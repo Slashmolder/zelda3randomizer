@@ -24,6 +24,9 @@
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
 #include "../features.h"   // g_rando_triforce_piece_count
+#include "../misc.h"       // §7.6 Link_CalculateSfxPan
+#include "../hud.h"        // §7.6 Hud_RefreshIcon
+#include "../player.h"     // §7.6 Link_ReceiveItem
 #include "third_party/sha256/sha256.h"
 
 // ---------------------------------------------------------------------------
@@ -370,6 +373,34 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // ---------------------------------------------------------------------------
 void Rando_BumpReachabilityCounter(void) {
   g_reachability_state_counter++;
+}
+
+// ---------------------------------------------------------------------------
+// §7.6 — generic confirmation cue for direct-grant placements that skip
+// Link_ReceiveItem entirely. Matches the standard receive-item sound used
+// at misc.c:834 (`sound_effect_2 = Link_CalculateSfxPan() | 0xf`) so the
+// auditory feedback is identical to a normal pickup. Refreshes the HUD so
+// any inventory cell that changed (prize bits, dungeon-item bits, Triforce
+// counter) reflects immediately rather than waiting for the next implicit
+// refresh.
+//
+// Deliberately NOT emitted from within `Rando_DispatchVanillaGrant` — the
+// caller knows whether its own code path already provides visual context
+// (e.g., the §6.6 boss-kill spawns a FallingPrize regardless of sentinel,
+// so the player sees that sprite). Pushing the confirmation to the call
+// site lets each integration choose whether to add the cue.
+// ---------------------------------------------------------------------------
+void Rando_ShowDirectGrantConfirmation(void) {
+  sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
+  Hud_RefreshIcon();
+}
+
+void Rando_ReceiveOrConfirm(uint8 lttp_code) {
+  if (Rando_ShouldSkipReceive(lttp_code)) {
+    Rando_ShowDirectGrantConfirmation();
+  } else {
+    Link_ReceiveItem(lttp_code, 0);
+  }
 }
 
 // ---------------------------------------------------------------------------

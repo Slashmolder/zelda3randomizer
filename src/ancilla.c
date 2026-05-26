@@ -4048,8 +4048,7 @@ void Ancilla36_Flute(int k) {  // 88cfaa
           if (enhanced_features1 & kFeatures1_RandomizerActive) {
             lttp_code = Rando_DispatchVanillaGrant(LOC_Flute_Spot, ITEM_OcarinaInactive, lttp_code);
           }
-          if (!Rando_ShouldSkipReceive(lttp_code))
-            Link_ReceiveItem(lttp_code, 0);
+          Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
         }
         return;
       }

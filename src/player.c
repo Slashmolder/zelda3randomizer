@@ -590,7 +590,9 @@ void LinkState_ReceivingEther() {  // 878570
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Ether_Tablet, ITEM_Ether, lttp_code);
     }
-    if (!Rando_ShouldSkipReceive(lttp_code))
+    if (Rando_ShouldSkipReceive(lttp_code))
+      Rando_ShowDirectGrantConfirmation();  // §7.6 — Ether tablet direct-grant cue
+    else
       AncillaAdd_FallingPrizeRando(0x29, lttp_code, 0, 4);
     flag_is_link_immobilized = 1;
     flag_block_link_menu = 0;
@@ -628,7 +630,9 @@ void LinkState_ReceivingBombos() {  // 8785fb
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Bombos_Tablet, ITEM_Bombos, lttp_code);
     }
-    if (!Rando_ShouldSkipReceive(lttp_code))
+    if (Rando_ShouldSkipReceive(lttp_code))
+      Rando_ShowDirectGrantConfirmation();  // §7.6 — Bombos tablet direct-grant cue
+    else
       AncillaAdd_FallingPrizeRando(0x29, lttp_code, 5, 4);
     flag_is_link_immobilized = 1;
   }
@@ -3867,9 +3871,14 @@ void Link_PerformOpenChest() {  // 87b574
   // bits), Rando_ChestDispatch returns kRandoLttpSkip. Passing 0xFE to
   // Link_ReceiveItem would index 178 bytes past the end of the 76-entry
   // dispatch tables in misc.c — arbitrary RAM corruption. The direct-grant
-  // has already been applied inside Rando_DispatchVanillaGrant; nothing
-  // else for this dispatch to do.
-  if (Rando_ShouldSkipReceive(item)) return;
+  // has already been applied inside Rando_DispatchVanillaGrant.
+  //
+  // §7.6 — fire the generic confirmation cue here so the player gets a
+  // sound + HUD refresh; the chest opening itself is the visual.
+  if (Rando_ShouldSkipReceive(item)) {
+    Rando_ShowDirectGrantConfirmation();
+    return;
+  }
 
   Link_ReceiveItem(item, chest_position);
 }

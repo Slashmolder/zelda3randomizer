@@ -91,6 +91,49 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 }
 
 // ---------------------------------------------------------------------------
+// Rando_ShowDirectGrantConfirmation — generic visual+audio confirmation
+// for direct-grant placements (tasks.md §7.6).
+//
+// When Rando_DispatchVanillaGrant returns kRandoLttpSkip the caller skips
+// Link_ReceiveItem entirely — no animation, no sound. For sites that have
+// no other confirmation visual (the §6.5 tablets, several §6.4 NPCs, the
+// §6.7 Pyramid Fairy item drop), the player can't tell that anything was
+// granted. Callers should invoke this immediately in the skip branch:
+//
+//   if (Rando_ShouldSkipReceive(lttp_code))
+//     Rando_ShowDirectGrantConfirmation();
+//   else
+//     Link_ReceiveItem(lttp_code, 0);
+//
+// Plays the standard item-receipt sound effect and refreshes the HUD so
+// any visible inventory change (prize icons, dungeon-item bits, Triforce
+// counter) updates immediately. Does NOT spawn an item-receipt ancilla —
+// the direct-grant path's item has no corresponding LttP receive code,
+// so an animation isn't available without per-item graphics work.
+// ---------------------------------------------------------------------------
+void Rando_ShowDirectGrantConfirmation(void);
+
+// ---------------------------------------------------------------------------
+// Rando_ReceiveOrConfirm — convenience wrapper that combines the standard
+// §6 NPC pattern into a single call (tasks.md §7.6).
+//
+// Replaces:
+//   if (!Rando_ShouldSkipReceive(lttp_code))
+//     Link_ReceiveItem(lttp_code, 0);
+//
+// with:
+//   Rando_ReceiveOrConfirm(lttp_code);
+//
+// Behavior: when `lttp_code` is the §6.2 skip-sentinel, fires the §7.6
+// confirmation cue (sound + HUD refresh). Otherwise invokes Link_ReceiveItem
+// with chest_position=0 — every existing call site at the NPC dispatch
+// pattern passes 0; sites that need non-zero chest_position (chest opens)
+// continue to call Link_ReceiveItem directly with an explicit confirmation
+// gate.
+// ---------------------------------------------------------------------------
+void Rando_ReceiveOrConfirm(uint8 lttp_code);
+
+// ---------------------------------------------------------------------------
 // Rando_ChestDispatch — universal chest grant-site hook.
 //
 // Hooked at Link_PerformOpenChest, AFTER OpenChestForItem returns the item
