@@ -87,23 +87,25 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
       // Bow=0x0b (tier 1) → SilverArrowUpgrade=0x29 (tier 2)
       return (uint8)((tier == 0) ? 0x0b : 0x29);
     }
-    // Multi-tier rupees: vanilla LttP receive codes per src/misc.c
-    // kMemoryLocationToGiveItemTo[52..]=0xf360=link_rupees_goal. The codes
-    // are signed-value dispatches that the existing receive handler adds
-    // to the wallet (see misc.c:723-784).
-    case ITEM_Rupee1:   return 0x35;
-    case ITEM_Rupee5:   return 0x34;
+    // Multi-tier rupees: vanilla LttP receive codes per Ancilla_AddRupees
+    // (ancilla.c:6963). kGiveRupeeGift_Tab[5] = {1, 5, 20, 100, 50}:
+    //   0x34→1, 0x35→5, 0x36→20, 0x40→100, 0x41→50, 0x46→300
+    case ITEM_Rupee1:   return 0x34;
+    case ITEM_Rupee5:   return 0x35;
     case ITEM_Rupee20:  return 0x36;
-    case ITEM_Rupee100: return 0x41;
-    case ITEM_Rupee300: return 0x42;
-    // Rupoor: decrements wallet. Vanilla code 0x47 per misc.c kValueToGiveItemTo[71] = -50.
-    case ITEM_Rupoor:   return 0x47;
-    // HalfMagic: LttP code 0x20 writes link_magic_consumption (per misc.c
-    // kMemoryLocationToGiveItemTo[32]=0xf37a). Matches vanilla Magic Bat
-    // grant when routed through Link_ReceiveItem.
-    case ITEM_HalfMagic: return 0x20;
-    // QuarterMagic has no vanilla LttP code (added by ROM patches in
-    // ALTTPR; Phase A1 falls back to vanilla item). §6.2 follow-on.
+    case ITEM_Rupee100: return 0x40;
+    case ITEM_Rupee300: return 0x46;
+    // Rupoor: ALTTPR-only item (vanilla LttP doesn't have it). No vanilla
+    // LttP code grants Rupoor; §6.2 follow-on. Phase A1 falls back to
+    // vanilla item (which is fine — Rupoor only appears in hard/expert
+    // pools per the spec, infrequent at most slots).
+    // HalfMagic / QuarterMagic: no LttP receive code in this port grants
+    // them. kValueToGiveItemTo[32]=-1 means code 0x20's "magic" branch at
+    // misc.c:751 runs special palette/cape logic but does NOT write to
+    // link_magic_consumption. The vanilla Magic Bat grant bypasses
+    // Link_ReceiveItem entirely (direct write). §6.2 work would add a
+    // new receive helper that writes link_magic_consumption=1 (Half) or
+    // =2 (Quarter); Phase A1 falls back to vanilla item.
 
     // Bottle-with-contents → LttP codes per misc.c kBottleList[].
     // ItemReceipt_GiveBottledItem finds the first empty slot and writes
