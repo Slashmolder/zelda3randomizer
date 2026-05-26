@@ -3437,6 +3437,11 @@ endif_11:
   } else if (a == 0x3e) {
     flag_is_link_immobilized = 0;
     if (link_health_capacity != 0xa0) {
+      // rando-exempt: receipt-dispatcher consumption — code 0x3e is the
+      // unified BossHeartContainer grant that all upstream callers reach
+      // (Link_ReceiveItem(0x3e, 0) from sprite_main.c boss drops + ancilla
+      // chest grants). The actual ALTTPR location dispatch happens at the
+      // call site (the boss handler / chest opener), not here.
       link_health_capacity += 8;
       link_hearts_filler += 8;
       Ancilla_Sfx3_Near(0xd);
@@ -3829,6 +3834,14 @@ void Ancilla_RisingCrystal(int k) {  // 88cbf2
   if (y < 0x49) {
     Ancilla_SetY(k, 0x49 + BG2VOFS_copy);
     if (!submodule_index) {
+      // rando-exempt: §6.6 work — boss prize crystal/pendant grant uses the
+      // current dungeon's vanilla bit-table. Phase A1's prize_shuffle places
+      // crystals/pendants at their _Prize locations (rando_placement.c
+      // pin pre-pass), so the in-game grant here still uses the vanilla
+      // dungeon→prize bit mapping — meaning rando players see the vanilla
+      // prize at each boss, while the placement spoiler reports the
+      // shuffled assignment. §6.6 lands a proper Rando_OnLocationCheck at
+      // each dungeon's <Dungeon>_Prize grant point.
       link_has_crystals |= kDungeonCrystalPendantBit[BYTE(cur_palace_index_x2) >> 1];
       submodule_index = 0x18;
       subsubmodule_index = 0;

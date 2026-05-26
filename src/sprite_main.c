@@ -1434,6 +1434,9 @@ void Bee_PutInBottle(int k) {
   if (!choice_in_multiselect_box) {
     int j = Sprite_Find_EmptyBottle();
     if (j >= 0) {
+      // rando-exempt: state-shuffle — Bee_PutInBottle stores the captured bee
+      // species (7+dir) into an existing empty bottle slot. Not an ALTTPR
+      // grant location; the bottle was the grant (handled by its own slot).
       link_bottle_info[j] = 7 + sprite_head_dir[k];
       Hud_RefreshIcon();
       sprite_state[k] = 0;
@@ -6523,6 +6526,11 @@ void Sprite_HeartPiece(int k) {  // 85f020
   if (sprite_delay_aux4[k] || !Sprite_CheckDamageToLink_same_layer(k))
     return;
 
+  // rando-exempt: this is the generic piece-of-heart pickup sprite handler,
+  // not a specific ALTTPR location. The 24 PieceOfHeart placement sites
+  // (Sunken Treasure, Cave 45, etc.) dispatch at their spawn point (chest /
+  // standing / dig / dash); this counter logic runs the same way regardless
+  // of which slot's PoH was collected.
   link_heart_pieces = link_heart_pieces + 1 & 3;
   if (link_heart_pieces == 0) {
     Link_CancelDash();
@@ -7045,6 +7053,10 @@ void Sprite_BonkKey(int k) {  // 85fc04
       sprite_floor[k] = link_is_on_lower_level;
     break;
   case 3:  // give to player
+    // rando-exempt: drop-pool (Phase B) — dash-triggered key drop. The drop
+    // is tied to a room state bit (kakariko well chunks etc.), not an
+    // ALTTPR location_id; grants the dungeon's vanilla SmallKey of the
+    // current room. Drop-pool shuffle lands in Phase B.
     link_num_keys++;
     sprite_state[k] = 0;
     dung_savegame_state_bits |= (sprite_die_action[k] ? 0x2000 : 0x4000);
@@ -11180,12 +11192,18 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
       Sprite_MagicBat_SpawnLightning(k);
     break;
   }
-  case 3:  // DoublePlayerMagicPower
+  case 3:  // DoublePlayerMagicPower (Magic Bat half-magic grant)
     if (!sprite_delay_aux1[k]) {
       Sprite_ShowMessageUnconditional(0x111);
       Palette_Restore_BG_And_HUD();
       flag_update_cgram_in_nmi++;
       sprite_ai_state[k]++;
+      // rando-exempt: §6.2 work — Magic Bat grants HalfMagic via direct
+      // write (link_magic_consumption=1) rather than Link_ReceiveItem.
+      // §6.2 lands a new receive-helper for direct-dispatch items
+      // (HalfMagic / QuarterMagic / dungeon-item subclasses). Until then
+      // the vanilla half-magic grant fires here; rando placement of
+      // HalfMagic at LOC_Magic_Bat is a no-op (still half magic).
       link_magic_consumption = 1;
       Hud_RefreshIcon();
     } else if (sprite_delay_aux1[k] == 0x10) {
@@ -11559,6 +11577,9 @@ show_later_msg:
     static const uint8 kMaxBombsForLevelHex[8] = {0x10, 0x15, 0x20, 0x25, 0x30, 0x35, 0x40, 0x50};
     int i = link_bomb_upgrades + 1;
     if (i != 8) {
+      // rando-exempt: shop subsystem (Phase B) — bomb-capacity upgrade from
+      // the Capacity Upgrade Shop. ALTTPR routes capacity upgrades through
+      // its Shop subsystem (app/Shop/Upgrade.php) with no Location\ entry.
       link_bomb_upgrades = i;
       dialogue_number[0] = link_bomb_filler = kMaxBombsForLevelHex[i];
       Sprite_ShowMessageUnconditional(0x96);
@@ -11596,6 +11617,8 @@ show_later_msg:
     static const uint8 kMaxArrowsForLevelHex[8] = {0x30, 0x35, 0x40, 0x45, 0x50, 0x55, 0x60, 0x70};
     int i = link_arrow_upgrades + 1;
     if (i != 8) {
+      // rando-exempt: shop subsystem (Phase B) — arrow-capacity upgrade.
+      // Same rationale as the bomb-capacity exemption above.
       link_arrow_upgrades = i;
       dialogue_number[0] = link_arrow_filler = kMaxArrowsForLevelHex[i];
       Sprite_ShowMessageUnconditional(0x97);
@@ -11911,6 +11934,9 @@ void Sprite_E3_Fairy(int k) {  // 86cf94
     if (choice_in_multiselect_box == 0) {
       int j = Sprite_Find_EmptyBottle();
       if (j >= 0) {
+        // rando-exempt: state-shuffle — GoodBee capture into bottle. The
+        // bottle was the grant; this stores the captured-bee species code
+        // (6 = GoodBee) into an existing empty bottle slot.
         link_bottle_info[j] = 6;
         Hud_RefreshIcon();
         sprite_state[k] = 0;

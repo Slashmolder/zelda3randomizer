@@ -1399,6 +1399,10 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     link_hearts_filler += 56;
     break;
   case 12:
+    // rando-exempt: drop-pool (Phase B) — small key from killed-sprite drop.
+    // The drop-pool shuffle is Phase B work per task 7.2; in Phase A1 small
+    // keys from enemy drops grant the vanilla SmallKey of the current dungeon
+    // (link_num_keys is a per-dungeon counter that interprets correctly).
     link_num_keys += 1;
     goto after_getkey;
   case 13:
