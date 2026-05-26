@@ -34,6 +34,7 @@
 #include "rando/rando_placement.h"
 #include "rando/rando_spoiler.h"
 #include "rando/rando_share.h"
+#include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
 static bool g_run_without_emu = 0;
@@ -558,6 +559,161 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   exit(0);
 }
 
+// Comparator for qsort over uint64 samples — ascending order.
+static int bench_cmp_u64(const void *a, const void *b) {
+  uint64_t lhs = *(const uint64_t *)a;
+  uint64_t rhs = *(const uint64_t *)b;
+  if (lhs < rhs) return -1;
+  if (lhs > rhs) return 1;
+  return 0;
+}
+
+static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
+  bool found = false;
+  int iters = 1000;
+  bool no_fail = false;
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--rando-bench-logic") == 0) found = true;
+    else if (strncmp(argv[i], "--bench-iters=", 14) == 0) iters = atoi(argv[i] + 14);
+    else if (strcmp(argv[i], "--bench-no-fail") == 0) no_fail = true;
+  }
+  if (!found) return;
+
+  if (iters < 1) {
+    fprintf(stderr, "--rando-bench-logic: --bench-iters must be >= 1 (got %d)\n", iters);
+    exit(64);
+  }
+  if (iters > 100000) {
+    fprintf(stderr, "--rando-bench-logic: --bench-iters capped at 100000 (got %d)\n", iters);
+    exit(64);
+  }
+
+  // Build representative settings + "full inventory" counts. Phase A1's
+  // populated graph today is Open / FastGanon (Standard/Inverted/Retro
+  // start_region wiring is a follow-on per audit_phase_a1 line 144). Defaults
+  // already pin world_state=Open / goal=FastGanon — the bench just runs them.
+  RandoSettings settings;
+  Settings_SetDefaults(&settings);
+
+  // Full inventory: every progression item maxed. Mirrors the placer's
+  // assumed-fill pre-state (counts populated with every progression item
+  // before the assumed-fill loop decrements). The bench is reading the
+  // graph at its widest reachable state — that's the worst-case work for
+  // Logic_ComputeReachability and the right number to gate against.
+  RandoCounts counts;
+  memset(&counts, 0, sizeof(counts));
+  for (int i = 0; i < 256; i++) counts.by_item_id[i] = 7;  // enough for any HAS_AMOUNT N<=7
+  counts.by_item_id[121] = 3;  // StartingHeart (per build_final_inventory pattern)
+  counts.by_item_id[122] = 1;  // RescuedZelda (non-Standard pre-grant)
+
+  // Allocate per-iteration sample buffer in performance-counter ticks.
+  uint64_t *samples = (uint64_t *)calloc((size_t)iters, sizeof(uint64_t));
+  if (samples == NULL) {
+    fprintf(stderr, "--rando-bench-logic: out of memory (iters=%d)\n", iters);
+    exit(1);
+  }
+
+  // SDL_GetPerformanceCounter / SDL_GetPerformanceFrequency are usable
+  // without SDL_Init per SDL2 API contract (verified against SDL source —
+  // both functions wrap platform raw clocks: QPC on Windows, monotonic
+  // clock on POSIX, no init state). Avoiding clock_gettime here keeps the
+  // src/rando/ determinism guard clean (no rando file uses time/clock_gettime).
+  uint64_t freq = SDL_GetPerformanceFrequency();
+  if (freq == 0) {
+    fprintf(stderr, "--rando-bench-logic: SDL_GetPerformanceFrequency returned 0\n");
+    free(samples);
+    exit(1);
+  }
+
+  uint64_t bench_start = SDL_GetPerformanceCounter();
+  for (int i = 0; i < iters; i++) {
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    const RandoReachability *r = Logic_ComputeReachability(&counts, &settings);
+    uint64_t t1 = SDL_GetPerformanceCounter();
+    samples[i] = (t1 >= t0) ? (t1 - t0) : 0;
+    // Touch the result so the compiler can't dead-code-eliminate the call.
+    if (r == NULL) {
+      // Should never happen; bail out so we don't report nonsense numbers.
+      fprintf(stderr, "--rando-bench-logic: Logic_ComputeReachability returned NULL at iter %d\n", i);
+      free(samples);
+      exit(1);
+    }
+  }
+  uint64_t bench_end = SDL_GetPerformanceCounter();
+  uint64_t total_ticks = bench_end - bench_start;
+
+  // Sort samples ascending; compute percentiles.
+  qsort(samples, (size_t)iters, sizeof(uint64_t), bench_cmp_u64);
+
+  // Percentile indices: round half-up (idx = ceil(p * (n-1)) using integer
+  // math). For iters=1000: p50_idx=499, p95_idx=949, p99_idx=989.
+  int p50_idx = (iters > 0) ? (iters - 1) / 2 : 0;
+  int p95_idx = (iters > 0) ? (int)(((long long)iters * 95 - 100) / 100) : 0;
+  int p99_idx = (iters > 0) ? (int)(((long long)iters * 99 - 100) / 100) : 0;
+  if (p50_idx < 0) p50_idx = 0;
+  if (p95_idx < 0) p95_idx = 0;
+  if (p99_idx < 0) p99_idx = 0;
+  if (p50_idx >= iters) p50_idx = iters - 1;
+  if (p95_idx >= iters) p95_idx = iters - 1;
+  if (p99_idx >= iters) p99_idx = iters - 1;
+
+  uint64_t p50_ticks = samples[p50_idx];
+  uint64_t p95_ticks = samples[p95_idx];
+  uint64_t p99_ticks = samples[p99_idx];
+
+  // Mean computed as total_ticks/iters (excludes loop overhead but the loop
+  // overhead is dominated by Logic_ComputeReachability so the difference is
+  // immaterial). Use integer arithmetic — the determinism guard forbids
+  // `float `/`double ` in src/rando/ but main.c is outside that scope, and
+  // we need double here to format percentiles in ms.
+  uint64_t mean_ticks = (iters > 0) ? (total_ticks / (uint64_t)iters) : 0;
+
+  // Convert each ticks count to milliseconds. We DO need floating point here
+  // for sub-millisecond resolution display — main.c is outside src/rando/
+  // and the determinism guard does not apply.
+  double ticks_to_ms = 1000.0 / (double)freq;
+  double p50_ms = (double)p50_ticks * ticks_to_ms;
+  double p95_ms = (double)p95_ticks * ticks_to_ms;
+  double p99_ms = (double)p99_ticks * ticks_to_ms;
+  double mean_ms = (double)mean_ticks * ticks_to_ms;
+  double total_ms = (double)total_ticks * ticks_to_ms;
+
+  // Machine-parseable single-line report on stdout. CI scripts grep for
+  // `bench_logic:` and parse fields by name; field names + ordering are
+  // stable. Per-iteration tick counts are not surfaced (they're dense and
+  // platform-specific); only the rolled-up percentiles are CI-relevant.
+  fprintf(stdout,
+    "bench_logic: iters=%d p50_ms=%.4f p95_ms=%.4f p99_ms=%.4f mean_ms=%.4f "
+    "total_ms=%.2f graph_locations=%u graph_regions=%u graph_edges=%u "
+    "p50_ticks=%llu freq=%llu\n",
+    iters, p50_ms, p95_ms, p99_ms, mean_ms,
+    total_ms,
+    (unsigned)kRandoLocationsCount,
+    (unsigned)kRandoRegionsCount,
+    (unsigned)kRandoEdgesCount,
+    (unsigned long long)p50_ticks,
+    (unsigned long long)freq);
+
+  free(samples);
+
+  // Gate: p50 must be under 5 ms. CI fails the build when this exceeds.
+  // --bench-no-fail suppresses the gate for diagnostic baselines.
+  const double kBudgetMs = 5.0;
+  if (p50_ms > kBudgetMs && !no_fail) {
+    fprintf(stderr,
+      "--rando-bench-logic: FAIL — p50_ms=%.4f exceeds budget %.1f ms\n",
+      p50_ms, kBudgetMs);
+    exit(1);
+  }
+  if (p50_ms > kBudgetMs && no_fail) {
+    fprintf(stderr,
+      "--rando-bench-logic: WARN — p50_ms=%.4f exceeds budget %.1f ms "
+      "(suppressed by --bench-no-fail)\n",
+      p50_ms, kBudgetMs);
+  }
+  exit(0);
+}
+
 // --generate-seed CLI/headless mode (tasks.md §1.6a).
 //
 // CRITICAL invariant: this function is called BEFORE any SDL_Init in main()
@@ -571,6 +727,26 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
 // exits with a clear "not yet implemented" message + exit code 64. The full
 // generator pipeline lands in Phase A1 (tasks 2.x, 3.x, 4.x, 5.x).
 static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *config_file);
+
+// --rando-bench-logic CLI mode (tasks.md §3.11).
+//
+// Detects `--rando-bench-logic` in argv. When present, runs
+// Logic_ComputeReachability `iters` times (default 1000, override with
+// `--bench-iters=N`) against a representative full-inventory snapshot, sorts
+// the per-iteration wall-clock samples, and prints p50/p95/p99/mean to stdout
+// in a single machine-parseable line:
+//
+//   bench_logic: iters=1000 p50_ms=0.12 p95_ms=0.18 p99_ms=0.25 mean_ms=0.13
+//                total_ms=130 graph_locations=237 graph_regions=N graph_edges=M
+//
+// Exits non-zero when p50_ms exceeds 5.0 (CI gate per `randomizer-logic /
+// Budget benchmark` scenario). `--bench-no-fail` overrides the gate for
+// diagnostic runs that just want the numbers.
+//
+// Runs BEFORE any SDL_Init. Uses SDL_GetPerformanceCounter /
+// SDL_GetPerformanceFrequency for sub-microsecond resolution; per the SDL
+// API contract these are callable before SDL_Init.
+static void MaybeRunBenchLogicAndExit(int argc, char **argv);
 
 #undef main
 int main(int argc, char** argv) {
@@ -593,6 +769,11 @@ int main(int argc, char** argv) {
       return 0;
     }
   }
+
+  // Check for --rando-bench-logic BEFORE any SDL_Init. Runs the
+  // Logic_ComputeReachability benchmark (tasks.md §3.11) and exits. When
+  // the flag is absent this returns; main() then continues normally.
+  MaybeRunBenchLogicAndExit(argc, argv);
 
   // Check for --generate-seed BEFORE any SDL_Init. If present, run headless
   // and exit; otherwise this returns and main() continues to the GUI path.
