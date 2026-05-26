@@ -212,6 +212,19 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // CSV parser accepts Python YAML capitalized True/False (audit-deferred fix).
+  {
+    RandoSettings sp;
+    Settings_SetDefaults(&sp);
+    if (Settings_ParseCsv("race_mode=True", &sp) != 0 || sp.race_mode != 1) {
+      fprintf(stderr, "Settings_SelfCheck: parse_bool should accept Python-style True\n");
+      exit(2);
+    }
+    if (Settings_ParseCsv("race_mode=False", &sp) != 0 || sp.race_mode != 0) {
+      fprintf(stderr, "Settings_SelfCheck: parse_bool should accept Python-style False\n");
+      exit(2);
+    }
+  }
   // CSV parser rejects duplicate keys.
   {
     RandoSettings s4d;
@@ -284,8 +297,11 @@ static int csv_str_eq(const char *a, int alen, const char *b) {
 }
 
 static int parse_bool(const char *v, int vlen, uint8 *out) {
-  if (csv_str_eq(v, vlen, "true") || csv_str_eq(v, vlen, "1")) { *out = 1; return 0; }
-  if (csv_str_eq(v, vlen, "false") || csv_str_eq(v, vlen, "0")) { *out = 0; return 0; }
+  // Accept lowercase / capitalized / numeric variants — Python YAML writes
+  // True/False (capitalized) and the corpus manifest goes through yaml.dump
+  // before --generate-seed reads it back.
+  if (csv_str_eq(v, vlen, "true") || csv_str_eq(v, vlen, "True") || csv_str_eq(v, vlen, "1")) { *out = 1; return 0; }
+  if (csv_str_eq(v, vlen, "false") || csv_str_eq(v, vlen, "False") || csv_str_eq(v, vlen, "0")) { *out = 0; return 0; }
   return -1;
 }
 

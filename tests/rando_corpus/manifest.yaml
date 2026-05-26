@@ -62,6 +62,116 @@ entries:
     seed: "0x0000000000000008"
     label: "a1-open-dungeon-keys-all"
     expected_digest: "dde44adaa1d08c7c0d2ce8b61b42a2f73cababd40e17dcac637e4c509893a274"
+  # Standard / Retro × all 7 goals.
+  - settings: { mode.state: standard, goal: dungeons }
+    seed: "0x0000000000000010"
+    label: "a1-standard-dungeons"
+    expected_digest: "460e87d82a26d0b9ae9cc1f39bf1c09e35b54bfbbc76e62115f08c3a9123148e"
+  - settings: { mode.state: standard, goal: pedestal }
+    seed: "0x0000000000000011"
+    label: "a1-standard-pedestal"
+    expected_digest: "6ac2240c628832bb2d42a809dc2d50ce8d0a0cc52eadebe7ab4301507255323e"
+  - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30 }
+    seed: "0x0000000000000012"
+    label: "a1-standard-triforce-hunt"
+    expected_digest: "53e57f4c4225a5ff47a326c5d4188cd96882cb04e43cf194872b0d6ec3e2392d"
+  - settings: { mode.state: standard, goal: completionist }
+    seed: "0x0000000000000013"
+    label: "a1-standard-completionist"
+    expected_digest: "797feec28cf4f80156d79ce370ebafa210e192424f4eb8d0a4ed63c2e4f6fded"
+  - settings: { mode.state: retro, goal: ganon }
+    seed: "0x0000000000000014"
+    label: "a1-retro-ganon"
+    expected_digest: "c223bea6bb591b81a9fddaaf1ef68ad74ebc08edec50c3d35f00424f0192c40e"
+  - settings: { mode.state: retro, goal: fast_ganon }
+    seed: "0x0000000000000015"
+    label: "a1-retro-fast-ganon"
+    expected_digest: "4448d94905a2f25643141aa437d0e03d9130ada72eb8d9097bd93227eed82394"
+  # crystals.* variations.
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
+    seed: "0x0000000000000016"
+    label: "a1-open-fg-crystals-4"
+    expected_digest: "4fe9ffd06860a84c7a82a8d533d1f7c2fbacdc479f591e130dc63e7261eec182"
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 5, crystals.tower: 7 }
+    seed: "0x0000000000000017"
+    label: "a1-open-fg-crystals-5-7"
+    expected_digest: "93b7e2239ede413120cf0819274e31d739d2d015f721765aeb590c3f2e093248"
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 2, crystals.tower: 0 }
+    seed: "0x0000000000000018"
+    label: "a1-open-fg-crystals-2-0"
+    expected_digest: "eb09c4a75e5e0d2dcdacfe2d32d060d8a2e2a17780419892b70603ac7e6d8198"
+  # item_pool difficulty variations.
+  - settings: { mode.state: open, goal: fast_ganon, item_pool: easy }
+    seed: "0x0000000000000020"
+    label: "a1-open-fg-pool-easy"
+    expected_digest: "073c94630d4fdc0da7f53454e3a84d0765bf2ea739a692f85eee3def842cc23e"
+  - settings: { mode.state: open, goal: fast_ganon, item_pool: hard }
+    seed: "0x0000000000000021"
+    label: "a1-open-fg-pool-hard"
+    expected_digest: "17818167000bb6a2ce821d9cbda2bb6eb4db64ac3ef28bc20c69893a88827d68"
+  - settings: { mode.state: open, goal: fast_ganon, item_pool: expert }
+    seed: "0x0000000000000022"
+    label: "a1-open-fg-pool-expert"
+    expected_digest: "5db302e399b82d536b222210cb365a394e2fb4182b6aa4c086a49f0402e28c71"
+  # Other settings axes.
+  - settings: { mode.state: open, goal: fast_ganon, accessibility: locations }
+    seed: "0x0000000000000023"
+    label: "a1-open-fg-acc-locations"
+    expected_digest: "16527442ba9d244e45352a3badc64acf7515b3dbb240f8ea7b2bf9115967fe22"
+  - settings: { mode.state: open, goal: fast_ganon, mode.weapons: assured }
+    seed: "0x0000000000000024"
+    label: "a1-open-fg-weapons-assured"
+    expected_digest: "affca389afa0efc63f96978c09385e9ff710cc70369cc85750e15605a8130faf"
+  - settings: { mode.state: open, goal: fast_ganon, prize_shuffle: false }
+    seed: "0x0000000000000025"
+    label: "a1-open-fg-no-prize-shuffle"
+    expected_digest: "1d20446bfe2df1bbf46c7338f84ce391d13c6686b8513901bea4cbe3b0143247"
+  - settings: { mode.state: open, goal: fast_ganon, medallion_shuffle: false }
+    seed: "0x0000000000000026"
+    label: "a1-open-fg-no-medallion-shuffle"
+    expected_digest: "6007cd90eb12cdb8af98576866a2ddfbd11922d033cb735d388d7f2789f30624"
+  - settings: { mode.state: open, goal: fast_ganon, prize_shuffle: false, medallion_shuffle: false }
+    seed: "0x0000000000000027"
+    label: "a1-open-fg-no-shuffles"
+    expected_digest: "6f36ad4eae75214f980aeb54fdc5021113c2472312285986e4b5492e3920d8a1"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, dungeon_items.big_keys: wild }
+    seed: "0x0000000000000028"
+    label: "a1-open-fg-wild-keys"
+    expected_digest: "b166608cc37acaea249ea764927be7bbbfc43846d26359053e276b1ac999154c"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, dungeon_items.maps: wild }
+    seed: "0x0000000000000029"
+    label: "a1-open-fg-mixed-modes"
+    expected_digest: "46c44fc5343568fbe88442698ac9184bfc90d260387ffb0f4fc9807ad29aab9d"
+  - settings: { mode.state: open, goal: fast_ganon, race_mode: true }
+    seed: "0x0000000000000030"
+    label: "a1-open-fg-race-mode"
+    expected_digest: "4fe20ec81c04e51b37132fb2d7f780e9208d57fa3df2954b60008cbc2e589bdf"
+  # Triforce-Hunt parameter variations.
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 25, pieces_placed: 30 }
+    seed: "0x0000000000000031"
+    label: "a1-th-25-of-30"
+    expected_digest: "6b3f92536c5037f2ea500e959168f8a06bd96c6e1cf860f6046a8d93505f40e8"
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 10, pieces_placed: 15 }
+    seed: "0x0000000000000032"
+    label: "a1-th-10-of-15"
+    expected_digest: "97bf124c0d221268b9b2fe063c70fbb2bf7a5b0e155ee183fa2d7a81baa976f8"
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 30, pieces_placed: 30 }
+    seed: "0x0000000000000033"
+    label: "a1-th-30-of-30"
+    expected_digest: "5f60caf344dad90e07af298f2a5d668218ccee5a11cf4b23fdb0797b90bce79f"
+  # Edge-case seed values.
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0x000000000000CAFE"
+    label: "a1-seed-0xCAFE"
+    expected_digest: "fa81f9c5f021eb63348e0502ab04d3aa554a88cd3b57fbc4ce7a26cac6971293"
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0x0000000000000100"
+    label: "a1-seed-0x100"
+    expected_digest: "0f0b8d9b49d63544345f84fe9761282308c3ed0286aa99d0c24cf9ba8f73d29b"
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0xFFFFFFFFFFFFFFFF"
+    label: "a1-seed-large"
+    expected_digest: "9c654caa5e82aedebc19dd2fa7b700f52d56b69ba1fb143415606cf910421d4c"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
