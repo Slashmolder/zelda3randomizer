@@ -3862,6 +3862,15 @@ void Link_PerformOpenChest() {  // 87b574
     }
   }
 
+  // §6.2 sentinel: when the placement at this chest is a direct-grant
+  // item (TriforcePiece, HalfMagic/QuarterMagic, prize bits, dungeon-item
+  // bits), Rando_ChestDispatch returns kRandoLttpSkip. Passing 0xFE to
+  // Link_ReceiveItem would index 178 bytes past the end of the 76-entry
+  // dispatch tables in misc.c — arbitrary RAM corruption. The direct-grant
+  // has already been applied inside Rando_DispatchVanillaGrant; nothing
+  // else for this dispatch to do.
+  if (Rando_ShouldSkipReceive(item)) return;
+
   Link_ReceiveItem(item, chest_position);
 }
 

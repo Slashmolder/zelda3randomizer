@@ -579,6 +579,39 @@ void Rando_SelfCheck(void) {
     }
   }
 
+  // §6.3 + §6.2 integration: install a direct-grant placement (TriforcePiece)
+  // at a known chest location and verify Rando_ChestDispatch returns
+  // kRandoLttpSkip. Regression guard for the bug where the universal chest
+  // hook in player.c forgot to check Rando_ShouldSkipReceive() and would
+  // pass 0xFE to Link_ReceiveItem (OOB index into 76-byte dispatch tables).
+  {
+    uint16 chest_loc = chest_lookup(114, 0);  // Hyrule Castle - Map Chest
+    if (chest_loc == 0xFFFFu) {
+      fprintf(stderr, "Rando_SelfCheck: chest_lookup(114,0) returned 0xFFFF (table broken?)\n");
+      exit(2);
+    }
+    static RandoPlacement entries[1];
+    entries[0].location_id = chest_loc;
+    entries[0].item_id = 52;  // ITEM_TriforcePiece
+    RandoPlacementTable t = { entries, 1 };
+    Placement_Install(&t);
+    g_rando_triforce_piece_count = 0;
+    uint8 lttp = Rando_ChestDispatch(114, 0, 0x05);  // vanilla map = 0x05
+    if (lttp != kRandoLttpSkip) {
+      fprintf(stderr,
+        "Rando_SelfCheck: chest dispatch with TriforcePiece placement should return"
+        " kRandoLttpSkip (got 0x%02x) — Link_PerformOpenChest would OOB-index dispatch tables\n",
+        (unsigned)lttp);
+      exit(2);
+    }
+    if (g_rando_triforce_piece_count != 1) {
+      fprintf(stderr, "Rando_SelfCheck: chest dispatch with TriforcePiece should tick counter\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    g_rando_triforce_piece_count = 0;
+  }
+
   // §6.2 TriforcePiece counter: install a placement that grants Triforce
   // Piece at Bottle Merchant, dispatch, verify counter ticked AND the
   // dispatch returned kRandoLttpSkip (caller bypasses Link_ReceiveItem).

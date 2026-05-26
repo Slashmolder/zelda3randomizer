@@ -986,6 +986,31 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
             % (len(unknown), msg, " ..." if len(unknown) > 5 else "")
         )
 
+    # Reverse direction: every Chest/BigChest location in the registry must
+    # appear in chest_data (modulo the explicitly-deferred Chest Game). If a
+    # future contributor adds a chest to location_registry.yaml without
+    # updating assets/chest_data.py, the codegen would silently emit a table
+    # missing that location and the runtime would fall through to vanilla
+    # for the new chest. Fail loudly at codegen time instead.
+    DEFERRED_CHEST_NAMES = {"Chest Game"}  # §6.8 minigame path
+    chest_names_in_table = {name for (_room, _ord, name, *_rest) in rows}
+    missing_in_chest_data = []
+    for loc in locations.values():
+        if loc.type not in ("Chest", "BigChest"):
+            continue
+        if loc.name in DEFERRED_CHEST_NAMES:
+            continue
+        if loc.name not in chest_names_in_table:
+            missing_in_chest_data.append((loc.name, loc.id))
+    if missing_in_chest_data:
+        msg = ", ".join("%s (loc %d)" % (n, i) for n, i in missing_in_chest_data[:5])
+        raise RuntimeError(
+            "chest_lookup: %d registry chest(s) absent from assets/chest_data.py: %s%s"
+            " — add them to CHEST_NAME_BY_ROM_ADDR with PHP source provenance."
+            % (len(missing_in_chest_data), msg,
+               " ..." if len(missing_in_chest_data) > 5 else "")
+        )
+
     # Sort by (room, ordinal) so the C-side binary search has a sorted key.
     rows.sort(key=lambda r: (r[0], r[1]))
 
@@ -1024,9 +1049,11 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
         "// %d entries, sorted by (room, ordinal). 164 of 165 ALTTPR chest" % len(rows),
         "// locations (Chest Game @ ROM 0xEDA8 is the minigame path; dispatch is",
         "// tasks.md S6.8). 4 ROM chest-table entries have no ALTTPR location",
-        "// (rooms 91/126/179/301 small-key/rupee chests, ALTTPR not exposing",
-        "// them as shuffleable locations); those fall through to vanilla at",
-        "// runtime via chest_lookup()'s 0xFFFF return.",
+        "// (one entry each in rooms 91, 126, 179, 301 - small-key/rupee chests",
+        "// that ALTTPR does not expose as shuffleable; rooms 126 and 179 each",
+        "// have ONE mapped chest at ord 0 plus the unmapped ord-1). The unmapped",
+        "// entries fall through to vanilla at runtime via chest_lookup()'s",
+        "// 0xFFFF return.",
         "static const RandoChestLookupEntry kRandoChestLookup[] = {",
     ]
     for room, ord_, name, ctype, item, big, addr in rows:
