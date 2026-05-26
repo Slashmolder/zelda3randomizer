@@ -26,7 +26,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7 }
     seed: "0xDEADBEEFCAFEBABE"
     label: "a1-open-fast-ganon"
-    expected_digest: "c8160f8de4e5a98210e20139e3963d849132c472d58f9b352d46dc96a1397892"
+    expected_digest: "84a12174b56502154b03eb5c6dc730b78588ddd9ded0ed7b4dde5ee90757eb7f"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

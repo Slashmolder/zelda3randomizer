@@ -403,6 +403,8 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   // that case, which makes prize-gated / medallion-gated areas unreachable).
   ctx.dungeon_prize_assignment = Rando_GetDungeonPrizeAssignment();
   ctx.medallion_entrance_assignment = Rando_GetMedallionAssignment();
+  // cleared_dungeons_bitmask gets recomputed at the end of each fixed-point
+  // iteration based on which boss locations have been reached. See below.
 
   // Fixed-point iteration. Cap at 64 iterations to bound runtime; the graph
   // depth is well under 32 in practice (per ALTTPR's region nesting).
@@ -419,11 +421,6 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
       const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
       if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
         bitset_set(g_reachability.region_bitset, edge->to_region);
-        if (!edge->one_way) {
-          // For Phase A purposes bidirectional edges are added on the from-side
-          // as well — but they already are by definition (the loop will pick
-          // them up on next iteration if relevant).
-        }
         changed = true;
       }
     }
@@ -451,6 +448,42 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         bitset_set(g_reachability.location_bitset, loc->id);
         changed = true;
       }
+    }
+
+    // Update cleared_dungeons_bitmask based on which boss locations are
+    // now reachable. Mapping per the dungeon-id table in op_registry.yaml
+    // (HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9, MM=10,
+    // TR=11, GT=12). The boss location is the canonical "dungeon cleared"
+    // signal — when its Prize location is reachable the boss is necessarily
+    // defeated to get there.
+    static const uint16 kDungeonBossLocations[13] = {
+      0xFFFF,  // HCE: no boss (escape sequence; Zelda event handles it)
+      16,      // EP Boss
+      23,      // DP Boss
+      30,      // TH Boss
+      34,      // HCT Agahnim (Prize_Event)
+      48,      // PoD Boss
+      59,      // SP Boss
+      68,      // SW Boss
+      77,      // TT Boss
+      86,      // IP Boss
+      95,      // MM Boss
+      108,     // TR Boss
+      137,     // GT Agahnim 2 (Prize_Event)
+    };
+    uint64 new_cleared = 0;
+    for (uint8 d = 0; d < 13; d++) {
+      uint16 loc_id = kDungeonBossLocations[d];
+      if (loc_id == 0xFFFF) continue;
+      if (loc_id < kReachabilityMaxLocations &&
+          bitset_has(g_reachability.location_bitset, loc_id)) {
+        new_cleared |= (uint64)1 << d;
+      }
+    }
+    if (new_cleared != g_reachability.cleared_dungeons_bitmask) {
+      g_reachability.cleared_dungeons_bitmask = new_cleared;
+      ctx.cleared_dungeons_bitmask = new_cleared;
+      changed = true;
     }
 
     if (!changed) break;
