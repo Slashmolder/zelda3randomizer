@@ -28,15 +28,37 @@ Subsequent commits have addressed the following:
 | #15 eval_glitch comparison | ✅ closed | 599f8a1 eval_glitch: use ctx->settings->logic |
 | #16 world_state_filter all 0 | ⚠ documented (no scenario violated; filter is opt-in) |
 
-Plus one issue discovered during audit-fix work that wasn't in the audit:
+Plus issues discovered during audit-fix work:
 
 | Issue | Status | Resolved by |
 |---|---|---|
 | Vanilla-mode dungeon items not in reachability inventory | ✅ closed | ec3c723 placer: vanilla-mode dungeon items pre-granted |
+| Second-audit N1: slot_kind enum disagrees with spec (Empty=0 missing) | ✅ closed | efbce92 slot_kind enum: Empty=0, Vanilla=1, Randomizer=2 |
+| Second-audit N2: Pedestal goal missing pendant-reachability check | ✅ closed | 1f68e51 goal: pendant-holding dungeons reachable |
+| Second-audit N4: sphere cap silent fail | ✅ closed | 0a18dd0 spheres: surface kSphereMaxCount cap warning |
+| Second-audit N5: BuildItemPool padded unconditionally to 237 | ✅ closed | 0a18dd0 pool: world-state-filtered location count |
+| Second-audit N7: 5 settings fields missing CSV parser | ✅ closed | efbce92 CSV: tricks/logic/race_mode/pyramid_bow_upgrade/region_boss_hearts_in_pool |
+| Third-audit NEW-1: dungeon_id_for_item off-by-one for BigKey/Map/Compass | ✅ closed | 0917299 lookup table replaces arithmetic, + 4908b68 regression selftest |
+| Third-audit NEW-3: Magic Bat vanilla_item should be HalfMagic | ✅ closed | a57cd95 registry: Magic Bat HalfMagic |
 
-The remaining open items concentrate on §6 grant-site dispatch
-(unchanged from the audit), the Phase A2 logic-graph work for
-Inverted/Retro world states, and the per-item rewind enhancement.
+Spec scenarios also closed beyond the original audit:
+- Dungeon-mode key/big/map/compass containment (3195b85)
+- Boss-heart slots identity-placed (0917299)
+- Item-pool difficulty downgrade (cd2dace)
+- Triforce-Hunt junk-padding rotation (d767563)
+- sphere_digest in spoiler meta (d0bd1b5)
+- seed_u64 in spoiler meta (000566c)
+- generation_wall_clock_ms wired (f8c6d88)
+
+Still open (deferred, substantial work):
+- NEW-2: §6.2 receive helpers for 0xFF-dispatch items (TriforcePiece,
+  small/big keys, multi-tier rupees, HalfMagic/QuarterMagic, etc.)
+- NEW-4: StateRecorder snapshot doesn't preserve rando placement
+- Inverted/Retro world-state pool augmentation + start region declaration
+- Per-item bounded rewind (vs current whole-attempt retry)
+- §6.4-§6.8 NPC/static/minigame dispatch for the long tail (~80 sites)
+- §8 sidecar save load/write integration
+- §9 UI work (file-select / settings screen / tracker)
 
 ## 1. Scenario-by-scenario gap report
 
