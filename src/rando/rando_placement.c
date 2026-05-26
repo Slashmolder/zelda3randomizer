@@ -136,6 +136,25 @@ enum {
   ID_Map_HCE = 124,
 };
 
+// Dungeon → Prize location id, for prize-shuffle placement. Indexed by
+// dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
+// File-scope so Goal_IsCompletable can consult it for prize-reachability checks.
+static const uint16 kDungeonPrizeLocations[13] = {
+  0xFFFF,  // HCE
+  17,      // EP Prize
+  24,      // DP Prize
+  31,      // TH Prize
+  0xFFFF,  // HCT (Aga 1 is at 34, Prize_Event pinned separately)
+  49,      // PoD Prize
+  60,      // SP Prize
+  69,      // SW Prize
+  78,      // TT Prize
+  87,      // IP Prize
+  96,      // MM Prize
+  109,     // TR Prize
+  0xFFFF,  // GT (Aga 2 is at 137, Prize_Event pinned separately)
+};
+
 // Per-dungeon small-key counts (vanilla per ALTTPR config; small_keys.X).
 static const struct { uint16 item_id; uint8 count; } kVanillaSmallKeyCounts[] = {
   { ID_SmallKey_HCE, 1 },
@@ -572,24 +591,6 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   Rando_SetDungeonPrizeAssignment(prize_assignment);
   Rando_SetMedallionAssignment(medallion_assignment);
 
-  // Dungeon → Prize location id, for prize-shuffle placement. Indexed by
-  // dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
-  static const uint16 kDungeonPrizeLocations[13] = {
-    0xFFFF,  // HCE
-    17,      // EP Prize
-    24,      // DP Prize
-    31,      // TH Prize
-    0xFFFF,  // HCT (Aga 1 is at 34, Prize_Event pinned separately)
-    49,      // PoD Prize
-    60,      // SP Prize
-    69,      // SW Prize
-    78,      // TT Prize
-    87,      // IP Prize
-    96,      // MM Prize
-    109,     // TR Prize
-    0xFFFF,  // GT (Aga 2 is at 137, Prize_Event pinned separately)
-  };
-
   // ----- 2. Partition into progression / junk -----
   static uint16 progression[256];
   static uint16 junk[512];
@@ -1025,11 +1026,37 @@ bool Goal_IsCompletable(const RandoSettings *settings,
         fprintf(stderr, "Goal_IsCompletable(pedestal): Master Sword Pedestal unreachable\n");
         return false;
       }
-      if (final_inv.by_item_id[ITEM_ID_GreenPendant] == 0 ||
-          final_inv.by_item_id[ITEM_ID_RedPendant] == 0 ||
-          final_inv.by_item_id[ITEM_ID_BluePendant] == 0) {
-        fprintf(stderr, "Goal_IsCompletable(pedestal): missing pendant in placement\n");
-        return false;
+      // Per audit N2: don't trust the placement count alone — verify that
+      // each colored pendant's holding _Prize location is reachable. The
+      // pendant placement could be at an unreachable Prize_* slot if the
+      // dungeon holding that pendant cannot be cleared.
+      {
+        const uint8 *prize_assign = Rando_GetDungeonPrizeAssignment();
+        uint8 pendant_prize_ids[3] = { 0, 1, 2 };  // Green=0, Red=1, Blue=2
+        const char *pendant_names[3] = { "GreenPendant", "RedPendant", "BluePendant" };
+        for (int p = 0; p < 3; p++) {
+          // Find the dungeon assigned this pendant.
+          int found_dungeon = -1;
+          if (prize_assign != NULL) {
+            for (uint8 d = 0; d < kRandoDungeonCount; d++) {
+              if (prize_assign[d] == pendant_prize_ids[p]) {
+                found_dungeon = d;
+                break;
+              }
+            }
+          }
+          if (found_dungeon < 0) {
+            fprintf(stderr, "Goal_IsCompletable(pedestal): %s not assigned to any dungeon\n",
+                    pendant_names[p]);
+            return false;
+          }
+          uint16 prize_loc = kDungeonPrizeLocations[found_dungeon];
+          if (prize_loc == 0xFFFF || !Reachability_HasLocation(r, prize_loc)) {
+            fprintf(stderr, "Goal_IsCompletable(pedestal): %s's dungeon (id %d) Prize location unreachable\n",
+                    pendant_names[p], found_dungeon);
+            return false;
+          }
+        }
       }
       return true;
     case kGoal_TriforceHunt: {
