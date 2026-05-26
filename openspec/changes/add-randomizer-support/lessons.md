@@ -339,3 +339,209 @@ yesterday, ask whether the strictness or the corpus is wrong
 before just bumping the corpus. (Here it was the strictness:
 the seeds were playable, the placer just had a known limitation.)
 
+## §9 UI sprint — three clusters and their audits
+
+Three parallel-agent clusters (file-select foundation; text input
+layer; settings + Generate) each shipped via worktree agents that
+followed a 9-step protocol. Post-merge fresh-eyes audits found
+**8 HIGH + 12 MED + 14 LOW** across the three clusters. Each cluster
+brought specific lessons that subsequent clusters honored when the
+prior audit's findings were baked into the next-cluster brief.
+
+### Tile-stream count encoding is BYTES-MINUS-ONE, not tile_count
+
+`HandleStripes14` at `src/nmi.c:421` decodes `len = (swap16(WORD(p[2]))
+& 0x3fff) + 1`. The 4-byte command header is `vram_addr_hi |
+vram_addr_lo | attr | count`, and `count` is BYTES-MINUS-ONE. For N
+tile pairs (each pair = 2 bytes), the count field MUST be `(N*2) - 1`.
+
+The cluster-1 agent passed `N` directly. memcpy copied half the data,
+`p` advanced mid-payload, and the next "header" was read from garbage
+bytes — corrupting VRAM and OOB-reading adjacent `g_ram`. The bug
+fired the moment any empty slot was picked (kind picker) or any
+cross-kind copy refusal triggered.
+
+Reference data to verify against: `kSelectFile_Func3_Data` uses count
+= 0x25 for 38 bytes = 19 tile pairs. After the fix-sprint,
+`kKindPicker_Text` uses count = 0x11 (= 17) for 18-byte / 9-pair rows.
+
+**Rule**: any new tile-stream emitter MUST encode count as
+`(num_bytes - 1)`. Static tables should compute it from the payload
+length, not from a hand-typed tile count.
+
+### VRAM-buffer restoration on cancel via submodule_index = 3
+
+Pickers and screens that `memcpy` data into `vram_upload_data`
+clobber the `kSelectFile_Func3_Data` background that
+`FileSelect_TriggerNameStripesAndAdvance` (submodule 4) installs.
+Slot-list rendering writes patches at fixed offsets {4, 0x2e, 0x58}
+of `vram_upload_data`, which only make sense within the Func3 layout.
+
+Cluster 1: B-cancel from the kind picker left `vram_upload_data`
+holding picker bytes; next frame's slot-list patches landed
+mid-prompt and the slot list rendered garbage.
+
+**Pattern**: on EVERY exit path from a UI surface that clobbers
+`vram_upload_data`, set:
+```c
+submodule_index = 3;
+subsubmodule_index = 0;
+```
+That makes submodule 3 → 4 → 5 re-execute, reinstalling Func3 data
+before slot-list rendering resumes.
+
+**The gotcha** (cluster-3 audit HIGH-1): if the same Deactivate
+function is also called for state-reset purposes from
+`Module_SelectFile_0` init (i.e. BEFORE submodules 1+2 have run),
+the unconditional rewind to 3 BYPASSES submodule 1
+(`ReInitSaveFlagsAndEraseTriforce`) and submodule 2 (slot-tile
+upload). First-launch file-select renders without slot frames.
+Guard the rewind on a "was actually active" flag.
+
+### 5-icon hash input is `share_string_binary`, NOT `settings_hash`
+
+The visual-hash widget computes `index_i = SHA-256(input)[i] %
+kHashIconAtlasSize` for i in 0..4. The input MUST be the
+share-string raw binary blob, NOT the settings hash. Otherwise every
+seed with the same settings produces identical icons — defeats the
+"at-a-glance seed verification" purpose. Cluster-1's banner-abbrev
+derivation made this exact mistake (rendered "world initial" via
+`settings_hash[0] % kWorldStateCount`), silently producing the same
+abbrev for different seeds with matching settings.
+
+**Anti-pattern**: deriving per-slot identifiers from `settings_hash`
+modulo an enum size. `settings_hash` is SHA-256 noise. Use either
+explicit settings fields (when serialized in the slot header) or
+hash the per-seed `share_string_binary`.
+
+### Asset-warn "Allow Once" needs a session-bypass flag
+
+Cluster-3's asset-warn dialog has three choices: Always Allow
+(persist), Allow Once (don't persist), Cancel. The original
+implementation routed Allow Once → recursive `HandleGenerate()`,
+expecting the gate to short-circuit because the dialog had been
+shown. But the gate's predicate is `AssetDecision_FindAllow(hash)`
+— which returns false because Allow Once didn't persist. Loop.
+
+**Pattern**: when a "this-time-only" choice exists alongside a
+"persist" choice, the in-flight UI needs a one-shot bypass flag
+that the gate's predicate consults and clears on consumption.
+
+### Generated new SRAM slots MUST run `kSramInit_Normal`
+
+The vanilla `NameFile_DoTheNaming` path memcpys a 60-byte
+`kSramInit_Normal` block to `sram + 0x340` after zeroing the slot.
+That block initializes health bytes at +44/+45 = 0x18/0x18 (= 3
+hearts, 3 max hearts), starting boomerang slot, etc. Without it,
+the slot loads with zero health → instant death.
+
+Cluster-3's Generate path zeroed the slot, wrote name + sentinel +
+DiedCounter, called `Intro_FixCksum`, and skipped the
+`kSramInit_Normal` copy. The generated rando slot was a valid
+checksum'd slot with zero health.
+
+**Rule**: any code path that creates a "new game" SRAM slot
+programmatically MUST replicate the full
+`NameFile_DoTheNaming` init sequence, not just the visible
+slot-name + sentinel writes. Factor out a helper if multiple
+sites need it.
+
+### Worktree agents need ROM + asset-blob mirroring
+
+Git worktrees don't carry gitignored files. `zelda3.smc` and
+`zelda3_assets.dat` are both gitignored. An agent in a fresh
+worktree running `run_rando_corpus.py` (which invokes
+`--generate-seed` 50 times, each calling `LoadAssets()`) hits
+`Die("Failed to read zelda3_assets.dat...")` on every iteration.
+
+On Windows Release builds, `Die()` was unconditionally calling
+`SDL_ShowSimpleMessageBox` — popping a modal dialog on the
+DEVELOPER'S desktop regardless of which process invoked the agent.
+50 popups in succession during a corpus run.
+
+**Two fixes shipped**:
+1. `g_headless_mode` global in `src/main.c` set when any of
+   `--rando-selftest`, `--generate-seed`, `--rando-bench-logic`,
+   `--print-assets-hash`, `--vanilla-ram-check` is in argv. `Die()`
+   skips the popup when the flag is set.
+2. `assets/scripts/setup_worktree.py` script that mirrors the ROM
+   + asset blob from the main worktree into the current one. Idempotent,
+   `--verify` mode for sanity checks. Worktree-agent briefs MUST
+   include this as the first step.
+
+### Auto-repeat KEYDOWN events spam one-shot actions
+
+SDL emits `SDL_KEYDOWN` every ~30 ms while a key is held (the
+`event.key.repeat` field marks repeats). For one-shot actions
+(Submit, Cancel, Generate, asset-warn choices), the handler MUST
+guard with `if (!event.key.repeat)` or accept that held keys will
+re-fire the action every frame.
+
+Cluster-2 audit found this on the alphabet picker's Submit / Cancel
+keys — held Enter prevented the OK-overlay countdown from completing
+(every frame re-submitted, resetting the countdown).
+
+### Cluster-merge integration pitfalls
+
+Two recurring failure modes when merging worktree-agent branches
+back to master:
+1. **Stale bash cwd**: a `cd .claude/worktrees/agent-xxx` in one
+   Bash tool call persists across subsequent calls. Build commands
+   silently target the agent's worktree instead of main, or merges
+   fail with "branch already used by another worktree." Always
+   `cd /c/src/zelda3randomizer` (absolute path to main) before a
+   sequence of merge / build / verify commands.
+2. **Worktree file leakage into main**: at least 3 times across this
+   sprint, the agent's WIP appeared in the main worktree's working
+   tree (showing as uncommitted changes on master). When this
+   happens, `git restore --staged` + `git checkout master -- <file>`
+   on the agent-owned files; only my own edits should end up
+   committed on master.
+
+### Audits find catastrophic bugs in non-obvious places
+
+Three audits this sprint caught issues that the implementing
+agent + their own selftest path would never have surfaced:
+- Tile-stream corruption: the agent's selftest doesn't open the
+  picker; the bug only fires when a player hits the kind picker
+  or copy refusal.
+- Instant-death rando slots: the agent's CLI `--generate-seed`
+  smoke test writes the spoiler files but doesn't load the slot
+  in-game. The "valid sidecar + corrupted SRAM" pair passed every
+  build-time check.
+- First-launch no slot frames: only visible on the very first
+  Module_SelectFile_0 entry; subsequent re-entries work because
+  Settings_Deactivate's no-op-after-first-call would let
+  submodules 1+2 run.
+
+**Pattern**: bugs that lurk in player-flow paths the agent's
+selftest doesn't exercise are the audit's specialty. Schedule
+the audit as a workflow REQUIREMENT, not a polish step.
+
+## Process: cluster audit protocol (integrator's checklist)
+
+Established this sprint and worth preserving:
+
+1. **Inspect agent branch**: `git log master..<branch> --oneline`
+   + `git diff master..<branch> --stat`. Note commit count + LOC.
+2. **Merge** with a detailed merge-commit message that captures
+   the agent's per-task summary verbatim.
+3. **Build + run gates**: msbuild, `--rando-selftest`,
+   `check_audit_guard.py --strict`, `check_codegen_wiring.py`,
+   `check_init_order.py`, `run_rando_corpus.py`. All must pass.
+4. **Fresh-eyes audit**: spawn a general-purpose agent with a
+   prompt that lists prior-cluster audit lessons + cluster-
+   specific risk areas. Ask for HIGH/MED/LOW findings with
+   file:line citations.
+5. **Fix sprint**: per the "don't lose findings" lesson, fix all
+   HIGH + MED findings inline. LOW items are case-by-case.
+6. **Re-run gates** after fix sprint.
+7. **Single combined commit** for the fix sprint with a commit
+   message that lists each finding + the fix applied.
+8. **Clean up**: `git worktree remove -f -f` + delete the
+   `worktree-agent-*` companion branch.
+
+When briefing the next cluster's agent, copy the prior audit's
+HIGH findings into the brief verbatim as "CRITICAL lessons to
+honor." This is the single highest-leverage step in the workflow.
+

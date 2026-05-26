@@ -32,13 +32,12 @@ Secondary item slot on button X (Hold X in inventory to select).
 
 Switching current item with L/R keys.
 
-## Randomizer (Phase A1 — generator functional, in-game dispatch landing)
+## Randomizer (Phase A — most subsystems landed; tracker overlays + race-mode reveal Phase B)
 
 This fork is adding an in-binary randomizer. The randomizer ships inside the
-same `zelda3` executable and is enabled per-slot from the file-select screen
-(when the Phase A2 UI lands; the CLI is the entry point until then).
+same `zelda3` executable and is enabled per-slot from the file-select screen.
 
-Phase A status (kGeneratorVersion=6):
+Phase A status (kGeneratorVersion=10):
 - Foundation, RNG, share-string, predicate VM, codegen, audit: landed
 - Logic graph (28 regions / 28 edges / 237 location predicates / 13 dungeons +
   overworld): landed for Standard mode; Inverted/Retro overlays Phase A2
@@ -47,13 +46,20 @@ Phase A status (kGeneratorVersion=6):
   strict refusal: landed
 - JSON + text spoilers with fallback-warning rollup, sphere_digest, region-
   grouped placements: landed
-- Sidecar save format aligned to spec (kRandoSidecar_*): landed
+- Sidecar save format with atomic-commit + snapshot tail-TLV: landed
 - 50-seed regression corpus + cross-platform CI (Linux/macOS): landed
-- §6 grant-site dispatch: 13 NPC sites wired (Bottle Merchant, Sahasrahla,
-  Mushroom, Library, Uncle, Sick Kid, Purple Chest, Hobo, Stumpy, Old Man,
-  Blacksmith, Master Sword Pedestal, Flute Spot). Universal chest hook
-  in place with stub lookup table.
-- UI (file-select toggle, settings screen, trackers): Phase A2 / Phase B
+- D7 init-order replay guard (`--vanilla-ram-check` CLI + CI step): landed
+- §6 grant-site dispatch: 13+ NPC sites, universal chest dispatch with
+  164-entry chest_lookup codegen (164 of 165 ALTTPR chests covered),
+  boss dual-grant, Pyramid Fairy synthesized site, Ether/Bombos tablets,
+  Magic Bat. §6.3 chest_lookup populated via assets/chest_data.py +
+  assets/rando_logic_gen.py. Minigame dispatch (§6.8) deferred.
+- File-select kind-toggle, settings screen with all 7 Phase A goals +
+  presets + asset-warn dialog, alphabet picker for share-string paste,
+  Generate action end-to-end (settings → placement → spoiler + sidecar
+  → return-to-file-select with cursor on the just-generated slot),
+  5-icon visual hash widget on slot banners: landed (§9 UI sprint)
+- In-game tracker overlays + race-mode reveal flow: Phase B
 
 The CLI generation mode is fully functional for single-seed runs across all
 7 Phase A goals × Open/Standard/Retro world states:
@@ -77,6 +83,17 @@ CLI flags:
 Self-tests (cross-platform determinism):
 ```sh
 ./zelda3 --rando-selftest
+```
+
+Init-order replay guard (D7 — verifies no existing vanilla game code
+writes to the addresses claimed for randomizer state):
+```sh
+python assets/scripts/check_init_order.py --binary=./bin/x64-Release/zelda3.exe
+```
+
+Logic-VM benchmark (CI gate: median ≤ 5 ms desktop):
+```sh
+./zelda3 --rando-bench-logic --bench-iters=1000
 ```
 
 ### `[Randomizer]` INI section
