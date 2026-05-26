@@ -1227,6 +1227,60 @@ void Sprite_WishPond3(int k) {
         return;
       }
     } else {
+      // §6.7 Pyramid Fairy dispatch (synthesized multi-slot grant site).
+      // The Pyramid Fairy in vanilla DarkWorld is the L2->L3 sword upgrade
+      // (when sprite_graphics==58 — already-tempered branch path), bottle
+      // toss → L1Sword vestigial (graphics==2), or bow→silvers (graphics==22).
+      //
+      // For rando, the two trade slots LOC_Pyramid_Fairy_Sword and
+      // LOC_Pyramid_Fairy_Bow grant whatever the placer assigned. We
+      // intercept here BEFORE the upgrade logic. The L1Sword vestigial
+      // branch (graphics==2) and the L3-already-tempered branch
+      // (graphics==58) both route to Pyramid_Fairy_Sword. The bow branch
+      // routes to Pyramid_Fairy_Bow.
+      //
+      // Per audit.md §0.3.4 and ALTTPR `app/Region/Standard/DarkWorld/
+      // NorthEast.php:34-35,59-60`: vanilla fall-backs are L1Sword for the
+      // sword slot, Bow for the bow slot.
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        uint16 loc = 0xFFFFu;
+        uint16 vi = 0xFFFFu;
+        uint8 vanilla_lttp = 0;
+        if (sprite_graphics[k] == 58) {
+          loc = LOC_Pyramid_Fairy_Sword;
+          vi = ITEM_L1Sword;
+          vanilla_lttp = 0;  // L1Sword (vestigial vanilla)
+        } else if (sprite_graphics[k] == 2) {
+          loc = LOC_Pyramid_Fairy_Sword;
+          vi = ITEM_L1Sword;
+          vanilla_lttp = 0;
+        } else if (sprite_graphics[k] == 22) {
+          loc = LOC_Pyramid_Fairy_Bow;
+          vi = ITEM_Bow;
+          vanilla_lttp = 0x0b;
+        }
+        if (loc != 0xFFFFu) {
+          uint8 placed_lttp = Rando_DispatchVanillaGrant(loc, vi, vanilla_lttp);
+          if (Rando_ShouldSkipReceive(placed_lttp)) {
+            // Direct grant already done. Skip the visual upgrade animation
+            // and the case-9 Link_ReceiveItem call by short-circuiting.
+            sprite_head_dir[k] = 0;  // no message kWishPondMsgs lookup
+            sprite_graphics[k] = 0;  // case 9 will Link_ReceiveItem(0)
+                                     // which is L1Sword — but with sentinel
+                                     // we've already direct-granted, so we
+                                     // need to skip case 9 entirely.
+            sprite_ai_state[k] = 10;  // jump past case 7/8/9 to message
+            return;
+          }
+          // Set sprite_graphics[k] to the dispatched LttP code so case 9
+          // grants the placed item via Link_ReceiveItem.
+          sprite_graphics[k] = placed_lttp;
+          if (sprite_head_dir[k] == 0)
+            sprite_head_dir[k] = (loc == LOC_Pyramid_Fairy_Sword) ? 5 : 3;
+          Sprite_ShowMessageUnconditional(0x8c);
+          break;
+        }
+      }
       if (sprite_graphics[k] == 58) {
         sprite_graphics[k] = 59;
         sprite_head_dir[k] = 4;
@@ -2144,7 +2198,8 @@ void MasterSword_Main(int k) {  // 8588d6
         if (enhanced_features1 & kFeatures1_RandomizerActive) {
           lttp_code = Rando_DispatchVanillaGrant(LOC_Master_Sword_Pedestal, ITEM_L2Sword, lttp_code);
         }
-        Link_ReceiveItem(lttp_code, 0);
+        if (!Rando_ShouldSkipReceive(lttp_code))
+          Link_ReceiveItem(lttp_code, 0);
       }
       savegame_map_icons_indicator = 5;
       link_unk_master_sword = 0;
@@ -5758,7 +5813,8 @@ void Uncle_InPassage(int k) {  // 85df19
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Link_s_Uncle, ITEM_L1Sword, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sprite_ai_state[k]++;
     sprite_graphics[k] = 1;
@@ -6232,7 +6288,8 @@ void Sprite_BottleVendor(int k) {  // 85ea79
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Bottle_Merchant, ITEM_BottleEmpty, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sram_progress_indicator_3 |= 2;
     link_rupees_goal -= 100;
@@ -6430,7 +6487,8 @@ void Sprite_E7_Mushroom(int k) {  // 85ee78
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Mushroom, ITEM_Mushroom, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
   } else if ((frame_counter & 0x1f) == 0) {
     sprite_oam_flags[k] ^= 0x40;
@@ -6493,15 +6551,39 @@ void Sprite_HeartContainer(int k) {  // 85ef47
   if (!Sprite_CheckDamageToLink_same_layer(k))
     return;
   sprite_state[k] = 0;
+  // §6.6 dispatch: when this heart-container drop is inside a dungeon AND
+  // the current dungeon is one of the 10 main-boss dungeons (EP/DP/TH/PoD/
+  // SP/SW/TT/IP/MM/TR), route the grant through Rando_DispatchVanillaGrant
+  // for the matching LOC_<Dungeon>_Boss slot. Phase A's default policy
+  // (`bossHeartsInPool=false`) identity-places BossHeartContainer at these
+  // slots, so the dispatch is a no-op (returns the original lttp_code) for
+  // vanilla play. When Phase B's boss-shuffle rolls out, the dispatch
+  // already-fires correctly.
+  uint16 boss_loc = 0xFFFFu;
+  if (player_is_indoors && (enhanced_features1 & kFeatures1_RandomizerActive)) {
+    boss_loc = Rando_GetBossHeartLocation(BYTE(cur_palace_index_x2) >> 1);
+  }
   if (sprite_A[k]) {
     item_receipt_method = 2;
-    Link_ReceiveItem(0x3e, 0);
+    uint8 lttp_code = 0x3e;
+    if (boss_loc != 0xFFFFu) {
+      lttp_code = Rando_DispatchVanillaGrant(boss_loc, ITEM_BossHeartContainer, lttp_code);
+    }
+    if (!Rando_ShouldSkipReceive(lttp_code))
+      Link_ReceiveItem(lttp_code, 0);
     dung_savegame_state_bits |= 0x8000;
     return;
   }
   Link_CancelDash();
   item_receipt_method = 0;
-  Link_ReceiveItem(0x26, 0);
+  {
+    uint8 lttp_code = 0x26;
+    if (boss_loc != 0xFFFFu) {
+      lttp_code = Rando_DispatchVanillaGrant(boss_loc, ITEM_BossHeartContainer, lttp_code);
+    }
+    if (!Rando_ShouldSkipReceive(lttp_code))
+      Link_ReceiveItem(lttp_code, 0);
+  }
   if (!player_is_indoors)
     save_ow_event_info[BYTE(overworld_screen_index)] |= 0x40;
   else
@@ -6600,7 +6682,8 @@ void Sprite_Sahasrahla(int k) {  // 85f14d
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Sahasrahla, ITEM_Boots, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sprite_ai_state[k] = 3;
     savegame_map_icons_indicator = 3;
@@ -6848,7 +6931,18 @@ void Sprite_BagOfPowder(int k) {  // 85f644
     return;
   Link_CancelDash();
   item_receipt_method = 0;
-  Link_ReceiveItem(0xd, 0);
+  // §6.4 Potion Shop (mushroom→powder) dispatch. The vanilla grant is
+  // MagicPowder (LttP code 0x0d); rando may replace via the Potion Shop
+  // location. The bag spawns only when the player has turned in the
+  // mushroom (save_dung_info[0x109] & 0x80) — same gate vanilla uses.
+  {
+    uint8 lttp_code = 0x0d;
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      lttp_code = Rando_DispatchVanillaGrant(LOC_Potion_Shop, ITEM_MagicPowder, lttp_code);
+    }
+    if (!Rando_ShouldSkipReceive(lttp_code))
+      Link_ReceiveItem(lttp_code, 0);
+  }
   sprite_state[k] = 0;
 }
 
@@ -7117,7 +7211,8 @@ void Sprite_BookOfMudora(int k) {  // 85fc9e
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Library, ITEM_BookOfMudora, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sprite_state[k] = 0;
     break;
@@ -9992,7 +10087,8 @@ void Sprite_FluteKid_Stumpy(int k) {  // 86b040
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Stumpy, ITEM_Shovel, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sprite_ai_state[k] = 0;
     break;
@@ -10264,7 +10360,8 @@ void Smithy_Main(int k) {  // 86b34e
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Blacksmith, ITEM_L3Sword, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sram_progress_indicator_3 &= ~0x80;
     break;
@@ -10522,7 +10619,8 @@ void Sprite_1F_SickKid(int k) {  // 86b94c
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Sick_Kid, ITEM_BugCatchingNet, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     flag_is_link_immobilized = 0;
     sprite_ai_state[k] = 3;
@@ -10740,7 +10838,8 @@ void Sprite_39_Locksmith(int k) {  // 86bcac
           if (enhanced_features1 & kFeatures1_RandomizerActive) {
             lttp_code = Rando_DispatchVanillaGrant(LOC_Purple_Chest, ITEM_BottleEmpty, lttp_code);
           }
-          Link_ReceiveItem(lttp_code, 0);
+          if (!Rando_ShouldSkipReceive(lttp_code))
+            Link_ReceiveItem(lttp_code, 0);
         }
         sram_progress_indicator_3 |= 0x10;
         sprite_ai_state[k] = 4;
@@ -10836,7 +10935,8 @@ void Sprite_Hobo_Bum(int k) {  // 86bdd0
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Hobo, ITEM_BottleEmpty, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
     sram_progress_indicator_3 |= 1;
     break;
@@ -11209,13 +11309,29 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
       Palette_Restore_BG_And_HUD();
       flag_update_cgram_in_nmi++;
       sprite_ai_state[k]++;
-      // rando-exempt: §6.2 work — Magic Bat grants HalfMagic via direct
-      // write (link_magic_consumption=1) rather than Link_ReceiveItem.
-      // §6.2 lands a new receive-helper for direct-dispatch items
-      // (HalfMagic / QuarterMagic / dungeon-item subclasses). Until then
-      // the vanilla half-magic grant fires here; rando placement of
-      // HalfMagic at LOC_Magic_Bat is a no-op (still half magic).
-      link_magic_consumption = 1;
+      // §6.4 Magic Bat dispatch. Vanilla writes link_magic_consumption to 1
+      // directly; rando dispatches LOC_Magic_Bat with ITEM_HalfMagic as the
+      // vanilla. If the placed item is HalfMagic (identity), the direct-
+      // write happens in dispatch and returns kRandoLttpSkip. If something
+      // else was placed, the dispatcher returns its LttP code, and we
+      // grant via Link_ReceiveItem.
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        uint8 lttp_code = Rando_DispatchVanillaGrant(LOC_Magic_Bat, ITEM_HalfMagic, 0xFFu);
+        if (Rando_ShouldSkipReceive(lttp_code)) {
+          // Direct-grant done (HalfMagic / prize / etc.). Skip the vanilla
+          // direct write below — the placed item is already in inventory.
+        } else if (lttp_code != 0xFFu) {
+          // Non-direct-grant placed item — route through the standard
+          // receive path. Magic Bat's existing animation already played;
+          // Link_ReceiveItem here is a separate "you got X" notification.
+          Link_ReceiveItem(lttp_code, 0);
+        } else {
+          // Fallback (no placement / unknown) — original vanilla HalfMagic.
+          link_magic_consumption = 1;  // rando-exempt: vanilla fallback path
+        }
+      } else {
+        link_magic_consumption = 1;  // rando-exempt: vanilla path when rando inactive
+      }
       Hud_RefreshIcon();
     } else if (sprite_delay_aux1[k] == 0x10) {
       intro_times_pal_flash = 0x10;
@@ -18309,7 +18425,8 @@ void Sprite_Catfish_QuakeMedallion(int k) {  // 9ddf54
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Catfish, ITEM_Quake, lttp_code);
       }
-      Link_ReceiveItem(lttp_code, 0);
+      if (!Rando_ShouldSkipReceive(lttp_code))
+        Link_ReceiveItem(lttp_code, 0);
     }
   }
   if (sprite_delay_aux3[k])
@@ -18464,6 +18581,13 @@ void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
   sprite_A[j] = 30;
   if (enhanced_features1 & kFeatures1_RandomizerActive) {
     uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_King_Zora, ITEM_Flippers, 30);
+    if (Rando_ShouldSkipReceive(placed_lttp)) {
+      // Direct-grant already wrote the placed item (HalfMagic / prize / etc.).
+      // Despawn the regurgitated-flippers sprite so we don't double-grant
+      // and so that pickup interaction won't re-trigger Link_ReceiveItem.
+      sprite_state[j] = 0;
+      return;
+    }
     sprite_A[j] = placed_lttp;
   }
   SpriteSfx_QueueSfx2WithPan(j, 0x20);
@@ -24815,7 +24939,8 @@ void Sprite_AD_OldMan(int k) {  // 9ee992
         if (enhanced_features1 & kFeatures1_RandomizerActive) {
           lttp_code = Rando_DispatchVanillaGrant(LOC_Old_Man, ITEM_MagicMirror, lttp_code);
         }
-        Link_ReceiveItem(lttp_code, 0);
+        if (!Rando_ShouldSkipReceive(lttp_code))
+          Link_ReceiveItem(lttp_code, 0);
       }
       which_starting_point = 1;
       OldMan_EnableCutscene();

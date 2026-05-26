@@ -14,6 +14,8 @@
 #include "sprite_main.h"
 #include "features.h"
 #include "rando/rando.h"
+#include "rando/item_ids.h"
+#include "rando/location_ids.h"
 
 static bool g_ApplyLinksMovementToCamera_called;
 
@@ -576,11 +578,20 @@ void LinkState_ReceivingEther() {  // 878570
     AncillaAdd_EtherSpell(0x18, 0);
     link_x_coord = x, link_y_coord = y;
   } else if (i == 0) {
-    // §6.5 work: this drops the Ether Medallion (item_idx 0 →
-    // kFallingItem_Type[0]=0x10). LOC_Ether_Tablet placement needs the
-    // ancilla path to accept arbitrary LttP codes (currently restricted to
-    // the 7-entry kFallingItem_Type table). Vanilla still grants Ether.
-    AncillaAdd_FallingPrize(0x29, 0, 4);
+    // §6.5: dispatch the placed item at LOC_Ether_Tablet. The vanilla item
+    // is Ether (LttP code 0x10); rando can swap to any LttP code or trigger
+    // a direct-write sentinel. AncillaAdd_FallingPrizeRando handles both:
+    //   - LttP code matches a kFallingItem_Type entry → use that index
+    //   - otherwise → use fallback_idx=0 (Ether's visual coords) and
+    //     override the granted item via ancilla_item_to_link.
+    // If the dispatch returned kRandoLttpSkip (direct-write done), skip
+    // the FallingPrize spawn entirely.
+    uint8 lttp_code = 0x10;  // vanilla Ether
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      lttp_code = Rando_DispatchVanillaGrant(LOC_Ether_Tablet, ITEM_Ether, lttp_code);
+    }
+    if (!Rando_ShouldSkipReceive(lttp_code))
+      AncillaAdd_FallingPrizeRando(0x29, lttp_code, 0, 4);
     flag_is_link_immobilized = 1;
     flag_block_link_menu = 0;
   }
@@ -611,7 +622,14 @@ void LinkState_ReceivingBombos() {  // 8785fb
     AncillaAdd_BombosSpell(0x19, 0);
     link_x_coord = x, link_y_coord = y;
   } else if (i == 0) {
-    AncillaAdd_FallingPrize(0x29, 5, 4);
+    // §6.5: dispatch the placed item at LOC_Bombos_Tablet. Vanilla Bombos
+    // (LttP code 0x0f); item_idx=5 is the Bombos visual.
+    uint8 lttp_code = 0x0f;  // vanilla Bombos
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      lttp_code = Rando_DispatchVanillaGrant(LOC_Bombos_Tablet, ITEM_Bombos, lttp_code);
+    }
+    if (!Rando_ShouldSkipReceive(lttp_code))
+      AncillaAdd_FallingPrizeRando(0x29, lttp_code, 5, 4);
     flag_is_link_immobilized = 1;
   }
 }

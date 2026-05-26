@@ -4048,7 +4048,8 @@ void Ancilla36_Flute(int k) {  // 88cfaa
           if (enhanced_features1 & kFeatures1_RandomizerActive) {
             lttp_code = Rando_DispatchVanillaGrant(LOC_Flute_Spot, ITEM_OcarinaInactive, lttp_code);
           }
-          Link_ReceiveItem(lttp_code, 0);
+          if (!Rando_ShouldSkipReceive(lttp_code))
+            Link_ReceiveItem(lttp_code, 0);
         }
         return;
       }
@@ -6048,6 +6049,37 @@ int AncillaAdd_FallingPrize(uint8 a, uint8 item_idx, uint8 yv) {  // 898bc1
     y = kFallingItem_Y[item_idx] + BG2VOFS_copy2;
   }
   Ancilla_SetXY(k, x, y);
+  return k;
+}
+
+// §6.5 helper for tablet dispatch. Spawns a falling-prize ancilla like
+// AncillaAdd_FallingPrize but uses an arbitrary `lttp_code` as the item
+// the player will receive when colliding with the falling sprite. Falls
+// back to AncillaAdd_FallingPrize(item_idx=fallback_idx) when the lttp
+// code matches one of the 7 supported falling-prize item types (Ether,
+// Bombos, pendant/crystal, heart container).
+//
+// `fallback_idx` is the kFallingItem_Type[] index to use for visual
+// positioning when `lttp_code` doesn't match any vanilla entry (the
+// sprite still falls in the same place; pickup grants `lttp_code`).
+//
+// Used by Ether/Bombos tablet handlers — lets rando place arbitrary items
+// at the tablet slots without losing the dash-cutscene visual.
+int AncillaAdd_FallingPrizeRando(uint8 a, uint8 lttp_code, uint8 fallback_idx, uint8 yv) {
+  static const int8 kFallingItem_Type[7] = {0x10, 0x37, 0x39, 0x38, 0x26, 0xf, 0x20};
+  // Try to find a matching index — preserves vanilla appearance.
+  for (int i = 0; i < 7; i++) {
+    if (kFallingItem_Type[i] == (int8)lttp_code)
+      return AncillaAdd_FallingPrize(a, (uint8)i, yv);
+  }
+  // No match: spawn using fallback_idx's coords but override the granted
+  // item via ancilla_item_to_link[k].
+  if (fallback_idx >= 7) fallback_idx = 0;
+  int k = AncillaAdd_FallingPrize(a, fallback_idx, yv);
+  if (k >= 0) {
+    ancilla_item_to_link[k] = lttp_code;
+    link_receiveitem_index = lttp_code;
+  }
   return k;
 }
 
