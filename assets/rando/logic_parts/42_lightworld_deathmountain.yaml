@@ -42,7 +42,7 @@ edges:
   # West DM; Hammer path goes through Tower of Hera.
   - from: LightWorld_DeathMountain_West
     to: LightWorld_DeathMountain_East
-    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera))"
+    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera_Lobby))"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:89-98"
 
 locations:
@@ -63,7 +63,7 @@ locations:
   # `Ether Tablet` (West.php:50-54): BookOfMudora AND hasSword(2)
   # AND Tower of Hera reachable. swordless-mode (Hammer) branch drops.
   - id: "Ether Tablet"
-    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND OP_REGION_REACHABLE(TowerOfHera)"
+    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND OP_REGION_REACHABLE(TowerOfHera_Lobby)"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:50-54"
 
   # `Spectacle Rock` (West.php:56-60): MagicMirror (glitch branches drop).
@@ -84,7 +84,7 @@ locations:
   # (KeyD7>=2 AND Turtle-Rock-reachable). All glitch/mirror-trick branches
   # drop; only the TR-keys+region branch survives.
   - id: "Mimic Cave"
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:68-77"
 
   # `Paradox Cave` chests (East.php:34-40) — no setRequirements; default TRUE.

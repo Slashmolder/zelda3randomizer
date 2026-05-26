@@ -805,14 +805,17 @@ def _resolve_ident(arg):
 
 def _resolve_region(arg, regions):
     name = _resolve_ident(arg)
-    # Phase A: regions may not all be declared yet. Allow unknown regions but
-    # emit an opaque ID hashed from name; this lets Phase A1 examples typecheck
-    # without a full logic.yaml. Production codegen requires the region to exist.
     if name in regions:
         # Stable IDs assigned by sorted order of region declaration.
         idx = sorted(regions.keys()).index(name)
         return idx
-    # Fallback: hash-based id (deterministic per name).
+    # Unknown region name. This is almost always a translation typo (e.g.,
+    # "DesertPalace" instead of "DesertPalace_Lobby"). Print to stderr so it
+    # shows up in the codegen output (--strict promotes to fail). Fall back
+    # to a hash so the bytecode still emits cleanly during the build.
+    print(f"WARN: OP_REGION_REACHABLE references unknown region {name!r}; "
+          f"did you mean one of: {sorted(regions.keys())[:6]}{'...' if len(regions) > 6 else ''}?",
+          file=sys.stderr)
     return _stable_hash16(name)
 
 

@@ -513,6 +513,24 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   Rando_SetDungeonPrizeAssignment(prize_assignment);
   Rando_SetMedallionAssignment(medallion_assignment);
 
+  // Dungeon → Prize location id, for prize-shuffle placement. Indexed by
+  // dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
+  static const uint16 kDungeonPrizeLocations[13] = {
+    0xFFFF,  // HCE
+    17,      // EP Prize
+    24,      // DP Prize
+    31,      // TH Prize
+    0xFFFF,  // HCT (Aga 1 is at 34, Prize_Event pinned separately)
+    49,      // PoD Prize
+    60,      // SP Prize
+    69,      // SW Prize
+    78,      // TT Prize
+    87,      // IP Prize
+    96,      // MM Prize
+    109,     // TR Prize
+    0xFFFF,  // GT (Aga 2 is at 137, Prize_Event pinned separately)
+  };
+
   // ----- 2. Partition into progression / junk -----
   static uint16 progression[256];
   static uint16 junk[512];
@@ -564,9 +582,12 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // Item id ranges (per item_registry.yaml):
   //   53..65 = small keys, 66..76 = big keys, 77..87 = maps (plus id 124 = Map_HCE),
   //   88..98 = compasses.
-  // Location type ids: Prize_Event = 12, Medallion = 13 (per logic.schema.yaml).
-  const uint8 LOCTYPE_Prize_Event = 12;
-  const uint8 LOCTYPE_Medallion   = 13;
+  // Location type ids: Prize_Event = 12, Prize_Pendant = 11, Prize_Crystal = 10,
+  // Medallion = 13 (per logic.schema.yaml).
+  const uint8 LOCTYPE_Prize_Crystal = 10;
+  const uint8 LOCTYPE_Prize_Pendant = 11;
+  const uint8 LOCTYPE_Prize_Event   = 12;
+  const uint8 LOCTYPE_Medallion     = 13;
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
     uint16 vi = loc->vanilla_item_id;
@@ -574,6 +595,25 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (loc->type == LOCTYPE_Prize_Event || loc->type == LOCTYPE_Medallion) {
       // Always pin event / medallion locations to vanilla item.
       vanilla_pin = true;
+    } else if (loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal) {
+      // Pin per the prize-shuffle assignment. Find the dungeon whose Prize
+      // location matches this slot, then look up the assigned prize id and
+      // map it to the item-registry id (+111 offset).
+      for (uint8 d = 0; d < kRandoDungeonCount; d++) {
+        if (kDungeonPrizeLocations[d] == 0xFFFF) continue;
+        if (kDungeonPrizeLocations[d] != loc->id) continue;
+        uint8 prize_id = prize_assignment[d];
+        if (prize_id < kRandoPrizeCount) {
+          // prize_id 0..9 (Green/Red/Blue pendants + Crystal1..7) → item id 111..120
+          placement_at[k] = 111 + prize_id;
+          break;
+        }
+      }
+      // If prize_shuffle is disabled, prize_assignment[d] is the vanilla
+      // identity; the lookup above still resolves correctly. Locations not
+      // in kDungeonPrizeLocations (shouldn't happen for Prize_* types) fall
+      // through to the assumed-fill placer.
+      continue;
     } else if (vi >= 53 && vi <= 65) {
       vanilla_pin = (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla);
     } else if (vi >= 66 && vi <= 76) {

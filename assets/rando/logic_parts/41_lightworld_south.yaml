@@ -115,7 +115,7 @@ locations:
 
   # `Desert Ledge` (php:161-163): Desert Palace canEnter (reach the region).
   - id: "Desert Ledge"
-    can_reach: "OP_REGION_REACHABLE(DesertPalace)"
+    can_reach: "OP_REGION_REACHABLE(DesertPalace_Lobby)"
     source: "app/Region/Standard/LightWorld/South.php:161-163"
 
   # `Lake Hylia Island` (php:165-175): Phase A — all glitch branches
