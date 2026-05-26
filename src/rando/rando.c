@@ -17,6 +17,8 @@
 #include "rando_shuffles.h"
 #include "rando_save.h"
 #include "rando_textfield.h"
+#include "item_ids.h"
+#include "location_ids.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -149,6 +151,70 @@ void Rando_SelfCheck(void) {
   sha256_buffer((const uint8 *)"abc", 3, out);
   if (!hex_eq(out, kExpectedAbc)) {
     fprintf(stderr, "Rando_SelfCheck: SHA-256 of 'abc' FAILED\n");
+    exit(2);
+  }
+
+  // Dispatch wrapper coverage (§6.1).
+  // When no placement table is installed, Rando_OnLocationCheck returns
+  // vanilla_item_id unchanged → Rando_DispatchVanillaGrant returns the
+  // vanilla LttP code unchanged.
+  Placement_Install(NULL);
+  if (Rando_OnLocationCheck(8, 5) != 5) {
+    fprintf(stderr, "Rando_SelfCheck: pass-through OnLocationCheck failed\n");
+    exit(2);
+  }
+  if (Rando_DispatchVanillaGrant(8, 5, 0x00) != 0x00) {
+    fprintf(stderr, "Rando_SelfCheck: pass-through DispatchVanillaGrant failed\n");
+    exit(2);
+  }
+
+  // Build a synthetic placement table and verify dispatch routes to the
+  // new LttP code. ITEM_BugCatchingNet=31 has dispatch:vanilla:0x21.
+  static RandoPlacement entries[2];
+  entries[0].location_id = 8;   // LOC_Link_s_Uncle
+  entries[0].item_id = 31;      // ITEM_BugCatchingNet
+  entries[1].location_id = 166; // LOC_Bottle_Merchant
+  entries[1].item_id = 43;      // ITEM_BottleEmpty (vanilla:0x16) — identity
+  RandoPlacementTable t = { entries, 2 };
+  Placement_Install(&t);
+  // Uncle now holds BugCatchingNet: vanilla code for that is 0x21
+  if (Rando_DispatchVanillaGrant(8, 5, 0x00) != 0x21) {
+    fprintf(stderr,
+      "Rando_SelfCheck: dispatch did not translate Uncle→BugCatchingNet "
+      "(expected 0x21, got 0x%02x)\n",
+      (unsigned)Rando_DispatchVanillaGrant(8, 5, 0x00));
+    exit(2);
+  }
+  // Bottle Merchant identity placement still grants 0x16
+  if (Rando_DispatchVanillaGrant(166, 43, 0x16) != 0x16) {
+    fprintf(stderr, "Rando_SelfCheck: identity dispatch failed\n");
+    exit(2);
+  }
+  // Unknown location → vanilla fall-back
+  if (Rando_DispatchVanillaGrant(0xFFFF, 5, 0x00) != 0x00) {
+    fprintf(stderr, "Rando_SelfCheck: unknown-location fall-back failed\n");
+    exit(2);
+  }
+  Placement_Install(NULL);
+
+  // Vanilla-dispatch table boundaries (must return 0xFF for progressive items
+  // and 0xFF for ids beyond the table).
+  if (Rando_VanillaItemForRegistryId(0) != 0xFF) {  // ITEM_ProgressiveSword
+    fprintf(stderr, "Rando_SelfCheck: ProgressiveSword should have no vanilla dispatch\n");
+    exit(2);
+  }
+  if (Rando_VanillaItemForRegistryId(31) != 0x21) {  // ITEM_BugCatchingNet
+    fprintf(stderr, "Rando_SelfCheck: BugCatchingNet vanilla dispatch wrong\n");
+    exit(2);
+  }
+  if (Rando_VanillaItemForRegistryId(0xFFFFu) != 0xFF) {
+    fprintf(stderr, "Rando_SelfCheck: out-of-range vanilla dispatch should be 0xFF\n");
+    exit(2);
+  }
+
+  // Chest dispatch stub returns vanilla unchanged (lookup table is empty).
+  if (Rando_ChestDispatch(0x12, 0, 0x05) != 0x05) {
+    fprintf(stderr, "Rando_SelfCheck: chest dispatch stub did not fall back\n");
     exit(2);
   }
 }
