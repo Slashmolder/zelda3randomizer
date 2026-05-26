@@ -151,9 +151,13 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
 
   // §6.2: TriforcePiece is a brand-new item with no vanilla LttP code.
   // Increment the rando-side counter directly. Returns the vanilla code
-  // so the chest/NPC still grants something visible (the placed-spoiler
-  // shows TriforcePiece; the player sees the counter tick up after
-  // they collect the slot's vanilla item).
+  // so the chest/NPC still grants something visible — Phase A1 limitation:
+  // the player gets both a piece counter tick AND the slot's vanilla item.
+  // §6.2 full work would return a sentinel that the caller treats as
+  // "skip Link_ReceiveItem"; the chest opens but only the counter ticks.
+  // For Phase A1 the double-grant is acceptable: the placed spoiler shows
+  // the TriforcePiece location, the counter is correct, the cosmetic
+  // double-grant is detectable by users but doesn't break completability.
   if (placed == ITEM_TriforcePiece) {
     if (g_rando_triforce_piece_count < 255) g_rando_triforce_piece_count++;
     return vanilla_lttp_code;
