@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <time.h>
 #include <SDL.h>
 #ifdef _WIN32
 #include "platform/win32/volume_control.h"
@@ -399,6 +400,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   }
   RandoPlacementTable table = { entries, 0 };
 
+  // Measure end-to-end placement+sphere wall-clock for the spoiler's
+  // generation_wall_clock_ms field. Includes placement, sphere computation,
+  // and goal-completability. Excludes spoiler I/O.
+  clock_t gen_start = clock();
+
   // Run placement. Phase A0 returns identity (every location ← vanilla_item_id);
   // Phase A1 replaces with assumed fill.
   bool ok = Place_AssumedFill(&settings, seed_u64, budget_seconds, &table);
@@ -443,7 +449,12 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.settings = &settings;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
-  spoiler.generation_wall_clock_ms = 0;  // Phase A0 stub: no timing
+  {
+    clock_t gen_end = clock();
+    long elapsed_ms = (long)((double)(gen_end - gen_start) * 1000.0 / CLOCKS_PER_SEC);
+    if (elapsed_ms < 0) elapsed_ms = 0;
+    spoiler.generation_wall_clock_ms = (uint32)elapsed_ms;
+  }
   // Forward placer stats — read from Placement_GetLastStats so the spoiler
   // can surface forward-fill fallbacks (audit Bug #8).
   {
