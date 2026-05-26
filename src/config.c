@@ -279,7 +279,36 @@ static int GetIniSection(const char *s) {
     return 5;
   if (StringEqualsNoCase(s, "[Randomizer]"))
     return 6;
+  if (StringEqualsNoCase(s, "[RandoAssetDecisions]"))
+    return 7;
   return -1;
+}
+
+// §9.4 — asset-warn persistence. The [RandoAssetDecisions] section maps
+// hex(g_assets_hash) keys to "allow" values. Read at startup; the settings
+// screen consults the in-memory lookup to skip the warn dialog on
+// previously-approved hashes. Writing back the user's "Always allow"
+// choice is deferred to a follow-up sprint (config.c is read-only today);
+// until then the decision persists for the current session.
+extern void Rando_RegisterAssetDecisionFromIni(const uint8 hash[32]);
+
+static int parse_hex_nibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+static bool ParseHashHex(const char *s, uint8 out[32]) {
+  // Accept exactly 64 hex digits; reject everything else.
+  for (int i = 0; i < 32; ++i) {
+    int hi = parse_hex_nibble(s[i * 2]);
+    int lo = parse_hex_nibble(s[i * 2 + 1]);
+    if (hi < 0 || lo < 0) return false;
+    out[i] = (uint8)((hi << 4) | lo);
+  }
+  if (s[64] != 0) return false;
+  return true;
 }
 
 bool ParseBool(const char *value, bool *result) {
@@ -499,6 +528,23 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
     //   GeneratorBudgetSeconds = 5     (default budget for assumed fill)
     //   AssetsMustBeVanilla = false    (auto-block generation on non-vanilla assets)
     //   TrackerEnabled = false         (in-game tracker default state)
+  } else if (section == 7) {
+    // [RandoAssetDecisions] — §9.4 asset-warn persistence. Each entry is
+    //   <64-hex-char hash>=allow
+    // The key is a full hex-encoded SHA-256 of the asset blob. Value MUST
+    // be "allow" (Phase A only supports the always-allow decision; deny
+    // is implicit — the absence of an entry means "ask again").
+    if (StringEqualsNoCase(value, "allow")) {
+      uint8 hash[32];
+      if (ParseHashHex(key, hash)) {
+        Rando_RegisterAssetDecisionFromIni(hash);
+        return true;
+      } else {
+        fprintf(stderr, "[RandoAssetDecisions] bad hash key '%s' (need 64 hex chars)\n", key);
+        return false;
+      }
+    }
+    return false;
   }
   return false;
 }

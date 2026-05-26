@@ -27,6 +27,7 @@ from pathlib import Path
 #   - src/rando/location_ids.h      (from assets/rando/location_registry.yaml — task 3.1)
 #   - src/rando/item_ids.h          (from assets/rando/item_registry.yaml — task 3.2)
 #   - src/rando/chest_lookup.h      (from assets/chest_data.py + location_registry.yaml — task 6.3)
+#   - src/rando/icon_atlas.h        (from assets/rando/icon_atlas.yaml — task 9.4b)
 #
 # Note: src/rando/vanilla_assets_hash.h is NOT in this list. It's hand-
 # maintained (the dump tool overwrites it) and pulled in via #include, so
@@ -36,6 +37,7 @@ EXPECTED_GENERATED = [
     "src/rando/location_ids.h",
     "src/rando/item_ids.h",
     "src/rando/chest_lookup.h",
+    "src/rando/icon_atlas.h",
 ]
 
 BUILD_SYSTEM_FILES = [

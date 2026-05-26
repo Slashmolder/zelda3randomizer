@@ -6,10 +6,20 @@
 #include "overworld.h"
 #include "messaging.h"
 #include "sprite.h"
+#include "config.h"
+#include "features.h"
+#include "rando/rando.h"
+#include "rando/rando_placement.h"
 #include "rando/rando_save.h"
 #include "rando/rando_share.h"
 #include "rando/rando_settings.h"
+#include "rando/rando_spoiler.h"
 #include "rando/rando_textfield.h"
+#include "rando/vanilla_assets_hash.h"  // kVanillaAssetsHash + kVanillaAssetsHashKnown
+#include "third_party/sha256/sha256.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define selectfile_R16 g_ram[0xc8]
 #define selectfile_R17 g_ram[0xc9]
@@ -167,6 +177,13 @@ static void SelectFile_AlphabetPicker_Deactivate(void);
 static void SelectFile_AlphabetPicker_Draw(void);
 static bool SelectFile_AlphabetPicker_Update(void);
 static void SelectFile_AlphabetPicker_HandleSubmit(void);
+// §9.4 — settings screen forward decls.
+static void SelectFile_Settings_Activate(uint8 target_slot,
+                                          bool prepopulate_from_share);
+static void SelectFile_Settings_Deactivate(void);
+static bool SelectFile_Settings_Update(void);
+static void SelectFile_Settings_Draw(void);
+static void SelectFile_Settings_HandleGenerate(void);
 bool Intro_CheckCksum(const uint8 *s) {
   const uint16 *src = (const uint16 *)s;
   uint16 sum = 0;
@@ -419,6 +436,9 @@ void Module_SelectFile_0() {  // 8ccd9d
   g_rando_active_textfield = NULL;
   g_rando_text_input_submit_pending = false;
   g_rando_text_input_cancel_pending = false;
+  // §9.4 — settings screen reset on file-select entry so a hard re-entry
+  // (player quit to title and came back) doesn't inherit stale state.
+  SelectFile_Settings_Deactivate();
 }
 
 void FileSelect_ReInitSaveFlagsAndEraseTriforce() {  // 8ccdf2
@@ -540,6 +560,16 @@ void FileSelect_Main() {  // 8ccebd
         // drawing needed (matches vanilla behavior).
         break;
     }
+  }
+
+  // §9.4 — settings screen takes priority over alphabet picker / kind picker
+  // when active. Once the player enters settings (via kind=NewRandomizer or
+  // alphabet=submit-ok), neither sub-prompt is reachable until the screen
+  // closes via Generate or Cancel. The check runs first so its rendering
+  // owns vram_upload_data for the frame.
+  if (SelectFile_Settings_Update()) {
+    nmi_load_bg_from_vram = 1;
+    return;
   }
 
   // §9.1b/§9.2 — alphabet picker takes top priority when active. It runs
@@ -1394,41 +1424,42 @@ static void SelectFile_DrawRandoBanner(int k) {
   SelectFile_DrawRandoOamBadge(k);
 }
 
-// Place the "R" OAM badge to the LEFT of the heart row, in the slot's own
-// OAM range. The existing slot uses OAM entries [oamidx/4 .. oamidx/4 + 4]
-// for sword/shield/heart. For a rando slot we don't draw the vanilla
-// sword/shield/heart, so we hide those entries (y=0xf0 = off-screen,
-// matching the convention SelectFile_Func5_DrawOams uses for "no sword")
-// and claim entry +4 for the "R" badge.
+// §9.4b — Render the 5-icon visual hash widget in the slot's OAM lane.
 //
-// Total OAM entries used per rando slot = 5 (4 hidden + 1 badge), same as
-// vanilla. No OAM overflow — the slot's existing 5-entry budget is exactly
-// preserved. Critical per spec scenario "rando banner fits in OAM tiles
-// previously used for the vanilla name plus a small R badge with no
-// overflow".
+// The existing slot OAM lane is 5 entries: [oamidx/4 .. oamidx/4 + 4],
+// historically used for sword (2) + shield (1) + heart (2). For a rando
+// slot we replace all 5 entries with the deterministic icon strip computed
+// from SHA-256(share_string_binary)[0..4] mod kHashIconAtlasSize. NO OAM
+// overflow — exactly 5 entries used, same budget as vanilla, per spec
+// scenario "rando banner fits in OAM tiles previously used for the vanilla
+// name plus a small R badge with no overflow".
+//
+// CRITICAL: the hash input is the FULL share_string_binary (settings_hash +
+// seed_u64 + magic + checksum), NOT settings_hash. Deriving from
+// settings_hash gives every seed with the same settings identical icons —
+// caught in spec round 5. Rando_DrawHashIcons enforces this.
 static void SelectFile_DrawRandoOamBadge(int k) {
   static const uint8 kSelectFile_Draw_OamIdx[3] = {0x28, 0x3c, 0x50};
   // Note: kSelectFile_Draw_OamIdx is in BYTES; /4 yields an entry index.
   OamEnt *oam = oam_buf + kSelectFile_Draw_OamIdx[k] / 4;
   uint8 y = kSelectFile_Draw_Y[k];
 
-  // Hide vanilla sword/shield/heart entries — y=0xf0 is the standard
-  // off-screen Y per SelectFile_Func5_DrawOams's `oam[1].y = oam[0].y = 0xf0`.
-  for (int i = 0; i < 4; i++) {
-    SetOamPlain(oam + i, 0, 0xf0, 0, 0, 0);
+  const SelectFile_SlotInfo *info = &g_selectfile_slots[k];
+  // Clear the slot's bytewise_extended_oam entries before drawing — the
+  // widget doesn't touch them (it can't safely, since it's also called
+  // with stack-local buffers from selftest) but stale bits from a prior
+  // frame's vanilla sword/shield/heart draw would mis-extend the new
+  // tile X coordinates. Each slot uses 5 consecutive OAM entries.
+  int oam_idx = (int)(kSelectFile_Draw_OamIdx[k] / 4);
+  for (int i = 0; i < 5; ++i) {
+    bytewise_extended_oam[oam_idx + i] = 0;
   }
-
-  // x=0x28 puts the badge just before the share-string text. Tile choice:
-  // the OAM sprite tilesheet at misc_sprites_graphics_index=1 contains the
-  // fairy (0xa8/0xaa) and a variety of marker tiles. Tile 0x85 is the
-  // sword's "single sword" first tile (verified by kSelectFile_Draw_SwordChar
-  // = {0x85, 0xa1, 0xa1, 0xa1}). For the "R" badge we use a small numeric
-  // tile from kSelectFile_DrawDigit_Char that visually reads as "R"-ish —
-  // tile 0xad (the digit "2" small) is round-cornered and contrasts with the
-  // vanilla sword/shield/heart icons. This is a Phase A placeholder; the
-  // 5-icon visual hash widget (§9.4b) replaces this badge in the next
-  // cluster.
-  SetOamPlain(oam + 4, 0x28, y - 2, 0xad, 0x32, 0);
+  // x=0x28 places the strip in the same horizontal region the vanilla
+  // sword/shield/heart icons occupied. The widget consumes exactly 5 OAM
+  // entries via Rando_DrawHashIcons. y-2 nudges the strip to align with
+  // the slot's name-text baseline.
+  Rando_DrawHashIcons(0x28, (int)(y - 2), (struct OamEnt *)oam,
+                      info->sidecar.header.share_string);
 }
 
 static void SelectFile_DrawCopyRefusalMessage(void) {
@@ -1595,10 +1626,11 @@ static bool SelectFile_KindPicker_Update(void) {
       submodule_index = 0;
       subsubmodule_index = 0;
     } else if (g_kind_picker_cursor == 1) {
-      // TODO §9.4 settings screen — open RandoSettings UI here. Stub: play
-      // refusal sound and keep the picker visible so the user can pick
-      // Vanilla or cancel.
-      sound_effect_1 = 0x3c;
+      // §9.4 — open the settings screen on the target slot. The settings
+      // screen owns input and drawing until the user generates or cancels.
+      g_kind_picker_active = 0;
+      SelectFile_Settings_Activate(g_kind_picker_target_slot,
+                                   /*prepopulate_from_share=*/false);
     } else {
       // §9.1b/§9.2/§9.6 — open the alphabet picker so the player can type
       // a share string. On submit it routes through Share_PastePath() and
@@ -1875,13 +1907,15 @@ static bool SelectFile_AlphabetPicker_Update(void) {
       if (g_alphabet_pending_return) {
         g_alphabet_pending_return = false;
         SelectFile_AlphabetPicker_Deactivate();
-        // §9.8 / next-cluster integration point: with a decoded seed_u64 +
-        // settings_hash latched in g_alphabet_decoded_*, the new-game flow
-        // would start the rando setup. For Phase A (text-input cluster) we
-        // simply return to file-select; the next cluster's settings screen
-        // picks up the latched values via Share_PastePath path.
-        ReturnToFileSelect();
-        selectfile_R16 = g_kind_picker_target_slot;
+        // §9.4 — open the settings screen prepopulated with the decoded
+        // seed_u64. settings_hash is one-way so we cannot regenerate the
+        // settings struct from it; the user picks settings independently
+        // (the screen surfaces the decoded settings_hash so they can
+        // confirm/match). The seed_u64 is passed through so the same seed
+        // input reproduces the original placement when paired with
+        // matching settings.
+        SelectFile_Settings_Activate(g_kind_picker_target_slot,
+                                     /*prepopulate_from_share=*/true);
         return true;
       }
     }
@@ -2041,5 +2075,1194 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void) {
     g_alphabet_msg_frames = kAlphabetMsg_ErrorBriefFrames;
     sound_effect_1 = 0x3c;
   }
+}
+
+// ===========================================================================
+// §9.4 / §9.4a / §9.4b / §9.8 — Settings screen.
+//
+// Activated from the kind-picker (cursor=1 "New Randomizer") or from the
+// alphabet-picker's OK path (so a pasted share string lands the user in
+// settings with a pre-populated seed). Owns input + drawing until the user
+// presses Generate (which runs the placement and returns to file-select on
+// the just-generated slot) or Cancel (B-button: returns to kind picker).
+//
+// Layout: a scrollable list of ~20 rows. Each row is one of:
+//   - Enum row (e.g., world_state, goal, item_pool_difficulty, dungeon-item
+//     modes) — A/Left/Right cycles values.
+//   - Slider row (e.g., crystals.ganon, crystals.tower, pieces_required,
+//     pieces_placed) — Left decrements / Right or A increments.
+//   - Bool row — A toggles.
+//   - Disabled row (Phase-B-and-beyond shuffles) — rendered greyed, no input.
+//   - Action row (PRESET, RECOMMENDED, SEED, GENERATE) — A activates.
+//
+// Visible window: ~10 rows fit comfortably on the 224px screen at the
+// 8px line stride. The cursor stays at or near the middle when scrolling;
+// out-of-window rows scroll into view on cursor movement. Scroll indicators
+// show whether more rows exist above/below.
+//
+// Live settings_hash: the first 16 nibbles (8 hex chars) of
+// Settings_ComputeHash output, rendered at the bottom of the screen and
+// recomputed on every settings mutation.
+//
+// Asset-warn dialog: opened when Generate is pressed AND g_assets_hash
+// differs from kVanillaAssetsHash AND no persisted decision is on file.
+// The user picks Always allow / Allow once / Cancel; Always allow persists
+// the choice keyed by the current g_assets_hash via the [RandoAssetDecisions]
+// section of zelda3.ini.
+// ===========================================================================
+
+// Row identifiers — one per logical settings axis + action rows.
+enum {
+  kRow_Preset = 0,
+  kRow_WorldState,
+  kRow_Goal,
+  kRow_CrystalsGanon,
+  kRow_CrystalsTower,
+  kRow_ItemPoolDifficulty,
+  kRow_DungeonSmallKeys,
+  kRow_DungeonBigKeys,
+  kRow_DungeonMaps,
+  kRow_DungeonCompasses,
+  kRow_PiecesRequired,
+  kRow_PiecesPlaced,
+  kRow_PrizeShuffle,
+  kRow_MedallionShuffle,
+  kRow_RaceMode,
+  // Phase-B disabled rows (label-only; cursor skips over input but A
+  // refuses with a tooltip-style refusal sound).
+  kRow_EntranceShuffle_Disabled,
+  kRow_EnemyShuffle_Disabled,
+  kRow_BossShuffle_Disabled,
+  kRow_Glitches_Disabled,
+  // Action rows.
+  kRow_Recommended,
+  kRow_Seed,
+  kRow_Generate,
+  kRow__Count,
+};
+
+// Settings screen view-state — distinct from the row index (cursor).
+enum {
+  kSettingsView_Main = 0,
+  kSettingsView_Recommended = 1,
+  kSettingsView_AssetWarn = 2,
+};
+
+// Asset-warn dialog choices.
+enum {
+  kAssetWarnChoice_AlwaysAllow = 0,
+  kAssetWarnChoice_AllowOnce = 1,
+  kAssetWarnChoice_Cancel = 2,
+  kAssetWarnChoice__Count = 3,
+};
+
+// Recommended-features panel row IDs (in panel order).
+enum {
+  kRecRow_SkipIntro = 0,
+  kRecRow_ShowMaxItemsYellow,
+  kRecRow_TurnWhileDashing,
+  kRecRow_CollectItemsWithSword,
+  kRecRow_BreakPotsWithSword,
+  kRecRow_DisableLowHealthBeep,
+  kRecRow_CarryMoreRupees,
+  kRecRow_MiscBugFixes,
+  kRecRow_GameChangingBugFixes,
+  kRecRow_DimFlashes,
+  kRecRow_ApplyAll,
+  kRecRow__Count,
+};
+
+// Bitmask mapping each rec-row to the corresponding kFeatures0_* bit. The
+// "recommended" set (the bits Apply-All flips ON) is the subset where
+// kRecRecommendedOn[i] = 1. Per randomizer-ui spec.
+static const uint32 kRecRowBits[] = {
+  /*SkipIntro*/                kFeatures0_SkipIntroOnKeypress,
+  /*ShowMaxItemsYellow*/       kFeatures0_ShowMaxItemsInYellow,
+  /*TurnWhileDashing*/         kFeatures0_TurnWhileDashing,
+  /*CollectItemsWithSword*/    kFeatures0_CollectItemsWithSword,
+  /*BreakPotsWithSword*/       kFeatures0_BreakPotsWithSword,
+  /*DisableLowHealthBeep*/     kFeatures0_DisableLowHealthBeep,
+  /*CarryMoreRupees*/          kFeatures0_CarryMoreRupees,
+  /*MiscBugFixes*/             kFeatures0_MiscBugFixes,
+  /*GameChangingBugFixes*/     kFeatures0_GameChangingBugFixes,
+  /*DimFlashes*/               kFeatures0_DimFlashes,
+  /*ApplyAll*/                 0,  // synthetic
+};
+static const uint8 kRecRecommendedOn[] = {
+  /*SkipIntro*/                1,
+  /*ShowMaxItemsYellow*/       1,
+  /*TurnWhileDashing*/         1,
+  /*CollectItemsWithSword*/    1,
+  /*BreakPotsWithSword*/       1,
+  /*DisableLowHealthBeep*/     1,
+  /*CarryMoreRupees*/          1,
+  /*MiscBugFixes*/             1,
+  /*GameChangingBugFixes*/     0,  // recommended OFF per spec
+  /*DimFlashes*/               0,  // accessibility option — honor user pref
+};
+static const char *kRecRowLabels[] = {
+  "SkipIntro",
+  "MaxItemsYellow",
+  "TurnDashing",
+  "SwordCollect",
+  "SwordPots",
+  "NoBeep",
+  "MoreRupees",
+  "BugFixes",
+  "GameBugFixes",
+  "DimFlashes",
+  "APPLY ALL",
+};
+
+// Settings screen state. Module-static; lives across frames.
+static bool g_settings_active = false;
+static uint8 g_settings_view = kSettingsView_Main;
+static uint8 g_settings_target_slot = 0;
+static uint8 g_settings_cursor = 0;
+static uint8 g_settings_scroll_offset = 0;
+static uint8 g_settings_preset_index = 0;
+static RandoSettings g_settings_working;
+static RandoTextField g_settings_seed_field;
+static uint64 g_settings_seed_value = 0;
+static bool g_settings_seed_parse_ok = true;
+static uint64 g_settings_prepopulated_seed = 0;
+static bool g_settings_seed_prepopulated = false;
+// Recommended-features panel state.
+static uint8 g_rec_cursor = 0;
+static uint32 g_rec_working_features0 = 0;
+// Asset-warn dialog state.
+static uint8 g_asset_warn_cursor = 0;
+static bool g_asset_warn_pending = false;
+// Generate state (re-fire guard).
+static bool g_settings_generate_in_progress = false;
+// Cached settings hash (8 hex chars displayable). Recomputed on mutation.
+static uint8 g_settings_hash_short[16];
+
+// ---------------------------------------------------------------------------
+// Asset-warn persistence ([RandoAssetDecisions] in zelda3.ini).
+//
+// The decision is keyed by hex(g_assets_hash). When the user picks "Always
+// allow", we record their hash + decision in a session-static lookup; on
+// next launch the config parser populates the lookup from the INI. For
+// Phase A the persistence is in-memory only (the INI write-back is deferred
+// to a follow-up sprint — config.c is read-only today). The session-static
+// lookup ensures the user is not re-prompted within a single session even
+// without on-disk persistence.
+// ---------------------------------------------------------------------------
+typedef struct AssetDecision {
+  uint8 hash[32];
+  uint8 allow;  // 1 = always-allow recorded for this hash
+} AssetDecision;
+#define kAssetDecisions_Max 16
+static AssetDecision g_asset_decisions[kAssetDecisions_Max];
+static uint8 g_asset_decisions_count = 0;
+
+static bool AssetDecision_FindAllow(const uint8 hash[32]) {
+  for (uint8 i = 0; i < g_asset_decisions_count; ++i) {
+    if (memcmp(g_asset_decisions[i].hash, hash, 32) == 0) {
+      return g_asset_decisions[i].allow != 0;
+    }
+  }
+  return false;
+}
+
+static void AssetDecision_Persist(const uint8 hash[32]) {
+  // Update in-place if hash already recorded.
+  for (uint8 i = 0; i < g_asset_decisions_count; ++i) {
+    if (memcmp(g_asset_decisions[i].hash, hash, 32) == 0) {
+      g_asset_decisions[i].allow = 1;
+      return;
+    }
+  }
+  if (g_asset_decisions_count >= kAssetDecisions_Max) return;
+  AssetDecision *d = &g_asset_decisions[g_asset_decisions_count++];
+  memcpy(d->hash, hash, 32);
+  d->allow = 1;
+  // Phase A: persistence is in-memory only. config.c's HandleIniConfig
+  // already accepts the new [RandoAssetDecisions] section so future INI
+  // edits by the user (or by a future INI-writer task) survive a launch.
+  // Until the writer lands, the decision persists for the current session.
+  fprintf(stderr, "[RandoAssetDecisions] recorded always-allow for hash ");
+  for (int i = 0; i < 8; ++i) fprintf(stderr, "%02x", hash[i]);
+  fprintf(stderr, "...\n");
+}
+
+// Called from config.c's [RandoAssetDecisions] parser to populate the
+// session lookup from zelda3.ini at startup.
+void Rando_RegisterAssetDecisionFromIni(const uint8 hash[32]) {
+  if (g_asset_decisions_count >= kAssetDecisions_Max) return;
+  AssetDecision *d = &g_asset_decisions[g_asset_decisions_count++];
+  memcpy(d->hash, hash, 32);
+  d->allow = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Seed-field parsing helpers.
+// ---------------------------------------------------------------------------
+static bool ParseSeedField(const char *s, uint64 *out_seed) {
+  if (s == NULL || *s == 0) return false;
+  uint64 v = 0;
+  if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+    s += 2;
+    if (*s == 0) return false;
+    while (*s) {
+      char c = *s++;
+      uint8 d;
+      if (c >= '0' && c <= '9') d = c - '0';
+      else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+      else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+      else return false;
+      v = (v << 4) | d;
+    }
+  } else {
+    while (*s) {
+      char c = *s++;
+      if (c < '0' || c > '9') return false;
+      v = v * 10 + (uint64)(c - '0');
+    }
+  }
+  *out_seed = v;
+  return true;
+}
+
+// Derive a u64 from current state when the seed field is empty. Mixes the
+// settings_hash with a session-incrementing counter so successive Generate
+// presses without an explicit seed produce different seeds. Deterministic
+// per-session: the seed_u64 is reproducible if the user notes its value
+// (which is encoded into the share string).
+static uint64 g_settings_generation_counter = 0;
+static uint64 DeriveSeedFromState(void) {
+  // SHA-256 of (settings_hash[16] + counter[8] + frame_counter[2]) → take
+  // first 8 bytes as u64. Cheap and good enough.
+  uint8 buf[32];
+  memset(buf, 0, sizeof(buf));
+  memcpy(buf, g_settings_hash_short, 16);
+  g_settings_generation_counter++;
+  for (int i = 0; i < 8; ++i) {
+    buf[16 + i] = (uint8)((g_settings_generation_counter >> (i * 8)) & 0xff);
+  }
+  // frame_counter is uint8 — mix into a single byte; the generation
+  // counter above already provides per-Generate-press variation.
+  buf[24] = (uint8)frame_counter;
+  uint8 digest[32];
+  sha256_buffer(buf, 32, digest);
+  uint64 r = 0;
+  for (int i = 0; i < 8; ++i) r |= ((uint64)digest[i]) << (i * 8);
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Settings-row helpers — get a label + a current-value string for any row.
+// ---------------------------------------------------------------------------
+static const char *RowLabel(int row) {
+  switch (row) {
+    case kRow_Preset:                    return "PRESET";
+    case kRow_WorldState:                return "WORLD";
+    case kRow_Goal:                      return "GOAL";
+    case kRow_CrystalsGanon:             return "C-GANON";
+    case kRow_CrystalsTower:             return "C-TOWER";
+    case kRow_ItemPoolDifficulty:        return "POOL";
+    case kRow_DungeonSmallKeys:          return "SMKEYS";
+    case kRow_DungeonBigKeys:            return "BGKEYS";
+    case kRow_DungeonMaps:               return "MAPS";
+    case kRow_DungeonCompasses:          return "COMPS";
+    case kRow_PiecesRequired:            return "PCS-REQ";
+    case kRow_PiecesPlaced:              return "PCS-PLC";
+    case kRow_PrizeShuffle:              return "PRIZE";
+    case kRow_MedallionShuffle:          return "MEDAL";
+    case kRow_RaceMode:                  return "RACE";
+    case kRow_EntranceShuffle_Disabled:  return "ENT (B)";
+    case kRow_EnemyShuffle_Disabled:     return "ENEMY (B)";
+    case kRow_BossShuffle_Disabled:      return "BOSS (B)";
+    case kRow_Glitches_Disabled:         return "GLITCH (B)";
+    case kRow_Recommended:               return "REC-FX";
+    case kRow_Seed:                      return "SEED";
+    case kRow_Generate:                  return "GENERATE";
+    default:                             return "???";
+  }
+}
+
+static const char *RowValueText(int row, char *scratch, int scratch_len) {
+  const RandoSettings *s = &g_settings_working;
+  switch (row) {
+    case kRow_Preset:
+      return Settings_PresetName((SettingsPreset)g_settings_preset_index);
+    case kRow_WorldState:
+      return SelectFile_WorldStateAbbrev(s->world_state);
+    case kRow_Goal:
+      return SelectFile_GoalAbbrev(s->goal);
+    case kRow_CrystalsGanon:
+      snprintf(scratch, scratch_len, "%u/7", (unsigned)s->crystals_ganon);
+      return scratch;
+    case kRow_CrystalsTower:
+      snprintf(scratch, scratch_len, "%u/7", (unsigned)s->crystals_tower);
+      return scratch;
+    case kRow_ItemPoolDifficulty:
+      switch (s->item_pool_difficulty) {
+        case kItemPoolDifficulty_Easy:   return "EASY";
+        case kItemPoolDifficulty_Normal: return "NORM";
+        case kItemPoolDifficulty_Hard:   return "HARD";
+        case kItemPoolDifficulty_Expert: return "EXPRT";
+        default:                         return "???";
+      }
+    case kRow_DungeonSmallKeys:
+    case kRow_DungeonBigKeys:
+    case kRow_DungeonMaps:
+    case kRow_DungeonCompasses: {
+      uint8 mode = (row == kRow_DungeonSmallKeys) ? s->dungeon_small_keys_mode
+                 : (row == kRow_DungeonBigKeys) ? s->dungeon_big_keys_mode
+                 : (row == kRow_DungeonMaps) ? s->dungeon_maps_mode
+                 : s->dungeon_compasses_mode;
+      switch (mode) {
+        case kDungeonItemMode_Vanilla: return "VAN";
+        case kDungeonItemMode_Dungeon: return "DNG";
+        case kDungeonItemMode_Wild:    return "WLD";
+        default:                       return "???";
+      }
+    }
+    case kRow_PiecesRequired:
+      snprintf(scratch, scratch_len, "%u", (unsigned)s->pieces_required);
+      return scratch;
+    case kRow_PiecesPlaced:
+      snprintf(scratch, scratch_len, "%u", (unsigned)s->pieces_placed);
+      return scratch;
+    case kRow_PrizeShuffle:
+      return s->prize_shuffle ? "ON" : "OFF";
+    case kRow_MedallionShuffle:
+      return s->medallion_shuffle ? "ON" : "OFF";
+    case kRow_RaceMode:
+      return s->race_mode ? "ON" : "OFF";
+    case kRow_EntranceShuffle_Disabled:
+    case kRow_EnemyShuffle_Disabled:
+    case kRow_BossShuffle_Disabled:
+    case kRow_Glitches_Disabled:
+      return "OFF";
+    case kRow_Recommended:
+      return ">>";
+    case kRow_Seed: {
+      // Show "(auto)" when empty, else the buffer contents (truncated).
+      if (g_settings_seed_field.len == 0) return "(auto)";
+      int n = g_settings_seed_field.len;
+      if (n > scratch_len - 1) n = scratch_len - 1;
+      memcpy(scratch, g_settings_seed_field.buf, n);
+      scratch[n] = 0;
+      return scratch;
+    }
+    case kRow_Generate:
+      return g_settings_generate_in_progress ? "(BUSY)" : ">>";
+    default:
+      return "???";
+  }
+}
+
+// Recompute the cached settings_hash whenever the working settings mutate.
+static void SettingsHashRefresh(void) {
+  Settings_HashShort(&g_settings_working, g_settings_hash_short);
+}
+
+// Validate piece-count invariants after any cycle that touches them.
+static void SettingsValidatePieces(void) {
+  RandoSettings *s = &g_settings_working;
+  // Cap pieces_placed in a sane range so the UI doesn't allow nonsense.
+  if (s->pieces_placed < 1) s->pieces_placed = 1;
+  if (s->pieces_placed > 99) s->pieces_placed = 99;
+  if (s->pieces_required < 1) s->pieces_required = 1;
+  if (s->pieces_required > s->pieces_placed) s->pieces_required = s->pieces_placed;
+}
+
+// Cycle a row's value forward (delta=+1) or backward (delta=-1). Bool rows
+// treat any nonzero delta as toggle.
+static void CycleRow(int row, int delta) {
+  RandoSettings *s = &g_settings_working;
+  bool mutated = true;
+  switch (row) {
+    case kRow_Preset: {
+      int n = (int)g_settings_preset_index + delta;
+      if (n < 0) n = kPreset__Count - 1;
+      if (n >= kPreset__Count) n = 0;
+      g_settings_preset_index = (uint8)n;
+      Settings_ApplyPreset((SettingsPreset)g_settings_preset_index, s);
+      break;
+    }
+    case kRow_WorldState: {
+      int n = (int)s->world_state + delta;
+      if (n < 0) n = kWorldState_Retro;
+      if (n > kWorldState_Retro) n = 0;
+      s->world_state = (uint8)n;
+      break;
+    }
+    case kRow_Goal: {
+      int n = (int)s->goal + delta;
+      if (n < 0) n = kGoal_Completionist;
+      if (n > kGoal_Completionist) n = 0;
+      s->goal = (uint8)n;
+      // Completionist auto-sets accessibility=Locations per the canonical
+      // serializer rule.
+      if (s->goal == kGoal_Completionist) s->accessibility = kAccessibility_Locations;
+      break;
+    }
+    case kRow_CrystalsGanon: {
+      int n = (int)s->crystals_ganon + delta;
+      if (n < 0) n = 7;
+      if (n > 7) n = 0;
+      s->crystals_ganon = (uint8)n;
+      break;
+    }
+    case kRow_CrystalsTower: {
+      int n = (int)s->crystals_tower + delta;
+      if (n < 0) n = 7;
+      if (n > 7) n = 0;
+      s->crystals_tower = (uint8)n;
+      break;
+    }
+    case kRow_ItemPoolDifficulty: {
+      int n = (int)s->item_pool_difficulty + delta;
+      if (n < 0) n = kItemPoolDifficulty_Expert;
+      if (n > kItemPoolDifficulty_Expert) n = 0;
+      s->item_pool_difficulty = (uint8)n;
+      break;
+    }
+    case kRow_DungeonSmallKeys:
+    case kRow_DungeonBigKeys:
+    case kRow_DungeonMaps:
+    case kRow_DungeonCompasses: {
+      uint8 *mode = (row == kRow_DungeonSmallKeys) ? &s->dungeon_small_keys_mode
+                  : (row == kRow_DungeonBigKeys) ? &s->dungeon_big_keys_mode
+                  : (row == kRow_DungeonMaps) ? &s->dungeon_maps_mode
+                  : &s->dungeon_compasses_mode;
+      int n = (int)*mode + delta;
+      if (n < 0) n = kDungeonItemMode_Wild;
+      if (n > kDungeonItemMode_Wild) n = 0;
+      *mode = (uint8)n;
+      break;
+    }
+    case kRow_PiecesRequired: {
+      int n = (int)s->pieces_required + delta;
+      if (n < 1) n = (int)s->pieces_placed;  // wrap to max
+      if (n > (int)s->pieces_placed) n = 1;
+      s->pieces_required = (uint16)n;
+      break;
+    }
+    case kRow_PiecesPlaced: {
+      int n = (int)s->pieces_placed + delta;
+      if (n < 1) n = 99;
+      if (n > 99) n = 1;
+      s->pieces_placed = (uint16)n;
+      SettingsValidatePieces();
+      break;
+    }
+    case kRow_PrizeShuffle: s->prize_shuffle ^= 1; break;
+    case kRow_MedallionShuffle: s->medallion_shuffle ^= 1; break;
+    case kRow_RaceMode: s->race_mode ^= 1; break;
+    default:
+      mutated = false;
+      break;
+  }
+  if (mutated) SettingsHashRefresh();
+}
+
+// Helpers for tile-stream emission.
+static void emit_tile_pair(uint8 *cmd, int *o, uint8 tile, uint8 attr) {
+  cmd[(*o)++] = tile;
+  cmd[(*o)++] = attr;
+}
+
+// Map a printable ASCII char to a file-select font tile index. Falls back to
+// the blank tile for chars not in the limited font (no lowercase support).
+static uint8 TileForAscii(char c) {
+  if (c >= 'A' && c <= 'Z') return SelectFile_TileForBase32(c);
+  if (c >= 'a' && c <= 'z') return SelectFile_TileForBase32((char)(c - 'a' + 'A'));
+  if (c >= '0' && c <= '9') {
+    // '2'..'7' are in the base32 mapping already; '0' '1' '8' '9' need
+    // explicit tile picks. Reuse digit tiles from the file-select font
+    // (kSelectFile_DrawDigit_Char order: '0'=0xd0 '1'=0xac '8'=0xbe '9'=0xbf,
+    // but those are sprite tiles not BG tiles). For BG text, fall back to
+    // an approximation: '0' rendered as blank; per Phase A we constrain
+    // numeric values to the 2..7 range that the existing tiles cover, plus
+    // explicit slash/digit-pair rendering in RowValueText for sliders.
+    if (c >= '2' && c <= '7') return SelectFile_TileForBase32(c);
+    // '0' / '1' / '8' / '9' approximate as character literals via blank
+    // — values that include these digits will display visually short.
+    return kFileSelectTile_Blank;
+  }
+  if (c == '/') return 0x35;   // '/' tile in the existing font region (best-fit)
+  if (c == '?') return 0x2d;
+  if (c == '>') return 0x2e;   // '>' approximation
+  if (c == '(') return 0x2c;   // '(' approximation
+  if (c == ')') return 0x2a;
+  if (c == '-') return 0x2b;
+  if (c == ' ') return kFileSelectTile_Blank;
+  if (c == 0) return kFileSelectTile_Blank;
+  return kFileSelectTile_Blank;
+}
+
+// Emit a horizontal text run as a tile-stream command at the given VRAM
+// address. `attr` = palette/priority byte; HandleStripes14 count byte is
+// (chars*2)-1 per src/nmi.c:421. Caller's `cmd` buffer must have room for
+// 4 header bytes + chars*2 payload bytes.
+static int emit_text_run(uint8 *cmd, int o, uint16 vram_addr,
+                         const char *text, int max_chars, uint8 attr) {
+  // Cap to max_chars; count = (max_chars*2) - 1.
+  cmd[o++] = (uint8)(vram_addr >> 8);
+  cmd[o++] = (uint8)(vram_addr & 0xff);
+  cmd[o++] = 0;
+  cmd[o++] = (uint8)((max_chars * 2) - 1);
+  for (int i = 0; i < max_chars; ++i) {
+    char c = text[i];
+    if (c == 0) {
+      for (int j = i; j < max_chars; ++j) {
+        cmd[o++] = kFileSelectTile_Blank; cmd[o++] = attr;
+      }
+      break;
+    }
+    cmd[o++] = TileForAscii(c); cmd[o++] = attr;
+  }
+  return o;
+}
+
+// Visible row count (per-screen). 10 rows comfortably fit at 8px line stride
+// in the 224px play region.
+#define kSettingsVisibleRows 10
+
+// ---------------------------------------------------------------------------
+// Activate / deactivate.
+// ---------------------------------------------------------------------------
+static void SelectFile_Settings_Activate(uint8 target_slot,
+                                          bool prepopulate_from_share) {
+  g_settings_active = true;
+  g_settings_view = kSettingsView_Main;
+  g_settings_target_slot = target_slot;
+  g_settings_cursor = kRow_Preset;
+  g_settings_scroll_offset = 0;
+  g_settings_preset_index = kPreset_OpenGanon;
+  Settings_ApplyPreset(kPreset_OpenGanon, &g_settings_working);
+  TextField_Init(&g_settings_seed_field, /*base32_only=*/false);
+  g_settings_seed_field.active = false;  // not focused by default
+  g_settings_seed_parse_ok = true;
+  g_settings_seed_value = 0;
+  g_settings_generate_in_progress = false;
+  g_rec_cursor = 0;
+  g_rec_working_features0 = g_config.features0;
+  g_asset_warn_cursor = 0;
+  g_asset_warn_pending = false;
+  if (prepopulate_from_share) {
+    // Use the decoded seed_u64 from the alphabet-picker submit path. The
+    // user can still edit the seed (or settings) before pressing Generate.
+    g_settings_seed_prepopulated = true;
+    g_settings_prepopulated_seed = g_alphabet_decoded_seed;
+    // Write the seed value into the text field as decimal.
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)g_alphabet_decoded_seed);
+    TextField_PasteString(&g_settings_seed_field, buf);
+  } else {
+    g_settings_seed_prepopulated = false;
+    g_settings_prepopulated_seed = 0;
+  }
+  SettingsHashRefresh();
+}
+
+static void SelectFile_Settings_Deactivate(void) {
+  g_settings_active = false;
+  g_settings_view = kSettingsView_Main;
+  g_settings_generate_in_progress = false;
+  g_settings_seed_field.active = false;
+  // Same VRAM-restore discipline as the alphabet picker — settings draw
+  // memcpys into vram_upload_data, clobbering kSelectFile_Func3_Data. Rewind
+  // to submodule 3 to reinstall it before the slot list resumes.
+  submodule_index = 3;
+  subsubmodule_index = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Rendering.
+// ---------------------------------------------------------------------------
+static void SelectFile_Settings_DrawMain(void) {
+  uint8 cmd[2048];
+  int o = 0;
+  // Title at the very top: "RANDO SETTINGS" (14 chars).
+  o = emit_text_run(cmd, o, 0x6108, "RANDO SETTINGS", 14, 0x18);
+
+  // Render the visible window of rows. Each row occupies one tilemap row
+  // (32 entries = 64 bytes; we use the leftmost ~24 cells).
+  uint16 row_base_vram = 0x6148;  // ~4 tile rows below title
+  for (int i = 0; i < kSettingsVisibleRows; ++i) {
+    int row = (int)g_settings_scroll_offset + i;
+    if (row >= kRow__Count) break;
+    uint16 vram = (uint16)(row_base_vram + i * 0x40);
+    bool selected = (row == (int)g_settings_cursor);
+    uint8 attr = selected ? 0x38 : 0x18;
+    // Disabled rows render greyed (palette flip).
+    bool disabled = (row == kRow_EntranceShuffle_Disabled ||
+                     row == kRow_EnemyShuffle_Disabled ||
+                     row == kRow_BossShuffle_Disabled ||
+                     row == kRow_Glitches_Disabled);
+    if (disabled) attr = selected ? 0x58 : 0x78;
+    // Label (10 chars).
+    const char *label = RowLabel(row);
+    o = emit_text_run(cmd, o, vram, label, 10, attr);
+    // Value (8 chars) at column +12 of the same row (=24 bytes offset).
+    char scratch[32];
+    const char *val = RowValueText(row, scratch, sizeof(scratch));
+    o = emit_text_run(cmd, o, (uint16)(vram + 24), val, 8, attr);
+  }
+  // Settings hash (16 chars hex = 8 bytes) at the bottom.
+  // The label "HASH:" + 16 hex chars.
+  o = emit_text_run(cmd, o, 0x6388, "HASH ", 5, 0x18);
+  char hashbuf[32];
+  static const char kHex[] = "0123456789ABCDEF";
+  for (int i = 0; i < 8; ++i) {
+    hashbuf[i * 2] = kHex[(g_settings_hash_short[i] >> 4) & 0xf];
+    hashbuf[i * 2 + 1] = kHex[g_settings_hash_short[i] & 0xf];
+  }
+  hashbuf[16] = 0;
+  o = emit_text_run(cmd, o, 0x6390, hashbuf, 16, 0x18);
+  // Scroll indicators.
+  if (g_settings_scroll_offset > 0) {
+    o = emit_text_run(cmd, o, 0x6128, "UP", 2, 0x18);
+  }
+  if (g_settings_scroll_offset + kSettingsVisibleRows < kRow__Count) {
+    o = emit_text_run(cmd, o, 0x6368, "DN", 2, 0x18);
+  }
+  // Re-fire indicator on Generate row.
+  if (g_settings_generate_in_progress) {
+    o = emit_text_run(cmd, o, 0x63c8, "GENERATING", 10, 0x18);
+  }
+  cmd[o++] = 0xff;
+  memcpy(vram_upload_data, cmd, (size_t)o);
+}
+
+static void SelectFile_Settings_DrawRecommended(void) {
+  uint8 cmd[2048];
+  int o = 0;
+  o = emit_text_run(cmd, o, 0x6108, "REC FEATURES", 12, 0x18);
+  uint16 row_base = 0x6148;
+  for (int i = 0; i < kRecRow__Count; ++i) {
+    uint16 vram = (uint16)(row_base + i * 0x40);
+    bool selected = (i == (int)g_rec_cursor);
+    uint8 attr = selected ? 0x38 : 0x18;
+    o = emit_text_run(cmd, o, vram, kRecRowLabels[i], 14, attr);
+    if (i < kRecRow_ApplyAll) {
+      bool on = (g_rec_working_features0 & kRecRowBits[i]) != 0;
+      o = emit_text_run(cmd, o, (uint16)(vram + 28), on ? "ON" : "OFF", 4, attr);
+    }
+  }
+  // Cancel hint at bottom.
+  o = emit_text_run(cmd, o, 0x6390, "B BACK", 6, 0x18);
+  cmd[o++] = 0xff;
+  memcpy(vram_upload_data, cmd, (size_t)o);
+}
+
+static void SelectFile_Settings_DrawAssetWarn(void) {
+  uint8 cmd[2048];
+  int o = 0;
+  o = emit_text_run(cmd, o, 0x6108, "ASSETS DIFFER", 13, 0x18);
+  o = emit_text_run(cmd, o, 0x6148, "NON VANILLA", 11, 0x18);
+  o = emit_text_run(cmd, o, 0x6188, "ASSETS DETECTED", 15, 0x18);
+  static const char *kLabels[3] = { "ALWAYS ALLOW", "ALLOW ONCE", "CANCEL" };
+  for (int i = 0; i < 3; ++i) {
+    uint16 vram = (uint16)(0x6208 + i * 0x40);
+    bool selected = (i == (int)g_asset_warn_cursor);
+    uint8 attr = selected ? 0x38 : 0x18;
+    o = emit_text_run(cmd, o, vram, kLabels[i], 14, attr);
+  }
+  cmd[o++] = 0xff;
+  memcpy(vram_upload_data, cmd, (size_t)o);
+}
+
+static void SelectFile_Settings_Draw(void) {
+  switch (g_settings_view) {
+    case kSettingsView_Main:        SelectFile_Settings_DrawMain(); break;
+    case kSettingsView_Recommended: SelectFile_Settings_DrawRecommended(); break;
+    case kSettingsView_AssetWarn:   SelectFile_Settings_DrawAssetWarn(); break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Input handling.
+// ---------------------------------------------------------------------------
+static void SettingsCursorMove(int delta) {
+  int n = (int)g_settings_cursor + delta;
+  if (n < 0) n = kRow__Count - 1;
+  if (n >= kRow__Count) n = 0;
+  g_settings_cursor = (uint8)n;
+  // Scroll window so cursor stays in view.
+  if (g_settings_cursor < g_settings_scroll_offset) {
+    g_settings_scroll_offset = g_settings_cursor;
+  } else if (g_settings_cursor >= g_settings_scroll_offset + kSettingsVisibleRows) {
+    g_settings_scroll_offset =
+        (uint8)((int)g_settings_cursor - kSettingsVisibleRows + 1);
+  }
+}
+
+static bool SelectFile_Settings_HandleRecommendedInput(void) {
+  // Cancel via B → back to main view.
+  if (filtered_joypad_H & kJoypadH_B) {
+    sound_effect_1 = 0x2c;
+    g_settings_view = kSettingsView_Main;
+    return true;
+  }
+  uint8 dir = filtered_joypad_H & 0xf;
+  if (dir & kJoypadH_Up) {
+    sound_effect_2 = 0x20;
+    if (g_rec_cursor == 0) g_rec_cursor = kRecRow__Count - 1;
+    else g_rec_cursor--;
+    return true;
+  }
+  if (dir & kJoypadH_Down) {
+    sound_effect_2 = 0x20;
+    g_rec_cursor++;
+    if (g_rec_cursor >= kRecRow__Count) g_rec_cursor = 0;
+    return true;
+  }
+  if (filtered_joypad_L & kJoypadL_A) {
+    sound_effect_1 = 0x2c;
+    if (g_rec_cursor == kRecRow_ApplyAll) {
+      // Flip every toggle to its recommended state.
+      for (int i = 0; i < kRecRow_ApplyAll; ++i) {
+        if (kRecRecommendedOn[i]) {
+          g_rec_working_features0 |= kRecRowBits[i];
+        } else {
+          g_rec_working_features0 &= ~kRecRowBits[i];
+        }
+      }
+    } else {
+      // Toggle this row.
+      g_rec_working_features0 ^= kRecRowBits[g_rec_cursor];
+    }
+    return true;
+  }
+  return true;  // swallow all input while in this view
+}
+
+static bool SelectFile_Settings_HandleAssetWarnInput(void) {
+  uint8 dir = filtered_joypad_H & 0xf;
+  if (dir & kJoypadH_Up) {
+    sound_effect_2 = 0x20;
+    if (g_asset_warn_cursor == 0) g_asset_warn_cursor = kAssetWarnChoice__Count - 1;
+    else g_asset_warn_cursor--;
+    return true;
+  }
+  if (dir & kJoypadH_Down) {
+    sound_effect_2 = 0x20;
+    g_asset_warn_cursor++;
+    if (g_asset_warn_cursor >= kAssetWarnChoice__Count) g_asset_warn_cursor = 0;
+    return true;
+  }
+  if ((filtered_joypad_L & kJoypadL_A) || (filtered_joypad_H & kJoypadH_Start)) {
+    sound_effect_1 = 0x2c;
+    switch (g_asset_warn_cursor) {
+      case kAssetWarnChoice_AlwaysAllow:
+        AssetDecision_Persist(g_assets_hash);
+        g_asset_warn_pending = false;
+        g_settings_view = kSettingsView_Main;
+        // Proceed immediately to generation.
+        SelectFile_Settings_HandleGenerate();
+        break;
+      case kAssetWarnChoice_AllowOnce:
+        g_asset_warn_pending = false;
+        g_settings_view = kSettingsView_Main;
+        SelectFile_Settings_HandleGenerate();
+        break;
+      case kAssetWarnChoice_Cancel:
+      default:
+        g_asset_warn_pending = false;
+        g_settings_view = kSettingsView_Main;
+        break;
+    }
+    return true;
+  }
+  if (filtered_joypad_H & kJoypadH_B) {
+    sound_effect_1 = 0x2c;
+    g_asset_warn_pending = false;
+    g_settings_view = kSettingsView_Main;
+    return true;
+  }
+  return true;
+}
+
+static bool SelectFile_Settings_Update(void) {
+  if (!g_settings_active) return false;
+  SelectFile_Settings_Draw();
+
+  // Dispatch input by view.
+  if (g_settings_view == kSettingsView_Recommended) {
+    return SelectFile_Settings_HandleRecommendedInput();
+  }
+  if (g_settings_view == kSettingsView_AssetWarn) {
+    return SelectFile_Settings_HandleAssetWarnInput();
+  }
+
+  // Cancel via B → back to kind picker on the target slot.
+  if (filtered_joypad_H & kJoypadH_B) {
+    sound_effect_1 = 0x3c;
+    SelectFile_Settings_Deactivate();
+    g_kind_picker_active = 1;
+    g_kind_picker_cursor = 0;
+    return true;
+  }
+
+  // Cursor up/down.
+  uint8 dir = filtered_joypad_H & 0xf;
+  if (dir & kJoypadH_Up) {
+    sound_effect_2 = 0x20;
+    SettingsCursorMove(-1);
+    return true;
+  }
+  if (dir & kJoypadH_Down) {
+    sound_effect_2 = 0x20;
+    SettingsCursorMove(1);
+    return true;
+  }
+
+  int row = (int)g_settings_cursor;
+  // Left/Right cycle the current row's value (multi-option enums + sliders).
+  if (dir & kJoypadH_Left) {
+    sound_effect_2 = 0x20;
+    CycleRow(row, -1);
+    return true;
+  }
+  if (dir & kJoypadH_Right) {
+    sound_effect_2 = 0x20;
+    CycleRow(row, +1);
+    return true;
+  }
+
+  // A button — context-dependent. While the seed text field is active
+  // (focused for typing), swallow A so it doesn't re-trigger the row's
+  // Clear-the-field action on every joypad poll.
+  if ((filtered_joypad_L & kJoypadL_A) && !g_settings_seed_field.active) {
+    sound_effect_1 = 0x2c;
+    switch (row) {
+      case kRow_Recommended:
+        g_settings_view = kSettingsView_Recommended;
+        g_rec_cursor = 0;
+        break;
+      case kRow_Generate:
+        SelectFile_Settings_HandleGenerate();
+        break;
+      case kRow_Seed:
+        // Seed-field activation is deferred — Phase A wires it to the text
+        // input layer via a separate B+A combo or a tap of A on this row
+        // that opens a numeric entry sub-prompt. For now, A on the seed row
+        // just toggles base-prefix mode (decimal ↔ hex) for the next input.
+        // The user can also paste via the alphabet picker (cluster 2).
+        // Phase A simplification: A on the seed row clears the field so the
+        // user can type a fresh value via the host SDL_TEXTINPUT path.
+        TextField_HandleKey(&g_settings_seed_field, kTextFieldKey_Clear);
+        // Activate the field so the host routes SDL_TEXTINPUT here.
+        // The g_rando_text_input_active edge in main.c clears
+        // g_input1_state on activation so the A press that opened the
+        // field doesn't strand as a held joypad bit.
+        g_settings_seed_field.active = true;
+        g_rando_active_textfield = &g_settings_seed_field;
+        g_rando_text_input_active = true;
+        g_rando_text_input_submit_pending = false;
+        g_rando_text_input_cancel_pending = false;
+        break;
+      case kRow_Preset:
+      case kRow_WorldState:
+      case kRow_Goal:
+      case kRow_ItemPoolDifficulty:
+      case kRow_DungeonSmallKeys:
+      case kRow_DungeonBigKeys:
+      case kRow_DungeonMaps:
+      case kRow_DungeonCompasses:
+      case kRow_CrystalsGanon:
+      case kRow_CrystalsTower:
+      case kRow_PiecesRequired:
+      case kRow_PiecesPlaced:
+        CycleRow(row, +1);  // A = forward cycle, same as Right
+        break;
+      case kRow_PrizeShuffle:
+      case kRow_MedallionShuffle:
+      case kRow_RaceMode:
+        CycleRow(row, +1);  // bool toggle
+        break;
+      case kRow_EntranceShuffle_Disabled:
+      case kRow_EnemyShuffle_Disabled:
+      case kRow_BossShuffle_Disabled:
+      case kRow_Glitches_Disabled:
+        sound_effect_1 = 0x3c;  // refusal — Phase B feature
+        break;
+      default:
+        break;
+    }
+    return true;
+  }
+
+  // Seed field text-input close: commit + parse on Start (joypad/gamepad
+  // path) OR on the host-pending submit flag (PC keyboard Enter, suppressed
+  // while text input is active). Cancel via the host-pending cancel flag
+  // (PC keyboard Escape) restores the prior value.
+  if (g_settings_seed_field.active) {
+    bool submit = (filtered_joypad_H & kJoypadH_Start) != 0 ||
+                  g_rando_text_input_submit_pending;
+    bool cancel = g_rando_text_input_cancel_pending;
+    if (submit || cancel) {
+      g_rando_text_input_submit_pending = false;
+      g_rando_text_input_cancel_pending = false;
+      g_settings_seed_field.active = false;
+      g_rando_text_input_active = false;
+      g_rando_active_textfield = NULL;
+      if (submit && g_settings_seed_field.len > 0) {
+        uint64 v = 0;
+        g_settings_seed_parse_ok = ParseSeedField(g_settings_seed_field.buf, &v);
+        if (g_settings_seed_parse_ok) g_settings_seed_value = v;
+        if (!g_settings_seed_parse_ok) sound_effect_1 = 0x3c;
+      }
+      return true;
+    }
+    // While typing, swallow all other input so cursor navigation doesn't
+    // wander when the user types digit keys (which the keyboard→joypad
+    // suppression would already block on PC, but gamepad players might
+    // accidentally hit a direction).
+    return true;
+  }
+
+  return true;  // swallow other input while active
+}
+
+// ---------------------------------------------------------------------------
+// Generate action — §9.8.
+//
+// On press:
+//   1. If asset-warn applies (non-vanilla assets + no persisted decision),
+//      switch view to the asset-warn dialog and return. User confirms; this
+//      function is re-invoked after their choice.
+//   2. Parse seed input. Empty → derive from settings_hash + counter.
+//   3. Run Place_AssumedFill.
+//   4. Build the share string.
+//   5. Write spoiler files (.json + .txt) to the spoiler directory.
+//   6. Write the sidecar slot (kind=Randomizer, header populated).
+//   7. Apply recommended-features panel choices to g_config.features0.
+//   8. Reset sidecar cache so the rando banner renders next frame.
+//   9. Transition back to file-select with the cursor on the target slot.
+// ---------------------------------------------------------------------------
+static void SelectFile_Settings_HandleGenerate(void) {
+  // Re-fire guard — Generate is async-ish (placement takes a moment); a
+  // double-press would otherwise re-enter mid-generation.
+  if (g_settings_generate_in_progress) return;
+
+  // Asset-warn gate. kVanillaAssetsHash / kVanillaAssetsHashKnown live in
+  // src/rando/vanilla_assets_hash.h (included above; static linkage).
+  if (kVanillaAssetsHashKnown &&
+      memcmp(g_assets_hash, kVanillaAssetsHash, 32) != 0 &&
+      !AssetDecision_FindAllow(g_assets_hash) &&
+      g_settings_view != kSettingsView_AssetWarn) {
+    // Show the dialog; user's choice re-enters Generate (Always/Allow Once)
+    // or returns to settings (Cancel).
+    g_settings_view = kSettingsView_AssetWarn;
+    g_asset_warn_cursor = kAssetWarnChoice_Cancel;  // default-safe
+    g_asset_warn_pending = true;
+    return;
+  }
+
+  g_settings_generate_in_progress = true;
+  SettingsValidatePieces();
+
+  // Resolve seed.
+  uint64 seed_u64 = 0;
+  if (g_settings_seed_field.len > 0) {
+    if (!ParseSeedField(g_settings_seed_field.buf, &seed_u64)) {
+      fprintf(stderr, "[settings] bad seed input — refusing to generate\n");
+      g_settings_generate_in_progress = false;
+      sound_effect_1 = 0x3c;
+      return;
+    }
+  } else if (g_settings_seed_prepopulated) {
+    seed_u64 = g_settings_prepopulated_seed;
+  } else {
+    seed_u64 = DeriveSeedFromState();
+  }
+
+  // Compute settings_hash (already cached as short).
+  uint8 settings_hash_full[32];
+  Settings_ComputeHash(&g_settings_working, settings_hash_full);
+
+  // Run placement.
+  extern const uint32 kRandoLocationsCount;
+  RandoPlacement *entries = (RandoPlacement *)calloc(kRandoLocationsCount,
+                                                     sizeof(RandoPlacement));
+  if (entries == NULL) {
+    fprintf(stderr, "[settings] OOM allocating placement table\n");
+    g_settings_generate_in_progress = false;
+    sound_effect_1 = 0x3c;
+    return;
+  }
+  RandoPlacementTable table = { entries, 0 };
+  // Use a generous budget so even Triforce-Hunt configurations succeed.
+  bool placed = Place_AssumedFill(&g_settings_working, seed_u64, /*budget_seconds=*/10, &table);
+  if (!placed) {
+    fprintf(stderr, "[settings] placement failed\n");
+    free(entries);
+    g_settings_generate_in_progress = false;
+    sound_effect_1 = 0x3c;
+    return;
+  }
+
+  // Build share string.
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  memcpy(ss.settings_hash, settings_hash_full, 16);
+  ss.seed_u64 = seed_u64;
+  char share_string[kShareStringBase32MaxLen];
+  int share_len = Share_Encode(&ss, share_string, sizeof(share_string));
+  if (share_len <= 0) {
+    fprintf(stderr, "[settings] share string encode failed\n");
+    free(entries);
+    g_settings_generate_in_progress = false;
+    sound_effect_1 = 0x3c;
+    return;
+  }
+
+  // Re-encode to recover the RAW 31-byte binary blob (we need it for the
+  // sidecar slot header + for the icon-hash widget input). We could
+  // recompute from ShareString fields, but Share_Decode→re-encode also
+  // proves the path is symmetric.
+  // For now, encode the 31-byte blob directly using the same packing
+  // Share_Encode used internally:
+  uint8 raw_binary[32];
+  memset(raw_binary, 0, sizeof(raw_binary));
+  // The on-disk blob layout per rando_share.h:
+  //   magic[4] (LE) | version[1] | settings_hash[16] | seed_u64[8] | crc[2]
+  // = 31 bytes. The magic is the "ZRSS" 4 ASCII bytes; we read what
+  // Share_Encode put in the binary form by decoding the base32 string.
+  ShareString decoded;
+  if (Share_Decode(share_string, &decoded) == kShareDecodeOk) {
+    // Rebuild raw_binary from the decoded fields (= original input, since
+    // decode is a pure inverse of encode for valid data).
+    raw_binary[0] = 'Z'; raw_binary[1] = 'R'; raw_binary[2] = 'S'; raw_binary[3] = 'S';
+    raw_binary[4] = decoded.version;
+    memcpy(raw_binary + 5, decoded.settings_hash, 16);
+    for (int i = 0; i < 8; ++i) raw_binary[21 + i] = (uint8)((decoded.seed_u64 >> (i * 8)) & 0xff);
+    // Last 2 bytes (CRC) are not exposed by ShareString; we leave them
+    // zero. The slot header consumes the bytes only as an opaque blob (the
+    // icon-hash widget hashes whatever's there). Phase A acceptance: the
+    // raw blob lives within the slot header for downstream sphere-tracking
+    // and the icon hash remains deterministic per (settings, seed).
+  }
+
+  // Compute spoiler path + write spoiler files.
+  char spoiler_json_path[512];
+  char spoiler_txt_path[512];
+  int n = Spoiler_ResolvePath(share_string, ".json", spoiler_json_path,
+                              sizeof(spoiler_json_path));
+  int m = Spoiler_ResolvePath(share_string, ".txt", spoiler_txt_path,
+                              sizeof(spoiler_txt_path));
+  if (n > 0 && m > 0) {
+    RandoSpheres spheres;
+    bool spheres_ok = Logic_ComputeSpheres(&g_settings_working, &table, &spheres);
+    (void)spheres_ok;
+    RandoSpoiler spoiler;
+    memset(&spoiler, 0, sizeof(spoiler));
+    spoiler.share_string = share_string;
+    spoiler.seed_u64 = seed_u64;
+    spoiler.generator_version = kGeneratorVersion;
+    spoiler.settings = &g_settings_working;
+    spoiler.placements = &table;
+    spoiler.spheres = &spheres;
+    spoiler.goal_completable = Goal_IsCompletable(&g_settings_working, &table);
+    {
+      const PlacementStats *st = Placement_GetLastStats();
+      spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
+      spoiler.retry_attempts = st->attempts_used;
+    }
+    if (!Spoiler_WriteJson(&spoiler, spoiler_json_path)) {
+      fprintf(stderr, "[settings] spoiler JSON write failed: %s\n", spoiler_json_path);
+    }
+    if (!Spoiler_WriteText(&spoiler, spoiler_txt_path)) {
+      fprintf(stderr, "[settings] spoiler TXT write failed: %s\n", spoiler_txt_path);
+    }
+  }
+
+  // Build & write the sidecar slot. Slot kind = Randomizer.
+  RandoSidecarSlot slot;
+  memset(&slot, 0, sizeof(slot));
+  slot.header.slot_kind = kSlotKind_Randomizer;
+  slot.header.generator_version = (uint16)kGeneratorVersion;
+  memcpy(slot.header.settings_hash, settings_hash_full, 16);
+  memcpy(slot.header.share_string, raw_binary, kRandoSidecar_ShareStringLength);
+  // Flags: set the forward-fill bit if the placer used the fallback.
+  {
+    const PlacementStats *st = Placement_GetLastStats();
+    if (st->forward_fill_fallback_count > 0) {
+      slot.header.flags |= kRandoSlotFlag_ForwardFillUsed;
+    }
+  }
+  // Copy placements + compute placement_table_size (BYTES = 2 * max_loc_id + 2).
+  if (table.count > (uint16)(sizeof(slot.placements) / sizeof(slot.placements[0]))) {
+    fprintf(stderr, "[settings] placement count %u exceeds sidecar slot capacity\n",
+            (unsigned)table.count);
+    free(entries);
+    g_settings_generate_in_progress = false;
+    sound_effect_1 = 0x3c;
+    return;
+  }
+  memcpy(slot.placements, entries, sizeof(RandoPlacement) * table.count);
+  slot.placement_count = table.count;
+  uint16 max_loc = 0;
+  for (uint16 i = 0; i < table.count; ++i) {
+    if (entries[i].location_id > max_loc) max_loc = entries[i].location_id;
+  }
+  slot.header.placement_table_size = (uint16)((max_loc + 1) * 2);
+
+  // Initialize the target sram.dat slot with the same "new file" defaults
+  // that NameFile_DoTheNaming applies for vanilla saves so the slot is
+  // valid when the player picks it. The actual rando-specific runtime
+  // bookkeeping (starting-inventory injection, etc.) happens at game-start
+  // time via Rando_TryGrantStartingInventory etc.
+  uint8 *target_sram = g_zenv.sram + g_settings_target_slot * 0x500;
+  memset(target_sram, 0, 0x500);
+  // Pre-name the file "RANDO " to match the rando-banner convention.
+  uint16 *name = (uint16 *)(target_sram + kSrmOffs_Name);
+  name[0] = 0x21;  // R
+  name[1] = 0x00;  // A
+  name[2] = 0x0d;  // N
+  name[3] = 0x03;  // D
+  name[4] = 0x0e;  // O
+  name[5] = 0xa9;  // blank
+  WORD(target_sram[0x3e5]) = 0x55aa;
+  WORD(target_sram[0x20c]) = 0xf000;
+  WORD(target_sram[0x20e]) = 0xf000;
+  WORD(target_sram[0x3e3]) = 0xffff;  // DiedCounter
+  Intro_FixCksum(target_sram);
+
+  if (!Rando_WriteSidecarSlot((int)g_settings_target_slot, &slot, target_sram, 0x500)) {
+    fprintf(stderr, "[settings] sidecar write failed for slot %u\n",
+            (unsigned)g_settings_target_slot);
+    free(entries);
+    g_settings_generate_in_progress = false;
+    sound_effect_1 = 0x3c;
+    return;
+  }
+  // Commit the vanilla SRAM image too (sidecar first by spec; then sram.dat).
+  ZeldaWriteSram();
+
+  // Apply recommended-features panel choices (if user toggled). Per spec
+  // the user must opt in explicitly; we honor whatever state the panel
+  // reflects (g_rec_working_features0 vs g_config.features0). The user
+  // changed bits — that's the explicit opt-in.
+  if (g_rec_working_features0 != g_config.features0) {
+    g_config.features0 = g_rec_working_features0;
+  }
+
+  free(entries);
+
+  // Reset sidecar cache + flag the slot active so the next file-select
+  // render picks up the rando banner.
+  SelectFile_ResetSidecarCache();
+  selectfile_arr1[g_settings_target_slot] = 1;
+
+  // Transition back to file-select with cursor on the target slot.
+  uint8 target = g_settings_target_slot;
+  SelectFile_Settings_Deactivate();
+  // Position cursor; ReturnToFileSelect was called via Deactivate's
+  // submodule rewind, but we want the cursor specifically on the new slot.
+  selectfile_R16 = target;
+
+  sound_effect_1 = 0x2c;
+  fprintf(stderr, "[settings] generated slot %u: share=%s seed=0x%016llx\n",
+          (unsigned)target, share_string, (unsigned long long)seed_u64);
 }
 

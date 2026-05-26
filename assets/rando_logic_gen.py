@@ -1073,6 +1073,88 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
     return len(rows)
 
 
+def emit_icon_atlas(icon_atlas_path: Path, out_header: Path) -> int:
+    """Emit src/rando/icon_atlas.h — kHashIconAtlas[N] tile-index table.
+
+    Per tasks.md S9.4b: the 5-icon visual hash widget computes
+    `index_i = SHA-256(share_string_binary)[i] mod N` for i in 0..4, then
+    emits 5 OAM tiles using kHashIconAtlas[index_i] as the tile index.
+
+    The atlas YAML defines a curated icon list (whatever pool the YAML
+    pins; not constrained to 32). Bumping the atlas changes the icon
+    output for every existing share string and therefore advances
+    kGeneratorVersion (per randomizer-ui spec).
+
+    Returns the entry count (for diagnostic logging).
+    """
+    if not icon_atlas_path.exists():
+        raise RuntimeError(
+            "emit_icon_atlas: missing source YAML at %s" % icon_atlas_path
+        )
+    with open(icon_atlas_path, "r", encoding="utf-8") as f:
+        atlas_doc = yaml.safe_load(f)
+    icons = atlas_doc.get("icons", [])
+    if not icons:
+        raise RuntimeError(
+            "emit_icon_atlas: %s has no 'icons:' entries — needs at least 1"
+            % icon_atlas_path
+        )
+    entries = []
+    for i, entry in enumerate(icons):
+        if not isinstance(entry, dict):
+            raise RuntimeError(
+                "emit_icon_atlas: entry %d in %s is not a mapping" % (i, icon_atlas_path)
+            )
+        if "tile" not in entry:
+            raise RuntimeError(
+                "emit_icon_atlas: entry %d (%r) missing required 'tile' key"
+                % (i, entry.get("name", "(unnamed)"))
+            )
+        tile = entry["tile"]
+        if not isinstance(tile, int) or tile < 0 or tile > 0xff:
+            raise RuntimeError(
+                "emit_icon_atlas: entry %d (%r) tile %r out of 0..0xff range"
+                % (i, entry.get("name", "(unnamed)"), tile)
+            )
+        name = entry.get("name", "icon_%d" % i)
+        entries.append((name, tile))
+
+    lines = [
+        HEADER_BANNER,
+        "",
+        "// icon_atlas.h - 5-icon visual hash widget tile table.",
+        "//",
+        "// Per tasks.md S9.4b / randomizer-ui spec: the widget computes",
+        "//   index_i = SHA-256(share_string_binary)[i] mod kHashIconAtlasSize",
+        "// for i in 0..4 and emits 5 OAM tiles via kHashIconAtlas[index_i].",
+        "//",
+        "// CRITICAL: the hash input is share_string_binary, NOT settings_hash.",
+        "// Deriving from settings_hash gives every seed with the same settings",
+        "// the same icons (architectural error caught in spec round 5).",
+        "//",
+        "// Source: assets/rando/icon_atlas.yaml. Atlas size and entry order",
+        "// is the registry pin per 'randomizer-ui / Atlas size is registry-",
+        "// pinned'. Bumping the atlas advances kGeneratorVersion.",
+        "",
+        "#ifndef ZELDA3_RANDO_ICON_ATLAS_H_",
+        "#define ZELDA3_RANDO_ICON_ATLAS_H_",
+        "",
+        "#include \"../types.h\"",
+        "",
+        "// %d entries; index_i is masked by kHashIconAtlasSize at runtime." % len(entries),
+        "static const uint8 kHashIconAtlas[] = {",
+    ]
+    for i, (name, tile) in enumerate(entries):
+        lines.append("  0x%02x,  // [%d] %s" % (tile, i, name))
+    lines.append("};")
+    lines.append("")
+    lines.append("#define kHashIconAtlasSize %d" % len(entries))
+    lines.append("")
+    lines.append("#endif  // ZELDA3_RANDO_ICON_ATLAS_H_")
+    out_header.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return len(entries)
+
+
 def emit_logic_data(
     locations: dict[str, LocationDef],
     regions: dict[str, RegionDef],
@@ -1497,11 +1579,16 @@ def main(argv=None):
     emit_item_ids(items, out_headers / "item_ids.h")
     emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates, out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
+    icon_atlas_count = emit_icon_atlas(
+        Path("assets/rando/icon_atlas.yaml"),
+        out_headers / "icon_atlas.h",
+    )
 
     print(f"generated location_ids.h ({len(locations)} locations)")
     print(f"generated item_ids.h ({len(items)} items)")
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
+    print(f"generated icon_atlas.h ({icon_atlas_count} icon entries)")
     print(f"warnings: {len(all_errors)}, macro errors: {len(macro_errors)}")
 
 

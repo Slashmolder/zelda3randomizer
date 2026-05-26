@@ -156,6 +156,32 @@ const uint8 *Rando_GetDungeonPrizeAssignment(void);
 const uint8 *Rando_GetMedallionAssignment(void);
 
 // ---------------------------------------------------------------------------
+// Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).
+//
+// Renders a 5-tile horizontal strip starting at (x, y), one tile per index
+// from kHashIconAtlas. The tile indices are derived from
+// `SHA-256(share_string_binary)[0..4] mod kHashIconAtlasSize` per the
+// randomizer-ui spec. Critical: the hash input is the FULL share-string
+// binary (31 bytes: magic + version + settings_hash + seed_u64 + checksum),
+// NOT settings_hash alone — otherwise every seed with identical settings
+// would render identical icons (architectural error caught in spec round 5).
+//
+// Writes 5 consecutive OAM entries beginning at *oam. The widget reserves a
+// horizontal strip of 5*8 = 40 px starting at x. The OAM palette flags
+// match the file-select font palette so the icons read cleanly against the
+// existing background.
+//
+// `share_string_binary` MUST be the 31-byte raw binary blob (the same data
+// that Share_EncodeRaw base32-encodes for display). The buffer is sized to
+// 32 to match RandoSlotHeader.share_string[]; the last byte is zero-pad
+// per the rando_save.h spec.
+// ---------------------------------------------------------------------------
+struct OamEnt;  // forward decl (defined in zelda_rtl.h via spc_player.h)
+void Rando_DrawHashIcons(int x, int y,
+                         struct OamEnt *oam,
+                         const uint8 share_string_binary[32]);
+
+// ---------------------------------------------------------------------------
 // Self-tests (tasks.md §2.2, §13.x). Always linked; CI invokes via
 // `--rando-selftest`. Exits with code 2 on any failure.
 // ---------------------------------------------------------------------------
