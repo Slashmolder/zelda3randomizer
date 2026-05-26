@@ -3422,6 +3422,11 @@ endif_11:
   item_receipt_method = 0;
   a = ancilla_item_to_link[k];
   if (a == 23 && link_heart_pieces == 0) {
+    // rando-exempt: PoH-rollover shared logic — when link_heart_pieces=0
+    // after increment (4/4 rolled over), grant a BossHeartContainer. The
+    // dispatch for each specific PoH placement happens at its spawn site
+    // (chest / standing / dig); the rollover is a counter-increment side
+    // effect that's the same regardless of which PoH was collected.
     Link_ReceiveItem(0x26, 0);
     ancilla_type[k] = 0;
     flag_unk1 = 0;
@@ -3777,6 +3782,11 @@ void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
         link_player_handler_state = 0;
       }
       item_receipt_method = 3;
+      // rando-exempt: ancilla-receive consumption — the LttP code for this
+      // ancilla was determined upstream at the spawn site (e.g.,
+      // Catfish_RegurgitateMedallion sets sprite_A which becomes
+      // ancilla_item_to_link). The dispatch happens at spawn; this is the
+      // receive-animation completion hand-off.
       Link_ReceiveItem(ancilla_item_to_link[k], 0);
       return;
     }
