@@ -51,4 +51,26 @@ int TextField_PasteString(RandoTextField *tf, const char *s);
 // Exits 2 on failure (per the *_SelfCheck pattern).
 void TextField_SelfCheck(void);
 
+// ---------------------------------------------------------------------------
+// Host hook (tasks.md §9.1b — SDL_TEXTINPUT routing).
+//
+// `g_rando_active_textfield` is the widget the host's SDL event loop should
+// route SDL_TEXTINPUT / SDL_KEYDOWN events into. NULL when no text-input
+// surface is focused.
+//
+// `g_rando_text_input_active` is the host's "did the game request text input?"
+// flag. When true, main.c calls SDL_StartTextInput() so the OS dispatches
+// SDL_TEXTINPUT events; when false, SDL_StopTextInput() is called. While
+// active, the host MUST also suppress its normal keyboard→joypad routing
+// so the user's typed chars don't double-fire as menu navigation
+// (otherwise typing the letter 'A' both inserts 'A' AND triggers the
+// SNES "A button", running away from the picker).
+//
+// The host doesn't write to these — the in-game UI sub-mode (e.g., the
+// alphabet picker in select_file.c) sets them when activating a text-entry
+// surface and clears them when leaving.
+// ---------------------------------------------------------------------------
+extern RandoTextField *g_rando_active_textfield;
+extern bool g_rando_text_input_active;
+
 #endif  // ZELDA3_RANDO_TEXTFIELD_H_

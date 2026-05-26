@@ -34,6 +34,7 @@
 #include "rando/rando_placement.h"
 #include "rando/rando_spoiler.h"
 #include "rando/rando_share.h"
+#include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
 #include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
@@ -975,7 +976,36 @@ int main(int argc, char** argv) {
   if (g_config.autosave)
     HandleCommand(kKeys_Load + 0, true);
 
+  // §9.1b — track SDL text-input state. SDL_StartTextInput / StopTextInput
+  // are global toggles that enable/disable SDL_TEXTINPUT event delivery. We
+  // only call them on transition so we don't spam SDL with redundant calls.
+  bool sdl_text_input_started = false;
+
   while(running) {
+    // §9.1b — sync SDL text-input enable state with the game's UI flag set
+    // by the alphabet picker (g_rando_text_input_active). Start text input
+    // when the picker activates a text field; stop it when the picker exits.
+    if (g_rando_text_input_active && !sdl_text_input_started) {
+      SDL_StartTextInput();
+      sdl_text_input_started = true;
+      // Clear any joypad bits held over from the keypress that activated
+      // the picker. Without this, the SDL_KEYDOWN that triggered the
+      // transition already set g_input1_state; its matching SDL_KEYUP is
+      // swallowed below (while text input is active), so the bit would
+      // stay set forever. Mirror clearing for gamepad modifiers since
+      // gamepad buttons are tracked separately.
+      g_input1_state = 0;
+      g_gamepad_buttons = 0;
+    } else if (!g_rando_text_input_active && sdl_text_input_started) {
+      SDL_StopTextInput();
+      sdl_text_input_started = false;
+      // Same logic in reverse — clear any stale bits from typing keys held
+      // when the picker closed (the keyup wasn't routed, so we'd inherit
+      // phantom presses on the file-select screen).
+      g_input1_state = 0;
+      g_gamepad_buttons = 0;
+    }
+
     while(SDL_PollEvent(&event)) {
       switch(event.type) {
       case SDL_CONTROLLERDEVICEADDED:
@@ -1003,10 +1033,80 @@ int main(int argc, char** argv) {
           }
         }
         break;
+      case SDL_TEXTINPUT: {
+        // §9.1b — route typed chars into the active rando text field. SDL
+        // delivers UTF-8 in event.text.text; we feed bytes through
+        // TextField_HandleChar which applies the base32 filter. Multi-byte
+        // chars are filtered out silently (base32 is ASCII only).
+        if (g_rando_text_input_active && g_rando_active_textfield != NULL) {
+          const char *s = event.text.text;
+          for (int i = 0; s[i] != 0 && i < (int)sizeof(event.text.text); i++) {
+            TextField_HandleChar(g_rando_active_textfield, s[i]);
+          }
+        }
+        break;
+      }
       case SDL_KEYDOWN:
+        // §9.1b — while text input is active, intercept editing keys
+        // (backspace/delete/arrows/home/end/enter/escape/Ctrl+V) and route
+        // them through TextField_HandleKey. Critically we MUST NOT also
+        // dispatch these keys through HandleInput while text input is
+        // active: otherwise, e.g. typing 'A' would both insert 'A' (via
+        // SDL_TEXTINPUT) AND fire the SNES "A" button (via the kKbdRemap
+        // table in HandleCommand), so the user's keystrokes would also
+        // drive Link or menu cursors.
+        if (g_rando_text_input_active && g_rando_active_textfield != NULL) {
+          RandoTextField *tf = g_rando_active_textfield;
+          SDL_Keycode k = event.key.keysym.sym;
+          SDL_Keymod m = event.key.keysym.mod;
+          switch (k) {
+            case SDLK_BACKSPACE: TextField_HandleKey(tf, kTextFieldKey_Backspace); break;
+            case SDLK_DELETE:    TextField_HandleKey(tf, kTextFieldKey_Delete);    break;
+            case SDLK_LEFT:      TextField_HandleKey(tf, kTextFieldKey_Left);      break;
+            case SDLK_RIGHT:     TextField_HandleKey(tf, kTextFieldKey_Right);     break;
+            case SDLK_HOME:      TextField_HandleKey(tf, kTextFieldKey_Home);      break;
+            case SDLK_END:       TextField_HandleKey(tf, kTextFieldKey_End);       break;
+            case SDLK_RETURN:
+            case SDLK_KP_ENTER:  TextField_HandleKey(tf, kTextFieldKey_Submit);    break;
+            case SDLK_v:
+              if (m & KMOD_CTRL) {
+                char *clip = SDL_GetClipboardText();
+                if (clip) {
+                  TextField_PasteString(tf, clip);
+                  SDL_free(clip);
+                }
+              }
+              // Note: bare 'v' (no Ctrl) falls through to SDL_TEXTINPUT for
+              // normal char entry. The base32 filter rejects it; no double-
+              // insert risk because we only intercepted the Ctrl+V combo.
+              break;
+            default:
+              // All other keys (alphabetic, digits, punctuation) flow through
+              // SDL_TEXTINPUT for char entry. We just need to swallow them
+              // here to suppress the keyboard→joypad path; do not call
+              // HandleInput.
+              break;
+          }
+          // Suppress HandleInput entirely — see comment above.
+          break;
+        }
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, true);
         break;
       case SDL_KEYUP:
+        // §9.1b — mirror the keydown suppression on key release. Without
+        // this, a key pressed BEFORE text-input activated and released AFTER
+        // would still clear the joypad bit, but a key pressed DURING text-
+        // input would never get its keyup routed — leaving stale joypad
+        // bits set when the picker closes. The simplest correct rule:
+        // while text input is active, no SDL_KEYUP reaches HandleInput
+        // either. The downside (a key held across activation/deactivation
+        // strands the joypad bit) is preferable to phantom joypad input
+        // during typing; the picker activation also resets g_input1_state
+        // bits implicitly via SelectFile_AlphabetPicker_Activate below
+        // (clears the joypad bits the kind picker's A-button press set).
+        if (g_rando_text_input_active) {
+          break;
+        }
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, false);
         break;
       case SDL_QUIT:
