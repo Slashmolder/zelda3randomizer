@@ -117,6 +117,10 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     case ITEM_BottleWithRedPotion:   return 0x2d;
     case ITEM_BottleWithGreenPotion: return 0x3d;
     case ITEM_BottleWithBluePotion:  return 0x48;
+    // SilverArrowUpgrade: LttP code 0x29 grants silver arrows by setting
+    // link_item_bow=2 (per misc.c index 41). Works without progressive
+    // ordering — direct silver-arrows upgrade.
+    case ITEM_SilverArrowUpgrade: return 0x29;
     default:
       return 0xFF;
   }
