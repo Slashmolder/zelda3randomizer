@@ -192,6 +192,22 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // Spec scenario "Truncation is first-16-bytes": Settings_HashShort writes
+  // exactly the first 16 bytes of SHA-256(canonical), not a different hash.
+  {
+    RandoSettings sh;
+    Settings_SetDefaults(&sh);
+    uint8 full[32], short_hash[16];
+    Settings_ComputeHash(&sh, full);
+    Settings_HashShort(&sh, short_hash);
+    for (int i = 0; i < 16; i++) {
+      if (full[i] != short_hash[i]) {
+        fprintf(stderr,
+          "Settings_SelfCheck: HashShort byte %d differs from ComputeHash byte\n", i);
+        exit(2);
+      }
+    }
+  }
   // CSV parser rejects unknown key.
   {
     RandoSettings s3;
