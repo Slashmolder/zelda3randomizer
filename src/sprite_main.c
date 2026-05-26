@@ -18300,7 +18300,11 @@ void Sprite_Catfish_QuakeMedallion(int k) {  // 9ddf54
     if (!submodule_index && Sprite_CheckDamageToLink_same_layer(k)) {
       sprite_state[k] = 0;
       item_receipt_method = 0;
-      Link_ReceiveItem(sprite_A[k], 0);
+      uint8 lttp_code = sprite_A[k];  // = 0x11 (Quake) per Catfish_RegurgitateMedallion
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Catfish, ITEM_Quake, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
     }
   }
   if (sprite_delay_aux3[k])
@@ -18448,7 +18452,15 @@ void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
   Sprite_SetSpawnedCoordinates(j, &info);
   sprite_z_vel[j] = 32;
   sprite_y_vel[j] = 16;
+  // sprite_A[j] becomes the LttP receive code when Link picks up the
+  // spawned medallion. Vanilla: 30 (0x1e) = Flippers (kMemoryLocationToGiveItemTo
+  // index 30 = 0xf356 = link_item_flippers). With rando active, dispatch
+  // through the placement table → the placed item's LttP code lands here.
   sprite_A[j] = 30;
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_King_Zora, ITEM_Flippers, 30);
+    sprite_A[j] = placed_lttp;
+  }
   SpriteSfx_QueueSfx2WithPan(j, 0x20);
   sprite_flags2[j] = 0x83;
   sprite_flags3[j] = 0x54;
