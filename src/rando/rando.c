@@ -20,6 +20,7 @@
 #include "rando_textfield.h"
 #include "item_ids.h"
 #include "location_ids.h"
+#include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
 #include "../features.h"   // g_rando_triforce_piece_count
@@ -326,19 +327,31 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
 }
 
 // ---------------------------------------------------------------------------
-// Chest universal-dispatch lookup table (Phase A1 stub).
+// Chest universal-dispatch lookup table.
 //
-// Phase A2 work: populate from assets/rando/chest_lookup.yaml authored from
-// audit.md §0.3.5 catalog cross-referenced with vanilla LttP room data.
-// Until then this returns 0xFFFF (no rando substitute) and chests grant
-// their vanilla items. The dispatch wrapper is in place so the codegen
-// flip is a one-file change.
+// (room, ordinal) -> LOC_* via the codegen-emitted kRandoChestLookup table in
+// src/rando/chest_lookup.h. Source-of-truth: vanilla chest table
+// ($81e96e) cross-referenced with ALTTPR PHP location names (audit.md §0.3.5).
+//
+// The table is sorted by (room, ordinal) at codegen time so we can binary-
+// search. Returns 0xFFFF for any (room, ordinal) pair that isn't in the
+// table — at runtime this falls through to vanilla item-grant, leaving rooms
+// like the 4 ALTTPR-unexposed small-key/rupee chests unaffected.
 // ---------------------------------------------------------------------------
 static uint16 chest_lookup(uint16 dungeon_room, uint8 chest_ordinal) {
-  (void)dungeon_room;
-  (void)chest_ordinal;
-  // Phase A2: replace with generated lookup table.
-  return 0xFFFFu;
+  // Binary search on packed (room << 8) | ordinal key — both room and
+  // ordinal are small enough that a single 32-bit pack is overkill but
+  // makes the compare cheap and branch-free against the inline ordering.
+  uint32 want = ((uint32)dungeon_room << 8) | chest_ordinal;
+  int lo = 0, hi = (int)kRandoChestLookup_COUNT - 1;
+  while (lo <= hi) {
+    int mid = lo + ((hi - lo) >> 1);
+    uint32 got = ((uint32)kRandoChestLookup[mid].room << 8) | kRandoChestLookup[mid].ordinal;
+    if (got == want) return kRandoChestLookup[mid].loc_id;
+    if (got < want) lo = mid + 1;
+    else            hi = mid - 1;
+  }
+  return 0xFFFFu;  // not mapped — vanilla item grants
 }
 
 uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
@@ -527,10 +540,43 @@ void Rando_SelfCheck(void) {
     exit(2);
   }
 
-  // Chest dispatch stub returns vanilla unchanged (lookup table is empty).
-  if (Rando_ChestDispatch(0x12, 0, 0x05) != 0x05) {
-    fprintf(stderr, "Rando_SelfCheck: chest dispatch stub did not fall back\n");
+  // Chest dispatch — verify both unmapped-fall-through and a known mapping.
+  // Unmapped (room, ordinal) returns vanilla unchanged.
+  if (Rando_ChestDispatch(0xFFFE, 5, 0x05) != 0x05) {
+    fprintf(stderr, "Rando_SelfCheck: chest dispatch did not fall back on unmapped\n");
     exit(2);
+  }
+  // Spot-check the generated kRandoChestLookup table against a curated subset
+  // of (room, ordinal, expected_LOC_*) triples. These triples are derived
+  // from audit.md §0.3.5 + the in-room ordering of the vanilla chest
+  // table at $81e96e. If chest_lookup() returns the right LOC_*, the
+  // dispatcher's caller bookkeeping is exercised by the placement test
+  // above; here we just verify the lookup itself.
+  {
+    static const struct { uint16 room; uint8 ord; uint16 expected; } kCases[] = {
+      {  17, 0, LOC_Sewers_Secret_Room_Left },
+      {  17, 1, LOC_Sewers_Secret_Room_Middle },
+      {  17, 2, LOC_Sewers_Secret_Room_Right },
+      {  18, 0, LOC_Sanctuary },
+      {  22, 0, LOC_Pyramid_Fairy_Left },
+      {  22, 1, LOC_Pyramid_Fairy_Right },
+      { 114, 0, LOC_Hyrule_Castle_Map_Chest },
+      { 168, 0, LOC_Eastern_Palace_Compass_Chest },
+      { 169, 0, LOC_Eastern_Palace_Big_Chest },
+      {  47, 4, LOC_Kakariko_Well_Bottom },
+      // unmapped fall-through (room 0xFFFE never appears in the table)
+      { 0xFFFE, 0, 0xFFFFu },
+    };
+    for (int i = 0; i < (int)(sizeof(kCases)/sizeof(kCases[0])); ++i) {
+      uint16 got = chest_lookup(kCases[i].room, kCases[i].ord);
+      if (got != kCases[i].expected) {
+        fprintf(stderr,
+          "Rando_SelfCheck: chest_lookup(room=%u, ord=%u) = %u, expected %u\n",
+          (unsigned)kCases[i].room, (unsigned)kCases[i].ord,
+          (unsigned)got, (unsigned)kCases[i].expected);
+        exit(2);
+      }
+    }
   }
 
   // §6.2 TriforcePiece counter: install a placement that grants Triforce

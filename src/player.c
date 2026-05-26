@@ -3846,11 +3846,11 @@ void Link_PerformOpenChest() {  // 87b574
       item = alt;
   }
 
-  // §6.1 universal chest dispatch hook. The (dungeon_room_index, chest
-  // ordinal) pair is fed through chest_lookup() in rando.c. Phase A1 ships
-  // the wrapper with an empty lookup table — every chest still grants its
-  // vanilla item until the (room, ordinal) → location_id table is
-  // authored in Phase A2. When rando is inactive the wrapper is a no-op.
+  // §6.3 universal chest dispatch hook. The (dungeon_room_index, chest
+  // ordinal) pair is fed through chest_lookup() in rando.c, backed by the
+  // codegen-emitted kRandoChestLookup table in src/rando/chest_lookup.h
+  // (164 entries covering all ALTTPR Chest/BigChest locations from
+  // audit.md §0.3.5). When rando is inactive the wrapper is a no-op.
   //
   // Chest ordinal = (chest tile id - 0x58). Tiles 0x58..0x5d encode the
   // 6 possible chests within a room as ordinals 0..5; OpenChestForItem
