@@ -1,27 +1,41 @@
 # Zelda3 Randomizer
 
-> **Phase A1 status (kGeneratorVersion=4).** Foundation, RNG, share-string,
+> **Phase A1 status (kGeneratorVersion=6).** Foundation, RNG, share-string,
 > predicate VM, codegen, audit, logic graph (28 regions / 28 edges / 237
 > location predicates across all 13 dungeons + 11 overworld regions in
 > Standard mode), assumed-fill placement with bounded retry + wall-clock
 > budget, prize/medallion shuffles, sphere computation, goal-completability
 > with strict refusal of un-completable seeds, JSON + text spoilers with
-> fallback-warning rollup, and sidecar save format aligned to spec are all
-> landed and locally verified end-to-end. All 7 Phase A goals produce
-> winnable seeds with 0 unreachable placements in Open / Standard / Retro
-> modes at both default (vanilla dungeon items) and `dungeon_items.small_keys=dungeon`.
-> The regression corpus exercises 9 (settings × seed) configurations; all
-> 9 entries verified at kGeneratorVersion=4.
+> fallback-warning rollup, sidecar save format aligned to spec, §6
+> grant-site dispatch foundation (universal chest hook + 13 NPC sites),
+> and --assets-must-be-vanilla check are all landed. All 7 Phase A goals
+> produce winnable seeds with 0 unreachable placements in Open / Standard
+> / Retro modes at both default (vanilla dungeon items) and
+> `dungeon_items.small_keys=dungeon`. The regression corpus exercises
+> 50 (settings × seed) configurations across the full Phase A axis matrix
+> + 5 named celebrity seeds; CI runs the corpus on Linux + macOS for
+> cross-platform digest determinism. Audit guard runs in --strict mode
+> (every grant-site write either dispatches or carries an explicit
+> exemption comment).
 
 **Known limitations** as of this status:
 - Inverted world-state seeds report ~32 unreachable until
   LinksHouse_Inverted region is declared (Phase A2 follow-on).
-- §6 dispatch is not yet wired into game code paths — playing a
-  generated seed in-game requires the file-select UI work landing
-  per task 9.x.
+- §6 grant-site dispatch table for the universal chest hook is empty —
+  individual chests still grant their vanilla items until the
+  (dungeon_room, ordinal) → location_id table is authored.
+  13 NPC sites (Bottle Merchant, Sahasrahla, Mushroom, Library, Uncle,
+  Sick Kid, Purple Chest, Hobo, Stumpy, Old Man, Blacksmith, Master
+  Sword Pedestal, Flute Spot) are wired and dispatch correctly when
+  `kFeatures1_RandomizerActive` is set.
+- File-select / settings UI not yet wired — only CLI generation works.
 - Per-item rewind inside an assumed-fill attempt is not implemented;
   the placer instead retries with a perturbed seed up to 8 times.
   The `--budget-seconds` flag bounds wall-clock time across retries.
+- vanilla_assets_hash.h ships with an all-zeros placeholder; activate
+  --assets-must-be-vanilla by running
+  `python assets/scripts/dump_vanilla_assets_hash.py` against a clean
+  extraction.
 
 This document covers user-facing operation of the in-binary randomizer, the
 share-string format, save behavior, audit conventions for contributors, and
