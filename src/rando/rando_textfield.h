@@ -73,4 +73,14 @@ void TextField_SelfCheck(void);
 extern RandoTextField *g_rando_active_textfield;
 extern bool g_rando_text_input_active;
 
+// One-shot flags set by the host (main.c) and consumed by the active UI
+// surface (alphabet picker). These exist so PC keyboard users can submit /
+// cancel via Enter / Escape without going through the on-screen controls
+// row, which is the only Submit path available on controllers. The flags
+// are level-triggered booleans: host sets to true on the key event, the
+// UI consumer reads-and-clears on its update tick. Both are reset to false
+// alongside `g_rando_text_input_active`.
+extern bool g_rando_text_input_submit_pending;
+extern bool g_rando_text_input_cancel_pending;
+
 #endif  // ZELDA3_RANDO_TEXTFIELD_H_

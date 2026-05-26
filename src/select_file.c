@@ -417,6 +417,8 @@ void Module_SelectFile_0() {  // 8ccd9d
   g_alphabet_pending_return = false;
   g_rando_text_input_active = false;
   g_rando_active_textfield = NULL;
+  g_rando_text_input_submit_pending = false;
+  g_rando_text_input_cancel_pending = false;
 }
 
 void FileSelect_ReInitSaveFlagsAndEraseTriforce() {  // 8ccdf2
@@ -1642,6 +1644,8 @@ static void SelectFile_AlphabetPicker_Activate(void) {
   // and the keyboard→joypad path is suppressed (see main.c §9.1b block).
   g_rando_active_textfield = &g_alphabet_textfield;
   g_rando_text_input_active = true;
+  g_rando_text_input_submit_pending = false;
+  g_rando_text_input_cancel_pending = false;
 }
 
 static void SelectFile_AlphabetPicker_Deactivate(void) {
@@ -1854,13 +1858,34 @@ static bool SelectFile_AlphabetPicker_Update(void) {
         // simply return to file-select; the next cluster's settings screen
         // picks up the latched values via Share_PastePath path.
         ReturnToFileSelect();
-        selectfile_R16 = (int8)g_kind_picker_target_slot;
+        selectfile_R16 = g_kind_picker_target_slot;
         return true;
       }
     }
   }
 
   SelectFile_AlphabetPicker_Draw();
+
+  // Consume host-pending submit/cancel one-shots set by main.c on Enter /
+  // Escape keypresses. This is the PC-keyboard path that bypasses the
+  // on-screen controls row (which is the only Submit/Cancel path on
+  // controllers). Read-and-clear so the same press doesn't fire twice.
+  if (g_rando_text_input_submit_pending) {
+    g_rando_text_input_submit_pending = false;
+    sound_effect_1 = 0x2c;
+    SelectFile_AlphabetPicker_HandleSubmit();
+    return true;
+  }
+  if (g_rando_text_input_cancel_pending) {
+    g_rando_text_input_cancel_pending = false;
+    sound_effect_1 = 0x3c;
+    // Same cancel semantics as the CANCEL control glyph: reopen the kind
+    // picker on the target slot.
+    SelectFile_AlphabetPicker_Deactivate();
+    g_kind_picker_active = 1;
+    g_kind_picker_cursor = 0;
+    return true;
+  }
 
   // D-pad: move cursor (with row wrapping; col wraps within each row's
   // width). Use filtered_joypad_H bits for direction edges (consistent

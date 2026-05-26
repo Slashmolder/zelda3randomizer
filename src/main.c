@@ -993,9 +993,13 @@ int main(int argc, char** argv) {
       // transition already set g_input1_state; its matching SDL_KEYUP is
       // swallowed below (while text input is active), so the bit would
       // stay set forever. Mirror clearing for gamepad modifiers since
-      // gamepad buttons are tracked separately.
+      // gamepad buttons are tracked separately. Also reset the host-
+      // pending submit/cancel one-shots so a stale flag from a prior
+      // session doesn't fire on the first frame of this picker.
       g_input1_state = 0;
       g_gamepad_buttons = 0;
+      g_rando_text_input_submit_pending = false;
+      g_rando_text_input_cancel_pending = false;
     } else if (!g_rando_text_input_active && sdl_text_input_started) {
       SDL_StopTextInput();
       sdl_text_input_started = false;
@@ -1004,6 +1008,8 @@ int main(int argc, char** argv) {
       // phantom presses on the file-select screen).
       g_input1_state = 0;
       g_gamepad_buttons = 0;
+      g_rando_text_input_submit_pending = false;
+      g_rando_text_input_cancel_pending = false;
     }
 
     while(SDL_PollEvent(&event)) {
@@ -1067,7 +1073,17 @@ int main(int argc, char** argv) {
             case SDLK_HOME:      TextField_HandleKey(tf, kTextFieldKey_Home);      break;
             case SDLK_END:       TextField_HandleKey(tf, kTextFieldKey_End);       break;
             case SDLK_RETURN:
-            case SDLK_KP_ENTER:  TextField_HandleKey(tf, kTextFieldKey_Submit);    break;
+            case SDLK_KP_ENTER:
+              // Set the host-pending submit flag so the active UI surface
+              // (alphabet picker) decodes the buffer on its next Update tick.
+              // Also call HandleKey for symmetry / self-check observability.
+              TextField_HandleKey(tf, kTextFieldKey_Submit);
+              g_rando_text_input_submit_pending = true;
+              break;
+            case SDLK_ESCAPE:
+              // Cancel — host-pending so the UI surface can close cleanly.
+              g_rando_text_input_cancel_pending = true;
+              break;
             case SDLK_v:
               if (m & KMOD_CTRL) {
                 char *clip = SDL_GetClipboardText();
@@ -1093,17 +1109,12 @@ int main(int argc, char** argv) {
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, true);
         break;
       case SDL_KEYUP:
-        // §9.1b — mirror the keydown suppression on key release. Without
-        // this, a key pressed BEFORE text-input activated and released AFTER
-        // would still clear the joypad bit, but a key pressed DURING text-
-        // input would never get its keyup routed — leaving stale joypad
-        // bits set when the picker closes. The simplest correct rule:
-        // while text input is active, no SDL_KEYUP reaches HandleInput
-        // either. The downside (a key held across activation/deactivation
-        // strands the joypad bit) is preferable to phantom joypad input
-        // during typing; the picker activation also resets g_input1_state
-        // bits implicitly via SelectFile_AlphabetPicker_Activate below
-        // (clears the joypad bits the kind picker's A-button press set).
+        // §9.1b — mirror the keydown suppression on key release. While text
+        // input is active, no SDL_KEYUP reaches HandleInput either. A key
+        // held across the activation/deactivation boundary would otherwise
+        // strand a joypad bit; the transition block at the top of the
+        // while(running) loop zeroes g_input1_state on both transitions
+        // (activate AND deactivate) to handle that edge case.
         if (g_rando_text_input_active) {
           break;
         }
