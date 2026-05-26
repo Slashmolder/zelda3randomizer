@@ -951,6 +951,7 @@ def emit_logic_data(
     edge_predicates: list[bytes],
     path: Path,
     items: dict[str, ItemDef] | None = None,
+    logic_loc_preds: dict[str, LocationDef] | None = None,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -992,8 +993,14 @@ def emit_logic_data(
     out.append("// Type definition: rando_logic.h::RandoLocationDef.")
     out.append(f"const RandoLocationDef kRandoLocations[{len(locations) or 1}] = {{")
     if not locations:
-        out.append("  {0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff},  // placeholder for zero-length array compatibility")
+        out.append("  {0, 0, 0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0xff},  // placeholder for zero-length array compatibility")
     else:
+        sorted_region_ids = sorted(regions.keys()) if regions else []
+        # logic.yaml's location entries carry an optional `region:` field.
+        # The location_registry.yaml's `region:` field is descriptive only
+        # (free-form string, not necessarily a logic.yaml region id) — we
+        # prefer logic.yaml when present.
+        logic_loc_region = {name: lp.region for name, lp in (logic_loc_preds or {}).items()}
         for loc in sorted(locations.values(), key=lambda l: l.id):
             offsets = location_offsets[loc.id]
             cr_off, cr_len = offsets["can_reach"]
@@ -1008,7 +1015,14 @@ def emit_logic_data(
             elif loc.vanilla_item:
                 # Reference to an unknown item — emit 0 but flag in the comment.
                 pass
-            out.append(f"  {{ {loc.id}, {vanilla_id}, {cr_off}u, {cr_len}, {cp_off}u, {cp_len}, {aa_off}u, {aa_len}, {type_id}, 0x{ws_mask:02x} }},  // {loc.name} (vanilla: {loc.vanilla_item})")
+            # Resolve region_id. The logic.yaml may have declared a region for
+            # this location; resolve to numeric index. 0xFFFF = not declared.
+            region_name = logic_loc_region.get(loc.name)
+            if region_name and region_name in sorted_region_ids:
+                region_id = sorted_region_ids.index(region_name)
+            else:
+                region_id = 0xFFFF
+            out.append(f"  {{ {loc.id}, {vanilla_id}, 0x{region_id:04x}, 0, {cr_off}u, {cr_len}, {cp_off}u, {cp_len}, {aa_off}u, {aa_len}, {type_id}, 0x{ws_mask:02x} }},  // {loc.name} (vanilla: {loc.vanilla_item}, region: {region_name or '-'})")
     out.append("};")
     out.append(f"const uint32 kRandoLocationsCount = {len(locations)};")
     out.append("")
@@ -1043,6 +1057,61 @@ def emit_logic_data(
     else:
         out.append("const RandoEdgeDef kRandoEdges[1] = { {0xFFFF, 0xFFFF, 0, 0, 0, 0} };  // placeholder")
     out.append(f"const uint32 kRandoEdgesCount = {len(edges)};")
+    out.append("")
+
+    # ----- Start region per world-state -----
+    out.append("// Start region per world_state. Indexed by WorldState enum:")
+    out.append("// Open=0, Standard=1, Inverted=2, Retro=3.")
+    sorted_region_ids = sorted(regions.keys()) if regions else []
+    # Pinned mapping (Phase A): Open/Standard/Retro start in LinksHouse;
+    # Inverted starts in LinksHouse_Inverted. Falls back to 0xFFFF if not
+    # declared in logic.yaml — caller treats as "empty graph".
+    start_region_names = {
+        0: "LinksHouse",            # Open
+        1: "LinksHouse",            # Standard
+        2: "LinksHouse_Inverted",   # Inverted (Phase B)
+        3: "LinksHouse",            # Retro
+    }
+    starts = []
+    for ws in [0, 1, 2, 3]:
+        nm = start_region_names[ws]
+        if nm in sorted_region_ids:
+            starts.append(sorted_region_ids.index(nm))
+        else:
+            starts.append(0xFFFF)
+    start_csv = ", ".join(f"0x{s:04x}" for s in starts)
+    out.append(f"const uint16 kRandoStartRegionByWorldState[4] = {{ {start_csv} }};")
+    out.append("")
+
+    # ----- Region-name lookup table for Rando_FindRegionByName -----
+    out.append("// Region-name → region-id lookup. Linear scan; only used by")
+    out.append("// authoring-time helpers (Rando_FindRegionByName).")
+    out.append("typedef struct RandoRegionNameEntry {")
+    out.append("  const char *name;")
+    out.append("  uint16 id;")
+    out.append("} RandoRegionNameEntry;")
+    out.append("")
+    if sorted_region_ids:
+        out.append(f"static const RandoRegionNameEntry kRandoRegionNames[{len(sorted_region_ids)}] = {{")
+        for rid in sorted_region_ids:
+            idx = sorted_region_ids.index(rid)
+            out.append(f"  {{ \"{rid}\", {idx} }},")
+        out.append("};")
+        out.append(f"static const uint32 kRandoRegionNamesCount = {len(sorted_region_ids)};")
+    else:
+        out.append("static const RandoRegionNameEntry kRandoRegionNames[1] = { {\"\", 0} };")
+        out.append("static const uint32 kRandoRegionNamesCount = 0;")
+    out.append("")
+    out.append("uint16 Rando_FindRegionByName(const char *name) {")
+    out.append("  if (name == NULL) return 0xFFFF;")
+    out.append("  for (uint32 i = 0; i < kRandoRegionNamesCount; i++) {")
+    out.append("    const char *a = kRandoRegionNames[i].name;")
+    out.append("    const char *b = name;")
+    out.append("    while (*a && *a == *b) { a++; b++; }")
+    out.append("    if (*a == 0 && *b == 0) return kRandoRegionNames[i].id;")
+    out.append("  }")
+    out.append("  return 0xFFFF;")
+    out.append("}")
     out.append("")
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
@@ -1227,7 +1296,7 @@ def main(argv=None):
     out_data.mkdir(parents=True, exist_ok=True)
     emit_location_ids(locations, out_headers / "location_ids.h")
     emit_item_ids(items, out_headers / "item_ids.h")
-    emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates, out_data / "logic_data.c", items=items)
+    emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates, out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds)
 
     print(f"generated location_ids.h ({len(locations)} locations)")
     print(f"generated item_ids.h ({len(items)} items)")

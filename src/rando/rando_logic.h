@@ -156,6 +156,8 @@ bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id);
 typedef struct RandoLocationDef {
   uint16 id;
   uint16 vanilla_item_id;
+  uint16 region_id;            // index into kRandoRegions, or 0xFFFF when location lacks logic.yaml region binding
+  uint16 _pad0;
   uint32 can_reach_offset;     // offset into kRandoPredicateStream
   uint16 can_reach_length;
   uint32 can_place_offset;
@@ -190,6 +192,17 @@ extern const RandoEdgeDef kRandoEdges[];
 extern const uint32 kRandoEdgesCount;
 extern const uint8 kRandoPredicateStream[];
 extern const uint32 kRandoPredicateStreamSize;
+
+// Start region per world_state. Indexed by WorldState enum (Open=0,
+// Standard=1, Inverted=2, Retro=3). Value is a region id (index into
+// kRandoRegions) — the reachability fixed-point seeds from this region.
+// A value of 0xFFFF means "no start region declared for this world_state";
+// the graph is treated as empty (no locations reachable).
+extern const uint16 kRandoStartRegionByWorldState[4];
+
+// Look up the numeric region id by string name. Returns 0xFFFF when not
+// found. O(N) linear scan; fine for the few authoring-time uses.
+uint16 Rando_FindRegionByName(const char *name);
 
 // ---------------------------------------------------------------------------
 // RegionRemap overlay (task 3.7a) — runtime entrance-shuffle remapping.

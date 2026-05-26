@@ -377,11 +377,19 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   memset(&g_reachability, 0, sizeof(g_reachability));
   g_reachability.reachable_regions_count = kReachabilityMaxRegions;
 
-  // Seed with the start region. With logic.yaml empty, kRandoRegionsCount = 0
-  // and the graph has no traversable edges; the start-region seed is the only
-  // reachable region. Phase A1 sets the start region per world_state.
-  if (kRandoRegionsCount > 0) {
-    bitset_set(g_reachability.region_bitset, 0);
+  // Seed the fixed-point with the world-state-appropriate start region. The
+  // codegen-emitted `kRandoStartRegionByWorldState[]` maps WorldState → region
+  // id; 0xFFFF means "no start region for this world-state" (e.g., Inverted
+  // before LinksHouse_Inverted is declared). In that case the graph has no
+  // reachable region and Logic_ComputeReachability returns an all-zero bitset
+  // — the placer falls back to "every location stays at vanilla" for that
+  // world-state.
+  uint16 start_region = 0xFFFF;
+  if (settings->world_state < 4) {
+    start_region = kRandoStartRegionByWorldState[settings->world_state];
+  }
+  if (start_region != 0xFFFF && start_region < kReachabilityMaxRegions) {
+    bitset_set(g_reachability.region_bitset, start_region);
   }
 
   PredicateContext ctx;
@@ -415,18 +423,24 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
       }
     }
 
-    // Expand reachable locations against current reachable-region set.
+    // Expand reachable locations: a location is reachable iff
+    //   (a) its world_state_filter permits the active world_state,
+    //   (b) its region is in the reachable_region set (when the location
+    //       has a region_id binding; locations with region_id == 0xFFFF
+    //       are treated as "always-reachable region" — used for fountains
+    //       and a handful of standalone locations), AND
+    //   (c) its can_reach predicate evaluates true under the current
+    //       inventory snapshot.
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
       if (bitset_has(g_reachability.location_bitset, loc->id)) continue;
-      // Filter by world_state.
       if (loc->world_state_filter != 0) {
         if (!(loc->world_state_filter & (1u << settings->world_state))) continue;
       }
-      // Note: location is reachable when its can_reach predicate evaluates
-      // true. Phase A0 has no logic.yaml so every location's predicate is
-      // TRUE() (vacuous AND) which trivially passes — every non-filtered
-      // location is reachable in iteration 0.
+      if (loc->region_id != 0xFFFF) {
+        if (loc->region_id >= kReachabilityMaxRegions) continue;
+        if (!bitset_has(g_reachability.region_bitset, loc->region_id)) continue;
+      }
       const uint8 *bc = kRandoPredicateStream + loc->can_reach_offset;
       if (Predicate_EvalCtx(bc, loc->can_reach_length, &ctx)) {
         bitset_set(g_reachability.location_bitset, loc->id);
