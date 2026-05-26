@@ -69,8 +69,11 @@ edges:
     predicate: "TRUE()"
     source: "app/Region/Standard/HyruleCastleEscape.php:14-57 (no can_enter closure - HCE is reachable from start)"
 
-  # EP entrance gate: PHP `can_enter` (EasternPalace.php:107-109) requires
-  # RescueZelda (the virtual completion-of-HCE-escape signal in Standard mode).
+  # EP entrance gate: PHP `can_enter` (EasternPalace.php:107-109) is
+  # `$items->has('RescueZelda')`. Open/Inverted/Retro have RescuedZelda
+  # pre-granted at world init (ALTTPR's pre_collected_items mechanism;
+  # mirrored here via Place_AssumedFill's per-world-state starting counts).
+  # In Standard the player earns RescuedZelda via the HCE escort sequence.
   - from: LightWorld_NorthEast
     to: EasternPalace
     predicate: "HAS_ITEM(RescuedZelda)"

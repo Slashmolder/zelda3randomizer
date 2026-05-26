@@ -434,7 +434,9 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.settings = &settings;
   spoiler.placements = &table;
   spoiler.generation_wall_clock_ms = 0;  // Phase A0 stub: no timing
-  spoiler.goal_completable = true;       // Phase A0 trivially (identity placement)
+  // Goal completability — runs Logic_ComputeReachability against the full
+  // placement-table inventory and checks the goal-specific locations.
+  spoiler.goal_completable = Goal_IsCompletable(&settings, &table);
 
   if (!Spoiler_WriteJson(&spoiler, out_spoiler)) {
     fprintf(stderr, "--generate-seed: failed writing JSON spoiler to %s\n", out_spoiler);

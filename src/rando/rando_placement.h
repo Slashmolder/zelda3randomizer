@@ -59,6 +59,32 @@ uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id);
 void Placement_SelfCheck(void);
 
 // ---------------------------------------------------------------------------
+// Goal completability (tasks.md §3.9, randomizer-logic / Goal-completion).
+//
+// After Place_AssumedFill returns, the spoiler writer calls this to set the
+// `goal_completable` field. The conservative semantics: with the full
+// placement-table inventory in hand, the locations the active goal demands
+// are reachable.
+//
+// Phase A1 implementation:
+//   - Fast Ganon / Ganon: every dungeon required for the configured
+//     crystals.ganon count is reachable AND the Ganon prize-event location
+//     (and Agahnim 2 for goal=ganon) is reachable.
+//   - All Dungeons: every dungeon-boss location is reachable.
+//   - Pedestal: Master Sword Pedestal location is reachable AND inventory
+//     contains the 3 pendants.
+//   - Triforce Hunt: at least `pieces_required` TriforcePiece items are
+//     placed at reachable locations, and the Pedestal location is reachable.
+//   - Ganon Hunt: Triforce Hunt's piece requirement + the Ganon location.
+//   - Completionist: every location in the placement table is reachable.
+//
+// Returns true when the goal is reachable, false otherwise. Logs a one-line
+// reason to stderr on false.
+// ---------------------------------------------------------------------------
+bool Goal_IsCompletable(const RandoSettings *settings,
+                        const RandoPlacementTable *placements);
+
+// ---------------------------------------------------------------------------
 // Starting-inventory injection (tasks.md §4.2).
 //
 // Grants the per-world-state starting items exactly once per slot. The

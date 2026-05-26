@@ -444,6 +444,34 @@ bool Place_AssumedFill(const RandoSettings *settings,
   static uint16 placement_at[512];
   for (uint16 k = 0; k < open_n; k++) placement_at[k] = 0xFFFF;
 
+  // ----- 3b. Pre-place vanilla-mode dungeon items -----
+  // In Vanilla mode (the default), small keys / big keys / maps / compasses
+  // are NOT added to the pool by BuildItemPool — they belong at their
+  // vanilla locations. Pin them here before assumed fill runs, otherwise
+  // junk fills those slots and dungeon locks become unopenable.
+  //
+  // Per-class mode lookup: per settings.dungeon_{small_keys,big_keys,maps,compasses}_mode.
+  // Item id ranges (per item_registry.yaml):
+  //   53..65 = small keys, 66..76 = big keys, 77..87 = maps (plus id 124 = Map_HCE),
+  //   88..98 = compasses.
+  for (uint16 k = 0; k < open_n; k++) {
+    const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+    uint16 vi = loc->vanilla_item_id;
+    bool vanilla_pin = false;
+    if (vi >= 53 && vi <= 65) {
+      vanilla_pin = (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla);
+    } else if (vi >= 66 && vi <= 76) {
+      vanilla_pin = (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla);
+    } else if ((vi >= 77 && vi <= 87) || vi == 124) {
+      vanilla_pin = (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla);
+    } else if (vi >= 88 && vi <= 98) {
+      vanilla_pin = (settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla);
+    }
+    if (vanilla_pin) {
+      placement_at[k] = vi;
+    }
+  }
+
   // ----- 4. Seed the assumed inventory with all progression items -----
   RandoRng rng;
   Rng_SeedFromU64(&rng, seed_u64);
@@ -451,8 +479,23 @@ bool Place_AssumedFill(const RandoSettings *settings,
   RandoCounts counts;
   memset(&counts, 0, sizeof(counts));
   counts.by_item_id[121] = 3;  // StartingHeart virtual item (id 121, count 3)
+  // Per-world-state pre-collected virtual items — mirrors ALTTPR's
+  // `World::pre_collected_items` mechanism. In Open / Inverted / Retro the
+  // player begins with RescuedZelda already granted (the sanctuary escort
+  // is skipped); in Standard the player earns it via HCE. (id 122 per
+  // item_registry.yaml.)
+  if (settings->world_state != kWorldState_Standard) {
+    counts.by_item_id[122] = 1;
+  }
   for (uint16 i = 0; i < prog_n; i++) {
     counts.by_item_id[progression[i]]++;
+  }
+  // Add pre-placed vanilla dungeon items to the assumed inventory so
+  // reachability evaluates as if the player will collect them in-place.
+  for (uint16 k = 0; k < open_n; k++) {
+    if (placement_at[k] == 0xFFFF) continue;
+    uint16 vi = placement_at[k];
+    if (vi < 256) counts.by_item_id[vi]++;
   }
 
   // Shuffle the progression placement order.
@@ -578,6 +621,163 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
     buf[i * 4 + 3] = local[i].item_id >> 8;
   }
   sha256_buffer(buf, n * 4, out_digest);
+}
+
+// ---------------------------------------------------------------------------
+// Goal completability (tasks.md §3.9). Run after Place_AssumedFill to verify
+// the placement is winnable for the active goal.
+// ---------------------------------------------------------------------------
+
+// Build a final-state inventory from a placement table: count[item_id] is the
+// number of times that item appears across all placements. Pre-populated with
+// counts[StartingHeart] = 3.
+static void build_final_inventory(const RandoPlacementTable *t, RandoCounts *out) {
+  memset(out, 0, sizeof(*out));
+  out->by_item_id[121] = 3;  // StartingHeart
+  if (t == NULL) return;
+  for (uint16 i = 0; i < t->count; i++) {
+    uint16 item_id = t->entries[i].item_id;
+    if (item_id < 256 && out->by_item_id[item_id] < 0xFFFF) {
+      out->by_item_id[item_id]++;
+    }
+  }
+}
+
+// Lookup a location_id in the placement table; returns the placed item or
+// 0xFFFF if not found.
+static uint16 placement_at_location(const RandoPlacementTable *t, uint16 loc_id) {
+  if (t == NULL) return 0xFFFF;
+  for (uint16 i = 0; i < t->count; i++) {
+    if (t->entries[i].location_id == loc_id) return t->entries[i].item_id;
+  }
+  return 0xFFFF;
+}
+
+// Count reachable placements that hold a specific item id.
+static uint16 count_reachable_placements_of(const RandoPlacementTable *t,
+                                            const RandoReachability *r,
+                                            uint16 item_id) {
+  if (t == NULL || r == NULL) return 0;
+  uint16 n = 0;
+  for (uint16 i = 0; i < t->count; i++) {
+    if (t->entries[i].item_id != item_id) continue;
+    if (Reachability_HasLocation(r, t->entries[i].location_id)) n++;
+  }
+  return n;
+}
+
+// Special location IDs frequently checked by goal predicates. These match
+// location_registry.yaml ordering (kept in sync — codegen will eventually
+// emit named LOC_* macros for this, but for Phase A1 the IDs are stable).
+#define LOC_ID_MasterSwordPedestal 151
+#define LOC_ID_Ganon               212
+#define LOC_ID_Agahnim2            137
+
+// Pendant item ids (matches item_registry.yaml).
+#define ITEM_ID_GreenPendant 111
+#define ITEM_ID_RedPendant   112
+#define ITEM_ID_BluePendant  113
+#define ITEM_ID_TriforcePiece 52
+
+bool Goal_IsCompletable(const RandoSettings *settings,
+                        const RandoPlacementTable *placements) {
+  if (settings == NULL || placements == NULL) return false;
+
+  RandoCounts final_inv;
+  build_final_inventory(placements, &final_inv);
+  const RandoReachability *r = Logic_ComputeReachability(&final_inv, settings);
+  if (r == NULL) {
+    fprintf(stderr, "Goal_IsCompletable: reachability returned NULL (empty graph?)\n");
+    return false;
+  }
+
+  switch (settings->goal) {
+    case kGoal_Ganon:
+      // Need Agahnim 2 (GT clear) AND Ganon reachable.
+      if (!Reachability_HasLocation(r, LOC_ID_Agahnim2)) {
+        fprintf(stderr, "Goal_IsCompletable(ganon): Agahnim 2 unreachable\n");
+        return false;
+      }
+      if (!Reachability_HasLocation(r, LOC_ID_Ganon)) {
+        fprintf(stderr, "Goal_IsCompletable(ganon): Ganon unreachable\n");
+        return false;
+      }
+      return true;
+    case kGoal_FastGanon:
+      // Need Ganon reachable (skips Agahnim 2 once crystals + tower entry
+      // unlock the fast-ganon shortcut).
+      if (!Reachability_HasLocation(r, LOC_ID_Ganon)) {
+        fprintf(stderr, "Goal_IsCompletable(fast_ganon): Ganon unreachable\n");
+        return false;
+      }
+      return true;
+    case kGoal_Dungeons:
+      // Every dungeon's _Boss location reachable. Dungeon-boss IDs match
+      // location_registry: EP=16, DP=23, TH=30, PoD=48, SP=59, SW=68, TT=77,
+      // IP=86, MM=95, TR=108, plus HCT=34 (Agahnim) and GT=137 (Agahnim 2).
+      {
+        const uint16 boss_locs[] = {16, 23, 30, 34, 48, 59, 68, 77, 86, 95, 108, 137};
+        for (size_t i = 0; i < sizeof(boss_locs) / sizeof(boss_locs[0]); i++) {
+          if (!Reachability_HasLocation(r, boss_locs[i])) {
+            fprintf(stderr, "Goal_IsCompletable(dungeons): boss location %u unreachable\n",
+                    (unsigned)boss_locs[i]);
+            return false;
+          }
+        }
+      }
+      return true;
+    case kGoal_Pedestal:
+      if (!Reachability_HasLocation(r, LOC_ID_MasterSwordPedestal)) {
+        fprintf(stderr, "Goal_IsCompletable(pedestal): Master Sword Pedestal unreachable\n");
+        return false;
+      }
+      if (final_inv.by_item_id[ITEM_ID_GreenPendant] == 0 ||
+          final_inv.by_item_id[ITEM_ID_RedPendant] == 0 ||
+          final_inv.by_item_id[ITEM_ID_BluePendant] == 0) {
+        fprintf(stderr, "Goal_IsCompletable(pedestal): missing pendant in placement\n");
+        return false;
+      }
+      return true;
+    case kGoal_TriforceHunt: {
+      uint16 reachable_pieces = count_reachable_placements_of(placements, r, ITEM_ID_TriforcePiece);
+      if (reachable_pieces < settings->pieces_required) {
+        fprintf(stderr, "Goal_IsCompletable(triforce-hunt): %u reachable pieces, need %u\n",
+                (unsigned)reachable_pieces, (unsigned)settings->pieces_required);
+        return false;
+      }
+      if (!Reachability_HasLocation(r, LOC_ID_MasterSwordPedestal)) {
+        fprintf(stderr, "Goal_IsCompletable(triforce-hunt): Pedestal unreachable\n");
+        return false;
+      }
+      return true;
+    }
+    case kGoal_GanonHunt: {
+      uint16 reachable_pieces = count_reachable_placements_of(placements, r, ITEM_ID_TriforcePiece);
+      if (reachable_pieces < settings->pieces_required) {
+        fprintf(stderr, "Goal_IsCompletable(ganonhunt): %u reachable pieces, need %u\n",
+                (unsigned)reachable_pieces, (unsigned)settings->pieces_required);
+        return false;
+      }
+      if (!Reachability_HasLocation(r, LOC_ID_Ganon)) {
+        fprintf(stderr, "Goal_IsCompletable(ganonhunt): Ganon unreachable\n");
+        return false;
+      }
+      return true;
+    }
+    case kGoal_Completionist:
+      for (uint16 i = 0; i < placements->count; i++) {
+        if (!Reachability_HasLocation(r, placements->entries[i].location_id)) {
+          fprintf(stderr,
+                  "Goal_IsCompletable(completionist): location %u unreachable\n",
+                  (unsigned)placements->entries[i].location_id);
+          return false;
+        }
+      }
+      return true;
+    default:
+      fprintf(stderr, "Goal_IsCompletable: unknown goal %u\n", (unsigned)settings->goal);
+      return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
