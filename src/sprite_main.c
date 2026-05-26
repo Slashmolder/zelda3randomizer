@@ -5886,9 +5886,15 @@ void Sprite_Witch(int k) {  // 85e3fb
       Sprite_ShowSolicitedMessage(k, 0x4a);
     }
     break;
-  case 1:  // grant cane of byrna
+  case 1:  // grant cane of byrna (vestigial — never reached in normal play)
     sprite_ai_state[k] = 0;
     item_receipt_method = 0;
+    // rando-exempt: this case is unreachable in normal vanilla LttP — the
+    // Witch's ALTTPR location "Potion Shop" (LOC_Potion_Shop, vanilla:
+    // MagicPowder) is granted by a different code path (the mushroom-
+    // delivery acceptance flow). Leaving this as the vanilla 0x18 grant
+    // means rando does not double-dispatch a stray Cane of Byrna at the
+    // Witch.
     Link_ReceiveItem(0x18, 0);
     break;
   }

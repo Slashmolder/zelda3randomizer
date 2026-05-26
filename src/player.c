@@ -576,6 +576,10 @@ void LinkState_ReceivingEther() {  // 878570
     AncillaAdd_EtherSpell(0x18, 0);
     link_x_coord = x, link_y_coord = y;
   } else if (i == 0) {
+    // §6.5 work: this drops the Ether Medallion (item_idx 0 →
+    // kFallingItem_Type[0]=0x10). LOC_Ether_Tablet placement needs the
+    // ancilla path to accept arbitrary LttP codes (currently restricted to
+    // the 7-entry kFallingItem_Type table). Vanilla still grants Ether.
     AncillaAdd_FallingPrize(0x29, 0, 4);
     flag_is_link_immobilized = 1;
     flag_block_link_menu = 0;
