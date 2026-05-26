@@ -1485,5 +1485,33 @@ void Placement_SelfCheck(void) {
     }
   }
 
+  // Audit NEW-1: dungeon_id_for_item mapping for the keys-skip-HCT enums.
+  // Pins the lookup table so a future formula-based regression breaks the
+  // selftest before a corpus run.
+  {
+    // Small keys (53..65) are contiguous HCE..GT (HCT included).
+    if (dungeon_id_for_item(53) != 0)  selfcheck_die("SmallKey_HCE → 0");
+    if (dungeon_id_for_item(57) != 4)  selfcheck_die("SmallKey_HCT → 4");
+    if (dungeon_id_for_item(58) != 5)  selfcheck_die("SmallKey_PoD → 5");
+    if (dungeon_id_for_item(65) != 12) selfcheck_die("SmallKey_GT → 12");
+    // BigKey ids 66..76 skip HCE AND HCT.
+    if (dungeon_id_for_item(66) != 1)  selfcheck_die("BigKey_EP → 1");
+    if (dungeon_id_for_item(68) != 3)  selfcheck_die("BigKey_TH → 3");
+    if (dungeon_id_for_item(69) != 5)  selfcheck_die("BigKey_PoD → 5 (HCT skip)");
+    if (dungeon_id_for_item(76) != 12) selfcheck_die("BigKey_GT → 12");
+    // Map_HCE = 124 → 0; Map ids 77..87 skip HCT.
+    if (dungeon_id_for_item(124) != 0) selfcheck_die("Map_HCE → 0");
+    if (dungeon_id_for_item(77) != 1)  selfcheck_die("Map_EP → 1");
+    if (dungeon_id_for_item(80) != 5)  selfcheck_die("Map_PoD → 5 (HCT skip)");
+    if (dungeon_id_for_item(87) != 12) selfcheck_die("Map_GT → 12");
+    // Compass ids 88..98 skip HCE AND HCT.
+    if (dungeon_id_for_item(88) != 1)  selfcheck_die("Compass_EP → 1");
+    if (dungeon_id_for_item(91) != 5)  selfcheck_die("Compass_PoD → 5 (HCT skip)");
+    if (dungeon_id_for_item(98) != 12) selfcheck_die("Compass_GT → 12");
+    // Non-dungeon items return 0xFF.
+    if (dungeon_id_for_item(0) != 0xFF)   selfcheck_die("ProgressiveSword → 0xFF");
+    if (dungeon_id_for_item(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
+  }
+
   fprintf(stderr, "[Placement_SelfCheck] OK\n");
 }
