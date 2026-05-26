@@ -212,6 +212,36 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // CSV parser rejects duplicate keys.
+  {
+    RandoSettings s4d;
+    Settings_SetDefaults(&s4d);
+    int rc = Settings_ParseCsv("goal=fast_ganon,goal=dungeons", &s4d);
+    if (rc == 0) {
+      fprintf(stderr, "Settings_SelfCheck: CSV parser should reject duplicate keys\n");
+      exit(2);
+    }
+  }
+  // CSV parser rejects out-of-range numeric values.
+  {
+    RandoSettings s4r;
+    Settings_SetDefaults(&s4r);
+    int rc = Settings_ParseCsv("crystals.ganon=8", &s4r);  // valid range is 0..7
+    if (rc == 0) {
+      fprintf(stderr, "Settings_SelfCheck: CSV parser should reject crystals.ganon=8\n");
+      exit(2);
+    }
+  }
+  // CSV parser rejects pieces_required > pieces_placed for Triforce-Hunt.
+  {
+    RandoSettings s4t;
+    Settings_SetDefaults(&s4t);
+    int rc = Settings_ParseCsv("goal=triforce-hunt,pieces_required=30,pieces_placed=20", &s4t);
+    if (rc == 0) {
+      fprintf(stderr, "Settings_SelfCheck: CSV parser should reject pieces_required > pieces_placed\n");
+      exit(2);
+    }
+  }
   // Preset round-trip: each preset applies cleanly, and the Standard preset
   // changes world_state from the default.
   for (int p = 0; p < kPreset__Count; p++) {
