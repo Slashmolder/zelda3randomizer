@@ -70,3 +70,86 @@ When the audit deliverable is written, capture:
 - A glossary mapping ALTTPR's terms to ours (e.g., `setRequirements` → our `can_reach`, `setFillRules` → `can_place`)
 
 The audit is the single biggest debt this spec creates; landing it well makes everything downstream cheaper.
+
+---
+
+# Phase A1 implementation lessons
+
+These accumulated during the ~2-day Phase A1 sprint that took the project from Phase 0 (audit gate just closed) to a fully solvable end-to-end CLI demo. Captured here because they would have shortened the sprint by hours and will shape Phase A2.
+
+## Silent-default fallbacks are the largest single source of bugs
+
+The codegen had a "silently ignore unknown region names and hash to a 16-bit id" fallback in `_resolve_region`. The intent was tolerance for partial-graph examples; the reality was that **every typo passed silently**, the bytecode still emitted, and a `Predicate_EvalCtx` check at runtime returned false because the hashed id wasn't in any reachable-region bitset. The bug surfaced as "Desert Palace inexplicably unreachable from sphere 2 even though Library has the Book of Mudora in sphere 1." Hours of trace.
+
+**Discipline**: codegen fallbacks should fail loud (warning printed; --strict promotes to error) and surface the typo. Same rule applies to "missing optional field" defaults — `region: 0xFFFF` (unbound) sounds harmless but silently broke the location-reachability gate.
+
+The same shape repeats elsewhere:
+- A location_registry `vanilla_item: BigKey_DesertPalace` typo at DP Big Chest (should be `PowerGlove`) made the vanilla-pin pre-pass place two big keys, blocking dungeon-mode key placement. Discovered when sphere computation showed BigKey_DP appearing twice in the placement.
+- Per-dungeon SmallKey counts in `BuildItemPool` say DP has 1 small key but no `location_registry.yaml` entry has `vanilla_item: SmallKey_DesertPalace`. In Vanilla mode the key is created in the pool then forgotten because no slot accepts it. Discovered when DP locations were persistently unreachable in vanilla-keys mode.
+
+**Practical rule**: every entity that has both a "registry side" and a "placement side" should have a consistency check at codegen time. The agent-driven `location_registry` audit caught the easy cases (DP Big Chest=PowerGlove); structural mismatches like the missing SmallKey pin sites need a dedicated cross-reference check.
+
+## Sphere computation is the best test of placement correctness
+
+Goal completability tells you "the goal is reachable in principle." Sphere computation tells you "every placed item is actually collectible by following the graph." The two disagree often.
+
+In Phase A1's first end-to-end run, `goal_completable=true` for `fast_ganon` because Ganon's location was reachable. Sphere computation said 46 of 236 placements were unreachable. The placer was producing seeds where two-thirds of items couldn't be collected — but Ganon still happened to be reachable through a happy path. Without sphere computation, this would have shipped as "working."
+
+**Practical rule**: every iteration of placement logic should run sphere computation against the produced placement table. The `unreachable_placements` field in the spoiler is the canary for placement quality.
+
+## Assumed fill produces broken seeds without bounded retry
+
+Even with a perfect logic graph, naive assumed-fill (Fisher-Yates progression order, no rewind, single attempt) can place a progression item in a location that gates behind that very item later in the placement order. The placer didn't notice because it used "all unplaced items in assumed inventory" — TR was reachable at that moment because Hammer was assumed in inventory, but Hammer got placed elsewhere in a later iteration.
+
+**Discipline**: bounded retry (currently 8 attempts in Phase A1) with sphere-check scoring is the cheap, correct guard. ALTTPR-style rewind-within-attempt is a follow-on optimization that improves the median attempt count but doesn't substantively change the worst case.
+
+## Parallel-agent fan-out for translation work is high-leverage
+
+The 16 logic_parts files were translated by 4 agents working in parallel over ~10 minutes each. The same work serially would have taken hours. The keys to making it work:
+- **File-per-agent partitioning** so no agent edits the same file as another. The codegen's merge-on-load handles cross-file region stub collisions cleanly.
+- **Brief includes the schema + 1-2 worked examples** so agents converge on shared conventions.
+- **Translation discipline** (every predicate cites PHP file:line) propagates from the brief into agent output.
+
+The same pattern works for the `location_registry` audit and the predicate-translation backlog.
+
+## The "ground truth" for ALTTPR semantics is the PHP source — and that is the only place it lives
+
+Documentation, tutorials, community references, and ALTTPR's own comments all drift from the actual code. Examples discovered:
+- ALTTPR's vanilla DP Big Chest contains PowerGlove. NOT BigKey, NOT MirrorShield, NOT anything else community guides may suggest. The truth is in `assets/dungeon/dungeon-115.yaml`'s `Chests: [27!]` (item code 0x1b = PowerGlove).
+- Vanilla DP has 1 small key per ALTTPR config. Where is it placed in vanilla LttP? Unclear from PHP region files — it requires reading the actual room data.
+- `RescueZelda` is a virtual item in ALTTPR (`Item::Event` subclass). Non-Standard world-states pre-collect it via `World::pre_collected_items`. The literal predicate `$items->has('RescueZelda')` is correct; the mode-state branching happens at world-construction time.
+
+**Rule**: when you find yourself reasoning "I think ALTTPR does X because Y" — grep first.
+
+## Spec-vs-impl drift accumulates faster than expected
+
+The spec audit (run after Phase A1 was "done") found 6 critical drifts in ~2000 lines of new code:
+- `placement_table_size` units (pairs vs. bytes)
+- `RandoSettings` fields missing 4 spec-mandated fields
+- `Goal_IsCompletable(FastGanon)` skipping the crystals check
+- Sidecar embedded placement table format (pair list vs. flat array)
+- Several `--cli-flag` parses that were never wired to the runtime
+- `fallback_warnings` etc. hardcoded empty
+
+All of these were specified scenarios with `WHEN/THEN` clauses. The implementation didn't violate them out of malice — they just slipped during fast iteration. **Spec-drift audits as a parallel agent process (per task 13.10) caught all six in one pass and were cheap to run.**
+
+## Document deviations from spec when you take them deliberately
+
+In Phase A1 I made several deliberate "differ from spec for now" calls:
+- Pre-grant DefeatAgahnim is unimplemented; spec doesn't require it but downstream reachability suffers
+- LinksHouse_Inverted region isn't declared; Inverted start region falls back to DarkWorld_South
+- Bounded-rewind is between-attempts (8 fresh shuffles) rather than within-attempt
+- `--budget-seconds` accepted but ignored
+- `--assets-must-be-vanilla` accepted but ignored (no vanilla_assets_hash.h to compare against)
+
+Each of these is a Phase A2 follow-on. They're recorded here so the user / future me can verify they were intentional rather than oversights, and so the next session can pick them up explicitly rather than re-discover them.
+
+## What to carry into Phase A2
+
+- Wire the missing CLI flags (`--budget-seconds`, `--assets-must-be-vanilla`).
+- Add a `Rando_AuditPlacementGraph(settings)` codegen-time check that emits warnings for every location whose `region` ID is `0xFFFF`, every dungeon item count mismatch with vanilla-pin coverage, every macro that references an undeclared item, etc.
+- Implement the spec's `placement_table_size` units convention (bytes, flat array indexed by location_id) — the current pair-list format is convenient but doesn't match the disk-format spec.
+- Re-shuffle the order of `BuildItemPool` to drop dungeon items per `dungeon_items.*` mode flexibly (current code is "all or none"; Wild mode in particular needs the items in the pool with no per-dungeon `can_place` constraint).
+- Wire the `RandoStartingInventory` injection at the actual new-game flow (currently only called from CLI/test contexts).
+- Add a "spec scenarios → implementation" coverage check as a CI step.
+
