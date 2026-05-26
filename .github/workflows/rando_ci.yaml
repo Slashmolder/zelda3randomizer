@@ -167,3 +167,10 @@ jobs:
       env:
         DISPLAY: ''  # confirm headless: no display server required
       run: ./zelda3 --rando-selftest
+
+    # Cross-platform digest determinism: the corpus manifest digests were
+    # captured against a Windows build. The Linux/macOS digests MUST match
+    # byte-for-byte per `randomizer-core / Deterministic cross-platform
+    # placement`. Any digest diff here surfaces a non-determinism bug.
+    - name: Run regression corpus (cross-platform digest check)
+      run: python assets/scripts/run_rando_corpus.py --binary=./zelda3
