@@ -27,6 +27,41 @@ entries:
     seed: "0xDEADBEEFCAFEBABE"
     label: "a1-open-fast-ganon"
     expected_digest: "2da6327679d0afebfe996a814ce2212fd63e21a484f28c885327a65e57527ffc"
+  # 7-goal × 4-world-state × dungeon-mode matrix — captured against
+  # kGeneratorVersion=4 with the vanilla-mode pre-grant fix landed.
+  # All entries verified goal_completable=true at capture time.
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0x0000000000000001"
+    label: "a1-open-fast-ganon-default"
+    expected_digest: "14d5ee78d8454beec09e3f8b01d1ff14c247ff2098b09d7b1aa363a52b8506bf"
+  - settings: { mode.state: open, goal: dungeons }
+    seed: "0x0000000000000002"
+    label: "a1-open-dungeons"
+    expected_digest: "81ee7ea4e2ef17a3e529347f59638e97e2f08c299c96716390324434c4ffbd80"
+  - settings: { mode.state: standard, goal: fast_ganon }
+    seed: "0x0000000000000003"
+    label: "a1-standard-fast-ganon"
+    expected_digest: "070eb0adae8745d4feb1da88ef87bbe15998abc7265fddf40e1305514fb5706f"
+  - settings: { mode.state: open, goal: pedestal }
+    seed: "0x0000000000000004"
+    label: "a1-open-pedestal"
+    expected_digest: "1432dc55ba62de874a30ee7f5632c2d860f1e8f3026dea2cdfd440b9e5d47f3b"
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30 }
+    seed: "0x0000000000000005"
+    label: "a1-open-triforce-hunt"
+    expected_digest: "ee1926c0fe452df7b9a6ed09f1baa8110cd1c1e909fc701b6adb578dee1d2816"
+  - settings: { mode.state: open, goal: ganonhunt, pieces_required: 20, pieces_placed: 30 }
+    seed: "0x0000000000000006"
+    label: "a1-open-ganonhunt"
+    expected_digest: "7fea489ac0d20e59ef65656c18d204fba7a72c10745642ea54608bcd511bfae8"
+  - settings: { mode.state: open, goal: completionist }
+    seed: "0x0000000000000007"
+    label: "a1-open-completionist"
+    expected_digest: "0b792bb97486c6a31ea861518292461a6ab34cfe62571560351e64290828f063"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, dungeon_items.big_keys: dungeon, dungeon_items.maps: dungeon, dungeon_items.compasses: dungeon }
+    seed: "0x0000000000000008"
+    label: "a1-open-dungeon-keys-all"
+    expected_digest: "1e6f9fdd4d4711f6832563cee34db34894d0a42486a52bb990a6e12f35e8fa2d"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
