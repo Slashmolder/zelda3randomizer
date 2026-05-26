@@ -23,10 +23,11 @@ __pycache__
 /src/rando/*.o
 /src/rando/vanilla_assets_hash.h
 # Codegen outputs from assets/rando_logic_gen.py — regenerated as a pre-build
-# step by Make / MSBuild / Switch Makefile. Per tasks.md §3.5 / §3.6.
+# step by Make / MSBuild / Switch Makefile. Per tasks.md §3.5 / §3.6 / §6.3.
 /src/rando/logic_data.c
 /src/rando/location_ids.h
 /src/rando/item_ids.h
+/src/rando/chest_lookup.h
 # CLI test outputs from --generate-seed runs.
 /out/
 /third_party/sha256/*.o

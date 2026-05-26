@@ -63,6 +63,11 @@ from pathlib import Path
 
 import yaml  # PyYAML; required by CLAUDE.md (`pip install -r requirements.txt`)
 
+# Generated chest table + ALTTPR chest-name data (tasks.md S6.3).
+# See assets/chest_data.py for the source-of-truth snapshot and provenance.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import chest_data  # noqa: E402  -- after sys.path mutation
+
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -946,6 +951,101 @@ def emit_item_ids(items: dict[str, ItemDef], path: Path):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
+    """Emit src/rando/chest_lookup.h — (dungeon_room, chest_ordinal) -> LOC_*.
+
+    Per tasks.md S6.3 / audit.md S0.3.5+S0.3.7. Cross-references the embedded
+    vanilla ROM chest table (assets/chest_data.py) with the canonical
+    chest-name catalog at assets/rando/location_registry.yaml to produce a
+    flat C array indexed by (room_index, chest_ordinal) for the runtime's
+    Rando_ChestDispatch hook at src/player.c:3847.
+
+    The runtime walks kDungeonRoomChests via the same N-th-room-match
+    iteration as the in-game OpenChestForItem at src/dungeon.c:5765, so the
+    `chest_ordinal` here matches `tile - 0x58` at the dispatch site.
+
+    Returns the number of rows emitted (for diagnostic logging).
+    """
+    rows = chest_data.get_chest_lookup_rows()
+    # Validate every chest name resolves to a Chest/BigChest registry entry.
+    unknown = []
+    for room, ord_, name, ctype, item, big, addr in rows:
+        loc = locations.get(name)
+        if loc is None:
+            unknown.append((name, addr))
+            continue
+        if loc.type not in ("Chest", "BigChest"):
+            raise RuntimeError(
+                "chest_lookup: '%s' (loc %d) has registry type %r != Chest/BigChest"
+                % (name, loc.id, loc.type)
+            )
+    if unknown:
+        msg = ", ".join("%s @ 0x%04X" % (n, a) for n, a in unknown[:5])
+        raise RuntimeError(
+            "chest_lookup: %d chest name(s) absent from location_registry.yaml: %s%s"
+            % (len(unknown), msg, " ..." if len(unknown) > 5 else "")
+        )
+
+    # Sort by (room, ordinal) so the C-side binary search has a sorted key.
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    lines = [
+        HEADER_BANNER,
+        "",
+        "// chest_lookup.h — (dungeon_room_index, chest_ordinal) -> LOC_* table.",
+        "//",
+        "// Hooked from src/player.c:3847 Link_PerformOpenChest via",
+        "// Rando_ChestDispatch in src/rando/rando.c. `chest_ordinal` is the",
+        "// 0-based in-room chest index `tile - 0x58` matching src/dungeon.c:5765",
+        "// OpenChestForItem's iteration (N-th matching room in",
+        "// kDungeonRoomChests).",
+        "//",
+        "// Source-of-truth provenance:",
+        "//   - In-room ordinals derived from the vanilla chest table",
+        "//     ($81e96e, 168 entries x 3 bytes) snapshot at",
+        "//     assets/chest_data.py (sha256 of the chest table bytes",
+        "//     documented there).",
+        "//   - Chest names sourced from ALTTPR PHP `new Location\\\\Chest(`",
+        "//     declarations at app/Region/Standard/**.php; cross-checked",
+        "//     against assets/rando/location_registry.yaml (audit.md S0.3.5).",
+        "",
+        "#ifndef ZELDA3_RANDO_CHEST_LOOKUP_H_",
+        "#define ZELDA3_RANDO_CHEST_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "#include \"location_ids.h\"",
+        "",
+        "typedef struct RandoChestLookupEntry {",
+        "  uint16 room;     // 0..319 dungeon room index",
+        "  uint8  ordinal;  // 0..5; in-room chest index = (tile - 0x58)",
+        "  uint16 loc_id;   // LOC_*",
+        "} RandoChestLookupEntry;",
+        "",
+        "// %d entries, sorted by (room, ordinal). 164 of 165 ALTTPR chest" % len(rows),
+        "// locations (Chest Game @ ROM 0xEDA8 is the minigame path; dispatch is",
+        "// tasks.md S6.8). 4 ROM chest-table entries have no ALTTPR location",
+        "// (rooms 91/126/179/301 small-key/rupee chests, ALTTPR not exposing",
+        "// them as shuffleable locations); those fall through to vanilla at",
+        "// runtime via chest_lookup()'s 0xFFFF return.",
+        "static const RandoChestLookupEntry kRandoChestLookup[] = {",
+    ]
+    for room, ord_, name, ctype, item, big, addr in rows:
+        loc = locations[name]
+        token = sanitize_for_define(name)
+        big_mark = "BigChest" if big else "Chest"
+        lines.append(
+            "  { %3d, %d, LOC_%s },  // ROM 0x%04X item=0x%02X %s '%s'"
+            % (room, ord_, token, addr, item, big_mark, name)
+        )
+    lines.append("};")
+    lines.append("")
+    lines.append("#define kRandoChestLookup_COUNT %d" % len(rows))
+    lines.append("")
+    lines.append("#endif  // ZELDA3_RANDO_CHEST_LOOKUP_H_")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return len(rows)
+
+
 def emit_logic_data(
     locations: dict[str, LocationDef],
     regions: dict[str, RegionDef],
@@ -1369,10 +1469,12 @@ def main(argv=None):
     emit_location_ids(locations, out_headers / "location_ids.h")
     emit_item_ids(items, out_headers / "item_ids.h")
     emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates, out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds)
+    chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
 
     print(f"generated location_ids.h ({len(locations)} locations)")
     print(f"generated item_ids.h ({len(items)} items)")
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
+    print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
     print(f"warnings: {len(all_errors)}, macro errors: {len(macro_errors)}")
 
 
