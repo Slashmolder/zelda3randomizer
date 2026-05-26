@@ -39,6 +39,14 @@
 
 static bool g_run_without_emu = 0;
 
+// When true, Die() skips the SDL_ShowSimpleMessageBox popup and just
+// prints to stderr + exits. Set by CLI flags like --rando-selftest,
+// --generate-seed, --rando-bench-logic, --print-assets-hash. Without
+// this, a failure during a headless CI/batch run pops a modal dialog
+// on whoever's desktop the process happens to land on (e.g., a worktree
+// agent's failed --generate-seed pops dialogs on the developer's screen).
+static bool g_headless_mode = 0;
+
 // Forwards
 static bool LoadRom(const char *filename);
 static void LoadLinkGraphics();
@@ -80,7 +88,12 @@ static uint16 g_gamepad_last_cmd[kGamepadBtn_Count];
 
 void NORETURN Die(const char *error) {
 #if defined(NDEBUG) && defined(_WIN32)
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kWindowTitle, error, NULL);
+  // Skip the modal popup in headless / CLI mode (--rando-selftest,
+  // --generate-seed, --rando-bench-logic, --print-assets-hash). Otherwise
+  // a failed batch run (e.g., a worktree agent calling --generate-seed
+  // without zelda3_assets.dat) pops dialogs on the developer's desktop.
+  if (!g_headless_mode)
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kWindowTitle, error, NULL);
 #endif
   fprintf(stderr, "Error: %s\n", error);
   exit(1);
@@ -751,6 +764,21 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv);
 #undef main
 int main(int argc, char** argv) {
   argc--, argv++;
+
+  // Detect headless-mode CLI flags up-front and set the global before any
+  // Die() can fire (e.g., from LoadAssets in a worktree without
+  // zelda3_assets.dat). Without this guard, batch tooling that fails its
+  // setup pops modal dialogs on the developer's desktop.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--rando-selftest") == 0 ||
+        strcmp(argv[i], "--rando-bench-logic") == 0 ||
+        strcmp(argv[i], "--generate-seed") == 0 ||
+        strcmp(argv[i], "--print-assets-hash") == 0) {
+      g_headless_mode = 1;
+      break;
+    }
+  }
+
   const char *config_file = NULL;
   if (argc >= 2 && strcmp(argv[0], "--config") == 0) {
     config_file = argv[1];
