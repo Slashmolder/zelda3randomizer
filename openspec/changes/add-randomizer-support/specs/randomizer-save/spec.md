@@ -38,7 +38,7 @@ The sidecar SHALL contain a **16-byte file header** followed by three slot regio
 | 7 | 16 | `settings_hash[16]` | first 16 bytes of SHA-256 of canonical settings serialization (per `randomizer-core / Settings canonical serialization order`) |
 | 23 | 32 | `share_string[32]` | raw binary form: `magic[4] \| version[2] \| settings_hash[16] \| seed_u64[8] \| checksum[2]` |
 | 55 | 2 | `last_vanilla_write_version` (LE) | the `generator_version` under which the paired `sram.dat` slot was last consistently written; SHALL be set to the current `generator_version` on every sidecar write |
-| 57 | 4 | `sram_slot_checksum_at_last_write` (LE) | CRC32 of the paired `sram.dat` slot snapshotted at the moment of sidecar write |
+| 57 | 4 | `sram_slot_checksum_at_last_write` (LE) | checksum of the paired `sram.dat` slot snapshotted at the moment of sidecar write. Algorithm mirrors `src/messaging.c::SaveGameFile` for drift-detection compatibility with the vanilla writer: `t = 0x5a5a; for (i = 0; i < 0x4fe; i += 2) t -= u16le_at(slot_bytes + i); return (uint32)t;` (high 16 bits of the stored u32 are always zero). NOT CRC32 — the spec field is named for forward compatibility with a wider digest, but Phase A must match the vanilla per-slot routine. |
 | 61 | 2 | `placement_table_size` (LE) | bytes; REQUIRED for cross-version forward compatibility |
 | 63 | 1 | `flags` | bit 0 = forward-fill fallback was used; bits 1..7 reserved |
 | 64 | 16 | `reserved[16]` | zero-initialized; forward-compat |

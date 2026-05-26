@@ -1228,48 +1228,42 @@ void Sprite_WishPond3(int k) {
       }
     } else {
       // §6.7 Pyramid Fairy dispatch (synthesized multi-slot grant site).
-      // The Pyramid Fairy in vanilla DarkWorld is the L2->L3 sword upgrade
-      // (when sprite_graphics==58 — already-tempered branch path), bottle
-      // toss → L1Sword vestigial (graphics==2), or bow→silvers (graphics==22).
-      //
-      // For rando, the two trade slots LOC_Pyramid_Fairy_Sword and
-      // LOC_Pyramid_Fairy_Bow grant whatever the placer assigned. We
-      // intercept here BEFORE the upgrade logic. The L1Sword vestigial
-      // branch (graphics==2) and the L3-already-tempered branch
-      // (graphics==58) both route to Pyramid_Fairy_Sword. The bow branch
-      // routes to Pyramid_Fairy_Bow.
+      // The Pyramid Fairy in vanilla DarkWorld accepts two toss-in items:
+      //   graphics==2  → L1Sword vestigial path (the sword-toss trade slot)
+      //   graphics==22 → Bow → Bow+Silvers (the bow-toss trade slot)
+      // graphics==58 is the L4-sword "you already have it" rejection branch
+      // (Sprite_ShowMessageUnconditional(0x14f) below) — vanilla LttP never
+      // grants from that branch, so dispatching it would inject an extra
+      // Pyramid Fairy Sword for L4-sword players who toss a sword. Skip 58.
       //
       // Per audit.md §0.3.4 and ALTTPR `app/Region/Standard/DarkWorld/
-      // NorthEast.php:34-35,59-60`: vanilla fall-backs are L1Sword for the
-      // sword slot, Bow for the bow slot.
+      // NorthEast.php:34-35,59-60`: vanilla fall-backs are L2Sword for the
+      // sword slot (the post-temper result), SilverArrowUpgrade for the
+      // bow slot (the silvers-trade result).
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         uint16 loc = 0xFFFFu;
         uint16 vi = 0xFFFFu;
         uint8 vanilla_lttp = 0;
-        if (sprite_graphics[k] == 58) {
+        if (sprite_graphics[k] == 2) {
           loc = LOC_Pyramid_Fairy_Sword;
-          vi = ITEM_L1Sword;
-          vanilla_lttp = 0;  // L1Sword (vestigial vanilla)
-        } else if (sprite_graphics[k] == 2) {
-          loc = LOC_Pyramid_Fairy_Sword;
-          vi = ITEM_L1Sword;
-          vanilla_lttp = 0;
+          vi = ITEM_L2Sword;
+          vanilla_lttp = 1;  // L2Sword LttP code
         } else if (sprite_graphics[k] == 22) {
           loc = LOC_Pyramid_Fairy_Bow;
-          vi = ITEM_Bow;
-          vanilla_lttp = 0x0b;
+          vi = ITEM_SilverArrowUpgrade;
+          vanilla_lttp = 0x43;  // SilverArrowUpgrade LttP code
         }
         if (loc != 0xFFFFu) {
           uint8 placed_lttp = Rando_DispatchVanillaGrant(loc, vi, vanilla_lttp);
           if (Rando_ShouldSkipReceive(placed_lttp)) {
-            // Direct grant already done. Skip the visual upgrade animation
-            // and the case-9 Link_ReceiveItem call by short-circuiting.
-            sprite_head_dir[k] = 0;  // no message kWishPondMsgs lookup
-            sprite_graphics[k] = 0;  // case 9 will Link_ReceiveItem(0)
-                                     // which is L1Sword — but with sentinel
-                                     // we've already direct-granted, so we
-                                     // need to skip case 9 entirely.
-            sprite_ai_state[k] = 10;  // jump past case 7/8/9 to message
+            // Direct grant already done. Run the case-7 bow restoration
+            // inline (otherwise the player loses the tossed bow), then
+            // jump past case 8/9 to the message state.
+            if (sprite_C[k] == 3)
+              (&link_item_bow)[sprite_C[k]] = sprite_D[k];
+            sprite_head_dir[k] = (loc == LOC_Pyramid_Fairy_Sword) ? 5 : 3;
+            sprite_graphics[k] = 0;
+            sprite_ai_state[k] = 10;
             return;
           }
           // Set sprite_graphics[k] to the dispatched LttP code so case 9
@@ -11310,24 +11304,35 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
       flag_update_cgram_in_nmi++;
       sprite_ai_state[k]++;
       // §6.4 Magic Bat dispatch. Vanilla writes link_magic_consumption to 1
-      // directly; rando dispatches LOC_Magic_Bat with ITEM_HalfMagic as the
-      // vanilla. If the placed item is HalfMagic (identity), the direct-
-      // write happens in dispatch and returns kRandoLttpSkip. If something
-      // else was placed, the dispatcher returns its LttP code, and we
-      // grant via Link_ReceiveItem.
+      // directly; there is no LttP item code that represents "grant Link
+      // HalfMagic" so we cannot route HalfMagic through Link_ReceiveItem.
+      //
+      // The dispatcher's 0xFFu return is ambiguous: it fires both for
+      // identity placements (placer kept HalfMagic — vanilla path is
+      // correct) AND for untranslatable placements (placer chose an
+      // exotic item the dispatch tables don't know — granting HalfMagic
+      // here would silently substitute the wrong item). Peek the
+      // placement first to disambiguate.
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
-        uint8 lttp_code = Rando_DispatchVanillaGrant(LOC_Magic_Bat, ITEM_HalfMagic, 0xFFu);
-        if (Rando_ShouldSkipReceive(lttp_code)) {
-          // Direct-grant done (HalfMagic / prize / etc.). Skip the vanilla
-          // direct write below — the placed item is already in inventory.
-        } else if (lttp_code != 0xFFu) {
-          // Non-direct-grant placed item — route through the standard
-          // receive path. Magic Bat's existing animation already played;
-          // Link_ReceiveItem here is a separate "you got X" notification.
-          Link_ReceiveItem(lttp_code, 0);
+        uint16 placed = Rando_OnLocationCheck(LOC_Magic_Bat, ITEM_HalfMagic);
+        if (placed == ITEM_HalfMagic) {
+          // Identity (or no override) — vanilla direct write.
+          link_magic_consumption = 1;  // rando-exempt: identity HalfMagic at Magic Bat
         } else {
-          // Fallback (no placement / unknown) — original vanilla HalfMagic.
-          link_magic_consumption = 1;  // rando-exempt: vanilla fallback path
+          // Non-identity placement. Re-dispatch so the direct-grant helpers
+          // (prize-bit, dungeon-item, TriforcePiece counter, etc.) AND the
+          // LttP-translation fall-through fire correctly for `placed`.
+          uint8 lttp_code = Rando_DispatchVanillaGrant(LOC_Magic_Bat, ITEM_HalfMagic, 0xFFu);
+          if (Rando_ShouldSkipReceive(lttp_code)) {
+            // Direct-grant done by a dispatch helper.
+          } else if (lttp_code != 0xFFu) {
+            Link_ReceiveItem(lttp_code, 0);
+          }
+          // else: lttp_code == 0xFFu under rando-active && non-identity —
+          // dispatcher had no translation for `placed`. Placement table
+          // still records it; no in-game grant fires. This is intentional:
+          // silently substituting HalfMagic for an unknown item would be
+          // a wrong-grant. Detectable in the spoiler.
         }
       } else {
         link_magic_consumption = 1;  // rando-exempt: vanilla path when rando inactive

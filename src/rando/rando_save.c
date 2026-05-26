@@ -430,11 +430,32 @@ bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
   if (slot_index < 0 || slot_index >= (int)kRandoSidecar_SlotCount) return false;
 
   // Read existing file (if any) so we don't clobber the other slots.
+  // CRITICAL: zero-init is safe ONLY if the file genuinely does not exist
+  // yet (first-write case). If the file exists but parsing failed (truncation,
+  // corruption, partial write from a crash mid-commit), zero-initializing
+  // would silently destroy the other two slots. Distinguish ENOENT from
+  // parse-error by probing the file's existence directly before deciding.
   RandoSidecarSlot all_slots[kRandoSidecar_SlotCount];
-  bool had_existing = RandoSave_ReadFile("saves/sram_rando.dat", all_slots);
-  if (!had_existing) {
-    // Initialize all slots empty (slot_kind=Empty, no placements). The
-    // serializer will still write a valid header per slot.
+  bool file_exists = false;
+  {
+    FILE *probe = fopen("saves/sram_rando.dat", "rb");
+    if (probe != NULL) { file_exists = true; fclose(probe); }
+  }
+  if (file_exists) {
+    if (!RandoSave_ReadFile("saves/sram_rando.dat", all_slots)) {
+      // File exists but failed to parse. Refuse the write — overwriting
+      // would destroy the corrupted-but-recoverable bytes. Back up the
+      // bad file under a .bad suffix (best-effort; rename failure is
+      // non-fatal — the original stays on disk) so the user / a recovery
+      // tool can inspect it.
+      char bak_path[] = "saves/sram_rando.dat.bad";
+      remove(bak_path);
+      rename("saves/sram_rando.dat", bak_path);
+      return false;
+    }
+  } else {
+    // Genuine first-write — initialize all slots empty. The serializer
+    // still writes a valid header per slot.
     memset(all_slots, 0, sizeof(all_slots));
   }
 

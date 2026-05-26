@@ -3844,15 +3844,15 @@ void Ancilla_RisingCrystal(int k) {  // 88cbf2
   if (y < 0x49) {
     Ancilla_SetY(k, 0x49 + BG2VOFS_copy);
     if (!submodule_index) {
-      // rando-exempt: §6.6 work — boss prize crystal/pendant grant uses the
-      // current dungeon's vanilla bit-table. Phase A1's prize_shuffle places
-      // crystals/pendants at their _Prize locations (rando_placement.c
-      // pin pre-pass), so the in-game grant here still uses the vanilla
-      // dungeon→prize bit mapping — meaning rando players see the vanilla
-      // prize at each boss, while the placement spoiler reports the
-      // shuffled assignment. §6.6 lands a proper Rando_OnLocationCheck at
-      // each dungeon's <Dungeon>_Prize grant point.
-      link_has_crystals |= kDungeonCrystalPendantBit[BYTE(cur_palace_index_x2) >> 1];
+      // §6.6 dispatch (RoomTag_GetHeartForPrize → Rando_DispatchVanillaGrant
+      // → prize_item_direct_grant) already grants the PLACED prize's bit
+      // when rando is active. Leaving this line unguarded would double-OR
+      // the current dungeon's vanilla crystal on top of the placed bit
+      // when prize_shuffle (Phase A default) puts a different prize here.
+      // Suppress under rando-active; the dispatch path owns the bit.
+      if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+        // rando-exempt: vanilla-only fall-through; dispatch path above owns the bit when rando is active.
+        link_has_crystals |= kDungeonCrystalPendantBit[BYTE(cur_palace_index_x2) >> 1];
       submodule_index = 0x18;
       subsubmodule_index = 0;
       memset(aux_palette_buffer + 0x20, 0, sizeof(uint16) * 0x60);

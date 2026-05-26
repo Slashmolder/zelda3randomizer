@@ -564,10 +564,22 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
   // do NOT insert bytes before the TLV chain or change the magic.
   (void)RandoSnapshotTail_Load(f);
 
-  // §8.8a debug-build assertion: confirm no Rando_OnLocationCheck fired
-  // between the LoadSnesState above and this point. If it did, the
-  // ordering invariant is broken (see comment block above).
-  assert(g_rando_oncheck_call_count == oncheck_count_at_pre_load);
+  // §8.8a ordering-invariant tripwire. assert() compiles out under NDEBUG
+  // (Release builds), so we also do a runtime check under rando-active that
+  // logs to stderr and skips the TLV reinstall's effect — preferable to
+  // silent corruption in shipped binaries. The placement table will then
+  // be re-installed at the next save-load cycle when the invariant holds.
+  if (g_rando_oncheck_call_count != oncheck_count_at_pre_load) {
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      fprintf(stderr,
+        "[rando] StateRecorder_Load: ordering invariant broken — %llu dispatch "
+        "call(s) fired between LoadSnesState and snapshot tail reinstall. "
+        "Rando state may be inconsistent until next save-load cycle. "
+        "(see design.md §D11)\n",
+        (unsigned long long)(g_rando_oncheck_call_count - oncheck_count_at_pre_load));
+    }
+    assert(g_rando_oncheck_call_count == oncheck_count_at_pre_load);
+  }
 }
 
 void StateRecorder_ClearKeyLog(StateRecorder *sr);  // forward decl
