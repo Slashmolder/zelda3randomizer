@@ -16,6 +16,7 @@
 #include "rando_placement.h"
 #include "rando_shuffles.h"
 #include "rando_save.h"
+#include "rando_snapshot_tail.h"
 #include "rando_textfield.h"
 #include "item_ids.h"
 #include "location_ids.h"
@@ -43,6 +44,13 @@ static uint32 g_reachability_state_counter;
 // Phase A0 stub: pass-through. Phase A1 wires the placement_table lookup.
 // ---------------------------------------------------------------------------
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
+  // §8.8a ordering-invariant tripwire: every call increments a global
+  // counter that StateRecorder_Load snapshots before LoadSnesState and
+  // asserts didn't change before the TLV reinstall. If a frame ran between
+  // those two steps, dispatch would fire here and bump the counter, making
+  // the load-time assertion trip.
+  g_rando_oncheck_call_count++;
+
   // Placement_Lookup returns vanilla_item_id when no active placement table
   // is installed (rando mode inactive), or when location_id is not in the
   // active table. See rando_placement.c.
@@ -364,6 +372,7 @@ void Rando_RunAllSelfChecks(void) {
   Placement_SelfCheck();
   Shuffles_SelfCheck();
   RandoSave_SelfCheck();
+  RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }
