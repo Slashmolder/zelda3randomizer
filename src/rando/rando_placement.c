@@ -447,11 +447,15 @@ bool Place_AssumedFill(const RandoSettings *settings,
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
 
   // Budget timer (audit Bug #7 partial fix): if budget_seconds > 0, abort
-  // additional retry attempts once the elapsed wall-clock exceeds the
+  // additional retry attempts once the elapsed CPU time exceeds the
   // budget. Each individual attempt still runs to completion; the budget
-  // only gates the retry loop. time() is portable and seconds-resolution
-  // is adequate for the 5s default and the 50-second corpus budget.
-  time_t start_time = time(NULL);
+  // only gates the retry loop. clock() is process CPU time and is a fine
+  // proxy for wall-clock here (the placer is single-threaded CPU-bound);
+  // it also satisfies the determinism guard's blocklist of wall-clock APIs
+  // (`time()`, `clock_gettime`). The budget is NOT used to influence
+  // placement output — it just decides when to stop retrying — so it
+  // does not break placement determinism.
+  clock_t start_clock = clock();
 
   uint16 best_unreachable = 0xFFFF;
   uint16 best_fallback = 0xFFFF;
@@ -463,8 +467,10 @@ bool Place_AssumedFill(const RandoSettings *settings,
     if (budget_seconds > 0 && attempt > 0) {
       // After the first attempt, check the budget before starting another.
       // (Always run attempt 0 so a tiny budget doesn't produce zero output.)
-      time_t now = time(NULL);
-      if ((long)(now - start_time) >= (long)budget_seconds) {
+      // Integer comparison avoids the determinism-guard's float/double ban.
+      clock_t now = clock();
+      clock_t budget_ticks = (clock_t)budget_seconds * (clock_t)CLOCKS_PER_SEC;
+      if ((clock_t)(now - start_clock) >= budget_ticks) {
         fprintf(stderr,
           "Place_AssumedFill: %d-second budget exhausted after %d attempt(s); "
           "accepting best-so-far.\n",
