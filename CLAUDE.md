@@ -121,3 +121,11 @@ Same discipline for this codebase:
 - **Save format**: `saves/sram.dat` is one 8 KB SRAM image structured as 3 slots × {primary, backup} per `src/messaging.c:103, 257-268` and `src/select_file.c:43`. `kSrmOffsets[4] = {0, 0x500, 0xa00, 0xf00}` is misleading — the fourth entry is the backup-region base, NOT a 4th slot.
 - **Snapshot format**: `StateRecorder_Save` in `src/zelda_rtl.c:533-558` writes header + input log + `base_snapshot` + `SaveSnesState` dump. It is an input-replay system, NOT a raw `g_ram` dump.
 - **Item-grant call sites**: `Link_ReceiveItem` is not the actual grant — it triggers the receive-animation ancilla. The real `link_item_*` write happens in `AncillaAdd_ItemReceipt` (`src/misc.c:713-844`) via `kMemoryLocationToGiveItemTo[]` / `kValueToGiveItemTo[]` plus a long chain of special-case branches. Enumerating every grant site is multi-day audit work, not a single grep.
+
+### Fresh-eyes audit cadence
+
+After landing any substantial code surface change on this project (a sprint's worth of work — new subsystem, large refactor, sweep of audit fixes), spawn a parallel review agent with a self-contained prompt before declaring the work done. Don't review your own work as the final pass.
+
+Each audit pass in this project's history has found 5-10 NEW bugs the previous reviewer missed, including HIGH-severity issues that the familiar author would never have noticed (off-by-one in formula-encoded list mappings, spec/impl enum disagreements, full-inventory-vs-sphere-walked goal-check inconsistencies). The pattern is reliable enough to treat as workflow, not optional polish.
+
+The prompt should brief the agent on what changed (`git log --oneline <baseline>..HEAD`), point to the spec scenarios, and ask explicitly for *new* findings — not re-litigation of previously-closed bugs. Cap the response length so the agent prioritizes signal over coverage.
