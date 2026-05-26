@@ -98,6 +98,12 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     case ITEM_Rupee300: return 0x42;
     // Rupoor: decrements wallet. Vanilla code 0x47 per misc.c kValueToGiveItemTo[71] = -50.
     case ITEM_Rupoor:   return 0x47;
+    // HalfMagic: LttP code 0x20 writes link_magic_consumption (per misc.c
+    // kMemoryLocationToGiveItemTo[32]=0xf37a). Matches vanilla Magic Bat
+    // grant when routed through Link_ReceiveItem.
+    case ITEM_HalfMagic: return 0x20;
+    // QuarterMagic has no vanilla LttP code (added by ROM patches in
+    // ALTTPR; Phase A1 falls back to vanilla item). §6.2 follow-on.
     default:
       return 0xFF;
   }
