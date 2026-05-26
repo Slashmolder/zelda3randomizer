@@ -21,6 +21,7 @@
 #include "location_ids.h"
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
+#include "../features.h"   // g_rando_triforce_piece_count
 #include "third_party/sha256/sha256.h"
 
 // ---------------------------------------------------------------------------
@@ -147,6 +148,17 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint8 vanilla_lttp_code) {
   uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
   if (placed == vanilla_registry_id) return vanilla_lttp_code;
+
+  // §6.2: TriforcePiece is a brand-new item with no vanilla LttP code.
+  // Increment the rando-side counter directly. Returns the vanilla code
+  // so the chest/NPC still grants something visible (the placed-spoiler
+  // shows TriforcePiece; the player sees the counter tick up after
+  // they collect the slot's vanilla item).
+  if (placed == ITEM_TriforcePiece) {
+    if (g_rando_triforce_piece_count < 255) g_rando_triforce_piece_count++;
+    return vanilla_lttp_code;
+  }
+
   uint8 lttp = Rando_VanillaItemForRegistryId(placed);
   if (lttp != 0xFF) return lttp;
 

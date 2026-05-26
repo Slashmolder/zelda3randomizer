@@ -16,7 +16,8 @@
 //   0x659-0x65c kRam_Features1           (uint32) — randomizer feature flags
 //   0x65d       kRam_RandoSlotActive     (1 byte) — 0 vanilla, 1 randomizer
 //   0x65e       kRam_RandoStartingInventoryGranted (1 byte) — once-per-slot gate
-//   0x65f-0x66f reserved                 (17 bytes forward-compat headroom)
+//   0x65f       kRam_RandoTriforcePieceCount (1 byte) — Phase A TriforceHunt counter
+//   0x660-0x66f reserved                 (16 bytes forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see variables.h:556)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
@@ -28,6 +29,7 @@ enum {
   kRam_Features1 = 0x659,
   kRam_RandoSlotActive = 0x65d,
   kRam_RandoStartingInventoryGranted = 0x65e,
+  kRam_RandoTriforcePieceCount = 0x65f,
 };
 
 enum {
@@ -82,6 +84,7 @@ enum {
 #define enhanced_features1 (*(uint32*)(g_ram+0x659))
 #define g_rando_slot_active (*(uint8*)(g_ram+0x65d))
 #define g_rando_starting_inventory_granted (*(uint8*)(g_ram+0x65e))
+#define g_rando_triforce_piece_count (*(uint8*)(g_ram+0x65f))
 #define msu_curr_sample (*(uint32*)(g_ram+0x650))
 #define msu_volume (*(uint8*)(g_ram+0x654))
 #define msu_track (*(uint8*)(g_ram+0x655))
