@@ -580,6 +580,19 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
                "HAS_ANY_COUNT sum=1 threshold 2 should be false");
   }
+  // Vacuous HAS_ANY_COUNT edge cases (audit Bug #14):
+  //   - count=0, n=0: sum 0 >= 0 → true (vacuous)
+  //   - count=0, n=1: sum 0 >= 1 → false
+  {
+    uint8 bc[] = { OP_HAS_ANY_COUNT, 0, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "HAS_ANY_COUNT vacuous (count=0, n=0) should be true");
+  }
+  {
+    uint8 bc[] = { OP_HAS_ANY_COUNT, 0, 1 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "HAS_ANY_COUNT vacuous (count=0, n=1) should be false");
+  }
   counts.by_item_id[7] = 0;
 
   // WORLDSTATE_EQ(open) — defaults set world_state = Open (0)

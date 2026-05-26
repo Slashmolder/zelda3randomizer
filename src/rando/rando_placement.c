@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 // Generated tables — RandoLocationDef typedef + kRandoLocations[] /
 // kRandoLocationsCount extern come from rando_logic.h.
@@ -441,10 +442,16 @@ bool Place_AssumedFill(const RandoSettings *settings,
                        uint64 seed_u64,
                        int budget_seconds,
                        RandoPlacementTable *out) {
-  (void)budget_seconds;
   // Reset stats — caller reads via Placement_GetLastStats() after we return.
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
+
+  // Budget timer (audit Bug #7 partial fix): if budget_seconds > 0, abort
+  // additional retry attempts once the elapsed wall-clock exceeds the
+  // budget. Each individual attempt still runs to completion; the budget
+  // only gates the retry loop. time() is portable and seconds-resolution
+  // is adequate for the 5s default and the 50-second corpus budget.
+  time_t start_time = time(NULL);
 
   uint16 best_unreachable = 0xFFFF;
   uint16 best_fallback = 0xFFFF;
@@ -453,6 +460,18 @@ bool Place_AssumedFill(const RandoSettings *settings,
   bool best_complete = false;
 
   for (int attempt = 0; attempt < kAssumedFillMaxAttempts; attempt++) {
+    if (budget_seconds > 0 && attempt > 0) {
+      // After the first attempt, check the budget before starting another.
+      // (Always run attempt 0 so a tiny budget doesn't produce zero output.)
+      time_t now = time(NULL);
+      if ((long)(now - start_time) >= (long)budget_seconds) {
+        fprintf(stderr,
+          "Place_AssumedFill: %d-second budget exhausted after %d attempt(s); "
+          "accepting best-so-far.\n",
+          budget_seconds, attempt);
+        break;
+      }
+    }
     g_last_placement_stats.attempts_used = (uint8)(attempt + 1);
     // Perturb the seed per attempt so each retry produces a different
     // progression order. The first attempt uses the unmodified seed so
