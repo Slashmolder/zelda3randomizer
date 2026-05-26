@@ -43,6 +43,16 @@ int Share_Encode(const ShareString *ss, char *out, int out_capacity);
 int Share_EncodeRaw(const uint8 raw_binary[kShareStringBinaryLen],
                     char *out, int out_capacity);
 
+// §9 cluster-3 audit MED-5 — produce the 31-byte raw binary form
+// (magic[4] | version[1] | settings_hash[16] | seed_u64[8] | crc[2])
+// from a ShareString. Callers that need to STORE the raw blob (e.g. the
+// sidecar slot header) should use this instead of hand-rolling the
+// pack — previously the file-select Generate path rebuilt the bytes
+// inline and left the trailing CRC at zero, producing a banner
+// share-string that disagreed with Share_Encode's output.
+void Share_PackBinary(const ShareString *ss,
+                      uint8 out[kShareStringBinaryLen]);
+
 // Decode `in` (base32, NUL-terminated) into `out_ss`. Returns the
 // decode-status enum; success is `kShareDecodeOk`.
 ShareDecodeStatus Share_Decode(const char *in, ShareString *out_ss);

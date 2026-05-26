@@ -85,6 +85,15 @@ static void pack_binary(const ShareString *ss, uint8 out[kShareBinaryLen]) {
   out[30] = (uint8)(ck >> 8);
 }
 
+/* §9 cluster-3 audit MED-5 — public entry point for callers that need the
+ * 31-byte binary form (magic + version + settings_hash + seed_u64 + CRC).
+ * Previously callers were recomputing the layout manually and leaving the
+ * trailing CRC at zero, producing a banner share-string that differed
+ * from the one Share_Encode emitted. */
+void Share_PackBinary(const ShareString *ss, uint8 out[kShareBinaryLen]) {
+  pack_binary(ss, out);
+}
+
 /* Base32-encode 31 bytes → 50 chars (no padding). */
 static void base32_encode(const uint8 in[kShareBinaryLen], char out[kShareBase32Len]) {
   uint64 buf = 0;

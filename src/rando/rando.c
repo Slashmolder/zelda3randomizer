@@ -818,11 +818,20 @@ void Rando_SelfCheck(void) {
         exit(2);
       }
     }
-    // Atlas size sanity: the widget must yield only valid kHashIconAtlas
-    // indices (the modulo bound). Verify the chosen tile matches.
+    // Atlas size sanity: every emitted tile MUST appear in kHashIconAtlas.
+    // §9 cluster-3 audit LOW: the original loop's ternary always evaluated
+    // to 0 and discarded the result via (void)expected — effectively dead
+    // code. Rewrite as a real membership check.
     for (int i = 0; i < 5; ++i) {
-      uint8 expected = kHashIconAtlas[buf_a[i].charnum == kHashIconAtlas[0] ? 0 : 0];
-      (void)expected;
+      bool found = false;
+      for (int j = 0; j < kHashIconAtlasSize; ++j) {
+        if (buf_a[i].charnum == kHashIconAtlas[j]) { found = true; break; }
+      }
+      if (!found) {
+        fprintf(stderr, "Rando_SelfCheck: hash icon tile 0x%02x at index %d not in kHashIconAtlas\n",
+                (unsigned)buf_a[i].charnum, i);
+        exit(2);
+      }
     }
   }
 }

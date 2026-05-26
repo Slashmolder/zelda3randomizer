@@ -2125,6 +2125,11 @@ enum {
   kRow_DungeonCompasses,
   kRow_PiecesRequired,
   kRow_PiecesPlaced,
+  // §9 cluster-3 audit MED-7: add the spec-required Phase A axes that
+  // the original cluster-3 implementation omitted from the UI. Both have
+  // exactly 2 supported Phase A values per randomizer-core spec.
+  kRow_ModeWeapons,        // Randomized / Assured (spec line 42)
+  kRow_Accessibility,      // Items / Locations (spec line 43)
   kRow_PrizeShuffle,
   kRow_MedallionShuffle,
   kRow_RaceMode,
@@ -2233,6 +2238,14 @@ static uint32 g_rec_working_features0 = 0;
 // Asset-warn dialog state.
 static uint8 g_asset_warn_cursor = 0;
 static bool g_asset_warn_pending = false;
+// §9 cluster-3 audit HIGH-2: one-shot bypass for the "Allow Once" choice.
+// Without this, AllowOnce → recursive HandleGenerate → asset-warn gate
+// fires again (AssetDecision_FindAllow is still false because AllowOnce
+// intentionally doesn't persist), looping back to the dialog. The flag
+// is set by AllowOnce, consumed (and cleared) on the next entry to
+// HandleGenerate, and explicitly cleared by Deactivate so it can't
+// leak across sessions.
+static bool g_asset_warn_session_bypass = false;
 // Generate state (re-fire guard).
 static bool g_settings_generate_in_progress = false;
 // Cached settings hash (8 hex chars displayable). Recomputed on mutation.
@@ -2368,6 +2381,8 @@ static const char *RowLabel(int row) {
     case kRow_DungeonCompasses:          return "COMPS";
     case kRow_PiecesRequired:            return "PCS-REQ";
     case kRow_PiecesPlaced:              return "PCS-PLC";
+    case kRow_ModeWeapons:               return "WEAPONS";
+    case kRow_Accessibility:             return "ACCESS";
     case kRow_PrizeShuffle:              return "PRIZE";
     case kRow_MedallionShuffle:          return "MEDAL";
     case kRow_RaceMode:                  return "RACE";
@@ -2421,11 +2436,29 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       }
     }
     case kRow_PiecesRequired:
+      // §9 cluster-3 audit MED-6: show "—" sentinel when the goal doesn't
+      // use pieces, signalling to the user that the field is inert.
+      if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt)
+        return "-";
       snprintf(scratch, scratch_len, "%u", (unsigned)s->pieces_required);
       return scratch;
     case kRow_PiecesPlaced:
+      if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt)
+        return "-";
       snprintf(scratch, scratch_len, "%u", (unsigned)s->pieces_placed);
       return scratch;
+    case kRow_ModeWeapons:
+      switch (s->mode_weapons) {
+        case kModeWeapons_Randomized: return "RAND";
+        case kModeWeapons_Assured:    return "ASUR";
+        default:                      return "???";
+      }
+    case kRow_Accessibility:
+      switch (s->accessibility) {
+        case kAccessibility_Items:     return "ITEMS";
+        case kAccessibility_Locations: return "LOCS";
+        default:                       return "???";
+      }
     case kRow_PrizeShuffle:
       return s->prize_shuffle ? "ON" : "OFF";
     case kRow_MedallionShuffle:
@@ -2537,6 +2570,15 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_PiecesRequired: {
+      // §9 cluster-3 audit MED-6: pieces fields are only meaningful for
+      // Triforce Hunt / Ganon Hunt goals; refuse cycle otherwise so the
+      // user doesn't accidentally mutate the field (which would change
+      // settings_hash without visible effect on placement).
+      if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt) {
+        mutated = false;
+        sound_effect_1 = 0x3c;
+        break;
+      }
       int n = (int)s->pieces_required + delta;
       if (n < 1) n = (int)s->pieces_placed;  // wrap to max
       if (n > (int)s->pieces_placed) n = 1;
@@ -2544,11 +2586,38 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_PiecesPlaced: {
+      // §9 cluster-3 audit MED-6: same gating as PiecesRequired.
+      if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt) {
+        mutated = false;
+        sound_effect_1 = 0x3c;
+        break;
+      }
       int n = (int)s->pieces_placed + delta;
       if (n < 1) n = 99;
       if (n > 99) n = 1;
       s->pieces_placed = (uint16)n;
       SettingsValidatePieces();
+      break;
+    }
+    case kRow_ModeWeapons: {
+      // §9 cluster-3 audit MED-7. Phase A supports only Randomized + Assured.
+      int n = (int)s->mode_weapons + delta;
+      if (n < kModeWeapons_Randomized) n = kModeWeapons_Assured;
+      if (n > kModeWeapons_Assured) n = kModeWeapons_Randomized;
+      s->mode_weapons = (uint8)n;
+      break;
+    }
+    case kRow_Accessibility: {
+      // Phase A supports Items + Locations. Completionist goal auto-locks
+      // to Locations (kRow_Goal sets it on cycle); cycling here while
+      // goal=Completionist still allows the user to view but the goal-
+      // cycle will reassert. For other goals, free toggle.
+      int n = (int)s->accessibility + delta;
+      if (n < kAccessibility_Items) n = kAccessibility_Locations;
+      if (n > kAccessibility_Locations) n = kAccessibility_Items;
+      s->accessibility = (uint8)n;
+      // Don't break the Completionist invariant.
+      if (s->goal == kGoal_Completionist) s->accessibility = kAccessibility_Locations;
       break;
     }
     case kRow_PrizeShuffle: s->prize_shuffle ^= 1; break;
@@ -2573,17 +2642,15 @@ static uint8 TileForAscii(char c) {
   if (c >= 'A' && c <= 'Z') return SelectFile_TileForBase32(c);
   if (c >= 'a' && c <= 'z') return SelectFile_TileForBase32((char)(c - 'a' + 'A'));
   if (c >= '0' && c <= '9') {
-    // '2'..'7' are in the base32 mapping already; '0' '1' '8' '9' need
-    // explicit tile picks. Reuse digit tiles from the file-select font
-    // (kSelectFile_DrawDigit_Char order: '0'=0xd0 '1'=0xac '8'=0xbe '9'=0xbf,
-    // but those are sprite tiles not BG tiles). For BG text, fall back to
-    // an approximation: '0' rendered as blank; per Phase A we constrain
-    // numeric values to the 2..7 range that the existing tiles cover, plus
-    // explicit slash/digit-pair rendering in RowValueText for sliders.
-    if (c >= '2' && c <= '7') return SelectFile_TileForBase32(c);
-    // '0' / '1' / '8' / '9' approximate as character literals via blank
-    // — values that include these digits will display visually short.
-    return kFileSelectTile_Blank;
+    // §9 cluster-3 audit MED-8: digit tiles live at 0x76..0x7f in the
+    // file-select font (10 sequential entries, '0'..'9'), per the
+    // comment at the kBase32CharToTile declaration ("Digit tiles at
+    // 0x76..0x7f are the wide-font digit tile pairs used in name-entry
+    // kNamePlayer_Tab3"). The cluster-3 agent's table only mapped
+    // '2'..'7' via the base32 table; '0' / '1' / '8' / '9' rendered
+    // blank, garbling multi-digit values like pieces_placed=30
+    // ("?0" → "0_" → "blank-zero"). Extend to the full digit range.
+    return (uint8)(0x76 + (c - '0'));
   }
   if (c == '/') return 0x35;   // '/' tile in the existing font region (best-fit)
   if (c == '?') return 0x2d;
@@ -2662,15 +2729,25 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
 }
 
 static void SelectFile_Settings_Deactivate(void) {
+  // §9 cluster-3 audit HIGH-1: Module_SelectFile_0 init calls this for
+  // state-reset purposes, BEFORE submodules 1 and 2 have run (the slot-
+  // tile upload + triforce erase). Unconditionally rewinding to
+  // submodule 3 here would bypass those, leaving first-launch file-select
+  // without slot frames. Only restore VRAM when we were ACTIVELY in the
+  // settings screen (i.e. our draw clobbered vram_upload_data).
+  bool was_active = g_settings_active;
   g_settings_active = false;
   g_settings_view = kSettingsView_Main;
   g_settings_generate_in_progress = false;
   g_settings_seed_field.active = false;
-  // Same VRAM-restore discipline as the alphabet picker — settings draw
-  // memcpys into vram_upload_data, clobbering kSelectFile_Func3_Data. Rewind
-  // to submodule 3 to reinstall it before the slot list resumes.
-  submodule_index = 3;
-  subsubmodule_index = 0;
+  g_asset_warn_session_bypass = false;  // don't leak past session
+  if (was_active) {
+    // Same VRAM-restore discipline as the alphabet picker — settings draw
+    // memcpys into vram_upload_data, clobbering kSelectFile_Func3_Data.
+    // Rewind to submodule 3 to reinstall it before the slot list resumes.
+    submodule_index = 3;
+    subsubmodule_index = 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2860,6 +2937,7 @@ static bool SelectFile_Settings_HandleAssetWarnInput(void) {
         break;
       case kAssetWarnChoice_AllowOnce:
         g_asset_warn_pending = false;
+        g_asset_warn_session_bypass = true;  // consumed by next HandleGenerate call
         g_settings_view = kSettingsView_Main;
         SelectFile_Settings_HandleGenerate();
         break;
@@ -2948,7 +3026,12 @@ static bool SelectFile_Settings_Update(void) {
         // The user can also paste via the alphabet picker (cluster 2).
         // Phase A simplification: A on the seed row clears the field so the
         // user can type a fresh value via the host SDL_TEXTINPUT path.
-        TextField_HandleKey(&g_settings_seed_field, kTextFieldKey_Clear);
+        // §9 cluster-3 audit LOW: don't clear if the field was
+        // prepopulated from an alphabet-picker decoded share string —
+        // the user wants to view/edit, not start over. Clear only when
+        // the field is empty (i.e. fresh entry).
+        if (!g_settings_seed_prepopulated)
+          TextField_HandleKey(&g_settings_seed_field, kTextFieldKey_Clear);
         // Activate the field so the host routes SDL_TEXTINPUT here.
         // The g_rando_text_input_active edge in main.c clears
         // g_input1_state on activation so the A press that opened the
@@ -2971,6 +3054,8 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_CrystalsTower:
       case kRow_PiecesRequired:
       case kRow_PiecesPlaced:
+      case kRow_ModeWeapons:
+      case kRow_Accessibility:
         CycleRow(row, +1);  // A = forward cycle, same as Right
         break;
       case kRow_PrizeShuffle:
@@ -3044,10 +3129,15 @@ static void SelectFile_Settings_HandleGenerate(void) {
   if (g_settings_generate_in_progress) return;
 
   // Asset-warn gate. kVanillaAssetsHash / kVanillaAssetsHashKnown live in
-  // src/rando/vanilla_assets_hash.h (included above; static linkage).
+  // src/rando/vanilla_assets_hash.h (included above; static linkage). The
+  // session-bypass flag (set by Allow Once) consumes here so a subsequent
+  // Generate within the same session continues to gate normally.
+  bool consumed_bypass = g_asset_warn_session_bypass;
+  g_asset_warn_session_bypass = false;
   if (kVanillaAssetsHashKnown &&
       memcmp(g_assets_hash, kVanillaAssetsHash, 32) != 0 &&
       !AssetDecision_FindAllow(g_assets_hash) &&
+      !consumed_bypass &&
       g_settings_view != kSettingsView_AssetWarn) {
     // Show the dialog; user's choice re-enters Generate (Always/Allow Once)
     // or returns to settings (Cancel).
@@ -3116,32 +3206,17 @@ static void SelectFile_Settings_HandleGenerate(void) {
     return;
   }
 
-  // Re-encode to recover the RAW 31-byte binary blob (we need it for the
-  // sidecar slot header + for the icon-hash widget input). We could
-  // recompute from ShareString fields, but Share_Decode→re-encode also
-  // proves the path is symmetric.
-  // For now, encode the 31-byte blob directly using the same packing
-  // Share_Encode used internally:
+  // §9 cluster-3 audit MED-5: pack the 31-byte raw binary blob via the
+  // public Share_PackBinary helper so the trailing CRC is correct.
+  // Previously the code rebuilt the blob inline and left CRC = 0, which
+  // meant the slot's stored share_string base32-re-encoded to a string
+  // DIFFERENT from the one Share_Encode emitted to the user — friends
+  // who tried Share_Decode on the banner-displayed string would get
+  // BadChecksum. The slot header reserves 32 bytes for share_string; we
+  // zero-pad bytes 31..32 here for cleanliness.
   uint8 raw_binary[32];
   memset(raw_binary, 0, sizeof(raw_binary));
-  // The on-disk blob layout per rando_share.h:
-  //   magic[4] (LE) | version[1] | settings_hash[16] | seed_u64[8] | crc[2]
-  // = 31 bytes. The magic is the "ZRSS" 4 ASCII bytes; we read what
-  // Share_Encode put in the binary form by decoding the base32 string.
-  ShareString decoded;
-  if (Share_Decode(share_string, &decoded) == kShareDecodeOk) {
-    // Rebuild raw_binary from the decoded fields (= original input, since
-    // decode is a pure inverse of encode for valid data).
-    raw_binary[0] = 'Z'; raw_binary[1] = 'R'; raw_binary[2] = 'S'; raw_binary[3] = 'S';
-    raw_binary[4] = decoded.version;
-    memcpy(raw_binary + 5, decoded.settings_hash, 16);
-    for (int i = 0; i < 8; ++i) raw_binary[21 + i] = (uint8)((decoded.seed_u64 >> (i * 8)) & 0xff);
-    // Last 2 bytes (CRC) are not exposed by ShareString; we leave them
-    // zero. The slot header consumes the bytes only as an opaque blob (the
-    // icon-hash widget hashes whatever's there). Phase A acceptance: the
-    // raw blob lives within the slot header for downstream sphere-tracking
-    // and the icon hash remains deterministic per (settings, seed).
-  }
+  Share_PackBinary(&ss, raw_binary);
 
   // Compute spoiler path + write spoiler files.
   char spoiler_json_path[512];
@@ -3225,7 +3300,24 @@ static void SelectFile_Settings_HandleGenerate(void) {
   WORD(target_sram[0x3e5]) = 0x55aa;
   WORD(target_sram[0x20c]) = 0xf000;
   WORD(target_sram[0x20e]) = 0xf000;
-  WORD(target_sram[0x3e3]) = 0xffff;  // DiedCounter
+  // §9 cluster-3 audit HIGH-4: 0x3e3 is name[5] (already blank above);
+  // DiedCounter lives at kSrmOffs_DiedCounter = 0x405.
+  WORD(target_sram[kSrmOffs_DiedCounter]) = 0xffff;
+  // §9 cluster-3 audit HIGH-3: replicate the new-file init from
+  // NameFile_DoTheNaming (lines 1183-1189) so the slot has the canonical
+  // starting state — without this, health bytes at 0x36c..0x36d stayed
+  // zero, so the rando slot loaded as instant-death (0 hearts / 0 max).
+  // The 60-byte block initializes health, magic, gloves, etc. The bytes
+  // 0x18,0x18 at offsets +44/+45 are the starting health + max health
+  // (0x18 = 3 hearts in quarter-heart units); 0xf8 at offset +57 is the
+  // boomerang/item slot baseline.
+  static const uint8 kSramInit_Normal[60] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0, 0x18, 0x18, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0, 0,
+  };
+  memcpy(target_sram + 0x340, kSramInit_Normal, 60);
   Intro_FixCksum(target_sram);
 
   if (!Rando_WriteSidecarSlot((int)g_settings_target_slot, &slot, target_sram, 0x500)) {
