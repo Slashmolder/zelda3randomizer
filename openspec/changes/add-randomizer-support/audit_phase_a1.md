@@ -22,7 +22,7 @@ Subsequent commits have addressed the following:
 | #9 text spoiler not grouped by region | ✅ closed | 599f8a1 Spoiler: group text by region |
 | #10 un-completable seed exits 0 | ✅ closed | 72cc7db Strict refusal of un-completable seeds |
 | #11 dead is_progression_item code | ✅ closed (now used; Prize_* ids pin correctly per #1) |
-| #12 Rando_TryGrantStartingInventory uncalled | ⚠ deferred (wires when §6 grant-site dispatch lands) |
+| #12 Rando_TryGrantStartingInventory uncalled | ⚠ STILL OPEN (re-verified 2026-05-26): function exists at `rando_placement.c:1360`; no production caller. `select_file.c:3289` comment is aspirational. Inverted needs MoonPearl+MagicMirror injection at game-start; Open grants nothing extra so unaffected. Call site decision (end of Module05_LoadFile vs first Module06_PreDungeon) is a §6/§9 integration choice — track separately. |
 | #13 pieces_required > pieces_placed silent | ✅ closed | 599f8a1 BuildItemPool: validate Triforce-Hunt |
 | #14 HAS_ANY_COUNT vacuous selftest | ✅ closed | 2bf28b0 Logic_SelfCheck: vacuous HAS_ANY_COUNT cases |
 | #15 eval_glitch comparison | ✅ closed | 599f8a1 eval_glitch: use ctx->settings->logic |
@@ -50,20 +50,40 @@ Spec scenarios also closed beyond the original audit:
 - seed_u64 in spoiler meta (000566c)
 - generation_wall_clock_ms wired (f8c6d88)
 
-Still open (deferred, substantial work):
-- NEW-2 (partial closure): §6.2 receive helpers added for 20 items
-  (5 progressive items, 5 rupees, Rupoor, HalfMagic, 7 bottle types,
-  SilverArrowUpgrade) — these now translate to LttP codes via the
-  existing misc.c dispatch table. Still 0xFF: TriforcePiece (needs
-  new counter), QuarterMagic (no vanilla LttP path), dungeon items
-  (35 IDs need per-dungeon bit OR), prize items (10 IDs need crystal/
-  pendant bit OR).
-- NEW-4 closed: snapshot tail TLV preserves rando placement (81b0a7a).
-- Inverted/Retro world-state pool augmentation + start region declaration.
-- Per-item bounded rewind (vs current whole-attempt retry).
-- §6.4-§6.8 NPC/static/minigame dispatch for the long tail (~80 sites).
-- §8 sidecar save load/write integration.
-- §9 UI work (file-select / settings screen / tracker).
+Still open (2026-05-26 refresh, post-§7.7/§8/§9/§7.6 sprints):
+
+**Closed since previous "Still open" list**:
+- NEW-2 §6.2 receive helpers: ✅ all 4 direct-grant categories now wired
+  (HalfMagic/QuarterMagic, prize bits, dungeon-item bits, TriforcePiece
+  counter). Direct-grant paths sentinel-return `kRandoLttpSkip`;
+  `Rando_DispatchVanillaGrant` handles all 125 registry items.
+- §6.4-§6.8 NPC/static dispatch: ✅ all 21 `Rando_ShouldSkipReceive`
+  sites wired (Bottle Merchant, Sahasrahla, Mushroom, Library, Uncle,
+  Sick Kid, Purple Chest, Hobo, Stumpy, Old Man, Blacksmith, Master
+  Sword Pedestal, Flute Spot, Catfish, King Zora, Magic Bat, Potion
+  Shop, Pyramid Fairy, Ether/Bombos tablets, all chests via §6.3
+  universal hook). §6.8 minigame sites (digging, hype cave, peg cave,
+  treasure chest minigame) are the Phase B follow-on per task 71.
+- §8 sidecar save load/write integration: ✅ §8.1-§8.10 all done
+  (atomic-commit protocol, Rando_LoadSidecarSlot, Rando_WriteSidecarSlot,
+  cross-version load test, downgrade drift detection, coexistence,
+  snapshot replay, older-binary degradation).
+- §9 UI work: ✅ §9.1-§9.8 done (text-input layer, file-select kind
+  dispatch, settings screen, recommended-features panel, 5-icon hash
+  widget, Generate action). §9.1c Switch swkbd is the only open §9 item.
+- §7.6 direct-grant visual confirmation UX: ✅ helper + 21 sites wired.
+- §7.7 link_which_pendants double-grant: ✅ fixed at `misc.c:738-742`
+  with the same `kFeatures1_RandomizerActive` gate that crystals got.
+
+**Still open**:
+- Bug #7 per-item bounded rewind (vs current whole-attempt retry) —
+  deferred to A2 per audit; not blocking A1 if forward-fill works.
+- Bug #12 starting-inventory call site — Inverted needs MoonPearl +
+  MagicMirror injection at game-start; need to pick a hook point.
+- Inverted world-state: `kRandoStartRegionByWorldState[Inverted] = 0xFFFF`
+  (no start region declared). Retro world-state: shop locations not in
+  pool. Per `§3.3` status note, both formally deferred to Phase B.
+- §9.1c Switch software-keyboard (libnx swkbd) wrapper.
 
 ## 1. Scenario-by-scenario gap report
 
