@@ -26,12 +26,14 @@ from pathlib import Path
 #   - src/rando/logic_data.c        (from assets/rando/logic.yaml — task 3.5)
 #   - src/rando/location_ids.h      (from assets/rando/location_registry.yaml — task 3.1)
 #   - src/rando/item_ids.h          (from assets/rando/item_registry.yaml — task 3.2)
-#   - src/rando/vanilla_assets_hash.h (from assets/restool.py post-build — task 1.1b)
+#
+# Note: src/rando/vanilla_assets_hash.h is NOT in this list. It's hand-
+# maintained (the dump tool overwrites it) and pulled in via #include, so
+# the build systems don't need to reference it explicitly.
 EXPECTED_GENERATED = [
     "src/rando/logic_data.c",
     "src/rando/location_ids.h",
     "src/rando/item_ids.h",
-    "src/rando/vanilla_assets_hash.h",
 ]
 
 BUILD_SYSTEM_FILES = [
