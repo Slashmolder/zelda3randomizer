@@ -57,6 +57,45 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   uint8 placement_digest[32];
   PlacementTable_ComputeDigest(s->placements, placement_digest);
 
+  // sphere_digest: SHA-256 over the canonical sphere assignment (per spec
+  // "sphere_digest in meta block"). Lets corpus tooling detect
+  // sphere-computation regressions independently of the placement table.
+  // Canonical bytes: for each placement in location_id-sorted order,
+  // emit (location_id u16 LE | sphere_index u8). Unreachable placements
+  // contribute sphere_index 0xFF.
+  uint8 sphere_digest[32];
+  {
+    extern void sha256_buffer(const uint8 *data, size_t len, uint8 out[32]);
+    if (s->spheres != NULL && s->placements != NULL && s->placements->count > 0) {
+      static struct { uint16 loc; uint8 sph; } rows[512];
+      uint16 n = s->placements->count;
+      if (n > 512) n = 512;
+      for (uint16 i = 0; i < n; i++) {
+        rows[i].loc = s->placements->entries[i].location_id;
+        rows[i].sph = s->spheres->sphere_index_by_placement[i];
+      }
+      // Insertion sort by location_id (canonical).
+      for (uint16 i = 1; i < n; i++) {
+        uint16 j = i;
+        while (j > 0 && rows[j - 1].loc > rows[j].loc) {
+          uint16 tl = rows[j - 1].loc; uint8 ts = rows[j - 1].sph;
+          rows[j - 1].loc = rows[j].loc; rows[j - 1].sph = rows[j].sph;
+          rows[j].loc = tl; rows[j].sph = ts;
+          j--;
+        }
+      }
+      static uint8 buf[512 * 3];
+      for (uint16 i = 0; i < n; i++) {
+        buf[i * 3 + 0] = (uint8)(rows[i].loc & 0xff);
+        buf[i * 3 + 1] = (uint8)(rows[i].loc >> 8);
+        buf[i * 3 + 2] = rows[i].sph;
+      }
+      sha256_buffer(buf, (size_t)n * 3, sphere_digest);
+    } else {
+      sha256_buffer((const uint8 *)"", 0, sphere_digest);
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Meta block — names match ALTTPR's "meta" object where applicable (per
   // randomizer-core / "Spoiler JSON schema mirrors ALTTPR field names").
@@ -73,6 +112,9 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "\",\n");
   fprintf(f, "    \"placement_digest_hex\": \"");
   write_hex(f, placement_digest, 32);
+  fprintf(f, "\",\n");
+  fprintf(f, "    \"sphere_digest\": \"");
+  write_hex(f, sphere_digest, 32);
   fprintf(f, "\",\n");
   fprintf(f, "    \"share_string\": \"%s\",\n",
           s->share_string != NULL ? s->share_string : "");
