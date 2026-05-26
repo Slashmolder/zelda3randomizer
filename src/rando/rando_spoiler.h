@@ -12,6 +12,7 @@
 
 typedef struct RandoSpoiler {
   const char *share_string;
+  uint64 seed_u64;                   // per spec — emitted in meta block
   uint32 generator_version;
   const RandoSettings *settings;
   const RandoPlacementTable *placements;

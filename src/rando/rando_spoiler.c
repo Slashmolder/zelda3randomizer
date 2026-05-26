@@ -76,6 +76,7 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "\",\n");
   fprintf(f, "    \"share_string\": \"%s\",\n",
           s->share_string != NULL ? s->share_string : "");
+  fprintf(f, "    \"seed_u64\": \"0x%016llx\",\n", (unsigned long long)s->seed_u64);
   fprintf(f, "    \"world_state\": %u,\n", (unsigned)s->settings->world_state);
   fprintf(f, "    \"goal\": %u,\n", (unsigned)s->settings->goal);
   fprintf(f, "    \"generation_wall_clock_ms\": %u,\n",

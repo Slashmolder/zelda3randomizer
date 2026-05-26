@@ -438,6 +438,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   RandoSpoiler spoiler;
   memset(&spoiler, 0, sizeof(spoiler));
   spoiler.share_string = share_string;
+  spoiler.seed_u64 = seed_u64;
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
   spoiler.placements = &table;
