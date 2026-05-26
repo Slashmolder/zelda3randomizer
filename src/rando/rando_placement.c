@@ -445,19 +445,32 @@ static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
 // order: HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9,
 // MM=10, TR=11, GT=12). Returns 0xFF if the item is not a dungeon item.
 //
-// Per item_registry.yaml: SmallKey ids 53..65, BigKey ids 66..76 (no HCE
-// big key), Map ids 77..87 + 124 (Map_HCE), Compass ids 88..98 (no HCE
-// compass).
+// Per audit NEW-1: BigKey/Map/Compass enums in item_registry.yaml skip
+// HCT (no big key/map/compass for HCT), NOT just HCE. The simple
+// arithmetic mapping (`item_id - base + 1`) was wrong for 8 of 11
+// dungeons. Use a per-class array index → dungeon-id table that
+// mirrors kBigKeys / kMaps / kCompasses ordering.
+//
+// kBigKeys order (11 entries): EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
+//                            = dungeons 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
+// kMaps order (12 entries): HCE, EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
+//                         = dungeons 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
+// kCompasses order (11 entries): EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
+//                              = dungeons 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
 static uint8 dungeon_id_for_item(uint16 item_id) {
-  // Small keys 53..65 in HCE..GT order.
+  // SmallKey ids 53..65 contiguous in HCE..GT order — no skip.
   if (item_id >= 53 && item_id <= 65) return (uint8)(item_id - 53);
-  // Big keys 66..76 in EP..GT order (no HCE big key).
-  if (item_id >= 66 && item_id <= 76) return (uint8)(item_id - 66 + 1);
-  // Maps 77..87 in EP..GT order; Map_HCE = id 124.
+  // BigKey ids 66..76 skip HCE *and* HCT.
+  static const uint8 kBigKeyDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
+  if (item_id >= 66 && item_id <= 76) return kBigKeyDungeon[item_id - 66];
+  // Map_HCE = 124.
   if (item_id == 124) return 0;
-  if (item_id >= 77 && item_id <= 87) return (uint8)(item_id - 77 + 1);
-  // Compasses 88..98 in EP..GT order.
-  if (item_id >= 88 && item_id <= 98) return (uint8)(item_id - 88 + 1);
+  // Map ids 77..87 skip HCT (HCE handled separately above).
+  static const uint8 kMapDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
+  if (item_id >= 77 && item_id <= 87) return kMapDungeon[item_id - 77];
+  // Compass ids 88..98 skip HCE *and* HCT.
+  static const uint8 kCompassDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
+  if (item_id >= 88 && item_id <= 98) return kCompassDungeon[item_id - 88];
   return 0xFF;
 }
 
@@ -785,6 +798,18 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       vanilla_pin = (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla);
     } else if (vi >= 88 && vi <= 98) {
       vanilla_pin = (settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla);
+    } else {
+      // Spec scenario "Phase A boss-heart slots are identity-placed":
+      // each <Dungeon>_BossHeart drop (10 of them; vanilla_item=51) is
+      // pinned to BossHeartContainer when region_boss_hearts_in_pool=1
+      // (the Phase A default). Identified by type=Drop + vanilla_item=51
+      // so the Sanctuary chest (also vanilla_item=51 but type=Chest) is
+      // NOT pinned.
+      const uint8 LOCTYPE_Drop = 7;  // per logic.schema.yaml types index
+      if (loc->type == LOCTYPE_Drop && vi == 51 &&
+          settings->region_boss_hearts_in_pool != 0) {
+        vanilla_pin = true;
+      }
     }
     if (vanilla_pin) {
       placement_at[k] = vi;
