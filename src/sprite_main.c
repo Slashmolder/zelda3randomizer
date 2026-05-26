@@ -2131,7 +2131,13 @@ void MasterSword_Main(int k) {  // 8588d6
     if (!sprite_delay_main[k]) {
       save_ow_event_info[BYTE(overworld_screen_index)] |= 0x40;
       item_receipt_method = 0;
-      Link_ReceiveItem(1, 0);
+      {
+        uint8 lttp_code = 1;  // L2Sword (Master Sword from Pedestal)
+        if (enhanced_features1 & kFeatures1_RandomizerActive) {
+          lttp_code = Rando_DispatchVanillaGrant(LOC_Master_Sword_Pedestal, ITEM_L2Sword, lttp_code);
+        }
+        Link_ReceiveItem(lttp_code, 0);
+      }
       savegame_map_icons_indicator = 5;
       link_unk_master_sword = 0;
       sprite_ai_state[k] = 5;

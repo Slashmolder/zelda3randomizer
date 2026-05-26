@@ -11,6 +11,10 @@
 #include "dungeon.h"
 #include "sprite_main.h"
 #include "assets.h"
+#include "features.h"
+#include "rando/rando.h"
+#include "rando/item_ids.h"
+#include "rando/location_ids.h"
 
 static const uint8 kAncilla_Pflags[68] = {
   0,    8,  0xc, 0x10, 0x10,    4, 0x10, 0x18,    8,    8,    8,    0, 0x14, 0, 0x10, 0x28,
@@ -4016,7 +4020,13 @@ void Ancilla36_Flute(int k) {  // 88cfaa
       if (Ancilla_CheckLinkCollision(k, 2, &coll_out) && !related_to_hookshot && link_auxiliary_state == 0) {
         ancilla_type[k] = 0;
         item_receipt_method = 0;
-        Link_ReceiveItem(0x14, 0);
+        {
+          uint8 lttp_code = 0x14;  // OcarinaInactive (Flute from FluteBoy duck)
+          if (enhanced_features1 & kFeatures1_RandomizerActive) {
+            lttp_code = Rando_DispatchVanillaGrant(LOC_Flute_Spot, ITEM_OcarinaInactive, lttp_code);
+          }
+          Link_ReceiveItem(lttp_code, 0);
+        }
         return;
       }
     }
