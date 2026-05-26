@@ -51,14 +51,19 @@ Spec scenarios also closed beyond the original audit:
 - generation_wall_clock_ms wired (f8c6d88)
 
 Still open (deferred, substantial work):
-- NEW-2: §6.2 receive helpers for 0xFF-dispatch items (TriforcePiece,
-  small/big keys, multi-tier rupees, HalfMagic/QuarterMagic, etc.)
-- NEW-4: StateRecorder snapshot doesn't preserve rando placement
-- Inverted/Retro world-state pool augmentation + start region declaration
-- Per-item bounded rewind (vs current whole-attempt retry)
-- §6.4-§6.8 NPC/static/minigame dispatch for the long tail (~80 sites)
-- §8 sidecar save load/write integration
-- §9 UI work (file-select / settings screen / tracker)
+- NEW-2 (partial closure): §6.2 receive helpers added for 20 items
+  (5 progressive items, 5 rupees, Rupoor, HalfMagic, 7 bottle types,
+  SilverArrowUpgrade) — these now translate to LttP codes via the
+  existing misc.c dispatch table. Still 0xFF: TriforcePiece (needs
+  new counter), QuarterMagic (no vanilla LttP path), dungeon items
+  (35 IDs need per-dungeon bit OR), prize items (10 IDs need crystal/
+  pendant bit OR).
+- NEW-4 closed: snapshot tail TLV preserves rando placement (81b0a7a).
+- Inverted/Retro world-state pool augmentation + start region declaration.
+- Per-item bounded rewind (vs current whole-attempt retry).
+- §6.4-§6.8 NPC/static/minigame dispatch for the long tail (~80 sites).
+- §8 sidecar save load/write integration.
+- §9 UI work (file-select / settings screen / tracker).
 
 ## 1. Scenario-by-scenario gap report
 
