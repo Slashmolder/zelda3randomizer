@@ -63,10 +63,15 @@ static uint32 get_u32le(const uint8 *p) {
 
 // ---------------------------------------------------------------------------
 // On-disk sizing
+//
+// Per spec (randomizer-save § Slot header): `placement_table_size` is the
+// byte size of the embedded placement table (= 2 × location_count, since
+// each location takes a uint16 LE). The bitmap covers `location_count` bits.
 // ---------------------------------------------------------------------------
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size) {
-  uint32 placements_bytes = (uint32)placement_table_size * 4;
-  uint32 bitmap_bytes = ((uint32)placement_table_size + 7) >> 3;
+  uint32 placements_bytes = (uint32)placement_table_size;
+  uint32 location_count = (uint32)placement_table_size / 2;
+  uint32 bitmap_bytes = (location_count + 7) >> 3;
   return kRandoSidecar_SlotHeaderSize + placements_bytes + bitmap_bytes;
 }
 
@@ -142,19 +147,40 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
 
 // ---------------------------------------------------------------------------
 // Slot body (placements + bitmap)
+//
+// Per spec: the on-disk embedded placement table is a FLAT uint16[] indexed
+// by location_id. Each slot at index k holds the item_id placed at
+// location_id k, or 0xFFFF as the "no placement" sentinel. The in-memory
+// `placements[]` array is a sparse (location, item) list — we translate
+// between the two representations here.
 // ---------------------------------------------------------------------------
 uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 buf_size) {
   if (slot == NULL || buf == NULL) return 0;
   uint32 size = RandoSave_SlotOnDiskSize(slot->header.placement_table_size);
   if (buf_size < size) return 0;
+  uint32 location_count = (uint32)slot->header.placement_table_size / 2;
   serialize_slot_header(&slot->header, buf);
   uint8 *p = buf + kRandoSidecar_SlotHeaderSize;
-  for (uint16 i = 0; i < slot->header.placement_table_size; i++) {
-    put_u16le(p + i * 4, slot->placements[i].location_id);
-    put_u16le(p + i * 4 + 2, slot->placements[i].item_id);
+  // Initialize the flat table to the no-placement sentinel.
+  for (uint32 i = 0; i < location_count; i++) {
+    put_u16le(p + i * 2, kRandoSidecar_NoPlacementSentinel);
   }
-  p += (uint32)slot->header.placement_table_size * 4;
-  uint32 bitmap_bytes = ((uint32)slot->header.placement_table_size + 7) >> 3;
+  // Scatter the sparse placements[] entries into the flat array. Entries with
+  // location_id >= location_count are ignored (they would lose data on
+  // round-trip — caller should size placement_table_size for the max id in
+  // use, which is what we do at write time).
+  uint16 sparse_count = slot->placement_count;
+  if (sparse_count > (sizeof(slot->placements) / sizeof(slot->placements[0]))) {
+    sparse_count = (uint16)(sizeof(slot->placements) / sizeof(slot->placements[0]));
+  }
+  for (uint16 i = 0; i < sparse_count; i++) {
+    uint16 loc = slot->placements[i].location_id;
+    if ((uint32)loc < location_count) {
+      put_u16le(p + (uint32)loc * 2, slot->placements[i].item_id);
+    }
+  }
+  p += location_count * 2;
+  uint32 bitmap_bytes = (location_count + 7) >> 3;
   memcpy(p, slot->checked_bitmap, bitmap_bytes);
   return size;
 }
@@ -164,19 +190,29 @@ uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecar
   memset(out, 0, sizeof(*out));
   uint32 hdr_used = deserialize_slot_header(buf, buf_size, &out->header);
   if (hdr_used == 0) return 0;
-  // Sanity-check placement_table_size against the array bound.
-  if (out->header.placement_table_size > (sizeof(out->placements) / sizeof(out->placements[0]))) {
+  uint32 location_count = (uint32)out->header.placement_table_size / 2;
+  // Sanity-check against the in-memory bound — we cannot store more sparse
+  // pairs than the static array can hold.
+  if (location_count > (sizeof(out->placements) / sizeof(out->placements[0]))) {
     return 0;
   }
   uint32 total = RandoSave_SlotOnDiskSize(out->header.placement_table_size);
   if (buf_size < total) return 0;
   const uint8 *p = buf + kRandoSidecar_SlotHeaderSize;
-  for (uint16 i = 0; i < out->header.placement_table_size; i++) {
-    out->placements[i].location_id = get_u16le(p + i * 4);
-    out->placements[i].item_id = get_u16le(p + i * 4 + 2);
+  // Gather the flat array back into the sparse in-memory list. Sentinel
+  // entries (item_id == 0xFFFF) are skipped — the dispatcher's fall-back
+  // path handles those.
+  uint16 sparse_count = 0;
+  for (uint32 i = 0; i < location_count; i++) {
+    uint16 item_id = get_u16le(p + i * 2);
+    if (item_id == kRandoSidecar_NoPlacementSentinel) continue;
+    out->placements[sparse_count].location_id = (uint16)i;
+    out->placements[sparse_count].item_id = item_id;
+    sparse_count++;
   }
-  p += (uint32)out->header.placement_table_size * 4;
-  uint32 bitmap_bytes = ((uint32)out->header.placement_table_size + 7) >> 3;
+  out->placement_count = sparse_count;
+  p += location_count * 2;
+  uint32 bitmap_bytes = (location_count + 7) >> 3;
   if (bitmap_bytes <= sizeof(out->checked_bitmap)) {
     memcpy(out->checked_bitmap, p, bitmap_bytes);
   }
@@ -357,11 +393,15 @@ void RandoSave_SelfCheck(void) {
   for (int i = 0; i < 32; i++) src.header.share_string[i] = (uint8)('A' + (i % 26));
   src.header.last_vanilla_write_version = 0xABCD;
   src.header.sram_slot_checksum_at_last_write = 0xDEADBEEF;
-  src.header.placement_table_size = 3;
+  // placement_table_size is in BYTES per spec. We want 3 placements at
+  // location_ids 5, 10, 20 — so we need a flat table covering loc_ids 0..20
+  // (21 entries × 2 bytes = 42 bytes).
+  src.header.placement_table_size = 42;
   src.header.flags = 0x42;
-  src.placements[0].location_id = 100; src.placements[0].item_id = 50;
-  src.placements[1].location_id = 200; src.placements[1].item_id = 75;
-  src.placements[2].location_id = 300; src.placements[2].item_id = 99;
+  src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
+  src.placements[1].location_id = 10; src.placements[1].item_id = 75;
+  src.placements[2].location_id = 20; src.placements[2].item_id = 99;
+  src.placement_count = 3;
   src.checked_bitmap[0] = 0x05;  // bits 0 and 2 set
 
   uint8 buf[256];
@@ -377,8 +417,17 @@ void RandoSave_SelfCheck(void) {
   if (get_u16le(buf + 5) != 0x1234) selfcheck_die("generator_version at @5 wrong");
   if (get_u16le(buf + 55) != 0xABCD) selfcheck_die("last_vanilla_write_version at @55 wrong");
   if (get_u32le(buf + 57) != 0xDEADBEEF) selfcheck_die("sram_checksum at @57 wrong");
-  if (get_u16le(buf + 61) != 3) selfcheck_die("placement_table_size at @61 wrong");
+  if (get_u16le(buf + 61) != 42) selfcheck_die("placement_table_size at @61 wrong");
   if (buf[63] != 0x42) selfcheck_die("flags at @63 wrong");
+  // Flat table layout check: location 5 should hold item 50.
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
+    selfcheck_die("flat table: loc 5 item slot wrong");
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 10 * 2) != 75)
+    selfcheck_die("flat table: loc 10 item slot wrong");
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 20 * 2) != 99)
+    selfcheck_die("flat table: loc 20 item slot wrong");
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 0 * 2) != kRandoSidecar_NoPlacementSentinel)
+    selfcheck_die("flat table: loc 0 should be sentinel");
 
   uint32 used = RandoSave_DeserializeSlot(buf, wrote, &dst);
   if (used != wrote) selfcheck_die("deserialize used != serialize wrote");
@@ -392,10 +441,12 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.sram_slot_checksum_at_last_write != src.header.sram_slot_checksum_at_last_write) selfcheck_die("sram_checksum round-trip");
   if (dst.header.placement_table_size != src.header.placement_table_size) selfcheck_die("placement_table_size round-trip");
   if (dst.header.flags != src.header.flags) selfcheck_die("flags round-trip");
-  for (uint16 i = 0; i < src.header.placement_table_size; i++) {
-    if (dst.placements[i].location_id != src.placements[i].location_id) selfcheck_die("placements round-trip loc");
-    if (dst.placements[i].item_id != src.placements[i].item_id) selfcheck_die("placements round-trip item");
-  }
+  if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
+  // After deserialization the sparse list is sorted by location_id (because
+  // we scatter+gather over the dense array).
+  if (dst.placements[0].location_id != 5  || dst.placements[0].item_id != 50) selfcheck_die("placements[0] round-trip");
+  if (dst.placements[1].location_id != 10 || dst.placements[1].item_id != 75) selfcheck_die("placements[1] round-trip");
+  if (dst.placements[2].location_id != 20 || dst.placements[2].item_id != 99) selfcheck_die("placements[2] round-trip");
   if (dst.checked_bitmap[0] != src.checked_bitmap[0]) selfcheck_die("checked_bitmap round-trip");
 
   // Bad-magic case → deserialize returns 0.

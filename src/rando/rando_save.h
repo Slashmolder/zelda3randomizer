@@ -50,10 +50,17 @@ typedef enum {
 //   @23 share_string[32]                    (raw binary; rando_share writes 31 + pad)
 //   @55 last_vanilla_write_version (u16 LE) (kGeneratorVersion at last write)
 //   @57 sram_slot_checksum_at_last_write (u32 LE)
-//   @61 placement_table_size (u16 LE)       (number of (loc,item) pairs)
-//   @63 flags (u8)
+//   @61 placement_table_size (u16 LE)       (**bytes**; placement_table_size / 2 = location count)
+//   @63 flags (u8)                          (bit 0 = forward-fill fallback was used)
 //   @64 reserved[16]                        (forward-compat; zero on write)
 //   Total = 80 bytes.
+//
+// Per spec: the on-disk embedded placement table is a FLAT uint16[] indexed
+// by location_id (length = placement_table_size / 2). Each slot holds the
+// item_id placed at that location; 0xFFFF is the "no placement / deprecated
+// location" sentinel that the dispatcher treats as fall-back-to-vanilla.
+// The in-memory `placements[]` array remains a sparse (location, item) list
+// for convenience; serialize/deserialize translate between the two forms.
 typedef struct RandoSlotHeader {
   uint8 slot_kind;
   uint16 generator_version;
@@ -61,9 +68,12 @@ typedef struct RandoSlotHeader {
   uint8 share_string[kRandoSidecar_ShareStringLength];
   uint16 last_vanilla_write_version;
   uint32 sram_slot_checksum_at_last_write;
-  uint16 placement_table_size;  // count of (location, item) pairs; bytes on disk = 4*size
-  uint8 flags;
+  uint16 placement_table_size;  // **bytes**; placement_table_size / 2 = #locations stored
+  uint8 flags;                  // bit 0 = forward-fill fallback was used
 } RandoSlotHeader;
+
+// Bitmap covers placement_table_size / 2 locations.
+#define kRandoSlotFlag_ForwardFillUsed 0x01
 
 // File header (16 bytes total):
 //   @0  magic[4]                            (= kRandoSidecar_FileMagic, LE)
@@ -78,12 +88,18 @@ typedef struct RandoSidecarFileHeader {
 } RandoSidecarFileHeader;
 
 // One in-memory slot.
+//
+// `placements[]` is the sparse in-memory representation of the placement
+// table; on-disk it is serialized as a flat uint16[] indexed by location_id.
+// `placement_count` tracks how many entries of `placements[]` are valid.
+// `header.placement_table_size` is the byte length of the on-disk flat
+// array (= 2 × max_location_id_in_use + 2 for the writer; the spec lets
+// later binaries that have a larger registry happily ignore zeros beyond
+// this prefix).
 typedef struct RandoSidecarSlot {
   RandoSlotHeader header;
-  // Embedded placement table — packed (uint16 LE location_id, uint16 LE item_id)*N
-  // when serialized; in-memory uses RandoPlacement[] for convenience.
   RandoPlacement placements[512];  // sized for ~237 + headroom
-  // Checked-location bitmap — (placement_table_size + 7) >> 3 bytes when serialized.
+  uint16 placement_count;          // valid entries in placements[]
   uint8 checked_bitmap[(512 + 7) >> 3];
 } RandoSidecarSlot;
 
@@ -92,8 +108,13 @@ typedef struct RandoSidecarSlot {
 // ---------------------------------------------------------------------------
 
 // Compute the on-disk byte size of one slot given its placement_table_size.
-// = 80 (header) + 4*N (placements) + ((N+7)>>3) (bitmap).
+// placement_table_size is in BYTES (= 2 × location count).
+// Total = 80 (header) + placement_table_size + ((placement_table_size/2 + 7) >> 3) bitmap.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);
+
+// Sentinel item_id for "no placement / deprecated location" — written at
+// indices that have no corresponding RandoPlacement entry.
+#define kRandoSidecar_NoPlacementSentinel 0xFFFFu
 
 // Serialize one slot into a fixed buffer. Returns the byte count written or 0
 // on failure (buffer too small).
