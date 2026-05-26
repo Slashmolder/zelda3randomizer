@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 7  # bumped: dungeon-mode small_keys/big_keys/maps/compasses now enforce per-dungeon containment at placement time
+generator_version: 8  # bumped: item-pool difficulty (hard/expert) now caps sword/shield/armor/bow/hearts counts per ALTTPR overflow.count.*
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -108,11 +108,11 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, item_pool: hard }
     seed: "0x0000000000000021"
     label: "a1-open-fg-pool-hard"
-    expected_digest: "17818167000bb6a2ce821d9cbda2bb6eb4db64ac3ef28bc20c69893a88827d68"
+    expected_digest: "2faf76a84d77700b3929593431ed818244b5a6c19d1d4459707245d1b9d9c315"
   - settings: { mode.state: open, goal: fast_ganon, item_pool: expert }
     seed: "0x0000000000000022"
     label: "a1-open-fg-pool-expert"
-    expected_digest: "5db302e399b82d536b222210cb365a394e2fb4182b6aa4c086a49f0402e28c71"
+    expected_digest: "3b016d0560017e035fc7abbf9d2334b5898bccb1e4ed76c83f10bbbf8f51a7b4"
   # Other settings axes.
   - settings: { mode.state: open, goal: fast_ganon, accessibility: locations }
     seed: "0x0000000000000023"
@@ -211,11 +211,11 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, item_pool: hard }
     seed: "0x0000000000000050"
     label: "a1-standard-fg-pool-hard"
-    expected_digest: "c22dbc08c527e530c448dbb51d8fb994be9b7c5b4197c2647ebdfdbb8505212d"
+    expected_digest: "4eb95ae20ddf387439d79587f83ab40467d99030b05cd8a67427ab5966d032fa"
   - settings: { mode.state: open, goal: "triforce-hunt", item_pool: expert, pieces_required: 15, pieces_placed: 20 }
     seed: "0x0000000000000051"
     label: "a1-th-expert-pool"
-    expected_digest: "5662b6a9fea8c3dc5d68b430466ca555d1c2ead31c69a8d080b1804216ffde05"
+    expected_digest: "c54b8091a2f0a175ca6cccc75e41eaa0de7261dafa3317e860a5ed548d725447"
 
   # Celebrity seeds — named for easier diagnosis when a future change
   # diverges. Each label is the headline-grade description of what the seed
@@ -231,7 +231,7 @@ entries:
   - settings: { mode.state: open, goal: completionist, item_pool: hard }
     seed: "0xC0FFEE"
     label: "celebrity-completionist-open"
-    expected_digest: "c09406e41ce4b250a8355d294b15673e738a735f3c0f36825336e9f12a171af4"
+    expected_digest: "2cee390e7f5a2450a50b9222076cd495015877b0e8c6bad51471d51a91d72191"
   - settings: { mode.state: open, goal: pedestal, mode.weapons: assured }
     seed: "0xDEADBEEF"
     label: "celebrity-pedestal-rush"

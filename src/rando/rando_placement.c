@@ -209,17 +209,39 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   uint16 n = 0;
 
   // ----- Progression items: sword / shield / armor / glove / bow -----
+  // Item-pool difficulty caps per spec scenario "Item-pool difficulty
+  // downgrade" + ALTTPR's app/World.php:171-214 overflow.count.* table.
+  // Hard / Expert cap the per-class counts; excess slots get filled with
+  // junk during the junk-pad pass.
+  uint8 sword_cap = 4, armor_cap = 2, shield_cap = 3, bow_cap = 2;
+  uint8 bossheart_cap = 10, poh_cap = 24;
+  switch (settings->item_pool_difficulty) {
+    case kItemPoolDifficulty_Hard:
+      sword_cap = 3; armor_cap = 0; shield_cap = 2; bow_cap = 1;
+      bossheart_cap = 6; poh_cap = 16;
+      break;
+    case kItemPoolDifficulty_Expert:
+      sword_cap = 2; armor_cap = 0; shield_cap = 1; bow_cap = 1;
+      bossheart_cap = 2; poh_cap = 8;
+      break;
+    case kItemPoolDifficulty_Easy:
+    case kItemPoolDifficulty_Normal:
+    default:
+      break;
+  }
+
   if (settings->mode_weapons == kModeWeapons_Randomized ||
       settings->mode_weapons == kModeWeapons_Assured) {
     // ALTTPR convention for Randomized/Assured: 4 progressive swords, 3
     // progressive shields, 2 progressive armor, 2 progressive gloves, 2
     // progressive bows. (Per `Randomizer.php:183-198`; counts match the max
-    // tier counts in item_registry.yaml.)
-    n = pool_add(out_items, n, capacity, ID_ProgressiveSword, 4);
-    n = pool_add(out_items, n, capacity, ID_ProgressiveShield, 3);
-    n = pool_add(out_items, n, capacity, ID_ProgressiveArmor, 2);
+    // tier counts in item_registry.yaml.) item_pool_difficulty applies
+    // overflow caps to sword / shield / armor / bow.
+    n = pool_add(out_items, n, capacity, ID_ProgressiveSword, sword_cap);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveShield, shield_cap);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveArmor, armor_cap);
     n = pool_add(out_items, n, capacity, ID_ProgressiveGlove, 2);
-    n = pool_add(out_items, n, capacity, ID_ProgressiveBow, 2);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveBow, bow_cap);
   } else {
     // Absolute weapon mode (Phase B 'vanilla' / Phase B 'swordless' reserved):
     // emit one of each tier as a distinct item.
@@ -283,8 +305,8 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   // boss). When region.bossHeartsInPool is false (Phase A default), the 10
   // boss-heart slots are identity-placed at the boss locations, so the pool
   // includes BossHeartContainer ×10 anyway — they end up at their _BossHeart slots.
-  n = pool_add(out_items, n, capacity, ID_PieceOfHeart, 24);
-  n = pool_add(out_items, n, capacity, ID_BossHeartContainer, 10);
+  n = pool_add(out_items, n, capacity, ID_PieceOfHeart, poh_cap);
+  n = pool_add(out_items, n, capacity, ID_BossHeartContainer, bossheart_cap);
 
   // ----- Dungeon items (per dungeon_items.* mode) -----
   // Vanilla: NOT in pool (placed at vanilla locations by the placement

@@ -19,7 +19,7 @@
 //
 // Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 7u
+#define kGeneratorVersion 8u
 
 // ---------------------------------------------------------------------------
 // g_assets_hash — SHA-256 of the loaded asset blob (computed once after
