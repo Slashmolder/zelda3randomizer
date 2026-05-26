@@ -1249,5 +1249,45 @@ void Placement_SelfCheck(void) {
     if (n_null != 0) selfcheck_die("BuildItemPool(NULL) should return 0");
   }
 
+  // Audit Bug #13: BuildItemPool refuses pieces_required > pieces_placed
+  // for Triforce/Ganon-Hunt goals.
+  {
+    RandoSettings s;
+    Settings_SetDefaults(&s);
+    s.goal = kGoal_TriforceHunt;
+    s.pieces_required = 30;
+    s.pieces_placed = 20;
+    uint16 pool[512];
+    uint16 n = BuildItemPool(&s, pool, 512);
+    if (n != 0) selfcheck_die("BuildItemPool should reject pieces_required > pieces_placed");
+    // GanonHunt should validate the same way.
+    s.goal = kGoal_GanonHunt;
+    n = BuildItemPool(&s, pool, 512);
+    if (n != 0) selfcheck_die("BuildItemPool should reject GanonHunt pieces_required > pieces_placed");
+    // Equal counts is allowed.
+    s.pieces_required = 20;
+    s.pieces_placed = 20;
+    n = BuildItemPool(&s, pool, 512);
+    if (n == 0) selfcheck_die("BuildItemPool should allow pieces_required == pieces_placed");
+  }
+
+  // Audit Bug #5: Settings_CanonicalSerialize normalizes completionist→locations
+  // on a private copy, so any direct-API user gets the spec-compliant hash.
+  {
+    RandoSettings a, b;
+    Settings_SetDefaults(&a);
+    a.goal = kGoal_Completionist;
+    a.accessibility = kAccessibility_Items;     // "wrong" — should normalize
+    Settings_SetDefaults(&b);
+    b.goal = kGoal_Completionist;
+    b.accessibility = kAccessibility_Locations; // "right"
+    uint8 hash_a[32], hash_b[32];
+    Settings_ComputeHash(&a, hash_a);
+    Settings_ComputeHash(&b, hash_b);
+    if (memcmp(hash_a, hash_b, 32) != 0) {
+      selfcheck_die("Settings_ComputeHash should normalize completionist→accessibility=locations");
+    }
+  }
+
   fprintf(stderr, "[Placement_SelfCheck] OK\n");
 }
