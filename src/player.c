@@ -3829,14 +3829,15 @@ void Link_PerformOpenChest() {  // 87b574
   // the wrapper with an empty lookup table — every chest still grants its
   // vanilla item until the (room, ordinal) → location_id table is
   // authored in Phase A2. When rando is inactive the wrapper is a no-op.
+  //
+  // Chest ordinal = (chest tile id - 0x58). Tiles 0x58..0x5d encode the
+  // 6 possible chests within a room as ordinals 0..5; OpenChestForItem
+  // uses the same convention via `tile - 0x58`.
   if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    // chest_position is the SNES room tile offset of the opened chest.
-    // The chest ordinal (0..5) corresponds to the iteration order in
-    // OpenChestForItem's kDungeonRoomChests loop — but that index isn't
-    // exposed by the function's current API. For now pass 0 as ordinal;
-    // Phase A2 plumbs the true ordinal via an extra out-parameter on
-    // OpenChestForItem.
-    item = Rando_ChestDispatch((uint16)dungeon_room_index, 0, item);
+    uint8 chest_ord = (uint8)(index_of_interacting_tile - 0x58);
+    if (chest_ord <= 5) {
+      item = Rando_ChestDispatch((uint16)dungeon_room_index, chest_ord, item);
+    }
   }
 
   Link_ReceiveItem(item, chest_position);
