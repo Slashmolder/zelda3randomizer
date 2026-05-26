@@ -143,6 +143,15 @@ int Share_Encode(const ShareString *ss, char *out, int out_capacity) {
   return kShareBase32Len;
 }
 
+int Share_EncodeRaw(const uint8 raw_binary[kShareStringBinaryLen],
+                    char *out, int out_capacity) {
+  if (out == NULL || raw_binary == NULL) return -1;
+  if (out_capacity < kShareBase32Len + 1) return -1;
+  base32_encode(raw_binary, out);
+  out[kShareBase32Len] = '\0';
+  return kShareBase32Len;
+}
+
 ShareDecodeStatus Share_Decode(const char *in, ShareString *out_ss) {
   if (in == NULL || out_ss == NULL) return kShareDecodeBadLength;
 

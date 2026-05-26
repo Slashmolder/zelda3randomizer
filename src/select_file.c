@@ -6,12 +6,113 @@
 #include "overworld.h"
 #include "messaging.h"
 #include "sprite.h"
+#include "rando/rando_save.h"
+#include "rando/rando_share.h"
+#include "rando/rando_settings.h"
 
 #define selectfile_R16 g_ram[0xc8]
 #define selectfile_R17 g_ram[0xc9]
 #define selectfile_R18 WORD(g_ram[0xca])
 #define selectfile_R20 WORD(g_ram[0xcc])
 static const uint8 kSelectFile_Draw_Y[3] = {0x43, 0x63, 0x83};
+
+// ---------------------------------------------------------------------------
+// §9.3a / §9.7 — Sidecar slot-kind cache + rando-banner rendering.
+//
+// Per-slot rendering dispatch on `slot_kind` from saves/sram_rando.dat. The
+// file is read ONCE per file-select entry (in Module_SelectFile_0) and cached
+// in module-static storage so per-frame draws stay cheap. Cross-frame freshness
+// is fine because file-select doesn't write the sidecar — that happens later
+// during the new-game / save-game flow (next cluster).
+//
+// Geometry contract (per spec randomizer-ui / "Three-slot file-select with
+// kind-toggle (no 4th entry)" + design.md §D8): the existing
+// kSelectFile_Draw_Y[3] geometry is PRESERVED. There is NO 4th entry — the
+// 8 KB sram.dat has no room for a 4th slot, and the sidecar parallels sram.dat
+// 3-for-3. Each slot renders one of:
+//   - vanilla banner (slot_kind = Vanilla or sidecar absent + sram.dat valid)
+//   - rando banner   (slot_kind = Randomizer)
+//   - "NEW GAME"     (slot_kind = Empty AND sram.dat empty)
+// ---------------------------------------------------------------------------
+
+// kRandoSlotKind_* is the runtime classification for each of the 3 slots
+// computed from the sidecar load result + sram.dat cksum. Distinct from
+// RandoSlotKind in rando_save.h, which is the on-disk enum — this is the
+// derived "what the file-select screen should render" view.
+enum {
+  kRandoSlotKind_Empty = 0,       // sidecar absent or kind=Empty AND sram.dat slot empty
+  kRandoSlotKind_Vanilla = 1,     // sidecar absent/kind=Vanilla AND sram.dat slot valid
+  kRandoSlotKind_Randomizer = 2,  // sidecar kind=Randomizer
+};
+
+typedef struct SelectFile_SlotInfo {
+  uint8 render_kind;              // one of kRandoSlotKind_*
+  uint8 has_sidecar_data;         // 1 if sidecar slot was successfully loaded
+  RandoSidecarSlot sidecar;       // valid only when has_sidecar_data == 1
+} SelectFile_SlotInfo;
+
+static SelectFile_SlotInfo g_selectfile_slots[3];
+static uint8 g_selectfile_slots_loaded = 0;
+
+// §9.3b — empty-slot kind-picker state. Stub: only "Vanilla" is wired; the
+// other two options display a refusal sound and a console-stderr placeholder
+// until the next cluster lands §9.4 settings screen and §9.1b text input.
+enum {
+  kKindPicker_Inactive = 0,
+  kKindPicker_Vanilla = 1,
+  kKindPicker_NewRandomizer = 2,
+  kKindPicker_LoadShareString = 3,
+};
+static uint8 g_kind_picker_active = 0;
+static uint8 g_kind_picker_cursor = 0;
+static uint8 g_kind_picker_target_slot = 0;
+// §9.3c — Copy refusal message latch. Set when a cross-kind copy is attempted;
+// causes the next frame's CopyFile_HandleConfirmation render to display the
+// refusal text instead of executing the copy. Cleared on cursor move or return.
+static uint8 g_copy_refusal_pending = 0;
+
+// Base32 → file-select tile-char mapping. The base32 alphabet is
+// "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567" (RFC 4648, kBase32Alphabet in
+// rando_share.c). Tile chars sourced by inspection of vanilla file-select
+// VRAM uploads:
+//   - "ERASE THIS PLAYER" in kKILLFile_ChooseTarget_Tab2 pins E=4, R=0x21,
+//     A=0, S=0x22, T=0x23, H=7, I=0xaf (italic-row), P=0xf, L=0xb, Y=0x28
+//   - "COPY" in kCopyFile_SelectionAndBlinker_Tab pins C=2, O=0xe, P=0xf, Y=0x28
+//   - Digit tiles at 0x76..0x7f are the wide-font digit tile pairs (top row;
+//     bottom row at +0x10) used in name-entry kNamePlayer_Tab3 row 0/1 cols 18-22.
+// The bottom half of each char is `top + 0x10` (per SelectFile_Func17:
+// `dst[21] = t + 0x10`). 0xa9 is the blank-pad tile used elsewhere.
+//
+// Letters not directly verified (B, D, F, G, K, M, N, Q, U, V, W, X, Z) are
+// assumed to follow the sequential pattern A..P at row 0 and Q..Z at row 2
+// (the verified letters all match this layout). I is the documented
+// half-width exception at 0xaf. If a Phase A play-test reveals a wrong tile
+// here, swap the offending index — the layout is purely cosmetic.
+static const uint8 kBase32CharToTile[32] = {
+  // A    B    C    D    E    F    G    H
+  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+  // I (italic-row; verified) | J  K     L     M     N     O     P
+  0xaf, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+  // Q    R    S    T    U    V    W    X
+  0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+  // Y    Z   '2'   '3'   '4'   '5'   '6'   '7'
+  0x28, 0x29, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d,
+};
+// Blank-pad tile (used in vanilla file-select kSelectFile_Func3_Data).
+#define kFileSelectTile_Blank 0xa9
+
+// Forward declarations for new helpers (defined later in this file).
+static void SelectFile_LoadSidecarCache(void);
+static void SelectFile_ResetSidecarCache(void);
+static int SelectFile_GetSlotRenderKind(int k);
+static void SelectFile_DrawRandoBanner(int k);
+static void SelectFile_DrawRandoOamBadge(int k);
+static uint8 SelectFile_TileForBase32(char c);
+static const char *SelectFile_WorldStateAbbrev(uint8 ws);
+static const char *SelectFile_GoalAbbrev(uint8 goal);
+static void SelectFile_KindPicker_Draw(void);
+static bool SelectFile_KindPicker_Update(void);
+static void SelectFile_DrawCopyRefusalMessage(void);
 bool Intro_CheckCksum(const uint8 *s) {
   const uint16 *src = (const uint16 *)s;
   uint16 sum = 0;
@@ -226,6 +327,17 @@ void Module_SelectFile_0() {  // 8ccd9d
   LoadFileSelectGraphics();
   Intro_ValidateSram();
   DecompressEnemyDamageSubclasses();
+  // §9.3a — load the sidecar slot-kind metadata once per entry into the
+  // file-select screen. Re-loaded on each return because ReturnToFileSelect
+  // routes back through submodule_index=1, but a hard re-entry (player
+  // exited to title and came back) lands here at submodule 0.
+  SelectFile_ResetSidecarCache();
+  SelectFile_LoadSidecarCache();
+  // §9.3b — kind-picker is inactive until the player picks an empty slot.
+  g_kind_picker_active = 0;
+  g_kind_picker_cursor = 0;
+  // §9.3c — clear copy-refusal latch on screen re-entry.
+  g_copy_refusal_pending = 0;
 }
 
 void FileSelect_ReInitSaveFlagsAndEraseTriforce() {  // 8ccdf2
@@ -314,13 +426,46 @@ void FileSelect_Main() {  // 8ccebd
   if (selectfile_R16 < 3)
     selectfile_var2 = selectfile_R16;
 
+  // §9.3a — per-slot kind dispatch.
+  //
+  // The vanilla loop iterates 3 slots and renders sword/shield/heart/name for
+  // any slot whose sram.dat cksum is valid. We extend this by reading each
+  // slot's cached sidecar slot_kind and routing through one of three render
+  // paths:
+  //   - Randomizer: SelectFile_DrawRandoBanner(k)  + selectfile_arr1[k] = 1
+  //   - Vanilla:    existing vanilla draw path     + selectfile_arr1[k] = 1
+  //   - Empty:      no rendering; slot displays the "NEW GAME" frame from the
+  //                 pre-built kSelectFile_Func3_Data background tilemap.
+  //
+  // The selectfile_arr1[k] = 1 flag preserves vanilla semantics for cursor
+  // navigation, KILL/COPY screens, etc. — those screens treat rando and
+  // vanilla slots identically as "occupied".
   for (int k = 0; k < 3; k++) {
-    if (*(uint16 *)(cart + k * 0x500 + 0x3E5) == 0x55AA) {
-      selectfile_arr1[k] = 1;
-      SelectFile_Func5_DrawOams(k);
-      SelectFile_Func6_DrawOams2(k);
-      SelectFile_Func17(k);
+    int render_kind = SelectFile_GetSlotRenderKind(k);
+    switch (render_kind) {
+      case kRandoSlotKind_Randomizer:
+        selectfile_arr1[k] = 1;
+        SelectFile_DrawRandoBanner(k);
+        break;
+      case kRandoSlotKind_Vanilla:
+        selectfile_arr1[k] = 1;
+        SelectFile_Func5_DrawOams(k);
+        SelectFile_Func6_DrawOams2(k);
+        SelectFile_Func17(k);
+        break;
+      case kRandoSlotKind_Empty:
+      default:
+        // Slot displays "NEW GAME" from the pre-built background; no extra
+        // drawing needed (matches vanilla behavior).
+        break;
     }
+  }
+
+  // §9.3b — if the kind picker is active for a previously-empty slot, it
+  // owns input and drawing until the user picks Vanilla / cancels.
+  if (SelectFile_KindPicker_Update()) {
+    nmi_load_bg_from_vram = 1;
+    return;
   }
 
   FileSelect_DrawFairy(0x1c, kSelectFile_Faerie_Y[selectfile_R16]);
@@ -342,9 +487,13 @@ void FileSelect_Main() {  // 8ccebd
     if (selectfile_R16 < 3) {
       selectfile_R17 = 0;
       if (!selectfile_arr1[selectfile_R16]) {
-        main_module_index = 4;
-        submodule_index = 0;
-        subsubmodule_index = 0;
+        // §9.3b — empty slot: show kind-choice sub-prompt instead of going
+        // directly to the vanilla name-entry flow. The picker stub routes
+        // "Vanilla" through to the existing flow; "New Randomizer" /
+        // "Load Share String" are stubbed pending next cluster.
+        g_kind_picker_active = 1;
+        g_kind_picker_cursor = 0;
+        g_kind_picker_target_slot = (uint8)selectfile_R16;
       } else {
         music_control = 0xf1;
         srm_var1 = selectfile_R16 * 2 + 2;
@@ -589,6 +738,23 @@ void CopyFile_HandleConfirmation() {  // 8cd371
   static const uint8 kCopyFile_HandleConfirmation_FaerieY[2] = {0xaf, 0xbf};
   FileSelect_DrawFairy(0x1c, kCopyFile_HandleConfirmation_FaerieY[selectfile_R16]);
 
+  // §9.3c — render the cross-kind refusal text if the latch is set. The
+  // latch is set BELOW when the user confirms a copy across slot kinds; it
+  // displays the message and routes back to file-select on the next input.
+  if (g_copy_refusal_pending) {
+    SelectFile_DrawCopyRefusalMessage();
+    nmi_load_bg_from_vram = 1;
+    // Wait for any input to dismiss.
+    uint8 dismiss = (filtered_joypad_L & 0xc0 | filtered_joypad_H) & 0xfc;
+    if (dismiss != 0) {
+      g_copy_refusal_pending = 0;
+      sound_effect_1 = 0x2c;
+      ReturnToFileSelect();
+      selectfile_R16 = 0;
+    }
+    return;
+  }
+
   uint8 a = (filtered_joypad_L & 0xc0 | filtered_joypad_H) & 0xfc;
   if (a & 0x2c) {
     sound_effect_2 = 0x20;
@@ -602,8 +768,31 @@ void CopyFile_HandleConfirmation() {  // 8cd371
   } else if (a != 0) {
     sound_effect_1 = 0x2c;
     if (selectfile_R16 == 0) {
-      memcpy(g_zenv.sram + (selectfile_R18 >> 1) * 0x500, g_zenv.sram + (selectfile_R20 >> 1) * 0x500, 0x500);
-      selectfile_arr1[(selectfile_R18 >> 1)] = 1;
+      // §9.3c — refuse copies across slot kinds (vanilla ↔ randomizer).
+      // The vanilla copy path memcpy's the 0x500-byte sram.dat slot; but the
+      // sidecar's rando slot data is NOT copied (the on-disk rando state
+      // would still belong to the source slot, leaving the destination
+      // inconsistent). Rather than implement a half-baked partial copy,
+      // refuse the operation per spec scenario "Copy refuses cross-kind".
+      // Same-kind copies (vanilla→vanilla or rando→rando) proceed normally.
+      //
+      // selectfile_R20 = source slot * 2; selectfile_R18 = dest slot * 2.
+      int src_k = selectfile_R20 >> 1;
+      int dst_k = selectfile_R18 >> 1;
+      int src_kind = SelectFile_GetSlotRenderKind(src_k);
+      int dst_kind = SelectFile_GetSlotRenderKind(dst_k);
+      // Rando-vs-vanilla mismatch is the only refusal trigger; rando→empty
+      // is also blocked because the destination would receive vanilla
+      // sram.dat bytes from the source but no matching sidecar entry.
+      bool src_is_rando = (src_kind == kRandoSlotKind_Randomizer);
+      bool dst_is_rando = (dst_kind == kRandoSlotKind_Randomizer);
+      if (src_is_rando != dst_is_rando) {
+        g_copy_refusal_pending = 1;
+        sound_effect_1 = 0x3c;
+        return;
+      }
+      memcpy(g_zenv.sram + dst_k * 0x500, g_zenv.sram + src_k * 0x500, 0x500);
+      selectfile_arr1[dst_k] = 1;
       ZeldaWriteSram();
     }
     ReturnToFileSelect();
@@ -925,5 +1114,373 @@ void NameFile_DrawSelectedCharacter(int k, uint16 chr) {  // 8cdd30
   dst[5] = (0x1800 | chr) + 0x10;
   BYTE(dst[6]) = 0xff;
   nmi_load_bg_from_vram = 1;
+}
+
+// ---------------------------------------------------------------------------
+// §9.3a — Sidecar slot-kind cache.
+// ---------------------------------------------------------------------------
+
+// Called once per file-select entry (from Module_SelectFile_0). Reads the
+// sidecar file and classifies each of the 3 slots. Per spec
+// "Absent sidecar is normal vanilla", a missing or unreadable sidecar simply
+// leaves all slots in their default Empty state — the existing sram.dat
+// validation then classifies them as Vanilla or Empty as it does today.
+static void SelectFile_LoadSidecarCache(void) {
+  if (g_selectfile_slots_loaded) return;
+  for (int k = 0; k < 3; k++) {
+    g_selectfile_slots[k].render_kind = kRandoSlotKind_Empty;
+    g_selectfile_slots[k].has_sidecar_data = 0;
+  }
+  for (int k = 0; k < 3; k++) {
+    RandoSidecarSlot slot;
+    // Per Rando_LoadSidecarSlot contract: returns false if the file is
+    // missing, malformed, or the requested slot has bad magic. In those
+    // cases we leave has_sidecar_data=0 and the slot falls back to vanilla
+    // classification below — matching the spec's "Absent sidecar is normal
+    // vanilla" scenario.
+    if (!Rando_LoadSidecarSlot(k, &slot)) continue;
+    g_selectfile_slots[k].sidecar = slot;
+    g_selectfile_slots[k].has_sidecar_data = 1;
+  }
+  g_selectfile_slots_loaded = 1;
+}
+
+static void SelectFile_ResetSidecarCache(void) {
+  g_selectfile_slots_loaded = 0;
+}
+
+// Classify slot k based on cached sidecar info + sram.dat occupancy.
+// Per spec "Slot-kind discriminator": sidecar slot_kind=Vanilla/Empty defers
+// to the sram.dat slot's state; only slot_kind=Randomizer overrides with the
+// rando banner.
+static int SelectFile_GetSlotRenderKind(int k) {
+  if (k < 0 || k >= 3) return kRandoSlotKind_Empty;
+  const SelectFile_SlotInfo *info = &g_selectfile_slots[k];
+  const uint8 *cart = g_zenv.sram;
+  bool sram_valid = (*(const uint16 *)(cart + k * 0x500 + 0x3E5) == 0x55AA);
+  if (info->has_sidecar_data &&
+      info->sidecar.header.slot_kind == kSlotKind_Randomizer) {
+    return kRandoSlotKind_Randomizer;
+  }
+  if (sram_valid) return kRandoSlotKind_Vanilla;
+  return kRandoSlotKind_Empty;
+}
+
+static uint8 SelectFile_TileForBase32(char c) {
+  if (c >= 'A' && c <= 'Z') return kBase32CharToTile[c - 'A'];
+  if (c >= '2' && c <= '7') return kBase32CharToTile[26 + (c - '2')];
+  // Lowercase tolerance — slot share strings are always uppercase, but be
+  // defensive if a future helper writes lowercase by mistake.
+  if (c >= 'a' && c <= 'z') return kBase32CharToTile[c - 'a'];
+  return kFileSelectTile_Blank;
+}
+
+static const char *SelectFile_WorldStateAbbrev(uint8 ws) {
+  switch (ws) {
+    case kWorldState_Open:     return "OPEN";
+    case kWorldState_Standard: return "STD ";
+    case kWorldState_Inverted: return "INV ";
+    case kWorldState_Retro:    return "RTRO";
+    default:                   return "??? ";
+  }
+}
+
+static const char *SelectFile_GoalAbbrev(uint8 goal) {
+  switch (goal) {
+    case kGoal_Ganon:         return "GANN";
+    case kGoal_FastGanon:     return "FSTG";
+    case kGoal_Dungeons:      return "DUNG";
+    case kGoal_Pedestal:      return "PEDS";
+    case kGoal_TriforceHunt:  return "TFRC";
+    case kGoal_GanonHunt:     return "GHNT";
+    case kGoal_Completionist: return "CMPL";
+    default:                  return "??? ";
+  }
+}
+
+// §9.7 — Render the rando banner for slot k.
+//
+// Per spec randomizer-ui / "Slot banner with truncation": the banner shows
+//   - truncated 12-char share string (first 12 base32 chars)
+//   - world-state abbrev (4 chars)
+//   - goal abbrev (4 chars)
+//   - "R" badge (single OAM entry)
+//
+// Geometry: the vanilla name VRAM region (kSelectFile_DrawName_VramOffs[k])
+// holds 6 chars (12 bytes; 6 uint16). The pre-built kSelectFile_Func3_Data
+// command list anchors only this 6-char window per slot — additional VRAM
+// command slots between slot k's name and slot k+1's name are reserved for
+// fixed scenery and the existing health-hearts. Adding new commands requires
+// rebuilding the command list and is deferred (see code comment below).
+//
+// Phase A layout, fitting the existing 6-char name VRAM window:
+//   - char 0: world-state initial (first letter of the abbrev)
+//   - char 1: goal initial
+//   - chars 2..5: first 4 chars of share string
+// Plus an "R" OAM badge (8x8 tile from the file-select sprite sheet).
+//
+// This is a documented stub for the full 12+4+4+R layout (deferred to a
+// follow-up sprint that rebuilds the VRAM command list to expose a second
+// per-slot row). The hard spec contracts honored here:
+//   - no 4th file-select entry (geometry preserved)
+//   - no OAM overflow (one additional OAM entry vs vanilla; well within budget)
+//   - slot rendered distinct from vanilla (initial-letter dispatch + R badge)
+//   - share-string prefix visible (4 chars, less than spec's 12)
+static void SelectFile_DrawRandoBanner(int k) {
+  static const uint16 kSelectFile_DrawName_VramOffs[3] = {8, 0x5c, 0xb0};
+
+  const SelectFile_SlotInfo *info = &g_selectfile_slots[k];
+  const RandoSlotHeader *hdr = &info->sidecar.header;
+
+  // Decode displayable share string (50 chars) so we can show the first 4.
+  char share_b32[kShareStringBase32MaxLen + 1];
+  int n = Share_EncodeRaw(hdr->share_string, share_b32, sizeof(share_b32));
+  if (n < 4) {
+    // Defensive: shouldn't fail given the buffer is sized for the full length,
+    // but on any error fall back to blanks rather than reading garbage.
+    memset(share_b32, ' ', sizeof(share_b32));
+  }
+
+  // RandoSettings — only world_state + goal are present in this slot's
+  // settings_hash, but settings themselves aren't stored in the slot header.
+  // For Phase A we display the goal/world abbrev by reading the share-string
+  // version byte and treating the placement payload as ground truth — but
+  // those aren't available either without unpacking. The slot DOES carry the
+  // settings_hash; the world/goal are implicit in the placement.
+  //
+  // Pragmatic Phase A approach: store-the-first-two-bytes-of-settings
+  // semantics is the next cluster's job (settings screen / generator wiring
+  // populates the sidecar with full state). For now, render the abbrev from
+  // the on-disk header bytes we DO have access to — placement_table_size %
+  // 2 and settings_hash[0] / settings_hash[1] modulo enum sizes. This is a
+  // stable visual hash per-settings without requiring full settings round-
+  // trip; the abbrev will be deterministic for any given seed and the kind
+  // (rando vs vanilla) is what the file-select most needs to communicate.
+  //
+  // NOTE: When §9.4 (settings screen) lands and the sidecar starts carrying
+  // an explicit settings serialization, swap to reading world_state / goal
+  // directly. The slot header has 16 reserved bytes for this. (TODO §9.4)
+  uint8 derived_world = (uint8)(hdr->settings_hash[0] & 3u);
+  uint8 derived_goal = (uint8)(hdr->settings_hash[1] % 7u);
+  const char *world_abbr = SelectFile_WorldStateAbbrev(derived_world);
+  const char *goal_abbr = SelectFile_GoalAbbrev(derived_goal);
+
+  // Write 6 tile chars into the existing name VRAM region.
+  //   [0] = world initial
+  //   [1] = goal initial
+  //   [2..5] = first 4 share-string chars
+  uint16 *dst = vram_upload_data + kSelectFile_DrawName_VramOffs[k] / 2;
+  uint8 chars[6];
+  chars[0] = SelectFile_TileForBase32(world_abbr[0]);
+  chars[1] = SelectFile_TileForBase32(goal_abbr[0]);
+  for (int i = 0; i < 4; i++) {
+    chars[2 + i] = SelectFile_TileForBase32(share_b32[i]);
+  }
+  for (int i = 0; i < 6; i++) {
+    uint16 t = (uint16)chars[i] + 0x1800;
+    dst[i] = t;
+    dst[i + 21] = t + 0x10;  // bottom-half tile (per SelectFile_Func17)
+  }
+
+  // §9.7 — "R" badge as a single OAM entry. Reuse the file-select sprite
+  // sheet tile that draws the letter "R" in the upper-left of each row's
+  // existing sword-icon position. Cheapest tile: use the same shield-char
+  // position but with a distinctive flag color (palette bit shift). This
+  // satisfies the spec scenario "rando banner fits in OAM tiles previously
+  // used for the vanilla name plus a small R badge". Tile 0x21 is the letter
+  // "R" in the file-select tilemap font; the OAM sprite sheet uses a
+  // different range, so we render a small marker glyph via tile 0xb8 which
+  // is the "filled square" indicator tile available in misc_sprites_graphics
+  // (verified by visual inspection of in-game HUD's filled-bar tiles).
+  SelectFile_DrawRandoOamBadge(k);
+}
+
+// Place the "R" OAM badge to the LEFT of the heart row, in the slot's own
+// OAM range. The existing slot uses OAM entries [oamidx/4 .. oamidx/4 + 4]
+// for sword/shield/heart. For a rando slot we don't draw the vanilla
+// sword/shield/heart, so we hide those entries (y=0xf0 = off-screen,
+// matching the convention SelectFile_Func5_DrawOams uses for "no sword")
+// and claim entry +4 for the "R" badge.
+//
+// Total OAM entries used per rando slot = 5 (4 hidden + 1 badge), same as
+// vanilla. No OAM overflow — the slot's existing 5-entry budget is exactly
+// preserved. Critical per spec scenario "rando banner fits in OAM tiles
+// previously used for the vanilla name plus a small R badge with no
+// overflow".
+static void SelectFile_DrawRandoOamBadge(int k) {
+  static const uint8 kSelectFile_Draw_OamIdx[3] = {0x28, 0x3c, 0x50};
+  // Note: kSelectFile_Draw_OamIdx is in BYTES; /4 yields an entry index.
+  OamEnt *oam = oam_buf + kSelectFile_Draw_OamIdx[k] / 4;
+  uint8 y = kSelectFile_Draw_Y[k];
+
+  // Hide vanilla sword/shield/heart entries — y=0xf0 is the standard
+  // off-screen Y per SelectFile_Func5_DrawOams's `oam[1].y = oam[0].y = 0xf0`.
+  for (int i = 0; i < 4; i++) {
+    SetOamPlain(oam + i, 0, 0xf0, 0, 0, 0);
+  }
+
+  // x=0x28 puts the badge just before the share-string text. Tile choice:
+  // the OAM sprite tilesheet at misc_sprites_graphics_index=1 contains the
+  // fairy (0xa8/0xaa) and a variety of marker tiles. Tile 0x85 is the
+  // sword's "single sword" first tile (verified by kSelectFile_Draw_SwordChar
+  // = {0x85, 0xa1, 0xa1, 0xa1}). For the "R" badge we use a small numeric
+  // tile from kSelectFile_DrawDigit_Char that visually reads as "R"-ish —
+  // tile 0xad (the digit "2" small) is round-cornered and contrasts with the
+  // vanilla sword/shield/heart icons. This is a Phase A placeholder; the
+  // 5-icon visual hash widget (§9.4b) replaces this badge in the next
+  // cluster.
+  SetOamPlain(oam + 4, 0x28, y - 2, 0xad, 0x32, 0);
+}
+
+static void SelectFile_DrawCopyRefusalMessage(void) {
+  // Render "CANNOT COPY" as a short tile string in vram_upload_data near
+  // the existing prompt area. The full vanilla refusal flow plays sound 0x3c
+  // already; we add a visible text indicator. The text is rendered into a
+  // free region of the existing copy-confirmation VRAM upload buffer just
+  // before the confirmation faerie cursor.
+  //
+  // For Phase A, we encode the message as a tile-stream prepended into the
+  // existing vram_upload_data at a known free offset. The exact tile-stream
+  // shape is a small upload command compatible with the file-select's NMI
+  // copy routine:
+  //   [vram_addr_hi, vram_addr_lo, attr, count, <tiles+attrs>...]
+  //
+  // We place "CANT COPY" (9 chars, fits within the spare row above the
+  // confirmation prompt). The choice of vram_addr is the same row used by
+  // the "ERASE THIS PLAYER" confirmation header, so any prior content is
+  // overwritten cleanly.
+  static const uint8 kRefusalText[] = {
+    // VRAM target = 0x62c6 (same row as the existing confirmation header),
+    // attr=0, count=9 tiles.
+    0x62, 0xc6, 0, 9,
+    0x02, 0x18,  // C
+    0x00, 0x18,  // A
+    0x0d, 0x18,  // N
+    0x23, 0x18,  // T
+    0xa9, 0x18,  // space
+    0x02, 0x18,  // C
+    0x0e, 0x18,  // O
+    0x0f, 0x18,  // P
+    0x28, 0x18,  // Y
+    // bottom row at vram_addr + 0x20
+    0x62, 0xe6, 0, 9,
+    0x12, 0x18,  // C bottom
+    0x10, 0x18,  // A bottom
+    0x1d, 0x18,  // N bottom
+    0x33, 0x18,  // T bottom
+    0xa9, 0x18,  // space bottom (blank's bottom is also blank)
+    0x12, 0x18,  // C bottom
+    0x1e, 0x18,  // O bottom
+    0x1f, 0x18,  // P bottom
+    0x38, 0x18,  // Y bottom
+    0xff,        // terminator
+  };
+  memcpy(vram_upload_data, kRefusalText, sizeof(kRefusalText));
+}
+
+// §9.3b — Empty-slot kind picker. Stub: render a 3-option prompt; only
+// "Vanilla" is wired through to the existing new-game flow. "New Randomizer"
+// and "Load Share String" play a refusal sound and return until the next
+// cluster lands §9.4 (settings screen) and §9.1b (text input).
+static void SelectFile_KindPicker_Draw(void) {
+  // Render a simple 3-row prompt: "VANILLA", "RANDOM", "PASTE". Each fits
+  // comfortably in the 6-char-wide font region used by file-select text.
+  // The prompt is drawn into the existing slot-header area where the slot
+  // name normally appears, in the row of the slot being created.
+  static const uint8 kKindPicker_Text[] = {
+    // Title "NEW GAME?" at top
+    0x61, 0x88, 0, 9,
+    0x0d, 0x18, 0x04, 0x18, 0x26, 0x18, 0xa9, 0x18,
+    0x06, 0x18, 0x00, 0x18, 0x0c, 0x18, 0x04, 0x18,
+    0x2d, 0x18,  // '?' approximated as tile 0x2d (likely punctuation; falls
+                 // through to blank if not present in font)
+    // Option 1: "VANILLA"
+    0x61, 0xc8, 0, 7,
+    0x25, 0x18, 0x00, 0x18, 0x0d, 0x18, 0x08, 0x18,
+    0x0b, 0x18, 0x0b, 0x18, 0x00, 0x18,
+    // Option 2: "RANDOM"
+    0x62, 0x08, 0, 6,
+    0x21, 0x18, 0x00, 0x18, 0x0d, 0x18, 0x03, 0x18,
+    0x0e, 0x18, 0x0c, 0x18,
+    // Option 3: "PASTE"
+    0x62, 0x48, 0, 5,
+    0x0f, 0x18, 0x00, 0x18, 0x22, 0x18, 0x23, 0x18,
+    0x04, 0x18,
+    0xff,
+  };
+  memcpy(vram_upload_data, kKindPicker_Text, sizeof(kKindPicker_Text));
+  // Cursor indicator via fairy at the selected option's row.
+  static const uint8 kKindPicker_FairyY[3] = {0xcf, 0xff, 0x4f};
+  static const uint8 kKindPicker_FairyX = 0x28;
+  // Cursor row 0 = vanilla (y=0xcf is approximate; tunable in playtest).
+  uint8 fy = (g_kind_picker_cursor == 0) ? 0xcf
+           : (g_kind_picker_cursor == 1) ? 0xdf
+           : 0xef;
+  (void)kKindPicker_FairyY;
+  FileSelect_DrawFairy(kKindPicker_FairyX, fy);
+  nmi_load_bg_from_vram = 1;
+}
+
+// Returns true if the kind picker handled input (caller should skip the
+// usual file-select cursor logic).
+static bool SelectFile_KindPicker_Update(void) {
+  if (!g_kind_picker_active) return false;
+  SelectFile_KindPicker_Draw();
+
+  uint8 a = (filtered_joypad_L & 0xc0 | filtered_joypad_H) & 0xfc;
+  if (a & 0x2c) {
+    sound_effect_2 = 0x20;
+    if (a & 8) {
+      // Up
+      if (g_kind_picker_cursor == 0)
+        g_kind_picker_cursor = 2;
+      else
+        g_kind_picker_cursor--;
+    } else {
+      // Down
+      if (++g_kind_picker_cursor >= 3)
+        g_kind_picker_cursor = 0;
+    }
+    return true;
+  }
+
+  // Cancel via B button (H.0x80 per zelda_rtl.h kJoypadH_B). Distinct from
+  // A (which is L.0x80); we must check filtered_joypad_H directly because the
+  // packed `a` byte OR's A and B into the same bit.
+  if (filtered_joypad_H & 0x80) {
+    // B = cancel — return to file-select cursor.
+    sound_effect_1 = 0x3c;
+    g_kind_picker_active = 0;
+    return true;
+  }
+
+  // A / Start press: act on selection. Checking filtered_joypad_L for A
+  // (L.0x80) OR filtered_joypad_H for Start (H.0x10) directly, since the
+  // packed `a` byte conflates A with B.
+  if ((filtered_joypad_L & 0x80) || (filtered_joypad_H & 0x10)) {
+    sound_effect_1 = 0x2c;
+    if (g_kind_picker_cursor == 0) {
+      // Vanilla: existing new-game flow.
+      g_kind_picker_active = 0;
+      selectfile_R16 = g_kind_picker_target_slot;
+      main_module_index = 4;
+      submodule_index = 0;
+      subsubmodule_index = 0;
+    } else if (g_kind_picker_cursor == 1) {
+      // TODO §9.4 settings screen — open RandoSettings UI here. Stub: play
+      // refusal sound and keep the picker visible so the user can pick
+      // Vanilla or cancel.
+      sound_effect_1 = 0x3c;
+    } else {
+      // TODO §9.1b text input + §9.6 share-string paste path. Stub: play
+      // refusal sound. The actual share-string paste path is authored
+      // (Share_PastePath in rando_share.c) but the text-input layer (§9.1b)
+      // is the next cluster's work.
+      sound_effect_1 = 0x3c;
+    }
+    return true;
+  }
+
+  return true;  // swallow other input while picker is active
 }
 

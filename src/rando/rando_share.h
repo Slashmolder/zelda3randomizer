@@ -34,6 +34,15 @@ typedef struct ShareString {
 // (excluding the trailing NUL); caller passes `out_capacity` >= kShareStringBase32MaxLen.
 int Share_Encode(const ShareString *ss, char *out, int out_capacity);
 
+// UI helper: base32-encode an existing 31-byte raw share-string binary blob
+// (as stored in `RandoSidecarSlot.header.share_string`). Writes exactly 50
+// uppercase base32 characters into `out` followed by a NUL terminator;
+// `out_capacity` must be >= 51. Returns the number of characters written
+// (50) on success, -1 on insufficient capacity. Used by the file-select
+// rando-banner renderer to display the first-N chars of the share string.
+int Share_EncodeRaw(const uint8 raw_binary[kShareStringBinaryLen],
+                    char *out, int out_capacity);
+
 // Decode `in` (base32, NUL-terminated) into `out_ss`. Returns the
 // decode-status enum; success is `kShareDecodeOk`.
 ShareDecodeStatus Share_Decode(const char *in, ShareString *out_ss);
