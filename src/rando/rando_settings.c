@@ -368,6 +368,12 @@ enum {
   KEY_accessibility,
   KEY_pieces_required,
   KEY_pieces_placed,
+  // New keys per audit finding N7 — were in canonical hash but not parseable.
+  KEY_tricks,
+  KEY_logic,
+  KEY_pyramid_bow_upgrade,
+  KEY_region_boss_hearts_in_pool,
+  KEY_race_mode,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -435,6 +441,38 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     uint32 v;
     if (parse_uint(val, vlen, &v) != 0 || v > 65535) goto bad_value;
     s->pieces_placed = (uint16)v;
+  } else if (csv_str_eq(key, klen, "tricks")) {
+    // Phase A: only `tricks=none` (the canonical zero bitmask) is accepted.
+    // Phase B will extend this to parse comma-separated trick names; the
+    // value column then becomes a quoted list per spec.
+    MARK_SEEN(KEY_tricks);
+    if (!csv_str_eq(val, vlen, "none") && !csv_str_eq(val, vlen, "0")) goto bad_value;
+    s->tricks = 0;
+  } else if (csv_str_eq(key, klen, "logic")) {
+    // Phase A: `logic=NoGlitches` (level 0). Phase B+ adds OWG/MajorGlitches.
+    MARK_SEEN(KEY_logic);
+    if (csv_str_eq(val, vlen, "NoGlitches") || csv_str_eq(val, vlen, "none") || csv_str_eq(val, vlen, "0")) {
+      s->logic = 0;
+    } else {
+      goto bad_value;
+    }
+  } else if (csv_str_eq(key, klen, "pyramid_bow_upgrade") ||
+             csv_str_eq(key, klen, "region.pyramidBowUpgrade")) {
+    MARK_SEEN(KEY_pyramid_bow_upgrade);
+    if (csv_str_eq(val, vlen, "silvers")) {
+      s->pyramid_bow_upgrade = kPyramidBowUpgrade_Silvers;
+    } else {
+      // Phase A pins to silvers; arrows is Phase B reserved.
+      goto bad_value;
+    }
+  } else if (csv_str_eq(key, klen, "region.bossHeartsInPool") ||
+             csv_str_eq(key, klen, "region_boss_hearts_in_pool")) {
+    MARK_SEEN(KEY_region_boss_hearts_in_pool);
+    if (parse_bool(val, vlen, &s->region_boss_hearts_in_pool) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "race_mode") ||
+             csv_str_eq(key, klen, "race")) {
+    MARK_SEEN(KEY_race_mode);
+    if (parse_bool(val, vlen, &s->race_mode) != 0) goto bad_value;
   } else {
     fprintf(stderr, "Settings_ParseCsv: unknown key '%.*s'\n", klen, key);
     return -1;

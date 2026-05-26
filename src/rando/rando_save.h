@@ -33,9 +33,14 @@
 #define kRandoSidecar_SlotHeaderSize    80
 #define kRandoSidecar_ShareStringLength 32      // raw binary (rando_share writes 31 bytes + pad)
 
+// Per randomizer-save spec § Slot header: 3-value discriminator.
+// Empty=0 is the all-zeroes default, distinguishable from an explicit
+// Vanilla=1 slot (i.e., the user has affirmatively claimed this slot as
+// non-randomized). The orphan/recovery logic relies on this distinction.
 typedef enum {
-  kSlotKind_Vanilla = 0,
-  kSlotKind_Randomizer = 1,
+  kSlotKind_Empty = 0,
+  kSlotKind_Vanilla = 1,
+  kSlotKind_Randomizer = 2,
 } RandoSlotKind;
 
 // In-memory representation of one slot header. On-disk byte layout follows
