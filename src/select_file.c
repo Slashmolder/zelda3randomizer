@@ -2518,9 +2518,20 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_WorldState: {
+      // Phase A re-scope: Inverted (2) and Retro (3) require a Phase B logic
+      // graph (ALTTPR's `Region/Inverted/*.php` ~1500 lines + Retro shop
+      // location pool augmentation). The predicate VM + RegionRemap overlay
+      // scaffolding is in place; the graph data isn't. Until Phase B lands,
+      // the picker only cycles Open <-> Standard so users don't generate
+      // silently-broken Inverted/Retro seeds (which would have empty
+      // reachability → effectively-vanilla placements with no error).
+      //
+      // The display label (`kWorldState_Inverted` / `Retro` → "INV "/"RTRO")
+      // is preserved so a slot loaded from a Phase-B share string round-trips
+      // its label correctly; only the NEW-seed picker is gated.
       int n = (int)s->world_state + delta;
-      if (n < 0) n = kWorldState_Retro;
-      if (n > kWorldState_Retro) n = 0;
+      if (n < 0) n = kWorldState_Standard;
+      if (n > kWorldState_Standard) n = 0;
       s->world_state = (uint8)n;
       break;
     }

@@ -274,11 +274,33 @@ escort completes, and dark-world / overworld access predicates reference it.
 
 Planned (not promised) follow-on work:
 
-- **Phase B**: hint generation (Sahasrahla / storyteller / bookshelf /
-  Murahdahla per ALTTPR `app/Services/HintService.php`); trick logic
-  + glitch-logic-level predicates; `swordless` weapon mode;
-  `pyramid_bow_upgrade=arrows`; `accessibility=none`; race-mode reveal;
-  in-game trackers; boss/drop-pool shuffles.
+- **Phase B**:
+  - **Inverted world-state**: full logic graph (translate
+    `alttp_vt_randomizer/app/Region/Inverted/*.php`, ~1500 lines);
+    declare `LinksHouse_Inverted` start region; wire `RegionRemap`
+    overlay (scaffolding already present in `rando_logic.c`); populate
+    `world_state_filter` for Inverted-specific locations; wire
+    `Rando_TryGrantStartingInventory` at the game-start hook so
+    Inverted Link receives MoonPearl + MagicMirror per the bunny-state
+    starting-inventory contract (Phase A audit Bug #12).
+  - **Retro world-state**: add shop locations from
+    `alttp_vt_randomizer/app/Region/Retro/Shops.php` to `BuildItemPool`
+    when `world_state == Retro`; route shop purchases through the
+    dispatcher.
+  - When these land, re-enable Inverted + Retro in the settings-screen
+    world-state picker (currently gated to Open + Standard in
+    `select_file.c` — see Phase A §14.1b re-scope).
+  - Hint generation (Sahasrahla / storyteller / bookshelf / Murahdahla
+    per ALTTPR `app/Services/HintService.php`).
+  - Trick logic + glitch-logic-level predicates.
+  - `swordless` weapon mode; `pyramid_bow_upgrade=arrows`;
+    `accessibility=none`; race-mode reveal; in-game trackers;
+    boss/drop-pool shuffles.
+  - §6.8 minigame dispatch (digging, hype cave, peg cave,
+    treasure-chest minigame).
+  - §7.6 follow-on: visible per-item-type confirmation icons for the
+    §6.2 direct-grant placements (current Phase A confirmation is
+    audio-only via `Rando_ShowDirectGrantConfirmation`).
 - **Phase C**: entrance shuffle (uses the `RegionRemap` overlay reserved in
   Phase A).
 - **Phase D**: cosmetic shuffles (palette/sprite), customizer mode
