@@ -154,17 +154,23 @@ def main(argv: list[str]) -> int:
 
     if args.apply:
         # Update generator_version + serialize back. Simple text-replace for the
-        # version line; entries are rewritten via yaml.dump (loses comments).
+        # version line; entries are updated in place to preserve comments.
         new_text = re.sub(r"^generator_version:\s*(?:\d+|null)",
                           f"generator_version: {current}",
                           text, count=1, flags=re.MULTILINE)
-        # Rebuild the entries section if any changed.
-        if changed:
-            entries_yaml = yaml.dump({"entries": entries}, sort_keys=False,
-                                     default_flow_style=False)
-            new_text = re.sub(r"^entries:\s*\[\s*\]\s*$",
-                              entries_yaml.rstrip(),
-                              new_text, count=1, flags=re.MULTILINE)
+        # In-place digest update preserves the manifest's comments + layout.
+        # We match each entry by its label and replace its expected_digest.
+        for (idx, label, old_d, new_d) in changed:
+            if not old_d or old_d == "<absent>":
+                continue
+            # Replace exactly: expected_digest: "<old>" → "<new>"
+            pattern = (r'(\bexpected_digest:\s*[\'"])' + re.escape(old_d) + r'([\'"])')
+            new_text, count = re.subn(pattern,
+                                       lambda m, n=new_d: f"{m.group(1)}{n}{m.group(2)}",
+                                       new_text, count=1)
+            if count == 0:
+                print(f"  WARNING: could not find expected_digest {old_d[:8]}... in manifest text",
+                      file=sys.stderr)
         args.manifest.write_text(new_text, encoding="utf-8")
         print(f"\nWrote updated manifest to {args.manifest}")
         print(f"  generator_version: {in_manifest} -> {current}")

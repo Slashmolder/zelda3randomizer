@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 3  # bumped when settings canonical layout aligned to spec (added tricks/logic/region_boss_hearts_in_pool/race_mode; pieces_*=u16)
+generator_version: 4  # bumped: vanilla-mode dungeon items now pre-granted in counts (Phase A1 placer fix — see commit log)
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -26,7 +26,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, dungeon_items.small_keys: dungeon }
     seed: "0xDEADBEEFCAFEBABE"
     label: "a1-open-fast-ganon"
-    expected_digest: "49da7e7a4eeca7f301a515da6fa9ee7d31de002a7da7a96171e5f89194e86e43"
+    expected_digest: "2da6327679d0afebfe996a814ce2212fd63e21a484f28c885327a65e57527ffc"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

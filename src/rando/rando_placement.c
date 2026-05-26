@@ -688,11 +688,39 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   if (settings->world_state != kWorldState_Standard) {
     counts.by_item_id[122] = 1;
   }
+  // Vanilla-mode dungeon items: when a dungeon-item class is in Vanilla mode,
+  // the items aren't placed by the randomizer — the vanilla ROM grants them
+  // when the player collects them in-place. Pre-grant them in the assumed
+  // inventory so reachability treats them as always-available. (Otherwise
+  // the placer treats SmallKey-gated dungeon locations as permanently
+  // unreachable, breaking vanilla-mode seeds.)
+  if (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
+      counts.by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
+    }
+  }
+  if (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++) {
+      counts.by_item_id[kBigKeys[i]] = 1;
+    }
+  }
+  if (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kMaps) / sizeof(kMaps[0])); i++) {
+      counts.by_item_id[kMaps[i]] = 1;
+    }
+  }
+  if (settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++) {
+      counts.by_item_id[kCompasses[i]] = 1;
+    }
+  }
   for (uint16 i = 0; i < prog_n; i++) {
     counts.by_item_id[progression[i]]++;
   }
   // Add pre-placed vanilla dungeon items to the assumed inventory so
   // reachability evaluates as if the player will collect them in-place.
+  // (For vanilla mode the items are already pre-granted above; this loop
+  // is for the (rare) case where a non-vanilla mode pinned something.)
   for (uint16 k = 0; k < open_n; k++) {
     if (placement_at[k] == 0xFFFF) continue;
     uint16 vi = placement_at[k];
@@ -841,6 +869,34 @@ static void build_final_inventory(const RandoPlacementTable *t, RandoCounts *out
   }
 }
 
+// Apply vanilla-mode dungeon-item pre-grants to `counts`. Mirror of the
+// pre-grant block in place_assumed_fill_attempt; called by both
+// Goal_IsCompletable and Logic_ComputeSpheres so reachability stays
+// consistent with what the placer assumed.
+static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCounts *out) {
+  if (s == NULL || out == NULL) return;
+  if (s->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
+      out->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
+    }
+  }
+  if (s->dungeon_big_keys_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++) {
+      out->by_item_id[kBigKeys[i]] = 1;
+    }
+  }
+  if (s->dungeon_maps_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kMaps) / sizeof(kMaps[0])); i++) {
+      out->by_item_id[kMaps[i]] = 1;
+    }
+  }
+  if (s->dungeon_compasses_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++) {
+      out->by_item_id[kCompasses[i]] = 1;
+    }
+  }
+}
+
 // Lookup a location_id in the placement table; returns the placed item or
 // 0xFFFF if not found.
 static uint16 placement_at_location(const RandoPlacementTable *t, uint16 loc_id) {
@@ -883,6 +939,10 @@ bool Goal_IsCompletable(const RandoSettings *settings,
 
   RandoCounts final_inv;
   build_final_inventory(placements, &final_inv);
+  apply_vanilla_dungeon_item_grants(settings, &final_inv);
+  if (settings->world_state != kWorldState_Standard) {
+    final_inv.by_item_id[122] = 1;  // RescuedZelda pre-granted in non-Standard
+  }
   const RandoReachability *r = Logic_ComputeReachability(&final_inv, settings);
   if (r == NULL) {
     fprintf(stderr, "Goal_IsCompletable: reachability returned NULL (empty graph?)\n");
@@ -1021,13 +1081,15 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
   }
 
   // Build the running inventory: starts as defaults (StartingHeart + world-
-  // state pre-grants) and accumulates items from each completed sphere.
+  // state pre-grants + vanilla-mode dungeon-item pre-grants) and accumulates
+  // items from each completed sphere.
   RandoCounts counts;
   memset(&counts, 0, sizeof(counts));
   counts.by_item_id[121] = 3;  // StartingHeart
   if (settings->world_state != kWorldState_Standard) {
     counts.by_item_id[122] = 1;  // RescuedZelda pre-grant
   }
+  apply_vanilla_dungeon_item_grants(settings, &counts);
 
   uint16 remaining = placements->count;
   uint8 sphere = 0;
