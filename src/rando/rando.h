@@ -77,6 +77,28 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint8 vanilla_lttp_code);
 
 // ---------------------------------------------------------------------------
+// Rando_ChestDispatch — universal chest grant-site hook.
+//
+// Hooked at Link_PerformOpenChest, AFTER OpenChestForItem returns the item
+// to give. Maps (dungeon_room_index, chest_ordinal) to an ALTTPR location_id
+// via a generated lookup table, then invokes Rando_DispatchVanillaGrant.
+//
+// `dungeon_room` is the global dungeon room index (matches ALTTPR's room id).
+// `chest_ordinal` is the 0-based index of this chest within the room (0..5).
+// `vanilla_lttp_code` is the LttP receive-item code OpenChestForItem returned.
+//
+// Returns the LttP code to grant. When the (room, ordinal) pair isn't in the
+// lookup table (universal hook covers chests we haven't enumerated yet), the
+// vanilla code is returned — the chest grants its vanilla item, as if rando
+// were inactive for that specific chest.
+//
+// Phase A1: lookup table is empty stub. Phase A2 work populates the
+// (room, ordinal) → location_id mapping from a new chest_lookup.yaml.
+// ---------------------------------------------------------------------------
+uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
+                          uint8 vanilla_lttp_code);
+
+// ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized
 // reachability cache when a story-progress event flag is written
 // (tasks.md §0.4a). Called from every reachability-affecting write site

@@ -12,6 +12,8 @@
 #include "misc.h"
 #include "player_oam.h"
 #include "sprite_main.h"
+#include "features.h"
+#include "rando/rando.h"
 
 static bool g_ApplyLinksMovementToCamera_called;
 
@@ -3820,6 +3822,21 @@ void Link_PerformOpenChest() {  // 87b574
     uint16 ram_addr = kMemoryLocationToGiveItemTo[item];
     if (g_ram[ram_addr])
       item = alt;
+  }
+
+  // §6.1 universal chest dispatch hook. The (dungeon_room_index, chest
+  // ordinal) pair is fed through chest_lookup() in rando.c. Phase A1 ships
+  // the wrapper with an empty lookup table — every chest still grants its
+  // vanilla item until the (room, ordinal) → location_id table is
+  // authored in Phase A2. When rando is inactive the wrapper is a no-op.
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    // chest_position is the SNES room tile offset of the opened chest.
+    // The chest ordinal (0..5) corresponds to the iteration order in
+    // OpenChestForItem's kDungeonRoomChests loop — but that index isn't
+    // exposed by the function's current API. For now pass 0 as ordinal;
+    // Phase A2 plumbs the true ordinal via an extra out-parameter on
+    // OpenChestForItem.
+    item = Rando_ChestDispatch((uint16)dungeon_room_index, 0, item);
   }
 
   Link_ReceiveItem(item, chest_position);

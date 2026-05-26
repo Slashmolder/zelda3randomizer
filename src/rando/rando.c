@@ -63,6 +63,31 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
 }
 
 // ---------------------------------------------------------------------------
+// Chest universal-dispatch lookup table (Phase A1 stub).
+//
+// Phase A2 work: populate from assets/rando/chest_lookup.yaml authored from
+// audit.md §0.3.5 catalog cross-referenced with vanilla LttP room data.
+// Until then this returns 0xFFFF (no rando substitute) and chests grant
+// their vanilla items. The dispatch wrapper is in place so the codegen
+// flip is a one-file change.
+// ---------------------------------------------------------------------------
+static uint16 chest_lookup(uint16 dungeon_room, uint8 chest_ordinal) {
+  (void)dungeon_room;
+  (void)chest_ordinal;
+  // Phase A2: replace with generated lookup table.
+  return 0xFFFFu;
+}
+
+uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
+                          uint8 vanilla_lttp_code) {
+  uint16 loc_id = chest_lookup(dungeon_room, chest_ordinal);
+  if (loc_id == 0xFFFFu) return vanilla_lttp_code;  // not mapped — vanilla
+  // We don't know the vanilla registry id for unmapped chests; pass 0xFFFF
+  // and let Rando_DispatchVanillaGrant's fall-back handle it.
+  return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
+}
+
+// ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's cached
 // reachability. Phase A0 stub: increment the counter. The tracker (task 10.2)
 // will consume the value.
