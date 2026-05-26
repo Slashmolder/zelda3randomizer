@@ -1077,12 +1077,22 @@ int main(int argc, char** argv) {
               // Set the host-pending submit flag so the active UI surface
               // (alphabet picker) decodes the buffer on its next Update tick.
               // Also call HandleKey for symmetry / self-check observability.
-              TextField_HandleKey(tf, kTextFieldKey_Submit);
-              g_rando_text_input_submit_pending = true;
+              //
+              // §9 cluster-2 audit MED-3: skip auto-repeat KEYDOWNs. SDL
+              // emits repeat KEYDOWN every ~30ms when a key is held, which
+              // would re-fire submit every frame and prevent the OK overlay
+              // countdown from completing while the user held Enter.
+              if (!event.key.repeat) {
+                TextField_HandleKey(tf, kTextFieldKey_Submit);
+                g_rando_text_input_submit_pending = true;
+              }
               break;
             case SDLK_ESCAPE:
               // Cancel — host-pending so the UI surface can close cleanly.
-              g_rando_text_input_cancel_pending = true;
+              // Skip auto-repeat: same rationale as Enter above.
+              if (!event.key.repeat) {
+                g_rando_text_input_cancel_pending = true;
+              }
               break;
             case SDLK_v:
               if (m & KMOD_CTRL) {
@@ -1093,8 +1103,10 @@ int main(int argc, char** argv) {
                 }
               }
               // Note: bare 'v' (no Ctrl) falls through to SDL_TEXTINPUT for
-              // normal char entry. The base32 filter rejects it; no double-
-              // insert risk because we only intercepted the Ctrl+V combo.
+              // normal char entry. V IS a base32 letter so the filter
+              // ACCEPTS it — we want that. Ctrl+V emits no SDL_TEXTINPUT
+              // (control characters suppressed), so the paste path above
+              // does not double-insert with a bare 'v' from this case.
               break;
             default:
               // All other keys (alphabetic, digits, punctuation) flow through
@@ -1194,6 +1206,11 @@ int main(int argc, char** argv) {
   free(g_audiobuffer);
 
   g_renderer_funcs.Destroy();
+
+  // §9.1b — defensive: SDL_StopTextInput if we exited while text input
+  // was active (e.g. user closed window during share-string entry).
+  // SDL_Quit() would clean up state anyway but explicit is clearer.
+  if (SDL_IsTextInputActive()) SDL_StopTextInput();
 
   SDL_DestroyWindow(window);
   SDL_Quit();

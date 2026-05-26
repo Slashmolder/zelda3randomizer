@@ -1638,6 +1638,12 @@ static void SelectFile_AlphabetPicker_Activate(void) {
   g_alphabet_msg_status = 0;
   g_alphabet_msg_frames = 0;
   g_alphabet_pending_return = false;
+  // §9 cluster-2 audit MED-1: zero the decoded-share globals so stale
+  // values from a previous successful submit don't leak into the next
+  // session. (Latent today since the SelectFile_GetLastDecodedShareString
+  // accessor isn't wired yet — but it lands in §9.4 / §9.8.)
+  g_alphabet_decoded_seed = 0;
+  memset(g_alphabet_decoded_hash, 0, sizeof(g_alphabet_decoded_hash));
   TextField_Init(&g_alphabet_textfield, /*base32_only=*/true);
   g_alphabet_textfield.active = true;
   // Hand the textfield to the SDL host so SDL_TEXTINPUT events route here
@@ -1699,14 +1705,26 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   };
   for (int i = 0; i < 18; i++) { cmd[o++] = kTitleTiles[i]; cmd[o++] = 0x18; }
 
-  // --- Row 1: current buffer (up to 18 chars to fit the same width).
+  // --- Row 1: current buffer (18-char sliding window keyed to cursor).
   //     VRAM target 0x61c8 (one tilemap row below title; +0x40 bytes).
   //     Count = (18*2)-1 = 0x23.
+  //
+  // §9 cluster-2 audit MED-2: the buffer holds up to 64 chars (share
+  // strings are 50). Fixed [0..18) display would hide chars 18+ entirely,
+  // so a user couldn't verify the back half of their typing and would
+  // get unattributable BadChecksum errors. Slide the window so the
+  // cursor is always visible — when the buffer overflows 18 chars, the
+  // window right-aligns to the cursor (so freshly-typed chars are
+  // always visible) and the older chars scroll off the left.
   cmd[o++] = 0x61; cmd[o++] = 0xc8; cmd[o++] = 0; cmd[o++] = 0x23;
-  int show = g_alphabet_textfield.len;
-  if (show > 18) show = 18;
+  int buf_len = g_alphabet_textfield.len;
+  int cur = g_alphabet_textfield.cursor;
+  int win_start = (cur > 17) ? (cur - 17) : 0;
+  // Don't show garbage past the end of the buffer; cap the visible char
+  // range at buf_len and pad with blanks.
   for (int i = 0; i < 18; i++) {
-    char c = (i < show) ? g_alphabet_textfield.buf[i] : ' ';
+    int src = win_start + i;
+    char c = (src < buf_len) ? g_alphabet_textfield.buf[src] : ' ';
     uint8 tile = SelectFile_TileForBase32(c);
     cmd[o++] = tile; cmd[o++] = 0x18;
   }
@@ -1750,8 +1768,11 @@ static void SelectFile_AlphabetPicker_Draw(void) {
         g_alphabet_cursor_col == kAlphabetPickerCtrl_Submit) attr = 0x38;
     cmd[o++] = kSubmitTiles[i]; cmd[o++] = attr;
   }
-  // DELETE — VRAM 6 cells to the right (each cell is 2 bytes; 6 cells = 12).
-  uint16 del_vram = ctrl_vram_base + 12;
+  // DELETE — VRAM 8 cells right (6 char cells + 2 cell gap; 8 cells = 16 bytes).
+  // §9 cluster-2 audit LOW: original 6-cell spacing rendered the three
+  // labels visually contiguous as "SUBMITDELETECANCEL". 2-tile gap parses
+  // as three discrete buttons. Fairy X table updated below to match.
+  uint16 del_vram = ctrl_vram_base + 16;
   cmd[o++] = (uint8)(del_vram >> 8);
   cmd[o++] = (uint8)(del_vram & 0xff);
   cmd[o++] = 0;
@@ -1763,8 +1784,8 @@ static void SelectFile_AlphabetPicker_Draw(void) {
         g_alphabet_cursor_col == kAlphabetPickerCtrl_Delete) attr = 0x38;
     cmd[o++] = kDeleteTiles[i]; cmd[o++] = attr;
   }
-  // CANCEL — 12 more bytes to the right.
-  uint16 cancel_vram = del_vram + 12;
+  // CANCEL — 16 more bytes to the right (same 6+2 spacing).
+  uint16 cancel_vram = del_vram + 16;
   cmd[o++] = (uint8)(cancel_vram >> 8);
   cmd[o++] = (uint8)(cancel_vram & 0xff);
   cmd[o++] = 0;
@@ -1830,7 +1851,9 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   // Control row cells are wider (6-tile labels with 6-tile gaps).
   uint8 fx;
   if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow) {
-    static const uint8 kCtrlFairyX[3] = { 0x24, 0x54, 0x84 };
+    // Fairy X step matches the VRAM label spacing: 8 tile cells per
+    // label-slot (6 char + 2 gap) = 64 px = 0x40. Anchor SUBMIT at 0x24.
+    static const uint8 kCtrlFairyX[3] = { 0x24, 0x64, 0xa4 };
     fx = kCtrlFairyX[g_alphabet_cursor_col % kAlphabetPickerCtrl_Count];
   } else {
     fx = kAlphabetPicker_FairyXBase + (uint8)(g_alphabet_cursor_col * 0x08);
@@ -1982,6 +2005,12 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void) {
   // decoded values + show "OK" overlay then return to file-select. On any
   // failure, surface the specific reject status so the user can fix the
   // input.
+  //
+  // §9 cluster-2 audit MED-4: refuse to re-fire while the OK countdown is
+  // already in flight. Without this guard, a held Start/Enter (or rapid
+  // press) during the post-OK frames re-runs the entire success path,
+  // dumping another stderr log line and resetting the countdown.
+  if (g_alphabet_pending_return) return;
   if (g_alphabet_textfield.len == 0) {
     g_alphabet_msg_status = (uint8)(kShareDecodeBadLength + 1);
     g_alphabet_msg_frames = kAlphabetMsg_ErrorBriefFrames;
