@@ -419,11 +419,80 @@ static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
   }
 }
 
+// Map dungeon-item registry id → dungeon id (0..12 per kDungeonPrizeLocations
+// order: HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9,
+// MM=10, TR=11, GT=12). Returns 0xFF if the item is not a dungeon item.
+//
+// Per item_registry.yaml: SmallKey ids 53..65, BigKey ids 66..76 (no HCE
+// big key), Map ids 77..87 + 124 (Map_HCE), Compass ids 88..98 (no HCE
+// compass).
+static uint8 dungeon_id_for_item(uint16 item_id) {
+  // Small keys 53..65 in HCE..GT order.
+  if (item_id >= 53 && item_id <= 65) return (uint8)(item_id - 53);
+  // Big keys 66..76 in EP..GT order (no HCE big key).
+  if (item_id >= 66 && item_id <= 76) return (uint8)(item_id - 66 + 1);
+  // Maps 77..87 in EP..GT order; Map_HCE = id 124.
+  if (item_id == 124) return 0;
+  if (item_id >= 77 && item_id <= 87) return (uint8)(item_id - 77 + 1);
+  // Compasses 88..98 in EP..GT order.
+  if (item_id >= 88 && item_id <= 98) return (uint8)(item_id - 88 + 1);
+  return 0xFF;
+}
+
+// Determine if `loc` is inside a dungeon. Returns 0..12 (dungeon id) or 0xFF.
+static uint8 dungeon_id_for_location(const RandoLocationDef *loc) {
+  if (loc->region_id == 0xFFFF) return 0xFF;
+  for (uint32 i = 0; i < kRandoRegionsCount; i++) {
+    if (kRandoRegions[i].id == loc->region_id) {
+      uint8 dg = kRandoRegions[i].dungeon_id;
+      if (dg == 0xFF) return 0xFF;
+      return dg;
+    }
+  }
+  return 0xFF;
+}
+
+// Per spec scenario "Dungeon-mode small key stays in its dungeon" — and the
+// equivalent for big keys / maps / compasses. When the corresponding
+// dungeon_items.* mode is Dungeon, the item is only acceptable at locations
+// inside the matching dungeon. Returns true if the placement is allowed.
+static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
+                                      uint16 candidate_item,
+                                      const RandoSettings *settings) {
+  uint8 item_dungeon = dungeon_id_for_item(candidate_item);
+  if (item_dungeon == 0xFF) return true;  // not a dungeon item — always OK
+  // Determine the active mode for this item class.
+  uint8 mode;
+  if (candidate_item >= 53 && candidate_item <= 65) {
+    mode = settings->dungeon_small_keys_mode;
+  } else if (candidate_item >= 66 && candidate_item <= 76) {
+    mode = settings->dungeon_big_keys_mode;
+  } else if (candidate_item == 124 || (candidate_item >= 77 && candidate_item <= 87)) {
+    mode = settings->dungeon_maps_mode;
+  } else if (candidate_item >= 88 && candidate_item <= 98) {
+    mode = settings->dungeon_compasses_mode;
+  } else {
+    return true;
+  }
+  if (mode != kDungeonItemMode_Dungeon) {
+    // Vanilla mode pre-pins these locations; Wild mode allows them anywhere.
+    // Only Dungeon mode requires per-dungeon containment.
+    return true;
+  }
+  uint8 loc_dungeon = dungeon_id_for_location(loc);
+  return loc_dungeon == item_dungeon;
+}
+
 // Evaluate can_place OR always_allow for a given (location, candidate_item) pair.
 static bool location_accepts_item(const RandoLocationDef *loc,
                                   uint16 candidate_item,
                                   const RandoCounts *counts,
                                   const RandoSettings *settings) {
+  // Dungeon-containment check (spec: "Dungeon-mode small key stays in its
+  // dungeon" + same for big keys / maps / compasses). Runs before the
+  // predicate VM so the can_place YAML doesn't need to enumerate every
+  // dungeon item per location.
+  if (!dungeon_mode_accepts_item(loc, candidate_item, settings)) return false;
   // can_place defaults to TRUE() when not overridden — the bytecode for
   // the default is "AND with 0 children" (2 bytes 0x0c 0x00), which
   // Predicate_EvaluatePlacement evaluates as true.

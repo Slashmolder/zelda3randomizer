@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 6  # bumped: BuildItemPool now pads to world-state-filtered location count, not kRandoLocationsCount
+generator_version: 7  # bumped: dungeon-mode small_keys/big_keys/maps/compasses now enforce per-dungeon containment at placement time
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -26,7 +26,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, dungeon_items.small_keys: dungeon }
     seed: "0xDEADBEEFCAFEBABE"
     label: "a1-open-fast-ganon"
-    expected_digest: "4570a1679d32e4565024753583e1d7a046e28f2ec978fe5a762569f7213db46d"
+    expected_digest: "6035e929a6f304e7b48967834ee283374aff3cfb4c139fa6821ca3dd3c15f057"
   # 7-goal × 4-world-state × dungeon-mode matrix — captured against
   # kGeneratorVersion=4 with the vanilla-mode pre-grant fix landed.
   # All entries verified goal_completable=true at capture time.
@@ -61,7 +61,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, dungeon_items.big_keys: dungeon, dungeon_items.maps: dungeon, dungeon_items.compasses: dungeon }
     seed: "0x0000000000000008"
     label: "a1-open-dungeon-keys-all"
-    expected_digest: "dde44adaa1d08c7c0d2ce8b61b42a2f73cababd40e17dcac637e4c509893a274"
+    expected_digest: "163f2cd04dd20971ab1491b3905f42d1f5c5e2cede5c4b178b96af907b099101"
   # Standard / Retro × all 7 goals.
   - settings: { mode.state: standard, goal: dungeons }
     seed: "0x0000000000000010"
@@ -141,7 +141,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, dungeon_items.maps: wild }
     seed: "0x0000000000000029"
     label: "a1-open-fg-mixed-modes"
-    expected_digest: "46c44fc5343568fbe88442698ac9184bfc90d260387ffb0f4fc9807ad29aab9d"
+    expected_digest: "990a0a7482ed99c3093e1da0659fd5148713940740c4f674abbae0ce5e6ecc7f"
   - settings: { mode.state: open, goal: fast_ganon, race_mode: true }
     seed: "0x0000000000000030"
     label: "a1-open-fg-race-mode"
