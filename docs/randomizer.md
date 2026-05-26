@@ -1,26 +1,27 @@
 # Zelda3 Randomizer
 
-> **Phase A1 status (kGeneratorVersion=2).** Foundation, RNG, share-string,
-> predicate VM, codegen, audit, logic graph (28 regions / 28 edges / 207
+> **Phase A1 status (kGeneratorVersion=4).** Foundation, RNG, share-string,
+> predicate VM, codegen, audit, logic graph (28 regions / 28 edges / 237
 > location predicates across all 13 dungeons + 11 overworld regions in
-> Standard mode), assumed-fill placement, prize/medallion shuffles, sphere
-> computation, and goal-completability checks are landed and locally
-> verified end-to-end. All 7 Phase A goals produce winnable seeds with
-> 0 unreachable placements in Open / Standard / Retro modes when
-> `dungeon_items.small_keys=dungeon`. Inverted mode is partial (start
-> region not yet declared). §6 grant-site dispatch and the file-select /
-> settings UI land in subsequent Phase A2 work.
+> Standard mode), assumed-fill placement with bounded retry + wall-clock
+> budget, prize/medallion shuffles, sphere computation, goal-completability
+> with strict refusal of un-completable seeds, JSON + text spoilers with
+> fallback-warning rollup, and sidecar save format aligned to spec are all
+> landed and locally verified end-to-end. All 7 Phase A goals produce
+> winnable seeds with 0 unreachable placements in Open / Standard / Retro
+> modes at both default (vanilla dungeon items) and `dungeon_items.small_keys=dungeon`.
+> The regression corpus exercises 9 (settings × seed) configurations; all
+> 9 entries verified at kGeneratorVersion=4.
 
 **Known limitations** as of this status:
-- Vanilla dungeon-item mode (the default) leaves ~39 locations
-  unreachable per seed because `location_registry.yaml` lacks
-  SmallKey_<dungeon> pin sites. Workaround: pass
-  `dungeon_items.small_keys=dungeon` to the CLI.
 - Inverted world-state seeds report ~32 unreachable until
   LinksHouse_Inverted region is declared (Phase A2 follow-on).
 - §6 dispatch is not yet wired into game code paths — playing a
   generated seed in-game requires the file-select UI work landing
   per task 9.x.
+- Per-item rewind inside an assumed-fill attempt is not implemented;
+  the placer instead retries with a perturbed seed up to 8 times.
+  The `--budget-seconds` flag bounds wall-clock time across retries.
 
 This document covers user-facing operation of the in-binary randomizer, the
 share-string format, save behavior, audit conventions for contributors, and
