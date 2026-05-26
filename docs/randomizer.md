@@ -1,22 +1,26 @@
 # Zelda3 Randomizer
 
-> **Phase A1 status (kGeneratorVersion=6).** Foundation, RNG, share-string,
+> **Phase A1 status (kGeneratorVersion=10).** Foundation, RNG, share-string,
 > predicate VM, codegen, audit, logic graph (28 regions / 28 edges / 237
 > location predicates across all 13 dungeons + 11 overworld regions in
 > Standard mode), assumed-fill placement with bounded retry + wall-clock
-> budget, prize/medallion shuffles, sphere computation, goal-completability
-> with strict refusal of un-completable seeds, JSON + text spoilers with
-> fallback-warning rollup, sidecar save format aligned to spec, §6
-> grant-site dispatch foundation (universal chest hook + 13 NPC sites),
-> and --assets-must-be-vanilla check are all landed. All 7 Phase A goals
-> produce winnable seeds with 0 unreachable placements in Open / Standard
-> / Retro modes at both default (vanilla dungeon items) and
-> `dungeon_items.small_keys=dungeon`. The regression corpus exercises
-> 50 (settings × seed) configurations across the full Phase A axis matrix
-> + 5 named celebrity seeds; CI runs the corpus on Linux + macOS for
-> cross-platform digest determinism. Audit guard runs in --strict mode
-> (every grant-site write either dispatches or carries an explicit
-> exemption comment).
+> budget, prize/medallion shuffles + dungeon-mode per-dungeon containment,
+> sphere computation, goal-completability with strict refusal of
+> un-completable seeds + Pedestal pendant-reachability + boss-heart
+> identity pinning + item-pool difficulty caps, JSON + text spoilers with
+> fallback-warning rollup + sphere_digest + seed_u64, sidecar save format
+> aligned to spec, §6 grant-site dispatch (13 NPC sites + universal chest
+> hook + ITEM→LttP translation for 53 of ~125 item ids including
+> progressive items / rupees / bottles / dungeon items / SilverArrowUpgrade),
+> snapshot tail TLV preserves rando placement across save/load,
+> `--assets-must-be-vanilla` check, and `--print-assets-hash` are all
+> landed. All 7 Phase A goals produce winnable seeds with 0 unreachable
+> placements in Open / Standard / Retro modes at all dungeon-item modes.
+> The regression corpus exercises 50 (settings × seed) configurations
+> across the full Phase A axis matrix + 5 named celebrity seeds; CI runs
+> the corpus on Linux + macOS for cross-platform digest determinism.
+> Audit guard runs in `--strict` mode (every grant-site write either
+> dispatches or carries an explicit exemption comment).
 
 **Known limitations** as of this status:
 - Inverted world-state seeds report ~32 unreachable until
@@ -28,14 +32,20 @@
   Sick Kid, Purple Chest, Hobo, Stumpy, Old Man, Blacksmith, Master
   Sword Pedestal, Flute Spot) are wired and dispatch correctly when
   `kFeatures1_RandomizerActive` is set.
+- TriforcePiece, HalfMagic/QuarterMagic, Rupoor, and the 10 prize
+  items have no vanilla LttP receive code — when placed at a §6-wired
+  site, they currently fall back to the slot's vanilla item. §6.2 work
+  introduces direct receive helpers (counter increments, magic_consumption
+  direct write). Triforce-Hunt seeds in particular need this to track
+  pieces collected at non-Triforce slots.
 - File-select / settings UI not yet wired — only CLI generation works.
 - Per-item rewind inside an assumed-fill attempt is not implemented;
   the placer instead retries with a perturbed seed up to 8 times.
   The `--budget-seconds` flag bounds wall-clock time across retries.
 - vanilla_assets_hash.h ships with an all-zeros placeholder; activate
-  --assets-must-be-vanilla by running
+  `--assets-must-be-vanilla` by running
   `python assets/scripts/dump_vanilla_assets_hash.py` against a clean
-  extraction.
+  extraction (or `./zelda3 --print-assets-hash` to view).
 
 This document covers user-facing operation of the in-binary randomizer, the
 share-string format, save behavior, audit conventions for contributors, and
