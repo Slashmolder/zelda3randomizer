@@ -13,6 +13,8 @@
 
 #include "rando_placement.h"
 #include "rando.h"
+#include "rando_logic.h"
+#include "rando_rng.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -315,28 +317,222 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
 }
 
 // ---------------------------------------------------------------------------
-// Place_AssumedFill — Phase A0 stub: emits the identity placement.
+// Item-progression classifier (tasks.md §4.3).
 //
-// Every location_id gets its vanilla_item_id. Returns true (trivially
-// "successful"). Phase A1 replaces with the real assumed-fill algorithm with
-// bounded retry + forward-fill fallback (per randomizer-placement spec).
+// "Progression" items are those whose placement affects reachability —
+// weapons, utility items, dungeon keys, bottles, prizes, triforce pieces,
+// and the magic upgrades. Non-progression items (rupees, arrows, bombs,
+// hearts, maps, compasses, junk) are placed last via simple shuffle.
 //
-// |out->entries| MUST be sized to hold at least kRandoLocationsCount entries.
-// The caller (or Placement_AllocTable) owns the allocation.
+// Item IDs match `assets/rando/item_registry.yaml`. Centralizing the
+// classification here means the spec stays the source of truth.
+// ---------------------------------------------------------------------------
+static bool is_progression_item(uint16 item_id) {
+  // Progressive items (0..4)
+  if (item_id <= 4) return true;
+  // Absolute weapons / utility (5..40 covers sword tiers, shields, armor,
+  // gloves, rods, hammer, hookshot, bow, boomerangs, powder, mushroom,
+  // medallions, lamp, shovel, ocarina, bug net, book, somaria, byrna, cape,
+  // mirror, boots, flippers, moon pearl, silver arrows).
+  if (item_id >= 5 && item_id <= 40) return true;
+  // Magic upgrades (41, 42)
+  if (item_id == 41 || item_id == 42) return true;
+  // Bottles (43..49)
+  if (item_id >= 43 && item_id <= 49) return true;
+  // PieceOfHeart (50) / BossHeartContainer (51) — NOT progression for Phase A.
+  // (Phase B's hero mode or low-health logic may revisit.)
+  // TriforcePiece (52) — progression for Triforce Hunt / Ganon Hunt goals.
+  if (item_id == 52) return true;
+  // Small keys (53..65) and big keys (66..76) — progression for dungeon traversal.
+  if (item_id >= 53 && item_id <= 76) return true;
+  // Maps (77..87) and compasses (88..98) — NOT progression.
+  // Multi-tier rupees (99..103) — NOT progression.
+  // Junk (104..110) — NOT progression.
+  // Prize pendants (111..113) and crystals (114..120) — progression
+  // (gate Sahasrahla / Pedestal / Ganon's Tower / Ganon).
+  if (item_id >= 111 && item_id <= 120) return true;
+  // Virtual items (121+) — NOT in pool; not progression.
+  return false;
+}
+
+// Fisher-Yates over a uint16 array, using Rng_NextRange for unbiased picks.
+static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
+  for (int i = (int)n - 1; i > 0; i--) {
+    uint32 j = Rng_NextRange(rng, (uint32)(i + 1));
+    uint16 tmp = arr[i];
+    arr[i] = arr[(uint16)j];
+    arr[(uint16)j] = tmp;
+  }
+}
+
+// Evaluate can_place OR always_allow for a given (location, candidate_item) pair.
+static bool location_accepts_item(const RandoLocationDef *loc,
+                                  uint16 candidate_item,
+                                  const RandoCounts *counts,
+                                  const RandoSettings *settings) {
+  // can_place defaults to TRUE() when not overridden — the bytecode for
+  // the default is "AND with 0 children" (2 bytes 0x0c 0x00), which
+  // Predicate_EvaluatePlacement evaluates as true.
+  const uint8 *cp_bc = kRandoPredicateStream + loc->can_place_offset;
+  if (Predicate_EvaluatePlacement(cp_bc, loc->can_place_length, counts, settings, candidate_item)) {
+    return true;
+  }
+  // always_allow defaults to FALSE() (OR with 0 children, 0x0d 0x00) — also
+  // evaluatable safely. If it returns true, the placement is permitted even
+  // when can_place rejected.
+  const uint8 *aa_bc = kRandoPredicateStream + loc->always_allow_offset;
+  return Predicate_EvaluatePlacement(aa_bc, loc->always_allow_length, counts, settings, candidate_item);
+}
+
+// ---------------------------------------------------------------------------
+// Place_AssumedFill — Phase A1 implementation.
+//
+// Algorithm (per `randomizer-placement / Assumed-fill placement`):
+//   1. Build the per-settings item pool via BuildItemPool.
+//   2. Partition into progression (~70 items) vs junk (~165).
+//   3. Shuffle progression order; "assumed inventory" = counts of all
+//      progression items still unplaced.
+//   4. For each progression item (in shuffled order):
+//        a. Remove from assumed inventory.
+//        b. Run Logic_ComputeReachability with current counts.
+//        c. Filter open locations to reachable + can_place(item).
+//        d. If candidates: pick a random one (Rng_NextRange).
+//        e. If no candidates: forward-fill fallback — place at any open
+//           location regardless of reachability. Records fallback in the
+//           future spoiler's fallback_warnings.
+//   5. Shuffle junk; fill remaining open locations.
+//
+// Bounded-rewind retry (per spec) is a Phase A1 follow-on; for now the
+// forward-fill fallback kicks in on dead-end. Logs to stderr.
 // ---------------------------------------------------------------------------
 bool Place_AssumedFill(const RandoSettings *settings,
                        uint64 seed_u64,
                        int budget_seconds,
                        RandoPlacementTable *out) {
-  (void)settings;
-  (void)seed_u64;
-  (void)budget_seconds;
-  if (out == NULL || out->entries == NULL) return false;
-  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
-    out->entries[i].location_id = kRandoLocations[i].id;
-    out->entries[i].item_id = kRandoLocations[i].vanilla_item_id;
+  (void)budget_seconds;  // Phase A1: not yet enforced
+  if (settings == NULL || out == NULL || out->entries == NULL) return false;
+
+  // ----- 1. Build pool -----
+  uint16 pool[512];
+  uint16 pool_n = BuildItemPool(settings, pool, 512);
+  if (pool_n == 0) return false;
+
+  // ----- 2. Partition into progression / junk -----
+  static uint16 progression[256];
+  static uint16 junk[512];
+  uint16 prog_n = 0, junk_n = 0;
+  for (uint16 i = 0; i < pool_n; i++) {
+    if (is_progression_item(pool[i])) {
+      if (prog_n < sizeof(progression) / sizeof(progression[0])) progression[prog_n++] = pool[i];
+    } else {
+      if (junk_n < sizeof(junk) / sizeof(junk[0])) junk[junk_n++] = pool[i];
+    }
   }
-  out->count = (uint16)kRandoLocationsCount;
+
+  // ----- 3. Collect open locations (world-state-filtered, sorted by id) -----
+  // open_loc_idx[k] = index into kRandoLocations of the k-th open location.
+  static uint16 open_loc_idx[512];
+  uint16 open_n = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    const RandoLocationDef *loc = &kRandoLocations[i];
+    if (loc->world_state_filter != 0 &&
+        !(loc->world_state_filter & (1u << settings->world_state))) continue;
+    open_loc_idx[open_n++] = (uint16)i;
+  }
+
+  // placement_at[k] = item placed at open_loc_idx[k], or 0xFFFF if empty.
+  static uint16 placement_at[512];
+  for (uint16 k = 0; k < open_n; k++) placement_at[k] = 0xFFFF;
+
+  // ----- 4. Seed the assumed inventory with all progression items -----
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, seed_u64);
+
+  RandoCounts counts;
+  memset(&counts, 0, sizeof(counts));
+  counts.by_item_id[121] = 3;  // StartingHeart virtual item (id 121, count 3)
+  for (uint16 i = 0; i < prog_n; i++) {
+    counts.by_item_id[progression[i]]++;
+  }
+
+  // Shuffle the progression placement order.
+  shuffle_u16(progression, prog_n, &rng);
+
+  // ----- 5. Place each progression item -----
+  uint16 fallback_count = 0;
+  for (uint16 i = 0; i < prog_n; i++) {
+    uint16 item = progression[i];
+    // Remove from assumed inventory before computing reachability.
+    if (counts.by_item_id[item] > 0) counts.by_item_id[item]--;
+
+    const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
+
+    // Find candidate locations: open + reachable + accepts item.
+    static uint16 candidates[512];
+    uint16 cand_n = 0;
+    for (uint16 k = 0; k < open_n; k++) {
+      if (placement_at[k] != 0xFFFF) continue;
+      const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+      if (r != NULL && !Reachability_HasLocation(r, loc->id)) continue;
+      if (!location_accepts_item(loc, item, &counts, settings)) continue;
+      candidates[cand_n++] = k;
+    }
+
+    if (cand_n > 0) {
+      uint32 pick = Rng_NextRange(&rng, cand_n);
+      placement_at[candidates[pick]] = item;
+    } else {
+      // Forward-fill fallback: place at any open + can_place location
+      // (ignore reachability). If still nothing, take the first open slot
+      // regardless of can_place — last-resort recovery.
+      cand_n = 0;
+      for (uint16 k = 0; k < open_n; k++) {
+        if (placement_at[k] != 0xFFFF) continue;
+        const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+        if (!location_accepts_item(loc, item, &counts, settings)) continue;
+        candidates[cand_n++] = k;
+      }
+      if (cand_n == 0) {
+        for (uint16 k = 0; k < open_n; k++) {
+          if (placement_at[k] != 0xFFFF) continue;
+          candidates[cand_n++] = k;
+        }
+      }
+      if (cand_n == 0) {
+        fprintf(stderr, "Place_AssumedFill: no open location for progression item %u\n",
+                (unsigned)item);
+        return false;
+      }
+      uint32 pick = Rng_NextRange(&rng, cand_n);
+      placement_at[candidates[pick]] = item;
+      fallback_count++;
+    }
+  }
+
+  // ----- 6. Fill remaining open locations with junk -----
+  shuffle_u16(junk, junk_n, &rng);
+  uint16 j_idx = 0;
+  for (uint16 k = 0; k < open_n; k++) {
+    if (placement_at[k] != 0xFFFF) continue;
+    if (j_idx < junk_n) {
+      placement_at[k] = junk[j_idx++];
+    } else {
+      // Pool/locations cardinality mismatch — fall back to vanilla item.
+      placement_at[k] = kRandoLocations[open_loc_idx[k]].vanilla_item_id;
+    }
+  }
+
+  // ----- 7. Emit placement table -----
+  for (uint16 k = 0; k < open_n; k++) {
+    out->entries[k].location_id = kRandoLocations[open_loc_idx[k]].id;
+    out->entries[k].item_id = placement_at[k];
+  }
+  out->count = open_n;
+
+  if (fallback_count > 0) {
+    fprintf(stderr, "Place_AssumedFill: %u progression item(s) placed via forward-fill fallback.\n",
+            (unsigned)fallback_count);
+  }
   return true;
 }
 

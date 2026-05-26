@@ -16,17 +16,17 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 0  # current kGeneratorVersion at last regeneration; null = no entries yet
+generator_version: 1  # bumped when Place_AssumedFill replaced the identity stub (task 4.3)
 
-# A0 seed: exercises the codegen + bump-corpus pipeline end-to-end. The
-# placement digest below is captured from the identity placer; once
-# Place_AssumedFill ships real placement logic (task 4.3), this digest will
-# change and kGeneratorVersion will bump. See `bump_rando_corpus.py`.
+# Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
+# Each digest is captured against the current `kGeneratorVersion`; when the
+# placer / RNG / settings serialization / logic graph changes, bump the version
+# and regenerate via `python assets/scripts/bump_rando_corpus.py --apply`.
 entries:
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7 }
     seed: "0xDEADBEEFCAFEBABE"
-    label: "a0-smoke-open-fast-ganon"
-    expected_digest: "e3557532374373ce1a3649787fc4aaa195f29ed451b0b702af620105a90312db"
+    label: "a1-open-fast-ganon"
+    expected_digest: "9445e47366c9de727d1b66ce699df203f3e84d69394104dd2023de158c8ec41d"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
