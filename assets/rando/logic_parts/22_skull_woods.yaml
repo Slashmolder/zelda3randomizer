@@ -55,16 +55,19 @@ locations:
 
   # Compass Chest (php:59) — no setRequirements; default TRUE.
   - id: "Skull Woods - Compass Chest"
+    region: SkullWoods
     can_reach: "TRUE()"
     source: "app/Region/Standard/SkullWoods.php:59"
 
   # Map Chest (php:60) — no setRequirements; default TRUE.
   - id: "Skull Woods - Map Chest"
+    region: SkullWoods
     can_reach: "TRUE()"
     source: "app/Region/Standard/SkullWoods.php:60"
 
   # Pot Prison (php:62) — no setRequirements; default TRUE.
   - id: "Skull Woods - Pot Prison"
+    region: SkullWoods
     can_reach: "TRUE()"
     source: "app/Region/Standard/SkullWoods.php:62"
 
@@ -72,11 +75,13 @@ locations:
   # setFillRules: !forceSkullWoodsKey || item == KeyD3. forceSkullWoodsKey=false
   # → first disjunct TRUE → no restriction.
   - id: "Skull Woods - Pinball Room"
+    region: SkullWoods
     can_reach: "TRUE()"
     source: "app/Region/Standard/SkullWoods.php:63, 106-108"
 
   # Big Key Chest (php:58) — no setRequirements; default TRUE.
   - id: "Skull Woods - Big Key Chest"
+    region: SkullWoods
     can_reach: "TRUE()"
     source: "app/Region/Standard/SkullWoods.php:58"
 
@@ -84,6 +89,7 @@ locations:
   # accessibility != 'locations' branches vacuous under default
   # accessibility=items.
   - id: "Skull Woods - Big Chest"
+    region: SkullWoods
     can_reach: "HAS_ITEM(BigKey_SkullWoods)"
     source: "app/Region/Standard/SkullWoods.php:110-116"
 
@@ -91,6 +97,7 @@ locations:
   #   FireRod && (MoonPearl || (canDungeonRevive && Boots && (MagicMirror || hasABottle)))
   # canDungeonRevive=false → require FireRod AND MoonPearl.
   - id: "Skull Woods - Bridge Room"
+    region: SkullWoods
     can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl)"
     source: "app/Region/Standard/SkullWoods.php:118-122"
 
@@ -102,11 +109,13 @@ locations:
   #   && Mothula.canBeat
   # canDungeonRevive=false → MoonPearl; swordless=false → HasSword(1).
   - id: "Skull Woods - Boss"
+    region: SkullWoods
     can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND HasSword(1) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
     source: "app/Region/Standard/SkullWoods.php:128-151"
 
   # Prize (php:66, 124-126, 163) — can_complete = Boss canAccess.
   - id: "Skull Woods - Prize"
+    region: SkullWoods
     can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND HasSword(1) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
     source: "app/Region/Standard/SkullWoods.php:66, 124-126, 163 (can_complete = Boss access)"
 

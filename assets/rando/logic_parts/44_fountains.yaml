@@ -25,6 +25,7 @@ locations:
   # `Waterfall Bottle` (php:30): Fountain in LightWorld_NorthEast.
   # No setRequirements → reach-by-region.
   - id: "Waterfall Bottle"
+    region: LightWorld_NorthEast
     can_reach: "TRUE()"
     source: "app/Region/Standard/Fountains.php:30"
 
@@ -32,6 +33,7 @@ locations:
   # No setRequirements → reach-by-region (gated by the region's can_enter
   # in 43_darkworld.yaml).
   - id: "Pyramid Bottle"
+    region: DarkWorld_NorthEast
     can_reach: "TRUE()"
     source: "app/Region/Standard/Fountains.php:31"
 

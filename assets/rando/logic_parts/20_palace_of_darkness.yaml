@@ -112,11 +112,13 @@ locations:
   # dropped per audit. Else branch: wildKeys=false → KeyD1,5. Always-allow /
   # fill-rules accessibility != 'locations' branches vacuous (see Big Key Chest).
   - id: "Palace of Darkness - Harmless Hellway"
+    region: PalaceOfDarkness
     can_reach: "HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     source: "app/Region/Standard/PalaceOfDarkness.php:111-121"
 
   # Stalfos Basement (php:123-126): same as The Arena - Bridge.
   - id: "Palace of Darkness - Stalfos Basement"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(SmallKey_PalaceOfDarkness) OR (CanShootArrowsL1() AND HAS_ITEM(Hammer))"
     source: "app/Region/Standard/PalaceOfDarkness.php:123-126"
 
@@ -125,16 +127,19 @@ locations:
   #   && ((Hammer && canShootArrows && Lamp) || wildKeys ? KeyD1,4 : KeyD1,3)
   # advanced=false → require Lamp. wildKeys=false → KeyD1,3.
   - id: "Palace of Darkness - Dark Basement - Left"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
     source: "app/Region/Standard/PalaceOfDarkness.php:128-132"
 
   # Dark Basement - Right (php:134-138): identical body.
   - id: "Palace of Darkness - Dark Basement - Right"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
     source: "app/Region/Standard/PalaceOfDarkness.php:134-138"
 
   # Map Chest (php:140-142): canShootArrows.
   - id: "Palace of Darkness - Map Chest"
+    region: PalaceOfDarkness
     can_reach: "CanShootArrowsL1()"
     source: "app/Region/Standard/PalaceOfDarkness.php:140-142"
 
@@ -142,12 +147,14 @@ locations:
   #   Lamp && ((Hammer && canShootArrows) || wildKeys ? KeyD1,6 : KeyD1,5)
   # wildKeys=false → KeyD1,5. setFillRules forbids KeyD1 placement here.
   - id: "Palace of Darkness - Dark Maze - Top"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:144-148"
 
   # Dark Maze - Bottom (php:150-154): identical body.
   - id: "Palace of Darkness - Dark Maze - Bottom"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:150-154"
@@ -157,11 +164,13 @@ locations:
   # vacuous (Phase A pins both false). bossNormalLocation=true, so the
   # setFillRules / setAlwaysAllow branches collapse the same way EP does.
   - id: "Palace of Darkness - Boss"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Lamp) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
     source: "app/Region/Standard/PalaceOfDarkness.php:160-180"
 
   # Prize (php:65, 156-158, 194) — can_complete = Boss canAccess.
   - id: "Palace of Darkness - Prize"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Lamp) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
     source: "app/Region/Standard/PalaceOfDarkness.php:65, 156-158, 194 (can_complete = Boss access)"
 

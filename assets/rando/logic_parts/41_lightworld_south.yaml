@@ -35,6 +35,7 @@ edges:
 locations:
   # `Floodgate Chest` (php:32) — no setRequirements; default TRUE.
   - id: "Floodgate Chest"
+    region: LightWorld_South
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/South.php:32"
 
@@ -42,11 +43,13 @@ locations:
   # (In Inverted this re-locates to DarkWorld/South.php; Phase A pins
   # world_state Standard/Open so the Light-World region is the placement.)
   - id: "Link's House"
+    region: LightWorld_South
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/South.php:33"
 
   # `Aginah's Cave` (php:107-109): canBombThings.
   - id: "Aginah's Cave"
+    region: LightWorld_South
     can_reach: "CanBombThings()"
     source: "app/Region/Standard/LightWorld/South.php:107-109"
 
@@ -54,33 +57,40 @@ locations:
   # canKillMostThings(world). The `enemies` param defaults to 5 in ALTTPR;
   # we call CanKillMostThings(world, 5).
   - id: "Mini Moldorm Cave - Far Left"
+    region: LightWorld_South
     can_reach: "CanBombThings() AND CanKillMostThings(world, 5)"
     source: "app/Region/Standard/LightWorld/South.php:111-113"
 
   - id: "Mini Moldorm Cave - Left"
+    region: LightWorld_South
     can_reach: "CanBombThings() AND CanKillMostThings(world, 5)"
     source: "app/Region/Standard/LightWorld/South.php:115-117"
 
   - id: "Mini Moldorm Cave - Right"
+    region: LightWorld_South
     can_reach: "CanBombThings() AND CanKillMostThings(world, 5)"
     source: "app/Region/Standard/LightWorld/South.php:119-121"
 
   - id: "Mini Moldorm Cave - Far Right"
+    region: LightWorld_South
     can_reach: "CanBombThings() AND CanKillMostThings(world, 5)"
     source: "app/Region/Standard/LightWorld/South.php:123-125"
 
   - id: "Mini Moldorm Cave - NPC"
+    region: LightWorld_South
     can_reach: "CanBombThings() AND CanKillMostThings(world, 5)"
     source: "app/Region/Standard/LightWorld/South.php:127-129"
 
   # `Ice Rod Cave` (php:39) — no setRequirements; default TRUE.
   - id: "Ice Rod Cave"
+    region: LightWorld_South
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/South.php:39"
 
   # `Hobo` (php:131-134): Flippers (canWaterWalk+Boots and canFakeFlipper
   # branches drop in Phase A).
   - id: "Hobo"
+    region: LightWorld_South
     can_reach: "HAS_ITEM(Flippers)"
     source: "app/Region/Standard/LightWorld/South.php:131-134"
 
@@ -89,32 +99,38 @@ locations:
   # glitch branches drop; only mirror+south-DW survives. swordless-mode
   # alternative (Hammer for tablet read) drops.
   - id: "Bombos Tablet"
+    region: LightWorld_South
     can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)"
     source: "app/Region/Standard/LightWorld/South.php:136-142"
 
   # `Cave 45` (php:144-148): mirror + south-DW (glitch branches drop).
   - id: "Cave 45"
+    region: LightWorld_South
     can_reach: "HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)"
     source: "app/Region/Standard/LightWorld/South.php:144-148"
 
   # `Checkerboard Cave` (php:150-155): canLiftRocks AND mirror+Mire
   # (glitch branches drop).
   - id: "Checkerboard Cave"
+    region: LightWorld_South
     can_reach: "CanLiftRocks() AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire)"
     source: "app/Region/Standard/LightWorld/South.php:150-155"
 
   # `Library` (php:157-159): Boots.
   - id: "Library"
+    region: LightWorld_South
     can_reach: "HAS_ITEM(Boots)"
     source: "app/Region/Standard/LightWorld/South.php:157-159"
 
   # `Maze Race` (php:46) — no setRequirements; default TRUE.
   - id: "Maze Race"
+    region: LightWorld_South
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/South.php:46"
 
   # `Desert Ledge` (php:161-163): Desert Palace canEnter (reach the region).
   - id: "Desert Ledge"
+    region: LightWorld_South
     can_reach: "OP_REGION_REACHABLE(DesertPalace_Lobby)"
     source: "app/Region/Standard/LightWorld/South.php:161-163"
 
@@ -123,16 +139,19 @@ locations:
   # drop. The surviving path is Flippers + MagicMirror + MoonPearl +
   # reachable DarkWorld_NorthEast (the mirror-from-DW-NE Lake-Hylia warp).
   - id: "Lake Hylia Island"
+    region: LightWorld_South
     can_reach: "HAS_ITEM(Flippers) AND HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthEast)"
     source: "app/Region/Standard/LightWorld/South.php:165-175"
 
   # `Sunken Treasure` (php:49) — no setRequirements; default TRUE.
   - id: "Sunken Treasure"
+    region: LightWorld_South
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/South.php:49"
 
   # `Flute Spot` (php:177-179): Shovel.
   - id: "Flute Spot"
+    region: LightWorld_South
     can_reach: "HAS_ITEM(Shovel)"
     source: "app/Region/Standard/LightWorld/South.php:177-179"
 

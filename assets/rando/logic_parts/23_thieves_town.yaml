@@ -53,31 +53,37 @@ locations:
 
   # Big Key Chest (php:51) — no setRequirements; default TRUE.
   - id: "Thieves' Town - Big Key Chest"
+    region: ThievesTown
     can_reach: "TRUE()"
     source: "app/Region/Standard/ThievesTown.php:51"
 
   # Map Chest (php:52) — no setRequirements; default TRUE.
   - id: "Thieves' Town - Map Chest"
+    region: ThievesTown
     can_reach: "TRUE()"
     source: "app/Region/Standard/ThievesTown.php:52"
 
   # Compass Chest (php:53) — no setRequirements; default TRUE.
   - id: "Thieves' Town - Compass Chest"
+    region: ThievesTown
     can_reach: "TRUE()"
     source: "app/Region/Standard/ThievesTown.php:53"
 
   # Ambush Chest (php:54) — no setRequirements; default TRUE.
   - id: "Thieves' Town - Ambush Chest"
+    region: ThievesTown
     can_reach: "TRUE()"
     source: "app/Region/Standard/ThievesTown.php:54"
 
   # Attic (php:73-75): KeyD4 && BigKeyD4.
   - id: "Thieves' Town - Attic"
+    region: ThievesTown
     can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown)"
     source: "app/Region/Standard/ThievesTown.php:73-75"
 
   # Blind's Cell (php:89-91): BigKeyD4.
   - id: "Thieves' Town - Blind's Cell"
+    region: ThievesTown
     can_reach: "HAS_ITEM(BigKey_ThievesTown)"
     source: "app/Region/Standard/ThievesTown.php:89-91"
 
@@ -87,17 +93,20 @@ locations:
   # The advanced self-ref branch is dropped per audit; take the else branch.
   # Always-allow / setFillRules accessibility != 'locations' branches vacuous.
   - id: "Thieves' Town - Big Chest"
+    region: ThievesTown
     can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown)"
     source: "app/Region/Standard/ThievesTown.php:77-87"
 
   # Boss (php:97-116): KeyD4 && BigKeyD4 && Blind.canBeat. canEnter enforced
   # by the edge. wildCompasses/wildMaps clauses vacuous (Phase A pins false).
   - id: "Thieves' Town - Boss"
+    region: ThievesTown
     can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) AND CanKillBlind(world)"
     source: "app/Region/Standard/ThievesTown.php:97-116"
 
   # Prize (php:59, 93-95, 128) — can_complete = Boss canAccess.
   - id: "Thieves' Town - Prize"
+    region: ThievesTown
     can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) AND CanKillBlind(world)"
     source: "app/Region/Standard/ThievesTown.php:59, 93-95, 128 (can_complete = Boss access)"
 

@@ -57,21 +57,25 @@ edges:
 locations:
   # Ice Palace - Compass Chest (php:51) — no setRequirements; default TRUE.
   - id: "Ice Palace - Compass Chest"
+    region: IcePalace_Lobby
     can_reach: "TRUE()"
     source: "app/Region/Standard/IcePalace.php:51 (no setRequirements)"
 
   # Ice Palace - Iced T Room (php:55) — no setRequirements; default TRUE.
   - id: "Ice Palace - Iced T Room"
+    region: IcePalace_Lobby
     can_reach: "TRUE()"
     source: "app/Region/Standard/IcePalace.php:55 (no setRequirements)"
 
   # Ice Palace - Freezor Chest (php:96-98): canMeltThings.
   - id: "Ice Palace - Freezor Chest"
+    region: IcePalace_Lobby
     can_reach: "CanMeltThings(world)"
     source: "app/Region/Standard/IcePalace.php:96-98"
 
   # Ice Palace - Big Chest (php:100-102): has(BigKeyD5).
   - id: "Ice Palace - Big Chest"
+    region: IcePalace_Lobby
     can_reach: "HAS_ITEM(BigKey_IcePalace)"
     source: "app/Region/Standard/IcePalace.php:100-102"
 
@@ -84,6 +88,7 @@ locations:
   # keeps the location-independent disjuncts and the bare-key requirement.
   # Pragmatic Phase A predicate: Hookshot OR SmallKey_IcePalace.
   - id: "Ice Palace - Spike Room"
+    region: IcePalace_Lobby
     can_reach: "HAS_ITEM(Hookshot) OR HAS_ITEM(SmallKey_IcePalace)"
     source: "app/Region/Standard/IcePalace.php:87-94"
 
@@ -92,11 +97,13 @@ locations:
   #   AND Spike Room canAccess
   # Spike Room canAccess collapses to its predicate above.
   - id: "Ice Palace - Big Key Chest"
+    region: IcePalace_Lobby
     can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND (HAS_ITEM(Hookshot) OR HAS_ITEM(SmallKey_IcePalace))"
     source: "app/Region/Standard/IcePalace.php:73-78"
 
   # Ice Palace - Map Chest (php:80-85): identical to Big Key Chest.
   - id: "Ice Palace - Map Chest"
+    region: IcePalace_Lobby
     can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND (HAS_ITEM(Hookshot) OR HAS_ITEM(SmallKey_IcePalace))"
     source: "app/Region/Standard/IcePalace.php:80-85"
 
@@ -110,11 +117,13 @@ locations:
   # Phase A: drop the !== 'basic' branch, keep `KeyD5>=2`.
   # wildCompasses/wildMaps both default false → those disjuncts collapse to TRUE.
   - id: "Ice Palace - Boss"
+    region: IcePalace_Lobby
     can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillKholdstare(world) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
     source: "app/Region/Standard/IcePalace.php:108-117"
 
   # Ice Palace - Prize (php:154 → can_complete = Boss canAccess).
   - id: "Ice Palace - Prize"
+    region: IcePalace_Lobby
     can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillKholdstare(world) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
     source: "app/Region/Standard/IcePalace.php:104-106, 154 (can_complete = Boss access)"
 

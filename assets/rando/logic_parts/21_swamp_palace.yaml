@@ -66,6 +66,7 @@ locations:
   # Both trick/wild flags false → only KeyD2 is allowed here. Modeled as
   # can_place restriction.
   - id: "Swamp Palace - Entrance"
+    region: SwampPalace
     can_reach: "TRUE()"
     can_place: "OP_ITEM_IS(SmallKey_SwampPalace)"
     source: "app/Region/Standard/SwampPalace.php:50, 87-91"
@@ -74,52 +75,62 @@ locations:
   #   has(KeyD2) && has(Hammer) && has(BigKeyD2).
   # Always-allow + fill-rules accessibility != 'locations' branches vacuous.
   - id: "Swamp Palace - Big Chest"
+    region: SwampPalace
     can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND HAS_ITEM(BigKey_SwampPalace)"
     source: "app/Region/Standard/SwampPalace.php:93-104"
 
   # Big Key Chest (php:106-110): has(KeyD2) && has(Hammer).
   - id: "Swamp Palace - Big Key Chest"
+    region: SwampPalace
     can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/SwampPalace.php:106-110"
 
   # Map Chest (php:112-115): canBombThings && has(KeyD2). canBombThings=TRUE.
   - id: "Swamp Palace - Map Chest"
+    region: SwampPalace
     can_reach: "HAS_ITEM(SmallKey_SwampPalace)"
     source: "app/Region/Standard/SwampPalace.php:112-115"
 
   # West Chest (php:117-121): has(KeyD2) && has(Hammer).
   - id: "Swamp Palace - West Chest"
+    region: SwampPalace
     can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/SwampPalace.php:117-121"
 
   # Compass Chest (php:123-127): has(KeyD2) && has(Hammer).
   - id: "Swamp Palace - Compass Chest"
+    region: SwampPalace
     can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/SwampPalace.php:123-127"
 
   # Flooded Room - Left (php:129-134): Hookshot && KeyD2 && Hammer.
   - id: "Swamp Palace - Flooded Room - Left"
+    region: SwampPalace
     can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/SwampPalace.php:129-134"
 
   # Flooded Room - Right (php:136-141): identical body.
   - id: "Swamp Palace - Flooded Room - Right"
+    region: SwampPalace
     can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/SwampPalace.php:136-141"
 
   # Waterfall Room (php:143-148): identical body.
   - id: "Swamp Palace - Waterfall Room"
+    region: SwampPalace
     can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/SwampPalace.php:143-148"
 
   # Boss (php:154-175): Hookshot && KeyD2 && Hammer && Arrghus.canBeat
   # plus the wildCompasses/wildMaps clauses (both vacuous under Phase A).
   - id: "Swamp Palace - Boss"
+    region: SwampPalace
     can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
     source: "app/Region/Standard/SwampPalace.php:154-175"
 
   # Prize (php:61, 150-152, 195) — can_complete = Boss canAccess.
   - id: "Swamp Palace - Prize"
+    region: SwampPalace
     can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
     source: "app/Region/Standard/SwampPalace.php:61, 150-152, 195 (can_complete = Boss access)"
 

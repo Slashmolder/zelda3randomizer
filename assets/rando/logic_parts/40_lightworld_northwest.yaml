@@ -46,6 +46,7 @@ locations:
   # require BookOfMudora). PHP `PendantOfCourage/Wisdom/Power` map to
   # OP_HAS_PRIZE on the green/blue/red pendant respectively.
   - id: "Master Sword Pedestal"
+    region: LightWorld_NorthWest
     can_reach: "HAS_ITEM(BookOfMudora) AND OP_HAS_PRIZE(Prize_RedPendant) AND OP_HAS_PRIZE(Prize_BluePendant) AND OP_HAS_PRIZE(Prize_GreenPendant)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:86-91"
 
@@ -53,68 +54,83 @@ locations:
   # branch dropped in Phase A — mirror return requires Dark World access
   # which collapses to canLiftDarkRocks under no-glitches).
   - id: "King's Tomb"
+    region: LightWorld_NorthWest
     can_reach: "HAS_ITEM(Boots) AND CanLiftDarkRocks()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:93-102"
 
   # `Kakariko Tavern` (php:34) — no setRequirements; default TRUE.
   - id: "Kakariko Tavern"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:34"
 
   # `Chicken House` (php:35) — no setRequirements; default TRUE.
   - id: "Chicken House"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:35"
 
   # `Kakariko Well` chests (php:36-40) — no setRequirements; default TRUE.
   - id: "Kakariko Well - Top"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:36"
 
   - id: "Kakariko Well - Left"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:37"
 
   - id: "Kakariko Well - Middle"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:38"
 
   - id: "Kakariko Well - Right"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:39"
 
   - id: "Kakariko Well - Bottom"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:40"
 
   # `Blind's Hideout` chests (php:41-45) — no setRequirements; default TRUE.
   - id: "Blind's Hideout - Top"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:41"
 
   - id: "Blind's Hideout - Left"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:42"
 
   - id: "Blind's Hideout - Right"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:43"
 
   - id: "Blind's Hideout - Far Left"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:44"
 
   - id: "Blind's Hideout - Far Right"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:45"
 
   # `Pegasus Rocks` (php:104-106): Boots.
   - id: "Pegasus Rocks"
+    region: LightWorld_NorthWest
     can_reach: "HAS_ITEM(Boots)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:104-106"
 
   # `Bottle Merchant` (php:47) — no setRequirements; default TRUE.
   - id: "Bottle Merchant"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:47"
 
@@ -124,21 +140,25 @@ locations:
   # entering DarkWorld_NorthWest, which itself requires Hammer in Phase A,
   # so it's strictly subsumed by the Hammer disjunct.
   - id: "Magic Bat"
+    region: LightWorld_NorthWest
     can_reach: "HAS_ITEM(MagicPowder) AND HAS_ITEM(Hammer)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:108-122"
 
   # `Sick Kid` (php:124-126): hasABottle().
   - id: "Sick Kid"
+    region: LightWorld_NorthWest
     can_reach: "HasABottle()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:124-126"
 
   # `Lost Woods Hideout` (php:50) — no setRequirements; default TRUE.
   - id: "Lost Woods Hideout"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:50"
 
   # `Lumberjack Tree` (php:128-130): DefeatAgahnim AND Boots.
   - id: "Lumberjack Tree"
+    region: LightWorld_NorthWest
     can_reach: "HAS_ITEM(DefeatAgahnim) AND HAS_ITEM(Boots)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:128-130"
 
@@ -147,11 +167,13 @@ locations:
   # mirror-from-DW-NorthWest path, which requires MagicMirror + MoonPearl
   # + reachable DarkWorld_NorthWest.
   - id: "Graveyard Ledge"
+    region: LightWorld_NorthWest
     can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:132-139"
 
   # `Mushroom` (php:53) — no setRequirements; default TRUE.
   - id: "Mushroom"
+    region: LightWorld_NorthWest
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:53"
 

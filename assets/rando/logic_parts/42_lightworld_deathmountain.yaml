@@ -52,22 +52,26 @@ locations:
 
   # `Old Man` (West.php:46-48): has Lamp.
   - id: "Old Man"
+    region: LightWorld_DeathMountain_West
     can_reach: "HAS_ITEM(Lamp)"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:46-48"
 
   # `Spectacle Rock Cave` (West.php:31) — no setRequirements; default TRUE.
   - id: "Spectacle Rock Cave"
+    region: LightWorld_DeathMountain_West
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:31"
 
   # `Ether Tablet` (West.php:50-54): BookOfMudora AND hasSword(2)
   # AND Tower of Hera reachable. swordless-mode (Hammer) branch drops.
   - id: "Ether Tablet"
+    region: LightWorld_DeathMountain_West
     can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND OP_REGION_REACHABLE(TowerOfHera_Lobby)"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:50-54"
 
   # `Spectacle Rock` (West.php:56-60): MagicMirror (glitch branches drop).
   - id: "Spectacle Rock"
+    region: LightWorld_DeathMountain_West
     can_reach: "HAS_ITEM(MagicMirror)"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:56-60"
 
@@ -77,6 +81,7 @@ locations:
 
   # `Spiral Cave` (East.php:32) — no setRequirements; default TRUE.
   - id: "Spiral Cave"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:32"
 
@@ -84,35 +89,43 @@ locations:
   # (KeyD7>=2 AND Turtle-Rock-reachable). All glitch/mirror-trick branches
   # drop; only the TR-keys+region branch survives.
   - id: "Mimic Cave"
+    region: LightWorld_DeathMountain_East
     can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:68-77"
 
   # `Paradox Cave` chests (East.php:34-40) — no setRequirements; default TRUE.
   - id: "Paradox Cave Lower - Far Left"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:34"
 
   - id: "Paradox Cave Lower - Left"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:35"
 
   - id: "Paradox Cave Lower - Right"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:36"
 
   - id: "Paradox Cave Lower - Far Right"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:37"
 
   - id: "Paradox Cave Lower - Middle"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:38"
 
   - id: "Paradox Cave Upper - Left"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:39"
 
   - id: "Paradox Cave Upper - Right"
+    region: LightWorld_DeathMountain_East
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:40"
 
@@ -120,6 +133,7 @@ locations:
   # canBombThings AND canLiftRocks AND East-Dark-DM-reachable. Glitch and
   # mirror-wrap branches drop.
   - id: "Floating Island"
+    region: LightWorld_DeathMountain_East
     can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanBombThings() AND CanLiftRocks() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:79-87"
 

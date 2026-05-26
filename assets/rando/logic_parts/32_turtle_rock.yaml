@@ -85,6 +85,7 @@ locations:
   #   (upper AND KeyD7) || middle || (lower AND Lamp AND Somaria)
   # Phase A: → KeyD7.
   - id: "Turtle Rock - Chain Chomps"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(SmallKey_TurtleRock)"
     source: "app/Region/Standard/TurtleRock.php:127-131"
 
@@ -92,6 +93,7 @@ locations:
   #   Somaria AND (upper || (middle AND (BigKeyD7 in {RollerL,RollerR} && KeyD7>=2 || KeyD7>=4)) || (lower AND Lamp AND KeyD7>=4))
   # Phase A: upper → TRUE; → Somaria.
   - id: "Turtle Rock - Compass Chest"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(CaneOfSomaria)"
     source: "app/Region/Standard/TurtleRock.php:155-164"
 
@@ -99,11 +101,13 @@ locations:
   #   FireRod AND Somaria AND (upper || middle_branch || lower_branch)
   # Phase A: upper → TRUE; → FireRod AND Somaria.
   - id: "Turtle Rock - Roller Room - Left"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria)"
     source: "app/Region/Standard/TurtleRock.php:133-142"
 
   # TR - Roller Room - Right (php:144-153): symmetric to Left.
   - id: "Turtle Rock - Roller Room - Right"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria)"
     source: "app/Region/Standard/TurtleRock.php:144-153"
 
@@ -111,6 +115,7 @@ locations:
   #   BigKeyD7 AND ((upper AND KeyD7>=2) || (middle AND ...) || (lower AND Lamp AND Somaria))
   # Phase A: upper → TRUE; → BigKeyD7 AND KeyD7>=2.
   - id: "Turtle Rock - Big Chest"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 2)"
     source: "app/Region/Standard/TurtleRock.php:166-173"
 
@@ -119,6 +124,7 @@ locations:
   # has(KeyD7, 2). The setAlwaysAllow/setFillRules accessibility branches
   # are Phase B (accessibility=items is the Phase A default).
   - id: "Turtle Rock - Big Key Chest"
+    region: TurtleRock_Lobby
     can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 2)"
     source: "app/Region/Standard/TurtleRock.php:175-184"
 
@@ -126,6 +132,7 @@ locations:
   #   (BigKeyD7 AND ((upper AND KeyD7>=2) || middle)) || (lower AND Lamp AND Somaria)
   # Phase A: upper → TRUE → BigKeyD7 AND KeyD7>=2.
   - id: "Turtle Rock - Crystaroller Room"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 2)"
     source: "app/Region/Standard/TurtleRock.php:186-190"
 
@@ -138,18 +145,22 @@ locations:
   # Second half: drop !== 'basic' advanced branch (FALSE), drop
   # item.overflow.count.Shield (Phase B); keep `Cape OR CaneOfByrna OR canBlockLasers`.
   - id: "Turtle Rock - Eye Bridge - Bottom Left"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Standard/TurtleRock.php:192-198"
 
   - id: "Turtle Rock - Eye Bridge - Bottom Right"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Standard/TurtleRock.php:200-206"
 
   - id: "Turtle Rock - Eye Bridge - Top Left"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Standard/TurtleRock.php:208-214"
 
   - id: "Turtle Rock - Eye Bridge - Top Right"
+    region: TurtleRock_Lobby
     can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Standard/TurtleRock.php:216-222"
 
@@ -160,11 +171,13 @@ locations:
   #   AND boss->canBeat(Trinexx)
   #   AND wildCompasses/wildMaps disjuncts (collapse TRUE).
   - id: "Turtle Rock - Boss"
+    region: TurtleRock_Lobby
     can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
     source: "app/Region/Standard/TurtleRock.php:228-242"
 
   # TR - Prize (php:266 → can_complete = Boss canAccess).
   - id: "Turtle Rock - Prize"
+    region: TurtleRock_Lobby
     can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
     source: "app/Region/Standard/TurtleRock.php:224-226, 266 (can_complete = Boss access)"
 
