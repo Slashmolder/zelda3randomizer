@@ -9,6 +9,7 @@
 #include "snes/dma.h"
 #include "spc_player.h"
 #include "rando/rando_placement.h"  // §8.8 snapshot rando placement TLV
+#include "rando/rando_snapshot_tail.h"  // §8.8 / §8.8a TLV save/load + invariant counter
 #include "util.h"
 #include "audio.h"
 #include "assets.h"
@@ -509,6 +510,13 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
 
   sr->replay_next_cmd_at = 0;
 
+  // §8.8a ordering-invariant tripwire: snapshot the Rando_OnLocationCheck
+  // counter immediately before LoadSnesState. The TLV reinstall (below)
+  // asserts it didn't change — proving no game frame ran between the
+  // g_ram restore (which sets kRam_RandoSlotActive) and the placement-
+  // table reinstall. Per design.md §D11.
+  uint64 oncheck_count_at_pre_load = g_rando_oncheck_call_count;
+
   sr->replay_mode = replay_mode;
   if (replay_mode) {
     sr->frames_since_last = 0;
@@ -539,50 +547,41 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
     assert(state.p == state.pend);
   }
 
-  // §8.8 rando snapshot tail TLV. Try to read trailing bytes; if the magic
-  // matches, restore the placement table. EOF here is fine — older
-  // snapshots have no tail and we keep whatever placement is currently
-  // installed (or none).
-  {
-    char magic[8];
-    size_t mr = fread(magic, 1, 8, f);
-    if (mr == 8 && memcmp(magic, "ZRSNAP01", 8) == 0) {
-      uint32 type = 0;
-      uint32 payload_len = 0;
-      if (fread(&type, 1, 4, f) == 4 && fread(&payload_len, 1, 4, f) == 4) {
-        if (type == 1 && payload_len >= 2) {
-          uint8 cnt_bytes[2];
-          if (fread(cnt_bytes, 1, 2, f) == 2) {
-            uint16 cnt = (uint16)cnt_bytes[0] | ((uint16)cnt_bytes[1] << 8);
-            uint32 expected_payload = 2u + (uint32)cnt * 4u;
-            if (payload_len == expected_payload && cnt <= 512) {
-              static RandoPlacement snapshot_entries[512];
-              static RandoPlacementTable snapshot_table;
-              for (uint16 i = 0; i < cnt; i++) {
-                uint8 row[4];
-                if (fread(row, 1, 4, f) != 4) { cnt = i; break; }
-                snapshot_entries[i].location_id =
-                  (uint16)row[0] | ((uint16)row[1] << 8);
-                snapshot_entries[i].item_id =
-                  (uint16)row[2] | ((uint16)row[3] << 8);
-              }
-              snapshot_table.entries = snapshot_entries;
-              snapshot_table.count = cnt;
-              Placement_Install(&snapshot_table);
-              printf("StateRecorder_Load: restored rando placement (%u entries)\n",
-                     (unsigned)cnt);
-            }
-          }
-        }
-      }
-    }
-    // If magic didn't match, no rando tail — fseek back so non-rando
-    // loaders don't see partial bytes. Snapshot file is at EOF either
-    // way at this point so no further reads are expected.
-  }
+  // §8.8 / §8.8a CRITICAL ORDERING INVARIANT (per design.md §D11):
+  //
+  // LoadSnesState above just restored g_ram in full — including the
+  // kRam_RandoSlotActive cell. The next read MUST be the snapshot tail
+  // TLV reinstall, with NO game frame executing between the two. If a
+  // frame ran here, dispatch (Rando_OnLocationCheck) would fire while
+  // `g_rando_slot_active` is true but the heap placement table is stale
+  // or empty, silently corrupting rando state.
+  //
+  // BACKWARD-COMPAT NOTE: any future change adding trailing data to the
+  // snapshot file MUST remain backward-compatible with the rando TLV
+  // chain. The tail format is a chain of `magic[8] + type[4] + length[4]
+  // + payload` entries; unknown types are seeked past. New trailing data
+  // MUST be appended as a new TLV with a fresh type discriminator —
+  // do NOT insert bytes before the TLV chain or change the magic.
+  (void)RandoSnapshotTail_Load(f);
+
+  // §8.8a debug-build assertion: confirm no Rando_OnLocationCheck fired
+  // between the LoadSnesState above and this point. If it did, the
+  // ordering invariant is broken (see comment block above).
+  assert(g_rando_oncheck_call_count == oncheck_count_at_pre_load);
 }
 
+void StateRecorder_ClearKeyLog(StateRecorder *sr);  // forward decl
+
 void StateRecorder_Save(StateRecorder *sr, FILE *f) {
+  // §8.8 rando snapshot: force StateRecorder_ClearKeyLog when a rando
+  // placement is installed so `base_snapshot` is populated. Without this,
+  // replay-mode load falls back to ZeldaReset(false) instead of restoring
+  // g_ram from the snapshot — which would wipe kRam_RandoSlotActive and
+  // make the TLV reinstall race the first dispatch.
+  if (Placement_GetActive() != NULL && sr->base_snapshot.size == 0) {
+    StateRecorder_ClearKeyLog(sr);
+  }
+
   uint32 hdr[8] = { 0 };
   ByteArray arr = { 0 };
   SaveSnesState(&saveFunc, &arr);
@@ -607,39 +606,13 @@ void StateRecorder_Save(StateRecorder *sr, FILE *f) {
   fwrite(sr->base_snapshot.data, 1, sr->base_snapshot.size, f);
   fwrite(arr.data, 1, arr.size, f);
 
-  // §8.8 rando snapshot tail TLV (per randomizer-save spec). Appends after
-  // the SNES state dump if rando placement is currently installed. Older
-  // binaries reading the snapshot ignore the trailing bytes (no magic
-  // recognized); newer binaries reading this snapshot restore the
-  // placement table on load — so Ctrl+F1..F10 replay preserves rando.
-  //
-  // Format:
-  //   magic[8] = "ZRSNAP01"
-  //   type[4]  = 1 (TLV_PLACEMENT)
-  //   length[4] = payload byte count
-  //   payload = placement_count(u16 LE) | (location_id u16 LE, item_id u16 LE) × count
-  {
-    const RandoPlacementTable *t = Placement_GetActive();
-    if (t != NULL && t->count > 0) {
-      const char magic[8] = { 'Z', 'R', 'S', 'N', 'A', 'P', '0', '1' };
-      uint32 type = 1;
-      uint32 payload_len = 2u + (uint32)t->count * 4u;
-      fwrite(magic, 1, 8, f);
-      fwrite(&type, 1, 4, f);
-      fwrite(&payload_len, 1, 4, f);
-      uint8 cnt[2] = { (uint8)(t->count & 0xff), (uint8)(t->count >> 8) };
-      fwrite(cnt, 1, 2, f);
-      for (uint16 i = 0; i < t->count; i++) {
-        uint8 row[4] = {
-          (uint8)(t->entries[i].location_id & 0xff),
-          (uint8)(t->entries[i].location_id >> 8),
-          (uint8)(t->entries[i].item_id & 0xff),
-          (uint8)(t->entries[i].item_id >> 8),
-        };
-        fwrite(row, 1, 4, f);
-      }
-    }
-  }
+  // §8.8 rando snapshot tail TLV (per randomizer-save spec § "Snapshot
+  // interoperability"). Emits TAIL_RANDO_STATE when a placement is
+  // installed AND the snapshot context is set (gen_version + settings_hash
+  // + share_string installed by the rando slot loader). Older readers
+  // ignore the trailing bytes (graceful degradation). See
+  // src/rando/rando_snapshot_tail.c for the exact byte layout.
+  (void)RandoSnapshotTail_Save(f);
 
   ByteArray_Destroy(&arr);
 }

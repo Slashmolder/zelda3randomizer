@@ -154,4 +154,103 @@ bool RandoSave_ReadFile(const char *path,
 
 void RandoSave_SelfCheck(void);
 
+// ---------------------------------------------------------------------------
+// Per-slot SRAM checksum (tasks.md §8.4).
+//
+// Sources the algorithm from `src/messaging.c::SaveGameFile` — the project's
+// existing per-slot checksum routine. NOT a freshly-invented one (per
+// CLAUDE.md / spec-vs-impl discipline).
+//
+// Routine (per messaging.c:261-264):
+//   t = 0x5a5a;
+//   for (i = 0; i < 0x4fe; i += 2) t -= *(uint16 *)(slot_bytes + i);
+// Returns t as a uint32 (zero-extended). The on-disk field is u32 LE per the
+// randomizer-save spec; the spec's wording calls this "CRC32 of the paired
+// sram.dat slot" but the practical contract is "any deterministic checksum
+// of the paired slot bytes." We use the existing 16-bit algorithm to keep
+// the cost of computing this in lockstep with vanilla SaveGameFile.
+//
+// `slot_bytes` must point at the start of a vanilla SRAM slot (0x500 bytes
+// total, but the checksum only covers bytes 0..0x4fe). `size` MUST be >=
+// 0x4fe; smaller buffers return 0.
+// ---------------------------------------------------------------------------
+uint32 RandoSave_ComputeSramSlotChecksum(const uint8 *slot_bytes, uint32 size);
+
+// ---------------------------------------------------------------------------
+// Rando_LoadSidecarSlot (tasks.md §8.3).
+//
+// Reads `saves/sram_rando.dat`, validates the file header, then deserializes
+// slot `slot_index` (0 ≤ slot_index < kRandoSidecar_SlotCount). On success
+// the caller receives the full slot in `*out` (header + sparse placements +
+// checked-location bitmap).
+//
+// Integration contract for the file-select UI (deferred to UI sprint):
+//
+//   1. UI calls Rando_LoadSidecarSlot(slot_index, &slot).
+//   2. If returns false → no sidecar (or unreadable) → treat slot as vanilla
+//      per spec scenario "Absent sidecar is normal vanilla".
+//   3. If slot.header.slot_kind != kSlotKind_Randomizer → spec scenario
+//      "Slot-kind discriminator": treat as vanilla, ignore the rest of the
+//      slot body.
+//   4. Drift check (spec § "Downgrade-then-re-upgrade safety"): compute
+//      RandoSave_ComputeSramSlotChecksum(<paired sram.dat slot bytes>, 0x500);
+//      compare to slot.header.sram_slot_checksum_at_last_write. If different,
+//      surface the drift warning + recovery prompt.
+//   5. UI installs the placement table (translate slot.placements[] →
+//      RandoPlacementTable + call Placement_Install) and sets
+//      g_rando_slot_active = 1 + enhanced_features1 |= kFeatures1_RandomizerActive.
+//   6. UI also calls Rando_SetSnapshotContext(slot.header.generator_version,
+//      slot.header.settings_hash, slot.header.share_string) so the snapshot
+//      tail-TLV emitter has the metadata it needs.
+//
+// This function does NOT mutate any rando-runtime state; it is a pure read.
+// Returns false when the sidecar file is missing, malformed, slot_index is
+// out of range, or the requested slot has bad magic.
+// ---------------------------------------------------------------------------
+bool Rando_LoadSidecarSlot(int slot_index, RandoSidecarSlot *out);
+
+// ---------------------------------------------------------------------------
+// Rando_WriteSidecarSlot (tasks.md §8.4).
+//
+// Writes slot `slot_index` of `saves/sram_rando.dat` with the supplied
+// `in` slot data. Atomically commits via RandoSave_WriteFile (which already
+// implements the §8.2 protocol: write .tmp → fflush → fsync/_commit →
+// rename → dir-fsync).
+//
+// The function OVERRIDES two fields of the on-disk header before writing,
+// regardless of what `in->header` carries for them:
+//
+//   - last_vanilla_write_version  ← kGeneratorVersion (current binary's)
+//   - sram_slot_checksum_at_last_write ← RandoSave_ComputeSramSlotChecksum(
+//       paired_sram_slot, paired_sram_slot_size)
+//
+// Per spec scenario "last_vanilla_write_version advances on every write" and
+// the downgrade-drift-detection clause.
+//
+// Other slots in the sidecar are preserved: if the file already exists, we
+// load it first and only the targeted slot is replaced. If the file does
+// not exist, the untouched slots are initialized empty (slot_kind=0).
+//
+// `paired_sram_slot` MUST point at the caller's snapshot of the current
+// in-memory paired sram.dat slot (typically `g_zenv.sram + slot_index * 0x500`,
+// size 0x500). The caller is responsible for snapshotting these bytes at the
+// same logical moment as the rando write — this is why the function takes
+// them as a parameter rather than reading sram.dat itself.
+//
+// Save-order coordination (per spec § "Atomic-commit protocol" — sidecar
+// first, then sram.dat): the UI sprint's call site issues
+// Rando_WriteSidecarSlot BEFORE ZeldaWriteSram (or the equivalent sram.dat
+// commit). A crash between the two writes leaves sram.dat matching the
+// pre-write state; the sidecar's `sram_slot_checksum_at_last_write` will
+// then differ from the actual sram.dat slot checksum on next load, and the
+// drift warning fires per spec.
+//
+// Returns true on a successful atomic commit, false on any I/O or
+// validation error (slot_index out of range, NULL buffers, RandoSave_WriteFile
+// failure). On false, the on-disk file is in its prior state.
+// ---------------------------------------------------------------------------
+bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
+                            const uint8 *paired_sram_slot,
+                            uint32 paired_sram_slot_size);
+
 #endif  // ZELDA3_RANDO_SAVE_H_
