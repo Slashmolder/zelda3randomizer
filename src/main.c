@@ -497,6 +497,14 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     free(entries);
     exit(1);
   }
+  // NOTE: a stricter unreachable_count > 0 refusal was tried but is too
+  // aggressive — the placer's bounded-retry-with-perturbed-seed strategy
+  // produces some seeds where the goal is reachable but a handful of
+  // non-progression items end up at unreachable slots (dungeon-mode key
+  // configurations can't always find valid containment placements). The
+  // spoiler's `fallback_warnings: unreachable_placements` rollup surfaces
+  // this — users can decide whether to regenerate with a different seed.
+  // Phase A2 bounded intra-attempt rewind should reduce these to 0.
 
   if (!Spoiler_WriteJson(&spoiler, out_spoiler)) {
     fprintf(stderr, "--generate-seed: failed writing JSON spoiler to %s\n", out_spoiler);
