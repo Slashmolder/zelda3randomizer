@@ -14,6 +14,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Host hook — see header comment. Set by the alphabet picker (select_file.c);
+// read by the SDL event loop (main.c).
+RandoTextField *g_rando_active_textfield = NULL;
+bool g_rando_text_input_active = false;
+bool g_rando_text_input_submit_pending = false;
+bool g_rando_text_input_cancel_pending = false;
+
 // RFC 4648 Base32 alphabet (uppercase A-Z + digits 2-7). Lowercase letters
 // are auto-uppercased before the check.
 static bool is_base32(char c) {

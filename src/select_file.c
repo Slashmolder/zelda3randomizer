@@ -9,6 +9,7 @@
 #include "rando/rando_save.h"
 #include "rando/rando_share.h"
 #include "rando/rando_settings.h"
+#include "rando/rando_textfield.h"
 
 #define selectfile_R16 g_ram[0xc8]
 #define selectfile_R17 g_ram[0xc9]
@@ -71,6 +72,54 @@ static uint8 g_kind_picker_target_slot = 0;
 // refusal text instead of executing the copy. Cleared on cursor move or return.
 static uint8 g_copy_refusal_pending = 0;
 
+// §9.1b / §9.2 — On-screen alphabet picker for share-string entry.
+//
+// Activated from the kind-picker's "Load Share String" option (cursor=2).
+// Renders an 8-col × 4-row base32 alphabet grid plus a 5th row of controls
+// (SUBMIT, DELETE, CANCEL). Owns input + drawing until the user submits,
+// cancels, or successfully decodes a share string.
+//
+// Layout (rendered as a tile-stream into vram_upload_data; count bytes are
+// encoded as (NUM_PAIRS * 2) - 1 per HandleStripes14's decode at
+// src/nmi.c:421 — see cluster-1 audit lessons).
+enum {
+  kAlphabetPicker_GridCols = 8,
+  kAlphabetPicker_GridRows = 4,   // 32 alphabet chars
+  kAlphabetPicker_CtrlRow = 4,    // 5th row holds 3 control glyphs
+  kAlphabetPicker_TotalRows = 5,
+};
+// Control-row buttons. Cursor on this row indexes into these slots.
+enum {
+  kAlphabetPickerCtrl_Submit = 0,
+  kAlphabetPickerCtrl_Delete = 1,
+  kAlphabetPickerCtrl_Cancel = 2,
+  kAlphabetPickerCtrl_Count = 3,
+};
+// Decode-status overlay state. After a submit attempt, the picker latches
+// the ShareDecodeStatus result + a frame countdown so the user sees the
+// pass/fail message before the next interaction. 0 = no message.
+enum {
+  kAlphabetMsg_None = 0,
+  kAlphabetMsg_OkBriefFrames = 90,      // ~1.5s @ 60fps
+  kAlphabetMsg_ErrorBriefFrames = 120,  // ~2.0s
+};
+static bool g_alphabet_picker_active = false;
+static uint8 g_alphabet_cursor_row = 0;  // 0..kAlphabetPicker_TotalRows-1
+static uint8 g_alphabet_cursor_col = 0;  // 0..kAlphabetPicker_GridCols-1 (or 0..2 on ctrl row)
+static RandoTextField g_alphabet_textfield;
+// Latched decode result; rendered as an overlay for `g_alphabet_msg_frames`
+// frames after a submit. On success the picker also transitions back to
+// file-select after the message expires (`g_alphabet_pending_return`).
+static uint8 g_alphabet_msg_status = 0;  // 0 = none, else ShareDecodeStatus + 1
+static uint16 g_alphabet_msg_frames = 0;
+static bool g_alphabet_pending_return = false;
+// Decoded values held until the message expires + return executes. These are
+// surfaced for downstream consumers (next cluster's §9.4/§9.8 settings +
+// new-game flow) via the SelectFile_GetLastDecodedShareString accessor; for
+// Phase A we just log them so a developer can verify the path end-to-end.
+static uint64 g_alphabet_decoded_seed = 0;
+static uint8 g_alphabet_decoded_hash[16];
+
 // Base32 → file-select tile-char mapping. The base32 alphabet is
 // "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567" (RFC 4648, kBase32Alphabet in
 // rando_share.c). Tile chars sourced by inspection of vanilla file-select
@@ -113,6 +162,11 @@ static const char *SelectFile_GoalAbbrev(uint8 goal);
 static void SelectFile_KindPicker_Draw(void);
 static bool SelectFile_KindPicker_Update(void);
 static void SelectFile_DrawCopyRefusalMessage(void);
+static void SelectFile_AlphabetPicker_Activate(void);
+static void SelectFile_AlphabetPicker_Deactivate(void);
+static void SelectFile_AlphabetPicker_Draw(void);
+static bool SelectFile_AlphabetPicker_Update(void);
+static void SelectFile_AlphabetPicker_HandleSubmit(void);
 bool Intro_CheckCksum(const uint8 *s) {
   const uint16 *src = (const uint16 *)s;
   uint16 sum = 0;
@@ -354,6 +408,17 @@ void Module_SelectFile_0() {  // 8ccd9d
   g_kind_picker_cursor = 0;
   // §9.3c — clear copy-refusal latch on screen re-entry.
   g_copy_refusal_pending = 0;
+  // §9.1b/§9.2 — alphabet picker starts inactive. The host text-input
+  // flags must agree: ensure SDL_StopTextInput fires next frame in case
+  // we re-entered file-select with stale state from a prior session.
+  g_alphabet_picker_active = false;
+  g_alphabet_msg_status = 0;
+  g_alphabet_msg_frames = 0;
+  g_alphabet_pending_return = false;
+  g_rando_text_input_active = false;
+  g_rando_active_textfield = NULL;
+  g_rando_text_input_submit_pending = false;
+  g_rando_text_input_cancel_pending = false;
 }
 
 void FileSelect_ReInitSaveFlagsAndEraseTriforce() {  // 8ccdf2
@@ -475,6 +540,15 @@ void FileSelect_Main() {  // 8ccebd
         // drawing needed (matches vanilla behavior).
         break;
     }
+  }
+
+  // §9.1b/§9.2 — alphabet picker takes top priority when active. It runs
+  // BEFORE the kind picker because once the user navigates kind→alphabet,
+  // the kind picker is deactivated; we keep the order explicit so the
+  // dispatch path is greppable.
+  if (SelectFile_AlphabetPicker_Update()) {
+    nmi_load_bg_from_vram = 1;
+    return;
   }
 
   // §9.3b — if the kind picker is active for a previously-empty slot, it
@@ -1526,15 +1600,417 @@ static bool SelectFile_KindPicker_Update(void) {
       // Vanilla or cancel.
       sound_effect_1 = 0x3c;
     } else {
-      // TODO §9.1b text input + §9.6 share-string paste path. Stub: play
-      // refusal sound. The actual share-string paste path is authored
-      // (Share_PastePath in rando_share.c) but the text-input layer (§9.1b)
-      // is the next cluster's work.
-      sound_effect_1 = 0x3c;
+      // §9.1b/§9.2/§9.6 — open the alphabet picker so the player can type
+      // a share string. On submit it routes through Share_PastePath() and
+      // reports the decode status; on cancel it returns to the kind picker.
+      g_kind_picker_active = 0;
+      SelectFile_AlphabetPicker_Activate();
     }
     return true;
   }
 
   return true;  // swallow other input while picker is active
+}
+
+// ---------------------------------------------------------------------------
+// §9.1b/§9.2 — On-screen alphabet picker.
+//
+// Renders the base32 alphabet as an 8-col × 4-row grid plus a 5th control
+// row (SUBMIT / DELETE / CANCEL). D-pad moves the cursor (with row+col
+// wrapping). A inserts the cursor char (or triggers the control); B
+// backspaces; Start submits. On submit, Share_PastePath() decodes the
+// buffer and a brief overlay reports OK / specific reject status.
+// ---------------------------------------------------------------------------
+
+// The 32 base32 chars in row-major order. Matches kBase32Alphabet in
+// rando_share.c (and the kBase32CharToTile mapping above).
+static const char kAlphabetPicker_Chars[32] = {
+  'A','B','C','D','E','F','G','H',
+  'I','J','K','L','M','N','O','P',
+  'Q','R','S','T','U','V','W','X',
+  'Y','Z','2','3','4','5','6','7',
+};
+
+static void SelectFile_AlphabetPicker_Activate(void) {
+  g_alphabet_picker_active = true;
+  g_alphabet_cursor_row = 0;
+  g_alphabet_cursor_col = 0;
+  g_alphabet_msg_status = 0;
+  g_alphabet_msg_frames = 0;
+  g_alphabet_pending_return = false;
+  TextField_Init(&g_alphabet_textfield, /*base32_only=*/true);
+  g_alphabet_textfield.active = true;
+  // Hand the textfield to the SDL host so SDL_TEXTINPUT events route here
+  // and the keyboard→joypad path is suppressed (see main.c §9.1b block).
+  g_rando_active_textfield = &g_alphabet_textfield;
+  g_rando_text_input_active = true;
+  g_rando_text_input_submit_pending = false;
+  g_rando_text_input_cancel_pending = false;
+}
+
+static void SelectFile_AlphabetPicker_Deactivate(void) {
+  g_alphabet_picker_active = false;
+  g_rando_text_input_active = false;
+  g_rando_active_textfield = NULL;
+  g_alphabet_textfield.active = false;
+  // CRITICAL (mirroring SelectFile_KindPicker_Update's B-cancel comment):
+  // SelectFile_AlphabetPicker_Draw memcpys its prompt over vram_upload_data,
+  // which clobbers the kSelectFile_Func3_Data background installed by
+  // submodule 4. The slot-list rendering loop in FileSelect_Main writes
+  // patches at fixed offsets within the Func3 layout; if we don't rebuild
+  // it, the slot list renders garbage on the frame after the picker
+  // closes. Force re-init by rewinding to submodule 3 (which advances
+  // 3 → 4 → 5, restoring vram_upload_data to the Func3 layout).
+  submodule_index = 3;
+  subsubmodule_index = 0;
+}
+
+// Render the alphabet picker into vram_upload_data. The buffer is rendered
+// as a tile-stream of (vram_addr, attr, count, tile pairs...) commands,
+// terminated with 0xff. Per HandleStripes14 (src/nmi.c:421), the count byte
+// is BYTES-MINUS-ONE; for N tile pairs (2 bytes each) the field is (N*2)-1.
+// All count bytes below are pre-computed against this rule — see cluster-1
+// audit lessons for the bug class this prevents.
+static void SelectFile_AlphabetPicker_Draw(void) {
+  // Render the textfield buffer first as a status line at the top.
+  //
+  // VRAM tile layout uses the same word-pairs as the kKindPicker_Text /
+  // kSelectFile_Func3_Data data above: each tile entry is 2 bytes
+  // (tile_index, attr=0x18). VRAM target = 0x6188 (matches the kind-picker
+  // title row), giving a stable on-screen Y near the slot region.
+  //
+  // We render up to 32 chars of the buffer per visual row (the buffer is
+  // 64 chars max, see kRandoTextFieldMaxLen). Phase A: render only the
+  // first 32 chars + a "..." marker when truncated.
+  //
+  // We build a single command buffer in stack memory then memcpy in one
+  // shot — simpler than incrementally writing into vram_upload_data.
+
+  uint8 cmd[512];
+  int o = 0;
+
+  // --- Row 0: title "PASTE SHARE STRING" (18 tile pairs = 36 bytes, count=0x23)
+  //     VRAM target 0x6188. Count = (18*2)-1 = 0x23.
+  cmd[o++] = 0x61; cmd[o++] = 0x88; cmd[o++] = 0; cmd[o++] = 0x23;
+  static const uint8 kTitleTiles[18] = {
+    0x0f, 0x00, 0x22, 0x23, 0x04, 0xa9,  // PASTE_
+    0x22, 0x07, 0x00, 0x21, 0x04, 0xa9,  // SHARE_
+    0x22, 0x23, 0x21, 0x08, 0x0d, 0x06,  // STRING
+  };
+  for (int i = 0; i < 18; i++) { cmd[o++] = kTitleTiles[i]; cmd[o++] = 0x18; }
+
+  // --- Row 1: current buffer (up to 18 chars to fit the same width).
+  //     VRAM target 0x61c8 (one tilemap row below title; +0x40 bytes).
+  //     Count = (18*2)-1 = 0x23.
+  cmd[o++] = 0x61; cmd[o++] = 0xc8; cmd[o++] = 0; cmd[o++] = 0x23;
+  int show = g_alphabet_textfield.len;
+  if (show > 18) show = 18;
+  for (int i = 0; i < 18; i++) {
+    char c = (i < show) ? g_alphabet_textfield.buf[i] : ' ';
+    uint8 tile = SelectFile_TileForBase32(c);
+    cmd[o++] = tile; cmd[o++] = 0x18;
+  }
+
+  // --- Alphabet grid: 4 rows of 8 chars each.
+  //     Rows start at VRAM 0x6208 and step by 0x40 per row.
+  //     Each grid row = 8 tile pairs = 16 bytes, count = (8*2)-1 = 0x0f.
+  for (int r = 0; r < kAlphabetPicker_GridRows; r++) {
+    uint16 vram = 0x6208 + r * 0x40;
+    cmd[o++] = (uint8)(vram >> 8);
+    cmd[o++] = (uint8)(vram & 0xff);
+    cmd[o++] = 0;
+    cmd[o++] = 0x0f;
+    for (int c = 0; c < kAlphabetPicker_GridCols; c++) {
+      char ch = kAlphabetPicker_Chars[r * kAlphabetPicker_GridCols + c];
+      uint8 tile = SelectFile_TileForBase32(ch);
+      // Highlight cell by toggling palette attr bits when the cursor is
+      // here; otherwise default attr 0x18. The OAM fairy cursor below is
+      // the primary indicator, so palette-flip here is belt-and-suspenders.
+      uint8 attr = 0x18;
+      if (r == g_alphabet_cursor_row && c == g_alphabet_cursor_col) attr = 0x38;
+      cmd[o++] = tile; cmd[o++] = attr;
+    }
+  }
+
+  // --- Control row: SUBMIT / DELETE / CANCEL labels.
+  //     6-char labels rendered as 3 groups across the same width as a grid
+  //     row. Each label occupies 6 tile pairs = 12 bytes, count = (6*2)-1 = 0x0b.
+  //     Place the SUBMIT label at the leftmost cell, DELETE in the middle,
+  //     CANCEL at the right — each at its own VRAM target.
+  uint16 ctrl_vram_base = 0x6208 + kAlphabetPicker_GridRows * 0x40;
+  // SUBMIT (6 chars, count = (6*2)-1 = 0x0b). Tiles: S U B M I T.
+  cmd[o++] = (uint8)(ctrl_vram_base >> 8);
+  cmd[o++] = (uint8)(ctrl_vram_base & 0xff);
+  cmd[o++] = 0;
+  cmd[o++] = 0x0b;
+  static const uint8 kSubmitTiles[6] = { 0x22, 0x24, 0x01, 0x0c, 0xaf, 0x23 };
+  for (int i = 0; i < 6; i++) {
+    uint8 attr = 0x18;
+    if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow &&
+        g_alphabet_cursor_col == kAlphabetPickerCtrl_Submit) attr = 0x38;
+    cmd[o++] = kSubmitTiles[i]; cmd[o++] = attr;
+  }
+  // DELETE — VRAM 6 cells to the right (each cell is 2 bytes; 6 cells = 12).
+  uint16 del_vram = ctrl_vram_base + 12;
+  cmd[o++] = (uint8)(del_vram >> 8);
+  cmd[o++] = (uint8)(del_vram & 0xff);
+  cmd[o++] = 0;
+  cmd[o++] = 0x0b;
+  static const uint8 kDeleteTiles[6] = { 0x03, 0x04, 0x0b, 0x04, 0x23, 0x04 };
+  for (int i = 0; i < 6; i++) {
+    uint8 attr = 0x18;
+    if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow &&
+        g_alphabet_cursor_col == kAlphabetPickerCtrl_Delete) attr = 0x38;
+    cmd[o++] = kDeleteTiles[i]; cmd[o++] = attr;
+  }
+  // CANCEL — 12 more bytes to the right.
+  uint16 cancel_vram = del_vram + 12;
+  cmd[o++] = (uint8)(cancel_vram >> 8);
+  cmd[o++] = (uint8)(cancel_vram & 0xff);
+  cmd[o++] = 0;
+  cmd[o++] = 0x0b;
+  static const uint8 kCancelTiles[6] = { 0x02, 0x00, 0x0d, 0x02, 0x04, 0x0b };
+  for (int i = 0; i < 6; i++) {
+    uint8 attr = 0x18;
+    if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow &&
+        g_alphabet_cursor_col == kAlphabetPickerCtrl_Cancel) attr = 0x38;
+    cmd[o++] = kCancelTiles[i]; cmd[o++] = attr;
+  }
+
+  // --- Optional decode-status overlay: render in the row below the controls
+  //     when g_alphabet_msg_status != 0. Each status maps to a short label.
+  //     8-tile slot, count = (8*2)-1 = 0x0f.
+  if (g_alphabet_msg_status != 0) {
+    uint16 msg_vram = ctrl_vram_base + 0x40;
+    cmd[o++] = (uint8)(msg_vram >> 8);
+    cmd[o++] = (uint8)(msg_vram & 0xff);
+    cmd[o++] = 0;
+    cmd[o++] = 0x0f;
+    // Render up to 8 chars of the status label. SelectFile_TileForBase32
+    // covers A-Z + 2-7 + space (via blank). For convenience we map a couple
+    // of short labels: "OK", "BAD LEN", "BAD B32", "BAD MAG", "BAD CKS",
+    // "ALTTPR". Each is 7 chars or fewer; pad with blanks.
+    const char *label = "        ";
+    // g_alphabet_msg_status = ShareDecodeStatus + 1; subtract to recover.
+    int s = g_alphabet_msg_status - 1;
+    switch (s) {
+      case kShareDecodeOk:           label = "OK      "; break;
+      case kShareDecodeBadLength:    label = "BAD LEN "; break;
+      case kShareDecodeBadBase32:    label = "BAD B32 "; break;
+      case kShareDecodeBadMagic:     label = "BAD MAG "; break;
+      case kShareDecodeBadChecksum:  label = "BAD CKS "; break;
+      case kShareDecodeAlttprFormat: label = "ALTTPR  "; break;
+      default:                       label = "ERROR   "; break;
+    }
+    for (int i = 0; i < 8; i++) {
+      uint8 tile = SelectFile_TileForBase32(label[i]);
+      cmd[o++] = tile; cmd[o++] = 0x18;
+    }
+  }
+
+  // Terminator. HandleStripes14 stops when p[0] has the 0x80 bit set; any
+  // value >= 0x80 will do.
+  cmd[o++] = 0xff;
+
+  // SAFETY: assert we stayed within the cmd[] buffer. cmd[] is 512 bytes;
+  // worst case is title(4+36) + buffer(4+36) + 4*(4+16) + 3*(4+12) + (4+16) +
+  // 1 = 40 + 40 + 80 + 48 + 20 + 1 = 229 bytes. Comfortably under 512.
+  // vram_upload_data is sized for the largest existing file-select payload
+  // (kKILLFile_ChooseTarget_Tab[253]), so 229 fits cleanly.
+  memcpy(vram_upload_data, cmd, (size_t)o);
+
+  // Cursor — draw fairy at the highlighted cell. Each grid cell is ~8px
+  // wide; the grid starts at X=24 (matches the kind picker fairy origin).
+  // Phase A best-fit Y: title at y=0x88, buffer at y=0x98, grid rows at
+  // y=0xa8/0xb0/0xb8/0xc0, control row at y=0xc8. Tune in playtest.
+  static const uint8 kAlphabetPicker_FairyXBase = 0x24;
+  static const uint8 kAlphabetPicker_FairyYBase = 0xa8;
+  uint8 fy = kAlphabetPicker_FairyYBase +
+             (uint8)(g_alphabet_cursor_row * 0x08);
+  // Control row cells are wider (6-tile labels with 6-tile gaps).
+  uint8 fx;
+  if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow) {
+    static const uint8 kCtrlFairyX[3] = { 0x24, 0x54, 0x84 };
+    fx = kCtrlFairyX[g_alphabet_cursor_col % kAlphabetPickerCtrl_Count];
+  } else {
+    fx = kAlphabetPicker_FairyXBase + (uint8)(g_alphabet_cursor_col * 0x08);
+  }
+  FileSelect_DrawFairy(fx, fy);
+}
+
+// Run the alphabet picker. Returns true when the picker is active (caller
+// skips the file-select cursor logic).
+static bool SelectFile_AlphabetPicker_Update(void) {
+  if (!g_alphabet_picker_active) return false;
+
+  // Tick the message overlay. When the OK overlay completes, perform the
+  // pending return to the file-select cursor.
+  if (g_alphabet_msg_frames > 0) {
+    g_alphabet_msg_frames--;
+    if (g_alphabet_msg_frames == 0) {
+      g_alphabet_msg_status = 0;
+      if (g_alphabet_pending_return) {
+        g_alphabet_pending_return = false;
+        SelectFile_AlphabetPicker_Deactivate();
+        // §9.8 / next-cluster integration point: with a decoded seed_u64 +
+        // settings_hash latched in g_alphabet_decoded_*, the new-game flow
+        // would start the rando setup. For Phase A (text-input cluster) we
+        // simply return to file-select; the next cluster's settings screen
+        // picks up the latched values via Share_PastePath path.
+        ReturnToFileSelect();
+        selectfile_R16 = g_kind_picker_target_slot;
+        return true;
+      }
+    }
+  }
+
+  SelectFile_AlphabetPicker_Draw();
+
+  // Consume host-pending submit/cancel one-shots set by main.c on Enter /
+  // Escape keypresses. This is the PC-keyboard path that bypasses the
+  // on-screen controls row (which is the only Submit/Cancel path on
+  // controllers). Read-and-clear so the same press doesn't fire twice.
+  if (g_rando_text_input_submit_pending) {
+    g_rando_text_input_submit_pending = false;
+    sound_effect_1 = 0x2c;
+    SelectFile_AlphabetPicker_HandleSubmit();
+    return true;
+  }
+  if (g_rando_text_input_cancel_pending) {
+    g_rando_text_input_cancel_pending = false;
+    sound_effect_1 = 0x3c;
+    // Same cancel semantics as the CANCEL control glyph: reopen the kind
+    // picker on the target slot.
+    SelectFile_AlphabetPicker_Deactivate();
+    g_kind_picker_active = 1;
+    g_kind_picker_cursor = 0;
+    return true;
+  }
+
+  // D-pad: move cursor (with row wrapping; col wraps within each row's
+  // width). Use filtered_joypad_H bits for direction edges (consistent
+  // with the kind picker).
+  uint8 dir = filtered_joypad_H & 0x0f;
+  if (dir != 0) {
+    int max_col = (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow)
+                      ? kAlphabetPickerCtrl_Count
+                      : kAlphabetPicker_GridCols;
+    if (dir & kJoypadH_Up) {
+      if (g_alphabet_cursor_row == 0) {
+        g_alphabet_cursor_row = kAlphabetPicker_TotalRows - 1;
+      } else {
+        g_alphabet_cursor_row--;
+      }
+      // Clamp col when landing on the narrower control row.
+      int new_max = (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow)
+                        ? kAlphabetPickerCtrl_Count
+                        : kAlphabetPicker_GridCols;
+      if (g_alphabet_cursor_col >= new_max) g_alphabet_cursor_col = new_max - 1;
+      sound_effect_2 = 0x20;
+    } else if (dir & kJoypadH_Down) {
+      g_alphabet_cursor_row++;
+      if (g_alphabet_cursor_row >= kAlphabetPicker_TotalRows) g_alphabet_cursor_row = 0;
+      int new_max = (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow)
+                        ? kAlphabetPickerCtrl_Count
+                        : kAlphabetPicker_GridCols;
+      if (g_alphabet_cursor_col >= new_max) g_alphabet_cursor_col = new_max - 1;
+      sound_effect_2 = 0x20;
+    } else if (dir & kJoypadH_Left) {
+      if (g_alphabet_cursor_col == 0) g_alphabet_cursor_col = max_col - 1;
+      else g_alphabet_cursor_col--;
+      sound_effect_2 = 0x20;
+    } else if (dir & kJoypadH_Right) {
+      g_alphabet_cursor_col++;
+      if (g_alphabet_cursor_col >= max_col) g_alphabet_cursor_col = 0;
+      sound_effect_2 = 0x20;
+    }
+    return true;
+  }
+
+  // Start = submit. Checked BEFORE A so a Start+A frame doesn't accidentally
+  // insert a char and submit on the same press.
+  if (filtered_joypad_H & kJoypadH_Start) {
+    sound_effect_1 = 0x2c;
+    SelectFile_AlphabetPicker_HandleSubmit();
+    return true;
+  }
+
+  // B button = backspace. Checked BEFORE A because A and B share the packed
+  // `a` byte; we want B to never act as insert when both fire.
+  if (filtered_joypad_H & kJoypadH_B) {
+    sound_effect_1 = 0x2c;
+    TextField_HandleKey(&g_alphabet_textfield, kTextFieldKey_Backspace);
+    return true;
+  }
+
+  // A button (or Start without B) = act on current cell.
+  if (filtered_joypad_L & kJoypadL_A) {
+    sound_effect_1 = 0x2c;
+    if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow) {
+      switch (g_alphabet_cursor_col) {
+        case kAlphabetPickerCtrl_Submit:
+          SelectFile_AlphabetPicker_HandleSubmit();
+          break;
+        case kAlphabetPickerCtrl_Delete:
+          TextField_HandleKey(&g_alphabet_textfield, kTextFieldKey_Backspace);
+          break;
+        case kAlphabetPickerCtrl_Cancel:
+          // Reopen the kind picker on the target slot so the player can
+          // pick a different option without re-navigating the file-select
+          // cursor.
+          SelectFile_AlphabetPicker_Deactivate();
+          g_kind_picker_active = 1;
+          g_kind_picker_cursor = 0;
+          break;
+      }
+    } else {
+      // Grid cell: insert the highlighted char via TextField_HandleChar so
+      // the base32 filter and length cap apply uniformly with paste/keyboard.
+      char ch = kAlphabetPicker_Chars[
+          g_alphabet_cursor_row * kAlphabetPicker_GridCols +
+          g_alphabet_cursor_col];
+      TextField_HandleChar(&g_alphabet_textfield, ch);
+    }
+    return true;
+  }
+
+  return true;  // swallow all other input while the picker is active
+}
+
+static void SelectFile_AlphabetPicker_HandleSubmit(void) {
+  // Run the buffer through the share-string decoder. On success, latch the
+  // decoded values + show "OK" overlay then return to file-select. On any
+  // failure, surface the specific reject status so the user can fix the
+  // input.
+  if (g_alphabet_textfield.len == 0) {
+    g_alphabet_msg_status = (uint8)(kShareDecodeBadLength + 1);
+    g_alphabet_msg_frames = kAlphabetMsg_ErrorBriefFrames;
+    sound_effect_1 = 0x3c;
+    return;
+  }
+  uint64 seed_u64 = 0;
+  uint8 hash[16];
+  ShareDecodeStatus st = Share_PastePath(g_alphabet_textfield.buf,
+                                         &seed_u64, hash);
+  g_alphabet_msg_status = (uint8)(st + 1);
+  if (st == kShareDecodeOk) {
+    g_alphabet_decoded_seed = seed_u64;
+    memcpy(g_alphabet_decoded_hash, hash, 16);
+    g_alphabet_msg_frames = kAlphabetMsg_OkBriefFrames;
+    g_alphabet_pending_return = true;
+    // Phase A integration point: the next-cluster settings screen + new-game
+    // flow (tasks 9.4 + 9.8) consume g_alphabet_decoded_seed +
+    // g_alphabet_decoded_hash. For now stderr-log them so a developer can
+    // sanity-check the end-to-end path.
+    fprintf(stderr, "[alphabet_picker] decoded share: seed=0x%016llx hash=",
+            (unsigned long long)seed_u64);
+    for (int i = 0; i < 16; i++) fprintf(stderr, "%02x", hash[i]);
+    fprintf(stderr, "\n");
+    sound_effect_1 = 0x2c;
+  } else {
+    // Leave the buffer intact so the user can edit (don't wipe their typing).
+    g_alphabet_msg_frames = kAlphabetMsg_ErrorBriefFrames;
+    sound_effect_1 = 0x3c;
+  }
 }
 
