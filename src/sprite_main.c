@@ -5734,7 +5734,18 @@ void Uncle_InPassage(int k) {  // 85df19
     break;
   case 1:  // GiveSwordAndShield
     item_receipt_method = 0;
-    Link_ReceiveItem(0, 0);
+    {
+      // Vanilla: code 0 = L1Sword (+shield as side-effect via the dispatch
+      // table's special-case branch in misc.c). In rando mode we dispatch via
+      // the placement table; the shield side-effect is preserved IF the placed
+      // item is still L1Sword (code 0) — otherwise the player loses the
+      // vanilla shield but gains whatever was placed (acceptable Phase A1).
+      uint8 lttp_code = 0;
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Link_s_Uncle, ITEM_L1Sword, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sprite_ai_state[k]++;
     sprite_graphics[k] = 1;
     which_starting_point = 3;
@@ -9947,7 +9958,13 @@ void Sprite_FluteKid_Stumpy(int k) {  // 86b040
     break;
   case 2:  // grant shovel
     item_receipt_method = 0;
-    Link_ReceiveItem(0x13, 0);
+    {
+      uint8 lttp_code = 0x13;  // Shovel
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Stumpy, ITEM_Shovel, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sprite_ai_state[k] = 0;
     break;
   case 3:  // wait for music
@@ -10213,7 +10230,13 @@ void Smithy_Main(int k) {  // 86b34e
     sprite_ai_state[k] = 0;
     sprite_ai_state[sprite_E[k]] = 0;
     item_receipt_method = 0;
-    Link_ReceiveItem(2, 0);
+    {
+      uint8 lttp_code = 2;  // L3Sword (vanilla tempered)
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Blacksmith, ITEM_L3Sword, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sram_progress_indicator_3 &= ~0x80;
     break;
   case 7:  //
@@ -10465,7 +10488,13 @@ void Sprite_1F_SickKid(int k) {  // 86b94c
     break;
   case 2:  // grant
     item_receipt_method = 0;
-    Link_ReceiveItem(0x21, 0);
+    {
+      uint8 lttp_code = 0x21;  // BugCatchingNet (Sick Kid vanilla grant)
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Sick_Kid, ITEM_BugCatchingNet, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     flag_is_link_immobilized = 0;
     sprite_ai_state[k] = 3;
     break;
@@ -10677,7 +10706,13 @@ void Sprite_39_Locksmith(int k) {  // 86bcac
         sprite_ai_state[k] = 2;
       } else {
         item_receipt_method = 0;
-        Link_ReceiveItem(0x16, 0);
+        {
+          uint8 lttp_code = 0x16;  // BottleEmpty (Purple Chest vanilla)
+          if (enhanced_features1 & kFeatures1_RandomizerActive) {
+            lttp_code = Rando_DispatchVanillaGrant(LOC_Purple_Chest, ITEM_BottleEmpty, lttp_code);
+          }
+          Link_ReceiveItem(lttp_code, 0);
+        }
         sram_progress_indicator_3 |= 0x10;
         sprite_ai_state[k] = 4;
         follower_indicator = 0;
@@ -10767,7 +10802,13 @@ void Sprite_Hobo_Bum(int k) {  // 86bdd0
     sprite_graphics[k] = 1;
     save_ow_event_info[BYTE(overworld_screen_index)] |= 0x20;
     item_receipt_method = 0;
-    Link_ReceiveItem(0x16, 0);
+    {
+      uint8 lttp_code = 0x16;  // BottleEmpty (Hobo vanilla)
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Hobo, ITEM_BottleEmpty, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sram_progress_indicator_3 |= 1;
     break;
   case 3:  // back to sleep
@@ -24714,7 +24755,13 @@ void Sprite_AD_OldMan(int k) {  // 9ee992
     case 0:  // grant mirror
       sprite_ai_state[k]++;
       item_receipt_method = 0;
-      Link_ReceiveItem(0x1a, 0);
+      {
+        uint8 lttp_code = 0x1a;  // MagicMirror (Old Man's escort reward)
+        if (enhanced_features1 & kFeatures1_RandomizerActive) {
+          lttp_code = Rando_DispatchVanillaGrant(LOC_Old_Man, ITEM_MagicMirror, lttp_code);
+        }
+        Link_ReceiveItem(lttp_code, 0);
+      }
       which_starting_point = 1;
       OldMan_EnableCutscene();
       sprite_delay_main[k] = 48;
