@@ -27,10 +27,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--target-ms",
         type=float,
-        default=5.0,
-        help="median latency budget in ms (default 5.0 for desktop CI)",
+        default=2000.0,
+        help="median latency budget in ms (default 2000 — spec budget for default settings)",
     )
-    parser.add_argument("--samples", type=int, default=1000)
+    parser.add_argument("--samples", type=int, default=10)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -38,16 +38,60 @@ def main(argv: list[str]) -> int:
         if not args.quiet:
             print(
                 f"run_rando_benchmarks: binary {args.binary} not built.\n"
-                "  scaffold A0 pass — gate activates once task 3.8 lands Logic_ComputeReachability\n"
-                "  and main.c exposes a --benchmark-reachability mode."
+                "  scaffold pass — build the binary to activate the benchmark gate."
             )
         return 0
 
-    # TODO: invoke ``--benchmark-reachability --samples=N`` once main.c supports it,
-    # parse the median latency from stdout, compare to args.target_ms.
+    # Phase A1 benchmark: per-seed generation wall-clock. Reads
+    # generation_wall_clock_ms from the spoiler meta block.
+    # Spec scenario: "Default-settings benchmark < 2s" (`randomizer-core`).
+    import json
+    import statistics
+    import subprocess
+    import tempfile
+    import time
+
+    sample_size = max(1, min(args.samples, 50))  # cap at 50; per-seed runs are ~1s each
     if not args.quiet:
-        print(f"run_rando_benchmarks: TODO — implement once --benchmark-reachability is wired in {args.binary}.")
-        print(f"  target_ms: {args.target_ms}  samples: {args.samples}")
+        print(f"run_rando_benchmarks: target_ms={args.target_ms}  samples={sample_size}")
+        print(f"  binary={args.binary}")
+    samples_ms = []
+    spoiler_self_reported = []
+    for i in range(sample_size):
+        seed = f"0x{i:016x}"
+        with tempfile.TemporaryDirectory() as td:
+            out_json = Path(td) / f"bm_{i}.json"
+            t0 = time.monotonic()
+            try:
+                subprocess.run(
+                    [str(args.binary), "--generate-seed",
+                     "--settings=mode.state=open,goal=fast_ganon",
+                     f"--seed={seed}",
+                     f"--out-spoiler={out_json}"],
+                    check=True, capture_output=True, timeout=60,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                print(f"  sample {i}: generator failed: {e}", file=sys.stderr)
+                return 1
+            wallclock_ms = (time.monotonic() - t0) * 1000.0
+            samples_ms.append(wallclock_ms)
+            if out_json.exists():
+                meta = json.loads(out_json.read_text(encoding="utf-8")).get("meta", {})
+                spoiler_self_reported.append(meta.get("generation_wall_clock_ms", 0))
+    samples_ms.sort()
+    median = statistics.median(samples_ms)
+    p95 = samples_ms[int(0.95 * (len(samples_ms) - 1))]
+    if not args.quiet:
+        print(f"  end-to-end (incl. binary launch + I/O):")
+        print(f"    median  {median:.1f} ms   p95 {p95:.1f} ms   max {max(samples_ms):.1f} ms")
+        if spoiler_self_reported:
+            srt = sorted(spoiler_self_reported)
+            sr_med = statistics.median(srt)
+            print(f"  spoiler.generation_wall_clock_ms (placement only):")
+            print(f"    median  {sr_med:.0f} ms   max {max(srt)} ms")
+    if median > args.target_ms:
+        print(f"FAIL: median {median:.1f} ms > target {args.target_ms} ms")
+        return 1
     return 0
 
 
