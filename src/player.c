@@ -3875,8 +3875,16 @@ void Link_PerformOpenChest() {  // 87b574
   //
   // §7.6 — fire the generic confirmation cue here so the player gets a
   // sound + HUD refresh; the chest opening itself is the visual.
+  //
+  // §7.6 audit follow-up: `item_receipt_method = 1` was set at line 3845
+  // and would normally be cleared by the AncillaAdd_ItemReceipt pipeline
+  // that Link_ReceiveItem starts. The skip-and-return path never enters
+  // that pipeline, so the field would leak — and line 3835's guard
+  // `... || item_receipt_method || ...` would block any further chest
+  // opening indefinitely. Clear it explicitly before returning.
   if (Rando_ShouldSkipReceive(item)) {
     Rando_ShowDirectGrantConfirmation();
+    item_receipt_method = 0;
     return;
   }
 

@@ -378,8 +378,8 @@ void Rando_BumpReachabilityCounter(void) {
 // ---------------------------------------------------------------------------
 // §7.6 — generic confirmation cue for direct-grant placements that skip
 // Link_ReceiveItem entirely. Matches the standard receive-item sound used
-// at misc.c:834 (`sound_effect_2 = Link_CalculateSfxPan() | 0xf`) so the
-// auditory feedback is identical to a normal pickup. Refreshes the HUD so
+// inside AncillaAdd_ItemReceipt (`sound_effect_2 = Link_CalculateSfxPan() | 0xf`)
+// so the auditory feedback is identical to a normal pickup. Refreshes the HUD so
 // any inventory cell that changed (prize bits, dungeon-item bits, Triforce
 // counter) reflects immediately rather than waiting for the next implicit
 // refresh.

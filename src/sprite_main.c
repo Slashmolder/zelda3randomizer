@@ -1264,6 +1264,13 @@ void Sprite_WishPond3(int k) {
             sprite_head_dir[k] = (loc == LOC_Pyramid_Fairy_Sword) ? 5 : 3;
             sprite_graphics[k] = 0;
             sprite_ai_state[k] = 10;
+            // §7.6 audit follow-up: bypassing case 7/8/9 skips the palette-
+            // filter cutscene + Link_ReceiveItem visual, so the player sees
+            // only the kWishPondMsgs message. Add the generic §7.6 cue so
+            // there's at least an audio + HUD-refresh confirmation that the
+            // direct-grant fired (vs the prior commit's incorrect claim
+            // that the state machine alone provided thematic confirmation).
+            Rando_ShowDirectGrantConfirmation();
             return;
           }
           // Set sprite_graphics[k] to the dispatched LttP code so case 9
