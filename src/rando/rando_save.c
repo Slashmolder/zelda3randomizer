@@ -481,6 +481,38 @@ bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
 }
 
 // ---------------------------------------------------------------------------
+// Drift-detection helpers (tasks.md §8.5, §8.6). Pure; no I/O.
+//
+// NULL-input policy: both helpers return false ("no drift signal") on NULL
+// inputs. This is intentional — the load path that consults these only does
+// so AFTER `Rando_LoadSidecarSlot` returned true (which guarantees the
+// header is populated and a paired sram slot is available). A NULL on
+// either input therefore means the caller already detected a load failure
+// upstream and is calling these helpers in a defensive path that doesn't
+// need a drift warning on top — the load failure itself is the signal.
+// Callers MUST NOT rely on these helpers to detect missing data; they only
+// compare two pieces of already-loaded state.
+// ---------------------------------------------------------------------------
+bool Rando_DetectVersionDrift(const RandoSlotHeader *hdr,
+                              uint16 current_generator_version) {
+  if (hdr == NULL) return false;
+  return hdr->generator_version != current_generator_version;
+}
+
+bool Rando_DetectChecksumDrift(const RandoSlotHeader *hdr,
+                               const uint8 *paired_sram_slot,
+                               uint32 paired_sram_slot_size) {
+  if (hdr == NULL || paired_sram_slot == NULL) return false;
+  // Smaller-than-0x4fe buffers can't be checksummed; treat as "no signal".
+  // (A truncated sram.dat is a load-path failure detected upstream; this
+  // helper isn't the place to surface it as drift.)
+  if (paired_sram_slot_size < 0x4fe) return false;
+  uint32 current = RandoSave_ComputeSramSlotChecksum(paired_sram_slot,
+                                                     paired_sram_slot_size);
+  return current != hdr->sram_slot_checksum_at_last_write;
+}
+
+// ---------------------------------------------------------------------------
 // Self-check
 // ---------------------------------------------------------------------------
 static void selfcheck_die(const char *msg) {
@@ -663,6 +695,291 @@ void RandoSave_SelfCheck(void) {
     if (memcmp(back[1].checked_bitmap, slots[1].checked_bitmap,
                sizeof(slots[1].checked_bitmap)) != 0) {
       selfcheck_die("full-file round-trip bitmap mismatch");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // §8.5 cross-version load test.
+  // Spec scenario "Version drift loads with warning": a slot whose
+  // `generator_version` differs from the binary's current value still loads
+  // (the embedded placement table is authoritative); the drift is signalled
+  // by Rando_DetectVersionDrift so the UI can warn.
+  // -------------------------------------------------------------------------
+  {
+    RandoSlotHeader hdr_old;
+    memset(&hdr_old, 0, sizeof(hdr_old));
+    hdr_old.slot_kind = kSlotKind_Randomizer;
+    hdr_old.generator_version = (uint16)(kGeneratorVersion - 1);  // N
+    hdr_old.placement_table_size = 0;
+
+    // Newer binary (N+1) loading an older slot — drift detected.
+    if (!Rando_DetectVersionDrift(&hdr_old, (uint16)kGeneratorVersion)) {
+      selfcheck_die("§8.5: newer binary should detect version drift on older slot");
+    }
+    // Same-version load: no drift.
+    RandoSlotHeader hdr_cur;
+    memset(&hdr_cur, 0, sizeof(hdr_cur));
+    hdr_cur.slot_kind = kSlotKind_Randomizer;
+    hdr_cur.generator_version = (uint16)kGeneratorVersion;
+    if (Rando_DetectVersionDrift(&hdr_cur, (uint16)kGeneratorVersion)) {
+      selfcheck_die("§8.5: same-version load should report no drift");
+    }
+    // Older binary reading a newer slot — drift symmetric.
+    RandoSlotHeader hdr_new = hdr_old;
+    hdr_new.generator_version = (uint16)(kGeneratorVersion + 1);
+    if (!Rando_DetectVersionDrift(&hdr_new, (uint16)kGeneratorVersion)) {
+      selfcheck_die("§8.5: drift detection should be symmetric (older binary vs newer slot)");
+    }
+    // NULL header is defensively false.
+    if (Rando_DetectVersionDrift(NULL, (uint16)kGeneratorVersion)) {
+      selfcheck_die("§8.5: NULL header should report no drift");
+    }
+    // Spec invariant: even with drift, the on-disk slot's
+    // `placement_table_size` is honored — we don't re-derive from the
+    // binary's current registry. Build a serialized slot with size 10 (5
+    // locations), drift the version, deserialize on the "newer binary",
+    // and confirm `placement_table_size` round-trips exactly.
+    //
+    // Vacuous-by-construction note (audit follow-up): the cross-registry
+    // failure mode this is meant to guard against (a loader that re-derives
+    // from current-binary registry count instead of reading the slot's own
+    // size) is structurally impossible in `RandoSave_DeserializeSlot` —
+    // there's no `current_registry_count` parameter or global it could
+    // consult. The assertion below documents the invariant as a regression
+    // guard against a future loader rewrite that adds such a parameter.
+    RandoSidecarSlot drift_src;
+    memset(&drift_src, 0, sizeof(drift_src));
+    drift_src.header = hdr_old;
+    drift_src.header.placement_table_size = 10;  // 5 locations
+    drift_src.placements[0].location_id = 2;
+    drift_src.placements[0].item_id = 0x0042;
+    drift_src.placement_count = 1;
+    uint8 drift_buf[256];
+    uint32 drift_wrote = RandoSave_SerializeSlot(&drift_src, drift_buf, sizeof(drift_buf));
+    if (drift_wrote == 0) selfcheck_die("§8.5: serialize for drift round-trip");
+    RandoSidecarSlot drift_dst;
+    if (RandoSave_DeserializeSlot(drift_buf, drift_wrote, &drift_dst) == 0) {
+      selfcheck_die("§8.5: deserialize for drift round-trip");
+    }
+    if (drift_dst.header.generator_version != (uint16)(kGeneratorVersion - 1)) {
+      selfcheck_die("§8.5: drifted generator_version should round-trip as-written");
+    }
+    if (drift_dst.header.placement_table_size != 10) {
+      selfcheck_die("§8.5: placement_table_size should round-trip exactly (spec: read N bytes, not current-binary's count)");
+    }
+    if (drift_dst.placement_count != 1 ||
+        drift_dst.placements[0].location_id != 2 ||
+        drift_dst.placements[0].item_id != 0x0042) {
+      selfcheck_die("§8.5: drifted slot placements should round-trip identically");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // §8.6 downgrade-then-re-upgrade drift detection.
+  // Spec scenario "Drift detected after downgrade-then-re-upgrade": after a
+  // vanilla-only write to the paired sram.dat slot, the stored
+  // sram_slot_checksum_at_last_write no longer matches the current paired
+  // bytes — the helper returns true so the UI can fire the recovery prompt.
+  // -------------------------------------------------------------------------
+  {
+    // Synthesize "v1.1 state" — populate sram_v11 with a deterministic
+    // pattern and capture its checksum into the slot header.
+    uint8 sram_v11[0x500];
+    for (uint32 i = 0; i < sizeof(sram_v11); i++) {
+      sram_v11[i] = (uint8)((i * 13u + 7u) & 0xffu);
+    }
+    RandoSlotHeader hdr_at_v11;
+    memset(&hdr_at_v11, 0, sizeof(hdr_at_v11));
+    hdr_at_v11.slot_kind = kSlotKind_Randomizer;
+    hdr_at_v11.generator_version = (uint16)kGeneratorVersion;
+    hdr_at_v11.sram_slot_checksum_at_last_write =
+        RandoSave_ComputeSramSlotChecksum(sram_v11, sizeof(sram_v11));
+
+    // Same paired slot bytes → no drift.
+    if (Rando_DetectChecksumDrift(&hdr_at_v11, sram_v11, sizeof(sram_v11))) {
+      selfcheck_die("§8.6: no-edit paired sram should report no drift");
+    }
+
+    // Simulate v1.0 writing the paired sram slot — different bytes.
+    uint8 sram_v10[0x500];
+    for (uint32 i = 0; i < sizeof(sram_v10); i++) {
+      sram_v10[i] = (uint8)((i * 17u + 3u) & 0xffu);
+    }
+    if (!Rando_DetectChecksumDrift(&hdr_at_v11, sram_v10, sizeof(sram_v10))) {
+      selfcheck_die("§8.6: edited paired sram should fire drift signal");
+    }
+
+    // Single-byte change is still drift (the checksum routine is u16
+    // subtract-over-pairs; a single flipped bit shifts the result).
+    uint8 sram_one_byte_off[0x500];
+    memcpy(sram_one_byte_off, sram_v11, sizeof(sram_one_byte_off));
+    sram_one_byte_off[0x100] ^= 0x01;
+    if (!Rando_DetectChecksumDrift(&hdr_at_v11, sram_one_byte_off,
+                                   sizeof(sram_one_byte_off))) {
+      selfcheck_die("§8.6: single-byte sram change should fire drift signal");
+    }
+
+    // NULL/short-buffer cases are defensively false (no signal).
+    if (Rando_DetectChecksumDrift(&hdr_at_v11, NULL, sizeof(sram_v11))) {
+      selfcheck_die("§8.6: NULL paired slot should report no drift");
+    }
+    if (Rando_DetectChecksumDrift(NULL, sram_v11, sizeof(sram_v11))) {
+      selfcheck_die("§8.6: NULL header should report no drift");
+    }
+    if (Rando_DetectChecksumDrift(&hdr_at_v11, sram_v11, 100)) {
+      selfcheck_die("§8.6: too-small buffer should report no drift");
+    }
+
+    // Spec scenario "Crash between sidecar and sram.dat" produces
+    // checksum drift WITHOUT version drift — single binary version, but
+    // the sram.dat write was interrupted so its bytes don't match the
+    // sidecar's recorded checksum. Verify checksum-drift fires alone on
+    // this isolated scenario.
+    {
+      RandoSlotHeader hdr_crash = hdr_at_v11;  // same gen_version
+      // sram_v10 represents the partially-written sram.dat after the crash.
+      if (!Rando_DetectChecksumDrift(&hdr_crash, sram_v10, sizeof(sram_v10))) {
+        selfcheck_die("§8.6: crash-mid-save should fire checksum drift");
+      }
+      if (Rando_DetectVersionDrift(&hdr_crash, (uint16)kGeneratorVersion)) {
+        selfcheck_die("§8.6: crash-mid-save scenario should NOT have version drift (single binary)");
+      }
+    }
+
+    // Cross-product: both drifts can co-occur — this is the
+    // downgrade-then-re-upgrade pattern (player wrote on v1.1, ran an older
+    // v1.0 binary that re-saved the paired sram.dat as vanilla without
+    // touching the sidecar, then re-upgraded to a v1.2 binary that loads
+    // the slot). The sidecar's gen_version still says v1.1; the binary is
+    // v1.2 (version drift); and the paired sram.dat checksum no longer
+    // matches the sidecar's recorded value (checksum drift). Both helpers
+    // fire independently — the UI surfaces both conditions.
+    RandoSlotHeader hdr_both = hdr_at_v11;
+    hdr_both.generator_version = (uint16)(kGeneratorVersion - 1);
+    if (!Rando_DetectVersionDrift(&hdr_both, (uint16)kGeneratorVersion)) {
+      selfcheck_die("§8.6: downgrade-re-upgrade case should fire version drift");
+    }
+    if (!Rando_DetectChecksumDrift(&hdr_both, sram_v10, sizeof(sram_v10))) {
+      selfcheck_die("§8.6: downgrade-re-upgrade case should fire checksum drift");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // §8.7 coexistence test.
+  // Spec scenarios "Slot-kind discriminator" and "sram.dat present but
+  // sidecar absent": a sidecar with mixed slot_kinds (Randomizer / Vanilla /
+  // Empty) loads correctly per-slot; a missing sidecar file produces no
+  // rando metadata. We exercise the in-memory serialize → deserialize path
+  // (the same data flow as RandoSave_ReadFile uses internally) so the test
+  // stays hermetic — CI environments may not have a writable saves/ dir.
+  // -------------------------------------------------------------------------
+  {
+    RandoSidecarSlot mixed[kRandoSidecar_SlotCount];
+    memset(mixed, 0, sizeof(mixed));
+    // Slot 0: Randomizer with a populated placement table.
+    mixed[0].header.slot_kind = kSlotKind_Randomizer;
+    mixed[0].header.generator_version = (uint16)kGeneratorVersion;
+    mixed[0].header.placement_table_size = 8;  // 4 locations
+    mixed[0].placements[0].location_id = 1;
+    mixed[0].placements[0].item_id = 0x0080;
+    mixed[0].placement_count = 1;
+    // Slot 1: Vanilla — explicit opt-out. Build with a NON-zero placement
+    // table body to exercise the spec scenario "Slot-kind discriminator"
+    // properly: "the loader ignores any subsequent bytes of that slot and
+    // treats the corresponding sram.dat slot as a plain vanilla save."
+    // A Vanilla slot can in principle have leftover placement bytes from a
+    // prior write (e.g., the slot was a Randomizer that the user converted
+    // to Vanilla). The discriminator contract says the caller MUST gate on
+    // slot_kind, not on placement contents. Test below asserts slot_kind
+    // round-trips so the UI's slot-kind dispatch is reliable.
+    mixed[1].header.slot_kind = kSlotKind_Vanilla;
+    mixed[1].header.placement_table_size = 6;  // 3 location slots
+    mixed[1].placements[0].location_id = 0;
+    mixed[1].placements[0].item_id = 0xBEEF;   // junk that the UI must ignore
+    mixed[1].placement_count = 1;
+    // Slot 2: Empty — never touched.
+    mixed[2].header.slot_kind = kSlotKind_Empty;
+    mixed[2].header.placement_table_size = 0;
+
+    // Serialize full file (file header + 3 slot regions).
+    uint32 total = kRandoSidecar_FileHeaderSize;
+    for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+      total += RandoSave_SlotOnDiskSize(mixed[i].header.placement_table_size);
+    }
+    uint8 *bigbuf = (uint8 *)malloc(total);
+    if (bigbuf == NULL) selfcheck_die("§8.7: malloc coexistence buffer");
+    RandoSidecarFileHeader fh3 = { kRandoSidecar_FileFormatVersion,
+                                   kRandoSidecar_SlotCount, 0 };
+    uint32 off = RandoSave_SerializeFileHeader(&fh3, bigbuf, total);
+    for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+      uint32 u = RandoSave_SerializeSlot(&mixed[i], bigbuf + off, total - off);
+      if (u == 0) { free(bigbuf); selfcheck_die("§8.7: serialize mixed slot"); }
+      off += u;
+    }
+    if (off != total) { free(bigbuf); selfcheck_die("§8.7: coexistence size mismatch"); }
+
+    // Read back and verify per-slot classification round-trips.
+    RandoSidecarFileHeader fh4;
+    uint32 fhu = RandoSave_DeserializeFileHeader(bigbuf, total, &fh4);
+    if (fhu != kRandoSidecar_FileHeaderSize) {
+      free(bigbuf); selfcheck_die("§8.7: file header deserialize");
+    }
+    uint32 cur = fhu;
+    RandoSidecarSlot back[kRandoSidecar_SlotCount];
+    for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+      uint32 u = RandoSave_DeserializeSlot(bigbuf + cur, total - cur, &back[i]);
+      if (u == 0) { free(bigbuf); selfcheck_die("§8.7: slot deserialize"); }
+      cur += u;
+    }
+    free(bigbuf);
+
+    if (back[0].header.slot_kind != kSlotKind_Randomizer) {
+      selfcheck_die("§8.7: slot 0 should round-trip as Randomizer");
+    }
+    if (back[0].placement_count != 1 ||
+        back[0].placements[0].location_id != 1 ||
+        back[0].placements[0].item_id != 0x0080) {
+      selfcheck_die("§8.7: slot 0 placement should round-trip");
+    }
+    if (back[1].header.slot_kind != kSlotKind_Vanilla) {
+      selfcheck_die("§8.7: slot 1 should round-trip as Vanilla (spec: discriminator preserved)");
+    }
+    // The Vanilla slot's body (junk placement bytes) is preserved through
+    // serialize/deserialize — that's expected. The contract the spec pins
+    // is that the UI MUST gate on slot_kind, not parse the body. Assert
+    // the body bytes did make the round-trip so we know the discriminator
+    // worked under realistic conditions (a Vanilla slot with non-zero
+    // body), AND that the slot_kind discriminator is intact so the UI
+    // can rely on it.
+    if (back[1].placement_count != 1 ||
+        back[1].placements[0].item_id != 0xBEEF) {
+      selfcheck_die("§8.7: Vanilla slot body should round-trip (UI must gate on slot_kind, not contents)");
+    }
+    if (back[2].header.slot_kind != kSlotKind_Empty) {
+      selfcheck_die("§8.7: slot 2 should round-trip as Empty");
+    }
+
+    // Spec scenario "sram.dat present but sidecar absent": loading a path
+    // that doesn't exist returns false; caller treats all slots as vanilla.
+    // Use a path with embedded entropy (PID-equivalent + literal cookie) so
+    // collision with a real CI file is implausible — protects against the
+    // pathological cwd hygiene failure of a literal short filename.
+    {
+      RandoSidecarSlot dummy_slots[kRandoSidecar_SlotCount];
+      char unique_path[128];
+      // Compose: literal cookie + a deterministic-but-unlikely-to-collide
+      // suffix derived from the function address (changes per build) and
+      // the stack address (changes per invocation). Neither is a "secure"
+      // random source, but the combination is essentially never the name
+      // of a real file in any sane checkout.
+      uintptr_t entropy = (uintptr_t)&dummy_slots ^ (uintptr_t)&RandoSave_ReadFile;
+      snprintf(unique_path, sizeof(unique_path),
+               "selfcheck_nonexistent_%016llx.dat",
+               (unsigned long long)entropy);
+      bool ok = RandoSave_ReadFile(unique_path, dummy_slots);
+      if (ok) {
+        selfcheck_die("§8.7: missing sidecar file should return false (vanilla appearance)");
+      }
     }
   }
 

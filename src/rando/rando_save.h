@@ -253,4 +253,31 @@ bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
                             const uint8 *paired_sram_slot,
                             uint32 paired_sram_slot_size);
 
+// ---------------------------------------------------------------------------
+// Drift-detection helpers (tasks.md §8.5, §8.6; randomizer-save spec §
+// "Embedded placement table — upgrade safety" + § "Downgrade-then-re-upgrade
+// safety"). Pure functions; no I/O.
+//
+// Rando_DetectVersionDrift: true when the slot was written by a different
+//   generator_version than the binary currently in use. Spec semantics: load
+//   still succeeds (the embedded placement table is authoritative); the
+//   loader surfaces an informational warning. The UI layer is responsible
+//   for the actual warning surface; this helper is the detection primitive
+//   the UI calls.
+//
+// Rando_DetectChecksumDrift: true when the paired sram.dat slot's current
+//   checksum no longer matches the value the sidecar recorded at last write.
+//   Indicates the paired sram.dat was edited outside the rando code path —
+//   typically a downgraded binary writing the slot as vanilla. The UI uses
+//   this to fire the "rando state may be stale" recovery prompt. NOTE: this
+//   helper expects the same byte-size buffer that the writer hashed
+//   (typically 0x500). A buffer smaller than 0x4fe returns false (no signal
+//   — the checksum routine can't compute, so we don't claim drift).
+// ---------------------------------------------------------------------------
+bool Rando_DetectVersionDrift(const RandoSlotHeader *hdr,
+                              uint16 current_generator_version);
+bool Rando_DetectChecksumDrift(const RandoSlotHeader *hdr,
+                               const uint8 *paired_sram_slot,
+                               uint32 paired_sram_slot_size);
+
 #endif  // ZELDA3_RANDO_SAVE_H_

@@ -364,6 +364,248 @@ void RandoSnapshotTail_SelfCheck(void) {
   if (!Rando_HasSnapshotContext()) selfcheck_die("context not restored (unknown-TLV test)");
   fclose(f2);
 
+  // -------------------------------------------------------------------------
+  // §8.9 snapshot replay test.
+  // Spec scenario "Replay mode preserves rando": when StateRecorder_Load
+  // restores g_ram from `base_snapshot` via LoadSnesState, the trailing TLV
+  // reinstall must restore the placement table so every replayed frame's
+  // dispatch fires correctly. We can't drive the full StateRecorder pipeline
+  // from this self-check (it depends on game-runtime globals), but we CAN
+  // exercise the equivalent TLV save → clear → load cycle and verify the
+  // placement table comes back identically — which is exactly the state
+  // StateRecorder_Load relies on after its LoadSnesState call.
+  //
+  // The §8.8 ClearKeyLog-on-rando-active forcing in StateRecorder_Save lives
+  // in src/zelda_rtl.c; we sanity-check the contract here: Placement_GetActive
+  // must be non-NULL when Save is asked to emit, AND HasSnapshotContext must
+  // be true. The Save returns true (silently emits nothing) when either is
+  // missing — graceful degradation. Verify both branches.
+  // -------------------------------------------------------------------------
+  {
+    // Build a "mid-run" placement table and context — the state the player
+    // would be in when they pressed Shift+F1 to snapshot.
+    static RandoPlacement replay_entries[3];
+    static RandoPlacementTable replay_table;
+    replay_entries[0].location_id = 1;   replay_entries[0].item_id = 0xAAAA;
+    replay_entries[1].location_id = 5;   replay_entries[1].item_id = 0xBBBB;
+    replay_entries[2].location_id = 9;   replay_entries[2].item_id = 0xCCCC;
+    replay_table.entries = replay_entries;
+    replay_table.count = 3;
+
+    uint8 r_settings[16];
+    uint8 r_share[32];
+    for (int i = 0; i < 16; i++) r_settings[i] = (uint8)(0x55 ^ i);
+    for (int i = 0; i < 32; i++) r_share[i] = (uint8)(0x77 + i);
+
+    Placement_Install(&replay_table);
+    Rando_SetSnapshotContext(0xBEEF, r_settings, r_share);
+
+    // "Snapshot save" — emit TLV to a tmpfile.
+    FILE *fsnap = tmpfile();
+    if (fsnap == NULL) selfcheck_die("§8.9: tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fsnap)) selfcheck_die("§8.9: Save returned false");
+
+    // Simulate "exit + relaunch": clear all rando state, as if process died
+    // and was restarted with no placement installed.
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    if (Placement_GetActive() != NULL) selfcheck_die("§8.9: clear placement should leave Active==NULL");
+    if (Rando_HasSnapshotContext()) selfcheck_die("§8.9: clear context should leave HasContext==false");
+
+    // "Replay-mode reload" — TLV consumer reinstalls placement + context.
+    fseek(fsnap, 0, SEEK_SET);
+    int recognized = RandoSnapshotTail_Load(fsnap);
+    if (recognized != 1) selfcheck_die("§8.9: replay reload should recognize 1 TLV");
+    if (!Rando_HasSnapshotContext()) {
+      selfcheck_die("§8.9: replay reload should restore snapshot context");
+    }
+    if (Rando_GetSnapshotGeneratorVersion() != 0xBEEF) {
+      selfcheck_die("§8.9: replay reload should restore generator_version");
+    }
+    if (memcmp(Rando_GetSnapshotSettingsHash(), r_settings, 16) != 0) {
+      selfcheck_die("§8.9: replay reload should restore settings_hash");
+    }
+    if (memcmp(Rando_GetSnapshotShareString(), r_share, 32) != 0) {
+      selfcheck_die("§8.9: replay reload should restore share_string");
+    }
+    const RandoPlacementTable *post = Placement_GetActive();
+    if (post == NULL) selfcheck_die("§8.9: replay reload should restore placement");
+    if (post->count != 3) selfcheck_die("§8.9: placement count after replay reload");
+    for (uint16 i = 0; i < 3; i++) {
+      if (post->entries[i].location_id != replay_entries[i].location_id ||
+          post->entries[i].item_id != replay_entries[i].item_id) {
+        selfcheck_die("§8.9: placement entry mismatch after replay reload");
+      }
+    }
+    fclose(fsnap);
+
+    // §8.8 ClearKeyLog contract sanity-check: Save returns true (silent
+    // emit) when no placement is installed — the snapshot then has a vanilla
+    // tail and older readers see no rando state. This is the path
+    // StateRecorder_Save in zelda_rtl.c takes for non-rando snapshots.
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    FILE *fsilent = tmpfile();
+    if (fsilent == NULL) selfcheck_die("§8.9: tmpfile() silent-path");
+    if (!RandoSnapshotTail_Save(fsilent)) selfcheck_die("§8.9: silent-emit path should return true");
+    // File should be empty — no TLV header was written.
+    fseek(fsilent, 0, SEEK_END);
+    long silent_size = ftell(fsilent);
+    if (silent_size != 0) selfcheck_die("§8.9: silent-emit path should write zero bytes");
+    fclose(fsilent);
+
+    // Same path for "placement installed but no context" — Save returns true
+    // and emits nothing (cannot fabricate the payload metadata).
+    Placement_Install(&replay_table);
+    FILE *fno_ctx = tmpfile();
+    if (fno_ctx == NULL) selfcheck_die("§8.9: tmpfile() no-ctx-path");
+    if (!RandoSnapshotTail_Save(fno_ctx)) selfcheck_die("§8.9: no-context Save should return true");
+    fseek(fno_ctx, 0, SEEK_END);
+    long no_ctx_size = ftell(fno_ctx);
+    if (no_ctx_size != 0) selfcheck_die("§8.9: no-context Save should write zero bytes");
+    fclose(fno_ctx);
+  }
+
+  // -------------------------------------------------------------------------
+  // §8.10 older-binary snapshot test.
+  // Spec scenario "Older binary degrades gracefully": a TLV-aware writer's
+  // output, when consumed by a reader that stops after the standard 4
+  // chunks (older binary predates RandoSnapshotTail), leaves the older
+  // binary in a clean vanilla state — the trailing tail bytes are simply
+  // ignored.
+  //
+  // Two assertions to make:
+  //
+  //   1. Reading a snapshot that has NO trailing TLV (vanilla snapshot)
+  //      cleanly returns 0 from RandoSnapshotTail_Load — no false positives.
+  //      This is the equivalent test for the modern reader: it must not
+  //      claim to recognize a TLV when none was emitted.
+  //
+  //   2. Reading a snapshot whose tail is a TLV with an UNKNOWN type code
+  //      cleanly skips it and continues. This is the forward-compat
+  //      property that lets older binaries cope with newer snapshots — the
+  //      unknown-type-skip path is the same code path an older binary
+  //      would use if it were extended to know about TLVs in general but
+  //      not the specific new type. (An older binary that knows nothing
+  //      about TLVs at all just closes the file after the 4 chunks; we
+  //      can't simulate "close the file early" inside a self-check, but
+  //      we CAN exercise the skip-then-continue path which is the same
+  //      forward-compat machinery.)
+  // -------------------------------------------------------------------------
+  {
+    // (1) Vanilla snapshot — no TLV bytes. Load should return 0 cleanly.
+    FILE *fvanilla = tmpfile();
+    if (fvanilla == NULL) selfcheck_die("§8.10: tmpfile() vanilla");
+    // Write zero bytes — pure empty file, simulating a snapshot whose
+    // standard chunks have already been consumed by the standard reader.
+    fseek(fvanilla, 0, SEEK_SET);
+    int n_vanilla = RandoSnapshotTail_Load(fvanilla);
+    if (n_vanilla != 0) {
+      selfcheck_die("§8.10: vanilla (empty) tail should yield zero recognized TLVs");
+    }
+    // Re-confirm prior state was untouched. We don't have a "snapshot prior"
+    // saved here — just verify the loader was a pure no-op on its outputs.
+    fclose(fvanilla);
+
+    // (1b) "Garbage trailing bytes" (e.g., unrelated trailing payload from
+    // a different format) — first 8 bytes don't match TLV magic, so loader
+    // terminates cleanly. Mirrors the older-binary case where the trailing
+    // bytes are simply foreign data the modern loader must reject without
+    // crashing.
+    FILE *fgarbage = tmpfile();
+    if (fgarbage == NULL) selfcheck_die("§8.10: tmpfile() garbage");
+    uint8 not_magic[8] = { 'X', 'Y', 'Z', 'Q', 'A', 'B', 'C', 'D' };
+    fwrite(not_magic, 1, sizeof(not_magic), fgarbage);
+    fseek(fgarbage, 0, SEEK_SET);
+    int n_garbage = RandoSnapshotTail_Load(fgarbage);
+    if (n_garbage != 0) {
+      selfcheck_die("§8.10: non-matching magic should terminate loop cleanly (zero recognized)");
+    }
+    fclose(fgarbage);
+
+    // (1c) Truncated TLV header (less than 8 bytes — magic incomplete).
+    // Older-binary equivalent: snapshot file ends abruptly inside what would
+    // have been a TLV. Loader returns 0 without crashing.
+    FILE *ftrunc = tmpfile();
+    if (ftrunc == NULL) selfcheck_die("§8.10: tmpfile() truncated");
+    uint8 trunc[3] = { 'Z', 'R', 'S' };  // 3 of 8 magic bytes — short read
+    fwrite(trunc, 1, sizeof(trunc), ftrunc);
+    fseek(ftrunc, 0, SEEK_SET);
+    int n_trunc = RandoSnapshotTail_Load(ftrunc);
+    if (n_trunc != 0) {
+      selfcheck_die("§8.10: short-read magic should terminate cleanly");
+    }
+    fclose(ftrunc);
+
+    // (2) Unknown-type TLV — emit a valid magic + unknown type discriminator
+    // + valid length, and verify the loader skips past it without claiming
+    // recognition (returns 0 because the only TLV present was unknown).
+    // This is the forward-compat property: future TLV types (e.g., Phase C
+    // entrance-shuffle data) shipped to older binaries get cleanly skipped.
+    FILE *funknown = tmpfile();
+    if (funknown == NULL) selfcheck_die("§8.10: tmpfile() unknown-type");
+    uint8 unk_hdr2[16];
+    memcpy(unk_hdr2, kRandoSnapshotTail_Magic, 8);
+    put_u32le_bytes(unk_hdr2 + 8, 0xDEADBEEFu);  // unknown type
+    put_u32le_bytes(unk_hdr2 + 12, 12u);          // payload length
+    fwrite(unk_hdr2, 1, 16, funknown);
+    uint8 unk_payload[12] = { 0,1,2,3,4,5,6,7,8,9,10,11 };
+    fwrite(unk_payload, 1, sizeof(unk_payload), funknown);
+    fseek(funknown, 0, SEEK_SET);
+    int n_unknown = RandoSnapshotTail_Load(funknown);
+    if (n_unknown != 0) {
+      selfcheck_die("§8.10: unknown TLV type should be skipped (zero recognized)");
+    }
+    // Confirm we've consumed past the unknown TLV — the file cursor should
+    // be at the unknown payload's end (16 + 12 = 28). If the loader had
+    // truncated early or seek-overshot, the cursor would be elsewhere.
+    long cursor_after_unknown = ftell(funknown);
+    if (cursor_after_unknown != 28L) {
+      selfcheck_die("§8.10: unknown-TLV skip should advance cursor exactly past payload");
+    }
+    fclose(funknown);
+
+    // (3) Mixed-tail file: unknown TLV followed by recognized TAIL_RANDO_STATE.
+    // Loader returns 1 (the recognized one), having skipped the unknown.
+    // This is the same path exercised earlier in this self-check but reframed
+    // as a §8.10 forward-compat assertion: the recognized TLV survives the
+    // presence of unknown predecessors.
+    static RandoPlacement mix_entries[2];
+    static RandoPlacementTable mix_table;
+    mix_entries[0].location_id = 0; mix_entries[0].item_id = 0x1111;
+    mix_entries[1].location_id = 3; mix_entries[1].item_id = 0x2222;
+    mix_table.entries = mix_entries; mix_table.count = 2;
+    uint8 mix_settings[16];
+    uint8 mix_share[32];
+    for (int i = 0; i < 16; i++) mix_settings[i] = (uint8)i;
+    for (int i = 0; i < 32; i++) mix_share[i] = (uint8)(0x80 + i);
+    Placement_Install(&mix_table);
+    Rando_SetSnapshotContext(0x0042, mix_settings, mix_share);
+
+    FILE *fmix = tmpfile();
+    if (fmix == NULL) selfcheck_die("§8.10: tmpfile() mixed");
+    // Unknown TLV first.
+    uint8 mix_hdr[16];
+    memcpy(mix_hdr, kRandoSnapshotTail_Magic, 8);
+    put_u32le_bytes(mix_hdr + 8, 0xBADC0DE5u);
+    put_u32le_bytes(mix_hdr + 12, 4u);
+    fwrite(mix_hdr, 1, 16, fmix);
+    uint8 mix_pay[4] = { 9, 8, 7, 6 };
+    fwrite(mix_pay, 1, 4, fmix);
+    // Then the recognized TLV.
+    if (!RandoSnapshotTail_Save(fmix)) selfcheck_die("§8.10: Save (mixed) returned false");
+    // Clear and reload.
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(fmix, 0, SEEK_SET);
+    int n_mix = RandoSnapshotTail_Load(fmix);
+    if (n_mix != 1) selfcheck_die("§8.10: mixed-tail should recognize exactly 1 known TLV");
+    if (Rando_GetSnapshotGeneratorVersion() != 0x0042) {
+      selfcheck_die("§8.10: mixed-tail should restore generator_version through the skip");
+    }
+    fclose(fmix);
+  }
+
   // Restore prior state to leave the world unchanged.
   Placement_Install(prior_table);
   if (prior_table == NULL) Rando_ClearSnapshotContext();
