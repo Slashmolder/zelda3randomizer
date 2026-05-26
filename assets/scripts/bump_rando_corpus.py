@@ -61,10 +61,10 @@ def manifest_version(manifest_text: str) -> int | None:
     return int(match.group(1))
 
 
-def regenerate_entry(binary: Path, settings: dict, seed: str) -> str | None:
-    """Run the binary's --generate-seed for one entry, return placement_digest."""
+def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | None, str | None]:
+    """Run --generate-seed for one entry, return (placement_digest, sphere_digest)."""
     if not binary.exists():
-        return None
+        return None, None
     settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
     with tempfile.TemporaryDirectory() as td:
         out_json = Path(td) / "out.json"
@@ -78,11 +78,12 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> str | None:
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             print(f"  generator failed for seed={seed}: {e}", file=sys.stderr)
-            return None
+            return None, None
         if not out_json.exists():
-            return None
+            return None, None
         spoiler = json.loads(out_json.read_text(encoding="utf-8"))
-        return spoiler.get("meta", {}).get("placement_digest_hex")
+        meta = spoiler.get("meta", {})
+        return meta.get("placement_digest_hex"), meta.get("sphere_digest")
 
 
 def main(argv: list[str]) -> int:
@@ -137,11 +138,13 @@ def main(argv: list[str]) -> int:
 
     # Regenerate digests.
     print("\nRegenerating placement digests...")
-    changed: list[tuple[int, str, str, str]] = []  # (idx, label, old, new)
+    changed: list[tuple[int, str, str, str]] = []  # (idx, label, old, new) — placement digest
+    sphere_changes: list[tuple[int, str, str]] = []  # (idx, old, new) — sphere digest
     for i, entry in enumerate(entries):
         old = entry.get("expected_digest", "<absent>")
-        new = regenerate_entry(args.binary, entry.get("settings", {}),
-                               str(entry.get("seed", "")))
+        old_sphere = entry.get("expected_sphere_digest", "")
+        new, new_sphere = regenerate_entry(args.binary, entry.get("settings", {}),
+                                            str(entry.get("seed", "")))
         if new is None:
             print(f"  [{i}] {entry.get('label', '?')}: SKIP (generator unavailable / failed)")
             continue
@@ -151,6 +154,11 @@ def main(argv: list[str]) -> int:
             print(f"  [{i}] {entry.get('label', '?')}: {old[:8]}... -> {new[:8]}...")
         else:
             print(f"  [{i}] {entry.get('label', '?')}: unchanged")
+        # Sphere digest is optional — only update if the field was already
+        # present in the manifest, OR if the user opts in via --with-spheres.
+        if old_sphere and new_sphere and new_sphere != old_sphere:
+            sphere_changes.append((i, old_sphere, new_sphere))
+            entry["expected_sphere_digest"] = new_sphere
 
     if args.apply:
         # Update generator_version + serialize back. Simple text-replace for the
@@ -170,6 +178,15 @@ def main(argv: list[str]) -> int:
                                        new_text, count=1)
             if count == 0:
                 print(f"  WARNING: could not find expected_digest {old_d[:8]}... in manifest text",
+                      file=sys.stderr)
+        # Same in-place update for sphere digests.
+        for (idx, old_s, new_s) in sphere_changes:
+            pattern = (r'(\bexpected_sphere_digest:\s*[\'"])' + re.escape(old_s) + r'([\'"])')
+            new_text, count = re.subn(pattern,
+                                       lambda m, n=new_s: f"{m.group(1)}{n}{m.group(2)}",
+                                       new_text, count=1)
+            if count == 0:
+                print(f"  WARNING: could not find expected_sphere_digest {old_s[:8]}... in manifest text",
                       file=sys.stderr)
         args.manifest.write_text(new_text, encoding="utf-8")
         print(f"\nWrote updated manifest to {args.manifest}")
