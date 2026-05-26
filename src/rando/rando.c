@@ -104,6 +104,19 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     case ITEM_HalfMagic: return 0x20;
     // QuarterMagic has no vanilla LttP code (added by ROM patches in
     // ALTTPR; Phase A1 falls back to vanilla item). §6.2 follow-on.
+
+    // Bottle-with-contents → LttP codes per misc.c kBottleList[].
+    // ItemReceipt_GiveBottledItem finds the first empty slot and writes
+    // (kBottleList_index + 2). Mapping is fixed at:
+    //   0x16=BottleEmpty, 0x2b=Bee, 0x2c=Fairy, 0x2d=RedPotion,
+    //   0x3d=GreenPotion, 0x3c=GoodBee, 0x48=BluePotion
+    case ITEM_BottleEmpty:           return 0x16;
+    case ITEM_BottleWithFairy:       return 0x2c;
+    case ITEM_BottleWithBee:         return 0x2b;
+    case ITEM_BottleWithGoodBee:     return 0x3c;
+    case ITEM_BottleWithRedPotion:   return 0x2d;
+    case ITEM_BottleWithGreenPotion: return 0x3d;
+    case ITEM_BottleWithBluePotion:  return 0x48;
     default:
       return 0xFF;
   }
