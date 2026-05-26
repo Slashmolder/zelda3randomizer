@@ -339,7 +339,13 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     n = pool_add(out_items, n, capacity, ID_TriforcePiece, settings->pieces_placed);
   }
 
-  // ----- Junk-pad to match location count -----
+  // ----- Junk-pad to match world-state-filtered location count -----
+  // Per audit N5: BuildItemPool used to pad to kRandoLocationsCount
+  // unconditionally; that's wrong when locations carry a world_state_filter
+  // (Phase A1 has none, but adding Inverted/Retro-specific locations later
+  // would break). Count the locations whose filter accepts the active
+  // world state and pad to that.
+  //
   // Per spec scenario "Triforce Hunt junk-padding": pad with a rotation of
   // small rupee / single bomb / single arrow / small heart-equivalent so the
   // padded items match ALTTPR's mix. The rotation is deterministic (no RNG),
@@ -348,7 +354,13 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     ID_Rupee20, ID_Bombs1, ID_Arrow1, ID_Rupee5,
   };
   const uint16 rotation_n = (uint16)(sizeof(kJunkRotation) / sizeof(kJunkRotation[0]));
-  uint16 target = (uint16)kRandoLocationsCount;
+  uint16 target = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    uint8 wsf = kRandoLocations[i].world_state_filter;
+    if (wsf == 0 || (wsf & (1u << settings->world_state))) {
+      target++;
+    }
+  }
   uint16 rotation_i = 0;
   while (n < target && n < capacity) {
     out_items[n++] = kJunkRotation[rotation_i];
@@ -1134,6 +1146,7 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
 
   uint16 remaining = placements->count;
   uint8 sphere = 0;
+  bool hit_sphere_cap = false;
   while (remaining > 0 && sphere < kSphereMaxCount) {
     const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
     uint16 added_this_sphere = 0;
@@ -1161,6 +1174,17 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
     remaining -= added_this_sphere;
     sphere++;
   }
+  // Audit N4: distinguish "fixed-point reached" from "kSphereMaxCount hit".
+  // The latter is rare (logic depth > 32) but silent failure would mark
+  // late-sphere reachable placements as unreachable — surface it explicitly.
+  if (sphere == kSphereMaxCount && remaining > 0) {
+    hit_sphere_cap = true;
+    fprintf(stderr,
+      "Logic_ComputeSpheres: WARNING hit kSphereMaxCount=%d cap with %u "
+      "placements unprocessed — logic depth exceeds sphere table.\n",
+      (int)kSphereMaxCount, (unsigned)remaining);
+  }
+  (void)hit_sphere_cap;  // already logged; spheres struct doesn't carry it
 
   // Count unreachable placements.
   out->unreachable_count = 0;
@@ -1273,16 +1297,24 @@ void Placement_SelfCheck(void) {
     selfcheck_die("placement digest collision on different items");
   }
 
-  // BuildItemPool: with default settings, pool size equals kRandoLocationsCount
-  // (junk-padded). With NULL settings, the function safely returns 0.
+  // BuildItemPool: with default settings (Open), pool size equals the
+  // count of locations active in the Open world-state (= kRandoLocationsCount
+  // minus any Inverted/Retro-only locations like Bomb Merchant). With NULL
+  // settings, the function safely returns 0.
   {
     RandoSettings defaults;
     Settings_SetDefaults(&defaults);
     uint16 pool[512];
     uint16 n = BuildItemPool(&defaults, pool, 512);
-    if (n != kRandoLocationsCount) {
+    // Compute expected = count of locations whose world_state_filter accepts Open (bit 0).
+    uint16 expected = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      uint8 wsf = kRandoLocations[i].world_state_filter;
+      if (wsf == 0 || (wsf & (1u << kWorldState_Open))) expected++;
+    }
+    if (n != expected) {
       fprintf(stderr, "[Placement_SelfCheck] BuildItemPool returned %u, expected %u\n",
-              (unsigned)n, (unsigned)kRandoLocationsCount);
+              (unsigned)n, (unsigned)expected);
       selfcheck_die("BuildItemPool count mismatch");
     }
     // NULL settings → 0 (safe rejection, not crash).

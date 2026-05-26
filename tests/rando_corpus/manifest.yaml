@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 5  # bumped: Triforce Hunt junk-padding rotates 4 junk types per spec scenario
+generator_version: 6  # bumped: BuildItemPool now pads to world-state-filtered location count, not kRandoLocationsCount
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -26,42 +26,42 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, dungeon_items.small_keys: dungeon }
     seed: "0xDEADBEEFCAFEBABE"
     label: "a1-open-fast-ganon"
-    expected_digest: "72d788d127d7ae0fb7aea487c94c8b117fca495b0645371a6c6f36aa3cf6129e"
+    expected_digest: "4570a1679d32e4565024753583e1d7a046e28f2ec978fe5a762569f7213db46d"
   # 7-goal × 4-world-state × dungeon-mode matrix — captured against
   # kGeneratorVersion=4 with the vanilla-mode pre-grant fix landed.
   # All entries verified goal_completable=true at capture time.
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x0000000000000001"
     label: "a1-open-fast-ganon-default"
-    expected_digest: "0b46151eb25ed617b6d05578570ac2a1d98a0519ce5df379c1141456f9977d7d"
+    expected_digest: "9bb88253c21cc0ee1b870aeb2e4d754fa4fecf6028f9c25f0649c14e224b9665"
   - settings: { mode.state: open, goal: dungeons }
     seed: "0x0000000000000002"
     label: "a1-open-dungeons"
-    expected_digest: "ba7deb26abaaad1f97f7f647ea03a21ba79e6f663f8d1d0766a841fccab528be"
+    expected_digest: "3258f9808656f736acc350c70faa40ff031d21e35f031e16b3dc1663d94a976a"
   - settings: { mode.state: standard, goal: fast_ganon }
     seed: "0x0000000000000003"
     label: "a1-standard-fast-ganon"
-    expected_digest: "f416944396b7967f00ff9a8b5d8f5f025ffb126f1358864a0d38a0e5e476d6af"
+    expected_digest: "3150e1052c4fa0886dd44b2288637dfd6f2222bf6ef9b0728b5db31df930586b"
   - settings: { mode.state: open, goal: pedestal }
     seed: "0x0000000000000004"
     label: "a1-open-pedestal"
-    expected_digest: "9a75849423aed954094109a712c822716ce8ffd7a1630b670e4f6f15defa2408"
+    expected_digest: "b50bf3a75c25d87836bd844e1096860f54bc33b693eb492748d75f42517cead9"
   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30 }
     seed: "0x0000000000000005"
     label: "a1-open-triforce-hunt"
-    expected_digest: "a1d6086cac93c39858610e666f3ae4061ff169f3cf900ffecd05a64262a8bc86"
+    expected_digest: "578a9b66cc756711e5c0642d60bf7203cc3101feea3fe966424d2f0cde78c52e"
   - settings: { mode.state: open, goal: ganonhunt, pieces_required: 20, pieces_placed: 30 }
     seed: "0x0000000000000006"
     label: "a1-open-ganonhunt"
-    expected_digest: "f58441f9a11be194a233c6afc7685d862f6a60d73ae251b3255d2f60d60b6529"
+    expected_digest: "bd752a50b0f472a4ecef3dc989f4f8b2bab255ec4d5e75a039eaf8460486ecdf"
   - settings: { mode.state: open, goal: completionist }
     seed: "0x0000000000000007"
     label: "a1-open-completionist"
-    expected_digest: "a7d9c559d0b01a8218b92d3c6ff51b002a9e7162a2510c8bc8a9bea25c47182e"
+    expected_digest: "cc54227df902cc2e90227d37fef895dc1fc21f7702ec8817bf3af17ef620782a"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, dungeon_items.big_keys: dungeon, dungeon_items.maps: dungeon, dungeon_items.compasses: dungeon }
     seed: "0x0000000000000008"
     label: "a1-open-dungeon-keys-all"
-    expected_digest: "6b3cbb6288f97a5ce656380e085a745242206f66f88d4e623fe5c37c8cd30d97"
+    expected_digest: "dde44adaa1d08c7c0d2ce8b61b42a2f73cababd40e17dcac637e4c509893a274"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
