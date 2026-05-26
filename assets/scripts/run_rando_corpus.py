@@ -63,6 +63,11 @@ def validate_entry(entry: dict, idx: int) -> list[str]:
         errors.append(f"entry {idx}: missing 'expected_digest' (SHA-256 of placement table)")
     elif not isinstance(entry["expected_digest"], str) or len(entry["expected_digest"]) != 64:
         errors.append(f"entry {idx}: 'expected_digest' must be a 64-char hex string")
+    # expected_sphere_digest is optional; when present, validate format.
+    if "expected_sphere_digest" in entry:
+        sd = entry["expected_sphere_digest"]
+        if not isinstance(sd, str) or len(sd) != 64:
+            errors.append(f"entry {idx}: 'expected_sphere_digest' must be a 64-char hex string")
     return errors
 
 
@@ -79,6 +84,7 @@ def run_activated(binary: Path, manifest: dict) -> int:
         settings = entry.get("settings", {})
         seed = str(entry.get("seed", entry.get("seed_u64", "")))
         expected = entry.get("expected_digest", "")
+        expected_sphere = entry.get("expected_sphere_digest", "")
         label = entry.get("label", f"entry-{idx}")
         settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
 
@@ -102,11 +108,17 @@ def run_activated(binary: Path, manifest: dict) -> int:
                 continue
             spoiler = json.loads(out_json.read_text(encoding="utf-8"))
             got = spoiler.get("meta", {}).get("placement_digest_hex", "")
+            got_sphere = spoiler.get("meta", {}).get("sphere_digest", "")
 
         if got != expected:
-            print(f"  FAIL [{idx}] {label}: digest mismatch")
+            print(f"  FAIL [{idx}] {label}: placement_digest mismatch")
             print(f"    expected {expected}")
             print(f"    got      {got}")
+            failures += 1
+        elif expected_sphere and got_sphere != expected_sphere:
+            print(f"  FAIL [{idx}] {label}: sphere_digest mismatch (placement OK)")
+            print(f"    expected sphere {expected_sphere}")
+            print(f"    got sphere      {got_sphere}")
             failures += 1
         else:
             print(f"  OK   [{idx}] {label}: {got[:16]}...")
