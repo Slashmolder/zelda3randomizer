@@ -447,6 +447,23 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // placement-table inventory and checks the goal-specific locations.
   spoiler.goal_completable = Goal_IsCompletable(&settings, &table);
 
+  // Per `randomizer-core / Generation rejects un-completable seeds`: refuse
+  // to write the spoiler when the goal predicate fails. CI corpus + race-mode
+  // workflows can't tolerate broken seeds. Set --allow-broken-seed to
+  // override (debug / diagnostic use only).
+  bool allow_broken_seed = false;
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--allow-broken-seed") == 0) { allow_broken_seed = true; break; }
+  }
+  if (!spoiler.goal_completable && !allow_broken_seed) {
+    fprintf(stderr,
+      "--generate-seed: goal %u is NOT completable for this seed — refusing to\n"
+      "  write spoiler. (Use --allow-broken-seed to write diagnostic spoiler anyway.)\n",
+      (unsigned)settings.goal);
+    free(entries);
+    exit(1);
+  }
+
   if (!Spoiler_WriteJson(&spoiler, out_spoiler)) {
     fprintf(stderr, "--generate-seed: failed writing JSON spoiler to %s\n", out_spoiler);
     free(entries);

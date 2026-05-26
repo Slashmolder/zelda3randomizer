@@ -61,11 +61,13 @@ locations:
 
   # Shooter Room (php:50) — no setRequirements; default TRUE.
   - id: "Palace of Darkness - Shooter Room"
+    region: PalaceOfDarkness
     can_reach: "TRUE()"
     source: "app/Region/Standard/PalaceOfDarkness.php:50"
 
   # The Arena - Ledge (php:79-81): canShootArrows.
   - id: "Palace of Darkness - The Arena - Ledge"
+    region: PalaceOfDarkness
     can_reach: "CanShootArrowsL1()"
     source: "app/Region/Standard/PalaceOfDarkness.php:79-81"
 
@@ -78,11 +80,13 @@ locations:
   # vacuous under default accessibility=items (mirrors EP Boss pattern in
   # logic.yaml).
   - id: "Palace of Darkness - Big Key Chest"
+    region: PalaceOfDarkness
     can_reach: "HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     source: "app/Region/Standard/PalaceOfDarkness.php:83-93"
 
   # The Arena - Bridge (php:95-98): has(KeyD1) OR (canShootArrows AND Hammer).
   - id: "Palace of Darkness - The Arena - Bridge"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(SmallKey_PalaceOfDarkness) OR (CanShootArrowsL1() AND HAS_ITEM(Hammer))"
     source: "app/Region/Standard/PalaceOfDarkness.php:95-98"
 
@@ -91,6 +95,7 @@ locations:
   # wildKeys=false → KeyD1,5. setFillRules forbids placing KeyD1 here (no
   # self-key); modeled below as can_place.
   - id: "Palace of Darkness - Big Chest"
+    region: PalaceOfDarkness
     can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:100-105"
@@ -99,6 +104,7 @@ locations:
   #   (Hammer && canShootArrows && Lamp) || wildKeys ? KeyD1,4 : KeyD1,3
   # wildKeys=false → KeyD1,3.
   - id: "Palace of Darkness - Compass Chest"
+    region: PalaceOfDarkness
     can_reach: "HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
     source: "app/Region/Standard/PalaceOfDarkness.php:107-109"
 

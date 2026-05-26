@@ -845,8 +845,18 @@ bool Goal_IsCompletable(const RandoSettings *settings,
   }
 
   switch (settings->goal) {
-    case kGoal_Ganon:
-      // Need Agahnim 2 (GT clear) AND Ganon reachable.
+    case kGoal_Ganon: {
+      // Need: Ganon vulnerable (≥ crystals.ganon crystals collected from
+      // REACHABLE locations) AND Agahnim 2 cleared AND Ganon reachable.
+      uint16 reachable_crystals = 0;
+      for (uint16 cid = 114; cid <= 120; cid++) {
+        reachable_crystals += count_reachable_placements_of(placements, r, cid);
+      }
+      if (reachable_crystals < settings->crystals_ganon) {
+        fprintf(stderr, "Goal_IsCompletable(ganon): %u reachable crystals, need %u\n",
+                (unsigned)reachable_crystals, (unsigned)settings->crystals_ganon);
+        return false;
+      }
       if (!Reachability_HasLocation(r, LOC_ID_Agahnim2)) {
         fprintf(stderr, "Goal_IsCompletable(ganon): Agahnim 2 unreachable\n");
         return false;
@@ -856,14 +866,26 @@ bool Goal_IsCompletable(const RandoSettings *settings,
         return false;
       }
       return true;
-    case kGoal_FastGanon:
-      // Need Ganon reachable (skips Agahnim 2 once crystals + tower entry
-      // unlock the fast-ganon shortcut).
+    }
+    case kGoal_FastGanon: {
+      // Per spec scenario "Fast Ganon gates on crystals and tower access":
+      // require crystals.ganon crystals for vulnerability AND Ganon reachable
+      // (GT entry edge implicitly requires crystals.tower).
+      uint16 reachable_crystals = 0;
+      for (uint16 cid = 114; cid <= 120; cid++) {
+        reachable_crystals += count_reachable_placements_of(placements, r, cid);
+      }
+      if (reachable_crystals < settings->crystals_ganon) {
+        fprintf(stderr, "Goal_IsCompletable(fast_ganon): %u reachable crystals, need %u\n",
+                (unsigned)reachable_crystals, (unsigned)settings->crystals_ganon);
+        return false;
+      }
       if (!Reachability_HasLocation(r, LOC_ID_Ganon)) {
         fprintf(stderr, "Goal_IsCompletable(fast_ganon): Ganon unreachable\n");
         return false;
       }
       return true;
+    }
     case kGoal_Dungeons:
       // Every dungeon's _Boss location reachable. Dungeon-boss IDs match
       // location_registry: EP=16, DP=23, TH=30, PoD=48, SP=59, SW=68, TT=77,
