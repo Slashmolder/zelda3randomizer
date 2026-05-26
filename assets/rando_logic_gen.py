@@ -1072,7 +1072,11 @@ def emit_logic_data(
     start_region_names = {
         0: "LinksHouse",            # Open
         1: "LinksHouse",            # Standard
-        2: "LinksHouse_Inverted",   # Inverted (Phase B)
+        # Inverted: Link's House is in DarkWorld_South per ALTTPR's Inverted
+        # layout (`app/Region/Inverted/DarkWorld/South.php`). For Phase A1
+        # we treat DarkWorld_South as the Inverted start region; a proper
+        # LinksHouse_Inverted region with its own edge graph is Phase A2 work.
+        2: "DarkWorld_South",
         3: "LinksHouse",            # Retro
     }
     starts = []

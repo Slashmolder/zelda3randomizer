@@ -1,6 +1,26 @@
 # Zelda3 Randomizer
 
-> **Phase A0/A1 status.** Foundation, RNG, share-string, predicate VM, codegen, and audit are landed. Logic graph (`assets/rando/logic.yaml`) is the next big content deliverable; §6 grant-site dispatch lands incrementally per `audit.md` §0.3.
+> **Phase A1 status (kGeneratorVersion=2).** Foundation, RNG, share-string,
+> predicate VM, codegen, audit, logic graph (28 regions / 28 edges / 207
+> location predicates across all 13 dungeons + 11 overworld regions in
+> Standard mode), assumed-fill placement, prize/medallion shuffles, sphere
+> computation, and goal-completability checks are landed and locally
+> verified end-to-end. All 7 Phase A goals produce winnable seeds with
+> 0 unreachable placements in Open / Standard / Retro modes when
+> `dungeon_items.small_keys=dungeon`. Inverted mode is partial (start
+> region not yet declared). §6 grant-site dispatch and the file-select /
+> settings UI land in subsequent Phase A2 work.
+
+**Known limitations** as of this status:
+- Vanilla dungeon-item mode (the default) leaves ~39 locations
+  unreachable per seed because `location_registry.yaml` lacks
+  SmallKey_<dungeon> pin sites. Workaround: pass
+  `dungeon_items.small_keys=dungeon` to the CLI.
+- Inverted world-state seeds report ~32 unreachable until
+  LinksHouse_Inverted region is declared (Phase A2 follow-on).
+- §6 dispatch is not yet wired into game code paths — playing a
+  generated seed in-game requires the file-select UI work landing
+  per task 9.x.
 
 This document covers user-facing operation of the in-binary randomizer, the
 share-string format, save behavior, audit conventions for contributors, and
