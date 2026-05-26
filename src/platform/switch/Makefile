@@ -42,13 +42,14 @@ TARGET		:=	zelda3
 BUILD		:=	bin
 SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/gl_core $(SRC_DIR)/third_party/opus-1.3.1-stripped $(SRC_DIR)/third_party/sha256
 
-# Rando codegen pre-step (tasks.md §3.5/§3.6/§6.3).
+# Rando codegen pre-step (tasks.md §3.5/§3.6/§6.3/§9.4b).
 # Regenerates src/rando/logic_data.c, src/rando/location_ids.h, src/rando/item_ids.h,
-# src/rando/chest_lookup.h from assets/rando/*.yaml + assets/chest_data.py. Run
-# BEFORE the wildcard below so logic_data.c is picked up by CFILES. The Switch
-# build is a manual gate (tasks.md §12.3b); contributors invoke
+# src/rando/chest_lookup.h, src/rando/icon_atlas.h from assets/rando/*.yaml +
+# assets/chest_data.py. Run BEFORE the wildcard below so logic_data.c is picked
+# up by CFILES. The Switch build is a manual gate (tasks.md §12.3b);
+# contributors invoke
 # `cd src/platform/switch && python ../../../assets/rando_logic_gen.py && make`.
-RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h
+RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/icon_atlas.h
 
 $(RANDO_CODEGEN_OUTPUTS): $(wildcard $(SRC_DIR)/../assets/rando/*.yaml) $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
 	@echo "Regenerating rando codegen for Switch build"

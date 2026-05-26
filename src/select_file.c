@@ -6,6 +6,7 @@
 #include "overworld.h"
 #include "messaging.h"
 #include "sprite.h"
+#include "rando/rando.h"
 #include "rando/rando_save.h"
 #include "rando/rando_share.h"
 #include "rando/rando_settings.h"
@@ -1394,41 +1395,42 @@ static void SelectFile_DrawRandoBanner(int k) {
   SelectFile_DrawRandoOamBadge(k);
 }
 
-// Place the "R" OAM badge to the LEFT of the heart row, in the slot's own
-// OAM range. The existing slot uses OAM entries [oamidx/4 .. oamidx/4 + 4]
-// for sword/shield/heart. For a rando slot we don't draw the vanilla
-// sword/shield/heart, so we hide those entries (y=0xf0 = off-screen,
-// matching the convention SelectFile_Func5_DrawOams uses for "no sword")
-// and claim entry +4 for the "R" badge.
+// §9.4b — Render the 5-icon visual hash widget in the slot's OAM lane.
 //
-// Total OAM entries used per rando slot = 5 (4 hidden + 1 badge), same as
-// vanilla. No OAM overflow — the slot's existing 5-entry budget is exactly
-// preserved. Critical per spec scenario "rando banner fits in OAM tiles
-// previously used for the vanilla name plus a small R badge with no
-// overflow".
+// The existing slot OAM lane is 5 entries: [oamidx/4 .. oamidx/4 + 4],
+// historically used for sword (2) + shield (1) + heart (2). For a rando
+// slot we replace all 5 entries with the deterministic icon strip computed
+// from SHA-256(share_string_binary)[0..4] mod kHashIconAtlasSize. NO OAM
+// overflow — exactly 5 entries used, same budget as vanilla, per spec
+// scenario "rando banner fits in OAM tiles previously used for the vanilla
+// name plus a small R badge with no overflow".
+//
+// CRITICAL: the hash input is the FULL share_string_binary (settings_hash +
+// seed_u64 + magic + checksum), NOT settings_hash. Deriving from
+// settings_hash gives every seed with the same settings identical icons —
+// caught in spec round 5. Rando_DrawHashIcons enforces this.
 static void SelectFile_DrawRandoOamBadge(int k) {
   static const uint8 kSelectFile_Draw_OamIdx[3] = {0x28, 0x3c, 0x50};
   // Note: kSelectFile_Draw_OamIdx is in BYTES; /4 yields an entry index.
   OamEnt *oam = oam_buf + kSelectFile_Draw_OamIdx[k] / 4;
   uint8 y = kSelectFile_Draw_Y[k];
 
-  // Hide vanilla sword/shield/heart entries — y=0xf0 is the standard
-  // off-screen Y per SelectFile_Func5_DrawOams's `oam[1].y = oam[0].y = 0xf0`.
-  for (int i = 0; i < 4; i++) {
-    SetOamPlain(oam + i, 0, 0xf0, 0, 0, 0);
+  const SelectFile_SlotInfo *info = &g_selectfile_slots[k];
+  // Clear the slot's bytewise_extended_oam entries before drawing — the
+  // widget doesn't touch them (it can't safely, since it's also called
+  // with stack-local buffers from selftest) but stale bits from a prior
+  // frame's vanilla sword/shield/heart draw would mis-extend the new
+  // tile X coordinates. Each slot uses 5 consecutive OAM entries.
+  int oam_idx = (int)(kSelectFile_Draw_OamIdx[k] / 4);
+  for (int i = 0; i < 5; ++i) {
+    bytewise_extended_oam[oam_idx + i] = 0;
   }
-
-  // x=0x28 puts the badge just before the share-string text. Tile choice:
-  // the OAM sprite tilesheet at misc_sprites_graphics_index=1 contains the
-  // fairy (0xa8/0xaa) and a variety of marker tiles. Tile 0x85 is the
-  // sword's "single sword" first tile (verified by kSelectFile_Draw_SwordChar
-  // = {0x85, 0xa1, 0xa1, 0xa1}). For the "R" badge we use a small numeric
-  // tile from kSelectFile_DrawDigit_Char that visually reads as "R"-ish —
-  // tile 0xad (the digit "2" small) is round-cornered and contrasts with the
-  // vanilla sword/shield/heart icons. This is a Phase A placeholder; the
-  // 5-icon visual hash widget (§9.4b) replaces this badge in the next
-  // cluster.
-  SetOamPlain(oam + 4, 0x28, y - 2, 0xad, 0x32, 0);
+  // x=0x28 places the strip in the same horizontal region the vanilla
+  // sword/shield/heart icons occupied. The widget consumes exactly 5 OAM
+  // entries via Rando_DrawHashIcons. y-2 nudges the strip to align with
+  // the slot's name-text baseline.
+  Rando_DrawHashIcons(0x28, (int)(y - 2), (struct OamEnt *)oam,
+                      info->sidecar.header.share_string);
 }
 
 static void SelectFile_DrawCopyRefusalMessage(void) {

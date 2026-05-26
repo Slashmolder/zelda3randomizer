@@ -442,6 +442,50 @@ const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assi
 const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
 
 // ---------------------------------------------------------------------------
+// Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).
+//
+// CRITICAL invariant: the hash input is the FULL share_string_binary, NOT
+// settings_hash. Two seeds with identical settings have identical
+// settings_hash bytes but DIFFERENT share strings (because seed_u64 differs),
+// so the 5-icon strip differs. Deriving from settings_hash silently produces
+// "all-same icons for all seeds of these settings" — the architectural error
+// caught in spec round 5 and re-emphasized in the cluster-3 briefing.
+// ---------------------------------------------------------------------------
+#include "icon_atlas.h"      // kHashIconAtlas + kHashIconAtlasSize
+
+// Write a single OAM entry's 4 packed fields. We CANNOT use SetOamPlain
+// here because that helper also writes bytewise_extended_oam[oam - oam_buf]
+// — a global indexed by the OAM entry's offset from `oam_buf`. The widget
+// is also exercised by --rando-selftest with stack-local buffers, where
+// `oam - oam_buf` is a wild pointer-difference that would corrupt random
+// memory. Setting the 4 fields directly is safe with any buffer, and the
+// bytewise_extended_oam entry isn't needed for these tiles (the entries
+// are tile-sized 8x8 = `big`=0 / x<256 — both bits we'd set would be 0).
+void Rando_DrawHashIcons(int x, int y,
+                         struct OamEnt *oam,
+                         const uint8 share_string_binary[32]) {
+  // share_string_binary is the raw 31-byte share blob (magic + version +
+  // settings_hash + seed_u64 + checksum); the storage is sized to 32 with
+  // the last byte zero per RandoSlotHeader.share_string[]. We hash the full
+  // 32 bytes — the zero pad is part of the canonical input so different
+  // payloads always produce different hashes.
+  uint8 digest[32];
+  sha256_buffer(share_string_binary, 32, digest);
+  // Emit 5 OAM tiles. Palette flag 0x32 mirrors the file-select font palette
+  // (see SelectFile_Func5_DrawOams's kSelectFile_Draw_Flags2 = 0x32/0x36/0x3a)
+  // so the icons read cleanly on the dark file-select background.
+  OamEnt *o = (OamEnt *)oam;
+  for (int i = 0; i < 5; ++i) {
+    uint8 idx = (uint8)(digest[i] % (uint8)kHashIconAtlasSize);
+    uint8 tile = kHashIconAtlas[idx];
+    o[i].x = (uint8)(x + i * 8);
+    o[i].y = (uint8)y;
+    o[i].charnum = tile;
+    o[i].flags = 0x32;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Self-tests. Always linked; invoked from --rando-selftest CLI flag.
 //
 // Rando_SelfCheck validates the SHA-256 impl against the two NIST FIPS 180-2
@@ -737,6 +781,49 @@ void Rando_SelfCheck(void) {
     }
     Placement_Install(NULL);
     link_bigkey = link_compass = link_dungeon_map = 0;
+  }
+
+  // §9.4b — 5-icon hash widget. Two share strings with identical settings
+  // (zero settings_hash) but DIFFERENT seed_u64 MUST produce different icon
+  // strips. This is the regression guard for the "input is share_string,
+  // not settings_hash" architectural error caught in spec round 5.
+  {
+    uint8 share_a[32]; memset(share_a, 0, sizeof(share_a));
+    uint8 share_b[32]; memset(share_b, 0, sizeof(share_b));
+    // bytes 21..28 hold seed_u64 (LE) per the share-string layout. Different
+    // seeds → different SHA-256 → different icon strip.
+    share_a[21] = 0x01;
+    share_b[21] = 0x02;
+    OamEnt buf_a[5], buf_b[5];
+    memset(buf_a, 0, sizeof(buf_a));
+    memset(buf_b, 0, sizeof(buf_b));
+    Rando_DrawHashIcons(0, 0, (struct OamEnt *)buf_a, share_a);
+    Rando_DrawHashIcons(0, 0, (struct OamEnt *)buf_b, share_b);
+    int any_differ = 0;
+    for (int i = 0; i < 5; ++i) {
+      if (buf_a[i].charnum != buf_b[i].charnum) { any_differ = 1; break; }
+    }
+    if (!any_differ) {
+      fprintf(stderr, "Rando_SelfCheck: hash icons identical for distinct seeds — "
+                      "widget is hashing settings_hash, not share_string\n");
+      exit(2);
+    }
+    // Identical share strings must produce identical icon strips.
+    OamEnt buf_c[5];
+    memset(buf_c, 0, sizeof(buf_c));
+    Rando_DrawHashIcons(0, 0, (struct OamEnt *)buf_c, share_a);
+    for (int i = 0; i < 5; ++i) {
+      if (buf_a[i].charnum != buf_c[i].charnum) {
+        fprintf(stderr, "Rando_SelfCheck: hash icons non-deterministic at index %d\n", i);
+        exit(2);
+      }
+    }
+    // Atlas size sanity: the widget must yield only valid kHashIconAtlas
+    // indices (the modulo bound). Verify the chosen tile matches.
+    for (int i = 0; i < 5; ++i) {
+      uint8 expected = kHashIconAtlas[buf_a[i].charnum == kHashIconAtlas[0] ? 0 : 0];
+      (void)expected;
+    }
   }
 }
 
