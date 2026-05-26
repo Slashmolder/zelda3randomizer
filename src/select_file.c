@@ -1297,31 +1297,39 @@ static void SelectFile_DrawRandoBanner(int k) {
 
 // Place the "R" OAM badge to the LEFT of the heart row, in the slot's own
 // OAM range. The existing slot uses OAM entries [oamidx/4 .. oamidx/4 + 4]
-// for sword/shield/heart. We use entry +5 (one beyond the heart pair), which
-// is currently unused per kSelectFile_Draw_OamIdx accounting.
+// for sword/shield/heart. For a rando slot we don't draw the vanilla
+// sword/shield/heart, so we hide those entries (y=0xf0 = off-screen,
+// matching the convention SelectFile_Func5_DrawOams uses for "no sword")
+// and claim entry +4 for the "R" badge.
+//
+// Total OAM entries used per rando slot = 5 (4 hidden + 1 badge), same as
+// vanilla. No OAM overflow — the slot's existing 5-entry budget is exactly
+// preserved. Critical per spec scenario "rando banner fits in OAM tiles
+// previously used for the vanilla name plus a small R badge with no
+// overflow".
 static void SelectFile_DrawRandoOamBadge(int k) {
   static const uint8 kSelectFile_Draw_OamIdx[3] = {0x28, 0x3c, 0x50};
-  // Reuse the slot's flag-base so the badge sits in the slot's existing
-  // sprite-priority strip; the digit-drawing OAM lane (idx/4 = 1, 4, 7)
-  // also has free entries we could use — but sticking to the slot's lane
-  // keeps the per-slot OAM footprint adjacent and easier to reason about.
   // Note: kSelectFile_Draw_OamIdx is in BYTES; /4 yields an entry index.
-  // Entries used by vanilla: base+0..base+4 (sword2, shield, heart1, heart2).
-  // We're claiming base+4 (the second heart-tile) for the "R" badge in rando
-  // mode — the original heart isn't drawn for rando slots since we don't
-  // render the vanilla sword/shield/heart for non-vanilla slots.
   OamEnt *oam = oam_buf + kSelectFile_Draw_OamIdx[k] / 4;
   uint8 y = kSelectFile_Draw_Y[k];
-  // x=0x28 puts the badge just before the share-string text. Tile 0x21 is
-  // the letter "R" in the file-select font (verified pin: kKILLFile_ChooseTarget_Tab2
-  // bytes 0x21,0x18 spell the "R" in "ERASE THIS PLAYER"). However, that
-  // tile lives in the BG tilemap region, not OAM. For OAM sprites the
-  // file-select uses misc_sprites_graphics_index=1 which contains the fairy
-  // (0xa8/0xaa) and the file-select font letters at fixed offsets. Use
-  // tile 0x29 (next slot in misc-sprites) as a distinctive marker glyph;
-  // worst case it renders as some non-vanilla character — still satisfies
-  // the spec's "distinct from vanilla slot" requirement.
-  SetOamPlain(oam + 4, 0x28, y - 2, 0x29, 0x32, 0);
+
+  // Hide vanilla sword/shield/heart entries — y=0xf0 is the standard
+  // off-screen Y per SelectFile_Func5_DrawOams's `oam[1].y = oam[0].y = 0xf0`.
+  for (int i = 0; i < 4; i++) {
+    SetOamPlain(oam + i, 0, 0xf0, 0, 0, 0);
+  }
+
+  // x=0x28 puts the badge just before the share-string text. Tile choice:
+  // the OAM sprite tilesheet at misc_sprites_graphics_index=1 contains the
+  // fairy (0xa8/0xaa) and a variety of marker tiles. Tile 0x85 is the
+  // sword's "single sword" first tile (verified by kSelectFile_Draw_SwordChar
+  // = {0x85, 0xa1, 0xa1, 0xa1}). For the "R" badge we use a small numeric
+  // tile from kSelectFile_DrawDigit_Char that visually reads as "R"-ish —
+  // tile 0xad (the digit "2" small) is round-cornered and contrasts with the
+  // vanilla sword/shield/heart icons. This is a Phase A placeholder; the
+  // 5-icon visual hash widget (§9.4b) replaces this badge in the next
+  // cluster.
+  SetOamPlain(oam + 4, 0x28, y - 2, 0xad, 0x32, 0);
 }
 
 static void SelectFile_DrawCopyRefusalMessage(void) {
@@ -1436,17 +1444,20 @@ static bool SelectFile_KindPicker_Update(void) {
     return true;
   }
 
-  // Cancel via B button (filtered_joypad bit 0x40 == B per existing code's
-  // joypad masks; checking against 0x40 alone if pressed).
-  if (filtered_joypad_H & 0x40) {
+  // Cancel via B button (H.0x80 per zelda_rtl.h kJoypadH_B). Distinct from
+  // A (which is L.0x80); we must check filtered_joypad_H directly because the
+  // packed `a` byte OR's A and B into the same bit.
+  if (filtered_joypad_H & 0x80) {
     // B = cancel — return to file-select cursor.
     sound_effect_1 = 0x3c;
     g_kind_picker_active = 0;
     return true;
   }
 
-  // A / Start press: act on selection.
-  if (a & 0x80) {
+  // A / Start press: act on selection. Checking filtered_joypad_L for A
+  // (L.0x80) OR filtered_joypad_H for Start (H.0x10) directly, since the
+  // packed `a` byte conflates A with B.
+  if ((filtered_joypad_L & 0x80) || (filtered_joypad_H & 0x10)) {
     sound_effect_1 = 0x2c;
     if (g_kind_picker_cursor == 0) {
       // Vanilla: existing new-game flow.
