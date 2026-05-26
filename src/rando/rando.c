@@ -87,6 +87,17 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
       // Bow=0x0b (tier 1) → SilverArrowUpgrade=0x29 (tier 2)
       return (uint8)((tier == 0) ? 0x0b : 0x29);
     }
+    // Multi-tier rupees: vanilla LttP receive codes per src/misc.c
+    // kMemoryLocationToGiveItemTo[52..]=0xf360=link_rupees_goal. The codes
+    // are signed-value dispatches that the existing receive handler adds
+    // to the wallet (see misc.c:723-784).
+    case ITEM_Rupee1:   return 0x35;
+    case ITEM_Rupee5:   return 0x34;
+    case ITEM_Rupee20:  return 0x36;
+    case ITEM_Rupee100: return 0x41;
+    case ITEM_Rupee300: return 0x42;
+    // Rupoor: decrements wallet. Vanilla code 0x47 per misc.c kValueToGiveItemTo[71] = -50.
+    case ITEM_Rupoor:   return 0x47;
     default:
       return 0xFF;
   }
