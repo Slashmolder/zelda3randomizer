@@ -773,7 +773,8 @@ int main(int argc, char** argv) {
     if (strcmp(argv[i], "--rando-selftest") == 0 ||
         strcmp(argv[i], "--rando-bench-logic") == 0 ||
         strcmp(argv[i], "--generate-seed") == 0 ||
-        strcmp(argv[i], "--print-assets-hash") == 0) {
+        strcmp(argv[i], "--print-assets-hash") == 0 ||
+        strncmp(argv[i], "--vanilla-ram-check=", 20) == 0) {
       g_headless_mode = 1;
       break;
     }
@@ -806,6 +807,45 @@ int main(int argc, char** argv) {
   // Check for --generate-seed BEFORE any SDL_Init. If present, run headless
   // and exit; otherwise this returns and main() continues to the GUI path.
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
+
+  // --vanilla-ram-check=<savestate-path>: init-order replay guard
+  // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,
+  // loads the chapter savestate via the replay-mode StateRecorder path
+  // (which restores g_ram from the snapshot's base_snapshot without
+  // running any frames), then prints the post-load values of the new
+  // kRam_* offsets. The script that drives this asserts each cell is
+  // zero — proof that pre-rando code paths in the savestate didn't
+  // touch the addresses we've claimed for randomizer state.
+  for (int i = 0; i < argc; ++i) {
+    if (strncmp(argv[i], "--vanilla-ram-check=", 20) == 0) {
+      const char *sav_path = argv[i] + 20;
+      // No ParseConfigFile/LoadAssets here: the savestate restore reads
+      // g_ram directly from the snapshot, not from asset tables. ZeldaInitialize
+      // sets up the dma/ppu/sram pointers LoadSnesState needs but doesn't
+      // require the asset blob. This lets the check run in CI without
+      // zelda3_assets.dat (CI doesn't extract from the ROM).
+      ZeldaInitialize();
+      if (!ZeldaLoadSavestateForRamDump(sav_path)) {
+        fprintf(stderr, "--vanilla-ram-check: unable to open savestate '%s'\n", sav_path);
+        return 2;
+      }
+      // Read the three new kRam_* offsets from g_ram. Format is keyed so
+      // the python driver can parse robustly.
+      uint32 features1 = (uint32)g_ram[kRam_Features1] |
+                         ((uint32)g_ram[kRam_Features1 + 1] << 8) |
+                         ((uint32)g_ram[kRam_Features1 + 2] << 16) |
+                         ((uint32)g_ram[kRam_Features1 + 3] << 24);
+      uint8 slot_active = g_ram[kRam_RandoSlotActive];
+      uint8 starting_inv = g_ram[kRam_RandoStartingInventoryGranted];
+      bool ok = (features1 == 0 && slot_active == 0 && starting_inv == 0);
+      fprintf(stdout,
+        "ram_check savestate=%s ok=%d "
+        "features1=0x%08x slot_active=0x%02x starting_inv=0x%02x\n",
+        sav_path, ok ? 1 : 0,
+        (unsigned)features1, (unsigned)slot_active, (unsigned)starting_inv);
+      return ok ? 0 : 1;
+    }
+  }
 
   // --print-assets-hash: load assets, dump the SHA-256, exit. Lets the user
   // capture the vanilla hash for vanilla_assets_hash.h activation.

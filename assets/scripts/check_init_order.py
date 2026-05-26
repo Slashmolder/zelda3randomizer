@@ -54,12 +54,69 @@ def discover_rando_kram_cells() -> dict[str, int]:
     return out
 
 
+def parse_ram_check_line(line: str) -> dict[str, str] | None:
+    """Parse one ``ram_check ...`` stdout line into a key/value dict.
+
+    Returns None if the line isn't a recognized ram_check line.
+    """
+    if not line.startswith("ram_check "):
+        return None
+    out: dict[str, str] = {}
+    rest = line[len("ram_check "):].strip()
+    # Tokens are space-separated key=value, but savestate paths can contain
+    # spaces ("Chapter 1 - Zelda's Rescue.sav"). The savestate= token always
+    # appears first; everything before the next "<key>=" with a known key is
+    # part of the savestate path.
+    KNOWN_KEYS = ("ok=", "features1=", "slot_active=", "starting_inv=")
+    sav_end = len(rest)
+    for k in KNOWN_KEYS:
+        idx = rest.find(" " + k)
+        if idx != -1 and idx < sav_end:
+            sav_end = idx
+    head = rest[:sav_end].strip()
+    if not head.startswith("savestate="):
+        return None
+    out["savestate"] = head[len("savestate="):]
+    for tok in rest[sav_end:].split():
+        if "=" in tok:
+            k, v = tok.split("=", 1)
+            out[k] = v
+    return out
+
+
+def run_one_chapter(binary: Path, savestate: Path) -> tuple[bool, str]:
+    """Invoke the binary's --vanilla-ram-check and parse the result.
+
+    Returns (ok, raw_line). ok=True if the binary printed ok=1 (all
+    tracked kRam_* cells were zero after replay).
+    """
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            [str(binary), f"--vanilla-ram-check={savestate}"],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        return (False, f"binary exited {exc.returncode}: {exc.output.strip()}")
+    line = out.strip().splitlines()[-1] if out.strip() else ""
+    parsed = parse_ram_check_line(line)
+    if not parsed:
+        return (False, f"unparseable output: {line!r}")
+    return (parsed.get("ok") == "1", line)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--strict",
         action="store_true",
         help="exit non-zero if the scaffold cannot yet run (CI gate sanity check)",
+    )
+    parser.add_argument(
+        "--binary",
+        default="./bin/x64-Release/zelda3.exe",
+        help="path to the built zelda3 binary",
     )
     args = parser.parse_args(argv)
 
@@ -77,17 +134,30 @@ def main(argv: list[str]) -> int:
         )
         return 1 if args.strict else 0
 
-    # Activated path: actually run the binary and check byte-identity.
-    # Implementation pending — placeholder that documents the contract:
-    print("check_init_order: rando kRam_* cells detected:")
-    for name, off in sorted(cells.items(), key=lambda kv: kv[1]):
-        print(f"  {name} @ 0x{off:04x}")
-    print(f"\n{len(chapters)} chapter savestate(s) available:")
-    for s in chapters:
-        print(f"  {s.name}")
+    binary = Path(args.binary)
+    if not binary.is_file():
+        print(f"check_init_order: binary not found at {binary}")
+        return 1 if args.strict else 0
+
+    failures = 0
+    for sav in chapters:
+        ok, line = run_one_chapter(binary, sav)
+        marker = "OK  " if ok else "FAIL"
+        print(f"  [{marker}] {line}")
+        if not ok:
+            failures += 1
+
+    if failures:
+        print(
+            f"\ncheck_init_order: {failures} chapter(s) saw non-zero rando kRam_* state.\n"
+            f"  This means existing game code is writing to addresses claimed for\n"
+            f"  randomizer state (per audit.md §0.7). Investigate the collision."
+        )
+        return 1
+
     print(
-        "\ncheck_init_order: TODO — implement replay-and-dump once binary supports it.\n"
-        "  Currently exits clean. Wire to the real binary in task 1.2."
+        f"\ncheck_init_order: {len(chapters)} chapter(s) clean — every rando kRam_*\n"
+        f"  cell retained zero through vanilla-mode replay."
     )
     return 0
 

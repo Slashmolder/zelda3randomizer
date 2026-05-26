@@ -69,6 +69,13 @@ void SaveLoadSlot(int cmd, int which);
 void ZeldaWriteSram();
 void ZeldaReadSram();
 
+// Headless helper for the §11.2 / §1.2 init-order replay guard. Loads
+// the savestate at `path` into the state recorder in replay mode (which
+// restores g_ram from the snapshot's base_snapshot without running any
+// frames). Returns true if the file was opened and loaded; false if the
+// file couldn't be opened. Used by main.c's --vanilla-ram-check CLI mode.
+bool ZeldaLoadSavestateForRamDump(const char *path);
+
 typedef void ZeldaRunFrameFunc(uint16 input, int run_what);
 typedef void ZeldaSyncAllFunc();
 

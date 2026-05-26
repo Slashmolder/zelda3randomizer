@@ -170,6 +170,14 @@ jobs:
         DISPLAY: ''  # confirm headless: no display server required
       run: ./zelda3 --rando-selftest
 
+    # Task 1.2 / 11.2 init-order replay guard (D7). Replays each
+    # saves/ref/Chapter*.sav via the binary's --vanilla-ram-check CLI mode
+    # in vanilla mode (no rando slot active) and asserts every newly-added
+    # kRam_* offset retained its init-zero value. Proves that no existing
+    # vanilla game code writes to the addresses claimed for randomizer state.
+    - name: Run init-order replay guard (1.2 / 11.2)
+      run: python assets/scripts/check_init_order.py --binary=./zelda3 --strict
+
     # Cross-platform digest determinism: the corpus manifest digests were
     # captured against a Windows build. The Linux/macOS digests MUST match
     # byte-for-byte per `randomizer-core / Deterministic cross-platform
