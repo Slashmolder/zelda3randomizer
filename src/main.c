@@ -29,6 +29,7 @@
 #include "audio.h"
 
 #include "rando/rando.h"  // g_assets_hash declaration (tasks.md §1.1a)
+#include "rando/vanilla_assets_hash.h"  // kVanillaAssetsHash + kVanillaAssetsHashKnown
 #include "rando/rando_settings.h"
 #include "rando/rando_placement.h"
 #include "rando/rando_spoiler.h"
@@ -337,11 +338,25 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   ParseConfigFile(config_file);
   LoadAssets();
 
-  // Honor --assets-must-be-vanilla: if vanilla_assets_hash.h is present and
-  // g_assets_hash differs from kVanillaAssetsHash, exit with a clear error.
-  // (Header doesn't exist yet — the actual check lands when 1.1b's pipeline
-  // produces it.) For A0 stub, just note the intent.
-  (void)assets_must_be_vanilla;
+  // Honor --assets-must-be-vanilla per randomizer-placement spec scenario
+  // "CLI --assets-must-be-vanilla refuses non-vanilla blobs".
+  if (assets_must_be_vanilla) {
+    if (!kVanillaAssetsHashKnown) {
+      fprintf(stderr,
+        "--assets-must-be-vanilla: WARNING the vanilla assets hash is not yet\n"
+        "  baked into vanilla_assets_hash.h (Phase A1 placeholder is all-zeros).\n"
+        "  Run `python assets/scripts/dump_vanilla_assets_hash.py` against a\n"
+        "  clean asset extraction and commit the result to activate this check.\n"
+        "  Proceeding with current assets.\n");
+    } else if (memcmp(g_assets_hash, kVanillaAssetsHash, 32) != 0) {
+      fprintf(stderr, "--assets-must-be-vanilla: assets are NOT vanilla. Refusing.\n  current hash:  ");
+      for (int i = 0; i < 32; i++) fprintf(stderr, "%02x", g_assets_hash[i]);
+      fprintf(stderr, "\n  expected hash: ");
+      for (int i = 0; i < 32; i++) fprintf(stderr, "%02x", kVanillaAssetsHash[i]);
+      fprintf(stderr, "\n");
+      exit(1);
+    }
+  }
 
   // Phase A0 batch form: still a stub (manifest parsing + iteration land in
   // Phase A1). Single-seed form goes through the real pipeline below.
@@ -514,11 +529,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     }
   }
 
-  // Honor --assets-must-be-vanilla: if vanilla_assets_hash.h is present and
-  // g_assets_hash differs from kVanillaAssetsHash, exit with a clear error.
-  // (Header doesn't exist yet — the actual check lands when 1.1b's pipeline
-  // produces it.)
-  (void)assets_must_be_vanilla;
+  // The --assets-must-be-vanilla check ran above, before the placer; no
+  // additional work needed here.
 
   fprintf(stderr,
     "--generate-seed: OK\n"
