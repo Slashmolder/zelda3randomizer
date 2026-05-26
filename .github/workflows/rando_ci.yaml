@@ -38,9 +38,11 @@ jobs:
     - name: check_byte_order (1.0c)
       run: python assets/scripts/check_byte_order.py
 
-    # Task 1.0g — Audit guard (report-only until audit.md §0.8e ticks; then add --strict)
-    - name: check_audit_guard (1.0g, report-only in A0)
-      run: python assets/scripts/check_audit_guard.py
+    # Task 1.0g / §6.10 — Audit guard. Now in --strict mode: every grant-site
+    # write to inventory state MUST be either dispatched via Rando_OnLocationCheck
+    # or carry an explicit `// rando-exempt: <reason>` comment.
+    - name: check_audit_guard (1.0g + 6.10, strict)
+      run: python assets/scripts/check_audit_guard.py --strict
 
     # Task 1.6b — Codegen-wiring parity across Makefile / MSVC / Switch
     - name: check_codegen_wiring (1.6b)
