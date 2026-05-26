@@ -61,6 +61,37 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
    See `randomizer-core / CLI generation mode` (in `openspec/changes/.../specs/`)
    for the full grammar and exit codes.
 
+### CLI flags
+
+| Flag | Effect |
+|---|---|
+| `--generate-seed` | Headless generation mode. Required to enter the rando pipeline; otherwise the binary boots the normal game. |
+| `--settings=k=v,...` | Comma-separated overrides for any settings axis (table below). |
+| `--seed=0x...` | uint64 seed value. Required for single-seed mode. |
+| `--out-spoiler=<path>` | JSON spoiler path. Also writes a sibling `.txt` text spoiler. |
+| `--out-share-string=<path>` | Optional file for the raw base32 share string. |
+| `--budget-seconds=<n>` | Bounds the placement retry budget (default 5). Exhausted budget accepts the best-so-far attempt. |
+| `--assets-must-be-vanilla` | Refuses non-vanilla `zelda3_assets.dat` (compares against `kVanillaAssetsHash` in `src/rando/vanilla_assets_hash.h`). |
+| `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
+| `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
+| `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, shuffles, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
+
+Examples:
+```sh
+# Print the asset hash to bake vanilla_assets_hash.h
+./zelda3 --print-assets-hash
+
+# Run the regression-corpus self-tests
+./zelda3 --rando-selftest
+
+# Generate a Completionist seed at hard pool difficulty with a 30-second budget
+./zelda3 --generate-seed \
+  --settings=mode.state=open,goal=completionist,item_pool=hard \
+  --seed=0x1234567890ABCDEF \
+  --budget-seconds=30 \
+  --out-spoiler=./spoilers/comp-hard.json
+```
+
 ## Settings reference
 
 Full per-axis documentation lives in `randomizer-core / Settings canonical
