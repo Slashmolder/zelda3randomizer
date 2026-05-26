@@ -5,6 +5,39 @@ against the OpenSpec scenarios in `openspec/changes/add-randomizer-support/specs
 
 Every claim cites a file:line. Findings sorted by severity, not by spec order.
 
+## Fix status (since audit landed)
+
+Subsequent commits have addressed the following:
+
+| Bug | Status | Resolved by |
+|---|---|---|
+| #1 prize-slot pinning | ✅ closed | c70f38e Placer: prize-shuffle pinning |
+| #2 region tags on dungeon/overworld | ✅ closed | 89f5405 Logic: add region tags to 190 logic_parts locations |
+| #3 settings struct missing 4 fields | ✅ closed | 4757e3d Settings: align canonical layout to spec |
+| #4 FastGanon ignores crystal counts | ✅ closed | 72cc7db Goal: crystals.ganon check + strict refusal |
+| #5 SetDefaults completionist→accessibility | ✅ closed | 599f8a1 Settings: completionist auto-set accessibility |
+| #6 placement_table_size byte semantics | ✅ closed | 5913318 rando_save: align on-disk format to spec |
+| #7 per-item bounded rewind | ⚠ partial | 2bf28b0 (--budget-seconds wired; per-attempt retry remains; intra-attempt rewind deferred to A2) |
+| #8 fallback_warnings hardcoded empty | ✅ closed | 599f8a1 Spoiler: surface placer fallbacks |
+| #9 text spoiler not grouped by region | ✅ closed | 599f8a1 Spoiler: group text by region |
+| #10 un-completable seed exits 0 | ✅ closed | 72cc7db Strict refusal of un-completable seeds |
+| #11 dead is_progression_item code | ✅ closed (now used; Prize_* ids pin correctly per #1) |
+| #12 Rando_TryGrantStartingInventory uncalled | ⚠ deferred (wires when §6 grant-site dispatch lands) |
+| #13 pieces_required > pieces_placed silent | ✅ closed | 599f8a1 BuildItemPool: validate Triforce-Hunt |
+| #14 HAS_ANY_COUNT vacuous selftest | ✅ closed | 2bf28b0 Logic_SelfCheck: vacuous HAS_ANY_COUNT cases |
+| #15 eval_glitch comparison | ✅ closed | 599f8a1 eval_glitch: use ctx->settings->logic |
+| #16 world_state_filter all 0 | ⚠ documented (no scenario violated; filter is opt-in) |
+
+Plus one issue discovered during audit-fix work that wasn't in the audit:
+
+| Issue | Status | Resolved by |
+|---|---|---|
+| Vanilla-mode dungeon items not in reachability inventory | ✅ closed | ec3c723 placer: vanilla-mode dungeon items pre-granted |
+
+The remaining open items concentrate on §6 grant-site dispatch
+(unchanged from the audit), the Phase A2 logic-graph work for
+Inverted/Retro world states, and the per-item rewind enhancement.
+
 ## 1. Scenario-by-scenario gap report
 
 Legend: `✓` implemented and matches | `⚠` partial (notes) | `✗` not implemented | `❓` unclear.
