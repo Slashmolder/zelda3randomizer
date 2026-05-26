@@ -174,3 +174,8 @@ jobs:
     # placement`. Any digest diff here surfaces a non-determinism bug.
     - name: Run regression corpus (cross-platform digest check)
       run: python assets/scripts/run_rando_corpus.py --binary=./zelda3
+
+    # Benchmark gate (tasks.md §3.11 / spec: "Default-settings benchmark < 2s").
+    # Runs the binary 10 times at default settings; asserts median <= 2000ms.
+    - name: Run benchmark (default-settings < 2s)
+      run: python assets/scripts/run_rando_benchmarks.py --binary=./zelda3 --samples=10
