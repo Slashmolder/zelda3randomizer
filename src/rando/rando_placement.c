@@ -321,11 +321,19 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   }
 
   // ----- Junk-pad to match location count -----
-  // ALTTPR pads with small rupees / single-bomb / single-arrow / small heart.
-  // For Phase A we pad with Rupee20 (the most-common ALTTPR junk).
+  // Per spec scenario "Triforce Hunt junk-padding": pad with a rotation of
+  // small rupee / single bomb / single arrow / small heart-equivalent so the
+  // padded items match ALTTPR's mix. The rotation is deterministic (no RNG),
+  // so the placement digest stays stable.
+  static const uint16 kJunkRotation[] = {
+    ID_Rupee20, ID_Bombs1, ID_Arrow1, ID_Rupee5,
+  };
+  const uint16 rotation_n = (uint16)(sizeof(kJunkRotation) / sizeof(kJunkRotation[0]));
   uint16 target = (uint16)kRandoLocationsCount;
+  uint16 rotation_i = 0;
   while (n < target && n < capacity) {
-    out_items[n++] = ID_Rupee20;
+    out_items[n++] = kJunkRotation[rotation_i];
+    rotation_i = (uint16)((rotation_i + 1u) % rotation_n);
   }
 
   return n;
