@@ -1271,11 +1271,26 @@ static void HandleGamepadAxisInput(int gamepad_id, int axis, int value) {
 }
 
 static bool LoadRom(const char *filename) {
+  // Side-by-side RAM-compare mode is a dev feature; failing to load the
+  // ROM here MUST NOT block the game from starting. The C reimplementation
+  // runs standalone from zelda3_assets.dat. Warn to stderr and continue
+  // without the emulated comparison if the ROM can't be read or isn't a
+  // valid SNES image.
   size_t length = 0;
   uint8 *file = ReadWholeFile(filename, &length);
-  if(!file) Die("Failed to read file");
+  if (!file) {
+    fprintf(stderr, "Side-by-side ROM '%s' unreadable; continuing without\n"
+                    "RAM-compare mode. The C reimplementation runs from\n"
+                    "zelda3_assets.dat.\n", filename);
+    return false;
+  }
   bool result = EmuInitialize(file, length);
   free(file);
+  if (!result) {
+    fprintf(stderr, "Side-by-side ROM '%s' failed EmuInitialize (not a\n"
+                    "valid SNES image?); continuing without RAM-compare.\n",
+                    filename);
+  }
   return result;
 }
 
@@ -1371,12 +1386,16 @@ static void LoadAssets() {
 
 // Go some steps up and find zelda3.ini
 static void SwitchDirectory() {
+  // Walk up the cwd looking for zelda3.ini so the game finds its assets
+  // when the user launches from a build subdirectory (e.g., bin/x64-Release/
+  // via a double-click). Walking 6 levels covers deeper build layouts
+  // (e.g., bin/x64-Release/ + cmake-style out-of-source trees).
   char buf[4096];
   if (!getcwd(buf, sizeof(buf) - 32))
     return;
   size_t pos = strlen(buf);
 
-  for (int step = 0; pos != 0 && step < 3; step++) {
+  for (int step = 0; pos != 0 && step < 6; step++) {
     memcpy(buf + pos, "/zelda3.ini", 12);
     FILE *f = fopen(buf, "rb");
     if (f) {
