@@ -1151,6 +1151,40 @@ def emit_logic_data(
     out.append("  return \"(unknown)\";")
     out.append("}")
     out.append("")
+
+    # Item registry ID → vanilla Link_ReceiveItem dispatch code (LttP item code).
+    # 0xFF = no vanilla dispatch (progressive items, dungeon items, prize items,
+    # virtual items). Indexed by registry item_id.
+    if items:
+        max_item_id = max(i.id for i in items.values())
+        # Build vanilla code map.
+        dispatch_codes = [0xFF] * (max_item_id + 1)
+        for it in items.values():
+            d = it.dispatch
+            if isinstance(d, str) and d.startswith("vanilla:"):
+                try:
+                    code = int(d[len("vanilla:"):], 0)
+                    if 0 <= code <= 0xFF:
+                        dispatch_codes[it.id] = code
+                except ValueError:
+                    pass
+        out.append("// Registry item_id → vanilla Link_ReceiveItem dispatch code (0xFF = no")
+        out.append("// vanilla path — progressive/dungeon/prize/virtual items). Used by §6")
+        out.append("// grant-site dispatch wrappers to translate from rando placement ids")
+        out.append("// to the LttP receive-item codes that the existing game code expects.")
+        out.append(f"static const uint8 kRandoItemVanillaDispatch[{max_item_id + 1}] = {{")
+        for i in range(0, len(dispatch_codes), 16):
+            chunk = dispatch_codes[i:i + 16]
+            out.append("  " + ", ".join(f"0x{c:02x}" for c in chunk) + ",")
+        out.append("};")
+        out.append(f"static const uint16 kRandoItemVanillaDispatchCount = {max_item_id + 1};")
+        out.append("")
+        out.append("uint8 Rando_VanillaItemForRegistryId(uint16 registry_item_id) {")
+        out.append("  if (registry_item_id >= kRandoItemVanillaDispatchCount) return 0xFF;")
+        out.append("  return kRandoItemVanillaDispatch[registry_item_id];")
+        out.append("}")
+        out.append("")
+
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 

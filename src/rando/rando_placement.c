@@ -900,6 +900,13 @@ static void build_final_inventory(const RandoPlacementTable *t, RandoCounts *out
 // pre-grant block in place_assumed_fill_attempt; called by both
 // Goal_IsCompletable and Logic_ComputeSpheres so reachability stays
 // consistent with what the placer assumed.
+//
+// Audit N3: maps/compasses are pre-granted here in Vanilla mode but in
+// Dungeon/Wild mode they go through the pool's junk[] path (not the
+// progression[] inventory-assumption). Today no predicate consults map or
+// compass IDs, so the asymmetry is harmless. If a future predicate gates
+// on a map/compass, classify those IDs in is_progression_item so the
+// assumed-fill inventory model stays consistent across modes.
 static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCounts *out) {
   if (s == NULL || out == NULL) return;
   if (s->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {

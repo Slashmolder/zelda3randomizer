@@ -199,6 +199,17 @@ extern const uint32 kRandoPredicateStreamSize;
 const char *Rando_GetRegionName(uint16 region_id);
 const char *Rando_GetLocationName(uint16 location_id);
 
+// Translate a rando registry item_id to the LttP Link_ReceiveItem dispatch
+// code. Used by §6 grant-site dispatch wrappers (rando dispatches via
+// Rando_OnLocationCheck which returns a registry id; the existing
+// Link_ReceiveItem path expects the LttP receive-item code byte).
+//
+// Returns 0xFF when no vanilla dispatch exists (progressive items, dungeon
+// items, prize items, virtual items). Callers SHOULD fall back to the
+// vanilla item that this grant site would have emitted; the rando subsystem
+// will eventually grow per-item-class handlers (§6.2) for these cases.
+uint8 Rando_VanillaItemForRegistryId(uint16 registry_item_id);
+
 // Start region per world_state. Indexed by WorldState enum (Open=0,
 // Standard=1, Inverted=2, Retro=3). Value is a region id (index into
 // kRandoRegions) — the reachability fixed-point seeds from this region.

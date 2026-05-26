@@ -45,6 +45,23 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   return Placement_Lookup(location_id, vanilla_item_id);
 }
 
+uint8 Rando_DispatchVanillaGrant(uint16 location_id,
+                                 uint16 vanilla_registry_id,
+                                 uint8 vanilla_lttp_code) {
+  uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
+  if (placed == vanilla_registry_id) return vanilla_lttp_code;
+  uint8 lttp = Rando_VanillaItemForRegistryId(placed);
+  if (lttp == 0xFF) {
+    // Placed item has no vanilla LttP dispatch path (progressive / dungeon
+    // item / prize / virtual). §6.2 introduces per-class receive helpers
+    // for these. Until then: fall back to the vanilla LttP code so the
+    // game keeps running with the vanilla grant. This is detectable in
+    // the spoiler (placement says X, in-game you got Y).
+    return vanilla_lttp_code;
+  }
+  return lttp;
+}
+
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's cached
 // reachability. Phase A0 stub: increment the counter. The tracker (task 10.2)

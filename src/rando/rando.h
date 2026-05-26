@@ -50,6 +50,33 @@ extern uint8 g_assets_hash[32];
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id);
 
 // ---------------------------------------------------------------------------
+// Rando_DispatchVanillaGrant — convenience for §6 grant-site wrappers that
+// route through the existing Link_ReceiveItem(uint8 lttp_code, ...) path.
+//
+// At every grant site that grants a vanilla LttP item code, wrap the call:
+//
+//     uint8 lttp_code = 0x16;  // BottleEmpty
+//     if (enhanced_features1 & kFeatures1_RandomizerActive) {
+//       lttp_code = Rando_DispatchVanillaGrant(LOC_<X>, ITEM_<vanilla>, lttp_code);
+//     }
+//     Link_ReceiveItem(lttp_code, 0);
+//
+// `vanilla_registry_id` is the rando registry id of the vanilla item this
+// site would have granted (looked up via item_ids.h's ITEM_<Name>).
+// `vanilla_lttp_code` is the LttP receive-item code the site would have
+// passed to Link_ReceiveItem in vanilla play (e.g. 0x16 for a bottle).
+//
+// Returns the LttP code to actually grant. If the placed item has no
+// vanilla LttP dispatch (progressive / dungeon-item / prize / virtual),
+// returns `vanilla_lttp_code` unchanged — those item classes need
+// per-class handlers (§6.2 work) that the universal dispatcher cannot
+// emit through the existing receive-item path.
+// ---------------------------------------------------------------------------
+uint8 Rando_DispatchVanillaGrant(uint16 location_id,
+                                 uint16 vanilla_registry_id,
+                                 uint8 vanilla_lttp_code);
+
+// ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized
 // reachability cache when a story-progress event flag is written
 // (tasks.md §0.4a). Called from every reachability-affecting write site

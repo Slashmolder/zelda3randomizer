@@ -8,6 +8,10 @@
 #include "dungeon.h"
 #include "player.h"
 #include "misc.h"
+#include "features.h"
+#include "rando/rando.h"
+#include "rando/item_ids.h"
+#include "rando/location_ids.h"
 
 #define byte_7FFE01 (*(uint8*)(g_ram+0x1FE01))
 static const int8 kSpriteKeese_Tab2[16] = {0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8};
@@ -6192,7 +6196,13 @@ void Sprite_BottleVendor(int k) {  // 85ea79
     break;
   case 2:  // giving
     item_receipt_method = 0;
-    Link_ReceiveItem(0x16, 0);
+    {
+      uint8 lttp_code = 0x16;  // BottleEmpty (vanilla Bottle Merchant grant)
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Bottle_Merchant, ITEM_BottleEmpty, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sram_progress_indicator_3 |= 2;
     link_rupees_goal -= 100;
     sprite_ai_state[k] = 0;
@@ -6384,7 +6394,13 @@ void Sprite_E7_Mushroom(int k) {  // 85ee78
   if (Sprite_CheckDamageToLink_same_layer(k)) {
     sprite_state[k] = 0;
     item_receipt_method = 0;
-    Link_ReceiveItem(0x29, 0);
+    {
+      uint8 lttp_code = 0x29;  // Mushroom
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Mushroom, ITEM_Mushroom, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
   } else if ((frame_counter & 0x1f) == 0) {
     sprite_oam_flags[k] ^= 0x40;
   }
@@ -6543,7 +6559,13 @@ void Sprite_Sahasrahla(int k) {  // 85f14d
     break;
   case 2:  // grant boots
     item_receipt_method = 0;
-    Link_ReceiveItem(0x4b, 0);
+    {
+      uint8 lttp_code = 0x4b;  // PegasusBoots
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Sahasrahla, ITEM_Boots, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sprite_ai_state[k] = 3;
     savegame_map_icons_indicator = 3;
     break;
@@ -7050,7 +7072,13 @@ void Sprite_BookOfMudora(int k) {  // 85fc9e
   case 3:  // give to player
     Link_CancelDash();
     item_receipt_method = 0;
-    Link_ReceiveItem(0x1d, 0);
+    {
+      uint8 lttp_code = 0x1d;  // BookOfMudora
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        lttp_code = Rando_DispatchVanillaGrant(LOC_Library, ITEM_BookOfMudora, lttp_code);
+      }
+      Link_ReceiveItem(lttp_code, 0);
+    }
     sprite_state[k] = 0;
     break;
   }
