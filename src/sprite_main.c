@@ -1268,6 +1268,11 @@ void Sprite_WishPond3(int k) {
     PaletteFilter_RestoreSP5F();
     Palette_RevertTranslucencySwap();
     item_receipt_method = 2;
+    // rando-exempt: state-shuffle — Wishing Pond's grant is determined by
+    // the pond's internal state (sprite_graphics[k] holds the rotation
+    // pick: bomb/arrow/sword/bow/heart upgrade). ALTTPR treats wishing
+    // ponds as not-a-placement-location (per audit.md §0.3.6 resolved
+    // wishing-pond classification); the upgrade rotation is its own logic.
     Link_ReceiveItem(sprite_graphics[k], 0);
     sprite_ai_state[k] = 10;
     break;
