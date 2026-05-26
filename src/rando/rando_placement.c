@@ -781,6 +781,75 @@ bool Goal_IsCompletable(const RandoSettings *settings,
 }
 
 // ---------------------------------------------------------------------------
+// Sphere computation (randomizer-core / Sphere semantics).
+//
+// Walks the placement table by sphere:
+//   Sphere 0: starting inventory only.
+//   Sphere N+1: locations newly reachable under inventory accumulated from
+//               spheres 0..N (items from those placements).
+//
+// On success: every placement gets an assigned sphere. On failure: any
+// unreachable placement keeps sphere_index = kSphereIndexUnreachable.
+// ---------------------------------------------------------------------------
+bool Logic_ComputeSpheres(const RandoSettings *settings,
+                          const RandoPlacementTable *placements,
+                          RandoSpheres *out) {
+  if (settings == NULL || placements == NULL || out == NULL) return false;
+  memset(out, 0, sizeof(*out));
+  for (uint16 i = 0; i < (uint16)(sizeof(out->sphere_index_by_placement) / sizeof(out->sphere_index_by_placement[0])); i++) {
+    out->sphere_index_by_placement[i] = kSphereIndexUnreachable;
+  }
+
+  // Build the running inventory: starts as defaults (StartingHeart + world-
+  // state pre-grants) and accumulates items from each completed sphere.
+  RandoCounts counts;
+  memset(&counts, 0, sizeof(counts));
+  counts.by_item_id[121] = 3;  // StartingHeart
+  if (settings->world_state != kWorldState_Standard) {
+    counts.by_item_id[122] = 1;  // RescuedZelda pre-grant
+  }
+
+  uint16 remaining = placements->count;
+  uint8 sphere = 0;
+  while (remaining > 0 && sphere < kSphereMaxCount) {
+    const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
+    uint16 added_this_sphere = 0;
+    for (uint16 i = 0; i < placements->count; i++) {
+      if (out->sphere_index_by_placement[i] != kSphereIndexUnreachable) continue;
+      uint16 loc_id = placements->entries[i].location_id;
+      if (r != NULL && Reachability_HasLocation(r, loc_id)) {
+        out->sphere_index_by_placement[i] = sphere;
+        added_this_sphere++;
+      }
+    }
+    if (added_this_sphere == 0) {
+      // Fixed point — remaining placements are unreachable.
+      break;
+    }
+    // Accumulate items from this sphere into the running inventory.
+    for (uint16 i = 0; i < placements->count; i++) {
+      if (out->sphere_index_by_placement[i] != sphere) continue;
+      uint16 item = placements->entries[i].item_id;
+      if (item < 256 && counts.by_item_id[item] < 0xFFFF) {
+        counts.by_item_id[item]++;
+      }
+    }
+    out->max_sphere = sphere;
+    remaining -= added_this_sphere;
+    sphere++;
+  }
+
+  // Count unreachable placements.
+  out->unreachable_count = 0;
+  for (uint16 i = 0; i < placements->count; i++) {
+    if (out->sphere_index_by_placement[i] == kSphereIndexUnreachable) {
+      out->unreachable_count++;
+    }
+  }
+  return out->unreachable_count == 0;
+}
+
+// ---------------------------------------------------------------------------
 // Starting-inventory injection (tasks.md §4.2).
 //
 // Phase A1 implementation: world-state-aware starting inventory.

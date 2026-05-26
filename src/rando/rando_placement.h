@@ -85,6 +85,35 @@ bool Goal_IsCompletable(const RandoSettings *settings,
                         const RandoPlacementTable *placements);
 
 // ---------------------------------------------------------------------------
+// Sphere computation (tasks.md §5 / randomizer-core / Sphere semantics).
+//
+// Sphere 0 = locations reachable with the starting inventory alone.
+// Sphere N+1 = locations newly reachable after collecting every item in
+// spheres 0..N. The fixed-point terminates when no new sphere can be added.
+//
+// Locations whose placed items never become reachable get sphere_index =
+// kSphereIndexUnreachable. The presence of any such location is a strong
+// signal that the placement is broken (or the logic graph is incomplete).
+// ---------------------------------------------------------------------------
+#define kSphereIndexUnreachable 0xFF
+#define kSphereMaxCount         32   // hard cap; logical depth is typically < 20
+
+typedef struct RandoSpheres {
+  // For each entry index in the placement table: which sphere it belongs to.
+  // Indexed by placement-table index (0..placements->count-1).
+  uint8 sphere_index_by_placement[512];
+  uint8 max_sphere;                  // highest sphere reached (inclusive); 0 if no progress
+  uint16 unreachable_count;          // count of placements with sphere_index_by_placement == 0xFF
+} RandoSpheres;
+
+// Compute sphere assignment for every placement. Returns true if every
+// placement is assigned a sphere (placement is fully reachable); false if
+// any placement is unreachable.
+bool Logic_ComputeSpheres(const RandoSettings *settings,
+                          const RandoPlacementTable *placements,
+                          RandoSpheres *out);
+
+// ---------------------------------------------------------------------------
 // Starting-inventory injection (tasks.md §4.2).
 //
 // Grants the per-world-state starting items exactly once per slot. The

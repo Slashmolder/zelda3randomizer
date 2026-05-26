@@ -15,7 +15,8 @@ typedef struct RandoSpoiler {
   uint32 generator_version;
   const RandoSettings *settings;
   const RandoPlacementTable *placements;
-  // sphere_data, fallback_warnings populated by the spoiler generator
+  const RandoSpheres *spheres;       // optional; NULL omits sphere_data
+  // fallback_warnings populated by the spoiler generator
   uint32 generation_wall_clock_ms;
   bool goal_completable;
 } RandoSpoiler;

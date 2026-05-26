@@ -130,10 +130,45 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "  ],\n");
 
   // -----------------------------------------------------------------------
-  // sphere_data — Phase A0 empty array. Phase A1 fills in once sphere
-  // computation lands (per randomizer-core / Sphere semantics).
+  // sphere_data — emitted per `randomizer-core / Sphere semantics` when a
+  // sphere table is provided. Format: array of arrays; each inner array
+  // holds {location, item} for that sphere.
   // -----------------------------------------------------------------------
-  fprintf(f, "  \"sphere_data\": [],\n");
+  fprintf(f, "  \"sphere_data\": [");
+  if (s->spheres != NULL && s->placements != NULL && s->placements->count > 0) {
+    fprintf(f, "\n");
+    uint8 max_sphere = s->spheres->max_sphere;
+    for (uint8 sp = 0; sp <= max_sphere; sp++) {
+      fprintf(f, "    [");
+      bool first = true;
+      for (uint16 i = 0; i < s->placements->count; i++) {
+        if (s->spheres->sphere_index_by_placement[i] != sp) continue;
+        if (!first) fprintf(f, ", ");
+        fprintf(f, "{\"location\": %u, \"item\": %u}",
+                s->placements->entries[i].location_id,
+                s->placements->entries[i].item_id);
+        first = false;
+      }
+      fprintf(f, "]%s\n", (sp < max_sphere) ? "," : "");
+    }
+    fprintf(f, "  ");
+  }
+  fprintf(f, "],\n");
+  // unreachable_placements: placements whose location never became reachable
+  // — emitted alongside sphere_data so tooling can detect broken seeds.
+  fprintf(f, "  \"unreachable_placements\": [");
+  if (s->spheres != NULL && s->placements != NULL) {
+    bool first = true;
+    for (uint16 i = 0; i < s->placements->count; i++) {
+      if (s->spheres->sphere_index_by_placement[i] != 0xFF) continue;
+      if (!first) fprintf(f, ", ");
+      fprintf(f, "{\"location\": %u, \"item\": %u}",
+              s->placements->entries[i].location_id,
+              s->placements->entries[i].item_id);
+      first = false;
+    }
+  }
+  fprintf(f, "],\n");
   fprintf(f, "  \"playthrough\": [],\n");
   fprintf(f, "  \"regions\": []\n");
 

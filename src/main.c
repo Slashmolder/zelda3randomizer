@@ -426,6 +426,14 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     exit(1);
   }
 
+  // Compute spheres for sphere_data emission.
+  RandoSpheres spheres;
+  bool spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
+  if (!spheres_ok) {
+    fprintf(stderr, "--generate-seed: %u placements unreachable across %u spheres\n",
+            (unsigned)spheres.unreachable_count, (unsigned)(spheres.max_sphere + 1));
+  }
+
   // Build the spoiler and write it.
   RandoSpoiler spoiler;
   memset(&spoiler, 0, sizeof(spoiler));
@@ -433,6 +441,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
   spoiler.placements = &table;
+  spoiler.spheres = &spheres;
   spoiler.generation_wall_clock_ms = 0;  // Phase A0 stub: no timing
   // Goal completability — runs Logic_ComputeReachability against the full
   // placement-table inventory and checks the goal-specific locations.
