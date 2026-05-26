@@ -1407,6 +1407,10 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     goto after_getkey;
   case 13:
     item_receipt_method = 0;
+    // rando-exempt: drop-pool (Phase B) — big key from killed-sprite drop.
+    // Same rationale as the SmallKey drop case above; ALTTPR's drop pool
+    // shuffle is Phase B work. Vanilla LttP grants the current-dungeon
+    // BigKey via Link_ReceiveItem(0x32, 0).
     Link_ReceiveItem(0x32, 0);
   after_getkey:
     sprite_N[k] = sprite_subtype[k];
