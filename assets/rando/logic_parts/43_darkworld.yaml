@@ -1,0 +1,320 @@
+# 43_darkworld.yaml — All Dark World overworld regions consolidated
+#
+# Mechanically translated from ALTTPR PHP closures at:
+#   - `../alttp_vt_randomizer/app/Region/Standard/DarkWorld/Mire.php`
+#   - `../alttp_vt_randomizer/app/Region/Standard/DarkWorld/NorthEast.php`
+#   - `../alttp_vt_randomizer/app/Region/Standard/DarkWorld/NorthWest.php`
+#   - `../alttp_vt_randomizer/app/Region/Standard/DarkWorld/South.php`
+#   - `../alttp_vt_randomizer/app/Region/Standard/DarkWorld/DeathMountain/West.php`
+#   - `../alttp_vt_randomizer/app/Region/Standard/DarkWorld/DeathMountain/East.php`
+# (MIT, verified per CLAUDE.md "Claim-grounding discipline").
+#
+# Phase A translation discipline (audit.md §0.10.2):
+#   - All glitch/trick branches (canBootsClip, canOneFrameClipOW,
+#     canSuperSpeed, canMirrorClip, canMirrorWrap, canFakeFlipper, canOWYBA,
+#     canBunnyRevive, canBunnySurf, canSuperBunny, canWaterWalk) drop.
+#   - swordless-mode branch drops.
+#   - `itemPlacement === 'basic'` is pinned in Phase A → `!== 'basic'`
+#     branches drop.
+#   - `region.swordsInPool` defaults true (Phase A pins true) so the
+#     Pyramid Fairy Left/Right slots exist.
+#   - `region.requireBetterBow` / `region.requireBetterSword` default false.
+#   - Goal-specific guards on the Ganon location use Phase A goal=fast_ganon
+#     which means DefeatAgahnim2 prerequisite drops (`in_array(goal,
+#     ['fast_ganon','ganonhunt']) → true`).
+#   - PHP `Crystal5` / `Crystal6` (the virtual items granted on clearing
+#     the dungeons holding those prizes) → `OP_HAS_PRIZE(Prize_Crystal5)` /
+#     `OP_HAS_PRIZE(Prize_Crystal6)`.
+#   - PHP `PendantOfCourage/Wisdom/Power` →
+#     `OP_HAS_PRIZE(Prize_GreenPendant/Prize_BluePendant/Prize_RedPendant)`.
+#   - PHP `PegasusBoots` → `Boots`. PHP `Bottle` → `HasABottle()`.
+#   - The dark-world "bunny check" `(MoonPearl OR canOWYBA+bottle OR
+#     canBunnyRevive)` collapses to `HAS_ITEM(MoonPearl)` in Phase A.
+
+format_version: 1
+
+regions:
+  - id: DarkWorld_Mire
+    name: "Dark World - Mire"
+    source: "app/Region/Standard/DarkWorld/Mire.php:14-100"
+
+  - id: DarkWorld_NorthEast
+    name: "Dark World - North East"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:14-238"
+
+  - id: DarkWorld_NorthWest
+    name: "Dark World - North West"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:14-167"
+
+  - id: DarkWorld_South
+    name: "Dark World - South"
+    source: "app/Region/Standard/DarkWorld/South.php:14-160"
+
+  - id: DarkWorld_DeathMountain_West
+    name: "Dark World - Death Mountain West"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/West.php:14-75"
+
+  - id: DarkWorld_DeathMountain_East
+    name: "Dark World - Death Mountain East"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:14-115"
+
+edges:
+  # ----- DarkWorld_Mire entry (Mire.php:86-96) --------------------------------
+  # Phase A surviving branches: canLiftDarkRocks AND canFly (flute), OR
+  # mirror-wrap+south-DW (drops). The only no-glitches path is the heavy
+  # gloves + flute fly to mire flute spot.
+  - from: LightWorld_NorthEast
+    to: DarkWorld_Mire
+    predicate: "CanLiftDarkRocks() AND CanFly(world)"
+    source: "app/Region/Standard/DarkWorld/Mire.php:86-96 (can_enter)"
+
+  # ----- DarkWorld_NorthEast entry (NorthEast.php:156-184) --------------------
+  # Phase A surviving branches collapse aggressively. Drop everything that
+  # uses canBootsClip / canMirrorClip / canMirrorWrap / canBunnyRevive /
+  # canSuperSpeed / canFakeFlipper / canOWYBA / canBunnySurf. What survives:
+  #   * DefeatAgahnim (post-Aga warp to Pyramid)
+  #   * Hammer + canLiftRocks + MoonPearl (light-world hammer-bridge from
+  #     east light-world, mirror to dark)
+  #   * canLiftDarkRocks + MoonPearl + (Hammer OR Flippers)
+  - from: LightWorld_NorthEast
+    to: DarkWorld_NorthEast
+    predicate: "HAS_ITEM(DefeatAgahnim) OR (HAS_ITEM(Hammer) AND CanLiftRocks() AND HAS_ITEM(MoonPearl)) OR (CanLiftDarkRocks() AND HAS_ITEM(MoonPearl) AND (HAS_ITEM(Hammer) OR HAS_ITEM(Flippers)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:156-184 (can_enter)"
+
+  # ----- DarkWorld_NorthWest entry (NorthWest.php:143-164) --------------------
+  # Surviving branches: MoonPearl AND (
+  #   (DarkWorld_NorthEast reachable AND (Hookshot AND (canLiftRocks OR
+  #     Hammer OR Flippers))) OR
+  #   (Hammer AND canLiftRocks) OR
+  #   canLiftDarkRocks
+  # )
+  - from: LightWorld_NorthEast
+    to: DarkWorld_NorthWest
+    predicate: "HAS_ITEM(MoonPearl) AND ((OP_REGION_REACHABLE(DarkWorld_NorthEast) AND HAS_ITEM(Hookshot) AND (CanLiftRocks() OR HAS_ITEM(Hammer) OR HAS_ITEM(Flippers))) OR (HAS_ITEM(Hammer) AND CanLiftRocks()) OR CanLiftDarkRocks())"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:143-164 (can_enter)"
+
+  # ----- DarkWorld_South entry (South.php:147-156) ----------------------------
+  # Surviving branches: MoonPearl AND DarkWorld_NorthEast-reachable AND
+  # Hammer, OR DarkWorld_NorthWest reachable (no extra requirements once
+  # NW is reached - the south is hammer-bridge-adjacent on the dark side).
+  - from: LightWorld_NorthEast
+    to: DarkWorld_South
+    predicate: "(HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthEast) AND HAS_ITEM(Hammer)) OR OP_REGION_REACHABLE(DarkWorld_NorthWest)"
+    source: "app/Region/Standard/DarkWorld/South.php:147-156 (can_enter)"
+
+  # ----- DarkWorld_DeathMountain_West entry (West.php:68-71) ------------------
+  # Surviving branch: RescueZelda AND West_Death_Mountain reachable.
+  # The light-world DM entry edge already gates RescueZelda.
+  - from: LightWorld_DeathMountain_West
+    to: DarkWorld_DeathMountain_West
+    predicate: "TRUE()"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/West.php:68-71 (can_enter)"
+
+  # ----- DarkWorld_DeathMountain_East entry (East.php:100-111) ----------------
+  # Surviving branches: canLiftDarkRocks AND East_Death_Mountain reachable
+  # (mirror-trick branches drop).
+  - from: LightWorld_DeathMountain_East
+    to: DarkWorld_DeathMountain_East
+    predicate: "CanLiftDarkRocks()"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:100-111 (can_enter)"
+
+locations:
+  # ===========================================================================
+  # Dark World — Mire (Mire.php:14-100)
+  # ===========================================================================
+
+  # `Mire Shed - Left` (Mire.php:66-74): MoonPearl (Phase A — all OWYBA
+  # /bottle/canSuperBunny/mirror-bunny branches drop).
+  - id: "Mire Shed - Left"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/Mire.php:66-74"
+
+  # `Mire Shed - Right` (Mire.php:76-84): same as left.
+  - id: "Mire Shed - Right"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/Mire.php:76-84"
+
+  # ===========================================================================
+  # Dark World — North East (NorthEast.php:14-238)
+  # ===========================================================================
+
+  # `Catfish` (NorthEast.php:95-101): MoonPearl AND canLiftRocks (other
+  # branches drop in Phase A).
+  - id: "Catfish"
+    can_reach: "HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:95-101"
+
+  # `Pyramid` (php:33) — no setRequirements; default TRUE (reachability
+  # gated by region entry).
+  - id: "Pyramid"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:33"
+
+  # `Pyramid Fairy - Sword` (php:103-114): hasSword AND
+  #   ((Crystal5 AND Crystal6 AND south-DW reachable AND
+  #     ((MoonPearl AND Hammer) OR (OWYBA+bottle dropped) OR
+  #      (MagicMirror AND DefeatAgahnim))))
+  # mirror-clip branches drop.
+  - id: "Pyramid Fairy - Sword"
+    can_reach: "HasSword(1) AND OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:103-114"
+
+  # `Pyramid Fairy - Bow` (php:116-127): canShootArrows AND
+  # (same Crystal/DW gate as Sword).
+  - id: "Pyramid Fairy - Bow"
+    can_reach: "CanShootArrowsL1() AND OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:116-127"
+
+  # `Pyramid Fairy - Left` (php:131-141): Crystal gate only (no weapon
+  # requirement). Same DW/Crystal predicate as the Sword/Bow chests.
+  - id: "Pyramid Fairy - Left"
+    can_reach: "OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:131-141"
+
+  # `Pyramid Fairy - Right` (php:143-153): same as Left.
+  - id: "Pyramid Fairy - Right"
+    can_reach: "OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:143-153"
+
+  # `Ganon` (NorthEast.php:186-234): the prize-event for clearing the game.
+  # Phase A goal=fast_ganon: the dungeons/ganonhunt/crystals guards drop
+  # (fast_ganon needs no DefeatAgahnim2 nor crystals.ganon count).
+  # Surviving body: MoonPearl AND
+  #   ((swordless+Hammer+Lamp branch dropped) OR
+  #    (hasSword(2) AND (Lamp OR (FireRod AND canExtendMagic(world, 3)))) OR
+  #    (hasSword(3) AND (Lamp OR (FireRod AND canExtendMagic(world, 2)))))
+  # Phase A inline: we use the hasSword(2)+Lamp disjunct as the minimum;
+  # extended-magic+FireRod is a Phase A authoring shorthand using
+  # CanExtendMagic(world, 1) (the default 2-bar form).
+  - id: "Ganon"
+    can_reach: "HAS_ITEM(MoonPearl) AND HasSword2() AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:186-234"
+
+  # ===========================================================================
+  # Dark World — North West (NorthWest.php:14-167)
+  # ===========================================================================
+
+  # `Brewery` (NorthWest.php:78-82): canBombThings AND MoonPearl.
+  - id: "Brewery"
+    can_reach: "CanBombThings() AND HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:78-82"
+
+  # `C-Shaped House` (NorthWest.php:84-88): MoonPearl.
+  - id: "C-Shaped House"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:84-88"
+
+  # `Chest Game` (NorthWest.php:90-94): MoonPearl.
+  - id: "Chest Game"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:90-94"
+
+  # `Hammer Pegs` (NorthWest.php:96-106): Hammer AND MoonPearl AND
+  # canLiftDarkRocks. Mirror-wrap and Flippers/glitch branches drop.
+  - id: "Hammer Pegs"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks()"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:96-106"
+
+  # `Bumper Cave` (NorthWest.php:108-116): MoonPearl AND
+  #   ((itemPlacement!=='basic' || Hookshot) → Hookshot in Phase A) AND
+  #   canLiftRocks AND Cape.
+  - id: "Bumper Cave"
+    can_reach: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape)"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:108-116"
+
+  # `Blacksmith` (NorthWest.php:118-128): (itemPlacement!=='basic' ||
+  # MagicMirror) → MagicMirror in Phase A AND MoonPearl AND canLiftDarkRocks.
+  - id: "Blacksmith"
+    can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks()"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:118-128"
+
+  # `Purple Chest` (NorthWest.php:130-141): Blacksmith reachable AND
+  # MoonPearl AND canLiftDarkRocks. Mirror-wrap and Flippers/glitch
+  # branches drop.
+  - id: "Purple Chest"
+    can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks()"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:130-141"
+
+  # ===========================================================================
+  # Dark World — South (South.php:14-160)
+  # ===========================================================================
+
+  # `Hype Cave - Top` (South.php:65-69): MoonPearl.
+  - id: "Hype Cave - Top"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:65-69"
+
+  - id: "Hype Cave - Middle Right"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:71-75"
+
+  - id: "Hype Cave - Middle Left"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:77-81"
+
+  - id: "Hype Cave - Bottom"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:83-87"
+
+  - id: "Hype Cave - NPC"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:89-93"
+
+  # `Stumpy` (South.php:95-100): MoonPearl OR (MagicMirror + canMirrorWrap).
+  # canMirrorWrap drops in Phase A; only MoonPearl survives.
+  - id: "Stumpy"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:95-100"
+
+  # `Digging Game` (South.php:102-106): MoonPearl.
+  - id: "Digging Game"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/South.php:102-106"
+
+  # ===========================================================================
+  # Dark World — Death Mountain West (DeathMountain/West.php:14-75)
+  # ===========================================================================
+
+  # `Spike Cave` (West.php:55-66): MoonPearl AND Hammer AND canLiftRocks
+  # AND (Cape AND canExtendMagic OR CaneOfByrna). canExtendMagic with the
+  # default `bars=2` form expands to the standard CanExtendMagic(world, 1).
+  - id: "Spike Cave"
+    can_reach: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer) AND CanLiftRocks() AND ((HAS_ITEM(Cape) AND CanExtendMagic(world, 1)) OR HAS_ITEM(CaneOfByrna))"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/West.php:55-66"
+
+  # ===========================================================================
+  # Dark World — Death Mountain East (DeathMountain/East.php:14-115)
+  # ===========================================================================
+
+  # `Superbunny Cave - Top` (East.php:58-63): MoonPearl (canSuperBunny and
+  # canOWYBA branches drop in Phase A).
+  - id: "Superbunny Cave - Top"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:58-63"
+
+  - id: "Superbunny Cave - Bottom"
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:65-70"
+
+  # `Hookshot Cave - Top Right` (East.php:72-77): Hookshot AND MoonPearl
+  # AND canLiftRocks.
+  - id: "Hookshot Cave - Top Right"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:72-77"
+
+  - id: "Hookshot Cave - Top Left"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:79-84"
+
+  - id: "Hookshot Cave - Bottom Left"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:86-91"
+
+  # `Hookshot Cave - Bottom Right` (East.php:93-98): Hookshot OR (Boots in
+  # non-basic placement, which drops in Phase A); plus the MoonPearl +
+  # canLiftRocks gate. Phase A keeps only Hookshot.
+  - id: "Hookshot Cave - Bottom Right"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:93-98"
+
+macros: []

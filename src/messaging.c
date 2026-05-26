@@ -694,6 +694,8 @@ void GameOver_SplatAndFade() {  // 89f3de
 
   for (int i = 0; i != 4; i++) {
     if (link_bottle_info[i] == 6) {
+      // rando-exempt: state-shuffle — fairy revive consumes the fairy
+      // (bottle contents 6 → empty 2). Not a grant. (audit.md §0.2.2)
       link_bottle_info[i] = 2;
       some_menu_ctr = 12;
       load_chr_halfslot_even_odd = 15;

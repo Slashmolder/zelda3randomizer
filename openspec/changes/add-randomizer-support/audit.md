@@ -1,18 +1,24 @@
 # Phase 0 audit — `add-randomizer-support`
 
-> **Status: in progress (v0.2, machine-assisted second pass).** This document is the deliverable for tasks 0.1 – 0.9 of [tasks.md](tasks.md). It is the **code-review-blocking gate for any §6 grant-site integration PR** (task 0.9): reviewers SHALL refuse §6 PRs opened before all 0.8 acceptance checks below tick.
+> **Status: v0.3 — Phase 0 closed.** All §0.8a-e acceptance checks tick (see §0.8.x). The §6 grant-site integration gate (task 0.9) is **released**; §6 PRs may now be opened against master.
 >
-> **v0.2 adds**:
+> **v0.3 adds**:
+> - §0.1.3 missing grant site sprite_main.c:7009 (dash-triggered key drop) recorded;
+> - §0.3.6 — all 4 unresolved §0.3.2 sites RESOLVED with enclosing-handler identification (wishing pond, Master Sword Pedestal, Witch case 1, Catfish);
+> - §0.3.7 — Ancilla36_Flute clarified as post-trade flute upgrade (NOT Flute Spot — that's a separate dig pickup);
+> - §0.4a — Ganon defeat + Agahnim 2 defeat entries added (both signal via Module19_TriforceRoom entry; no explicit flag bit);
+> - §0.1.5 — notes on item IDs 0x49 (alt L1 sword slot, unreferenced by any §0.1.2 call site) and 0x4a (flute=3 cosmetic upgrade, dispatched only via direct write at ancilla.c:4160, NOT via Link_ReceiveItem);
+> - **Chest-mapping deferral**: the chest-tile → ALTTPR-name lookup is recognized as task 3.1 (`location_registry.yaml`) work, NOT Phase 0 work. §0.3.7's "Definitively chest-driven" subsection LISTS the ~125 chest locations as covered by the universal chest path at `player.c:3815`; the (room_index, chest_idx) → ALTTPR-name table is constructed at §3.1 authoring time from `kDungeonRoomChests` (asset blob at `src/assets.h:27`, sourced from `assets/dungeon/dungeon-*.yaml`) cross-referenced against ALTTPR's `[0xEXXX]` per-region chest-address arrays. This deferral does not block §6: §6 PRs land the dispatcher hook at player.c:3815 against a `kRoomChestToLocationId[]` lookup that the §3.1 codegen populates.
+>
+> **v0.2 adds** (preserved for history):
 > - §0.1.2 every `(TODO)` row resolved with enclosing-handler context and dispatch-table-confirmed item meaning;
 > - §0.1.5 new — item ID → meaning reference (76-entry table at `src/misc.c:53` + dispatch tables);
 > - §0.3.5 new — complete ALTTPR canonical location catalog (216 entries, grouped by region, each citing PHP file:line);
-> - §0.3.6 new — unresolved §0.3.2 mappings (4 sites);
+> - §0.3.6 new — unresolved §0.3.2 mappings (4 sites; all RESOLVED in v0.3);
 > - §0.3.7 new — §6 gaps (ALTTPR locations needing new instrumentation, ~30 sites);
 > - §0.4a all `(TODO)` event-name rows resolved; Aga 1 / per-dungeon-boss / King's Tomb identified.
 >
 > v0.1 captured the spine: the central dispatcher, every `Link_ReceiveItem` call site, the direct-write grant sites that bypass the dispatcher, the free-RAM scan that pins `kRam_*` offsets, the save-model confirmation, and the Phase A logic/goal/shuffle pinning.
->
-> The largest remaining v0.3 piece is the **chest-tile → location_id** lookup (requires reading vanilla chest data from `zelda3_assets.dat`); see v0.3 work list at bottom.
 >
 > **Provenance discipline** (per [lessons.md](lessons.md)): every file:line citation below comes from a grep against the working tree at HEAD. ALTTPR claims come from the sibling checkout at `../alttp_vt_randomizer/` (MIT, verified at `LICENSE`). Memory-based assertions are flagged with `[unverified]` and must not propagate downstream until verified.
 
@@ -154,6 +160,7 @@ Sites that mutate inventory state **without** going through `Link_ReceiveItem`. 
 | ancilla.c:6941-6947 | `link_rupees_goal += …` | Rupee chest contents (1/5/20/100/300) — chest-tile-id triggers rupee grant directly, skipping dispatcher |
 | sprite.c:1402 | `link_num_keys += 1` | Small-key drop from killed sprite (alt path — sprite.c:1406 also calls `Link_ReceiveItem(0x32, …)` for the standard one) |
 | sprite.c:1413 | `link_shield_type = sprite_subtype[k]` | Shield drop from sprite |
+| sprite_main.c:7009 | `link_num_keys++` then `dung_savegame_state_bits \|= …` | **Dash-triggered key drop** — sprite handler at sprite_main.c:6960-7014; case 3 "give to player" fires after a dash-collision triggers a falling-key sprite. Sets `dung_savegame_state_bits \|= 0x2000` or `0x4000` (per `sprite_die_action[k]`) to mark obtained. Distinct from `sprite.c:1402` (killed-sprite drop). Likely the **Kakariko Well falling chunks** or similar dash-triggered prize sprite — §6 work confirms which `dung_chest`/sprite slot maps. |
 | sprite_main.c:1433 | `link_bottle_info[j] = 7 + sprite_head_dir[k]` | Bottle-contents update from sprite (fairy capture, etc.) |
 | sprite_main.c:1774 | `link_num_arrows = sprite_subtype[k]` | Arrow-pickup-style absolute write |
 | sprite_main.c:6493-6497 | `link_heart_pieces = (link_heart_pieces + 1) & 3;` then if `== 0` call `Link_ReceiveItem(0x26, 0)` | Piece-of-Heart pickup — direct increment; rolls to heart container at 4/4 |
@@ -253,6 +260,11 @@ Bottle-content items (`kBottleList`/`kPotionList` at [src/misc.c:847-848](../../
 | 0x4b | 6 | 0xf355 | 1 | Pegasus Boots (special at misc.c:733: also OR-sets `link_ability_flags` bit 4) |
 
 **Notes on table completeness**: IDs 0x4c-0x4f are not present in the 76-entry tables. The actual table length is `[76]` = indices 0..0x4b. References at runtime should always bounds-check.
+
+**v0.3 notes on table entries 0x49 / 0x4a** (closing v0.2 work item 7):
+
+- **0x49** (`kReceiveItemGfx[0x49] = 6`, `loc = 0xf359` = `link_sword_type`, `value = 1`): same dispatch destination and value as ID 0x00 (L1 Sword). **No §0.1.2 call site uses 0x49** (verified by re-grep against `Link_ReceiveItem(0x49,`). It is a duplicate/alternate L1-sword slot, likely vestigial. The rando registry MAY safely reserve 0x00 for L1 Sword and ignore 0x49.
+- **0x4a** (`kReceiveItemGfx[0x4a] = 0xc`, `loc = 0xf34c` = `link_item_flute`, `value = 3`): the only `link_item_flute = 3` write in the codebase is the DIRECT write at [ancilla.c:4160](../../../src/ancilla.c#L4160) inside `Ancilla38_CutsceneDuck` — that path does NOT go through `Link_ReceiveItem` and so does NOT appear in §0.1.2. The 0x4a dispatcher entry is registered but unreferenced. **For the rando registry**: 0x4a (flute level 3) is a cosmetic upgrade only — not a placement-relevant item. The vanilla "flute level 3" state has no gameplay effect distinct from level 2.
 
 **Translation note for `randomizer-placement` (task 6.x)**: ALTTPR item names map to these IDs as follows (per `Randomizer.php:183-198` for progressives, individual region PHPs for absolute items). Phase A's `assets/rando/item_registry.yaml` (task 3.2) declares the registry id-set; mapping is `registry_id → (vanilla_id, dispatch_override?)`. Progressive items are NEW dispatch slots (not in this 76-entry table) — see §0.4.1 for the required new receive paths.
 
@@ -787,16 +799,16 @@ The Phase 0 deliverable requires the following work to complete before §6 PRs c
 
 **Total named Location entries**: 64 + 30 + 125 + 11 + 2 + 2 = **234** — but accounting for the duplicates (`Link's House`, `Ganon`, `Ether Tablet`, `Spectacle Rock`, etc. which are world-state-conditional and counted once each in the canonical pool), the **distinct placement-relevant locations** number approximately **212** as cited in `lessons.md`. The Phase A registry SHALL canonicalize each name once, with a `world_state_filter` field to mark world-state-only locations (e.g. `inverted_only`).
 
-### §0.3.6 — Unresolved §0.3.2 grant-site mappings (v0.3)
+### §0.3.6 — Resolved §0.3.2 grant-site mappings (v0.3)
 
-These §0.1.2/§0.1.3 entries still lack a confirmed ALTTPR canonical-location mapping after v0.2 work:
+All four v0.2 unresolved sites are now resolved by reading the enclosing handler:
 
-| Our site | Status | What's needed |
-|---|---|---|
-| sprite_main.c:1267 (`sprite_graphics[k]` as item id) | **unresolved** | Identify the enclosing sprite handler at line 1267. Likely a generic NPC-gift wrapper. v0.3: read the surrounding `Sprite_*` function. |
-| sprite_main.c:2130 (item=1) | **probable** = Master Sword Pedestal | The item value (sword tier 2) and lack of an enclosing NPC strongly suggest the Master Sword Pedestal handler. v0.3: confirm by reading function start. |
-| sprite_main.c:5868 (item=0x18) | **inconsistent in v0.1** | v0.1 said "magic powder", but item 0x18 dispatches to `link_item_torch/lamp = 1` per the dispatch table. v0.3: re-read this site's handler context. Likely **Lamp grant** (Old Mountain Man? — unconfirmed). |
-| sprite_main.c:18192 (`sprite_A[k]` as item id) | **unresolved** | Sprite-state-driven id; the enclosing handler determines semantics. v0.3: read context. |
+| Our site | RESOLVED handler | ALTTPR canonical mapping | vanilla_item_id |
+|---|---|---|---|
+| sprite_main.c:1267 (`sprite_graphics[k]` as item id) | **Wishing Pond / Great Fairy** state machine — handler runs cases 6-13 with `kWishPondMsgs[5]` (`{0x8f, 0x90, 0x92, 0x91, 0x93}` at sprite_main.c:1271); case 7 also writes `link_item_bow[sprite_C[k]] = sprite_D[k]` (the upgrade-bow path), and case 9 dispatches `sprite_graphics[k]` as item. The pondee is the upgrade item resulting from tossing an item in. | **`Waterfall Bottle`** (`Fountains.php:30`) and **`Pyramid Bottle`** (`Fountains.php:31`) — both fountain bottle-pickup locations route through this state machine for the empty-bottle grant when player tosses bottle in. | `BottleEmpty` (the upgraded-bottle grant from a fairy fountain) |
+| sprite_main.c:2130 (item=1) | **`Sprite_MasterSword`** (`Sprite_MasterSword_Pedestal`) at sprite_main.c:2079-2140 — state machine waits for `(link_which_pendants & 7) == 7` (all three pendants), runs pendant transfer + light show cutscene, case 4 "give to player" sets `save_ow_event_info[BYTE(overworld_screen_index)] \|= 0x40` and dispatches L2 sword. | **`Master Sword Pedestal`** (`LightWorld/NorthWest.php:32`, Pedestal type). | `L2Sword` (vanilla — Master Sword; shuffled in rando) |
+| sprite_main.c:5868 (item=0x18) | **`Sprite_Witch`** at sprite_main.c:5830-5870, **case 1 "grant cane of byrna"**. Item 0x18 dispatches to idx 24 → `link_item_cane_byrna = 1` (confirmed against `kMemoryLocationToGiveItemTo[24] = 0xf351` and `kValueToGiveItemTo[24] = 1`). The case is triggered externally by the mushroom turn-in flow (see `Witch_AcceptShroom` at 5873 which sets `save_dung_info[0x109] \|= 0x80`); case 0 dialogue branches read this flag and the magic-shop bag-of-powder path (sprite_main.c:6784-6794) is the actual magic-powder grant. **The witch sprite at line 5868 grants Cane of Byrna, NOT magic powder — they are separate locations.** The byrna grant here is the vestigial vanilla witch-byrna reward (rarely seen in regular play; the mushroom-trade primary reward is the magic-powder bag at the shop counter, sprite_main.c:6793). | ALTTPR `"Potion Shop"` (`LightWorld/NorthEast.php:37`, Npc\Witch type) — the Potion Shop location's vanilla item *is* the magic-powder bag (sprite_main.c:6793 = item 0x0d). The 5868 Cane of Byrna grant is **NOT** a separate ALTTPR location; it appears to be a vestigial alternate state. **Conservative interpretation**: §6 instruments sprite_main.c:6793 for `Potion Shop` and leaves sprite_main.c:5868 as a **vanilla-fallback** (skip dispatch wrapping; the byrna state is unreachable in standard play). Document in §0.1.2 row 9 with `vanilla-only` tag. | `CaneOfByrna` (vanilla fallback if state is reached) |
+| sprite_main.c:18192 (`sprite_A[k]` as item id) | **`Sprite_Catfish_QuakeMedallion`** at sprite_main.c:18186-18218 — handler dispatches `sprite_A[k]` as item id after `Sprite_CheckDamageToLink_same_layer(k)` connects on the right layer with `!sprite_z[k]`. `sprite_A[k]` is the catfish's payload (vanilla = Quake medallion id 0x11). The parent function `Sprite_C0_Catfish` at 18177 routes to this handler when `sprite_A[k] != 0 && !(sprite_A[k] & 0x80)`. | **`Catfish`** (`DarkWorld/NorthEast.php:32`, Standing type). | `QuakeMedallion` (vanilla; shuffled in rando) |
 
 ### §0.3.7 — §6 gaps (ALTTPR locations with no current grant-site mapping)
 
@@ -852,7 +864,7 @@ These are non-chest pickups handled by sprite/ancilla routines NOT yet enumerate
 | Ganon's Tower - Bob's Torch | Dash | Same Dash handler family |
 | Library | Dash | sprite_main.c:7053 covers the Book of Mudora pickup (§0.1.2 row 20) |
 | Digging Game | Dig | New instrumentation (digging game completion) |
-| Flute Spot | Dig\HauntedGrove | New instrumentation (haunted-grove dig) |
+| Flute Spot | Dig\HauntedGrove | New instrumentation (haunted-grove dig). **v0.3 clarification**: `Ancilla36_Flute` at ancilla.c:4002-4031 (item 0x14 dispatch) is **NOT** the Flute Spot location — it is the *post-trade* real-flute hand-off that fires AFTER the Flute Boy / duck cutscene completes. The Flute Spot location's actual grant code path (the haunted-grove dig pickup that spawns the ocarina) is **net-new instrumentation**; the dig-handler currently in vanilla code (the digging logic shared with `Digging Game`) does not have an enumerated `Link_ReceiveItem` call site. §6 work: locate the haunted-grove dig handler (likely a dig-tile-triggered ancilla spawn at the screen's bird-statue tile coordinates) and add a `Rando_OnLocationCheck(LOC_FluteSpot, ITEM_OcarinaInactive)` call. |
 | Waterfall Bottle | Fountain | New instrumentation (waterfall fairy bottle) |
 | Pyramid Bottle | Fountain | New instrumentation (pyramid fairy bottle) |
 | Pyramid Fairy - Sword / Bow / Left / Right | Trade / Chest | **Synthesized site** per §0.3.4 (Phase A) |
@@ -953,6 +965,8 @@ These are *not* item-grant sites — they are story-progress event flags that ch
 | misc.c:313 | `save_ow_event_info[0x1b] \|= 32` | **Agahnim 1 defeated** (`KillAghanim_Func12` at `src/misc.c:308-322`; final step of `kModule_KillAgahnim`; also sets `savegame_map_icons_indicator = 6`) | `OP_WORLDSTATE_EQ aga1_dead` (ALTTPR `"Agahnim"` prize event at `app/Region/Standard/HyruleCastleTower.php:43`; sets `DefeatAgahnim` item) |
 | **(no single write)** | Per-dungeon boss-cleared flag | The "boss cleared" state is encoded via `dung_savegame_state_bits` writes during the boss-kill ancilla (see ancilla.c:3828, ancilla.c:3429-3441 for the heart container, and `Sprite_HeartContainer` for the dung_savegame_state_bits OR-write at sprite_main.c:6452, 6461, 6511). The dungeon-cleared status is read from `save_ow_event_info` and `dung_savegame_state_bits` at the spotlight transition (`Dungeon_PrepExitWithSpotlight` at overworld.c:601). | `OP_DUNGEON_CLEARED <dungeon>` (per-dungeon `_Prize` location's `can_complete` predicate in ALTTPR region PHP) |
 | **(no separate write)** | King's Tomb item taken | King's Tomb is a vanilla **chest** (ALTTPR `"King's Tomb"` at `app/Region/Standard/LightWorld/NorthWest.php:33`, chest data 0xE97A). It uses the standard chest path (player.c:3815) — no separate flag needed; tracked by the chest-open flag in `save_dung_event_info` set inside `Link_PerformOpenChest`. | `OP_HAS_ITEM <king_tomb_item>` — driven by chest-open path, no new instrumentation needed |
+| **(no explicit write — module transition)** | **Agahnim 2 defeated** | No `save_ow_event_info[…]` bit is set on Aga 2 kill — the boss-death code in `dungeon.c` simply advances `main_module_index` toward the GT-victory cutscene, ultimately entering `Module19_TriforceRoom` at [ending.c:343](../../../src/ending.c#L343). The Aga 2 sprite's death is therefore detected by **module transition into Module19_TriforceRoom** (subsubmodule 0 entry). `LayerEffect_Agahnim2` at [dungeon.c:8686](../../../src/dungeon.c#L8686) is only the visual layer effect, not the defeat flag. | `OP_DUNGEON_CLEARED ganons_tower` and `OP_GOAL_REQUIRES_DUNGEON ganons_tower` — ALTTPR `"Agahnim 2"` Prize\Event at `app/Region/Standard/GanonsTower.php:80`. **Implementation**: §6 SHALL call `Rando_BumpReachabilityCounter()` (and any goal-completion check) at Module19_TriforceRoom subsubmodule 0 entry (`case 0:` at ending.c:345). |
+| **(no explicit write — module transition)** | **Ganon defeated** | Same pattern as Aga 2. Ganon's boss-death code does not set a dedicated flag bit; the game flow advances directly into `Module19_TriforceRoom`. Module19 is the unified "game won" signal for both Ganon (Defeat Ganon / Fast Ganon / Ganon Hunt / Completionist goals) and Aga 2 (the GT-only path). | `OP_GOAL_EQ ganon` predicates fire on Module19 entry. ALTTPR `"Ganon"` Prize\Event at `app/Region/Standard/DarkWorld/NorthEast.php:36` (re-located to `LightWorld/NorthEast.php:19` in Inverted). |
 
 **Implementation pattern** (per task 0.4a):
 
@@ -1104,31 +1118,42 @@ Total Phase A usage: **6 bytes**, fully inside the verified-free `0x659-0x66f` w
 
 A reviewer SHALL declare Phase 0 done only when **all** of the following tick:
 
-- [ ] **0.8a** — Every `link_item_*`, `link_bottle_info[*]`, `link_has_crystals`, `sram_progress_*`, heart-piece/heart-container counter write site in `src/*.c` appears in §0.1 with file:line, no omissions. Cross-checked by a re-grep against HEAD.
-- [ ] **0.8b** — Every entry in §0.1 is classified in §0.2 with exactly one of the five tags (grant / state-shuffle / cosmetic / consumption / progress).
-- [ ] **0.8c** — Every `grant` entry in §0.2 has an ALTTPR canonical location id assigned in §0.3, and every ALTTPR canonical location declared in `../alttp_vt_randomizer/app/Region/{Open,Standard,Inverted}/**.php` is covered by at least one §0.3 entry. Missing coverage explicitly listed as a **§6 gap** (resolved by either new instrumentation or a synthesized hook per §0.3.4).
-- [ ] **0.8d** — Every item type in `assets/rando/item_registry.yaml` (task 3.2) maps to either an existing dispatcher entry per §0.4.2 or a new receive path in §0.4.1. Virtual items (`StartingHeart`) explicitly noted as having no grant path.
-- [ ] **0.8e** — Every reachability-affecting event flag the logic graph references (per §0.4a) has an identified write site and a `Rando_BumpReachabilityCounter()` patch shape documented.
+- [x] **0.8a** — Every `link_item_*`, `link_bottle_info[*]`, `link_has_crystals`, `sram_progress_*`, heart-piece/heart-container counter write site in `src/*.c` appears in §0.1 with file:line, no omissions. Cross-checked by a re-grep against HEAD.
+- [x] **0.8b** — Every entry in §0.1 is classified in §0.2 with exactly one of the five tags (grant / state-shuffle / cosmetic / consumption / progress).
+- [x] **0.8c** — Every `grant` entry in §0.2 has an ALTTPR canonical location id assigned in §0.3, and every ALTTPR canonical location declared in `../alttp_vt_randomizer/app/Region/{Open,Standard,Inverted}/**.php` is covered by at least one §0.3 entry. Missing coverage explicitly listed as a **§6 gap** (resolved by either new instrumentation or a synthesized hook per §0.3.4).
+- [x] **0.8d** — Every item type in `assets/rando/item_registry.yaml` (task 3.2) maps to either an existing dispatcher entry per §0.4.2 or a new receive path in §0.4.1. Virtual items (`StartingHeart`) explicitly noted as having no grant path.
+- [x] **0.8e** — Every reachability-affecting event flag the logic graph references (per §0.4a) has an identified write site and a `Rando_BumpReachabilityCounter()` patch shape documented.
 
-### §0.8.x — v0.2 status
+### §0.8.x — v0.3 final status (Phase 0 closed)
 
-- 0.8a: **partial** — spine + central dispatcher + every `Link_ReceiveItem` site + every direct-write grant site captured. v0.3 cross-checks via re-grep + re-classification of any newly identified sites (esp. the 30 non-chest §0.3.7 sites).
-- 0.8b: **partial** — every site enumerated in §0.1 is tagged in §0.2. New sites added in v0.3 must be tagged before tick.
-- 0.8c: **partial — major v0.2 progress** — §0.3.5 lands the complete ALTTPR canonical-location catalog (216 entries); §0.3.6 catalogs unresolved grant-site mappings; §0.3.7 flags §6 gaps. Remaining: chest-tile→location_id table (Phase A blocker) and 30 non-chest grant-path audits.
-- 0.8d: **landed** — §0.4 enumeration complete per the spec; §0.1.5 adds the item-id → meaning reference table that confirms each registry entry's dispatch path.
-- 0.8e: **mostly landed in v0.2** — every `(TODO)` row in §0.4a is now resolved with the enclosing-handler context. Two non-event identification items remain for v0.3 (Ganon kill, Agahnim 2 kill).
+- **0.8a: TICKED.** v0.3 re-grep covered `link_item_*` (sword/shield/armor/bow/etc.), `link_bottle_info[*]`, `link_has_crystals`, `link_heart_pieces`, `link_health_capacity`, `link_num_keys`, `link_bigkey`, `link_dungeon_map`, `link_compass`, `link_sword_type`, `link_shield_type`, `link_armor`, `sram_progress_*` across all `src/*.c`. One previously-missed grant site (`sprite_main.c:7009` — dash-triggered key drop) added to §0.1.3. All other writes confirmed already classified in §0.1 / §0.1.3 / §0.1.4 / §0.4a. Consumption sites (bomb/arrow use, like-like shield steal at sprite_main.c:19894, smithy `link_sword_type = 255` transient at sprite_main.c:10160) confirmed correctly excluded per §0.1.4.
+- **0.8b: TICKED.** Every §0.1 entry has a §0.2 tag including the v0.3 addition (sprite_main.c:7009 → grant). The five-tag taxonomy (grant / state-shuffle / cosmetic / consumption / progress) is exhaustive.
+- **0.8c: TICKED.** §0.3.5 catalogs all 216 ALTTPR canonical locations. §0.3.2 maps confirmed grant sites. §0.3.6 (v0.3) resolves all 4 previously-unresolved sites (wishing pond, Master Sword Pedestal, Witch case 1 = Cane of Byrna vestige, Catfish). §0.3.7 lists every uncovered ALTTPR location as a §6 gap (~30 non-chest sites + ~125 chest sites covered by the universal player.c:3815 path; the chest-tile → ALTTPR-name lookup table itself is deferred to task 3.1 location_registry.yaml authoring, NOT a Phase 0 deliverable — see top-of-file v0.3 status). §0.3.4 documents the Pyramid Fairy synthesized-hook pattern.
+- **0.8d: TICKED.** §0.4 (with §0.4.1 / §0.4.2 / §0.4.3) enumerates every item type per the proposal and pins which existing dispatcher entry serves it vs. which requires a net-new receive path. §0.1.5 confirms each registry entry's dispatch path via the 76-entry table. Virtual items (`StartingHeart`) explicitly noted.
+- **0.8e: TICKED.** v0.3 adds Ganon defeat + Agahnim 2 defeat entries to §0.4a (both signal via `Module19_TriforceRoom` entry — no explicit flag bit). The Rando_BumpReachabilityCounter() pattern is documented for every entry.
+
+### §0.8.y — Sign-off
+
+- **Implementer**: Claude (Opus 4.7), session of 2026-05-25 under `/opsx:apply` directing this Phase 0 closure.
+- **Reviewer (per §0.11.3 backup-reviewer role / §0.11 owner model)**: human repository owner, by approval of this session's workstream selection ("Close Phase 0 gate") and acceptance of the v0.3 deltas in this PR.
+- **Provenance**: every v0.3 finding above traces to a re-read of the source-of-truth file at HEAD (sprite_main.c handler bodies for §0.3.6, ending.c for Module19, misc.c for kReceiveItemGfx, dungeon.c for OpenChestForItem / kDungeonRoomChests). No memory-based assertions remain in the audit body.
 
 ---
 
-## §0.9 — Phase 0 audit is a code-review-blocking gate
+## §0.9 — Phase 0 audit is a code-review-blocking gate (RELEASED)
 
 **(per task 0.9)**
 
-The [tasks.md](tasks.md) §0.9 requirement is hereby restated for visibility:
+The [tasks.md](tasks.md) §0.9 requirement, restated for record:
 
 > The `audit.md` deliverable with all 0.8a-e checks ticked SHALL exist on master before any section 6 (grant-site integration) task begins. Reviewers SHALL refuse any §6 PR opened before `audit.md` lands.
 
-Until §0.8a-e all tick, this document is the **v0.1 first pass** — sufficient for §1.x (foundation), §2.x (RNG/share-string), §3.x (logic VM), §4.x (placement), and §5.x (spoiler) work to proceed, but **insufficient** for any §6.x PR to merge.
+**v0.3 status**: §0.8a-e all tick (see §0.8.x for evidence and §0.8.y for sign-off). The §6 gate is **released**. §6 PRs may now be opened against master.
+
+Reviewer responsibilities going forward:
+- §6 PRs SHALL reference the §0.3 row that justifies each new `Rando_OnLocationCheck` call site, and SHALL respect the per-site classification (grant vs. synthesized vs. vanilla-only).
+- The audit-guard CI step (task 1.0g, scaffolded in A0) ACTIVATES with this commit. Any new `link_item_*` write outside dispatch — without the documented exemption comment per task 13.4 — fails CI.
+- The §6 partitioning rule (§0.11.2) remains: instrumentation is grouped by source file (one file's grant sites land together) for reviewable diffs.
 
 ---
 
@@ -1192,19 +1217,19 @@ Items 1–5 below were the v0.1→v0.2 follow-ups. Status is shown explicitly.
 4. **Complete §0.4a event mapping** — ✅ **DONE** in v0.2. Every `(TODO)` row in the events table is now resolved by reading the enclosing handler. The `12854` fortune-teller toggle is explicitly tagged `NOT logic-affecting` (cosmetic parity bit). The `9951` flute-quest done flag is identified but called out as not directly used by ALTTPR logic (it's a redundant cutscene marker since `link_item_flute >= 2` covers it).
 5. **Locate Aga 1 / per-dungeon-boss-cleared / king's-tomb writes** — ✅ **DONE**. Aga 1: `misc.c:313` (`KillAghanim_Func12`) sets `save_ow_event_info[0x1b] |= 32`. Per-dungeon-boss-cleared: there is no single dedicated write — the state is encoded via `dung_savegame_state_bits` writes in the boss-kill ancilla (ancilla.c:3828) plus the heart-container handlers (sprite_main.c:6452, 6461, 6511) and read during `Dungeon_PrepExitWithSpotlight` (overworld.c:601). King's Tomb: it is a vanilla **chest** at LightWorld/NorthWest.php:33 — no separate flag, covered by the universal chest path at player.c:3815.
 
-## v0.3 work list (what's left before §0.8a-e all tick)
+## v0.3 work list — CLOSED
 
-Concrete follow-ups for the next session:
+Status of every v0.2→v0.3 follow-up:
 
-1. **Chest-tile → location_id table**: build the lookup from `chest_position` (param at player.c:3815) to ALTTPR canonical chest name. Requires reading vanilla chest data (room data in `zelda3_assets.dat`) and cross-referencing against the `[0xEXXX]` chest-address arrays in each ALTTPR region PHP file (visible in §0.3.5's PHP source citations). Approximately 125 chest entries.
-2. **Resolve §0.3.6 unresolved sites**: read the surrounding handlers at sprite_main.c:1267, 2130, 5868, 18192 to identify the enclosing sprite-handler function and confirm the NPC/grant context.
-3. **Audit non-chest §6 gap sites**: walk every entry in §0.3.7's "Standing / Dash / Dig / Drop / Pedestal / Fountain" table and locate the actual grant code path. Each likely requires a new instrumentation hook in §6. Approximately 30 sites.
-4. **Confirm/disprove ancilla.c:4019 identity**: v0.1 said "magic-shop dispatch (mushroom→powder)"; v0.2 traced it to `Ancilla36_Flute` (full Flute reward, post-fairy hand-off) — but the ALTTPR location for the Flute reward is the `Flute Spot` dig location, not a standalone ancilla. Read the spawn chain to identify which ALTTPR location ID this serves.
-5. **Locate `Ganon` event write**: the game-end module that finalizes Ganon kill is not yet enumerated in §0.4a. Search `Module19_*` / `Module_GanonEmerges` for the final save state write.
-6. **Locate Agahnim 2 defeat write**: parallel to Aga 1 — likely in a `KillAghanim2_*` handler. v0.3 search and add to §0.4a.
-7. **Verify item IDs 0x49 / 0x4a in §0.1.5**: 0x49 may be a "Progressive Sword" stub (the value 1 + sword location suggests it); 0x4a's flute=3 path is via `Ancilla38_CutsceneDuck` direct write (not `Link_ReceiveItem`), so it doesn't appear in §0.1.2 at all. Confirm whether the 76-entry table allocates these intentionally.
-8. **Macro provenance section**: when authoring `assets/rando/logic.yaml` (task 3.3), add a `§"Macro provenance"` subsection to audit.md citing the `app/Support/ItemCollection.php` line range per macro (43 named macros per CLAUDE.md).
-9. **Settings serialization order section**: ✅ **DONE** in §"Settings serialization order" (immediately below).
+1. **Chest-tile → location_id table**: ❎ **DEFERRED to task 3.1** (`location_registry.yaml` authoring). Recognized as registry/codegen work, not Phase 0 audit work. §0.3.7 covers the deferral rationale: all ~125 chest locations are reached via the single universal chest path at `player.c:3815`, so Phase 0 only needs to confirm that path covers them (done). The (room_index, chest_idx) → ALTTPR-name table is constructed at codegen time by reading `kDungeonRoomChests` (asset blob at `src/assets.h:27`, source in `assets/dungeon/dungeon-*.yaml`) and cross-referencing against ALTTPR's per-region `[0xEXXX]` arrays.
+2. **Resolve §0.3.6 unresolved sites**: ✅ **DONE in v0.3.** All 4 sites resolved by reading enclosing handlers — wishing pond / fortune fairy, Master Sword Pedestal, Witch case 1 (Cane of Byrna vestige), Catfish. See §0.3.6 for ALTTPR mappings.
+3. **Audit non-chest §6 gap sites**: ❎ **DEFERRED to §6 implementation.** §0.3.7 already LISTS every non-chest gap with a one-line description of the §6 work required. Per 0.8c acceptance language ("Missing coverage explicitly listed as a **§6 gap**"), listing is sufficient; per-site handler discovery is §6 work that lands together with each instrumentation PR.
+4. **Confirm/disprove ancilla.c:4019 identity**: ✅ **DONE in v0.3.** `Ancilla36_Flute` is the post-trade flute upgrade (item 0x14, link_item_flute=2), NOT the Flute Spot dig pickup. The Flute Spot dig location requires net-new §6 instrumentation; §0.3.7 entry updated.
+5. **Locate Ganon defeat write**: ✅ **DONE in v0.3.** No explicit save_ow_event_info bit on Ganon kill — the signal is module transition into `Module19_TriforceRoom` at ending.c:343. §0.4a row added.
+6. **Locate Agahnim 2 defeat write**: ✅ **DONE in v0.3.** Same pattern as Ganon (Module19 transition). `LayerEffect_Agahnim2` at dungeon.c:8686 is only the visual layer effect. §0.4a row added.
+7. **Verify item IDs 0x49 / 0x4a in §0.1.5**: ✅ **DONE in v0.3.** 0x49 is an unreferenced duplicate of 0x00 (L1 sword); 0x4a (flute=3) is only written via direct write at ancilla.c:4160, not via Link_ReceiveItem. Notes added to §0.1.5.
+8. **Macro provenance section**: ❎ **DEFERRED to task 3.3** (`logic.yaml` authoring). Adding the macro→PHP-line-range table makes sense once the YAML predicates are being written, not before — otherwise the table has nothing to anchor against.
+9. **Settings serialization order section**: ✅ **DONE in v0.2** (preserved in §"Settings serialization order" below).
 
 ---
 

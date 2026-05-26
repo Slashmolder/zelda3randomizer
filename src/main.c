@@ -28,6 +28,10 @@
 #include "audio.h"
 
 #include "rando/rando.h"  // g_assets_hash declaration (tasks.md §1.1a)
+#include "rando/rando_settings.h"
+#include "rando/rando_placement.h"
+#include "rando/rando_spoiler.h"
+#include "rando/rando_share.h"
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
 static bool g_run_without_emu = 0;
@@ -338,32 +342,153 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // produces it.) For A0 stub, just note the intent.
   (void)assets_must_be_vanilla;
 
-  // Phase A0 stub: report the parsed args + exit.
-  fprintf(stderr,
-    "--generate-seed: Phase A0 stub. Parsed args:\n"
-    "  mode: %s\n"
-    "  settings: %s\n"
-    "  seed: %s\n"
-    "  out_spoiler: %s\n"
-    "  out_share_string: %s\n"
-    "  manifest: %s\n"
-    "  out_dir: %s\n"
-    "  budget_seconds: %d\n"
-    "  assets_must_be_vanilla: %s\n"
-    "  g_assets_hash[0..3]: %02x %02x %02x %02x ...\n"
-    "Full generator pipeline lands in Phase A1 (see tasks.md sections 2-5).\n",
-    batch ? "batch" : "single",
-    settings_csv ? settings_csv : "(none)",
-    seed_u64_str ? seed_u64_str : "(none)",
-    out_spoiler ? out_spoiler : "(none)",
-    out_share_string ? out_share_string : "(none)",
-    manifest_path ? manifest_path : "(none)",
-    out_dir ? out_dir : "(none)",
-    budget_seconds,
-    assets_must_be_vanilla ? "true" : "false",
-    g_assets_hash[0], g_assets_hash[1], g_assets_hash[2], g_assets_hash[3]);
+  // Phase A0 batch form: still a stub (manifest parsing + iteration land in
+  // Phase A1). Single-seed form goes through the real pipeline below.
+  if (batch) {
+    fprintf(stderr,
+      "--generate-seed --manifest: Phase A0 batch form is a stub.\n"
+      "  Manifest path: %s\n"
+      "  Out dir: %s\n"
+      "Single-seed form is functional (--generate-seed --settings=... --seed=... --out-spoiler=...).\n",
+      manifest_path, out_dir ? out_dir : "(none)");
+    exit(64);
+  }
 
-  exit(64);
+  // ----- Phase A1 single-seed pipeline -----
+  // Settings: parse --settings=k=v,... via Settings_ParseCsv. Defaults populate
+  // the struct first; missing keys keep defaults.
+  RandoSettings settings;
+  Settings_SetDefaults(&settings);
+  if (settings_csv != NULL && *settings_csv != '\0') {
+    if (Settings_ParseCsv(settings_csv, &settings) != 0) {
+      fprintf(stderr, "--generate-seed: --settings= parse failed (see error above)\n");
+      exit(64);
+    }
+  }
+
+  // Seed: parse hex or decimal uint64 from --seed=<u64>.
+  uint64 seed_u64 = 0;
+  {
+    const char *p = seed_u64_str;
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+      p += 2;
+      while (*p) {
+        char c = *p++;
+        uint8 v;
+        if (c >= '0' && c <= '9') v = c - '0';
+        else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+        else { fprintf(stderr, "--seed: bad hex digit '%c'\n", c); exit(64); }
+        seed_u64 = (seed_u64 << 4) | v;
+      }
+    } else {
+      while (*p) {
+        char c = *p++;
+        if (c < '0' || c > '9') { fprintf(stderr, "--seed: bad decimal digit '%c'\n", c); exit(64); }
+        seed_u64 = seed_u64 * 10 + (c - '0');
+      }
+    }
+  }
+
+  // Allocate placement table sized to the location count.
+  extern const uint32 kRandoLocationsCount;
+  RandoPlacement *entries = (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+  if (entries == NULL) {
+    fprintf(stderr, "--generate-seed: out of memory allocating placement table\n");
+    exit(64);
+  }
+  RandoPlacementTable table = { entries, 0 };
+
+  // Run placement. Phase A0 returns identity (every location ← vanilla_item_id);
+  // Phase A1 replaces with assumed fill.
+  bool ok = Place_AssumedFill(&settings, seed_u64, budget_seconds, &table);
+  if (!ok) {
+    fprintf(stderr, "--generate-seed: placement failed (Phase A0 identity should always succeed)\n");
+    free(entries);
+    exit(1);
+  }
+
+  // Compute digest for log + spoiler header.
+  uint8 placement_digest[32];
+  PlacementTable_ComputeDigest(&table, placement_digest);
+
+  // Compute share string (magic | version | settings_hash | seed_u64 | crc).
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  Settings_HashShort(&settings, ss.settings_hash);
+  ss.seed_u64 = seed_u64;
+  char share_string[kShareStringBase32MaxLen];
+  int share_len = Share_Encode(&ss, share_string, sizeof(share_string));
+  if (share_len <= 0) {
+    fprintf(stderr, "--generate-seed: share string encoding failed\n");
+    free(entries);
+    exit(1);
+  }
+
+  // Build the spoiler and write it.
+  RandoSpoiler spoiler;
+  memset(&spoiler, 0, sizeof(spoiler));
+  spoiler.share_string = share_string;
+  spoiler.generator_version = kGeneratorVersion;
+  spoiler.settings = &settings;
+  spoiler.placements = &table;
+  spoiler.generation_wall_clock_ms = 0;  // Phase A0 stub: no timing
+  spoiler.goal_completable = true;       // Phase A0 trivially (identity placement)
+
+  if (!Spoiler_WriteJson(&spoiler, out_spoiler)) {
+    fprintf(stderr, "--generate-seed: failed writing JSON spoiler to %s\n", out_spoiler);
+    free(entries);
+    exit(1);
+  }
+
+  // Also write the text spoiler alongside (path with .txt suffix).
+  size_t out_len = strlen(out_spoiler);
+  char *txt_path = (char *)malloc(out_len + 5);
+  if (txt_path != NULL) {
+    // Strip .json if present, append .txt
+    if (out_len >= 5 && strcmp(out_spoiler + out_len - 5, ".json") == 0) {
+      memcpy(txt_path, out_spoiler, out_len - 5);
+      strcpy(txt_path + out_len - 5, ".txt");
+    } else {
+      memcpy(txt_path, out_spoiler, out_len);
+      strcpy(txt_path + out_len, ".txt");
+    }
+    Spoiler_WriteText(&spoiler, txt_path);
+    free(txt_path);
+  }
+
+  // Optionally write the share string to its own file.
+  if (out_share_string != NULL) {
+    FILE *sf = fopen(out_share_string, "wb");
+    if (sf != NULL) {
+      fputs(share_string, sf);
+      fclose(sf);
+    }
+  }
+
+  // Honor --assets-must-be-vanilla: if vanilla_assets_hash.h is present and
+  // g_assets_hash differs from kVanillaAssetsHash, exit with a clear error.
+  // (Header doesn't exist yet — the actual check lands when 1.1b's pipeline
+  // produces it.)
+  (void)assets_must_be_vanilla;
+
+  fprintf(stderr,
+    "--generate-seed: OK\n"
+    "  seed: 0x%016llx\n"
+    "  share_string: %s\n"
+    "  placements: %u\n"
+    "  placement_digest: %02x%02x%02x%02x%02x%02x%02x%02x...\n"
+    "  spoiler.json: %s\n",
+    (unsigned long long)seed_u64,
+    share_string,
+    (unsigned)table.count,
+    placement_digest[0], placement_digest[1], placement_digest[2], placement_digest[3],
+    placement_digest[4], placement_digest[5], placement_digest[6], placement_digest[7],
+    out_spoiler);
+
+  free(entries);
+  exit(0);
 }
 
 // --generate-seed CLI/headless mode (tasks.md §1.6a).

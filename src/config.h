@@ -74,6 +74,11 @@ typedef struct Config {
   // For A0 these fields are unused but declared so the struct shape is stable.
   const char *rando_spoiler_dir;  // default: "<exe-dir>/spoilers"
   bool rando_race_mode_default;   // default: false
+  // Dev-only override per tasks.md §11.1: keep RAM-compare frame check active
+  // when rando is on. Lets developers attach the original ROM and observe
+  // RAM divergences during dispatcher work. Default false (RAM-compare
+  // short-circuits when rando is active). Not documented in user-facing keys.
+  bool rando_debug_force_ram_compare;
 
   const char *link_graphics;
   char *memory_buffer;

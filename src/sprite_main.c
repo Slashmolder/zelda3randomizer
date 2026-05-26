@@ -10157,6 +10157,10 @@ void Smithy_Main(int k) {  // 86b34e
       sprite_ai_state[sprite_E[k]] = 5;
       sprite_ai_state[k] = 5;
       flag_overworld_area_did_change = 0;
+      // rando-exempt: state-shuffle — smithy tempering transient: sword is
+      // "taken away" (255 sentinel) for the duration of the upgrade. Cleared
+      // when case 6 "Smithy_GiveTemperedSword" grants the new tier. Not a
+      // grant. (audit.md §0.2.2)
       link_sword_type = 255;
       sram_progress_indicator_3 |= 128;
     }
@@ -19891,6 +19895,9 @@ void Sprite_AA_Pikit(int k) {  // 9e8bbf
       } else {
         sprite_subtype[k] = link_shield_type;
         if (link_shield_type != 0 && link_shield_type != 3)
+          // rando-exempt: consumption — like-like steals Link's shield by
+          // clearing link_shield_type to 0 (sprite_subtype captures the old
+          // tier so it can be dropped/re-collected). (audit.md §0.2.4)
           link_shield_type = 0;
         else
           sprite_G[k] = 0;

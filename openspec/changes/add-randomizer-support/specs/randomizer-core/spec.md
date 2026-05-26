@@ -351,6 +351,18 @@ The placement algorithm SHALL use assumed fill — placing progression items int
 
 The generator SHALL emit a spoiler log in two forms: a human-readable text file grouped by region, and a machine-readable JSON file with stable field names suitable for parsing by external tools. Spoiler files SHALL be written to a configurable directory keyed by share string. The JSON schema SHALL define `fallback_warnings` as an array of objects each with `code` (string enum, e.g., `"forward_fill_fallback"`, `"rewind_budget_exceeded_recovered"`) and `detail` (human-readable string).
 
+#### Scenario: Both JSON and text spoilers are emitted
+- **WHEN** a seed generates successfully
+- **THEN** both `<spoiler_dir>/<share_string>.json` and `<spoiler_dir>/<share_string>.txt` are written to the configured spoiler directory
+
+#### Scenario: fallback_warnings records forward-fill fallback
+- **WHEN** the forward-fill fallback fires (per `Forward-fill fallback after timeout` in the assumed-fill requirement above)
+- **THEN** the JSON spoiler's `fallback_warnings` array contains an object whose `code` field equals `"forward_fill_fallback"` and whose `detail` field is a human-readable string explaining the fallback
+
+#### Scenario: Text spoiler is grouped by region
+- **WHEN** the text spoiler file is read
+- **THEN** placements are organised into one section per region (one region heading followed by that region's location/item lines), making the file scannable without external tooling
+
 ### Requirement: Sphere semantics
 
 A **sphere** is the set of locations reachable using only items collected from previous spheres (sphere 0 = locations reachable with the starting inventory alone; sphere N+1 = locations newly reachable after collecting everything in spheres 0..N). The generator SHALL compute spheres via iterative fixed-point expansion against the simulated inventory model.

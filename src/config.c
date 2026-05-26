@@ -489,6 +489,11 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "RaceMode")) {
       return ParseBool(value, &g_config.rando_race_mode_default);
+    } else if (StringEqualsNoCase(key, "DebugForceRamCompare")) {
+      // Dev-only override (tasks.md §11.1). Not in the user-facing README key
+      // map. When true + rando active, the dual-runtime frame comparator
+      // keeps running (expect spew). Use to verify dispatcher coverage.
+      return ParseBool(value, &g_config.rando_debug_force_ram_compare);
     }
     // Future keys (Phase A1+):
     //   GeneratorBudgetSeconds = 5     (default budget for assumed fill)
@@ -541,6 +546,7 @@ void ParseConfigFile(const char *filename) {
   g_config.features1 = 0;                    // rando bank empty by default
   g_config.rando_spoiler_dir = NULL;         // resolved at runtime: <exe-dir>/spoilers
   g_config.rando_race_mode_default = false;
+  g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
 
   if (filename != NULL || !ParseOneConfigFile("zelda3.user.ini", 0)) {
     if (filename == NULL)

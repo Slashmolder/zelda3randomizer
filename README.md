@@ -32,6 +32,55 @@ Secondary item slot on button X (Hold X in inventory to select).
 
 Switching current item with L/R keys.
 
+## Randomizer (Phase A0/A1 — in development)
+
+This fork is adding an in-binary randomizer. The randomizer ships inside the
+same `zelda3` executable and is enabled per-slot from the file-select screen
+(when the Phase A2 UI lands; the CLI is the entry point until then).
+
+Phase A status:
+- Foundation, RNG, share-string, predicate VM, codegen, audit: landed
+- Item pool / placement / spoiler writer / save sidecar: scaffolded (identity placements at A0; assumed-fill placement is Phase A1 follow-on)
+- UI (file-select toggle, settings screen, trackers): Phase A2 / Phase B
+
+The CLI generation mode is functional now for single-seed runs:
+```sh
+./zelda3 --generate-seed \
+  --settings=mode.state=open,goal=fast_ganon,crystals.ganon=7,crystals.tower=7 \
+  --seed=0xDEADBEEFCAFEBABE \
+  --out-spoiler=./spoilers/demo.json
+```
+
+Self-tests (cross-platform determinism):
+```sh
+./zelda3 --rando-selftest
+```
+
+### `[Randomizer]` INI section
+
+Add to `zelda3.ini`:
+
+```ini
+[Randomizer]
+; Bitmask of kFeatures1_* (src/features.h). 1 = kFeatures1_RandomizerActive.
+; Per-slot rather than global once UI lands; this is the global default.
+Features1 = 0
+
+; Directory where the JSON / text spoilers land. Default: ./spoilers/
+SpoilerDir = ./spoilers
+
+; Race-mode default for new slots. When true, the spoiler is stamped but
+; suppressed from the in-game tracker. (Phase B feature; flag reserved here.)
+RaceMode = false
+
+; Developer-only override per docs/randomizer.md "RAM-compare safety". When
+; true AND a rando slot is active, the dual-runtime RAM compare keeps running
+; (expect spew). NOT documented in the user-facing key map. Default false.
+DebugForceRamCompare = false
+```
+
+Full reference: `docs/randomizer.md`. The OpenSpec change `openspec/changes/add-randomizer-support/` is the source of truth for scope and acceptance.
+
 ## How to Play:
 
 Option 1: Launcher by RadzPrower (windows only) https://github.com/ajohns6/Zelda-3-Launcher

@@ -1,0 +1,197 @@
+# op_registry.yaml — predicate VM op-code assignments
+#
+# Per `randomizer-logic / Predicate VM op set` and tasks.md §3.4.
+#
+# - Append-only: new ops receive new IDs at the end; removed ops keep their
+#   slot reserved with `deprecated: true`.
+# - Op-code bytecode is compiled into `src/rando/logic_data.c` at build time
+#   and is NOT stored in any save; cross-version save compatibility does not
+#   depend on op-code stability.
+# - Changing any assignment is a `kGeneratorVersion` bump trigger (tasks.md §13.6).
+
+format_version: 1
+phase: A
+
+# ---------------------------------------------------------------------------
+# Phase A ops (15 active)
+# ---------------------------------------------------------------------------
+ops:
+  # --- Inventory ops ----------------------------------------------------------
+  - id: 0
+    name: OP_HAS_ITEM
+    phase: A
+    operands: [item_id]
+    semantics: "counts[item_id] >= 1"
+    contexts: [can_reach, can_place]
+
+  - id: 1
+    name: OP_HAS_AMOUNT
+    phase: A
+    operands: [item_id, n_uint8]
+    semantics: "counts[item_id] >= n"
+    contexts: [can_reach, can_place]
+
+  - id: 2
+    name: OP_HAS_ANY_OF
+    phase: A
+    operands: [item_id_list]
+    semantics: "any(counts[id] >= 1 for id in list)"
+    contexts: [can_reach, can_place]
+
+  - id: 3
+    name: OP_HAS_ANY_COUNT
+    phase: A
+    operands: [item_id_list, n_uint8]
+    semantics: "sum(counts[id] for id in list) >= n"
+    contexts: [can_reach, can_place]
+    notes: |
+      Canonical "hearts total" predicate uses this op over
+      [PieceOfHeart, BossHeartContainer, StartingHeart]. Sums counters
+      across the union — a 4-quarter PieceOfHeart counts as one container
+      because the heart-piece roll-over to a container is handled by the
+      grant path, not by this op (this op sums the *registry counters*).
+
+  # --- World / settings / goal ops --------------------------------------------
+  - id: 4
+    name: OP_WORLDSTATE_EQ
+    phase: A
+    operands: [world_state_id]
+    semantics: "settings.world_state == world_state_id"
+    contexts: [can_reach, can_place]
+
+  - id: 5
+    name: OP_GOAL_EQ
+    phase: A
+    operands: [goal_id]
+    semantics: "settings.goal == goal_id"
+    contexts: [can_reach, can_place]
+
+  - id: 6
+    name: OP_GOAL_REQUIRES_DUNGEON
+    phase: A
+    operands: [dungeon_id]
+    semantics: |
+      true iff the active goal predicate references dungeon_id as a
+      required-clear (Defeat Ganon and Fast Ganon do not require any
+      dungeon; All Dungeons requires every dungeon; Completionist requires
+      every dungeon whose locations are non-empty in the active world-state).
+    contexts: [can_reach, can_place]
+
+  - id: 7
+    name: OP_DUNGEON_CLEARED
+    phase: A
+    operands: [dungeon_id]
+    semantics: "dungeon_id ∈ cleared_dungeons (set maintained by reachability fixed-point)"
+    contexts: [can_reach, can_place]
+
+  # --- Region / entrance ops --------------------------------------------------
+  - id: 8
+    name: OP_REGION_REACHABLE
+    phase: A
+    operands: [region_id]
+    semantics: |
+      true iff RegionRemap[region_id] is reachable from the start region
+      under the current inventory snapshot. Consults the runtime
+      RegionRemap[entrance_id -> interior_id] overlay before traversing
+      static EdgeDef[].
+    contexts: [can_reach, can_place]
+    notes: |
+      Memoized PER fixed-point iteration of the reachability outer loop
+      (cache invalidated at every iteration boundary because adding an
+      item between iterations can make a previously unreachable region
+      reachable).
+
+  # --- Shuffle-aware ops ------------------------------------------------------
+  - id: 9
+    name: OP_HAS_PRIZE
+    phase: A
+    operands: [prize_id]
+    semantics: |
+      true iff the dungeon whose prize-shuffle assignment is prize_id is
+      currently in cleared_dungeons. Bridges the prize-shuffle table to
+      logic gates like "Sahasrahla wants the Green Pendant" (the predicate
+      asks for the prize, the engine resolves the prize to the dungeon
+      that currently holds it).
+    contexts: [can_reach, can_place]
+
+  - id: 10
+    name: OP_MEDALLION_OPENS
+    phase: A
+    operands: [entrance_id]
+    semantics: |
+      true iff the inventory contains the medallion that medallion-shuffle
+      assigned to entrance_id. Used by Misery Mire and Turtle Rock entrance
+      predicates.
+    contexts: [can_reach, can_place]
+
+  # --- Placement-only op ------------------------------------------------------
+  - id: 11
+    name: OP_ITEM_IS
+    phase: A
+    operands: [item_id]
+    semantics: "candidate_item == item_id (evaluates the placer's candidate_item register)"
+    contexts: [can_place, always_allow]
+    notes: |
+      Per `randomizer-logic / Per-location can_place + always_allow predicates`:
+      OP_ITEM_IS evaluates against the candidate_item register. It SHALL
+      appear ONLY inside placement-context predicates (can_place AND
+      always_allow). The placer consults `can_place(item) OR always_allow(item)`
+      as the placement gate — both expressions have the candidate_item
+      register populated, so OP_ITEM_IS is well-defined in either. The
+      well-formedness pass (task 3.10) rejects OP_ITEM_IS in can_reach (the
+      reachability context, where candidate_item is undefined).
+
+  # --- Composition ------------------------------------------------------------
+  - id: 12
+    name: OP_AND
+    phase: A
+    operands: [predicate_list]
+    semantics: "all(eval(p) for p in list)"
+    contexts: [can_reach, can_place]
+
+  - id: 13
+    name: OP_OR
+    phase: A
+    operands: [predicate_list]
+    semantics: "any(eval(p) for p in list)"
+    contexts: [can_reach, can_place]
+
+  - id: 14
+    name: OP_NOT
+    phase: A
+    operands: [predicate]
+    semantics: "not eval(predicate)"
+    contexts: [can_reach, can_place]
+
+  # ---------------------------------------------------------------------------
+  # Phase B placeholders — id slots reserved, handlers ship in Phase B.
+  # Predicates that reference these ops MUST NOT appear in Phase A logic.yaml;
+  # the codegen well-formedness pass rejects them.
+  # ---------------------------------------------------------------------------
+  - id: 15
+    name: OP_TRICK
+    phase: B
+    operands: [trick_id]
+    semantics: "settings.tricks bitfield has trick_id enabled (Phase A pins tricks=none → always false)"
+    contexts: [can_reach, can_place]
+
+  - id: 16
+    name: OP_DIFFICULTY_AT_LEAST
+    phase: B
+    operands: [difficulty_level]
+    semantics: "settings.item_pool_difficulty >= level"
+    contexts: [can_reach, can_place]
+    notes: |
+      Phase A's item_pool_difficulty does NOT affect the logic graph;
+      this op exists only for Phase B+ predicates that gate behavior on
+      pool difficulty (e.g., hard-only macros).
+
+  - id: 17
+    name: OP_GLITCH_LEVEL_AT_LEAST
+    phase: B
+    operands: [glitch_level]
+    semantics: |
+      settings.logic >= level (NoGlitches=0 < OverworldGlitches=1 <
+      MajorGlitches=2 < HybridMG=3 < NoLogic=4). Phase A pins logic=NoGlitches,
+      so any predicate referencing this op evaluates to its zero-glitch branch.
+    contexts: [can_reach, can_place]

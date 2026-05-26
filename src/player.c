@@ -2459,6 +2459,8 @@ fail:
   } else if (b == 3) {  // red potion
     if (link_health_capacity == link_health_current)
       goto fail;
+    // rando-exempt: state-shuffle — bottle drink consumes the contents (red/
+    // green/blue potion, fairy, bee → empty 2). Not a grant. (audit.md §0.2.2)
     link_bottle_info[btidx] = 2;
     link_item_in_hand = 0;
     submodule_index = 4;
@@ -2469,6 +2471,8 @@ fail:
   } else if (b == 4) { // green potion
     if (link_magic_power == 128)
       goto fail;
+    // rando-exempt: state-shuffle — bottle drink consumes the contents (red/
+    // green/blue potion, fairy, bee → empty 2). Not a grant. (audit.md §0.2.2)
     link_bottle_info[btidx] = 2;
     link_item_in_hand = 0;
     submodule_index = 8;
@@ -2479,6 +2483,8 @@ fail:
   } else if (b == 5) { // blue potion
     if (link_health_capacity == link_health_current && link_magic_power == 128)
       goto fail;
+    // rando-exempt: state-shuffle — bottle drink consumes the contents (red/
+    // green/blue potion, fairy, bee → empty 2). Not a grant. (audit.md §0.2.2)
     link_bottle_info[btidx] = 2;
     link_item_in_hand = 0;
     submodule_index = 9;
@@ -2490,11 +2496,15 @@ fail:
     link_item_in_hand = 0;
     if (ReleaseFairy() < 0)
       goto fail;
+    // rando-exempt: state-shuffle — bottle drink consumes the contents (red/
+    // green/blue potion, fairy, bee → empty 2). Not a grant. (audit.md §0.2.2)
     link_bottle_info[btidx] = 2;
     Hud_Rebuild();
   } else if (b == 7 || b == 8) {  // bad/good bee
     if (!ReleaseBeeFromBottle(btidx))
       goto fail;
+    // rando-exempt: state-shuffle — bottle drink consumes the contents (red/
+    // green/blue potion, fairy, bee → empty 2). Not a grant. (audit.md §0.2.2)
     link_bottle_info[btidx] = 2;
     Hud_Rebuild();
   }

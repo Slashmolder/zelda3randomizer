@@ -4157,6 +4157,9 @@ after_stuff:
   if (!sign16(info.x) && info.x >= 248) {
     ancilla_type[k] = 0;
     submodule_index = 0;
+    // rando-exempt: cosmetic — post-duck-cutscene flute-upgrade visual state.
+    // link_item_flute=3 is gameplay-equivalent to =2 (level 2); the upgrade
+    // is purely the "flying flute" sprite swap. Not a grant. (audit.md §0.2.3)
     link_item_flute = 3;
   }
 }

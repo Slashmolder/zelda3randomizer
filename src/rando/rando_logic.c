@@ -1,0 +1,692 @@
+// rando_logic.c — predicate VM (tasks.md §3.7).
+//
+// Decodes the bytecode stream produced by assets/rando_logic_gen.py.
+// Format reference lives in rando_logic.h and the codegen docstring.
+//
+// Determinism: no rand, no time, no float. Iteration over operand lists is
+// linear scan. The recursive evaluator's depth is bounded by the codegen's
+// inline-complexity check (~6 ops per macro after expansion).
+
+#include "rando_logic.h"
+#include "rando.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// ---------------------------------------------------------------------------
+// Read helpers — every multi-byte read is explicit LE per byte-order pin.
+// ---------------------------------------------------------------------------
+static inline uint16 read_u16le(const uint8 *p) {
+  return (uint16)p[0] | ((uint16)p[1] << 8);
+}
+
+// ---------------------------------------------------------------------------
+// Internal evaluator. Walks the bytecode tree recursively.
+//
+// Caller passes a cursor that the evaluator advances. Each top-level call
+// reads exactly one predicate (i.e., one opcode + its operands + any nested
+// children).
+//
+// Returns the boolean result. On malformed bytecode (unknown op, ran off the
+// end), returns false in release and asserts in debug.
+// ---------------------------------------------------------------------------
+
+typedef struct Cursor {
+  const uint8 *p;
+  const uint8 *end;
+  bool error;
+} Cursor;
+
+static bool cursor_ok(const Cursor *c, size_t need) {
+  return !c->error && (size_t)(c->end - c->p) >= need;
+}
+
+static uint8 cursor_u8(Cursor *c) {
+  if (!cursor_ok(c, 1)) { c->error = true; return 0; }
+  return *c->p++;
+}
+
+static uint16 cursor_u16le(Cursor *c) {
+  if (!cursor_ok(c, 2)) { c->error = true; return 0; }
+  uint16 v = read_u16le(c->p);
+  c->p += 2;
+  return v;
+}
+
+static bool eval(Cursor *c, const PredicateContext *ctx);
+
+static bool eval_has_item(Cursor *c, const PredicateContext *ctx) {
+  uint16 item_id = cursor_u16le(c);
+  if (c->error || item_id >= 256) return false;
+  return ctx->counts->by_item_id[item_id] >= 1;
+}
+
+static bool eval_has_amount(Cursor *c, const PredicateContext *ctx) {
+  uint16 item_id = cursor_u16le(c);
+  uint8 n = cursor_u8(c);
+  if (c->error || item_id >= 256) return false;
+  return ctx->counts->by_item_id[item_id] >= n;
+}
+
+static bool eval_has_any_of(Cursor *c, const PredicateContext *ctx) {
+  uint8 count = cursor_u8(c);
+  bool result = false;
+  for (uint8 i = 0; i < count; i++) {
+    uint16 item_id = cursor_u16le(c);
+    if (c->error || item_id >= 256) { result = false; continue; }
+    if (ctx->counts->by_item_id[item_id] >= 1) result = true;
+  }
+  return result;
+}
+
+static bool eval_has_any_count(Cursor *c, const PredicateContext *ctx) {
+  uint8 count = cursor_u8(c);
+  // Sum the counts across all ids, then compare to threshold.
+  uint32 sum = 0;
+  for (uint8 i = 0; i < count; i++) {
+    uint16 item_id = cursor_u16le(c);
+    if (c->error || item_id >= 256) continue;
+    sum += ctx->counts->by_item_id[item_id];
+  }
+  uint8 n = cursor_u8(c);
+  if (c->error) return false;
+  return sum >= n;
+}
+
+static bool eval_worldstate_eq(Cursor *c, const PredicateContext *ctx) {
+  uint8 ws = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  return ctx->settings->world_state == ws;
+}
+
+static bool eval_goal_eq(Cursor *c, const PredicateContext *ctx) {
+  uint8 g = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  return ctx->settings->goal == g;
+}
+
+static bool eval_goal_requires_dungeon(Cursor *c, const PredicateContext *ctx) {
+  uint8 d = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  if (d >= kRandoDungeonCount) return false;
+  // Phase A goal semantics: All Dungeons requires every dungeon. Completionist
+  // requires every dungeon whose locations are non-empty. Fast Ganon / Ganon
+  // do NOT require dungeon clears (only crystals.ganon). Triforce-Hunt /
+  // Ganon-Hunt require no specific dungeons.
+  switch (ctx->settings->goal) {
+    case kGoal_Dungeons:
+    case kGoal_Completionist:
+      return true;
+    case kGoal_Ganon:
+    case kGoal_FastGanon:
+    case kGoal_GanonHunt:
+    case kGoal_Pedestal:
+    case kGoal_TriforceHunt:
+    default:
+      return false;
+  }
+}
+
+static bool eval_dungeon_cleared(Cursor *c, const PredicateContext *ctx) {
+  uint8 d = cursor_u8(c);
+  if (c->error) return false;
+  if (d >= 64) return false;  // bitmask is 64 bits
+  return (ctx->cleared_dungeons_bitmask >> d) & 1;
+}
+
+static bool eval_region_reachable(Cursor *c, const PredicateContext *ctx) {
+  uint16 entrance_id = cursor_u16le(c);
+  if (c->error) return false;
+  // RegionRemap overlay (task 3.7a): entrance shuffle in Phase C remaps
+  // entrances to non-identity interiors. Phase A's identity-overlay returns
+  // entrance_id unchanged.
+  uint16 region_id = RegionRemap_Lookup(entrance_id);
+  // Phase A0: if no reachability bitset has been supplied (e.g., a standalone
+  // Predicate_Evaluate call outside of Logic_ComputeReachability), conservatively
+  // return false. The placer / tracker pass a populated bitset.
+  if (ctx->reachable_regions_bitset == NULL) return false;
+  if (region_id >= ctx->reachable_regions_count) return false;
+  uint16 byte_idx = region_id >> 3;
+  uint8 bit_idx = region_id & 7;
+  return (ctx->reachable_regions_bitset[byte_idx] >> bit_idx) & 1;
+}
+
+static bool eval_has_prize(Cursor *c, const PredicateContext *ctx) {
+  uint8 prize_id = cursor_u8(c);
+  if (c->error || ctx->dungeon_prize_assignment == NULL) return false;
+  // OP_HAS_PRIZE p evaluates true iff the dungeon currently holding prize p
+  // (per the shuffle assignment) is in cleared_dungeons.
+  for (uint8 d = 0; d < kRandoDungeonCount; d++) {
+    if (ctx->dungeon_prize_assignment[d] == prize_id) {
+      return (ctx->cleared_dungeons_bitmask >> d) & 1;
+    }
+  }
+  return false;
+}
+
+static bool eval_medallion_opens(Cursor *c, const PredicateContext *ctx) {
+  uint8 entrance_id = cursor_u8(c);
+  if (c->error) return false;
+  if (entrance_id >= kRandoMedallionEntranceCount) return false;
+  if (ctx->medallion_entrance_assignment == NULL) return false;
+  uint16 medallion_item_id = ctx->medallion_entrance_assignment[entrance_id];
+  if (medallion_item_id >= 256) return false;
+  return ctx->counts->by_item_id[medallion_item_id] >= 1;
+}
+
+static bool eval_item_is(Cursor *c, const PredicateContext *ctx) {
+  uint16 item_id = cursor_u16le(c);
+  if (c->error) return false;
+  // Well-formedness pass in codegen rejects OP_ITEM_IS outside can_place; in
+  // release we still guard against bad bytecode reaching here.
+  assert(ctx->placement_context && "OP_ITEM_IS only valid in placement context");
+  if (!ctx->placement_context) return false;
+  return ctx->candidate_item == item_id;
+}
+
+static bool eval_not(Cursor *c, const PredicateContext *ctx) {
+  return !eval(c, ctx);
+}
+
+static bool eval_and(Cursor *c, const PredicateContext *ctx) {
+  uint8 count = cursor_u8(c);
+  bool result = true;
+  for (uint8 i = 0; i < count; i++) {
+    bool child = eval(c, ctx);
+    if (!child) {
+      // Short-circuit: skip remaining children (but we still need to walk
+      // them to advance the cursor). For correctness of the cursor we DO
+      // need to read past them — so iterate without checking.
+      result = false;
+    }
+  }
+  return result;
+}
+
+static bool eval_or(Cursor *c, const PredicateContext *ctx) {
+  uint8 count = cursor_u8(c);
+  bool result = false;
+  for (uint8 i = 0; i < count; i++) {
+    bool child = eval(c, ctx);
+    if (child) result = true;
+  }
+  return result;
+}
+
+// Phase B placeholders — Phase A pins tricks=none and logic=NoGlitches, so
+// these always evaluate to false. The codegen rejects predicates that
+// reference these ops at Phase A; runtime check is a safety net.
+static bool eval_trick(Cursor *c, const PredicateContext *ctx) {
+  (void)cursor_u8(c);  // skip operand
+  return false;
+}
+static bool eval_difficulty(Cursor *c, const PredicateContext *ctx) {
+  uint8 level = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  return ctx->settings->item_pool_difficulty >= level;
+}
+static bool eval_glitch(Cursor *c, const PredicateContext *ctx) {
+  uint8 level = cursor_u8(c);
+  if (c->error) return false;
+  // Phase A pins logic=NoGlitches (level 0). Phase B adds logic axis to settings.
+  return 0 >= level;
+}
+
+static bool eval(Cursor *c, const PredicateContext *ctx) {
+  uint8 op = cursor_u8(c);
+  if (c->error) return false;
+  switch (op) {
+    case OP_HAS_ITEM:               return eval_has_item(c, ctx);
+    case OP_HAS_AMOUNT:             return eval_has_amount(c, ctx);
+    case OP_HAS_ANY_OF:             return eval_has_any_of(c, ctx);
+    case OP_HAS_ANY_COUNT:          return eval_has_any_count(c, ctx);
+    case OP_WORLDSTATE_EQ:          return eval_worldstate_eq(c, ctx);
+    case OP_GOAL_EQ:                return eval_goal_eq(c, ctx);
+    case OP_GOAL_REQUIRES_DUNGEON:  return eval_goal_requires_dungeon(c, ctx);
+    case OP_DUNGEON_CLEARED:        return eval_dungeon_cleared(c, ctx);
+    case OP_REGION_REACHABLE:       return eval_region_reachable(c, ctx);
+    case OP_HAS_PRIZE:              return eval_has_prize(c, ctx);
+    case OP_MEDALLION_OPENS:        return eval_medallion_opens(c, ctx);
+    case OP_ITEM_IS:                return eval_item_is(c, ctx);
+    case OP_NOT:                    return eval_not(c, ctx);
+    case OP_AND:                    return eval_and(c, ctx);
+    case OP_OR:                     return eval_or(c, ctx);
+    case OP_TRICK:                  return eval_trick(c, ctx);
+    case OP_DIFFICULTY_AT_LEAST:    return eval_difficulty(c, ctx);
+    case OP_GLITCH_LEVEL_AT_LEAST:  return eval_glitch(c, ctx);
+    default:
+      assert(0 && "unknown predicate op");
+      c->error = true;
+      return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public entry points
+// ---------------------------------------------------------------------------
+
+bool Predicate_EvalCtx(const uint8 *bytecode, uint16 length,
+                       const PredicateContext *ctx) {
+  if (bytecode == NULL || length == 0 || ctx == NULL || ctx->counts == NULL) {
+    return false;
+  }
+  Cursor c = { bytecode, bytecode + length, false };
+  bool result = eval(&c, ctx);
+  // Either we consumed the entire stream, or hit an error. Malformed bytecode
+  // asserts in debug builds; in release we just return the partial result.
+  assert(!c.error && "predicate bytecode error");
+  // Trailing bytes is also an error — the codegen always emits exactly the
+  // declared length.
+  assert(c.p == c.end && "predicate length mismatch");
+  return result;
+}
+
+bool Predicate_Evaluate(const uint8 *bytecode, uint16 length,
+                        const RandoCounts *counts,
+                        const RandoSettings *settings) {
+  PredicateContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.counts = counts;
+  ctx.settings = settings;
+  ctx.placement_context = 0;
+  return Predicate_EvalCtx(bytecode, length, &ctx);
+}
+
+bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
+                                 const RandoCounts *counts,
+                                 const RandoSettings *settings,
+                                 uint16 candidate_item) {
+  PredicateContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.counts = counts;
+  ctx.settings = settings;
+  ctx.candidate_item = candidate_item;
+  ctx.placement_context = 1;
+  return Predicate_EvalCtx(bytecode, length, &ctx);
+}
+
+// ---------------------------------------------------------------------------
+// RegionRemap overlay (task 3.7a). Phase A0 default: NULL pointer = identity.
+// ---------------------------------------------------------------------------
+
+static const uint16 *g_region_remap_table = NULL;
+static uint16 g_region_remap_count = 0;
+
+uint16 RegionRemap_Lookup(uint16 entrance_id) {
+  if (g_region_remap_table == NULL) return entrance_id;
+  if (entrance_id >= g_region_remap_count) return entrance_id;
+  return g_region_remap_table[entrance_id];
+}
+
+void Rando_SetRegionRemap(const uint16 *table, uint16 count) {
+  g_region_remap_table = table;
+  g_region_remap_count = (table != NULL) ? count : 0;
+}
+
+void Rando_ResetRegionRemap(void) {
+  g_region_remap_table = NULL;
+  g_region_remap_count = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Logic_ComputeReachability (task 3.8) — fixed-point expansion.
+//
+// Algorithm:
+//   1. Initialize reachable_regions = {start_region}, reachable_locations = {}.
+//      The start region depends on world_state (Open/Standard/Retro start in
+//      LinksHouse; Inverted starts in DarkWorld_South). Phase A maps these
+//      via region-id-by-name lookups when logic.yaml is populated; until
+//      then, region 0 is treated as the start.
+//   2. Iterate: for each edge from a reachable region, evaluate its predicate;
+//      if true, mark target region reachable. For each location in a reachable
+//      region, evaluate its can_reach; if true, mark reachable.
+//   3. Stop when no new region / location was added in an iteration.
+//   4. Memoize the result keyed by (counts, settings) — Phase A0 keeps the
+//      result in a single static buffer (single-context per process).
+//
+// Performance budget (task 3.11): under 5 ms on reference desktop, under 20 ms
+// on Switch, both for the full ~216-location graph. Phase A0's empty graph
+// completes in microseconds.
+// ---------------------------------------------------------------------------
+
+#define kReachabilityMaxRegions 256
+#define kReachabilityMaxLocations 512
+
+struct RandoReachability {
+  uint8 region_bitset[(kReachabilityMaxRegions + 7) >> 3];
+  uint8 location_bitset[(kReachabilityMaxLocations + 7) >> 3];
+  uint64 cleared_dungeons_bitmask;
+  uint16 reachable_regions_count;
+};
+
+static struct RandoReachability g_reachability;
+
+static inline void bitset_set(uint8 *bs, uint16 idx) {
+  bs[idx >> 3] |= (uint8)(1u << (idx & 7));
+}
+
+static inline bool bitset_has(const uint8 *bs, uint16 idx) {
+  return (bs[idx >> 3] >> (idx & 7)) & 1;
+}
+
+const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
+                                                   const RandoSettings *settings) {
+  if (counts == NULL || settings == NULL) return NULL;
+  memset(&g_reachability, 0, sizeof(g_reachability));
+  g_reachability.reachable_regions_count = kReachabilityMaxRegions;
+
+  // Seed with the start region. With logic.yaml empty, kRandoRegionsCount = 0
+  // and the graph has no traversable edges; the start-region seed is the only
+  // reachable region. Phase A1 sets the start region per world_state.
+  if (kRandoRegionsCount > 0) {
+    bitset_set(g_reachability.region_bitset, 0);
+  }
+
+  PredicateContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.counts = counts;
+  ctx.settings = settings;
+  ctx.reachable_regions_bitset = g_reachability.region_bitset;
+  ctx.reachable_regions_count = kReachabilityMaxRegions;
+
+  // Fixed-point iteration. Cap at 64 iterations to bound runtime; the graph
+  // depth is well under 32 in practice (per ALTTPR's region nesting).
+  for (int iter = 0; iter < 64; iter++) {
+    bool changed = false;
+
+    // Expand reachable regions via edges.
+    for (uint32 e = 0; e < kRandoEdgesCount; e++) {
+      const RandoEdgeDef *edge = &kRandoEdges[e];
+      if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
+      if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
+      if (bitset_has(g_reachability.region_bitset, edge->to_region)) continue;
+      // Evaluate the edge predicate against the current snapshot.
+      const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
+      if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
+        bitset_set(g_reachability.region_bitset, edge->to_region);
+        if (!edge->one_way) {
+          // For Phase A purposes bidirectional edges are added on the from-side
+          // as well — but they already are by definition (the loop will pick
+          // them up on next iteration if relevant).
+        }
+        changed = true;
+      }
+    }
+
+    // Expand reachable locations against current reachable-region set.
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (bitset_has(g_reachability.location_bitset, loc->id)) continue;
+      // Filter by world_state.
+      if (loc->world_state_filter != 0) {
+        if (!(loc->world_state_filter & (1u << settings->world_state))) continue;
+      }
+      // Note: location is reachable when its can_reach predicate evaluates
+      // true. Phase A0 has no logic.yaml so every location's predicate is
+      // TRUE() (vacuous AND) which trivially passes — every non-filtered
+      // location is reachable in iteration 0.
+      const uint8 *bc = kRandoPredicateStream + loc->can_reach_offset;
+      if (Predicate_EvalCtx(bc, loc->can_reach_length, &ctx)) {
+        bitset_set(g_reachability.location_bitset, loc->id);
+        changed = true;
+      }
+    }
+
+    if (!changed) break;
+  }
+
+  return &g_reachability;
+}
+
+bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id) {
+  if (r == NULL) return false;
+  if (location_id >= kReachabilityMaxLocations) return false;
+  return bitset_has(r->location_bitset, location_id);
+}
+
+bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id) {
+  if (r == NULL) return false;
+  if (region_id >= kReachabilityMaxRegions) return false;
+  return bitset_has(r->region_bitset, region_id);
+}
+
+// ---------------------------------------------------------------------------
+// Self-check — synthetic bytecode exercising each op.
+//
+// Pattern mirrors Rng_SelfCheck / Share_SelfCheck / Settings_SelfCheck:
+// builds known inputs, asserts known outputs, exits 2 on failure.
+// ---------------------------------------------------------------------------
+
+static void selfcheck_die(const char *msg) {
+  fprintf(stderr, "[Logic_SelfCheck] FAIL: %s\n", msg);
+  exit(2);
+}
+
+#define LSC_ASSERT(cond, msg) do { if (!(cond)) selfcheck_die(msg); } while (0)
+
+void Logic_SelfCheck(void) {
+  RandoCounts counts;
+  memset(&counts, 0, sizeof(counts));
+  RandoSettings settings;
+  Settings_SetDefaults(&settings);
+
+  // HAS_ITEM(5) when count[5] == 0 -> false
+  {
+    uint8 bc[] = { OP_HAS_ITEM, 5, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "HAS_ITEM(5) without item should be false");
+  }
+  // HAS_ITEM(5) when count[5] == 1 -> true
+  counts.by_item_id[5] = 1;
+  {
+    uint8 bc[] = { OP_HAS_ITEM, 5, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "HAS_ITEM(5) with item should be true");
+  }
+
+  // HAS_AMOUNT(5, 2) when count[5] == 1 -> false
+  {
+    uint8 bc[] = { OP_HAS_AMOUNT, 5, 0, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "HAS_AMOUNT(5,2) with count=1 should be false");
+  }
+  // HAS_AMOUNT(5, 2) when count[5] == 2 -> true
+  counts.by_item_id[5] = 2;
+  {
+    uint8 bc[] = { OP_HAS_AMOUNT, 5, 0, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "HAS_AMOUNT(5,2) with count=2 should be true");
+  }
+  counts.by_item_id[5] = 0;
+
+  // HAS_ANY_OF([7, 8]) when neither set -> false
+  {
+    uint8 bc[] = { OP_HAS_ANY_OF, 2, 7, 0, 8, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "HAS_ANY_OF empty inventory should be false");
+  }
+  counts.by_item_id[8] = 1;
+  {
+    uint8 bc[] = { OP_HAS_ANY_OF, 2, 7, 0, 8, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "HAS_ANY_OF with one item set should be true");
+  }
+  counts.by_item_id[8] = 0;
+
+  // HAS_ANY_COUNT([7,8,9], 2): 1+1+0 = 2 -> true; 1+0+0 = 1 -> false
+  counts.by_item_id[7] = 1;
+  counts.by_item_id[8] = 1;
+  {
+    uint8 bc[] = { OP_HAS_ANY_COUNT, 3, 7, 0, 8, 0, 9, 0, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "HAS_ANY_COUNT sum=2 threshold 2 should be true");
+  }
+  counts.by_item_id[8] = 0;
+  {
+    uint8 bc[] = { OP_HAS_ANY_COUNT, 3, 7, 0, 8, 0, 9, 0, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "HAS_ANY_COUNT sum=1 threshold 2 should be false");
+  }
+  counts.by_item_id[7] = 0;
+
+  // WORLDSTATE_EQ(open) — defaults set world_state = Open (0)
+  {
+    uint8 bc[] = { OP_WORLDSTATE_EQ, kWorldState_Open };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "WORLDSTATE_EQ(open) against defaults should be true");
+  }
+  {
+    uint8 bc[] = { OP_WORLDSTATE_EQ, kWorldState_Inverted };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "WORLDSTATE_EQ(inverted) against defaults should be false");
+  }
+
+  // GOAL_EQ(fast_ganon) — defaults set goal = FastGanon (1)
+  {
+    uint8 bc[] = { OP_GOAL_EQ, kGoal_FastGanon };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "GOAL_EQ(fast_ganon) against defaults should be true");
+  }
+
+  // AND with all true children
+  {
+    uint8 bc[] = {
+      OP_AND, 2,
+        OP_WORLDSTATE_EQ, kWorldState_Open,
+        OP_GOAL_EQ, kGoal_FastGanon,
+    };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "AND of two truths should be true");
+  }
+  // AND with one false child
+  {
+    uint8 bc[] = {
+      OP_AND, 2,
+        OP_WORLDSTATE_EQ, kWorldState_Inverted,
+        OP_GOAL_EQ, kGoal_FastGanon,
+    };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "AND with one false should be false");
+  }
+  // Vacuous AND -> TRUE
+  {
+    uint8 bc[] = { OP_AND, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "vacuous AND should be true");
+  }
+  // Vacuous OR -> FALSE
+  {
+    uint8 bc[] = { OP_OR, 0 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "vacuous OR should be false");
+  }
+
+  // OR with one truth
+  {
+    uint8 bc[] = {
+      OP_OR, 2,
+        OP_WORLDSTATE_EQ, kWorldState_Inverted,
+        OP_GOAL_EQ, kGoal_FastGanon,
+    };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "OR with one truth should be true");
+  }
+
+  // NOT
+  {
+    uint8 bc[] = { OP_NOT, OP_WORLDSTATE_EQ, kWorldState_Inverted };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "NOT (false) should be true");
+  }
+
+  // ITEM_IS in placement context — true iff candidate matches
+  {
+    uint8 bc[] = { OP_ITEM_IS, 42, 0 };
+    LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 42) == true,
+               "ITEM_IS(42) with candidate 42 should be true");
+    LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 41) == false,
+               "ITEM_IS(42) with candidate 41 should be false");
+  }
+
+  // DUNGEON_CLEARED — driven by cleared_dungeons_bitmask in ctx
+  {
+    uint8 bc[] = { OP_DUNGEON_CLEARED, 5 };
+    PredicateContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.counts = &counts;
+    ctx.settings = &settings;
+    ctx.cleared_dungeons_bitmask = (uint64)1 << 5;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == true,
+               "DUNGEON_CLEARED with bit set should be true");
+    ctx.cleared_dungeons_bitmask = 0;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == false,
+               "DUNGEON_CLEARED with bit clear should be false");
+  }
+
+  // HAS_PRIZE — true iff the dungeon currently holding the prize is cleared
+  {
+    uint8 bc[] = { OP_HAS_PRIZE, 0 };  // prize id 0 = Prize_GreenPendant
+    uint8 prize_assignment[kRandoDungeonCount];
+    memset(prize_assignment, 0xff, sizeof(prize_assignment));
+    prize_assignment[1] = 0;  // EasternPalace (id 1) holds the green pendant
+    PredicateContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.counts = &counts;
+    ctx.settings = &settings;
+    ctx.dungeon_prize_assignment = prize_assignment;
+    ctx.cleared_dungeons_bitmask = (uint64)1 << 1;  // EP cleared
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == true,
+               "HAS_PRIZE when holding-dungeon cleared should be true");
+    ctx.cleared_dungeons_bitmask = 0;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == false,
+               "HAS_PRIZE when holding-dungeon not cleared should be false");
+  }
+
+  // MEDALLION_OPENS — true iff inventory has the medallion that opens the entrance
+  {
+    uint8 bc[] = { OP_MEDALLION_OPENS, 0 };  // entrance 0 = MiseryMire
+    uint8 medallion_assignment[kRandoMedallionEntranceCount];
+    // Misery Mire opens with item id 26 (Ether per item_registry)
+    medallion_assignment[0] = 26;
+    medallion_assignment[1] = 25;
+    PredicateContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.counts = &counts;
+    ctx.settings = &settings;
+    ctx.medallion_entrance_assignment = medallion_assignment;
+    counts.by_item_id[26] = 1;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == true,
+               "MEDALLION_OPENS with required medallion should be true");
+    counts.by_item_id[26] = 0;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == false,
+               "MEDALLION_OPENS without required medallion should be false");
+  }
+
+  // Phase B placeholder ops always evaluate to their zero branch in Phase A
+  {
+    uint8 bc[] = { OP_TRICK, 5 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "OP_TRICK should always be false in Phase A");
+  }
+  {
+    uint8 bc[] = { OP_GLITCH_LEVEL_AT_LEAST, 1 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "OP_GLITCH_LEVEL_AT_LEAST(1) should be false in Phase A (logic=NoGlitches)");
+  }
+
+  // OP_DIFFICULTY_AT_LEAST against defaults (normal=1)
+  {
+    uint8 bc[] = { OP_DIFFICULTY_AT_LEAST, 1 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "OP_DIFFICULTY_AT_LEAST(1) against defaults (normal=1) should be true");
+  }
+  {
+    uint8 bc[] = { OP_DIFFICULTY_AT_LEAST, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "OP_DIFFICULTY_AT_LEAST(2) against defaults (normal=1) should be false");
+  }
+
+  fprintf(stderr, "[Logic_SelfCheck] OK\n");
+}

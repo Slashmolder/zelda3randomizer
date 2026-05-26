@@ -215,6 +215,30 @@ static void share_assert(bool cond, const char *msg) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Share_PastePath (tasks.md §9.6) — UI helper.
+//
+// Decodes a user-pasted share string and extracts the seed_u64 +
+// settings_hash. Returns the decode status enum so the caller can surface a
+// specific error message.
+// ---------------------------------------------------------------------------
+ShareDecodeStatus Share_PastePath(const char *share_string_input,
+                                  uint64 *out_seed_u64,
+                                  uint8 out_settings_hash_short[16]) {
+  if (share_string_input == NULL || out_seed_u64 == NULL ||
+      out_settings_hash_short == NULL) {
+    return kShareDecodeBadLength;
+  }
+  ShareString ss;
+  ShareDecodeStatus st = Share_Decode(share_string_input, &ss);
+  if (st != kShareDecodeOk) {
+    return st;
+  }
+  *out_seed_u64 = ss.seed_u64;
+  for (int i = 0; i < 16; i++) out_settings_hash_short[i] = ss.settings_hash[i];
+  return kShareDecodeOk;
+}
+
 void Share_SelfCheck(void) {
   /* Round-trip: encode + decode → identical struct. */
   ShareString original = {0};

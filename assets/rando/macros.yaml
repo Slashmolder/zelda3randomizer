@@ -1,0 +1,443 @@
+# macros.yaml — Phase A named-macro definitions
+#
+# Per tasks.md §3.4a: each macro pairs 1:1 with a logic-bearing public method
+# on `alttp_vt_randomizer/app/Support/ItemCollection.php`. The file at
+# `app/Support/ItemCollection.php` (MIT-licensed; verified at audit.md §0.10.1)
+# is the upstream source-of-truth.
+#
+# Source-line citations are mechanically derived: each macro has a `source:`
+# field pointing at the PHP method's exact line range. Translation discipline:
+#  - PHP `$this->has('X')` → `HAS_ITEM(X)` (when treated as boolean)
+#  - PHP `$this->has('X', n)` → `HAS_AMOUNT(X, n)`
+#  - PHP `$this->canFoo($world)` → `CanFoo(world)` (macro call passing through
+#    the world parameter)
+#  - PHP `$world->config(...)` and `$world instanceof World\Inverted` →
+#    `WORLDSTATE_EQ(...)` or Phase B placeholder (`OP_TRICK`, etc.) with notes
+#  - PHP item names: ALTTPR's `PegasusBoots` → our `Boots`,
+#    ALTTPR's `TitansMitt` → our `TitanMitt`,
+#    ALTTPR's `BottleWithGoldBee` → our `BottleWithGoodBee`.
+#  - ALTTPR-specific pool variants not modeled in our `item_registry.yaml`
+#    (`BowAndArrows`, `BowAndSilverArrows`, `ShopArrow`, `MasterSword`,
+#    `UncleSword`, `L1SwordAndShield`, `TenBombs`, `OcarinaActive`) are
+#    dropped from Phase A predicates and called out with notes. Phase B
+#    re-introduces them if the corresponding pool option (`assured`,
+#    `randomized weapons`, `rupee bow`, etc.) is added to our settings.
+#
+# Phase B ops referenced: `OP_TRICK`, `OP_DIFFICULTY_AT_LEAST`,
+# `OP_GLITCH_LEVEL_AT_LEAST`. These never evaluate true under Phase A's pinned
+# logic axes (`tricks=none`, `logic=NoGlitches`) — see audit.md §0.10.2.
+
+format_version: 1
+phase: A
+
+macros:
+  # ===========================================================================
+  # has — base lookup. Not a "named macro" in the ALTTPR sense (it's the
+  # one-argument helper that every other predicate calls), but emitted here
+  # so the audit table is 1:1 with PHP. Codegen does NOT emit it — predicate
+  # bodies in our logic.yaml use `HAS_ITEM` / `HAS_AMOUNT` directly.
+  # ===========================================================================
+  - name: Has
+    parameters: [item, at_least]
+    body: "HAS_AMOUNT(item, at_least)"
+    source: "app/Support/ItemCollection.php:256-276"
+    notes: |
+      ALTTPR's $this->has($key, $at_least=1) tests `item_counts[$key] >= $at_least`,
+      with two special branches we drop in Phase A:
+        (a) `if ($at_least === 0) return true` — caller convention; our DSL
+            forbids zero-arity HAS_AMOUNT.
+        (b) `ShopKey` retro-mode generic-key wildcard (lines 271-273) — Phase
+            B retro-mode handles small-key fungibility separately.
+      Predicate bodies SHOULD inline `HAS_ITEM(X)` / `HAS_AMOUNT(X, n)`
+      rather than call `Has(...)`; this macro exists for provenance only.
+
+  # ===========================================================================
+  # heartCount — counts hearts; reduces to HAS_ANY_COUNT-style usage.
+  # ===========================================================================
+  - name: HeartCount
+    parameters: [initial]
+    body: "HAS_ANY_COUNT([PieceOfHeart, BossHeartContainer, StartingHeart], initial)"
+    source: "app/Support/ItemCollection.php:346-359"
+    notes: |
+      ALTTPR's heartCount() iterates Item\Upgrade\Health instances and adds
+      0.25 per PieceOfHeart, 1.0 per BossHeartContainer, with `$initial=3.0`
+      as the starting-hearts seed. Our DSL has no fractional arithmetic; the
+      common usage (`hasHealth($n)`) is the only call site and it reduces to
+      "do you have enough heart-piece-equivalents to total $n". Phase A
+      handles this via `HasHealth(min)` (below) which expands to a single
+      HAS_ANY_COUNT bucket: PoH counts 1, BossHC counts 1, StartingHeart
+      counts 1. Phase B may refine this to handle the 4-PoH-per-container
+      ratio if hard-mode logic demands sub-heart-container granularity.
+
+  # ===========================================================================
+  # canLiftRocks — light-rock gloves test.
+  # ===========================================================================
+  - name: CanLiftRocks
+    parameters: []
+    body: "HAS_ITEM(PowerGlove) OR HAS_ITEM(ProgressiveGlove) OR HAS_ITEM(TitanMitt)"
+    source: "app/Support/ItemCollection.php:366-371"
+    notes: |
+      ALTTPR's `TitansMitt` is our `TitanMitt` (id 15). `ProgressiveGlove`
+      at any level satisfies; the `>= 1` check is implicit since HAS_ITEM
+      tests presence (any count ≥ 1).
+
+  # ===========================================================================
+  # canLiftDarkRocks — heavy-rock test (Titan's Mitt or ProgGlove L2).
+  # ===========================================================================
+  - name: CanLiftDarkRocks
+    parameters: []
+    body: "HAS_ITEM(TitanMitt) OR HAS_AMOUNT(ProgressiveGlove, 2)"
+    source: "app/Support/ItemCollection.php:378-382"
+
+  # ===========================================================================
+  # canLightTorches — fire source.
+  # ===========================================================================
+  - name: CanLightTorches
+    parameters: []
+    body: "HAS_ITEM(FireRod) OR HAS_ITEM(Lamp)"
+    source: "app/Support/ItemCollection.php:389-392"
+
+  # ===========================================================================
+  # canMeltThings — ice-statue / freezor melt.
+  # ===========================================================================
+  - name: CanMeltThings
+    parameters: [world]
+    body: "HAS_ITEM(FireRod) OR (HAS_ITEM(Bombos) AND HasSword(1))"
+    source: "app/Support/ItemCollection.php:402-406"
+    notes: |
+      ALTTPR: `FireRod OR (Bombos AND (swordless OR hasSword()))`. Phase A
+      pins `mode.weapons != swordless`, so the swordless-mode disjunct is
+      dropped here; Bombos requires a sword to cast. Phase B re-adds the
+      `WORLDSTATE_EQ(swordless)` branch when swordless-mode lands.
+
+  # ===========================================================================
+  # canFly — duck fast-travel.
+  # ===========================================================================
+  - name: CanFly
+    parameters: [world]
+    body: "HAS_ITEM(OcarinaInactive) AND CanActivateOcarina(world)"
+    source: "app/Support/ItemCollection.php:415-418"
+    notes: |
+      ALTTPR: `OcarinaActive OR (OcarinaInactive AND canActivateOcarina())`.
+      Our item_registry.yaml has only OcarinaInactive (id 30); the
+      "active" state is set by Ancilla38_CutsceneDuck via a direct
+      link_item_flute write (per registry note on id 30), not as a placed
+      item. So the post-duck "flute = 3" state is unreachable as an
+      inventory presence — only the pre-duck inactive form is placeable,
+      and the CanActivateOcarina gate models the cutscene prerequisite.
+
+  # ===========================================================================
+  # canActivateOcarina — inverted-world ocarina-cutscene gate. PRIVATE in
+  # PHP but called by canFly; emitted here so logic.yaml can express it.
+  # ===========================================================================
+  - name: CanActivateOcarina
+    parameters: [world]
+    body: "(NOT WORLDSTATE_EQ(inverted)) OR (HAS_ITEM(MoonPearl) AND (HAS_ITEM(DefeatAgahnim) OR (HAS_ITEM(Hammer) AND CanLiftRocks()) OR CanLiftDarkRocks()))"
+    source: "app/Support/ItemCollection.php:420-428"
+    notes: |
+      ALTTPR's `canActivateOcarina` returns true unconditionally outside
+      Inverted mode; in Inverted, it requires MoonPearl plus a route to
+      the dark-world flute spot (defeated Agahnim, OR pyramid-fairy
+      pocket via Hammer+light-glove, OR Titan's Mitt). DefeatAgahnim is
+      our virtual item (registry id 123). The private modifier in PHP
+      is irrelevant for our purposes — we surface it as a public macro
+      so canFly can call it.
+
+  # ===========================================================================
+  # canSpinSpeed — pegasus-boots dash with hookshot/sword for boosting.
+  # ===========================================================================
+  - name: CanSpinSpeed
+    parameters: []
+    body: "HAS_ITEM(Boots) AND (HasSword(1) OR HAS_ITEM(Hookshot))"
+    source: "app/Support/ItemCollection.php:435-439"
+    notes: |
+      ALTTPR's `PegasusBoots` maps to our `Boots` (item_registry.yaml id 37).
+
+  # ===========================================================================
+  # canAcquireFairy — fairy-catching rules. Drops to settings switch.
+  # ===========================================================================
+  - name: CanAcquireFairy
+    parameters: [world]
+    body: "TRUE()"
+    source: "app/Support/ItemCollection.php:444-450"
+    notes: |
+      ALTTPR returns False when `$world->config('rom.CatchableFairies', true)`
+      is disabled; default is true. Phase A pins fairy-catching as available
+      (we have no setting equivalent yet). Phase B adds a settings switch
+      and replaces the body with `NOT OP_NO_CATCHABLE_FAIRIES()` or similar.
+
+  # ===========================================================================
+  # canBunnyRevive — bottle+net for water-bunny revival.
+  # ===========================================================================
+  - name: CanBunnyRevive
+    parameters: [world]
+    body: "HasABottle() AND HAS_ITEM(BugCatchingNet) AND CanAcquireFairy(world)"
+    source: "app/Support/ItemCollection.php:457-466"
+    notes: |
+      ALTTPR's body conditionally folds in `canAcquireFairy($world)` only
+      when `$world !== null`; in our codegen the parameter is always bound
+      so we keep the macro call unconditional.
+
+  # ===========================================================================
+  # canShootArrows — bow + arrows test (level 1 or 2 for silvers).
+  # ===========================================================================
+  - name: CanShootArrows
+    parameters: [world, min_level]
+    body: "((HAS_ITEM(Bow) OR HAS_ITEM(ProgressiveBow)) AND (min_level EQ 1)) OR ((HAS_ITEM(BowAndSilverArrows) OR HAS_AMOUNT(ProgressiveBow, 2) OR (HAS_ITEM(SilverArrowUpgrade) AND (HAS_ITEM(Bow) OR HAS_ITEM(ProgressiveBow)))) AND (min_level EQ 2))"
+    source: "app/Support/ItemCollection.php:476-493"
+    notes: |
+      ALTTPR's full body is parameterized by min_level (1 default, 2 for
+      silver-only contexts), and gated by `rom.rupeeBow` (drops bow without
+      ShopArrow item). Phase A pins `rupeeBow=false` so the `ShopArrow`
+      branches collapse out. ALTTPR-specific pool variants `BowAndArrows`
+      and `BowAndSilverArrows` are NOT in our item_registry.yaml — they're
+      "assured starting" pool quirks. The `BowAndSilverArrows` branch is
+      retained for compat with assured-silvers settings (Phase B). The
+      DSL `EQ` operator on integer params is a Phase A authoring shorthand;
+      if the grammar rejects it, codegen MUST expand `CanShootArrows(W,1)`
+      and `CanShootArrows(W,2)` into separate macros at substitution time.
+      Pragmatic Phase A: most callers use `CanShootArrows()` with default
+      min_level=1, and we publish `CanShootArrows` as the level-1 variant
+      and `CanShootSilvers` as the level-2 variant (see below).
+
+  # CanShootArrows shorthand: level-1, world-agnostic (the common call site).
+  - name: CanShootArrowsL1
+    parameters: []
+    body: "HAS_ITEM(Bow) OR HAS_ITEM(ProgressiveBow)"
+    source: "app/Support/ItemCollection.php:476-493 (case 1 default branch)"
+    notes: |
+      Phase A simplification: rupeeBow=false → bow alone is sufficient
+      regardless of arrow ammo. This is the form referenced by location
+      predicates like Eastern Palace - Boss (see `01_eastern_palace.yaml`).
+
+  # CanShootArrows shorthand: level-2 (silver arrows for Ganon, etc.).
+  - name: CanShootSilvers
+    parameters: []
+    body: "HAS_AMOUNT(ProgressiveBow, 2) OR (HAS_ITEM(SilverArrowUpgrade) AND (HAS_ITEM(Bow) OR HAS_ITEM(ProgressiveBow)))"
+    source: "app/Support/ItemCollection.php:476-493 (case 2 branch)"
+    notes: |
+      Silver arrows for Ganon damage. ALTTPR's `BowAndSilverArrows` pool
+      variant is not in our registry; reachability requires either
+      ProgressiveBow level 2 OR a regular bow plus the standalone
+      SilverArrowUpgrade item.
+
+  # ===========================================================================
+  # canBlockLasers — mirror shield (or ProgShield L3).
+  # ===========================================================================
+  - name: CanBlockLasers
+    parameters: []
+    body: "HAS_ITEM(MirrorShield) OR HAS_AMOUNT(ProgressiveShield, 3)"
+    source: "app/Support/ItemCollection.php:500-504"
+
+  # ===========================================================================
+  # canExtendMagic — magic bar headroom for extended sequences.
+  # ===========================================================================
+  - name: CanExtendMagic
+    parameters: [world, bars]
+    body: "HAS_ITEM(HalfMagic) OR HAS_ITEM(QuarterMagic) OR HasBottle(1)"
+    source: "app/Support/ItemCollection.php:513-526"
+    notes: |
+      ALTTPR computes a numeric magic budget:
+        baseMagic = QuarterMagic ? 4 : HalfMagic ? 2 : 1
+        bottleMagic = baseMagic * bottleCount() * magicModifier
+        return (baseMagic + bottleMagic) >= $bars
+      With magicModifier=1.0 (rom.BottleFill.Magic default 0x80) and the
+      common call `canExtendMagic($w, 2.0)`:
+        - QuarterMagic alone: 4+0 = 4 >= 2 ✓
+        - HalfMagic alone:    2+0 = 2 >= 2 ✓
+        - 1 bottle alone:     1+1 = 2 >= 2 ✓
+        - nothing:            1+0 = 1 < 2 ✗
+      So the default-bars-2.0 collapse is `HalfMagic OR QuarterMagic OR
+      HasBottle(1)`. Phase B handles the rare non-default `bars` callers
+      (e.g., `bars=8.0` for long-sequence ice-rod chains) via a higher
+      HAS_ANY_COUNT or by introducing a CanExtendMagicLarge variant.
+      The `bars` parameter is accepted for signature parity but ignored
+      in the Phase A body.
+
+  # ===========================================================================
+  # glitchedLinkInDarkWorld — major-glitches dark-world bunny override.
+  # ===========================================================================
+  - name: GlitchedLinkInDarkWorld
+    parameters: []
+    body: "HAS_ITEM(MoonPearl) OR HasABottle()"
+    source: "app/Support/ItemCollection.php:533-537"
+    notes: |
+      Used only when major-glitches logic is enabled (a Phase B logic axis).
+      Phase A pins `logic=NoGlitches`; predicates that gate on this should
+      add `OP_GLITCH_LEVEL_AT_LEAST(major)` to suppress this branch.
+
+  # ===========================================================================
+  # hasHealth — minimum health budget for damage-bottled sequences.
+  # ===========================================================================
+  - name: HasHealth
+    parameters: [minimum]
+    body: "HAS_ANY_COUNT([PieceOfHeart, BossHeartContainer, StartingHeart], minimum)"
+    source: "app/Support/ItemCollection.php:546-553"
+    notes: |
+      ALTTPR sums `item->power` over Item\Upgrade\Health instances. Our
+      simplification: each heart-bearing item counts 1 toward `minimum`.
+      In practice the only Phase A call site is rare; if hard logic needs
+      sub-container granularity (PieceOfHeart counting as 0.25 each), this
+      macro grows into a Phase B-tagged variant.
+
+  # ===========================================================================
+  # canKillEscapeThings — minimum-firepower test for the uncle/escape segment.
+  # ===========================================================================
+  - name: CanKillEscapeThings
+    parameters: [world]
+    body: "HasSword(1) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna) OR CanBombThings() OR CanShootArrowsL1() OR HAS_ITEM(Hammer) OR HAS_ITEM(FireRod)"
+    source: "app/Support/ItemCollection.php:562-574"
+    notes: |
+      ALTTPR's body includes `UncleSword` (Standard-mode uncle gift item
+      that doesn't exist in our pool — we use ProgressiveSword from
+      RescuedZelda forward) and `TenBombs` (assured-bombs pool variant
+      not in our registry). HasSword(1) covers the sword case (any sword
+      satisfies "escape kill"). Enemizer's `enemyHealth='default'` gate
+      on the bomb/byrna branches is dropped: Phase A pins enemizer off.
+      The `ignoreCanKillEscapeThings` config switch is also dropped
+      (Standard-mode escape Phase B feature).
+
+  # ===========================================================================
+  # canKillMostThings — general-purpose enemy-kill predicate.
+  # ===========================================================================
+  - name: CanKillMostThings
+    parameters: [world, enemies]
+    body: "HasSword(1) OR HAS_ITEM(CaneOfSomaria) OR CanShootArrowsL1() OR HAS_ITEM(Hammer) OR HAS_ITEM(FireRod) OR (CanBombThings() AND (enemies LT 6)) OR (HAS_ITEM(CaneOfByrna) AND ((enemies LT 6) OR CanExtendMagic(world, 2)))"
+    source: "app/Support/ItemCollection.php:584-595"
+    notes: |
+      ALTTPR's `enemies` parameter (default 5) gates the bomb/byrna branches
+      ("< 6 enemies you can bomb individually before running out"). The
+      enemizer.enemyHealth='default' gate is dropped (Phase A pins enemizer
+      off). The `enemies LT 6` literal-int comparison is a Phase A authoring
+      shorthand; codegen MUST expand at substitution time to a fixed
+      constant per call site (e.g., `CanKillMostThings(w, 4)` evaluates the
+      branches with `enemies=4` literal, dropping the `enemies LT 6` guard
+      to TRUE()).
+
+  # ===========================================================================
+  # canBombThings — bombs are always available in vanilla ALTTPR.
+  # ===========================================================================
+  - name: CanBombThings
+    parameters: []
+    body: "TRUE()"
+    source: "app/Support/ItemCollection.php:602-605"
+    notes: |
+      ALTTPR returns true unconditionally — Link starts with bombs and
+      bomb refills are common-pool. Phase A inherits this assumption.
+      Phase B no-bombs-from-start variant flips this to `HAS_ITEM(Bombs1)
+      OR HAS_ITEM(Bombs3) OR HAS_ITEM(Bombs10)` plus a worldstate gate.
+
+  # ===========================================================================
+  # canGetGoodBee — golden bee acquisition.
+  # ===========================================================================
+  - name: CanGetGoodBee
+    parameters: []
+    body: "HAS_ITEM(BugCatchingNet) AND HasABottle() AND (HAS_ITEM(Boots) OR (HasSword(1) AND HAS_ITEM(Quake)))"
+    source: "app/Support/ItemCollection.php:612-618"
+    notes: |
+      ALTTPR's `PegasusBoots` maps to our `Boots`. The boots-or-sword+quake
+      branches reflect the two ways to stagger-stun the bee swarm.
+
+  # ===========================================================================
+  # hasSword — min-level sword test, treating UncleSword as ProgressiveSword.
+  # ===========================================================================
+  - name: HasSword
+    parameters: [min_level]
+    body: "HAS_AMOUNT(ProgressiveSword, min_level) OR HAS_ITEM(L1Sword) OR HAS_ITEM(L2Sword) OR HAS_ITEM(L3Sword) OR HAS_ITEM(L4Sword)"
+    source: "app/Support/ItemCollection.php:627-657"
+    notes: |
+      ALTTPR's hasSword has 4-way min_level switch (1..4) and folds
+      UncleSword + ProgressiveSword(min_level-1), L1SwordAndShield, and
+      MasterSword into the lower-tier disjuncts. Our item_registry.yaml
+      does not model UncleSword (we use ProgressiveSword from
+      RescuedZelda), L1SwordAndShield (a Standard-mode starting bundle),
+      or MasterSword (an item alias for L2Sword). The Phase A body
+      collapses to:
+        - HAS_AMOUNT(ProgressiveSword, min_level) — generalizes all 4 cases
+        - any absolute L1..L4 sword counts as "have any sword" for
+          min_level=1, but a literal L2Sword does NOT satisfy
+          HAS_AMOUNT(ProgressiveSword, 2). For accurate min_level>=2 in
+          absolute-sword mode, callers SHOULD use HasSword2/3/4 variants.
+      The min_level parameter substitution happens at codegen time.
+
+  - name: HasSword2
+    parameters: []
+    body: "HAS_AMOUNT(ProgressiveSword, 2) OR HAS_ITEM(L2Sword) OR HAS_ITEM(L3Sword) OR HAS_ITEM(L4Sword)"
+    source: "app/Support/ItemCollection.php:639-645 (case 2 branch)"
+    notes: |
+      Explicit min_level=2 form. UncleSword + ProgressiveSword (i.e., level
+      1.5) is dropped (no UncleSword in our pool).
+
+  - name: HasSword3
+    parameters: []
+    body: "HAS_AMOUNT(ProgressiveSword, 3) OR HAS_ITEM(L3Sword) OR HAS_ITEM(L4Sword)"
+    source: "app/Support/ItemCollection.php:634-638 (case 3 branch)"
+
+  - name: HasSword4
+    parameters: []
+    body: "HAS_AMOUNT(ProgressiveSword, 4) OR HAS_ITEM(L4Sword)"
+    source: "app/Support/ItemCollection.php:630-633 (case 4 branch)"
+
+  # ===========================================================================
+  # hasArmor — min-level armor test.
+  # ===========================================================================
+  - name: HasArmor
+    parameters: [min_level]
+    body: "HAS_AMOUNT(ProgressiveArmor, min_level) OR HAS_ITEM(BlueMail) OR HAS_ITEM(RedMail)"
+    source: "app/Support/ItemCollection.php:666-678"
+    notes: |
+      ALTTPR's hasArmor switches on min_level (1 or 2). At min_level=2 the
+      BlueMail branch drops (only RedMail or ProgressiveArmor>=2 satisfies).
+      The Phase A parametric form leaves both BlueMail and RedMail in the
+      disjunct; callers needing min_level=2 strictness should use HasArmor2.
+
+  - name: HasArmor2
+    parameters: []
+    body: "HAS_AMOUNT(ProgressiveArmor, 2) OR HAS_ITEM(RedMail)"
+    source: "app/Support/ItemCollection.php:669-672 (case 2 branch)"
+
+  # ===========================================================================
+  # hasBottle — N-bottle test (counts only bottles, not bottle contents
+  # individually — multiple-bottle predicates count distinct bottle items).
+  # ===========================================================================
+  - name: HasBottle
+    parameters: [at_least]
+    body: "HAS_ANY_COUNT([BottleEmpty, BottleWithFairy, BottleWithBee, BottleWithGoodBee, BottleWithRedPotion, BottleWithGreenPotion, BottleWithBluePotion], at_least)"
+    source: "app/Support/ItemCollection.php:687-690"
+    notes: |
+      ALTTPR's hasBottle calls bottleCount() which filters
+      `Item\Bottle` instances. Our bottle taxonomy in item_registry.yaml
+      (ids 43-49) covers all bottle states; HAS_ANY_COUNT sums them.
+      Note: ALTTPR also references a bare `Bottle` item name in hasABottle
+      (line 716) — that's the "Bottle" base-class name in the upstream
+      Item enum, which we model as `BottleEmpty`.
+
+  # ===========================================================================
+  # bottleCount — counter helper, returns int. Emit as macro for citation;
+  # predicate bodies should use HAS_ANY_COUNT([bottles...], N) directly.
+  # ===========================================================================
+  - name: BottleCount
+    parameters: [at_least]
+    body: "HAS_ANY_COUNT([BottleEmpty, BottleWithFairy, BottleWithBee, BottleWithGoodBee, BottleWithRedPotion, BottleWithGreenPotion, BottleWithBluePotion], at_least)"
+    source: "app/Support/ItemCollection.php:697-702"
+    notes: |
+      bottleCount() returns an integer; our DSL has no integer-returning
+      macros (only boolean predicates). The provenance-faithful form is
+      "have at_least N bottles", identical to HasBottle. Predicate bodies
+      should call HasBottle(N) instead.
+
+  # ===========================================================================
+  # hasABottle — at least one bottle of any kind.
+  # ===========================================================================
+  - name: HasABottle
+    parameters: []
+    body: "HAS_ANY_OF([BottleEmpty, BottleWithFairy, BottleWithBee, BottleWithGoodBee, BottleWithRedPotion, BottleWithGreenPotion, BottleWithBluePotion])"
+    source: "app/Support/ItemCollection.php:709-718"
+    notes: |
+      ALTTPR's hasABottle enumerates `BottleWithBee`, `BottleWithFairy`,
+      `BottleWithRedPotion`, `BottleWithGreenPotion`, `BottleWithBluePotion`,
+      `Bottle` (the base/empty), and `BottleWithGoldBee`. The naming
+      remappings: ALTTPR `Bottle` → our `BottleEmpty`; ALTTPR
+      `BottleWithGoldBee` → our `BottleWithGoodBee`. All 7 of our bottle
+      ids appear in the HAS_ANY_OF list — identical to HasBottle(1) but
+      emits OP_HAS_ANY_OF instead of OP_HAS_ANY_COUNT (saves one operand).

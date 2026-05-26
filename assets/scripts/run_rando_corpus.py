@@ -55,8 +55,10 @@ def validate_entry(entry: dict, idx: int) -> list[str]:
     errors = []
     if "settings" not in entry:
         errors.append(f"entry {idx}: missing 'settings'")
-    if "seed_u64" not in entry:
-        errors.append(f"entry {idx}: missing 'seed_u64'")
+    # Canonical key is `seed` per randomizer-core / CLI manifest schema;
+    # accept legacy `seed_u64` for backward compatibility.
+    if "seed" not in entry and "seed_u64" not in entry:
+        errors.append(f"entry {idx}: missing 'seed' (quoted uint64 string)")
     if "expected_digest" not in entry:
         errors.append(f"entry {idx}: missing 'expected_digest' (SHA-256 of placement table)")
     elif not isinstance(entry["expected_digest"], str) or len(entry["expected_digest"]) != 64:
@@ -68,12 +70,51 @@ def run_activated(binary: Path, manifest: dict) -> int:
     if not binary.exists():
         print(f"run_rando_corpus: binary {binary} not found. Build first.")
         return 1
-    # The binary's batch form writes N spoiler JSONs to a directory.
-    # We then read each, recompute its placement digest, compare to expected.
-    # TODO: implement once 1.6a / 12.2 land.
-    print(f"run_rando_corpus: activated path TODO — manifest has {len(manifest['entries'])} entries.")
-    print(f"  Binary: {binary}")
-    print("  Implementation pending tasks 1.6a (--generate-seed --manifest) and 12.2 (corpus content).")
+    import json
+    import subprocess
+    import tempfile
+
+    failures = 0
+    for idx, entry in enumerate(manifest["entries"]):
+        settings = entry.get("settings", {})
+        seed = str(entry.get("seed", entry.get("seed_u64", "")))
+        expected = entry.get("expected_digest", "")
+        label = entry.get("label", f"entry-{idx}")
+        settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
+
+        with tempfile.TemporaryDirectory() as td:
+            out_json = Path(td) / "out.json"
+            try:
+                subprocess.run(
+                    [str(binary), "--generate-seed",
+                     f"--settings={settings_csv}",
+                     f"--seed={seed}",
+                     f"--out-spoiler={out_json}"],
+                    check=True, capture_output=True, timeout=60,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                print(f"  FAIL [{idx}] {label}: generator error: {e}")
+                failures += 1
+                continue
+            if not out_json.exists():
+                print(f"  FAIL [{idx}] {label}: spoiler not written")
+                failures += 1
+                continue
+            spoiler = json.loads(out_json.read_text(encoding="utf-8"))
+            got = spoiler.get("meta", {}).get("placement_digest_hex", "")
+
+        if got != expected:
+            print(f"  FAIL [{idx}] {label}: digest mismatch")
+            print(f"    expected {expected}")
+            print(f"    got      {got}")
+            failures += 1
+        else:
+            print(f"  OK   [{idx}] {label}: {got[:16]}...")
+
+    if failures:
+        print(f"\nrun_rando_corpus: {failures} of {len(manifest['entries'])} entries FAILED.")
+        return 1
+    print(f"\nrun_rando_corpus: all {len(manifest['entries'])} entries OK.")
     return 0
 
 

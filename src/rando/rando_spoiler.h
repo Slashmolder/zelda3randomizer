@@ -29,4 +29,21 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path);
 // Write text spoiler grouped by region for human readability.
 bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path);
 
+// Resolve the spoiler path for a slot's share string. The path is derived
+// at runtime from `[Randomizer] SpoilerDir` (or `<exe-dir>/spoilers` when
+// the INI key is unset) + the slot's share string + the extension.
+//
+// Per `randomizer-core / Spoiler-log emission`: the path is NOT stored in
+// the slot — it's recomputed whenever the spoiler needs to be written or
+// surfaced. This keeps slots invariant under config changes.
+//
+// Writes into `out_path` (max `out_capacity` bytes including NUL). Returns
+// the length written (excluding NUL) or 0 on failure (buffer too small).
+//
+// Caller responsibility: the directory `<spoiler_dir>` must exist when the
+// spoiler is actually written (Spoiler_WriteJson does not create it).
+int Spoiler_ResolvePath(const char *share_string,
+                        const char *extension_with_dot,  // ".json" or ".txt"
+                        char *out_path, int out_capacity);
+
 #endif  // ZELDA3_RANDO_SPOILER_H_

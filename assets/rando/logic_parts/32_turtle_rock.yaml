@@ -1,0 +1,183 @@
+# 32_turtle_rock.yaml — Turtle Rock logic graph.
+#
+# Mechanically translated from `app/Region/Standard/TurtleRock.php` (MIT,
+# verified per CLAUDE.md "Claim-grounding discipline" §Upstream references).
+#
+# Translation discipline (audit.md §0.10.2):
+#   - Every predicate cites the PHP file:line range it came from.
+#   - PHP defines three approach closures `$upper`, `$middle`, `$lower`
+#     (php:87-125). In Phase A:
+#       * `$lower` requires `canMirrorWrap` (Phase B trick) → FALSE.
+#       * `$middle` requires one of canMirrorClip/canBootsClip/canSuperSpeed/
+#         canOneFrameClipOW (all Phase B tricks) → FALSE.
+#       * `$upper` collapses to the canonical non-glitch front-door route:
+#           medallion-tablet match + sword + MoonPearl + Somaria + Hammer
+#           + canLiftDarkRocks + East Death Mountain reachable.
+#     So `(upper OR middle OR lower)` reduces to just `upper`.
+#   - Phase B settings dropped (defaults):
+#       * region.cantTakeDamage / wildCompasses / wildMaps / wildKeys /
+#         bossNormalLocation — all collapse out via default values.
+#       * itemPlacement !== 'basic' branch dropped; keep only the basic-mode
+#         strict requirement (matches the EP Big Key Chest precedent).
+#       * item.overflow.count.Shield — pool setting; dropped (Phase B).
+#       * canBunnyRevive / canOWYBA / mode.weapons === 'swordless' etc. pinned.
+#       * accessibility !== 'locations' — accessibility=items is the default
+#         Phase A target; the `accessibility=locations` branch is dropped.
+#   - PHP item-name remappings:
+#       * KeyD7 → SmallKey_TurtleRock
+#       * BigKeyD7 → BigKey_TurtleRock
+#       * CompassD7 → Compass_TurtleRock
+#       * MapD7 → Map_TurtleRock
+#       * PegasusBoots → Boots
+#       * RescueZelda → RescuedZelda
+
+format_version: 1
+
+regions:
+  # External parent stub — Death Mountain east side (light-world EDM where
+  # the mirror warp to TR front door tile sits). Stubbed for cross-file
+  # region reference; codegen merges with the LightWorld_DeathMountain_East
+  # definition that lives in the overworld region file.
+  - id: LightWorld_DeathMountain_East
+    name: "Light World - Death Mountain East (stub)"
+    source: "stub for cross-file region reference"
+
+  - id: TurtleRock_Entrance
+    name: "Turtle Rock Entrance"
+    source: "app/Region/Standard/TurtleRock.php:257-264 (can_enter approach tile)"
+
+  - id: TurtleRock_Lobby
+    name: "Turtle Rock - Lobby"
+    dungeon: TurtleRock
+    parent: TurtleRock_Entrance
+    source: "app/Region/Standard/TurtleRock.php:15-77"
+
+edges:
+  # First leg — reach the TR front-door tile via the `$upper` route.
+  # `$upper` (php:87-101) after dropping Phase B trick disjuncts:
+  #   MoonPearl AND Hammer AND canLiftDarkRocks AND East-DM reachable.
+  # The medallion / sword conjuncts live on the entrance-to-lobby edge below.
+  - from: LightWorld_DeathMountain_East
+    to: TurtleRock_Entrance
+    predicate: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer) AND CanLiftDarkRocks() AND HAS_ITEM(MagicMirror)"
+    source: "app/Region/Standard/TurtleRock.php:87-101 (upper approach)"
+
+  # Second leg — read the TR medallion tablet to open the dungeon door.
+  # From `$upper` (php:87-91) AND can_enter (php:257-264):
+  #   medallion match (Bombos/Ether/Quake assigned + held)
+  #   AND (swordless OR hasSword)         [swordless pinned false → hasSword(1)]
+  #   AND CaneOfSomaria                   [needed inside immediately]
+  # Plus the can_enter outer wrapper:
+  #   RescuedZelda
+  - from: TurtleRock_Entrance
+    to: TurtleRock_Lobby
+    predicate: "HAS_ITEM(RescuedZelda) AND OP_MEDALLION_OPENS(TurtleRock_Entrance) AND HasSword(1) AND HAS_ITEM(CaneOfSomaria)"
+    source: "app/Region/Standard/TurtleRock.php:87-101, 257-264 (entrance)"
+
+locations:
+  # All TR location closures use `(upper || middle || lower)`. In Phase A
+  # middle/lower are FALSE, so we evaluate against `upper` only. The
+  # `upper` predicate is itself satisfied by reaching TurtleRock_Lobby —
+  # i.e., it is implicit in the location being in TurtleRock_Lobby.
+  # We therefore translate each closure with `upper=TRUE` substituted.
+
+  # TR - Chain Chomps (php:127-131):
+  #   (upper AND KeyD7) || middle || (lower AND Lamp AND Somaria)
+  # Phase A: → KeyD7.
+  - id: "Turtle Rock - Chain Chomps"
+    can_reach: "HAS_ITEM(SmallKey_TurtleRock)"
+    source: "app/Region/Standard/TurtleRock.php:127-131"
+
+  # TR - Compass Chest (php:155-164):
+  #   Somaria AND (upper || (middle AND (BigKeyD7 in {RollerL,RollerR} && KeyD7>=2 || KeyD7>=4)) || (lower AND Lamp AND KeyD7>=4))
+  # Phase A: upper → TRUE; → Somaria.
+  - id: "Turtle Rock - Compass Chest"
+    can_reach: "HAS_ITEM(CaneOfSomaria)"
+    source: "app/Region/Standard/TurtleRock.php:155-164"
+
+  # TR - Roller Room - Left (php:133-142):
+  #   FireRod AND Somaria AND (upper || middle_branch || lower_branch)
+  # Phase A: upper → TRUE; → FireRod AND Somaria.
+  - id: "Turtle Rock - Roller Room - Left"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria)"
+    source: "app/Region/Standard/TurtleRock.php:133-142"
+
+  # TR - Roller Room - Right (php:144-153): symmetric to Left.
+  - id: "Turtle Rock - Roller Room - Right"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria)"
+    source: "app/Region/Standard/TurtleRock.php:144-153"
+
+  # TR - Big Chest (php:166-173):
+  #   BigKeyD7 AND ((upper AND KeyD7>=2) || (middle AND ...) || (lower AND Lamp AND Somaria))
+  # Phase A: upper → TRUE; → BigKeyD7 AND KeyD7>=2.
+  - id: "Turtle Rock - Big Chest"
+    can_reach: "HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 2)"
+    source: "app/Region/Standard/TurtleRock.php:166-173"
+
+  # TR - Big Key Chest (php:175-184). Has a wildKeys (false default)
+  # outer guard; in the wildKeys=false branch the requirement is simply
+  # has(KeyD7, 2). The setAlwaysAllow/setFillRules accessibility branches
+  # are Phase B (accessibility=items is the Phase A default).
+  - id: "Turtle Rock - Big Key Chest"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 2)"
+    source: "app/Region/Standard/TurtleRock.php:175-184"
+
+  # TR - Crystaroller Room (php:186-190):
+  #   (BigKeyD7 AND ((upper AND KeyD7>=2) || middle)) || (lower AND Lamp AND Somaria)
+  # Phase A: upper → TRUE → BigKeyD7 AND KeyD7>=2.
+  - id: "Turtle Rock - Crystaroller Room"
+    can_reach: "HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 2)"
+    source: "app/Region/Standard/TurtleRock.php:186-190"
+
+  # TR - Eye Bridge - Bottom Left (php:192-198):
+  #   (lower || ((upper || middle) AND Lamp AND Somaria AND BigKeyD7 AND KeyD7>=3))
+  #   AND (itemPlacement !== 'basic' || Cape || CaneOfByrna
+  #        || (item.overflow.count.Shield >= 3 AND canBlockLasers))
+  # Phase A: lower → FALSE, upper → TRUE; first half →
+  #     Lamp AND Somaria AND BigKeyD7 AND KeyD7>=3.
+  # Second half: drop !== 'basic' advanced branch (FALSE), drop
+  # item.overflow.count.Shield (Phase B); keep `Cape OR CaneOfByrna OR canBlockLasers`.
+  - id: "Turtle Rock - Eye Bridge - Bottom Left"
+    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    source: "app/Region/Standard/TurtleRock.php:192-198"
+
+  - id: "Turtle Rock - Eye Bridge - Bottom Right"
+    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    source: "app/Region/Standard/TurtleRock.php:200-206"
+
+  - id: "Turtle Rock - Eye Bridge - Top Left"
+    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    source: "app/Region/Standard/TurtleRock.php:208-214"
+
+  - id: "Turtle Rock - Eye Bridge - Top Right"
+    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    source: "app/Region/Standard/TurtleRock.php:216-222"
+
+  # TR - Boss (php:228-242):
+  #   canEnter AND KeyD7>=4
+  #   AND ((canMirrorWrap branches) OR Lamp)            [glitch branches FALSE → Lamp]
+  #   AND BigKeyD7 AND CaneOfSomaria
+  #   AND boss->canBeat(Trinexx)
+  #   AND wildCompasses/wildMaps disjuncts (collapse TRUE).
+  - id: "Turtle Rock - Boss"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
+    source: "app/Region/Standard/TurtleRock.php:228-242"
+
+  # TR - Prize (php:266 → can_complete = Boss canAccess).
+  - id: "Turtle Rock - Prize"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
+    source: "app/Region/Standard/TurtleRock.php:224-226, 266 (can_complete = Boss access)"
+
+macros:
+  # CanKillTrinexx — TR boss (Boss.php:119-125).
+  # PHP body:
+  #   FireRod AND IceRod
+  #   AND (itemPlacement !== 'basic' || swordless || hasSword(3) || (canExtendMagic(2) AND hasSword(2)))
+  #   AND (hasSword(3) || Hammer || (canExtendMagic(2) AND hasSword(2)) || (canExtendMagic(4) AND hasSword))
+  # Phase A: drop !== 'basic' advanced branch and swordless.
+  # First conjunct: hasSword(3) OR (canExtendMagic(2) AND hasSword(2)).
+  # Second conjunct: stays.
+  - name: CanKillTrinexx
+    parameters: [world]
+    body: "HAS_ITEM(FireRod) AND HAS_ITEM(IceRod) AND (HasSword3() OR (CanExtendMagic(world, 2) AND HasSword2())) AND (HasSword3() OR HAS_ITEM(Hammer) OR (CanExtendMagic(world, 2) AND HasSword2()) OR (CanExtendMagic(world, 4) AND HasSword(1)))"
+    source: "app/Boss.php:119-125 (Trinexx can_beat)"

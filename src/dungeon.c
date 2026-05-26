@@ -5085,6 +5085,7 @@ void Dungeon_ProcessTorchesAndDoors() {  // 81ce70
           Main_ShowTextMessage();
         }
       } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a && link_num_keys != 0) {
+        // rando-exempt: consumption — small key spent on locked door. (audit.md §0.2.4)
         link_num_keys -= 1;
 has_key_for_door:
         door_animation_step_indicator = 0;
@@ -6417,6 +6418,8 @@ void Module_PreDungeon() {  // 82821e
 
   Dungeon_LoadEntrance();
   uint8 d = cur_palace_index_x2;
+  // rando-exempt: state-shuffle — restore per-dungeon key count when entering
+  // dungeon (or sentinel 0xff outside). Not a grant. (audit.md §0.2.2)
   link_num_keys = (d != 0xff) ? link_keys_earned_per_dungeon[d == 2 ? 0 : (d >> 1)] : 0xff;
   Hud_Rebuild();
   dung_num_lit_torches = 0;
@@ -7832,6 +7835,8 @@ void Module11_02_LoadEntrance() {  // 829b1c
   Dungeon_LoadEntrance();
 
   uint8 dung = BYTE(cur_palace_index_x2);
+  // rando-exempt: state-shuffle — restore per-dungeon key count on entrance
+  // load (or 0xff sentinel outside). Not a grant. (audit.md §0.2.2)
   link_num_keys = (dung != 255) ? link_keys_earned_per_dungeon[((dung == 2) ? 0 : dung) >> 1] : 255;
   Hud_Rebuild();
   link_this_controls_sprite_oam = 4;

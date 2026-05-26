@@ -43,4 +43,36 @@ bool Place_AssumedFill(const RandoSettings *settings,
 // diffing (tasks.md §4.4).
 void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest[32]);
 
+// Install the active placement table — subsequent Rando_OnLocationCheck calls
+// consult this table. Pass NULL to clear (revert to pure pass-through, i.e.,
+// rando mode inactive).
+void Placement_Install(const RandoPlacementTable *t);
+const RandoPlacementTable *Placement_GetActive(void);
+
+// Looks up location_id in the active table. Returns vanilla_item_id when no
+// table is installed or the location_id is missing. Called from
+// Rando_OnLocationCheck (rando.c).
+uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id);
+
+// Self-check: digest stability under sort-order, BuildItemPool sanity. Exits 2
+// on failure (per Settings_SelfCheck pattern).
+void Placement_SelfCheck(void);
+
+// ---------------------------------------------------------------------------
+// Starting-inventory injection (tasks.md §4.2).
+//
+// Grants the per-world-state starting items exactly once per slot. The
+// `kRam_RandoStartingInventoryGranted` gate ensures save-reload does NOT
+// re-inject (per randomizer-placement / "Starting inventory injection").
+//
+// Per `randomizer-placement / Starting-inventory injection atomicity`: all
+// per-item grants complete in the same ZeldaRunFrame call. Caller MUST NOT
+// invoke ZeldaWriteSram between Try... and the flag being set; both happen
+// in this function.
+//
+// Returns true if injection ran this call, false if it was already granted
+// (no-op) or rando is inactive.
+// ---------------------------------------------------------------------------
+bool Rando_TryGrantStartingInventory(const RandoSettings *settings);
+
 #endif  // ZELDA3_RANDO_PLACEMENT_H_

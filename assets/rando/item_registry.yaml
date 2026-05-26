@@ -1,0 +1,703 @@
+# item_registry.yaml — Phase A item ID registry
+#
+# Per `randomizer-core / Item pool construction` and tasks.md §3.2.
+# Source-of-truth for `#define ITEM_<Name> <numeric_id>` in the generated
+# `src/rando/item_ids.h`.
+#
+# Discipline:
+# - IDs are append-only. Removed items keep their slot with `deprecated: true`.
+# - Renaming an item does not change its numeric ID.
+# - Changing any ID is a `kGeneratorVersion` bump trigger (tasks.md §13.6).
+# - Virtual items have no dispatcher entry and no grant path; they exist
+#   so logic predicates can reference them (e.g., StartingHeart for the
+#   hearts-total HAS_ANY_COUNT idiom).
+# - `dispatch` field documents how §6 instrumentation grants the item:
+#     vanilla:<id>      — route via existing Link_ReceiveItem(<id>, …)
+#     progressive_*     — new helper (§0.4.1) that increments link_item_*
+#     dungeon_item_*    — OR-into-bit by *placed* dungeon
+#     rupee_tier        — new path that adds value to link_rupees_goal
+#     bottle_contents:N — find empty bottle slot, write code N
+#     prize_*           — OR-into-bit on link_has_crystals / link_which_pendants
+#                         for *placed* dungeon (not current_dungeon)
+#     direct_*          — new direct-write code (no kReceiveItemGfx entry)
+#     virtual           — no grant path; logic-only
+
+format_version: 1
+phase: A
+
+items:
+  # ===========================================================================
+  # Progressive items (IDs 0..4)
+  # ===========================================================================
+  - id: 0
+    name: ProgressiveSword
+    category: progressive
+    max_count: 4
+    dispatch: progressive_sword
+    notes: "Advances link_sword_type from 0→1→2→3→4 (Fighter→Master→Tempered→Gold)."
+
+  - id: 1
+    name: ProgressiveShield
+    category: progressive
+    max_count: 3
+    dispatch: progressive_shield
+    notes: "Advances link_shield_type from 0→1→2→3 (Fighter→Red→Mirror)."
+
+  - id: 2
+    name: ProgressiveArmor
+    category: progressive
+    max_count: 2
+    dispatch: progressive_armor
+    notes: "Advances link_armor 0→1→2 (Green→Blue→Red)."
+
+  - id: 3
+    name: ProgressiveGlove
+    category: progressive
+    max_count: 2
+    dispatch: progressive_glove
+    notes: "Advances link_item_gloves 0→1→2 (Power→Titan)."
+
+  - id: 4
+    name: ProgressiveBow
+    category: progressive
+    max_count: 2
+    dispatch: progressive_bow
+    notes: "Advances link_item_bow 0→1→2 (Bow→Bow+Silvers)."
+
+  # ===========================================================================
+  # Absolute weapon items (IDs 5..15)
+  # ===========================================================================
+  - id: 5
+    name: L1Sword
+    category: absolute
+    dispatch: vanilla:0x00
+  - id: 6
+    name: L2Sword
+    category: absolute
+    dispatch: vanilla:0x01
+  - id: 7
+    name: L3Sword
+    category: absolute
+    dispatch: vanilla:0x02
+  - id: 8
+    name: L4Sword
+    category: absolute
+    dispatch: vanilla:0x03
+
+  - id: 9
+    name: FighterShield
+    category: absolute
+    dispatch: vanilla:0x04
+  - id: 10
+    name: RedShield
+    category: absolute
+    dispatch: vanilla:0x05
+  - id: 11
+    name: MirrorShield
+    category: absolute
+    dispatch: vanilla:0x06
+
+  - id: 12
+    name: BlueMail
+    category: absolute
+    dispatch: vanilla:0x22
+  - id: 13
+    name: RedMail
+    category: absolute
+    dispatch: vanilla:0x23
+
+  - id: 14
+    name: PowerGlove
+    category: absolute
+    dispatch: vanilla:0x1b
+  - id: 15
+    name: TitanMitt
+    category: absolute
+    dispatch: vanilla:0x1c
+
+  # ===========================================================================
+  # Absolute non-weapon equipment (IDs 16..40)
+  # ===========================================================================
+  - id: 16
+    name: FireRod
+    category: absolute
+    dispatch: vanilla:0x07
+  - id: 17
+    name: IceRod
+    category: absolute
+    dispatch: vanilla:0x08
+  - id: 18
+    name: Hammer
+    category: absolute
+    dispatch: vanilla:0x09
+  - id: 19
+    name: Hookshot
+    category: absolute
+    dispatch: vanilla:0x0a
+  - id: 20
+    name: Bow
+    category: absolute
+    dispatch: vanilla:0x0b
+  - id: 21
+    name: BlueBoomerang
+    category: absolute
+    dispatch: vanilla:0x0c
+  - id: 22
+    name: RedBoomerang
+    category: absolute
+    dispatch: vanilla:0x2a
+  - id: 23
+    name: MagicPowder
+    category: absolute
+    dispatch: vanilla:0x0d
+  - id: 24
+    name: Mushroom
+    category: absolute
+    dispatch: vanilla:0x29
+  - id: 25
+    name: Bombos
+    category: absolute
+    dispatch: vanilla:0x0f
+  - id: 26
+    name: Ether
+    category: absolute
+    dispatch: vanilla:0x10
+  - id: 27
+    name: Quake
+    category: absolute
+    dispatch: vanilla:0x11
+  - id: 28
+    name: Lamp
+    category: absolute
+    dispatch: vanilla:0x12
+  - id: 29
+    name: Shovel
+    category: absolute
+    dispatch: vanilla:0x13
+    notes: |
+      Vanilla item ID 0x13 sets link_item_flute = 1 (the "shovel-form
+      flute" state). Distinct from Flute (id 30) which sets it to 2.
+  - id: 30
+    name: OcarinaInactive
+    category: absolute
+    dispatch: vanilla:0x14
+    notes: |
+      Vanilla item ID 0x14 sets link_item_flute = 2. Granted from the
+      Haunted Grove dig (Flute Spot) before the duck cutscene. After the
+      duck cutscene Ancilla38_CutsceneDuck directly writes link_item_flute=3
+      (cosmetic upgrade; not a placement-relevant item).
+  - id: 31
+    name: BugCatchingNet
+    category: absolute
+    dispatch: vanilla:0x21
+  - id: 32
+    name: BookOfMudora
+    category: absolute
+    dispatch: vanilla:0x1d
+  - id: 33
+    name: CaneOfSomaria
+    category: absolute
+    dispatch: vanilla:0x15
+  - id: 34
+    name: CaneOfByrna
+    category: absolute
+    dispatch: vanilla:0x18
+  - id: 35
+    name: Cape
+    category: absolute
+    dispatch: vanilla:0x19
+  - id: 36
+    name: MagicMirror
+    category: absolute
+    dispatch: vanilla:0x1a
+  - id: 37
+    name: Boots
+    category: absolute
+    dispatch: vanilla:0x4b
+  - id: 38
+    name: Flippers
+    category: absolute
+    dispatch: vanilla:0x1e
+  - id: 39
+    name: MoonPearl
+    category: absolute
+    dispatch: vanilla:0x1f
+  - id: 40
+    name: SilverArrowUpgrade
+    category: absolute
+    dispatch: direct_silver_arrows
+    notes: |
+      Sets the silver-arrows bit on link_item_bow (1→2 or 3→4). Standalone
+      pool entry only when mode.weapons=randomized/assured with absolute
+      bow; with ProgressiveBow this is absent (ProgressiveBow advances to
+      silvers automatically at level 2).
+
+  # ===========================================================================
+  # Magic upgrades (IDs 41..42)
+  # ===========================================================================
+  - id: 41
+    name: HalfMagic
+    category: absolute
+    dispatch: direct_half_magic
+    notes: "Sets link_magic_consumption = 2 (half) if currently 1 (full)."
+  - id: 42
+    name: QuarterMagic
+    category: absolute
+    dispatch: direct_quarter_magic
+    notes: "Sets link_magic_consumption = 4 (quarter); applies on top of HalfMagic."
+
+  # ===========================================================================
+  # Bottles (IDs 43..49)
+  # ===========================================================================
+  - id: 43
+    name: BottleEmpty
+    category: bottle
+    dispatch: bottle_contents:2
+  - id: 44
+    name: BottleWithFairy
+    category: bottle
+    dispatch: bottle_contents:4
+  - id: 45
+    name: BottleWithBee
+    category: bottle
+    dispatch: bottle_contents:3
+  - id: 46
+    name: BottleWithGoodBee
+    category: bottle
+    dispatch: bottle_contents:7
+  - id: 47
+    name: BottleWithRedPotion
+    category: bottle
+    dispatch: bottle_contents:5
+  - id: 48
+    name: BottleWithGreenPotion
+    category: bottle
+    dispatch: bottle_contents:6
+  - id: 49
+    name: BottleWithBluePotion
+    category: bottle
+    dispatch: bottle_contents:8
+
+  # ===========================================================================
+  # Heart items (IDs 50..51)
+  # ===========================================================================
+  - id: 50
+    name: PieceOfHeart
+    category: heart
+    dispatch: vanilla:0x17
+    notes: "Quarters mechanic; 4 PoH = +1 max HP via existing vanilla path."
+  - id: 51
+    name: BossHeartContainer
+    category: heart
+    dispatch: vanilla:0x26
+    notes: "Direct +1 max HP, no quarters mechanic."
+
+  # ===========================================================================
+  # TriforcePiece (IDs 52)
+  # ===========================================================================
+  - id: 52
+    name: TriforcePiece
+    category: triforce
+    dispatch: direct_triforce_piece
+    notes: |
+      Increments a Phase A triforce-piece counter (new RAM cell — task 0.7
+      reserved 0x65f-0x66f range; pin exact offset at task 1.1 follow-on).
+      Triggers goal-completion check on threshold. Only enters pool for
+      Triforce Hunt / Ganon Hunt goals.
+
+  # ===========================================================================
+  # Small keys (IDs 53..65)
+  # ===========================================================================
+  - id: 53
+    name: SmallKey_HyruleCastleEscape
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 54
+    name: SmallKey_EasternPalace
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 55
+    name: SmallKey_DesertPalace
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 56
+    name: SmallKey_TowerOfHera
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 57
+    name: SmallKey_HyruleCastleTower
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 58
+    name: SmallKey_PalaceOfDarkness
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 59
+    name: SmallKey_SwampPalace
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 60
+    name: SmallKey_SkullWoods
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 61
+    name: SmallKey_ThievesTown
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 62
+    name: SmallKey_IcePalace
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 63
+    name: SmallKey_MiseryMire
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 64
+    name: SmallKey_TurtleRock
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+  - id: 65
+    name: SmallKey_GanonsTower
+    category: dungeon_item
+    dungeon_item_class: small_key
+    dispatch: dungeon_item_small_key
+
+  # ===========================================================================
+  # Big keys (IDs 66..76)
+  # 11 entries — HCE and HCT have no big key.
+  # ===========================================================================
+  - id: 66
+    name: BigKey_EasternPalace
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 67
+    name: BigKey_DesertPalace
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 68
+    name: BigKey_TowerOfHera
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 69
+    name: BigKey_PalaceOfDarkness
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 70
+    name: BigKey_SwampPalace
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 71
+    name: BigKey_SkullWoods
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 72
+    name: BigKey_ThievesTown
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 73
+    name: BigKey_IcePalace
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 74
+    name: BigKey_MiseryMire
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 75
+    name: BigKey_TurtleRock
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+  - id: 76
+    name: BigKey_GanonsTower
+    category: dungeon_item
+    dungeon_item_class: big_key
+    dispatch: dungeon_item_big_key
+
+  # ===========================================================================
+  # Maps (IDs 77..87, plus Map_HCE @ 124 appended)
+  # ===========================================================================
+  - id: 77
+    name: Map_EasternPalace
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 78
+    name: Map_DesertPalace
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 79
+    name: Map_TowerOfHera
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 80
+    name: Map_PalaceOfDarkness
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 81
+    name: Map_SwampPalace
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 82
+    name: Map_SkullWoods
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 83
+    name: Map_ThievesTown
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 84
+    name: Map_IcePalace
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 85
+    name: Map_MiseryMire
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 86
+    name: Map_TurtleRock
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+  - id: 87
+    name: Map_GanonsTower
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+
+  # ===========================================================================
+  # Compasses (IDs 88..98)
+  # ===========================================================================
+  - id: 88
+    name: Compass_EasternPalace
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 89
+    name: Compass_DesertPalace
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 90
+    name: Compass_TowerOfHera
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 91
+    name: Compass_PalaceOfDarkness
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 92
+    name: Compass_SwampPalace
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 93
+    name: Compass_SkullWoods
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 94
+    name: Compass_ThievesTown
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 95
+    name: Compass_IcePalace
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 96
+    name: Compass_MiseryMire
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 97
+    name: Compass_TurtleRock
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+  - id: 98
+    name: Compass_GanonsTower
+    category: dungeon_item
+    dungeon_item_class: compass
+    dispatch: dungeon_item_compass
+
+  # ===========================================================================
+  # Multi-tier rupees (IDs 99..103)
+  # ===========================================================================
+  - id: 99
+    name: Rupee1
+    category: rupee
+    dispatch: rupee_tier:1
+  - id: 100
+    name: Rupee5
+    category: rupee
+    dispatch: rupee_tier:5
+  - id: 101
+    name: Rupee20
+    category: rupee
+    dispatch: rupee_tier:20
+  - id: 102
+    name: Rupee100
+    category: rupee
+    dispatch: rupee_tier:100
+  - id: 103
+    name: Rupee300
+    category: rupee
+    dispatch: rupee_tier:300
+    notes: "ALTTPR convention: Rupee300 (purple) plays full item-receive cutscene."
+
+  # ===========================================================================
+  # Junk pool (IDs 104..110)
+  # ===========================================================================
+  - id: 104
+    name: SmallMagic
+    category: junk
+    dispatch: vanilla:0x45
+  - id: 105
+    name: Arrow1
+    category: junk
+    dispatch: vanilla:0x43
+  - id: 106
+    name: Arrow10
+    category: junk
+    dispatch: vanilla:0x44
+  - id: 107
+    name: Bombs1
+    category: junk
+    dispatch: vanilla:0x27
+  - id: 108
+    name: Bombs3
+    category: junk
+    dispatch: vanilla:0x27
+    notes: "Vanilla 0x27 dispatch grants +3 bombs; Bombs3 is the canonical name."
+  - id: 109
+    name: Bombs10
+    category: junk
+    dispatch: vanilla:0x28
+  - id: 110
+    name: Rupoor
+    category: junk
+    dispatch: direct_rupoor
+    notes: |
+      Subtracts rupees (floors at 0). Only enters pool when
+      item_pool_difficulty ∈ {hard, expert}.
+
+  # ===========================================================================
+  # Prize items (IDs 111..120) — driven by prize-shuffle assignment
+  # ===========================================================================
+  - id: 111
+    name: Prize_GreenPendant
+    category: prize_pendant
+    dispatch: prize_pendant:green
+    notes: "OR-bit on link_which_pendants for *placed* dungeon (not current)."
+  - id: 112
+    name: Prize_RedPendant
+    category: prize_pendant
+    dispatch: prize_pendant:red
+  - id: 113
+    name: Prize_BluePendant
+    category: prize_pendant
+    dispatch: prize_pendant:blue
+  - id: 114
+    name: Prize_Crystal1
+    category: prize_crystal
+    dispatch: prize_crystal:1
+  - id: 115
+    name: Prize_Crystal2
+    category: prize_crystal
+    dispatch: prize_crystal:2
+  - id: 116
+    name: Prize_Crystal3
+    category: prize_crystal
+    dispatch: prize_crystal:3
+  - id: 117
+    name: Prize_Crystal4
+    category: prize_crystal
+    dispatch: prize_crystal:4
+  - id: 118
+    name: Prize_Crystal5
+    category: prize_crystal
+    dispatch: prize_crystal:5
+  - id: 119
+    name: Prize_Crystal6
+    category: prize_crystal
+    dispatch: prize_crystal:6
+  - id: 120
+    name: Prize_Crystal7
+    category: prize_crystal
+    dispatch: prize_crystal:7
+
+  # ===========================================================================
+  # Virtual items (IDs 121..125) — no grant path, logic-only
+  # ===========================================================================
+  - id: 121
+    name: StartingHeart
+    category: virtual
+    dispatch: virtual
+    notes: |
+      Placer pre-populates counts[StartingHeart] = 3 per
+      randomizer-core / Simulated-inventory model. Phase B hero-mode would
+      override the constant. Excluded from the dispatcher; logic references
+      it via HAS_ANY_COUNT([PieceOfHeart, BossHeartContainer, StartingHeart], n).
+  - id: 122
+    name: RescuedZelda
+    category: virtual
+    dispatch: virtual
+    notes: |
+      Set when the Standard-mode uncle-and-sanctuary escort completes.
+      Granted as a virtual item by the §6.x dispatch wrapper at the
+      sanctuary-priest sprite handler. Standard-mode logic uses this as
+      the gate for further progression.
+  - id: 123
+    name: DefeatAgahnim
+    category: virtual
+    dispatch: virtual
+    notes: |
+      Set when KillAghanim_Func12 (misc.c:313) executes — the Aga 1 defeat
+      flag. Used by logic to gate pyramid-opens and dark-world access in
+      world-states that require Aga 1 first.
+
+  # ===========================================================================
+  # Appended dungeon-item additions (ID 124)
+  # ===========================================================================
+  - id: 124
+    name: Map_HyruleCastleEscape
+    category: dungeon_item
+    dungeon_item_class: map
+    dispatch: dungeon_item_map
+    notes: |
+      ALTTPR's Hyrule Castle Escape has its own map item (vanilla item at
+      location "Hyrule Castle - Map Chest"). Distinct from the dungeon
+      maps of EP/DP/etc. — appended out-of-sequence (after id 123) to
+      preserve all earlier ID assignments for append-only discipline.

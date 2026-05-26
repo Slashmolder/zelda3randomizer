@@ -1,0 +1,38 @@
+# 44_fountains.yaml — Standard fountains (Waterfall + Pyramid bottles)
+#
+# Mechanically translated from ALTTPR PHP at
+# `../alttp_vt_randomizer/app/Region/Standard/Fountains.php`
+# (MIT, verified per CLAUDE.md "Claim-grounding discipline").
+#
+# Fountains.php declares two Fountain locations with NO setRequirements
+# closures (only the constructor — there is no `initalize()` method). The
+# reachability of each bottle slot is determined solely by the containing
+# region's reachability:
+#   - Waterfall Bottle (php:30) → registry region LightWorld_NorthEast.
+#   - Pyramid Bottle    (php:31) → registry region DarkWorld_NorthEast.
+#
+# Phase A treats both bottle slots as TRUE-can-reach within their region;
+# DarkWorld_NorthEast's region-entry edge (declared in 43_darkworld.yaml)
+# carries the actual MoonPearl/crystal/DefeatAgahnim gating.
+
+format_version: 1
+
+regions: []
+
+edges: []
+
+locations:
+  # `Waterfall Bottle` (php:30): Fountain in LightWorld_NorthEast.
+  # No setRequirements → reach-by-region.
+  - id: "Waterfall Bottle"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/Fountains.php:30"
+
+  # `Pyramid Bottle` (php:31): Fountain in DarkWorld_NorthEast.
+  # No setRequirements → reach-by-region (gated by the region's can_enter
+  # in 43_darkworld.yaml).
+  - id: "Pyramid Bottle"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/Fountains.php:31"
+
+macros: []

@@ -1,0 +1,506 @@
+// rando_placement.c — item pool, placement table, digest (tasks.md §4.1, §4.4, §6.1).
+//
+// Phase A0 scope:
+//   - BuildItemPool returns a minimal "identity" pool: every location's
+//     vanilla_item, in registry order. Phase A1 replaces with real per-settings
+//     construction (progressive vs absolute, dungeon-item modes, etc.).
+//   - Place_AssumedFill returns an identity placement (every location ←
+//     its vanilla_item_id). Phase A1 replaces with the assumed-fill algorithm.
+//   - PlacementTable_ComputeDigest emits SHA-256 over the canonical
+//     serialization — this works at A0 and is what the regression corpus diffs.
+//   - Rando_OnLocationCheck (in rando.c) consults the active placement table
+//     once one is installed via Placement_Install.
+
+#include "rando_placement.h"
+#include "rando.h"
+#include "../types.h"
+#include "third_party/sha256/sha256.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Generated tables — RandoLocationDef typedef + kRandoLocations[] /
+// kRandoLocationsCount extern come from rando_logic.h.
+
+// ---------------------------------------------------------------------------
+// Active placement table — set by Placement_Install. Phase A0: starts NULL,
+// meaning Rando_OnLocationCheck returns vanilla_item_id for every call
+// (effectively rando-inactive).
+// ---------------------------------------------------------------------------
+static const RandoPlacementTable *g_active_placement = NULL;
+
+void Placement_Install(const RandoPlacementTable *t) {
+  g_active_placement = t;
+}
+
+const RandoPlacementTable *Placement_GetActive(void) {
+  return g_active_placement;
+}
+
+// ---------------------------------------------------------------------------
+// Linear-scan dispatch lookup. Phase A0 placement tables are small (~237
+// entries); O(N) scan per location-check is fine. Phase A1 may switch to a
+// sorted-by-location-id table with binary search.
+//
+// Returns vanilla_item_id when:
+//   - No placement table installed (g_active_placement == NULL).
+//   - location_id is not in the table (e.g., a slot from a future binary).
+// ---------------------------------------------------------------------------
+uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
+  if (g_active_placement == NULL) return vanilla_item_id;
+  for (uint16 i = 0; i < g_active_placement->count; i++) {
+    if (g_active_placement->entries[i].location_id == location_id) {
+      return g_active_placement->entries[i].item_id;
+    }
+  }
+  return vanilla_item_id;
+}
+
+// ---------------------------------------------------------------------------
+// BuildItemPool — per-settings construction (tasks.md §4.1).
+//
+// Phase A1 implementation. The pool is built from:
+//
+//   1. Progression items per mode.weapons (progressive vs. absolute weapon set)
+//   2. Common non-weapon equipment (boots, flippers, moon pearl, ...)
+//   3. Dungeon items per dungeon_items.{small_keys,big_keys,maps,compasses} mode
+//      - Vanilla : NOT added to pool (placed at vanilla locations)
+//      - Dungeon : added to pool with per-location placement restrictions
+//      - Wild    : added to pool, no per-location restrictions
+//   4. Bottles (default 4; capped at link_bottle_info[4] slots total)
+//   5. Magic upgrades (HalfMagic, QuarterMagic)
+//   6. Heart items (PieceOfHeart, BossHeartContainer)
+//   7. Multi-tier rupees
+//   8. Junk pool (SmallMagic, Arrows, Bombs; Rupoor at hard/expert)
+//   9. TriforcePiece × pieces_placed for Triforce Hunt / Ganon Hunt
+//  10. Junk-pad to |locations|
+//
+// The exact junk counts mirror ALTTPR's config/alttp.php `item.junk` table
+// (Phase A1 approximation — see ALTTPR `World.php::getItemPool` for the
+// authoritative computation, line 838).
+// ---------------------------------------------------------------------------
+
+// Item registry id constants (from assets/rando/item_registry.yaml).
+// Kept as named constants so the implementation reads cleanly.
+enum {
+  ID_ProgressiveSword = 0,
+  ID_ProgressiveShield = 1,
+  ID_ProgressiveArmor = 2,
+  ID_ProgressiveGlove = 3,
+  ID_ProgressiveBow = 4,
+  ID_L1Sword = 5, ID_L2Sword = 6, ID_L3Sword = 7, ID_L4Sword = 8,
+  ID_FighterShield = 9, ID_RedShield = 10, ID_MirrorShield = 11,
+  ID_BlueMail = 12, ID_RedMail = 13,
+  ID_PowerGlove = 14, ID_TitanMitt = 15,
+  ID_FireRod = 16, ID_IceRod = 17, ID_Hammer = 18, ID_Hookshot = 19,
+  ID_Bow = 20, ID_BlueBoomerang = 21, ID_RedBoomerang = 22,
+  ID_MagicPowder = 23, ID_Mushroom = 24,
+  ID_Bombos = 25, ID_Ether = 26, ID_Quake = 27, ID_Lamp = 28,
+  ID_Shovel = 29, ID_OcarinaInactive = 30,
+  ID_BugCatchingNet = 31, ID_BookOfMudora = 32,
+  ID_CaneOfSomaria = 33, ID_CaneOfByrna = 34, ID_Cape = 35,
+  ID_MagicMirror = 36, ID_Boots = 37, ID_Flippers = 38, ID_MoonPearl = 39,
+  ID_SilverArrowUpgrade = 40,
+  ID_HalfMagic = 41, ID_QuarterMagic = 42,
+  ID_BottleEmpty = 43, ID_BottleWithFairy = 44, ID_BottleWithBee = 45,
+  ID_BottleWithGoodBee = 46, ID_BottleWithRedPotion = 47,
+  ID_BottleWithGreenPotion = 48, ID_BottleWithBluePotion = 49,
+  ID_PieceOfHeart = 50, ID_BossHeartContainer = 51,
+  ID_TriforcePiece = 52,
+  ID_SmallKey_HCE = 53, ID_SmallKey_EP = 54, ID_SmallKey_DP = 55,
+  ID_SmallKey_TH = 56, ID_SmallKey_HCT = 57, ID_SmallKey_PoD = 58,
+  ID_SmallKey_SP = 59, ID_SmallKey_SW = 60, ID_SmallKey_TT = 61,
+  ID_SmallKey_IP = 62, ID_SmallKey_MM = 63, ID_SmallKey_TR = 64,
+  ID_SmallKey_GT = 65,
+  ID_BigKey_EP = 66, ID_BigKey_DP = 67, ID_BigKey_TH = 68,
+  ID_BigKey_PoD = 69, ID_BigKey_SP = 70, ID_BigKey_SW = 71,
+  ID_BigKey_TT = 72, ID_BigKey_IP = 73, ID_BigKey_MM = 74,
+  ID_BigKey_TR = 75, ID_BigKey_GT = 76,
+  ID_Map_EP = 77, ID_Map_DP = 78, ID_Map_TH = 79, ID_Map_PoD = 80,
+  ID_Map_SP = 81, ID_Map_SW = 82, ID_Map_TT = 83, ID_Map_IP = 84,
+  ID_Map_MM = 85, ID_Map_TR = 86, ID_Map_GT = 87,
+  ID_Compass_EP = 88, ID_Compass_DP = 89, ID_Compass_TH = 90,
+  ID_Compass_PoD = 91, ID_Compass_SP = 92, ID_Compass_SW = 93,
+  ID_Compass_TT = 94, ID_Compass_IP = 95, ID_Compass_MM = 96,
+  ID_Compass_TR = 97, ID_Compass_GT = 98,
+  ID_Rupee1 = 99, ID_Rupee5 = 100, ID_Rupee20 = 101,
+  ID_Rupee100 = 102, ID_Rupee300 = 103,
+  ID_SmallMagic = 104, ID_Arrow1 = 105, ID_Arrow10 = 106,
+  ID_Bombs1 = 107, ID_Bombs3 = 108, ID_Bombs10 = 109, ID_Rupoor = 110,
+  ID_Map_HCE = 124,
+};
+
+// Per-dungeon small-key counts (vanilla per ALTTPR config; small_keys.X).
+static const struct { uint16 item_id; uint8 count; } kVanillaSmallKeyCounts[] = {
+  { ID_SmallKey_HCE, 1 },
+  { ID_SmallKey_EP,  0 }, // EP has no small keys in vanilla
+  { ID_SmallKey_DP,  1 },
+  { ID_SmallKey_TH,  1 },
+  { ID_SmallKey_HCT, 2 },
+  { ID_SmallKey_PoD, 6 },
+  { ID_SmallKey_SP,  1 },
+  { ID_SmallKey_SW,  3 },
+  { ID_SmallKey_TT,  1 },
+  { ID_SmallKey_IP,  2 },
+  { ID_SmallKey_MM,  3 },
+  { ID_SmallKey_TR,  4 },
+  { ID_SmallKey_GT,  4 },
+};
+
+static const uint16 kBigKeys[] = {
+  ID_BigKey_EP, ID_BigKey_DP, ID_BigKey_TH, ID_BigKey_PoD, ID_BigKey_SP,
+  ID_BigKey_SW, ID_BigKey_TT, ID_BigKey_IP, ID_BigKey_MM, ID_BigKey_TR, ID_BigKey_GT,
+};
+static const uint16 kMaps[] = {
+  ID_Map_HCE, ID_Map_EP, ID_Map_DP, ID_Map_TH, ID_Map_PoD, ID_Map_SP,
+  ID_Map_SW, ID_Map_TT, ID_Map_IP, ID_Map_MM, ID_Map_TR, ID_Map_GT,
+};
+static const uint16 kCompasses[] = {
+  ID_Compass_EP, ID_Compass_DP, ID_Compass_TH, ID_Compass_PoD, ID_Compass_SP,
+  ID_Compass_SW, ID_Compass_TT, ID_Compass_IP, ID_Compass_MM, ID_Compass_TR, ID_Compass_GT,
+};
+
+// Add `n` copies of `item_id` to the pool, respecting capacity.
+static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_id, uint16 n) {
+  for (uint16 i = 0; i < n && used < capacity; i++) pool[used++] = item_id;
+  return used;
+}
+
+uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 capacity) {
+  if (settings == NULL || out_items == NULL || capacity == 0) return 0;
+  uint16 n = 0;
+
+  // ----- Progression items: sword / shield / armor / glove / bow -----
+  if (settings->mode_weapons == kModeWeapons_Randomized ||
+      settings->mode_weapons == kModeWeapons_Assured) {
+    // ALTTPR convention for Randomized/Assured: 4 progressive swords, 3
+    // progressive shields, 2 progressive armor, 2 progressive gloves, 2
+    // progressive bows. (Per `Randomizer.php:183-198`; counts match the max
+    // tier counts in item_registry.yaml.)
+    n = pool_add(out_items, n, capacity, ID_ProgressiveSword, 4);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveShield, 3);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveArmor, 2);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveGlove, 2);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveBow, 2);
+  } else {
+    // Absolute weapon mode (Phase B 'vanilla' / Phase B 'swordless' reserved):
+    // emit one of each tier as a distinct item.
+    n = pool_add(out_items, n, capacity, ID_L1Sword, 1);
+    n = pool_add(out_items, n, capacity, ID_L2Sword, 1);
+    n = pool_add(out_items, n, capacity, ID_L3Sword, 1);
+    n = pool_add(out_items, n, capacity, ID_L4Sword, 1);
+    n = pool_add(out_items, n, capacity, ID_FighterShield, 1);
+    n = pool_add(out_items, n, capacity, ID_RedShield, 1);
+    n = pool_add(out_items, n, capacity, ID_MirrorShield, 1);
+    n = pool_add(out_items, n, capacity, ID_BlueMail, 1);
+    n = pool_add(out_items, n, capacity, ID_RedMail, 1);
+    n = pool_add(out_items, n, capacity, ID_PowerGlove, 1);
+    n = pool_add(out_items, n, capacity, ID_TitanMitt, 1);
+    n = pool_add(out_items, n, capacity, ID_Bow, 1);
+    n = pool_add(out_items, n, capacity, ID_SilverArrowUpgrade, 1);
+  }
+
+  // ----- Common non-weapon equipment (always one copy each) -----
+  n = pool_add(out_items, n, capacity, ID_FireRod, 1);
+  n = pool_add(out_items, n, capacity, ID_IceRod, 1);
+  n = pool_add(out_items, n, capacity, ID_Hammer, 1);
+  n = pool_add(out_items, n, capacity, ID_Hookshot, 1);
+  n = pool_add(out_items, n, capacity, ID_BlueBoomerang, 1);
+  n = pool_add(out_items, n, capacity, ID_RedBoomerang, 1);
+  n = pool_add(out_items, n, capacity, ID_MagicPowder, 1);
+  n = pool_add(out_items, n, capacity, ID_Mushroom, 1);
+  n = pool_add(out_items, n, capacity, ID_Bombos, 1);
+  n = pool_add(out_items, n, capacity, ID_Ether, 1);
+  n = pool_add(out_items, n, capacity, ID_Quake, 1);
+  n = pool_add(out_items, n, capacity, ID_Lamp, 1);
+  n = pool_add(out_items, n, capacity, ID_Shovel, 1);
+  n = pool_add(out_items, n, capacity, ID_OcarinaInactive, 1);
+  n = pool_add(out_items, n, capacity, ID_BugCatchingNet, 1);
+  n = pool_add(out_items, n, capacity, ID_BookOfMudora, 1);
+  n = pool_add(out_items, n, capacity, ID_CaneOfSomaria, 1);
+  n = pool_add(out_items, n, capacity, ID_CaneOfByrna, 1);
+  n = pool_add(out_items, n, capacity, ID_Cape, 1);
+  n = pool_add(out_items, n, capacity, ID_MagicMirror, 1);
+  n = pool_add(out_items, n, capacity, ID_Boots, 1);
+  n = pool_add(out_items, n, capacity, ID_Flippers, 1);
+  n = pool_add(out_items, n, capacity, ID_MoonPearl, 1);
+
+  // ----- Magic upgrades -----
+  n = pool_add(out_items, n, capacity, ID_HalfMagic, 1);
+  // QuarterMagic is a Phase A item but ALTTPR places it only at specific
+  // higher-pool-difficulty configs. Phase A includes it; if the player
+  // collects both Half then Quarter, the dispatcher applies them in order
+  // (per audit §0.4.1 notes).
+  n = pool_add(out_items, n, capacity, ID_QuarterMagic, 1);
+
+  // ----- Bottles: default 4 (the cap; link_bottle_info has 4 slots) -----
+  // Per `randomizer-core / Item pool construction`: "Bottle count is capped
+  // at 4 total". For now emit 4 BottleEmpty; future settings (Triforce Hunt
+  // assured-bottle) may pre-place a starting bottle in which case the pool
+  // contains 3.
+  n = pool_add(out_items, n, capacity, ID_BottleEmpty, 4);
+
+  // ----- Heart items: PoH and BossHeartContainer counts per ALTTPR vanilla -----
+  // Vanilla ALTTPR: 24 Piece-of-Heart + 10 BossHeartContainer (one per dungeon
+  // boss). When region.bossHeartsInPool is false (Phase A default), the 10
+  // boss-heart slots are identity-placed at the boss locations, so the pool
+  // includes BossHeartContainer ×10 anyway — they end up at their _BossHeart slots.
+  n = pool_add(out_items, n, capacity, ID_PieceOfHeart, 24);
+  n = pool_add(out_items, n, capacity, ID_BossHeartContainer, 10);
+
+  // ----- Dungeon items (per dungeon_items.* mode) -----
+  // Vanilla: NOT in pool (placed at vanilla locations by the placement
+  // algorithm's identity rule). Dungeon/Wild: add to pool.
+  if (settings->dungeon_small_keys_mode != kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
+      n = pool_add(out_items, n, capacity, kVanillaSmallKeyCounts[i].item_id, kVanillaSmallKeyCounts[i].count);
+    }
+  }
+  if (settings->dungeon_big_keys_mode != kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++) {
+      n = pool_add(out_items, n, capacity, kBigKeys[i], 1);
+    }
+  }
+  if (settings->dungeon_maps_mode != kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kMaps) / sizeof(kMaps[0])); i++) {
+      n = pool_add(out_items, n, capacity, kMaps[i], 1);
+    }
+  }
+  if (settings->dungeon_compasses_mode != kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++) {
+      n = pool_add(out_items, n, capacity, kCompasses[i], 1);
+    }
+  }
+
+  // ----- Rupees -----
+  // ALTTPR vanilla pool: 4× Rupee300, 5× Rupee100, 28× Rupee20, 7× Rupee5,
+  // 2× Rupee1. Numbers approximate per `config/alttp.php item.junk`.
+  n = pool_add(out_items, n, capacity, ID_Rupee300, 4);
+  n = pool_add(out_items, n, capacity, ID_Rupee100, 5);
+  n = pool_add(out_items, n, capacity, ID_Rupee20,  28);
+  n = pool_add(out_items, n, capacity, ID_Rupee5,   7);
+  n = pool_add(out_items, n, capacity, ID_Rupee1,   2);
+
+  // ----- Arrows, Bombs, Magic refills -----
+  n = pool_add(out_items, n, capacity, ID_Arrow10, 5);
+  n = pool_add(out_items, n, capacity, ID_Arrow1,  1);
+  n = pool_add(out_items, n, capacity, ID_Bombs10, 1);
+  n = pool_add(out_items, n, capacity, ID_Bombs3,  10);
+  n = pool_add(out_items, n, capacity, ID_Bombs1,  0);
+  n = pool_add(out_items, n, capacity, ID_SmallMagic, 1);
+
+  // ----- Rupoor (hard/expert pools only) -----
+  if (settings->item_pool_difficulty == kItemPoolDifficulty_Hard ||
+      settings->item_pool_difficulty == kItemPoolDifficulty_Expert) {
+    n = pool_add(out_items, n, capacity, ID_Rupoor,
+                 settings->item_pool_difficulty == kItemPoolDifficulty_Expert ? 4 : 2);
+  }
+
+  // ----- Triforce pieces (Hunt goals) -----
+  if (settings->goal == kGoal_TriforceHunt || settings->goal == kGoal_GanonHunt) {
+    n = pool_add(out_items, n, capacity, ID_TriforcePiece, settings->pieces_placed);
+  }
+
+  // ----- Junk-pad to match location count -----
+  // ALTTPR pads with small rupees / single-bomb / single-arrow / small heart.
+  // For Phase A we pad with Rupee20 (the most-common ALTTPR junk).
+  uint16 target = (uint16)kRandoLocationsCount;
+  while (n < target && n < capacity) {
+    out_items[n++] = ID_Rupee20;
+  }
+
+  return n;
+}
+
+// ---------------------------------------------------------------------------
+// Place_AssumedFill — Phase A0 stub: emits the identity placement.
+//
+// Every location_id gets its vanilla_item_id. Returns true (trivially
+// "successful"). Phase A1 replaces with the real assumed-fill algorithm with
+// bounded retry + forward-fill fallback (per randomizer-placement spec).
+//
+// |out->entries| MUST be sized to hold at least kRandoLocationsCount entries.
+// The caller (or Placement_AllocTable) owns the allocation.
+// ---------------------------------------------------------------------------
+bool Place_AssumedFill(const RandoSettings *settings,
+                       uint64 seed_u64,
+                       int budget_seconds,
+                       RandoPlacementTable *out) {
+  (void)settings;
+  (void)seed_u64;
+  (void)budget_seconds;
+  if (out == NULL || out->entries == NULL) return false;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    out->entries[i].location_id = kRandoLocations[i].id;
+    out->entries[i].item_id = kRandoLocations[i].vanilla_item_id;
+  }
+  out->count = (uint16)kRandoLocationsCount;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// PlacementTable_ComputeDigest — SHA-256 over a canonical-LE serialization.
+//
+// Canonical serialization: for each (location_id, item_id) pair in
+// location_id-sorted order, emit 4 bytes: <location_id:u16_le> <item_id:u16_le>.
+// The result is fed to SHA-256.
+//
+// Determinism contract: the input order is sorted by location_id, so the
+// digest is invariant under any internal reordering during placement. This is
+// the source of truth for the regression corpus (tasks.md §12.1).
+// ---------------------------------------------------------------------------
+static int placement_cmp(const void *a, const void *b) {
+  const RandoPlacement *pa = a;
+  const RandoPlacement *pb = b;
+  if (pa->location_id < pb->location_id) return -1;
+  if (pa->location_id > pb->location_id) return 1;
+  return 0;
+}
+
+void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest[32]) {
+  if (t == NULL || t->entries == NULL || t->count == 0) {
+    // Hash of empty input is well-defined (SHA-256 of zero bytes).
+    sha256_buffer((const uint8 *)"", 0, out_digest);
+    return;
+  }
+  // Copy entries into a local buffer and sort by location_id.
+  // Phase A worst case is ~250 entries; sorting in place is fine.
+  RandoPlacement local[256];
+  uint16 n = t->count;
+  if (n > 256) n = 256;
+  memcpy(local, t->entries, n * sizeof(RandoPlacement));
+  qsort(local, n, sizeof(RandoPlacement), placement_cmp);
+
+  // Serialize: 4 bytes per entry, little-endian.
+  uint8 buf[256 * 4];
+  for (uint16 i = 0; i < n; i++) {
+    buf[i * 4 + 0] = local[i].location_id & 0xff;
+    buf[i * 4 + 1] = local[i].location_id >> 8;
+    buf[i * 4 + 2] = local[i].item_id & 0xff;
+    buf[i * 4 + 3] = local[i].item_id >> 8;
+  }
+  sha256_buffer(buf, n * 4, out_digest);
+}
+
+// ---------------------------------------------------------------------------
+// Starting-inventory injection (tasks.md §4.2).
+//
+// Phase A1 implementation: world-state-aware starting inventory.
+//
+// Per world-state:
+//   - Open / Retro: Link starts with no extra items (uncle's slot still places
+//     the chosen item; collected on encounter — distinct from Standard mode).
+//   - Standard: Link starts swordless (link_sword_type = 0); the uncle's slot
+//     determines what becomes the starting item once collected. No injection
+//     here — the dispatcher at the uncle's grant site grants the placed item.
+//   - Inverted: Link starts with the Moon Pearl as a virtual starting item
+//     (since the inverted dark-world traversal does not require it; ALTTPR
+//     pre-collects to keep the placement pool's MoonPearl meaningful at the
+//     pendant logic gate). MagicMirror is similarly pre-collected per
+//     `app/Region/Inverted/`. (Phase B note: confirm exact pre-collected
+//     set against ALTTPR's `pre_collected_items` config when finalizing.)
+//
+// Atomicity: the dispatch calls below all run in the same call frame; no
+// I/O happens between them.
+// ---------------------------------------------------------------------------
+
+// link_item_* RAM cells (offsets per features.h / variables.h).
+// We can't include variables.h cleanly from src/rando/ without pulling in
+// game-state headers; use the same address-by-offset pattern as features.h
+// and just call the dispatcher helpers exposed by Phase A1 receive paths.
+//
+// For Phase A1 starting inventory, we set the simplest items directly via
+// the existing dispatcher (Link_ReceiveItem). That dispatcher is in
+// src/misc.c and is the same one §6 grant sites use.
+
+extern void Link_ReceiveItem(uint8 item, int chest_position);
+
+// Returns the RAM address of kRam_RandoStartingInventoryGranted to allow the
+// injection to read/write the gate cell without pulling in the macro defs.
+#include "../features.h"
+extern uint8 g_ram[];
+
+bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
+  if (settings == NULL) return false;
+  if (g_rando_slot_active == 0) return false;
+  if (g_rando_starting_inventory_granted != 0) return false;
+
+  // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents.
+  if (settings->world_state == kWorldState_Inverted) {
+    Link_ReceiveItem(0x1f, 0);  // Moon Pearl (registry id 39, vanilla dispatch 0x1f)
+    Link_ReceiveItem(0x1a, 0);  // Magic Mirror (registry id 36, vanilla dispatch 0x1a)
+  }
+
+  // Standard: no pre-grant (uncle's slot handles it via §6 dispatch).
+  // Open / Retro: no pre-grant by default; future hero-mode (Phase B) may
+  // pre-grant a starting bottle, hearts, etc.
+
+  // Mark gate so save-reload does not re-inject. Per §4.2 atomicity, this
+  // SHALL happen in the same frame as the grants above.
+  g_rando_starting_inventory_granted = 1;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Self-check
+// ---------------------------------------------------------------------------
+static void selfcheck_die(const char *msg) {
+  fprintf(stderr, "[Placement_SelfCheck] FAIL: %s\n", msg);
+  exit(2);
+}
+
+void Placement_SelfCheck(void) {
+  // Build identity placement, compute digest, assert digest stable across
+  // sort-order perturbations of input.
+  RandoPlacement entries[3] = {
+    { 100, 5 },
+    { 50,  10 },
+    { 200, 15 },
+  };
+  RandoPlacementTable t = { entries, 3 };
+  uint8 digest1[32];
+  PlacementTable_ComputeDigest(&t, digest1);
+
+  // Same entries in different order → same digest (sort invariance).
+  RandoPlacement entries2[3] = {
+    { 200, 15 },
+    { 50,  10 },
+    { 100, 5 },
+  };
+  RandoPlacementTable t2 = { entries2, 3 };
+  uint8 digest2[32];
+  PlacementTable_ComputeDigest(&t2, digest2);
+
+  if (memcmp(digest1, digest2, 32) != 0) {
+    selfcheck_die("placement digest not sort-invariant");
+  }
+
+  // Changing one item changes the digest.
+  entries[0].item_id = 99;
+  uint8 digest3[32];
+  PlacementTable_ComputeDigest(&t, digest3);
+  if (memcmp(digest1, digest3, 32) == 0) {
+    selfcheck_die("placement digest collision on different items");
+  }
+
+  // BuildItemPool: with default settings, pool size equals kRandoLocationsCount
+  // (junk-padded). With NULL settings, the function safely returns 0.
+  {
+    RandoSettings defaults;
+    Settings_SetDefaults(&defaults);
+    uint16 pool[512];
+    uint16 n = BuildItemPool(&defaults, pool, 512);
+    if (n != kRandoLocationsCount) {
+      fprintf(stderr, "[Placement_SelfCheck] BuildItemPool returned %u, expected %u\n",
+              (unsigned)n, (unsigned)kRandoLocationsCount);
+      selfcheck_die("BuildItemPool count mismatch");
+    }
+    // NULL settings → 0 (safe rejection, not crash).
+    uint16 n_null = BuildItemPool(NULL, pool, 512);
+    if (n_null != 0) selfcheck_die("BuildItemPool(NULL) should return 0");
+  }
+
+  fprintf(stderr, "[Placement_SelfCheck] OK\n");
+}

@@ -87,13 +87,30 @@ DISPATCH_CONTEXT_PATTERNS = [
 
 
 def is_exempted(file_lines: list[str], lineno_zero_based: int) -> bool:
-    """Check if the line carries an explicit ``// rando-exempt:`` comment."""
+    """Check if the line carries an explicit ``// rando-exempt:`` comment.
+
+    Accepts the marker on the same line OR within the preceding ~5 comment
+    lines (the common multi-line-comment style). The walk-back stops at any
+    blank or non-comment line, so the marker has to be in a comment block
+    that's contiguous with the write.
+    """
     line = file_lines[lineno_zero_based]
     if EXEMPTION_COMMENT in line:
         return True
-    # Also honor the comment on the preceding line (more common style)
-    if lineno_zero_based > 0 and EXEMPTION_COMMENT in file_lines[lineno_zero_based - 1]:
-        return True
+    # Walk backward through contiguous comment lines (// ...) up to 5 lines.
+    for delta in range(1, 6):
+        idx = lineno_zero_based - delta
+        if idx < 0:
+            break
+        prev = file_lines[idx].lstrip()
+        if not prev.startswith("//"):
+            # Allow whitespace-only line as a step between comment and code,
+            # but stop at non-comment non-blank.
+            if prev == "":
+                continue
+            break
+        if EXEMPTION_COMMENT in prev:
+            return True
     return False
 
 

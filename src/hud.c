@@ -407,6 +407,10 @@ void Hud_RefillLogic() {  // 8ddb92
   if (link_bomb_filler) {
     link_bomb_filler--;
     if (link_item_bombs != kMaxBombsForLevel[link_bomb_upgrades])
+      // rando-exempt: state-shuffle — bomb-filler animation increments
+      // link_item_bombs one tick at a time toward kMaxBombsForLevel. The
+      // dispatcher already granted the bombs by writing link_bomb_filler;
+      // this is the HUD payout. (audit.md §0.2.2)
       link_item_bombs++;
   }
 
@@ -415,6 +419,9 @@ void Hud_RefillLogic() {  // 8ddb92
     if (link_num_arrows != kMaxArrowsForLevel[link_arrow_upgrades])
       link_num_arrows++;
     if (link_item_bow && (link_item_bow & 1) == 1) {
+      // rando-exempt: state-shuffle — silver-arrows-bit promotion of
+      // link_item_bow when arrow counter ticks. Cosmetic tier swap; the bow
+      // item itself was granted via the dispatcher. (audit.md §0.2.2)
       link_item_bow++;
       Hud_RefreshIcon();
     }
@@ -1351,6 +1358,8 @@ void Hud_RestoreTorchBackground() {  // 8dfa33
 
 void Hud_RebuildIndoor() {  // 8dfa60
   overworld_fixed_color_plusminus = 0;
+  // rando-exempt: state-shuffle — 0xff sentinel marks "outside dungeon" key
+  // count; the per-dungeon count restores on entrance load. (audit.md §0.2.2)
   link_num_keys = 0xff;
   Hud_Rebuild();
 }
@@ -1426,8 +1435,13 @@ static void Hud_Update_Inventory() {  // 8dfc09
     if (link_item_bow >= 3) {
       hud_tile_indices_buffer[HUDXY(15, 0)] = 0x2486;
       hud_tile_indices_buffer[HUDXY(16, 0)] = 0x2487;
+      // rando-exempt: state-shuffle — bow tier swap on arrow-count change
+      // (4=silvers-with-arrows, 3=silvers-no-arrows, 2=bow-with-arrows,
+      // 1=bow-no-arrows). The bow item was already granted via dispatch;
+      // this is HUD tier re-derivation. (audit.md §0.2.2)
       link_item_bow = link_num_arrows ? 4 : 3;
     } else {
+      // rando-exempt: state-shuffle — same as the silvers branch above.
       link_item_bow = link_num_arrows ? 2 : 1;
     }
   }

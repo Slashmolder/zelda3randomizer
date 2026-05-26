@@ -1,0 +1,126 @@
+# 42_lightworld_deathmountain.yaml — Light World Death Mountain (West + East)
+#
+# Mechanically translated from ALTTPR PHP closures at:
+#   - `../alttp_vt_randomizer/app/Region/Standard/LightWorld/DeathMountain/West.php`
+#   - `../alttp_vt_randomizer/app/Region/Standard/LightWorld/DeathMountain/East.php`
+# (MIT, verified per CLAUDE.md "Claim-grounding discipline").
+#
+# Phase A translation discipline (audit.md §0.10.2):
+#   - All glitch/trick branches (canBootsClip, canOneFrameClipOW,
+#     canSuperSpeed, canMirrorClip, canMirrorWrap, canOWYBA) drop.
+#   - swordless-mode branch drops.
+#   - `itemPlacement` branches drop.
+#   - PHP `PegasusBoots` → our `Boots`.
+#   - PHP `item.require.Lamp` defaults to 1 → `HAS_ITEM(Lamp)` (vanilla).
+#   - PHP `Bottle` (the base/empty bottle name) → modeled via HasABottle().
+#   - PHP `KeyD7` (Turtle Rock small key) → `SmallKey_TurtleRock`.
+
+format_version: 1
+
+regions:
+  - id: LightWorld_DeathMountain_West
+    name: "Light World - Death Mountain West"
+    source: "app/Region/Standard/LightWorld/DeathMountain/West.php:14-74"
+
+  - id: LightWorld_DeathMountain_East
+    name: "Light World - Death Mountain East"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:16-102"
+
+edges:
+  # DM West entry — `can_enter` (West.php:62-70):
+  #   RescueZelda AND (canFly OR (canLiftRocks AND Lamp))
+  # All glitch branches drop. The two surviving disjuncts are flute
+  # (canFly) and the canonical rock+lamp climb.
+  - from: LightWorld_NorthEast
+    to: LightWorld_DeathMountain_West
+    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp))"
+    source: "app/Region/Standard/LightWorld/DeathMountain/West.php:62-70"
+
+  # DM East entry — `can_enter` (East.php:89-98):
+  #   RescueZelda AND (Hookshot+West-DM OR (Hammer + Tower of Hera))
+  # All glitch and mirror-trick branches drop. Hookshot path goes through
+  # West DM; Hammer path goes through Tower of Hera.
+  - from: LightWorld_DeathMountain_West
+    to: LightWorld_DeathMountain_East
+    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera))"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:89-98"
+
+locations:
+  # ===========================================================================
+  # Light World — Death Mountain West (php:14-74)
+  # ===========================================================================
+
+  # `Old Man` (West.php:46-48): has Lamp.
+  - id: "Old Man"
+    can_reach: "HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/LightWorld/DeathMountain/West.php:46-48"
+
+  # `Spectacle Rock Cave` (West.php:31) — no setRequirements; default TRUE.
+  - id: "Spectacle Rock Cave"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/West.php:31"
+
+  # `Ether Tablet` (West.php:50-54): BookOfMudora AND hasSword(2)
+  # AND Tower of Hera reachable. swordless-mode (Hammer) branch drops.
+  - id: "Ether Tablet"
+    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND OP_REGION_REACHABLE(TowerOfHera)"
+    source: "app/Region/Standard/LightWorld/DeathMountain/West.php:50-54"
+
+  # `Spectacle Rock` (West.php:56-60): MagicMirror (glitch branches drop).
+  - id: "Spectacle Rock"
+    can_reach: "HAS_ITEM(MagicMirror)"
+    source: "app/Region/Standard/LightWorld/DeathMountain/West.php:56-60"
+
+  # ===========================================================================
+  # Light World — Death Mountain East (php:16-102)
+  # ===========================================================================
+
+  # `Spiral Cave` (East.php:32) — no setRequirements; default TRUE.
+  - id: "Spiral Cave"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:32"
+
+  # `Mimic Cave` (East.php:68-77): Hammer AND MagicMirror AND
+  # (KeyD7>=2 AND Turtle-Rock-reachable). All glitch/mirror-trick branches
+  # drop; only the TR-keys+region branch survives.
+  - id: "Mimic Cave"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock)"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:68-77"
+
+  # `Paradox Cave` chests (East.php:34-40) — no setRequirements; default TRUE.
+  - id: "Paradox Cave Lower - Far Left"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:34"
+
+  - id: "Paradox Cave Lower - Left"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:35"
+
+  - id: "Paradox Cave Lower - Right"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:36"
+
+  - id: "Paradox Cave Lower - Far Right"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:37"
+
+  - id: "Paradox Cave Lower - Middle"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:38"
+
+  - id: "Paradox Cave Upper - Left"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:39"
+
+  - id: "Paradox Cave Upper - Right"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:40"
+
+  # `Floating Island` (East.php:79-87): mirror AND MoonPearl AND
+  # canBombThings AND canLiftRocks AND East-Dark-DM-reachable. Glitch and
+  # mirror-wrap branches drop.
+  - id: "Floating Island"
+    can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanBombThings() AND CanLiftRocks() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)"
+    source: "app/Region/Standard/LightWorld/DeathMountain/East.php:79-87"
+
+macros: []

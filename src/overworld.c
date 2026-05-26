@@ -425,6 +425,8 @@ void PreOverworld_LoadProperties() {  // 8283c7
   else
     LoadOverworldFromSpecialOverworld();
   Overworld_SetSongList();
+  // rando-exempt: state-shuffle — 0xff sentinel marks "outside dungeon" key
+  // count when transitioning to the overworld. (audit.md §0.2.2)
   link_num_keys = 0xff;
   Hud_RefillLogic();
 

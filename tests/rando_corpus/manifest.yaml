@@ -16,6 +16,45 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: null  # populated at first regeneration; null means "no manifest yet"
+generator_version: 0  # current kGeneratorVersion at last regeneration; null = no entries yet
 
-entries: []
+# A0 seed: exercises the codegen + bump-corpus pipeline end-to-end. The
+# placement digest below is captured from the identity placer; once
+# Place_AssumedFill ships real placement logic (task 4.3), this digest will
+# change and kGeneratorVersion will bump. See `bump_rando_corpus.py`.
+entries:
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7 }
+    seed: "0xDEADBEEFCAFEBABE"
+    label: "a0-smoke-open-fast-ganon"
+    expected_digest: "e3557532374373ce1a3649787fc4aaa195f29ed451b0b702af620105a90312db"
+
+# Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
+# to capture once the generator stabilizes. Listed here as comments so the
+# next session can populate them in order. Each MUST include `seed` as a
+# YAML *string* (per randomizer-core / CLI manifest schema — YAML 1.1 vs 1.2
+# uint64 parsing portability).
+#
+#   - settings: { mode.state: open, goal: dungeons, item_pool_difficulty: normal }
+#     seed: "0xTBD"
+#     label: "all-bosses-12-min"
+#     expected_digest: "<filled-after-first-run>"
+#
+#   - settings: { mode.state: open, goal: fast_ganon, mode.weapons: swordless }
+#     seed: "0xTBD"
+#     label: "swordless-skip-mire"          # Phase B (swordless mode)
+#     expected_digest: "<filled-after-first-run>"
+#
+#   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 25, pieces_placed: 30 }
+#     seed: "0xTBD"
+#     label: "triforce-hunt-25-of-30"
+#     expected_digest: "<filled-after-first-run>"
+#
+#   - settings: { mode.state: standard, goal: ganonhunt }
+#     seed: "0xTBD"
+#     label: "standard-ganon-hunt"
+#     expected_digest: "<filled-after-first-run>"
+#
+#   - settings: { mode.state: open, goal: completionist }
+#     seed: "0xTBD"
+#     label: "completionist-open"
+#     expected_digest: "<filled-after-first-run>"

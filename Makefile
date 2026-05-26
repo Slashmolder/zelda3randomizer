@@ -6,6 +6,13 @@ PYTHON:=/usr/bin/env python3
 CFLAGS:=$(if $(CFLAGS),$(CFLAGS),-O2 -Werror) -I .
 CFLAGS:=${CFLAGS} $(shell sdl2-config --cflags) -DSYSTEM_VOLUME_MIXER_AVAILABLE=0
 
+# Rando codegen artifacts (tasks.md §3.5 / §3.6). The Python script reads the
+# YAML registries under assets/rando/ and emits these three files. The wildcard
+# above picks up src/rando/logic_data.c automatically; the headers are referenced
+# by code via #include directives.
+RANDO_GEN_SRCS:=$(wildcard assets/rando/*.yaml) assets/rando_logic_gen.py
+RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h
+
 ifeq (${OS},Windows_NT)
     WINDRES:=windres
     RES:=zelda3.res
@@ -14,13 +21,22 @@ else
     SDLFLAGS:=$(shell sdl2-config --libs) -lm
 endif
 
-.PHONY: all clean clean_obj clean_gen
+.PHONY: all clean clean_obj clean_gen rando-codegen
 
 all: $(TARGET_EXEC) zelda3_assets.dat
 $(TARGET_EXEC): $(OBJS) $(RES)
 	$(CC) $^ -o $@ $(LDFLAGS) $(SDLFLAGS)
 %.o : %.c
 	$(CC) -c $(CFLAGS) $< -o $@
+
+# Rando codegen rule. Touch any input → regenerate all three outputs.
+# Building src/rando/logic_data.c triggers the rule (and emits the headers as a
+# side-effect). Compilation depends on the headers via #include.
+$(RANDO_GEN_OUTPUTS): $(RANDO_GEN_SRCS)
+	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h}"
+	$(PYTHON) assets/rando_logic_gen.py
+
+rando-codegen: $(RANDO_GEN_OUTPUTS)
 
 $(RES): src/platform/win32/zelda3.rc
 	@echo "Generating Windows resources"

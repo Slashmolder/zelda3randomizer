@@ -12,6 +12,11 @@
 #include "rando_rng.h"
 #include "rando_share.h"
 #include "rando_settings.h"
+#include "rando_logic.h"
+#include "rando_placement.h"
+#include "rando_shuffles.h"
+#include "rando_save.h"
+#include "rando_textfield.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -34,10 +39,10 @@ static uint32 g_reachability_state_counter;
 // Phase A0 stub: pass-through. Phase A1 wires the placement_table lookup.
 // ---------------------------------------------------------------------------
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
-  (void)location_id;
-  // TODO(rando-phase-a1): consult the placement table; fall back to
-  // vanilla_item_id on unknown id. Until then, every call is a pass-through.
-  return vanilla_item_id;
+  // Placement_Lookup returns vanilla_item_id when no active placement table
+  // is installed (rando mode inactive), or when location_id is not in the
+  // active table. See rando_placement.c.
+  return Placement_Lookup(location_id, vanilla_item_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,5 +101,10 @@ void Rando_RunAllSelfChecks(void) {
   Rando_Rng_SelfCheck();
   Share_SelfCheck();
   Settings_SelfCheck();
+  Logic_SelfCheck();
+  Placement_SelfCheck();
+  Shuffles_SelfCheck();
+  RandoSave_SelfCheck();
+  TextField_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }

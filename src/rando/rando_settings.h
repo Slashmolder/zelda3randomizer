@@ -126,4 +126,48 @@ void Settings_HashShort(const RandoSettings *s, uint8 out_hash[16]);
 // code 2 on failure.
 void Settings_SelfCheck(void);
 
+// ---------------------------------------------------------------------------
+// CLI `--settings=k=v,...` parser (tasks.md §1.6a, randomizer-core spec).
+//
+// `csv` is a comma-separated list of `<key>=<value>` pairs using the
+// canonical CLI key grammar (dot-separated keys: `mode.state`, `crystals.ganon`,
+// `dungeon_items.small_keys`, etc.). Enum values are case-sensitive and match
+// the spec exactly (e.g., `fast_ganon`, `triforce-hunt`, `NoGlitches`).
+//
+// On success: writes parsed values into `*out` over the defaults and returns
+// 0. On any error (unknown key, bad value, duplicate key): writes a one-line
+// error to stderr and returns non-zero. Callers SHOULD have populated `out`
+// with defaults before calling.
+//
+// Examples accepted:
+//   "mode.state=open,goal=fast_ganon,crystals.ganon=7"
+//   "goal=triforce-hunt,pieces_required=25,pieces_placed=30"
+//   "dungeon_items.small_keys=dungeon,prize_shuffle=true"
+int Settings_ParseCsv(const char *csv, RandoSettings *out);
+
+// ---------------------------------------------------------------------------
+// Settings presets (tasks.md §9.5). Named bundles of (key, value) pairs that
+// populate RandoSettings. The settings screen offers these as one-tap
+// defaults; the user can fine-tune afterward.
+//
+// Phase A presets: Open Ganon, Standard Ganon, Inverted Ganon, Retro,
+// Triforce Hunt Default. Each preset starts from Settings_SetDefaults and
+// overrides specific fields.
+// ---------------------------------------------------------------------------
+typedef enum {
+  kPreset_OpenGanon = 0,        // Open / Fast Ganon (the defaults)
+  kPreset_StandardGanon = 1,    // Standard world-state, Fast Ganon
+  kPreset_InvertedGanon = 2,    // Inverted world-state, Fast Ganon
+  kPreset_Retro = 3,            // Retro world-state, Defeat Ganon
+  kPreset_TriforceHuntDefault = 4,  // Open / Triforce Hunt 20-of-30
+  kPreset__Count = 5,
+} SettingsPreset;
+
+// Apply a preset to `out`. Calls Settings_SetDefaults first, then overrides
+// the preset-specific fields. Returns 0 on success, non-zero on unknown preset.
+int Settings_ApplyPreset(SettingsPreset preset, RandoSettings *out);
+
+// Human-readable preset name for UI display.
+const char *Settings_PresetName(SettingsPreset preset);
+
 #endif  // ZELDA3_RANDO_SETTINGS_H_

@@ -16,6 +16,7 @@ typedef struct RandoTextField {
   int len;
   int cursor;
   bool active;
+  bool base32_only;
 } RandoTextField;
 
 // Initialize a text field. base32_only restricts input to RFC 4648 Base32
@@ -29,11 +30,25 @@ void TextField_HandleChar(RandoTextField *tf, char c);
 // Handle a special key (backspace, paste, etc.). Returns true if the key
 // was consumed.
 typedef enum {
-  kTextFieldKey_Backspace,
-  kTextFieldKey_Delete,
-  kTextFieldKey_Paste,
-  kTextFieldKey_Submit,
+  kTextFieldKey_Backspace,    // delete char to the left of cursor
+  kTextFieldKey_Delete,       // delete char at cursor
+  kTextFieldKey_Left,         // move cursor left
+  kTextFieldKey_Right,        // move cursor right
+  kTextFieldKey_Home,         // cursor to start
+  kTextFieldKey_End,          // cursor to end
+  kTextFieldKey_Paste,        // paste from clipboard (caller passes via TextField_PasteString)
+  kTextFieldKey_Clear,        // clear the field
+  kTextFieldKey_Submit,       // user pressed enter; caller queries buf/len
 } TextFieldKey;
 bool TextField_HandleKey(RandoTextField *tf, TextFieldKey key);
+
+// Insert a multi-character string (e.g., clipboard paste). Filters per
+// base32_only constraint. Returns the number of chars actually inserted
+// (may be less than strlen(s) if base32_only filters or the buffer fills).
+int TextField_PasteString(RandoTextField *tf, const char *s);
+
+// Self-check: insert / paste / backspace / cursor-move + base32 filter.
+// Exits 2 on failure (per the *_SelfCheck pattern).
+void TextField_SelfCheck(void);
 
 #endif  // ZELDA3_RANDO_TEXTFIELD_H_

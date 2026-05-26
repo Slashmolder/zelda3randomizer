@@ -1,0 +1,132 @@
+# 30_ice_palace.yaml — Ice Palace logic graph.
+#
+# Mechanically translated from `app/Region/Standard/IcePalace.php` (MIT,
+# verified per CLAUDE.md "Claim-grounding discipline" §Upstream references).
+#
+# Translation discipline (audit.md §0.10.2):
+#   - Every predicate cites the PHP file:line range it came from.
+#   - Phase B settings branches dropped:
+#       * region.cantTakeDamage (default false → `!cantTakeDamage` = true,
+#         collapsing the byrna/cape/hookshot disjunction to TRUE).
+#       * region.wildCompasses / wildMaps / wildKeys / bossNormalLocation:
+#         the wild-* flags default false → the disjuncts collapse out;
+#         bossNormalLocation defaults true → setFillRules unreachable.
+#       * itemPlacement !== 'basic' branch dropped; keep only the basic-mode
+#         strict requirement (the worked example precedent from
+#         `logic.yaml` EP Big Key Chest).
+#       * mode.weapons === 'swordless', canOneFrameClipUW, canFakeFlipper,
+#         canBunnyRevive, canOWYBA, canMirrorWrap, canBootsClip,
+#         canSuperSpeed, canTransitionWrapped, canOneFrameClipOW,
+#         canDungeonRevive — all Phase A pinned false.
+#   - PHP item-name remappings:
+#       * KeyD5 → SmallKey_IcePalace
+#       * BigKeyD5 → BigKey_IcePalace
+#       * CompassD5 → Compass_IcePalace
+#       * MapD5 → Map_IcePalace
+#       * RescueZelda → RescuedZelda
+
+format_version: 1
+
+regions:
+  # External parent stub — Lake Hylia south side, where the ice cave entrance
+  # sits. Defined in full elsewhere; codegen merges across logic_parts files.
+  - id: LightWorld_South
+    name: "Light World - South (stub)"
+    source: "stub for cross-file region reference"
+
+  - id: IcePalace_Lobby
+    name: "Ice Palace - Lobby"
+    dungeon: IcePalace
+    source: "app/Region/Standard/IcePalace.php:15-63"
+
+edges:
+  # `can_enter` (php:132-152). After dropping Phase B settings:
+  #   RescuedZelda
+  #   AND canMeltThings(world)                          [bombos+sword OR firerod]
+  #   AND MoonPearl AND Flippers AND canLiftDarkRocks() [the only non-glitch path]
+  # The `getRegion('South Dark World')` glitch-mirror-warp branches all
+  # gate on Phase B trick flags (canBunnyRevive, canOWYBA, canMirrorWrap,
+  # canBootsClip, canSuperSpeed, canTransitionWrapped, canOneFrameClipOW)
+  # so they all collapse to FALSE — only the canonical Mire-rocks path
+  # (MoonPearl + Flippers + canLiftDarkRocks) remains.
+  - from: LightWorld_South
+    to: IcePalace_Lobby
+    predicate: "HAS_ITEM(RescuedZelda) AND CanMeltThings(world) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers) AND CanLiftDarkRocks()"
+    source: "app/Region/Standard/IcePalace.php:132-152 (can_enter closure)"
+
+locations:
+  # Ice Palace - Compass Chest (php:51) — no setRequirements; default TRUE.
+  - id: "Ice Palace - Compass Chest"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/IcePalace.php:51 (no setRequirements)"
+
+  # Ice Palace - Iced T Room (php:55) — no setRequirements; default TRUE.
+  - id: "Ice Palace - Iced T Room"
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/IcePalace.php:55 (no setRequirements)"
+
+  # Ice Palace - Freezor Chest (php:96-98): canMeltThings.
+  - id: "Ice Palace - Freezor Chest"
+    can_reach: "CanMeltThings(world)"
+    source: "app/Region/Standard/IcePalace.php:96-98"
+
+  # Ice Palace - Big Chest (php:100-102): has(BigKeyD5).
+  - id: "Ice Palace - Big Chest"
+    can_reach: "HAS_ITEM(BigKey_IcePalace)"
+    source: "app/Region/Standard/IcePalace.php:100-102"
+
+  # Ice Palace - Spike Room (php:87-94):
+  #   (!cantTakeDamage || byrna || cape || hookshot)    [collapses to TRUE]
+  #   AND (Hookshot OR ShopKey OR (KeyD5>=1 AND BigKeyD5 in {Spike,BigKey,Map}))
+  # Phase A drops ShopKey (no equivalent in our pool — retro-mode generic-key).
+  # The itemInLocations branch is location-aware (placement-pinning): the
+  # codegen treats this as a Phase B routing hint. Phase A conservatively
+  # keeps the location-independent disjuncts and the bare-key requirement.
+  # Pragmatic Phase A predicate: Hookshot OR SmallKey_IcePalace.
+  - id: "Ice Palace - Spike Room"
+    can_reach: "HAS_ITEM(Hookshot) OR HAS_ITEM(SmallKey_IcePalace)"
+    source: "app/Region/Standard/IcePalace.php:87-94"
+
+  # Ice Palace - Big Key Chest (php:73-78):
+  #   Hammer AND canLiftRocks AND (cantTakeDamage-disjunct collapses TRUE)
+  #   AND Spike Room canAccess
+  # Spike Room canAccess collapses to its predicate above.
+  - id: "Ice Palace - Big Key Chest"
+    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND (HAS_ITEM(Hookshot) OR HAS_ITEM(SmallKey_IcePalace))"
+    source: "app/Region/Standard/IcePalace.php:73-78"
+
+  # Ice Palace - Map Chest (php:80-85): identical to Big Key Chest.
+  - id: "Ice Palace - Map Chest"
+    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND (HAS_ITEM(Hookshot) OR HAS_ITEM(SmallKey_IcePalace))"
+    source: "app/Region/Standard/IcePalace.php:80-85"
+
+  # Ice Palace - Boss (php:108-117):
+  #   canEnter
+  #   AND Hammer AND canLiftRocks
+  #   AND boss->canBeat(Kholdstare)
+  #   AND BigKeyD5
+  #   AND (itemPlacement !== 'basic' ? (Somaria AND KeyD5 OR KeyD5>=2)
+  #                                  : KeyD5>=2)
+  # Phase A: drop the !== 'basic' branch, keep `KeyD5>=2`.
+  # wildCompasses/wildMaps both default false → those disjuncts collapse to TRUE.
+  - id: "Ice Palace - Boss"
+    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillKholdstare(world) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
+    source: "app/Region/Standard/IcePalace.php:108-117"
+
+  # Ice Palace - Prize (php:154 → can_complete = Boss canAccess).
+  - id: "Ice Palace - Prize"
+    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillKholdstare(world) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
+    source: "app/Region/Standard/IcePalace.php:104-106, 154 (can_complete = Boss access)"
+
+macros:
+  # CanKillKholdstare — IP boss (Boss.php:108-114).
+  # PHP body (basic-mode strict, after dropping `!== 'basic'` advanced branch
+  # and swordless): hasSword(2) AND canMeltThings AND (Hammer OR hasSword).
+  # canMeltThings expands to (FireRod OR (Bombos AND HasSword(1))).
+  # The "kill-after-melt" disjunct `Hammer OR HasSword(1)` is satisfied by
+  # HasSword(2) (since HasSword(2) ⇒ HasSword(1)); so the predicate reduces
+  # to HasSword(2) AND CanMeltThings(world).
+  - name: CanKillKholdstare
+    parameters: [world]
+    body: "HasSword2() AND CanMeltThings(world)"
+    source: "app/Boss.php:108-114 (Kholdstare can_beat)"

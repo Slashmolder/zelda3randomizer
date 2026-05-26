@@ -1,0 +1,145 @@
+# 21_swamp_palace.yaml — Swamp Palace translation
+#
+# Mechanically translated from
+# `../alttp_vt_randomizer/app/Region/Standard/SwampPalace.php` (MIT, verified
+# per CLAUDE.md "Claim-grounding discipline" §Upstream references).
+#
+# Phase A axis pins (per audit.md §0.10.2) collapse the PHP closures:
+#   - region.wildKeys / wildBigKeys / wildMaps / wildCompasses → false
+#   - region.bossNormalLocation → true
+#   - itemPlacement === 'advanced' / 'basic' → both false (standard mode)
+#   - mode.weapons === 'swordless' → false
+#   - accessibility === 'locations' → false (default accessibility=items)
+#   - canOneFrameClipUW / canBootsClip / canSuperSpeed / canOneFrameClipOW /
+#     canOWYBA / canBunnyRevive / canDungeonRevive → all false (NoGlitches)
+#
+# The local `$mire` and `$hera` lambdas (php:75-85) both require
+# canOneFrameClipUW=TRUE → both collapse to FALSE in Phase A. Every
+# `($items->has('KeyD2') || $mire(...))` therefore reduces to
+# `HAS_ITEM(SmallKey_SwampPalace)`, and every
+# `($items->has('Hammer') || $mire(...) || $hera(...))` to `HAS_ITEM(Hammer)`.
+# Likewise the Big Chest's "or via Mire/Hera with their big keys" branches
+# (lines 97-99) collapse to `HAS_ITEM(BigKey_SwampPalace)`.
+#
+# PHP item-name remappings:
+#   KeyD2     → SmallKey_SwampPalace
+#   BigKeyD2  → BigKey_SwampPalace
+#   MapD2     → Map_SwampPalace
+#   CompassD2 → Compass_SwampPalace
+#
+# Boss: Arrghus — translated from `app/Boss.php:91-95`. canExtendMagic with
+# magic_modifier default = HalfMagic|QuarterMagic|HasBottle(1) (see
+# macros.yaml CanExtendMagic notes).
+
+format_version: 1
+
+regions:
+  # External parent — Swamp Palace's overworld region. Stubbed.
+  - id: DarkWorld_South
+    name: "Dark World - South (stub)"
+    source: "stub for cross-file region reference"
+
+  - id: SwampPalace
+    name: "Swamp Palace"
+    dungeon: SwampPalace
+    source: "app/Region/Standard/SwampPalace.php:15-65"
+
+edges:
+  # SP can_enter (php:177-193). Phase A collapse:
+  #   has(RescueZelda) && Flippers && <SouthDarkWorld.canEnter>
+  #   && ((MoonPearl && MagicMirror) || <canOneFrameClipUW trick branch>)
+  # Trick disjunct collapses to FALSE → required: RescuedZelda AND Flippers
+  # AND MoonPearl AND MagicMirror (the South Dark World parent region's
+  # canEnter is the edge's `from` side gate).
+  - from: DarkWorld_South
+    to: SwampPalace
+    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(Flippers) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(MagicMirror)"
+    source: "app/Region/Standard/SwampPalace.php:177-193 (can_enter closure)"
+
+locations:
+  # ===========================================================================
+  # Swamp Palace — predicates from SwampPalace.php:73-198
+  # ===========================================================================
+
+  # Entrance (php:50, 87-91). No setRequirements → default TRUE. setFillRules:
+  #   canOneFrameClipUW || wildKeys || item == KeyD2
+  # Both trick/wild flags false → only KeyD2 is allowed here. Modeled as
+  # can_place restriction.
+  - id: "Swamp Palace - Entrance"
+    can_reach: "TRUE()"
+    can_place: "OP_ITEM_IS(SmallKey_SwampPalace)"
+    source: "app/Region/Standard/SwampPalace.php:50, 87-91"
+
+  # Big Chest (php:93-104). After trick collapse:
+  #   has(KeyD2) && has(Hammer) && has(BigKeyD2).
+  # Always-allow + fill-rules accessibility != 'locations' branches vacuous.
+  - id: "Swamp Palace - Big Chest"
+    can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND HAS_ITEM(BigKey_SwampPalace)"
+    source: "app/Region/Standard/SwampPalace.php:93-104"
+
+  # Big Key Chest (php:106-110): has(KeyD2) && has(Hammer).
+  - id: "Swamp Palace - Big Key Chest"
+    can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+    source: "app/Region/Standard/SwampPalace.php:106-110"
+
+  # Map Chest (php:112-115): canBombThings && has(KeyD2). canBombThings=TRUE.
+  - id: "Swamp Palace - Map Chest"
+    can_reach: "HAS_ITEM(SmallKey_SwampPalace)"
+    source: "app/Region/Standard/SwampPalace.php:112-115"
+
+  # West Chest (php:117-121): has(KeyD2) && has(Hammer).
+  - id: "Swamp Palace - West Chest"
+    can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+    source: "app/Region/Standard/SwampPalace.php:117-121"
+
+  # Compass Chest (php:123-127): has(KeyD2) && has(Hammer).
+  - id: "Swamp Palace - Compass Chest"
+    can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+    source: "app/Region/Standard/SwampPalace.php:123-127"
+
+  # Flooded Room - Left (php:129-134): Hookshot && KeyD2 && Hammer.
+  - id: "Swamp Palace - Flooded Room - Left"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+    source: "app/Region/Standard/SwampPalace.php:129-134"
+
+  # Flooded Room - Right (php:136-141): identical body.
+  - id: "Swamp Palace - Flooded Room - Right"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+    source: "app/Region/Standard/SwampPalace.php:136-141"
+
+  # Waterfall Room (php:143-148): identical body.
+  - id: "Swamp Palace - Waterfall Room"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+    source: "app/Region/Standard/SwampPalace.php:143-148"
+
+  # Boss (php:154-175): Hookshot && KeyD2 && Hammer && Arrghus.canBeat
+  # plus the wildCompasses/wildMaps clauses (both vacuous under Phase A).
+  - id: "Swamp Palace - Boss"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
+    source: "app/Region/Standard/SwampPalace.php:154-175"
+
+  # Prize (php:61, 150-152, 195) — can_complete = Boss canAccess.
+  - id: "Swamp Palace - Prize"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
+    source: "app/Region/Standard/SwampPalace.php:61, 150-152, 195 (can_complete = Boss access)"
+
+macros:
+  # CanKillArrghus — SP boss. Translated from app/Boss.php:91-95.
+  #   (itemPlacement!='basic' || swordless || hasSword(2))
+  #   && Hookshot
+  #   && (Hammer || hasSword()
+  #       || ((canExtendMagic(w,2) || canShootArrows(w)) && (FireRod || IceRod)))
+  # itemPlacement!='basic' → TRUE → leading disjunct TRUE. Hookshot is also
+  # required at the location level (already AND'd into the boss can_reach), but
+  # included here for self-contained boss-kill semantics (matches Boss.php
+  # closure shape).
+  - name: CanKillArrghus
+    parameters: [world]
+    body: "HAS_ITEM(Hookshot) AND (HAS_ITEM(Hammer) OR HasSword(1) OR ((CanExtendMagic(world, 2) OR CanShootArrowsL1()) AND (HAS_ITEM(FireRod) OR HAS_ITEM(IceRod))))"
+    source: "app/Boss.php:91-95 (Boss::canBeat for Arrghus)"
+    notes: |
+      Phase A: leading `(itemPlacement!='basic' || swordless || hasSword(2))`
+      collapses to TRUE under default itemPlacement='standard'. The Hookshot
+      requirement is duplicated at the boss-room location level (in the
+      can_reach predicate) but kept here so the macro stands alone, matching
+      the Boss.php closure shape.

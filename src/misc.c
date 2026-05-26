@@ -850,6 +850,10 @@ void ItemReceipt_GiveBottledItem(uint8 item) {  // 89893e
   if ((j = FindInByteArray(kBottleList, item, 7)) >= 0) {
     for (int i = 0; i != 4; i++) {
       if (link_bottle_info[i] < 2) {
+        // rando-exempt: dispatcher-core — ItemReceipt_GiveBottledItem is
+        // called from AncillaAdd_ItemReceipt, the central dispatch helper.
+        // §6 dispatch wraps Link_ReceiveItem call sites, not this internal
+        // helper. (audit.md §0.1.1 dispatcher funnel)
         link_bottle_info[i] = j + 2;
         return;
       }
@@ -858,6 +862,7 @@ void ItemReceipt_GiveBottledItem(uint8 item) {  // 89893e
   if ((j = FindInByteArray(kPotionList, item, 5)) >= 0) {
     for (int i = 0; i != 4; i++) {
       if (link_bottle_info[i] == 2) {
+        // rando-exempt: dispatcher-core — see above. (audit.md §0.1.1)
         link_bottle_info[i] = j + 3;
         return;
       }
