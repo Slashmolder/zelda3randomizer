@@ -259,3 +259,54 @@ Per-attempt RNG byte-consumption is the lurking gotcha: Fisher-Yates'
 shuffle is sensitive to array length. So any pool-sizing change shifts
 every digest. The world-state-filtered pool padding bump did this.
 
+## Misleading audit ranges
+
+Audit NEW-1 (dungeon_id_for_item off-by-one) bit because the SmallKey
+enum's contiguous HCE..GT range (13 entries) accidentally validated
+the formula `item_id - base`. BigKey / Map / Compass skip both HCE
+AND HCT (11 entries), so the same formula was off by 1 for 8 of 11
+dungeons.
+
+**Rule**: when arithmetic encodes a list, ALWAYS prefer an explicit
+lookup table — the cost is 10 bytes of data, the upside is the
+mapping is visible to grep + immune to "I forgot the dungeon enum
+has a gap" classes of bug. The selftest now pins each (item_id →
+dungeon_id) explicitly.
+
+## Dispatch wrappers can encode runtime state
+
+The §6.2 progressive-item dispatch uses runtime state
+(`link_sword_type`) to translate a placed registry id to the
+next-tier vanilla LttP code. This is more powerful than a static
+translation table: a single ProgressiveSword item can grant L1/L2/L3/L4
+based on the player's current state. The placer's bounded-retry
+already accounts for the cumulative effect across multiple placements
+of the same progressive id.
+
+Similar pattern works for items that need per-current-dungeon
+tracking (small keys, big keys, maps, compasses) where the dispatch
+returns the vanilla LttP code and the existing receive logic
+handles the per-dungeon increment.
+
+The pattern breaks for items that need persistent rando-specific
+state beyond what vanilla LttP tracks (TriforcePiece counter,
+HalfMagic direct-write). Those need new code paths.
+
+## Phase A1 ⇄ Phase A2 boundary
+
+By the end of this work, Phase A1 has produced:
+- Generator complete + 50-seed cross-platform corpus
+- 15 §6 NPC dispatch sites + universal chest hook (with empty lookup)
+- §6.2 partial: 53 item ids translate correctly
+- Snapshot rando preservation via TLV tail
+- Audit guard --strict mode active in CI
+- 17 spec scenarios verified by selftest
+
+The Phase A2 boundary is reached at: file-select / settings UI,
+chest-lookup table population (needs zelda3_assets.dat parse),
+Inverted/Retro logic graphs, §6.2 full receive helpers for
+TriforcePiece counter UI / HalfMagic direct grant / per-placed-dungeon
+counters. None of these block Phase A1's generator from being
+usable headlessly — they're the polish that makes rando seeds
+playable in-game.
+
