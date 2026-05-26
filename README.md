@@ -32,24 +32,47 @@ Secondary item slot on button X (Hold X in inventory to select).
 
 Switching current item with L/R keys.
 
-## Randomizer (Phase A0/A1 — in development)
+## Randomizer (Phase A1 — generator functional, in-game dispatch landing)
 
 This fork is adding an in-binary randomizer. The randomizer ships inside the
 same `zelda3` executable and is enabled per-slot from the file-select screen
 (when the Phase A2 UI lands; the CLI is the entry point until then).
 
-Phase A status:
+Phase A status (kGeneratorVersion=6):
 - Foundation, RNG, share-string, predicate VM, codegen, audit: landed
-- Item pool / placement / spoiler writer / save sidecar: scaffolded (identity placements at A0; assumed-fill placement is Phase A1 follow-on)
+- Logic graph (28 regions / 28 edges / 237 location predicates / 13 dungeons +
+  overworld): landed for Standard mode; Inverted/Retro overlays Phase A2
+- Assumed-fill placement with bounded retry + wall-clock budget,
+  prize/medallion shuffles, sphere computation, goal-completability with
+  strict refusal: landed
+- JSON + text spoilers with fallback-warning rollup, sphere_digest, region-
+  grouped placements: landed
+- Sidecar save format aligned to spec (kRandoSidecar_*): landed
+- 50-seed regression corpus + cross-platform CI (Linux/macOS): landed
+- §6 grant-site dispatch: 13 NPC sites wired (Bottle Merchant, Sahasrahla,
+  Mushroom, Library, Uncle, Sick Kid, Purple Chest, Hobo, Stumpy, Old Man,
+  Blacksmith, Master Sword Pedestal, Flute Spot). Universal chest hook
+  in place with stub lookup table.
 - UI (file-select toggle, settings screen, trackers): Phase A2 / Phase B
 
-The CLI generation mode is functional now for single-seed runs:
+The CLI generation mode is fully functional for single-seed runs across all
+7 Phase A goals × Open/Standard/Retro world states:
 ```sh
 ./zelda3 --generate-seed \
   --settings=mode.state=open,goal=fast_ganon,crystals.ganon=7,crystals.tower=7 \
   --seed=0xDEADBEEFCAFEBABE \
   --out-spoiler=./spoilers/demo.json
 ```
+
+CLI flags:
+- `--settings=k=v,...` — comma-separated settings overrides (see
+  `docs/randomizer.md` for the full key reference).
+- `--seed=0x...` — uint64 seed.
+- `--out-spoiler=<path>` — JSON spoiler output path (also writes `.txt`).
+- `--out-share-string=<path>` — optional file for the base32 share string.
+- `--budget-seconds=<n>` — bound the placement retry budget (default 5).
+- `--assets-must-be-vanilla` — refuse non-vanilla zelda3_assets.dat blobs.
+- `--allow-broken-seed` — skip the goal-completability refusal (diagnostic).
 
 Self-tests (cross-platform determinism):
 ```sh
