@@ -44,7 +44,7 @@ locations:
   # Eastern Palace (IDs 11..17)
   # ===========================================================================
   - { id: 11, name: "Eastern Palace - Compass Chest",         region: EasternPalace, type: Chest,        vanilla_item: Compass_EasternPalace, source: "app/Region/Standard/EasternPalace.php:51" }
-  - { id: 12, name: "Eastern Palace - Big Chest",             region: EasternPalace, type: BigChest,     vanilla_item: BigKey_EasternPalace,  source: "app/Region/Standard/EasternPalace.php:52" }
+  - { id: 12, name: "Eastern Palace - Big Chest",             region: EasternPalace, type: BigChest,     vanilla_item: Bow,                    source: "app/Region/Standard/EasternPalace.php:52" }
   - { id: 13, name: "Eastern Palace - Cannonball Chest",      region: EasternPalace, type: Chest,        vanilla_item: Rupee100,              source: "app/Region/Standard/EasternPalace.php:53" }
   - { id: 14, name: "Eastern Palace - Big Key Chest",         region: EasternPalace, type: Chest,        vanilla_item: BigKey_EasternPalace,  source: "app/Region/Standard/EasternPalace.php:54" }
   - { id: 15, name: "Eastern Palace - Map Chest",             region: EasternPalace, type: Chest,        vanilla_item: Map_EasternPalace,     source: "app/Region/Standard/EasternPalace.php:55" }
@@ -54,9 +54,9 @@ locations:
   # ===========================================================================
   # Desert Palace (IDs 18..24)
   # ===========================================================================
-  - { id: 18, name: "Desert Palace - Big Chest",              region: DesertPalace, type: BigChest, vanilla_item: BigKey_DesertPalace,   source: "app/Region/Standard/DesertPalace.php:55" }
+  - { id: 18, name: "Desert Palace - Big Chest",              region: DesertPalace, type: BigChest, vanilla_item: PowerGlove,            source: "app/Region/Standard/DesertPalace.php:55" }
   - { id: 19, name: "Desert Palace - Map Chest",              region: DesertPalace, type: Chest,    vanilla_item: Map_DesertPalace,      source: "app/Region/Standard/DesertPalace.php:56" }
-  - { id: 20, name: "Desert Palace - Torch",                  region: DesertPalace, type: Dash,     vanilla_item: PowerGlove,            source: "app/Region/Standard/DesertPalace.php:57" }
+  - { id: 20, name: "Desert Palace - Torch",                  region: DesertPalace, type: Dash,     vanilla_item: Boots,                 source: "app/Region/Standard/DesertPalace.php:57" }
   - { id: 21, name: "Desert Palace - Big Key Chest",          region: DesertPalace, type: Chest,    vanilla_item: BigKey_DesertPalace,   source: "app/Region/Standard/DesertPalace.php:58" }
   - { id: 22, name: "Desert Palace - Compass Chest",          region: DesertPalace, type: Chest,    vanilla_item: Compass_DesertPalace,  source: "app/Region/Standard/DesertPalace.php:59" }
   - { id: 23, name: "Desert Palace - Boss",                   region: DesertPalace, type: Drop,     vanilla_item: BossHeartContainer,    source: "app/Region/Standard/DesertPalace.php:60" }
@@ -69,7 +69,7 @@ locations:
   - { id: 26, name: "Tower of Hera - Basement Cage",          region: TowerOfHera, type: Standing, vanilla_item: SmallKey_TowerOfHera,  source: "app/Region/Standard/TowerOfHera.php:54", notes: "Standing\\HeraBasement type — non-chest pickup; new §6 instrumentation required." }
   - { id: 27, name: "Tower of Hera - Map Chest",              region: TowerOfHera, type: Chest,    vanilla_item: Map_TowerOfHera,       source: "app/Region/Standard/TowerOfHera.php:55" }
   - { id: 28, name: "Tower of Hera - Compass Chest",          region: TowerOfHera, type: Chest,    vanilla_item: Compass_TowerOfHera,   source: "app/Region/Standard/TowerOfHera.php:56" }
-  - { id: 29, name: "Tower of Hera - Big Chest",              region: TowerOfHera, type: BigChest, vanilla_item: MirrorShield,          source: "app/Region/Standard/TowerOfHera.php:57" }
+  - { id: 29, name: "Tower of Hera - Big Chest",              region: TowerOfHera, type: BigChest, vanilla_item: MoonPearl,             source: "app/Region/Standard/TowerOfHera.php:57" }
   - { id: 30, name: "Tower of Hera - Boss",                   region: TowerOfHera, type: Drop,     vanilla_item: BossHeartContainer,    source: "app/Region/Standard/TowerOfHera.php:58" }
   - { id: 31, name: "Tower of Hera - Prize",                  region: TowerOfHera, type: Prize_Pendant, vanilla_item: Prize_BluePendant, source: "app/Region/Standard/TowerOfHera.php:60" }
 

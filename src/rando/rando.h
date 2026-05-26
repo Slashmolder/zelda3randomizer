@@ -58,6 +58,24 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id);
 void Rando_BumpReachabilityCounter(void);
 
 // ---------------------------------------------------------------------------
+// Active per-seed shuffle assignments. The predicate VM's OP_HAS_PRIZE and
+// OP_MEDALLION_OPENS consult these via PredicateContext; the placer + sphere
+// computation + tracker call Logic_ComputeReachability which reads them.
+//
+// Callers MUST set these before generating reachability — otherwise both ops
+// degrade to "false", which makes prize-gated locations (Sahasrahla, GT
+// entry, Master Sword Pedestal) and medallion-gated dungeons (MM, TR)
+// unreachable.
+//
+// Pass NULL to clear (resets to "no assignment installed" — falls back to
+// false). Pointers are borrowed; caller retains ownership.
+// ---------------------------------------------------------------------------
+void Rando_SetDungeonPrizeAssignment(const uint8 *assignment);    // [kRandoDungeonCount]
+void Rando_SetMedallionAssignment(const uint8 *assignment);       // [kRandoMedallionEntranceCount]
+const uint8 *Rando_GetDungeonPrizeAssignment(void);
+const uint8 *Rando_GetMedallionAssignment(void);
+
+// ---------------------------------------------------------------------------
 // Self-tests (tasks.md §2.2, §13.x). Always linked; CI invokes via
 // `--rando-selftest`. Exits with code 2 on any failure.
 // ---------------------------------------------------------------------------

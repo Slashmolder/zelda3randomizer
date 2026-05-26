@@ -15,6 +15,7 @@
 #include "rando.h"
 #include "rando_logic.h"
 #include "rando_rng.h"
+#include "rando_shuffles.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -384,6 +385,15 @@ static bool location_accepts_item(const RandoLocationDef *loc,
   return Predicate_EvaluatePlacement(aa_bc, loc->always_allow_length, counts, settings, candidate_item);
 }
 
+// Single-attempt inner implementation of assumed-fill. Returns true on
+// "every progression item placed at a reachable location" (success), false
+// otherwise (forward-fill fallback fired at least once). The outer
+// Place_AssumedFill wraps this with a bounded-retry loop.
+static bool place_assumed_fill_attempt(const RandoSettings *settings,
+                                       uint64 seed_u64,
+                                       RandoPlacementTable *out,
+                                       uint16 *out_fallback_count);
+
 // ---------------------------------------------------------------------------
 // Place_AssumedFill — Phase A1 implementation.
 //
@@ -397,25 +407,111 @@ static bool location_accepts_item(const RandoLocationDef *loc,
 //        b. Run Logic_ComputeReachability with current counts.
 //        c. Filter open locations to reachable + can_place(item).
 //        d. If candidates: pick a random one (Rng_NextRange).
-//        e. If no candidates: forward-fill fallback — place at any open
-//           location regardless of reachability. Records fallback in the
-//           future spoiler's fallback_warnings.
+//        e. If no candidates: forward-fill fallback.
 //   5. Shuffle junk; fill remaining open locations.
-//
-// Bounded-rewind retry (per spec) is a Phase A1 follow-on; for now the
-// forward-fill fallback kicks in on dead-end. Logs to stderr.
+//   6. Run sphere computation against the produced placement; if any
+//      progression item is unreachable, retry with a perturbed seed.
+//   7. After kAssumedFillMaxAttempts retries, accept the last attempt and
+//      surface a fallback warning. (Aligns with the spec's "forward-fill
+//      fallback after timeout" — bounded-rewind is the in-attempt retry
+//      strategy; this is the cross-attempt retry strategy.)
 // ---------------------------------------------------------------------------
+#define kAssumedFillMaxAttempts 8
+
 bool Place_AssumedFill(const RandoSettings *settings,
                        uint64 seed_u64,
                        int budget_seconds,
                        RandoPlacementTable *out) {
-  (void)budget_seconds;  // Phase A1: not yet enforced
+  (void)budget_seconds;
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
 
-  // ----- 1. Build pool -----
+  uint16 best_unreachable = 0xFFFF;
+  uint16 best_fallback = 0xFFFF;
+  static RandoPlacement best_entries[512];
+  uint16 best_count = 0;
+  bool best_complete = false;
+
+  for (int attempt = 0; attempt < kAssumedFillMaxAttempts; attempt++) {
+    // Perturb the seed per attempt so each retry produces a different
+    // progression order. The first attempt uses the unmodified seed so
+    // single-seed determinism holds when the first attempt succeeds.
+    uint64 attempt_seed = seed_u64 ^ ((uint64)attempt * 0x9E3779B97F4A7C15ull);
+    uint16 fallback_count = 0;
+    if (!place_assumed_fill_attempt(settings, attempt_seed, out, &fallback_count)) {
+      // Inner attempt itself failed catastrophically (couldn't place an
+      // item even with forward-fill). Continue retrying with a new seed.
+      continue;
+    }
+    // Check completability via sphere computation.
+    RandoSpheres spheres;
+    bool full_reach = Logic_ComputeSpheres(settings, out, &spheres);
+    if (full_reach && fallback_count == 0) {
+      // Best possible outcome — accept this placement.
+      return true;
+    }
+    // Track best-so-far (fewest unreachable + fewest fallbacks).
+    uint16 score = spheres.unreachable_count * 100 + fallback_count;
+    uint16 best_score = (best_unreachable == 0xFFFF) ? 0xFFFF : (best_unreachable * 100 + best_fallback);
+    if (score < best_score) {
+      best_unreachable = spheres.unreachable_count;
+      best_fallback = fallback_count;
+      best_count = out->count;
+      for (uint16 i = 0; i < out->count; i++) best_entries[i] = out->entries[i];
+      best_complete = full_reach;
+    }
+  }
+  // All attempts exhausted; restore the best-scored placement.
+  if (best_unreachable == 0xFFFF) {
+    fprintf(stderr, "Place_AssumedFill: no attempt produced a placement\n");
+    return false;
+  }
+  for (uint16 i = 0; i < best_count; i++) out->entries[i] = best_entries[i];
+  out->count = best_count;
+  fprintf(stderr,
+          "Place_AssumedFill: best of %d attempts: %u unreachable placement(s), %u forward-fill fallback(s).\n",
+          kAssumedFillMaxAttempts, (unsigned)best_unreachable, (unsigned)best_fallback);
+  // Return true to signal "a placement was produced" — the caller checks
+  // goal_completable / sphere unreachable_count to decide whether the seed
+  // is actually playable. (best_complete may be false; we still keep the
+  // best-scored output so the spoiler surfaces diagnostic info.)
+  (void)best_complete;
+  return true;
+}
+
+static bool place_assumed_fill_attempt(const RandoSettings *settings,
+                                       uint64 seed_u64,
+                                       RandoPlacementTable *out,
+                                       uint16 *out_fallback_count) {
+  if (settings == NULL || out == NULL || out->entries == NULL) return false;
+  if (out_fallback_count) *out_fallback_count = 0;
+
+  // ----- 1. Build pool + shuffle-assignment tables -----
   uint16 pool[512];
   uint16 pool_n = BuildItemPool(settings, pool, 512);
   if (pool_n == 0) return false;
+
+  // Run prize + medallion shuffles. Their outputs are stored as static state
+  // that Logic_ComputeReachability picks up via Rando_GetDungeonPrizeAssignment
+  // / Rando_GetMedallionAssignment. The placer needs these BEFORE running
+  // reachability, otherwise OP_HAS_PRIZE / OP_MEDALLION_OPENS evaluate to
+  // false everywhere and most of the graph is unreachable.
+  //
+  // Note: this state is process-global, which is fine here because the CLI
+  // generates one seed at a time. Multi-seed batch generation (task 1.6a
+  // batch form) would need to re-install per iteration.
+  static uint8 prize_assignment[kRandoDungeonCount];
+  static uint8 medallion_assignment[kRandoMedallionEntranceCount];
+  {
+    // Use a dedicated RNG seeded from seed_u64 so the shuffles are
+    // deterministic per (seed, settings) — independent of the placer's RNG
+    // consumption order.
+    RandoRng shuffle_rng;
+    Rng_SeedFromU64(&shuffle_rng, seed_u64);
+    PrizeShuffle_Run(settings, &shuffle_rng, prize_assignment);
+    MedallionShuffle_Run(settings, &shuffle_rng, medallion_assignment);
+  }
+  Rando_SetDungeonPrizeAssignment(prize_assignment);
+  Rando_SetMedallionAssignment(medallion_assignment);
 
   // ----- 2. Partition into progression / junk -----
   static uint16 progression[256];
@@ -444,21 +540,41 @@ bool Place_AssumedFill(const RandoSettings *settings,
   static uint16 placement_at[512];
   for (uint16 k = 0; k < open_n; k++) placement_at[k] = 0xFFFF;
 
-  // ----- 3b. Pre-place vanilla-mode dungeon items -----
-  // In Vanilla mode (the default), small keys / big keys / maps / compasses
-  // are NOT added to the pool by BuildItemPool — they belong at their
-  // vanilla locations. Pin them here before assumed fill runs, otherwise
-  // junk fills those slots and dungeon locks become unopenable.
+  // ----- 3b. Pre-place vanilla-mode dungeon items + event-prize pins -----
   //
-  // Per-class mode lookup: per settings.dungeon_{small_keys,big_keys,maps,compasses}_mode.
+  // Several location types are NOT subject to assumed-fill randomization:
+  //
+  //   1. Prize_Event (Zelda, Agahnim, Agahnim 2, Ganon, Bomb Merchant
+  //      in Inverted): these are virtual event triggers. Their vanilla
+  //      item (RescuedZelda / DefeatAgahnim / etc.) MUST be pinned so
+  //      sphere computation sees the event item enter inventory when the
+  //      location is reached — otherwise downstream regions that gate
+  //      on the event are forever unreachable.
+  //
+  //   2. Medallion config locations (Misery Mire Medallion / Turtle Rock
+  //      Medallion): these are read by the medallion-shuffle module, not
+  //      placed. For now pin to vanilla (matches medallion_shuffle=0 case).
+  //
+  //   3. In Vanilla dungeon-item mode (the default), small keys / big keys /
+  //      maps / compasses belong at their vanilla locations. Pin them here
+  //      before assumed fill runs, otherwise junk fills those slots and
+  //      dungeon locks become unopenable.
+  //
+  // Per-class mode lookup: settings.dungeon_{small_keys,big_keys,maps,compasses}_mode.
   // Item id ranges (per item_registry.yaml):
   //   53..65 = small keys, 66..76 = big keys, 77..87 = maps (plus id 124 = Map_HCE),
   //   88..98 = compasses.
+  // Location type ids: Prize_Event = 12, Medallion = 13 (per logic.schema.yaml).
+  const uint8 LOCTYPE_Prize_Event = 12;
+  const uint8 LOCTYPE_Medallion   = 13;
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
     uint16 vi = loc->vanilla_item_id;
     bool vanilla_pin = false;
-    if (vi >= 53 && vi <= 65) {
+    if (loc->type == LOCTYPE_Prize_Event || loc->type == LOCTYPE_Medallion) {
+      // Always pin event / medallion locations to vanilla item.
+      vanilla_pin = true;
+    } else if (vi >= 53 && vi <= 65) {
       vanilla_pin = (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla);
     } else if (vi >= 66 && vi <= 76) {
       vanilla_pin = (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla);
@@ -572,10 +688,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   }
   out->count = open_n;
 
-  if (fallback_count > 0) {
-    fprintf(stderr, "Place_AssumedFill: %u progression item(s) placed via forward-fill fallback.\n",
-            (unsigned)fallback_count);
-  }
+  if (out_fallback_count) *out_fallback_count = fallback_count;
   return true;
 }
 

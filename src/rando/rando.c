@@ -55,6 +55,21 @@ void Rando_BumpReachabilityCounter(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-seed shuffle-assignment globals consumed by Logic_ComputeReachability.
+// ---------------------------------------------------------------------------
+static const uint8 *g_dungeon_prize_assignment = NULL;
+static const uint8 *g_medallion_assignment = NULL;
+
+void Rando_SetDungeonPrizeAssignment(const uint8 *assignment) {
+  g_dungeon_prize_assignment = assignment;
+}
+void Rando_SetMedallionAssignment(const uint8 *assignment) {
+  g_medallion_assignment = assignment;
+}
+const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assignment; }
+const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
+
+// ---------------------------------------------------------------------------
 // Self-tests. Always linked; invoked from --rando-selftest CLI flag.
 //
 // Rando_SelfCheck validates the SHA-256 impl against the two NIST FIPS 180-2

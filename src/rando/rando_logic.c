@@ -398,6 +398,11 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   ctx.settings = settings;
   ctx.reachable_regions_bitset = g_reachability.region_bitset;
   ctx.reachable_regions_count = kReachabilityMaxRegions;
+  // Per-seed shuffle assignments (NULL when the placer hasn't installed
+  // them yet — OP_HAS_PRIZE and OP_MEDALLION_OPENS evaluate to false in
+  // that case, which makes prize-gated / medallion-gated areas unreachable).
+  ctx.dungeon_prize_assignment = Rando_GetDungeonPrizeAssignment();
+  ctx.medallion_entrance_assignment = Rando_GetMedallionAssignment();
 
   // Fixed-point iteration. Cap at 64 iterations to bound runtime; the graph
   // depth is well under 32 in practice (per ALTTPR's region nesting).
