@@ -36,42 +36,52 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->goal = kGoal_FastGanon;
   s->crystals_ganon = 7;
   s->crystals_tower = 7;
+  s->tricks = 0;                            // Phase A pinned to none
   s->item_pool_difficulty = kItemPoolDifficulty_Normal;
+  s->logic = 0;                             // Phase A pinned to NoGlitches
+  s->mode_weapons = kModeWeapons_Randomized;
+  s->accessibility = kAccessibility_Items;
+  s->pyramid_bow_upgrade = kPyramidBowUpgrade_Silvers;
+  s->region_boss_hearts_in_pool = 1;        // Phase A pinned to identity placement
   s->dungeon_small_keys_mode = kDungeonItemMode_Vanilla;
   s->dungeon_big_keys_mode = kDungeonItemMode_Vanilla;
   s->dungeon_maps_mode = kDungeonItemMode_Vanilla;
   s->dungeon_compasses_mode = kDungeonItemMode_Vanilla;
   s->prize_shuffle = 1;
   s->medallion_shuffle = 1;
-  s->mode_weapons = kModeWeapons_Randomized;
-  s->accessibility = kAccessibility_Items;
-  s->pyramid_bow_upgrade = kPyramidBowUpgrade_Silvers;
+  s->race_mode = 0;
   s->pieces_required = 20;
   s->pieces_placed = 30;
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s,
                                 uint8 out[kSettingsCanonicalLen]) {
-  out[0]  = s->settings_version;
-  out[1]  = s->world_state;
-  out[2]  = s->goal;
-  out[3]  = s->crystals_ganon;
-  out[4]  = s->crystals_tower;
+  // Layout per `randomizer-core / Settings canonical serialization order`.
+  // 18 single-byte fields + 2×u16 LE + zero padding to multiple of 4 = 24 bytes.
+  out[0]  = s->world_state;
+  out[1]  = s->goal;
+  out[2]  = s->crystals_ganon;
+  out[3]  = s->crystals_tower;
+  out[4]  = s->tricks;
   out[5]  = s->item_pool_difficulty;
-  out[6]  = s->dungeon_small_keys_mode;
-  out[7]  = s->dungeon_big_keys_mode;
-  out[8]  = s->dungeon_maps_mode;
-  out[9]  = s->dungeon_compasses_mode;
-  out[10] = s->prize_shuffle;
-  out[11] = s->medallion_shuffle;
-  out[12] = s->mode_weapons;
-  out[13] = s->accessibility;
-  out[14] = s->pyramid_bow_upgrade;
-  out[15] = s->pieces_required;
-  out[16] = s->pieces_placed;
-  out[17] = 0;
-  out[18] = 0;
-  out[19] = 0;
+  out[6]  = s->logic;
+  out[7]  = s->mode_weapons;
+  out[8]  = s->accessibility;
+  out[9]  = s->pyramid_bow_upgrade;
+  out[10] = s->region_boss_hearts_in_pool;
+  out[11] = s->dungeon_small_keys_mode;
+  out[12] = s->dungeon_big_keys_mode;
+  out[13] = s->dungeon_maps_mode;
+  out[14] = s->dungeon_compasses_mode;
+  out[15] = s->prize_shuffle;
+  out[16] = s->medallion_shuffle;
+  out[17] = s->race_mode;
+  out[18] = (uint8)(s->pieces_required & 0xff);
+  out[19] = (uint8)((s->pieces_required >> 8) & 0xff);
+  out[20] = (uint8)(s->pieces_placed & 0xff);
+  out[21] = (uint8)((s->pieces_placed >> 8) & 0xff);
+  out[22] = 0;  // pad to multiple of 4
+  out[23] = 0;
   return kSettingsCanonicalLen;
 }
 
@@ -110,18 +120,22 @@ void Settings_SelfCheck(void) {
     exit(2);
   }
 
-  // Default-settings canonical bytes (computed in Python — see comment in
-  // rando_rng.c for the discipline. Bake-in matches the layout above.)
+  // Default-settings canonical bytes, layout per Settings_CanonicalSerialize:
+  //   ws=0 goal=1 cg=7 ct=7 tricks=0 pool=1 logic=0 weapons=0 access=0
+  //   bow=0 bossH=1 sk=0 bk=0 mp=0 cmp=0 prize=1 med=1 race=0
+  //   pieces_req=20 (0x0014 LE) pieces_pl=30 (0x001e LE) pad pad
   static const uint8 kExpectedCanonical[kSettingsCanonicalLen] = {
-    0x01, 0x00, 0x01, 0x07, 0x07, 0x01, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x14,
-    0x1e, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x07, 0x07, 0x00, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x00, 0x00,
   };
   if (!settings_byte_eq(canonical, kExpectedCanonical, kSettingsCanonicalLen)) {
     fprintf(stderr,
             "Settings_SelfCheck: default canonical bytes mismatch.\n"
-            "  Expected: 010001070701000000000101000000141e000000\n"
-            "  Got:      ");
+            "  Expected: ");
+    for (int i = 0; i < kSettingsCanonicalLen; ++i)
+      fprintf(stderr, "%02x", kExpectedCanonical[i]);
+    fprintf(stderr, "\n  Got:      ");
     for (int i = 0; i < kSettingsCanonicalLen; ++i)
       fprintf(stderr, "%02x", canonical[i]);
     fprintf(stderr, "\n  Either the defaults changed (bump kGeneratorVersion!) or\n"
@@ -133,10 +147,10 @@ void Settings_SelfCheck(void) {
   Settings_ComputeHash(&s, hash);
   // SHA-256 of the kExpectedCanonical bytes.
   static const uint8 kExpectedHash[32] = {
-    0xb0, 0x1d, 0x22, 0xb2, 0xb5, 0x03, 0xa1, 0xc8,
-    0x32, 0xfe, 0x7d, 0xaf, 0xc0, 0x92, 0x06, 0xb0,
-    0x1f, 0xfd, 0x5c, 0xf0, 0x6c, 0x27, 0xaa, 0x37,
-    0xed, 0x4d, 0x11, 0x01, 0x4d, 0x5c, 0x00, 0x09,
+    0xcb, 0x9b, 0xc5, 0xab, 0x8f, 0xe4, 0xbb, 0x34,
+    0x29, 0x19, 0x01, 0x5b, 0x0f, 0xfa, 0x6f, 0xcc,
+    0xdc, 0xd3, 0xd6, 0xaf, 0x8b, 0x4c, 0x5c, 0x2f,
+    0x43, 0x57, 0x34, 0xfe, 0x0e, 0xac, 0xb9, 0x0f,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,
@@ -367,13 +381,13 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
   } else if (csv_str_eq(key, klen, "pieces_required")) {
     MARK_SEEN(KEY_pieces_required);
     uint32 v;
-    if (parse_uint(val, vlen, &v) != 0 || v > 255) goto bad_value;
-    s->pieces_required = (uint8)v;
+    if (parse_uint(val, vlen, &v) != 0 || v > 65535) goto bad_value;
+    s->pieces_required = (uint16)v;
   } else if (csv_str_eq(key, klen, "pieces_placed")) {
     MARK_SEEN(KEY_pieces_placed);
     uint32 v;
-    if (parse_uint(val, vlen, &v) != 0 || v > 255) goto bad_value;
-    s->pieces_placed = (uint8)v;
+    if (parse_uint(val, vlen, &v) != 0 || v > 65535) goto bad_value;
+    s->pieces_placed = (uint16)v;
   } else {
     fprintf(stderr, "Settings_ParseCsv: unknown key '%.*s'\n", klen, key);
     return -1;

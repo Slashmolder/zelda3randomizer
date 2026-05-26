@@ -83,18 +83,22 @@ typedef struct RandoSettings {
   uint8 goal;                       // Goal
   uint8 crystals_ganon;             // 0..7 — required to make Ganon vulnerable
   uint8 crystals_tower;             // 0..7 — required to enter Ganon's Tower
+  uint8 tricks;                     // Phase A: pinned to 0 (none); Phase B bitmask reserved
   uint8 item_pool_difficulty;       // ItemPoolDifficulty
+  uint8 logic;                      // Phase A: 0 (NoGlitches); Phase B+ reserved
+  uint8 mode_weapons;               // ModeWeapons
+  uint8 accessibility;              // Accessibility
+  uint8 pyramid_bow_upgrade;        // PyramidBowUpgrade
+  uint8 region_boss_hearts_in_pool; // bool; Phase A pinned 1 (identity-placed)
   uint8 dungeon_small_keys_mode;    // DungeonItemMode
   uint8 dungeon_big_keys_mode;      // DungeonItemMode
   uint8 dungeon_maps_mode;          // DungeonItemMode
   uint8 dungeon_compasses_mode;     // DungeonItemMode
   uint8 prize_shuffle;              // bool: shuffle crystal/pendant→dungeon assignments
   uint8 medallion_shuffle;          // bool: shuffle Bombos/Ether/Quake → MM/TR entrance
-  uint8 mode_weapons;               // ModeWeapons
-  uint8 accessibility;              // Accessibility
-  uint8 pyramid_bow_upgrade;        // PyramidBowUpgrade
-  uint8 pieces_required;            // for triforce-hunt / ganonhunt
-  uint8 pieces_placed;              // for triforce-hunt / ganonhunt
+  uint8 race_mode;                  // bool; Phase B feature, bit reserved in hash from Phase A
+  uint16 pieces_required;           // for triforce-hunt / ganonhunt (was uint8; spec is uint16)
+  uint16 pieces_placed;             // for triforce-hunt / ganonhunt
 } RandoSettings;
 
 // ===========================================================================
@@ -102,7 +106,9 @@ typedef struct RandoSettings {
 // exactly this many bytes. Adding a field requires bumping this constant
 // AND kGeneratorVersion (tasks.md §13.6).
 // ===========================================================================
-#define kSettingsCanonicalLen 20
+// Canonical serialization is 22 bytes (18 single-byte fields + 2×u16) padded
+// to 24 (the next multiple of 4). Layout per spec — see Settings_CanonicalSerialize.
+#define kSettingsCanonicalLen 24
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
 // pool / 7 crystals each / dungeon items Vanilla / prize+medallion shuffle
