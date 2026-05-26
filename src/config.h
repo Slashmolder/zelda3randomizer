@@ -68,6 +68,12 @@ typedef struct Config {
   bool disable_frame_delay;
   uint8 msuvolume;
   uint32 features0;
+  uint32 features1;  // randomizer kFeatures1_* bank (parsed from [randomizer] section, default 0)
+
+  // Randomizer configuration (parsed from [randomizer] section in task 1.6).
+  // For A0 these fields are unused but declared so the struct shape is stable.
+  const char *rando_spoiler_dir;  // default: "<exe-dir>/spoilers"
+  bool rando_race_mode_default;   // default: false
 
   const char *link_graphics;
   char *memory_buffer;

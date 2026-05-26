@@ -40,9 +40,9 @@ include $(DEVKITPRO)/libnx/switch_rules
 SRC_DIR     := ../..
 TARGET		:=	zelda3
 BUILD		:=	bin
-SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/third_party/gl_core $(SRC_DIR)/third_party/opus-1.3.1-stripped
+SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/gl_core $(SRC_DIR)/third_party/opus-1.3.1-stripped $(SRC_DIR)/third_party/sha256
 
-CFILES := $(wildcard $(SRC_DIR)/*.c $(SRC_DIR)/snes/*.c) $(SRC_DIR)/third_party/gl_core/gl_core_3_1.c $(SRC_DIR)/third_party/opus-1.3.1-stripped/opus_decoder_amalgam.c
+CFILES := $(wildcard $(SRC_DIR)/*.c $(SRC_DIR)/rando/*.c $(SRC_DIR)/snes/*.c) $(SRC_DIR)/third_party/gl_core/gl_core_3_1.c $(SRC_DIR)/third_party/opus-1.3.1-stripped/opus_decoder_amalgam.c $(SRC_DIR)/third_party/sha256/sha256.c
 
 INCLUDES	:=	include
 APP_TITLE   :=  The Legend of Zelda: A Link to the Past

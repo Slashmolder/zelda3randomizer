@@ -1,0 +1,169 @@
+name: Randomizer CI
+
+# Phase A0 CI scaffolding (tasks.md §1.0a-h, §1.6b).
+# Each guard is documented as either "runnable in A0" or "scaffold; activates
+# when X lands". Scaffolds intentionally exit zero today; they become live the
+# moment their dependency arrives.
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Source-level guards (no compile needed). Cheap; run on every push/PR.
+  # --------------------------------------------------------------------------
+  rando-source-guards:
+    name: Rando source guards (Linux)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # Need history for the kGeneratorVersion bump-gate diff
+        fetch-depth: 0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Install Python deps
+      run: pip install pyyaml
+
+    # Task 1.0b — Determinism-grep on src/rando/*.[ch]
+    - name: check_determinism (1.0b)
+      run: python assets/scripts/check_determinism.py
+
+    # Task 1.0c — Byte-order pin grep on src/rando/*.[ch]
+    - name: check_byte_order (1.0c)
+      run: python assets/scripts/check_byte_order.py
+
+    # Task 1.0g — Audit guard (report-only until audit.md §0.8e ticks; then add --strict)
+    - name: check_audit_guard (1.0g, report-only in A0)
+      run: python assets/scripts/check_audit_guard.py
+
+    # Task 1.6b — Codegen-wiring parity across Makefile / MSVC / Switch
+    - name: check_codegen_wiring (1.6b)
+      run: python assets/scripts/check_codegen_wiring.py
+
+    # Task 1.0e — kGeneratorVersion PR-gate (needs base/head shas; only meaningful on PRs)
+    - name: check_generator_version (1.0e)
+      if: github.event_name == 'pull_request'
+      run: |
+        python assets/scripts/check_generator_version.py \
+          --base-sha "${{ github.event.pull_request.base.sha }}" \
+          --head-sha "${{ github.event.pull_request.head.sha }}"
+
+    - name: check_generator_version (1.0e, push event — presence-only)
+      if: github.event_name != 'pull_request'
+      run: python assets/scripts/check_generator_version.py
+
+    # Task 1.0a — Regression-corpus manifest schema check (scaffold; activates with task 12.2)
+    - name: run_rando_corpus (1.0a, manifest schema)
+      run: python assets/scripts/run_rando_corpus.py
+
+  # --------------------------------------------------------------------------
+  # Build-dependent guards. Need a compiled binary / object files. Run on the
+  # full OS matrix once src/rando/ has compilable content.
+  # --------------------------------------------------------------------------
+  rando-build-guards:
+    name: Rando build guards (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: Linux
+          os: ubuntu-latest
+        - name: Mac
+          os: macos-latest
+        - name: Windows
+          os: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Install Python deps
+      run: pip install pyyaml pillow
+
+    # Linux build deps
+    - name: Install SDL2 (Linux)
+      if: matrix.name == 'Linux'
+      run: |
+        sudo apt update
+        sudo apt install -y libsdl2-dev
+    # macOS build deps
+    - name: Install SDL2 (Mac)
+      if: matrix.name == 'Mac'
+      run: brew install sdl2 coreutils
+    # Windows build deps: SDL2 is vendored under third_party/SDL2-* per README;
+    # the build path is via Zelda3.sln (MSBuild). For A0 we don't build on
+    # Windows yet — the rando-build-guards on Windows are scaffold-only and
+    # depend on a future MSBuild wiring task.
+
+    # Task 1.0d — Init-order replay (scaffold; activates with task 1.1)
+    - name: check_init_order (1.0d)
+      shell: bash
+      run: python assets/scripts/check_init_order.py
+
+    # Task 1.0f — Link-time symbol blocklist (scaffold; activates when src/rando/*.o exists)
+    # No build step in A0 because src/rando/ is empty. When the first rando .c
+    # file lands, add ``- run: make zelda3`` and then the script will scan objects.
+    - name: check_link_symbols (1.0f)
+      shell: bash
+      run: python assets/scripts/check_link_symbols.py
+
+    # Task 1.0h — Benchmark gates (scaffold; activates with task 3.8)
+    - name: run_rando_benchmarks (1.0h)
+      shell: bash
+      run: python assets/scripts/run_rando_benchmarks.py
+
+  # --------------------------------------------------------------------------
+  # Cross-platform determinism property tests (tasks.md §2.2). Builds the
+  # binary on Linux/macOS, runs `--rando-selftest` which validates SHA-256
+  # NIST vectors + xoshiro256** 10k-sample digest. Any byte-mismatch fails CI.
+  # Windows would need MSBuild wiring (out of scope for A0).
+  # --------------------------------------------------------------------------
+  rando-determinism:
+    name: Rando determinism self-tests (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: Linux
+          os: ubuntu-latest
+        - name: Mac
+          os: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Install Python deps
+      run: pip install pyyaml pillow
+
+    - name: Install SDL2 (Linux)
+      if: matrix.name == 'Linux'
+      run: |
+        sudo apt update
+        sudo apt install -y libsdl2-dev
+
+    - name: Install SDL2 (Mac)
+      if: matrix.name == 'Mac'
+      run: brew install sdl2 coreutils
+
+    # The binary needs zelda3_assets.dat to start. Asset extraction needs the
+    # original ROM, which CI doesn't have. For the self-tests we bypass asset
+    # loading by passing --rando-selftest BEFORE LoadAssets runs — see main.c
+    # ordering: argv parse -> self-test exit, all before SwitchDirectory /
+    # ParseConfigFile / LoadAssets. So we can build the binary and run the
+    # self-test without any asset blob present.
+    - name: Build (just the binary)
+      run: make -j2 zelda3
+
+    - name: Run --rando-selftest
+      env:
+        DISPLAY: ''  # confirm headless: no display server required
+      run: ./zelda3 --rando-selftest

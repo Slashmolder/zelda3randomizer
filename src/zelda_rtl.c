@@ -15,6 +15,7 @@ ZeldaEnv g_zenv;
 uint8 g_ram[131072];
 
 uint32 g_wanted_zelda_features;
+uint32 g_wanted_zelda_features1;  // randomizer feature-flag bank (kFeatures1_*)
 
 static void Startup_InitializeMemory();
 
@@ -272,6 +273,14 @@ void ZeldaInitialize() {
   SpcPlayer_Initialize(g_zenv.player);
   dma_reset(g_zenv.dma);
   ppu_reset(g_zenv.ppu);
+
+  // Randomizer cells: explicit zero before any game code or snapshot reads
+  // them. g_ram is static zero-init so this is defense-in-depth — protects
+  // against future reorderings that move kRam_Rando* reads earlier in init.
+  // Per add-randomizer-support tasks.md §1.1, §1.2 (D7 init-order guard).
+  enhanced_features1 = 0;
+  g_rando_slot_active = 0;
+  g_rando_starting_inventory_granted = 0;
 }
 
 static void ZeldaRunPolyLoop() {
@@ -722,6 +731,17 @@ bool ZeldaRunFrame(int inputs) {
         enhanced_features0 = g_wanted_zelda_features;
         EmuSyncMemoryRegion(&enhanced_features0, sizeof(enhanced_features0));
         StateRecorder_RecordPatchByte(&state_recorder, kRam_Features0, (uint8 *)&enhanced_features0, 4);
+      }
+
+      // Mirror g_wanted_zelda_features1 → enhanced_features1 the same way.
+      // kRam_Features1 (0x659, uint32) is the randomizer feature-flag bank.
+      // Init-order: this runs inside ZeldaRunFrame, AFTER all snapshots have
+      // finished playing back — the kRam_Rando* cells are guaranteed zero from
+      // g_ram's static zero-init plus the explicit zero in ZeldaInitialize().
+      if (enhanced_features1 != g_wanted_zelda_features1) {
+        enhanced_features1 = g_wanted_zelda_features1;
+        EmuSyncMemoryRegion(&enhanced_features1, sizeof(enhanced_features1));
+        StateRecorder_RecordPatchByte(&state_recorder, kRam_Features1, (uint8 *)&enhanced_features1, 4);
       }
     }
   }

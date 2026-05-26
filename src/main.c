@@ -27,6 +27,9 @@
 #include "util.h"
 #include "audio.h"
 
+#include "rando/rando.h"  // g_assets_hash declaration (tasks.md §1.1a)
+#include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
+
 static bool g_run_without_emu = 0;
 
 // Forwards
@@ -276,6 +279,107 @@ static const struct RendererFuncs kSdlRendererFuncs  = {
 
 void OpenGLRenderer_Create(struct RendererFuncs *funcs, bool use_opengl_es);
 
+static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *config_file) {
+  // Detect --generate-seed anywhere in argv. If not present, return so main()
+  // proceeds with the normal GUI startup path.
+  bool found = false;
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--generate-seed") == 0) { found = true; break; }
+  }
+  if (!found) return;
+
+  // Headless path: parse rando-relevant flags, load config + assets so
+  // g_assets_hash is computed, then exit.
+  //
+  // Phase A0 stub — the actual generation pipeline is wired in Phase A1
+  // (tasks 2.x/3.x/4.x/5.x). Exit code 64 (EX_USAGE-ish) signals "feature
+  // not yet implemented" so CI can distinguish A0 from a real failure.
+  const char *settings_csv = NULL;
+  const char *seed_u64_str = NULL;
+  const char *out_spoiler = NULL;
+  const char *out_share_string = NULL;
+  const char *manifest_path = NULL;
+  const char *out_dir = NULL;
+  int budget_seconds = 5;
+  bool assets_must_be_vanilla = false;
+
+  for (int i = 0; i < argc; ++i) {
+    const char *a = argv[i];
+    if (strncmp(a, "--settings=", 11) == 0) settings_csv = a + 11;
+    else if (strncmp(a, "--seed=", 7) == 0) seed_u64_str = a + 7;
+    else if (strncmp(a, "--out-spoiler=", 14) == 0) out_spoiler = a + 14;
+    else if (strncmp(a, "--out-share-string=", 19) == 0) out_share_string = a + 19;
+    else if (strncmp(a, "--manifest=", 11) == 0) manifest_path = a + 11;
+    else if (strncmp(a, "--out-dir=", 10) == 0) out_dir = a + 10;
+    else if (strncmp(a, "--budget-seconds=", 17) == 0) budget_seconds = atoi(a + 17);
+    else if (strcmp(a, "--assets-must-be-vanilla") == 0) assets_must_be_vanilla = true;
+  }
+
+  // Validate flag combinations.
+  bool batch = (manifest_path != NULL);
+  bool single = (settings_csv != NULL && seed_u64_str != NULL && out_spoiler != NULL);
+  if (!batch && !single) {
+    fprintf(stderr,
+      "Usage:\n"
+      "  Single seed: --generate-seed --settings=<k=v,...> --seed=<u64> --out-spoiler=<path>\n"
+      "               [--out-share-string=<path>] [--budget-seconds=<n>] [--assets-must-be-vanilla]\n"
+      "  Batch:       --generate-seed --manifest=<yaml> [--budget-seconds=<n>] [--out-dir=<path>]\n");
+    exit(64);
+  }
+
+  // Load config (so [Randomizer] defaults populate) and assets (so
+  // g_assets_hash is computed). Both are safe to call without SDL.
+  ParseConfigFile(config_file);
+  LoadAssets();
+
+  // Honor --assets-must-be-vanilla: if vanilla_assets_hash.h is present and
+  // g_assets_hash differs from kVanillaAssetsHash, exit with a clear error.
+  // (Header doesn't exist yet — the actual check lands when 1.1b's pipeline
+  // produces it.) For A0 stub, just note the intent.
+  (void)assets_must_be_vanilla;
+
+  // Phase A0 stub: report the parsed args + exit.
+  fprintf(stderr,
+    "--generate-seed: Phase A0 stub. Parsed args:\n"
+    "  mode: %s\n"
+    "  settings: %s\n"
+    "  seed: %s\n"
+    "  out_spoiler: %s\n"
+    "  out_share_string: %s\n"
+    "  manifest: %s\n"
+    "  out_dir: %s\n"
+    "  budget_seconds: %d\n"
+    "  assets_must_be_vanilla: %s\n"
+    "  g_assets_hash[0..3]: %02x %02x %02x %02x ...\n"
+    "Full generator pipeline lands in Phase A1 (see tasks.md sections 2-5).\n",
+    batch ? "batch" : "single",
+    settings_csv ? settings_csv : "(none)",
+    seed_u64_str ? seed_u64_str : "(none)",
+    out_spoiler ? out_spoiler : "(none)",
+    out_share_string ? out_share_string : "(none)",
+    manifest_path ? manifest_path : "(none)",
+    out_dir ? out_dir : "(none)",
+    budget_seconds,
+    assets_must_be_vanilla ? "true" : "false",
+    g_assets_hash[0], g_assets_hash[1], g_assets_hash[2], g_assets_hash[3]);
+
+  exit(64);
+}
+
+// --generate-seed CLI/headless mode (tasks.md §1.6a).
+//
+// CRITICAL invariant: this function is called BEFORE any SDL_Init in main()
+// and either runs to completion + exits, or returns (when the flag is not
+// present) so main() can proceed with normal GUI startup. The function never
+// initializes SDL_INIT_VIDEO/SDL_INIT_AUDIO; CI smoke-tests it with
+// DISPLAY= unset on a Linux runner to confirm headless operation.
+//
+// Phase A0 status (stub): the flag is detected, dependent argv is parsed,
+// configuration + assets load so g_assets_hash populates, and the function
+// exits with a clear "not yet implemented" message + exit code 64. The full
+// generator pipeline lands in Phase A1 (tasks 2.x, 3.x, 4.x, 5.x).
+static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *config_file);
+
 #undef main
 int main(int argc, char** argv) {
   argc--, argv++;
@@ -286,6 +390,21 @@ int main(int argc, char** argv) {
   } else {
     SwitchDirectory();
   }
+
+  // Check for --rando-selftest BEFORE any SDL_Init. Runs the sub-system
+  // self-tests (SHA-256 NIST vectors + xoshiro256** determinism + future
+  // checks) and exits. CI invokes this on every Linux/macOS/Windows runner
+  // to guard cross-platform byte-identity (tasks.md §2.2).
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--rando-selftest") == 0) {
+      Rando_RunAllSelfChecks();
+      return 0;
+    }
+  }
+
+  // Check for --generate-seed BEFORE any SDL_Init. If present, run headless
+  // and exit; otherwise this returns and main() continues to the GUI path.
+  MaybeRunGenerateSeedAndExit(argc, argv, config_file);
   ParseConfigFile(config_file);
   LoadAssets();
   LoadLinkGraphics();
@@ -298,6 +417,7 @@ int main(int argc, char** argv) {
 
   // Delay actually setting those features in ram until any snapshots finish playing.
   g_wanted_zelda_features = g_config.features0;
+  g_wanted_zelda_features1 = g_config.features1;  // randomizer flags (defaults to 0 until [randomizer] section parsed in 1.6)
 
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
                        g_config.enhanced_mode7 * kPpuRenderFlags_4x4Mode7 |
@@ -849,6 +969,17 @@ static void LoadAssets() {
     kPalette_DungBgMain[0x485] = 0x95;
     kPalette_DungBgMain[0x486] = 0x57;
   }
+
+  // Compute SHA-256 of the entire asset blob for the randomizer's
+  // vanilla-asset comparison (tasks.md §1.1a). Hashed once; the
+  // value lives in g_assets_hash and is compared against
+  // kVanillaAssetsHash (generated by assets/restool.py per §1.1b)
+  // before any randomizer slot is allowed to dispatch.
+  //
+  // NOTE: `data` and `length` are the raw blob — header, asset offset
+  // table, and all asset bytes — exactly what the codegen pipeline
+  // hashes too, guaranteeing parity.
+  sha256_buffer(data, length, g_assets_hash);
 }
 
 // Go some steps up and find zelda3.ini

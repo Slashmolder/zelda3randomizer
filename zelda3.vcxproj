@@ -289,7 +289,12 @@
     <ClCompile Include="src\sprite.c" />
     <ClCompile Include="src\sprite_main.c" />
     <ClCompile Include="src\tagalong.c" />
+    <ClCompile Include="src\rando\rando.c" />
+    <ClCompile Include="src\rando\rando_rng.c" />
+    <ClCompile Include="src\rando\rando_share.c" />
+    <ClCompile Include="src\rando\rando_settings.c" />
     <ClCompile Include="third_party\gl_core\gl_core_3_1.c" />
+    <ClCompile Include="third_party\sha256\sha256.c" />
     <ClCompile Include="third_party\opus-1.3.1-stripped\bands.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">true</ExcludedFromBuild>

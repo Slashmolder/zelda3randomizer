@@ -277,6 +277,8 @@ static int GetIniSection(const char *s) {
     return 4;
   if (StringEqualsNoCase(s, "[GamepadMap]"))
     return 5;
+  if (StringEqualsNoCase(s, "[Randomizer]"))
+    return 6;
   return -1;
 }
 
@@ -476,6 +478,22 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
     } else if (StringEqualsNoCase(key, "CancelBirdTravel")) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_CancelBirdTravel);
     }
+  } else if (section == 6) {
+    // [Randomizer] section — tasks.md §1.6. Defaults set in ParseConfigFile
+    // before the file is read; missing keys keep the defaults.
+    if (StringEqualsNoCase(key, "Features1")) {
+      g_config.features1 = (uint32)strtoul(value, (char**)NULL, 0);
+      return true;
+    } else if (StringEqualsNoCase(key, "SpoilerDir")) {
+      g_config.rando_spoiler_dir = *value ? value : NULL;
+      return true;
+    } else if (StringEqualsNoCase(key, "RaceMode")) {
+      return ParseBool(value, &g_config.rando_race_mode_default);
+    }
+    // Future keys (Phase A1+):
+    //   GeneratorBudgetSeconds = 5     (default budget for assumed fill)
+    //   AssetsMustBeVanilla = false    (auto-block generation on non-vanilla assets)
+    //   TrackerEnabled = false         (in-game tracker default state)
   }
   return false;
 }
@@ -518,6 +536,11 @@ static bool ParseOneConfigFile(const char *filename, int depth) {
 
 void ParseConfigFile(const char *filename) {
   g_config.msuvolume = 100;  // default msu volume, 100%
+
+  // [Randomizer] defaults (tasks.md §1.6). Missing INI keys keep these.
+  g_config.features1 = 0;                    // rando bank empty by default
+  g_config.rando_spoiler_dir = NULL;         // resolved at runtime: <exe-dir>/spoilers
+  g_config.rando_race_mode_default = false;
 
   if (filename != NULL || !ParseOneConfigFile("zelda3.user.ini", 0)) {
     if (filename == NULL)

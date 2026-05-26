@@ -5,11 +5,29 @@
 #include "types.h"
 
 // Special RAM locations that are unused but I use for compat things.
+//
+// Layout:
+//   0x648       kRam_APUI00              (1 byte)
+//   0x649       kRam_CrystalRotateCounter (1 byte)
+//   0x64a       kRam_BugsFixed           (1 byte) — 0x64b unused (padding)
+//   0x64c-0x64f kRam_Features0           (uint32)
+//   0x650-0x655 msu_curr_sample/volume/track (6 bytes, see below)
+//   0x656-0x658 hud_cur_item_x/l/r       (3 bytes)
+//   0x659-0x65c kRam_Features1           (uint32) — randomizer feature flags
+//   0x65d       kRam_RandoSlotActive     (1 byte) — 0 vanilla, 1 randomizer
+//   0x65e       kRam_RandoStartingInventoryGranted (1 byte) — once-per-slot gate
+//   0x65f-0x66f reserved                 (17 bytes forward-compat headroom)
+//   0x670+      spotlight_* (DO NOT USE — see variables.h:556)
+//
+// Verified clean in audit.md §0.7 (Phase 0 deliverable).
 enum {
   kRam_APUI00 = 0x648,
   kRam_CrystalRotateCounter = 0x649,
   kRam_BugsFixed = 0x64a,
   kRam_Features0 = 0x64c,
+  kRam_Features1 = 0x659,
+  kRam_RandoSlotActive = 0x65d,
+  kRam_RandoStartingInventoryGranted = 0x65e,
 };
 
 enum {
@@ -48,7 +66,22 @@ enum {
   kFeatures0_DimFlashes = 65536,
 };
 
+// Enum values for kRam_Features1 (randomizer feature flags).
+// Bits land here as Phase A features are implemented. The enum exists from
+// A0 so the CI guards have something to scan; the values are populated
+// incrementally.
+enum {
+  kFeatures1_RandomizerActive = 1,
+  // Future bits reserved (per add-randomizer-support proposal):
+  //   2  kFeatures1_ReservedTracker
+  //   4  kFeatures1_ReservedSpoilerSuppress
+  //   ...
+};
+
 #define enhanced_features0 (*(uint32*)(g_ram+0x64c))
+#define enhanced_features1 (*(uint32*)(g_ram+0x659))
+#define g_rando_slot_active (*(uint8*)(g_ram+0x65d))
+#define g_rando_starting_inventory_granted (*(uint8*)(g_ram+0x65e))
 #define msu_curr_sample (*(uint32*)(g_ram+0x650))
 #define msu_volume (*(uint8*)(g_ram+0x654))
 #define msu_track (*(uint8*)(g_ram+0x655))
@@ -60,6 +93,7 @@ enum {
 
 
 extern uint32 g_wanted_zelda_features;
+extern uint32 g_wanted_zelda_features1;
 
 
 #endif  // ZELDA3_FEATURES_H_

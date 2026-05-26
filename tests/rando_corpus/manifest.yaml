@@ -1,0 +1,21 @@
+# Regression-corpus manifest (tasks.md §12.1).
+#
+# Each entry: { settings: {<key>: <value>, ...}, seed_u64: <int>, expected_digest: <sha256_hex> }
+#
+# The corpus is regenerated on every (Linux, macOS, Windows) CI runner against
+# the binary at the listed generator_version; any byte-diff in expected_digest
+# vs. observed is a CI failure (cross-platform determinism guarantee per
+# randomizer-core / Deterministic cross-platform placement).
+#
+# Switch is a manual gate (not CI-blocking) per tasks.md §12.3a.
+#
+# **A0 status**: empty. Populated in Phase A1 task 12.2 (50 seeds across the
+# world-state × goal × item-pool-difficulty matrix, including 5+ named
+# celebrity seeds).
+#
+# Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
+# tools/bump_rando_corpus.py regenerates digests and updates this manifest.
+
+generator_version: null  # populated at first regeneration; null means "no manifest yet"
+
+entries: []

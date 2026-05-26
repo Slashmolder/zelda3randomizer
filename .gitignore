@@ -20,6 +20,9 @@
 /zelda3
 __pycache__
 /src/*.o
+/src/rando/*.o
+/src/rando/vanilla_assets_hash.h
+/third_party/sha256/*.o
 /*.exe
 /*.out
 /snes/*.o
