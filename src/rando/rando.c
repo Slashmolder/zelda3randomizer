@@ -20,6 +20,7 @@
 #include "item_ids.h"
 #include "location_ids.h"
 #include "../types.h"
+#include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
 #include "third_party/sha256/sha256.h"
 
 // ---------------------------------------------------------------------------
@@ -47,21 +48,68 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   return Placement_Lookup(location_id, vanilla_item_id);
 }
 
+// §6.2 partial: progressive items don't have a vanilla LttP code (the
+// game's Link_ReceiveItem dispatch table grants absolute tiers, not
+// "advance to next tier"). Translate progressive items to the next-tier
+// absolute LttP code at dispatch time. Each call advances by one tier;
+// the placer's bounded-retry already accounts for the cumulative effect
+// across multiple ProgressiveSword placements.
+//
+// Returns 0xFF if `registry_id` isn't a progressive item OR is at max tier
+// (the placer caps pool counts via item-pool-difficulty, so we shouldn't
+// hit this in practice — but if we do, fall back to junk via 0xFF).
+static uint8 progressive_to_lttp(uint16 registry_id) {
+  switch (registry_id) {
+    case ITEM_ProgressiveSword: {
+      uint8 tier = link_sword_type;
+      if (tier >= 4) return 0xFF;
+      return tier;  // LttP codes 0x00..0x03 = L1..L4 sword
+    }
+    case ITEM_ProgressiveShield: {
+      uint8 tier = link_shield_type;
+      if (tier >= 3) return 0xFF;
+      return (uint8)(0x04 + tier);  // LttP codes 0x04..0x06 = Fighter/Red/Mirror
+    }
+    case ITEM_ProgressiveArmor: {
+      // link_armor: 0=Green (default), 1=Blue, 2=Red
+      uint8 tier = link_armor;
+      if (tier >= 2) return 0xFF;
+      return (uint8)(0x22 + tier);  // 0x22=BlueMail, 0x23=RedMail
+    }
+    case ITEM_ProgressiveGlove: {
+      uint8 tier = link_item_gloves;
+      if (tier >= 2) return 0xFF;
+      return (uint8)(0x1b + tier);  // 0x1b=PowerGlove, 0x1c=TitanMitt
+    }
+    case ITEM_ProgressiveBow: {
+      uint8 tier = link_item_bow;
+      if (tier >= 2) return 0xFF;
+      // Bow=0x0b (tier 1) → SilverArrowUpgrade=0x29 (tier 2)
+      return (uint8)((tier == 0) ? 0x0b : 0x29);
+    }
+    default:
+      return 0xFF;
+  }
+}
+
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code) {
   uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
   if (placed == vanilla_registry_id) return vanilla_lttp_code;
   uint8 lttp = Rando_VanillaItemForRegistryId(placed);
-  if (lttp == 0xFF) {
-    // Placed item has no vanilla LttP dispatch path (progressive / dungeon
-    // item / prize / virtual). §6.2 introduces per-class receive helpers
-    // for these. Until then: fall back to the vanilla LttP code so the
-    // game keeps running with the vanilla grant. This is detectable in
-    // the spoiler (placement says X, in-game you got Y).
-    return vanilla_lttp_code;
-  }
-  return lttp;
+  if (lttp != 0xFF) return lttp;
+
+  // §6.2 partial: progressive items translate via current-tier lookup.
+  uint8 prog_lttp = progressive_to_lttp(placed);
+  if (prog_lttp != 0xFF) return prog_lttp;
+
+  // Placed item has no vanilla LttP dispatch path (dungeon item / prize /
+  // virtual / direct-grant items like HalfMagic). §6.2 full receive helpers
+  // for these are deferred. Until then: fall back to the vanilla LttP code
+  // so the game keeps running with the vanilla grant. This is detectable
+  // in the spoiler (placement says X, in-game you got Y).
+  return vanilla_lttp_code;
 }
 
 // ---------------------------------------------------------------------------
