@@ -54,10 +54,27 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->pieces_placed = 30;
 }
 
-int Settings_CanonicalSerialize(const RandoSettings *s,
+// Apply derived-from-other-fields normalization rules. Audit Bug #5:
+// `goal=completionist` forces `accessibility=locations` per spec — otherwise
+// the canonical hash differs between (SetDefaults; s->goal=Completionist)
+// callers and (Settings_ParseCsv("goal=completionist")) callers.
+//
+// Applied on a private copy in Settings_CanonicalSerialize so any external
+// caller's struct is left untouched and the hash is consistent regardless of
+// how the struct was populated.
+static void apply_derived_rules(RandoSettings *s) {
+  if (s->goal == kGoal_Completionist) {
+    s->accessibility = kAccessibility_Locations;
+  }
+}
+
+int Settings_CanonicalSerialize(const RandoSettings *s_in,
                                 uint8 out[kSettingsCanonicalLen]) {
   // Layout per `randomizer-core / Settings canonical serialization order`.
   // 18 single-byte fields + 2×u16 LE + zero padding to multiple of 4 = 24 bytes.
+  RandoSettings sn = *s_in;
+  apply_derived_rules(&sn);
+  const RandoSettings *s = &sn;
   out[0]  = s->world_state;
   out[1]  = s->goal;
   out[2]  = s->crystals_ganon;

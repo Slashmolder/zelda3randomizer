@@ -229,9 +229,8 @@ static bool eval_difficulty(Cursor *c, const PredicateContext *ctx) {
 }
 static bool eval_glitch(Cursor *c, const PredicateContext *ctx) {
   uint8 level = cursor_u8(c);
-  if (c->error) return false;
-  // Phase A pins logic=NoGlitches (level 0). Phase B adds logic axis to settings.
-  return 0 >= level;
+  if (c->error || ctx->settings == NULL) return false;
+  return ctx->settings->logic >= level;
 }
 
 static bool eval(Cursor *c, const PredicateContext *ctx) {

@@ -193,6 +193,12 @@ extern const uint32 kRandoEdgesCount;
 extern const uint8 kRandoPredicateStream[];
 extern const uint32 kRandoPredicateStreamSize;
 
+// Human-readable name lookups (used by spoiler / debug output).
+// Both return a pointer to a static string in the generated logic_data.c.
+// Never returns NULL — falls back to "(unknown)" / "(unbound)" on miss.
+const char *Rando_GetRegionName(uint16 region_id);
+const char *Rando_GetLocationName(uint16 location_id);
+
 // Start region per world_state. Indexed by WorldState enum (Open=0,
 // Standard=1, Inverted=2, Retro=3). Value is a region id (index into
 // kRandoRegions) — the reachability fixed-point seeds from this region.

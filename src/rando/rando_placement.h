@@ -39,6 +39,16 @@ bool Place_AssumedFill(const RandoSettings *settings,
                        int budget_seconds,
                        RandoPlacementTable *out);
 
+// Per-run placer stats from the most recent Place_AssumedFill call.
+// Cleared at the start of every Place_AssumedFill call, populated before
+// it returns. Read by the spoiler writer to populate fallback_warnings.
+typedef struct PlacementStats {
+  uint16 forward_fill_fallback_count;  // # of placements that fell to forward-fill
+  uint8 attempts_used;                 // # of assumed-fill attempts taken
+  uint16 best_unreachable_count;       // unreachable placements in the accepted attempt
+} PlacementStats;
+const PlacementStats *Placement_GetLastStats(void);
+
 // SHA-256 of the canonical-serialized placement table, for regression-corpus
 // diffing (tasks.md §4.4).
 void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest[32]);

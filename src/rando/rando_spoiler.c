@@ -82,7 +82,33 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
           (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "    \"goal_completable\": %s,\n",
           s->goal_completable ? "true" : "false");
-  fprintf(f, "    \"fallback_warnings\": []\n");
+  // fallback_warnings: each non-zero counter from the placer surfaces here
+  // (audit Bug #8). Plus an "unreachable_placements" rollup when the placer
+  // could not produce a fully-reachable seed.
+  fprintf(f, "    \"fallback_warnings\": [");
+  {
+    bool first = true;
+    if (s->forward_fill_fallback_count > 0) {
+      fprintf(f, "%s\n      {\"kind\": \"forward_fill_fallback\", \"count\": %u}",
+              first ? "" : ",",
+              (unsigned)s->forward_fill_fallback_count);
+      first = false;
+    }
+    if (s->retry_attempts > 1) {
+      fprintf(f, "%s\n      {\"kind\": \"retry_attempts\", \"count\": %u}",
+              first ? "" : ",",
+              (unsigned)s->retry_attempts);
+      first = false;
+    }
+    if (s->spheres != NULL && s->spheres->unreachable_count > 0) {
+      fprintf(f, "%s\n      {\"kind\": \"unreachable_placements\", \"count\": %u}",
+              first ? "" : ",",
+              (unsigned)s->spheres->unreachable_count);
+      first = false;
+    }
+    if (!first) fprintf(f, "\n    ");
+  }
+  fprintf(f, "]\n");
   fprintf(f, "  },\n");
 
   // -----------------------------------------------------------------------
@@ -229,17 +255,74 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "Generation wall-clock: %u ms\n", (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "Goal completable: %s\n\n", s->goal_completable ? "yes" : "no");
 
-  fprintf(f, "Placements (by location_id):\n");
-  fprintf(f, "----------------------------\n");
+  // Fallback warnings — surface forward-fill / retry / unreachable counts
+  // prominently per audit Bug #8.
+  if (s->forward_fill_fallback_count > 0 || s->retry_attempts > 1 ||
+      (s->spheres != NULL && s->spheres->unreachable_count > 0)) {
+    fprintf(f, "WARNINGS\n--------\n");
+    if (s->forward_fill_fallback_count > 0)
+      fprintf(f, "  ! Forward-fill fallback hit %u time(s) during placement.\n",
+              (unsigned)s->forward_fill_fallback_count);
+    if (s->retry_attempts > 1)
+      fprintf(f, "  ! Placer needed %u attempts before producing a seed.\n",
+              (unsigned)s->retry_attempts);
+    if (s->spheres != NULL && s->spheres->unreachable_count > 0)
+      fprintf(f, "  ! %u placement(s) are unreachable in this seed.\n",
+              (unsigned)s->spheres->unreachable_count);
+    fprintf(f, "\n");
+  }
+
+  fprintf(f, "Placements (grouped by region):\n");
+  fprintf(f, "-------------------------------\n");
   if (s->placements != NULL && s->placements->count > 0) {
     uint16 n = s->placements->count;
     if (n > 512) n = 512;
-    RandoPlacement local[512];
-    memcpy(local, s->placements->entries, n * sizeof(RandoPlacement));
-    qsort(local, n, sizeof(RandoPlacement), placement_cmp);
+    // Look up region_id for each placement via kRandoLocations.
+    // Then sort by (region_id, location_id) and emit grouped sections.
+    static struct {
+      uint16 region_id;
+      uint16 location_id;
+      uint16 item_id;
+    } rows[512];
     for (uint16 i = 0; i < n; i++) {
-      fprintf(f, "  LOC %3u -> ITEM %3u\n",
-              local[i].location_id, local[i].item_id);
+      rows[i].location_id = s->placements->entries[i].location_id;
+      rows[i].item_id = s->placements->entries[i].item_id;
+      rows[i].region_id = 0xFFFF;
+      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
+        if (kRandoLocations[j].id == rows[i].location_id) {
+          rows[i].region_id = kRandoLocations[j].region_id;
+          break;
+        }
+      }
+    }
+    // Insertion sort by (region_id, location_id) — n is small (~237).
+    for (uint16 i = 1; i < n; i++) {
+      uint16 j = i;
+      while (j > 0 &&
+             (rows[j - 1].region_id > rows[j].region_id ||
+              (rows[j - 1].region_id == rows[j].region_id &&
+               rows[j - 1].location_id > rows[j].location_id))) {
+        // swap
+        uint16 tr = rows[j - 1].region_id, tl = rows[j - 1].location_id, ti = rows[j - 1].item_id;
+        rows[j - 1].region_id = rows[j].region_id;
+        rows[j - 1].location_id = rows[j].location_id;
+        rows[j - 1].item_id = rows[j].item_id;
+        rows[j].region_id = tr; rows[j].location_id = tl; rows[j].item_id = ti;
+        j--;
+      }
+    }
+    uint16 cur_region = 0;
+    bool first_section = true;
+    for (uint16 i = 0; i < n; i++) {
+      if (first_section || rows[i].region_id != cur_region) {
+        if (!first_section) fprintf(f, "\n");
+        first_section = false;
+        cur_region = rows[i].region_id;
+        const char *rname = Rando_GetRegionName(cur_region);
+        fprintf(f, "[%s]\n", rname);
+      }
+      const char *lname = Rando_GetLocationName(rows[i].location_id);
+      fprintf(f, "  %-44s -> ITEM %3u\n", lname, rows[i].item_id);
     }
   }
   fprintf(f, "\n");

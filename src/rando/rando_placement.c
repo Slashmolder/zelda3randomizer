@@ -173,6 +173,19 @@ static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_i
 
 uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 capacity) {
   if (settings == NULL || out_items == NULL || capacity == 0) return 0;
+
+  // Audit Bug #13: validate Triforce/Ganon-Hunt parameters before pool
+  // construction. An un-buildable pool (pieces_required > pieces_placed)
+  // would silently produce an un-completable seed.
+  if ((settings->goal == kGoal_TriforceHunt || settings->goal == kGoal_GanonHunt) &&
+      settings->pieces_required > settings->pieces_placed) {
+    fprintf(stderr,
+      "BuildItemPool: pieces_required (%u) > pieces_placed (%u) — refusing\n"
+      "  to build a pool that can never satisfy the goal.\n",
+      (unsigned)settings->pieces_required, (unsigned)settings->pieces_placed);
+    return 0;
+  }
+
   uint16 n = 0;
 
   // ----- Progression items: sword / shield / armor / glove / bow -----
@@ -418,11 +431,19 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
 // ---------------------------------------------------------------------------
 #define kAssumedFillMaxAttempts 8
 
+static PlacementStats g_last_placement_stats;
+
+const PlacementStats *Placement_GetLastStats(void) {
+  return &g_last_placement_stats;
+}
+
 bool Place_AssumedFill(const RandoSettings *settings,
                        uint64 seed_u64,
                        int budget_seconds,
                        RandoPlacementTable *out) {
   (void)budget_seconds;
+  // Reset stats — caller reads via Placement_GetLastStats() after we return.
+  memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
 
   uint16 best_unreachable = 0xFFFF;
@@ -432,6 +453,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   bool best_complete = false;
 
   for (int attempt = 0; attempt < kAssumedFillMaxAttempts; attempt++) {
+    g_last_placement_stats.attempts_used = (uint8)(attempt + 1);
     // Perturb the seed per attempt so each retry produces a different
     // progression order. The first attempt uses the unmodified seed so
     // single-seed determinism holds when the first attempt succeeds.
@@ -447,6 +469,8 @@ bool Place_AssumedFill(const RandoSettings *settings,
     bool full_reach = Logic_ComputeSpheres(settings, out, &spheres);
     if (full_reach && fallback_count == 0) {
       // Best possible outcome — accept this placement.
+      g_last_placement_stats.forward_fill_fallback_count = 0;
+      g_last_placement_stats.best_unreachable_count = 0;
       return true;
     }
     // Track best-so-far (fewest unreachable + fewest fallbacks).
@@ -467,6 +491,8 @@ bool Place_AssumedFill(const RandoSettings *settings,
   }
   for (uint16 i = 0; i < best_count; i++) out->entries[i] = best_entries[i];
   out->count = best_count;
+  g_last_placement_stats.forward_fill_fallback_count = best_fallback;
+  g_last_placement_stats.best_unreachable_count = best_unreachable;
   fprintf(stderr,
           "Place_AssumedFill: best of %d attempts: %u unreachable placement(s), %u forward-fill fallback(s).\n",
           kAssumedFillMaxAttempts, (unsigned)best_unreachable, (unsigned)best_fallback);

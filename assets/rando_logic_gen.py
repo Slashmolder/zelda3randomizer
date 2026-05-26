@@ -1120,6 +1120,37 @@ def emit_logic_data(
     out.append("  return 0xFFFF;")
     out.append("}")
     out.append("")
+    # Reverse lookup: region_id → name. Used by text spoiler region grouping.
+    out.append("const char *Rando_GetRegionName(uint16 region_id) {")
+    out.append("  for (uint32 i = 0; i < kRandoRegionNamesCount; i++) {")
+    out.append("    if (kRandoRegionNames[i].id == region_id) return kRandoRegionNames[i].name;")
+    out.append("  }")
+    out.append("  return \"(unbound)\";")
+    out.append("}")
+    out.append("")
+    # Location name table — used by text spoiler for human-readable rows.
+    # Indexed parallel to kRandoLocations (sorted by id).
+    if locations:
+        out.append(f"static const char *kRandoLocationNames[{len(locations)}] = {{")
+        for loc in sorted(locations.values(), key=lambda l: l.id):
+            safe = loc.name.replace('"', '\\"')
+            out.append(f"  \"{safe}\",  // id {loc.id}")
+        out.append("};")
+        out.append(f"static const uint32 kRandoLocationNamesCount = {len(locations)};")
+    else:
+        out.append("static const char *kRandoLocationNames[1] = { \"\" };")
+        out.append("static const uint32 kRandoLocationNamesCount = 0;")
+    out.append("")
+    out.append("const char *Rando_GetLocationName(uint16 location_id) {")
+    out.append("  for (uint32 i = 0; i < kRandoLocationsCount; i++) {")
+    out.append("    if (kRandoLocations[i].id == location_id) {")
+    out.append("      if (i < kRandoLocationNamesCount) return kRandoLocationNames[i];")
+    out.append("      return \"(unnamed)\";")
+    out.append("    }")
+    out.append("  }")
+    out.append("  return \"(unknown)\";")
+    out.append("}")
+    out.append("")
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 

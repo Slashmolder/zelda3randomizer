@@ -16,7 +16,11 @@ typedef struct RandoSpoiler {
   const RandoSettings *settings;
   const RandoPlacementTable *placements;
   const RandoSpheres *spheres;       // optional; NULL omits sphere_data
-  // fallback_warnings populated by the spoiler generator
+  // Placer fallback counters — populated from Place_AssumedFill outputs.
+  // Each non-zero counter produces one fallback_warnings[] entry in JSON
+  // and a banner in the text spoiler. Per audit Bug #8.
+  uint32 forward_fill_fallback_count;  // # of placements that fell back to forward-fill
+  uint32 retry_attempts;               // # of assumed-fill attempts taken before success
   uint32 generation_wall_clock_ms;
   bool goal_completable;
 } RandoSpoiler;

@@ -443,6 +443,13 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   spoiler.generation_wall_clock_ms = 0;  // Phase A0 stub: no timing
+  // Forward placer stats — read from Placement_GetLastStats so the spoiler
+  // can surface forward-fill fallbacks (audit Bug #8).
+  {
+    const PlacementStats *st = Placement_GetLastStats();
+    spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
+    spoiler.retry_attempts = st->attempts_used;
+  }
   // Goal completability — runs Logic_ComputeReachability against the full
   // placement-table inventory and checks the goal-specific locations.
   spoiler.goal_completable = Goal_IsCompletable(&settings, &table);
