@@ -122,6 +122,20 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     // ordering — direct silver-arrows upgrade.
     case ITEM_SilverArrowUpgrade: return 0x29;
     default:
+      // Dungeon items (SmallKey 53..65, BigKey 66..76, Map 77..87 + 124,
+      // Compass 88..98): vanilla LttP codes grant for the CURRENT
+      // dungeon, not the placed dungeon. ALTTPR adds per-dungeon
+      // counters via ROM patches; this port doesn't carry them. For
+      // Phase A1 we route through the current-dungeon vanilla path:
+      // the player gets credit for SOME dungeon's key when they pick
+      // up the placed item — better than vanilla fall-back (slot's
+      // vanilla item) but not equivalent to ALTTPR's per-dungeon
+      // grant. §6.2 follow-on lands the per-dungeon counters.
+      if (registry_id >= 53 && registry_id <= 65) return 0x24;  // SmallKey
+      if (registry_id >= 66 && registry_id <= 76) return 0x32;  // BigKey
+      if (registry_id == 124) return 0x33;                       // Map_HCE
+      if (registry_id >= 77 && registry_id <= 87) return 0x33;   // Map_*
+      if (registry_id >= 88 && registry_id <= 98) return 0x25;   // Compass
       return 0xFF;
   }
 }
