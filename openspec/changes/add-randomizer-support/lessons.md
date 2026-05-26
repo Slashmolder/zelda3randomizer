@@ -153,3 +153,109 @@ Each of these is a Phase A2 follow-on. They're recorded here so the user / futur
 - Wire the `RandoStartingInventory` injection at the actual new-game flow (currently only called from CLI/test contexts).
 - Add a "spec scenarios → implementation" coverage check as a CI step.
 
+---
+
+# Second-sprint lessons (post-audit cleanup + §6 dispatch)
+
+This sprint took the project from "Phase A1 substantially behind" (per the
+audit's overall assessment) to closing audit Bugs #1-#15 (15 of 16) plus
+the agent's new findings N1, N2, N4, N5, N7. It also landed the §6
+dispatch foundation: 13 NPC grant sites + universal chest hook + audit
+guard --strict + 50-seed cross-platform CI corpus + item-pool difficulty
+caps + per-dungeon containment for keys/maps/compasses.
+
+## Audit agents are dramatically more valuable than they look on the spec
+
+Spawning a "second pair of eyes" agent against the codebase produced 10
+**new** findings the spec audit had missed, two of them HIGH severity
+(N1 slot_kind enum off-by-one vs spec; N2 Pedestal goal-completability
+missing pendant-reachability check). Cost: one agent invocation, ~3
+minutes of wall-clock, parallel with my own work.
+
+**Practical rule**: launch an audit agent each time the code surface
+changes substantially. Even with a comprehensive prior audit, fresh eyes
+catch what familiarity skipped.
+
+## Generator-version bumps are cheap; absorb them aggressively
+
+The corpus regenerate tool (`bump_rando_corpus.py`) makes version bumps
+nearly free: write the placement-changing fix → bump kGeneratorVersion
+in src/rando/rando.h → run `bump_rando_corpus.py --apply` → corpus
+digests update in place → ship.
+
+This session bumped 3→4→5→6→7→8 (five bumps) across:
+- Settings struct alignment to spec
+- Triforce-Hunt junk-padding rotation
+- Vanilla-mode dungeon items pre-granted
+- World-state-filtered pool padding
+- Dungeon-mode containment for keys/maps/compasses
+- Item-pool difficulty count caps
+
+Each bump is a correctness improvement; the corpus is now a higher-
+quality regression guard against each of those scenarios. Previously
+the project hesitated on bumps; the cheap regen turned them into routine.
+
+## Settings-hash drift is the silent killer
+
+The audit's N7 finding (5 settings fields in the canonical hash but
+unparseable via CSV) meant that fields the spec considered "first-class
+settings" couldn't be exercised end-to-end. Race-mode in particular
+had a spec scenario ("Race-mode toggle changes settings hash") that
+was untestable because the toggle had no input path.
+
+**Rule**: every field in the settings canonical-serialize layout must
+have a corresponding CSV parser entry. Verified by selftest cases that
+parse each field via `--settings=` and assert the resulting hash differs.
+
+## Dispatch wrappers should fall back gracefully
+
+`Rando_DispatchVanillaGrant` returns the vanilla LttP code when:
+- Placement table not installed (rando inactive)
+- Placed item has no vanilla LttP path (progressive/dungeon/prize/virtual)
+- Lookup-table miss (unknown location_id)
+
+This means wiring a §6 site is risk-free: the worst case is "rando
+doesn't actually change this site's behavior yet" — never "the game
+crashes" or "the vanilla path breaks". The audit guard's `--strict`
+mode + the corpus + the per-attempt placer determinism guarantee
+together mean a sloppy wrap can't damage anything in production.
+
+## Spec scenarios are the unit tests
+
+The biggest leverage in this sprint came from spec scenarios I hadn't
+verified pass. Every one I checked surfaced 0-2 fixes:
+- "Dungeon-mode small key stays in its dungeon" → wasn't enforced; added per-dungeon containment in `location_accepts_item`.
+- "Item-pool difficulty downgrade" → wasn't implemented; added overflow.count caps per ALTTPR's `app/World.php:171-214`.
+- "Race-mode toggle changes settings hash" → field wasn't parseable.
+- "CLI --assets-must-be-vanilla refuses non-vanilla blobs" → flag was `(void)`'d out.
+- "sphere_digest field in meta block" → wasn't emitted.
+
+**Rule**: spec scenarios are the work list. When deciding what to do next,
+grep `^#### Scenario` across all spec files and pick one whose passing
+isn't yet exercised. Each one is a small contained fix.
+
+## Audit-guard exemption comments are documentation
+
+The 8 `// rando-exempt:` comments added in this sprint are real
+documentation of which writes are NOT grant sites. Each exemption
+includes:
+- Why the write isn't a grant (drop-pool / state-shuffle / receipt-
+  dispatcher consumption / etc.)
+- Where the real grant happens (call site upstream / Phase B work / etc.)
+
+Reviewing the exemption list is a fast way to find sites that need
+real dispatch — and a fast way to find sites that already do dispatch
+(elsewhere) and just need their downstream write tagged.
+
+## Corpus regeneration is also a quality check
+
+When the corpus diff is small (3 of 50 entries changed) after a placer
+change, that's a strong signal the change is what you expected (only
+affects the seeds that exercise the changed scenario). When it's large
+(all 50 changed), reconsider — you may have a broader RNG-consumption
+change than intended.
+
+Per-attempt RNG byte-consumption is the lurking gotcha: Fisher-Yates'
+shuffle is sensitive to array length. So any pool-sizing change shifts
+every digest. The world-state-filtered pool padding bump did this.
+
