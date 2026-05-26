@@ -2927,8 +2927,10 @@ static bool SelectFile_Settings_Update(void) {
     return true;
   }
 
-  // A button — context-dependent.
-  if (filtered_joypad_L & kJoypadL_A) {
+  // A button — context-dependent. While the seed text field is active
+  // (focused for typing), swallow A so it doesn't re-trigger the row's
+  // Clear-the-field action on every joypad poll.
+  if ((filtered_joypad_L & kJoypadL_A) && !g_settings_seed_field.active) {
     sound_effect_1 = 0x2c;
     switch (row) {
       case kRow_Recommended:
@@ -2948,6 +2950,9 @@ static bool SelectFile_Settings_Update(void) {
         // user can type a fresh value via the host SDL_TEXTINPUT path.
         TextField_HandleKey(&g_settings_seed_field, kTextFieldKey_Clear);
         // Activate the field so the host routes SDL_TEXTINPUT here.
+        // The g_rando_text_input_active edge in main.c clears
+        // g_input1_state on activation so the A press that opened the
+        // field doesn't strand as a held joypad bit.
         g_settings_seed_field.active = true;
         g_rando_active_textfield = &g_settings_seed_field;
         g_rando_text_input_active = true;
@@ -2985,17 +2990,32 @@ static bool SelectFile_Settings_Update(void) {
     return true;
   }
 
-  // Seed field text-input close on Start: commit + parse.
-  if (g_settings_seed_field.active && (filtered_joypad_H & kJoypadH_Start)) {
-    g_settings_seed_field.active = false;
-    g_rando_text_input_active = false;
-    g_rando_active_textfield = NULL;
-    // Parse and validate.
-    if (g_settings_seed_field.len > 0) {
-      uint64 v = 0;
-      g_settings_seed_parse_ok = ParseSeedField(g_settings_seed_field.buf, &v);
-      if (g_settings_seed_parse_ok) g_settings_seed_value = v;
+  // Seed field text-input close: commit + parse on Start (joypad/gamepad
+  // path) OR on the host-pending submit flag (PC keyboard Enter, suppressed
+  // while text input is active). Cancel via the host-pending cancel flag
+  // (PC keyboard Escape) restores the prior value.
+  if (g_settings_seed_field.active) {
+    bool submit = (filtered_joypad_H & kJoypadH_Start) != 0 ||
+                  g_rando_text_input_submit_pending;
+    bool cancel = g_rando_text_input_cancel_pending;
+    if (submit || cancel) {
+      g_rando_text_input_submit_pending = false;
+      g_rando_text_input_cancel_pending = false;
+      g_settings_seed_field.active = false;
+      g_rando_text_input_active = false;
+      g_rando_active_textfield = NULL;
+      if (submit && g_settings_seed_field.len > 0) {
+        uint64 v = 0;
+        g_settings_seed_parse_ok = ParseSeedField(g_settings_seed_field.buf, &v);
+        if (g_settings_seed_parse_ok) g_settings_seed_value = v;
+        if (!g_settings_seed_parse_ok) sound_effect_1 = 0x3c;
+      }
+      return true;
     }
+    // While typing, swallow all other input so cursor navigation doesn't
+    // wander when the user types digit keys (which the keyboard→joypad
+    // suppression would already block on PC, but gamepad players might
+    // accidentally hit a direction).
     return true;
   }
 
