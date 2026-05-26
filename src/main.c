@@ -589,6 +589,20 @@ int main(int argc, char** argv) {
   // Check for --generate-seed BEFORE any SDL_Init. If present, run headless
   // and exit; otherwise this returns and main() continues to the GUI path.
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
+
+  // --print-assets-hash: load assets, dump the SHA-256, exit. Lets the user
+  // capture the vanilla hash for vanilla_assets_hash.h activation.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--print-assets-hash") == 0) {
+      ParseConfigFile(config_file);
+      LoadAssets();
+      fprintf(stdout, "assets SHA-256: ");
+      for (int b = 0; b < 32; b++) fprintf(stdout, "%02x", g_assets_hash[b]);
+      fprintf(stdout, "\n");
+      return 0;
+    }
+  }
+
   ParseConfigFile(config_file);
   LoadAssets();
   LoadLinkGraphics();
