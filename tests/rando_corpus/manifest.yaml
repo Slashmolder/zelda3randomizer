@@ -172,6 +172,74 @@ entries:
     seed: "0xFFFFFFFFFFFFFFFF"
     label: "a1-seed-large"
     expected_digest: "9c654caa5e82aedebc19dd2fa7b700f52d56b69ba1fb143415606cf910421d4c"
+  # Goal=ganon (full Defeat Ganon — requires Aga 2 reachable).
+  - settings: { mode.state: open, goal: ganon }
+    seed: "0x0000000000000040"
+    label: "a1-open-ganon"
+    expected_digest: "217cc04ee546cfa2dd0fec5f02370dbe5eb50dda020bbb1b28a22b052a33daaa"
+  - settings: { mode.state: standard, goal: ganon }
+    seed: "0x0000000000000041"
+    label: "a1-standard-ganon"
+    expected_digest: "ed7c39eab135289af1ee9b8ff856abfa68ec0cb63554f793504dfc0698e8d64d"
+  # More crystals.* coverage.
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 0, crystals.tower: 0 }
+    seed: "0x0000000000000042"
+    label: "a1-open-fg-crystals-0-0"
+    expected_digest: "5766625600ff0f1606324ac1de864b99090b4f94ee4837dc5b2e00370e8aac12"
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 0 }
+    seed: "0x0000000000000043"
+    label: "a1-open-fg-crystals-7-0"
+    expected_digest: "be8dee1cfadb33ae7b63920d7b82e2b843c86c560eee7ae842496faa2435969d"
+  - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 3, crystals.tower: 3 }
+    seed: "0x0000000000000044"
+    label: "a1-open-fg-crystals-3-3"
+    expected_digest: "1161a81e260b59b970ecc939bbe37a9e7844e0452661582cf476941a2f92a4af"
+  # Seed-space coverage (large / small / multibyte values).
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0x1234567890ABCDEF"
+    label: "a1-seed-multibyte"
+    expected_digest: "32f19a342f74a836c1397b09e1e5cad907fa870e94aa88b9a7df7c3bb7b971a3"
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0x000000000F4243"
+    label: "a1-seed-prime"
+    expected_digest: "68053c732eede81cd44e98575f5c62742726ff8dcbb4b1e9af6767e1e6c98859"
+  - settings: { mode.state: open, goal: fast_ganon }
+    seed: "0x0000000000000000"
+    label: "a1-seed-zero"
+    expected_digest: "e842962fdad6c9ad8751323509c4444f2c260a48392ac6b68e273f9eb81f288f"
+  # Cross-axis interactions.
+  - settings: { mode.state: standard, goal: fast_ganon, item_pool: hard }
+    seed: "0x0000000000000050"
+    label: "a1-standard-fg-pool-hard"
+    expected_digest: "c22dbc08c527e530c448dbb51d8fb994be9b7c5b4197c2647ebdfdbb8505212d"
+  - settings: { mode.state: open, goal: "triforce-hunt", item_pool: expert, pieces_required: 15, pieces_placed: 20 }
+    seed: "0x0000000000000051"
+    label: "a1-th-expert-pool"
+    expected_digest: "5662b6a9fea8c3dc5d68b430466ca555d1c2ead31c69a8d080b1804216ffde05"
+
+  # Celebrity seeds — named for easier diagnosis when a future change
+  # diverges. Each label is the headline-grade description of what the seed
+  # exercises; the seed value is the ASCII encoding of a memorable string.
+  - settings: { mode.state: open, goal: dungeons, item_pool: normal }
+    seed: "0x4144454144"   # "ADEAD" — placeholder
+    label: "celebrity-all-bosses-12min"
+    expected_digest: "031b23363cde071a008edc77382ad6cb55eaa8cd1deb7f3bd698c1593b767637"
+  - settings: { mode.state: standard, goal: ganonhunt, pieces_required: 20, pieces_placed: 30 }
+    seed: "0x534B5953"   # "SKYS"
+    label: "celebrity-standard-ganon-hunt"
+    expected_digest: "ec8acf0bbf028b78cba5254b6582531b703e55d3915deafc42203834726c3099"
+  - settings: { mode.state: open, goal: completionist, item_pool: hard }
+    seed: "0xC0FFEE"
+    label: "celebrity-completionist-open"
+    expected_digest: "c09406e41ce4b250a8355d294b15673e738a735f3c0f36825336e9f12a171af4"
+  - settings: { mode.state: open, goal: pedestal, mode.weapons: assured }
+    seed: "0xDEADBEEF"
+    label: "celebrity-pedestal-rush"
+    expected_digest: "4501ea0ecaeb90164a4ee6c8c45d066fc3261544bc0b527a7284b21cdc8e8cdb"
+  - settings: { mode.state: retro, goal: completionist }
+    seed: "0x52455452"   # "RETR"
+    label: "celebrity-retro-completionist"
+    expected_digest: "41dac55d070a4e357d9128cd48fe51770ac5d43cd859e711f9e5d76920671935"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
