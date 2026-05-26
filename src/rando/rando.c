@@ -327,6 +327,28 @@ void Rando_SelfCheck(void) {
     fprintf(stderr, "Rando_SelfCheck: chest dispatch stub did not fall back\n");
     exit(2);
   }
+
+  // §6.2 TriforcePiece counter: install a placement that grants Triforce
+  // Piece at Bottle Merchant, dispatch, verify counter ticked.
+  {
+    static RandoPlacement entries[1];
+    entries[0].location_id = 166;  // Bottle Merchant
+    entries[0].item_id = 52;       // ITEM_TriforcePiece
+    RandoPlacementTable t = { entries, 1 };
+    Placement_Install(&t);
+    g_rando_triforce_piece_count = 0;
+    uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != 0x16) {
+      fprintf(stderr, "Rando_SelfCheck: TriforcePiece dispatch should return vanilla code\n");
+      exit(2);
+    }
+    if (g_rando_triforce_piece_count != 1) {
+      fprintf(stderr, "Rando_SelfCheck: TriforcePiece dispatch should tick counter\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    g_rando_triforce_piece_count = 0;
+  }
 }
 
 void Rando_RunAllSelfChecks(void) {
