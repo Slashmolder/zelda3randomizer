@@ -126,14 +126,12 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     case ITEM_SilverArrowUpgrade: return 0x29;
     default:
       // Dungeon items (SmallKey 53..65, BigKey 66..76, Map 77..87 + 124,
-      // Compass 88..98): vanilla LttP codes grant for the CURRENT
-      // dungeon, not the placed dungeon. ALTTPR adds per-dungeon
-      // counters via ROM patches; this port doesn't carry them. For
-      // Phase A1 we route through the current-dungeon vanilla path:
-      // the player gets credit for SOME dungeon's key when they pick
-      // up the placed item — better than vanilla fall-back (slot's
-      // vanilla item) but not equivalent to ALTTPR's per-dungeon
-      // grant. §6.2 follow-on lands the per-dungeon counters.
+      // Compass 88..98): for the CURRENT-dungeon vanilla fall-back this
+      // returns the dispatcher code (0x24/0x32/0x33/0x25). The per-placed-
+      // dungeon direct-write path in Rando_DispatchVanillaGrant supersedes
+      // this — see dungeon_item_direct_grant() below. We keep these here as
+      // a last-resort fall-back when the direct-write path can't apply
+      // (e.g. caller passed a vanilla_lttp_code that bypasses dispatch).
       if (registry_id >= 53 && registry_id <= 65) return 0x24;  // SmallKey
       if (registry_id >= 66 && registry_id <= 76) return 0x32;  // BigKey
       if (registry_id == 124) return 0x33;                       // Map_HCE
@@ -143,24 +141,167 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
   }
 }
 
+// §6.2 per-placed-dungeon counter helpers. The vanilla LttP dispatcher at
+// misc.c:746-747/772-775 indexes by `cur_palace_index_x2 >> 1` (the player's
+// current dungeon). For rando placements where a key/map/compass belongs to
+// a DIFFERENT dungeon than the player's current one, we have to write to
+// that specific dungeon's bit/counter ourselves.
+//
+// Returns 1 if the placed item is a dungeon item and was direct-written.
+// Caller treats this as "skip Link_ReceiveItem" via kRandoLttpSkip.
+//
+// Mappings (matching dungeon_id_for_item in rando_placement.c, which
+// mirrors the kBigKeys / kMaps / kCompasses ordering):
+//   SmallKey ids 53..65 contiguous → dungeon_id = id - 53 (HCE..GT, no skip)
+//   BigKey ids 66..76 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCE+HCT)
+//   Map_HCE = 124 → dungeon 0
+//   Map ids 77..87 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCT)
+//   Compass ids 88..98 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCE+HCT)
+//
+// `link_bigkey` / `link_dungeon_map` / `link_compass` are uint16 bitfields.
+// Per misc.c:746-747 special case for codes 0x25/0x32/0x33:
+//     WORD(*p) |= 0x8000 >> (BYTE(cur_palace_index_x2) >> 1)
+// So dungeon_id D maps to bit (0x8000 >> D). HCE=0 → 0x8000, EP=1 → 0x4000,
+// ..., GT=12 → 0x0008. This matches the HUD's per-dungeon icon table.
+static uint16 dungeon_bit_for_map_or_compass(uint8 dungeon_id) {
+  if (dungeon_id >= 16) return 0;
+  return (uint16)(0x8000u >> dungeon_id);
+}
+
+static uint8 dungeon_id_for_item_local(uint16 registry_id) {
+  // SmallKey 53..65: HCE..GT in order (no skips).
+  if (registry_id >= 53 && registry_id <= 65) return (uint8)(registry_id - 53);
+  static const uint8 kBigKeyDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
+  if (registry_id >= 66 && registry_id <= 76) return kBigKeyDungeon[registry_id - 66];
+  if (registry_id == 124) return 0;  // Map_HCE
+  static const uint8 kMapDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
+  if (registry_id >= 77 && registry_id <= 87) return kMapDungeon[registry_id - 77];
+  static const uint8 kCompassDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
+  if (registry_id >= 88 && registry_id <= 98) return kCompassDungeon[registry_id - 88];
+  return 0xFF;
+}
+
+// Per-placed-dungeon counter direct-grant. Returns 1 on success.
+// Note: SmallKey writes only to per-dungeon Phase B work — Phase A1 falls
+// back to the current-dungeon vanilla path since `link_num_keys` is a
+// single counter (the per-dungeon array `kRam_DungeonKeysByDungeon[13]`
+// would land with §6.2 follow-on work). For now SmallKey returns 0 here
+// and the dispatcher falls through to the current-dungeon vanilla path.
+static int dungeon_item_direct_grant(uint16 registry_id) {
+  uint8 dungeon = dungeon_id_for_item_local(registry_id);
+  if (dungeon == 0xFF || dungeon >= 13) return 0;
+
+  uint16 bit = dungeon_bit_for_map_or_compass(dungeon);
+  if (registry_id >= 66 && registry_id <= 76) {
+    // BigKey for `dungeon`.
+    link_bigkey |= bit;
+    return 1;
+  }
+  if (registry_id == 124 || (registry_id >= 77 && registry_id <= 87)) {
+    // Map for `dungeon`.
+    link_dungeon_map |= bit;
+    return 1;
+  }
+  if (registry_id >= 88 && registry_id <= 98) {
+    // Compass for `dungeon`.
+    link_compass |= bit;
+    return 1;
+  }
+  // SmallKey — Phase A1 falls back to current-dungeon dispatcher path
+  // (per-dungeon counter table is §6.2 follow-on).
+  return 0;
+}
+
+// §6.2 prize-item direct-grant. The 7 crystals + 3 pendants OR into
+// `link_has_crystals` / `link_which_pendants`. Each prize has a fixed bit
+// per vanilla LttP convention (kDungeonCrystalPendantBit[] indexed by
+// dungeon — but since prizes can be shuffled to any dungeon, we map by
+// PRIZE id, not by dungeon).
+//
+// Per ALTTPR Prize\Pendant / Prize\Crystal classes and the vanilla bit
+// allocations at misc.c:738-740 (pendant) and ancilla.c:3855 (crystal):
+//   GreenPendant → link_which_pendants bit 2 (mask 0x04)
+//   RedPendant   → link_which_pendants bit 0 (mask 0x01)
+//   BluePendant  → link_which_pendants bit 1 (mask 0x02)
+//   Crystal1 (PoD)  → link_has_crystals bit 4 (mask 0x10)
+//   Crystal2 (SP)   → link_has_crystals bit 1 (mask 0x02)
+//   Crystal3 (SW)   → link_has_crystals bit 0 (mask 0x01)
+//   Crystal4 (TT)   → link_has_crystals bit 6 (mask 0x40)
+//   Crystal5 (IP)   → link_has_crystals bit 2 (mask 0x04)
+//   Crystal6 (MM)   → link_has_crystals bit 5 (mask 0x20)
+//   Crystal7 (TR)   → link_has_crystals bit 3 (mask 0x08)
+// Bits derived by cross-referencing kDungeonCrystalPendantBit[13] in
+// src/zelda_rtl.c:50 against the vanilla dungeon→prize assignment in
+// app/Region/Standard/<Dungeon>.php.
+//
+// Returns 1 on success.
+static int prize_item_direct_grant(uint16 registry_id) {
+  switch (registry_id) {
+    case ITEM_Prize_GreenPendant: link_which_pendants |= 0x04; return 1;
+    case ITEM_Prize_RedPendant:   link_which_pendants |= 0x01; return 1;
+    case ITEM_Prize_BluePendant:  link_which_pendants |= 0x02; return 1;
+    case ITEM_Prize_Crystal1: link_has_crystals |= 0x10; return 1;
+    case ITEM_Prize_Crystal2: link_has_crystals |= 0x02; return 1;
+    case ITEM_Prize_Crystal3: link_has_crystals |= 0x01; return 1;
+    case ITEM_Prize_Crystal4: link_has_crystals |= 0x40; return 1;
+    case ITEM_Prize_Crystal5: link_has_crystals |= 0x04; return 1;
+    case ITEM_Prize_Crystal6: link_has_crystals |= 0x20; return 1;
+    case ITEM_Prize_Crystal7: link_has_crystals |= 0x08; return 1;
+    default: return 0;
+  }
+}
+
+// §6.2 magic-upgrade direct-grant. HalfMagic / QuarterMagic bypass
+// Link_ReceiveItem in vanilla — the only writer is sprite_main.c:11210
+// (Magic Bat handler) writing link_magic_consumption = 1. Rando placements
+// of these items at non-Magic-Bat slots need a direct-write here.
+// Returns 1 on success.
+static int magic_upgrade_direct_grant(uint16 registry_id) {
+  if (registry_id == ITEM_HalfMagic) {
+    if (link_magic_consumption < 1) link_magic_consumption = 1;
+    return 1;
+  }
+  if (registry_id == ITEM_QuarterMagic) {
+    link_magic_consumption = 2;
+    return 1;
+  }
+  return 0;
+}
+
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code) {
   uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
   if (placed == vanilla_registry_id) return vanilla_lttp_code;
 
-  // §6.2: TriforcePiece is a brand-new item with no vanilla LttP code.
-  // Increment the rando-side counter directly. Returns the vanilla code
-  // so the chest/NPC still grants something visible — Phase A1 limitation:
-  // the player gets both a piece counter tick AND the slot's vanilla item.
-  // §6.2 full work would return a sentinel that the caller treats as
-  // "skip Link_ReceiveItem"; the chest opens but only the counter ticks.
-  // For Phase A1 the double-grant is acceptable: the placed spoiler shows
-  // the TriforcePiece location, the counter is correct, the cosmetic
-  // double-grant is detectable by users but doesn't break completability.
+  // §6.2 TriforcePiece (no vanilla LttP code). Tick the counter and
+  // return kRandoLttpSkip so the caller bypasses Link_ReceiveItem — no
+  // accidental double-grant of the slot's vanilla item.
   if (placed == ITEM_TriforcePiece) {
     if (g_rando_triforce_piece_count < 255) g_rando_triforce_piece_count++;
-    return vanilla_lttp_code;
+    return kRandoLttpSkip;
+  }
+
+  // §6.2 HalfMagic / QuarterMagic direct-write (no vanilla LttP dispatcher
+  // path). The Magic Bat handler writes link_magic_consumption directly;
+  // rando placements of these at other slots use the same direct-write here.
+  if (magic_upgrade_direct_grant(placed)) {
+    return kRandoLttpSkip;
+  }
+
+  // §6.2 prize-item direct-write (crystals + pendants). The vanilla path at
+  // ancilla.c:3855 ORs the current dungeon's bit into link_has_crystals; for
+  // rando placements at non-boss slots we set the prize's bit directly.
+  if (prize_item_direct_grant(placed)) {
+    return kRandoLttpSkip;
+  }
+
+  // §6.2 per-placed-dungeon BigKey/Map/Compass direct-write. Vanilla LttP's
+  // dispatcher writes to the CURRENT dungeon's bit; for rando placements
+  // where the placed item belongs to a DIFFERENT dungeon, we have to write
+  // that specific dungeon's bit. SmallKey falls through here (Phase B work).
+  if (dungeon_item_direct_grant(placed)) {
+    return kRandoLttpSkip;
   }
 
   uint8 lttp = Rando_VanillaItemForRegistryId(placed);
@@ -170,11 +311,9 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   uint8 prog_lttp = progressive_to_lttp(placed);
   if (prog_lttp != 0xFF) return prog_lttp;
 
-  // Placed item has no vanilla LttP dispatch path (dungeon item / prize /
-  // virtual / direct-grant items like HalfMagic). §6.2 full receive helpers
-  // for these are deferred. Until then: fall back to the vanilla LttP code
-  // so the game keeps running with the vanilla grant. This is detectable
-  // in the spoiler (placement says X, in-game you got Y).
+  // Placed item has no vanilla LttP dispatch path remaining. Fall back to
+  // the vanilla LttP code so the game keeps running with the vanilla grant
+  // (detectable in the spoiler).
   return vanilla_lttp_code;
 }
 
@@ -210,6 +349,60 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // ---------------------------------------------------------------------------
 void Rando_BumpReachabilityCounter(void) {
   g_reachability_state_counter++;
+}
+
+// ---------------------------------------------------------------------------
+// §6.6 boss-kill dispatch helpers. Each boss kill grants TWO rando locations
+// (BossHeart + Prize). Phase A's default `bossHeartsInPool=false` policy
+// identity-places BossHeartContainer at every _Boss slot — so the dispatch
+// is still fired for uniformity (caller treats the no-op identity case as
+// "the player gets a heart container, vanilla behavior").
+//
+// Dungeon ID layout (cur_palace_index_x2 >> 1):
+//   0 HCE  (no boss; Sanctuary chest is the heart container slot)
+//   1 EP   2 DP   3 TH
+//   4 HCT  (Agahnim; not a heart-drop boss — handled separately)
+//   5 PoD  6 SP   7 SW   8 TT   9 IP  10 MM  11 TR
+//  12 GT   (Agahnim 2; same as HCT path)
+// ---------------------------------------------------------------------------
+uint16 Rando_GetBossHeartLocation(uint8 dungeon_id) {
+  static const uint16 kBossHeartByDungeon[13] = {
+    0xFFFFu,                       // 0  HCE
+    LOC_Eastern_Palace_Boss,       // 1  EP
+    LOC_Desert_Palace_Boss,        // 2  DP
+    LOC_Tower_of_Hera_Boss,        // 3  TH
+    0xFFFFu,                       // 4  HCT (Agahnim path)
+    LOC_Palace_of_Darkness_Boss,   // 5  PoD
+    LOC_Swamp_Palace_Boss,         // 6  SP
+    LOC_Skull_Woods_Boss,          // 7  SW
+    LOC_Thieves_Town_Boss,         // 8  TT
+    LOC_Ice_Palace_Boss,           // 9  IP
+    LOC_Misery_Mire_Boss,          // 10 MM
+    LOC_Turtle_Rock_Boss,          // 11 TR
+    0xFFFFu                        // 12 GT (Agahnim 2 path)
+  };
+  if (dungeon_id >= 13) return 0xFFFFu;
+  return kBossHeartByDungeon[dungeon_id];
+}
+
+uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
+  static const uint16 kBossPrizeByDungeon[13] = {
+    0xFFFFu,                       // 0  HCE
+    LOC_Eastern_Palace_Prize,      // 1  EP
+    LOC_Desert_Palace_Prize,       // 2  DP
+    LOC_Tower_of_Hera_Prize,       // 3  TH
+    0xFFFFu,                       // 4  HCT
+    LOC_Palace_of_Darkness_Prize,  // 5  PoD
+    LOC_Swamp_Palace_Prize,        // 6  SP
+    LOC_Skull_Woods_Prize,         // 7  SW
+    LOC_Thieves_Town_Prize,        // 8  TT
+    LOC_Ice_Palace_Prize,          // 9  IP
+    LOC_Misery_Mire_Prize,         // 10 MM
+    LOC_Turtle_Rock_Prize,         // 11 TR
+    0xFFFFu                        // 12 GT
+  };
+  if (dungeon_id >= 13) return 0xFFFFu;
+  return kBossPrizeByDungeon[dungeon_id];
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +526,8 @@ void Rando_SelfCheck(void) {
   }
 
   // §6.2 TriforcePiece counter: install a placement that grants Triforce
-  // Piece at Bottle Merchant, dispatch, verify counter ticked.
+  // Piece at Bottle Merchant, dispatch, verify counter ticked AND the
+  // dispatch returned kRandoLttpSkip (caller bypasses Link_ReceiveItem).
   {
     static RandoPlacement entries[1];
     entries[0].location_id = 166;  // Bottle Merchant
@@ -342,8 +536,8 @@ void Rando_SelfCheck(void) {
     Placement_Install(&t);
     g_rando_triforce_piece_count = 0;
     uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
-    if (lttp != 0x16) {
-      fprintf(stderr, "Rando_SelfCheck: TriforcePiece dispatch should return vanilla code\n");
+    if (lttp != kRandoLttpSkip) {
+      fprintf(stderr, "Rando_SelfCheck: TriforcePiece dispatch should return kRandoLttpSkip (got 0x%02x)\n", (unsigned)lttp);
       exit(2);
     }
     if (g_rando_triforce_piece_count != 1) {
@@ -352,6 +546,110 @@ void Rando_SelfCheck(void) {
     }
     Placement_Install(NULL);
     g_rando_triforce_piece_count = 0;
+  }
+
+  // §6.2 HalfMagic/QuarterMagic direct-write tests. Placement HalfMagic at
+  // Bottle Merchant; dispatch should write link_magic_consumption=1 and
+  // return kRandoLttpSkip.
+  {
+    static RandoPlacement entries[1];
+    entries[0].location_id = 166;
+    entries[0].item_id = ITEM_HalfMagic;  // 41
+    RandoPlacementTable t = { entries, 1 };
+    Placement_Install(&t);
+    link_magic_consumption = 0;
+    uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != kRandoLttpSkip) {
+      fprintf(stderr, "Rando_SelfCheck: HalfMagic dispatch should return kRandoLttpSkip (got 0x%02x)\n", (unsigned)lttp);
+      exit(2);
+    }
+    if (link_magic_consumption != 1) {
+      fprintf(stderr, "Rando_SelfCheck: HalfMagic dispatch should set link_magic_consumption=1\n");
+      exit(2);
+    }
+    // Same site with QuarterMagic should escalate.
+    entries[0].item_id = ITEM_QuarterMagic;  // 42
+    Placement_Install(&t);
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_magic_consumption != 2) {
+      fprintf(stderr, "Rando_SelfCheck: QuarterMagic dispatch should set link_magic_consumption=2\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    link_magic_consumption = 0;
+  }
+
+  // §6.2 prize-item direct-write tests. Placement Prize_Crystal4 at Bottle
+  // Merchant; dispatch should OR bit 0x40 into link_has_crystals.
+  {
+    static RandoPlacement entries[1];
+    entries[0].location_id = 166;
+    entries[0].item_id = ITEM_Prize_Crystal4;  // 117
+    RandoPlacementTable t = { entries, 1 };
+    Placement_Install(&t);
+    link_has_crystals = 0;
+    uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != kRandoLttpSkip) {
+      fprintf(stderr, "Rando_SelfCheck: Crystal4 dispatch should return kRandoLttpSkip (got 0x%02x)\n", (unsigned)lttp);
+      exit(2);
+    }
+    if ((link_has_crystals & 0x40) == 0) {
+      fprintf(stderr, "Rando_SelfCheck: Crystal4 dispatch should OR 0x40 into link_has_crystals\n");
+      exit(2);
+    }
+    // Same site with Prize_GreenPendant.
+    entries[0].item_id = ITEM_Prize_GreenPendant;
+    Placement_Install(&t);
+    link_which_pendants = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if ((link_which_pendants & 0x04) == 0) {
+      fprintf(stderr, "Rando_SelfCheck: GreenPendant dispatch should OR 0x04 into link_which_pendants\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    link_has_crystals = 0;
+    link_which_pendants = 0;
+  }
+
+  // §6.2 per-placed-dungeon BigKey/Map/Compass direct-write tests.
+  // Placement BigKey_GanonsTower (76) at Bottle Merchant; dispatch should
+  // OR (0x8000 >> 12) = 0x0008 into link_bigkey (GT's bit slot).
+  {
+    static RandoPlacement entries[1];
+    entries[0].location_id = 166;
+    entries[0].item_id = ITEM_BigKey_GanonsTower;  // 76
+    RandoPlacementTable t = { entries, 1 };
+    Placement_Install(&t);
+    link_bigkey = 0;
+    uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != kRandoLttpSkip) {
+      fprintf(stderr, "Rando_SelfCheck: BigKey_GT dispatch should return kRandoLttpSkip\n");
+      exit(2);
+    }
+    if (link_bigkey != 0x0008) {
+      fprintf(stderr, "Rando_SelfCheck: BigKey_GT dispatch should set link_bigkey=0x0008 (got 0x%04x)\n", (unsigned)link_bigkey);
+      exit(2);
+    }
+    // Compass_EasternPalace (88) → dungeon 1 → bit (0x8000 >> 1) = 0x4000
+    entries[0].item_id = ITEM_Compass_EasternPalace;
+    Placement_Install(&t);
+    link_compass = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_compass != 0x4000) {
+      fprintf(stderr, "Rando_SelfCheck: Compass_EP dispatch should set link_compass=0x4000 (got 0x%04x)\n", (unsigned)link_compass);
+      exit(2);
+    }
+    // Map_HCE (124) → dungeon 0 → bit 0x8000
+    entries[0].item_id = 124;
+    Placement_Install(&t);
+    link_dungeon_map = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_dungeon_map != 0x8000) {
+      fprintf(stderr, "Rando_SelfCheck: Map_HCE dispatch should set link_dungeon_map=0x8000\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    link_bigkey = link_compass = link_dungeon_map = 0;
   }
 }
 

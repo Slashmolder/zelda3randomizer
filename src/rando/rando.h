@@ -71,10 +71,24 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id);
 // returns `vanilla_lttp_code` unchanged — those item classes need
 // per-class handlers (§6.2 work) that the universal dispatcher cannot
 // emit through the existing receive-item path.
+//
+// §6.2 sentinel return: `kRandoLttpSkip` (0xFE) means "the rando subsystem
+// has already granted the placed item via a direct write; caller MUST NOT
+// invoke Link_ReceiveItem". This signals to the caller that all bookkeeping
+// is done. Use the convenience wrapper `Rando_ShouldSkipReceive(code)` to
+// test the return value.
 // ---------------------------------------------------------------------------
+#define kRandoLttpSkip 0xFEu
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code);
+
+// Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
+// Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
+// items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.
+static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
+  return lttp_code == kRandoLttpSkip;
+}
 
 // ---------------------------------------------------------------------------
 // Rando_ChestDispatch — universal chest grant-site hook.
@@ -105,6 +119,19 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // enumerated in audit.md §0.4a.
 // ---------------------------------------------------------------------------
 void Rando_BumpReachabilityCounter(void);
+
+// ---------------------------------------------------------------------------
+// §6.6 boss-kill dispatch helpers. The boss-kill code path in dungeon.c
+// fires TWO grant sites per boss: the BossHeart drop (Sprite_HeartContainer)
+// and the Prize crystal/pendant (RoomTag_GetHeartForPrize). Each has its
+// own LOC_* per audit.md §0.3.5.
+//
+// `dungeon_id` is `cur_palace_index_x2 >> 1` (0..12; HCE=0, EP=1, ..., GT=12).
+// Returns 0xFFFF for dungeons without a boss drop (HCE/HCT/GT — those have
+// their own dispatch paths: Sanctuary chest, Agahnim event, Agahnim 2 event).
+// ---------------------------------------------------------------------------
+uint16 Rando_GetBossHeartLocation(uint8 dungeon_id);
+uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id);
 
 // ---------------------------------------------------------------------------
 // Active per-seed shuffle assignments. The predicate VM's OP_HAS_PRIZE and

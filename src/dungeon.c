@@ -15,6 +15,10 @@
 #include "tagalong.h"
 #include "messaging.h"
 #include "assets.h"
+#include "features.h"
+#include "rando/rando.h"
+#include "rando/item_ids.h"
+#include "rando/location_ids.h"
 
 // todo: move to config
 static const uint16 kBossRooms[] = {
@@ -4586,6 +4590,28 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
   int t = savegame_is_darkworld ? link_has_crystals : link_which_pendants;
   if (!(t & kDungeonCrystalPendantBit[BYTE(cur_palace_index_x2) >> 1])) {
     byte_7E04C2 = 128;
+    // §6.6 prize dispatch: fire Rando_OnLocationCheck for the boss-prize
+    // slot. Phase A's prize_shuffle identity-places crystals/pendants at
+    // their vanilla dungeons by default — the dispatch is a no-op for the
+    // identity case. When prize-shuffle reassigns, the OR-into-bit happens
+    // inside Rando_DispatchVanillaGrant's prize_item_direct_grant() path
+    // (which sets the prize's bit, not the dungeon's bit).
+    //
+    // The visual FallingPrize sprite still spawns using the vanilla
+    // kBossFinishedFallingItem mapping — that's a cosmetic limitation
+    // (player sees the dungeon's vanilla prize falling). The bit set
+    // matches the placed prize per the direct-grant.
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      uint16 prize_loc = Rando_GetBossPrizeLocation(BYTE(cur_palace_index_x2) >> 1);
+      if (prize_loc != 0xFFFFu) {
+        // The vanilla_registry_id depends on the dungeon. Phase A1: pass
+        // 0xFFFF (unknown vanilla) and let the dispatch find the placed
+        // prize via Placement_Lookup; the placement table's vanilla-pin
+        // pre-pass installs the vanilla prize per dungeon if no shuffle
+        // override applies.
+        Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, 0);
+      }
+    }
     if (Ancilla_SpawnFallingPrize(kBossFinishedFallingItem[BYTE(cur_palace_index_x2) >> 1]) < 0)
       return; // Zelda bugfix. Price won't spawn if we're out of ancillas
   }
