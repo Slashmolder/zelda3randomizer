@@ -2500,14 +2500,19 @@ static void CycleRow(int row, int delta) {
       // c999af2/24e7987/86b0629. End-to-end CLI smoke shows 1/237
       // unreachable placements for a representative Inverted seed; small
       // graph gaps remain (task list #47-50) but the picker is functional.
-      // Retro stays gated until Slice 3 lands the shop-locations + item
-      // registry expansion.
+      //
+      // Retro un-gated as of Slice 3a (2026-05-27): 29 shop locations land
+      // in the placement pool under world_state=Retro per
+      // `openspec/changes/add-rando-retro-world-state/design.md` §1a.
+      // The 22 TakeAny shops remain Slice 3b scope; players who select
+      // Retro will see the regular-shop and Capacity-Upgrade randomization
+      // but TakeAny caves stay vanilla until 3b ships sprite dispatch.
       //
       // The display label is preserved for all 4 world states so a slot
       // loaded from a Phase-B share string round-trips its label.
       int n = (int)s->world_state + delta;
-      if (n < 0) n = kWorldState_Inverted;       // wrap to last enabled
-      if (n > kWorldState_Inverted) n = 0;       // skip Retro (gated)
+      if (n < 0) n = kWorldState_Retro;          // wrap to last enabled
+      if (n > kWorldState_Retro) n = 0;
       s->world_state = (uint8)n;
       break;
     }

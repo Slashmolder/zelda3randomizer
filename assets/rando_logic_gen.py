@@ -1781,8 +1781,12 @@ def emit_logic_data(
 
 
 def _location_type_id(t: str) -> int:
+    # APPEND-ONLY: existing indices 0-13 are baked into kRandoLocations bytes
+    # in src/rando/logic_data.c. Adding new types past 13 preserves them.
     types = ["Chest", "BigChest", "Npc", "Standing", "Pedestal", "Dash", "Dig", "Drop",
-             "Fountain", "Trade", "Prize_Crystal", "Prize_Pendant", "Prize_Event", "Medallion"]
+             "Fountain", "Trade", "Prize_Crystal", "Prize_Pendant", "Prize_Event", "Medallion",
+             "Shop",        # 14 — Phase B Slice 3a Retro shop purchase slot
+             "ShopUpgrade"] # 15 — Phase B Slice 3a Capacity Upgrade (identity-placed)
     if t not in types:
         return 0
     return types.index(t)

@@ -793,12 +793,21 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   const uint8 LOCTYPE_Prize_Pendant = 11;
   const uint8 LOCTYPE_Prize_Event   = 12;
   const uint8 LOCTYPE_Medallion     = 13;
+  const uint8 LOCTYPE_ShopUpgrade   = 15;  // Phase B Slice 3a — identity-placed Capacity Upgrade slots
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
     uint16 vi = loc->vanilla_item_id;
     bool vanilla_pin = false;
     if (loc->type == LOCTYPE_Prize_Event || loc->type == LOCTYPE_Medallion) {
       // Always pin event / medallion locations to vanilla item.
+      vanilla_pin = true;
+    } else if (loc->type == LOCTYPE_ShopUpgrade) {
+      // Phase B Slice 3a — Capacity Upgrade slots (Bomb +5 / Arrow +5)
+      // are identity-placed per design.md §1a + proposal.md:41. The slot
+      // exists in the registry so the shop dispatcher can route the grant
+      // through the uniform Rando_DispatchVanillaGrant call shape, but
+      // the placer pins the upgrade to its vanilla item so the player
+      // still buys the capacity upgrade for rupees as in vanilla.
       vanilla_pin = true;
     } else if (loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal) {
       // Pin per the prize-shuffle assignment. Find the dungeon whose Prize

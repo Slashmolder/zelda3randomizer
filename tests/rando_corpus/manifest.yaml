@@ -95,13 +95,13 @@ entries:
   - settings: { mode.state: retro, goal: ganon }
     seed: "0x0000000000000014"
     label: "a1-retro-ganon"
-    expected_digest: "747bf53819767e000dc1dae0b0374e56cd7154d1a2798b287c1412313c21d984"
-    expected_sphere_digest: "1d386b85d6ce44c957d0ff996570f0b219f88766669510bc1e6064e16691be1a"
+    expected_digest: "c6e0e4a8700cb50c6ec8dc4a3c03628b59e7fd50462471a0217e06fa26c82018"
+    expected_sphere_digest: "4d9958341fc7cd008460b3e3a4e33b77a40d44f4444dc6c402841ab6837c481e"
   - settings: { mode.state: retro, goal: fast_ganon }
     seed: "0x0000000000000015"
     label: "a1-retro-fast-ganon"
-    expected_digest: "7e5cdaad1c50262135aeca99fefc065b895f4b6d94c75e795beb67a667d11538"
-    expected_sphere_digest: "b6cfe478f850b2d9534c9be50ea3abea0a10d829a9405315c5e143a9be1e39d0"
+    expected_digest: "ce45ad4bdd7944c7f092229b762e621d975de7efa93f9b886ac166ced6f0a7e1"
+    expected_sphere_digest: "16176db7780047bef1e83c192b028b91acb72e549389b9cc63e293866806ea06"
   # crystals.* variations.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
     seed: "0x0000000000000016"
@@ -288,8 +288,8 @@ entries:
   - settings: { mode.state: retro, goal: completionist }
     seed: "0x52455452"   # "RETR"
     label: "celebrity-retro-completionist"
-    expected_digest: "cd52916d8cf1b8fd665b5dd00f611d6f2bfc90e5b0ab1087882fa51014308708"
-    expected_sphere_digest: "16a3101a9770a30eac537e56e2deab461df4659cb45924fd7bd1aad8f8d79ba0"
+    expected_digest: "20306333a7ff8f342251fc1343e9e8a6e87a7bc512be24c9dbe447f3eac3671c"
+    expected_sphere_digest: "882a6f70449f67087f8be3296861c92091c72e36431ac0ed12d6133680006351"
   # Phase B Slice 2 (kGeneratorVersion 11) — Inverted seeds. Captured against
   # the world-state-aware predicate/edge/region override path. 1-2 unreachable
   # placements per seed is currently expected (graph gaps tracked in tasks

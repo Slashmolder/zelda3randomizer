@@ -127,6 +127,8 @@ location_record:
         - Prize_Pendant
         - Prize_Event
         - Medallion
+        - Shop          # Phase B Slice 3a — Retro shop purchase slots
+        - ShopUpgrade   # Phase B Slice 3a — Capacity Upgrade slots (identity-placed)
       description: |
         Location archetype. Mirrors ALTTPR's Location\* subclasses. Drives
         §6 dispatch routing (chest path vs. NPC handler vs. synthesized hook).
