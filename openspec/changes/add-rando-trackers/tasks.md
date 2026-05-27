@@ -1,11 +1,34 @@
 ## 1. Keybinding wiring
 
-- [ ] 1.1 Add `kKeys_RandoToggleItemTracker` and `kKeys_RandoToggleLocationTracker` to the `kKeys_*` enumeration in `src/config.c`. Place near the other randomizer key constants.
-- [ ] 1.2 Add the two key names to the `[KeyMap]` INI parser's accepted key list in `src/config.c`. Default: unbound (empty).
-- [ ] 1.3 Document the two key names in `README.md` key map table.
-- [ ] 1.4 Wire input dispatch — on key press, toggle the in-memory visibility booleans `g_rando_show_item_tracker` and `g_rando_show_location_tracker`. Reset both to `false` on `ZeldaInit` so launch state is always hidden.
+- [x] 1.1 Add `kKeys_RandoToggleItemTracker` and `kKeys_RandoToggleLocationTracker` to the `kKeys_*` enumeration in `src/config.c`. Place near the other randomizer key constants. *(Landed at `config.h:39-40`.)*
+- [x] 1.2 Add the two key names to the `[KeyMap]` INI parser's accepted key list in `src/config.c`. Default: unbound (empty). *(Landed at `config.c:63` via the `S(RandoToggleItemTracker), S(RandoToggleLocationTracker)` entries in `kKeyNameId`.)*
+- [x] 1.3 Document the two key names in `README.md` key map table. *(Landed at `README.md:264-271` — `### Randomizer keybindings` section lists both key ids with their action.)*
+- [x] 1.4 Wire input dispatch — on key press, toggle the in-memory visibility booleans `g_rando_show_item_tracker` and `g_rando_show_location_tracker`. Reset both to `false` on `ZeldaInit` so launch state is always hidden. *(Landed: dispatch at `main.c:1430-1435`; flags defined at `rando.c:408-409`; reset to false at `rando.c:645-646` (called from `ZeldaInit` via `Rando_DeactivateSlot`-equivalent).)*
 
 ## 2. Item-tracker overlay (`src/hud.c`)
+
+**Status (2026-05-27)**: Deferred — playtest-gated.
+
+The item-tracker is a visual feature that requires per-iteration
+playtest to verify (correct tile alignment, no OAM overflow, correct
+item-icon tile lookups for boots/hookshot/etc., dialogue-box hide
+rule trigger). Per the `playtest_vs_codegen_tests` memo: end-to-end
+playtest is the only test that catches missing-wiring bugs in HUD
+overlays. Phase A selftests + multi-agent review missed two
+showstopper gaps when this discipline was skipped.
+
+The toggle keybinding (§1) is fully wired, so a future playtest
+sprint can iterate on the draw function with the toggle as the
+test-trigger. Suggested approach when picking this up:
+
+1. Start with a single-tile proof-of-concept at a known-safe OAM
+   slot (e.g., top-left, slot 0 of the rando-tracker reserved bank
+   if added). Verify it renders without breaking the existing HUD.
+2. Walk outward from the proof tile to a 1D row of cells (5 items
+   wide) to validate the OAM math + tile-lookup pattern.
+3. Expand to the full 6×5 grid only after the row pattern is
+   stable across all renderer backends (§4 in this tasks.md).
+4. Dialogue-box hide rule is the last polish.
 
 - [ ] 2.1 Design the item-grid layout: fixed rows × cols (e.g., 6 × 5 = 30 cells covering progressives + absolute items + bottles + magic + heart counter). Place anchor configurable via `[randomizer] tracker_anchor` (default top-left). Reuse HUD tiles — no new graphics.
 - [ ] 2.2 Implement `Hud_RandoDrawItemTracker(void)` — reads from `link_item_*` + `link_bottle_info[*]` + `link_max_health` to compute the cell-by-cell "have / level" state. Writes to OAM directly via the standard HUD OAM slots.
