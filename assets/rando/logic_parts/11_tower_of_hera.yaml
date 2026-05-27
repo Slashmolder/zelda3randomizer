@@ -44,12 +44,15 @@ regions:
 
 edges:
   # ToH `can_enter` (php:164-168): `RescuedZelda AND ($main OR $mire)`.
-  # $mire = FALSE in Phase A; $main = `(MagicMirror OR (Hookshot AND Hammer))
-  # AND WestDM->canEnter`. Modeled as a single edge from WestDM since
+  # $mire = FALSE in Phase A; $main = `(boots && canBootsClip) || canSuperSpeed
+  # || canOneFrameClipOW || ((MagicMirror OR (Hookshot AND Hammer)) AND
+  # WestDM->canEnter)`. Modeled as a single edge from WestDM since
   # WestDM reachability is implied by the source region.
+  # Phase B Slice 4 §7: CanBootsClip + OWG bypass surfaced; canSuperSpeed
+  # lacks a macro (no spin-speed kit in this fork yet) so it's dropped.
   - from: LightWorld_DeathMountain_West
     to: TowerOfHera_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MagicMirror) OR (HAS_ITEM(Hookshot) AND HAS_ITEM(Hammer)))"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MagicMirror) OR (HAS_ITEM(Hookshot) AND HAS_ITEM(Hammer)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
     source: "app/Region/Standard/TowerOfHera.php:103-109, 164-168 (can_enter + $main)"
 
 locations:

@@ -136,12 +136,16 @@ locations:
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:40"
 
-  # `Floating Island` (East.php:79-87): mirror AND MoonPearl AND
-  # canBombThings AND canLiftRocks AND East-Dark-DM-reachable. Glitch and
-  # mirror-wrap branches drop.
+  # `Floating Island` (East.php:79-87):
+  #   (canBootsClip && PegasusBoots) || (canOWYBA && bottle) ||
+  #   canOneFrameClipOW || (MagicMirror && MoonPearl && canBombThings
+  #     && canLiftRocks && East-Dark-DM-reachable)
+  # Phase A retained only the MagicMirror cross-region path. Phase B
+  # Slice 4 §7 surfaces the three trick / OWG alternatives — all
+  # collapse to FALSE under default (tricks=0, logic=NoGlitches).
   - id: "Floating Island"
     region: LightWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanBombThings() AND CanLiftRocks() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)"
+    can_reach: "(HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanBombThings() AND CanLiftRocks() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR CanBootsClip() OR CanPearlBypass() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:79-87"
 
 macros: []

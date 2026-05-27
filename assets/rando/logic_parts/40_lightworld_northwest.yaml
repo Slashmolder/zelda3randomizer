@@ -50,12 +50,17 @@ locations:
     can_reach: "HAS_ITEM(BookOfMudora) AND OP_HAS_PRIZE(Prize_RedPendant) AND OP_HAS_PRIZE(Prize_BluePendant) AND OP_HAS_PRIZE(Prize_GreenPendant)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:86-91"
 
-  # `King's Tomb` (php:93-102): Boots + canLiftDarkRocks (mirror+OWYBA
-  # branch dropped in Phase A — mirror return requires Dark World access
-  # which collapses to canLiftDarkRocks under no-glitches).
+  # `King's Tomb` (php:93-102):
+  #   Boots AND (canBootsClip || canLiftDarkRocks || canOneFrameClipOW
+  #              || (canSuperSpeed && spin) || (MagicMirror && DW NW && ...))
+  # Phase A retained `Boots AND CanLiftDarkRocks`. Phase B Slice 4 §7
+  # surfaces boots-clip (note: CanBootsClip already AND's HAS_ITEM(Boots)
+  # internally, but the outer `HAS_ITEM(Boots)` requirement is preserved
+  # so the predicate's existing structure is unchanged when tricks=0) and
+  # the OWG bypass. canSuperSpeed lacks a macro.
   - id: "King's Tomb"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(Boots) AND CanLiftDarkRocks()"
+    can_reach: "HAS_ITEM(Boots) AND (CanLiftDarkRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
     source: "app/Region/Standard/LightWorld/NorthWest.php:93-102"
 
   # `Kakariko Tavern` (php:34) — no setRequirements; default TRUE.
@@ -162,13 +167,17 @@ locations:
     can_reach: "HAS_ITEM(DefeatAgahnim) AND HAS_ITEM(Boots)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:128-130"
 
-  # `Graveyard Ledge` (php:132-139): all surviving Phase A disjuncts are
-  # glitch/mirror-trick branches that drop. The only remaining path is the
-  # mirror-from-DW-NorthWest path, which requires MagicMirror + MoonPearl
-  # + reachable DarkWorld_NorthWest.
+  # `Graveyard Ledge` (php:132-139):
+  #   (canBootsClip && Boots) || (canSuperSpeed && spin) ||
+  #   canOneFrameClipOW || (MagicMirror && DW NW && (MoonPearl || OWYBA+bottle
+  #                                                  || canBunnyRevive))
+  # Phase A retained the MagicMirror cross-region path. Phase B Slice 4 §7
+  # surfaces boots-clip + OWG + the pearl-bypass disjunct on the
+  # MagicMirror inner conjunction. canSuperSpeed + canBunnyRevive lack
+  # macros so those disjuncts drop.
   - id: "Graveyard Ledge"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)"
+    can_reach: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:132-139"
 
   # `Mushroom` (php:53) — no setRequirements; default TRUE.

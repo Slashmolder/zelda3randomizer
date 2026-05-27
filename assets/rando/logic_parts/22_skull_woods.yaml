@@ -41,11 +41,14 @@ edges:
   #   && (itemPlacement!='basic' || <basic-mode gate>)   [TRUE]
   #   && (canDungeonRevive || MoonPearl || canOWYBA+bottle || canBunnyRevive)
   #   && <NorthWestDarkWorld.canEnter>
-  # All trick disjuncts collapse to FALSE → required: RescuedZelda AND
-  # MoonPearl. The parent region's reachability is implicit via the edge.
+  # Phase A retained `RescuedZelda AND MoonPearl`. Phase B Slice 4 §7
+  # surfaces the pearl-bypass alternative; canDungeonRevive and
+  # canBunnyRevive lack first-class macros in this fork (Phase B
+  # reservation) so their disjuncts drop. Default `tricks=0` collapses
+  # CanPearlBypass to FALSE → Phase A shape.
   - from: DarkWorld_NorthWest
     to: SkullWoods
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(MoonPearl)"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())"
     source: "app/Region/Standard/SkullWoods.php:153-161 (can_enter closure)"
 
 locations:
