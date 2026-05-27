@@ -3665,6 +3665,16 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
   // shuffled out of this dungeon. Return k-1 with the same convention
   // used by the 0xE4/overlord branches so the caller's `k = ... + 1`
   // recipe leaves the slot index unchanged for the next entry.
+  //
+  // Cluster-audit LOW-4 — this branch fires BEFORE the
+  // `sprite_where_in_room` killed-bit gate at line 3667 reads
+  // `1 << k`, so the killed-bit lookup never sees the suppressed
+  // sprite's slot. That is correct under the current room-data load
+  // order (TR/IP list their secondaries after the primary, so by the
+  // time we suppress a secondary the slot `k` was already consumed
+  // by the primary and the bit refers to the PRIMARY's death, not the
+  // secondary's). If a future room-data edit interleaves boss-segment
+  // sprites or puts secondaries first, this assumption needs revisit.
   if (BossShuffle_ShouldSuppressSecondary(type)) {
     return k - 1;
   }

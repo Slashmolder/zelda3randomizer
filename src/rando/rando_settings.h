@@ -116,8 +116,9 @@ typedef struct RandoSettings {
 // exactly this many bytes. Adding a field requires bumping this constant
 // AND kGeneratorVersion (tasks.md §13.6).
 // ===========================================================================
-// Canonical serialization is 25 bytes (21 single-byte fields + 2×u16) padded
-// to 28 (the next multiple of 4). Layout per spec — see Settings_CanonicalSerialize.
+// Canonical serialization is 25 bytes of content (21 single-byte fields +
+// 2×u16 LE = 25) padded to 28 (the next multiple of 4 = 3 pad bytes).
+// Layout per spec — see Settings_CanonicalSerialize.
 // Phase B Slice 7+8 §66: bumped from 24→28 to absorb `hints`, `boss_shuffle`,
 // `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
 #define kSettingsCanonicalLen 28

@@ -474,6 +474,17 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // site lets each integration choose whether to add the cue.
 // ---------------------------------------------------------------------------
 void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
+  // Cluster audit LOW-5 — every caller passes `(uint8)Rando_LastDispatched
+  // ItemId()`; the cast loses precision if the sentinel value 0xFFFF
+  // ever reaches us. The skip-sentinel path only runs AFTER a successful
+  // Rando_DispatchVanillaGrant, which populates g_last_dispatched_item_id
+  // with a valid item id (< ITEM__COUNT, currently 125), so the
+  // truncation is unreachable in normal flow. The bounds check at
+  // `(size_t)item_id < icon_table_len` defends the array access
+  // regardless; this assert just makes the invariant explicit so a
+  // future change that calls this WITHOUT a prior dispatch fires loudly.
+  assert(item_id != 0xFFu /* sentinel byte from 0xFFFF truncation */ ||
+         Rando_LastDispatchedItemId() != 0xFFFFu);
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
@@ -877,6 +888,20 @@ const char *Rando_RevealResultDescription(RandoRevealResult r) {
 RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   if (!g_rando_slot_active || g_rando_active_share_string[0] == '\0') {
     fprintf(stderr, "rando reveal: no active randomizer slot.\n");
+    return kRandoReveal_FileNotFound;
+  }
+  // §62 cluster-audit MED-1 — anti-cheat gate. Race-mode's design intent
+  // is the spoiler stays off-disk until post-race. An in-binary key with
+  // no terminal-state gate lets a self-disciplined runner peek mid-race
+  // and defeats the design. Gate the in-binary action on game-completion
+  // (main_module_index 24 = Ending intro, 25 = Credits — both set after
+  // Ganon dies / Triforce collected, per dungeon.c:2528 + ending.c:291).
+  // The `--reveal-spoiler=<path>` CLI flow stays unconditional (no in-
+  // game state to check) for tournament admins / post-race tooling.
+  if (main_module_index < 24) {
+    fprintf(stderr,
+            "rando reveal: refused — game not yet completed "
+            "(use --reveal-spoiler CLI flag for tournament admin reveals).\n");
     return kRandoReveal_FileNotFound;
   }
   RandoRevealResult r =

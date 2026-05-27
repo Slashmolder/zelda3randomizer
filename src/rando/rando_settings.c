@@ -88,7 +88,9 @@ static void apply_derived_rules(RandoSettings *s) {
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
                                 uint8 out[kSettingsCanonicalLen]) {
   // Layout per `randomizer-core / Settings canonical serialization order`.
-  // 18 single-byte fields + 2×u16 LE + zero padding to multiple of 4 = 24 bytes.
+  // 21 single-byte fields + 2×u16 LE + 3 pad bytes = 28 bytes
+  // (kGenVer 14 §66 grew 18→21 single-byte fields by absorbing hints +
+  // boss_shuffle + drop_shuffle at offsets [22..24]).
   RandoSettings sn = *s_in;
   apply_derived_rules(&sn);
   const RandoSettings *s = &sn;

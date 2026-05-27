@@ -189,16 +189,20 @@ static const BossSpriteMap kBossSpriteMap[] = {
 };
 #define kBossSpriteMapCount (sizeof(kBossSpriteMap) / sizeof(kBossSpriteMap[0]))
 
-// Reverse: pool index → sprite type. 12 entries; both Agahnim slots map
-// to 0x7A (same shared sprite, world-state discriminates rendering — but
-// in practice both Agahnim slots are pinned and never picked by the
-// shuffle, so these entries are dead code kept only as a defense in
-// depth against future pool edits).
+// Reverse: pool index → sprite type. 12 entries. Both Agahnim slots
+// map to 0xFF (poisoned sentinel — cluster audit LOW-3) rather than
+// the shared 0x7A. The remap function falls back to vanilla on 0xFF,
+// preserving correctness if a future edit puts Agahnim2 back in the
+// pool: instead of silently spawning the wrong Agahnim variant in a
+// random dungeon (the `is_in_dark_world` rendering discriminator at
+// `sprite_main.c:8313` can't tell which Agahnim was intended), the
+// remap returns the input vanilla type unchanged. The safer default
+// future-proofs against the exact bug §65 audit caught and removed.
 static const uint8 kBossPoolIdxToSprite[12] = {
   [kBoss_ArmosKnights]  = 0x53,
   [kBoss_Lanmolas]      = 0x54,
   [kBoss_Moldorm]       = 0x09,
-  [kBoss_Agahnim]       = 0x7A,
+  [kBoss_Agahnim]       = 0xFF,  // pinned; never picked → poisoned
   [kBoss_HelmasaurKing] = 0x92,
   [kBoss_Arrghus]       = 0x8C,
   [kBoss_Mothula]       = 0x88,
@@ -206,7 +210,7 @@ static const uint8 kBossPoolIdxToSprite[12] = {
   [kBoss_Kholdstare]    = 0xA2,
   [kBoss_Vitreous]      = 0xBD,
   [kBoss_Trinexx]       = 0xCB,
-  [kBoss_Agahnim2]      = 0x7A,
+  [kBoss_Agahnim2]      = 0xFF,  // pinned; never picked → poisoned
 };
 
 uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
@@ -218,7 +222,11 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
     uint8 pool_idx = g_boss_assignment[dungeon];
     if (pool_idx == 0xFF || pool_idx >= 12) return vanilla_sprite_type;
     uint8 mapped = kBossPoolIdxToSprite[pool_idx];
-    if (mapped == 0) return vanilla_sprite_type;  // unmapped — safety
+    // 0 = uninitialized entry; 0xFF = poisoned (pinned Agahnim variants
+    // that must not be substituted because the sprite id cannot
+    // disambiguate A1 vs A2 without world-state context — cluster
+    // audit LOW-3). Fall back to vanilla in both cases.
+    if (mapped == 0 || mapped == 0xFF) return vanilla_sprite_type;
     return mapped;
   }
   return vanilla_sprite_type;
