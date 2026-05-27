@@ -538,10 +538,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--allow-broken-seed") == 0) { allow_broken_seed = true; break; }
   }
-  if (!spoiler.goal_completable && !allow_broken_seed) {
+  if (Goal_ShouldRefuse(&settings, &table) && !allow_broken_seed) {
     fprintf(stderr,
       "--generate-seed: goal %u is NOT completable for this seed — refusing to\n"
-      "  write spoiler. (Use --allow-broken-seed to write diagnostic spoiler anyway.)\n",
+      "  write spoiler. (Use --allow-broken-seed to write diagnostic spoiler anyway.\n"
+      "  Set accessibility=none to opt-in to possibly-unwinnable seeds.)\n",
       (unsigned)settings.goal);
     free(entries);
     exit(1);

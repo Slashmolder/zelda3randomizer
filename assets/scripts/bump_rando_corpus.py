@@ -169,9 +169,11 @@ def main(argv: list[str]) -> int:
         if new is None:
             print(f"  [{i}] {entry.get('label', '?')}: SKIP (generator unavailable / failed)")
             continue
-        if new == "<ZRSR>":
-            print(f"  [{i}] {entry.get('label', '?')}: SKIP (race-mode ZRSR — separate roundtrip path)")
-            continue
+        # NOTE: prior versions returned ("<ZRSR>", "<ZRSR>") for race-mode
+        # entries and skipped here. The M3 fix at regenerate_entry now
+        # invokes --reveal-spoiler and returns the revealed digest, so this
+        # branch is no longer reachable. Kept as a defensive assert.
+        assert new != "<ZRSR>", "regenerate_entry returned sentinel for race-mode entry — M3 regression?"
         if new != old:
             changed.append((i, entry.get("label", "?"), old, new))
             entry["expected_digest"] = new

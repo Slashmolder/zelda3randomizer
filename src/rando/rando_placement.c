@@ -1148,15 +1148,13 @@ bool Goal_IsCompletable(const RandoSettings *settings,
                         const RandoPlacementTable *placements) {
   if (settings == NULL || placements == NULL) return false;
 
-  // Phase B Slice 4 §5 — accessibility=none short-circuits goal-completability
-  // (the player explicitly opted into a possibly-unwinnable seed; the
-  // generator should not refuse). The spoiler still records the un-completable
-  // status via `goal_completable: false` and a `fallback_warnings` entry —
-  // see Spoiler_Write for the warning emission.
-  if (settings->accessibility == kAccessibility_None) {
-    return true;
-  }
-
+  // Pure reachability predicate — does NOT consider accessibility=none.
+  // For "should the generator refuse to ship this seed?", call
+  // Goal_ShouldRefuse instead. (Fresh-eyes audit H1 of e9f20ad — the
+  // earlier short-circuit-to-true here made the spoiler report
+  // `goal_completable: true` even for un-completable accessibility=none
+  // seeds, which actively misled players who explicitly opted in to
+  // an un-completable seed.)
   RandoCounts final_inv;
   build_final_inventory(placements, &final_inv);
   apply_vanilla_dungeon_item_grants(settings, &final_inv);
@@ -1304,6 +1302,19 @@ bool Goal_IsCompletable(const RandoSettings *settings,
       fprintf(stderr, "Goal_IsCompletable: unknown goal %u\n", (unsigned)settings->goal);
       return false;
   }
+}
+
+// Should the generator refuse to ship this seed because the goal isn't
+// reachable? Wraps `Goal_IsCompletable` with the accessibility=none opt-out
+// — players who explicitly chose accessibility=none have signed up for
+// possibly-unwinnable seeds. The spoiler's `goal_completable` field is
+// always the pure reachability predicate; only the refusal gate honors
+// the opt-out. (Fresh-eyes audit H1 of e9f20ad.)
+bool Goal_ShouldRefuse(const RandoSettings *settings,
+                       const RandoPlacementTable *placements) {
+  if (settings == NULL) return false;
+  if (settings->accessibility == kAccessibility_None) return false;
+  return !Goal_IsCompletable(settings, placements);
 }
 
 // ---------------------------------------------------------------------------

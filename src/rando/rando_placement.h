@@ -94,6 +94,15 @@ void Placement_SelfCheck(void);
 bool Goal_IsCompletable(const RandoSettings *settings,
                         const RandoPlacementTable *placements);
 
+// Should the generator REFUSE this seed because the goal isn't reachable?
+// Returns false (i.e., don't refuse) when settings.accessibility==None — the
+// player explicitly opted in to a possibly-unwinnable seed. Otherwise
+// returns `!Goal_IsCompletable`. The spoiler's `goal_completable` field
+// is always the pure reachability predicate (Goal_IsCompletable); only
+// generation refusal gates honor the accessibility=none opt-out.
+bool Goal_ShouldRefuse(const RandoSettings *settings,
+                       const RandoPlacementTable *placements);
+
 // ---------------------------------------------------------------------------
 // Sphere computation (tasks.md §5 / randomizer-core / Sphere semantics).
 //
