@@ -146,9 +146,11 @@ locations:
   # Dark Maze - Top (php:144-148):
   #   Lamp && ((Hammer && canShootArrows) || wildKeys ? KeyD1,6 : KeyD1,5)
   # wildKeys=false → KeyD1,5. setFillRules forbids KeyD1 placement here.
+  # Phase B Slice 4 §56: under settings `tricks=dark-room-nav`, the lamp
+  # gate is bypassed (this mirrors ALTTPR's `item.require.Lamp=0` config).
   - id: "Palace of Darkness - Dark Maze - Top"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:144-148"
 

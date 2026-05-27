@@ -456,6 +456,91 @@ macros:
       should call HasBottle(N) instead.
 
   # ===========================================================================
+  # Phase B Slice 4 §56 — trick-aware named macros.
+  #
+  # Each macro pairs a trick id from `op_registry.yaml:tricks:` with the
+  # vanilla item prerequisite for that trick (e.g., boots-clip requires
+  # boots in the inventory in addition to the trick bit being set).
+  # Settings axes:
+  #   - settings.tricks (uint8 LE, 1 bit per trick)
+  #   - settings.logic  (NoGlitches=0..NoLogic=4) — glitch level
+  #
+  # Default settings (tricks=0, logic=no_glitches) cause every macro
+  # below to evaluate FALSE, preserving Phase A corpus byte-identity.
+  # ===========================================================================
+  - name: CanBootsClip
+    parameters: []
+    body: "OP_TRICK(boots_clip) AND HAS_ITEM(Boots)"
+    source: "app/Region/.../West.php:58 (canBootsClip + PegasusBoots)"
+    notes: |
+      Mirrors ALTTPR's `$world->config('canBootsClip', false) &&
+      $items->has('PegasusBoots')` pattern. The trick gate exposes the
+      glitch only when the user opted in; the boots prereq is the actual
+      mechanic.
+
+  - name: CanFakeFlippers
+    parameters: []
+    body: "OP_TRICK(fake_flippers)"
+    source: "ALTTPR `canFakeFlippers` toggle"
+    notes: |
+      ALTTPR upstream rarely gates locations directly on canFakeFlippers
+      — it's used in macros like canSwim() with a fallback. Phase B
+      uses this macro as the gating predicate; callers compose
+      `HAS_ITEM(Flippers) OR CanFakeFlippers()` at swim sites.
+
+  - name: CanDarkRoomNav
+    parameters: []
+    body: "OP_TRICK(dark_room_nav)"
+    source: "ALTTPR `item.require.Lamp=0` config-flag equivalent"
+    notes: |
+      Mirrors ALTTPR's `item.require.Lamp=0` config — when the trick is
+      on, dark-room predicates that gate on Lamp can be bypassed.
+      Usage: `HAS_ITEM(Lamp) OR CanDarkRoomNav()`.
+
+  - name: CanBombJump
+    parameters: []
+    body: "OP_TRICK(bomb_jump) AND CanBombThings()"
+    source: "ALTTPR `canBombJump` toggle"
+    notes: |
+      Bomb-knockback vault. Composes with CanBombThings() (Phase A:
+      always TRUE since bombs are universally available, but kept for
+      symmetry with no-bombs-from-start Phase B variants).
+
+  - name: CanBunnyRevival
+    parameters: [world]
+    body: "OP_TRICK(bunny_revival) AND CanBunnyRevive(world)"
+    source: "ALTTPR `canBunnyRevive` toggle"
+    notes: |
+      Bunny-state recovery mid-movement. Composes with the CanBunnyRevive
+      bottle+net prereq macro (already in Phase A).
+
+  - name: CanPearlBypass
+    parameters: []
+    body: "OP_TRICK(pearl_bypass) AND HasABottle()"
+    source: "ALTTPR `canOWYBA` (Over-World Y-Bot Aim with bottle)"
+    notes: |
+      Limited dark-world traversal without Moon Pearl via bunny-state
+      tech that requires a bottle. The closest ALTTPR equivalent is
+      canOWYBA. Usage: `HAS_ITEM(MoonPearl) OR CanPearlBypass()`.
+
+  - name: CanHookshotClip
+    parameters: []
+    body: "OP_TRICK(hookshot_clip) AND HAS_ITEM(Hookshot)"
+    source: "ALTTPR `canHookshotClip` toggle"
+    notes: |
+      Hookshot through wall onto unreachable target. Requires hookshot
+      in inventory; the trick bit toggles whether the glitch is in
+      logic at all.
+
+  - name: CanLobotomy
+    parameters: []
+    body: "OP_TRICK(lobotomy)"
+    source: "Aginah's Cave skip — placeholder for 8th trick slot"
+    notes: |
+      Specific Aginah's Cave skip technique. Reserved for community
+      replacement if a higher-priority Phase B trick emerges.
+
+  # ===========================================================================
   # hasABottle — at least one bottle of any kind.
   # ===========================================================================
   - name: HasABottle

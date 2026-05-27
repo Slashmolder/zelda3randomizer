@@ -273,7 +273,13 @@ well_formedness:
   - "Every location is reachable under a full-inventory mock (no orphan locations)."
   - "Every region is reachable from the start under a full-inventory mock."
   - "No predicate exceeds the inline-complexity threshold without macro factoring."
-  - "Phase A predicates do not reference Phase B ops (OP_TRICK, OP_DIFFICULTY_AT_LEAST, OP_GLITCH_LEVEL_AT_LEAST)."
+  # Phase B Slice 4 §56: OP_TRICK / OP_DIFFICULTY_AT_LEAST /
+  # OP_GLITCH_LEVEL_AT_LEAST are now authored predicates. The codegen
+  # resolves OP_TRICK(<id>) operands via `tricks:` table in op_registry.yaml
+  # and the difficulty/glitch enums via DIFFICULTY_LEVELS / GLITCH_LEVELS
+  # in `rando_logic_gen.py`. Phase A defaults (tricks=0, logic=no_glitches,
+  # item_pool_difficulty=normal) cause these ops to evaluate to their
+  # zero-trick / zero-glitch branches — corpus-stable.
 
 # ---------------------------------------------------------------------------
 # Outputs produced by codegen (`assets/rando_logic_gen.py` — task 3.5)

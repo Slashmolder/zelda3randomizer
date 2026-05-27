@@ -28,12 +28,16 @@ regions:
 
 edges:
   # DM West entry — `can_enter` (West.php:62-70):
-  #   RescueZelda AND (canFly OR (canLiftRocks AND Lamp))
-  # All glitch branches drop. The two surviving disjuncts are flute
-  # (canFly) and the canonical rock+lamp climb.
+  #   RescueZelda AND (canFly OR (canLiftRocks AND Lamp)
+  #                    OR canOneFrameClipOW          [OWG branch]
+  #                    OR (canBootsClip && PegasusBoots))
+  # Phase B Slice 4 §56: the canOneFrameClipOW disjunct un-pins under
+  # logic=overworld_glitches (or higher). The boots-clip disjunct
+  # un-pins under tricks=boots-clip. Defaults (no_glitches, tricks=0)
+  # collapse both new branches to FALSE.
   - from: LightWorld_NorthEast
     to: LightWorld_DeathMountain_West
-    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp))"
+    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp)) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR CanBootsClip()"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:62-70"
 
   # DM East entry — `can_enter` (East.php:89-98):
@@ -69,10 +73,13 @@ locations:
     can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND OP_REGION_REACHABLE(TowerOfHera_Lobby)"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:50-54"
 
-  # `Spectacle Rock` (West.php:56-60): MagicMirror (glitch branches drop).
+  # `Spectacle Rock` (West.php:56-60): MagicMirror OR boots-clip.
+  # Phase B Slice 4 §56 — boots-clip trick branch un-pinned; under
+  # default settings (tricks=0) it evaluates FALSE and the predicate
+  # collapses to the Phase A `HAS_ITEM(MagicMirror)` form.
   - id: "Spectacle Rock"
     region: LightWorld_DeathMountain_West
-    can_reach: "HAS_ITEM(MagicMirror)"
+    can_reach: "HAS_ITEM(MagicMirror) OR CanBootsClip()"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:56-60"
 
   # ===========================================================================

@@ -759,6 +759,48 @@ def encode_predicate(ast, ops: dict[str, OpDef], items: dict[str, ItemDef], regi
 
 WORLD_STATES = {"open": 0, "standard": 1, "inverted": 2, "retro": 3}
 GOALS = {"ganon": 0, "fast_ganon": 1, "dungeons": 2, "pedestal": 3, "triforce_hunt": 4, "ganonhunt": 5, "completionist": 6}
+# Phase B Slice 4 §56 — operand lookup tables for the three Phase B ops.
+# Difficulty enum mirrors `ItemPoolDifficulty` in `src/rando/rando_settings.h`.
+# Glitch levels mirror the `logic` axis: NoGlitches=0, OverworldGlitches=1,
+# MajorGlitches=2, HybridMG=3, NoLogic=4.
+DIFFICULTY_LEVELS = {"easy": 0, "normal": 1, "hard": 2, "expert": 3}
+GLITCH_LEVELS = {
+    "no_glitches": 0,
+    "overworld_glitches": 1,
+    "major_glitches": 2,
+    "hybrid_major_glitches": 3,
+    "no_logic": 4,
+}
+# Populated by load_tricks(op_registry) at codegen startup; keys are trick
+# ids (e.g. "boots-clip"), values are bit positions (0..7).
+TRICK_BITS: dict[str, int] = {}
+
+
+def load_tricks(path: Path) -> dict[str, int]:
+    """Parse the `tricks:` table in op_registry.yaml — map id → bit position.
+
+    Phase B §56: the codegen emits the bit position as the OP_TRICK operand;
+    runtime tests `(settings.tricks & (1 << bit)) != 0`. Trick widths cap at
+    8 (uint8 settings field); per the registry, only bits 0-7 are valid.
+
+    The registry ids use kebab-case (`boots-clip`) to match the user-facing
+    `--settings=tricks=...` CSV grammar. The DSL tokenizer accepts only
+    `[A-Za-z_][A-Za-z0-9_]*` (no hyphens), so we ALSO register the
+    snake-case variant (`boots_clip`) at the same bit. Predicate authors
+    use the snake form in `OP_TRICK(name)`; settings CSV stays kebab.
+    """
+    doc = load_yaml(path)
+    out: dict[str, int] = {}
+    for raw in doc.get("tricks", []):
+        bit = raw["bit"]
+        if not (0 <= bit < 8):
+            raise ParseError(f"trick {raw.get('id')!r}: bit {bit} out of range 0..7")
+        canonical = raw["id"]
+        out[canonical] = bit
+        snake = canonical.replace("-", "_")
+        if snake != canonical:
+            out[snake] = bit
+    return out
 
 
 def _emit(ast, out: bytearray, ops, items, regions, locations):
@@ -838,11 +880,28 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "ITEM_IS":
         out += struct.pack("<H", _resolve_item(args[0], items))
     elif op_name == "TRICK":
-        out.append(0)  # Phase B placeholder; codegen rejects use in Phase A
+        # Phase B §56: resolve named trick → bit position via TRICK_BITS table
+        # (populated by load_tricks at codegen startup).
+        name = _resolve_ident(args[0])
+        if name not in TRICK_BITS:
+            raise ParseError(
+                f"OP_TRICK references unknown trick {name!r}; "
+                f"known: {sorted(TRICK_BITS.keys())}")
+        out.append(TRICK_BITS[name])
     elif op_name == "DIFFICULTY_AT_LEAST":
-        out.append(0)
+        name = _resolve_ident(args[0])
+        if name not in DIFFICULTY_LEVELS:
+            raise ParseError(
+                f"OP_DIFFICULTY_AT_LEAST: unknown difficulty {name!r}; "
+                f"known: {sorted(DIFFICULTY_LEVELS.keys())}")
+        out.append(DIFFICULTY_LEVELS[name])
     elif op_name == "GLITCH_LEVEL_AT_LEAST":
-        out.append(0)
+        name = _resolve_ident(args[0])
+        if name not in GLITCH_LEVELS:
+            raise ParseError(
+                f"OP_GLITCH_LEVEL_AT_LEAST: unknown glitch level {name!r}; "
+                f"known: {sorted(GLITCH_LEVELS.keys())}")
+        out.append(GLITCH_LEVELS[name])
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 
@@ -932,11 +991,14 @@ def _stable_hash16(s: str) -> int:
 # ---------------------------------------------------------------------------
 # Well-formedness checks (task 3.10)
 # ---------------------------------------------------------------------------
-def well_formedness(ast, ops, items, regions, locations, context: str, phase_a_only: bool = True, errors: list = None):
+def well_formedness(ast, ops, items, regions, locations, context: str, phase_a_only: bool = False, errors: list = None):
     """Walk AST, check:
     - referenced items / regions / dungeons exist;
     - OP_ITEM_IS only in can_place context;
-    - no Phase B ops in Phase A predicates.
+    - (phase_a_only=True only) no Phase B ops in Phase A predicates.
+    Phase B Slice 4 §56 flipped the default to allow trick/difficulty/
+    glitch ops; the strict-Phase-A gate remains available for callers
+    that explicitly opt in.
     Returns the list of error strings (in-place modifications).
     """
     if errors is None:
@@ -1764,6 +1826,11 @@ def main(argv=None):
     logic_path = Path(args.logic) if args.logic else (RANDO_ASSETS / "logic.yaml")
 
     ops = load_ops(ops_path)
+    # Phase B §56 — populate the OP_TRICK operand lookup. The codegen now
+    # resolves `OP_TRICK(boots-clip)` to the bit-position operand byte;
+    # without this load, every trick reference would fail well-formedness.
+    global TRICK_BITS
+    TRICK_BITS = load_tricks(ops_path)
     items = load_items(items_path)
     locations = load_locations(locs_path)
     if not schema_path.exists():
