@@ -272,53 +272,55 @@ escort completes, and dark-world / overworld access predicates reference it.
 
 ## Phase B+ roadmap
 
-Planned (not promised) follow-on work:
+Planned (not promised) follow-on work.
 
-- **Phase B**:
-  - **Inverted world-state**: full logic graph (translate
-    `alttp_vt_randomizer/app/Region/Inverted/*.php`, ~1500 lines);
-    declare `LinksHouse_Inverted` start region; wire `RegionRemap`
-    overlay (scaffolding already present in `rando_logic.c`); populate
-    `world_state_filter` for Inverted-specific locations; wire
-    `Rando_TryGrantStartingInventory` at the game-start hook so
-    Inverted Link receives MoonPearl + MagicMirror per the bunny-state
-    starting-inventory contract (Phase A audit Bug #12).
-  - **Retro world-state**: add shop locations from
-    `alttp_vt_randomizer/app/Region/Retro/Shops.php` to `BuildItemPool`
-    when `world_state == Retro`; route shop purchases through the
-    dispatcher.
-  - When these land, re-enable Inverted + Retro in the settings-screen
-    world-state picker (currently gated to Open + Standard in
-    `select_file.c` — see Phase A §14.1b re-scope).
-  - Hint generation (Sahasrahla / storyteller / bookshelf / Murahdahla
-    per ALTTPR `app/Services/HintService.php`).
-  - Trick logic + glitch-logic-level predicates.
-  - `swordless` weapon mode; `pyramid_bow_upgrade=arrows`;
-    `accessibility=none`; race-mode reveal; in-game trackers;
-    boss/drop-pool shuffles.
-  - §6.8 minigame dispatch (digging, hype cave, peg cave,
-    treasure-chest minigame).
-  - §7.6 follow-on: visible per-item-type confirmation icons for the
-    §6.2 direct-grant placements (current Phase A confirmation is
-    audio-only via `Rando_ShowDirectGrantConfirmation`).
-  - §9.1c Switch software-keyboard wrapper (libnx `swkbdCreate` /
-    `swkbdShow` / `swkbdInputText`) routing into the existing
-    `RandoTextField` widget. Re-scoped from Phase A2 to Phase B per
-    the §12.3a/§12.3b Switch-manual-gate precedent (Switch builds
-    are a release-cut manual check, not per-PR CI).
-  - Phase A1 audit Bug #7: `Place_AssumedFill` per-item bounded
-    rewind (currently uses whole-attempt retry with
-    `kAssumedFillMaxAttempts=8`; spec defines per-item rewind that
-    backtracks the last N placements rather than restarting from
-    scratch). Deferred to A2 by audit; lands in B.
-  - See `docs/randomizer_phase_b.md` for the consolidated planning
-    doc — each Phase B slice with scope, files-to-touch, ALTTPR
-    references, and effort estimates.
-- **Phase C**: entrance shuffle (uses the `RegionRemap` overlay reserved in
-  Phase A).
-- **Phase D**: cosmetic shuffles (palette/sprite), customizer mode
-  (uses dispatcher API unchanged), major-glitch logic level, auto-tracker
-  server.
+### Phase B — chunked into 9 OpenSpec changes (2026-05-26)
+
+All 9 changes are authored at `openspec/changes/add-rando-*` and pass
+`openspec validate --changes`. Warm-up changes are fully authored
+(proposal + spec deltas + tasks); larger changes are proposal-only stubs
+with detail deferred to `/openspec-explore` at apply-time.
+
+| # | Change | Slice | Scope | Status |
+|---|---|---|---|---|
+| 1 | [`add-rando-confirmation-icons`](../openspec/changes/add-rando-confirmation-icons/) | 9 | Visible per-item icon ancilla for §6.2 direct-grant placements | Full |
+| 2 | [`add-rando-trackers`](../openspec/changes/add-rando-trackers/) | 1 | In-game item + location tracker overlays + checked-bitmap r/w paths | Full |
+| 3 | [`add-rando-race-mode-reveal`](../openspec/changes/add-rando-race-mode-reveal/) | 6 | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp verify | Full |
+| 4a | [`add-rando-inverted-world-state`](../openspec/changes/add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | Stub |
+| 4b | [`add-rando-retro-world-state`](../openspec/changes/add-rando-retro-world-state/) | 3 | Retro shop locations + dispatch + 4 Retro flags pinned | Full |
+| 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/add-rando-trick-logic-and-axes/) | 4 + misc | `OP_TRICK` / `OP_DIFFICULTY_AT_LEAST` / `OP_GLITCH_LEVEL_AT_LEAST` handlers + `swordless` + `accessibility=none` + `pyramid_bow_upgrade=arrows` un-pin + Bug #7 per-item rewind | Stub |
+| 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla generation + dialogue-ID injection | Stub |
+| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | Stub |
+| 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |
+
+See [`docs/randomizer_phase_b.md`](randomizer_phase_b.md) for the per-slice
+scope detail (files-to-touch, ALTTPR references, effort estimates) and
+[`docs/randomizer_phase_b_chunking.md`](randomizer_phase_b_chunking.md)
+for the chunking plan, critique-agent history, and audit findings.
+
+Items folded into the changes above:
+- `swordless`, `accessibility=none`, `pyramid_bow_upgrade=arrows`,
+  Phase A1 audit Bug #7 (per-item rewind) — all in **#5
+  `add-rando-trick-logic-and-axes`**.
+- §6.8 minigame dispatch — in **#7 `add-rando-shuffles-and-minigames`**.
+- §9.1c Switch software-keyboard — **own change #8
+  `add-rando-switch-swkbd`** (Switch-manual-gated; no PC code path).
+- §7.6 follow-on visible confirmation icons — **#1
+  `add-rando-confirmation-icons`** (warm-up).
+- Inverted + Retro picker un-gates — split across **#4a Inverted** and
+  **#4b Retro** (each as ADDED Requirements to sidestep archive
+  sequencing).
+
+### Phase C
+
+Entrance shuffle (uses the `RegionRemap` overlay reserved in Phase A and
+activated in #4a Inverted).
+
+### Phase D
+
+Cosmetic shuffles (palette/sprite), customizer mode (uses dispatcher API
+unchanged), major-glitch logic level (extends #5's
+`OP_GLITCH_LEVEL_AT_LEAST` threshold space), auto-tracker server.
 
 See `openspec/changes/add-randomizer-support/tasks.md` §7 and §14 for the
 acceptance gates per phase.
