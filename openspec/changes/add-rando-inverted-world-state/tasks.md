@@ -105,7 +105,7 @@
 ## 13.5. Performance budget verification
 
 - [ ] 13.5.1 **Generation budget bench (early)**: BEFORE locking in YAML authoring scope (i.e., after §4.1-4.5 land but before §4.6+), generate a Phase A default-settings seed AND a representative Inverted seed; measure wall-clock against Phase A's `randomizer-core / Generation performance budget` SHALL (2s desktop, 5s Switch).
-- [ ] 13.5.2 If Inverted exceeds the budget by >2x on desktop: pause translation work and tune. Options: simplify predicate density (fewer per-location predicates); widen `--budget-seconds`; surface a SHALL relaxation in this change's spec. Per `docs/randomizer_phase_b_risks.md` R13 (added during Phase B planning), a budget-exceeding slice is treated as a real regression.
+- [ ] 13.5.2 If Inverted exceeds the budget by >2x on desktop: pause translation work and tune. Options: simplify predicate density (fewer per-location predicates); widen `--budget-seconds`; surface a SHALL relaxation in this change's spec. Per `docs/randomizer_phase_b_risks.md` R12 (Generation-time budget regression), a budget-exceeding slice is treated as a real regression.
 - [ ] 13.5.3 Re-bench after the full translation lands (§4.24). Record p50 / p95 / p99 in `audit.md §"Inverted generation benchmark"`.
 - [ ] 13.5.4 Switch dev-unit bench is a release-cut gate (per `tasks.md §12.3a`); record manually after the desktop bench is green.
 
