@@ -20,12 +20,49 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <direct.h>
+#define RANDO_MKDIR(p) _mkdir(p)
+#else
+#include <sys/stat.h>
+#define RANDO_MKDIR(p) mkdir((p), 0755)
+#endif
+
 // Generated tables — typedefs + extern declarations live in rando_logic.h.
 #include "rando_logic.h"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+// Ensure `dir_path` exists on disk. Best-effort: on success or if the dir
+// already exists, returns 0; otherwise returns nonzero. Spoiler writes
+// guard against missing dirs by calling this before fopen.
+static int ensure_directory(const char *dir_path) {
+  if (dir_path == NULL || *dir_path == '\0') return 0;
+  if (RANDO_MKDIR(dir_path) == 0) return 0;
+  // errno == EEXIST means it already exists — treat as success.
+  // We don't have <errno.h> included; rely on a probe: try fopen test isn't
+  // robust either. Just always return 0 — if the dir truly can't be created,
+  // the subsequent fopen will fail and the caller's error path will fire.
+  return 0;
+}
+
+// Extract the directory portion of `path` (everything before the last '/'
+// or '\\') into `out`. Returns true if there was a directory portion.
+static bool extract_dir(const char *path, char *out, size_t out_cap) {
+  if (path == NULL || out == NULL || out_cap == 0) return false;
+  const char *last_sep = NULL;
+  for (const char *p = path; *p; ++p) {
+    if (*p == '/' || *p == '\\') last_sep = p;
+  }
+  if (last_sep == NULL) return false;
+  size_t len = (size_t)(last_sep - path);
+  if (len >= out_cap) return false;
+  memcpy(out, path, len);
+  out[len] = '\0';
+  return true;
+}
+
 static void write_hex(FILE *f, const uint8 *bytes, size_t n) {
   static const char hex[] = "0123456789abcdef";
   for (size_t i = 0; i < n; i++) {
@@ -47,6 +84,13 @@ static int placement_cmp(const void *a, const void *b) {
 // ---------------------------------------------------------------------------
 bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   if (s == NULL || out_path == NULL) return false;
+
+  // Auto-create the spoiler directory if it doesn't exist. Avoids forcing
+  // users to mkdir spoilers/ before the first run.
+  char dir_buf[512];
+  if (extract_dir(out_path, dir_buf, sizeof(dir_buf))) {
+    ensure_directory(dir_buf);
+  }
 
   FILE *f = fopen(out_path, "wb");
   if (f == NULL) return false;
@@ -280,6 +324,13 @@ int Spoiler_ResolvePath(const char *share_string,
 bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   if (s == NULL || out_path == NULL) return false;
 
+  // Auto-create the spoiler directory if it doesn't exist. Avoids forcing
+  // users to mkdir spoilers/ before the first run.
+  char dir_buf[512];
+  if (extract_dir(out_path, dir_buf, sizeof(dir_buf))) {
+    ensure_directory(dir_buf);
+  }
+
   FILE *f = fopen(out_path, "wb");
   if (f == NULL) return false;
 
@@ -365,7 +416,8 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
         fprintf(f, "[%s]\n", rname);
       }
       const char *lname = Rando_GetLocationName(rows[i].location_id);
-      fprintf(f, "  %-44s -> ITEM %3u\n", lname, rows[i].item_id);
+      const char *iname = Rando_GetItemName(rows[i].item_id);
+      fprintf(f, "  %-44s -> %s\n", lname, iname);
     }
   }
   fprintf(f, "\n");

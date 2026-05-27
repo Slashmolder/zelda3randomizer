@@ -199,6 +199,27 @@ const uint8 *Rando_GetDungeonPrizeAssignment(void);
 const uint8 *Rando_GetMedallionAssignment(void);
 
 // ---------------------------------------------------------------------------
+// Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the
+// file-select slot pick and the runtime randomizer dispatcher.
+//
+// Activate copies the sidecar slot's placements into a session-persistent
+// buffer, installs them via Placement_Install, sets g_rando_slot_active = 1,
+// and ORs kFeatures1_RandomizerActive into enhanced_features1 +
+// g_wanted_zelda_features1. Subsequent Rando_OnLocationCheck calls consult
+// the installed placement table.
+//
+// Deactivate is the inverse — clears the installed placement, the slot-
+// active flag, and the feature bit. Call when a vanilla slot is picked, or
+// when the user returns to the title screen.
+//
+// Caller passes a sidecar slot in `src`; if NULL or its slot_kind is not
+// kSlotKind_Randomizer, Activate falls through to Deactivate.
+// ---------------------------------------------------------------------------
+struct RandoSidecarSlot;
+void Rando_ActivateSidecarSlot(const struct RandoSidecarSlot *src);
+void Rando_DeactivateSlot(void);
+
+// ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).
 //
 // Renders a 5-tile horizontal strip starting at (x, y), one tile per index

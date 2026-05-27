@@ -9,6 +9,7 @@
 //   - Optional SHA-256 self-test (RANDO_SELFCHECK build flag)
 
 #include "rando.h"
+#include <string.h>  // memcpy — used by Rando_ActivateSidecarSlot below
 #include "rando_rng.h"
 #include "rando_share.h"
 #include "rando_settings.h"
@@ -471,6 +472,46 @@ void Rando_SetMedallionAssignment(const uint8 *assignment) {
 }
 const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assignment; }
 const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
+
+// ---------------------------------------------------------------------------
+// Session-persistent placement storage. The sidecar struct lives in the
+// file-select cache (and is overwritten when the cache reloads), so we copy
+// its placements[] into this static buffer before installing — that way the
+// pointer Placement_Install holds stays valid for the duration of gameplay.
+// ---------------------------------------------------------------------------
+#define kRando_SessionPlacementCapacity 512
+static RandoPlacement g_session_placements[kRando_SessionPlacementCapacity];
+static RandoPlacementTable g_session_placement_table;
+
+// `g_wanted_zelda_features1` lives in main.c — declared here so we can
+// mirror the feature-bit update into the wanted bank as well as the
+// in-RAM enhanced bank (zelda_rtl.c's frame loop syncs wanted → enhanced).
+extern uint32 g_wanted_zelda_features1;
+
+void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
+  if (src == NULL || src->header.slot_kind != kSlotKind_Randomizer) {
+    Rando_DeactivateSlot();
+    return;
+  }
+  uint16 n = src->placement_count;
+  if (n > kRando_SessionPlacementCapacity) n = kRando_SessionPlacementCapacity;
+  memcpy(g_session_placements, src->placements, (size_t)n * sizeof(RandoPlacement));
+  g_session_placement_table.entries = g_session_placements;
+  g_session_placement_table.count = n;
+  Placement_Install(&g_session_placement_table);
+  g_rando_slot_active = 1;
+  g_wanted_zelda_features1 |= kFeatures1_RandomizerActive;
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+}
+
+void Rando_DeactivateSlot(void) {
+  Placement_Install(NULL);
+  g_session_placement_table.entries = NULL;
+  g_session_placement_table.count = 0;
+  g_rando_slot_active = 0;
+  g_wanted_zelda_features1 &= ~(uint32)kFeatures1_RandomizerActive;
+  enhanced_features1 &= ~(uint32)kFeatures1_RandomizerActive;
+}
 
 // ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).

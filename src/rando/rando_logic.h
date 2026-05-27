@@ -198,6 +198,7 @@ extern const uint32 kRandoPredicateStreamSize;
 // Never returns NULL — falls back to "(unknown)" / "(unbound)" on miss.
 const char *Rando_GetRegionName(uint16 region_id);
 const char *Rando_GetLocationName(uint16 location_id);
+const char *Rando_GetItemName(uint16 item_id);
 
 // Translate a rando registry item_id to the LttP Link_ReceiveItem dispatch
 // code. Used by §6 grant-site dispatch wrappers (rando dispatches via
