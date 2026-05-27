@@ -7,9 +7,14 @@
 
 #include "rando_hints.h"
 
-// String IDs mirroring `app/Services/HintService.php:59-75` exactly.
-// Indexed by `RandoHintNpc - 1` (skipping `_None`). Used by the spoiler
-// emitter to produce keys that diff against ALTTPR seeds.
+// String IDs.
+//   Indices 0-14 mirror `app/Services/HintService.php:59-75` exactly
+//   (15 telepathic tiles).
+//   Index 15 = ALTTPR Murahdahla.
+//   Indices 16-19 = zelda3-fork extensions (NOT in ALTTPR), prefixed
+//   `fork_` so spoiler-JSON diffing against ALTTPR seeds cleanly
+//   distinguishes the core 16 from the fork extras.
+// Indexed by `RandoHintNpc - 1` (skipping `_None`).
 static const char *kRandoHintStringIds[kRandoHintNpc__Count - 1] = {
   "telepathic_tile_eastern_palace",
   "telepathic_tile_tower_of_hera_floor_4",
@@ -27,6 +32,11 @@ static const char *kRandoHintStringIds[kRandoHintNpc__Count - 1] = {
   "telepathic_tile_tower_of_hera_entrance",
   "telepathic_tile_south_east_darkworld_cave",
   "murahdahla",
+  // Fork extensions.
+  "fork_storyteller",
+  "fork_fortune_teller_kakariko",
+  "fork_fortune_teller_dark_world",
+  "fork_fortune_teller_lake_hylia",
 };
 
 bool Rando_GenerateHints(const RandoSettings *settings,
