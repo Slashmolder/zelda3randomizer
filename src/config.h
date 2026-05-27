@@ -38,6 +38,11 @@ enum {
   // both reset to hidden on each launch (in-memory only, not persisted).
   kKeys_RandoToggleItemTracker,
   kKeys_RandoToggleLocationTracker,
+  // Phase B Slice 6 §62 — in-binary reveal-spoiler action. Default unbound;
+  // when fired, the host calls Rando_RevealSpoiler for the active slot's
+  // share string. No-op when no rando slot is active or no suppressed
+  // (race-mode) spoiler file exists for that slot.
+  kKeys_RandoRevealSpoiler,
   kKeys_Total,
 };
 

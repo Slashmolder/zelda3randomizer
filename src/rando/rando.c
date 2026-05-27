@@ -581,6 +581,12 @@ static RandoPlacementTable g_session_placement_table;
 // in-RAM enhanced bank (zelda_rtl.c's frame loop syncs wanted → enhanced).
 extern uint32 g_wanted_zelda_features1;
 
+// §62 — cache for the active slot's textual share string (50 base32 chars +
+// NUL). Populated at Rando_ActivateSidecarSlot from the slot header's raw
+// binary; consumed by Rando_RevealActiveSlotSpoiler to resolve the on-disk
+// spoiler path. Cleared on Rando_DeactivateSlot.
+static char g_rando_active_share_string[64] = {0};
+
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   if (src == NULL || src->header.slot_kind != kSlotKind_Randomizer) {
     Rando_DeactivateSlot();
@@ -602,6 +608,15 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
+
+  // §62 — cache the active slot's textual share string for the in-binary
+  // reveal action. Race-mode slots have a suppressed spoiler at
+  // <spoiler_dir>/<share_string>.json that the reveal action regenerates.
+  // Non-race slots populate the cache anyway (harmless; reveal will fall
+  // through to FileNotFound when there's no ZRSR file).
+  g_rando_active_share_string[0] = '\0';
+  (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
+                        (int)sizeof(g_rando_active_share_string));
 }
 
 void Rando_DeactivateSlot(void) {
@@ -622,6 +637,10 @@ void Rando_DeactivateSlot(void) {
   // Phase B Slice 5 — clear the hint set so it doesn't leak across slot
   // switches once the hint generator lands (stub today; no-op).
   Rando_ClearHints();
+
+  // §62 — clear the share-string cache; reveal action returns FileNotFound
+  // when no slot is active.
+  g_rando_active_share_string[0] = '\0';
 }
 
 // ---------------------------------------------------------------------------
@@ -842,6 +861,28 @@ const char *Rando_RevealResultDescription(RandoRevealResult r) {
     case kRandoReveal_WriteFailed:         return "Failed writing revealed spoiler to disk.";
     default:                               return "Unknown reveal error.";
   }
+}
+
+// §62 — in-binary reveal entry point. The host wires this to a key
+// binding (kKeys_RandoRevealSpoiler). When the player presses the bound
+// key, we attempt to reveal the active slot's race-mode ZRSR file.
+//
+// No-op (returns FileNotFound with a logged note) when:
+//   - no rando slot is currently active (e.g., the player is on the
+//     file-select screen);
+//   - the active slot's share string was never captured (Activate path
+//     not exercised — shouldn't happen in practice);
+//   - the resolved spoiler path doesn't exist (non-race slot, or the
+//     race-mode file was already revealed / never written).
+RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
+  if (!g_rando_slot_active || g_rando_active_share_string[0] == '\0') {
+    fprintf(stderr, "rando reveal: no active randomizer slot.\n");
+    return kRandoReveal_FileNotFound;
+  }
+  RandoRevealResult r =
+      Rando_RevealSpoiler(NULL, g_rando_active_share_string);
+  fprintf(stderr, "rando reveal: %s\n", Rando_RevealResultDescription(r));
+  return r;
 }
 
 // ---------------------------------------------------------------------------

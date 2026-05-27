@@ -61,6 +61,8 @@ static const KeyNameId kKeyNameId[] = {
   S(Pause), S(PauseDimmed), S(Turbo), S(ReplayTurbo), S(WindowBigger), S(WindowSmaller), S(VolumeUp), S(VolumeDown), S(DisplayPerf), S(ToggleRenderer),
   // Phase B Slice 1 — randomizer tracker overlay toggles.
   S(RandoToggleItemTracker), S(RandoToggleLocationTracker),
+  // Phase B Slice 6 §62 — in-binary reveal-spoiler action.
+  S(RandoRevealSpoiler),
 };
 #undef S
 #undef M

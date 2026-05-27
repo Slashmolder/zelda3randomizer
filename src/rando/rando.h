@@ -137,6 +137,14 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
 // surfacing in the file-select dialog or the CLI's stderr line. Never NULL.
 const char *Rando_RevealResultDescription(RandoRevealResult r);
 
+// §62 — in-binary reveal action. Reveals the active slot's suppressed
+// spoiler (race-mode `.json` containing the ZRSR header). Returns the
+// reveal result enum; emits a one-line log to stderr describing the
+// outcome. Returns kRandoReveal_FileNotFound when no slot is active or
+// the slot's share string was never captured (no race-mode spoiler to
+// reveal).
+RandoRevealResult Rando_RevealActiveSlotSpoiler(void);
+
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
 // Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
 // items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.

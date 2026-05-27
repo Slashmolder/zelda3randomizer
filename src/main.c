@@ -1425,6 +1425,12 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_RandoToggleLocationTracker:
       g_rando_show_location_tracker = !g_rando_show_location_tracker;
       break;
+    // Phase B Slice 6 §62 — reveal the active slot's race-mode ZRSR spoiler.
+    // The reveal action logs its outcome to stderr; on success the on-disk
+    // file is overwritten with the full JSON + .txt companion.
+    case kKeys_RandoRevealSpoiler:
+      (void)Rando_RevealActiveSlotSpoiler();
+      break;
     default: assert(0);
     }
   }
