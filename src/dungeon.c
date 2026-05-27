@@ -4609,7 +4609,16 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
         // prize via Placement_Lookup; the placement table's vanilla-pin
         // pre-pass installs the vanilla prize per dungeon if no shuffle
         // override applies.
-        Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, 0);
+        uint8 placed_lttp = Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, 0);
+        // Phase B Slice 9 audit L6 — when prize_shuffle places a direct-
+        // grant item here (a different prize bit than the dungeon's vanilla
+        // one), pop the per-item icon ancilla so the player can see what
+        // was actually granted. The vanilla FallingPrize sprite below still
+        // spawns with the dungeon's canonical prize visual (cosmetic
+        // inconsistency); the icon-pop reflects the real grant.
+        if (Rando_ShouldSkipReceive(placed_lttp)) {
+          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+        }
       }
     }
     if (Ancilla_SpawnFallingPrize(kBossFinishedFallingItem[BYTE(cur_palace_index_x2) >> 1]) < 0)

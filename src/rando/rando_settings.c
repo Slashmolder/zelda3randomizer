@@ -549,12 +549,61 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     if (parse_uint(val, vlen, &v) != 0 || v > 65535) goto bad_value;
     s->pieces_placed = (uint16)v;
   } else if (csv_str_eq(key, klen, "tricks")) {
-    // Phase A: only `tricks=none` (the canonical zero bitmask) is accepted.
-    // Phase B will extend this to parse comma-separated trick names; the
-    // value column then becomes a quoted list per spec.
+    // Phase B Slice 4 — extended grammar for the `tricks` setting. Accepts:
+    //   tricks=none               → bitmask 0 (Phase A pinned default)
+    //   tricks=0                  → bitmask 0 (alias)
+    //   tricks=0xNN               → raw 8-bit bitmask
+    //   tricks=<bit-name>         → single trick bit
+    //   tricks=<n1>+<n2>+<n3>     → multiple trick bits (semicolons would
+    //                              collide with the CSV separator, so we use
+    //                              '+' as the intra-value list delimiter)
+    //
+    // Bit-name table MUST stay in sync with assets/rando/op_registry.yaml
+    // `tricks:` section. When that section grows, mirror new entries here
+    // (consider codegen if the list grows past a dozen).
     MARK_SEEN(KEY_tricks);
-    if (!csv_str_eq(val, vlen, "none") && !csv_str_eq(val, vlen, "0")) goto bad_value;
-    s->tricks = 0;
+    if (csv_str_eq(val, vlen, "none") || csv_str_eq(val, vlen, "0")) {
+      s->tricks = 0;
+    } else if (vlen >= 2 && val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
+      // Hex bitmask form.
+      uint32 v;
+      if (parse_uint(val, vlen, &v) != 0 || v > 0xFF) goto bad_value;
+      s->tricks = (uint8)v;
+    } else {
+      static const struct { const char *name; uint8 bit; } kTrickNames[] = {
+        { "boots-clip",     0 },
+        { "fake-flippers",  1 },
+        { "bunny-revival",  2 },
+        { "dark-room-nav",  3 },
+        { "bomb-jump",      4 },
+        { "pearl-bypass",   5 },
+        { "hookshot-clip",  6 },
+        { "lobotomy",       7 },
+      };
+      uint8 mask = 0;
+      const char *p = val;
+      const char *end = val + vlen;
+      while (p < end) {
+        const char *tok_start = p;
+        while (p < end && *p != '+') p++;
+        size_t tok_len = (size_t)(p - tok_start);
+        if (tok_len == 0) goto bad_value;
+        int found = 0;
+        for (size_t i = 0; i < sizeof(kTrickNames) / sizeof(kTrickNames[0]); i++) {
+          size_t nlen = 0;
+          while (kTrickNames[i].name[nlen] != '\0') nlen++;
+          if (nlen == tok_len &&
+              csv_str_eq(tok_start, (int)tok_len, kTrickNames[i].name)) {
+            mask |= (uint8)(1u << kTrickNames[i].bit);
+            found = 1;
+            break;
+          }
+        }
+        if (!found) goto bad_value;
+        if (p < end) p++;  // skip '+'
+      }
+      s->tricks = mask;
+    }
   } else if (csv_str_eq(key, klen, "logic")) {
     // Phase A: `logic=NoGlitches` (level 0). Phase B+ adds OWG/MajorGlitches.
     MARK_SEEN(KEY_logic);

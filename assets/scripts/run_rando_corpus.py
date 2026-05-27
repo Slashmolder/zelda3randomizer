@@ -106,14 +106,55 @@ def run_activated(binary: Path, manifest: dict) -> int:
                 print(f"  FAIL [{idx}] {label}: spoiler not written")
                 failures += 1
                 continue
-            # Phase B Slice 6 — race-mode entries emit a suppressed binary
-            # (magic ZRSR) instead of JSON. The corpus doesn't yet have a
-            # dedicated race-mode round-trip path (tasks.md §7.4); skip
-            # those with a notice rather than crashing the whole run.
+            # Phase B Slice 6 §7.4 — race-mode entries emit a 134-byte
+            # suppressed binary (magic ZRSR). Verify by reading the file,
+            # checking the magic + CRC32, then invoking --reveal-spoiler
+            # on a sibling copy to confirm the stamp matches the
+            # regenerated placement. The original file is left intact.
             head = out_json.read_bytes()[:4]
             if head == b"ZRSR":
-                print(f"  SKIP [{idx}] {label}: race-mode suppressed file "
-                      f"(future Slice 6 §7.4 round-trip check)")
+                buf = out_json.read_bytes()
+                if len(buf) != 134:
+                    print(f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 134")
+                    failures += 1
+                    continue
+                # Validate CRC32 (LE u32 at offset 130 over bytes 0..129).
+                import zlib
+                disk_crc = int.from_bytes(buf[130:134], "little")
+                calc_crc = zlib.crc32(buf[:130]) & 0xffffffff
+                if disk_crc != calc_crc:
+                    print(f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "
+                          f"(disk {disk_crc:#x} != calc {calc_crc:#x})")
+                    failures += 1
+                    continue
+                # Reveal round-trip: copy → reveal → confirm exit 0.
+                reveal_path = Path(td) / "reveal_target.json"
+                reveal_path.write_bytes(buf)
+                try:
+                    subprocess.run(
+                        [str(binary), f"--reveal-spoiler={reveal_path}"],
+                        check=True, capture_output=True, timeout=60,
+                    )
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                    print(f"  FAIL [{idx}] {label}: reveal failed: {e}")
+                    failures += 1
+                    continue
+                # On success the file has been overwritten with full JSON.
+                # Confirm we can parse it and the placement_digest is sane.
+                try:
+                    revealed = json.loads(reveal_path.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    print(f"  FAIL [{idx}] {label}: revealed JSON unparseable: {exc}")
+                    failures += 1
+                    continue
+                got_pd = revealed.get("meta", {}).get("placement_digest_hex", "")
+                if expected and got_pd != expected:
+                    print(f"  FAIL [{idx}] {label}: revealed placement_digest "
+                          f"mismatch: expected {expected[:16]}, got {got_pd[:16]}")
+                    failures += 1
+                    continue
+                print(f"  OK   [{idx}] {label}: ZRSR roundtrip OK "
+                      f"(placement_digest {got_pd[:16] if got_pd else 'unchecked'}...)")
                 continue
             spoiler = json.loads(out_json.read_text(encoding="utf-8"))
             got = spoiler.get("meta", {}).get("placement_digest_hex", "")
