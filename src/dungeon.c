@@ -2507,6 +2507,11 @@ void PrepareDungeonExitFromBossFight() {  // 80f945
   if (BYTE(dungeon_room_index) == 0x20) {
     sram_progress_indicator = 3;
     save_ow_event_info[2] |= 0x20;
+    // Phase B Slice 1 §38 — Master Sword pulled (sram_progress_indicator=3
+    // is the canonical post-pedestal world-state per audit.md §0.4a).
+    // Reachability state changes; bump the counter.
+    if (enhanced_features1 & kFeatures1_RandomizerActive)
+      Rando_BumpReachabilityCounter();
     savegame_is_darkworld ^= 0x40;
     Sprite_LoadGraphicsProperties_light_world_only();
     Ancilla_TerminateSelectInteractives(0);

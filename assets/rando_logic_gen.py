@@ -1507,11 +1507,14 @@ def emit_logic_data(
     start_region_names = {
         0: "LinksHouse",            # Open
         1: "LinksHouse",            # Standard
-        # Inverted: Link's House is in DarkWorld_South per ALTTPR's Inverted
-        # layout (`app/Region/Inverted/DarkWorld/South.php`). For Phase A1
-        # we treat DarkWorld_South as the Inverted start region; a proper
-        # LinksHouse_Inverted region with its own edge graph is Phase A2 work.
-        2: "DarkWorld_South",
+        # Phase B Slice 2 §50 — Inverted starts at LinksHouse_Inverted,
+        # declared in `inverted/DarkWorld/South.yaml`. A trivial edge
+        # LinksHouse_Inverted → DarkWorld_South provides the overworld
+        # entry. Earlier Phase A1 stopgap of DarkWorld_South as the start
+        # region is replaced — the new structure mirrors Standard's
+        # LinksHouse → LightWorld_South split and reserves room for
+        # future Inverted entrance shuffles (Phase C).
+        2: "LinksHouse_Inverted",
         3: "LinksHouse",            # Retro
     }
     starts = []

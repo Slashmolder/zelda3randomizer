@@ -11,6 +11,8 @@
 #include "player_oam.h"
 #include "snes/snes_regs.h"
 #include "assets.h"
+#include "features.h"   // enhanced_features1 / kFeatures1_RandomizerActive
+#include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
 
 const uint16 kOverworld_OffsetBaseX[64] = {
   0,     0, 0x400, 0x600, 0x600, 0xa00, 0xa00, 0xe00,
@@ -3550,6 +3552,11 @@ void CreatePyramidHole() {  // 9bc2a7
   Overworld_DrawMap16_Persist(0x4c0, 0xe47);
   WORD(sound_effect_ambient) = 0x3515;
   save_ow_event_info[0x5b] |= 0x20;
+  // Phase B Slice 1 §38 — Pyramid-hole creation opens a new path to GT
+  // (post-Aga2). Reachability state changes; bump the tracker counter so
+  // its memoized reachability cache invalidates.
+  if (enhanced_features1 & kFeatures1_RandomizerActive)
+    Rando_BumpReachabilityCounter();
   sound_effect_2 = 3;
   nmi_load_bg_from_vram = 1;
 }

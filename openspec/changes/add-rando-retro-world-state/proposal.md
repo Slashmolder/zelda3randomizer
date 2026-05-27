@@ -8,10 +8,10 @@ Phase A's Phase B+ roadmap (`docs/randomizer.md:286-289` original wording, now s
 - `region.takeAnys = true` (the four "Take Any" shops have non-vanilla content)
 - `region.wildKeys = true` (small keys can appear in the wild pool, not pinned to dungeons)
 
-The shop subsystem upstream is in `app/Shop.php` (230 lines, verified) + `app/Support/ShopCollection.php` (64 lines, verified). Grep against `app/Region/Standard/**/*.php` enumerates **42 unique shop entities** across LightWorld + DarkWorld regions, broken down into three classes:
-- **`Shop`** — standard shops with purchasable item inventory (Kakariko Shop, Lake Hylia Shop, the Dark World potion shop, Dark World Outcasts shop, the four "DM" shops, etc.).
-- **`Shop\Upgrade`** — capacity upgrades (bomb/arrow capacity).
-- **`Shop\TakeAny`** — the four "Take Any" caves that only appear in Retro (`20 Rupee Cave`, `50 Rupee Cave`, `Bonk Fairy (Light)`, `Bonk Fairy (Dark)`, `Desert Fairy`, etc. — these are visible in the upstream as `Shop\TakeAny` instances but `region.takeAnys` controls whether the player can enter them).
+The shop subsystem upstream is in `app/Shop.php` (230 lines, verified) + `app/Support/ShopCollection.php` (64 lines, verified). Grep against `app/Region/Standard/**/*.php` enumerates **~32 shop entities** across LightWorld + DarkWorld regions (the original "42" claim was inflated; corrected by the Slice 3 research agent on 2026-05-27 — actual count is 9 regular shops + 1 Capacity-Upgrade + 22 TakeAny = 32). Broken into three classes:
+- **`Shop`** — 9 standard shops with purchasable item inventory (Kakariko Shop, Lake Hylia Shop, the Dark World potion shop, Dark World Outcasts shop, the four "DM" shops, etc.).
+- **`Shop\Upgrade`** — 1 Capacity Upgrade location (2 slots: bomb + arrow capacity).
+- **`Shop\TakeAny`** — 22 "Take Any" caves. In Retro mode, ~5 of the 22 become active per-seed via `randomCollection(4)` / `randomCollection(5)` in `app/Randomizer.php:716-750`. The active set differs every seed (see `design.md` Risk 1).
 
 **Retro is NOT a separate logic graph** — it inherits Open's region structure and modifies item-pool composition + shop dispatch. The Phase A logic graph stays unchanged for Retro seeds; what changes is which locations are in `BuildItemPool` and which sprite-handler call sites route through the dispatcher.
 
@@ -21,7 +21,7 @@ This is the right slice to ship right after the warm-up changes — small, no lo
 
 ### Item pool
 
-- **Add shop-purchase locations** to `BuildItemPool` when `settings.world_state == Retro`. Roughly 30-40 shop-purchase slots across the 42 enumerated shop entities (most shops have 1-3 purchasable slots; Take-Any caves add 4-7 more).
+- **Add shop-purchase locations** to `BuildItemPool` when `settings.world_state == Retro`. The Slice 3 research agent enumerated 27 static shop-purchase slots (9 regular shops × ~3 slots) + 2 Capacity-Upgrade slots (identity-placed) + ~24 Retro-extra slots picked per-seed from the 22 TakeAny pool. Total active per seed: ~50 slots. See `design.md` for the full schedule.
 - **Pin the 4 Retro config flags** in the seed's effective settings whenever `world_state == Retro`:
   - `rupeeBow = true`
   - `genericKeys = true`
@@ -68,4 +68,4 @@ This is the right slice to ship right after the warm-up changes — small, no lo
 - **Effort**: **1 week of focused work.** Small surface, no logic-translation overhead.
 - **Regression risk**: `kGeneratorVersion` bumps; corpus regenerates. Open + Standard + Inverted (if #4a shipped first) digests should remain byte-identical (Retro branch is gated on `world_state == Retro`).
 - **No dependency on #4a Inverted** — Retro extends Open, not Inverted. Either can ship first.
-- **ALTTPR provenance**: 42 enumerated shop entities; full hand-translation discipline per `audit.md §0.10`. Per-shop source-line citations in `audit.md §"Retro shop provenance"` (new section).
+- **ALTTPR provenance**: 32 enumerated shop entities (9 Shop + 1 Upgrade + 22 TakeAny); full hand-translation discipline per `audit.md §0.10`. Per-shop source-line citations in `audit.md §"Retro shop provenance"` (new section).

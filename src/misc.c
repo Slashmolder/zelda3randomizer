@@ -1,6 +1,7 @@
 #include "misc.h"
 #include "variables.h"
 #include "features.h"
+#include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
 #include "hud.h"
 #include "dungeon.h"
 #include "overworld.h"
@@ -312,6 +313,11 @@ static void KillAghanim_Func12() {
   ResetAncillaAndCutscene();
   Overworld_SetSongList();
   save_ow_event_info[0x1b] |= 32;
+  // Phase B Slice 1 §38 — Aga 1 defeat is a reachability-changing event
+  // (per audit.md §0.4a). Bump the counter so the tracker recomputes
+  // reachability for post-aga1 graph reachability.
+  if (enhanced_features1 & kFeatures1_RandomizerActive)
+    Rando_BumpReachabilityCounter();
   BYTE(cur_palace_index_x2) = 255;
   submodule_index = 0;
   overworld_map_state = 0;

@@ -1,0 +1,108 @@
+# 01_eastern_palace.yaml — Eastern Palace Standard world-state.
+#
+# Phase B Slice 2 §47 — Standard EP YAML was previously authored only as
+# `logic_examples/01_eastern_palace.yaml` (not scanned by codegen).
+# Promoted to `logic_parts/` so the merge picks up its location predicates
+# under all world states. Inverted's `inverted/EasternPalace.yaml`
+# overrides specific predicates (MoonPearl bunny-state gate); locations
+# not overridden in Inverted inherit from this file's defaults.
+#
+# Translation discipline:
+#   - Mechanically translated from `app/Region/Standard/EasternPalace.php`.
+#   - Macros (`CanShootArrows`, `CanKillArmosKnights`, `HasSword`) live in
+#     `assets/rando/macros.yaml` — NOT re-declared here to avoid drift.
+#   - Predicates cite PHP file:line ranges.
+#
+# Author: Phase B Slice 2 §47 (2026-05-27).
+
+format_version: 1
+
+regions:
+  # Cross-file region reference (overworld parent). Canonical declaration
+  # lives in `40_lightworld_northwest.yaml`.
+  - id: LightWorld_NorthEast
+    name: "Light World - North East (stub)"
+    source: "stub for cross-file region reference"
+
+  - id: EasternPalace_Lobby
+    name: "Eastern Palace - Lobby"
+    dungeon: EasternPalace
+    source: "app/Region/Standard/EasternPalace.php:21-50"
+
+  - id: EasternPalace_PastArmos
+    name: "Eastern Palace - Past Armos"
+    dungeon: EasternPalace
+    parent: EasternPalace_Lobby
+    source: "app/Region/Standard/EasternPalace.php:56-60"
+
+edges:
+  - from: LightWorld_NorthEast
+    to: EasternPalace_Lobby
+    # Trivial entrance — entrance-side gates handled by the overworld
+    # region's edges, not the in-dungeon edge.
+    predicate: "TRUE()"
+    source: "app/Region/Standard/LightWorld/NorthEast.php (entrance wiring)"
+
+  - from: EasternPalace_Lobby
+    to: EasternPalace_PastArmos
+    # Boss-room access: arrows (Armos Knights), light (Lamp/FireRod for
+    # the dark room), and the Big Key.
+    predicate: "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR HAS_ITEM(FireRod)) AND HAS_ITEM(BigKey_EasternPalace)"
+    source: "app/Region/Standard/EasternPalace.php:56 (boss can_complete closure)"
+
+locations:
+  - id: "Eastern Palace - Compass Chest"
+    region: EasternPalace_Lobby
+    type: Chest
+    vanilla_item: Compass_EasternPalace
+    dungeon_item_class: compass
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/EasternPalace.php:51"
+
+  - id: "Eastern Palace - Big Chest"
+    region: EasternPalace_Lobby
+    type: BigChest
+    vanilla_item: BigKey_EasternPalace
+    can_reach: "HAS_ITEM(BigKey_EasternPalace)"
+    # Big Chest accepts any dungeon item from its own dungeon under
+    # dungeon-mode; always_allow overrides any general fill restriction.
+    always_allow: "OP_ITEM_IS(Compass_EasternPalace) OR OP_ITEM_IS(Map_EasternPalace)"
+    source: "app/Region/Standard/EasternPalace.php:52, 102-105"
+
+  - id: "Eastern Palace - Cannonball Chest"
+    region: EasternPalace_Lobby
+    type: Chest
+    vanilla_item: Rupee100
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/EasternPalace.php:53"
+
+  - id: "Eastern Palace - Big Key Chest"
+    region: EasternPalace_Lobby
+    type: Chest
+    vanilla_item: BigKey_EasternPalace
+    dungeon_item_class: big_key
+    # Dark room — needs light.
+    can_reach: "HAS_ITEM(Lamp) OR HAS_ITEM(FireRod)"
+    source: "app/Region/Standard/EasternPalace.php:54"
+
+  - id: "Eastern Palace - Map Chest"
+    region: EasternPalace_Lobby
+    type: Chest
+    vanilla_item: Map_EasternPalace
+    dungeon_item_class: map
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/EasternPalace.php:55"
+
+  - id: "Eastern Palace - Boss"
+    region: EasternPalace_PastArmos
+    type: Drop
+    vanilla_item: BossHeartContainer
+    can_reach: "CanKillArmosKnights() AND HAS_ITEM(BigKey_EasternPalace)"
+    source: "app/Region/Standard/EasternPalace.php:56"
+
+  - id: "Eastern Palace - Prize"
+    region: EasternPalace_PastArmos
+    type: Prize_Pendant
+    vanilla_item: Prize_GreenPendant
+    can_reach: "CanKillArmosKnights() AND HAS_ITEM(BigKey_EasternPalace)"
+    source: "app/Region/Standard/EasternPalace.php:58"

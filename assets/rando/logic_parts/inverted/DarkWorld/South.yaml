@@ -37,22 +37,46 @@
 format_version: 1
 
 regions:
+  # Phase B Slice 2 §50 — `LinksHouse_Inverted` is the canonical
+  # Inverted start region (per the spec). Distinct from DarkWorld_South
+  # so the start can have its own edge graph: trivial Link's House →
+  # DarkWorld_South edge today, but the spec reserves room for future
+  # Inverted-specific entrance shuffles (Phase C).
+  # `kRandoStartRegionByWorldState[Inverted]` is updated to consult
+  # `LinksHouse_Inverted`.
+  - id: LinksHouse_Inverted
+    name: "Link's House (Inverted)"
+    source: "app/Region/Inverted/DarkWorld/South.php:31 (Inverted ctor adds Link's House)"
+
   - id: DarkWorld_South
-    name: "Dark World - South (Inverted start region)"
+    name: "Dark World - South (Inverted overworld south)"
     source: "app/Region/Inverted/DarkWorld/South.php:13-130 (extends Standard/DarkWorld/South.php:14-160)"
     notes: |
-      Inverted-mode start region. PHP base class is
+      Inverted-mode overworld South. Reached from LinksHouse_Inverted via
+      a trivial edge (no entry condition). PHP base class is
       `Region\Standard\DarkWorld\South`; Inverted/South.php adds Link's
-      House to the locations list (php:31) and overrides predicates for
-      the Hype Cave family + dark Lake Hylia shops. No `$this->can_enter`
-      is set in Inverted/South.php's initialize() → start region.
+      House to its locations list (php:31) BUT for the Phase A graph we
+      model Link's House as its own region (LinksHouse_Inverted) and
+      DarkWorld_South as the overworld region — matches the Standard-
+      world Link's House / LightWorld_South split.
+      Inverted/South.php overrides predicates for the Hype Cave family +
+      dark Lake Hylia shops. No `$this->can_enter` is set → reachable
+      from LinksHouse_Inverted unconditionally.
+
+edges:
+  # Phase B Slice 2 §50 — trivial edge from the Inverted start to the
+  # DarkWorld South overworld. No predicate (TRUE).
+  - from: LinksHouse_Inverted
+    to: DarkWorld_South
+    predicate: "TRUE()"
+    source: "Phase A2 graph follow-up; mirrors Standard LinksHouse → LightWorld_South."
 
 locations:
   # `Link's House` (Inverted/South.php:31): added in Inverted constructor;
-  # no setRequirements → defaults to TRUE(). Registry id 174 with
-  # world_state_filter note (location_registry.yaml:273).
+  # no setRequirements → defaults to TRUE(). Registry id 174.
+  # Moved to LinksHouse_Inverted region per §50.
   - id: "Link's House"
-    region: DarkWorld_South
+    region: LinksHouse_Inverted
     can_reach: "TRUE()"
     source: "app/Region/Inverted/DarkWorld/South.php:31"
 
