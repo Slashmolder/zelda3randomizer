@@ -76,6 +76,13 @@
 - [ ] 9.2 Add a "Shuffle modules" subsection covering boss + drop-pool behavior.
 - [ ] 9.3 Update `docs/randomizer_phase_b.md` Slices 7 + 8 status: mark complete.
 
+## 9.5. Performance budget verification
+
+- [ ] 9.5.1 **Generation budget bench**: both shuffles run AFTER `Place_AssumedFill` + sphere computation (per design.md D5). Each adds a post-placement pass. Bench: a seed with both shuffles on SHALL stay within Phase A's 2s desktop / 5s Switch budget.
+- [ ] 9.5.2 Drop-pool's heart-drop-guarantee constraint loop is the long pole — if the retry budget exhausts often, fall back to identity drop-pool with a spoiler `fallback_warnings` entry (per design.md D5 risk).
+- [ ] 9.5.3 Boss-shuffle is O(10) permutation; should add <10ms.
+- [ ] 9.5.4 Record final p50/p95/p99 in `audit.md §"Shuffles+minigames benchmark"`.
+
 ## 10. Playtest
 
 - [ ] 10.1 Generate a boss_shuffle=true seed; play through Eastern Palace; verify the boss is randomized but the prize stays with EP.

@@ -87,6 +87,13 @@
 - [ ] 10.1 Add a "Hints" section to `docs/randomizer.md` documenting the `hints=` setting + per-NPC behavior + race-mode interaction (race-mode reveal protects the hints body via stamp).
 - [ ] 10.2 Update `docs/randomizer_phase_b.md` Slice 5 status: mark complete.
 
+## 10.5. Performance budget verification
+
+- [ ] 10.5.1 **Generation budget bench**: hint generation runs once per seed at generation time (text expansion + per-NPC selection). Bench against Phase A's 2s desktop / 5s Switch budget; hints SHALL add < 200ms desktop / < 500ms Switch budget overhead.
+- [ ] 10.5.2 Triforce Hunt seeds with hints=full are the worst case (Murahdahla emits one entry per Triforce-piece location). Bench specifically.
+- [ ] 10.5.3 If hint generation exceeds the overhead budget: lazy-evaluate per-source generation (only generate the source the player is about to talk to); cache between hint NPCs.
+- [ ] 10.5.4 Record final p50/p95/p99 in `audit.md §"Hint generation benchmark"`.
+
 ## 11. Playtest
 
 - [ ] 11.1 Generate a Triforce Hunt + hints=full seed; talk to Murahdahla; verify Triforce-piece hint text references piece locations grouped by sphere.
