@@ -158,6 +158,17 @@ Rationale: matches ALTTPR's architecture at the byte level (cross-tool diff-abil
 
 **Risk 7 — TakeAny activation under hard-mode flag interaction with `setShops()` / `clearInventory()` is unverified.** Moved to Slice 3b scope — not blocking 3a.
 
+**Risk 8 — Retro runtime gameplay flags are NOT pinned at the runtime layer** (task #84, verified 2026-05-27). Slice 3a wired the LOGIC + PLACEMENT side: `world_state == Retro` filters in the right shop locations, placer pins ShopUpgrade slots, picker accepts Retro. But the 4 gameplay flags from `app/World/Retro.php:18-23` are NOT actually pinned in the game runtime:
+
+- **`rom.rupeeBow`** (bow consumes rupees instead of arrows) — not wired. In Retro, shooting an arrow should deduct rupees from `link_rupees_goal`, not from `link_num_arrows`. Find the bow-fire handler in `src/player.c` / `src/ancilla.c` and add a Retro branch.
+- **`rom.genericKeys`** (small keys are inter-dungeon transferable) — not wired. In Retro, all small keys should consume from a single `link_num_keys`-style pool, not per-dungeon counters. Find the `link_num_keys` increment + small-key-door consume sites and re-route under Retro.
+- **`rom.wildKeys`** — partially logic-aware (keys can spawn anywhere in the placement pool via dungeon_items.small_keys=any settings combo), but the runtime side doesn't change. Verify this matches ALTTPR's intent.
+- **`region.takeAnys`** — covered by Slice 3b.
+
+Grep confirms: `rupeeBow`, `genericKeys`, `wildKeys` appear nowhere in `src/` outside the settings-parse layer.
+
+Without runtime wiring, Retro mode is effectively "Open + extra shop placements in the logic" — the actual Retro GAMEPLAY differences (the entire reason ALTTPR has a Retro mode) don't fire in the in-game experience. Tracked as task #84; should land in a follow-up after #53 (shop dispatch).
+
 ## 5. Scope split (locked in)
 
 **Slice 3a** (this proposal post-resolution):

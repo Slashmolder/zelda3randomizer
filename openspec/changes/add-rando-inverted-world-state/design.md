@@ -2,6 +2,50 @@
 
 **Translation: 24 YAML files written.** All 13 dungeon PHP files + 5 LightWorld + 6 DarkWorld translated under `assets/rando/logic_parts/inverted/**`. ~2500 PHP lines → ~3500 YAML lines. Six background agents worked file-disjoint sets in parallel; each produced citation-grounded YAML with PHP file:line refs on every predicate.
 
+### CRITICAL UNADDRESSED GAP (#82) — verified by playtest 2026-05-27
+
+**Slice 2's runtime starting-state for Inverted is not wired.** The logic graph
+believes Inverted (Link starts in Dark World, Pyramid of Power); the runtime
+puts Link at the vanilla Light World Sanctuary spawn after a Standard intro
+cutscene. Result: the placer makes assumptions about frame-1 reachability
+that the runtime does not honor; soft-lock observed within minutes of game
+start (no accessible weapon for combat).
+
+The ONLY runtime difference today is `rando_placement.c:1404-1407` — a
+pre-grant of `Moon Pearl` (0x1f) + `Magic Mirror` (0x1a) at slot activate.
+This makes Inverted effectively "Open + 2 free items," NOT Inverted.
+
+**Missing runtime pieces** (task #82):
+
+1. **Starting overworld_area_index** — set to the Pyramid of Power
+   area, not the Sanctuary. Investigate `Rando_TryGrantStartingInventory`
+   and the new-game initialization path; need an additional `if
+   world_state == Inverted` branch that re-points the starting RAM
+   state (link_x_coord, link_y_coord, overworld_area_index, possibly
+   `link_position_mode`).
+2. **Intro cutscene skip** — Inverted treats `RescuedZelda` as
+   pre-collected (already pre-granted at `rando.c:498-505` via the
+   pre_collected_items mechanism). The CUTSCENE itself still plays.
+   Need to gate the intro on `world_state != Inverted` or on the
+   pre_collected RescuedZelda virtual item being set.
+3. **Mirror semantics** — vanilla mirror is LW→DW (warp to DW). In
+   Inverted, mirror should be DW→LW (the "exit" path). Find the
+   mirror-warp handler in `src/player.c` and add an Inverted branch.
+4. **Bunny-state-outside-DW** — without Moon Pearl in DW, Link is a
+   bunny. The pre-grant at `rando_placement.c:1405` gives Moon Pearl
+   so this MAY already work; verify by playtest.
+5. **Light/Dark world default flag** — `savegame_is_darkworld` is the
+   runtime flag that drives `is_in_dark_world`. Under Inverted it
+   should start true; under Standard/Open it starts false.
+
+This work is a SCOPE GAP, not a fixable code bug — the original Slice 2
+plan did not include runtime initialization. Estimated half-day to a day
+of focused work. Same shape as the `fork-dispatch-gaps` pattern: the
+fork's reimplementation has logic-graph plumbing but is missing the
+gameplay-state plumbing for non-default world-states.
+
+
+
 **Integration: BLOCKED on world-state-aware predicate merge.** The codegen (`assets/rando_logic_gen.py:_merge_logic_doc`) currently does "last wins" merge per location. Loading the Inverted YAML overwrites Standard predicates for same-named locations, corrupting Standard placements (verified: corpus 50/50 FAILED with recursive glob enabled). The codegen revert to non-recursive glob restores the corpus to 50/50 OK — Inverted files sit on disk as reference until the world-state-aware merge lands.
 
 **Required integration changes** (NOT in this commit):
