@@ -34,7 +34,9 @@
 # Schema:
 #   icons:
 #     <ItemName>:
-#       tile:    <0..0xffff>   # 16-bit tile address into graphics blob.
+#       tile:    <0..0xff>     # 8-bit OAM charnum (single-page tile). The
+#                              # icon-receipt ancilla does NOT support tile
+#                              # bit-9 (would collide with OAM x-high bit).
 #                              # 0 = unverified; helper falls back to audio-only.
 #       palette: <0..0x7>      # CGRAM palette index (0..7 for OBJ palettes).
 #       notes:   "<provenance>"# Where the tile was discovered (HUD code,

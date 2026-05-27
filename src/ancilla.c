@@ -17,13 +17,14 @@
 #include "rando/location_ids.h"
 
 // Type 0x44 (index 68) is the Phase B Slice 9 rando icon-receipt ancilla —
-// see Ancilla44_RandoIconReceipt below. 0x10 = 2 OAM sprites (icon top/bottom).
+// see Ancilla44_RandoIconReceipt below. 8 = 2 OAM entries (8 bytes / 2x4) for
+// the stacked-icon draw. Matches Ancilla22_ItemReceipt's Pflag (also 8).
 static const uint8 kAncilla_Pflags[69] = {
   0,    8,  0xc, 0x10, 0x10,    4, 0x10, 0x18,    8,    8,    8,    0, 0x14, 0, 0x10, 0x28,
   0x18, 0x10, 0x10, 0x10, 0x10,  0xc,    8,    8, 0x50,    0, 0x10,    8, 0x40, 0,  0xc, 0x24,
   0x10,  0xc,    8, 0x10, 0x10,    4,  0xc, 0x1c,    0, 0x10, 0x14, 0x14, 0x10, 8, 0x20, 0x10,
   0x10, 0x10,    4,    0, 0x80, 0x10,    4, 0x30, 0x14, 0x10,    0, 0x10,    0, 0,    8,    0,
-  0x10,    8, 0x78, 0x80, 0x10,
+  0x10,    8, 0x78, 0x80, 8,
 };
 static const int8 kFireRod_Xvel2[12] = {0, 0, -40, 40, 0, 0, -48, 48, 0, 0, -64, 64};
 static const int8 kFireRod_Yvel2[12] = {-40, 40, 0, 0, -48, 48, 0, 0, -64, 64, 0, 0};
@@ -6875,9 +6876,15 @@ void FireRodShot_BecomeSkullWoodsFire(int k) {  // 899c4f
 // only; its lifecycle is independent of any inventory state.
 //
 // Per-ancilla state layout:
-//   ancilla_item_to_link[k] — low 8 bits of the OAM tile index (charnum).
-//   ancilla_arr3[k]         — high tile-page bit (1 if tile >= 0x100, else 0).
-//   ancilla_arr4[k]         — CGRAM OBJ palette index (0..7).
+//   ancilla_item_to_link[k] — OAM tile index (charnum). Restricted to 0..0xff
+//                              (single-page OBJ tile); the HUD icons sourced
+//                              by kDirectGrantIcons[] all live in the low
+//                              page. Tile bit-9 (high-page) is NOT supported —
+//                              passing it through `big` would collide with
+//                              `(x >> 8) & 1` in Ancilla_SetOam and shift
+//                              the icon horizontally.
+//   ancilla_arr4[k]         — CGRAM OBJ palette index (0..7), shifted into
+//                              OAM flags bits 1..3.
 //   ancilla_timer[k]        — frames remaining (Ancilla_ExecuteOne decrements
 //                              while submodule_index == 0; zero ends the ancilla).
 //
@@ -6891,10 +6898,10 @@ void Ancilla44_RandoIconReceipt(int k) {
     ancilla_type[k] = 0;
     return;
   }
-  // Don't update during message/menu submodules. submodule_index 0 = normal
-  // gameplay; 9 = item-acquisition cutscene (same gate Ancilla22_ItemReceipt
-  // uses for the receive-item state machine).
-  if (submodule_index != 0 && submodule_index != 9)
+  // Don't update during message/menu submodules. Gate matches Ancilla22_ItemReceipt
+  // (`src/ancilla.c:3370`): submodule_index 0 = normal gameplay; 9 = item-
+  // acquisition cutscene; 43 = Master Sword cutscene.
+  if (submodule_index != 0 && submodule_index != 43 && submodule_index != 9)
     return;
 
   Point16U pt;
@@ -6903,20 +6910,21 @@ void Ancilla44_RandoIconReceipt(int k) {
   uint8 charnum = ancilla_item_to_link[k];
   uint8 palette = (uint8)(ancilla_arr4[k] & 0x07);
   uint8 flags = (uint8)((palette << 1) | 0x30);
-  uint8 ext_bits = (uint8)(ancilla_arr3[k] & 0x01);
 
   // Lift the icon ~16px above Link's anchor; the second OAM tile lands at +8.
+  // `big` = 0 (8x8 OBJ size, single-page tile, x high-bit handled by Ancilla_SetOam).
   OamEnt *oam = GetOamCurPtr();
-  Ancilla_SetOam(oam, pt.x, pt.y - 16, charnum, flags, ext_bits);
+  Ancilla_SetOam(oam, pt.x, pt.y - 16, charnum, flags, 0);
   oam++;
-  Ancilla_SetOam(oam, pt.x, pt.y - 8, (uint8)(charnum + 0x10), flags, ext_bits);
+  Ancilla_SetOam(oam, pt.x, pt.y - 8, (uint8)(charnum + 0x10), flags, 0);
 }
 
 void AncillaAdd_RandoIconReceipt(uint16 tile, uint8 palette) {
   // Tile 0 is the "no verified icon" sentinel used by kDirectGrantIcons[];
   // callers should check before invoking, but guard here as well to keep
-  // the no-op contract local.
-  if (tile == 0)
+  // the no-op contract local. Also clamp out-of-page tiles (> 0xff) — the
+  // OAM draw path does not support high-page tiles in this ancilla.
+  if (tile == 0 || tile > 0xff)
     return;
 
   int k = Ancilla_AddAncilla(kAncillaType_RandoIconReceipt, 4);
@@ -6924,7 +6932,6 @@ void AncillaAdd_RandoIconReceipt(uint16 tile, uint8 palette) {
     return;
 
   ancilla_item_to_link[k] = (uint8)(tile & 0xff);
-  ancilla_arr3[k] = (uint8)((tile >> 8) & 0x01);
   ancilla_arr4[k] = (uint8)(palette & 0x07);
   ancilla_timer[k] = 40;  // ~0.66s at 60fps; matches the receive-item dwell.
   ancilla_step[k] = 0;

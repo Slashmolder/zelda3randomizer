@@ -1194,9 +1194,14 @@ def emit_direct_grant_icons(
                 )
             tile = entry.get("tile", 0)
             palette = entry.get("palette", 0)
-            if not isinstance(tile, int) or tile < 0 or tile > 0xffff:
+            # tile must fit in a single OAM charnum (8-bit). High-page tiles
+            # would require OAM bit-9 in flags, which the icon-receipt ancilla
+            # does NOT wire (would collide with the x-high bit in extended
+            # OAM). Single-page is sufficient for HUD icons.
+            if not isinstance(tile, int) or tile < 0 or tile > 0xff:
                 raise RuntimeError(
-                    "emit_direct_grant_icons: entry %r tile %r out of 0..0xffff"
+                    "emit_direct_grant_icons: entry %r tile %r out of 0..0xff "
+                    "(single-page OAM tile)"
                     % (name, tile)
                 )
             if not isinstance(palette, int) or palette < 0 or palette > 0x07:
