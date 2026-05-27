@@ -36,6 +36,8 @@
 #include "rando/rando_share.h"
 #include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
 #include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
+#include "rando/shuffle_boss.h"  // BossShuffle_Generate (Slice 7 §63)
+#include "rando/shuffle_drops.h"  // DropShuffle_Generate (Slice 8 §64)
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
 static bool g_run_without_emu = 0;
@@ -462,6 +464,18 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     fprintf(stderr, "--generate-seed: placement failed (Phase A0 identity should always succeed)\n");
     free(entries);
     exit(1);
+  }
+
+  // Phase B Slice 7+8 §63/§64 — generate boss + drop shuffle assignments.
+  // The shuffles consume the placement table (for sphere data — Phase B+
+  // refinement) and are deterministic from (settings, seed_u64). Today
+  // the assignments are computed but not yet consumed by sprite handlers
+  // (per-site instrumentation is task #65). Calling here keeps the
+  // algorithms exercised during corpus regression.
+  {
+    uint8 boss_assignment[16];
+    (void)BossShuffle_Generate(&settings, seed_u64, boss_assignment);
+    (void)DropShuffle_Generate(&settings, seed_u64, &table, NULL);
   }
 
   // Compute digest for log + spoiler header.

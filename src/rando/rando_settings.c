@@ -484,6 +484,9 @@ enum {
   KEY_race_mode,
   // Phase B Slice 5 §61 — hints axis (binary on/off).
   KEY_hints,
+  // Phase B Slice 7 §63 / Slice 8 §64 — shuffle axes (binary on/off).
+  KEY_boss_shuffle,
+  KEY_drop_shuffle,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -632,6 +635,15 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
              csv_str_eq(key, klen, "race")) {
     MARK_SEEN(KEY_race_mode);
     if (parse_bool(val, vlen, &s->race_mode) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "boss_shuffle")) {
+    // Phase B Slice 7 §63 — boss-shuffle axis. Binary on/off. NOT YET
+    // in canonical serialization (deferred — see RandoSettings header).
+    MARK_SEEN(KEY_boss_shuffle);
+    if (parse_bool(val, vlen, &s->boss_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "drop_shuffle")) {
+    // Phase B Slice 8 §64 — drop-shuffle axis. Binary on/off.
+    MARK_SEEN(KEY_drop_shuffle);
+    if (parse_bool(val, vlen, &s->drop_shuffle) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "hints")) {
     // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
     // `spoil.Hints` semantics (`HintService.php:54` tests `=== 'on'`).

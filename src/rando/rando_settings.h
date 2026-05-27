@@ -105,6 +105,12 @@ typedef struct RandoSettings {
   // lands — that bump is the natural kGenVer increment to include this
   // field in the hash).
   uint8 hints;
+  // Phase B Slice 7 §63 / Slice 8 §64 — shuffle axes. Binary on/off.
+  // Default 0 (off). NOT YET in canonical serialization (deferred to
+  // the same commit that lands per-site sprite-handler instrumentation
+  // #65; that bump is the natural kGenVer increment).
+  uint8 boss_shuffle;
+  uint8 drop_shuffle;
 } RandoSettings;
 
 // ===========================================================================
