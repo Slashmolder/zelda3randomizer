@@ -5948,6 +5948,20 @@ uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
       }
     }
     rv = kDungeon_MinigameChestPrizes1[t];
+    // Phase B Slice 8 §67 — Chest Game minigame dispatch. The t==7 branch
+    // is the "rare prize" (PoH, lttp code 0x17) that fires only once per
+    // savegame (the 0x4000 dung_savegame_state_bits gate). Route this
+    // first-win moment through the placement table so rando seeds can
+    // place anything at LOC_Chest_Game. Consolation outcomes (t != 7
+    // here, post the bit-already-set degrade) stay vanilla.
+    //
+    // The returned lttp code propagates back to Link_PerformOpenChest at
+    // player.c:3887 where the existing Rando_ShouldSkipReceive sentinel
+    // path fires the direct-grant confirmation and short-circuits the
+    // Link_ReceiveItem call.
+    if (rv == 0x17 && (enhanced_features1 & kFeatures1_RandomizerActive)) {
+      rv = Rando_DispatchVanillaGrant(LOC_Chest_Game, ITEM_PieceOfHeart, 0x17);
+    }
   }
   some_menu_ctr = t;
   nmi_load_bg_from_vram = 1;

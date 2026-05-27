@@ -6722,6 +6722,22 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
   case 4:
     if (beamos_x_hi[1] < 25 || beamos_x_hi[0] || GetRandomNumber() & 3)
       return;
+    // Phase B Slice 8 §67 — Digging Game minigame dispatch. Case 4 is the
+    // PoH "win" outcome (vanilla lttp code 0x26). Direct-grant items
+    // (HalfMagic/Triforce/prize bits) are applied in-place by
+    // Rando_DispatchVanillaGrant; on skip-sentinel return we suppress the
+    // 0xeb sprite spawn so the player doesn't also get a vanilla PoH.
+    // Non-direct-grant placements (Bow/Sword/Bottle/...) stay on the PoH
+    // sprite for Phase B simplicity; promoting those to per-item spawned
+    // sprites is a Slice-9-flavored follow-up.
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_Digging_Game, ITEM_PieceOfHeart, 0x26);
+      if (Rando_ShouldSkipReceive(placed_lttp)) {
+        Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+        beamos_x_hi[0] = 0xeb;  // mark "win consumed" so we don't re-roll
+        return;
+      }
+    }
     item_to_spawn = beamos_x_hi[0] = 0xeb;
     break;
   default:
