@@ -141,10 +141,14 @@ locations:
   # ===========================================================================
 
   # `Catfish` (NorthEast.php:95-101): MoonPearl AND canLiftRocks (other
-  # branches drop in Phase A).
+  # branches drop in Phase A). Phase B Slice 4 §7: under
+  # `tricks=boots-clip`, the canLiftRocks disjunct gains a boots-clip
+  # alternative (`canBootsClip && PegasusBoots` in upstream); default
+  # `tricks=0` collapses `CanBootsClip()` to FALSE and the gate keeps
+  # its Phase A `CanLiftRocks()` shape.
   - id: "Catfish"
     region: DarkWorld_NorthEast
-    can_reach: "HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    can_reach: "HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
     source: "app/Region/Standard/DarkWorld/NorthEast.php:95-101"
 
   # `Pyramid` (php:33) — no setRequirements; default TRUE (reachability
@@ -230,10 +234,14 @@ locations:
 
   # `Bumper Cave` (NorthWest.php:108-116): MoonPearl AND
   #   ((itemPlacement!=='basic' || Hookshot) → Hookshot in Phase A) AND
-  #   canLiftRocks AND Cape.
+  #   canLiftRocks AND Cape. Phase B Slice 4 §7: ALTTPR's first disjunct
+  # is `canOneFrameClipOW` — un-pins under `logic=overworld_glitches+`.
+  # The MoonPearl gate also has a `canOWYBA && bottle` (pearl-bypass)
+  # alternative. Defaults (logic=NoGlitches, tricks=0) collapse both
+  # new branches to FALSE.
   - id: "Bumper Cave"
     region: DarkWorld_NorthWest
-    can_reach: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape)"
+    can_reach: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape))"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:108-116"
 
   # `Blacksmith` (NorthWest.php:118-128): (itemPlacement!=='basic' ||
@@ -311,40 +319,46 @@ locations:
   # ===========================================================================
 
   # `Superbunny Cave - Top` (East.php:58-63): MoonPearl (canSuperBunny and
-  # canOWYBA branches drop in Phase A).
+  # canOWYBA branches drop in Phase A). Phase B Slice 4 §7: under
+  # `tricks=pearl-bypass`, the canOWYBA+bottle alternative un-pins
+  # (CanPearlBypass = `OP_TRICK(pearl_bypass) AND HasABottle()`).
+  # Default `tricks=0` collapses CanPearlBypass to FALSE → Phase A shape.
   - id: "Superbunny Cave - Top"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass()"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:58-63"
 
   - id: "Superbunny Cave - Bottom"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass()"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:65-70"
 
   # `Hookshot Cave - Top Right` (East.php:72-77): Hookshot AND MoonPearl
-  # AND canLiftRocks.
+  # AND canLiftRocks. Phase B Slice 4 §7: under `tricks=boots-clip`, the
+  # canLiftRocks disjunct gains the upstream `canBootsClip && PegasusBoots`
+  # alternative; default `tricks=0` collapses CanBootsClip to FALSE.
   - id: "Hookshot Cave - Top Right"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:72-77"
 
   - id: "Hookshot Cave - Top Left"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:79-84"
 
   - id: "Hookshot Cave - Bottom Left"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:86-91"
 
   # `Hookshot Cave - Bottom Right` (East.php:93-98): Hookshot OR (Boots in
   # non-basic placement, which drops in Phase A); plus the MoonPearl +
-  # canLiftRocks gate. Phase A keeps only Hookshot.
+  # canLiftRocks gate. Phase A keeps only Hookshot. Phase B Slice 4 §7:
+  # same boots-clip trick alternative to canLiftRocks as the other 3.
   - id: "Hookshot Cave - Bottom Right"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND CanLiftRocks()"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:93-98"
 
 macros: []

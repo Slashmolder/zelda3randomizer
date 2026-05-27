@@ -154,10 +154,14 @@ locations:
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:144-148"
 
-  # Dark Maze - Bottom (php:150-154): identical body.
+  # Dark Maze - Bottom (php:150-154): identical body. Phase B Slice 4 §7
+  # — mirror the dark-room-nav gate from Dark Maze - Top (the two
+  # locations share a PHP closure; the gate must match or one slot
+  # silently bypasses lamp under tricks=dark-room-nav while the other
+  # still requires it).
   - id: "Palace of Darkness - Dark Maze - Bottom"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:150-154"
 
