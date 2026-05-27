@@ -21,6 +21,14 @@
 // ---------------------------------------------------------------------------
 #define kGeneratorVersion 12u  // Phase B Slice 2 §49: BigRedBomb gate restored on Inverted Pyramid Fairy (CanReachBombMerchant macro)
 
+// Audit L7 — the share-string binary layout packs version into 1 byte
+// (rando_share.h: ShareString.version is uint8). Compile-time enforce
+// kGeneratorVersion ≤ 255 so silent truncation can't ship.
+_Static_assert(kGeneratorVersion <= 0xFFu,
+               "kGeneratorVersion exceeds the share-string uint8 version field; "
+               "bump ShareString.version to uint16 and rev the share-string binary layout "
+               "before incrementing past 255.");
+
 // ---------------------------------------------------------------------------
 // g_assets_hash — SHA-256 of the loaded asset blob (computed once after
 // LoadAssets returns; see tasks.md §1.1a). Compared against kVanillaAssetsHash

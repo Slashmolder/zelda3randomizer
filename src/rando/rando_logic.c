@@ -829,5 +829,46 @@ void Logic_SelfCheck(void) {
                "OP_DIFFICULTY_AT_LEAST(2) against defaults (normal=1) should be false");
   }
 
+  // Audit L8 — Inverted reachability self-check. Verify the world-state
+  // override path actually fires by computing reachability under Inverted
+  // and asserting that `LinksHouse_Inverted` (the Inverted start region)
+  // is reachable while `LinksHouse` (the Standard start) is NOT.
+  // Exercises:
+  //   - `Logic_ComputeReachability` running under `world_state = 2`.
+  //   - `kRandoStartRegionByWorldState[Inverted]` resolving to the right id.
+  //   - `kRandoEdges_Inverted` being walked (the trivial
+  //     LinksHouse_Inverted → DarkWorld_South edge means DW_South should
+  //     also be reachable).
+  {
+    RandoSettings inv_settings;
+    Settings_SetDefaults(&inv_settings);
+    inv_settings.world_state = 2;  // kWorldState_Inverted
+    RandoCounts inv_counts;
+    memset(&inv_counts, 0, sizeof(inv_counts));
+    // Grant the full pool (every item id has count >= 1) so we're
+    // checking GRAPH reachability, not item gating.
+    for (int i = 0; i < 256; i++) inv_counts.by_item_id[i] = 99;
+    const RandoReachability *inv_reach =
+        Logic_ComputeReachability(&inv_counts, &inv_settings);
+    LSC_ASSERT(inv_reach != NULL,
+               "Logic_ComputeReachability returned NULL under Inverted");
+
+    uint16 lhi = Rando_FindRegionByName("LinksHouse_Inverted");
+    uint16 lhs = Rando_FindRegionByName("LinksHouse");
+    LSC_ASSERT(lhi != 0xFFFF,
+               "LinksHouse_Inverted region must exist for Inverted seeds");
+    if (lhi != 0xFFFF && inv_reach != NULL) {
+      LSC_ASSERT(Reachability_HasRegion(inv_reach, lhi),
+                 "LinksHouse_Inverted should be reachable under world_state=Inverted");
+    }
+    // The Standard start region has world_state_filter excluding Inverted;
+    // it should NOT be in the reachable set under Inverted.
+    if (lhs != 0xFFFF && lhs != lhi && inv_reach != NULL) {
+      LSC_ASSERT(!Reachability_HasRegion(inv_reach, lhs),
+                 "LinksHouse should NOT be reachable under world_state=Inverted "
+                 "(gated by world_state_filter)");
+    }
+  }
+
   fprintf(stderr, "[Logic_SelfCheck] OK\n");
 }

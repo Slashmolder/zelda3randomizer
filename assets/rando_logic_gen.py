@@ -1373,6 +1373,24 @@ def emit_logic_data(
     override_offsets: dict[int, list[tuple[int, int, tuple[int, int], tuple[int, int], tuple[int, int]]]] = {}
     sorted_region_ids_for_overrides = sorted(regions.keys()) if regions else []
     rid_for_overrides = {rid: i for i, rid in enumerate(sorted_region_ids_for_overrides)}
+    # Map location_id → base region index (from logic_loc_region resolution
+    # used in the base predicate emission above). Used by audit M3 to
+    # detect when an override's region matches the base — in that case we
+    # emit the 0xFFFF sentinel so the runtime takes the "no region change"
+    # fast path. Avoids the 100%-overridden anti-pattern where the
+    # sentinel path is dead code.
+    base_region_idx_by_loc_id: dict[int, int] = {}
+    for _loc in sorted(locations.values(), key=lambda l: l.id):
+        _off = location_offsets.get(_loc.id, {})
+        # Reconstruct what the base emission picked: same lookup as the
+        # main loop in `emit_logic_data` (logic_loc_region → registry
+        # default → 0xFFFF).
+        _region_name = (logic_loc_preds or {}).get(_loc.name)
+        _region_name = _region_name.region if _region_name else None
+        if _region_name and _region_name in rid_for_overrides:
+            base_region_idx_by_loc_id[_loc.id] = rid_for_overrides[_region_name]
+        else:
+            base_region_idx_by_loc_id[_loc.id] = 0xFFFF
     if compiled_overrides:
         for ws_id, entries in compiled_overrides.items():
             for loc_name, region_str, encoded in entries:
@@ -1385,7 +1403,13 @@ def emit_logic_data(
                 # world state.
                 override_region_id = 0xFFFF
                 if region_str is not None and region_str in rid_for_overrides:
-                    override_region_id = rid_for_overrides[region_str]
+                    candidate_idx = rid_for_overrides[region_str]
+                    base_idx = base_region_idx_by_loc_id.get(loc_id, 0xFFFF)
+                    # Audit M3 — only record an override when it differs
+                    # from the base region. Matching cases emit 0xFFFF so
+                    # the runtime sentinel path is exercised.
+                    if candidate_idx != base_idx:
+                        override_region_id = candidate_idx
                 cr = encoded.get("can_reach", b"\x0c\x00")
                 cp = encoded.get("can_place", b"\x0c\x00")
                 aa = encoded.get("always_allow", b"\x0d\x00")
@@ -1665,7 +1689,11 @@ def emit_logic_data(
             out.append("};")
             out.append(f"const uint32 kRandoLocationPredOverrides_{ws_name}Count = {len(entries_sorted)};")
         else:
-            out.append(f"const RandoLocationPredOverride kRandoLocationPredOverrides_{ws_name}[1] = {{ {{0, 0, 0, 0, 0, 0, 0, 0}} }};")
+            # Audit M4 — emit 0xFFFF in the region_override slot so the
+            # placeholder matches the "no region change" sentinel rather
+            # than accidentally binding loc 0 to region 0 when a future
+            # entry is added without auditing the placeholder.
+            out.append(f"const RandoLocationPredOverride kRandoLocationPredOverrides_{ws_name}[1] = {{ {{0, 0xFFFF, 0, 0, 0, 0, 0, 0}} }};")
             out.append(f"const uint32 kRandoLocationPredOverrides_{ws_name}Count = 0;")
         out.append("")
 

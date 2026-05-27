@@ -475,10 +475,24 @@ static uint8 dungeon_id_for_item(uint16 item_id) {
 }
 
 // Determine if `loc` is inside a dungeon. Returns 0..12 (dungeon id) or 0xFF.
-static uint8 dungeon_id_for_location(const RandoLocationDef *loc) {
-  if (loc->region_id == 0xFFFF) return 0xFF;
+// Audit H2 — also consults Rando_FindPredicateOverride so a per-world-state
+// override that moves a location across a dungeon boundary is honored.
+// Today no Inverted override crosses dungeons (Ether/Spectacle Rock are
+// overworld), but the guard prevents a latent regression when Slice 3+
+// Inverted-only locations land.
+static uint8 dungeon_id_for_location(const RandoLocationDef *loc,
+                                     const RandoSettings *settings) {
+  uint16 effective_region = loc->region_id;
+  if (settings != NULL) {
+    const RandoLocationPredOverride *ov =
+        Rando_FindPredicateOverride(loc->id, settings->world_state);
+    if (ov != NULL && ov->region_override != 0xFFFF) {
+      effective_region = ov->region_override;
+    }
+  }
+  if (effective_region == 0xFFFF) return 0xFF;
   for (uint32 i = 0; i < kRandoRegionsCount; i++) {
-    if (kRandoRegions[i].id == loc->region_id) {
+    if (kRandoRegions[i].id == effective_region) {
       uint8 dg = kRandoRegions[i].dungeon_id;
       if (dg == 0xFF) return 0xFF;
       return dg;
@@ -514,7 +528,7 @@ static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
     // Only Dungeon mode requires per-dungeon containment.
     return true;
   }
-  uint8 loc_dungeon = dungeon_id_for_location(loc);
+  uint8 loc_dungeon = dungeon_id_for_location(loc, settings);
   return loc_dungeon == item_dungeon;
 }
 

@@ -590,6 +590,19 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
       for (uint32 j = 0; j < kRandoLocationsCount; j++) {
         if (kRandoLocations[j].id == rows[i].location_id) {
           rows[i].region_id = kRandoLocations[j].region_id;
+          // Audit H1 — under Inverted, a location may be assigned to a
+          // different region via Rando_FindPredicateOverride. Honor that
+          // override here so the grouped spoiler text matches the
+          // runtime's reachability view (e.g., Ether Tablet shows under
+          // LightWorld_DeathMountain_East, not the base West region).
+          if (s->settings != NULL) {
+            const RandoLocationPredOverride *ov =
+                Rando_FindPredicateOverride(rows[i].location_id,
+                                            s->settings->world_state);
+            if (ov != NULL && ov->region_override != 0xFFFF) {
+              rows[i].region_id = ov->region_override;
+            }
+          }
           break;
         }
       }
