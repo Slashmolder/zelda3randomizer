@@ -2495,19 +2495,19 @@ static void CycleRow(int row, int delta) {
     }
     case kRow_WorldState: {
       // Phase A re-scope: Inverted (2) and Retro (3) require a Phase B logic
-      // graph (ALTTPR's `Region/Inverted/*.php` ~1500 lines + Retro shop
-      // location pool augmentation). The predicate VM + RegionRemap overlay
-      // scaffolding is in place; the graph data isn't. Until Phase B lands,
-      // the picker only cycles Open <-> Standard so users don't generate
-      // silently-broken Inverted/Retro seeds (which would have empty
-      // reachability â†’ effectively-vanilla placements with no error).
+      // Phase B Slice 2 (2026-05-27): Inverted is now enabled — the
+      // world-state-aware codegen + runtime VM merge lands in commits
+      // c999af2/24e7987/86b0629. End-to-end CLI smoke shows 1/237
+      // unreachable placements for a representative Inverted seed; small
+      // graph gaps remain (task list #47-50) but the picker is functional.
+      // Retro stays gated until Slice 3 lands the shop-locations + item
+      // registry expansion.
       //
-      // The display label (`kWorldState_Inverted` / `Retro` â†’ "INV "/"RTRO")
-      // is preserved so a slot loaded from a Phase-B share string round-trips
-      // its label correctly; only the NEW-seed picker is gated.
+      // The display label is preserved for all 4 world states so a slot
+      // loaded from a Phase-B share string round-trips its label.
       int n = (int)s->world_state + delta;
-      if (n < 0) n = kWorldState_Standard;
-      if (n > kWorldState_Standard) n = 0;
+      if (n < 0) n = kWorldState_Inverted;       // wrap to last enabled
+      if (n > kWorldState_Inverted) n = 0;       // skip Retro (gated)
       s->world_state = (uint8)n;
       break;
     }
