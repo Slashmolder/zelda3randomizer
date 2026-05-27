@@ -39,12 +39,6 @@ Phase A also has an open bug (`audit_phase_a1.md` Bug #12, "STILL OPEN") that's 
 - **No dependency on other Phase B slices**; can ship alongside #4b Retro (independent) and #2 trackers (helpful for verification).
 - **Translation discipline** per `add-randomizer-support / audit.md §0.10`: hand-translate PHP closures to YAML predicates with per-macro source-line citations. MIT attribution preserved in `NOTICE`.
 
-## Status (stub)
+## Status
 
-This is a **proposal-only stub**. Specs deltas and `tasks.md` are deferred to `/openspec-explore` + `/openspec-propose` at the time work begins. Reasons for deferring detail:
-
-- Translation surprises in 2977 lines of PHP closures may invalidate detailed task lists written months in advance (per critique-agent feedback on the chunking plan).
-- The exact RegionRemap overlay shape depends on findings during PHP-to-YAML translation that aren't worth pre-specing.
-- The Bug #12 starting-inventory call-site decision needs to land in this change's design.md after a quick prototype in the implementing PR.
-
-Read the [README.md](README.md) for the stub's status and the entry points for filling it in.
+**Fully authored** as of 2026-05-26. Promoted from initial stub after the user requested completing every Phase B plan. design.md captures the YAML directory layout decision (mirror PHP), RegionRemap overlay shape, Bug #12 call-site choice (end of `Module05_LoadFile`), and world_state_filter encoding. Priming directory at `assets/rando/logic_parts/inverted/` holds 24 stub YAML files (one per upstream PHP source). See [README.md](README.md) for the file index.

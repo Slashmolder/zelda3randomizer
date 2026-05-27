@@ -4,18 +4,16 @@ Phase B §9.1c. Implements the libnx software-keyboard wrapper that Phase A re-s
 
 ## Status
 
-**Proposal-only stub.** Authored: 2026-05-26. Specs deltas + `tasks.md` deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: libnx swkbd API has changed across DevKitPro versions; the exact `swkbdCreate` call sequence + character-set-restriction mechanism need verification against the current Switch SDK at apply-time.
+**Fully authored.** Authored: 2026-05-26. Promoted with design.md (sync wrapper, post-filter base32, cancel-preserves semantics).
 
 ## Read these in order
 
 | File | Purpose | Status |
 |---|---|---|
 | [proposal.md](proposal.md) | Why, what changes, capabilities, impact | ✅ authored |
-| [specs/randomizer-ui/spec.md](specs/randomizer-ui/spec.md) | libnx swkbd wrapper contract | 🪵 minimal stub deltas |
-| `design.md` | swkbd API sequence; character-set restriction | ⏳ deferred (apply-time) |
-| `tasks.md` | Implementation checklist | ⏳ deferred (apply-time) |
+| [design.md](design.md) | Sync vs. async; charset restriction; cancel behavior; initial-value seeding | ✅ authored |
+| [specs/randomizer-ui/spec.md](specs/randomizer-ui/spec.md) | libnx swkbd wrapper contract | ✅ authored |
+| [tasks.md](tasks.md) | Implementation checklist (9 sections, ~25 tasks) | ✅ authored |
 
 ## Effort
 
@@ -33,7 +31,6 @@ Per `add-randomizer-support / tasks.md §12.3b`, Switch builds are NOT part of p
 
 ## When work starts
 
-1. `/openspec-explore add-rando-switch-swkbd` — verify libnx swkbd API against current DevKitPro; survey character-set restriction mechanisms; survey existing `RandoTextField` consumer API.
-2. `/openspec-propose` to finalize spec deltas + design.md.
-3. `/openspec-apply` to walk through tasks.
-4. `/openspec-archive` when done — requires Switch dev-unit smoke pass.
+1. `/openspec-apply add-rando-switch-swkbd` — Section 1 (pre-flight DevKitPro/libnx version verification) settles SDK-shape questions first.
+2. Manual Switch dev-unit smoke is the release-cut gate (per `tasks.md §12.3b`); no PC CI step.
+3. `/openspec-archive` when done.

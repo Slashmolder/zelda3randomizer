@@ -57,10 +57,6 @@ This change bundles boss + drop shuffles + the minigame dispatch because all thr
 - **Regression risk**: `kGeneratorVersion` bumps; corpus regenerates. Default-settings seeds (boss_shuffle=false, drop_pool_shuffle=false) should remain byte-identical in `placement_digest_hex`.
 - **Dependency on Slice 1 trackers**: helpful for visualizing boss-shuffle (player tracks which boss is in which dungeon) and Slice 4 trick logic (some tricks depend on which boss is where). Not strict.
 
-## Status (stub)
+## Status
 
-This is a **proposal-only stub**. Specs deltas and `tasks.md` are deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: each of the 4 minigame sites needs grep against `src/sprite_main.c` to confirm the exact patch point; boss-shuffle's goal-required-boss exception list needs ALTTPR PHP grep; drop-pool shuffle's heart-drop guarantee algorithm needs prototyping.
-
-Read the [README.md](README.md) for the stub's status.
+**Fully authored** as of 2026-05-26. Promoted from initial stub. design.md captures boss-pool composition (10 shuffleable + 3 pinned bosses), drop-pool tier algorithm with heart-drop constraint, Treasure-Chest minigame slot grouping (3 candidates, 1 reward), and post-sphere shuffle ordering. See [README.md](README.md) for the file index.

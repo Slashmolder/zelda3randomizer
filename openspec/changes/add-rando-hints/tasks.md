@@ -1,0 +1,102 @@
+## 1. Apply-time pre-flight
+
+- [ ] 1.1 Pin upstream commit hash of `../alttp_vt_randomizer/`. Record in `audit.md §"Hint provenance"`.
+- [ ] 1.2 Grep `src/messaging.c` for the highest currently-used dialogue ID. Carve a dynamic range above it per design.md D2; record in `audit.md §"Hint dialogue ID range"`.
+- [ ] 1.3 Verify hint NPC sprite handler locations in `src/sprite_main.c`: Sahasrahla telepathic, storyteller (which shrine?), bookshelf interaction handler, Murahdahla.
+- [ ] 1.4 Verify per-dialogue text buffer length in `src/messaging.c`. Hint text generator must fit within this cap.
+
+## 2. New module skeleton
+
+- [ ] 2.1 Create `src/rando/rando_hints.{c,h}`. API:
+  ```c
+  typedef enum { kHintKind_LocationSpoil, kHintKind_ItemSpoil, kHintKind_GoalProgress, kHintKind_Joke } HintKind;
+  typedef struct {
+    HintKind kind;
+    const char *source;  // "sahasrahla_<region>", "storyteller_<shrine>", "bookshelf_<dungeon_room>", "murahdahla_<N>"
+    const char *text;    // rendered hint text (UTF-8)
+    uint16 dialogue_id;  // allocated from dynamic range
+  } HintEntry;
+  
+  void Rando_GenerateHints(const RandoSettings *settings, const PlacementTable *pt, const SphereData *sd, HintEntry **out_entries, size_t *out_count);
+  uint16 Rando_GetHintDialogueId(NpcId npc_id);
+  ```
+- [ ] 2.2 Wire into the Makefile / vcxproj / Switch makefile per the multi-build-system convention.
+- [ ] 2.3 Add to `assets/scripts/check_codegen_wiring.py` enumerated-files set (the rando_hints module itself isn't codegen output but the build wiring needs to track it).
+
+## 3. Generation pipeline
+
+- [ ] 3.1 Implement `Rando_GenerateHints`:
+  - Seeds a sub-RNG from `seed_u64 XOR kHintsRngMagic` (per design.md D6).
+  - Iterates each enabled hint source.
+  - For each source, calls the per-source generator.
+  - Allocates HintEntry array on heap; populates fields.
+- [ ] 3.2 Implement per-source generators:
+  - `gen_sahasrahla_hints(rng, pt, sd)` — selects N random locations from sphere 0..2 (early-game); emits "the X lies near Y" text.
+  - `gen_storyteller_hints(rng, pt, sd)` — selects N items from the pool; emits "Look for the Y in Z's domain."
+  - `gen_bookshelf_hints(rng, pt, sd)` — per bookshelf, emits a hint about a nearby location.
+  - `gen_murahdahla_hints(rng, pt, sd)` — for Triforce Hunt: one entry per Triforce-piece location, grouped by sphere ("A piece lies in <region> (sphere N)"). For other goals: one entry "no progress to report" OR empty.
+- [ ] 3.3 Per-NPC count: tune at apply-time. Initial guesses: Sahasrahla 5 hints, storyteller 3 hints, bookshelf 8 hints, Murahdahla = TriforcePiecesPlaced count.
+- [ ] 3.4 Hint text format: hand-translate from `../alttp_vt_randomizer/app/Services/HintService.php` and `app/Text.php`. Per-NPC translation discipline; source-line citations.
+- [ ] 3.5 Hint length constraint: each hint's rendered text must fit the text-engine buffer. Add an assert during generation; if a hint exceeds the cap, generate a shorter fallback.
+
+## 4. Dialogue-ID injection
+
+- [ ] 4.1 Allocate dynamic dialogue IDs from the carved range (per design.md D2). E.g., IDs 0x300, 0x301, ... assigned to the HintEntry array in iteration order.
+- [ ] 4.2 In `src/messaging.c` text dispatch: when the requested dialogue ID is in the dynamic range, consult `g_rando_hint_dialogue_table` (a runtime-loaded array of `(dialogue_id, text)` pairs); fall through to the static dialogue blob for IDs outside the range.
+- [ ] 4.3 Per-frame cost: dynamic-range lookup is O(1) — array indexed by `dialogue_id - kHintDialogueIdBase`.
+- [ ] 4.4 Vanilla mode preservation: when `kFeatures1_RandomizerActive` is clear, the dynamic range is empty; dialogue dispatch is byte-identical to vanilla.
+
+## 5. Per-NPC sprite-handler dispatch
+
+- [ ] 5.1 Wire `Rando_GetHintDialogueId(NPC_SahasrahlaTelepathic)` at the Sahasrahla telepathic-tile sprite handler. Returns the slot-specific hint dialogue ID; the text engine renders the slot's hint text.
+- [ ] 5.2 Wire `Rando_GetHintDialogueId(NPC_Storyteller)` at the storyteller sprite handler.
+- [ ] 5.3 Wire `Rando_GetHintDialogueId(NPC_Bookshelf)` at the bookshelf interaction handler.
+- [ ] 5.4 Wire `Rando_GetHintDialogueId(NPC_Murahdahla)` at the Murahdahla sprite handler.
+- [ ] 5.5 Each wiring respects the `kFeatures1_RandomizerActive` gate — vanilla mode returns the vanilla dialogue ID.
+
+## 6. Settings axis
+
+- [ ] 6.1 Add `settings.hints` enum field to `rando_settings.h`: `kHintsOff=0`, `kHintsSahasrahla=1`, `kHintsFull=2`. Default-by-goal per design.md D4.
+- [ ] 6.2 Add to canonical-serialization order. Decide byte position (deferred from Phase B chunking; chosen at apply-time after audit of other Phase B settings additions).
+- [ ] 6.3 CSV parser accepts `hints=off|sahasrahla|full`.
+- [ ] 6.4 `SetDefaults` resolves the goal-aware default.
+- [ ] 6.5 Settings-screen widget: cycle through the 3 values.
+
+## 7. Spoiler integration
+
+- [ ] 7.1 In `Spoiler_WriteJson`, emit a top-level `hints` array per the spec (`source`, `text`, `kind` per entry).
+- [ ] 7.2 In `Spoiler_WriteText`, add a `Hints` section heading followed by one line per entry (`source: text`).
+- [ ] 7.3 When `settings.hints == off`, omit the section.
+- [ ] 7.4 Add a `meta.hints_count` integer to the JSON spoiler for tooling.
+
+## 8. Determinism + CI
+
+- [ ] 8.1 Bump `kGeneratorVersion` in `src/rando/rando.h`.
+- [ ] 8.2 Regenerate corpus. Add at least 2 Triforce Hunt + hints=full + 2 Fast Ganon + hints=sahasrahla + 2 misc + hints=off seeds.
+- [ ] 8.3 **Critical**: verify `hints == off` seeds produce byte-identical hint behavior to non-hint Phase A behavior (which is no hints at all). `placement_digest_hex` for hints=off seeds matches pre-change baseline.
+- [ ] 8.4 Hint determinism CI step: for at least 1 corpus seed with hints=full, capture the per-NPC hint text; CI fails if hint text drifts across builds.
+
+## 9. Audit
+
+- [ ] 9.1 Run `assets/scripts/check_audit_guard.py`. The hint module writes to `g_rando_hint_dialogue_table` and to `dialogue_id` in the messaging path; neither is in the tracked-inventory-cells set. No new exemptions needed.
+- [ ] 9.2 Run `assets/scripts/check_determinism.py`. No new `rand`/`time`/`htobe*` symbols (use `Rng_*` only).
+- [ ] 9.3 Fresh-eyes audit per memory `[[cluster-audit-cadence]]` post-translation.
+
+## 10. Documentation
+
+- [ ] 10.1 Add a "Hints" section to `docs/randomizer.md` documenting the `hints=` setting + per-NPC behavior + race-mode interaction (race-mode reveal protects the hints body via stamp).
+- [ ] 10.2 Update `docs/randomizer_phase_b.md` Slice 5 status: mark complete.
+
+## 11. Playtest
+
+- [ ] 11.1 Generate a Triforce Hunt + hints=full seed; talk to Murahdahla; verify Triforce-piece hint text references piece locations grouped by sphere.
+- [ ] 11.2 Generate a Fast Ganon + hints=sahasrahla seed; talk to Sahasrahla telepathic tile early-game; verify hint text format.
+- [ ] 11.3 Generate a hints=off seed; verify NPCs play vanilla text.
+- [ ] 11.4 Race-mode + hints test: generate race-mode seed with hints=full; verify suppressed-spoiler doesn't reveal hint text; reveal succeeds and surfaces hint section.
+
+## 12. Archive readiness
+
+- [ ] 12.1 CI green on Linux + macOS + Windows; corpus matches; hint determinism preserved.
+- [ ] 12.2 Manual playtest covers all 4 hint sources + all 3 hints axis values.
+- [ ] 12.3 Fresh-eyes audit findings addressed.
+- [ ] 12.4 `openspec archive add-rando-hints` runs cleanly; new `randomizer-hints` spec moves to `openspec/specs/randomizer-hints/spec.md`; deltas merge into `randomizer-placement` + `randomizer-core`.

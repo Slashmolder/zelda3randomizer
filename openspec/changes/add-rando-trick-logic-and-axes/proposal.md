@@ -62,10 +62,6 @@ Phase A's canonical-serialization spec at `randomizer-core/spec.md:29-66` (Requi
 - **No dependency on other Phase B slices.** Could ship alongside #4a Inverted (trick predicates in Inverted dungeons may need to be authored as part of #4a; mark them as a follow-on of #5).
 - **`mode.weapons=swordless` interaction with Phase A's "Pyramid Fairy Sword" location**: swordless mode rejects sword placement at `LOC_Pyramid_Fairy_Sword`; spec must update the `can_place` predicate at that slot.
 
-## Status (stub)
+## Status
 
-This is a **proposal-only stub**. Specs deltas and `tasks.md` are deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: trick predicate authoring depends on ALTTPR PHP grep findings (specific trick names + per-location applicability); per-item rewind implementation needs a quick prototype to settle the rewind-budget tuning (N=10 is a guess); the matrix of which settings interact with which predicates is best surveyed during /openspec-explore.
-
-Read the [README.md](README.md) for the stub's status.
+**Fully authored** as of 2026-05-26. Promoted from initial stub after the user requested completing every Phase B plan. design.md captures the per-item rewind algorithm + trick bit-position assignments + CSV syntax + swordless/accessibility=none semantics. See [README.md](README.md) for the file index.

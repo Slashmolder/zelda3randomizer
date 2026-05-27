@@ -195,3 +195,99 @@ ops:
       MajorGlitches=2 < HybridMG=3 < NoLogic=4). Phase A pins logic=NoGlitches,
       so any predicate referencing this op evaluates to its zero-glitch branch.
     contexts: [can_reach, can_place]
+
+# ---------------------------------------------------------------------------
+# Phase B trick bit-position scaffolding (priming for `add-rando-trick-logic-and-axes`)
+# ---------------------------------------------------------------------------
+#
+# OP_TRICK (id 15) takes a trick_id operand. The trick_id maps to a bit
+# position in `settings.tricks` (uint8 LE per Phase A canonical
+# serialization position #5). Width is 8 bits — Phase B supports 8 tricks;
+# extending to uint16/uint64 is a separate generator_version bump.
+#
+# Bit positions SHALL be stable across kGeneratorVersion bumps within
+# Phase B (only added entries shift the bit space, and new entries get
+# appended to the next free bit).
+#
+# Status: scaffold only. Phase B `add-rando-trick-logic-and-axes` will
+# populate the per-trick predicate authoring discipline + per-location
+# applicability via ALTTPR PHP grep.
+#
+# Initial 8 tricks (the "canonical 5" + 3 fill, per Phase B risk register R11):
+
+tricks:
+  - bit: 0
+    id: boots-clip
+    name: "Pegasus Boots clip"
+    description: |
+      Using boots to clip into a tile slightly inside an obstacle, enabling
+      out-of-bounds traversal or shortcuts.
+    sources:
+      # apply-time: cite ALTTPR PHP closures referencing this trick
+    status: scaffold
+
+  - bit: 1
+    id: fake-flippers
+    name: "Fake Flippers"
+    description: |
+      Traversing water without flippers using sprite-based water bounce.
+    sources:
+    status: scaffold
+
+  - bit: 2
+    id: bunny-revival
+    name: "Bunny revival"
+    description: |
+      Recovering from bunny-state mid-movement to chain into walls/screens.
+    sources:
+    status: scaffold
+
+  - bit: 3
+    id: dark-room-nav
+    name: "Dark room navigation"
+    description: |
+      Navigating dark rooms without the lamp by memorizing layouts. Some
+      community considers this not a glitch but a tech skill; settings axis
+      treats it as a trick toggle.
+    sources:
+    status: scaffold
+
+  - bit: 4
+    id: bomb-jump
+    name: "Bomb jump"
+    description: |
+      Using a bomb's knockback to vault over an obstacle.
+    sources:
+    status: scaffold
+
+  - bit: 5
+    id: pearl-bypass
+    name: "Moon Pearl bypass"
+    description: |
+      Limited dark-world traversal without Moon Pearl via bunny-state tech.
+      (Distinct from Inverted-world bunny-state at start; this trick applies
+      when in dark world without pearl in Open/Standard.)
+    sources:
+    status: scaffold
+
+  - bit: 6
+    id: hookshot-clip
+    name: "Hookshot clip"
+    description: |
+      Hookshot through a wall onto a target normally unreachable.
+    sources:
+    status: scaffold
+
+  - bit: 7
+    id: lobotomy
+    name: "Aginah Lobotomy"
+    description: |
+      Specific Aginah's Cave skip technique. Reserved as a placeholder for
+      the 8th trick if community prioritizes; replace if a higher-priority
+      Phase B trick emerges.
+    sources:
+    status: scaffold
+
+# Note: when Phase B `add-rando-trick-logic-and-axes` applies, the `status:`
+# field for each trick advances from "scaffold" to "authored" once the
+# per-location applicability is recorded in the logic_parts YAML files.

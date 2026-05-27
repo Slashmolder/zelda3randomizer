@@ -313,14 +313,20 @@ Items folded into the changes above:
 
 ### Phase C
 
-Entrance shuffle (uses the `RegionRemap` overlay reserved in Phase A and
-activated in #4a Inverted).
+| # | Change | Scope | Status |
+|---|---|---|---|
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/add-rando-entrance-shuffle/) | Entrance shuffle (Simple / Restricted / Crossed / Insanity). Uses `RegionRemap` overlay activated in Phase B #4a Inverted. | Stub |
 
 ### Phase D
 
-Cosmetic shuffles (palette/sprite), customizer mode (uses dispatcher API
-unchanged), major-glitch logic level (extends #5's
-`OP_GLITCH_LEVEL_AT_LEAST` threshold space), auto-tracker server.
+| # | Change | Scope | Status |
+|---|---|---|---|
+| D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | Stub |
+| D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Stub |
+| D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level. Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to support `HybridMajorGlitches` + `NoLogic`. | Stub |
+| D4 | [`add-rando-auto-tracker`](../openspec/changes/add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients. | Stub |
+
+All Phase C/D changes are proposal-only stubs (proposal + 1-3 minimal spec deltas) — full design + tasks deferred to apply-time. Phase C requires Phase B #4a archived; Phase D D3 requires Phase B #5 archived.
 
 See `openspec/changes/add-randomizer-support/tasks.md` §7 and §14 for the
 acceptance gates per phase.

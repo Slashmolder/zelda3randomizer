@@ -1,0 +1,117 @@
+## 1. Apply-time pre-flight
+
+- [ ] 1.1 Verify `../alttp_vt_randomizer/app/World/Inverted.php` exists; if so, capture line range for RegionRemap pairing table source. If missing, derive the pairing table from `app/Region/Inverted/` collectively. Open question per design.md.
+- [ ] 1.2 Pin upstream commit hash. Run `git -C ../alttp_vt_randomizer rev-parse HEAD` and record in `audit.md §"Inverted macro provenance"` so translation references a frozen reference.
+- [ ] 1.3 Re-verify Inverted PHP file count + line count: `find ../alttp_vt_randomizer/app/Region/Inverted -name "*.php" | wc -l` should yield 24; `find ... -name "*.php" -exec wc -l {} +` should yield 2977.
+- [ ] 1.4 Skim each of the 24 PHP files for `setRequirements` / `setFillRules` / `setAlwaysAllow` / `$this->can_enter` / `$this->can_complete` patterns; count predicates per file; estimate translation effort.
+
+## 2. Inverted-specific macros
+
+- [ ] 2.1 Grep `../alttp_vt_randomizer/app/Region/Inverted/**/*.php` for `$items->can*` and `$this->world->can*` method calls. Cross-reference against Phase A's existing 30 macros in `assets/rando/macros.yaml`.
+- [ ] 2.2 For any macro NOT in Phase A's set: author it in `macros.yaml` with `phase: B-inverted` tag. Record PHP source-line range.
+- [ ] 2.3 Re-run `assets/rando_logic_gen.py` to confirm the macro additions parse cleanly.
+
+## 3. Codegen pipeline — recurse subdirs
+
+- [ ] 3.1 Update `assets/rando_logic_gen.py` to scan `assets/rando/logic_parts/inverted/` and its subdirectories (per design.md D1).
+- [ ] 3.2 Add a path filter so Phase A's existing flat-directory scan is preserved; only `inverted/` recurses. Avoid accidentally picking up future world-state subdirs that aren't yet wired.
+- [ ] 3.3 Confirm `assets/scripts/check_codegen_wiring.py` passes — generated headers (`logic_data.c`, `location_ids.h`, `item_ids.h`) are unchanged in name; just their content expands.
+
+## 4. Translate Inverted YAML (the bulk of the work)
+
+- [ ] 4.1 Translate `app/Region/Inverted/HyruleCastleEscape.php` → `assets/rando/logic_parts/inverted/HyruleCastleEscape.yaml`. Use the template in `assets/rando/logic_parts/inverted/README.md`. Cite source lines per predicate.
+- [ ] 4.2 Translate `HyruleCastleTower.php` → `HyruleCastleTower.yaml`. Especially careful here — Agahnim 1 routing differs in Inverted.
+- [ ] 4.3 Translate `EasternPalace.php` → `EasternPalace.yaml`.
+- [ ] 4.4 Translate `DesertPalace.php` → `DesertPalace.yaml`.
+- [ ] 4.5 Translate `TowerOfHera.php` → `TowerOfHera.yaml`.
+- [ ] 4.6 Translate `PalaceOfDarkness.php` → `PalaceOfDarkness.yaml`.
+- [ ] 4.7 Translate `SwampPalace.php` → `SwampPalace.yaml`.
+- [ ] 4.8 Translate `SkullWoods.php` → `SkullWoods.yaml`.
+- [ ] 4.9 Translate `ThievesTown.php` → `ThievesTown.yaml`.
+- [ ] 4.10 Translate `IcePalace.php` → `IcePalace.yaml`.
+- [ ] 4.11 Translate `MiseryMire.php` → `MiseryMire.yaml`.
+- [ ] 4.12 Translate `TurtleRock.php` → `TurtleRock.yaml`.
+- [ ] 4.13 Translate `GanonsTower.php` → `GanonsTower.yaml`. Agahnim 2 routing differs.
+- [ ] 4.14 Translate `LightWorld/NorthEast.php` → `LightWorld/NorthEast.yaml`.
+- [ ] 4.15 Translate `LightWorld/NorthWest.php`.
+- [ ] 4.16 Translate `LightWorld/South.php`.
+- [ ] 4.17 Translate `LightWorld/DeathMountain/East.php`.
+- [ ] 4.18 Translate `LightWorld/DeathMountain/West.php`.
+- [ ] 4.19 Translate `DarkWorld/Mire.php`.
+- [ ] 4.20 Translate `DarkWorld/NorthEast.php`.
+- [ ] 4.21 Translate `DarkWorld/NorthWest.php`.
+- [ ] 4.22 Translate `DarkWorld/South.php`.
+- [ ] 4.23 Translate `DarkWorld/DeathMountain/East.php`.
+- [ ] 4.24 Translate `DarkWorld/DeathMountain/West.php`.
+
+## 5. world_state_filter authoring
+
+- [ ] 5.1 Grep ALTTPR for Inverted-specific locations (locations that only exist when Link starts as bunny / routes through dark world first). Tag in `assets/rando/location_registry.yaml` with `world_state_filter: 0b1000`.
+- [ ] 5.2 Identify Inverted-exclusion locations (Light World locations unreachable in Inverted). Tag with `world_state_filter: 0b0111`.
+- [ ] 5.3 Verify no existing Open/Standard location's filter changes — only Inverted-specific entries get non-zero filters. Existing Phase A locations remain `world_state_filter: 0`.
+
+## 6. RegionRemap overlay table
+
+- [ ] 6.1 Author the Inverted overlay table per design.md D2. Hand-translate from `app/World/Inverted.php` (if present) or derive from per-region PHP files.
+- [ ] 6.2 Emit the overlay as `static const uint16 kInvertedRegionRemap[NUM_REGIONS]` in a new generated file (or extend `src/rando/logic_data.c`).
+- [ ] 6.3 Wire `Rando_SetRegionRemap(kInvertedRegionRemap)` at generation start when `settings.world_state == Inverted`.
+- [ ] 6.4 Confirm Open/Standard seeds do NOT call `Rando_SetRegionRemap` (identity is default; overlay is opt-in).
+
+## 7. Start region
+
+- [ ] 7.1 Populate `kRandoStartRegionByWorldState[Inverted] = LinksHouse_Inverted` in `src/rando/rando_logic.c`. Declare `LinksHouse_Inverted` as a peer to the existing `LinksHouse` region (or share the same region with the RegionRemap overlay routing the Inverted player to dark-world tiles).
+- [ ] 7.2 Verify the `Logic_ComputeReachability` initial seed advances from `LinksHouse_Inverted` correctly under the overlay.
+
+## 8. Bug #12 starting-inventory call site
+
+- [ ] 8.1 Add `Rando_TryGrantStartingInventory()` call at end of `Module05_LoadFile` per design.md D3.
+- [ ] 8.2 Gate the call on `kFeatures1_RandomizerActive && !kRam_RandoStartingInventoryGranted` — already documented in spec, but verify the gate is correctly placed.
+- [ ] 8.3 Implement the Inverted-specific starting-inventory list inside `Rando_TryGrantStartingInventory`: grant `MoonPearl` + `MagicMirror` when `settings.world_state == Inverted`.
+- [ ] 8.4 Open mode and Retro: starting-inventory list is empty (no additional grants beyond Phase A defaults). Standard mode: also empty (uncle's-gift handling is separate).
+- [ ] 8.5 Set `kRam_RandoStartingInventoryGranted = 1` after the grant. Confirm save-reload idempotency: `kRam_RandoStartingInventoryGranted` persists via Phase A's `kRam_*` block.
+- [ ] 8.6 Add a `// rando-exempt: state-shuffle — bunny-state starting inventory` comment at the write site (per memory `[[audit-guard-exempt-placement]]` discipline).
+- [ ] 8.7 Run `assets/scripts/check_audit_guard.py` — no new audit-guard failures.
+
+## 9. Picker un-gate
+
+- [ ] 9.1 Locate the `kRow_WorldState` case in `src/select_file.c:2520-2527`. Phase A capped cycle at Standard.
+- [ ] 9.2 Update the cycle to include Inverted: `Open → Standard → Inverted → Retro → Open` (assuming Retro un-gate ships in parallel) OR `Open → Standard → Inverted → Open` (if Inverted ships first).
+- [ ] 9.3 Update the stale comment that references "ALTTPR `Region/Inverted/*.php` ~1500 lines" — correct to "2977 lines, 24 files recursive" per audit findings.
+
+## 10. CI + corpus
+
+- [ ] 10.1 Bump `kGeneratorVersion` in `src/rando/rando.h`.
+- [ ] 10.2 Run `assets/scripts/bump_rando_corpus.py` to regenerate `tests/rando_corpus/manifest.yaml`. Add at least 6 Inverted corpus seeds covering: Fast Ganon, All Dungeons, Triforce Hunt, Completionist × item_pool=normal + hard.
+- [ ] 10.3 Verify Open + Standard + Retro digests remain byte-identical to pre-Inverted-change baseline.
+- [ ] 10.4 Cross-platform determinism: run the new Inverted corpus on Linux + macOS + Windows; all digests byte-identical.
+
+## 11. Spoiler integration
+
+- [ ] 11.1 Update `Spoiler_WriteText` to recognize Inverted region grouping (regions in Inverted are reorganized — verify the grouping algorithm handles the overlay).
+- [ ] 11.2 JSON spoiler: confirm `regions` section reflects the Inverted overlay's region names; `placements` entries reference Inverted-specific location names correctly.
+
+## 12. Audit + cluster-audit cadence
+
+- [ ] 12.1 Run `Rando_RunAllSelfChecks` — all selftests must pass post-Inverted YAML authoring.
+- [ ] 12.2 Schedule a **fresh-eyes audit** post-translation per memory `[[cluster-audit-cadence]]`. Every audit on this project finds 5-10 NEW bugs including ≥ 1 HIGH. Treat as workflow, not optional polish.
+- [ ] 12.3 Address audit findings before archive.
+
+## 13. Documentation
+
+- [ ] 13.1 Update `docs/randomizer.md` Phase A1 status note — remove "Inverted world-state seeds report ~32 unreachable until LinksHouse_Inverted region is declared (Phase A2 follow-on)" caveat.
+- [ ] 13.2 Update `docs/randomizer_phase_b.md` Slice 2 status: mark complete; cross-link to this change.
+- [ ] 13.3 Add a "Inverted world-state" subsection to `docs/randomizer.md` explaining bunny-state start, MoonPearl+MagicMirror starting inventory, and the dark-world-first progression.
+
+## 14. Playtest
+
+- [ ] 14.1 Generate an Inverted Fast Ganon seed; verify Link starts with MoonPearl + MagicMirror.
+- [ ] 14.2 Play to Ganon's Tower entry; verify the path through Inverted's routing.
+- [ ] 14.3 Save/load mid-run; verify `kRam_RandoStartingInventoryGranted` doesn't re-grant.
+- [ ] 14.4 Verify Open seed regression: generate a known-good Phase A Open seed post-Inverted-change; confirm `placement_digest_hex` matches the pre-change baseline.
+
+## 15. Archive readiness
+
+- [ ] 15.1 CI green on Linux + macOS + Windows; Inverted corpus matches across platforms.
+- [ ] 15.2 Fresh-eyes audit findings all addressed.
+- [ ] 15.3 Manual playtest confirms Inverted seeds are completable end-to-end.
+- [ ] 15.4 `openspec archive add-rando-inverted-world-state` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{logic,placement,ui}/spec.md`.

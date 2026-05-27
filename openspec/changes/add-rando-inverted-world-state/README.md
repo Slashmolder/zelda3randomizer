@@ -4,21 +4,20 @@ Phase B Slice 2. Translates ALTTPR's Inverted region logic (2977 PHP lines, recu
 
 ## Status
 
-**Proposal-only stub.** Authored: 2026-05-26. Specs deltas + `tasks.md` deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: ALTTPR translation surprises invalidate task detail written months in advance; RegionRemap overlay shape depends on findings during translation; Bug #12 call-site decision belongs in this change's design.md after a quick prototype.
+**Fully authored.** Authored: 2026-05-26. Promoted from stub to full content after capturing translation discipline + RegionRemap overlay shape + Bug #12 call-site decision (`Module05_LoadFile` end) in design.md.
 
 ## Read these in order
 
 | File | Purpose | Status |
 |---|---|---|
 | [proposal.md](proposal.md) | Why, what changes, capabilities, impact | ✅ authored |
-| `specs/randomizer-logic/spec.md` | Inverted region graph + RegionRemap + filter contract | ⏳ deferred (apply-time) |
-| `specs/randomizer-placement/spec.md` | Starting-inventory call-site (Bug #12) | ⏳ deferred (apply-time) |
-| `specs/randomizer-core/spec.md` | BuildItemPool Inverted branch | ⏳ deferred (apply-time) |
-| `specs/randomizer-ui/spec.md` | Picker un-gate | ⏳ deferred (apply-time) |
-| `design.md` | RegionRemap design + Bug #12 call-site decision | ⏳ deferred (apply-time) |
-| `tasks.md` | Implementation checklist | ⏳ deferred (apply-time) |
+| [design.md](design.md) | Translation discipline; RegionRemap overlay shape; Bug #12 call-site decision; world_state_filter encoding | ✅ authored |
+| [specs/randomizer-logic/spec.md](specs/randomizer-logic/spec.md) | Inverted region graph + RegionRemap + filter contract | ✅ authored |
+| [specs/randomizer-placement/spec.md](specs/randomizer-placement/spec.md) | Starting-inventory call-site (Bug #12) | ✅ authored |
+| [specs/randomizer-ui/spec.md](specs/randomizer-ui/spec.md) | Picker un-gate | ✅ authored |
+| [tasks.md](tasks.md) | Implementation checklist (15 sections, ~70 tasks) | ✅ authored |
+
+Priming directory at [`assets/rando/logic_parts/inverted/`](../../../assets/rando/logic_parts/inverted/) holds 24 stub YAML files (one per upstream PHP file) ready for translation.
 
 ## Effort
 
@@ -37,7 +36,6 @@ Phase B Slice 2. Translates ALTTPR's Inverted region logic (2977 PHP lines, recu
 
 ## When work starts
 
-1. `/openspec-explore add-rando-inverted-world-state` to flesh out specs + tasks against fresh PHP-grep findings.
-2. Iterate `/openspec-propose` to finalize spec deltas + design.md.
-3. `/openspec-apply` to walk through `tasks.md` task-by-task.
-4. `/openspec-archive` when done; specs merge into `openspec/specs/randomizer-{logic,placement,core,ui}/spec.md`.
+1. `/openspec-apply add-rando-inverted-world-state` to walk through `tasks.md` task-by-task. Translation work (Section 4) is the long pole.
+2. Per memory `[[cluster-audit-cadence]]` — schedule a fresh-eyes audit IMMEDIATELY after the translation completes (Section 12). Every audit finds 5-10 new bugs.
+3. `/openspec-archive` when done; specs merge into `openspec/specs/randomizer-{logic,placement,ui}/spec.md`.

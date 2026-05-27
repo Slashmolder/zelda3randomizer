@@ -52,10 +52,6 @@ This change is a **new capability** — `randomizer-hints` — because hints are
 - **Regression risk**: `kGeneratorVersion` bumps; corpus regenerates. Hints are deterministic, so the same seed + settings always produces the same hint set — corpus catches drift.
 - **Switch parity**: text rendering uses the existing text-engine; no platform-specific work.
 
-## Status (stub)
+## Status
 
-This is a **proposal-only stub**. Specs deltas and `tasks.md` are deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: the `randomizer-hints` capability shape (peer vs. extension) needs a design.md decision; hint-text format depends on ALTTPR upstream grep; the dialogue-ID-range carve-out needs a grep against `src/messaging.c` to find an unused band; the `hints` settings axis default policy depends on goal interaction (Triforce Hunt vs. others).
-
-Read the [README.md](README.md) for the stub's status.
+**Fully authored** as of 2026-05-26. Promoted from initial stub. design.md records the new-capability decision (peer `randomizer-hints`), dialogue-ID range carve strategy, goal-aware hints-axis default, and per-source generation algorithm. See [README.md](README.md) for the file index.

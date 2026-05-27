@@ -4,19 +4,19 @@ Phase B Slice 4 + folded misc items. Un-pins 5 Phase A settings axes (`tricks`, 
 
 ## Status
 
-**Proposal-only stub.** Authored: 2026-05-26. Specs deltas + `tasks.md` deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: trick predicate authoring depends on ALTTPR PHP grep findings (specific trick names + per-location applicability); per-item rewind needs a prototype to settle the rewind-budget tuning (N=10 is a guess); the interaction matrix between settings and predicates is best surveyed during /openspec-explore.
+**Fully authored.** Authored: 2026-05-26. Promoted from stub to full content with design.md (decisions on per-item rewind algorithm, trick bit-positions, CSV syntax, swordless/accessibility=none semantics).
 
 ## Read these in order
 
 | File | Purpose | Status |
 |---|---|---|
 | [proposal.md](proposal.md) | Why, what changes, capabilities, impact | ✅ authored |
-| [specs/randomizer-logic/spec.md](specs/randomizer-logic/spec.md) | 3 op-code handlers + trick predicate convention | 🪵 minimal stub deltas |
-| [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | Settings axes + per-item rewind | 🪵 minimal stub deltas |
-| `design.md` | Per-item rewind algorithm + tuning + escalation strategy | ⏳ deferred (apply-time) |
-| `tasks.md` | Implementation checklist | ⏳ deferred (apply-time) |
+| [design.md](design.md) | Per-item rewind algorithm; trick bit-positions; CSV syntax; swordless predicate impact; accessibility=none semantics | ✅ authored |
+| [specs/randomizer-logic/spec.md](specs/randomizer-logic/spec.md) | 3 op-code handlers + trick predicate convention | ✅ authored |
+| [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | Settings axes (full Phase A quote + Phase B un-pins) + per-item rewind | ✅ authored |
+| [tasks.md](tasks.md) | Implementation checklist (14 sections, ~60 tasks) | ✅ authored |
+
+Priming directory: `assets/rando/op_registry.yaml` `tricks:` section holds the initial 8 trick bit-position scaffolds (#29).
 
 ## Effort
 
@@ -42,7 +42,7 @@ Phase B Slice 4 + folded misc items. Un-pins 5 Phase A settings axes (`tricks`, 
 
 ## When work starts
 
-1. `/openspec-explore add-rando-trick-logic-and-axes` — grep ALTTPR PHP for trick names + per-location applicability; survey settings-axis CSV grammar; prototype per-item rewind on a known-hard seed.
-2. `/openspec-propose` to finalize spec deltas + design.md.
-3. `/openspec-apply` to walk through tasks.
+1. `/openspec-apply add-rando-trick-logic-and-axes` — walk through `tasks.md` task-by-task.
+2. Critical: prototype per-item rewind (Section 8) early — if N=10 is too aggressive, tune before authoring the trick predicates.
+3. Fresh-eyes audit post-trick-authoring per memory `[[cluster-audit-cadence]]`.
 4. `/openspec-archive` when done.

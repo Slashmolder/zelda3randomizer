@@ -4,20 +4,18 @@ Phase B Slice 5. Adds the **new `randomizer-hints` capability** plus hint NPC sp
 
 ## Status
 
-**Proposal-only stub.** Authored: 2026-05-26. Specs deltas + `tasks.md` deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: the new-capability decision (peer vs. extension) needs a design.md call; hint-text format depends on ALTTPR upstream grep; dialogue-ID range carve-out needs a grep against `src/messaging.c`; hints-axis default policy depends on goal interaction.
+**Fully authored.** Authored: 2026-05-26. Promoted from stub with design.md recording the new-capability decision (peer to `randomizer-core`), dialogue-ID range carve strategy, and hints-axis goal-aware default.
 
 ## Read these in order
 
 | File | Purpose | Status |
 |---|---|---|
 | [proposal.md](proposal.md) | Why, what changes, capabilities, impact | ✅ authored |
-| [specs/randomizer-hints/spec.md](specs/randomizer-hints/spec.md) | **NEW** capability: generation pipeline + per-source-NPC contracts | 🪵 minimal stub deltas |
-| [specs/randomizer-placement/spec.md](specs/randomizer-placement/spec.md) | Hint-NPC dispatch routing | 🪵 minimal stub deltas |
-| [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | `hints` settings axis + spoiler section | 🪵 minimal stub deltas |
-| `design.md` | New-capability decision; dialogue-ID range; hints-axis default policy | ⏳ deferred (apply-time) |
-| `tasks.md` | Implementation checklist | ⏳ deferred (apply-time) |
+| [design.md](design.md) | New-capability decision; dialogue-ID range; hints-axis default policy; per-source generation algorithm | ✅ authored |
+| [specs/randomizer-hints/spec.md](specs/randomizer-hints/spec.md) | **NEW** capability: generation pipeline + per-source-NPC contracts | ✅ authored |
+| [specs/randomizer-placement/spec.md](specs/randomizer-placement/spec.md) | Hint-NPC dispatch routing | ✅ authored |
+| [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | `hints` settings axis + spoiler section | ✅ authored |
+| [tasks.md](tasks.md) | Implementation checklist (12 sections, ~50 tasks) | ✅ authored |
 
 ## Effort
 
@@ -36,7 +34,6 @@ Phase B Slice 5. Adds the **new `randomizer-hints` capability** plus hint NPC sp
 
 ## When work starts
 
-1. `/openspec-explore add-rando-hints` — settle new-capability-vs-extension decision; grep ALTTPR PHP for hint-text format; find unused dialogue-ID band in `src/messaging.c`; survey hint-NPC sprite handlers.
-2. `/openspec-propose` to finalize spec deltas + design.md.
-3. `/openspec-apply` to walk through tasks.
-4. `/openspec-archive` when done.
+1. `/openspec-apply add-rando-hints` — walk through `tasks.md` task-by-task. Start with the dialogue-ID range carve (Section 1.2) before authoring hint text — it's the dependency for everything downstream.
+2. Per-source PR strategy: ship Sahasrahla first, then storyteller, then bookshelves, then Murahdahla. Each is a separate translation pass with its own audit.
+3. `/openspec-archive` when done.

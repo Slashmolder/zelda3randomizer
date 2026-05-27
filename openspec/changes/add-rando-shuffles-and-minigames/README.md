@@ -4,19 +4,17 @@ Phase B Slice 7 + Slice 8. Activates boss shuffle (`§7.1`) + drop-pool shuffle 
 
 ## Status
 
-**Proposal-only stub.** Authored: 2026-05-26. Specs deltas + `tasks.md` deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: each minigame site needs `src/sprite_main.c` grep to confirm the exact patch point; boss-shuffle's goal-required-boss exception list needs ALTTPR PHP grep; drop-pool's heart-drop-guarantee algorithm needs a prototype to settle.
+**Fully authored.** Authored: 2026-05-26. Promoted with design.md (boss-shuffle pool composition, drop-pool tiers, Treasure-Chest minigame slot handling, post-sphere ordering decision).
 
 ## Read these in order
 
 | File | Purpose | Status |
 |---|---|---|
 | [proposal.md](proposal.md) | Why, what changes, capabilities, impact | ✅ authored |
-| [specs/randomizer-shuffles/spec.md](specs/randomizer-shuffles/spec.md) | Boss + drop-pool un-defer | 🪵 minimal stub deltas |
-| [specs/randomizer-placement/spec.md](specs/randomizer-placement/spec.md) | 4 minigame dispatch sites | 🪵 minimal stub deltas |
-| `design.md` | Boss-shuffle pool + heart-drop guarantee algorithm + Peg Cave location-id decision | ⏳ deferred (apply-time) |
-| `tasks.md` | Implementation checklist | ⏳ deferred (apply-time) |
+| [design.md](design.md) | Boss pool + drop-pool tier + Treasure-Chest slot grouping + post-sphere ordering | ✅ authored |
+| [specs/randomizer-shuffles/spec.md](specs/randomizer-shuffles/spec.md) | Boss + drop-pool un-defer | ✅ authored |
+| [specs/randomizer-placement/spec.md](specs/randomizer-placement/spec.md) | 4 minigame dispatch sites | ✅ authored |
+| [tasks.md](tasks.md) | Implementation checklist (11 sections, ~45 tasks) | ✅ authored |
 
 ## Effort
 
@@ -45,7 +43,6 @@ Per grep against `src/sprite_main.c` + `src/rando/chest_lookup.h`:
 
 ## When work starts
 
-1. `/openspec-explore add-rando-shuffles-and-minigames` — grep `src/sprite_main.c` for each minigame patch site; grep ALTTPR for boss-pool definition + drop-pool tier definitions; verify Peg Cave location id.
-2. `/openspec-propose` to finalize spec deltas + design.md (boss-pool, heart-drop guarantee algorithm).
-3. `/openspec-apply` to walk through tasks.
-4. `/openspec-archive` when done.
+1. `/openspec-apply add-rando-shuffles-and-minigames` — Section 1 (pre-flight grep) settles per-site patch points first.
+2. Author per-shuffle module independently (boss first → drop-pool); minigame dispatch sites can interleave.
+3. `/openspec-archive` when done.

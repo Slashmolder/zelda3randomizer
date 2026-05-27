@@ -38,10 +38,6 @@ This change ships the wrapper. Standalone (Slice 8 in the chunking plan) because
 - **Regression risk**: Switch-only; PC builds unchanged. No corpus regen needed.
 - **Manual gate**: Per `add-randomizer-support / tasks.md §12.3b`, Switch build verification is a release-cut manual check. This change can only be archived after a Switch dev-unit smoke confirms the swkbd flow works end-to-end.
 
-## Status (stub)
+## Status
 
-This is a **proposal-only stub**. Specs deltas and `tasks.md` are deferred to `/openspec-explore` + `/openspec-propose` at apply-time.
-
-**Stub-only because**: the exact libnx swkbd API call sequence (single vs. multi-step input, character-set restrictions for base32 share strings) needs apply-time verification against current DevKitPro / libnx; some Switch SDK versions have changed swkbd behavior.
-
-Read the [README.md](README.md) for the stub's status.
+**Fully authored** as of 2026-05-26. Promoted from initial stub. design.md captures sync wrapper design, base32 post-filter approach, cancel-preserves semantics. Verification against the current DevKitPro/libnx SDK is the first apply-time task. See [README.md](README.md) for the file index.
