@@ -27,6 +27,7 @@
 //   offset 19 reserved                    = 0
 
 #include "rando_settings.h"
+#include "rando_hints.h"  // kHintsMode_Off / kHintsMode_On (Slice 5 §61)
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -481,6 +482,8 @@ enum {
   KEY_pyramid_bow_upgrade,
   KEY_region_boss_hearts_in_pool,
   KEY_race_mode,
+  // Phase B Slice 5 §61 — hints axis (binary on/off).
+  KEY_hints,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -629,6 +632,26 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
              csv_str_eq(key, klen, "race")) {
     MARK_SEEN(KEY_race_mode);
     if (parse_bool(val, vlen, &s->race_mode) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "hints")) {
+    // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
+    // `spoil.Hints` semantics (`HintService.php:54` tests `=== 'on'`).
+    // For forward-compat we accept the proposal's tri-state aliases
+    // (`sahasrahla` / `full`) and collapse them to on; future binary
+    // extensions can split them apart without breaking existing
+    // share-strings since this field is NOT in canonical serialization
+    // yet (scaffold-only).
+    MARK_SEEN(KEY_hints);
+    if (csv_str_eq(val, vlen, "off") || csv_str_eq(val, vlen, "0") ||
+        csv_str_eq(val, vlen, "false") || csv_str_eq(val, vlen, "False") ||
+        csv_str_eq(val, vlen, "none")) {
+      s->hints = kHintsMode_Off;
+    } else if (csv_str_eq(val, vlen, "on") || csv_str_eq(val, vlen, "1") ||
+               csv_str_eq(val, vlen, "true") || csv_str_eq(val, vlen, "True") ||
+               csv_str_eq(val, vlen, "sahasrahla") || csv_str_eq(val, vlen, "full")) {
+      s->hints = kHintsMode_On;
+    } else {
+      goto bad_value;
+    }
   } else {
     fprintf(stderr, "Settings_ParseCsv: unknown key '%.*s'\n", klen, key);
     return -1;

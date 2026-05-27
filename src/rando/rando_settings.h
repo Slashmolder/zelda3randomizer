@@ -99,6 +99,12 @@ typedef struct RandoSettings {
   uint8 race_mode;                  // bool; Phase B feature, bit reserved in hash from Phase A
   uint16 pieces_required;           // for triforce-hunt / ganonhunt (was uint8; spec is uint16)
   uint16 pieces_placed;             // for triforce-hunt / ganonhunt
+  // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
+  // `spoil.Hints` (HintService.php:54). Default 0 (off). NOT YET in
+  // canonical serialization (deferred until the hint generator body
+  // lands — that bump is the natural kGenVer increment to include this
+  // field in the hash).
+  uint8 hints;
 } RandoSettings;
 
 // ===========================================================================
