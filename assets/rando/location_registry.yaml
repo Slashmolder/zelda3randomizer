@@ -369,3 +369,70 @@ locations:
   # Inverted-only additions (ID 236)
   # ===========================================================================
   - { id: 236, name: "Bomb Merchant",                         region: DarkWorld_South, type: Prize_Event, vanilla_item: Bombs10, world_state_filter: [inverted], source: "app/Region/Inverted/LightWorld/South.php:27", notes: "Inverted-only Prize\\Event slot per audit §0.3.5; not a placement, a logic-affecting event." }
+
+  # ===========================================================================
+  # Phase B Slice 3a — Retro shop-purchase locations (IDs 237..265)
+  #
+  # Per `openspec/changes/add-rando-retro-world-state/design.md` §1a.
+  # World-state-filtered to Retro-only — these locations enter the
+  # placement pool ONLY when `settings.world_state == Retro`. Default
+  # Open/Standard/Inverted seeds ignore them, so the existing 52-corpus
+  # digests stay stable.
+  #
+  # Capacity Upgrade slots (264, 265) are identity-placed in 3a per
+  # proposal.md:41 — registry entry exists so the shop dispatcher routes
+  # the grant through the uniform Rando_DispatchVanillaGrant call shape,
+  # but the placer pins the upgrade to its vanilla item.
+  #
+  # The 22 TakeAny shops + per-seed random extras defer to Slice 3b per
+  # design.md §5; not enumerated here.
+  # ===========================================================================
+
+  # Dark World Potion Shop (DarkWorld_NorthEast — south of Pyramid)
+  - { id: 237, name: "Dark World Potion Shop - 0", region: DarkWorld_NorthEast, type: Shop, vanilla_item: RedPotion,      world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:53" }
+  - { id: 238, name: "Dark World Potion Shop - 1", region: DarkWorld_NorthEast, type: Shop, vanilla_item: FighterShield,  world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:54", notes: "BlueShield in ALTTPR == FighterShield in zelda3-fork (ROM byte 0x04)." }
+  - { id: 239, name: "Dark World Potion Shop - 2", region: DarkWorld_NorthEast, type: Shop, vanilla_item: Bombs10,        world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:55", notes: "ALTTPR TenBombs == zelda3-fork Bombs10." }
+
+  # Dark World Forest Shop (DarkWorld_NorthWest)
+  - { id: 240, name: "Dark World Forest Shop - 0", region: DarkWorld_NorthWest, type: Shop, vanilla_item: RedShield,    world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:51" }
+  - { id: 241, name: "Dark World Forest Shop - 1", region: DarkWorld_NorthWest, type: Shop, vanilla_item: BeeContents,  world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:52", notes: "Unbottled Bee (ROM 0x0E); distinct from BottleWithBee." }
+  - { id: 242, name: "Dark World Forest Shop - 2", region: DarkWorld_NorthWest, type: Shop, vanilla_item: Arrow10,      world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:53" }
+
+  # Dark World Lumberjack Hut (DarkWorld_NorthWest)
+  - { id: 243, name: "Dark World Lumberjack Hut - 0", region: DarkWorld_NorthWest, type: Shop, vanilla_item: RedPotion,     world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:55" }
+  - { id: 244, name: "Dark World Lumberjack Hut - 1", region: DarkWorld_NorthWest, type: Shop, vanilla_item: FighterShield, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:56" }
+  - { id: 245, name: "Dark World Lumberjack Hut - 2", region: DarkWorld_NorthWest, type: Shop, vanilla_item: Bombs10,       world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:57" }
+
+  # Dark World Village of Outcasts (DarkWorld_NorthWest)
+  - { id: 246, name: "Dark World Village of Outcasts - 0", region: DarkWorld_NorthWest, type: Shop, vanilla_item: RedPotion,     world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:59" }
+  - { id: 247, name: "Dark World Village of Outcasts - 1", region: DarkWorld_NorthWest, type: Shop, vanilla_item: FighterShield, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:60" }
+  - { id: 248, name: "Dark World Village of Outcasts - 2", region: DarkWorld_NorthWest, type: Shop, vanilla_item: Bombs10,       world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:61" }
+
+  # Dark World Lake Hylia Shop (DarkWorld_South)
+  - { id: 249, name: "Dark World Lake Hylia Shop - 0", region: DarkWorld_South, type: Shop, vanilla_item: RedPotion,     world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:52" }
+  - { id: 250, name: "Dark World Lake Hylia Shop - 1", region: DarkWorld_South, type: Shop, vanilla_item: FighterShield, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:53" }
+  - { id: 251, name: "Dark World Lake Hylia Shop - 2", region: DarkWorld_South, type: Shop, vanilla_item: Bombs10,       world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:54" }
+
+  # Dark World Death Mountain Shop (DarkWorld_DeathMountain_East)
+  - { id: 252, name: "Dark World Death Mountain Shop - 0", region: DarkWorld_DeathMountain_East, type: Shop, vanilla_item: RedPotion,   world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:45" }
+  - { id: 253, name: "Dark World Death Mountain Shop - 1", region: DarkWorld_DeathMountain_East, type: Shop, vanilla_item: HeartRefill, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:46" }
+  - { id: 254, name: "Dark World Death Mountain Shop - 2", region: DarkWorld_DeathMountain_East, type: Shop, vanilla_item: Bombs10,     world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:47" }
+
+  # Light World Death Mountain Shop (LightWorld_DeathMountain_East)
+  - { id: 255, name: "Light World Death Mountain Shop - 0", region: LightWorld_DeathMountain_East, type: Shop, vanilla_item: RedPotion,   world_state_filter: [retro], source: "app/Region/Standard/LightWorld/DeathMountain/East.php:51" }
+  - { id: 256, name: "Light World Death Mountain Shop - 1", region: LightWorld_DeathMountain_East, type: Shop, vanilla_item: HeartRefill, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/DeathMountain/East.php:52" }
+  - { id: 257, name: "Light World Death Mountain Shop - 2", region: LightWorld_DeathMountain_East, type: Shop, vanilla_item: Bombs10,     world_state_filter: [retro], source: "app/Region/Standard/LightWorld/DeathMountain/East.php:53" }
+
+  # Light World Kakariko Shop (LightWorld_NorthWest)
+  - { id: 258, name: "Light World Kakariko Shop - 0", region: LightWorld_NorthWest, type: Shop, vanilla_item: RedPotion,   world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:69" }
+  - { id: 259, name: "Light World Kakariko Shop - 1", region: LightWorld_NorthWest, type: Shop, vanilla_item: HeartRefill, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:70" }
+  - { id: 260, name: "Light World Kakariko Shop - 2", region: LightWorld_NorthWest, type: Shop, vanilla_item: Bombs10,     world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:71" }
+
+  # Light World Lake Hylia Shop (LightWorld_South)
+  - { id: 261, name: "Light World Lake Hylia Shop - 0", region: LightWorld_South, type: Shop, vanilla_item: RedPotion,   world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:73" }
+  - { id: 262, name: "Light World Lake Hylia Shop - 1", region: LightWorld_South, type: Shop, vanilla_item: HeartRefill, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:74" }
+  - { id: 263, name: "Light World Lake Hylia Shop - 2", region: LightWorld_South, type: Shop, vanilla_item: Bombs10,     world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:75" }
+
+  # Capacity Upgrade — identity-placed in 3a per proposal.md:41.
+  - { id: 264, name: "Capacity Upgrade - Bomb",  region: LightWorld_South, type: ShopUpgrade, vanilla_item: BombUpgrade5,  world_state_filter: [retro], identity_placed: true, source: "app/Region/Standard/LightWorld/South.php:69" }
+  - { id: 265, name: "Capacity Upgrade - Arrow", region: LightWorld_South, type: ShopUpgrade, vanilla_item: ArrowUpgrade5, world_state_filter: [retro], identity_placed: true, source: "app/Region/Standard/LightWorld/South.php:70" }
