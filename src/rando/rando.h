@@ -19,7 +19,7 @@
 //
 // Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 12u  // Phase B Slice 2 §49: BigRedBomb gate restored on Inverted Pyramid Fairy (CanReachBombMerchant macro)
+#define kGeneratorVersion 13u  // Phase B Slice 2 §47: Standard EP YAML promoted (Compass/Big/Cannonball/BigKey/Map/Boss/Prize predicates)
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

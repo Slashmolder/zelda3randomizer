@@ -81,6 +81,16 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
             return None, None
         if not out_json.exists():
             return None, None
+        # Phase B Slice 6 — race-mode entries emit a 134-byte ZRSR
+        # binary instead of JSON. Reveal pipeline regenerates the
+        # placement; for bump purposes we read the binary's stamp +
+        # share string but don't try to extract a placement_digest_hex
+        # (the suppressed file has no JSON to parse). Return the
+        # current values unchanged so the existing manifest digest is
+        # preserved through the bump.
+        head = out_json.read_bytes()[:4]
+        if head == b"ZRSR":
+            return "<ZRSR>", "<ZRSR>"  # caller skips comparison
         spoiler = json.loads(out_json.read_text(encoding="utf-8"))
         meta = spoiler.get("meta", {})
         return meta.get("placement_digest_hex"), meta.get("sphere_digest")
@@ -147,6 +157,9 @@ def main(argv: list[str]) -> int:
                                             str(entry.get("seed", "")))
         if new is None:
             print(f"  [{i}] {entry.get('label', '?')}: SKIP (generator unavailable / failed)")
+            continue
+        if new == "<ZRSR>":
+            print(f"  [{i}] {entry.get('label', '?')}: SKIP (race-mode ZRSR — separate roundtrip path)")
             continue
         if new != old:
             changed.append((i, entry.get("label", "?"), old, new))

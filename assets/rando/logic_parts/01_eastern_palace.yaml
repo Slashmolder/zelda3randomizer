@@ -1,19 +1,18 @@
 # 01_eastern_palace.yaml — Eastern Palace Standard world-state.
 #
-# Phase B Slice 2 §47 — Standard EP YAML was previously authored only as
+# Phase B Slice 2 §47 (landed 2026-05-27 via the kGenVer 12→13 bump).
+# Standard EP locations were previously authored only in
 # `logic_examples/01_eastern_palace.yaml` (not scanned by codegen).
-# Promoted to `logic_parts/` so the merge picks up its location predicates
-# under all world states. Inverted's `inverted/EasternPalace.yaml`
-# overrides specific predicates (MoonPearl bunny-state gate); locations
-# not overridden in Inverted inherit from this file's defaults.
+# Result: EP locations defaulted to TRUE / FALSE for can_reach /
+# always_allow, which over-approximated reachability. Inverted EP's
+# H2-audit fix authored the Inverted-specific predicates explicitly;
+# this file fills the Standard gap with the same precision.
 #
-# Translation discipline:
+# Translation discipline (audit.md §0.10.2):
 #   - Mechanically translated from `app/Region/Standard/EasternPalace.php`.
-#   - Macros (`CanShootArrows`, `CanKillArmosKnights`, `HasSword`) live in
-#     `assets/rando/macros.yaml` — NOT re-declared here to avoid drift.
+#   - Macros (`CanShootArrowsL1`, `CanKillArmosKnights`, `HasSword`)
+#     stay canonical in `macros.yaml`; not re-declared here.
 #   - Predicates cite PHP file:line ranges.
-#
-# Author: Phase B Slice 2 §47 (2026-05-27).
 
 format_version: 1
 
