@@ -19,7 +19,7 @@
 //
 // Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 14u  // Phase B Slice 7+8 §66: hints/boss_shuffle/drop_shuffle absorbed into canonical serialization (kSettingsCanonicalLen 24→28)
+#define kGeneratorVersion 15u  // Phase B Slice 3a #52: 7 new item-registry IDs (GenericKey + 6 shop consumables) supporting Retro shop dispatch
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

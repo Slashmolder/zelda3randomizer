@@ -1,15 +1,34 @@
+**Scope (2026-05-27)**: This task list is **Slice 3a**. Tasks marked **[3b-deferred]** below relocate to a future `add-rando-retro-takeany` change folder when TakeAny dispatch infrastructure lands. Per `design.md` §5 resolution.
+
 ## 1. Provenance grep + audit-md update
 
-- [ ] 1.1 Enumerate the 42 shop entities in `../alttp_vt_randomizer/app/Region/Standard/**/*.php`. Run `grep -hE "new Shop|new Shop\\\\(Upgrade|TakeAny)"` and record per-shop file/line. Classify each as `Shop` / `Shop\Upgrade` / `Shop\TakeAny`.
+- [ ] 1.1 Enumerate the 42 shop entities in `../alttp_vt_randomizer/app/Region/Standard/**/*.php`. Run `grep -hE "new Shop|new Shop\\\\(Upgrade|TakeAny)"` and record per-shop file/line. Classify each as `Shop` / `Shop\Upgrade` / `Shop\TakeAny`. (Slice 3a only enumerates the 9 regular + 1 Upgrade; the 22 TakeAny lines move to 3b.)
 - [ ] 1.2 For each `Shop` and `Shop\TakeAny`, enumerate the purchasable inventory by inspecting `->setInventory(...)` calls. Record per-slot item id and rupee cost. Expected total: ~30-40 purchasable slots.
 - [ ] 1.3 Add a new section `audit.md §"Retro shop provenance"` to the parent change's audit (or as a Phase B addendum) listing every shop with PHP source-line citation per `add-randomizer-support / audit.md §0.10` translation discipline.
 - [ ] 1.4 Cross-check: confirm no shop slot collides with an existing `LOC_<id>` in `assets/rando/location_registry.yaml`. Each new shop slot gets a unique numeric id appended to the registry (append-only convention preserves Open/Standard digests).
+
+## 1a. Item registry expansion (Risk 3 resolution — #52)
+
+Add **7 new item-registry IDs** per `design.md` §4 Risk 3 resolution table. The 4 aliased items (ShopArrow→Arrow1, ShopKey→GenericKey, BlueShield→FighterShield, RedShield→existing) live as code-side comments at dispatch sites, NOT registry entries.
+
+- [ ] 1a.1 Append 7 entries to `assets/rando/item_registry.yaml` (preserves existing IDs):
+  - `GenericKey` — ROM byte 0xAF — Retro generic small key (alias target for ALTTPR `ShopKey` / `KeyGK`).
+  - `BluePotion` — 0x30 — unbottled blue potion served by shop (distinct from `BottleWithBluePotion` 0x2D).
+  - `RedPotion` — 0x2E — unbottled red potion (distinct from `BottleWithRedPotion` 0x2C).
+  - `BeeContents` — 0x0E — unbottled bee (distinct from `BottleWithBee` 0x3C).
+  - `BombUpgrade5` — 0x51 — +5 bombs to max capacity.
+  - `ArrowUpgrade5` — 0x52 — +5 arrows to max capacity.
+  - `HeartRefill` — 0x42 — heart-refill consumable served by shop.
+- [ ] 1a.2 Regenerate `src/rando/item_ids.h` via the codegen; verify new `ITEM_*` defines appear and existing IDs are unchanged.
+- [ ] 1a.3 Bump `kGeneratorVersion` in `src/rando/rando.h` (14→15).
+- [ ] 1a.4 Run `assets/scripts/bump_rando_corpus.py --apply` and verify all 52 corpus entries stay digest-stable (new items aren't in default pool yet — they only enter the pool under `world_state=Retro`).
+- [ ] 1a.5 Run the full guard sweep: `--rando-selftest`, `run_rando_corpus.py`, `check_audit_guard.py --strict`, `check_determinism.py`.
 
 ## 2. Location registry expansion
 
 - [ ] 2.1 Add per-shop-slot location ids to `assets/rando/location_registry.yaml`. Naming convention: `Light_World_Kakariko_Shop_Slot1`, `Light_World_Kakariko_Shop_Slot2`, `Dark_World_Potion_Shop_Slot1`, etc. — kebab-cased into the existing snake_case-ish convention.
 - [ ] 2.2 Add `world_state_filter` per location: every Retro shop slot has the `Retro` bit set, NOT the `Open/Standard/Inverted` bits — only Retro seeds include them in the pool.
-- [ ] 2.3 Take-Any caves get the same Retro-only filter.
+- [ ] 2.3 **[3b-deferred]** Take-Any caves get the same Retro-only filter.
 - [ ] 2.4 Capacity-upgrade slots (`Light_World_Lake_Hylia_Capacity_Upgrade_Bomb` etc.) get Retro-only filter AND a `identity_placed` marker so the placer pins them to their vanilla item.
 - [ ] 2.5 Run `assets/rando_logic_gen.py` to regenerate `src/rando/location_ids.h`; verify the new `LOC_<...>` defines appear and the existing ids are unchanged.
 
@@ -33,7 +52,7 @@
 
 - [ ] 5.1 Wire `Rando_OnLocationCheck` at `src/sprite_main.c:25308` (`ShopItem_HandleReceipt`). The patch resolves the active shop's slot id to a `LOC_<...>` via a shop-lookup table (similar to `chest_lookup.h` for §6.3 chests).
 - [ ] 5.2 Author `src/rando/shop_lookup.h` (generated from `retro_shops.yaml` or inline) mapping `(shop_id, slot_index) → LOC_<...>`. Codegen extends `assets/rando_logic_gen.py`; new generated header registered in build wiring (`Makefile`, `Zelda3.vcxproj`, `src/platform/switch/Makefile`).
-- [ ] 5.3 Grep `src/sprite_main.c` for the Take-Any cave sprite handler. Decide whether it goes through the same `ShopItem_HandleReceipt` path or needs its own dispatch site. Wire accordingly.
+- [ ] 5.3 **[3b-deferred]** Grep `src/sprite_main.c` for the Take-Any cave sprite handler. Decide whether it goes through the same `ShopItem_HandleReceipt` path or needs its own dispatch site. Wire accordingly. (Per design.md Risk 1+6 resolution: no Take-Any-specific sprite handler exists in this fork; needs new infra in 3b.)
 - [ ] 5.4 Wire capacity-upgrade dispatch at `sprite_main.c:11483-11484` (bomb) and `11520-11521` (arrow). Identity-placed; dispatch is for uniformity.
 - [ ] 5.5 Add `// rando-exempt: state-shuffle — rupee cost deduction, not a grant` comments at the `link_rupees_goal -= cost` sites (`sprite_main.c:1067, 1845, 3025, 6197, 6831, 6871, 6912, 9794, 10155, 11425, 19176, 19883, 24682, 25329` per `audit.md` §280). Per Phase A audit, these are already classified state-shuffle; ensure the comments are present.
 
@@ -63,7 +82,7 @@
 ## 10. Testing
 
 - [ ] 10.1 Manual playtest: generate a Retro Fast Ganon seed; play until first shop purchase; confirm placement-table substitute is granted at vanilla rupee cost.
-- [ ] 10.2 Manual playtest: enter a Take-Any cave in the same seed; confirm dispatch fires and placement-table item is granted.
+- [ ] 10.2 **[3b-deferred]** Manual playtest: enter a Take-Any cave in the same seed; confirm dispatch fires and placement-table item is granted.
 - [ ] 10.3 Manual playtest: buy bomb-capacity upgrade; confirm identity-placement works (player still gets the capacity upgrade, dispatch fires but no rando-side effect).
 - [ ] 10.4 Vanilla-mode regression: run a non-rando game; visit a shop; confirm `g_ram` after purchase is bit-identical to pre-change baseline (per `randomizer-placement / Single dispatch point per grant site` Scenario "Vanilla path bit-identical when rando inactive").
 - [ ] 10.5 Cross-platform digest determinism: regenerate the Retro corpus on Linux + macOS + Windows; all digests must match.

@@ -1,5 +1,7 @@
 ## Why
 
+**Status (2026-05-27)**: scoped 3a/3b per `design.md` §5 — the 22 TakeAny shops + RNG-driven activation defer to Slice 3b (a separate change folder, not yet created). This proposal now covers **Slice 3a only**: 9 regular shops + 1 Capacity Upgrade + 7 new item-registry IDs + the picker un-gate. 3a ships ~80% of the Retro experience; 3b lands TakeAny when the missing ROM-table dispatch infrastructure does.
+
 Phase A's Phase B+ roadmap (`docs/randomizer.md:286-289` original wording, now superseded by the chunked roadmap) and `tasks.md §14.2` deferred Retro world-state to Phase B. The settings-screen world-state picker is gated at Open + Standard per `select_file.c:2520` (Phase A §14.1b re-scope).
 
 **Retro is the shortest Phase B world-state slice.** Per `../alttp_vt_randomizer/app/World/Retro.php` (44 lines, verified), Retro extends Open and forces 4 config flags:

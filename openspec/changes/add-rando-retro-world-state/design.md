@@ -1,6 +1,6 @@
 # Slice 3 Retro — translation research & design proposal
 
-**Status**: PROPOSAL. Authored 2026-05-27 by background research agent. Requires user decisions before implementation.
+**Status**: APPROVED. Risks 1 + 3 (TakeAny enumeration + missing item IDs) resolved 2026-05-27 per user-approved deep-dive recommendation; see §4 Resolutions. Slice now split 3a/3b per §5 — this proposal covers 3a only.
 
 ## 0. Summary of upstream model
 
@@ -103,22 +103,57 @@ Call sites:
 
 There is **no Take-Any-specific sprite handler** in `sprite_main.c`. Take-Any "entry" appears to be an ALTTPR-side ROM-table mechanism — out of scope per proposal.md:37.
 
-## 4. Risks / unknowns requiring user clarification
+## 4. Risks / unknowns — resolutions
 
-**Risk 1 — TakeAny set is RNG-driven, not enumerable.** Pick Option A or Option B (see §1b) before implementation; this determines whether `kGeneratorVersion` bump rules apply to all 44 IDs or only the 5 active ones.
+**Risk 1 — TakeAny set is RNG-driven, not enumerable.** **RESOLVED 2026-05-27**: defer
+TakeAny entirely to Slice 3b (matches Risk 6 recommendation). The 22 TakeAny shops
+require new sprite-handler infrastructure this fork does not yet have (`app/Shop/TakeAny.php`
+is an empty subclass — the activation mechanism is ALTTPR's `setActive()` ROM
+patching, not present here). Adding 44 (Option A) or 22 (Option B) registry IDs
+now would burn 2 corpus regenerations on entries that can never be reached.
+Slice 3a ships the 9 regular shops + Capacity Upgrade — ~80% of the Retro
+player experience. The Option A/B choice happens in 3b, informed by whatever
+dispatch shape lands then.
 
-**Risk 2 — Shop+slot identity is not tracked on the shop-item sprite.** `Sprite_BB_Shopkeeper` (`sprite_main.c:25236`) uses `sprite_subtype2[k]` to distinguish item *kind*, not shop+slot. To dispatch to the correct LOC, the dispatcher needs to derive shop identity from `dungeon_room_index` via a parallel `kShopkeeper_LocId[13][3]` table.
+**Risk 2 — Shop+slot identity is not tracked on the shop-item sprite.** `Sprite_BB_Shopkeeper` (`sprite_main.c:25236`) uses `sprite_subtype2[k]` to distinguish item *kind*, not shop+slot. To dispatch to the correct LOC, the dispatcher needs to derive shop identity from `dungeon_room_index` via a parallel `kShopkeeper_LocId[13][3]` table. **Tracked as task #53**, lands inside 3a.
 
-**Risk 3 — ShopArrow / ShopKey / BluePotion (unbottled) / RedPotion (unbottled) / Heart-refill / Bee (unbottled) / BlueShield / RedShield / BombUpgrade5 / ArrowUpgrade5 / GenericKey items don't exist in `assets/rando/item_registry.yaml`.** Item-pool work is blocked on a Phase B item_registry expansion. Decide whether to add these IDs or to alias existing IDs (e.g. `ShopArrow → ID_Arrow1`, `ShopKey → ID_GenericSmallKey`).
+**Risk 3 — ShopArrow / ShopKey / BluePotion (unbottled) / RedPotion (unbottled) / Heart-refill / Bee (unbottled) / BlueShield / RedShield / BombUpgrade5 / ArrowUpgrade5 / GenericKey items don't exist in `assets/rando/item_registry.yaml`.** **RESOLVED 2026-05-27**: match ALTTPR's own alias/distinct mix. Verified against `app/Item.php:107, 138-141, 168-170, 253` and `:270-271`. **Net 7 new distinct item-registry IDs** (the other 4 alias to existing entries):
 
-**Risk 4 — proposal.md:11 claims "42 shop entities"; actual count ~32.** Recommend updating proposal.md once the user confirms the count from the agent's grep.
+| Item | ALTTPR ROM byte | Recommendation |
+|---|---|---|
+| ShopArrow | (alias) | Use existing `ITEM_Arrow1`; ALTTPR's `ItemAlias('ShopArrow', 'Arrow')` |
+| ShopKey | 0xAF (KeyGK) | **NEW**: `ITEM_GenericKey` (alias collapses to it; ALTTPR's `ItemAlias('ShopKey', 'KeyGK')`) |
+| BluePotion (unbottled) | 0x30 | **NEW**: `ITEM_BluePotion` (distinct from `BottleWithBluePotion` 0x2D) |
+| RedPotion (unbottled) | 0x2E | **NEW**: `ITEM_RedPotion` (distinct from `BottleWithRedPotion` 0x2C) |
+| Bee (unbottled) | 0x0E | **NEW**: `ITEM_BeeContents` (distinct from `BottleWithBee` 0x3C) |
+| BlueShield | 0x04 | Use existing `ITEM_FighterShield` (same byte; ALTTPR-name only) |
+| RedShield | 0x06 | Use existing `ITEM_RedShield` |
+| BombUpgrade5 | 0x51 | **NEW**: `ITEM_BombUpgrade5` |
+| ArrowUpgrade5 | 0x52 | **NEW**: `ITEM_ArrowUpgrade5` |
+| Heart-refill | 0x42 | **NEW**: `ITEM_HeartRefill` |
+
+Rationale: matches ALTTPR's architecture at the byte level (cross-tool diff-ability), keeps the registry honest about distinct vs alias forms, and the aliases live as comments at dispatch sites rather than registry pollution. One kGenVer bump (14→15) lands all 7 in 3a.
+
+**Risk 4 — proposal.md:11 claims "42 shop entities"; actual count ~32.** **RESOLVED**: proposal.md already corrected to "32 = 9 regular + 1 Capacity-Upgrade + 22 TakeAny" per task #55. No further action.
 
 **Risk 5 — Inverted-only "Dark World Lake Hylia Shop" exclusion** (per `Randomizer.php:740`) is irrelevant in Retro+Open since Retro extends Open. Document only.
 
-**Risk 6 — Take-Any dispatch mechanism unspecified.** Recommend deferring TakeAny placements to Phase B Slice 3b so the bulk of Retro (9 regular shops + Capacity Upgrade) ships in 3a.
+**Risk 6 — Take-Any dispatch mechanism unspecified.** **RESOLVED**: defer to Slice 3b (see Risk 1 resolution).
 
-**Risk 7 — TakeAny activation under hard-mode flag interaction with `setShops()` / `clearInventory()` is unverified.** Worth a focused upstream read before lock-in.
+**Risk 7 — TakeAny activation under hard-mode flag interaction with `setShops()` / `clearInventory()` is unverified.** Moved to Slice 3b scope — not blocking 3a.
 
-## 5. Recommended scope split
+## 5. Scope split (locked in)
 
-Split Slice 3 into 3a (this proposal's §1a regular shops) and 3b (TakeAny + advanced extras). 3a unblocks the Retro flag for ~80% of the player experience; 3b lands the per-seed RNG-driven TakeAny activation after the supporting item_registry IDs land.
+**Slice 3a** (this proposal post-resolution):
+- 7 new item-registry IDs (Risk 3 resolution).
+- 29 shop-purchase location IDs from §1a (27 regular + 2 Capacity-Upgrade identity-placed).
+- BuildItemPool Retro branch (only the §2 sections (a) static and (c) regular-shop extras; section (b) TakeAny deferred to 3b).
+- Shop-handler instrumentation at the 7 sprite_main.c sites in §3 (regular shops only).
+- Picker un-gate.
+- kGeneratorVersion bump + corpus regen.
+
+**Slice 3b** (deferred, separate change folder):
+- 22 TakeAny location IDs (Option A vs Option B decided then).
+- TakeAny dispatch infrastructure (the missing ROM-table mechanism).
+- RNG-driven `randomCollection(4)` + `randomCollection(5)` replication.
+- ProgressiveSword / ThreeHundredRupees "5th TakeAny" activation logic.

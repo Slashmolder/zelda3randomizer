@@ -701,3 +701,98 @@ items:
       location "Hyrule Castle - Map Chest"). Distinct from the dungeon
       maps of EP/DP/etc. — appended out-of-sequence (after id 123) to
       preserve all earlier ID assignments for append-only discipline.
+
+  # ===========================================================================
+  # Phase B Slice 3a (#52) — 7 new IDs supporting Retro shop dispatch
+  #
+  # Resolved per `openspec/changes/add-rando-retro-world-state/design.md` §4
+  # Risk 3 (2026-05-27). Each entry below has a distinct ROM byte from its
+  # bottled / pool sibling; matches ALTTPR's `app/Item.php` byte assignments
+  # exactly for cross-tool diff-ability.
+  #
+  # Aliased ALTTPR items (not new IDs — code-side comments at dispatch sites):
+  #   ShopArrow   → ITEM_Arrow1        (ALTTPR `ItemAlias('ShopArrow', 'Arrow')`)
+  #   ShopKey     → ITEM_GenericKey    (ALTTPR `ItemAlias('ShopKey', 'KeyGK')`)
+  #   BlueShield  → ITEM_FighterShield (same ROM byte 0x04)
+  #   RedShield   → ITEM_RedShield     (already in registry at id 10)
+  # ===========================================================================
+  - id: 125
+    name: GenericKey
+    category: shop_consumable
+    dispatch: vanilla:0xAF
+    notes: |
+      Retro-mode inter-dungeon-transferable small key. ROM byte 0xAF.
+      ALTTPR upstream: `Item\Key('KeyGK', [0xAF])` at `app/Item.php:253`;
+      ALTTPR also exposes the alias `ShopKey → KeyGK` at
+      `app/Item.php:270`. Phase B Slice 3a — only valid when
+      `settings.world_state == Retro AND rom.genericKeys == true`
+      (which Retro pins on per `app/World/Retro.php:18-23`).
+
+  - id: 126
+    name: BluePotion
+    category: shop_consumable
+    dispatch: vanilla:0x30
+    notes: |
+      Unbottled blue potion served by shops in Retro mode. ROM byte 0x30.
+      Distinct from `BottleWithBluePotion` (ROM 0x2D, registry id varies)
+      — the shop variant restores MP/HP on purchase rather than placing
+      the bottled form into Link's inventory.
+      ALTTPR upstream: `Item\BottleContents('BluePotion', [0x30])` at
+      `app/Item.php:141`.
+
+  - id: 127
+    name: RedPotion
+    category: shop_consumable
+    dispatch: vanilla:0x2E
+    notes: |
+      Unbottled red potion served by shops in Retro mode. ROM byte 0x2E.
+      Distinct from `BottleWithRedPotion` — see BluePotion notes for the
+      bottled-vs-content distinction.
+      ALTTPR upstream: `Item\BottleContents('RedPotion', [0x2E])` at
+      `app/Item.php:139`.
+
+  - id: 128
+    name: BeeContents
+    category: shop_consumable
+    dispatch: vanilla:0x0E
+    notes: |
+      Unbottled bee served by the Dark World Forest Shop in Retro mode.
+      ROM byte 0x0E. Distinct from `BottleWithBee` (ROM 0x3C, registry
+      id 47) — same animal, different inventory slot semantics.
+      ALTTPR upstream: `Item\BottleContents('Bee', [0x0E])` at
+      `app/Item.php:107`.
+
+  - id: 129
+    name: BombUpgrade5
+    category: shop_consumable
+    dispatch: vanilla:0x51
+    notes: |
+      +5 max bomb capacity, sold at the Capacity Upgrade shop. ROM byte
+      0x51.
+      ALTTPR upstream: `Item\Upgrade\Bomb('BombUpgrade5', [0x51])` at
+      `app/Item.php:168`. Phase A's existing `BombUpgrade10` / `BombUpgrade50`
+      (registry ids 79, 80) cover the larger upgrades; this entry adds
+      the 5-step variant for shop purchases.
+
+  - id: 130
+    name: ArrowUpgrade5
+    category: shop_consumable
+    dispatch: vanilla:0x52
+    notes: |
+      +5 max arrow capacity, sold at the Capacity Upgrade shop. ROM byte
+      0x52.
+      ALTTPR upstream: `Item\Upgrade\Arrow('ArrowUpgrade5', [0x52])` at
+      `app/Item.php:171`.
+
+  - id: 131
+    name: HeartRefill
+    category: shop_consumable
+    dispatch: vanilla:0x42
+    notes: |
+      Heart-refill consumable served by Light/Dark World shops in Retro
+      mode. ROM byte 0x42. Transient — restores health on purchase;
+      does NOT occupy an inventory slot.
+      ALTTPR upstream: ROM byte 0x42 in shop-inventory tables; not a
+      named Item class in app/Item.php (modeled inline at shop-region
+      construction). Phase B Slice 3a adds the registry entry so the
+      shop-dispatch path can route through the placement table.
