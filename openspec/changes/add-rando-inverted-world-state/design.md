@@ -1,3 +1,29 @@
+## Status (2026-05-27 overnight push)
+
+**Translation: 24 YAML files written.** All 13 dungeon PHP files + 5 LightWorld + 6 DarkWorld translated under `assets/rando/logic_parts/inverted/**`. ~2500 PHP lines → ~3500 YAML lines. Six background agents worked file-disjoint sets in parallel; each produced citation-grounded YAML with PHP file:line refs on every predicate.
+
+**Integration: BLOCKED on world-state-aware predicate merge.** The codegen (`assets/rando_logic_gen.py:_merge_logic_doc`) currently does "last wins" merge per location. Loading the Inverted YAML overwrites Standard predicates for same-named locations, corrupting Standard placements (verified: corpus 50/50 FAILED with recursive glob enabled). The codegen revert to non-recursive glob restores the corpus to 50/50 OK — Inverted files sit on disk as reference until the world-state-aware merge lands.
+
+**Required integration changes** (NOT in this commit):
+
+1. `assets/rando_logic_gen.py::_merge_logic_doc` — replace `loc_preds[name] = pred` with `loc_preds[name][world_state] = pred`. Codegen emits per-world-state predicate tables; runtime VM picks predicate matching `settings.world_state` at reachability time.
+2. `src/rando/rando_logic.c` predicate VM — consult `settings.world_state` when looking up location/region predicates.
+3. Per-world-state region assignment — Ether Tablet (id 194) and Spectacle Rock (id 195) move from LightWorld_DeathMountain_West (Standard) to East (Inverted) per PHP `LightWorld/DeathMountain/East.php:25-26` vs `West.php:24-25`. Codegen needs to emit per-(loc, world_state) region maps OR move the branching into the predicate body.
+4. Re-enable recursive glob in codegen.
+5. Bytecode size — ~600 new predicates ≈ 2× can_reach table. Verify against `kPredicateBytes_*` budget.
+6. `kGeneratorVersion` bump 10 → 11.
+7. Un-gate Inverted in `src/select_file.c` settings-screen picker (currently capped at Standard at line 2509-2511).
+8. Manual Inverted playthrough validation.
+9. Fresh-eyes audit on translation correctness — every prior cluster audit found 5-10 NEW bugs; translation has high latent-bug surface per `cluster_audit_cadence` memory.
+
+**Known translation flags from the agents**:
+- `EasternPalace.yaml`: parent file (Standard) doesn't exist in `logic_parts/` (only worked-example in `logic_examples/`); Inverted EP relies on inherited locations from a future Standard EP file. Cannonball Chest + Map Chest not emitted.
+- `HyruleCastleEscape.yaml`: `item_registry.yaml` has no `BigKey_HyruleCastleEscape` / `Compass_HyruleCastleEscape`; PHP `setFillRules` wild-flag bans dropped as vacuous.
+- `LightWorld/DeathMountain/East.yaml`: Ether Tablet + Spectacle Rock world-state-conditional region assignment (see #3 above).
+- All files drop Phase B branches (canBootsClip, canSuperSpeed, canOneFrameClipOW, canBunnyRevive, canOWYBA, canSuperBunny+MagicMirror, etc.) and document in header.
+
+---
+
 ## Context
 
 Phase A scaffolded Inverted-world plumbing without authoring its logic graph:

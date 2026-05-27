@@ -1,3 +1,151 @@
-# TODO: translate from ../alttp_vt_randomizer/app/Region/Inverted/EasternPalace.php
-# See README.md for the template.
-# Status: scaffold only, not yet authored.
+# EasternPalace.yaml — Eastern Palace Inverted world-state (Phase B Slice 2)
+#
+# Mechanically translated from `../alttp_vt_randomizer/app/Region/Inverted/EasternPalace.php`
+# (MIT, verified per CLAUDE.md "Claim-grounding discipline" §Upstream references).
+#
+# The Inverted variant `extends Region\Standard\EasternPalace` and overrides:
+#   1. `Eastern Palace - Compass Chest` setRequirements (php:23-30) —
+#      Standard had no setRequirements (default TRUE); Inverted adds a
+#      bunny-state gate (hasSword OR MoonPearl OR various trick disjuncts).
+#   2. `Eastern Palace - Big Chest` setRequirements (php:32-40) — Inverted
+#      adds the same bunny-state gate AND retains has(BigKeyP1).
+#   3. `Eastern Palace - Big Key Chest` setRequirements (php:42-50) —
+#      Inverted adds bunny-state gate AND has(Lamp, item.require.Lamp=1).
+#   4. `Eastern Palace - Boss` setRequirements (php:52-67) — Inverted adds
+#      the bunny-state gate alongside arrows+light+BigKey+boss-kill.
+#   5. `can_enter` (php:69-77) — bunny-state gate AND
+#      `North East Light World`.canEnter.
+#
+# In Inverted-mode, Link starts in dark-world bunny-state on the light-
+# world overworld; entering Eastern Palace (a light-world dungeon) without
+# MoonPearl makes Link still a bunny inside, hence the "must be able to
+# revive from bunny state OR have MoonPearl" gates on every chest interaction.
+#
+# Translation discipline:
+#   - Every predicate cites the PHP file:line range it came from.
+#   - PHP item-name remappings:
+#       * BigKeyP1 → BigKey_EasternPalace
+#       * CompassP1 → Compass_EasternPalace (only in wildCompasses guard)
+#       * MapP1 → Map_EasternPalace (only in wildMaps guard)
+#   - Dropped branches:
+#       * canDungeonRevive (php:25, 34, 45, 54, 70) — Phase B trick, FALSE.
+#       * canBunnyRevive+canBunnyRevive (php:26-27, 35-36, 46-47, 55-56,
+#         72-73) — Phase B trick, FALSE.
+#       * canOWYBA+hasABottle (php:27-28, 36-37, 47-48, 56-57, 73-74)
+#         — Phase B trick, FALSE.
+#       * canSuperBunny+MagicMirror (php:71-72) — Phase B trick, FALSE.
+#       * itemPlacement === 'advanced' branch in Boss (php:59-60) —
+#         drops the FireRod-as-Lamp-substitute disjunct; Phase A pins
+#         itemPlacement=basic so the `=== 'advanced'` clause evaluates FALSE.
+#       * region.wildCompasses / region.wildMaps in Boss (php:62-66) —
+#         default false → guards collapse to TRUE.
+#       * item.require.Lamp (php:49, 58) — defaults to 1, so the test is
+#         has(Lamp, 1) = HAS_ITEM(Lamp).
+#       * hasSword() bunny-revive shorthand: Phase A drops the trick-only
+#         disjuncts; what remains of the "bunny-state OK" gate is
+#         `hasSword() OR MoonPearl`. NOTE: `$items->hasSword()` here is the
+#         no-arg PHP form which is hasSword(1) — any sword.
+#
+# Status: translated 2026-05-27. Awaiting review + codegen integration.
+
+format_version: 1
+
+regions:
+  # External parent stub — `North East Light World` in PHP. In Inverted,
+  # this is the light-world overworld region holding EP's entrance (the
+  # "North East" quadrant where Sahasrahla's Hut, Witch's Hut, Hyrule
+  # Castle stand). Maps to our canonical `LightWorld_NorthEast` ID.
+  - id: LightWorld_NorthEast
+    name: "Light World - North East (stub)"
+    source: "stub for cross-file region reference"
+
+  # Single-region EP (the Standard parent EP also uses a single region;
+  # there's no `PastArmos` sub-region split in the PHP class hierarchy,
+  # only in the `logic_examples/01_eastern_palace.yaml` worked example).
+  - id: EasternPalace
+    name: "Eastern Palace"
+    dungeon: EasternPalace
+    source: "app/Region/Inverted/EasternPalace.php:11 (extends Standard\\EasternPalace); base in app/Region/Standard/EasternPalace.php:15-62"
+
+edges:
+  # Inverted `can_enter` (Inverted/EasternPalace.php:69-77). Phase A collapse:
+  #   (canDungeonRevive                                       [FALSE]
+  #    || (canSuperBunny AND MagicMirror)                     [FALSE]
+  #    || (canBunnyRevive AND canBunnyRevive(world))          [FALSE]
+  #    || (canOWYBA AND hasABottle())                         [FALSE]
+  #    || has(MoonPearl))                                     [survives]
+  #   AND <NorthEastLightWorld.canEnter>                      [edge from LW_NE]
+  # Surviving: HAS_ITEM(MoonPearl). (The PHP code does NOT include
+  # `RescueZelda` in this override — the parent's `has('RescueZelda')`
+  # (Standard php:108) is wholly replaced. Per trust-the-code rule,
+  # RescuedZelda is NOT a requirement here.)
+  - from: LightWorld_NorthEast
+    to: EasternPalace
+    predicate: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Inverted/EasternPalace.php:69-77 (can_enter closure)"
+
+locations:
+  # ===========================================================================
+  # Inverted-overridden EP location predicates. The shared "bunny-state OK"
+  # gate (Phase A surviving form: `hasSword() OR HAS_ITEM(MoonPearl)`)
+  # appears in 4 of these. Reflected literally; codegen factor-out is a
+  # later optimization.
+  # ===========================================================================
+
+  # Compass Chest (Inverted/EasternPalace.php:23-30): the bunny-state gate
+  # alone. (No `has(BigKeyP1)` like Big Chest; no Lamp like Big Key Chest.)
+  - id: "Eastern Palace - Compass Chest"
+    region: EasternPalace
+    can_reach: "HasSword(1) OR HAS_ITEM(MoonPearl)"
+    source: "app/Region/Inverted/EasternPalace.php:23-30"
+
+  # Big Chest (Inverted/EasternPalace.php:32-40): bunny-state gate AND BigKey.
+  - id: "Eastern Palace - Big Chest"
+    region: EasternPalace
+    can_reach: "(HasSword(1) OR HAS_ITEM(MoonPearl)) AND HAS_ITEM(BigKey_EasternPalace)"
+    source: "app/Region/Inverted/EasternPalace.php:32-40"
+
+  # Big Key Chest (Inverted/EasternPalace.php:42-50): bunny-state AND Lamp.
+  - id: "Eastern Palace - Big Key Chest"
+    region: EasternPalace
+    can_reach: "(HasSword(1) OR HAS_ITEM(MoonPearl)) AND HAS_ITEM(Lamp)"
+    source: "app/Region/Inverted/EasternPalace.php:42-50"
+
+  # Boss (Inverted/EasternPalace.php:52-67). Phase A collapse:
+  #   canShootArrows(world)                                  [→ CanShootArrowsL1()]
+  #   AND (canDungeonRevive || canBunnyRevive+revive ||
+  #        canOWYBA+bottle || MoonPearl)                      [→ MoonPearl]
+  #   AND (has(Lamp, 1) || (advanced AND FireRod))            [→ HAS_ITEM(Lamp)]
+  #   AND has(BigKeyP1)
+  #   AND boss.canBeat (Armos Knights)
+  #   AND wildCompasses/wildMaps guards                       [TRUE]
+  - id: "Eastern Palace - Boss"
+    region: EasternPalace
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    source: "app/Region/Inverted/EasternPalace.php:52-67"
+
+  # Prize: inherited via parent's `prize_location->setRequirements($this->can_complete)`
+  # (Standard php:111); can_complete = Boss canAccess (Standard php:80-82).
+  # The Boss predicate is the Inverted override above; Prize mirrors it.
+  - id: "Eastern Palace - Prize"
+    region: EasternPalace
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    source: "app/Region/Inverted/EasternPalace.php:52-67 (Prize = can_complete = Boss access)"
+
+  # ===========================================================================
+  # Inherited from Standard parent (NOT overridden in Inverted):
+  #   - Eastern Palace - Cannonball Chest (Standard php:53; default TRUE).
+  #   - Eastern Palace - Map Chest (Standard php:55; default TRUE).
+  # These are NOT re-emitted here. They will be picked up from the
+  # Standard logic_parts file once it lands (currently authored as the
+  # worked example `assets/rando/logic_examples/01_eastern_palace.yaml`,
+  # not yet in `logic_parts/`). Phase B integration task: confirm the
+  # codegen merge picks up Standard's Cannonball/Map predicates when
+  # Inverted variant is active.
+  # ===========================================================================
+
+# NOTE: CanKillArmosKnights macro is already defined in `logic.yaml:255-258`
+# (canonical, zero parameters). Earlier draft of this file re-declared it
+# with a `world` parameter, which conflicted with the existing zero-arg
+# callers in `33_ganons_tower.yaml`. The macro is now consumed from the
+# canonical definition; no redeclaration needed here.

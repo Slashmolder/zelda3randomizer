@@ -1,3 +1,140 @@
-# TODO: translate from ../alttp_vt_randomizer/app/Region/Inverted/DarkWorld/NorthEast.php
-# See ../README.md for the template.
-# Status: scaffold only, not yet authored.
+# DarkWorld/NorthEast.yaml — Inverted DarkWorld NorthEast (Phase B Slice 2)
+#
+# Mechanically translated from `../alttp_vt_randomizer/app/Region/Inverted/DarkWorld/NorthEast.php`
+# (MIT, verified per CLAUDE.md claim-grounding discipline).
+#
+# Translation discipline:
+#   - Every predicate cites the PHP file:line range it came from.
+#   - PHP `PegasusBoots` → registry-canonical `Boots`.
+#   - PHP `BigRedBomb` is the Pyramid Fairy bomb-item gate; we model it
+#     with HAS_ITEM(BigBomb). NOTE: the item_registry does not currently
+#     have a `BigRedBomb` / `BigBomb` id (verified by grep). Per
+#     discipline, predicates referencing this are flagged as DROPPED
+#     with the PHP source preserved as a comment.
+#   - PHP `Bottle` → `HasABottle()` via macro.
+#   - Inverted/NorthEast.php extends Standard/NorthEast.php. The Inverted
+#     constructor (php:24) removes "Ganon" from this region (Ganon lives
+#     elsewhere in Inverted — Light World per location_registry.yaml:327
+#     note "Re-located to LightWorld/NorthEast.php:19 in Inverted").
+#     The Pyramid Fairy Sword/Bow + (optionally Left/Right) predicates
+#     are replaced; Inverted's `initialize()` does NOT call parent::initialize()
+#     so other locations (Pyramid standing slot) get default TRUE().
+#   - Dropped branches: canBootsClip, canOneFrameClipOW, canSuperSpeed,
+#     canFakeFlipper, canBunnyRevive, canOWYBA, canWaterWalk,
+#     region.cantTakeDamage — Phase B logic axes.
+#
+# Status: translated 2026-05-27. Awaiting review.
+
+format_version: 1
+
+regions:
+  - id: DarkWorld_NorthEast
+    name: "Dark World - North East (Inverted)"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:11-106 (extends Standard/DarkWorld/NorthEast.php:14-238)"
+
+edges:
+  # Inverted `can_enter` (NorthEast.php:89-102):
+  #   canFly OR Hammer OR Flippers OR
+  #   (MagicMirror AND NE_Light_World_reachable) OR
+  #   <glitch branches drop>
+  # Surviving Phase A:
+  #   canFly(world) OR HAS_ITEM(Hammer) OR HAS_ITEM(Flippers) OR
+  #   (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthEast))
+  #
+  # Note: in Inverted, the "source" for the entry edge is the start region
+  # DarkWorld_South (Link's House sits there). The mirror-back disjunct
+  # cross-references LightWorld_NorthEast which is owned by another agent's
+  # YAML; codegen merges regions by id.
+  - from: DarkWorld_South
+    to: DarkWorld_NorthEast
+    predicate: "CanFly(world) OR HAS_ITEM(Hammer) OR HAS_ITEM(Flippers) OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthEast))"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:89-102 (can_enter)"
+
+locations:
+  # `Catfish` (Inverted/NorthEast.php:52-62):
+  #   canLiftRocks OR
+  #   (MagicMirror AND South_Light_World_reachable AND
+  #     (MoonPearl OR <OWYBA dropped>) AND
+  #     (Flippers OR <fake-flipper/water-walk dropped>))
+  # All glitch branches drop. Surviving:
+  #   CanLiftRocks() OR
+  #   (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_South) AND
+  #    HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers))
+  - id: "Catfish"
+    region: DarkWorld_NorthEast
+    can_reach: "CanLiftRocks() OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_South) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers))"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:52-62"
+
+  # `Pyramid` — not overridden in Inverted; parent::initialize() is NOT
+  # called → default TRUE() per framework. (location_registry id 209.)
+  - id: "Pyramid"
+    region: DarkWorld_NorthEast
+    can_reach: "TRUE()"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php (not overridden, default TRUE)"
+
+  # `Pyramid Fairy - Sword` (Inverted/NorthEast.php:64-68):
+  #   hasSword AND BigRedBomb AND MagicMirror.
+  #
+  # DROPPED-DEPENDENCY: BigRedBomb is not in our item_registry (it's an
+  # ALTTPR pool item granted by the bomb-merchant interaction). Phase A
+  # cannot express the BigRedBomb gate; for now we drop it and require
+  # only HasSword(1) + MagicMirror. Phase B re-introduces BigRedBomb when
+  # the bomb-merchant interaction is modeled (location_registry id 236
+  # Bomb Merchant — Inverted-only event).
+  - id: "Pyramid Fairy - Sword"
+    region: DarkWorld_NorthEast
+    can_reach: "HasSword(1) AND HAS_ITEM(MagicMirror)"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:64-68"
+    notes: |
+      DROPPED: BigRedBomb requirement (no item_registry id). Phase B
+      restores when BigBomb / Bomb Merchant interaction is modeled.
+
+  # `Pyramid Fairy - Bow` (Inverted/NorthEast.php:70-74):
+  #   canShootArrows AND BigRedBomb AND MagicMirror.
+  # Same BigRedBomb drop as above.
+  - id: "Pyramid Fairy - Bow"
+    region: DarkWorld_NorthEast
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(MagicMirror)"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:70-74"
+    notes: |
+      DROPPED: BigRedBomb requirement (no item_registry id). See Sword
+      slot note.
+
+  # `Pyramid Fairy - Left` (Inverted/NorthEast.php:77-82, conditional on
+  # `region.swordsInPool` which Phase A pins true):
+  #   BigRedBomb AND MagicMirror.
+  # Phase A pin: `region.swordsInPool=true` → this slot exists.
+  # Same BigRedBomb drop.
+  - id: "Pyramid Fairy - Left"
+    region: DarkWorld_NorthEast
+    can_reach: "HAS_ITEM(MagicMirror)"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:77-82"
+    notes: |
+      DROPPED: BigRedBomb requirement. Phase A pins
+      `region.swordsInPool=true` (consistent with Standard handling).
+
+  # `Pyramid Fairy - Right` (Inverted/NorthEast.php:83-86): same as Left.
+  - id: "Pyramid Fairy - Right"
+    region: DarkWorld_NorthEast
+    can_reach: "HAS_ITEM(MagicMirror)"
+    source: "app/Region/Inverted/DarkWorld/NorthEast.php:83-86"
+    notes: |
+      DROPPED: BigRedBomb requirement.
+
+  # NOTE: "Ganon" (location_registry id 212) is REMOVED from this region
+  # in Inverted (Inverted/NorthEast.php:24 `$this->locations->removeItem("Ganon")`).
+  # The Inverted "Ganon" location lives in LightWorld/NorthEast.php:19
+  # (per location_registry.yaml:327 note). That YAML is owned by another
+  # agent (Inverted LightWorld translator).
+
+# NOTE on the "Dark World Potion Shop" predicate (Inverted/NorthEast.php:35-50):
+#   PHP: canFly OR Hammer OR Flippers OR
+#        (MagicMirror AND NE_Light_World_reachable AND MoonPearl) OR
+#        <glitch branches drop>
+#   Phase A surviving: CanFly(world) OR HAS_ITEM(Hammer) OR
+#                      HAS_ITEM(Flippers) OR
+#                      (HAS_ITEM(MagicMirror) AND
+#                       OP_REGION_REACHABLE(LightWorld_NorthEast) AND
+#                       HAS_ITEM(MoonPearl))
+#   DROPPED from this YAML because shops are not placement targets in
+#   Phase A (no location_registry entry).

@@ -282,6 +282,14 @@ def load_logic(path: Path | None) -> tuple[dict[str, RegionDef], list[EdgeDef], 
         _merge_logic_doc(load_yaml(path), regions, edges, loc_preds, macros, str(path))
 
     # Load every file under assets/rando/logic_parts/*.yaml (sorted).
+    # NON-RECURSIVE: Phase B Slice 2 Inverted YAML lives under
+    # `logic_parts/inverted/` but is NOT loaded yet — the codegen's "last
+    # wins" merge corrupts Standard placements when Inverted files
+    # redefine the same location IDs with Inverted-specific predicates.
+    # World-state-aware predicate merging is a Slice-2-prerequisite codegen
+    # change tracked separately; until that lands, the Inverted YAML files
+    # sit on disk as reference material that can be loaded by switching
+    # this glob to `rglob` and the merge to a world-state-keyed map.
     parts_dir = RANDO_ASSETS / "logic_parts"
     if parts_dir.exists() and parts_dir.is_dir():
         for part in sorted(parts_dir.glob("*.yaml")):
