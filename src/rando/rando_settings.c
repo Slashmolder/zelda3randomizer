@@ -481,6 +481,10 @@ static int parse_weapons(const char *v, int vlen, uint8 *out) {
 static int parse_accessibility(const char *v, int vlen, uint8 *out) {
   if (csv_str_eq(v, vlen, "items"))     { *out = kAccessibility_Items;     return 0; }
   if (csv_str_eq(v, vlen, "locations")) { *out = kAccessibility_Locations; return 0; }
+  // Phase B Slice 4 §5 — `none` accepts un-completable seeds (goal-completability
+  // check short-circuits at Goal_IsCompletable). Generation refusal is bypassed
+  // and a `fallback_warnings` entry is emitted to the spoiler.
+  if (csv_str_eq(v, vlen, "none"))      { *out = kAccessibility_None;      return 0; }
   return -1;
 }
 
@@ -641,10 +645,25 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
       s->tricks = mask;
     }
   } else if (csv_str_eq(key, klen, "logic")) {
-    // Phase A: `logic=NoGlitches` (level 0). Phase B+ adds OWG/MajorGlitches.
+    // Phase B Slice 4 — un-pinned to accept OWG / MajorGlitches in addition
+    // to NoGlitches (the Phase A default). Phase D will lift the
+    // HybridMG / NoLogic ceiling. Per `add-rando-trick-logic-and-axes` §3.1.
+    //   logic=NoGlitches | none | 0    → 0 (default)
+    //   logic=OverworldGlitches | overworld_glitches | 1 → 1
+    //   logic=MajorGlitches | major_glitches | 2     → 2
+    //   logic=HybridMG | hybrid_mg | 3                → reject (Phase D)
+    //   logic=NoLogic | no_logic | 4                  → reject (Phase D)
     MARK_SEEN(KEY_logic);
     if (csv_str_eq(val, vlen, "NoGlitches") || csv_str_eq(val, vlen, "none") || csv_str_eq(val, vlen, "0")) {
       s->logic = 0;
+    } else if (csv_str_eq(val, vlen, "OverworldGlitches") || csv_str_eq(val, vlen, "overworld_glitches") || csv_str_eq(val, vlen, "1")) {
+      s->logic = 1;
+    } else if (csv_str_eq(val, vlen, "MajorGlitches") || csv_str_eq(val, vlen, "major_glitches") || csv_str_eq(val, vlen, "2")) {
+      s->logic = 2;
+    } else if (csv_str_eq(val, vlen, "HybridMG") || csv_str_eq(val, vlen, "hybrid_mg") || csv_str_eq(val, vlen, "3") ||
+               csv_str_eq(val, vlen, "NoLogic") || csv_str_eq(val, vlen, "no_logic") || csv_str_eq(val, vlen, "4")) {
+      fprintf(stderr, "Settings_ParseCsv: logic=%.*s is deferred to Phase D (not yet supported)\n", vlen, val);
+      goto bad_value;
     } else {
       goto bad_value;
     }

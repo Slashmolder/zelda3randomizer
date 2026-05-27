@@ -34,10 +34,11 @@ Add **7 new item-registry IDs** per `design.md` §4 Risk 3 resolution table. The
 
 ## 3. BuildItemPool Retro branch
 
-- [ ] 3.1 In `src/rando/rando_placement.c`, add a `BuildItemPool` branch for `world_state == Retro` that:
+- [x] 3.1 In `src/rando/rando_placement.c`, add a `BuildItemPool` branch for `world_state == Retro` that:
   - Starts from the Open pool (Retro inherits Open's region graph + item set).
   - Appends shop-purchase locations from `location_registry.yaml` whose `world_state_filter` includes the Retro bit.
   - Junk-pads to match `|locations|`.
+  *(Landed 2026-05-27 via a simpler ALTTPR-faithful path: instead of pool additions, `LOCTYPE_Shop` (type 14) gets the same identity-pin as `LOCTYPE_ShopUpgrade`. Per ALTTPR `Randomizer.php:737-750`, Retro shops retain their vanilla inventory — the randomization is "the player must find shops + pay rupees," not shuffled inventory. The 27 Shop-type locations + 2 ShopUpgrade locations pin to vanilla; the existing junk-pad logic absorbs the location count exactly. `kGeneratorVersion` 16→17; 3 Retro corpus entries regenerated digests. 55/55 corpus passes at the new baseline. Pool growth path is preserved for a future "wild shops" Phase variant if owner direction calls for it.)*
 - [ ] 3.2 Pin the 4 Retro config flags (`rupeeBow`, `genericKeys`, `takeAnys`, `wildKeys`) in the effective settings struct when `world_state == Retro` is detected at generation start. Decide whether to reject CSV overrides or silently apply Retro defaults — recorded in design.md.
 - [ ] 3.3 Verify junk-pad rotation: pool difficulty `hard`/`expert` still adds `Rupoor`; `normal` does not. Same as Phase A.
 - [ ] 3.4 Add a unit-style assert (or selftest entry) confirming `|pool| == |locations|` for the Retro branch on at least 3 corpus seeds.

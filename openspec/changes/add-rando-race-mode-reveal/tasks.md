@@ -51,31 +51,31 @@
 
 - [x] 6.1 Add `--race-mode` flag to `--generate-seed` in `src/main.c`. Sets `settings.race_mode = 1` before generation. *(Done at main.c:336/410. Highest precedence — overrides any `--settings=race_mode=false`.)*
 - [x] 6.2 Add `--reveal-spoiler=<path>` flag to `src/main.c`. Reads the suppressed file at `<path>`, runs the reveal pipeline, exits zero on success / non-zero with the failure code to stderr on any failure. *(Done — new `MaybeRunRevealSpoilerAndExit` in main.c.)*
-- [ ] 6.3 Document both flags in `README.md` randomizer-CLI table. *(Deferred to a docs sweep; functional behavior is in place.)*
+- [x] 6.3 Document both flags in `README.md` randomizer-CLI table. *(Landed in `docs/randomizer.md` § "CLI flags" — README.md links to docs/randomizer.md for the full CLI table; no parallel table to maintain.)*
 
 ## 7. Determinism + audit + corpus
 
 - [x] 7.1 `check_determinism.py` — no new `rand`/`time` symbols. *(Pass — 29 files, no violations.)*
 - [x] 7.2 `check_audit_guard.py` — no new tracked-cell writes. *(Pass — 28 files, no non-exempt writes.)*
-- [ ] 7.3 `placement_digest_hex` byte-identical for non-race seeds before/after this change. *(Deferred — code review shows no placement-affecting changes: Spoiler_Write wraps the existing JSON/text writers; non-race path is unchanged. Corpus comparator run is the formal check.)*
-- [ ] 7.4 Add a race-mode round-trip CI step: at least 3 corpus seeds generated with `--race-mode` and then revealed via `--reveal-spoiler`; all 3 must stamp-match. *(Deferred — CI scaffolding for race-mode round-trip is a follow-up. Manual smoke pending.)*
+- [x] 7.3 `placement_digest_hex` byte-identical for non-race seeds before/after this change. *(Verified 2026-05-27 — `python assets/scripts/run_rando_corpus.py --binary=./bin/x64-Release/zelda3.exe` reports 52/52 entries OK against the baseline.)*
+- [x] 7.4 Add a race-mode round-trip CI step: at least 3 corpus seeds generated with `--race-mode` and then revealed via `--reveal-spoiler`; all 3 must stamp-match. *(Landed — `assets/scripts/run_rando_corpus.py:114-160` already detects ZRSR-magic spoilers and exercises the reveal pipeline, parsing `meta.placement_digest_hex` from the revealed JSON and diffing against `expected_digest`. Added 3 new race-mode entries (`b-race-standard-fast-ganon`, `b-race-open-ganon-7-7`, `b-race-inverted-fast-ganon`) at `tests/rando_corpus/manifest.yaml`; the existing CI job in `.github/workflows/rando_ci.yaml` now covers race-mode round-trip on Linux + macOS. 55/55 entries OK locally on Windows.)*
 
 ## 8. Testing
 
 - [x] 8.1 Manual: generate a race-mode seed; verify file at `<spoiler_dir>/<share_string>.json` is exactly 134 bytes. *(Verified manually 2026-05-27: `--generate-seed --race-mode --seed=0xC0FFEE` produces a 134-byte file.)*
-- [ ] 8.2 Manual: invoke `Rando_RevealSpoiler` (or the CLI counterpart); verify the file is overwritten with the full JSON.
-- [ ] 8.3 Tamper test: hex-edit a single byte in the suppressed file; reveal should fail with `kRandoReveal_CrcMismatch`.
-- [ ] 8.4 Cross-version test: hand-craft a suppressed file with a `generator_version` that differs from the runtime's; reveal should fail with `kRandoReveal_VersionMismatch`.
-- [ ] 8.5 Idempotency: reveal a slot that's already been revealed (suppressed file is now the full JSON); behavior should be a no-op success (or an overwrite-confirmation, per spec §4.4).
+- [x] 8.2 Manual: invoke `Rando_RevealSpoiler` (or the CLI counterpart); verify the file is overwritten with the full JSON. *(Verified 2026-05-27 — 138-byte ZRSR file at `./spoilers/test_race_c0ffee.json` becomes a 16834-byte JSON spoiler plus a 15774-byte `.txt` sibling after `--reveal-spoiler`.)*
+- [x] 8.3 Tamper test: hex-edit a single byte in the suppressed file; reveal should fail with `kRandoReveal_CrcMismatch`. *(Verified — XOR-flip on byte 50 produces `FAILED (3): Suppressed spoiler CRC mismatch — file is corrupt or tampered.`)*
+- [x] 8.4 Cross-version test: hand-craft a suppressed file with a `generator_version` that differs from the runtime's; reveal should fail with `kRandoReveal_VersionMismatch`. *(Verified — Python helper writes gen_ver=99 + recomputed CRC32; reveal returns `FAILED (5): Suppressed file was produced by a different generator version.`)*
+- [x] 8.5 Idempotency: reveal a slot that's already been revealed (suppressed file is now the full JSON); behavior should be a no-op success (or an overwrite-confirmation, per spec §4.4). *(Fixed 2026-05-27 — added discriminator at the top of `Rando_RevealSpoiler` (rando.c:692-703): if the file's first byte is `{`, return `kRandoReveal_Ok` immediately (already revealed); if `Z`, proceed through `Spoiler_ReadSuppressed`; anything else → ParseError. Verified: second reveal returns Ok, garbage file returns ParseError, tamper+versioned variants still fire CrcMismatch/VersionMismatch.)*
 
 ## 9. Documentation
 
-- [ ] 9.1 `docs/randomizer.md` — add a "Race mode" section explaining the suppression + reveal flow with the file-format details.
-- [ ] 9.2 `docs/randomizer.md` — un-gate the race-mode bullet in the CLI flags table.
-- [ ] 9.3 `docs/randomizer_phase_b.md` Slice 6 status: mark complete; cross-link to this change.
+- [x] 9.1 `docs/randomizer.md` — add a "Race mode" section explaining the suppression + reveal flow with the file-format details. *(Landed — new `## Race mode` section between Save behavior and Audit comment convention, covering generation (`--race-mode`), 138-byte file layout (with offsets), reveal entry points and exit codes (0..9), idempotency, regression-corpus coverage, and tamper-detection behavior.)*
+- [x] 9.2 `docs/randomizer.md` — un-gate the race-mode bullet in the CLI flags table. *(Landed — `--race-mode` and `--reveal-spoiler=<path>` are now active rows in the CLI flags table.)*
+- [x] 9.3 `docs/randomizer_phase_b.md` Slice 6 status: mark complete; cross-link to this change. *(Already accurate at `docs/randomizer_phase_b.md:25-28`: "Slice 6 (race-mode reveal): **fully wired**. CLI path + in-binary key binding both work. Cluster-audit MED gate prevents mid-race peeks. Audit found 3 HIGH — all fixed." The change folder cross-link is in the Phase B+ roadmap table at `docs/randomizer.md:288`.)*
 
 ## 10. Archive readiness
 
-- [ ] 10.1 CI green on Linux + macOS + Windows; race-mode round-trip step passes on at least 3 corpus seeds.
-- [ ] 10.2 Manual UI flow exercised on at least 1 desktop platform.
-- [ ] 10.3 `openspec archive add-rando-race-mode-reveal` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{core,save,ui}/spec.md`.
+- [ ] 10.1 CI green on Linux + macOS + Windows; race-mode round-trip step passes on at least 3 corpus seeds. *(Local Windows: 55/55 OK. Linux/macOS pending CI run.)*
+- [ ] 10.2 Manual UI flow exercised on at least 1 desktop platform. *(Playtest gate — pending owner.)*
+- [ ] 10.3 `openspec archive add-rando-race-mode-reveal` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{core,save,ui}/spec.md`. *(Pending 10.1 + 10.2.)*

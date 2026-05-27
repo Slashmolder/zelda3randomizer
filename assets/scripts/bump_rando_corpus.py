@@ -81,16 +81,27 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
             return None, None
         if not out_json.exists():
             return None, None
-        # Phase B Slice 6 — race-mode entries emit a 138-byte ZRSR (kGenVer 14)
-        # binary instead of JSON. Reveal pipeline regenerates the
-        # placement; for bump purposes we read the binary's stamp +
-        # share string but don't try to extract a placement_digest_hex
-        # (the suppressed file has no JSON to parse). Return the
-        # current values unchanged so the existing manifest digest is
-        # preserved through the bump.
+        # Phase B Slice 6 — race-mode entries emit a 138-byte ZRSR binary
+        # instead of JSON. Invoke --reveal-spoiler on the suppressed file
+        # (it overwrites the file in place with full JSON) and parse the
+        # revealed digest. This matches the steady-state corpus runner's
+        # behavior and ensures a kGeneratorVersion bump regenerates the
+        # ZRSR-path digest the same way it regenerates the CSV-path
+        # digest. Cluster-audit 2026-05-27 M3 — prior implementation
+        # returned ("<ZRSR>", "<ZRSR>") and the caller skipped comparison,
+        # leaving stale expected_digest values in the manifest with no
+        # proof the new binary's reveal-spoiler path produced the same
+        # placement.
         head = out_json.read_bytes()[:4]
         if head == b"ZRSR":
-            return "<ZRSR>", "<ZRSR>"  # caller skips comparison
+            try:
+                subprocess.run(
+                    [str(binary), f"--reveal-spoiler={out_json}"],
+                    check=True, capture_output=True, timeout=60,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                print(f"  reveal failed for seed={seed}: {e}", file=sys.stderr)
+                return None, None
         spoiler = json.loads(out_json.read_text(encoding="utf-8"))
         meta = spoiler.get("meta", {})
         return meta.get("placement_digest_hex"), meta.get("sphere_digest")

@@ -688,6 +688,20 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
     suppressed_path = resolved;
   }
 
+  // Idempotency (randomizer-ui spec §3.4): if the file at this path is
+  // already a full JSON spoiler (first byte '{'), reveal already ran.
+  // Return success without rewriting. The discriminator is the same one
+  // §2.4 calls out — first byte 'Z' (suppressed magic 'ZRSR') vs. '{'
+  // (JSON open brace) vs. anything else (malformed).
+  {
+    FILE *fdis = fopen(suppressed_path, "rb");
+    if (fdis == NULL) return kRandoReveal_FileNotFound;
+    int first = fgetc(fdis);
+    fclose(fdis);
+    if (first == '{') return kRandoReveal_Ok;
+    if (first != 'Z') return kRandoReveal_ParseError;
+  }
+
   RandoSuppressedSpoiler hdr;
   int rd = Spoiler_ReadSuppressed(suppressed_path, &hdr);
   if (rd == -1) return kRandoReveal_FileNotFound;

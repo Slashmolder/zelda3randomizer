@@ -54,7 +54,7 @@
 
 - [x] 6.1 `assets/scripts/check_determinism.py` — no new `rand`/`time` symbols; this change adds none, but re-run as a sanity check. *(Pass — 29 files, no violations.)*
 - [x] 6.2 `assets/scripts/check_audit_guard.py` — confirm no new writes to `link_item_*` / `link_bottle_info[*]` / `link_has_crystals` / `sram_progress_*` cells from this change. The helper only writes `sound_effect_2` and triggers a HUD refresh; neither is tracked. No new `// rando-exempt:` comments required. *(Pass — 28 files, no non-exempt writes.)*
-- [ ] 6.3 Manual verification: generate a seed before and after this change with the same `--seed` and confirm `placement_digest_hex` is byte-identical (`docs/randomizer_playthrough.md` cross-platform digest check). *(Deferred to corpus comparator run — code review shows no placement-affecting changes: only call sites added, no logic/macro/op changes.)*
+- [x] 6.3 Manual verification: generate a seed before and after this change with the same `--seed` and confirm `placement_digest_hex` is byte-identical (`docs/randomizer_playthrough.md` cross-platform digest check). *(Verified 2026-05-27 — `python assets/scripts/run_rando_corpus.py --binary=./bin/x64-Release/zelda3.exe` reports all 52 entries OK against the current `tests/rando_corpus/manifest.yaml` baseline. Code review confirmed no placement-affecting changes; corpus run confirms it byte-for-byte.)*
 
 ## 7. Playtest
 
@@ -64,14 +64,14 @@
 
 ## 8. Documentation
 
-- [ ] 8.1 Update `docs/randomizer.md` known-limitations section to remove the "audio-only visible confirmation" caveat (currently the §7.6 follow-on bullet under Phase B+ roadmap).
-- [ ] 8.2 Update `docs/randomizer_phase_b.md` Slice 9 status: mark complete; cross-link to this change.
-- [ ] 8.3 No `README.md` update needed (this is a back-end UX polish, no new user-facing toggle).
+- [x] 8.1 Update `docs/randomizer.md` known-limitations section to remove the "audio-only visible confirmation" caveat (currently the §7.6 follow-on bullet under Phase B+ roadmap). *(No-op — caveat was already removed when the §7.6 follow-on bullet was rewritten as "**#1 add-rando-confirmation-icons** (warm-up)" in the Phase B+ roadmap (docs/randomizer.md:308-309). The "audio-only" framing in `docs/randomizer_phase_b.md:455` is a factual description of the current YAML-stub state, not a stale caveat — it correctly notes that tile-research is the remaining follow-up (#68).)*
+- [x] 8.2 Update `docs/randomizer_phase_b.md` Slice 9 status: mark complete; cross-link to this change. *(Already correct — `docs/randomizer_phase_b.md:23-24` reports "Slice 9 (confirmation icons): **scaffold complete** + audit fixes. YAML tile-research (47 items) is the remaining follow-up (#68)." Slice 9 section header at :453 says "**CODE COMPLETE pending tile-research follow-up.**" Cross-link to this change folder exists at :459.)*
+- [x] 8.3 No `README.md` update needed (this is a back-end UX polish, no new user-facing toggle).
 
 ## 9. Archive readiness
 
-- [ ] 9.1 All 5 call sites updated; `git grep "Rando_ShowDirectGrantConfirmation()"` returns zero.
-- [ ] 9.2 CI green on Linux + macOS + Windows; codegen-wiring check passes; determinism + audit guards green.
-- [ ] 9.3 `placement_digest_hex` regression: a corpus-comparable seed (e.g., the first seed in `tests/rando_corpus/manifest.yaml`) yields the same digest before and after this change. **No `kGeneratorVersion` bump.**
-- [ ] 9.4 Manual smoke (§7.1-7.3) ticked.
-- [ ] 9.5 `openspec archive add-rando-confirmation-icons` runs cleanly; spec deltas merge into `openspec/specs/randomizer-placement/spec.md`.
+- [x] 9.1 All 5 call sites updated; `git grep "Rando_ShowDirectGrantConfirmation()"` returns zero. *(Per §5.6 — verified zero matches for both the zero-arg form and the single-arg `Rando_ReceiveOrConfirm(lttp_code)` form.)*
+- [ ] 9.2 CI green on Linux + macOS + Windows; codegen-wiring check passes; determinism + audit guards green. *(Awaiting CI run — local checks pass: --rando-selftest 8/8 OK, codegen-wiring check passes, 52/52 corpus entries OK.)*
+- [x] 9.3 `placement_digest_hex` regression: a corpus-comparable seed (e.g., the first seed in `tests/rando_corpus/manifest.yaml`) yields the same digest before and after this change. **No `kGeneratorVersion` bump.** *(Verified — 52/52 corpus entries OK at the current baseline. See §6.3.)*
+- [ ] 9.4 Manual smoke (§7.1-7.3) ticked. *(Playtest gate — pending owner.)*
+- [ ] 9.5 `openspec archive add-rando-confirmation-icons` runs cleanly; spec deltas merge into `openspec/specs/randomizer-placement/spec.md`. *(Pending 9.2 + 9.4.)*

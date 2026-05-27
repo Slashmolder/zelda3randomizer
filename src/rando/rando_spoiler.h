@@ -90,8 +90,8 @@ bool Spoiler_Write(const RandoSpoiler *s,
 // ---------------------------------------------------------------------------
 #define kRandoSuppressedSpoilerMagic "ZRSR"
 #define kRandoSuppressedSpoilerShareStringMax 64
-#define kRandoSuppressedSpoilerSettingsLen 28  // = kSettingsCanonicalLen (kGenVer 14, §66)
-#define kRandoSuppressedSpoilerSize 138  // on-disk byte length (kGenVer 14: 134→138)
+#define kRandoSuppressedSpoilerSettingsLen 28  // = kSettingsCanonicalLen (last changed at kGenVer 14 §66; stable through current)
+#define kRandoSuppressedSpoilerSize 138  // on-disk byte length (last changed at kGenVer 14: 134→138; stable through current)
 
 // Compile-time guard — when kSettingsCanonicalLen bumps, this assert
 // forces a coupled update to kRandoSuppressedSpoilerSettingsLen +

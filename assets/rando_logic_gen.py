@@ -1797,7 +1797,15 @@ def _world_state_mask(wsf: list) -> int:
         return 0  # 0 = all world-states (the common case)
     mask = 0
     for ws in wsf:
-        mask |= 1 << WORLD_STATES.get(ws, 0)
+        # Strict — typoed names like "retros" silently demoted to Open (bit 0)
+        # under the prior `.get(ws, 0)` default, invalidating every Open digest
+        # at once. Raise loudly instead. (Cluster-audit 2026-05-27 M1.)
+        if ws not in WORLD_STATES:
+            raise ParseError(
+                f"unknown world_state {ws!r} in world_state_filter — "
+                f"valid: {sorted(WORLD_STATES.keys())}"
+            )
+        mask |= 1 << WORLD_STATES[ws]
     return mask
 
 

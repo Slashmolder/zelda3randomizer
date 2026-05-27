@@ -793,6 +793,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   const uint8 LOCTYPE_Prize_Pendant = 11;
   const uint8 LOCTYPE_Prize_Event   = 12;
   const uint8 LOCTYPE_Medallion     = 13;
+  const uint8 LOCTYPE_Shop          = 14;  // Phase B Slice 3a #53 part 2 — Retro regular shop slot
   const uint8 LOCTYPE_ShopUpgrade   = 15;  // Phase B Slice 3a — identity-placed Capacity Upgrade slots
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
@@ -808,6 +809,20 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // through the uniform Rando_DispatchVanillaGrant call shape, but
       // the placer pins the upgrade to its vanilla item so the player
       // still buys the capacity upgrade for rupees as in vanilla.
+      vanilla_pin = true;
+    } else if (loc->type == LOCTYPE_Shop) {
+      // Phase B Slice 3a #53 part 2 — Retro regular shop slots are
+      // identity-placed. Per ALTTPR `Randomizer.php:737-750`, Retro shops
+      // retain their vanilla inventory (the randomization is that the
+      // player must find shops + pay rupees to survive, NOT that shop
+      // inventory is shuffled). The slot exists in `location_registry.yaml`
+      // so the future shop-sprite-handler dispatch (#53 part 1 — sprite
+      // discovery deferred) can route the grant through the uniform
+      // Rando_DispatchVanillaGrant call, but the placer pins the item
+      // to its vanilla_item_id so the shop sells what it sold in vanilla.
+      // No pool addition is needed — `vanilla_pin = true` + the existing
+      // junk-pad logic means the Retro location count is exactly absorbed
+      // by the existing pool size.
       vanilla_pin = true;
     } else if (loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal) {
       // Pin per the prize-shuffle assignment. Find the dungeon whose Prize
@@ -1012,15 +1027,23 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
     return;
   }
   // Copy entries into a local buffer and sort by location_id.
-  // Phase A worst case is ~250 entries; sorting in place is fine.
-  RandoPlacement local[256];
+  //
+  // Phase B Retro is up to 265 entries (266 catalog minus 1 Inverted-only
+  // entry per the world_state filter); Phase A peaked at ~250. Sized at
+  // 512 to match kRando_SessionPlacementCapacity in rando.c and leave
+  // room for Phase C+. Silent truncation at the old 256 cap was H1 of the
+  // 2026-05-27 cluster audit — the missing 9 Retro Light-World shop /
+  // capacity-upgrade slots dropped out of placement_digest_hex when sorted
+  // by location_id; corpus coverage was silently degraded.
+  enum { kDigestLocalCap = 512 };
+  RandoPlacement local[kDigestLocalCap];
   uint16 n = t->count;
-  if (n > 256) n = 256;
+  if (n > kDigestLocalCap) n = kDigestLocalCap;
   memcpy(local, t->entries, n * sizeof(RandoPlacement));
   qsort(local, n, sizeof(RandoPlacement), placement_cmp);
 
   // Serialize: 4 bytes per entry, little-endian.
-  uint8 buf[256 * 4];
+  uint8 buf[kDigestLocalCap * 4];
   for (uint16 i = 0; i < n; i++) {
     buf[i * 4 + 0] = local[i].location_id & 0xff;
     buf[i * 4 + 1] = local[i].location_id >> 8;
@@ -1124,6 +1147,15 @@ static uint16 count_reachable_placements_of(const RandoPlacementTable *t,
 bool Goal_IsCompletable(const RandoSettings *settings,
                         const RandoPlacementTable *placements) {
   if (settings == NULL || placements == NULL) return false;
+
+  // Phase B Slice 4 §5 — accessibility=none short-circuits goal-completability
+  // (the player explicitly opted into a possibly-unwinnable seed; the
+  // generator should not refuse). The spoiler still records the un-completable
+  // status via `goal_completable: false` and a `fallback_warnings` entry —
+  // see Spoiler_Write for the warning emission.
+  if (settings->accessibility == kAccessibility_None) {
+    return true;
+  }
 
   RandoCounts final_inv;
   build_final_inventory(placements, &final_inv);

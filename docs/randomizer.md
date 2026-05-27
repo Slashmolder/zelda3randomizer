@@ -85,6 +85,8 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
 | `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, shuffles, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
+| `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 138-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
+| `--reveal-spoiler=<path>` | Read a suppressed `ZRSR` file at `<path>`, validate magic + CRC + version + stamp, regenerate the placement, and overwrite the file in place with the full JSON. Writes a sibling `.txt` text spoiler. Exits 0 on success; non-zero with a numeric `kRandoReveal_*` code on any failure (CrcMismatch, VersionMismatch, StampMismatch, ParseError, FileNotFound). Idempotent: a second invocation on an already-revealed file is a no-op success. |
 
 Examples:
 ```sh
@@ -159,6 +161,64 @@ Cross-version forward-compatibility (per `randomizer-save / Embedded placement
 table — upgrade safety`): a slot written by `generator_version = N` loads on a
 binary with version `N+1` and surfaces a one-time informational warning. The
 embedded placement table is consulted; no regeneration is required.
+
+## Race mode
+
+Race-mode seeds suppress the spoiler at generation time so tournament admins
+can distribute the share string without leaking item placement. Reveal happens
+later via `--reveal-spoiler` (the binary regenerates and overwrites the file
+in place with the full JSON).
+
+**Generation**: pass `--race-mode` (or set `race_mode=true` via `--settings`).
+The spoiler path receives a 138-byte binary file with magic `ZRSR` instead
+of the usual JSON + .txt pair. File layout (all multi-byte fields LE):
+
+```
++0    4 bytes   magic "ZRSR"
++4    2 bytes   generator_version (u16 LE)
++6    32 bytes  spoiler_stamp[32] = SHA-256 of the canonical revealed JSON
+                (with race_mode and wall-clock fields normalized to 0)
++38   4 bytes   share_string_len (u32 LE)
++42   64 bytes  share_string (zero-padded)
++106  28 bytes  settings_canonical (= kSettingsCanonicalLen)
++134  4 bytes   crc32 (IEEE 802.3 over bytes 0..133, LE on disk)
+```
+
+Total: 138 bytes. The settings are public on race sheets, so including the
+canonical bytes does not leak the placement — they're needed at reveal time
+to regenerate.
+
+**Reveal**: `--reveal-spoiler=<path>` runs the full validation chain — magic,
+CRC32, generator-version match, settings canonical-deserialize, share-string
+decode, `Place_AssumedFill` regenerate, `Logic_ComputeSpheres`, compare stamp
+against a re-hashed canonical revealed JSON; on match, rename the
+`.reveal-tmp` over the original suppressed file and write a sibling `.txt`
+spoiler. Exit codes (`kRandoReveal_*`):
+
+| Code | Meaning |
+|---|---|
+| 0 | Ok — file overwritten with full JSON (or no-op success if already revealed) |
+| 1 | FileNotFound |
+| 2 | ParseError — file lacks `ZRSR` magic or has unexpected size |
+| 3 | CrcMismatch — file is corrupt or tampered |
+| 4 | ShareStringMismatch — caller-provided expected_share_string doesn't match |
+| 5 | VersionMismatch — file was produced by a different `kGeneratorVersion` |
+| 6 | SettingsCorrupt — `settings_canonical` failed deserialization |
+| 7 | StampMismatch — regenerated placement does not produce the recorded SHA-256 (bug, file tampering, or undetected determinism drift) |
+| 8 | PlacementFailed — `Place_AssumedFill` could not regenerate |
+| 9 | WriteFailed — partial-write failure during the rename step |
+
+The reveal action is **idempotent**: a second invocation on an already-revealed
+file (first byte `{` instead of `Z`) returns Ok without rewriting. The
+regression corpus exercises the round-trip via `run_rando_corpus.py`'s ZRSR
+sub-path — 3 race-mode entries in `tests/rando_corpus/manifest.yaml` (labels
+prefixed `b-race-`) are part of the determinism CI matrix.
+
+**Tamper detection**: any single-byte flip in the suppressed file produces a
+CRC mismatch on read; reveal returns code 3 without touching the original.
+Hand-crafting a file with a divergent `generator_version` + recomputed CRC
+returns code 5 (`VersionMismatch`) — the gen-version check fires before
+expensive placement regeneration.
 
 ## Audit comment convention (for contributors)
 

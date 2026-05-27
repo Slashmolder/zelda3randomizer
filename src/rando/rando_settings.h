@@ -60,8 +60,7 @@ typedef enum {
 typedef enum {
   kAccessibility_Items = 0,
   kAccessibility_Locations = 1,
-  // Phase B reservation:
-  // kAccessibility_None = 2,
+  kAccessibility_None = 2,  // Phase B Slice 4 — un-pinned per add-rando-trick-logic-and-axes §5.
 } Accessibility;
 
 typedef enum {

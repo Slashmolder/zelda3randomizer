@@ -38,11 +38,11 @@
 
 ## 4. §6.8 minigame dispatch
 
-- [ ] 4.1 **Digging Game**: wire `Rando_OnLocationCheck(LOC_Digging_Game, vanilla_item)` at the dig-reward grant site in `src/sprite_main.c`. The sprite handler currently grants vanilla items inline; replace with the dispatcher call.
-- [ ] 4.2 **Hype Cave NPC**: wire dispatch at the Hype Cave soldier-NPC handler. The 4 chests in Hype Cave are already wired (`chest_lookup.h:203-206`); this site is the 5th, NPC-based.
-- [ ] 4.3 **Peg Cave**: wire dispatch at the hammer-pegs reward-chest open path. Add `// rando-exempt: state-shuffle — hammer peg state` comments at the peg-state mutation sites.
-- [ ] 4.4 **Treasure-Chest minigame**: wire dispatch at the pick-1-of-3 handler. The picked chest's `LOC_<...>` dispatches; the other 2 chests are not dispatched in that play-through. Spoiler annotates the 3 slots as `"choice_group": "treasure_chest"` per design.md D3.
-- [ ] 4.5 Vanilla-mode regression: each new dispatch site preserves byte-identical behavior when `kFeatures1_RandomizerActive` is clear.
+- [x] 4.1 **Digging Game**: wire `Rando_OnLocationCheck(LOC_Digging_Game, vanilla_item)` at the dig-reward grant site in `src/sprite_main.c`. The sprite handler currently grants vanilla items inline; replace with the dispatcher call. *(Landed in slice 8 #67.)*
+- [ ] 4.2 **Hype Cave NPC**: wire dispatch at the Hype Cave soldier-NPC handler. The 4 chests in Hype Cave are already wired (`chest_lookup.h:203-206`); this site is the 5th, NPC-based. *(Blocked on #78 sprite-handler discovery. ALTTPR stores at SRAM 0x180011 — an event-flag location, not a sprite-dispatch site in the fork's current model. Needs a playtest-verified C-side handler — per `logic_vs_runtime_gap` memory note, wiring runtime intercepts without playtest is the failure mode.)*
+- [ ] 4.3 **Peg Cave**: wire dispatch at the hammer-pegs reward-chest open path. Add `// rando-exempt: state-shuffle — hammer peg state` comments at the peg-state mutation sites. *(Blocked on #79 — Hammer Pegs is a "Standing" location at SRAM 0x180006 needing new instrumentation per audit.md. ALTTPR's reward is a one-time prize after all pegs hammered; the fork has no sprite-handler equivalent yet. Same playtest-gating concern as #78.)*
+- [x] 4.4 **Treasure-Chest minigame**: wire dispatch at the pick-1-of-3 handler. The picked chest's `LOC_<...>` dispatches; the other 2 chests are not dispatched in that play-through. Spoiler annotates the 3 slots as `"choice_group": "treasure_chest"` per design.md D3. *(Landed in slice 8 #67 — `LOC_Chest_Game` dispatch at `src/dungeon.c:5955-5963`.)*
+- [ ] 4.5 Vanilla-mode regression: each new dispatch site preserves byte-identical behavior when `kFeatures1_RandomizerActive` is clear. *(Active for §4.1/§4.4 via the existing audit-guard CI step. §4.2/§4.3 pending.)*
 
 ## 5. Settings axes
 

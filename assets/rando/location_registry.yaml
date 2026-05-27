@@ -433,6 +433,11 @@ locations:
   - { id: 262, name: "Light World Lake Hylia Shop - 1", region: LightWorld_South, type: Shop, vanilla_item: HeartRefill, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:74" }
   - { id: 263, name: "Light World Lake Hylia Shop - 2", region: LightWorld_South, type: Shop, vanilla_item: Bombs10,     world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:75" }
 
-  # Capacity Upgrade — identity-placed in 3a per proposal.md:41.
-  - { id: 264, name: "Capacity Upgrade - Bomb",  region: LightWorld_South, type: ShopUpgrade, vanilla_item: BombUpgrade5,  world_state_filter: [retro], identity_placed: true, source: "app/Region/Standard/LightWorld/South.php:69" }
-  - { id: 265, name: "Capacity Upgrade - Arrow", region: LightWorld_South, type: ShopUpgrade, vanilla_item: ArrowUpgrade5, world_state_filter: [retro], identity_placed: true, source: "app/Region/Standard/LightWorld/South.php:70" }
+  # Capacity Upgrade — identity-placed in 3a per proposal.md:41. Note: pin
+  # is enforced by `type: ShopUpgrade` in the placer, not by any YAML field.
+  # An `identity_placed: true` flag that used to live on these two entries
+  # was unused — only the type matters — and was removed per cluster-audit
+  # 2026-05-27 M2 to prevent future maintainers from believing the flag
+  # could be toggled.
+  - { id: 264, name: "Capacity Upgrade - Bomb",  region: LightWorld_South, type: ShopUpgrade, vanilla_item: BombUpgrade5,  world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:69" }
+  - { id: 265, name: "Capacity Upgrade - Arrow", region: LightWorld_South, type: ShopUpgrade, vanilla_item: ArrowUpgrade5, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:70" }

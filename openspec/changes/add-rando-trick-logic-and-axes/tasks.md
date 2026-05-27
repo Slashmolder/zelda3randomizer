@@ -1,22 +1,22 @@
 ## 1. Op-code handlers
 
-- [ ] 1.1 Implement `OP_TRICK trick_id` handler in `src/rando/rando_logic.c`. Looks up `settings.tricks` bitmask; returns true iff bit at position `trick_id` is set.
-- [ ] 1.2 Implement `OP_DIFFICULTY_AT_LEAST threshold` handler. Returns `settings.item_pool_difficulty >= threshold` per the enum ordering (`easy=0`, `normal=1`, `hard=2`, `expert=3`).
-- [ ] 1.3 Implement `OP_GLITCH_LEVEL_AT_LEAST threshold` handler. Returns `settings.logic >= threshold` per the enum ordering (`NoGlitches=0`, `OverworldGlitches=1`, `MajorGlitches=2`). Phase D extends to higher thresholds; this change handles 0-2.
-- [ ] 1.4 Add the 3 handlers to `Logic_SelfCheck` with positive + negative test cases.
+- [x] 1.1 Implement `OP_TRICK trick_id` handler in `src/rando/rando_logic.c`. Looks up `settings.tricks` bitmask; returns true iff bit at position `trick_id` is set. *(Landed in slice 4 #56 — `eval_trick` at `rando_logic.c:224-229`. Rejects `trick_id >= 8` defensively.)*
+- [x] 1.2 Implement `OP_DIFFICULTY_AT_LEAST threshold` handler. Returns `settings.item_pool_difficulty >= threshold` per the enum ordering (`easy=0`, `normal=1`, `hard=2`, `expert=3`). *(Landed in slice 4 — `eval_difficulty` at `rando_logic.c:230-234`.)*
+- [x] 1.3 Implement `OP_GLITCH_LEVEL_AT_LEAST threshold` handler. Returns `settings.logic >= threshold` per the enum ordering (`NoGlitches=0`, `OverworldGlitches=1`, `MajorGlitches=2`). Phase D extends to higher thresholds; this change handles 0-2. *(Landed in slice 4 — `eval_glitch` at `rando_logic.c:235-239`.)*
+- [x] 1.4 Add the 3 handlers to `Logic_SelfCheck` with positive + negative test cases. *(Landed — coverage at `rando_logic.c:810-829`. Selftest passes 8/8 OK.)*
 
 ## 2. Trick bitmask un-pin + CSV
 
-- [ ] 2.1 In `src/rando/rando_settings.h`, confirm `tricks` is uint8 (Phase A pinned to 0). Phase B leaves the type unchanged; just allows user input.
-- [ ] 2.2 Update `src/rando/rando_settings.c` CSV parser to accept `tricks=boots-clip,fake-flippers,...` syntax. Resolve trick names against the `tricks:` table in `assets/rando/op_registry.yaml` (loaded by `assets/rando_logic_gen.py` and emitted into a runtime lookup table).
-- [ ] 2.3 Unknown trick names are an error: CLI exits non-zero with a clear message naming the unknown trick.
-- [ ] 2.4 Settings-screen widget: add a multi-select trick toggle UI (Phase A's settings screen supports per-axis enums; tricks is multi-select).
+- [x] 2.1 In `src/rando/rando_settings.h`, confirm `tricks` is uint8 (Phase A pinned to 0). Phase B leaves the type unchanged; just allows user input. *(Confirmed — `rando_settings.h:86`, `uint8 tricks`. Type unchanged.)*
+- [x] 2.2 Update `src/rando/rando_settings.c` CSV parser to accept `tricks=boots-clip,fake-flippers,...` syntax. Resolve trick names against the `tricks:` table in `assets/rando/op_registry.yaml` (loaded by `assets/rando_logic_gen.py` and emitted into a runtime lookup table). *(Landed — `rando_settings.c:587-642` accepts `tricks=none | 0 | 0xNN | name | n1+n2+n3`. 8-trick table mirrors op_registry.yaml.)*
+- [x] 2.3 Unknown trick names are an error: CLI exits non-zero with a clear message naming the unknown trick. *(Landed — `goto bad_value;` at `rando_settings.c:638` produces "Settings_ParseCsv: bad value '...' for key 'tricks'".)*
+- [ ] 2.4 Settings-screen widget: add a multi-select trick toggle UI (Phase A's settings screen supports per-axis enums; tricks is multi-select). *(Deferred — depends on settings-screen architecture; needs cycle-or-multi-select decision.)*
 
 ## 3. Logic level un-pin + CSV
 
-- [ ] 3.1 Un-pin `logic` in `rando_settings.h:88`. Accept `OverworldGlitches=1` and `MajorGlitches=2` from user input. Reject `HybridMG=3` and `NoLogic=4` with a "deferred to Phase D" message.
-- [ ] 3.2 CSV parser: accept `logic=overworld_glitches | major_glitches` (snake_case).
-- [ ] 3.3 Settings-screen widget: cycle the field through the 3 supported values.
+- [x] 3.1 Un-pin `logic` in `rando_settings.h:88`. Accept `OverworldGlitches=1` and `MajorGlitches=2` from user input. Reject `HybridMG=3` and `NoLogic=4` with a "deferred to Phase D" message. *(Landed 2026-05-27 — `rando_settings.c:643-666` accepts NoGlitches/OverworldGlitches/MajorGlitches; rejects HybridMG/NoLogic with the Phase-D message via stderr + bad_value. Verified: `logic=OverworldGlitches`/`logic=major_glitches` both generate clean; `logic=HybridMG` emits "deferred to Phase D" and exits non-zero.)*
+- [x] 3.2 CSV parser: accept `logic=overworld_glitches | major_glitches` (snake_case). *(Landed — snake_case + PascalCase + numeric forms all accepted.)*
+- [ ] 3.3 Settings-screen widget: cycle the field through the 3 supported values. *(Deferred — settings-screen UI work.)*
 
 ## 4. mode_weapons un-pin (swordless)
 
@@ -29,12 +29,12 @@
 
 ## 5. accessibility=none
 
-- [ ] 5.1 Un-pin `accessibility` in `rando_settings.h`. Accept `none=2`.
-- [ ] 5.2 CSV parser: accept `accessibility=none`.
-- [ ] 5.3 In `Goal_IsCompletable` (`rando_placement.c:1086`), when `settings.accessibility == none`, short-circuit to true (no reachability enforcement).
-- [ ] 5.4 At `src/main.c:482`'s strict refusal: skip the refusal when `accessibility == none`.
-- [ ] 5.5 Emit a spoiler warning: `fallback_warnings: [{"code": "accessibility_none_seed", "detail": "..."}]`.
-- [ ] 5.6 Settings-screen widget: add `none` to the accessibility cycle.
+- [x] 5.1 Un-pin `accessibility` in `rando_settings.h`. Accept `none=2`. *(Landed 2026-05-27 — `kAccessibility_None = 2` no longer commented-out in `rando_settings.h:64`.)*
+- [x] 5.2 CSV parser: accept `accessibility=none`. *(Landed — `parse_accessibility` at `rando_settings.c:485` adds the `none` branch.)*
+- [x] 5.3 In `Goal_IsCompletable` (`rando_placement.c:1086`), when `settings.accessibility == none`, short-circuit to true (no reachability enforcement). *(Landed — `rando_placement.c:1140-1142` short-circuits before reachability compute. Verified: `--settings=accessibility=none` with a goal that would normally refuse generates clean.)*
+- [x] 5.4 At `src/main.c:482`'s strict refusal: skip the refusal when `accessibility == none`. *(Implicit via §5.3 — `Goal_IsCompletable` returns true so the refusal branch never fires. No `main.c` change needed.)*
+- [ ] 5.5 Emit a spoiler warning: `fallback_warnings: [{"code": "accessibility_none_seed", "detail": "..."}]`. *(Deferred — needs `Spoiler_Write` to consult `settings->accessibility` and append the warning. Code path is mechanical; low priority since the meta block already records the setting.)*
+- [ ] 5.6 Settings-screen widget: add `none` to the accessibility cycle. *(Deferred — settings-screen UI work.)*
 
 ## 6. pyramid_bow_upgrade un-pin
 

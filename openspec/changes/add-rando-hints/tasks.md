@@ -25,19 +25,22 @@
 
 ## 3. Generation pipeline
 
-- [ ] 3.1 Implement `Rando_GenerateHints`:
-  - Seeds a sub-RNG from `seed_u64 XOR kHintsRngMagic` (per design.md D6).
-  - Iterates each enabled hint source.
-  - For each source, calls the per-source generator.
-  - Allocates HintEntry array on heap; populates fields.
-- [ ] 3.2 Implement per-source generators:
-  - `gen_sahasrahla_hints(rng, pt, sd)` — selects N random locations from sphere 0..2 (early-game); emits "the X lies near Y" text.
-  - `gen_storyteller_hints(rng, pt, sd)` — selects N items from the pool; emits "Look for the Y in Z's domain."
-  - `gen_bookshelf_hints(rng, pt, sd)` — per bookshelf, emits a hint about a nearby location.
-  - `gen_murahdahla_hints(rng, pt, sd)` — for Triforce Hunt: one entry per Triforce-piece location, grouped by sphere ("A piece lies in <region> (sphere N)"). For other goals: one entry "no progress to report" OR empty.
-- [ ] 3.3 Per-NPC count: tune at apply-time. Initial guesses: Sahasrahla 5 hints, storyteller 3 hints, bookshelf 8 hints, Murahdahla = TriforcePiecesPlaced count.
-- [ ] 3.4 Hint text format: hand-translate from `../alttp_vt_randomizer/app/Services/HintService.php` and `app/Text.php`. Per-NPC translation discipline; source-line citations.
+Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic tile hints — there is no upstream Storyteller / Bookshelf / Murahdahla generator (Storyteller is the dark-world hint sprite; Murahdahla is a static per-goal text in `Randomizer.php`). The scaffolded task list below over-promised; the real algorithm is the 6-step HintService.applyHints (`app/Services/HintService.php:48-176`):
+
+1. Fisher-Yates shuffle the 15 tile names + an 8-entry interesting-location list.
+2. If `region.wildBigKeys`, allocate one tile to the GT BigKey location.
+3. Allocate one tile to the PegasusBoots location.
+4. Pick 5 random interesting-location hints from the shuffled list.
+5. Pick up to 4 advancement-item hints (filtered to exclude Shield/Key/Map/Compass/BigKey/Bottle/Sword + specific blocklist).
+6. Fill remaining tiles with `random_locations + joke_hints` mix from `strings/hint.txt`.
+
+- [ ] 3.1 Implement `Rando_GenerateHints` per the 6-step algorithm above. Seeds a sub-RNG from `seed_u64 XOR kHintsRngMagic` (per design.md D6). Allocates an array of 15 hint text strings keyed by `kRandoHintNpc_TelepathicTileEasternPalace..`.
+- [ ] 3.2 Hint text format (`Location::getHint()`): translate from `../alttp_vt_randomizer/app/Location.php` and per-location overrides in `app/Region/**/*.php`. Format follows `"<item> at <location-hint-text>"` with per-location colorful descriptors. Joke hints from `../alttp_vt_randomizer/strings/hint.txt` (60+ entries).
+- [ ] 3.3 (Deleted — see §3.1 note. There are no Sahasrahla / storyteller / bookshelf / Murahdahla generators; the original task draft conflated the 4 NPC types with hint-text generation.)
+- [ ] 3.4 Hint text format: hand-translate from `../alttp_vt_randomizer/app/Services/HintService.php` (177 lines) and `app/Text.php` (1110 lines, hint-bearing entries only). Per-NPC translation discipline; source-line citations.
 - [ ] 3.5 Hint length constraint: each hint's rendered text must fit the text-engine buffer. Add an assert during generation; if a hint exceeds the cap, generate a shorter fallback.
+
+**Status (2026-05-27)**: Scaffold in `src/rando/rando_hints.c` is a no-op stub. The actual translation is too large for an autonomous cleanup pass (≥3 hours focused work plus playtest verification of dispatch wiring at §5 + visible-output gate at §4). Deferred to a dedicated implementation sprint. Per `logic_vs_runtime_gap` memo: playtest at slice START — start by wiring `Rando_RemapTeleMsg` invocation in the message-engine read path so the generated text becomes visible in-game; THEN translate the generation algorithm.
 
 ## 4. Dialogue-ID injection
 

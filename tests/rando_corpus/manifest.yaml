@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 15  # temporary downgrade for bump_rando_corpus regen — re-bumped to 15 by --apply
+generator_version: 17  # current kGeneratorVersion; bump policy per tasks.md §13.6 — `assets/scripts/bump_rando_corpus.py --apply` regenerates digests on bump
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -95,13 +95,13 @@ entries:
   - settings: { mode.state: retro, goal: ganon }
     seed: "0x0000000000000014"
     label: "a1-retro-ganon"
-    expected_digest: "c6e0e4a8700cb50c6ec8dc4a3c03628b59e7fd50462471a0217e06fa26c82018"
-    expected_sphere_digest: "4d9958341fc7cd008460b3e3a4e33b77a40d44f4444dc6c402841ab6837c481e"
+    expected_digest: "0165dc7807de396f2f8679fb40f8365e758b207db64c70d93e1473d948e50af3"
+    expected_sphere_digest: "f5b8f79825a49466612bc12ddd83186988902bd4138bdd9115626af2c252fb10"
   - settings: { mode.state: retro, goal: fast_ganon }
     seed: "0x0000000000000015"
     label: "a1-retro-fast-ganon"
-    expected_digest: "ce45ad4bdd7944c7f092229b762e621d975de7efa93f9b886ac166ced6f0a7e1"
-    expected_sphere_digest: "16176db7780047bef1e83c192b028b91acb72e549389b9cc63e293866806ea06"
+    expected_digest: "39a79ab691c5e7ad04a4ffdd7d27781e1b3517e1b1f93b6bc97dc6aee1dcc869"
+    expected_sphere_digest: "0be534cba78a11e905935b81ae4f62387bebdde0aad8a0f0d67e4813da2530af"
   # crystals.* variations.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
     seed: "0x0000000000000016"
@@ -288,8 +288,8 @@ entries:
   - settings: { mode.state: retro, goal: completionist }
     seed: "0x52455452"   # "RETR"
     label: "celebrity-retro-completionist"
-    expected_digest: "20306333a7ff8f342251fc1343e9e8a6e87a7bc512be24c9dbe447f3eac3671c"
-    expected_sphere_digest: "882a6f70449f67087f8be3296861c92091c72e36431ac0ed12d6133680006351"
+    expected_digest: "29607c6de2328729eebbe1a76a576482df7259b9747c967eaa3f6b9468fcf2be"
+    expected_sphere_digest: "f567b7e317a777daaae9934093b099ca983f28672a02b1a08193e76fdb4959a5"
   # Phase B Slice 2 (kGeneratorVersion 11) — Inverted seeds. Captured against
   # the world-state-aware predicate/edge/region override path. 1-2 unreachable
   # placements per seed is currently expected (graph gaps tracked in tasks
@@ -304,6 +304,28 @@ entries:
     label: "b-inverted-ganon-7-7"
     expected_digest: "8d3a0cd74affc8602047877e4369def90c95f4cb3f88a139815a4fbc47e23aab"
     expected_sphere_digest: "f712b2090a0391fc54a40b0f4a0ac057e3c4ec4c9c96c2adcb75e362cab0826a"
+  # Phase B Slice 6 §7.4 — race-mode round-trip entries. Each generates a
+  # 138-byte ZRSR file; run_rando_corpus's reveal sub-path overwrites it
+  # with full JSON and parses placement_digest_hex from the revealed meta
+  # block. expected_digest is the placement after race_mode is normalized
+  # to 0 at reveal-time (race_mode is a visibility flag, not consumed by
+  # the placer, so the digest equals the non-race generation's digest for
+  # the same (settings, seed)).
+  - settings: { mode.state: standard, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
+    seed: "0x12345678ABCDEF01"
+    label: "b-race-standard-fast-ganon"
+    expected_digest: "a3138212413ea8515573123138db5405ed33899908186c3faa5e72524f1c2274"
+    expected_sphere_digest: "01d2feace95f43da516a476ac1a889506fd774a76a8ae96a70547121ec253817"
+  - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
+    seed: "0xCAFEFEEDABCD1234"
+    label: "b-race-open-ganon-7-7"
+    expected_digest: "d4e72741e799518b41a33c887d6b02b9733fc648dd87bf0d27335c7b900e66d8"
+    expected_sphere_digest: "16c45bb2b89679d29fbd57e42967aac221607df695806dac471a95a312d183c9"
+  - settings: { mode.state: inverted, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
+    seed: "0xBADC0FFEE"
+    label: "b-race-inverted-fast-ganon"
+    expected_digest: "35d8d545e97b1b6cf72595c6c220a6d8a1d9e4ba73c0b9b71db3646ec1fcfb1d"
+    expected_sphere_digest: "c37ef16a251b4315159afd3320805c26737a44f3fcd2a63c246399fdd313fa4a"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
