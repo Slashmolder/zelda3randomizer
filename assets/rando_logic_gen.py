@@ -1155,6 +1155,102 @@ def emit_icon_atlas(icon_atlas_path: Path, out_header: Path) -> int:
     return len(entries)
 
 
+def emit_direct_grant_icons(
+    icons_yaml_path: Path,
+    items: dict[str, ItemDef],
+    out_header: Path,
+) -> int:
+    """Emit src/rando/direct_grant_icons.h — kDirectGrantIcons[ITEM__COUNT] table.
+
+    Phase B Slice 9 — add-rando-confirmation-icons. The §7.6 direct-grant
+    helper looks up the granted item id in this table. tile=0 entries mean
+    "no verified icon yet" and the helper falls back to audio + HUD only
+    (Phase A behavior). tile!=0 entries spawn an icon-receipt ancilla.
+
+    The table is dense (sized to ITEM__COUNT) and indexed by item id so
+    callers can do `kDirectGrantIcons[item_id]` without a search.
+
+    Returns the count of items WITH a non-zero tile (for diagnostic logging).
+    """
+    entries: dict[int, tuple[int, int, str]] = {}  # item_id -> (tile, palette, name)
+    if icons_yaml_path.exists():
+        with open(icons_yaml_path, "r", encoding="utf-8") as f:
+            doc = yaml.safe_load(f) or {}
+        raw = doc.get("icons", {}) or {}
+        if not isinstance(raw, dict):
+            raise RuntimeError(
+                "emit_direct_grant_icons: %s 'icons:' must be a mapping"
+                % icons_yaml_path
+            )
+        for name, entry in raw.items():
+            if name not in items:
+                raise RuntimeError(
+                    "emit_direct_grant_icons: %s references unknown item %r"
+                    % (icons_yaml_path, name)
+                )
+            if not isinstance(entry, dict):
+                raise RuntimeError(
+                    "emit_direct_grant_icons: entry %r is not a mapping" % name
+                )
+            tile = entry.get("tile", 0)
+            palette = entry.get("palette", 0)
+            if not isinstance(tile, int) or tile < 0 or tile > 0xffff:
+                raise RuntimeError(
+                    "emit_direct_grant_icons: entry %r tile %r out of 0..0xffff"
+                    % (name, tile)
+                )
+            if not isinstance(palette, int) or palette < 0 or palette > 0x07:
+                raise RuntimeError(
+                    "emit_direct_grant_icons: entry %r palette %r out of 0..7"
+                    % (name, palette)
+                )
+            entries[items[name].id] = (tile, palette, name)
+
+    item_count = (max(it.id for it in items.values()) + 1) if items else 0
+
+    lines = [
+        HEADER_BANNER,
+        "",
+        "// direct_grant_icons.h - per-item icon table for the §7.6 direct-grant",
+        "// confirmation ancilla (Phase B Slice 9 — add-rando-confirmation-icons).",
+        "//",
+        "// Indexed by item id. tile=0 entries cause the helper to fall back to",
+        "// audio + HUD only (Phase A behavior preserved). tile!=0 entries spawn",
+        "// the kAncillaType_RandoIconReceipt ancilla with the supplied tile/palette.",
+        "//",
+        "// Source: assets/rando/direct_grant_icons.yaml. Tile addresses SHALL be",
+        "// verified by draw-test (run the binary, force the grant, observe the",
+        "// icon visually) per Phase B Slice 9 §1.3.",
+        "",
+        "#ifndef ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_",
+        "#define ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_",
+        "",
+        "#include \"../types.h\"",
+        "",
+        "typedef struct DirectGrantIconEntry {",
+        "  uint16 tile;     // tile address in graphics blob; 0 = no icon (audio-only).",
+        "  uint8  palette;  // CGRAM OBJ palette index (0..7).",
+        "  uint8  _pad;",
+        "} DirectGrantIconEntry;",
+        "",
+        "// Indexed by item id. ITEM__COUNT-sized so direct subscripting is safe.",
+        "static const DirectGrantIconEntry kDirectGrantIcons[%d] = {" % item_count,
+    ]
+    for it in sorted(items.values(), key=lambda i: i.id):
+        if it.id in entries:
+            tile, palette, name = entries[it.id]
+            lines.append(
+                "  [%d] = { 0x%04x, 0x%02x, 0 },  // %s"
+                % (it.id, tile, palette, name)
+            )
+    lines.append("};")
+    lines.append("")
+    lines.append("#endif  // ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_")
+
+    out_header.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return sum(1 for (tile, _palette, _name) in entries.values() if tile != 0)
+
+
 def emit_logic_data(
     locations: dict[str, LocationDef],
     regions: dict[str, RegionDef],
@@ -1602,12 +1698,18 @@ def main(argv=None):
         Path("assets/rando/icon_atlas.yaml"),
         out_headers / "icon_atlas.h",
     )
+    direct_grant_icon_count = emit_direct_grant_icons(
+        Path("assets/rando/direct_grant_icons.yaml"),
+        items,
+        out_headers / "direct_grant_icons.h",
+    )
 
     print(f"generated location_ids.h ({len(locations)} locations)")
     print(f"generated item_ids.h ({len(items)} items)")
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
     print(f"generated icon_atlas.h ({icon_atlas_count} icon entries)")
+    print(f"generated direct_grant_icons.h ({direct_grant_icon_count} verified-tile entries)")
     print(f"warnings: {len(all_errors)}, macro errors: {len(macro_errors)}")
 
 

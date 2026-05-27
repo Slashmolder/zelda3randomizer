@@ -38,6 +38,7 @@ EXPECTED_GENERATED = [
     "src/rando/item_ids.h",
     "src/rando/chest_lookup.h",
     "src/rando/icon_atlas.h",
+    "src/rando/direct_grant_icons.h",
 ]
 
 BUILD_SYSTEM_FILES = [

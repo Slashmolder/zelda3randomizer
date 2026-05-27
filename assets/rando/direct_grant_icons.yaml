@@ -1,0 +1,264 @@
+# direct_grant_icons.yaml — per-item icon table for §7.6 direct-grant
+# visible confirmation (Phase B Slice 9 — add-rando-confirmation-icons).
+#
+# When `Rando_DispatchVanillaGrant` returns `kRandoLttpSkip` for a direct-
+# grant item (HalfMagic / QuarterMagic / TriforcePiece / prize bits /
+# dungeon-item bits), the call site invokes `Rando_ShowDirectGrantConfirmation(item_id)`.
+# The implementation looks up `kDirectGrantIcons[item_id]` (codegen'd to
+# `src/rando/direct_grant_icons.h`) and, when `tile != 0`, spawns an
+# `kAncillaType_RandoIconReceipt` ancilla that draws the icon above Link.
+# When `tile == 0` (entry missing or unverified), the helper falls back
+# to audio + HUD only (Phase A behavior preserved).
+#
+# Item-id catalog (the items that reach the helper today):
+#   ITEM_HalfMagic (41), ITEM_QuarterMagic (42) — magic_upgrade_direct_grant
+#   ITEM_TriforcePiece (52) — direct counter bump
+#   ITEM_Prize_GreenPendant..BluePendant (111..113) — prize_item_direct_grant
+#   ITEM_Prize_Crystal1..7 (114..120) — prize_item_direct_grant
+#   ITEM_BigKey_*  (66..76)  — dungeon_item_direct_grant (11 dungeons; no HCE+HCT)
+#   ITEM_Map_HyruleCastleEscape (124) + ITEM_Map_* (77..87) — dungeon_item_direct_grant
+#   ITEM_Compass_* (88..98) — dungeon_item_direct_grant
+#
+# SmallKey items (53..65) do NOT currently reach the helper. Per
+# rando.c:223-225 the dispatcher falls back to the current-dungeon vanilla
+# path for SmallKey; per-dungeon-counter SmallKey direct-grant is §6.2
+# Phase B work. When that lands, add SmallKey_* entries here.
+#
+# TILE ADDRESS DISCIPLINE (per Phase B Slice 9 §1.3):
+# `tile` SHALL be a verified offset into the bundled graphics blob. Tile
+# discovery is **draw-test verified**: run the binary, force the grant,
+# observe the on-screen icon matches the intended item. Don't trust a
+# single grep — the same icon may be referenced from multiple draw paths
+# and only one is the right tile for an 8×16 ancilla.
+#
+# Schema:
+#   icons:
+#     <ItemName>:
+#       tile:    <0..0xffff>   # 16-bit tile address into graphics blob.
+#                              # 0 = unverified; helper falls back to audio-only.
+#       palette: <0..0x7>      # CGRAM palette index (0..7 for OBJ palettes).
+#       notes:   "<provenance>"# Where the tile was discovered (HUD code,
+#                              # inventory drawing, etc.) — informs future debug.
+#
+# All entries below are STUBS with tile=0 (audio-only fallback). Each entry
+# carries a `notes:` line with the suggested provenance path for draw-test
+# verification. Fill in `tile:` + `palette:` after running the game and
+# confirming the icon visually matches the intended item.
+
+icons:
+  # ---------------------------------------------------------------------------
+  # Magic upgrades (HUD: magic-meter / decanter region)
+  # ---------------------------------------------------------------------------
+  HalfMagic:
+    tile: 0
+    palette: 0
+    notes: "magic decanter HUD tile — see hud.c HUD redraw for the magic-meter area"
+  QuarterMagic:
+    tile: 0
+    palette: 0
+    notes: "quarter magic decanter HUD tile — same HUD region as HalfMagic"
+
+  # ---------------------------------------------------------------------------
+  # Triforce piece (HUD: piece counter top-left during Triforce Hunt)
+  # ---------------------------------------------------------------------------
+  TriforcePiece:
+    tile: 0
+    palette: 0
+    notes: "Triforce-piece counter HUD tile — Triforce Hunt counter overlay"
+
+  # ---------------------------------------------------------------------------
+  # Prize bits (pendants + crystals)
+  # ---------------------------------------------------------------------------
+  Prize_GreenPendant:
+    tile: 0
+    palette: 0
+    notes: "green pendant HUD tile — see misc.c:738 pendant grant + HUD pendant icons"
+  Prize_RedPendant:
+    tile: 0
+    palette: 0
+    notes: "red pendant HUD tile"
+  Prize_BluePendant:
+    tile: 0
+    palette: 0
+    notes: "blue pendant HUD tile"
+  Prize_Crystal1:
+    tile: 0
+    palette: 0
+    notes: "crystal-1 (PoD) dungeon-prize tile — see ancilla.c:3855 crystal grant"
+  Prize_Crystal2:
+    tile: 0
+    palette: 0
+    notes: "crystal-2 (SP) dungeon-prize tile"
+  Prize_Crystal3:
+    tile: 0
+    palette: 0
+    notes: "crystal-3 (SW) dungeon-prize tile"
+  Prize_Crystal4:
+    tile: 0
+    palette: 0
+    notes: "crystal-4 (TT) dungeon-prize tile"
+  Prize_Crystal5:
+    tile: 0
+    palette: 0
+    notes: "crystal-5 (IP) dungeon-prize tile"
+  Prize_Crystal6:
+    tile: 0
+    palette: 0
+    notes: "crystal-6 (MM) dungeon-prize tile"
+  Prize_Crystal7:
+    tile: 0
+    palette: 0
+    notes: "crystal-7 (TR) dungeon-prize tile"
+
+  # ---------------------------------------------------------------------------
+  # Dungeon items — BigKey (per-dungeon).
+  # Vanilla draws all BigKeys with the same icon (HUD big-key indicator).
+  # Acceptable to share a tile across dungeons; per-dungeon palette swaps
+  # are not done in vanilla and not required here.
+  # ---------------------------------------------------------------------------
+  BigKey_EasternPalace:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared) — see misc.c BigKey grant + HUD per-dungeon big-key indicator"
+  BigKey_DesertPalace:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared) — same tile as EasternPalace"
+  BigKey_TowerOfHera:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_PalaceOfDarkness:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_SwampPalace:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_SkullWoods:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_ThievesTown:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_IcePalace:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_MiseryMire:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_TurtleRock:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+  BigKey_GanonsTower:
+    tile: 0
+    palette: 0
+    notes: "big key icon (HUD shared)"
+
+  # ---------------------------------------------------------------------------
+  # Dungeon items — Map (per-dungeon).
+  # Vanilla draws all Maps with a shared map icon.
+  # ---------------------------------------------------------------------------
+  Map_HyruleCastleEscape:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared) — see misc.c Map grant + HUD map indicator"
+  Map_EasternPalace:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_DesertPalace:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_TowerOfHera:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_PalaceOfDarkness:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_SwampPalace:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_SkullWoods:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_ThievesTown:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_IcePalace:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_MiseryMire:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_TurtleRock:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+  Map_GanonsTower:
+    tile: 0
+    palette: 0
+    notes: "dungeon map icon (HUD shared)"
+
+  # ---------------------------------------------------------------------------
+  # Dungeon items — Compass (per-dungeon).
+  # Vanilla draws all Compasses with a shared compass icon.
+  # ---------------------------------------------------------------------------
+  Compass_EasternPalace:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared) — see misc.c Compass grant + HUD compass indicator"
+  Compass_DesertPalace:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_TowerOfHera:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_PalaceOfDarkness:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_SwampPalace:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_SkullWoods:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_ThievesTown:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_IcePalace:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_MiseryMire:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_TurtleRock:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"
+  Compass_GanonsTower:
+    tile: 0
+    palette: 0
+    notes: "compass icon (HUD shared)"

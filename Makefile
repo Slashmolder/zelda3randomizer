@@ -13,7 +13,7 @@ CFLAGS:=${CFLAGS} $(shell sdl2-config --cflags) -DSYSTEM_VOLUME_MIXER_AVAILABLE=
 # the generated chest table + ALTTPR chest-name snapshot consumed
 # by chest_lookup.h emission (§6.3).
 RANDO_GEN_SRCS:=$(wildcard assets/rando/*.yaml) assets/rando_logic_gen.py assets/chest_data.py
-RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/icon_atlas.h
+RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
 
 ifeq (${OS},Windows_NT)
     WINDRES:=windres
@@ -35,7 +35,7 @@ $(TARGET_EXEC): $(OBJS) $(RES)
 # Building src/rando/logic_data.c triggers the rule (and emits the headers as a
 # side-effect). Compilation depends on the headers via #include.
 $(RANDO_GEN_OUTPUTS): $(RANDO_GEN_SRCS)
-	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, icon_atlas.h}"
+	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, icon_atlas.h, direct_grant_icons.h}"
 	$(PYTHON) assets/rando_logic_gen.py
 
 rando-codegen: $(RANDO_GEN_OUTPUTS)

@@ -1270,7 +1270,9 @@ void Sprite_WishPond3(int k) {
             // there's at least an audio + HUD-refresh confirmation that the
             // direct-grant fired (vs the prior commit's incorrect claim
             // that the state machine alone provided thematic confirmation).
-            Rando_ShowDirectGrantConfirmation();
+            // Slice 9 — pass the placed item id resolved by the dispatch
+            // above so the per-item icon ancilla pops.
+            Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
             return;
           }
           // Set sprite_graphics[k] to the dispatched LttP code so case 9
@@ -2199,7 +2201,7 @@ void MasterSword_Main(int k) {  // 8588d6
         if (enhanced_features1 & kFeatures1_RandomizerActive) {
           lttp_code = Rando_DispatchVanillaGrant(LOC_Master_Sword_Pedestal, ITEM_L2Sword, lttp_code);
         }
-        Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+        Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
       }
       savegame_map_icons_indicator = 5;
       link_unk_master_sword = 0;
@@ -5813,7 +5815,7 @@ void Uncle_InPassage(int k) {  // 85df19
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Link_s_Uncle, ITEM_L1Sword, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sprite_ai_state[k]++;
     sprite_graphics[k] = 1;
@@ -6287,7 +6289,7 @@ void Sprite_BottleVendor(int k) {  // 85ea79
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Bottle_Merchant, ITEM_BottleEmpty, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sram_progress_indicator_3 |= 2;
     link_rupees_goal -= 100;
@@ -6485,7 +6487,7 @@ void Sprite_E7_Mushroom(int k) {  // 85ee78
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Mushroom, ITEM_Mushroom, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
   } else if ((frame_counter & 0x1f) == 0) {
     sprite_oam_flags[k] ^= 0x40;
@@ -6566,7 +6568,7 @@ void Sprite_HeartContainer(int k) {  // 85ef47
     if (boss_loc != 0xFFFFu) {
       lttp_code = Rando_DispatchVanillaGrant(boss_loc, ITEM_BossHeartContainer, lttp_code);
     }
-    Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+    Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     dung_savegame_state_bits |= 0x8000;
     return;
   }
@@ -6577,7 +6579,7 @@ void Sprite_HeartContainer(int k) {  // 85ef47
     if (boss_loc != 0xFFFFu) {
       lttp_code = Rando_DispatchVanillaGrant(boss_loc, ITEM_BossHeartContainer, lttp_code);
     }
-    Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+    Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
   }
   if (!player_is_indoors)
     save_ow_event_info[BYTE(overworld_screen_index)] |= 0x40;
@@ -6677,7 +6679,7 @@ void Sprite_Sahasrahla(int k) {  // 85f14d
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Sahasrahla, ITEM_Boots, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sprite_ai_state[k] = 3;
     savegame_map_icons_indicator = 3;
@@ -6934,7 +6936,7 @@ void Sprite_BagOfPowder(int k) {  // 85f644
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Potion_Shop, ITEM_MagicPowder, lttp_code);
     }
-    Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+    Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
   }
   sprite_state[k] = 0;
 }
@@ -7204,7 +7206,7 @@ void Sprite_BookOfMudora(int k) {  // 85fc9e
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Library, ITEM_BookOfMudora, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sprite_state[k] = 0;
     break;
@@ -10079,7 +10081,7 @@ void Sprite_FluteKid_Stumpy(int k) {  // 86b040
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Stumpy, ITEM_Shovel, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sprite_ai_state[k] = 0;
     break;
@@ -10351,7 +10353,7 @@ void Smithy_Main(int k) {  // 86b34e
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Blacksmith, ITEM_L3Sword, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sram_progress_indicator_3 &= ~0x80;
     break;
@@ -10609,7 +10611,7 @@ void Sprite_1F_SickKid(int k) {  // 86b94c
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Sick_Kid, ITEM_BugCatchingNet, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     flag_is_link_immobilized = 0;
     sprite_ai_state[k] = 3;
@@ -10827,7 +10829,7 @@ void Sprite_39_Locksmith(int k) {  // 86bcac
           if (enhanced_features1 & kFeatures1_RandomizerActive) {
             lttp_code = Rando_DispatchVanillaGrant(LOC_Purple_Chest, ITEM_BottleEmpty, lttp_code);
           }
-          Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+          Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
         }
         sram_progress_indicator_3 |= 0x10;
         sprite_ai_state[k] = 4;
@@ -10923,7 +10925,7 @@ void Sprite_Hobo_Bum(int k) {  // 86bdd0
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Hobo, ITEM_BottleEmpty, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
     sram_progress_indicator_3 |= 1;
     break;
@@ -18423,7 +18425,7 @@ void Sprite_Catfish_QuakeMedallion(int k) {  // 9ddf54
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         lttp_code = Rando_DispatchVanillaGrant(LOC_Catfish, ITEM_Quake, lttp_code);
       }
-      Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
   }
   if (sprite_delay_aux3[k])
@@ -18583,7 +18585,8 @@ void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
       // Despawn the regurgitated-flippers sprite so we don't double-grant
       // and so that pickup interaction won't re-trigger Link_ReceiveItem.
       sprite_state[j] = 0;
-      Rando_ShowDirectGrantConfirmation();  // §7.6 — sound + HUD refresh
+      // §7.6 + Slice 9 — King Zora direct-grant cue with placed-item icon.
+      Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
       return;
     }
     sprite_A[j] = placed_lttp;
@@ -24937,7 +24940,7 @@ void Sprite_AD_OldMan(int k) {  // 9ee992
         if (enhanced_features1 & kFeatures1_RandomizerActive) {
           lttp_code = Rando_DispatchVanillaGrant(LOC_Old_Man, ITEM_MagicMirror, lttp_code);
         }
-        Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+        Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
       }
       which_starting_point = 1;
       OldMan_EnableCutscene();

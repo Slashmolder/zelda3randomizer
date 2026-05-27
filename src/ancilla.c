@@ -16,12 +16,14 @@
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 
-static const uint8 kAncilla_Pflags[68] = {
+// Type 0x44 (index 68) is the Phase B Slice 9 rando icon-receipt ancilla —
+// see Ancilla44_RandoIconReceipt below. 0x10 = 2 OAM sprites (icon top/bottom).
+static const uint8 kAncilla_Pflags[69] = {
   0,    8,  0xc, 0x10, 0x10,    4, 0x10, 0x18,    8,    8,    8,    0, 0x14, 0, 0x10, 0x28,
   0x18, 0x10, 0x10, 0x10, 0x10,  0xc,    8,    8, 0x50,    0, 0x10,    8, 0x40, 0,  0xc, 0x24,
   0x10,  0xc,    8, 0x10, 0x10,    4,  0xc, 0x1c,    0, 0x10, 0x14, 0x14, 0x10, 8, 0x20, 0x10,
   0x10, 0x10,    4,    0, 0x80, 0x10,    4, 0x30, 0x14, 0x10,    0, 0x10,    0, 0,    8,    0,
-  0x10,    8, 0x78, 0x80,
+  0x10,    8, 0x78, 0x80, 0x10,
 };
 static const int8 kFireRod_Xvel2[12] = {0, 0, -40, 40, 0, 0, -48, 48, 0, 0, -64, 64};
 static const int8 kFireRod_Yvel2[12] = {-40, 40, 0, 0, -48, 48, 0, 0, -64, 64, 0, 0};
@@ -253,7 +255,11 @@ static const uint8 kTravelBird_Draw_Char[3] = {0xe, 0, 2};
 static const uint8 kTravelBird_Draw_Flags[3] = {0x22, 0x2e, 0x2e};
 static const int8 kSomarianBlock_Coll_X[12] = {0, 0, -8, 8, 0, 0, 0, 0, 8, -8, -8, 8};
 static const int8 kSomarianBlock_Coll_Y[12] = {-8, 8, 0, 0, 0, 0, 0, 0, -8, 8, -8, 8};
-static HandlerFuncK *const kAncilla_Funcs[67] = {
+// Phase B Slice 9 — type 0x44 (index 67) is Ancilla44_RandoIconReceipt, the
+// rando direct-grant icon-pop ancilla. Defined below near the AncillaAdd_*
+// helpers.
+void Ancilla44_RandoIconReceipt(int k);
+static HandlerFuncK *const kAncilla_Funcs[68] = {
   &Ancilla01_SomariaBullet,
   &Ancilla02_FireRodShot,
   &Ancilla_Empty,
@@ -321,6 +327,7 @@ static HandlerFuncK *const kAncilla_Funcs[67] = {
   &Ancilla41_WaterfallSplash,
   &Ancilla42_HappinessPondRupees,
   &Ancilla43_GanonsTowerCutscene,
+  &Ancilla44_RandoIconReceipt,
 };
 uint16 Ancilla_GetX(int k) {
   return ancilla_x_lo[k] | ancilla_x_hi[k] << 8;
@@ -4048,7 +4055,7 @@ void Ancilla36_Flute(int k) {  // 88cfaa
           if (enhanced_features1 & kFeatures1_RandomizerActive) {
             lttp_code = Rando_DispatchVanillaGrant(LOC_Flute_Spot, ITEM_OcarinaInactive, lttp_code);
           }
-          Rando_ReceiveOrConfirm(lttp_code);  // §7.6 — confirmation cue when sentinel
+          Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
         }
         return;
       }
@@ -6850,6 +6857,78 @@ void FireRodShot_BecomeSkullWoodsFire(int k) {  // 899c4f
   ancilla_item_to_link[0] = 0;
   ancilla_step[0] = 0;
 
+}
+
+// ---------------------------------------------------------------------------
+// Phase B Slice 9 — add-rando-confirmation-icons.
+//
+// Ancilla44_RandoIconReceipt is a Z3R-fork-specific addition (not present in
+// vanilla US ROM). It is used by Rando_ShowDirectGrantConfirmation(item_id)
+// to surface a per-item icon above Link's head for direct-grant items
+// (HalfMagic / QuarterMagic / TriforcePiece / prize bits / dungeon-item bits)
+// that bypass Link_ReceiveItem entirely. Tile + palette come from
+// kDirectGrantIcons[item_id] (codegen output from
+// assets/rando/direct_grant_icons.yaml).
+//
+// Does NOT grant the item — the direct write already happened upstream
+// inside Rando_DispatchVanillaGrant. This ancilla is visual confirmation
+// only; its lifecycle is independent of any inventory state.
+//
+// Per-ancilla state layout:
+//   ancilla_item_to_link[k] — low 8 bits of the OAM tile index (charnum).
+//   ancilla_arr3[k]         — high tile-page bit (1 if tile >= 0x100, else 0).
+//   ancilla_arr4[k]         — CGRAM OBJ palette index (0..7).
+//   ancilla_timer[k]        — frames remaining (Ancilla_ExecuteOne decrements
+//                              while submodule_index == 0; zero ends the ancilla).
+//
+// Rendering: 2 OAM sprites stacked vertically (top tile + bottom tile = +0x10).
+// Position is Link's coordinates lifted by 16px so the icon hovers above
+// his head. No animation beyond the natural fade as nearby ancillas claim
+// OAM slots.
+// ---------------------------------------------------------------------------
+void Ancilla44_RandoIconReceipt(int k) {
+  if (ancilla_timer[k] == 0) {
+    ancilla_type[k] = 0;
+    return;
+  }
+  // Don't update during message/menu submodules. submodule_index 0 = normal
+  // gameplay; 9 = item-acquisition cutscene (same gate Ancilla22_ItemReceipt
+  // uses for the receive-item state machine).
+  if (submodule_index != 0 && submodule_index != 9)
+    return;
+
+  Point16U pt;
+  Ancilla_PrepAdjustedOamCoord(k, &pt);
+
+  uint8 charnum = ancilla_item_to_link[k];
+  uint8 palette = (uint8)(ancilla_arr4[k] & 0x07);
+  uint8 flags = (uint8)((palette << 1) | 0x30);
+  uint8 ext_bits = (uint8)(ancilla_arr3[k] & 0x01);
+
+  // Lift the icon ~16px above Link's anchor; the second OAM tile lands at +8.
+  OamEnt *oam = GetOamCurPtr();
+  Ancilla_SetOam(oam, pt.x, pt.y - 16, charnum, flags, ext_bits);
+  oam++;
+  Ancilla_SetOam(oam, pt.x, pt.y - 8, (uint8)(charnum + 0x10), flags, ext_bits);
+}
+
+void AncillaAdd_RandoIconReceipt(uint16 tile, uint8 palette) {
+  // Tile 0 is the "no verified icon" sentinel used by kDirectGrantIcons[];
+  // callers should check before invoking, but guard here as well to keep
+  // the no-op contract local.
+  if (tile == 0)
+    return;
+
+  int k = Ancilla_AddAncilla(kAncillaType_RandoIconReceipt, 4);
+  if (k < 0)
+    return;
+
+  ancilla_item_to_link[k] = (uint8)(tile & 0xff);
+  ancilla_arr3[k] = (uint8)((tile >> 8) & 0x01);
+  ancilla_arr4[k] = (uint8)(palette & 0x07);
+  ancilla_timer[k] = 40;  // ~0.66s at 60fps; matches the receive-item dwell.
+  ancilla_step[k] = 0;
+  Ancilla_SetXY(k, link_x_coord, link_y_coord);
 }
 
 int Ancilla_AddAncilla(uint8 a, uint8 y) {  // 899ce2

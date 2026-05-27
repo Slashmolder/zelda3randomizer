@@ -83,6 +83,12 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code);
 
+// Returns the item id resolved by the most recent Rando_DispatchVanillaGrant
+// (or Rando_ChestDispatch) call. Phase B Slice 9 — used by direct-grant
+// confirmation sites to feed the per-item icon lookup. Returns 0xFFFF when
+// no dispatch has run yet this slot.
+uint16 Rando_LastDispatchedItemId(void);
+
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
 // Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
 // items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.
@@ -92,7 +98,7 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 
 // ---------------------------------------------------------------------------
 // Rando_ShowDirectGrantConfirmation — generic visual+audio confirmation
-// for direct-grant placements (tasks.md §7.6).
+// for direct-grant placements (tasks.md §7.6 + Phase B Slice 9).
 //
 // When Rando_DispatchVanillaGrant returns kRandoLttpSkip the caller skips
 // Link_ReceiveItem entirely — no animation, no sound. For sites that have
@@ -101,37 +107,50 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 // granted. Callers should invoke this immediately in the skip branch:
 //
 //   if (Rando_ShouldSkipReceive(lttp_code))
-//     Rando_ShowDirectGrantConfirmation();
+//     Rando_ShowDirectGrantConfirmation(placed_item_id);
 //   else
 //     Link_ReceiveItem(lttp_code, 0);
 //
+// where `placed_item_id` is the ITEM_* id of the item that was actually
+// direct-written by the dispatcher (resolve via Placement_Lookup or via the
+// vanilla item id when no rando swap occurred).
+//
 // Plays the standard item-receipt sound effect and refreshes the HUD so
 // any visible inventory change (prize icons, dungeon-item bits, Triforce
-// counter) updates immediately. Does NOT spawn an item-receipt ancilla —
-// the direct-grant path's item has no corresponding LttP receive code,
-// so an animation isn't available without per-item graphics work.
+// counter) updates immediately. When `item_id` maps to a tile in
+// `kDirectGrantIcons[]` (codegen'd from
+// `assets/rando/direct_grant_icons.yaml`), additionally spawns the
+// `kAncillaType_RandoIconReceipt` ancilla so the player sees what they
+// got. Unverified (tile==0) entries fall back to the audio+HUD path.
 // ---------------------------------------------------------------------------
-void Rando_ShowDirectGrantConfirmation(void);
+void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
 // ---------------------------------------------------------------------------
 // Rando_ReceiveOrConfirm — convenience wrapper that combines the standard
-// §6 NPC pattern into a single call (tasks.md §7.6).
+// §6 NPC pattern into a single call (tasks.md §7.6 + Phase B Slice 9).
 //
 // Replaces:
-//   if (!Rando_ShouldSkipReceive(lttp_code))
+//   if (Rando_ShouldSkipReceive(lttp_code))
+//     Rando_ShowDirectGrantConfirmation(item_id);
+//   else
 //     Link_ReceiveItem(lttp_code, 0);
 //
 // with:
-//   Rando_ReceiveOrConfirm(lttp_code);
+//   Rando_ReceiveOrConfirm(lttp_code, item_id);
 //
 // Behavior: when `lttp_code` is the §6.2 skip-sentinel, fires the §7.6
-// confirmation cue (sound + HUD refresh). Otherwise invokes Link_ReceiveItem
-// with chest_position=0 — every existing call site at the NPC dispatch
-// pattern passes 0; sites that need non-zero chest_position (chest opens)
-// continue to call Link_ReceiveItem directly with an explicit confirmation
-// gate.
+// confirmation cue (sound + HUD refresh + icon ancilla if `item_id` has a
+// verified entry in `kDirectGrantIcons[]`). Otherwise invokes
+// Link_ReceiveItem with chest_position=0 — every existing call site at the
+// NPC dispatch pattern passes 0; sites that need non-zero chest_position
+// (chest opens) continue to call Link_ReceiveItem directly with an explicit
+// confirmation gate.
+//
+// `item_id` is the ITEM_* id of the placed item (Placement_Lookup result).
+// When the dispatcher returns a vanilla lttp_code (no swap), `item_id` is
+// unused; pass the vanilla ITEM_* for symmetry and forward-compat.
 // ---------------------------------------------------------------------------
-void Rando_ReceiveOrConfirm(uint8 lttp_code);
+void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 
 // ---------------------------------------------------------------------------
 // Rando_ChestDispatch — universal chest grant-site hook.

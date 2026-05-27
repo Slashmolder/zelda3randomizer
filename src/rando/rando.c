@@ -22,6 +22,8 @@
 #include "item_ids.h"
 #include "location_ids.h"
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
+#include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
+#include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
 #include "../features.h"   // g_rando_triforce_piece_count
@@ -281,10 +283,23 @@ static int magic_upgrade_direct_grant(uint16 registry_id) {
   return 0;
 }
 
+// Phase B Slice 9 — last item id resolved by Rando_DispatchVanillaGrant
+// (or its callers via Rando_ChestDispatch). Read by call sites after the
+// dispatch returns kRandoLttpSkip so Rando_ShowDirectGrantConfirmation can
+// look up the per-item icon in kDirectGrantIcons[]. Single-threaded; the
+// dispatcher is the immediately preceding rando call at every direct-grant
+// site, so the value is fresh by construction.
+static uint16 g_last_dispatched_item_id = 0xFFFFu;
+
+uint16 Rando_LastDispatchedItemId(void) {
+  return g_last_dispatched_item_id;
+}
+
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code) {
   uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
+  g_last_dispatched_item_id = placed;
   if (placed == vanilla_registry_id) return vanilla_lttp_code;
 
   // §6.2 TriforcePiece (no vanilla LttP code). Tick the counter and
@@ -385,20 +400,39 @@ void Rando_BumpReachabilityCounter(void) {
 // counter) reflects immediately rather than waiting for the next implicit
 // refresh.
 //
+// Phase B Slice 9 (add-rando-confirmation-icons): extends Phase A's audio +
+// HUD-only cue with a visible icon ancilla. The granted item id is looked up
+// in kDirectGrantIcons[item_id] (codegen'd from
+// assets/rando/direct_grant_icons.yaml). When the table entry has a
+// non-zero tile, AncillaAdd_RandoIconReceipt spawns an icon-pop above Link's
+// head. Empty / unverified entries (tile == 0) fall back to the Phase A
+// audio + HUD behavior — never crash, never spawn a blank ancilla.
+//
 // Deliberately NOT emitted from within `Rando_DispatchVanillaGrant` — the
 // caller knows whether its own code path already provides visual context
 // (e.g., the §6.6 boss-kill spawns a FallingPrize regardless of sentinel,
 // so the player sees that sprite). Pushing the confirmation to the call
 // site lets each integration choose whether to add the cue.
 // ---------------------------------------------------------------------------
-void Rando_ShowDirectGrantConfirmation(void) {
+void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
+
+  // Slice 9 — look up the per-item icon. Unverified entries (tile == 0) fall
+  // back to audio + HUD only, preserving Phase A behavior.
+  const size_t icon_table_len =
+      sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
+  if ((size_t)item_id < icon_table_len) {
+    const DirectGrantIconEntry *e = &kDirectGrantIcons[item_id];
+    if (e->tile != 0) {
+      AncillaAdd_RandoIconReceipt(e->tile, e->palette);
+    }
+  }
 }
 
-void Rando_ReceiveOrConfirm(uint8 lttp_code) {
+void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
   if (Rando_ShouldSkipReceive(lttp_code)) {
-    Rando_ShowDirectGrantConfirmation();
+    Rando_ShowDirectGrantConfirmation(item_id);
   } else {
     Link_ReceiveItem(lttp_code, 0);
   }

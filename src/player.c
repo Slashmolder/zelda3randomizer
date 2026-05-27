@@ -591,7 +591,8 @@ void LinkState_ReceivingEther() {  // 878570
       lttp_code = Rando_DispatchVanillaGrant(LOC_Ether_Tablet, ITEM_Ether, lttp_code);
     }
     if (Rando_ShouldSkipReceive(lttp_code))
-      Rando_ShowDirectGrantConfirmation();  // §7.6 — Ether tablet direct-grant cue
+      // §7.6 + Slice 9 — Ether tablet direct-grant cue with placed-item icon.
+      Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
     else
       AncillaAdd_FallingPrizeRando(0x29, lttp_code, 0, 4);
     flag_is_link_immobilized = 1;
@@ -631,7 +632,8 @@ void LinkState_ReceivingBombos() {  // 8785fb
       lttp_code = Rando_DispatchVanillaGrant(LOC_Bombos_Tablet, ITEM_Bombos, lttp_code);
     }
     if (Rando_ShouldSkipReceive(lttp_code))
-      Rando_ShowDirectGrantConfirmation();  // §7.6 — Bombos tablet direct-grant cue
+      // §7.6 + Slice 9 — Bombos tablet direct-grant cue with placed-item icon.
+      Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
     else
       AncillaAdd_FallingPrizeRando(0x29, lttp_code, 5, 4);
     flag_is_link_immobilized = 1;
@@ -3883,7 +3885,10 @@ void Link_PerformOpenChest() {  // 87b574
   // `... || item_receipt_method || ...` would block any further chest
   // opening indefinitely. Clear it explicitly before returning.
   if (Rando_ShouldSkipReceive(item)) {
-    Rando_ShowDirectGrantConfirmation();
+    // §7.6 + Slice 9 — chest direct-grant cue. The placed item id was set
+    // inside Rando_ChestDispatch -> Rando_DispatchVanillaGrant immediately
+    // above; retrieve it for the per-item icon lookup.
+    Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
     item_receipt_method = 0;
     return;
   }

@@ -272,3 +272,16 @@ int DashTremor_TwiddleOffset(int k);
 void Ancilla_TerminateIfOffscreen(int j);
 bool Bomb_CheckUndersideSpriteStatus(int k, Point16U *out_pt, uint8 *out_r10);
 void Sprite_CreateDeflectedArrow(int k);
+
+// Phase B Slice 9 — add-rando-confirmation-icons. Spawns a short-lived
+// icon-pop ancilla above Link's head used by Rando_ShowDirectGrantConfirmation
+// to surface direct-grant items (HalfMagic / QuarterMagic / TriforcePiece /
+// prize bits / dungeon-item bits) that bypass Link_ReceiveItem. The tile +
+// palette come from kDirectGrantIcons[item_id] (src/rando/direct_grant_icons.h,
+// codegen'd from assets/rando/direct_grant_icons.yaml).
+//
+// Does NOT grant the item — the direct write happened upstream inside
+// Rando_DispatchVanillaGrant. This ancilla is visual confirmation only.
+// No-op when called with tile==0 (the helper guards against that).
+void AncillaAdd_RandoIconReceipt(uint16 tile, uint8 palette);
+#define kAncillaType_RandoIconReceipt 0x44
