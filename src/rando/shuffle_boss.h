@@ -51,9 +51,34 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id);
 //   - boss-shuffle is off (assignment active but identity)
 //
 // Vanilla boss sprite IDs: 0x09 Moldorm, 0x53 ArmosKnights,
-// 0x54 Lanmolas, 0x7A Agahnim (pinned), 0x88 Mothula,
-// 0x8C Arrghus, 0x92 HelmasaurKing, 0xA3 Kholdstare,
-// 0xB6 Agahnim2 (pinned), 0xBD Vitreous, 0xCB Trinexx, 0xCE Blind.
+// 0x54 Lanmolas, 0x7A Agahnim 1/2 (both pinned), 0x88 Mothula,
+// 0x8C Arrghus, 0x92 HelmasaurKing, 0xA2 Kholdstare, 0xBD Vitreous,
+// 0xCB Trinexx, 0xCE Blind.
 uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type);
+
+// Per-site instrumentation — audit §65 M1 follow-up.
+//
+// Returns true if `vanilla_sprite_type` is a room-data secondary segment
+// of a boss whose primary has been remapped to something else (i.e., the
+// segment would spawn as an orphan with no kill-logic context). The
+// caller is expected to skip the sprite-spawn.
+//
+// Returns false when:
+//   - boss-shuffle is inactive (g_boss_assignment_active = false)
+//   - the sprite isn't a known secondary segment
+//   - the parent dungeon still has its vanilla boss (identity remap —
+//     segment is wanted)
+//
+// Known room-data secondaries (sprites that appear alongside their
+// primary in dungeon room data, NOT spawned by runtime boss logic):
+//   0xCC Trinexx left arm  → TR  (dungeon 11), parent kBoss_Trinexx
+//   0xCD Trinexx right arm → TR  (dungeon 11), parent kBoss_Trinexx
+//   0xA3 KholdstareShell   → IP  (dungeon 9),  parent kBoss_Kholdstare
+//
+// Other bosses' segments (Mothula beams 0x89, Arrghi puffs 0x8D,
+// VitreousEye 0xBE, BlindHead) are spawned at runtime by the primary
+// boss's logic and so naturally come along with the remapped boss
+// instead of the orphaned vanilla one — no suppression needed.
+bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type);
 
 #endif  // ZELDA3_RANDO_SHUFFLE_BOSS_H_

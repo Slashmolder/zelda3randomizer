@@ -223,3 +223,31 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
   }
   return vanilla_sprite_type;
 }
+
+// Room-data secondary segments. Each entry pairs a secondary sprite_type
+// with the dungeon + pool-index of its primary boss. Suppression fires
+// when boss-shuffle is active AND the dungeon's assignment differs from
+// the vanilla primary.
+typedef struct BossSecondarySegment {
+  uint8 sprite_type;
+  uint8 parent_dungeon_id;
+  uint8 parent_pool_idx;
+} BossSecondarySegment;
+
+static const BossSecondarySegment kBossSecondaries[] = {
+  { 0xCC, 11, kBoss_Trinexx },    // Trinexx left arm  (TR)
+  { 0xCD, 11, kBoss_Trinexx },    // Trinexx right arm (TR)
+  { 0xA3, 9,  kBoss_Kholdstare }, // KholdstareShell   (IP)
+};
+#define kBossSecondariesCount (sizeof(kBossSecondaries) / sizeof(kBossSecondaries[0]))
+
+bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type) {
+  if (!g_boss_assignment_active) return false;
+  for (uint32 i = 0; i < kBossSecondariesCount; i++) {
+    if (kBossSecondaries[i].sprite_type != vanilla_sprite_type) continue;
+    uint8 dungeon = kBossSecondaries[i].parent_dungeon_id;
+    uint8 assigned = g_boss_assignment[dungeon];
+    return assigned != kBossSecondaries[i].parent_pool_idx;
+  }
+  return false;
+}

@@ -3660,6 +3660,14 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
     Dungeon_LoadSingleOverlord(src);
     return k - 1;
   }
+  // Audit M1 follow-up — suppress orphan boss secondaries (Trinexx
+  // arms 0xCC/0xCD, KholdstareShell 0xA3) when the parent boss has been
+  // shuffled out of this dungeon. Return k-1 with the same convention
+  // used by the 0xE4/overlord branches so the caller's `k = ... + 1`
+  // recipe leaves the slot index unchanged for the next entry.
+  if (BossShuffle_ShouldSuppressSecondary(type)) {
+    return k - 1;
+  }
   if (!(kSpriteInit_DeflBits[type] & 1) && (sprite_where_in_room[dungeon_room_index2] & (1 << k)))
     return k;
   sprite_state[k] = 8;
