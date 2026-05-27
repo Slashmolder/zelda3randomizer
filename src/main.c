@@ -401,9 +401,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
 
   // Phase B Slice 6 — --race-mode override (highest precedence; can also be
   // set via --settings=race_mode=true, but --race-mode is the canonical CLI).
-  // Slice 6 audit M2 — warn if the user supplied a contradictory pair so
-  // a typo doesn't silently produce a non-race-mode seed.
-  if (race_mode && settings.race_mode == 0 && settings_csv != NULL) {
+  // Slice 6 audit M2 — warn if the user explicitly typed
+  // `--settings=race_mode=false` alongside `--race-mode`, so a typo doesn't
+  // silently produce a non-race-mode seed.
+  if (race_mode && settings_csv != NULL && settings.race_mode == 0 &&
+      strstr(settings_csv, "race_mode=") != NULL) {
     fprintf(stderr,
       "--generate-seed: WARNING --race-mode overrides --settings=race_mode=false; "
       "generating a race-mode seed.\n");
