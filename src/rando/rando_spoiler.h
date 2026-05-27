@@ -105,6 +105,14 @@ _Static_assert(kRandoSuppressedSpoilerSettingsLen == kSettingsCanonicalLen,
                "AND the CRC32 offsets in rando_spoiler.c serialize/read AND the "
                "126/130/134/138 constants in assets/scripts/{bump,run}_rando_corpus.py.");
 
+// TODO(durability sweep 2026-05-27): the 3 hard-coded `134` literals in
+// rando_spoiler.c (serialize/write/read at lines ~348/376/484) should
+// become `#define kRandoSuppressedSpoilerCrcOffset (kRandoSuppressedSpoilerSize - 4)`
+// + an additional `_Static_assert` that the offset equals the expected
+// position. Cheap defensive follow-up — would catch 3 more coupled sites
+// at compile time instead of the current "find via corpus regression"
+// path. See memory `canonical_size_coupling.md` for the lesson.
+
 typedef struct RandoSuppressedSpoiler {
   uint8 magic[4];                // 'ZRSR'
   uint16 generator_version;      // LE on disk
