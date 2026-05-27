@@ -58,6 +58,12 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   // the load-time assertion trip.
   g_rando_oncheck_call_count++;
 
+  // Phase B Slice 1 — flag this location as checked. The bitmap is the
+  // session source-of-truth; sidecar write copies it back to the slot.
+  // Set BEFORE dispatch so a crash inside dispatch still records the
+  // in-flight intent (tracker shows the location as checked on reload).
+  Rando_MarkLocationChecked(location_id);
+
   // Placement_Lookup returns vanilla_item_id when no active placement table
   // is installed (rando mode inactive), or when location_id is not in the
   // active table. See rando_placement.c.
@@ -391,6 +397,41 @@ void Rando_BumpReachabilityCounter(void) {
   g_reachability_state_counter++;
 }
 
+uint32 Rando_GetReachabilityCounter(void) {
+  return g_reachability_state_counter;
+}
+
+// ---------------------------------------------------------------------------
+// Phase B Slice 1 — tracker overlay state + checked-location bitmap.
+// ---------------------------------------------------------------------------
+bool g_rando_show_item_tracker = false;
+bool g_rando_show_location_tracker = false;
+uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
+
+void Rando_MarkLocationChecked(uint16 location_id) {
+  if (!g_rando_slot_active) return;
+  if (location_id >= 512) return;
+  uint32 byte_idx = location_id >> 3;
+  uint8 bit_mask = (uint8)(1u << (location_id & 7));
+  g_rando_checked_bitmap[byte_idx] |= bit_mask;
+  // Mark the tracker's reachability cache stale so the overlay re-paints
+  // the location's status glyph on the next draw.
+  g_reachability_state_counter++;
+}
+
+bool Rando_IsLocationChecked(uint16 location_id) {
+  if (!g_rando_slot_active) return false;
+  if (location_id >= 512) return false;
+  return (g_rando_checked_bitmap[location_id >> 3] & (1u << (location_id & 7))) != 0;
+}
+
+void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
+  if (out_slot == NULL || !g_rando_slot_active) return;
+  // sizeof(out_slot->checked_bitmap) == kRandoCheckedBitmapBytes by
+  // construction (both derived from the same 512-bit cap).
+  memcpy(out_slot->checked_bitmap, g_rando_checked_bitmap, kRandoCheckedBitmapBytes);
+}
+
 // ---------------------------------------------------------------------------
 // §7.6 — generic confirmation cue for direct-grant placements that skip
 // Link_ReceiveItem entirely. Matches the standard receive-item sound used
@@ -536,6 +577,13 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_slot_active = 1;
   g_wanted_zelda_features1 |= kFeatures1_RandomizerActive;
   enhanced_features1 |= kFeatures1_RandomizerActive;
+
+  // Phase B Slice 1 — copy the slot's checked-location bitmap into the
+  // session state. Bitmap size matches between slot and session
+  // (both kRandoCheckedBitmapBytes = 64).
+  memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
+  // Force the tracker to repaint after activation.
+  g_reachability_state_counter++;
 }
 
 void Rando_DeactivateSlot(void) {
@@ -545,6 +593,13 @@ void Rando_DeactivateSlot(void) {
   g_rando_slot_active = 0;
   g_wanted_zelda_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   enhanced_features1 &= ~(uint32)kFeatures1_RandomizerActive;
+
+  // Phase B Slice 1 — clear the checked bitmap and reset tracker visibility
+  // so the next slot launches with the documented "trackers default hidden"
+  // contract.
+  memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+  g_rando_show_item_tracker = false;
+  g_rando_show_location_tracker = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -621,13 +676,16 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   uint64 seed_u64 = ss.seed_u64;
 
   // Regenerate the placement table.
+  // Slice 6 audit H2 — pass budget_seconds=0 (no wall-clock cutoff) so the
+  // placer runs to its hard 8-attempt cap. This makes the placer's behavior
+  // deterministic at reveal regardless of machine speed; combined with the
+  // stamp's H1 normalization of attempts_used/forward_fill_fallback_count,
+  // the stamp is reproducible across machines.
   static RandoPlacement scratch_entries[512];
   RandoPlacementTable table;
   table.entries = scratch_entries;
   table.count = 0;
-  if (!Place_AssumedFill(&settings, seed_u64, /*budget_seconds=*/10, &table)) {
-    // Forward-fill fallback is acceptable for the reveal; a true failure
-    // (table.count == 0) is the only fail signal.
+  if (!Place_AssumedFill(&settings, seed_u64, /*budget_seconds=*/0, &table)) {
     if (table.count == 0) return kRandoReveal_PlacementFailed;
   }
 
@@ -635,6 +693,10 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   Logic_ComputeSpheres(&settings, &table, &spheres);
 
   // Build the spoiler view and write to a tmp file for stamp computation.
+  // Slice 6 audit H1 — forward_fill_fallback_count and retry_attempts are
+  // normalized in compute_stamp via the same constants (see
+  // rando_spoiler.c). At reveal, the regen spoiler is also normalized so
+  // the JSON bytes are byte-identical to the generate-time stamp input.
   RandoSpoiler regen;
   memset(&regen, 0, sizeof(regen));
   regen.share_string = share_buf;
@@ -644,90 +706,84 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   regen.placements = &table;
   regen.spheres = &spheres;
   regen.goal_completable = Goal_IsCompletable(&settings, &table);
-  {
-    const PlacementStats *st = Placement_GetLastStats();
-    regen.forward_fill_fallback_count = st->forward_fill_fallback_count;
-    regen.retry_attempts = st->attempts_used;
-  }
-  regen.generation_wall_clock_ms = 0;  // normalized for stamp reproducibility
+  regen.forward_fill_fallback_count = 0;  // stamp normalization
+  regen.retry_attempts = 1;               // stamp normalization
+  regen.generation_wall_clock_ms = 0;     // stamp normalization
 
-  // Write JSON to a tmpfile so we can read it back and SHA-256 it without
-  // disturbing the on-disk suppressed file (which we only overwrite on
-  // stamp success).
-  FILE *tmp = tmpfile();
-  if (tmp == NULL) return kRandoReveal_WriteFailed;
-  // Spoiler_WriteJson opens its own file; we don't have a public stream
-  // variant. Use the path-based form via a tmp path generated by os.
-  fclose(tmp);
-  // Use a known temp path next to the suppressed file: <suppressed>.tmp
+  // Write JSON to a tmp file next to the suppressed path so we can read it
+  // back and SHA-256 it without disturbing the suppressed file.
+  // Slice 6 audit M3 — removed dead tmpfile() open/close scaffolding.
   char tmp_path[1280];
   if (snprintf(tmp_path, sizeof(tmp_path), "%s.reveal-tmp", suppressed_path) >= (int)sizeof(tmp_path)) {
     return kRandoReveal_WriteFailed;
   }
-  if (!Spoiler_WriteJson(&regen, tmp_path)) return kRandoReveal_WriteFailed;
+
+  // Cleanup epilogue is reached via `goto fail` from every error path so
+  // .reveal-tmp never leaks (Slice 6 audit M1).
+  uint8 *bytes = NULL;
+  RandoRevealResult result = kRandoReveal_WriteFailed;
+
+  if (!Spoiler_WriteJson(&regen, tmp_path)) goto fail;
 
   // Read the tmp file back and SHA-256 it.
   FILE *rb = fopen(tmp_path, "rb");
-  if (rb == NULL) return kRandoReveal_WriteFailed;
+  if (rb == NULL) goto fail;
   fseek(rb, 0, SEEK_END);
   long flen = ftell(rb);
   rewind(rb);
-  uint8 *bytes = (uint8 *)malloc((size_t)flen);
-  if (bytes == NULL) { fclose(rb); remove(tmp_path); return kRandoReveal_WriteFailed; }
+  if (flen <= 0) { fclose(rb); goto fail; }
+  bytes = (uint8 *)malloc((size_t)flen);
+  if (bytes == NULL) { fclose(rb); goto fail; }
   size_t got = fread(bytes, 1, (size_t)flen, rb);
   fclose(rb);
-  if (got != (size_t)flen) {
-    free(bytes);
-    remove(tmp_path);
-    return kRandoReveal_WriteFailed;
-  }
+  if (got != (size_t)flen) goto fail;
   uint8 calc_stamp[32];
   sha256_buffer(bytes, (size_t)flen, calc_stamp);
-  free(bytes);
 
   if (memcmp(calc_stamp, hdr.spoiler_stamp, 32) != 0) {
-    // Stamp mismatch — leave the suppressed file untouched and drop the tmp.
-    remove(tmp_path);
-    return kRandoReveal_StampMismatch;
+    // Slice 6 audit H3 — leave the suppressed file untouched on stamp
+    // mismatch. The fact that we never wrote to suppressed_path is the
+    // invariant.
+    result = kRandoReveal_StampMismatch;
+    goto fail;
   }
 
-  // Stamp matched. Rename the tmp file over the suppressed path, then
-  // write the .txt sibling.
-  remove(suppressed_path);
-  if (rename(tmp_path, suppressed_path) != 0) {
-    // Fallback: copy contents manually (rename may fail across volumes).
-    FILE *src = fopen(tmp_path, "rb");
-    FILE *dst = fopen(suppressed_path, "wb");
-    if (src == NULL || dst == NULL) {
-      if (src) fclose(src);
-      if (dst) fclose(dst);
-      remove(tmp_path);
-      return kRandoReveal_WriteFailed;
-    }
-    uint8 chunk[4096];
-    size_t r;
-    while ((r = fread(chunk, 1, sizeof(chunk), src)) > 0) {
-      fwrite(chunk, 1, r, dst);
-    }
-    fclose(src);
-    fclose(dst);
-    remove(tmp_path);
+  // Stamp matched. Overwrite the suppressed file with the regenerated
+  // bytes IN-PLACE (no rename — the previous remove()+rename() pattern
+  // could lose the suppressed file on rename failure; in-place write
+  // either succeeds or leaves the file in a partial state, never deleted).
+  // The full bytes are in `bytes`, so this is a single fopen/fwrite/fclose.
+  {
+    FILE *out = fopen(suppressed_path, "wb");
+    if (out == NULL) goto fail;
+    size_t wrote = fwrite(bytes, 1, (size_t)flen, out);
+    if (fclose(out) != 0 || wrote != (size_t)flen) goto fail;
   }
 
   // Write the .txt companion alongside.
-  char txt_path[1280];
-  size_t pl = strlen(suppressed_path);
-  if (pl >= 5 && strcmp(suppressed_path + pl - 5, ".json") == 0) {
-    memcpy(txt_path, suppressed_path, pl - 5);
-    strcpy(txt_path + pl - 5, ".txt");
-  } else if (pl + 4 < sizeof(txt_path)) {
-    memcpy(txt_path, suppressed_path, pl);
-    strcpy(txt_path + pl, ".txt");
-  } else {
-    return kRandoReveal_Ok;  // success — .txt is best-effort
+  {
+    char txt_path[1280];
+    size_t pl = strlen(suppressed_path);
+    if (pl >= 5 && strcmp(suppressed_path + pl - 5, ".json") == 0) {
+      memcpy(txt_path, suppressed_path, pl - 5);
+      strcpy(txt_path + pl - 5, ".txt");
+      (void)Spoiler_WriteText(&regen, txt_path);
+    } else if (pl + 4 < sizeof(txt_path)) {
+      memcpy(txt_path, suppressed_path, pl);
+      strcpy(txt_path + pl, ".txt");
+      (void)Spoiler_WriteText(&regen, txt_path);
+    }
+    // If neither path-form fits, skip the .txt — success on the JSON path.
   }
-  (void)Spoiler_WriteText(&regen, txt_path);
-  return kRandoReveal_Ok;
+
+  result = kRandoReveal_Ok;
+
+fail:
+  // Always drop the .reveal-tmp scratch file (Slice 6 audit M1) and free
+  // the in-memory bytes (Slice 6 audit M1). `result` carries the outcome.
+  if (bytes != NULL) free(bytes);
+  remove(tmp_path);
+  return result;
 }
 
 const char *Rando_RevealResultDescription(RandoRevealResult r) {

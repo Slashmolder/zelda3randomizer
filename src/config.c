@@ -59,6 +59,8 @@ static const KeyNameId kKeyNameId[] = {
   S(CheatLife), S(CheatKeys), S(CheatEquipment), S(CheatWalkThroughWalls),
   S(ClearKeyLog), S(StopReplay), S(Fullscreen), S(Reset),
   S(Pause), S(PauseDimmed), S(Turbo), S(ReplayTurbo), S(WindowBigger), S(WindowSmaller), S(VolumeUp), S(VolumeDown), S(DisplayPerf), S(ToggleRenderer),
+  // Phase B Slice 1 — randomizer tracker overlay toggles.
+  S(RandoToggleItemTracker), S(RandoToggleLocationTracker),
 };
 #undef S
 #undef M

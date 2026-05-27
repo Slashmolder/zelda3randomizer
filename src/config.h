@@ -34,6 +34,10 @@ enum {
   kKeys_ToggleRenderer,
   kKeys_VolumeUp,
   kKeys_VolumeDown,
+  // Phase B Slice 1 — randomizer tracker overlay toggles. Default unbound;
+  // both reset to hidden on each launch (in-memory only, not persisted).
+  kKeys_RandoToggleItemTracker,
+  kKeys_RandoToggleLocationTracker,
   kKeys_Total,
 };
 

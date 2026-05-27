@@ -103,12 +103,17 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 }
 
 // Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the 24-byte
-// canonical bytes and populates `out`. Returns 0 on success, -1 if the input
-// is NULL or the trailing pad bytes are non-zero.
+// canonical bytes and populates `out`. Returns 0 on success, -1 if the
+// input is NULL.
+//
+// **Forward-compat note**: pad bytes in[22], in[23] are NOT inspected — a
+// future format extension may repurpose them, and rejecting on non-zero
+// would break reveal of pre-extension suppressed files. Today the
+// serializer always writes zero (`rando_settings.c:100-101`) but the
+// deserializer is permissive.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;
-  if (in[22] != 0 || in[23] != 0) return -1;
   RandoSettings s;
   memset(&s, 0, sizeof(s));
   s.settings_version = 1;  // Phase A constant; not serialized

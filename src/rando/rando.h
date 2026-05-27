@@ -225,6 +225,39 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // enumerated in audit.md §0.4a.
 // ---------------------------------------------------------------------------
 void Rando_BumpReachabilityCounter(void);
+uint32 Rando_GetReachabilityCounter(void);
+
+// ---------------------------------------------------------------------------
+// Phase B Slice 1 — tracker overlay toggle state. In-memory only, not
+// persisted. Both default to false at process start AND on every
+// Rando_DeactivateSlot (so launching/loading defaults to hidden).
+// Keybindings: kKeys_RandoToggleItemTracker, kKeys_RandoToggleLocationTracker.
+// ---------------------------------------------------------------------------
+extern bool g_rando_show_item_tracker;
+extern bool g_rando_show_location_tracker;
+
+// ---------------------------------------------------------------------------
+// Phase B Slice 1 — checked-location bitmap (one bit per location_id, 0..511).
+// Set when Rando_OnLocationCheck fires for a location, OR when an audit-
+// exempt event-flag bump site updates Rando_BumpReachabilityCounter AND has
+// a corresponding LOC_*.
+//
+// Bitmap is heap-resident per the Phase A spec (NOT in g_ram). Loaded from
+// RandoSidecarSlot.checked_bitmap on activate; written back on sidecar save.
+// ---------------------------------------------------------------------------
+#define kRandoCheckedBitmapBytes ((512 + 7) >> 3)  // 64 bytes = 512 bits
+extern uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
+
+// Set the bit for `location_id`. No-op if loc_id >= 512 or rando not active.
+void Rando_MarkLocationChecked(uint16 location_id);
+// Test the bit for `location_id`. Returns false for OOB or no slot active.
+bool Rando_IsLocationChecked(uint16 location_id);
+
+// Copy g_rando_checked_bitmap into the supplied slot's checked_bitmap field.
+// Callers about to write the ACTIVE rando slot to disk should invoke this
+// just before calling Rando_WriteSidecarSlot so the in-memory checks survive
+// the save/reload cycle. Safe to call when no slot is active (no-op).
+void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot);
 
 // ---------------------------------------------------------------------------
 // §6.6 boss-kill dispatch helpers. The boss-kill code path in dungeon.c

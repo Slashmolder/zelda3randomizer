@@ -388,10 +388,23 @@ static bool write_suppressed_file(const char *share_string,
   return wrote == sizeof(buf);
 }
 
-// Stamp computation: write the spoiler JSON to a temporary file (with
-// race_mode = 0 and generation_wall_clock_ms = 0 in a temporary copy of
-// the input), read it back into memory, and SHA-256 the bytes. Returns
-// true and fills `out_stamp` on success.
+// Stamp computation: write the spoiler JSON to a temporary file with
+// non-deterministic fields cleared, read it back into memory, and SHA-256
+// the bytes. Returns true and fills `out_stamp` on success.
+//
+// **Stamp normalization** — fields normalized to stable values so the
+// stamp is reproducible across runs and machines:
+//   - settings.race_mode → 0       (race_mode is recorded in file existence,
+//                                    not in the stamped settings)
+//   - generation_wall_clock_ms → 0 (varies with machine speed)
+//   - forward_fill_fallback_count → 0  (varies with placer's wall-clock
+//   - retry_attempts → 1               budget cutoff; reveal at a different
+//                                       budget would otherwise mismatch)
+// The `Place_AssumedFill` retry-attempts count is also a function of the
+// per-call `budget_seconds`. Reveal MUST pass `budget_seconds = 0` (no
+// wall-clock cutoff) so the placer runs to its hard 8-attempt cap; that
+// makes attempts_used deterministic and lets us normalize to 1 in the
+// stamp without lying about what happened on a particular machine.
 static bool compute_stamp(const RandoSpoiler *s, uint8 out_stamp[32]) {
   // Build the normalized spoiler view for stamping.
   RandoSettings norm_settings = *s->settings;
@@ -399,6 +412,10 @@ static bool compute_stamp(const RandoSpoiler *s, uint8 out_stamp[32]) {
   RandoSpoiler norm = *s;
   norm.settings = &norm_settings;
   norm.generation_wall_clock_ms = 0;
+  // Slice 6 audit H1 — these fields depend on placer wall-clock; clear so
+  // the stamp is reproducible regardless of budget_seconds or machine speed.
+  norm.forward_fill_fallback_count = 0;
+  norm.retry_attempts = 1;
 
   FILE *tmp = tmpfile();
   if (tmp == NULL) return false;

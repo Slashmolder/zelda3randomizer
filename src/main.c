@@ -401,6 +401,13 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
 
   // Phase B Slice 6 — --race-mode override (highest precedence; can also be
   // set via --settings=race_mode=true, but --race-mode is the canonical CLI).
+  // Slice 6 audit M2 — warn if the user supplied a contradictory pair so
+  // a typo doesn't silently produce a non-race-mode seed.
+  if (race_mode && settings.race_mode == 0 && settings_csv != NULL) {
+    fprintf(stderr,
+      "--generate-seed: WARNING --race-mode overrides --settings=race_mode=false; "
+      "generating a race-mode seed.\n");
+  }
   if (race_mode) settings.race_mode = 1;
 
   // Seed: parse hex or decimal uint64 from --seed=<u64>.
@@ -1389,6 +1396,14 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_ToggleRenderer: g_ppu_render_flags ^= kPpuRenderFlags_NewRenderer; break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
+    // Phase B Slice 1 — tracker overlay toggles. Toggle is in-memory only;
+    // resets to hidden on each launch.
+    case kKeys_RandoToggleItemTracker:
+      g_rando_show_item_tracker = !g_rando_show_item_tracker;
+      break;
+    case kKeys_RandoToggleLocationTracker:
+      g_rando_show_location_tracker = !g_rando_show_location_tracker;
+      break;
     default: assert(0);
     }
   }
