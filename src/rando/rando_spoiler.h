@@ -9,6 +9,7 @@
 
 #include "../types.h"
 #include "rando_placement.h"
+#include "rando_settings.h"  // kSettingsCanonicalLen for the _Static_assert below
 
 typedef struct RandoSpoiler {
   const char *share_string;
@@ -91,6 +92,18 @@ bool Spoiler_Write(const RandoSpoiler *s,
 #define kRandoSuppressedSpoilerShareStringMax 64
 #define kRandoSuppressedSpoilerSettingsLen 28  // = kSettingsCanonicalLen (kGenVer 14, §66)
 #define kRandoSuppressedSpoilerSize 138  // on-disk byte length (kGenVer 14: 134→138)
+
+// Compile-time guard — when kSettingsCanonicalLen bumps, this assert
+// forces a coupled update to kRandoSuppressedSpoilerSettingsLen +
+// kRandoSuppressedSpoilerSize + the CRC32 offsets in rando_spoiler.c +
+// the corpus runner constants. Caught at build time rather than at
+// the run_rando_corpus race-mode regression (which is how the
+// kGenVer 14 cycle first surfaced the gap).
+_Static_assert(kRandoSuppressedSpoilerSettingsLen == kSettingsCanonicalLen,
+               "ZRSR settings_canonical span must match kSettingsCanonicalLen; "
+               "bump kRandoSuppressedSpoilerSettingsLen AND kRandoSuppressedSpoilerSize "
+               "AND the CRC32 offsets in rando_spoiler.c serialize/read AND the "
+               "126/130/134/138 constants in assets/scripts/{bump,run}_rando_corpus.py.");
 
 typedef struct RandoSuppressedSpoiler {
   uint8 magic[4];                // 'ZRSR'

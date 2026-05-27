@@ -115,7 +115,23 @@ Slice 3a ships the 9 regular shops + Capacity Upgrade — ~80% of the Retro
 player experience. The Option A/B choice happens in 3b, informed by whatever
 dispatch shape lands then.
 
-**Risk 2 — Shop+slot identity is not tracked on the shop-item sprite.** `Sprite_BB_Shopkeeper` (`sprite_main.c:25236`) uses `sprite_subtype2[k]` to distinguish item *kind*, not shop+slot. To dispatch to the correct LOC, the dispatcher needs to derive shop identity from `dungeon_room_index` via a parallel `kShopkeeper_LocId[13][3]` table. **Tracked as task #53**, lands inside 3a.
+**Risk 2 — Shop+slot identity is not tracked on the shop-item sprite.** `Sprite_BB_Shopkeeper` (`sprite_main.c:25236`) uses `sprite_subtype2[k]` to distinguish item *kind*, not shop+slot.
+
+**Apply-time deep-dive finding (2026-05-27)**: the disambiguation is harder than originally scoped. Findings:
+
+1. **`ShopKeeper_SpawnShopItem(int k, int pos, int what)`** at `sprite_main.c:25426`: the `pos` parameter (0/1/2 slot index) is consumed only by `kShopKeeper_ItemX[pos]` for the spawn X coordinate. It is **NOT stored on the spawned sprite**. Both `sprite_subtype2[j]` and `sprite_ignore_projectile[j]` are set to `what` (item kind), not `pos`. The slot index is lost by receipt time.
+
+2. **`kShopKeeperWhere[13]`** at `sprite_main.c:7800` lists 13 dungeon-room indices, but only **5 of those rooms** are actual shop-dispatch sites (cases 0/1/5/7/8). The other 8 cases route to ChestGameGuy / NiceThief / minigame handlers.
+
+3. **Multiple ALTTPR shops share the same `dungeon_room_index`**: ALTTPR enumerates 9 regular shops; the C fork's dispatch covers only 5 unique rooms. The missing 4 are distinguished via `is_in_dark_world` (savegame_is_darkworld) — the same indoor room ID is reused for LW vs DW shop variants. Verify: room 0x12 in LW = LW Lake Hylia Shop, room 0x12 in DW = DW Lake Hylia Shop (or similar; needs apply-time grep to confirm exact pairing).
+
+**Implementation requirements** for #53:
+
+- Plumb `pos` into `ShopKeeper_SpawnShopItem` → spawned sprite's fields. `sprite_ignore_projectile` is unsafe (`pos=0` would disable projectile-ignore for slot-0). Recommend storing in `sprite_C[k]` (verified unused by `Sprite_BB`'s ShopItem_* paths at `sprite_main.c:25245-25251`).
+- Build a `kShopLocationLookup[5][2][3]` table — `[room_index][is_dark_world][pos] → LOC_id`. 5 rooms × 2 worlds × 3 slots = 30 entries. For unmapped entries return `LOC_NONE` (vanilla passthrough).
+- Wire each of the 7 `ShopItem_*` handlers (sprite_main.c:25418-25559) through a new `ShopItem_DispatchVanillaGrant(int k, uint16 vanilla_item, uint8 lttp_code)` helper that reads `sprite_C[k]` (pos) + `dungeon_room_index` + `savegame_is_darkworld`.
+
+Tracked as **task #53**; deferred from 3a's main bundle (multi-hour focused work). The placement-table is correct and player-visible randomization in shops will activate when #53 lands.
 
 **Risk 3 — ShopArrow / ShopKey / BluePotion (unbottled) / RedPotion (unbottled) / Heart-refill / Bee (unbottled) / BlueShield / RedShield / BombUpgrade5 / ArrowUpgrade5 / GenericKey items don't exist in `assets/rando/item_registry.yaml`.** **RESOLVED 2026-05-27**: match ALTTPR's own alias/distinct mix. Verified against `app/Item.php:107, 138-141, 168-170, 253` and `:270-271`. **Net 7 new distinct item-registry IDs** (the other 4 alias to existing entries):
 

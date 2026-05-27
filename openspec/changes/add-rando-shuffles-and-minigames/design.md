@@ -10,6 +10,36 @@ Phase A drafted boss-shuffle + drop-pool-shuffle contracts at `randomizer-shuffl
 
 This change bundles all three workstreams because they share `src/sprite_main.c` surface.
 
+### Status (2026-05-27 post-implementation)
+
+- Boss + drop shuffle algorithms + per-site sprite-handler instrumentation: **landed** (`72c3a93`, `d4b3b7d`).
+- `boss_shuffle` / `drop_shuffle` settings axes in canonical serialization: **landed** (`4d9d85e`, kGenVer 14).
+- §6.8 minigame dispatch: **2 of 4 sites wired** (`e97669a`):
+  - ✅ Digging Game — `player.c:6725` in `DiggingGameGuy_AttemptPrizeSpawn` case 4.
+  - ✅ Treasure-Chest minigame — `dungeon.c:5950` in `OpenMiniGameChest` t==7 branch.
+  - ⏳ Hype Cave NPC (#78) — sprite handler not located in the
+    reimplementation. ALTTPR uses `Location\Npc("Hype Cave - NPC",
+    [0x180011])` (`app/Region/Standard/DarkWorld/South.php:37`). The
+    ROM-byte-patch at 0x180011 has no corresponding sprite-handler entry
+    in this fork's `kSpriteHandlers[]` table (`sprite_main.c:480-716`).
+    Candidates checked + rejected: Sprite_28_DarkWorldHintNPC (storyteller,
+    not item-grant), Sprite_BC_Drunkard, Sprite_C8_BigFairy, Cukeman.
+    **Next step**: `git log -S "0x180011"` against any vendored asar
+    patches; audit `overlord.c` for an Hype-Cave overlord handler. The
+    vanilla item is `Rupee100` (not "Bee in a Bottle" as the original
+    task brief claimed — verified against `location_registry.yaml:350`).
+  - ⏳ Hammer Pegs (#79) — `LOC_Hammer_Pegs = 218`, vanilla PoH (lttp
+    code 0x26). ALTTPR uses `Location\Standing("Hammer Pegs",
+    [0x180006])`. The reimplementation's hammer-peg tile handler
+    (`dungeon.c:1021-1085`, `RoomDraw_HammerPegSingle`) is tile-rendering
+    only; no `RoomTag_*` handler in `dungeon.c:205-269` is wired to the
+    Peg-Cave room. **Next step**: locate the post-all-pegs-hammered
+    heart-piece spawn (likely an overlord or sprite handler not located
+    by the discovery agent), OR document as "unreachable in fork; falls
+    back to vanilla" if the grant logic was elided in the reimplementation.
+
+Audit M1 fix (`d4b3b7d`) landed alongside: orphan boss-segment suppression for Trinexx arms (0xCC/0xCD) + KholdstareShell (0xA3). Cluster-audit follow-ups (LOW-3 Agahnim reverse-map poison, LOW-4 load-order assumption, LOW-5 confirmation truncation defense) landed in `bbf7ea9`.
+
 ## Goals / Non-Goals
 
 **Goals**:
