@@ -280,7 +280,19 @@ def main(argv: list[str]) -> int:
     if not args.quiet and not tracked_offsets:
         print("check_audit_guard: warning — could not parse variables.h; raw-offset scan disabled.")
 
-    files = sorted(SRC_DIR.glob("*.c"))
+    # Recursive scan picks up `src/platform/*/.c` and any future
+    # subdirectory writers. `src/rando/*.c` is excluded because its
+    # entire purpose IS the dispatch path — those files own
+    # `Rando_OnLocationCheck` and the per-class direct-grant helpers
+    # (`prize_item_direct_grant`, `magic_upgrade_direct_grant`, etc.).
+    # The guard's job is to catch vanilla-side writes that DIDN'T
+    # route through rando, not to police rando's own implementation.
+    # Indirect-dispatch advisory still surfaces `src/rando/rando.c`
+    # for its `kValueToGiveItemTo` reference, so the auditor's eyeball
+    # path still covers it.
+    # Audit-of-audit LOW-1 of phase-b (e9f20ad cluster-audit follow-on).
+    all_c = sorted(SRC_DIR.rglob("*.c"))
+    files = [p for p in all_c if "rando" not in p.parts]
     total = 0
     for path in files:
         for lineno, line, reason in scan_file(path, raw_re):
@@ -293,7 +305,9 @@ def main(argv: list[str]) -> int:
     # Indirect-dispatch advisory — not a hard error, but flags files
     # the auditor must eyeball for ``*p`` writes through dispatch
     # tables that the regex above can't catch.
-    indirect_files = scan_indirect_dispatch_warnings(files)
+    # Pass the full file set (including src/rando) so rando-side
+    # references to the dispatch tables also surface in the advisory.
+    indirect_files = scan_indirect_dispatch_warnings(all_c)
     if indirect_files and not args.quiet:
         print()
         print("check_audit_guard: indirect-dispatch-table references detected.")

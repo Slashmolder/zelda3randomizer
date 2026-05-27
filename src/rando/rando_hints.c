@@ -198,10 +198,12 @@ bool Rando_GenerateHints(const RandoSettings *settings,
   // Murahdahla — populate when the goal is Triforce-related.
   if (settings->goal == kGoal_TriforceHunt || settings->goal == kGoal_GanonHunt) {
     // Count regions that hold at least one TriforcePiece placement.
-    // Stash up to 8 region names for the summary text. We use a
-    // small fixed buffer for simplicity; the summary truncates if
-    // more than 8 distinct regions appear.
-    uint8 seen_regions[16] = {0};
+    // Stash up to N region ids in a small fixed buffer for the summary
+    // text. region_id is uint16 in `RandoLocationDef`; the dedupe array
+    // matches that width so two distinct regions ≥ 256 don't collide
+    // (kRandoRegions is append-only, so the 256-region threshold could
+    // be crossed in a future slice). Audit-of-audit LOW-2 of phase-b.
+    uint16 seen_regions[16] = {0};
     uint8 seen_count = 0;
     uint8 piece_count = 0;
     for (uint16 i = 0; i < entry_count; i++) {
@@ -216,10 +218,10 @@ bool Rando_GenerateHints(const RandoSettings *settings,
         // Already recorded?
         bool found = false;
         for (uint8 k = 0; k < seen_count; k++) {
-          if (seen_regions[k] == (uint8)region_id) { found = true; break; }
+          if (seen_regions[k] == region_id) { found = true; break; }
         }
-        if (!found && seen_count < (uint8)(sizeof(seen_regions))) {
-          seen_regions[seen_count++] = (uint8)region_id;
+        if (!found && seen_count < (uint8)(sizeof(seen_regions) / sizeof(seen_regions[0]))) {
+          seen_regions[seen_count++] = region_id;
         }
         break;
       }

@@ -327,15 +327,18 @@ shifts as a result.
 
 | Version | Change | Corpus impact |
 |---|---|---|
-| 12→13 | Slice 2 Standard EP YAML promoted from inverted-only | All Standard digests refreshed |
-| 13→14 | Slice 7+8 §66 — settings canonical layout 24→28 bytes (`hints`, `boss_shuffle`, `drop_shuffle` added) | All digests refreshed; sidecar `kRandoSuppressedSpoilerSettingsLen` static-asserts the coupling |
+| 12→13 | Slice 2 Standard EP YAML promoted from inverted-only | 11 placement_digests + 13 sphere_digests changed (EP-region-only); 28 unchanged. See `27b52dd` |
+| 13→14 | Slice 7+8 §66 — settings canonical layout 24→28 bytes (`hints`, `boss_shuffle`, `drop_shuffle` added) | 52/52 corpus entries unchanged — canonical layout grew but defaults are all 0, so placement digest doesn't move. Only seeds with non-default new settings would diverge. Sidecar `kRandoSuppressedSpoilerSettingsLen` static-asserts the coupling |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
-| 17→18 | CanBombThings macro `TRUE() → HAS_ANY_OF([Bombs1, Bombs3, Bombs10])` — playtest-found softlock on Standard escape | All Standard digests refreshed (predicate change affects every CanKillEscapeThings-gated location) |
 
-The pattern: Retro-isolated changes hit ~3 corpus entries; Standard-
-mode predicate changes hit ~30+ entries. Plan corpus regen time
+The pattern: predicate changes that affect only one region (12→13's
+EP gate) hit a subset of seeds; layout-only changes with default-zero
+new fields (13→14) leave the corpus untouched; Retro-isolated rule
+changes hit ~3 entries; a global predicate change (every
+`CanKillEscapeThings`-gated location, every `CanBombThings()` caller,
+etc.) would hit ~30+ Standard entries. Plan corpus regen time
 accordingly when scoping a sprint.
 
 ## ALTTPR cross-compatibility (none)

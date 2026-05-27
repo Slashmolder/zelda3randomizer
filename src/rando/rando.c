@@ -628,6 +628,27 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_active_share_string[0] = '\0';
   (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
+
+  // TODO (audit-of-audit HIGH-3 of phase-b): Rando_GenerateHints does
+  // NOT run on slot-load because the sidecar slot doesn't carry the
+  // full RandoSettings struct (only settings_hash, which is one-way).
+  // When #85 (hint dispatch wiring) lands, in-game telepathic tiles
+  // on a loaded slot will read `g_hint_table` populated by the LAST
+  // CLI generation — empty for slots that were imported via share
+  // string and never re-generated in-process.
+  //
+  // Fix shape options:
+  //   (a) Add a new sidecar TLV `TAIL_RANDO_SETTINGS` carrying the
+  //       canonical 28-byte settings blob; deserialize here, then
+  //       Rando_GenerateHints(deserialized_settings, &g_session_placement_table, NULL).
+  //   (b) Always run `Rando_GenerateHints` with synthesized
+  //       "defaults + hints=On + goal=Detected-from-placements"
+  //       settings. Degraded shape (Murahdahla won't fire correctly
+  //       on TriforceHunt slots; non-hint slots get hints anyway) but
+  //       hint table is non-empty for runtime dispatch.
+  //
+  // Option (a) is cleaner; ship paired with #85 dispatch wiring.
+  // Option (b) ships now if dispatch lands before sidecar redesign.
 }
 
 void Rando_DeactivateSlot(void) {
