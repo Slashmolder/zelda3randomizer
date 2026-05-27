@@ -28,8 +28,21 @@ import sys
 from pathlib import Path
 
 SRC_DIR = Path("src")
+VARIABLES_H = Path("src/variables.h")
 AUDIT_MD = Path("openspec/changes/add-randomizer-support/audit.md")
 EXEMPTION_COMMENT = "rando-exempt:"
+
+# Functions that resolve a pointer from a dispatch table (e.g.,
+# `kMemoryLocationToGiveItemTo[j]`) and then write through `*p`. Any
+# unflagged `*p[?]\s*[|&^+-]?=` write inside a function whose body
+# mentions one of these names is suspicious because the regex-based
+# direct-cell match above can't catch indirect writes. See memory note
+# `audit_guard_indirect_writes` and §7.7 of add-randomizer-support
+# audit (the pendant double-grant in misc.c:739).
+INDIRECT_DISPATCH_TABLES = [
+    "kMemoryLocationToGiveItemTo",
+    "kValueToGiveItemTo",
+]
 
 # Cells the audit tracks. Mirrors audit.md §0.1.1 dispatch-table cells.
 TRACKED_CELLS = [
@@ -81,6 +94,61 @@ WRITE_RE = re.compile(
 )
 BOTTLE_WRITE_RE = re.compile(r"\blink_bottle_info\s*\[[^\]]+\]\s*(?:=(?!=)|\+=|-=|\|=|&=|\^=)")
 
+# Raw-offset writes (e.g. ``g_ram[0xF374] |= 1`` or ``*(uint8*)(g_ram+0xF374) = 1``)
+# bypass the symbol-name regex above. Parsed from variables.h at scan time so
+# the offsets stay in lockstep with the C-side macro definitions.
+# Cluster-audit (post-e9f20ad) memory note `audit_guard_indirect_writes`.
+DEFINE_RE = re.compile(
+    r"^\s*#define\s+([a-zA-Z_]\w*)\s+\(\s*\*\s*\(\s*u?int\d+_?\s*\*\s*\)\s*\(\s*g_ram\s*\+\s*0x([0-9a-fA-F]+)\s*\)\s*\)"
+)
+
+
+def parse_tracked_offsets() -> dict[int, str]:
+    """Read variables.h and return {offset: symbol} for each TRACKED_CELLS macro.
+
+    The symbol-name regex catches plain assignments like ``link_item_bow = 5``
+    but misses raw-address writes through the same offset (e.g. callers that
+    spell out ``g_ram+0xF340``). Building a separate offset → symbol map lets
+    the raw-write regex below cover both shapes uniformly.
+    """
+    if not VARIABLES_H.exists():
+        return {}
+    tracked = set(TRACKED_CELLS) | {"link_num_arrows"}
+    out: dict[int, str] = {}
+    for line in VARIABLES_H.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = DEFINE_RE.match(line)
+        if not m:
+            continue
+        name = m.group(1)
+        if name not in tracked:
+            continue
+        out[int(m.group(2), 16)] = name
+    return out
+
+
+def build_raw_write_regex(offsets: dict[int, str]) -> re.Pattern[str] | None:
+    """Build a regex matching raw writes to any tracked offset.
+
+    Patterns matched (case-insensitive on the hex part):
+        g_ram[0xNNNN] = ...
+        g_ram[0xNNNN] |= ...
+        *(uint8*)(g_ram + 0xNNNN) = ...
+        *(g_ram + 0xNNNN) = ...
+    """
+    if not offsets:
+        return None
+    # Build the offset alternation. Each offset is matched in hex (with or
+    # without 0x prefix tolerance — but DEFINE_RE forces 0x so we mirror).
+    hex_alt = "|".join(f"{off:X}" for off in sorted(offsets, reverse=True))
+    # Two write shapes: bracket-indexed g_ram[0xNNNN] and pointer-deref
+    # ``*(<cast>)(g_ram + 0xNNNN)``. Both followed by an assignment op.
+    pattern = (
+        r"g_ram\s*(?:\[\s*0x(?:" + hex_alt + r")\s*\]"
+        r"|\+\s*0x(?:" + hex_alt + r")\s*\))"
+        r"\s*(?:=(?!=)|\+=|-=|\|=|&=|\^=)"
+    )
+    return re.compile(pattern, re.IGNORECASE)
+
 # Dispatch funnel patterns — these are "blessed" writes the audit knows about.
 DISPATCH_CONTEXT_PATTERNS = [
     re.compile(r"Rando_OnLocationCheck\s*\("),
@@ -130,8 +198,17 @@ def is_consumption_or_arithmetic(line: str) -> bool:
     return bool(re.search(r"\b(?:link_item_bombs|link_num_arrows)\s*(?:--|-=)", line))
 
 
-def scan_file(path: Path) -> list[tuple[int, str, str]]:
-    """Return [(lineno, line, reason)] for each tracked write site found."""
+def scan_file(path: Path, raw_re: re.Pattern[str] | None) -> list[tuple[int, str, str]]:
+    """Return [(lineno, line, reason)] for each tracked write site found.
+
+    Three classes of write are caught:
+      1. Symbol-name writes (``WRITE_RE``): ``link_item_bow = ...`` etc.
+      2. Bottle-array writes (``BOTTLE_WRITE_RE``): ``link_bottle_info[k] = ...``.
+      3. Raw-offset writes (``raw_re``, built from variables.h at startup):
+         ``g_ram[0xF340] |= ...`` or ``*(uint8*)(g_ram+0xF340) = ...``.
+         Catches the indirect-write failure mode the §7.7 pendant
+         double-grant bug exposed.
+    """
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -142,16 +219,46 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
     for idx, line in enumerate(lines):
         if is_consumption_or_arithmetic(line):
             continue
-        match = WRITE_RE.search(line) or BOTTLE_WRITE_RE.search(line)
+        sym_match = WRITE_RE.search(line)
+        bottle_match = BOTTLE_WRITE_RE.search(line) if not sym_match else None
+        raw_match = raw_re.search(line) if (raw_re is not None and not sym_match and not bottle_match) else None
+        match = sym_match or bottle_match or raw_match
         if not match:
             continue
         if is_exempted(lines, idx):
             continue
         if is_in_dispatch_context(lines, idx):
             continue
-        cell = match.group(1) if match.re is WRITE_RE else "link_bottle_info[*]"
+        if sym_match:
+            cell = sym_match.group(1)
+        elif bottle_match:
+            cell = "link_bottle_info[*]"
+        else:
+            cell = "raw g_ram offset"
         hits.append((idx + 1, line.rstrip(), f"write to {cell} outside dispatch / exemption"))
     return hits
+
+
+def scan_indirect_dispatch_warnings(files: list[Path]) -> list[tuple[Path, str]]:
+    """List files that reference an indirect-write dispatch table.
+
+    The regex-based scan above misses writes through pointers like
+    ``*p = ...`` where ``p`` came from ``kMemoryLocationToGiveItemTo[j]``.
+    Flag those files as "manual audit needed" — auditor confirms every
+    ``*p`` write in the function carries either a dispatch context or
+    an exemption comment.
+    """
+    out: list[tuple[Path, str]] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for name in INDIRECT_DISPATCH_TABLES:
+            if name in text:
+                out.append((path, name))
+                break
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -168,15 +275,34 @@ def main(argv: list[str]) -> int:
         print(f"check_audit_guard: {AUDIT_MD} missing — cannot consult exemption list.")
         return 1 if args.strict else 0
 
+    tracked_offsets = parse_tracked_offsets()
+    raw_re = build_raw_write_regex(tracked_offsets)
+    if not args.quiet and not tracked_offsets:
+        print("check_audit_guard: warning — could not parse variables.h; raw-offset scan disabled.")
+
     files = sorted(SRC_DIR.glob("*.c"))
     total = 0
     for path in files:
-        for lineno, line, reason in scan_file(path):
+        for lineno, line, reason in scan_file(path, raw_re):
             total += 1
             if not args.quiet:
                 tag = "[error]" if args.strict else "[report-only]"
                 print(f"{tag} {path}:{lineno}: {reason}")
                 print(f"  > {line}")
+
+    # Indirect-dispatch advisory — not a hard error, but flags files
+    # the auditor must eyeball for ``*p`` writes through dispatch
+    # tables that the regex above can't catch.
+    indirect_files = scan_indirect_dispatch_warnings(files)
+    if indirect_files and not args.quiet:
+        print()
+        print("check_audit_guard: indirect-dispatch-table references detected.")
+        print("  The regex scan above catches direct symbol-name + raw-offset writes,")
+        print("  but `*p = ...` writes via these dispatch-table pointers need manual")
+        print("  eyeball. See memory note `audit_guard_indirect_writes` and §7.7 of")
+        print("  add-randomizer-support audit (misc.c:739 pendant double-grant).")
+        for path, tbl in indirect_files:
+            print(f"  [advisory] {path}: references {tbl}")
 
     if total:
         if not args.quiet:
@@ -188,7 +314,9 @@ def main(argv: list[str]) -> int:
         return 1 if args.strict else 0
 
     if not args.quiet:
-        print(f"check_audit_guard: {len(files)} file(s) scanned, no non-exempt writes.")
+        n_off = len(tracked_offsets)
+        suffix = f" ({n_off} tracked offsets parsed from variables.h)" if n_off else ""
+        print(f"check_audit_guard: {len(files)} file(s) scanned, no non-exempt writes{suffix}.")
     return 0
 
 
