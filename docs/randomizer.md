@@ -301,6 +301,19 @@ Planned (not promised) follow-on work:
   - §7.6 follow-on: visible per-item-type confirmation icons for the
     §6.2 direct-grant placements (current Phase A confirmation is
     audio-only via `Rando_ShowDirectGrantConfirmation`).
+  - §9.1c Switch software-keyboard wrapper (libnx `swkbdCreate` /
+    `swkbdShow` / `swkbdInputText`) routing into the existing
+    `RandoTextField` widget. Re-scoped from Phase A2 to Phase B per
+    the §12.3a/§12.3b Switch-manual-gate precedent (Switch builds
+    are a release-cut manual check, not per-PR CI).
+  - Phase A1 audit Bug #7: `Place_AssumedFill` per-item bounded
+    rewind (currently uses whole-attempt retry with
+    `kAssumedFillMaxAttempts=8`; spec defines per-item rewind that
+    backtracks the last N placements rather than restarting from
+    scratch). Deferred to A2 by audit; lands in B.
+  - See `docs/randomizer_phase_b.md` for the consolidated planning
+    doc — each Phase B slice with scope, files-to-touch, ALTTPR
+    references, and effort estimates.
 - **Phase C**: entrance shuffle (uses the `RegionRemap` overlay reserved in
   Phase A).
 - **Phase D**: cosmetic shuffles (palette/sprite), customizer mode
