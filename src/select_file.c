@@ -2431,6 +2431,7 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       switch (s->accessibility) {
         case kAccessibility_Items:     return "ITEMS";
         case kAccessibility_Locations: return "LOCS";
+        case kAccessibility_None:      return "NONE";
         default:                       return "ERR";
       }
     case kRow_PrizeShuffle:
@@ -2600,13 +2601,13 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_Accessibility: {
-      // Phase A supports Items + Locations. Completionist goal auto-locks
-      // to Locations (kRow_Goal sets it on cycle); cycling here while
-      // goal=Completionist still allows the user to view but the goal-
-      // cycle will reassert. For other goals, free toggle.
+      // Items / Locations / None — Completionist goal auto-locks to Locations
+      // (kRow_Goal sets it on cycle); cycling here while goal=Completionist
+      // still allows the user to view but the goal-cycle will reassert.
+      // Phase B Slice 4 added `None` (opt-in to possibly-unwinnable seeds).
       int n = (int)s->accessibility + delta;
-      if (n < kAccessibility_Items) n = kAccessibility_Locations;
-      if (n > kAccessibility_Locations) n = kAccessibility_Items;
+      if (n < kAccessibility_Items) n = kAccessibility_None;
+      if (n > kAccessibility_None) n = kAccessibility_Items;
       s->accessibility = (uint8)n;
       // Don't break the Completionist invariant.
       if (s->goal == kGoal_Completionist) s->accessibility = kAccessibility_Locations;

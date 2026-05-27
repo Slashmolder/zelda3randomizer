@@ -321,6 +321,31 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // Phase B Slice 4 — un-pinned axes. Cluster-audit LOW L2 of e9f20ad
+  // post-commit review: round-trip the new parser surface.
+  {
+    RandoSettings sl;
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("logic=OverworldGlitches", &sl) != 0 || sl.logic != 1) {
+      fprintf(stderr, "Settings_SelfCheck: logic=OverworldGlitches should parse to 1\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("logic=major_glitches", &sl) != 0 || sl.logic != 2) {
+      fprintf(stderr, "Settings_SelfCheck: logic=major_glitches should parse to 2\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("logic=HybridMG", &sl) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: logic=HybridMG should reject (Phase D)\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("accessibility=none", &sl) != 0 || sl.accessibility != 2) {
+      fprintf(stderr, "Settings_SelfCheck: accessibility=none should parse to 2 (kAccessibility_None)\n");
+      exit(2);
+    }
+  }
   // CSV parser rejects out-of-range numeric values.
   {
     RandoSettings s4r;

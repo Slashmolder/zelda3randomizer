@@ -150,9 +150,20 @@ def run_activated(binary: Path, manifest: dict) -> int:
                     failures += 1
                     continue
                 got_pd = revealed.get("meta", {}).get("placement_digest_hex", "")
+                got_sphere_pd = revealed.get("meta", {}).get("sphere_digest", "")
                 if expected and got_pd != expected:
                     print(f"  FAIL [{idx}] {label}: revealed placement_digest "
                           f"mismatch: expected {expected[:16]}, got {got_pd[:16]}")
+                    failures += 1
+                    continue
+                # Cluster-audit M2 (of e9f20ad audit): also check sphere
+                # digest. Previously skipped in the ZRSR sub-path, leaving
+                # the manifest's expected_sphere_digest for race-mode entries
+                # unenforced.
+                if expected_sphere and got_sphere_pd != expected_sphere:
+                    print(f"  FAIL [{idx}] {label}: revealed sphere_digest "
+                          f"mismatch: expected {expected_sphere[:16]}, "
+                          f"got {got_sphere_pd[:16]}")
                     failures += 1
                     continue
                 print(f"  OK   [{idx}] {label}: ZRSR roundtrip OK "

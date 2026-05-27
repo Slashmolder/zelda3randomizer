@@ -33,7 +33,7 @@
 - [x] 5.2 CSV parser: accept `accessibility=none`. *(Landed — `parse_accessibility` at `rando_settings.c:485` adds the `none` branch.)*
 - [x] 5.3 In `Goal_IsCompletable` (`rando_placement.c:1086`), when `settings.accessibility == none`, short-circuit to true (no reachability enforcement). *(Landed — `rando_placement.c:1140-1142` short-circuits before reachability compute. Verified: `--settings=accessibility=none` with a goal that would normally refuse generates clean.)*
 - [x] 5.4 At `src/main.c:482`'s strict refusal: skip the refusal when `accessibility == none`. *(Implicit via §5.3 — `Goal_IsCompletable` returns true so the refusal branch never fires. No `main.c` change needed.)*
-- [ ] 5.5 Emit a spoiler warning: `fallback_warnings: [{"code": "accessibility_none_seed", "detail": "..."}]`. *(Deferred — needs `Spoiler_Write` to consult `settings->accessibility` and append the warning. Code path is mechanical; low priority since the meta block already records the setting.)*
+- [x] 5.5 Emit a spoiler warning: `fallback_warnings: [{"code": "accessibility_none_seed", "detail": "..."}]`. *(Landed 2026-05-27 — `rando_spoiler.c::Spoiler_WriteJson` now appends a `{"kind": "accessibility_none_seed", "detail": "goal-completability not enforced; seed may be unwinnable"}` entry to the `fallback_warnings` array when `s->settings->accessibility == 2`. Per LOW L1 of the fresh-eyes audit of e9f20ad.)*
 - [ ] 5.6 Settings-screen widget: add `none` to the accessibility cycle. *(Deferred — settings-screen UI work.)*
 
 ## 6. pyramid_bow_upgrade un-pin
