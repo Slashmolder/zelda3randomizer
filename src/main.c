@@ -452,7 +452,12 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
 
   // Run placement. Phase A0 returns identity (every location ← vanilla_item_id);
   // Phase A1 replaces with assumed fill.
-  bool ok = Place_AssumedFill(&settings, seed_u64, budget_seconds, &table);
+  // Phase B Slice 6 audit H1 — race-mode generation always uses
+  // budget_seconds=0 so the placer runs to its deterministic
+  // kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
+  // Stamp is then reproducible across machines.
+  int effective_budget = (settings.race_mode != 0) ? 0 : budget_seconds;
+  bool ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
   if (!ok) {
     fprintf(stderr, "--generate-seed: placement failed (Phase A0 identity should always succeed)\n");
     free(entries);

@@ -259,6 +259,14 @@ bool Rando_IsLocationChecked(uint16 location_id);
 // the save/reload cycle. Safe to call when no slot is active (no-op).
 void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot);
 
+// Persist the active session's checked-location bitmap to the sidecar slot
+// at `slot_index`. Hook from in-game save points (SaveGameFile and its
+// peers). Reads the existing sidecar slot (which has the header and
+// placement table from the last write), overwrites checked_bitmap from
+// the in-memory session, and writes back. No-op when no rando slot is
+// active or `slot_index` is out of range.
+void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size);
+
 // ---------------------------------------------------------------------------
 // §6.6 boss-kill dispatch helpers. The boss-kill code path in dungeon.c
 // fires TWO grant sites per boss: the BossHeart drop (Sprite_HeartContainer)

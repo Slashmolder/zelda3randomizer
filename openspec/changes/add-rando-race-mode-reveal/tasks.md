@@ -62,7 +62,7 @@
 
 ## 8. Testing
 
-- [ ] 8.1 Manual: generate a race-mode seed; verify file at `<spoiler_dir>/<share_string>.json` is 78 bytes or less (depending on share-string length).
+- [x] 8.1 Manual: generate a race-mode seed; verify file at `<spoiler_dir>/<share_string>.json` is exactly 134 bytes. *(Verified manually 2026-05-27: `--generate-seed --race-mode --seed=0xC0FFEE` produces a 134-byte file.)*
 - [ ] 8.2 Manual: invoke `Rando_RevealSpoiler` (or the CLI counterpart); verify the file is overwritten with the full JSON.
 - [ ] 8.3 Tamper test: hex-edit a single byte in the suppressed file; reveal should fail with `kRandoReveal_CrcMismatch`.
 - [ ] 8.4 Cross-version test: hand-craft a suppressed file with a `generator_version` that differs from the runtime's; reveal should fail with `kRandoReveal_VersionMismatch`.

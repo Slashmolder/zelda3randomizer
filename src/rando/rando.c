@@ -23,6 +23,7 @@
 #include "location_ids.h"
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
+#include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
@@ -432,6 +433,23 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   memcpy(out_slot->checked_bitmap, g_rando_checked_bitmap, kRandoCheckedBitmapBytes);
 }
 
+void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
+  if (!g_rando_slot_active) return;
+  if (slot_index < 0 || slot_index >= 3) return;  // 3 sidecar slots
+
+  // Read the existing sidecar slot (preserves header + placement table).
+  // If the slot isn't a rando slot, skip silently — the in-game save
+  // still recorded SRAM via ZeldaWriteSram; we just don't have a sidecar
+  // to update.
+  RandoSidecarSlot slot;
+  if (!Rando_LoadSidecarSlot(slot_index, &slot)) return;
+  if (slot.header.slot_kind != kSlotKind_Randomizer) return;
+
+  // Refresh the bitmap from the in-memory session and write back.
+  Rando_PopulateSlotBitmap(&slot);
+  (void)Rando_WriteSidecarSlot(slot_index, &slot, paired_sram_slot, paired_sram_slot_size);
+}
+
 // ---------------------------------------------------------------------------
 // §7.6 — generic confirmation cue for direct-grant placements that skip
 // Link_ReceiveItem entirely. Matches the standard receive-item sound used
@@ -600,6 +618,10 @@ void Rando_DeactivateSlot(void) {
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
+
+  // Phase B Slice 5 — clear the hint set so it doesn't leak across slot
+  // switches once the hint generator lands (stub today; no-op).
+  Rando_ClearHints();
 }
 
 // ---------------------------------------------------------------------------
@@ -748,16 +770,36 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
     goto fail;
   }
 
-  // Stamp matched. Overwrite the suppressed file with the regenerated
-  // bytes IN-PLACE (no rename — the previous remove()+rename() pattern
-  // could lose the suppressed file on rename failure; in-place write
-  // either succeeds or leaves the file in a partial state, never deleted).
-  // The full bytes are in `bytes`, so this is a single fopen/fwrite/fclose.
+  // Stamp matched. Audit M1 — write to `.partial`, fsync-equivalent close,
+  // then rename atomically over the suppressed file. The previous
+  // fopen("wb") + fwrite pattern truncated the suppressed file before
+  // writing; a mid-write failure (disk full, IO error) would lose the
+  // original suppressed bytes AND leave a partial new file. The partial+
+  // rename pattern keeps the suppressed file intact until the new bytes
+  // are fully on disk.
   {
-    FILE *out = fopen(suppressed_path, "wb");
+    char partial_path[1280];
+    if (snprintf(partial_path, sizeof(partial_path), "%s.partial", suppressed_path) >= (int)sizeof(partial_path)) {
+      goto fail;
+    }
+    FILE *out = fopen(partial_path, "wb");
     if (out == NULL) goto fail;
     size_t wrote = fwrite(bytes, 1, (size_t)flen, out);
-    if (fclose(out) != 0 || wrote != (size_t)flen) goto fail;
+    if (fclose(out) != 0 || wrote != (size_t)flen) {
+      remove(partial_path);
+      goto fail;
+    }
+    // On Windows rename() fails if the destination exists; use
+    // remove()+rename(). The window between remove() and rename() is
+    // small enough that a crash there is acceptable (the partial file
+    // exists; the user can manually inspect / rescue). On POSIX rename()
+    // is atomic-replace.
+    remove(suppressed_path);
+    if (rename(partial_path, suppressed_path) != 0) {
+      // Partial file remains as evidence of the failed write; leave it
+      // for inspection rather than auto-deleting.
+      goto fail;
+    }
   }
 
   // Write the .txt companion alongside.

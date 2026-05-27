@@ -19,7 +19,7 @@ The total file size SHALL be 4 + 2 + 32 + 4 + N + 4 bytes (where N is the share-
 
 #### Scenario: Race-mode suppression writes only the stamp file
 - **WHEN** a seed generates successfully with `race_mode == 1`
-- **THEN** only the suppressed-spoiler file at `<spoiler_dir>/<share_string>.json` is written; no `.txt` companion is emitted; the file is at most 78 bytes (4-byte magic + 2-byte version + 32-byte stamp + 4-byte share-string-length + 32-byte share-string + 4-byte CRC32)
+- **THEN** only the suppressed-spoiler file at `<spoiler_dir>/<share_string>.json` is written; no `.txt` companion is emitted; the file is exactly 134 bytes (4-byte magic `ZRSR` + 2-byte generator_version LE + 32-byte SHA-256 stamp + 4-byte share-string-length LE + 64-byte share-string zero-padded + 24-byte settings_canonical with race_mode cleared + 4-byte CRC32 LE). The settings_canonical field carries the original `RandoSettings` bytes (with `race_mode` cleared to 0 in the canonical form) because the sidecar slot does not preserve `RandoSettings` — only `settings_hash` (a truncated SHA-256, not invertible). The reveal pipeline needs the original settings to regenerate the placement deterministically.
 
 #### Scenario: Stamp algorithm is canonical
 - **WHEN** the same `race_mode == 1` seed is generated twice on different platforms (Linux, macOS, Windows, Switch)

@@ -3263,7 +3263,12 @@ static void SelectFile_Settings_HandleGenerate(void) {
   }
   RandoPlacementTable table = { entries, 0 };
   // Use a generous budget so even Triforce-Hunt configurations succeed.
-  bool placed = Place_AssumedFill(&g_settings_working, seed_u64, /*budget_seconds=*/10, &table);
+  // Phase B Slice 6 audit H1 — race-mode generation must pass
+  // budget_seconds=0 (no wall-clock cutoff) so the placer runs to its
+  // deterministic kAssumedFillMaxAttempts cap. Reveal also passes 0; this
+  // matches both sides so the stamp is reproducible across machines.
+  int budget = (g_settings_working.race_mode != 0) ? 0 : 10;
+  bool placed = Place_AssumedFill(&g_settings_working, seed_u64, budget, &table);
   if (!placed) {
     fprintf(stderr, "[settings] placement failed\n");
     free(entries);

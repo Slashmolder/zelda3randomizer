@@ -1,5 +1,6 @@
 #include "messaging.h"
 #include "zelda_rtl.h"
+#include "rando/rando.h"  // Phase B Slice 1 — Rando_OnGameSave
 #include "variables.h"
 #include "snes/snes_regs.h"
 #include "dungeon.h"
@@ -255,7 +256,8 @@ const uint8 *GetLightOverworldTilemap() {
 }
 
 void SaveGameFile() {  // 80894a
-  int offs = ((srm_var1 >> 1) - 1) * 0x500;
+  int slot_index = (srm_var1 >> 1) - 1;
+  int offs = slot_index * 0x500;
   memcpy(g_zenv.sram + offs, save_dung_info, 0x500);
   memcpy(g_zenv.sram + offs + 0xf00, save_dung_info, 0x500);
   uint16 t = 0x5a5a;
@@ -265,6 +267,10 @@ void SaveGameFile() {  // 80894a
   WORD(g_zenv.sram[offs + 0x4fe]) = t;
   WORD(g_zenv.sram[offs + 0x4fe + 0xf00]) = t;
   ZeldaWriteSram();
+  // Phase B Slice 1 — persist the in-memory checked-location bitmap to
+  // the sidecar slot so trackers survive save/reload. No-op when the
+  // active slot isn't a randomizer slot.
+  Rando_OnGameSave(slot_index, g_zenv.sram + offs, 0x500);
 }
 
 void TransferMode7Characters() {  // 80e399

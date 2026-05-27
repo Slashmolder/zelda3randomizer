@@ -10,7 +10,7 @@ The reveal action SHALL be the `Rando_RevealSpoiler(slot_index)` entry point def
 
 #### Scenario: Race-mode file contains only stamp
 - **WHEN** a race-mode slot is created
-- **THEN** the on-disk file contains the magic header, the generator_version, the SHA-256 stamp, the length-prefixed share-string, and the CRC32 — and nothing else; the total size is bounded to ≤ 78 bytes
+- **THEN** the on-disk file contains the magic header `ZRSR`, the generator_version (u16 LE), the SHA-256 stamp, the length-prefixed share-string (64-byte buffer with leading length), the canonical-serialized settings (24 bytes, with `race_mode` cleared), and the CRC32 — and nothing else; the total size is exactly 134 bytes. The settings field is included because the sidecar slot does not preserve `RandoSettings` and reveal needs it to regenerate placement deterministically.
 
 #### Scenario: Reveal verifies stamp
 - **WHEN** the player triggers reveal for a race-mode slot
