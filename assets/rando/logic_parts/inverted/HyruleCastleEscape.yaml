@@ -238,7 +238,12 @@ locations:
   # registry-canonical region.
   - id: "Link's Uncle"
     name: "Link's Uncle"
-    region: LinksHouse
+    # Audit finding #5 fix (post-S2 cluster audit): under Inverted, Link
+    # starts in `LinksHouse_Inverted` not `LinksHouse`. The base region
+    # binding (LinksHouse) was producing the 1/237 unreachable placement.
+    # Override the region for the Inverted view so Uncle lives in the
+    # Inverted start region.
+    region: LinksHouse_Inverted
     type: Npc
     vanilla_item: L1Sword
     can_reach: "TRUE()"

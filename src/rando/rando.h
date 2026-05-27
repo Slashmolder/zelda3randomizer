@@ -19,7 +19,7 @@
 //
 // Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 11u  // Phase B Slice 2: Inverted world-state predicate/edge/region overrides
+#define kGeneratorVersion 12u  // Phase B Slice 2 §49: BigRedBomb gate restored on Inverted Pyramid Fairy (CanReachBombMerchant macro)
 
 // ---------------------------------------------------------------------------
 // g_assets_hash — SHA-256 of the loaded asset blob (computed once after

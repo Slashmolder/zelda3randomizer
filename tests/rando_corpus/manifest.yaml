@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 11  # Phase B Slice 2: Inverted world-state predicate/edge/region overrides (Standard/Open/Retro placement_digest byte-identical)
+generator_version: 12  # Phase B Slice 2 §49: BigRedBomb gate via CanReachBombMerchant macro on Inverted Pyramid Fairy (Standard/Open/Retro digests byte-identical)
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -297,13 +297,13 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon }
     seed: "0x0000000000C0FFEE"
     label: "b-inverted-fast-ganon"
-    expected_digest: "488a272c366de544e4bad6115d71bbe62b2a19fb7ce71c7dd1ca3cdce0644258"
-    expected_sphere_digest: "352638ddab0ed95fe9f386818d7abcaca632eb508e0e7b9755a66624a7e54a6a"
+    expected_digest: "ffc9220132e5cb84acc66a725bef601d28b761c5263bff355b8e9fce0fb03c1d"
+    expected_sphere_digest: "6335faceeeaf38ebdad872e8ee1ea8a7ef0ed280ae2b1e03130c52fc6adea5d1"
   - settings: { mode.state: inverted, goal: ganon, crystals.ganon: 7, crystals.tower: 7 }
     seed: "0xDEADBEEF"
     label: "b-inverted-ganon-7-7"
     expected_digest: "8d3a0cd74affc8602047877e4369def90c95f4cb3f88a139815a4fbc47e23aab"
-    expected_sphere_digest: "f924629eb057a6ac76f321d2548e3f23c58cf12a81dc31fe8d202f4a90068b6a"
+    expected_sphere_digest: "f712b2090a0391fc54a40b0f4a0ac057e3c4ec4c9c96c2adcb75e362cab0826a"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

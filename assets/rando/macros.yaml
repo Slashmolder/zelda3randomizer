@@ -222,6 +222,35 @@ macros:
       SilverArrowUpgrade item.
 
   # ===========================================================================
+  # Phase B Slice 2 §49 — Bomb Merchant accessibility (predicate-only model
+  # for the BigRedBomb gate; no item id added to item_registry.yaml).
+  #
+  # ALTTPR upstream models BigRedBomb as a placement-pool item granted by
+  # the Bomb Merchant interaction (location_registry id 236 = Bomb
+  # Merchant). The 4 Pyramid Fairy chests gate on `HAS_ITEM(BigRedBomb)`.
+  # In zelda3-fork's Phase A item_registry the BigRedBomb is NOT modeled
+  # as a separate item — it's transient state granted by the
+  # Bomb-Merchant interaction. Functionally equivalent for reachability:
+  # having the inventory + crystal prereqs to ENTER Bomb Merchant is
+  # equivalent to "able to obtain + deliver a BigRedBomb to the Pyramid
+  # Fairy" (both endpoints are in the same DarkWorld_NorthEast region).
+  #
+  # This macro mirrors the Bomb Merchant predicate (per Inverted/LightWorld/
+  # South.php:90-94 which the Slice 2 H1 fix authored). Use it at Pyramid
+  # Fairy locations as the BigRedBomb-gate proxy.
+  # ===========================================================================
+  - name: CanReachBombMerchant
+    parameters: []
+    body: "HAS_ITEM(MoonPearl) AND OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6)"
+    source: "app/Region/Inverted/LightWorld/South.php:90-94 (Bomb Merchant predicate)"
+    notes: |
+      Equivalent to `$items->has('BigRedBomb')` in ALTTPR. The
+      BigRedBomb item itself is NOT in item_registry.yaml; this macro
+      stands in. If item_registry expands later to include BigRedBomb
+      and Bomb Merchant is wired to grant it, the macro body can switch
+      to `HAS_ITEM(BigRedBomb)` and the gate semantics stay identical.
+
+  # ===========================================================================
   # canBlockLasers — mirror shield (or ProgShield L3).
   # ===========================================================================
   - name: CanBlockLasers

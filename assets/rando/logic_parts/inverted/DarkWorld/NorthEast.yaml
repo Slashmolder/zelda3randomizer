@@ -74,52 +74,34 @@ locations:
 
   # `Pyramid Fairy - Sword` (Inverted/NorthEast.php:64-68):
   #   hasSword AND BigRedBomb AND MagicMirror.
-  #
-  # DROPPED-DEPENDENCY: BigRedBomb is not in our item_registry (it's an
-  # ALTTPR pool item granted by the bomb-merchant interaction). Phase A
-  # cannot express the BigRedBomb gate; for now we drop it and require
-  # only HasSword(1) + MagicMirror. Phase B re-introduces BigRedBomb when
-  # the bomb-merchant interaction is modeled (location_registry id 236
-  # Bomb Merchant — Inverted-only event).
+  # §49 fix — BigRedBomb gate restored via `CanReachBombMerchant()` macro
+  # (see macros.yaml). The macro is the predicate-only stand-in for the
+  # BigRedBomb item (which is not modeled in item_registry).
   - id: "Pyramid Fairy - Sword"
     region: DarkWorld_NorthEast
-    can_reach: "HasSword(1) AND HAS_ITEM(MagicMirror)"
+    can_reach: "HasSword(1) AND CanReachBombMerchant() AND HAS_ITEM(MagicMirror)"
     source: "app/Region/Inverted/DarkWorld/NorthEast.php:64-68"
-    notes: |
-      DROPPED: BigRedBomb requirement (no item_registry id). Phase B
-      restores when BigBomb / Bomb Merchant interaction is modeled.
 
   # `Pyramid Fairy - Bow` (Inverted/NorthEast.php:70-74):
   #   canShootArrows AND BigRedBomb AND MagicMirror.
-  # Same BigRedBomb drop as above.
   - id: "Pyramid Fairy - Bow"
     region: DarkWorld_NorthEast
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(MagicMirror)"
+    can_reach: "CanShootArrowsL1() AND CanReachBombMerchant() AND HAS_ITEM(MagicMirror)"
     source: "app/Region/Inverted/DarkWorld/NorthEast.php:70-74"
-    notes: |
-      DROPPED: BigRedBomb requirement (no item_registry id). See Sword
-      slot note.
 
   # `Pyramid Fairy - Left` (Inverted/NorthEast.php:77-82, conditional on
   # `region.swordsInPool` which Phase A pins true):
   #   BigRedBomb AND MagicMirror.
-  # Phase A pin: `region.swordsInPool=true` → this slot exists.
-  # Same BigRedBomb drop.
   - id: "Pyramid Fairy - Left"
     region: DarkWorld_NorthEast
-    can_reach: "HAS_ITEM(MagicMirror)"
+    can_reach: "CanReachBombMerchant() AND HAS_ITEM(MagicMirror)"
     source: "app/Region/Inverted/DarkWorld/NorthEast.php:77-82"
-    notes: |
-      DROPPED: BigRedBomb requirement. Phase A pins
-      `region.swordsInPool=true` (consistent with Standard handling).
 
   # `Pyramid Fairy - Right` (Inverted/NorthEast.php:83-86): same as Left.
   - id: "Pyramid Fairy - Right"
     region: DarkWorld_NorthEast
-    can_reach: "HAS_ITEM(MagicMirror)"
+    can_reach: "CanReachBombMerchant() AND HAS_ITEM(MagicMirror)"
     source: "app/Region/Inverted/DarkWorld/NorthEast.php:83-86"
-    notes: |
-      DROPPED: BigRedBomb requirement.
 
   # NOTE: "Ganon" (location_registry id 212) is REMOVED from this region
   # in Inverted (Inverted/NorthEast.php:24 `$this->locations->removeItem("Ganon")`).
