@@ -60,24 +60,23 @@ static const uint8 kBossVanilla[16] = {
 };
 
 // Dungeon-ids whose boss is shuffleable (excludes HCE=0, HCT=4, GT=12).
-static const uint8 kBossShuffleableDungeons[11] = {
-  1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12,
+// Per ALTTPR's app/Boss.php, both Agahnim 1 (HCT) and Agahnim 2 (GT top)
+// are pinned — they share sprite_type 0x7A (the runtime discriminates by
+// `is_in_dark_world` at `sprite_main.c:8313`), so pinning both is the
+// only safe option without per-call-site world disambiguation. The
+// shuffleable pool is 10 bosses across 10 dungeon-boss rooms.
+static const uint8 kBossShuffleableDungeons[10] = {
+  1, 2, 3, 5, 6, 7, 8, 9, 10, 11,
 };
-// 12 (GT) is in the list because GT-Big-Boss (Moldorm at top) is part
-// of the shuffle in ALTTPR; Agahnim2 is its own slot pinned separately.
-// Wait — GT has TWO boss rooms in ALTTPR. The shuffleable one is
-// "GT mini-boss" (e.g., Moldorm at top); Agahnim2 is the final boss.
-// For Phase A simplicity treat GT's shuffle slot as the same dungeon
-// id (12); the per-site instrumentation will disambiguate.
 
-// Phase A pool of shuffleable bosses (11 entries, excluding Agahnim +
-// Agahnim2). The vanilla mapping (kBossVanilla) places these at the
+// Phase A pool of shuffleable bosses (10 entries, excluding both
+// Agahnims). The vanilla mapping (kBossVanilla) places these at the
 // dungeons listed above.
-static const uint8 kBossShufflePool[11] = {
+static const uint8 kBossShufflePool[10] = {
   kBoss_ArmosKnights, kBoss_Lanmolas, kBoss_Moldorm,
   kBoss_HelmasaurKing, kBoss_Arrghus, kBoss_Mothula,
   kBoss_Blind, kBoss_Kholdstare, kBoss_Vitreous,
-  kBoss_Trinexx, kBoss_Agahnim2,
+  kBoss_Trinexx,
 };
 
 static uint8 g_boss_assignment[16];
@@ -113,20 +112,20 @@ bool BossShuffle_Generate(const RandoSettings *settings,
   // ASCII = 0x424F5353_53484646; pick a recognizable cousin).
   Rng_SeedFromU64(&rng, seed_u64 ^ 0xB055A11FB055A11Full);
 
-  uint8 pool[11];
+  uint8 pool[10];
   memcpy(pool, kBossShufflePool, sizeof(pool));
-  fy_shuffle_u8(&rng, pool, 11);
+  fy_shuffle_u8(&rng, pool, 10);
 
   // Assign shuffled pool to the shuffleable dungeon slots in order.
-  for (uint32 i = 0; i < 11; i++) {
+  for (uint32 i = 0; i < 10; i++) {
     uint8 dungeon = kBossShuffleableDungeons[i];
     out_assignment[dungeon] = pool[i];
   }
-  // Pin Agahnim 1 + Agahnim 2 — overwrite anything the shuffle could
-  // have landed there. (Agahnim2 is in the pool because slot 12=GT can
-  // receive any pool boss for its shuffleable slot; the GT-top Agahnim2
-  // boss is per-instance separately at the sprite-handler level.)
-  out_assignment[4] = kBoss_Agahnim;
+  // Pin Agahnim 1 (HCT) and Agahnim 2 (GT-top). kBossVanilla already
+  // assigns these, but write explicitly to defend against future pool
+  // edits that could touch slots 4/12.
+  out_assignment[4]  = kBoss_Agahnim;
+  out_assignment[12] = kBoss_Agahnim2;
 
   memcpy(g_boss_assignment, out_assignment, sizeof(g_boss_assignment));
   g_boss_assignment_active = true;
@@ -139,25 +138,37 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
   return g_boss_assignment[dungeon_id];
 }
 
-// Vanilla boss sprite IDs (cross-referenced with `src/sprite_main.h` and
-// `other/names.txt`).
+// Vanilla boss sprite IDs (cross-referenced with `src/sprite_main.h:783-785,
+// 894` and `other/names.txt`). Agahnim 1 and Agahnim 2 share sprite_type
+// 0x7A; the runtime discriminates by `is_in_dark_world` at
+// `sprite_main.c:8313`. Both are PINNED at their vanilla dungeons (HCT=4
+// and GT-top=12) so the remap never has to disambiguate.
 //   0x09 Moldorm        (ToH, dungeon 3)
 //   0x53 ArmosKnights   (EP,  dungeon 1)
 //   0x54 Lanmolas       (DP,  dungeon 2)
-//   0x7A Agahnim 1      (HCT, dungeon 4, pinned)
+//   0x7A Agahnim 1/2    (HCT/GT, dungeons 4/12 — pinned, no remap entry)
 //   0x88 Mothula        (SW,  dungeon 7)
 //   0x8C Arrghus        (SP,  dungeon 6)
 //   0x92 HelmasaurKing  (PoD, dungeon 5)
-//   0xA3 Kholdstare     (IP,  dungeon 9)
-//   0xB6 Agahnim 2      (GT,  dungeon 12, pinned)
+//   0xA2 Kholdstare     (IP,  dungeon 9)  -- 0xA3 is KholdstareShell, NOT the boss
 //   0xBD Vitreous       (MM,  dungeon 10)
 //   0xCB Trinexx        (TR,  dungeon 11)
 //   0xCE Blind          (TT,  dungeon 8)
 //
-// Translation: each boss sprite type uniquely identifies which dungeon's
-// boss is being spawned, because vanilla LttP places one boss per dungeon.
-// We use the incoming sprite_type as the dungeon-key, look up the shuffle
-// assignment, and translate the assigned pool index back to a sprite type.
+// 0xB6 is Sprite_B6_Kiki (`sprite_main.h:894`), NOT Agahnim 2 — DO NOT
+// add it to the table; remapping Kiki at GT-door would soft-lock GT entry.
+//
+// Translation: each boss sprite type in the table uniquely identifies
+// which dungeon's boss is being spawned, because vanilla LttP places one
+// boss per dungeon. We use the incoming sprite_type as the dungeon-key,
+// look up the shuffle assignment, and translate the assigned pool index
+// back to a sprite type via kBossPoolIdxToSprite.
+//
+// Limitation (M1 follow-up): multi-segment bosses (Trinexx CB/CC/CD,
+// Lanmolas, Armos Knights x6, Mothula spikes) only remap the primary
+// sprite; secondary segments pass through unchanged. The shuffled room
+// will have orphan segments of the original boss alongside the new
+// boss until a group-aware remap lands.
 typedef struct BossSpriteMap {
   uint8 sprite_type;
   uint8 dungeon_id;
@@ -168,19 +179,21 @@ static const BossSpriteMap kBossSpriteMap[] = {
   { 0x09, 3,  kBoss_Moldorm },
   { 0x53, 1,  kBoss_ArmosKnights },
   { 0x54, 2,  kBoss_Lanmolas },
-  { 0x7A, 4,  kBoss_Agahnim },
   { 0x88, 7,  kBoss_Mothula },
   { 0x8C, 6,  kBoss_Arrghus },
   { 0x92, 5,  kBoss_HelmasaurKing },
-  { 0xA3, 9,  kBoss_Kholdstare },
-  { 0xB6, 12, kBoss_Agahnim2 },
+  { 0xA2, 9,  kBoss_Kholdstare },
   { 0xBD, 10, kBoss_Vitreous },
   { 0xCB, 11, kBoss_Trinexx },
   { 0xCE, 8,  kBoss_Blind },
 };
 #define kBossSpriteMapCount (sizeof(kBossSpriteMap) / sizeof(kBossSpriteMap[0]))
 
-// Reverse: pool index → sprite type. 12 entries (Agahnim 1+2 included).
+// Reverse: pool index → sprite type. 12 entries; both Agahnim slots map
+// to 0x7A (same shared sprite, world-state discriminates rendering — but
+// in practice both Agahnim slots are pinned and never picked by the
+// shuffle, so these entries are dead code kept only as a defense in
+// depth against future pool edits).
 static const uint8 kBossPoolIdxToSprite[12] = {
   [kBoss_ArmosKnights]  = 0x53,
   [kBoss_Lanmolas]      = 0x54,
@@ -190,10 +203,10 @@ static const uint8 kBossPoolIdxToSprite[12] = {
   [kBoss_Arrghus]       = 0x8C,
   [kBoss_Mothula]       = 0x88,
   [kBoss_Blind]         = 0xCE,
-  [kBoss_Kholdstare]    = 0xA3,
+  [kBoss_Kholdstare]    = 0xA2,
   [kBoss_Vitreous]      = 0xBD,
   [kBoss_Trinexx]       = 0xCB,
-  [kBoss_Agahnim2]      = 0xB6,
+  [kBoss_Agahnim2]      = 0x7A,
 };
 
 uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {

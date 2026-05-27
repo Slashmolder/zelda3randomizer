@@ -19,7 +19,7 @@
 //
 // Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 13u  // Phase B Slice 2 §47: Standard EP YAML promoted (Compass/Big/Cannonball/BigKey/Map/Boss/Prize predicates)
+#define kGeneratorVersion 14u  // Phase B Slice 7+8 §66: hints/boss_shuffle/drop_shuffle absorbed into canonical serialization (kSettingsCanonicalLen 24→28)
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

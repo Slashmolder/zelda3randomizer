@@ -4,27 +4,38 @@
 // The canonical layout is pinned below. Reordering, widening, or renumbering
 // any field is a kGeneratorVersion bump trigger (tasks.md §13.6).
 //
-// Layout (kSettingsCanonicalLen = 20 bytes):
-//   offset 0  settings_version            (Phase A: 1)
-//   offset 1  world_state                 WorldState enum
-//   offset 2  goal                        Goal enum
-//   offset 3  crystals_ganon              0..7
-//   offset 4  crystals_tower              0..7
-//   offset 5  item_pool_difficulty        ItemPoolDifficulty enum
-//   offset 6  dungeon_small_keys_mode     DungeonItemMode enum
-//   offset 7  dungeon_big_keys_mode       DungeonItemMode enum
-//   offset 8  dungeon_maps_mode           DungeonItemMode enum
-//   offset 9  dungeon_compasses_mode      DungeonItemMode enum
-//   offset 10 prize_shuffle               bool (0/1)
-//   offset 11 medallion_shuffle           bool (0/1)
-//   offset 12 mode_weapons                ModeWeapons enum
-//   offset 13 accessibility               Accessibility enum
-//   offset 14 pyramid_bow_upgrade         PyramidBowUpgrade enum
-//   offset 15 pieces_required             uint8
-//   offset 16 pieces_placed               uint8
-//   offset 17 reserved                    = 0 (forward-compat)
-//   offset 18 reserved                    = 0
-//   offset 19 reserved                    = 0
+// Layout (kSettingsCanonicalLen = 28 bytes):
+//   offset 0   world_state                 WorldState enum
+//   offset 1   goal                        Goal enum
+//   offset 2   crystals_ganon              0..7
+//   offset 3   crystals_tower              0..7
+//   offset 4   tricks                      uint8 bitmask (Phase A: 0)
+//   offset 5   item_pool_difficulty        ItemPoolDifficulty enum
+//   offset 6   logic                       uint8 (Phase A: 0)
+//   offset 7   mode_weapons                ModeWeapons enum
+//   offset 8   accessibility               Accessibility enum
+//   offset 9   pyramid_bow_upgrade         PyramidBowUpgrade enum
+//   offset 10  region_boss_hearts_in_pool  bool (Phase A: 1)
+//   offset 11  dungeon_small_keys_mode     DungeonItemMode enum
+//   offset 12  dungeon_big_keys_mode       DungeonItemMode enum
+//   offset 13  dungeon_maps_mode           DungeonItemMode enum
+//   offset 14  dungeon_compasses_mode      DungeonItemMode enum
+//   offset 15  prize_shuffle               bool
+//   offset 16  medallion_shuffle           bool
+//   offset 17  race_mode                   bool
+//   offset 18  pieces_required (LE lo)
+//   offset 19  pieces_required (LE hi)
+//   offset 20  pieces_placed   (LE lo)
+//   offset 21  pieces_placed   (LE hi)
+//   offset 22  hints                       bool          (§66, kGenVer 13→14)
+//   offset 23  boss_shuffle                bool          (§66)
+//   offset 24  drop_shuffle                bool          (§66)
+//   offset 25  reserved                    = 0 (forward-compat)
+//   offset 26  reserved                    = 0
+//   offset 27  reserved                    = 0
+//
+// settings_version is NOT serialized — it's a runtime constant pinned to 1
+// for Phase A. Bumping the layout requires kGeneratorVersion increment.
 
 #include "rando_settings.h"
 #include "rando_hints.h"  // kHintsMode_Off / kHintsMode_On (Slice 5 §61)
@@ -53,6 +64,11 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->race_mode = 0;
   s->pieces_required = 20;
   s->pieces_placed = 30;
+  // Phase B Slice 5/7/8 §66 — included in canonical serialization
+  // starting at kGeneratorVersion 14. Defaults are off.
+  s->hints = 0;
+  s->boss_shuffle = 0;
+  s->drop_shuffle = 0;
 }
 
 // Apply derived-from-other-fields normalization rules. Audit Bug #5:
@@ -98,8 +114,13 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   out[19] = (uint8)((s->pieces_required >> 8) & 0xff);
   out[20] = (uint8)(s->pieces_placed & 0xff);
   out[21] = (uint8)((s->pieces_placed >> 8) & 0xff);
-  out[22] = 0;  // pad to multiple of 4
-  out[23] = 0;
+  // §66: hints + shuffle axes joined the hash at kGeneratorVersion 14.
+  out[22] = s->hints;
+  out[23] = s->boss_shuffle;
+  out[24] = s->drop_shuffle;
+  out[25] = 0;  // pad to multiple of 4
+  out[26] = 0;
+  out[27] = 0;
   return kSettingsCanonicalLen;
 }
 
@@ -138,6 +159,11 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.race_mode                  = in[17];
   s.pieces_required            = (uint16)(in[18] | ((uint16)in[19] << 8));
   s.pieces_placed              = (uint16)(in[20] | ((uint16)in[21] << 8));
+  // §66: read hints + shuffle axes (offsets [22..24]). Pad bytes [25..27]
+  // are not inspected — see forward-compat note above.
+  s.hints                      = in[22];
+  s.boss_shuffle               = in[23];
+  s.drop_shuffle               = in[24];
   *out = s;
   return 0;
 }
@@ -180,11 +206,13 @@ void Settings_SelfCheck(void) {
   // Default-settings canonical bytes, layout per Settings_CanonicalSerialize:
   //   ws=0 goal=1 cg=7 ct=7 tricks=0 pool=1 logic=0 weapons=0 access=0
   //   bow=0 bossH=1 sk=0 bk=0 mp=0 cmp=0 prize=1 med=1 race=0
-  //   pieces_req=20 (0x0014 LE) pieces_pl=30 (0x001e LE) pad pad
+  //   pieces_req=20 (0x0014 LE) pieces_pl=30 (0x001e LE)
+  //   hints=0 boss_shuffle=0 drop_shuffle=0 pad pad pad
   static const uint8 kExpectedCanonical[kSettingsCanonicalLen] = {
     0x00, 0x01, 0x07, 0x07, 0x00, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
   };
   if (!settings_byte_eq(canonical, kExpectedCanonical, kSettingsCanonicalLen)) {
     fprintf(stderr,
@@ -202,12 +230,12 @@ void Settings_SelfCheck(void) {
 
   uint8 hash[32];
   Settings_ComputeHash(&s, hash);
-  // SHA-256 of the kExpectedCanonical bytes.
+  // SHA-256 of the kExpectedCanonical bytes (28 bytes, kGenVer 14).
   static const uint8 kExpectedHash[32] = {
-    0xcb, 0x9b, 0xc5, 0xab, 0x8f, 0xe4, 0xbb, 0x34,
-    0x29, 0x19, 0x01, 0x5b, 0x0f, 0xfa, 0x6f, 0xcc,
-    0xdc, 0xd3, 0xd6, 0xaf, 0x8b, 0x4c, 0x5c, 0x2f,
-    0x43, 0x57, 0x34, 0xfe, 0x0e, 0xac, 0xb9, 0x0f,
+    0xdc, 0x50, 0x2f, 0x58, 0xf7, 0xd3, 0x1a, 0x3b,
+    0x40, 0xfc, 0xa2, 0xa3, 0xbc, 0xb1, 0xd1, 0x30,
+    0x25, 0x91, 0xfc, 0x11, 0x8e, 0xa0, 0x6f, 0x28,
+    0x6d, 0xca, 0x4d, 0x66, 0x34, 0x4b, 0xce, 0xbc,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,

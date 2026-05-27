@@ -114,14 +114,16 @@ def run_activated(binary: Path, manifest: dict) -> int:
             head = out_json.read_bytes()[:4]
             if head == b"ZRSR":
                 buf = out_json.read_bytes()
-                if len(buf) != 134:
-                    print(f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 134")
+                if len(buf) != 138:
+                    print(f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 138")
                     failures += 1
                     continue
-                # Validate CRC32 (LE u32 at offset 130 over bytes 0..129).
+                # Validate CRC32 (LE u32 at offset 134 over bytes 0..133).
+                # (kGenVer 14 §66 grew the file 134→138 to absorb the wider
+                # canonical settings layout.)
                 import zlib
-                disk_crc = int.from_bytes(buf[130:134], "little")
-                calc_crc = zlib.crc32(buf[:130]) & 0xffffffff
+                disk_crc = int.from_bytes(buf[134:138], "little")
+                calc_crc = zlib.crc32(buf[:134]) & 0xffffffff
                 if disk_crc != calc_crc:
                     print(f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "
                           f"(disk {disk_crc:#x} != calc {calc_crc:#x})")

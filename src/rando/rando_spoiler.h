@@ -89,8 +89,8 @@ bool Spoiler_Write(const RandoSpoiler *s,
 // ---------------------------------------------------------------------------
 #define kRandoSuppressedSpoilerMagic "ZRSR"
 #define kRandoSuppressedSpoilerShareStringMax 64
-#define kRandoSuppressedSpoilerSettingsLen 24  // = kSettingsCanonicalLen
-#define kRandoSuppressedSpoilerSize 134  // on-disk byte length
+#define kRandoSuppressedSpoilerSettingsLen 28  // = kSettingsCanonicalLen (kGenVer 14, §66)
+#define kRandoSuppressedSpoilerSize 138  // on-disk byte length (kGenVer 14: 134→138)
 
 typedef struct RandoSuppressedSpoiler {
   uint8 magic[4];                // 'ZRSR'

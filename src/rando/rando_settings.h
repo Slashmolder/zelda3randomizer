@@ -100,15 +100,13 @@ typedef struct RandoSettings {
   uint16 pieces_required;           // for triforce-hunt / ganonhunt (was uint8; spec is uint16)
   uint16 pieces_placed;             // for triforce-hunt / ganonhunt
   // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
-  // `spoil.Hints` (HintService.php:54). Default 0 (off). NOT YET in
-  // canonical serialization (deferred until the hint generator body
-  // lands — that bump is the natural kGenVer increment to include this
-  // field in the hash).
+  // `spoil.Hints` (HintService.php:54). Default 0 (off). Canonical
+  // serialization at offset [22] — landed with §66 in the kGenVer 13→14
+  // bump.
   uint8 hints;
   // Phase B Slice 7 §63 / Slice 8 §64 — shuffle axes. Binary on/off.
-  // Default 0 (off). NOT YET in canonical serialization (deferred to
-  // the same commit that lands per-site sprite-handler instrumentation
-  // #65; that bump is the natural kGenVer increment).
+  // Default 0 (off). Canonical serialization at offsets [23] and [24]
+  // — landed with §66 in the kGenVer 13→14 bump.
   uint8 boss_shuffle;
   uint8 drop_shuffle;
 } RandoSettings;
@@ -118,9 +116,11 @@ typedef struct RandoSettings {
 // exactly this many bytes. Adding a field requires bumping this constant
 // AND kGeneratorVersion (tasks.md §13.6).
 // ===========================================================================
-// Canonical serialization is 22 bytes (18 single-byte fields + 2×u16) padded
-// to 24 (the next multiple of 4). Layout per spec — see Settings_CanonicalSerialize.
-#define kSettingsCanonicalLen 24
+// Canonical serialization is 25 bytes (21 single-byte fields + 2×u16) padded
+// to 28 (the next multiple of 4). Layout per spec — see Settings_CanonicalSerialize.
+// Phase B Slice 7+8 §66: bumped from 24→28 to absorb `hints`, `boss_shuffle`,
+// `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
+#define kSettingsCanonicalLen 28
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
 // pool / 7 crystals each / dungeon items Vanilla / prize+medallion shuffle

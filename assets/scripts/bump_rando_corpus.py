@@ -81,7 +81,7 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
             return None, None
         if not out_json.exists():
             return None, None
-        # Phase B Slice 6 — race-mode entries emit a 134-byte ZRSR
+        # Phase B Slice 6 — race-mode entries emit a 138-byte ZRSR (kGenVer 14)
         # binary instead of JSON. Reveal pipeline regenerates the
         # placement; for bump purposes we read the binary's stamp +
         # share string but don't try to extract a placement_digest_hex

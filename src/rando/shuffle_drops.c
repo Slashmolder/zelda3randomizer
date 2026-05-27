@@ -19,9 +19,14 @@
 // Drop-table indices — match `kPrizeItems[56]` at `src/sprite.c:439`.
 // The vanilla table is 7 prize tiers × 8 slot indices = 56 entries; the
 // caller computes `prize_table_index = prize * 8 | prizes_arr1[slot]`.
-// The shuffle permutes which slot the game reads from, preserving the
-// per-tier prize distribution shape (the kPrizeMasks gating is per-tier
-// at the call site, not per-entry).
+// The shuffle permutes which slot the game reads from across all 56
+// entries (Fisher-Yates over 0..55).
+//
+// Caveat (audit L3): kPrizeMasks gating at `sprite.c:2991` is per-tier
+// BEFORE the table read, so the per-tier "drop frequency" stays vanilla;
+// but the *content* of any slot can land anywhere in 0..55, so tier-3
+// (mask=0, always-drop) becomes a wildcard under shuffle. Validated by
+// playtest is a Phase B follow-up.
 #define kDropTableEntryCount 56
 
 static uint8 g_drop_assignment[kDropTableEntryCount];

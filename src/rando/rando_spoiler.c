@@ -345,7 +345,7 @@ static size_t serialize_suppressed(const RandoSuppressedSpoiler *h,
   put_u32_le(out + 38, h->share_string_len);
   memcpy(out + 42, h->share_string, kRandoSuppressedSpoilerShareStringMax);
   memcpy(out + 106, h->settings_canonical, kRandoSuppressedSpoilerSettingsLen);
-  put_u32_le(out + 130, h->crc32);
+  put_u32_le(out + 134, h->crc32);
   return kRandoSuppressedSpoilerSize;
 }
 
@@ -373,7 +373,7 @@ static bool write_suppressed_file(const char *share_string,
   serialize_suppressed(&h, buf);
   // CRC over everything except the crc32 trailer itself.
   h.crc32 = crc32_ieee(buf, kRandoSuppressedSpoilerSize - 4);
-  put_u32_le(buf + 130, h.crc32);
+  put_u32_le(buf + 134, h.crc32);
 
   // Auto-create the spoiler directory.
   char dir_buf[512];
@@ -481,7 +481,7 @@ int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
   if (got != sizeof(buf)) return -2;
   if (memcmp(buf, kRandoSuppressedSpoilerMagic, 4) != 0) return -2;
 
-  uint32 disk_crc = read_u32_le(buf + 130);
+  uint32 disk_crc = read_u32_le(buf + 134);
   uint32 calc_crc = crc32_ieee(buf, kRandoSuppressedSpoilerSize - 4);
   if (disk_crc != calc_crc) return -3;
 
