@@ -138,3 +138,75 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
   if (dungeon_id >= 16) return 0xFF;
   return g_boss_assignment[dungeon_id];
 }
+
+// Vanilla boss sprite IDs (cross-referenced with `src/sprite_main.h` and
+// `other/names.txt`).
+//   0x09 Moldorm        (ToH, dungeon 3)
+//   0x53 ArmosKnights   (EP,  dungeon 1)
+//   0x54 Lanmolas       (DP,  dungeon 2)
+//   0x7A Agahnim 1      (HCT, dungeon 4, pinned)
+//   0x88 Mothula        (SW,  dungeon 7)
+//   0x8C Arrghus        (SP,  dungeon 6)
+//   0x92 HelmasaurKing  (PoD, dungeon 5)
+//   0xA3 Kholdstare     (IP,  dungeon 9)
+//   0xB6 Agahnim 2      (GT,  dungeon 12, pinned)
+//   0xBD Vitreous       (MM,  dungeon 10)
+//   0xCB Trinexx        (TR,  dungeon 11)
+//   0xCE Blind          (TT,  dungeon 8)
+//
+// Translation: each boss sprite type uniquely identifies which dungeon's
+// boss is being spawned, because vanilla LttP places one boss per dungeon.
+// We use the incoming sprite_type as the dungeon-key, look up the shuffle
+// assignment, and translate the assigned pool index back to a sprite type.
+typedef struct BossSpriteMap {
+  uint8 sprite_type;
+  uint8 dungeon_id;
+  uint8 pool_idx;
+} BossSpriteMap;
+
+static const BossSpriteMap kBossSpriteMap[] = {
+  { 0x09, 3,  kBoss_Moldorm },
+  { 0x53, 1,  kBoss_ArmosKnights },
+  { 0x54, 2,  kBoss_Lanmolas },
+  { 0x7A, 4,  kBoss_Agahnim },
+  { 0x88, 7,  kBoss_Mothula },
+  { 0x8C, 6,  kBoss_Arrghus },
+  { 0x92, 5,  kBoss_HelmasaurKing },
+  { 0xA3, 9,  kBoss_Kholdstare },
+  { 0xB6, 12, kBoss_Agahnim2 },
+  { 0xBD, 10, kBoss_Vitreous },
+  { 0xCB, 11, kBoss_Trinexx },
+  { 0xCE, 8,  kBoss_Blind },
+};
+#define kBossSpriteMapCount (sizeof(kBossSpriteMap) / sizeof(kBossSpriteMap[0]))
+
+// Reverse: pool index → sprite type. 12 entries (Agahnim 1+2 included).
+static const uint8 kBossPoolIdxToSprite[12] = {
+  [kBoss_ArmosKnights]  = 0x53,
+  [kBoss_Lanmolas]      = 0x54,
+  [kBoss_Moldorm]       = 0x09,
+  [kBoss_Agahnim]       = 0x7A,
+  [kBoss_HelmasaurKing] = 0x92,
+  [kBoss_Arrghus]       = 0x8C,
+  [kBoss_Mothula]       = 0x88,
+  [kBoss_Blind]         = 0xCE,
+  [kBoss_Kholdstare]    = 0xA3,
+  [kBoss_Vitreous]      = 0xBD,
+  [kBoss_Trinexx]       = 0xCB,
+  [kBoss_Agahnim2]      = 0xB6,
+};
+
+uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
+  if (!g_boss_assignment_active) return vanilla_sprite_type;
+
+  for (uint32 i = 0; i < kBossSpriteMapCount; i++) {
+    if (kBossSpriteMap[i].sprite_type != vanilla_sprite_type) continue;
+    uint8 dungeon = kBossSpriteMap[i].dungeon_id;
+    uint8 pool_idx = g_boss_assignment[dungeon];
+    if (pool_idx == 0xFF || pool_idx >= 12) return vanilla_sprite_type;
+    uint8 mapped = kBossPoolIdxToSprite[pool_idx];
+    if (mapped == 0) return vanilla_sprite_type;  // unmapped — safety
+    return mapped;
+  }
+  return vanilla_sprite_type;
+}

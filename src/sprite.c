@@ -13,6 +13,8 @@
 #include "tile_detect.h"
 #include "sprite_main.h"
 #include "assets.h"
+#include "rando/shuffle_boss.h"
+#include "rando/shuffle_drops.h"
 static const uint16 kOamGetBufferPos_Tab0[6] = {0x171, 0x201, 0x31, 0xc1, 0x141, 0x1d1};
 static const uint16 kOamGetBufferPos_Tab1[48] = {
    0x30,  0x50,  0x80,  0xb0,  0xe0, 0x110, 0x140, 0x170, 0x1d0, 0x1d4, 0x1dc, 0x1e0, 0x1e4, 0x1ec, 0x1f0, 0x1f8,
@@ -3001,7 +3003,11 @@ void Sprite_DoTheDeath(int k) {  // 86f923
 void ForcePrizeDrop(int k, uint8 prize, uint8 slot) {  // 86f9bc
   prize = prize * 8 | prizes_arr1[slot];
   prizes_arr1[slot] = (prizes_arr1[slot] + 1) & 7;
-  PrepareEnemyDrop(k, kPrizeItems[prize]);
+  // Per-site drop-shuffle instrumentation (Phase B §65). When the
+  // assignment is identity (drop_shuffle off), DropShuffle_Lookup returns
+  // the original index unchanged → vanilla behavior.
+  uint8 shuffled = DropShuffle_Lookup(prize);
+  PrepareEnemyDrop(k, kPrizeItems[shuffled]);
 }
 
 void PrepareEnemyDrop(int k, uint8 item) {  // 86f9d1
@@ -3662,6 +3668,11 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
   Sprite_SetY(k, ((y << 4) & 0x1ff) + (byte_7E0FB1 << 8));
   byte_7E0FB6 = x;
   Sprite_SetX(k, ((x << 4) & 0x1ff) + (byte_7E0FB0 << 8));
+  // Per-site boss-shuffle instrumentation (Phase B §65). When the
+  // sprite being spawned is a recognized vanilla boss, substitute the
+  // shuffle-assigned boss. Returns `type` unchanged when boss_shuffle
+  // is off or `type` is not a boss sprite.
+  type = BossShuffle_RemapSpriteType(type);
   sprite_type[k] = type;
   tmp_counter = (tmp_counter & 0x60) >> 2;
   sprite_subtype[k] = tmp_counter | byte_7E0FB6 >> 5;

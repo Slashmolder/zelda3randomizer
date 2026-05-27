@@ -16,10 +16,13 @@
 #include "rando_rng.h"
 #include <string.h>
 
-// Drop-table indices — Phase A models 64 entries. Mapping to specific
-// sprite-death drops is per-site (sprite_main.c instrumentation). The
-// algorithm operates on indices; lookup translates index → drop entry.
-#define kDropTableEntryCount 64
+// Drop-table indices — match `kPrizeItems[56]` at `src/sprite.c:439`.
+// The vanilla table is 7 prize tiers × 8 slot indices = 56 entries; the
+// caller computes `prize_table_index = prize * 8 | prizes_arr1[slot]`.
+// The shuffle permutes which slot the game reads from, preserving the
+// per-tier prize distribution shape (the kPrizeMasks gating is per-tier
+// at the call site, not per-entry).
+#define kDropTableEntryCount 56
 
 static uint8 g_drop_assignment[kDropTableEntryCount];
 static bool g_drop_assignment_active = false;

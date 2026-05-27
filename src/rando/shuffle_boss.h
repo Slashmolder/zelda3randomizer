@@ -40,4 +40,20 @@ bool BossShuffle_Generate(const RandoSettings *settings,
 // (boss shuffle off, or no slot loaded).
 uint8 BossShuffle_GetForDungeon(uint8 dungeon_id);
 
+// Per-site instrumentation entry — Phase B §65.
+//
+// Given the vanilla boss sprite type the room data wants to spawn
+// (e.g. 0x53 ArmosKnight for EP's boss room), returns the sprite
+// type that should actually spawn under the active shuffle.
+//
+// Returns `vanilla_sprite_type` unchanged when:
+//   - the sprite type is not a recognized boss
+//   - boss-shuffle is off (assignment active but identity)
+//
+// Vanilla boss sprite IDs: 0x09 Moldorm, 0x53 ArmosKnights,
+// 0x54 Lanmolas, 0x7A Agahnim (pinned), 0x88 Mothula,
+// 0x8C Arrghus, 0x92 HelmasaurKing, 0xA3 Kholdstare,
+// 0xB6 Agahnim2 (pinned), 0xBD Vitreous, 0xCB Trinexx, 0xCE Blind.
+uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type);
+
 #endif  // ZELDA3_RANDO_SHUFFLE_BOSS_H_
