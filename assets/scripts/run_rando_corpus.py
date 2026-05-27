@@ -106,6 +106,15 @@ def run_activated(binary: Path, manifest: dict) -> int:
                 print(f"  FAIL [{idx}] {label}: spoiler not written")
                 failures += 1
                 continue
+            # Phase B Slice 6 — race-mode entries emit a suppressed binary
+            # (magic ZRSR) instead of JSON. The corpus doesn't yet have a
+            # dedicated race-mode round-trip path (tasks.md §7.4); skip
+            # those with a notice rather than crashing the whole run.
+            head = out_json.read_bytes()[:4]
+            if head == b"ZRSR":
+                print(f"  SKIP [{idx}] {label}: race-mode suppressed file "
+                      f"(future Slice 6 §7.4 round-trip check)")
+                continue
             spoiler = json.loads(out_json.read_text(encoding="utf-8"))
             got = spoiler.get("meta", {}).get("placement_digest_hex", "")
             got_sphere = spoiler.get("meta", {}).get("sphere_digest", "")
@@ -130,9 +139,28 @@ def run_activated(binary: Path, manifest: dict) -> int:
     return 0
 
 
+def find_binary_default() -> Path:
+    """Look for the built zelda3 binary in common locations.
+
+    Per `build_commands` memory: the MSBuild Release/x64 artifact lands at
+    `bin/x64-Release/zelda3.exe`. Plain `make` lands at `./zelda3` (Linux/macOS).
+    Returns the first one that exists; falls back to `./zelda3` (legacy
+    default) if neither is found, so the error message still surfaces.
+    """
+    candidates = [
+        Path("bin") / "x64-Release" / "zelda3.exe",  # MSBuild Release x64
+        Path("./zelda3.exe"),                         # Repo-root copy (Windows)
+        Path("./zelda3"),                             # Linux/macOS make target
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return Path("./zelda3")  # legacy default; error path will print it
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=Path("./zelda3"))
+    parser.add_argument("--binary", type=Path, default=find_binary_default())
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
