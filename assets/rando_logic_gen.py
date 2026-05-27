@@ -1364,17 +1364,28 @@ def emit_logic_data(
         stream += ep
 
     # Phase B Slice 2 — per-world-state location predicate overrides.
-    # For each (world_state_id, loc_name) pair with overrides, append the
-    # three encoded predicates (can_reach / can_place / always_allow) to
-    # the shared `stream` and record their offsets for the override table.
-    # world_state_id → list[ (loc_id, (cr_off, cr_len), (cp_off, cp_len), (aa_off, aa_len)) ]
-    override_offsets: dict[int, list[tuple[int, tuple[int, int], tuple[int, int], tuple[int, int]]]] = {}
+    # For each (world_state_id, loc_name, region_str_or_None, encoded) tuple
+    # in compiled_overrides, append the three encoded predicates to the
+    # shared `stream` and record their offsets. Capture a per-override
+    # region_id when the world-state YAML moves the location (e.g.,
+    # Ether Tablet East↔West in Inverted).
+    # world_state_id → list[ (loc_id, region_override_id, cr_off, cp_off, aa_off) ]
+    override_offsets: dict[int, list[tuple[int, int, tuple[int, int], tuple[int, int], tuple[int, int]]]] = {}
+    sorted_region_ids_for_overrides = sorted(regions.keys()) if regions else []
+    rid_for_overrides = {rid: i for i, rid in enumerate(sorted_region_ids_for_overrides)}
     if compiled_overrides:
         for ws_id, entries in compiled_overrides.items():
-            for loc_name, encoded in entries:
+            for loc_name, region_str, encoded in entries:
                 if loc_name not in locations:
                     continue  # already warned upstream
                 loc_id = locations[loc_name].id
+                # Resolve region_override. 0xFFFF means "no region change"
+                # (use base region from kRandoLocations). Else the override
+                # moves the location to a different region for this
+                # world state.
+                override_region_id = 0xFFFF
+                if region_str is not None and region_str in rid_for_overrides:
+                    override_region_id = rid_for_overrides[region_str]
                 cr = encoded.get("can_reach", b"\x0c\x00")
                 cp = encoded.get("can_place", b"\x0c\x00")
                 aa = encoded.get("always_allow", b"\x0d\x00")
@@ -1382,7 +1393,7 @@ def emit_logic_data(
                 cp_off = (len(stream), len(cp)); stream += cp
                 aa_off = (len(stream), len(aa)); stream += aa
                 override_offsets.setdefault(ws_id, []).append(
-                    (loc_id, cr_off, cp_off, aa_off)
+                    (loc_id, override_region_id, cr_off, cp_off, aa_off)
                 )
 
     # Phase B Slice 2 — per-world-state edge predicates (Inverted overworld
@@ -1643,10 +1654,10 @@ def emit_logic_data(
         entries_sorted = sorted(entries, key=lambda t: t[0])
         if entries_sorted:
             out.append(f"const RandoLocationPredOverride kRandoLocationPredOverrides_{ws_name}[{len(entries_sorted)}] = {{")
-            for loc_id, (cr_o, cr_l), (cp_o, cp_l), (aa_o, aa_l) in entries_sorted:
+            for loc_id, region_override, (cr_o, cr_l), (cp_o, cp_l), (aa_o, aa_l) in entries_sorted:
                 out.append(
-                    "  { %d, %d, %d, %d, %d, %d, %d, %d }, " %
-                    (loc_id, 0, cr_o, cr_l, cp_o, cp_l, aa_o, aa_l)
+                    "  { %d, 0x%04x, %d, %d, %d, %d, %d, %d }, " %
+                    (loc_id, region_override, cr_o, cr_l, cp_o, cp_l, aa_o, aa_l)
                 )
             out.append("};")
             out.append(f"const uint32 kRandoLocationPredOverrides_{ws_name}Count = {len(entries_sorted)};")
@@ -1845,10 +1856,12 @@ def main(argv=None):
             edge_predicates.append(b"\x0d\x00")  # safe default: FALSE
 
     # Phase B Slice 2 — compile per-world-state location predicate overrides.
-    # Output shape: world_state_id → list[ (loc_name, encoded_dict) ]
+    # Output shape: world_state_id → list[ (loc_name, region_str_or_None, encoded_dict) ]
     # Each loc_name MUST be present in `locations` (registry); unknown names
     # are dropped with a WARN (same well-formedness contract as the base path).
-    compiled_overrides: dict[int, list[tuple[str, dict[str, bytes]]]] = {}
+    # `region_str_or_None` is the override's region (from the world-state YAML);
+    # None means "no region change vs the base" — the codegen emits 0xFFFF.
+    compiled_overrides: dict[int, list[tuple[str, str | None, dict[str, bytes]]]] = {}
     for loc_name_or_id, ws_map in world_state_overrides.items():
         # Resolve the override key to a registry location name. Override
         # YAMLs key by location id (e.g., "Eastern Palace - Compass Chest");
@@ -1882,7 +1895,13 @@ def main(argv=None):
                         f"override(ws={ws_id}) {loc_name_or_id}.{label}: parse error: {e}"
                     )
                     encoded[label] = b"\x0d\x00"  # safe default: FALSE
-            compiled_overrides.setdefault(ws_id, []).append((loc_name_or_id, encoded))
+            # Capture the override's region if it differs from the empty
+            # default. Codegen at emit time resolves the region name to
+            # an index into sorted_region_ids; if the name doesn't match
+            # any region OR equals the base region, region_override is set
+            # to 0xFFFF.
+            region_str = override_def.region if override_def.region else None
+            compiled_overrides.setdefault(ws_id, []).append((loc_name_or_id, region_str, encoded))
 
     # Compile per-world-state edge predicates (Inverted overworld + cross-
     # region traversal). Encode and bucket by ws_id; emitted alongside base

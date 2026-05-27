@@ -460,20 +460,27 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
       if (loc->world_state_filter != 0) {
         if (!(loc->world_state_filter & (1u << settings->world_state))) continue;
       }
-      if (loc->region_id != 0xFFFF) {
-        if (loc->region_id >= kReachabilityMaxRegions) continue;
-        if (!bitset_has(g_reachability.region_bitset, loc->region_id)) continue;
-      }
       // Phase B Slice 2 — consult the per-world-state override table.
       // Inverted seeds get a different can_reach predicate per location;
-      // when no override exists, fall back to the base predicate.
+      // when no override exists, fall back to the base predicate. The
+      // override may ALSO change the region the location belongs to —
+      // e.g., Ether Tablet (id 194) moves East↔West in Inverted per
+      // `Inverted/LightWorld/DeathMountain/East.php:25-26`.
       uint32 cr_offset = loc->can_reach_offset;
       uint16 cr_length = loc->can_reach_length;
+      uint16 effective_region = loc->region_id;
       const RandoLocationPredOverride *ov =
           Rando_FindPredicateOverride(loc->id, settings->world_state);
       if (ov != NULL) {
         cr_offset = ov->can_reach_offset;
         cr_length = ov->can_reach_length;
+        if (ov->region_override != 0xFFFF) {
+          effective_region = ov->region_override;
+        }
+      }
+      if (effective_region != 0xFFFF) {
+        if (effective_region >= kReachabilityMaxRegions) continue;
+        if (!bitset_has(g_reachability.region_bitset, effective_region)) continue;
       }
       const uint8 *bc = kRandoPredicateStream + cr_offset;
       if (Predicate_EvalCtx(bc, cr_length, &ctx)) {

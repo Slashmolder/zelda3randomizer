@@ -198,9 +198,15 @@ extern const uint32 kRandoPredicateStreamSize;
 // the runtime VM looks up (location_id) in the per-world-state override
 // table and uses its (cr/cp/aa) offsets instead of the base ones in
 // `kRandoLocations`. Tables are sorted by location_id for binary search.
+//
+// `region_override`: 0xFFFF = "no region change" (use base region from
+// `kRandoLocations[loc].region_id`). Otherwise, the runtime treats this
+// location as belonging to `region_override` for reachability gating —
+// e.g., Ether Tablet (id 194) moves from LW-DM-West (Standard) to
+// LW-DM-East (Inverted) per PHP `Inverted/LightWorld/DeathMountain/East.php:25-26`.
 typedef struct RandoLocationPredOverride {
   uint16 location_id;
-  uint16 _pad;
+  uint16 region_override;        // 0xFFFF = use base region_id
   uint32 can_reach_offset;
   uint16 can_reach_length;
   uint32 can_place_offset;
