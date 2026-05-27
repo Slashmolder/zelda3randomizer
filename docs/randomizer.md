@@ -258,6 +258,8 @@ whenever a placement-affecting change lands. Triggers:
 - `src/rando/rando_placement.c` — placement algorithm changes
 - `src/rando/rando_rng.c` — RNG changes
 - `assets/rando/logic.yaml` — logic graph changes
+- `assets/rando/logic_parts/*.yaml` — per-region predicate authoring (merges into logic.yaml)
+- `assets/rando/macros.yaml` — named-predicate macros (mirrors `app/Support/ItemCollection.php`)
 - `assets/rando/item_registry.yaml` — item pool / registry changes
 - `assets/rando/location_registry.yaml` — location registry changes (append-only adds advance the count, which is part of the determinism input)
 - `assets/rando/op_registry.yaml` — op-code assignments
@@ -267,6 +269,74 @@ whenever a placement-affecting change lands. Triggers:
 Append-only location-registry additions advance the version and regenerate
 the regression corpus for new seeds, but do NOT invalidate existing saves
 (the embedded placement table preserves the older slot's interpretation).
+
+### Inert-change exception
+
+A change in any of the listed paths that is provably **corpus
+byte-identical under default settings** does not require a bump. The
+proof shape: run the regression corpus against the modified binary
+and confirm all 55 entries pass without manifest changes. This
+exception covers:
+
+- Trick-predicate authoring that adds new disjuncts evaluating FALSE
+  under `tricks=0`, `logic=NoGlitches` (i.e., the gates collapse to
+  their Phase A shape on every existing corpus seed). Slice 4 §7
+  batches landed without bumps via this exception.
+- Comment / formatting changes in any of the listed YAML files.
+- Renames of internal symbols whose canonical-byte representation is
+  unchanged.
+
+When in doubt, bump. The corpus regen via
+`python assets/scripts/bump_rando_corpus.py --apply` is cheap (~5
+seconds locally) and the bumper is idempotent.
+
+### Bumping procedure
+
+1. Edit `src/rando/rando.h:22` — increment the integer and update
+   the comment with a brief reason.
+2. Rebuild the binary.
+3. Run `python assets/scripts/bump_rando_corpus.py --binary=./bin/x64-Release/zelda3.exe --apply`.
+4. Verify with `python assets/scripts/run_rando_corpus.py --binary=./bin/x64-Release/zelda3.exe` (expect all entries OK at the new version).
+5. Commit the `rando.h` bump, the manifest changes, and any sources
+   in the same commit. The commit message states the new version
+   and the reason.
+
+### Save / snapshot compatibility across bumps
+
+- **Sidecar slots** (`saves/sram_rando.dat`): the embedded placement
+  table preserves the older slot's interpretation. Loading a v=N
+  slot on a v=N+k binary surfaces a one-time informational warning
+  (`Rando_DetectVersionDrift`) and uses the embedded data verbatim.
+  The slot is NOT regenerated.
+- **Snapshots** (`Shift+F1..F10` save / `Ctrl+F1..F10` replay): the
+  TLV-tail format carries `generator_version` in the
+  `TAIL_RANDO_STATE` payload. Replay on a different version uses the
+  embedded settings + placement; the runtime treats them as
+  authoritative.
+- **Suppressed race-mode files** (`<spoiler>.json` ZRSR format):
+  `Rando_RevealSpoiler` enforces version match — a v=N file
+  produced against the runtime's current v=N+k binary returns
+  `kRandoReveal_VersionMismatch` (code 5). The race admin must
+  reveal on the same generator version the seed was produced
+  against.
+
+### Bump case studies (recent)
+
+For maintainers: real-world examples of when to bump and what
+shifts as a result.
+
+| Version | Change | Corpus impact |
+|---|---|---|
+| 12→13 | Slice 2 Standard EP YAML promoted from inverted-only | All Standard digests refreshed |
+| 13→14 | Slice 7+8 §66 — settings canonical layout 24→28 bytes (`hints`, `boss_shuffle`, `drop_shuffle` added) | All digests refreshed; sidecar `kRandoSuppressedSpoilerSettingsLen` static-asserts the coupling |
+| 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
+| 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
+| 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
+| 17→18 | CanBombThings macro `TRUE() → HAS_ANY_OF([Bombs1, Bombs3, Bombs10])` — playtest-found softlock on Standard escape | All Standard digests refreshed (predicate change affects every CanKillEscapeThings-gated location) |
+
+The pattern: Retro-isolated changes hit ~3 corpus entries; Standard-
+mode predicate changes hit ~30+ entries. Plan corpus regen time
+accordingly when scoping a sprint.
 
 ## ALTTPR cross-compatibility (none)
 
