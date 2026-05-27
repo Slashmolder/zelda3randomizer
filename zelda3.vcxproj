@@ -296,6 +296,7 @@
     <ClCompile Include="src\rando\rando_logic.c" />
     <ClCompile Include="src\rando\rando_placement.c" />
     <ClCompile Include="src\rando\rando_spoiler.c" />
+    <ClCompile Include="src\rando\rando_hints.c" />
     <ClCompile Include="src\rando\rando_shuffles.c" />
     <ClCompile Include="src\rando\rando_save.c" />
     <ClCompile Include="src\rando\rando_snapshot_tail.c" />

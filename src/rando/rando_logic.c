@@ -215,12 +215,17 @@ static bool eval_or(Cursor *c, const PredicateContext *ctx) {
   return result;
 }
 
-// Phase B placeholders — Phase A pins tricks=none and logic=NoGlitches, so
-// these always evaluate to false. The codegen rejects predicates that
-// reference these ops at Phase A; runtime check is a safety net.
+// Phase B trick gate. Phase A pinned settings.tricks=0, so the bit test
+// always failed. Slice 4 wires the bit test against the 8-bit
+// settings.tricks bitfield (op_registry.yaml `tricks:` section enumerates
+// the bit positions). Predicates referencing trick_id >= 8 are rejected
+// by the codegen well-formedness pass; the runtime guard returns false
+// defensively.
 static bool eval_trick(Cursor *c, const PredicateContext *ctx) {
-  (void)cursor_u8(c);  // skip operand
-  return false;
+  uint8 trick_id = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  if (trick_id >= 8) return false;
+  return (ctx->settings->tricks & (uint8)(1u << trick_id)) != 0;
 }
 static bool eval_difficulty(Cursor *c, const PredicateContext *ctx) {
   uint8 level = cursor_u8(c);
