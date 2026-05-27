@@ -336,6 +336,42 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // Phase B Slice 6 — Settings_CanonicalDeserialize round-trip. Verify
+  // serialize → deserialize → serialize produces byte-identical output for
+  // both defaults and a non-default preset. This is the reproducibility
+  // guarantee Rando_RevealSpoiler depends on.
+  {
+    RandoSettings s_orig, s_round;
+    Settings_SetDefaults(&s_orig);
+    uint8 bytes_a[kSettingsCanonicalLen], bytes_b[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&s_orig, bytes_a);
+    if (Settings_CanonicalDeserialize(bytes_a, &s_round) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: deserialize defaults failed\n");
+      exit(2);
+    }
+    Settings_CanonicalSerialize(&s_round, bytes_b);
+    if (!settings_byte_eq(bytes_a, bytes_b, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: deserialize round-trip drift on defaults\n");
+      exit(2);
+    }
+  }
+  {
+    // Apply a preset (Completionist triggers apply_derived_rules) and verify
+    // round-trip still re-applies the derived rules so the bytes stabilize.
+    RandoSettings s_orig, s_round;
+    Settings_ApplyPreset(kPreset_TriforceHuntDefault, &s_orig);
+    uint8 bytes_a[kSettingsCanonicalLen], bytes_b[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&s_orig, bytes_a);
+    if (Settings_CanonicalDeserialize(bytes_a, &s_round) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: deserialize preset failed\n");
+      exit(2);
+    }
+    Settings_CanonicalSerialize(&s_round, bytes_b);
+    if (!settings_byte_eq(bytes_a, bytes_b, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: deserialize round-trip drift on preset\n");
+      exit(2);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

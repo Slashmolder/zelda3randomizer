@@ -261,6 +261,23 @@ Additionally, the following commands are available:
 | 1-9 | Load a dungeons playthrough snapshot |
 | Ctrl+1-9 | Run a dungeons playthrough in turbo mode |
 
+### Randomizer keybindings
+
+Bind these in `zelda3.ini` under `[KeyMap]`. Default: unbound (overlays hidden). Both toggles reset to hidden on each launch and on slot deactivate.
+
+| Key id | Action |
+| ---- | ------ |
+| RandoToggleItemTracker | Show/hide the in-game item-tracker overlay |
+| RandoToggleLocationTracker | Show/hide the in-game location-tracker overlay |
+
+### Randomizer CLI
+
+| Flag | Action |
+| ---- | ------ |
+| --generate-seed --settings=... --seed=... --out-spoiler=... | Generate a seed headlessly |
+| --race-mode | Suppress the on-disk spoiler at generate time (race-admin feature) |
+| --reveal-spoiler=&lt;path&gt; | Reveal a previously-suppressed spoiler — regenerate placement, verify SHA-256 stamp, write full JSON |
+
 
 ## License
 
