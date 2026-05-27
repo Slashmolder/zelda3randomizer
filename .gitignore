@@ -17,6 +17,9 @@
 /saves/*.sav
 /saves/sram.dat
 /saves/sram.bak
+/saves/sram_rando.dat
+# Rando spoiler files (regenerated on every Generate; per-user content).
+/spoilers/
 /zelda3
 __pycache__
 /src/*.o
