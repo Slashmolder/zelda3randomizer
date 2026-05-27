@@ -416,16 +416,33 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     bool changed = false;
 
     // Expand reachable regions via edges.
+    // Phase B Slice 2 — also walk per-world-state edges. The base
+    // kRandoEdges array carries the Standard/Open/Retro graph; Inverted
+    // adds its own edges (DarkWorld_South → IcePalace, LightWorld mirror
+    // back to DarkWorld, etc.). When the active world state is Inverted,
+    // both tables are walked.
     for (uint32 e = 0; e < kRandoEdgesCount; e++) {
       const RandoEdgeDef *edge = &kRandoEdges[e];
       if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
       if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
       if (bitset_has(g_reachability.region_bitset, edge->to_region)) continue;
-      // Evaluate the edge predicate against the current snapshot.
       const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
       if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
         bitset_set(g_reachability.region_bitset, edge->to_region);
         changed = true;
+      }
+    }
+    if (settings->world_state == 2 /* kWorldState_Inverted */) {
+      for (uint32 e = 0; e < kRandoEdges_InvertedCount; e++) {
+        const RandoEdgeDef *edge = &kRandoEdges_Inverted[e];
+        if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
+        if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
+        if (bitset_has(g_reachability.region_bitset, edge->to_region)) continue;
+        const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
+        if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
+          bitset_set(g_reachability.region_bitset, edge->to_region);
+          changed = true;
+        }
       }
     }
 
