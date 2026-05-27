@@ -528,18 +528,33 @@ static bool location_accepts_item(const RandoLocationDef *loc,
   // predicate VM so the can_place YAML doesn't need to enumerate every
   // dungeon item per location.
   if (!dungeon_mode_accepts_item(loc, candidate_item, settings)) return false;
+
+  // Phase B Slice 2 — per-world-state can_place/always_allow override.
+  // Inverted seeds may have different can_place predicates per location.
+  uint32 cp_offset = loc->can_place_offset;
+  uint16 cp_length = loc->can_place_length;
+  uint32 aa_offset = loc->always_allow_offset;
+  uint16 aa_length = loc->always_allow_length;
+  const RandoLocationPredOverride *ov =
+      Rando_FindPredicateOverride(loc->id, settings->world_state);
+  if (ov != NULL) {
+    cp_offset = ov->can_place_offset;
+    cp_length = ov->can_place_length;
+    aa_offset = ov->always_allow_offset;
+    aa_length = ov->always_allow_length;
+  }
   // can_place defaults to TRUE() when not overridden — the bytecode for
   // the default is "AND with 0 children" (2 bytes 0x0c 0x00), which
   // Predicate_EvaluatePlacement evaluates as true.
-  const uint8 *cp_bc = kRandoPredicateStream + loc->can_place_offset;
-  if (Predicate_EvaluatePlacement(cp_bc, loc->can_place_length, counts, settings, candidate_item)) {
+  const uint8 *cp_bc = kRandoPredicateStream + cp_offset;
+  if (Predicate_EvaluatePlacement(cp_bc, cp_length, counts, settings, candidate_item)) {
     return true;
   }
   // always_allow defaults to FALSE() (OR with 0 children, 0x0d 0x00) — also
   // evaluatable safely. If it returns true, the placement is permitted even
   // when can_place rejected.
-  const uint8 *aa_bc = kRandoPredicateStream + loc->always_allow_offset;
-  return Predicate_EvaluatePlacement(aa_bc, loc->always_allow_length, counts, settings, candidate_item);
+  const uint8 *aa_bc = kRandoPredicateStream + aa_offset;
+  return Predicate_EvaluatePlacement(aa_bc, aa_length, counts, settings, candidate_item);
 }
 
 // Single-attempt inner implementation of assumed-fill. Returns true on

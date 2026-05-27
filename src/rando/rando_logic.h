@@ -193,6 +193,39 @@ extern const uint32 kRandoEdgesCount;
 extern const uint8 kRandoPredicateStream[];
 extern const uint32 kRandoPredicateStreamSize;
 
+// Phase B Slice 2 — per-world-state location-predicate override.
+// When `settings.world_state == kWorldState_Inverted` (or Retro, future),
+// the runtime VM looks up (location_id) in the per-world-state override
+// table and uses its (cr/cp/aa) offsets instead of the base ones in
+// `kRandoLocations`. Tables are sorted by location_id for binary search.
+typedef struct RandoLocationPredOverride {
+  uint16 location_id;
+  uint16 _pad;
+  uint32 can_reach_offset;
+  uint16 can_reach_length;
+  uint32 can_place_offset;
+  uint16 can_place_length;
+  uint32 always_allow_offset;
+  uint16 always_allow_length;
+} RandoLocationPredOverride;
+
+extern const RandoLocationPredOverride kRandoLocationPredOverrides_Inverted[];
+extern const uint32 kRandoLocationPredOverrides_InvertedCount;
+extern const RandoLocationPredOverride kRandoLocationPredOverrides_Retro[];
+extern const uint32 kRandoLocationPredOverrides_RetroCount;
+
+// Per-world-state edges. Each non-Standard world-state with extra cross-
+// region edges (Inverted's mirror-back, DarkWorld entry edges) emits its
+// own table. The base `kRandoEdges` is the Standard graph.
+extern const RandoEdgeDef kRandoEdges_Inverted[];
+extern const uint32 kRandoEdges_InvertedCount;
+
+// Lookup the predicate override for `loc_id` under `world_state`. Returns
+// NULL when no override is installed (caller uses the base predicate from
+// kRandoLocations[loc_id]). Binary search over the sorted override table.
+const RandoLocationPredOverride *Rando_FindPredicateOverride(uint16 loc_id,
+                                                             uint8 world_state);
+
 // Human-readable name lookups (used by spoiler / debug output).
 // Both return a pointer to a static string in the generated logic_data.c.
 // Never returns NULL — falls back to "(unknown)" / "(unbound)" on miss.

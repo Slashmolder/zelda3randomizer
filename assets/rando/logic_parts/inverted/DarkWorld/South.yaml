@@ -103,11 +103,15 @@ locations:
     can_reach: "TRUE()"
     source: "app/Region/Inverted/DarkWorld/South.php (not overridden, parent::initialize() not called → default TRUE)"
 
-  # NOTE: The Inverted-only "Bomb Merchant" location (registry id 236) lives
-  # in DarkWorld_South per location_registry.yaml:371. Its predicate is set
-  # in Inverted/LightWorld/South.php (out-of-scope for this file); it is
-  # NOT authored here. The other agent owning Inverted/LightWorld/South.yaml
-  # is responsible for declaring it.
+  # Bomb Merchant — Inverted-only location (registry id 236, region
+  # DarkWorld_South per location_registry.yaml:371). PHP predicate at
+  # `Inverted/LightWorld/South.php:90-94`: `MoonPearl AND Crystal5 AND
+  # Crystal6`. Authored here (not in LightWorld/South.yaml) because the
+  # registry assigns the location to DarkWorld_South.
+  - id: "Bomb Merchant"
+    region: DarkWorld_South
+    can_reach: "HAS_ITEM(MoonPearl) AND OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6)"
+    source: "app/Region/Inverted/LightWorld/South.php:90-94"
 
 # NOTE on Inverted shops (Inverted/South.php:42-106):
 #   The "Bonk Fairy (Dark)" and three "Dark Lake Hylia Ledge ..." shops

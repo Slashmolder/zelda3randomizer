@@ -133,15 +133,21 @@ locations:
     source: "app/Region/Inverted/EasternPalace.php:52-67 (Prize = can_complete = Boss access)"
 
   # ===========================================================================
-  # Inherited from Standard parent (NOT overridden in Inverted):
-  #   - Eastern Palace - Cannonball Chest (Standard php:53; default TRUE).
-  #   - Eastern Palace - Map Chest (Standard php:55; default TRUE).
-  # These are NOT re-emitted here. They will be picked up from the
-  # Standard logic_parts file once it lands (currently authored as the
-  # worked example `assets/rando/logic_examples/01_eastern_palace.yaml`,
-  # not yet in `logic_parts/`). Phase B integration task: confirm the
-  # codegen merge picks up Standard's Cannonball/Map predicates when
-  # Inverted variant is active.
+  # Inverted-EP locations NOT overridden vs the Standard parent.
+  # Audit H2 fix: these were originally documented as "inherited from Standard"
+  # but Standard's EP YAML lives only in `logic_examples/` (not scanned by
+  # codegen). Emit explicit Inverted predicates here so the world-state-aware
+  # override path has a deterministic value rather than relying on whatever
+  # the base table defaults to.
+  - id: "Eastern Palace - Cannonball Chest"
+    region: EasternPalace
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/EasternPalace.php:53 (default TRUE) + Inverted MoonPearl bunny-state gate"
+
+  - id: "Eastern Palace - Map Chest"
+    region: EasternPalace
+    can_reach: "HAS_ITEM(MoonPearl)"
+    source: "app/Region/Standard/EasternPalace.php:55 (default TRUE) + Inverted MoonPearl bunny-state gate"
   # ===========================================================================
 
 # NOTE: CanKillArmosKnights macro is already defined in `logic.yaml:255-258`

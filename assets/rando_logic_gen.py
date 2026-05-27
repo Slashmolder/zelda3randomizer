@@ -213,13 +213,24 @@ def load_macros(path: Path | None) -> dict[str, MacroDef]:
     return out
 
 
-def _merge_logic_doc(doc, regions, edges, loc_preds, macros, source_file):
+def _merge_logic_doc(doc, regions, edges, loc_preds, macros, source_file,
+                     world_state_overrides=None, world_state_id=None,
+                     world_state_edges=None):
     """Merge a single parsed logic YAML doc into the cumulative dicts.
 
     Per-file conflict policy: regions / macros are keyed by id/name; a later
     file silently overrides an earlier one (the codegen reports duplicates as
     warnings via well-formedness). Edges are appended. Location predicates
     are keyed by id; later wins.
+
+    Phase B Slice 2 (add-rando-inverted-world-state): when ``world_state_id``
+    is not None, location predicates and edges from this file are stored in
+    ``world_state_overrides[loc_id][world_state_id]`` and
+    ``world_state_edges[world_state_id]`` instead of the base maps. The base
+    ``loc_preds`` / ``edges`` only receive entries from files with
+    ``world_state_id is None`` (i.e., the Standard/Open/Retro path).
+    Regions and macros still merge into the global maps regardless of
+    world_state (they're identity-shared across world states by design).
     """
     if doc is None:
         return
@@ -232,17 +243,25 @@ def _merge_logic_doc(doc, regions, edges, loc_preds, macros, source_file):
             world_state_filter=raw.get("world_state_filter", []),
             source=raw.get("source", ""),
         )
-        regions[r.id] = r
+        # Don't let a world-state-specific YAML overwrite a base region
+        # with a "stub" entry that would lose the parent / dungeon
+        # binding. Only insert if not already present.
+        if world_state_id is None or r.id not in regions:
+            regions[r.id] = r
     for raw in doc.get("edges", []) or []:
-        edges.append(EdgeDef(
+        edge = EdgeDef(
             from_=raw["from"],
             to=raw["to"],
             predicate=raw.get("predicate", "TRUE()"),
             one_way=raw.get("one_way", False),
             source=raw.get("source", ""),
-        ))
+        )
+        if world_state_id is None:
+            edges.append(edge)
+        else:
+            world_state_edges.setdefault(world_state_id, []).append(edge)
     for raw in doc.get("locations", []) or []:
-        loc_preds[raw["id"]] = LocationDef(
+        loc = LocationDef(
             id=0,  # numeric id comes from registry
             name=raw.get("name", raw["id"]),
             region=raw.get("region", ""),
@@ -253,6 +272,10 @@ def _merge_logic_doc(doc, regions, edges, loc_preds, macros, source_file):
             always_allow=raw.get("always_allow", "FALSE()"),
             source=raw.get("source", ""),
         )
+        if world_state_id is None:
+            loc_preds[raw["id"]] = loc
+        else:
+            world_state_overrides.setdefault(raw["id"], {})[world_state_id] = loc
     for raw in doc.get("macros", []) or []:
         macros[raw["name"]] = MacroDef(
             name=raw["name"],
@@ -262,40 +285,82 @@ def _merge_logic_doc(doc, regions, edges, loc_preds, macros, source_file):
         )
 
 
-def load_logic(path: Path | None) -> tuple[dict[str, RegionDef], list[EdgeDef], dict[str, LocationDef], dict[str, MacroDef]]:
+# Phase B Slice 2 — world-state numeric IDs matching the C-side enum
+# (src/rando/rando_settings.h `kWorldState_*`). Used to bucket YAML files
+# from `logic_parts/inverted/**` into the Inverted override map.
+kWorldState_Open = 0
+kWorldState_Standard = 1
+kWorldState_Inverted = 2
+kWorldState_Retro = 3
+
+
+def _world_state_id_for_path(path: Path) -> int | None:
+    """Derive the world_state override key from a logic_parts file path.
+
+    `logic_parts/inverted/**/*.yaml` → kWorldState_Inverted
+    `logic_parts/*.yaml`              → None (base / Standard / shared across
+                                              all world states)
+
+    Future world-state-specific subdirs (e.g., `logic_parts/retro/`) plug
+    into the same convention.
+    """
+    parts = path.parts
+    if "inverted" in parts:
+        return kWorldState_Inverted
+    # Future: if "retro" in parts: return kWorldState_Retro
+    return None
+
+
+def load_logic(path: Path | None):
     """Load the optional logic.yaml plus every file under
-    `assets/rando/logic_parts/*.yaml` (sorted for deterministic merge order).
-    Returns (regions, edges, location_predicates, macros).
+    `assets/rando/logic_parts/**/*.yaml` (sorted for deterministic merge order).
+    Returns (regions, edges, location_predicates, macros, world_state_overrides, world_state_edges).
 
     Files later in sort order override earlier files for regions / locations /
-    macros. Edges are concatenated. Authors partition work across files: one
-    region per file (or one dungeon per file) avoids merge conflicts between
-    agents working in parallel.
+    macros at the BASE level. Phase B Slice 2: files under
+    `logic_parts/inverted/**` are routed to the `world_state_overrides`
+    map keyed by location id → {world_state_id: LocationDef}. The base
+    `loc_preds` only holds Standard/Open/Retro predicates. The runtime
+    consults the override map when `settings.world_state == Inverted`.
+
+    Cross-region edges from Inverted YAML go into `world_state_edges` and
+    are emitted as Inverted-specific edges in `logic_data.c`. The base
+    `edges` list is unchanged.
     """
     regions: dict[str, RegionDef] = {}
     edges: list[EdgeDef] = []
     loc_preds: dict[str, LocationDef] = {}
     macros: dict[str, MacroDef] = {}
+    # location_id → {world_state_id: LocationDef}
+    world_state_overrides: dict[str, dict[int, LocationDef]] = {}
+    # world_state_id → list[EdgeDef]
+    world_state_edges: dict[int, list[EdgeDef]] = {}
 
     # Load the main logic.yaml first (lowest priority).
     if path is not None and path.exists():
-        _merge_logic_doc(load_yaml(path), regions, edges, loc_preds, macros, str(path))
+        _merge_logic_doc(
+            load_yaml(path), regions, edges, loc_preds, macros, str(path),
+            world_state_overrides=world_state_overrides,
+            world_state_id=None,
+            world_state_edges=world_state_edges,
+        )
 
-    # Load every file under assets/rando/logic_parts/*.yaml (sorted).
-    # NON-RECURSIVE: Phase B Slice 2 Inverted YAML lives under
-    # `logic_parts/inverted/` but is NOT loaded yet — the codegen's "last
-    # wins" merge corrupts Standard placements when Inverted files
-    # redefine the same location IDs with Inverted-specific predicates.
-    # World-state-aware predicate merging is a Slice-2-prerequisite codegen
-    # change tracked separately; until that lands, the Inverted YAML files
-    # sit on disk as reference material that can be loaded by switching
-    # this glob to `rglob` and the merge to a world-state-keyed map.
+    # Load every file under assets/rando/logic_parts/**/*.yaml (sorted).
+    # Phase B Slice 2: recurse so `inverted/**/*.yaml` is picked up; route
+    # those entries to the world_state_overrides / world_state_edges maps
+    # via `_world_state_id_for_path`.
     parts_dir = RANDO_ASSETS / "logic_parts"
     if parts_dir.exists() and parts_dir.is_dir():
-        for part in sorted(parts_dir.glob("*.yaml")):
-            _merge_logic_doc(load_yaml(part), regions, edges, loc_preds, macros, str(part))
+        for part in sorted(parts_dir.rglob("*.yaml")):
+            ws_id = _world_state_id_for_path(part)
+            _merge_logic_doc(
+                load_yaml(part), regions, edges, loc_preds, macros, str(part),
+                world_state_overrides=world_state_overrides,
+                world_state_id=ws_id,
+                world_state_edges=world_state_edges,
+            )
 
-    return regions, edges, loc_preds, macros
+    return regions, edges, loc_preds, macros, world_state_overrides, world_state_edges
 
 
 # ---------------------------------------------------------------------------
@@ -1273,6 +1338,8 @@ def emit_logic_data(
     path: Path,
     items: dict[str, ItemDef] | None = None,
     logic_loc_preds: dict[str, LocationDef] | None = None,
+    compiled_overrides: dict[int, list[tuple[str, dict[str, bytes]]]] | None = None,
+    compiled_world_state_edges: dict[int, list[tuple[EdgeDef, bytes]]] | None = None,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -1295,6 +1362,45 @@ def emit_logic_data(
     for ep in edge_predicates:
         edge_offsets.append((len(stream), len(ep)))
         stream += ep
+
+    # Phase B Slice 2 — per-world-state location predicate overrides.
+    # For each (world_state_id, loc_name) pair with overrides, append the
+    # three encoded predicates (can_reach / can_place / always_allow) to
+    # the shared `stream` and record their offsets for the override table.
+    # world_state_id → list[ (loc_id, (cr_off, cr_len), (cp_off, cp_len), (aa_off, aa_len)) ]
+    override_offsets: dict[int, list[tuple[int, tuple[int, int], tuple[int, int], tuple[int, int]]]] = {}
+    if compiled_overrides:
+        for ws_id, entries in compiled_overrides.items():
+            for loc_name, encoded in entries:
+                if loc_name not in locations:
+                    continue  # already warned upstream
+                loc_id = locations[loc_name].id
+                cr = encoded.get("can_reach", b"\x0c\x00")
+                cp = encoded.get("can_place", b"\x0c\x00")
+                aa = encoded.get("always_allow", b"\x0d\x00")
+                cr_off = (len(stream), len(cr)); stream += cr
+                cp_off = (len(stream), len(cp)); stream += cp
+                aa_off = (len(stream), len(aa)); stream += aa
+                override_offsets.setdefault(ws_id, []).append(
+                    (loc_id, cr_off, cp_off, aa_off)
+                )
+
+    # Phase B Slice 2 — per-world-state edge predicates (Inverted overworld
+    # edges, mirror-back paths). Append to the same predicate stream.
+    # world_state_id → list[ (from_region_idx, to_region_idx, one_way, (off, len)) ]
+    ws_edge_offsets: dict[int, list[tuple[int, int, int, tuple[int, int]]]] = {}
+    if compiled_world_state_edges:
+        sorted_region_ids = sorted(regions.keys()) if regions else []
+        rid_index = {rid: i for i, rid in enumerate(sorted_region_ids)}
+        for ws_id, entries in compiled_world_state_edges.items():
+            for edge_def, encoded_pred in entries:
+                ep_offset = (len(stream), len(encoded_pred))
+                stream += encoded_pred
+                from_idx = rid_index.get(edge_def.from_, 0xFFFF)
+                to_idx = rid_index.get(edge_def.to, 0xFFFF)
+                ws_edge_offsets.setdefault(ws_id, []).append(
+                    (from_idx, to_idx, 1 if edge_def.one_way else 0, ep_offset)
+                )
     # Emit the stream as a uint8 array.
     out.append("// Predicate bytecode stream — concatenated per the encoding documented in")
     out.append("// assets/rando_logic_gen.py. Locations and edges reference (offset, length).")
@@ -1522,6 +1628,51 @@ def emit_logic_data(
         out.append("}")
         out.append("")
 
+    # ----- Phase B Slice 2 — per-world-state predicate overrides -----
+    # Emit one array per non-default world state that has overrides. The
+    # array is sorted by location_id for binary-search lookup at runtime.
+    # An empty/no-override world state emits a 1-entry placeholder so the
+    # extern symbol exists for the C ABI.
+    out.append("// Phase B Slice 2 — per-world-state location predicate overrides.")
+    out.append("// Each non-Standard world state with Inverted-style overrides emits its own")
+    out.append("// table. Sorted by location_id for binary-search lookup.")
+    out.append("// Empty tables retain a 1-entry placeholder so the symbol always exists.")
+    out.append("")
+    for ws_id, ws_name in [(2, "Inverted"), (3, "Retro")]:
+        entries = override_offsets.get(ws_id, [])
+        entries_sorted = sorted(entries, key=lambda t: t[0])
+        if entries_sorted:
+            out.append(f"const RandoLocationPredOverride kRandoLocationPredOverrides_{ws_name}[{len(entries_sorted)}] = {{")
+            for loc_id, (cr_o, cr_l), (cp_o, cp_l), (aa_o, aa_l) in entries_sorted:
+                out.append(
+                    "  { %d, %d, %d, %d, %d, %d, %d, %d }, " %
+                    (loc_id, 0, cr_o, cr_l, cp_o, cp_l, aa_o, aa_l)
+                )
+            out.append("};")
+            out.append(f"const uint32 kRandoLocationPredOverrides_{ws_name}Count = {len(entries_sorted)};")
+        else:
+            out.append(f"const RandoLocationPredOverride kRandoLocationPredOverrides_{ws_name}[1] = {{ {{0, 0, 0, 0, 0, 0, 0, 0}} }};")
+            out.append(f"const uint32 kRandoLocationPredOverrides_{ws_name}Count = 0;")
+        out.append("")
+
+    # Per-world-state edges (Inverted-only entries).
+    out.append("// Phase B Slice 2 — per-world-state edges (Inverted overworld + dungeon entries).")
+    for ws_id, ws_name in [(2, "Inverted")]:
+        entries = ws_edge_offsets.get(ws_id, [])
+        if entries:
+            out.append(f"const RandoEdgeDef kRandoEdges_{ws_name}[{len(entries)}] = {{")
+            for from_idx, to_idx, one_way, (off, length) in entries:
+                out.append(
+                    "  { %d, %d, %d, %d, %d, 0 }, " %
+                    (from_idx, to_idx, off, length, one_way)
+                )
+            out.append("};")
+            out.append(f"const uint32 kRandoEdges_{ws_name}Count = {len(entries)};")
+        else:
+            out.append(f"const RandoEdgeDef kRandoEdges_{ws_name}[1] = {{ {{0, 0, 0, 0, 0, 0}} }};")
+            out.append(f"const uint32 kRandoEdges_{ws_name}Count = 0;")
+        out.append("")
+
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
@@ -1576,7 +1727,8 @@ def main(argv=None):
     if not schema_path.exists():
         print(f"WARNING: {schema_path} not found", file=sys.stderr)
     macros = load_macros(macros_path)
-    logic_regions, logic_edges, logic_loc_preds, logic_macros = load_logic(logic_path)
+    (logic_regions, logic_edges, logic_loc_preds, logic_macros,
+     world_state_overrides, world_state_edges) = load_logic(logic_path)
 
     # Merge macros from macros.yaml and logic.yaml (logic.yaml takes precedence).
     all_macros = {**macros, **logic_macros}
@@ -1692,6 +1844,74 @@ def main(argv=None):
             all_errors.append(f"edge[{i}]: parse error: {ex}")
             edge_predicates.append(b"\x0d\x00")  # safe default: FALSE
 
+    # Phase B Slice 2 — compile per-world-state location predicate overrides.
+    # Output shape: world_state_id → list[ (loc_name, encoded_dict) ]
+    # Each loc_name MUST be present in `locations` (registry); unknown names
+    # are dropped with a WARN (same well-formedness contract as the base path).
+    compiled_overrides: dict[int, list[tuple[str, dict[str, bytes]]]] = {}
+    for loc_name_or_id, ws_map in world_state_overrides.items():
+        # Resolve the override key to a registry location name. Override
+        # YAMLs key by location id (e.g., "Eastern Palace - Compass Chest");
+        # the registry uses the same canonical names.
+        if loc_name_or_id not in locations:
+            all_errors.append(
+                f"world-state override for {loc_name_or_id!r} does not match "
+                f"a registry entry — drop or fix the location id."
+            )
+            continue
+        for ws_id, override_def in ws_map.items():
+            encoded = {}
+            for label, src in [
+                ("can_reach", override_def.can_reach),
+                ("can_place", override_def.can_place),
+                ("always_allow", override_def.always_allow),
+            ]:
+                try:
+                    ast = parse_predicate(src)
+                    ast = resolve_calls(ast, ops, all_macros)
+                    ast = expand_macros(ast, all_macros, parsed_macro_bodies, ops)
+                    errs = well_formedness(ast, ops, items, logic_regions, locations, label)
+                    if errs:
+                        for e in errs:
+                            all_errors.append(
+                                f"override(ws={ws_id}) {loc_name_or_id}.{label}: {e}"
+                            )
+                    encoded[label] = encode_predicate(ast, ops, items, logic_regions, locations)
+                except ParseError as e:
+                    all_errors.append(
+                        f"override(ws={ws_id}) {loc_name_or_id}.{label}: parse error: {e}"
+                    )
+                    encoded[label] = b"\x0d\x00"  # safe default: FALSE
+            compiled_overrides.setdefault(ws_id, []).append((loc_name_or_id, encoded))
+
+    # Compile per-world-state edge predicates (Inverted overworld + cross-
+    # region traversal). Encode and bucket by ws_id; emitted alongside base
+    # edges in logic_data.c.
+    compiled_world_state_edges: dict[int, list[tuple[EdgeDef, bytes]]] = {}
+    for ws_id, edges_list in world_state_edges.items():
+        for e in edges_list:
+            try:
+                ast = parse_predicate(e.predicate)
+                ast = resolve_calls(ast, ops, all_macros)
+                ast = expand_macros(ast, all_macros, parsed_macro_bodies, ops)
+                errs = well_formedness(ast, ops, items, logic_regions, locations,
+                                       f"ws-edge[{ws_id}]")
+                if errs:
+                    for err in errs:
+                        all_errors.append(
+                            f"ws-edge(ws={ws_id}) {e.from_}->{e.to}: {err}"
+                        )
+                compiled_world_state_edges.setdefault(ws_id, []).append(
+                    (e, encode_predicate(ast, ops, items, logic_regions, locations))
+                )
+            except ParseError as ex:
+                all_errors.append(
+                    f"ws-edge(ws={ws_id}): parse error: {ex}"
+                )
+                compiled_world_state_edges.setdefault(ws_id, []).append(
+                    (e, b"\x0d\x00")
+                )
+
     if all_errors:
         for err in all_errors:
             print(f"WARN: {err}", file=sys.stderr)
@@ -1705,7 +1925,10 @@ def main(argv=None):
     out_data.mkdir(parents=True, exist_ok=True)
     emit_location_ids(locations, out_headers / "location_ids.h")
     emit_item_ids(items, out_headers / "item_ids.h")
-    emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates, out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds)
+    emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates,
+                    out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds,
+                    compiled_overrides=compiled_overrides,
+                    compiled_world_state_edges=compiled_world_state_edges)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     icon_atlas_count = emit_icon_atlas(
         Path("assets/rando/icon_atlas.yaml"),

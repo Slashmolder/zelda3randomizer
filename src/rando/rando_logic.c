@@ -447,8 +447,19 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         if (loc->region_id >= kReachabilityMaxRegions) continue;
         if (!bitset_has(g_reachability.region_bitset, loc->region_id)) continue;
       }
-      const uint8 *bc = kRandoPredicateStream + loc->can_reach_offset;
-      if (Predicate_EvalCtx(bc, loc->can_reach_length, &ctx)) {
+      // Phase B Slice 2 — consult the per-world-state override table.
+      // Inverted seeds get a different can_reach predicate per location;
+      // when no override exists, fall back to the base predicate.
+      uint32 cr_offset = loc->can_reach_offset;
+      uint16 cr_length = loc->can_reach_length;
+      const RandoLocationPredOverride *ov =
+          Rando_FindPredicateOverride(loc->id, settings->world_state);
+      if (ov != NULL) {
+        cr_offset = ov->can_reach_offset;
+        cr_length = ov->can_reach_length;
+      }
+      const uint8 *bc = kRandoPredicateStream + cr_offset;
+      if (Predicate_EvalCtx(bc, cr_length, &ctx)) {
         bitset_set(g_reachability.location_bitset, loc->id);
         changed = true;
       }
@@ -506,6 +517,43 @@ bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id) {
   if (r == NULL) return false;
   if (region_id >= kReachabilityMaxRegions) return false;
   return bitset_has(r->region_bitset, region_id);
+}
+
+// ---------------------------------------------------------------------------
+// Phase B Slice 2 — per-world-state predicate override lookup.
+//
+// Override tables are sorted by location_id at codegen time; binary search
+// is the standard lookup. Returns NULL when no override is installed for
+// (location_id, world_state).
+// ---------------------------------------------------------------------------
+static const RandoLocationPredOverride *
+binary_search_overrides(const RandoLocationPredOverride *arr, uint32 count, uint16 loc_id) {
+  if (count == 0) return NULL;
+  int lo = 0, hi = (int)count - 1;
+  while (lo <= hi) {
+    int mid = lo + ((hi - lo) >> 1);
+    uint16 mid_id = arr[mid].location_id;
+    if (mid_id == loc_id) return &arr[mid];
+    if (mid_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return NULL;
+}
+
+const RandoLocationPredOverride *
+Rando_FindPredicateOverride(uint16 loc_id, uint8 world_state) {
+  switch (world_state) {
+    case 2:  // kWorldState_Inverted
+      return binary_search_overrides(kRandoLocationPredOverrides_Inverted,
+                                     kRandoLocationPredOverrides_InvertedCount,
+                                     loc_id);
+    case 3:  // kWorldState_Retro
+      return binary_search_overrides(kRandoLocationPredOverrides_Retro,
+                                     kRandoLocationPredOverrides_RetroCount,
+                                     loc_id);
+    default:
+      return NULL;
+  }
 }
 
 // ---------------------------------------------------------------------------
