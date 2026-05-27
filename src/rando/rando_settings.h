@@ -120,6 +120,14 @@ void Settings_SetDefaults(RandoSettings *s);
 int Settings_CanonicalSerialize(const RandoSettings *s,
                                 uint8 out[kSettingsCanonicalLen]);
 
+// Inverse of Settings_CanonicalSerialize. Reads `kSettingsCanonicalLen`
+// bytes and populates `out`. Returns 0 on success, non-zero on input error
+// (NULL pointer or non-zero pad bytes). Phase B Slice 6 — needed by the
+// race-mode reveal pipeline to reconstruct settings from the suppressed
+// spoiler file.
+int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
+                                  RandoSettings *out);
+
 // Compute SHA-256 of the canonical-serialized bytes. Writes 32 bytes.
 void Settings_ComputeHash(const RandoSettings *s, uint8 out_hash[32]);
 

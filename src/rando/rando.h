@@ -89,6 +89,46 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
 // no dispatch has run yet this slot.
 uint16 Rando_LastDispatchedItemId(void);
 
+// ---------------------------------------------------------------------------
+// Phase B Slice 6 — race-mode reveal action.
+//
+// Rando_RevealSpoiler reads a race-mode suppressed spoiler at the given path
+// (or, if `suppressed_path == NULL`, derives the path from `share_string`
+// via Spoiler_ResolvePath), verifies its integrity, reproduces the placement
+// deterministically from the embedded settings + seed (decoded from the
+// share string), confirms the stamp matches the regenerated spoiler, and
+// writes the full JSON + .txt spoiler back to disk (overwriting the
+// suppressed binary).
+//
+// The reveal flow is also the verification flow: stamp mismatch means the
+// suppressed file no longer corresponds to the current generator's output
+// for this (settings, seed_u64) pair — either the generator changed or the
+// file was tampered with.
+// ---------------------------------------------------------------------------
+typedef enum RandoRevealResult {
+  kRandoReveal_Ok = 0,
+  kRandoReveal_FileNotFound = 1,
+  kRandoReveal_ParseError = 2,
+  kRandoReveal_CrcMismatch = 3,
+  kRandoReveal_ShareStringMismatch = 4,
+  kRandoReveal_VersionMismatch = 5,
+  kRandoReveal_StampMismatch = 6,
+  kRandoReveal_PlacementFailed = 7,
+  kRandoReveal_SettingsCorrupt = 8,
+  kRandoReveal_WriteFailed = 9,
+} RandoRevealResult;
+
+// Reveal the suppressed spoiler at `suppressed_path`. If `expected_share_string`
+// is non-NULL, the reveal also verifies the file's embedded share string
+// matches. Caller may pass either (the file path explicitly) OR (an
+// expected share string only; path resolved via Spoiler_ResolvePath).
+RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
+                                      const char *expected_share_string);
+
+// Player-facing one-line description for a reveal result, suitable for
+// surfacing in the file-select dialog or the CLI's stderr line. Never NULL.
+const char *Rando_RevealResultDescription(RandoRevealResult r);
+
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
 // Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
 // items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.

@@ -102,6 +102,40 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   return kSettingsCanonicalLen;
 }
 
+// Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the 24-byte
+// canonical bytes and populates `out`. Returns 0 on success, -1 if the input
+// is NULL or the trailing pad bytes are non-zero.
+int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
+                                  RandoSettings *out) {
+  if (in == NULL || out == NULL) return -1;
+  if (in[22] != 0 || in[23] != 0) return -1;
+  RandoSettings s;
+  memset(&s, 0, sizeof(s));
+  s.settings_version = 1;  // Phase A constant; not serialized
+  s.world_state                = in[0];
+  s.goal                       = in[1];
+  s.crystals_ganon             = in[2];
+  s.crystals_tower             = in[3];
+  s.tricks                     = in[4];
+  s.item_pool_difficulty       = in[5];
+  s.logic                      = in[6];
+  s.mode_weapons               = in[7];
+  s.accessibility              = in[8];
+  s.pyramid_bow_upgrade        = in[9];
+  s.region_boss_hearts_in_pool = in[10];
+  s.dungeon_small_keys_mode    = in[11];
+  s.dungeon_big_keys_mode      = in[12];
+  s.dungeon_maps_mode          = in[13];
+  s.dungeon_compasses_mode     = in[14];
+  s.prize_shuffle              = in[15];
+  s.medallion_shuffle          = in[16];
+  s.race_mode                  = in[17];
+  s.pieces_required            = (uint16)(in[18] | ((uint16)in[19] << 8));
+  s.pieces_placed              = (uint16)(in[20] | ((uint16)in[21] << 8));
+  *out = s;
+  return 0;
+}
+
 void Settings_ComputeHash(const RandoSettings *s, uint8 out_hash[32]) {
   uint8 buf[kSettingsCanonicalLen];
   Settings_CanonicalSerialize(s, buf);

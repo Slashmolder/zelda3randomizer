@@ -82,6 +82,8 @@ static int placement_cmp(const void *a, const void *b) {
 // ---------------------------------------------------------------------------
 // JSON writer
 // ---------------------------------------------------------------------------
+static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f);
+
 bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   if (s == NULL || out_path == NULL) return false;
 
@@ -94,7 +96,12 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
 
   FILE *f = fopen(out_path, "wb");
   if (f == NULL) return false;
+  bool ok = write_spoiler_json_stream(s, f);
+  fclose(f);
+  return ok;
+}
 
+static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // Compute hashes/digests we'll cite in the meta block.
   uint8 settings_hash[32];
   Settings_ComputeHash(s->settings, settings_hash);
@@ -286,9 +293,190 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "  \"regions\": []\n");
 
   fprintf(f, "}\n");
-
-  fclose(f);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Phase B Slice 6 — race-mode suppressed-spoiler writer + reader.
+// ---------------------------------------------------------------------------
+
+// CRC-32 IEEE 802.3, reflected, polynomial 0xEDB88320. Same algorithm as
+// zlib's crc32. Small inline implementation — no LUT to keep .data
+// footprint minimal; the suppressed spoiler is < 200 bytes so perf doesn't
+// matter.
+static uint32 crc32_ieee(const uint8 *data, size_t len) {
+  uint32 c = 0xFFFFFFFFu;
+  for (size_t i = 0; i < len; i++) {
+    c ^= (uint32)data[i];
+    for (int b = 0; b < 8; b++) {
+      c = (c >> 1) ^ (0xEDB88320u & (uint32)(-(int32)(c & 1u)));
+    }
+  }
+  return c ^ 0xFFFFFFFFu;
+}
+
+static void put_u16_le(uint8 *p, uint16 v) {
+  p[0] = (uint8)(v & 0xff);
+  p[1] = (uint8)((v >> 8) & 0xff);
+}
+
+static void put_u32_le(uint8 *p, uint32 v) {
+  p[0] = (uint8)(v & 0xff);
+  p[1] = (uint8)((v >> 8) & 0xff);
+  p[2] = (uint8)((v >> 16) & 0xff);
+  p[3] = (uint8)((v >> 24) & 0xff);
+}
+
+static uint16 read_u16_le(const uint8 *p) {
+  return (uint16)((uint16)p[0] | ((uint16)p[1] << 8));
+}
+
+static uint32 read_u32_le(const uint8 *p) {
+  return (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
+}
+
+// Serialize the suppressed-spoiler header into the on-disk layout.
+// Returns the number of bytes written (always kRandoSuppressedSpoilerSize).
+static size_t serialize_suppressed(const RandoSuppressedSpoiler *h,
+                                   uint8 out[kRandoSuppressedSpoilerSize]) {
+  memcpy(out + 0, h->magic, 4);
+  put_u16_le(out + 4, h->generator_version);
+  memcpy(out + 6, h->spoiler_stamp, 32);
+  put_u32_le(out + 38, h->share_string_len);
+  memcpy(out + 42, h->share_string, kRandoSuppressedSpoilerShareStringMax);
+  memcpy(out + 106, h->settings_canonical, kRandoSuppressedSpoilerSettingsLen);
+  put_u32_le(out + 130, h->crc32);
+  return kRandoSuppressedSpoilerSize;
+}
+
+// Build + write the suppressed-spoiler file at `out_path`. Caller supplies
+// the SHA-256 stamp of the full canonical JSON (computed with race_mode
+// cleared to 0 and generation_wall_clock_ms cleared to 0) AND the canonical
+// settings bytes (also with race_mode cleared to 0).
+static bool write_suppressed_file(const char *share_string,
+                                  uint16 generator_version,
+                                  const uint8 stamp[32],
+                                  const uint8 settings_canonical[kRandoSuppressedSpoilerSettingsLen],
+                                  const char *out_path) {
+  RandoSuppressedSpoiler h;
+  memset(&h, 0, sizeof(h));
+  memcpy(h.magic, kRandoSuppressedSpoilerMagic, 4);
+  h.generator_version = generator_version;
+  memcpy(h.spoiler_stamp, stamp, 32);
+  size_t len = share_string ? strlen(share_string) : 0;
+  if (len > kRandoSuppressedSpoilerShareStringMax) len = kRandoSuppressedSpoilerShareStringMax;
+  h.share_string_len = (uint32)len;
+  if (len > 0) memcpy(h.share_string, share_string, len);
+  memcpy(h.settings_canonical, settings_canonical, kRandoSuppressedSpoilerSettingsLen);
+
+  uint8 buf[kRandoSuppressedSpoilerSize];
+  serialize_suppressed(&h, buf);
+  // CRC over everything except the crc32 trailer itself.
+  h.crc32 = crc32_ieee(buf, kRandoSuppressedSpoilerSize - 4);
+  put_u32_le(buf + 130, h.crc32);
+
+  // Auto-create the spoiler directory.
+  char dir_buf[512];
+  if (extract_dir(out_path, dir_buf, sizeof(dir_buf))) {
+    ensure_directory(dir_buf);
+  }
+
+  FILE *f = fopen(out_path, "wb");
+  if (f == NULL) return false;
+  size_t wrote = fwrite(buf, 1, sizeof(buf), f);
+  fclose(f);
+  return wrote == sizeof(buf);
+}
+
+// Stamp computation: write the spoiler JSON to a temporary file (with
+// race_mode = 0 and generation_wall_clock_ms = 0 in a temporary copy of
+// the input), read it back into memory, and SHA-256 the bytes. Returns
+// true and fills `out_stamp` on success.
+static bool compute_stamp(const RandoSpoiler *s, uint8 out_stamp[32]) {
+  // Build the normalized spoiler view for stamping.
+  RandoSettings norm_settings = *s->settings;
+  norm_settings.race_mode = 0;
+  RandoSpoiler norm = *s;
+  norm.settings = &norm_settings;
+  norm.generation_wall_clock_ms = 0;
+
+  FILE *tmp = tmpfile();
+  if (tmp == NULL) return false;
+  if (!write_spoiler_json_stream(&norm, tmp)) {
+    fclose(tmp);
+    return false;
+  }
+  fflush(tmp);
+  if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); return false; }
+  long len = ftell(tmp);
+  if (len <= 0) { fclose(tmp); return false; }
+  rewind(tmp);
+  uint8 *bytes = (uint8 *)malloc((size_t)len);
+  if (bytes == NULL) { fclose(tmp); return false; }
+  size_t got = fread(bytes, 1, (size_t)len, tmp);
+  fclose(tmp);
+  if (got != (size_t)len) { free(bytes); return false; }
+
+  extern void sha256_buffer(const uint8 *data, size_t len, uint8 out[32]);
+  sha256_buffer(bytes, (size_t)len, out_stamp);
+  free(bytes);
+  return true;
+}
+
+bool Spoiler_Write(const RandoSpoiler *s,
+                   const char *json_path,
+                   const char *txt_path) {
+  if (s == NULL || s->settings == NULL || json_path == NULL) return false;
+
+  bool race_mode = s->settings->race_mode != 0;
+  if (!race_mode) {
+    if (!Spoiler_WriteJson(s, json_path)) return false;
+    if (txt_path != NULL) (void)Spoiler_WriteText(s, txt_path);
+    return true;
+  }
+
+  // Race mode: write the suppressed binary in lieu of the full JSON.
+  uint8 stamp[32];
+  if (!compute_stamp(s, stamp)) return false;
+
+  // Canonicalize settings with race_mode = 0 (per spec — stamp is over
+  // the placement, not the race-mode flag).
+  RandoSettings norm_settings = *s->settings;
+  norm_settings.race_mode = 0;
+  uint8 settings_canon[kRandoSuppressedSpoilerSettingsLen];
+  Settings_CanonicalSerialize(&norm_settings, settings_canon);
+
+  return write_suppressed_file(s->share_string,
+                               (uint16)s->generator_version,
+                               stamp,
+                               settings_canon,
+                               json_path);
+  // No .txt sibling in race mode.
+}
+
+int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
+  if (path == NULL || out == NULL) return -2;
+  FILE *f = fopen(path, "rb");
+  if (f == NULL) return -1;
+  uint8 buf[kRandoSuppressedSpoilerSize];
+  size_t got = fread(buf, 1, sizeof(buf), f);
+  fclose(f);
+  if (got != sizeof(buf)) return -2;
+  if (memcmp(buf, kRandoSuppressedSpoilerMagic, 4) != 0) return -2;
+
+  uint32 disk_crc = read_u32_le(buf + 130);
+  uint32 calc_crc = crc32_ieee(buf, kRandoSuppressedSpoilerSize - 4);
+  if (disk_crc != calc_crc) return -3;
+
+  memcpy(out->magic, buf + 0, 4);
+  out->generator_version = read_u16_le(buf + 4);
+  memcpy(out->spoiler_stamp, buf + 6, 32);
+  out->share_string_len = read_u32_le(buf + 38);
+  if (out->share_string_len > kRandoSuppressedSpoilerShareStringMax) return -2;
+  memcpy(out->share_string, buf + 42, kRandoSuppressedSpoilerShareStringMax);
+  memcpy(out->settings_canonical, buf + 106, kRandoSuppressedSpoilerSettingsLen);
+  out->crc32 = disk_crc;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------

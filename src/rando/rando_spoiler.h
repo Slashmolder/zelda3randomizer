@@ -35,6 +35,78 @@ bool Spoiler_WriteJson(const RandoSpoiler *s, const char *out_path);
 // Write text spoiler grouped by region for human readability.
 bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path);
 
+// ---------------------------------------------------------------------------
+// Phase B Slice 6 — race-mode spoiler suppression.
+//
+// Top-level entry that writes the JSON + .txt spoiler when `s->settings->race_mode == 0`,
+// or the suppressed binary form alone (no .txt) when `race_mode == 1`. The
+// suppressed form on disk is the file at `json_path` — the magic header
+// (`ZRSR`) is what callers use to distinguish; the filename is unchanged.
+//
+// Returns true on success.
+//
+// `txt_path` may be NULL to skip the text companion in both branches; race
+// mode always skips the text companion regardless of `txt_path`.
+// ---------------------------------------------------------------------------
+bool Spoiler_Write(const RandoSpoiler *s,
+                   const char *json_path,
+                   const char *txt_path);
+
+// ---------------------------------------------------------------------------
+// Suppressed-spoiler on-disk format (Phase B Slice 6 — randomizer-save spec).
+//
+// The file at `<spoiler_dir>/<share_string>.json` contains, in race mode, the
+// bytes described by RandoSuppressedSpoiler (little-endian multibyte ints):
+//
+//   offset    size   field
+//   ------    ----   --------------------------------
+//   +0        4      magic[4] = "ZRSR"
+//   +4        2      generator_version (u16 LE)
+//   +6        32     spoiler_stamp[32] = SHA-256 of the full canonical
+//                    JSON spoiler with race_mode cleared to 0 and
+//                    generation_wall_clock_ms cleared to 0 (so the stamp
+//                    is reproducible across runs)
+//   +38       4      share_string_len (u32 LE) — actual length without NUL
+//   +42       64     share_string[64] — base32 textual share string,
+//                    zero-padded
+//   +106      24     settings_canonical[24] = Settings_CanonicalSerialize
+//                    output with race_mode cleared to 0 (race-mode flag
+//                    itself is recorded in the file's existence, not in
+//                    the serialized settings). Needed at reveal time to
+//                    regenerate the placement deterministically.
+//   +130      4      crc32 (u32 LE) — IEEE 802.3 over offsets 0..129
+//
+// Total: 134 bytes. The struct below is for in-memory parsing; the on-disk
+// layout is the byte sequence above (we serialize explicitly to avoid
+// platform-dependent padding).
+//
+// Why settings are in the file: the per-slot sidecar (RandoSidecarSlot) does
+// NOT preserve the original RandoSettings — only `settings_hash` (a truncated
+// SHA-256, not invertible). To regenerate the placement and verify the
+// stamp, the reveal pipeline needs the original settings. Including them
+// here doesn't leak the placement (the secret); settings are already
+// publicly visible on any tournament settings sheet.
+// ---------------------------------------------------------------------------
+#define kRandoSuppressedSpoilerMagic "ZRSR"
+#define kRandoSuppressedSpoilerShareStringMax 64
+#define kRandoSuppressedSpoilerSettingsLen 24  // = kSettingsCanonicalLen
+#define kRandoSuppressedSpoilerSize 134  // on-disk byte length
+
+typedef struct RandoSuppressedSpoiler {
+  uint8 magic[4];                // 'ZRSR'
+  uint16 generator_version;      // LE on disk
+  uint8 spoiler_stamp[32];       // SHA-256
+  uint32 share_string_len;       // actual length (<= 64)
+  uint8 share_string[kRandoSuppressedSpoilerShareStringMax]; // zero-padded
+  uint8 settings_canonical[kRandoSuppressedSpoilerSettingsLen];
+  uint32 crc32;                  // IEEE 802.3 over prior bytes (LE on disk)
+} RandoSuppressedSpoiler;
+
+// Read the suppressed spoiler at `path` into `out`, verifying magic + CRC.
+// Returns 0 on success.
+// Returns -1 on file-not-found, -2 on bad magic / parse error, -3 on CRC mismatch.
+int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out);
+
 // Resolve the spoiler path for a slot's share string. The path is derived
 // at runtime from `[Randomizer] SpoilerDir` (or `<exe-dir>/spoilers` when
 // the INI key is unset) + the slot's share string + the extension.

@@ -3325,11 +3325,9 @@ static void SelectFile_Settings_HandleGenerate(void) {
       spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
       spoiler.retry_attempts = st->attempts_used;
     }
-    if (!Spoiler_WriteJson(&spoiler, spoiler_json_path)) {
-      fprintf(stderr, "[settings] spoiler JSON write failed: %s\n", spoiler_json_path);
-    }
-    if (!Spoiler_WriteText(&spoiler, spoiler_txt_path)) {
-      fprintf(stderr, "[settings] spoiler TXT write failed: %s\n", spoiler_txt_path);
+    // Phase B Slice 6 — Spoiler_Write branches on race_mode (full vs suppressed).
+    if (!Spoiler_Write(&spoiler, spoiler_json_path, spoiler_txt_path)) {
+      fprintf(stderr, "[settings] spoiler write failed: %s\n", spoiler_json_path);
     }
   }
 

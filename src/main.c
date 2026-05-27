@@ -323,6 +323,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   const char *out_dir = NULL;
   int budget_seconds = 5;
   bool assets_must_be_vanilla = false;
+  bool race_mode = false;  // Phase B Slice 6 — set settings.race_mode = 1
 
   for (int i = 0; i < argc; ++i) {
     const char *a = argv[i];
@@ -334,6 +335,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     else if (strncmp(a, "--out-dir=", 10) == 0) out_dir = a + 10;
     else if (strncmp(a, "--budget-seconds=", 17) == 0) budget_seconds = atoi(a + 17);
     else if (strcmp(a, "--assets-must-be-vanilla") == 0) assets_must_be_vanilla = true;
+    else if (strcmp(a, "--race-mode") == 0) race_mode = true;
   }
 
   // Validate flag combinations.
@@ -396,6 +398,10 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       exit(64);
     }
   }
+
+  // Phase B Slice 6 — --race-mode override (highest precedence; can also be
+  // set via --settings=race_mode=true, but --race-mode is the canonical CLI).
+  if (race_mode) settings.race_mode = 1;
 
   // Seed: parse hex or decimal uint64 from --seed=<u64>.
   uint64 seed_u64 = 0;
@@ -521,13 +527,9 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // this — users can decide whether to regenerate with a different seed.
   // Phase A2 bounded intra-attempt rewind should reduce these to 0.
 
-  if (!Spoiler_WriteJson(&spoiler, out_spoiler)) {
-    fprintf(stderr, "--generate-seed: failed writing JSON spoiler to %s\n", out_spoiler);
-    free(entries);
-    exit(1);
-  }
-
-  // Also write the text spoiler alongside (path with .txt suffix).
+  // Phase B Slice 6 — Spoiler_Write branches on settings.race_mode:
+  //   race_mode == 0: full JSON + .txt (existing behavior).
+  //   race_mode == 1: suppressed binary (ZRSR header) at <out_spoiler>; no .txt.
   size_t out_len = strlen(out_spoiler);
   char *txt_path = (char *)malloc(out_len + 5);
   if (txt_path != NULL) {
@@ -539,9 +541,14 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       memcpy(txt_path, out_spoiler, out_len);
       strcpy(txt_path + out_len, ".txt");
     }
-    Spoiler_WriteText(&spoiler, txt_path);
-    free(txt_path);
   }
+  if (!Spoiler_Write(&spoiler, out_spoiler, txt_path)) {
+    fprintf(stderr, "--generate-seed: failed writing spoiler to %s\n", out_spoiler);
+    if (txt_path != NULL) free(txt_path);
+    free(entries);
+    exit(1);
+  }
+  if (txt_path != NULL) free(txt_path);
 
   // Optionally write the share string to its own file.
   if (out_share_string != NULL) {
@@ -571,6 +578,39 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
 
   free(entries);
   exit(0);
+}
+
+// Phase B Slice 6 — --reveal-spoiler=<path> headless reveal path.
+// Reads the suppressed spoiler at <path>, verifies its integrity,
+// regenerates the placement deterministically from the embedded settings +
+// share-string-derived seed, stamps it, and overwrites <path> with the
+// full JSON + writes a .txt sibling. Exits 0 on success, non-zero on any
+// failure with a description on stderr.
+static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *config_file) {
+  const char *reveal_path = NULL;
+  for (int i = 0; i < argc; ++i) {
+    if (strncmp(argv[i], "--reveal-spoiler=", 17) == 0) {
+      reveal_path = argv[i] + 17;
+      break;
+    }
+  }
+  if (reveal_path == NULL) return;
+
+  // Load config + assets so the spoiler writer has the same view of the
+  // world as a normal generate. Assets aren't strictly needed for reveal
+  // but Spoiler_WriteJson computes `placement_digest_hex` so the placement
+  // graph is consulted; LoadAssets() keeps everything consistent.
+  ParseConfigFile(config_file);
+  LoadAssets();
+
+  RandoRevealResult r = Rando_RevealSpoiler(reveal_path, NULL);
+  if (r == kRandoReveal_Ok) {
+    fprintf(stderr, "--reveal-spoiler: OK at %s\n", reveal_path);
+    exit(0);
+  }
+  fprintf(stderr, "--reveal-spoiler: FAILED (%d): %s\n  path: %s\n",
+          (int)r, Rando_RevealResultDescription(r), reveal_path);
+  exit(1);
 }
 
 // Comparator for qsort over uint64 samples — ascending order.
@@ -741,6 +781,7 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
 // exits with a clear "not yet implemented" message + exit code 64. The full
 // generator pipeline lands in Phase A1 (tasks 2.x, 3.x, 4.x, 5.x).
 static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *config_file);
+static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *config_file);
 
 // --rando-bench-logic CLI mode (tasks.md §3.11).
 //
@@ -808,6 +849,7 @@ int main(int argc, char** argv) {
   // Check for --generate-seed BEFORE any SDL_Init. If present, run headless
   // and exit; otherwise this returns and main() continues to the GUI path.
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
+  MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
 
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,
