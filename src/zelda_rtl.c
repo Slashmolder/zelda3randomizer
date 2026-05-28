@@ -887,6 +887,29 @@ static const char *const kReferenceSaves[] = {
   "Chapter 13 - After Ganon's Tower.sav",
 };
 
+// Dev diagnostic (bound to F12 in main.c): print the key link/module/world
+// state to stderr and dump raw g_ram + PPU VRAM/OAM/CGRAM to files next to the
+// executable. Used to root-cause spawn softlocks (the state line) and GFX
+// corruption (vram/oam). No gameplay effect; safe to leave in.
+void ZeldaDumpDebugState(void) {
+  fprintf(stderr,
+    "[DUMP] module=%02X sub=%02X handler_state=%02X anim_steps=%02X "
+    "pose_for_item=%02X incap_timer=%02X facing=%02X bunny=%d bunny_mirror=%d "
+    "dw_flag=%02X start_pt=%02X progress=%02X ow_screen=%04X "
+    "moon_pearl=%d mirror=%d sword=%d\n",
+    main_module_index, submodule_index, link_player_handler_state,
+    link_animation_steps, link_pose_for_item, link_incapacitated_timer,
+    link_direction_facing, link_is_bunny, link_is_bunny_mirror,
+    savegame_is_darkworld, which_starting_point, sram_progress_indicator,
+    overworld_screen_index, g_ram[0xF357], g_ram[0xF353], g_ram[0xF359]);
+  FILE *f;
+  if ((f = fopen("dump_gram.bin", "wb")))  { fwrite(g_zenv.ram, 1, 0x20000, f); fclose(f); }
+  if ((f = fopen("dump_vram.bin", "wb")))  { fwrite(g_zenv.ppu->vram, 2, 0x8000, f); fclose(f); }
+  if ((f = fopen("dump_oam.bin", "wb")))   { fwrite(g_zenv.ppu->oam, 2, 0x110, f); fclose(f); }
+  if ((f = fopen("dump_cgram.bin", "wb"))) { fwrite(g_zenv.ppu->cgram, 2, 0x100, f); fclose(f); }
+  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_vram.bin / dump_oam.bin / dump_cgram.bin\n");
+}
+
 void SaveLoadSlot(int cmd, int which) {
   char name[128];
   if (which & 256) {
