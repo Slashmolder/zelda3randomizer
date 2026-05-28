@@ -140,15 +140,18 @@ locations:
   # Dark World — North East (NorthEast.php:14-238)
   # ===========================================================================
 
-  # `Catfish` (NorthEast.php:95-101): MoonPearl AND canLiftRocks (other
-  # branches drop in Phase A). Phase B Slice 4 §7: under
-  # `tricks=boots-clip`, the canLiftRocks disjunct gains a boots-clip
-  # alternative (`canBootsClip && PegasusBoots` in upstream); default
-  # `tricks=0` collapses `CanBootsClip()` to FALSE and the gate keeps
-  # its Phase A `CanLiftRocks()` shape.
+  # `Catfish` (NorthEast.php:95-101):
+  #   (canBunnyRevive OR MoonPearl OR (canOWYBA AND hasABottle))
+  #   AND (canOneFrameClipOW OR (canBootsClip AND Boots) OR canLiftRocks)
+  # Slice 4 §7 surfaces all three pearl-gate alternatives via
+  # CanBunnyRevival + CanPearlBypass, and surfaces the canOneFrameClipOW
+  # movement disjunct via OP_GLITCH_LEVEL_AT_LEAST(major_glitches).
+  # CanBootsClip already encapsulates the bootsClip+Boots conjunction.
+  # Defaults (tricks=0, logic=NoGlitches) collapse every new disjunct to
+  # FALSE → predicate reduces to Phase A's `MoonPearl AND CanLiftRocks()`.
   - id: "Catfish"
     region: DarkWorld_NorthEast
-    can_reach: "HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/DarkWorld/NorthEast.php:95-101"
 
   # `Pyramid` (php:33) — no setRequirements; default TRUE (reachability
