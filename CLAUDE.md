@@ -99,6 +99,8 @@ The reimplementation roughly follows the original ROM's bank structure. Major en
 
 The single most impactful lesson from prior spec/doc work on this project: when asserting facts about external code, this codebase, or any referenced upstream, read the source before the assertion lands in an artifact. Memory-based assertions have been the largest single source of avoidable error in plan- and spec-level work on this repo — see `openspec/changes/add-randomizer-support/lessons.md` for the catalog of failure modes and the discipline that prevents them.
 
+**Verify a root cause against baseline behavior.** Before accepting a diagnosis — your own, a sub-agent's, or a remembered one — check whether it implies the *unmodified* game is also broken. If the explanation would mean vanilla behavior fails too, but vanilla demonstrably works, the diagnosis is wrong. (A Tower of Hera "no prize + softlock" was confidently misattributed to the boss heart never setting its prize-ready bit; that would have broken vanilla ToH, which works, so it couldn't be right — the real cause was a rando-only prize-gate bug.)
+
 ### Upstream references
 
 This repo references the ALTTPR PHP implementation at `../alttp_vt_randomizer/` (when checked out as a sibling directory). Facts about that upstream:
@@ -132,3 +134,14 @@ Each audit pass in this project's history has found 5-10 NEW bugs the previous r
 **Saturation model** (validated across a 5-round recursive audit-fix-of-audit-fix sequence): rounds 1-3 each find ≥1 HIGH; rounds 4-5 found 0 HIGH but 3 MED apiece. After two consecutive HIGH-free rounds the marginal value of another audit drops sharply, but MED-severity findings keep coming when a single drift class (e.g., a PHP idiom translation pattern that cuts across many YAMLs) hasn't been swept end-to-end. The right response to repeated MED finds in the same class is usually a class-driven `grep` across ALL sites at once, not another iterative audit round.
 
 The prompt should brief the agent on what changed (`git log --oneline <baseline>..HEAD`), point to the spec scenarios, and ask explicitly for *new* findings — not re-litigation of previously-closed bugs. Cap the response length so the agent prioritizes signal over coverage.
+
+### Rando's dominant bug class: vanilla state reused as a progress proxy
+
+Vanilla ALTTP repeatedly uses one item/state as a stand-in for "the player reached milestone Y," because in vanilla `has(X)` and `past(Y)` are equivalent. Rando breaks that equivalence by shuffling the proxy. This is the single most common bug class in the randomizer work, and it is invisible to `--rando-selftest`, the placement corpus, and `check_audit_guard` — those check grant sites and placement, but these bugs live at *gameplay/consume sites*. **End-to-end playtest is the only reliable net.** When reviewing a rando change, audit four forms:
+
+- **Vanilla receive *codes* with side effects** — `progressive_to_lttp` (`src/rando/rando.c`) reuses LttP receive codes whose receipt carries cutscenes/text/immobilization (Master Sword code 0x01 → pedestal cutscene), are dead garbage-text entries, or write the wrong RAM byte (silver-arrows code 0x29 writes the *mushroom* byte).
+- **Shared bytes** holding what rando treats as independent items — `link_item_mushroom` (0xF344) is one byte for Mushroom(1)/Powder(2); Powder-first locks out the Witch/Potion-Shop check.
+- **Per-dungeon / per-event *bit gates*** the shuffle reassigns — prize gates test `kDungeonCrystalPendantBit[dungeon]` (the dungeon's *vanilla* prize bit), wrong under `prize_shuffle`; gate on the rando *location-checked* state instead.
+- **Consume-site *guards*** (`link_item_*`, `sram_progress_indicator`) used as pre/post-milestone sentinels — fix with `(vanilla_gate) || (enhanced_features1 & kFeatures1_RandomizerActive)`.
+
+Corollary: a freeze inside a prize/cutscene/receipt sequence is often a *downstream* symptom — the sequence is waiting on an object a grant/gate bug prevented from spawning. Chase the un-spawned awaited object before hunting the immobilizer.
