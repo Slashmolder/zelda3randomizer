@@ -1362,5 +1362,6 @@ void Rando_RunAllSelfChecks(void) {
   RandoSave_SelfCheck();
   RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
+  Hints_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }

@@ -160,4 +160,11 @@ const char *Rando_GetHintNpcStringId(RandoHintNpc npc);
 // Clear the active hint set (called from `Rando_DeactivateSlot`).
 void Rando_ClearHints(void);
 
+// Self-check (called from Rando_RunAllSelfChecks). Asserts that
+// Rando_GenerateHints produces byte-identical output across consecutive
+// invocations with the same inputs (determinism contract per the
+// header of rando_hints.c) and exercises the kHintsMode_Off / NULL-args
+// defensive paths.
+void Hints_SelfCheck(void);
+
 #endif  // ZELDA3_RANDO_HINTS_H_

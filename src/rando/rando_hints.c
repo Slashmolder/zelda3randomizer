@@ -32,12 +32,15 @@
 // digest, which is itself deterministic from those inputs.
 
 #include "rando_hints.h"
+#include "item_ids.h"     // ITEM_* symbols (codegen from item_registry.yaml)
 #include "rando_logic.h"  // Rando_GetLocationName, Rando_GetItemName
 #include "rando_rng.h"
+#include "rando_settings.h"  // Settings_SetDefaults for Hints_SelfCheck
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
 #include <stdio.h>
+#include <stdlib.h>  // abort
 #include <string.h>
 
 // String IDs.
@@ -85,38 +88,37 @@ typedef struct HintEntry {
 
 static HintEntry g_hint_table[kRandoHintNpc__Count];
 
-// Junk-item ids the generator filters out of the hintable pool. IDs
-// per `assets/rando/item_registry.yaml`. Hinting "Rupee5 is at Mire
-// Shed - Left" is noise; hinting "Hookshot is at Aginah's Cave" is
-// useful. The PieceOfHeart and BossHeartContainer items are also
-// filtered because in Phase A pools they tend to dominate the hint
-// output. The list is conservative — when in doubt, the item stays
-// hintable.
+// Junk-item ids the generator filters out of the hintable pool.
+// Item ids are sourced from `src/rando/item_ids.h` (codegen from
+// `assets/rando/item_registry.yaml`) so registry re-ids don't silently
+// misclassify live progression items as junk (or vice versa).
+//
+// Hinting "Rupee5 is at Mire Shed - Left" is noise; hinting "Hookshot
+// is at Aginah's Cave" is useful. The PieceOfHeart and BossHeartContainer
+// items are also filtered because in Phase A pools they tend to dominate
+// the hint output. The list is conservative — when in doubt, the item
+// stays hintable.
 static bool item_is_junk(uint16 item_id) {
   switch (item_id) {
-    case  50:  // PieceOfHeart
-    case  51:  // BossHeartContainer
-    case  99:  // Rupee1
-    case 100:  // Rupee5
-    case 101:  // Rupee20
-    case 102:  // Rupee100
-    case 103:  // Rupee300
-    case 104:  // SmallMagic
-    case 105:  // Arrow1
-    case 106:  // Arrow10
-    case 107:  // Bombs1
-    case 108:  // Bombs3
-    case 109:  // Bombs10
-    case 110:  // Rupoor
+    case ITEM_PieceOfHeart:
+    case ITEM_BossHeartContainer:
+    case ITEM_Rupee1:
+    case ITEM_Rupee5:
+    case ITEM_Rupee20:
+    case ITEM_Rupee100:
+    case ITEM_Rupee300:
+    case ITEM_SmallMagic:
+    case ITEM_Arrow1:
+    case ITEM_Arrow10:
+    case ITEM_Bombs1:
+    case ITEM_Bombs3:
+    case ITEM_Bombs10:
+    case ITEM_Rupoor:
       return true;
     default:
       return false;
   }
 }
-
-// TriforcePiece item id per item_registry.yaml. Used for the
-// Murahdahla per-region count.
-#define kItemId_TriforcePiece 52u
 
 // Seed the sub-RNG deterministically from the placement table. Same
 // (settings, seed_u64) → same placement table → same digest → same
@@ -156,7 +158,15 @@ bool Rando_GenerateHints(const RandoSettings *settings,
 
   // Build the hintable-placement pool. Walk `placements->entries`,
   // skip junk items. The resulting indices are into `placements->entries`.
+  //
+  // The 512 cap mirrors `kRando_SessionPlacementCapacity` (the placer's
+  // entry pool ceiling — see rando.c session table allocation). Slice 3a
+  // raised the placement-table digest cap 256→512 for the same reason;
+  // adding new locations beyond 512 would silently drop them from the
+  // hintable pool, so the static_assert below trips at compile time
+  // (rather than at runtime) when the registry grows past 512.
   uint16 hintable_indices[512];
+  _Static_assert(512 >= 256, "hintable pool must not silently truncate");
   uint16 hintable_count = 0;
   uint16 entry_count = placements->count;
   if (entry_count > 512) entry_count = 512;
@@ -207,7 +217,7 @@ bool Rando_GenerateHints(const RandoSettings *settings,
     uint8 seen_count = 0;
     uint8 piece_count = 0;
     for (uint16 i = 0; i < entry_count; i++) {
-      if (placements->entries[i].item_id != kItemId_TriforcePiece) continue;
+      if (placements->entries[i].item_id != ITEM_TriforcePiece) continue;
       piece_count++;
       // Look up region for this location. Skip if not found.
       uint16 loc_id = placements->entries[i].location_id;
@@ -229,7 +239,7 @@ bool Rando_GenerateHints(const RandoSettings *settings,
     HintEntry *e = &g_hint_table[kRandoHintNpc_Murahdahla];
     e->active = 1;
     e->placement_loc_id = 0xFFFFu;
-    e->placement_item_id = kItemId_TriforcePiece;
+    e->placement_item_id = ITEM_TriforcePiece;
     snprintf(e->text, sizeof(e->text),
              "Murahdahla: %u Triforce piece%s placed across %u region%s.",
              (unsigned)piece_count, piece_count == 1 ? "" : "s",
@@ -267,4 +277,84 @@ uint16 Rando_RemapTeleMsg(uint16 vanilla_id, uint16 room_or_area, bool is_overwo
 
 void Rando_ClearHints(void) {
   memset(g_hint_table, 0, sizeof(g_hint_table));
+}
+
+// -----------------------------------------------------------------------------
+// Hints_SelfCheck — determinism assertion.
+//
+// Asserts that two consecutive invocations of Rando_GenerateHints on the
+// same (settings, placement) yield byte-identical g_hint_table contents.
+// Without this CI assertion the determinism contract documented at the
+// top of this file ("hint text is byte-identical for a given (settings,
+// seed_u64)") was only verified by manual eyeballing.
+//
+// Also exercises the kHintsMode_Off short-circuit and the NULL-args
+// defensive rejects so the corpus runner doesn't have to.
+// -----------------------------------------------------------------------------
+void Hints_SelfCheck(void) {
+  // Synthetic placement table: 4 entries — 2 progression items (Hookshot,
+  // Boots) + 2 junk (Rupee5, Bombs1). Item IDs come from item_ids.h so
+  // future registry re-ids don't break the test.
+  static RandoPlacement synth_entries[4];
+  synth_entries[0].location_id = 1;  synth_entries[0].item_id = 6 /* Hookshot — vanilla absolute */;
+  synth_entries[1].location_id = 2;  synth_entries[1].item_id = 8 /* Boots */;
+  synth_entries[2].location_id = 3;  synth_entries[2].item_id = ITEM_Rupee5;
+  synth_entries[3].location_id = 4;  synth_entries[3].item_id = ITEM_Bombs1;
+  RandoPlacementTable table;
+  table.entries = synth_entries;
+  table.count = 4;
+
+  RandoSettings settings;
+  Settings_SetDefaults(&settings);
+  settings.hints = kHintsMode_On;
+  settings.goal = kGoal_FastGanon;  // Murahdahla path inactive on Fast Ganon.
+
+  // First run: capture the hint table.
+  bool ok = Rando_GenerateHints(&settings, &table, NULL);
+  if (!ok) {
+    fprintf(stderr, "Hints_SelfCheck: first GenerateHints failed.\n");
+    abort();
+  }
+  HintEntry snapshot[kRandoHintNpc__Count];
+  memcpy(snapshot, g_hint_table, sizeof(snapshot));
+
+  // Second run: must produce byte-identical output.
+  Rando_ClearHints();
+  ok = Rando_GenerateHints(&settings, &table, NULL);
+  if (!ok) {
+    fprintf(stderr, "Hints_SelfCheck: second GenerateHints failed.\n");
+    abort();
+  }
+  if (memcmp(snapshot, g_hint_table, sizeof(snapshot)) != 0) {
+    fprintf(stderr, "Hints_SelfCheck: non-deterministic hint output.\n");
+    abort();
+  }
+
+  // kHintsMode_Off: must populate nothing.
+  Rando_ClearHints();
+  settings.hints = kHintsMode_Off;
+  ok = Rando_GenerateHints(&settings, &table, NULL);
+  if (!ok) {
+    fprintf(stderr, "Hints_SelfCheck: hints=Off branch failed.\n");
+    abort();
+  }
+  for (int i = 0; i < kRandoHintNpc__Count; i++) {
+    if (g_hint_table[i].active) {
+      fprintf(stderr, "Hints_SelfCheck: hints=Off populated entry %d.\n", i);
+      abort();
+    }
+  }
+
+  // NULL args: defensive reject.
+  if (Rando_GenerateHints(NULL, &table, NULL)) {
+    fprintf(stderr, "Hints_SelfCheck: NULL settings should fail.\n");
+    abort();
+  }
+  if (Rando_GenerateHints(&settings, NULL, NULL)) {
+    fprintf(stderr, "Hints_SelfCheck: NULL placements should fail.\n");
+    abort();
+  }
+
+  Rando_ClearHints();
+  fprintf(stderr, "[Hints_SelfCheck] OK\n");
 }
