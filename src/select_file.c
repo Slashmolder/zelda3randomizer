@@ -2205,6 +2205,7 @@ enum {
   kRow_PrizeShuffle,
   kRow_MedallionShuffle,
   kRow_RaceMode,
+  kRow_Hints,              // Slice 5 — telepathic-tile hints (on/off)
   // Phase-B disabled rows (label-only; cursor skips over input but A
   // refuses with a tooltip-style refusal sound).
   kRow_EntranceShuffle_Disabled,
@@ -2458,6 +2459,7 @@ static const char *RowLabel(int row) {
     case kRow_PrizeShuffle:              return "PRIZE";
     case kRow_MedallionShuffle:          return "MEDAL";
     case kRow_RaceMode:                  return "RACE";
+    case kRow_Hints:                     return "HINTS";
     case kRow_EntranceShuffle_Disabled:  return "ENT B";
     case kRow_EnemyShuffle_Disabled:     return "ENEMY B";
     case kRow_BossShuffle_Disabled:      return "BOSS B";
@@ -2538,6 +2540,8 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       return s->medallion_shuffle ? "ON" : "OFF";
     case kRow_RaceMode:
       return s->race_mode ? "ON" : "OFF";
+    case kRow_Hints:
+      return s->hints ? "ON" : "OFF";
     case kRow_EntranceShuffle_Disabled:
     case kRow_EnemyShuffle_Disabled:
     case kRow_BossShuffle_Disabled:
@@ -2714,6 +2718,7 @@ static void CycleRow(int row, int delta) {
     case kRow_PrizeShuffle: s->prize_shuffle ^= 1; break;
     case kRow_MedallionShuffle: s->medallion_shuffle ^= 1; break;
     case kRow_RaceMode: s->race_mode ^= 1; break;
+    case kRow_Hints: s->hints ^= 1; break;
     default:
       mutated = false;
       break;
@@ -3247,6 +3252,7 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_PrizeShuffle:
       case kRow_MedallionShuffle:
       case kRow_RaceMode:
+      case kRow_Hints:
         CycleRow(row, +1);  // bool toggle
         break;
       case kRow_EntranceShuffle_Disabled:
