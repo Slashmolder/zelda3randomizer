@@ -567,9 +567,10 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // HUD-only cue with a visible icon ancilla. The granted item id is looked up
 // in kDirectGrantIcons[item_id] (codegen'd from
 // assets/rando/direct_grant_icons.yaml). When the table entry has a
-// non-zero tile, AncillaAdd_RandoIconReceipt spawns an icon-pop above Link's
-// head. Empty / unverified entries (tile == 0) fall back to the Phase A
-// audio + HUD behavior — never crash, never spawn a blank ancilla.
+// non-zero gfx (the item's receive-animation sprite bundle),
+// AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon above Link's
+// head. Entries with gfx == 0 (the audio-only sentinel) fall back to the
+// Phase A audio + HUD behavior — never crash, never spawn a blank ancilla.
 //
 // Deliberately NOT emitted from within `Rando_DispatchVanillaGrant` — the
 // caller knows whether its own code path already provides visual context
@@ -592,14 +593,18 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
-  // Slice 9 — look up the per-item icon. Unverified entries (tile == 0) fall
-  // back to audio + HUD only, preserving Phase A behavior.
+  // Slice 9 — look up the per-item icon. Entries with gfx == 0 (the audio-only
+  // fallback sentinel: HalfMagic / QuarterMagic / TriforcePiece — no vanilla
+  // receive-item GFX) fall back to audio + HUD only, preserving Phase A
+  // behavior. gfx != 0 spawns a per-item icon ancilla that DMAs the item's
+  // receive-animation sprite bundle and draws it above Link, mirroring the
+  // vanilla pickup animation.
   const size_t icon_table_len =
       sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
   if ((size_t)item_id < icon_table_len) {
     const DirectGrantIconEntry *e = &kDirectGrantIcons[item_id];
-    if (e->tile != 0) {
-      AncillaAdd_RandoIconReceipt(e->tile, e->palette);
+    if (e->gfx != 0) {
+      AncillaAdd_RandoIconReceipt(e->gfx, e->big, e->oam_flags);
     }
   }
 }

@@ -173,11 +173,11 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 //
 // Plays the standard item-receipt sound effect and refreshes the HUD so
 // any visible inventory change (prize icons, dungeon-item bits, Triforce
-// counter) updates immediately. When `item_id` maps to a tile in
-// `kDirectGrantIcons[]` (codegen'd from
+// counter) updates immediately. When `item_id` maps to a non-zero gfx bundle
+// in `kDirectGrantIcons[]` (codegen'd from
 // `assets/rando/direct_grant_icons.yaml`), additionally spawns the
 // `kAncillaType_RandoIconReceipt` ancilla so the player sees what they
-// got. Unverified (tile==0) entries fall back to the audio+HUD path.
+// got. Audio-only (gfx==0) entries fall back to the audio+HUD path.
 // ---------------------------------------------------------------------------
 void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
