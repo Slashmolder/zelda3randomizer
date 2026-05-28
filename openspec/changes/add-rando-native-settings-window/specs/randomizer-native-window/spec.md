@@ -2,17 +2,22 @@
 
 ### Requirement: Second OS window for randomizer settings on PC
 
-The host SHALL create a second OS-native window dedicated to randomizer settings on PC builds (Windows, Linux, macOS), distinct from the game window. The window SHALL be created at application startup, before the game's main loop begins, and SHALL persist for the lifetime of the application unless explicitly hidden by the user.
+The host SHALL create a second OS-native window dedicated to randomizer settings on PC builds (Windows, Linux, macOS), distinct from the game window. The window SHALL be created **hidden** at application startup and SHALL remain hidden until the player chooses "New Randomizer" on the file-select kind-toggle (or re-opens it via a hotkey / game menu), at which point it is shown and raised. Vanilla players who never choose New Randomizer SHALL never see the second window.
 
-#### Scenario: Both windows visible at startup
+#### Scenario: Settings window is hidden at startup
 
-- **WHEN** the user launches the application on a PC build
-- **THEN** two OS windows are present and visible: the game window (per existing behavior) and the settings window (new), each independently movable, resizable, and minimizable
+- **WHEN** the user launches the application on a PC build and has not chosen New Randomizer
+- **THEN** only the game window is visible; the settings window has been created but is hidden (no second window appears on the desktop)
+
+#### Scenario: New Randomizer shows and raises the settings window
+
+- **WHEN** the player selects an empty slot on the file-select and chooses New Randomizer (or invokes the re-open hotkey/menu)
+- **THEN** the settings window is shown and raised via `SDL_ShowWindow` + `SDL_RaiseWindow`, independently movable, resizable, and minimizable
 
 #### Scenario: Closing the settings window does not close the game
 
 - **WHEN** the user closes the settings window via the OS window-close control
-- **THEN** the settings window hides (does not destroy the underlying SDL window) and the game continues running unaffected
+- **THEN** the settings window hides (does not destroy the underlying SDL window) and the game continues running unaffected; it can be shown again via New Randomizer or the re-open hotkey/menu
 
 #### Scenario: Closing the game window closes the application
 
@@ -67,16 +72,17 @@ The main SDL event loop SHALL pump events for both windows and route them by `ev
 - **WHEN** the user clicks the OS close button on either window
 - **THEN** the application identifies which window via `event.window.windowID` and applies the per-window close behavior (hide settings window vs. shut down on game window)
 
-### Requirement: ImGui-rendered settings panels expose every RandoSettings field
+### Requirement: ImGui-rendered settings panels at parity with the in-game screen
 
-The settings window SHALL render every field of `RandoSettings` (per `src/rando/rando_settings.h`) as an interactive ImGui widget. Enum-typed fields SHALL render as dropdowns (combos) whose option labels match the canonical CLI key grammar exactly (e.g., `fast_ganon`, `triforce-hunt`, `NoGlitches` — the same strings accepted by `Settings_ParseCsv`). Integer-typed fields SHALL render as integer input widgets with the documented valid ranges enforced. Boolean fields SHALL render as checkboxes.
+The settings window SHALL render the settings surface **at parity with the in-game settings screen's axis set** (NOT every `RandoSettings` field). The live-editable axes are exactly the ones the in-game `kRow_*` rows expose. Enum-typed fields SHALL render as dropdowns (combos) whose option labels match the canonical CLI key grammar exactly (e.g., `fast_ganon`, `triforce-hunt`, `NoGlitches` — the same strings accepted by `Settings_ParseCsv`). Integer-typed fields SHALL render as integer input widgets with the documented valid ranges enforced. Boolean fields SHALL render as checkboxes. Axes the in-game screen exposes only as disabled "coming soon" placeholders (matching its `kRow_*_Disabled` rows) SHALL render disabled here too; pinned axes (logic, tricks) MAY render read-only.
 
-#### Scenario: Every Phase A axis has a widget; Phase A-pinned axes are visibly disabled
+#### Scenario: Live axes match the in-game screen; disabled/pinned axes are visibly non-editable
 
 - **WHEN** the user opens the settings window
-- **THEN** widgets are present for every `RandoSettings` field: world_state, goal, crystals_ganon, crystals_tower, tricks, item_pool_difficulty, logic, mode_weapons, accessibility, pyramid_bow_upgrade, region_boss_hearts_in_pool, dungeon_small_keys_mode, dungeon_big_keys_mode, dungeon_maps_mode, dungeon_compasses_mode, prize_shuffle, medallion_shuffle, race_mode, pieces_required, pieces_placed
-- **AND** the following fields render disabled (greyed out) with a tooltip explaining the Phase A pin, because the parent change pins them: `tricks` (pinned 0; `rando_settings.h:86`), `logic` (pinned `NoGlitches`; `:88`), `region_boss_hearts_in_pool` (pinned 1; `:92`), `pyramid_bow_upgrade` (only `Silvers` available in Phase A; `:67-70`). For `mode_weapons` and `accessibility`, only the Phase A subset of enum values appears in the dropdown — Phase B reservations (`Vanilla`, `Swordless`, `None`) are not selectable
-- **AND** the disabled state is not just visual: attempting to change a disabled field via clipboard paste of a share string with an out-of-range value SHALL produce the inline error described in `randomizer-core` and SHALL NOT mutate the field
+- **THEN** live-editable widgets are present for exactly the in-game screen's axis set: world_state, goal, crystals_ganon, crystals_tower, item_pool_difficulty, dungeon_small_keys_mode, dungeon_big_keys_mode, dungeon_maps_mode, dungeon_compasses_mode, pieces_required, pieces_placed, mode_weapons, accessibility, prize_shuffle, medallion_shuffle, race_mode, and hints
+- **AND** boss_shuffle, drop_shuffle, and entrance/enemy/glitches shuffle render as disabled "coming soon" placeholders (matching the in-game `kRow_*_Disabled` rows) with a tooltip — no live toggle ships, because boss/drop shuffle is runtime-inert for playable slots (`Rando_ActivateSidecarSlot` never regenerates it), so a live widget would lie
+- **AND** the Phase-A-pinned axes render disabled/read-only with an explanatory tooltip: `logic` (pinned `NoGlitches`), `tricks` (pinned none), `region_boss_hearts_in_pool` (pinned 1), `pyramid_bow_upgrade` (only `Silvers` in Phase A); for `mode_weapons` and `accessibility`, only the Phase A subset of enum values appears in the dropdown — Phase B reservations (`Vanilla`, `Swordless`, `None`) are not selectable
+- **AND** the disabled state is not just visual: attempting to set a disabled/out-of-range field via clipboard paste of a share string SHALL produce the inline error described in `randomizer-core` and SHALL NOT mutate the field
 
 #### Scenario: Triforce-Hunt piece fields are visible only for relevant goals
 
@@ -169,6 +175,25 @@ The settings window SHALL detect when `g_assets_hash != kVanillaAssetsHash` at t
 - **WHEN** the user chooses Cancel
 - **THEN** the modal closes, no generation runs, and the settings widgets remain at their current values
 
+### Requirement: Recommended-features opt-in renders in the native window on PC
+
+The recommended-features opt-in (which writes `g_config.features0` at generate time) is reachable in-game only through the settings screen, which is compile-guarded out on PC. On PC builds the settings window SHALL therefore render the recommended-features opt-in itself. The UI SHALL edit only a bridge snapshot (`pending_recommended_features0`), taken from `g_config.features0` at window-open; the game thread SHALL apply the snapshot to `g_config.features0` only inside the generate consumer. The opt-in SHALL be determinism-neutral: `features0` is not part of `settings_hash`. On Switch the in-game recommended-features panel is retained and the native window does not exist.
+
+#### Scenario: Recommended-features opt-in is present on PC
+
+- **WHEN** the user opens the settings window on a PC build during new-slot creation
+- **THEN** a recommended-features opt-in (one toggle per recommended `features0` bit, mirroring the in-game `kRecRowBits[]`/`kRecRowLabels[]` set) is rendered, bound to `bridge.pending_recommended_features0`
+
+#### Scenario: UI never writes g_config.features0 directly
+
+- **WHEN** the user toggles a recommended-features option
+- **THEN** only `bridge.pending_recommended_features0` changes; `g_config.features0` is unchanged until the game thread applies it inside the generate consumer at Generate time
+
+#### Scenario: Recommended-features choice does not affect the hash or share string
+
+- **WHEN** the user changes a recommended-features option
+- **THEN** the displayed `settings_hash` and share string are unchanged, because `features0` is not part of the canonical settings bytes
+
 ### Requirement: Settings-state bridge owns pending settings
 
 A bridge module (`src/rando/rando_window_bridge.{c,h}`) SHALL own the canonical pending-settings struct and the generation request/status flags. The UI side SHALL only mutate the `pending` field and the generate-request flag. The game side SHALL only mutate the generate-status, in-progress, and error fields. No shared field SHALL be mutated by both sides.
@@ -207,24 +232,29 @@ When the UI requests generation, the settings window SHALL display an input-bloc
 - **WHEN** the game side reports `generate_status = -1` (error)
 - **THEN** the modal text updates to show `bridge.generate_error` and an OK button closes the modal; no slot is created
 
-### Requirement: Persistence of last settings to zelda3.ini
+### Requirement: Persistence of last settings to a sidecar INI
 
-The settings window SHALL persist the user's most recent settings to a new `[rando_window]` section in `zelda3.ini`. Persistence SHALL use the canonical-serialized 24 bytes (the same bytes that feed `Settings_ComputeHash`), base64-encoded as `last_settings_canonical_b64`. On startup, the window SHALL preselect to those settings if present and valid; on parse failure or absence, the window SHALL preselect to `Settings_SetDefaults`.
+The settings window SHALL persist the user's most recent settings to a `[rando_window]` section in a **sidecar `saves/rando_window.ini`** (it SHALL NOT rewrite the user's hand-edited `zelda3.ini`). Persistence SHALL use the canonical-serialized `kSettingsCanonicalLen` bytes (28; the same bytes that feed `Settings_ComputeHash`), **hex**-encoded as `last_settings_canonical_hex` (56 hex chars). The sidecar SHALL be loaded at startup via a whitelisting loader that parses only `[rando_window]` and `[RandoAssetDecisions]`. On startup, the window SHALL preselect to those settings if present and valid; on parse failure or absence, the window SHALL preselect to `Settings_SetDefaults`.
 
 #### Scenario: Settings round-trip across sessions
 
 - **WHEN** the user configures settings, generates a seed, exits, and re-launches
-- **THEN** the settings window opens preselected to the same widget values that were active at exit
+- **THEN** the settings window opens preselected to the same widget values that were active at exit, restored from `saves/rando_window.ini`
 
 #### Scenario: Corrupt persistence falls back to defaults
 
-- **WHEN** `last_settings_canonical_b64` is malformed, decodes to the wrong length, or fails the canonical-serialize round-trip
+- **WHEN** `last_settings_canonical_hex` is malformed, decodes to a length other than `kSettingsCanonicalLen` (28) bytes, or fails the canonical-serialize round-trip
 - **THEN** the window preselects to `Settings_SetDefaults` and logs a one-line warning; the application does not crash or refuse to start
+
+#### Scenario: User's zelda3.ini is never rewritten
+
+- **WHEN** the application persists settings on shutdown
+- **THEN** only the sidecar `saves/rando_window.ini` is written; the user's hand-edited `zelda3.ini` (keymaps, comments, foreign sections) is left untouched
 
 #### Scenario: Asset-hash decisions persist per hash
 
 - **WHEN** the user chose Always allow for a given asset hash in a previous session
-- **THEN** that decision is loaded from `[rando_window]` at startup and applied when Generate is clicked under the same asset hash
+- **THEN** that decision is loaded from the `[RandoAssetDecisions]` section (in the sidecar and/or `zelda3.ini`, union) at startup and applied when Generate is clicked under the same asset hash; it is NOT stored under `[rando_window]`
 
 #### Scenario: Window geometry persists
 
@@ -233,12 +263,12 @@ The settings window SHALL persist the user's most recent settings to a new `[ran
 
 ### Requirement: Read-only spoiler and placement viewer tab
 
-The settings window SHALL include a tab that displays the spoiler/placement of the most recently generated seed in a read-only form. The viewer SHALL show locations grouped by region with their assigned items. The viewer SHALL be hidden entirely when the most recently generated placement was created with `race_mode = true` (tracked by `bridge.last_generated_race_mode`, NOT by `bridge.pending.race_mode` which reflects what the user is editing right now).
+The settings window SHALL include a tab that displays the spoiler/placement of the most recently generated seed in a read-only form, read from the bridge's own owned copy of the just-generated placement (`bridge.last_generated_placement` / `bridge.last_generated_spheres`), NOT from `Placement_GetActive()`. The viewer SHALL show locations grouped by region with their assigned items. The viewer SHALL be hidden entirely when the most recently generated placement was created with `race_mode = true` (tracked by `bridge.last_generated_race_mode`, NOT by `bridge.pending.race_mode` which reflects what the user is editing right now).
 
-#### Scenario: Viewer reads from Placement_GetActive
+#### Scenario: Viewer reads from the bridge's owned placement copy
 
 - **WHEN** the user opens the spoiler viewer tab after a successful generation
-- **THEN** the viewer shows every entry returned by `Placement_GetActive()` (`src/rando/rando_placement.h:60`), grouped by region; no other placement source is consulted
+- **THEN** the viewer shows every entry from `bridge.last_generated_placement` (the caller-owned copy returned by `Rando_GenerateSlot`), grouped by region; it does NOT read `Placement_GetActive()`, which is populated only at slot load and would be stale right after generating
 
 #### Scenario: Viewer hidden when last generation was race-mode
 
@@ -257,12 +287,12 @@ The settings window SHALL include a tab that displays the spoiler/placement of t
 
 ### Requirement: PC kind-toggle on file-select opens the native window
 
-On PC builds, when the player selects an empty slot on the file-select screen and chooses "New Randomizer", the game SHALL call `RandoWindow_OpenForNewSlot(slot_index)` at each of the call sites that today invoke `SelectFile_Settings_Activate` (`src/select_file.c:1664, :1891`). The native window SHALL surface focus, populate the target slot index in the bridge, and accept settings entry as usual. On generation success, the new randomizer slot SHALL be created at the requested slot index.
+On PC builds, the file-select kind-picker (Vanilla / New-Randomizer / From-share chooser) stays compiled, but its two rando branches redirect to the native window under `Z3R_NATIVE_SETTINGS_WINDOW`. When the player selects an empty slot and chooses "New Randomizer" (the `SelectFile_Settings_Activate` call site at `src/select_file.c:1703`) or "From share string" (which on Switch activates the in-game alphabet picker), the game SHALL call `RandoWindow_OpenForNewSlot(slot_index)` instead. The native window SHALL surface focus (show + raise the startup-hidden window), populate the target slot index in the bridge, and accept settings entry (and share-string paste) as usual. On generation success, the new randomizer slot SHALL be created at the requested slot index. The post-decode `SelectFile_Settings_Activate` call at `src/select_file.c:1990` lives inside the alphabet-picker update flow (part of the guarded-out text-input layer) and therefore compiles out on PC with no redirect; the decoded-seed handoff is moot on PC because the user pastes the share string directly into the native window.
 
 #### Scenario: Kind-toggle opens the native window on PC
 
 - **WHEN** the user selects an empty slot on PC and chooses New Randomizer
-- **THEN** the native window receives OS focus via `SDL_RaiseWindow`, the bridge records the target slot index, and the in-game settings screen does not appear
+- **THEN** the native window is shown and raised via `SDL_ShowWindow` + `SDL_RaiseWindow`, the bridge records the target slot index, and the in-game settings screen does not appear
 
 #### Scenario: Generation lands in the requested slot
 
