@@ -99,7 +99,11 @@ BOTTLE_WRITE_RE = re.compile(r"\blink_bottle_info\s*\[[^\]]+\]\s*(?:=(?!=)|\+=|-
 # the offsets stay in lockstep with the C-side macro definitions.
 # Cluster-audit (post-e9f20ad) memory note `audit_guard_indirect_writes`.
 DEFINE_RE = re.compile(
-    r"^\s*#define\s+([a-zA-Z_]\w*)\s+\(\s*\*\s*\(\s*u?int\d+_?\s*\*\s*\)\s*\(\s*g_ram\s*\+\s*0x([0-9a-fA-F]+)\s*\)\s*\)"
+    # Accepts both project-style `uint8` / `int16` and stdint-style
+    # `uint8_t` / `int16_t` casts. If `variables.h` ever migrates to
+    # stdint typedefs, every tracked offset would silently drop out of
+    # the raw-write map without the `_t` alternation.
+    r"^\s*#define\s+([a-zA-Z_]\w*)\s+\(\s*\*\s*\(\s*u?int\d+(?:_t)?\s*\*\s*\)\s*\(\s*g_ram\s*\+\s*0x([0-9a-fA-F]+)\s*\)\s*\)"
 )
 
 
@@ -186,9 +190,39 @@ def is_exempted(file_lines: list[str], lineno_zero_based: int) -> bool:
 
 
 def is_in_dispatch_context(file_lines: list[str], lineno_zero_based: int) -> bool:
-    """Check if the surrounding ~12 lines mention a dispatch funnel call."""
-    start = max(0, lineno_zero_based - 12)
-    end = min(len(file_lines), lineno_zero_based + 4)
+    """Check if the surrounding lines mention a dispatch funnel call.
+
+    Walks backward up to 12 lines and forward up to 4 lines, but stops at
+    column-0 `}` (function boundary) so dispatch keywords from an adjacent
+    function don't get absorbed into this site's window. Without the
+    boundary stop, e.g. a write at the top of function B would falsely
+    "see" a `Link_ReceiveItem(...)` near the bottom of function A.
+    """
+    # Walk backward from the line above the write site to the start of the
+    # current function (or up to 12 lines, whichever is closer).
+    upper_floor = max(0, lineno_zero_based - 12)
+    start = lineno_zero_based - 1
+    while start >= upper_floor:
+        line = file_lines[start]
+        # Column-0 `}` closes the previous function's body; the line above
+        # belongs to a different function, so cap here.
+        if line.startswith("}"):
+            start += 1
+            break
+        start -= 1
+    start = max(start, upper_floor)
+
+    # Walk forward similarly. A column-0 `}` here is THIS function's close
+    # brace; we include it but stop before the next function's opening.
+    lower_ceiling = min(len(file_lines), lineno_zero_based + 4)
+    end = lineno_zero_based + 1
+    while end < lower_ceiling:
+        line = file_lines[end]
+        end += 1
+        if line.startswith("}"):
+            break
+    end = min(end, lower_ceiling)
+
     window = "\n".join(file_lines[start:end])
     return any(p.search(window) for p in DISPATCH_CONTEXT_PATTERNS)
 
