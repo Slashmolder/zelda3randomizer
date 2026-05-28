@@ -173,11 +173,11 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 //
 // Plays the standard item-receipt sound effect and refreshes the HUD so
 // any visible inventory change (prize icons, dungeon-item bits, Triforce
-// counter) updates immediately. When `item_id` maps to a tile in
-// `kDirectGrantIcons[]` (codegen'd from
+// counter) updates immediately. When `item_id` maps to a non-zero gfx bundle
+// in `kDirectGrantIcons[]` (codegen'd from
 // `assets/rando/direct_grant_icons.yaml`), additionally spawns the
 // `kAncillaType_RandoIconReceipt` ancilla so the player sees what they
-// got. Unverified (tile==0) entries fall back to the audio+HUD path.
+// got. Audio-only (gfx==0) entries fall back to the audio+HUD path.
 // ---------------------------------------------------------------------------
 void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
@@ -233,6 +233,37 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 // ---------------------------------------------------------------------------
 uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
                           uint8 vanilla_lttp_code);
+
+// ---------------------------------------------------------------------------
+// Rando_ShopDispatch — Retro-world-state shop-purchase grant hook (#53).
+//
+// Hooked at ShopItem_HandleReceipt (src/sprite_main.c), the universal
+// shop-item grant point. Maps a shop purchase to an ALTTPR shop-slot
+// location_id via the (room, entrance-door, slot-position) disambiguation
+// contract, then routes through Rando_DispatchVanillaGrant.
+//
+// Disambiguation mirrors ALTTPR's SpritePrep_ShopKeeper (z3randomizer
+// shopkeeper.asm): vanilla LttP reuses one physical shop room for several
+// overworld entrances (e.g. low-byte room 0x0F backs the DW Potion,
+// Lumberjack, Outcasts, and Lake-Hylia shops; room 0x12 backs both the DW
+// Death-Mountain and LW Lake-Hylia shops). Room alone is ambiguous, so the
+// entrance door (`which_entrance`, g_ram+0x10E — ALTTPR's
+// PreviousOverworldDoor) selects the specific shop, and `pos` (0..2) selects
+// the slot within it.
+//
+// `room` is BYTE(dungeon_room_index); `entrance` is `which_entrance`;
+// `pos` is the 0-based slot index the shopkeeper spawned the item at.
+// `vanilla_lttp_code` is the LttP receive code the shop would grant in vanilla.
+//
+// Returns the LttP code to grant. When (room, entrance, pos) isn't a known
+// shop slot — every non-shop ShopItem_HandleReceipt caller (gift thief,
+// bomb shop) and every non-Retro seed (shop slots absent from the placement
+// table) — the vanilla code is returned unchanged, so behavior is identical
+// to vanilla. May return kRandoLttpSkip (test with Rando_ShouldSkipReceive)
+// for direct-grant placements.
+// ---------------------------------------------------------------------------
+uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
+                         uint8 vanilla_lttp_code);
 
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized

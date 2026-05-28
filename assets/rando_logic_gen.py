@@ -1298,16 +1298,30 @@ def emit_direct_grant_icons(
     """Emit src/rando/direct_grant_icons.h — kDirectGrantIcons[ITEM__COUNT] table.
 
     Phase B Slice 9 — add-rando-confirmation-icons. The §7.6 direct-grant
-    helper looks up the granted item id in this table. tile=0 entries mean
-    "no verified icon yet" and the helper falls back to audio + HUD only
-    (Phase A behavior). tile!=0 entries spawn an icon-receipt ancilla.
+    helper looks up the granted item id in this table. gfx=0 entries mean
+    "audio-only" and the helper falls back to sound + HUD only (Phase A
+    behavior). gfx!=0 entries spawn an icon-receipt ancilla that DMAs the
+    item's animated-sprite bundle (exactly like the vanilla receive-item
+    pickup) and draws OAM chars 0x24/0x34.
+
+    Each entry pins three values, all derived from the vanilla receive-item
+    tables in src/misc.c / src/sprite_main.c, indexed by the LttP receive code
+    whose kMemoryLocationToGiveItemTo cell matches the direct-grant's
+    destination RAM cell:
+
+      gfx       - DecodeAnimatedSpriteTile_variable() index = kReceiveItemGfx
+                  [lttp]. gfx == 0 is the AUDIO-ONLY sentinel (no icon).
+      big       - the OAM size byte = kReceiveItem_Tab1[lttp] (0 -> 8x16
+                  two-tile, 2 -> single tile).
+      oam_flags - the OAM palette/priority byte = (kWishPond2_OamFlags[lttp]
+                  * 2) | 0x30, matching Ancilla_ReceiveItem_Draw.
 
     The table is dense (sized to ITEM__COUNT) and indexed by item id so
     callers can do `kDirectGrantIcons[item_id]` without a search.
 
-    Returns the count of items WITH a non-zero tile (for diagnostic logging).
+    Returns the count of items WITH a non-zero gfx (for diagnostic logging).
     """
-    entries: dict[int, tuple[int, int, str]] = {}  # item_id -> (tile, palette, name)
+    entries: dict[int, tuple[int, int, int, str]] = {}  # id -> (gfx, big, oam, name)
     if icons_yaml_path.exists():
         with open(icons_yaml_path, "r", encoding="utf-8") as f:
             doc = yaml.safe_load(f) or {}
@@ -1327,24 +1341,16 @@ def emit_direct_grant_icons(
                 raise RuntimeError(
                     "emit_direct_grant_icons: entry %r is not a mapping" % name
                 )
-            tile = entry.get("tile", 0)
-            palette = entry.get("palette", 0)
-            # tile must fit in a single OAM charnum (8-bit). High-page tiles
-            # would require OAM bit-9 in flags, which the icon-receipt ancilla
-            # does NOT wire (would collide with the x-high bit in extended
-            # OAM). Single-page is sufficient for HUD icons.
-            if not isinstance(tile, int) or tile < 0 or tile > 0xff:
-                raise RuntimeError(
-                    "emit_direct_grant_icons: entry %r tile %r out of 0..0xff "
-                    "(single-page OAM tile)"
-                    % (name, tile)
-                )
-            if not isinstance(palette, int) or palette < 0 or palette > 0x07:
-                raise RuntimeError(
-                    "emit_direct_grant_icons: entry %r palette %r out of 0..7"
-                    % (name, palette)
-                )
-            entries[items[name].id] = (tile, palette, name)
+            gfx = entry.get("gfx", 0)
+            big = entry.get("big", 0)
+            oam_flags = entry.get("oam_flags", 0)
+            for fld, v in (("gfx", gfx), ("big", big), ("oam_flags", oam_flags)):
+                if not isinstance(v, int) or v < 0 or v > 0xff:
+                    raise RuntimeError(
+                        "emit_direct_grant_icons: entry %r %s %r out of 0..0xff"
+                        % (name, fld, v)
+                    )
+            entries[items[name].id] = (gfx, big, oam_flags, name)
 
     item_count = (max(it.id for it in items.values()) + 1) if items else 0
 
@@ -1354,13 +1360,15 @@ def emit_direct_grant_icons(
         "// direct_grant_icons.h - per-item icon table for the §7.6 direct-grant",
         "// confirmation ancilla (Phase B Slice 9 — add-rando-confirmation-icons).",
         "//",
-        "// Indexed by item id. tile=0 entries cause the helper to fall back to",
-        "// audio + HUD only (Phase A behavior preserved). tile!=0 entries spawn",
-        "// the kAncillaType_RandoIconReceipt ancilla with the supplied tile/palette.",
+        "// Indexed by item id. gfx=0 entries cause the helper to fall back to",
+        "// audio + HUD only (Phase A behavior preserved). gfx!=0 entries spawn",
+        "// the kAncillaType_RandoIconReceipt ancilla, which DMAs the item's",
+        "// receive-animation sprite bundle and draws it above Link.",
         "//",
-        "// Source: assets/rando/direct_grant_icons.yaml. Tile addresses SHALL be",
-        "// verified by draw-test (run the binary, force the grant, observe the",
-        "// icon visually) per Phase B Slice 9 §1.3.",
+        "// Source: assets/rando/direct_grant_icons.yaml. gfx/big/oam_flags are",
+        "// derived from the vanilla receive-item tables (kReceiveItemGfx,",
+        "// kReceiveItem_Tab1, kWishPond2_OamFlags) indexed by the item's LttP",
+        "// receive code, so each icon matches the vanilla pickup animation.",
         "",
         "#ifndef ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_",
         "#define ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_",
@@ -1368,9 +1376,9 @@ def emit_direct_grant_icons(
         "#include \"../types.h\"",
         "",
         "typedef struct DirectGrantIconEntry {",
-        "  uint16 tile;     // tile address in graphics blob; 0 = no icon (audio-only).",
-        "  uint8  palette;  // CGRAM OBJ palette index (0..7).",
-        "  uint8  _pad;",
+        "  uint8 gfx;        // DecodeAnimatedSpriteTile_variable index; 0 = audio-only.",
+        "  uint8 big;        // OAM size byte (0 = 8x16 two-tile, 2 = single tile).",
+        "  uint8 oam_flags;  // OAM palette/priority byte.",
         "} DirectGrantIconEntry;",
         "",
         "// Indexed by item id. ITEM__COUNT-sized so direct subscripting is safe.",
@@ -1378,17 +1386,17 @@ def emit_direct_grant_icons(
     ]
     for it in sorted(items.values(), key=lambda i: i.id):
         if it.id in entries:
-            tile, palette, name = entries[it.id]
+            gfx, big, oam_flags, name = entries[it.id]
             lines.append(
-                "  [%d] = { 0x%04x, 0x%02x, 0 },  // %s"
-                % (it.id, tile, palette, name)
+                "  [%d] = { 0x%02x, 0x%02x, 0x%02x },  // %s"
+                % (it.id, gfx, big, oam_flags, name)
             )
     lines.append("};")
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_")
 
     out_header.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return sum(1 for (tile, _palette, _name) in entries.values() if tile != 0)
+    return sum(1 for (gfx, _b, _o, _name) in entries.values() if gfx != 0)
 
 
 def emit_logic_data(
@@ -2122,7 +2130,7 @@ def main(argv=None):
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
     print(f"generated icon_atlas.h ({icon_atlas_count} icon entries)")
-    print(f"generated direct_grant_icons.h ({direct_grant_icon_count} verified-tile entries)")
+    print(f"generated direct_grant_icons.h ({direct_grant_icon_count} mapped icons)")
     print(f"warnings: {len(all_errors)}, macro errors: {len(macro_errors)}")
 
 

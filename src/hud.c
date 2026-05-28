@@ -3,6 +3,11 @@
 
 #include "variables.h"
 #include "messaging.h"
+#include "sprite.h"
+#include "features.h"
+#include "rando/rando.h"
+#include "rando/rando_logic.h"
+#include "rando/rando_placement.h"
 
 enum {
   kNewStyleInventory = 0,
@@ -1565,4 +1570,289 @@ static void Hud_ReorderItem(int direction) {
   hud_inventory_order[new_pos] = t;
   Hud_DrawYButtonItems();
   sound_effect_2 = 32;
+}
+
+// ===========================================================================
+// Randomizer in-game tracker overlays (add-rando-trackers, Phase B Slice 1).
+//
+// These overlays draw via OAM sprites so they composite over live gameplay on
+// every renderer backend (the in-game HUD strip is a static BG tilemap and
+// cannot host a fixed overlay that doesn't scroll). The glyph graphics are a
+// tiny self-contained 4bpp font written into a free scratch region of sprite
+// VRAM each frame, so the overlay never depends on which area's sprite gfx
+// subset happens to be loaded.
+//
+// Scratch VRAM: per-area sprite gfx subsets fill VRAM 0x5000..0x5eff (four
+// 0x300-word subsets at 0x5000/0x5400/0x5800/0x5c00; see load_gfx.c
+// Gfx_LoadSpritesInner). VRAM 0x5f00..0x5fff is therefore free during
+// gameplay — that maps to objTileAdr2 (PPU obj name-select bit, OAM flag 0x01)
+// charnums 0xF0..0xFF. We rewrite the glyphs there every frame so an area
+// reload can't leave us pointing at stale tiles.
+//
+// The visibility flags (g_rando_show_item_tracker / g_rando_show_location_tracker)
+// are owned by rando.c (declared in rando/rando.h); this file only reads them.
+//
+// Location-tracker status now reads the live checked-location bitmap
+// (Rando_IsLocationChecked) for a have/not tri-state, so a placed-but-checked
+// location renders the filled glyph and unchecked ones the neutral ring.
+// ===========================================================================
+
+// Charnums (in objTileAdr2 space; OAM flag bit 0 selects that base).
+enum {
+  kRandoTrkTile_Base   = 0xF0,  // first scratch charnum
+  kRandoTrkGlyph_Blank = 0,     // empty / not-have
+  kRandoTrkGlyph_Dot,           // small centered dot  ("." / unchecked-reachable)
+  kRandoTrkGlyph_Ring,          // hollow square        ("?" / unknown)
+  kRandoTrkGlyph_Full,          // filled square        ("*" / checked / have)
+  kRandoTrkGlyph_One,           // single bar           (level 1 / minor have)
+  kRandoTrkGlyph_Two,           // double bar           (level 2)
+  kRandoTrkGlyph_Three,         // triple bar           (level 3+)
+  kRandoTrkGlyph_Count,
+};
+
+// 8x8 glyph bitmaps, 1 bit per pixel (bit 7 = leftmost). Rendered into the
+// low bitplane of a 4bpp sprite tile; a per-glyph palette-index nibble lets us
+// pick a readable color. Shape is the primary (colorblind-safe) signal.
+typedef struct RandoTrkGlyph { uint8 rows[8]; uint8 color; } RandoTrkGlyph;
+
+static const RandoTrkGlyph kRandoTrkGlyphs[kRandoTrkGlyph_Count] = {
+  [kRandoTrkGlyph_Blank] = { {0,0,0,0,0,0,0,0}, 0 },
+  [kRandoTrkGlyph_Dot]   = { {0x00,0x00,0x18,0x3c,0x3c,0x18,0x00,0x00}, 0x9 },
+  [kRandoTrkGlyph_Ring]  = { {0x00,0x7e,0x42,0x42,0x42,0x42,0x7e,0x00}, 0x8 },
+  [kRandoTrkGlyph_Full]  = { {0x00,0x7e,0x7e,0x7e,0x7e,0x7e,0x7e,0x00}, 0x6 },
+  [kRandoTrkGlyph_One]   = { {0x00,0x00,0x00,0x7e,0x00,0x00,0x00,0x00}, 0x6 },
+  [kRandoTrkGlyph_Two]   = { {0x00,0x00,0x7e,0x00,0x7e,0x00,0x00,0x00}, 0x6 },
+  [kRandoTrkGlyph_Three] = { {0x00,0x7e,0x00,0x7e,0x00,0x7e,0x00,0x00}, 0x6 },
+};
+
+// Write the glyph font into scratch sprite VRAM. Each glyph is a 4bpp tile:
+// addr[r] holds bitplanes 0 (low byte) + 1 (high byte); addr[r+8] holds
+// planes 2+3. We encode each set pixel with the glyph's 4-bit palette index so
+// the PPU produces a single readable color per glyph (see ppu.c obj fetch).
+static void Hud_RandoUploadGlyphs(void) {
+  for (int g = 0; g < kRandoTrkGlyph_Count; g++) {
+    const RandoTrkGlyph *gl = &kRandoTrkGlyphs[g];
+    uint16 *tile = &g_zenv.vram[0x5000 + (kRandoTrkTile_Base + g) * 16];
+    uint8 c = gl->color;
+    for (int r = 0; r < 8; r++) {
+      uint8 m = gl->rows[r];
+      uint16 p01 = 0, p23 = 0;
+      if (c & 1) p01 |= m;          // plane 0
+      if (c & 2) p01 |= (uint16)m << 8;  // plane 1
+      if (c & 4) p23 |= m;          // plane 2
+      if (c & 8) p23 |= (uint16)m << 8;  // plane 3
+      tile[r] = p01;
+      tile[r + 8] = p23;
+    }
+  }
+}
+
+// Find the next free OAM slot at or below |*slot|, scanning downward. A slot
+// is free when the game left it hidden (y == 0xf0) this frame — ClearOamBuffer
+// hides all 128 entries at frame start and the game only un-hides the slots it
+// actually uses, so claiming hidden slots never occludes a live sprite.
+// Returns -1 when none remain.
+static int Hud_RandoNextFreeSlot(int *slot) {
+  while (*slot >= 0) {
+    int s = (*slot)--;
+    if (oam_buf[s].y == 0xf0)
+      return s;
+  }
+  return -1;
+}
+
+// Place one overlay glyph at HUD pixel (px, py) into the next free OAM slot.
+// palette is the sprite sub-palette index (0..7). Returns false (and draws
+// nothing) when the slot budget is exhausted.
+static bool Hud_RandoDrawGlyph(int *slot, uint8 px, uint8 py, int glyph, uint8 palette) {
+  if (glyph <= kRandoTrkGlyph_Blank)
+    return *slot >= 0;  // nothing to draw, but keep going
+  int s = Hud_RandoNextFreeSlot(slot);
+  if (s < 0)
+    return false;
+  uint8 flags = 0x01                 // bit0: select objTileAdr2 (scratch base)
+              | ((palette & 7) << 1) // bits1-3: palette
+              | 0x30;                // bits4-5: priority (in front of BG)
+  SetOamPlain(&oam_buf[s], px, py, (uint8)(kRandoTrkTile_Base + glyph), flags, 0 /*8x8*/);
+  return true;
+}
+
+// True only during normal interactive gameplay (overworld / dungeon) with no
+// submodule active. Text boxes, the inventory menu, map screens, and screen
+// transitions all push submodule_index != 0, which suppresses the overlay
+// (the dialogue-box hide rule, generalized).
+static bool Hud_RandoTrackerVisibleNow(void) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return false;
+  if (main_module_index != 0x07 && main_module_index != 0x09)
+    return false;
+  if (submodule_index != 0)
+    return false;
+  return true;
+}
+
+// ---- Item tracker --------------------------------------------------------
+// A compact grid, anchored top-left, showing have/level for the progressive
+// and absolute items plus bottles, magic, and the heart count. Each cell is a
+// single overlay glyph: blank = don't have, full = have (binary item),
+// one/two/three bars = level for tiered items. Reads inventory RAM directly.
+
+typedef struct RandoTrkItemCell { const char *label; uint8 kind; uint16 addr; } RandoTrkItemCell;
+enum { kRTI_Bool = 0, kRTI_Level, kRTI_Bottles, kRTI_Hearts };
+
+static void Hud_RandoDrawItemTrackerInner(int *slot) {
+  Hud_RandoUploadGlyphs();
+
+  // (kind, RAM byte): binary items render full/blank; tiered items render a
+  // bar count clamped to 3; bottles count non-empty slots; hearts shows tier.
+  static const RandoTrkItemCell kCells[] = {
+    { 0, kRTI_Level,   0xF340 },  // bow (0..4)
+    { 0, kRTI_Level,   0xF341 },  // boomerang
+    { 0, kRTI_Bool,    0xF342 },  // hookshot
+    { 0, kRTI_Bool,    0xF343 },  // bombs (count, treat as have)
+    { 0, kRTI_Bool,    0xF345 },  // fire rod
+    { 0, kRTI_Bool,    0xF346 },  // ice rod
+    { 0, kRTI_Bool,    0xF347 },  // bombos
+    { 0, kRTI_Bool,    0xF348 },  // ether
+    { 0, kRTI_Bool,    0xF349 },  // quake
+    { 0, kRTI_Level,   0xF34A },  // lamp/torch
+    { 0, kRTI_Bool,    0xF34B },  // hammer
+    { 0, kRTI_Level,   0xF34C },  // flute (0..3)
+    { 0, kRTI_Bool,    0xF34D },  // bug net
+    { 0, kRTI_Bool,    0xF34E },  // book of mudora
+    { 0, kRTI_Bool,    0xF350 },  // cane of somaria
+    { 0, kRTI_Bool,    0xF351 },  // cane of byrna
+    { 0, kRTI_Bool,    0xF352 },  // cape
+    { 0, kRTI_Bool,    0xF353 },  // magic mirror
+    { 0, kRTI_Level,   0xF354 },  // gloves (1=power,2=titan)
+    { 0, kRTI_Level,   0xF355 },  // boots
+    { 0, kRTI_Bool,    0xF356 },  // flippers
+    { 0, kRTI_Bool,    0xF357 },  // moon pearl
+    { 0, kRTI_Level,   0xF359 },  // sword (1..4; 0xff = none)
+    { 0, kRTI_Level,   0xF35A },  // shield (1..3)
+    { 0, kRTI_Level,   0xF35B },  // armor (0..2)
+    { 0, kRTI_Bottles, 0 },       // bottles (count non-empty)
+    { 0, kRTI_Hearts,  0 },       // hearts (capacity tier)
+  };
+  enum { kCols = 7, kCellPx = 9, kOriginX = 16, kOriginY = 16 };
+
+  int n = (int)(sizeof(kCells) / sizeof(kCells[0]));
+  for (int i = 0; i < n; i++) {
+    const RandoTrkItemCell *c = &kCells[i];
+    uint8 px = (uint8)(kOriginX + (i % kCols) * kCellPx);
+    uint8 py = (uint8)(kOriginY + (i / kCols) * kCellPx);
+    int glyph = kRandoTrkGlyph_Blank;
+    switch (c->kind) {
+    case kRTI_Bool:
+      glyph = g_ram[c->addr] ? kRandoTrkGlyph_Full : kRandoTrkGlyph_Blank;
+      break;
+    case kRTI_Level: {
+      uint8 v = g_ram[c->addr];
+      if (v == 0 || v == 0xff) glyph = kRandoTrkGlyph_Blank;
+      else if (v == 1)         glyph = kRandoTrkGlyph_One;
+      else if (v == 2)         glyph = kRandoTrkGlyph_Two;
+      else                     glyph = kRandoTrkGlyph_Three;
+      break;
+    }
+    case kRTI_Bottles: {
+      int cnt = 0;
+      for (int b = 0; b < 4; b++) if (link_bottle_info[b]) cnt++;
+      glyph = cnt == 0 ? kRandoTrkGlyph_Blank
+            : cnt == 1 ? kRandoTrkGlyph_One
+            : cnt == 2 ? kRandoTrkGlyph_Two
+                       : kRandoTrkGlyph_Three;
+      break;
+    }
+    case kRTI_Hearts: {
+      // link_health_capacity is hearts*8; show a coarse tier.
+      int hearts = link_health_capacity >> 3;
+      glyph = hearts >= 16 ? kRandoTrkGlyph_Three
+            : hearts >= 10 ? kRandoTrkGlyph_Two
+                           : kRandoTrkGlyph_One;
+      break;
+    }
+    }
+    uint8 pal = (glyph == kRandoTrkGlyph_Full || glyph == kRandoTrkGlyph_One ||
+                 glyph == kRandoTrkGlyph_Two  || glyph == kRandoTrkGlyph_Three) ? 6 : 4;
+    if (!Hud_RandoDrawGlyph(slot, px, py, glyph, pal))
+      break;
+  }
+}
+
+void Hud_RandoDrawItemTracker(void) {
+  int slot = 127;
+  Hud_RandoDrawItemTrackerInner(&slot);
+}
+
+// ---- Location tracker ----------------------------------------------------
+// Iterate the active placement table, group by region (matching the spoiler's
+// region grouping via kRandoLocations[].region_id), and render a status glyph
+// per location: filled when the location has been checked
+// (Rando_IsLocationChecked), neutral ring when still outstanding. New rows are
+// started on each region change so locations group visually.
+
+static void Hud_RandoDrawLocationTrackerInner(int *slot) {
+  Hud_RandoUploadGlyphs();
+
+  const RandoPlacementTable *t = Placement_GetActive();
+  if (t == NULL || t->count == 0)
+    return;
+
+  // kMaxY bounds the grid so a full ~266-location seed can't drive `py` past
+  // the bottom of the screen (it would wrap the uint8 and overlap the HUD).
+  // `rows` is monotonic, so once a row clears kMaxY every later row does too.
+  enum { kCols = 8, kCellPx = 8, kOriginX = 256 - 8 - (kCols - 1) * 8, kOriginY = 16, kMaxY = 200 };
+  uint16 prev_region = 0xFFFF;
+  int col = 0, rows = 0;
+
+  for (int i = 0; i < t->count && *slot >= 0; i++) {
+    uint16 loc = t->entries[i].location_id;
+
+    // Resolve the location's region for grouping.
+    uint16 region = 0xFFFF;
+    for (uint32 k = 0; k < kRandoLocationsCount; k++) {
+      if (kRandoLocations[k].id == loc) { region = kRandoLocations[k].region_id; break; }
+    }
+
+    // Start a new row when the region changes (groups locations visually).
+    if (region != prev_region) {
+      if (prev_region != 0xFFFF) rows++;
+      prev_region = region;
+      col = 0;
+    }
+    if (col >= kCols) { rows++; col = 0; }
+
+    // Stop before the grid runs off the bottom of the screen (uint8 wrap).
+    if (kOriginY + rows * kCellPx > kMaxY)
+      break;
+
+    uint8 px = (uint8)(kOriginX + col * kCellPx);
+    uint8 py = (uint8)(kOriginY + rows * kCellPx);
+
+    // Checked locations render the filled glyph; outstanding ones the ring.
+    bool checked = Rando_IsLocationChecked(loc);
+    int glyph = checked ? kRandoTrkGlyph_Full : kRandoTrkGlyph_Ring;
+    uint8 pal = checked ? 6 : 4;
+    if (!Hud_RandoDrawGlyph(slot, px, py, glyph, pal))
+      break;
+    col++;
+  }
+}
+
+void Hud_RandoDrawLocationTracker(void) {
+  int slot = 127;
+  Hud_RandoDrawLocationTrackerInner(&slot);
+}
+
+void Hud_RandoDrawTrackers(void) {
+  if (!Hud_RandoTrackerVisibleNow())
+    return;
+  // Both trackers share one downward OAM-slot cursor so they never claim the
+  // same free slot. Item tracker (top-left) draws first, then the location
+  // tracker (top-right) from whatever slots remain.
+  int slot = 127;
+  if (g_rando_show_item_tracker)
+    Hud_RandoDrawItemTrackerInner(&slot);
+  if (g_rando_show_location_tracker)
+    Hud_RandoDrawLocationTrackerInner(&slot);
 }

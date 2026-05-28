@@ -17,6 +17,7 @@
 #include "attract.h"
 #include "nmi.h"
 #include "assets.h"
+#include "rando/rando_hints.h"
 
 static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y);
 static bool WorldMap_CalculateOamCoordinates(Point16U *pt);
@@ -2271,6 +2272,16 @@ uint32 Text_DecodeCmd(uint8 a, const uint8 *src) {
 
 // Perform initial parsing of the string, expanding words, processing some commands, etc.
 void Text_LoadCharacterBuffer() {  // 8ec4e2
+  // Phase B hints: telepathic-tile interception. When the randomizer slot is
+  // active, hints are enabled, and the requested dialogue id is one of the 15
+  // ALTTPR telepathic-tile ids, render a generated hint directly into the
+  // character buffer (font-encoded, 0x7f-terminated) and skip the vanilla
+  // dialogue decode. Returns false (and is a no-op) in every other case.
+  // See src/rando/rando_hints.c::Rando_RenderHintMessage.
+  if (Rando_RenderHintMessage(dialogue_message_index, messaging_text_buffer)) {
+    dialogue_msg_read_pos = 0;
+    return;
+  }
   MemBlk dictionary = FindIndexInMemblk(g_zenv.dialogue_blk, 0);
   MemBlk dialogue = FindIndexInMemblk(g_zenv.dialogue_blk, 1);
   MemBlk text_str = FindIndexInMemblk(dialogue, dialogue_message_index);

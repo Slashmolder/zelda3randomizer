@@ -124,9 +124,16 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   put_u16le(buf + 61, h->placement_table_size);
   // @63 flags
   buf[63] = h->flags;
-  // @64 mushroom_held (rando Mushroom-possession); @65-79 reserved — zero on write
+  // @64 mushroom_held (rando Mushroom-possession).
   buf[64] = h->mushroom_held;
-  memset(buf + 65, 0, 15);
+  // @65-67 Phase B hints settings extension (additive; previously zero). The
+  // generator only reads `hints` and `goal` from RandoSettings, so those two
+  // axes are all the reserved tail needs to carry to regenerate hints at slot
+  // load. @68-79 still zero on write.
+  buf[65] = h->settings_ext_present;
+  buf[66] = h->hints_setting;
+  buf[67] = h->goal;
+  memset(buf + 68, 0, kRandoSidecar_SlotHeaderSize - 68);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -143,6 +150,12 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   out->placement_table_size = get_u16le(buf + 61);
   out->flags = buf[63];
   out->mushroom_held = buf[64];
+  // Phase B hints settings extension (@65-67). A file written before this
+  // field existed has zero here -> settings_ext_present == 0 -> the loader
+  // (Rando_ActivateSidecarSlot) applies the hints-on default.
+  out->settings_ext_present = buf[65];
+  out->hints_setting = buf[66];
+  out->goal = buf[67];
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }
@@ -540,6 +553,10 @@ void RandoSave_SelfCheck(void) {
   src.header.placement_table_size = 42;
   src.header.flags = 0x42;
   src.header.mushroom_held = 0x01;
+  // Phase B hints settings extension round-trip coverage.
+  src.header.settings_ext_present = 1;
+  src.header.hints_setting = 1;   // kHintsMode_On
+  src.header.goal = 4;            // kGoal_TriforceHunt
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -562,6 +579,10 @@ void RandoSave_SelfCheck(void) {
   if (get_u16le(buf + 61) != 42) selfcheck_die("placement_table_size at @61 wrong");
   if (buf[63] != 0x42) selfcheck_die("flags at @63 wrong");
   if (buf[64] != 0x01) selfcheck_die("mushroom_held at @64 wrong");
+  // Phase B hints settings extension byte layout @65-67.
+  if (buf[65] != 1) selfcheck_die("settings_ext_present at @65 wrong");
+  if (buf[66] != 1) selfcheck_die("hints_setting at @66 wrong");
+  if (buf[67] != 4) selfcheck_die("goal at @67 wrong");
   // Flat table layout check: location 5 should hold item 50.
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
     selfcheck_die("flat table: loc 5 item slot wrong");
@@ -585,6 +606,9 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.placement_table_size != src.header.placement_table_size) selfcheck_die("placement_table_size round-trip");
   if (dst.header.flags != src.header.flags) selfcheck_die("flags round-trip");
   if (dst.header.mushroom_held != src.header.mushroom_held) selfcheck_die("mushroom_held round-trip");
+  if (dst.header.settings_ext_present != src.header.settings_ext_present) selfcheck_die("settings_ext_present round-trip");
+  if (dst.header.hints_setting != src.header.hints_setting) selfcheck_die("hints_setting round-trip");
+  if (dst.header.goal != src.header.goal) selfcheck_die("goal round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).

@@ -17,8 +17,8 @@
 #include "rando/location_ids.h"
 
 // Type 0x44 (index 68) is the Phase B Slice 9 rando icon-receipt ancilla —
-// see Ancilla44_RandoIconReceipt below. 8 = 2 OAM entries (8 bytes / 2x4) for
-// the stacked-icon draw. Matches Ancilla22_ItemReceipt's Pflag (also 8).
+// see Ancilla44_RandoIconReceipt below. Its Pflag is 8 (reserves 2 OAM
+// entries) for the 8x16 (two-tile) icon draw, matching Ancilla22_ItemReceipt.
 static const uint8 kAncilla_Pflags[69] = {
   0,    8,  0xc, 0x10, 0x10,    4, 0x10, 0x18,    8,    8,    8,    0, 0x14, 0, 0x10, 0x28,
   0x18, 0x10, 0x10, 0x10, 0x10,  0xc,    8,    8, 0x50,    0, 0x10,    8, 0x40, 0,  0xc, 0x24,
@@ -6883,7 +6883,15 @@ void FireRodShot_BecomeSkullWoodsFire(int k) {  // 899c4f
 // vanilla US ROM). It is used by Rando_ShowDirectGrantConfirmation(item_id)
 // to surface a per-item icon above Link's head for direct-grant items
 // (HalfMagic / QuarterMagic / TriforcePiece / prize bits / dungeon-item bits)
-// that bypass Link_ReceiveItem entirely. Tile + palette come from
+// that bypass Link_ReceiveItem entirely.
+//
+// Rendering mirrors the vanilla receive-item ancilla
+// (Ancilla_ReceiveItem_Draw): the item's animated-sprite tile bundle is DMA'd
+// into the receive-item VRAM slot at spawn via DecodeAnimatedSpriteTile_
+// variable, then the handler draws OAM chars 0x24 (top) and 0x34 (bottom) out
+// of that slot. Selecting the bundle by GFX index — rather than a raw OAM
+// charnum — guarantees the icon matches whatever the vanilla pickup of that
+// item already shows, with no new sprite art. gfx/big/oam_flags come from
 // kDirectGrantIcons[item_id] (codegen output from
 // assets/rando/direct_grant_icons.yaml).
 //
@@ -6891,67 +6899,81 @@ void FireRodShot_BecomeSkullWoodsFire(int k) {  // 899c4f
 // inside Rando_DispatchVanillaGrant. This ancilla is visual confirmation
 // only; its lifecycle is independent of any inventory state.
 //
-// Per-ancilla state layout:
-//   ancilla_item_to_link[k] — OAM tile index (charnum). Restricted to 0..0xff
-//                              (single-page OBJ tile); the HUD icons sourced
-//                              by kDirectGrantIcons[] all live in the low
-//                              page. Tile bit-9 (high-page) is NOT supported —
-//                              passing it through `big` would collide with
-//                              `(x >> 8) & 1` in Ancilla_SetOam and shift
-//                              the icon horizontally.
-//   ancilla_arr4[k]         — CGRAM OBJ palette index (0..7), shifted into
-//                              OAM flags bits 1..3.
-//   ancilla_timer[k]        — frames remaining (Ancilla_ExecuteOne decrements
-//                              while submodule_index == 0; zero ends the ancilla).
+// Per-ancilla state layout (set by AncillaAdd_RandoIconReceipt):
+//   ancilla_G[k]         — OAM size byte ("big"); 0 -> draw a second tile below
+//                          (8x16), 2 -> single tile.
+//   ancilla_L[k]         — precomputed OAM palette/priority byte.
+//   ancilla_aux_timer[k] — frames remaining (this handler decrements it; zero
+//                          ends the ancilla).
 //
-// Rendering: 2 OAM sprites stacked vertically (top tile + bottom tile = +0x10).
-// Position is Link's coordinates lifted by 16px so the icon hovers above
-// his head. No animation beyond the natural fade as nearby ancillas claim
-// OAM slots.
+// The icon rises a few pixels for the first part of its lifetime, then holds,
+// matching the receive-item ancilla's float. No item grant, no message.
 // ---------------------------------------------------------------------------
 void Ancilla44_RandoIconReceipt(int k) {
-  if (ancilla_timer[k] == 0) {
-    ancilla_type[k] = 0;
+  // Hold (draw only, don't advance) while the game is mid-transition. Gate
+  // matches `Ancilla22_ItemReceipt`: submodule_index 0 = normal gameplay; 9 =
+  // item-acquisition cutscene; 43 = Master Sword cutscene.
+  if (submodule_index != 0 && submodule_index != 9 && submodule_index != 43)
+    goto draw;
+
+  // Rise slowly for the first part of the lifetime, then hold.
+  if (ancilla_aux_timer[k] >= 24) {
+    uint8 v = ancilla_y_vel[k] - 1;
+    if (v >= 248)              // clamp small negative (rising) velocity
+      ancilla_y_vel[k] = v;
+    Ancilla_MoveY(k);
+  }
+
+  if (ancilla_aux_timer[k] == 0) {
+    ancilla_type[k] = 0;       // terminate
     return;
   }
-  // Don't update during message/menu submodules. Gate matches
-  // `Ancilla22_ItemReceipt`: submodule_index 0 = normal gameplay; 9 = item-
-  // acquisition cutscene; 43 = Master Sword cutscene.
-  if (submodule_index != 0 && submodule_index != 43 && submodule_index != 9)
-    return;
+  ancilla_aux_timer[k]--;
 
+draw:;
   Point16U pt;
   Ancilla_PrepAdjustedOamCoord(k, &pt);
-
-  uint8 charnum = ancilla_item_to_link[k];
-  uint8 palette = (uint8)(ancilla_arr4[k] & 0x07);
-  uint8 flags = (uint8)((palette << 1) | 0x30);
-
-  // Lift the icon ~16px above Link's anchor; the second OAM tile lands at +8.
-  // `big` = 0 (8x8 OBJ size, single-page tile, x high-bit handled by Ancilla_SetOam).
   OamEnt *oam = GetOamCurPtr();
-  Ancilla_SetOam(oam, pt.x, pt.y - 16, charnum, flags, 0);
+  uint8 flags = ancilla_L[k];
+  Ancilla_SetOam(oam, pt.x, pt.y, 0x24, flags, ancilla_G[k]);
   oam++;
-  Ancilla_SetOam(oam, pt.x, pt.y - 8, (uint8)(charnum + 0x10), flags, 0);
+  if (ancilla_G[k] == 0)
+    Ancilla_SetOam(oam, pt.x, pt.y + 8, 0x34, flags, 0);
 }
 
-void AncillaAdd_RandoIconReceipt(uint16 tile, uint8 palette) {
-  // Tile 0 is the "no verified icon" sentinel used by kDirectGrantIcons[];
-  // callers should check before invoking, but guard here as well to keep
-  // the no-op contract local. Also clamp out-of-page tiles (> 0xff) — the
-  // OAM draw path does not support high-page tiles in this ancilla.
-  if (tile == 0 || tile > 0xff)
+// Spawn helper for the rando direct-grant confirmation icon. `gfx` is a
+// DecodeAnimatedSpriteTile_variable index (kReceiveItemGfx-style); `big` is the
+// OAM size byte (kReceiveItem_Tab1-style); `oam_flags` is the precomputed OAM
+// palette/priority byte ((kWishPond2_OamFlags*2)|0x30). Callers gate on
+// gfx != 0 (the audio-only fallback sentinel) before calling; guard here too
+// to keep the no-op contract local.
+void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
+  if (gfx == 0)
     return;
 
   int k = Ancilla_AddAncilla(kAncillaType_RandoIconReceipt, 4);
   if (k < 0)
     return;
 
-  ancilla_item_to_link[k] = (uint8)(tile & 0xff);
-  ancilla_arr4[k] = (uint8)(palette & 0x07);
-  ancilla_timer[k] = 40;  // ~0.66s at 60fps; matches the receive-item dwell.
+  // DMA the item's animated-sprite tile bundle into the VRAM slot drawn at
+  // chars 0x24/0x34 — exactly what AncillaAdd_ItemReceipt does for a pickup.
+  DecodeAnimatedSpriteTile_variable(gfx);
+  if (gfx == 6)
+    DecompressSwordGraphics();   // (defensive; no direct-grant item uses gfx 6)
+
+  ancilla_G[k] = big;
+  ancilla_L[k] = oam_flags;
+  ancilla_item_to_link[k] = 0;
   ancilla_step[k] = 0;
-  Ancilla_SetXY(k, link_x_coord, link_y_coord);
+  ancilla_arr4[k] = 0;
+  ancilla_y_vel[k] = 0;
+  ancilla_x_vel[k] = 0;
+  ancilla_z[k] = 0;
+  ancilla_aux_timer[k] = 0x60;   // ~96-frame lifetime, like a normal receipt.
+  ancilla_timer[k] = 0;
+  // Position above Link's head, matching the receive-item ancilla's default
+  // (item_receipt_method == 0): x += 6, y -= 14.
+  Ancilla_SetXY(k, link_x_coord + 6, link_y_coord - 14);
 }
 
 int Ancilla_AddAncilla(uint8 a, uint8 y) {  // 899ce2

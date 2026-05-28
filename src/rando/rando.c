@@ -424,6 +424,74 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
   return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
 }
 
+// === Phase B sprite/shop dispatch: begin ===
+// ---------------------------------------------------------------------------
+// Retro shop-slot lookup (#53). (room-low-byte, entrance-door) selects one
+// of the 9 ALTTPR shops; that shop's three purchasable slots occupy three
+// consecutive registry ids (LOC base .. base+2). Capacity-Upgrade slots
+// (264/265) are identity-placed and dispatched separately by their own site.
+//
+// Provenance: ALTTPR shop room_id/door_id pairs from
+// `../alttp_vt_randomizer/app/Region/Standard/**/*.php` `new Shop(...)`
+// 4th/5th constructor args; LOC bases from
+// `assets/rando/location_registry.yaml` ids 237..263. The (room, door)
+// disambiguation matches z3randomizer `shopkeeper.asm` SpritePrep_ShopKeeper
+// (ShopTable room+door match). Door values equal the vanilla overworld
+// entrance ids (kOverworld_Entrance_Id), which is exactly what
+// `which_entrance` holds while the player stands in the cave.
+//
+// NOTE: low-byte room is ambiguous (0x0F backs four DW shops; 0x12 backs DW
+// Death-Mountain + LW Lake-Hylia), so for most shops the door (== vanilla
+// `which_entrance` / ALTTPR `PreviousOverworldDoor`) disambiguates.
+//
+// EXCEPTION — room-only-match shops: ALTTPR's shop identifier (z3randomizer
+// `shopkeeper.asm`, ShopTable match loop) checks `ShopType & 0x0040`; when set,
+// it matches on RoomIndex ALONE and SKIPS the door compare. That bit comes from
+// the Shop's `config & 0xFC` (PHP `Shop::getBytes`): the Light World Death
+// Mountain Shop is constructed with `config = 0x43` (= 0x03 | 0x40) per
+// `../alttp_vt_randomizer/app/Region/Standard/LightWorld/DeathMountain/East.php`,
+// so its `door_id = 0x00` is deliberately ignored. Keying that shop on the door
+// would silently fail (0x00 also = the "no entrance" reset value), so it is
+// flagged room_only and matched on room (0xFF) alone — exactly as the ROM does.
+typedef struct { uint8 room; uint8 door; uint16 loc_base; bool room_only; } RandoShopSlot;
+static const RandoShopSlot kRandoShopSlots[] = {
+  // room  door   base  room_only   shop (LOC ids base..base+2)
+  { 0x0F, 0x6F, 237, false },  // Dark World Potion Shop          (237/238/239)
+  { 0x10, 0x75, 240, false },  // Dark World Forest Shop          (240/241/242)
+  { 0x0F, 0x57, 243, false },  // Dark World Lumberjack Hut       (243/244/245)
+  { 0x0F, 0x60, 246, false },  // Dark World Village of Outcasts  (246/247/248)
+  { 0x0F, 0x74, 249, false },  // Dark World Lake Hylia Shop      (249/250/251)
+  { 0x12, 0x6E, 252, false },  // Dark World Death Mountain Shop  (252/253/254)
+  { 0xFF, 0x00, 255, true  },  // Light World Death Mountain Shop (255/256/257) — config 0x43 -> room-only
+  { 0x1F, 0x46, 258, false },  // Light World Kakariko Shop       (258/259/260)
+  { 0x12, 0x58, 261, false },  // Light World Lake Hylia Shop     (261/262/263)
+};
+
+static uint16 shop_lookup(uint8 room, uint8 entrance, uint8 pos) {
+  if (pos > 2) return 0xFFFFu;  // shops have exactly 3 slots
+  for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
+    if (kRandoShopSlots[i].room != room) continue;  // room must always match
+    // Room-only shops match on the room alone (ShopType & 0x40); others also
+    // require the door (entrance) to match, since their room is shared.
+    if (kRandoShopSlots[i].room_only || kRandoShopSlots[i].door == entrance) {
+      return (uint16)(kRandoShopSlots[i].loc_base + pos);
+    }
+  }
+  return 0xFFFFu;  // not a known shop slot — vanilla item grants
+}
+
+uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
+                         uint8 vanilla_lttp_code) {
+  uint16 loc_id = shop_lookup(room, entrance, pos);
+  if (loc_id == 0xFFFFu) return vanilla_lttp_code;  // not mapped — vanilla
+  // Vanilla registry id is not threaded through the shop receipt path; pass
+  // 0xFFFF so Rando_DispatchVanillaGrant treats the slot as "always overridden
+  // when present in the table" and falls back to the vanilla LttP code when the
+  // slot is absent (non-Retro seeds) — identical to the chest-dispatch contract.
+  return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
+}
+// === Phase B sprite/shop dispatch: end ===
+
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's cached
 // reachability. Phase A0 stub: increment the counter. The tracker (task 10.2)
@@ -511,9 +579,10 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // HUD-only cue with a visible icon ancilla. The granted item id is looked up
 // in kDirectGrantIcons[item_id] (codegen'd from
 // assets/rando/direct_grant_icons.yaml). When the table entry has a
-// non-zero tile, AncillaAdd_RandoIconReceipt spawns an icon-pop above Link's
-// head. Empty / unverified entries (tile == 0) fall back to the Phase A
-// audio + HUD behavior — never crash, never spawn a blank ancilla.
+// non-zero gfx (the item's receive-animation sprite bundle),
+// AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon above Link's
+// head. Entries with gfx == 0 (the audio-only sentinel) fall back to the
+// Phase A audio + HUD behavior — never crash, never spawn a blank ancilla.
 //
 // Deliberately NOT emitted from within `Rando_DispatchVanillaGrant` — the
 // caller knows whether its own code path already provides visual context
@@ -536,14 +605,18 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
-  // Slice 9 — look up the per-item icon. Unverified entries (tile == 0) fall
-  // back to audio + HUD only, preserving Phase A behavior.
+  // Slice 9 — look up the per-item icon. Entries with gfx == 0 (the audio-only
+  // fallback sentinel: HalfMagic / QuarterMagic / TriforcePiece — no vanilla
+  // receive-item GFX) fall back to audio + HUD only, preserving Phase A
+  // behavior. gfx != 0 spawns a per-item icon ancilla that DMAs the item's
+  // receive-animation sprite bundle and draws it above Link, mirroring the
+  // vanilla pickup animation.
   const size_t icon_table_len =
       sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
   if ((size_t)item_id < icon_table_len) {
     const DirectGrantIconEntry *e = &kDirectGrantIcons[item_id];
-    if (e->tile != 0) {
-      AncillaAdd_RandoIconReceipt(e->tile, e->palette);
+    if (e->gfx != 0) {
+      AncillaAdd_RandoIconReceipt(e->gfx, e->big, e->oam_flags);
     }
   }
 }
@@ -694,26 +767,31 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
 
-  // TODO (audit-of-audit HIGH-3 of phase-b): Rando_GenerateHints does
-  // NOT run on slot-load because the sidecar slot doesn't carry the
-  // full RandoSettings struct (only settings_hash, which is one-way).
-  // When #85 (hint dispatch wiring) lands, in-game telepathic tiles
-  // on a loaded slot will read `g_hint_table` populated by the LAST
-  // CLI generation — empty for slots that were imported via share
-  // string and never re-generated in-process.
-  //
-  // Fix shape options:
-  //   (a) Add a new sidecar TLV `TAIL_RANDO_SETTINGS` carrying the
-  //       canonical 28-byte settings blob; deserialize here, then
-  //       Rando_GenerateHints(deserialized_settings, &g_session_placement_table, NULL).
-  //   (b) Always run `Rando_GenerateHints` with synthesized
-  //       "defaults + hints=On + goal=Detected-from-placements"
-  //       settings. Degraded shape (Murahdahla won't fire correctly
-  //       on TriforceHunt slots; non-hint slots get hints anyway) but
-  //       hint table is non-empty for runtime dispatch.
-  //
-  // Option (a) is cleaner; ship paired with #85 dispatch wiring.
-  // Option (b) ships now if dispatch lands before sidecar redesign.
+  // === Phase B hints: regenerate telepathic-tile hints for this slot ===
+  // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
+  // of (settings, placement table); the generator (rando_hints.c) reads only
+  // the `hints` and `goal` axes from RandoSettings. Rather than the one-way
+  // settings_hash, the slot header carries those two axes additively in its
+  // reserved tail (rando_save.h settings extension). We synthesize a settings
+  // struct from defaults, override `hints`/`goal` from the ext, and
+  // regenerate — so a slot loaded from disk (including share-string imports)
+  // shows hints without re-running the full seed generator.
+  {
+    RandoSettings hint_settings;
+    Settings_SetDefaults(&hint_settings);
+    if (src->header.settings_ext_present) {
+      hint_settings.hints = src->header.hints_setting;
+      hint_settings.goal = src->header.goal;
+    } else {
+      // Older slot (or writer that did not populate the ext): default to
+      // hints-on so existing rando slots still surface telepathic-tile hints.
+      // goal stays at the Settings_SetDefaults value (Murahdahla won't fire
+      // unless it happens to be a Triforce/Ganon-hunt default).
+      hint_settings.hints = kHintsMode_On;
+    }
+    Rando_GenerateHints(&hint_settings, &g_session_placement_table, NULL);
+  }
+  // === Phase B hints: end ===
 }
 
 void Rando_DeactivateSlot(void) {
