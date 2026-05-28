@@ -5943,6 +5943,22 @@ void Sprite_Witch(int k) {  // 85e3fb
     return;
   switch (sprite_ai_state[k]) {
   case 0:  // main
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      // Rando: Mushroom possession is tracked separately from
+      // link_item_mushroom (which may currently show Powder=2), so accept on
+      // contact when the player holds an undelivered Mushroom — without the
+      // vanilla "Mushroom must be the selected item" requirement, which can't
+      // be satisfied while Powder occupies the HUD slot.
+      if (save_dung_info[0x109] & 0x80)
+        Sprite_ShowSolicitedMessage(k, 0x4b);        // already traded
+      else if (!Rando_MushroomHeld())
+        Sprite_ShowSolicitedMessage(k, 0x4a);        // come back with a mushroom
+      else if (Sprite_CheckDamageToLink_same_layer(k))
+        Witch_AcceptShroom(k);
+      else
+        Sprite_ShowSolicitedMessage(k, 0x4c);        // bring it over here
+      break;
+    }
     if (link_item_mushroom == 0) {
       if (save_dung_info[0x109] & 0x80)
         Sprite_ShowSolicitedMessage(k, 0x4b);
@@ -5973,12 +5989,19 @@ void Sprite_Witch(int k) {  // 85e3fb
 }
 
 void Witch_AcceptShroom(int k) {  // 85e4cf
+  bool rando = (enhanced_features1 & kFeatures1_RandomizerActive) != 0;
+  // Under rando the possession flag is the source of truth for the trade;
+  // clear it so the Witch won't re-prompt. The Potion Shop check is granted
+  // later at the Magic Powder dispatch (LOC_Potion_Shop).
+  if (rando)
+    Rando_DeliverMushroom();
   // rando-exempt: state-shuffle — the mushroom is CONSUMED (given to the
-  // witch) here, not granted. The corresponding grant happens later at the
-  // Magic Powder dispatch (ITEM_MagicPowder via Rando_DispatchVanillaGrant).
-  // Without this exemption the cluster-audit guard flags the consumption as
-  // an un-dispatched write.
-  link_item_mushroom = 0;
+  // witch) here, not granted. Under rando, only clear the slot when it
+  // actually holds the Mushroom (=1); if it holds Powder (=2) the possession
+  // flag already recorded the trade and clearing would erase the player's
+  // Powder. Without this exemption the cluster-audit guard flags the
+  // consumption as an un-dispatched write.
+  if (!rando || link_item_mushroom == 1) link_item_mushroom = 0;
   save_dung_info[0x109] |= 0x80;
   sound_effect_1 = 0;
   Hud_RefreshIcon();
@@ -6880,8 +6903,19 @@ void SpritePrep_PotionShop(int k) {  // 85f529
 }
 
 void MagicShopAssistant_SpawnPowder(int k) {  // 85f539
-  if (!flag_overworld_area_did_change || link_item_mushroom == 2)
+  if (!flag_overworld_area_did_change)
     return;
+  // Vanilla suppresses re-spawn once you hold Powder (mushroom==2). Under
+  // rando the bag grants the Potion Shop check (which may NOT be Powder) and
+  // the player may already hold Powder, so gate on whether the check was
+  // collected instead — otherwise the bag never spawns (Powder held) or
+  // re-spawns forever (check item isn't Powder).
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    if (Rando_IsLocationChecked(LOC_Potion_Shop))
+      return;
+  } else if (link_item_mushroom == 2) {
+    return;
+  }
   if (save_dung_info[0x109] & 0x80) {
     SpriteSpawnInfo info;
     int j = Sprite_SpawnDynamically(k, 0xe9, &info);

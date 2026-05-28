@@ -57,7 +57,8 @@ typedef enum {
 //   @57 sram_slot_checksum_at_last_write (u32 LE)
 //   @61 placement_table_size (u16 LE)       (**bytes**; placement_table_size / 2 = location count)
 //   @63 flags (u8)                          (bit 0 = forward-fill fallback was used)
-//   @64 reserved[16]                        (forward-compat; zero on write)
+//   @64 mushroom_held (u8)                   (rando Mushroom-possession; bit 0 = held, not yet delivered)
+//   @65 reserved[15]                        (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // Per spec: the on-disk embedded placement table is a FLAT uint16[] indexed
@@ -75,6 +76,13 @@ typedef struct RandoSlotHeader {
   uint32 sram_slot_checksum_at_last_write;
   uint16 placement_table_size;  // **bytes**; placement_table_size / 2 = #locations stored
   uint8 flags;                  // bit 0 = forward-fill fallback was used
+  // Rando Mushroom-possession flag, stored at on-disk offset @64 (the first
+  // byte of the former reserved[16] block; older binaries wrote it as zero).
+  // Set while the player holds the Mushroom item but has not yet handed it to
+  // the Witch. Tracked here rather than via link_item_mushroom — which
+  // doubles as the Powder slot — so obtaining Powder first cannot lock out
+  // the Potion Shop check. See Rando_MushroomHeld / Witch_AcceptShroom.
+  uint8 mushroom_held;
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

@@ -269,6 +269,16 @@ void Rando_MarkLocationChecked(uint16 location_id);
 // Test the bit for `location_id`. Returns false for OOB or no slot active.
 bool Rando_IsLocationChecked(uint16 location_id);
 
+// Rando Mushroom-possession state. True between obtaining the Mushroom item
+// and handing it to the Witch — tracked independently of link_item_mushroom
+// (which doubles as the Powder slot) so Powder-first pickups can't lock out
+// the Potion Shop check. Persisted via RandoSlotHeader.mushroom_held.
+extern uint8 g_rando_mushroom_held;
+// True iff a rando slot is active and the player holds an undelivered Mushroom.
+bool Rando_MushroomHeld(void);
+// Clear the possession flag — call when the Witch accepts the Mushroom.
+void Rando_DeliverMushroom(void);
+
 // Copy g_rando_checked_bitmap into the supplied slot's checked_bitmap field.
 // Callers about to write the ACTIVE rando slot to disk should invoke this
 // just before calling Rando_WriteSidecarSlot so the in-memory checks survive

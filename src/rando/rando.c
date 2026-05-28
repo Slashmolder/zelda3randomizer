@@ -68,7 +68,17 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   // Placement_Lookup returns vanilla_item_id when no active placement table
   // is installed (rando mode inactive), or when location_id is not in the
   // active table. See rando_placement.c.
-  return Placement_Lookup(location_id, vanilla_item_id);
+  uint16 placed = Placement_Lookup(location_id, vanilla_item_id);
+
+  // Track Mushroom possession the moment the player obtains it, wherever it
+  // is placed. link_item_mushroom can't represent "have Mushroom AND Powder"
+  // (one byte, mutually exclusive values), so the Witch trade keys off this
+  // flag instead — see Rando_MushroomHeld / Witch_AcceptShroom. Guarded on
+  // an active slot so a vanilla Mushroom pickup never sets it.
+  if (placed == ITEM_Mushroom && g_rando_slot_active)
+    g_rando_mushroom_held = 1;
+
+  return placed;
 }
 
 // §6.2 partial: progressive items don't have a vanilla LttP code (the
@@ -433,6 +443,15 @@ uint32 Rando_GetReachabilityCounter(void) {
 bool g_rando_show_item_tracker = false;
 bool g_rando_show_location_tracker = false;
 uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
+uint8 g_rando_mushroom_held = 0;
+
+bool Rando_MushroomHeld(void) {
+  return g_rando_slot_active && g_rando_mushroom_held != 0;
+}
+
+void Rando_DeliverMushroom(void) {
+  g_rando_mushroom_held = 0;
+}
 
 void Rando_MarkLocationChecked(uint16 location_id) {
   if (!g_rando_slot_active) return;
@@ -456,6 +475,10 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // sizeof(out_slot->checked_bitmap) == kRandoCheckedBitmapBytes by
   // construction (both derived from the same 512-bit cap).
   memcpy(out_slot->checked_bitmap, g_rando_checked_bitmap, kRandoCheckedBitmapBytes);
+  // Persist Mushroom possession alongside the checked bitmap so an undelivered
+  // Mushroom survives save/reload (otherwise a reload could re-lock the
+  // Potion Shop check).
+  out_slot->header.mushroom_held = g_rando_mushroom_held;
 }
 
 void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
@@ -658,6 +681,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // session state. Bitmap size matches between slot and session
   // (both kRandoCheckedBitmapBytes = 64).
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
+  g_rando_mushroom_held = src->header.mushroom_held;
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
 
@@ -707,6 +731,7 @@ void Rando_DeactivateSlot(void) {
   // so the next slot launches with the documented "trackers default hidden"
   // contract.
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+  g_rando_mushroom_held = 0;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
 

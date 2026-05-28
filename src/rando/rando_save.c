@@ -124,8 +124,9 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   put_u16le(buf + 61, h->placement_table_size);
   // @63 flags
   buf[63] = h->flags;
-  // @64-79 reserved[16] — zero on write
-  memset(buf + 64, 0, 16);
+  // @64 mushroom_held (rando Mushroom-possession); @65-79 reserved — zero on write
+  buf[64] = h->mushroom_held;
+  memset(buf + 65, 0, 15);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -141,7 +142,8 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   out->sram_slot_checksum_at_last_write = get_u32le(buf + 57);
   out->placement_table_size = get_u16le(buf + 61);
   out->flags = buf[63];
-  // reserved bytes ignored — forward-compat
+  out->mushroom_held = buf[64];
+  // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -537,6 +539,7 @@ void RandoSave_SelfCheck(void) {
   // (21 entries × 2 bytes = 42 bytes).
   src.header.placement_table_size = 42;
   src.header.flags = 0x42;
+  src.header.mushroom_held = 0x01;
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -558,6 +561,7 @@ void RandoSave_SelfCheck(void) {
   if (get_u32le(buf + 57) != 0xDEADBEEF) selfcheck_die("sram_checksum at @57 wrong");
   if (get_u16le(buf + 61) != 42) selfcheck_die("placement_table_size at @61 wrong");
   if (buf[63] != 0x42) selfcheck_die("flags at @63 wrong");
+  if (buf[64] != 0x01) selfcheck_die("mushroom_held at @64 wrong");
   // Flat table layout check: location 5 should hold item 50.
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
     selfcheck_die("flat table: loc 5 item slot wrong");
@@ -580,6 +584,7 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.sram_slot_checksum_at_last_write != src.header.sram_slot_checksum_at_last_write) selfcheck_die("sram_checksum round-trip");
   if (dst.header.placement_table_size != src.header.placement_table_size) selfcheck_die("placement_table_size round-trip");
   if (dst.header.flags != src.header.flags) selfcheck_die("flags round-trip");
+  if (dst.header.mushroom_held != src.header.mushroom_held) selfcheck_die("mushroom_held round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
