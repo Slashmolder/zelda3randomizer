@@ -184,3 +184,48 @@ Without runtime wiring, Retro mode is effectively "Open + extra shop placements 
 - TakeAny dispatch infrastructure (the missing ROM-table mechanism).
 - RNG-driven `randomCollection(4)` + `randomCollection(5)` replication.
 - ProgressiveSword / ThreeHundredRupees "5th TakeAny" activation logic.
+
+## 5b. Slice 3b implementation plan (scoping pass 2026-05-28)
+
+Branch `pb-retro-takeany` (plan-only, no code). Findings from grounding against
+z3randomizer `shopkeeper.asm` + the ALTTPR PHP + this fork's cave handlers:
+
+**Corrections to earlier numbers**: there are **31** `Shop\TakeAny` declarations
+in `app/Region/Standard/**` (not 22); `randomCollection(4)` + a 5th +
+`randomCollection(5)` select a per-seed subset. Current `kGeneratorVersion` is
+**35** (any 3b bump is 35→36). `kSettingsCanonicalLen = 28`, guarded by the
+`_Static_assert` in `rando_spoiler.h`; Retro flags derive from `world_state` at
+runtime, so 3b should NOT need a canonical-len bump (flag for review if it grows).
+
+**Why it's a missing subsystem, not a hook**: in z3randomizer TakeAny is the
+same `Sprite_ShopKeeper` gated by `ShopType & $80`, driven by ROM data tables
+that don't exist here; ALTTPR activates a cave by ROM-patching the overworld
+entrance table (`[0xDBBE2 => [0x58]]` style) so the entrance loads a shopkeeper
+room. In this fork those 31 cave entrances lead to vanilla fairy ponds
+(`Sprite_72_FairyPond`), fortune tellers, bonk-rupee caves — no shopkeeper
+sprite spawns, no item-grant site exists, and entrance tables are static ROM
+assets with no per-seed redirection layer. Wiring a grant now = a dead path.
+
+**Required new infrastructure (the blocker, ~1.5–3 wks, item 1 dominates):**
+1. **Per-seed entrance redirection** — override the static
+   `kEntranceData_*`/`kOverworld_Entrance_Id` tables so the active cave
+   entrances load a take-any room instead of their vanilla room. No such layer
+   exists; this is the single largest piece.
+2. **Take-any room + shopkeeper presentation** — repurpose `Sprite_BB_Shopkeeper`
+   with a new subtype (or a new old-man handler): draw the keeper, present the
+   take-once item, grant without charging rupees, set a per-cave "taken" bit
+   (z3randomizer's `ShopState |= $07` + `PurchaseCounts`). Needs a new RAM byte
+   from the `kRam_*` block in `features.h`.
+3. **TakeAny dispatch + disambiguation table** — `(cave entrance/room) → LOC_id`,
+   returning the placed item via `Rando_DispatchVanillaGrant` / `Rando_ReceiveOrConfirm`
+   (mirrors `Rando_ShopDispatch`).
+
+**Generator surface**: up to 22 TakeAny location IDs (`world_state_filter:
+[retro]`, **Option B** = active-only gate recommended); a new `LOCTYPE_TakeAny`
+in `logic.schema.yaml` + `rando_logic_gen.py` (append-only like 3a's
+`LOCTYPE_Shop`/`ShopUpgrade`); deterministic `randomCollection` replication
+inside `BuildItemPool` (the corpus-determinism-sensitive piece — needs a
+dedicated review + a second-regen byte-identity check); `kGeneratorVersion`
+35→36; corpus regen via the same procedure 3a used (deterministic runner, no
+time/budget param — re-run reproduces identical digests). Non-Retro entries
+must stay byte-identical (Retro-gated branch).

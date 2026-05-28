@@ -2833,6 +2833,11 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
   g_settings_scroll_offset = 0;
   g_settings_preset_index = kPreset_OpenGanon;
   Settings_ApplyPreset(kPreset_OpenGanon, &g_settings_working);
+  // Default the in-game HINTS row to ON (user preference). This is UI-scoped:
+  // the global Settings_SetDefaults (used by CLI / corpus) stays hints=OFF, so
+  // default-settings placement/spoiler stamps are unchanged. The player can
+  // still toggle HINTS off in the menu before generating.
+  g_settings_working.hints = 1;
   TextField_Init(&g_settings_seed_field, /*base32_only=*/false);
   g_settings_seed_field.active = false;  // not focused by default
   g_settings_seed_parse_ok = true;
