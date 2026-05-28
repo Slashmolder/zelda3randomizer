@@ -779,6 +779,17 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   RandoSpheres spheres;
   Logic_ComputeSpheres(&settings, &table, &spheres);
 
+  // Regenerate the hint set so the spoiler JSON's `hints[]` array
+  // matches the generate-time bytes. Without this, the regenerated
+  // spoiler emits empty `hints: []` (module-static g_hint_table is
+  // zero in a fresh process), so any seed generated with hints=on
+  // would fail the SHA-256 stamp comparison below with
+  // kRandoReveal_StampMismatch. Determinism contract is in
+  // rando_hints.c:7 — same (settings, placement) → byte-identical
+  // hint text; mirrors the main.c:512 call site that produces the
+  // generate-time bytes.
+  (void)Rando_GenerateHints(&settings, &table, &spheres);
+
   // Build the spoiler view and write to a tmp file for stamp computation.
   // Slice 6 audit H1 — forward_fill_fallback_count and retry_attempts are
   // normalized in compute_stamp via the same constants (see
