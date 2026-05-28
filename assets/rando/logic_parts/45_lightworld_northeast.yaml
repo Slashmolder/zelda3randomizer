@@ -4,8 +4,22 @@
 # `../alttp_vt_randomizer/app/Region/Standard/LightWorld/NorthEast.php`.
 #
 # Region entry edge (LinksHouse -> LightWorld_NorthEast) is declared in the
-# main logic.yaml with the RescueZelda gate for Standard mode. This file just
-# declares the region and binds its locations.
+# main logic.yaml with the RescueZelda gate for Standard mode. This file
+# declares the region and binds locations that are NOT already in
+# logic.yaml — the Sahasrahla's Hut chests.
+#
+# IMPORTANT: King Zora, Sahasrahla, Potion Shop, Zora's Ledge, and the
+# two Waterfall Fairy chests are CANONICALLY DECLARED IN logic.yaml
+# (lines ~250-283 there). They MUST NOT be duplicated here — the codegen
+# "last wins" merge would let a less-restrictive predicate in this file
+# silently override logic.yaml's full predicate. Confirmed by Slice 4 §7
+# cluster audit: a prior copy of this file had `King Zora can_reach: TRUE()`
+# which clobbered logic.yaml's `(CanLiftRocks OR Flippers OR CanFakeFlippers
+# OR CanBootsClip OR major_glitches)` gate.
+#
+# Trick-disjunct surfacing for the locations declared in logic.yaml lives
+# in logic.yaml directly (e.g., King Zora's CanBootsClip + major_glitches
+# disjuncts).
 
 format_version: 1
 
@@ -29,33 +43,3 @@ locations:
     region: LightWorld_NorthEast
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthEast.php:34"
-
-  - id: "Sahasrahla"
-    region: LightWorld_NorthEast
-    can_reach: "OP_HAS_PRIZE(Prize_GreenPendant)"
-    source: "app/Region/Standard/LightWorld/NorthEast.php:35, 59-61"
-
-  - id: "King Zora"
-    region: LightWorld_NorthEast
-    can_reach: "TRUE()"
-    source: "app/Region/Standard/LightWorld/NorthEast.php:36, 73-77"
-
-  - id: "Potion Shop"
-    region: LightWorld_NorthEast
-    can_reach: "HAS_ITEM(Mushroom)"
-    source: "app/Region/Standard/LightWorld/NorthEast.php:37, 81-83"
-
-  - id: "Zora's Ledge"
-    region: LightWorld_NorthEast
-    can_reach: "HAS_ITEM(Flippers)"
-    source: "app/Region/Standard/LightWorld/NorthEast.php:38, 87-89"
-
-  - id: "Waterfall Fairy - Left"
-    region: LightWorld_NorthEast
-    can_reach: "HAS_ITEM(Flippers)"
-    source: "app/Region/Standard/LightWorld/NorthEast.php:39, 93-95"
-
-  - id: "Waterfall Fairy - Right"
-    region: LightWorld_NorthEast
-    can_reach: "HAS_ITEM(Flippers)"
-    source: "app/Region/Standard/LightWorld/NorthEast.php:40, 93-95"

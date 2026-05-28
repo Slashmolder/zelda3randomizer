@@ -41,17 +41,23 @@ regions:
     source: "app/Region/Standard/PalaceOfDarkness.php:15-69"
 
 edges:
-  # PoD can_enter (php:182-192). Phase A collapse:
+  # PoD can_enter (php:182-192). Phase A + Slice 4 §7:
   #   has(RescueZelda)
   #   AND (itemPlacement !== 'basic' [TRUE in Phase A] OR <basic-mode gate>) → TRUE
   #   AND (((MoonPearl OR canOWYBA+bottle OR canBunnyRevive)
   #         AND <NorthEastDarkWorld.canEnter>)
   #        OR (canOneFrameClipUW AND canDungeonRevive AND <WestDM.canEnter>))
-  # Trick disjuncts collapse to FALSE → required: RescueZelda AND MoonPearl AND
-  # reachability of DarkWorld_NorthEast (modeled via the parent edge).
+  # The OR-pearl gate (MoonPearl OR canOWYBA+bottle OR canBunnyRevive) is now
+  # surfaced via CanPearlBypass + CanBunnyRevival; the parent-region edge
+  # carries the DarkWorld_NorthEast reachability constraint. Defaults
+  # (tricks=0) collapse both new disjuncts to FALSE, preserving Phase A
+  # behavior (MoonPearl required).
+  # GAP: the canOneFrameClipUW + canDungeonRevive West-DM alt-entry is NOT
+  # modeled — no CanDungeonRevive macro exists in macros.yaml. Phase B
+  # follow-up should author the macro before this disjunct can land.
   - from: DarkWorld_NorthEast
     to: PalaceOfDarkness
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(MoonPearl)"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world))"
     source: "app/Region/Standard/PalaceOfDarkness.php:182-192 (can_enter closure)"
 
 locations:
@@ -93,10 +99,13 @@ locations:
   # Big Chest (php:100-105): Lamp AND BigKeyD1 AND
   #   ((Hammer && canShootArrows) || wildKeys ? KeyD1,6 : KeyD1,5)
   # wildKeys=false → KeyD1,5. setFillRules forbids placing KeyD1 here (no
-  # self-key); modeled below as can_place.
+  # self-key); modeled below as can_place. Slice 4 §7: mirror the Dark Maze
+  # dark-room-nav pattern — Big Chest sits behind the dark-basement traverse,
+  # so the lamp gate has the same `OR CanDarkRoomNav()` bypass (matches
+  # ALTTPR's `item.require.Lamp=0` semantics for PoD dark rooms).
   - id: "Palace of Darkness - Big Chest"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 5)"
     can_place: "NOT OP_ITEM_IS(SmallKey_PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:100-105"
 
@@ -126,15 +135,19 @@ locations:
   #   (Lamp || (itemPlacement=='advanced' && FireRod))
   #   && ((Hammer && canShootArrows && Lamp) || wildKeys ? KeyD1,4 : KeyD1,3)
   # advanced=false → require Lamp. wildKeys=false → KeyD1,3.
+  # Slice 4 §7: extends Dark Maze dark-room-nav pattern — the Dark Basement
+  # is a dark room in vanilla, so the Lamp gate carries the same
+  # `OR CanDarkRoomNav()` bypass.
   - id: "Palace of Darkness - Dark Basement - Left"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
     source: "app/Region/Standard/PalaceOfDarkness.php:128-132"
 
-  # Dark Basement - Right (php:134-138): identical body.
+  # Dark Basement - Right (php:134-138): identical body. Slice 4 §7 mirror
+  # of Dark Basement - Left.
   - id: "Palace of Darkness - Dark Basement - Right"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Lamp) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"
     source: "app/Region/Standard/PalaceOfDarkness.php:134-138"
 
   # Map Chest (php:140-142): canShootArrows.
@@ -169,15 +182,20 @@ locations:
   # mirrors EP Boss in logic.yaml). The wildCompasses / wildMaps clauses are
   # vacuous (Phase A pins both false). bossNormalLocation=true, so the
   # setFillRules / setAlwaysAllow branches collapse the same way EP does.
+  # Slice 4 §7: Helmasaur's room sits behind a dark traverse from the
+  # dark basement; lamp gate carries the `OR CanDarkRoomNav()` bypass to
+  # mirror the Dark Maze / Dark Basement pattern (matches ALTTPR's
+  # `item.require.Lamp=0` config-level dark-room-nav semantics).
   - id: "Palace of Darkness - Boss"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Lamp) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
+    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
     source: "app/Region/Standard/PalaceOfDarkness.php:160-180"
 
-  # Prize (php:65, 156-158, 194) — can_complete = Boss canAccess.
+  # Prize (php:65, 156-158, 194) — can_complete = Boss canAccess. Mirrors
+  # the Boss `Lamp OR CanDarkRoomNav()` pattern (same closure, same gate).
   - id: "Palace of Darkness - Prize"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Lamp) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
+    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
     source: "app/Region/Standard/PalaceOfDarkness.php:65, 156-158, 194 (can_complete = Boss access)"
 
 macros:
