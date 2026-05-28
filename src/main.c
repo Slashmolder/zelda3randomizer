@@ -38,6 +38,7 @@
 #include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
 #include "rando/shuffle_boss.h"  // BossShuffle_Generate (Slice 7 §63)
 #include "rando/shuffle_drops.h"  // DropShuffle_Generate (Slice 8 §64)
+#include "rando/rando_hints.h"  // Rando_GenerateHints (Slice 5 §3)
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
 static bool g_run_without_emu = 0;
@@ -503,6 +504,12 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     fprintf(stderr, "--generate-seed: %u placements unreachable across %u spheres\n",
             (unsigned)spheres.unreachable_count, (unsigned)(spheres.max_sphere + 1));
   }
+
+  // Phase B Slice 5 §3 — populate per-NPC hint texts. No-op when
+  // settings.hints == kHintsMode_Off. Output reaches users via the
+  // spoiler's `hints[]` array; runtime telepathic-tile intercept is
+  // playtest-gated (#85).
+  Rando_GenerateHints(&settings, &table, &spheres);
 
   // Build the spoiler and write it.
   RandoSpoiler spoiler;

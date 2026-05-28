@@ -13,6 +13,7 @@
 #include "rando_placement.h"
 #include "rando_settings.h"
 #include "rando.h"
+#include "rando_hints.h"
 #include "../config.h"
 #include "../types.h"
 
@@ -237,7 +238,10 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"accessibility\": %u,\n", s->settings->accessibility);
   fprintf(f, "    \"pyramid_bow_upgrade\": %u,\n", s->settings->pyramid_bow_upgrade);
   fprintf(f, "    \"pieces_required\": %u,\n", s->settings->pieces_required);
-  fprintf(f, "    \"pieces_placed\": %u\n", s->settings->pieces_placed);
+  fprintf(f, "    \"pieces_placed\": %u,\n", s->settings->pieces_placed);
+  fprintf(f, "    \"hints\": %u,\n", s->settings->hints);
+  fprintf(f, "    \"boss_shuffle\": %u,\n", s->settings->boss_shuffle);
+  fprintf(f, "    \"drop_shuffle\": %u\n", s->settings->drop_shuffle);
   fprintf(f, "  },\n");
 
   // -----------------------------------------------------------------------
@@ -297,6 +301,37 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
               s->placements->entries[i].item_id);
       first = false;
     }
+  }
+  fprintf(f, "],\n");
+  // -----------------------------------------------------------------------
+  // hints[] — Phase B Slice 5 §3. Emitted by `Rando_GenerateHints`,
+  // populated only when `settings.hints == kHintsMode_On`. Each entry
+  // mirrors ALTTPR's `(npc_string_id, text)` shape from HintService
+  // output; the `dialogue_id` is the runtime carve from `kRandoHint*`.
+  // When the runtime intercept (#85) lands these texts will surface
+  // in-game; today they're spoiler-only.
+  // -----------------------------------------------------------------------
+  fprintf(f, "  \"hints\": [");
+  {
+    bool first = true;
+    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
+      const char *text = Rando_GetHintString((RandoHintNpc)npc);
+      if (text == NULL) continue;
+      const char *npc_str = Rando_GetHintNpcStringId((RandoHintNpc)npc);
+      uint16 dlg = Rando_GetHintDialogueId((RandoHintNpc)npc);
+      if (first) fprintf(f, "\n");
+      fprintf(f, "    %s{\"npc\": \"%s\", \"dialogue_id\": %u, \"text\": \"",
+              first ? "" : ",\n    ", npc_str ? npc_str : "?", (unsigned)dlg);
+      // Escape minimal JSON chars in the text (quotes + backslash).
+      for (const char *p = text; *p; p++) {
+        char c = *p;
+        if (c == '"' || c == '\\') fputc('\\', f);
+        fputc(c, f);
+      }
+      fprintf(f, "\"}");
+      first = false;
+    }
+    if (!first) fprintf(f, "\n  ");
   }
   fprintf(f, "],\n");
   fprintf(f, "  \"playthrough\": [],\n");
@@ -649,6 +684,28 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     }
   }
   fprintf(f, "\n");
+
+  // Hints — Phase B Slice 5 §3. Mirrors the JSON `hints[]` array. The
+  // section is omitted entirely when no hints are populated (settings.hints
+  // == kHintsMode_Off, or non-rando spoiler context). Runtime telepathic-
+  // tile dispatch (#85) is deferred — these hints are spoiler-only today.
+  {
+    bool any_hint = false;
+    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
+      if (Rando_GetHintString((RandoHintNpc)npc) != NULL) { any_hint = true; break; }
+    }
+    if (any_hint) {
+      fprintf(f, "Hints:\n");
+      fprintf(f, "------\n");
+      for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
+        const char *text = Rando_GetHintString((RandoHintNpc)npc);
+        if (text == NULL) continue;
+        const char *npc_str = Rando_GetHintNpcStringId((RandoHintNpc)npc);
+        fprintf(f, "  %-42s : %s\n", npc_str ? npc_str : "?", text);
+      }
+      fprintf(f, "\n");
+    }
+  }
 
   fclose(f);
   return true;

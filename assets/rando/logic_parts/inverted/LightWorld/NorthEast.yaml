@@ -84,12 +84,17 @@ locations:
     can_reach: "OP_HAS_PRIZE(Prize_GreenPendant)"
     source: "app/Region/Inverted/LightWorld/NorthEast.php:65-67"
 
-  # `King Zora` (php:69-81): MoonPearl AND (canLiftRocks OR Flippers).
-  # All glitch branches (canFakeFlipper, canBootsClip+Boots, canWaterWalk+
-  # Boots, canSuperSpeed+canSpinSpeed+EastDM, canOneFrameClipOW) drop.
+  # `King Zora` (php:69-81): (MoonPearl OR (canOWYBA AND bottle)) AND
+  #   (canLiftRocks OR (canFakeFlipper OR Flippers) OR
+  #    ((canBootsClip OR canWaterWalk) AND PegasusBoots) OR
+  #    (canSuperSpeed AND spin AND EastDM)) OR canOneFrameClipOW
+  # Phase A retained `MoonPearl AND (canLiftRocks OR Flippers)`.
+  # Phase B Slice 4 §7 surfaces: pearl-bypass, fake-flippers,
+  # boots-clip, and the OWG top-level bypass. canSuperSpeed +
+  # canWaterWalk lack macros (Phase B reservation).
   - id: "King Zora"
     region: LightWorld_NorthEast
-    can_reach: "HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR HAS_ITEM(Flippers))"
+    can_reach: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip()))"
     source: "app/Region/Inverted/LightWorld/NorthEast.php:69-81"
 
   # `Potion Shop` (php:83-91): MoonPearl AND Mushroom. The canBunnyRevive

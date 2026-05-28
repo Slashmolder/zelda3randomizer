@@ -40,10 +40,13 @@ edges:
   #   && (itemPlacement!='basic' || <basic-mode gate>)       [TRUE]
   #   && (MoonPearl || canOWYBA+bottle || (canBunnyRevive && canSpinSpeed))
   #   && <NorthWestDarkWorld.canEnter>
-  # Trick disjuncts collapse to FALSE → required: RescuedZelda AND MoonPearl.
+  # Phase A retained `RescuedZelda AND MoonPearl`. Phase B Slice 4 §7
+  # surfaces the pearl-bypass alternative; canBunnyRevive+spin lacks
+  # macros so that disjunct drops. Default `tricks=0` collapses
+  # CanPearlBypass to FALSE → Phase A shape.
   - from: DarkWorld_NorthWest
     to: ThievesTown
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(MoonPearl)"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())"
     source: "app/Region/Standard/ThievesTown.php:118-126 (can_enter closure)"
 
 locations:

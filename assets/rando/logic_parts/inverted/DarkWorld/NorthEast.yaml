@@ -52,17 +52,17 @@ edges:
 
 locations:
   # `Catfish` (Inverted/NorthEast.php:52-62):
-  #   canLiftRocks OR
+  #   canLiftRocks OR (canBootsClip AND PegasusBoots) OR canOneFrameClipOW OR
   #   (MagicMirror AND South_Light_World_reachable AND
-  #     (MoonPearl OR <OWYBA dropped>) AND
-  #     (Flippers OR <fake-flipper/water-walk dropped>))
-  # All glitch branches drop. Surviving:
-  #   CanLiftRocks() OR
-  #   (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_South) AND
-  #    HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers))
+  #     (MoonPearl OR (canOWYBA AND bottle)) AND
+  #     (Flippers OR canFakeFlipper OR (canWaterWalk AND PegasusBoots)))
+  # Phase A retained `canLiftRocks OR (Mirror cross-region)`. Phase B
+  # Slice 4 §7 surfaces: boots-clip + OWG top-level; pearl-bypass on
+  # the MoonPearl conjunction; fake-flippers on the Flippers disjunct.
+  # canWaterWalk lacks a macro (Phase B reservation).
   - id: "Catfish"
     region: DarkWorld_NorthEast
-    can_reach: "CanLiftRocks() OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_South) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers))"
+    can_reach: "CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_South) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (HAS_ITEM(Flippers) OR CanFakeFlippers()))"
     source: "app/Region/Inverted/DarkWorld/NorthEast.php:52-62"
 
   # `Pyramid` — not overridden in Inverted; parent::initialize() is NOT

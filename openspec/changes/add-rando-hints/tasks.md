@@ -42,6 +42,10 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 **Status (2026-05-27)**: Scaffold in `src/rando/rando_hints.c` is a no-op stub. The actual translation is too large for an autonomous cleanup pass (≥3 hours focused work plus playtest verification of dispatch wiring at §5 + visible-output gate at §4). Deferred to a dedicated implementation sprint. Per `logic_vs_runtime_gap` memo: playtest at slice START — start by wiring `Rando_RemapTeleMsg` invocation in the message-engine read path so the generated text becomes visible in-game; THEN translate the generation algorithm.
 
+**Status update (phase-b adc6b08)**: Real generator body landed for CLI-path generations. 15 telepathic-tile hints + Murahdahla for Triforce goals. Spoiler emits `hints[]` array. **HIGH-3 of phase-b audit-of-audit**: `Rando_GenerateHints` does NOT run from `Rando_ActivateSidecarSlot` because the sidecar slot doesn't carry the full `RandoSettings` struct (only `settings_hash`, one-way). When §5 dispatch wiring (#85) lands, slot-loaded games will have an empty `g_hint_table` and telepathic tiles will read NULL. Two fix options recorded inline at `rando.c:632-650`:
+  - **(a)** Add a new sidecar TLV `TAIL_RANDO_SETTINGS` carrying the canonical 28-byte settings blob; ship paired with #85.
+  - **(b)** Synthesize default settings (hints=On, goal=detected-from-placements) and run `Rando_GenerateHints` from slot-load. Degraded shape but non-empty hint table.
+
 ## 4. Dialogue-ID injection
 
 - [ ] 4.1 Allocate dynamic dialogue IDs from the carved range (per design.md D2). E.g., IDs 0x300, 0x301, ... assigned to the HintEntry array in iteration order.

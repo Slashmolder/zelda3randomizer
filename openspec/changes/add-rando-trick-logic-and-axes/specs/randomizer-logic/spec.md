@@ -48,3 +48,42 @@ When `settings.logic == NoGlitches` (Phase A default), every `OP_GLITCH_LEVEL_AT
 #### Scenario: OverworldGlitches unlocks Bumper Cave Ledge
 - **WHEN** a seed has `settings.logic == OverworldGlitches` and the Bumper Cave Ledge location's predicate includes `OP_GLITCH_LEVEL_AT_LEAST OverworldGlitches`
 - **THEN** the location is reachable (subject to its other predicate constraints)
+
+### Requirement: Per-trick ROM-version verification status
+
+ALTTPR upstream targets the Japanese 1.0 ROM; this fork targets the US 1.0 ROM. Tricks and glitch-level mechanics that ALTTPR's logic graph assumes available may have JP/US timing differences, mechanic differences, or be entirely absent on US 1.0. The randomizer SHALL track per-trick ROM-version verification status so users can distinguish "ALTTPR says this trick exists" from "we have confirmed this trick works on US 1.0."
+
+Each entry in `assets/rando/op_registry.yaml`'s `tricks:` table SHALL carry a `rom_version_status` field with one of these values:
+
+- `untested-on-us10` — trick is in the upstream logic graph but no contributor has confirmed it on US 1.0 (DEFAULT for newly-added tricks).
+- `verified-us10` — trick has been performed end-to-end on a real US 1.0 build by a named contributor with the date recorded.
+- `cross-version` — trick is a pure player skill (e.g., `dark-room-nav` — memorize the layout) OR a mechanic that has been verified to behave identically on JP 1.0 and US 1.0.
+- `jp10-only` — trick has been confirmed to NOT work on US 1.0; SHALL NOT be used in trick gates.
+- `us10-different` — trick exists on both ROMs but with different timing/mechanics; the upstream logic graph's assumptions may not transfer; needs per-site verification.
+
+The same field SHALL be added to the `glitch_levels:` table in `op_registry.yaml` (OverworldGlitches, MajorGlitches, HybridMG, NoLogic), with the same value space.
+
+The generator SHALL emit a spoiler `fallback_warnings` entry of kind `unverified_tricks_enabled` when any active trick bit (`settings.tricks`) or non-zero glitch level (`settings.logic`) corresponds to a trick whose `rom_version_status` is `untested-on-us10`, `jp10-only`, or `us10-different`. The warning detail SHALL list the offending trick names so race admins and seed validators can decide whether to accept the seed.
+
+Tricks with `rom_version_status: jp10-only` SHALL NOT appear in any predicate body in `logic.yaml` or `logic_parts/*.yaml`; the codegen well-formedness pass SHALL reject any predicate that references them.
+
+#### Scenario: Default seed has no unverified-tricks warning
+- **WHEN** a seed is generated with `settings.tricks == 0` and `settings.logic == NoGlitches`
+- **THEN** the spoiler's `fallback_warnings` array does NOT contain an `unverified_tricks_enabled` entry
+
+#### Scenario: Enabling an untested-on-us10 trick surfaces warning
+- **WHEN** a seed is generated with `settings.tricks` enabling a trick whose `rom_version_status` is `untested-on-us10`
+- **THEN** the spoiler's `fallback_warnings` array contains an `unverified_tricks_enabled` entry naming that trick
+- **AND** the seed is still generated (the warning is informational, not blocking)
+
+#### Scenario: jp10-only trick rejected at codegen
+- **WHEN** the codegen pass encounters a `logic.yaml` or `logic_parts/*.yaml` predicate that references a trick whose `rom_version_status` is `jp10-only`
+- **THEN** codegen SHALL fail with an error citing the offending file and trick
+
+#### Scenario: cross-version trick does not surface warning
+- **WHEN** a seed is generated with `settings.tricks` enabling only tricks whose `rom_version_status` is `cross-version` or `verified-us10`
+- **THEN** the spoiler's `fallback_warnings` array does NOT contain an `unverified_tricks_enabled` entry
+
+#### Scenario: Glitch-level threshold same shape as trick verification
+- **WHEN** a seed is generated with `settings.logic == OverworldGlitches` and `glitch_levels: [{name: OverworldGlitches, rom_version_status: untested-on-us10}]` in the registry
+- **THEN** the spoiler's `fallback_warnings` array contains an `unverified_tricks_enabled` entry naming `OverworldGlitches`

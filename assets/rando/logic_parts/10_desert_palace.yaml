@@ -50,9 +50,12 @@ edges:
   #        || canOneFrameClipOW                          -- Phase B (dropped)
   #        || (MagicMirror && Mire->canEnter))           -- cross-region; dropped
   # Phase A collapses to RescuedZelda && BookOfMudora.
+  # Phase B Slice 4 §7: ALTTPR adds `canBootsClip && PegasusBoots` and
+  # `canOneFrameClipOW` as alternatives to BookOfMudora. Defaults
+  # (tricks=0, logic=NoGlitches) collapse both new branches to FALSE.
   - from: LightWorld_South
     to: DesertPalace_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(BookOfMudora)"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(BookOfMudora) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
     source: "app/Region/Standard/DesertPalace.php:122-128 (can_enter closure)"
 
   # Boss-room access: PHP boss predicate carries an inline gate that's the
@@ -61,9 +64,14 @@ edges:
   # onto this edge; per-location predicates below carry the rest.
   # The Phase B reroutes (BootsClip / SpinSpeed / OneFrameClipOW / Mirror+Mire)
   # are dropped per audit §0.10.2.
+  # Phase B Slice 4 §7: ALTTPR's spatial gate to the Boss past Lanmolas is
+  # `canLiftRocks || (canBootsClip && PegasusBoots) || canSuperSpeed+spin ||
+  # canOneFrameClipOW || (MagicMirror && Mire->canEnter)`. We surface
+  # boots-clip + OWG; canSuperSpeed lacks a macro and the Mirror+Mire
+  # cross-region disjunct is dropped per audit §0.10.2.
   - from: DesertPalace_Lobby
     to: DesertPalace_PastLanmolas
-    predicate: "CanLiftRocks()"
+    predicate: "CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Standard/DesertPalace.php:96-102 (Boss spatial gate)"
 
 locations:

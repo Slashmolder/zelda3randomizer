@@ -251,11 +251,15 @@ locations:
     can_reach: "OP_HAS_PRIZE(Prize_GreenPendant)"
     source: "app/Region/Standard/LightWorld/NorthEast.php:59-61"
 
-  # `King Zora` (php:63-69): canLiftRocks OR has(Flippers). All trick
-  # branches (canFakeFlipper, canWaterWalk+Boots, canBootsClip, etc.) are
-  # Phase B; dropped.
+  # `King Zora` (php:63-69):
+  #   canFakeFlipper || ((canWaterWalk || canBootsClip) && PegasusBoots)
+  #   || canOneFrameClipOW || canLiftRocks || Flippers
+  # Phase A retained `canLiftRocks || Flippers`. Phase B Slice 4 §7
+  # surfaces `CanFakeFlippers`, `CanBootsClip` (boots gate is inside
+  # the macro), and the OWG bypass. `canWaterWalk` lacks a macro
+  # (Phase B reservation) so its disjunct is dropped.
   - id: "King Zora"
-    can_reach: "CanLiftRocks() OR HAS_ITEM(Flippers)"
+    can_reach: "CanLiftRocks() OR HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Standard/LightWorld/NorthEast.php:63-69"
 
   # `Potion Shop` (php:71-73): has(Mushroom).

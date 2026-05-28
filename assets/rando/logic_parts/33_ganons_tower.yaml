@@ -48,27 +48,42 @@ regions:
     source: "app/Region/Standard/GanonsTower.php:15-85"
 
 edges:
-  # can_enter (php:396-416). After dropping Phase B settings:
-  #   RescuedZelda
-  #   AND MoonPearl                                       [bottle-bunny FALSE]
-  #   AND (crystal_count >= crystals.tower=7)
-  #   AND DarkWorld_DeathMountain_East reachable
-  # The west-DM boots-clip branch and the canOneFrameClipOW branch are
-  # both Phase B → FALSE.
+  # can_enter (php:396-415). Phase B Slice 4 §7 surfaces three trick
+  # disjuncts behind OP_TRICK / OP_GLITCH_LEVEL gates; under default
+  # settings (tricks=0, logic=no_glitches) all three collapse to FALSE
+  # and the predicate is byte-identical to the Phase A form.
+  #
+  # PHP shape after dropping unsupported macros (no canSuperSpeed,
+  # no canDungeonRevive):
+  #   RescueZelda
+  #   AND (
+  #     ((MoonPearl OR canOWYBA+bottle)
+  #       AND (
+  #         (crystal_count>=tower-count AND East-DM-reach)
+  #         OR (canBootsClip+Boots AND West-DM-reach)
+  #       ))
+  #     OR (canOneFrameClipOW AND (MoonPearl OR canOWYBA+bottle))
+  #   )
+  #
+  # Note: West-DM mirror-clip route is a cross-crystal-count BYPASS —
+  # the crystals.tower=7 gate sits only on the East-DM branch, matching
+  # PHP nesting at php:401-412. Do not factor the crystal gate above
+  # the disjunction.
   - from: DarkWorld_DeathMountain_East
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(MoonPearl) AND HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)"
-    source: "app/Region/Standard/GanonsTower.php:396-416 (can_enter closure)"
+    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())))"
+    source: "app/Region/Standard/GanonsTower.php:396-415 (can_enter closure)"
 
   # Convenience edge from the standard DarkWorld_NorthEast region (the
   # Pyramid). The actual GT door tile is on East DM; this edge captures
   # the common spec usage where the parent overworld region is
   # DarkWorld_NorthEast and the edge predicate factors the East DM
-  # reachability via OP_REGION_REACHABLE.
+  # reachability via OP_REGION_REACHABLE. The West-DM boots-clip
+  # disjunct factors West-DM reachability via OP_REGION_REACHABLE too.
   - from: DarkWorld_NorthEast
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(MoonPearl) AND HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)"
-    source: "app/Region/Standard/GanonsTower.php:396-416 (can_enter via East DM reach)"
+    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)))"
+    source: "app/Region/Standard/GanonsTower.php:396-415 (can_enter via East DM reach)"
 
 locations:
   # GT - Bob's Torch (php:194-196): has(PegasusBoots).

@@ -52,9 +52,30 @@ edges:
   #   AND canKillMostThings(world, 8)
   #   AND DarkWorld_Mire reachable
   # CanReachDarkMire factors the flute+moonpearl reach (per worked example 04).
+  #
+  # Phase B Slice 4 §7: re-expand the MoonPearl conjunct's bunny-bypass
+  # alternatives (php:140-149 nested OR-chain). Full PHP structure:
+  #   MoonPearl OR (hasABottle AND (
+  #     (BugCatchingNet AND canBunnyRevive AND (
+  #        (canLiftDarkRocks AND (canFly OR (canBootsClip+Boots)))
+  #        OR (canOWYBA AND MagicMirror)
+  #        OR canOneFrameClipOW))
+  #     OR (canOWYBA AND (
+  #        (canBootsClip+Boots)
+  #        OR canOneFrameClipOW
+  #        OR hasBottle(2)))))
+  # Macro mapping:
+  #   canBunnyRevive + hasABottle + BugCatchingNet → CanBunnyRevival(world)
+  #     (CanBunnyRevival bundles CanBunnyRevive which bundles HasABottle +
+  #      BugCatchingNet — macros.yaml CanBunnyRevival)
+  #   canOWYBA + hasABottle               → CanPearlBypass()
+  #   canBootsClip + Boots                → CanBootsClip()
+  #   canOneFrameClipOW                   → OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)
+  # Default (tricks=0, logic=NoGlitches) collapses every new disjunct
+  # to FALSE → predicate reduces to the Phase A shape (MoonPearl AND ...).
   - from: DarkWorld_Mire
     to: MiseryMire_Entrance
-    predicate: "HAS_ITEM(RescuedZelda) AND HAS_ITEM(MoonPearl) AND (HAS_ITEM(Boots) OR HAS_ITEM(Hookshot)) AND CanKillMostThings(world, 8) AND CanReachDarkMire()"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MoonPearl) OR (CanBunnyRevival(world) AND ((CanLiftDarkRocks() AND (CanFly(world) OR CanBootsClip())) OR (CanPearlBypass() AND HAS_ITEM(MagicMirror)) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR HasBottle(2)))) AND (HAS_ITEM(Boots) OR HAS_ITEM(Hookshot)) AND CanKillMostThings(world, 8) AND CanReachDarkMire()"
     source: "app/Region/Standard/MiseryMire.php:132-154 (can_enter — approach)"
 
   # Second leg — read the medallion tablet to open MM.
@@ -123,15 +144,19 @@ locations:
   #   AND BigKeyD6
   #   AND boss->canBeat(Vitreous)
   #   AND wildCompasses/wildMaps disjuncts (collapse to TRUE)
+  # Phase B Slice 4 §7: Lamp gate gains CanDarkRoomNav() alternative
+  # (mirrors `item.require.Lamp=0` config — macros.yaml CanDarkRoomNav).
+  # Default `tricks=0` collapses CanDarkRoomNav() to FALSE → Phase A shape.
   - id: "Misery Mire - Boss"
     region: MiseryMire_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
     source: "app/Region/Standard/MiseryMire.php:110-117"
 
   # MM - Prize (php:156 → can_complete = Boss canAccess).
+  # Phase B Slice 4 §7: mirror the Boss Lamp/CanDarkRoomNav substitution.
   - id: "Misery Mire - Prize"
     region: MiseryMire_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
     source: "app/Region/Standard/MiseryMire.php:106-108, 156 (can_complete = Boss access)"
 
 macros:
