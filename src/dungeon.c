@@ -4592,8 +4592,24 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
   static const uint8 kBossFinishedFallingItem[13] = { 0, 0, 1, 2, 0, 6, 6, 6, 6, 6, 3, 6, 6 };
   if (!(dung_savegame_state_bits & 0x8000))
     return;
+  uint8 didx = BYTE(cur_palace_index_x2) >> 1;
   int t = savegame_is_darkworld ? link_has_crystals : link_which_pendants;
-  if (!(t & kDungeonCrystalPendantBit[BYTE(cur_palace_index_x2) >> 1])) {
+  // "Have I already collected THIS dungeon's prize?" gate. Vanilla keys off
+  // the dungeon's fixed pendant/crystal bit (kDungeonCrystalPendantBit[didx]),
+  // but under prize_shuffle the placed prize grants a DIFFERENT bit than the
+  // dungeon's vanilla one — so the vanilla-bit test both falsely closes (some
+  // other dungeon's prize already set this bit, so the prize is skipped and no
+  // reward is granted) and falsely stays open. Gate on the rando prize
+  // LOCATION instead; the dispatch below marks it checked, closing the gate
+  // after collection.
+  bool prize_uncollected;
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    uint16 ploc = Rando_GetBossPrizeLocation(didx);
+    prize_uncollected = (ploc != 0xFFFFu) && !Rando_IsLocationChecked(ploc);
+  } else {
+    prize_uncollected = !(t & kDungeonCrystalPendantBit[didx]);
+  }
+  if (prize_uncollected) {
     byte_7E04C2 = 128;
     // §6.6 prize dispatch: fire Rando_OnLocationCheck for the boss-prize
     // slot. Phase A's prize_shuffle identity-places crystals/pendants at

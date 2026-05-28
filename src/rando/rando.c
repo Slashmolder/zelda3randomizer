@@ -277,9 +277,9 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
 // Per ALTTPR Prize\Pendant / Prize\Crystal classes and the vanilla bit
 // allocations in Link_ReceiveItem's pendant case and AncillaAdd_FallingPrize's
 // crystal case:
-//   GreenPendant → link_which_pendants bit 2 (mask 0x04)
-//   RedPendant   → link_which_pendants bit 0 (mask 0x01)
-//   BluePendant  → link_which_pendants bit 1 (mask 0x02)
+//   GreenPendant (EP)  → link_which_pendants bit 2 (mask 0x04)
+//   RedPendant   (DP)  → link_which_pendants bit 1 (mask 0x02)
+//   BluePendant  (ToH) → link_which_pendants bit 0 (mask 0x01)
 //   Crystal1 (PoD)  → link_has_crystals bit 4 (mask 0x10)
 //   Crystal2 (SP)   → link_has_crystals bit 1 (mask 0x02)
 //   Crystal3 (SW)   → link_has_crystals bit 0 (mask 0x01)
@@ -294,9 +294,9 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
 // Returns 1 on success.
 static int prize_item_direct_grant(uint16 registry_id) {
   switch (registry_id) {
-    case ITEM_Prize_GreenPendant: link_which_pendants |= 0x04; return 1;
-    case ITEM_Prize_RedPendant:   link_which_pendants |= 0x01; return 1;
-    case ITEM_Prize_BluePendant:  link_which_pendants |= 0x02; return 1;
+    case ITEM_Prize_GreenPendant: link_which_pendants |= 0x04; return 1;  // EP
+    case ITEM_Prize_RedPendant:   link_which_pendants |= 0x02; return 1;  // DP
+    case ITEM_Prize_BluePendant:  link_which_pendants |= 0x01; return 1;  // ToH
     case ITEM_Prize_Crystal1: link_has_crystals |= 0x10; return 1;
     case ITEM_Prize_Crystal2: link_has_crystals |= 0x02; return 1;
     case ITEM_Prize_Crystal3: link_has_crystals |= 0x01; return 1;
