@@ -1798,7 +1798,10 @@ static void Hud_RandoDrawLocationTrackerInner(int *slot) {
   if (t == NULL || t->count == 0)
     return;
 
-  enum { kCols = 8, kCellPx = 8, kOriginX = 256 - 8 - (kCols - 1) * 8, kOriginY = 16 };
+  // kMaxY bounds the grid so a full ~266-location seed can't drive `py` past
+  // the bottom of the screen (it would wrap the uint8 and overlap the HUD).
+  // `rows` is monotonic, so once a row clears kMaxY every later row does too.
+  enum { kCols = 8, kCellPx = 8, kOriginX = 256 - 8 - (kCols - 1) * 8, kOriginY = 16, kMaxY = 200 };
   uint16 prev_region = 0xFFFF;
   int col = 0, rows = 0;
 
@@ -1818,6 +1821,10 @@ static void Hud_RandoDrawLocationTrackerInner(int *slot) {
       col = 0;
     }
     if (col >= kCols) { rows++; col = 0; }
+
+    // Stop before the grid runs off the bottom of the screen (uint8 wrap).
+    if (kOriginY + rows * kCellPx > kMaxY)
+      break;
 
     uint8 px = (uint8)(kOriginX + col * kCellPx);
     uint8 py = (uint8)(kOriginY + rows * kCellPx);

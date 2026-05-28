@@ -17,8 +17,8 @@
 #include "rando/location_ids.h"
 
 // Type 0x44 (index 68) is the Phase B Slice 9 rando icon-receipt ancilla —
-// see Ancilla44_RandoIconReceipt below. Pflag 0x10 reserves OAM slots for the
-// 8x16 (two-tile) icon draw, matching Ancilla22_ItemReceipt's allocation.
+// see Ancilla44_RandoIconReceipt below. Its Pflag is 8 (reserves 2 OAM
+// entries) for the 8x16 (two-tile) icon draw, matching Ancilla22_ItemReceipt.
 static const uint8 kAncilla_Pflags[69] = {
   0,    8,  0xc, 0x10, 0x10,    4, 0x10, 0x18,    8,    8,    8,    0, 0x14, 0, 0x10, 0x28,
   0x18, 0x10, 0x10, 0x10, 0x10,  0xc,    8,    8, 0x50,    0, 0x10,    8, 0x40, 0,  0xc, 0x24,
