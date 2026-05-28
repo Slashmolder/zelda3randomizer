@@ -60,7 +60,7 @@ locations:
   # the OWG bypass. canSuperSpeed lacks a macro.
   - id: "King's Tomb"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(Boots) AND (CanLiftDarkRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
+    can_reach: "HAS_ITEM(Boots) AND (CanLiftDarkRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/LightWorld/NorthWest.php:93-102"
 
   # `Kakariko Tavern` (php:34) — no setRequirements; default TRUE.
@@ -177,7 +177,7 @@ locations:
   # macros so those disjuncts drop.
   - id: "Graveyard Ledge"
     region: LightWorld_NorthWest
-    can_reach: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    can_reach: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
     source: "app/Region/Standard/LightWorld/NorthWest.php:132-139"
 
   # `Mushroom` (php:53) — no setRequirements; default TRUE.

@@ -37,7 +37,7 @@ edges:
   # collapse both new branches to FALSE.
   - from: LightWorld_NorthEast
     to: LightWorld_DeathMountain_West
-    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp)) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR CanBootsClip()"
+    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp)) OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR CanBootsClip()"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:62-70"
 
   # DM East entry — `can_enter` (East.php:89-98):
@@ -50,7 +50,7 @@ edges:
   # canSuperSpeed lacks a macro (Phase B reservation).
   - from: LightWorld_DeathMountain_West
     to: LightWorld_DeathMountain_East
-    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera_Lobby)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera_Lobby)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:89-98"
 
 locations:
@@ -106,7 +106,7 @@ locations:
   # variant; just add the simple OWG path here.
   - id: "Mimic Cave"
     region: LightWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND ((HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND ((HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)) OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:68-77"
 
   # `Paradox Cave` chests (East.php:34-40) — no setRequirements; default TRUE.
@@ -154,7 +154,7 @@ locations:
   # collapse to FALSE under default (tricks=0, logic=NoGlitches).
   - id: "Floating Island"
     region: LightWorld_DeathMountain_East
-    can_reach: "(HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanBombThings() AND CanLiftRocks() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR CanBootsClip() OR CanPearlBypass() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    can_reach: "(HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanBombThings() AND CanLiftRocks() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR CanBootsClip() OR CanPearlBypass() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:79-87"
 
 macros: []

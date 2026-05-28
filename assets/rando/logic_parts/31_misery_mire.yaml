@@ -70,12 +70,12 @@ edges:
   #      BugCatchingNet — macros.yaml CanBunnyRevival)
   #   canOWYBA + hasABottle               → CanPearlBypass()
   #   canBootsClip + Boots                → CanBootsClip()
-  #   canOneFrameClipOW                   → OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)
+  #   canOneFrameClipOW                   → OP_GLITCH_LEVEL_AT_LEAST(major_glitches)
   # Default (tricks=0, logic=NoGlitches) collapses every new disjunct
   # to FALSE → predicate reduces to the Phase A shape (MoonPearl AND ...).
   - from: DarkWorld_Mire
     to: MiseryMire_Entrance
-    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MoonPearl) OR (CanBunnyRevival(world) AND ((CanLiftDarkRocks() AND (CanFly(world) OR CanBootsClip())) OR (CanPearlBypass() AND HAS_ITEM(MagicMirror)) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR HasBottle(2)))) AND (HAS_ITEM(Boots) OR HAS_ITEM(Hookshot)) AND CanKillMostThings(world, 8) AND CanReachDarkMire()"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MoonPearl) OR (CanBunnyRevival(world) AND ((CanLiftDarkRocks() AND (CanFly(world) OR CanBootsClip())) OR (CanPearlBypass() AND HAS_ITEM(MagicMirror)) OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR HasBottle(2)))) AND (HAS_ITEM(Boots) OR HAS_ITEM(Hookshot)) AND CanKillMostThings(world, 8) AND CanReachDarkMire()"
     source: "app/Region/Standard/MiseryMire.php:132-154 (can_enter — approach)"
 
   # Second leg — read the medallion tablet to open MM.

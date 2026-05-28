@@ -65,7 +65,7 @@ locations:
   # §7 surfaces the boots-clip + OWG top-level bypasses.
   - id: "Bumper Cave"
     region: DarkWorld_NorthWest
-    can_reach: "(CanLiftRocks() AND HAS_ITEM(Cape) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthWest)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    can_reach: "(CanLiftRocks() AND HAS_ITEM(Cape) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthWest)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
     source: "app/Region/Inverted/DarkWorld/NorthWest.php:42-51"
 
   # `Blacksmith` (Inverted/NorthWest.php:53-62):

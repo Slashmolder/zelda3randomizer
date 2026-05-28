@@ -259,7 +259,7 @@ locations:
   # the macro), and the OWG bypass. `canWaterWalk` lacks a macro
   # (Phase B reservation) so its disjunct is dropped.
   - id: "King Zora"
-    can_reach: "CanLiftRocks() OR HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    can_reach: "CanLiftRocks() OR HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
     source: "app/Region/Standard/LightWorld/NorthEast.php:63-69"
 
   # `Potion Shop` (php:71-73): has(Mushroom).

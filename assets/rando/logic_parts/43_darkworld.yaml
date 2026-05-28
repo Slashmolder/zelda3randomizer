@@ -232,16 +232,20 @@ locations:
     can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks()"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:96-106"
 
-  # `Bumper Cave` (NorthWest.php:108-116): MoonPearl AND
-  #   ((itemPlacement!=='basic' || Hookshot) → Hookshot in Phase A) AND
-  #   canLiftRocks AND Cape. Phase B Slice 4 §7: ALTTPR's first disjunct
-  # is `canOneFrameClipOW` — un-pins under `logic=overworld_glitches+`.
-  # The MoonPearl gate also has a `canOWYBA && bottle` (pearl-bypass)
-  # alternative. Defaults (logic=NoGlitches, tricks=0) collapse both
-  # new branches to FALSE.
+  # `Bumper Cave` (NorthWest.php:108-116):
+  #   canOneFrameClipOW
+  #   OR ((MoonPearl OR (canOWYBA AND hasABottle) OR canBunnyRevive)
+  #        AND ((canBootsClip AND PegasusBoots)
+  #             OR ((itemPlacement!=='basic' OR Hookshot) AND canLiftRocks AND Cape)))
+  # Phase A: itemPlacement axis dropped per audit §0.10.2; we conservatively
+  # retain Hookshot as the gate for the non-bootsClip path (basic-mode shape).
+  # Phase B Slice 4 §7: surfaces canOneFrameClipOW (MajorGlitches), the
+  # full pearl-gate OR-chain (MoonPearl OR CanPearlBypass OR CanBunnyRevival),
+  # AND the canBootsClip+Boots inner disjunct (previously dropped).
+  # Defaults (logic=NoGlitches, tricks=0) collapse the new branches to FALSE.
   - id: "Bumper Cave"
     region: DarkWorld_NorthWest
-    can_reach: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape))"
+    can_reach: "OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanBootsClip() OR (HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape))))"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:108-116"
 
   # `Blacksmith` (NorthWest.php:118-128): (itemPlacement!=='basic' ||

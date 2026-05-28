@@ -70,7 +70,7 @@ locations:
   # (depends on macros not in our trick set).
   - id: "King's Tomb"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(Boots) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftDarkRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
+    can_reach: "HAS_ITEM(Boots) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftDarkRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:42-60"
 
   # `Kakariko Tavern` (php:62-69): MoonPearl (superbunny/OWYBA branches drop).

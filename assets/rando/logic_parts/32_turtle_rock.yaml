@@ -65,7 +65,7 @@ edges:
   # canMirrorClip / canSuperSpeed have no macro (Phase B reservation).
   - from: LightWorld_DeathMountain_East
     to: TurtleRock_Entrance
-    predicate: "(HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer) AND CanLiftDarkRocks() AND HAS_ITEM(MagicMirror)) OR (CanBootsClip() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())) OR (OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()))"
+    predicate: "(HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer) AND CanLiftDarkRocks() AND HAS_ITEM(MagicMirror)) OR (CanBootsClip() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())) OR (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()))"
     source: "app/Region/Standard/TurtleRock.php:87-101 (upper approach)"
 
   # `$middle` route (php:103-115) — dark-world DM-East approach via
@@ -79,7 +79,7 @@ edges:
   # Phase A had no edge here.
   - from: DarkWorld_DeathMountain_East
     to: TurtleRock_Entrance
-    predicate: "(CanBootsClip() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())) OR (OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()))"
+    predicate: "(CanBootsClip() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())) OR (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()))"
     source: "app/Region/Standard/TurtleRock.php:103-115 (middle approach)"
 
   # Second leg — read the TR medallion tablet to open the dungeon door.
@@ -97,7 +97,7 @@ edges:
   # to the Phase A medallion+sword+somaria form.
   - from: TurtleRock_Entrance
     to: TurtleRock_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND ((OP_MEDALLION_OPENS(TurtleRock_Entrance) AND HasSword(1) AND HAS_ITEM(CaneOfSomaria)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
+    predicate: "HAS_ITEM(RescuedZelda) AND ((OP_MEDALLION_OPENS(TurtleRock_Entrance) AND HasSword(1) AND HAS_ITEM(CaneOfSomaria)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/TurtleRock.php:87-101, 257-264 (entrance)"
 
 locations:

@@ -71,7 +71,7 @@ edges:
   # the disjunction.
   - from: DarkWorld_DeathMountain_East
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())))"
+    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())))"
     source: "app/Region/Standard/GanonsTower.php:396-415 (can_enter closure)"
 
   # Convenience edge from the standard DarkWorld_NorthEast region (the
@@ -82,7 +82,7 @@ edges:
   # disjunct factors West-DM reachability via OP_REGION_REACHABLE too.
   - from: DarkWorld_NorthEast
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)))"
+    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)))"
     source: "app/Region/Standard/GanonsTower.php:396-415 (can_enter via East DM reach)"
 
 locations:
