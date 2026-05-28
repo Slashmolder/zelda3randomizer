@@ -13,6 +13,8 @@
 #include "assets.h"
 #include "features.h"   // enhanced_features1 / kFeatures1_RandomizerActive
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
+#include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
+#include "rando/item_ids.h"      // ITEM_PieceOfHeart
 
 const uint16 kOverworld_OffsetBaseX[64] = {
   0,     0, 0x400, 0x600, 0x600, 0xa00, 0xa00, 0xe00,
@@ -2760,6 +2762,26 @@ void HandlePegPuzzles(uint16 pos) {  // 8edd67
     if (++word_7E04C8 == 22) {
       save_ow_event_info[0x62] |= 0x20;
       sound_effect_2 = 27;
+      // Phase B Slice 8 §67/#79 — Hammer Pegs minigame dispatch. The 22nd
+      // peg-hit is the once-per-save trigger for the PoH reward. Mirror the
+      // Digging Game pattern from DiggingGameGuy_AttemptPrizeSpawn: dispatch
+      // through Rando_DispatchVanillaGrant, then set the obtained-bit on
+      // save_ow_event_info[0x62] (overworld_screen_index 98 = 0x62) so the
+      // vanilla standing PoH (`Sprite_HeartPiece`) doesn't ALSO spawn when
+      // the tile reveal below uncovers its tile — HeartUpgrade_CheckIfAlreadyObtained
+      // consults that bit and refuses to activate. Rando_ReceiveOrConfirm
+      // grants the placed item directly (for non-direct-grant placements
+      // like Bow/Sword) or fires the confirmation cue (for direct-grant
+      // placements like HalfMagic/Triforce/prize-bits).
+      // The (0x40 == 0) gate prevents re-trigger if the player somehow
+      // hits the 22nd-peg state machine again on the same save (word_7E04C8
+      // is RAM, the obtained-bit is save-state).
+      if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+          (save_ow_event_info[0x62] & 0x40) == 0) {
+        uint8 lttp = Rando_DispatchVanillaGrant(LOC_Hammer_Pegs, ITEM_PieceOfHeart, 0x26);
+        save_ow_event_info[0x62] |= 0x40;
+        Rando_ReceiveOrConfirm(lttp, (uint8)Rando_LastDispatchedItemId());
+      }
       door_open_closed_counter = 0x50;
       big_rock_starting_address = 0xd20;
       Overworld_DoMapUpdate32x32_B();
