@@ -123,17 +123,26 @@ locations:
   # Dark World — Mire (Mire.php:14-100)
   # ===========================================================================
 
-  # `Mire Shed - Left` (Mire.php:66-74): MoonPearl (Phase A — all OWYBA
-  # /bottle/canSuperBunny/mirror-bunny branches drop).
+  # `Mire Shed - Left` (Mire.php:66-74):
+  #   MoonPearl
+  #   OR (canOWYBA AND hasABottle AND
+  #        (canOneFrameClipOW OR hasBottle(2)
+  #         OR (MagicMirror AND BugCatchingNet AND canBunnyRevive)
+  #         OR (canBootsClip AND PegasusBoots)))
+  #   OR (canSuperBunny AND MagicMirror)
+  # Slice 4 §7 surfaces the bunny-glitch pearl-bypass branch with its full
+  # 4-way inner trigger. Defaults (tricks=0, logic=NoGlitches) collapse
+  # the new disjunct to FALSE; predicate reduces to HAS_ITEM(MoonPearl).
+  # canSuperBunny+MagicMirror branch stays dropped — no CanSuperBunny macro.
   - id: "Mire Shed - Left"
     region: DarkWorld_Mire
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
     source: "app/Region/Standard/DarkWorld/Mire.php:66-74"
 
-  # `Mire Shed - Right` (Mire.php:76-84): same as left.
+  # `Mire Shed - Right` (Mire.php:76-84): identical shape to Left.
   - id: "Mire Shed - Right"
     region: DarkWorld_Mire
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
     source: "app/Region/Standard/DarkWorld/Mire.php:76-84"
 
   # ===========================================================================
@@ -208,38 +217,54 @@ locations:
   # Phase A inline: we use the hasSword(2)+Lamp disjunct as the minimum;
   # extended-magic+FireRod is a Phase A authoring shorthand using
   # CanExtendMagic(world, 1) (the default 2-bar form).
+  # Slice 4 §7: NorthEast.php pearl gate includes a canOWYBA+bottle
+  # alternative (`MoonPearl OR (canOWYBA AND hasABottle)`). PHP for Ganon
+  # has NO canBunnyRevive disjunct on the pearl gate — distinguish from
+  # other DW pearl-OR sites that surface CanBunnyRevival.
   - id: "Ganon"
     region: DarkWorld_NorthEast
-    can_reach: "HAS_ITEM(MoonPearl) AND HasSword2() AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND HasSword2() AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
     source: "app/Region/Standard/DarkWorld/NorthEast.php:186-234"
 
   # ===========================================================================
   # Dark World — North West (NorthWest.php:14-167)
   # ===========================================================================
 
-  # `Brewery` (NorthWest.php:78-82): canBombThings AND MoonPearl.
+  # `Brewery` (NorthWest.php:78-82):
+  #   canBombThings AND (MoonPearl OR (canOWYBA AND hasABottle) OR canBunnyRevive)
+  # Slice 4 §7 surfaces the full pearl-OR triple.
   - id: "Brewery"
     region: DarkWorld_NorthWest
-    can_reach: "CanBombThings() AND HAS_ITEM(MoonPearl)"
+    can_reach: "CanBombThings() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world))"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:78-82"
 
-  # `C-Shaped House` (NorthWest.php:84-88): MoonPearl.
+  # `C-Shaped House` (NorthWest.php:84-88):
+  #   MoonPearl OR canSuperBunny OR (canOWYBA AND hasABottle) OR canBunnyRevive
+  # canSuperBunny stays dropped — no macro.
   - id: "C-Shaped House"
     region: DarkWorld_NorthWest
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:84-88"
 
-  # `Chest Game` (NorthWest.php:90-94): MoonPearl.
+  # `Chest Game` (NorthWest.php:90-94): identical to C-Shaped House.
   - id: "Chest Game"
     region: DarkWorld_NorthWest
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:90-94"
 
-  # `Hammer Pegs` (NorthWest.php:96-106): Hammer AND MoonPearl AND
-  # canLiftDarkRocks. Mirror-wrap and Flippers/glitch branches drop.
+  # `Hammer Pegs` (NorthWest.php:96-106):
+  #   Hammer AND
+  #   (MoonPearl OR (canOWYBA AND hasABottle) OR canBunnyRevive) AND
+  #   (canLiftDarkRocks OR (MagicMirror AND canMirrorWrap)
+  #    OR ((canFakeFlipper OR Flippers)
+  #         AND (canOneFrameClipOW OR (canBootsClip AND PegasusBoots)
+  #              OR (canSuperSpeed AND canSpinSpeed))))
+  # Slice 4 §7: surfaces pearl-OR triple + the canFakeFlipper/Flippers
+  # alt-traverse path. canMirrorWrap+mirror and canSuperSpeed+canSpinSpeed
+  # disjuncts stay dropped — no macros.
   - id: "Hammer Pegs"
     region: DarkWorld_NorthWest
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks()"
+    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftDarkRocks() OR ((CanFakeFlippers() OR HAS_ITEM(Flippers)) AND (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR CanBootsClip())))"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:96-106"
 
   # `Bumper Cave` (NorthWest.php:108-116):
@@ -277,43 +302,50 @@ locations:
   # Dark World — South (South.php:14-160)
   # ===========================================================================
 
-  # `Hype Cave - Top` (South.php:65-69): MoonPearl.
+  # `Hype Cave - Top/Middle Right/Middle Left/Bottom/NPC` (South.php:65-93):
+  # all five chests share the predicate
+  #   MoonPearl OR (canOWYBA AND hasABottle) OR canBunnyRevive
+  # Slice 4 §7 surfaces the full pearl-OR triple.
   - id: "Hype Cave - Top"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:65-69"
 
   - id: "Hype Cave - Middle Right"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:71-75"
 
   - id: "Hype Cave - Middle Left"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:77-81"
 
   - id: "Hype Cave - Bottom"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:83-87"
 
   - id: "Hype Cave - NPC"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:89-93"
 
-  # `Stumpy` (South.php:95-100): MoonPearl OR (MagicMirror + canMirrorWrap).
-  # canMirrorWrap drops in Phase A; only MoonPearl survives.
+  # `Stumpy` (South.php:95-100):
+  #   MoonPearl OR (canOWYBA AND hasABottle) OR canBunnyRevive
+  #   OR (MagicMirror AND canMirrorWrap)
+  # Slice 4 §7 surfaces the pearl-OR triple. canMirrorWrap+mirror stays
+  # dropped — no CanMirrorWrap macro.
   - id: "Stumpy"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:95-100"
 
-  # `Digging Game` (South.php:102-106): MoonPearl.
+  # `Digging Game` (South.php:102-106):
+  #   MoonPearl OR (canOWYBA AND hasABottle) OR canBunnyRevive
   - id: "Digging Game"
     region: DarkWorld_South
-    can_reach: "HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     source: "app/Region/Standard/DarkWorld/South.php:102-106"
 
   # ===========================================================================
@@ -337,42 +369,51 @@ locations:
   # `tricks=pearl-bypass`, the canOWYBA+bottle alternative un-pins
   # (CanPearlBypass = `OP_TRICK(pearl_bypass) AND HasABottle()`).
   # Default `tricks=0` collapses CanPearlBypass to FALSE → Phase A shape.
+  # PHP shape (East.php:58-70):
+  #   canSuperBunny OR MoonPearl
+  #   OR (canOWYBA AND hasABottle AND (canBootsClip+Boots OR canOneFrameClipOW))
+  # The previous YAML had `MoonPearl OR CanPearlBypass()` which is too
+  # permissive — under tricks=pearl-bypass alone, PHP STILL requires
+  # boots-clip OR clipOW co-trick. Tighten to mirror PHP's inner AND.
+  # canSuperBunny still dropped (no macro).
   - id: "Superbunny Cave - Top"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass()"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:58-63"
 
   - id: "Superbunny Cave - Bottom"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl) OR CanPearlBypass()"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:65-70"
 
-  # `Hookshot Cave - Top Right` (East.php:72-77): Hookshot AND MoonPearl
-  # AND canLiftRocks. Phase B Slice 4 §7: under `tricks=boots-clip`, the
-  # canLiftRocks disjunct gains the upstream `canBootsClip && PegasusBoots`
-  # alternative; default `tricks=0` collapses CanBootsClip to FALSE.
+  # PHP shape (East.php:72-91 for the four Hookshot Cave chests):
+  #   Hookshot AND
+  #   (MoonPearl OR (canOWYBA AND hasABottle)) AND
+  #   (canLiftRocks OR canOneFrameClipOW OR (canBootsClip AND PegasusBoots))
+  # Slice 4 §7 surfaces the pearl-OR alternative (CanPearlBypass) AND
+  # the canOneFrameClipOW movement disjunct. East.php pearl gate omits
+  # canBunnyRevive — distinguish from other DW sites.
   - id: "Hookshot Cave - Top Right"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:72-77"
 
   - id: "Hookshot Cave - Top Left"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:79-84"
 
   - id: "Hookshot Cave - Bottom Left"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:86-91"
 
   # `Hookshot Cave - Bottom Right` (East.php:93-98): Hookshot OR (Boots in
   # non-basic placement, which drops in Phase A); plus the MoonPearl +
-  # canLiftRocks gate. Phase A keeps only Hookshot. Phase B Slice 4 §7:
-  # same boots-clip trick alternative to canLiftRocks as the other 3.
+  # canLiftRocks gate with the same trick disjuncts as the other three.
   - id: "Hookshot Cave - Bottom Right"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl) AND (CanLiftRocks() OR CanBootsClip())"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:93-98"
 
 macros: []
