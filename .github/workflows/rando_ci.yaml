@@ -65,6 +65,15 @@ jobs:
     - name: run_rando_corpus (1.0a, manifest schema)
       run: python assets/scripts/run_rando_corpus.py
 
+    # Codegen well-formedness in --strict mode. The build invokes
+    # rando_logic_gen.py in non-strict mode (warnings logged but
+    # build proceeds). CI runs it strictly so any new well-formedness
+    # warning (e.g., the region-binding silent-bypass guard added
+    # post-King-Zora-regression) fails CI instead of being a build
+    # log warning that a maintainer might miss.
+    - name: rando_logic_gen --strict
+      run: python assets/rando_logic_gen.py --strict
+
   # --------------------------------------------------------------------------
   # Build-dependent guards. Need a compiled binary / object files. Run on the
   # full OS matrix once src/rando/ has compilable content.
