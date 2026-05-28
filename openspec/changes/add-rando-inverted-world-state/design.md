@@ -44,6 +44,73 @@ of focused work. Same shape as the `fork-dispatch-gaps` pattern: the
 fork's reimplementation has logic-graph plumbing but is missing the
 gameplay-state plumbing for non-default world-states.
 
+### UPDATE 2026-05-28 (branch `pb-inverted-runtime`) — runtime partially built
+
+What was IMPLEMENTED on this branch (the tractable pieces):
+
+1. **`world_state` persisted in the slot header @68** (additive, like the
+   pb2-hints @65-67 ext; no size bump, no `kSettingsCanonicalLen` change,
+   no `kGeneratorVersion` bump). Written at the in-game Generate path
+   (`select_file.c`), read in `Rando_ActivateSidecarSlot` into a new
+   `Rando_GetActiveWorldState()` accessor.
+2. **Reliable Moon Pearl + Magic Mirror grant.** Moved the Inverted MP+MM
+   grant in `Rando_TryGrantStartingInventory` ABOVE the once-per-boot and
+   cold-boot gates so it fires on slot reload (where `settings == NULL`) by
+   consulting `Rando_GetActiveWorldState()`. Idempotent (no-op bit-set).
+3. **Dark-World start state baked into the fresh-save SRAM image.** For an
+   Inverted seed, the rando Generate path writes
+   `savegame_is_darkworld = 0x40`, `sram_progress_indicator = 2`
+   (skip the rain/escape intro), `sram_progress_flags = 0x14`,
+   `link_item_moon_pearl = 1`, `link_item_mirror = 2` directly into the
+   SRAM slot — mirroring ALTTPR's `initsramtable.asm` SRAM init table
+   (`InitCurrentWorld` / `InitProgressIndicator` / `InitProgressFlags`).
+   Result: a generated Inverted seed boots **directly into the Dark World
+   overworld** (Module05_LoadFile's `savegame_is_darkworld` branch →
+   `main_module_index = 8`), with the Moon Pearl (so Link is NOT a bunny)
+   and the Magic Mirror, and NO Light-World intro cutscene.
+
+What remains STUBBED / DEFERRED (the large piece):
+
+**The overworld LW↔DW topology tile-swap is NOT ported.** ALTTPR realizes
+the inverted overworld with a per-screen tilemap-overlay subsystem
+(`z3randomizer/invertedmaps.asm`, ~1563 lines of RLE-encoded
+`OverworldMapChangePointers` data driving `Overworld_LoadNewTiles`, plus
+`inverted.asm` ~265 lines of per-screen special-casing: pyramid hole,
+electric barrier, Ganon's Tower animation, Turtle-Rock peg, hardcoded-rock
+removal, and a `MirrorBonk` rectangle table for fake-world bonk regions).
+Without it, the Dark-World start screen renders the *native* DW geometry of
+the Link's-House-counterpart screen ("fake DW") rather than a globally
+inverted topology where every LW area's tiles appear in the DW slot and
+vice-versa. So: **the seed starts in the Dark World correctly, but the
+world is NOT actually swapped** — DW areas still look like DW, LW areas
+(reached via mirror) still look like LW. This is honest per
+`logic_vs_runtime_gap`: the start is real, the topology inversion is not.
+
+**Concrete plan for the deferred tile-swap** (effort ≈ 1-2 weeks):
+
+- New `src/rando/inverted_overworld.c` (or extend `overworld.c`) porting
+  `Overworld_LoadNewTiles` + the `OverworldMapChangePointers` table.
+- The ~1563 lines of RLE overlay DATA must be ported as a C asset/table
+  (likely a new `assets/` blob loaded via `assets.h`/`load_gfx.c`, since it
+  is ~KB of per-screen tile rewrites). This is the bulk of the work and the
+  precise blocker: it is a new data-driven asset subsystem, not a code tweak.
+- Hook the overlay into the overworld load (`PreOverworld_LoadProperties` /
+  `LoadOverworldFromDungeon`) gated on `Rando_GetActiveWorldState() ==
+  kWorldState_Inverted`.
+- Port the `inverted.asm` per-screen special cases (pyramid hole, electric
+  barrier, GT animation, TR peg pre-solved, LW rock removal) — each is a
+  small targeted patch to the corresponding `overworld.c`/`dungeon.c`
+  handler, gated on Inverted.
+- Port `MirrorBonk` rectangle table + `DoWorldFix_Inverted` /
+  `SetDeathWorldChecked_Inverted` (`darkworldspawn.asm`) so death/mirror
+  respawn keeps `savegame_is_darkworld = 0x40` and the mirror behaves as the
+  DW→LW exit. The death-respawn-world handling in `misc.c` /
+  `Module05_LoadFile` would need an Inverted branch (currently the vanilla
+  rule "mirror/Agahnim sends you to LW" applies).
+- Verify against the existing `kFeatures0_MirrorToDarkworld` flag — it is
+  UNRELATED (a cosmetic convenience letting the mirror be used in the LW; it
+  does NOT swap topology).
+
 
 
 **Integration: BLOCKED on world-state-aware predicate merge.** The codegen (`assets/rando_logic_gen.py:_merge_logic_doc`) currently does "last wins" merge per location. Loading the Inverted YAML overwrites Standard predicates for same-named locations, corrupting Standard placements (verified: corpus 50/50 FAILED with recursive glob enabled). The codegen revert to non-recursive glob restores the corpus to 50/50 OK — Inverted files sit on disk as reference until the world-state-aware merge lands.

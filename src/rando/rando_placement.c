@@ -1560,12 +1560,35 @@ extern uint8 g_ram[];
 bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   // `settings` MAY be NULL — production callers (e.g., the Module05_LoadFile
   // wiring) don't have the full RandoSettings struct on slot-reload because
-  // the sidecar slot persists only `settings_hash`, not the canonical 28-byte
-  // settings blob (open TODO in `Rando_ActivateSidecarSlot`). When NULL, this
-  // function still performs the placement-based escape-ammo grant (doesn't
-  // need world_state); the world_state-dependent Inverted branch is skipped.
-  // CLI generation paths that DO have settings should pass them.
+  // the sidecar slot persists only `settings_hash` + a few additive ext bytes,
+  // not the canonical settings blob. When NULL, the world_state-dependent
+  // Inverted branch reads the world_state captured at Rando_ActivateSidecarSlot
+  // via Rando_GetActiveWorldState() (the sidecar header carries world_state
+  // additively at @68); the placement-based escape-ammo grant doesn't need
+  // world_state. CLI generation paths that DO have settings should pass them.
   if (g_rando_slot_active == 0) return false;
+
+  // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents. These are
+  // ALSO baked into the fresh-save SRAM image at slot creation
+  // (select_file.c), so this is defense-in-depth — and idempotent, since
+  // Link_ReceiveItem for an already-owned absolute is a no-op bit-set. We
+  // grant ABOVE the once-per-boot and cold-boot gates because:
+  //   (a) `settings` is NULL on slot-reload (the sidecar persists only
+  //       settings_hash, not the canonical settings blob), so we read the
+  //       world_state captured at Rando_ActivateSidecarSlot instead; and
+  //   (b) the Inverted starting state must hold on EVERY load (including
+  //       cold-boot of an in-progress save), where the cold-boot gate below
+  //       would otherwise short-circuit before reaching the old grant site.
+  // rando-exempt: state-shuffle — bunny-state starting inventory (Inverted)
+  {
+    uint8 ws = (settings != NULL) ? settings->world_state
+                                  : Rando_GetActiveWorldState();
+    if (ws == kWorldState_Inverted) {
+      Link_ReceiveItem(0x1f, 0);  // Moon Pearl (registry id 39, vanilla dispatch 0x1f)
+      Link_ReceiveItem(0x1a, 0);  // Magic Mirror (registry id 36, vanilla dispatch 0x1a)
+    }
+  }
+
   if (g_rando_starting_inventory_granted != 0) return false;
 
   // Cold-boot exploit guard. `g_rando_starting_inventory_granted` lives at
@@ -1580,24 +1603,19 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   // the refill, matching ALTTPR's setEscapeFills semantics (refill on each
   // Uncle/Zelda/Sanctuary respawn).
   //
-  // The Inverted Moon-Pearl + Magic-Mirror grant BELOW this gate is
-  // intentionally idempotent — Link_ReceiveItem for already-owned absolutes
-  // is a no-op bit-set. So a future fix that thread `settings` through to
-  // this call won't break Inverted on cold-boot (the gate short-circuits
-  // before MP+MM but those grants would be no-ops anyway). Keep MP+MM
-  // below the gate so the cold-boot guard remains a single check.
+  // The Inverted Moon-Pearl + Magic-Mirror grant lives ABOVE this gate (see
+  // the top of this function) precisely so it still fires when this cold-boot
+  // guard short-circuits. Those grants are idempotent (Link_ReceiveItem for an
+  // already-owned absolute is a no-op bit-set), so re-running them every boot
+  // is harmless; only the escape-ammo filler below must be guarded.
   if (g_ram[0xF3C5] != 0) {
     g_rando_starting_inventory_granted = 1;  // dedupe within this boot
     return false;
   }
 
-  // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents. Skipped when
-  // settings is NULL — Inverted-on-slot-reload needs world_state persisted
-  // through the sidecar (separate fix; see TODO above).
-  if (settings != NULL && settings->world_state == kWorldState_Inverted) {
-    Link_ReceiveItem(0x1f, 0);  // Moon Pearl (registry id 39, vanilla dispatch 0x1f)
-    Link_ReceiveItem(0x1a, 0);  // Magic Mirror (registry id 36, vanilla dispatch 0x1a)
-  }
+  // (Inverted Moon Pearl + Magic Mirror are granted ABOVE the cold-boot gate
+  // now — see the top of this function — so the grant fires on reload where
+  // settings is NULL and survives the cold-boot short-circuit.)
 
   // Escape-ammo pre-grant. Prevents impossible-seed cases where the sphere-0
   // weapon needs ammo the player doesn't start with (bow/no-arrows,

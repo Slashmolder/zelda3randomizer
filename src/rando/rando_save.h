@@ -61,7 +61,13 @@ typedef enum {
 //   @65 settings_ext_present (u8)            (Phase B hints; 1 = @66/@67 meaningful, 0 = unset)
 //   @66 hints_setting (u8)                   (Phase B hints; RandoHintsMode: 0=off 1=on)
 //   @67 goal (u8)                            (Phase B hints; Goal enum, rando_settings.h)
-//   @68 reserved[12]                         (forward-compat; zero on write)
+//   @68 world_state (u8)                      (Phase B Inverted runtime; WorldState enum,
+//                                              rando_settings.h. Only meaningful when
+//                                              settings_ext_present == 1. Carried additively so
+//                                              slot-load knows it is an Inverted seed and can
+//                                              grant Moon Pearl + Magic Mirror / start in the
+//                                              Dark World. Older slots read 0 == Open == no-op.)
+//   @69 reserved[11]                         (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===
@@ -104,6 +110,13 @@ typedef struct RandoSlotHeader {
   uint8 settings_ext_present;   // @65
   uint8 hints_setting;          // @66 (RandoHintsMode: 0=off 1=on)
   uint8 goal;                   // @67 (Goal enum, rando_settings.h)
+  // Phase B Inverted runtime: the seed's world_state, carried additively at
+  // @69... no — at @68 (first reserved byte after the hints ext). Only
+  // meaningful when settings_ext_present == 1. Lets slot-load regrant the
+  // Inverted starting inventory (Moon Pearl + Magic Mirror) and recognize an
+  // Inverted seed for runtime world-state setup. Older slots / non-populated
+  // writers read 0 (== kWorldState_Open), which is the safe no-op default.
+  uint8 world_state;            // @68 (WorldState enum, rando_settings.h)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

@@ -310,6 +310,14 @@ bool Rando_MushroomHeld(void);
 // Clear the possession flag — call when the Witch accepts the Mushroom.
 void Rando_DeliverMushroom(void);
 
+// Phase B Inverted runtime — the active slot's world_state (WorldState enum),
+// captured at Rando_ActivateSidecarSlot from the slot header's additive @68
+// byte. Returns kWorldState_Open (0) when no slot is active or the slot
+// predates the world_state ext. Used by the starting-inventory grant to
+// recognize an Inverted slot on reload, where the full RandoSettings struct
+// is unavailable.
+uint8 Rando_GetActiveWorldState(void);
+
 // Copy g_rando_checked_bitmap into the supplied slot's checked_bitmap field.
 // Callers about to write the ACTIVE rando slot to disk should invoke this
 // just before calling Rando_WriteSidecarSlot so the in-memory checks survive
