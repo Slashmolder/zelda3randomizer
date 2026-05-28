@@ -257,7 +257,14 @@ void PlayerHandler_00_Ground_3() {  // 8781a0
           link_player_handler_state == kPlayerState_Ether ||
           link_player_handler_state == kPlayerState_Quake))
         goto getout_clear_vel;
-      if (sram_progress_indicator != 0) {
+      // Vanilla gated the swing pipeline on sram_progress_indicator != 0 as a
+      // proxy for "Link has been given a sword" — safe in vanilla because the
+      // indicator only flips at Uncle's death scene, which always grants the
+      // sword too. Rando decouples those: Uncle can give non-sword items, and
+      // chests can grant a sword pre-Uncle. Gate on inventory directly so the
+      // pipeline runs iff Link actually has a usable sword.
+      uint8 sword = link_sword_type;
+      if (sword != 0 && sword != 0xFF) {
         Link_HandleSwordCooldown();
         if (link_player_handler_state == 3)
           goto getout_clear_vel;

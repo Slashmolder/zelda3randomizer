@@ -23,11 +23,14 @@ edges: []
 
 locations:
   # `Waterfall Bottle` (php:30): Fountain in LightWorld_NorthEast.
-  # No setRequirements → reach-by-region.
+  # ALTTPR's PHP has no setRequirements, but the fountain is physically
+  # behind the waterfall — Link swims in. Without Flippers the room is
+  # unreachable, so progression items placed here are effectively locked
+  # out of sphere 0 (Lamp landing here softlocks the sewers).
   - id: "Waterfall Bottle"
     region: LightWorld_NorthEast
-    can_reach: "TRUE()"
-    source: "app/Region/Standard/Fountains.php:30"
+    can_reach: "HAS_ITEM(Flippers)"
+    source: "app/Region/Standard/Fountains.php:30 — Flippers added (waterfall access)"
 
   # `Pyramid Bottle` (php:31): Fountain in DarkWorld_NorthEast.
   # No setRequirements → reach-by-region (gated by the region's can_enter

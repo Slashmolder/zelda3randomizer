@@ -1,0 +1,61 @@
+# 45_lightworld_northeast.yaml — Light World North East region
+#
+# Mechanically translated from
+# `../alttp_vt_randomizer/app/Region/Standard/LightWorld/NorthEast.php`.
+#
+# Region entry edge (LinksHouse -> LightWorld_NorthEast) is declared in the
+# main logic.yaml with the RescueZelda gate for Standard mode. This file just
+# declares the region and binds its locations.
+
+format_version: 1
+
+regions:
+  - id: LightWorld_NorthEast
+    name: "Light World - North East"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:14-99"
+
+locations:
+  - id: "Sahasrahla's Hut - Left"
+    region: LightWorld_NorthEast
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:32"
+
+  - id: "Sahasrahla's Hut - Middle"
+    region: LightWorld_NorthEast
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:33"
+
+  - id: "Sahasrahla's Hut - Right"
+    region: LightWorld_NorthEast
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:34"
+
+  - id: "Sahasrahla"
+    region: LightWorld_NorthEast
+    can_reach: "OP_HAS_PRIZE(Prize_GreenPendant)"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:35, 59-61"
+
+  - id: "King Zora"
+    region: LightWorld_NorthEast
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:36, 73-77"
+
+  - id: "Potion Shop"
+    region: LightWorld_NorthEast
+    can_reach: "HAS_ITEM(Mushroom)"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:37, 81-83"
+
+  - id: "Zora's Ledge"
+    region: LightWorld_NorthEast
+    can_reach: "HAS_ITEM(Flippers)"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:38, 87-89"
+
+  - id: "Waterfall Fairy - Left"
+    region: LightWorld_NorthEast
+    can_reach: "HAS_ITEM(Flippers)"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:39, 93-95"
+
+  - id: "Waterfall Fairy - Right"
+    region: LightWorld_NorthEast
+    can_reach: "HAS_ITEM(Flippers)"
+    source: "app/Region/Standard/LightWorld/NorthEast.php:40, 93-95"

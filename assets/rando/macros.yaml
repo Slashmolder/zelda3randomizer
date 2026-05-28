@@ -344,15 +344,18 @@ macros:
       to TRUE()).
 
   # ===========================================================================
-  # canBombThings — bombs are always available in vanilla ALTTPR.
+  # canBombThings — requires the player to actually have a bomb refill item.
   # ===========================================================================
   - name: CanBombThings
     parameters: []
-    body: "TRUE()"
+    body: "HAS_ANY_OF([Bombs1, Bombs3, Bombs10])"
     source: "app/Support/ItemCollection.php:602-605"
     notes: |
-      ALTTPR returns true unconditionally — Link starts with bombs and
-      bomb refills are common-pool. Phase A inherits this assumption.
+      ALTTPR returns true unconditionally because its Standard ROM patch
+      pre-grants 10 starting bombs. This port does not pre-grant bombs.
+      A TRUE() body would let the codegen simplify CanKillEscapeThings
+      to TRUE (any OR-with-TRUE collapses), making the placer believe
+      every HC escape chest is reachable with no items.
       Phase B no-bombs-from-start variant flips this to `HAS_ITEM(Bombs1)
       OR HAS_ITEM(Bombs3) OR HAS_ITEM(Bombs10)` plus a worldstate gate.
 

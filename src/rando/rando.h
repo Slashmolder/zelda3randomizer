@@ -19,7 +19,7 @@
 //
 // Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 17u  // Phase B Slice 3a #53 part 2: Retro Shop slots (LOCTYPE_Shop = 14) identity-pinned per ALTTPR Randomizer.php:737-750 — shops sell vanilla inventory; randomization is "find shops + pay rupees," not shuffled inventory. Placement changes for Retro seeds; corpus regen on the 3 Retro entries.
+#define kGeneratorVersion 32u
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

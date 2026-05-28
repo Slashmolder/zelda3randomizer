@@ -1394,7 +1394,17 @@ void Sprite_EE_MovableMantle(int k) {
   Sprite_NullifyHookshotDrag();
   Sprite_RepelDash();
 
-  if (follower_indicator != 1 || !link_item_torch || link_is_running || sprite_G[k] == 0x90 || sign8(link_actual_vel_x - 24))
+  // Vanilla gates the push on link_item_torch (lamp) as a "post-wake-up"
+  // sentinel — the room isn't dark (lights_out: 0 in dungeon-81.yaml). Vanilla
+  // could rely on this because Link's House chest always yields the lamp, so
+  // by the time Zelda is a tagalong the player guaranteed-has it. Under rando
+  // the chest is shuffled and the lamp may live elsewhere, leaving the player
+  // unable to push the throne and softlocked at the Hyrule Castle escape.
+  // follower_indicator == 1 (Zelda following) is the real prerequisite; drop
+  // the lamp gate when rando is active.
+  bool no_lamp_gate = !link_item_torch &&
+                      !(enhanced_features1 & kFeatures1_RandomizerActive);
+  if (follower_indicator != 1 || no_lamp_gate || link_is_running || sprite_G[k] == 0x90 || sign8(link_actual_vel_x - 24))
     return;
 
   which_starting_point = 4;

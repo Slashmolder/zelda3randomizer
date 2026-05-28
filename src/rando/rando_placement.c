@@ -16,6 +16,8 @@
 #include "rando_logic.h"
 #include "rando_rng.h"
 #include "rando_shuffles.h"
+#include "item_ids.h"
+#include "location_ids.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -602,7 +604,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
 //      fallback after timeout" — bounded-rewind is the in-attempt retry
 //      strategy; this is the cross-attempt retry strategy.)
 // ---------------------------------------------------------------------------
-#define kAssumedFillMaxAttempts 8
+#define kAssumedFillMaxAttempts 256
 
 static PlacementStats g_last_placement_stats;
 
@@ -631,6 +633,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
 
   uint16 best_unreachable = 0xFFFF;
   uint16 best_fallback = 0xFFFF;
+  uint16 best_score_cached = 0xFFFF;  // includes the no-core-weapon penalty
   static RandoPlacement best_entries[512];
   uint16 best_count = 0;
   bool best_complete = false;
@@ -664,16 +667,86 @@ bool Place_AssumedFill(const RandoSettings *settings,
     // Check completability via sphere computation.
     RandoSpheres spheres;
     bool full_reach = Logic_ComputeSpheres(settings, out, &spheres);
-    if (full_reach && fallback_count == 0) {
+    // ALTTPR's Standard-mode lock-in-house ROM patch isn't shipped in this
+    // port: the player can technically walk to Light World from game start
+    // but combat-blocking guards make it impractical without a weapon. The
+    // 5 always-reachable slots that need no weapon (Link's House chest,
+    // Uncle, Sewers Dark Cross, HC Map Chest, Secret Passage) MUST contain
+    // at least one canKillEscapeThings-satisfying item or the seed is a
+    // soft-softlock. Reject attempts that fail this.
+    bool has_core_weapon = false;
+    bool has_escape_lamp = false;
+    if (settings->world_state == kWorldState_Standard) {
+      // The 4 sphere-0 slots — reachable from game start without combat.
+      static const uint16 kCoreLocIds[] = {
+        LOC_Link_s_House,
+        LOC_Link_s_Uncle,
+        LOC_Hyrule_Castle_Map_Chest,
+        LOC_Secret_Passage,
+      };
+      // Lamp must be reachable BEFORE the dark sewers gate (Sanctuary etc.).
+      // That means either at the 4 sphere-0 slots OR at one of the 2 HCE
+      // chests that need only canKillEscapeThings (Boomerang Chest, Zelda's
+      // Cell). All other locations require RescuedZelda, which itself
+      // requires Lamp via the Sanctuary gate — placing Lamp anywhere else
+      // creates a cycle and softlocks the escape.
+      static const uint16 kEscapeLocIds[] = {
+        LOC_Link_s_House,
+        LOC_Link_s_Uncle,
+        LOC_Hyrule_Castle_Map_Chest,
+        LOC_Secret_Passage,
+        LOC_Hyrule_Castle_Boomerang_Chest,
+        LOC_Hyrule_Castle_Zelda_s_Cell,
+      };
+      // Items that satisfy canKillEscapeThings (matches macros.yaml
+      // CanKillEscapeThings body: HasSword OR Somaria OR Byrna OR
+      // CanBombThings OR CanShootArrowsL1 OR Hammer OR FireRod).
+      static const uint16 kWeaponItemIds[] = {
+        ITEM_ProgressiveSword, ITEM_L1Sword, ITEM_L2Sword, ITEM_L3Sword, ITEM_L4Sword,
+        ITEM_CaneOfSomaria, ITEM_CaneOfByrna,
+        ITEM_Bow, ITEM_ProgressiveBow,
+        ITEM_Hammer, ITEM_FireRod,
+        ITEM_Bombs1, ITEM_Bombs3, ITEM_Bombs10,
+      };
+      for (uint16 i = 0; i < out->count; i++) {
+        uint16 loc = out->entries[i].location_id;
+        uint16 item = out->entries[i].item_id;
+        if (!has_core_weapon) {
+          for (size_t c = 0; c < sizeof(kCoreLocIds)/sizeof(kCoreLocIds[0]); c++) {
+            if (loc != kCoreLocIds[c]) continue;
+            for (size_t w = 0; w < sizeof(kWeaponItemIds)/sizeof(kWeaponItemIds[0]); w++) {
+              if (item == kWeaponItemIds[w]) { has_core_weapon = true; break; }
+            }
+            break;
+          }
+        }
+        if (!has_escape_lamp && item == ITEM_Lamp) {
+          for (size_t e = 0; e < sizeof(kEscapeLocIds)/sizeof(kEscapeLocIds[0]); e++) {
+            if (loc == kEscapeLocIds[e]) { has_escape_lamp = true; break; }
+          }
+        }
+      }
+    } else {
+      // Open/Inverted/Retro: not gated on HC escape combat / sewer dark.
+      has_core_weapon = true;
+      has_escape_lamp = true;
+    }
+    if (full_reach && fallback_count == 0 && has_core_weapon && has_escape_lamp) {
       // Best possible outcome — accept this placement.
       g_last_placement_stats.forward_fill_fallback_count = 0;
       g_last_placement_stats.best_unreachable_count = 0;
       return true;
     }
-    // Track best-so-far (fewest unreachable + fewest fallbacks).
-    uint16 score = spheres.unreachable_count * 100 + fallback_count;
-    uint16 best_score = (best_unreachable == 0xFFFF) ? 0xFFFF : (best_unreachable * 100 + best_fallback);
-    if (score < best_score) {
+    // Track best-so-far (fewest unreachable + fewest fallbacks). Treat
+    // "no core weapon" and "no escape-reachable Lamp" each as ~20 extra
+    // unreachables for ranking purposes — they're effectively softlocks
+    // even though the placer's local reachability thinks they're fine.
+    uint16 effective_unreachable = spheres.unreachable_count
+        + (has_core_weapon ? 0 : 20)
+        + (has_escape_lamp ? 0 : 20);
+    uint16 score = effective_unreachable * 100 + fallback_count;
+    if (score < best_score_cached) {
+      best_score_cached = score;
       best_unreachable = spheres.unreachable_count;
       best_fallback = fallback_count;
       best_count = out->count;
@@ -737,14 +810,38 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   Rando_SetMedallionAssignment(medallion_assignment);
 
   // ----- 2. Partition into progression / junk -----
+  // Per ALTTPR Filler/RandomAssumed.php — split progression so DUNGEON items
+  // (small keys, big keys, maps, compasses) are placed FIRST, then other
+  // progression. Dungeon items have the most-restrictive can_place / dungeon-
+  // mode constraints; placing them first means the assumed inventory still
+  // contains all other progression (weapons, lamp, etc.), so they land at the
+  // most-reachable in-dungeon slot. Placing them late lets other progression
+  // fill in-dungeon slots first, often leaving keys with only circular slots
+  // remaining and triggering forward-fill fallback.
   static uint16 progression[256];
   static uint16 junk[512];
   uint16 prog_n = 0, junk_n = 0;
+  uint16 dungeon_prog_n = 0;  // first dungeon_prog_n entries of progression[] are dungeon items
   for (uint16 i = 0; i < pool_n; i++) {
-    if (is_progression_item(pool[i])) {
-      if (prog_n < sizeof(progression) / sizeof(progression[0])) progression[prog_n++] = pool[i];
+    uint16 it = pool[i];
+    if (is_progression_item(it)) {
+      if (prog_n < sizeof(progression) / sizeof(progression[0])) {
+        // Dungeon items: small key (53..65), big key (66..76).
+        // (Maps 77..87 + 124 and compasses 88..98 are NOT in progression per
+        // is_progression_item, so they fall through to junk and are handled
+        // by the constraint-aware junk-fill below.)
+        bool is_dungeon_item = (it >= 53 && it <= 76);
+        if (is_dungeon_item) {
+          // Insert at the front of the dungeon-prog prefix.
+          for (uint16 j = prog_n; j > dungeon_prog_n; j--) progression[j] = progression[j - 1];
+          progression[dungeon_prog_n++] = it;
+          prog_n++;
+        } else {
+          progression[prog_n++] = it;
+        }
+      }
     } else {
-      if (junk_n < sizeof(junk) / sizeof(junk[0])) junk[junk_n++] = pool[i];
+      if (junk_n < sizeof(junk) / sizeof(junk[0])) junk[junk_n++] = it;
     }
   }
 
@@ -923,8 +1020,10 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (vi < 256) counts.by_item_id[vi]++;
   }
 
-  // Shuffle the progression placement order.
-  shuffle_u16(progression, prog_n, &rng);
+  // Shuffle within each tier independently so dungeon items stay first.
+  shuffle_u16(progression, dungeon_prog_n, &rng);
+  if (prog_n > dungeon_prog_n)
+    shuffle_u16(progression + dungeon_prog_n, (uint16)(prog_n - dungeon_prog_n), &rng);
 
   // ----- 5. Place each progression item -----
   uint16 fallback_count = 0;
@@ -978,15 +1077,30 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   }
 
   // ----- 6. Fill remaining open locations with junk -----
+  //
+  // Junk fill must still honor `can_place` / `always_allow`. Restrictive
+  // can_place predicates (e.g., SP Entrance's `OP_ITEM_IS(SmallKey_SwampPalace)`
+  // forcing a specific item) get silently violated if junk lands at the slot
+  // because the progression item was placed elsewhere first.
   shuffle_u16(junk, junk_n, &rng);
-  uint16 j_idx = 0;
+  uint8 junk_consumed[512] = {0};
   for (uint16 k = 0; k < open_n; k++) {
     if (placement_at[k] != 0xFFFF) continue;
-    if (j_idx < junk_n) {
-      placement_at[k] = junk[j_idx++];
-    } else {
-      // Pool/locations cardinality mismatch — fall back to vanilla item.
-      placement_at[k] = kRandoLocations[open_loc_idx[k]].vanilla_item_id;
+    const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+    bool placed = false;
+    for (uint16 j = 0; j < junk_n; j++) {
+      if (junk_consumed[j]) continue;
+      if (!location_accepts_item(loc, junk[j], &counts, settings)) continue;
+      placement_at[k] = junk[j];
+      junk_consumed[j] = 1;
+      placed = true;
+      break;
+    }
+    if (!placed) {
+      // No junk item fits this slot's can_place — fall back to the slot's
+      // vanilla item, which always satisfies (since vanilla is what shipped
+      // there). This also covers the pool-cardinality-mismatch case.
+      placement_at[k] = loc->vanilla_item_id;
     }
   }
 

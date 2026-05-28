@@ -1314,6 +1314,15 @@ static void SelectFile_LoadSidecarCache(void) {
 }
 
 static void SelectFile_ResetSidecarCache(void) {
+  // Also clear per-slot data. GetSlotRenderKind reads has_sidecar_data /
+  // slot_kind directly and does NOT gate on g_selectfile_slots_loaded, so
+  // flipping only the loaded flag leaves stale Randomizer classification
+  // in place after erase/copy and the slot keeps rendering the rando banner
+  // (and remains selectable, starting a corrupted game).
+  for (int k = 0; k < 3; k++) {
+    g_selectfile_slots[k].render_kind = kRandoSlotKind_Empty;
+    g_selectfile_slots[k].has_sidecar_data = 0;
+  }
   g_selectfile_slots_loaded = 0;
 }
 
@@ -1575,7 +1584,20 @@ static void SelectFile_KindPicker_Draw(void) {
   //   PASTE   0x6248 (screen yâ‰ˆ139)
   uint8 cmd[256];
   int o = 0;
-  // Title is "NEW GAME" without a trailing '?' â€” the '?' tile approximation
+  // Clear the slot list area BEFORE writing picker text. Without this,
+  // any slot's BG2 content — vanilla heart tiles (0x520), the rando
+  // banner's share-string letters, and the slot name — bleeds through
+  // in cols the picker text doesn't overwrite. The original 256-word
+  // clear at 0x6180 only covered rows 12-19 (where the picker text
+  // lives); slot 1 sits at rows 9-11 so it leaked above the picker
+  // when creating slot 2 or 3.
+  // 640 words at 0x6100 = 20 tilemap rows × 32 cols, covering rows
+  // 8-27 (all 3 slots). Same range Settings_DrawMain clears; this also
+  // wipes COPY/ERASE PLAYER for the duration the picker is open, which
+  // is fine — those controls aren't active in modal mode and reappear
+  // when the picker closes (Func3 reinstall on submodule rewind).
+  o = emit_clear_area(cmd, o, 0x6100, 640);
+  // Title is "NEW GAME" without a trailing '?' — the '?' tile approximation
   // currently maps to a letter-shaped glyph in this font, so it reads as
   // "NEW GAMEd". Drop it for now; reintroduce when a verified punctuation
   // tile is wired into TileForAscii.
@@ -1640,6 +1662,23 @@ static bool SelectFile_KindPicker_Update(void) {
     // to the Func3 layout before slot rendering resumes.
     sound_effect_1 = 0x3c;
     g_kind_picker_active = 0;
+    // KindPicker_Draw memcpyd text into BG2 at 0x6188..0x6268. The submodule
+    // 3->4 rebuild reinstalls kSelectFile_Func3_Data which only patches the
+    // slot-name regions — the picker rows in between stay stale and bleed
+    // through (NEW GAME / VANILLA / RANDOM / PASTE overlapping the slot
+    // numbers). Push a clear over the picker's tilemap rows this frame,
+    // same pattern as Settings_Deactivate.
+    uint8 *p = (uint8 *)vram_upload_data;
+    int o = 0;
+    int clear_count = 256 * 2 - 1;  // 256 word cells = 8 tilemap rows
+    p[o++] = 0x61;
+    p[o++] = 0x80;  // 0x6180 — top of NEW GAME row, just below slot 1
+    p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
+    p[o++] = (uint8)(clear_count & 0xff);
+    p[o++] = 0xa9;
+    p[o++] = 0x18;
+    p[o++] = 0xff;
+    nmi_load_bg_from_vram = 1;
     submodule_index = 3;
     subsubmodule_index = 0;
     return true;
@@ -1730,7 +1769,26 @@ static void SelectFile_AlphabetPicker_Deactivate(void) {
   // patches at fixed offsets within the Func3 layout; if we don't rebuild
   // it, the slot list renders garbage on the frame after the picker
   // closes. Force re-init by rewinding to submodule 3 (which advances
-  // 3 â†’ 4 â†’ 5, restoring vram_upload_data to the Func3 layout).
+  // 3 -> 4 -> 5, restoring vram_upload_data to the Func3 layout).
+  //
+  // Submodule rewind doesn't blank picker tiles in BG2 — Func3_Data only
+  // patches the slot-name regions, so the picker's title/buffer/grid/
+  // control rows (0x6180..0x6380) bleed through as "extra letters below
+  // the 3rd slot" until something overwrites them. Push a stripes clear
+  // now over the same range the picker's own Draw clears (512 words at
+  // 0x6180). This frame's NMI uploads the clear; next frame Func3/Func4
+  // reinstall the slot layout on top.
+  uint8 *p = (uint8 *)vram_upload_data;
+  int o = 0;
+  int clear_count = 512 * 2 - 1;
+  p[o++] = 0x61;
+  p[o++] = 0x80;
+  p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
+  p[o++] = (uint8)(clear_count & 0xff);
+  p[o++] = 0xa9;
+  p[o++] = 0x18;
+  p[o++] = 0xff;
+  nmi_load_bg_from_vram = 1;
   submodule_index = 3;
   subsubmodule_index = 0;
 }
@@ -1762,10 +1820,12 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   uint8 cmd[1024];
   int o = 0;
 
-  // Clear the picker area first â€” see Settings_DrawMain comment. Covers
-  // rows 12-27 (title row, buffer row, 4 grid rows, ctrl row, status row,
-  // each Ã—2 for top+bot halves = 16 rows Ã— 32 cols = 512 word cells).
-  o = emit_clear_area(cmd, o, 0x6180, 512);
+  // Clear the slot list area BEFORE writing picker content. The picker
+  // text only lives in rows 12-27, but slot 1's BG2 content sits at
+  // rows 9-11 — clearing only rows 12+ leaks slot 1 banner/name above
+  // the picker. 640 words at 0x6100 covers rows 8-27, matching
+  // Settings_DrawMain and the kind picker's first-pass clear.
+  o = emit_clear_area(cmd, o, 0x6100, 640);
 
   // Title at 0x6188, current buffer at 0x61c8. 18-char width per row.
   o = emit_text_run(cmd, o, 0x6188, "PASTE SHARE STRING", 18, 0x18);
@@ -1784,24 +1844,39 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   buffer_view[18] = 0;
   o = emit_text_run(cmd, o, 0x61c8, buffer_view, 18, 0x18);
 
-  // Alphabet grid: 4 rows of 8 chars each, starting at 0x6208 step 0x40.
-  // Build each row as a temporary string so emit_text_run can render both
-  // halves. Cursor highlighting via attr=0x38 only flips the entire row's
-  // palette, so apply it per-row when the cursor is in that row (the OAM
-  // fairy is the primary cursor indicator).
+  // Alphabet grid: 4 rows of 8 chars each.
+  //
+  // Layout: 24-px cell pitch (letter + 2 blanks = 3 tilemap cols). 16-px
+  // pitch left only an 8-px gap for the 16-px-wide fairy sprite, so the
+  // fairy always overlapped the cursor letter — and since the fairy sprite
+  // has transparent pixels, the letter showed through and the cursor read
+  // as "behind" the letter. 24-px pitch gives a 16-px gap, exactly fitting
+  // the fairy with no letter overlap. Start the row at col 7 (one col left
+  // of the old 8) so the rightmost letter H lands at col 28 (screen x=224)
+  // with room to spare from the picker box edge.
+  // String layout: "A  B  C  D  E  F  G  H" (22 chars).
   for (int r = 0; r < kAlphabetPicker_GridRows; r++) {
-    char grid_row[9];
+    char grid_row[23];
+    int idx = 0;
     for (int c = 0; c < kAlphabetPicker_GridCols; c++) {
-      grid_row[c] = kAlphabetPicker_Chars[r * kAlphabetPicker_GridCols + c];
+      grid_row[idx++] = kAlphabetPicker_Chars[r * kAlphabetPicker_GridCols + c];
+      if (c < kAlphabetPicker_GridCols - 1) {
+        grid_row[idx++] = ' ';
+        grid_row[idx++] = ' ';
+      }
     }
-    grid_row[8] = 0;
+    grid_row[idx] = 0;
     uint8 row_attr = 0x18;
     if (r == g_alphabet_cursor_row) row_attr = 0x38;
-    o = emit_text_run(cmd, o, (uint16)(0x6208 + r * 0x40), grid_row, 8, row_attr);
+    o = emit_text_run(cmd, o, (uint16)(0x6207 + r * 0x40), grid_row, idx, row_attr);
   }
 
   // Control row: SUBMIT / DELETE / CANCEL labels.
-  uint16 ctrl_vram_base = 0x6208 + kAlphabetPicker_GridRows * 0x40;
+  //
+  // Shifted left by 2 cols (col 8 -> col 6) so CANCEL ends at col 27
+  // (screen x=216-223) instead of col 29 — at col 29 the L's right edge
+  // overlapped the picker box border and rendered cropped.
+  uint16 ctrl_vram_base = 0x6206 + kAlphabetPicker_GridRows * 0x40;
   uint8 submit_attr = 0x18;
   if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow &&
       g_alphabet_cursor_col == kAlphabetPickerCtrl_Submit) submit_attr = 0x38;
@@ -1850,19 +1925,43 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   // wide; the grid starts at X=24 (matches the kind picker fairy origin).
   // Phase A best-fit Y: title at y=0x88, buffer at y=0x98, grid rows at
   // y=0xa8/0xb0/0xb8/0xc0, control row at y=0xc8. Tune in playtest.
-  static const uint8 kAlphabetPicker_FairyXBase = 0x24;
-  static const uint8 kAlphabetPicker_FairyYBase = 0xa8;
+  // Fairy Y math: grid rows are written at VRAM 0x6208/0x6248/0x6288/0x62c8.
+  // PPU word-stride = 0x20 words/row, so those map to tilemap rows
+  // 16/18/20/22, screen y = 128/144/160/176, with 16 px between rows
+  // (glyphs are 16 px tall, abutting). Fairy y = row_top + 2 matches the
+  // kind picker convention (VANILLA row top 112 -> fairy 114). Earlier
+  // base 0xa8 / step 0x08 placed cursor-row-0 (A) fairy at y=168, which
+  // is between Q (160) and Y (176), and the half-sized step meant the
+  // fairy never tracked the actual row.
+  //   row 0 (A)    -> 0x82 (130)
+  //   row 1 (I)    -> 0x92 (146)
+  //   row 2 (Q)    -> 0xa2 (162)
+  //   row 3 (Y)    -> 0xb2 (178)
+  //   row 4 (ctrl) -> 0xc2 (194)
+  // Fairy X: grid row starts at VRAM col 7 (screen x=56) with 24-px cell
+  // pitch (letter + 2 blanks). Position the 16-px-wide fairy in the
+  // 16-px blank to the LEFT of the cursor letter so it doesn't overlap
+  // the letter at all (the fairy sprite has transparent pixels, so any
+  // overlap reads as "behind" the letter even though OBJ priority 3
+  // wins over BG2 low). Cursor col N letter at screen x = 56 + N*24;
+  // fairy at letter_x - 16 = 40 + N*24. Step = 24 px per cursor col.
+  static const uint8 kAlphabetPicker_FairyXBase = 0x28;
+  static const uint8 kAlphabetPicker_FairyXStep = 0x18;
+  static const uint8 kAlphabetPicker_FairyYBase = 0x82;
   uint8 fy = kAlphabetPicker_FairyYBase +
-             (uint8)(g_alphabet_cursor_row * 0x08);
+             (uint8)(g_alphabet_cursor_row * 0x10);
   // Control row cells are wider (6-tile labels with 6-tile gaps).
   uint8 fx;
   if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow) {
     // Fairy X step matches the VRAM label spacing: 8 tile cells per
-    // label-slot (6 char + 2 gap) = 64 px = 0x40. Anchor SUBMIT at 0x24.
-    static const uint8 kCtrlFairyX[3] = { 0x24, 0x64, 0xa4 };
+    // label-slot (6 char + 2 gap) = 64 px = 0x40. Labels were shifted
+    // left 2 cols (col 8 -> col 6) to avoid clipping CANCEL, so the fairy
+    // table follows: SUBMIT label at screen x=48, fairy 28 px left at 20.
+    static const uint8 kCtrlFairyX[3] = { 0x14, 0x54, 0x94 };
     fx = kCtrlFairyX[g_alphabet_cursor_col % kAlphabetPickerCtrl_Count];
   } else {
-    fx = kAlphabetPicker_FairyXBase + (uint8)(g_alphabet_cursor_col * 0x08);
+    fx = kAlphabetPicker_FairyXBase +
+         (uint8)(g_alphabet_cursor_col * kAlphabetPicker_FairyXStep);
   }
   FileSelect_DrawFairy(fx, fy);
 }

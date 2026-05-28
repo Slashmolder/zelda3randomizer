@@ -40,10 +40,13 @@ locations:
     source: "app/Region/Standard/LightWorld/South.php:32"
 
   # `Link's House` (php:33) — no setRequirements; default TRUE.
-  # (In Inverted this re-locates to DarkWorld/South.php; Phase A pins
-  # world_state Standard/Open so the Light-World region is the placement.)
+  # The chest is INSIDE the house building, so accessible from game start
+  # without needing to traverse the overworld. Bind to LinksHouse region
+  # (which is sphere 0) rather than LightWorld_South (which is post-
+  # RescuedZelda). In Inverted this re-locates to DarkWorld/South.php;
+  # Phase A pins world_state Standard/Open.
   - id: "Link's House"
-    region: LightWorld_South
+    region: LinksHouse
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/South.php:33"
 

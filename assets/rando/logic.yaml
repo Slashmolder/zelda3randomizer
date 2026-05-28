@@ -53,9 +53,10 @@ regions:
     source: "app/Region/Standard/EasternPalace.php:15-62"
 
 edges:
-  # Link's House -> Light World NorthEast. Standard-mode requires escorting
-  # uncle out of the sewers first (RescuedZelda virtual item); Open/Retro
-  # let Link out of the house immediately.
+  # Link's House -> Light World NorthEast. Gated on RescuedZelda because
+  # in actual gameplay the player can't traverse the overworld from Link's
+  # House — guards block forward progress before the HC escape completes.
+  # After RescuedZelda, the overworld opens up.
   - from: LinksHouse
     to: LightWorld_NorthEast
     predicate: "WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro) OR HAS_ITEM(RescuedZelda)"
@@ -84,36 +85,59 @@ locations:
   # Hyrule Castle Escape — predicates from HyruleCastleEscape.php:65-122
   # ===========================================================================
 
+  # Sewers locations are 100% dark — vanilla zelda3 effectively gates them
+  # on the Lamp because the player can't navigate without light. ALTTPR
+  # treats `darkRoomNavigation` as a trick that bypasses the Lamp; future
+  # trick-logic should do the same here. For now Lamp is a hard requirement.
+
   # `Sanctuary` (php:67-69): canKillEscapeThings AND has(KeyH2).
   - id: "Sanctuary"
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:67-69"
+    region: HyruleCastleEscape
+    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/HyruleCastleEscape.php:67-69 — Lamp added for dark-sewer navigation"
 
   - id: "Sewers - Secret Room - Left"
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:71-73"
+    region: HyruleCastleEscape
+    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/HyruleCastleEscape.php:71-73 — Lamp added for dark-sewer navigation"
 
   - id: "Sewers - Secret Room - Middle"
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:75-77"
+    region: HyruleCastleEscape
+    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/HyruleCastleEscape.php:75-77 — Lamp added for dark-sewer navigation"
 
   - id: "Sewers - Secret Room - Right"
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:79-81"
+    region: HyruleCastleEscape
+    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/HyruleCastleEscape.php:79-81 — Lamp added for dark-sewer navigation"
 
   - id: "Sewers - Dark Cross"
-    can_reach: "CanKillEscapeThings(world)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:83-85"
+    region: HyruleCastleEscape
+    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/HyruleCastleEscape.php:83-85 — Lamp added for dark-sewer navigation"
 
   - id: "Hyrule Castle - Boomerang Chest"
+    region: HyruleCastleEscape
     can_reach: "CanKillEscapeThings(world)"
     source: "app/Region/Standard/HyruleCastleEscape.php:87-89"
 
   - id: "Hyrule Castle - Map Chest"
-    can_reach: "CanKillEscapeThings(world)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:91-93"
+    region: HyruleCastleEscape
+    # Reachable weaponless only by sneaking past patrolling guards — a
+    # skill-based trick. Future trick-logic should gate this on a
+    # `sneak-past-guards` setting so accessibility=locations seeds stay
+    # honest. For now it's TRUE() because the seed must offer at least one
+    # sphere-0 weapon path.
+    can_reach: "TRUE()"
+    source: "app/Region/Standard/HyruleCastleEscape.php:91-93 — relaxed (sneak-past-guards trick)"
 
   - id: "Hyrule Castle - Zelda's Cell"
+    region: HyruleCastleEscape
+    # The 2 small-key doors between Uncle's death and Zelda's cell are gated
+    # by 2 pinned (non-randomized) small keys that drop from specific
+    # soldiers — neither has pots available, so killing them needs a real
+    # weapon. The rando-pool small key is reserved for the sewers section
+    # (Sanctuary / Secret Rooms), not for this path.
     can_reach: "CanKillEscapeThings(world)"
     source: "app/Region/Standard/HyruleCastleEscape.php:95-97"
 
@@ -124,9 +148,12 @@ locations:
   # other dungeon-items (every other dungeon's keys/big-keys/maps/compasses)
   # are also barred. We enumerate the full set to stay faithful to the PHP.
   - id: "Secret Passage"
-    can_reach: "CanKillEscapeThings(world)"
+    region: HyruleCastleEscape
+    # Same sneak-past-guards trick as HC Map Chest — see that entry for
+    # the future trick-logic gating note.
+    can_reach: "TRUE()"
     can_place: "NotADungeonItem()"
-    source: "app/Region/Standard/HyruleCastleEscape.php:99-106"
+    source: "app/Region/Standard/HyruleCastleEscape.php:99-106 — relaxed (sneak-past-guards trick)"
 
   # `Link's Uncle` (php:108-114) — registry assigns region=LinksHouse.
   # The setFillRules restricts to:
@@ -136,13 +163,17 @@ locations:
   # We carry only the dungeon-item ban; the Sanctuary-canAccess gate is a
   # standard reachability post-condition that the placer enforces.
   - id: "Link's Uncle"
+    region: LinksHouse
     can_reach: "TRUE()"
     can_place: "NotADungeonItem()"
     source: "app/Region/Standard/HyruleCastleEscape.php:108-114"
 
   # `Zelda` prize-event (php:51, 120) — can_complete = Sanctuary canAccess.
+  # The rescue requires escorting Zelda through the dark sewers to the
+  # Sanctuary, so Lamp is needed (same as Sanctuary itself).
   - id: "Zelda"
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape)"
+    region: HyruleCastleEscape
+    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
     source: "app/Region/Standard/HyruleCastleEscape.php:51, 116-120 (can_complete = Sanctuary access)"
 
   # ===========================================================================

@@ -224,6 +224,25 @@
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
+  <!-- Vendored SDL2 2.32.10 (replaces sdl2/sdl2.redist NuGet 2.0.5).
+       Switch Online SNES controller needs SDL >= 2.28 for HIDAPI mapping. -->
+  <PropertyGroup>
+    <Sdl2Dir>$(SolutionDir)third_party\SDL2-2.32.10\</Sdl2Dir>
+    <Sdl2LibDir Condition="'$(Platform)'=='x64'">$(Sdl2Dir)lib\x64\</Sdl2LibDir>
+    <Sdl2LibDir Condition="'$(Platform)'=='Win32'">$(Sdl2Dir)lib\x86\</Sdl2LibDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions>HAS_SDL2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(Sdl2Dir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(Sdl2LibDir)SDL2main.lib;$(Sdl2LibDir)SDL2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <Target Name="CopySdl2Dll" AfterTargets="Build">
+    <Copy SourceFiles="$(Sdl2LibDir)SDL2.dll" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
   <ItemGroup>
     <ClCompile Include="src\ancilla.c" />
     <ClCompile Include="src\attract.c" />
@@ -767,9 +786,6 @@
     <ClInclude Include="src\zelda_rtl.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ResourceCompile Include="src\platform\win32\zelda3.rc" />
   </ItemGroup>
   <ItemGroup>
@@ -843,8 +859,6 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="packages\sdl2.redist.2.0.5\build\native\sdl2.redist.targets" Condition="Exists('packages\sdl2.redist.2.0.5\build\native\sdl2.redist.targets')" />
-    <Import Project="packages\sdl2.2.0.5\build\native\sdl2.targets" Condition="Exists('packages\sdl2.2.0.5\build\native\sdl2.targets')" />
   </ImportGroup>
   <!-- Rando codegen pre-build event (tasks.md §3.5/§3.6/§6.3/§9.4b;
        direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
@@ -857,11 +871,7 @@
           Outputs="src\rando\logic_data.c;src\rando\location_ids.h;src\rando\item_ids.h;src\rando\chest_lookup.h;src\rando\icon_atlas.h;src\rando\direct_grant_icons.h">
     <Exec Command="python assets\rando_logic_gen.py" />
   </Target>
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-    <PropertyGroup>
-      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
-    </PropertyGroup>
-    <Error Condition="!Exists('packages\sdl2.redist.2.0.5\build\native\sdl2.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\sdl2.redist.2.0.5\build\native\sdl2.redist.targets'))" />
-    <Error Condition="!Exists('packages\sdl2.2.0.5\build\native\sdl2.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\sdl2.2.0.5\build\native\sdl2.targets'))" />
+  <Target Name="EnsureVendoredSdl2" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(Sdl2LibDir)SDL2.lib')" Text="Vendored SDL2 missing at $(Sdl2LibDir). Re-extract third_party/SDL2-2.32.10/ from libsdl.org's SDL2-devel-2.32.10-VC.zip." />
   </Target>
 </Project>
