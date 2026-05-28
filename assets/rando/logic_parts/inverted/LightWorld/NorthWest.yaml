@@ -58,12 +58,19 @@ locations:
     can_reach: "OP_HAS_PRIZE(Prize_GreenPendant) AND OP_HAS_PRIZE(Prize_BluePendant) AND OP_HAS_PRIZE(Prize_RedPendant)"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:36-40"
 
-  # `King's Tomb` (php:42-60): Boots AND MoonPearl AND canLiftDarkRocks.
-  # The canMirrorClip+MagicMirror+(canBootsClip|canOneFrameClipOW|EastDM+
-  # SpinSpeed+...) branch DROPPED.
+  # `King's Tomb` (php:42-60):
+  #   PegasusBoots AND
+  #   (MoonPearl OR canBunnyRevive OR (canOWYBA AND bottle)) AND
+  #   (canLiftDarkRocks OR <complex mirror-clip + canBootsClip +
+  #    canOneFrameClipOW + canSuperSpeed cross-region chain>)
+  # Phase A retained `Boots AND MoonPearl AND canLiftDarkRocks`.
+  # Phase B Slice 4 §7 surfaces: pearl-bypass alternative to MoonPearl,
+  # boots-clip + OWG alternatives to canLiftDarkRocks. The complex
+  # mirror-clip / canSuperSpeed cross-region disjunct stays dropped
+  # (depends on macros not in our trick set).
   - id: "King's Tomb"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(Boots) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks()"
+    can_reach: "HAS_ITEM(Boots) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftDarkRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:42-60"
 
   # `Kakariko Tavern` (php:62-69): MoonPearl (superbunny/OWYBA branches drop).
@@ -169,12 +176,15 @@ locations:
     can_reach: "HAS_ITEM(DefeatAgahnim) AND HAS_ITEM(Boots) AND HAS_ITEM(MoonPearl)"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:183-193"
 
-  # `Graveyard Ledge` (php:195-201): MoonPearl AND canBombThings.
+  # `Graveyard Ledge` (php:195-201):
+  #   (MoonPearl OR canBunnyRevive OR (canOWYBA AND bottle)) AND canBombThings
   # (The standard `mirror-from-DW-NorthWest` route is implicit — in Inverted
   # you're already in LW once the region is reached.)
+  # Phase B Slice 4 §7: surface the pearl-bypass alternative.
+  # canBunnyRevive lacks a first-class macro (Phase B reservation).
   - id: "Graveyard Ledge"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(MoonPearl) AND CanBombThings()"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND CanBombThings()"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:195-201"
 
   # `Mushroom` (php:203-208): MoonPearl.

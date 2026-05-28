@@ -41,12 +41,16 @@ edges:
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:62-70"
 
   # DM East entry — `can_enter` (East.php:89-98):
-  #   RescueZelda AND (Hookshot+West-DM OR (Hammer + Tower of Hera))
-  # All glitch and mirror-trick branches drop. Hookshot path goes through
-  # West DM; Hammer path goes through Tower of Hera.
+  #   RescueZelda AND (canOneFrameClipOW OR (canBootsClip+Boots) OR
+  #                    (canSuperSpeed+spin) OR
+  #                    ((MagicMirror+Hookshot)+West-DM mirror routes) OR
+  #                    (Hammer + Tower of Hera))
+  # Phase A retained the Hookshot+West-DM and Hammer+ToH paths.
+  # Phase B Slice 4 §7 surfaces CanBootsClip + OWG bypass.
+  # canSuperSpeed lacks a macro (Phase B reservation).
   - from: LightWorld_DeathMountain_West
     to: LightWorld_DeathMountain_East
-    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera_Lobby))"
+    predicate: "HAS_ITEM(Hookshot) OR (HAS_ITEM(Hammer) AND OP_REGION_REACHABLE(TowerOfHera_Lobby)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:89-98"
 
 locations:
@@ -93,11 +97,16 @@ locations:
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:32"
 
   # `Mimic Cave` (East.php:68-77): Hammer AND MagicMirror AND
-  # (KeyD7>=2 AND Turtle-Rock-reachable). All glitch/mirror-trick branches
-  # drop; only the TR-keys+region branch survives.
+  #   (canMirrorClip OR (canBootsClip+Boots+(MoonPearl OR canOWYBA+bottle))
+  #    OR (canSuperSpeed+spin+MoonPearl+EastDarkDM-reachable)
+  #    OR canOneFrameClipOW OR (KeyD7>=2 AND TurtleRock reachable))
+  # Phase A retained the TR-keys+region branch. Phase B Slice 4 §7
+  # surfaces OWG bypass. canBootsClip needs MoonPearl OR pearl-bypass
+  # at this site, which makes the disjunct conditional — defer that
+  # variant; just add the simple OWG path here.
   - id: "Mimic Cave"
     region: LightWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND ((HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
     source: "app/Region/Standard/LightWorld/DeathMountain/East.php:68-77"
 
   # `Paradox Cave` chests (East.php:34-40) — no setRequirements; default TRUE.

@@ -95,18 +95,23 @@ locations:
     source: "app/Region/Standard/LightWorld/South.php:131-134"
 
   # `Bombos Tablet` (php:136-142): BookOfMudora AND hasSword(2) AND
-  # (canBootsClip+Boots OR canOneFrameClipOW OR mirror+south-DW). All
-  # glitch branches drop; only mirror+south-DW survives. swordless-mode
-  # alternative (Hammer for tablet read) drops.
+  # (canBootsClip+Boots OR canOneFrameClipOW OR mirror+south-DW).
+  # Phase A retained mirror+south-DW only. Phase B Slice 4 §7 surfaces
+  # boots-clip + OWG. The swordless-mode Hammer alternative still drops
+  # (swordless is a Phase B mode_weapons axis tracked separately).
   - id: "Bombos Tablet"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)"
+    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND ((HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches))"
     source: "app/Region/Standard/LightWorld/South.php:136-142"
 
-  # `Cave 45` (php:144-148): mirror + south-DW (glitch branches drop).
+  # `Cave 45` (php:144-148):
+  #   canOneFrameClipOW OR (canBootsClip AND PegasusBoots) OR
+  #   (MagicMirror AND south-DW reachable)
+  # Phase A retained mirror+south-DW only. Phase B Slice 4 §7 surfaces
+  # the boots-clip + OWG alternatives at the top level.
   - id: "Cave 45"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)"
+    can_reach: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Standard/LightWorld/South.php:144-148"
 
   # `Checkerboard Cave` (php:150-155): canLiftRocks AND mirror+Mire

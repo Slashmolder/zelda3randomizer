@@ -60,13 +60,12 @@ locations:
   # `Bumper Cave` (Inverted/NorthWest.php:42-51):
   #   (canLiftRocks AND Cape AND MoonPearl AND MagicMirror AND
   #    NW_Light_World_reachable) OR
-  #   <glitch branches drop>
-  # Surviving Phase A:
-  #   CanLiftRocks() AND HAS_ITEM(Cape) AND HAS_ITEM(MoonPearl) AND
-  #   HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthWest)
+  #   (canBootsClip AND PegasusBoots) OR canOneFrameClipOW
+  # Phase A retained the cross-region mirror path only. Phase B Slice 4
+  # §7 surfaces the boots-clip + OWG top-level bypasses.
   - id: "Bumper Cave"
     region: DarkWorld_NorthWest
-    can_reach: "CanLiftRocks() AND HAS_ITEM(Cape) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthWest)"
+    can_reach: "(CanLiftRocks() AND HAS_ITEM(Cape) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(LightWorld_NorthWest)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
     source: "app/Region/Inverted/DarkWorld/NorthWest.php:42-51"
 
   # `Blacksmith` (Inverted/NorthWest.php:53-62):

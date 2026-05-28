@@ -685,6 +685,28 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   }
   fprintf(f, "\n");
 
+  // Hints — Phase B Slice 5 §3. Mirrors the JSON `hints[]` array. The
+  // section is omitted entirely when no hints are populated (settings.hints
+  // == kHintsMode_Off, or non-rando spoiler context). Runtime telepathic-
+  // tile dispatch (#85) is deferred — these hints are spoiler-only today.
+  {
+    bool any_hint = false;
+    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
+      if (Rando_GetHintString((RandoHintNpc)npc) != NULL) { any_hint = true; break; }
+    }
+    if (any_hint) {
+      fprintf(f, "Hints:\n");
+      fprintf(f, "------\n");
+      for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
+        const char *text = Rando_GetHintString((RandoHintNpc)npc);
+        if (text == NULL) continue;
+        const char *npc_str = Rando_GetHintNpcStringId((RandoHintNpc)npc);
+        fprintf(f, "  %-42s : %s\n", npc_str ? npc_str : "?", text);
+      }
+      fprintf(f, "\n");
+    }
+  }
+
   fclose(f);
   return true;
 }
