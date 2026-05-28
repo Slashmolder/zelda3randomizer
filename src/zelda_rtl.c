@@ -8,8 +8,10 @@
 #include "snes/snes_regs.h"
 #include "snes/dma.h"
 #include "spc_player.h"
+#include "rando/rando.h"  // add-rando-trackers: tracker visibility flags
 #include "rando/rando_placement.h"  // §8.8 snapshot rando placement TLV
 #include "rando/rando_snapshot_tail.h"  // §8.8 / §8.8a TLV save/load + invariant counter
+#include "hud.h"  // add-rando-trackers: per-frame tracker-overlay draw hook
 #include "util.h"
 #include "audio.h"
 #include "assets.h"
@@ -261,6 +263,12 @@ static void ZeldaRunGameLoop() {
   frame_counter++;
   ClearOamBuffer();
   Module_MainRouting();
+  // add-rando-trackers (Phase B Slice 1): draw the in-game tracker overlays
+  // here, after the game has built OAM for the frame and BEFORE
+  // NMI_PrepareSprites packs the extended-OAM table, so overlay sprites are
+  // uploaded with the rest of OAM. No-op unless rando is active and a tracker
+  // toggle is on.
+  Hud_RandoDrawTrackers();
   NMI_PrepareSprites();
   nmi_boolean = 0;
 }
@@ -283,6 +291,12 @@ void ZeldaInitialize() {
   enhanced_features1 = 0;
   g_rando_slot_active = 0;
   g_rando_starting_inventory_granted = 0;
+
+  // add-rando-trackers: launch state is always hidden. The per-seed deactivate
+  // path in rando.c also clears these on slot switch; this is the cold-init
+  // guard so a fresh process never shows a stale overlay.
+  g_rando_show_item_tracker = false;
+  g_rando_show_location_tracker = false;
 }
 
 static void ZeldaRunPolyLoop() {
