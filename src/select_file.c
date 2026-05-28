@@ -28,17 +28,17 @@
 static const uint8 kSelectFile_Draw_Y[3] = {0x43, 0x63, 0x83};
 
 // ---------------------------------------------------------------------------
-// Â§9.3a / Â§9.7 â€” Sidecar slot-kind cache + rando-banner rendering.
+// §9.3a / §9.7 — Sidecar slot-kind cache + rando-banner rendering.
 //
 // Per-slot rendering dispatch on `slot_kind` from saves/sram_rando.dat. The
 // file is read ONCE per file-select entry (in Module_SelectFile_0) and cached
 // in module-static storage so per-frame draws stay cheap. Cross-frame freshness
-// is fine because file-select doesn't write the sidecar â€” that happens later
+// is fine because file-select doesn't write the sidecar — that happens later
 // during the new-game / save-game flow (next cluster).
 //
 // Geometry contract (per spec randomizer-ui / "Three-slot file-select with
-// kind-toggle (no 4th entry)" + design.md Â§D8): the existing
-// kSelectFile_Draw_Y[3] geometry is PRESERVED. There is NO 4th entry â€” the
+// kind-toggle (no 4th entry)" + design.md §D8): the existing
+// kSelectFile_Draw_Y[3] geometry is PRESERVED. There is NO 4th entry — the
 // 8 KB sram.dat has no room for a 4th slot, and the sidecar parallels sram.dat
 // 3-for-3. Each slot renders one of:
 //   - vanilla banner (slot_kind = Vanilla or sidecar absent + sram.dat valid)
@@ -48,7 +48,7 @@ static const uint8 kSelectFile_Draw_Y[3] = {0x43, 0x63, 0x83};
 
 // kRandoSlotKind_* is the runtime classification for each of the 3 slots
 // computed from the sidecar load result + sram.dat cksum. Distinct from
-// RandoSlotKind in rando_save.h, which is the on-disk enum â€” this is the
+// RandoSlotKind in rando_save.h, which is the on-disk enum — this is the
 // derived "what the file-select screen should render" view.
 enum {
   kRandoSlotKind_Empty = 0,       // sidecar absent or kind=Empty AND sram.dat slot empty
@@ -65,9 +65,9 @@ typedef struct SelectFile_SlotInfo {
 static SelectFile_SlotInfo g_selectfile_slots[3];
 static uint8 g_selectfile_slots_loaded = 0;
 
-// Â§9.3b â€” empty-slot kind-picker state. Stub: only "Vanilla" is wired; the
+// §9.3b — empty-slot kind-picker state. Stub: only "Vanilla" is wired; the
 // other two options display a refusal sound and a console-stderr placeholder
-// until the next cluster lands Â§9.4 settings screen and Â§9.1b text input.
+// until the next cluster lands §9.4 settings screen and §9.1b text input.
 enum {
   kKindPicker_Inactive = 0,
   kKindPicker_Vanilla = 1,
@@ -77,21 +77,21 @@ enum {
 static uint8 g_kind_picker_active = 0;
 static uint8 g_kind_picker_cursor = 0;
 static uint8 g_kind_picker_target_slot = 0;
-// Â§9.3c â€” Copy refusal message latch. Set when a cross-kind copy is attempted;
+// §9.3c — Copy refusal message latch. Set when a cross-kind copy is attempted;
 // causes the next frame's CopyFile_HandleConfirmation render to display the
 // refusal text instead of executing the copy. Cleared on cursor move or return.
 static uint8 g_copy_refusal_pending = 0;
 
-// Â§9.1b / Â§9.2 â€” On-screen alphabet picker for share-string entry.
+// §9.1b / §9.2 — On-screen alphabet picker for share-string entry.
 //
 // Activated from the kind-picker's "Load Share String" option (cursor=2).
-// Renders an 8-col Ã— 4-row base32 alphabet grid plus a 5th row of controls
+// Renders an 8-col × 4-row base32 alphabet grid plus a 5th row of controls
 // (SUBMIT, DELETE, CANCEL). Owns input + drawing until the user submits,
 // cancels, or successfully decodes a share string.
 //
 // Layout (rendered as a tile-stream into vram_upload_data; count bytes are
 // encoded as (NUM_PAIRS * 2) - 1 per HandleStripes14's decode at
-// src/nmi.c:421 â€” see cluster-1 audit lessons).
+// src/nmi.c:421 — see cluster-1 audit lessons).
 enum {
   kAlphabetPicker_GridCols = 8,
   kAlphabetPicker_GridRows = 4,   // 32 alphabet chars
@@ -124,13 +124,13 @@ static uint8 g_alphabet_msg_status = 0;  // 0 = none, else ShareDecodeStatus + 1
 static uint16 g_alphabet_msg_frames = 0;
 static bool g_alphabet_pending_return = false;
 // Decoded values held until the message expires + return executes. These are
-// surfaced for downstream consumers (next cluster's Â§9.4/Â§9.8 settings +
+// surfaced for downstream consumers (next cluster's §9.4/§9.8 settings +
 // new-game flow) via the SelectFile_GetLastDecodedShareString accessor; for
 // Phase A we just log them so a developer can verify the path end-to-end.
 static uint64 g_alphabet_decoded_seed = 0;
 static uint8 g_alphabet_decoded_hash[16];
 
-// Base32 â†’ file-select tile-char mapping. The base32 alphabet is
+// Base32 → file-select tile-char mapping. The base32 alphabet is
 // "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567" (RFC 4648, kBase32Alphabet in
 // rando_share.c). Tile chars sourced by inspection of vanilla file-select
 // VRAM uploads:
@@ -146,7 +146,7 @@ static uint8 g_alphabet_decoded_hash[16];
 // assumed to follow the sequential pattern A..P at row 0 and Q..Z at row 2
 // (the verified letters all match this layout). I is the documented
 // half-width exception at 0xaf. If a Phase A play-test reveals a wrong tile
-// here, swap the offending index â€” the layout is purely cosmetic.
+// here, swap the offending index — the layout is purely cosmetic.
 static const uint8 kBase32CharToTile[32] = {
   // A    B    C    D    E    F    G    H
   0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -186,7 +186,7 @@ static void SelectFile_AlphabetPicker_Deactivate(void);
 static void SelectFile_AlphabetPicker_Draw(void);
 static bool SelectFile_AlphabetPicker_Update(void);
 static void SelectFile_AlphabetPicker_HandleSubmit(void);
-// Â§9.4 â€” settings screen forward decls.
+// §9.4 — settings screen forward decls.
 static void SelectFile_Settings_Activate(uint8 target_slot,
                                           bool prepopulate_from_share);
 static void SelectFile_Settings_Deactivate(void);
@@ -315,7 +315,7 @@ void SelectFile_Func16() {
       memset(g_zenv.sram + k * 0x500, 0, 0x500);
       memset(g_zenv.sram + k * 0x500 + 0xf00, 0, 0x500);
       ZeldaWriteSram();
-      // Â§9.3a addendum â€” also clear the paired sidecar slot if it was a
+      // §9.3a addendum — also clear the paired sidecar slot if it was a
       // rando slot. Without this, SelectFile_GetSlotRenderKind keeps
       // returning Randomizer (the sidecar's slot_kind still pins to it),
       // so the erased slot renders the stale rando banner; picking it
@@ -423,18 +423,18 @@ void Module_SelectFile_0() {  // 8ccd9d
   LoadFileSelectGraphics();
   Intro_ValidateSram();
   DecompressEnemyDamageSubclasses();
-  // Â§9.3a â€” load the sidecar slot-kind metadata once per entry into the
+  // §9.3a — load the sidecar slot-kind metadata once per entry into the
   // file-select screen. Re-loaded on each return because ReturnToFileSelect
   // routes back through submodule_index=1, but a hard re-entry (player
   // exited to title and came back) lands here at submodule 0.
   SelectFile_ResetSidecarCache();
   SelectFile_LoadSidecarCache();
-  // Â§9.3b â€” kind-picker is inactive until the player picks an empty slot.
+  // §9.3b — kind-picker is inactive until the player picks an empty slot.
   g_kind_picker_active = 0;
   g_kind_picker_cursor = 0;
-  // Â§9.3c â€” clear copy-refusal latch on screen re-entry.
+  // §9.3c — clear copy-refusal latch on screen re-entry.
   g_copy_refusal_pending = 0;
-  // Â§9.1b/Â§9.2 â€” alphabet picker starts inactive. The host text-input
+  // §9.1b/§9.2 — alphabet picker starts inactive. The host text-input
   // flags must agree: ensure SDL_StopTextInput fires next frame in case
   // we re-entered file-select with stale state from a prior session.
   g_alphabet_picker_active = false;
@@ -445,7 +445,7 @@ void Module_SelectFile_0() {  // 8ccd9d
   g_rando_active_textfield = NULL;
   g_rando_text_input_submit_pending = false;
   g_rando_text_input_cancel_pending = false;
-  // Â§9.4 â€” settings screen reset on file-select entry so a hard re-entry
+  // §9.4 — settings screen reset on file-select entry so a hard re-entry
   // (player quit to title and came back) doesn't inherit stale state.
   SelectFile_Settings_Deactivate();
 }
@@ -536,7 +536,7 @@ void FileSelect_Main() {  // 8ccebd
   if (selectfile_R16 < 3)
     selectfile_var2 = selectfile_R16;
 
-  // Â§9.3a â€” per-slot kind dispatch.
+  // §9.3a — per-slot kind dispatch.
   //
   // The vanilla loop iterates 3 slots and renders sword/shield/heart/name for
   // any slot whose sram.dat cksum is valid. We extend this by reading each
@@ -548,7 +548,7 @@ void FileSelect_Main() {  // 8ccebd
   //                 pre-built kSelectFile_Func3_Data background tilemap.
   //
   // The selectfile_arr1[k] = 1 flag preserves vanilla semantics for cursor
-  // navigation, KILL/COPY screens, etc. â€” those screens treat rando and
+  // navigation, KILL/COPY screens, etc. — those screens treat rando and
   // vanilla slots identically as "occupied".
   //
   // Skip the slot OAM draw when a modal picker is active. Func5/Func6 (and
@@ -581,7 +581,7 @@ void FileSelect_Main() {  // 8ccebd
     }
   }
 
-  // Â§9.4 â€” settings screen takes priority over alphabet picker / kind picker
+  // §9.4 — settings screen takes priority over alphabet picker / kind picker
   // when active. Once the player enters settings (via kind=NewRandomizer or
   // alphabet=submit-ok), neither sub-prompt is reachable until the screen
   // closes via Generate or Cancel. The check runs first so its rendering
@@ -591,8 +591,8 @@ void FileSelect_Main() {  // 8ccebd
     return;
   }
 
-  // Â§9.1b/Â§9.2 â€” alphabet picker takes top priority when active. It runs
-  // BEFORE the kind picker because once the user navigates kindâ†’alphabet,
+  // §9.1b/§9.2 — alphabet picker takes top priority when active. It runs
+  // BEFORE the kind picker because once the user navigates kind→alphabet,
   // the kind picker is deactivated; we keep the order explicit so the
   // dispatch path is greppable.
   if (SelectFile_AlphabetPicker_Update()) {
@@ -600,7 +600,7 @@ void FileSelect_Main() {  // 8ccebd
     return;
   }
 
-  // Â§9.3b â€” if the kind picker is active for a previously-empty slot, it
+  // §9.3b — if the kind picker is active for a previously-empty slot, it
   // owns input and drawing until the user picks Vanilla / cancels.
   if (SelectFile_KindPicker_Update()) {
     nmi_load_bg_from_vram = 1;
@@ -626,7 +626,7 @@ void FileSelect_Main() {  // 8ccebd
     if (selectfile_R16 < 3) {
       selectfile_R17 = 0;
       if (!selectfile_arr1[selectfile_R16]) {
-        // Â§9.3b â€” empty slot: show kind-choice sub-prompt instead of going
+        // §9.3b — empty slot: show kind-choice sub-prompt instead of going
         // directly to the vanilla name-entry flow. The picker stub routes
         // "Vanilla" through to the existing flow; "New Randomizer" /
         // "Load Share String" are stubbed pending next cluster.
@@ -894,7 +894,7 @@ void CopyFile_HandleConfirmation() {  // 8cd371
   static const uint8 kCopyFile_HandleConfirmation_FaerieY[2] = {0xaf, 0xbf};
   FileSelect_DrawFairy(0x1c, kCopyFile_HandleConfirmation_FaerieY[selectfile_R16]);
 
-  // Â§9.3c â€” render the cross-kind refusal text if the latch is set. The
+  // §9.3c — render the cross-kind refusal text if the latch is set. The
   // latch is set BELOW when the user confirms a copy across slot kinds; it
   // displays the message and routes back to file-select on the next input.
   if (g_copy_refusal_pending) {
@@ -924,20 +924,20 @@ void CopyFile_HandleConfirmation() {  // 8cd371
   } else if (a != 0) {
     sound_effect_1 = 0x2c;
     if (selectfile_R16 == 0) {
-      // Â§9.3c â€” refuse copies across slot kinds (vanilla â†” randomizer).
+      // §9.3c — refuse copies across slot kinds (vanilla ↔ randomizer).
       // The vanilla copy path memcpy's the 0x500-byte sram.dat slot; but the
       // sidecar's rando slot data is NOT copied (the on-disk rando state
       // would still belong to the source slot, leaving the destination
       // inconsistent). Rather than implement a half-baked partial copy,
       // refuse the operation per spec scenario "Copy refuses cross-kind".
-      // Same-kind copies (vanillaâ†’vanilla or randoâ†’rando) proceed normally.
+      // Same-kind copies (vanilla→vanilla or rando→rando) proceed normally.
       //
       // selectfile_R20 = source slot * 2; selectfile_R18 = dest slot * 2.
       int src_k = selectfile_R20 >> 1;
       int dst_k = selectfile_R18 >> 1;
       int src_kind = SelectFile_GetSlotRenderKind(src_k);
       int dst_kind = SelectFile_GetSlotRenderKind(dst_k);
-      // Rando-vs-vanilla mismatch is the only refusal trigger; randoâ†’empty
+      // Rando-vs-vanilla mismatch is the only refusal trigger; rando→empty
       // is also blocked because the destination would receive vanilla
       // sram.dat bytes from the source but no matching sidecar entry.
       bool src_is_rando = (src_kind == kRandoSlotKind_Randomizer);
@@ -950,11 +950,11 @@ void CopyFile_HandleConfirmation() {  // 8cd371
       memcpy(g_zenv.sram + dst_k * 0x500, g_zenv.sram + src_k * 0x500, 0x500);
       selectfile_arr1[dst_k] = 1;
       ZeldaWriteSram();
-      // Â§9.3c â€” if both slots are rando, propagate the sidecar entry too.
+      // §9.3c — if both slots are rando, propagate the sidecar entry too.
       // Without this, the destination slot has the source's rando sram
       // state but a stale sidecar (slot_kind != Randomizer), so on next
       // file-select entry SelectFile_GetSlotRenderKind() returns Vanilla
-      // and the player loads it as a vanilla save â€” rando dispatch never
+      // and the player loads it as a vanilla save — rando dispatch never
       // fires, item placements are silently wrong.
       if (src_is_rando && dst_is_rando) {
         const RandoSidecarSlot *src_sc = &g_selectfile_slots[src_k].sidecar;
@@ -1285,13 +1285,13 @@ void NameFile_DrawSelectedCharacter(int k, uint16 chr) {  // 8cdd30
 }
 
 // ---------------------------------------------------------------------------
-// Â§9.3a â€” Sidecar slot-kind cache.
+// §9.3a — Sidecar slot-kind cache.
 // ---------------------------------------------------------------------------
 
 // Called once per file-select entry (from Module_SelectFile_0). Reads the
 // sidecar file and classifies each of the 3 slots. Per spec
 // "Absent sidecar is normal vanilla", a missing or unreadable sidecar simply
-// leaves all slots in their default Empty state â€” the existing sram.dat
+// leaves all slots in their default Empty state — the existing sram.dat
 // validation then classifies them as Vanilla or Empty as it does today.
 static void SelectFile_LoadSidecarCache(void) {
   if (g_selectfile_slots_loaded) return;
@@ -1304,7 +1304,7 @@ static void SelectFile_LoadSidecarCache(void) {
     // Per Rando_LoadSidecarSlot contract: returns false if the file is
     // missing, malformed, or the requested slot has bad magic. In those
     // cases we leave has_sidecar_data=0 and the slot falls back to vanilla
-    // classification below â€” matching the spec's "Absent sidecar is normal
+    // classification below — matching the spec's "Absent sidecar is normal
     // vanilla" scenario.
     if (!Rando_LoadSidecarSlot(k, &slot)) continue;
     g_selectfile_slots[k].sidecar = slot;
@@ -1346,7 +1346,7 @@ static int SelectFile_GetSlotRenderKind(int k) {
 static uint8 SelectFile_TileForBase32(char c) {
   if (c >= 'A' && c <= 'Z') return kBase32CharToTile[c - 'A'];
   if (c >= '2' && c <= '7') return kBase32CharToTile[26 + (c - '2')];
-  // Lowercase tolerance â€” slot share strings are always uppercase, but be
+  // Lowercase tolerance — slot share strings are always uppercase, but be
   // defensive if a future helper writes lowercase by mistake.
   if (c >= 'a' && c <= 'z') return kBase32CharToTile[c - 'a'];
   return kFileSelectTile_Blank;
@@ -1375,7 +1375,7 @@ static const char *SelectFile_GoalAbbrev(uint8 goal) {
   }
 }
 
-// Â§9.7 â€” Render the rando banner for slot k.
+// §9.7 — Render the rando banner for slot k.
 //
 // Per spec randomizer-ui / "Slot banner with truncation": the banner shows
 //   - truncated 12-char share string (first 12 base32 chars)
@@ -1385,7 +1385,7 @@ static const char *SelectFile_GoalAbbrev(uint8 goal) {
 //
 // Geometry: the vanilla name VRAM region (kSelectFile_DrawName_VramOffs[k])
 // holds 6 chars (12 bytes; 6 uint16). The pre-built kSelectFile_Func3_Data
-// command list anchors only this 6-char window per slot â€” additional VRAM
+// command list anchors only this 6-char window per slot — additional VRAM
 // command slots between slot k's name and slot k+1's name are reserved for
 // fixed scenery and the existing health-hearts. Adding new commands requires
 // rebuilding the command list and is deferred (see code comment below).
@@ -1422,16 +1422,16 @@ static void SelectFile_DrawRandoBanner(int k) {
   // goal serialization (the 16 reserved bytes at @64 of the slot header are
   // earmarked for it). The original cluster-1 implementation derived
   // initials from `settings_hash[0]/[1] % enum_size`, which is silently
-  // WRONG â€” settings_hash is SHA-256 noise, so two seeds with the same goal
+  // WRONG — settings_hash is SHA-256 noise, so two seeds with the same goal
   // would render DIFFERENT goal initials. A user inspecting the banner could
   // believe the displayed letter is meaningful when it isn't.
   //
-  // Render explicit '?' placeholders for the world+goal initials until Â§9.4
+  // Render explicit '?' placeholders for the world+goal initials until §9.4
   // lands. The share-string prefix (chars[2..5]) is still a useful
-  // per-slot identifier â€” share_string IS authoritative per-seed data,
+  // per-slot identifier — share_string IS authoritative per-seed data,
   // unlike a hash mod.
   //
-  // The '!' marker (spec: randomizer-ui Â§ Slot banner) replaces the world
+  // The '!' marker (spec: randomizer-ui § Slot banner) replaces the world
   // placeholder when forward-fill fallback was used during generation, so
   // the user sees a visible warning that the seed used the fallback path.
   bool forward_fill_used = (hdr->flags & kRandoSlotFlag_ForwardFillUsed) != 0;
@@ -1474,19 +1474,19 @@ static void SelectFile_DrawRandoBanner(int k) {
   SelectFile_Func6_DrawOams2(k);
 }
 
-// Â§9.4b â€” Render the 5-icon visual hash widget in the slot's OAM lane.
+// §9.4b — Render the 5-icon visual hash widget in the slot's OAM lane.
 //
 // The existing slot OAM lane is 5 entries: [oamidx/4 .. oamidx/4 + 4],
 // historically used for sword (2) + shield (1) + heart (2). For a rando
 // slot we replace all 5 entries with the deterministic icon strip computed
 // from SHA-256(share_string_binary)[0..4] mod kHashIconAtlasSize. NO OAM
-// overflow â€” exactly 5 entries used, same budget as vanilla, per spec
+// overflow — exactly 5 entries used, same budget as vanilla, per spec
 // scenario "rando banner fits in OAM tiles previously used for the vanilla
 // name plus a small R badge with no overflow".
 //
 // CRITICAL: the hash input is the FULL share_string_binary (settings_hash +
 // seed_u64 + magic + checksum), NOT settings_hash. Deriving from
-// settings_hash gives every seed with the same settings identical icons â€”
+// settings_hash gives every seed with the same settings identical icons —
 // caught in spec round 5. Rando_DrawHashIcons enforces this.
 static void SelectFile_DrawRandoOamBadge(int k) {
   static const uint8 kSelectFile_Draw_OamIdx[3] = {0x28, 0x3c, 0x50};
@@ -1495,7 +1495,7 @@ static void SelectFile_DrawRandoOamBadge(int k) {
   uint8 y = kSelectFile_Draw_Y[k];
 
   const SelectFile_SlotInfo *info = &g_selectfile_slots[k];
-  // Clear the slot's bytewise_extended_oam entries before drawing â€” the
+  // Clear the slot's bytewise_extended_oam entries before drawing — the
   // widget doesn't touch them (it can't safely, since it's also called
   // with stack-local buffers from selftest) but stale bits from a prior
   // frame's vanilla sword/shield/heart draw would mis-extend the new
@@ -1533,7 +1533,7 @@ static void SelectFile_DrawCopyRefusalMessage(void) {
   //   len = (swap16(WORD(p[2])) & 0x3fff) + 1
   // i.e. the count byte encodes BYTES-MINUS-ONE, not tile_count. For N
   // tile pairs (2 bytes each), the field is (N*2)-1. The original
-  // implementation used N here directly â€” that fed len=N+1 into the
+  // implementation used N here directly — that fed len=N+1 into the
   // memcpy, copying only ~half the data and advancing p mid-payload, so
   // every subsequent "header" was read from garbage bytes. Result was
   // OOB reads into adjacent g_ram + arbitrary VRAM corruption the moment
@@ -1567,10 +1567,10 @@ static void SelectFile_DrawCopyRefusalMessage(void) {
   memcpy(vram_upload_data, kRefusalText, sizeof(kRefusalText));
 }
 
-// Â§9.3b â€” Empty-slot kind picker. Stub: render a 3-option prompt; only
+// §9.3b — Empty-slot kind picker. Stub: render a 3-option prompt; only
 // "Vanilla" is wired through to the existing new-game flow. "New Randomizer"
 // and "Load Share String" play a refusal sound and return until the next
-// cluster lands Â§9.4 (settings screen) and Â§9.1b (text input).
+// cluster lands §9.4 (settings screen) and §9.1b (text input).
 static void SelectFile_KindPicker_Draw(void) {
   // Render a 4-row prompt (title + 3 options). The file-select font is
   // 16-pixel-tall: each glyph occupies two tilemap rows. emit_text_run
@@ -1578,10 +1578,10 @@ static void SelectFile_KindPicker_Draw(void) {
   // (top) and vram_addr + 0x20 (bottom, tile index + 0x10).
   //
   // Layout (16-px-tall glyphs, options spaced 0x40 word units = 16 px):
-  //   Title  0x6188 (screen yâ‰ˆ91)
-  //   VANILLA 0x61c8 (screen yâ‰ˆ107)
-  //   RANDOM  0x6208 (screen yâ‰ˆ123)
-  //   PASTE   0x6248 (screen yâ‰ˆ139)
+  //   Title  0x6188 (screen y≈91)
+  //   VANILLA 0x61c8 (screen y≈107)
+  //   RANDOM  0x6208 (screen y≈123)
+  //   PASTE   0x6248 (screen y≈139)
   uint8 cmd[256];
   int o = 0;
   // Clear the slot list area BEFORE writing picker text. Without this,
@@ -1611,9 +1611,9 @@ static void SelectFile_KindPicker_Draw(void) {
   // rows = 16 screen pixels apart. Slot 1's row top at VRAM 0x6129 maps to
   // screen y=0x43=67, and the slot fairy sits at y=0x4a=74 (row_top + 7).
   // Applying the same offset:
-  //   VANILLA row top y â‰ˆ 107 â†’ fairy y â‰ˆ 114 (0x72)
-  //   RANDOM  row top y â‰ˆ 123 â†’ fairy y â‰ˆ 130 (0x82)
-  //   PASTE   row top y â‰ˆ 139 â†’ fairy y â‰ˆ 146 (0x92)
+  //   VANILLA row top y ≈ 107 → fairy y ≈ 114 (0x72)
+  //   RANDOM  row top y ≈ 123 → fairy y ≈ 130 (0x82)
+  //   PASTE   row top y ≈ 139 → fairy y ≈ 146 (0x92)
   static const uint8 kKindPicker_FairyX = 0x28;
   static const uint8 kKindPicker_FairyY0 = 0x72;
   uint8 fy = kKindPicker_FairyY0 + (uint8)(g_kind_picker_cursor * 0x10);
@@ -1648,17 +1648,17 @@ static bool SelectFile_KindPicker_Update(void) {
   // A (which is L.0x80); we must check filtered_joypad_H directly because the
   // packed `a` byte OR's A and B into the same bit.
   if (filtered_joypad_H & 0x80) {
-    // B = cancel â€” return to file-select cursor.
+    // B = cancel — return to file-select cursor.
     //
     // CRITICAL: SelectFile_KindPicker_Draw memcpys its prompt over the
     // entire vram_upload_data buffer, clobbering the kSelectFile_Func3_Data
     // background that submodule 4 (FileSelect_TriggerNameStripesAndAdvance)
     // installed. The slot-list rendering loop in FileSelect_Main writes
-    // patches at fixed offsets {4, 0x2e, 0x58} of vram_upload_data â€” those
+    // patches at fixed offsets {4, 0x2e, 0x58} of vram_upload_data — those
     // offsets only make sense within the Func3 layout. If we just clear
     // the picker flag, the next frame's slot patches land mid-prompt and
     // the slot list renders garbage. Force re-init by rewinding to
-    // submodule 3 (which advances 3 â†’ 4 â†’ 5), restoring vram_upload_data
+    // submodule 3 (which advances 3 → 4 → 5), restoring vram_upload_data
     // to the Func3 layout before slot rendering resumes.
     sound_effect_1 = 0x3c;
     g_kind_picker_active = 0;
@@ -1697,13 +1697,13 @@ static bool SelectFile_KindPicker_Update(void) {
       submodule_index = 0;
       subsubmodule_index = 0;
     } else if (g_kind_picker_cursor == 1) {
-      // Â§9.4 â€” open the settings screen on the target slot. The settings
+      // §9.4 — open the settings screen on the target slot. The settings
       // screen owns input and drawing until the user generates or cancels.
       g_kind_picker_active = 0;
       SelectFile_Settings_Activate(g_kind_picker_target_slot,
                                    /*prepopulate_from_share=*/false);
     } else {
-      // Â§9.1b/Â§9.2/Â§9.6 â€” open the alphabet picker so the player can type
+      // §9.1b/§9.2/§9.6 — open the alphabet picker so the player can type
       // a share string. On submit it routes through Share_PastePath() and
       // reports the decode status; on cancel it returns to the kind picker.
       g_kind_picker_active = 0;
@@ -1716,9 +1716,9 @@ static bool SelectFile_KindPicker_Update(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Â§9.1b/Â§9.2 â€” On-screen alphabet picker.
+// §9.1b/§9.2 — On-screen alphabet picker.
 //
-// Renders the base32 alphabet as an 8-col Ã— 4-row grid plus a 5th control
+// Renders the base32 alphabet as an 8-col × 4-row grid plus a 5th control
 // row (SUBMIT / DELETE / CANCEL). D-pad moves the cursor (with row+col
 // wrapping). A inserts the cursor char (or triggers the control); B
 // backspaces; Start submits. On submit, Share_PastePath() decodes the
@@ -1741,16 +1741,16 @@ static void SelectFile_AlphabetPicker_Activate(void) {
   g_alphabet_msg_status = 0;
   g_alphabet_msg_frames = 0;
   g_alphabet_pending_return = false;
-  // Â§9 cluster-2 audit MED-1: zero the decoded-share globals so stale
-  // values from a previous successful submit don't leak into the next
-  // session. (Latent today since the SelectFile_GetLastDecodedShareString
-  // accessor isn't wired yet â€” but it lands in Â§9.4 / Â§9.8.)
+  // Zero the decoded-share globals so stale values from a previous
+  // successful submit don't leak into the next session. (Latent today
+  // since the SelectFile_GetLastDecodedShareString accessor isn't wired
+  // yet — it lands when the settings/generate path consumes it.)
   g_alphabet_decoded_seed = 0;
   memset(g_alphabet_decoded_hash, 0, sizeof(g_alphabet_decoded_hash));
   TextField_Init(&g_alphabet_textfield, /*base32_only=*/true);
   g_alphabet_textfield.active = true;
   // Hand the textfield to the SDL host so SDL_TEXTINPUT events route here
-  // and the keyboardâ†’joypad path is suppressed (see main.c Â§9.1b block).
+  // and the keyboard→joypad path is suppressed (see main.c §9.1b block).
   g_rando_active_textfield = &g_alphabet_textfield;
   g_rando_text_input_active = true;
   g_rando_text_input_submit_pending = false;
@@ -1797,7 +1797,7 @@ static void SelectFile_AlphabetPicker_Deactivate(void) {
 // as a tile-stream of (vram_addr, attr, count, tile pairs...) commands,
 // terminated with 0xff. Per HandleStripes14 (src/nmi.c:421), the count byte
 // is BYTES-MINUS-ONE; for N tile pairs (2 bytes each) the field is (N*2)-1.
-// All count bytes below are pre-computed against this rule â€” see cluster-1
+// All count bytes below are pre-computed against this rule — see cluster-1
 // audit lessons for the bug class this prevents.
 static void SelectFile_AlphabetPicker_Draw(void) {
   // Render the textfield buffer first as a status line at the top.
@@ -1812,7 +1812,7 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   // first 32 chars + a "..." marker when truncated.
   //
   // We build a single command buffer in stack memory then memcpy in one
-  // shot â€” simpler than incrementally writing into vram_upload_data.
+  // shot — simpler than incrementally writing into vram_upload_data.
 
   // The file-select font is 16 px tall, so emit_text_run writes both the
   // top and bottom halves of every glyph (see definition far below).
@@ -1830,9 +1830,9 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   // Title at 0x6188, current buffer at 0x61c8. 18-char width per row.
   o = emit_text_run(cmd, o, 0x6188, "PASTE SHARE STRING", 18, 0x18);
 
-  // Â§9 cluster-2 audit MED-2: the buffer holds up to 64 chars (share
-  // strings are 50). Fixed [0..18) display would hide chars 18+ entirely;
-  // slide the window so the cursor is always visible.
+  // The buffer holds up to 64 chars (share strings are 50). Fixed
+  // [0..18) display would hide chars 18+ entirely; slide the window so
+  // the cursor is always visible.
   char buffer_view[19];
   int buf_len = g_alphabet_textfield.len;
   int cur = g_alphabet_textfield.cursor;
@@ -1882,14 +1882,14 @@ static void SelectFile_AlphabetPicker_Draw(void) {
       g_alphabet_cursor_col == kAlphabetPickerCtrl_Submit) submit_attr = 0x38;
   o = emit_text_run(cmd, o, ctrl_vram_base, "SUBMIT", 6, submit_attr);
 
-  // DELETE â€” 2-tile gap after SUBMIT (8 cells right).
+  // DELETE — 2-tile gap after SUBMIT (8 cells right).
   uint16 del_vram = ctrl_vram_base + 8;
   uint8 del_attr = 0x18;
   if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow &&
       g_alphabet_cursor_col == kAlphabetPickerCtrl_Delete) del_attr = 0x38;
   o = emit_text_run(cmd, o, del_vram, "DELETE", 6, del_attr);
 
-  // CANCEL â€” 8 cells right of DELETE.
+  // CANCEL — 8 cells right of DELETE.
   uint16 cancel_vram = del_vram + 8;
   uint8 cancel_attr = 0x18;
   if (g_alphabet_cursor_row == kAlphabetPicker_CtrlRow &&
@@ -1921,7 +1921,7 @@ static void SelectFile_AlphabetPicker_Draw(void) {
   // + 1 = ~ 456 bytes. Fits comfortably.
   memcpy(vram_upload_data, cmd, (size_t)o);
 
-  // Cursor â€” draw fairy at the highlighted cell. Each grid cell is ~8px
+  // Cursor — draw fairy at the highlighted cell. Each grid cell is ~8px
   // wide; the grid starts at X=24 (matches the kind picker fairy origin).
   // Phase A best-fit Y: title at y=0x88, buffer at y=0x98, grid rows at
   // y=0xa8/0xb0/0xb8/0xc0, control row at y=0xc8. Tune in playtest.
@@ -1980,7 +1980,7 @@ static bool SelectFile_AlphabetPicker_Update(void) {
       if (g_alphabet_pending_return) {
         g_alphabet_pending_return = false;
         SelectFile_AlphabetPicker_Deactivate();
-        // Â§9.4 â€” open the settings screen prepopulated with the decoded
+        // §9.4 — open the settings screen prepopulated with the decoded
         // seed_u64. settings_hash is one-way so we cannot regenerate the
         // settings struct from it; the user picks settings independently
         // (the screen surfaces the decoded settings_hash so they can
@@ -2113,10 +2113,10 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void) {
   // failure, surface the specific reject status so the user can fix the
   // input.
   //
-  // Â§9 cluster-2 audit MED-4: refuse to re-fire while the OK countdown is
-  // already in flight. Without this guard, a held Start/Enter (or rapid
-  // press) during the post-OK frames re-runs the entire success path,
-  // dumping another stderr log line and resetting the countdown.
+  // Refuse to re-fire while the OK countdown is already in flight.
+  // Without this guard, a held Start/Enter (or rapid press) during the
+  // post-OK frames re-runs the entire success path, dumping another
+  // stderr log line and resetting the countdown.
   if (g_alphabet_pending_return) return;
   if (g_alphabet_textfield.len == 0) {
     g_alphabet_msg_status = (uint8)(kShareDecodeBadLength + 1);
@@ -2151,7 +2151,7 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void) {
 }
 
 // ===========================================================================
-// Â§9.4 / Â§9.4a / Â§9.4b / Â§9.8 â€” Settings screen.
+// §9.4 / §9.4a / §9.4b / §9.8 — Settings screen.
 //
 // Activated from the kind-picker (cursor=1 "New Randomizer") or from the
 // alphabet-picker's OK path (so a pasted share string lands the user in
@@ -2161,12 +2161,12 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void) {
 //
 // Layout: a scrollable list of ~20 rows. Each row is one of:
 //   - Enum row (e.g., world_state, goal, item_pool_difficulty, dungeon-item
-//     modes) â€” A/Left/Right cycles values.
+//     modes) — A/Left/Right cycles values.
 //   - Slider row (e.g., crystals.ganon, crystals.tower, pieces_required,
-//     pieces_placed) â€” Left decrements / Right or A increments.
-//   - Bool row â€” A toggles.
-//   - Disabled row (Phase-B-and-beyond shuffles) â€” rendered greyed, no input.
-//   - Action row (PRESET, RECOMMENDED, SEED, GENERATE) â€” A activates.
+//     pieces_placed) — Left decrements / Right or A increments.
+//   - Bool row — A toggles.
+//   - Disabled row (Phase-B-and-beyond shuffles) — rendered greyed, no input.
+//   - Action row (PRESET, RECOMMENDED, SEED, GENERATE) — A activates.
 //
 // Visible window: ~10 rows fit comfortably on the 224px screen at the
 // 8px line stride. The cursor stays at or near the middle when scrolling;
@@ -2184,7 +2184,7 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void) {
 // section of zelda3.ini.
 // ===========================================================================
 
-// Row identifiers â€” one per logical settings axis + action rows.
+// Row identifiers — one per logical settings axis + action rows.
 enum {
   kRow_Preset = 0,
   kRow_WorldState,
@@ -2198,9 +2198,8 @@ enum {
   kRow_DungeonCompasses,
   kRow_PiecesRequired,
   kRow_PiecesPlaced,
-  // Â§9 cluster-3 audit MED-7: add the spec-required Phase A axes that
-  // the original cluster-3 implementation omitted from the UI. Both have
-  // exactly 2 supported Phase A values per randomizer-core spec.
+  // Spec-required Phase A axes. Both have exactly 2 supported Phase A
+  // values per randomizer-core spec.
   kRow_ModeWeapons,        // Randomized / Assured (spec line 42)
   kRow_Accessibility,      // Items / Locations (spec line 43)
   kRow_PrizeShuffle,
@@ -2219,7 +2218,7 @@ enum {
   kRow__Count,
 };
 
-// Settings screen view-state â€” distinct from the row index (cursor).
+// Settings screen view-state — distinct from the row index (cursor).
 enum {
   kSettingsView_Main = 0,
   kSettingsView_Recommended = 1,
@@ -2276,7 +2275,7 @@ static const uint8 kRecRecommendedOn[] = {
   /*CarryMoreRupees*/          1,
   /*MiscBugFixes*/             1,
   /*GameChangingBugFixes*/     0,  // recommended OFF per spec
-  /*DimFlashes*/               0,  // accessibility option â€” honor user pref
+  /*DimFlashes*/               0,  // accessibility option — honor user pref
 };
 static const char *kRecRowLabels[] = {
   "SkipIntro",
@@ -2311,9 +2310,9 @@ static uint32 g_rec_working_features0 = 0;
 // Asset-warn dialog state.
 static uint8 g_asset_warn_cursor = 0;
 static bool g_asset_warn_pending = false;
-// Â§9 cluster-3 audit HIGH-2: one-shot bypass for the "Allow Once" choice.
-// Without this, AllowOnce â†’ recursive HandleGenerate â†’ asset-warn gate
-// fires again (AssetDecision_FindAllow is still false because AllowOnce
+// One-shot bypass for the "Allow Once" choice. Without this, AllowOnce
+// → recursive HandleGenerate → asset-warn gate fires again
+// (AssetDecision_FindAllow is still false because AllowOnce
 // intentionally doesn't persist), looping back to the dialog. The flag
 // is set by AllowOnce, consumed (and cleared) on the next entry to
 // HandleGenerate, and explicitly cleared by Deactivate so it can't
@@ -2331,7 +2330,7 @@ static uint8 g_settings_hash_short[16];
 // allow", we record their hash + decision in a session-static lookup; on
 // next launch the config parser populates the lookup from the INI. For
 // Phase A the persistence is in-memory only (the INI write-back is deferred
-// to a follow-up sprint â€” config.c is read-only today). The session-static
+// to a follow-up sprint — config.c is read-only today). The session-static
 // lookup ensures the user is not re-prompted within a single session even
 // without on-disk persistence.
 // ---------------------------------------------------------------------------
@@ -2418,7 +2417,7 @@ static bool ParseSeedField(const char *s, uint64 *out_seed) {
 // (which is encoded into the share string).
 static uint64 g_settings_generation_counter = 0;
 static uint64 DeriveSeedFromState(void) {
-  // SHA-256 of (settings_hash[16] + counter[8] + frame_counter[2]) â†’ take
+  // SHA-256 of (settings_hash[16] + counter[8] + frame_counter[2]) → take
   // first 8 bytes as u64. Cheap and good enough.
   uint8 buf[32];
   memset(buf, 0, sizeof(buf));
@@ -2427,7 +2426,7 @@ static uint64 DeriveSeedFromState(void) {
   for (int i = 0; i < 8; ++i) {
     buf[16 + i] = (uint8)((g_settings_generation_counter >> (i * 8)) & 0xff);
   }
-  // frame_counter is uint8 â€” mix into a single byte; the generation
+  // frame_counter is uint8 — mix into a single byte; the generation
   // counter above already provides per-Generate-press variation.
   buf[24] = (uint8)frame_counter;
   uint8 digest[32];
@@ -2438,7 +2437,7 @@ static uint64 DeriveSeedFromState(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Settings-row helpers â€” get a label + a current-value string for any row.
+// Settings-row helpers — get a label + a current-value string for any row.
 // ---------------------------------------------------------------------------
 static const char *RowLabel(int row) {
   switch (row) {
@@ -2509,8 +2508,8 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       }
     }
     case kRow_PiecesRequired:
-      // Â§9 cluster-3 audit MED-6: show "â€”" sentinel when the goal doesn't
-      // use pieces, signalling to the user that the field is inert.
+      // Show "-" sentinel when the goal doesn't use pieces, signalling
+      // to the user that the field is inert.
       if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt)
         return "-";
       snprintf(scratch, scratch_len, "%u", (unsigned)s->pieces_required);
@@ -2662,10 +2661,10 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_PiecesRequired: {
-      // Â§9 cluster-3 audit MED-6: pieces fields are only meaningful for
-      // Triforce Hunt / Ganon Hunt goals; refuse cycle otherwise so the
-      // user doesn't accidentally mutate the field (which would change
-      // settings_hash without visible effect on placement).
+      // Pieces fields are only meaningful for Triforce Hunt / Ganon Hunt
+      // goals; refuse cycle otherwise so the user doesn't accidentally
+      // mutate the field (which would change settings_hash without
+      // visible effect on placement).
       if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt) {
         mutated = false;
         sound_effect_1 = 0x3c;
@@ -2678,7 +2677,7 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_PiecesPlaced: {
-      // Â§9 cluster-3 audit MED-6: same gating as PiecesRequired.
+      // Same gating as PiecesRequired.
       if (s->goal != kGoal_TriforceHunt && s->goal != kGoal_GanonHunt) {
         mutated = false;
         sound_effect_1 = 0x3c;
@@ -2692,7 +2691,7 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_ModeWeapons: {
-      // Â§9 cluster-3 audit MED-7. Phase A supports only Randomized + Assured.
+      // Phase A supports only Randomized + Assured for mode.weapons.
       int n = (int)s->mode_weapons + delta;
       if (n < kModeWeapons_Randomized) n = kModeWeapons_Assured;
       if (n > kModeWeapons_Assured) n = kModeWeapons_Randomized;
@@ -2738,7 +2737,7 @@ static uint8 TileForAscii(char c) {
     // 0xe6..0xef for top halves, 0xf6..0xff for bottom halves (verified
     // by the slot row tiles in kSelectFile_Func3_Data: slot 1's "1"
     // uses 0xe7 top + 0xf7 bot, slot 2's "2" uses 0xe8 + 0xf8, etc.).
-    // The +0x10 topâ†’bot offset that emit_text_run assumes holds for
+    // The +0x10 top→bot offset that emit_text_run assumes holds for
     // this range. Previously TileForAscii returned 0x76+digit, the
     // 8-px-tall half-height digits from the name-entry font; those
     // have no matching bottom-half companions in the file-select
@@ -2757,7 +2756,7 @@ static uint8 TileForAscii(char c) {
 // Emit one tilemap-row half (top OR bottom) of a horizontal text run as a
 // tile-stream command at the given VRAM address. `attr` = palette/priority
 // byte; HandleStripes14 count byte is (chars*2)-1 per src/nmi.c:421.
-// `tile_offset` is added to each glyph's base tile index â€” 0 for the top
+// `tile_offset` is added to each glyph's base tile index — 0 for the top
 // half, 0x10 for the bottom half (the file-select font stores top/bottom
 // halves of each glyph 16 tiles apart). Caller's `cmd` buffer must have
 // room for 4 header bytes + chars*2 payload bytes.
@@ -2813,7 +2812,7 @@ static int emit_clear_area(uint8 *cmd, int o, uint16 vram_addr, int num_words) {
 
 // Visible row count (per-screen). File-select glyphs are 16 px tall (two
 // tilemap rows per glyph), so a row's stride is 0x40 word units = 16 px.
-// Budget: title (16) + 7 rows Ã— 16 (112) + hash (16) + generate (16) =
+// Budget: title (16) + 7 rows × 16 (112) + hash (16) + generate (16) =
 // 160 px of content, well within the 224 px play region.
 #define kSettingsVisibleRows 7
 
@@ -2855,12 +2854,12 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
 }
 
 static void SelectFile_Settings_Deactivate(void) {
-  // Â§9 cluster-3 audit HIGH-1: Module_SelectFile_0 init calls this for
-  // state-reset purposes, BEFORE submodules 1 and 2 have run (the slot-
-  // tile upload + triforce erase). Unconditionally rewinding to
-  // submodule 3 here would bypass those, leaving first-launch file-select
-  // without slot frames. Only restore VRAM when we were ACTIVELY in the
-  // settings screen (i.e. our draw clobbered vram_upload_data).
+  // Module_SelectFile_0 init calls this for state-reset purposes, BEFORE
+  // submodules 1 and 2 have run (the slot-tile upload + triforce erase).
+  // Unconditionally rewinding to submodule 3 here would bypass those,
+  // leaving first-launch file-select without slot frames. Only restore
+  // VRAM when we were ACTIVELY in the settings screen (i.e. our draw
+  // clobbered vram_upload_data).
   bool was_active = g_settings_active;
   g_settings_active = false;
   g_settings_view = kSettingsView_Main;
@@ -2904,7 +2903,7 @@ static void SelectFile_Settings_DrawMain(void) {
   int o = 0;
   // Clear the entire settings area first so stale VRAM from prior screens
   // (kind picker text, title-screen text, etc.) doesn't peek through the
-  // gaps between label/value columns. Covers rows 8-27 (20 rows Ã— 32 cols
+  // gaps between label/value columns. Covers rows 8-27 (20 rows × 32 cols
   // = 640 word cells), which encompasses the title, all 7 settings rows
   // plus their bottom halves, the hash row, and the generate indicator row.
   o = emit_clear_area(cmd, o, 0x6100, 640);
@@ -2985,13 +2984,13 @@ static void SelectFile_Settings_DrawRecommended(void) {
   // Clear the panel area first so unwritten columns don't expose stale
   // VRAM from prior screens. Covers rows 7-28 (the title at row 7, 11 rec
   // rows starting at row 9, each consuming 2 tilemap rows = 22 rows of
-  // tile cells Ã— 32 cols â‰ˆ 704 word cells).
+  // tile cells × 32 cols ≈ 704 word cells).
   o = emit_clear_area(cmd, o, 0x60e0, 704);
-  // 16-px-tall glyphs, no scrolling â€” fit 11 rows + title + B BACK hint in
+  // 16-px-tall glyphs, no scrolling — fit 11 rows + title + B BACK hint in
   // the 224 px play region. Title is shifted up to 0x60e8 (row 7) so the
   // last row's bottom half lands at row 28 (y=219), within screen.
   o = emit_text_run(cmd, o, 0x60e8, "REC FEATURES", 12, 0x18);
-  // B BACK hint sits inline with the title at column 22 â€” outside the
+  // B BACK hint sits inline with the title at column 22 — outside the
   // 14-column wide row-label area below, so it never collides with the
   // settings rows.
   o = emit_text_run(cmd, o, 0x60f6, "B BACK", 6, 0x18);
@@ -3004,7 +3003,7 @@ static void SelectFile_Settings_DrawRecommended(void) {
     if (i < kRecRow_ApplyAll) {
       bool on = (g_rec_working_features0 & kRecRowBits[i]) != 0;
       // Place value on the SAME tilemap row as the label, at col 24 (label
-      // spans cols 8-21). vram already targets col 8, so +16 â†’ col 24. The
+      // spans cols 8-21). vram already targets col 8, so +16 → col 24. The
       // 32-wide BG2 tilemap wraps any offset past col 32 to the next row.
       o = emit_text_run(cmd, o, (uint16)(vram + 16), on ? "ON" : "OFF", 4, attr);
     }
@@ -3016,8 +3015,8 @@ static void SelectFile_Settings_DrawRecommended(void) {
 static void SelectFile_Settings_DrawAssetWarn(void) {
   uint8 cmd[2048];
   int o = 0;
-  // Clear before drawing â€” see Settings_DrawMain comment. Covers rows 8-25
-  // (18 rows Ã— 32 cols = 576 word cells).
+  // Clear before drawing — see Settings_DrawMain comment. Covers rows 8-25
+  // (18 rows × 32 cols = 576 word cells).
   o = emit_clear_area(cmd, o, 0x6100, 576);
   o = emit_text_run(cmd, o, 0x6108, "ASSETS DIFFER", 13, 0x18);
   o = emit_text_run(cmd, o, 0x6148, "NON VANILLA", 11, 0x18);
@@ -3059,7 +3058,7 @@ static void SettingsCursorMove(int delta) {
 }
 
 static bool SelectFile_Settings_HandleRecommendedInput(void) {
-  // Cancel via B â†’ back to main view.
+  // Cancel via B → back to main view.
   if (filtered_joypad_H & kJoypadH_B) {
     sound_effect_1 = 0x2c;
     g_settings_view = kSettingsView_Main;
@@ -3157,7 +3156,7 @@ static bool SelectFile_Settings_Update(void) {
     return SelectFile_Settings_HandleAssetWarnInput();
   }
 
-  // Cancel via B â†’ back to kind picker on the target slot.
+  // Cancel via B → back to kind picker on the target slot.
   if (filtered_joypad_H & kJoypadH_B) {
     sound_effect_1 = 0x3c;
     SelectFile_Settings_Deactivate();
@@ -3192,7 +3191,7 @@ static bool SelectFile_Settings_Update(void) {
     return true;
   }
 
-  // A button â€” context-dependent. While the seed text field is active
+  // A button — context-dependent. While the seed text field is active
   // (focused for typing), swallow A so it doesn't re-trigger the row's
   // Clear-the-field action on every joypad poll.
   if ((filtered_joypad_L & kJoypadL_A) && !g_settings_seed_field.active) {
@@ -3206,17 +3205,17 @@ static bool SelectFile_Settings_Update(void) {
         SelectFile_Settings_HandleGenerate();
         break;
       case kRow_Seed:
-        // Seed-field activation is deferred â€” Phase A wires it to the text
+        // Seed-field activation is deferred — Phase A wires it to the text
         // input layer via a separate B+A combo or a tap of A on this row
         // that opens a numeric entry sub-prompt. For now, A on the seed row
-        // just toggles base-prefix mode (decimal â†” hex) for the next input.
+        // just toggles base-prefix mode (decimal ↔ hex) for the next input.
         // The user can also paste via the alphabet picker (cluster 2).
         // Phase A simplification: A on the seed row clears the field so the
         // user can type a fresh value via the host SDL_TEXTINPUT path.
-        // Â§9 cluster-3 audit LOW: don't clear if the field was
-        // prepopulated from an alphabet-picker decoded share string â€”
-        // the user wants to view/edit, not start over. Clear only when
-        // the field is empty (i.e. fresh entry).
+        // Don't clear if the field was prepopulated from an alphabet-
+        // picker decoded share string — the user wants to view/edit,
+        // not start over. Clear only when the field is empty (i.e.
+        // fresh entry).
         if (!g_settings_seed_prepopulated)
           TextField_HandleKey(&g_settings_seed_field, kTextFieldKey_Clear);
         // Activate the field so the host routes SDL_TEXTINPUT here.
@@ -3254,7 +3253,7 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_EnemyShuffle_Disabled:
       case kRow_BossShuffle_Disabled:
       case kRow_Glitches_Disabled:
-        sound_effect_1 = 0x3c;  // refusal â€” Phase B feature
+        sound_effect_1 = 0x3c;  // refusal — Phase B feature
         break;
       default:
         break;
@@ -3285,7 +3284,7 @@ static bool SelectFile_Settings_Update(void) {
       return true;
     }
     // While typing, swallow all other input so cursor navigation doesn't
-    // wander when the user types digit keys (which the keyboardâ†’joypad
+    // wander when the user types digit keys (which the keyboard→joypad
     // suppression would already block on PC, but gamepad players might
     // accidentally hit a direction).
     return true;
@@ -3295,13 +3294,13 @@ static bool SelectFile_Settings_Update(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Generate action â€” Â§9.8.
+// Generate action — §9.8.
 //
 // On press:
 //   1. If asset-warn applies (non-vanilla assets + no persisted decision),
 //      switch view to the asset-warn dialog and return. User confirms; this
 //      function is re-invoked after their choice.
-//   2. Parse seed input. Empty â†’ derive from settings_hash + counter.
+//   2. Parse seed input. Empty → derive from settings_hash + counter.
 //   3. Run Place_AssumedFill.
 //   4. Build the share string.
 //   5. Write spoiler files (.json + .txt) to the spoiler directory.
@@ -3311,7 +3310,7 @@ static bool SelectFile_Settings_Update(void) {
 //   9. Transition back to file-select with the cursor on the target slot.
 // ---------------------------------------------------------------------------
 static void SelectFile_Settings_HandleGenerate(void) {
-  // Re-fire guard â€” Generate is async-ish (placement takes a moment); a
+  // Re-fire guard — Generate is async-ish (placement takes a moment); a
   // double-press would otherwise re-enter mid-generation.
   if (g_settings_generate_in_progress) return;
 
@@ -3341,7 +3340,7 @@ static void SelectFile_Settings_HandleGenerate(void) {
   uint64 seed_u64 = 0;
   if (g_settings_seed_field.len > 0) {
     if (!ParseSeedField(g_settings_seed_field.buf, &seed_u64)) {
-      fprintf(stderr, "[settings] bad seed input â€” refusing to generate\n");
+      fprintf(stderr, "[settings] bad seed input — refusing to generate\n");
       g_settings_generate_in_progress = false;
       sound_effect_1 = 0x3c;
       return;
@@ -3398,11 +3397,11 @@ static void SelectFile_Settings_HandleGenerate(void) {
     return;
   }
 
-  // Â§9 cluster-3 audit MED-5: pack the 31-byte raw binary blob via the
-  // public Share_PackBinary helper so the trailing CRC is correct.
-  // Previously the code rebuilt the blob inline and left CRC = 0, which
-  // meant the slot's stored share_string base32-re-encoded to a string
-  // DIFFERENT from the one Share_Encode emitted to the user â€” friends
+  // Pack the 31-byte raw binary blob via the public Share_PackBinary
+  // helper so the trailing CRC is correct. Previously the code rebuilt
+  // the blob inline and left CRC = 0, which meant the slot's stored
+  // share_string base32-re-encoded to a string
+  // DIFFERENT from the one Share_Encode emitted to the user — friends
   // who tried Share_Decode on the banner-displayed string would get
   // BadChecksum. The slot header reserves 32 bytes for share_string; we
   // zero-pad bytes 31..32 here for cleanliness.
@@ -3490,14 +3489,14 @@ static void SelectFile_Settings_HandleGenerate(void) {
   WORD(target_sram[0x3e5]) = 0x55aa;
   WORD(target_sram[0x20c]) = 0xf000;
   WORD(target_sram[0x20e]) = 0xf000;
-  // Â§9 cluster-3 audit HIGH-4: 0x3e3 is name[5] (already blank above);
-  // DiedCounter lives at kSrmOffs_DiedCounter = 0x405.
+  // 0x3e3 is name[5] (already blank above); DiedCounter lives at
+  // kSrmOffs_DiedCounter = 0x405.
   WORD(target_sram[kSrmOffs_DiedCounter]) = 0xffff;
-  // Â§9 cluster-3 audit HIGH-3: replicate the new-file init from
-  // NameFile_DoTheNaming (lines 1183-1189) so the slot has the canonical
-  // starting state â€” without this, health bytes at 0x36c..0x36d stayed
-  // zero, so the rando slot loaded as instant-death (0 hearts / 0 max).
-  // The 60-byte block initializes health, magic, gloves, etc. The bytes
+  // Replicate the new-file init from `NameFile_DoTheNaming` so the slot
+  // has the canonical starting state — without this, health bytes
+  // stayed zero, so the rando slot loaded as instant-death (0 hearts
+  // / 0 max). The 60-byte block initializes health, magic, gloves, etc.
+  // The bytes
   // 0x18,0x18 at offsets +44/+45 are the starting health + max health
   // (0x18 = 3 hearts in quarter-heart units); 0xf8 at offset +57 is the
   // boomerang/item slot baseline.
@@ -3524,7 +3523,7 @@ static void SelectFile_Settings_HandleGenerate(void) {
   // Apply recommended-features panel choices (if user toggled). Per spec
   // the user must opt in explicitly; we honor whatever state the panel
   // reflects (g_rec_working_features0 vs g_config.features0). The user
-  // changed bits â€” that's the explicit opt-in.
+  // changed bits — that's the explicit opt-in.
   if (g_rec_working_features0 != g_config.features0) {
     g_config.features0 = g_rec_working_features0;
   }
