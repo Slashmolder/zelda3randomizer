@@ -276,12 +276,15 @@ void Sprite_CreateDeflectedArrow(int k);
 // Phase B Slice 9 — add-rando-confirmation-icons. Spawns a short-lived
 // icon-pop ancilla above Link's head used by Rando_ShowDirectGrantConfirmation
 // to surface direct-grant items (HalfMagic / QuarterMagic / TriforcePiece /
-// prize bits / dungeon-item bits) that bypass Link_ReceiveItem. The tile +
-// palette come from kDirectGrantIcons[item_id] (src/rando/direct_grant_icons.h,
-// codegen'd from assets/rando/direct_grant_icons.yaml).
+// prize bits / dungeon-item bits) that bypass Link_ReceiveItem. Renders the
+// item's animated-sprite GFX bundle exactly like the vanilla receive-item
+// ancilla: `gfx` (DecodeAnimatedSpriteTile_variable index), `big` (OAM size
+// byte), and `oam_flags` (precomputed palette/priority byte) come from
+// kDirectGrantIcons[item_id] (src/rando/direct_grant_icons.h, codegen'd from
+// assets/rando/direct_grant_icons.yaml).
 //
 // Does NOT grant the item — the direct write happened upstream inside
 // Rando_DispatchVanillaGrant. This ancilla is visual confirmation only.
-// No-op when called with tile==0 (the helper guards against that).
-void AncillaAdd_RandoIconReceipt(uint16 tile, uint8 palette);
+// No-op when called with gfx==0 (the audio-only fallback sentinel).
+void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags);
 #define kAncillaType_RandoIconReceipt 0x44
