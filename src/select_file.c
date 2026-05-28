@@ -3447,6 +3447,12 @@ static void SelectFile_Settings_HandleGenerate(void) {
   slot.header.generator_version = (uint16)kGeneratorVersion;
   memcpy(slot.header.settings_hash, settings_hash_full, 16);
   memcpy(slot.header.share_string, raw_binary, kRandoSidecar_ShareStringLength);
+  // Phase B hints: carry the `hints` and `goal` axes in the slot's reserved
+  // tail (rando_save.h settings extension) so telepathic-tile hints can be
+  // regenerated at slot load. The generator reads only these two axes.
+  slot.header.settings_ext_present = 1;
+  slot.header.hints_setting = g_settings_working.hints;
+  slot.header.goal = g_settings_working.goal;
   // Flags: set the forward-fill bit if the placer used the fallback.
   {
     const PlacementStats *st = Placement_GetLastStats();
