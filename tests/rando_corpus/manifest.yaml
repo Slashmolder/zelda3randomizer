@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 33  # current kGeneratorVersion; bump policy per tasks.md §13.6 — `assets/scripts/bump_rando_corpus.py --apply` regenerates digests on bump
+generator_version: 34  # bumped to 34 by next bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -85,8 +85,8 @@ entries:
   - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30 }
     seed: "0x0000000000000012"
     label: "a1-standard-triforce-hunt"
-    expected_digest: "2ac95eac404180c8ce697580eadea85f261b4fd11b563e563f6f969f51c028a9"
-    expected_sphere_digest: "d924dd2c0eb5b57dd37eec4500a8de1f6f3deaedc8e14c54b5edb9b2de01cb75"
+    expected_digest: "695814eaea0d4054b8785d0c546d58fe7eb7cdad15f6dbdb2a1eac8eee3fa9b1"
+    expected_sphere_digest: "20f29e9c50d0321a4c69380d6d31d0366f050a380c7764768ef81231e551aaac"
   - settings: { mode.state: standard, goal: completionist }
     seed: "0x0000000000000013"
     label: "a1-standard-completionist"
@@ -217,7 +217,7 @@ entries:
     seed: "0x0000000000000041"
     label: "a1-standard-ganon"
     expected_digest: "326d45367cba7d515f8724b81daddd6612adeb63c663c7865850755eaa651de8"
-    expected_sphere_digest: "5f429020cbb1ba10ed2c81249a5f162beba78ed5106ae5d81a59817c850b0fc0"
+    expected_sphere_digest: "619463a78d036a6370b69bac2a1b6dcf04a608b30a2ba6f776885957a3810ee6"
   # More crystals.* coverage.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 0, crystals.tower: 0 }
     seed: "0x0000000000000042"
