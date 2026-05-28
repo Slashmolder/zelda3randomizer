@@ -1,3 +1,10 @@
+// rando_window.h pulls in <SDL.h> (under Z3R_NATIVE_SETTINGS_WINDOW), which
+// includes <setjmp.h>. It MUST precede variables.h: variables.h #defines R12/
+// R14 (g_ram register aliases) that otherwise mangle setjmp.h's _JUMP_BUFFER
+// struct members and break the build. types.h precedes it for `bool`
+// (rando_window.h declares a bool-returning function but only includes SDL).
+#include "types.h"
+#include "rando/rando_window/rando_window.h"  // RandoWindow_OpenForNewSlot (guarded internally)
 #include "zelda_rtl.h"
 #include "variables.h"
 #include "load_gfx.h"
@@ -9,6 +16,8 @@
 #include "config.h"
 #include "features.h"
 #include "rando/rando.h"
+#include "rando/rando_asset_decisions.h"
+#include "rando/rando_generate.h"
 #include "rando/rando_placement.h"
 #include "rando/rando_save.h"
 #include "rando/rando_share.h"
@@ -1326,6 +1335,15 @@ static void SelectFile_ResetSidecarCache(void) {
   g_selectfile_slots_loaded = 0;
 }
 
+// Post-generate seam (Phase P3). Called by Rando_GenerateSlot after a playable
+// slot is written so the next file-select render picks up the rando banner.
+// Non-static so the shared src/rando/rando_generate.c can call it (declared in
+// rando_generate.h). selectfile_arr1 is a uint16* into g_ram (variables.h).
+void SelectFile_NotifySlotWritten(int slot_index) {
+  SelectFile_ResetSidecarCache();
+  selectfile_arr1[slot_index] = 1;
+}
+
 // Classify slot k based on cached sidecar info + sram.dat occupancy.
 // Per spec "Slot-kind discriminator": sidecar slot_kind=Vanilla/Empty defers
 // to the sram.dat slot's state; only slot_kind=Randomizer overrides with the
@@ -1697,17 +1715,30 @@ static bool SelectFile_KindPicker_Update(void) {
       submodule_index = 0;
       subsubmodule_index = 0;
     } else if (g_kind_picker_cursor == 1) {
-      // §9.4 — open the settings screen on the target slot. The settings
-      // screen owns input and drawing until the user generates or cancels.
+      // §9.4 — "New Randomizer" on the target slot.
       g_kind_picker_active = 0;
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      // PC (F1): the native settings window owns the new-slot surface.
+      RandoWindow_OpenForNewSlot(g_kind_picker_target_slot);
+#else
+      // Switch / guard off: the in-game settings screen owns input and drawing
+      // until the user generates or cancels.
       SelectFile_Settings_Activate(g_kind_picker_target_slot,
                                    /*prepopulate_from_share=*/false);
+#endif
     } else {
-      // §9.1b/§9.2/§9.6 — open the alphabet picker so the player can type
-      // a share string. On submit it routes through Share_PastePath() and
-      // reports the decode status; on cancel it returns to the kind picker.
+      // §9.1b/§9.2/§9.6 — "From share string" on the target slot.
       g_kind_picker_active = 0;
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      // PC (F1): the native settings window owns share-string paste — it
+      // replaces the in-game alphabet picker entirely.
+      RandoWindow_OpenForNewSlot(g_kind_picker_target_slot);
+#else
+      // Switch / guard off: open the alphabet picker so the player can type a
+      // share string. On submit it routes through Share_PastePath() and
+      // reports the decode status; on cancel it returns to the kind picker.
       SelectFile_AlphabetPicker_Activate();
+#endif
     }
     return true;
   }
@@ -2327,60 +2358,13 @@ static uint8 g_settings_hash_short[16];
 // ---------------------------------------------------------------------------
 // Asset-warn persistence ([RandoAssetDecisions] in zelda3.ini).
 //
-// The decision is keyed by hex(g_assets_hash). When the user picks "Always
-// allow", we record their hash + decision in a session-static lookup; on
-// next launch the config parser populates the lookup from the INI. For
-// Phase A the persistence is in-memory only (the INI write-back is deferred
-// to a follow-up sprint — config.c is read-only today). The session-static
-// lookup ensures the user is not re-prompted within a single session even
-// without on-disk persistence.
-// ---------------------------------------------------------------------------
-typedef struct AssetDecision {
-  uint8 hash[32];
-  uint8 allow;  // 1 = always-allow recorded for this hash
-} AssetDecision;
-#define kAssetDecisions_Max 16
-static AssetDecision g_asset_decisions[kAssetDecisions_Max];
-static uint8 g_asset_decisions_count = 0;
-
-static bool AssetDecision_FindAllow(const uint8 hash[32]) {
-  for (uint8 i = 0; i < g_asset_decisions_count; ++i) {
-    if (memcmp(g_asset_decisions[i].hash, hash, 32) == 0) {
-      return g_asset_decisions[i].allow != 0;
-    }
-  }
-  return false;
-}
-
-static void AssetDecision_Persist(const uint8 hash[32]) {
-  // Update in-place if hash already recorded.
-  for (uint8 i = 0; i < g_asset_decisions_count; ++i) {
-    if (memcmp(g_asset_decisions[i].hash, hash, 32) == 0) {
-      g_asset_decisions[i].allow = 1;
-      return;
-    }
-  }
-  if (g_asset_decisions_count >= kAssetDecisions_Max) return;
-  AssetDecision *d = &g_asset_decisions[g_asset_decisions_count++];
-  memcpy(d->hash, hash, 32);
-  d->allow = 1;
-  // Phase A: persistence is in-memory only. config.c's HandleIniConfig
-  // already accepts the new [RandoAssetDecisions] section so future INI
-  // edits by the user (or by a future INI-writer task) survive a launch.
-  // Until the writer lands, the decision persists for the current session.
-  fprintf(stderr, "[RandoAssetDecisions] recorded always-allow for hash ");
-  for (int i = 0; i < 8; ++i) fprintf(stderr, "%02x", hash[i]);
-  fprintf(stderr, "...\n");
-}
-
-// Called from config.c's [RandoAssetDecisions] parser to populate the
-// session lookup from zelda3.ini at startup.
-void Rando_RegisterAssetDecisionFromIni(const uint8 hash[32]) {
-  if (g_asset_decisions_count >= kAssetDecisions_Max) return;
-  AssetDecision *d = &g_asset_decisions[g_asset_decisions_count++];
-  memcpy(d->hash, hash, 32);
-  d->allow = 1;
-}
+// The decision store (AssetDecision_FindAllow / AssetDecision_Persist /
+// Rando_RegisterAssetDecisionFromIni + the g_asset_decisions array) was
+// promoted to src/rando/rando_asset_decisions.{h,c} (Phase P3) so both UIs
+// (the in-game settings screen and the native settings window) plus the INI
+// loader/writer share one source of truth. Included above via
+// "rando/rando_asset_decisions.h". The asset-warn UI dialog + the
+// g_asset_warn_session_bypass flag stay here (they are UI).
 
 // ---------------------------------------------------------------------------
 // Seed-field parsing helpers.
@@ -3362,195 +3346,20 @@ static void SelectFile_Settings_HandleGenerate(void) {
     seed_u64 = DeriveSeedFromState();
   }
 
-  // Compute settings_hash (already cached as short).
-  uint8 settings_hash_full[32];
-  Settings_ComputeHash(&g_settings_working, settings_hash_full);
-
-  // Run placement.
-  extern const uint32 kRandoLocationsCount;
-  RandoPlacement *entries = (RandoPlacement *)calloc(kRandoLocationsCount,
-                                                     sizeof(RandoPlacement));
-  if (entries == NULL) {
-    fprintf(stderr, "[settings] OOM allocating placement table\n");
+  // Run the shared, UI-agnostic playable-slot generation (Phase P3). This is
+  // the relocated body of this function (from Settings_ComputeHash onward):
+  // placement + share + spoiler files + sidecar slot write + SRAM commit +
+  // recommended-features apply + SelectFile_NotifySlotWritten. budget = -1 →
+  // race-aware default (race?0:10). out=NULL → no placement copy (the in-game
+  // flow does not need one). See src/rando/rando_generate.c.
+  char errbuf[256];
+  if (!Rando_GenerateSlot(&g_settings_working, seed_u64, -1, g_settings_target_slot,
+                          g_rec_working_features0, NULL, errbuf, sizeof errbuf)) {
+    fprintf(stderr, "[settings] %s\n", errbuf);
     g_settings_generate_in_progress = false;
     sound_effect_1 = 0x3c;
     return;
   }
-  RandoPlacementTable table = { entries, 0 };
-  // Use a generous budget so even Triforce-Hunt configurations succeed.
-  // Phase B Slice 6 audit H1 — race-mode generation must pass
-  // budget_seconds=0 (no wall-clock cutoff) so the placer runs to its
-  // deterministic kAssumedFillMaxAttempts cap. Reveal also passes 0; this
-  // matches both sides so the stamp is reproducible across machines.
-  int budget = (g_settings_working.race_mode != 0) ? 0 : 10;
-  bool placed = Place_AssumedFill(&g_settings_working, seed_u64, budget, &table);
-  if (!placed) {
-    fprintf(stderr, "[settings] placement failed\n");
-    free(entries);
-    g_settings_generate_in_progress = false;
-    sound_effect_1 = 0x3c;
-    return;
-  }
-
-  // Build share string.
-  ShareString ss;
-  memset(&ss, 0, sizeof(ss));
-  ss.version = (uint8)kGeneratorVersion;
-  memcpy(ss.settings_hash, settings_hash_full, 16);
-  ss.seed_u64 = seed_u64;
-  char share_string[kShareStringBase32MaxLen];
-  int share_len = Share_Encode(&ss, share_string, sizeof(share_string));
-  if (share_len <= 0) {
-    fprintf(stderr, "[settings] share string encode failed\n");
-    free(entries);
-    g_settings_generate_in_progress = false;
-    sound_effect_1 = 0x3c;
-    return;
-  }
-
-  // Pack the 31-byte raw binary blob via the public Share_PackBinary
-  // helper so the trailing CRC is correct. Previously the code rebuilt
-  // the blob inline and left CRC = 0, which meant the slot's stored
-  // share_string base32-re-encoded to a string
-  // DIFFERENT from the one Share_Encode emitted to the user — friends
-  // who tried Share_Decode on the banner-displayed string would get
-  // BadChecksum. The slot header reserves 32 bytes for share_string; we
-  // zero-pad bytes 31..32 here for cleanliness.
-  uint8 raw_binary[32];
-  memset(raw_binary, 0, sizeof(raw_binary));
-  Share_PackBinary(&ss, raw_binary);
-
-  // Compute spoiler path + write spoiler files.
-  char spoiler_json_path[512];
-  char spoiler_txt_path[512];
-  int n = Spoiler_ResolvePath(share_string, ".json", spoiler_json_path,
-                              sizeof(spoiler_json_path));
-  int m = Spoiler_ResolvePath(share_string, ".txt", spoiler_txt_path,
-                              sizeof(spoiler_txt_path));
-  if (n > 0 && m > 0) {
-    RandoSpheres spheres;
-    bool spheres_ok = Logic_ComputeSpheres(&g_settings_working, &table, &spheres);
-    (void)spheres_ok;
-    RandoSpoiler spoiler;
-    memset(&spoiler, 0, sizeof(spoiler));
-    spoiler.share_string = share_string;
-    spoiler.seed_u64 = seed_u64;
-    spoiler.generator_version = kGeneratorVersion;
-    spoiler.settings = &g_settings_working;
-    spoiler.placements = &table;
-    spoiler.spheres = &spheres;
-    spoiler.goal_completable = Goal_IsCompletable(&g_settings_working, &table);
-    {
-      const PlacementStats *st = Placement_GetLastStats();
-      spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
-      spoiler.retry_attempts = st->attempts_used;
-    }
-    // Phase B Slice 6 — Spoiler_Write branches on race_mode (full vs suppressed).
-    if (!Spoiler_Write(&spoiler, spoiler_json_path, spoiler_txt_path)) {
-      fprintf(stderr, "[settings] spoiler write failed: %s\n", spoiler_json_path);
-    }
-  }
-
-  // Build & write the sidecar slot. Slot kind = Randomizer.
-  RandoSidecarSlot slot;
-  memset(&slot, 0, sizeof(slot));
-  slot.header.slot_kind = kSlotKind_Randomizer;
-  slot.header.generator_version = (uint16)kGeneratorVersion;
-  memcpy(slot.header.settings_hash, settings_hash_full, 16);
-  memcpy(slot.header.share_string, raw_binary, kRandoSidecar_ShareStringLength);
-  // Phase B hints: carry the `hints` and `goal` axes in the slot's reserved
-  // tail (rando_save.h settings extension) so telepathic-tile hints can be
-  // regenerated at slot load. The generator reads only these two axes.
-  slot.header.settings_ext_present = 1;
-  slot.header.hints_setting = g_settings_working.hints;
-  slot.header.goal = g_settings_working.goal;
-  // Flags: set the forward-fill bit if the placer used the fallback.
-  {
-    const PlacementStats *st = Placement_GetLastStats();
-    if (st->forward_fill_fallback_count > 0) {
-      slot.header.flags |= kRandoSlotFlag_ForwardFillUsed;
-    }
-  }
-  // Copy placements + compute placement_table_size (BYTES = 2 * max_loc_id + 2).
-  if (table.count > (uint16)(sizeof(slot.placements) / sizeof(slot.placements[0]))) {
-    fprintf(stderr, "[settings] placement count %u exceeds sidecar slot capacity\n",
-            (unsigned)table.count);
-    free(entries);
-    g_settings_generate_in_progress = false;
-    sound_effect_1 = 0x3c;
-    return;
-  }
-  memcpy(slot.placements, entries, sizeof(RandoPlacement) * table.count);
-  slot.placement_count = table.count;
-  uint16 max_loc = 0;
-  for (uint16 i = 0; i < table.count; ++i) {
-    if (entries[i].location_id > max_loc) max_loc = entries[i].location_id;
-  }
-  slot.header.placement_table_size = (uint16)((max_loc + 1) * 2);
-
-  // Initialize the target sram.dat slot with the same "new file" defaults
-  // that NameFile_DoTheNaming applies for vanilla saves so the slot is
-  // valid when the player picks it. The actual rando-specific runtime
-  // bookkeeping (starting-inventory injection, etc.) happens at game-start
-  // time via Rando_TryGrantStartingInventory etc.
-  uint8 *target_sram = g_zenv.sram + g_settings_target_slot * 0x500;
-  memset(target_sram, 0, 0x500);
-  // Pre-name the file "RANDO " to match the rando-banner convention.
-  uint16 *name = (uint16 *)(target_sram + kSrmOffs_Name);
-  name[0] = 0x21;  // R
-  name[1] = 0x00;  // A
-  name[2] = 0x0d;  // N
-  name[3] = 0x03;  // D
-  name[4] = 0x0e;  // O
-  name[5] = 0xa9;  // blank
-  WORD(target_sram[0x3e5]) = 0x55aa;
-  WORD(target_sram[0x20c]) = 0xf000;
-  WORD(target_sram[0x20e]) = 0xf000;
-  // 0x3e3 is name[5] (already blank above); DiedCounter lives at
-  // kSrmOffs_DiedCounter = 0x405.
-  WORD(target_sram[kSrmOffs_DiedCounter]) = 0xffff;
-  // Replicate the new-file init from `NameFile_DoTheNaming` so the slot
-  // has the canonical starting state — without this, health bytes
-  // stayed zero, so the rando slot loaded as instant-death (0 hearts
-  // / 0 max). The 60-byte block initializes health, magic, gloves, etc.
-  // The bytes
-  // 0x18,0x18 at offsets +44/+45 are the starting health + max health
-  // (0x18 = 3 hearts in quarter-heart units); 0xf8 at offset +57 is the
-  // boomerang/item slot baseline.
-  static const uint8 kSramInit_Normal[60] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0, 0x18, 0x18, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0, 0,
-  };
-  memcpy(target_sram + 0x340, kSramInit_Normal, 60);
-  Intro_FixCksum(target_sram);
-
-  if (!Rando_WriteSidecarSlot((int)g_settings_target_slot, &slot, target_sram, 0x500)) {
-    fprintf(stderr, "[settings] sidecar write failed for slot %u\n",
-            (unsigned)g_settings_target_slot);
-    free(entries);
-    g_settings_generate_in_progress = false;
-    sound_effect_1 = 0x3c;
-    return;
-  }
-  // Commit the vanilla SRAM image too (sidecar first by spec; then sram.dat).
-  ZeldaWriteSram();
-
-  // Apply recommended-features panel choices (if user toggled). Per spec
-  // the user must opt in explicitly; we honor whatever state the panel
-  // reflects (g_rec_working_features0 vs g_config.features0). The user
-  // changed bits — that's the explicit opt-in.
-  if (g_rec_working_features0 != g_config.features0) {
-    g_config.features0 = g_rec_working_features0;
-  }
-
-  free(entries);
-
-  // Reset sidecar cache + flag the slot active so the next file-select
-  // render picks up the rando banner.
-  SelectFile_ResetSidecarCache();
-  selectfile_arr1[g_settings_target_slot] = 1;
 
   // Transition back to file-select with cursor on the target slot.
   uint8 target = g_settings_target_slot;
@@ -3560,7 +3369,7 @@ static void SelectFile_Settings_HandleGenerate(void) {
   selectfile_R16 = target;
 
   sound_effect_1 = 0x2c;
-  fprintf(stderr, "[settings] generated slot %u: share=%s seed=0x%016llx\n",
-          (unsigned)target, share_string, (unsigned long long)seed_u64);
+  fprintf(stderr, "[settings] generated slot %u: seed=0x%016llx\n",
+          (unsigned)target, (unsigned long long)seed_u64);
 }
 

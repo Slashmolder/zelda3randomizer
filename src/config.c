@@ -5,6 +5,7 @@
 #include <SDL.h>
 #include "features.h"
 #include "util.h"
+#include "rando/rando_asset_decisions.h"  // Rando_RegisterAssetDecisionFromIni
 
 enum {
   kKeyMod_ScanCode = 0x200,
@@ -294,7 +295,8 @@ static int GetIniSection(const char *s) {
 // previously-approved hashes. Writing back the user's "Always allow"
 // choice is deferred to a follow-up sprint (config.c is read-only today);
 // until then the decision persists for the current session.
-extern void Rando_RegisterAssetDecisionFromIni(const uint8 hash[32]);
+// Rando_RegisterAssetDecisionFromIni now lives in the shared decision-store
+// module (Phase P3) — included via "rando/rando_asset_decisions.h" above.
 
 static int parse_hex_nibble(char c) {
   if (c >= '0' && c <= '9') return c - '0';
