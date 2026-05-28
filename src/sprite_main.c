@@ -25645,6 +25645,7 @@ void ShopItem_HandleReceipt(int k, uint8 item) {  // 9ef366
   // they skip the dispatch and keep vanilla behavior. In non-Retro seeds the
   // shop slot is absent from the placement table and Rando_ShopDispatch
   // returns the vanilla code unchanged.
+  uint8 vanilla_item = item;
   if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
       sprite_subtype2[k] >= 7 && sprite_subtype[k] != 0) {
     // subtype2 >= 7 is the standard shop-item class (only ShopKeeper_SpawnShopItem
@@ -25663,7 +25664,14 @@ void ShopItem_HandleReceipt(int k, uint8 item) {  // 9ef366
   }
   int j = sprite_subtype2[k];
   if (j >= 7) {
-    Sprite_ShowMessageUnconditional(kShopKeeper_GiveItemMsgs[j - 7]);
+    // kShopKeeper_GiveItemMsgs names the slot's VANILLA item, so it's wrong once
+    // rando substitutes a different item. Show it only when no substitution
+    // happened (vanilla play, non-Retro/unmapped slot, or coincidentally the
+    // same item). The substituted-item feedback comes from Rando_ReceiveOrConfirm
+    // (item-get animation or §7.6 icon cue). The caller already set
+    // sprite_state[k]=0, so skipping the textbox does not stall the sprite.
+    if (item == vanilla_item)
+      Sprite_ShowMessageUnconditional(kShopKeeper_GiveItemMsgs[j - 7]);
     ShopKeeper_RapidTerminateReceiveItem();
   }
 }

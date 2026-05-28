@@ -441,27 +441,39 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // `which_entrance` holds while the player stands in the cave.
 //
 // NOTE: low-byte room is ambiguous (0x0F backs four DW shops; 0x12 backs DW
-// Death-Mountain + LW Lake-Hylia), so the door is the real key. Every entry's
-// door is globally unique, so the room field is documentation only — the
-// lookup keys on door, then sanity-checks room.
-typedef struct { uint8 room; uint8 door; uint16 loc_base; } RandoShopSlot;
+// Death-Mountain + LW Lake-Hylia), so for most shops the door (== vanilla
+// `which_entrance` / ALTTPR `PreviousOverworldDoor`) disambiguates.
+//
+// EXCEPTION — room-only-match shops: ALTTPR's shop identifier (z3randomizer
+// `shopkeeper.asm`, ShopTable match loop) checks `ShopType & 0x0040`; when set,
+// it matches on RoomIndex ALONE and SKIPS the door compare. That bit comes from
+// the Shop's `config & 0xFC` (PHP `Shop::getBytes`): the Light World Death
+// Mountain Shop is constructed with `config = 0x43` (= 0x03 | 0x40) per
+// `../alttp_vt_randomizer/app/Region/Standard/LightWorld/DeathMountain/East.php`,
+// so its `door_id = 0x00` is deliberately ignored. Keying that shop on the door
+// would silently fail (0x00 also = the "no entrance" reset value), so it is
+// flagged room_only and matched on room (0xFF) alone — exactly as the ROM does.
+typedef struct { uint8 room; uint8 door; uint16 loc_base; bool room_only; } RandoShopSlot;
 static const RandoShopSlot kRandoShopSlots[] = {
-  // room  door   base   shop (LOC ids base..base+2)
-  { 0x0F, 0x6F, 237 },  // Dark World Potion Shop          (237/238/239)
-  { 0x10, 0x75, 240 },  // Dark World Forest Shop          (240/241/242)
-  { 0x0F, 0x57, 243 },  // Dark World Lumberjack Hut       (243/244/245)
-  { 0x0F, 0x60, 246 },  // Dark World Village of Outcasts  (246/247/248)
-  { 0x0F, 0x74, 249 },  // Dark World Lake Hylia Shop      (249/250/251)
-  { 0x12, 0x6E, 252 },  // Dark World Death Mountain Shop  (252/253/254)
-  { 0xFF, 0x00, 255 },  // Light World Death Mountain Shop (255/256/257)
-  { 0x1F, 0x46, 258 },  // Light World Kakariko Shop       (258/259/260)
-  { 0x12, 0x58, 261 },  // Light World Lake Hylia Shop     (261/262/263)
+  // room  door   base  room_only   shop (LOC ids base..base+2)
+  { 0x0F, 0x6F, 237, false },  // Dark World Potion Shop          (237/238/239)
+  { 0x10, 0x75, 240, false },  // Dark World Forest Shop          (240/241/242)
+  { 0x0F, 0x57, 243, false },  // Dark World Lumberjack Hut       (243/244/245)
+  { 0x0F, 0x60, 246, false },  // Dark World Village of Outcasts  (246/247/248)
+  { 0x0F, 0x74, 249, false },  // Dark World Lake Hylia Shop      (249/250/251)
+  { 0x12, 0x6E, 252, false },  // Dark World Death Mountain Shop  (252/253/254)
+  { 0xFF, 0x00, 255, true  },  // Light World Death Mountain Shop (255/256/257) — config 0x43 -> room-only
+  { 0x1F, 0x46, 258, false },  // Light World Kakariko Shop       (258/259/260)
+  { 0x12, 0x58, 261, false },  // Light World Lake Hylia Shop     (261/262/263)
 };
 
 static uint16 shop_lookup(uint8 room, uint8 entrance, uint8 pos) {
   if (pos > 2) return 0xFFFFu;  // shops have exactly 3 slots
   for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
-    if (kRandoShopSlots[i].door == entrance && kRandoShopSlots[i].room == room) {
+    if (kRandoShopSlots[i].room != room) continue;  // room must always match
+    // Room-only shops match on the room alone (ShopType & 0x40); others also
+    // require the door (entrance) to match, since their room is shared.
+    if (kRandoShopSlots[i].room_only || kRandoShopSlots[i].door == entrance) {
       return (uint16)(kRandoShopSlots[i].loc_base + pos);
     }
   }
