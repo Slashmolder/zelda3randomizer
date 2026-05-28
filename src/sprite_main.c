@@ -25390,7 +25390,32 @@ void NiceThiefWithGift(int k) {  // 9ef038
     if (!(dung_savegame_state_bits & 0x4000)) {
       dung_savegame_state_bits |= 0x4000;
       sprite_ai_state[k] = 2;
-      ShopItem_HandleReceipt(k, 0x46);
+      // The gift thief (subtype2==2) grants a hard-coded 300-rupee LttP code
+      // (0x46) in vanilla. ALTTPR maps the Hype Cave room (286 / 0x11E) to
+      // LOC_Hype_Cave_NPC (vanilla pool item Rupee100). Only that room is a
+      // shuffled ALTTPR location; the other subtype2==2 thief rooms (low-byte
+      // 0x23/0x27 via SpritePrep_Shopkeeper's kShopKeeperWhere) are not ALTTPR
+      // locations, so they keep vanilla behavior. Match the full 16-bit room
+      // index so a low-byte collision with a non-Hype room can't misfire.
+      uint8 give = 0x46;
+      if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+          dungeon_room_index == 0x11E) {
+        uint8 placed_lttp =
+            Rando_DispatchVanillaGrant(LOC_Hype_Cave_NPC, ITEM_Rupee100, 0x46);
+        if (Rando_ShouldSkipReceive(placed_lttp)) {
+          // Direct-grant placement (HalfMagic / prize bit / Triforce piece /
+          // progressive) already wrote the item; skip Link_ReceiveItem and
+          // fire the §7.6 confirmation cue with the placed-item icon.
+          item_receipt_method = 0;
+          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+          break;
+        }
+        give = placed_lttp;
+      }
+      // subtype2==2 keeps j<7 inside ShopItem_HandleReceipt, so this just sets
+      // item_receipt_method=0 and runs Link_ReceiveItem(give, 0) — the vanilla
+      // path with the (possibly substituted) placed LttP code.
+      ShopItem_HandleReceipt(k, give);
     } else {
       sprite_ai_state[k] = 0;
     }
