@@ -44,9 +44,10 @@ edges:
 
   - from: EasternPalace_Lobby
     to: EasternPalace_PastArmos
-    # Boss-room access: arrows (Armos Knights), light (Lamp/FireRod for
-    # the dark room), and the Big Key.
-    predicate: "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR HAS_ITEM(FireRod)) AND HAS_ITEM(BigKey_EasternPalace)"
+    # Boss-room access: arrows (Armos Knights), light (Lamp; PHP's FireRod
+    # alternative is gated behind itemPlacement=='advanced' which Phase A
+    # drops per audit §0.10.2), and the Big Key.
+    predicate: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace)"
     source: "app/Region/Standard/EasternPalace.php:56 (boss can_complete closure)"
 
 locations:
@@ -80,9 +81,11 @@ locations:
     type: Chest
     vanilla_item: BigKey_EasternPalace
     dungeon_item_class: big_key
-    # Dark room — needs light.
-    can_reach: "HAS_ITEM(Lamp) OR HAS_ITEM(FireRod)"
-    source: "app/Region/Standard/EasternPalace.php:54"
+    # Dark room — needs the Lamp. PHP's FireRod-substitute branch
+    # (`itemPlacement === 'advanced' && FireRod`) is Phase B; defaults
+    # drop the substitute branch per audit §0.10.2.
+    can_reach: "HAS_ITEM(Lamp)"
+    source: "app/Region/Standard/EasternPalace.php:76-78"
 
   - id: "Eastern Palace - Map Chest"
     region: EasternPalace_Lobby
@@ -92,16 +95,24 @@ locations:
     can_reach: "TRUE()"
     source: "app/Region/Standard/EasternPalace.php:55"
 
+  # Boss + Prize predicates mirror PHP `EasternPalace.php:84-105`:
+  #   canShootArrows AND (has(Lamp) || (itemPlacement=='advanced' && FireRod))
+  #   AND has(BigKeyP1) AND canBeat(Armos Knights)
+  # Phase A drops the itemPlacement=advanced FireRod alt per audit §0.10.2.
+  # The CanShootArrows and Lamp gates were previously omitted here and
+  # silently overrode the stricter predicates in `logic.yaml` via the
+  # codegen last-wins merge — the placer could route through the boss
+  # without bow / lamp. Restored.
   - id: "Eastern Palace - Boss"
     region: EasternPalace_PastArmos
     type: Drop
     vanilla_item: BossHeartContainer
-    can_reach: "CanKillArmosKnights() AND HAS_ITEM(BigKey_EasternPalace)"
-    source: "app/Region/Standard/EasternPalace.php:56"
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    source: "app/Region/Standard/EasternPalace.php:84-105"
 
   - id: "Eastern Palace - Prize"
     region: EasternPalace_PastArmos
     type: Prize_Pendant
     vanilla_item: Prize_GreenPendant
-    can_reach: "CanKillArmosKnights() AND HAS_ITEM(BigKey_EasternPalace)"
-    source: "app/Region/Standard/EasternPalace.php:58"
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    source: "app/Region/Standard/EasternPalace.php:58, 84-105 (Prize = Boss can_complete)"

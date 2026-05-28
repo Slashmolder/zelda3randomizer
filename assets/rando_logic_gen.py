@@ -1541,6 +1541,9 @@ def emit_logic_data(
                 pass
             # Resolve region_id. The logic.yaml may have declared a region for
             # this location; resolve to numeric index. 0xFFFF = not declared.
+            # The well-formedness pass in main() warns about non-allowlisted
+            # types that hit the 0xFFFF branch — that's the silent-bypass
+            # guard preventing the King Zora region-binding regression.
             region_name = logic_loc_region.get(loc.name)
             if region_name and region_name in sorted_region_ids:
                 region_id = sorted_region_ids.index(region_name)
@@ -1923,6 +1926,51 @@ def main(argv=None):
                 all_errors.append(
                     f"logic.yaml location {raw_id!r} declares region {override.region!r} "
                     f"which is not in logic.yaml regions."
+                )
+
+    # 6. Silent-region-bypass guard. A location with no `region:` field
+    #    in logic.yaml or logic_parts/* gets encoded with region_id=0xFFFF,
+    #    which makes it bypass region-membership reachability entirely
+    #    (the predicate VM treats it as "always-reachable region"). That
+    #    is CORRECT for the allowlisted types — Medallion is a generation-
+    #    time config slot (not a chest), Shop locations are gated by
+    #    world-state filter rather than region, CapacityUpgrade follows
+    #    Shop. For ordinary chests/NPCs/standing-items it is WRONG: the
+    #    location becomes reachable from sphere 0 regardless of any
+    #    entry-edge predicate (e.g., losing the Standard-mode RescuedZelda
+    #    gate on the LightWorld_NorthEast entry edge).
+    #
+    #    This bug pattern landed once when removing the
+    #    logic_parts/45_lightworld_northeast.yaml duplicate-override
+    #    silently dropped the region binding on King Zora et al.; the
+    #    audit caught it. Warn at codegen time so the next such regression
+    #    fails the build instead of being caught by playtest.
+    # Types that don't require a `region:` binding because their reachability
+    # gating happens via a different mechanism:
+    #   - Medallion: generation-time config slot (medallion-shuffle), not a
+    #     pool placement; reachability isn't checked.
+    #   - Shop: gated by world_state_filter=[retro], not by region predicate.
+    #   - ShopUpgrade: same as Shop (capacity-upgrade slots in Retro mode).
+    #   - Prize_Event: game-event-style logic-affecting sites (Zelda rescue,
+    #     Agahnim 1/2, Ganon, Bomb Merchant). Most carry a region binding in
+    #     logic.yaml or logic_parts, but Bomb Merchant — Inverted-only and
+    #     deferred to Slice 2 — does not yet; allowlisting Prize_Event lets
+    #     the Bomb Merchant warning stay quiet until Inverted logic_parts
+    #     land and its DarkWorld_South region binding is wired.
+    REGION_OPTIONAL_TYPES = {"Medallion", "Shop", "ShopUpgrade", "Prize_Event"}
+    if logic_regions:
+        region_ids = set(logic_regions.keys())
+        for loc_name, loc in locations.items():
+            override = logic_loc_preds.get(loc.name) or logic_loc_preds.get(loc_name)
+            has_region = bool(override and override.region and override.region in region_ids)
+            if not has_region and loc.type not in REGION_OPTIONAL_TYPES:
+                all_errors.append(
+                    f"location {loc.name!r} (type {loc.type}) has no `region:` "
+                    f"binding — encoded as region_id=0xFFFF which bypasses "
+                    f"region-membership reachability. Either bind a region in "
+                    f"logic.yaml / logic_parts, or add `{loc.type}` to "
+                    f"REGION_OPTIONAL_TYPES if this is a config-slot-style "
+                    f"location that genuinely doesn't have a region."
                 )
 
     # Compile location predicates (only those that have overrides in logic.yaml).
