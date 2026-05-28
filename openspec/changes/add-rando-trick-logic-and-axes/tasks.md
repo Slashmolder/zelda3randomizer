@@ -95,6 +95,19 @@
 - [ ] 12.5.3 If trick-dense seeds exceed budget by >2x: tune per-item rewind N (`kPerItemRewindBudget`, default 10); consider per-trick laziness in predicate evaluation. Per `docs/randomizer_phase_b_risks.md` R4 (rewind tuning).
 - [ ] 12.5.4 Record final p50/p95/p99 in `audit.md §"Trick-logic generation benchmark"`.
 
+## 12.6. ROM-version trick verification (new requirement — randomizer-logic spec)
+
+Captures the concern raised mid-batch-4 trick authoring (2026-05-27): ALTTPR targets Japanese 1.0; this fork targets US 1.0; some tricks may behave differently or be absent on US 1.0. The trick gates landed across slices 4 §7 batch 1-4 are textually-correct translations of upstream PHP but UNVERIFIED on US 1.0. See `randomizer-logic` spec delta § "Per-trick ROM-version verification status".
+
+- [ ] 12.6.1 Add a `rom_version_status` field to each entry in `assets/rando/op_registry.yaml`'s `tricks:` table. Valid values per spec: `untested-on-us10`, `verified-us10`, `cross-version`, `jp10-only`, `us10-different`. Default new entries to `untested-on-us10` except `dark-room-nav` (`cross-version` — pure player skill, no ROM dependency).
+- [ ] 12.6.2 Add a `glitch_levels:` table to `assets/rando/op_registry.yaml` (currently the glitch levels are an enum baked into `OP_GLITCH_LEVEL_AT_LEAST` only; surface them as registry entries so the same `rom_version_status` field applies). Default all to `untested-on-us10`.
+- [ ] 12.6.3 Extend `assets/rando_logic_gen.py` codegen to emit `kRandoTrickStatus[]` and `kRandoGlitchLevelStatus[]` arrays + their counts so the runtime can consult them.
+- [ ] 12.6.4 Extend `Spoiler_WriteJson` `fallback_warnings` emission to add `unverified_tricks_enabled` entries when `settings.tricks` enables a trick whose status is `untested-on-us10`, `jp10-only`, or `us10-different`. Same for `settings.logic >= overworld_glitches`.
+- [ ] 12.6.5 Extend the codegen well-formedness pass to REJECT any predicate that references a trick whose status is `jp10-only`.
+- [ ] 12.6.6 Document the field, the status semantics, and the verification protocol in `docs/randomizer.md` § "Tricks / glitch logic — ROM-version verification" (new subsection). Include a per-status table and a contributor's guide for upgrading a trick from `untested-on-us10` to `verified-us10` (test plan, evidence requirements, where to record the verification).
+- [ ] 12.6.7 Per-trick verification work itself is OUT OF SCOPE for this change — it's playtest work that needs a US 1.0 ROM owner. Track as a follow-on workstream; the scaffolding (field + warning + codegen guard) is all this change covers.
+- [ ] 12.6.8 Backfill the status for tricks already wired by Slice 4 §7 batches 1-4 with whatever the contributor can confirm (initial pass: `dark-room-nav` → `cross-version`; everything else → `untested-on-us10`).
+
 ## 13. Playtest
 
 - [ ] 13.1 Generate a Standard / Fast Ganon / tricks=boots-clip,fake-flippers seed; play to verify trick predicates gate locations correctly.
