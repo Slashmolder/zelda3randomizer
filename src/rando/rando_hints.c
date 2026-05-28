@@ -215,7 +215,11 @@ bool Rando_GenerateHints(const RandoSettings *settings,
     // be crossed in a future slice). Audit-of-audit LOW-2 of phase-b.
     uint16 seen_regions[16] = {0};
     uint8 seen_count = 0;
-    uint8 piece_count = 0;
+    uint16 piece_count = 0;  // uint16 — `settings.pieces_placed` is uint16
+                              // (range up to 65535); a uint8 here would wrap
+                              // silently past 255. Practical TH max is ~50
+                              // but the type pin guards against future axis
+                              // widening.
     for (uint16 i = 0; i < entry_count; i++) {
       if (placements->entries[i].item_id != ITEM_TriforcePiece) continue;
       piece_count++;

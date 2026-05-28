@@ -51,6 +51,8 @@ When `settings.logic == NoGlitches` (Phase A default), every `OP_GLITCH_LEVEL_AT
 
 ### Requirement: Per-trick ROM-version verification status
 
+> **Stub status**: scaffolding (op_registry `rom_version_status` field, codegen guard rejecting `jp10-only`, `fallback_warnings` emission for unverified tricks) deferred to apply-time per tasks §12.6.1-8. The fork-vs-ALTTPR ROM-version provenance gap is real (see `rom_version_unverified_tricks` memory) but is currently surfaced via task tracking, not by the binary.
+
 ALTTPR upstream targets the Japanese 1.0 ROM; this fork targets the US 1.0 ROM. Tricks and glitch-level mechanics that ALTTPR's logic graph assumes available may have JP/US timing differences, mechanic differences, or be entirely absent on US 1.0. The randomizer SHALL track per-trick ROM-version verification status so users can distinguish "ALTTPR says this trick exists" from "we have confirmed this trick works on US 1.0."
 
 Each entry in `assets/rando/op_registry.yaml`'s `tricks:` table SHALL carry a `rom_version_status` field with one of these values:
