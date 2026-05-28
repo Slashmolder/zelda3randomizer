@@ -71,10 +71,11 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->drop_shuffle = 0;
 }
 
-// Apply derived-from-other-fields normalization rules. Audit Bug #5:
-// `goal=completionist` forces `accessibility=locations` per spec — otherwise
-// the canonical hash differs between (SetDefaults; s->goal=Completionist)
-// callers and (Settings_ParseCsv("goal=completionist")) callers.
+// Apply derived-from-other-fields normalization rules.
+// `goal=completionist` forces `accessibility=locations` per spec —
+// otherwise the canonical hash differs between
+// (SetDefaults; s->goal=Completionist) callers and
+// (Settings_ParseCsv("goal=completionist")) callers.
 //
 // Applied on a private copy in Settings_CanonicalSerialize so any external
 // caller's struct is left untouched and the hash is consistent regardless of

@@ -196,9 +196,9 @@ static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_i
 uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 capacity) {
   if (settings == NULL || out_items == NULL || capacity == 0) return 0;
 
-  // Audit Bug #13: validate Triforce/Ganon-Hunt parameters before pool
-  // construction. An un-buildable pool (pieces_required > pieces_placed)
-  // would silently produce an un-completable seed.
+  // Validate Triforce/Ganon-Hunt parameters before pool construction.
+  // An un-buildable pool (pieces_required > pieces_placed) would
+  // silently produce an un-completable seed.
   if ((settings->goal == kGoal_TriforceHunt || settings->goal == kGoal_GanonHunt) &&
       settings->pieces_required > settings->pieces_placed) {
     fprintf(stderr,
@@ -620,7 +620,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
 
-  // Budget timer (audit Bug #7 partial fix): if budget_seconds > 0, abort
+  // Budget timer: if budget_seconds > 0, abort
   // additional retry attempts once the elapsed CPU time exceeds the
   // budget. Each individual attempt still runs to completion; the budget
   // only gates the retry loop. clock() is process CPU time and is a fine
@@ -1728,8 +1728,8 @@ void Placement_SelfCheck(void) {
     if (n_null != 0) selfcheck_die("BuildItemPool(NULL) should return 0");
   }
 
-  // Audit Bug #13: BuildItemPool refuses pieces_required > pieces_placed
-  // for Triforce/Ganon-Hunt goals.
+  // BuildItemPool refuses pieces_required > pieces_placed for
+  // Triforce/Ganon-Hunt goals.
   {
     RandoSettings s;
     Settings_SetDefaults(&s);
@@ -1750,8 +1750,8 @@ void Placement_SelfCheck(void) {
     if (n == 0) selfcheck_die("BuildItemPool should allow pieces_required == pieces_placed");
   }
 
-  // Audit Bug #5: Settings_CanonicalSerialize normalizes completionist→locations
-  // on a private copy, so any direct-API user gets the spec-compliant hash.
+  // Settings_CanonicalSerialize normalizes completionist→locations on a
+  // private copy, so any direct-API user gets the spec-compliant hash.
   {
     RandoSettings a, b;
     Settings_SetDefaults(&a);

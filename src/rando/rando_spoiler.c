@@ -177,9 +177,9 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "    \"goal_completable\": %s,\n",
           s->goal_completable ? "true" : "false");
-  // fallback_warnings: each non-zero counter from the placer surfaces here
-  // (audit Bug #8). Plus an "unreachable_placements" rollup when the placer
-  // could not produce a fully-reachable seed.
+  // fallback_warnings: each non-zero counter from the placer surfaces
+  // here. Plus an "unreachable_placements" rollup when the placer could
+  // not produce a fully-reachable seed.
   fprintf(f, "    \"fallback_warnings\": [");
   {
     bool first = true;
@@ -599,8 +599,8 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "Generation wall-clock: %u ms\n", (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "Goal completable: %s\n\n", s->goal_completable ? "yes" : "no");
 
-  // Fallback warnings — surface forward-fill / retry / unreachable counts
-  // prominently per audit Bug #8.
+  // Fallback warnings — surface forward-fill / retry / unreachable
+  // counts prominently in the text spoiler.
   if (s->forward_fill_fallback_count > 0 || s->retry_attempts > 1 ||
       (s->spheres != NULL && s->spheres->unreachable_count > 0)) {
     fprintf(f, "WARNINGS\n--------\n");

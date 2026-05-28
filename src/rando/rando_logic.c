@@ -657,7 +657,7 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
                "HAS_ANY_COUNT sum=1 threshold 2 should be false");
   }
-  // Vacuous HAS_ANY_COUNT edge cases (audit Bug #14):
+  // Vacuous HAS_ANY_COUNT edge cases:
   //   - count=0, n=0: sum 0 >= 0 → true (vacuous)
   //   - count=0, n=1: sum 0 >= 1 → false
   {

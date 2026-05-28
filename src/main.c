@@ -526,8 +526,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     if (elapsed_ms < 0) elapsed_ms = 0;
     spoiler.generation_wall_clock_ms = (uint32)elapsed_ms;
   }
-  // Forward placer stats — read from Placement_GetLastStats so the spoiler
-  // can surface forward-fill fallbacks (audit Bug #8).
+  // Forward placer stats — read from Placement_GetLastStats so the
+  // spoiler can surface forward-fill fallbacks.
   {
     const PlacementStats *st = Placement_GetLastStats();
     spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
