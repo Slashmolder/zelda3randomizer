@@ -3464,6 +3464,11 @@ static void SelectFile_Settings_HandleGenerate(void) {
   slot.header.settings_ext_present = 1;
   slot.header.hints_setting = g_settings_working.hints;
   slot.header.goal = g_settings_working.goal;
+  // Phase B Inverted runtime: persist world_state so slot-load knows whether
+  // this is an Inverted seed (Moon Pearl + Magic Mirror starting inventory,
+  // Dark-World start state). Carried additively at slot-header @68; older
+  // binaries ignore it, and 0 (== kWorldState_Open) is the safe default.
+  slot.header.world_state = g_settings_working.world_state;
   // Flags: set the forward-fill bit if the placer used the fallback.
   {
     const PlacementStats *st = Placement_GetLastStats();
@@ -3524,6 +3529,37 @@ static void SelectFile_Settings_HandleGenerate(void) {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0, 0,
   };
   memcpy(target_sram + 0x340, kSramInit_Normal, 60);
+
+  // === Phase B Inverted runtime: Dark-World starting state ===
+  // For an Inverted seed, Link starts in the Dark World holding the Moon Pearl
+  // (so he is not a bunny) and the Magic Mirror (the DW->LW exit). We bake this
+  // into the freshly-created SRAM image directly, mirroring ALTTPR's
+  // seed-generator SRAM init table (z3randomizer initsramtable.asm):
+  //   InitCurrentWorld  (0x1833CA -> savegame_is_darkworld 0xF3CA) = 0x40 (DW)
+  //   InitProgressIndicator (0x1833C5 -> 0xF3C5) = 2  (past the rain/escape
+  //       intro so Module05_LoadFile takes the no-intro overworld path)
+  //   InitProgressFlags (0x1833C6 -> 0xF3C6) = 0x14  (Sanctuary/Zelda-rescued
+  //       progress bits, matching ALTTPR's non-Standard default)
+  // target_sram[X] maps to g_ram[0xF000 + X] once CopySaveToWRAM runs, so
+  // these offsets are (RAM address - 0xF000). See variables.h.
+  //
+  // NOTE (scope): this gives the correct Dark-World *world flag* + pearl +
+  // mirror + skipped intro, so an Inverted seed boots into the Dark World
+  // overworld with no bunny. It does NOT yet swap the overworld TILE SOURCES
+  // (the LW<->DW topology inversion lives in a large per-screen tilemap-overlay
+  // subsystem, z3randomizer invertedmaps.asm ~1563 lines, not ported here).
+  // The opening screen therefore renders the Light-World Link's-House geometry
+  // with the Dark-World flag set ("fake DW") until that subsystem lands. See
+  // the deferred-work plan in the change's design.md task #82.
+  if (g_settings_working.world_state == kWorldState_Inverted) {
+    target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
+    target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+    target_sram[0x3C6] = 0x14;  // sram_progress_flags
+    target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
+    target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+  }
+  // === Phase B Inverted runtime: end ===
+
   Intro_FixCksum(target_sram);
 
   if (!Rando_WriteSidecarSlot((int)g_settings_target_slot, &slot, target_sram, 0x500)) {

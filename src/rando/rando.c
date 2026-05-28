@@ -513,6 +513,20 @@ bool g_rando_show_location_tracker = false;
 uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 uint8 g_rando_mushroom_held = 0;
 
+// Phase B Inverted runtime — the active slot's world_state, captured at
+// Rando_ActivateSidecarSlot from the slot header's additive @68 byte (only
+// meaningful when settings_ext_present). Lets the starting-inventory grant in
+// rando_placement.c recognize an Inverted slot on reload, where the full
+// RandoSettings struct is not available (the sidecar persists only
+// settings_hash + the additive ext bytes, not the canonical settings blob).
+// Defaults to kWorldState_Open (0) — the safe no-op — when no slot is active
+// or the slot predates the world_state ext.
+static uint8 g_rando_active_world_state = kWorldState_Open;
+
+uint8 Rando_GetActiveWorldState(void) {
+  return g_rando_slot_active ? g_rando_active_world_state : (uint8)kWorldState_Open;
+}
+
 bool Rando_MushroomHeld(void) {
   return g_rando_slot_active && g_rando_mushroom_held != 0;
 }
@@ -755,6 +769,12 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // (both kRandoCheckedBitmapBytes = 64).
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = src->header.mushroom_held;
+  // Phase B Inverted runtime — capture the slot's world_state from the
+  // additive @68 ext byte. Only trust it when settings_ext_present is set
+  // (older slots wrote 0 there, which already maps to kWorldState_Open).
+  g_rando_active_world_state = src->header.settings_ext_present
+                                   ? src->header.world_state
+                                   : (uint8)kWorldState_Open;
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
 
@@ -810,6 +830,7 @@ void Rando_DeactivateSlot(void) {
   // contract.
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
+  g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
 
