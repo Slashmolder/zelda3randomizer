@@ -1579,6 +1579,13 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   // past escape. Mid-escape reloads (progress still 0) intentionally re-fire
   // the refill, matching ALTTPR's setEscapeFills semantics (refill on each
   // Uncle/Zelda/Sanctuary respawn).
+  //
+  // The Inverted Moon-Pearl + Magic-Mirror grant BELOW this gate is
+  // intentionally idempotent — Link_ReceiveItem for already-owned absolutes
+  // is a no-op bit-set. So a future fix that thread `settings` through to
+  // this call won't break Inverted on cold-boot (the gate short-circuits
+  // before MP+MM but those grants would be no-ops anyway). Keep MP+MM
+  // below the gate so the cold-boot guard remains a single check.
   if (g_ram[0xF3C5] != 0) {
     g_rando_starting_inventory_granted = 1;  // dedupe within this boot
     return false;

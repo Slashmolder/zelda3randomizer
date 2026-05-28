@@ -201,13 +201,17 @@ def is_in_dispatch_context(file_lines: list[str], lineno_zero_based: int) -> boo
     # Walk backward from the line above the write site to the start of the
     # current function (or up to 12 lines, whichever is closer).
     #
-    # Bare column-0 `}` (followed only by whitespace) closes the previous
-    # function's body. Other forms — `} else {`, `} while (...)`, `} for (...)`
-    # — are intra-function continuations that we MUST NOT treat as boundaries
-    # (a 2-space-indented codebase doesn't have these at column 0 today, but
-    # a future style drift would silently re-introduce the cross-function
-    # bleed bug this terminator was added to prevent).
-    FUNCTION_CLOSE_BRACE = re.compile(r"^\}\s*$")
+    # Bare column-0 `}` (followed only by whitespace or a trailing comment)
+    # closes the previous function's body. Other forms — `} else {`,
+    # `} while (...)`, `} for (...)` — are intra-function continuations
+    # that we MUST NOT treat as boundaries (a 2-space-indented codebase
+    # doesn't have these at column 0 today, but a future style drift would
+    # silently re-introduce the cross-function bleed bug this terminator
+    # was added to prevent). The `(?://.*)?` tail accepts an inline
+    # `// foo` trailing comment which is a common close-brace annotation
+    # style and not yet present in src/ today, but robust against future
+    # additions.
+    FUNCTION_CLOSE_BRACE = re.compile(r"^\}\s*(?://.*)?$")
     upper_floor = max(0, lineno_zero_based - 12)
     start = lineno_zero_based - 1
     while start >= upper_floor:
