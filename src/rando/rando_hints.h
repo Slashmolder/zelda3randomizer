@@ -160,6 +160,43 @@ const char *Rando_GetHintNpcStringId(RandoHintNpc npc);
 // Clear the active hint set (called from `Rando_DeactivateSlot`).
 void Rando_ClearHints(void);
 
+// ---------------------------------------------------------------------------
+// Telepathic-tile runtime dispatch (Phase B Slice 5 §57.3 wiring).
+//
+// The 15 ALTTPR telepathic-tile hints surface in-game by hijacking the
+// VANILLA per-room telepathic-tile dialogue ids. Link reading a tile sets
+// `dialogue_message_index` (player.c::Link_PerformRead -> Dungeon_GetTeleMsg)
+// to one of the 15 vanilla US tele-message ids; the messaging engine
+// (messaging.c::Text_LoadCharacterBuffer) calls Rando_RenderHintMessage at
+// its top to give this module first refusal on those ids.
+//
+// The 15 hint-bearing vanilla US tele-message ids are:
+//   0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0, 0xC1, 0xC2, 0xC3,
+//   0xC4, 0xC5, 0xC6, 0xC7
+// (0xB4 is the GENERIC default tele text used as filler in many rooms and is
+// intentionally NOT a hint tile.) These ids map positionally to the 15
+// RandoHintNpc telepathic-tile slots: each distinct physical tile shows one
+// distinct generated hint. The exact tile<->hint pairing need not byte-match
+// ALTTPR because ALTTPR itself fy_shuffles the tile list (HintService.php:59)
+// — the generator's per-tile assignment is already a deterministic shuffle.
+// ---------------------------------------------------------------------------
+
+// True when `msg_id` is one of the 15 hint-bearing vanilla telepathic-tile
+// message ids above (0xB4 generic-default excluded). Pure predicate; does
+// NOT consult the active hint table or rando-active state.
+bool Rando_IsHintTileMessage(uint16 msg_id);
+
+// Telepathic-tile dialogue interception. Called at the very top of
+// Text_LoadCharacterBuffer. Returns true (and fills `out_buffer`) only when
+// ALL of: the randomizer slot is active, the active hint table has a hint for
+// the tile `msg_id` maps to, and `msg_id` is a hint-tile id. On true, writes
+// the generated hint's font-encoded character codes into `out_buffer`
+// (the messaging engine's `messaging_text_buffer`, >=256 bytes), laid out as
+// up to three message-box lines and terminated with the 0x7f end marker the
+// renderer expects, then resets `dialogue_msg_read_pos`. Returns false in
+// every other case so the vanilla dialogue decode proceeds unchanged.
+bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer);
+
 // Self-check (called from Rando_RunAllSelfChecks). Asserts that
 // Rando_GenerateHints produces byte-identical output across consecutive
 // invocations with the same inputs (determinism contract per the

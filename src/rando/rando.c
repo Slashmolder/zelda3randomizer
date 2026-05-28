@@ -755,26 +755,31 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
 
-  // TODO (audit-of-audit HIGH-3 of phase-b): Rando_GenerateHints does
-  // NOT run on slot-load because the sidecar slot doesn't carry the
-  // full RandoSettings struct (only settings_hash, which is one-way).
-  // When #85 (hint dispatch wiring) lands, in-game telepathic tiles
-  // on a loaded slot will read `g_hint_table` populated by the LAST
-  // CLI generation — empty for slots that were imported via share
-  // string and never re-generated in-process.
-  //
-  // Fix shape options:
-  //   (a) Add a new sidecar TLV `TAIL_RANDO_SETTINGS` carrying the
-  //       canonical 28-byte settings blob; deserialize here, then
-  //       Rando_GenerateHints(deserialized_settings, &g_session_placement_table, NULL).
-  //   (b) Always run `Rando_GenerateHints` with synthesized
-  //       "defaults + hints=On + goal=Detected-from-placements"
-  //       settings. Degraded shape (Murahdahla won't fire correctly
-  //       on TriforceHunt slots; non-hint slots get hints anyway) but
-  //       hint table is non-empty for runtime dispatch.
-  //
-  // Option (a) is cleaner; ship paired with #85 dispatch wiring.
-  // Option (b) ships now if dispatch lands before sidecar redesign.
+  // === Phase B hints: regenerate telepathic-tile hints for this slot ===
+  // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
+  // of (settings, placement table); the generator (rando_hints.c) reads only
+  // the `hints` and `goal` axes from RandoSettings. Rather than the one-way
+  // settings_hash, the slot header carries those two axes additively in its
+  // reserved tail (rando_save.h settings extension). We synthesize a settings
+  // struct from defaults, override `hints`/`goal` from the ext, and
+  // regenerate — so a slot loaded from disk (including share-string imports)
+  // shows hints without re-running the full seed generator.
+  {
+    RandoSettings hint_settings;
+    Settings_SetDefaults(&hint_settings);
+    if (src->header.settings_ext_present) {
+      hint_settings.hints = src->header.hints_setting;
+      hint_settings.goal = src->header.goal;
+    } else {
+      // Older slot (or writer that did not populate the ext): default to
+      // hints-on so existing rando slots still surface telepathic-tile hints.
+      // goal stays at the Settings_SetDefaults value (Murahdahla won't fire
+      // unless it happens to be a Triforce/Ganon-hunt default).
+      hint_settings.hints = kHintsMode_On;
+    }
+    Rando_GenerateHints(&hint_settings, &g_session_placement_table, NULL);
+  }
+  // === Phase B hints: end ===
 }
 
 void Rando_DeactivateSlot(void) {

@@ -37,6 +37,8 @@
 #include "rando_rng.h"
 #include "rando_settings.h"  // Settings_SetDefaults for Hints_SelfCheck
 #include "../types.h"
+#include "../variables.h"    // g_ram (backs the g_rando_slot_active macro)
+#include "../features.h"     // g_rando_slot_active (g_ram macro)
 #include "third_party/sha256/sha256.h"
 
 #include <stdio.h>
@@ -281,6 +283,144 @@ uint16 Rando_RemapTeleMsg(uint16 vanilla_id, uint16 room_or_area, bool is_overwo
 
 void Rando_ClearHints(void) {
   memset(g_hint_table, 0, sizeof(g_hint_table));
+}
+
+// ---------------------------------------------------------------------------
+// Telepathic-tile runtime dispatch (Phase B Slice 5 §57.3).
+//
+// g_hint_table stores plain ASCII text (see HintEntry.text). The messaging
+// engine consumes FONT CHARACTER CODES (the post-dictionary decode stream),
+// so the dispatch path below encodes ASCII -> US font codes mirroring
+// assets/text_compression.py::kTextAlphabet_US and emits the message-box line
+// commands the renderer's Text_DecodeCmd understands.
+// ---------------------------------------------------------------------------
+
+// Count of telepathic-tile hint slots = the 15 contiguous Tele* enumerators
+// (kRandoHintNpc_TeleEasternPalace .. kRandoHintNpc_TeleSouthEastDarkworldCave).
+#define kHintTileCount \
+  (kRandoHintNpc_TeleSouthEastDarkworldCave - kRandoHintNpc_TeleEasternPalace + 1)
+
+// The 15 hint-bearing vanilla US telepathic-tile message ids, in ascending
+// order. Index i maps to RandoHintNpc (kRandoHintNpc_TeleEasternPalace + i).
+// 0xB4 (generic-default tele text) is intentionally absent.
+static const uint16 kHintTileMsgIds[kHintTileCount] = {
+  0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0,
+  0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7,
+};
+
+bool Rando_IsHintTileMessage(uint16 msg_id) {
+  for (int i = 0; i < kHintTileCount; i++) {
+    if (kHintTileMsgIds[i] == msg_id) return true;
+  }
+  return false;
+}
+
+// ASCII -> US font character code. Mirrors kTextAlphabet_US (text_compression.py).
+// Returns 0xFF for characters with no glyph in the US alphabet (caller maps
+// those to a space). Note the US alphabet has NO ':' glyph.
+static uint8 ascii_to_font(char ch) {
+  if (ch >= 'A' && ch <= 'Z') return (uint8)(ch - 'A');            // 0..25
+  if (ch >= 'a' && ch <= 'z') return (uint8)(26 + (ch - 'a'));     // 26..51
+  if (ch >= '0' && ch <= '9') return (uint8)(52 + (ch - '0'));     // 52..61
+  switch (ch) {
+    case '!': return 62;
+    case '?': return 63;
+    case '-': return 64;
+    case '.': return 65;
+    case ',': return 66;
+    case '\'': return 81;
+    case ' ': return 89;  // 0x59
+    default:  return 0xFF;
+  }
+}
+
+// US message-engine control bytes (Text_DecodeCmd: code = 0x67 + cmd_index).
+//   kTextCmd_1 = 13 -> 0x74 (advance to row 1)
+//   kTextCmd_2 = 14 -> 0x75 (advance to row 2)
+//   kTextCmd_Waitkey = 23 -> 0x7e (pause for input between pages)
+//   kTextCmd_EndMessage = 24 -> 0x7f (terminator; matches Text_LoadCharacterBuffer)
+#define kHintFontCmdLine1   0x74u
+#define kHintFontCmdLine2   0x75u
+#define kHintFontCmdWaitkey 0x7eu
+#define kHintFontCmdEnd     0x7fu
+
+// Render `text` (NUL-terminated ASCII) into `out` as US font codes, wrapping
+// on word boundaries to fit the three-row dialogue box and inserting the
+// row-advance control codes. Pages break with a Waitkey when the text exceeds
+// three rows. Returns the number of bytes written (excluding the 0x7f
+// terminator the caller appends). `out` must hold >= 256 bytes.
+#define kHintMaxCharsPerLine 13  // VWF is variable-width; 13 is a safe cap that
+                                 // avoids overrun on the 256-px message box for
+                                 // worst-case wide glyphs.
+static int encode_hint_text(const char *text, uint8 *out) {
+  int w = 0;            // write cursor into out
+  int col = 0;          // glyph count on the current row
+  int row = 0;          // 0..2 within the current page
+  const char *p = text;
+  while (*p && w < 240) {
+    // Measure the next word (run of non-space chars).
+    const char *word_end = p;
+    while (*word_end && *word_end != ' ') word_end++;
+    int word_len = (int)(word_end - p);
+    if (word_len == 0) { p++; continue; }  // skip the space separator itself
+
+    // Wrap if the word won't fit on the current row (and the row isn't empty).
+    if (col != 0 && col + 1 + word_len > kHintMaxCharsPerLine) {
+      row++;
+      col = 0;
+      if (row == 1)      out[w++] = kHintFontCmdLine1;
+      else if (row == 2) out[w++] = kHintFontCmdLine2;
+      else {
+        // Page is full — pause and start a fresh page at row 0.
+        out[w++] = kHintFontCmdWaitkey;
+        row = 0;
+      }
+    } else if (col != 0) {
+      out[w++] = ascii_to_font(' ');  // inter-word space
+      col++;
+    }
+
+    // Emit the word's glyphs (hard-wrap if a single word exceeds the row).
+    for (const char *q = p; q < word_end && w < 240; q++) {
+      if (col >= kHintMaxCharsPerLine) {
+        row++;
+        col = 0;
+        if (row == 1)      out[w++] = kHintFontCmdLine1;
+        else if (row == 2) out[w++] = kHintFontCmdLine2;
+        else { out[w++] = kHintFontCmdWaitkey; row = 0; }
+      }
+      uint8 fc = ascii_to_font(*q);
+      if (fc == 0xFF) fc = ascii_to_font(' ');  // glyphless char -> space
+      out[w++] = fc;
+      col++;
+    }
+    p = word_end;
+  }
+  return w;
+}
+
+bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer) {
+  if (out_buffer == NULL) return false;
+  // Slot-active gate: g_rando_slot_active is a g_ram macro (features.h).
+  if (!g_rando_slot_active) return false;
+  if (!Rando_IsHintTileMessage(msg_id)) return false;
+
+  // Map the vanilla tele-message id positionally to a RandoHintNpc.
+  RandoHintNpc npc = kRandoHintNpc_None;
+  for (int i = 0; i < kHintTileCount; i++) {
+    if (kHintTileMsgIds[i] == msg_id) {
+      npc = (RandoHintNpc)(kRandoHintNpc_TeleEasternPalace + i);
+      break;
+    }
+  }
+  if (npc == kRandoHintNpc_None) return false;
+
+  const char *text = Rando_GetHintString(npc);
+  if (text == NULL) return false;  // hints disabled / no hint -> vanilla decode.
+
+  int w = encode_hint_text(text, out_buffer);
+  out_buffer[w] = kHintFontCmdEnd;  // 0x7f terminator (matches vanilla path).
+  return true;
 }
 
 // -----------------------------------------------------------------------------

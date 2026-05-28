@@ -58,8 +58,23 @@ typedef enum {
 //   @61 placement_table_size (u16 LE)       (**bytes**; placement_table_size / 2 = location count)
 //   @63 flags (u8)                          (bit 0 = forward-fill fallback was used)
 //   @64 mushroom_held (u8)                   (rando Mushroom-possession; bit 0 = held, not yet delivered)
-//   @65 reserved[15]                        (forward-compat; zero on write)
+//   @65 settings_ext_present (u8)            (Phase B hints; 1 = @66/@67 meaningful, 0 = unset)
+//   @66 hints_setting (u8)                   (Phase B hints; RandoHintsMode: 0=off 1=on)
+//   @67 goal (u8)                            (Phase B hints; Goal enum, rando_settings.h)
+//   @68 reserved[12]                         (forward-compat; zero on write)
 //   Total = 80 bytes.
+//
+// === Phase B hints (Slice 5): settings extension in the reserved tail ===
+// The hint generator (rando_hints.c::Rando_GenerateHints) reads exactly two
+// axes from RandoSettings: `hints` (off/on) and `goal`. To regenerate hints
+// at slot-load WITHOUT enlarging the slot (the on-disk size is coupled to the
+// ZRSR file size + corpus-runner constants via kSettingsCanonicalLen — see
+// [[canonical-size-coupling]]), those two bytes are carried ADDITIVELY in the
+// previously-zero reserved tail. @64 (mushroom_held) is unchanged; the ext
+// starts at @65. Existing field offsets and the 80-byte slot size are
+// unchanged; old binaries reading a new file see @65-67 as "reserved" and
+// ignore them. settings_ext_present == 0 (older slot, or a writer that does
+// not populate it) makes the loader fall back to "hints on".
 //
 // Per spec: the on-disk embedded placement table is a FLAT uint16[] indexed
 // by location_id (length = placement_table_size / 2). Each slot holds the
@@ -83,6 +98,12 @@ typedef struct RandoSlotHeader {
   // doubles as the Powder slot — so obtaining Powder first cannot lock out
   // the Potion Shop check. See Rando_MushroomHeld / Witch_AcceptShroom.
   uint8 mushroom_held;
+  // Phase B hints settings extension (serialized into reserved bytes @65-67;
+  // see the layout note above). settings_ext_present == 0 means "not written"
+  // and the loader applies the hints-on default.
+  uint8 settings_ext_present;   // @65
+  uint8 hints_setting;          // @66 (RandoHintsMode: 0=off 1=on)
+  uint8 goal;                   // @67 (Goal enum, rando_settings.h)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
