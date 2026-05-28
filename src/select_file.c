@@ -3530,35 +3530,64 @@ static void SelectFile_Settings_HandleGenerate(void) {
   };
   memcpy(target_sram + 0x340, kSramInit_Normal, 60);
 
-  // === Phase B Inverted runtime: Dark-World starting state ===
-  // For an Inverted seed, Link starts in the Dark World holding the Moon Pearl
-  // (so he is not a bunny) and the Magic Mirror (the DW->LW exit). We bake this
-  // into the freshly-created SRAM image directly, mirroring ALTTPR's
-  // seed-generator SRAM init table (z3randomizer initsramtable.asm):
-  //   InitCurrentWorld  (0x1833CA -> savegame_is_darkworld 0xF3CA) = 0x40 (DW)
-  //   InitProgressIndicator (0x1833C5 -> 0xF3C5) = 2  (past the rain/escape
-  //       intro so Module05_LoadFile takes the no-intro overworld path)
-  //   InitProgressFlags (0x1833C6 -> 0xF3C6) = 0x14  (Sanctuary/Zelda-rescued
-  //       progress bits, matching ALTTPR's non-Standard default)
+  // === Phase B non-Standard world-state runtime: post-escape starting state ===
+  // The placer pre-grants RescuedZelda (item 122) and skips the sphere-0
+  // weapon/lamp guarantee for every non-Standard world_state (see
+  // Rando_BuildPlacement / build_starting_inventory in rando_placement.c):
+  // the logic graph assumes the HC escape is already done and the overworld
+  // is free-roam. The runtime MUST match that assumption, or a fresh save
+  // boots into the vanilla rain/uncle/escape intro with no guaranteed weapon
+  // and hard-softlocks at the 4 weaponless sphere-0 checks.
+  //
+  // We bake the post-escape state into the freshly-created SRAM image,
+  // mirroring ALTTPR's seed-generator SRAM init table (z3randomizer
+  // initsramtable.asm — a SINGLE shared table, not per-mode):
+  //   InitProgressIndicator (0x1833C5 -> sram_progress_indicator 0xF3C5) = 2
+  //       Past the rain/escape intro. Module05_LoadFile gates the intro path
+  //       on `sram_progress_indicator < 2`, and the rain at OW screen 0x70
+  //       (overworld.c) clears at `>= 2`, so 2 yields free-roam, no rain.
+  //   InitProgressFlags (0x1833C6 -> sram_progress_flags 0xF3C6) = 0x14
+  //       (0x10 | 0x04: uncle/escape + Sanctuary milestone bits — ALTTPR's
+  //       non-Standard default.)
   // target_sram[X] maps to g_ram[0xF000 + X] once CopySaveToWRAM runs, so
   // these offsets are (RAM address - 0xF000). See variables.h.
   //
-  // NOTE (scope): this gives the correct Dark-World *world flag* + pearl +
-  // mirror + skipped intro, so an Inverted seed boots into the Dark World
-  // overworld with no bunny. It does NOT yet swap the overworld TILE SOURCES
-  // (the LW<->DW topology inversion lives in a large per-screen tilemap-overlay
-  // subsystem, z3randomizer invertedmaps.asm ~1563 lines, not ported here).
-  // The opening screen therefore renders the Light-World Link's-House geometry
-  // with the Dark-World flag set ("fake DW") until that subsystem lands. See
-  // the deferred-work plan in the change's design.md task #82.
-  if (g_settings_working.world_state == kWorldState_Inverted) {
-    target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
-    target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
-    target_sram[0x3C6] = 0x14;  // sram_progress_flags
-    target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
-    target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+  // World flag differs by state and is NOT in the shared table — the asm's
+  // InitCurrentWorld (0x1833CA) is left 0 (Light World); the Inverted runtime
+  // overrides it to 0x40 (Dark World) plus grants Moon Pearl + Magic Mirror.
+  //   - Open / Retro: Light World free-roam (world flag stays 0, no pearl/mirror).
+  //   - Inverted: Dark World start with pearl (no bunny) + mirror (DW->LW exit).
+  // Standard is intentionally left untouched: the vanilla rain/uncle/escape
+  // intro IS the Standard start, and Standard's placer keeps the sphere-0
+  // weapon/lamp guarantee.
+  //
+  // NOTE (Inverted scope): the Inverted branch gives the correct DW world flag
+  // + pearl + mirror + skipped intro, but does NOT yet swap the overworld TILE
+  // SOURCES (the LW<->DW topology inversion lives in a large per-screen
+  // tilemap-overlay subsystem, z3randomizer invertedmaps.asm, not ported here).
+  // The opening screen renders Light-World Link's-House geometry with the DW
+  // flag set ("fake DW") until that subsystem lands. See design.md task #82.
+  switch (g_settings_working.world_state) {
+    case kWorldState_Open:
+    case kWorldState_Retro:
+      // Light-World post-escape free-roam. World flag stays 0 (Light World),
+      // no Moon Pearl / Mirror grant.
+      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+      target_sram[0x3C6] = 0x14;  // sram_progress_flags
+      break;
+    case kWorldState_Inverted:
+      target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
+      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+      target_sram[0x3C6] = 0x14;  // sram_progress_flags
+      target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
+      target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+      break;
+    case kWorldState_Standard:
+    default:
+      // Standard: vanilla rain/uncle/escape intro — leave SRAM at fresh defaults.
+      break;
   }
-  // === Phase B Inverted runtime: end ===
+  // === Phase B non-Standard world-state runtime: end ===
 
   Intro_FixCksum(target_sram);
 
