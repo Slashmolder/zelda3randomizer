@@ -41,6 +41,11 @@
 #include "rando/rando_hints.h"  // Rando_GenerateHints (Slice 5 §3)
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+#include "rando/rando_window/rando_window.h"          // RandoWindow_* (ImGui settings window)
+#include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
+#endif
+
 static bool g_run_without_emu = 0;
 
 // When true, Die() skips the SDL_ShowSimpleMessageBox popup and just
@@ -76,6 +81,15 @@ enum {
 static const char kWindowTitle[] = "The Legend of Zelda: A Link to the Past";
 static uint32 g_win_flags = SDL_WINDOW_RESIZABLE;
 static SDL_Window *g_window;
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+// Native randomizer settings window (Dear ImGui). A SECOND OS window with its
+// OWN dedicated GL context, independent of the game window's renderer (the game
+// defaults to SDL software with no GL context). Created hidden at startup; shown
+// on demand. NEVER pass g_window to the settings GL context — see rando_window.cpp.
+static SDL_Window *g_settings_window;
+static SDL_GLContext g_settings_gl;
+#endif
 
 static uint8 g_paused, g_turbo, g_replay_turbo = true, g_cursor = true;
 static uint8 g_current_window_scale;
@@ -1009,6 +1023,44 @@ int main(int argc, char** argv) {
   if (!g_renderer_funcs.Initialize(window))
     return 1;
 
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  // Native settings window (PC only). Created AFTER SDL_Init and AFTER the game
+  // window — and therefore after every headless `Maybe*AndExit` / inline
+  // `--rando-selftest` / `--print-assets-hash` handler, all of which return or
+  // exit() before SDL_Init. Headless CLI thus never reaches here / opens a window.
+  //
+  // The settings window has its OWN dedicated GL context. Set the GL attributes
+  // BEFORE creating it. (The game renderer — software by default, or its own GL
+  // context when output_method is OpenGL — has already been initialized above; we
+  // never reuse the game window for the settings context.)
+#ifdef __APPLE__
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#else
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+  g_settings_window = SDL_CreateWindow(
+      "Z3R Settings", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 720, 900,
+      SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_HIDDEN);
+  if (g_settings_window == NULL) {
+    printf("Failed to create settings window: %s\n", SDL_GetError());
+    return 1;
+  }
+  g_settings_gl = SDL_GL_CreateContext(g_settings_window);  // NEVER g_window here
+  if (g_settings_gl == NULL) {
+    printf("Failed to create settings GL context: %s\n", SDL_GetError());
+    return 1;
+  }
+  RandoWindowBridge_Init();
+  RandoWindow_Init(g_settings_window, g_settings_gl);
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
+
   SDL_AudioDeviceID device = 0;
   SDL_AudioSpec want = { 0 }, have;
   g_audio_mutex = SDL_CreateMutex();
@@ -1091,6 +1143,43 @@ int main(int argc, char** argv) {
     }
 
     while(SDL_PollEvent(&event)) {
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      // Two-window event routing. GLOBAL / no-windowID events (SDL_QUIT, all
+      // SDL_CONTROLLER*/SDL_JOY*, audio device add/remove, SDL_KEYMAPCHANGED)
+      // are NOT window-targeted and fall through to the game path unchanged.
+      // WINDOW-targeted events carry a windowID in their event-union sub-struct;
+      // if that ID is the settings window, hand the event to ImGui and DO NOT
+      // pass it to the game input path. Otherwise it's a game-window event and
+      // flows to the existing switch below.
+      {
+        Uint32 settings_wid = g_settings_window ? SDL_GetWindowID(g_settings_window) : 0;
+        Uint32 wid = 0;
+        bool is_windowed = true;
+        switch (event.type) {
+        case SDL_WINDOWEVENT:    wid = event.window.windowID; break;
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:          wid = event.key.windowID;    break;
+        case SDL_TEXTINPUT:      wid = event.text.windowID;   break;
+        case SDL_TEXTEDITING:    wid = event.edit.windowID;   break;
+        case SDL_MOUSEMOTION:    wid = event.motion.windowID; break;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:  wid = event.button.windowID; break;
+        case SDL_MOUSEWHEEL:     wid = event.wheel.windowID;  break;
+        case SDL_DROPFILE:       wid = event.drop.windowID;   break;
+        default:                 is_windowed = false;         break;  // global → game path
+        }
+        if (is_windowed && settings_wid != 0 && wid == settings_wid) {
+          if (event.type == SDL_WINDOWEVENT &&
+              event.window.event == SDL_WINDOWEVENT_CLOSE) {
+            // Settings-window close button: hide, don't quit the app.
+            RandoWindow_Hide();
+          } else {
+            RandoWindow_ProcessEvent(&event);
+          }
+          continue;  // settings-window event consumed; never reaches the game
+        }
+      }
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
       switch(event.type) {
       case SDL_CONTROLLERDEVICEADDED:
         OpenOneGamepad(event.cdevice.which);
@@ -1131,6 +1220,20 @@ int main(int argc, char** argv) {
         break;
       }
       case SDL_KEYDOWN:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+        // TEMP P2 debug toggle — remove when kind-toggle entry lands.
+        // F12 on the game window toggles the native settings window so it can be
+        // exercised before select_file.c wires the real "New Randomizer" entry.
+        if (event.key.keysym.scancode == SDL_SCANCODE_F12 && !event.key.repeat) {
+          if (RandoWindow_WantsShown()) {
+            RandoWindow_Hide();
+          } else {
+            // Open without targeting a slot (debug only; slot -1 = none).
+            RandoWindow_OpenForNewSlot(-1);
+          }
+          break;
+        }
+#endif
         // §9.1b — while text input is active, intercept editing keys
         // (backspace/delete/arrows/home/end/enter/escape/Ctrl+V) and route
         // them through TextField_HandleKey. Critically we MUST NOT also
@@ -1213,6 +1316,16 @@ int main(int argc, char** argv) {
       case SDL_QUIT:
         running = false;
         break;
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      case SDL_WINDOWEVENT:
+        // Only game-window window-events reach here (settings-window events were
+        // routed to ImGui above). With a second window open, SDL may not emit
+        // SDL_QUIT when the game window's close button is pressed, so handle the
+        // game-window close explicitly → app shutdown.
+        if (event.window.event == SDL_WINDOWEVENT_CLOSE)
+          running = false;
+        break;
+#endif
       }
     }
 
@@ -1244,6 +1357,21 @@ int main(int argc, char** argv) {
     }
 
     DrawPpuFrameWithPerf();
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    // Render the native settings window after the game frame. Save the game's
+    // current GL context (NULL when the game uses the SDL software renderer) and
+    // restore it after — RandoWindow_BeginFrame/Render make the SETTINGS context
+    // current internally, so without this restore an OpenGL game renderer would
+    // be left bound to the wrong context. No coupling to opengl.c internals.
+    if (RandoWindow_WantsShown()) {
+      SDL_GLContext prev = SDL_GL_GetCurrentContext();
+      RandoWindow_BeginFrame();
+      RandoWindow_Render();
+      if (prev)
+        SDL_GL_MakeCurrent(g_window, prev);
+    }
+#endif
 
     if (g_config.display_perf_title) {
       char title[60];
@@ -1289,6 +1417,15 @@ int main(int argc, char** argv) {
   // was active (e.g. user closed window during share-string entry).
   // SDL_Quit() would clean up state anyway but explicit is clearer.
   if (SDL_IsTextInputActive()) SDL_StopTextInput();
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  // Tear down the settings window unconditionally (NOT gated on enable_audio).
+  RandoWindow_Shutdown();
+  if (g_settings_gl)
+    SDL_GL_DeleteContext(g_settings_gl);
+  if (g_settings_window)
+    SDL_DestroyWindow(g_settings_window);
+#endif
 
   SDL_DestroyWindow(window);
   SDL_Quit();

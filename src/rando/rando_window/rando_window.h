@@ -20,8 +20,19 @@ void RandoWindow_BeginFrame(void);   // builds the ImGui frame for this game fra
 void RandoWindow_Render(void);       // renders + swaps the settings window
 void RandoWindow_Shutdown(void);
 
+// Feeds one SDL event to the ImGui SDL2 backend. The host event pump routes
+// every event whose windowID matches the settings window here (and ONLY here —
+// such events never reach the game input path). `sdl_event` is a `const SDL_Event*`
+// passed as void* to keep the header callable from the C host without dragging
+// the C++ ImGui types into it.
+void RandoWindow_ProcessEvent(const void *sdl_event);
+
 // Show + target the window for a new randomizer slot (kind-toggle entry on PC).
 void RandoWindow_OpenForNewSlot(int slot_index);
+
+// Hide the settings window (settings-window close button / cancel). Clears any
+// pending kind-toggle target so a hidden window doesn't leave a slot waiting.
+void RandoWindow_Hide(void);
 
 // Whether the settings window should currently be visible (driven by user show/hide).
 bool RandoWindow_WantsShown(void);
