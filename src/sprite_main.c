@@ -25400,8 +25400,12 @@ void NiceThiefWithGift(int k) {  // 9ef038
       uint8 give = 0x46;
       if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
           dungeon_room_index == 0x11E) {
+        // Pass 0xFFFF as the registry id (chest/shop convention): the slot is
+        // always overridden when present in the table and falls back to the
+        // vanilla 300-rupee code (0x46) when absent. Passing the real Rupee100
+        // id instead would mis-grant 300 rupees if a seed placed Rupee100 here.
         uint8 placed_lttp =
-            Rando_DispatchVanillaGrant(LOC_Hype_Cave_NPC, ITEM_Rupee100, 0x46);
+            Rando_DispatchVanillaGrant(LOC_Hype_Cave_NPC, 0xFFFFu, 0x46);
         if (Rando_ShouldSkipReceive(placed_lttp)) {
           // Direct-grant placement (HalfMagic / prize bit / Triforce piece /
           // progressive) already wrote the item; skip Link_ReceiveItem and
