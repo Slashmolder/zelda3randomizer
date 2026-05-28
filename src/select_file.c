@@ -3581,6 +3581,15 @@ static void SelectFile_Settings_HandleGenerate(void) {
       target_sram[0x3C6] = 0x14;  // sram_progress_flags
       target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
       target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+      // which_starting_point = 1 (Sanctuary), matching ALTTPR's
+      // initsramtable.asm InitStartingEntrance = $01 for non-Standard modes.
+      // The DW flag above sends Module05_LoadFile down the post-escape
+      // spawn-select prompt for an active Inverted slot (see misc.c
+      // Module05_LoadFile), and this is the sane fallback / default spawn if
+      // the prompt is ever bypassed. (Index 0 = Link's House bed, which would
+      // mis-spawn under the DW flag; 1 = Sanctuary is the safe post-escape
+      // spawn.)
+      target_sram[0x3C8] = 0x01;  // which_starting_point (Sanctuary)
       break;
     case kWorldState_Standard:
     default:
