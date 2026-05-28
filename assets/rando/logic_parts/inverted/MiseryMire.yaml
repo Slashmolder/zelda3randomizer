@@ -147,11 +147,11 @@ locations:
   # MM - Boss (Standard php:110-117).
   - id: "Misery Mire - Boss"
     region: MiseryMire_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
     source: "app/Region/Standard/MiseryMire.php:110-117 (inherited)"
 
   # MM - Prize (Standard php:106-108, 156) — can_complete = Boss canAccess.
   - id: "Misery Mire - Prize"
     region: MiseryMire_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
     source: "app/Region/Standard/MiseryMire.php:106-108, 156 (inherited; can_complete = Boss access)"

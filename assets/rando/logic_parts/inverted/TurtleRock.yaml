@@ -252,22 +252,22 @@ locations:
   # tighter (no-glitch) gate.
   - id: "Turtle Rock - Eye Bridge - Bottom Left"
     region: TurtleRock_Lobby
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Inverted/TurtleRock.php:135-142"
 
   - id: "Turtle Rock - Eye Bridge - Bottom Right"
     region: TurtleRock_Lobby
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Inverted/TurtleRock.php:144-151"
 
   - id: "Turtle Rock - Eye Bridge - Top Left"
     region: TurtleRock_Lobby
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Inverted/TurtleRock.php:153-160"
 
   - id: "Turtle Rock - Eye Bridge - Top Right"
     region: TurtleRock_Lobby
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_AMOUNT(SmallKey_TurtleRock, 3) AND (HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna) OR CanBlockLasers())"
     source: "app/Region/Inverted/TurtleRock.php:162-169"
 
   # TR - Boss (Inverted php:175-200):
@@ -283,14 +283,14 @@ locations:
   # CompassD7 / MapD7 at boss when bossNormalLocation=true (default).
   - id: "Turtle Rock - Boss"
     region: TurtleRock_Lobby
-    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
     always_allow: "OP_ITEM_IS(Compass_TurtleRock) OR OP_ITEM_IS(Map_TurtleRock)"
     source: "app/Region/Inverted/TurtleRock.php:175-200"
 
   # TR - Prize (Inverted php:214 → can_complete = Boss canAccess).
   - id: "Turtle Rock - Prize"
     region: TurtleRock_Lobby
-    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
     source: "app/Region/Inverted/TurtleRock.php:171-173, 214 (can_complete = Boss access)"
 
 macros_notes: |
