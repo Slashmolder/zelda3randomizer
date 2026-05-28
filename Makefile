@@ -6,6 +6,25 @@ PYTHON:=/usr/bin/env python3
 CFLAGS:=$(if $(CFLAGS),$(CFLAGS),-O2 -Werror) -I .
 CFLAGS:=${CFLAGS} $(shell sdl2-config --cflags) -DSYSTEM_VOLUME_MIXER_AVAILABLE=0
 
+# --- Native settings window (Z3R_NATIVE_SETTINGS_WINDOW): Dear ImGui (C++) ---
+# PC builds (this Makefile + MSBuild) define the guard; the Switch Makefile does
+# NOT, and its non-recursive src/rando/*.c glob excludes src/rando/rando_window/.
+CFLAGS:=${CFLAGS} -DZ3R_NATIVE_SETTINGS_WINDOW=1
+CXX:=$(if $(CXX),$(CXX),$(if $(filter clang%,$(CC)),clang++,g++))
+IMGUI_DIR:=third_party/imgui
+# ImGui is vendored third-party C++: build it C++17, no exceptions/rtti, and
+# WITHOUT -Werror (it emits warnings under -O2). Reuse CFLAGS' includes/optims.
+CXXFLAGS:=$(filter-out -Werror,$(CFLAGS)) -std=c++17 -fno-exceptions -fno-rtti -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
+IMGUI_SRCS:=$(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp \
+            $(IMGUI_DIR)/imgui_widgets.cpp $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp \
+            $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp \
+            src/rando/rando_window/rando_window.cpp
+CPP_OBJS:=$(IMGUI_SRCS:%.cpp=%.o)
+# The bridge .c lives under src/rando/rando_window/ — the src/rando/*.c glob is
+# non-recursive and does NOT pick it up, so add it explicitly here (PC only).
+SRCS:=$(SRCS) src/rando/rando_window/rando_window_bridge.c
+OBJS:=$(SRCS:%.c=%.o)
+
 # Rando codegen artifacts (tasks.md §3.5 / §3.6 / §6.3). The Python script reads
 # the YAML registries under assets/rando/ and emits these four files. The
 # wildcard above picks up src/rando/logic_data.c automatically; the headers are
@@ -26,10 +45,13 @@ endif
 .PHONY: all clean clean_obj clean_gen rando-codegen
 
 all: $(TARGET_EXEC) zelda3_assets.dat
-$(TARGET_EXEC): $(OBJS) $(RES)
-	$(CC) $^ -o $@ $(LDFLAGS) $(SDLFLAGS)
+# Link through $(CXX) to pull in libstdc++ for the vendored ImGui C++ objects.
+$(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(SDLFLAGS)
 %.o : %.c
 	$(CC) -c $(CFLAGS) $< -o $@
+%.o : %.cpp
+	$(CXX) -c $(CXXFLAGS) $< -o $@
 
 # Rando codegen rule. Touch any input → regenerate all four outputs.
 # Building src/rando/logic_data.c triggers the rule (and emits the headers as a
@@ -50,7 +72,7 @@ zelda3_assets.dat:
 
 clean: clean_obj clean_gen
 clean_obj:
-	@$(RM) $(OBJS) $(TARGET_EXEC)
+	@$(RM) $(OBJS) $(CPP_OBJS) $(TARGET_EXEC)
 clean_gen:
 	@$(RM) $(RES) zelda3_assets.dat tables/zelda3_assets.dat tables/*.txt tables/*.png tables/sprites/*.png tables/*.yaml
 	@rm -rf tables/__pycache__ tables/dungeon tables/img tables/overworld tables/sound

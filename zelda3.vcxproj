@@ -233,8 +233,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>HAS_SDL2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(Sdl2Dir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>HAS_SDL2;Z3R_NATIVE_SETTINGS_WINDOW=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(Sdl2Dir)include;$(SolutionDir)third_party\imgui;$(SolutionDir)third_party\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(Sdl2LibDir)SDL2main.lib;$(Sdl2LibDir)SDL2.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -265,6 +265,38 @@
     <ClCompile Include="src\poly.c" />
     <ClCompile Include="src\select_file.c" />
     <ClCompile Include="src\opengl.c" />
+    <!-- Native settings window (Z3R_NATIVE_SETTINGS_WINDOW). Vendored ImGui .cpp
+         build as C++17 with /WX off (L3 warnings in third-party code). The bridge
+         is C. All live under src/rando/rando_window/ (excluded from the Switch build). -->
+    <ClCompile Include="src\rando\rando_window\rando_window_bridge.c" />
+    <ClCompile Include="src\rando\rando_window\rando_window.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_draw.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_tables.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_widgets.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_sdl2.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_opengl3.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
     <ClCompile Include="snes\apu.c">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</InlineFunctionExpansion>
