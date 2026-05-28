@@ -110,8 +110,8 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
       // Bow=0x0b (tier 1) → SilverArrowUpgrade=0x29 (tier 2)
       return (uint8)((tier == 0) ? 0x0b : 0x29);
     }
-    // Multi-tier rupees: vanilla LttP receive codes per Ancilla_AddRupees
-    // (ancilla.c:6963). kGiveRupeeGift_Tab[5] = {1, 5, 20, 100, 50}:
+    // Multi-tier rupees: vanilla LttP receive codes per Ancilla_AddRupees.
+    // kGiveRupeeGift_Tab[5] = {1, 5, 20, 100, 50}:
     //   0x34→1, 0x35→5, 0x36→20, 0x40→100, 0x41→50, 0x46→300
     case ITEM_Rupee1:   return 0x34;
     case ITEM_Rupee5:   return 0x35;
@@ -123,8 +123,8 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     // vanilla item (which is fine — Rupoor only appears in hard/expert
     // pools per the spec, infrequent at most slots).
     // HalfMagic / QuarterMagic: no LttP receive code in this port grants
-    // them. kValueToGiveItemTo[32]=-1 means code 0x20's "magic" branch at
-    // misc.c:751 runs special palette/cape logic but does NOT write to
+    // them. kValueToGiveItemTo[32]=-1 means code 0x20's "magic" branch in
+    // Link_ReceiveItem runs special palette/cape logic but does NOT write to
     // link_magic_consumption. The vanilla Magic Bat grant bypasses
     // Link_ReceiveItem entirely (direct write). §6.2 work would add a
     // new receive helper that writes link_magic_consumption=1 (Half) or
@@ -163,8 +163,8 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
   }
 }
 
-// §6.2 per-placed-dungeon counter helpers. The vanilla LttP dispatcher at
-// misc.c:746-747/772-775 indexes by `cur_palace_index_x2 >> 1` (the player's
+// §6.2 per-placed-dungeon counter helpers. The vanilla LttP dispatcher
+// Link_ReceiveItem indexes by `cur_palace_index_x2 >> 1` (the player's
 // current dungeon). For rando placements where a key/map/compass belongs to
 // a DIFFERENT dungeon than the player's current one, we have to write to
 // that specific dungeon's bit/counter ourselves.
@@ -181,7 +181,7 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
 //   Compass ids 88..98 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCE+HCT)
 //
 // `link_bigkey` / `link_dungeon_map` / `link_compass` are uint16 bitfields.
-// Per misc.c:746-747 special case for codes 0x25/0x32/0x33:
+// Per Link_ReceiveItem's special case for codes 0x25/0x32/0x33:
 //     WORD(*p) |= 0x8000 >> (BYTE(cur_palace_index_x2) >> 1)
 // So dungeon_id D maps to bit (0x8000 >> D). HCE=0 → 0x8000, EP=1 → 0x4000,
 // ..., GT=12 → 0x0008. This matches the HUD's per-dungeon icon table.
@@ -241,7 +241,8 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
 // PRIZE id, not by dungeon).
 //
 // Per ALTTPR Prize\Pendant / Prize\Crystal classes and the vanilla bit
-// allocations at misc.c:738-740 (pendant) and ancilla.c:3855 (crystal):
+// allocations in Link_ReceiveItem's pendant case and AncillaAdd_FallingPrize's
+// crystal case:
 //   GreenPendant → link_which_pendants bit 2 (mask 0x04)
 //   RedPendant   → link_which_pendants bit 0 (mask 0x01)
 //   BluePendant  → link_which_pendants bit 1 (mask 0x02)
@@ -253,7 +254,7 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
 //   Crystal6 (MM)   → link_has_crystals bit 5 (mask 0x20)
 //   Crystal7 (TR)   → link_has_crystals bit 3 (mask 0x08)
 // Bits derived by cross-referencing kDungeonCrystalPendantBit[13] in
-// src/zelda_rtl.c:50 against the vanilla dungeon→prize assignment in
+// src/zelda_rtl.c against the vanilla dungeon→prize assignment in
 // app/Region/Standard/<Dungeon>.php.
 //
 // Returns 1 on success.
@@ -274,8 +275,8 @@ static int prize_item_direct_grant(uint16 registry_id) {
 }
 
 // §6.2 magic-upgrade direct-grant. HalfMagic / QuarterMagic bypass
-// Link_ReceiveItem in vanilla — the only writer is sprite_main.c:11210
-// (Magic Bat handler) writing link_magic_consumption = 1. Rando placements
+// Link_ReceiveItem in vanilla — the only writer is the Magic Bat handler in
+// sprite_main.c writing link_magic_consumption = 1. Rando placements
 // of these items at non-Magic-Bat slots need a direct-write here.
 // Returns 1 on success.
 static int magic_upgrade_direct_grant(uint16 registry_id) {
@@ -324,9 +325,9 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
     return kRandoLttpSkip;
   }
 
-  // §6.2 prize-item direct-write (crystals + pendants). The vanilla path at
-  // ancilla.c:3855 ORs the current dungeon's bit into link_has_crystals; for
-  // rando placements at non-boss slots we set the prize's bit directly.
+  // §6.2 prize-item direct-write (crystals + pendants). The vanilla path in
+  // AncillaAdd_FallingPrize ORs the current dungeon's bit into link_has_crystals;
+  // for rando placements at non-boss slots we set the prize's bit directly.
   if (prize_item_direct_grant(placed)) {
     return kRandoLttpSkip;
   }
@@ -793,10 +794,10 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   // spoiler emits empty `hints: []` (module-static g_hint_table is
   // zero in a fresh process), so any seed generated with hints=on
   // would fail the SHA-256 stamp comparison below with
-  // kRandoReveal_StampMismatch. Determinism contract is in
-  // rando_hints.c:7 — same (settings, placement) → byte-identical
-  // hint text; mirrors the main.c:512 call site that produces the
-  // generate-time bytes.
+  // kRandoReveal_StampMismatch. Determinism contract is in the
+  // rando_hints.c header doc-comment — same (settings, placement) →
+  // byte-identical hint text; mirrors the generate-time call site that
+  // produces the generate-time bytes.
   (void)Rando_GenerateHints(&settings, &table, &spheres);
 
   // Build the spoiler view and write to a tmp file for stamp computation.
@@ -950,7 +951,8 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   // no terminal-state gate lets a self-disciplined runner peek mid-race
   // and defeats the design. Gate the in-binary action on game-completion
   // (main_module_index 24 = Ending intro, 25 = Credits — both set after
-  // Ganon dies / Triforce collected, per dungeon.c:2528 + ending.c:291).
+  // Ganon dies / Triforce collected, on the Ganon-defeat / Triforce-collected
+  // path).
   // The `--reveal-spoiler=<path>` CLI flow stays unconditional (no in-
   // game state to check) for tournament admins / post-race tooling.
   if (main_module_index < 24) {
