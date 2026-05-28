@@ -134,8 +134,8 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // **Forward-compat note**: pad bytes in[22], in[23] are NOT inspected — a
 // future format extension may repurpose them, and rejecting on non-zero
 // would break reveal of pre-extension suppressed files. Today the
-// serializer always writes zero (`rando_settings.c:100-101`) but the
-// deserializer is permissive.
+// serializer (`Settings_CanonicalSerialize`) always writes zero to those pad
+// bytes but the deserializer is permissive.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;

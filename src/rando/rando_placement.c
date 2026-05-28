@@ -1149,7 +1149,7 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
   // 2026-05-27 cluster audit — the missing 9 Retro Light-World shop /
   // capacity-upgrade slots dropped out of placement_digest_hex when sorted
   // by location_id; corpus coverage was silently degraded.
-  // Must be >= kRando_SessionPlacementCapacity (rando.c:586, currently 512).
+  // Must be >= kRando_SessionPlacementCapacity (currently 512).
   // The two constants are decoupled by translation unit; the assert below
   // catches the coupling at build time. Cluster-audit LOW L3 of e9f20ad.
   enum { kDigestLocalCap = 512 };

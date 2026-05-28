@@ -90,8 +90,8 @@ static uint8 g_copy_refusal_pending = 0;
 // cancels, or successfully decodes a share string.
 //
 // Layout (rendered as a tile-stream into vram_upload_data; count bytes are
-// encoded as (NUM_PAIRS * 2) - 1 per HandleStripes14's decode at
-// src/nmi.c:421 — see cluster-1 audit lessons).
+// encoded as (NUM_PAIRS * 2) - 1 per HandleStripes14's decode
+// — see cluster-1 audit lessons).
 enum {
   kAlphabetPicker_GridCols = 8,
   kAlphabetPicker_GridRows = 4,   // 32 alphabet chars
@@ -1529,7 +1529,7 @@ static void SelectFile_DrawCopyRefusalMessage(void) {
   // confirmation prompt). The choice of vram_addr is the same row used by
   // the "ERASE THIS PLAYER" confirmation header, so any prior content is
   // overwritten cleanly.
-  // HandleStripes14 (src/nmi.c:421) decodes the 4-byte header as:
+  // HandleStripes14 decodes the 4-byte header as:
   //   len = (swap16(WORD(p[2])) & 0x3fff) + 1
   // i.e. the count byte encodes BYTES-MINUS-ONE, not tile_count. For N
   // tile pairs (2 bytes each), the field is (N*2)-1. The original
@@ -1795,7 +1795,7 @@ static void SelectFile_AlphabetPicker_Deactivate(void) {
 
 // Render the alphabet picker into vram_upload_data. The buffer is rendered
 // as a tile-stream of (vram_addr, attr, count, tile pairs...) commands,
-// terminated with 0xff. Per HandleStripes14 (src/nmi.c:421), the count byte
+// terminated with 0xff. Per HandleStripes14, the count byte
 // is BYTES-MINUS-ONE; for N tile pairs (2 bytes each) the field is (N*2)-1.
 // All count bytes below are pre-computed against this rule — see cluster-1
 // audit lessons for the bug class this prevents.
@@ -2755,7 +2755,7 @@ static uint8 TileForAscii(char c) {
 
 // Emit one tilemap-row half (top OR bottom) of a horizontal text run as a
 // tile-stream command at the given VRAM address. `attr` = palette/priority
-// byte; HandleStripes14 count byte is (chars*2)-1 per src/nmi.c:421.
+// byte; HandleStripes14 count byte is (chars*2)-1.
 // `tile_offset` is added to each glyph's base tile index — 0 for the top
 // half, 0x10 for the bottom half (the file-select font stores top/bottom
 // halves of each glyph 16 tiles apart). Caller's `cmd` buffer must have

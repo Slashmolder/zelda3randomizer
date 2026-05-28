@@ -66,8 +66,8 @@ typedef enum RandoHintNpc {
   kRandoHintNpc_Murahdahla                 = 16,
 
   // Fork extensions (NOT in ALTTPR). The Storyteller is the 20-rupee
-  // health-restoring NPC `Sprite_28_DarkWorldHintNPC` at
-  // `sprite_main.c:9852` — vanilla framing ("I'll give you a tip for
+  // health-restoring NPC `Sprite_28_DarkWorldHintNPC` — vanilla framing
+  // ("I'll give you a tip for
   // 20 rupees") makes it a natural fit. The 3 Fortune Tellers are
   // currently near-useless cosmetic NPCs whose framing ("I see your
   // future") matches hint-distribution.
@@ -96,12 +96,12 @@ typedef enum RandoHintsMode {
 // ---------------------------------------------------------------------------
 // Dialogue-ID carve — Phase B Slice 5 §57.3.
 //
-// Vanilla zelda3 dialogue IDs (16-bit, `variables.h:833`) max out at
-// 0x18a per highest assigned vanilla site (`sprite_main.c:19466`).
-// Carve `0x200..0x213` for the hint range — 20 IDs, positionally mapped:
+// Vanilla zelda3 dialogue IDs (16-bit, `dialogue_message_index`) max out at
+// 0x18a per highest assigned vanilla site. Carve `0x200..0x213` for the hint
+// range — 20 IDs, positionally mapped:
 //   id = kRandoHintDialogueBase + (RandoHintNpc - 1)
-// The runtime intercept lives at `Text_LoadCharacterBuffer`
-// (`messaging.c:2273-2276`); when the request id falls in the carve,
+// The runtime intercept lives at `Text_LoadCharacterBuffer`;
+// when the request id falls in the carve,
 // the text source switches from `g_zenv.dialogue_blk` to the in-memory
 // hint table populated by `Rando_GenerateHints`.
 // ---------------------------------------------------------------------------

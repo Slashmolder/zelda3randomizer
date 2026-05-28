@@ -62,7 +62,7 @@ static const uint8 kBossVanilla[16] = {
 // Dungeon-ids whose boss is shuffleable (excludes HCE=0, HCT=4, GT=12).
 // Per ALTTPR's app/Boss.php, both Agahnim 1 (HCT) and Agahnim 2 (GT top)
 // are pinned — they share sprite_type 0x7A (the runtime discriminates by
-// `is_in_dark_world` at `sprite_main.c:8313`), so pinning both is the
+// `is_in_dark_world` inside `Sprite_7A_Agahnim`), so pinning both is the
 // only safe option without per-call-site world disambiguation. The
 // shuffleable pool is 10 bosses across 10 dungeon-boss rooms.
 static const uint8 kBossShuffleableDungeons[10] = {
@@ -138,10 +138,10 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
   return g_boss_assignment[dungeon_id];
 }
 
-// Vanilla boss sprite IDs (cross-referenced with `src/sprite_main.h:783-785,
-// 894` and `other/names.txt`). Agahnim 1 and Agahnim 2 share sprite_type
-// 0x7A; the runtime discriminates by `is_in_dark_world` at
-// `sprite_main.c:8313`. Both are PINNED at their vanilla dungeons (HCT=4
+// Vanilla boss sprite IDs (cross-referenced with the `Sprite_*` symbol
+// table in `src/sprite_main.h` and `other/names.txt`). Agahnim 1 and Agahnim 2
+// share sprite_type 0x7A; the runtime discriminates by `is_in_dark_world`
+// inside `Sprite_7A_Agahnim`. Both are PINNED at their vanilla dungeons (HCT=4
 // and GT-top=12) so the remap never has to disambiguate.
 //   0x09 Moldorm        (ToH, dungeon 3)
 //   0x53 ArmosKnights   (EP,  dungeon 1)
@@ -155,7 +155,7 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
 //   0xCB Trinexx        (TR,  dungeon 11)
 //   0xCE Blind          (TT,  dungeon 8)
 //
-// 0xB6 is Sprite_B6_Kiki (`sprite_main.h:894`), NOT Agahnim 2 — DO NOT
+// 0xB6 is `Sprite_B6_Kiki`, NOT Agahnim 2 — DO NOT
 // add it to the table; remapping Kiki at GT-door would soft-lock GT entry.
 //
 // Translation: each boss sprite type in the table uniquely identifies
@@ -194,8 +194,8 @@ static const BossSpriteMap kBossSpriteMap[] = {
 // the shared 0x7A. The remap function falls back to vanilla on 0xFF,
 // preserving correctness if a future edit puts Agahnim2 back in the
 // pool: instead of silently spawning the wrong Agahnim variant in a
-// random dungeon (the `is_in_dark_world` rendering discriminator at
-// `sprite_main.c:8313` can't tell which Agahnim was intended), the
+// random dungeon (the `is_in_dark_world` rendering discriminator inside
+// `Sprite_7A_Agahnim` can't tell which Agahnim was intended), the
 // remap returns the input vanilla type unchanged. The safer default
 // future-proofs against the exact bug §65 audit caught and removed.
 static const uint8 kBossPoolIdxToSprite[12] = {

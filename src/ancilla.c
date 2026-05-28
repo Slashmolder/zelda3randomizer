@@ -6898,8 +6898,8 @@ void Ancilla44_RandoIconReceipt(int k) {
     ancilla_type[k] = 0;
     return;
   }
-  // Don't update during message/menu submodules. Gate matches Ancilla22_ItemReceipt
-  // (`src/ancilla.c:3370`): submodule_index 0 = normal gameplay; 9 = item-
+  // Don't update during message/menu submodules. Gate matches
+  // `Ancilla22_ItemReceipt`: submodule_index 0 = normal gameplay; 9 = item-
   // acquisition cutscene; 43 = Master Sword cutscene.
   if (submodule_index != 0 && submodule_index != 43 && submodule_index != 9)
     return;

@@ -376,7 +376,7 @@ bool RandoSave_ReadFile(const char *path,
 // ---------------------------------------------------------------------------
 // Per-slot SRAM checksum (tasks.md §8.4).
 //
-// Mirrors src/messaging.c:261-264's SaveGameFile checksum:
+// Mirrors `SaveGameFile`'s per-slot checksum:
 //   t = 0x5a5a;
 //   for (i = 0; i < 0x4fe; i += 2) t -= *(uint16 *)(slot_bytes + i);
 //

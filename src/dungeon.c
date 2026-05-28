@@ -5955,8 +5955,8 @@ uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
     // place anything at LOC_Chest_Game. Consolation outcomes (t != 7
     // here, post the bit-already-set degrade) stay vanilla.
     //
-    // The returned lttp code propagates back to Link_PerformOpenChest at
-    // player.c:3887 where the existing Rando_ShouldSkipReceive sentinel
+    // The returned lttp code propagates back to `Link_PerformOpenChest`
+    // where the existing Rando_ShouldSkipReceive sentinel
     // path fires the direct-grant confirmation and short-circuits the
     // Link_ReceiveItem call.
     if (rv == 0x17 && (enhanced_features1 & kFeatures1_RandomizerActive)) {

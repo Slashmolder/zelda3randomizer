@@ -5975,9 +5975,9 @@ void Sprite_Witch(int k) {  // 85e3fb
 void Witch_AcceptShroom(int k) {  // 85e4cf
   // rando-exempt: state-shuffle — the mushroom is CONSUMED (given to the
   // witch) here, not granted. The corresponding grant happens later at the
-  // Magic Powder dispatch (sprite_main.c:6842, ITEM_MagicPowder via
-  // Rando_DispatchVanillaGrant). Without this exemption the cluster-audit
-  // guard flags the consumption as an un-dispatched write.
+  // Magic Powder dispatch (ITEM_MagicPowder via Rando_DispatchVanillaGrant).
+  // Without this exemption the cluster-audit guard flags the consumption as
+  // an un-dispatched write.
   link_item_mushroom = 0;
   save_dung_info[0x109] |= 0x80;
   sound_effect_1 = 0;

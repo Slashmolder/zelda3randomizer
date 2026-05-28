@@ -758,13 +758,14 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   if (j == 0x1b || j == 0x1c) {
     Palette_UpdateGlovesColor();
   } else if ((t = 4, j == 0x37) || (t = 1, j == 0x38) || (t = 2, j == 0x39)) {
-    // §7.7 pendant double-grant fix (symmetric to §6.6 ancilla.c:3855 crystal
-    // fix). This site is the vanilla pendant grant — reached via the
-    // boss-kill → RoomTag_GetHeartForPrize → AncillaAdd_FallingPrize chain,
-    // which sets link_receiveitem_index to the VANILLA dungeon's pendant
-    // code (0x37/0x38/0x39 per kFallingItem_Type / kBossFinishedFallingItem).
-    // Under rando with non-identity prize_shuffle, the rando dispatch in
-    // dungeon.c:4604-4614 has ALREADY OR'd the placed prize's bit (via
+    // Pendant double-grant fix (symmetric to the `AncillaAdd_FallingPrize`
+    // crystal-grant fix). This site is the vanilla pendant grant — reached
+    // via the boss-kill → RoomTag_GetHeartForPrize → AncillaAdd_FallingPrize
+    // chain, which sets link_receiveitem_index to the VANILLA dungeon's
+    // pendant code (0x37/0x38/0x39 per kFallingItem_Type /
+    // kBossFinishedFallingItem). Under rando with non-identity prize_shuffle,
+    // the rando dispatch in `RoomTag_GetHeartForPrize` has ALREADY OR'd the
+    // placed prize's bit (via
     // prize_item_direct_grant). Letting `*p |= t` run here would double-OR
     // the vanilla pendant on top — silently corrupting state when a pendant
     // dungeon (EP/DP/TH) was shuffled to hold a crystal. Suppress the OR

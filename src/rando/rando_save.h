@@ -161,7 +161,7 @@ void RandoSave_SelfCheck(void);
 // existing per-slot checksum routine. NOT a freshly-invented one (per
 // CLAUDE.md / spec-vs-impl discipline).
 //
-// Routine (per messaging.c:261-264):
+// Routine (per `SaveGameFile`):
 //   t = 0x5a5a;
 //   for (i = 0; i < 0x4fe; i += 2) t -= *(uint16 *)(slot_bytes + i);
 // Returns t as a uint32 (zero-extended). The on-disk field is u32 LE per the

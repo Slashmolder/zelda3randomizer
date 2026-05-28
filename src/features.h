@@ -18,7 +18,7 @@
 //   0x65e       kRam_RandoStartingInventoryGranted (1 byte) — once-per-slot gate
 //   0x65f       kRam_RandoTriforcePieceCount (1 byte) — Phase A TriforceHunt counter
 //   0x660-0x66f reserved                 (16 bytes forward-compat headroom)
-//   0x670+      spotlight_* (DO NOT USE — see variables.h:556)
+//   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
 enum {
