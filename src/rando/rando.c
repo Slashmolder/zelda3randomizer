@@ -105,10 +105,14 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
       return (uint8)(0x1b + tier);  // 0x1b=PowerGlove, 0x1c=TitanMitt
     }
     case ITEM_ProgressiveBow: {
-      uint8 tier = link_item_bow;
-      if (tier >= 2) return 0xFF;
-      // Bow=0x0b (tier 1) → SilverArrowUpgrade=0x29 (tier 2)
-      return (uint8)((tier == 0) ? 0x0b : 0x29);
+      // link_item_bow is NOT a linear tier counter: it encodes bow strength
+      // AND arrow state (1=wood/no-arrows, 2=wood/arrows, 3=silver/no-arrows,
+      // 4=silver/arrows; hud.c re-derives the low bit from link_num_arrows).
+      // So distinguish by strength tier, not raw value.
+      uint8 bow = link_item_bow;
+      if (bow == 0) return 0x0b;  // first pickup: wooden bow (code 0x0b)
+      if (bow < 3)  return 0x3b;  // second: upgrade to silver bow (code 0x3b)
+      return 0xFF;                // already have silver bow
     }
     // Multi-tier rupees: vanilla LttP receive codes per Ancilla_AddRupees.
     // kGiveRupeeGift_Tab[5] = {1, 5, 20, 100, 50}:
@@ -142,10 +146,11 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     case ITEM_BottleWithRedPotion:   return 0x2d;
     case ITEM_BottleWithGreenPotion: return 0x3d;
     case ITEM_BottleWithBluePotion:  return 0x48;
-    // SilverArrowUpgrade: LttP code 0x29 grants silver arrows by setting
-    // link_item_bow=2 (per misc.c index 41). Works without progressive
-    // ordering — direct silver-arrows upgrade.
-    case ITEM_SilverArrowUpgrade: return 0x29;
+    // SilverArrowUpgrade → LttP code 0x3b, which sets link_item_bow=3
+    // (silver bow). hud.c re-derives 3→4 when arrows are present. NOTE: code
+    // 0x29 (used previously) writes link_item_mushroom, NOT the bow — it
+    // grants a Mushroom, so silver arrows were never actually awarded.
+    case ITEM_SilverArrowUpgrade: return 0x3b;
     default:
       // Dungeon items (SmallKey 53..65, BigKey 66..76, Map 77..87 + 124,
       // Compass 88..98): for the CURRENT-dungeon vanilla fall-back this
@@ -167,39 +172,56 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
 // Link_ReceiveItem indexes by `cur_palace_index_x2 >> 1` (the player's
 // current dungeon). For rando placements where a key/map/compass belongs to
 // a DIFFERENT dungeon than the player's current one, we have to write to
-// that specific dungeon's bit/counter ourselves.
+// that specific dungeon's bit ourselves — and the bit MUST line up with
+// the bit the door-check (dungeon.c) reads back.
 //
 // Returns 1 if the placed item is a dungeon item and was direct-written.
 // Caller treats this as "skip Link_ReceiveItem" via kRandoLttpSkip.
 //
-// Mappings (matching dungeon_id_for_item in rando_placement.c, which
-// mirrors the kBigKeys / kMaps / kCompasses ordering):
-//   SmallKey ids 53..65 contiguous → dungeon_id = id - 53 (HCE..GT, no skip)
-//   BigKey ids 66..76 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCE+HCT)
-//   Map_HCE = 124 → dungeon 0
-//   Map ids 77..87 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCT)
-//   Compass ids 88..98 → dungeon ids 1,2,3,5,6,7,8,9,10,11,12 (skip HCE+HCT)
+// Two dungeon-id conventions are in play and they DO NOT agree:
 //
-// `link_bigkey` / `link_dungeon_map` / `link_compass` are uint16 bitfields.
-// Per Link_ReceiveItem's special case for codes 0x25/0x32/0x33:
+//   ALTTPR convention   — HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6,
+//                         SW=7, TT=8, IP=9, MM=10, TR=11, GT=12.
+//     Used by ALTTPR item-id ordering (so e.g. registry_id - 66 over the
+//     BigKey range gives ALTTPR dungeon - 1) and by rando_placement.c
+//     internals (kDungeonPrizeLocations etc.).
+//
+//   Game-side convention — `cur_palace_index_x2 >> 1`. Derived by
+//     cross-referencing kDungeonCrystalPendantBit[13] in zelda_rtl.c
+//     against the vanilla dungeon→prize bits:
+//       [0]=HCE [1]=(unused/sub-area) [2]=EP [3]=DP [4]=HCT [5]=PoD
+//       [6]=SP  [7]=SW  [8]=TT  [9]=IP  [10]=TH  [11]=MM  [12]=TR  [13]=GT
+//
+// Per Link_ReceiveItem's special case for codes 0x25/0x32/0x33 (misc.c):
 //     WORD(*p) |= 0x8000 >> (BYTE(cur_palace_index_x2) >> 1)
-// So dungeon_id D maps to bit (0x8000 >> D). HCE=0 → 0x8000, EP=1 → 0x4000,
-// ..., GT=12 → 0x0008. This matches the HUD's per-dungeon icon table.
-static uint16 dungeon_bit_for_map_or_compass(uint8 dungeon_id) {
-  if (dungeon_id >= 16) return 0;
-  return (uint16)(0x8000u >> dungeon_id);
+// So the bit for dungeon D is `0x8000 >> D` where D is the GAME-side
+// index. The tables below translate ALTTPR-id → game-side index so the
+// bit we set matches the bit the game's door-check reads.
+static uint16 dungeon_bit_for_map_or_compass(uint8 game_dungeon_id) {
+  if (game_dungeon_id >= 16) return 0;
+  return (uint16)(0x8000u >> game_dungeon_id);
 }
 
+// Indexed by ALTTPR registry-id offset (66..76 → 0..10 for BigKey;
+// likewise -77 for Map, -88 for Compass over the same 11 dungeons,
+// in EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT order). The value is
+// the GAME-side dungeon index for that ALTTPR dungeon.
+//                                             EP  DP  TH  PoD SP  SW  TT  IP  MM  TR  GT
+static const uint8 kBigKeyGameDungeon[11]  = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
+static const uint8 kMapGameDungeon[11]     = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
+static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
+
 static uint8 dungeon_id_for_item_local(uint16 registry_id) {
-  // SmallKey 53..65: HCE..GT in order (no skips).
+  // SmallKey 53..65: returns ALTTPR dungeon id (id - 53). SmallKey direct-
+  // grant is §6.2 follow-on (per-dungeon counter table); this path is
+  // unused by dungeon_item_direct_grant today. When it's wired this
+  // mapping must be translated to game-side just like BigKey/Map/Compass
+  // below — otherwise the bit lands on the wrong dungeon's slot.
   if (registry_id >= 53 && registry_id <= 65) return (uint8)(registry_id - 53);
-  static const uint8 kBigKeyDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (registry_id >= 66 && registry_id <= 76) return kBigKeyDungeon[registry_id - 66];
-  if (registry_id == 124) return 0;  // Map_HCE
-  static const uint8 kMapDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (registry_id >= 77 && registry_id <= 87) return kMapDungeon[registry_id - 77];
-  static const uint8 kCompassDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (registry_id >= 88 && registry_id <= 98) return kCompassDungeon[registry_id - 88];
+  if (registry_id >= 66 && registry_id <= 76) return kBigKeyGameDungeon[registry_id - 66];
+  if (registry_id == 124) return 0;  // Map_HCE (game-side index 0)
+  if (registry_id >= 77 && registry_id <= 87) return kMapGameDungeon[registry_id - 77];
+  if (registry_id >= 88 && registry_id <= 98) return kCompassGameDungeon[registry_id - 88];
   return 0xFF;
 }
 
@@ -211,7 +233,9 @@ static uint8 dungeon_id_for_item_local(uint16 registry_id) {
 // and the dispatcher falls through to the current-dungeon vanilla path.
 static int dungeon_item_direct_grant(uint16 registry_id) {
   uint8 dungeon = dungeon_id_for_item_local(registry_id);
-  if (dungeon == 0xFF || dungeon >= 13) return 0;
+  // Game-side indices range 0..13 (GT). 16 is the kUpperBitmasks size — past
+  // that, dungeon_bit_for_map_or_compass returns 0 and the OR would no-op.
+  if (dungeon == 0xFF || dungeon >= 16) return 0;
 
   uint16 bit = dungeon_bit_for_map_or_compass(dungeon);
   if (registry_id >= 66 && registry_id <= 76) {
@@ -516,50 +540,56 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
 // is still fired for uniformity (caller treats the no-op identity case as
 // "the player gets a heart container, vanilla behavior").
 //
-// Dungeon ID layout (cur_palace_index_x2 >> 1):
+// Dungeon ID layout (cur_palace_index_x2 >> 1) — game-side convention.
+// Derived from kDungeonCrystalPendantBit / kBossFinishedFallingItem
+// (zelda_rtl.c, dungeon.c). NOTE: TH lives at 10, not 3 — this is not
+// the ALTTPR id ordering.
 //   0 HCE  (no boss; Sanctuary chest is the heart container slot)
-//   1 EP   2 DP   3 TH
+//   1 (unused sub-area, no prize)
+//   2 EP   3 DP
 //   4 HCT  (Agahnim; not a heart-drop boss — handled separately)
-//   5 PoD  6 SP   7 SW   8 TT   9 IP  10 MM  11 TR
-//  12 GT   (Agahnim 2; same as HCT path)
+//   5 PoD  6 SP   7 SW   8 TT   9 IP  10 TH  11 MM  12 TR
+//  13 GT   (Agahnim 2; same as HCT path)
 // ---------------------------------------------------------------------------
 uint16 Rando_GetBossHeartLocation(uint8 dungeon_id) {
-  static const uint16 kBossHeartByDungeon[13] = {
-    0xFFFFu,                       // 0  HCE
-    LOC_Eastern_Palace_Boss,       // 1  EP
-    LOC_Desert_Palace_Boss,        // 2  DP
-    LOC_Tower_of_Hera_Boss,        // 3  TH
-    0xFFFFu,                       // 4  HCT (Agahnim path)
-    LOC_Palace_of_Darkness_Boss,   // 5  PoD
-    LOC_Swamp_Palace_Boss,         // 6  SP
-    LOC_Skull_Woods_Boss,          // 7  SW
-    LOC_Thieves_Town_Boss,         // 8  TT
-    LOC_Ice_Palace_Boss,           // 9  IP
-    LOC_Misery_Mire_Boss,          // 10 MM
-    LOC_Turtle_Rock_Boss,          // 11 TR
-    0xFFFFu                        // 12 GT (Agahnim 2 path)
+  static const uint16 kBossHeartByDungeon[14] = {
+    0xFFFFu,                       //  0  HCE
+    0xFFFFu,                       //  1  (unused)
+    LOC_Eastern_Palace_Boss,       //  2  EP
+    LOC_Desert_Palace_Boss,        //  3  DP
+    0xFFFFu,                       //  4  HCT (Agahnim path)
+    LOC_Palace_of_Darkness_Boss,   //  5  PoD
+    LOC_Swamp_Palace_Boss,         //  6  SP
+    LOC_Skull_Woods_Boss,          //  7  SW
+    LOC_Thieves_Town_Boss,         //  8  TT
+    LOC_Ice_Palace_Boss,           //  9  IP
+    LOC_Tower_of_Hera_Boss,        // 10  TH
+    LOC_Misery_Mire_Boss,          // 11  MM
+    LOC_Turtle_Rock_Boss,          // 12  TR
+    0xFFFFu                        // 13  GT (Agahnim 2 path)
   };
-  if (dungeon_id >= 13) return 0xFFFFu;
+  if (dungeon_id >= 14) return 0xFFFFu;
   return kBossHeartByDungeon[dungeon_id];
 }
 
 uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
-  static const uint16 kBossPrizeByDungeon[13] = {
-    0xFFFFu,                       // 0  HCE
-    LOC_Eastern_Palace_Prize,      // 1  EP
-    LOC_Desert_Palace_Prize,       // 2  DP
-    LOC_Tower_of_Hera_Prize,       // 3  TH
-    0xFFFFu,                       // 4  HCT
-    LOC_Palace_of_Darkness_Prize,  // 5  PoD
-    LOC_Swamp_Palace_Prize,        // 6  SP
-    LOC_Skull_Woods_Prize,         // 7  SW
-    LOC_Thieves_Town_Prize,        // 8  TT
-    LOC_Ice_Palace_Prize,          // 9  IP
-    LOC_Misery_Mire_Prize,         // 10 MM
-    LOC_Turtle_Rock_Prize,         // 11 TR
-    0xFFFFu                        // 12 GT
+  static const uint16 kBossPrizeByDungeon[14] = {
+    0xFFFFu,                       //  0  HCE
+    0xFFFFu,                       //  1  (unused)
+    LOC_Eastern_Palace_Prize,      //  2  EP
+    LOC_Desert_Palace_Prize,       //  3  DP
+    0xFFFFu,                       //  4  HCT
+    LOC_Palace_of_Darkness_Prize,  //  5  PoD
+    LOC_Swamp_Palace_Prize,        //  6  SP
+    LOC_Skull_Woods_Prize,         //  7  SW
+    LOC_Thieves_Town_Prize,        //  8  TT
+    LOC_Ice_Palace_Prize,          //  9  IP
+    LOC_Tower_of_Hera_Prize,       // 10  TH
+    LOC_Misery_Mire_Prize,         // 11  MM
+    LOC_Turtle_Rock_Prize,         // 12  TR
+    0xFFFFu                        // 13  GT
   };
-  if (dungeon_id >= 13) return 0xFFFFu;
+  if (dungeon_id >= 14) return 0xFFFFu;
   return kBossPrizeByDungeon[dungeon_id];
 }
 
@@ -614,6 +644,16 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_wanted_zelda_features1 |= kFeatures1_RandomizerActive;
   enhanced_features1 |= kFeatures1_RandomizerActive;
 
+  // Wire the snapshot-tail TLV emitter (per rando_save.h "UI also calls
+  // Rando_SetSnapshotContext"). Without this, `RandoSnapshotTail_Save`
+  // early-returns at `!g_has_ctx` and the snapshot file has no rando TLV;
+  // a later Ctrl+F1 then restores `g_ram`'s rando-active bit but leaves
+  // `g_active_placement == NULL` (placement table lives in the heap, not
+  // g_ram), so the next chest dispatch falls back to vanilla items.
+  Rando_SetSnapshotContext(src->header.generator_version,
+                           src->header.settings_hash,
+                           src->header.share_string);
+
   // Phase B Slice 1 — copy the slot's checked-location bitmap into the
   // session state. Bitmap size matches between slot and session
   // (both kRandoCheckedBitmapBytes = 64).
@@ -659,6 +699,9 @@ void Rando_DeactivateSlot(void) {
   g_rando_slot_active = 0;
   g_wanted_zelda_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   enhanced_features1 &= ~(uint32)kFeatures1_RandomizerActive;
+  // Pair with the SetSnapshotContext in Activate — leaving stale metadata
+  // would let a future snapshot save emit a TLV bound to the wrong slot.
+  Rando_ClearSnapshotContext();
 
   // Phase B Slice 1 — clear the checked bitmap and reset tracker visibility
   // so the next slot launches with the documented "trackers default hidden"
@@ -1270,7 +1313,7 @@ void Rando_SelfCheck(void) {
 
   // §6.2 per-placed-dungeon BigKey/Map/Compass direct-write tests.
   // Placement BigKey_GanonsTower (76) at Bottle Merchant; dispatch should
-  // OR (0x8000 >> 12) = 0x0008 into link_bigkey (GT's bit slot).
+  // OR (0x8000 >> 13) = 0x0004 into link_bigkey (GT's game-side bit slot).
   {
     static RandoPlacement entries[1];
     entries[0].location_id = 166;
@@ -1283,17 +1326,17 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: BigKey_GT dispatch should return kRandoLttpSkip\n");
       exit(2);
     }
-    if (link_bigkey != 0x0008) {
-      fprintf(stderr, "Rando_SelfCheck: BigKey_GT dispatch should set link_bigkey=0x0008 (got 0x%04x)\n", (unsigned)link_bigkey);
+    if (link_bigkey != 0x0004) {
+      fprintf(stderr, "Rando_SelfCheck: BigKey_GT dispatch should set link_bigkey=0x0004 (got 0x%04x)\n", (unsigned)link_bigkey);
       exit(2);
     }
-    // Compass_EasternPalace (88) → dungeon 1 → bit (0x8000 >> 1) = 0x4000
+    // Compass_EasternPalace (88) → game-side dungeon 2 → bit (0x8000 >> 2) = 0x2000
     entries[0].item_id = ITEM_Compass_EasternPalace;
     Placement_Install(&t);
     link_compass = 0;
     Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
-    if (link_compass != 0x4000) {
-      fprintf(stderr, "Rando_SelfCheck: Compass_EP dispatch should set link_compass=0x4000 (got 0x%04x)\n", (unsigned)link_compass);
+    if (link_compass != 0x2000) {
+      fprintf(stderr, "Rando_SelfCheck: Compass_EP dispatch should set link_compass=0x2000 (got 0x%04x)\n", (unsigned)link_compass);
       exit(2);
     }
     // Map_HCE (124) → dungeon 0 → bit 0x8000

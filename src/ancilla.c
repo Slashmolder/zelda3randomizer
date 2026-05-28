@@ -3497,6 +3497,22 @@ endif_6:
     else
       msg = kReceiveItemMsgs[ancilla_item_to_link[k]];
   }
+  // Rando: progressive sword/shield reuse vanilla LttP receive codes whose
+  // receipt text was authored for a different acquisition context — or is a
+  // dead table entry never fired in vanilla (red shield comes from a shop,
+  // gold sword from the fountain, neither via this ancilla). Correct the text
+  // so it matches the gear actually granted. See progressive_to_lttp() in
+  // rando/rando.c. Affected codes:
+  //   0x01 master sword -> text is Sahasrahla's pedestal telepathy
+  //   0x03 gold sword   -> text is the Boomerang receipt (dead entry)
+  //   0x05 red shield   -> text is "You found the Mirror Shield!"
+  if (msg != -1 && (enhanced_features1 & kFeatures1_RandomizerActive)) {
+    uint8 gear_code = ancilla_item_to_link[k];
+    if (gear_code == 0x01 || gear_code == 0x03)
+      msg = 0x77;  // "Great!  Your sword is stronger!"
+    else if (gear_code == 0x05)
+      msg = 0x90;  // "Your shield is improved! ... against fireballs!"
+  }
   if (msg != -1) {
     dialogue_message_index = msg;
     if (msg == 0x70)

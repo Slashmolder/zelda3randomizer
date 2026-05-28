@@ -838,7 +838,14 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   ancilla_item_to_link[ancilla] = j;
   ancilla_arr1[ancilla] = 0;
 
-  if (j == 1 && item_receipt_method != 2) {
+  // Rando: ProgressiveSword tier 1 translates to LttP receive code 0x01
+  // (Master Sword) — see progressive_to_lttp() in rando/rando.c. Vanilla code
+  // 0x01 is the Lost Woods pedestal pull, which hijacks the main module
+  // (submodule_index = 43) for the pedestal cutscene. Firing that from an
+  // arbitrary chest/sprite pickup corrupts game state and crashes. Route the
+  // rando master-sword grant through the normal item hold-up path instead.
+  if (j == 1 && item_receipt_method != 2 &&
+      !(enhanced_features1 & kFeatures1_RandomizerActive)) {
     ancilla_timer[ancilla] = 160;
     submodule_index = 43;
     BYTE(palette_filter_countdown) = 0;
