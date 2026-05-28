@@ -200,26 +200,32 @@ def is_in_dispatch_context(file_lines: list[str], lineno_zero_based: int) -> boo
     """
     # Walk backward from the line above the write site to the start of the
     # current function (or up to 12 lines, whichever is closer).
+    #
+    # Bare column-0 `}` (followed only by whitespace) closes the previous
+    # function's body. Other forms — `} else {`, `} while (...)`, `} for (...)`
+    # — are intra-function continuations that we MUST NOT treat as boundaries
+    # (a 2-space-indented codebase doesn't have these at column 0 today, but
+    # a future style drift would silently re-introduce the cross-function
+    # bleed bug this terminator was added to prevent).
+    FUNCTION_CLOSE_BRACE = re.compile(r"^\}\s*$")
     upper_floor = max(0, lineno_zero_based - 12)
     start = lineno_zero_based - 1
     while start >= upper_floor:
         line = file_lines[start]
-        # Column-0 `}` closes the previous function's body; the line above
-        # belongs to a different function, so cap here.
-        if line.startswith("}"):
+        if FUNCTION_CLOSE_BRACE.match(line):
             start += 1
             break
         start -= 1
     start = max(start, upper_floor)
 
-    # Walk forward similarly. A column-0 `}` here is THIS function's close
-    # brace; we include it but stop before the next function's opening.
+    # Walk forward similarly. A bare column-0 `}` here is THIS function's
+    # close brace; include it but stop before the next function's opening.
     lower_ceiling = min(len(file_lines), lineno_zero_based + 4)
     end = lineno_zero_based + 1
     while end < lower_ceiling:
         line = file_lines[end]
         end += 1
-        if line.startswith("}"):
+        if FUNCTION_CLOSE_BRACE.match(line):
             break
     end = min(end, lower_ceiling)
 

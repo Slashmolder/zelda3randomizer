@@ -297,11 +297,15 @@ void Rando_ClearHints(void) {
 // -----------------------------------------------------------------------------
 void Hints_SelfCheck(void) {
   // Synthetic placement table: 4 entries — 2 progression items (Hookshot,
-  // Boots) + 2 junk (Rupee5, Bombs1). Item IDs come from item_ids.h so
-  // future registry re-ids don't break the test.
+  // Boots) + 2 junk (Rupee5, Bombs1). Item IDs sourced from item_ids.h so
+  // future registry re-ids don't break the test. Prior version used raw
+  // integers 6 and 8 with Hookshot / Boots comments, but those IDs are
+  // L2Sword / L4Sword in the actual registry — the test still exercised
+  // determinism but on the wrong items, which is exactly the drift this
+  // file's item_is_junk symbol-reference fix was added to prevent.
   static RandoPlacement synth_entries[4];
-  synth_entries[0].location_id = 1;  synth_entries[0].item_id = 6 /* Hookshot — vanilla absolute */;
-  synth_entries[1].location_id = 2;  synth_entries[1].item_id = 8 /* Boots */;
+  synth_entries[0].location_id = 1;  synth_entries[0].item_id = ITEM_Hookshot;
+  synth_entries[1].location_id = 2;  synth_entries[1].item_id = ITEM_Boots;
   synth_entries[2].location_id = 3;  synth_entries[2].item_id = ITEM_Rupee5;
   synth_entries[3].location_id = 4;  synth_entries[3].item_id = ITEM_Bombs1;
   RandoPlacementTable table;

@@ -1568,6 +1568,22 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   if (g_rando_slot_active == 0) return false;
   if (g_rando_starting_inventory_granted != 0) return false;
 
+  // Cold-boot exploit guard. `g_rando_starting_inventory_granted` lives at
+  // g_ram[0x65e] — OUTSIDE the SRAM-saved range (save_dung_info covers
+  // 0xF000-0xF4FF), and ZeldaInitialize zeroes the cell on every cold boot.
+  // Without an additional save-state-persisted check, every cold-boot reload
+  // of an in-progress save would re-fire the escape-fill, queueing a fresh
+  // 70-arrow / 0x80-magic / 50-bomb refill into the HUD filler registers
+  // every launch. Gate on `sram_progress_indicator` (g_ram[0xF3C5]) which IS
+  // SRAM-saved: 0 = brand-new save (Uncle's gift not yet received), 1+ =
+  // past escape. Mid-escape reloads (progress still 0) intentionally re-fire
+  // the refill, matching ALTTPR's setEscapeFills semantics (refill on each
+  // Uncle/Zelda/Sanctuary respawn).
+  if (g_ram[0xF3C5] != 0) {
+    g_rando_starting_inventory_granted = 1;  // dedupe within this boot
+    return false;
+  }
+
   // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents. Skipped when
   // settings is NULL — Inverted-on-slot-reload needs world_state persisted
   // through the sidecar (separate fix; see TODO above).

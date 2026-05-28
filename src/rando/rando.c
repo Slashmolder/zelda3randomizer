@@ -673,6 +673,15 @@ void Rando_DeactivateSlot(void) {
   // §62 — clear the share-string cache; reveal action returns FileNotFound
   // when no slot is active.
   g_rando_active_share_string[0] = '\0';
+
+  // Reset the starting-inventory gate so an in-session slot-switch (slot A
+  // already received its grant, then user backs out and loads slot B) lets
+  // slot B's grant fire on its next Module05_LoadFile. Without this, the
+  // same-boot gate at g_ram[0x65e] stays set and slot B silently misses its
+  // escape-fill on a brand-new save. The cold-boot exploit guard in
+  // Rando_TryGrantStartingInventory still gates on sram_progress_indicator
+  // so in-progress saves aren't re-granted.
+  g_rando_starting_inventory_granted = 0;
 }
 
 // ---------------------------------------------------------------------------
