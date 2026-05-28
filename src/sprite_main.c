@@ -11753,6 +11753,13 @@ show_later_msg:
     static const uint8 kMaxBombsForLevelHex[8] = {0x10, 0x15, 0x20, 0x25, 0x30, 0x35, 0x40, 0x50};
     int i = link_bomb_upgrades + 1;
     if (i != 8) {
+      // Retro shop dispatch (#53): the Bomb Capacity Upgrade is an
+      // identity-placed shop slot (LOC 264, pinned to ITEM_BombUpgrade5 by the
+      // placer). The dispatch fires for uniformity + tracker mark-checked; the
+      // returned item is the identity substitute so the vanilla capacity write
+      // below proceeds unchanged.
+      if (enhanced_features1 & kFeatures1_RandomizerActive)
+        Rando_OnLocationCheck(LOC_Capacity_Upgrade_Bomb, ITEM_BombUpgrade5);
       // rando-exempt: shop subsystem (Phase B) — bomb-capacity upgrade from
       // the Capacity Upgrade Shop. ALTTPR routes capacity upgrades through
       // its Shop subsystem (app/Shop/Upgrade.php) with no Location\ entry.
@@ -11793,6 +11800,10 @@ show_later_msg:
     static const uint8 kMaxArrowsForLevelHex[8] = {0x30, 0x35, 0x40, 0x45, 0x50, 0x55, 0x60, 0x70};
     int i = link_arrow_upgrades + 1;
     if (i != 8) {
+      // Retro shop dispatch (#53): identity-placed Arrow Capacity Upgrade
+      // (LOC 265, pinned to ITEM_ArrowUpgrade5). See bomb-capacity note above.
+      if (enhanced_features1 & kFeatures1_RandomizerActive)
+        Rando_OnLocationCheck(LOC_Capacity_Upgrade_Arrow, ITEM_ArrowUpgrade5);
       // rando-exempt: shop subsystem (Phase B) — arrow-capacity upgrade.
       // Same rationale as the bomb-capacity exemption above.
       link_arrow_upgrades = i;
@@ -25481,6 +25492,14 @@ void ShopKeeper_SpawnShopItem(int k, int pos, int what) {  // 9ef1b3
   Sprite_SetX(j, info.r0_x + kShopKeeper_ItemX[pos]);
   Sprite_SetY(j, info.r2_y + 0x27);
   sprite_flags2[j] |= 4;
+  // Retro shop dispatch (#53): record the 0-based slot position (stored as
+  // pos+1 so 0 means "unset") on the spawned item sprite so
+  // ShopItem_HandleReceipt can recover the (room, door, pos) tuple needed to
+  // resolve the ALTTPR shop-slot location. Gated on rando-active so vanilla /
+  // RAM-compare runs leave sprite_subtype[] untouched (the field is otherwise
+  // unread by the 0xBB shop-item handlers).
+  if (enhanced_features1 & kFeatures1_RandomizerActive)
+    sprite_subtype[j] = (uint8)(pos + 1);
 }
 
 void ShopItem_FighterShield(int k) {  // 9ef1f2
@@ -25616,7 +25635,32 @@ void ShopItem_Bee(int k) {  // 9ef322
 void ShopItem_HandleReceipt(int k, uint8 item) {  // 9ef366
   static const uint16 kShopKeeper_GiveItemMsgs[7] = {0x168, 0x167, 0x167, 0x16c, 0x169, 0x16a, 0x16b};
   item_receipt_method = 0;
-  Link_ReceiveItem(item, 0);
+  // Retro shop dispatch (#53): a spawned shop-item sprite carries its
+  // 0-based slot position in sprite_subtype[k] (stored as pos+1 by
+  // ShopKeeper_SpawnShopItem; 0 = not a rando shop slot). Resolve
+  // (room, entrance-door, pos) -> shop-slot location and substitute the
+  // placed item. The rupee cost was already deducted by ShopItem_HandleCost
+  // at vanilla pricing, so prices stay vanilla per the #53 contract.
+  // Non-shop callers (gift thief, bomb shop) never set sprite_subtype[k], so
+  // they skip the dispatch and keep vanilla behavior. In non-Retro seeds the
+  // shop slot is absent from the placement table and Rando_ShopDispatch
+  // returns the vanilla code unchanged.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      sprite_subtype2[k] >= 7 && sprite_subtype[k] != 0) {
+    // subtype2 >= 7 is the standard shop-item class (only ShopKeeper_SpawnShopItem
+    // creates these); sprite_subtype carries pos+1 set at spawn. Non-shop
+    // ShopItem_HandleReceipt callers (gift thief subtype2=2, bomb shop) fail
+    // the subtype2 gate and keep vanilla behavior.
+    uint8 pos = (uint8)(sprite_subtype[k] - 1);
+    item = Rando_ShopDispatch(BYTE(dungeon_room_index), which_entrance, pos, item);
+    // Rando_ReceiveOrConfirm grants the placed item directly (Bow/Sword/Bottle)
+    // or, for direct-grant placements (HalfMagic/Triforce/prize bits) where
+    // Rando_ShopDispatch returned the skip sentinel, fires the §7.6
+    // confirmation cue with the placed-item icon instead of Link_ReceiveItem.
+    Rando_ReceiveOrConfirm(item, (uint8)Rando_LastDispatchedItemId());
+  } else {
+    Link_ReceiveItem(item, 0);
+  }
   int j = sprite_subtype2[k];
   if (j >= 7) {
     Sprite_ShowMessageUnconditional(kShopKeeper_GiveItemMsgs[j - 7]);

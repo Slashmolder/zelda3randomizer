@@ -235,6 +235,37 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
                           uint8 vanilla_lttp_code);
 
 // ---------------------------------------------------------------------------
+// Rando_ShopDispatch — Retro-world-state shop-purchase grant hook (#53).
+//
+// Hooked at ShopItem_HandleReceipt (src/sprite_main.c), the universal
+// shop-item grant point. Maps a shop purchase to an ALTTPR shop-slot
+// location_id via the (room, entrance-door, slot-position) disambiguation
+// contract, then routes through Rando_DispatchVanillaGrant.
+//
+// Disambiguation mirrors ALTTPR's SpritePrep_ShopKeeper (z3randomizer
+// shopkeeper.asm): vanilla LttP reuses one physical shop room for several
+// overworld entrances (e.g. low-byte room 0x0F backs the DW Potion,
+// Lumberjack, Outcasts, and Lake-Hylia shops; room 0x12 backs both the DW
+// Death-Mountain and LW Lake-Hylia shops). Room alone is ambiguous, so the
+// entrance door (`which_entrance`, g_ram+0x10E — ALTTPR's
+// PreviousOverworldDoor) selects the specific shop, and `pos` (0..2) selects
+// the slot within it.
+//
+// `room` is BYTE(dungeon_room_index); `entrance` is `which_entrance`;
+// `pos` is the 0-based slot index the shopkeeper spawned the item at.
+// `vanilla_lttp_code` is the LttP receive code the shop would grant in vanilla.
+//
+// Returns the LttP code to grant. When (room, entrance, pos) isn't a known
+// shop slot — every non-shop ShopItem_HandleReceipt caller (gift thief,
+// bomb shop) and every non-Retro seed (shop slots absent from the placement
+// table) — the vanilla code is returned unchanged, so behavior is identical
+// to vanilla. May return kRandoLttpSkip (test with Rando_ShouldSkipReceive)
+// for direct-grant placements.
+// ---------------------------------------------------------------------------
+uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
+                         uint8 vanilla_lttp_code);
+
+// ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized
 // reachability cache when a story-progress event flag is written
 // (tasks.md §0.4a). Called from every reachability-affecting write site

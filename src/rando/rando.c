@@ -424,6 +424,62 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
   return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
 }
 
+// === Phase B sprite/shop dispatch: begin ===
+// ---------------------------------------------------------------------------
+// Retro shop-slot lookup (#53). (room-low-byte, entrance-door) selects one
+// of the 9 ALTTPR shops; that shop's three purchasable slots occupy three
+// consecutive registry ids (LOC base .. base+2). Capacity-Upgrade slots
+// (264/265) are identity-placed and dispatched separately by their own site.
+//
+// Provenance: ALTTPR shop room_id/door_id pairs from
+// `../alttp_vt_randomizer/app/Region/Standard/**/*.php` `new Shop(...)`
+// 4th/5th constructor args; LOC bases from
+// `assets/rando/location_registry.yaml` ids 237..263. The (room, door)
+// disambiguation matches z3randomizer `shopkeeper.asm` SpritePrep_ShopKeeper
+// (ShopTable room+door match). Door values equal the vanilla overworld
+// entrance ids (kOverworld_Entrance_Id), which is exactly what
+// `which_entrance` holds while the player stands in the cave.
+//
+// NOTE: low-byte room is ambiguous (0x0F backs four DW shops; 0x12 backs DW
+// Death-Mountain + LW Lake-Hylia), so the door is the real key. Every entry's
+// door is globally unique, so the room field is documentation only — the
+// lookup keys on door, then sanity-checks room.
+typedef struct { uint8 room; uint8 door; uint16 loc_base; } RandoShopSlot;
+static const RandoShopSlot kRandoShopSlots[] = {
+  // room  door   base   shop (LOC ids base..base+2)
+  { 0x0F, 0x6F, 237 },  // Dark World Potion Shop          (237/238/239)
+  { 0x10, 0x75, 240 },  // Dark World Forest Shop          (240/241/242)
+  { 0x0F, 0x57, 243 },  // Dark World Lumberjack Hut       (243/244/245)
+  { 0x0F, 0x60, 246 },  // Dark World Village of Outcasts  (246/247/248)
+  { 0x0F, 0x74, 249 },  // Dark World Lake Hylia Shop      (249/250/251)
+  { 0x12, 0x6E, 252 },  // Dark World Death Mountain Shop  (252/253/254)
+  { 0xFF, 0x00, 255 },  // Light World Death Mountain Shop (255/256/257)
+  { 0x1F, 0x46, 258 },  // Light World Kakariko Shop       (258/259/260)
+  { 0x12, 0x58, 261 },  // Light World Lake Hylia Shop     (261/262/263)
+};
+
+static uint16 shop_lookup(uint8 room, uint8 entrance, uint8 pos) {
+  if (pos > 2) return 0xFFFFu;  // shops have exactly 3 slots
+  for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
+    if (kRandoShopSlots[i].door == entrance && kRandoShopSlots[i].room == room) {
+      return (uint16)(kRandoShopSlots[i].loc_base + pos);
+    }
+  }
+  return 0xFFFFu;  // not a known shop slot — vanilla item grants
+}
+
+uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
+                         uint8 vanilla_lttp_code) {
+  uint16 loc_id = shop_lookup(room, entrance, pos);
+  if (loc_id == 0xFFFFu) return vanilla_lttp_code;  // not mapped — vanilla
+  // Vanilla registry id is not threaded through the shop receipt path; pass
+  // 0xFFFF so Rando_DispatchVanillaGrant treats the slot as "always overridden
+  // when present in the table" and falls back to the vanilla LttP code when the
+  // slot is absent (non-Retro seeds) — identical to the chest-dispatch contract.
+  return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
+}
+// === Phase B sprite/shop dispatch: end ===
+
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's cached
 // reachability. Phase A0 stub: increment the counter. The tracker (task 10.2)
