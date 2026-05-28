@@ -584,7 +584,52 @@ void Module05_LoadFile() {  // 828136
   // through slot reload.
   (void)Rando_TryGrantStartingInventory(NULL);
 
-  if (savegame_is_darkworld) {
+  // Phase B post-escape S&Q respawn fix. A non-Standard rando slot starts
+  // post-escape (sram_progress_indicator == 2): the Hyrule Castle escape never
+  // happens, but the HC interior / sewers are still physically reachable. If
+  // the player saves-and-quits while standing in an escape-only spawn region,
+  // the vanilla escape story-beat sprites may have written an escape-only value
+  // into the persisted respawn pointer `which_starting_point` (cell = 2, post-
+  // uncle sewers = 3, post-throne sewers = 4, Old-Man escort = 5) and/or left
+  // Zelda as a persisted follower. On reload Module05 would then drop the player
+  // back into the sealed escape with no Zelda to push the throne — a hard trap,
+  // since there is no longer any exit (matching the playtest symptom). The
+  // only safe spawn points are the spawn-select menu locations (Link's House 0,
+  // Sanctuary 1, Mountain Cave 6). Under an active rando slot that is already
+  // post-escape, sanitize any escape-only respawn pointer back to Sanctuary and
+  // clear a stale escape follower so reload routes through the normal
+  // post-escape spawn-select instead of the sealed escape area. Standard is
+  // untouched (its escape is real and progress climbs through it normally).
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      sram_progress_indicator >= 2) {
+    uint8 sp = which_starting_point;
+    if (sp != 0 && sp != 1 && sp != 6) {
+      // rando-exempt: post-escape respawn sanitize — redirect an escape-only
+      // spawn pointer to Sanctuary so S&Q can't trap the player in the sealed
+      // HC escape. Not an item grant.
+      which_starting_point = 1;  // Sanctuary
+      if (follower_indicator == 1)  // Zelda mid-escape follower
+        follower_indicator = 0;
+    }
+  }
+
+  // Phase B Inverted runtime: an Inverted rando slot bakes
+  // savegame_is_darkworld=0x40 into a *fresh* save (see select_file.c's
+  // world-state start-SRAM block). Vanilla's DW-outdoors load path below
+  // hard-spawns at the fixed mirror-exit overworld screen (dungeon_room_index
+  // 32) using cached DW exit/scroll state from a prior legitimate DW visit —
+  // state a fresh Inverted save does not have. The result is an invalid
+  // overworld spawn where Link is uncontrollable. ALTTPR instead starts
+  // non-Standard saves at a real entrance (initsramtable.asm
+  // InitStartingEntrance = Sanctuary) and applies the DW world flag at runtime
+  // (darkworldspawn.asm DoWorldFix), routing through the normal spawn-select.
+  // Mirror that here: for an active Inverted slot, fall through to the same
+  // post-escape spawn-select prompt the Open/LW path uses (main_module_index
+  // 27 / Module1B_SpawnSelect), which respawns at a valid entrance
+  // (Sanctuary / Link's House / Mountain Cave) while keeping the DW flag set.
+  bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
+                        (Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */);
+  if (savegame_is_darkworld && !rando_inverted) {
     if (player_is_indoors) {
       LoadDungeonRoomRebuildHUD();
       return;
