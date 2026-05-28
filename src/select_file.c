@@ -2593,7 +2593,13 @@ static void CycleRow(int row, int delta) {
       if (n < 0) n = kPreset__Count - 1;
       if (n >= kPreset__Count) n = 0;
       g_settings_preset_index = (uint8)n;
+      // HINTS is a UI-scoped axis (defaulted ON in SelectFile_Settings_Activate),
+      // not a preset axis. Settings_ApplyPreset runs Settings_SetDefaults which
+      // resets hints to OFF; preserve the user's HINTS choice across a preset
+      // cycle so cycling PRESET doesn't silently turn hints off.
+      uint8 saved_hints = s->hints;
       Settings_ApplyPreset((SettingsPreset)g_settings_preset_index, s);
+      s->hints = saved_hints;
       break;
     }
     case kRow_WorldState: {

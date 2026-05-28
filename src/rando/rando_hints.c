@@ -15,11 +15,12 @@
 //     in a stable format; ALTTPR uses Location::getHint() with
 //     per-location flavor text from `Text.php`. Translation is mechanical
 //     once we own the text-engine intercept (#85).
-//   - Wire `Rando_RemapTeleMsg` into the runtime message-engine read
-//     path. Without that, the hints we generate are visible in the
-//     spoiler only — telepathic tiles in-game still play vanilla
-//     dialogue. The dispatch wiring is the playtest-gated piece per
-//     the `logic_vs_runtime_gap` memo.
+//   - `Rando_RemapTeleMsg` is a vestigial stub from an earlier design and
+//     is NOT on the live path. The runtime intercept is wired directly:
+//     `Text_LoadCharacterBuffer` (messaging.c) calls
+//     `Rando_RenderHintMessage` before the vanilla dialogue decode, so a
+//     read telepathic tile shows the generated hint in-game (not just in
+//     the spoiler) whenever the slot was generated with HINTS on.
 //   - Joke-hint fallback from ALTTPR's `strings/hint.txt` (60+
 //     entries). Currently fills the 15 slots regardless; a future
 //     pass can swap in joke text for slots where no interesting
