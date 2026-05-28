@@ -4,6 +4,7 @@
 - [ ] 1.2 Grep `src/messaging.c` for the highest currently-used dialogue ID. Carve a dynamic range above it per design.md D2; record in `audit.md §"Hint dialogue ID range"`.
 - [ ] 1.3 Verify hint NPC sprite handler locations in `src/sprite_main.c`: Sahasrahla telepathic, storyteller (which shrine?), bookshelf interaction handler, Murahdahla.
 - [ ] 1.4 Verify per-dialogue text buffer length in `src/messaging.c`. Hint text generator must fit within this cap.
+- [ ] 1.5 **Vanilla-NPC hint redirect audit** (per spec Requirement "Vanilla NPC hint redirects"). Sweep `assets/dialogue.txt` for entries that name a specific item from `assets/rando/item_registry.yaml` *together with* a location string (e.g., "in the house of books in the village"). Anchor case already identified: dialogue **294** = Aginah → Book of Mudora (vanilla Library). For each additional match, record `(dialogue_id, npc, referenced_item, vanilla_location_phrase, sprite-handler file:line)` in `audit.md §"Vanilla NPC hint redirects"`. Each confirmed match feeds a redirect entry that flows through the same dynamic-dialogue-ID path as telepathic tiles (§4). Discard candidates whose "location" phrasing is generic flavor (e.g., "somewhere in Hyrule") rather than a vanilla-spoiler.
 
 ## 2. New module skeleton
 

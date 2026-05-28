@@ -41,3 +41,24 @@ Each source's hint-text format SHALL be derived from `../alttp_vt_randomizer/app
 #### Scenario: Non-hunt goals omit Murahdahla
 - **WHEN** a seed has `settings.goal ∉ {triforce-hunt, ganon-hunt}` and `settings.hints != off`
 - **THEN** the spoiler `hints` array does NOT contain a `RandoHintNpc_Murahdahla` entry (the goal has no Triforce pieces to hint at)
+
+### Requirement: Vanilla NPC hint redirects
+
+A subset of vanilla NPC dialogue spoils the vanilla *location* of a specific named item. Under randomization the referenced item is shuffled, so the vanilla line becomes misleading. The randomizer SHALL, when `kFeatures1_RandomizerActive` is set and `settings.hints != off`, replace the location-referencing portion of each such NPC's dialogue with a hint that names the *randomized* `LOC_*` of the referenced item, routed through the same dynamic-dialogue-ID path used for telepathic tiles (per Requirement "Hint generation pipeline").
+
+**Anchor case (verified 2026-05-27)** — Aginah in Aginah's Cave (`Sprite_Aginah` handler at `src/sprite_main.c:6661`; dialogue-seen flag at `src/sprite_main.c:6528`). Dialogue ID **294** in `assets/dialogue.txt` reads in part: *"It should be in the house of books in the village[...] You must get it!"* — a location spoiler for the Book of Mudora at its vanilla Library slot. Under randomization this text SHALL be regenerated to point at the slot's actual `LOC_*` for `ITEM_BookOfMudora`.
+
+> **Stub status**: a deeper audit of `assets/dialogue.txt` for OTHER vanilla NPCs that name a specific item plus its location is REQUIRED before apply-time. Each match becomes a candidate redirect entry. Audit owner: apply-time. Candidate sweep targets (to be confirmed/discarded during the audit, NOT load-bearing): dwarven smiths (sword tempering), Library NPCs (Book interaction flavor), the desert hint NPC, and any dialogue that string-matches an item name from `assets/rando/item_registry.yaml`. See `tasks.md §1.5`.
+
+#### Scenario: Aginah redirects to randomized Book location
+- **WHEN** a seed is generated with `kFeatures1_RandomizerActive` set and `settings.hints != off`
+- **THEN** dialogue ID 294 (Aginah) is served from the dynamic-hint table; the rendered text references the randomized `LOC_*` of `ITEM_BookOfMudora` instead of the vanilla Library
+- **AND** the spoiler `hints` array contains an entry whose `source` identifies the Aginah redirect
+
+#### Scenario: Vanilla redirects gated by hints axis
+- **WHEN** a seed has `settings.hints == off`
+- **THEN** vanilla-NPC redirects do NOT activate; Aginah and other vanilla hint NPCs play their original (now-misleading) dialogue — opt-in spoiler-free run
+
+#### Scenario: Vanilla mode preserves byte-identical dialogue
+- **WHEN** `kFeatures1_RandomizerActive` is clear
+- **THEN** dialogue dispatch for vanilla hint NPCs is byte-identical to upstream zelda3; no dynamic-table lookup occurs
