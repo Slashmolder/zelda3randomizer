@@ -325,6 +325,8 @@ seconds locally) and the bumper is idempotent.
 For maintainers: real-world examples of when to bump and what
 shifts as a result.
 
+Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGeneratorVersion`); recent bumps including the post-phase-b-merge regen at v32 are tracked in the manifest commit history. The case studies below show the bump *pattern* — see `git log -- src/rando/rando.h tests/rando_corpus/manifest.yaml` for the canonical bump history.
+
 | Version | Change | Corpus impact |
 |---|---|---|
 | 12→13 | Slice 2 Standard EP YAML promoted from inverted-only | 11 placement_digests + 13 sphere_digests changed (EP-region-only); 28 unchanged. See `27b52dd` |
@@ -332,6 +334,7 @@ shifts as a result.
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
+| 17→32 | Phase-b merge cumulative — slice 4 trick predicates, slice 5 hints generator, slice 7+8 boss/drop algorithms, inverted parity translation, audit-fix passes | 55/55 corpus regenerated (`baa393b`); most defaults inert per the `kgenver_inert_change_exception` invariant but several intermediate bumps shifted Retro/Inverted digests. See `git log v17..v32 -- src/rando/ assets/rando/` |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

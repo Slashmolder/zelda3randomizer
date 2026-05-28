@@ -22,23 +22,22 @@ Hint generation SHALL be deterministic: the same `(share_string, generator_versi
 
 ### Requirement: Hint source NPCs
 
-The randomizer SHALL support hint generation for four ALTTPR-canonical hint sources:
+The randomizer SHALL support hint generation for the ALTTPR-canonical hint sources plus fork-specific extensions:
 
-1. **Sahasrahla telepathic tiles** — light-world early-game psychic-talk tiles (one per region in vanilla; this change retains the vanilla count).
-2. **Storyteller** — hint NPCs that appear in shrines.
-3. **Bookshelves** — book-of-mudora-driven hints (interaction with bookshelf sprites in dungeons).
-4. **Murahdahla** — dark-world Triforce-Hunt hint NPC.
+1. **15 telepathic tiles** (ALTTPR-canonical) — per `app/Services/HintService.php:59-75`, the upstream ships exactly 15 telepathic-tile sources (NOT one per region — there are duplicates at Ice Palace and Tower of Hera). The list is positionally stable: Eastern Palace, Tower of Hera Floor 4, Spectacle Rock, Swamp Entrance, Thieves Town Upstairs, Misery Mire, Palace of Darkness, Desert Bonk Torch Room, Castle Tower, Ice Large Room, Turtle Rock, Ice Entrance, Ice Stalfos Knights Room, Tower of Hera Entrance, South-East Darkworld Cave.
+2. **Murahdahla** — static per-goal text line from `app/Randomizer.php:1029`. Emitted on `goal ∈ {triforce-hunt, ganon-hunt}` as a region summary of where Triforce pieces are placed.
+3. **Fork extensions** (NOT in ALTTPR upstream) — Storyteller (Sprite_28_DarkWorldHintNPC) + 3 Fortune Tellers (Kakariko, Dark World, Lake Hylia). Spoiler-JSON keys are prefixed `fork_` so ALTTPR-diff-ability is preserved for the core 16 sources.
+
+Earlier drafts of this requirement listed Sahasrahla, Storyteller, Bookshelves, and Murahdahla as the four ALTTPR-canonical sources; that was inaccurate per `design.md §57.1` translation review. ALTTPR has no Sahasrahla hint source distinct from the telepathic tile near Sahasrahla; Bookshelf hints were considered for this fork and dropped (poor discoverability + thematic dilution).
 
 Each source's hint-text format SHALL be derived from `../alttp_vt_randomizer/app/Services/HintService.php` (177 lines) and `../alttp_vt_randomizer/app/Text.php` (1110 lines) with per-line citations recorded in `audit.md §"Hint provenance"`.
 
-For Triforce Hunt seeds, Murahdahla SHALL surface Triforce-piece locations. Exact hint count and per-sphere grouping deferred to apply-time PHP translation.
-
-> **Stub status**: per-source-NPC hint-count and text-format details deferred.
+> **Stub status**: ALTTPR-line-by-line text-format fidelity deferred. The simplified `"<item> is at <location>"` format is the apply-time baseline; richer per-location flavor text follows in a follow-up commit alongside the runtime-message-engine intercept (#85).
 
 #### Scenario: Triforce Hunt forces Murahdahla active
-- **WHEN** a seed has `settings.goal == triforce-hunt` and `settings.hints != off`
-- **THEN** the Murahdahla source is active; the spoiler `hints.murahdahla` array is populated with at least one entry per Triforce-piece location
+- **WHEN** a seed has `settings.goal ∈ {triforce-hunt, ganon-hunt}` and `settings.hints != off`
+- **THEN** the Murahdahla source is active; the spoiler `hints` array contains an entry for `RandoHintNpc_Murahdahla` whose text is a region summary of where Triforce-piece placements live
 
-#### Scenario: Non-Triforce-Hunt may omit Murahdahla
-- **WHEN** a seed has `settings.goal != triforce-hunt` and `settings.hints != off`
-- **THEN** Murahdahla generation MAY produce an empty entry (no Triforce pieces to hint at); behavior is documented in design.md
+#### Scenario: Non-hunt goals omit Murahdahla
+- **WHEN** a seed has `settings.goal ∉ {triforce-hunt, ganon-hunt}` and `settings.hints != off`
+- **THEN** the spoiler `hints` array does NOT contain a `RandoHintNpc_Murahdahla` entry (the goal has no Triforce pieces to hint at)
