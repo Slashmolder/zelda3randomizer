@@ -60,7 +60,7 @@ locations:
     type: Chest
     vanilla_item: SmallKey_HyruleCastleTower
     dungeon_item_class: small_key
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(SmallKey_HyruleCastleTower)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(SmallKey_HyruleCastleTower)"
     source: "app/Region/Standard/HyruleCastleTower.php:58-60"
 
   # HCT - Agahnim (php:62-68): can_complete; prize_location uses same predicate.
@@ -74,5 +74,5 @@ locations:
     region: HyruleCastleTower
     type: Prize_Event
     vanilla_item: DefeatAgahnim
-    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND HAS_ITEM(Lamp) AND HasSword(1)"
+    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HasSword(1)"
     source: "app/Region/Standard/HyruleCastleTower.php:62-68 (can_complete + prize)"

@@ -235,9 +235,14 @@ locations:
   # edge) is also satisfied in-region. The simpler conjunct that always
   # gates this chest is BigKeyD7 (the room past the Big-Key door); the
   # second disjunct adds Lamp+Somaria for the lower-route variant.
+  # Slice 4 §7 (round-5 audit follow-up): Inverted TR's Crystaroller Lamp
+  # gate is `item.require.Lamp`-driven per PHP Inverted/TurtleRock.php:131,
+  # so it should bypass via dark-room-nav. Standard TR's Crystaroller has
+  # the Lamp disjunct dropped entirely as a Phase A collapse — no
+  # equivalent bypass exists there.
   - id: "Turtle Rock - Crystaroller Room"
     region: TurtleRock_Lobby
-    can_reach: "HAS_ITEM(BigKey_TurtleRock) OR (HAS_ITEM(Lamp) AND HAS_ITEM(CaneOfSomaria))"
+    can_reach: "HAS_ITEM(BigKey_TurtleRock) OR ((HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(CaneOfSomaria))"
     source: "app/Region/Inverted/TurtleRock.php:128-133"
 
   # TR - Eye Bridge - Bottom Left (Inverted php:135-142):

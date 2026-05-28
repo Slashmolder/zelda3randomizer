@@ -40,7 +40,7 @@
 #       * region.wildCompasses / region.wildMaps in Boss (php:62-66) —
 #         default false → guards collapse to TRUE.
 #       * item.require.Lamp (php:49, 58) — defaults to 1, so the test is
-#         has(Lamp, 1) = HAS_ITEM(Lamp).
+#         has(Lamp, 1) = (HAS_ITEM(Lamp) OR CanDarkRoomNav()).
 #       * hasSword() bunny-revive shorthand: Phase A drops the trick-only
 #         disjuncts; what remains of the "bunny-state OK" gate is
 #         `hasSword() OR MoonPearl`. NOTE: `$items->hasSword()` here is the
@@ -79,9 +79,12 @@ edges:
   # `RescueZelda` in this override — the parent's `has('RescueZelda')`
   # (Standard php:108) is wholly replaced. Per trust-the-code rule,
   # RescuedZelda is NOT a requirement here.)
+  # Slice 4 §7 surfaces the PHP `(MoonPearl | canBunnyRevive | canOWYBA+bottle)`
+  # bunny-state triplet. canDungeonRevive and canSuperBunny+Mirror branches
+  # in PHP stay dropped — no CanDungeonRevive / CanSuperBunny macros.
   - from: LightWorld_NorthEast
     to: EasternPalace
-    predicate: "HAS_ITEM(MoonPearl)"
+    predicate: "HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()"
     source: "app/Region/Inverted/EasternPalace.php:69-77 (can_enter closure)"
 
 locations:
@@ -94,34 +97,35 @@ locations:
 
   # Compass Chest (Inverted/EasternPalace.php:23-30): the bunny-state gate
   # alone. (No `has(BigKeyP1)` like Big Chest; no Lamp like Big Key Chest.)
+  # Slice 4 §7 surfaces canBunnyRevive + canOWYBA+bottle via the macros.
   - id: "Eastern Palace - Compass Chest"
     region: EasternPalace
-    can_reach: "HasSword(1) OR HAS_ITEM(MoonPearl)"
+    can_reach: "HasSword(1) OR HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()"
     source: "app/Region/Inverted/EasternPalace.php:23-30"
 
   # Big Chest (Inverted/EasternPalace.php:32-40): bunny-state gate AND BigKey.
   - id: "Eastern Palace - Big Chest"
     region: EasternPalace
-    can_reach: "(HasSword(1) OR HAS_ITEM(MoonPearl)) AND HAS_ITEM(BigKey_EasternPalace)"
+    can_reach: "(HasSword(1) OR HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) AND HAS_ITEM(BigKey_EasternPalace)"
     source: "app/Region/Inverted/EasternPalace.php:32-40"
 
   # Big Key Chest (Inverted/EasternPalace.php:42-50): bunny-state AND Lamp.
   - id: "Eastern Palace - Big Key Chest"
     region: EasternPalace
-    can_reach: "(HasSword(1) OR HAS_ITEM(MoonPearl)) AND HAS_ITEM(Lamp)"
+    can_reach: "(HasSword(1) OR HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav())"
     source: "app/Region/Inverted/EasternPalace.php:42-50"
 
   # Boss (Inverted/EasternPalace.php:52-67). Phase A collapse:
   #   canShootArrows(world)                                  [→ CanShootArrowsL1()]
   #   AND (canDungeonRevive || canBunnyRevive+revive ||
   #        canOWYBA+bottle || MoonPearl)                      [→ MoonPearl]
-  #   AND (has(Lamp, 1) || (advanced AND FireRod))            [→ HAS_ITEM(Lamp)]
+  #   AND (has(Lamp, 1) || (advanced AND FireRod))            [→ (HAS_ITEM(Lamp) OR CanDarkRoomNav())]
   #   AND has(BigKeyP1)
   #   AND boss.canBeat (Armos Knights)
   #   AND wildCompasses/wildMaps guards                       [TRUE]
   - id: "Eastern Palace - Boss"
     region: EasternPalace
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    can_reach: "CanShootArrowsL1() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
     source: "app/Region/Inverted/EasternPalace.php:52-67"
 
   # Prize: inherited via parent's `prize_location->setRequirements($this->can_complete)`
@@ -129,7 +133,7 @@ locations:
   # The Boss predicate is the Inverted override above; Prize mirrors it.
   - id: "Eastern Palace - Prize"
     region: EasternPalace
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    can_reach: "CanShootArrowsL1() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
     source: "app/Region/Inverted/EasternPalace.php:52-67 (Prize = can_complete = Boss access)"
 
   # ===========================================================================

@@ -80,9 +80,12 @@ edges:
   #   AND (MagicMirror || <canOneFrameClipUW trick chain>)         [→ MagicMirror]
   #   AND South-LW->canEnter                                       [→ source region]
   # Phase A surviving: Flippers AND MoonPearl AND MagicMirror.
+  # Slice 4 §7 surfaces the PHP bunny-state OR triplet on the MoonPearl
+  # gate. canSuperBunny+Mirror and canOneFrameClipUW alt-mirror remain
+  # dropped (no macros for canSuperBunny / alt-mirror-clip composition).
   - from: LightWorld_South
     to: SwampPalace
-    predicate: "HAS_ITEM(Flippers) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(MagicMirror)"
+    predicate: "HAS_ITEM(Flippers) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) AND HAS_ITEM(MagicMirror)"
     source: "app/Region/Inverted/SwampPalace.php:132-155 (can_enter closure)"
 
 locations:

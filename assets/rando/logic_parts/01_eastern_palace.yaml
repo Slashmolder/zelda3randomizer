@@ -47,7 +47,7 @@ edges:
     # Boss-room access: arrows (Armos Knights), light (Lamp; PHP's FireRod
     # alternative is gated behind itemPlacement=='advanced' which Phase A
     # drops per audit §0.10.2), and the Big Key.
-    predicate: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace)"
+    predicate: "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace)"
     source: "app/Region/Standard/EasternPalace.php:56 (boss can_complete closure)"
 
 locations:
@@ -84,7 +84,7 @@ locations:
     # Dark room — needs the Lamp. PHP's FireRod-substitute branch
     # (`itemPlacement === 'advanced' && FireRod`) is Phase B; defaults
     # drop the substitute branch per audit §0.10.2.
-    can_reach: "HAS_ITEM(Lamp)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav())"
     source: "app/Region/Standard/EasternPalace.php:76-78"
 
   - id: "Eastern Palace - Map Chest"
@@ -107,12 +107,12 @@ locations:
     region: EasternPalace_PastArmos
     type: Drop
     vanilla_item: BossHeartContainer
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    can_reach: "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
     source: "app/Region/Standard/EasternPalace.php:84-105"
 
   - id: "Eastern Palace - Prize"
     region: EasternPalace_PastArmos
     type: Prize_Pendant
     vanilla_item: Prize_GreenPendant
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    can_reach: "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
     source: "app/Region/Standard/EasternPalace.php:58, 84-105 (Prize = Boss can_complete)"

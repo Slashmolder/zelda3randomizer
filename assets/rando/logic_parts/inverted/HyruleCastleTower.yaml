@@ -75,7 +75,7 @@ locations:
   # Inherited unchanged.
   - id: "Castle Tower - Dark Maze"
     region: HyruleCastleTower
-    can_reach: "HAS_ITEM(Lamp) AND HAS_ITEM(SmallKey_HyruleCastleTower)"
+    can_reach: "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(SmallKey_HyruleCastleTower)"
     source: "app/Region/Standard/HyruleCastleTower.php:58-60 (inherited)"
 
   # HCT - Agahnim (Standard php:62-68): can_complete; prize_location uses
@@ -89,5 +89,5 @@ locations:
   # can_enter was overridden by Inverted.
   - id: "Agahnim"
     region: HyruleCastleTower
-    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND HAS_ITEM(Lamp) AND HasSword(1)"
+    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HasSword(1)"
     source: "app/Region/Standard/HyruleCastleTower.php:62-68 (can_complete + prize, inherited)"

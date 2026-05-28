@@ -68,9 +68,15 @@ edges:
   #        || canOneFrameClipOW                            [FALSE]
   #        || (canSuperSpeed AND canSpinSpeed))            [FALSE]
   # Surviving: CanMeltThings(world) AND HAS_ITEM(Flippers).
+  # Slice 4 §7 surfaces the PHP trick disjuncts (canFakeFlipper,
+  # canBootsClip+Boots, canOneFrameClipOW). The canFakeFlipper PHP
+  # branch has an inner bunny sub-chain which is dropped here for
+  # macro simplicity — the conservative widening is harmless under
+  # defaults (CanFakeFlippers = FALSE). canSuperSpeed+canSpinSpeed
+  # and canOneFrameClipUW lack macros — documented drops.
   - from: LightWorld_South
     to: IcePalace_Lobby
-    predicate: "CanMeltThings(world) AND HAS_ITEM(Flippers)"
+    predicate: "CanMeltThings(world) AND (HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Inverted/IcePalace.php:22-44 (can_enter closure)"
 
 locations: []

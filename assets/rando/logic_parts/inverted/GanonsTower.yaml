@@ -99,7 +99,7 @@ edges:
   # No RescuedZelda gate (the Inverted override drops it from the Standard).
   - from: LightWorld_NorthEast
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(MoonPearl) AND HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)"
+    predicate: "(HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) AND HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)"
     source: "app/Region/Inverted/GanonsTower.php:466-491 (can_enter closure)"
 
 locations:
@@ -115,22 +115,22 @@ locations:
   # The bunny-bypass disjunct collapses to MoonPearl after Phase A drops.
   - id: "Ganon's Tower - DMs Room - Top Left"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:23-34"
 
   - id: "Ganon's Tower - DMs Room - Top Right"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:36-47"
 
   - id: "Ganon's Tower - DMs Room - Bottom Left"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:49-60"
 
   - id: "Ganon's Tower - DMs Room - Bottom Right"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:62-73"
 
   # GT - Randomizer Room x4 (Inverted php:75-157):
@@ -140,22 +140,22 @@ locations:
   # Phase A: drop placement-pinned branch → KeyA2>=4.
   - id: "Ganon's Tower - Randomizer Room - Top Left"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:75-94"
 
   - id: "Ganon's Tower - Randomizer Room - Top Right"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:96-115"
 
   - id: "Ganon's Tower - Randomizer Room - Bottom Left"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:117-136"
 
   - id: "Ganon's Tower - Randomizer Room - Bottom Right"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:138-157"
 
   # GT - Firesnake Room (Inverted php:159-180):
@@ -166,7 +166,7 @@ locations:
   # Phase A: drop the location-pinned branch → KeyA2>=3.
   - id: "Ganon's Tower - Firesnake Room"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:159-180"
 
   # GT - Map Chest (Inverted php:182-209):
@@ -183,7 +183,7 @@ locations:
   # → Phase A drops to TRUE (no fill restriction).
   - id: "Ganon's Tower - Map Chest"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     always_allow: "OP_ITEM_IS(SmallKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3)"
     source: "app/Region/Inverted/GanonsTower.php:182-209"
 
@@ -194,7 +194,7 @@ locations:
   # setFillRules (php:226-228): item != BigKeyA2 — can't place own BigKey here.
   - id: "Ganon's Tower - Big Chest"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND ((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND ((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     can_place: "NOT OP_ITEM_IS(BigKey_GanonsTower)"
     source: "app/Region/Inverted/GanonsTower.php:211-228"
 
@@ -220,14 +220,14 @@ locations:
   # emit only the Inverted-explicit predicate.
   - id: "Ganon's Tower - Bob's Chest"
     region: GanonsTower_Lobby
-    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND HAS_ITEM(MoonPearl)"
+    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:230-242"
 
   # GT - Tile Room (Inverted php:244-254):
   #   CaneOfSomaria AND MoonPearl.
   - id: "Ganon's Tower - Tile Room"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:244-254"
 
   # GT - Compass Room x4 (Inverted php:256-335):
@@ -237,22 +237,22 @@ locations:
   # Phase A: drop placement-pinned branch → KeyA2>=4.
   - id: "Ganon's Tower - Compass Room - Top Left"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:256-275"
 
   - id: "Ganon's Tower - Compass Room - Top Right"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:277-296"
 
   - id: "Ganon's Tower - Compass Room - Bottom Left"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:298-315"
 
   - id: "Ganon's Tower - Compass Room - Bottom Right"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:317-335"
 
   # GT - Big Key Chest + Big Key Room - Left/Right (Inverted php:337-381):
@@ -262,17 +262,17 @@ locations:
   #   AND MoonPearl
   - id: "Ganon's Tower - Big Key Chest"
     region: GanonsTower_Lobby
-    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() AND HAS_ITEM(MoonPearl)"
+    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:337-351"
 
   - id: "Ganon's Tower - Big Key Room - Left"
     region: GanonsTower_Lobby
-    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() AND HAS_ITEM(MoonPearl)"
+    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:353-366"
 
   - id: "Ganon's Tower - Big Key Room - Right"
     region: GanonsTower_Lobby
-    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() AND HAS_ITEM(MoonPearl)"
+    can_reach: "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR (HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:368-381"
 
   # GT - Mini Helmasaur Room - Left/Right (Inverted php:383-417):
@@ -282,13 +282,13 @@ locations:
   # setFillRules (php:397-399 / 415-417): item != BigKeyA2 — can't place own BigKey here.
   - id: "Ganon's Tower - Mini Helmasaur Room - Left"
     region: GanonsTower_Lobby
-    can_reach: "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) AND HAS_ITEM(MoonPearl)"
+    can_reach: "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     can_place: "NOT OP_ITEM_IS(BigKey_GanonsTower)"
     source: "app/Region/Inverted/GanonsTower.php:383-399"
 
   - id: "Ganon's Tower - Mini Helmasaur Room - Right"
     region: GanonsTower_Lobby
-    can_reach: "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) AND HAS_ITEM(MoonPearl)"
+    can_reach: "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     can_place: "NOT OP_ITEM_IS(BigKey_GanonsTower)"
     source: "app/Region/Inverted/GanonsTower.php:401-417"
 
@@ -298,7 +298,7 @@ locations:
   # setFillRules (php:433-435): item != BigKeyA2.
   - id: "Ganon's Tower - Pre-Moldorm Chest"
     region: GanonsTower_Lobby
-    can_reach: "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) AND HAS_ITEM(MoonPearl)"
+    can_reach: "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     can_place: "NOT OP_ITEM_IS(BigKey_GanonsTower)"
     source: "app/Region/Inverted/GanonsTower.php:419-435"
 
@@ -310,7 +310,7 @@ locations:
   # setFillRules (php:453-456): item != KeyA2 AND item != BigKeyA2.
   - id: "Ganon's Tower - Moldorm Chest"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND CanKillLanmolas(world) AND CanKillMoldorm() AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND CanKillLanmolas(world) AND CanKillMoldorm() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     can_place: "NOT OP_ITEM_IS(SmallKey_GanonsTower) AND NOT OP_ITEM_IS(BigKey_GanonsTower)"
     source: "app/Region/Inverted/GanonsTower.php:437-456"
 
@@ -318,7 +318,7 @@ locations:
   #   can_complete = canEnter AND Moldorm-Chest-canAccess AND boss->canBeat(Aga2)
   - id: "Agahnim 2"
     region: GanonsTower_Lobby
-    can_reach: "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND CanKillLanmolas(world) AND CanKillMoldorm() AND CanKillAgahnim2() AND HAS_ITEM(MoonPearl)"
+    can_reach: "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) AND CanKillLanmolas(world) AND CanKillMoldorm() AND CanKillAgahnim2() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())"
     source: "app/Region/Inverted/GanonsTower.php:458-464 (can_complete = Moldorm Chest + Aga2 beat)"
 
 macros_notes: |
