@@ -1558,17 +1558,77 @@ extern void Link_ReceiveItem(uint8 item, int chest_position);
 extern uint8 g_ram[];
 
 bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
-  if (settings == NULL) return false;
+  // `settings` MAY be NULL — production callers (e.g., the Module05_LoadFile
+  // wiring) don't have the full RandoSettings struct on slot-reload because
+  // the sidecar slot persists only `settings_hash`, not the canonical 28-byte
+  // settings blob (open TODO in `Rando_ActivateSidecarSlot`). When NULL, this
+  // function still performs the placement-based escape-ammo grant (doesn't
+  // need world_state); the world_state-dependent Inverted branch is skipped.
+  // CLI generation paths that DO have settings should pass them.
   if (g_rando_slot_active == 0) return false;
   if (g_rando_starting_inventory_granted != 0) return false;
 
-  // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents.
-  if (settings->world_state == kWorldState_Inverted) {
+  // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents. Skipped when
+  // settings is NULL — Inverted-on-slot-reload needs world_state persisted
+  // through the sidecar (separate fix; see TODO above).
+  if (settings != NULL && settings->world_state == kWorldState_Inverted) {
     Link_ReceiveItem(0x1f, 0);  // Moon Pearl (registry id 39, vanilla dispatch 0x1f)
     Link_ReceiveItem(0x1a, 0);  // Magic Mirror (registry id 36, vanilla dispatch 0x1a)
   }
 
-  // Standard: no pre-grant (uncle's slot handles it via §6 dispatch).
+  // Escape-ammo pre-grant. Prevents impossible-seed cases where the sphere-0
+  // weapon needs ammo the player doesn't start with (bow/no-arrows,
+  // FireRod/no-magic, bombs-only/no-bombs). This port diverges from ALTTPR by
+  // treating four chests as sphere-0 (Link's House, Uncle, HC Map Chest,
+  // Secret Passage — see `Place_AssumedFill`'s sphere-0 constraint), so the
+  // inspection scans all four rather than only Uncle's slot.
+  //
+  // Applied in ALL world-states. Standard mode needs it for HC escape combat;
+  // Open/Inverted/Retro don't have escape but the grant is harmless (slightly
+  // generous starting ammo). Keying on world_state would require settings,
+  // which isn't available on slot-reload (see TODO above).
+  //
+  // TODO(escape-fill v2): replace this one-shot pre-grant with a faithful
+  // port of ALTTPR's `World::setEscapeFills` (in `app/World.php`). That
+  // version hooks Uncle's death, Zelda's cell, and Sanctuary mantle to refill
+  // ammo on each respawn during escape, and exposes a `rom.EscapeAssist`
+  // toggle for infinite ammo during the escape state. This stopgap grants
+  // once at game start, so dying mid-escape leaves the player without refill.
+  // Refill counts (70/0x80/50) mirror ALTTPR's `Rom.php` EscapeRefills.Uncle.*
+  // defaults — keep them in sync with the v2 implementation.
+  if (g_active_placement != NULL) {
+    static const uint16 kEscapeSlots[] = {
+      LOC_Link_s_House,
+      LOC_Link_s_Uncle,
+      LOC_Hyrule_Castle_Map_Chest,
+      LOC_Secret_Passage,
+    };
+    bool grant_arrows = false, grant_magic = false, grant_bombs = false;
+    for (uint16 i = 0; i < g_active_placement->count; i++) {
+      uint16 loc = g_active_placement->entries[i].location_id;
+      uint16 item = g_active_placement->entries[i].item_id;
+      bool in_escape_slot = false;
+      for (size_t s = 0; s < sizeof(kEscapeSlots) / sizeof(kEscapeSlots[0]); s++) {
+        if (loc == kEscapeSlots[s]) { in_escape_slot = true; break; }
+      }
+      if (!in_escape_slot) continue;
+      switch (item) {
+        case ITEM_Bow: case ITEM_ProgressiveBow:
+          grant_arrows = true; break;
+        case ITEM_FireRod: case ITEM_CaneOfSomaria: case ITEM_CaneOfByrna:
+          grant_magic = true; break;
+        case ITEM_Bombs1: case ITEM_Bombs3: case ITEM_Bombs10:
+          grant_bombs = true; break;
+      }
+    }
+    // Direct cell writes (offset-pattern per top-of-block note re: variables.h).
+    // 0xF373 = link_magic_filler, 0xF375 = link_bomb_filler, 0xF376 = link_arrow_filler.
+    // The HUD tick (src/hud.c) drains each filler into its live count over frames.
+    if (grant_arrows) g_ram[0xF376] = 70;
+    if (grant_magic)  g_ram[0xF373] = 0x80;
+    if (grant_bombs)  g_ram[0xF375] = 50;
+  }
+
   // Open / Retro: no pre-grant by default; future hero-mode (Phase B) may
   // pre-grant a starting bottle, hearts, etc.
 

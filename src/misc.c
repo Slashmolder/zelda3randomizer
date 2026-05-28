@@ -2,6 +2,11 @@
 #include "variables.h"
 #include "features.h"
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
+
+// Forward-declared here to avoid pulling rando_placement.h into misc.c.
+// NULL `settings` is supported (used by the Module05_LoadFile call below).
+struct RandoSettings;
+bool Rando_TryGrantStartingInventory(const struct RandoSettings *settings);
 #include "hud.h"
 #include "dungeon.h"
 #include "overworld.h"
@@ -569,6 +574,16 @@ void Module05_LoadFile() {  // 828136
   sprite_gfx_subset_3 = 70;
   word_7E02CD = 0x200;
   virq_trigger = 48;
+
+  // Rando starting-inventory grant. Self-gates on `g_rando_slot_active` and
+  // `g_rando_starting_inventory_granted`, so vanilla mode is unaffected and
+  // load-existing-slot doesn't re-grant. NULL settings is intentional —
+  // sidecar slots don't carry the full settings blob, so this call only
+  // triggers the placement-based escape-ammo grant. The Inverted
+  // Moon-Pearl/Mirror branch is inert here until world_state is persisted
+  // through slot reload.
+  (void)Rando_TryGrantStartingInventory(NULL);
+
   if (savegame_is_darkworld) {
     if (player_is_indoors) {
       LoadDungeonRoomRebuildHUD();
