@@ -23,10 +23,16 @@
 #include "../variables.h"  // g_ram, overworld_screen_index, save_ow_event_info, etc.
 
 static inline void OWW_WriteTile(uint16 pos, uint16 tile) {
-  // pos is the WRAM low address ($7E0000+pos); g_ram models $7E-based WRAM, and
-  // the map16 buffer sits at g_ram+0x2000 (dung_bg2). Mask to the WRAM low bank
-  // so a stray high bit can never write outside g_ram[].
-  *(uint16 *)(g_ram + (pos & 0x1FFFF)) = tile;
+  // pos is the WRAM low address ($7E0000+pos); the map16 buffer (dung_bg2) is
+  // g_ram[0x2000..0x5FFF]. CONFINE the write to that region: every legitimate
+  // overlay position is in 0x2xxx-0x3Cxx, but pos is attacker-uncontrolled data
+  // and a uint16 reaches into SRAM (g_ram[0xF000+]) and other live state. A
+  // transcription bug or a stripe/RLE entry missing its terminator could
+  // otherwise corrupt the save. Clamping makes the worst case a recoverable
+  // visual glitch (wrong map16 tile) instead of state loss.
+  if (pos < 0x2000 || pos >= 0x6000)
+    return;
+  *(uint16 *)(g_ram + pos) = tile;
 }
 
 void Overworld_ApplyInvertedTiles(void) {
