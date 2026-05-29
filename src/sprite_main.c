@@ -11254,7 +11254,14 @@ void Sprite_73_UncleAndPriest(int k) {  // 86bfe0
 }
 
 void SpritePrep_UncleAndPriest_bounce(int k) {  // 86bfe5
-  if (BYTE(dungeon_room_index) == 18) {
+  // Sprite 0x73 (Priest/Uncle) spawns in EXACTLY three rooms (verified against
+  // the dungeon room YAMLs): 0x012 Sanctuary, 0x104 Link's house (opening
+  // wake-up uncle), 0x055 sewers (dying uncle / "Link's Uncle" item location,
+  // handled by the else branch). Dispatch on the FULL 16-bit dungeon_room_index,
+  // never BYTE(dungeon_room_index): the low-byte form made 0x104 collide with a
+  // nonexistent "0x004" room, which is how the non-Standard HC-escape
+  // suppression wrongly despawned the opening uncle and softlocked the wake-up.
+  if (dungeon_room_index == 0x012) {
     Priest_SpawnMantle(k);
     if (sram_progress_indicator >= 3)
       sram_progress_flags |= 2;
@@ -11287,20 +11294,15 @@ void SpritePrep_UncleAndPriest_bounce(int k) {  // 86bfe5
     Sprite_SetY(k, Sprite_GetY(k) + kUncleAndSage_Y[j]);
     sprite_ignore_projectile[k]++;
     byte_7FFE01 = 0;
-  } else if (BYTE(dungeon_room_index) == 4) {
-    // NOTE: BYTE(dungeon_room_index)==4 matches BOTH the sewers passage room
-    // (0x004, the dying-uncle / Uncle_InPassage escape beat) AND Link's house
-    // (0x104, the opening wake-up uncle) — same low byte. The HC-escape
-    // suppression for non-Standard seeds must apply ONLY to the sewers uncle:
-    // despawning the Link's-house opening uncle softlocks the wake-up sequence
-    // (player_sleep_in_bed_state never advances → Link sleeps forever), which
-    // hit every non-Standard seed since those run the intro at progress=0.
-    // Vanilla despawns either uncle once sram_progress_flags bit 0x10 (uncle
-    // left house) is set; the rando suppression only extends that to the
-    // sewers uncle. See Rando_SuppressHyruleCastleEscape.
-    bool sewers_escape_uncle = (dungeon_room_index != 0x104);
-    if (!(sram_progress_flags & 0x10) &&
-        !(sewers_escape_uncle && Rando_SuppressHyruleCastleEscape()))
+  } else if (dungeon_room_index == 0x104) {
+    // Link's house — the opening wake-up uncle (Uncle_AtHouse). NO rando
+    // escape-suppression here: this uncle must spawn in ALL world states that
+    // run the intro (progress=0), or the wake-up softlocks. HC-escape
+    // re-engagement is suppressed at the REAL escape sites — the
+    // Uncle_InPassage write-gate (else branch) and Module05_LoadFile — not by
+    // touching the opening uncle. Vanilla behavior: nudge into position until
+    // the uncle has left the house (progress bit 0x10), then despawn.
+    if (!(sram_progress_flags & 0x10))
       sprite_x_lo[k] += 8;
     else
       sprite_state[k] = 0;
