@@ -18,12 +18,14 @@
 /saves/sram.dat
 /saves/sram.bak
 /saves/sram_rando.dat
+/saves/rando_window.ini
 # Rando spoiler files (regenerated on every Generate; per-user content).
 /spoilers/
 /zelda3
 __pycache__
 /src/*.o
 /src/rando/*.o
+/src/rando/rando_window/*.o
 /src/rando/vanilla_assets_hash.h
 # Codegen outputs from assets/rando_logic_gen.py — regenerated as a pre-build
 # step by Make / MSBuild / Switch Makefile. Per tasks.md §3.5 / §3.6 / §6.3 / §9.4b.
@@ -36,6 +38,8 @@ __pycache__
 # CLI test outputs from --generate-seed runs.
 /out/
 /third_party/sha256/*.o
+/third_party/imgui/*.o
+/third_party/imgui/backends/*.o
 /*.exe
 /*.out
 /snes/*.o
@@ -44,6 +48,7 @@ __pycache__
 /zelda3_assets.dat
 /SDL2.dll
 /zelda3.*.ini
+/imgui.ini
 /zelda3.wiki
 /sprites-gfx
 /glsl-shaders

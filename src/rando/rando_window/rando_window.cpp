@@ -752,6 +752,10 @@ void RandoWindow_Init(SDL_Window *window, SDL_GLContext gl_context) {
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
+  // Don't let ImGui auto-write its own imgui.ini in the user's run dir — our
+  // single full-window panel has no layout worth persisting, and window geometry
+  // is persisted via SDL through saves/rando_window.ini (P5).
+  ImGui::GetIO().IniFilename = nullptr;
   // Apply the persisted theme (default dark). g_rando_window_prefs is populated
   // by Config_LoadAuxIniFile before RandoWindow_Init in main.c; it defaults to
   // dark_theme=true if no sidecar was found.
