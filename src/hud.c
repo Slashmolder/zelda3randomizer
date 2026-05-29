@@ -1884,6 +1884,9 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   int n = (int)(sizeof(kHudItemBoxGfxPtrs) / sizeof(kHudItemBoxGfxPtrs[0]));
   if (n > kRandoIconCount) n = kRandoIconCount;
   for (int slot = 0; slot < n; slot++) {
+    // kHudItemEmpty is a single-element array (no [1] tier) and is never drawn —
+    // skip it so we don't read past the object (audit R2 MED).
+    if (slot == kRandoIcon_Empty) continue;
     const ItemBoxGfx *icon = &kHudItemBoxGfxPtrs[slot][1];  // [0]=empty, [1]=have
     for (int q = 0; q < 4; q++) {  // 2x2 quad: TL,TR,BL,BR
       uint16 w = icon->v[q];
