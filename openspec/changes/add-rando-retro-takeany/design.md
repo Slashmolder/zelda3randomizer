@@ -36,7 +36,7 @@ End-to-end (ALTTPR build-time → z3randomizer runtime):
 - **A1. Per-seed overworld entrance redirect** — re-point an active take-any cave's OW door to a host-room entrance, while preserving the source door for disambiguation.
 - **A2. Take-any presentation** — in the host room, present the take-any reward(s) (an old-man / shopkeeper) instead of the vanilla general store, granting **free**.
 - **A3. Persistent per-cave "taken" bit** — survive save/reload; non-farmable.
-- **A4. Dispatch + disambiguation** — `(host_room, source_door) → LOC_id`, granting the placed item via the existing rando dispatch.
+- **A4. Dispatch + disambiguation** — `(host_room, door_id) → LOC_id`, granting the placed item via the existing rando dispatch.
 - **A5. Generator** — `LOCTYPE_TakeAny`, the 31 cave location entries, the deterministic `randomCollection` selection, kGeneratorVersion bump, corpus regen.
 
 ---
@@ -44,36 +44,37 @@ End-to-end (ALTTPR build-time → z3randomizer runtime):
 ## 2. Architecture decisions (locked unless review overturns)
 
 ### D1 — Runtime redirect: in-place `which_entrance` override + captured source door (NOT asset-table mutation)
-Hook `Overworld_UseEntrance` at `src/overworld.c:3340`. **The disambiguation key is the cave's vanilla door id `= kOverworld_Entrance_Id[lx]`** (review correction: NOT `lx+1` — `lx` is a position-table row index, the *value* is the door id, already `X+1` in ALTTPR terms). This door id is what the redirect must capture *before* it overwrites `which_entrance` (the redirect makes `which_entrance` the host entrance, destroying the source identity):
+Hook `Overworld_UseEntrance` at `src/overworld.c:3340`. **The disambiguation key is the OW door row-index `lx`** (= ALTTPR's `X` in `LDA $1BBB73,X`), captured as `door_id = lx + 1` (= ALTTPR `PreviousOverworldDoor`). This is the bulletproof identity: verified against all 31 caves, `door_id − 1 == (write_addr − 0xDBB73) == X`, so `lx == door_id − 1`. We key on `lx` (the table *row*), **not** on `kOverworld_Entrance_Id[lx]` (the vanilla *destination* entrance — which may collide across caves that share a fairy-pond room, and is the wrong quantity for take-anys even though it happens to be the right key for the already-working regular-shop path). `lx` is in scope at the hook (`int lx = LookupInOwEntranceTab2(pos)`, `overworld.c:3329`).
 
 ```c
-uint8 src_door = kOverworld_Entrance_Id[lx];   // = ALTTPR PreviousOverworldDoor (X+1)
-which_entrance = src_door;                      // vanilla default
+// at overworld.c:3340, lx already computed at :3329
+which_entrance = kOverworld_Entrance_Id[lx];        // vanilla default (unchanged)
+g_rando_takeany_door_id = 0;
 if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
     Rando_GetActiveWorldState() == kWorldState_Retro) {
-  uint8 host = Rando_TakeAnyHostEntrance(src_door);  // 0 if src_door is not an *active* take-any this seed
+  uint8 host = Rando_TakeAnyHostByDoorIndex(lx);    // active take-any with (door_id-1)==lx? else 0
   if (host) {
-    g_rando_takeany_source_door = src_door;          // capture BEFORE override (disambiguation key)
-    which_entrance = host;                            // land in host room
-  } else {
-    g_rando_takeany_source_door = 0;
+    g_rando_takeany_door_id = (uint8)(lx + 1);      // = ALTTPR door_id; disambiguation key
+    which_entrance = host;                           // land in host room
   }
 }
 ```
-The fall-hole path (`Overworld_GetPitDestination`, `overworld.c:3274`) is *not* a take-any source and needs no hook (verify in R1: no take-any cave is a pit). `g_rando_takeany_source_door` must reset to 0 on any non-take-any entrance so a stale value can't mis-key a later normal-shop visit (task R2.1).
+The fall-hole path (`Overworld_GetPitDestination`, `overworld.c:3274`) is *not* a take-any source and needs no hook (verify in R1: no take-any cave is a pit). `g_rando_takeany_door_id` resets to 0 on every entrance so a stale value can't mis-key a later normal-shop visit (task R2.1). Host-room dispatch then matches on `(dungeon_room_index, g_rando_takeany_door_id)`.
 
-> **Rationale vs ALTTPR's asset-table patch.** ALTTPR mutates the redirect table at `0xDBB73+door-1`. We could equivalently mutate the loaded `kOverworld_Entrance_Id` asset copy at game start. We reject that: (a) it loses the source door (post-redirect `which_entrance` = host, so disambiguation would need a *separate* PreviousOverworldDoor RAM byte the fork doesn't maintain); (b) in-place override at the single read site is smaller, reversible, and keeps all take-any logic in `src/rando/`. Capturing the door id at the override site gives us the disambiguation key for free.
+> **Empirical gate (R1):** the chain `fork lx == ALTTPR X` rests on `LookupInOwEntranceTab2` returning the same row index ALTTPR's OW scan uses. Verified by arithmetic + faithful-port assumption; R1 forces one known cave (20 Rupee Cave, door 0x7B → lx 0x7A → host 0x58/room 0x112) and confirms in-game that the player lands in the host room and `door_id` round-trips before wiring all 31.
+
+> **Rationale vs ALTTPR's asset-table patch.** ALTTPR mutates the redirect table at `0xDBB73+door-1`. We could equivalently mutate the loaded `kOverworld_Entrance_Id` asset copy at game start. We reject that: (a) it loses the source door (post-redirect `which_entrance` = host, so disambiguation would need a *separate* RAM byte the fork doesn't maintain); (b) in-place override at the single read site is smaller, reversible, and keeps all take-any logic in `src/rando/`. Capturing `lx+1` at the override site gives the disambiguation key for free.
 
 ### D1b — Host-room dispatch collision (review BLOCKER): the host rooms ARE randomized regular shops
 Critical interaction the first draft under-specified: each host room is *itself* an active Retro regular-shop slot. After redirect `which_entrance` becomes the host entrance, e.g. `0x58` → room 0x112 = **Light World Lake Hylia Shop** (`kRandoShopSlots {0x12,0x58,261}`, `rando.c:498`); likewise `0x60`→0x10F (DW shops, low 0x0F) and `0x46`→0x11F (LW Kakariko Shop, slot 258). So a take-any visitor lands in the *same room+entrance* as a normal shopper, and:
 - `SpritePrep_Shopkeeper` (`sprite_main.c:7927-7975`) spawns the 3 regular shop items keyed purely on room low-byte (0x0F→j0, 0x12→j5, 0x1F→j8).
 - `ShopItem_HandleReceipt` → `Rando_ShopDispatch(room, which_entrance, pos)` (`sprite_main.c:25937`) would match the regular shop LOC.
 
-**Therefore the take-any path must, when `g_rando_takeany_source_door != 0`:** (1) in `SpritePrep_Shopkeeper`, suppress the room-keyed regular-shop item spawns and instead spawn the take-any reward item(s) at price 0; (2) in `ShopItem_HandleReceipt`, short-circuit *before* `Rando_ShopDispatch` and route to `Rando_TakeAnyDispatch` instead. The disambiguation is `source_door`, never the (shared) host entrance. This collision is an explicit R1 acceptance criterion.
+**Therefore the take-any path must, when `g_rando_takeany_door_id != 0`:** (1) in `SpritePrep_Shopkeeper`, suppress the room-keyed regular-shop item spawns and instead spawn the take-any reward item(s) at price 0; (2) in `ShopItem_HandleReceipt`, short-circuit *before* `Rando_ShopDispatch` and route to `Rando_TakeAnyDispatch` instead. The disambiguation is `door_id`, never the (shared) host entrance. This collision is an explicit R1 acceptance criterion.
 
 ### D2 — Presentation: extend the host room's shopkeeper into a take-any mode
-When `g_rando_takeany_source_door != 0` and `(dungeon_room_index, source_door)` maps to an active take-any LOC, the host room must show the take-any reward(s), free, and suppress the vanilla general-store inventory. The host rooms already carry a `BB-ShopMan` sprite. Two candidate implementations — decide in the runtime spike (task R1):
-- **D2a (preferred): take-any branch on the existing shop-item path.** Reuse `Sprite_BB_Shopkeeper` / `ShopItem_*` + the existing `Rando_ShopDispatch` shape, adding a take-any sub-path that (i) skips the rupee cost, (ii) grants via `Rando_DispatchVanillaGrant((host_room, source_door, pos)→LOC)`, (iii) sets the taken bit, (iv) hides slots when already taken. Lowest new-surface; reuses dispatch + receipt plumbing.
+When `g_rando_takeany_door_id != 0` and `(dungeon_room_index, door_id)` maps to an active take-any LOC, the host room must show the take-any reward(s), free, and suppress the vanilla general-store inventory. The host rooms already carry a `BB-ShopMan` sprite. Two candidate implementations — decide in the runtime spike (task R1):
+- **D2a (preferred): take-any branch on the existing shop-item path.** Reuse `Sprite_BB_Shopkeeper` / `ShopItem_*` + the existing `Rando_ShopDispatch` shape, adding a take-any sub-path that (i) skips the rupee cost, (ii) grants via `Rando_DispatchVanillaGrant((host_room, door_id, pos)→LOC)`, (iii) sets the taken bit, (iv) hides slots when already taken. Lowest new-surface; reuses dispatch + receipt plumbing.
 - **D2b (fallback): dedicated take-any sprite/handler** modelled on `Sprite_BottleVendor` (0x75, the existing two-item-choice + receipt sprite, `sprite_main.c:6328-6396`) if the general-store sprite can't be cleanly suppressed/re-skinned.
 
 The "old man" graphic (ALTTPR `shopkeeper='old_man'` → sprite 0xE2) is **cosmetic**; v1 may keep the general-store keeper graphic and still be functionally correct. Flagged as a polish item, not a correctness blocker.
@@ -118,18 +119,17 @@ Spot-checked rows (for review sanity only; not the source of truth):
 ```
 OW cave step
   └─ Overworld_UseEntrance (overworld.c:3340)
-       src_door = kOverworld_Entrance_Id[lx]   // NOT lx+1
-       Rando_TakeAnyHostEntrance(src_door):
-          active take-any this seed?  → host entrance + set g_rando_takeany_source_door
+       Rando_TakeAnyHostByDoorIndex(lx):       // key on row-index lx, NOT the destination value
+          active take-any this seed?  → host entrance + set g_rando_takeany_door_id = lx+1
        which_entrance := host
   └─ Dungeon load → host room (0x112 etc.), entrance-specific spawn
   └─ Shopkeeper prep in host room:
-       if g_rando_takeany_source_door && taken-bit clear:
+       if g_rando_takeany_door_id && taken-bit clear:
           present take-any reward(s) free (D2)
        else if taken-bit set: present nothing
        else: vanilla general store (non-take-any visitors)
   └─ Player touches reward:
-       Rando_TakeAnyDispatch(host_room, source_door, pos):
+       Rando_TakeAnyDispatch(host_room, door_id, pos):
           LOC = takeany_lookup(...)  →  Rando_DispatchVanillaGrant(LOC, …)
        free (no rupee charge); set taken-bit (D5)
 ```
@@ -164,9 +164,9 @@ This must be resolved before G-tasks touch the regular-shop pool, because it det
 
 ## 7. Risks
 
-- **R-keystone (entrance redirect / source-door):** D1 captures `src_door = kOverworld_Entrance_Id[lx]` (review-corrected from the wrong `lx+1`). The `door_id − 1` writes-offset is spot-checked on 4 caves but **not exhaustively verified across all 31** — G1 derives the table programmatically and asserts. Task R1 is a 1–2 cave runtime spike that MUST confirm: player lands in the host room, `src_door` round-trips, and `(room, source_door)` disambiguates — before wiring all 31.
-- **D1b host-room/regular-shop dispatch collision (BLOCKER):** each host room IS an active randomized regular shop (0x112=Lake Hylia 261, 0x10F=DW shops, 0x11F=Kakariko 258). The take-any path must suppress BOTH `SpritePrep_Shopkeeper`'s room-keyed spawns and `Rando_ShopDispatch`, gating on `g_rando_takeany_source_door != 0`. Disambiguation is `source_door`, never the (shared) host entrance. R1.1 acceptance.
-- **Normal-shop suppression:** the host rooms are real shops reachable by their *own* entrances (source_door==0). The take-any branch must fire ONLY when arriving via a take-any source door, never for a normal shopper.
+- **R-keystone (entrance redirect / door identity):** D1 keys on the OW row-index `lx` and captures `door_id = lx+1`. The `door_id − 1 == write_offset == lx` relation is now verified across **all 31** caves (not just spot-checks). Task R1 is a 1–2 cave runtime spike confirming `fork lx == ALTTPR X` in-game (player lands in host room, `door_id` round-trips) before wiring all 31.
+- **D1b host-room/regular-shop dispatch collision (BLOCKER):** each host room IS an active randomized regular shop (0x112=Lake Hylia 261, 0x10F=DW shops, 0x11F=Kakariko 258). The take-any path must suppress BOTH `SpritePrep_Shopkeeper`'s room-keyed spawns and `Rando_ShopDispatch`, gating on `g_rando_takeany_door_id != 0`. Disambiguation is the captured `door_id`, never the (shared) host entrance. R1.1 acceptance.
+- **Normal-shop suppression:** the host rooms are real shops reachable by their *own* entrances (door_id==0). The take-any branch must fire ONLY when arriving via a take-any source door, never for a normal shopper.
 - **Spec internal consistency:** the two ADDED spec files describe Fisher-Yates and an inaccurate regular-shop item list; V4 amends them to match the grounded mechanism (pick-without-replacement; TenBombs-only). Until then the change ships code contradicting its own spec.
 - **Corpus determinism:** D6 RNG ordering must be fixed and documented; any reordering silently changes every Retro digest.
 - **Playtest dependency:** A2/A3 are only fully validated in-game (the user's loop). Plan delivers a debug aid (force-activate a known cave) to make playtest deterministic.

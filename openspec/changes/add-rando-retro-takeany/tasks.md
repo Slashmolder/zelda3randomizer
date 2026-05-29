@@ -28,14 +28,14 @@ Conventions: `[ ]` todo, `[x]` done. Tasks gated `world_state == Retro`; non-Ret
 - [ ] G5 `--rando-selftest` passes; spoiler shows exactly the active take-any locations.
 
 ## 4. Runtime: keystone spike (de-risk BEFORE full wiring)
-- [ ] R1 Spike: hard-code ONE known cave (e.g. 20 Rupee Cave, door 0x7B → host 0x112) as a forced take-any behind a debug flag. Hook `Overworld_UseEntrance` (overworld.c:3340): capture `src_door = kOverworld_Entrance_Id[lx]` (NOT lx+1), override `which_entrance`. Confirm in-game: player lands in host room at sane spawn; `g_rando_takeany_source_door` round-trips.
+- [ ] R1 Spike: hard-code ONE known cave (20 Rupee Cave, door 0x7B → lx 0x7A → host 0x58/room 0x112) as a forced take-any behind a debug flag. Hook `Overworld_UseEntrance` (overworld.c:3340): detect on row-index `lx` (== door_id-1), capture `g_rando_takeany_door_id = lx+1`, override `which_entrance`. Confirm in-game: player lands in host room at sane spawn; `door_id` round-trips.
 - [ ] R1.1 **Host-room/regular-shop collision (BLOCKER acceptance):** host 0x112 IS the Lake Hylia Shop (slot 261). Confirm the take-any branch fires on `source_door != 0` and SUPPRESSES both the room-keyed `SpritePrep_Shopkeeper` spawns (sprite_main.c:7927-7975) and `Rando_ShopDispatch` (sprite_main.c:25937); and that a normal Lake Hylia Shop visit (own entrance, source_door==0) still shows the regular shop.
 - [ ] R1.2 Confirm no take-any cave is a fall-hole (Overworld_GetPitDestination path needs no hook).
 - [ ] R1.3 Decide D2a vs D2b based on spike findings.
 
 ## 5. Runtime: full wiring
 - [ ] R2 `Rando_TakeAnyHostEntrance(door_id)` + `takeany_lookup((room,source_door)→LOC)` tables in `src/rando/` (mirror `kRandoShopSlots`/`shop_lookup`), populated from the active set.
-- [ ] R2.1 Reset `g_rando_takeany_source_door = 0` on every non-take-any entrance (D1 hygiene).
+- [ ] R2.1 Reset `g_rando_takeany_door_id = 0` on every non-take-any entrance (D1 hygiene).
 - [ ] R3 Presentation (D2a/b): present reward(s) free; suppress regular-shop spawns AND `Rando_ShopDispatch` for take-any visitors (D1b); grant via `Rando_DispatchVanillaGrant`; skip rupee cost.
 - [ ] R3.1 Taken state via existing `g_rando_checked_bitmap` (D5): `Rando_MarkLocationChecked(loc)` on grant; on host-room load, if `Rando_IsLocationChecked(loc)` present nothing. No new persistence.
 - [ ] R4 Save/load: verify taken state survives slot reload (checked_bitmap already round-trips via rando_save.c:213,245-246 — confirm the take-any LOC ids are within the bitmap's covered range and reload-restored).

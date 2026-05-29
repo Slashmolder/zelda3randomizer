@@ -441,3 +441,114 @@ locations:
   # could be toggled.
   - { id: 264, name: "Capacity Upgrade - Bomb",  region: LightWorld_South, type: ShopUpgrade, vanilla_item: BombUpgrade5,  world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:69" }
   - { id: 265, name: "Capacity Upgrade - Arrow", region: LightWorld_South, type: ShopUpgrade, vanilla_item: ArrowUpgrade5, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:70" }
+
+  # ===========================================================================
+  # Phase B Slice 3b — Retro TakeAny cave locations (IDs 266..327)
+  #
+  # Per `openspec/changes/add-rando-retro-takeany/design.md`. ALTTPR declares
+  # 31 `Shop\TakeAny` (app/Region/Standard/**; Inverted declares 0). Each cave
+  # has TWO inventory slots (slot 0, slot 1) — modelled as two LOC ids per cave
+  # so the runtime `(room, door, pos)->loc_base+pos` dispatch works exactly like
+  # the 3a regular shops. Cave index = (id - 266) / 2; slot = (id - 266) % 2.
+  #
+  # PER-SEED ACTIVE SUBSET (Option B, design §D4): of the 31 caves, the placer
+  # selects 5 active per seed (Randomizer.php:716-735): 4 "potion" caves give
+  # BluePotion@slot0 + BossHeartContainer@slot1, and 1 "weapon" cave gives
+  # ProgressiveSword (or Rupee300 when mode.weapons in {swordless,vanilla})
+  # @slot0 only. So exactly 9 LOC ids emit per seed (4*2 + 1); the other 53 are
+  # NOT in the placement table. Selection is deterministic (Rando_TakeAnySelect,
+  # rng = seed ^ salt) — see src/rando/rando_placement.c.
+  #
+  # `vanilla_item` here is a NOMINAL fallback only: the placer assigns the real
+  # reward per role (BluePotion/BossHeart/sword/rupee) and pins it. Inactive
+  # caves never emit, active caves are always pinned, and these are retro-only,
+  # so the fallback is never reached at runtime.
+  #
+  # `region:` is descriptive only (codegen takes region binding from logic.yaml;
+  # TakeAny is REGION_OPTIONAL like Shop — gated by world_state_filter + the
+  # per-seed active gate, not by a region predicate).
+  #
+  # `door_id` (ALTTPR 5th ctor arg) is recorded in NOTES per cave; the runtime
+  # keys redirect/dispatch on it (door_id = overworld row-index lx + 1). The
+  # ROM-patch dest byte 0x58/0x60/0x46 -> host room 0x112/0x10F/0x11F.
+  # ===========================================================================
+
+  # Dark World Mire
+  - { id: 266, name: "Dark Desert Fairy - 0",                region: DarkWorld_Mire, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/Mire.php:37", notes: "door_id 0x56; dest 0x58/room 0x112" }
+  - { id: 267, name: "Dark Desert Fairy - 1",                region: DarkWorld_Mire, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/Mire.php:37", notes: "door_id 0x56" }
+  - { id: 268, name: "Dark Desert Hint - 0",                 region: DarkWorld_Mire, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/Mire.php:38", notes: "door_id 0x62; dest 0x58/room 0x112" }
+  - { id: 269, name: "Dark Desert Hint - 1",                 region: DarkWorld_Mire, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/Mire.php:38", notes: "door_id 0x62" }
+
+  # Dark World NorthEast
+  - { id: 270, name: "Dark Lake Hylia Fairy - 0",            region: DarkWorld_NorthEast, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:47", notes: "door_id 0x6D; dest 0x58/room 0x112" }
+  - { id: 271, name: "Dark Lake Hylia Fairy - 1",            region: DarkWorld_NorthEast, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:47", notes: "door_id 0x6D" }
+  - { id: 272, name: "East Dark World Hint - 0",             region: DarkWorld_NorthEast, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:48", notes: "door_id 0x69; dest 0x58/room 0x112" }
+  - { id: 273, name: "East Dark World Hint - 1",             region: DarkWorld_NorthEast, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:48", notes: "door_id 0x69" }
+  - { id: 274, name: "Palace of Darkness Hint - 0",          region: DarkWorld_NorthEast, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:49", notes: "door_id 0x68; dest 0x60/room 0x10F" }
+  - { id: 275, name: "Palace of Darkness Hint - 1",          region: DarkWorld_NorthEast, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthEast.php:49", notes: "door_id 0x68" }
+
+  # Dark World NorthWest
+  - { id: 276, name: "Dark Sanctuary Hint - 0",              region: DarkWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:46", notes: "door_id 0x5A; dest 0x58/room 0x112" }
+  - { id: 277, name: "Dark Sanctuary Hint - 1",              region: DarkWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:46", notes: "door_id 0x5A" }
+  - { id: 278, name: "Fortune Teller (Dark) - 0",            region: DarkWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:47", notes: "door_id 0x66; dest 0x60/room 0x10F" }
+  - { id: 279, name: "Fortune Teller (Dark) - 1",            region: DarkWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/NorthWest.php:47", notes: "door_id 0x66" }
+
+  # Dark World South
+  - { id: 280, name: "Archery Game (Take-Any) - 0",          region: DarkWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:44", notes: "door_id 0x59; dest 0x60/room 0x10F" }
+  - { id: 281, name: "Archery Game (Take-Any) - 1",          region: DarkWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:44", notes: "door_id 0x59" }
+  - { id: 282, name: "Bonk Fairy (Dark) - 0",                region: DarkWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:45", notes: "door_id 0x78; dest 0x58/room 0x112" }
+  - { id: 283, name: "Bonk Fairy (Dark) - 1",                region: DarkWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:45", notes: "door_id 0x78" }
+  - { id: 284, name: "Dark Lake Hylia Ledge Fairy - 0",      region: DarkWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:46", notes: "door_id 0x81; dest 0x58/room 0x112" }
+  - { id: 285, name: "Dark Lake Hylia Ledge Fairy - 1",      region: DarkWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:46", notes: "door_id 0x81" }
+  - { id: 286, name: "Dark Lake Hylia Ledge Hint - 0",       region: DarkWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:47", notes: "door_id 0x6A; dest 0x58/room 0x112" }
+  - { id: 287, name: "Dark Lake Hylia Ledge Hint - 1",       region: DarkWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:47", notes: "door_id 0x6A" }
+  - { id: 288, name: "Dark Lake Hylia Ledge Spike Cave - 0", region: DarkWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:48", notes: "door_id 0x7C; dest 0x58/room 0x112" }
+  - { id: 289, name: "Dark Lake Hylia Ledge Spike Cave - 1", region: DarkWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/South.php:48", notes: "door_id 0x7C" }
+
+  # Dark World Death Mountain West
+  - { id: 290, name: "Dark Death Mountain Fairy - 0",        region: DarkWorld_DeathMountain_West, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/DeathMountain/West.php:36", notes: "door_id 0x70; dest 0x58/room 0x112" }
+  - { id: 291, name: "Dark Death Mountain Fairy - 1",        region: DarkWorld_DeathMountain_West, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/DarkWorld/DeathMountain/West.php:36", notes: "door_id 0x70" }
+
+  # Light World South
+  - { id: 292, name: "20 Rupee Cave - 0",                    region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:57", notes: "door_id 0x7B; dest 0x58/room 0x112" }
+  - { id: 293, name: "20 Rupee Cave - 1",                    region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:57", notes: "door_id 0x7B" }
+  - { id: 294, name: "50 Rupee Cave - 0",                    region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:58", notes: "door_id 0x79; dest 0x58/room 0x112" }
+  - { id: 295, name: "50 Rupee Cave - 1",                    region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:58", notes: "door_id 0x79" }
+  - { id: 296, name: "Bonk Fairy (Light) - 0",               region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:59", notes: "door_id 0x77; dest 0x58/room 0x112" }
+  - { id: 297, name: "Bonk Fairy (Light) - 1",               region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:59", notes: "door_id 0x77" }
+  - { id: 298, name: "Desert Fairy - 0",                     region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:60", notes: "door_id 0x72; dest 0x58/room 0x112" }
+  - { id: 299, name: "Desert Fairy - 1",                     region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:60", notes: "door_id 0x72" }
+  - { id: 300, name: "Good Bee Cave (Take-Any) - 0",         region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:61", notes: "door_id 0x6B; dest 0x58/room 0x112" }
+  - { id: 301, name: "Good Bee Cave (Take-Any) - 1",         region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:61", notes: "door_id 0x6B" }
+  - { id: 302, name: "Lake Hylia Fortune Teller - 0",        region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:62", notes: "door_id 0x73; dest 0x46/room 0x11F" }
+  - { id: 303, name: "Lake Hylia Fortune Teller - 1",        region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:62", notes: "door_id 0x73" }
+  - { id: 304, name: "Light Hype Fairy - 0",                 region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:63", notes: "door_id 0x6C; dest 0x58/room 0x112" }
+  - { id: 305, name: "Light Hype Fairy - 1",                 region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:63", notes: "door_id 0x6C" }
+  - { id: 306, name: "Kakariko Gamble Game - 0",             region: LightWorld_South, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:64", notes: "door_id 0x67; dest 0x46/room 0x11F" }
+  - { id: 307, name: "Kakariko Gamble Game - 1",             region: LightWorld_South, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/South.php:64", notes: "door_id 0x67" }
+
+  # Light World NorthEast
+  - { id: 308, name: "Long Fairy Cave - 0",                  region: LightWorld_NorthEast, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthEast.php:44", notes: "door_id 0x55; dest 0x58/room 0x112" }
+  - { id: 309, name: "Long Fairy Cave - 1",                  region: LightWorld_NorthEast, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthEast.php:44", notes: "door_id 0x55" }
+  - { id: 310, name: "Lake Hylia Fairy - 0",                 region: LightWorld_NorthEast, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthEast.php:45", notes: "door_id 0x5E; dest 0x58/room 0x112" }
+  - { id: 311, name: "Lake Hylia Fairy - 1",                 region: LightWorld_NorthEast, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthEast.php:45", notes: "door_id 0x5E" }
+
+  # Light World NorthWest
+  - { id: 312, name: "Fortune Teller (Light) - 0",           region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:59", notes: "door_id 0x65; dest 0x46/room 0x11F" }
+  - { id: 313, name: "Fortune Teller (Light) - 1",           region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:59", notes: "door_id 0x65" }
+  - { id: 314, name: "Bush Covered House - 0",               region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:60", notes: "door_id 0x44; dest 0x46/room 0x11F" }
+  - { id: 315, name: "Bush Covered House - 1",               region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:60", notes: "door_id 0x44" }
+  - { id: 316, name: "Lost Woods Gamble - 0",                region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:61", notes: "door_id 0x3C; dest 0x58/room 0x112" }
+  - { id: 317, name: "Lost Woods Gamble - 1",                region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:61", notes: "door_id 0x3C" }
+  - { id: 318, name: "Lumberjack House - 0",                 region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:62", notes: "door_id 0x76; dest 0x46/room 0x11F" }
+  - { id: 319, name: "Lumberjack House - 1",                 region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:62", notes: "door_id 0x76" }
+  - { id: 320, name: "Snitch Lady East - 0",                 region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:63", notes: "door_id 0x3E; dest 0x46/room 0x11F" }
+  - { id: 321, name: "Snitch Lady East - 1",                 region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:63", notes: "door_id 0x3E" }
+  - { id: 322, name: "Snitch Lady West - 0",                 region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:64", notes: "door_id 0x3F; dest 0x46/room 0x11F" }
+  - { id: 323, name: "Snitch Lady West - 1",                 region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:64", notes: "door_id 0x3F" }
+  - { id: 324, name: "Bomb Hut - 0",                         region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:65", notes: "door_id 0x4A; dest 0x46/room 0x11F" }
+  - { id: 325, name: "Bomb Hut - 1",                         region: LightWorld_NorthWest, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/NorthWest.php:65", notes: "door_id 0x4A" }
+
+  # Light World Death Mountain East
+  - { id: 326, name: "Hookshot Fairy (Take-Any) - 0",        region: LightWorld_DeathMountain_East, type: TakeAny, vanilla_item: BluePotion,         world_state_filter: [retro], source: "app/Region/Standard/LightWorld/DeathMountain/East.php:47", notes: "door_id 0x50; dest 0x58/room 0x112" }
+  - { id: 327, name: "Hookshot Fairy (Take-Any) - 1",        region: LightWorld_DeathMountain_East, type: TakeAny, vanilla_item: BossHeartContainer, world_state_filter: [retro], source: "app/Region/Standard/LightWorld/DeathMountain/East.php:47", notes: "door_id 0x50" }
