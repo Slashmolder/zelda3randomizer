@@ -1102,8 +1102,11 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   out->by_item_id[ITEM_StartingHeart] = 3;  // baseline 3 hearts
   // RescuedZelda: pre-collected in non-Standard worlds; in Standard it is earned
   // at the castle escape (sram_progress_indicator >= 2 == Zelda at sanctuary).
-  bool rescued = (g_rando_active_world_state != (uint8)kWorldState_Standard) ||
-                 (sram_progress_indicator >= 2);
+  // Use the SAME world-state source the reachability graph walks (the recovered
+  // settings) so the event derivation can't diverge from the graph (audit LOW).
+  uint8 ws = g_rando_active_settings_valid ? g_rando_active_settings.world_state
+                                           : g_rando_active_world_state;
+  bool rescued = (ws != (uint8)kWorldState_Standard) || (sram_progress_indicator >= 2);
   if (rescued) out->by_item_id[ITEM_RescuedZelda] = 1;
   // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
   if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
@@ -1187,12 +1190,22 @@ void Rando_FillItemView(RandoItemView *out) {
   out->ether = link_item_ether_medallion != 0;
   out->quake = link_item_quake_medallion != 0;
 
-  // Shared-byte items, resolved via rando ownership state.
-  out->mushroom = Rando_MushroomHeld() || link_item_mushroom == 1;
-  out->powder = link_item_mushroom == 2;
-  uint8 fs = g_rando_flute_shovel_owned;
-  out->flute = (fs & kRandoFluteShovel_Flute) != 0;
-  out->shovel = (fs & kRandoFluteShovel_Shovel) != 0;
+  // Shared-byte items. With a rando slot active, true ownership is in rando
+  // state (the vanilla bytes are single slots that can't represent both). With
+  // no slot active that state isn't tracked, so fall back to the raw vanilla
+  // bytes for the informational view (audit LOW).
+  if (g_rando_slot_active) {
+    out->mushroom = Rando_MushroomHeld() || link_item_mushroom == 1;
+    out->powder = link_item_mushroom == 2;
+    uint8 fs = g_rando_flute_shovel_owned;
+    out->flute = (fs & kRandoFluteShovel_Flute) != 0;
+    out->shovel = (fs & kRandoFluteShovel_Shovel) != 0;
+  } else {
+    out->mushroom = link_item_mushroom == 1;
+    out->powder = link_item_mushroom == 2;
+    out->flute = link_item_flute >= 2;   // 0xF34C: 2=flute(inactive), 3=flute(active)
+    out->shovel = link_item_flute == 1;  // 1=shovel
+  }
 
   {
     uint8 bottles = 0;
