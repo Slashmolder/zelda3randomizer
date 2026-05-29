@@ -34,6 +34,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
+    # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
+    # "zelda3", which subprocess would PATH-search for (and miss on Linux/macOS,
+    # where cwd isn't on PATH). An absolute path runs the built binary directly;
+    # resolve(strict=False) leaves a not-yet-built path absolute so the scaffold
+    # branch below still treats an absent binary as a pass.
+    args.binary = args.binary.resolve()
+
     if not args.binary.exists():
         if not args.quiet:
             print(

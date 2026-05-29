@@ -72,6 +72,11 @@ def validate_entry(entry: dict, idx: int) -> list[str]:
 
 
 def run_activated(binary: Path, manifest: dict) -> int:
+    # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
+    # "zelda3" (pathlib strips the leading "./"), so subprocess would PATH-search
+    # for it and fail on Linux/macOS (cwd isn't on PATH). An absolute path runs
+    # the built binary directly.
+    binary = binary.resolve()
     if not binary.exists():
         print(f"run_rando_corpus: binary {binary} not found. Build first.")
         return 1
@@ -217,6 +222,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--binary", type=Path, default=find_binary_default())
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--schema-only", action="store_true",
+                        help="validate the manifest schema and exit 0 without "
+                             "launching the binary. Used by the no-build "
+                             "source-guards CI job; the determinism job runs the "
+                             "full corpus with --binary.")
     args = parser.parse_args(argv)
 
     data = load_manifest(args.manifest)
@@ -235,6 +245,15 @@ def main(argv: list[str]) -> int:
         for err in all_errors:
             print(f"  schema error: {err}")
         return 1
+
+    # Schema-only mode: the manifest validated cleanly above; stop before the
+    # binary-dependent run. Lets the no-build source-guards job gate manifest
+    # format without a compiled binary present.
+    if args.schema_only:
+        if not args.quiet:
+            print("run_rando_corpus: --schema-only — manifest schema OK, "
+                  "skipping binary run.")
+        return 0
 
     if not entries:
         if not args.quiet:
