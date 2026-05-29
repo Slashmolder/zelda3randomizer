@@ -204,18 +204,21 @@ window) the randomizer ships three rich, separate-OS-window trackers that
 auto-update from live game state — no RAM-watcher heuristics or emulator/tool
 desync, the headline advantage of a native port:
 
-- **Item Tracker** — a live grid of equipment levels, items, medallions,
-  consumables (mushroom/powder & flute/shovel resolved via the rando-aware
-  shared-byte ownership), bottle count, prizes, and hearts.
+- **Item Tracker** — a live grid of the **real HUD item icons** (decoded from the
+  game's 2bpp HUD graphics + palette into an RGBA atlas; dimmed when not owned,
+  with level/count overlays), plus per-dungeon small/big-key/map/compass tracking,
+  prizes, hearts, and magic. Consumables (mushroom/powder & flute/shovel) use the
+  rando-aware shared-byte ownership.
 - **Check Tracker** — every location grouped by region, tri-state
   **checked / available (reachable, unchecked) / locked**, with region counts, a
   summary + progress bar, filters (hide-checked, only-available, search), and an
   optional "show items" spoiler toggle (off by default, force-hidden for race
   seeds). This is the direct "what can I do right now given my items?" view.
-- **Map Tracker** — a region "logic map": overworld regions as status-coloured
-  pins on a Light/Dark canvas (hover for the region's check list), plus a dungeon
-  panel. Geographic pixel-accurate pins on the decoded in-game map graphic are a
-  documented follow-up.
+- **Map Tracker** — the **real light-world overworld map** (decoded from the
+  in-game Mode-7 map graphic) with status-coloured region pins overlaid (hover
+  for the region's check list); dark-world + dungeon regions are listed in a panel
+  below. The decoders are verified by dumping PNGs via the `--dump-overworld-map`
+  / `--dump-item-icons` dev flags.
 
 ### Architecture
 
@@ -237,15 +240,21 @@ desync, the headline advantage of a native port:
   buffer. Requires the format_version 2 settings blob (see *Save behavior*);
   absent → reachability suppressed.
 
-Switch keeps the in-game OAM-overlay trackers (`hud.c`); these ImGui windows are
-PC-only and additive. The OAM overlay and the ImGui windows coexist.
+On PC the legacy in-game OAM-overlay trackers (`hud.c`) are compiled out — the
+ImGui windows are the single tracker system, and the legacy toggle keys
+(`RandoToggleItemTracker` / `RandoToggleLocationTracker`) open the corresponding
+window. Switch (no native-window support) keeps the OAM overlay. Open the windows
+during play via `Ctrl+I` / `Ctrl+C` / `Ctrl+M` (default-bound) or from the
+settings window's **Trackers** tab.
 
-**Known limitations / follow-ups:** keysanity (shuffled dungeon-item) modes are
-not yet read from live `g_ram` into the reachability counts, so the Check/Map
+**Known limitations / follow-ups:** the dark-world map graphic decodes only its
+NW quadrant from the single asset (the in-game dark map is assembled via a
+separate NMI path), so the full dark-map background is a follow-up — dark-world
+regions use the panel for now; keysanity (shuffled dungeon-item) modes are not
+yet read from live `g_ram` into the reachability counts, so the Check/Map
 trackers under-report dungeon interiors under those non-default modes (default
-seeds are all-vanilla and fully correct); geographic map pins + per-location map
-coordinates; and per-window visibility/geometry persistence in
-`saves/rando_window.ini`.
+seeds are all-vanilla and fully correct); per-location geographic map pins; and
+per-window visibility/geometry persistence in `saves/rando_window.ini`.
 
 ## Audit comment convention (for contributors)
 
