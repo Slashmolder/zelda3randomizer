@@ -98,6 +98,16 @@ static uint64_t SplitMix64(uint64_t x) {
   return x ^ (x >> 31);
 }
 
+// A fresh UI-input seed. Mixes the high-res performance counter with a
+// monotonic salt so two rolls within the same counter tick still differ (e.g.
+// opening the window twice in quick succession). Pure generator INPUT — does
+// not touch determinism.
+static uint64 RollRandomSeed() {
+  static uint64 s_salt = 0;
+  s_salt += 0x1234567ull;
+  return SplitMix64((uint64)SDL_GetPerformanceCounter() ^ s_salt);
+}
+
 // Apply pending edits → refresh the bridge-derived hash + share string.
 static void Pending_Changed() { RandoWindowBridge_RecomputeDerived(); }
 
@@ -311,24 +321,22 @@ static void Panel_General() {
     HelpTooltip("Telepathic-tile hints.");
   }
 
-  // ---- Pinned / disabled axes (greyed + tooltip) ----
-  ImGui::SeparatorText("Pinned (Phase A)");
-  ImGui::BeginDisabled();
-  {
-    const char *logic_lbl = "NoGlitches";
-    ImGui::LabelText("Logic", "%s", logic_lbl);
-    ImGui::LabelText("Tricks", "%s", "none");
-    bool t = s->region_boss_hearts_in_pool != 0;
-    ImGui::Checkbox("Region boss hearts in pool", &t);
-    ImGui::LabelText("Pyramid bow upgrade", "%s", "Silvers");
+  // ---- Locked settings (informational; not yet configurable) ----
+  // Rendered as plain read-only text under a collapsed header rather than a row
+  // of disabled controls, which read as broken/confusing widgets.
+  if (ImGui::CollapsingHeader("Locked settings (fixed in this version)")) {
+    ImGui::TextDisabled("These axes aren't configurable yet — every seed uses these values:");
+    ImGui::BulletText("Logic: NoGlitches");
+    ImGui::BulletText("Tricks: none");
+    ImGui::BulletText("Region boss hearts in pool: %s",
+                      s->region_boss_hearts_in_pool ? "yes" : "no");
+    ImGui::BulletText("Pyramid bow upgrade: Silvers");
   }
-  ImGui::EndDisabled();
   HelpTooltip("pinned in Phase A");
 
-  // ---- Quality of Life (opt-in enhancement bits; not in the settings hash) ----
-  if (ImGui::CollapsingHeader("Quality of Life")) {
-    Panel_RecommendedFeatures();
-  }
+  // Quality-of-Life enhancement bits live in their own top-level tab
+  // (Panel_RecommendedFeatures), not here — they are opt-in and not part of the
+  // settings hash, so they don't belong among the core seed-defining axes.
 
   // ---- Display (window theme; persisted to the sidecar) ----
   ImGui::SeparatorText("Display");
@@ -344,29 +352,28 @@ static void Panel_General() {
   // ---- Seed ----
   ImGui::SeparatorText("Seed");
   {
-    // Decimal uint64 input. ImGui has no native u64 widget; use a text buffer
-    // and parse it back. Display the same value as 16-char hex alongside.
-    static char seed_buf[32];
+    // Hex uint64 input. ImGui has no native u64 widget; use a text buffer and
+    // parse it back. Hex is the natural representation for a 64-bit seed (and
+    // matches the share-string ethos); the decimal value is shown read-only
+    // below for reference.
+    static char seed_buf[20];
     static uint64 seed_buf_mirror = ~0ull;  // forces a re-format on first use
     if (seed_buf_mirror != b->seed_u64) {
-      snprintf(seed_buf, sizeof seed_buf, "%llu", (unsigned long long)b->seed_u64);
+      snprintf(seed_buf, sizeof seed_buf, "%016llx", (unsigned long long)b->seed_u64);
       seed_buf_mirror = b->seed_u64;
     }
-    if (ImGui::InputText("Seed (decimal)", seed_buf, sizeof seed_buf,
-                         ImGuiInputTextFlags_CharsDecimal)) {
+    if (ImGui::InputText("Seed (hex)", seed_buf, sizeof seed_buf,
+                         ImGuiInputTextFlags_CharsHexadecimal)) {
       unsigned long long v = 0;
-      if (sscanf(seed_buf, "%llu", &v) == 1) {
+      if (sscanf(seed_buf, "%llx", &v) == 1) {
         b->seed_u64 = (uint64)v;
         seed_buf_mirror = b->seed_u64;  // accept; don't reformat under the cursor
         changed = true;
       }
     }
-    // 16-char hex view of the seed (the integer's natural big-endian hex).
-    char seed_hex[17];
-    snprintf(seed_hex, sizeof seed_hex, "%016llx", (unsigned long long)b->seed_u64);
-    ImGui::Text("Seed (hex): %s", seed_hex);
+    ImGui::TextDisabled("decimal: %llu", (unsigned long long)b->seed_u64);
     if (ImGui::Button("New random seed")) {
-      b->seed_u64 = SplitMix64((uint64)SDL_GetPerformanceCounter());
+      b->seed_u64 = RollRandomSeed();
       seed_buf_mirror = ~0ull;  // force re-format from the new value
       changed = true;
     }
@@ -793,10 +800,11 @@ void RandoWindow_BeginFrame(void) {
   if (ImGui::Begin("Z3R Settings##main", nullptr, flags)) {
     const RandoWindowBridge *b = &g_rando_window_bridge;
     if (ImGui::BeginTabBar("##z3r_tabs")) {
-      if (ImGui::BeginTabItem("General"))   { Panel_General();   ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Dungeons"))  { Panel_Dungeons();  ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Shuffles"))  { Panel_Shuffles();  ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Asset Hash")){ Panel_AssetHash(); ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("General"))        { Panel_General();             ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Dungeons"))       { Panel_Dungeons();            ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Shuffles"))       { Panel_Shuffles();            ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Quality of Life")){ Panel_RecommendedFeatures(); ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Asset Hash"))     { Panel_AssetHash();           ImGui::EndTabItem(); }
       // Spoiler tab hidden entirely when the last generation was race-mode.
       if (!b->last_generated_race_mode) {
         if (ImGui::BeginTabItem("Spoiler")) { Panel_Spoiler(); ImGui::EndTabItem(); }
@@ -855,6 +863,12 @@ void RandoWindow_OpenForNewSlot(int slot_index) {
   // g_config here is safe and current. The UI edits only this snapshot; the game
   // thread applies it back to g_config.features0 inside the generate consumer.
   g_rando_window_bridge.pending_recommended_features0 = g_config.features0;
+  // Fresh random seed every time the window opens for a new slot, so "start a
+  // new seed" defaults to a NEW random seed rather than reusing the last one
+  // (the user can still type a specific seed or paste a share string, which
+  // overwrites this). Settings persist across opens; the seed does not.
+  g_rando_window_bridge.seed_u64 = RollRandomSeed();
+  RandoWindowBridge_RecomputeDerived();  // refresh share string for the new seed
   if (s_settings_window) {
     SDL_ShowWindow(s_settings_window);
     SDL_RaiseWindow(s_settings_window);

@@ -854,6 +854,30 @@ static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *conf
 // API contract these are callable before SDL_Init.
 static void MaybeRunBenchLogicAndExit(int argc, char **argv);
 
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+// Capture the live rando-window settings/seed/geometry/theme from the bridge +
+// window into g_rando_window_prefs and atomically write the sidecar. Called
+// after every successful Generate (so a later crash/softlock/kill can't lose
+// the settings the player just used) AND once more at clean shutdown. The
+// settings window must still be alive (RandoWindow_GetGeometry queries SDL).
+static void PersistRandoWindowState(void) {
+  Settings_CanonicalSerialize(&g_rando_window_bridge.pending,
+                              g_rando_window_prefs.settings_canonical);
+  g_rando_window_prefs.has_settings = true;
+  g_rando_window_prefs.last_seed_u64 = g_rando_window_bridge.seed_u64;
+  int gx, gy, gw, gh;
+  RandoWindow_GetGeometry(&gx, &gy, &gw, &gh);
+  if (gw > 0 && gh > 0) {
+    g_rando_window_prefs.window_x = gx;
+    g_rando_window_prefs.window_y = gy;
+    g_rando_window_prefs.window_w = gw;
+    g_rando_window_prefs.window_h = gh;
+    g_rando_window_prefs.has_geometry = true;
+  }
+  Config_SaveRandoWindowIni("saves/rando_window.ini");
+}
+#endif
+
 #undef main
 int main(int argc, char** argv) {
   argc--, argv++;
@@ -1404,6 +1428,10 @@ int main(int argc, char** argv) {
         RandoWindowBridge_StoreGenerated(&res.placement, NULL, res.race_mode);  // bridge copies
         free(res.placement.entries);                                            // free our owned copy
         RandoWindowBridge_SetGenerateResult(2, "");
+        // Persist the settings the player just generated with NOW (not only at
+        // exit) so a crash/softlock/kill can't revert them — makes settings
+        // sticky for the next seed.
+        PersistRandoWindowState();
       } else {
         RandoWindowBridge_SetGenerateResult(-1, err);
       }
@@ -1479,26 +1507,10 @@ int main(int argc, char** argv) {
   if (SDL_IsTextInputActive()) SDL_StopTextInput();
 
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
-  // P5 — persist the rando-window state to the sidecar before teardown. Capture
-  // the live settings (canonical bytes), seed, geometry, and theme from the
-  // bridge + window, then atomically write saves/rando_window.ini. The settings
-  // window is still alive here (RandoWindow_GetGeometry queries SDL directly).
-  Settings_CanonicalSerialize(&g_rando_window_bridge.pending,
-                              g_rando_window_prefs.settings_canonical);
-  g_rando_window_prefs.has_settings = true;
-  g_rando_window_prefs.last_seed_u64 = g_rando_window_bridge.seed_u64;
-  {
-    int gx, gy, gw, gh;
-    RandoWindow_GetGeometry(&gx, &gy, &gw, &gh);
-    if (gw > 0 && gh > 0) {
-      g_rando_window_prefs.window_x = gx;
-      g_rando_window_prefs.window_y = gy;
-      g_rando_window_prefs.window_w = gw;
-      g_rando_window_prefs.window_h = gh;
-      g_rando_window_prefs.has_geometry = true;
-    }
-  }
-  Config_SaveRandoWindowIni("saves/rando_window.ini");
+  // P5 — persist the rando-window state to the sidecar before teardown (same
+  // capture used after each successful Generate). The settings window is still
+  // alive here (RandoWindow_GetGeometry queries SDL directly).
+  PersistRandoWindowState();
 
   // Tear down the settings window unconditionally (NOT gated on enable_audio).
   RandoWindow_Shutdown();

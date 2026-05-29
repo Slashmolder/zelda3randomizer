@@ -66,8 +66,10 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->pieces_required = 20;
   s->pieces_placed = 30;
   // Phase B Slice 5/7/8 §66 — included in canonical serialization
-  // starting at kGeneratorVersion 14. Defaults are off.
-  s->hints = 0;
+  // starting at kGeneratorVersion 14. Hints default ON (the intended
+  // out-of-the-box experience — telepathic tiles give item hints);
+  // the shuffle axes default off.
+  s->hints = kHintsMode_On;
   s->boss_shuffle = 0;
   s->drop_shuffle = 0;
 }
@@ -211,11 +213,11 @@ void Settings_SelfCheck(void) {
   //   ws=0 goal=1 cg=7 ct=7 tricks=0 pool=1 logic=0 weapons=0 access=0
   //   bow=0 bossH=1 sk=0 bk=0 mp=0 cmp=0 prize=1 med=1 race=0
   //   pieces_req=20 (0x0014 LE) pieces_pl=30 (0x001e LE)
-  //   hints=0 boss_shuffle=0 drop_shuffle=0 pad pad pad
+  //   hints=1 boss_shuffle=0 drop_shuffle=0 pad pad pad
   static const uint8 kExpectedCanonical[kSettingsCanonicalLen] = {
     0x00, 0x01, 0x07, 0x07, 0x00, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01,
-    0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x01, 0x00,
     0x00, 0x00, 0x00, 0x00,
   };
   if (!settings_byte_eq(canonical, kExpectedCanonical, kSettingsCanonicalLen)) {
@@ -234,12 +236,12 @@ void Settings_SelfCheck(void) {
 
   uint8 hash[32];
   Settings_ComputeHash(&s, hash);
-  // SHA-256 of the kExpectedCanonical bytes (28 bytes, kGenVer 14).
+  // SHA-256 of the kExpectedCanonical bytes (28 bytes; hints=1 default).
   static const uint8 kExpectedHash[32] = {
-    0xdc, 0x50, 0x2f, 0x58, 0xf7, 0xd3, 0x1a, 0x3b,
-    0x40, 0xfc, 0xa2, 0xa3, 0xbc, 0xb1, 0xd1, 0x30,
-    0x25, 0x91, 0xfc, 0x11, 0x8e, 0xa0, 0x6f, 0x28,
-    0x6d, 0xca, 0x4d, 0x66, 0x34, 0x4b, 0xce, 0xbc,
+    0x44, 0x0f, 0x9d, 0x6c, 0x81, 0x00, 0x05, 0x41,
+    0xc5, 0x91, 0x6f, 0xa0, 0xc2, 0x5a, 0x55, 0x6c,
+    0xdf, 0x2f, 0x3f, 0xb0, 0xff, 0xad, 0x0c, 0x1e,
+    0xdf, 0xfe, 0x6d, 0xb4, 0x8b, 0x80, 0x77, 0x8f,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,
