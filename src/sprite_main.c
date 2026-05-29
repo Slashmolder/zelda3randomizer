@@ -7942,7 +7942,8 @@ void SpritePrep_Shopkeeper(int k) {  // 868bf1
     uint8 spawned = 0;
     for (uint8 pos = 0; pos < 2; pos++) {
       if (Rando_TakeAnyLiveSlot(room, g_rando_takeany_door_id, pos) != 0xFFFFu) {
-        ShopKeeper_SpawnShopItem(k, pos, 14);  // 14 = take-any item kind
+        // Per-item icon: 14 = heart (BossHeart), 15 = potion (BluePotion/generic).
+        ShopKeeper_SpawnShopItem(k, pos, Rando_TakeAnyDrawKind(g_rando_takeany_door_id, pos));
         spawned++;
       }
     }
@@ -25589,7 +25590,7 @@ void Sprite_BB_Shopkeeper(int k) {  // 9eeeef
   case 11: ShopItem_Arrows(k); break;
   case 12: ShopItem_Bombs(k); break;
   case 13: ShopItem_Bee(k); break;
-  case 14: ShopItem_TakeAny(k); break;  // Phase B Slice 3b — Retro take-any cave item
+  case 14: case 15: ShopItem_TakeAny(k); break;  // Phase B Slice 3b — take-any (14=heart,15=potion icon)
   }
 }
 
@@ -26031,11 +26032,12 @@ bool ShopItem_HandleCost(int amt) {  // 9ef39e
 }
 
 void SpriteDraw_ShopItem(int k) {  // 9ef4ce
-  // 8 kinds x 5 rows. Kinds 0..6 = subtype2 7..13 (vanilla shop items, with
-  // price digits). Kind 7 = subtype2 14 = Phase B Slice 3b take-any item: a
-  // price-less free-item icon (reuses the Heart-kind rows). The exact per-item
-  // take-any icon is a flagged cosmetic-polish item — function is unaffected.
-  static const DrawMultipleData kShopKeeper_ItemWithPrice_Dmd[40] = {
+  // 7 kinds x 5 rows. Kinds 0..6 = subtype2 7..13 (vanilla shop items). Within
+  // each kind the y:16 ext:0 rows are the PRICE digits and the ext:2 big tile
+  // is the item graphic (e.g. RedPotion: 0x0231/0x0213/0x0230 = "150", 0x02c0 =
+  // bottle). Phase B Slice 3b take-any items (subtype2 14/15) draw price-less
+  // per-item icons separately below, from those item tiles.
+  static const DrawMultipleData kShopKeeper_ItemWithPrice_Dmd[35] = {
     {-4, 16, 0x0231, 0},
     { 4, 16, 0x0213, 0},
     {12, 16, 0x0230, 0},
@@ -26071,13 +26073,25 @@ void SpriteDraw_ShopItem(int k) {  // 9ef4ce
     { 8, 16, 0x0230, 0},
     { 4,  8, 0x0ff4, 0},
     { 4, 11, 0x0338, 0},
-    // Kind 7 (subtype2 14) — take-any free item (Heart-kind rows, no price).
-    { 0, 16, 0x0231, 0},
-    { 0, 16, 0x0231, 0},
-    { 8, 16, 0x0230, 0},
-    { 4,  8, 0x0329, 0},
-    { 4, 11, 0x0338, 0},
   };
+  // Phase B Slice 3b — take-any per-item icon (price-less). Item tiles only:
+  //   kind 14 = heart  -> the Heart kind's item tiles (0x0329 / 0x0338)
+  //   kind 15 = potion -> RedPotion's item big-tile (0x02c0); also used for the
+  //                       weapon cave's sword/rupee (no sword tile in shop GFX).
+  // Both are present in every host room's GFX (those rooms sell RedPotion + a
+  // heart in vanilla). The "150"/"10" the player saw earlier was me drawing the
+  // price-digit rows; these draw only the item.
+  if (sprite_subtype2[k] >= 14) {
+    static const DrawMultipleData kTakeAnyHeart[2] = {
+      {4, 8, 0x0329, 0}, {4, 11, 0x0338, 0} };
+    static const DrawMultipleData kTakeAnyPotion[1] = {
+      {0, 0, 0x02c0, 2} };
+    if (sprite_subtype2[k] == 14)
+      Sprite_DrawMultiplePlayerDeferred(k, kTakeAnyHeart, 2, NULL);
+    else
+      Sprite_DrawMultiplePlayerDeferred(k, kTakeAnyPotion, 1, NULL);
+    return;
+  }
   Sprite_DrawMultiplePlayerDeferred(k, &kShopKeeper_ItemWithPrice_Dmd[(sprite_subtype2[k] - 7) * 5], 5, NULL);
 }
 

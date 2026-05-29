@@ -297,6 +297,10 @@ uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos);
 uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
                             uint8 vanilla_lttp_code);
 
+// Icon kind (shop-item subtype2) for a take-any slot's placed item: 14 = heart,
+// 15 = potion (generic). Both tiles are present in every host room's shop GFX.
+uint8 Rando_TakeAnyDrawKind(uint8 door_id, uint8 pos);
+
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized
 // reachability cache when a story-progress event flag is written

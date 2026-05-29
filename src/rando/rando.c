@@ -570,6 +570,19 @@ uint8 Rando_TakeAnyHostByDoorIndex(uint8 lx) {
   return kRandoTakeAnyCaves[cave].host_entrance;
 }
 
+// Icon kind (shop-item subtype2) for a take-any slot's placed item: 14 = heart
+// (BossHeartContainer), 15 = potion (BluePotion, plus the weapon cave's
+// sword/rupee — no sword tile exists in the host rooms' shop GFX, so it falls
+// back to the potion icon). Both tiles are always loaded (these rooms sell
+// RedPotion + a heart in vanilla).
+uint8 Rando_TakeAnyDrawKind(uint8 door_id, uint8 pos) {
+  int cave = takeany_cave_for_door(door_id);
+  if (cave < 0) return 15;
+  uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
+  uint16 item = Placement_Lookup(loc, 0xFFFFu);
+  return (item == ITEM_BossHeartContainer) ? 14 : 15;
+}
+
 uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos) {
   (void)room;  // door_id is globally unique across the 31 caves; room is advisory
   if (pos > 1) return 0xFFFFu;
