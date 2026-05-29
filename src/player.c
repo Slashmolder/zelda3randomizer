@@ -3066,7 +3066,12 @@ static bool InvertedMirrorBonk_InRect(void) {
   uint16 x = link_x_coord, y = link_y_coord;
   for (size_t i = 0; i < sizeof(kInvertedMirrorBonkRects) / sizeof(kInvertedMirrorBonkRects[0]); i++) {
     const uint16 *r = kInvertedMirrorBonkRects[i];
-    if (x >= r[0] && x < r[1] && y >= r[2] && y < r[3])
+    // Match inverted.asm MirrorBonk: its unsigned BGE/BLT compares make a point
+    // inside when X1 < x <= X2 && Y1 < y <= Y2 (exclusive low, inclusive high) —
+    // not the inclusive-low/exclusive-high we'd write by habit. The wrong
+    // convention mis-fires the forced cross by a pixel at rect edges (worst
+    // where rects abut, e.g. the adjacent Bridge L/R rects).
+    if (x > r[0] && x <= r[1] && y > r[2] && y <= r[3])
       return true;
   }
   return false;
