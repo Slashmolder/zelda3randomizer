@@ -3938,9 +3938,36 @@ lbl_else:
     goto label_b;
   if (ancilla_step[k] == 2) {
     if (--breaktowerseal_var5 == 0) {
-      trigger_special_entrance = 5;
-      subsubmodule_index = 0;
-      BYTE(R16) = 0;
+      // #82 Inverted: the GT crystal-barrier break cutscene. In vanilla the
+      // seal-break triggers special-entrance 5 (the warp into the now-open
+      // Ganon's Tower). In Inverted the GT entrance sits at a different
+      // overworld location, so z3randomizer inverted.asm GanonTowerAnimation
+      // does NOT trigger the special entrance; instead it just plays the
+      // barrier-break SFX/music and tears down the cutscene-freeze state in
+      // place, leaving the player free to walk to the (relocated) GT entrance.
+      // Mirror that: skip the special-entrance trigger and clear the cutscene
+      // bookkeeping (entrance-cutscene id, sub-sub-module, OAM-skip, immobilize
+      // flag, sprite-freeze, BG shake) the way the asm STZs them, then queue the
+      // break SFX (SFX3=0x1B), music request 2, and SFX1=9. Gated on the active
+      // Inverted rando world-state so vanilla / Open / Standard / Retro take the
+      // original special-entrance warp byte-for-byte.
+      if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+          Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+        sound_effect_2 = 0x1b;            // SFX3 (barrier-break)
+        trigger_special_entrance = 0;     // OWEntranceCutscene = 0 (no warp)
+        subsubmodule_index = 0;           // SubSubModule
+        nmi_disable_core_updates = 0;     // SkipOAM
+        flag_is_link_immobilized = 0;     // CutsceneFlag
+        flag_unk1 = 0;                    // FreezeSprites
+        bg1_x_offset = 0;                 // BG1ShakeV (word)
+        bg1_y_offset = 0;                 // BG1ShakeH (word)
+        music_control = 2;                // MusicControlRequest
+        sound_effect_ambient = 9;         // SFX1
+      } else {
+        trigger_special_entrance = 5;
+        subsubmodule_index = 0;
+        BYTE(R16) = 0;
+      }
       ancilla_step[k]++;
     }
   } else {
