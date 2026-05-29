@@ -221,8 +221,18 @@ static void DrawItemTracker(void *) {
   ImGui::NewLine();
 
   SectionHeader("Prizes");
-  { char b[24]; snprintf(b, sizeof b, "Crystals %d/7", v.crystals); Chip(b, v.crystals ? (v.crystals == 7 ? 1 : 2) : 0, 110.0f); }
-  { char b[24]; snprintf(b, sizeof b, "Pendants %d/3", v.pendants); Chip(b, v.pendants ? (v.pendants == 3 ? 1 : 2) : 0, 110.0f); }
+  // Pendants: three colored gems lit by pendant_mask (bit0 green, bit1 blue,
+  // bit2 red — see kPendantMask in rando.c Rando_FillItemView).
+  ImGui::AlignTextToFramePadding();
+  IconImage(kRandoIcon_PendantGreen, 28.0f, (v.pendant_mask & 1) != 0); ImGui::SameLine();
+  IconImage(kRandoIcon_PendantBlue,  28.0f, (v.pendant_mask & 2) != 0); ImGui::SameLine();
+  IconImage(kRandoIcon_PendantRed,   28.0f, (v.pendant_mask & 4) != 0); ImGui::SameLine();
+  ImGui::Text("%d / 3 pendants", v.pendants);
+  // Crystals: identical purple gems, tracked by count.
+  ImGui::AlignTextToFramePadding();
+  IconImage(kRandoIcon_Crystal, 28.0f, v.crystals > 0); ImGui::SameLine();
+  ImGui::Text("%d / 7 crystals", v.crystals);
+  // Agahnim 1 has no clean standalone icon sprite (72-tile boss) — status chip.
   Chip("Agahnim", v.agahnim, 92.0f);
 
   SectionHeader("Stats");

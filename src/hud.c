@@ -1922,6 +1922,41 @@ static void DecodeIconTile2x(uint32 *out, int stride, const uint16 *scratch,
   }
 }
 
+// Render one 8x8 4bpp sprite tile (32 bytes at `tile`, planar 0/1 at +0/+1 of
+// each row, planes 2/3 at +0x10) into atlas slot `aslot` at pixel (px,py),
+// `scale`x. pal = 15-color sub-palette (BGR555), color index c -> pal[c-1]
+// (index 0 transparent).
+static void BlitSpriteTile(uint32 *out, int stride, int aslot, const uint16 *pal,
+                           const uint8 *tile, int px, int py, int scale) {
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      int bit = 7 - col;
+      int idx = ((tile[row * 2] >> bit) & 1) |
+                (((tile[row * 2 + 1] >> bit) & 1) << 1) |
+                (((tile[0x10 + row * 2] >> bit) & 1) << 2) |
+                (((tile[0x11 + row * 2] >> bit) & 1) << 3);
+      if (idx == 0) continue;  // transparent
+      uint16 c = pal[idx - 1];
+      uint32 rgba = (uint32)((c & 0x1f) << 3) | ((uint32)(((c >> 5) & 0x1f) << 3) << 8) |
+                    ((uint32)(((c >> 10) & 0x1f) << 3) << 16) | 0xff000000u;
+      for (int dy = 0; dy < scale; dy++)
+        for (int dx = 0; dx < scale; dx++)
+          out[(py + row * scale + dy) * stride + aslot * kRandoIconSize + (px + col * scale + dx)] = rgba;
+    }
+  }
+}
+
+// Decode a single-tile 4bpp sprite icon (the receive-animation art for `gfx`)
+// 2x-scaled into atlas slot `aslot`. DecodeAnimatedSpriteTile_variable(gfx)
+// decompresses the bundle into g_ram[0xbd40..] (char 0x24 = top-left tile).
+// State-immune: decompresses from asset packs, not live VRAM. NOTE: clobbers
+// the g_ram[0x14000]/0xbd40 decomp scratch — fine for the one-shot atlas build.
+static void DecodeSpriteIcon(uint32 *out, int stride, int aslot, uint8 gfx,
+                             const uint16 *pal) {
+  DecodeAnimatedSpriteTile_variable(gfx);
+  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd40], 0, 0, 2);
+}
+
 // Dungeon-item HUD icons (not in kHudItemBoxGfxPtrs — these are drawn directly
 // by the dungeon HUD, hud.c Hud_UpdateItemBox). Big key = kHudItemPalaceItem[0],
 // map = kHudItemDungeonMap, compass = kHudItemDungeonCompass.
@@ -1970,6 +2005,31 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Compass, &kRandoCompassIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Shovel, &kHudItemFlute[1]);
   DecodeIconTile2x(out, stride, scratch, sw, pal, kRandoIcon_Heart, kRandoFullHeartTile);
+  // Prize sprite icons (4bpp receive-animation art). Pendant = gfx 0x23 (one
+  // tile; palettes green pal4 / red pal2 / blue pal1 from kPalette_MainSpr).
+  // Pendant gem (gfx 0x23) draws with palette indices 9/13/14 (-> pal[8]/[12]/
+  // [13]: dark accent / body / highlight; verified by index-map dump). The
+  // receive sprite borrows the dungeon's sprite palette in vanilla (there is no
+  // static green/blue/red pendant asset), so synthesize canonical gem palettes
+  // per hue (BGR555: r | g<<5 | b<<10, each 0-31).
+  static uint16 pgreen[15] = {0}, pblue[15] = {0}, pred[15] = {0};
+#define Z3R_BGR(r, g, b) ((uint16)((r) | ((g) << 5) | ((b) << 10)))
+  pgreen[8] = Z3R_BGR(1, 8, 1);  pgreen[12] = Z3R_BGR(4, 22, 5);  pgreen[13] = Z3R_BGR(20, 31, 17);
+  pblue[8]  = Z3R_BGR(2, 2, 11); pblue[12]  = Z3R_BGR(6, 9, 27);  pblue[13]  = Z3R_BGR(19, 21, 31);
+  pred[8]   = Z3R_BGR(9, 1, 1);  pred[12]   = Z3R_BGR(27, 4, 4);  pred[13]   = Z3R_BGR(31, 17, 16);
+#undef Z3R_BGR
+  DecodeSpriteIcon(out, stride, kRandoIcon_PendantGreen, 0x23, pgreen);
+  DecodeSpriteIcon(out, stride, kRandoIcon_PendantRed,   0x23, pred);
+  DecodeSpriteIcon(out, stride, kRandoIcon_PendantBlue,  0x23, pblue);
+  // Crystal = gfx 0x28, a 16x16 diamond spread across 4 quadrant tiles
+  // (TL=0xbd40, TR=0xbd60, BL=0xbd80, BR=0xbda0; arrangement verified by PNG
+  // dump). Palette 6 from kPalette_MiscSprite_Indoors index 4.
+  DecodeAnimatedSpriteTile_variable(0x28);
+  { const uint16 *cp = kPalette_MiscSprite_Indoors + 4 * 7;
+    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd40], 0, 0, 1);
+    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd60], 8, 0, 1);
+    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd80], 0, 8, 1);
+    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbda0], 8, 8, 1); }
   return n;
 }
 

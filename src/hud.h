@@ -86,7 +86,7 @@ void Hud_RandoDrawLocationTracker(void);
 // live VRAM), so it can run any time after assets load. Atlas is a horizontal
 // strip kRandoIconCount*kRandoIconSize wide, kRandoIconSize tall.
 // ---------------------------------------------------------------------------
-#define kRandoIconCount 34
+#define kRandoIconCount 38
 #define kRandoIconSize 16
 // Slot indices into the atlas == kHudItemBoxGfxPtrs order.
 enum {
@@ -102,6 +102,9 @@ enum {
   // shovel (kHudItemFlute[1]) and a full-heart icon at 32-33.
   kRandoIcon_BigKey = 28, kRandoIcon_Map = 29, kRandoIcon_Compass = 30,
   kRandoIcon_Shovel = 32, kRandoIcon_Heart = 33,
+  // Prize sprite icons (4bpp, decoded via DecodeAnimatedSpriteTile_variable).
+  kRandoIcon_PendantGreen = 34, kRandoIcon_PendantRed = 35,
+  kRandoIcon_PendantBlue = 36, kRandoIcon_Crystal = 37,
 };
 // Build the atlas into `out` (kRandoIconCount*kRandoIconSize*kRandoIconSize
 // uint32 RGBA8888). Transparent pixels have alpha 0. Returns the icon count.
