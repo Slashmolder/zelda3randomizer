@@ -43,6 +43,13 @@ enum {
   // share string. No-op when no rando slot is active or no suppressed
   // (race-mode) spoiler file exists for that slot.
   kKeys_RandoRevealSpoiler,
+  // Rich tracker windows (PC native windows, behind Z3R_NATIVE_SETTINGS_WINDOW).
+  // Toggle the item / check / map tracker OS windows. Default unbound. The enum
+  // entries are unconditional (so the keymap table stays index-stable across
+  // platforms); the handler arms in main.c are gated — they no-op on Switch.
+  kKeys_RandoItemTrackerWindow,
+  kKeys_RandoCheckTrackerWindow,
+  kKeys_RandoMapTrackerWindow,
   kKeys_Total,
 };
 

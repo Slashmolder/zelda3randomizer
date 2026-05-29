@@ -86,6 +86,8 @@ static const KeyNameId kKeyNameId[] = {
   S(RandoToggleItemTracker), S(RandoToggleLocationTracker),
   // Phase B Slice 6 §62 — in-binary reveal-spoiler action.
   S(RandoRevealSpoiler),
+  // Rich tracker windows (PC). Toggle the item / check / map tracker windows.
+  S(RandoItemTrackerWindow), S(RandoCheckTrackerWindow), S(RandoMapTrackerWindow),
 };
 #undef S
 #undef M

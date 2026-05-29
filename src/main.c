@@ -44,6 +44,8 @@
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "rando/rando_window/rando_window.h"          // RandoWindow_* (ImGui settings window)
 #include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
+#include "rando/rando_window/imgui_host.h"            // Z3RHost_* (multi-window host)
+#include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #endif
 
@@ -1127,6 +1129,11 @@ int main(int argc, char** argv) {
     RandoWindow_ApplyGeometry(g_rando_window_prefs.window_x, g_rando_window_prefs.window_y,
                               g_rando_window_prefs.window_w, g_rando_window_prefs.window_h);
   }
+  // Tracker windows (item/check/map) — created hidden on the multi-window host.
+  // Z3RHost_Create saves/restores the current ImGui + GL context, so the settings
+  // window's context stays current and the game context is untouched here.
+  Trackers_Init();
+
   // Restore the game's GL context: the settings window's GL setup above left the
   // settings context current. NULL under the software renderer → nothing to do.
   if (game_gl_ctx)
@@ -1223,6 +1230,10 @@ int main(int argc, char** argv) {
       // if that ID is the settings window, hand the event to ImGui and DO NOT
       // pass it to the game input path. Otherwise it's a game-window event and
       // flows to the existing switch below.
+      // Tracker windows (host-owned) consume their own events first. Their
+      // windowIDs are disjoint from the settings/game windows.
+      if (Z3RHost_ProcessEvent(&event))
+        continue;
       {
         Uint32 settings_wid = g_settings_window ? SDL_GetWindowID(g_settings_window) : 0;
         Uint32 wid = 0;
@@ -1459,6 +1470,10 @@ int main(int argc, char** argv) {
       if (prev)
         SDL_GL_MakeCurrent(g_window, prev);
     }
+    // Render any visible tracker windows. Z3RHost_RenderAll saves/restores the
+    // current SDL GL + ImGui context itself, so the game renderer and the
+    // settings window are unaffected regardless of which (if any) is shown.
+    Z3RHost_RenderAll();
 #endif
 
     if (g_config.display_perf_title) {
@@ -1514,6 +1529,9 @@ int main(int argc, char** argv) {
 
   // Tear down the settings window unconditionally (NOT gated on enable_audio).
   RandoWindow_Shutdown();
+  // Then the tracker windows. RandoWindow_Shutdown destroyed the (current)
+  // settings ImGui context first, so the host's teardown won't clobber it.
+  Trackers_Shutdown();
   if (g_settings_gl)
     SDL_GL_DeleteContext(g_settings_gl);
   if (g_settings_window)
@@ -1669,6 +1687,12 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_RandoRevealSpoiler:
       (void)Rando_RevealActiveSlotSpoiler();
       break;
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    // Rich tracker windows (PC). Toggle the item / check / map OS windows.
+    case kKeys_RandoItemTrackerWindow:  Trackers_Toggle(kTracker_Item);  break;
+    case kKeys_RandoCheckTrackerWindow: Trackers_Toggle(kTracker_Check); break;
+    case kKeys_RandoMapTrackerWindow:   Trackers_Toggle(kTracker_Map);   break;
+#endif
     default: assert(0);
     }
   }
