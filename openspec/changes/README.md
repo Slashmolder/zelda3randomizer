@@ -6,29 +6,31 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 
 | Phase | # | Change | Scope | Authoring | kGen bump | Effort |
 |---|---|---|---|---|---|---|
-| **A** | — | [`add-randomizer-support`](add-randomizer-support/) | Foundation, RNG, share string, predicate VM, codegen, audit, logic graph (Open + Standard), assumed-fill placement, prize/medallion shuffles, sphere computation, goal-completability, JSON+text spoilers, sidecar save format, §6 grant-site dispatch (43 sites), snapshot tail TLV. | Full (119/139 tasks; remaining 20 are Phase B+ deferrals) | n/a (baseline) | shipped |
+| **A** | — | [`add-randomizer-support`](archive/2026-05-29-add-randomizer-support/) | Foundation, RNG, share string, predicate VM, codegen, audit, logic graph (Open + Standard), assumed-fill placement, prize/medallion shuffles, sphere computation, goal-completability, JSON+text spoilers, sidecar save format, §6 grant-site dispatch (43 sites), snapshot tail TLV. | **Archived 2026-05-29** (119/139; the 20 deferrals are tracked in the Phase B/C/D changes below) | n/a (baseline) | ✅ shipped + archived → `openspec/specs/randomizer-*` (6 capabilities) |
 | **B** | 1 | [`add-rando-confirmation-icons`](add-rando-confirmation-icons/) | Visible direct-grant icon ancilla (extends §7.6 audio-only) | Full | No | 3-5d |
 | **B** | 2 | [`add-rando-trackers`](add-rando-trackers/) | In-game item + location overlays; checked-bitmap r/w | Full | No | 1-2w |
 | **B** | 3 | [`add-rando-race-mode-reveal`](add-rando-race-mode-reveal/) | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp | Full | No | 3-5d |
-| **B** | 4a | [`add-rando-inverted-world-state`](add-rando-inverted-world-state/) | Inverted region graph (2977 PHP lines) + RegionRemap + Bug #12 starting-inv | Full | **Yes** | 4-6w |
-| **B** | 4b | [`add-rando-retro-world-state`](add-rando-retro-world-state/) | Retro shop dispatch + 4 Retro flag pin | Full | **Yes** | 1w |
+| **B** | 4a | [`add-rando-inverted-world-state`](add-rando-inverted-world-state/) | Inverted region graph (2977 PHP lines) + RegionRemap + Bug #12 starting-inv | Full (50/77 landed — graph + runtime in; B-inverted macros 2.x, docs, playtest still open) | **Yes** | 4-6w |
+| **B** | 4b | [`add-rando-retro-world-state`](add-rando-retro-world-state/) | Retro shop dispatch + 4 Retro flag pin | Full (1/48) | **Yes** | 1w |
+| **B** | 4c | [`add-rando-retro-takeany`](add-rando-retro-takeany/) | 22 TakeAny shop dispatch + RNG-driven activation (promoted from 4b's design §5 split) | Stub (proposal + specs; no tasks.md yet) | **Yes** | — |
 | **B** | 5 | [`add-rando-trick-logic-and-axes`](add-rando-trick-logic-and-axes/) | OP_TRICK/OP_DIFFICULTY_AT_LEAST/OP_GLITCH_LEVEL_AT_LEAST + 5 settings un-pins + Bug #7 per-item rewind | Full | **Yes** | 2-3w |
 | **B** | 6 | [`add-rando-hints`](add-rando-hints/) | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla | Full | **Yes** | 2-3w |
 | **B** | 7 | [`add-rando-shuffles-and-minigames`](add-rando-shuffles-and-minigames/) | Boss + drop-pool shuffles + §6.8 minigame dispatch | Full | **Yes** | 2-3w |
 | **B** | 8 | [`add-rando-switch-swkbd`](add-rando-switch-swkbd/) | libnx swkbd wrapper for Switch text input | Full | No | 3-5d |
+| **B** | PC | [`add-rando-native-settings-window`](add-rando-native-settings-window/) | Dear ImGui second OS window owns the rando settings UI on PC; in-game screen compile-guarded out behind `Z3R_NATIVE_SETTINGS_WINDOW` | Full (114/141 — **shipped & merged**; remaining = spoiler-viewer polish 13.7/14.3-5 + manual verify/audit/archive) | No | ✅ shipped, not yet archived |
 | **C** | C1 | [`add-rando-entrance-shuffle`](add-rando-entrance-shuffle/) | 4-mode entrance shuffle (uses RegionRemap from #4a) | Stub | **Yes** | 4-8w |
 | **D** | D1 | [`add-rando-cosmetic-shuffles`](add-rando-cosmetic-shuffles/) | Palette / sprite / music shuffles; `cosmetic_seed` separate from `settings_hash` | Stub | No | 3-4w |
 | **D** | D2 | [`add-rando-customizer-mode`](add-rando-customizer-mode/) | Manual per-location placement + custom pool composition | Stub | No (per-seed; affects `customizer_seed`) | 2-3w |
 | **D** | D3 | [`add-rando-major-glitch`](add-rando-major-glitch/) | Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to HybridMG + NoLogic | Stub | **Yes** | 2-3w |
 | **D** | D4 | [`add-rando-auto-tracker`](add-rando-auto-tracker/) | Local TCP server for external tracker clients | Stub | No | 2-3w |
 
-Total: 15 changes. All pass `openspec validate --changes`.
+Total: 16 active changes + 1 archived (`add-randomizer-support`). All 16 active changes pass `openspec validate --changes`.
 
 ## Implementation order
 
 Recommended ordering:
 
-1. **Wait** for Phase A archive.
+1. ✅ **Phase A archived** (2026-05-29) — baseline specs live in `openspec/specs/randomizer-*`. Phase B/C/D changes now modify those specs.
 2. **Phase B warm-up**: #1 confirmation-icons → #2 trackers → #3 race-mode reveal.
 3. **Phase B world-states**: #4b Retro (small) → #4a Inverted (large).
 4. **Phase B logic + UX**: #5 trick logic → #6 hints → #7 shuffles+minigames → #8 swkbd.
@@ -39,7 +41,7 @@ Recommended ordering:
 ## Dependencies graph
 
 ```
-Phase A archive
+Phase A archive ✅ (2026-05-29)
        │
        ├──► #1, #2, #3 (warm-up, parallel-safe)
        ├──► #4b Retro
@@ -62,7 +64,7 @@ Phase A archive
 
 - `openspec validate --changes` — validate all changes.
 - `openspec list` — view per-change task progress.
-- `openspec list --specs` — view archived specs (currently none until Phase A archives).
+- `openspec list --specs` — view the spec baseline (6 `randomizer-*` capabilities live as of the Phase A archive, 2026-05-29).
 
 ## When you're ready to start a change
 

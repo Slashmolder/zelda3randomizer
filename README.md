@@ -37,10 +37,12 @@ Switching current item with L/R keys.
 This fork is adding an in-binary randomizer. The randomizer ships inside the
 same `zelda3` executable and is enabled per-slot from the file-select screen.
 
-Phase A status (kGeneratorVersion=10):
+Randomizer status (`kGeneratorVersion` in `src/rando/rando.h` is the authoritative
+version marker — 36 at time of writing; Phase A foundation is archived to
+`openspec/specs/randomizer-*`, Phase B is in progress):
 - Foundation, RNG, share-string, predicate VM, codegen, audit: landed
-- Logic graph (28 regions / 28 edges / 237 location predicates / 13 dungeons +
-  overworld): landed for Standard mode; Inverted/Retro overlays Phase A2
+- Logic graph (31 regions / 266 location checks / 13 dungeons + overworld):
+  landed for Open + Standard; Inverted + Retro overlays in progress (Phase B)
 - Assumed-fill placement with bounded retry + wall-clock budget,
   prize/medallion shuffles, sphere computation, goal-completability with
   strict refusal: landed
@@ -119,7 +121,7 @@ RaceMode = false
 DebugForceRamCompare = false
 ```
 
-Full reference: `docs/randomizer.md`. The OpenSpec change `openspec/changes/add-randomizer-support/` is the source of truth for scope and acceptance.
+Full reference: `docs/randomizer.md`. The OpenSpec spec baseline `openspec/specs/randomizer-*/` is the source of truth for scope and acceptance (Phase A archived 2026-05-29; active follow-on changes live under `openspec/changes/`).
 
 ## How to Play:
 

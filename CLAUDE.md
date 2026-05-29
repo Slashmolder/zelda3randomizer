@@ -99,7 +99,7 @@ The reimplementation roughly follows the original ROM's bank structure. Major en
 
 ## Claim-grounding discipline (read before asserting facts about external code or this codebase)
 
-The single most impactful lesson from prior spec/doc work on this project: when asserting facts about external code, this codebase, or any referenced upstream, read the source before the assertion lands in an artifact. Memory-based assertions have been the largest single source of avoidable error in plan- and spec-level work on this repo — see `openspec/changes/add-randomizer-support/lessons.md` for the catalog of failure modes and the discipline that prevents them.
+The single most impactful lesson from prior spec/doc work on this project: when asserting facts about external code, this codebase, or any referenced upstream, read the source before the assertion lands in an artifact. Memory-based assertions have been the largest single source of avoidable error in plan- and spec-level work on this repo — see `openspec/changes/archive/2026-05-29-add-randomizer-support/lessons.md` for the catalog of failure modes and the discipline that prevents them.
 
 **Verify a root cause against baseline behavior.** Before accepting a diagnosis — your own, a sub-agent's, or a remembered one — check whether it implies the *unmodified* game is also broken. If the explanation would mean vanilla behavior fails too, but vanilla demonstrably works, the diagnosis is wrong. (A Tower of Hera "no prize + softlock" was confidently misattributed to the boss heart never setting its prize-ready bit; that would have broken vanilla ToH, which works, so it couldn't be right — the real cause was a rando-only prize-gate bug.)
 

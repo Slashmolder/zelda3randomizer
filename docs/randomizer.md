@@ -12,7 +12,8 @@
 This document covers user-facing operation of the in-binary randomizer, the
 share-string format, save behavior, audit conventions for contributors, and
 the generator-version bump policy. The authoritative source for behavior
-decisions is the OpenSpec change at `openspec/changes/add-randomizer-support/`.
+decisions is the OpenSpec spec baseline at `openspec/specs/randomizer-*/` (Phase A
+was archived 2026-05-29 to `openspec/changes/archive/2026-05-29-add-randomizer-support/`).
 
 ## Getting started
 
@@ -235,7 +236,7 @@ the regression corpus for new seeds, but do NOT invalidate existing saves
 ### Serialization invariants
 
 Two invariants underpin the bump policy and the byte layout pinned in
-`openspec/changes/add-randomizer-support/specs/randomizer-core/spec.md`:
+`openspec/specs/randomizer-core/spec.md`:
 
 1. **The canonical settings serialization is append-only.** Byte positions,
    widths, and enum value assignments for existing fields never change. A new
@@ -448,17 +449,18 @@ Items folded into the changes above:
 
 All Phase C/D changes are proposal-only stubs (proposal + 1-3 minimal spec deltas) — full design + tasks deferred to apply-time. Phase C requires Phase B #4a archived; Phase D D3 requires Phase B #5 archived.
 
-See `openspec/changes/add-randomizer-support/tasks.md` §7 and §14 for the
+See `openspec/changes/archive/2026-05-29-add-randomizer-support/tasks.md` §7 and §14 for the
 acceptance gates per phase.
 
 ## References
 
-- OpenSpec change: `openspec/changes/add-randomizer-support/`
+- Spec baseline (Phase A, archived 2026-05-29): `openspec/specs/randomizer-*/spec.md` — normative requirements per subsystem (the live source of truth).
+- Archived Phase A change: `openspec/changes/archive/2026-05-29-add-randomizer-support/`
   - `proposal.md` — high-level scope
   - `design.md` — design decisions and trade-offs
-  - `tasks.md` — implementation task list (the source of truth for what's done / what's left)
+  - `tasks.md` — implementation task list (119/139; the 20 deferrals are tracked in the active Phase B/C/D changes)
   - `audit.md` — Phase 0 audit deliverable (closes the §6 gate)
-  - `specs/randomizer-*/spec.md` — normative requirements per subsystem
+- Active follow-on changes: `openspec/changes/` (see its `README.md` index)
 - Upstream provenance: `alttp_vt_randomizer` (MIT) — sibling checkout
   expected at `../alttp_vt_randomizer/` for translation work; not required
   to build or play.

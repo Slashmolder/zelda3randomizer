@@ -10,7 +10,7 @@
 ### Randomizer changes — spec-drift checklist
 
 If this PR touches `src/rando/*`, `assets/rando/*`, or any behavior described
-by an OpenSpec scenario under `openspec/changes/add-randomizer-support/specs/`,
+by an OpenSpec scenario under `openspec/specs/randomizer-*/` (or an active change delta under `openspec/changes/`),
 confirm:
 
 - [ ] The change is consistent with the relevant spec scenario, **or** the PR

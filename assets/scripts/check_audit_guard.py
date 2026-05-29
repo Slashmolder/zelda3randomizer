@@ -3,7 +3,7 @@
 
 Rejects new writes to inventory-state cells (``link_item_*``, ``link_bottle_info[*]``,
 ``link_has_crystals``, etc.) outside the documented dispatch path or the
-exemption list in ``openspec/changes/add-randomizer-support/audit.md``.
+exemption list in ``openspec/changes/archive/2026-05-29-add-randomizer-support/audit.md``.
 
 The guard is the long-term enforcement for the Phase 0 audit's discipline:
 once §6 instrumentation lands, every grant-site write goes through
@@ -29,7 +29,7 @@ from pathlib import Path
 
 SRC_DIR = Path("src")
 VARIABLES_H = Path("src/variables.h")
-AUDIT_MD = Path("openspec/changes/add-randomizer-support/audit.md")
+AUDIT_MD = Path("openspec/changes/archive/2026-05-29-add-randomizer-support/audit.md")
 EXEMPTION_COMMENT = "rando-exempt:"
 
 # Functions that resolve a pointer from a dispatch table (e.g.,
