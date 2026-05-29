@@ -353,8 +353,14 @@ static bool ParseHashHex(const char *s, uint8 out[32]) {
 // (out must hold at least nbytes*2+1).
 static bool HexDecode(const char *s, uint8 *out, int nbytes) {
   for (int i = 0; i < nbytes; ++i) {
-    int hi = parse_hex_nibble(s[i * 2]);
-    int lo = parse_hex_nibble(s[i * 2 + 1]);
+    // Check each nibble for NUL before reading the next, so a string shorter
+    // than nbytes*2 cannot read past the terminator (audit MED over-read).
+    char c0 = s[i * 2];
+    if (c0 == '\0') return false;
+    char c1 = s[i * 2 + 1];
+    if (c1 == '\0') return false;
+    int hi = parse_hex_nibble(c0);
+    int lo = parse_hex_nibble(c1);
     if (hi < 0 || lo < 0) return false;
     out[i] = (uint8)((hi << 4) | lo);
   }

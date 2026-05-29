@@ -641,7 +641,8 @@ static void RenderGenerateRow() {
     ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s", err);
   }
 
-  bool disabled = (invalid != 0) || b->generate_in_progress;
+  bool no_target = (b->target_slot_index < 0);
+  bool disabled = (invalid != 0) || b->generate_in_progress || no_target;
   if (disabled) ImGui::BeginDisabled();
   if (ImGui::Button("Generate & start new slot")) {
     TryBeginGenerate();
@@ -650,6 +651,8 @@ static void RenderGenerateRow() {
     ImGui::EndDisabled();
     if (invalid)
       HelpTooltip("Fix the validation error above before generating.");
+    else if (no_target)
+      HelpTooltip("Open this window from the file-select \"New Randomizer\" entry to pick a target slot.");
     else
       HelpTooltip("Generation already in progress.");
   }
@@ -824,6 +827,12 @@ void RandoWindow_Render(void) {
 
 void RandoWindow_Shutdown(void) {
   if (ImGui::GetCurrentContext() != nullptr) {
+    // Make the settings context current first: the per-frame restore may have
+    // left the GAME context current (OpenGL renderer), and the backend's
+    // glDelete* in ImGui_ImplOpenGL3_Shutdown must target the settings
+    // context (audit HIGH).
+    if (s_settings_window && s_settings_gl)
+      SDL_GL_MakeCurrent(s_settings_window, s_settings_gl);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
@@ -850,6 +859,11 @@ void RandoWindow_Hide(void) {
   if (s_settings_window)
     SDL_HideWindow(s_settings_window);
   s_wants_shown = false;
+  // Closing the window cancels a not-yet-consumed generate request AND clears
+  // the kind-toggle target, so the game-frame consumer cannot run a generate
+  // against a cleared (-1) slot (audit BLOCKER — defense in depth with the
+  // slot-index guard in Rando_GenerateSlot).
+  g_rando_window_bridge.generate_requested = false;
   if (g_rando_window_bridge.target_slot_index >= 0)
     RandoWindowBridge_CancelTarget();
 }

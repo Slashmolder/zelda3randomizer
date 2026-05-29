@@ -1202,7 +1202,10 @@ int main(int argc, char** argv) {
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:  wid = event.button.windowID; break;
         case SDL_MOUSEWHEEL:     wid = event.wheel.windowID;  break;
-        case SDL_DROPFILE:       wid = event.drop.windowID;   break;
+        case SDL_DROPFILE:
+        case SDL_DROPTEXT:
+        case SDL_DROPBEGIN:
+        case SDL_DROPCOMPLETE:   wid = event.drop.windowID;   break;
         default:                 is_windowed = false;         break;  // global → game path
         }
         if (is_windowed && settings_wid != 0 && wid == settings_wid) {
@@ -1257,20 +1260,6 @@ int main(int argc, char** argv) {
         break;
       }
       case SDL_KEYDOWN:
-#ifdef Z3R_NATIVE_SETTINGS_WINDOW
-        // TEMP P2 debug toggle — remove when kind-toggle entry lands.
-        // F12 on the game window toggles the native settings window so it can be
-        // exercised before select_file.c wires the real "New Randomizer" entry.
-        if (event.key.keysym.scancode == SDL_SCANCODE_F12 && !event.key.repeat) {
-          if (RandoWindow_WantsShown()) {
-            RandoWindow_Hide();
-          } else {
-            // Open without targeting a slot (debug only; slot -1 = none).
-            RandoWindow_OpenForNewSlot(-1);
-          }
-          break;
-        }
-#endif
         // §9.1b — while text input is active, intercept editing keys
         // (backspace/delete/arrows/home/end/enter/escape/Ctrl+V) and route
         // them through TextField_HandleKey. Critically we MUST NOT also

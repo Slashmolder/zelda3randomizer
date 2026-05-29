@@ -32,6 +32,15 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
                         RandoGenerateResult *out, char *err, size_t err_cap) {
   if (err != NULL && err_cap > 0) err[0] = '\0';
 
+  // Refuse an out-of-range slot BEFORE any SRAM/sidecar write. The SRAM init
+  // below indexes g_zenv.sram + slot_index*0x500, so a negative slot_index
+  // (e.g. the window closed mid-request, clearing the kind-toggle target to
+  // -1) would memset/write BEFORE the buffer. Audit BLOCKER fix.
+  if (slot_index < 0 || slot_index >= kRandoSidecar_SlotCount) {
+    if (err != NULL) snprintf(err, err_cap, "invalid slot index %d", slot_index);
+    return false;
+  }
+
   // Compute settings_hash (already cached as short).
   uint8 settings_hash_full[32];
   Settings_ComputeHash(settings, settings_hash_full);
