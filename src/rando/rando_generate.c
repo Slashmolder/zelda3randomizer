@@ -147,6 +147,13 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   slot.header.settings_ext_present = 1;
   slot.header.hints_setting = settings->hints;
   slot.header.goal = settings->goal;
+  // Carry world_state too (@68). Without this the slot header keeps the memset
+  // 0 = kWorldState_Open, so a Standard/Inverted/Retro seed loads as Open at
+  // runtime: for Standard that makes Rando_SuppressHyruleCastleEscape() true and
+  // despawns the opening (Link's-house) Uncle — room 0x104, whose low byte 0x04
+  // collides with the sewers-passage branch in SpritePrep_UncleAndPriest_bounce —
+  // so Link sleeps forever (player_sleep_in_bed_state never advances).
+  slot.header.world_state = settings->world_state;
   // Flags: set the forward-fill bit if the placer used the fallback.
   bool used_forward_fill = false;
   {
