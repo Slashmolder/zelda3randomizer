@@ -1712,6 +1712,29 @@ static void SelectFile_KindPicker_Draw(void) {
   nmi_load_bg_from_vram = 1;
 }
 
+// Leaving the kind picker: SelectFile_KindPicker_Draw memcpy'd its prompt over
+// the BG2 vram_upload_data, clobbering the kSelectFile_Func3_Data slot-name
+// background. Push a clear over the picker's tilemap rows and rewind to
+// submodule 3 (which advances 3 → 4 → 5), reinstalling the Func3 layout so the
+// slot list renders cleanly again. Used by B-cancel and (on PC) the
+// New-Randomizer / From-share branches so the file-select behind the native
+// window is clean and STAYS clean if the user closes it without generating.
+static void SelectFile_KindPicker_RestoreBg(void) {
+  uint8 *p = (uint8 *)vram_upload_data;
+  int o = 0;
+  int clear_count = 256 * 2 - 1;  // 256 word cells = 8 tilemap rows
+  p[o++] = 0x61;
+  p[o++] = 0x80;  // 0x6180 — top of NEW GAME row, just below slot 1
+  p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
+  p[o++] = (uint8)(clear_count & 0xff);
+  p[o++] = 0xa9;
+  p[o++] = 0x18;
+  p[o++] = 0xff;
+  nmi_load_bg_from_vram = 1;
+  submodule_index = 3;
+  subsubmodule_index = 0;
+}
+
 // Returns true if the kind picker handled input (caller should skip the
 // usual file-select cursor logic).
 static bool SelectFile_KindPicker_Update(void) {
@@ -1759,19 +1782,7 @@ static bool SelectFile_KindPicker_Update(void) {
     // through (NEW GAME / VANILLA / RANDOM / PASTE overlapping the slot
     // numbers). Push a clear over the picker's tilemap rows this frame,
     // same pattern as Settings_Deactivate.
-    uint8 *p = (uint8 *)vram_upload_data;
-    int o = 0;
-    int clear_count = 256 * 2 - 1;  // 256 word cells = 8 tilemap rows
-    p[o++] = 0x61;
-    p[o++] = 0x80;  // 0x6180 — top of NEW GAME row, just below slot 1
-    p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
-    p[o++] = (uint8)(clear_count & 0xff);
-    p[o++] = 0xa9;
-    p[o++] = 0x18;
-    p[o++] = 0xff;
-    nmi_load_bg_from_vram = 1;
-    submodule_index = 3;
-    subsubmodule_index = 0;
+    SelectFile_KindPicker_RestoreBg();
     return true;
   }
 
@@ -1791,8 +1802,12 @@ static bool SelectFile_KindPicker_Update(void) {
       // §9.4 — "New Randomizer" on the target slot.
       g_kind_picker_active = 0;
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
-      // PC (F1): the native settings window owns the new-slot surface.
+      // PC (F1): the native settings window owns the new-slot surface. Rebuild
+      // the file-select BG2 (the kind picker clobbered it) so the screen behind
+      // the window is clean and stays clean if the user closes without
+      // generating (the Generate path rebuilds again via SelectFile_NotifySlotWritten).
       RandoWindow_OpenForNewSlot(g_kind_picker_target_slot);
+      SelectFile_KindPicker_RestoreBg();
 #else
       // Switch / guard off: the in-game settings screen owns input and drawing
       // until the user generates or cancels.
@@ -1804,8 +1819,9 @@ static bool SelectFile_KindPicker_Update(void) {
       g_kind_picker_active = 0;
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
       // PC (F1): the native settings window owns share-string paste — it
-      // replaces the in-game alphabet picker entirely.
+      // replaces the in-game alphabet picker entirely. Rebuild BG2 (see above).
       RandoWindow_OpenForNewSlot(g_kind_picker_target_slot);
+      SelectFile_KindPicker_RestoreBg();
 #else
       // Switch / guard off: open the alphabet picker so the player can type a
       // share string. On submit it routes through Share_PastePath() and
