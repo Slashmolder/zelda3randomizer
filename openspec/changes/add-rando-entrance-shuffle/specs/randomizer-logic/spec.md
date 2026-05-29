@@ -1,23 +1,52 @@
 ## ADDED Requirements
 
-### Requirement: RegionRemap entrance-shuffle overlay shape
+### Requirement: Per-seed entrance reachability — two mechanisms by interior class
 
-When `settings.entrance_shuffle != none`, `Rando_SetRegionRemap` SHALL be called with an entrance-permutation overlay table. The overlay shape generalizes the Phase B #4a Inverted overlay (Light↔Dark world swap) to a per-entrance permutation.
+Entrance shuffle SHALL feed the logic graph through **two mechanisms**, matching the
+two runtime exit classes (caves vs dungeons), and SHALL NOT use the Phase A
+`RegionRemap` scaffold, which is **retired** (it remaps an `OP_REGION_REACHABLE`
+operand — a region lookup — and would corrupt the 10+ live predicates that use that
+opcode if populated; see change `design.md §1`/§2).
 
-The overlay table SHALL be a `uint16[NUM_ENTRANCES]` array where index `i` maps the canonical entrance i to its shuffled-destination entrance id. Identity mapping (`overlay[i] == i`) SHALL be permitted for entrances that don't move under the active mode (e.g., Simple mode leaves multi-entrance dungeons identity-mapped).
+**Caves (single-interior locations).** A cave's chest is a *location* bound to an
+overworld region; the graph has no cave-interior region and no door-edge into a cave
+(verified: caves are `type: Chest` in `location_registry.yaml`, not regions). When a
+cave entrance is shuffled, the reachability computation SHALL treat each cave-location
+as belonging to the **overworld region of the door that now leads to it**, via a
+per-seed location-region reassignment (the existing `region_override` field, driven by
+the entrance permutation π instead of by world_state).
 
-The overlay SHALL be deterministically derived from `(share_string, generator_version, entrance_shuffle_mode)`. Same inputs SHALL produce byte-identical overlays across platforms.
+**Dungeons (first-class interior regions).** Dungeon interiors ARE regions with
+inbound door-edges. When a dungeon entrance is shuffled, the reachability computation
+SHALL traverse a per-seed edge graph in which each **dungeon door-edge's** destination
+region is rewritten per π; internal dungeon edges and event gates SHALL remain fixed.
 
-> **Stub status**: exact `NUM_ENTRANCES` count + per-entrance ID assignment table deferred to `assets/rando/entrance_registry.yaml` authored at Phase C apply-time.
+Placement and goal-completability SHALL reflect the active mechanism.
 
-#### Scenario: Non-shuffle mode leaves overlay identity
-- **WHEN** `settings.entrance_shuffle == none`
-- **THEN** `Rando_SetRegionRemap` is either not called OR called with `overlay[i] == i` for all i; logic-graph behavior matches Phase A + Phase B non-Inverted
+#### Scenario: Shuffled cave changes reachability via region reassignment
+- **WHEN** a cave whose vanilla door is in Light World South is shuffled so its door
+  is now in a region reachable only later
+- **THEN** the cave-location's effective region becomes that later region, and the
+  placer treats the cave's check as reachable only when that region is reachable
 
-#### Scenario: Overlay determinism across platforms
-- **WHEN** the same `(share_string, generator_version, entrance_shuffle=insanity)` is generated on Linux + macOS + Windows + Switch
-- **THEN** the resulting entrance-permutation overlay bytes are identical across platforms; the corpus-determinism CI step catches drift
+#### Scenario: Same-region cave swap is a reachability no-op
+- **WHEN** two caves whose doors are both in the same overworld region swap entrances
+- **THEN** reachability is unchanged (both were reachable iff that region was), though
+  the runtime door destinations still differ
 
-#### Scenario: Overlay consumed by predicate evaluation
-- **WHEN** a predicate references `OP_REGION_REACHABLE <region_id>` and an entrance-shuffle overlay is active
-- **THEN** the region accessor returns the shuffled destination's location set, NOT the canonical region's; reachability computation honors the overlay
+#### Scenario: Shuffled dungeon changes reachability via edge overlay
+- **WHEN** entrance shuffle maps Eastern Palace's door to Palace of Darkness's interior
+- **THEN** the per-seed edge graph routes the EP overworld region's door-edge to the
+  PoD region, and reachability/placement treat PoD's interior as reached via EP's door
+
+#### Scenario: Disabled entrance shuffle preserves Phase A reachability byte-for-byte
+- **WHEN** all entrance axes are off (the default)
+- **THEN** no π-driven region reassignment is applied and the edge graph equals the
+  base static graph; reachability matches the Phase A baseline exactly (regression
+  corpus digests unchanged)
+
+#### Scenario: Internal dungeon edges are never shuffled
+- **WHEN** a seed shuffles dungeon entrances (Stage 2+)
+- **THEN** only door-edges (overworld-region → dungeon-region) are rewritten by π;
+  edges representing a dungeon's internal room-to-room progression and event gates
+  remain fixed

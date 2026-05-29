@@ -8,16 +8,16 @@ ALTTPR's entrance shuffle randomizes which interior screen each overworld door l
 - **Crossed** — interiors shuffle across categories (an overworld door could go to a dungeon's first room).
 - **Insanity** — every screen-pair endpoint is independently shuffled.
 
-Phase A scaffolded `RegionRemap_Lookup` in `src/rando/rando_logic.c` precisely so Phase C could swap region accessors at runtime without re-authoring the static `EdgeDef[]` graph. Phase B Slice #4a Inverted activated `RegionRemap` for the first time (Light↔Dark swap); Phase C extends it for arbitrary entrance permutations.
+Phase A scaffolded `RegionRemap_Lookup` in `src/rando/rando_logic.c` intending it as the Phase C entrance hook. **Investigation (2026-05-29, branch `pc-entrance-spike`) found that scaffold is both dead code and the wrong abstraction** — see `design.md §1`. It has zero callers; it is identity in every shipped seed; and Phase B #4a Inverted did NOT activate it (Inverted shipped via a *static alternate edge table* `kRandoEdges_Inverted[]` + a visual tile overlay, never the runtime overlay). `RegionRemap` also models a region *lookup*, whereas entrance shuffle must rewire which interior-region a door-*edge* terminates at. This change therefore **retires `RegionRemap`** and feeds the logic graph via a per-seed alternate edge table (Inverted's proven pattern, regenerated from the permutation each seed).
 
-This change is a **Phase C** scaffold — proposal-only stub. Phase C cannot start before Phase B has shipped at least #4a Inverted (RegionRemap must be production-grade before entrance shuffle layers on top of it).
+A worktree spike rotated 57 cave entrances at runtime via a shadow copy of `kOverworld_Entrance_Id` and the user playtested clean, walkable redirected interiors — so the runtime door-rewiring story is validated. This change is now **fully scoped** (design + staged tasks) rather than a stub. The hard runtime risk is retired; the work is staged functional-first (see `design.md §6`).
 
 ## What Changes (intended scope)
 
 - **Entrance shuffle module** (`src/rando/shuffle_entrance.{c,h}` new) that runs during generation, computes an entrance permutation given the active mode + RNG, and produces a `RegionRemap_*` overlay that the logic graph consumes.
 - **4 mode-specific algorithms** per ALTTPR's convention (Simple / Restricted / Crossed / Insanity), each with goal-completability preservation: the permutation algorithm SHALL retry until the goal is reachable under the permutation. Per-mode complexity differs; Insanity is the hardest case.
 - **Spoiler integration**: per-door mapping listed in JSON + text spoilers under a new `entrance_mapping` section. Critical for race admins and route planners.
-- **Settings axis**: `entrance_shuffle` enum (`none | simple | restricted | crossed | insanity`). Default `none`. Phase A reserved this axis ordinally but didn't pin a bit position — Phase C confirms placement in the canonical-serialization order.
+- **Settings model**: **composable boolean axes** (`shuffle_cave_entrances`, `shuffle_dungeon_entrances`, `coupled` [default on], `cross_category`, `decoupled`) rather than a single monolithic enum — the user chooses what to swap. The 4 famous ALTTPR modes (Simple/Restricted/Crossed/Insanity) become **presets** over these axes, plus a "Custom" mode for free. NOTE: contrary to the original stub, there is **no** existing `entrance_shuffle` enum and **no** Phase A reservation (verified 2026-05-29) — the axes are new fields appended to the canonical serialization. They consume the existing zero-pad bytes (`out[25..27]`) so no existing byte moves and the default-settings hash stays byte-identical (`design.md §5`).
 - **Sidecar TLV**: the entrance permutation is per-seed state that must persist across save/load. Phase A's `randomizer-save / Forward-compat reserve (Phase C foresight)` already specs a TLV chain after the bitmap; this change defines the `TAIL_ENTRANCE_MAP` TLV.
 - **`kGeneratorVersion` bumps**.
 - **In-game tracker integration** (#2 trackers): entrance-shuffle mode displays the per-door mapping in the location tracker (so the player knows "this door I entered actually leads to PoD's first room").
@@ -31,36 +31,39 @@ This change is a **Phase C** scaffold — proposal-only stub. Phase C cannot sta
 ### Modified Capabilities
 
 - `randomizer-shuffles`: MODIFIED Requirement on "Entrance shuffle modes (Phase C)" (Phase A drafted this at `randomizer-shuffles/spec.md:81`). Phase C fleshes out the per-mode algorithm and the goal-preservation contract.
-- `randomizer-logic`: MODIFIED Requirement on `RegionRemap` to support the entrance-shuffle overlay shape (Phase A activated Light↔Dark swap; Phase C extends to per-door permutation).
+- `randomizer-logic`: ADDED Requirement "Per-seed entrance edge overlay" — entrance shuffle feeds reachability via a per-seed alternate edge table (Inverted's pattern), and the Phase A `RegionRemap` scaffold is **retired** (dead code + wrong abstraction; see `design.md §1`).
 - `randomizer-save`: ADDED Requirement for the `TAIL_ENTRANCE_MAP` TLV chain entry; MODIFIED Requirement on the "Forward-compat reserve" section to mark this as the first realized TLV.
-- `randomizer-core`: MODIFIED Requirement on `Settings canonical serialization order (normative)` to confirm the `entrance_shuffle` byte position.
+- `randomizer-core`: MODIFIED Requirement on `Settings canonical serialization order (normative)` to **append** the composable entrance axes (consuming existing pad bytes; default-hash byte-identical).
 - `randomizer-ui`: ADDED Requirement for the entrance-shuffle mode picker on the settings screen.
 
 ## Impact
 
-- **Code**: `src/rando/shuffle_entrance.c` (new), `src/rando/shuffle_entrance.h` (new), `src/rando/rando_logic.c` (extend `RegionRemap` for entrance overlay), `src/rando/rando_save.c` (TLV write/read), `src/rando/rando_spoiler.c` (entrance_mapping section), `src/select_file.c` (settings-screen mode picker).
+- **Code**: `src/rando/shuffle_entrance.c` (new), `src/rando/shuffle_entrance.h` (new), `src/rando/rando_logic.c` (per-seed edge overlay; retire `RegionRemap`), `src/overworld.c` (door overlay + coupling via the source-door capture idiom — composes with the merged Retro TakeAny redirect at the entry hook), `src/rando/rando_save.c` (TLV write/read), `src/rando/rando_spoiler.c` (entrance_mapping section), the native settings window + Switch picker.
 - **Assets**: `assets/rando/entrance_registry.yaml` (new — enumerates every shuffleable entrance with stable IDs; mirrors ALTTPR's entrance-table convention).
 - **Effort**: Large — **4-8 weeks of focused work** depending on how clean the RegionRemap activation in Phase B ended up. Insanity mode is the long pole; the algorithm has to keep retrying permutations until goal-reachable, and the success probability can be low.
 - **Regression risk**: high `kGeneratorVersion` impact; corpus regenerates. Existing non-entrance-shuffle seeds (`entrance_shuffle == none`) MUST remain byte-identical.
-- **Dependencies**: REQUIRES Phase B #4a Inverted (RegionRemap activation), and benefits from #2 trackers + #6 hints (entrance-shuffle is much more playable with hints + a per-door tracker).
+- **Dependencies**: No hard dependency on #4a Inverted after all (the "RegionRemap activation" premise was false — see Why / `design.md §1`). The logic half reuses Inverted's *already-shipped* alternate-edge-table pattern, and the runtime coupling reuses the *already-merged* Retro TakeAny source-door-capture idiom. Benefits from #2 trackers + #6 hints (entrance shuffle is much more playable with a per-door tracker + hints).
 - **ALTTPR provenance**: entrance-shuffle code in ALTTPR is in `app/EntranceRandomizer.php`, but per `CLAUDE.md` claim-grounding note, that file's docstring incorrectly claims "we use mt_rand" — the actual code shells out to a Python script. Phase C translation discipline applies: read the actual code, not just comments.
 
-## Status (stub)
+## Status (scoped)
 
-This is a **proposal-only stub** for Phase C. Detail is deferred to `/openspec-explore` AFTER Phase B's #4a Inverted RegionRemap activation ships.
+**Scoped 2026-05-29** via `/openspec-explore` + the `pc-entrance-spike` worktree
+investigation and playtest. `design.md` captures the model (one permutation π →
+runtime door overlay + per-seed logic edge overlay), the RegionRemap retirement, the
+coupling-via-source-door-capture mechanism, the cave/dungeon exit fault line, and the
+functional-first staging. `tasks.md` is structured into Stages 0–4.
 
-Reasons for deferring detail to apply-time:
-- RegionRemap's production shape post-#4a may differ from the Phase A scaffold; Phase C spec text depends on the final shape.
-- ALTTPR's entrance-shuffle algorithm needs careful study (the PHP shells out to Python — translation discipline is non-trivial).
-- Per-mode complexity bounds (Simple is mechanical; Insanity is a retry-loop with low success rate) need a prototype.
-- Goal-preservation algorithm choice (reject + retry vs. constrained construction) needs investigation.
-
-Phase C should not begin until at least #4a Inverted has archived.
+Key de-risking already done:
+- Runtime door redirect **playtested clean** (57-cave rotation spike).
+- Coupling mechanism **already shipped** in the merged Retro TakeAny code (reuse).
+- Logic-half edge-table swap **already shipped** for Inverted (reuse the pattern).
+- `entrance_shuffle` enum + canonical reserve **already declared** by Phase A.
 
 ## When work starts
 
-1. Wait for Phase A archive + Phase B #4a Inverted archive.
-2. `/openspec-explore add-rando-entrance-shuffle` to flesh out the 4 per-mode algorithms + RegionRemap overlay shape + TLV format.
-3. `/openspec-propose` to finalize spec deltas + design.md.
-4. `/openspec-apply` to walk through tasks.
-5. `/openspec-archive` when done.
+1. `/openspec-apply add-rando-entrance-shuffle` to walk Stage 0 → Stage 1.
+2. Ship + archive when Stage 1 (coupled cave-shuffle vertical slice) is playtested
+   and audited; Stages 2–4 continue here or split into follow-on changes.
+3. Keep file-disjoint from parallel Retro work where possible; sequence the shared
+   seams (kGeneratorVersion+corpus, canonical serialization, the overworld entry
+   hook) at merge time (`design.md §7`).
