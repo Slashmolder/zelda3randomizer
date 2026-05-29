@@ -8,8 +8,30 @@
 #include <string.h>
 
 #include "../rando.h"  // kGeneratorVersion
+#include "../rando_spoiler.h"  // RandoSpoiler, Spoiler_Write (§14.4/§14.5)
 
 RandoWindowBridge g_rando_window_bridge;
+
+bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_path) {
+  const RandoWindowBridge *b = &g_rando_window_bridge;
+  if (!b->has_last_generated || b->last_generated_placement.entries == NULL)
+    return false;
+  // Build the spoiler from the generate-time SNAPSHOT (not `pending`, which the
+  // user may have edited since). Hints are NOT re-emitted (re-running
+  // Rando_GenerateHints would mutate shared hint state); this is a convenience
+  // export of the displayed placement. Spheres are not snapshotted for the native
+  // path, so sphere_data is omitted (NULL).
+  RandoSpoiler sp;
+  memset(&sp, 0, sizeof sp);
+  sp.share_string = b->last_generated_share_string;
+  sp.seed_u64 = b->last_generated_seed_u64;
+  sp.generator_version = (uint32)kGeneratorVersion;
+  sp.settings = &b->last_generated_settings;
+  sp.placements = &b->last_generated_placement;
+  sp.spheres = NULL;
+  sp.goal_completable = b->last_generated_goal_completable;
+  return Spoiler_Write(&sp, json_path, txt_path);
+}
 
 void RandoWindowBridge_RecomputeDerived(void) {
   RandoWindowBridge *b = &g_rando_window_bridge;
@@ -28,6 +50,7 @@ void RandoWindowBridge_Init(void) {
   RandoWindowBridge *b = &g_rando_window_bridge;
   memset(b, 0, sizeof *b);
   b->target_slot_index = -1;
+  b->load_slot_index = -1;
   b->generate_status = 0;
   Settings_SetDefaults(&b->pending);
   RandoWindowBridge_RecomputeDerived();
@@ -47,6 +70,21 @@ bool RandoWindowBridge_ConsumeGenerateRequest(void) {
   b->generate_requested = false;
   b->generate_in_progress = true;
   return true;
+}
+
+void RandoWindowBridge_RequestLoad(int slot_index) {
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  b->load_slot_index = slot_index;
+  b->load_requested = true;
+}
+
+int RandoWindowBridge_ConsumeLoadRequest(void) {
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  if (!b->load_requested) return -1;
+  b->load_requested = false;
+  int slot = b->load_slot_index;
+  b->load_slot_index = -1;
+  return slot;
 }
 
 void RandoWindowBridge_SetGenerateResult(int status, const char *err) {

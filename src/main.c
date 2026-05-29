@@ -1427,6 +1427,15 @@ int main(int argc, char** argv) {
       if (ok) {
         RandoWindowBridge_StoreGenerated(&res.placement, NULL, res.race_mode);  // bridge copies
         free(res.placement.entries);                                            // free our owned copy
+        // Snapshot the settings/share/seed that produced this placement so the
+        // Spoiler tab's "Save spoiler" writes an accurate RandoSpoiler even after
+        // the user edits `pending`. (game thread owns last_generated_*.)
+        b->last_generated_settings = b->pending;
+        b->last_generated_seed_u64 = b->seed_u64;
+        b->last_generated_goal_completable = res.goal_completable;
+        strncpy(b->last_generated_share_string, res.share_string,
+                sizeof b->last_generated_share_string - 1);
+        b->last_generated_share_string[sizeof b->last_generated_share_string - 1] = '\0';
         RandoWindowBridge_SetGenerateResult(2, "");
         // Persist the settings the player just generated with NOW (not only at
         // exit) so a crash/softlock/kill can't revert them — makes settings
@@ -1435,6 +1444,17 @@ int main(int argc, char** argv) {
       } else {
         RandoWindowBridge_SetGenerateResult(-1, err);
       }
+    }
+
+    // "Load it now" consumer (§13.7): the UI raises a load request after a
+    // successful generate; perform the file-select load here on the game thread
+    // (touches g_ram/WRAM, so it cannot run from the ImGui side). At this point
+    // Module01_FileSelect is the active module sitting at FileSelect_Main, which
+    // is exactly the state the in-game occupied-slot load path expects.
+    {
+      int load_slot = RandoWindowBridge_ConsumeLoadRequest();
+      if (load_slot >= 0)
+        SelectFile_LoadRandoSlot(load_slot);
     }
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
