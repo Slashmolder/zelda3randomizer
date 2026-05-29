@@ -354,6 +354,21 @@ uint8 Rando_FluteShovelEffectiveLevel(void);
 // is unavailable.
 uint8 Rando_GetActiveWorldState(void);
 
+// True when the Hyrule Castle escape story sequence (uncle death / sewers /
+// cell rescue / throne push) must NOT engage. Non-Standard rando seeds
+// (Open / Inverted / Retro) start POST-escape: the placer pre-grants
+// RescuedZelda and treats the overworld as free-roam, and the fresh-save SRAM
+// is seeded post-escape (sram_progress_indicator=2, sram_progress_flags=0x14).
+// But the HC interior is still physically reachable, and the vanilla escape
+// story-beat sprites would re-run the sequence on entry — dropping
+// sram_progress_indicator below 2 and writing an escape-only which_starting_point
+// (cell=2, post-uncle sewers=3, throne=4), which both hard-traps a save-and-quit
+// in the sealed escape and leaves the sprite CHR in its escape-specific
+// half-refreshed state (the green-guard body-tile GFX corruption). Standard
+// returns false: its escape is the real, intended start and progress climbs
+// through it. Gate any HC escape story-beat trigger on this.
+bool Rando_SuppressHyruleCastleEscape(void);
+
 // Copy g_rando_checked_bitmap into the supplied slot's checked_bitmap field.
 // Callers about to write the ACTIVE rando slot to disk should invoke this
 // just before calling Rando_WriteSidecarSlot so the in-memory checks survive
