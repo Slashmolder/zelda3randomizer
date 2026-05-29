@@ -1964,6 +1964,93 @@ void Rando_SelfCheck(void) {
   }
 }
 
+static void tsc_die(const char *msg) {
+  fprintf(stderr, "[Tracker_SelfCheck] FAIL: %s\n", msg);
+  exit(2);
+}
+
+// End-to-end check of the slot-recovery + live-reachability path (Phase 1a/1b),
+// which the corpus / other selftests do NOT cover (the playable-slot path is
+// otherwise test-free per CLAUDE.md). Generates a default placement, round-trips
+// it through a sidecar slot + Rando_ActivateSidecarSlot, and asserts: settings
+// recovered, prize/medallion shuffle assignments installed at activation, and
+// reachability is non-empty from the empty starting inventory AND expands when a
+// broad item kit is added. Pure (no file IO; g_ram inventory is zero at selftest
+// time, before game init). Leaves no active slot (Deactivate at the end).
+void Rando_TrackerSelfCheck(void) {
+  RandoSettings s;
+  Settings_SetDefaults(&s);
+  uint64 seed = 0x0123456789abcdefull;
+
+  static RandoPlacement entries[512];
+  RandoPlacementTable table;
+  table.entries = entries;
+  table.count = 0;
+  if (!Place_AssumedFill(&s, seed, 0, &table) && table.count == 0)
+    tsc_die("placement failed");
+
+  RandoSidecarSlot slot;
+  memset(&slot, 0, sizeof(slot));
+  slot.header.slot_kind = kSlotKind_Randomizer;
+  slot.header.generator_version = (uint16)kGeneratorVersion;
+  uint16 maxloc = 0;
+  for (uint16 i = 0; i < table.count && i < 512; i++) {
+    slot.placements[i] = table.entries[i];
+    if (table.entries[i].location_id > maxloc) maxloc = table.entries[i].location_id;
+  }
+  slot.placement_count = table.count;
+  slot.header.placement_table_size = (uint16)(((uint32)maxloc + 1) * 2);
+  slot.header.settings_ext_present = 1;
+  slot.header.world_state = s.world_state;
+  slot.header.goal = s.goal;
+  Settings_CanonicalSerialize(&s, slot.settings_canonical);
+  slot.header.settings_present = 1;
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  ss.seed_u64 = seed;
+  Share_PackBinary(&ss, slot.header.share_string);
+
+  Rando_ActivateSidecarSlot(&slot);
+  if (!Rando_HasActiveSettings()) tsc_die("settings not recovered after activate");
+  const RandoSettings *rec = Rando_GetActiveSettings();
+  if (rec == NULL || rec->world_state != s.world_state || rec->goal != s.goal ||
+      rec->prize_shuffle != s.prize_shuffle || rec->medallion_shuffle != s.medallion_shuffle)
+    tsc_die("recovered settings mismatch");
+  if (Rando_GetDungeonPrizeAssignment() == NULL || Rando_GetMedallionAssignment() == NULL)
+    tsc_die("shuffle assignments not installed at activate");
+
+  RandoCounts counts;
+  Rando_BuildRuntimeCounts(&counts);
+  const RandoReachability *r0 = Logic_ComputeReachability(&counts, rec);
+  int n0 = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (Reachability_HasLocation(r0, kRandoLocations[i].id)) n0++;
+  if (n0 == 0) tsc_die("no locations reachable from the starting inventory");
+
+  // A broad progression kit must strictly expand reachability (monotonic logic).
+  counts.by_item_id[ITEM_ProgressiveSword] = 4;
+  counts.by_item_id[ITEM_ProgressiveGlove] = 2;
+  counts.by_item_id[ITEM_Hammer] = 1;
+  counts.by_item_id[ITEM_Lamp] = 1;
+  counts.by_item_id[ITEM_MoonPearl] = 1;
+  counts.by_item_id[ITEM_Flippers] = 1;
+  counts.by_item_id[ITEM_Hookshot] = 1;
+  counts.by_item_id[ITEM_FireRod] = 1;
+  counts.by_item_id[ITEM_ProgressiveBow] = 2;
+  counts.by_item_id[ITEM_CaneOfSomaria] = 1;
+  counts.by_item_id[ITEM_MagicMirror] = 1;
+  counts.by_item_id[ITEM_Bombos] = counts.by_item_id[ITEM_Ether] = counts.by_item_id[ITEM_Quake] = 1;
+  const RandoReachability *r1 = Logic_ComputeReachability(&counts, rec);
+  int n1 = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (Reachability_HasLocation(r1, kRandoLocations[i].id)) n1++;
+  if (n1 <= n0) tsc_die("reachability did not expand when a full item kit was added");
+
+  Rando_DeactivateSlot();
+  fprintf(stderr, "[Tracker_SelfCheck] OK (%d -> %d reachable)\n", n0, n1);
+}
+
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
   Rando_Rng_SelfCheck();
@@ -1976,5 +2063,6 @@ void Rando_RunAllSelfChecks(void) {
   RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
   Hints_SelfCheck();
+  Rando_TrackerSelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }
