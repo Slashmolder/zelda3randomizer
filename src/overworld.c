@@ -15,6 +15,7 @@
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
 #include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
+#include "rando/inverted_maps.h" // Overworld_ApplyInvertedTiles (#82 Inverted topology)
 
 const uint16 kOverworld_OffsetBaseX[64] = {
   0,     0, 0x400, 0x600, 0x600, 0xa00, 0xa00, 0xe00,
@@ -2093,13 +2094,34 @@ void Overworld_DrawQuadrantsAndOverlays() {  // 82eec5
     ow_entrance_value = 0;
   }
   Overworld_HandleOverlaysAndBombDoors();
+
+  // #82 Inverted overworld topology: after the screen's map16 buffer is built
+  // (quadrants + entrance markers + vanilla event overlays), apply the inverted
+  // per-screen tile-overlay set, mirroring z3randomizer's Overworld_LoadNewTiles
+  // hook ("executed right after the original tile load"). Gated on the active
+  // Inverted rando world-state so vanilla / Open / Standard / Retro screens are
+  // byte-identical. This is purely a render-buffer rewrite (consumed by the
+  // following Map16ToMap8); no game-logic / RAM-compare-relevant state changes.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+    Overworld_ApplyInvertedTiles();
+  }
 }
 
 void Overworld_HandleOverlaysAndBombDoors() {  // 82ef29
-  if (overworld_screen_index == 0x33)
-    dung_bg2[340] = 0x20f;
-  else if (overworld_screen_index == 0x2f)
-    dung_bg2[1497] = 0x20f;
+  // #82 Inverted: the two hardcoded Light-World rocks (screens 0x33 / 0x2F) are
+  // removed in Inverted mode (z3randomizer inverted.asm HardcodedRocks: skip the
+  // 0x020F rock write when InvertedMode). Otherwise the LW (reached via mirror)
+  // keeps a rock that the inverted topology expects gone.
+  bool rando_inverted_ow =
+      (enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+  if (!rando_inverted_ow) {
+    if (overworld_screen_index == 0x33)
+      dung_bg2[340] = 0x20f;
+    else if (overworld_screen_index == 0x2f)
+      dung_bg2[1497] = 0x20f;
+  }
   if (BYTE(overworld_screen_index) < 0x80 && save_ow_event_info[BYTE(overworld_screen_index)] & 0x20)
     Overworld_LoadEventOverlay();
   if (save_ow_event_info[BYTE(overworld_screen_index)] & 2) {
