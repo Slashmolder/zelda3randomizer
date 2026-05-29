@@ -452,12 +452,10 @@ static const ImU32 kColChecked = IM_COL32(115, 191, 115, 255);
 static const ImU32 kColReach   = IM_COL32(242, 217, 89, 255);
 static const ImU32 kColLocked  = IM_COL32(120, 120, 128, 255);
 
-// Light-world region pins, positioned (normalized 0..1) over the decoded light
-// overworld map image. (Dark world + dungeon interiors are listed in the panel
-// below — the dark map graphic decodes only its NW quadrant from the asset, so
-// a full dark-map background is a follow-up.)
-struct LightPin { uint16 region_id; float x, y; };
-static const LightPin kLightPins[] = {
+// Region pins positioned (normalized 0..1) over the decoded overworld maps. The
+// dark world shares the light world's geography, so the dark coords mirror it.
+struct WorldPin { uint16 region_id; float x, y; };
+static const WorldPin kLightPins[] = {
   {16, 0.30f, 0.16f},  // LightWorld_DeathMountain_West
   {15, 0.52f, 0.14f},  // LightWorld_DeathMountain_East
   {18, 0.16f, 0.50f},  // LightWorld_NorthWest (Kakariko)
@@ -465,15 +463,28 @@ static const LightPin kLightPins[] = {
   {19, 0.45f, 0.82f},  // LightWorld_South
   {20, 0.50f, 0.66f},  // LinksHouse
 };
-static bool IsLightPin(uint16 rid) {
+static const WorldPin kDarkPins[] = {
+  {1, 0.30f, 0.16f},   // DarkWorld_DeathMountain_West
+  {0, 0.52f, 0.14f},   // DarkWorld_DeathMountain_East
+  {29, 0.62f, 0.13f},  // TurtleRock_Entrance (DM east)
+  {4, 0.16f, 0.50f},   // DarkWorld_NorthWest (Village of Outcasts)
+  {3, 0.64f, 0.44f},   // DarkWorld_NorthEast
+  {5, 0.45f, 0.80f},   // DarkWorld_South
+  {2, 0.20f, 0.84f},   // DarkWorld_Mire
+  {22, 0.13f, 0.86f},  // MiseryMire_Entrance
+  {21, 0.50f, 0.66f},  // LinksHouse_Inverted
+};
+static bool IsOverworldPin(uint16 rid) {
   for (int i = 0; i < (int)(sizeof(kLightPins) / sizeof(kLightPins[0])); i++)
     if (kLightPins[i].region_id == rid) return true;
+  for (int i = 0; i < (int)(sizeof(kDarkPins) / sizeof(kDarkPins[0])); i++)
+    if (kDarkPins[i].region_id == rid) return true;
   return false;
 }
 
-// Decoded light-world map texture (created once, in the map window's GL context).
-static ImTextureID s_light_map_tex = (ImTextureID)0;
-static bool s_light_map_tried = false;
+// Decoded map textures (created once, in the map window's GL context).
+static ImTextureID s_map_tex[2] = {(ImTextureID)0, (ImTextureID)0};  // [0]=light,[1]=dark
+static bool s_map_tried = false;
 
 static void DrawMapTracker(void *) {
   BeginFullWindow("Map Tracker##z3r");
@@ -489,39 +500,49 @@ static void DrawMapTracker(void *) {
   const RandoReachability *reach = Rando_GetLiveReachability();
   bool have_reach = (reach != NULL);
 
-  // Decode + upload the light-world map once (static asset; the GL context of
-  // this window is current inside the draw callback).
-  if (!s_light_map_tried) {
+  // Decode + upload both overworld maps once (static assets; this window's GL
+  // context is current inside the draw callback).
+  if (!s_map_tried) {
     static unsigned char buf[kRandoMapPixels * kRandoMapPixels * 4];
     if (RandoMap_Decode(false, buf))
-      s_light_map_tex = UploadRgbaTexture(buf, kRandoMapPixels, kRandoMapPixels);
-    s_light_map_tried = true;
+      s_map_tex[0] = UploadRgbaTexture(buf, kRandoMapPixels, kRandoMapPixels);
+    if (RandoMap_Decode(true, buf))
+      s_map_tex[1] = UploadRgbaTexture(buf, kRandoMapPixels, kRandoMapPixels);
+    s_map_tried = true;
   }
 
-  ImGui::TextDisabled("Light World — green: all checked · yellow: available · grey: locked");
+  static int s_world = 0;  // 0=light, 1=dark
+  ImGui::RadioButton("Light World", &s_world, 0);
+  ImGui::SameLine();
+  ImGui::RadioButton("Dark World", &s_world, 1);
+  ImGui::SameLine();
+  ImGui::TextDisabled("(green: checked · yellow: available · grey: locked)");
 
-  // ---- Light-world map image with region pins ----
+  const WorldPin *pins = s_world ? kDarkPins : kLightPins;
+  int npins = s_world ? (int)(sizeof(kDarkPins) / sizeof(kDarkPins[0]))
+                      : (int)(sizeof(kLightPins) / sizeof(kLightPins[0]));
+
   ImVec2 origin = ImGui::GetCursorScreenPos();
   float side = ImGui::GetContentRegionAvail().x;
   if (side > 480.0f) side = 480.0f;
   ImDrawList *dl = ImGui::GetWindowDrawList();
   ImVec2 br = ImVec2(origin.x + side, origin.y + side);
-  if (s_light_map_tex)
-    dl->AddImage(s_light_map_tex, origin, br);
+  if (s_map_tex[s_world])
+    dl->AddImage(s_map_tex[s_world], origin, br);
   else
     dl->AddRectFilled(origin, br, IM_COL32(28, 30, 38, 255), 4.0f);
 
   ImVec2 mouse = ImGui::GetMousePos();
   int hover_region = -1;
-  for (int i = 0; i < (int)(sizeof(kLightPins) / sizeof(kLightPins[0])); i++) {
-    uint16 rid = kLightPins[i].region_id;
+  for (int i = 0; i < npins; i++) {
+    uint16 rid = pins[i].region_id;
     int total, checked, avail;
     RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
     if (total == 0) continue;
     int st = RegionStatus(total, checked, avail);
     ImU32 col = (st == kCheck_Checked) ? kColChecked
                 : (st == kCheck_Reachable) ? kColReach : kColLocked;
-    ImVec2 c = ImVec2(origin.x + kLightPins[i].x * side, origin.y + kLightPins[i].y * side);
+    ImVec2 c = ImVec2(origin.x + pins[i].x * side, origin.y + pins[i].y * side);
     float radius = 9.0f;
     dl->AddCircleFilled(c, radius, col);
     dl->AddCircle(c, radius, IM_COL32(10, 10, 12, 255), 0, 2.0f);
@@ -555,13 +576,13 @@ static void DrawMapTracker(void *) {
     ImGui::EndTooltip();
   }
 
-  // ---- Dark world + dungeon regions (panel) ----
+  // ---- Dungeon regions (interiors have no overworld pin) ----
   ImGui::Spacing();
-  ImGui::SeparatorText("Dark World & Dungeons");
-  ImGui::BeginChild("##darkdungeons", ImVec2(0, 0), false);
+  ImGui::SeparatorText("Dungeons");
+  ImGui::BeginChild("##dungeons", ImVec2(0, 0), false);
   for (uint32 ri = 0; ri < kRandoRegionsCount; ri++) {
     uint16 rid = kRandoRegions[ri].id;
-    if (IsLightPin(rid)) continue;  // shown as a pin on the light map above
+    if (IsOverworldPin(rid)) continue;  // shown as a pin on a map above
     int total, checked, avail;
     RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
     if (total == 0) continue;

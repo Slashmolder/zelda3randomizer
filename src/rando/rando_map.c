@@ -10,13 +10,17 @@ bool RandoMap_Decode(bool dark, uint8 *out) {
   const uint16 *pal = kOverworldMapPaletteData;    // 256 BGR555
   if (gfx == NULL || pal == NULL || out == NULL) return false;
 
-  // Reconstruct the 64x64 tile-index grid the Mode-7 map renders.
+  // Reconstruct the 64x64 tile-index grid the Mode-7 map renders. BOTH worlds
+  // use the light tilemap as the 64x64 base; the dark world then overlays its
+  // 32x32 data onto the CENTER (the in-game dark map runs the light loader
+  // first, then NMI_UploadDarkWorldMap writes the dark block at VRAM dst 0x810 =
+  // row 16, col 16). The light-tile border around the dark center is faithful to
+  // the game (messaging.c:1129/1144, nmi.c:327/393).
   static uint8 grid[64][64];
   memset(grid, 0, sizeof(grid));
-  if (!dark) {
-    // Light: kLightOverworldTilemap is quadrant-major (4 x 32x32), laid out into
-    // a 128-stride VRAM tilemap at dsts {0, 0x20, 0x1000, 0x1020} — i.e. the four
-    // 32x32 quadrants of a 64x64 grid (NMI_UpdateLoadLightWorldMap, nmi.c:327).
+  {
+    // Light base: kLightOverworldTilemap is quadrant-major (4 x 32x32) into the
+    // four corners of the 64x64 grid (NMI_UpdateLoadLightWorldMap, nmi.c:327).
     const uint8 *src = kLightOverworldTilemap;
     if (src == NULL) return false;
     static const int qcol[4] = {0, 32, 0, 32};
@@ -25,22 +29,24 @@ bool RandoMap_Decode(bool dark, uint8 *out) {
       for (int r = 0; r < 32; r++)
         for (int c = 0; c < 32; c++)
           grid[qrow[q] + r][qcol[q] + c] = src[q * 1024 + r * 32 + c];
-  } else {
-    // Dark: kDarkOverworldTilemap is 1024 bytes (32x32). Best-effort placement;
-    // verified/adjusted empirically. (The in-game dark load goes through a
-    // separate NMI path — WorldMap_LoadDarkWorldMap, messaging.c:1144.)
+  }
+  if (dark) {
     const uint8 *src = kDarkOverworldTilemap;
     if (src == NULL) return false;
     for (int r = 0; r < 32; r++)
       for (int c = 0; c < 32; c++)
-        grid[r][c] = src[r * 32 + c];
+        grid[16 + r][16 + c] = src[r * 32 + c];  // centered overlay
   }
 
+  // The Mode-7 tile gfx is shared between worlds; the world is selected by the
+  // 128-color palette block (light 0x00..0x7F, dark 0x80..0xFF). Pixel indices
+  // run 0..127 within the selected block.
+  int pal_base = dark ? 0x80 : 0;
   for (int py = 0; py < kRandoMapPixels; py++) {
     for (int px = 0; px < kRandoMapPixels; px++) {
       uint8 tile = grid[py >> 3][px >> 3];
       uint8 idx = gfx[tile * 64 + (py & 7) * 8 + (px & 7)];
-      uint16 c = pal[idx];  // BGR555
+      uint16 c = pal[pal_base + (idx & 0x7f)];  // BGR555
       uint8 *o = out + ((size_t)py * kRandoMapPixels + px) * 4;
       o[0] = (uint8)((c & 0x1f) << 3);          // R
       o[1] = (uint8)(((c >> 5) & 0x1f) << 3);   // G
