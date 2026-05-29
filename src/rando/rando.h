@@ -13,6 +13,7 @@
 
 #include "../types.h"
 #include "rando_settings.h"  // RandoSettings (Rando_GetActiveSettings)
+#include "rando_logic.h"     // RandoCounts, RandoReachability (live reachability bridge)
 
 // ---------------------------------------------------------------------------
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
@@ -429,6 +430,16 @@ const uint8 *Rando_GetMedallionAssignment(void);
 // ---------------------------------------------------------------------------
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
+
+// ---------------------------------------------------------------------------
+// Live reachability bridge for the tracker windows. Rando_BuildRuntimeCounts
+// maps the live g_ram inventory into a logical RandoCounts; Rando_GetLiveReach-
+// ability computes (memoized on the reachability counter) the set of currently
+// reachable locations/regions, or NULL when settings are unavailable (caller
+// then shows checked/unchecked only). See rando_logic.h Reachability_Has*.
+// ---------------------------------------------------------------------------
+void Rando_BuildRuntimeCounts(RandoCounts *out);
+const RandoReachability *Rando_GetLiveReachability(void);
 
 // ---------------------------------------------------------------------------
 // Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the

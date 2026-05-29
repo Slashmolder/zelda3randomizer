@@ -1016,6 +1016,137 @@ const RandoSettings *Rando_GetActiveSettings(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Live reachability bridge (tracker windows).
+//
+// Rando_BuildRuntimeCounts maps the live g_ram inventory into the logical
+// RandoCounts the predicate VM reads. The macros (macros.yaml) accept the
+// progressive form via HAS_AMOUNT(Progressive*, n), so populating the
+// progressive counts satisfies every tier disjunct — we don't need the
+// absolute L1Sword/etc. ids. Prizes (crystals/pendants) are NOT set here: the
+// reachability fixed-point derives them from reachable dungeon bosses
+// (OP_HAS_PRIZE + cleared_dungeons), i.e. logical accessibility. Event items
+// the VM treats as inventory (RescuedZelda, DefeatAgahnim) are derived from
+// actual game/rando progress.
+// ---------------------------------------------------------------------------
+void Rando_BuildRuntimeCounts(RandoCounts *out) {
+  if (out == NULL) return;
+  memset(out, 0, sizeof(*out));
+
+  // Progressive tiers. Sword byte 0xFF == none (not 0).
+  uint8 sword = link_sword_type;
+  if (sword >= 1 && sword <= 4) out->by_item_id[ITEM_ProgressiveSword] = sword;
+  out->by_item_id[ITEM_ProgressiveShield] = link_shield_type;  // 0..3
+  out->by_item_id[ITEM_ProgressiveArmor] = link_armor;          // 0=green,1=blue,2=red
+  out->by_item_id[ITEM_ProgressiveGlove] = link_item_gloves;    // 0..2
+  // Bow byte is non-linear: 0 none, 1-2 wood, 3-4 silver (see progressive_to_lttp).
+  uint8 bowb = link_item_bow;
+  if (bowb >= 3) {
+    out->by_item_id[ITEM_ProgressiveBow] = 2;
+    out->by_item_id[ITEM_SilverArrowUpgrade] = 1;
+  } else if (bowb >= 1) {
+    out->by_item_id[ITEM_ProgressiveBow] = 1;
+  }
+
+  // Single-presence items.
+  out->by_item_id[ITEM_FireRod] = link_item_fire_rod ? 1 : 0;
+  out->by_item_id[ITEM_IceRod] = link_item_ice_rod ? 1 : 0;
+  out->by_item_id[ITEM_Hammer] = link_item_hammer ? 1 : 0;
+  out->by_item_id[ITEM_Hookshot] = link_item_hookshot ? 1 : 0;
+  out->by_item_id[ITEM_Bombos] = link_item_bombos_medallion ? 1 : 0;
+  out->by_item_id[ITEM_Ether] = link_item_ether_medallion ? 1 : 0;
+  out->by_item_id[ITEM_Quake] = link_item_quake_medallion ? 1 : 0;
+  out->by_item_id[ITEM_Lamp] = link_item_torch ? 1 : 0;
+  out->by_item_id[ITEM_BugCatchingNet] = link_item_bug_net ? 1 : 0;
+  out->by_item_id[ITEM_BookOfMudora] = link_item_book_of_mudora ? 1 : 0;
+  out->by_item_id[ITEM_CaneOfSomaria] = link_item_cane_somaria ? 1 : 0;
+  out->by_item_id[ITEM_CaneOfByrna] = link_item_cane_byrna ? 1 : 0;
+  out->by_item_id[ITEM_Cape] = link_item_cape ? 1 : 0;
+  out->by_item_id[ITEM_MagicMirror] = link_item_mirror ? 1 : 0;
+  out->by_item_id[ITEM_Boots] = link_item_boots ? 1 : 0;
+  out->by_item_id[ITEM_Flippers] = link_item_flippers ? 1 : 0;
+  out->by_item_id[ITEM_MoonPearl] = link_item_moon_pearl ? 1 : 0;
+
+  // Boomerangs: byte 1=blue, 2=red (separate rando items).
+  if (link_item_boomerang == 1) out->by_item_id[ITEM_BlueBoomerang] = 1;
+  else if (link_item_boomerang == 2) out->by_item_id[ITEM_RedBoomerang] = 1;
+
+  // Mushroom / Powder share byte 0xF344 (1=mushroom, 2=powder); true mushroom
+  // possession is tracked separately in rando state so Powder-first can't lock
+  // out the mushroom logic.
+  if (Rando_MushroomHeld() || link_item_mushroom == 1) out->by_item_id[ITEM_Mushroom] = 1;
+  if (link_item_mushroom == 2) out->by_item_id[ITEM_MagicPowder] = 1;
+
+  // Flute / shovel decouple — true ownership in rando state (the vanilla
+  // link_item_flute byte is one slot that can't hold both).
+  uint8 fs = g_rando_flute_shovel_owned;
+  if (fs & kRandoFluteShovel_Shovel) out->by_item_id[ITEM_Shovel] = 1;
+  if (fs & kRandoFluteShovel_Flute) out->by_item_id[ITEM_OcarinaInactive] = 1;
+
+  // Half / quarter magic: link_magic_consumption 1=half, 2=quarter.
+  if (link_magic_consumption >= 1) out->by_item_id[ITEM_HalfMagic] = 1;
+  if (link_magic_consumption >= 2) out->by_item_id[ITEM_QuarterMagic] = 1;
+
+  // Bottles — count non-empty slots. HasBottle macro sums all bottle ids via
+  // HAS_ANY_COUNT, so a single counter satisfies the count-based gates. (Content
+  // -specific gates like GoodBee are not modeled; an acceptable approximation.)
+  {
+    uint8 bottles = 0;
+    for (int i = 0; i < 4; i++) if (link_bottle_info[i] != 0) bottles++;
+    out->by_item_id[ITEM_BottleEmpty] = bottles;
+  }
+
+  // Virtual / event items the VM reads as inventory.
+  out->by_item_id[ITEM_StartingHeart] = 3;  // baseline 3 hearts
+  // RescuedZelda: pre-collected in non-Standard worlds; in Standard it is earned
+  // at the castle escape (sram_progress_indicator >= 2 == Zelda at sanctuary).
+  bool rescued = (g_rando_active_world_state != (uint8)kWorldState_Standard) ||
+                 (sram_progress_indicator >= 2);
+  if (rescued) out->by_item_id[ITEM_RescuedZelda] = 1;
+  // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
+  if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
+
+  // Vanilla-mode dungeon items are logically available in-place — pre-grant
+  // exactly as the placer does (shared helper). NOTE: shuffled (keysanity)
+  // dungeon-item classes are NOT yet read from live g_ram here, so the check
+  // tracker under-reports dungeon-interior locations under those non-default
+  // modes; default seeds are all-vanilla. (Follow-up: map live per-dungeon keys
+  // / big keys / maps / compasses → registry ids for non-vanilla modes.)
+  if (g_rando_active_settings_valid) {
+    Rando_SeedVanillaDungeonItems(out, &g_rando_active_settings);
+  }
+}
+
+// Memoized live reachability. Recomputed only when the reachability-state
+// counter advances (bumped on item pickups, location checks, and progress
+// events). Returns NULL when settings are unavailable (older slot / snapshot
+// restore) — callers then suppress the reachability display. The result is
+// snapshotted out of the shared Logic_ComputeReachability buffer so it stays
+// valid across frames and across both tracker windows.
+static uint32 g_live_reach_counter = 0xFFFFFFFFu;
+static bool g_live_reach_valid = false;
+
+const RandoReachability *Rando_GetLiveReachability(void) {
+  if (!g_rando_active_settings_valid) {
+    g_live_reach_valid = false;
+    return NULL;
+  }
+  uint32 cur = Rando_GetReachabilityCounter();
+  if (g_live_reach_valid && cur == g_live_reach_counter) {
+    return Reachability_Snapshot(false);  // stable cached snapshot
+  }
+  RandoCounts counts;
+  Rando_BuildRuntimeCounts(&counts);
+  const RandoReachability *r = Logic_ComputeReachability(&counts, &g_rando_active_settings);
+  if (r == NULL) {
+    g_live_reach_valid = false;
+    return NULL;
+  }
+  g_live_reach_counter = cur;
+  g_live_reach_valid = true;
+  return Reachability_Snapshot(true);  // copy out of the shared buffer
+}
+
+// ---------------------------------------------------------------------------
 // Phase B Slice 6 — race-mode reveal action.
 //
 // Pipeline:
