@@ -310,6 +310,65 @@ bool Rando_MushroomHeld(void);
 // Clear the possession flag — call when the Witch accepts the Mushroom.
 void Rando_DeliverMushroom(void);
 
+// Flute/shovel decouple (old-style single inventory slot).
+//
+// Vanilla packs the shovel and flute into one byte, link_item_flute (0xF34C):
+// 1=shovel, 2=flute (inactive), 3=flute (activated). Rando shuffles the flute
+// and the shovel as INDEPENDENT items, but that byte can't represent owning
+// both — so acquiring the second of the pair used to overwrite (and lose) the
+// first, softlocking seeds that require both (e.g. Shovel to dig "Flute Spot"
+// AND the flute to fly). We track true ownership in g_rando_flute_shovel_owned
+// and treat link_item_flute purely as the currently-SELECTED function, which
+// the player swaps in the item menu (see Hud_NormalMenu). Mirrors ALTTPR's
+// itemdowngrade.asm / inventory.asm model. Persisted via
+// RandoSlotHeader.flute_shovel_owned.
+enum {
+  kRandoFluteShovel_Shovel      = 0x01,  // shovel obtained
+  kRandoFluteShovel_Flute       = 0x02,  // flute obtained (inactive)
+  kRandoFluteShovel_FluteActive = 0x04,  // flute has been activated (selects level 3)
+};
+extern uint8 g_rando_flute_shovel_owned;
+// Record a shovel/flute pickup: set the ownership bit and raise link_item_flute
+// (the selected function) to this item's level without ever downgrading, so the
+// shovel can't drop the slot below an owned flute. `lttp_code` is the vanilla
+// receive code (0x13 shovel, 0x14 flute, 0x4a active flute). Call only when
+// rando is active, from the receive path in misc.c.
+void Rando_GrantFluteShovel(uint8 lttp_code);
+// True iff a rando slot is active and the player owns BOTH a flute and the
+// shovel, so the single Y-slot's function can be toggled in the item menu.
+bool Rando_FluteShovelCanToggle(void);
+// Effective flute/shovel level for OWNERSHIP tests (0 none, 1 shovel, 2 flute,
+// 3 active flute): the highest function the player actually owns, regardless of
+// which one is currently selected in link_item_flute. Use this — not the raw
+// link_item_flute byte — wherever a sprite/NPC asks "does the player have the
+// flute" (vs. "is the flute the selected Y item"), so toggling to the shovel
+// doesn't make the player look flute-less. Returns the raw byte verbatim when
+// no rando slot is active, so the vanilla side-by-side path is byte-identical.
+uint8 Rando_FluteShovelEffectiveLevel(void);
+
+// Phase B Inverted runtime — the active slot's world_state (WorldState enum),
+// captured at Rando_ActivateSidecarSlot from the slot header's additive @68
+// byte. Returns kWorldState_Open (0) when no slot is active or the slot
+// predates the world_state ext. Used by the starting-inventory grant to
+// recognize an Inverted slot on reload, where the full RandoSettings struct
+// is unavailable.
+uint8 Rando_GetActiveWorldState(void);
+
+// True when the Hyrule Castle escape story sequence (uncle death / sewers /
+// cell rescue / throne push) must NOT engage. Non-Standard rando seeds
+// (Open / Inverted / Retro) start POST-escape: the placer pre-grants
+// RescuedZelda and treats the overworld as free-roam, and the fresh-save SRAM
+// is seeded post-escape (sram_progress_indicator=2, sram_progress_flags=0x14).
+// But the HC interior is still physically reachable, and the vanilla escape
+// story-beat sprites would re-run the sequence on entry — dropping
+// sram_progress_indicator below 2 and writing an escape-only which_starting_point
+// (cell=2, post-uncle sewers=3, throne=4), which both hard-traps a save-and-quit
+// in the sealed escape and leaves the sprite CHR in its escape-specific
+// half-refreshed state (the green-guard body-tile GFX corruption). Standard
+// returns false: its escape is the real, intended start and progress climbs
+// through it. Gate any HC escape story-beat trigger on this.
+bool Rando_SuppressHyruleCastleEscape(void);
+
 // Copy g_rando_checked_bitmap into the supplied slot's checked_bitmap field.
 // Callers about to write the ACTIVE rando slot to disk should invoke this
 // just before calling Rando_WriteSidecarSlot so the in-memory checks survive

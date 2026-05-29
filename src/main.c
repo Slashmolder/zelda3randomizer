@@ -1336,6 +1336,10 @@ int main(int argc, char** argv) {
           // Suppress HandleInput entirely — see comment above.
           break;
         }
+        if (event.key.keysym.sym == SDLK_F12 && !event.key.repeat) {
+          ZeldaDumpDebugState();  // dev diagnostic: dump g_ram + PPU + state line
+          break;
+        }
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, true);
         break;
       case SDL_KEYUP:

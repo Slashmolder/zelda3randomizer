@@ -15,6 +15,7 @@
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
 #include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
+#include "rando/inverted_maps.h" // Overworld_ApplyInvertedTiles (#82 Inverted topology)
 
 const uint16 kOverworld_OffsetBaseX[64] = {
   0,     0, 0x400, 0x600, 0x600, 0xa00, 0xa00, 0xe00,
@@ -2093,13 +2094,34 @@ void Overworld_DrawQuadrantsAndOverlays() {  // 82eec5
     ow_entrance_value = 0;
   }
   Overworld_HandleOverlaysAndBombDoors();
+
+  // #82 Inverted overworld topology: after the screen's map16 buffer is built
+  // (quadrants + entrance markers + vanilla event overlays), apply the inverted
+  // per-screen tile-overlay set, mirroring z3randomizer's Overworld_LoadNewTiles
+  // hook ("executed right after the original tile load"). Gated on the active
+  // Inverted rando world-state so vanilla / Open / Standard / Retro screens are
+  // byte-identical. This is purely a render-buffer rewrite (consumed by the
+  // following Map16ToMap8); no game-logic / RAM-compare-relevant state changes.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+    Overworld_ApplyInvertedTiles();
+  }
 }
 
 void Overworld_HandleOverlaysAndBombDoors() {  // 82ef29
-  if (overworld_screen_index == 0x33)
-    dung_bg2[340] = 0x20f;
-  else if (overworld_screen_index == 0x2f)
-    dung_bg2[1497] = 0x20f;
+  // #82 Inverted: the two hardcoded Light-World rocks (screens 0x33 / 0x2F) are
+  // removed in Inverted mode (z3randomizer inverted.asm HardcodedRocks: skip the
+  // 0x020F rock write when InvertedMode). Otherwise the LW (reached via mirror)
+  // keeps a rock that the inverted topology expects gone.
+  bool rando_inverted_ow =
+      (enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+  if (!rando_inverted_ow) {
+    if (overworld_screen_index == 0x33)
+      dung_bg2[340] = 0x20f;
+    else if (overworld_screen_index == 0x2f)
+      dung_bg2[1497] = 0x20f;
+  }
   if (BYTE(overworld_screen_index) < 0x80 && save_ow_event_info[BYTE(overworld_screen_index)] & 0x20)
     Overworld_LoadEventOverlay();
   if (save_ow_event_info[BYTE(overworld_screen_index)] & 2) {
@@ -2744,7 +2766,17 @@ void HandlePegPuzzles(uint16 pos) {  // 8edd67
   static const uint16 kLwTurtleRockPegPositions[3] = { 0x826, 0x5a0, 0x81a };
 
   if (overworld_screen_index == 7) {
-    if (save_ow_event_info[7] & 0x20)
+    // #82 Inverted: TurtleRockPegSolved. In Inverted the Turtle Rock entrance
+    // pegs are treated as already solved (the puzzle is pre-flat), per
+    // z3randomizer inverted.asm TurtleRockPegSolved which forces the
+    // peg-solved event test (`LDA $7EF287 : AND #$0020`) to always read 0x20.
+    // Mirror that here so the troll-peg hammer interaction is skipped under the
+    // active Inverted rando world-state (the peg puzzle behaves as complete).
+    // Vanilla / Open / Standard / Retro use the persisted solved-bit unchanged.
+    bool inverted_rando =
+        (enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+    if (inverted_rando || (save_ow_event_info[7] & 0x20))
       return;
     if (word_7E04C8 != 0xffff && kLwTurtleRockPegPositions[word_7E04C8 >> 1] == pos) {
       WORD(sound_effect_1) = 0x2d00;
@@ -3566,15 +3598,47 @@ void OpenGargoylesDomain() {  // 9bc264
 }
 
 void CreatePyramidHole() {  // 9bc2a7
-  Overworld_DrawMap16_Persist(0x3bc, 0xe3f);
-  Overworld_DrawMap16_Persist(0x3be, 0xe40);
-  Overworld_DrawMap16_Persist(0x3c0, 0xe41);
-  Overworld_DrawMap16_Persist(0x43c, 0xe42);
-  Overworld_DrawMap16_Persist(0x43e, 0xe43);
-  Overworld_DrawMap16_Persist(0x440, 0xe44);
-  Overworld_DrawMap16_Persist(0x4bc, 0xe45);
-  Overworld_DrawMap16_Persist(0x4be, 0xe46);
-  Overworld_DrawMap16_Persist(0x4c0, 0xe47);
+  // #82 Inverted: the animated post-bat-slam pyramid hole. In Inverted the
+  // pyramid sits at a different screen position than vanilla DW screen 0x5B,
+  // so the carved hole occupies a different map16 footprint (z3randomizer
+  // inverted.asm Overworld_CreatePyramidHoleModified .invertedBehavior). The
+  // *static* (reload-the-screen-with-hole-already-present) inverted overlay is
+  // already handled by the OWW_CUSTOM_MAP1B_AGA branch in
+  // Overworld_ApplyInvertedTiles (inverted_maps_apply.c) on inverted screen
+  // 0x1B. To keep the animated reveal and the static reload byte-identical, the
+  // positions/tiles below are exactly the (pos, tile) pairs the MAP1B_AGA
+  // stripe stream expands to (see kInvertedMapData screen 0x1B): a 0x046D base
+  // tile, then 0xE39 and two 4-wide RLEINC runs 0xE3A.. / 0xE3E.. and the
+  // 0x490/0x491 debris pair. Gated on the Inverted rando world-state so vanilla
+  // / Open / Standard / Retro carve the original footprint unchanged. This only
+  // rewrites the live map16 buffer + queues the matching VRAM upload (via
+  // Overworld_DrawMap16_Persist); the event bit / SFX / reachability bump below
+  // are shared.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+    Overworld_DrawMap16_Persist(0x43e, 0x046d);
+    Overworld_DrawMap16_Persist(0x440, 0x0e39);
+    Overworld_DrawMap16_Persist(0x4bc, 0x0e3a);
+    Overworld_DrawMap16_Persist(0x4be, 0x0e3b);
+    Overworld_DrawMap16_Persist(0x4c0, 0x0e3c);
+    Overworld_DrawMap16_Persist(0x4c2, 0x0e3d);
+    Overworld_DrawMap16_Persist(0x53c, 0x0e3e);
+    Overworld_DrawMap16_Persist(0x53e, 0x0e3f);
+    Overworld_DrawMap16_Persist(0x540, 0x0e40);
+    Overworld_DrawMap16_Persist(0x542, 0x0e41);
+    Overworld_DrawMap16_Persist(0x5be, 0x0490);
+    Overworld_DrawMap16_Persist(0x5c0, 0x0491);
+  } else {
+    Overworld_DrawMap16_Persist(0x3bc, 0xe3f);
+    Overworld_DrawMap16_Persist(0x3be, 0xe40);
+    Overworld_DrawMap16_Persist(0x3c0, 0xe41);
+    Overworld_DrawMap16_Persist(0x43c, 0xe42);
+    Overworld_DrawMap16_Persist(0x43e, 0xe43);
+    Overworld_DrawMap16_Persist(0x440, 0xe44);
+    Overworld_DrawMap16_Persist(0x4bc, 0xe45);
+    Overworld_DrawMap16_Persist(0x4be, 0xe46);
+    Overworld_DrawMap16_Persist(0x4c0, 0xe47);
+  }
   WORD(sound_effect_ambient) = 0x3515;
   save_ow_event_info[0x5b] |= 0x20;
   // Phase B Slice 1 §38 — Pyramid-hole creation opens a new path to GT

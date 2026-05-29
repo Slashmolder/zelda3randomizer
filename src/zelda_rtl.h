@@ -66,6 +66,7 @@ enum {
 };
 
 void SaveLoadSlot(int cmd, int which);
+void ZeldaDumpDebugState(void);  // F12 dev diagnostic: dump g_ram/VRAM + state line
 void ZeldaWriteSram();
 void ZeldaReadSram();
 

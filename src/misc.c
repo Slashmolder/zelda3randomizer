@@ -584,6 +584,61 @@ void Module05_LoadFile() {  // 828136
   // through slot reload.
   (void)Rando_TryGrantStartingInventory(NULL);
 
+  // Phase B post-escape S&Q respawn fix. A non-Standard rando slot starts
+  // post-escape (sram_progress_indicator == 2): the Hyrule Castle escape never
+  // happens, but the HC interior / sewers are still physically reachable. If
+  // the player saves-and-quits while standing in an escape-only spawn region,
+  // the vanilla escape story-beat sprites may have written an escape-only value
+  // into the persisted respawn pointer `which_starting_point` (cell = 2, post-
+  // uncle sewers = 3, post-throne sewers = 4, Old-Man escort = 5) and/or left
+  // Zelda as a persisted follower. On reload Module05 would then drop the player
+  // back into the sealed escape with no Zelda to push the throne — a hard trap,
+  // since there is no longer any exit (matching the playtest symptom). The
+  // only safe spawn points are the spawn-select menu locations (Link's House 0,
+  // Sanctuary 1, Mountain Cave 6). Under an active rando slot that is already
+  // post-escape, sanitize any escape-only respawn pointer back to Sanctuary and
+  // clear a stale escape follower so reload routes through the normal
+  // post-escape spawn-select instead of the sealed escape area. Standard is
+  // untouched (its escape is real and progress climbs through it normally).
+  // Gate on the slot's world_state, NOT sram_progress_indicator: entering
+  // Hyrule Castle in a non-Standard seed can re-run the escape story beats,
+  // which both sets which_starting_point to an escape-only value AND drops
+  // progress below 2 — so a progress>=2 gate (the earlier attempt) misses
+  // exactly the trap it was meant to catch (confirmed by an F12 dump:
+  // progress=1, which_starting_point=3). Standard is excluded (its escape is
+  // real and progress climbs through it legitimately).
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() != 1 /* kWorldState_Standard */) {
+    uint8 sp = which_starting_point;
+    if (sp != 0 && sp != 1 && sp != 6) {
+      // rando-exempt: post-escape respawn sanitize — redirect an escape-only
+      // spawn pointer to Sanctuary so S&Q can't trap the player in the sealed
+      // HC escape. Not an item grant.
+      which_starting_point = 1;  // Sanctuary
+      if (follower_indicator == 1)  // stale Zelda mid-escape follower
+        follower_indicator = 0;
+      // The re-engaged escape dropped progress; restore the post-escape
+      // free-roam state so the overworld isn't gated behind the sealed escape.
+      // rando-exempt: post-escape progress restore (non-Standard rando)
+      if (sram_progress_indicator < 2)
+        sram_progress_indicator = 2;
+    }
+  }
+
+  // Phase B Inverted runtime: an Inverted rando slot bakes
+  // savegame_is_darkworld=0x40 into a fresh save (select_file.c's world-state
+  // start-SRAM block), so it takes the DW-outdoors load path below (the
+  // mirror-exit overworld screen, dungeon_room_index 32) — the SAME path
+  // vanilla uses for a Dark-World save — and spawns in the Dark World, where
+  // the #82 tile overlays render the inverted topology.
+  //
+  // (An earlier revision excluded Inverted here and routed it through the LW
+  // spawn-select, believing the DW-outdoors path produced an uncontrollable
+  // spawn. That was actually the kPlayerState_HoldUpItem freeze from granting
+  // Moon Pearl/Mirror via Link_ReceiveItem — since fixed with a direct
+  // byte-write in Rando_TryGrantStartingInventory. Playtest-confirmed the DW
+  // spawn works, so the exclusion is removed: Inverted spawns in the DW like
+  // the original approach, not the Light World.)
   if (savegame_is_darkworld) {
     if (player_is_indoors) {
       LoadDungeonRoomRebuildHUD();
@@ -737,6 +792,20 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   if (ancilla < 0)
     return;
 
+  // A vanilla pickup repaints the shared receive-item VRAM slot (chars
+  // 0x24/0x34) via DecodeAnimatedSpriteTile_variable further down. Under rando,
+  // a direct-grant confirmation icon (kAncillaType_RandoIconReceipt) may still
+  // be floating from a recent silent grant; it draws from that same slot and
+  // would abruptly render this pickup's tiles. Retire it so it never shows the
+  // wrong item. Type 0x44 never exists outside rando, so this is a no-op in the
+  // vanilla side-by-side path.
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    for (int i = 0; i < 5; i++) {
+      if (ancilla_type[i] == kAncillaType_RandoIconReceipt)
+        ancilla_type[i] = 0;
+    }
+  }
+
   flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
   uint8 t;
 
@@ -747,8 +816,20 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
 
   uint8 v = kValueToGiveItemTo[j];
   uint8 *p = &g_ram[kMemoryLocationToGiveItemTo[j]];
-  if (!sign8(v))
+  // Rando: the shovel (0x13) and flute (0x14 inactive / 0x4a active) are
+  // independent shuffled items that vanilla packs into one byte
+  // (link_item_flute: 1=shovel, 2=flute, 3=active flute). The vanilla
+  // unconditional `*p = v` would let acquiring the 2nd of the pair overwrite —
+  // and permanently lose — the 1st, softlocking seeds that need both.
+  // Rando_GrantFluteShovel records true ownership separately and raises the
+  // shared byte without ever downgrading, so both survive; the player swaps
+  // which one the slot performs via the item-menu toggle (Hud_NormalMenu).
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      (j == 0x13 || j == 0x14 || j == 0x4a)) {
+    Rando_GrantFluteShovel((uint8)j);
+  } else if (!sign8(v)) {
     *p = v;
+  }
 
   if (j == 0x1f)
     link_is_bunny = 0;

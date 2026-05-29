@@ -133,7 +133,15 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   buf[65] = h->settings_ext_present;
   buf[66] = h->hints_setting;
   buf[67] = h->goal;
-  memset(buf + 68, 0, kRandoSidecar_SlotHeaderSize - 68);
+  // @68 world_state (Phase B Inverted runtime). Additive; previously zero, so
+  // old binaries reading a new file see @68 as "reserved" and ignore it, and
+  // new binaries reading an old file see 0 == kWorldState_Open (safe no-op).
+  buf[68] = h->world_state;
+  // @69 flute_shovel_owned (rando flute/shovel decouple). Additive; previously
+  // zero, so old binaries reading a new file ignore it and new binaries reading
+  // an old file see 0 (own neither — the safe default).
+  buf[69] = h->flute_shovel_owned;
+  memset(buf + 70, 0, kRandoSidecar_SlotHeaderSize - 70);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -156,6 +164,12 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   out->settings_ext_present = buf[65];
   out->hints_setting = buf[66];
   out->goal = buf[67];
+  // @68 world_state (Phase B Inverted runtime). Pre-field files read 0 here
+  // (== kWorldState_Open), the safe no-op default.
+  out->world_state = buf[68];
+  // @69 flute_shovel_owned (rando flute/shovel decouple). Pre-field files read
+  // 0 here (own neither), the safe default.
+  out->flute_shovel_owned = buf[69];
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }
@@ -557,6 +571,8 @@ void RandoSave_SelfCheck(void) {
   src.header.settings_ext_present = 1;
   src.header.hints_setting = 1;   // kHintsMode_On
   src.header.goal = 4;            // kGoal_TriforceHunt
+  src.header.world_state = 2;     // kWorldState_Inverted
+  src.header.flute_shovel_owned = 0x05;  // shovel + flute-active (distinct from mushroom 0x01)
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -583,6 +599,10 @@ void RandoSave_SelfCheck(void) {
   if (buf[65] != 1) selfcheck_die("settings_ext_present at @65 wrong");
   if (buf[66] != 1) selfcheck_die("hints_setting at @66 wrong");
   if (buf[67] != 4) selfcheck_die("goal at @67 wrong");
+  // Phase B Inverted runtime: world_state byte layout @68.
+  if (buf[68] != 2) selfcheck_die("world_state at @68 wrong");
+  // Rando flute/shovel decouple: flute_shovel_owned byte layout @69.
+  if (buf[69] != 0x05) selfcheck_die("flute_shovel_owned at @69 wrong");
   // Flat table layout check: location 5 should hold item 50.
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
     selfcheck_die("flat table: loc 5 item slot wrong");
@@ -609,6 +629,8 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.settings_ext_present != src.header.settings_ext_present) selfcheck_die("settings_ext_present round-trip");
   if (dst.header.hints_setting != src.header.hints_setting) selfcheck_die("hints_setting round-trip");
   if (dst.header.goal != src.header.goal) selfcheck_die("goal round-trip");
+  if (dst.header.world_state != src.header.world_state) selfcheck_die("world_state round-trip");
+  if (dst.header.flute_shovel_owned != src.header.flute_shovel_owned) selfcheck_die("flute_shovel_owned round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).

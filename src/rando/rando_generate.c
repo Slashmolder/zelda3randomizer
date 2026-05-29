@@ -22,6 +22,7 @@
 #include "rando.h"            // kGeneratorVersion
 #include "rando_save.h"       // RandoSidecarSlot, kSlotKind_Randomizer, Rando_WriteSidecarSlot, ...
 #include "rando_spoiler.h"    // RandoSpoiler, Spoiler_ResolvePath, Spoiler_Write
+#include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
 
 #include <string.h>
 #include <stdio.h>
@@ -105,6 +106,13 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     RandoSpheres spheres;
     bool spheres_ok = Logic_ComputeSpheres(settings, &table, &spheres);
     (void)spheres_ok;
+    // Phase B Slice 5 §3 (ported from main's in-game generate fix) — populate
+    // per-NPC hint texts into g_hint_table so the spoiler's hints[] array is
+    // non-empty when hints=on. The CLI --generate-seed path does this before its
+    // Spoiler_Write; this shared playable-slot path (in-game screen + native
+    // window) must too, or the spoiler emits an empty hints[] despite "hints": 1.
+    // No-op when hints == Off.
+    Rando_GenerateHints(settings, &table, &spheres);
     RandoSpoiler spoiler;
     memset(&spoiler, 0, sizeof(spoiler));
     spoiler.share_string = share_string;

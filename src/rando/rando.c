@@ -221,13 +221,19 @@ static const uint8 kBigKeyGameDungeon[11]  = {  2,  3, 10,  5,  6,  7,  8,  9, 1
 static const uint8 kMapGameDungeon[11]     = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
 static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
 
+// SmallKey spans all 13 ALTTPR dungeons (registry-id offset -53: HCE, EP, DP,
+// TH, HCT, PoD, SP, SW, TT, IP, MM, TR, GT). Value = GAME-side dungeon index,
+// matching the cur_palace_index_x2>>1 ordering the per-dungeon key array
+// (link_keys_earned_per_dungeon) is indexed by. Note HCE=0 and HCT=4 are
+// present here (BigKey/Map/Compass omit them since vanilla never has those).
+//                                            HCE EP  DP  TH HCT PoD SP  SW  TT  IP  MM  TR  GT
+static const uint8 kSmallKeyGameDungeon[13] = { 0,  2,  3, 10,  4,  5,  6,  7,  8,  9, 11, 12, 13 };
+
 static uint8 dungeon_id_for_item_local(uint16 registry_id) {
-  // SmallKey 53..65: returns ALTTPR dungeon id (id - 53). SmallKey direct-
-  // grant is §6.2 follow-on (per-dungeon counter table); this path is
-  // unused by dungeon_item_direct_grant today. When it's wired this
-  // mapping must be translated to game-side just like BigKey/Map/Compass
-  // below — otherwise the bit lands on the wrong dungeon's slot.
-  if (registry_id >= 53 && registry_id <= 65) return (uint8)(registry_id - 53);
+  // SmallKey 53..65 → GAME-side dungeon index (same translation as
+  // BigKey/Map/Compass below). Consumed by dungeon_item_direct_grant's
+  // per-dungeon key-counter write into link_keys_earned_per_dungeon[].
+  if (registry_id >= 53 && registry_id <= 65) return kSmallKeyGameDungeon[registry_id - 53];
   if (registry_id >= 66 && registry_id <= 76) return kBigKeyGameDungeon[registry_id - 66];
   if (registry_id == 124) return 0;  // Map_HCE (game-side index 0)
   if (registry_id >= 77 && registry_id <= 87) return kMapGameDungeon[registry_id - 77];
@@ -236,11 +242,9 @@ static uint8 dungeon_id_for_item_local(uint16 registry_id) {
 }
 
 // Per-placed-dungeon counter direct-grant. Returns 1 on success.
-// Note: SmallKey writes only to per-dungeon Phase B work — Phase A1 falls
-// back to the current-dungeon vanilla path since `link_num_keys` is a
-// single counter (the per-dungeon array `kRam_DungeonKeysByDungeon[13]`
-// would land with §6.2 follow-on work). For now SmallKey returns 0 here
-// and the dispatcher falls through to the current-dungeon vanilla path.
+// Handles BigKey/Map/Compass (bitfields) and SmallKey (the per-dungeon counter
+// array link_keys_earned_per_dungeon[], with the live link_num_keys counter
+// kept in sync when the player is standing in the destination dungeon).
 static int dungeon_item_direct_grant(uint16 registry_id) {
   uint8 dungeon = dungeon_id_for_item_local(registry_id);
   // Game-side indices range 0..13 (GT). 16 is the kUpperBitmasks size — past
@@ -263,8 +267,35 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
     link_compass |= bit;
     return 1;
   }
-  // SmallKey — Phase A1 falls back to current-dungeon dispatcher path
-  // (per-dungeon counter table is §6.2 follow-on).
+  if (registry_id >= 53 && registry_id <= 65) {
+    // SmallKey for game-side dungeon `dungeon`. Vanilla keeps the live count
+    // for the player's CURRENT dungeon in link_num_keys and parks every
+    // dungeon's saved count in link_keys_earned_per_dungeon[cur_palace_index_x2
+    // >> 1] (Hyrule Castle proper, raw index 2, folds into the Escape slot 0 —
+    // see SaveDungeonKeys and the dungeon-entrance restore in dungeon.c). Under
+    // key-shuffle a small key can belong to a DIFFERENT dungeon than the one
+    // the player is standing in (the reported bug: Tower-of-Hera keys collected
+    // during the Hyrule Castle escape were credited to the escape's live
+    // counter and were unusable once the player reached ToH). Credit the
+    // DESTINATION dungeon's slot, not the live current-dungeon counter.
+    uint8 cur = (uint8)cur_palace_index_x2;  // 0xff when not in a dungeon
+    uint8 cur_slot = (cur == 0xff) ? 0xff : ((cur == 2) ? 0 : (cur >> 1));
+    if (cur != 0xff && dungeon == cur_slot) {
+      // Key belongs to the dungeon the player is in: bump the LIVE counter and
+      // resync the saved slot (mirrors SaveDungeonKeys). Don't recompute from
+      // the slot — door uses decrement link_num_keys without touching the
+      // slot, so the slot can be staler than the live count.
+      if (link_num_keys < 0xfe) link_num_keys += 1;
+      link_keys_earned_per_dungeon[dungeon] = link_num_keys;
+    } else {
+      // Key belongs to a dungeon the player isn't in right now: credit only the
+      // saved slot. It restores into link_num_keys on dungeon entry. (0xfe cap
+      // keeps the 0xff "outside dungeon" sentinel out of a counter slot.)
+      if (link_keys_earned_per_dungeon[dungeon] < 0xfe)
+        link_keys_earned_per_dungeon[dungeon] += 1;
+    }
+    return 1;
+  }
   return 0;
 }
 
@@ -366,10 +397,10 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
     return kRandoLttpSkip;
   }
 
-  // §6.2 per-placed-dungeon BigKey/Map/Compass direct-write. Vanilla LttP's
-  // dispatcher writes to the CURRENT dungeon's bit; for rando placements
-  // where the placed item belongs to a DIFFERENT dungeon, we have to write
-  // that specific dungeon's bit. SmallKey falls through here (Phase B work).
+  // §6.2 per-placed-dungeon SmallKey/BigKey/Map/Compass direct-write. Vanilla
+  // LttP's dispatcher credits the player's CURRENT dungeon; for rando
+  // placements where the placed item belongs to a DIFFERENT dungeon we write
+  // that specific dungeon's bit (BigKey/Map/Compass) or counter slot (SmallKey).
   if (dungeon_item_direct_grant(placed)) {
     return kRandoLttpSkip;
   }
@@ -512,6 +543,26 @@ bool g_rando_show_item_tracker = false;
 bool g_rando_show_location_tracker = false;
 uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 uint8 g_rando_mushroom_held = 0;
+uint8 g_rando_flute_shovel_owned = 0;
+
+// Phase B Inverted runtime — the active slot's world_state, captured at
+// Rando_ActivateSidecarSlot from the slot header's additive @68 byte (only
+// meaningful when settings_ext_present). Lets the starting-inventory grant in
+// rando_placement.c recognize an Inverted slot on reload, where the full
+// RandoSettings struct is not available (the sidecar persists only
+// settings_hash + the additive ext bytes, not the canonical settings blob).
+// Defaults to kWorldState_Open (0) — the safe no-op — when no slot is active
+// or the slot predates the world_state ext.
+static uint8 g_rando_active_world_state = kWorldState_Open;
+
+uint8 Rando_GetActiveWorldState(void) {
+  return g_rando_slot_active ? g_rando_active_world_state : (uint8)kWorldState_Open;
+}
+
+bool Rando_SuppressHyruleCastleEscape(void) {
+  return (enhanced_features1 & kFeatures1_RandomizerActive) &&
+         Rando_GetActiveWorldState() != (uint8)kWorldState_Standard;
+}
 
 bool Rando_MushroomHeld(void) {
   return g_rando_slot_active && g_rando_mushroom_held != 0;
@@ -519,6 +570,61 @@ bool Rando_MushroomHeld(void) {
 
 void Rando_DeliverMushroom(void) {
   g_rando_mushroom_held = 0;
+}
+
+// Flute/shovel decouple — see rando.h. Called from the receive-item path
+// (AncillaAdd_ItemReceipt, misc.c) when a shovel/flute is granted under rando,
+// instead of the vanilla unconditional write to link_item_flute. Records the
+// item in the ownership bitfield (additive, never lost), then sets the shared
+// link_item_flute slot to the SELECTED function with NEVER-DOWNGRADE semantics:
+// the byte is the max of its current value and this item's level (shovel=1,
+// flute=2, active flute=3). So acquiring the shovel can never drop the slot
+// below an owned flute (fixing "flute then shovel loses the flute"), while
+// acquiring the flute selects it. Whenever both are owned the player flips the
+// slot's function with the item-menu toggle (Hud_NormalMenu); that toggle may
+// set the byte below this floor, and that's fine — it only persists a player
+// choice and never runs at grant time.
+void Rando_GrantFluteShovel(uint8 lttp_code) {
+  uint8 floor;  // lowest link_item_flute value consistent with this item
+  if (lttp_code == 0x13) {  // shovel
+    g_rando_flute_shovel_owned |= kRandoFluteShovel_Shovel;
+    floor = 1;
+  } else {                  // 0x14 inactive flute, 0x4a active flute
+    g_rando_flute_shovel_owned |= kRandoFluteShovel_Flute;
+    if (lttp_code == 0x4a) {
+      g_rando_flute_shovel_owned |= kRandoFluteShovel_FluteActive;
+      floor = 3;
+    } else {
+      floor = 2;
+    }
+  }
+  if (link_item_flute < floor)
+    link_item_flute = floor;
+}
+
+bool Rando_FluteShovelCanToggle(void) {
+  return g_rando_slot_active &&
+         (g_rando_flute_shovel_owned & kRandoFluteShovel_Shovel) &&
+         (g_rando_flute_shovel_owned &
+          (kRandoFluteShovel_Flute | kRandoFluteShovel_FluteActive));
+}
+
+uint8 Rando_FluteShovelEffectiveLevel(void) {
+  // The selected-function byte is the only ownership signal in vanilla — and in
+  // a rando save written before the @69 ownership field existed — so start from
+  // it. Under an active slot, also fold in the tracked ownership bits and take
+  // the max, so owning a flute while the shovel is the selected function still
+  // reads as "has the flute" (and never downgrades below the byte).
+  uint8 level = link_item_flute;
+  if (g_rando_slot_active) {
+    uint8 owned = (g_rando_flute_shovel_owned & kRandoFluteShovel_FluteActive) ? 3
+                : (g_rando_flute_shovel_owned & kRandoFluteShovel_Flute)       ? 2
+                : (g_rando_flute_shovel_owned & kRandoFluteShovel_Shovel)      ? 1
+                : 0;
+    if (owned > level)
+      level = owned;
+  }
+  return level;
 }
 
 void Rando_MarkLocationChecked(uint16 location_id) {
@@ -547,6 +653,9 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // Mushroom survives save/reload (otherwise a reload could re-lock the
   // Potion Shop check).
   out_slot->header.mushroom_held = g_rando_mushroom_held;
+  // Persist flute/shovel ownership so owning both survives save/reload (the
+  // single link_item_flute byte can't carry it — see Rando_GrantFluteShovel).
+  out_slot->header.flute_shovel_owned = g_rando_flute_shovel_owned;
 }
 
 void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
@@ -755,6 +864,13 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // (both kRandoCheckedBitmapBytes = 64).
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = src->header.mushroom_held;
+  g_rando_flute_shovel_owned = src->header.flute_shovel_owned;
+  // Phase B Inverted runtime — capture the slot's world_state from the
+  // additive @68 ext byte. Only trust it when settings_ext_present is set
+  // (older slots wrote 0 there, which already maps to kWorldState_Open).
+  g_rando_active_world_state = src->header.settings_ext_present
+                                   ? src->header.world_state
+                                   : (uint8)kWorldState_Open;
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
 
@@ -810,6 +926,8 @@ void Rando_DeactivateSlot(void) {
   // contract.
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
+  g_rando_flute_shovel_owned = 0;
+  g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
 
@@ -1453,6 +1571,63 @@ void Rando_SelfCheck(void) {
     }
     Placement_Install(NULL);
     link_bigkey = link_compass = link_dungeon_map = 0;
+  }
+
+  // §6.2 follow-on — per-dungeon SmallKey counter direct-write. Under
+  // key-shuffle a small key can be collected in a dungeon other than its own
+  // (e.g. a Tower-of-Hera key found during the Hyrule Castle escape); the
+  // grant must credit the DESTINATION dungeon's saved counter, not the live
+  // current-dungeon counter.
+  {
+    static RandoPlacement entries[1];
+    entries[0].location_id = 166;
+    entries[0].item_id = ITEM_SmallKey_TowerOfHera;  // 56 → game-side dungeon 10
+    RandoPlacementTable t = { entries, 1 };
+
+    uint16 saved_palace = cur_palace_index_x2;
+    uint8 saved_keys = link_num_keys;
+
+    // (a) ToH key collected while in the Hyrule Castle escape (raw
+    // cur_palace_index_x2 = 0). The escape's live counter must be untouched;
+    // only ToH's saved slot (game-side index 10) ticks up.
+    cur_palace_index_x2 = 0;
+    link_num_keys = 3;  // pretend the escape has 3 keys in hand
+    link_keys_earned_per_dungeon[10] = 0;
+    Placement_Install(&t);
+    uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != kRandoLttpSkip) {
+      fprintf(stderr, "Rando_SelfCheck: SmallKey_ToH dispatch should return kRandoLttpSkip\n");
+      exit(2);
+    }
+    if (link_num_keys != 3) {
+      fprintf(stderr, "Rando_SelfCheck: SmallKey_ToH in escape must not touch live key count (got %u)\n",
+              (unsigned)link_num_keys);
+      exit(2);
+    }
+    if (link_keys_earned_per_dungeon[10] != 1) {
+      fprintf(stderr, "Rando_SelfCheck: SmallKey_ToH should credit ToH slot 10 (got %u)\n",
+              (unsigned)link_keys_earned_per_dungeon[10]);
+      exit(2);
+    }
+
+    // (b) ToH key collected while standing in Tower of Hera (raw
+    // cur_palace_index_x2 = 20 = game-side index 10). The live counter moves
+    // and the saved slot stays in sync.
+    cur_palace_index_x2 = 20;
+    link_num_keys = 1;
+    link_keys_earned_per_dungeon[10] = 1;
+    Placement_Install(&t);
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_num_keys != 2 || link_keys_earned_per_dungeon[10] != 2) {
+      fprintf(stderr, "Rando_SelfCheck: SmallKey_ToH in ToH should bump live+slot to 2 (got live=%u slot=%u)\n",
+              (unsigned)link_num_keys, (unsigned)link_keys_earned_per_dungeon[10]);
+      exit(2);
+    }
+
+    Placement_Install(NULL);
+    cur_palace_index_x2 = saved_palace;
+    link_num_keys = saved_keys;
+    link_keys_earned_per_dungeon[10] = 0;
   }
 
   // §9.4b — 5-icon hash widget. Two share strings with identical settings
