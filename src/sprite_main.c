@@ -11171,15 +11171,17 @@ void SpritePrep_UncleAndPriest_bounce(int k) {  // 86bfe5
     else
       sprite_state[k] = 0;
   } else {
-    // Sewers uncle that runs Uncle_InPassage (gives sword/shield, then writes
-    // which_starting_point=3 + sram_progress_indicator=1). Vanilla gates this
-    // on sram_progress_flags bit 0x01 (uncle item obtained); the post-escape
-    // rando start does NOT set bit 0x01 (ALTTPR's InitProgressFlags=0x14), so
-    // re-entering the Hyrule Castle sewers re-runs this beat and traps the
-    // player (F12 dump: which_starting_point=3, sram_progress_indicator=1).
-    // Suppress it for non-Standard rando; treat the HC interior as a normal
-    // post-escape dungeon.
-    if (!(sram_progress_flags & 1) && !Rando_SuppressHyruleCastleEscape()) {
+    // Sewers uncle that runs Uncle_InPassage. CRITICAL: this NPC is the rando
+    // item location "Link's Uncle" (Uncle_InPassage case 1 dispatches
+    // Rando_DispatchVanillaGrant(LOC_Link_s_Uncle, ...)). It must SPAWN so the
+    // player can collect the placed item — despawning it makes any seed that
+    // places progression there unbeatable. The escape TRAP it used to cause
+    // (which_starting_point=3 + sram_progress_indicator=1) is neutralized at the
+    // write site in Uncle_InPassage (gated by !Rando_SuppressHyruleCastleEscape),
+    // not by despawning — so the item-give survives while the trap does not.
+    // (Earlier this was despawned for non-Standard rando, which removed the
+    // check; the write-gate is the correct, narrower fix.)
+    if (!(sram_progress_flags & 1)) {
       sprite_D[k] = 3;
       sprite_subtype2[k] = 1;
     } else {
