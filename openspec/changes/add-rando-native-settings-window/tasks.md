@@ -190,17 +190,17 @@ Extract the in-game body into a shared function, refactor the in-game caller to 
 - [ ] 13.4 On success: `Rando_GenerateSlot` has already written the sidecar slot (incl. `SelectFile_NotifySlotWritten`) and applied `recommended_features0`. Store the owned `result.placement` / `result.spheres` into `bridge.last_generated_placement` / `bridge.last_generated_spheres` (freeing any previous copy), write `bridge.last_generated_race_mode = result.race_mode` and `bridge.has_last_generated = true` (gates spoiler-viewer visibility per spec), and call `RandoWindowBridge_SetGenerateResult(2, "")`. Do **NOT** `Placement_Install`
 - [ ] 13.5 On failure: call `RandoWindowBridge_SetGenerateResult(-1, err)` with the message populated by §12.2
 - [ ] 13.6 On UI side, the modal polls `bridge.generate_status` each ImGui frame; on `2` (success) close the modal and show a follow-up dialog "Slot N is ready — Load it now? [Yes / No]"; on `-1` (error) update modal body to the error and show OK
-- [ ] 13.7 "Load it now" routes to the existing file-select load path for the new slot
+- [x] 13.7 "Load it now" routes to the existing file-select load path for the new slot
 - [ ] 13.8 Confirm that the game thread is blocked for the generation duration (UI shows the modal; the game window's frame counter does not advance) and that this is acceptable for the expected 100-500ms generation time
 
 ## 14. Build the read-only Spoiler / Placement viewer tab
 
 - [ ] 14.1 Add a Spoiler tab; hide entirely when `bridge.last_generated_race_mode == true` (set by §13.4 after a successful generation). The gate is on what was LAST GENERATED, not on `bridge.pending.race_mode` (which is what the user is editing right now).
 - [ ] 14.2 Render the placement table from the bridge's own owned copy — `bridge.last_generated_placement` (+ `bridge.last_generated_spheres`) — grouped by region; columns: Location, Item, Source (Vanilla/Dungeon/Wild for dungeon items). Do **NOT** read `Placement_GetActive()` (`src/rando/rando_placement.h:60`): it is populated only at slot *load* via `Placement_Install`, and `Rando_GenerateSlot` deliberately does not install at generate, so it would be stale/empty right after generating. If `bridge.has_last_generated == false` (no generation has run yet this session), show an empty-state message: "Generate a seed to see its placement here."
-- [ ] 14.3 Use ImGui's table widget with sortable columns and a per-region collapse header
-- [ ] 14.4 Provide a "Save spoiler to file..." button that re-uses `Spoiler_Write(const RandoSpoiler*, json_path, txt_path)` (file-only) to write the spoiler JSON to a user-chosen path via SDL's portable file-dialog approach (or a simple text input path if SDL2 lacks native dialog)
-- [ ] 14.5 Provide a "Save spoiler to clipboard" button. `Spoiler_Write` is **file-only** (cannot target a buffer/clipboard), so write the JSON to a temp file, read it back, and feed the text to `SDL_SetClipboardText` — do NOT modify the spoiler writer
-- [ ] 14.6 Ensure NO ImGui widget in this tab is editable (use `ImGui::BeginDisabled` around any cell-render path that might be misread as editable)
+- [x] 14.3 Use ImGui's table widget with sortable columns and a per-region collapse header
+- [x] 14.4 Provide a "Save spoiler to file..." button that re-uses `Spoiler_Write(const RandoSpoiler*, json_path, txt_path)` (file-only) to write the spoiler JSON to a user-chosen path via SDL's portable file-dialog approach (or a simple text input path if SDL2 lacks native dialog)
+- [x] 14.5 Provide a "Save spoiler to clipboard" button. `Spoiler_Write` is **file-only** (cannot target a buffer/clipboard), so write the JSON to a temp file, read it back, and feed the text to `SDL_SetClipboardText` — do NOT modify the spoiler writer
+- [x] 14.6 Ensure NO ImGui widget in this tab is editable (use `ImGui::BeginDisabled` around any cell-render path that might be misread as editable)
 
 ## 15. Wire the kind-toggle on PC file-select to the native window
 
@@ -318,7 +318,7 @@ Enumerate every call site:
 
 - [ ] 21.1 Manual test: generate a slot with `race_mode = true`, confirm Spoiler tab is not visible
 - [ ] 21.2 Manual test: generate a slot with `race_mode = false`, confirm Spoiler tab is visible and shows the correct placement from the bridge's owned copy (`bridge.last_generated_placement`, NOT `Placement_GetActive()`)
-- [ ] 21.3 Add a regression unit-style check: when `bridge.last_generated_race_mode == true`, the function that builds the tab list omits "Spoiler"
+- [x] 21.3 Add a regression unit-style check: when `bridge.last_generated_race_mode == true`, the function that builds the tab list omits "Spoiler"
 - [ ] 21.4 Manual test: with a non-race active placement, toggle `pending.race_mode` ON in the settings panel WITHOUT re-generating; confirm Spoiler tab remains visible (gate is on last-generated, not pending)
 
 ## 22. Cross-platform CI verification

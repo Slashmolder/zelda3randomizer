@@ -38,4 +38,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
 
 extern void SelectFile_NotifySlotWritten(int slot_index);  // defined in select_file.c
 
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+// Native-window "Load it now" seam (§13.7). Game-thread only; defined in
+// select_file.c. Loads the just-generated playable slot exactly as pressing A
+// on an occupied file-select slot would (sidecar reload + Rando_ActivateSidecarSlot
+// + CopySaveToWRAM). Must run while Module01_FileSelect is active.
+extern void SelectFile_LoadRandoSlot(int slot_index);
+#endif
+
 #endif  // ZELDA3_RANDO_RANDO_GENERATE_H_

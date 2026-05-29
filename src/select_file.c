@@ -1456,6 +1456,38 @@ void SelectFile_NotifySlotWritten(int slot_index) {
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
 }
 
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+// Native-window "Load it now" seam (§13.7). Game-thread only — invoked by the
+// per-frame bridge consumer in main.c after a successful native-window generate,
+// while Module01_FileSelect is the active module. Replicates EXACTLY the in-game
+// load sequence that FileSelect_Main runs when the player presses A on an
+// occupied slot (the occupied-slot branch around the SelectFile_LoadSidecarCache
+// call): reload the sidecar cache, install the rando placement + activate the
+// slot (or deactivate for a non-rando slot), then start the game by copying the
+// SRAM save into WRAM. Touching g_ram/WRAM here is why this must run on the game
+// thread, not from the ImGui side. slot_index is 0..2.
+void SelectFile_LoadRandoSlot(int slot_index) {
+  if (slot_index < 0 || slot_index >= 3) return;
+  selectfile_R16 = (uint8)slot_index;
+  selectfile_R17 = 0;
+  // The sidecar cache is reset after every Generate; reload it now to pick up
+  // the freshly-written sidecar data before reading it.
+  SelectFile_LoadSidecarCache();
+  if (g_selectfile_slots_loaded &&
+      g_selectfile_slots[slot_index].has_sidecar_data &&
+      g_selectfile_slots[slot_index].sidecar.header.slot_kind
+          == kSlotKind_Randomizer) {
+    Rando_ActivateSidecarSlot(&g_selectfile_slots[slot_index].sidecar);
+  } else {
+    Rando_DeactivateSlot();
+  }
+  music_control = 0xf1;
+  srm_var1 = slot_index * 2 + 2;
+  WORD(g_ram[0]) = slot_index * 0x500;
+  CopySaveToWRAM();
+}
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
+
 // Classify slot k based on cached sidecar info + sram.dat occupancy.
 // Per spec "Slot-kind discriminator": sidecar slot_kind=Vanilla/Empty defers
 // to the sram.dat slot's state; only slot_kind=Randomizer overrides with the

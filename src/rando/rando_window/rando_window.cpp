@@ -31,8 +31,9 @@
 #include <SDL.h>
 #include <SDL_opengl.h>
 
-#include <cstdio>   // snprintf
-#include <cstring>  // memcmp
+#include <cstdio>   // snprintf, fopen/fread/remove (spoiler clipboard temp file)
+#include <cstring>  // memcmp, strlen, strcmp
+#include <cstdlib>  // malloc/free (spoiler clipboard buffer)
 
 #include "rando_window.h"
 #include "rando_window_bridge.h"
@@ -52,6 +53,12 @@ extern "C" {
 // (not valid in this C++ TU), so declare just the symbol we need here.
 extern uint8 g_assets_hash[32];
 }
+
+// Forward declarations (definitions appear later but are referenced from
+// RandoWindow_Init, which is defined earlier in the file).
+static int RandoWindow_BuildTabList(bool last_generated_race_mode,
+                                    const char **out_tabs, int cap);
+static void RandoWindow_TabSelfCheck(void);
 
 // ---- File-static state -----------------------------------------------------
 static SDL_Window *s_settings_window = nullptr;
@@ -489,6 +496,84 @@ static void Panel_AssetHash() {
   }
 }
 
+// §14.4 "Save spoiler to file..." + §14.5 "Save spoiler to clipboard".
+// SDL2 (2.x) has no portable native file dialog (SDL_ShowOpenFileDialog is SDL3),
+// so per §14.4 we use a simple text-input path field. Both buttons route through
+// RandoWindowBridge_WriteSpoilerFiles, a thin C wrapper that builds a RandoSpoiler
+// from the bridge's generate-time snapshot and calls Spoiler_Write (the writer is
+// NOT modified). The wrapper lives in the C bridge TU because rando_spoiler.h uses
+// a C11 _Static_assert that is invalid in this C++ TU.
+static void RenderSpoilerSaveRow() {
+  static char s_save_path[512] = "spoiler.json";
+  static char s_save_status[256];
+
+  ImGui::SetNextItemWidth(360.0f);
+  ImGui::InputText("##spoiler_path", s_save_path, sizeof s_save_path);
+  ImGui::SameLine();
+  if (ImGui::Button("Save spoiler to file...")) {
+    s_save_status[0] = '\0';
+    // Derive a .txt companion path next to the chosen .json (replace a trailing
+    // ".json", else append ".txt"). The viewer is non-race-only, so Spoiler_Write
+    // emits the .txt companion too.
+    char txt_path[520];
+    snprintf(txt_path, sizeof txt_path, "%s", s_save_path);
+    size_t plen = strlen(txt_path);
+    if (plen >= 5 && strcmp(txt_path + plen - 5, ".json") == 0)
+      snprintf(txt_path + plen - 5, sizeof txt_path - (plen - 5), ".txt");
+    else
+      snprintf(txt_path + plen, sizeof txt_path - plen, ".txt");
+    if (RandoWindowBridge_WriteSpoilerFiles(s_save_path, txt_path))
+      snprintf(s_save_status, sizeof s_save_status, "Saved to %s (+ .txt).", s_save_path);
+    else
+      snprintf(s_save_status, sizeof s_save_status, "Save failed: could not write %s.", s_save_path);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Save spoiler to clipboard")) {
+    s_save_status[0] = '\0';
+    // Spoiler_Write is file-only, so write JSON to a temp file, read it back, and
+    // push the text to the clipboard (per §14.5 — do NOT modify the writer).
+    char tmp_path[1024];
+    char *base = SDL_GetPrefPath("zelda3", "rando");
+    if (base && base[0]) {
+      snprintf(tmp_path, sizeof tmp_path, "%sspoiler_clip.json", base);
+    } else {
+      snprintf(tmp_path, sizeof tmp_path, "spoiler_clip.json");
+    }
+    if (base) SDL_free(base);
+    // txt_path = NULL skips the companion; clipboard wants only the JSON text.
+    if (RandoWindowBridge_WriteSpoilerFiles(tmp_path, nullptr)) {
+      FILE *f = fopen(tmp_path, "rb");
+      if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz > 0 && sz < 8 * 1024 * 1024) {
+          char *buf = (char *)malloc((size_t)sz + 1);
+          if (buf) {
+            size_t rd = fread(buf, 1, (size_t)sz, f);
+            buf[rd] = '\0';
+            SDL_SetClipboardText(buf);
+            free(buf);
+            snprintf(s_save_status, sizeof s_save_status, "Copied spoiler JSON to clipboard.");
+          } else {
+            snprintf(s_save_status, sizeof s_save_status, "Clipboard copy failed: out of memory.");
+          }
+        } else {
+          snprintf(s_save_status, sizeof s_save_status, "Clipboard copy failed: bad temp file size.");
+        }
+        fclose(f);
+      } else {
+        snprintf(s_save_status, sizeof s_save_status, "Clipboard copy failed: temp file unreadable.");
+      }
+      remove(tmp_path);
+    } else {
+      snprintf(s_save_status, sizeof s_save_status, "Clipboard copy failed: could not write temp file.");
+    }
+  }
+  if (s_save_status[0])
+    ImGui::TextColored(ImVec4(0.8f, 0.9f, 0.8f, 1.0f), "%s", s_save_status);
+}
+
 // Spoiler region grouping caveat: the bridge stores only the placement table,
 // not the generated world_state, so we group by the BASE region_id from
 // kRandoLocations (no per-world-state region override). For Inverted seeds a few
@@ -509,18 +594,13 @@ static void Panel_Spoiler() {
       "Region grouping uses base regions; per-world-state overrides (e.g. Inverted) "
       "are not applied here. Read-only.");
 
-  if (!ImGui::BeginTable("##spoiler", 2,
-                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                             ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
-    return;
-  }
-  ImGui::TableSetupColumn("Location");
-  ImGui::TableSetupColumn("Item");
-  ImGui::TableSetupScrollFreeze(0, 1);
-  ImGui::TableHeadersRow();
+  // Save-spoiler controls (§14.4 file, §14.5 clipboard).
+  RenderSpoilerSaveRow();
+  ImGui::Separator();
 
-  // Build (region_id, location_id, item_id) rows then sort by (region, loc),
-  // mirroring rando_spoiler.c's text writer grouping.
+  // Build (region_id, location_id, item_id) rows, then sort by (region, loc)
+  // so a stable per-region grouping falls out, mirroring rando_spoiler.c's text
+  // writer. The per-region tables below get their OWN interactive sort.
   uint16 n = t->count;
   static struct Row { uint16 region_id; uint16 location_id; uint16 item_id; } rows[512];
   if (n > 512) n = 512;
@@ -546,22 +626,74 @@ static void Panel_Spoiler() {
     }
   }
 
-  uint16 cur_region = 0xFFFE;
-  for (uint16 i = 0; i < n; i++) {
-    if (rows[i].region_id != cur_region) {
-      cur_region = rows[i].region_id;
-      ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
-      ImGui::TableSetColumnIndex(0);
-      ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "%s",
-                         Rando_GetRegionName(cur_region));
+  // Render one collapsing header per region (§14.3 "per-region collapse header"),
+  // each owning a sortable two-column table (§14.3 "sortable columns"). Cells are
+  // pure text (never editable); the whole cell-render path is bracketed in
+  // BeginDisabled/EndDisabled so it reads unambiguously as read-only (§14.6) while
+  // the header expand/collapse and the column sort stay interactive (navigation,
+  // not editing).
+  for (uint16 start = 0; start < n;) {
+    uint16 region = rows[start].region_id;
+    uint16 end = start;
+    while (end < n && rows[end].region_id == region) end++;
+
+    char header[160];
+    snprintf(header, sizeof header, "%s (%u)###region_%u",
+             Rando_GetRegionName(region), (unsigned)(end - start), (unsigned)region);
+    if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) {
+      char table_id[32];
+      snprintf(table_id, sizeof table_id, "##sp_%u", (unsigned)region);
+      if (ImGui::BeginTable(table_id, 2,
+                            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable)) {
+        ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_DefaultSort);
+        ImGui::TableSetupColumn("Item");
+        ImGui::TableHeadersRow();
+
+        // Local index list into rows[start..end) so we can re-order per the
+        // sort spec without disturbing the region grouping.
+        int idx[512];
+        int m = 0;
+        for (uint16 i = start; i < end && m < 512; i++) idx[m++] = i;
+
+        if (ImGuiTableSortSpecs *specs = ImGui::TableGetSortSpecs()) {
+          if (specs->SpecsCount > 0) {
+            int col = specs->Specs[0].ColumnIndex;
+            bool asc = specs->Specs[0].SortDirection == ImGuiSortDirection_Ascending;
+            // Insertion sort by the chosen column's display name (small N).
+            for (int a = 1; a < m; a++) {
+              int v = idx[a]; int bb = a;
+              const char *va = (col == 0) ? Rando_GetLocationName(rows[v].location_id)
+                                          : Rando_GetItemName(rows[v].item_id);
+              while (bb > 0) {
+                int u = idx[bb - 1];
+                const char *vu = (col == 0) ? Rando_GetLocationName(rows[u].location_id)
+                                            : Rando_GetItemName(rows[u].item_id);
+                int cmp = strcmp(vu, va);
+                if (asc ? (cmp > 0) : (cmp < 0)) { idx[bb] = idx[bb - 1]; bb--; }
+                else break;
+              }
+              idx[bb] = v;
+            }
+          }
+        }
+
+        ImGui::BeginDisabled();  // §14.6 — cells are read-only.
+        for (int k = 0; k < m; k++) {
+          const Row *r = &rows[idx[k]];
+          ImGui::TableNextRow();
+          ImGui::TableSetColumnIndex(0);
+          ImGui::TextUnformatted(Rando_GetLocationName(r->location_id));
+          ImGui::TableSetColumnIndex(1);
+          ImGui::TextUnformatted(Rando_GetItemName(r->item_id));
+        }
+        ImGui::EndDisabled();
+
+        ImGui::EndTable();
+      }
     }
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::TextUnformatted(Rando_GetLocationName(rows[i].location_id));
-    ImGui::TableSetColumnIndex(1);
-    ImGui::TextUnformatted(Rando_GetItemName(rows[i].item_id));
+    start = end;
   }
-  ImGui::EndTable();
 }
 
 // ===========================================================================
@@ -728,9 +860,14 @@ static void RenderGenerateModal() {
       ImGui::TextUnformatted("Load it now?");
       ImGui::Spacing();
       if (ImGui::Button("Yes")) {
-        // TODO(P5/later): route to the file-select load path for the just-created
-        // slot. That wiring lands in a later phase; for now we just hide the
-        // settings window so the player returns to the game/file-select.
+        // §13.7 — route to the existing file-select load path for the just-created
+        // slot. Loading touches g_ram/WRAM, so it must run on the game thread:
+        // raise a load request the per-frame consumer in main.c honors via
+        // SelectFile_LoadRandoSlot(). The game is sitting in Module01_FileSelect
+        // right now (where the in-game occupied-slot load path runs), so the load
+        // takes effect cleanly. RandoWindow_Hide() clears the kind-toggle target,
+        // but the load slot is captured in the request before hiding.
+        RandoWindowBridge_RequestLoad(b->target_slot_index);
         ImGui::CloseCurrentPopup();
         b->generate_status = 0;
         RandoWindow_Hide();
@@ -785,6 +922,60 @@ void RandoWindow_Init(SDL_Window *window, SDL_GLContext gl_context) {
   s_glViewport = (PFN_glViewport)SDL_GL_GetProcAddress("glViewport");
   s_glClearColor = (PFN_glClearColor)SDL_GL_GetProcAddress("glClearColor");
   s_glClear = (PFN_glClear)SDL_GL_GetProcAddress("glClear");
+
+  // §21.3 — verify the race-mode Spoiler-tab gate once at init.
+  RandoWindow_TabSelfCheck();
+}
+
+// ---- Tab list builder (§21.3 race-mode gate) -------------------------------
+// Single source of truth for which tabs the window shows. The "Spoiler" tab is
+// OMITTED when the last generation was race-mode (bridge.last_generated_race_mode).
+// The gate keys off what was LAST GENERATED, never pending.race_mode (§14.1).
+// Returns the count; fills `out_tabs` (capacity `cap`) with stable string ptrs.
+static const char *const kTab_General         = "General";
+static const char *const kTab_Dungeons        = "Dungeons";
+static const char *const kTab_Shuffles        = "Shuffles";
+static const char *const kTab_QualityOfLife   = "Quality of Life";
+static const char *const kTab_AssetHash       = "Asset Hash";
+static const char *const kTab_Spoiler         = "Spoiler";
+
+static int RandoWindow_BuildTabList(bool last_generated_race_mode,
+                                    const char **out_tabs, int cap) {
+  int n = 0;
+  const char *base[] = { kTab_General, kTab_Dungeons, kTab_Shuffles,
+                         kTab_QualityOfLife, kTab_AssetHash };
+  for (size_t i = 0; i < sizeof base / sizeof base[0]; i++)
+    if (n < cap) out_tabs[n++] = base[i];
+  // Spoiler tab: visible only when the last generation was NOT race-mode.
+  if (!last_generated_race_mode && n < cap)
+    out_tabs[n++] = kTab_Spoiler;
+  return n;
+}
+
+// §21.3 regression self-check: assert the tab-list builder OMITS "Spoiler" when
+// last_generated_race_mode == true, and INCLUDES it otherwise. Runs once at
+// init (matches the Settings/Placement_SelfCheck "exit nonzero on failure"
+// pattern). Catches a future refactor that breaks the race-mode gate.
+static bool TabListContains(const char **tabs, int n, const char *name) {
+  for (int i = 0; i < n; i++) if (tabs[i] == name) return true;
+  return false;
+}
+static void RandoWindow_TabSelfCheck(void) {
+  const char *tabs[8];
+  int n = RandoWindow_BuildTabList(/*race_mode=*/true, tabs, 8);
+  if (TabListContains(tabs, n, kTab_Spoiler)) {
+    fprintf(stderr,
+            "[rando_window] SELF-CHECK FAILED: Spoiler tab present under "
+            "race-mode (must be omitted). (§21.3)\n");
+    exit(2);
+  }
+  n = RandoWindow_BuildTabList(/*race_mode=*/false, tabs, 8);
+  if (!TabListContains(tabs, n, kTab_Spoiler)) {
+    fprintf(stderr,
+            "[rando_window] SELF-CHECK FAILED: Spoiler tab missing for a "
+            "non-race generation (must be present). (§21.3)\n");
+    exit(2);
+  }
 }
 
 void RandoWindow_ProcessEvent(const void *sdl_event) {
@@ -806,15 +997,21 @@ void RandoWindow_BeginFrame(void) {
                            ImGuiWindowFlags_NoBringToFrontOnFocus;
   if (ImGui::Begin("Z3R Settings##main", nullptr, flags)) {
     const RandoWindowBridge *b = &g_rando_window_bridge;
+    // The visible tab set comes from the single-source-of-truth builder so the
+    // race-mode Spoiler gate (§21.3) can be self-checked independently of render.
+    const char *tabs[8];
+    int ntabs = RandoWindow_BuildTabList(b->last_generated_race_mode, tabs, 8);
     if (ImGui::BeginTabBar("##z3r_tabs")) {
-      if (ImGui::BeginTabItem("General"))        { Panel_General();             ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Dungeons"))       { Panel_Dungeons();            ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Shuffles"))       { Panel_Shuffles();            ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Quality of Life")){ Panel_RecommendedFeatures(); ImGui::EndTabItem(); }
-      if (ImGui::BeginTabItem("Asset Hash"))     { Panel_AssetHash();           ImGui::EndTabItem(); }
-      // Spoiler tab hidden entirely when the last generation was race-mode.
-      if (!b->last_generated_race_mode) {
-        if (ImGui::BeginTabItem("Spoiler")) { Panel_Spoiler(); ImGui::EndTabItem(); }
+      for (int i = 0; i < ntabs; i++) {
+        if (ImGui::BeginTabItem(tabs[i])) {
+          if (tabs[i] == kTab_General)            Panel_General();
+          else if (tabs[i] == kTab_Dungeons)      Panel_Dungeons();
+          else if (tabs[i] == kTab_Shuffles)      Panel_Shuffles();
+          else if (tabs[i] == kTab_QualityOfLife) Panel_RecommendedFeatures();
+          else if (tabs[i] == kTab_AssetHash)     Panel_AssetHash();
+          else if (tabs[i] == kTab_Spoiler)       Panel_Spoiler();
+          ImGui::EndTabItem();
+        }
       }
       ImGui::EndTabBar();
     }
