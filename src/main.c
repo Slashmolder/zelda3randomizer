@@ -1687,12 +1687,19 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_RandoRevealSpoiler:
       (void)Rando_RevealActiveSlotSpoiler();
       break;
+    // Rich tracker windows. PC toggles the OS windows; on Switch (no
+    // Z3R_NATIVE_SETTINGS_WINDOW) these keys exist in the keymap but have no
+    // windows — degrade to a no-op rather than hitting default: assert(0) if a
+    // user hand-binds one in the ini.
+    case kKeys_RandoItemTrackerWindow:
+    case kKeys_RandoCheckTrackerWindow:
+    case kKeys_RandoMapTrackerWindow:
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
-    // Rich tracker windows (PC). Toggle the item / check / map OS windows.
-    case kKeys_RandoItemTrackerWindow:  Trackers_Toggle(kTracker_Item);  break;
-    case kKeys_RandoCheckTrackerWindow: Trackers_Toggle(kTracker_Check); break;
-    case kKeys_RandoMapTrackerWindow:   Trackers_Toggle(kTracker_Map);   break;
+      Trackers_Toggle(j == kKeys_RandoItemTrackerWindow ? kTracker_Item
+                      : j == kKeys_RandoCheckTrackerWindow ? kTracker_Check
+                                                           : kTracker_Map);
 #endif
+      break;
     default: assert(0);
     }
   }
