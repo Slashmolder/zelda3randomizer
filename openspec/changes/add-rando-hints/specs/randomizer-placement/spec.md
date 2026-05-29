@@ -1,17 +1,19 @@
 ## ADDED Requirements
 
-### Requirement: Hint NPC dialogue-ID dispatch
+### Requirement: Telepathic-tile hint dispatch
 
-Hint NPC sprite handlers (Sahasrahla telepathic, storyteller, bookshelf, Murahdahla) SHALL invoke `Rando_GetHintDialogueId(npc_id) → uint16` to determine which dialogue ID to dispatch. The returned ID maps to a slot-specific entry in the text-engine's dialogue table.
+The randomizer SHALL surface generated telepathic-tile hints in-game by intercepting the vanilla telepathic-tile dialogue read, NOT by carving a dynamic dialogue-ID range. `Text_LoadCharacterBuffer` (`src/messaging.c`) SHALL call `Rando_RenderHintMessage(dialogue_message_index, messaging_text_buffer)` before the vanilla dialogue decode; when the randomizer slot is active, `settings.hints == on`, and `dialogue_message_index` is one of the 15 hint-bearing vanilla US telepathic-tile message ids (`0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0..0xC7`; `0xB4` generic-default excluded), the function SHALL render the generated hint (font-encoded, `0x7f`-terminated) into the buffer and the engine SHALL skip the vanilla decode.
 
-When `kFeatures1_RandomizerActive` is clear, hint NPC handlers SHALL preserve byte-identical vanilla behavior — the accessor returns the vanilla dialogue ID and the standard text-engine flow proceeds.
+When the slot is inactive, hints are off, or the id is not a hint-tile id, `Rando_RenderHintMessage` SHALL return false and the vanilla text-engine flow SHALL proceed byte-identically.
 
-> **Stub status**: exact sprite-handler patch sites + dialogue-ID range carve-out deferred to apply-time.
+`Rando_GetHintDialogueId(npc) → uint16` (returning `0x200 + (npc-1)`, or `0xFFFF` when no hint is allocated) SHALL exist and is consumed by the **spoiler emitter** as the entry's `dialogue_id` label. It is NOT consulted by any in-game sprite handler.
 
-#### Scenario: Sahasrahla in rando mode reads slot-specific dialogue
-- **WHEN** the player triggers a Sahasrahla telepathic tile in a randomizer slot
-- **THEN** `Rando_GetHintDialogueId(NPC_SahasrahlaTelepathic)` returns a dialogue ID pointing at the slot's per-NPC hint text; the text-engine renders that text
+> **As-built note**: an earlier draft had hint NPC *sprite handlers* (Sahasrahla, storyteller, bookshelf, Murahdahla) invoking `Rando_GetHintDialogueId` to dispatch a slot-specific dialogue id from a carved dynamic range. The implementation instead intercepts the vanilla tele-tile ids in the messaging engine, and `Rando_GetHintDialogueId` survives only as a spoiler label. No storyteller/bookshelf/Murahdahla in-game handler is wired (Murahdahla is spoiler-only). `Rando_RemapTeleMsg` exists but is a vestigial unused stub.
 
-#### Scenario: Vanilla mode hint NPCs unchanged
-- **WHEN** the binary is in vanilla mode and the player triggers a Sahasrahla telepathic tile
-- **THEN** the accessor returns the vanilla dialogue ID; the standard text plays
+#### Scenario: Telepathic tile in rando mode renders the generated hint
+- **WHEN** the player reads a hint-bearing telepathic tile in an active randomizer slot with `hints=on`
+- **THEN** `Rando_RenderHintMessage` returns true and the message box shows the slot's generated hint instead of the vanilla telepathic text
+
+#### Scenario: Vanilla mode tiles unchanged
+- **WHEN** no randomizer slot is active (or `hints=off`) and the player reads a telepathic tile
+- **THEN** `Rando_RenderHintMessage` returns false and the standard vanilla text plays byte-identically

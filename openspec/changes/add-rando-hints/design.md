@@ -1,19 +1,47 @@
+## As-built summary (2026-05-29 — read this first)
+
+The implementation (Phase B Slice 5, `src/rando/rando_hints.{c,h}`) diverged from the original design recorded in the "Decisions D1–D6" section below. The reality, verified against code:
+
+- **Sources:** 15 telepathic-tile hints (`Rando_GenerateHints`, `rando_hints.c`) + 1 Murahdahla region-summary line (Triforce/Ganon Hunt only). NOT "4 sources". Storyteller/Bookshelf are not generated. The enum (`rando_hints.h`) reserves 4 "fork extension" ids (storyteller + 3 fortune tellers) but they are **not wired in-game**.
+- **Runtime display (KEY divergence):** NO dynamic dialogue-ID carve is used on the read path — neither D2's `0x300+` nor §57.3's `0x200..0x20E`. Instead `Text_LoadCharacterBuffer` (`src/messaging.c`, the call site is the line guarded by `Rando_RenderHintMessage(dialogue_message_index, ...)`) intercepts the **15 vanilla US telepathic-tile message ids** (`kHintTileMsgIds[]` = `0xB5,0xB8,0xB9,0xBA,0xBB,0xBE,0xBF,0xC0..0xC7`; `0xB4` generic-default excluded) and renders the generated hint directly into the character buffer, skipping the vanilla decode. `Rando_RemapTeleMsg` is a vestigial stub, never called.
+- **`0x200` is a spoiler label only.** `Rando_GetHintDialogueId(npc)` returns `kRandoHintDialogueBase (0x200) + (npc-1)`; this value appears at runtime ONLY as the `dialogue_id` field in the spoiler JSON (`rando_spoiler.c`). It is never used as a runtime dialogue-table key.
+- **Settings axis:** `uint8 hints` (`kHintsMode_Off`/`kHintsMode_On`), canonical byte 22 (kGenVer 14). CSV `hints=` accepts `off|0|false|none` → off, `on|1|true|sahasrahla|full` → on. So it is **binary on/off**, with `sahasrahla`/`full` as accepted *aliases*, not a functional tri-state. Default is **ON unconditionally** (`Settings_SetDefaults`), NOT goal-aware.
+- **Hint text:** stable `"The <item> lies at <location>."`; Murahdahla `"Murahdahla: N Triforce piece(s) placed across M region(s)."`. NO joke-pool fallback, NO `Text.php` per-location flavor translation, NO per-sphere grouping.
+- **Determinism RNG:** sub-RNG seeded from the placement-table digest XOR `0x48494E5448494E54` ("HINTHINT"), via `seed_hint_rng` — not D6's `seed_u64 XOR magic`. Same `(settings, seed)` → same placement → same digest → same hints. Asserted by `Hints_SelfCheck`.
+- **Spoiler:** a `hints` array of `{"npc","dialogue_id","text"}` objects (`rando_spoiler.c`), plus `"hints": <0|1>` in the settings block. There is NO `meta.hints_count`.
+- **Slot persistence:** `hints_setting` carried at slot-header byte @66 (`rando_save.c`).
+- **Storage:** static module-local `g_hint_table[]` (not heap, not `g_ram`), contra D3.
+
+### Deferred / not implemented
+
+- Storyteller + 3 fortune-teller "fork extension" sprite wiring (enum/spoiler ids exist; no in-game handler).
+- Bookshelf hint source (dropped — see §57.1).
+- Murahdahla as an in-game NPC (spoiler-only; static, no per-sphere piece locations).
+- Full ALTTPR `Text.php` per-location flavor text + joke-pool (`strings/hint.txt`) fallback.
+- Goal-aware default (default is unconditionally ON).
+- A true functional tri-state `hints` axis (`sahasrahla`/`full` collapse to `on`).
+- `meta.hints_count` spoiler field.
+- Aginah / vanilla-NPC location-redirect hints (see the now-deferred spec requirement).
+
+---
+
 ## Context
 
 ALTTPR's hint generation lives in `app/Services/HintService.php` (177 lines, verified) and the hint text body in `app/Text.php` (1110 lines). Combined ≈ 1287 lines.
 
-Phase A roadmap (`docs/randomizer.md:294`) names four hint sources: Sahasrahla telepathic, storyteller, bookshelf, Murahdahla. Triforce Hunt is "almost unplayable without them" per the source doc — Murahdahla in particular surfaces Triforce-piece locations grouped by sphere.
+Phase A roadmap (`docs/randomizer.md:294`) named four hint sources: Sahasrahla telepathic, storyteller, bookshelf, Murahdahla. **That framing was wrong** — see §57.1: ALTTPR's generator produces only 15 telepathic tiles, plus a static per-goal Murahdahla line. The as-built fork follows §57.1, not the four-source framing.
 
 The chunking critique flagged the capability-shape decision as worth resolving in design.md. This change records the decision.
 
 ## Goals / Non-Goals
 
-**Goals**:
-- New `randomizer-hints` capability that owns hint generation + per-NPC dispatch + spoiler integration.
-- 4 hint sources implemented: Sahasrahla telepathic, storyteller, bookshelf, Murahdahla.
-- Hints settings axis (`off | sahasrahla | full`) with goal-aware default.
-- Deterministic hint generation: same `(share_string, generator_version)` → byte-identical hint set.
-- JSON + text spoiler integration with `hints` section.
+**Goals** (as-built — original goals annotated):
+- New `randomizer-hints` capability that owns hint generation + spoiler integration. **As-built:** done.
+- ~~4 hint sources: Sahasrahla telepathic, storyteller, bookshelf, Murahdahla.~~ **As-built:** 15 telepathic tiles + a static Murahdahla region-summary line (§57.1). Storyteller/bookshelf NOT generated.
+- ~~Hints settings axis (`off | sahasrahla | full`) with goal-aware default.~~ **As-built:** binary `off | on` axis (canonical byte 22); `sahasrahla`/`full` are accepted CSV aliases for `on`. Default is unconditionally ON, not goal-aware.
+- Deterministic hint generation: same `(settings, seed)` → byte-identical hint set. **As-built:** done, via a placement-digest-seeded sub-RNG; `Hints_SelfCheck` asserts it.
+- JSON + text spoiler integration with `hints` section. **As-built:** done (`{npc, dialogue_id, text}` array; no `hints_count`).
+- **As-built addition:** in-game display of telepathic-tile hints via `Text_LoadCharacterBuffer` interception of vanilla tile dialogue ids.
 
 **Non-Goals**:
 - Inverted-specific hints (follow-on after #4a if any new NPC sites emerge).
@@ -41,63 +69,57 @@ Spec deltas in this change:
 - `randomizer-placement/spec.md` — hint-NPC dispatch routing (ADDED requirement).
 - `randomizer-core/spec.md` — hints settings axis + spoiler section (ADDED requirements).
 
-### D2: Dialogue-ID range carve-out
+### D2: Dialogue-ID range carve-out — SUPERSEDED
 
-ALTTPR injects hint text by replacing existing vanilla dialogue IDs with per-slot hint strings. zelda3's text engine in `src/messaging.c` has a fixed dialogue table.
+> **As-built:** This decision was NOT implemented. There is no runtime dialogue-ID carve (neither this `0x300..0x3FF` band nor §57.3's `0x200..0x20E`). Instead the runtime intercepts the **vanilla** telepathic-tile dialogue ids directly: `Text_LoadCharacterBuffer` (`src/messaging.c`) calls `Rando_RenderHintMessage(dialogue_message_index, messaging_text_buffer)` at its top, and when the slot is active and the id is one of the 15 vanilla tele ids (`kHintTileMsgIds[]`), renders the generated hint into the character buffer and returns — skipping the vanilla decode. The `0x200` base (`kRandoHintDialogueBase`, `Rando_GetHintDialogueId`) survives only as the `dialogue_id` *label* in the spoiler JSON, not as a runtime table key. See "As-built summary" and §57.4.
 
-**Decision**: carve out a "dynamic" dialogue ID range — say IDs `0x300..0x3FF` (256 entries) — that the runtime treats as a slot-specific lookup. When the text engine encounters a dialogue ID in the dynamic range, it consults `g_rando_hint_dialogue_table` instead of the static dialogue blob.
+Original (superseded) decision: ALTTPR injects hint text by replacing existing vanilla dialogue IDs with per-slot hint strings. zelda3's text engine in `src/messaging.c` has a fixed dialogue table. The plan was to carve a "dynamic" dialogue ID range — IDs `0x300..0x3FF` (256 entries) — that the runtime treats as a slot-specific lookup against a `g_rando_hint_dialogue_table`. Not built; the vanilla-id interception above replaced it.
 
-The exact range is decided at apply-time by grepping `src/messaging.c` for the highest currently-used dialogue ID and carving an unused band above it. Recorded in `audit.md §"Hint dialogue ID range"`.
+### D3: Hint-text storage — SUPERSEDED (option (a) shipped, not (b))
 
-### D3: Hint-text storage
+> **As-built:** The shipped storage is a **static module-local table** `g_hint_table[kRandoHintNpc__Count]` (`rando_hints.c`), each entry holding a fixed `char text[160]` plus the placement loc/item ids — NOT a heap allocation. It is cleared (`Rando_ClearHints`) rather than freed. This is closer to original option (a) than (b).
 
-**Options**:
-- (a) **Static dictionary** in a new C file or codegen-generated file. Predictable; in-binary; no runtime allocation.
-- (b) **Heap-allocated per-slot table**. Slot-loaded; uses heap.
+Original options / decision (superseded): (a) static dictionary vs. (b) heap-allocated per-slot table; the decision recorded (b). The implementation instead used a static fixed-size table — the hint count is bounded (≤21) so no heap is needed.
 
-**Decision**: **(b) heap-allocated per-slot table.** Hint strings are per-seed and computed at generation time; storing in heap is the natural shape. The table is freed when the slot unloads.
+### D4: Goal-aware hints default — SUPERSEDED
 
-Per-slot hint table size estimate: 4 sources × max 20 hints × ~100 bytes/hint ≈ 8KB per slot. Negligible.
+> **As-built:** The default is **unconditionally ON** — `Settings_SetDefaults` (`rando_settings.c`) sets `s->hints = kHintsMode_On` with no goal dependence. There is no `full`/`sahasrahla` distinction (the axis is binary; both are aliases for `on`). Murahdahla still only emits on Triforce/Ganon Hunt, but that's a generation-time check inside `Rando_GenerateHints`, not a default-resolution rule.
 
-### D4: Goal-aware hints default
-
-Per the proposal, the default `hints=` value depends on goal:
-- `goal == triforce-hunt | ganonhunt` → default `hints=full` (Murahdahla is critical).
-- All other goals → default `hints=sahasrahla` (Sahasrahla + bookshelves enabled; Murahdahla empty; storyteller off).
-
-**Decision**: implement the goal-aware default in `SetDefaults` (same site as Phase A's `completionist → accessibility=locations` auto-set). Documented in spec scenarios.
+Original (superseded) decision: a goal-aware default (`full` for Triforce/Ganon Hunt, `sahasrahla` otherwise) in `SetDefaults`. Not built — the binary axis made it moot, and ALTTPR's own default is `on` everywhere (§57.6).
 
 ### D5: Murahdahla in non-Triforce-Hunt goals
 
 ALTTPR shows Murahdahla in dark world; the NPC is always-present. The hint role is Triforce-specific.
 
-**Decision**: when `goal != triforce-hunt | ganonhunt`, Murahdahla shows a generic "no progress to report" hint OR remains silent (sprite present, dialogue trigger is vanilla). The spec leaves this as design.md-soft; apply-time can pick whichever feels right after playtest.
+> **As-built:** Murahdahla is **spoiler-only** (no in-game NPC handler is wired). The Murahdahla hint entry is populated by `Rando_GenerateHints` only when `goal ∈ {kGoal_TriforceHunt, kGoal_GanonHunt}`; for all other goals no entry is created (so the question of "generic line vs. silent" never reaches the player — it simply doesn't appear in the spoiler).
 
 ### D6: Hint determinism RNG
 
-Hint generation runs against the placement table + sphere data. Each hint source draws from a subset (e.g., Murahdahla draws from Triforce-piece locations grouped by sphere). The order in which hints are selected SHALL be deterministic.
+Hint generation runs against the placement table. The order in which hints are selected SHALL be deterministic.
 
-**Decision**: use a `Rng_NextU32`-derived sub-RNG seeded from `(seed_u64 XOR 0xH1_HINTS)` (with `H1_HINTS` a magic constant) for hint generation. Distinct from the placement RNG so changing placement doesn't shift hint text and vice versa.
+> **As-built:** Implemented, with a different (and stronger) seed source than recorded here. `seed_hint_rng` (`rando_hints.c`) computes the SHA-256 placement-table digest (`PlacementTable_ComputeDigest`), takes its first 8 bytes as a `uint64`, and XORs the magic constant `0x48494E5448494E54` ("HINTHINT"). The hintable pool is Fisher-Yates shuffled (`shuffle_u16`) and the 15 tiles sample without replacement. Because the seed derives from the placement digest (itself deterministic from `(settings, seed)`), changing placement DOES shift hint assignment — but that is the intended "same seed → same hints" contract, asserted by `Hints_SelfCheck`. Note the `spheres` parameter is accepted but unused (`(void)spheres;`).
+
+Original (superseded) wording: a `Rng_NextU32`-derived sub-RNG seeded from `(seed_u64 XOR 0xH1_HINTS)`, described as "distinct from the placement RNG so changing placement doesn't shift hint text." The as-built seed is *derived from* the placement digest, so it intentionally tracks placement.
 
 ## Risks / Trade-offs
 
-| Risk | Mitigation |
+| Risk | Mitigation (as-built) |
 |---|---|
-| Hint text format divergence from ALTTPR convention | Per-NPC corpus test (hints_corpus); CI catches drift. |
-| Dynamic dialogue ID range collides with future vanilla content | Carve a high range (0x300+); document in audit.md; verify at apply-time. |
-| Hint text body in `Text.php` (1110 lines) is hard to translate | Translate incrementally; ship Sahasrahla first, then storyteller, then bookshelves, then Murahdahla. Per-source PR. |
-| Triforce Hunt hints leak placement | They're supposed to — Murahdahla is the "where are the pieces" hint NPC. Race mode users have a separate concern (race-mode reveal handles spoiler suppression). |
+| Hint text format divergence from ALTTPR convention | Accepted — the fork uses a stable `"The <item> lies at <location>."` form, not ALTTPR's per-location flavor text. Determinism (not ALTTPR-byte-equivalence) is enforced by `Hints_SelfCheck` + the corpus. |
+| ~~Dynamic dialogue ID range collides with future vanilla content~~ | N/A — no runtime dialogue-ID range was carved (D2 superseded). The runtime intercepts existing vanilla tele ids instead, so there is no new ID space to collide. |
+| Hint text body in `Text.php` (1110 lines) is hard to translate | Deferred entirely — the `Text.php` per-location flavor translation was not done; only the structural port (15 tiles + Murahdahla) shipped. |
+| Triforce Hunt hints leak placement | Murahdahla is spoiler-only here, so the leak is only via the spoiler file (race-mode reveal already suppresses on-disk full spoiler — §57.5). |
 
 ## Migration Plan
 
-No user-data migration. Hints default `off` for existing slots (Phase B default for non-Triforce-Hunt) or `full` (Triforce Hunt). Users on existing slots without hints just have empty `g_rando_hint_dialogue_table` on load; NPCs play vanilla text.
+No user-data migration. Hints default **ON** for all new slots (`Settings_SetDefaults`). Slot files written before the hints extension read `hints_setting = 0` at byte @66; `Rando_ActivateSidecarSlot` applies the hints-on default for such pre-extension files (`rando_save.c`). On load the static `g_hint_table` is repopulated from the slot's settings + seed; with hints off it stays empty and tiles play vanilla text.
 
-## Open Questions
+## Open Questions — RESOLVED by the implementation
 
-1. Sahasrahla telepathic tile count: how many distinct tiles, and does each get a unique hint or share a pool? Apply-time grep against ALTTPR.
-2. Bookshelf hint vs. book-of-mudora interaction collision — bookshelves in dungeons may have non-hint vanilla behavior; verify which interactions are hint-bearing.
-3. Storyteller NPC location — which shrines have hint NPCs? Apply-time grep.
-4. Per-hint length cap — the text engine has a buffer limit per dialogue ID. Verify the limit and constrain hint generation to fit.
+1. ~~Sahasrahla telepathic tile count?~~ **Resolved:** 15 hint-bearing tiles (`kHintTileMsgIds[]`, the vanilla US tele ids `0xB5,0xB8,0xB9,0xBA,0xBB,0xBE,0xBF,0xC0..0xC7`; `0xB4` generic-default excluded). Each gets a distinct generated hint sampled without replacement from the shuffled hintable pool — no shared pool of text.
+2. ~~Bookshelf hint vs. book-of-mudora collision?~~ **Resolved:** moot — bookshelf hints were dropped from scope (§57.1, `rando_hints.h` header comment).
+3. ~~Storyteller NPC location?~~ **Resolved:** moot in-game — the storyteller (and 3 fortune tellers) exist only as reserved spoiler enum ids (`kRandoHintNpc_Fork*`); no in-game handler is wired.
+4. ~~Per-hint length cap?~~ **Resolved:** `HintEntry.text` is capped at `kRandoHintTextMax` (160) ASCII bytes; at render time `encode_hint_text` word-wraps to ~13 glyphs/row, paginates with a wait-key when over three rows, and writes into the ≥256-byte `messaging_text_buffer`, terminating with `0x7f`.
 
 ## Runtime intercept NOT wired (task #85 — verified by grep 2026-05-27)
 
@@ -123,6 +145,8 @@ Both intercepts are pre-requisites for the hint generator body to produce any vi
 ## §57 Translation status
 
 This section translates ALTTPR's `app/Services/HintService.php` (177 lines, verified `wc -l` 2026-05-27) + hint-bearing text bodies in `app/Text.php` (1110 lines) into a concrete shape for `Rando_GenerateHints`. The audit corrects several capability-shape and source-count claims earlier in this file; see §57.1 and §57.7.
+
+> **Resolution (2026-05-29).** The §57 analysis below is still accurate as a *translation reference* and its recommendations were largely followed: drop Storyteller/Bookshelf (§57.1), binary on/off axis (§57.6), no sphere data (§57.2). Several open "TBD"/"decision pending" markers are now resolved — see the "As-built summary" at the top of this file for what shipped. Notably, the §57.2 generator algorithm (5-step pool) and the §57.3 `0x200..0x20E` runtime dialogue carve were **NOT** built as written: the shipped generator picks 15 non-junk placements at random without replacement, and the runtime intercepts the vanilla telepathic-tile message ids directly (no carve). Keep §57 for provenance; trust the As-built summary for current behavior.
 
 ### §57.1 Hint sources enumeration — actual ALTTPR shape
 

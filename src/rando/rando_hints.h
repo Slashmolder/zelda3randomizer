@@ -84,9 +84,9 @@ typedef enum RandoHintNpc {
 // `HintService.php:54` which tests `=== 'on'`).
 //
 // Bit width reserved in canonical serialization: 2 bits (room for future
-// modes if needed — currently only on/off are wired). Canonical-
-// serialization landing is a Slice 5 follow-up tied to the actual
-// generator body; scaffold does NOT extend the canonical bytes yet.
+// modes if needed — currently only on/off are wired). As-built: `hints`
+// occupies canonical byte 22 (joined the settings hash at kGeneratorVersion
+// 14); see Settings_CanonicalSerialize/Deserialize in rando_settings.c.
 // ---------------------------------------------------------------------------
 typedef enum RandoHintsMode {
   kHintsMode_Off = 0,
@@ -94,16 +94,17 @@ typedef enum RandoHintsMode {
 } RandoHintsMode;
 
 // ---------------------------------------------------------------------------
-// Dialogue-ID carve — Phase B Slice 5 §57.3.
+// Dialogue-ID labels — Phase B Slice 5 §57.3.
 //
-// Vanilla zelda3 dialogue IDs (16-bit, `dialogue_message_index`) max out at
-// 0x18a per highest assigned vanilla site. Carve `0x200..0x213` for the hint
-// range — 20 IDs, positionally mapped:
-//   id = kRandoHintDialogueBase + (RandoHintNpc - 1)
-// The runtime intercept lives at `Text_LoadCharacterBuffer`;
-// when the request id falls in the carve,
-// the text source switches from `g_zenv.dialogue_blk` to the in-memory
-// hint table populated by `Rando_GenerateHints`.
+// `kRandoHintDialogueBase + (RandoHintNpc - 1)` gives each hint NPC a stable
+// 16-bit id, positionally mapped. As-built this is used ONLY as a label in the
+// spoiler JSON (`Rando_GetHintDialogueId`, see rando_spoiler.c) — it is NOT a
+// runtime dialogue carve. The in-game intercept does not key off this range:
+// `Text_LoadCharacterBuffer` calls `Rando_RenderHintMessage`, which replaces
+// the vanilla tile text in place when the requested `dialogue_message_index`
+// is one of the 15 vanilla telepathic-tile message IDs (`kHintTileMsgIds`,
+// 0xB5..0xC7). `Rando_IsHintDialogueId` / `Rando_RemapTeleMsg` are vestigial
+// from the original carve design and are not used at runtime.
 // ---------------------------------------------------------------------------
 #define kRandoHintDialogueBase  0x200u
 #define kRandoHintDialogueCount 20u  // = kRandoHintNpc__Count - 1
