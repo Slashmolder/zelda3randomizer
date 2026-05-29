@@ -103,6 +103,46 @@ static void IconImage(int slot, float sz, bool have) {
   }
 }
 
+// Draw a centered number/char overlay on the icon just drawn at screen pos `p`
+// (square `sz`). White when lit, grey when dim.
+static void OverlayCentered(ImVec2 p, float sz, const char *txt, bool lit) {
+  ImDrawList *dl = ImGui::GetWindowDrawList();
+  ImVec2 ts = ImGui::CalcTextSize(txt);
+  ImVec2 tp(p.x + (sz - ts.x) * 0.5f, p.y + (sz - ts.y) * 0.5f);
+  dl->AddText(ImVec2(tp.x + 1, tp.y + 1), IM_COL32(0, 0, 0, 220), txt);
+  dl->AddText(tp, lit ? IM_COL32(255, 255, 255, 255) : IM_COL32(150, 150, 155, 160), txt);
+}
+
+// Draw a dim rounded "?" placeholder cell (sz square): the prize a dungeon
+// awards is hidden under prize_shuffle until obtained, so we must not reveal it.
+static void UnknownPrizeCell(float sz) {
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  ImDrawList *dl = ImGui::GetWindowDrawList();
+  dl->AddRectFilled(p, ImVec2(p.x + sz, p.y + sz), IM_COL32(58, 58, 70, 130), 3.0f);
+  dl->AddRect(p, ImVec2(p.x + sz, p.y + sz), IM_COL32(110, 110, 125, 180), 3.0f);
+  OverlayCentered(p, sz, "?", false);
+  ImGui::Dummy(ImVec2(sz, sz));
+}
+
+// Map a prize id (0..9, rando_shuffles.c kPrize_*) to its atlas icon, the
+// obtained flag (Rando_FillItemView masks), and crystal number (0 = pendant).
+static int PrizeIcon(const RandoItemView &v, uint8 prize, bool *obtained, int *crystal_num) {
+  *crystal_num = 0;
+  switch (prize) {
+    case 0: *obtained = (v.pendant_mask & 1) != 0; return kRandoIcon_PendantGreen;  // green
+    case 1: *obtained = (v.pendant_mask & 4) != 0; return kRandoIcon_PendantRed;    // red
+    case 2: *obtained = (v.pendant_mask & 2) != 0; return kRandoIcon_PendantBlue;   // blue
+    default:
+      if (prize >= 3 && prize <= 9) {           // Crystal1..7
+        *crystal_num = prize - 2;
+        *obtained = (v.crystal_mask & (1 << (prize - 3))) != 0;
+        return kRandoIcon_Crystal;
+      }
+      *obtained = false;
+      return -1;
+  }
+}
+
 // ---- Window handles --------------------------------------------------------
 static Z3RWindow *s_win[kTracker_Count];
 
@@ -220,21 +260,6 @@ static void DrawItemTracker(void *) {
   LevelChip("Magic", v.magic, kMagic[v.magic <= 2 ? v.magic : 0]);
   ImGui::NewLine();
 
-  SectionHeader("Prizes");
-  // Pendants: three colored gems lit by pendant_mask (bit0 green, bit1 blue,
-  // bit2 red — see kPendantMask in rando.c Rando_FillItemView).
-  ImGui::AlignTextToFramePadding();
-  IconImage(kRandoIcon_PendantGreen, 28.0f, (v.pendant_mask & 1) != 0); ImGui::SameLine();
-  IconImage(kRandoIcon_PendantBlue,  28.0f, (v.pendant_mask & 2) != 0); ImGui::SameLine();
-  IconImage(kRandoIcon_PendantRed,   28.0f, (v.pendant_mask & 4) != 0); ImGui::SameLine();
-  ImGui::Text("%d / 3 pendants", v.pendants);
-  // Crystals: identical purple gems, tracked by count.
-  ImGui::AlignTextToFramePadding();
-  IconImage(kRandoIcon_Crystal, 28.0f, v.crystals > 0); ImGui::SameLine();
-  ImGui::Text("%d / 7 crystals", v.crystals);
-  // Agahnim 1 has no clean standalone icon sprite (72-tile boss) — status chip.
-  Chip("Agahnim", v.agahnim, 92.0f);
-
   SectionHeader("Stats");
   // Hearts: heart containers + pieces toward the next, clearly labelled.
   ImGui::AlignTextToFramePadding();
@@ -245,17 +270,30 @@ static void DrawItemTracker(void *) {
   else
     ImGui::Text("%d hearts", v.hearts);
 
-  // Per-dungeon items: small-key count + big-key / map / compass indicators.
-  ImGui::SeparatorText("Dungeon Items");
-  static const struct { int idx; const char *name; } kDungeonRows[] = {
-      {0, "Hyrule Castle"}, {4, "Castle Tower"}, {2, "Eastern"}, {3, "Desert"},
-      {10, "Tower of Hera"}, {5, "Pal. of Darkness"}, {6, "Swamp"}, {7, "Skull Woods"},
-      {8, "Thieves'"}, {9, "Ice"}, {11, "Misery Mire"}, {12, "Turtle Rock"},
-      {13, "Ganon's Tower"},
+  // Per-dungeon: prize (= boss-completion), small-key count, big-key/map/compass.
+  // `game` indexes the RandoItemView dungeon arrays; `logic` indexes the prize
+  // assignment (rando_logic dungeon ids). `prize` marks the 10 dungeons that
+  // award a pendant/crystal (HC/CT/GT do not).
+  ImGui::SeparatorText("Dungeons");
+  static const struct { int game; int logic; const char *name; bool prize; } kDungeonRows[] = {
+      {0,  0,  "Hyrule Castle",    false}, {4,  4,  "Castle Tower",     false},
+      {2,  1,  "Eastern",          true},  {3,  2,  "Desert",           true},
+      {10, 3,  "Tower of Hera",    true},  {5,  5,  "Pal. of Darkness", true},
+      {6,  6,  "Swamp",            true},  {7,  7,  "Skull Woods",      true},
+      {8,  8,  "Thieves'",         true},  {9,  9,  "Ice",              true},
+      {11, 10, "Misery Mire",      true},  {12, 11, "Turtle Rock",      true},
+      {13, 12, "Ganon's Tower",    false},
   };
-  if (ImGui::BeginTable("##dungeonitems", 5,
+  // Prize assignment + shuffle flag drive the spoiler-safe prize column: an
+  // unobtained shuffled prize shows "?" (revealing it would spoil); an obtained
+  // one (or any prize when shuffle is off) shows the real icon.
+  const uint8 *prize_assign = Rando_GetDungeonPrizeAssignment();  // NULL if no rando
+  const RandoSettings *rset = Rando_GetActiveSettings();
+  bool shuffle_on = rset && rset->prize_shuffle;
+  if (ImGui::BeginTable("##dungeons", 6,
                         ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
     ImGui::TableSetupColumn("Dungeon");
+    ImGui::TableSetupColumn("Prize");
     ImGui::TableSetupColumn("Keys");
     ImGui::TableSetupColumn("Big");
     ImGui::TableSetupColumn("Map");
@@ -263,12 +301,43 @@ static void DrawItemTracker(void *) {
     ImGui::TableHeadersRow();
     const ImVec4 on = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
     const ImVec4 off = ImVec4(0.45f, 0.45f, 0.48f, 1.0f);
+    const ImVec4 done = ImVec4(0.45f, 0.90f, 0.50f, 1.0f);  // completed dungeon name
     for (int i = 0; i < (int)(sizeof(kDungeonRows) / sizeof(kDungeonRows[0])); i++) {
-      int d = kDungeonRows[i].idx;
+      int d = kDungeonRows[i].game;
       uint16 bit = (uint16)(0x8000u >> d);
       int keys = v.dungeon_small_keys[d];
+
+      // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.
+      bool prize_obtained = false; int prize_icon = -1, crystal_num = 0;
+      if (kDungeonRows[i].prize && prize_assign)
+        prize_icon = PrizeIcon(v, prize_assign[kDungeonRows[i].logic], &prize_obtained, &crystal_num);
+      bool complete = kDungeonRows[i].game == 4 ? v.agahnim : prize_obtained;
+
       ImGui::TableNextRow();
-      ImGui::TableNextColumn(); ImGui::TextUnformatted(kDungeonRows[i].name);
+      ImGui::TableNextColumn();
+      ImGui::TextColored(complete ? done : ImGui::GetStyleColorVec4(ImGuiCol_Text),
+                         "%s", kDungeonRows[i].name);
+
+      // Prize column (doubles as boss-completion indicator).
+      ImGui::TableNextColumn();
+      if (kDungeonRows[i].game == 4) {            // Castle Tower -> Agahnim 1
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p, ImVec2(p.x + 18, p.y + 18),
+                          v.agahnim ? IM_COL32(90, 40, 90, 200) : IM_COL32(50, 50, 60, 120), 3.0f);
+        OverlayCentered(p, 18.0f, "A", v.agahnim);
+        ImGui::Dummy(ImVec2(18, 18));
+      } else if (prize_icon >= 0 && (prize_obtained || !shuffle_on)) {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        IconImage(prize_icon, 18.0f, prize_obtained);
+        if (crystal_num) { char nb[4]; snprintf(nb, sizeof nb, "%d", crystal_num);
+                           OverlayCentered(p, 18.0f, nb, prize_obtained); }
+      } else if (kDungeonRows[i].prize && prize_assign) {
+        UnknownPrizeCell(18.0f);                  // shuffled + not yet obtained
+      } else {
+        ImGui::Dummy(ImVec2(18, 18));             // HC / GT / no rando: no prize
+      }
+
       // Small keys: the game shows these as a count (no standalone HUD sprite).
       ImGui::TableNextColumn();
       ImGui::TextColored(keys > 0 ? on : off, "x%d", keys);

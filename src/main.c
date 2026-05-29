@@ -963,6 +963,7 @@ int main(int argc, char** argv) {
     }
   }
 
+
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,
   // loads the chapter savestate via the replay-mode StateRecorder path
