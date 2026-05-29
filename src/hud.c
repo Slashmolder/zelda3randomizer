@@ -2023,7 +2023,11 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeSpriteIcon(out, stride, kRandoIcon_PendantBlue,  0x23, pblue);
   // Crystal = gfx 0x28, a 16x16 diamond spread across 4 quadrant tiles
   // (TL=0xbd40, TR=0xbd60, BL=0xbd80, BR=0xbda0; arrangement verified by PNG
-  // dump). Palette 6 from kPalette_MiscSprite_Indoors index 4.
+  // dump). Colored with kPalette_MiscSprite_Indoors row 4 (offset 4*7) — the
+  // same source the game loads into sprite palette 6 for the crystal receipt
+  // (ancilla.c: palette_sp6r_indoors=4 -> Palette_Load_SpriteEnvironment_Dungeon).
+  // The crystal art only uses color indices 1-6 (PNG-verified), so BlitSpriteTile's
+  // pal[idx-1] stays within this 7-entry row.
   DecodeAnimatedSpriteTile_variable(0x28);
   { const uint16 *cp = kPalette_MiscSprite_Indoors + 4 * 7;
     BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd40], 0, 0, 1);
