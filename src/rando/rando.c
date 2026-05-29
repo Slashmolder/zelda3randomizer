@@ -1007,6 +1007,9 @@ void Rando_DeactivateSlot(void) {
 // and the shuffle assignments installed. The tracker windows gate their
 // reachability display on this — false means "settings unknown", show only
 // checked/unchecked, not reachable.
+// Whether a randomizer slot is currently active (a placement is installed).
+bool Rando_IsActive(void) { return g_rando_slot_active != 0; }
+
 bool Rando_HasActiveSettings(void) { return g_rando_active_settings_valid; }
 
 // The recovered active settings, or NULL when unavailable. Used by the runtime
@@ -1144,6 +1147,67 @@ const RandoReachability *Rando_GetLiveReachability(void) {
   g_live_reach_counter = cur;
   g_live_reach_valid = true;
   return Reachability_Snapshot(true);  // copy out of the shared buffer
+}
+
+void Rando_FillItemView(RandoItemView *out) {
+  if (out == NULL) return;
+  memset(out, 0, sizeof(*out));
+
+  uint8 sword = link_sword_type;
+  out->sword = (sword >= 1 && sword <= 4) ? sword : 0;  // 0xFF == none
+  out->shield = link_shield_type;     // 0..3
+  out->mail = link_armor;             // 0 green, 1 blue, 2 red
+  out->gloves = link_item_gloves;     // 0..2
+  uint8 bowb = link_item_bow;
+  out->bow = (bowb >= 3) ? 2 : (bowb >= 1 ? 1 : 0);  // wood/silver
+  out->boomerang = (link_item_boomerang <= 2) ? link_item_boomerang : 0;
+
+  out->hookshot = link_item_hookshot != 0;
+  out->firerod = link_item_fire_rod != 0;
+  out->icerod = link_item_ice_rod != 0;
+  out->hammer = link_item_hammer != 0;
+  out->lamp = link_item_torch != 0;
+  out->net = link_item_bug_net != 0;
+  out->book = link_item_book_of_mudora != 0;
+  out->somaria = link_item_cane_somaria != 0;
+  out->byrna = link_item_cane_byrna != 0;
+  out->cape = link_item_cape != 0;
+  out->mirror = link_item_mirror != 0;
+  out->boots = link_item_boots != 0;
+  out->flippers = link_item_flippers != 0;
+  out->moon_pearl = link_item_moon_pearl != 0;
+  out->bombos = link_item_bombos_medallion != 0;
+  out->ether = link_item_ether_medallion != 0;
+  out->quake = link_item_quake_medallion != 0;
+
+  // Shared-byte items, resolved via rando ownership state.
+  out->mushroom = Rando_MushroomHeld() || link_item_mushroom == 1;
+  out->powder = link_item_mushroom == 2;
+  uint8 fs = g_rando_flute_shovel_owned;
+  out->flute = (fs & kRandoFluteShovel_Flute) != 0;
+  out->shovel = (fs & kRandoFluteShovel_Shovel) != 0;
+
+  {
+    uint8 bottles = 0;
+    for (int i = 0; i < 4; i++) if (link_bottle_info[i] != 0) bottles++;
+    out->bottles = bottles;
+  }
+  out->magic = link_magic_consumption;          // 0 normal, 1 half, 2 quarter
+  out->hearts = (uint8)(link_health_capacity >> 3);
+  out->heart_pieces = link_heart_pieces;
+
+  // Crystals (7) and pendants (3) — vanilla bit masks (mirror messaging.c).
+  static const uint8 kCrystalMask[7] = { 2, 0x40, 8, 0x20, 1, 4, 0x10 };
+  static const uint8 kPendantMask[3] = { 4, 1, 2 };
+  uint8 cbits = link_has_crystals, pbits = link_which_pendants;
+  for (uint8 i = 0; i < 7; i++) {
+    if (cbits & kCrystalMask[i]) { out->crystal_mask |= (uint8)(1 << i); out->crystals++; }
+  }
+  for (uint8 i = 0; i < 3; i++) {
+    if (pbits & kPendantMask[i]) { out->pendant_mask |= (uint8)(1 << i); out->pendants++; }
+  }
+
+  out->agahnim = Rando_IsLocationChecked(LOC_Agahnim);
 }
 
 // ---------------------------------------------------------------------------
