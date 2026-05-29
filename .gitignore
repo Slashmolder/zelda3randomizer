@@ -48,3 +48,5 @@ __pycache__
 /sprites-gfx
 /glsl-shaders
 /token.txt
+# F12 debug dumps (g_ram + PPU VRAM/OAM/CGRAM snapshots).
+/dump_*.bin
