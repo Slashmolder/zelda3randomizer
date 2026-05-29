@@ -6,6 +6,7 @@
 #include "imgui.h"
 
 #include <cstdio>   // snprintf
+#include <cfloat>   // FLT_MIN (ImGui full-width sentinel)
 
 #include "imgui_host.h"
 #include "tracker_windows.h"
@@ -14,6 +15,8 @@
 // C++-guarded); wrap in extern "C" so the C++ linker resolves the C symbols.
 extern "C" {
 #include "../rando.h"          // Rando_IsActive, Rando_FillItemView, RandoItemView, ...
+#include "../rando_logic.h"    // kRandoLocations/Regions, Rando_Get*Name, Reachability_HasLocation
+#include "../rando_placement.h"// Placement_GetActive, RandoPlacementTable
 }
 
 // ---- Window handles --------------------------------------------------------
@@ -145,11 +148,171 @@ static void DrawItemTracker(void *) {
   ImGui::End();
 }
 
+// location_id -> region_id index, built once from the static logic table.
+static uint16 s_loc_region[1024];
+static bool s_loc_region_built = false;
+static void BuildLocRegionIndex() {
+  for (int i = 0; i < 1024; i++) s_loc_region[i] = 0xFFFF;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    uint16 id = kRandoLocations[i].id;
+    if (id < 1024) s_loc_region[id] = kRandoLocations[i].region_id;
+  }
+  s_loc_region_built = true;
+}
+
+// Check status: 0 unreachable, 1 reachable-unchecked, 2 checked.
+enum { kCheck_Unreachable = 0, kCheck_Reachable = 1, kCheck_Checked = 2 };
+
 static void DrawCheckTracker(void *) {
   BeginFullWindow("Check Tracker##z3r");
-  ImGui::TextUnformatted("Check Tracker");
+
+  if (!Rando_IsActive()) {
+    ImGui::TextDisabled("No randomizer slot active.");
+    ImGui::TextDisabled("Start or load a randomizer slot to track checks.");
+    ImGui::End();
+    return;
+  }
+  if (!s_loc_region_built) BuildLocRegionIndex();
+
+  const RandoPlacementTable *pt = Placement_GetActive();
+  const RandoReachability *reach = Rando_GetLiveReachability();  // NULL => suppress
+  bool have_reach = (reach != NULL);
+
+  // Spoiler availability: never for race seeds. settings carry race_mode.
+  const RandoSettings *settings = Rando_GetActiveSettings();
+  bool race = settings && settings->race_mode;
+
+  // Persistent UI state.
+  static bool s_hide_checked = false;
+  static bool s_only_reachable = false;
+  static bool s_show_items = false;
+  static char s_search[64] = "";
+  if (race) s_show_items = false;
+
+  // Compute summary counts.
+  int n_total = pt ? (int)pt->count : 0;
+  int n_checked = 0, n_reachable = 0;
+  for (int i = 0; i < n_total; i++) {
+    uint16 loc = pt->entries[i].location_id;
+    if (Rando_IsLocationChecked(loc)) n_checked++;
+    else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
+  }
+
+  ImGui::Text("Checks: %d checked", n_checked);
+  if (have_reach) {
+    ImGui::SameLine();
+    ImGui::Text("· %d available", n_reachable);
+  }
+  ImGui::SameLine();
+  ImGui::Text("· %d total", n_total);
+  if (n_total > 0) {
+    ImGui::ProgressBar((float)n_checked / (float)n_total, ImVec2(-FLT_MIN, 0),
+                       "");
+  }
+  if (!have_reach) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.7f, 0.2f, 1));
+    ImGui::TextWrapped("Reachability unavailable for this slot (re-generate the "
+                       "seed on this build to enable it). Showing checked / "
+                       "unchecked only.");
+    ImGui::PopStyleColor();
+  }
+
   ImGui::Separator();
-  ImGui::TextDisabled("(reachable/checked locations — coming in phase 3)");
+  ImGui::Checkbox("Hide checked", &s_hide_checked);
+  ImGui::SameLine();
+  if (have_reach) { ImGui::Checkbox("Only available", &s_only_reachable); ImGui::SameLine(); }
+  ImGui::SetNextItemWidth(160);
+  ImGui::InputTextWithHint("##search", "search", s_search, sizeof(s_search));
+  if (!race) {
+    ImGui::SameLine();
+    ImGui::Checkbox("Show items (spoiler)", &s_show_items);
+  } else {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(spoiler hidden: race seed)");
+  }
+
+  ImGui::Separator();
+  ImGui::BeginChild("##checklist", ImVec2(0, 0), false);
+
+  // Status colors.
+  const ImVec4 col_checked = ImVec4(0.45f, 0.75f, 0.45f, 1.0f);
+  const ImVec4 col_reach   = ImVec4(0.95f, 0.85f, 0.35f, 1.0f);
+  const ImVec4 col_unreach = ImVec4(0.55f, 0.55f, 0.58f, 1.0f);
+
+  // Iterate regions in table order; an extra pass (region 0xFFFF) catches
+  // location entries with no region binding.
+  for (uint32 ri = 0; ri <= kRandoRegionsCount; ri++) {
+    uint16 region_id = (ri < kRandoRegionsCount) ? kRandoRegions[ri].id : 0xFFFF;
+
+    // Tally this region's locations from the placement table.
+    int r_total = 0, r_checked = 0, r_avail = 0;
+    for (int i = 0; i < n_total; i++) {
+      uint16 loc = pt->entries[i].location_id;
+      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      if (lr != region_id) continue;
+      r_total++;
+      if (Rando_IsLocationChecked(loc)) r_checked++;
+      else if (have_reach && Reachability_HasLocation(reach, loc)) r_avail++;
+    }
+    if (r_total == 0) continue;
+
+    const char *rname = (region_id == 0xFFFF) ? "(unbound)" : Rando_GetRegionName(region_id);
+    char header[128];
+    if (have_reach)
+      snprintf(header, sizeof header, "%s — %d avail · %d/%d checked###reg%u",
+               rname, r_avail, r_checked, r_total, region_id);
+    else
+      snprintf(header, sizeof header, "%s — %d/%d checked###reg%u",
+               rname, r_checked, r_total, region_id);
+
+    if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
+
+    ImGui::Indent();
+    for (int i = 0; i < n_total; i++) {
+      uint16 loc = pt->entries[i].location_id;
+      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      if (lr != region_id) continue;
+
+      bool checked = Rando_IsLocationChecked(loc);
+      bool reachable = have_reach && Reachability_HasLocation(reach, loc);
+      int status = checked ? kCheck_Checked : (reachable ? kCheck_Reachable : kCheck_Unreachable);
+
+      if (s_hide_checked && checked) continue;
+      if (s_only_reachable && status == kCheck_Unreachable) continue;
+
+      const char *lname = Rando_GetLocationName(loc);
+      if (s_search[0] && lname) {
+        // Case-insensitive substring filter.
+        bool match = false;
+        for (const char *p = lname; *p && !match; p++) {
+          const char *a = p; const char *b = s_search; bool ok = true;
+          while (*b) {
+            char ca = *a, cb = *b;
+            if (ca >= 'A' && ca <= 'Z') ca += 32;
+            if (cb >= 'A' && cb <= 'Z') cb += 32;
+            if (ca != cb) { ok = false; break; }
+            a++; b++;
+          }
+          if (ok) match = true;
+        }
+        if (!match) continue;
+      }
+
+      ImVec4 c = checked ? col_checked : (reachable ? col_reach : col_unreach);
+      const char *mark = checked ? "[x]" : (reachable ? "[ ]" : " - ");
+      ImGui::PushStyleColor(ImGuiCol_Text, c);
+      if (s_show_items && !race) {
+        const char *iname = Rando_GetItemName(pt->entries[i].item_id);
+        ImGui::Text("%s %s = %s", mark, lname ? lname : "(loc)", iname ? iname : "(item)");
+      } else {
+        ImGui::Text("%s %s", mark, lname ? lname : "(loc)");
+      }
+      ImGui::PopStyleColor();
+    }
+    ImGui::Unindent();
+  }
+
+  ImGui::EndChild();
   ImGui::End();
 }
 
