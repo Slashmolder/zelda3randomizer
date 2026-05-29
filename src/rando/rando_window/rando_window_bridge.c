@@ -3,6 +3,7 @@
 
 #include "rando_window_bridge.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,11 +89,36 @@ void RandoWindowBridge_CancelTarget(void) {
 }
 
 int RandoWindowBridge_Validate(const RandoSettings *s, char *out_err, size_t cap) {
-  // Full cross-field validation (crystals_tower<=crystals_ganon for Fast/Ganon-Hunt;
-  // pieces_required<=pieces_placed for Triforce/Ganon-Hunt; Completionist forces
-  // accessibility=locations) lands in P4 §8. Stub accepts.
-  (void)s;
+  // Cross-field validation mirroring the in-game SettingsValidatePieces semantics
+  // (select_file.c) plus the crystals constraint:
+  //   - goal ∈ {fast_ganon, ganonhunt}: crystals_tower must not exceed crystals_ganon
+  //     (you cannot need more crystals to ENTER the tower than to make Ganon
+  //     vulnerable, or the tower gates harder than the win condition).
+  //   - goal ∈ {triforce-hunt, ganonhunt}: pieces_required must not exceed
+  //     pieces_placed (cannot require more pieces than exist).
+  // The Completionist→accessibility=locations rule is enforced in the UI (auto-set +
+  // read-only combo), matching CycleRow(kRow_Goal); it is not a failure condition here.
   if (out_err != NULL && cap > 0) out_err[0] = '\0';
+  if (s == NULL) return 0;
+
+  if ((s->goal == kGoal_FastGanon || s->goal == kGoal_GanonHunt) &&
+      s->crystals_tower > s->crystals_ganon) {
+    if (out_err != NULL && cap > 0)
+      snprintf(out_err, cap,
+               "Tower crystals (%u) cannot exceed Ganon crystals (%u) for this goal.",
+               (unsigned)s->crystals_tower, (unsigned)s->crystals_ganon);
+    return 1;
+  }
+
+  if ((s->goal == kGoal_TriforceHunt || s->goal == kGoal_GanonHunt) &&
+      s->pieces_required > s->pieces_placed) {
+    if (out_err != NULL && cap > 0)
+      snprintf(out_err, cap,
+               "Pieces required (%u) cannot exceed pieces placed (%u).",
+               (unsigned)s->pieces_required, (unsigned)s->pieces_placed);
+    return 1;
+  }
+
   return 0;
 }
 

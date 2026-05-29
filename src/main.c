@@ -44,6 +44,7 @@
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "rando/rando_window/rando_window.h"          // RandoWindow_* (ImGui settings window)
 #include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
+#include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #endif
 
 static bool g_run_without_emu = 0;
@@ -1349,6 +1350,25 @@ int main(int argc, char** argv) {
     SDL_LockMutex(g_audio_mutex);
     bool is_replay = ZeldaRunFrame(inputs);
     SDL_UnlockMutex(g_audio_mutex);
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    // Game-side generate consumer: when the settings window requested a generate,
+    // run it synchronously on this (game) thread. Blocks the game frame for the
+    // generation duration — expected; the UI shows an input-blocking modal.
+    if (RandoWindowBridge_ConsumeGenerateRequest()) {
+      RandoGenerateResult res; char err[256] = {0};
+      RandoWindowBridge *b = &g_rando_window_bridge;
+      bool ok = Rando_GenerateSlot(&b->pending, b->seed_u64, -1, b->target_slot_index,
+                                   b->pending_recommended_features0, &res, err, sizeof err);
+      if (ok) {
+        RandoWindowBridge_StoreGenerated(&res.placement, NULL, res.race_mode);  // bridge copies
+        free(res.placement.entries);                                            // free our owned copy
+        RandoWindowBridge_SetGenerateResult(2, "");
+      } else {
+        RandoWindowBridge_SetGenerateResult(-1, err);
+      }
+    }
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
     frameCtr++;
 

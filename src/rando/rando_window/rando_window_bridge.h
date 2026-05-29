@@ -15,14 +15,20 @@
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 
 #include <stddef.h>
-#include "../../types.h"
-#include "../rando_settings.h"   // RandoSettings, Settings_*
-#include "../rando_share.h"      // kShareStringBase32MaxLen, ShareString, Share_Encode
-#include "../rando_placement.h"  // RandoPlacementTable, RandoSpheres
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// These rando-core headers declare C functions (Settings_*, Share_*,
+// placement helpers). They are included INSIDE the extern "C" block so that a
+// C++ TU (rando_window.cpp) sees their declarations with C linkage — otherwise
+// the linker looks for C++-mangled names and fails. They do not self-wrap in
+// extern "C", so the wrapping must happen here at the include site.
+#include "../../types.h"
+#include "../rando_settings.h"   // RandoSettings, Settings_*
+#include "../rando_share.h"      // kShareStringBase32MaxLen, ShareString, Share_Encode
+#include "../rando_placement.h"  // RandoPlacementTable, RandoSpheres
 
 typedef struct RandoWindowBridge {
   RandoSettings pending;                 // settings the UI is editing
