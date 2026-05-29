@@ -316,11 +316,165 @@ static void DrawCheckTracker(void *) {
   ImGui::End();
 }
 
+// Aggregate a region's placement checks. Outputs total/checked/available.
+static void RegionTally(const RandoPlacementTable *pt, const RandoReachability *reach,
+                        bool have_reach, uint16 region_id,
+                        int *total, int *checked, int *avail) {
+  int t = 0, c = 0, a = 0;
+  int n = pt ? (int)pt->count : 0;
+  for (int i = 0; i < n; i++) {
+    uint16 loc = pt->entries[i].location_id;
+    uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+    if (lr != region_id) continue;
+    t++;
+    if (Rando_IsLocationChecked(loc)) c++;
+    else if (have_reach && Reachability_HasLocation(reach, loc)) a++;
+  }
+  *total = t; *checked = c; *avail = a;
+}
+
+// Aggregate status: -1 empty, 2 all-checked, 1 some-available, 0 locked.
+static int RegionStatus(int total, int checked, int avail) {
+  if (total == 0) return -1;
+  if (checked == total) return kCheck_Checked;
+  if (avail > 0) return kCheck_Reachable;
+  return kCheck_Unreachable;
+}
+
+// Hand-placed schematic positions (normalized 0..1) for the overworld regions.
+// Dungeon-interior regions have no map position — they appear in the panel
+// below. (Geographic pixel-accurate pins on the real map gfx are a follow-up;
+// this region "logic map" is the MVP.)
+struct RegionPos { uint16 region_id; float x, y; };
+static const RegionPos kRegionMap[] = {
+  // Light World (left).
+  {16, 0.12f, 0.13f}, {15, 0.33f, 0.09f}, {18, 0.10f, 0.40f}, {17, 0.37f, 0.35f},
+  {19, 0.20f, 0.70f}, {20, 0.31f, 0.58f},
+  // Dark World (right).
+  {1, 0.62f, 0.13f}, {0, 0.85f, 0.09f}, {4, 0.61f, 0.40f}, {3, 0.87f, 0.35f},
+  {5, 0.71f, 0.70f}, {2, 0.60f, 0.86f}, {22, 0.54f, 0.90f}, {29, 0.90f, 0.13f},
+  {21, 0.75f, 0.58f},
+};
+
+static const ImU32 kColChecked = IM_COL32(115, 191, 115, 255);
+static const ImU32 kColReach   = IM_COL32(242, 217, 89, 255);
+static const ImU32 kColLocked  = IM_COL32(120, 120, 128, 255);
+
 static void DrawMapTracker(void *) {
   BeginFullWindow("Map Tracker##z3r");
-  ImGui::TextUnformatted("Map Tracker");
-  ImGui::Separator();
-  ImGui::TextDisabled("(world map with check pins — coming in phase 4)");
+
+  if (!Rando_IsActive()) {
+    ImGui::TextDisabled("No randomizer slot active.");
+    ImGui::End();
+    return;
+  }
+  if (!s_loc_region_built) BuildLocRegionIndex();
+
+  const RandoPlacementTable *pt = Placement_GetActive();
+  const RandoReachability *reach = Rando_GetLiveReachability();
+  bool have_reach = (reach != NULL);
+
+  ImGui::TextDisabled("Region logic map — green: all checked · yellow: available · grey: locked");
+  if (!have_reach)
+    ImGui::TextDisabled("(reachability unavailable; colors show checked vs not)");
+
+  // ---- Map canvas (overworld region pins) ----
+  ImVec2 origin = ImGui::GetCursorScreenPos();
+  float width = ImGui::GetContentRegionAvail().x;
+  float height = width * 0.52f;
+  if (height > 360.0f) height = 360.0f;
+  ImDrawList *dl = ImGui::GetWindowDrawList();
+
+  // Backdrop + light/dark split.
+  dl->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
+                    IM_COL32(28, 30, 38, 255), 4.0f);
+  float midx = origin.x + width * 0.5f;
+  dl->AddLine(ImVec2(midx, origin.y), ImVec2(midx, origin.y + height),
+              IM_COL32(70, 72, 84, 255), 1.0f);
+  dl->AddText(ImVec2(origin.x + 8, origin.y + 6), IM_COL32(150, 160, 180, 255), "Light World");
+  ImVec2 dwsz = ImGui::CalcTextSize("Dark World");
+  dl->AddText(ImVec2(origin.x + width - dwsz.x - 8, origin.y + 6),
+              IM_COL32(150, 160, 180, 255), "Dark World");
+
+  ImVec2 mouse = ImGui::GetMousePos();
+  bool mouse_in_canvas = mouse.x >= origin.x && mouse.x <= origin.x + width &&
+                         mouse.y >= origin.y && mouse.y <= origin.y + height;
+  int hover_region = -1;
+
+  for (int i = 0; i < (int)(sizeof(kRegionMap) / sizeof(kRegionMap[0])); i++) {
+    uint16 rid = kRegionMap[i].region_id;
+    int total, checked, avail;
+    RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
+    if (total == 0) continue;
+    int st = RegionStatus(total, checked, avail);
+    ImU32 col = (st == kCheck_Checked) ? kColChecked
+                : (st == kCheck_Reachable) ? kColReach : kColLocked;
+
+    ImVec2 c = ImVec2(origin.x + kRegionMap[i].x * width,
+                      origin.y + kRegionMap[i].y * height);
+    float radius = 7.0f + (float)total * 0.8f;
+    if (radius > 18.0f) radius = 18.0f;
+    dl->AddCircleFilled(c, radius, col);
+    dl->AddCircle(c, radius, IM_COL32(20, 20, 24, 255), 0, 1.5f);
+
+    // Label with available/total (or checked/total when reachability is off).
+    char lbl[48];
+    if (have_reach) snprintf(lbl, sizeof lbl, "%d/%d", avail, total - checked);
+    else snprintf(lbl, sizeof lbl, "%d/%d", checked, total);
+    ImVec2 ts = ImGui::CalcTextSize(lbl);
+    dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f),
+                IM_COL32(15, 15, 18, 255), lbl);
+
+    if (mouse_in_canvas) {
+      float dx = mouse.x - c.x, dy = mouse.y - c.y;
+      if (dx * dx + dy * dy <= radius * radius) hover_region = rid;
+    }
+  }
+  ImGui::Dummy(ImVec2(width, height));
+
+  // Tooltip: the hovered region's check list.
+  if (hover_region >= 0) {
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(Rando_GetRegionName((uint16)hover_region));
+    ImGui::Separator();
+    int n = pt ? (int)pt->count : 0;
+    for (int i = 0; i < n; i++) {
+      uint16 loc = pt->entries[i].location_id;
+      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      if (lr != (uint16)hover_region) continue;
+      bool checked = Rando_IsLocationChecked(loc);
+      bool reachable = have_reach && Reachability_HasLocation(reach, loc);
+      ImVec4 cc = checked ? ImVec4(0.45f, 0.75f, 0.45f, 1)
+                  : reachable ? ImVec4(0.95f, 0.85f, 0.35f, 1)
+                              : ImVec4(0.55f, 0.55f, 0.58f, 1);
+      ImGui::TextColored(cc, "%s %s", checked ? "[x]" : (reachable ? "[ ]" : " - "),
+                         Rando_GetLocationName(loc));
+    }
+    ImGui::EndTooltip();
+  }
+
+  // ---- Dungeon panel (interior regions, no map position) ----
+  ImGui::Spacing();
+  ImGui::SeparatorText("Dungeons");
+  ImGui::BeginChild("##dungeons", ImVec2(0, 0), false);
+  for (uint32 ri = 0; ri < kRandoRegionsCount; ri++) {
+    if (kRandoRegions[ri].dungeon_id == 0xFF) continue;  // overworld → on the map
+    uint16 rid = kRandoRegions[ri].id;
+    int total, checked, avail;
+    RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
+    if (total == 0) continue;
+    int st = RegionStatus(total, checked, avail);
+    ImVec4 c = (st == kCheck_Checked) ? ImVec4(0.45f, 0.75f, 0.45f, 1)
+               : (st == kCheck_Reachable) ? ImVec4(0.95f, 0.85f, 0.35f, 1)
+                                          : ImVec4(0.55f, 0.55f, 0.58f, 1);
+    ImGui::PushStyleColor(ImGuiCol_Text, c);
+    if (have_reach)
+      ImGui::Text("%s — %d avail · %d/%d", Rando_GetRegionName(rid), avail, checked, total);
+    else
+      ImGui::Text("%s — %d/%d", Rando_GetRegionName(rid), checked, total);
+    ImGui::PopStyleColor();
+  }
+  ImGui::EndChild();
   ImGui::End();
 }
 
