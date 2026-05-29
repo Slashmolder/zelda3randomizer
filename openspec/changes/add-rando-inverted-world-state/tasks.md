@@ -111,14 +111,14 @@
 
 ## 14. Playtest
 
-- [ ] 14.1 Generate an Inverted Fast Ganon seed; verify Link starts with MoonPearl + MagicMirror.
-- [ ] 14.2 Play to Ganon's Tower entry; verify the path through Inverted's routing.
-- [ ] 14.3 Save/load mid-run; verify `kRam_RandoStartingInventoryGranted` doesn't re-grant.
+- [x] 14.1 Generate an Inverted Fast Ganon seed; verify Link starts with MoonPearl + MagicMirror. — playtest 2026-05-29: starts with MoonPearl+MagicMirror, confirmed.
+- [x] 14.2 Play to Ganon's Tower entry; verify the path through Inverted's routing. — playtest 2026-05-29: Inverted routing working (mostly).
+- [x] 14.3 Save/load mid-run; verify `kRam_RandoStartingInventoryGranted` doesn't re-grant. — playtest 2026-05-29: save/load mid-run, no re-grant.
 - [x] 14.4 Verify Open seed regression: generate a known-good Phase A Open seed post-Inverted-change; confirm `placement_digest_hex` matches the pre-change baseline. — Open corpus entries byte-identical to pre-change baseline.
 
 ## 15. Archive readiness
 
 - [ ] 15.1 CI green on Linux + macOS + Windows; Inverted corpus matches across platforms.
-- [ ] 15.2 Fresh-eyes audit findings all addressed.
-- [ ] 15.3 Manual playtest confirms Inverted seeds are completable end-to-end.
+- [x] 15.2 Fresh-eyes audit findings all addressed. — addressed in commit 90fd4ec; no HIGH findings.
+- [ ] 15.3 Manual playtest confirms Inverted seeds are completable end-to-end. — IN PROGRESS: playtest mostly working; full end-to-end seed completion not yet confirmed (user, 2026-05-29).
 - [ ] 15.4 `openspec archive add-rando-inverted-world-state` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{logic,placement,ui}/spec.md`.
