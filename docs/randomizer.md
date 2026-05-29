@@ -392,6 +392,38 @@ Standard mode also gates broader progression on the uncle pickup having
 occurred; the virtual `RescuedZelda` item is granted when the uncle/sanctuary
 escort completes, and dark-world / overworld access predicates reference it.
 
+### Inverted world-state
+
+Inverted flips the relationship between the light and dark worlds. Link
+**starts in the dark world as a bunny** — the overworld the player wakes into
+is the dark-world map, and progression runs **dark-world-first**: the dark
+world is the early game, and the light world is opened up later (the reverse of
+Open/Standard). This mirrors ALTTPR's `App\World\Inverted`, whose 24
+`app/Region/Inverted/**/*.php` region files (2977 lines) re-route every region
+gate for the inverted topology.
+
+To make the bunny start survivable and the dark world traversable from the
+first frame, Inverted seeds grant a fixed **starting inventory** of two items:
+
+- **Moon Pearl** — keeps Link in human form in the dark world (without it he is
+  stuck in the powerless bunny state and most actions are disabled).
+- **Magic Mirror** — provides the dark→light return warp that the inverted
+  routing depends on.
+
+This is the only world-state with a non-empty starting inventory. Open, Retro,
+and Standard grant nothing here (Standard's uncle's-gift is a separate
+placement-pool mechanism, described above). The grant happens once at file-load
+(`Rando_TryGrantStartingInventory`, gated on `kFeatures1_RandomizerActive` and
+the `kRam_RandoStartingInventoryGranted` sentinel) and is idempotent across
+save/reload — the sentinel persists in the Phase A `kRam_*` block so a mid-run
+load does not re-grant.
+
+Because the inverted topology relabels which overworld tiles a region occupies,
+generation activates a `RegionRemap` overlay (`kInvertedRegionRemap`) at slot
+start when `world_state == Inverted`; Open/Standard/Retro seeds leave the
+identity remap in place. The reachability seed starts from the inverted
+counterpart of Link's House rather than the light-world spawn.
+
 ## Phase B+ roadmap
 
 Planned (not promised) follow-on work.
