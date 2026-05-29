@@ -1111,14 +1111,62 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
   if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
 
-  // Vanilla-mode dungeon items are logically available in-place — pre-grant
-  // exactly as the placer does (shared helper). NOTE: shuffled (keysanity)
-  // dungeon-item classes are NOT yet read from live g_ram here, so the check
-  // tracker under-reports dungeon-interior locations under those non-default
-  // modes; default seeds are all-vanilla. (Follow-up: map live per-dungeon keys
-  // / big keys / maps / compasses → registry ids for non-vanilla modes.)
+  // Dungeon items. Vanilla-mode classes are logically available in-place, so
+  // pre-grant them exactly as the placer does (shared helper). For shuffled
+  // (Dungeon/Wild) classes, read what the player has ACTUALLY collected from the
+  // live vanilla per-dungeon cells and map game-dungeon index -> registry id.
+  // Symbolic ITEM_ ids (not arithmetic) avoid the game-order vs registry-order
+  // mismatch (e.g. ToH/Castle-Tower swap). 0xFFFF = no such item for that
+  // dungeon (HC/Castle-Tower have no big key/map/compass).
   if (g_rando_active_settings_valid) {
-    Rando_SeedVanillaDungeonItems(out, &g_rando_active_settings);
+    const RandoSettings *st = &g_rando_active_settings;
+    Rando_SeedVanillaDungeonItems(out, st);
+
+    // game dungeon index (0=HC,1=unused,2=EP,3=DP,4=CT,5=PoD,6=SP,7=SW,8=TT,
+    // 9=IP,10=ToH,11=MM,12=TR,13=GT) -> registry item id.
+    static const uint16 kGToSmallKey[16] = {
+      ITEM_SmallKey_HyruleCastleEscape, 0xFFFF, ITEM_SmallKey_EasternPalace,
+      ITEM_SmallKey_DesertPalace, ITEM_SmallKey_HyruleCastleTower,
+      ITEM_SmallKey_PalaceOfDarkness, ITEM_SmallKey_SwampPalace,
+      ITEM_SmallKey_SkullWoods, ITEM_SmallKey_ThievesTown, ITEM_SmallKey_IcePalace,
+      ITEM_SmallKey_TowerOfHera, ITEM_SmallKey_MiseryMire, ITEM_SmallKey_TurtleRock,
+      ITEM_SmallKey_GanonsTower, 0xFFFF, 0xFFFF,
+    };
+    static const uint16 kGToBigKey[16] = {
+      0xFFFF, 0xFFFF, ITEM_BigKey_EasternPalace, ITEM_BigKey_DesertPalace, 0xFFFF,
+      ITEM_BigKey_PalaceOfDarkness, ITEM_BigKey_SwampPalace, ITEM_BigKey_SkullWoods,
+      ITEM_BigKey_ThievesTown, ITEM_BigKey_IcePalace, ITEM_BigKey_TowerOfHera,
+      ITEM_BigKey_MiseryMire, ITEM_BigKey_TurtleRock, ITEM_BigKey_GanonsTower,
+      0xFFFF, 0xFFFF,
+    };
+    static const uint16 kGToMap[16] = {
+      0xFFFF, 0xFFFF, ITEM_Map_EasternPalace, ITEM_Map_DesertPalace, 0xFFFF,
+      ITEM_Map_PalaceOfDarkness, ITEM_Map_SwampPalace, ITEM_Map_SkullWoods,
+      ITEM_Map_ThievesTown, ITEM_Map_IcePalace, ITEM_Map_TowerOfHera,
+      ITEM_Map_MiseryMire, ITEM_Map_TurtleRock, ITEM_Map_GanonsTower, 0xFFFF, 0xFFFF,
+    };
+    static const uint16 kGToCompass[16] = {
+      0xFFFF, 0xFFFF, ITEM_Compass_EasternPalace, ITEM_Compass_DesertPalace, 0xFFFF,
+      ITEM_Compass_PalaceOfDarkness, ITEM_Compass_SwampPalace, ITEM_Compass_SkullWoods,
+      ITEM_Compass_ThievesTown, ITEM_Compass_IcePalace, ITEM_Compass_TowerOfHera,
+      ITEM_Compass_MiseryMire, ITEM_Compass_TurtleRock, ITEM_Compass_GanonsTower,
+      0xFFFF, 0xFFFF,
+    };
+    for (int g = 0; g < 14; g++) {
+      uint16 bit = (uint16)(0x8000u >> g);
+      if (st->dungeon_small_keys_mode != kDungeonItemMode_Vanilla &&
+          kGToSmallKey[g] != 0xFFFF)
+        out->by_item_id[kGToSmallKey[g]] = link_keys_earned_per_dungeon[g];
+      if (st->dungeon_big_keys_mode != kDungeonItemMode_Vanilla &&
+          kGToBigKey[g] != 0xFFFF && (link_bigkey & bit))
+        out->by_item_id[kGToBigKey[g]] = 1;
+      if (st->dungeon_maps_mode != kDungeonItemMode_Vanilla &&
+          kGToMap[g] != 0xFFFF && (link_dungeon_map & bit))
+        out->by_item_id[kGToMap[g]] = 1;
+      if (st->dungeon_compasses_mode != kDungeonItemMode_Vanilla &&
+          kGToCompass[g] != 0xFFFF && (link_compass & bit))
+        out->by_item_id[kGToCompass[g]] = 1;
+    }
   }
 }
 
