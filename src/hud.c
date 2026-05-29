@@ -8,6 +8,8 @@
 #include "rando/rando.h"
 #include "rando/rando_logic.h"
 #include "rando/rando_placement.h"
+#include "load_gfx.h"  // DecompAndUpload2bpp (rando icon-atlas decode)
+#include "assets.h"    // kHudPalData (rando icon-atlas palette)
 
 enum {
   kNewStyleInventory = 0,
@@ -1864,6 +1866,50 @@ static void Hud_RandoDrawLocationTrackerInner(int *slot) {
 void Hud_RandoDrawLocationTracker(void) {
   int slot = 127;
   Hud_RandoDrawLocationTrackerInner(&slot);
+}
+
+int Hud_RandoBuildIconAtlas(uint32 *out) {
+  // Decompress the three HUD 2bpp packs into a scratch char buffer laid out
+  // exactly like VRAM 0x7000/0x7400/0x7800 (so char c -> scratch[c*8 + row]).
+  static uint16 scratch[0xC00];  // chars 0..0x17f (the HUD icon range)
+  memset(scratch, 0, sizeof(scratch));
+  DecompAndUpload2bpp(&scratch[0x000], 0x6a);
+  DecompAndUpload2bpp(&scratch[0x400], 0x6b);
+  DecompAndUpload2bpp(&scratch[0x800], 0x69);
+  const uint16 *pal = kHudPalData;  // 32 colors at offset 0 (hud_palette == 0)
+  if (pal == NULL) return 0;
+
+  const int stride = kRandoIconCount * kRandoIconSize;  // atlas width in pixels
+  memset(out, 0, (size_t)stride * kRandoIconSize * 4);
+  int n = (int)(sizeof(kHudItemBoxGfxPtrs) / sizeof(kHudItemBoxGfxPtrs[0]));
+  if (n > kRandoIconCount) n = kRandoIconCount;
+  for (int slot = 0; slot < n; slot++) {
+    const ItemBoxGfx *icon = &kHudItemBoxGfxPtrs[slot][1];  // [0]=empty, [1]=have
+    for (int q = 0; q < 4; q++) {  // 2x2 quad: TL,TR,BL,BR
+      uint16 w = icon->v[q];
+      int chr = w & 0x3ff, subpal = (w >> 10) & 7;
+      bool hflip = (w & 0x4000) != 0, vflip = (w & 0x8000) != 0;
+      int qx = (q & 1) * 8, qy = (q >= 2) ? 8 : 0;
+      for (int r = 0; r < 8; r++) {
+        int srow = vflip ? (7 - r) : r;
+        if (chr * 8 + srow >= (int)(sizeof(scratch) / sizeof(scratch[0]))) continue;
+        uint16 word = scratch[chr * 8 + srow];
+        for (int cc = 0; cc < 8; cc++) {
+          int pix = hflip ? (((word >> cc) & 1) | ((word >> (7 + cc)) & 2))
+                          : (((word >> (7 - cc)) & 1) | ((word >> (14 - cc)) & 2));
+          if (pix == 0) continue;  // transparent
+          uint16 col = pal[subpal * 4 + pix];  // BGR555
+          uint32 R = (uint32)((col & 0x1f) << 3);
+          uint32 G = (uint32)(((col >> 5) & 0x1f) << 3);
+          uint32 B = (uint32)(((col >> 10) & 0x1f) << 3);
+          uint32 rgba = R | (G << 8) | (B << 16) | 0xff000000u;
+          int ox = qx + cc, oy = qy + r;
+          out[oy * stride + slot * kRandoIconSize + ox] = rgba;
+        }
+      }
+    }
+  }
+  return n;
 }
 
 void Hud_RandoDrawTrackers(void) {

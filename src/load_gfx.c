@@ -409,7 +409,7 @@ void EraseTileMaps_normal() {
   EraseTileMaps(0x7f, 0x1ec);
 }
 
-static void DecompAndUpload2bpp(uint16 *vram_ptr, uint8 pack) {
+void DecompAndUpload2bpp(uint16 *vram_ptr, uint8 pack) {
   Decomp_spr(&g_ram[0x14000], pack);
   const uint8 *src = &g_ram[0x14000];
   memcpy(vram_ptr, src, 1024 * sizeof(uint16));

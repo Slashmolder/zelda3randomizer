@@ -78,3 +78,26 @@ void Hud_HandleItemSwitchInputs();
 void Hud_RandoDrawTrackers(void);
 void Hud_RandoDrawItemTracker(void);
 void Hud_RandoDrawLocationTracker(void);
+
+// ---------------------------------------------------------------------------
+// Item-icon atlas for the rich ImGui item tracker (PC). Decodes the HUD
+// item-box 2bpp icons (kHudItemBoxGfxPtrs order) + palette into an RGBA atlas.
+// State-immune: decodes from the HUD graphics packs into a scratch buffer (not
+// live VRAM), so it can run any time after assets load. Atlas is a horizontal
+// strip kRandoIconCount*kRandoIconSize wide, kRandoIconSize tall.
+// ---------------------------------------------------------------------------
+#define kRandoIconCount 32
+#define kRandoIconSize 16
+// Slot indices into the atlas == kHudItemBoxGfxPtrs order.
+enum {
+  kRandoIcon_Bow = 0, kRandoIcon_Boomerang, kRandoIcon_Hookshot, kRandoIcon_Bombs,
+  kRandoIcon_Mushroom, kRandoIcon_FireRod, kRandoIcon_IceRod, kRandoIcon_Bombos,
+  kRandoIcon_Ether, kRandoIcon_Quake, kRandoIcon_Lamp, kRandoIcon_Hammer,
+  kRandoIcon_Flute, kRandoIcon_Net, kRandoIcon_Book, kRandoIcon_Bottle,
+  kRandoIcon_Somaria, kRandoIcon_Byrna, kRandoIcon_Cape, kRandoIcon_Mirror,
+  kRandoIcon_Gloves, kRandoIcon_Boots, kRandoIcon_Flippers, kRandoIcon_MoonPearl,
+  kRandoIcon_Empty, kRandoIcon_Sword, kRandoIcon_Shield, kRandoIcon_Armor,
+};
+// Build the atlas into `out` (kRandoIconCount*kRandoIconSize*kRandoIconSize
+// uint32 RGBA8888). Transparent pixels have alpha 0. Returns the icon count.
+int Hud_RandoBuildIconAtlas(uint32 *out);

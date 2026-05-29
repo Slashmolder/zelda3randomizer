@@ -20,6 +20,7 @@ extern "C" {
 #include "../rando_logic.h"    // kRandoLocations/Regions, Rando_Get*Name, Reachability_HasLocation
 #include "../rando_placement.h"// Placement_GetActive, RandoPlacementTable
 #include "../rando_map.h"      // RandoMap_Decode (overworld map background)
+#include "../../hud.h"         // Hud_RandoBuildIconAtlas, kRandoIcon_* (item icons)
 }
 
 // ---- Minimal GL texture upload (resolve the few entry points via SDL, like
@@ -52,6 +53,39 @@ static ImTextureID UploadRgbaTexture(const unsigned char *rgba, int w, int h) {
   p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
   return (ImTextureID)(intptr_t)tex;
+}
+
+// ---- Item-icon atlas (real HUD icons) --------------------------------------
+static ImTextureID s_icon_tex = (ImTextureID)0;
+static bool s_icon_tried = false;
+
+// Draw one item as a 34px icon (atlas slot), dimmed when not owned, with an
+// optional small level/count overlay. Flows left-to-right and wraps. Falls back
+// to nothing-but-spacing if the atlas texture isn't available.
+static void IconChip(int slot, bool have, const char *overlay) {
+  const float sz = 34.0f;
+  ImGuiStyle &st = ImGui::GetStyle();
+  float avail = ImGui::GetContentRegionAvail().x;
+  if (ImGui::GetCursorPosX() > st.WindowPadding.x && avail < sz + st.ItemSpacing.x)
+    ImGui::NewLine();
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  const float W = (float)(kRandoIconCount * kRandoIconSize);
+  if (s_icon_tex) {
+    ImVec2 uv0(slot * (float)kRandoIconSize / W, 0.0f);
+    ImVec2 uv1((slot + 1) * (float)kRandoIconSize / W, 1.0f);
+    ImVec4 tint = have ? ImVec4(1, 1, 1, 1) : ImVec4(1, 1, 1, 0.16f);
+    ImGui::Image(s_icon_tex, ImVec2(sz, sz), uv0, uv1, tint);
+  } else {
+    ImGui::Dummy(ImVec2(sz, sz));
+  }
+  if (overlay && overlay[0]) {
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    ImVec2 ts = ImGui::CalcTextSize(overlay);
+    ImVec2 tp(p.x + sz - ts.x - 1.0f, p.y + sz - ts.y);
+    dl->AddText(ImVec2(tp.x + 1, tp.y + 1), IM_COL32(0, 0, 0, 230), overlay);
+    dl->AddText(tp, IM_COL32(255, 235, 90, 255), overlay);
+  }
+  ImGui::SameLine();
 }
 
 // ---- Window handles --------------------------------------------------------
@@ -123,52 +157,53 @@ static void DrawItemTracker(void *) {
     ImGui::Spacing();
   }
 
+  // Build the real item-icon atlas once, in this window's GL context.
+  if (!s_icon_tried) {
+    static uint32 atlas[kRandoIconCount * kRandoIconSize * kRandoIconSize];
+    if (Hud_RandoBuildIconAtlas(atlas) > 0)
+      s_icon_tex = UploadRgbaTexture((const unsigned char *)atlas,
+                                     kRandoIconCount * kRandoIconSize, kRandoIconSize);
+    s_icon_tried = true;
+  }
+
   RandoItemView v;
   Rando_FillItemView(&v);
-
-  static const char *kBow[3] = { "none", "wood", "silver" };
-  static const char *kBoom[3] = { "none", "blue", "red" };
-  static const char *kMail[3] = { "green", "blue", "red" };
   static const char *kMagic[3] = { "1x", "1/2x", "1/4x" };
+  char ov[12];
 
-  ImGui::SeparatorText("Equipment");
-  LevelChip("Sword", v.sword);
-  LevelChip("Shield", v.shield);
-  LevelChip("Mail", v.mail + 1, kMail[v.mail <= 2 ? v.mail : 0]);  // mail always >=green
-  LevelChip("Glove", v.gloves);
-  LevelChip("Bow", v.bow, kBow[v.bow <= 2 ? v.bow : 0]);
-  LevelChip("Boomerang", v.boomerang, kBoom[v.boomerang <= 2 ? v.boomerang : 0]);
-
-  SectionHeader("Items");
-  Chip("Hookshot", v.hookshot);
-  Chip("Fire Rod", v.firerod);
-  Chip("Ice Rod", v.icerod);
-  Chip("Hammer", v.hammer);
-  Chip("Lamp", v.lamp);
-  Chip("Net", v.net);
-  Chip("Book", v.book);
-  Chip("Somaria", v.somaria);
-  Chip("Byrna", v.byrna);
-  Chip("Cape", v.cape);
-
-  SectionHeader("Movement");
-  Chip("Boots", v.boots);
-  Chip("Flippers", v.flippers);
-  Chip("Moon Pearl", v.moon_pearl);
-  Chip("Mirror", v.mirror);
-
-  SectionHeader("Medallions");
-  Chip("Bombos", v.bombos);
-  Chip("Ether", v.ether);
-  Chip("Quake", v.quake);
-
-  SectionHeader("Other");
-  Chip("Mushroom", v.mushroom);
-  Chip("Powder", v.powder);
-  Chip("Flute", v.flute);
-  Chip("Shovel", v.shovel);
-  { char b[24]; snprintf(b, sizeof b, "Bottles %d", v.bottles); Chip(b, v.bottles > 0 ? 1 : 0); }
+  ImGui::SeparatorText("Items");
+  // Equipment (level/tier overlays).
+  snprintf(ov, sizeof ov, "%d", v.sword);  IconChip(kRandoIcon_Sword, v.sword > 0, v.sword > 0 ? ov : nullptr);
+  snprintf(ov, sizeof ov, "%d", v.shield); IconChip(kRandoIcon_Shield, v.shield > 0, v.shield > 0 ? ov : nullptr);
+  IconChip(kRandoIcon_Armor, true, v.mail == 2 ? "R" : v.mail == 1 ? "B" : nullptr);
+  snprintf(ov, sizeof ov, "%d", v.gloves); IconChip(kRandoIcon_Gloves, v.gloves > 0, v.gloves > 0 ? ov : nullptr);
+  IconChip(kRandoIcon_Bow, v.bow > 0, v.bow == 2 ? "S" : v.bow == 1 ? "W" : nullptr);
+  IconChip(kRandoIcon_Boomerang, v.boomerang > 0, v.boomerang == 2 ? "R" : v.boomerang == 1 ? "B" : nullptr);
+  IconChip(kRandoIcon_Hookshot, v.hookshot, nullptr);
+  IconChip(kRandoIcon_FireRod, v.firerod, nullptr);
+  IconChip(kRandoIcon_IceRod, v.icerod, nullptr);
+  IconChip(kRandoIcon_Hammer, v.hammer, nullptr);
+  IconChip(kRandoIcon_Lamp, v.lamp, nullptr);
+  IconChip(kRandoIcon_Net, v.net, nullptr);
+  IconChip(kRandoIcon_Book, v.book, nullptr);
+  IconChip(kRandoIcon_Somaria, v.somaria, nullptr);
+  IconChip(kRandoIcon_Byrna, v.byrna, nullptr);
+  IconChip(kRandoIcon_Cape, v.cape, nullptr);
+  IconChip(kRandoIcon_Mirror, v.mirror, nullptr);
+  IconChip(kRandoIcon_Boots, v.boots, nullptr);
+  IconChip(kRandoIcon_Flippers, v.flippers, nullptr);
+  IconChip(kRandoIcon_MoonPearl, v.moon_pearl, nullptr);
+  IconChip(kRandoIcon_Bombos, v.bombos, nullptr);
+  IconChip(kRandoIcon_Ether, v.ether, nullptr);
+  IconChip(kRandoIcon_Quake, v.quake, nullptr);
+  IconChip(kRandoIcon_Mushroom, v.mushroom || v.powder, v.powder ? "P" : nullptr);
+  IconChip(kRandoIcon_Flute, v.flute, nullptr);
+  snprintf(ov, sizeof ov, "%d", v.bottles); IconChip(kRandoIcon_Bottle, v.bottles > 0, v.bottles > 0 ? ov : nullptr);
+  ImGui::NewLine();
+  // Shovel has no distinct HUD icon; magic level is a stat — show as chips.
+  Chip("Shovel", v.shovel ? 1 : 0, 72.0f);
   LevelChip("Magic", v.magic, kMagic[v.magic <= 2 ? v.magic : 0]);
+  ImGui::NewLine();
 
   SectionHeader("Prizes");
   { char b[24]; snprintf(b, sizeof b, "Crystals %d/7", v.crystals); Chip(b, v.crystals ? (v.crystals == 7 ? 1 : 2) : 0, 110.0f); }

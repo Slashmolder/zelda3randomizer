@@ -48,6 +48,7 @@
 #include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
+#include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
 #endif
 
 static bool g_run_without_emu = 0;
@@ -938,6 +939,27 @@ int main(int argc, char** argv) {
       bool ok = RandoMap_DumpPpm(prefix);
       fprintf(stderr, "--dump-overworld-map: %s\n", ok ? "OK" : "FAILED");
       return ok ? 0 : 1;
+    }
+  }
+  // Dev/verification: decode the HUD item-icon atlas to a PPM and exit.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-item-icons") == 0) {
+      const char *path = (i + 1 < argc) ? argv[i + 1] : "item_icons.ppm";
+      LoadAssets();
+      static uint32 atlas[kRandoIconCount * kRandoIconSize * kRandoIconSize];
+      int n = Hud_RandoBuildIconAtlas(atlas);
+      int W = kRandoIconCount * kRandoIconSize, H = kRandoIconSize;
+      FILE *f = fopen(path, "wb");
+      if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", W, H);
+        for (int p = 0; p < W * H; p++) {
+          const uint8 *px = (const uint8 *)&atlas[p];
+          fputc(px[0], f); fputc(px[1], f); fputc(px[2], f);  // RGB (drop alpha)
+        }
+        fclose(f);
+      }
+      fprintf(stderr, "--dump-item-icons: %d icons -> %s\n", n, path);
+      return f ? 0 : 1;
     }
   }
 
