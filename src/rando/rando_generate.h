@@ -36,6 +36,17 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
                         int slot_index, uint32 recommended_features0,
                         RandoGenerateResult *out, char *err, size_t err_cap);
 
+// Initializes a freshly-generated rando slot's 0x500-byte SRAM image (vanilla
+// new-file defaults + world-state post-escape start state). Writes only into
+// target_sram[0..0x4ff]; no other side effects. Shared by Rando_GenerateSlot
+// and RandoGenerate_SelfCheck.
+void Rando_InitNewSlotSram(uint8 *target_sram, uint8 world_state);
+
+// Self-test: asserts the world-state start-state SRAM init (the merge-dropped
+// non-Standard-boot softlock class). Called by Rando_RunAllSelfChecks; exits(2)
+// on failure. Side-effect-free (operates on a scratch buffer).
+void RandoGenerate_SelfCheck(void);
+
 extern void SelectFile_NotifySlotWritten(int slot_index);  // defined in select_file.c
 
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW

@@ -17,6 +17,7 @@
 #include "rando_placement.h"
 #include "rando_shuffles.h"
 #include "rando_save.h"
+#include "rando_generate.h"  // RandoGenerate_SelfCheck (slot SRAM-init self-test)
 #include "rando_snapshot_tail.h"
 #include "rando_textfield.h"
 #include "item_ids.h"
@@ -1692,6 +1693,7 @@ void Rando_RunAllSelfChecks(void) {
   Placement_SelfCheck();
   Shuffles_SelfCheck();
   RandoSave_SelfCheck();
+  RandoGenerate_SelfCheck();
   RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
   Hints_SelfCheck();

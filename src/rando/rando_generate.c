@@ -28,6 +28,113 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// Initializes a freshly-generated rando playable slot's 0x500-byte SRAM image:
+// the vanilla "new file" defaults (RANDO name + health/magic baseline) plus the
+// world-state-specific post-escape start state. Writes ONLY into
+// target_sram[0..0x4ff]; no file/config/global side effects. Factored out of
+// Rando_GenerateSlot so the start-state init is unit-testable
+// (RandoGenerate_SelfCheck) against a scratch buffer — this exact init was
+// silently dropped by a merge once, booting non-Standard slots into the vanilla
+// intro and softlocking. Mirrors ALTTPR's initsramtable.asm.
+void Rando_InitNewSlotSram(uint8 *target_sram, uint8 world_state) {
+  memset(target_sram, 0, 0x500);
+  // Pre-name the file "RANDO " to match the rando-banner convention.
+  uint16 *name = (uint16 *)(target_sram + kSrmOffs_Name);
+  name[0] = 0x21;  // R
+  name[1] = 0x00;  // A
+  name[2] = 0x0d;  // N
+  name[3] = 0x03;  // D
+  name[4] = 0x0e;  // O
+  name[5] = 0xa9;  // blank
+  WORD(target_sram[0x3e5]) = 0x55aa;
+  WORD(target_sram[0x20c]) = 0xf000;
+  WORD(target_sram[0x20e]) = 0xf000;
+  WORD(target_sram[kSrmOffs_DiedCounter]) = 0xffff;
+  // Replicate the new-file init from NameFile_DoTheNaming so the slot has the
+  // canonical starting state — without this, health bytes stayed zero and the
+  // rando slot loaded as instant-death (0/0 hearts). Offsets +44/+45 = starting
+  // + max health (0x18 = 3 hearts in quarter-heart units); +57 = item baseline.
+  static const uint8 kSramInit_Normal[60] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0, 0x18, 0x18, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0, 0,
+  };
+  memcpy(target_sram + 0x340, kSramInit_Normal, 60);
+
+  // Non-Standard world-state starting SRAM. The placer pre-grants RescuedZelda
+  // and skips the sphere-0 weapon/lamp guarantee for every non-Standard
+  // world_state (the logic graph assumes the HC escape is already done), so the
+  // runtime MUST start post-escape or a fresh save boots into the vanilla
+  // rain/uncle/escape intro and hard-softlocks. target_sram[X] maps to
+  // g_ram[0xF000 + X] once the slot loads. Standard is intentionally untouched:
+  // the vanilla intro IS the Standard start.
+  switch (world_state) {
+    case kWorldState_Open:
+    case kWorldState_Retro:
+      // Light-World post-escape free-roam. World flag stays 0 (Light World),
+      // no Moon Pearl / Mirror grant.
+      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+      target_sram[0x3C6] = 0x14;  // sram_progress_flags
+      break;
+    case kWorldState_Inverted:
+      target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
+      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+      target_sram[0x3C6] = 0x14;  // sram_progress_flags
+      target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
+      target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+      target_sram[0x3C8] = 0x01;  // which_starting_point (Sanctuary)
+      break;
+    case kWorldState_Standard:
+    default:
+      // Standard: vanilla rain/uncle/escape intro — leave SRAM at fresh defaults.
+      break;
+  }
+}
+
+// Self-test for the world-state start-state SRAM init above (the merge-dropped
+// softlock class). Runs against a scratch buffer — no side effects. Called by
+// Rando_RunAllSelfChecks; exits(2) on mismatch.
+void RandoGenerate_SelfCheck(void) {
+  uint8 sram[0x500];
+
+  // Common new-file defaults must always be present (a zeroed health block
+  // booted the slot as instant-death; the RANDO name marks the banner).
+  Rando_InitNewSlotSram(sram, kWorldState_Standard);
+  if (sram[0x340 + 44] != 0x18 || sram[0x340 + 45] != 0x18 ||
+      sram[0x340 + 57] != 0xf8 || sram[kSrmOffs_Name] != 0x21) {
+    fprintf(stderr, "RandoGenerate_SelfCheck: new-file SRAM defaults missing\n");
+    exit(2);
+  }
+  // Standard keeps the vanilla rain/uncle/escape intro: NO post-escape bytes.
+  // If the whole switch is ever dropped again, non-Standard would match this
+  // (all-zero) instead of its post-escape state — caught by the cases below.
+  if (sram[0x3C5] != 0 || sram[0x3C6] != 0 || sram[0x3CA] != 0 ||
+      sram[0x357] != 0 || sram[0x353] != 0 || sram[0x3C8] != 0) {
+    fprintf(stderr, "RandoGenerate_SelfCheck: Standard slot must keep vanilla intro SRAM\n");
+    exit(2);
+  }
+  // Open + Retro: Light-World post-escape free-roam (skip intro); no DW/MoonPearl.
+  for (int i = 0; i < 2; ++i) {
+    uint8 ws = (i == 0) ? (uint8)kWorldState_Open : (uint8)kWorldState_Retro;
+    Rando_InitNewSlotSram(sram, ws);
+    if (sram[0x3C5] != 0x02 || sram[0x3C6] != 0x14 ||
+        sram[0x3CA] != 0 || sram[0x357] != 0 || sram[0x353] != 0) {
+      fprintf(stderr, "RandoGenerate_SelfCheck: Open/Retro post-escape SRAM wrong (ws=%u)\n",
+              (unsigned)ws);
+      exit(2);
+    }
+  }
+  // Inverted: Dark-World start with Moon Pearl + Magic Mirror + Sanctuary spawn.
+  Rando_InitNewSlotSram(sram, kWorldState_Inverted);
+  if (sram[0x3CA] != 0x40 || sram[0x3C5] != 0x02 || sram[0x3C6] != 0x14 ||
+      sram[0x357] != 0x01 || sram[0x353] != 0x02 || sram[0x3C8] != 0x01) {
+    fprintf(stderr, "RandoGenerate_SelfCheck: Inverted DW start-state SRAM wrong\n");
+    exit(2);
+  }
+  fprintf(stderr, "[RandoGenerate_SelfCheck] OK\n");
+}
+
 bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budget,
                         int slot_index, uint32 recommended_features0,
                         RandoGenerateResult *out, char *err, size_t err_cap) {
@@ -179,81 +286,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   }
   slot.header.placement_table_size = (uint16)((max_loc + 1) * 2);
 
-  // Initialize the target sram.dat slot with the same "new file" defaults
-  // that NameFile_DoTheNaming applies for vanilla saves so the slot is
-  // valid when the player picks it. The actual rando-specific runtime
-  // bookkeeping (starting-inventory injection, etc.) happens at game-start
-  // time via Rando_TryGrantStartingInventory etc.
+  // Initialize the target sram.dat slot image (new-file defaults + world-state
+  // post-escape start state) via the shared, self-tested helper above. The
+  // rando-specific runtime bookkeeping (starting-inventory injection, etc.)
+  // happens at game-start time via Rando_TryGrantStartingInventory.
   uint8 *target_sram = g_zenv.sram + slot_index * 0x500;
-  memset(target_sram, 0, 0x500);
-  // Pre-name the file "RANDO " to match the rando-banner convention.
-  uint16 *name = (uint16 *)(target_sram + kSrmOffs_Name);
-  name[0] = 0x21;  // R
-  name[1] = 0x00;  // A
-  name[2] = 0x0d;  // N
-  name[3] = 0x03;  // D
-  name[4] = 0x0e;  // O
-  name[5] = 0xa9;  // blank
-  WORD(target_sram[0x3e5]) = 0x55aa;
-  WORD(target_sram[0x20c]) = 0xf000;
-  WORD(target_sram[0x20e]) = 0xf000;
-  // 0x3e3 is name[5] (already blank above); DiedCounter lives at
-  // kSrmOffs_DiedCounter = 0x405.
-  WORD(target_sram[kSrmOffs_DiedCounter]) = 0xffff;
-  // Replicate the new-file init from `NameFile_DoTheNaming` so the slot
-  // has the canonical starting state — without this, health bytes
-  // stayed zero, so the rando slot loaded as instant-death (0 hearts
-  // / 0 max). The 60-byte block initializes health, magic, gloves, etc.
-  // The bytes
-  // 0x18,0x18 at offsets +44/+45 are the starting health + max health
-  // (0x18 = 3 hearts in quarter-heart units); 0xf8 at offset +57 is the
-  // boomerang/item slot baseline.
-  static const uint8 kSramInit_Normal[60] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0,    0,    0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,    0, 0, 0, 0x18, 0x18, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0, 0,
-  };
-  memcpy(target_sram + 0x340, kSramInit_Normal, 60);
-
-  // Non-Standard world-state starting SRAM. The placer pre-grants RescuedZelda
-  // and skips the sphere-0 weapon/lamp guarantee for every non-Standard
-  // world_state (the logic graph assumes the HC escape is already done and the
-  // overworld is free-roam), so the runtime MUST start post-escape or a fresh
-  // save boots into the vanilla rain/uncle/escape intro and hard-softlocks.
-  // This was baked inline in select_file.c's generate (commits 799e83d Inverted
-  // + 8fbfc33 Open/Retro) and DROPPED when the generate body was extracted into
-  // this shared function and merged — restoring it here. target_sram[X] maps to
-  // g_ram[0xF000 + X] once the slot loads. Standard is intentionally untouched:
-  // the vanilla intro IS the Standard start. Mirrors ALTTPR's initsramtable.asm.
-  switch (settings->world_state) {
-    case kWorldState_Open:
-    case kWorldState_Retro:
-      // Light-World post-escape free-roam. World flag stays 0 (Light World),
-      // no Moon Pearl / Mirror grant.
-      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
-      target_sram[0x3C6] = 0x14;  // sram_progress_flags
-      break;
-    case kWorldState_Inverted:
-      target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
-      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
-      target_sram[0x3C6] = 0x14;  // sram_progress_flags
-      target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
-      target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
-      // which_starting_point = 1 (Sanctuary), matching ALTTPR's
-      // initsramtable.asm for non-Standard modes — the safe post-escape spawn
-      // if the spawn-select prompt is ever bypassed. Index 0 = Link's House bed
-      // would mis-spawn under the DW flag; the post-escape S&Q sanitizer in
-      // misc.c Module05_LoadFile explicitly does NOT rewrite a 0 here, so the
-      // bake is the only thing keeping a reload off the wrong spawn. (Dropped
-      // from 5bb544d by the UI-branch merge; restored.)
-      target_sram[0x3C8] = 0x01;  // which_starting_point (Sanctuary)
-      break;
-    case kWorldState_Standard:
-    default:
-      // Standard: vanilla rain/uncle/escape intro — leave SRAM at fresh defaults.
-      break;
-  }
+  Rando_InitNewSlotSram(target_sram, settings->world_state);
 
   Intro_FixCksum(target_sram);
 
