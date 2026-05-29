@@ -7610,6 +7610,18 @@ void SpritePrep_Octoballoon(int k) {  // 868910
 }
 
 void SpritePrep_AgahnimsBarrier(int k) {  // 86891b
+  // #82 Inverted: Electric_Barrier. The Ganon's-Tower crystal (electric)
+  // barrier is removed in Inverted mode (its blocking role is handled by the
+  // relocated GT entrance). z3randomizer inverted.asm Electric_Barrier ORs the
+  // screen's event-data 0x40 "barrier dead" bit on before the prep routine
+  // tests it, so the barrier always preps into its already-broken graphics
+  // state (graphics == 4). Mirror that by forcing the dead bit under the active
+  // Inverted rando world-state. Gated so vanilla / Open / Standard / Retro
+  // leave the bit (and the persisted event byte) untouched.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+    save_ow_event_info[BYTE(overworld_screen_index)] |= 0x40;
+  }
   if (save_ow_event_info[BYTE(overworld_screen_index)] & 0x40)
     sprite_graphics[k] = 4;
   SpritePrep_MoveDown_8px_Right8px(k);
@@ -13971,7 +13983,18 @@ void Waterfall(int k) {  // 9af5b8
   if (Sprite_ReturnIfInactive(k))
     return;
   if (Sprite_CheckDamageToLink_same_layer(k)) {
-    if (BYTE(overworld_screen_index) == 0x43)
+    // #82 Inverted: GanonTowerInvertedCheck. Vanilla treats the waterfall on
+    // overworld screen 0x43 as the Ganon's-Tower crystal-barrier trigger
+    // (spawns the GT break-seal cutscene). In Inverted the GT entrance is
+    // relocated, so z3randomizer inverted.asm GanonTowerInvertedCheck forces
+    // this 0x43 compare to fail (returns a non-zero so the BEQ to the GT path
+    // isn't taken), making the screen-0x43 waterfall behave as an ordinary
+    // splash. Mirror that by suppressing the GT branch under the active
+    // Inverted rando world-state. Vanilla / Open / Standard / Retro unchanged.
+    bool inverted_rando =
+        (enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+    if (BYTE(overworld_screen_index) == 0x43 && !inverted_rando)
       AncillaAdd_GTCutscene();
     else
       AncillaAdd_WaterfallSplash();

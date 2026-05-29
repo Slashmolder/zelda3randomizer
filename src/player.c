@@ -3026,11 +3026,68 @@ void DoSwordInteractionWithTiles_Mirror() {  // 87a95c
   }
 }
 
+// #82 Inverted: MirrorBonk fake-world rectangle table (z3randomizer
+// inverted.asm MirrorBonk .bonkRectanglesTable). Each row is {X1, X2, Y1, Y2}
+// in 16-bit overworld pixel coords; a mirror cross is force-accepted when Link
+// is inside any rectangle (X1 <= x < X2 && Y1 <= y < Y2). These are the spots
+// where the inverted topology must warp even though the tile under Link would
+// not normally permit it.
+static const uint16 kInvertedMirrorBonkRects[][4] = {
+  {0x0290, 0x02C8, 0x0CA8, 0x0CF8},  // Desert checkerboard cave 2
+  {0x05F8, 0x0A00, 0x0600, 0x0660},  // Castle Top
+  {0x05B0, 0x06A0, 0x0660, 0x0830},  // Castle Top
+  {0x06A0, 0x0770, 0x0660, 0x0680},  // Castle Top
+  {0x0880, 0x0950, 0x0660, 0x0688},  // Castle Top
+  {0x0950, 0x0A00, 0x0660, 0x0830},  // Castle Top
+  {0x07B8, 0x0848, 0x08E0, 0x0970},  // Castle Bridge
+  {0x02EF, 0x0321, 0x0C16, 0x0CA2},  // Desert (Mazeblock cave)
+  {0x0048, 0x008F, 0x0B10, 0x0B48},
+  {0x0358, 0x0440, 0x0E08, 0x0ED0},
+  {0x03B8, 0x0420, 0x0ED0, 0x0FE8},
+  {0x0360, 0x03C8, 0x0EC0, 0x0F20},
+  {0x0C68, 0x0D00, 0x0D78, 0x0DC8},
+  {0x0F40, 0x0F70, 0x0618, 0x0640},  // Pod / eastern entrance
+  {0x0E28, 0x0E78, 0x0298, 0x02E8},
+  {0x0F10, 0x0F80, 0x01F8, 0x0238},
+  {0x0AA8, 0x0B90, 0x02C8, 0x0320},
+  {0x0D18, 0x0D80, 0x0040, 0x0070},
+  {0x0EF0, 0x0F30, 0x0120, 0x0160},
+  {0x0AD0, 0x0B00, 0x0B50, 0x0B70},  // Bridge Left
+  {0x0B30, 0x0B60, 0x0B50, 0x0B70},  // Bridge Right
+  {0x0678, 0x06F0, 0x0010, 0x0040},  // Ether Island
+  {0x02A8, 0x02E8, 0x0C90, 0x0CC0},  // Desert Checkerboard Cave 3
+};
+
+static bool InvertedMirrorBonk_InRect(void) {
+  // Mirror inverted.asm: only force a bonk when Link is in the DARK world
+  // (OverworldIndex & 0x40 set); in the Light world we never force one.
+  if (!(overworld_screen_index & 0x40))
+    return false;
+  uint16 x = link_x_coord, y = link_y_coord;
+  for (size_t i = 0; i < sizeof(kInvertedMirrorBonkRects) / sizeof(kInvertedMirrorBonkRects[0]); i++) {
+    const uint16 *r = kInvertedMirrorBonkRects[i];
+    if (x >= r[0] && x < r[1] && y >= r[2] && y < r[3])
+      return true;
+  }
+  return false;
+}
+
 void LinkState_CrossingWorlds() {  // 87a9b1
   uint8 t;
 
   Link_ResetProperties_B();
   TileCheckForMirrorBonk();
+
+  // #82 Inverted: MirrorBonk. In Inverted, certain overworld regions must
+  // force-accept a mirror cross even when the tile under Link would not allow
+  // it (z3randomizer inverted.asm MirrorBonk forces BRANCH_GAMMA == the
+  // do_mirror cross). Gated on the active Inverted rando world-state; vanilla /
+  // Open / Standard / Retro use only the original tile-detect test below.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */ &&
+      (overworld_screen_index & 0x40) != last_light_vs_dark_world &&
+      InvertedMirrorBonk_InRect())
+    goto do_mirror;
 
   if ((overworld_screen_index & 0x40) != last_light_vs_dark_world && ((t = R12 | R14) & 0xc) != 0 && BitSum4(t) >= 2)
     goto do_mirror;
