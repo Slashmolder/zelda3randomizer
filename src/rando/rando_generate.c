@@ -154,6 +154,14 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // collides with the sewers-passage branch in SpritePrep_UncleAndPriest_bounce —
   // so Link sleeps forever (player_sleep_in_bed_state never advances).
   slot.header.world_state = settings->world_state;
+  // format_version 2: persist the FULL canonical settings blob so a reloaded
+  // slot can reproduce the seed's settings + prize/medallion shuffle
+  // assignments for the runtime reachability (tracker) engine. The reserved-tail
+  // hints/goal/world_state above stay for backward-compat (hint regen, Inverted
+  // detection on older readers); this blob is the authoritative settings source
+  // for v2 readers. See Rando_RecoverActiveSettings / Rando_ActivateSidecarSlot.
+  Settings_CanonicalSerialize(settings, slot.settings_canonical);
+  slot.header.settings_present = 1;
   // Flags: set the forward-fill bit if the placer used the fallback.
   bool used_forward_fill = false;
   {

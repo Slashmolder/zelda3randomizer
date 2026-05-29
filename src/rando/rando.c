@@ -834,6 +834,22 @@ extern uint32 g_wanted_zelda_features1;
 // spoiler path. Cleared on Rando_DeactivateSlot.
 static char g_rando_active_share_string[64] = {0};
 
+// Active slot's recovered settings + shuffle assignments (format_version >= 2
+// slots carry the canonical settings blob). g_rando_active_settings_valid gates
+// the runtime reachability engine the tracker windows consume: when false
+// (older v1 slot, snapshot-restore, or a slot whose writer didn't populate the
+// blob), reachability is SUPPRESSED rather than computed from guessed defaults —
+// a wrong prize_shuffle flag mis-seeds the shuffle stream and yields
+// confidently-wrong prize/medallion gating.
+static RandoSettings g_rando_active_settings;
+static bool g_rando_active_settings_valid = false;
+// Session-lifetime buffers the predicate VM borrows via Rando_Get*Assignment().
+// These MUST outlive activation — the setters store the pointer, not a copy — so
+// they live here as file-statics, NOT in the placer's function-statics (which
+// aren't repopulated on a slot reload).
+static uint8 g_rando_active_prize_assignment[kRandoDungeonCount];
+static uint8 g_rando_active_medallion_assignment[kRandoMedallionEntranceCount];
+
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   if (src == NULL || src->header.slot_kind != kSlotKind_Randomizer) {
     Rando_DeactivateSlot();
@@ -882,6 +898,36 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_active_share_string[0] = '\0';
   (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
+
+  // === Reachability settings + shuffle assignments (tracker engine) ===
+  // The runtime reachability engine (Logic_ComputeReachability, consumed by the
+  // Check/Map tracker windows) needs the seed's FULL settings plus the prize /
+  // medallion shuffle assignments. Nothing else installs the assignments at
+  // reload — the placer set them at generation time (rando_placement.c) and that
+  // doesn't re-run here. Recover the canonical settings blob (format_version >=
+  // 2) and recompute the assignments from (settings, seed) in the EXACT placer
+  // order (Rng_SeedFromU64 → PrizeShuffle_Run → MedallionShuffle_Run on one
+  // shared rng; medallion output is stream-position-dependent on prize_shuffle).
+  // When the blob is absent, mark settings invalid and clear the assignments so
+  // the tracker layer suppresses reachability instead of guessing.
+  g_rando_active_settings_valid = false;
+  if (src->header.settings_present &&
+      Settings_CanonicalDeserialize(src->settings_canonical, &g_rando_active_settings) == 0) {
+    ShareString ss;
+    if (Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk) {
+      RandoRng shuffle_rng;
+      Rng_SeedFromU64(&shuffle_rng, ss.seed_u64);
+      PrizeShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_prize_assignment);
+      MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
+      Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
+      Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
+      g_rando_active_settings_valid = true;
+    }
+  }
+  if (!g_rando_active_settings_valid) {
+    Rando_SetDungeonPrizeAssignment(NULL);
+    Rando_SetMedallionAssignment(NULL);
+  }
 
   // === Phase B hints: regenerate telepathic-tile hints for this slot ===
   // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
@@ -939,6 +985,14 @@ void Rando_DeactivateSlot(void) {
   // when no slot is active.
   g_rando_active_share_string[0] = '\0';
 
+  // Reachability: invalidate the recovered settings and NULL the shuffle
+  // assignment pointers. Without this, switching to a vanilla/empty slot would
+  // leave eval_has_prize / eval_medallion_opens reading the prior slot's stale
+  // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
+  g_rando_active_settings_valid = false;
+  Rando_SetDungeonPrizeAssignment(NULL);
+  Rando_SetMedallionAssignment(NULL);
+
   // Reset the starting-inventory gate so an in-session slot-switch (slot A
   // already received its grant, then user backs out and loads slot B) lets
   // slot B's grant fire on its next Module05_LoadFile. Without this, the
@@ -947,6 +1001,18 @@ void Rando_DeactivateSlot(void) {
   // Rando_TryGrantStartingInventory still gates on sram_progress_indicator
   // so in-progress saves aren't re-granted.
   g_rando_starting_inventory_granted = 0;
+}
+
+// Whether the active slot's settings were recovered (format_version >= 2 blob)
+// and the shuffle assignments installed. The tracker windows gate their
+// reachability display on this — false means "settings unknown", show only
+// checked/unchecked, not reachable.
+bool Rando_HasActiveSettings(void) { return g_rando_active_settings_valid; }
+
+// The recovered active settings, or NULL when unavailable. Used by the runtime
+// reachability bridge (Rando_GetLiveReachability).
+const RandoSettings *Rando_GetActiveSettings(void) {
+  return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
 }
 
 // ---------------------------------------------------------------------------

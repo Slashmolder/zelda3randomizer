@@ -12,6 +12,7 @@
 #define ZELDA3_RANDO_H_
 
 #include "../types.h"
+#include "rando_settings.h"  // RandoSettings (Rando_GetActiveSettings)
 
 // ---------------------------------------------------------------------------
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
@@ -416,6 +417,18 @@ void Rando_SetDungeonPrizeAssignment(const uint8 *assignment);    // [kRandoDung
 void Rando_SetMedallionAssignment(const uint8 *assignment);       // [kRandoMedallionEntranceCount]
 const uint8 *Rando_GetDungeonPrizeAssignment(void);
 const uint8 *Rando_GetMedallionAssignment(void);
+
+// ---------------------------------------------------------------------------
+// Active-slot settings recovery (format_version >= 2). On slot activation the
+// canonical settings blob is deserialized and the prize/medallion shuffle
+// assignments recomputed from (settings, seed). Rando_HasActiveSettings() is
+// true only when that succeeded — the tracker windows gate their reachability
+// display on it (false = "settings unknown", show checked/unchecked only, never
+// confidently-wrong reachability). Rando_GetActiveSettings() returns the
+// recovered settings, or NULL when unavailable.
+// ---------------------------------------------------------------------------
+bool Rando_HasActiveSettings(void);
+const RandoSettings *Rando_GetActiveSettings(void);
 
 // ---------------------------------------------------------------------------
 // Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the
