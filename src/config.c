@@ -18,6 +18,7 @@
 #include "features.h"
 #include "util.h"
 #include "rando/rando_asset_decisions.h"  // Rando_RegisterAssetDecisionFromIni
+#include "rando/rando_settings.h"          // kSettingsCanonicalLen
 #if !defined(_WIN32)
 #include <unistd.h>   // fsync
 #include <sys/stat.h> // mkdir
@@ -615,9 +616,9 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
     // §3.5). All values are copied out (no pointer-into-buffer), so the aux
     // loader can free its temp buffer after the parse pass.
     if (StringEqualsNoCase(key, "last_settings_canonical_hex")) {
-      uint8 buf[28];  // kSettingsCanonicalLen
-      if (HexDecode(value, buf, 28)) {
-        memcpy(g_rando_window_prefs.settings_canonical, buf, 28);
+      uint8 buf[kSettingsCanonicalLen];
+      if (HexDecode(value, buf, kSettingsCanonicalLen)) {
+        memcpy(g_rando_window_prefs.settings_canonical, buf, kSettingsCanonicalLen);
         g_rando_window_prefs.has_settings = true;
         return true;
       }
@@ -796,8 +797,8 @@ void Config_SaveRandoWindowIni(const char *path) {
   fprintf(f, "[rando_window]\n");
 
   if (g_rando_window_prefs.has_settings) {
-    char hex[28 * 2 + 1];
-    HexEncode(g_rando_window_prefs.settings_canonical, 28, hex);
+    char hex[kSettingsCanonicalLen * 2 + 1];
+    HexEncode(g_rando_window_prefs.settings_canonical, kSettingsCanonicalLen, hex);
     fprintf(f, "last_settings_canonical_hex = %s\n", hex);
   }
   fprintf(f, "last_seed_u64 = %llu\n",
@@ -831,12 +832,14 @@ void Config_SaveRandoWindowIni(const char *path) {
   if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
     fprintf(stderr, "Config_SaveRandoWindowIni: rename %s -> %s failed (err %lu)\n",
             tmp, path, (unsigned long)GetLastError());
+    remove(tmp);  // don't leave an orphaned .tmp behind
   }
 #else
   fsync(fileno(f));
   fclose(f);
   if (rename(tmp, path) != 0) {
     fprintf(stderr, "Config_SaveRandoWindowIni: rename %s -> %s failed\n", tmp, path);
+    remove(tmp);  // don't leave an orphaned .tmp behind
   }
 #endif
 }

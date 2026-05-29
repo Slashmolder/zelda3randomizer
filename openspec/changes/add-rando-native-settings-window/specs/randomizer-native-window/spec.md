@@ -89,10 +89,10 @@ The settings window SHALL render the settings surface **at parity with the in-ga
 - **WHEN** the user selects a goal other than Triforce Hunt or Ganon Hunt
 - **THEN** the pieces_required and pieces_placed fields are visually disabled or hidden because they have no effect on placement
 
-#### Scenario: Crystals_tower must not exceed crystals_ganon for Fast Ganon
+#### Scenario: Crystals_tower and crystals_ganon are independent (no cross-constraint)
 
-- **WHEN** the user attempts to set crystals_tower > crystals_ganon while goal is Fast Ganon or Ganon Hunt
-- **THEN** the UI surfaces an inline validation error and the Generate button is disabled until the values are reconciled
+- **WHEN** the user sets crystals_tower greater than crystals_ganon for any goal (including Fast Ganon or Ganon Hunt)
+- **THEN** the UI does NOT surface a validation error and Generate stays enabled — the Ganon's-Tower entry crystal gate is independent of the Ganon-vulnerability gate, and the in-game settings screen, the CLI, and `Goal_IsCompletable` all permit it, so the native window matches that behavior (a cross-constraint here would falsely block valid seeds)
 
 #### Scenario: Pieces_required must not exceed pieces_placed
 

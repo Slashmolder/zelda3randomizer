@@ -89,26 +89,19 @@ void RandoWindowBridge_CancelTarget(void) {
 }
 
 int RandoWindowBridge_Validate(const RandoSettings *s, char *out_err, size_t cap) {
-  // Cross-field validation mirroring the in-game SettingsValidatePieces semantics
-  // (select_file.c) plus the crystals constraint:
-  //   - goal ∈ {fast_ganon, ganonhunt}: crystals_tower must not exceed crystals_ganon
-  //     (you cannot need more crystals to ENTER the tower than to make Ganon
-  //     vulnerable, or the tower gates harder than the win condition).
+  // Reject ONLY configurations the placer itself refuses — matching the in-game
+  // path (select_file.c) and the CLI. Do NOT add constraints the game allows:
   //   - goal ∈ {triforce-hunt, ganonhunt}: pieces_required must not exceed
-  //     pieces_placed (cannot require more pieces than exist).
-  // The Completionist→accessibility=locations rule is enforced in the UI (auto-set +
-  // read-only combo), matching CycleRow(kRow_Goal); it is not a failure condition here.
+  //     pieces_placed (BuildItemPool refuses pieces_required > pieces_placed).
+  // NOTE (audit round 3): crystals_tower may freely exceed crystals_ganon. The
+  // in-game UI (CycleRow allows 0..7 on both), the CLI, and Goal_IsCompletable
+  // all permit it — the Ganon's-Tower entry crystal gate is independent of the
+  // Ganon-vulnerability gate — so the native window must NOT block it. The
+  // Completionist→accessibility=locations rule is enforced in the UI (auto-set +
+  // read-only combo) and normalized by Settings_CanonicalSerialize, so it is not
+  // a failure condition here.
   if (out_err != NULL && cap > 0) out_err[0] = '\0';
   if (s == NULL) return 0;
-
-  if ((s->goal == kGoal_FastGanon || s->goal == kGoal_GanonHunt) &&
-      s->crystals_tower > s->crystals_ganon) {
-    if (out_err != NULL && cap > 0)
-      snprintf(out_err, cap,
-               "Tower crystals (%u) cannot exceed Ganon crystals (%u) for this goal.",
-               (unsigned)s->crystals_tower, (unsigned)s->crystals_ganon);
-    return 1;
-  }
 
   if ((s->goal == kGoal_TriforceHunt || s->goal == kGoal_GanonHunt) &&
       s->pieces_required > s->pieces_placed) {
