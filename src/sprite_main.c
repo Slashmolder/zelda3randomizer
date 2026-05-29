@@ -11288,13 +11288,19 @@ void SpritePrep_UncleAndPriest_bounce(int k) {  // 86bfe5
     sprite_ignore_projectile[k]++;
     byte_7FFE01 = 0;
   } else if (BYTE(dungeon_room_index) == 4) {
-    // Sewers passage uncle (the dying-uncle / Uncle_InPassage story beat).
-    // Vanilla despawns it once sram_progress_flags bit 0x10 (uncle left house)
-    // is set. A non-Standard rando seed starts post-escape with that bit set
-    // (fresh-save SRAM 0x14), so this normally despawns — but suppress it
-    // unconditionally for non-Standard rando so it can never re-engage even if
-    // the SRAM bit is clear on an older slot. See Rando_SuppressHyruleCastleEscape.
-    if (!(sram_progress_flags & 0x10) && !Rando_SuppressHyruleCastleEscape())
+    // NOTE: BYTE(dungeon_room_index)==4 matches BOTH the sewers passage room
+    // (0x004, the dying-uncle / Uncle_InPassage escape beat) AND Link's house
+    // (0x104, the opening wake-up uncle) — same low byte. The HC-escape
+    // suppression for non-Standard seeds must apply ONLY to the sewers uncle:
+    // despawning the Link's-house opening uncle softlocks the wake-up sequence
+    // (player_sleep_in_bed_state never advances → Link sleeps forever), which
+    // hit every non-Standard seed since those run the intro at progress=0.
+    // Vanilla despawns either uncle once sram_progress_flags bit 0x10 (uncle
+    // left house) is set; the rando suppression only extends that to the
+    // sewers uncle. See Rando_SuppressHyruleCastleEscape.
+    bool sewers_escape_uncle = (dungeon_room_index != 0x104);
+    if (!(sram_progress_flags & 0x10) &&
+        !(sewers_escape_uncle && Rando_SuppressHyruleCastleEscape()))
       sprite_x_lo[k] += 8;
     else
       sprite_state[k] = 0;

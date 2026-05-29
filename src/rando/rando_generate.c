@@ -215,6 +215,46 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0, 0,
   };
   memcpy(target_sram + 0x340, kSramInit_Normal, 60);
+
+  // Non-Standard world-state starting SRAM. The placer pre-grants RescuedZelda
+  // and skips the sphere-0 weapon/lamp guarantee for every non-Standard
+  // world_state (the logic graph assumes the HC escape is already done and the
+  // overworld is free-roam), so the runtime MUST start post-escape or a fresh
+  // save boots into the vanilla rain/uncle/escape intro and hard-softlocks.
+  // This was baked inline in select_file.c's generate (commits 799e83d Inverted
+  // + 8fbfc33 Open/Retro) and DROPPED when the generate body was extracted into
+  // this shared function and merged — restoring it here. target_sram[X] maps to
+  // g_ram[0xF000 + X] once the slot loads. Standard is intentionally untouched:
+  // the vanilla intro IS the Standard start. Mirrors ALTTPR's initsramtable.asm.
+  switch (settings->world_state) {
+    case kWorldState_Open:
+    case kWorldState_Retro:
+      // Light-World post-escape free-roam. World flag stays 0 (Light World),
+      // no Moon Pearl / Mirror grant.
+      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+      target_sram[0x3C6] = 0x14;  // sram_progress_flags
+      break;
+    case kWorldState_Inverted:
+      target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
+      target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
+      target_sram[0x3C6] = 0x14;  // sram_progress_flags
+      target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
+      target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+      // which_starting_point = 1 (Sanctuary), matching ALTTPR's
+      // initsramtable.asm for non-Standard modes — the safe post-escape spawn
+      // if the spawn-select prompt is ever bypassed. Index 0 = Link's House bed
+      // would mis-spawn under the DW flag; the post-escape S&Q sanitizer in
+      // misc.c Module05_LoadFile explicitly does NOT rewrite a 0 here, so the
+      // bake is the only thing keeping a reload off the wrong spawn. (Dropped
+      // from 5bb544d by the UI-branch merge; restored.)
+      target_sram[0x3C8] = 0x01;  // which_starting_point (Sanctuary)
+      break;
+    case kWorldState_Standard:
+    default:
+      // Standard: vanilla rain/uncle/escape intro — leave SRAM at fresh defaults.
+      break;
+  }
+
   Intro_FixCksum(target_sram);
 
   if (!Rando_WriteSidecarSlot(slot_index, &slot, target_sram, 0x500)) {

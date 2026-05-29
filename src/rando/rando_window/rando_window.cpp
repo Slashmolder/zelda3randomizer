@@ -239,7 +239,14 @@ static void Panel_General() {
   for (int i = 0; i < kPreset__Count; i++) {
     if (i > 0) ImGui::SameLine();
     if (ImGui::Button(Settings_PresetName((SettingsPreset)i))) {
+      // HINTS is a UI-scoped axis, not a preset axis. Settings_ApplyPreset runs
+      // Settings_SetDefaults, which resets hints to its default; preserve the
+      // user's explicit Hints choice across a preset click so picking a preset
+      // doesn't silently flip the Hints checkbox. (PC equivalent of the in-game
+      // screen's cece249 fix, which is compiled out on PC.)
+      uint8 saved_hints = s->hints;
       Settings_ApplyPreset((SettingsPreset)i, s);
+      s->hints = saved_hints;
       // A preset may move the goal off/onto Completionist; re-evaluate the lock
       // from scratch so we don't restore a stale pre-lock value.
       s_accessibility_locked = false;
