@@ -1126,6 +1126,7 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
 // snapshotted out of the shared Logic_ComputeReachability buffer so it stays
 // valid across frames and across both tracker windows.
 static uint32 g_live_reach_counter = 0xFFFFFFFFu;
+static uint8 g_live_reach_progress = 0xFFu;
 static bool g_live_reach_valid = false;
 
 const RandoReachability *Rando_GetLiveReachability(void) {
@@ -1134,7 +1135,12 @@ const RandoReachability *Rando_GetLiveReachability(void) {
     return NULL;
   }
   uint32 cur = Rando_GetReachabilityCounter();
-  if (g_live_reach_valid && cur == g_live_reach_counter) {
+  // sram_progress_indicator feeds RescuedZelda in Standard (Rando_BuildRuntime-
+  // Counts) but does NOT bump the reachability counter when it advances during
+  // the castle-escape cutscene — so fold it into the memo key, else RescuedZelda
+  // -gated regions stay dark until the next unrelated location check (audit M1).
+  uint8 prog = sram_progress_indicator;
+  if (g_live_reach_valid && cur == g_live_reach_counter && prog == g_live_reach_progress) {
     return Reachability_Snapshot(false);  // stable cached snapshot
   }
   RandoCounts counts;
@@ -1145,6 +1151,7 @@ const RandoReachability *Rando_GetLiveReachability(void) {
     return NULL;
   }
   g_live_reach_counter = cur;
+  g_live_reach_progress = prog;
   g_live_reach_valid = true;
   return Reachability_Snapshot(true);  // copy out of the shared buffer
 }

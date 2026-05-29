@@ -281,7 +281,8 @@ static void DrawCheckTracker(void *) {
       if (s_only_reachable && status == kCheck_Unreachable) continue;
 
       const char *lname = Rando_GetLocationName(loc);
-      if (s_search[0] && lname) {
+      if (s_search[0]) {
+        if (!lname) continue;  // can't match a search term with no name
         // Case-insensitive substring filter.
         bool match = false;
         for (const char *p = lname; *p && !match; p++) {

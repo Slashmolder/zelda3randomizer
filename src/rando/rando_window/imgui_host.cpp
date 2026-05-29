@@ -115,7 +115,12 @@ Z3RWindow *Z3RHost_Create(const char *title, int w, int h,
     slot->shown = false;
   }
 
-  // Restore the caller's contexts.
+  // Restore the caller's contexts. Precondition: callers invoke Z3RHost_Create
+  // while a GL context is current (the settings context, set up just before
+  // Trackers_Init in main.c), so prev_gl is non-null and the restore runs. If a
+  // future caller has no GL context current, this leaves the new tracker context
+  // current — harmless under the SDL software game renderer, but the contract is
+  // "call with a context current".
   ImGui::SetCurrentContext(prev_ctx);
   if (prev_gl) SDL_GL_MakeCurrent(prev_win, prev_gl);
   return slot;
