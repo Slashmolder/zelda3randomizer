@@ -109,12 +109,27 @@ file alongside the existing `saves/sram.dat`. The vanilla save file is
 slots as vanilla. Sidecar layout:
 
 - 16-byte file header (magic `ZRSC`, format_version, slot_count, file_crc).
-- 3 slots × {80-byte header + embedded placement table + checked-location bitmap}.
+- 3 slots × {80-byte header + embedded placement table + checked-location bitmap
+  + (format_version ≥ 2) a 28-byte canonical `RandoSettings` blob}.
 - No 4th slot anywhere (per `audit.md` §0.6 and `randomizer-save` spec).
 
 Slot header records: `slot_kind`, `generator_version`, `settings_hash`,
 `share_string`, `last_vanilla_write_version`, `sram_slot_checksum_at_last_write`,
-`placement_table_size`, `flags`, reserved.
+`placement_table_size`, `flags`, `mushroom_held`, hints/`goal`/`world_state`/
+`flute_shovel_owned` ext bytes, and (`@70`) `settings_present`.
+
+**format_version 2** (added with the rich tracker windows): each slot appends a
+`kSettingsCanonicalLen`-byte canonical `RandoSettings` blob after the checked
+bitmap. This lets a reloaded slot reproduce the seed's full settings *and*
+recompute the prize/medallion shuffle assignments (from the share string's seed,
+in the exact placer order) — both of which the runtime reachability engine
+needs. Older v1 slots have no blob and load unchanged via the version-aware
+deserializer (`RandoSave_ReadFile` keys body layout on the file
+`format_version`); on such slots `settings_present` is forced off and the
+trackers **suppress** the reachability display rather than guess (a wrong
+`prize_shuffle` flag would mis-seed the shuffle stream). The blob size is coupled
+to `kSettingsCanonicalLen` by a `_Static_assert`; the round-trip + a v1-compat
+case are covered by `RandoSave_SelfCheck` (`--rando-selftest`).
 
 Atomic-commit: write `<file>.tmp`, fflush, fsync (POSIX) / `_commit` (Windows),
 rename atomically. Save order: sidecar first, then `sram.dat`.
@@ -181,6 +196,56 @@ CRC mismatch on read; reveal returns code 3 without touching the original.
 Hand-crafting a file with a divergent `generator_version` + recomputed CRC
 returns code 5 (`VersionMismatch`) — the gen-version check fires before
 expensive placement regeneration.
+
+## Tracker windows (PC)
+
+On PC (behind `Z3R_NATIVE_SETTINGS_WINDOW`, the same gate as the native settings
+window) the randomizer ships three rich, separate-OS-window trackers that
+auto-update from live game state — no RAM-watcher heuristics or emulator/tool
+desync, the headline advantage of a native port:
+
+- **Item Tracker** — a live grid of equipment levels, items, medallions,
+  consumables (mushroom/powder & flute/shovel resolved via the rando-aware
+  shared-byte ownership), bottle count, prizes, and hearts.
+- **Check Tracker** — every location grouped by region, tri-state
+  **checked / available (reachable, unchecked) / locked**, with region counts, a
+  summary + progress bar, filters (hide-checked, only-available, search), and an
+  optional "show items" spoiler toggle (off by default, force-hidden for race
+  seeds). This is the direct "what can I do right now given my items?" view.
+- **Map Tracker** — a region "logic map": overworld regions as status-coloured
+  pins on a Light/Dark canvas (hover for the region's check list), plus a dungeon
+  panel. Geographic pixel-accurate pins on the decoded in-game map graphic are a
+  documented follow-up.
+
+### Architecture
+
+- **`imgui_host.{h,cpp}`** — a small multi-window Dear ImGui host. One
+  `ImGuiContext` per window; every entry point saves/restores the current ImGui
+  + SDL-GL context so the single-context settings window (left untouched) keeps
+  working. Tracker windows are created hidden at startup and driven once per game
+  frame from `main.c` (event routing + `Z3RHost_RenderAll`).
+- **`tracker_windows.{h,cpp}`** — the three window bodies; opened from the
+  settings window's **Trackers** tab or via the optional hotkeys
+  `RandoItemTrackerWindow` / `RandoCheckTrackerWindow` / `RandoMapTrackerWindow`
+  (default unbound; bind in `zelda3.ini`). Windows opened at seed setup persist
+  into gameplay.
+- **Reachability bridge** (`rando.c`) — `Rando_BuildRuntimeCounts` maps the live
+  `g_ram` inventory into the logical `RandoCounts` the predicate VM reads (the
+  logic macros accept the progressive form, so progressive counts satisfy every
+  tier); `Rando_GetLiveReachability` runs `Logic_ComputeReachability` memoized on
+  the reachability-state counter and snapshots the result out of the shared
+  buffer. Requires the format_version 2 settings blob (see *Save behavior*);
+  absent → reachability suppressed.
+
+Switch keeps the in-game OAM-overlay trackers (`hud.c`); these ImGui windows are
+PC-only and additive. The OAM overlay and the ImGui windows coexist.
+
+**Known limitations / follow-ups:** keysanity (shuffled dungeon-item) modes are
+not yet read from live `g_ram` into the reachability counts, so the Check/Map
+trackers under-report dungeon interiors under those non-default modes (default
+seeds are all-vanilla and fully correct); geographic map pins + per-location map
+coordinates; and per-window visibility/geometry persistence in
+`saves/rando_window.ini`.
 
 ## Audit comment convention (for contributors)
 
