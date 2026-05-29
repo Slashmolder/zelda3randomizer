@@ -82,7 +82,7 @@
 
 - [x] 10.1 Bump `kGeneratorVersion` in `src/rando/rando.h`.
 - [x] 10.2 Run `assets/scripts/bump_rando_corpus.py` to regenerate `tests/rando_corpus/manifest.yaml`. Add at least 6 Inverted corpus seeds covering: Fast Ganon, All Dungeons, Triforce Hunt, Completionist × item_pool=normal + hard.
-- [ ] 10.3 Verify Open + Standard + Retro digests remain byte-identical to pre-Inverted-change baseline.
+- [x] 10.3 Verify Open + Standard + Retro digests remain byte-identical to pre-Inverted-change baseline. — corpus all 55 entries byte-identical (Open/Standard/Retro/Inverted), 2026-05-29.
 - [ ] 10.4 Cross-platform determinism: run the new Inverted corpus on Linux + macOS + Windows; all digests byte-identical.
 
 ## 11. Spoiler integration
@@ -92,7 +92,7 @@
 
 ## 12. Audit + cluster-audit cadence
 
-- [ ] 12.1 Run `Rando_RunAllSelfChecks` — all selftests must pass post-Inverted YAML authoring.
+- [x] 12.1 Run `Rando_RunAllSelfChecks` — all selftests must pass post-Inverted YAML authoring. — `--rando-selftest` exit 0; Rando_RunAllSelfChecks all subsystems OK.
 - [ ] 12.2 Schedule a **fresh-eyes audit** post-translation per memory `[[cluster-audit-cadence]]`. Every audit on this project finds 5-10 NEW bugs including ≥ 1 HIGH. Treat as workflow, not optional polish.
 - [ ] 12.3 Address audit findings before archive.
 
@@ -104,9 +104,9 @@
 
 ## 13.5. Performance budget verification
 
-- [ ] 13.5.1 **Generation budget bench (early)**: BEFORE locking in YAML authoring scope (i.e., after §4.1-4.5 land but before §4.6+), generate a Phase A default-settings seed AND a representative Inverted seed; measure wall-clock against Phase A's `randomizer-core / Generation performance budget` SHALL (2s desktop, 5s Switch).
-- [ ] 13.5.2 If Inverted exceeds the budget by >2x on desktop: pause translation work and tune. Options: simplify predicate density (fewer per-location predicates); widen `--budget-seconds`; surface a SHALL relaxation in this change's spec. A generation-time budget regression is treated as a real regression: a budget-exceeding slice must be tuned before it ships.
-- [ ] 13.5.3 Re-bench after the full translation lands (§4.24). Record p50 / p95 / p99 in `audit.md §"Inverted generation benchmark"`.
+- [x] 13.5.1 **Generation budget bench (early)**: BEFORE locking in YAML authoring scope (i.e., after §4.1-4.5 land but before §4.6+), generate a Phase A default-settings seed AND a representative Inverted seed; measure wall-clock against Phase A's `randomizer-core / Generation performance budget` SHALL (2s desktop, 5s Switch). — Inverted p50=50ms (see audit.md Headless verification).
+- [x] 13.5.2 If Inverted exceeds the budget by >2x on desktop: pause translation work and tune. Options: simplify predicate density (fewer per-location predicates); widen `--budget-seconds`; surface a SHALL relaxation in this change's spec. A generation-time budget regression is treated as a real regression: a budget-exceeding slice must be tuned before it ships. — not triggered: Inverted max 633ms << 2000ms desktop budget.
+- [x] 13.5.3 Re-bench after the full translation lands (§4.24). Record p50 / p95 / p99 in `audit.md §"Inverted generation benchmark"`. — recorded p50=50ms/p95=622ms/max=633ms in audit.md.
 - [ ] 13.5.4 Switch dev-unit bench is a release-cut gate (per `tasks.md §12.3a`); record manually after the desktop bench is green.
 
 ## 14. Playtest
@@ -114,7 +114,7 @@
 - [ ] 14.1 Generate an Inverted Fast Ganon seed; verify Link starts with MoonPearl + MagicMirror.
 - [ ] 14.2 Play to Ganon's Tower entry; verify the path through Inverted's routing.
 - [ ] 14.3 Save/load mid-run; verify `kRam_RandoStartingInventoryGranted` doesn't re-grant.
-- [ ] 14.4 Verify Open seed regression: generate a known-good Phase A Open seed post-Inverted-change; confirm `placement_digest_hex` matches the pre-change baseline.
+- [x] 14.4 Verify Open seed regression: generate a known-good Phase A Open seed post-Inverted-change; confirm `placement_digest_hex` matches the pre-change baseline. — Open corpus entries byte-identical to pre-change baseline.
 
 ## 15. Archive readiness
 

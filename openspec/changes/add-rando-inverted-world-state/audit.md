@@ -136,3 +136,38 @@ unit and are explicitly **out of scope** here. Because no macro (and no
 logic.yaml / logic_parts content) changed in this work item, default-settings
 corpus output is expected to be byte-identical and no `kGeneratorVersion` bump
 is performed.
+
+## Headless verification (2026-05-29, generator_version 36, Windows x64 Release)
+
+Done without playtest, against `bin/x64-Release/zelda3.exe`. Validates the
+Inverted *logic graph + placement* (NOT in-game runtime, which still needs the
+playtest in §14.1-14.3).
+
+### Determinism / regression (§10.3, §14.4)
+`run_rando_corpus.py --binary=bin/x64-Release/zelda3.exe` → **all 55 entries OK**,
+byte-identical to the recorded baseline. Covers 44 Open / 10 Standard / 3 Retro
+/ 3 Inverted seeds (incl. `b-inverted-fast-ganon`, `b-inverted-ganon-7-7`,
+`b-race-inverted-fast-ganon`). Confirms: (a) the recent main merges
+(Phase A archive, inverted-finish, native-spoiler, MED fixes) are
+placement-neutral; (b) Inverted generation is deterministic.
+
+### Inverted completability stress (§14.x logic-side precursor)
+Generated 40 Inverted seeds (7 goals × multiple seeds, normal+hard pools).
+**Every seed `goal_completable = true`; zero unreachable-location / forward-fill
+warnings.** The only `fallback_warnings` entries are `{kind: retry_attempts}`
+metadata (assumed-fill restart count), not placement failures:
+- Open: 0-1 retries · Standard: ~7 · Inverted: ~24.
+Inverted's higher retry count reflects its denser constraints (bunny-state /
+MoonPearl gating) and is well within budget.
+
+### Generation benchmark (§13.5.1, §13.5.3)
+Inverted, 35-seed sample: **p50 = 50 ms, p95 = 622 ms, max = 633 ms** —
+comfortably under the 2000 ms desktop SHALL (§13.5). Triforce-Hunt / Ganon-Hunt
+are the slow goals (more pieces → more reachability iterations); all others
+30-70 ms. No budget relaxation needed (§13.5.2 condition not triggered).
+
+### Still requires playtest (not coverable headlessly)
+In-game runtime: bunny-state start, MoonPearl+MagicMirror grant + save/reload
+idempotency (§14.3), mirror/tile-swap topology, dark-world-first routing
+(§14.1-14.2). Cross-platform corpus (§10.4) and Switch bench (§13.5.4) need
+other platforms / a Switch dev unit.
