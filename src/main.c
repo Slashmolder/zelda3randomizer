@@ -1673,13 +1673,23 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_ToggleRenderer: g_ppu_render_flags ^= kPpuRenderFlags_NewRenderer; break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
-    // Phase B Slice 1 — tracker overlay toggles. Toggle is in-memory only;
-    // resets to hidden on each launch.
+    // Phase B Slice 1 — tracker overlay toggles. On PC the OAM overlay is
+    // superseded by the rich ImGui windows, so these legacy keys open the
+    // corresponding window (so existing bindings keep working); on Switch they
+    // toggle the OAM overlay as before. In-memory only; reset to hidden each launch.
     case kKeys_RandoToggleItemTracker:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(kTracker_Item);
+#else
       g_rando_show_item_tracker = !g_rando_show_item_tracker;
+#endif
       break;
     case kKeys_RandoToggleLocationTracker:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(kTracker_Check);
+#else
       g_rando_show_location_tracker = !g_rando_show_location_tracker;
+#endif
       break;
     // Phase B Slice 6 §62 — reveal the active slot's race-mode ZRSR spoiler.
     // The reveal action logs its outcome to stderr; on success the on-disk

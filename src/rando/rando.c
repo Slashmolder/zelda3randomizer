@@ -1228,6 +1228,15 @@ void Rando_FillItemView(RandoItemView *out) {
   }
 
   out->agahnim = Rando_IsLocationChecked(LOC_Agahnim);
+
+  // Per-dungeon items (indexed by game-side dungeon index; bitfields use bit
+  // 0x8000 >> index). These reflect what the player has actually collected
+  // (shuffled dungeon items write these vanilla cells on receipt; vanilla-mode
+  // dungeons fill them in-place).
+  for (int i = 0; i < 16; i++) out->dungeon_small_keys[i] = link_keys_earned_per_dungeon[i];
+  out->bigkey_bits = link_bigkey;
+  out->map_bits = link_dungeon_map;
+  out->compass_bits = link_compass;
 }
 
 // ---------------------------------------------------------------------------

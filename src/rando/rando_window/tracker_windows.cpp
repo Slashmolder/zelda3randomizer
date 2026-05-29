@@ -145,6 +145,42 @@ static void DrawItemTracker(void *) {
   if (v.heart_pieces > 0) { char b[24]; snprintf(b, sizeof b, "Pieces %d/4", v.heart_pieces); Chip(b, 2); }
   ImGui::NewLine();
 
+  // Per-dungeon items: small-key count + big-key / map / compass indicators.
+  ImGui::SeparatorText("Dungeon Items");
+  static const struct { int idx; const char *name; } kDungeonRows[] = {
+      {0, "Hyrule Castle"}, {4, "Castle Tower"}, {2, "Eastern"}, {3, "Desert"},
+      {10, "Tower of Hera"}, {5, "Pal. of Darkness"}, {6, "Swamp"}, {7, "Skull Woods"},
+      {8, "Thieves'"}, {9, "Ice"}, {11, "Misery Mire"}, {12, "Turtle Rock"},
+      {13, "Ganon's Tower"},
+  };
+  if (ImGui::BeginTable("##dungeonitems", 5,
+                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+    ImGui::TableSetupColumn("Dungeon");
+    ImGui::TableSetupColumn("Keys");
+    ImGui::TableSetupColumn("Big");
+    ImGui::TableSetupColumn("Map");
+    ImGui::TableSetupColumn("Cmp");
+    ImGui::TableHeadersRow();
+    const ImVec4 on = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
+    const ImVec4 off = ImVec4(0.45f, 0.45f, 0.48f, 1.0f);
+    for (int i = 0; i < (int)(sizeof(kDungeonRows) / sizeof(kDungeonRows[0])); i++) {
+      int d = kDungeonRows[i].idx;
+      uint16 bit = (uint16)(0x8000u >> d);
+      int keys = v.dungeon_small_keys[d];
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn(); ImGui::TextUnformatted(kDungeonRows[i].name);
+      ImGui::TableNextColumn();
+      ImGui::TextColored(keys > 0 ? on : off, "%d", keys);
+      ImGui::TableNextColumn();
+      ImGui::TextColored((v.bigkey_bits & bit) ? on : off, (v.bigkey_bits & bit) ? "B" : "-");
+      ImGui::TableNextColumn();
+      ImGui::TextColored((v.map_bits & bit) ? on : off, (v.map_bits & bit) ? "M" : "-");
+      ImGui::TableNextColumn();
+      ImGui::TextColored((v.compass_bits & bit) ? on : off, (v.compass_bits & bit) ? "C" : "-");
+    }
+    ImGui::EndTable();
+  }
+
   ImGui::End();
 }
 

@@ -475,6 +475,14 @@ typedef struct RandoItemView {
   bool bombos, ether, quake;
   bool mushroom, powder, flute, shovel;
   bool agahnim;       // Agahnim 1 defeated
+  // Per-dungeon items, indexed by GAME-side dungeon index (0=HyruleCastle/sewers,
+  // 2=EP, 3=DP, 4=CastleTower, 5=PoD, 6=SP, 7=SW, 8=TT, 9=IP, 10=ToH, 11=MM,
+  // 12=TR, 13=GT; index 1 unused). Big-key/map/compass are bitfields with bit
+  // (0x8000 >> game_index).
+  uint8 dungeon_small_keys[16];
+  uint16 bigkey_bits;
+  uint16 map_bits;
+  uint16 compass_bits;
 } RandoItemView;
 
 void Rando_FillItemView(RandoItemView *out);
