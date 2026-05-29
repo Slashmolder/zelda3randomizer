@@ -670,6 +670,28 @@ void Hud_NormalMenu() {  // 8ddf15
       sound_effect_2 = 32;
     }
   }
+
+  // Rando flute/shovel toggle. The shovel and flute share this single Y-slot
+  // (link_item_flute: 1=shovel, 2=flute, 3=active flute) but are independent
+  // shuffled items. When the player owns both, pressing A on the highlighted
+  // flute/shovel slot swaps which function the slot performs — mirroring
+  // ALTTPR's item-menu swap. Without it the second-acquired item would be
+  // unreachable. A is otherwise unused in this menu; ownership of both is
+  // tracked in g_rando_flute_shovel_owned (one byte can't represent it).
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      (filtered_joypad_L & kJoypadL_A) &&
+      *GetCurrentItemButtonPtr(GetCurrentItemButtonIndex()) == kHudItem_Flute &&
+      Rando_FluteShovelCanToggle()) {
+    // rando-exempt: player toggle of the flute/shovel SELECTED function, not an
+    // item grant — ownership in g_rando_flute_shovel_owned is unchanged. Gated
+    // on already owning both. See Rando_GrantFluteShovel (rando.c) for the grant.
+    link_item_flute = (link_item_flute == 1)
+        ? ((g_rando_flute_shovel_owned & kRandoFluteShovel_FluteActive) ? 3 : 2)
+        : 1;
+    timer_for_flashing_circle = 16;
+    sound_effect_2 = 32;  // menu select sound
+  }
+
   Hud_DrawYButtonItems();
   Hud_DrawSelectedYButtonItem();
   if (hud_cur_item == kHudItem_BottleOld && !kNewStyleInventory)

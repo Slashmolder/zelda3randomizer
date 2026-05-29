@@ -7815,7 +7815,7 @@ void SpritePrep_HauntedGroveAnimal(int k) {  // 868bab
 }
 
 void SpritePrep_HauntedGroveOstritch(int k) {  // 868bb2
-  if (link_item_flute >= 2)
+  if (Rando_FluteShovelEffectiveLevel() >= 2)  // owns flute (rando: even if shovel selected)
     sprite_state[k] = 0;
   sprite_ignore_projectile[k]++;
 }
@@ -8240,17 +8240,18 @@ void SpritePrep_CrystalSwitch(int k) {  // 869064
 void SpritePrep_FluteKid(int k) {  // 869075
   sprite_ignore_projectile[k]++;
   sprite_subtype2[k] = savegame_is_darkworld >> 6 & 1;
+  uint8 flute_level = Rando_FluteShovelEffectiveLevel();  // owns-flute level (rando: ignores selection)
   if (sprite_subtype2[k]) {
-    if (sram_progress_indicator_3 & 8 || link_item_flute > 2) {
+    if (sram_progress_indicator_3 & 8 || flute_level > 2) {
       sprite_graphics[k] = 3;
       sprite_ai_state[k] = 5;
-    } else if (link_item_flute == 2) {
+    } else if (flute_level == 2) {
       sprite_graphics[k] = 1;
     }
     sprite_x_lo[k] += 8;
     sprite_y_lo[k] -= 8;
   } else {
-    if (link_item_flute >= 2)
+    if (flute_level >= 2)
       sprite_state[k] = 0;
     else
       sprite_x_lo[k] += 7;
@@ -10043,7 +10044,7 @@ void FluteKid_Human(int k) {  // 86af51
   sprite_graphics[k] = frame_counter >> 5 & 1;
   switch (sprite_ai_state[k]) {
   case 0:  // wait
-    if (link_item_flute >= 2 || FluteBoy_CheckIfPlayerClose(k)) {
+    if (Rando_FluteShovelEffectiveLevel() >= 2 || FluteBoy_CheckIfPlayerClose(k)) {  // owns flute
       sprite_ai_state[k] = 1;
       sprite_D[k]++;
       byte_7E0FDD++;
@@ -10095,8 +10096,21 @@ void Sprite_FluteKid_Stumpy(int k) {  // 86b040
   if (Sprite_ReturnIfInactive(k))
     return;
   switch (sprite_ai_state[k]) {
-  case 0:  //
-    switch (link_item_flute & 3) {
+  case 0: {
+    // Vanilla keys Stumpy's quest phase off link_item_flute & 3 (0 = needs
+    // shovel -> supplicate + grant, 1 = has shovel, 2 = has flute -> thanks +
+    // free-the-boy cutscene, 3 = done). Under rando the flute is shuffled and
+    // decoupled from this NPC, so gate the GRANT on whether LOC_Stumpy has been
+    // collected instead — mirroring ALTTPR's per-NPC NpcFlags bit
+    // (npcitems.asm ItemCheck_TreeKid3). Otherwise obtaining the flute first
+    // raises the byte past 0 and Stumpy never grants his placed item (lost).
+    // Once collected, never re-enter phase 0 (the granted item may not be the
+    // flute, so the byte can still read 0 — which would re-grant); map the
+    // no-flute cases to "already did" and keep the flute cutscene when owned.
+    int phase = link_item_flute & 3;
+    if (enhanced_features1 & kFeatures1_RandomizerActive)
+      phase = !Rando_IsLocationChecked(LOC_Stumpy) ? 0 : (phase < 2 ? 3 : phase);
+    switch (phase) {
     case 0:  // supplicate
       if (Sprite_ShowSolicitedMessage(k, 0xe5) & 0x100)
         sprite_ai_state[k] = 1;
@@ -10114,6 +10128,7 @@ void Sprite_FluteKid_Stumpy(int k) {  // 86b040
       break;
     }
     break;
+  }
   case 1:  //
     if (!choice_in_multiselect_box) {
       Sprite_ShowMessageUnconditional(0xe6);
@@ -11598,11 +11613,12 @@ void Sprite_1D_FluteQuest(int k) {  // 86c2e5
   Sprite_PrepOamCoord(k, &info);
   if (Sprite_ReturnIfInactive(k))
     return;
+  uint8 flute_level = Rando_FluteShovelEffectiveLevel();  // owns-flute level (rando: ignores selection)
   if (BYTE(overworld_screen_index) == 0x18) {
-    if (link_item_flute == 3)
+    if (flute_level == 3)
       sprite_state[k] = 0;
   } else {
-    if (link_item_flute & 2)
+    if (flute_level & 2)
       sprite_state[k] = 0;
   }
 }
@@ -12960,7 +12976,7 @@ void Sprite_FluteDad(int k) {  // 8dc343
   if (sprite_ai_state[k]) {
     Sprite_ShowSolicitedMessage(k, 0xa3);
     sprite_graphics[k] = 2;
-  } else if (link_item_flute < 2) {
+  } else if (Rando_FluteShovelEffectiveLevel() < 2) {  // doesn't own a flute
     Sprite_ShowSolicitedMessage(k, 0xa1);
   } else if (!(Sprite_ShowSolicitedMessage(k, 0xa4) & 0x100) &&
              hud_cur_item == kHudItem_Flute && (joypad1H_last&0x40) && Sprite_CheckDamageToLink_same_layer(k)) {

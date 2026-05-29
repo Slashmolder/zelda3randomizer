@@ -794,6 +794,20 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   if (ancilla < 0)
     return;
 
+  // A vanilla pickup repaints the shared receive-item VRAM slot (chars
+  // 0x24/0x34) via DecodeAnimatedSpriteTile_variable further down. Under rando,
+  // a direct-grant confirmation icon (kAncillaType_RandoIconReceipt) may still
+  // be floating from a recent silent grant; it draws from that same slot and
+  // would abruptly render this pickup's tiles. Retire it so it never shows the
+  // wrong item. Type 0x44 never exists outside rando, so this is a no-op in the
+  // vanilla side-by-side path.
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    for (int i = 0; i < 5; i++) {
+      if (ancilla_type[i] == kAncillaType_RandoIconReceipt)
+        ancilla_type[i] = 0;
+    }
+  }
+
   flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
   uint8 t;
 
@@ -804,8 +818,20 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
 
   uint8 v = kValueToGiveItemTo[j];
   uint8 *p = &g_ram[kMemoryLocationToGiveItemTo[j]];
-  if (!sign8(v))
+  // Rando: the shovel (0x13) and flute (0x14 inactive / 0x4a active) are
+  // independent shuffled items that vanilla packs into one byte
+  // (link_item_flute: 1=shovel, 2=flute, 3=active flute). The vanilla
+  // unconditional `*p = v` would let acquiring the 2nd of the pair overwrite —
+  // and permanently lose — the 1st, softlocking seeds that need both.
+  // Rando_GrantFluteShovel records true ownership separately and raises the
+  // shared byte without ever downgrading, so both survive; the player swaps
+  // which one the slot performs via the item-menu toggle (Hud_NormalMenu).
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      (j == 0x13 || j == 0x14 || j == 0x4a)) {
+    Rando_GrantFluteShovel((uint8)j);
+  } else if (!sign8(v)) {
     *p = v;
+  }
 
   if (j == 0x1f)
     link_is_bunny = 0;
