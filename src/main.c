@@ -47,6 +47,7 @@
 #include "rando/rando_window/imgui_host.h"            // Z3RHost_* (multi-window host)
 #include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
+#include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
 #endif
 
 static bool g_run_without_emu = 0;
@@ -927,6 +928,18 @@ int main(int argc, char** argv) {
   // and exit; otherwise this returns and main() continues to the GUI path.
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
   MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
+
+  // Dev/verification: decode the overworld map (asset 66/67/68/93) to PPM files
+  // and exit. Used to visually verify the Map Tracker background decoder.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-overworld-map") == 0) {
+      const char *prefix = (i + 1 < argc) ? argv[i + 1] : "overworld_map";
+      LoadAssets();
+      bool ok = RandoMap_DumpPpm(prefix);
+      fprintf(stderr, "--dump-overworld-map: %s\n", ok ? "OK" : "FAILED");
+      return ok ? 0 : 1;
+    }
+  }
 
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,

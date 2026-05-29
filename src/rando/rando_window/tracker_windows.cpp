@@ -5,6 +5,8 @@
 
 #include "imgui.h"
 
+#include <SDL.h>
+#include <SDL_opengl.h>
 #include <cstdio>   // snprintf
 #include <cfloat>   // FLT_MIN (ImGui full-width sentinel)
 
@@ -17,6 +19,39 @@ extern "C" {
 #include "../rando.h"          // Rando_IsActive, Rando_FillItemView, RandoItemView, ...
 #include "../rando_logic.h"    // kRandoLocations/Regions, Rando_Get*Name, Reachability_HasLocation
 #include "../rando_placement.h"// Placement_GetActive, RandoPlacementTable
+#include "../rando_map.h"      // RandoMap_Decode (overworld map background)
+}
+
+// ---- Minimal GL texture upload (resolve the few entry points via SDL, like
+// imgui_host/rando_window — no GL loader dependency in an ImGui TU). ----------
+typedef void(APIENTRY *PFN_glGenTextures)(GLsizei, GLuint *);
+typedef void(APIENTRY *PFN_glBindTexture)(GLenum, GLuint);
+typedef void(APIENTRY *PFN_glTexImage2D)(GLenum, GLint, GLint, GLsizei, GLsizei,
+                                         GLint, GLenum, GLenum, const void *);
+typedef void(APIENTRY *PFN_glTexParameteri)(GLenum, GLenum, GLint);
+static PFN_glGenTextures p_glGenTextures;
+static PFN_glBindTexture p_glBindTexture;
+static PFN_glTexImage2D p_glTexImage2D;
+static PFN_glTexParameteri p_glTexParameteri;
+
+// Upload an RGBA8888 buffer as a GL texture in the CURRENT context; returns the
+// texture id (0 on failure). Caller must have the target window's GL context
+// current (true inside a draw callback under Z3RHost_RenderAll).
+static ImTextureID UploadRgbaTexture(const unsigned char *rgba, int w, int h) {
+  if (!p_glGenTextures) {
+    p_glGenTextures = (PFN_glGenTextures)SDL_GL_GetProcAddress("glGenTextures");
+    p_glBindTexture = (PFN_glBindTexture)SDL_GL_GetProcAddress("glBindTexture");
+    p_glTexImage2D = (PFN_glTexImage2D)SDL_GL_GetProcAddress("glTexImage2D");
+    p_glTexParameteri = (PFN_glTexParameteri)SDL_GL_GetProcAddress("glTexParameteri");
+  }
+  if (!p_glGenTextures || !p_glTexImage2D) return (ImTextureID)0;
+  GLuint tex = 0;
+  p_glGenTextures(1, &tex);
+  p_glBindTexture(GL_TEXTURE_2D, tex);
+  p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+  return (ImTextureID)(intptr_t)tex;
 }
 
 // ---- Window handles --------------------------------------------------------
@@ -378,24 +413,32 @@ static int RegionStatus(int total, int checked, int avail) {
   return kCheck_Unreachable;
 }
 
-// Hand-placed schematic positions (normalized 0..1) for the overworld regions.
-// Dungeon-interior regions have no map position — they appear in the panel
-// below. (Geographic pixel-accurate pins on the real map gfx are a follow-up;
-// this region "logic map" is the MVP.)
-struct RegionPos { uint16 region_id; float x, y; };
-static const RegionPos kRegionMap[] = {
-  // Light World (left).
-  {16, 0.12f, 0.13f}, {15, 0.33f, 0.09f}, {18, 0.10f, 0.40f}, {17, 0.37f, 0.35f},
-  {19, 0.20f, 0.70f}, {20, 0.31f, 0.58f},
-  // Dark World (right).
-  {1, 0.62f, 0.13f}, {0, 0.85f, 0.09f}, {4, 0.61f, 0.40f}, {3, 0.87f, 0.35f},
-  {5, 0.71f, 0.70f}, {2, 0.60f, 0.86f}, {22, 0.54f, 0.90f}, {29, 0.90f, 0.13f},
-  {21, 0.75f, 0.58f},
-};
-
 static const ImU32 kColChecked = IM_COL32(115, 191, 115, 255);
 static const ImU32 kColReach   = IM_COL32(242, 217, 89, 255);
 static const ImU32 kColLocked  = IM_COL32(120, 120, 128, 255);
+
+// Light-world region pins, positioned (normalized 0..1) over the decoded light
+// overworld map image. (Dark world + dungeon interiors are listed in the panel
+// below — the dark map graphic decodes only its NW quadrant from the asset, so
+// a full dark-map background is a follow-up.)
+struct LightPin { uint16 region_id; float x, y; };
+static const LightPin kLightPins[] = {
+  {16, 0.30f, 0.16f},  // LightWorld_DeathMountain_West
+  {15, 0.52f, 0.14f},  // LightWorld_DeathMountain_East
+  {18, 0.16f, 0.50f},  // LightWorld_NorthWest (Kakariko)
+  {17, 0.64f, 0.44f},  // LightWorld_NorthEast
+  {19, 0.45f, 0.82f},  // LightWorld_South
+  {20, 0.50f, 0.66f},  // LinksHouse
+};
+static bool IsLightPin(uint16 rid) {
+  for (int i = 0; i < (int)(sizeof(kLightPins) / sizeof(kLightPins[0])); i++)
+    if (kLightPins[i].region_id == rid) return true;
+  return false;
+}
+
+// Decoded light-world map texture (created once, in the map window's GL context).
+static ImTextureID s_light_map_tex = (ImTextureID)0;
+static bool s_light_map_tried = false;
 
 static void DrawMapTracker(void *) {
   BeginFullWindow("Map Tracker##z3r");
@@ -411,65 +454,52 @@ static void DrawMapTracker(void *) {
   const RandoReachability *reach = Rando_GetLiveReachability();
   bool have_reach = (reach != NULL);
 
-  ImGui::TextDisabled("Region logic map — green: all checked · yellow: available · grey: locked");
-  if (!have_reach)
-    ImGui::TextDisabled("(reachability unavailable; colors show checked vs not)");
+  // Decode + upload the light-world map once (static asset; the GL context of
+  // this window is current inside the draw callback).
+  if (!s_light_map_tried) {
+    static unsigned char buf[kRandoMapPixels * kRandoMapPixels * 4];
+    if (RandoMap_Decode(false, buf))
+      s_light_map_tex = UploadRgbaTexture(buf, kRandoMapPixels, kRandoMapPixels);
+    s_light_map_tried = true;
+  }
 
-  // ---- Map canvas (overworld region pins) ----
+  ImGui::TextDisabled("Light World — green: all checked · yellow: available · grey: locked");
+
+  // ---- Light-world map image with region pins ----
   ImVec2 origin = ImGui::GetCursorScreenPos();
-  float width = ImGui::GetContentRegionAvail().x;
-  float height = width * 0.52f;
-  if (height > 360.0f) height = 360.0f;
+  float side = ImGui::GetContentRegionAvail().x;
+  if (side > 480.0f) side = 480.0f;
   ImDrawList *dl = ImGui::GetWindowDrawList();
-
-  // Backdrop + light/dark split.
-  dl->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
-                    IM_COL32(28, 30, 38, 255), 4.0f);
-  float midx = origin.x + width * 0.5f;
-  dl->AddLine(ImVec2(midx, origin.y), ImVec2(midx, origin.y + height),
-              IM_COL32(70, 72, 84, 255), 1.0f);
-  dl->AddText(ImVec2(origin.x + 8, origin.y + 6), IM_COL32(150, 160, 180, 255), "Light World");
-  ImVec2 dwsz = ImGui::CalcTextSize("Dark World");
-  dl->AddText(ImVec2(origin.x + width - dwsz.x - 8, origin.y + 6),
-              IM_COL32(150, 160, 180, 255), "Dark World");
+  ImVec2 br = ImVec2(origin.x + side, origin.y + side);
+  if (s_light_map_tex)
+    dl->AddImage(s_light_map_tex, origin, br);
+  else
+    dl->AddRectFilled(origin, br, IM_COL32(28, 30, 38, 255), 4.0f);
 
   ImVec2 mouse = ImGui::GetMousePos();
-  bool mouse_in_canvas = mouse.x >= origin.x && mouse.x <= origin.x + width &&
-                         mouse.y >= origin.y && mouse.y <= origin.y + height;
   int hover_region = -1;
-
-  for (int i = 0; i < (int)(sizeof(kRegionMap) / sizeof(kRegionMap[0])); i++) {
-    uint16 rid = kRegionMap[i].region_id;
+  for (int i = 0; i < (int)(sizeof(kLightPins) / sizeof(kLightPins[0])); i++) {
+    uint16 rid = kLightPins[i].region_id;
     int total, checked, avail;
     RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
     if (total == 0) continue;
     int st = RegionStatus(total, checked, avail);
     ImU32 col = (st == kCheck_Checked) ? kColChecked
                 : (st == kCheck_Reachable) ? kColReach : kColLocked;
-
-    ImVec2 c = ImVec2(origin.x + kRegionMap[i].x * width,
-                      origin.y + kRegionMap[i].y * height);
-    float radius = 7.0f + (float)total * 0.8f;
-    if (radius > 18.0f) radius = 18.0f;
+    ImVec2 c = ImVec2(origin.x + kLightPins[i].x * side, origin.y + kLightPins[i].y * side);
+    float radius = 9.0f;
     dl->AddCircleFilled(c, radius, col);
-    dl->AddCircle(c, radius, IM_COL32(20, 20, 24, 255), 0, 1.5f);
-
-    // Label with available/total (or checked/total when reachability is off).
-    char lbl[48];
-    if (have_reach) snprintf(lbl, sizeof lbl, "%d/%d", avail, total - checked);
-    else snprintf(lbl, sizeof lbl, "%d/%d", checked, total);
+    dl->AddCircle(c, radius, IM_COL32(10, 10, 12, 255), 0, 2.0f);
+    char lbl[24];
+    if (have_reach) snprintf(lbl, sizeof lbl, "%d", avail);
+    else snprintf(lbl, sizeof lbl, "%d", total - checked);
     ImVec2 ts = ImGui::CalcTextSize(lbl);
-    dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f),
-                IM_COL32(15, 15, 18, 255), lbl);
-
-    if (mouse_in_canvas) {
-      float dx = mouse.x - c.x, dy = mouse.y - c.y;
-      if (dx * dx + dy * dy <= radius * radius) hover_region = rid;
-    }
+    dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), IM_COL32(12, 12, 14, 255), lbl);
+    float dx = mouse.x - c.x, dy = mouse.y - c.y;
+    if (dx * dx + dy * dy <= radius * radius) hover_region = rid;
   }
-  ImGui::Dummy(ImVec2(width, height));
+  ImGui::Dummy(ImVec2(side, side));
 
-  // Tooltip: the hovered region's check list.
   if (hover_region >= 0) {
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(Rando_GetRegionName((uint16)hover_region));
@@ -490,13 +520,13 @@ static void DrawMapTracker(void *) {
     ImGui::EndTooltip();
   }
 
-  // ---- Dungeon panel (interior regions, no map position) ----
+  // ---- Dark world + dungeon regions (panel) ----
   ImGui::Spacing();
-  ImGui::SeparatorText("Dungeons");
-  ImGui::BeginChild("##dungeons", ImVec2(0, 0), false);
+  ImGui::SeparatorText("Dark World & Dungeons");
+  ImGui::BeginChild("##darkdungeons", ImVec2(0, 0), false);
   for (uint32 ri = 0; ri < kRandoRegionsCount; ri++) {
-    if (kRandoRegions[ri].dungeon_id == 0xFF) continue;  // overworld → on the map
     uint16 rid = kRandoRegions[ri].id;
+    if (IsLightPin(rid)) continue;  // shown as a pin on the light map above
     int total, checked, avail;
     RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
     if (total == 0) continue;
