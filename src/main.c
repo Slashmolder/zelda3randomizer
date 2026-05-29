@@ -71,6 +71,28 @@ static void HandleVolumeAdjustment(int volume_adjustment);
 static void LoadAssets();
 static void SwitchDirectory();
 
+// Loads assets if a blob is present; returns false (without Die()ing) when none
+// exists. LoadAssets() hard-fails on a missing zelda3_assets.dat, but the
+// headless rando CLI paths (--generate-seed, --reveal-spoiler) only need assets
+// for g_assets_hash (the --assets-must-be-vanilla gate). Placement is driven
+// entirely by compiled-in logic/codegen tables and never reads asset bytes
+// (no g_asset_ptrs references in src/rando/), so it stays byte-identical with or
+// without the blob. This lets those paths — and the CI regression corpus that
+// drives them — run on a ROM-less checkout; the vanilla-asset gate just degrades
+// to its "hash unknown" warning (g_assets_hash remains all-zeros).
+static bool LoadAssetsIfPresent() {
+  FILE *f = fopen("zelda3_assets.dat", "rb");
+  if (!f) f = fopen("zelda3_assets.bps", "rb");
+  if (!f) {
+    fprintf(stderr, "note: no zelda3_assets.dat — proceeding without assets "
+                    "(placement is asset-independent; --assets-must-be-vanilla inert).\n");
+    return false;
+  }
+  fclose(f);
+  LoadAssets();
+  return true;
+}
+
 enum {
   kDefaultFullscreen = 0,
   kMaxWindowScale = 10,
@@ -369,9 +391,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   }
 
   // Load config (so [Randomizer] defaults populate) and assets (so
-  // g_assets_hash is computed). Both are safe to call without SDL.
+  // g_assets_hash is computed). Both are safe to call without SDL. Assets are
+  // optional here: placement is asset-independent, so a ROM-less run (CI) still
+  // generates deterministically (see LoadAssetsIfPresent).
   ParseConfigFile(config_file);
-  LoadAssets();
+  LoadAssetsIfPresent();
 
   // Honor --assets-must-be-vanilla per randomizer-placement spec scenario
   // "CLI --assets-must-be-vanilla refuses non-vanilla blobs".
@@ -649,10 +673,11 @@ static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *conf
 
   // Load config + assets so the spoiler writer has the same view of the
   // world as a normal generate. Assets aren't strictly needed for reveal
-  // but Spoiler_WriteJson computes `placement_digest_hex` so the placement
-  // graph is consulted; LoadAssets() keeps everything consistent.
+  // (Spoiler_WriteJson computes `placement_digest_hex` from the placement
+  // graph, which is asset-independent), so load them only if present — a
+  // ROM-less checkout (CI) reveals deterministically all the same.
   ParseConfigFile(config_file);
-  LoadAssets();
+  LoadAssetsIfPresent();
 
   RandoRevealResult r = Rando_RevealSpoiler(reveal_path, NULL);
   if (r == kRandoReveal_Ok) {
