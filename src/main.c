@@ -1046,6 +1046,13 @@ int main(int argc, char** argv) {
 #endif
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
+  // Capture the game's current GL context (the OpenGL renderer left it current
+  // after Initialize above; NULL under the default SDL software renderer) so we
+  // can restore it after the settings window's GL setup makes the settings
+  // context current — otherwise the game would render against the settings
+  // context and the per-frame restore would bind the wrong context. (audit HIGH)
+  SDL_GLContext game_gl_ctx = SDL_GL_GetCurrentContext();
+
   g_settings_window = SDL_CreateWindow(
       "Z3R Settings", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 720, 900,
       SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_HIDDEN);
@@ -1096,6 +1103,10 @@ int main(int argc, char** argv) {
     RandoWindow_ApplyGeometry(g_rando_window_prefs.window_x, g_rando_window_prefs.window_y,
                               g_rando_window_prefs.window_w, g_rando_window_prefs.window_h);
   }
+  // Restore the game's GL context: the settings window's GL setup above left the
+  // settings context current. NULL under the software renderer → nothing to do.
+  if (game_gl_ctx)
+    SDL_GL_MakeCurrent(g_window, game_gl_ctx);
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
   SDL_AudioDeviceID device = 0;

@@ -837,6 +837,9 @@ void RandoWindow_Shutdown(void) {
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
   }
+  // Free the bridge's owned spoiler-viewer placement copy (passing NULL frees +
+  // clears without re-storing) so it isn't leaked at process exit. (audit LOW)
+  RandoWindowBridge_StoreGenerated(NULL, NULL, false);
 }
 
 // ---- Show / hide -----------------------------------------------------------
