@@ -1887,7 +1887,15 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
     // kHudItemEmpty is a single-element array (no [1] tier) and is never drawn —
     // skip it so we don't read past the object (audit R2 MED).
     if (slot == kRandoIcon_Empty) continue;
-    const ItemBoxGfx *icon = &kHudItemBoxGfxPtrs[slot][1];  // [0]=empty, [1]=have
+    // Most items: [0]=empty placeholder, [1]=the "have" icon. Exceptions:
+    //   Armor has NO empty slot — [0]=green, [1]=blue, [2]=red (use green base).
+    //   Flute's [1] is the SHOVEL; [2] is the actual flute.
+    int tier = 1;
+    if (slot == kRandoIcon_Armor) tier = 0;        // [0]=green base ([1]=blue,[2]=red)
+    else if (slot == kRandoIcon_Flute) tier = 2;   // [1]=shovel, [2]=flute
+    else if (slot == kRandoIcon_Mirror) tier = 2;  // [1]=scroll, [2]=the mirror
+    else if (slot == kRandoIcon_Bottle) tier = 2;  // [1]=shared mushroom tile, [2]=bottle
+    const ItemBoxGfx *icon = &kHudItemBoxGfxPtrs[slot][tier];
     for (int q = 0; q < 4; q++) {  // 2x2 quad: TL,TR,BL,BR
       uint16 w = icon->v[q];
       int chr = w & 0x3ff, subpal = (w >> 10) & 7;
