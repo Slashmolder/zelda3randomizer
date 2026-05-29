@@ -1353,7 +1353,68 @@ static void SelectFile_ResetSidecarCache(void) {
 // rando_generate.h). selectfile_arr1 is a uint16* into g_ram (variables.h).
 void SelectFile_NotifySlotWritten(int slot_index) {
   SelectFile_ResetSidecarCache();
+  // selectfile_arr1[k] means "slot k is occupied" (drives cursor/COPY/ERASE
+  // logic + the per-slot draw dispatch in FileSelect_Main). Setting it to 1
+  // is correct here — it makes the slot draw its banner; it does NOT suppress
+  // the redraw. The actual tile upload happens in FileSelect_Main every frame.
   selectfile_arr1[slot_index] = 1;
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  // §16 native-window post-generate redraw (in-game-flow parity).
+  //
+  // On PC the in-game settings screen is compiled out, so the generate runs
+  // on the GAME THREAD via the per-frame consumer in main.c, AFTER
+  // ZeldaRunFrame returns — i.e. while Module01_FileSelect is the active
+  // module sitting at submodule 5 (FileSelect_Main). At that point BG2 is
+  // STALE: the kind picker that the player went through to reach "New
+  // Randomizer" memcpyd its NEW GAME / VANILLA / RANDOM / PASTE prompt over
+  // vram_upload_data (see SelectFile_KindPicker_Draw), clobbering the
+  // kSelectFile_Func3_Data background that submodule 4 installed. Selecting
+  // "New Randomizer" on PC opens the native window WITHOUT a submodule rewind
+  // (unlike the B-cancel path), so the Func3 slot/banner layout is never
+  // reinstalled and FileSelect_Main's small per-slot name patches land on
+  // top of the clobbered buffer → garbled slot tiles + empty black banner box.
+  //
+  // The original (guard-off) generate epilogue fixed this via
+  // SelectFile_Settings_Deactivate's submodule rewind. On PC that function is
+  // a no-op stub, so reproduce the same rewind here: push one clear over the
+  // slot/banner rows now, then rewind to submodule 3 so the file-select state
+  // machine re-runs 3 -> 4 -> 5, reinstalling kSelectFile_Func3_Data before
+  // slot rendering resumes. This matches SelectFile_KindPicker_Update's
+  // B-cancel and SelectFile_AlphabetPicker_Deactivate rebuild discipline.
+  //
+  // One-shot + safe from the consumer: NotifySlotWritten is called exactly
+  // once per generate; submodule 3 self-advances to 4 then 5 and stays there,
+  // so there is no loop. Running it after ZeldaRunFrame means the NEXT frame's
+  // Module01_FileSelect dispatch picks up the rewound submodule in-context.
+  //
+  // 640 words at 0x6100 = 20 tilemap rows x 32 cols (rows 8-27), covering all
+  // three slots — the same range SelectFile_KindPicker_Draw cleared, so any
+  // prompt text it wrote is wiped before Func3/Func4 reinstall the layout.
+  uint8 *p = (uint8 *)vram_upload_data;
+  int o = 0;
+  int clear_count = 640 * 2 - 1;
+  p[o++] = 0x61;
+  p[o++] = 0x00;
+  p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
+  p[o++] = (uint8)(clear_count & 0xff);
+  p[o++] = 0xa9;
+  p[o++] = 0x18;
+  p[o++] = 0xff;  // stripes terminator
+  nmi_load_bg_from_vram = 1;
+  submodule_index = 3;
+  subsubmodule_index = 0;
+  // Land the cursor on the freshly-generated slot, matching the in-game flow
+  // (SelectFile_Settings_HandleGenerate set selectfile_R16 = target after its
+  // Deactivate rewind). slot_index is 0..2 here. Note submodule 3
+  // (FileSelect_TriggerStripesAndAdvance) re-applies selectfile_R16 =
+  // selectfile_var2 next frame; selectfile_var2 already equals the target slot
+  // (set when the player pressed A on the empty slot), so this stays correct.
+  // Setting it here keeps parity with the in-game epilogue and is robust to any
+  // selectfile_var2 drift.
+  if (slot_index >= 0 && slot_index < 3)
+    selectfile_R16 = (uint8)slot_index;
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
 }
 
 // Classify slot k based on cached sidecar info + sram.dat occupancy.
