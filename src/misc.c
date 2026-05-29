@@ -600,16 +600,28 @@ void Module05_LoadFile() {  // 828136
   // clear a stale escape follower so reload routes through the normal
   // post-escape spawn-select instead of the sealed escape area. Standard is
   // untouched (its escape is real and progress climbs through it normally).
+  // Gate on the slot's world_state, NOT sram_progress_indicator: entering
+  // Hyrule Castle in a non-Standard seed can re-run the escape story beats,
+  // which both sets which_starting_point to an escape-only value AND drops
+  // progress below 2 — so a progress>=2 gate (the earlier attempt) misses
+  // exactly the trap it was meant to catch (confirmed by an F12 dump:
+  // progress=1, which_starting_point=3). Standard is excluded (its escape is
+  // real and progress climbs through it legitimately).
   if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-      sram_progress_indicator >= 2) {
+      Rando_GetActiveWorldState() != 1 /* kWorldState_Standard */) {
     uint8 sp = which_starting_point;
     if (sp != 0 && sp != 1 && sp != 6) {
       // rando-exempt: post-escape respawn sanitize — redirect an escape-only
       // spawn pointer to Sanctuary so S&Q can't trap the player in the sealed
       // HC escape. Not an item grant.
       which_starting_point = 1;  // Sanctuary
-      if (follower_indicator == 1)  // Zelda mid-escape follower
+      if (follower_indicator == 1)  // stale Zelda mid-escape follower
         follower_indicator = 0;
+      // The re-engaged escape dropped progress; restore the post-escape
+      // free-roam state so the overworld isn't gated behind the sealed escape.
+      // rando-exempt: post-escape progress restore (non-Standard rando)
+      if (sram_progress_indicator < 2)
+        sram_progress_indicator = 2;
     }
   }
 

@@ -1584,8 +1584,17 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
     uint8 ws = (settings != NULL) ? settings->world_state
                                   : Rando_GetActiveWorldState();
     if (ws == kWorldState_Inverted) {
-      Link_ReceiveItem(0x1f, 0);  // Moon Pearl (registry id 39, vanilla dispatch 0x1f)
-      Link_ReceiveItem(0x1a, 0);  // Magic Mirror (registry id 36, vanilla dispatch 0x1a)
+      // Direct byte-set, NOT Link_ReceiveItem: the receive path always triggers
+      // the hold-up-item animation (kPlayerState_HoldUpItem = 0x15). Because
+      // this grant runs on EVERY load (it sits above the cold-boot dedupe so
+      // Inverted MP+Mirror persist across reloads), Link_ReceiveItem re-enters
+      // that pose every frame -> permanent arm-raised softlock (confirmed by an
+      // F12 dump: handler_state=0x15, pose_for_item=1). A direct write is
+      // idempotent and animation-free.
+      // rando-exempt: state-shuffle — bunny-state starting inventory (Inverted)
+      g_ram[0xF357] = 1;  // link_item_moon_pearl
+      // rando-exempt: state-shuffle — bunny-state starting inventory (Inverted)
+      g_ram[0xF353] = 2;  // link_item_mirror (2 = Magic Mirror)
     }
   }
 
