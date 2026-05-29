@@ -413,6 +413,11 @@ uint8 Rando_GetActiveWorldState(void);
 // through it. Gate any HC escape story-beat trigger on this.
 bool Rando_SuppressHyruleCastleEscape(void);
 
+// Forward-declared so the prototypes below that take a RandoSidecarSlot* are
+// at file scope (clang -Wvisibility errors if a struct tag is first introduced
+// inside a function-parameter list). The full definition lives in rando_save.h.
+struct RandoSidecarSlot;
+
 // Copy g_rando_checked_bitmap into the supplied slot's checked_bitmap field.
 // Callers about to write the ACTIVE rando slot to disk should invoke this
 // just before calling Rando_WriteSidecarSlot so the in-memory checks survive

@@ -9,7 +9,6 @@ on:
   push:
     branches:
     - main
-    - master
   pull_request:
   workflow_dispatch:
 
@@ -61,9 +60,11 @@ jobs:
       if: github.event_name != 'pull_request'
       run: python assets/scripts/check_generator_version.py
 
-    # Task 1.0a — Regression-corpus manifest schema check (scaffold; activates with task 12.2)
+    # Task 1.0a — Regression-corpus manifest schema check. This job does NOT
+    # build, so run schema-only; the full corpus (with --binary) runs in the
+    # rando-determinism job below.
     - name: run_rando_corpus (1.0a, manifest schema)
-      run: python assets/scripts/run_rando_corpus.py
+      run: python assets/scripts/run_rando_corpus.py --schema-only
 
     # Codegen well-formedness in --strict mode. The build invokes
     # rando_logic_gen.py in non-strict mode (warnings logged but

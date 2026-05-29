@@ -33,18 +33,29 @@ def main(argv: list[str]) -> int:
                         help="path to zelda3_assets.dat")
     parser.add_argument("--header", type=Path, default=HEADER,
                         help="output header path")
+    parser.add_argument("--placeholder", action="store_true",
+                        help="emit an all-zeros, kVanillaAssetsHashKnown=0 header "
+                             "without reading any asset file. Lets a ROM-less build "
+                             "(e.g. CI) compile; the vanilla-asset gate stays inert "
+                             "until a real hash is baked in.")
     args = parser.parse_args(argv)
 
-    if not args.asset_file.exists():
-        print(f"ERROR: asset file not found: {args.asset_file}", file=sys.stderr)
-        print("  Extract assets first per README.md "
-              "(python assets/restool.py --extract-from-rom).", file=sys.stderr)
-        return 1
-
-    data = args.asset_file.read_bytes()
-    digest = hashlib.sha256(data).digest()
-    print(f"asset file:   {args.asset_file}  ({len(data)} bytes)")
-    print(f"SHA-256:      {digest.hex()}")
+    if args.placeholder:
+        digest = bytes(32)
+        known = 0
+        print("placeholder:  all-zeros (kVanillaAssetsHashKnown=0)")
+    else:
+        if not args.asset_file.exists():
+            print(f"ERROR: asset file not found: {args.asset_file}", file=sys.stderr)
+            print("  Extract assets first per README.md "
+                  "(python assets/restool.py --extract-from-rom),", file=sys.stderr)
+            print("  or pass --placeholder for a ROM-less (inert) header.", file=sys.stderr)
+            return 1
+        data = args.asset_file.read_bytes()
+        digest = hashlib.sha256(data).digest()
+        known = 1
+        print(f"asset file:   {args.asset_file}  ({len(data)} bytes)")
+        print(f"SHA-256:      {digest.hex()}")
 
     rows = []
     for i in range(0, 32, 8):
@@ -57,7 +68,8 @@ def main(argv: list[str]) -> int:
 // US ROM (SHA-256 66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb).
 //
 // Regenerate via:
-//   python assets/scripts/dump_vanilla_assets_hash.py
+//   python assets/scripts/dump_vanilla_assets_hash.py            (real hash)
+//   python assets/scripts/dump_vanilla_assets_hash.py --placeholder  (inert)
 // after any asset-pipeline change that affects the output blob layout.
 
 #ifndef ZELDA3_RANDO_VANILLA_ASSETS_HASH_H_
@@ -65,7 +77,7 @@ def main(argv: list[str]) -> int:
 
 #include "../types.h"
 
-#define kVanillaAssetsHashKnown 1
+#define kVanillaAssetsHashKnown {known}
 
 static const uint8 kVanillaAssetsHash[32] = {{
 {body}
@@ -75,7 +87,10 @@ static const uint8 kVanillaAssetsHash[32] = {{
 """
     args.header.write_text(content, encoding="utf-8")
     print(f"wrote:        {args.header}")
-    print(f"  kVanillaAssetsHashKnown is now 1 — --assets-must-be-vanilla active.")
+    if known:
+        print(f"  kVanillaAssetsHashKnown is now 1 — --assets-must-be-vanilla active.")
+    else:
+        print(f"  kVanillaAssetsHashKnown is 0 — vanilla-asset gate inert (placeholder).")
     return 0
 
 
