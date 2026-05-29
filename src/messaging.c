@@ -789,7 +789,14 @@ void Death_Func15(bool count_as_death) {  // 89f50f
     Dungeon_FlagRoomData_Quadrants();
   AdjustLinkBunnyStatus();
   if (sram_progress_indicator < 3) {
-    savegame_is_darkworld = 0;
+    // #82 Inverted: vanilla forces the LIGHT world on a pre-Agahnim death
+    // respawn (darkworldspawn.asm SetDeathWorldChecked/DoWorldFix). In Inverted
+    // the "home" world is the DARK world, so DoWorldFix_Inverted forces 0x40
+    // instead. Keep the respawn in the DW so an Inverted player isn't dumped
+    // into the (mirror-only) Light World on death.
+    bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
+                          Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+    savegame_is_darkworld = rando_inverted ? 0x40 : 0;
     if (!link_item_moon_pearl)
       ForceNonbunnyStatus();
   }
