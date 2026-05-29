@@ -543,6 +543,17 @@ bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id) {
   return bitset_has(r->region_bitset, region_id);
 }
 
+// Private snapshot buffer. Logic_ComputeReachability returns a pointer into the
+// single shared g_reachability, which any later call overwrites. A caller that
+// must hold a result across other reachability computations (the runtime
+// tracker bridge) copies it here once and reads the stable snapshot.
+static struct RandoReachability g_reachability_snapshot;
+
+const RandoReachability *Reachability_Snapshot(bool refresh) {
+  if (refresh) g_reachability_snapshot = g_reachability;
+  return &g_reachability_snapshot;
+}
+
 // ---------------------------------------------------------------------------
 // Phase B Slice 2 — per-world-state predicate override lookup.
 //

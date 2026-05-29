@@ -44,7 +44,11 @@
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "rando/rando_window/rando_window.h"          // RandoWindow_* (ImGui settings window)
 #include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
+#include "rando/rando_window/imgui_host.h"            // Z3RHost_* (multi-window host)
+#include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
+#include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
+#include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
 #endif
 
 static bool g_run_without_emu = 0;
@@ -926,6 +930,40 @@ int main(int argc, char** argv) {
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
   MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
 
+  // Dev/verification: decode the overworld map (asset 66/67/68/93) to PPM files
+  // and exit. Used to visually verify the Map Tracker background decoder.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-overworld-map") == 0) {
+      const char *prefix = (i + 1 < argc) ? argv[i + 1] : "overworld_map";
+      LoadAssets();
+      bool ok = RandoMap_DumpPpm(prefix);
+      fprintf(stderr, "--dump-overworld-map: %s\n", ok ? "OK" : "FAILED");
+      return ok ? 0 : 1;
+    }
+  }
+  // Dev/verification: decode the HUD item-icon atlas to a PPM and exit.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-item-icons") == 0) {
+      const char *path = (i + 1 < argc) ? argv[i + 1] : "item_icons.ppm";
+      LoadAssets();
+      static uint32 atlas[kRandoIconCount * kRandoIconSize * kRandoIconSize];
+      int n = Hud_RandoBuildIconAtlas(atlas);
+      int W = kRandoIconCount * kRandoIconSize, H = kRandoIconSize;
+      FILE *f = fopen(path, "wb");
+      if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", W, H);
+        for (int p = 0; p < W * H; p++) {
+          const uint8 *px = (const uint8 *)&atlas[p];
+          fputc(px[0], f); fputc(px[1], f); fputc(px[2], f);  // RGB (drop alpha)
+        }
+        fclose(f);
+      }
+      fprintf(stderr, "--dump-item-icons: %d icons -> %s\n", n, path);
+      return f ? 0 : 1;
+    }
+  }
+
+
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,
   // loads the chapter savestate via the replay-mode StateRecorder path
@@ -1127,6 +1165,11 @@ int main(int argc, char** argv) {
     RandoWindow_ApplyGeometry(g_rando_window_prefs.window_x, g_rando_window_prefs.window_y,
                               g_rando_window_prefs.window_w, g_rando_window_prefs.window_h);
   }
+  // Tracker windows (item/check/map) — created hidden on the multi-window host.
+  // Z3RHost_Create saves/restores the current ImGui + GL context, so the settings
+  // window's context stays current and the game context is untouched here.
+  Trackers_Init();
+
   // Restore the game's GL context: the settings window's GL setup above left the
   // settings context current. NULL under the software renderer → nothing to do.
   if (game_gl_ctx)
@@ -1223,6 +1266,10 @@ int main(int argc, char** argv) {
       // if that ID is the settings window, hand the event to ImGui and DO NOT
       // pass it to the game input path. Otherwise it's a game-window event and
       // flows to the existing switch below.
+      // Tracker windows (host-owned) consume their own events first. Their
+      // windowIDs are disjoint from the settings/game windows.
+      if (Z3RHost_ProcessEvent(&event))
+        continue;
       {
         Uint32 settings_wid = g_settings_window ? SDL_GetWindowID(g_settings_window) : 0;
         Uint32 wid = 0;
@@ -1479,6 +1526,10 @@ int main(int argc, char** argv) {
       if (prev)
         SDL_GL_MakeCurrent(g_window, prev);
     }
+    // Render any visible tracker windows. Z3RHost_RenderAll saves/restores the
+    // current SDL GL + ImGui context itself, so the game renderer and the
+    // settings window are unaffected regardless of which (if any) is shown.
+    Z3RHost_RenderAll();
 #endif
 
     if (g_config.display_perf_title) {
@@ -1534,6 +1585,9 @@ int main(int argc, char** argv) {
 
   // Tear down the settings window unconditionally (NOT gated on enable_audio).
   RandoWindow_Shutdown();
+  // Then the tracker windows. RandoWindow_Shutdown destroyed the (current)
+  // settings ImGui context first, so the host's teardown won't clobber it.
+  Trackers_Shutdown();
   if (g_settings_gl)
     SDL_GL_DeleteContext(g_settings_gl);
   if (g_settings_window)
@@ -1675,19 +1729,42 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_ToggleRenderer: g_ppu_render_flags ^= kPpuRenderFlags_NewRenderer; break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
-    // Phase B Slice 1 — tracker overlay toggles. Toggle is in-memory only;
-    // resets to hidden on each launch.
+    // Phase B Slice 1 — tracker overlay toggles. On PC the OAM overlay is
+    // superseded by the rich ImGui windows, so these legacy keys open the
+    // corresponding window (so existing bindings keep working); on Switch they
+    // toggle the OAM overlay as before. In-memory only; reset to hidden each launch.
     case kKeys_RandoToggleItemTracker:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(kTracker_Item);
+#else
       g_rando_show_item_tracker = !g_rando_show_item_tracker;
+#endif
       break;
     case kKeys_RandoToggleLocationTracker:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(kTracker_Check);
+#else
       g_rando_show_location_tracker = !g_rando_show_location_tracker;
+#endif
       break;
     // Phase B Slice 6 §62 — reveal the active slot's race-mode ZRSR spoiler.
     // The reveal action logs its outcome to stderr; on success the on-disk
     // file is overwritten with the full JSON + .txt companion.
     case kKeys_RandoRevealSpoiler:
       (void)Rando_RevealActiveSlotSpoiler();
+      break;
+    // Rich tracker windows. PC toggles the OS windows; on Switch (no
+    // Z3R_NATIVE_SETTINGS_WINDOW) these keys exist in the keymap but have no
+    // windows — degrade to a no-op rather than hitting default: assert(0) if a
+    // user hand-binds one in the ini.
+    case kKeys_RandoItemTrackerWindow:
+    case kKeys_RandoCheckTrackerWindow:
+    case kKeys_RandoMapTrackerWindow:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(j == kKeys_RandoItemTrackerWindow ? kTracker_Item
+                      : j == kKeys_RandoCheckTrackerWindow ? kTracker_Check
+                                                           : kTracker_Map);
+#endif
       break;
     default: assert(0);
     }

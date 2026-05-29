@@ -9,6 +9,8 @@
 #define ZELDA3_RANDO_H_
 
 #include "../types.h"
+#include "rando_settings.h"  // RandoSettings (Rando_GetActiveSettings)
+#include "rando_logic.h"     // RandoCounts, RandoReachability (live reachability bridge)
 
 // ---------------------------------------------------------------------------
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
@@ -19,7 +21,13 @@
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
+// C++ uses the static_assert keyword; C11 uses _Static_assert. rando.h is
+// included from the C++ tracker-window TUs, so pick the right spelling.
+#ifdef __cplusplus
+static_assert(kGeneratorVersion <= 0xFFu,
+#else
 _Static_assert(kGeneratorVersion <= 0xFFu,
+#endif
                "kGeneratorVersion exceeds the share-string uint8 version field; "
                "bump ShareString.version to uint16 and rev the share-string binary layout "
                "before incrementing past 255.");
@@ -452,6 +460,68 @@ void Rando_SetDungeonPrizeAssignment(const uint8 *assignment);    // [kRandoDung
 void Rando_SetMedallionAssignment(const uint8 *assignment);       // [kRandoMedallionEntranceCount]
 const uint8 *Rando_GetDungeonPrizeAssignment(void);
 const uint8 *Rando_GetMedallionAssignment(void);
+
+// ---------------------------------------------------------------------------
+// Active-slot settings recovery (format_version >= 2). On slot activation the
+// canonical settings blob is deserialized and the prize/medallion shuffle
+// assignments recomputed from (settings, seed). Rando_HasActiveSettings() is
+// true only when that succeeded — the tracker windows gate their reachability
+// display on it (false = "settings unknown", show checked/unchecked only, never
+// confidently-wrong reachability). Rando_GetActiveSettings() returns the
+// recovered settings, or NULL when unavailable.
+// ---------------------------------------------------------------------------
+bool Rando_IsActive(void);
+bool Rando_HasActiveSettings(void);
+const RandoSettings *Rando_GetActiveSettings(void);
+
+// ---------------------------------------------------------------------------
+// Live reachability bridge for the tracker windows. Rando_BuildRuntimeCounts
+// maps the live g_ram inventory into a logical RandoCounts; Rando_GetLiveReach-
+// ability computes (memoized on the reachability counter) the set of currently
+// reachable locations/regions, or NULL when settings are unavailable (caller
+// then shows checked/unchecked only). See rando_logic.h Reachability_Has*.
+// ---------------------------------------------------------------------------
+void Rando_BuildRuntimeCounts(RandoCounts *out);
+const RandoReachability *Rando_GetLiveReachability(void);
+
+// ---------------------------------------------------------------------------
+// Compact item-tracker view of the live inventory, filled from g_ram by
+// Rando_FillItemView. A clean data boundary so the ImGui item-tracker window
+// renders from this struct instead of the full variables.h RAM-macro namespace.
+// Levels: 0 means "not obtained". Bow/boomerang/mushroom-powder/flute-shovel
+// use the rando-aware decoupling (shared vanilla bytes resolved here).
+// ---------------------------------------------------------------------------
+typedef struct RandoItemView {
+  uint8 sword;        // 0..4 (0 none; 1 fighter .. 4 gold)
+  uint8 shield;       // 0..3 (0 none; 1 fighter, 2 red, 3 mirror)
+  uint8 mail;         // 0 green (start), 1 blue, 2 red
+  uint8 gloves;       // 0 none, 1 power, 2 titan
+  uint8 bow;          // 0 none, 1 wood, 2 silver
+  uint8 boomerang;    // 0 none, 1 blue, 2 red
+  uint8 bottles;      // 0..4
+  uint8 magic;        // 0 normal, 1 half, 2 quarter
+  uint8 hearts;       // heart containers
+  uint8 heart_pieces; // 0..3 toward next container
+  uint8 crystals;     // count obtained (0..7)
+  uint8 pendants;     // count obtained (0..3)
+  uint8 crystal_mask; // bit per crystal# (0..6) obtained
+  uint8 pendant_mask; // bit0 green(courage actually idx), see fill code
+  bool hookshot, firerod, icerod, hammer, lamp, net, book;
+  bool somaria, byrna, cape, mirror, boots, flippers, moon_pearl;
+  bool bombos, ether, quake;
+  bool mushroom, powder, flute, shovel;
+  bool agahnim;       // Agahnim 1 defeated
+  // Per-dungeon items, indexed by GAME-side dungeon index (0=HyruleCastle/sewers,
+  // 2=EP, 3=DP, 4=CastleTower, 5=PoD, 6=SP, 7=SW, 8=TT, 9=IP, 10=ToH, 11=MM,
+  // 12=TR, 13=GT; index 1 unused). Big-key/map/compass are bitfields with bit
+  // (0x8000 >> game_index).
+  uint8 dungeon_small_keys[16];
+  uint16 bigkey_bits;
+  uint16 map_bits;
+  uint16 compass_bits;
+} RandoItemView;
+
+void Rando_FillItemView(RandoItemView *out);
 
 // ---------------------------------------------------------------------------
 // Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the

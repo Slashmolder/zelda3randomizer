@@ -19,6 +19,7 @@
 
 #include "../types.h"
 #include "rando_placement.h"
+#include "rando_settings.h"  // kSettingsCanonicalLen (persisted settings blob)
 
 // Magic prefix for both file header and per-slot header. "ZRSC" (Zelda Rando
 // SideCar) in ASCII; little-endian read produces 0x4353525A. Distinct from the
@@ -27,7 +28,18 @@
 #define kRandoSidecar_SlotMagic  0x53435253  // 'S' 'R' 'C' 'S' on disk
 
 // Sidecar file constants.
-#define kRandoSidecar_FileFormatVersion 1
+//
+// format_version history:
+//   1 — original layout (header + flat placement table + checked bitmap).
+//   2 — appends a per-slot canonical RandoSettings blob (kSettingsCanonicalLen
+//       bytes) AFTER the checked bitmap, and a `settings_present` byte at slot
+//       header @70. A v1 file has neither; the loader keys the blob's physical
+//       presence on this file version (RandoSave_ReadFile), and old binaries
+//       reading a v2 file would mis-size slots — but format_version gating in
+//       both directions is the contract. New writes are always v2. Needed so a
+//       reloaded slot can reproduce the seed's settings + shuffle assignments
+//       for the runtime reachability (tracker) engine.
+#define kRandoSidecar_FileFormatVersion 2
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -67,9 +79,14 @@ typedef enum {
 //                                              slot-load knows it is an Inverted seed and can
 //                                              grant Moon Pearl + Magic Mirror / start in the
 //                                              Dark World. Older slots read 0 == Open == no-op.)
-//   @69 flute_shovel_owned                   (bitfield: 0x01 shovel, 0x02 flute,
-//                                              0x04 flute activated; additive)
-//   @70 reserved[10]                          (forward-compat; zero on write)
+//   @69 flute_shovel_owned (u8)              (rando flute/shovel decouple bitfield:
+//                                              0x01 shovel, 0x02 flute, 0x04 flute
+//                                              activated; additive)
+//   @70 settings_present (u8)                (format_version >= 2: 1 = the slot
+//                                              body carries a valid canonical
+//                                              RandoSettings blob; 0 = absent.
+//                                              v1 files read 0 here = absent.)
+//   @71 reserved[9]                          (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===
@@ -127,6 +144,14 @@ typedef struct RandoSlotHeader {
   // SELECTED function (toggled in the item menu). Bits: 0x01 shovel, 0x02
   // flute, 0x04 flute activated. See kRandoFluteShovel_* / Rando_GrantFluteShovel.
   uint8 flute_shovel_owned;     // @69
+  // format_version >= 2: 1 when the slot body carries a valid canonical
+  // RandoSettings blob (RandoSidecarSlot.settings_canonical). Lets slot-load
+  // reproduce the seed's settings + prize/medallion shuffle assignments for the
+  // runtime reachability engine. 0 (older slots, vanilla/empty slots, or a
+  // writer that didn't populate it) means the loader must SUPPRESS reachability
+  // rather than guess (a wrong prize_shuffle flag yields confidently-wrong
+  // assignments). See Rando_RecoverActiveSettings / Rando_ActivateSidecarSlot.
+  uint8 settings_present;       // @70
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
@@ -158,15 +183,22 @@ typedef struct RandoSidecarSlot {
   RandoPlacement placements[512];  // sized for ~237 + headroom
   uint16 placement_count;          // valid entries in placements[]
   uint8 checked_bitmap[(512 + 7) >> 3];
+  // Canonical RandoSettings blob (format_version >= 2). Valid only when
+  // header.settings_present == 1. On disk it trails the checked bitmap; v1
+  // files have no such bytes (the loader keys presence on the file version).
+  uint8 settings_canonical[kSettingsCanonicalLen];
 } RandoSidecarSlot;
 
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
 
-// Compute the on-disk byte size of one slot given its placement_table_size.
-// placement_table_size is in BYTES (= 2 × location count).
-// Total = 80 (header) + placement_table_size + ((placement_table_size/2 + 7) >> 3) bitmap.
+// Compute the on-disk byte size of one slot given its placement_table_size,
+// for the CURRENT format (version 2). placement_table_size is in BYTES (= 2 ×
+// location count). Total = 80 (header) + placement_table_size +
+// ((placement_table_size/2 + 7) >> 3) bitmap + kSettingsCanonicalLen (settings
+// blob). v1 files omit the trailing blob; RandoSave_ReadFile handles that older
+// layout internally based on the file's format_version.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);
 
 // Sentinel item_id for "no placement / deprecated location" — written at

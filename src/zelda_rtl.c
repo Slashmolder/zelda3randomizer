@@ -268,7 +268,13 @@ static void ZeldaRunGameLoop() {
   // NMI_PrepareSprites packs the extended-OAM table, so overlay sprites are
   // uploaded with the rest of OAM. No-op unless rando is active and a tracker
   // toggle is on.
+  //
+  // PC supersedes these OAM overlays with the rich ImGui tracker windows, so
+  // the overlay is compiled out there (one tracker system on PC). Switch keeps
+  // the OAM overlay (no native-window support).
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
   Hud_RandoDrawTrackers();
+#endif
   NMI_PrepareSprites();
   nmi_boolean = 0;
 }

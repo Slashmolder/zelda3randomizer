@@ -195,6 +195,31 @@ static const uint16 kCompasses[] = {
   ID_Compass_SW, ID_Compass_TT, ID_Compass_IP, ID_Compass_MM, ID_Compass_TR, ID_Compass_GT,
 };
 
+// Seed the vanilla-mode dungeon items into a RandoCounts inventory. For each
+// dungeon-item class in Vanilla mode the items are NOT shuffled into the world
+// pool — the player collects them in-place — so logic treats them as always
+// available. Shared by the placer's assumed-fill seeding and the runtime
+// reachability bridge (Rando_BuildRuntimeCounts), so both agree exactly.
+void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *settings) {
+  if (counts == NULL || settings == NULL) return;
+  if (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++)
+      counts->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
+  }
+  if (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++)
+      counts->by_item_id[kBigKeys[i]] = 1;
+  }
+  if (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kMaps) / sizeof(kMaps[0])); i++)
+      counts->by_item_id[kMaps[i]] = 1;
+  }
+  if (settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla) {
+    for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++)
+      counts->by_item_id[kCompasses[i]] = 1;
+  }
+}
+
 // Add `n` copies of `item_id` to the pool, respecting capacity.
 static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_id, uint16 n) {
   for (uint16 i = 0; i < n && used < capacity; i++) pool[used++] = item_id;
@@ -1100,27 +1125,9 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // when the player collects them in-place. Pre-grant them in the assumed
   // inventory so reachability treats them as always-available. (Otherwise
   // the placer treats SmallKey-gated dungeon locations as permanently
-  // unreachable, breaking vanilla-mode seeds.)
-  if (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
-    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
-      counts.by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
-    }
-  }
-  if (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla) {
-    for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++) {
-      counts.by_item_id[kBigKeys[i]] = 1;
-    }
-  }
-  if (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla) {
-    for (uint8 i = 0; i < (uint8)(sizeof(kMaps) / sizeof(kMaps[0])); i++) {
-      counts.by_item_id[kMaps[i]] = 1;
-    }
-  }
-  if (settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla) {
-    for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++) {
-      counts.by_item_id[kCompasses[i]] = 1;
-    }
-  }
+  // unreachable, breaking vanilla-mode seeds.) Shared with the runtime
+  // reachability bridge so both agree.
+  Rando_SeedVanillaDungeonItems(&counts, settings);
   for (uint16 i = 0; i < prog_n; i++) {
     counts.by_item_id[progression[i]]++;
   }

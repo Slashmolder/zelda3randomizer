@@ -28,6 +28,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The persisted settings blob must be exactly kSettingsCanonicalLen bytes (the
+// canonical serializer's output size) — couples the slot field to the codec so
+// a canonical-length change can never silently truncate/overrun it. Mirrors the
+// ZRSR _Static_assert (rando_spoiler.h). See [[canonical-size-coupling]].
+_Static_assert(sizeof(((RandoSidecarSlot *)0)->settings_canonical) == kSettingsCanonicalLen,
+               "RandoSidecarSlot.settings_canonical size must equal kSettingsCanonicalLen");
+
 // Atomic-commit protocol (tasks.md §8.2 / design.md D12).
 // POSIX: fsync the file descriptor, then rename, then fsync the containing dir.
 // Windows: _commit on the file descriptor, then MoveFileEx with REPLACE_EXISTING.
@@ -68,11 +75,18 @@ static uint32 get_u32le(const uint8 *p) {
 // byte size of the embedded placement table (= 2 × location_count, since
 // each location takes a uint16 LE). The bitmap covers `location_count` bits.
 // ---------------------------------------------------------------------------
-uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size) {
+// Base (version-1) on-disk size: header + flat placement table + bitmap, with
+// no trailing settings blob. Internal — the version-aware paths add the blob.
+static uint32 slot_on_disk_size_base(uint16 placement_table_size) {
   uint32 placements_bytes = (uint32)placement_table_size;
   uint32 location_count = (uint32)placement_table_size / 2;
   uint32 bitmap_bytes = (location_count + 7) >> 3;
   return kRandoSidecar_SlotHeaderSize + placements_bytes + bitmap_bytes;
+}
+
+// Public size is the CURRENT format (version 2): base + the settings blob.
+uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size) {
+  return slot_on_disk_size_base(placement_table_size) + kSettingsCanonicalLen;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +155,10 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   // zero, so old binaries reading a new file ignore it and new binaries reading
   // an old file see 0 (own neither — the safe default).
   buf[69] = h->flute_shovel_owned;
-  memset(buf + 70, 0, kRandoSidecar_SlotHeaderSize - 70);
+  // @70 settings_present (format_version >= 2). Whether the slot body carries a
+  // valid canonical RandoSettings blob. v1 readers see this as a reserved zero.
+  buf[70] = h->settings_present;
+  memset(buf + 71, 0, kRandoSidecar_SlotHeaderSize - 71);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -170,6 +187,10 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   // @69 flute_shovel_owned (rando flute/shovel decouple). Pre-field files read
   // 0 here (own neither), the safe default.
   out->flute_shovel_owned = buf[69];
+  // @70 settings_present (format_version >= 2). v1 files read 0 (absent). The
+  // version-aware body deserializer additionally forces this to 0 when the file
+  // has no trailing blob, so a stray nonzero byte in a v1 file can't mislead.
+  out->settings_present = buf[70];
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }
@@ -211,10 +232,19 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
   p += location_count * 2;
   uint32 bitmap_bytes = (location_count + 7) >> 3;
   memcpy(p, slot->checked_bitmap, bitmap_bytes);
+  p += bitmap_bytes;
+  // format_version 2: canonical settings blob trails the bitmap. Always written
+  // (zeroed when settings_present == 0); RandoSave_SlotOnDiskSize accounts for it.
+  memcpy(p, slot->settings_canonical, kSettingsCanonicalLen);
   return size;
 }
 
-uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecarSlot *out) {
+// Version-aware slot deserialize. `with_settings` is true for the current
+// (version-2) layout, which has a trailing canonical settings blob; false for
+// the older version-1 layout (no blob). RandoSave_ReadFile passes the value
+// derived from the file's format_version.
+static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
+                                         RandoSidecarSlot *out, bool with_settings) {
   if (buf == NULL || out == NULL) return 0;
   memset(out, 0, sizeof(*out));
   uint32 hdr_used = deserialize_slot_header(buf, buf_size, &out->header);
@@ -225,7 +255,9 @@ uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecar
   if (location_count > (sizeof(out->placements) / sizeof(out->placements[0]))) {
     return 0;
   }
-  uint32 total = RandoSave_SlotOnDiskSize(out->header.placement_table_size);
+  uint32 total = with_settings
+                     ? RandoSave_SlotOnDiskSize(out->header.placement_table_size)
+                     : slot_on_disk_size_base(out->header.placement_table_size);
   if (buf_size < total) return 0;
   const uint8 *p = buf + kRandoSidecar_SlotHeaderSize;
   // Gather the flat array back into the sparse in-memory list. Sentinel
@@ -245,7 +277,21 @@ uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecar
   if (bitmap_bytes <= sizeof(out->checked_bitmap)) {
     memcpy(out->checked_bitmap, p, bitmap_bytes);
   }
+  p += bitmap_bytes;
+  if (with_settings) {
+    memcpy(out->settings_canonical, p, kSettingsCanonicalLen);
+  } else {
+    // A v1 file physically has no blob — force settings_present off so a stray
+    // @70 byte can't be mistaken for a (nonexistent) valid blob.
+    out->header.settings_present = 0;
+  }
   return total;
+}
+
+uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecarSlot *out) {
+  // Public entry assumes the current (version-2) layout. RandoSave_ReadFile
+  // uses the version-aware static directly for older files.
+  return deserialize_slot_versioned(buf, buf_size, out, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -392,9 +438,14 @@ bool RandoSave_ReadFile(const char *path,
   uint32 hdr_used = RandoSave_DeserializeFileHeader(buf, (uint32)fsize, &fh);
   if (hdr_used == 0 || fh.slot_count != kRandoSidecar_SlotCount) { free(buf); return false; }
 
+  // Slots in a version-2 file carry a trailing settings blob; version-1 files
+  // do not. Key the body layout on the file's declared format_version so an old
+  // (v1) sidecar still loads correctly (its slots are 28 bytes shorter).
+  bool with_settings = (fh.format_version >= 2);
   uint32 off = hdr_used;
   for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
-    uint32 used = RandoSave_DeserializeSlot(buf + off, (uint32)fsize - off, &out_slots[i]);
+    uint32 used = deserialize_slot_versioned(buf + off, (uint32)fsize - off,
+                                             &out_slots[i], with_settings);
     if (used == 0) { free(buf); return false; }
     off += used;
   }
@@ -573,6 +624,9 @@ void RandoSave_SelfCheck(void) {
   src.header.goal = 4;            // kGoal_TriforceHunt
   src.header.world_state = 2;     // kWorldState_Inverted
   src.header.flute_shovel_owned = 0x05;  // shovel + flute-active (distinct from mushroom 0x01)
+  // format_version 2: canonical settings blob round-trip coverage.
+  src.header.settings_present = 1;
+  for (int i = 0; i < kSettingsCanonicalLen; i++) src.settings_canonical[i] = (uint8)(0xC0 + i);
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -603,6 +657,15 @@ void RandoSave_SelfCheck(void) {
   if (buf[68] != 2) selfcheck_die("world_state at @68 wrong");
   // Rando flute/shovel decouple: flute_shovel_owned byte layout @69.
   if (buf[69] != 0x05) selfcheck_die("flute_shovel_owned at @69 wrong");
+  // format_version 2: settings_present @70, and the canonical blob trails the
+  // bitmap at offset (base size = header + placements + bitmap).
+  if (buf[70] != 1) selfcheck_die("settings_present at @70 wrong");
+  {
+    uint32 base = RandoSave_SlotOnDiskSize(src.header.placement_table_size) - kSettingsCanonicalLen;
+    if (buf[base] != 0xC0) selfcheck_die("settings_canonical blob not at expected offset");
+    if (buf[base + kSettingsCanonicalLen - 1] != (uint8)(0xC0 + kSettingsCanonicalLen - 1))
+      selfcheck_die("settings_canonical blob tail wrong");
+  }
   // Flat table layout check: location 5 should hold item 50.
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
     selfcheck_die("flat table: loc 5 item slot wrong");
@@ -631,6 +694,8 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.goal != src.header.goal) selfcheck_die("goal round-trip");
   if (dst.header.world_state != src.header.world_state) selfcheck_die("world_state round-trip");
   if (dst.header.flute_shovel_owned != src.header.flute_shovel_owned) selfcheck_die("flute_shovel_owned round-trip");
+  if (dst.header.settings_present != src.header.settings_present) selfcheck_die("settings_present round-trip");
+  if (memcmp(dst.settings_canonical, src.settings_canonical, kSettingsCanonicalLen) != 0) selfcheck_die("settings_canonical round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
@@ -747,6 +812,42 @@ void RandoSave_SelfCheck(void) {
                sizeof(slots[1].checked_bitmap)) != 0) {
       selfcheck_die("full-file round-trip bitmap mismatch");
     }
+    if (back[1].header.settings_present != slots[1].header.settings_present ||
+        memcmp(back[1].settings_canonical, slots[1].settings_canonical,
+               kSettingsCanonicalLen) != 0) {
+      selfcheck_die("full-file round-trip settings blob mismatch");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // format_version 1 backward-compat: a v1 slot has no trailing settings blob.
+  // Serialize the body WITHOUT the blob (base size), then deserialize with
+  // with_settings=false (the path RandoSave_ReadFile takes for a v1 file) and
+  // confirm it loads with settings_present forced off and the placement/bitmap
+  // intact. Guards the older-file load path the version gate protects.
+  // -------------------------------------------------------------------------
+  {
+    // Build a v1-style buffer by hand: header (with @70 deliberately nonzero to
+    // prove the loader forces it off), flat table, bitmap — and NO blob.
+    uint8 v1buf[256];
+    memset(v1buf, 0, sizeof(v1buf));
+    serialize_slot_header(&src.header, v1buf);  // writes settings_present=1 @70
+    uint32 loc_count = (uint32)src.header.placement_table_size / 2;
+    uint8 *p = v1buf + kRandoSidecar_SlotHeaderSize;
+    for (uint32 i = 0; i < loc_count; i++) put_u16le(p + i * 2, kRandoSidecar_NoPlacementSentinel);
+    put_u16le(p + 5 * 2, 50);
+    p += loc_count * 2;
+    uint32 v1_bitmap = (loc_count + 7) >> 3;
+    p[0] = 0x05;  // matches src.checked_bitmap[0]
+    uint32 v1_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v1_bitmap;  // NO blob
+
+    RandoSidecarSlot v1dst;
+    uint32 v1_used = deserialize_slot_versioned(v1buf, v1_total, &v1dst, false);
+    if (v1_used != v1_total) selfcheck_die("v1 compat: used != base total (blob must be absent)");
+    if (v1dst.header.settings_present != 0) selfcheck_die("v1 compat: settings_present must be forced 0");
+    if (v1dst.placement_count != 1 || v1dst.placements[0].location_id != 5 ||
+        v1dst.placements[0].item_id != 50) selfcheck_die("v1 compat: placement round-trip");
+    if (v1dst.checked_bitmap[0] != 0x05) selfcheck_die("v1 compat: bitmap round-trip");
   }
 
   // -------------------------------------------------------------------------

@@ -62,6 +62,10 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   _(SDLK_w), _(SDLK_o), S(SDLK_w), C(SDLK_e),
   // ClearKeyLog, StopReplay, Fullscreen, Reset, Pause, PauseDimmed, Turbo, ReplayTurbo, WindowBigger, WindowSmaller, DisplayPerf, ToggleRenderer
   _(SDLK_k), _(SDLK_l), A(SDLK_RETURN), C(SDLK_r), S(SDLK_p), _(SDLK_p), _(SDLK_TAB), _(SDLK_t), N, N, _(SDLK_f), _(SDLK_r),
+  // VolumeUp, VolumeDown, RandoToggleItemTracker, RandoToggleLocationTracker,
+  // RandoRevealSpoiler (all default-unbound), then the rich tracker windows:
+  // Ctrl+I = Item, Ctrl+C = Check, Ctrl+M = Map (mnemonic, grouped, conflict-free).
+  N, N, N, N, N, C(SDLK_i), C(SDLK_c), C(SDLK_m),
 };
 #undef _
 #undef A
@@ -86,6 +90,8 @@ static const KeyNameId kKeyNameId[] = {
   S(RandoToggleItemTracker), S(RandoToggleLocationTracker),
   // Phase B Slice 6 §62 — in-binary reveal-spoiler action.
   S(RandoRevealSpoiler),
+  // Rich tracker windows (PC). Toggle the item / check / map tracker windows.
+  S(RandoItemTrackerWindow), S(RandoCheckTrackerWindow), S(RandoMapTrackerWindow),
 };
 #undef S
 #undef M

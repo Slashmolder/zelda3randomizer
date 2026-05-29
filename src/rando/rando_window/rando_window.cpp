@@ -37,6 +37,7 @@
 
 #include "rando_window.h"
 #include "rando_window_bridge.h"
+#include "tracker_windows.h"  // Trackers_SetShown/IsShown (Trackers launcher tab)
 // kFeatures0_* recommended-features bit constants (compile-time enums; no g_ram
 // access — this TU never invokes the enhanced_features0 macro that writes g_ram).
 #include "../../features.h"
@@ -473,6 +474,33 @@ static void Panel_Shuffles() {
   HelpTooltip("not yet active in playable slots");
 
   if (changed) Pending_Changed();
+}
+
+static void Panel_Trackers() {
+  ImGui::SeparatorText("Tracker windows");
+  ImGui::TextWrapped(
+      "Open the rich tracker windows. They stay open into gameplay and auto-"
+      "update from live game state. You can also bind hotkeys "
+      "(RandoItemTrackerWindow / RandoCheckTrackerWindow / RandoMapTrackerWindow) "
+      "in zelda3.ini to toggle them during play.");
+  ImGui::Spacing();
+  struct { const char *label; int kind; } rows[] = {
+      {"Item Tracker", kTracker_Item},
+      {"Check Tracker", kTracker_Check},
+      {"Map Tracker", kTracker_Map},
+  };
+  for (int i = 0; i < 3; i++) {
+    bool shown = Trackers_IsShown(rows[i].kind);
+    ImGui::Text("%-14s", rows[i].label);
+    ImGui::SameLine();
+    char btn[32];
+    snprintf(btn, sizeof btn, "%s##trk%d", shown ? "Hide" : "Open", i);
+    if (ImGui::Button(btn, ImVec2(80, 0)))
+      Trackers_SetShown(rows[i].kind, !shown);
+    ImGui::SameLine();
+    ImGui::TextColored(shown ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                       shown ? "open" : "closed");
+  }
 }
 
 static void Panel_AssetHash() {
@@ -952,6 +980,7 @@ static const char *const kTab_General         = "General";
 static const char *const kTab_Dungeons        = "Dungeons";
 static const char *const kTab_Shuffles        = "Shuffles";
 static const char *const kTab_QualityOfLife   = "Quality of Life";
+static const char *const kTab_Trackers        = "Trackers";
 static const char *const kTab_AssetHash       = "Asset Hash";
 static const char *const kTab_Spoiler         = "Spoiler";
 
@@ -959,7 +988,7 @@ static int RandoWindow_BuildTabList(bool last_generated_race_mode,
                                     const char **out_tabs, int cap) {
   int n = 0;
   const char *base[] = { kTab_General, kTab_Dungeons, kTab_Shuffles,
-                         kTab_QualityOfLife, kTab_AssetHash };
+                         kTab_QualityOfLife, kTab_Trackers, kTab_AssetHash };
   for (size_t i = 0; i < sizeof base / sizeof base[0]; i++)
     if (n < cap) out_tabs[n++] = base[i];
   // Spoiler tab: visible only when the last generation was NOT race-mode.
@@ -1024,6 +1053,7 @@ void RandoWindow_BeginFrame(void) {
           else if (tabs[i] == kTab_Dungeons)      Panel_Dungeons();
           else if (tabs[i] == kTab_Shuffles)      Panel_Shuffles();
           else if (tabs[i] == kTab_QualityOfLife) Panel_RecommendedFeatures();
+          else if (tabs[i] == kTab_Trackers)      Panel_Trackers();
           else if (tabs[i] == kTab_AssetHash)     Panel_AssetHash();
           else if (tabs[i] == kTab_Spoiler)       Panel_Spoiler();
           ImGui::EndTabItem();
