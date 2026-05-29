@@ -543,6 +543,7 @@ bool g_rando_show_item_tracker = false;
 bool g_rando_show_location_tracker = false;
 uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 uint8 g_rando_mushroom_held = 0;
+uint8 g_rando_flute_shovel_owned = 0;
 
 // Phase B Inverted runtime — the active slot's world_state, captured at
 // Rando_ActivateSidecarSlot from the slot header's additive @68 byte (only
@@ -564,6 +565,61 @@ bool Rando_MushroomHeld(void) {
 
 void Rando_DeliverMushroom(void) {
   g_rando_mushroom_held = 0;
+}
+
+// Flute/shovel decouple — see rando.h. Called from the receive-item path
+// (AncillaAdd_ItemReceipt, misc.c) when a shovel/flute is granted under rando,
+// instead of the vanilla unconditional write to link_item_flute. Records the
+// item in the ownership bitfield (additive, never lost), then sets the shared
+// link_item_flute slot to the SELECTED function with NEVER-DOWNGRADE semantics:
+// the byte is the max of its current value and this item's level (shovel=1,
+// flute=2, active flute=3). So acquiring the shovel can never drop the slot
+// below an owned flute (fixing "flute then shovel loses the flute"), while
+// acquiring the flute selects it. Whenever both are owned the player flips the
+// slot's function with the item-menu toggle (Hud_NormalMenu); that toggle may
+// set the byte below this floor, and that's fine — it only persists a player
+// choice and never runs at grant time.
+void Rando_GrantFluteShovel(uint8 lttp_code) {
+  uint8 floor;  // lowest link_item_flute value consistent with this item
+  if (lttp_code == 0x13) {  // shovel
+    g_rando_flute_shovel_owned |= kRandoFluteShovel_Shovel;
+    floor = 1;
+  } else {                  // 0x14 inactive flute, 0x4a active flute
+    g_rando_flute_shovel_owned |= kRandoFluteShovel_Flute;
+    if (lttp_code == 0x4a) {
+      g_rando_flute_shovel_owned |= kRandoFluteShovel_FluteActive;
+      floor = 3;
+    } else {
+      floor = 2;
+    }
+  }
+  if (link_item_flute < floor)
+    link_item_flute = floor;
+}
+
+bool Rando_FluteShovelCanToggle(void) {
+  return g_rando_slot_active &&
+         (g_rando_flute_shovel_owned & kRandoFluteShovel_Shovel) &&
+         (g_rando_flute_shovel_owned &
+          (kRandoFluteShovel_Flute | kRandoFluteShovel_FluteActive));
+}
+
+uint8 Rando_FluteShovelEffectiveLevel(void) {
+  // The selected-function byte is the only ownership signal in vanilla — and in
+  // a rando save written before the @69 ownership field existed — so start from
+  // it. Under an active slot, also fold in the tracked ownership bits and take
+  // the max, so owning a flute while the shovel is the selected function still
+  // reads as "has the flute" (and never downgrades below the byte).
+  uint8 level = link_item_flute;
+  if (g_rando_slot_active) {
+    uint8 owned = (g_rando_flute_shovel_owned & kRandoFluteShovel_FluteActive) ? 3
+                : (g_rando_flute_shovel_owned & kRandoFluteShovel_Flute)       ? 2
+                : (g_rando_flute_shovel_owned & kRandoFluteShovel_Shovel)      ? 1
+                : 0;
+    if (owned > level)
+      level = owned;
+  }
+  return level;
 }
 
 void Rando_MarkLocationChecked(uint16 location_id) {
@@ -592,6 +648,9 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // Mushroom survives save/reload (otherwise a reload could re-lock the
   // Potion Shop check).
   out_slot->header.mushroom_held = g_rando_mushroom_held;
+  // Persist flute/shovel ownership so owning both survives save/reload (the
+  // single link_item_flute byte can't carry it — see Rando_GrantFluteShovel).
+  out_slot->header.flute_shovel_owned = g_rando_flute_shovel_owned;
 }
 
 void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
@@ -800,6 +859,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // (both kRandoCheckedBitmapBytes = 64).
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = src->header.mushroom_held;
+  g_rando_flute_shovel_owned = src->header.flute_shovel_owned;
   // Phase B Inverted runtime — capture the slot's world_state from the
   // additive @68 ext byte. Only trust it when settings_ext_present is set
   // (older slots wrote 0 there, which already maps to kWorldState_Open).
@@ -861,6 +921,7 @@ void Rando_DeactivateSlot(void) {
   // contract.
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
+  g_rando_flute_shovel_owned = 0;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;

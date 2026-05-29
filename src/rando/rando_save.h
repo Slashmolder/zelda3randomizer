@@ -117,6 +117,14 @@ typedef struct RandoSlotHeader {
   // Inverted seed for runtime world-state setup. Older slots / non-populated
   // writers read 0 (== kWorldState_Open), which is the safe no-op default.
   uint8 world_state;            // @68 (WorldState enum, rando_settings.h)
+  // Flute/shovel ownership bitfield, stored additively at @69 (older binaries
+  // wrote it as zero). The vanilla link_item_flute byte (0xF34C) is a single
+  // slot — 1=shovel, 2=flute, 3=active flute — so it can't represent owning
+  // BOTH a flute and the shovel, which rando shuffles as independent items.
+  // We persist true ownership here and treat link_item_flute as the currently
+  // SELECTED function (toggled in the item menu). Bits: 0x01 shovel, 0x02
+  // flute, 0x04 flute activated. See kRandoFluteShovel_* / Rando_GrantFluteShovel.
+  uint8 flute_shovel_owned;     // @69
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

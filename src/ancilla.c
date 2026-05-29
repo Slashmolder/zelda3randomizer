@@ -4218,6 +4218,12 @@ after_stuff:
     // link_item_flute=3 is gameplay-equivalent to =2 (level 2); the upgrade
     // is purely the "flying flute" sprite swap. Not a grant. (audit.md §0.2.3)
     link_item_flute = 3;
+    // Rando flute/shovel decouple: remember the flute is now activated so the
+    // item-menu toggle restores level 3 (not 2) when switching back from the
+    // shovel. Activating the flute requires it to have been the selected slot,
+    // so this never disturbs a shovel selection. No-op outside rando.
+    if (enhanced_features1 & kFeatures1_RandomizerActive)
+      g_rando_flute_shovel_owned |= kRandoFluteShovel_Flute | kRandoFluteShovel_FluteActive;
   }
 }
 
@@ -6950,6 +6956,19 @@ draw:;
 void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
   if (gfx == 0)
     return;
+
+  // Only one receive-item icon may own the shared VRAM slot (chars 0x24/0x34,
+  // repainted by the DecodeAnimatedSpriteTile_variable call below) at a time.
+  // Unlike a vanilla chest pickup, a direct-grant icon floats during free
+  // gameplay without immobilizing Link, so grabbing several items in quick
+  // succession would otherwise leave multiple icons alive — and every live icon
+  // draws those same two chars, so the last DMA wins and the older icons
+  // suddenly render the newest item's tiles. Retire any still-floating rando
+  // icon so this newest grant's DMA is what the player sees.
+  for (int i = 0; i < 5; i++) {
+    if (ancilla_type[i] == kAncillaType_RandoIconReceipt)
+      ancilla_type[i] = 0;
+  }
 
   int k = Ancilla_AddAncilla(kAncillaType_RandoIconReceipt, 4);
   if (k < 0)
