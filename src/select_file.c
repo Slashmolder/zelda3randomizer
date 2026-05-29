@@ -1585,9 +1585,9 @@ static void SelectFile_DrawRandoBanner(int k) {
     memset(share_b32, ' ', sizeof(share_b32));
   }
 
-  // Phase A stub: the slot header doesn't yet carry an explicit world_state /
-  // goal serialization (the 16 reserved bytes at @64 of the slot header are
-  // earmarked for it). The original cluster-1 implementation derived
+  // The slot header now persists world_state (added for the Standard-softlock
+  // fix) but not an explicit goal, and the banner does not yet derive its
+  // initials from the stored world_state. The original cluster-1 implementation derived
   // initials from `settings_hash[0]/[1] % enum_size`, which is silently
   // WRONG — settings_hash is SHA-256 noise, so two seeds with the same goal
   // would render DIFFERENT goal initials. A user inspecting the banner could

@@ -330,9 +330,10 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // Headless path: parse rando-relevant flags, load config + assets so
   // g_assets_hash is computed, then exit.
   //
-  // Phase A0 stub — the actual generation pipeline is wired in Phase A1
-  // (tasks 2.x/3.x/4.x/5.x). Exit code 64 (EX_USAGE-ish) signals "feature
-  // not yet implemented" so CI can distinguish A0 from a real failure.
+  // The single-seed generation pipeline runs below (settings parse →
+  // Place_AssumedFill → spoiler/share-string write). The batch/manifest form
+  // is not yet implemented and exits 64 (EX_USAGE-ish) so CI can distinguish
+  // "not implemented" from a real failure.
   const char *settings_csv = NULL;
   const char *seed_u64_str = NULL;
   const char *out_spoiler = NULL;
@@ -393,11 +394,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     }
   }
 
-  // Phase A0 batch form: still a stub (manifest parsing + iteration land in
-  // Phase A1). Single-seed form goes through the real pipeline below.
+  // Batch form: still a stub (manifest parsing + iteration not yet
+  // implemented). Single-seed form goes through the real pipeline below.
   if (batch) {
     fprintf(stderr,
-      "--generate-seed --manifest: Phase A0 batch form is a stub.\n"
+      "--generate-seed --manifest: batch form is not yet implemented.\n"
       "  Manifest path: %s\n"
       "  Out dir: %s\n"
       "Single-seed form is functional (--generate-seed --settings=... --seed=... --out-spoiler=...).\n",
@@ -468,8 +469,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // and goal-completability. Excludes spoiler I/O.
   clock_t gen_start = clock();
 
-  // Run placement. Phase A0 returns identity (every location ← vanilla_item_id);
-  // Phase A1 replaces with assumed fill.
+  // Run placement (assumed fill with bounded retry + wall-clock budget).
   // Phase B Slice 6 audit H1 — race-mode generation always uses
   // budget_seconds=0 so the placer runs to its deterministic
   // kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
@@ -477,7 +477,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   int effective_budget = (settings.race_mode != 0) ? 0 : budget_seconds;
   bool ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
   if (!ok) {
-    fprintf(stderr, "--generate-seed: placement failed (Phase A0 identity should always succeed)\n");
+    fprintf(stderr, "--generate-seed: placement failed\n");
     free(entries);
     exit(1);
   }
@@ -827,10 +827,10 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
 // initializes SDL_INIT_VIDEO/SDL_INIT_AUDIO; CI smoke-tests it with
 // DISPLAY= unset on a Linux runner to confirm headless operation.
 //
-// Phase A0 status (stub): the flag is detected, dependent argv is parsed,
-// configuration + assets load so g_assets_hash populates, and the function
-// exits with a clear "not yet implemented" message + exit code 64. The full
-// generator pipeline lands in Phase A1 (tasks 2.x, 3.x, 4.x, 5.x).
+// The flag is detected, dependent argv is parsed, and configuration + assets
+// load so g_assets_hash populates. The single-seed form then runs the full
+// generator pipeline; the batch/manifest form is not yet implemented (exits
+// 64). Either way the process exits without entering the GUI.
 static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *config_file);
 static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *config_file);
 

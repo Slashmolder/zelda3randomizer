@@ -379,12 +379,17 @@ static void Panel_General() {
     if (ImGui::InputText("Seed (hex)", seed_buf, sizeof seed_buf,
                          ImGuiInputTextFlags_CharsHexadecimal)) {
       unsigned long long v = 0;
-      if (sscanf(seed_buf, "%llx", &v) == 1) {
+      // CharsHexadecimal already blocks non-hex input. seed_buf[16]=='\0'
+      // means <=16 hex digits typed; reject longer pastes so they can't
+      // silently overflow-wrap the u64 under %llx. A shorter value is a
+      // legitimate (smaller) seed — the seed is a pure u64 input.
+      if (seed_buf[16] == '\0' && sscanf(seed_buf, "%llx", &v) == 1) {
         b->seed_u64 = (uint64)v;
         seed_buf_mirror = b->seed_u64;  // accept; don't reformat under the cursor
         changed = true;
       }
     }
+    HelpTooltip("Any 64-bit value (1-16 hex digits). A shorter entry is a smaller seed, not an error.");
     ImGui::TextDisabled("decimal: %llu", (unsigned long long)b->seed_u64);
     if (ImGui::Button("New random seed")) {
       b->seed_u64 = RollRandomSeed();
@@ -602,8 +607,14 @@ static void Panel_Spoiler() {
   // so a stable per-region grouping falls out, mirroring rando_spoiler.c's text
   // writer. The per-region tables below get their OWN interactive sort.
   uint16 n = t->count;
-  static struct Row { uint16 region_id; uint16 location_id; uint16 item_id; } rows[512];
-  if (n > 512) n = 512;
+  // Display cap, comfortably above any plausible location count
+  // (kRandoLocationsCount == 266 today; placements can't exceed it). If a
+  // future location-set growth ever exceeds this, we surface a visible note
+  // below rather than silently dropping rows.
+  enum { kSpoilerMaxRows = 1024 };
+  bool truncated = false;
+  static struct Row { uint16 region_id; uint16 location_id; uint16 item_id; } rows[kSpoilerMaxRows];
+  if (n > kSpoilerMaxRows) { n = kSpoilerMaxRows; truncated = true; }
   for (uint16 i = 0; i < n; i++) {
     rows[i].location_id = t->entries[i].location_id;
     rows[i].item_id = t->entries[i].item_id;
@@ -632,6 +643,11 @@ static void Panel_Spoiler() {
   // BeginDisabled/EndDisabled so it reads unambiguously as read-only (§14.6) while
   // the header expand/collapse and the column sort stay interactive (navigation,
   // not editing).
+  if (truncated)
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f),
+                       "Note: showing the first %d of %u placements (display cap).",
+                       (int)kSpoilerMaxRows, (unsigned)t->count);
+
   for (uint16 start = 0; start < n;) {
     uint16 region = rows[start].region_id;
     uint16 end = start;
@@ -652,9 +668,9 @@ static void Panel_Spoiler() {
 
         // Local index list into rows[start..end) so we can re-order per the
         // sort spec without disturbing the region grouping.
-        int idx[512];
+        int idx[kSpoilerMaxRows];
         int m = 0;
-        for (uint16 i = start; i < end && m < 512; i++) idx[m++] = i;
+        for (uint16 i = start; i < end && m < kSpoilerMaxRows; i++) idx[m++] = i;
 
         if (ImGuiTableSortSpecs *specs = ImGui::TableGetSortSpecs()) {
           if (specs->SpecsCount > 0) {

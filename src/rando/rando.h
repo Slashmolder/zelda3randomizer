@@ -1,12 +1,9 @@
-// rando.h — randomizer master header. Phase A0 stub.
+// rando.h — randomizer master header.
 //
-// Per add-randomizer-support proposal: this module is the seed-generation
-// pipeline, runtime override layer for vanilla item-grant sites, and host of
-// the per-slot randomizer state. All public types and entry points the rest
-// of the codebase consumes live here.
-//
-// Phase A0 status: this header declares the API surface. The .c files that
-// implement it land incrementally through Phase A.
+// This module is the seed-generation pipeline, the runtime override layer for
+// vanilla item-grant sites, and the host of the per-slot randomizer state. All
+// public types and entry points the rest of the codebase consumes live here;
+// the .c files under src/rando/ implement them.
 
 #ifndef ZELDA3_RANDO_H_
 #define ZELDA3_RANDO_H_
@@ -16,8 +13,6 @@
 // ---------------------------------------------------------------------------
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
-//
-// Phase A0 starts at 0; first real placement-affecting change bumps to 1.
 // ---------------------------------------------------------------------------
 #define kGeneratorVersion 36u
 
