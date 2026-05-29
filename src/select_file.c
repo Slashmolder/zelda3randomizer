@@ -283,14 +283,24 @@ void SelectFile_Func17(int k) {
     dst++;
   }
   int health = sram[kSrmOffs_Health] >> 3;
+  // Clamp to the 2x10-heart grid this routine renders, and never enter the
+  // loop with health == 0. The original do/while underflowed catastrophically
+  // when health == 0: `--health` wraps to -1 and keeps decrementing, so the
+  // loop writes 0x520 past the end of vram_upload_data until it walks off
+  // mapped memory (access-violation crash). health == 0 occurs when an EMPTY
+  // sram slot is drawn here — e.g. an orphaned rando sidecar that marked the
+  // slot occupied (see the orphan scrub in SelectFile_LoadSidecarCache). Even
+  // with that scrub in place, keep this defensive: a corrupt/0-heart slot must
+  // never be able to run the heart loop unbounded.
+  if (health > 20) health = 20;
   dst = vram_upload_data + kSelectFile_DrawName_HealthVramOffs[k] / 2;
   uint16 *dst_org = dst;
   int row = 10;
-  do {
+  for (; health > 0; health--) {
     *dst++ = 0x520;
     if (--row == 0)
       dst = dst_org + 21;
-  } while (--health);
+  }
 }
 
 void SelectFile_Func16() {
@@ -1307,6 +1317,34 @@ static void SelectFile_LoadSidecarCache(void) {
     // classification below — matching the spec's "Absent sidecar is normal
     // vanilla" scenario.
     if (!Rando_LoadSidecarSlot(k, &slot)) continue;
+
+    // Orphaned-sidecar guard. A rando sidecar whose paired sram.dat slot is
+    // NOT a valid save (the 0x55AA marker is absent) is an orphan: the seed
+    // was generated (sidecar written) but the sram.dat slot was reset or
+    // invalidated before any save committed it — interrupted seed-testing, a
+    // hard reset, or a bad-checksum slot that Intro_ValidateSram (run earlier
+    // in Module_SelectFile_0) zeroed. Intro_ValidateSram already tried the
+    // backup copy, so an invalid primary here means the save is gone for good;
+    // the placement table alone can't reconstruct a playthrough.
+    //
+    // Left in place, an orphan does real damage: GetSlotRenderKind would
+    // classify it Randomizer and FileSelect_Main would mark it occupied,
+    // feeding an empty slot to SelectFile_Func17 (0-heart loop -> OOB write,
+    // the crash this fixes) and to CopySaveToWRAM (corrupt game start). Worse,
+    // if the player later starts a *vanilla* game in the slot the stale rando
+    // placement table would silently re-attach (no code clears the sidecar on
+    // a vanilla new game). So scrub the orphan to Empty on disk and treat the
+    // slot as having no sidecar in memory; it renders as a clean "NEW GAME".
+    bool sram_valid =
+        (*(const uint16 *)(g_zenv.sram + k * 0x500 + 0x3E5) == 0x55AA);
+    if (!sram_valid && slot.header.slot_kind == kSlotKind_Randomizer) {
+      RandoSidecarSlot empty_slot;
+      memset(&empty_slot, 0, sizeof(empty_slot));
+      empty_slot.header.slot_kind = kSlotKind_Empty;
+      Rando_WriteSidecarSlot(k, &empty_slot, g_zenv.sram + k * 0x500, 0x500);
+      continue;  // leave has_sidecar_data = 0 -> classified Empty
+    }
+
     g_selectfile_slots[k].sidecar = slot;
     g_selectfile_slots[k].has_sidecar_data = 1;
   }
@@ -1335,7 +1373,12 @@ static int SelectFile_GetSlotRenderKind(int k) {
   const SelectFile_SlotInfo *info = &g_selectfile_slots[k];
   const uint8 *cart = g_zenv.sram;
   bool sram_valid = (*(const uint16 *)(cart + k * 0x500 + 0x3E5) == 0x55AA);
-  if (info->has_sidecar_data &&
+  // A rando slot must have BOTH a Randomizer sidecar AND a valid paired sram
+  // slot. SelectFile_LoadSidecarCache already scrubs orphaned sidecars (rando
+  // sidecar + invalid sram), so has_sidecar_data should never be set for one
+  // here — but require sram_valid anyway so this classifier can't be tricked
+  // into reporting an occupied randomizer slot backed by an empty save.
+  if (sram_valid && info->has_sidecar_data &&
       info->sidecar.header.slot_kind == kSlotKind_Randomizer) {
     return kRandoSlotKind_Randomizer;
   }

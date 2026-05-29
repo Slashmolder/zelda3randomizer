@@ -37,6 +37,7 @@
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
 
+#include <string.h>  // memset (used below at Settings_CanonicalDeserialize)
 #include "rando_settings.h"
 #include "rando_hints.h"  // kHintsMode_Off / kHintsMode_On (Slice 5 §61)
 #include "../types.h"
