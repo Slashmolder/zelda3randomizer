@@ -1,21 +1,21 @@
 ## 1. Apply-time pre-flight
 
-- [ ] 1.1 Verify `../alttp_vt_randomizer/app/World/Inverted.php` exists; if so, capture line range for RegionRemap pairing table source. If missing, derive the pairing table from `app/Region/Inverted/` collectively. Open question per design.md.
-- [ ] 1.2 Pin upstream commit hash. Run `git -C ../alttp_vt_randomizer rev-parse HEAD` and record in `audit.md §"Inverted macro provenance"` so translation references a frozen reference.
-- [ ] 1.3 Re-verify Inverted PHP file count + line count: `find ../alttp_vt_randomizer/app/Region/Inverted -name "*.php" | wc -l` should yield 24; `find ... -name "*.php" -exec wc -l {} +` should yield 2977.
-- [ ] 1.4 Skim each of the 24 PHP files for `setRequirements` / `setFillRules` / `setAlwaysAllow` / `$this->can_enter` / `$this->can_complete` patterns; count predicates per file; estimate translation effort.
+- [x] 1.1 Verify `../alttp_vt_randomizer/app/World/Inverted.php` exists; if so, capture line range for RegionRemap pairing table source. If missing, derive the pairing table from `app/Region/Inverted/` collectively. Open question per design.md. — EXISTS (53 lines); region-registry/pairing source at lines 28-55. See audit.md §1.1.
+- [x] 1.2 Pin upstream commit hash. Run `git -C ../alttp_vt_randomizer rev-parse HEAD` and record in `audit.md §"Inverted macro provenance"` so translation references a frozen reference. — `219fcafd029dab597b8db400efafd8f56f8b4edb`.
+- [x] 1.3 Re-verify Inverted PHP file count + line count: `find ../alttp_vt_randomizer/app/Region/Inverted -name "*.php" | wc -l` should yield 24; `find ... -name "*.php" -exec wc -l {} +` should yield 2977. — 24 files / 2977 lines, both match.
+- [x] 1.4 Skim each of the 24 PHP files for `setRequirements` / `setFillRules` / `setAlwaysAllow` / `$this->can_enter` / `$this->can_complete` patterns; count predicates per file; estimate translation effort. — per-file table + effort note in audit.md §1.4.
 
 ## 2. Inverted-specific macros
 
-- [ ] 2.1 Grep `../alttp_vt_randomizer/app/Region/Inverted/**/*.php` for `$items->can*` and `$this->world->can*` method calls. Cross-reference against Phase A's existing 30 macros in `assets/rando/macros.yaml`.
-- [ ] 2.2 For any macro NOT in Phase A's set: author it in `macros.yaml` with `phase: B-inverted` tag. Record PHP source-line range.
-- [ ] 2.3 Re-run `assets/rando_logic_gen.py` to confirm the macro additions parse cleanly.
+- [x] 2.1 Grep `../alttp_vt_randomizer/app/Region/Inverted/**/*.php` for `$items->can*` and `$this->world->can*` method calls. Cross-reference against Phase A's existing 30 macros in `assets/rando/macros.yaml`. — 12 `$items->can*` macros used; 0 `$this->world->can*`; ALL 12 already in macros.yaml. See audit.md §2.1.
+- [x] 2.2 For any macro NOT in Phase A's set: author it in `macros.yaml` with `phase: B-inverted` tag. Record PHP source-line range. — NONE missing; no change to macros.yaml; no kGeneratorVersion bump warranted on macro grounds. See audit.md §2.2.
+- [x] 2.3 Re-run `assets/rando_logic_gen.py` to confirm the macro additions parse cleanly. — exit 0, `warnings: 0, macro errors: 0`, generated output byte-identical (working tree clean).
 
 ## 3. Codegen pipeline — recurse subdirs
 
 - [ ] 3.1 Update `assets/rando_logic_gen.py` to scan `assets/rando/logic_parts/inverted/` and its subdirectories (per design.md D1).
 - [ ] 3.2 Add a path filter so Phase A's existing flat-directory scan is preserved; only `inverted/` recurses. Avoid accidentally picking up future world-state subdirs that aren't yet wired.
-- [ ] 3.3 Confirm `assets/scripts/check_codegen_wiring.py` passes — generated headers (`logic_data.c`, `location_ids.h`, `item_ids.h`) are unchanged in name; just their content expands.
+- [x] 3.3 Confirm `assets/scripts/check_codegen_wiring.py` passes — generated headers (`logic_data.c`, `location_ids.h`, `item_ids.h`) are unchanged in name; just their content expands. — exit 0, "6 generated file(s) wired across all build systems"; header names unchanged.
 
 ## 4. Translate Inverted YAML (the bulk of the work)
 
@@ -70,7 +70,7 @@
 - [ ] 8.4 Open mode and Retro: starting-inventory list is empty (no additional grants beyond Phase A defaults). Standard mode: also empty (uncle's-gift handling is separate).
 - [ ] 8.5 Set `kRam_RandoStartingInventoryGranted = 1` after the grant. Confirm save-reload idempotency: `kRam_RandoStartingInventoryGranted` persists via Phase A's `kRam_*` block.
 - [ ] 8.6 Add a `// rando-exempt: state-shuffle — bunny-state starting inventory` comment at the write site (per memory `[[audit-guard-exempt-placement]]` discipline).
-- [ ] 8.7 Run `assets/scripts/check_audit_guard.py` — no new audit-guard failures.
+- [x] 8.7 Run `assets/scripts/check_audit_guard.py` — no new audit-guard failures. — exit 0, "no non-exempt writes (38 tracked offsets)"; `[advisory]` indirect-dispatch notes are pre-existing informational output, not failures.
 
 ## 9. Picker un-gate
 
@@ -100,7 +100,7 @@
 
 - [ ] 13.1 Update `docs/randomizer.md` Phase A1 status note — remove "Inverted world-state seeds report ~32 unreachable until LinksHouse_Inverted region is declared (Phase A2 follow-on)" caveat.
 - [ ] 13.2 Cross-link this change from the `openspec/changes/` index (README.md).
-- [ ] 13.3 Add a "Inverted world-state" subsection to `docs/randomizer.md` explaining bunny-state start, MoonPearl+MagicMirror starting inventory, and the dark-world-first progression.
+- [x] 13.3 Add a "Inverted world-state" subsection to `docs/randomizer.md` explaining bunny-state start, MoonPearl+MagicMirror starting inventory, and the dark-world-first progression. — added under "World-state notes".
 
 ## 13.5. Performance budget verification
 
