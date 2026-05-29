@@ -29,4 +29,12 @@ void AssetDecision_Persist(const uint8 hash[32]);
 // double-insert.
 void Rando_RegisterAssetDecisionFromIni(const uint8 hash[32]);
 
+// Read accessors for enumerating persisted always-allow decisions (used by the
+// sidecar writer in config.c). AssetDecision_Count returns how many decisions
+// are recorded; AssetDecision_HashAt returns a pointer to the 32-byte hash at
+// `index` (NULL if out of range). Only "allow" decisions are stored, so every
+// enumerated entry is an always-allow.
+int AssetDecision_Count(void);
+const uint8 *AssetDecision_HashAt(int index);
+
 #endif  // ZELDA3_RANDO_RANDO_ASSET_DECISIONS_H_

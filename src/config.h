@@ -125,6 +125,47 @@ enum {
 
 extern Config g_config;
 
+// ---------------------------------------------------------------------------
+// Native settings window persistence (PLAN.md §3.5, R8 sidecar).
+//
+// Persisted to/from the SIDECAR saves/rando_window.ini — NEVER the user's
+// hand-edited zelda3.ini. All fields are copied out of the parse buffer (no
+// pointer-into-buffer values), so Config_LoadAuxIniFile can free its temp
+// buffer immediately after the parse pass.
+//
+// settings_canonical holds kSettingsCanonicalLen (=28) bytes of
+// Settings_CanonicalSerialize output, encoded as 56 hex chars in the INI
+// (key last_settings_canonical_hex). The window's startup-load round-trips it
+// through Settings_CanonicalDeserialize and falls back to Settings_SetDefaults
+// if the hex is corrupt or fails the round-trip check.
+// ---------------------------------------------------------------------------
+typedef struct RandoWindowPrefs {
+  bool has_settings;             // true when last_settings_canonical_hex parsed OK
+  uint8 settings_canonical[28];  // kSettingsCanonicalLen; canonical-serialized RandoSettings
+  uint64 last_seed_u64;          // last UI-chosen seed
+  int window_x, window_y, window_w, window_h;  // last settings-window geometry
+  bool has_geometry;             // true when all four geometry keys were present
+  bool dark_theme;               // ImGui theme (default true = dark)
+} RandoWindowPrefs;
+
+extern RandoWindowPrefs g_rando_window_prefs;
+
 void ParseConfigFile(const char *filename);
+
+// Load the rando-window sidecar (saves/rando_window.ini). Parses ONLY the
+// [rando_window] + [RandoAssetDecisions] sections into g_rando_window_prefs /
+// the asset-decision store; every other section is skipped (G1 whitelist). The
+// temp buffer is freed before return (all consumed values are copied out).
+// Returns gracefully (no-op) when the file is absent. MUST NOT be used in place
+// of ParseConfigFile — it never repoints g_config.memory_buffer or re-registers
+// default keys.
+void Config_LoadAuxIniFile(const char *path);
+
+// Atomically write the rando-window sidecar from g_rando_window_prefs +
+// the asset-decision store. Creates the saves dir if missing. Writes to
+// "<path>.tmp" then renames over `path` (_commit+MoveFileExA on Win32,
+// fsync+rename elsewhere).
+void Config_SaveRandoWindowIni(const char *path);
+
 int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod);
 int FindCmdForGamepadButton(int button, uint32 modifiers);

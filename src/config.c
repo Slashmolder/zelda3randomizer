@@ -1,11 +1,27 @@
+// Windows headers must precede "types.h": types.h defines BYTE/WORD/DWORD/HIBYTE
+// as function-style macros that collide with the same names as typedefs in
+// winbase.h. Including windows.h first lets it lay down the typedefs (the macros
+// then shadow them, which is fine for project use). Mirrors rando_save.c.
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>  // MoveFileExA, GetLastError
+#include <io.h>       // _commit, _fileno
+#include <direct.h>   // _mkdir
+#endif
+
 #include "config.h"
 #include "types.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
 #include "features.h"
 #include "util.h"
 #include "rando/rando_asset_decisions.h"  // Rando_RegisterAssetDecisionFromIni
+#if !defined(_WIN32)
+#include <unistd.h>   // fsync
+#include <sys/stat.h> // mkdir
+#endif
 
 enum {
   kKeyMod_ScanCode = 0x200,
@@ -15,6 +31,11 @@ enum {
 };
 
 Config g_config;
+
+// Native-settings-window persistence (PLAN.md §3.5). Zero-initialized: no
+// settings/geometry until the sidecar is parsed; dark_theme defaults to true
+// (set here so a missing sidecar still gives the dark theme).
+RandoWindowPrefs g_rando_window_prefs = { .dark_theme = true };
 
 #define REMAP_SDL_KEYCODE(key) ((key) & SDLK_SCANCODE_MASK ? kKeyMod_ScanCode : 0) | (key) & (kKeyMod_ScanCode - 1)
 #define _(x) REMAP_SDL_KEYCODE(x)
@@ -163,6 +184,12 @@ static GamepadMapEnt *joymap_ents;
 static int joymap_size;
 static bool has_joypad_controls;
 
+// Bitmask of which [rando_window] geometry keys (x=1,y=2,w=4,h=8) were seen
+// during the current aux-INI parse pass. Config_LoadAuxIniFile resets it to 0
+// before the pass and sets g_rando_window_prefs.has_geometry only when all four
+// (== 0xF) were present.
+static int g_rwp_geom_seen;
+
 static int CountBits32(uint32 n) {
   int count = 0;
   for (; n != 0; count++)
@@ -286,6 +313,8 @@ static int GetIniSection(const char *s) {
     return 6;
   if (StringEqualsNoCase(s, "[RandoAssetDecisions]"))
     return 7;
+  if (StringEqualsNoCase(s, "[rando_window]"))
+    return 8;
   return -1;
 }
 
@@ -315,6 +344,30 @@ static bool ParseHashHex(const char *s, uint8 out[32]) {
   }
   if (s[64] != 0) return false;
   return true;
+}
+
+// Generic hex codec over an arbitrary byte length (PLAN.md R12 — do NOT reuse
+// ParseHashHex's fixed-32 loop). Used for the 28-byte canonical settings blob
+// in the rando-window sidecar. Decode requires EXACTLY `nbytes*2` hex digits
+// (no trailing chars). Encode writes `nbytes*2` lowercase hex chars plus a NUL
+// (out must hold at least nbytes*2+1).
+static bool HexDecode(const char *s, uint8 *out, int nbytes) {
+  for (int i = 0; i < nbytes; ++i) {
+    int hi = parse_hex_nibble(s[i * 2]);
+    int lo = parse_hex_nibble(s[i * 2 + 1]);
+    if (hi < 0 || lo < 0) return false;
+    out[i] = (uint8)((hi << 4) | lo);
+  }
+  return s[nbytes * 2] == 0;
+}
+
+static void HexEncode(const uint8 *bytes, int nbytes, char *out) {
+  static const char kHex[] = "0123456789abcdef";
+  for (int i = 0; i < nbytes; ++i) {
+    out[i * 2] = kHex[(bytes[i] >> 4) & 0xF];
+    out[i * 2 + 1] = kHex[bytes[i] & 0xF];
+  }
+  out[nbytes * 2] = 0;
 }
 
 bool ParseBool(const char *value, bool *result) {
@@ -551,6 +604,43 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       }
     }
     return false;
+  } else if (section == 8) {
+    // [rando_window] — native-settings-window persistence sidecar (PLAN.md
+    // §3.5). All values are copied out (no pointer-into-buffer), so the aux
+    // loader can free its temp buffer after the parse pass.
+    if (StringEqualsNoCase(key, "last_settings_canonical_hex")) {
+      uint8 buf[28];  // kSettingsCanonicalLen
+      if (HexDecode(value, buf, 28)) {
+        memcpy(g_rando_window_prefs.settings_canonical, buf, 28);
+        g_rando_window_prefs.has_settings = true;
+        return true;
+      }
+      fprintf(stderr, "[rando_window] bad last_settings_canonical_hex (need 56 hex chars)\n");
+      g_rando_window_prefs.has_settings = false;
+      return false;
+    } else if (StringEqualsNoCase(key, "last_seed_u64")) {
+      g_rando_window_prefs.last_seed_u64 = (uint64)strtoull(value, (char**)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "window_x")) {
+      g_rando_window_prefs.window_x = atoi(value);
+      g_rwp_geom_seen |= 1;
+      return true;
+    } else if (StringEqualsNoCase(key, "window_y")) {
+      g_rando_window_prefs.window_y = atoi(value);
+      g_rwp_geom_seen |= 2;
+      return true;
+    } else if (StringEqualsNoCase(key, "window_w")) {
+      g_rando_window_prefs.window_w = atoi(value);
+      g_rwp_geom_seen |= 4;
+      return true;
+    } else if (StringEqualsNoCase(key, "window_h")) {
+      g_rando_window_prefs.window_h = atoi(value);
+      g_rwp_geom_seen |= 8;
+      return true;
+    } else if (StringEqualsNoCase(key, "dark_theme")) {
+      return ParseBool(value, &g_rando_window_prefs.dark_theme);
+    }
+    return false;
   }
   return false;
 }
@@ -607,4 +697,140 @@ void ParseConfigFile(const char *filename) {
       fprintf(stderr, "Warning: Unable to read config file %s\n", filename);
   }
   RegisterDefaultKeys();
+}
+
+// ===========================================================================
+// Native-settings-window sidecar (saves/rando_window.ini) — PLAN.md §3.5, F2, G1.
+// ===========================================================================
+
+// PLAN.md §10 F2 + §11 G1: load the sidecar without disturbing g_config state.
+// We replicate ParseOneConfigFile's [section]→GetIniSection→SplitKeyValue loop
+// here (the section detection lives in the caller, NOT in HandleIniConfig) but
+// dispatch ONLY the sections we own — section 7 ([RandoAssetDecisions]) and
+// section 8 ([rando_window]). Every other section is skipped entirely, so a
+// hand-edited foreign section (e.g. [Graphics]) can never cause HandleIniConfig
+// to store a pointer into our temp buffer. All keys we DO consume copy their
+// values out (hex/int/bool), so freeing the temp buffer after the pass is safe.
+//
+// MUST NOT call ParseConfigFile/ParseOneConfigFile: those repoint the
+// long-lived g_config.memory_buffer (backing store for pointer-valued keys),
+// reset rando defaults, and re-RegisterDefaultKeys().
+void Config_LoadAuxIniFile(const char *path) {
+  char *filedata = (char*)ReadWholeFile(path, NULL), *p;
+  if (!filedata)
+    return;  // absent sidecar — graceful no-op.
+
+  // `cursor` is the running read position (advanced by NextLineStripComments);
+  // `p` is the stripped line it returns. (Mirrors ParseOneConfigFile, which
+  // passes &filedata as the cursor and assigns the line to a separate `p`.)
+  char *cursor = filedata;
+  g_rwp_geom_seen = 0;
+  int section = -2;
+  while ((p = NextLineStripComments(&cursor)) != NULL) {
+    if (*p == 0)
+      continue;  // empty line
+    if (*p == '[') {
+      section = GetIniSection(p);
+      // Unknown / foreign sections become -1 here; the dispatch below skips
+      // everything that isn't one of our two whitelisted sections, so we do
+      // not warn (a hand-edited sidecar may legitimately carry other content).
+    } else if (section == -2) {
+      // Lines before any [section] header — ignore.
+    } else {
+      char *v = SplitKeyValue(p);
+      if (v == NULL)
+        continue;  // not key=value — ignore.
+      // G1 whitelist: ONLY dispatch our own sections to HandleIniConfig.
+      if (section == 7 || section == 8)
+        HandleIniConfig(section, p, v);
+      // All other sections (including the still-valid [Graphics]/[Sound]/etc.)
+      // are deliberately NOT passed to HandleIniConfig — they would store raw
+      // pointers into `filedata`, which we are about to free.
+    }
+  }
+
+  g_rando_window_prefs.has_geometry = (g_rwp_geom_seen == 0xF);
+  free(filedata);  // safe: all consumed values were copied out.
+}
+
+// Ensure the directory portion of `path` exists (best-effort; ignores errors).
+static void EnsureParentDir(const char *path) {
+  const char *slash = strrchr(path, '/');
+  const char *bslash = strrchr(path, '\\');
+  if (bslash > slash) slash = bslash;
+  if (slash == NULL) return;
+  size_t n = (size_t)(slash - path);
+  if (n == 0 || n >= 256) return;
+  char dir[256];
+  memcpy(dir, path, n);
+  dir[n] = 0;
+#ifdef _WIN32
+  _mkdir(dir);
+#else
+  mkdir(dir, 0755);
+#endif
+}
+
+// PLAN.md §3.5 (R8): write the sidecar atomically from g_rando_window_prefs +
+// the asset-decision store. NEVER touches zelda3.ini. Writes to "<path>.tmp",
+// flushes to disk, then renames over `path`.
+void Config_SaveRandoWindowIni(const char *path) {
+  EnsureParentDir(path);
+
+  char tmp[512];
+  snprintf(tmp, sizeof tmp, "%s.tmp", path);
+
+  FILE *f = fopen(tmp, "wb");
+  if (!f) {
+    fprintf(stderr, "Config_SaveRandoWindowIni: cannot open %s for writing\n", tmp);
+    return;
+  }
+
+  fprintf(f, "# Native randomizer settings window state. Auto-generated; safe to delete.\n");
+  fprintf(f, "[rando_window]\n");
+
+  if (g_rando_window_prefs.has_settings) {
+    char hex[28 * 2 + 1];
+    HexEncode(g_rando_window_prefs.settings_canonical, 28, hex);
+    fprintf(f, "last_settings_canonical_hex = %s\n", hex);
+  }
+  fprintf(f, "last_seed_u64 = %llu\n",
+          (unsigned long long)g_rando_window_prefs.last_seed_u64);
+  if (g_rando_window_prefs.has_geometry) {
+    fprintf(f, "window_x = %d\n", g_rando_window_prefs.window_x);
+    fprintf(f, "window_y = %d\n", g_rando_window_prefs.window_y);
+    fprintf(f, "window_w = %d\n", g_rando_window_prefs.window_w);
+    fprintf(f, "window_h = %d\n", g_rando_window_prefs.window_h);
+  }
+  fprintf(f, "dark_theme = %s\n", g_rando_window_prefs.dark_theme ? "true" : "false");
+
+  // [RandoAssetDecisions] — flush all persisted always-allow decisions in the
+  // same hash=allow line format config.c's section-7 parser reads back.
+  int ndec = AssetDecision_Count();
+  if (ndec > 0) {
+    fprintf(f, "\n[RandoAssetDecisions]\n");
+    for (int i = 0; i < ndec; i++) {
+      const uint8 *h = AssetDecision_HashAt(i);
+      if (!h) continue;
+      char hex[32 * 2 + 1];
+      HexEncode(h, 32, hex);
+      fprintf(f, "%s = allow\n", hex);
+    }
+  }
+
+  fflush(f);
+#ifdef _WIN32
+  _commit(_fileno(f));
+  fclose(f);
+  if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
+    fprintf(stderr, "Config_SaveRandoWindowIni: rename %s -> %s failed (err %lu)\n",
+            tmp, path, (unsigned long)GetLastError());
+  }
+#else
+  fsync(fileno(f));
+  fclose(f);
+  if (rename(tmp, path) != 0) {
+    fprintf(stderr, "Config_SaveRandoWindowIni: rename %s -> %s failed\n", tmp, path);
+  }
+#endif
 }

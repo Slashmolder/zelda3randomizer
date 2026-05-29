@@ -1059,7 +1059,43 @@ int main(int argc, char** argv) {
     return 1;
   }
   RandoWindowBridge_Init();
+
+  // P5 — load the rando-window sidecar (saves/rando_window.ini) BEFORE
+  // RandoWindow_Init so the persisted dark_theme is applied at ImGui init.
+  // The sidecar is parsed into g_rando_window_prefs (never touches zelda3.ini
+  // / g_config; see Config_LoadAuxIniFile). Absent file → graceful defaults.
+  Config_LoadAuxIniFile("saves/rando_window.ini");
+
   RandoWindow_Init(g_settings_window, g_settings_gl);
+
+  // P5 — apply persisted settings to the bridge. RandoWindowBridge_Init already
+  // set Settings_SetDefaults; override with the saved canonical bytes only if
+  // they deserialize AND round-trip back to identical bytes (rejects a struct
+  // whose layout/version drifted since it was written).
+  // Couple the prefs buffer size to the canonical length so the memcmp below
+  // can never overrun settings_canonical[] if kSettingsCanonicalLen changes.
+  _Static_assert(sizeof(g_rando_window_prefs.settings_canonical) == kSettingsCanonicalLen,
+                 "RandoWindowPrefs.settings_canonical size must equal kSettingsCanonicalLen");
+  if (g_rando_window_prefs.has_settings) {
+    RandoSettings restored;
+    uint8 reser[kSettingsCanonicalLen];
+    if (Settings_CanonicalDeserialize(g_rando_window_prefs.settings_canonical, &restored) == 0 &&
+        Settings_CanonicalSerialize(&restored, reser) == kSettingsCanonicalLen &&
+        memcmp(reser, g_rando_window_prefs.settings_canonical, kSettingsCanonicalLen) == 0) {
+      g_rando_window_bridge.pending = restored;
+    } else {
+      Settings_SetDefaults(&g_rando_window_bridge.pending);
+    }
+  }
+  g_rando_window_bridge.seed_u64 = g_rando_window_prefs.last_seed_u64;
+  RandoWindowBridge_RecomputeDerived();
+
+  // P5 — restore the saved window geometry (clamped to on-screen; re-centers if
+  // fully off-screen). Applied while the window is still hidden, so no jump.
+  if (g_rando_window_prefs.has_geometry) {
+    RandoWindow_ApplyGeometry(g_rando_window_prefs.window_x, g_rando_window_prefs.window_y,
+                              g_rando_window_prefs.window_w, g_rando_window_prefs.window_h);
+  }
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
   SDL_AudioDeviceID device = 0;
@@ -1439,6 +1475,27 @@ int main(int argc, char** argv) {
   if (SDL_IsTextInputActive()) SDL_StopTextInput();
 
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  // P5 — persist the rando-window state to the sidecar before teardown. Capture
+  // the live settings (canonical bytes), seed, geometry, and theme from the
+  // bridge + window, then atomically write saves/rando_window.ini. The settings
+  // window is still alive here (RandoWindow_GetGeometry queries SDL directly).
+  Settings_CanonicalSerialize(&g_rando_window_bridge.pending,
+                              g_rando_window_prefs.settings_canonical);
+  g_rando_window_prefs.has_settings = true;
+  g_rando_window_prefs.last_seed_u64 = g_rando_window_bridge.seed_u64;
+  {
+    int gx, gy, gw, gh;
+    RandoWindow_GetGeometry(&gx, &gy, &gw, &gh);
+    if (gw > 0 && gh > 0) {
+      g_rando_window_prefs.window_x = gx;
+      g_rando_window_prefs.window_y = gy;
+      g_rando_window_prefs.window_w = gw;
+      g_rando_window_prefs.window_h = gh;
+      g_rando_window_prefs.has_geometry = true;
+    }
+  }
+  Config_SaveRandoWindowIni("saves/rando_window.ini");
+
   // Tear down the settings window unconditionally (NOT gated on enable_audio).
   RandoWindow_Shutdown();
   if (g_settings_gl)

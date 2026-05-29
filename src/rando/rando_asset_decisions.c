@@ -74,3 +74,12 @@ void Rando_RegisterAssetDecisionFromIni(const uint8 hash[32]) {
   memcpy(d->hash, hash, 32);
   d->allow = 1;
 }
+
+int AssetDecision_Count(void) {
+  return (int)g_asset_decisions_count;
+}
+
+const uint8 *AssetDecision_HashAt(int index) {
+  if (index < 0 || index >= (int)g_asset_decisions_count) return NULL;
+  return g_asset_decisions[index].hash;
+}

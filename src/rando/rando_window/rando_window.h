@@ -37,6 +37,13 @@ void RandoWindow_Hide(void);
 // Whether the settings window should currently be visible (driven by user show/hide).
 bool RandoWindow_WantsShown(void);
 
+// Geometry persistence (P5). RandoWindow_ApplyGeometry restores a saved window
+// rect, clamped to the union of all connected displays (re-centers if the rect
+// is fully off-screen). Call BEFORE the window is first shown.
+// RandoWindow_GetGeometry reads the current logical position + size for saving.
+void RandoWindow_ApplyGeometry(int x, int y, int w, int h);
+void RandoWindow_GetGeometry(int *x, int *y, int *w, int *h);
+
 #ifdef __cplusplus
 }
 #endif
