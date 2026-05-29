@@ -1898,15 +1898,40 @@ static void DecodeIconQuad(uint32 *out, int stride, const uint16 *scratch,
   }
 }
 
+// Decode a single 8x8 2bpp HUD tile (tilemap word `w`) 2x-scaled into the
+// 16x16 atlas slot `aslot`. For icons that are one HUD tile (the full heart).
+static void DecodeIconTile2x(uint32 *out, int stride, const uint16 *scratch,
+                             int scratch_words, const uint16 *pal, int aslot, uint16 w) {
+  int chr = w & 0x3ff, subpal = (w >> 10) & 7;
+  bool hflip = (w & 0x4000) != 0, vflip = (w & 0x8000) != 0;
+  for (int r = 0; r < 8; r++) {
+    int srow = vflip ? (7 - r) : r;
+    if (chr * 8 + srow >= scratch_words) continue;
+    uint16 word = scratch[chr * 8 + srow];
+    for (int cc = 0; cc < 8; cc++) {
+      int pix = hflip ? (((word >> cc) & 1) | ((word >> (7 + cc)) & 2))
+                      : (((word >> (7 - cc)) & 1) | ((word >> (14 - cc)) & 2));
+      if (pix == 0) continue;
+      uint16 col = pal[subpal * 4 + pix];
+      uint32 rgba = (uint32)((col & 0x1f) << 3) | ((uint32)(((col >> 5) & 0x1f) << 3) << 8) |
+                    ((uint32)(((col >> 10) & 0x1f) << 3) << 16) | 0xff000000u;
+      for (int dy = 0; dy < 2; dy++)
+        for (int dx = 0; dx < 2; dx++)
+          out[(r * 2 + dy) * stride + aslot * kRandoIconSize + (cc * 2 + dx)] = rgba;
+    }
+  }
+}
+
 // Dungeon-item HUD icons (not in kHudItemBoxGfxPtrs — these are drawn directly
 // by the dungeon HUD, hud.c Hud_UpdateItemBox). Big key = kHudItemPalaceItem[0],
 // map = kHudItemDungeonMap, compass = kHudItemDungeonCompass.
 static const ItemBoxGfx kRandoBigKeyIcon  = {{0x28d6, 0x68d6, 0x28e6, 0x28e7}};
 static const ItemBoxGfx kRandoMapIcon     = {{0x28de, 0x28df, 0x28ee, 0x28ef}};
 static const ItemBoxGfx kRandoCompassIcon = {{0x24bf, 0x64bf, 0x2ccf, 0x6ccf}};
-// Full-heart icon (the 4/4 heart-piece quad from Hud_UpdateItemBox's
-// kHudItemHeartPieces[3]) used for the heart-container count.
-static const ItemBoxGfx kRandoHeartIcon   = {{0x24ad, 0x64ad, 0x24ae, 0x6485}};
+// Full heart = the life-meter FILLED-heart tile (Hud_Update_Hearts kHudItemBoxTab2
+// full entry = 0x24A0; 0x24A2 is the empty outline, 0x24A1 the half), 2x-scaled
+// to 16x16 — a clean filled heart, not a heart-piece graphic.
+#define kRandoFullHeartTile 0x24A0
 
 int Hud_RandoBuildIconAtlas(uint32 *out) {
   // Decompress the three HUD 2bpp packs into a scratch char buffer laid out
@@ -1944,7 +1969,7 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Map, &kRandoMapIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Compass, &kRandoCompassIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Shovel, &kHudItemFlute[1]);
-  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Heart, &kRandoHeartIcon);
+  DecodeIconTile2x(out, stride, scratch, sw, pal, kRandoIcon_Heart, kRandoFullHeartTile);
   return n;
 }
 

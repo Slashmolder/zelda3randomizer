@@ -226,9 +226,14 @@ static void DrawItemTracker(void *) {
   Chip("Agahnim", v.agahnim, 92.0f);
 
   SectionHeader("Stats");
-  snprintf(ov, sizeof ov, "%d", v.hearts); IconChip(kRandoIcon_Heart, v.hearts > 0, v.hearts > 0 ? ov : nullptr);
-  if (v.heart_pieces > 0) { char b[24]; snprintf(b, sizeof b, "Pieces %d/4", v.heart_pieces); Chip(b, 2); }
-  ImGui::NewLine();
+  // Hearts: heart containers + pieces toward the next, clearly labelled.
+  ImGui::AlignTextToFramePadding();
+  IconImage(kRandoIcon_Heart, 22.0f, v.hearts > 0);
+  ImGui::SameLine();
+  if (v.heart_pieces > 0)
+    ImGui::Text("%d hearts  (+%d/4 piece%s)", v.hearts, v.heart_pieces, v.heart_pieces == 1 ? "" : "s");
+  else
+    ImGui::Text("%d hearts", v.hearts);
 
   // Per-dungeon items: small-key count + big-key / map / compass indicators.
   ImGui::SeparatorText("Dungeon Items");
