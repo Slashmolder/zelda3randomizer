@@ -189,7 +189,14 @@ static int emit_text_run(uint8 *cmd, int o, uint16 vram_addr,
 static int emit_clear_area(uint8 *cmd, int o, uint16 vram_addr, int num_words);
 // Forward declaration — actual static defined deep in this file, but the
 // slot-loop in FileSelect_Main needs to check it for modal-active gating.
+// On PC (Z3R_NATIVE_SETTINGS_WINDOW) the real definition is compiled out, so
+// this tentative definition is the only one and zero-inits to false — the
+// settings screen never activates, so modal_active gating stays correct.
 static bool g_settings_active;
+// SelectFile_Settings_Deactivate stays compiled on PC (called from the
+// file-select state-reset path); see its guarded stub definition below.
+static void SelectFile_Settings_Deactivate(void);
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
 static void SelectFile_AlphabetPicker_Activate(void);
 static void SelectFile_AlphabetPicker_Deactivate(void);
 static void SelectFile_AlphabetPicker_Draw(void);
@@ -198,10 +205,10 @@ static void SelectFile_AlphabetPicker_HandleSubmit(void);
 // §9.4 — settings screen forward decls.
 static void SelectFile_Settings_Activate(uint8 target_slot,
                                           bool prepopulate_from_share);
-static void SelectFile_Settings_Deactivate(void);
 static bool SelectFile_Settings_Update(void);
 static void SelectFile_Settings_Draw(void);
 static void SelectFile_Settings_HandleGenerate(void);
+#endif  // !Z3R_NATIVE_SETTINGS_WINDOW
 bool Intro_CheckCksum(const uint8 *s) {
   const uint16 *src = (const uint16 *)s;
   uint16 sum = 0;
@@ -590,6 +597,10 @@ void FileSelect_Main() {  // 8ccebd
     }
   }
 
+  // §16 — the in-game settings screen + alphabet picker are compiled out on PC
+  // (Z3R_NATIVE_SETTINGS_WINDOW); the native window owns the new-slot surface.
+  // On Switch / guard-off these dispatch into the in-game modules below.
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
   // §9.4 — settings screen takes priority over alphabet picker / kind picker
   // when active. Once the player enters settings (via kind=NewRandomizer or
   // alphabet=submit-ok), neither sub-prompt is reachable until the screen
@@ -608,6 +619,7 @@ void FileSelect_Main() {  // 8ccebd
     nmi_load_bg_from_vram = 1;
     return;
   }
+#endif  // !Z3R_NATIVE_SETTINGS_WINDOW
 
   // §9.3b — if the kind picker is active for a previously-empty slot, it
   // owns input and drawing until the user picks Vanilla / cancels.
@@ -1746,6 +1758,109 @@ static bool SelectFile_KindPicker_Update(void) {
   return true;  // swallow other input while picker is active
 }
 
+// SelectFile_Settings_Deactivate (§16.4) is defined at the END of this file,
+// AFTER the #ifndef compile-out region, so that under guard-off the in-game
+// settings statics it resets are already declared. On PC its body is an
+// #ifndef no-op stub but the function symbol stays linkable for the
+// always-compiled state-reset callers (FileSelect_Main entry, BG transitions).
+
+// Map a printable ASCII char to a file-select font tile index. Falls back to
+// the blank tile for chars not in the limited font (no lowercase support).
+static uint8 TileForAscii(char c) {
+  if (c >= 'A' && c <= 'Z') return SelectFile_TileForBase32(c);
+  if (c >= 'a' && c <= 'z') return SelectFile_TileForBase32((char)(c - 'a' + 'A'));
+  if (c >= '0' && c <= '9') {
+    // Use the 16-px-tall digit pair from the slot-number font region:
+    // 0xe6..0xef for top halves, 0xf6..0xff for bottom halves (verified
+    // by the slot row tiles in kSelectFile_Func3_Data: slot 1's "1"
+    // uses 0xe7 top + 0xf7 bot, slot 2's "2" uses 0xe8 + 0xf8, etc.).
+    // The +0x10 top→bot offset that emit_text_run assumes holds for
+    // this range. Previously TileForAscii returned 0x76+digit, the
+    // 8-px-tall half-height digits from the name-entry font; those
+    // have no matching bottom-half companions in the file-select
+    // font, so emit_text_run rendered garbage glyphs in the bottom row.
+    return (uint8)(0xe6 + (c - '0'));
+  }
+  // The file-select font has no verified glyphs for typical punctuation.
+  // Render '-', '(', ')', '?', etc. as a blank rather than as random
+  // letter-like glyphs from the 0x2a..0x2f range. Callers needing a
+  // visible separator should use a space instead.
+  if (c == ' ') return kFileSelectTile_Blank;
+  if (c == 0) return kFileSelectTile_Blank;
+  return kFileSelectTile_Blank;
+}
+
+// Emit one tilemap-row half (top OR bottom) of a horizontal text run as a
+// tile-stream command at the given VRAM address. `attr` = palette/priority
+// byte; HandleStripes14 count byte is (chars*2)-1.
+// `tile_offset` is added to each glyph's base tile index — 0 for the top
+// half, 0x10 for the bottom half (the file-select font stores top/bottom
+// halves of each glyph 16 tiles apart). Caller's `cmd` buffer must have
+// room for 4 header bytes + chars*2 payload bytes.
+static int emit_text_run_half(uint8 *cmd, int o, uint16 vram_addr,
+                              const char *text, int max_chars, uint8 attr,
+                              uint8 tile_offset) {
+  cmd[o++] = (uint8)(vram_addr >> 8);
+  cmd[o++] = (uint8)(vram_addr & 0xff);
+  cmd[o++] = 0;
+  cmd[o++] = (uint8)((max_chars * 2) - 1);
+  for (int i = 0; i < max_chars; ++i) {
+    char c = text[i];
+    if (c == 0) {
+      for (int j = i; j < max_chars; ++j) {
+        cmd[o++] = (uint8)(kFileSelectTile_Blank + tile_offset); cmd[o++] = attr;
+      }
+      break;
+    }
+    cmd[o++] = (uint8)(TileForAscii(c) + tile_offset); cmd[o++] = attr;
+  }
+  return o;
+}
+
+// Emit BOTH the top and bottom halves of a horizontal text run, since the
+// file-select font is 16 pixels tall (each glyph spans two tilemap rows).
+// The bottom half is written one tilemap row below (VRAM word offset +0x20)
+// with tile indices shifted by +0x10. Callers spacing rows by 0x40 word
+// units (= 16 px) get correctly stacked text with no overlap.
+static int emit_text_run(uint8 *cmd, int o, uint16 vram_addr,
+                         const char *text, int max_chars, uint8 attr) {
+  o = emit_text_run_half(cmd, o, vram_addr, text, max_chars, attr, 0x00);
+  o = emit_text_run_half(cmd, o, (uint16)(vram_addr + 0x20), text, max_chars,
+                         attr, 0x10);
+  return o;
+}
+
+// Stripes memset: write `num_words` copies of (tile=0xa9 attr=0x18) into
+// consecutive tilemap entries from `vram_addr`. HandleStripes14 encodes the
+// length as BYTES-MINUS-ONE then halves it (because memset writes one word
+// per source-byte pair). So count_field = num_words*2 - 1, split across
+// the attr byte's low 6 bits and the length byte.
+static int emit_clear_area(uint8 *cmd, int o, uint16 vram_addr, int num_words) {
+  int count = num_words * 2 - 1;
+  cmd[o++] = (uint8)(vram_addr >> 8);
+  cmd[o++] = (uint8)(vram_addr & 0xff);
+  // Bit 6 = is_memset; low 6 bits = high 6 bits of count.
+  cmd[o++] = (uint8)(0x40 | ((count >> 8) & 0x3f));
+  cmd[o++] = (uint8)(count & 0xff);
+  cmd[o++] = 0xa9;  // fill word low (tile = blank)
+  cmd[o++] = 0x18;  // fill word high (palette 6, no flip/prio)
+  return o;
+}
+
+// ===========================================================================
+// In-game settings-screen + on-screen text-input surface (compile-out, §16).
+//
+// On a normal PC build (Z3R_NATIVE_SETTINGS_WINDOW defined) the native ImGui
+// settings window replaces this entire surface, so everything from here to the
+// end of the file is excluded from the binary. Flipping the guard OFF (or
+// building Switch, which never defines it) recompiles the in-game UI unchanged.
+//
+// The kind-picker entry seam (SelectFile_KindPicker_Update, above) keeps its
+// #ifdef branch active on PC — its #else calls into this region and is only
+// compiled when the guard is off, so the seam stays intact either way.
+// ===========================================================================
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
+
 // ---------------------------------------------------------------------------
 // §9.1b/§9.2 — On-screen alphabet picker.
 //
@@ -2716,88 +2831,12 @@ static void emit_tile_pair(uint8 *cmd, int *o, uint8 tile, uint8 attr) {
   cmd[(*o)++] = attr;
 }
 
-// Map a printable ASCII char to a file-select font tile index. Falls back to
-// the blank tile for chars not in the limited font (no lowercase support).
-static uint8 TileForAscii(char c) {
-  if (c >= 'A' && c <= 'Z') return SelectFile_TileForBase32(c);
-  if (c >= 'a' && c <= 'z') return SelectFile_TileForBase32((char)(c - 'a' + 'A'));
-  if (c >= '0' && c <= '9') {
-    // Use the 16-px-tall digit pair from the slot-number font region:
-    // 0xe6..0xef for top halves, 0xf6..0xff for bottom halves (verified
-    // by the slot row tiles in kSelectFile_Func3_Data: slot 1's "1"
-    // uses 0xe7 top + 0xf7 bot, slot 2's "2" uses 0xe8 + 0xf8, etc.).
-    // The +0x10 top→bot offset that emit_text_run assumes holds for
-    // this range. Previously TileForAscii returned 0x76+digit, the
-    // 8-px-tall half-height digits from the name-entry font; those
-    // have no matching bottom-half companions in the file-select
-    // font, so emit_text_run rendered garbage glyphs in the bottom row.
-    return (uint8)(0xe6 + (c - '0'));
-  }
-  // The file-select font has no verified glyphs for typical punctuation.
-  // Render '-', '(', ')', '?', etc. as a blank rather than as random
-  // letter-like glyphs from the 0x2a..0x2f range. Callers needing a
-  // visible separator should use a space instead.
-  if (c == ' ') return kFileSelectTile_Blank;
-  if (c == 0) return kFileSelectTile_Blank;
-  return kFileSelectTile_Blank;
-}
-
-// Emit one tilemap-row half (top OR bottom) of a horizontal text run as a
-// tile-stream command at the given VRAM address. `attr` = palette/priority
-// byte; HandleStripes14 count byte is (chars*2)-1.
-// `tile_offset` is added to each glyph's base tile index — 0 for the top
-// half, 0x10 for the bottom half (the file-select font stores top/bottom
-// halves of each glyph 16 tiles apart). Caller's `cmd` buffer must have
-// room for 4 header bytes + chars*2 payload bytes.
-static int emit_text_run_half(uint8 *cmd, int o, uint16 vram_addr,
-                              const char *text, int max_chars, uint8 attr,
-                              uint8 tile_offset) {
-  cmd[o++] = (uint8)(vram_addr >> 8);
-  cmd[o++] = (uint8)(vram_addr & 0xff);
-  cmd[o++] = 0;
-  cmd[o++] = (uint8)((max_chars * 2) - 1);
-  for (int i = 0; i < max_chars; ++i) {
-    char c = text[i];
-    if (c == 0) {
-      for (int j = i; j < max_chars; ++j) {
-        cmd[o++] = (uint8)(kFileSelectTile_Blank + tile_offset); cmd[o++] = attr;
-      }
-      break;
-    }
-    cmd[o++] = (uint8)(TileForAscii(c) + tile_offset); cmd[o++] = attr;
-  }
-  return o;
-}
-
-// Emit BOTH the top and bottom halves of a horizontal text run, since the
-// file-select font is 16 pixels tall (each glyph spans two tilemap rows).
-// The bottom half is written one tilemap row below (VRAM word offset +0x20)
-// with tile indices shifted by +0x10. Callers spacing rows by 0x40 word
-// units (= 16 px) get correctly stacked text with no overlap.
-static int emit_text_run(uint8 *cmd, int o, uint16 vram_addr,
-                         const char *text, int max_chars, uint8 attr) {
-  o = emit_text_run_half(cmd, o, vram_addr, text, max_chars, attr, 0x00);
-  o = emit_text_run_half(cmd, o, (uint16)(vram_addr + 0x20), text, max_chars,
-                         attr, 0x10);
-  return o;
-}
-
-// Stripes memset: write `num_words` copies of (tile=0xa9 attr=0x18) into
-// consecutive tilemap entries from `vram_addr`. HandleStripes14 encodes the
-// length as BYTES-MINUS-ONE then halves it (because memset writes one word
-// per source-byte pair). So count_field = num_words*2 - 1, split across
-// the attr byte's low 6 bits and the length byte.
-static int emit_clear_area(uint8 *cmd, int o, uint16 vram_addr, int num_words) {
-  int count = num_words * 2 - 1;
-  cmd[o++] = (uint8)(vram_addr >> 8);
-  cmd[o++] = (uint8)(vram_addr & 0xff);
-  // Bit 6 = is_memset; low 6 bits = high 6 bits of count.
-  cmd[o++] = (uint8)(0x40 | ((count >> 8) & 0x3f));
-  cmd[o++] = (uint8)(count & 0xff);
-  cmd[o++] = 0xa9;  // fill word low (tile = blank)
-  cmd[o++] = 0x18;  // fill word high (palette 6, no flip/prio)
-  return o;
-}
+// TileForAscii / emit_text_run_half / emit_text_run / emit_clear_area are the
+// general tile-stream text helpers; they are used by the always-compiled
+// kind-picker draw (SelectFile_KindPicker_Draw) as well as the compiled-out
+// settings screen, so their definitions live OUTSIDE the §16 compile-out region
+// (moved up, just before the big #ifndef). Only the settings-screen-specific
+// emit_tile_pair helper remains here.
 
 // Visible row count (per-screen). File-select glyphs are 16 px tall (two
 // tilemap rows per glyph), so a row's stride is 0x40 word units = 16 px.
@@ -2847,47 +2886,9 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
   SettingsHashRefresh();
 }
 
-static void SelectFile_Settings_Deactivate(void) {
-  // Module_SelectFile_0 init calls this for state-reset purposes, BEFORE
-  // submodules 1 and 2 have run (the slot-tile upload + triforce erase).
-  // Unconditionally rewinding to submodule 3 here would bypass those,
-  // leaving first-launch file-select without slot frames. Only restore
-  // VRAM when we were ACTIVELY in the settings screen (i.e. our draw
-  // clobbered vram_upload_data).
-  bool was_active = g_settings_active;
-  g_settings_active = false;
-  g_settings_view = kSettingsView_Main;
-  g_settings_generate_in_progress = false;
-  g_settings_seed_field.active = false;
-  g_asset_warn_session_bypass = false;  // don't leak past session
-  if (was_active) {
-    // Settings_DrawMain wrote text + blanks into BG2 tilemap rows 8-27.
-    // The slot-rebuild flow below (submodule 3 -> 4) restores slot rows
-    // 9-10, 13-14, 17-18, but the OTHER settings cells (title, label
-    // columns, hash row, etc.) stay stale and bleed back into the file-
-    // select screen. Push one final clear into vram_upload_data NOW so
-    // the next NMI blanks those cells; the same clear pattern is used in
-    // Settings_DrawMain (rows 8-27, all cols) and is known not to touch
-    // PLAYER SELECT / COPY PLAYER / ERASE PLAYER (those live on a
-    // different VRAM layer).
-    uint8 *p = (uint8 *)vram_upload_data;
-    int o = 0;
-    int clear_count = 640 * 2 - 1;
-    p[o++] = 0x61;
-    p[o++] = 0x00;
-    p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
-    p[o++] = (uint8)(clear_count & 0xff);
-    p[o++] = 0xa9;
-    p[o++] = 0x18;
-    p[o++] = 0xff;  // stripes terminator
-    nmi_load_bg_from_vram = 1;
-    // Same VRAM-restore discipline as the alphabet picker — settings draw
-    // memcpys into vram_upload_data, clobbering kSelectFile_Func3_Data.
-    // Rewind to submodule 3 to reinstall it before the slot list resumes.
-    submodule_index = 3;
-    subsubmodule_index = 0;
-  }
-}
+// SelectFile_Settings_Deactivate is defined OUTSIDE this compile-out region
+// (it is called from the always-compiled file-select state-reset path); see
+// the guarded stub above SelectFile_KindPicker_Update / the big #ifndef block.
 
 // ---------------------------------------------------------------------------
 // Rendering.
@@ -3371,5 +3372,57 @@ static void SelectFile_Settings_HandleGenerate(void) {
   sound_effect_1 = 0x2c;
   fprintf(stderr, "[settings] generated slot %u: seed=0x%016llx\n",
           (unsigned)target, (unsigned long long)seed_u64);
+}
+
+#endif  // !Z3R_NATIVE_SETTINGS_WINDOW (in-game settings screen + alphabet picker)
+
+// §16.4 — SelectFile_Settings_Deactivate stays compiled on PC because it is
+// called from always-compiled state-reset paths (FileSelect_Main entry, BG
+// transitions) UNRELATED to opening the settings screen. On PC the in-game
+// settings statics it would reset are compiled out, so the body collapses to a
+// no-op stub; on Switch / guard-off it performs the full reset + VRAM restore.
+// Defined here (after the compile-out region) so guard-off sees the statics.
+static void SelectFile_Settings_Deactivate(void) {
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
+  // Module_SelectFile_0 init calls this for state-reset purposes, BEFORE
+  // submodules 1 and 2 have run (the slot-tile upload + triforce erase).
+  // Unconditionally rewinding to submodule 3 here would bypass those,
+  // leaving first-launch file-select without slot frames. Only restore
+  // VRAM when we were ACTIVELY in the settings screen (i.e. our draw
+  // clobbered vram_upload_data).
+  bool was_active = g_settings_active;
+  g_settings_active = false;
+  g_settings_view = kSettingsView_Main;
+  g_settings_generate_in_progress = false;
+  g_settings_seed_field.active = false;
+  g_asset_warn_session_bypass = false;  // don't leak past session
+  if (was_active) {
+    // Settings_DrawMain wrote text + blanks into BG2 tilemap rows 8-27.
+    // The slot-rebuild flow below (submodule 3 -> 4) restores slot rows
+    // 9-10, 13-14, 17-18, but the OTHER settings cells (title, label
+    // columns, hash row, etc.) stay stale and bleed back into the file-
+    // select screen. Push one final clear into vram_upload_data NOW so
+    // the next NMI blanks those cells; the same clear pattern is used in
+    // Settings_DrawMain (rows 8-27, all cols) and is known not to touch
+    // PLAYER SELECT / COPY PLAYER / ERASE PLAYER (those live on a
+    // different VRAM layer).
+    uint8 *p = (uint8 *)vram_upload_data;
+    int o = 0;
+    int clear_count = 640 * 2 - 1;
+    p[o++] = 0x61;
+    p[o++] = 0x00;
+    p[o++] = (uint8)(0x40 | ((clear_count >> 8) & 0x3f));
+    p[o++] = (uint8)(clear_count & 0xff);
+    p[o++] = 0xa9;
+    p[o++] = 0x18;
+    p[o++] = 0xff;  // stripes terminator
+    nmi_load_bg_from_vram = 1;
+    // Same VRAM-restore discipline as the alphabet picker — settings draw
+    // memcpys into vram_upload_data, clobbering kSelectFile_Func3_Data.
+    // Rewind to submodule 3 to reinstall it before the slot list resumes.
+    submodule_index = 3;
+    subsubmodule_index = 0;
+  }
+#endif  // !Z3R_NATIVE_SETTINGS_WINDOW
 }
 
