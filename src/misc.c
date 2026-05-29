@@ -626,22 +626,20 @@ void Module05_LoadFile() {  // 828136
   }
 
   // Phase B Inverted runtime: an Inverted rando slot bakes
-  // savegame_is_darkworld=0x40 into a *fresh* save (see select_file.c's
-  // world-state start-SRAM block). Vanilla's DW-outdoors load path below
-  // hard-spawns at the fixed mirror-exit overworld screen (dungeon_room_index
-  // 32) using cached DW exit/scroll state from a prior legitimate DW visit —
-  // state a fresh Inverted save does not have. The result is an invalid
-  // overworld spawn where Link is uncontrollable. ALTTPR instead starts
-  // non-Standard saves at a real entrance (initsramtable.asm
-  // InitStartingEntrance = Sanctuary) and applies the DW world flag at runtime
-  // (darkworldspawn.asm DoWorldFix), routing through the normal spawn-select.
-  // Mirror that here: for an active Inverted slot, fall through to the same
-  // post-escape spawn-select prompt the Open/LW path uses (main_module_index
-  // 27 / Module1B_SpawnSelect), which respawns at a valid entrance
-  // (Sanctuary / Link's House / Mountain Cave) while keeping the DW flag set.
-  bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
-                        (Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */);
-  if (savegame_is_darkworld && !rando_inverted) {
+  // savegame_is_darkworld=0x40 into a fresh save (select_file.c's world-state
+  // start-SRAM block), so it takes the DW-outdoors load path below (the
+  // mirror-exit overworld screen, dungeon_room_index 32) — the SAME path
+  // vanilla uses for a Dark-World save — and spawns in the Dark World, where
+  // the #82 tile overlays render the inverted topology.
+  //
+  // (An earlier revision excluded Inverted here and routed it through the LW
+  // spawn-select, believing the DW-outdoors path produced an uncontrollable
+  // spawn. That was actually the kPlayerState_HoldUpItem freeze from granting
+  // Moon Pearl/Mirror via Link_ReceiveItem — since fixed with a direct
+  // byte-write in Rando_TryGrantStartingInventory. Playtest-confirmed the DW
+  // spawn works, so the exclusion is removed: Inverted spawns in the DW like
+  // the original approach, not the Light World.)
+  if (savegame_is_darkworld) {
     if (player_is_indoors) {
       LoadDungeonRoomRebuildHUD();
       return;
