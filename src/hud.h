@@ -97,6 +97,9 @@ enum {
   kRandoIcon_Somaria, kRandoIcon_Byrna, kRandoIcon_Cape, kRandoIcon_Mirror,
   kRandoIcon_Gloves, kRandoIcon_Boots, kRandoIcon_Flippers, kRandoIcon_MoonPearl,
   kRandoIcon_Empty, kRandoIcon_Sword, kRandoIcon_Shield, kRandoIcon_Armor,
+  // Dungeon-item icons (decoded from the dungeon HUD's own tiles, not the
+  // kHudItemBoxGfxPtrs inventory table) into spare atlas slots 28-30.
+  kRandoIcon_BigKey = 28, kRandoIcon_Map = 29, kRandoIcon_Compass = 30,
 };
 // Build the atlas into `out` (kRandoIconCount*kRandoIconSize*kRandoIconSize
 // uint32 RGBA8888). Transparent pixels have alpha 0. Returns the icon count.

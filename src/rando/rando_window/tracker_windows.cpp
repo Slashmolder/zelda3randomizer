@@ -88,6 +88,21 @@ static void IconChip(int slot, bool have, const char *overlay) {
   ImGui::SameLine();
 }
 
+// Draw a single atlas icon inline at `sz` px (no flow/overlay), dimmed when not
+// owned. For table cells (dungeon items). Falls back to a dash if no atlas.
+static void IconImage(int slot, float sz, bool have) {
+  if (s_icon_tex) {
+    const float W = (float)(kRandoIconCount * kRandoIconSize);
+    ImVec2 uv0(slot * (float)kRandoIconSize / W, 0.0f);
+    ImVec2 uv1((slot + 1) * (float)kRandoIconSize / W, 1.0f);
+    ImVec4 tint = have ? ImVec4(1, 1, 1, 1) : ImVec4(1, 1, 1, 0.16f);
+    ImGui::Image(s_icon_tex, ImVec2(sz, sz), uv0, uv1, tint);
+  } else {
+    ImGui::TextColored(have ? ImVec4(0.45f, 0.85f, 0.45f, 1) : ImVec4(0.45f, 0.45f, 0.48f, 1),
+                       have ? "Y" : "-");
+  }
+}
+
 // ---- Window handles --------------------------------------------------------
 static Z3RWindow *s_win[kTracker_Count];
 
@@ -239,14 +254,13 @@ static void DrawItemTracker(void *) {
       int keys = v.dungeon_small_keys[d];
       ImGui::TableNextRow();
       ImGui::TableNextColumn(); ImGui::TextUnformatted(kDungeonRows[i].name);
+      // Small keys: the game shows these as a count (no standalone HUD sprite).
       ImGui::TableNextColumn();
-      ImGui::TextColored(keys > 0 ? on : off, "%d", keys);
-      ImGui::TableNextColumn();
-      ImGui::TextColored((v.bigkey_bits & bit) ? on : off, (v.bigkey_bits & bit) ? "B" : "-");
-      ImGui::TableNextColumn();
-      ImGui::TextColored((v.map_bits & bit) ? on : off, (v.map_bits & bit) ? "M" : "-");
-      ImGui::TableNextColumn();
-      ImGui::TextColored((v.compass_bits & bit) ? on : off, (v.compass_bits & bit) ? "C" : "-");
+      ImGui::TextColored(keys > 0 ? on : off, "x%d", keys);
+      // Big key / map / compass: the real dungeon-HUD sprites, dimmed when absent.
+      ImGui::TableNextColumn(); IconImage(kRandoIcon_BigKey, 18.0f, (v.bigkey_bits & bit) != 0);
+      ImGui::TableNextColumn(); IconImage(kRandoIcon_Map, 18.0f, (v.map_bits & bit) != 0);
+      ImGui::TableNextColumn(); IconImage(kRandoIcon_Compass, 18.0f, (v.compass_bits & bit) != 0);
     }
     ImGui::EndTable();
   }
