@@ -39,6 +39,11 @@ def emit_vanilla_assets_hash():
     "\n"
     "#include \"../types.h\"\n"
     "\n"
+    # Emit the Known flag so --assets-must-be-vanilla compiles and enforces.
+    # dump_vanilla_assets_hash.py emits the same flag — keep the two
+    # generators' header output in lockstep (the bundled blob is the reference).
+    "#define kVanillaAssetsHashKnown 1\n"
+    "\n"
     "static const uint8 kVanillaAssetsHash[32] = {\n"
     + bytes_block + "\n"
     "};\n"
