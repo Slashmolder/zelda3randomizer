@@ -81,8 +81,13 @@ void Overworld_ApplyInvertedTiles(void) {
       continue;
     }
 
-    // stripe-family command
-    int opid = cmd & 0x00FF;
+    // stripe-family command. The command word is 1sss ssss dccc cccc: size in
+    // bits 8-14, direction in bit 7, command id in the LOW 7 BITS. The asm
+    // dispatch masks AND #$007F to index its vector table, so the id must NOT
+    // include the direction bit (0x80) — a vertical stripe (e.g. 0x8080 Stripe,
+    // 0x8581 StripeRLE) otherwise decodes to opid 0x80/0x81, matches no branch,
+    // and is dropped while its operands are misread as plain tile-writes.
+    int opid = cmd & 0x007F;
     int inc = (cmd & 0x0080) ? 0x80 : 0x02;  // vertical vs horizontal
 
     if (opid == 0x00) {
