@@ -3,10 +3,14 @@
 # Mechanically translated from `../alttp_vt_randomizer/app/Region/Inverted/DarkWorld/South.php`
 # (MIT, verified per CLAUDE.md claim-grounding discipline).
 #
-# *** THIS YAML DECLARES `DarkWorld_South`, THE INVERTED START REGION. ***
-# Per `assets/rando_logic_gen.py:1389`,
-#   kRandoStartRegionByWorldState[Inverted] = DarkWorld_South
-# without this declaration, the Inverted graph is unreachable.
+# NOTE on the Inverted start region: it is `LinksHouse_Inverted` (id 21), NOT
+# DarkWorld_South. The generated `kRandoStartRegionByWorldState` in
+# src/rando/logic_data.c is {0x14, 0x14, 0x15, 0x14} (Inverted = 0x15 = id 21).
+# DarkWorld_South is reached from the start through the Inverted RegionRemap
+# overlay (see tasks §6), not a static edge. Headless verification 2026-05-29:
+# every Inverted goal is goal_completable, so the start → dark-world routing
+# resolves correctly. This file still declares DarkWorld_South's locations as
+# part of the Inverted graph.
 #
 # Translation discipline:
 #   - Every predicate cites the PHP file:line range it came from.

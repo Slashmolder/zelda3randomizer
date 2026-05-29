@@ -93,8 +93,8 @@
 ## 12. Audit + cluster-audit cadence
 
 - [x] 12.1 Run `Rando_RunAllSelfChecks` — all selftests must pass post-Inverted YAML authoring. — `--rando-selftest` exit 0; Rando_RunAllSelfChecks all subsystems OK.
-- [ ] 12.2 Schedule a **fresh-eyes audit** post-translation per memory `[[cluster-audit-cadence]]`. Every audit on this project finds 5-10 NEW bugs including ≥ 1 HIGH. Treat as workflow, not optional polish.
-- [ ] 12.3 Address audit findings before archive.
+- [x] 12.2 Schedule a **fresh-eyes audit** post-translation per memory `[[cluster-audit-cadence]]`. Every audit on this project finds 5-10 NEW bugs including ≥ 1 HIGH. Treat as workflow, not optional polish. — done 2026-05-29; no HIGH found; see audit.md "Fresh-eyes audit".
+- [x] 12.3 Address audit findings before archive. — triaged: 1 doc fix applied, 1 suggestion rejected (would regress), rest non-blocking.
 
 ## 13. Documentation
 

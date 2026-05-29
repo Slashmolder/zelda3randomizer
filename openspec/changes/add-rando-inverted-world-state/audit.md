@@ -171,3 +171,28 @@ In-game runtime: bunny-state start, MoonPearl+MagicMirror grant + save/reload
 idempotency (§14.3), mirror/tile-swap topology, dark-world-first routing
 (§14.1-14.2). Cross-platform corpus (§10.4) and Switch bench (§13.5.4) need
 other platforms / a Switch dev unit.
+
+## Fresh-eyes audit (§12.2, 2026-05-29)
+
+Parallel review agent, self-contained prompt, per CLAUDE.md "Fresh-eyes audit
+cadence." **No HIGH-severity logic-graph, region-binding, or vanilla-state-proxy
+bugs found — the Inverted implementation is sound.** Findings triaged:
+
+- **[FIXED] Start-region doc inconsistency** — `DarkWorld/South.yaml`'s header
+  claimed DarkWorld_South was "THE INVERTED START REGION" and cited a stale
+  codegen line. Verified ground truth: `kRandoStartRegionByWorldState` =
+  {0x14,0x14,0x15,0x14}, i.e. Inverted start = `LinksHouse_Inverted` (id 21).
+  DarkWorld_South is reached via the RegionRemap overlay (no static edge from
+  LinksHouse_Inverted exists). Comment corrected; codegen output byte-identical.
+- **[REJECTED] "Starting-inventory MIN-guard" (audit MED #3)** — suggestion was
+  to only write MP/Mirror when the byte is 0. This would be a REGRESSION: the
+  grant deliberately runs on every load (above the cold-boot dedupe) so MP+Mirror
+  persist across reloads in Inverted; if a byte were ever cleared we WANT to
+  re-grant. Current unconditional `=1/=2` write is correct. Left as-is.
+- **[NOTED, non-blocking] Defensive-doc suggestions** — Bottle Merchant relies on
+  the LW can_enter edge (MoonPearl) rather than an explicit per-location
+  predicate (MED #2); HCE BigKey/Compass Phase-B placeholder (LOW #4); mirror-bonk
+  rect dependency (LOW #5); Ganon location cross-file ownership (LOW #6). All
+  mechanically correct today; captured here for the maintainer. Not applied
+  because #2 would change the logic graph (placement/kGen impact) for
+  defense-in-depth only.
