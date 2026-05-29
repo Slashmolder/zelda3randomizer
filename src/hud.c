@@ -1904,6 +1904,9 @@ static void DecodeIconQuad(uint32 *out, int stride, const uint16 *scratch,
 static const ItemBoxGfx kRandoBigKeyIcon  = {{0x28d6, 0x68d6, 0x28e6, 0x28e7}};
 static const ItemBoxGfx kRandoMapIcon     = {{0x28de, 0x28df, 0x28ee, 0x28ef}};
 static const ItemBoxGfx kRandoCompassIcon = {{0x24bf, 0x64bf, 0x2ccf, 0x6ccf}};
+// Full-heart icon (the 4/4 heart-piece quad from Hud_UpdateItemBox's
+// kHudItemHeartPieces[3]) used for the heart-container count.
+static const ItemBoxGfx kRandoHeartIcon   = {{0x24ad, 0x64ad, 0x24ae, 0x6485}};
 
 int Hud_RandoBuildIconAtlas(uint32 *out) {
   // Decompress the three HUD 2bpp packs into a scratch char buffer laid out
@@ -1940,6 +1943,8 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_BigKey, &kRandoBigKeyIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Map, &kRandoMapIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Compass, &kRandoCompassIcon);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Shovel, &kHudItemFlute[1]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Heart, &kRandoHeartIcon);
   return n;
 }
 

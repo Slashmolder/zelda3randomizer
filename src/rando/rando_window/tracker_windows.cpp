@@ -213,10 +213,10 @@ static void DrawItemTracker(void *) {
   IconChip(kRandoIcon_Quake, v.quake, nullptr);
   IconChip(kRandoIcon_Mushroom, v.mushroom || v.powder, v.powder ? "P" : nullptr);
   IconChip(kRandoIcon_Flute, v.flute, nullptr);
+  IconChip(kRandoIcon_Shovel, v.shovel, nullptr);
   snprintf(ov, sizeof ov, "%d", v.bottles); IconChip(kRandoIcon_Bottle, v.bottles > 0, v.bottles > 0 ? ov : nullptr);
   ImGui::NewLine();
-  // Shovel has no distinct HUD icon; magic level is a stat — show as chips.
-  Chip("Shovel", v.shovel ? 1 : 0, 72.0f);
+  // Magic is a consumption rate (no item sprite) — show as a chip.
   LevelChip("Magic", v.magic, kMagic[v.magic <= 2 ? v.magic : 0]);
   ImGui::NewLine();
 
@@ -226,7 +226,7 @@ static void DrawItemTracker(void *) {
   Chip("Agahnim", v.agahnim, 92.0f);
 
   SectionHeader("Stats");
-  { char b[24]; snprintf(b, sizeof b, "Hearts %d", v.hearts); Chip(b, v.hearts > 0 ? 1 : 0); }
+  snprintf(ov, sizeof ov, "%d", v.hearts); IconChip(kRandoIcon_Heart, v.hearts > 0, v.hearts > 0 ? ov : nullptr);
   if (v.heart_pieces > 0) { char b[24]; snprintf(b, sizeof b, "Pieces %d/4", v.heart_pieces); Chip(b, 2); }
   ImGui::NewLine();
 

@@ -86,7 +86,7 @@ void Hud_RandoDrawLocationTracker(void);
 // live VRAM), so it can run any time after assets load. Atlas is a horizontal
 // strip kRandoIconCount*kRandoIconSize wide, kRandoIconSize tall.
 // ---------------------------------------------------------------------------
-#define kRandoIconCount 32
+#define kRandoIconCount 34
 #define kRandoIconSize 16
 // Slot indices into the atlas == kHudItemBoxGfxPtrs order.
 enum {
@@ -98,8 +98,10 @@ enum {
   kRandoIcon_Gloves, kRandoIcon_Boots, kRandoIcon_Flippers, kRandoIcon_MoonPearl,
   kRandoIcon_Empty, kRandoIcon_Sword, kRandoIcon_Shield, kRandoIcon_Armor,
   // Dungeon-item icons (decoded from the dungeon HUD's own tiles, not the
-  // kHudItemBoxGfxPtrs inventory table) into spare atlas slots 28-30.
+  // kHudItemBoxGfxPtrs inventory table) into spare atlas slots 28-30, plus
+  // shovel (kHudItemFlute[1]) and a full-heart icon at 32-33.
   kRandoIcon_BigKey = 28, kRandoIcon_Map = 29, kRandoIcon_Compass = 30,
+  kRandoIcon_Shovel = 32, kRandoIcon_Heart = 33,
 };
 // Build the atlas into `out` (kRandoIconCount*kRandoIconSize*kRandoIconSize
 // uint32 RGBA8888). Transparent pixels have alpha 0. Returns the icon count.
