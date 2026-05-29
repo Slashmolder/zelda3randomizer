@@ -849,7 +849,7 @@ void RandoWindow_Shutdown(void) {
 // ---- Show / hide -----------------------------------------------------------
 void RandoWindow_OpenForNewSlot(int slot_index) {
   g_rando_window_bridge.target_slot_index = slot_index;
-  // R2 (PLAN.md §9): snapshot the LIVE config features0 into the bridge so the
+  // Snapshot the LIVE config features0 into the bridge so the
   // recommended-features panel starts from the user's current configuration.
   // OpenForNewSlot runs on the game thread (kind-toggle entry), so reading
   // g_config here is safe and current. The UI edits only this snapshot; the game

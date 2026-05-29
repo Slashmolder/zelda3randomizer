@@ -33,7 +33,7 @@ enum {
 
 Config g_config;
 
-// Native-settings-window persistence (PLAN.md §3.5). Zero-initialized: no
+// Native-settings-window persistence. Zero-initialized: no
 // settings/geometry until the sidecar is parsed; dark_theme defaults to true
 // (set here so a missing sidecar still gives the dark theme).
 RandoWindowPrefs g_rando_window_prefs = { .dark_theme = true };
@@ -347,7 +347,7 @@ static bool ParseHashHex(const char *s, uint8 out[32]) {
   return true;
 }
 
-// Generic hex codec over an arbitrary byte length (PLAN.md R12 — do NOT reuse
+// Generic hex codec over an arbitrary byte length (do NOT reuse
 // ParseHashHex's fixed-32 loop). Used for the 28-byte canonical settings blob
 // in the rando-window sidecar. Decode requires EXACTLY `nbytes*2` hex digits
 // (no trailing chars). Encode writes `nbytes*2` lowercase hex chars plus a NUL
@@ -612,8 +612,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
     }
     return false;
   } else if (section == 8) {
-    // [rando_window] — native-settings-window persistence sidecar (PLAN.md
-    // §3.5). All values are copied out (no pointer-into-buffer), so the aux
+    // [rando_window] — native-settings-window persistence sidecar.
+    // All values are copied out (no pointer-into-buffer), so the aux
     // loader can free its temp buffer after the parse pass.
     if (StringEqualsNoCase(key, "last_settings_canonical_hex")) {
       uint8 buf[kSettingsCanonicalLen];
@@ -707,10 +707,10 @@ void ParseConfigFile(const char *filename) {
 }
 
 // ===========================================================================
-// Native-settings-window sidecar (saves/rando_window.ini) — PLAN.md §3.5, F2, G1.
+// Native-settings-window sidecar (saves/rando_window.ini).
 // ===========================================================================
 
-// PLAN.md §10 F2 + §11 G1: load the sidecar without disturbing g_config state.
+// Load the sidecar without disturbing g_config state.
 // We replicate ParseOneConfigFile's [section]→GetIniSection→SplitKeyValue loop
 // here (the section detection lives in the caller, NOT in HandleIniConfig) but
 // dispatch ONLY the sections we own — section 7 ([RandoAssetDecisions]) and
@@ -778,7 +778,7 @@ static void EnsureParentDir(const char *path) {
 #endif
 }
 
-// PLAN.md §3.5 (R8): write the sidecar atomically from g_rando_window_prefs +
+// Write the sidecar atomically from g_rando_window_prefs +
 // the asset-decision store. NEVER touches zelda3.ini. Writes to "<path>.tmp",
 // flushes to disk, then renames over `path`.
 void Config_SaveRandoWindowIni(const char *path) {

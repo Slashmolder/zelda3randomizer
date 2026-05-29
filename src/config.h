@@ -126,7 +126,7 @@ enum {
 extern Config g_config;
 
 // ---------------------------------------------------------------------------
-// Native settings window persistence (PLAN.md §3.5, R8 sidecar).
+// Native settings window persistence (rando_window.ini sidecar).
 //
 // Persisted to/from the SIDECAR saves/rando_window.ini — NEVER the user's
 // hand-edited zelda3.ini. All fields are copied out of the parse buffer (no
