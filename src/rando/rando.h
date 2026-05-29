@@ -14,7 +14,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 36u
+#define kGeneratorVersion 37u  // Phase B Slice 3b — Retro TakeAny caves (62 LOC ids, per-seed active subset); rebased atop main's 36
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
@@ -259,6 +259,47 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // ---------------------------------------------------------------------------
 uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
                          uint8 vanilla_lttp_code);
+
+// ---------------------------------------------------------------------------
+// Retro TakeAny caves (Phase B Slice 3b). See add-rando-retro-takeany/design.md.
+//
+// ALTTPR converts 5-of-31 ordinary overworld caves into "take-any" caves per
+// seed (an old man offers a free item; take ONE of two and the cave locks).
+// The generator pins the active caves' rewards into the placement table
+// (LOC ids 266..327 = 31 caves x 2 slots; only ~9 active). The runtime:
+//   1. Overworld_UseEntrance redirects an active cave's overworld door to its
+//      take-any host room and captures the door id in g_rando_takeany_door_id.
+//   2. SpritePrep_Shopkeeper presents the live slots and suppresses the host
+//      room's regular shop (the host rooms ARE regular shops — collision).
+//   3. ShopItem_TakeAny grants the taken item free and locks the cave.
+// ---------------------------------------------------------------------------
+
+// Set by Overworld_UseEntrance when the player steps into an active take-any
+// cave (= ALTTPR PreviousOverworldDoor = overworld row-index lx + 1). 0 means
+// "this entrance is not an active take-any" — read by the host-room shopkeeper
+// prep/dispatch to disambiguate from a normal visit to the shared host room.
+// Transient (per cave visit), reset on every overworld entrance.
+extern uint8 g_rando_takeany_door_id;
+
+// If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE
+// take-any this seed (rando active + Retro + its slot-0 LOC is in the placement
+// table), return its host-room entrance (0x58/0x60/0x46). Else 0.
+uint8 Rando_TakeAnyHostByDoorIndex(uint8 lx);
+
+// For host-room presentation: the take-any LOC id for (door_id, slot pos) if it
+// is active AND not yet collected (should be presented), else 0xFFFF. `room`
+// (BYTE(dungeon_room_index)) is a sanity cross-check against the host room.
+uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos);
+
+// On taking a take-any item at (door_id, pos): grant the placed item and LOCK
+// the whole cave (mark every active slot LOC checked, matching the asm
+// ShopState|=$07). Returns the LttP code (caller drives Rando_ReceiveOrConfirm).
+uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
+                            uint8 vanilla_lttp_code);
+
+// Icon kind (shop-item subtype2) for a take-any slot's placed item: 14 = heart,
+// 15 = potion (generic). Both tiles are present in every host room's shop GFX.
+uint8 Rando_TakeAnyDrawKind(uint8 door_id, uint8 pos);
 
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized

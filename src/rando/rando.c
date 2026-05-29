@@ -522,6 +522,103 @@ uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
   // slot is absent (non-Retro seeds) — identical to the chest-dispatch contract.
   return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
 }
+
+// === Phase B Slice 3b — Retro TakeAny runtime ===
+//
+// Runtime cave table. Index = cave index (MUST match the generator + registry:
+// location id = 266 + 2*cave + slot). door_id = ALTTPR overworld door
+// (= row-index lx + 1); host_entrance = the redirected destination entrance
+// (0x58 -> host room 0x112, 0x60 -> 0x10F, 0x46 -> 0x11F). Verified across all
+// 31 caves against app/Region/Standard/** (door_id-1 == the 0xDBB73 redirect
+// offset). See add-rando-retro-takeany/design.md §3.
+#define kRandoTakeAnyCaveCount 31
+#define kRandoTakeAnyLocBase   266
+uint8 g_rando_takeany_door_id;  // transient; set by Overworld_UseEntrance
+
+typedef struct { uint8 door_id; uint8 host_entrance; } RandoTakeAnyCaveRt;
+static const RandoTakeAnyCaveRt kRandoTakeAnyCaves[kRandoTakeAnyCaveCount] = {
+  {0x56, 0x58}, {0x62, 0x58}, {0x6D, 0x58}, {0x69, 0x58}, {0x68, 0x60},  // 0..4
+  {0x5A, 0x58}, {0x66, 0x60}, {0x59, 0x60}, {0x78, 0x58}, {0x81, 0x58},  // 5..9
+  {0x6A, 0x58}, {0x7C, 0x58}, {0x70, 0x58}, {0x7B, 0x58}, {0x79, 0x58},  // 10..14
+  {0x77, 0x58}, {0x72, 0x58}, {0x6B, 0x58}, {0x73, 0x46}, {0x6C, 0x58},  // 15..19
+  {0x67, 0x46}, {0x55, 0x58}, {0x5E, 0x58}, {0x65, 0x46}, {0x44, 0x46},  // 20..24
+  {0x3C, 0x58}, {0x76, 0x46}, {0x3E, 0x46}, {0x3F, 0x46}, {0x4A, 0x46},  // 25..29
+  {0x50, 0x58},                                                           // 30
+};
+
+// Cave index for an overworld door id, or -1 if not a take-any door.
+static int takeany_cave_for_door(uint8 door_id) {
+  for (int i = 0; i < kRandoTakeAnyCaveCount; i++)
+    if (kRandoTakeAnyCaves[i].door_id == door_id) return i;
+  return -1;
+}
+
+// True iff loc is present in the active placement table (the generator only
+// emits active caves' slots, so presence == "active this seed").
+static bool takeany_loc_in_table(uint16 loc) {
+  return Placement_Lookup(loc, 0xFFFFu) != 0xFFFFu;
+}
+
+uint8 Rando_TakeAnyHostByDoorIndex(uint8 lx) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive)) return 0;
+  if (Rando_GetActiveWorldState() != kWorldState_Retro) return 0;
+  int cave = takeany_cave_for_door((uint8)(lx + 1));
+  if (cave < 0) return 0;
+  // A cave is active iff its slot-0 LOC is in the placement table (both potion
+  // and weapon caves always populate slot 0).
+  if (!takeany_loc_in_table((uint16)(kRandoTakeAnyLocBase + 2 * cave))) return 0;
+  return kRandoTakeAnyCaves[cave].host_entrance;
+}
+
+// Icon kind (shop-item subtype2) for a take-any slot's placed item: 14 = heart
+// (BossHeartContainer), 15 = potion (BluePotion, plus the weapon cave's
+// sword/rupee — no sword tile exists in the host rooms' shop GFX, so it falls
+// back to the potion icon). Both tiles are always loaded (these rooms sell
+// RedPotion + a heart in vanilla).
+uint8 Rando_TakeAnyDrawKind(uint8 door_id, uint8 pos) {
+  int cave = takeany_cave_for_door(door_id);
+  if (cave < 0) return 15;
+  uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
+  uint16 item = Placement_Lookup(loc, 0xFFFFu);
+  return (item == ITEM_BossHeartContainer) ? 14 : 15;
+}
+
+uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos) {
+  (void)room;  // door_id is globally unique across the 31 caves; room is advisory
+  if (pos > 1) return 0xFFFFu;
+  int cave = takeany_cave_for_door(door_id);
+  if (cave < 0) return 0xFFFFu;
+  uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
+  if (!takeany_loc_in_table(loc)) return 0xFFFFu;   // inactive slot
+  if (Rando_IsLocationChecked(loc)) return 0xFFFFu; // already taken (cave locked)
+  return loc;
+}
+
+uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
+                            uint8 vanilla_lttp_code) {
+  (void)room;
+  int cave = takeany_cave_for_door(door_id);
+  if (cave < 0) return vanilla_lttp_code;
+  uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
+  // Grant the placed item (Rando_OnLocationCheck inside also marks loc checked).
+  // NOTE (latent): the weapon cave's Rupee300 reward (only when mode.weapons is
+  // vanilla/swordless — modes reserved/unreachable today, see
+  // rando_settings.h) has no vanilla LttP dispatch code (rupees are granted by
+  // a separate path), so it would fall through to `vanilla_lttp_code`. When
+  // those weapon modes are enabled, give Rupee300 a real grant here. The
+  // default ProgressiveSword reward dispatches correctly via progressive_to_lttp.
+  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, vanilla_lttp_code);
+  // Lock the whole cave: mark every active slot's LOC checked so the other
+  // offered item vanishes and the cave stays empty on revisit (matches the asm
+  // ShopState |= $07 + PurchaseCounts[idx] = 1). Slot `pos` was just marked by
+  // the grant; mark the sibling slot too if it is an active slot.
+  for (uint8 s = 0; s < 2; s++) {
+    if (s == pos) continue;
+    uint16 sib = (uint16)(kRandoTakeAnyLocBase + 2 * cave + s);
+    if (takeany_loc_in_table(sib)) Rando_MarkLocationChecked(sib);
+  }
+  return lttp;
+}
 // === Phase B sprite/shop dispatch: end ===
 
 // ---------------------------------------------------------------------------

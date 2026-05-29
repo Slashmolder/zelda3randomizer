@@ -7931,6 +7931,27 @@ void SpritePrep_Shopkeeper(int k) {  // 868bf1
   sprite_flags3[k] |= 16;
   static const uint8 kShopKeeperWhere[13] = {0xf, 0x10, 0, 6, 0x18, 0x12, 0x1e, 0xff, 0x1f, 0x23, 0x24, 0x25, 0x27};
   uint8 room = BYTE(dungeon_room_index);
+  // Phase B Slice 3b — Retro TakeAny. The take-any host rooms (0x112/0x10F/
+  // 0x11F) ARE the regular Lake-Hylia/DW/Kakariko shops, so when the player
+  // arrived via an active take-any redirect (g_rando_takeany_door_id != 0) we
+  // must present the cave's offered item(s) and SUPPRESS the host room's
+  // regular-shop spawns (otherwise the regular shop would appear / its
+  // Rando_ShopDispatch would fire). See add-rando-retro-takeany/design.md §D1b.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      g_rando_takeany_door_id != 0) {
+    uint8 spawned = 0;
+    for (uint8 pos = 0; pos < 2; pos++) {
+      if (Rando_TakeAnyLiveSlot(room, g_rando_takeany_door_id, pos) != 0xFFFFu) {
+        // Per-item icon: 14 = heart (BossHeart), 15 = potion (BluePotion/generic).
+        ShopKeeper_SpawnShopItem(k, pos, Rando_TakeAnyDrawKind(g_rando_takeany_door_id, pos));
+        spawned++;
+      }
+    }
+    // Cave fully taken on a revisit -> empty room (despawn the keeper too, so
+    // it matches the asm "draw nothing when PurchaseCounts != 0").
+    if (spawned == 0) sprite_state[k] = 0;
+    return;  // never fall through to the regular-shop switch
+  }
   int j = FindInByteArray(kShopKeeperWhere, room, 13);
   switch (j) {
   case 0:
@@ -25569,6 +25590,34 @@ void Sprite_BB_Shopkeeper(int k) {  // 9eeeef
   case 11: ShopItem_Arrows(k); break;
   case 12: ShopItem_Bombs(k); break;
   case 13: ShopItem_Bee(k); break;
+  case 14: case 15: ShopItem_TakeAny(k); break;  // Phase B Slice 3b — take-any (14=heart,15=potion icon)
+  }
+}
+
+// Phase B Slice 3b — a take-any cave's offered item. Presented free; taking
+// EITHER offered item locks the whole cave (Rando_TakeAnyDispatch marks every
+// active slot checked), so the sibling item despawns on its next frame via the
+// live-slot check below. The host room arrived through a take-any redirect, so
+// g_rando_takeany_door_id holds the cave's overworld door (disambiguation key).
+void ShopItem_TakeAny(int k) {
+  uint8 room = BYTE(dungeon_room_index);
+  uint8 pos = (uint8)(sprite_subtype[k] - 1);  // ShopKeeper_SpawnShopItem stored pos+1
+  if (Rando_TakeAnyLiveSlot(room, g_rando_takeany_door_id, pos) == 0xFFFFu) {
+    sprite_state[k] = 0;  // inactive / cave already locked — vanish
+    return;
+  }
+  SpriteDraw_ShopItem(k);
+  if (Sprite_ReturnIfInactive(k))
+    return;
+  Sprite_BehaveAsBarrier(k);
+  if (ShopItem_CheckForAPress(k)) {
+    sprite_state[k] = 0;
+    item_receipt_method = 0;  // match the shop-item receipt path
+    // vanilla_lttp fallback is unreachable here (slot is guaranteed in the
+    // placement table by the live-slot check); pass a benign refill code.
+    uint8 lttp = Rando_TakeAnyDispatch(room, g_rando_takeany_door_id, pos, 0x42);
+    Rando_ReceiveOrConfirm(lttp, (uint8)Rando_LastDispatchedItemId());
+    ShopKeeper_RapidTerminateReceiveItem();
   }
 }
 
@@ -25983,6 +26032,11 @@ bool ShopItem_HandleCost(int amt) {  // 9ef39e
 }
 
 void SpriteDraw_ShopItem(int k) {  // 9ef4ce
+  // 7 kinds x 5 rows. Kinds 0..6 = subtype2 7..13 (vanilla shop items). Within
+  // each kind the y:16 ext:0 rows are the PRICE digits and the ext:2 big tile
+  // is the item graphic (e.g. RedPotion: 0x0231/0x0213/0x0230 = "150", 0x02c0 =
+  // bottle). Phase B Slice 3b take-any items (subtype2 14/15) draw price-less
+  // per-item icons separately below, from those item tiles.
   static const DrawMultipleData kShopKeeper_ItemWithPrice_Dmd[35] = {
     {-4, 16, 0x0231, 0},
     { 4, 16, 0x0213, 0},
@@ -26020,6 +26074,24 @@ void SpriteDraw_ShopItem(int k) {  // 9ef4ce
     { 4,  8, 0x0ff4, 0},
     { 4, 11, 0x0338, 0},
   };
+  // Phase B Slice 3b — take-any per-item icon (price-less). Item tiles only:
+  //   kind 14 = heart  -> the Heart kind's item tiles (0x0329 / 0x0338)
+  //   kind 15 = potion -> RedPotion's item big-tile (0x02c0); also used for the
+  //                       weapon cave's sword/rupee (no sword tile in shop GFX).
+  // Both are present in every host room's GFX (those rooms sell RedPotion + a
+  // heart in vanilla). The "150"/"10" the player saw earlier was me drawing the
+  // price-digit rows; these draw only the item.
+  if (sprite_subtype2[k] >= 14) {
+    static const DrawMultipleData kTakeAnyHeart[2] = {
+      {4, 8, 0x0329, 0}, {4, 11, 0x0338, 0} };
+    static const DrawMultipleData kTakeAnyPotion[1] = {
+      {0, 0, 0x02c0, 2} };
+    if (sprite_subtype2[k] == 14)
+      Sprite_DrawMultiplePlayerDeferred(k, kTakeAnyHeart, 2, NULL);
+    else
+      Sprite_DrawMultiplePlayerDeferred(k, kTakeAnyPotion, 1, NULL);
+    return;
+  }
   Sprite_DrawMultiplePlayerDeferred(k, &kShopKeeper_ItemWithPrice_Dmd[(sprite_subtype2[k] - 7) * 5], 5, NULL);
 }
 

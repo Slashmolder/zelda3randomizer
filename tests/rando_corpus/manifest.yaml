@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 36  # bumped to 35 by next bump_rando_corpus.py --apply
+generator_version: 37  # Phase B Slice 3b — Retro TakeAny (bump_rando_corpus.py --apply)
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -95,13 +95,13 @@ entries:
   - settings: { mode.state: retro, goal: ganon }
     seed: "0x0000000000000014"
     label: "a1-retro-ganon"
-    expected_digest: "d27b10b150ab079d3ca563da2f9c0f682cd0edf011e4329571e4bb7a715ec337"
-    expected_sphere_digest: "1cd66a9a55990cb7156de3289dc1794acea74e5a26ac6dc419bc5a996b6405d3"
+    expected_digest: "4d47d1fe36b78207597df1effe2f4d88f85b776c20110ff642c6bf5c9734b5a5"
+    expected_sphere_digest: "ec0008aff6daea1accc881a6f81211808fbcc5f000b6b3abf9607e7183e5f5ec"
   - settings: { mode.state: retro, goal: fast_ganon }
     seed: "0x0000000000000015"
     label: "a1-retro-fast-ganon"
-    expected_digest: "dde31fbac292f3e492377f566f1da1be093c07961605b24c00378685ecc76718"
-    expected_sphere_digest: "c382c97129cc236709375ad82eefa2a7c19bb14001f1c0d07000838e9a59e709"
+    expected_digest: "a9b5cafb0c384d3fa7c6231d0ef067138cbd51bda98914e76a6bc778b466d1ad"
+    expected_sphere_digest: "42c1f6d0ae0dd435bee0098e66cceea3af5b193b26e6a222e97aa575235517ba"
   # crystals.* variations.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
     seed: "0x0000000000000016"
@@ -288,8 +288,8 @@ entries:
   - settings: { mode.state: retro, goal: completionist }
     seed: "0x52455452"   # "RETR"
     label: "celebrity-retro-completionist"
-    expected_digest: "15fba093c9385f0f7925d2c757409478f599ab7fed340f903ce1468e844c8d11"
-    expected_sphere_digest: "6ccaf347ee2924e26fc0363e615e074d127708f00b4871cb8c2f3b24442f7e30"
+    expected_digest: "abfe09e858d5d47c0b0aa160fd6fd893c6d887067767f9aa41002399ab2add17"
+    expected_sphere_digest: "bd4b1c42ca013094e895fe75a6921844fad1d9ef8ea754a9c650d10a95bd7ecc"
   # Phase B Slice 2 (kGeneratorVersion 11) — Inverted seeds. Captured against
   # the world-state-aware predicate/edge/region override path. 1-2 unreachable
   # placements per seed is currently expected (graph gaps tracked in tasks

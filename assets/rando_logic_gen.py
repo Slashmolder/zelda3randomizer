@@ -1797,7 +1797,8 @@ def _location_type_id(t: str) -> int:
     types = ["Chest", "BigChest", "Npc", "Standing", "Pedestal", "Dash", "Dig", "Drop",
              "Fountain", "Trade", "Prize_Crystal", "Prize_Pendant", "Prize_Event", "Medallion",
              "Shop",        # 14 — Phase B Slice 3a Retro shop purchase slot
-             "ShopUpgrade"] # 15 — Phase B Slice 3a Capacity Upgrade (identity-placed)
+             "ShopUpgrade", # 15 — Phase B Slice 3a Capacity Upgrade (identity-placed)
+             "TakeAny"]     # 16 — Phase B Slice 3b Retro take-any cave slot (per-seed active subset)
     if t not in types:
         return 0
     return types.index(t)
@@ -1959,13 +1960,19 @@ def main(argv=None):
     #     pool placement; reachability isn't checked.
     #   - Shop: gated by world_state_filter=[retro], not by region predicate.
     #   - ShopUpgrade: same as Shop (capacity-upgrade slots in Retro mode).
+    #   - TakeAny: Phase B Slice 3b Retro take-any cave slots. Like Shop, these
+    #     are gated by world_state_filter=[retro] and an additional per-seed
+    #     "active" gate in the placer (only 9 of 62 slots emit per seed). They
+    #     are reward-pinned by role, never assumed-fill targets, so region
+    #     reachability isn't used to place into them. (Consistent with the 3a
+    #     Shop precedent; see add-rando-retro-takeany/design.md §D4, §5.)
     #   - Prize_Event: game-event-style logic-affecting sites (Zelda rescue,
     #     Agahnim 1/2, Ganon, Bomb Merchant). Most carry a region binding in
     #     logic.yaml or logic_parts, but Bomb Merchant — Inverted-only and
     #     deferred to Slice 2 — does not yet; allowlisting Prize_Event lets
     #     the Bomb Merchant warning stay quiet until Inverted logic_parts
     #     land and its DarkWorld_South region binding is wired.
-    REGION_OPTIONAL_TYPES = {"Medallion", "Shop", "ShopUpgrade", "Prize_Event"}
+    REGION_OPTIONAL_TYPES = {"Medallion", "Shop", "ShopUpgrade", "TakeAny", "Prize_Event"}
     if logic_regions:
         region_ids = set(logic_regions.keys())
         for loc_name, loc in locations.items():

@@ -67,7 +67,9 @@ typedef enum {
 //                                              slot-load knows it is an Inverted seed and can
 //                                              grant Moon Pearl + Magic Mirror / start in the
 //                                              Dark World. Older slots read 0 == Open == no-op.)
-//   @69 reserved[11]                         (forward-compat; zero on write)
+//   @69 flute_shovel_owned                   (bitfield: 0x01 shovel, 0x02 flute,
+//                                              0x04 flute activated; additive)
+//   @70 reserved[10]                          (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===

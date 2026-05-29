@@ -129,6 +129,7 @@ location_record:
         - Medallion
         - Shop          # Phase B Slice 3a — Retro shop purchase slots
         - ShopUpgrade   # Phase B Slice 3a — Capacity Upgrade slots (identity-placed)
+        - TakeAny       # Phase B Slice 3b — Retro take-any cave slots (per-seed active subset)
       description: |
         Location archetype. Mirrors ALTTPR's Location\* subclasses. Drives
         §6 dispatch routing (chest path vs. NPC handler vs. synthesized hook).

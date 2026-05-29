@@ -136,7 +136,15 @@ enum {
   ID_SmallMagic = 104, ID_Arrow1 = 105, ID_Arrow10 = 106,
   ID_Bombs1 = 107, ID_Bombs3 = 108, ID_Bombs10 = 109, ID_Rupoor = 110,
   ID_Map_HCE = 124,
+  ID_BluePotion = 126,  // unbottled BluePotion (ROM 0x30); Phase B Slice 3b TakeAny reward
 };
+
+// Phase B Slice 3b — Retro TakeAny constants (used by BuildItemPool's junk-pad
+// target loop and the placer's selection/pin logic). Cave count + LOC id base
+// must match assets/rando/location_registry.yaml (id = 266 + 2*cave + slot).
+#define kTakeAnyCaveCount 31
+#define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
+#define LOCTYPE_TakeAny   16    // logic.schema.yaml type enum ordinal
 
 // Dungeon → Prize location id, for prize-shuffle placement. Indexed by
 // dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
@@ -382,6 +390,12 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     uint8 wsf = kRandoLocations[i].world_state_filter;
     if (wsf == 0 || (wsf & (1u << settings->world_state))) {
+      // Phase B Slice 3b — TakeAny LOCs are reward-pinned by role in the placer
+      // (not pool-filled) and only a fixed 9-of-62 emit per seed. Excluding them
+      // from the junk-pad target keeps the pool sized to the actual fillable
+      // (non-pinned) slot count, so existing non-TakeAny Retro placements stay
+      // decision-stable when TakeAny lands. See design.md §"Pool/pad".
+      if (kRandoLocations[i].type == LOCTYPE_TakeAny) continue;
       target++;
     }
   }
@@ -774,6 +788,84 @@ bool Place_AssumedFill(const RandoSettings *settings,
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Phase B Slice 3b — Retro TakeAny per-seed selection.
+//
+// ALTTPR declares 31 Shop\TakeAny (app/Region/Standard/**). Per
+// app/Randomizer.php:716-735, in Retro the generator picks 4 "potion" caves
+// (BluePotion@slot0 + BossHeartContainer@slot1) via randomCollection(4) and a
+// 5th "weapon" cave (ProgressiveSword, or Rupee300 when mode.weapons is
+// vanilla/swordless) via ->random(). The other 26 caves are inactive.
+//
+// Cave index ordering MUST match assets/rando/location_registry.yaml: registry
+// id = 266 + 2*cave_index (slot 0) and +1 (slot 1). See design.md §3/§D4.
+// Only the LOCs of active caves are emitted into the placement table (the slot-1
+// LOC of the weapon cave is NOT emitted — it has a single inventory item).
+//
+// The runtime does NOT re-run this selection; it reads the placement table to
+// learn which caves are active and what each slot grants. The runtime's own
+// (door_id, host_entrance) cave table lives in src/rando/rando.c.
+// (kTakeAnyCaveCount / kTakeAnyLocBase / LOCTYPE_TakeAny defined near the top.)
+// ---------------------------------------------------------------------------
+enum { kTakeAnyRole_Inactive = 0, kTakeAnyRole_Potion = 1, kTakeAnyRole_Weapon = 2 };
+
+// Deterministic, pick-without-replacement (array_splice-style, matching ALTTPR
+// randomCollection) selection over the 31-cave list, from a dedicated RNG
+// salted off the seed so the main fill RNG stream is untouched. Mirrors the
+// prize/medallion-shuffle pattern in place_assumed_fill_attempt. Writes a role
+// per cave into roles_out[31]. No-op (all inactive) outside Retro.
+static void takeany_select(const RandoSettings *settings, uint64 seed_u64,
+                           uint8 roles_out[kTakeAnyCaveCount]) {
+  for (uint8 i = 0; i < kTakeAnyCaveCount; i++) roles_out[i] = kTakeAnyRole_Inactive;
+  if (settings == NULL || settings->world_state != kWorldState_Retro) return;
+
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, seed_u64 ^ 0x54616B65416E79ull);  // "TakeAny" salt
+
+  uint8 cand[kTakeAnyCaveCount];
+  uint8 n = kTakeAnyCaveCount;
+  for (uint8 i = 0; i < n; i++) cand[i] = i;
+
+  // 4 potion caves (randomCollection(4)).
+  for (uint8 p = 0; p < 4 && n > 0; p++) {
+    uint32 pick = Rng_NextRange(&rng, n);
+    roles_out[cand[pick]] = kTakeAnyRole_Potion;
+    for (uint8 j = (uint8)pick; (uint8)(j + 1) < n; j++) cand[j] = cand[j + 1];  // splice out
+    n--;
+  }
+  // 5th weapon cave (->random() over remaining inactive).
+  if (n > 0) {
+    uint32 pick = Rng_NextRange(&rng, n);
+    roles_out[cand[pick]] = kTakeAnyRole_Weapon;
+  }
+}
+
+// Resolve the pinned reward item id for a TakeAny location id under the seed's
+// role assignment, or 0xFFFF if that LOC is NOT active this seed (inactive cave,
+// or the weapon cave's unused slot-1). Used both to skip inactive LOCs in the
+// open-location collection and to pin active LOCs in the placer.
+static uint16 takeany_reward(const RandoSettings *settings,
+                             const uint8 roles[kTakeAnyCaveCount], uint16 loc_id) {
+  if (loc_id < kTakeAnyLocBase ||
+      loc_id >= (uint16)(kTakeAnyLocBase + 2 * kTakeAnyCaveCount)) return 0xFFFF;
+  uint16 rel = (uint16)(loc_id - kTakeAnyLocBase);
+  uint8 cave = (uint8)(rel / 2);
+  uint8 slot = (uint8)(rel % 2);
+  switch (roles[cave]) {
+    case kTakeAnyRole_Potion:
+      return slot == 0 ? (uint16)ID_BluePotion : (uint16)ID_BossHeartContainer;
+    case kTakeAnyRole_Weapon:
+      if (slot != 0) return 0xFFFF;  // weapon cave has only slot 0
+      // mode.weapons vanilla(2)/swordless(3) -> 300 rupees, else ProgressiveSword
+      // (per app/Randomizer.php:733). 2/3 are reserved per rando_settings.h:56-57
+      // and currently unreachable, so today this is always ProgressiveSword.
+      return (settings->mode_weapons == 2 || settings->mode_weapons == 3)
+                 ? (uint16)ID_Rupee300 : (uint16)ID_ProgressiveSword;
+    default:
+      return 0xFFFF;  // inactive
+  }
+}
+
 static bool place_assumed_fill_attempt(const RandoSettings *settings,
                                        uint64 seed_u64,
                                        RandoPlacementTable *out,
@@ -808,6 +900,13 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   }
   Rando_SetDungeonPrizeAssignment(prize_assignment);
   Rando_SetMedallionAssignment(medallion_assignment);
+
+  // Phase B Slice 3b — pick the per-seed active TakeAny caves (Retro only).
+  // Computed once here (like prize/medallion) so the collection + pin loops
+  // below agree on which TakeAny LOCs are active. Salted RNG → main fill stream
+  // untouched; non-Retro leaves all caves inactive (roles all 0).
+  uint8 takeany_roles[kTakeAnyCaveCount];
+  takeany_select(settings, seed_u64, takeany_roles);
 
   // ----- 2. Partition into progression / junk -----
   // Per ALTTPR Filler/RandomAssumed.php — split progression so DUNGEON items
@@ -853,6 +952,11 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     const RandoLocationDef *loc = &kRandoLocations[i];
     if (loc->world_state_filter != 0 &&
         !(loc->world_state_filter & (1u << settings->world_state))) continue;
+    // Phase B Slice 3b — only the per-seed ACTIVE TakeAny LOCs emit (Option B).
+    // Inactive caves (and the weapon cave's unused slot 1) produce no placement
+    // entry, per the spec "the placement table contains only the active slots".
+    if (loc->type == LOCTYPE_TakeAny &&
+        takeany_reward(settings, takeany_roles, loc->id) == 0xFFFF) continue;
     open_loc_idx[open_n++] = (uint16)i;
   }
 
@@ -921,6 +1025,16 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // junk-pad logic means the Retro location count is exactly absorbed
       // by the existing pool size.
       vanilla_pin = true;
+    } else if (loc->type == LOCTYPE_TakeAny) {
+      // Phase B Slice 3b — active TakeAny caves are pinned to their per-seed
+      // role reward (potion cave: BluePotion@0 / BossHeart@1; weapon cave:
+      // ProgressiveSword|Rupee300 @0). Only active LOCs reach this point —
+      // inactive ones were filtered out of open_loc_idx above. The reward is
+      // NOT from the item pool (fixed inventory, matching ALTTPR addInventory),
+      // so like the regular shops it consumes no pool slot.
+      uint16 reward = takeany_reward(settings, takeany_roles, loc->id);
+      placement_at[k] = reward;  // guaranteed != 0xFFFF for active LOCs
+      continue;
     } else if (loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal) {
       // Pin per the prize-shuffle assignment. Find the dungeon whose Prize
       // location matches this slot, then look up the assigned prize id and
@@ -1821,6 +1935,51 @@ void Placement_SelfCheck(void) {
     // Non-dungeon items return 0xFF.
     if (dungeon_id_for_item(0) != 0xFF)   selfcheck_die("ProgressiveSword → 0xFF");
     if (dungeon_id_for_item(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
+  }
+
+  // Phase B Slice 3b — Retro TakeAny selection invariants. Pins the per-seed
+  // activation model (exactly 4 potion caves + 1 weapon cave = 9 active slots;
+  // deterministic per seed; inactive outside Retro; role→reward mapping) so a
+  // future placer/RNG change trips the selftest before a corpus regen.
+  {
+    RandoSettings s;
+    Settings_SetDefaults(&s);
+    s.world_state = kWorldState_Retro;  // mode_weapons defaults to Randomized → ProgressiveSword
+    uint8 roles[kTakeAnyCaveCount], roles2[kTakeAnyCaveCount];
+    takeany_select(&s, 0x1234ull, roles);
+    takeany_select(&s, 0x1234ull, roles2);
+    uint8 potion = 0, weapon = 0, active_slots = 0;
+    for (uint8 cave = 0; cave < kTakeAnyCaveCount; cave++) {
+      if (roles[cave] != roles2[cave])
+        selfcheck_die("TakeAny selection not deterministic for a fixed seed");
+      uint16 r0 = takeany_reward(&s, roles, (uint16)(kTakeAnyLocBase + 2 * cave));
+      uint16 r1 = takeany_reward(&s, roles, (uint16)(kTakeAnyLocBase + 2 * cave + 1));
+      if (roles[cave] == kTakeAnyRole_Potion) {
+        potion++;
+        active_slots += 2;
+        if (r0 != ID_BluePotion || r1 != ID_BossHeartContainer)
+          selfcheck_die("TakeAny potion cave reward mapping wrong (expect BluePotion@0 + BossHeart@1)");
+      } else if (roles[cave] == kTakeAnyRole_Weapon) {
+        weapon++;
+        active_slots += 1;
+        if (r0 != ID_ProgressiveSword || r1 != 0xFFFF)
+          selfcheck_die("TakeAny weapon cave reward mapping wrong (expect ProgressiveSword@0, no slot 1)");
+      } else if (r0 != 0xFFFF || r1 != 0xFFFF) {
+        selfcheck_die("TakeAny inactive cave must yield no reward");
+      }
+    }
+    if (potion != 4)       selfcheck_die("TakeAny must activate exactly 4 potion caves");
+    if (weapon != 1)       selfcheck_die("TakeAny must activate exactly 1 weapon cave");
+    if (active_slots != 9) selfcheck_die("TakeAny must emit exactly 9 active slots per seed");
+
+    // Outside Retro, no cave activates (Open default world-state).
+    RandoSettings open;
+    Settings_SetDefaults(&open);
+    uint8 oroles[kTakeAnyCaveCount];
+    takeany_select(&open, 0x1234ull, oroles);
+    for (uint8 cave = 0; cave < kTakeAnyCaveCount; cave++)
+      if (oroles[cave] != kTakeAnyRole_Inactive)
+        selfcheck_die("TakeAny must be inactive outside Retro world-state");
   }
 
   fprintf(stderr, "[Placement_SelfCheck] OK\n");

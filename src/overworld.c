@@ -3268,11 +3268,13 @@ void Overworld_GetPitDestination() {  // 9bb860
       // Chris Houlihan's room
       which_entrance = 130;
       byte_7E010F = 0;
+      g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
       return;
     }
   }
   which_entrance = kFallHole_Entrances[i];
   byte_7E010F = 0;
+  g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
 }
 
 void Overworld_UseEntrance() {  // 9bbbf4
@@ -3338,6 +3340,20 @@ after:
     }
   } else {
     which_entrance = kOverworld_Entrance_Id[lx];
+    // Phase B Slice 3b — Retro TakeAny redirect. `lx` is the overworld door
+    // row-index (== ALTTPR's X); door_id = lx+1. If this cave is an active
+    // take-any this seed, capture the door (the disambiguation key — the
+    // redirect overwrites which_entrance with the shared host-room entrance,
+    // destroying the source identity) and send the player into the take-any
+    // host room. See src/rando/rando.c / add-rando-retro-takeany/design.md §D1.
+    g_rando_takeany_door_id = 0;
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      uint8 host = Rando_TakeAnyHostByDoorIndex((uint8)lx);
+      if (host) {
+        g_rando_takeany_door_id = (uint8)(lx + 1);
+        which_entrance = host;
+      }
+    }
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;
     main_module_index = 15;
