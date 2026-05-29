@@ -2,8 +2,6 @@
 
 This directory holds every active and pending OpenSpec change for the zelda3 randomizer. Use this index to navigate.
 
-> **Quick links**: [Phase A archive readiness](../../docs/randomizer_phase_a_archive_readiness.md) · [Phase B chunking history](../../docs/randomizer_phase_b_chunking.md) · [Phase B interactions](../../docs/randomizer_phase_b_interactions.md) · [Phase B risks](../../docs/randomizer_phase_b_risks.md) · [Phase B exit criteria](../../docs/randomizer_phase_b_exit.md) · [Settings serialization versioning](../../docs/randomizer_settings_versioning.md)
-
 ## Status overview
 
 | Phase | # | Change | Scope | Authoring | kGen bump | Effort |
@@ -28,13 +26,13 @@ Total: 15 changes. All pass `openspec validate --changes`.
 
 ## Implementation order
 
-Per `docs/randomizer_phase_b.md` recommended ordering + the chunking interactions doc:
+Recommended ordering:
 
-1. **Wait** for Phase A archive — see [archive-readiness checklist](../../docs/randomizer_phase_a_archive_readiness.md).
+1. **Wait** for Phase A archive.
 2. **Phase B warm-up**: #1 confirmation-icons → #2 trackers → #3 race-mode reveal.
 3. **Phase B world-states**: #4b Retro (small) → #4a Inverted (large).
 4. **Phase B logic + UX**: #5 trick logic → #6 hints → #7 shuffles+minigames → #8 swkbd.
-5. **Phase B exit** — see [Phase B exit criteria](../../docs/randomizer_phase_b_exit.md).
+5. **Phase B exit**: each change archives independently once its tasks + fresh-eyes audit complete.
 6. **Phase C**: C1 entrance shuffle (requires #4a archived).
 7. **Phase D**: D1-D4 (D3 requires #5 archived; D1/D2/D4 are independent).
 
@@ -53,7 +51,7 @@ Phase A archive
        └──► D1, D2, D4 (Phase D parallel-safe)
 ```
 
-## File-overlap hotspots (see [interactions matrix](../../docs/randomizer_phase_b_interactions.md) for full detail)
+## File-overlap hotspots
 
 - **`src/sprite_main.c`**: #1, #4b, #6, #7 — serialize.
 - **`src/rando/rando.{c,h}`**: #1, #3, #6 — #1 first, then #3/#6 in parallel.
@@ -78,7 +76,7 @@ Phase A archive
 Every kGen-bump change SHALL:
 - Bump `kGeneratorVersion` in `src/rando/rando.h`.
 - Regenerate the regression corpus via `assets/scripts/bump_rando_corpus.py`.
-- Verify default-settings digests remain byte-identical to the pre-change baseline (per [`settings versioning`](../../docs/randomizer_settings_versioning.md)).
+- Verify default-settings digests remain byte-identical to the pre-change baseline.
 - Pass audit-guard (`assets/scripts/check_audit_guard.py`), determinism (`check_determinism.py`), and codegen-wiring (`check_codegen_wiring.py`) checks.
 
 Per `CLAUDE.md` "Fresh-eyes audit cadence": every Phase B change SHALL schedule a fresh-eyes audit pass after the main authoring lands. Memory `[[cluster-audit-cadence]]` documents the pattern.

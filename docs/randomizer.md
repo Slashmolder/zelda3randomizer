@@ -1,56 +1,18 @@
 # Zelda3 Randomizer
 
-> **Phase A1 status (kGeneratorVersion=10).** Foundation, RNG, share-string,
-> predicate VM, codegen, audit, logic graph (28 regions / 28 edges / 237
-> location predicates across all 13 dungeons + 11 overworld regions in
-> Standard mode), assumed-fill placement with bounded retry + wall-clock
-> budget, prize/medallion shuffles + dungeon-mode per-dungeon containment,
-> sphere computation, goal-completability with strict refusal of
-> un-completable seeds + Pedestal pendant-reachability + boss-heart
-> identity pinning + item-pool difficulty caps, JSON + text spoilers with
-> fallback-warning rollup + sphere_digest + seed_u64, sidecar save format
-> aligned to spec, §6 grant-site dispatch (13 NPC sites + universal chest
-> hook + ITEM→LttP translation for 53 of ~125 item ids including
-> progressive items / rupees / bottles / dungeon items / SilverArrowUpgrade),
-> snapshot tail TLV preserves rando placement across save/load,
-> `--assets-must-be-vanilla` check, and `--print-assets-hash` are all
-> landed. All 7 Phase A goals produce winnable seeds with 0 unreachable
-> placements in Open / Standard / Retro modes at all dungeon-item modes.
-> The regression corpus exercises 50 (settings × seed) configurations
-> across the full Phase A axis matrix + 5 named celebrity seeds; CI runs
-> the corpus on Linux + macOS for cross-platform digest determinism.
-> Audit guard runs in `--strict` mode (every grant-site write either
-> dispatches or carries an explicit exemption comment).
-
-**Known limitations** as of this status:
-- Inverted world-state seeds report ~32 unreachable until
-  LinksHouse_Inverted region is declared (Phase A2 follow-on).
-- §6 grant-site dispatch table for the universal chest hook is empty —
-  individual chests still grant their vanilla items until the
-  (dungeon_room, ordinal) → location_id table is authored.
-  13 NPC sites (Bottle Merchant, Sahasrahla, Mushroom, Library, Uncle,
-  Sick Kid, Purple Chest, Hobo, Stumpy, Old Man, Blacksmith, Master
-  Sword Pedestal, Flute Spot) are wired and dispatch correctly when
-  `kFeatures1_RandomizerActive` is set.
-- TriforcePiece, HalfMagic/QuarterMagic, Rupoor, and the 10 prize
-  items have no vanilla LttP receive code — when placed at a §6-wired
-  site, they currently fall back to the slot's vanilla item. §6.2 work
-  introduces direct receive helpers (counter increments, magic_consumption
-  direct write). Triforce-Hunt seeds in particular need this to track
-  pieces collected at non-Triforce slots.
-- File-select / settings UI not yet wired — only CLI generation works.
-- Per-item rewind inside an assumed-fill attempt is not implemented;
-  the placer instead retries with a perturbed seed up to 8 times.
-  The `--budget-seconds` flag bounds wall-clock time across retries.
-- vanilla_assets_hash.h ships with an all-zeros placeholder; activate
-  `--assets-must-be-vanilla` by running
-  `python assets/scripts/dump_vanilla_assets_hash.py` against a clean
-  extraction (or `./zelda3 --print-assets-hash` to view).
+> **Status.** The randomizer is well past its Phase A foundation. Phase B
+> work — Inverted/Retro world-states, in-game trackers, hints, race-mode
+> reveal, boss/drop shuffles, the native settings window, and more — has
+> landed incrementally. For current scope and per-change status, see the
+> OpenSpec changes under `openspec/changes/` (start at its `README.md`
+> index). `kGeneratorVersion` in `src/rando/rando.h` is the authoritative
+> marker of the live placement/serialization format; it advances whenever a
+> placement-affecting change ships.
 
 This document covers user-facing operation of the in-binary randomizer, the
 share-string format, save behavior, audit conventions for contributors, and
-the Phase B+ roadmap. Authoritative source for behavior decisions is the
-OpenSpec change at `openspec/changes/add-randomizer-support/`.
+the generator-version bump policy. The authoritative source for behavior
+decisions is the OpenSpec change at `openspec/changes/add-randomizer-support/`.
 
 ## Getting started
 
@@ -429,10 +391,9 @@ with detail deferred to `/openspec-explore` at apply-time.
 | 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | Stub |
 | 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |
 
-See [`docs/randomizer_phase_b.md`](randomizer_phase_b.md) for the per-slice
-scope detail (files-to-touch, ALTTPR references, effort estimates) and
-[`docs/randomizer_phase_b_chunking.md`](randomizer_phase_b_chunking.md)
-for the chunking plan, critique-agent history, and audit findings.
+See the [`openspec/changes/` index](../openspec/changes/README.md) for the
+per-slice scope detail (files-to-touch, ALTTPR references) and the
+change-folder breakdown.
 
 Items folded into the changes above:
 - `swordless`, `accessibility=none`, `pyramid_bow_upgrade=arrows`,
