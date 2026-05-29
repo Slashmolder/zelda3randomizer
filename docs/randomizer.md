@@ -214,11 +214,11 @@ desync, the headline advantage of a native port:
   summary + progress bar, filters (hide-checked, only-available, search), and an
   optional "show items" spoiler toggle (off by default, force-hidden for race
   seeds). This is the direct "what can I do right now given my items?" view.
-- **Map Tracker** — the **real light-world overworld map** (decoded from the
-  in-game Mode-7 map graphic) with status-coloured region pins overlaid (hover
-  for the region's check list); dark-world + dungeon regions are listed in a panel
-  below. The decoders are verified by dumping PNGs via the `--dump-overworld-map`
-  / `--dump-item-icons` dev flags.
+- **Map Tracker** — the **real light- and dark-world overworld maps** (decoded
+  from the in-game Mode-7 map graphic; Light/Dark toggle) with status-coloured
+  region pins overlaid (hover for the region's check list); dungeon interiors are
+  listed in a panel below. The decoders are verified by dumping PNGs via the
+  `--dump-overworld-map` / `--dump-item-icons` dev flags.
 
 ### Architecture
 
@@ -247,14 +247,11 @@ window. Switch (no native-window support) keeps the OAM overlay. Open the window
 during play via `Ctrl+I` / `Ctrl+C` / `Ctrl+M` (default-bound) or from the
 settings window's **Trackers** tab.
 
-**Known limitations / follow-ups:** the dark-world map graphic decodes only its
-NW quadrant from the single asset (the in-game dark map is assembled via a
-separate NMI path), so the full dark-map background is a follow-up — dark-world
-regions use the panel for now; keysanity (shuffled dungeon-item) modes are not
-yet read from live `g_ram` into the reachability counts, so the Check/Map
-trackers under-report dungeon interiors under those non-default modes (default
-seeds are all-vanilla and fully correct); per-location geographic map pins; and
-per-window visibility/geometry persistence in `saves/rando_window.ini`.
+**Known limitations / follow-ups:** region pins are hand-placed (no per-location
+geographic pin coordinates yet); and per-window visibility/geometry persistence
+in `saves/rando_window.ini` is not yet implemented (windows open from the
+Trackers tab / hotkeys each session). (Keysanity reachability and the dark-world
+map background — earlier follow-ups — are now implemented.)
 
 ## Audit comment convention (for contributors)
 
