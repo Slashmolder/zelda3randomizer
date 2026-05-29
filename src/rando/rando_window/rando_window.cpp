@@ -36,6 +36,7 @@
 
 #include "rando_window.h"
 #include "rando_window_bridge.h"
+#include "tracker_windows.h"  // Trackers_SetShown/IsShown (Trackers launcher tab)
 // kFeatures0_* recommended-features bit constants (compile-time enums; no g_ram
 // access — this TU never invokes the enhanced_features0 macro that writes g_ram).
 #include "../../features.h"
@@ -463,6 +464,33 @@ static void Panel_Shuffles() {
   if (changed) Pending_Changed();
 }
 
+static void Panel_Trackers() {
+  ImGui::SeparatorText("Tracker windows");
+  ImGui::TextWrapped(
+      "Open the rich tracker windows. They stay open into gameplay and auto-"
+      "update from live game state. You can also bind hotkeys "
+      "(RandoItemTrackerWindow / RandoCheckTrackerWindow / RandoMapTrackerWindow) "
+      "in zelda3.ini to toggle them during play.");
+  ImGui::Spacing();
+  struct { const char *label; int kind; } rows[] = {
+      {"Item Tracker", kTracker_Item},
+      {"Check Tracker", kTracker_Check},
+      {"Map Tracker", kTracker_Map},
+  };
+  for (int i = 0; i < 3; i++) {
+    bool shown = Trackers_IsShown(rows[i].kind);
+    ImGui::Text("%-14s", rows[i].label);
+    ImGui::SameLine();
+    char btn[32];
+    snprintf(btn, sizeof btn, "%s##trk%d", shown ? "Hide" : "Open", i);
+    if (ImGui::Button(btn, ImVec2(80, 0)))
+      Trackers_SetShown(rows[i].kind, !shown);
+    ImGui::SameLine();
+    ImGui::TextColored(shown ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                       shown ? "open" : "closed");
+  }
+}
+
 static void Panel_AssetHash() {
   ImGui::SeparatorText("Asset data");
   char cur[65], van[65];
@@ -811,6 +839,7 @@ void RandoWindow_BeginFrame(void) {
       if (ImGui::BeginTabItem("Dungeons"))       { Panel_Dungeons();            ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Shuffles"))       { Panel_Shuffles();            ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Quality of Life")){ Panel_RecommendedFeatures(); ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Trackers"))       { Panel_Trackers();            ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Asset Hash"))     { Panel_AssetHash();           ImGui::EndTabItem(); }
       // Spoiler tab hidden entirely when the last generation was race-mode.
       if (!b->last_generated_race_mode) {
