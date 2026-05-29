@@ -1,21 +1,19 @@
 ## ADDED Requirements
 
-### Requirement: Retro TakeAny randomCollection RNG model
+### Requirement: Retro TakeAny selection RNG model
 
-The TakeAny + regular-shop random selection SHALL be driven by a Fisher-Yates shuffle over a static shop-id list, seeded deterministically from the Retro-mode seed RNG. The shuffle SHALL be invoked exactly twice per generation:
+The TakeAny activation SHALL be driven by **pick-without-replacement** (ALTTPR `randomCollection` / `array_splice` semantics — NOT take-N-of-a-Fisher-Yates-shuffle) over the static 31-cave candidate list, seeded deterministically from a dedicated RNG forked off the seed (`seed_u64 ^ salt`) so the main fill RNG stream is unperturbed. Selection picks:
 
-1. Once over the 22 TakeAny shop ids; the first 5 picks become the activated set (first 4 → BluePotion+BossHeart pair; 5th → ProgressiveSword/ThreeHundredRupees).
-2. Once over the 9 regular non-Upgrade shop ids; the first 5 picks become the randomCollection(5) extras recipients.
+1. 4 "potion" caves (each gains `BluePotion@slot0` + `BossHeartContainer@slot1`).
+2. A 5th distinct "weapon" cave from the remaining inactive caves (gains `ProgressiveSword`, or `Rupee300` when `mode.weapons ∈ {swordless, vanilla}`).
 
-The two shuffles SHALL consume RNG state in a fixed order (TakeAny first, then regular shops) so the placement is reproducible.
+The fork does NOT reproduce ALTTPR's `mt_rand` byte-for-byte (it pins `xoshiro256**` per `randomizer-core / RNG family`); the determinism guarantee is **self-consistency** — identical `(settings, seed_u64)` yields an identical activated set on every platform. The regular-shop inventory is NOT part of this selection (Slice 3a shipped the 9 regular shops as identity-placed inventory; see `randomizer-placement` §6).
 
-> **Stub status**: exact RNG sub-state mixing (whether TakeAny selection uses a sub-RNG forked from the seed or the main RNG inline) deferred to apply-time. ALTTPR uses `randomCollection` against `mt_rand`-driven shuffles; this fork's reimplementation pins to `xoshiro256**` per `randomizer-core / RNG family` and must keep cross-platform determinism.
-
-#### Scenario: TakeAny shuffle precedes regular-shop shuffle
-- **WHEN** a Retro seed is generated
-- **THEN** the RNG calls for TakeAny selection complete before the first RNG call for regular-shop selection
-- **AND** the placement table is byte-identical to another seed with the same `(settings, seed_u64)` regardless of build configuration or platform
+#### Scenario: Same seed produces same activated set
+- **WHEN** two generations run with identical `(settings, seed_u64)` against Retro world-state
+- **THEN** the 4 potion caves AND the 5th weapon cave are identical between the two runs
+- **AND** the placement table is byte-identical regardless of build configuration or platform
 
 #### Scenario: Cross-platform RNG determinism
 - **WHEN** the same `(settings, seed_u64)` is generated on Linux, macOS, Windows, and Switch
-- **THEN** the activated TakeAny set + regular-shop extras set are identical across all four platforms
+- **THEN** the activated TakeAny set is identical across all four platforms

@@ -3,6 +3,27 @@
 Scope: **Full subsystem** (generator + runtime), one branch `pb-retro-takeany`. See `design.md`.
 Conventions: `[ ]` todo, `[x]` done. Tasks gated `world_state == Retro`; non-Retro corpus must stay byte-identical.
 
+> **STATUS 2026-05-28 — implementation complete, pending user playtest.**
+> - **DONE**: §0 decisions (OQ1/3/4 resolved, OQ2 = 2 LOCs/cave); §1–§3 generator
+>   (LOCTYPE_TakeAny, 62 registry LOCs, deterministic selection, kGenVer 35→36,
+>   corpus regen — 3 Retro digests, 52 non-Retro byte-identical); §5 runtime
+>   (overworld redirect, host-room presentation + regular-shop suppression,
+>   `ShopItem_TakeAny` free grant, cave-lock via `g_rando_checked_bitmap`);
+>   §6 build (Release, -Werror clean); §7 V1 self-check, V2 fresh-eyes review
+>   (clean — 2 LOW fixed), V4 spec/proposal sync, V5 stale-comment fix.
+>   Guards: `--rando-selftest` OK, corpus 55/55, determinism, version, audit-guard,
+>   codegen-wiring, `openspec validate --strict` all green. Retro seed 42 emits
+>   exactly 9 active take-any slots (4 potion + 1 sword).
+> - **PENDING (needs the user's in-game loop)**: §4 R1 keystone playtest (enter an
+>   active take-any cave: confirm redirect lands in host room, items present,
+>   free grant, take-one-locks-cave, empty-on-revisit, normal shop unaffected),
+>   §7 V3 full playtest. These cannot be verified by codegen/corpus — see the
+>   `logic_vs_runtime_gap` / `playtest_vs_codegen_tests` lessons.
+> - **Cosmetic polish (deferred, non-blocking)**: per-item take-any icon (all
+>   slots currently draw a heart-kind icon), old-man keeper graphic, free-item
+>   text. Latent: weapon-cave `Rupee300` grant when vanilla/swordless weapon
+>   modes land (those modes are unreachable today).
+
 ## 0. Resolve open decisions (BLOCKING — do before coding)
 - [x] 0.1 OQ4 — DECIDED: **B** (keep 3a's shipped identity-placed regular shops; amend this change's spec to match reality + correct the item list). Reviewer-endorsed; no regular-shop corpus churn. This change touches TakeAny only. Spec amendment tracked in V4.
 - [x] 0.2 OQ1 — RESOLVED (review): take-any rewards never enter the fill pool; identity-place per §D3.

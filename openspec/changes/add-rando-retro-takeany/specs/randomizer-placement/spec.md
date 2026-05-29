@@ -2,41 +2,34 @@
 
 ### Requirement: Retro TakeAny per-seed activation
 
-In Retro world-state, the generator SHALL replicate ALTTPR's TakeAny activation model (per `app/Randomizer.php:716-735`):
+In Retro world-state, the generator SHALL replicate ALTTPR's TakeAny activation model (per `app/Randomizer.php:716-735`) over the **31** `Shop\TakeAny` caves (ALTTPR declares 31 in `app/Region/Standard/**`; Inverted declares 0):
 
-1. 4 of the 22 TakeAny shops are selected via Fisher-Yates (deterministic from the seed RNG) and gain fixed inventory `BluePotion @ slot 0` + `BossHeartContainer @ slot 1`.
-2. A 5th distinct TakeAny shop is selected and gains a single-slot inventory: `ProgressiveSword` by default, OR `ThreeHundredRupees` when `mode.weapons ∈ {swordless, vanilla}`.
-3. The remaining 17 TakeAny shops are NOT active for this seed (player cannot enter / no inventory).
+1. 4 caves are selected via deterministic pick-without-replacement (see `randomizer-shuffles`) and gain fixed inventory `BluePotion @ slot 0` + `BossHeartContainer @ slot 1`.
+2. A 5th distinct cave is selected and gains a single-slot inventory: `ProgressiveSword` by default, OR `Rupee300` when `mode.weapons ∈ {swordless, vanilla}`.
+3. The remaining 26 caves are NOT active for this seed (no redirect, no inventory).
 
-The 5 active TakeAny shops contribute to the placement table per the chosen dispatch model (Option A or Option B — see § "Dispatch model" below). The 17 inactive shops produce no placement entries.
-
-> **Stub status**: dispatch model (Option A static enumeration with 44 LOC ids vs Option B active-only gate with 22 LOC ids) deferred to apply-time once sprite-handler infrastructure is authored. Per the parent change folder's proposal.md §"Dispatch infrastructure".
+Encoding is **Option B (active-only)**: each cave has 2 reserved LOC ids (266..327 = 31 × 2). Only active caves' slots emit into the placement table — 9 per seed (4 potion caves × 2 + 1 weapon cave × 1). Rewards are **role-pinned, not pool-shuffled** (take-any inventory is fixed). The player takes ONE offered item and the cave locks (runtime, see `randomizer-core`).
 
 #### Scenario: Same seed produces same 4 + 5th TakeAny selection
 - **WHEN** two `--generate-seed` invocations run with identical `(settings, seed_u64)` against Retro world-state
-- **THEN** the 4 BluePotion+BossHeart shops AND the 5th weapon/rupee shop are byte-identical between the two runs
+- **THEN** the 4 BluePotion+BossHeart caves AND the 5th weapon cave are byte-identical between the two runs
 
 #### Scenario: mode.weapons toggles the 5th TakeAny inventory
 - **WHEN** a Retro seed with `mode.weapons=randomized` is generated
 - **THEN** the 5th active TakeAny carries `ProgressiveSword`
 - **AND WHEN** the same seed is regenerated with `mode.weapons=swordless`
-- **THEN** the 5th active TakeAny carries `ThreeHundredRupees`
+- **THEN** the 5th active TakeAny carries `Rupee300` (NOTE: vanilla/swordless weapon modes are reserved/unreachable in current Phase B; this scenario activates once those modes land)
 
-#### Scenario: Inactive TakeAny shops are not in the placement table
+#### Scenario: Inactive TakeAny caves are not in the placement table
 - **WHEN** a Retro seed is generated
-- **THEN** the placement table contains exactly 5 TakeAny entries (the 4 + 5th), not 22
+- **THEN** the placement table contains exactly 9 TakeAny slot entries (4 caves × 2 + the 5th cave × 1), not 62
 
-### Requirement: Retro regular-shop randomCollection(5) extras
+### Requirement: Retro regular-shop inventory (superseded — identity-placed in Slice 3a)
 
-Independently of TakeAny activation, the generator SHALL select 5 of the 9 regular Retro shops (excluding Shop\Upgrade) via the same RNG to gain extra inventory slots (per `app/Randomizer.php:737-750`):
+This change SHALL NOT modify the regular-shop inventory: the 9 regular Retro shops MUST remain identity-placed with their vanilla inventory as shipped by Slice 3a (`add-rando-retro-world-state`), and SHALL NOT be given per-seed `randomCollection(5)` extras. This supersedes the earlier draft of this requirement.
 
-- `ShopArrow @ slot 0` (priced 80 rupees)
-- `ShopKey @ slot 1` (priced 100 rupees)
-- `TenBombs @ slot 2` (priced 50 rupees)
+Rationale: ALTTPR's `randomCollection(5)` regular-shop extras (`app/Randomizer.php:737-750`) add `ShopArrow` only under `rom.rupeeBow`, `ShopKey` only under `rom.genericKeys` (both out of scope — see `design.md` §8), and `TenBombs` unconditionally. Slice 3a chose to model the 9 shops as identity-placed vanilla inventory ("the randomization is that the player must find shops + pay rupees, not that shop inventory is shuffled"), which already shipped in the corpus. This change does NOT re-open that decision; it touches TakeAny only. See `design.md` §6.
 
-The remaining 4 regular shops keep their vanilla inventory.
-
-#### Scenario: 5 of 9 regular shops gain randomCollection extras
+#### Scenario: Regular Retro shops keep vanilla inventory
 - **WHEN** a Retro seed is generated
-- **THEN** exactly 5 of the 9 non-Upgrade, non-TakeAny shops carry the `ShopArrow + ShopKey + TenBombs` slot triple
-- **AND** the placement table emits 15 entries for those slots (5 × 3 slots)
+- **THEN** each of the 9 regular shop slots holds its vanilla item (identity-placed by Slice 3a), and this change adds no regular-shop extras

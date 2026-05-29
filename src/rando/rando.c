@@ -588,6 +588,12 @@ uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
   if (cave < 0) return vanilla_lttp_code;
   uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
   // Grant the placed item (Rando_OnLocationCheck inside also marks loc checked).
+  // NOTE (latent): the weapon cave's Rupee300 reward (only when mode.weapons is
+  // vanilla/swordless — modes reserved/unreachable today, see
+  // rando_settings.h) has no vanilla LttP dispatch code (rupees are granted by
+  // a separate path), so it would fall through to `vanilla_lttp_code`. When
+  // those weapon modes are enabled, give Rupee300 a real grant here. The
+  // default ProgressiveSword reward dispatches correctly via progressive_to_lttp.
   uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, vanilla_lttp_code);
   // Lock the whole cave: mark every active slot's LOC checked so the other
   // offered item vanishes and the cave stays empty on revisit (matches the asm
