@@ -47,6 +47,7 @@ extern "C" {
 #include "../rando_asset_decisions.h"  // AssetDecision_FindAllow / _Persist
 #include "../rando_logic.h"      // Rando_GetRegionName/LocationName/ItemName, kRandoLocations
 #include "../vanilla_assets_hash.h"  // kVanillaAssetsHash, kVanillaAssetsHashKnown
+#include "../../config.h"        // g_config (R2: snapshot features0 at open), g_rando_window_prefs
 // g_assets_hash is declared in rando.h, but that header uses C11 _Static_assert
 // (not valid in this C++ TU), so declare just the symbol we need here.
 extern uint8 g_assets_hash[32];
@@ -327,6 +328,17 @@ static void Panel_General() {
   // ---- Recommended features (quality-of-life opt-in; not in the hash) ----
   if (ImGui::CollapsingHeader("Recommended features")) {
     Panel_RecommendedFeatures();
+  }
+
+  // ---- Display (window theme; persisted to the sidecar) ----
+  ImGui::SeparatorText("Display");
+  {
+    bool dark = g_rando_window_prefs.dark_theme;
+    if (ImGui::Checkbox("Dark theme", &dark)) {
+      g_rando_window_prefs.dark_theme = dark;  // persisted at shutdown
+      if (dark) ImGui::StyleColorsDark(); else ImGui::StyleColorsLight();
+    }
+    HelpTooltip("Toggles the settings-window theme. Saved to saves/rando_window.ini.");
   }
 
   // ---- Seed ----
@@ -737,7 +749,13 @@ void RandoWindow_Init(SDL_Window *window, SDL_GLContext gl_context) {
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
-  ImGui::StyleColorsDark();
+  // Apply the persisted theme (default dark). g_rando_window_prefs is populated
+  // by Config_LoadAuxIniFile before RandoWindow_Init in main.c; it defaults to
+  // dark_theme=true if no sidecar was found.
+  if (g_rando_window_prefs.dark_theme)
+    ImGui::StyleColorsDark();
+  else
+    ImGui::StyleColorsLight();
 
   ImGui_ImplSDL2_InitForOpenGL(s_settings_window, s_settings_gl);
   ImGui_ImplOpenGL3_Init(s_glsl_version);
@@ -815,6 +833,12 @@ void RandoWindow_Shutdown(void) {
 // ---- Show / hide -----------------------------------------------------------
 void RandoWindow_OpenForNewSlot(int slot_index) {
   g_rando_window_bridge.target_slot_index = slot_index;
+  // R2 (PLAN.md §9): snapshot the LIVE config features0 into the bridge so the
+  // recommended-features panel starts from the user's current configuration.
+  // OpenForNewSlot runs on the game thread (kind-toggle entry), so reading
+  // g_config here is safe and current. The UI edits only this snapshot; the game
+  // thread applies it back to g_config.features0 inside the generate consumer.
+  g_rando_window_bridge.pending_recommended_features0 = g_config.features0;
   if (s_settings_window) {
     SDL_ShowWindow(s_settings_window);
     SDL_RaiseWindow(s_settings_window);
@@ -831,5 +855,59 @@ void RandoWindow_Hide(void) {
 }
 
 bool RandoWindow_WantsShown(void) { return s_wants_shown; }
+
+// ---- Geometry persistence (P5) --------------------------------------------
+// Apply a restored window rect, clamped to the union of all connected displays.
+// If the saved rect does not intersect ANY display (e.g. a monitor was
+// unplugged), the position is ignored and the window is re-centered; the size
+// is still honored (clamped to something sane). Called BEFORE the window is
+// shown, so SetWindowPosition/Size take effect without a visible jump.
+void RandoWindow_ApplyGeometry(int x, int y, int w, int h) {
+  if (!s_settings_window) return;
+
+  // Sanitize the size first (reject absurd / non-positive values).
+  if (w < 200) w = 200;
+  if (h < 200) h = 200;
+  if (w > 16384) w = 16384;
+  if (h > 16384) h = 16384;
+
+  // Does the saved rect intersect any display? Build the union of display
+  // bounds; treat the rect as on-screen if it overlaps at least one.
+  bool on_screen = false;
+  int ndisp = SDL_GetNumVideoDisplays();
+  for (int i = 0; i < ndisp; i++) {
+    SDL_Rect db;
+    if (SDL_GetDisplayBounds(i, &db) != 0) continue;
+    SDL_Rect want = { x, y, w, h };
+    SDL_Rect isect;
+    if (SDL_IntersectRect(&want, &db, &isect) && isect.w > 0 && isect.h > 0) {
+      on_screen = true;
+      break;
+    }
+  }
+
+  SDL_SetWindowSize(s_settings_window, w, h);
+  if (on_screen) {
+    SDL_SetWindowPosition(s_settings_window, x, y);
+  } else {
+    // Off-screen (or no displays reported the rect): re-center.
+    SDL_SetWindowPosition(s_settings_window, SDL_WINDOWPOS_CENTERED,
+                          SDL_WINDOWPOS_CENTERED);
+  }
+}
+
+// Read back the live window geometry (logical position + size, not the HiDPI
+// drawable size). Any out param may be NULL.
+void RandoWindow_GetGeometry(int *x, int *y, int *w, int *h) {
+  int px = 0, py = 0, pw = 0, ph = 0;
+  if (s_settings_window) {
+    SDL_GetWindowPosition(s_settings_window, &px, &py);
+    SDL_GetWindowSize(s_settings_window, &pw, &ph);
+  }
+  if (x) *x = px;
+  if (y) *y = py;
+  if (w) *w = pw;
+  if (h) *h = ph;
+}
 
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
