@@ -7976,7 +7976,19 @@ void SpritePrep_Locksmith(int k) {  // 868d59
 }
 
 void SpritePrep_SickKid(int k) {  // 868d7f
-  if (link_item_bug_net)
+  // Vanilla locks the Sick Kid into ai_state 3 ("back to rest / already gave")
+  // once link_item_bug_net is set, because in vanilla HE is the source of the
+  // bug net — so "has net" == "already collected his gift." Under rando the net
+  // is a shuffled item: obtaining it elsewhere first would lock him done before
+  // his placed check is collected, making it unreachable. Gate the done-state on
+  // whether LOC_Sick_Kid has actually been checked (Sprite_1F_SickKid case 2
+  // dispatches Rando_DispatchVanillaGrant(LOC_Sick_Kid, ...), which marks it).
+  // Keep the vanilla proxy when rando is inactive so the RAM-compare path is
+  // byte-identical.
+  bool already_done = (enhanced_features1 & kFeatures1_RandomizerActive)
+                          ? Rando_IsLocationChecked(LOC_Sick_Kid)
+                          : (bool)link_item_bug_net;
+  if (already_done)
     sprite_ai_state[k] = 3;
   sprite_ignore_projectile[k]++;
 }
@@ -11181,7 +11193,22 @@ void SpritePrep_UncleAndPriest_bounce(int k) {  // 86bfe5
     // not by despawning — so the item-give survives while the trap does not.
     // (Earlier this was despawned for non-Standard rando, which removed the
     // check; the write-gate is the correct, narrower fix.)
-    if (!(sram_progress_flags & 1)) {
+    //
+    // BUT: the vanilla "already collected" proxy is sram_progress_flags bit 1,
+    // which Uncle_InPassage only sets in the !Rando_SuppressHyruleCastleEscape
+    // path. In a non-Standard (Open/Inverted) seed suppression is TRUE, so bit 1
+    // is NEVER set after collecting — the uncle re-spawns on every re-entry and
+    // re-grants its placed item ("bottle twice"). Use the rando location-checked
+    // bit as the "already collected" signal in that case. LOC_Link_s_Uncle is
+    // marked the moment Uncle_InPassage case 1 dispatches the grant, so this
+    // ONLY despawns AFTER the item is collected — it does NOT re-introduce the
+    // old despawn-before-collection bug that made seeds unbeatable. Vanilla
+    // behavior (bit-1 proxy) is unchanged when rando is inactive.
+    bool collected = (sram_progress_flags & 1) != 0;
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_IsLocationChecked(LOC_Link_s_Uncle))
+      collected = true;
+    if (!collected) {
       sprite_D[k] = 3;
       sprite_subtype2[k] = 1;
     } else {

@@ -13,6 +13,7 @@
 #include "rando/rando_save.h"
 #include "rando/rando_share.h"
 #include "rando/rando_settings.h"
+#include "rando/rando_hints.h"  // Rando_GenerateHints (populate hints[] before spoiler write)
 #include "rando/rando_spoiler.h"
 #include "rando/rando_textfield.h"
 #include "rando/vanilla_assets_hash.h"  // kVanillaAssetsHash + kVanillaAssetsHashKnown
@@ -3480,6 +3481,13 @@ static void SelectFile_Settings_HandleGenerate(void) {
     RandoSpheres spheres;
     bool spheres_ok = Logic_ComputeSpheres(&g_settings_working, &table, &spheres);
     (void)spheres_ok;
+    // Phase B Slice 5 §3 — populate per-NPC hint texts into g_hint_table so
+    // the spoiler's hints[] array is non-empty when hints=on. The CLI
+    // --generate-seed path (main.c) calls this before its Spoiler_Write; the
+    // in-game generation flow must do the same or the spoiler emits an empty
+    // hints[] (g_hint_table is a zeroed module static at process start)
+    // despite "hints": 1 in the settings block. No-op when hints == Off.
+    Rando_GenerateHints(&g_settings_working, &table, &spheres);
     RandoSpoiler spoiler;
     memset(&spoiler, 0, sizeof(spoiler));
     spoiler.share_string = share_string;
