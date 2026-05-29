@@ -325,8 +325,8 @@ static void Panel_General() {
   ImGui::EndDisabled();
   HelpTooltip("pinned in Phase A");
 
-  // ---- Recommended features (quality-of-life opt-in; not in the hash) ----
-  if (ImGui::CollapsingHeader("Recommended features")) {
+  // ---- Quality of Life (opt-in enhancement bits; not in the settings hash) ----
+  if (ImGui::CollapsingHeader("Quality of Life")) {
     Panel_RecommendedFeatures();
   }
 
