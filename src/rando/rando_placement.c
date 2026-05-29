@@ -1937,5 +1937,50 @@ void Placement_SelfCheck(void) {
     if (dungeon_id_for_item(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
   }
 
+  // Phase B Slice 3b — Retro TakeAny selection invariants. Pins the per-seed
+  // activation model (exactly 4 potion caves + 1 weapon cave = 9 active slots;
+  // deterministic per seed; inactive outside Retro; role→reward mapping) so a
+  // future placer/RNG change trips the selftest before a corpus regen.
+  {
+    RandoSettings s;
+    Settings_SetDefaults(&s);
+    s.world_state = kWorldState_Retro;  // mode_weapons defaults to Randomized → ProgressiveSword
+    uint8 roles[kTakeAnyCaveCount], roles2[kTakeAnyCaveCount];
+    takeany_select(&s, 0x1234ull, roles);
+    takeany_select(&s, 0x1234ull, roles2);
+    uint8 potion = 0, weapon = 0, active_slots = 0;
+    for (uint8 cave = 0; cave < kTakeAnyCaveCount; cave++) {
+      if (roles[cave] != roles2[cave])
+        selfcheck_die("TakeAny selection not deterministic for a fixed seed");
+      uint16 r0 = takeany_reward(&s, roles, (uint16)(kTakeAnyLocBase + 2 * cave));
+      uint16 r1 = takeany_reward(&s, roles, (uint16)(kTakeAnyLocBase + 2 * cave + 1));
+      if (roles[cave] == kTakeAnyRole_Potion) {
+        potion++;
+        active_slots += 2;
+        if (r0 != ID_BluePotion || r1 != ID_BossHeartContainer)
+          selfcheck_die("TakeAny potion cave reward mapping wrong (expect BluePotion@0 + BossHeart@1)");
+      } else if (roles[cave] == kTakeAnyRole_Weapon) {
+        weapon++;
+        active_slots += 1;
+        if (r0 != ID_ProgressiveSword || r1 != 0xFFFF)
+          selfcheck_die("TakeAny weapon cave reward mapping wrong (expect ProgressiveSword@0, no slot 1)");
+      } else if (r0 != 0xFFFF || r1 != 0xFFFF) {
+        selfcheck_die("TakeAny inactive cave must yield no reward");
+      }
+    }
+    if (potion != 4)       selfcheck_die("TakeAny must activate exactly 4 potion caves");
+    if (weapon != 1)       selfcheck_die("TakeAny must activate exactly 1 weapon cave");
+    if (active_slots != 9) selfcheck_die("TakeAny must emit exactly 9 active slots per seed");
+
+    // Outside Retro, no cave activates (Open default world-state).
+    RandoSettings open;
+    Settings_SetDefaults(&open);
+    uint8 oroles[kTakeAnyCaveCount];
+    takeany_select(&open, 0x1234ull, oroles);
+    for (uint8 cave = 0; cave < kTakeAnyCaveCount; cave++)
+      if (oroles[cave] != kTakeAnyRole_Inactive)
+        selfcheck_die("TakeAny must be inactive outside Retro world-state");
+  }
+
   fprintf(stderr, "[Placement_SelfCheck] OK\n");
 }
