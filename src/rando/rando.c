@@ -559,6 +559,11 @@ uint8 Rando_GetActiveWorldState(void) {
   return g_rando_slot_active ? g_rando_active_world_state : (uint8)kWorldState_Open;
 }
 
+bool Rando_SuppressHyruleCastleEscape(void) {
+  return (enhanced_features1 & kFeatures1_RandomizerActive) &&
+         Rando_GetActiveWorldState() != (uint8)kWorldState_Standard;
+}
+
 bool Rando_MushroomHeld(void) {
   return g_rando_slot_active && g_rando_mushroom_held != 0;
 }

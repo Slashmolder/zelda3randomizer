@@ -1407,7 +1407,12 @@ void Sprite_EE_MovableMantle(int k) {
   if (follower_indicator != 1 || no_lamp_gate || link_is_running || sprite_G[k] == 0x90 || sign8(link_actual_vel_x - 24))
     return;
 
-  which_starting_point = 4;
+  // The throne-push beat sets the escape-only sewers respawn pointer. It only
+  // reaches here with Zelda following (follower_indicator==1), which a
+  // post-escape non-Standard rando seed never has — but guard the write for
+  // completeness so the escape respawn pointer can't be set under rando.
+  if (!Rando_SuppressHyruleCastleEscape())
+    which_starting_point = 4;
   sprite_subtype2[k]++;
 
   if (!(sprite_subtype2[k] & 1))
@@ -5829,9 +5834,15 @@ void Uncle_InPassage(int k) {  // 85df19
     }
     sprite_ai_state[k]++;
     sprite_graphics[k] = 1;
-    which_starting_point = 3;
-    sram_progress_flags |= 1;
-    sram_progress_indicator = 1;
+    // Defense-in-depth: never write the escape-only respawn pointer / drop
+    // progress below the post-escape baseline for a non-Standard rando seed.
+    // The sprite is normally despawned at prep (SpritePrep_UncleAndPriest_bounce),
+    // so this guard is a belt-and-suspenders backstop against the S&Q trap.
+    if (!Rando_SuppressHyruleCastleEscape()) {
+      which_starting_point = 3;
+      sram_progress_flags |= 1;
+      sram_progress_indicator = 1;
+    }
     break;
   }
 }
@@ -6435,7 +6446,10 @@ void Zelda_InCell(int k) {  // 85ecbf
     break;
   case 4:  // TransitionToTagalong
     flag_is_link_immobilized = 0;
-    which_starting_point = 2;
+    // Defense-in-depth: don't set the escape-only cell respawn pointer for a
+    // non-Standard rando seed (despawned at prep; see SpritePrep_Zelda_bounce).
+    if (!Rando_SuppressHyruleCastleEscape())
+      which_starting_point = 2;
     SavePalaceDeaths();
     follower_indicator = 1;
     Dungeon_FlagRoomData_Quadrants();
@@ -11146,12 +11160,26 @@ void SpritePrep_UncleAndPriest_bounce(int k) {  // 86bfe5
     sprite_ignore_projectile[k]++;
     byte_7FFE01 = 0;
   } else if (BYTE(dungeon_room_index) == 4) {
-    if (!(sram_progress_flags & 0x10))
+    // Sewers passage uncle (the dying-uncle / Uncle_InPassage story beat).
+    // Vanilla despawns it once sram_progress_flags bit 0x10 (uncle left house)
+    // is set. A non-Standard rando seed starts post-escape with that bit set
+    // (fresh-save SRAM 0x14), so this normally despawns — but suppress it
+    // unconditionally for non-Standard rando so it can never re-engage even if
+    // the SRAM bit is clear on an older slot. See Rando_SuppressHyruleCastleEscape.
+    if (!(sram_progress_flags & 0x10) && !Rando_SuppressHyruleCastleEscape())
       sprite_x_lo[k] += 8;
     else
       sprite_state[k] = 0;
   } else {
-    if (!(sram_progress_flags & 1)) {
+    // Sewers uncle that runs Uncle_InPassage (gives sword/shield, then writes
+    // which_starting_point=3 + sram_progress_indicator=1). Vanilla gates this
+    // on sram_progress_flags bit 0x01 (uncle item obtained); the post-escape
+    // rando start does NOT set bit 0x01 (ALTTPR's InitProgressFlags=0x14), so
+    // re-entering the Hyrule Castle sewers re-runs this beat and traps the
+    // player (F12 dump: which_starting_point=3, sram_progress_indicator=1).
+    // Suppress it for non-Standard rando; treat the HC interior as a normal
+    // post-escape dungeon.
+    if (!(sram_progress_flags & 1) && !Rando_SuppressHyruleCastleEscape()) {
       sprite_D[k] = 3;
       sprite_subtype2[k] = 1;
     } else {
@@ -11432,7 +11460,14 @@ void SpritePrep_Zelda_bounce(int k) {  // 86c06c
     }
   } else {
     sprite_subtype2[k] = 0;
-    if (follower_indicator == 1 || (sram_progress_flags & 4))
+    // Zelda-in-cell rescue beat. Vanilla despawns it once Zelda is following
+    // or has been rescued (sram_progress_flags bit 0x04). Post-escape rando
+    // starts with bit 0x04 set, but suppress unconditionally for non-Standard
+    // rando so the cell rescue (which writes which_starting_point=2 and leaves
+    // the escape sprite/CHR mode engaged) can never re-run. See
+    // Rando_SuppressHyruleCastleEscape.
+    if (follower_indicator == 1 || (sram_progress_flags & 4) ||
+        Rando_SuppressHyruleCastleEscape())
       sprite_state[k] = 0;
   }
 }
