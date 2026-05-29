@@ -1672,15 +1672,32 @@ void SpritePrep_FakeSword(int k) {
 }
 
 void SpritePrep_MedallionTable(int k) {
+  // Vanilla fast-forwards the tablet to ai_state 3 (already-read, inert
+  // crumbled graphic) when the matching medallion is held, because in vanilla
+  // reading the tablet IS the only way to get that medallion — "has medallion"
+  // == "already read this tablet." Under rando the medallions are shuffled:
+  // obtaining Bombos/Ether elsewhere first would make the tablet inert before
+  // its check is collected, making LOC_*_Tablet unreachable. Gate on whether
+  // the location has actually been checked instead (the read cutscene in
+  // {Ether,Bombos}Tablet_StartCutscene → LinkState_Receiving* dispatches
+  // Rando_DispatchVanillaGrant(LOC_*_Tablet, ...), which marks it). Once
+  // checked the tablet goes inert as before, so a revisit can't re-read.
+  // Vanilla path keeps the proxy so RAM-compare stays byte-identical.
   sprite_ignore_projectile[k]++;
   if (BYTE(overworld_screen_index) != 3) {
     sprite_x_lo[k] += 8;
-    if (link_item_bombos_medallion) {
+    bool already_read = (enhanced_features1 & kFeatures1_RandomizerActive)
+                            ? Rando_IsLocationChecked(LOC_Bombos_Tablet)
+                            : (bool)link_item_bombos_medallion;
+    if (already_read) {
       sprite_graphics[k] = 4;
       sprite_ai_state[k] = 3;
     }
   } else {
-    if (link_item_ether_medallion) {
+    bool already_read = (enhanced_features1 & kFeatures1_RandomizerActive)
+                            ? Rando_IsLocationChecked(LOC_Ether_Tablet)
+                            : (bool)link_item_ether_medallion;
+    if (already_read) {
       sprite_graphics[k] = 4;
       sprite_ai_state[k] = 3;
     }
@@ -3122,7 +3139,18 @@ void Sprite_52_KingZora(int k) {  // 85995b
         sprite_delay_main[k] = 0x30;
       }
     } else if (j == 77) {
-      if (sprite_E[k])
+      // Defense-in-depth against re-grant: SpritePrep_KingZora despawns Zora
+      // once LOC_King_Zora is checked, so this dialogue branch is normally
+      // unreachable on a revisit. But Rando_DispatchVanillaGrant /
+      // Rando_OnLocationCheck are NOT idempotent (every call re-runs
+      // Link_ReceiveItem / re-ticks the Triforce counter / re-writes prize
+      // bits), so if the regurgitate were ever reached a second time it would
+      // mint a duplicate item. Skip the regurgitate when the location is
+      // already checked under rando (the vanilla path is untouched).
+      bool already_collected = (enhanced_features1 & kFeatures1_RandomizerActive)
+                                   ? Rando_IsLocationChecked(LOC_King_Zora)
+                                   : false;
+      if (sprite_E[k] && !already_collected)
         Sprite_Zora_RegurgitateFlippers(k);
     }
     break;
@@ -6513,7 +6541,22 @@ void Zelda_AtSanctuary(int k) {  // 85ee0c
 }
 
 void SpritePrep_Mushroom(int k) {  // 85ee53
-  if (link_item_mushroom >= 2) {
+  // Vanilla despawns the ground Mushroom once link_item_mushroom >= 2 (i.e. the
+  // player holds Powder), because byte 0xF344 is shared Mushroom(1)/Powder(2)
+  // and in vanilla you can't have Powder without having first picked up THIS
+  // Mushroom. Under rando the Mushroom is a shuffled item and Powder can be
+  // obtained first (or placed elsewhere), which raises the byte to 2 and would
+  // despawn the ground pickup before LOC_Mushroom is collected — unreachable.
+  // (The Witch / Potion-Shop *consume* side was already decoupled via
+  // g_rando_mushroom_held; this is the pickup side, still keying off the raw
+  // byte.) Gate the despawn on whether LOC_Mushroom has been checked (pickup in
+  // Sprite_E7_Mushroom dispatches Rando_DispatchVanillaGrant(LOC_Mushroom, ...),
+  // which marks it). Vanilla path keeps the proxy so RAM-compare stays
+  // byte-identical.
+  bool already_collected = (enhanced_features1 & kFeatures1_RandomizerActive)
+                               ? Rando_IsLocationChecked(LOC_Mushroom)
+                               : (link_item_mushroom >= 2);
+  if (already_collected) {
     sprite_state[k] = 0;
   } else {
     sprite_graphics[k] = 0;
@@ -6744,10 +6787,24 @@ void Sprite_Sahasrahla(int k) {  // 85f14d
 }
 
 void Sasha_Idle(int k) {  // 85f160
+  // Vanilla selects the give-Boots branch on !link_item_boots, because in
+  // vanilla Sahasrahla IS the source of the Pegasus Boots — "no boots" ==
+  // "haven't received his gift yet" (the green-pendant precondition above
+  // still gates when he'll offer it). Under rando Boots are shuffled: obtaining
+  // them elsewhere first makes !link_item_boots false, so he skips straight to
+  // the ice-rod hint and LOC_Sahasrahla never grants (unreachable). Conversely
+  // a non-Boots placed item never raises link_item_boots, so every revisit
+  // re-enters the give branch and re-dispatches the (non-idempotent) grant.
+  // Gate on whether LOC_Sahasrahla has been checked (case 2 dispatches
+  // Rando_DispatchVanillaGrant(LOC_Sahasrahla, ...), which marks it). The
+  // green-pendant precondition is unchanged; vanilla path stays byte-identical.
+  bool boots_given = (enhanced_features1 & kFeatures1_RandomizerActive)
+                         ? Rando_IsLocationChecked(LOC_Sahasrahla)
+                         : (bool)link_item_boots;
   if (!(link_which_pendants & 4)) {
     if (Sprite_ShowSolicitedMessage(k, 0x32) & 0x100)
       sprite_ai_state[k] = 1;
-  } else if (!link_item_boots) {
+  } else if (!boots_given) {
     int m = (savegame_map_icons_indicator >= 3) ? 0x38 : 0x39;
     if (Sprite_ShowSolicitedMessage(k, m) & 0x100)
       sprite_ai_state[k] = 2;
@@ -7941,7 +7998,20 @@ void SpritePrep_BonkItem(int k) {  // 868cf2
   }
   sprite_floor[k] = 2;
   if (dungeon_room_index == 0x107) {
-    if (link_item_book_of_mudora)
+    // The Library bonk-item (Book of Mudora). Vanilla despawns it once
+    // link_item_book_of_mudora is set, because in vanilla this IS the only
+    // Book source — "has Book" == "already dashed it out." Under rando the
+    // Book is shuffled: obtaining it elsewhere first would despawn the Library
+    // item before LOC_Library is collected, making it unreachable. Gate the
+    // despawn on whether LOC_Library has been checked (pickup dispatches
+    // Rando_DispatchVanillaGrant(LOC_Library, ...), which marks it). Vanilla
+    // path keeps the proxy so RAM-compare stays byte-identical. (The else
+    // branch below keys off dung_savegame_state_bits — a proper per-item event
+    // bit, not a shuffled-item proxy — so it is left untouched.)
+    bool already_collected = (enhanced_features1 & kFeatures1_RandomizerActive)
+                                 ? Rando_IsLocationChecked(LOC_Library)
+                                 : (bool)link_item_book_of_mudora;
+    if (already_collected)
       sprite_state[k] = 0;
     else
       DecodeAnimatedSpriteTile_variable(0xe);
@@ -8127,7 +8197,22 @@ void SpritePrep_FallingIce(int k) {  // 868f08
 }
 
 void SpritePrep_KingZora(int k) {  // 868f0f
-  if (link_item_flippers)
+  // Vanilla despawns King Zora once link_item_flippers is set, because in
+  // vanilla HE is the only source of the Flippers — "has flippers" == "already
+  // bought his gift." Under rando the Flippers are shuffled: obtaining them
+  // elsewhere first would despawn Zora before his placed check is collected,
+  // making LOC_King_Zora unreachable (and any progression placed there would
+  // make the seed unbeatable). Gate the despawn on whether the location has
+  // actually been checked (Sprite_Zora_RegurgitateFlippers dispatches
+  // Rando_DispatchVanillaGrant(LOC_King_Zora, ...), which marks it). Once
+  // checked he despawns as before, so a revisit can't re-trigger the 500-rupee
+  // regurgitate (Rando_OnLocationCheck is NOT idempotent — a second dispatch
+  // would re-grant). Keep the vanilla proxy when rando is inactive so the
+  // RAM-compare path stays byte-identical.
+  bool already_collected = (enhanced_features1 & kFeatures1_RandomizerActive)
+                               ? Rando_IsLocationChecked(LOC_King_Zora)
+                               : (bool)link_item_flippers;
+  if (already_collected)
     sprite_state[k] = 0;
   else
     sprite_ignore_projectile[k]++;
@@ -10388,7 +10473,26 @@ void Smithy_Main(int k) {  // 86b34e
     break;
   case 2:  // HandleTemperingChoice
     if (choice_in_multiselect_box == 0) {
-      if (link_sword_type < 3) {
+      // Vanilla gates the tempering offer on link_sword_type < 3, because the
+      // tempering reward IS an L3 (tempered) sword — "sword >= 3" == "already
+      // tempered." There is NO persistent done-bit for the reward: bit 0x20 is
+      // "both smiths reunited" (the prerequisite) and bit 0x80 is the in-temper
+      // transient (set in case 3, cleared the instant case 6 grants), so neither
+      // survives as a done-gate. Under rando the Blacksmith's reward is shuffled
+      // two ways break this proxy:
+      //   (A) a tempered/gold sword obtained elsewhere (e.g. progressive-sword
+      //       shuffle pushing link_sword_type >= 3) makes this take the
+      //       "already good" branch and LOC_Blacksmith never grants — unreachable;
+      //   (B) a NON-sword placed reward leaves link_sword_type < 3, so the temper
+      //       flow can be run again — and case 6 routes through the NON-idempotent
+      //       Rando_DispatchVanillaGrant, re-minting the item every time.
+      // Gate on whether LOC_Blacksmith has been checked (case 6 dispatches it).
+      // Vanilla path keeps the link_sword_type proxy so RAM-compare stays
+      // byte-identical.
+      bool already_rewarded = (enhanced_features1 & kFeatures1_RandomizerActive)
+                                  ? Rando_IsLocationChecked(LOC_Blacksmith)
+                                  : (link_sword_type >= 3);
+      if (!already_rewarded) {
         Sprite_ShowMessageUnconditional(0xda);
         sprite_ai_state[k] = 3;
       } else {
@@ -11224,7 +11328,21 @@ void SpritePrep_OldMan_bounce(int k) {  // 86bff9
     return;
   }
   if (follower_indicator == 0) {
-    if (link_item_mirror == 2)
+    // Vanilla despawns the lost old man once link_item_mirror == 2, because in
+    // vanilla escorting him to his cave IS the only source of the Magic Mirror
+    // — "has mirror" == "already did the escort." Under rando the Mirror is
+    // shuffled: obtaining it elsewhere first would despawn the old man before
+    // LOC_Old_Man is collected, making the escort reward unreachable. Gate the
+    // despawn on whether the location has been checked (the escort payoff in
+    // Sprite_OldMan dispatches Rando_DispatchVanillaGrant(LOC_Old_Man, ...),
+    // which marks it). Vanilla path keeps the proxy so RAM-compare stays
+    // byte-identical. NOTE: the escort is a multi-screen tagalong flow — this
+    // prep-gate keeps the NPC spawnable until collected; the exact escort
+    // hand-off still wants a live playtest to confirm end-to-end.
+    bool already_escorted = (enhanced_features1 & kFeatures1_RandomizerActive)
+                                ? Rando_IsLocationChecked(LOC_Old_Man)
+                                : (link_item_mirror == 2);
+    if (already_escorted)
       sprite_state[k] = 0;
     follower_indicator = 4;
     LoadFollowerGraphics();
@@ -11369,6 +11487,20 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
   switch(sprite_ai_state[k]) {
   case 0:  // wait for summon
     if (link_magic_consumption >= 2)
+      return;
+    // Anti-re-grant guard. Vanilla's grant (case 3) sets the magic-consumption
+    // byte to the HalfMagic value, which is idempotent — re-summoning the bat
+    // (leave the room, re-enter, re-bomb the altar) just re-writes that same
+    // value, no harm, so vanilla never needed a "done" gate (the >= 2 check
+    // above only blocks once QuarterMagic, value 2, is held — NOT after a
+    // HalfMagic grant). Under
+    // rando the case-3 dispatch routes through the NON-idempotent
+    // Rando_OnLocationCheck / Rando_DispatchVanillaGrant, so a re-summon would
+    // re-grant the placed item (re-run Link_ReceiveItem / re-tick the Triforce
+    // counter / re-write prize bits). Block re-summon once LOC_Magic_Bat is
+    // checked. Vanilla path is unchanged (RAM-compare byte-identical).
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_IsLocationChecked(LOC_Magic_Bat))
       return;
     if (!Sprite_CheckDamageToLink_same_layer(k))
       return;
@@ -18646,6 +18778,23 @@ void Catfish_BigFish(int k) {  // 9ddfd1
   case 3: { // ConversateThenSubmerge
     int j = sprite_delay_main[k];
     static const uint8 kGreatCatfish_Conversate_Gfx[20] = { 0, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6 };
+    // Vanilla keys the catfish on link_item_quake_medallion because HE is the
+    // only source of Quake — "has Quake" == "already received his gift," after
+    // which he shows the taunt text and lobs a bomb/fireball instead of
+    // regurgitating. Under rando Quake is shuffled, breaking the proxy two ways:
+    //   (A) obtaining Quake elsewhere first makes !already false, so the catfish
+    //       never regurgitates and LOC_Catfish becomes unreachable (a seed with
+    //       progression placed there would be unbeatable);
+    //   (B) a non-Quake placed item never raises link_item_quake_medallion, so
+    //       every revisit regurgitates again — and Rando_OnLocationCheck is NOT
+    //       idempotent, so each pickup re-grants (infinite items).
+    // Gate on whether LOC_Catfish has actually been checked (the regurgitated
+    // medallion's pickup in Sprite_Catfish_QuakeMedallion dispatches
+    // Rando_DispatchVanillaGrant(LOC_Catfish, ...), which marks it). Vanilla
+    // path keeps the original proxy so RAM-compare stays byte-identical.
+    bool already_given = (enhanced_features1 & kFeatures1_RandomizerActive)
+                             ? Rando_IsLocationChecked(LOC_Catfish)
+                             : (bool)link_item_quake_medallion;
     if (j == 0) {
       sprite_state[k] = 0;
     } else {
@@ -18655,11 +18804,11 @@ void Catfish_BigFish(int k) {  // 9ddfd1
         Catfish_SpawnPlop(k);
       } else if (j == 96) {
         flag_is_link_immobilized = 0;
-        dialogue_message_index = link_item_quake_medallion ? 0x12b : 0x12a;
+        dialogue_message_index = already_given ? 0x12b : 0x12a;
         Sprite_ShowMessageMinimal();
         return;
       } else if (j == 80) {
-        if (link_item_quake_medallion) {
+        if (already_given) {
           if (GetRandomNumber() & 1)
             Sprite_SpawnBomb(k);
           else

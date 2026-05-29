@@ -593,6 +593,20 @@ void LinkState_ReceivingEther() {  // 878570
     //     override the granted item via ancilla_item_to_link.
     // If the dispatch returned kRandoLttpSkip (direct-write done), skip
     // the FallingPrize spawn entirely.
+    // Anti-re-grant guard: tablets have no vanilla "already read" bit, so
+    // re-reading would re-dispatch Rando_DispatchVanillaGrant — which is NOT
+    // idempotent (re-runs Link_ReceiveItem / re-ticks the Triforce counter /
+    // re-writes prize bits), minting a duplicate item. SpritePrep_MedallionTable
+    // already fast-forwards the tablet to inert once LOC_Ether_Tablet is checked
+    // (so a revisit can't reach this), but guard the grant directly too: if the
+    // location is already checked under rando, end the cutscene without dispatch.
+    // Vanilla re-reads are idempotent (Ether is fixed), so leave vanilla alone.
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_IsLocationChecked(LOC_Ether_Tablet)) {
+      flag_is_link_immobilized = 1;
+      flag_block_link_menu = 0;
+      return;
+    }
     uint8 lttp_code = 0x10;  // vanilla Ether
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Ether_Tablet, ITEM_Ether, lttp_code);
@@ -634,6 +648,15 @@ void LinkState_ReceivingBombos() {  // 8785fb
   } else if (i == 0) {
     // §6.5: dispatch the placed item at LOC_Bombos_Tablet. Vanilla Bombos
     // (LttP code 0x0f); item_idx=5 is the Bombos visual.
+    // Anti-re-grant guard (see LinkState_ReceivingEther for rationale): tablets
+    // have no vanilla "already read" bit, so re-reading would re-dispatch the
+    // non-idempotent Rando_DispatchVanillaGrant. SpritePrep_MedallionTable goes
+    // inert once LOC_Bombos_Tablet is checked; guard the grant directly too.
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_IsLocationChecked(LOC_Bombos_Tablet)) {
+      flag_is_link_immobilized = 1;
+      return;
+    }
     uint8 lttp_code = 0x0f;  // vanilla Bombos
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Bombos_Tablet, ITEM_Bombos, lttp_code);
