@@ -29,7 +29,7 @@ No `design.md` — change is small enough that the proposal + spec carry the des
 - `assets/scripts/check_codegen_wiring.py` — multi-build-system header registration.
 - `assets/scripts/check_determinism.py` — no new `rand`/`time` symbols (no-op for this change).
 - `assets/scripts/check_audit_guard.py` — no new tracked-cell writes (no-op for this change).
-- Manual playtest per `docs/randomizer_playthrough.md` spot-tests + `tasks.md §7`.
+- Manual playtest spot-tests + `tasks.md §7`.
 - **`placement_digest_hex` byte-identical** before/after — no `kGeneratorVersion` bump.
 
 ## Dependencies
@@ -39,4 +39,4 @@ No `design.md` — change is small enough that the proposal + spec carry the des
 
 ## Why first
 
-Per `docs/randomizer_phase_b.md` recommended ordering: smallest contained slice, immediate UX payoff, exercises the Phase B change-authoring pattern end-to-end (proposal → specs → tasks → apply → archive) with low blast radius.
+Per the Phase B recommended ordering: smallest contained slice, immediate UX payoff, exercises the Phase B change-authoring pattern end-to-end (proposal → specs → tasks → apply → archive) with low blast radius.

@@ -72,7 +72,7 @@
 
 - [x] 9.1 `docs/randomizer.md` — add a "Race mode" section explaining the suppression + reveal flow with the file-format details. *(Landed — new `## Race mode` section between Save behavior and Audit comment convention, covering generation (`--race-mode`), 138-byte file layout (with offsets), reveal entry points and exit codes (0..9), idempotency, regression-corpus coverage, and tamper-detection behavior.)*
 - [x] 9.2 `docs/randomizer.md` — un-gate the race-mode bullet in the CLI flags table. *(Landed — `--race-mode` and `--reveal-spoiler=<path>` are now active rows in the CLI flags table.)*
-- [x] 9.3 `docs/randomizer_phase_b.md` Slice 6 status: mark complete; cross-link to this change. *(Already accurate at `docs/randomizer_phase_b.md:25-28`: "Slice 6 (race-mode reveal): **fully wired**. CLI path + in-binary key binding both work. Cluster-audit MED gate prevents mid-race peeks. Audit found 3 HIGH — all fixed." The change folder cross-link is in the Phase B+ roadmap table at `docs/randomizer.md:288`.)*
+- [x] 9.3 Cross-link this change from the `openspec/changes/` index (README.md). *(Already accurate: Slice 6 (race-mode reveal) is fully wired — CLI path + in-binary key binding both work; cluster-audit MED gate prevents mid-race peeks; audit found 3 HIGH, all fixed. The change folder cross-link is in the Phase B+ roadmap table at `docs/randomizer.md:288`.)*
 
 ## 10. Archive readiness
 

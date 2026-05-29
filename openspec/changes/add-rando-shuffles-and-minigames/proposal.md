@@ -6,7 +6,7 @@ Phase A's `randomizer-shuffles` spec scaffolds five shuffle modules — prize, m
 - **Hype Cave chests** (4 of them) are already wired via the §6.3 universal chest hook (rows 203-206 of `chest_lookup.h`).
 - **Digging Game** (`LOC_Digging_Game = 228`), **Hype Cave NPC** (`LOC_Hype_Cave_NPC = 227`), **Peg Cave**, and **Treasure-Chest minigame** are defined location IDs but NOT instrumented — vanilla code paths still grant their inline items.
 
-This change bundles boss + drop shuffles + the minigame dispatch because all three workstreams touch the same surface area: sprite handlers in `src/sprite_main.c`. Per `docs/randomizer_phase_b_chunking.md`, bundling preserves authorship efficiency (one focused PR rather than three).
+This change bundles boss + drop shuffles + the minigame dispatch because all three workstreams touch the same surface area: sprite handlers in `src/sprite_main.c`. Bundling preserves authorship efficiency (one focused PR rather than three).
 
 ## What Changes
 

@@ -74,7 +74,7 @@
 
 - [ ] 9.1 Update `docs/randomizer.md` settings reference: document `boss_shuffle=` and `drop_pool_shuffle=` axes.
 - [ ] 9.2 Add a "Shuffle modules" subsection covering boss + drop-pool behavior.
-- [ ] 9.3 Update `docs/randomizer_phase_b.md` Slices 7 + 8 status: mark complete.
+- [ ] 9.3 Cross-link this change from the `openspec/changes/` index (README.md).
 
 ## 9.5. Performance budget verification
 

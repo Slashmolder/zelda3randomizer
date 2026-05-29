@@ -40,4 +40,4 @@ No `design.md` — the spec carries the design decisions (anchor configuration, 
 
 ## Why second
 
-Highest player-impact UX in Phase B (per `docs/randomizer_phase_b.md` Slice 1 rationale). Also a test substrate for the Inverted world-state work coming later.
+Highest player-impact UX in Phase B (per the Phase B Slice 1 rationale). Also a test substrate for the Inverted world-state work coming later.

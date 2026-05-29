@@ -232,6 +232,29 @@ Append-only location-registry additions advance the version and regenerate
 the regression corpus for new seeds, but do NOT invalidate existing saves
 (the embedded placement table preserves the older slot's interpretation).
 
+### Serialization invariants
+
+Two invariants underpin the bump policy and the byte layout pinned in
+`openspec/changes/add-randomizer-support/specs/randomizer-core/spec.md`:
+
+1. **The canonical settings serialization is append-only.** Byte positions,
+   widths, and enum value assignments for existing fields never change. A new
+   axis is appended at the end and bumps `kGeneratorVersion`; it never reorders
+   or re-widths an existing field. This is what lets a slot written at version
+   `N` load verbatim on an `N+k` binary via its embedded placement table.
+2. **The enum space was fully declared up front.** Every enum value a setting
+   can take (e.g. `world_state` open/standard/inverted/retro, `logic`
+   NoGlitches..NoLogic, `mode_weapons` swordless, `accessibility` none) was
+   enumerated at the canonical-layout stage. Later work *un-pins user input* to
+   subsets of those already-declared values — it does not expand the enum
+   space, so the byte representation of a given setting is stable across
+   versions.
+
+A corollary used throughout the corpus: the **default-settings placement
+digest is preserved across bumps** — a bump that changes the default seed's
+`placement_digest_hex` is a real placement change, not an inert one (see
+below).
+
 ### Inert-change exception
 
 A change in any of the listed paths that is provably **corpus

@@ -54,7 +54,7 @@
 ## 8. Documentation
 
 - [ ] 8.1 Update `README.md` Switch section: mention swkbd is now native.
-- [ ] 8.2 Update `docs/randomizer_phase_b.md` §9.1c status: mark complete.
+- [ ] 8.2 Cross-link this change from the `openspec/changes/` index (README.md).
 
 ## 9. Archive readiness
 

@@ -28,7 +28,7 @@ __pycache__
 /src/rando/rando_window/*.o
 /src/rando/vanilla_assets_hash.h
 # Codegen outputs from assets/rando_logic_gen.py — regenerated as a pre-build
-# step by Make / MSBuild / Switch Makefile. Per tasks.md §3.5 / §3.6 / §6.3 / §9.4b.
+# step by Make / MSBuild / the Switch Makefile.
 /src/rando/logic_data.c
 /src/rando/location_ids.h
 /src/rando/item_ids.h
@@ -55,3 +55,7 @@ __pycache__
 /token.txt
 # F12 debug dumps (g_ram + PPU VRAM/OAM/CGRAM snapshots).
 /dump_*.bin
+# Local-only randomizer planning notes, kept on disk but not tracked. The
+# tracked reference doc docs/randomizer.md has no underscore, so it stays
+# tracked; the underscore-suffixed planning files are ignored.
+/docs/randomizer_*.md

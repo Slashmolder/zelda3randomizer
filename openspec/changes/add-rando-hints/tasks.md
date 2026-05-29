@@ -93,7 +93,7 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 ## 10. Documentation
 
 - [ ] 10.1 Add a "Hints" section to `docs/randomizer.md` documenting the `hints=` setting + per-NPC behavior + race-mode interaction (race-mode reveal protects the hints body via stamp).
-- [ ] 10.2 Update `docs/randomizer_phase_b.md` Slice 5 status: mark complete.
+- [ ] 10.2 Cross-link this change from the `openspec/changes/` index (README.md).
 
 ## 10.5. Performance budget verification
 

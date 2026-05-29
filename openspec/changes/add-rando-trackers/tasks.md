@@ -90,7 +90,7 @@ test-trigger. Suggested approach when picking this up:
 
 - [ ] 9.1 `README.md` key-map table: add `RandoToggleItemTracker` and `RandoToggleLocationTracker` entries.
 - [ ] 9.2 `docs/randomizer.md` UI section: short paragraph on the trackers, including the dialogue-box-hide rule and the OAM-cache invalidation guarantee.
-- [ ] 9.3 `docs/randomizer_phase_b.md` Slice 1 status: mark complete; cross-link to this change.
+- [ ] 9.3 Cross-link this change from the `openspec/changes/` index (README.md).
 
 ## 10. Archive readiness
 

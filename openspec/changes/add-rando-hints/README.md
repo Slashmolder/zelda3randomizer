@@ -30,7 +30,7 @@ Phase B Slice 5. Adds the **new `randomizer-hints` capability** plus hint NPC sp
 ## Dependencies
 
 - **Phase A archived first.** Deltas multiple specs post-archive.
-- **No upstream slice dependency.** Could ship any time. Particularly useful for Triforce Hunt seeds (which are "almost unplayable without hints" per `docs/randomizer_phase_b.md` Slice 5 rationale).
+- **No upstream slice dependency.** Could ship any time. Particularly useful for Triforce Hunt seeds (which are "almost unplayable without hints" per the Phase B Slice 5 rationale).
 
 ## When work starts
 

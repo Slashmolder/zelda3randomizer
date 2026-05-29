@@ -83,7 +83,7 @@ Hint generation runs against the placement table + sphere data. Each hint source
 
 | Risk | Mitigation |
 |---|---|
-| Hint text format divergence from ALTTPR convention | Per-NPC corpus test (hints_corpus); CI catches drift. Acknowledge per `docs/randomizer_phase_b_risks.md` R6. |
+| Hint text format divergence from ALTTPR convention | Per-NPC corpus test (hints_corpus); CI catches drift. |
 | Dynamic dialogue ID range collides with future vanilla content | Carve a high range (0x300+); document in audit.md; verify at apply-time. |
 | Hint text body in `Text.php` (1110 lines) is hard to translate | Translate incrementally; ship Sahasrahla first, then storyteller, then bookshelves, then Murahdahla. Per-source PR. |
 | Triforce Hunt hints leak placement | They're supposed to — Murahdahla is the "where are the pieces" hint NPC. Race mode users have a separate concern (race-mode reveal handles spoiler suppression). |

@@ -53,7 +53,7 @@ while (current_item != NULL) {
 
 **Per-item rewind budget**: default `kPerItemRewindBudget = 10`. Configurable via INI `[Randomizer] per_item_rewind_budget`. The per-attempt rewind budget resets at the start of each whole-attempt iteration.
 
-**Decision rationale**: N=10 is a guess; prototype during apply-time on a known-hard seed (Triforce Hunt + hard pool) and tune. Risk per R4 in `docs/randomizer_phase_b_risks.md`.
+**Decision rationale**: N=10 is a guess; prototype during apply-time on a known-hard seed (Triforce Hunt + hard pool) and tune. Risk: an ill-tuned rewind budget regresses generation time (rewind-tuning risk).
 
 ### D2: Trick bit-position assignments
 
@@ -115,7 +115,7 @@ Per `Randomizer.php:150-152`, this is the BowAndArrows variant (no silvers from 
 
 ### D8: Trick predicate authoring scope
 
-Per `docs/randomizer_phase_b_risks.md` R11 (scope creep): Phase B trick predicate authoring is bounded to the initial 8 tricks. ALTTPR has more trick definitions; the long-tail is Phase C work.
+To bound scope creep: Phase B trick predicate authoring is bounded to the initial 8 tricks. ALTTPR has more trick definitions; the long-tail is Phase C work.
 
 Authoring discipline per `audit.md §0.10`: each trick's per-location applicability is sourced from ALTTPR PHP grep; per-location SOURCE citations recorded.
 

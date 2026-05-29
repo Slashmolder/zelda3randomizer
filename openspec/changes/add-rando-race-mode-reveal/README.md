@@ -41,4 +41,4 @@ No `design.md` — the spec carries the design decisions (file format struct, re
 
 ## Why third
 
-Small, well-scoped, learns the change-authoring pattern end-to-end. Per `docs/randomizer_phase_b.md` recommended ordering: ships before the big logic-translation slices.
+Small, well-scoped, learns the change-authoring pattern end-to-end. Per the Phase B recommended ordering: ships before the big logic-translation slices.

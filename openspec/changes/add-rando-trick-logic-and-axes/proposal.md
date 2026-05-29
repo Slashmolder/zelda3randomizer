@@ -10,7 +10,7 @@ Phase A pinned three logic-relaxation axes to their safest values and reserved o
 
 Phase A1 audit Bug #7 (per-item bounded rewind) is also still open per `audit_phase_a1.md:79-80`. The Phase A spec at `randomizer-core/spec.md:344` says "the placer rewinds the last N placements and retries" — Phase A implementation uses whole-attempt retry via `kAssumedFillMaxAttempts=8` (per `audit_phase_a1.md:20`). **This is implementation-matches-spec work; no spec change needed.** Folded here because tricks make placement harder via predicate density — the relaxation axes and the placement-quality fix go together.
 
-This change un-pins all 5 axes + implements Bug #7's per-item rewind in one bundle. Per `docs/randomizer_phase_b_chunking.md` rationale: all four axes are "logic relaxations" sharing one mental model; Bug #7 lands with them because trick predicates raise the placement difficulty floor.
+This change un-pins all 5 axes + implements Bug #7's per-item rewind in one bundle. Chunking rationale: all four axes are "logic relaxations" sharing one mental model; Bug #7 lands with them because trick predicates raise the placement difficulty floor.
 
 ## What Changes
 

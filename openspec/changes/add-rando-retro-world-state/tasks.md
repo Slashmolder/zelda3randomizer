@@ -91,7 +91,7 @@ Add **7 new item-registry IDs** per `design.md` §4 Risk 3 resolution table. The
 ## 11. Documentation
 
 - [ ] 11.1 Update `docs/randomizer.md` settings reference: confirm `world_state=retro` is documented (Phase A reserved it; this change activates it).
-- [ ] 11.2 Update `docs/randomizer_phase_b.md` Slice 3 status: mark complete; the change-folder link should already exist per the cross-link pass.
+- [ ] 11.2 Cross-link this change from the `openspec/changes/` index (README.md); the change-folder link should already exist per the cross-link pass.
 - [ ] 11.3 Add a short "Retro mode" subsection to `docs/randomizer.md` explaining the 4 pinned flags and what they mean for gameplay.
 
 ## 12. Archive readiness

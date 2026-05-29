@@ -86,13 +86,13 @@
 - [ ] 12.1 Update `docs/randomizer.md` settings reference: document `tricks=`, `logic=`, `mode.weapons=swordless`, `accessibility=none`, `region.pyramidBowUpgrade=false` syntax.
 - [ ] 12.2 Add "Trick logic" subsection explaining the 8-trick initial set + ALTTPR community context.
 - [ ] 12.3 Add "Glitch logic" subsection explaining the OverworldGlitches / MajorGlitches options.
-- [ ] 12.4 Update `docs/randomizer_phase_b.md` Slice 4 status: mark complete.
+- [ ] 12.4 Cross-link this change from the `openspec/changes/` index (README.md).
 
 ## 12.5. Performance budget verification
 
 - [ ] 12.5.1 **Generation budget bench (early)**: BEFORE authoring the full 8-trick set (after §1-3 op handlers land, before §7 per-location authoring), generate (a) a Phase A default-settings seed, (b) a tricks=all-8-on seed, (c) a swordless seed. Measure wall-clock against Phase A's 2s desktop / 5s Switch budget.
 - [ ] 12.5.2 The Bug #7 per-item rewind (§8) MAY change the wall-clock profile. Re-bench after §8 lands.
-- [ ] 12.5.3 If trick-dense seeds exceed budget by >2x: tune per-item rewind N (`kPerItemRewindBudget`, default 10); consider per-trick laziness in predicate evaluation. Per `docs/randomizer_phase_b_risks.md` R4 (rewind tuning).
+- [ ] 12.5.3 If trick-dense seeds exceed budget by >2x: tune per-item rewind N (`kPerItemRewindBudget`, default 10); consider per-trick laziness in predicate evaluation (rewind-tuning risk).
 - [ ] 12.5.4 Record final p50/p95/p99 in `audit.md §"Trick-logic generation benchmark"`.
 
 ## 12.6. ROM-version trick verification (new requirement — randomizer-logic spec)
