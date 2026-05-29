@@ -168,6 +168,12 @@ cd zelda3
 ```sh
 python3 -m pip install -r requirements.txt
 ```
+> **Tip (Linux/macOS):** if you have [uv](https://docs.astral.sh/uv/), you can
+> skip this step entirely. The `Makefile` auto-detects `uv` and runs the asset /
+> codegen tooling in an isolated, auto-provisioned environment (deps from
+> `requirements.txt`) — no manual `pip install` or venv needed. It falls back to
+> the system `python3` when `uv` isn't installed. (Windows builds use `python`
+> directly and are unaffected.)
 5. Install SDL2
 * Ubuntu/Debian `sudo apt install libsdl2-dev`
 * Fedora Linux `sudo dnf install SDL2-devel`

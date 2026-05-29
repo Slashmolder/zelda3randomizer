@@ -2,7 +2,23 @@ TARGET_EXEC:=zelda3
 ROM:=tables/zelda3.sfc
 SRCS:=$(wildcard src/*.c src/rando/*.c snes/*.c) third_party/gl_core/gl_core_3_1.c third_party/opus-1.3.1-stripped/opus_decoder_amalgam.c third_party/sha256/sha256.c
 OBJS:=$(SRCS:%.c=%.o)
-PYTHON:=/usr/bin/env python3
+# Python runner for the asset-extraction and rando codegen tooling (which needs
+# Pillow + PyYAML, see requirements.txt). On macOS/Linux, prefer `uv` when it is
+# installed: `uv run` executes the scripts in an isolated, auto-provisioned
+# environment seeded from requirements.txt, so contributors never have to manage
+# a venv or `pip install` by hand. Fall back to the system python3 when uv is
+# absent (the scripts still work if Pillow/PyYAML are already importable).
+# Override explicitly with `make PYTHON=...`.
+#
+# Windows is intentionally NOT covered here: its builds invoke `python` directly
+# via extract_assets.bat and the .vcxproj pre-build Exec, neither of which uses
+# this variable — so Windows needs no uv.
+UV:=$(shell command -v uv 2>/dev/null)
+ifeq ($(UV),)
+    PYTHON:=/usr/bin/env python3
+else
+    PYTHON:=$(UV) run --no-project --with-requirements requirements.txt python
+endif
 CFLAGS:=$(if $(CFLAGS),$(CFLAGS),-O2 -Werror) -I .
 CFLAGS:=${CFLAGS} $(shell sdl2-config --cflags) -DSYSTEM_VOLUME_MIXER_AVAILABLE=0
 
@@ -22,8 +38,12 @@ IMGUI_SRCS:=$(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgu
 CPP_OBJS:=$(IMGUI_SRCS:%.cpp=%.o)
 # The bridge .c lives under src/rando/rando_window/ — the src/rando/*.c glob is
 # non-recursive and does NOT pick it up, so add it explicitly here (PC only).
-SRCS:=$(SRCS) src/rando/rando_window/rando_window_bridge.c
-OBJS:=$(SRCS:%.c=%.o)
+# src/rando/logic_data.c is a codegen OUTPUT (see RANDO_GEN_OUTPUTS below): on a
+# fresh checkout it does not exist when the wildcard above is expanded, so the
+# glob misses it and it would never link. List it explicitly; $(sort) dedupes
+# the object in case a prior codegen run left the .c for the wildcard to catch.
+SRCS:=$(SRCS) src/rando/rando_window/rando_window_bridge.c src/rando/logic_data.c
+OBJS:=$(sort $(SRCS:%.c=%.o))
 
 # Rando codegen artifacts (tasks.md §3.5 / §3.6 / §6.3). The Python script reads
 # the YAML registries under assets/rando/ and emits these four files. The
@@ -53,14 +73,48 @@ $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 %.o : %.cpp
 	$(CXX) -c $(CXXFLAGS) $< -o $@
 
-# Rando codegen rule. Touch any input → regenerate all four outputs.
-# Building src/rando/logic_data.c triggers the rule (and emits the headers as a
-# side-effect). Compilation depends on the headers via #include.
-$(RANDO_GEN_OUTPUTS): $(RANDO_GEN_SRCS)
+# Rando codegen rule. Touch any input → ONE invocation regenerates all outputs.
+#
+# All six outputs come from a single run of the script. Apple's /usr/bin/make is
+# GNU Make 3.81, which has no grouped-target `&:` syntax — so `$(OUTPUTS): deps`
+# would run the recipe once PER output, and under -j those invocations race,
+# writing the same files concurrently. Express the single-invocation contract
+# portably (works on 3.81 and on Linux's 4.x): logic_data.c carries the recipe;
+# the headers depend on it with an empty recipe (the `;`), since that one python
+# run emits them as a side effect. Building any header forces logic_data.c
+# first, so the script runs exactly once.
+RANDO_GEN_HEADERS:=$(filter-out src/rando/logic_data.c,$(RANDO_GEN_OUTPUTS))
+$(RANDO_GEN_HEADERS): src/rando/logic_data.c ;
+src/rando/logic_data.c: $(RANDO_GEN_SRCS)
 	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, icon_atlas.h, direct_grant_icons.h}"
 	$(PYTHON) assets/rando_logic_gen.py
 
 rando-codegen: $(RANDO_GEN_OUTPUTS)
+
+# Make every object wait on the codegen outputs and the asset-hash header
+# before it compiles. Order-only (the `|`): they gate presence, not timestamps,
+# so regenerating them does not force a full rebuild — consistent with this
+# Makefile carrying no other header dependency tracking. This is what lets a
+# fresh checkout — including CI, which has NO ROM and never extracts assets —
+# build with a bare `make zelda3`. (The Windows vcxproj runs the same codegen
+# as a pre-build Exec; this is the Make equivalent.)
+$(OBJS) $(CPP_OBJS): | $(RANDO_GEN_OUTPUTS) src/rando/vanilla_assets_hash.h
+
+# vanilla_assets_hash.h holds the SHA-256 the rando code compares assets
+# against. The asset pipeline (assets/restool.py) bakes the REAL hash here when
+# it (re)builds zelda3_assets.dat. This rule covers the gap: it fires ONLY when
+# the header is absent (no prerequisites), and then — if a blob already exists —
+# bakes the real hash from it, otherwise (ROM-less CI, fresh checkout) drops an
+# inert all-zeros placeholder (kVanillaAssetsHashKnown=0) so the code compiles.
+# Either way it never clobbers an existing header.
+src/rando/vanilla_assets_hash.h:
+	@if [ -f zelda3_assets.dat ]; then \
+	  echo "Baking src/rando/vanilla_assets_hash.h from existing zelda3_assets.dat"; \
+	  $(PYTHON) assets/scripts/dump_vanilla_assets_hash.py; \
+	else \
+	  echo "Generating placeholder src/rando/vanilla_assets_hash.h (no assets extracted yet)"; \
+	  $(PYTHON) assets/scripts/dump_vanilla_assets_hash.py --placeholder; \
+	fi
 
 $(RES): src/platform/win32/zelda3.rc
 	@echo "Generating Windows resources"

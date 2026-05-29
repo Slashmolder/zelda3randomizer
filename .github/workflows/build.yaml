@@ -33,5 +33,13 @@ jobs:
       if: ${{ matrix.name == 'Mac' }}
       run: |
         brew install sdl2 coreutils
+    # The Makefile runs the rando codegen (needs PyYAML) and asset tooling
+    # (needs Pillow) as part of the build. It prefers `uv` when present, which
+    # provisions those deps from requirements.txt in an isolated env — so CI
+    # gets them without a manual `pip install`. Mirrors the macOS/Linux dev flow.
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
     - name: Build
       run: make -j$(nproc) zelda3

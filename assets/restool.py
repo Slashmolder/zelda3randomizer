@@ -39,6 +39,8 @@ def emit_vanilla_assets_hash():
     "\n"
     "#include \"../types.h\"\n"
     "\n"
+    "#define kVanillaAssetsHashKnown 1\n"
+    "\n"
     "static const uint8 kVanillaAssetsHash[32] = {\n"
     + bytes_block + "\n"
     "};\n"

@@ -19,7 +19,7 @@ Place `zelda3.sfc` (US ROM) in the repo root, then:
 - Windows: double-click `extract_assets.bat`
 - Any platform: `python assets/restool.py --extract-from-rom`
 
-Python deps: `pip install -r requirements.txt` (Pillow, PyYAML).
+Python deps: `pip install -r requirements.txt` (Pillow, PyYAML). On macOS/Linux the `Makefile` prefers `uv` when installed (runs the tooling in an isolated env auto-provisioned from `requirements.txt`; falls back to system `python3`), so a manual install is optional there. Windows invokes `python` directly (extract_assets.bat / .vcxproj) and is uv-agnostic.
 
 `restool.py` is the entry point — it dispatches to `extract_resources.py` and `compile_resources.py` in `assets/`. Useful flags: `--no-build`, `--print-strings`, `--languages de,fr,...`, `--sprites-from-png`.
 

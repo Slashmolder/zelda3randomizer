@@ -286,7 +286,7 @@ void Share_SelfCheck(void) {
 
   /* Reject: corrupted base32 char (`1` is not in the alphabet). */
   char corrupt_b32[kShareBase32Len + 1];
-  memcpy(corrupt_b32, encoded, sizeof encoded);
+  memcpy(corrupt_b32, encoded, sizeof corrupt_b32);
   corrupt_b32[10] = '1';  /* invalid */
   st = Share_Decode(corrupt_b32, &decoded);
   share_assert(st == kShareDecodeBadBase32 ||
