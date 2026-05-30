@@ -318,3 +318,87 @@ edge from a dungeon source, or an added edge from a cave source). No double-set.
 Combined retry: compute the combined π, apply the 4-case overrides, require FULL
 reachability (the existing gate), accept first π where Goal_IsCompletable. Store
 under the existing `cross_category` axis (canonical bit 3). Corpus entry to lock it.
+
+**Status (2026-05-30):** §9 is BUILT, tested, committed. Runtime door overlay
+(`Entrance_BuildCrossOverlay`), 4-case dispatch (`Entrance_ApplyCrossOverrides`),
+and the cave→dungeon exit flag (`g_rando_entrance_force_cached` +
+`Rando_EntranceForceCachedExit`) all land. Corpus `c-entrance-cross-open-fast-ganon`
+locks it; 62 entries green. Default-off so corpus/selftest stay byte-identical.
+Task 3.3 (playtest + audit) is the remaining gate — cross is NOT model-gate-proof.
+
+## 10. Decoupled (Insanity) engine design — for the next build step
+
+**Status (2026-05-30):** NOT built. This section is the design + a load-bearing
+asset finding that gates the whole stage. Read before building.
+
+### What decoupled means
+Coupled: enter door A ⇒ exit returns you to A. Decoupled ("Insanity"): the exit
+side is an INDEPENDENT permutation — leaving interior I drops you at some overworld
+door D unrelated to where you entered. Doors become **one-way edges**. Implies
+`!coupled`; `apply_derived_rules` already clears coupled when decoupled is set.
+
+### Logic model (the easy half)
+The reachability graph is already directed, so decoupled is naturally expressible:
+for each (interior I, exit-destination door D) pair, add a directed edge
+`region(I) → region(interior-behind-D)`. No coupling assumption. The existing
+`Rando_AddEntranceEdge` primitive carries this. Two independent permutations
+(entrance π_in : door→interior, exit π_out : interior→door) instead of one bijection
+and its inverse. Cross-category composes (the pools already unify in §9).
+
+### Generation (the medium half)
+A *random* π_out almost never leaves the goal reachable (one-way doors strand whole
+regions), so reject-and-retry (§4) is too sparse. Needs **constrained construction**
+(§4, Stage 4 bullet): build π_out incrementally, assigning each exit only to a
+destination that keeps every already-placed region reachable — assumed-fill applied
+to exits rather than items. The full-reachability gate still backstops the result.
+
+### Runtime (the HARD half — the actual blocker)
+To arrive at overworld door D, the engine must set the overworld arrival state
+(area index, link x/y, camera + scroll, screen index — the `*_exit` shadow-var set).
+Where those come from per destination class:
+
+- **Dungeon / special destinations** (rooms < 0x100, 0x104, ≥ 0x180): a STATIC table
+  exists. `kExitData_*` (asset ptrs 130–142: `ScreenIndex, Rooms, Map16LoadSrcOff,
+  ScrollX/Y, XCoord, YCoord, CameraXScroll, CameraYScroll, NormalDoor, FancyDoor`)
+  is keyed by interior room. The vanilla room-keyed search (`do k--; while(
+  kExitDataRooms[k]!=room)`) already loads a full arrival state from it. So to arrive
+  at dungeon/special door D: search `kExitData` for the room of D's vanilla interior
+  and load that entry. **Buildable today** — it's the §9 dungeon-exit machinery with
+  the search key set to the *destination's* room instead of the source's.
+
+- **Cave destinations** (rooms 0x100–0x17F excl 0x104): **NO static arrival table
+  exists.** Cave exits use `LoadCachedEntranceProperties`, which reads `*_exit` —
+  the overworld position CACHED LIVE at entry (`Dungeon_LoadEntrance` dungeon.c:8373).
+  There is no asset giving a cave door's overworld coordinates ahead of time; the
+  cave-door overworld position is implicit in the trigger tile and only materializes
+  when the player physically stands on it. Decoupled needs to drop the player at an
+  *arbitrary* cave door they did NOT enter from, so the live-cache trick cannot
+  supply it.
+
+**This asymmetry is the Stage-4 blocker and a genuine fork the user must weigh:**
+
+1. **New asset table (full Insanity).** Extract a per-cave-door overworld arrival
+   table (area index, x/y, camera, scroll, screen) in `extract_resources.py`, pack
+   it in `compile_resources.py`, read it in `assets.h`, and route cave-destination
+   exits through it. This is real asset-pipeline work (touches both Python ends + the
+   C reader + a `zelda3_assets.dat` bump) and is playtest-only verifiable — exactly
+   the class the project methodology says NOT to build blind. ALTTPR's own runtime
+   carries this as `StartingAreaExitTable` / `ExtraHole` tables in `tables.asm`
+   (asm repo `C:/src/z3randomizer`) — confirming the table is the right shape, and a
+   port reference exists.
+
+2. **Decoupled-dungeons-only (partial Insanity).** Restrict decoupled to the
+   dungeon/special class (which already has `kExitData`). Caves stay coupled even when
+   the decoupled axis is on. Ships a meaningful Insanity-lite with ZERO new assets,
+   reusing §9's exit machinery. Loses cave one-way doors (a chunk of ALTTPR Insanity's
+   chaos) but is buildable + testable now.
+
+3. **Defer.** Decoupled is marked "optional / could split out" (§6 staging). Ship
+   caves + dungeons + crossed as the production entrance randomizer; treat Insanity as
+   a follow-up once the user decides on the asset fork.
+
+**Recommendation:** do NOT build blind. Surface options 1–3 to the user. The
+default-off axes mean shipping without decoupled costs nothing — the settings bit
+(`kEntranceAxis_Decoupled`) already exists and normalizes safely. Option 2 is the
+cheapest real progress if the user wants *some* Insanity now; option 1 is the only
+path to full ALTTPR-parity Insanity and needs an explicit asset-pipeline go-ahead.
