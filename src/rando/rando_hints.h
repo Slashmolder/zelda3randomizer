@@ -172,10 +172,12 @@ void Rando_ClearHints(void);
 // its top to give this module first refusal on those ids.
 //
 // The 15 hint-bearing vanilla US tele-message ids are:
-//   0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0, 0xC1, 0xC2, 0xC3,
-//   0xC4, 0xC5, 0xC6, 0xC7
-// (0xB4 is the GENERIC default tele text used as filler in many rooms and is
-// intentionally NOT a hint tile.) These ids map positionally to the 15
+//   0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0, 0xC1, 0xC2,
+//   0xC3, 0xC4, 0xC5, 0xC6
+// (0xB4 is the Eastern Palace tile, the first ALTTPR tile; 0xC7 is the Chris
+// Houlihan secret room and is NOT a hint tile. See kHintTileMsgIds in
+// rando_hints.c for the off-by-one this corrects.) These ids map positionally
+// to the 15
 // RandoHintNpc telepathic-tile slots: each distinct physical tile shows one
 // distinct generated hint. The exact tile<->hint pairing need not byte-match
 // ALTTPR because ALTTPR itself fy_shuffles the tile list (HintService.php:59)
