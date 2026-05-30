@@ -103,11 +103,13 @@ locations:
     can_reach: "CanReachBombMerchant() AND HAS_ITEM(MagicMirror)"
     source: "app/Region/Inverted/DarkWorld/NorthEast.php:83-86"
 
-  # NOTE: "Ganon" (location_registry id 212) is REMOVED from this region
-  # in Inverted (Inverted/NorthEast.php:24 `$this->locations->removeItem("Ganon")`).
-  # The Inverted "Ganon" location lives in LightWorld/NorthEast.php:19
-  # (per location_registry.yaml:327 note). That YAML is owned by another
-  # agent (Inverted LightWorld translator).
+  # NOTE: "Ganon" (location_registry id 212) is correctly OMITTED from this
+  # region in Inverted (Inverted/NorthEast.php:24 `removeItem("Ganon")`). The
+  # id-212 Inverted region/predicate override is owned SOLELY by
+  # `logic_parts/inverted/LightWorld/NorthEast.yaml` (re-located to
+  # LightWorld_NorthEast per Inverted/LightWorld/NorthEast.php:19). Do NOT add
+  # a Ganon entry here — a duplicate would re-introduce the last-wins ownership
+  # gap this file's prior "owned by other agent" note left unresolved.
 
 # NOTE on the "Dark World Potion Shop" predicate (Inverted/NorthEast.php:35-50):
 #   PHP: canFly OR Hammer OR Flippers OR

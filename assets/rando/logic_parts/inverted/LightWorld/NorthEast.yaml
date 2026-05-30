@@ -19,20 +19,24 @@
 #
 # Inverted regional context:
 #   - In Inverted, "Ganon" is fought in LightWorld_NorthEast (php:19, 21-22).
-#     The fight slot lives at location id 212 with region=DarkWorld_NorthEast
-#     per location_registry.yaml — the cross-world re-locate is owned by the
-#     DarkWorld translator agent. DROPPED here.
+#     The fight slot is location id 212; in Standard it lives in
+#     DarkWorld_NorthEast (logic_parts/43_darkworld.yaml). In Inverted,
+#     `Inverted/DarkWorld/NorthEast.php:24` removes it from DarkWorld and
+#     `Inverted/LightWorld/NorthEast.php:19` re-adds it here. THIS file is the
+#     SINGLE owner of the id-212 Inverted region/predicate override (fixes the
+#     prior two-file ownership gap where BOTH NE YAMLs dropped Ganon, so the
+#     Standard predicate bound to DarkWorld_NorthEast won by last-wins default
+#     — wrong in Inverted, where DarkWorld_NorthEast is the home world). See
+#     the "Ganon" location entry below.
 #   - `Sahasrahla` (php:65-67): in Inverted-Open, the green pendant grants
 #     are the same predicate as Standard; PHP body is `PendantOfCourage`.
 #     Per our convention this maps to OP_HAS_PRIZE(Prize_GreenPendant).
 #
 # DROPPED locations:
-#   - "Ganon" (php:19, 21-22, 144-206) — location_registry.yaml id 212
-#     assigns it to DarkWorld_NorthEast. Owned by DarkWorld agent.
 #   - Waterfall Bottle / Pyramid Bottle fountains: not in this PHP file's
 #     overrides; inherited from Fountains.php (not in scope).
 #
-# Status: translated 2026-05-27. Awaiting review + codegen integration.
+# Status: translated 2026-05-27; Ganon (212) override added 2026-05-30.
 
 format_version: 1
 
@@ -125,5 +129,33 @@ locations:
     region: LightWorld_NorthEast
     can_reach: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers)"
     source: "app/Region/Inverted/LightWorld/NorthEast.php:127-142"
+
+  # `Ganon` (php:144-228, the prize_location->setRequirements) — the win
+  # location (location_registry id 212). RE-LOCATED here from DarkWorld_NorthEast
+  # for Inverted: the override's `region:` rebinds id 212 to LightWorld_NorthEast
+  # at runtime when world_state==Inverted (see rando_logic.c effective_region).
+  #
+  # Predicate is byte-for-byte the Standard Ganon body
+  # (logic_parts/43_darkworld.yaml "Ganon"): the ALTTPR Inverted prize body
+  # (php:176-205) is identical to Standard (Standard/DarkWorld/NorthEast.php:225-233)
+  # AFTER the project's standard drops — only the REGION differs between
+  # Standard and Inverted. As in Standard, the goal-conditional guards drop:
+  #   - `(DefeatAgahnim2 || goal==fast_ganon)` (php:186-187) and the
+  #     `crystals.ganon` count gate (php:163-174) are NOT encoded here. There
+  #     is no distinct `DefeatAgahnim2` item in the predicate vocabulary
+  #     (loc 137 Agahnim2 grants `DefeatAgahnim`, same virtual item as Aga1),
+  #     and Goal_IsCompletable (rando_placement.c) enforces crystals.ganon +
+  #     Agahnim2-reachability separately and world-state-agnostically. Encoding
+  #     them in the predicate would diverge Inverted from the tested Standard
+  #     model for no behavioral gain.
+  #   - swordless/requireBetterBow/requireBetterSword branches (php:188-205)
+  #     drop per the region-config/weapons-mode discipline at the top of file.
+  # CanExtendMagic(world, 1) mirrors the Standard authoring shorthand
+  # (43_darkworld.yaml) rather than php's per-branch canExtendMagic(2/3/4) —
+  # kept identical to Standard so Inverted does not silently diverge.
+  - id: "Ganon"
+    region: LightWorld_NorthEast
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND HasSword2() AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
+    source: "app/Region/Inverted/LightWorld/NorthEast.php:144-228"
 
 macros: []
