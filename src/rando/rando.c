@@ -1096,6 +1096,11 @@ void Rando_DeactivateSlot(void) {
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
   g_rando_flute_shovel_owned = 0;
+  // Transient Retro take-any redirect target. Reset with the other per-slot
+  // transients so a stale door id from a prior slot can't mis-key a host-room
+  // shop after a slot switch. (Within a slot it is set/cleared by
+  // Overworld_UseEntrance; clearing it here is the slot-boundary backstop.)
+  g_rando_takeany_door_id = 0;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;

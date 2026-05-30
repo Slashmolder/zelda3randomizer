@@ -70,14 +70,16 @@ bool Spoiler_Write(const RandoSpoiler *s,
 //   +38       4      share_string_len (u32 LE) — actual length without NUL
 //   +42       64     share_string[64] — base32 textual share string,
 //                    zero-padded
-//   +106      24     settings_canonical[24] = Settings_CanonicalSerialize
-//                    output with race_mode cleared to 0 (race-mode flag
-//                    itself is recorded in the file's existence, not in
-//                    the serialized settings). Needed at reveal time to
-//                    regenerate the placement deterministically.
-//   +130      4      crc32 (u32 LE) — IEEE 802.3 over offsets 0..129
+//   +106      28     settings_canonical[28] = Settings_CanonicalSerialize
+//                    output (= kSettingsCanonicalLen) with race_mode cleared to
+//                    0 (race-mode flag itself is recorded in the file's
+//                    existence, not in the serialized settings). Needed at
+//                    reveal time to regenerate the placement deterministically.
+//   +134      4      crc32 (u32 LE) — IEEE 802.3 over offsets 0..133
 //
-// Total: 134 bytes. The struct below is for in-memory parsing; the on-disk
+// Total: 138 bytes (see kRandoSuppressedSpoilerSize; grew 134->138 at kGenVer
+// 14 §66 when settings_canonical went 24->28). The struct below is for
+// in-memory parsing; the on-disk
 // layout is the byte sequence above (we serialize explicitly to avoid
 // platform-dependent padding).
 //
