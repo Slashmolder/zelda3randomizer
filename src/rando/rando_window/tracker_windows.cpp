@@ -626,7 +626,7 @@ static void DrawMapTracker(void *) {
   // game crops too), so the cursor readout reports stable absolute coords at
   // any zoom — hover where a pin should sit, read x/y, and that's the value.
   static bool s_show_grid = false;
-  static float s_zoom = 1.30f;
+  static float s_zoom = 1.50f;
   ImGui::Checkbox("Grid", &s_show_grid);
   ImGui::SameLine();
   ImGui::SetNextItemWidth(120);
