@@ -283,13 +283,17 @@ static void DrawItemTracker(void *) {
   ImGui::SeparatorText("Dungeons");
   // game = game-side dungeon id (cur_palace_index_x2>>1): drives the prize/
   //   Agahnim completion and the big-key/map/compass bit (0x8000 >> game).
-  // kidx = small-key array index. Equal to `game` for every dungeon EXCEPT
-  //   Hyrule Castle, whose big-key/map/compass bit is at game id 1 but whose
-  //   small keys share slot 0 with the sewers (SaveDungeonKeys maps raw
-  //   dungeon id 2 -> key slot 0; see src/dungeon.c).
+  //   Hyrule Castle's map/big-key/compass live at game id 0 (bit 0x8000): the
+  //   rando grant for Map_HCE dispatches to index 0 (rando.c dungeon-bit table +
+  //   Rando_SelfCheck assert link_dungeon_map==0x8000), and the escape runs at
+  //   cur_palace_index_x2 = 0 (rando.c:2044).
+  // kidx = small-key array index. SaveDungeonKeys folds raw dungeon id 2
+  //   (Hyrule Castle proper) into key slot 0 (shared with the sewers; see
+  //   src/dungeon.c), so kidx can differ from `game`; it equals `game` for
+  //   every current row.
   // logic = prize-assignment index (rando_logic / kDungeonPrizeLocations order).
   static const struct { int game; int kidx; int logic; const char *name; bool prize; } kDungeonRows[] = {
-      {1,  0,  0,  "Hyrule Castle",    false}, {4,  4,  4,  "Castle Tower",     false},
+      {0,  0,  0,  "Hyrule Castle",    false}, {4,  4,  4,  "Castle Tower",     false},
       {2,  2,  1,  "Eastern",          true},  {3,  3,  2,  "Desert",           true},
       {10, 10, 3,  "Tower of Hera",    true},  {5,  5,  5,  "Pal. of Darkness", true},
       {6,  6,  6,  "Swamp",            true},  {7,  7,  7,  "Skull Woods",      true},
