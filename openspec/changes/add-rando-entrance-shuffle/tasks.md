@@ -169,7 +169,16 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 - [ ] P.2 Playtest each preset resolves to the right axis combination.
 
 ## Cross-cutting (per `openspec/changes/README.md` conventions)
-- [ ] X.1 Backward-load: a slot from `generator_version = N` loads on `N+1` with a
-      one-time informational warning; no regeneration required.
-- [ ] X.2 Append-only registry check if location/entrance ids grew.
-- [ ] X.3 Update `docs/randomizer.md` + the change README status checklist.
+- [x] X.1 Backward-load: `Rando_ActivateSidecarSlot`→`Entrance_RuntimeInstall` now
+      surfaces a version-drift warning for entrance-shuffle slots (via
+      `Rando_DetectVersionDrift`). Entrance seeds are version-locked because π is
+      regenerated from the build's pool; the placement still loads (only the door
+      layout is at risk) → warn + recommend regenerate. (A future full fix would
+      store π in the slot for version-independence — noted; deferred.)
+- [x] X.2 Registry integrity is guarded at build/selftest time by
+      `Entrance_SelfCheck` (unique entrance-ids, region resolution, registry↔logic
+      region cross-validation, ≥1 inbound edge, cave room-class). Entrance shuffle
+      added NO new location ids (reuses existing), so the append-only-id check is
+      N/A. (YAML→C-table is a one-shot `gen_entrance_table.py`; the C table is the
+      authority + self-checked.)
+- [x] X.3 Updated `docs/randomizer.md` + the change README status checklist.
