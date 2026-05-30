@@ -7,7 +7,7 @@
   - Treasure-Chest minigame (the "pick 1 of 3" handler).
 - [ ] 1.2 Verify Peg Cave location id is in `assets/rando/location_registry.yaml`. If missing, add append-only.
 - [ ] 1.3 Verify Treasure-Chest minigame's 3 candidate-chest location ids are in the registry. If missing OR if only 1 exists, add the other 2 as append-only.
-- [ ] 1.4 Grep `../alttp_vt_randomizer/app/Boss.php` + `app/EnemyDrop.php` line counts + record source-line ranges in `audit.md §"Boss-shuffle provenance"` and `§"Drop-pool provenance"`.
+- [x] 1.4 Grep `../alttp_vt_randomizer/app/Boss.php` + `app/EnemyDrop.php` line counts + record source-line ranges in `audit.md §"Boss-shuffle provenance"` and `§"Drop-pool provenance"`. <!-- done: created audit.md with both sections. Boss.php (185 lines): 12 bosses in BossCollection @ Boss.php:68-128, each with file:line + shuffle role (10 shufflable + Agahnim/Agahnim2 pinned + Ganon out-of-pool = matches design D1). --> <!-- CORRECTION: app/EnemyDrop.php DOES NOT EXIST. Drop pool lives in app/Drops/PrizePack.php (61) + PrizePackSlot.php (60) + the roster in app/World.php:76-87 (11 packs, 63 slots) + sprite table app/Sprite.php (229 entries). Corrected source map recorded in audit.md §"Drop-pool provenance"; update design.md to match. Default-fill + ROM-writer location flagged as open follow-up. -->
 
 ## 2. Boss-shuffle module
 

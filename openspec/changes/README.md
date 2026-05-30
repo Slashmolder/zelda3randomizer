@@ -12,7 +12,7 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 | **B** | 3 | [`add-rando-race-mode-reveal`](add-rando-race-mode-reveal/) | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp | Full | No | 3-5d |
 | **B** | 4a | [`add-rando-inverted-world-state`](add-rando-inverted-world-state/) | Inverted region graph (2977 PHP lines) + RegionRemap + Bug #12 starting-inv | Full (50/77 landed — graph + runtime in; B-inverted macros 2.x, docs, playtest still open) | **Yes** | 4-6w |
 | **B** | 4b | [`add-rando-retro-world-state`](add-rando-retro-world-state/) | Retro shop dispatch + 4 Retro flag pin | Full (1/48) | **Yes** | 1w |
-| **B** | 4c | [`add-rando-retro-takeany`](add-rando-retro-takeany/) | 22 TakeAny shop dispatch + RNG-driven activation (promoted from 4b's design §5 split) | Stub (proposal + specs; no tasks.md yet) | **Yes** | — |
+| **B** | 4c | [`add-rando-retro-takeany`](archive/2026-05-29-add-rando-retro-takeany/) | 31 TakeAny shop dispatch + RNG-driven activation (promoted from 4b's design §5 split) | ✅ **Archived 2026-05-29** | **Yes** | ✅ shipped + archived |
 | **B** | 5 | [`add-rando-trick-logic-and-axes`](add-rando-trick-logic-and-axes/) | OP_TRICK/OP_DIFFICULTY_AT_LEAST/OP_GLITCH_LEVEL_AT_LEAST + 5 settings un-pins + Bug #7 per-item rewind | Full | **Yes** | 2-3w |
 | **B** | 6 | [`add-rando-hints`](add-rando-hints/) | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla | Full | **Yes** | 2-3w |
 | **B** | 7 | [`add-rando-shuffles-and-minigames`](add-rando-shuffles-and-minigames/) | Boss + drop-pool shuffles + §6.8 minigame dispatch | Full | **Yes** | 2-3w |
@@ -24,7 +24,7 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 | **D** | D3 | [`add-rando-major-glitch`](add-rando-major-glitch/) | Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to HybridMG + NoLogic | Stub | **Yes** | 2-3w |
 | **D** | D4 | [`add-rando-auto-tracker`](add-rando-auto-tracker/) | Local TCP server for external tracker clients | Stub | No | 2-3w |
 
-Total: 16 active changes + 1 archived (`add-randomizer-support`). All 16 active changes pass `openspec validate --changes`.
+Total: 15 active changes + 2 archived (`add-randomizer-support`, `add-rando-retro-takeany`). All 15 active changes pass `openspec validate --changes`.
 
 ## Implementation order
 

@@ -23,7 +23,7 @@ This change bundles boss + drop shuffles + the minigame dispatch because all thr
 - **Randomize sprite-death drop tables** (which drops fall from which enemies).
 - **Heart-drop guarantee**: low-HP zones still drop at least some hearts; the shuffle preserves a minimum heart-drop rate so the player doesn't get HP-starved at the start.
 - **Post-sphere ordering**: drop-pool runs AFTER item placement so sphere data is available; uses sphere data to gate aggressive shuffles (e.g., don't dry up hearts in the player's sphere 0 location set).
-- ALTTPR provenance: `../alttp_vt_randomizer/app/EnemyDrop.php`. PHP source-line range to be recorded at apply-time.
+- ALTTPR provenance: drop pool is `app/Drops/PrizePack.php` + `PrizePackSlot.php` + the 11-pack/63-slot roster at `app/World.php:76-87` + sprite table `app/Sprite.php` (NOT `app/EnemyDrop.php`, which does not exist). Recorded in `audit.md §"Drop-pool provenance"`.
 - **Settings axis**: `drop_pool_shuffle` (boolean, default false).
 
 ### §6.8 Minigame dispatch

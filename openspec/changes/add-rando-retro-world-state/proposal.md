@@ -1,6 +1,6 @@
 ## Why
 
-**Status (2026-05-27)**: scoped 3a/3b per `design.md` §5 — the 22 TakeAny shops + RNG-driven activation defer to Slice 3b (a separate change folder, not yet created). This proposal now covers **Slice 3a only**: 9 regular shops + 1 Capacity Upgrade + 7 new item-registry IDs + the picker un-gate. 3a ships ~80% of the Retro experience; 3b lands TakeAny when the missing ROM-table dispatch infrastructure does.
+**Status (2026-05-27)**: scoped 3a/3b per `design.md` §5 — the 31 TakeAny shops + RNG-driven activation defer to Slice 3b, which was split out as the `add-rando-retro-takeany` change (now **archived** at `openspec/changes/archive/2026-05-29-add-rando-retro-takeany/`). This proposal now covers **Slice 3a only**: 9 regular shops + 1 Capacity Upgrade + 7 new item-registry IDs + the picker un-gate. 3a ships ~80% of the Retro experience; 3b lands TakeAny when the missing ROM-table dispatch infrastructure does.
 
 Phase A's Phase B+ roadmap (`docs/randomizer.md:286-289` original wording, now superseded by the chunked roadmap) and `tasks.md §14.2` deferred Retro world-state to Phase B. The settings-screen world-state picker is gated at Open + Standard per `select_file.c:2520` (Phase A §14.1b re-scope).
 
@@ -10,10 +10,10 @@ Phase A's Phase B+ roadmap (`docs/randomizer.md:286-289` original wording, now s
 - `region.takeAnys = true` (the four "Take Any" shops have non-vanilla content)
 - `region.wildKeys = true` (small keys can appear in the wild pool, not pinned to dungeons)
 
-The shop subsystem upstream is in `app/Shop.php` (230 lines, verified) + `app/Support/ShopCollection.php` (64 lines, verified). Grep against `app/Region/Standard/**/*.php` enumerates **~32 shop entities** across LightWorld + DarkWorld regions (the original "42" claim was inflated; corrected by the Slice 3 research agent on 2026-05-27 — actual count is 9 regular shops + 1 Capacity-Upgrade + 22 TakeAny = 32). Broken into three classes:
+The shop subsystem upstream is in `app/Shop.php` (230 lines, verified) + `app/Support/ShopCollection.php` (64 lines, verified). Grep against `app/Region/Standard/**/*.php` enumerates **41 shop entities** across LightWorld + DarkWorld regions (the original "42" claim was off by one; actual count is 9 regular shops + 1 Capacity-Upgrade + 31 TakeAny = 41, re-verified 2026-05-30 against the checkout — full census with file:line in `audit.md §"Retro shop provenance"`). Broken into three classes:
 - **`Shop`** — 9 standard shops with purchasable item inventory (Kakariko Shop, Lake Hylia Shop, the Dark World potion shop, Dark World Outcasts shop, the four "DM" shops, etc.).
 - **`Shop\Upgrade`** — 1 Capacity Upgrade location (2 slots: bomb + arrow capacity).
-- **`Shop\TakeAny`** — 22 "Take Any" caves. In Retro mode, ~5 of the 22 become active per-seed via `randomCollection(4)` / `randomCollection(5)` in `app/Randomizer.php:716-750`. The active set differs every seed (see `design.md` Risk 1).
+- **`Shop\TakeAny`** — 31 "Take Any" caves. In Retro mode, ~5 of the 31 become active per-seed via `randomCollection(4)` / `randomCollection(5)` in `app/Randomizer.php:716-750`. The active set differs every seed (see `design.md` Risk 1).
 
 **Retro is NOT a separate logic graph** — it inherits Open's region structure and modifies item-pool composition + shop dispatch. The Phase A logic graph stays unchanged for Retro seeds; what changes is which locations are in `BuildItemPool` and which sprite-handler call sites route through the dispatcher.
 
@@ -23,7 +23,7 @@ This is the right slice to ship right after the warm-up changes — small, no lo
 
 ### Item pool
 
-- **Add shop-purchase locations** to `BuildItemPool` when `settings.world_state == Retro`. The Slice 3 research agent enumerated 27 static shop-purchase slots (9 regular shops × ~3 slots) + 2 Capacity-Upgrade slots (identity-placed) + ~24 Retro-extra slots picked per-seed from the 22 TakeAny pool. Total active per seed: ~50 slots. See `design.md` for the full schedule.
+- **Add shop-purchase locations** to `BuildItemPool` when `settings.world_state == Retro`. Slice 3a is 27 static shop-purchase slots (9 regular shops × 3 slots) + 2 Capacity-Upgrade slots (identity-placed) = **29 slots** (verified in `audit.md §1.2`). The per-seed TakeAny-extra slots are picked from the 31 TakeAny pool and are handled by the archived `add-rando-retro-takeany` change (≤9 active per seed: 4×2 + 1×1). See `design.md` for the full schedule.
 - **Pin the 4 Retro config flags** in the seed's effective settings whenever `world_state == Retro`:
   - `rupeeBow = true`
   - `genericKeys = true`
@@ -70,4 +70,4 @@ This is the right slice to ship right after the warm-up changes — small, no lo
 - **Effort**: **1 week of focused work.** Small surface, no logic-translation overhead.
 - **Regression risk**: `kGeneratorVersion` bumps; corpus regenerates. Open + Standard + Inverted (if #4a shipped first) digests should remain byte-identical (Retro branch is gated on `world_state == Retro`).
 - **No dependency on #4a Inverted** — Retro extends Open, not Inverted. Either can ship first.
-- **ALTTPR provenance**: 32 enumerated shop entities (9 Shop + 1 Upgrade + 22 TakeAny); full hand-translation discipline per `audit.md §0.10`. Per-shop source-line citations in `audit.md §"Retro shop provenance"` (new section).
+- **ALTTPR provenance**: 41 enumerated shop entities (9 Shop + 1 Upgrade + 31 TakeAny); full hand-translation discipline per `audit.md §0.10`. Per-shop source-line citations in `audit.md §"Retro shop provenance"`.
