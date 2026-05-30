@@ -517,11 +517,13 @@ typedef struct RandoItemView {
   bool mushroom, powder, flute, shovel;
   bool agahnim;       // Agahnim 1 defeated
   // Per-dungeon items, indexed by GAME-side dungeon index (cur_palace_index_x2>>1):
-  // 0=Sewers/HCE, 1=HyruleCastle, 2=EP, 3=DP, 4=CastleTower, 5=PoD, 6=SP, 7=SW,
-  // 8=TT, 9=IP, 10=ToH, 11=MM, 12=TR, 13=GT. Big-key/map/compass are bitfields
-  // with bit (0x8000 >> game_index): Hyrule Castle's bit is at index 1 (index 0
-  // carries no big-key/prize). NOTE small keys instead share slot 0 between the
-  // sewers and Hyrule Castle (SaveDungeonKeys maps raw dungeon id 2 -> slot 0).
+  // 0=HyruleCastle/HCE, 2=EP, 3=DP, 4=CastleTower, 5=PoD, 6=SP, 7=SW, 8=TT,
+  // 9=IP, 10=ToH, 11=MM, 12=TR, 13=GT (index 1 is an unused sub-area slot the
+  // game never stores into). Big-key/map/compass are bitfields with bit
+  // (0x8000 >> game_index): Hyrule Castle's map/big-key/compass bit is at index
+  // 0 (0x8000) — the Map_HCE grant dispatches to index 0 and the HC escape runs
+  // at cur_palace_index_x2 = 0. Small keys are indexed by the same game-side
+  // index (SaveDungeonKeys folds raw dungeon id 2, HC proper, into slot 0).
   uint8 dungeon_small_keys[16];
   uint16 bigkey_bits;
   uint16 map_bits;
@@ -529,6 +531,27 @@ typedef struct RandoItemView {
 } RandoItemView;
 
 void Rando_FillItemView(RandoItemView *out);
+
+// ---------------------------------------------------------------------------
+// Canonical dungeon table for the in-game dungeon tracker. SINGLE SOURCE OF
+// TRUTH for the per-dungeon game-side index so the tracker's big-key/map/
+// compass bit (0x8000 >> game_index) and small-key slot can never drift from
+// the game's RAM storage convention. Validated headlessly by Rando_TrackerSelfCheck
+// against kSmallKeyGameDungeon / dungeon_bit_for_map_or_compass — a prior bug
+// (Hyrule Castle drifted to game_index 1, bit 0x4000, which the game never sets)
+// is now a hard self-check failure. Rows are in tracker display order.
+typedef struct RandoTrackerDungeonInfo {
+  uint8 game_index;    // game-side dungeon id: bit = 0x8000 >> game_index; also
+                       //   the link_keys_earned_per_dungeon[] small-key slot.
+  uint8 alttpr_index;  // ALTTPR dungeon order (kSmallKeyGameDungeon index) — the
+                       //   binding used by the self-check to validate game_index.
+  uint8 prize_logic;   // dungeon-prize-assignment index (kDungeonPrizeLocations
+                       //   order); only meaningful when has_prize.
+  bool  has_prize;     // dungeon awards a pendant/crystal (HC/CT/GT do not).
+  const char *name;
+} RandoTrackerDungeonInfo;
+#define kRandoTrackerDungeonCount 13
+extern const RandoTrackerDungeonInfo kRandoTrackerDungeons[kRandoTrackerDungeonCount];
 
 // ---------------------------------------------------------------------------
 // Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the
