@@ -498,10 +498,16 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
         Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
       }
       table.count = 0;
-      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table) &&
-          Goal_IsCompletable(&settings, &table)) {
-        ok = true;
-        break;
+      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
+        // Require FULL reachability (not just goal-completability) for entrance
+        // shuffle — reject any π that strands placements (e.g. a gated door
+        // leading to the dungeon that grants the gating item). See rando_generate.c.
+        RandoSpheres reach_spheres;
+        if (Logic_ComputeSpheres(&settings, &table, &reach_spheres) &&
+            Goal_IsCompletable(&settings, &table)) {
+          ok = true;
+          break;
+        }
       }
     }
     // Leave overrides active through sphere + spoiler emission below.

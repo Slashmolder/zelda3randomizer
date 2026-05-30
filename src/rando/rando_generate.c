@@ -203,11 +203,21 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
         Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
       }
       table.count = 0;
-      if (Place_AssumedFill(settings, seed_u64, effective_budget, &table) &&
-          Goal_IsCompletable(settings, &table)) {
-        placed = true;
-        entrance_attempt = (uint8)att;
-        break;
+      if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
+        // Require FULL reachability, not just goal-completability: an entrance
+        // permutation can make some interiors circularly unreachable (e.g. a
+        // medallion/crystal-gated door leading to the very dungeon that grants
+        // the gating item). Place_AssumedFill accepts a best-effort with stranded
+        // placements; we must REJECT that π and try another rather than ship a
+        // seed with unreachable items. Logic_ComputeSpheres returns true only when
+        // every placement is reachable.
+        RandoSpheres reach_spheres;
+        if (Logic_ComputeSpheres(settings, &table, &reach_spheres) &&
+            Goal_IsCompletable(settings, &table)) {
+          placed = true;
+          entrance_attempt = (uint8)att;
+          break;
+        }
       }
     }
     // NB: leave the accepted π's overrides ACTIVE — the spoiler's sphere + goal

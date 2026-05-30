@@ -526,17 +526,13 @@ dungeons:
       Main door 0x35 only; mountainface doors stay vanilla. Entry region has two
       inbound edges (LW+DW Death Mountain) — override remaps both. Medallion gate
       lives in the door predicate (kept with the door).
-  - dungeon_id: ganons_tower
-    name: "Ganon's Tower (main)"
-    rooms: [0x00C]
-    entrance_ids: [0x37]
-    region: DarkWorld_DeathMountain_East
-    entry_region: GanonsTower_Lobby
-    notes: >
-      Main door 0x37 only; the Pyramid Sanctum (Ganon-fight) entrances stay
-      vanilla. Two inbound edges (override remaps both). The crystal-tower gate is
-      in the door predicate, so it travels with the door under the shuffle;
-      completability stays safe (Goal_IsCompletable is override-aware).
+  # Ganon's Tower is DEFERRED (briefly added then reverted): its crystal-tower
+  # gate lives in the door-edge predicate, so under the shuffle it gates whatever
+  # lands behind GT's door behind 7 crystals — circular when that's a
+  # crystal-bearing dungeon (need the crystal to enter, but the dungeon grants it)
+  # → frequent unreachable seeds. Needs the gate to travel with the dungeon
+  # (internal edge), not the door. (Entry datum if revisited: id 0x37, room 0x0C,
+  # entry_region GanonsTower_Lobby.)
   - dungeon_id: misery_mire
     name: "Misery Mire"
     rooms: [0x098]

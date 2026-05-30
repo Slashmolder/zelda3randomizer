@@ -505,11 +505,11 @@ static void Panel_Shuffles() {
       s->coupled = (dun || s->shuffle_cave_entrances) ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Shuffles 11 of 12 dungeons among themselves (everything except "
-                "Skull Woods); entering one's door loads another, coupled exit "
-                "returns you. Desert / Turtle Rock / Ganon's Tower shuffle their "
-                "MAIN door only (the extra 'contained' entrances stay vanilla). "
-                "Skull Woods (truly many separate entrances) comes later.");
+    HelpTooltip("Shuffles 10 of 12 dungeons among themselves; entering one's door "
+                "loads another, coupled exit returns you. Desert + Turtle Rock "
+                "shuffle their MAIN door only (extra 'contained' entrances stay "
+                "vanilla). Skull Woods (many separate entrances) and Ganon's Tower "
+                "(crystal-gate circularity) are deferred.");
     // Coupled is the only implemented mode for now; show it as a fixed
     // indicator rather than a live toggle so the widget never lies.
     ImGui::BeginDisabled(true);

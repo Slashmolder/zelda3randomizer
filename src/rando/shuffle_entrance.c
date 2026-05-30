@@ -149,7 +149,7 @@ typedef struct RandoDungeon {
   uint8 entrance_id;              // overworld front-door entrance-id
 } RandoDungeon;
 
-#define kEntranceDungeonCount 11
+#define kEntranceDungeonCount 10
 static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   { "palace_of_darkness",   "PalaceOfDarkness",     0x04A, 0x26 },
   { "swamp_palace",         "SwampPalace",          0x028, 0x25 },
@@ -181,15 +181,16 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   //  - Turtle Rock: main 0x35; mountainface doors stay vanilla. Entry region
   //    TurtleRock_Entrance(29) has TWO inbound edges (LW+DW Death Mountain) — the
   //    override remaps both; medallion gate lives in the door predicate (kept).
-  //  - Ganon's Tower: main 0x37; the Pyramid Sanctum (Ganon-fight) entrances stay
-  //    vanilla. Entry region GanonsTower_Lobby(11) also has two inbound edges. NB:
-  //    GT's crystal-tower gate lives in its door predicate, so it travels with the
-  //    door — completability stays safe (Goal_IsCompletable is override-aware), but
-  //    the crystal requirement effectively follows GT's door under the shuffle.
+  // Ganon's Tower is DEFERRED (was briefly added, then reverted): GT's
+  // crystal-tower gate lives in its door-edge predicate, so under the shuffle it
+  // travels with the door and gates whatever lands behind GT's door behind 7
+  // crystals. When that's a crystal-bearing dungeon (e.g. Ice Palace), it's
+  // circular (need the crystal to enter, but the dungeon GIVES the crystal) →
+  // frequent unreachable seeds. Fixing it cleanly needs the crystal gate to
+  // travel with the DUNGEON (internal edge), not the door — a logic restructure.
   // Skull Woods stays deferred (truly many separate interiors, not "contained").
   { "desert_palace",        "DesertPalace_Lobby",   0x084, 0x09 },
   { "turtle_rock",          "TurtleRock_Entrance",  0x0D6, 0x35 },
-  { "ganons_tower",         "GanonsTower_Lobby",    0x00C, 0x37 },
 };
 
 // ---------------------------------------------------------------------------
