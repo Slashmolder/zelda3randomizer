@@ -516,14 +516,14 @@ typedef struct RandoItemView {
   bool bombos, ether, quake;
   bool mushroom, powder, flute, shovel;
   bool agahnim;       // Agahnim 1 defeated
-  // Per-dungeon items, indexed by GAME-side dungeon index (cur_palace_index_x2>>1):
-  // 0=HyruleCastle/HCE, 2=EP, 3=DP, 4=CastleTower, 5=PoD, 6=SP, 7=SW, 8=TT,
-  // 9=IP, 10=ToH, 11=MM, 12=TR, 13=GT (index 1 is an unused sub-area slot the
-  // game never stores into). Big-key/map/compass are bitfields with bit
-  // (0x8000 >> game_index): Hyrule Castle's map/big-key/compass bit is at index
-  // 0 (0x8000) — the Map_HCE grant dispatches to index 0 and the HC escape runs
-  // at cur_palace_index_x2 = 0. Small keys are indexed by the same game-side
-  // index (SaveDungeonKeys folds raw dungeon id 2, HC proper, into slot 0).
+  // Per-dungeon items. bigkey/map/compass are bitfields with bit
+  // (0x8000 >> game_index) where game_index = cur_palace_index_x2>>1. Hyrule
+  // Castle's big-key/compass bit is at game_index 1 (0x4000) — when standing in
+  // HC the live cur_palace_index_x2 is 2 (verified by F12 dump). Small keys are
+  // a separate axis: SaveDungeonKeys folds HC (raw dungeon id 2) into key slot
+  // 0, so HC's bit index (1) and key slot (0) differ. (Map_HCE, the rando map
+  // GRANT, dispatches to index 0 = the sewers/escape sub-area — a separate
+  // index from the HC dungeon proper; do not conflate the two.)
   uint8 dungeon_small_keys[16];
   uint16 bigkey_bits;
   uint16 map_bits;
@@ -531,27 +531,6 @@ typedef struct RandoItemView {
 } RandoItemView;
 
 void Rando_FillItemView(RandoItemView *out);
-
-// ---------------------------------------------------------------------------
-// Canonical dungeon table for the in-game dungeon tracker. SINGLE SOURCE OF
-// TRUTH for the per-dungeon game-side index so the tracker's big-key/map/
-// compass bit (0x8000 >> game_index) and small-key slot can never drift from
-// the game's RAM storage convention. Validated headlessly by Rando_TrackerSelfCheck
-// against kSmallKeyGameDungeon / dungeon_bit_for_map_or_compass — a prior bug
-// (Hyrule Castle drifted to game_index 1, bit 0x4000, which the game never sets)
-// is now a hard self-check failure. Rows are in tracker display order.
-typedef struct RandoTrackerDungeonInfo {
-  uint8 game_index;    // game-side dungeon id: bit = 0x8000 >> game_index; also
-                       //   the link_keys_earned_per_dungeon[] small-key slot.
-  uint8 alttpr_index;  // ALTTPR dungeon order (kSmallKeyGameDungeon index) — the
-                       //   binding used by the self-check to validate game_index.
-  uint8 prize_logic;   // dungeon-prize-assignment index (kDungeonPrizeLocations
-                       //   order); only meaningful when has_prize.
-  bool  has_prize;     // dungeon awards a pendant/crystal (HC/CT/GT do not).
-  const char *name;
-} RandoTrackerDungeonInfo;
-#define kRandoTrackerDungeonCount 13
-extern const RandoTrackerDungeonInfo kRandoTrackerDungeons[kRandoTrackerDungeonCount];
 
 // ---------------------------------------------------------------------------
 // Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the
