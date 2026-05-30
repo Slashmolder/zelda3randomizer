@@ -17,6 +17,8 @@ The infrastructure is already in place (the ImGui window, tabs, widgets, and the
 
 - `game-config-ui`: gains a Debug tab with a live inventory editor. The editor is a runtime `g_ram` editor (distinct from the config tabs' Apply/INI flow): it does not persist to the INI or any save file; edited state lands in live RAM and only reaches SRAM if the player saves normally.
 
+  Because `game-config-ui` is introduced by `add-native-game-config-ui` and is not yet baselined in `openspec/specs/`, the Debug-tab behavior is expressed as **ADDED Requirements** on that capability (see `specs/game-config-ui/spec.md`) rather than MODIFIED — both changes ADD to the same not-yet-archived capability; sequence the archives accordingly.
+
 ## Impact
 
 - **New code, no new files:** `GameDebug_RenderTab()` + cheat read/write/gate helpers added to the existing `src/rando/rando_window/game_config_panels.cpp`; the Debug top-level tab added in `src/rando/rando_window/rando_window.cpp`; declaration in `game_config_widgets.h`. `ZeldaIsEmulatorAttached()` added to `src/zelda_rtl.{c,h}`.
