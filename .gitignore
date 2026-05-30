@@ -47,6 +47,7 @@ __pycache__
 /tmp/
 /zelda3_assets.dat
 /SDL2.dll
+/zelda3.ini
 /zelda3.*.ini
 /zelda3.ini.bak
 /imgui.ini
