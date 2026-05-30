@@ -1091,7 +1091,11 @@ void Rando_CaptureArrivalForBake(void) {
     int total = Entrance_CaveInteriorCount();
     fprintf(stderr, "[ARRIVAL-CAPTURE] %d/%d — interior %d %s\n",
             g_cave_capture_count, total, interior, Entrance_CaveInteriorName(interior));
-    if (g_cave_capture_count >= total) Rando_DumpArrivalCapture();
+    // Rewrite the dump on every NEW capture so a partial walkabout is always
+    // saved (stop anytime and bake what's there); flag completion at full set.
+    Rando_DumpArrivalCapture();
+    if (g_cave_capture_count >= total)
+      fprintf(stderr, "[ARRIVAL-CAPTURE] COMPLETE — all %d captured\n", total);
   }
 }
 
