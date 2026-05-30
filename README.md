@@ -170,6 +170,12 @@ cd zelda3
 ```sh
 python3 -m pip install -r requirements.txt
 ```
+> **Tip (Linux/macOS):** if you have [uv](https://docs.astral.sh/uv/), you can
+> skip this step entirely. The `Makefile` auto-detects `uv` and runs the asset /
+> codegen tooling in an isolated, auto-provisioned environment (deps from
+> `requirements.txt`) — no manual `pip install` or venv needed. It falls back to
+> the system `python3` when `uv` isn't installed. (Windows builds use `python`
+> directly and are unaffected.)
 5. Install SDL2
 * Ubuntu/Debian `sudo apt install libsdl2-dev`
 * Fedora Linux `sudo dnf install SDL2-devel`
@@ -262,6 +268,17 @@ Additionally, the following commands are available:
 | Ctrl+F1-F10 | Replay the snapshot |
 | 1-9 | Load a dungeons playthrough snapshot |
 | Ctrl+1-9 | Run a dungeons playthrough in turbo mode |
+| ` (backquote) | Open the native game-settings window (PC; configurable as `OpenSettings`) |
+| F12 | Dump developer debug state — g_ram/VRAM/OAM/CGRAM + hint state + a log line (configurable as `DumpDebugState`; clear its binding to disable, or trigger it from the Debug tab) |
+
+### Native game-settings window (PC)
+
+On Windows/Linux/macOS, press `` ` `` (backquote) — or whatever you bind `OpenSettings` to under `[KeyMap]` — to open the **Z3R Settings** window on its **Game Settings** tab. It configures the game without hand-editing `zelda3.ini`:
+
+- **Controls / Controller** — rebind any keyboard key or gamepad button. Click *Rebind*, then press the key/button (Esc cancels; the window must be focused for keyboard capture). Conflicts steal the binding from the previous owner with a notice.
+- **Video / Audio / Gameplay** — window scale, fullscreen, renderer, widescreen, audio device/MSU, and the `[Features]` gameplay toggles.
+
+Click **Apply** to save. Bindings and gameplay toggles take effect immediately; options marked *(restart)* (audio device, renderer, language, …) are written to the INI and take effect on the next launch. Apply rewrites only the keys it manages in your loaded INI (`zelda3.user.ini` if present, else `zelda3.ini`), preserving comments and everything else; a one-time `.bak` is made before the first rewrite.
 
 ### Randomizer keybindings
 

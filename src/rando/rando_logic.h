@@ -147,6 +147,13 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
 bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id);
 bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id);
 
+// Copy the last Logic_ComputeReachability result into a private snapshot buffer
+// (refresh=true) and return it, or return the existing snapshot unchanged
+// (refresh=false). The snapshot survives later Logic_ComputeReachability calls,
+// which only touch the shared result buffer. Used by the runtime tracker bridge
+// to hold a stable reachability across frames / multiple windows.
+const RandoReachability *Reachability_Snapshot(bool refresh);
+
 // ---------------------------------------------------------------------------
 // Generated-data record types (emitted by assets/rando_logic_gen.py into
 // src/rando/logic_data.c). Declared here so other compilation units can

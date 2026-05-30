@@ -361,8 +361,18 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // Phase C — carry the entrance-shuffle axes + accepted goal-retry attempt so
   // slot-load can regenerate the cave permutation π (and install the door
   // overlay) deterministically from the seed. 0/0 when no shuffle was active.
+  // (Redundant with canon[25] in the settings blob below, but the dedicated
+  // header bytes are what Entrance_RuntimeInstall reads.)
   slot.header.entrance_axes = entrance_axes;
   slot.header.entrance_attempt = entrance_attempt;
+  // format_version 2: persist the FULL canonical settings blob so a reloaded
+  // slot can reproduce the seed's settings + prize/medallion shuffle
+  // assignments for the runtime reachability (tracker) engine. The reserved-tail
+  // hints/goal/world_state above stay for backward-compat (hint regen, Inverted
+  // detection on older readers); this blob is the authoritative settings source
+  // for v2 readers. See Rando_RecoverActiveSettings / Rando_ActivateSidecarSlot.
+  Settings_CanonicalSerialize(settings, slot.settings_canonical);
+  slot.header.settings_present = 1;
   // Flags: set the forward-fill bit if the placer used the fallback.
   bool used_forward_fill = false;
   {

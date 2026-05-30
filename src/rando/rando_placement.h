@@ -39,6 +39,13 @@ bool Place_AssumedFill(const RandoSettings *settings,
                        int budget_seconds,
                        RandoPlacementTable *out);
 
+// Seed the vanilla-mode dungeon items (small keys / big keys / maps / compasses
+// whose class is in Vanilla mode) into a RandoCounts inventory — they are not
+// shuffled into the world pool, so logic treats them as always available.
+// Shared by the placer's assumed-fill seeding and the runtime reachability
+// bridge (Rando_BuildRuntimeCounts) so both produce identical reachability.
+void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *settings);
+
 // Per-run placer stats from the most recent Place_AssumedFill call.
 // Cleared at the start of every Place_AssumedFill call, populated before
 // it returns. Read by the spoiler writer to populate fallback_warnings.

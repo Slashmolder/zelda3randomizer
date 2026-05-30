@@ -2,6 +2,7 @@
 #include "variables.h"
 #include "features.h"
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
+#include "rando/location_ids.h"  // LOC_Agahnim (mark Aga-1 defeat as the DefeatAgahnim event)
 
 // Forward-declared here to avoid pulling rando_placement.h into misc.c.
 // NULL `settings` is supported (used by the Module05_LoadFile call below).
@@ -319,10 +320,15 @@ static void KillAghanim_Func12() {
   Overworld_SetSongList();
   save_ow_event_info[0x1b] |= 32;
   // Phase B Slice 1 §38 — Aga 1 defeat is a reachability-changing event
-  // (per audit.md §0.4a). Bump the counter so the tracker recomputes
-  // reachability for post-aga1 graph reachability.
+  // (per audit.md §0.4a). Mark the Agahnim event location checked: it is a pure
+  // event location (vanilla_item = DefeatAgahnim, no real item to grant), and the
+  // logic's HAS_ITEM(DefeatAgahnim) gates (e.g. Lumberjack Tree, pyramid access)
+  // derive from it via Rando_BuildRuntimeCounts. Nothing else marks loc 34 at
+  // runtime, so without this the live reachability tracker would treat post-Aga1
+  // checks as permanently unreachable. Mark (not just bump) — Rando_MarkLocation-
+  // Checked bumps the reachability counter itself.
   if (enhanced_features1 & kFeatures1_RandomizerActive)
-    Rando_BumpReachabilityCounter();
+    Rando_MarkLocationChecked(LOC_Agahnim);
   BYTE(cur_palace_index_x2) = 255;
   submodule_index = 0;
   overworld_map_state = 0;

@@ -1082,6 +1082,22 @@ bool Rando_EntranceForceCachedExit(uint16 lx) {
   return rooms[target] < 0x100;                               // loaded a dungeon
 }
 
+// Active slot's recovered settings + shuffle assignments (format_version >= 2
+// slots carry the canonical settings blob). g_rando_active_settings_valid gates
+// the runtime reachability engine the tracker windows consume: when false
+// (older v1 slot, snapshot-restore, or a slot whose writer didn't populate the
+// blob), reachability is SUPPRESSED rather than computed from guessed defaults —
+// a wrong prize_shuffle flag mis-seeds the shuffle stream and yields
+// confidently-wrong prize/medallion gating.
+static RandoSettings g_rando_active_settings;
+static bool g_rando_active_settings_valid = false;
+// Session-lifetime buffers the predicate VM borrows via Rando_Get*Assignment().
+// These MUST outlive activation — the setters store the pointer, not a copy — so
+// they live here as file-statics, NOT in the placer's function-statics (which
+// aren't repopulated on a slot reload).
+static uint8 g_rando_active_prize_assignment[kRandoDungeonCount];
+static uint8 g_rando_active_medallion_assignment[kRandoMedallionEntranceCount];
+
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   if (src == NULL || src->header.slot_kind != kSlotKind_Randomizer) {
     Rando_DeactivateSlot();
@@ -1137,6 +1153,36 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
 
+  // === Reachability settings + shuffle assignments (tracker engine) ===
+  // The runtime reachability engine (Logic_ComputeReachability, consumed by the
+  // Check/Map tracker windows) needs the seed's FULL settings plus the prize /
+  // medallion shuffle assignments. Nothing else installs the assignments at
+  // reload — the placer set them at generation time (rando_placement.c) and that
+  // doesn't re-run here. Recover the canonical settings blob (format_version >=
+  // 2) and recompute the assignments from (settings, seed) in the EXACT placer
+  // order (Rng_SeedFromU64 → PrizeShuffle_Run → MedallionShuffle_Run on one
+  // shared rng; medallion output is stream-position-dependent on prize_shuffle).
+  // When the blob is absent, mark settings invalid and clear the assignments so
+  // the tracker layer suppresses reachability instead of guessing.
+  g_rando_active_settings_valid = false;
+  if (src->header.settings_present &&
+      Settings_CanonicalDeserialize(src->settings_canonical, &g_rando_active_settings) == 0) {
+    ShareString ss;
+    if (Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk) {
+      RandoRng shuffle_rng;
+      Rng_SeedFromU64(&shuffle_rng, ss.seed_u64);
+      PrizeShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_prize_assignment);
+      MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
+      Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
+      Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
+      g_rando_active_settings_valid = true;
+    }
+  }
+  if (!g_rando_active_settings_valid) {
+    Rando_SetDungeonPrizeAssignment(NULL);
+    Rando_SetMedallionAssignment(NULL);
+  }
+
   // === Phase B hints: regenerate telepathic-tile hints for this slot ===
   // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
   // of (settings, placement table); the generator (rando_hints.c) reads only
@@ -1148,16 +1194,26 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // shows hints without re-running the full seed generator.
   {
     RandoSettings hint_settings;
-    Settings_SetDefaults(&hint_settings);
-    if (src->header.settings_ext_present) {
-      hint_settings.hints = src->header.hints_setting;
-      hint_settings.goal = src->header.goal;
+    if (g_rando_active_settings_valid) {
+      // Most reliable source: the full canonical settings blob recovered just
+      // above (the same one the reachability engine consumes). It carries the
+      // real `hints` and `goal` axes, so it is immune to a stale or partially
+      // written header ext byte — which would otherwise leave hints silently
+      // off even though the seed was generated with hints on.
+      hint_settings = g_rando_active_settings;
     } else {
-      // Older slot (or writer that did not populate the ext): default to
-      // hints-on so existing rando slots still surface telepathic-tile hints.
-      // goal stays at the Settings_SetDefaults value (Murahdahla won't fire
-      // unless it happens to be a Triforce/Ganon-hunt default).
-      hint_settings.hints = kHintsMode_On;
+      // No canonical blob (older v1 slot / snapshot restore). Fall back to the
+      // additive header ext byte, or default hints-on for the oldest slots so
+      // existing rando slots still surface telepathic-tile hints. goal stays at
+      // the Settings_SetDefaults value (Murahdahla won't fire unless it happens
+      // to be a Triforce/Ganon-hunt default).
+      Settings_SetDefaults(&hint_settings);
+      if (src->header.settings_ext_present) {
+        hint_settings.hints = src->header.hints_setting;
+        hint_settings.goal = src->header.goal;
+      } else {
+        hint_settings.hints = kHintsMode_On;
+      }
     }
     Rando_GenerateHints(&hint_settings, &g_session_placement_table, NULL);
   }
@@ -1184,6 +1240,11 @@ void Rando_DeactivateSlot(void) {
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
   g_rando_flute_shovel_owned = 0;
+  // Transient Retro take-any redirect target. Reset with the other per-slot
+  // transients so a stale door id from a prior slot can't mis-key a host-room
+  // shop after a slot switch. (Within a slot it is set/cleared by
+  // Overworld_UseEntrance; clearing it here is the slot-boundary backstop.)
+  g_rando_takeany_door_id = 0;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
@@ -1196,6 +1257,14 @@ void Rando_DeactivateSlot(void) {
   // when no slot is active.
   g_rando_active_share_string[0] = '\0';
 
+  // Reachability: invalidate the recovered settings and NULL the shuffle
+  // assignment pointers. Without this, switching to a vanilla/empty slot would
+  // leave eval_has_prize / eval_medallion_opens reading the prior slot's stale
+  // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
+  g_rando_active_settings_valid = false;
+  Rando_SetDungeonPrizeAssignment(NULL);
+  Rando_SetMedallionAssignment(NULL);
+
   // Reset the starting-inventory gate so an in-session slot-switch (slot A
   // already received its grant, then user backs out and loads slot B) lets
   // slot B's grant fire on its next Module05_LoadFile. Without this, the
@@ -1204,6 +1273,295 @@ void Rando_DeactivateSlot(void) {
   // Rando_TryGrantStartingInventory still gates on sram_progress_indicator
   // so in-progress saves aren't re-granted.
   g_rando_starting_inventory_granted = 0;
+}
+
+// Whether the active slot's settings were recovered (format_version >= 2 blob)
+// and the shuffle assignments installed. The tracker windows gate their
+// reachability display on this — false means "settings unknown", show only
+// checked/unchecked, not reachable.
+// Whether a randomizer slot is currently active (a placement is installed).
+bool Rando_IsActive(void) { return g_rando_slot_active != 0; }
+
+bool Rando_HasActiveSettings(void) { return g_rando_active_settings_valid; }
+
+// The recovered active settings, or NULL when unavailable. Used by the runtime
+// reachability bridge (Rando_GetLiveReachability).
+const RandoSettings *Rando_GetActiveSettings(void) {
+  return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
+}
+
+// ---------------------------------------------------------------------------
+// Live reachability bridge (tracker windows).
+//
+// Rando_BuildRuntimeCounts maps the live g_ram inventory into the logical
+// RandoCounts the predicate VM reads. The macros (macros.yaml) accept the
+// progressive form via HAS_AMOUNT(Progressive*, n), so populating the
+// progressive counts satisfies every tier disjunct — we don't need the
+// absolute L1Sword/etc. ids. Prizes (crystals/pendants) are NOT set here: the
+// reachability fixed-point derives them from reachable dungeon bosses
+// (OP_HAS_PRIZE + cleared_dungeons), i.e. logical accessibility. Event items
+// the VM treats as inventory (RescuedZelda, DefeatAgahnim) are derived from
+// actual game/rando progress.
+// ---------------------------------------------------------------------------
+void Rando_BuildRuntimeCounts(RandoCounts *out) {
+  if (out == NULL) return;
+  memset(out, 0, sizeof(*out));
+
+  // Progressive tiers. Sword byte 0xFF == none (not 0).
+  uint8 sword = link_sword_type;
+  if (sword >= 1 && sword <= 4) out->by_item_id[ITEM_ProgressiveSword] = sword;
+  out->by_item_id[ITEM_ProgressiveShield] = link_shield_type;  // 0..3
+  out->by_item_id[ITEM_ProgressiveArmor] = link_armor;          // 0=green,1=blue,2=red
+  out->by_item_id[ITEM_ProgressiveGlove] = link_item_gloves;    // 0..2
+  // Bow byte is non-linear: 0 none, 1-2 wood, 3-4 silver (see progressive_to_lttp).
+  uint8 bowb = link_item_bow;
+  if (bowb >= 3) {
+    out->by_item_id[ITEM_ProgressiveBow] = 2;
+    out->by_item_id[ITEM_SilverArrowUpgrade] = 1;
+  } else if (bowb >= 1) {
+    out->by_item_id[ITEM_ProgressiveBow] = 1;
+  }
+
+  // Single-presence items.
+  out->by_item_id[ITEM_FireRod] = link_item_fire_rod ? 1 : 0;
+  out->by_item_id[ITEM_IceRod] = link_item_ice_rod ? 1 : 0;
+  out->by_item_id[ITEM_Hammer] = link_item_hammer ? 1 : 0;
+  out->by_item_id[ITEM_Hookshot] = link_item_hookshot ? 1 : 0;
+  out->by_item_id[ITEM_Bombos] = link_item_bombos_medallion ? 1 : 0;
+  out->by_item_id[ITEM_Ether] = link_item_ether_medallion ? 1 : 0;
+  out->by_item_id[ITEM_Quake] = link_item_quake_medallion ? 1 : 0;
+  out->by_item_id[ITEM_Lamp] = link_item_torch ? 1 : 0;
+  out->by_item_id[ITEM_BugCatchingNet] = link_item_bug_net ? 1 : 0;
+  out->by_item_id[ITEM_BookOfMudora] = link_item_book_of_mudora ? 1 : 0;
+  out->by_item_id[ITEM_CaneOfSomaria] = link_item_cane_somaria ? 1 : 0;
+  out->by_item_id[ITEM_CaneOfByrna] = link_item_cane_byrna ? 1 : 0;
+  out->by_item_id[ITEM_Cape] = link_item_cape ? 1 : 0;
+  out->by_item_id[ITEM_MagicMirror] = link_item_mirror ? 1 : 0;
+  out->by_item_id[ITEM_Boots] = link_item_boots ? 1 : 0;
+  out->by_item_id[ITEM_Flippers] = link_item_flippers ? 1 : 0;
+  out->by_item_id[ITEM_MoonPearl] = link_item_moon_pearl ? 1 : 0;
+
+  // Boomerangs: byte 1=blue, 2=red (separate rando items).
+  if (link_item_boomerang == 1) out->by_item_id[ITEM_BlueBoomerang] = 1;
+  else if (link_item_boomerang == 2) out->by_item_id[ITEM_RedBoomerang] = 1;
+
+  // Mushroom / Powder share byte 0xF344 (1=mushroom, 2=powder); true mushroom
+  // possession is tracked separately in rando state so Powder-first can't lock
+  // out the mushroom logic.
+  if (Rando_MushroomHeld() || link_item_mushroom == 1) out->by_item_id[ITEM_Mushroom] = 1;
+  if (link_item_mushroom == 2) out->by_item_id[ITEM_MagicPowder] = 1;
+
+  // Flute / shovel decouple — true ownership in rando state (the vanilla
+  // link_item_flute byte is one slot that can't hold both).
+  uint8 fs = g_rando_flute_shovel_owned;
+  if (fs & kRandoFluteShovel_Shovel) out->by_item_id[ITEM_Shovel] = 1;
+  if (fs & kRandoFluteShovel_Flute) out->by_item_id[ITEM_OcarinaInactive] = 1;
+
+  // Half / quarter magic: link_magic_consumption 1=half, 2=quarter.
+  if (link_magic_consumption >= 1) out->by_item_id[ITEM_HalfMagic] = 1;
+  if (link_magic_consumption >= 2) out->by_item_id[ITEM_QuarterMagic] = 1;
+
+  // Bottles — count non-empty slots. HasBottle macro sums all bottle ids via
+  // HAS_ANY_COUNT, so a single counter satisfies the count-based gates. (Content
+  // -specific gates like GoodBee are not modeled; an acceptable approximation.)
+  {
+    uint8 bottles = 0;
+    for (int i = 0; i < 4; i++) if (link_bottle_info[i] != 0) bottles++;
+    out->by_item_id[ITEM_BottleEmpty] = bottles;
+  }
+
+  // Virtual / event items the VM reads as inventory.
+  out->by_item_id[ITEM_StartingHeart] = 3;  // baseline 3 hearts
+  // RescuedZelda: pre-collected in non-Standard worlds; in Standard it is earned
+  // at the castle escape (sram_progress_indicator >= 2 == Zelda at sanctuary).
+  // Use the SAME world-state source the reachability graph walks (the recovered
+  // settings) so the event derivation can't diverge from the graph (audit LOW).
+  uint8 ws = g_rando_active_settings_valid ? g_rando_active_settings.world_state
+                                           : g_rando_active_world_state;
+  bool rescued = (ws != (uint8)kWorldState_Standard) || (sram_progress_indicator >= 2);
+  if (rescued) out->by_item_id[ITEM_RescuedZelda] = 1;
+  // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
+  if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
+
+  // Dungeon items. Vanilla-mode classes are logically available in-place, so
+  // pre-grant them exactly as the placer does (shared helper). For shuffled
+  // (Dungeon/Wild) classes, read what the player has ACTUALLY collected from the
+  // live vanilla per-dungeon cells and map game-dungeon index -> registry id.
+  // Symbolic ITEM_ ids (not arithmetic) avoid the game-order vs registry-order
+  // mismatch (e.g. ToH/Castle-Tower swap). 0xFFFF = no such item for that
+  // dungeon (HC/Castle-Tower have no big key/map/compass).
+  if (g_rando_active_settings_valid) {
+    const RandoSettings *st = &g_rando_active_settings;
+    Rando_SeedVanillaDungeonItems(out, st);
+
+    // game dungeon index (0=HC,1=unused,2=EP,3=DP,4=CT,5=PoD,6=SP,7=SW,8=TT,
+    // 9=IP,10=ToH,11=MM,12=TR,13=GT) -> registry item id.
+    static const uint16 kGToSmallKey[16] = {
+      ITEM_SmallKey_HyruleCastleEscape, 0xFFFF, ITEM_SmallKey_EasternPalace,
+      ITEM_SmallKey_DesertPalace, ITEM_SmallKey_HyruleCastleTower,
+      ITEM_SmallKey_PalaceOfDarkness, ITEM_SmallKey_SwampPalace,
+      ITEM_SmallKey_SkullWoods, ITEM_SmallKey_ThievesTown, ITEM_SmallKey_IcePalace,
+      ITEM_SmallKey_TowerOfHera, ITEM_SmallKey_MiseryMire, ITEM_SmallKey_TurtleRock,
+      ITEM_SmallKey_GanonsTower, 0xFFFF, 0xFFFF,
+    };
+    static const uint16 kGToBigKey[16] = {
+      0xFFFF, 0xFFFF, ITEM_BigKey_EasternPalace, ITEM_BigKey_DesertPalace, 0xFFFF,
+      ITEM_BigKey_PalaceOfDarkness, ITEM_BigKey_SwampPalace, ITEM_BigKey_SkullWoods,
+      ITEM_BigKey_ThievesTown, ITEM_BigKey_IcePalace, ITEM_BigKey_TowerOfHera,
+      ITEM_BigKey_MiseryMire, ITEM_BigKey_TurtleRock, ITEM_BigKey_GanonsTower,
+      0xFFFF, 0xFFFF,
+    };
+    static const uint16 kGToMap[16] = {
+      0xFFFF, 0xFFFF, ITEM_Map_EasternPalace, ITEM_Map_DesertPalace, 0xFFFF,
+      ITEM_Map_PalaceOfDarkness, ITEM_Map_SwampPalace, ITEM_Map_SkullWoods,
+      ITEM_Map_ThievesTown, ITEM_Map_IcePalace, ITEM_Map_TowerOfHera,
+      ITEM_Map_MiseryMire, ITEM_Map_TurtleRock, ITEM_Map_GanonsTower, 0xFFFF, 0xFFFF,
+    };
+    static const uint16 kGToCompass[16] = {
+      0xFFFF, 0xFFFF, ITEM_Compass_EasternPalace, ITEM_Compass_DesertPalace, 0xFFFF,
+      ITEM_Compass_PalaceOfDarkness, ITEM_Compass_SwampPalace, ITEM_Compass_SkullWoods,
+      ITEM_Compass_ThievesTown, ITEM_Compass_IcePalace, ITEM_Compass_TowerOfHera,
+      ITEM_Compass_MiseryMire, ITEM_Compass_TurtleRock, ITEM_Compass_GanonsTower,
+      0xFFFF, 0xFFFF,
+    };
+    for (int g = 0; g < 14; g++) {
+      uint16 bit = (uint16)(0x8000u >> g);
+      if (st->dungeon_small_keys_mode != kDungeonItemMode_Vanilla &&
+          kGToSmallKey[g] != 0xFFFF)
+        out->by_item_id[kGToSmallKey[g]] = link_keys_earned_per_dungeon[g];
+      if (st->dungeon_big_keys_mode != kDungeonItemMode_Vanilla &&
+          kGToBigKey[g] != 0xFFFF && (link_bigkey & bit))
+        out->by_item_id[kGToBigKey[g]] = 1;
+      if (st->dungeon_maps_mode != kDungeonItemMode_Vanilla &&
+          kGToMap[g] != 0xFFFF && (link_dungeon_map & bit))
+        out->by_item_id[kGToMap[g]] = 1;
+      if (st->dungeon_compasses_mode != kDungeonItemMode_Vanilla &&
+          kGToCompass[g] != 0xFFFF && (link_compass & bit))
+        out->by_item_id[kGToCompass[g]] = 1;
+    }
+  }
+}
+
+// Memoized live reachability. Recomputed only when the reachability-state
+// counter advances (bumped on item pickups, location checks, and progress
+// events). Returns NULL when settings are unavailable (older slot / snapshot
+// restore) — callers then suppress the reachability display. The result is
+// snapshotted out of the shared Logic_ComputeReachability buffer so it stays
+// valid across frames and across both tracker windows.
+static uint32 g_live_reach_counter = 0xFFFFFFFFu;
+static uint8 g_live_reach_progress = 0xFFu;
+static bool g_live_reach_valid = false;
+
+const RandoReachability *Rando_GetLiveReachability(void) {
+  if (!g_rando_active_settings_valid) {
+    g_live_reach_valid = false;
+    return NULL;
+  }
+  uint32 cur = Rando_GetReachabilityCounter();
+  // sram_progress_indicator feeds RescuedZelda in Standard (Rando_BuildRuntime-
+  // Counts) but does NOT bump the reachability counter when it advances during
+  // the castle-escape cutscene — so fold it into the memo key, else RescuedZelda
+  // -gated regions stay dark until the next unrelated location check (audit M1).
+  uint8 prog = sram_progress_indicator;
+  if (g_live_reach_valid && cur == g_live_reach_counter && prog == g_live_reach_progress) {
+    return Reachability_Snapshot(false);  // stable cached snapshot
+  }
+  RandoCounts counts;
+  Rando_BuildRuntimeCounts(&counts);
+  const RandoReachability *r = Logic_ComputeReachability(&counts, &g_rando_active_settings);
+  if (r == NULL) {
+    g_live_reach_valid = false;
+    return NULL;
+  }
+  g_live_reach_counter = cur;
+  g_live_reach_progress = prog;
+  g_live_reach_valid = true;
+  return Reachability_Snapshot(true);  // copy out of the shared buffer
+}
+
+void Rando_FillItemView(RandoItemView *out) {
+  if (out == NULL) return;
+  memset(out, 0, sizeof(*out));
+
+  uint8 sword = link_sword_type;
+  out->sword = (sword >= 1 && sword <= 4) ? sword : 0;  // 0xFF == none
+  out->shield = link_shield_type;     // 0..3
+  out->mail = link_armor;             // 0 green, 1 blue, 2 red
+  out->gloves = link_item_gloves;     // 0..2
+  uint8 bowb = link_item_bow;
+  out->bow = (bowb >= 3) ? 2 : (bowb >= 1 ? 1 : 0);  // wood/silver
+  out->boomerang = (link_item_boomerang <= 2) ? link_item_boomerang : 0;
+
+  out->hookshot = link_item_hookshot != 0;
+  out->firerod = link_item_fire_rod != 0;
+  out->icerod = link_item_ice_rod != 0;
+  out->hammer = link_item_hammer != 0;
+  out->lamp = link_item_torch != 0;
+  out->net = link_item_bug_net != 0;
+  out->book = link_item_book_of_mudora != 0;
+  out->somaria = link_item_cane_somaria != 0;
+  out->byrna = link_item_cane_byrna != 0;
+  out->cape = link_item_cape != 0;
+  out->mirror = link_item_mirror != 0;
+  out->boots = link_item_boots != 0;
+  out->flippers = link_item_flippers != 0;
+  out->moon_pearl = link_item_moon_pearl != 0;
+  out->bombos = link_item_bombos_medallion != 0;
+  out->ether = link_item_ether_medallion != 0;
+  out->quake = link_item_quake_medallion != 0;
+
+  // Shared-byte items. With a rando slot active, true ownership is in rando
+  // state (the vanilla bytes are single slots that can't represent both). With
+  // no slot active that state isn't tracked, so fall back to the raw vanilla
+  // bytes for the informational view (audit LOW).
+  if (g_rando_slot_active) {
+    out->mushroom = Rando_MushroomHeld() || link_item_mushroom == 1;
+    out->powder = link_item_mushroom == 2;
+    uint8 fs = g_rando_flute_shovel_owned;
+    out->flute = (fs & kRandoFluteShovel_Flute) != 0;
+    out->shovel = (fs & kRandoFluteShovel_Shovel) != 0;
+  } else {
+    out->mushroom = link_item_mushroom == 1;
+    out->powder = link_item_mushroom == 2;
+    out->flute = link_item_flute >= 2;   // 0xF34C: 2=flute(inactive), 3=flute(active)
+    out->shovel = link_item_flute == 1;  // 1=shovel
+  }
+
+  {
+    uint8 bottles = 0;
+    for (int i = 0; i < 4; i++) if (link_bottle_info[i] != 0) bottles++;
+    out->bottles = bottles;
+  }
+  out->magic = link_magic_consumption;          // 0 normal, 1 half, 2 quarter
+  out->hearts = (uint8)(link_health_capacity >> 3);
+  out->heart_pieces = link_heart_pieces;
+
+  // Crystals (7) and pendants (3). crystal_mask bit (N-1) = rando Crystal N
+  // obtained, indexed by the PRIZE crystal number (kPrize_Crystal1..7) the
+  // tracker and placement use — NOT the HUD display order. The per-crystal
+  // link_has_crystals bits mirror prize_item_direct_grant: C1=0x10, C2=0x02,
+  // C3=0x01, C4=0x40, C5=0x04, C6=0x20, C7=0x08. pendant_mask bit0=green,
+  // 1=blue, 2=red (kPendantMask order; PrizeIcon maps each prize to its bit).
+  static const uint8 kCrystalMask[7] = { 0x10, 0x02, 0x01, 0x40, 0x04, 0x20, 0x08 };
+  static const uint8 kPendantMask[3] = { 4, 1, 2 };
+  uint8 cbits = link_has_crystals, pbits = link_which_pendants;
+  for (uint8 i = 0; i < 7; i++) {
+    if (cbits & kCrystalMask[i]) { out->crystal_mask |= (uint8)(1 << i); out->crystals++; }
+  }
+  for (uint8 i = 0; i < 3; i++) {
+    if (pbits & kPendantMask[i]) { out->pendant_mask |= (uint8)(1 << i); out->pendants++; }
+  }
+
+  out->agahnim = Rando_IsLocationChecked(LOC_Agahnim);
+
+  // Per-dungeon items (indexed by game-side dungeon index; bitfields use bit
+  // 0x8000 >> index). These reflect what the player has actually collected
+  // (shuffled dungeon items write these vanilla cells on receipt; vanilla-mode
+  // dungeons fill them in-place).
+  for (int i = 0; i < 16; i++) out->dungeon_small_keys[i] = link_keys_earned_per_dungeon[i];
+  out->bigkey_bits = link_bigkey;
+  out->map_bits = link_dungeon_map;
+  out->compass_bits = link_compass;
 }
 
 // ---------------------------------------------------------------------------
@@ -1940,6 +2298,93 @@ void Rando_SelfCheck(void) {
   }
 }
 
+static void tsc_die(const char *msg) {
+  fprintf(stderr, "[Tracker_SelfCheck] FAIL: %s\n", msg);
+  exit(2);
+}
+
+// End-to-end check of the slot-recovery + live-reachability path (Phase 1a/1b),
+// which the corpus / other selftests do NOT cover (the playable-slot path is
+// otherwise test-free per CLAUDE.md). Generates a default placement, round-trips
+// it through a sidecar slot + Rando_ActivateSidecarSlot, and asserts: settings
+// recovered, prize/medallion shuffle assignments installed at activation, and
+// reachability is non-empty from the empty starting inventory AND expands when a
+// broad item kit is added. Pure (no file IO; g_ram inventory is zero at selftest
+// time, before game init). Leaves no active slot (Deactivate at the end).
+void Rando_TrackerSelfCheck(void) {
+  RandoSettings s;
+  Settings_SetDefaults(&s);
+  uint64 seed = 0x0123456789abcdefull;
+
+  static RandoPlacement entries[512];
+  RandoPlacementTable table;
+  table.entries = entries;
+  table.count = 0;
+  if (!Place_AssumedFill(&s, seed, 0, &table) && table.count == 0)
+    tsc_die("placement failed");
+
+  RandoSidecarSlot slot;
+  memset(&slot, 0, sizeof(slot));
+  slot.header.slot_kind = kSlotKind_Randomizer;
+  slot.header.generator_version = (uint16)kGeneratorVersion;
+  uint16 maxloc = 0;
+  for (uint16 i = 0; i < table.count && i < 512; i++) {
+    slot.placements[i] = table.entries[i];
+    if (table.entries[i].location_id > maxloc) maxloc = table.entries[i].location_id;
+  }
+  slot.placement_count = table.count;
+  slot.header.placement_table_size = (uint16)(((uint32)maxloc + 1) * 2);
+  slot.header.settings_ext_present = 1;
+  slot.header.world_state = s.world_state;
+  slot.header.goal = s.goal;
+  Settings_CanonicalSerialize(&s, slot.settings_canonical);
+  slot.header.settings_present = 1;
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  ss.seed_u64 = seed;
+  Share_PackBinary(&ss, slot.header.share_string);
+
+  Rando_ActivateSidecarSlot(&slot);
+  if (!Rando_HasActiveSettings()) tsc_die("settings not recovered after activate");
+  const RandoSettings *rec = Rando_GetActiveSettings();
+  if (rec == NULL || rec->world_state != s.world_state || rec->goal != s.goal ||
+      rec->prize_shuffle != s.prize_shuffle || rec->medallion_shuffle != s.medallion_shuffle)
+    tsc_die("recovered settings mismatch");
+  if (Rando_GetDungeonPrizeAssignment() == NULL || Rando_GetMedallionAssignment() == NULL)
+    tsc_die("shuffle assignments not installed at activate");
+
+  RandoCounts counts;
+  Rando_BuildRuntimeCounts(&counts);
+  const RandoReachability *r0 = Logic_ComputeReachability(&counts, rec);
+  int n0 = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (Reachability_HasLocation(r0, kRandoLocations[i].id)) n0++;
+  if (n0 == 0) tsc_die("no locations reachable from the starting inventory");
+
+  // A broad progression kit must strictly expand reachability (monotonic logic).
+  counts.by_item_id[ITEM_ProgressiveSword] = 4;
+  counts.by_item_id[ITEM_ProgressiveGlove] = 2;
+  counts.by_item_id[ITEM_Hammer] = 1;
+  counts.by_item_id[ITEM_Lamp] = 1;
+  counts.by_item_id[ITEM_MoonPearl] = 1;
+  counts.by_item_id[ITEM_Flippers] = 1;
+  counts.by_item_id[ITEM_Hookshot] = 1;
+  counts.by_item_id[ITEM_FireRod] = 1;
+  counts.by_item_id[ITEM_ProgressiveBow] = 2;
+  counts.by_item_id[ITEM_CaneOfSomaria] = 1;
+  counts.by_item_id[ITEM_MagicMirror] = 1;
+  counts.by_item_id[ITEM_Bombos] = counts.by_item_id[ITEM_Ether] = counts.by_item_id[ITEM_Quake] = 1;
+  const RandoReachability *r1 = Logic_ComputeReachability(&counts, rec);
+  int n1 = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (Reachability_HasLocation(r1, kRandoLocations[i].id)) n1++;
+  if (n1 <= n0) tsc_die("reachability did not expand when a full item kit was added");
+
+  Rando_DeactivateSlot();
+  fprintf(stderr, "[Tracker_SelfCheck] OK (%d -> %d reachable)\n", n0, n1);
+}
+
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
   Rando_Rng_SelfCheck();
@@ -1954,5 +2399,6 @@ void Rando_RunAllSelfChecks(void) {
   TextField_SelfCheck();
   Hints_SelfCheck();
   Entrance_SelfCheck();
+  Rando_TrackerSelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }

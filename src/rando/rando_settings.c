@@ -198,11 +198,12 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   return kSettingsCanonicalLen;
 }
 
-// Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the 24-byte
-// canonical bytes and populates `out`. Returns 0 on success, -1 if the
-// input is NULL.
+// Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
+// kSettingsCanonicalLen (28)-byte canonical blob and populates `out`. Returns 0
+// on success, -1 if the input is NULL. Body occupies [0..24] (through
+// drop_shuffle); [25..27] are pad.
 //
-// **Forward-compat note**: trailing pad byte in[26], in[27] are NOT inspected
+// **Forward-compat note**: trailing pad bytes in[26], in[27] are NOT inspected
 // — a future format extension may repurpose them, and rejecting on non-zero
 // would break reveal of pre-extension suppressed files. Byte [25] is the
 // Phase C packed entrance-axis byte (0x00 = no shuffle). Today the serializer
@@ -234,8 +235,8 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.race_mode                  = in[17];
   s.pieces_required            = (uint16)(in[18] | ((uint16)in[19] << 8));
   s.pieces_placed              = (uint16)(in[20] | ((uint16)in[21] << 8));
-  // §66: read hints + shuffle axes (offsets [22..24]). Pad bytes [25..27]
-  // are not inspected — see forward-compat note above.
+  // §66: read hints + shuffle axes (offsets [22..24]). Byte [25] is the Phase C
+  // entrance-axis byte (unpacked below); pad bytes [26..27] are not inspected.
   s.hints                      = in[22];
   s.boss_shuffle               = in[23];
   s.drop_shuffle               = in[24];

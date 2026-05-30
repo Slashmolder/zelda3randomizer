@@ -11,6 +11,7 @@
 #include "rando/rando.h"  // add-rando-trackers: tracker visibility flags
 #include "rando/rando_placement.h"  // §8.8 snapshot rando placement TLV
 #include "rando/rando_snapshot_tail.h"  // §8.8 / §8.8a TLV save/load + invariant counter
+#include "rando/rando_hints.h"  // Rando_DumpHintDebug (F12 hint-state diagnostic)
 #include "hud.h"  // add-rando-trackers: per-frame tracker-overlay draw hook
 #include "util.h"
 #include "audio.h"
@@ -268,14 +269,20 @@ static void ZeldaRunGameLoop() {
   // NMI_PrepareSprites packs the extended-OAM table, so overlay sprites are
   // uploaded with the rest of OAM. No-op unless rando is active and a tracker
   // toggle is on.
+  //
+  // PC supersedes these OAM overlays with the rich ImGui tracker windows, so
+  // the overlay is compiled out there (one tracker system on PC). Switch keeps
+  // the OAM overlay (no native-window support).
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
   Hud_RandoDrawTrackers();
+#endif
   NMI_PrepareSprites();
   nmi_boolean = 0;
 }
 
 void ZeldaInitialize() {
   g_zenv.dma = dma_init(NULL);
-  g_zenv.ppu = ppu_init(NULL);
+  g_zenv.ppu = ppu_init();
   g_zenv.ram = g_ram;
   g_zenv.sram = (uint8*)calloc(8192, 1);
   g_zenv.vram = g_zenv.ppu->vram;
@@ -451,6 +458,15 @@ typedef struct StateRecorder {
 } StateRecorder;
 
 static StateRecorder state_recorder;
+
+bool ZeldaIsReplaying(void) { return state_recorder.replay_mode; }
+
+// True while the original ROM is attached for side-by-side RAM comparison
+// (g_emu_runframe is set only when ZeldaSetupEmuCallbacks ran). The native
+// debug/cheats editor uses this to hard-disable g_ram edits so a UI write the
+// emulated ROM never made can't diverge the comparator. Conservative: true
+// whenever the emulator is attached, even on frames the comparator skips.
+bool ZeldaIsEmulatorAttached(void) { return g_emu_runframe != NULL; }
 
 void StateRecorder_Init(StateRecorder *sr) {
   memset(sr, 0, sizeof(*sr));
@@ -907,7 +923,8 @@ void ZeldaDumpDebugState(void) {
   if ((f = fopen("dump_vram.bin", "wb")))  { fwrite(g_zenv.ppu->vram, 2, 0x8000, f); fclose(f); }
   if ((f = fopen("dump_oam.bin", "wb")))   { fwrite(g_zenv.ppu->oam, 2, 0x110, f); fclose(f); }
   if ((f = fopen("dump_cgram.bin", "wb"))) { fwrite(g_zenv.ppu->cgram, 2, 0x100, f); fclose(f); }
-  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_vram.bin / dump_oam.bin / dump_cgram.bin\n");
+  Rando_DumpHintDebug(dialogue_message_index);  // dev: hint-table state -> dump_hints.txt
+  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_vram.bin / dump_oam.bin / dump_cgram.bin / dump_hints.txt\n");
 }
 
 void SaveLoadSlot(int cmd, int which) {

@@ -161,4 +161,9 @@ void Palette_LoadForFileSelect_Shield(int k, uint8 shield);
 void Palette_LoadAgahnim();
 void HandleScreenFlash();
 
+// Decompress a 2bpp graphics pack into `vram_ptr` (8 words per tile). Exposed
+// so the rando icon-atlas builder can decompress the HUD item-icon packs into a
+// scratch buffer (state-immune, independent of live VRAM).
+void DecompAndUpload2bpp(uint16 *vram_ptr, uint8 pack);
+
 #endif // ZELDA3_LOAD_GFX_H_

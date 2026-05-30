@@ -78,3 +78,42 @@ void Hud_HandleItemSwitchInputs();
 void Hud_RandoDrawTrackers(void);
 void Hud_RandoDrawItemTracker(void);
 void Hud_RandoDrawLocationTracker(void);
+
+// ---------------------------------------------------------------------------
+// Item-icon atlas for the rich ImGui item tracker (PC). Decodes the HUD
+// item-box 2bpp icons (kHudItemBoxGfxPtrs order) + palette into an RGBA atlas.
+// State-immune: decodes from the HUD graphics packs into a scratch buffer (not
+// live VRAM), so it can run any time after assets load. Atlas is a horizontal
+// strip kRandoIconCount*kRandoIconSize wide, kRandoIconSize tall.
+// ---------------------------------------------------------------------------
+#define kRandoIconCount 42
+#define kRandoIconSize 16
+// Slot indices into the atlas == kHudItemBoxGfxPtrs order.
+enum {
+  kRandoIcon_Bow = 0, kRandoIcon_Boomerang, kRandoIcon_Hookshot, kRandoIcon_Bombs,
+  kRandoIcon_Mushroom, kRandoIcon_FireRod, kRandoIcon_IceRod, kRandoIcon_Bombos,
+  kRandoIcon_Ether, kRandoIcon_Quake, kRandoIcon_Lamp, kRandoIcon_Hammer,
+  kRandoIcon_Flute, kRandoIcon_Net, kRandoIcon_Book, kRandoIcon_Bottle,
+  kRandoIcon_Somaria, kRandoIcon_Byrna, kRandoIcon_Cape, kRandoIcon_Mirror,
+  kRandoIcon_Gloves, kRandoIcon_Boots, kRandoIcon_Flippers, kRandoIcon_MoonPearl,
+  kRandoIcon_Empty, kRandoIcon_Sword, kRandoIcon_Shield, kRandoIcon_Armor,
+  // Dungeon-item icons (decoded from the dungeon HUD's own tiles, not the
+  // kHudItemBoxGfxPtrs inventory table) into spare atlas slots 28-30, plus
+  // shovel (kHudItemFlute[1]) and a full-heart icon at 32-33.
+  kRandoIcon_BigKey = 28, kRandoIcon_Map = 29, kRandoIcon_Compass = 30,
+  kRandoIcon_Shovel = 32, kRandoIcon_Heart = 33,
+  // Prize sprite icons (4bpp, decoded via DecodeAnimatedSpriteTile_variable).
+  kRandoIcon_PendantGreen = 34, kRandoIcon_PendantRed = 35,
+  kRandoIcon_PendantBlue = 36, kRandoIcon_Crystal = 37,
+  // Tier/colour variants. The inventory table renders each item at a single
+  // tier (boomerang/gloves at [1], armor at [0]=green), so an upgraded item
+  // would otherwise show the base sprite. The tracker selects these slots when
+  // the player holds the upgraded form so the icon matches the real item.
+  kRandoIcon_BoomerangRed = 38,  // kHudItemBoomerang[2] (magic/red boomerang)
+  kRandoIcon_GlovesTitan  = 39,  // kHudItemGloves[2]   (Titan's Mitt)
+  kRandoIcon_ArmorBlue    = 40,  // kHudItemArmor[1]    (blue mail)
+  kRandoIcon_ArmorRed     = 41,  // kHudItemArmor[2]    (red mail)
+};
+// Build the atlas into `out` (kRandoIconCount*kRandoIconSize*kRandoIconSize
+// uint32 RGBA8888). Transparent pixels have alpha 0. Returns the icon count.
+int Hud_RandoBuildIconAtlas(uint32 *out);

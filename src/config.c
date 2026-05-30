@@ -62,12 +62,33 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   _(SDLK_w), _(SDLK_o), S(SDLK_w), C(SDLK_e),
   // ClearKeyLog, StopReplay, Fullscreen, Reset, Pause, PauseDimmed, Turbo, ReplayTurbo, WindowBigger, WindowSmaller, DisplayPerf, ToggleRenderer
   _(SDLK_k), _(SDLK_l), A(SDLK_RETURN), C(SDLK_r), S(SDLK_p), _(SDLK_p), _(SDLK_TAB), _(SDLK_t), N, N, _(SDLK_f), _(SDLK_r),
+  // VolumeUp, VolumeDown, RandoToggleItemTracker, RandoToggleLocationTracker,
+  // RandoRevealSpoiler (all default-unbound), then the rich tracker windows:
+  // Ctrl+I = Item, Ctrl+C = Check, Ctrl+M = Map (mnemonic, grouped, conflict-free).
+  N, N, N, N, N, C(SDLK_i), C(SDLK_c), C(SDLK_m),
+  // OpenSettings — backquote `` ` `` opens the native game-config window.
+  _(SDLK_BACKQUOTE),
+  // DumpDebugState — F12 writes the developer state dump.
+  _(SDLK_F12),
 };
 #undef _
 #undef A
 #undef C
 #undef S
 #undef N
+
+// The flat default table is indexed by expanded command id; a missing/extra
+// entry would silently desync the keybind model and the keymap. Pin it.
+_Static_assert(countof(kDefaultKbdControls) == kKeys_Total,
+               "kDefaultKbdControls must have exactly kKeys_Total entries");
+
+// Editable keybinding model — the source of truth (see config.h). Populated by
+// ParseKeyArray/ParseGamepadArray during parse and by RegisterDefaultKeys for
+// absent sections; the runtime hashes are derived from these via
+// Config_RebuildKeymap. Zero / kGamepadBtn_Invalid initialized = all unbound
+// until parse fills them.
+uint16 g_keybind_kbd[kKeys_Total];
+PadBinding g_keybind_pad[kKeys_Total];
 
 typedef struct KeyNameId {
   const char *name;
@@ -86,9 +107,17 @@ static const KeyNameId kKeyNameId[] = {
   S(RandoToggleItemTracker), S(RandoToggleLocationTracker),
   // Phase B Slice 6 §62 — in-binary reveal-spoiler action.
   S(RandoRevealSpoiler),
+  // Rich tracker windows (PC). Toggle the item / check / map tracker windows.
+  S(RandoItemTrackerWindow), S(RandoCheckTrackerWindow), S(RandoMapTrackerWindow),
+  // Native game-config window toggle (config mode). INI key "OpenSettings".
+  S(OpenSettings),
+  // Developer state dump. INI key "DumpDebugState" (default F12).
+  S(DumpDebugState),
 };
 #undef S
 #undef M
+// Config_WriteIniFile collects the keymap command names into a fixed keybuf[64].
+_Static_assert(countof(kKeyNameId) <= 64, "kKeyNameId exceeds the writer's keybuf[64]");
 typedef struct KeyMapHashEnt {
   uint16 key, cmd, next;
 } KeyMapHashEnt;
@@ -133,7 +162,7 @@ static int KeyMapHash_Find(uint16 key) {
   return 0;
 }
 
-int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod) {
+uint16 Config_EncodeKeyEvent(SDL_Keycode code, SDL_Keymod mod) {
   if (code & ~(SDLK_SCANCODE_MASK | 0x1ff))
     return 0;
   int key = 0;
@@ -144,6 +173,13 @@ int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod) {
   if (code != SDLK_LSHIFT && code != SDLK_RSHIFT)
     key |= mod & KMOD_SHIFT ? kKeyMod_Shift : 0;
   key |= REMAP_SDL_KEYCODE(code);
+  return (uint16)key;
+}
+
+int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod) {
+  uint16 key = Config_EncodeKeyEvent(code, mod);
+  if (key == 0)
+    return 0;
   return KeyMapHash_Find(key);
 }
 
@@ -170,8 +206,14 @@ static void ParseKeyArray(char *value, int cmd, int size) {
       fprintf(stderr, "Unknown key: '%s'\n", s);
       continue;
     }
-    if (!KeyMapHash_Add(key_with_mod | REMAP_SDL_KEYCODE(key), cmd))
+    uint16 kwm = (uint16)(key_with_mod | REMAP_SDL_KEYCODE(key));
+    // Populate the editable model only when the key actually binds (a duplicate
+    // is rejected by KeyMapHash_Add) so the model stays consistent with the hash
+    // (no phantom binding the runtime hash dropped).
+    if (!KeyMapHash_Add(kwm, cmd))
       fprintf(stderr, "Duplicate key: '%s'\n", s);
+    else if (cmd >= 0 && cmd < kKeys_Total)
+      g_keybind_kbd[cmd] = kwm;
   }
 }
 
@@ -275,6 +317,11 @@ static void ParseGamepadArray(char *value, int cmd, int size) {
         ss++;
         modifiers |= 1 << button;
       } else if (*ss == 0) {
+        if (cmd >= 0 && cmd < kKeys_Total) {
+          // Populate the editable model (last binding parsed per command wins).
+          g_keybind_pad[cmd].button = (int16)button;
+          g_keybind_pad[cmd].modifiers = modifiers;
+        }
         GamepadMap_Add(button, modifiers, cmd);
         break;
       } else
@@ -287,13 +334,18 @@ static void RegisterDefaultKeys() {
   for (int i = 1; i < countof(kKeyNameId); i++) {
     if (!has_keynameid[i]) {
       int size = kKeyNameId[i].size, k = kKeyNameId[i].id;
-      for (int j = 0; j < size; j++, k++)
+      for (int j = 0; j < size; j++, k++) {
+        g_keybind_kbd[k] = kDefaultKbdControls[k];  // model mirrors the default
         KeyMapHash_Add(kDefaultKbdControls[k], k);
+      }
     }
   }
   if (!has_joypad_controls) {
-    for (int i = 0; i < countof(kDefaultGamepadCmds); i++)
+    for (int i = 0; i < countof(kDefaultGamepadCmds); i++) {
+      g_keybind_pad[kKeys_Controls + i].button = (int16)kDefaultGamepadCmds[i];
+      g_keybind_pad[kKeys_Controls + i].modifiers = 0;
       GamepadMap_Add(kDefaultGamepadCmds[i], 0, kKeys_Controls + i);
+    }
   }
 }
 
@@ -688,6 +740,17 @@ static bool ParseOneConfigFile(const char *filename, int depth) {
   return true;
 }
 
+// The INI file ParseConfigFile resolved at depth-0 (the write target for
+// Config_WriteIniFile). Captured here, NEVER inside the recursive
+// ParseOneConfigFile (which re-points memory_buffer per !include child).
+static char g_loaded_ini_path[512] = "zelda3.ini";
+
+const char *Config_GetLoadedIniPath(void) { return g_loaded_ini_path; }
+
+static void SetLoadedIniPath(const char *p) {
+  snprintf(g_loaded_ini_path, sizeof g_loaded_ini_path, "%s", p);
+}
+
 void ParseConfigFile(const char *filename) {
   g_config.msuvolume = 100;  // default msu volume, 100%
 
@@ -697,11 +760,25 @@ void ParseConfigFile(const char *filename) {
   g_config.rando_race_mode_default = false;
   g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
 
-  if (filename != NULL || !ParseOneConfigFile("zelda3.user.ini", 0)) {
-    if (filename == NULL)
-      filename = "zelda3.ini";
+  // Reset the editable keybind model before parsing. Keyboard 0 = unbound;
+  // gamepad button -1 (kGamepadBtn_Invalid) = unbound (a zero-init would mean
+  // "bound to A"). Parse + RegisterDefaultKeys fill in the bound entries.
+  memset(g_keybind_kbd, 0, sizeof g_keybind_kbd);
+  for (int i = 0; i < kKeys_Total; i++) {
+    g_keybind_pad[i].button = kGamepadBtn_Invalid;
+    g_keybind_pad[i].modifiers = 0;
+  }
+
+  if (filename != NULL) {
     if (!ParseOneConfigFile(filename, 0))
       fprintf(stderr, "Warning: Unable to read config file %s\n", filename);
+    SetLoadedIniPath(filename);
+  } else if (ParseOneConfigFile("zelda3.user.ini", 0)) {
+    SetLoadedIniPath("zelda3.user.ini");
+  } else {
+    if (!ParseOneConfigFile("zelda3.ini", 0))
+      fprintf(stderr, "Warning: Unable to read config file %s\n", "zelda3.ini");
+    SetLoadedIniPath("zelda3.ini");
   }
   RegisterDefaultKeys();
 }
@@ -842,4 +919,686 @@ void Config_SaveRandoWindowIni(const char *path) {
     remove(tmp);  // don't leave an orphaned .tmp behind
   }
 #endif
+}
+
+// ===========================================================================
+// Native game-config UI — keybind model rebuild, name codecs, INI writer,
+// live-apply. (config.c is read at startup elsewhere; this section makes it
+// writable for the settings UI without ever clobbering user content.)
+// ===========================================================================
+
+int Config_CommandCount(void) { return (int)countof(kKeyNameId); }
+const char *Config_CommandName(int i) {
+  return (i >= 0 && i < (int)countof(kKeyNameId)) ? kKeyNameId[i].name : "";
+}
+int Config_CommandId(int i) {
+  return (i >= 0 && i < (int)countof(kKeyNameId)) ? kKeyNameId[i].id : 0;
+}
+int Config_CommandSlots(int i) {
+  return (i >= 0 && i < (int)countof(kKeyNameId)) ? kKeyNameId[i].size : 0;
+}
+
+void Config_SelfCheckKeymap(void) {
+  // --rando-selftest runs before the normal startup parse, so populate the model
+  // + parse-time hash first (defaults, plus any zelda3.ini in the CWD). Without
+  // this the model is zero-initialized garbage (button 0 == A) and the check is
+  // meaningless.
+  ParseConfigFile(NULL);
+
+  // 1. With the parse-time hash, every bound model entry must look up to itself,
+  //    and every bound gamepad entry likewise. (No duplicate keys in defaults.)
+  int fails = 0;
+  for (int i = 0; i < kKeys_Total; i++) {
+    if (g_keybind_kbd[i] != 0 && KeyMapHash_Find(g_keybind_kbd[i]) != i) {
+      fprintf(stderr, "[Config_SelfCheckKeymap] FAIL: kbd cmd %d not found pre-rebuild\n", i);
+      fails++;
+    }
+    if (g_keybind_pad[i].button >= 0 &&
+        FindCmdForGamepadButton(g_keybind_pad[i].button, g_keybind_pad[i].modifiers) != i) {
+      fprintf(stderr, "[Config_SelfCheckKeymap] FAIL: pad cmd %d not found pre-rebuild\n", i);
+      fails++;
+    }
+  }
+  // 2. Rebuild from the model and re-verify identical lookup results.
+  Config_RebuildKeymap();
+  for (int i = 0; i < kKeys_Total; i++) {
+    if (g_keybind_kbd[i] != 0 && KeyMapHash_Find(g_keybind_kbd[i]) != i) {
+      fprintf(stderr, "[Config_SelfCheckKeymap] FAIL: kbd cmd %d diverged after rebuild\n", i);
+      fails++;
+    }
+    if (g_keybind_pad[i].button >= 0 &&
+        FindCmdForGamepadButton(g_keybind_pad[i].button, g_keybind_pad[i].modifiers) != i) {
+      fprintf(stderr, "[Config_SelfCheckKeymap] FAIL: pad cmd %d diverged after rebuild\n", i);
+      fails++;
+    }
+  }
+  if (fails) {
+    fprintf(stderr, "[Config_SelfCheckKeymap] %d failure(s)\n", fails);
+    exit(2);
+  }
+  fprintf(stderr, "[Config_SelfCheckKeymap] OK\n");
+}
+
+// Writer fidelity self-check (invoked from --rando-selftest, after the keymap
+// check has populated g_config). Writes a known INI with comments / a trailing
+// comment / an unknown section / a randomizer section to a temp file, changes a
+// managed value, rewrites in place, and asserts the managed key changed while
+// everything we don't own is preserved. exits(2) on failure.
+void Config_SelfCheckIniWriter(void) {
+  const char *path = "_cfg_writer_selftest.ini";
+  const char *seed =
+      "# test comment\r\n"
+      "[Graphics]\r\n"
+      "WindowScale = 2  # keep me\r\n"
+      "\r\n"
+      "[Custom]\r\n"
+      "MyKey = MyVal\r\n"
+      "[Randomizer]\r\n"
+      "Features1 = 0\r\n";
+  FILE *f = fopen(path, "wb");
+  if (!f) { fprintf(stderr, "[Config_SelfCheckIniWriter] FAIL: cannot create temp\n"); exit(2); }
+  fwrite(seed, 1, strlen(seed), f);
+  fclose(f);
+
+  uint8 saved_scale = g_config.window_scale;
+  g_config.window_scale = 5;  // a managed change the writer must apply
+  Config_WriteIniFile(path);
+  g_config.window_scale = saved_scale;
+
+  char *out = (char *)ReadWholeFile(path, NULL);
+  int fails = 0;
+  if (!out) { fprintf(stderr, "[Config_SelfCheckIniWriter] FAIL: temp vanished\n"); exit(2); }
+  struct { const char *needle; bool want; } checks[] = {
+    {"WindowScale = 5", true},   // managed value updated
+    {"WindowScale = 2", false},  // old value gone
+    {"# test comment", true},    // leading comment preserved
+    {"# keep me", true},         // trailing comment preserved
+    {"[Custom]", true},          // unknown section preserved
+    {"MyKey = MyVal", true},     // unknown key preserved
+    {"[Randomizer]", true},      // unowned section preserved
+  };
+  for (int i = 0; i < (int)(sizeof checks / sizeof checks[0]); i++) {
+    bool present = strstr(out, checks[i].needle) != NULL;
+    if (present != checks[i].want) {
+      fprintf(stderr, "[Config_SelfCheckIniWriter] FAIL: '%s' %s\n",
+              checks[i].needle, checks[i].want ? "missing" : "should be gone");
+      fails++;
+    }
+  }
+  free(out);
+  remove(path);
+  { char b[600]; snprintf(b, sizeof b, "%s.bak", path); remove(b);
+    snprintf(b, sizeof b, "%s.tmp", path); remove(b); }
+  if (fails) { fprintf(stderr, "[Config_SelfCheckIniWriter] %d failure(s)\n", fails); exit(2); }
+  fprintf(stderr, "[Config_SelfCheckIniWriter] OK\n");
+}
+
+void Config_RebuildKeymap(void) {
+  // Re-derive the runtime lookup hashes from the editable model. The realloc'd
+  // backing buffers (keymap_hash / joymap_ents) are reused — reset the sizes and
+  // the bucket-head index arrays, then re-add. The model is conflict-free (the
+  // UI guarantees no duplicate key), so no KeyMapHash_Add rejection occurs.
+  keymap_hash_size = 0;
+  memset(keymap_hash_first, 0, sizeof keymap_hash_first);
+  joymap_size = 0;
+  memset(joymap_first, 0, sizeof joymap_first);
+  has_joypad_controls = false;
+  for (int i = 0; i < kKeys_Total; i++) {
+    if (g_keybind_kbd[i] != 0)
+      KeyMapHash_Add(g_keybind_kbd[i], (uint16)i);
+    if (g_keybind_pad[i].button >= 0)
+      GamepadMap_Add(g_keybind_pad[i].button, g_keybind_pad[i].modifiers, (uint16)i);
+  }
+}
+
+bool Config_DecodeKeyName(uint16 k, char *out, size_t cap) {
+  if (cap == 0) return false;
+  out[0] = 0;
+  uint16 low = k & (kKeyMod_ScanCode - 1);  // low 9 bits
+  SDL_Keycode code = (k & kKeyMod_ScanCode)
+                         ? (SDL_Keycode)(low | SDLK_SCANCODE_MASK)
+                         : (SDL_Keycode)low;
+  const char *name = SDL_GetKeyName(code);
+  if (name == NULL || name[0] == 0)
+    return false;  // unnamed on this layout — caller preserves the existing line
+  char buf[96];
+  buf[0] = 0;
+  if (k & kKeyMod_Ctrl)  strncat(buf, "Ctrl+",  sizeof buf - strlen(buf) - 1);
+  if (k & kKeyMod_Shift) strncat(buf, "Shift+", sizeof buf - strlen(buf) - 1);
+  if (k & kKeyMod_Alt)   strncat(buf, "Alt+",   sizeof buf - strlen(buf) - 1);
+  strncat(buf, name, sizeof buf - strlen(buf) - 1);
+  snprintf(out, cap, "%s", buf);
+  return true;
+}
+
+const char *Config_GamepadButtonName(int b) {
+  switch (b) {
+  case kGamepadBtn_A: return "A";
+  case kGamepadBtn_B: return "B";
+  case kGamepadBtn_X: return "X";
+  case kGamepadBtn_Y: return "Y";
+  case kGamepadBtn_Back: return "Back";
+  case kGamepadBtn_Guide: return "Guide";
+  case kGamepadBtn_Start: return "Start";
+  case kGamepadBtn_L3: return "L3";
+  case kGamepadBtn_R3: return "R3";
+  case kGamepadBtn_L1: return "L1";
+  case kGamepadBtn_R1: return "R1";
+  case kGamepadBtn_DpadUp: return "DpadUp";
+  case kGamepadBtn_DpadDown: return "DpadDown";
+  case kGamepadBtn_DpadLeft: return "DpadLeft";
+  case kGamepadBtn_DpadRight: return "DpadRight";
+  case kGamepadBtn_L2: return "L2";
+  case kGamepadBtn_R2: return "R2";
+  default: return NULL;
+  }
+}
+
+bool Config_PadBindingName(PadBinding b, char *out, size_t cap) {
+  if (cap == 0) return false;
+  out[0] = 0;
+  if (b.button < 0) return false;
+  const char *primary = Config_GamepadButtonName(b.button);
+  if (primary == NULL) return false;
+  char buf[96];
+  buf[0] = 0;
+  // Held buttons first ("L1+Start"), matching ParseGamepadArray's grammar.
+  for (int i = 0; i < kGamepadBtn_Count; i++) {
+    if (b.modifiers & (1u << i)) {
+      const char *n = Config_GamepadButtonName(i);
+      if (n) {
+        strncat(buf, n, sizeof buf - strlen(buf) - 1);
+        strncat(buf, "+", sizeof buf - strlen(buf) - 1);
+      }
+    }
+  }
+  strncat(buf, primary, sizeof buf - strlen(buf) - 1);
+  snprintf(out, cap, "%s", buf);
+  return true;
+}
+
+const char *Config_InternString(const char *s) {
+  if (s == NULL) return NULL;
+  size_t n = strlen(s) + 1;
+  char *p = (char *)malloc(n);
+  if (!p) return NULL;
+  memcpy(p, s, n);
+  return p;  // process-lifetime; intentionally never freed
+}
+
+// ---- Managed-key value rendering ------------------------------------------
+// Returns false to SKIP this key entirely (preserve any existing line and do
+// NOT insert it). An empty out-string is a valid value (used to clear a key);
+// the insert pass additionally skips empty values so absent+empty keys aren't
+// materialized.
+
+static const char *const kGfxKeys[] = {
+  "WindowSize", "Fullscreen", "WindowScale", "NewRenderer", "EnhancedMode7",
+  "IgnoreAspectRatio", "NoSpriteLimits", "LinearFiltering", "OutputMethod",
+  "Shader", "LinkGraphics", "DimFlashes",
+};
+static const char *const kSndKeys[] = {
+  "EnableAudio", "AudioFreq", "AudioChannels", "AudioSamples", "EnableMSU",
+  "MSUPath", "MSUVolume", "ResumeMSU",
+};
+static const char *const kGenKeys[] = {
+  "Autosave", "ExtendedAspectRatio", "DisplayPerfInTitle", "DisableFrameDelay",
+  "Language",
+};
+static const char *const kFeatKeys[] = {
+  "ItemSwitchLR", "ItemSwitchLRLimit", "TurnWhileDashing", "MirrorToDarkworld",
+  "CollectItemsWithSword", "BreakPotsWithSword", "DisableLowHealthBeep",
+  "SkipIntroOnKeypress", "ShowMaxItemsInYellow", "MoreActiveBombs",
+  "CarryMoreRupees", "MiscBugFixes", "GameChangingBugFixes", "CancelBirdTravel",
+};
+static const uint32 kFeatMasks[] = {
+  kFeatures0_SwitchLR, kFeatures0_SwitchLRLimit, kFeatures0_TurnWhileDashing,
+  kFeatures0_MirrorToDarkworld, kFeatures0_CollectItemsWithSword,
+  kFeatures0_BreakPotsWithSword, kFeatures0_DisableLowHealthBeep,
+  kFeatures0_SkipIntroOnKeypress, kFeatures0_ShowMaxItemsInYellow,
+  kFeatures0_MoreActiveBombs, kFeatures0_CarryMoreRupees, kFeatures0_MiscBugFixes,
+  kFeatures0_GameChangingBugFixes, kFeatures0_CancelBirdTravel,
+};
+_Static_assert(countof(kFeatKeys) == countof(kFeatMasks),
+               "feature key/mask tables must stay aligned");
+
+// Render the comma-joined binding list for a [KeyMap] (section 0) or
+// [GamepadMap] (section 5) command. Trailing unbound slots are trimmed.
+static bool RenderBindingLine(int section, const KeyNameId *kn, char *out, size_t cap) {
+  char buf[1024];
+  buf[0] = 0;
+  int last_bound = -1;
+  for (int j = 0; j < kn->size; j++) {
+    int k = kn->id + j;
+    bool bound = (section == 0) ? (g_keybind_kbd[k] != 0) : (g_keybind_pad[k].button >= 0);
+    if (bound) last_bound = j;
+  }
+  for (int j = 0; j <= last_bound; j++) {
+    int k = kn->id + j;
+    char tok[96];
+    tok[0] = 0;
+    if (section == 0) {
+      if (g_keybind_kbd[k] != 0 && !Config_DecodeKeyName(g_keybind_kbd[k], tok, sizeof tok))
+        return false;  // an unnamed key — preserve the whole existing line
+    } else {
+      if (g_keybind_pad[k].button >= 0 && !Config_PadBindingName(g_keybind_pad[k], tok, sizeof tok))
+        return false;
+    }
+    if (j > 0) strncat(buf, ", ", sizeof buf - strlen(buf) - 1);
+    strncat(buf, tok, sizeof buf - strlen(buf) - 1);
+  }
+  snprintf(out, cap, "%s", buf);
+  return true;  // last_bound == -1 ⇒ empty value (clears the key)
+}
+
+static bool RenderManagedValue(int section, const char *key, char *out, size_t cap) {
+  // Keymap / gamepad: dispatch by command name.
+  if (section == 0 || section == 5) {
+    for (int i = 1; i < (int)countof(kKeyNameId); i++) {
+      if (StringEqualsNoCase(key, kKeyNameId[i].name))
+        return RenderBindingLine(section, &kKeyNameId[i], out, cap);
+    }
+    return false;
+  }
+  if (section == 1) {  // [Graphics]
+    if (StringEqualsNoCase(key, "WindowSize")) {
+      if (g_config.window_width == 0 && g_config.window_height == 0) snprintf(out, cap, "Auto");
+      else snprintf(out, cap, "%dx%d", g_config.window_width, g_config.window_height);
+    } else if (StringEqualsNoCase(key, "Fullscreen")) snprintf(out, cap, "%d", g_config.fullscreen);
+    else if (StringEqualsNoCase(key, "WindowScale")) snprintf(out, cap, "%d", g_config.window_scale);
+    else if (StringEqualsNoCase(key, "NewRenderer")) snprintf(out, cap, "%s", g_config.new_renderer ? "true" : "false");
+    else if (StringEqualsNoCase(key, "EnhancedMode7")) snprintf(out, cap, "%s", g_config.enhanced_mode7 ? "true" : "false");
+    else if (StringEqualsNoCase(key, "IgnoreAspectRatio")) snprintf(out, cap, "%s", g_config.ignore_aspect_ratio ? "true" : "false");
+    else if (StringEqualsNoCase(key, "NoSpriteLimits")) snprintf(out, cap, "%s", g_config.no_sprite_limits ? "true" : "false");
+    else if (StringEqualsNoCase(key, "LinearFiltering")) snprintf(out, cap, "%s", g_config.linear_filtering ? "true" : "false");
+    else if (StringEqualsNoCase(key, "OutputMethod"))
+      snprintf(out, cap, "%s", g_config.output_method == kOutputMethod_SDLSoftware ? "SDL-Software"
+                               : g_config.output_method == kOutputMethod_OpenGL ? "OpenGL"
+                               : g_config.output_method == kOutputMethod_OpenGL_ES ? "OpenGL ES" : "SDL");
+    else if (StringEqualsNoCase(key, "Shader")) snprintf(out, cap, "%s", g_config.shader ? g_config.shader : "");
+    else if (StringEqualsNoCase(key, "LinkGraphics")) snprintf(out, cap, "%s", g_config.link_graphics ? g_config.link_graphics : "");
+    else if (StringEqualsNoCase(key, "DimFlashes")) snprintf(out, cap, "%s", (g_config.features0 & kFeatures0_DimFlashes) ? "true" : "false");
+    else return false;
+    return true;
+  }
+  if (section == 2) {  // [Sound]
+    if (StringEqualsNoCase(key, "EnableAudio")) snprintf(out, cap, "%s", g_config.enable_audio ? "true" : "false");
+    else if (StringEqualsNoCase(key, "AudioFreq")) snprintf(out, cap, "%d", g_config.audio_freq);
+    else if (StringEqualsNoCase(key, "AudioChannels")) snprintf(out, cap, "%d", g_config.audio_channels);
+    else if (StringEqualsNoCase(key, "AudioSamples")) snprintf(out, cap, "%d", g_config.audio_samples);
+    else if (StringEqualsNoCase(key, "EnableMSU")) {
+      uint8 m = g_config.enable_msu;
+      bool deluxe = (m & kMsuEnabled_MsuDeluxe) != 0, opuz = (m & kMsuEnabled_Opuz) != 0;
+      if (deluxe && opuz) snprintf(out, cap, "deluxe-opuz");
+      else if (deluxe) snprintf(out, cap, "deluxe");
+      else if (opuz) snprintf(out, cap, "opuz");
+      else snprintf(out, cap, "%s", (m & kMsuEnabled_Msu) ? "true" : "false");
+    } else if (StringEqualsNoCase(key, "MSUPath")) snprintf(out, cap, "%s", g_config.msu_path ? g_config.msu_path : "");
+    else if (StringEqualsNoCase(key, "MSUVolume")) snprintf(out, cap, "%d", g_config.msuvolume);
+    else if (StringEqualsNoCase(key, "ResumeMSU")) snprintf(out, cap, "%s", g_config.resume_msu ? "true" : "false");
+    else return false;
+    return true;
+  }
+  if (section == 3) {  // [General]
+    if (StringEqualsNoCase(key, "Autosave")) snprintf(out, cap, "%d", g_config.autosave ? 1 : 0);  // parser uses strtol
+    else if (StringEqualsNoCase(key, "DisplayPerfInTitle")) snprintf(out, cap, "%s", g_config.display_perf_title ? "true" : "false");
+    else if (StringEqualsNoCase(key, "DisableFrameDelay")) snprintf(out, cap, "%s", g_config.disable_frame_delay ? "true" : "false");
+    else if (StringEqualsNoCase(key, "Language")) snprintf(out, cap, "%s", g_config.language ? g_config.language : "");
+    else if (StringEqualsNoCase(key, "ExtendedAspectRatio")) {
+      // Recover the ratio token from the stored value. The parser is
+      // order-dependent (computes the ratio at whatever height it has seen so
+      // far), so a given ratio can be stored as either its h=224 or h=240 value
+      // — match BOTH. Emit `extend_y` FIRST when set so the parser recomputes the
+      // ratio at h=240, reproducing the value Config_ApplyLive/the UI committed.
+      uint8 ar = g_config.extended_aspect_ratio;
+      const char *ratio = NULL;
+      if (ar == 0) ratio = "4:3";
+      else if (ar == (uint8)((224 * 16 / 9 - 256) / 2) || ar == (uint8)((240 * 16 / 9 - 256) / 2)) ratio = "16:9";
+      else if (ar == (uint8)((224 * 16 / 10 - 256) / 2) || ar == (uint8)((240 * 16 / 10 - 256) / 2)) ratio = "16:10";
+      else if (ar == (uint8)((224 * 18 / 9 - 256) / 2) || ar == (uint8)((240 * 18 / 9 - 256) / 2)) ratio = "18:9";
+      if (ratio == NULL) return false;  // hand-set custom value — leave untouched
+      char tmp[64];
+      tmp[0] = 0;
+      if (g_config.extend_y) strncat(tmp, "extend_y,", sizeof tmp - strlen(tmp) - 1);
+      strncat(tmp, ratio, sizeof tmp - strlen(tmp) - 1);
+      if (ar != 0 && !(g_config.features0 & kFeatures0_ExtendScreen64))
+        strncat(tmp, ",unchanged_sprites", sizeof tmp - strlen(tmp) - 1);
+      if (ar != 0 && !(g_config.features0 & kFeatures0_WidescreenVisualFixes))
+        strncat(tmp, ",no_visual_fixes", sizeof tmp - strlen(tmp) - 1);
+      snprintf(out, cap, "%s", tmp);
+    } else return false;
+    return true;
+  }
+  if (section == 4) {  // [Features]
+    for (int i = 0; i < (int)countof(kFeatKeys); i++) {
+      if (StringEqualsNoCase(key, kFeatKeys[i])) {
+        snprintf(out, cap, "%s", (g_config.features0 & kFeatMasks[i]) ? "true" : "false");
+        return true;
+      }
+    }
+    return false;
+  }
+  return false;
+}
+
+// ---- In-place INI writer ---------------------------------------------------
+
+typedef struct IniLines { char **v; int *sec; int n, cap; } IniLines;
+
+static void IniLines_Push(IniLines *L, char *line, int section) {
+  if (L->n == L->cap) {
+    L->cap = L->cap ? L->cap * 2 : 64;
+    L->v = (char **)realloc(L->v, sizeof(char *) * L->cap);
+    L->sec = (int *)realloc(L->sec, sizeof(int) * L->cap);
+  }
+  L->v[L->n] = line;
+  L->sec[L->n] = section;
+  L->n++;
+}
+
+static void IniLines_InsertAfter(IniLines *L, int idx, char *line, int section) {
+  IniLines_Push(L, NULL, 0);  // grow by one
+  for (int i = L->n - 1; i > idx + 1; i--) {
+    L->v[i] = L->v[i - 1];
+    L->sec[i] = L->sec[i - 1];
+  }
+  L->v[idx + 1] = line;
+  L->sec[idx + 1] = section;
+}
+
+static char *DupRange(const char *p, size_t n) {
+  char *r = (char *)malloc(n + 1);
+  memcpy(r, p, n);
+  r[n] = 0;
+  return r;
+}
+
+// Is `line` a comment / blank (first non-space char absent or '#').
+static bool LineIsCommentOrBlank(const char *line) {
+  while (*line == ' ' || *line == '\t') line++;
+  return *line == 0 || *line == '#';
+}
+
+// If `line` is a "[Section]" header (ignoring trailing comment + whitespace),
+// return its GetIniSection id; else return INT_MIN.
+static int LineHeaderSection(const char *line) {
+  const char *p = line;
+  while (*p == ' ' || *p == '\t') p++;
+  if (*p != '[') return -2147483647 - 1;  // INT_MIN sentinel: not a header
+  // copy up to end / '#'
+  char hdr[64];
+  size_t n = 0;
+  while (p[n] && p[n] != '#' && n < sizeof hdr - 1) n++;
+  // trim trailing whitespace
+  while (n > 0 && (p[n - 1] == ' ' || p[n - 1] == '\t')) n--;
+  memcpy(hdr, p, n);
+  hdr[n] = 0;
+  return GetIniSection(hdr);
+}
+
+// Extract the key (before '=') from a non-comment key line into `keyout`;
+// returns the offset of the value (just past '='), or -1 if no '='.
+static int LineKey(const char *line, char *keyout, size_t cap) {
+  const char *eq = strchr(line, '=');
+  if (!eq) return -1;
+  const char *ks = line;
+  while (*ks == ' ' || *ks == '\t') ks++;
+  const char *ke = eq;
+  while (ke > ks && (ke[-1] == ' ' || ke[-1] == '\t')) ke--;
+  size_t n = (size_t)(ke - ks);
+  if (n >= cap) n = cap - 1;
+  memcpy(keyout, ks, n);
+  keyout[n] = 0;
+  return (int)(eq - line) + 1;
+}
+
+static const char *SectionName(int section) {
+  switch (section) {
+  case 0: return "[KeyMap]";
+  case 1: return "[Graphics]";
+  case 2: return "[Sound]";
+  case 3: return "[General]";
+  case 4: return "[Features]";
+  case 5: return "[GamepadMap]";
+  default: return NULL;
+  }
+}
+
+// Build "<key> = <value>[ <trailing-comment>]". `srcline` (may be NULL) supplies
+// a trailing '#...' comment to preserve.
+static char *FormatKeyLine(const char *key, const char *value, const char *srcline) {
+  const char *comment = NULL;
+  if (srcline) {
+    const char *eq = strchr(srcline, '=');
+    if (eq) {
+      const char *h = strchr(eq, '#');
+      if (h) comment = h;
+    }
+  }
+  char buf[1280];
+  if (comment)
+    snprintf(buf, sizeof buf, "%s = %s  %s", key, value, comment);
+  else
+    snprintf(buf, sizeof buf, "%s = %s", key, value);
+  return DupRange(buf, strlen(buf));
+}
+
+static bool AtomicWriteBytes(const char *path, const char *data, size_t len) {
+  EnsureParentDir(path);
+  char tmp[520];
+  snprintf(tmp, sizeof tmp, "%s.tmp", path);
+  FILE *f = fopen(tmp, "wb");
+  if (!f) {
+    fprintf(stderr, "Config_WriteIniFile: cannot open %s\n", tmp);
+    return false;
+  }
+  if (len) fwrite(data, 1, len, f);
+  fflush(f);
+#ifdef _WIN32
+  _commit(_fileno(f));
+  fclose(f);
+  if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
+    fprintf(stderr, "Config_WriteIniFile: rename %s -> %s failed (err %lu)\n",
+            tmp, path, (unsigned long)GetLastError());
+    remove(tmp);
+    return false;
+  }
+#else
+  fsync(fileno(f));
+  fclose(f);
+  if (rename(tmp, path) != 0) {
+    fprintf(stderr, "Config_WriteIniFile: rename %s -> %s failed\n", tmp, path);
+    remove(tmp);
+    return false;
+  }
+#endif
+  return true;
+}
+
+// One-shot per session: copy the original file to "<path>.bak" before the first
+// rewrite, so a botched edit is recoverable.
+static bool g_ini_backed_up;
+
+static void BackupOnce(const char *path) {
+  if (g_ini_backed_up) return;
+  g_ini_backed_up = true;
+  size_t len = 0;
+  char *orig = (char *)ReadWholeFile(path, &len);
+  if (!orig) return;  // no original to back up
+  char bak[520];
+  snprintf(bak, sizeof bak, "%s.bak", path);
+  AtomicWriteBytes(bak, orig, len);
+  free(orig);
+}
+
+void Config_WriteIniFile(const char *path) {
+  BackupOnce(path);
+
+  char *data = (char *)ReadWholeFile(path, NULL);  // NUL-terminated; NULL if absent
+  const char *eol = "\n";
+  if (data) {
+    const char *nl = strchr(data, '\n');
+    if (nl && nl > data && nl[-1] == '\r') eol = "\r\n";
+  }
+
+  IniLines L = {0};
+  if (data) {
+    char *p = data;
+    int cur = -2;  // before any [section]
+    while (*p) {
+      char *nl = strchr(p, '\n');
+      size_t linelen = nl ? (size_t)(nl - p) : strlen(p);
+      size_t l = linelen;
+      if (l > 0 && p[l - 1] == '\r') l--;  // strip CR (EOL re-added on write)
+      char *line = DupRange(p, l);
+      int hs = LineHeaderSection(line);
+      if (hs != (-2147483647 - 1)) cur = hs;  // header line updates current section
+      IniLines_Push(&L, line, cur);
+      if (!nl) break;
+      p = nl + 1;
+    }
+    free(data);
+  }
+
+  // Drive the replace/insert passes over every managed (section, key).
+  struct { int section; const char *const *keys; int count; } groups[] = {
+    {0, NULL, 0}, {5, NULL, 0},  // keymap / gamepad handled by name table below
+    {1, kGfxKeys, (int)countof(kGfxKeys)},
+    {2, kSndKeys, (int)countof(kSndKeys)},
+    {3, kGenKeys, (int)countof(kGenKeys)},
+    {4, kFeatKeys, (int)countof(kFeatKeys)},
+  };
+
+  // For each section, build its key list (keymap/gamepad come from kKeyNameId).
+  for (int g = 0; g < (int)countof(groups); g++) {
+    int section = groups[g].section;
+    int nkeys;
+    const char *keybuf[64];
+    const char *const *keys;
+    if (section == 0 || section == 5) {
+      nkeys = 0;
+      for (int i = 1; i < (int)countof(kKeyNameId) && nkeys < 64; i++)
+        keybuf[nkeys++] = kKeyNameId[i].name;
+      keys = keybuf;
+    } else {
+      keys = groups[g].keys;
+      nkeys = groups[g].count;
+    }
+
+    for (int ki = 0; ki < nkeys; ki++) {
+      const char *key = keys[ki];
+      char value[1024];
+      if (!RenderManagedValue(section, key, value, sizeof value))
+        continue;  // skip (preserve existing / custom / unnamed)
+
+      // Replace: last matching key line across all runs of this section.
+      int found = -1;
+      char lk[96];
+      for (int i = 0; i < L.n; i++) {
+        if (L.sec[i] != section) continue;
+        if (LineIsCommentOrBlank(L.v[i])) continue;
+        if (LineKey(L.v[i], lk, sizeof lk) < 0) continue;
+        if (StringEqualsNoCase(lk, key)) found = i;
+      }
+      if (found >= 0) {
+        char *nl = FormatKeyLine(key, value, L.v[found]);
+        free(L.v[found]);
+        L.v[found] = nl;
+        continue;
+      }
+
+      // Insert: skip empty values (don't materialize absent+empty keys).
+      if (value[0] == 0) continue;
+
+      // Find the last line of this section; insert after it.
+      int last_in_sec = -1;
+      for (int i = 0; i < L.n; i++)
+        if (L.sec[i] == section) last_in_sec = i;
+      if (last_in_sec >= 0) {
+        IniLines_InsertAfter(&L, last_in_sec, FormatKeyLine(key, value, NULL), section);
+      } else {
+        // Section absent — create header then the key at EOF.
+        const char *sn = SectionName(section);
+        if (sn) {
+          IniLines_Push(&L, DupRange(sn, strlen(sn)), section);
+          IniLines_Push(&L, FormatKeyLine(key, value, NULL), section);
+        }
+      }
+    }
+  }
+
+  // Serialize.
+  size_t total = 0;
+  size_t eollen = strlen(eol);
+  for (int i = 0; i < L.n; i++) total += strlen(L.v[i]) + eollen;
+  char *outbuf = (char *)malloc(total + 1);
+  size_t pos = 0;
+  for (int i = 0; i < L.n; i++) {
+    size_t sl = strlen(L.v[i]);
+    memcpy(outbuf + pos, L.v[i], sl); pos += sl;
+    memcpy(outbuf + pos, eol, eollen); pos += eollen;
+  }
+  AtomicWriteBytes(path, outbuf, pos);
+
+  free(outbuf);
+  for (int i = 0; i < L.n; i++) free(L.v[i]);
+  free(L.v);
+  free(L.sec);
+}
+
+// ---- Live-apply ------------------------------------------------------------
+
+extern uint32 g_wanted_zelda_features;  // defined in zelda_rtl.c
+bool ZeldaIsReplaying(void);            // zelda_rtl.h (avoid heavy include here)
+
+uint32 Config_ApplyLive(const Config *prev, const Config *now) {
+  uint32 restart = 0;
+  const uint32 GEOM = kFeatures0_ExtendScreen64 | kFeatures0_WidescreenVisualFixes;
+
+  // features0: live-update the non-geometry bits via the existing per-frame
+  // mirror (g_wanted_zelda_features -> g_ram+0x64c). The two geometry bits keep
+  // their running value (framebuffer width is fixed at init). Deferred during
+  // replay (the mirror does not run on replay frames).
+  if (!ZeldaIsReplaying()) {
+    g_wanted_zelda_features = (g_wanted_zelda_features & GEOM) | (now->features0 & ~GEOM);
+  } else if ((prev->features0 & ~GEOM) != (now->features0 & ~GEOM)) {
+    restart |= kCfgRestart_Features;  // surfaced as "applies after replay/restart"
+  }
+  if ((prev->features0 & GEOM) != (now->features0 & GEOM))
+    restart |= kCfgRestart_Video;  // geometry bits need a restart
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  if (prev->window_scale != now->window_scale)
+    MainHost_SetWindowScale(now->window_scale);  // updates g_config.window_scale to achieved
+  if (prev->fullscreen != now->fullscreen) {
+    if (now->fullscreen <= 1) MainHost_SetFullscreen(now->fullscreen);
+    else restart |= kCfgRestart_Video;  // exclusive fullscreen is restart-only
+  }
+  if (prev->new_renderer != now->new_renderer)
+    MainHost_SetNewRenderer(now->new_renderer);
+#endif
+
+  // Restart-only categories.
+  if (prev->output_method != now->output_method ||
+      prev->linear_filtering != now->linear_filtering ||
+      prev->enhanced_mode7 != now->enhanced_mode7 ||
+      prev->ignore_aspect_ratio != now->ignore_aspect_ratio ||
+      prev->window_width != now->window_width ||
+      prev->window_height != now->window_height ||
+      prev->extended_aspect_ratio != now->extended_aspect_ratio ||
+      prev->extend_y != now->extend_y ||
+      prev->shader != now->shader ||
+      prev->link_graphics != now->link_graphics)
+    restart |= kCfgRestart_Video;
+  if (prev->enable_audio != now->enable_audio ||
+      prev->audio_freq != now->audio_freq ||
+      prev->audio_channels != now->audio_channels ||
+      prev->audio_samples != now->audio_samples ||
+      prev->enable_msu != now->enable_msu ||
+      prev->msu_path != now->msu_path)
+    restart |= kCfgRestart_Audio;
+  if (prev->language != now->language)
+    restart |= kCfgRestart_Language;
+
+  return restart;
 }

@@ -44,8 +44,13 @@
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "rando/rando_window/rando_window.h"          // RandoWindow_* (ImGui settings window)
 #include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
+#include "rando/rando_window/imgui_host.h"            // Z3RHost_* (multi-window host)
+#include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
+#include "rando/rando_window/game_config_widgets.h"   // GameConfig_* (native game-config panels)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #include "rando/shuffle_entrance.h"                    // Phase C entrance shuffle (CLI generate path)
+#include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
+#include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
 #endif
 
 static bool g_run_without_emu = 0;
@@ -71,6 +76,28 @@ static void OpenOneGamepad(int i);
 static void HandleVolumeAdjustment(int volume_adjustment);
 static void LoadAssets();
 static void SwitchDirectory();
+
+// Loads assets if a blob is present; returns false (without Die()ing) when none
+// exists. LoadAssets() hard-fails on a missing zelda3_assets.dat, but the
+// headless rando CLI paths (--generate-seed, --reveal-spoiler) only need assets
+// for g_assets_hash (the --assets-must-be-vanilla gate). Placement is driven
+// entirely by compiled-in logic/codegen tables and never reads asset bytes
+// (no g_asset_ptrs references in src/rando/), so it stays byte-identical with or
+// without the blob. This lets those paths — and the CI regression corpus that
+// drives them — run on a ROM-less checkout; the vanilla-asset gate just degrades
+// to its "hash unknown" warning (g_assets_hash remains all-zeros).
+static bool LoadAssetsIfPresent() {
+  FILE *f = fopen("zelda3_assets.dat", "rb");
+  if (!f) f = fopen("zelda3_assets.bps", "rb");
+  if (!f) {
+    fprintf(stderr, "note: no zelda3_assets.dat — proceeding without assets "
+                    "(placement is asset-independent; --assets-must-be-vanilla inert).\n");
+    return false;
+  }
+  fclose(f);
+  LoadAssets();
+  return true;
+}
 
 enum {
   kDefaultFullscreen = 0,
@@ -158,6 +185,36 @@ void ChangeWindowScale(int scale_step) {
     SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   }
 }
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+// Absolute window/renderer hooks for the native game-config UI's live-apply
+// (Config_ApplyLive). Distinct from the relative ChangeWindowScale and the XOR
+// fullscreen toggle in HandleCommand_Locked — those are wrong for "set to X".
+int MainHost_SetWindowScale(int scale) {
+  if (scale < 1) scale = 1;
+  // ChangeWindowScale is a relative step that clamps to a screen-fit max; drive
+  // it to the target and report the achieved scale so the caller can persist the
+  // value actually honored (avoids re-clamping an unreachable scale each launch).
+  ChangeWindowScale(scale - (int)g_current_window_scale);
+  g_config.window_scale = g_current_window_scale;
+  return g_current_window_scale;
+}
+
+void MainHost_SetFullscreen(uint8 mode) {
+  if (mode == 1) {  // desktop fullscreen
+    g_win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    SDL_SetWindowFullscreen(g_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+  } else {          // windowed
+    g_win_flags &= ~SDL_WINDOW_FULLSCREEN_DESKTOP;
+    SDL_SetWindowFullscreen(g_window, 0);
+  }
+}
+
+void MainHost_SetNewRenderer(bool on) {
+  if (on) g_ppu_render_flags |= kPpuRenderFlags_NewRenderer;
+  else g_ppu_render_flags &= ~kPpuRenderFlags_NewRenderer;
+}
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
 #define RESIZE_BORDER 20
 static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, void *data) {
@@ -371,9 +428,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   }
 
   // Load config (so [Randomizer] defaults populate) and assets (so
-  // g_assets_hash is computed). Both are safe to call without SDL.
+  // g_assets_hash is computed). Both are safe to call without SDL. Assets are
+  // optional here: placement is asset-independent, so a ROM-less run (CI) still
+  // generates deterministically (see LoadAssetsIfPresent).
   ParseConfigFile(config_file);
-  LoadAssets();
+  LoadAssetsIfPresent();
 
   // Honor --assets-must-be-vanilla per randomizer-placement spec scenario
   // "CLI --assets-must-be-vanilla refuses non-vanilla blobs".
@@ -709,10 +768,11 @@ static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *conf
 
   // Load config + assets so the spoiler writer has the same view of the
   // world as a normal generate. Assets aren't strictly needed for reveal
-  // but Spoiler_WriteJson computes `placement_digest_hex` so the placement
-  // graph is consulted; LoadAssets() keeps everything consistent.
+  // (Spoiler_WriteJson computes `placement_digest_hex` from the placement
+  // graph, which is asset-independent), so load them only if present — a
+  // ROM-less checkout (CI) reveals deterministically all the same.
   ParseConfigFile(config_file);
-  LoadAssets();
+  LoadAssetsIfPresent();
 
   RandoRevealResult r = Rando_RevealSpoiler(reveal_path, NULL);
   if (r == kRandoReveal_Ok) {
@@ -971,6 +1031,8 @@ int main(int argc, char** argv) {
   // to guard cross-platform byte-identity (tasks.md §2.2).
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--rando-selftest") == 0) {
+      Config_SelfCheckKeymap();    // keybind-model <-> rebuilt-hash equivalence (game-config UI)
+      Config_SelfCheckIniWriter(); // in-place INI writer fidelity (game-config UI)
       Rando_RunAllSelfChecks();
       return 0;
     }
@@ -985,6 +1047,40 @@ int main(int argc, char** argv) {
   // and exit; otherwise this returns and main() continues to the GUI path.
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
   MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
+
+  // Dev/verification: decode the overworld map (asset 66/67/68/93) to PPM files
+  // and exit. Used to visually verify the Map Tracker background decoder.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-overworld-map") == 0) {
+      const char *prefix = (i + 1 < argc) ? argv[i + 1] : "overworld_map";
+      LoadAssets();
+      bool ok = RandoMap_DumpPpm(prefix);
+      fprintf(stderr, "--dump-overworld-map: %s\n", ok ? "OK" : "FAILED");
+      return ok ? 0 : 1;
+    }
+  }
+  // Dev/verification: decode the HUD item-icon atlas to a PPM and exit.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-item-icons") == 0) {
+      const char *path = (i + 1 < argc) ? argv[i + 1] : "item_icons.ppm";
+      LoadAssets();
+      static uint32 atlas[kRandoIconCount * kRandoIconSize * kRandoIconSize];
+      int n = Hud_RandoBuildIconAtlas(atlas);
+      int W = kRandoIconCount * kRandoIconSize, H = kRandoIconSize;
+      FILE *f = fopen(path, "wb");
+      if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", W, H);
+        for (int p = 0; p < W * H; p++) {
+          const uint8 *px = (const uint8 *)&atlas[p];
+          fputc(px[0], f); fputc(px[1], f); fputc(px[2], f);  // RGB (drop alpha)
+        }
+        fclose(f);
+      }
+      fprintf(stderr, "--dump-item-icons: %d icons -> %s\n", n, path);
+      return f ? 0 : 1;
+    }
+  }
+
 
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,
@@ -1187,6 +1283,11 @@ int main(int argc, char** argv) {
     RandoWindow_ApplyGeometry(g_rando_window_prefs.window_x, g_rando_window_prefs.window_y,
                               g_rando_window_prefs.window_w, g_rando_window_prefs.window_h);
   }
+  // Tracker windows (item/check/map) — created hidden on the multi-window host.
+  // Z3RHost_Create saves/restores the current ImGui + GL context, so the settings
+  // window's context stays current and the game context is untouched here.
+  Trackers_Init();
+
   // Restore the game's GL context: the settings window's GL setup above left the
   // settings context current. NULL under the software renderer → nothing to do.
   if (game_gl_ctx)
@@ -1283,6 +1384,10 @@ int main(int argc, char** argv) {
       // if that ID is the settings window, hand the event to ImGui and DO NOT
       // pass it to the game input path. Otherwise it's a game-window event and
       // flows to the existing switch below.
+      // Tracker windows (host-owned) consume their own events first. Their
+      // windowIDs are disjoint from the settings/game windows.
+      if (Z3RHost_ProcessEvent(&event))
+        continue;
       {
         Uint32 settings_wid = g_settings_window ? SDL_GetWindowID(g_settings_window) : 0;
         Uint32 wid = 0;
@@ -1325,6 +1430,16 @@ int main(int argc, char** argv) {
       case SDL_CONTROLLERBUTTONDOWN:
       case SDL_CONTROLLERBUTTONUP: {
         int b = RemapSdlButton(event.cbutton.button);
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+        // Gamepad binding capture: while a rebind is armed, the next button-down
+        // (with currently-held buttons as the combo) is consumed by the config UI
+        // instead of the game. g_gamepad_modifiers does not yet include this
+        // button (we intercept before HandleGamepadInput toggles it).
+        if (b >= 0 && event.type == SDL_CONTROLLERBUTTONDOWN && GameConfig_IsCapturingGamepad()) {
+          GameConfig_FeedCapturedButton(b, g_gamepad_modifiers);
+          break;
+        }
+#endif
         if (b >= 0)
           HandleGamepadInput(b, event.type == SDL_CONTROLLERBUTTONDOWN);
         break;
@@ -1420,10 +1535,13 @@ int main(int argc, char** argv) {
           // Suppress HandleInput entirely — see comment above.
           break;
         }
-        if (event.key.keysym.sym == SDLK_F12 && !event.key.repeat) {
-          ZeldaDumpDebugState();  // dev diagnostic: dump g_ram + PPU + state line
+        // The debug-state dump (default F12, rebindable as kKeys_DumpDebugState)
+        // writes several files; ignore key auto-repeat so holding the key can't
+        // thrash the disk. The first (non-repeat) press flows through HandleInput
+        // -> HandleCommand -> kKeys_DumpDebugState like any other command.
+        if (event.key.repeat &&
+            FindCmdForSdlKey(event.key.keysym.sym, event.key.keysym.mod) == kKeys_DumpDebugState)
           break;
-        }
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, true);
         break;
       case SDL_KEYUP:
@@ -1476,6 +1594,14 @@ int main(int argc, char** argv) {
     SDL_UnlockMutex(g_audio_mutex);
 
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    // Game-config apply consumer: the settings UI raises a pending-apply flag;
+    // commit the working copy + rebuild the keymap + live-apply + write the INI
+    // here on the game thread (game GL context current). Runs BEFORE the generate
+    // consumer so a just-applied config is reflected if a generate follows.
+    if (GameConfig_HasPendingApply())
+      GameConfig_ApplyPending();
+    GameConfig_CaptureTick(SDL_GetTicks());  // time out a stuck rebind capture
+
     // Game-side generate consumer: when the settings window requested a generate,
     // run it synchronously on this (game) thread. Blocks the game frame for the
     // generation duration — expected; the UI shows an input-blocking modal.
@@ -1539,6 +1665,10 @@ int main(int argc, char** argv) {
       if (prev)
         SDL_GL_MakeCurrent(g_window, prev);
     }
+    // Render any visible tracker windows. Z3RHost_RenderAll saves/restores the
+    // current SDL GL + ImGui context itself, so the game renderer and the
+    // settings window are unaffected regardless of which (if any) is shown.
+    Z3RHost_RenderAll();
 #endif
 
     if (g_config.display_perf_title) {
@@ -1594,6 +1724,9 @@ int main(int argc, char** argv) {
 
   // Tear down the settings window unconditionally (NOT gated on enable_audio).
   RandoWindow_Shutdown();
+  // Then the tracker windows. RandoWindow_Shutdown destroyed the (current)
+  // settings ImGui context first, so the host's teardown won't clobber it.
+  Trackers_Shutdown();
   if (g_settings_gl)
     SDL_GL_DeleteContext(g_settings_gl);
   if (g_settings_window)
@@ -1735,19 +1868,55 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_ToggleRenderer: g_ppu_render_flags ^= kPpuRenderFlags_NewRenderer; break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
-    // Phase B Slice 1 — tracker overlay toggles. Toggle is in-memory only;
-    // resets to hidden on each launch.
+    // Phase B Slice 1 — tracker overlay toggles. On PC the OAM overlay is
+    // superseded by the rich ImGui windows, so these legacy keys open the
+    // corresponding window (so existing bindings keep working); on Switch they
+    // toggle the OAM overlay as before. In-memory only; reset to hidden each launch.
     case kKeys_RandoToggleItemTracker:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(kTracker_Item);
+#else
       g_rando_show_item_tracker = !g_rando_show_item_tracker;
+#endif
       break;
     case kKeys_RandoToggleLocationTracker:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(kTracker_Check);
+#else
       g_rando_show_location_tracker = !g_rando_show_location_tracker;
+#endif
       break;
     // Phase B Slice 6 §62 — reveal the active slot's race-mode ZRSR spoiler.
     // The reveal action logs its outcome to stderr; on success the on-disk
     // file is overwritten with the full JSON + .txt companion.
     case kKeys_RandoRevealSpoiler:
       (void)Rando_RevealActiveSlotSpoiler();
+      break;
+    // Rich tracker windows. PC toggles the OS windows; on Switch (no
+    // Z3R_NATIVE_SETTINGS_WINDOW) these keys exist in the keymap but have no
+    // windows — degrade to a no-op rather than hitting default: assert(0) if a
+    // user hand-binds one in the ini.
+    case kKeys_RandoItemTrackerWindow:
+    case kKeys_RandoCheckTrackerWindow:
+    case kKeys_RandoMapTrackerWindow:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Trackers_Toggle(j == kKeys_RandoItemTrackerWindow ? kTracker_Item
+                      : j == kKeys_RandoCheckTrackerWindow ? kTracker_Check
+                                                           : kTracker_Map);
+#endif
+      break;
+    // Native game-config window toggle (config mode). PC: open/hide the Z3R
+    // Settings window on its Game Settings tab. Switch: no window — no-op (the
+    // unconditional case label keeps the keymap index stable; cf. tracker keys).
+    case kKeys_OpenSettings:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      RandoWindow_ToggleConfig();
+#endif
+      break;
+    // Developer state dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line to
+    // the log). Available on all platforms (ZeldaDumpDebugState is core).
+    case kKeys_DumpDebugState:
+      ZeldaDumpDebugState();
       break;
     default: assert(0);
     }

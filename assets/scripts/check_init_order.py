@@ -134,7 +134,12 @@ def main(argv: list[str]) -> int:
         )
         return 1 if args.strict else 0
 
-    binary = Path(args.binary)
+    # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
+    # "zelda3" (pathlib strips the leading "./"), and subprocess would then
+    # PATH-search for it — which fails on Linux/macOS where cwd isn't on PATH
+    # (FileNotFoundError: 'zelda3'). An absolute path executes the built binary
+    # directly. resolve(strict=False) is a no-op-safe even if it doesn't exist.
+    binary = Path(args.binary).resolve()
     if not binary.is_file():
         print(f"check_init_order: binary not found at {binary}")
         return 1 if args.strict else 0

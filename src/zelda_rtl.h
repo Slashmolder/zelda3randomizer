@@ -53,6 +53,13 @@ void LoadSongBank(const uint8 *p);
 void ZeldaApuLock();
 void ZeldaApuUnlock();
 bool ZeldaIsPlayingMusicTrack(uint8 track);
+// True while a recorded input snapshot is being replayed (Ctrl+F1-F10). The
+// native game-config UI uses this to defer live feature application during
+// replay (the feature->RAM mirror does not run on replay frames).
+bool ZeldaIsReplaying(void);
+// True while the original ROM is attached for side-by-side RAM compare. The
+// native debug/cheats editor disables g_ram edits when this is set.
+bool ZeldaIsEmulatorAttached(void);
 uint8 ZeldaGetEntranceMusicTrack(int track);
 void ZeldaSetLanguage(const char *language);
 void PatchCommand(char cmd);

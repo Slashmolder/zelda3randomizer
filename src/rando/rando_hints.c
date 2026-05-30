@@ -150,6 +150,42 @@ static void shuffle_u16(RandoRng *rng, uint16 *arr, uint16 n) {
   }
 }
 
+// Produce a short, player-friendly item name from the internal registry name so
+// a hint fits one 3-row message box. Strips placeholder prefixes (Prize_/
+// Progressive), collapses dungeon items to their kind, and splits CamelCase /
+// underscores into words.
+static void hint_friendly_item(const char *in, char *out, int outsz) {
+  if (in == NULL) { out[0] = '\0'; return; }
+  if (strncmp(in, "Prize_Crystal", 13) == 0) { snprintf(out, outsz, "Crystal %s", in + 13); return; }
+  if (strncmp(in, "SmallKey_", 9) == 0) { snprintf(out, outsz, "Small Key"); return; }
+  if (strncmp(in, "BigKey_", 7) == 0)   { snprintf(out, outsz, "Big Key");   return; }
+  if (strncmp(in, "Compass_", 8) == 0)  { snprintf(out, outsz, "Compass");   return; }
+  if (strncmp(in, "Map_", 4) == 0)      { snprintf(out, outsz, "Map");       return; }
+  if (strcmp(in, "BugCatchingNet") == 0) { snprintf(out, outsz, "Net");     return; }
+  if (strcmp(in, "DefeatAgahnim") == 0)  { snprintf(out, outsz, "Agahnim"); return; }
+  if (strncmp(in, "Prize_", 6) == 0) in += 6;         // Prize_GreenPendant -> GreenPendant
+  if (strncmp(in, "Progressive", 11) == 0) in += 11;  // ProgressiveSword -> Sword
+  int o = 0;
+  for (int i = 0; in[i] && o < outsz - 2; i++) {
+    char c = in[i];
+    if (c == '_') { out[o++] = ' '; continue; }
+    if (i > 0 && c >= 'A' && c <= 'Z' && in[i - 1] >= 'a' && in[i - 1] <= 'z')
+      out[o++] = ' ';  // split CamelCase: space before a capital following a lowercase
+    out[o++] = c;
+  }
+  out[o] = '\0';
+}
+
+// Friendly location: keep just the area/room, dropping the " - <sub-spot>" tail.
+static void hint_friendly_loc(const char *in, char *out, int outsz) {
+  if (in == NULL) { out[0] = '\0'; return; }
+  const char *dash = strstr(in, " - ");
+  int n = dash ? (int)(dash - in) : (int)strlen(in);
+  if (n > outsz - 1) n = outsz - 1;
+  memcpy(out, in, (size_t)n);
+  out[n] = '\0';
+}
+
 bool Rando_GenerateHints(const RandoSettings *settings,
                          const RandoPlacementTable *placements,
                          const RandoSpheres *spheres) {
@@ -204,8 +240,10 @@ bool Rando_GenerateHints(const RandoSettings *settings,
     e->active = 1;
     e->placement_loc_id = loc;
     e->placement_item_id = item;
-    snprintf(e->text, sizeof(e->text), "The %s lies at %s.",
-             Rando_GetItemName(item), Rando_GetLocationName(loc));
+    char fitem[48], floc[48];
+    hint_friendly_item(Rando_GetItemName(item), fitem, sizeof fitem);
+    hint_friendly_loc(Rando_GetLocationName(loc), floc, sizeof floc);
+    snprintf(e->text, sizeof(e->text), "%s is in %s", fitem, floc);
   }
 
   // Murahdahla — populate when the goal is Triforce-related.
@@ -303,10 +341,16 @@ void Rando_ClearHints(void) {
 
 // The 15 hint-bearing vanilla US telepathic-tile message ids, in ascending
 // order. Index i maps to RandoHintNpc (kRandoHintNpc_TeleEasternPalace + i).
-// 0xB4 (generic-default tele text) is intentionally absent.
+// NOTE: 0xB4 IS the Eastern Palace tile ("...the treasure hidden in this palace
+// to defeat armored foes"), the FIRST ALTTPR tile — not generic filler. An
+// earlier off-by-one (reading a 1-indexed dialogue dump as 0-indexed) dropped
+// it and instead included 0xC7, which is actually the Chris Houlihan secret-room
+// text and not a hint tile. 0xB4 is set as dialogue only by the tele table
+// (Dungeon_GetTeleMsg), so intercepting it is safe; among the 15 tiles only
+// Eastern Palace happens to use the value that doubles as the room default.
 static const uint16 kHintTileMsgIds[kHintTileCount] = {
-  0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0,
-  0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7,
+  0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF,
+  0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6,
 };
 
 bool Rando_IsHintTileMessage(uint16 msg_id) {
@@ -345,18 +389,20 @@ static uint8 ascii_to_font(char ch) {
 #define kHintFontCmdWaitkey 0x7eu
 #define kHintFontCmdEnd     0x7fu
 
-// Render `text` (NUL-terminated ASCII) into `out` as US font codes, wrapping
-// on word boundaries to fit the three-row dialogue box and inserting the
-// row-advance control codes. Pages break with a Waitkey when the text exceeds
-// three rows. Returns the number of bytes written (excluding the 0x7f
-// terminator the caller appends). `out` must hold >= 256 bytes.
+// Render `text` (NUL-terminated ASCII) into `out` as US font codes, wrapping on
+// word boundaries to fit the THREE-row dialogue box. The box holds rows 0/1/2;
+// anything that would overflow row 2 is dropped rather than paged — multi-page
+// (Waitkey) output corrupts because this hint buffer is injected pre-decoded and
+// does not survive the engine's page-advance. Friendly short hint text (see
+// hint_friendly_item/loc) is sized to fit, so overflow should not occur.
+// Returns bytes written (excluding the 0x7f terminator the caller appends).
 #define kHintMaxCharsPerLine 13  // VWF is variable-width; 13 is a safe cap that
                                  // avoids overrun on the 256-px message box for
                                  // worst-case wide glyphs.
 static int encode_hint_text(const char *text, uint8 *out) {
   int w = 0;            // write cursor into out
   int col = 0;          // glyph count on the current row
-  int row = 0;          // 0..2 within the current page
+  int row = 0;          // 0..2 (the 3 box rows)
   const char *p = text;
   while (*p && w < 240) {
     // Measure the next word (run of non-space chars).
@@ -367,15 +413,10 @@ static int encode_hint_text(const char *text, uint8 *out) {
 
     // Wrap if the word won't fit on the current row (and the row isn't empty).
     if (col != 0 && col + 1 + word_len > kHintMaxCharsPerLine) {
+      if (row >= 2) break;  // box full — stop (no paging)
       row++;
       col = 0;
-      if (row == 1)      out[w++] = kHintFontCmdLine1;
-      else if (row == 2) out[w++] = kHintFontCmdLine2;
-      else {
-        // Page is full — pause and start a fresh page at row 0.
-        out[w++] = kHintFontCmdWaitkey;
-        row = 0;
-      }
+      out[w++] = (row == 1) ? kHintFontCmdLine1 : kHintFontCmdLine2;
     } else if (col != 0) {
       out[w++] = ascii_to_font(' ');  // inter-word space
       col++;
@@ -384,11 +425,10 @@ static int encode_hint_text(const char *text, uint8 *out) {
     // Emit the word's glyphs (hard-wrap if a single word exceeds the row).
     for (const char *q = p; q < word_end && w < 240; q++) {
       if (col >= kHintMaxCharsPerLine) {
+        if (row >= 2) return w;  // box full mid-word — stop
         row++;
         col = 0;
-        if (row == 1)      out[w++] = kHintFontCmdLine1;
-        else if (row == 2) out[w++] = kHintFontCmdLine2;
-        else { out[w++] = kHintFontCmdWaitkey; row = 0; }
+        out[w++] = (row == 1) ? kHintFontCmdLine1 : kHintFontCmdLine2;
       }
       uint8 fc = ascii_to_font(*q);
       if (fc == 0xFF) fc = ascii_to_font(' ');  // glyphless char -> space
@@ -422,6 +462,27 @@ bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer) {
   int w = encode_hint_text(text, out_buffer);
   out_buffer[w] = kHintFontCmdEnd;  // 0x7f terminator (matches vanilla path).
   return true;
+}
+
+// Dev diagnostic (F12 / ZeldaDumpDebugState): write the live hint-table state to
+// dump_hints.txt so a telepathic-tile "no hint" report can be diagnosed without
+// a debugger. `cur_msg_id` is the current dialogue_message_index — pass the id
+// of the tile just read to see whether it is a hint tile and which NPC/text it
+// maps to.
+void Rando_DumpHintDebug(uint16 cur_msg_id) {
+  FILE *f = fopen("dump_hints.txt", "w");
+  if (f == NULL) return;
+  int active = 0;
+  for (int i = 1; i < kRandoHintNpc__Count; i++)
+    if (g_hint_table[i].active) active++;
+  fprintf(f, "slot_active=%d  active_hints=%d/%d  cur_dialogue_msg=0x%02X  is_hint_tile=%d\n",
+          (int)g_rando_slot_active, active, (int)kRandoHintNpc__Count - 1,
+          (unsigned)cur_msg_id, (int)Rando_IsHintTileMessage(cur_msg_id));
+  for (int i = 1; i < kRandoHintNpc__Count; i++) {
+    fprintf(f, "  npc %2d active=%d text=%s\n", i, (int)g_hint_table[i].active,
+            g_hint_table[i].text[0] ? g_hint_table[i].text : "(empty)");
+  }
+  fclose(f);
 }
 
 // -----------------------------------------------------------------------------
@@ -477,6 +538,42 @@ void Hints_SelfCheck(void) {
   if (memcmp(snapshot, g_hint_table, sizeof(snapshot)) != 0) {
     fprintf(stderr, "Hints_SelfCheck: non-deterministic hint output.\n");
     abort();
+  }
+
+  // Murahdahla determinism: the Fast-Ganon goal above never enters the
+  // Triforce/Ganon-hunt branch — the only path with nested region-dedup
+  // iteration, and thus the one most prone to nondeterministic drift — so its
+  // determinism was previously unasserted. Round-trip a second time under
+  // Triforce Hunt with a TriforcePiece in the pool so the branch actually runs.
+  {
+    static RandoPlacement th_entries[4];
+    th_entries[0].location_id = 1;  th_entries[0].item_id = ITEM_TriforcePiece;
+    th_entries[1].location_id = 2;  th_entries[1].item_id = ITEM_Hookshot;
+    th_entries[2].location_id = 3;  th_entries[2].item_id = ITEM_Boots;
+    th_entries[3].location_id = 4;  th_entries[3].item_id = ITEM_Rupee5;
+    RandoPlacementTable th_table;
+    th_table.entries = th_entries;
+    th_table.count = 4;
+    RandoSettings th = settings;       // still hints=On from above
+    th.hints = kHintsMode_On;
+    th.goal = kGoal_TriforceHunt;
+
+    Rando_ClearHints();
+    if (!Rando_GenerateHints(&th, &th_table, NULL)) {
+      fprintf(stderr, "Hints_SelfCheck: Triforce-Hunt GenerateHints failed.\n");
+      abort();
+    }
+    HintEntry th_snapshot[kRandoHintNpc__Count];
+    memcpy(th_snapshot, g_hint_table, sizeof(th_snapshot));
+    Rando_ClearHints();
+    if (!Rando_GenerateHints(&th, &th_table, NULL)) {
+      fprintf(stderr, "Hints_SelfCheck: second Triforce-Hunt GenerateHints failed.\n");
+      abort();
+    }
+    if (memcmp(th_snapshot, g_hint_table, sizeof(th_snapshot)) != 0) {
+      fprintf(stderr, "Hints_SelfCheck: non-deterministic Murahdahla hint output.\n");
+      abort();
+    }
   }
 
   // kHintsMode_Off: must populate nothing.
