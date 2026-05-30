@@ -463,6 +463,33 @@ static void Panel_Shuffles() {
     bool ws_ok = (s->world_state == kWorldState_Open ||
                   s->world_state == kWorldState_Standard);
     ImGui::BeginDisabled(!ws_ok);
+
+    // Presets — one-click bundles over the axes. Simple/Restricted both map to
+    // "caves + dungeons, coupled" (we shuffle within-category by default; the
+    // two ALTTPR names converge until cross-category lands). Crossed (needs
+    // cross_category) and Insanity (needs decoupled) are not built yet — shown
+    // disabled so the buttons never lie.
+    ImGui::TextUnformatted("Presets:"); ImGui::SameLine();
+    if (ImGui::SmallButton("None")) {
+      s->shuffle_cave_entrances = 0; s->shuffle_dungeon_entrances = 0;
+      s->coupled = 0; s->cross_category = 0; s->decoupled = 0; changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Simple / Restricted")) {
+      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
+      s->coupled = 1; s->cross_category = 0; s->decoupled = 0; changed = true;
+    }
+    HelpTooltip("Caves + dungeons shuffled within their own category, coupled. "
+                "(ALTTPR's Simple and Restricted converge here until "
+                "cross-category ships.)");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(true);
+    ImGui::SmallButton("Crossed"); ImGui::SameLine(); ImGui::SmallButton("Insanity");
+    ImGui::EndDisabled();
+    HelpTooltip("Crossed (caves<->dungeons mix) and Insanity (decoupled) need "
+                "the cross-category / decoupled engine — coming after the "
+                "Stage 1-2 playtest.");
+
     bool cave = s->shuffle_cave_entrances != 0;
     if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
       s->shuffle_cave_entrances = cave;
@@ -478,11 +505,11 @@ static void Panel_Shuffles() {
       s->coupled = (dun || s->shuffle_cave_entrances) ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Shuffles the 6 single-entrance dungeons (PoD, Swamp, Thieves' "
-                "Town, Ice Palace, Tower of Hera, Agahnim's Tower) among "
+    HelpTooltip("Shuffles 7 single-entrance dungeons (PoD, Swamp, Thieves' Town, "
+                "Ice Palace, Tower of Hera, Agahnim's Tower, Misery Mire) among "
                 "themselves; entering one's door loads another, coupled exit "
-                "returns you. Multi-entrance dungeons (Skull Woods, Desert) + "
-                "Eastern Palace come later.");
+                "returns you. Multi-entrance dungeons (Skull Woods, Desert), "
+                "Eastern Palace, Turtle Rock + Ganon's Tower come later.");
     // Coupled is the only implemented mode for now; show it as a fixed
     // indicator rather than a live toggle so the widget never lies.
     ImGui::BeginDisabled(true);

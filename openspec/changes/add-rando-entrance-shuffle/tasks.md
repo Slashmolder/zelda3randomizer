@@ -146,8 +146,11 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 
 ## Presets (once the relevant axes ship)
 
-- [ ] P.1 Bundle the axes into named modes: Simple / Restricted / Crossed / Insanity
-      + Custom (design §5a). Add to the settings-preset enum + UI.
+- [~] P.1 Native-window preset buttons: **None** + **Simple/Restricted** (caves +
+      dungeons, coupled — both ALTTPR names converge here until cross-category
+      ships) are LIVE; **Crossed** (needs cross_category) + **Insanity** (needs
+      decoupled) shown DISABLED so no button lies. Individual axis checkboxes serve
+      as Custom. (UI sugar over the axes — no stored enum, per design §5a.)
 - [ ] P.2 Playtest each preset resolves to the right axis combination.
 
 ## Cross-cutting (per `openspec/changes/README.md` conventions)
