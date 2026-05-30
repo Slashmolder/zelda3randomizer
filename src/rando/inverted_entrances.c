@@ -4,6 +4,7 @@
 #include "rando_settings.h"  // kWorldState_Inverted
 #include "../assets.h"       // g_asset_ptrs[] / g_asset_sizes[] + asset-index macros
 
+#include <stdio.h>           // fprintf (oversize-asset diagnostic)
 #include <string.h>          // memcpy
 
 // ---------------------------------------------------------------------------
@@ -108,7 +109,18 @@ void InvertedEntrances_Install(uint8 world_state) {
     const uint8 *src = (const uint8 *)g_asset_ptrs[s->asset_index];
     uint32 size = g_asset_sizes[s->asset_index];
     if (src == NULL || size == 0 || size > kShadowMaxBytes) {
-      InvertedEntrances_Teardown();  // undo any orig pointers saved below
+      // Abort the whole install rather than apply a partial override. The
+      // leading Teardown already restored any prior install, so the live asset
+      // pointers are still vanilla here (Pass 3 is what repoints) — this
+      // Teardown is a defensive no-op. Warn on the oversize case so a future
+      // maintainer who registers a larger asset notices the silent fallback.
+      if (size > kShadowMaxBytes)
+        fprintf(stderr,
+                "InvertedEntrances: asset %u (%u bytes) exceeds shadow cap %u; "
+                "inverted entrance override skipped.\n",
+                (unsigned)s->asset_index, (unsigned)size,
+                (unsigned)kShadowMaxBytes);
+      InvertedEntrances_Teardown();
       return;
     }
     memcpy(s->buf, src, size);
