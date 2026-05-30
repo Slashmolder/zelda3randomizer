@@ -109,12 +109,21 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       search keys on it so the player returns to the entered door (avoids stranding,
       e.g. Ice Palace lake without flippers). Caves auto-couple; dungeons don't, so
       this is required. Runtime — playtest-pending.
-- [x] 2.2 **Single-entrance dungeons** — the 6 clean ones (PoD, Swamp, Thieves'
-      Town, Ice Palace, Tower of Hera, Hyrule Castle Tower) in `kDungeons[]`; shared
-      door overlay (cave pass + dungeon pass on disjoint id sets).
-- [ ] 2.3 **Multi-entrance / 2-region** (Skull Woods, Desert, Eastern Palace) +
-      medallion (MM/TR) + goal (GT) — DEFERRED to Stage 2b (need coordinated
-      multi-door / medallion-aware handling). Documented in entrance_registry.yaml.
+- [x] 2.2 **Dungeon pool = 10 of 12** (`kDungeons[]`): the 6 clean single-entrance
+      (PoD, Swamp, Thieves' Town, Ice Palace, Tower of Hera, Hyrule Castle Tower)
+      + Misery Mire (medallion in door predicate) + Eastern Palace (its real entry
+      is the Lobby region; the "2nd region" is empty/vestigial) + Desert Palace &
+      Turtle Rock (MAIN door only — the extra "contained" doors stay vanilla; the
+      dungeon stays reachable via them, logic treats that as a conservative extra).
+      Shared door overlay (cave + dungeon passes on disjoint id sets).
+- [x] 2.2a **Full-reachability gate** — the entrance retry rejects any π that
+      strands placements (not just goal-incompletable ones), in both generation
+      paths. Caught + fixed a real bug where GT's crystal-gate circularity produced
+      a seed with 9 unreachable locations.
+- [ ] 2.3 **Deferred**: Skull Woods (truly many separate entrances — needs a
+      multi-entrance move-as-a-unit mechanism) + Ganon's Tower (crystal-tower gate
+      travels with the door → circular reachability; needs the gate to travel with
+      the dungeon). Documented in `shuffle_entrance.c` + `entrance_registry.yaml`.
 - [ ] 2.4 Link's House (room 0x104) special-case — not needed for the 6 (deferred).
 - [x] 2.5 Logic: per-seed **dungeon EDGE overlay** (`Rando_*EntranceEdgeOverride`)
       remaps each door-edge's `to_region` per π, keyed by the (unique) entry region;

@@ -50,9 +50,11 @@ Read in this order:
       dungeon coupled-exit both validated (EP's randomized door loads a different
       dungeon, exit returns to EP's door). The seams no automated check covers are
       now playtest-good.
-- [x] Stage 2b partial — Misery Mire + Eastern Palace added (8 of 12 dungeons).
-- [ ] Remaining dungeons (DEFERRED by user 2026-05-30): Skull Woods / Desert /
-      Turtle Rock (multi-entrance) + Ganon's Tower (goal/crystal) — need a
-      multi-entrance "move-as-a-unit" + goal-aware mechanism.
+- [x] Stage 2b — Misery Mire, Eastern Palace, Desert Palace + Turtle Rock (main
+      doors) added → **10 of 12 dungeons** shuffle. Full-reachability gate added to
+      the retry (rejects any π that strands placements).
+- [ ] Remaining dungeons DEFERRED: Skull Woods (truly multi-entrance) + Ganon's
+      Tower (crystal-tower gate travels with the door → circular reachability;
+      needs the gate to travel with the dungeon). Each needs a new mechanism.
 - [ ] Stage 3 (crossed / cross-category) + Stage 4 (decoupled / Insanity) presets.
 - [ ] Archive (Stages 1–2 are playtest-confirmed and archivable on the user's go).
