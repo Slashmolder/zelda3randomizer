@@ -39,6 +39,7 @@
 #include "rando_window_bridge.h"
 #include "tracker_windows.h"  // Trackers_SetShown/IsShown (Trackers launcher tab)
 #include "game_config_widgets.h"  // GameConfig_* (native game-config panels)
+#include "game_panels.h"          // Rando*_Render (reachability/hints sub-tabs)
 // kFeatures0_* recommended-features bit constants (compile-time enums; no g_ram
 // access — this TU never invokes the enhanced_features0 macro that writes g_ram).
 #include "../../features.h"
@@ -1098,6 +1099,9 @@ void RandoWindow_BeginFrame(void) {
               ImGui::EndTabItem();
             }
           }
+          // Read-only logic views (their own files).
+          if (ImGui::BeginTabItem("Reachability")) { RandoReach_Render(); ImGui::EndTabItem(); }
+          if (ImGui::BeginTabItem("Hints"))        { RandoHints_Render(); ImGui::EndTabItem(); }
           ImGui::EndTabBar();
         }
         // Generate flow lives inside the Randomizer tab, below its sub-tabs, but

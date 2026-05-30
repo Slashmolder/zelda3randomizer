@@ -47,6 +47,8 @@
 #include "rando/rando_window/imgui_host.h"            // Z3RHost_* (multi-window host)
 #include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
 #include "rando/rando_window/game_config_widgets.h"   // GameConfig_* (native game-config panels)
+#include "rando/rando_window/game_cheats.h"            // Cheats_SelfCheck (selftest)
+#include "rando/rando_window/game_panels.h"            // Panels_RenderSmokeCheck (selftest)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
 #include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
@@ -120,6 +122,12 @@ static SDL_GLContext g_settings_gl;
 #endif
 
 static uint8 g_paused, g_turbo, g_replay_turbo = true, g_cursor = true;
+// Debug Time panel state. g_frame_step is a one-shot consumed by the loop to let
+// exactly one frame through while paused; g_game_speed scales the frame-pacing
+// delay only (1.0 = normal). Both default to "no effect" so non-PC builds and
+// the untouched default behave identically.
+static bool g_frame_step;
+static float g_game_speed = 1.0f;
 static uint8 g_current_window_scale;
 static uint8 g_gamepad_buttons;
 static int g_input1_state;
@@ -213,6 +221,17 @@ void MainHost_SetNewRenderer(bool on) {
   if (on) g_ppu_render_flags |= kPpuRenderFlags_NewRenderer;
   else g_ppu_render_flags &= ~kPpuRenderFlags_NewRenderer;
 }
+
+// Time-control hooks (debug Time panel).
+void MainHost_SetPaused(bool paused) { g_paused = paused ? 1 : 0; }
+bool MainHost_GetPaused(void) { return g_paused != 0; }
+void MainHost_RequestFrameStep(void) { g_frame_step = true; }  // consumed by the loop
+void MainHost_SetSpeed(float mult) {
+  if (mult < 0.25f) mult = 0.25f;
+  if (mult > 4.0f) mult = 4.0f;
+  g_game_speed = mult;
+}
+float MainHost_GetSpeed(void) { return g_game_speed; }
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
 #define RESIZE_BORDER 20
@@ -973,6 +992,10 @@ int main(int argc, char** argv) {
     if (strcmp(argv[i], "--rando-selftest") == 0) {
       Config_SelfCheckKeymap();    // keybind-model <-> rebuilt-hash equivalence (game-config UI)
       Config_SelfCheckIniWriter(); // in-place INI writer fidelity (game-config UI)
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      Cheats_SelfCheck();          // cheat-core gate + clamp invariants (debug panels)
+      Panels_RenderSmokeCheck();   // headless render of every Debug/Randomizer panel
+#endif
       Rando_RunAllSelfChecks();
       return 0;
     }
@@ -1518,10 +1541,27 @@ int main(int argc, char** argv) {
         SDL_PauseAudioDevice(device, audiopaused);
     }
 
-    if (g_paused) {
+    // Paused: don't advance the game, but (PC) keep the settings/tracker windows
+    // interactive so you can unpause / frame-step / edit from the UI. A pending
+    // frame-step lets exactly one frame through (g_paused stays set).
+    if (g_paused && !g_frame_step) {
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      if (GameConfig_HasPendingApply())
+        GameConfig_ApplyPending();
+      GameConfig_CaptureTick(SDL_GetTicks());
+      if (RandoWindow_WantsShown()) {
+        SDL_GLContext prev = SDL_GL_GetCurrentContext();
+        RandoWindow_BeginFrame();
+        RandoWindow_Render();
+        if (prev)
+          SDL_GL_MakeCurrent(g_window, prev);
+      }
+      Z3RHost_RenderAll();
+#endif
       SDL_Delay(16);
       continue;
     }
+    g_frame_step = false;  // consume the one-shot; run exactly one frame this pass
 
     // Clear gamepad inputs when joypad directional inputs to avoid wonkiness
     int inputs = g_input1_state;
@@ -1622,7 +1662,10 @@ int main(int argc, char** argv) {
 
     if (!g_config.disable_frame_delay) {
       static const uint8 delays[3] = { 17, 17, 16 }; // 60 fps
-      lastTick += delays[frameCtr % 3];
+      // Speed multiplier (debug Time panel): scale the pacing delay only — slower
+      // speed => larger increment => longer sleep; faster => shorter. Audio is
+      // produced on its own thread at the device clock, so it stays real-time.
+      lastTick += (uint32)((float)delays[frameCtr % 3] / g_game_speed + 0.5f);
 
       if (lastTick > curTick) {
         uint32 delta = lastTick - curTick;

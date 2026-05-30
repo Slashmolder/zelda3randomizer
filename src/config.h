@@ -298,3 +298,14 @@ const char *Config_InternString(const char *s);
 int  MainHost_SetWindowScale(int scale);
 void MainHost_SetFullscreen(uint8 mode);   // 0=windowed, 1=desktop (2=exclusive is restart-only)
 void MainHost_SetNewRenderer(bool on);
+
+// Time-control hooks for the debug Time panel. Pause keeps the settings/tracker
+// windows interactive (so you can unpause/step from the UI); frame-step lets
+// exactly one game frame through while paused; speed (0.25..4.0) scales the
+// frame-pacing delay only (audio stays real-time). Defined under
+// Z3R_NATIVE_SETTINGS_WINDOW in main.c.
+void  MainHost_SetPaused(bool paused);
+bool  MainHost_GetPaused(void);
+void  MainHost_RequestFrameStep(void);
+void  MainHost_SetSpeed(float mult);
+float MainHost_GetSpeed(void);

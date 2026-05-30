@@ -36,6 +36,15 @@ IMGUI_SRCS:=$(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgu
             $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp \
             src/rando/rando_window/rando_window.cpp \
             src/rando/rando_window/game_config_panels.cpp \
+            src/rando/rando_window/game_cheats.cpp \
+            src/rando/rando_window/dbg_watch.cpp \
+            src/rando/rando_window/dbg_snapshots.cpp \
+            src/rando/rando_window/dbg_timecontrol.cpp \
+            src/rando/rando_window/dbg_warp.cpp \
+            src/rando/rando_window/dbg_flags.cpp \
+            src/rando/rando_window/rando_reach_panel.cpp \
+            src/rando/rando_window/rando_hints_panel.cpp \
+            src/rando/rando_window/panels_selftest.cpp \
             src/rando/rando_window/imgui_host.cpp \
             src/rando/rando_window/tracker_windows.cpp
 CPP_OBJS:=$(IMGUI_SRCS:%.cpp=%.o)

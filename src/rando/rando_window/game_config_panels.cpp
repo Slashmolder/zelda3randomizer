@@ -14,8 +14,13 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdarg>
+#if defined(_WIN32)
+#include <filesystem>  // ZSPR picker dir scan (Windows only — keeps Linux/macOS CI link-dep-free)
+#endif
 
 #include "game_config_widgets.h"
+#include "game_cheats.h"   // Cheats_* gate/pokes/widgets (shared cheat-core)
+#include "game_panels.h"   // Dbg*_Render / Rando*_Render panel entry points
 
 extern "C" {
 #include "../../config.h"     // g_config, g_keybind_*, Config_* helpers, kKeys_*, kGamepadBtn_*
@@ -340,8 +345,25 @@ static void BindingRow(const char *label, int cmd, bool pad) {
   ImGui::PopID();
 }
 
+// Optional case-insensitive name filter for the bindings lists (set by
+// Panel_Controls; cleared by Panel_Controller). When set, CommandRows skips any
+// command whose name doesn't contain the filter substring.
+static const char *g_bind_filter;
+
+static bool NameMatchesFilter(const char *name) {
+  if (!g_bind_filter || !g_bind_filter[0]) return true;
+  // naive case-insensitive substring search
+  for (const char *h = name; *h; h++) {
+    const char *a = h, *b = g_bind_filter;
+    while (*a && *b && ((*a | 32) == (*b | 32))) { a++; b++; }
+    if (!*b) return true;
+  }
+  return false;
+}
+
 // Render all slots of a multi-slot command as rows.
 static void CommandRows(int cmd_index, bool pad) {
+  if (!NameMatchesFilter(Config_CommandName(cmd_index))) return;
   int base = Config_CommandId(cmd_index), n = Config_CommandSlots(cmd_index);
   for (int s = 0; s < n; s++) {
     char lbl[96];
@@ -369,6 +391,12 @@ static void RowsForBase(int base, bool pad) {
 // ---------------------------------------------------------------------------
 static void Panel_Controls(void) {
   ImGui::TextWrapped("Click Rebind, then press a key (Esc cancels). This window must be focused.");
+  static char s_filter[64];
+  ImGui::SetNextItemWidth(220);
+  ImGui::InputTextWithHint("##ctrlfilter", "Filter actions...", s_filter, sizeof s_filter);
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Clear")) s_filter[0] = 0;
+  g_bind_filter = s_filter;  // applied by CommandRows below
   ImGui::Separator();
   if (ImGui::BeginChild("##kbd", ImVec2(0, 0))) {
     ImGui::SeparatorText("Game controls");
@@ -405,6 +433,7 @@ static void Panel_Controls(void) {
 }
 
 static void Panel_Controller(void) {
+  g_bind_filter = nullptr;  // the filter is keyboard-panel-only
   ImGui::TextWrapped("Click Rebind, then press a controller button. Hold modifier buttons while "
                      "pressing the main button to bind a combo (e.g. L1+Start). Only one binding "
                      "per action is editable here.");
@@ -419,6 +448,31 @@ static void Panel_Controller(void) {
   }
   ImGui::EndChild();
 }
+
+#if defined(_WIN32)
+// Scan a few likely directories for *.zspr (Link sprite) files. Exception-free
+// (std::error_code overloads) so it's safe regardless of the EH mode. Returns the
+// count; fills names[] with relative paths.
+static int ScanZspr(char names[][260], int max) {
+  int n = 0;
+  const char *dirs[] = {".", "sprites"};  // (Windows is case-insensitive; one "sprites" entry)
+  for (int d = 0; d < 2 && n < max; d++) {
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dirs[d], ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+      std::error_code fec;
+      if (!it->is_regular_file(fec)) continue;
+      std::string ext = it->path().extension().string();
+      for (char &c : ext) if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+      if (ext == ".zspr" && n < max) {
+        snprintf(names[n], 260, "%s", it->path().string().c_str());
+        n++;
+      }
+    }
+  }
+  return n;
+}
+#endif
 
 static void Panel_Video(void) {
   int scale = s_cfg.window_scale;
@@ -490,6 +544,23 @@ static void Panel_Video(void) {
   RestartTag();
   if (ImGui::InputText("Link graphics (.zspr)", s_path_link, sizeof s_path_link)) s_dirty = true;
   RestartTag();
+#if defined(_WIN32)
+  {
+    static char s_zspr[64][260];
+    static int s_nzspr = -1;  // -1 = not scanned yet
+    if (s_nzspr < 0) s_nzspr = ScanZspr(s_zspr, 64);
+    ImGui::SetNextItemWidth(320);
+    if (ImGui::BeginCombo("##zsprpick", s_nzspr > 0 ? "Pick a .zspr..." : "(no .zspr found)")) {
+      for (int i = 0; i < s_nzspr; i++)
+        if (ImGui::Selectable(s_zspr[i])) { snprintf(s_path_link, sizeof s_path_link, "%s", s_zspr[i]); s_dirty = true; }
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Rescan")) s_nzspr = ScanZspr(s_zspr, 64);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(scans . and sprites/)");
+  }
+#endif
   bool perf = s_cfg.display_perf_title;
   if (ImGui::Checkbox("Show FPS in title bar", &perf)) { s_cfg.display_perf_title = perf; s_dirty = true; }
 }
@@ -579,6 +650,26 @@ static void Panel_Gameplay(void) {
 // ---------------------------------------------------------------------------
 // Tab + action row
 // ---------------------------------------------------------------------------
+// Window appearance (applies immediately, not through Apply/INI). Theme persists
+// via the rando_window.ini sidecar's dark_theme pref; UI scale is session-only.
+static void Panel_Interface(void) {
+  ImGui::TextDisabled("Appearance of this settings window. Applies immediately.");
+  ImGui::SeparatorText("Theme");
+  static const char *const kThemes[] = {"Dark", "Light"};
+  int theme = g_rando_window_prefs.dark_theme ? 0 : 1;
+  if (ComboInt("Theme", &theme, kThemes, 2)) {
+    g_rando_window_prefs.dark_theme = (theme == 0);
+    if (theme == 0) ImGui::StyleColorsDark();
+    else ImGui::StyleColorsLight();
+  }
+  Help("Saved to saves/rando_window.ini.");
+  ImGui::SeparatorText("Scale");
+  float scale = ImGui::GetIO().FontGlobalScale;
+  if (ImGui::SliderFloat("UI scale", &scale, 0.8f, 2.0f, "%.2fx"))
+    ImGui::GetIO().FontGlobalScale = scale;
+  ImGui::TextDisabled("Scales this window's text. Session-only (not saved).");
+}
+
 extern "C" void GameConfig_RenderTab(void) {
   if (!s_synced) SyncFromLive();
 
@@ -591,6 +682,7 @@ extern "C" void GameConfig_RenderTab(void) {
       if (ImGui::BeginTabItem("Video"))      { Panel_Video();      ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Audio"))      { Panel_Audio();      ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Gameplay"))   { Panel_Gameplay();   ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Interface"))  { Panel_Interface();  ImGui::EndTabItem(); }
       ImGui::EndTabBar();
     }
   }
@@ -615,95 +707,19 @@ extern "C" void GameConfig_RenderTab(void) {
 }
 
 // ===========================================================================
-// Debug tab — live inventory/equipment editor. Writes Link's g_ram save block
-// directly (NO INI/Apply). Hard-gated: only in a stable gameplay/menu module,
-// never during replay or while the original ROM is attached for RAM compare.
-// All g_ram writes live in this .cpp (audit guard scans only .c, excludes rando)
-// and are range-clamped, so no out-of-range byte can reach a game-code table.
+// Debug tab. GameDebug_RenderTab is a nested-tab dispatcher; the inventory
+// editor lives here (DbgInventory_Render), the other sub-panels in their own
+// files. All edits go through the shared cheat-core (game_cheats.h): one safety
+// gate, clamped/gated g_ram pokes — never an out-of-range byte to game code.
 // ===========================================================================
 extern "C" {
 extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
 bool ZeldaIsReplaying(void);          // zelda_rtl.h
 bool ZeldaIsEmulatorAttached(void);   // zelda_rtl.h
-void ZeldaDumpDebugState(void);       // zelda_rtl.h (developer state dump)
 }
 
-static uint32 LiveFeatures0(void) { return *(const uint32 *)(g_ram + 0x64c); }  // enhanced_features0
-static uint32 LiveFeatures1(void) { return *(const uint32 *)(g_ram + 0x659); }  // enhanced_features1
-static bool DbgRandoActive(void) { return (LiveFeatures1() & kFeatures1_RandomizerActive) != 0; }
-
-static bool CheatsCanEdit(void) {
-  // Whitelist of stable gameplay/menu modules: 0x07 dungeon, 0x09/0x0B overworld
-  // (run states; 0x08/0x0A are the transient load halves), 0x0E Interface (the
-  // pause/item menu — the most-wanted edit context). Excludes title/file-select
-  // (inventory not loaded), death/cutscene/transition/stub modules.
-  uint8 m = g_ram[0x10];  // main_module_index
-  bool in_game = (m == 0x07 || m == 0x09 || m == 0x0B || m == 0x0E);
-  return in_game && !ZeldaIsReplaying() && !ZeldaIsEmulatorAttached();
-}
-
-static void PokeByte(uint32 addr, int v, int lo, int hi) {
-  if (!CheatsCanEdit()) return;       // re-check the gate at the write (defense in depth)
-  if (v < lo) v = lo;
-  if (v > hi) v = hi;
-  g_ram[addr] = (uint8)v;
-}
-static void PokeWord(uint32 addr, int v, int lo, int hi) {  // little-endian
-  if (!CheatsCanEdit()) return;
-  if (v < lo) v = lo;
-  if (v > hi) v = hi;
-  g_ram[addr] = (uint8)(v & 0xFF);
-  g_ram[addr + 1] = (uint8)((v >> 8) & 0xFF);
-}
-
-// --- widget helpers (read g_ram live for display, write clamped on change) ---
-static void DbgByteSlider(const char *label, uint32 addr, int lo, int hi) {
-  int v = g_ram[addr];
-  if (v > hi) v = hi;
-  if (ImGui::SliderInt(label, &v, lo, hi)) PokeByte(addr, v, lo, hi);
-}
-static void DbgToggle(const char *label, uint32 addr) {
-  bool v = g_ram[addr] != 0;
-  if (ImGui::Checkbox(label, &v)) PokeByte(addr, v ? 1 : 0, 0, 1);
-}
-// Contiguous 0..count-1 combo. A read >= count (e.g. the sword 0xFF in-repair
-// sentinel) previews as index 0 ("None") rather than indexing garbage.
-static void DbgCombo(const char *label, uint32 addr, const char *const *items, int count) {
-  int v = g_ram[addr];
-  if (v < 0 || v >= count) v = 0;
-  if (ImGui::BeginCombo(label, items[v])) {
-    for (int i = 0; i < count; i++) {
-      bool sel = (v == i);
-      if (ImGui::Selectable(items[i], sel) && i != v) PokeByte(addr, i, 0, count - 1);
-      if (sel) ImGui::SetItemDefaultFocus();
-    }
-    ImGui::EndCombo();
-  }
-}
-// Combo over a non-contiguous value set (bow {0,1,3}, bottle contents {0,2..8}).
-static void DbgComboVals(const char *label, uint32 addr, const char *const *items,
-                         const int *vals, int count) {
-  int cur = g_ram[addr], idx = 0;
-  for (int i = 0; i < count; i++) if (vals[i] == cur) idx = i;
-  if (ImGui::BeginCombo(label, items[idx])) {
-    for (int i = 0; i < count; i++) {
-      bool sel = (idx == i);
-      if (ImGui::Selectable(items[i], sel) && i != idx) PokeByte(addr, vals[i], 0, 255);
-      if (sel) ImGui::SetItemDefaultFocus();
-    }
-    ImGui::EndCombo();
-  }
-}
-// One bit of a bitfield byte as a checkbox.
-static void DbgBit(const char *label, uint32 addr, int bit) {
-  uint8 cur = g_ram[addr];
-  bool on = (cur >> bit) & 1;
-  if (ImGui::Checkbox(label, &on))
-    PokeByte(addr, (cur & ~(1 << bit)) | (on ? (1 << bit) : 0), 0, 255);
-}
-
-extern "C" void GameDebug_RenderTab(void) {
-  bool can = CheatsCanEdit();
+void DbgInventory_Render(void) {
+  bool can = Cheats_CanEdit();
   if (!can) {
     const char *why = ZeldaIsEmulatorAttached()
                           ? "Disabled while the original ROM is attached (RAM-compare mode)."
@@ -715,95 +731,72 @@ extern "C" void GameDebug_RenderTab(void) {
   }
   ImGui::Separator();
 
-  // Diagnostics — always available (read-only; useful even at the title screen
-  // or during replay). This is the GUI trigger for the F12 developer dump; the
-  // F12 hotkey itself is the rebindable kKeys_DumpDebugState command (clear its
-  // binding in Controls to disable the hotkey).
-  ImGui::SeparatorText("Diagnostics");
-  static unsigned int s_dump_msg_until = 0;
-  if (ImGui::Button("Dump debug state")) {  // dumps once per click (not per frame)
-    ZeldaDumpDebugState();
-    s_dump_msg_until = SDL_GetTicks() + 3000;
-  }
-  if (ImGui::IsItemHovered())
-    ImGui::SetTooltip("Writes dump_gram.bin / dump_vram.bin / dump_oam.bin /\n"
-                      "dump_cgram.bin / dump_hints.txt next to the executable,\n"
-                      "plus a state line to the log. Same as the F12 hotkey.");
-  ImGui::SameLine();
-  ImGui::TextDisabled("(also F12 \xe2\x80\x94 rebindable in Controls > Randomizer)");
-  if (SDL_GetTicks() < s_dump_msg_until) {
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.4f, 1, 0.4f, 1), "wrote dump_*");
-  }
-  ImGui::Separator();
-
   if (!can) ImGui::BeginDisabled();
-  if (ImGui::BeginChild("##dbg", ImVec2(0, 0))) {
-    bool rando = DbgRandoActive();
-    int rupcap = (LiveFeatures0() & kFeatures0_CarryMoreRupees) ? 9999 : 999;
+  if (ImGui::BeginChild("##dbg_inv", ImVec2(0, 0))) {
+    bool rando = Cheats_RandoActive();
+    int rupcap = (Cheats_Features0() & kFeatures0_CarryMoreRupees) ? 9999 : 999;
 
     ImGui::SeparatorText("Consumables");
     {
       int v = g_ram[0xF362] | (g_ram[0xF363] << 8);
       if (v > rupcap) v = rupcap;
       if (ImGui::SliderInt("Rupees", &v, 0, rupcap)) {  // set actual AND goal for an instant change
-        PokeWord(0xF362, v, 0, rupcap);
-        PokeWord(0xF360, v, 0, rupcap);
+        Cheats_PokeWord(0xF362, v, 0, rupcap);
+        Cheats_PokeWord(0xF360, v, 0, rupcap);
       }
     }
-    DbgByteSlider("Bombs", 0xF343, 0, 50);
-    DbgByteSlider("Arrows", 0xF377, 0, 70);
-    DbgByteSlider("Keys (current dungeon)", 0xF36F, 0, 99);
-    DbgByteSlider("Magic (128 = full)", 0xF36E, 0, 128);
-    DbgByteSlider("Heart pieces", 0xF36B, 0, 3);
+    Cheats_ByteSlider("Bombs", 0xF343, 0, 50);
+    Cheats_ByteSlider("Arrows", 0xF377, 0, 70);
+    Cheats_ByteSlider("Keys (current dungeon)", 0xF36F, 0, 99);
+    Cheats_ByteSlider("Magic (128 = full)", 0xF36E, 0, 128);
+    Cheats_ByteSlider("Heart pieces", 0xF36B, 0, 3);
 
     ImGui::SeparatorText("Hearts");
     {
       int containers = g_ram[0xF36C] / 8;
       if (containers < 1) containers = 1;
       if (ImGui::SliderInt("Heart containers", &containers, 1, 20)) {
-        PokeByte(0xF36C, containers * 8, 8, 160);
-        if (g_ram[0xF36D] > g_ram[0xF36C]) PokeByte(0xF36D, g_ram[0xF36C], 0, 160);  // clamp current<=capacity
+        Cheats_PokeByte(0xF36C, containers * 8, 8, 160);
+        if (g_ram[0xF36D] > g_ram[0xF36C]) Cheats_PokeByte(0xF36D, g_ram[0xF36C], 0, 160);  // clamp current<=capacity
       }
     }
-    if (ImGui::Button("Refill hearts")) PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
+    if (ImGui::Button("Refill hearts")) Cheats_PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
     ImGui::SameLine();
-    if (ImGui::Button("Refill magic")) PokeByte(0xF36E, 0x80, 0, 128);
+    if (ImGui::Button("Refill magic")) Cheats_PokeByte(0xF36E, 0x80, 0, 128);
 
     ImGui::SeparatorText("Equipment");
-    { static const char *const k[] = {"None", "Fighter", "Master", "Tempered", "Gold"}; DbgCombo("Sword", 0xF359, k, 5); }
-    { static const char *const k[] = {"None", "Blue", "Red", "Mirror"}; DbgCombo("Shield", 0xF35A, k, 4); }
-    { static const char *const k[] = {"Green", "Blue", "Red"}; DbgCombo("Armor", 0xF35B, k, 3); }
-    { static const char *const k[] = {"None", "Power Glove", "Titan's Mitt"}; DbgCombo("Gloves", 0xF354, k, 3); }
+    { static const char *const k[] = {"None", "Fighter", "Master", "Tempered", "Gold"}; Cheats_Combo("Sword", 0xF359, k, 5); }
+    { static const char *const k[] = {"None", "Blue", "Red", "Mirror"}; Cheats_Combo("Shield", 0xF35A, k, 4); }
+    { static const char *const k[] = {"Green", "Blue", "Red"}; Cheats_Combo("Armor", 0xF35B, k, 3); }
+    { static const char *const k[] = {"None", "Power Glove", "Titan's Mitt"}; Cheats_Combo("Gloves", 0xF354, k, 3); }
 
     ImGui::SeparatorText("Items");
     { static const char *const k[] = {"None", "Bow", "Silver Bow"}; static const int v[] = {0, 1, 3};
-      DbgComboVals("Bow", 0xF340, k, v, 3); }
-    { static const char *const k[] = {"None", "Blue", "Red"}; DbgCombo("Boomerang", 0xF341, k, 3); }  // no "both" — red replaces blue (kHudItemBoomerang has 3 entries)
-    DbgToggle("Hookshot", 0xF342);
-    DbgToggle("Lamp", 0xF34A);
-    DbgToggle("Fire Rod", 0xF345);
-    DbgToggle("Ice Rod", 0xF346);
-    DbgToggle("Hammer", 0xF34B);
-    DbgToggle("Bug Net", 0xF34D);
-    DbgToggle("Book of Mudora", 0xF34E);
-    DbgToggle("Cane of Somaria", 0xF350);
-    DbgToggle("Cane of Byrna", 0xF351);
-    DbgToggle("Magic Cape", 0xF352);
-    DbgToggle("Magic Mirror", 0xF353);
-    DbgToggle("Pegasus Boots", 0xF355);
-    DbgToggle("Flippers", 0xF356);
-    DbgToggle("Moon Pearl", 0xF357);
-    DbgToggle("Bombos Medallion", 0xF347);
-    DbgToggle("Ether Medallion", 0xF348);
-    DbgToggle("Quake Medallion", 0xF349);
+      Cheats_ComboVals("Bow", 0xF340, k, v, 3); }
+    { static const char *const k[] = {"None", "Blue", "Red"}; Cheats_Combo("Boomerang", 0xF341, k, 3); }  // no "both" — red replaces blue
+    Cheats_Toggle("Hookshot", 0xF342);
+    Cheats_Toggle("Lamp", 0xF34A);
+    Cheats_Toggle("Fire Rod", 0xF345);
+    Cheats_Toggle("Ice Rod", 0xF346);
+    Cheats_Toggle("Hammer", 0xF34B);
+    Cheats_Toggle("Bug Net", 0xF34D);
+    Cheats_Toggle("Book of Mudora", 0xF34E);
+    Cheats_Toggle("Cane of Somaria", 0xF350);
+    Cheats_Toggle("Cane of Byrna", 0xF351);
+    Cheats_Toggle("Magic Cape", 0xF352);
+    Cheats_Toggle("Magic Mirror", 0xF353);
+    Cheats_Toggle("Pegasus Boots", 0xF355);
+    Cheats_Toggle("Flippers", 0xF356);
+    Cheats_Toggle("Moon Pearl", 0xF357);
+    Cheats_Toggle("Bombos Medallion", 0xF347);
+    Cheats_Toggle("Ether Medallion", 0xF348);
+    Cheats_Toggle("Quake Medallion", 0xF349);
 
     // Mushroom/Powder (0xF344) and Shovel/Flute (0xF34C) share a byte AND have
-    // separate randomizer ownership state — editing the raw byte under rando
-    // desyncs it (the documented "vanilla state as a progress proxy" class).
+    // separate randomizer ownership state — disabled under rando to avoid desync.
     if (rando) ImGui::BeginDisabled();
-    { static const char *const k[] = {"None", "Mushroom", "Magic Powder"}; DbgCombo("Mushroom / Powder", 0xF344, k, 3); }
-    { static const char *const k[] = {"None", "Shovel", "Flute"}; DbgCombo("Shovel / Flute", 0xF34C, k, 3); }
+    { static const char *const k[] = {"None", "Mushroom", "Magic Powder"}; Cheats_Combo("Mushroom / Powder", 0xF344, k, 3); }
+    { static const char *const k[] = {"None", "Shovel", "Flute"}; Cheats_Combo("Shovel / Flute", 0xF34C, k, 3); }
     if (rando) {
       ImGui::EndDisabled();
       ImGui::TextDisabled("(Mushroom/Powder & Shovel/Flute are managed by the randomizer.)");
@@ -817,37 +810,52 @@ extern "C" void GameDebug_RenderTab(void) {
       for (int i = 0; i < 4; i++) {
         char lbl[24];
         snprintf(lbl, sizeof lbl, "Bottle %d", i + 1);
-        DbgComboVals(lbl, 0xF35C + i, k, v, 8);
+        Cheats_ComboVals(lbl, 0xF35C + i, k, v, 8);
       }
     }
 
     if (ImGui::TreeNode("Progress (advanced \xe2\x80\x94 will not update randomizer prize/goal tracking)")) {
       ImGui::TextDisabled("Pendants");
-      DbgBit("Pendant of Courage", 0xF374, 0);
-      DbgBit("Pendant of Power", 0xF374, 1);
-      DbgBit("Pendant of Wisdom", 0xF374, 2);
+      // Bit order per rando.c:312-314 (vanilla bit allocation): bit0=Blue/ToH=
+      // Wisdom, bit1=Red/DP=Power, bit2=Green/EP=Courage.
+      Cheats_BitCheckbox("Pendant of Wisdom", 0xF374, 0);
+      Cheats_BitCheckbox("Pendant of Power", 0xF374, 1);
+      Cheats_BitCheckbox("Pendant of Courage", 0xF374, 2);
       ImGui::TextDisabled("Crystals");
       for (int b = 0; b < 7; b++) {
         char l[16];
         snprintf(l, sizeof l, "Crystal %d", b + 1);
-        DbgBit(l, 0xF37A, b);
+        Cheats_BitCheckbox(l, 0xF37A, b);
       }
       ImGui::TreePop();
     }
 
     ImGui::SeparatorText("Quick actions");
     if (ImGui::Button("Max consumables")) {
-      PokeWord(0xF362, rupcap, 0, rupcap);
-      PokeWord(0xF360, rupcap, 0, rupcap);
-      PokeByte(0xF343, 50, 0, 50);
-      PokeByte(0xF377, 70, 0, 70);
-      PokeByte(0xF36F, 99, 0, 99);
-      PokeByte(0xF36E, 0x80, 0, 128);
-      PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
+      Cheats_PokeWord(0xF362, rupcap, 0, rupcap);
+      Cheats_PokeWord(0xF360, rupcap, 0, rupcap);
+      Cheats_PokeByte(0xF343, 50, 0, 50);
+      Cheats_PokeByte(0xF377, 70, 0, 70);
+      Cheats_PokeByte(0xF36F, 99, 0, 99);
+      Cheats_PokeByte(0xF36E, 0x80, 0, 128);
+      Cheats_PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
     }
   }
   ImGui::EndChild();
   if (!can) ImGui::EndDisabled();
+}
+
+// Nested-tab dispatcher for the top-level "Debug" tab.
+extern "C" void GameDebug_RenderTab(void) {
+  if (ImGui::BeginTabBar("##dbg_tabs")) {
+    if (ImGui::BeginTabItem("Watch"))     { DbgWatch_Render();     ImGui::EndTabItem(); }
+    if (ImGui::BeginTabItem("Inventory")) { DbgInventory_Render(); ImGui::EndTabItem(); }
+    if (ImGui::BeginTabItem("Snapshots")) { DbgSnapshots_Render(); ImGui::EndTabItem(); }
+    if (ImGui::BeginTabItem("Time"))      { DbgTime_Render();      ImGui::EndTabItem(); }
+    if (ImGui::BeginTabItem("Warp"))      { DbgWarp_Render();      ImGui::EndTabItem(); }
+    if (ImGui::BeginTabItem("Flags"))     { DbgFlags_Render();     ImGui::EndTabItem(); }
+    ImGui::EndTabBar();
+  }
 }
 
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
