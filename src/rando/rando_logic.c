@@ -391,6 +391,10 @@ void Rando_ClearEntranceEdgeOverrides(void) {
   g_entrance_edge_active = false;
 }
 
+bool Rando_EntranceEdgeOverridesActive(void) {
+  return g_entrance_edge_active;
+}
+
 uint16 Rando_GetEntranceEdgeOverride(uint16 to_region) {
   if (!g_entrance_edge_active || to_region >= kEntranceEdgeOverrideMax)
     return to_region;

@@ -297,6 +297,10 @@ void Rando_BeginEntranceEdgeOverrides(void);
 void Rando_SetEntranceEdgeOverride(uint16 old_to_region, uint16 new_to_region);
 void Rando_ClearEntranceEdgeOverrides(void);
 uint16 Rando_GetEntranceEdgeOverride(uint16 to_region);
+// True while edge overrides / added edges are active (between Begin and Clear).
+// Lets the decoupled exit-edge pass add edges on top of an already-begun dungeon/
+// cross edge set without re-Begin (which would wipe them).
+bool Rando_EntranceEdgeOverridesActive(void);
 
 // Phase C entrance shuffle (Stage 3 / cross-category) primitives.
 // SetEntranceRegionOverridePred: like the region override, but ALSO AND a
