@@ -31,8 +31,8 @@ Per grep against `src/sprite_main.c` + `src/rando/chest_lookup.h`:
 
 ## Key upstream references
 
-- `../alttp_vt_randomizer/app/Boss.php` (boss-shuffle pool — source-line range TBD at apply-time)
-- `../alttp_vt_randomizer/app/EnemyDrop.php` (drop-pool — source-line range TBD)
+- `../alttp_vt_randomizer/app/Boss.php:68-128` (boss-shuffle pool — 12 bosses; see `audit.md §"Boss-shuffle provenance"`)
+- drop-pool: `../alttp_vt_randomizer/app/Drops/PrizePack.php` + `PrizePackSlot.php` + roster `app/World.php:76-87` + sprite table `app/Sprite.php` (NOT `app/EnemyDrop.php`, which does not exist; see `audit.md §"Drop-pool provenance"`)
 - `../alttp_vt_randomizer/app/Region/Standard/...` and `app/Region/Open/...` for the minigame-site placement predicates.
 
 ## Dependencies

@@ -47,10 +47,10 @@ Per `app/Randomizer.php:716-724`, in Retro 4 TakeAny shops gain `BluePotion@slot
 
 Because the *set* is RNG-chosen per seed, there are two acceptable encodings (decision deferred):
 
-- **Option A** ("static enumeration"): Add registry entries for **all 22 TakeAny shops × 2 slots = 44 slots**, plus the 5 ShopArrow / 5 ShopKey extra slots on every regular shop. Mark each as `world_state_filter: [retro]`. The Retro placer picks 4-of-22 TakeAny by setting fixed-slot vanilla items at runtime; the unselected ones get junk identity-placed. Total new IDs: ~75.
-- **Option B** ("active-only enumeration"): Replicate ALTTPR's RNG-driven `randomCollection(4)` selection in `BuildItemPool`, then only emit the chosen slots' location IDs into the placement pool. Registry entries for all 22 TakeAny + extra-regular-shop slots still exist (so IDs are stable across seeds), but they all carry `world_state_filter: [retro]` *and* a runtime "active" gate.
+- **Option A** ("static enumeration"): Add registry entries for **all 31 TakeAny shops × 2 slots = 62 slots**, plus the 5 ShopArrow / 5 ShopKey extra slots on every regular shop. Mark each as `world_state_filter: [retro]`. The Retro placer picks 4-of-31 TakeAny by setting fixed-slot vanilla items at runtime; the unselected ones get junk identity-placed. Total new IDs: ~93.
+- **Option B** ("active-only enumeration"): Replicate ALTTPR's RNG-driven `randomCollection(4)` selection in `BuildItemPool`, then only emit the chosen slots' location IDs into the placement pool. Registry entries for all 31 TakeAny + extra-regular-shop slots still exist (so IDs are stable across seeds), but they all carry `world_state_filter: [retro]` *and* a runtime "active" gate.
 
-22 TakeAny shop names + PHP cites are in the full agent output (see git log for the original).
+The full 31-entry TakeAny census (names + file:line + door_id) is in `audit.md §"TakeAny census"`. (Decided in the archived `add-rando-retro-takeany` change, which chose active-only enumeration.)
 
 ## 2. BuildItemPool branch outline
 
@@ -106,10 +106,10 @@ There is **no Take-Any-specific sprite handler** in `sprite_main.c`. Take-Any "e
 ## 4. Risks / unknowns — resolutions
 
 **Risk 1 — TakeAny set is RNG-driven, not enumerable.** **RESOLVED 2026-05-27**: defer
-TakeAny entirely to Slice 3b (matches Risk 6 recommendation). The 22 TakeAny shops
+TakeAny entirely to Slice 3b (matches Risk 6 recommendation). The 31 TakeAny shops
 require new sprite-handler infrastructure this fork does not yet have (`app/Shop/TakeAny.php`
 is an empty subclass — the activation mechanism is ALTTPR's `setActive()` ROM
-patching, not present here). Adding 44 (Option A) or 22 (Option B) registry IDs
+patching, not present here). Adding 62 (Option A) or 31 (Option B) registry IDs
 now would burn 2 corpus regenerations on entries that can never be reached.
 Slice 3a ships the 9 regular shops + Capacity Upgrade — ~80% of the Retro
 player experience. The Option A/B choice happens in 3b, informed by whatever
@@ -150,7 +150,7 @@ Tracked as **task #53**; deferred from 3a's main bundle (multi-hour focused work
 
 Rationale: matches ALTTPR's architecture at the byte level (cross-tool diff-ability), keeps the registry honest about distinct vs alias forms, and the aliases live as comments at dispatch sites rather than registry pollution. One kGenVer bump (14→15) lands all 7 in 3a.
 
-**Risk 4 — proposal.md:11 claims "42 shop entities"; actual count ~32.** **RESOLVED**: proposal.md already corrected to "32 = 9 regular + 1 Capacity-Upgrade + 22 TakeAny" per task #55. No further action.
+**Risk 4 — proposal.md:11 claims "42 shop entities"; actual count 41.** **RESOLVED**: proposal.md corrected to "41 = 9 regular + 1 Capacity-Upgrade + 31 TakeAny". (The earlier task-#55 "32/22" figures were themselves wrong; re-verified 2026-05-30 against the checkout — full census in `audit.md §"Retro shop provenance"`.)
 
 **Risk 5 — Inverted-only "Dark World Lake Hylia Shop" exclusion** (per `Randomizer.php:740`) is irrelevant in Retro+Open since Retro extends Open. Document only.
 
@@ -179,8 +179,8 @@ Without runtime wiring, Retro mode is effectively "Open + extra shop placements 
 - Picker un-gate.
 - kGeneratorVersion bump + corpus regen.
 
-**Slice 3b** (deferred, separate change folder):
-- 22 TakeAny location IDs (Option A vs Option B decided then).
+**Slice 3b** (split out as the archived `add-rando-retro-takeany` change):
+- 31 TakeAny location IDs (Option B = active-only enumeration decided there).
 - TakeAny dispatch infrastructure (the missing ROM-table mechanism).
 - RNG-driven `randomCollection(4)` + `randomCollection(5)` replication.
 - ProgressiveSword / ThreeHundredRupees "5th TakeAny" activation logic.
@@ -220,7 +220,7 @@ assets with no per-seed redirection layer. Wiring a grant now = a dead path.
    returning the placed item via `Rando_DispatchVanillaGrant` / `Rando_ReceiveOrConfirm`
    (mirrors `Rando_ShopDispatch`).
 
-**Generator surface**: up to 22 TakeAny location IDs (`world_state_filter:
+**Generator surface**: up to 31 TakeAny location IDs (`world_state_filter:
 [retro]`, **Option B** = active-only gate recommended); a new `LOCTYPE_TakeAny`
 in `logic.schema.yaml` + `rando_logic_gen.py` (append-only like 3a's
 `LOCTYPE_Shop`/`ShopUpgrade`); deterministic `randomCollection` replication
