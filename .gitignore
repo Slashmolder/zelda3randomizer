@@ -53,8 +53,13 @@ __pycache__
 /sprites-gfx
 /glsl-shaders
 /token.txt
-# F12 debug dumps (g_ram + PPU VRAM/OAM/CGRAM snapshots).
+# F12 debug dumps (g_ram + PPU VRAM/OAM/CGRAM snapshots + hint-table text).
+# zelda_rtl.c writes dump_gram.bin/dump_vram.bin/.../dump_hints.txt together.
 /dump_*.bin
+/dump_*.txt
+# Debug image dumps: item_icons.ppm (--dump-item-icons), rando_map.c map dumps
+# (<prefix>_light.ppm / _dark.ppm), and ad-hoc *.ppm scratch. Never a source asset.
+*.ppm
 # Local-only randomizer planning notes, kept on disk but not tracked. The
 # tracked reference doc docs/randomizer.md has no underscore, so it stays
 # tracked; the underscore-suffixed planning files are ignored.
