@@ -500,6 +500,42 @@ void Hints_SelfCheck(void) {
     abort();
   }
 
+  // Murahdahla determinism: the Fast-Ganon goal above never enters the
+  // Triforce/Ganon-hunt branch — the only path with nested region-dedup
+  // iteration, and thus the one most prone to nondeterministic drift — so its
+  // determinism was previously unasserted. Round-trip a second time under
+  // Triforce Hunt with a TriforcePiece in the pool so the branch actually runs.
+  {
+    static RandoPlacement th_entries[4];
+    th_entries[0].location_id = 1;  th_entries[0].item_id = ITEM_TriforcePiece;
+    th_entries[1].location_id = 2;  th_entries[1].item_id = ITEM_Hookshot;
+    th_entries[2].location_id = 3;  th_entries[2].item_id = ITEM_Boots;
+    th_entries[3].location_id = 4;  th_entries[3].item_id = ITEM_Rupee5;
+    RandoPlacementTable th_table;
+    th_table.entries = th_entries;
+    th_table.count = 4;
+    RandoSettings th = settings;       // still hints=On from above
+    th.hints = kHintsMode_On;
+    th.goal = kGoal_TriforceHunt;
+
+    Rando_ClearHints();
+    if (!Rando_GenerateHints(&th, &th_table, NULL)) {
+      fprintf(stderr, "Hints_SelfCheck: Triforce-Hunt GenerateHints failed.\n");
+      abort();
+    }
+    HintEntry th_snapshot[kRandoHintNpc__Count];
+    memcpy(th_snapshot, g_hint_table, sizeof(th_snapshot));
+    Rando_ClearHints();
+    if (!Rando_GenerateHints(&th, &th_table, NULL)) {
+      fprintf(stderr, "Hints_SelfCheck: second Triforce-Hunt GenerateHints failed.\n");
+      abort();
+    }
+    if (memcmp(th_snapshot, g_hint_table, sizeof(th_snapshot)) != 0) {
+      fprintf(stderr, "Hints_SelfCheck: non-deterministic Murahdahla hint output.\n");
+      abort();
+    }
+  }
+
   // kHintsMode_Off: must populate nothing.
   Rando_ClearHints();
   settings.hints = kHintsMode_Off;
