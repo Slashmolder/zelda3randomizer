@@ -307,6 +307,9 @@ bool Rando_EntranceForceCachedExit(uint16 lx);
 void Rando_DecoupledSetEnteredDoor(uint16 lx);
 void Rando_DecoupledCaptureArrival(void);
 bool Rando_DecoupledReplaceArrival(void);
+// D.3 capture-for-bake: in a NON-entrance-shuffle game, snapshot each entered
+// cave's overworld arrival; auto-dumps cave_arrival_capture.txt at full coverage.
+void Rando_CaptureArrivalForBake(void);
 
 // If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE
 // take-any this seed (rando active + Retro + its slot-0 LOC is in the placement

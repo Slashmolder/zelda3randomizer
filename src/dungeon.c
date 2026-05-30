@@ -8492,6 +8492,9 @@ void Dungeon_LoadEntrance() {  // 82d8b3
     // later decoupled cave exit can replay it from a different door. No-op unless
     // decoupled is active. Only the non-death entry path caches a real arrival.
     Rando_DecoupledCaptureArrival();
+    // D.3 capture-for-bake: in a non-entrance-shuffle game, record each cave's
+    // arrival for the static table. No-op when an entrance overlay is installed.
+    Rando_CaptureArrivalForBake();
   }
   bg1_y_offset = bg1_x_offset = 0;
   WORD(death_var5) = 0;

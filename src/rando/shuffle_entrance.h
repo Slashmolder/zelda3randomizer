@@ -136,6 +136,9 @@ void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, in
 // representative entrance-id (for the decoupled arrival-table keying + replay).
 int Entrance_InteriorOfEntranceId(uint8 ent_id);
 uint8 Entrance_CaveRepresentativeId(int interior);
+// D.3 capture helpers: total cave-interior count (decoupled pool size) + name.
+int Entrance_CaveInteriorCount(void);
+const char *Entrance_CaveInteriorName(int interior);
 
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole

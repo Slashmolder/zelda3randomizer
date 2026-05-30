@@ -605,6 +605,13 @@ uint8 Entrance_CaveRepresentativeId(int interior) {
   return kCaveInteriors[interior].entrance_ids[0];
 }
 
+// Public: total cave interior count (the decoupled pool size) + a name for logs.
+int Entrance_CaveInteriorCount(void) { return kEntranceCaveInteriorCount; }
+const char *Entrance_CaveInteriorName(int interior) {
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return "(oob)";
+  return kCaveInteriors[interior].name;
+}
+
 // ---------------------------------------------------------------------------
 // Decoupled / per-endpoint ("Insanity", Stage 4 — D.1/D.2: logic + generation)
 // ---------------------------------------------------------------------------
