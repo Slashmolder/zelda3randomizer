@@ -36,7 +36,12 @@ Read in this order:
 - [x] Proposal drafted + premise corrected
 - [x] Design captured (`design.md`)
 - [x] Tasks staged (`tasks.md`, Stages 0–4)
-- [x] Spec deltas updated (logic spec rewritten off RegionRemap)
-- [ ] `/openspec-apply` — Stage 0 → Stage 1
-- [ ] Stage 1 playtest + fresh-eyes audit
-- [ ] Archive (Stage 1 minimum)
+- [x] Spec deltas updated (logic spec rewritten off RegionRemap; save spec
+      reconciled to the reserved-byte + regen approach)
+- [x] Apply-time plan grounded (`apply_plan.md`) + adversarially reviewed
+- [x] **Stage 0** — settings axes packed + RegionRemap retired (corpus byte-identical)
+- [x] **Stage 1** — coupled cave shuffle: engine + region overrides + door overlay
+      + save-regen + spoiler + native UI. selftest + corpus(57) green.
+- [ ] Stage 1 **playtest** (USER — `apply_plan.md` checklist) + fresh-eyes audit fixes
+- [ ] Stages 2–4 (dungeons / crossed / decoupled) + presets
+- [ ] Archive (Stage 1 minimum, after playtest)
