@@ -303,10 +303,16 @@ void Rando_ClearHints(void) {
 
 // The 15 hint-bearing vanilla US telepathic-tile message ids, in ascending
 // order. Index i maps to RandoHintNpc (kRandoHintNpc_TeleEasternPalace + i).
-// 0xB4 (generic-default tele text) is intentionally absent.
+// NOTE: 0xB4 IS the Eastern Palace tile ("...the treasure hidden in this palace
+// to defeat armored foes"), the FIRST ALTTPR tile — not generic filler. An
+// earlier off-by-one (reading a 1-indexed dialogue dump as 0-indexed) dropped
+// it and instead included 0xC7, which is actually the Chris Houlihan secret-room
+// text and not a hint tile. 0xB4 is set as dialogue only by the tele table
+// (Dungeon_GetTeleMsg), so intercepting it is safe; among the 15 tiles only
+// Eastern Palace happens to use the value that doubles as the room default.
 static const uint16 kHintTileMsgIds[kHintTileCount] = {
-  0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0,
-  0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7,
+  0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF,
+  0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6,
 };
 
 bool Rando_IsHintTileMessage(uint16 msg_id) {

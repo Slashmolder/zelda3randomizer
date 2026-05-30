@@ -560,23 +560,23 @@ static const ImU32 kColLocked  = IM_COL32(120, 120, 128, 255);
 // dark world shares the light world's geography, so the dark coords mirror it.
 struct WorldPin { uint16 region_id; float x, y; };
 static const WorldPin kLightPins[] = {
-  {16, 0.30f, 0.16f},  // LightWorld_DeathMountain_West
-  {15, 0.52f, 0.14f},  // LightWorld_DeathMountain_East
-  {18, 0.16f, 0.50f},  // LightWorld_NorthWest (Kakariko)
-  {17, 0.64f, 0.44f},  // LightWorld_NorthEast
-  {19, 0.45f, 0.82f},  // LightWorld_South
-  {20, 0.50f, 0.66f},  // LinksHouse
+  {16, 0.50f, 0.35f},  // LightWorld_DeathMountain_West
+  {15, 0.72f, 0.27f},  // LightWorld_DeathMountain_East
+  {18, 0.30f, 0.50f},  // LightWorld_NorthWest (Kakariko)
+  {17, 0.70f, 0.40f},  // LightWorld_NorthEast
+  {19, 0.50f, 0.70f},  // LightWorld_South
+  {20, 0.52f, 0.60f},  // LinksHouse
 };
 static const WorldPin kDarkPins[] = {
-  {1, 0.30f, 0.16f},   // DarkWorld_DeathMountain_West
-  {0, 0.52f, 0.14f},   // DarkWorld_DeathMountain_East
-  {29, 0.62f, 0.13f},  // TurtleRock_Entrance (DM east)
-  {4, 0.16f, 0.50f},   // DarkWorld_NorthWest (Village of Outcasts)
-  {3, 0.64f, 0.44f},   // DarkWorld_NorthEast
-  {5, 0.45f, 0.80f},   // DarkWorld_South
-  {2, 0.20f, 0.84f},   // DarkWorld_Mire
-  {22, 0.13f, 0.86f},  // MiseryMire_Entrance
-  {21, 0.50f, 0.66f},  // LinksHouse_Inverted
+  {1, 0.50f, 0.35f},   // DarkWorld_DeathMountain_West
+  {0, 0.72f, 0.27f},   // DarkWorld_DeathMountain_East
+  {29, 0.82f, 0.20f},  // TurtleRock_Entrance (DM east) — ESTIMATED
+  {4, 0.30f, 0.50f},   // DarkWorld_NorthWest (Village of Outcasts)
+  {3, 0.70f, 0.40f},   // DarkWorld_NorthEast
+  {5, 0.50f, 0.70f},   // DarkWorld_South
+  {2, 0.22f, 0.82f},   // DarkWorld_Mire — ESTIMATED
+  {22, 0.14f, 0.87f},  // MiseryMire_Entrance — ESTIMATED
+  {21, 0.52f, 0.60f},  // LinksHouse_Inverted
 };
 static bool IsOverworldPin(uint16 rid) {
   for (int i = 0; i < (int)(sizeof(kLightPins) / sizeof(kLightPins[0])); i++)
