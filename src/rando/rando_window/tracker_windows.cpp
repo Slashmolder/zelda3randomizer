@@ -570,7 +570,7 @@ static const WorldPin kLightPins[] = {
   {16, 0.50f, 0.35f},  // LightWorld_DeathMountain_West
   {15, 0.72f, 0.27f},  // LightWorld_DeathMountain_East
   {18, 0.30f, 0.50f},  // LightWorld_NorthWest (Kakariko)
-  {17, 0.70f, 0.30f},  // LightWorld_NorthEast
+  {17, 0.70f, 0.40f},  // LightWorld_NorthEast
   {19, 0.50f, 0.70f},  // LightWorld_South
   {20, 0.52f, 0.60f},  // LinksHouse
 };
@@ -579,7 +579,7 @@ static const WorldPin kDarkPins[] = {
   {0, 0.72f, 0.27f},   // DarkWorld_DeathMountain_East
   {29, 0.82f, 0.20f},  // TurtleRock_Entrance (DM east) — ESTIMATED
   {4, 0.30f, 0.50f},   // DarkWorld_NorthWest (Village of Outcasts)
-  {3, 0.70f, 0.30f},   // DarkWorld_NorthEast
+  {3, 0.70f, 0.40f},   // DarkWorld_NorthEast
   {5, 0.50f, 0.70f},   // DarkWorld_South
   {2, 0.22f, 0.82f},   // DarkWorld_Mire — ESTIMATED
   {22, 0.14f, 0.87f},  // MiseryMire_Entrance — ESTIMATED
