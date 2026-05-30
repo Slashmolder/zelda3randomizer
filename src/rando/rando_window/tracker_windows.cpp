@@ -579,13 +579,14 @@ static const WorldPin kLightPins[] = {
 static const WorldPin kDarkPins[] = {
   {1, 0.50f, 0.35f},   // DarkWorld_DeathMountain_West
   {0, 0.72f, 0.27f},   // DarkWorld_DeathMountain_East
-  {29, 0.82f, 0.20f},  // TurtleRock_Entrance (DM east) — ESTIMATED
   {4, 0.30f, 0.50f},   // DarkWorld_NorthWest (Village of Outcasts)
   {3, 0.70f, 0.40f},   // DarkWorld_NorthEast
   {5, 0.50f, 0.70f},   // DarkWorld_South
-  {2, 0.22f, 0.82f},   // DarkWorld_Mire — ESTIMATED
-  {22, 0.14f, 0.87f},  // MiseryMire_Entrance — ESTIMATED
-  {21, 0.52f, 0.60f},  // LinksHouse_Inverted
+  {2, 0.30f, 0.70f},   // DarkWorld_Mire
+  {21, 0.52f, 0.60f},  // LinksHouse_Inverted (only shown in Inverted seeds)
+  // NOTE: TurtleRock_Entrance (29) and MiseryMire_Entrance (22) are pure doorway
+  // connector regions with no item locations, so they never render a pin —
+  // omitted intentionally.
 };
 static bool IsOverworldPin(uint16 rid) {
   for (int i = 0; i < (int)(sizeof(kLightPins) / sizeof(kLightPins[0])); i++)
