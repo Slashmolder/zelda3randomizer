@@ -375,30 +375,87 @@ Where those come from per destination class:
   *arbitrary* cave door they did NOT enter from, so the live-cache trick cannot
   supply it.
 
-**This asymmetry is the Stage-4 blocker and a genuine fork the user must weigh:**
+**DECISION (user, 2026-05-30): build FULL support — the new cave-arrival asset.**
 
-1. **New asset table (full Insanity).** Extract a per-cave-door overworld arrival
-   table (area index, x/y, camera, scroll, screen) in `extract_resources.py`, pack
-   it in `compile_resources.py`, read it in `assets.h`, and route cave-destination
-   exits through it. This is real asset-pipeline work (touches both Python ends + the
-   C reader + a `zelda3_assets.dat` bump) and is playtest-only verifiable — exactly
-   the class the project methodology says NOT to build blind. ALTTPR's own runtime
-   carries this as `StartingAreaExitTable` / `ExtraHole` tables in `tables.asm`
-   (asm repo `C:/src/z3randomizer`) — confirming the table is the right shape, and a
-   port reference exists.
+### Research resolution (2026-05-30): the engine ALWAYS uses static seed tables
+A research pass over both this codebase and the ALTTPR asm (`C:/src/z3randomizer`
+@ dcb0a2b) resolved the open question of "store explicit state vs recompute from
+(area, pos)":
 
-2. **Decoupled-dungeons-only (partial Insanity).** Restrict decoupled to the
-   dungeon/special class (which already has `kExitData`). Caves stay coupled even when
-   the decoupled axis is on. Ships a meaningful Insanity-lite with ZERO new assets,
-   reusing §9's exit machinery. Loses cave one-way doors (a chunk of ALTTPR Insanity's
-   chaos) but is buildable + testable now.
+- The vanilla exit (`LoadOverworldFromDungeon` else-branch, `overworld.c:1814-1836`)
+  loads ~10 SEED fields from `kExitData_*[k]` — `ScrollX/Y, link x/y,
+  Map16LoadSrcOff, CameraX/YScroll, ScreenIndex, NormalDoor, FancyDoor, Unk1, Unk3`
+  — then `Overworld_LoadNewScreenProperties()` RECOMPUTES only the camera
+  *boundaries* from `overworld_area_index`. So the engine needs the seeds; the
+  boundaries are derived.
+- Even flute/bird-travel landings use a stored seed table
+  (`Overworld_LoadBirdTravelPos`, `overworld.c:2013` → `kBirdTravel_*`). Discrete
+  arrivals are NEVER pure recompute-from-position in this engine.
+- ALTTPR's `StartingAreaExitTable` (`tables.asm:1052`, 20-byte rows) stores the same
+  near-full seed set explicitly. Confirmed: that revision is COUPLED-ONLY (grep
+  decouple/insanity = 0 hits), so there's no decoupled mechanism to port — we build
+  it. But the row shape is the right template, and it equals our `*_exit` shadow set.
 
-3. **Defer.** Decoupled is marked "optional / could split out" (§6 staging). Ship
-   caves + dungeons + crossed as the production entrance randomizer; treat Insanity as
-   a follow-up once the user decides on the asset fork.
+⇒ **A static per-cave-door arrival seed table IS required** (same ~10 fields as
+`kExitData`, keyed by cave entrance-id). Pure recompute is not an option.
 
-**Recommendation:** do NOT build blind. Surface options 1–3 to the user. The
-default-off axes mean shipping without decoupled costs nothing — the settings bit
-(`kEntranceAxis_Decoupled`) already exists and normalizes safely. Option 2 is the
-cheapest real progress if the user wants *some* Insanity now; option 1 is the only
-path to full ALTTPR-parity Insanity and needs an explicit asset-pipeline go-ahead.
+### The asset: `kCaveExitData_*` (cave arrival seed table)
+Mirror the `kExitData_*` field set, keyed by cave entrance-id (the 57 cave doors).
+Fields per entry (the cached `*_exit` shadow-var set restored by
+`LoadCachedEntranceProperties`, `overworld.c:~1860`): `overworld_area_index,
+TM/VRAM tilemap index, BG H/V scroll, link x/y, camera x/y scroll-low,
+map16_load_src_off, ow_entrance_value (NormalDoor), big_rock (FancyDoor), unk1,
+unk3, tile-theme indices`. New `g_asset_ptrs[143..]` slots + `assets.h` readers.
+
+**Population = a CAPTURE pass, not hand-authoring or ROM extraction.** The seed
+values are a deterministic function of (area, door-tile pos) THROUGH the overworld
+scroll computation — not stored in the ROM for caves and not cheaply re-derivable in
+Python. So populate by reusing the engine: a one-shot capture mode walks each cave
+door slot, drives the overworld load + entry caching (the exact `Dungeon_LoadEntrance`
+path), reads the resulting `*_exit` set, and emits the table. Baked into
+`zelda3_assets.dat` via `compile_resources.py` (and a `restool.py` flag). This
+guarantees byte-correct arrival because it IS the runtime computation. Verified by
+playtest (visit each captured door, confirm clean arrival).
+
+### Runtime exit redirect
+At `LoadOverworldFromDungeon`, a DECOUPLED interior's exit must arrive at the
+independently-assigned destination door (π_out), not the cached source. New branch:
+look up the destination door's class — dungeon/special ⇒ key the existing room
+search on the destination's room (already supported); cave ⇒ load the seeds from
+`kCaveExitData_*[dest_entrance_id]` (the new asset) directly into the arrival vars
+(same writes as the else-branch, sourced from the cave table). A per-seed
+`g_rando_decoupled_exit[interior]` map (built at slot-load from π_out) drives it.
+
+### Logic model — one-way edges
+Decoupled = two independent permutations: π_in (door→interior, the existing door
+overlay) and π_out (interior→door). Reachability is directed: location reachability
+inside I depends only on π_in (you enter I via its door); π_out controls where you
+emerge, which can open or strand overworld regions. So per interior I add:
+`overworld_region(door with π_in=I) → I_entry` (gated by the door predicate; this is
+the entry side, shared with coupled) AND `I_exit_region → overworld_region(π_out(I))`
+(unconditional — you can always walk out). Coupled is the special case π_out=π_in⁻¹
+where the exit edge returns whence you came (adds no new reach). The existing
+`Rando_AddEntranceEdge` (predicate-carrying) expresses both. Cross-category composes.
+
+### Generation — constrained construction
+A random π_out almost never keeps everything reachable (one-way doors strand whole
+regions), so reject-and-retry is too sparse. Build π_out incrementally: assumed-fill
+over EXITS — repeatedly pick an unplaced interior's exit and assign it to a
+destination that (with assumed access to all unplaced items) keeps the frontier
+growing, never closing the goal off. The full-reachability gate (§2.2a) backstops the
+final result. Deterministic in (seed, attempt) like the other pools.
+
+### Phasing (each milestone independently testable where possible)
+- **D.1 Logic one-way edges** — π_out edges + the directed model. Headless-testable
+  (corpus digests with a decoupled seed). No asset needed.
+- **D.2 Constrained-construction generation** — the exit assumed-fill + retry. Headless
+  (corpus + reachability gate). The algorithmic centerpiece.
+- **D.3 Cave-arrival asset + capture tool** — the new `kCaveExitData_*` table +
+  populate pass + `assets.h` reader + `.dat` bump. Playtest-verified.
+- **D.4 Runtime exit redirect** — wire π_out → arrival (dungeon via room search, cave
+  via the new table). Playtest-verified.
+- **D.5 Spoiler/tracker** for one-way doors; UI: enable the Insanity preset.
+
+Settings bit `kEntranceAxis_Decoupled` already exists + normalizes (`decoupled`
+implies `!coupled`). Default-off ⇒ corpus byte-identical until a decoupled seed is
+added.

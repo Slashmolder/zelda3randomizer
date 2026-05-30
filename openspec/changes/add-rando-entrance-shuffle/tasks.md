@@ -189,13 +189,28 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       unconditional `*_exit` cache (caching is interior-driven, not door-driven, so
       a cave-door→dungeon load still caches the source overworld position).
 
-## Stage 4 — `decoupled` / per-endpoint ("Insanity") — optional / may split
+## Stage 4 — `decoupled` / per-endpoint ("Insanity") — FULL support (user 2026-05-30)
 
-- [ ] 4.1 Decoupled pairing (per-endpoint independent shuffle; implies !coupled).
-- [ ] 4.2 Constrained-construction retry (random π rarely leaves goal reachable —
-      design §4).
-- [ ] 4.3 Spoiler/tracker support for decoupled (one-way) doors.
-- [ ] 4.4 Playtest + fresh-eyes audit.
+Design resolved in `design.md §10`: the engine always uses static seed tables for
+discrete arrivals (verified: kExitData, kBirdTravel, ALTTPR StartingAreaExitTable),
+so a NEW per-cave-door arrival seed table (`kCaveExitData_*`) is required, populated
+by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
+
+- [ ] D.1 **Logic one-way edges** — π_out (interior→door) exit edges + the directed
+      reachability model (entry edge shared with coupled; exit edge unconditional).
+      `Rando_AddEntranceEdge` carries both. HEADLESS-testable (corpus). No asset.
+- [ ] D.2 **Constrained-construction generation** — assumed-fill over EXITS (random
+      π_out strands regions; reject-and-retry too sparse). Full-reachability gate
+      backstops. Deterministic in (seed, attempt). HEADLESS-testable. Algorithmic core.
+- [ ] D.3 **Cave-arrival asset + capture tool** — `kCaveExitData_*` (≈10 seed fields ×
+      57 cave doors, shaped like kExitData), populated by a one-shot capture pass that
+      drives the real overworld-load/entry-cache path per door; `extract`/`compile`/
+      `assets.h` + `zelda3_assets.dat` bump. PLAYTEST-verified.
+- [ ] D.4 **Runtime exit redirect** — `g_rando_decoupled_exit[interior]` (from π_out at
+      slot-load); at `LoadOverworldFromDungeon` arrive at π_out's door (dungeon/special
+      via room search; cave via `kCaveExitData_*`). PLAYTEST-verified.
+- [ ] D.5 Spoiler/tracker for one-way doors + UI: enable the Insanity preset.
+- [ ] D.6 Playtest + fresh-eyes audit.
 
 ## Presets (once the relevant axes ship)
 
