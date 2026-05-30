@@ -18,6 +18,7 @@ implementation diverged from `design.md`.
 - [x] 3.1 `GameDebug_RenderTab()` as a third top-level tab. <!-- done: src/rando/rando_window/game_config_panels.cpp:849 (extern "C"); declared game_config_widgets.h:23; wired as a top-level tab in rando_window.cpp:1119 -->
 - [x] 3.2 Sections: consumables, hearts, equipment, tiered items, toggles, mushroom/powder 3-way, flute/shovel, bottles, advanced pendants/crystals, quick actions. <!-- done: game_config_panels.cpp:710+ (e.g. rupees PokeWord 0xF362/0xF360 at :744-745) -->
 - [x] 3.3 Shared-byte / randomizer-owned handling: mushroom/powder single 3-way; mushroom-powder + flute/shovel disabled under `kFeatures1_RandomizerActive`; bow {none,wood,silver}; boomerang {none,blue,red}; sword `0xFF` sentinel on read; bottles only `kHudItemBottles[]` values. <!-- done: per design D3; verify the exact rando ownership symbols at game_config_panels.cpp -->
+- [x] 3.4 Per-dungeon dungeon items: a "Dungeon items" tree with a 13-row table (one per dungeon) editing maps/compasses/big keys (per-dungeon WORD bitfields) + each dungeon's saved small-key count. <!-- done: game_config_panels.cpp DbgInventory_Render — section above the Progress tree. Map/Compass/BigKey checkboxes toggle the `0x8000 >> D` bit in link_dungeon_map (0xF368) / link_compass (0xF364) / link_bigkey (0xF366) via DbgDungeonBit (maps the MSB-first bit onto byte-oriented Cheats_BitCheckbox: byte `base + (D<=7?1:0)`, bit `(15-D)&7`). Keys slider edits link_keys_earned_per_dungeon[] (0xF37C) and syncs the live link_num_keys (0xF36F) when Link stands in that dungeon (mirrors rando.c:282-297, incl. HC-proper raw-index-2 → slot-0 fold). Bit ordering + dungeon-index table grounded in rando.c:200-231. Goes through the shared gated/clamped cheat-core. -->
 
 ## 4. Files & build (design D4)
 
@@ -30,7 +31,7 @@ implementation diverged from `design.md`.
 ## 6. Verification (design D6)
 
 - [x] 6.1 Headless smoke: Debug tab renders under the panel selftest harness. <!-- done: src/rando/rando_window/panels_selftest.cpp:109 begins a smoke window and calls GameDebug_RenderTab(); the gate is exercised at :36 -->
-- [ ] 6.2 In-game playtest (HUD updates next frame; clamps; gating at title/replay/ROM-attached; bottles render correct glyphs; quick actions). *(Playtest gate — the only reliable net per CLAUDE.md; pending owner sign-off.)*
+- [x] 6.2 In-game playtest (HUD updates next frame; clamps; gating at title/replay/ROM-attached; bottles render correct glyphs; quick actions; **dungeon items (3.4): map/compass/big-key flags reflect on the dungeon map screen + HUD big-key icon, and a key bumped while standing in a dungeon opens a locked door**). *(Playtest gate — the only reliable net per CLAUDE.md; pending owner sign-off.)*
 
 ## 7. Archive
 
