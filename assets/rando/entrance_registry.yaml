@@ -505,6 +505,38 @@ dungeons:
       0x11->9. Region 8 ("EasternPalace") is an empty vestigial structural region
       (no locations / no outbound edges), so the real entry region is the Lobby
       (9) and EP fits the single-region model.
+  # Multi-entrance dungeons — MAIN door only (extras are "contained": they lead
+  # back into the same dungeon, so leaving them vanilla while shuffling the front
+  # door is safe). TR + GT entry regions have two inbound overworld edges; the
+  # edge-override remaps both together.
+  - dungeon_id: desert_palace
+    name: "Desert Palace (main)"
+    rooms: [0x084]
+    entrance_ids: [0x09]
+    region: LightWorld_South
+    entry_region: DesertPalace_Lobby
+    notes: "Main door 0x09 only; East 0x0A / West 0x0B / Boss 0x0C stay vanilla."
+  - dungeon_id: turtle_rock
+    name: "Turtle Rock (main)"
+    rooms: [0x0D6]
+    entrance_ids: [0x35]
+    region: DarkWorld_DeathMountain_East
+    entry_region: TurtleRock_Entrance
+    notes: >
+      Main door 0x35 only; mountainface doors stay vanilla. Entry region has two
+      inbound edges (LW+DW Death Mountain) — override remaps both. Medallion gate
+      lives in the door predicate (kept with the door).
+  - dungeon_id: ganons_tower
+    name: "Ganon's Tower (main)"
+    rooms: [0x00C]
+    entrance_ids: [0x37]
+    region: DarkWorld_DeathMountain_East
+    entry_region: GanonsTower_Lobby
+    notes: >
+      Main door 0x37 only; the Pyramid Sanctum (Ganon-fight) entrances stay
+      vanilla. Two inbound edges (override remaps both). The crystal-tower gate is
+      in the door predicate, so it travels with the door under the shuffle;
+      completability stays safe (Goal_IsCompletable is override-aware).
   - dungeon_id: misery_mire
     name: "Misery Mire"
     rooms: [0x098]
@@ -517,8 +549,10 @@ dungeons:
       override) — ALTTPR-consistent: MM's tablet is tapped at MM's overworld spot
       to open the door regardless of what's behind it.
 
-# Deferred (NOT shuffled yet) — each needs a mechanism beyond single-door/
-# single-entry-region (multi-entrance coordination or goal/crystal handling):
+# Deferred (NOT shuffled): only Skull Woods remains — unlike DP/TR/GT, its
+# multiple entrances are NOT "contained" (they open into genuinely separate
+# interior rooms), so the main-door-only approach doesn't apply; it needs a real
+# multi-entrance "move-as-a-unit" (or per-door) mechanism.
 #  - skull_woods: multi-entrance (front 0x28; secondaries 0x29/0x2A/0x2B + drop-ins).
 #  - desert_palace: multi-entrance (front 0x09; East 0x0A / West 0x0B / Boss 0x0C).
 #  - turtle_rock: multi-entrance (Main 0x35 + mountainface) + medallion + 2 sources.

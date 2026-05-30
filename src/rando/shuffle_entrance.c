@@ -149,7 +149,7 @@ typedef struct RandoDungeon {
   uint8 entrance_id;              // overworld front-door entrance-id
 } RandoDungeon;
 
-#define kEntranceDungeonCount 8
+#define kEntranceDungeonCount 11
 static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   { "palace_of_darkness",   "PalaceOfDarkness",     0x04A, 0x26 },
   { "swamp_palace",         "SwampPalace",          0x028, 0x25 },
@@ -171,6 +171,25 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   // entrance + goal/crystal); Eastern Palace deferred (2 entry regions).
   { "misery_mire",          "MiseryMire_Entrance",  0x098, 0x27 },
   { "eastern_palace",       "EasternPalace_Lobby",  0x0C9, 0x08 },
+  // Multi-entrance dungeons, MAIN door only — the extra doors are "contained"
+  // (they lead back into the same dungeon), so leaving them vanilla while
+  // shuffling just the front door is safe: the dungeon stays reachable via its
+  // own side doors (the logic merely treats that as a conservative extra, never
+  // claiming more than runtime → no softlock), and only the main door is in the
+  // shuffle table so the side doors keep vanilla coupling.
+  //  - Desert Palace: main 0x09; East 0x0A / West 0x0B / Boss 0x0C stay vanilla.
+  //  - Turtle Rock: main 0x35; mountainface doors stay vanilla. Entry region
+  //    TurtleRock_Entrance(29) has TWO inbound edges (LW+DW Death Mountain) — the
+  //    override remaps both; medallion gate lives in the door predicate (kept).
+  //  - Ganon's Tower: main 0x37; the Pyramid Sanctum (Ganon-fight) entrances stay
+  //    vanilla. Entry region GanonsTower_Lobby(11) also has two inbound edges. NB:
+  //    GT's crystal-tower gate lives in its door predicate, so it travels with the
+  //    door — completability stays safe (Goal_IsCompletable is override-aware), but
+  //    the crystal requirement effectively follows GT's door under the shuffle.
+  // Skull Woods stays deferred (truly many separate interiors, not "contained").
+  { "desert_palace",        "DesertPalace_Lobby",   0x084, 0x09 },
+  { "turtle_rock",          "TurtleRock_Entrance",  0x0D6, 0x35 },
+  { "ganons_tower",         "GanonsTower_Lobby",    0x00C, 0x37 },
 };
 
 // ---------------------------------------------------------------------------
@@ -648,15 +667,19 @@ void Entrance_SelfCheck(void) {
           exit(2);
         }
       }
-      // Exactly one inbound door-edge targets this entry region.
+      // At least one inbound door-edge targets this entry region. Most dungeons
+      // have exactly one; Turtle Rock and Ganon's Tower legitimately have TWO
+      // (reachable from two overworld Death-Mountain contexts) — the override
+      // remaps ALL edges into the region together, which is correct, so >1 is
+      // allowed. 0 inbound would mean the override key is unreachable / wrong.
       int inbound = 0;
       for (uint32 e = 0; e < kRandoEdgesCount; e++) {
         if (kRandoEdges[e].to_region == rid) inbound++;
       }
-      if (inbound != 1) {
-        fprintf(stderr, "Entrance_SelfCheck: dungeon %d ('%s') entry region has %d "
-                        "inbound edges (want 1) — edge-override key not well-defined\n",
-                i, kDungeons[i].entry_region_name, inbound);
+      if (inbound < 1) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d ('%s') entry region has no "
+                        "inbound door-edge — edge-override key is unreachable\n",
+                i, kDungeons[i].entry_region_name);
         exit(2);
       }
     }
