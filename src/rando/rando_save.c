@@ -274,9 +274,15 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
   out->placement_count = sparse_count;
   p += location_count * 2;
   uint32 bitmap_bytes = (location_count + 7) >> 3;
-  if (bitmap_bytes <= sizeof(out->checked_bitmap)) {
-    memcpy(out->checked_bitmap, p, bitmap_bytes);
-  }
+  // The location_count cap above (== placements[] length) is sized so the
+  // checked-bitmap always covers it; assert that coupling so the two can't
+  // drift apart silently. Fail CLOSED if a slot ever claims more bits than the
+  // bitmap holds — better to reject the slot than load it with checks cleared.
+  _Static_assert((sizeof(out->placements) / sizeof(out->placements[0]))
+                     <= sizeof(out->checked_bitmap) * 8,
+                 "checked_bitmap must cover every placement slot's location bit");
+  if (bitmap_bytes > sizeof(out->checked_bitmap)) return 0;
+  memcpy(out->checked_bitmap, p, bitmap_bytes);
   p += bitmap_bytes;
   if (with_settings) {
     memcpy(out->settings_canonical, p, kSettingsCanonicalLen);

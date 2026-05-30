@@ -41,6 +41,12 @@
 // Type discriminators.
 #define kRandoSnapshotTail_Type_RandoState 1u
 
+// Upper bound on a single TLV payload's claimed length. The largest legal
+// payload is the RandoState body (52 + 512*2 = 1076 bytes); the loader rejects
+// any TLV claiming more than this before seeking, so an untrusted/corrupt
+// length can't drive a negative (LLP64) or wild fseek. Generous headroom.
+#define kRandoSnapshotTail_MaxPayloadBytes 0x10000u
+
 // ---------------------------------------------------------------------------
 // Snapshot context. The active rando slot's metadata that the TLV payload
 // needs (generator_version + settings_hash + share_string). The placer
