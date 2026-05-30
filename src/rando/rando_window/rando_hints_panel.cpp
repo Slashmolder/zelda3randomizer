@@ -73,11 +73,13 @@ extern "C" void RandoHints_Render(void) {
   }
 
   // Race mode: suppress the hint text (it can spoil item/location placement).
-  // Show only the count above; direct the user to the reveal flow for the rest.
+  // Show only the count above — NO reveal call-to-action: the spoiler is
+  // intentionally unavailable during a race. (It is recoverable post-race via
+  // the reveal flow, but advertising that here would undercut race mode.)
   if (race) {
     ImGui::Separator();
-    ImGui::TextDisabled("Hint text is hidden in race mode so it can't spoil item");
-    ImGui::TextDisabled("locations. Reveal the spoiler to view the hints.");
+    ImGui::TextDisabled("Hint text is hidden in race mode so it can't");
+    ImGui::TextDisabled("spoil item locations.");
     return;
   }
 
