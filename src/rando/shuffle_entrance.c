@@ -607,6 +607,14 @@ void Entrance_SelfCheck(void) {
                 i, kDungeons[i].entry_region_name);
         exit(2);
       }
+      // Audit LOW-3 — the edge-override array is keyed by region id and bounded by
+      // kEntranceEdgeOverrideMax (64); a region id ≥ that would be silently dropped
+      // on the logic side (runtime redirected, logic identity → desync). Guard it.
+      if (rid >= 64) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d region id %u >= edge-override "
+                        "bound (64); Set/GetEntranceEdgeOverride would drop it\n", i, rid);
+        exit(2);
+      }
       // Distinct entry regions.
       for (int j = i + 1; j < kEntranceDungeonCount; j++) {
         if (Rando_FindRegionByName(kDungeons[j].entry_region_name) == rid) {

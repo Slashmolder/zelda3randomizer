@@ -1788,19 +1788,24 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   cur_palace_index_x2 = 0xff;
   num_memorized_tiles = 0;
 
+  // Phase C Stage 2 — dungeon entrance-shuffle coupling. CONSUME the source-room
+  // override UNCONDITIONALLY here (audit HIGH-1): this function is reached not just
+  // by the room-keyed exit search below but also by Magic-Mirror / special-area /
+  // ending warps (overworld.c:697,1914, ending.c) and the cached-exit `if` branch;
+  // clearing only in the search branch let a mirror-out of a shuffled dungeon leak
+  // a stale source room into a LATER unrelated exit → wrong-door warp. Capture once
+  // into a local, zero the global, then use the local only in the search branch.
+  uint16 coupled_exit_room = g_rando_entrance_exit_room;
+  g_rando_entrance_exit_room = 0;
+
   if (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100) {
     LoadCachedEntranceProperties();
   } else {
 
-    // Phase C Stage 2 — dungeon entrance-shuffle coupling: if the player entered a
-    // shuffled dungeon door, key the exit search on the SOURCE dungeon's room (so
-    // they return to the door they entered) instead of the loaded dungeon's room.
-    // Consume it so it can't leak to an unrelated later exit. 0 = normal exit.
-    uint16 exit_room = dungeon_room_index;
-    if (g_rando_entrance_exit_room != 0) {
-      exit_room = g_rando_entrance_exit_room;
-      g_rando_entrance_exit_room = 0;
-    }
+    // If the player entered a shuffled dungeon door, key the exit search on the
+    // SOURCE dungeon's room (so they return to the door they entered) instead of
+    // the loaded dungeon's room. 0 = normal exit.
+    uint16 exit_room = (coupled_exit_room != 0) ? coupled_exit_room : dungeon_room_index;
     int k = 79;
     do k--; while (k > 0 && kExitDataRooms[k] != exit_room);
     BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = kExitData_ScrollY[k];
