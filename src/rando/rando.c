@@ -26,6 +26,7 @@
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
+#include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
@@ -1141,6 +1142,13 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // the tracker repaint counter bump.
   Entrance_RuntimeInstall(&src->header);
 
+  // #82 Inverted world-state — repoint the static Inverted entrance/exit
+  // overrides (Link's House<->Bomb Shop, GT<->AT). No-op unless the slot is
+  // Inverted. Runs AFTER Entrance_RuntimeInstall, which is itself a no-op on an
+  // Inverted slot (the shuffle bails for non-Open/Standard), so the two never
+  // contend for g_asset_ptrs[126].
+  InvertedEntrances_Install(g_rando_active_world_state);
+
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
 
@@ -1224,6 +1232,9 @@ void Rando_DeactivateSlot(void) {
   // Phase C — restore the vanilla door table + clear entrance region overrides
   // before anything else (mirror of Entrance_RuntimeInstall in Activate).
   Entrance_RuntimeTeardown();
+  // #82 Inverted override teardown — reverse of the Activate install order.
+  // Restores g_asset_ptrs[126/130/131] to their saved vanilla originals.
+  InvertedEntrances_Teardown();
   Placement_Install(NULL);
   g_session_placement_table.entries = NULL;
   g_session_placement_table.count = 0;
