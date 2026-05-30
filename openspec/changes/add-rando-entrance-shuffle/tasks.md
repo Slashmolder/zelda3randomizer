@@ -89,17 +89,38 @@ follow-on changes.
 
 Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 
-- [ ] 2.1 Room-keyed exit remap: parallel overlay for `kExitDataRooms` / `kExitData_*`
-      so a shuffled dungeon exits to the source overworld door (design §3c).
-- [ ] 2.2 **Single-entrance dungeons** (EP, PoD, …): one door-edge rewrite each —
-      same machinery as caves. The low-risk subset; land + playtest this first.
-- [ ] 2.3 **Multi-entrance dungeon** consistency (Hyrule Castle / Skull Woods etc. —
-      their doors move as a unit / stay mutually consistent).
+> Grounded exit facts (read this session): dungeon/special/`0x104` exits go through
+> the room-keyed SEARCH `int k = 79; do k--; while (kExitDataRooms[k] != room);`
+> at `overworld.c:1795-1796` (the `else` of `room != 0x104 && room < 0x180 &&
+> room >= 0x100`, so it also catches `room >= 0x180` special areas). The search has
+> **no floor** — a shuffled room absent from `kExitDataRooms` underflows (silent
+> OOB). Stage 1 caves provably never hit this (Entrance_SelfCheck asserts pooled
+> rooms ∈ [0x100,0x180)\{0x104}), so the floor guard is deferred to here.
+
+- [ ] 2.0 **Harden the exit-search floor** (`overworld.c:1796`) before remapping the
+      exit class — add a `k > 0` floor + safe fallback. (Vanilla-inert: the OOB
+      can't occur in vanilla, so RAM-compare is unaffected; but a shuffled dungeon
+      room not in `kExitDataRooms` would underflow without it.)
+- [ ] 2.1 Room-keyed exit remap: a parallel rando overlay so a shuffled dungeon
+      exits to the SOURCE overworld door. NB: dungeons differ from caves — the
+      `*_exit` cached-source coupling (automatic for caves) does NOT apply; the
+      exit is recomputed from `kExitData_*[k]` keyed by the LOADED room. So coupling
+      here needs the source door's exit row, not the loaded dungeon's.
+- [ ] 2.2 **Single-entrance dungeons** (EP, PoD, …): one door per dungeon. Extend the
+      cave engine — add a dungeon pool to `shuffle_entrance.c`; the runtime overlay
+      already rewrites `kOverworld_Entrance_Id`, so the entry side is shared.
+- [ ] 2.3 **Multi-entrance dungeon** consistency (Hyrule Castle ~3 / Skull Woods ~4
+      doors — move as a unit / stay mutually consistent).
 - [ ] 2.4 Link's House (room 0x104) special-case folded into the room-keyed class.
-- [ ] 2.5 Logic: per-seed edge overlay — dungeon door-edges' `to_region` rewritten
-      per π (design §2b); internal dungeon edges + event gates stay fixed. Watch
-      prize/medallion gates (prize tied to dungeon, not door).
-- [ ] 2.6 Playtest dungeon entrance/exit round-trips + fresh-eyes audit.
+- [ ] 2.5 Logic: dungeons ARE regions with inbound door-edges, so use the per-seed
+      **edge overlay** (NOT region override) — mirror `kRandoEdges_Inverted`
+      selection (`rando_logic.c:432-444`): build a per-seed edge array = base graph
+      with each dungeon door-edge's `to_region` rewritten per π; internal edges +
+      event gates fixed. Watch prize/medallion gates (`[[prize-shuffle-bit-gates]]`
+      — prize tied to dungeon, not door).
+- [ ] 2.6 Save: extend the regen at slot-load to the dungeon pool (the
+      `entrance_axes` dungeon bit + same `entrance_attempt`).
+- [ ] 2.7 Playtest dungeon entrance/exit round-trips + fresh-eyes audit.
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 
