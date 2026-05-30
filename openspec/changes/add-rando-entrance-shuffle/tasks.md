@@ -144,26 +144,27 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       dungeon's), so no stranding. Fresh-eyes audit DONE earlier (1 HIGH + 1 LOW
       fixed; direction-agreement / no-collision / save-regen / no-double-remap
       verified). The highest-risk seam is now validated.
-- [ ] 2.8 **OPEN — HIGH, needs a targeted playtest to confirm** (audit 2026-05-30):
-      MEDALLION model↔runtime mismatch for Misery Mire / Turtle Rock under dungeon
-      shuffle. The logic graph attaches the `OP_MEDALLION_OPENS` gate to the INTERIOR
-      `Entry→Lobby` edge (e.g. `TurtleRock_Entrance → TurtleRock_Lobby`,
-      `32_turtle_rock.yaml:98-100`). `Entrance_ApplyEdgeOverrides` redirects the
-      APPROACH edges (overworld → entry_region), so after a swap the model evaluates
-      the **loaded interior's** medallion gate, while the runtime medallion barrier
-      (`LinkItem_Bombos/Ether/Quake` cast at the overworld tile) stays at the
-      **source spot**. PERMISSIVE direction (softlock risk): when MM/TR is the SOURCE
-      door and a NON-medallion dungeon is behind it, the model grants free entry but
-      runtime still demands MM/TR's medallion to open the spot. The full-reachability
-      gate evaluates the MODEL, so it cannot catch this. **Verify by playtest:** load
-      a seed where TR's (or MM's) door leads to a non-medallion dungeon (e.g. PoD) and
-      check whether the overworld spot still demands the medallion to open. If it does,
-      the fix is to make the medallion predicate travel with the SOURCE spot (carry it
-      on the redirected approach edge — the cross §9 case-4 predicate-carrying-override
-      machinery applied to dungeon shuffle), OR exclude MM/TR from the dungeon pool
-      until that lands (safe, but a scope cut that changes corpus digests). NOTE: the
-      6 originally-cleared dungeons (2.5) are non-medallion, so this is strictly an
-      MM/TR concern. Two reasoners on the same source ≠ confirmation — get the dump.
+- [x] 2.8 **FIXED — medallion gate travels with the SPOT** (audit 2026-05-30; user
+      decision: "the requirement should be tied to the entrance not the dungeon").
+      Was: the logic attached `OP_MEDALLION_OPENS` to the INTERIOR `Entrance→Lobby`
+      edge while `Entrance_ApplyEdgeOverrides` remapped the APPROACH edges, so after a
+      swap the model evaluated the LOADED interior's gate but runtime keeps the
+      barrier at the source spot → permissive softlock when MM/TR is the SOURCE.
+      FIX (kGenVer 44): the dungeon edge-override (Stage 2 + cross Stage 3) now keys
+      on each dungeon's **interior (lobby) region** — the `to_region` of its gated
+      door edge — via `interior_region_name` / `dungeon_override_key()` in
+      `shuffle_entrance.c`. So MM/TR's medallion-bearing `Entrance→Lobby` edge is what
+      gets remapped, keeping the medallion predicate tied to the source spot; the
+      approach edges (and the `Entrance` waypoint) stay put. For the 8 single-region
+      dungeons interior == entry, so behavior + digests are unchanged; only the 4
+      MM/TR-involving corpus seeds changed (regenerated). Cross-pool eligibility still
+      keys on `entry_region_name`, so TR stays excluded from cross (2 approach edges) —
+      no pool-composition change. `Entrance_SelfCheck` now also validates each
+      interior region resolves, id < 64, and is a door-edge `to_region`. **Runtime
+      match still wants a playtest** (model↔runtime is not gate-protected): confirm a
+      seed where TR/MM's door leads to a non-medallion dungeon still demands the
+      medallion at the spot, and a non-medallion dungeon's door leading to TR/MM is
+      free at its own spot. See [[entrance-shuffle-medallion-gate-mismatch]].
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 

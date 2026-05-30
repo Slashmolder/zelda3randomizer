@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 43  # Phase C Stage 2 — Ganon's Tower advanced opt-in (default off; existing digests unchanged)
+generator_version: 44  # Phase C — medallion gate travels with the SPOT (task 2.8): dungeon edge-override keys on interior (lobby) region. Changed the 4 MM/TR-involving dungeon+cross digests below; cave-only + non-shuffle entries unchanged.
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -353,29 +353,29 @@ entries:
   - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE05"
     label: "c-entrance-dungeons-open-ganon"
-    expected_digest: "9fedfb552c493f2fa353574bd02a2efb1defe1ad6462fadf29cb257d234120fb"
-    expected_sphere_digest: "9eaac37d05f211b8c63bbf7b1e14584d9404e742b8cade48cf8a02d58c1b038b"
+    expected_digest: "4d7cb98950a1a0fd9491dd7a8f5b4d5c6826ced27bb2b9c38cfdc7829024c1a9"
+    expected_sphere_digest: "ba1c45232ff6ef9245f05dc821b53cc78a4a562bd38357af359300e131fe751c"
   # Ganon's Tower advanced opt-in (11-dungeon pool, goal=ganon, crystals.tower=7).
   # Locks that the full-reachability gate finds a clean (fully reachable)
   # permutation despite GT's crystal-gate-on-the-door.
   - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, shuffle_dungeon_entrances: true, shuffle_ganons_tower_entrance: true }
     seed: "0x00000000C0FFEE06"
     label: "c-entrance-dungeons-gt-open-ganon"
-    expected_digest: "1ba040dd441877098f53faf703315c8ee27542d4d5ea3aaf064f89d8544d8715"
-    expected_sphere_digest: "9a6cd8b560057e6f564709755092e80399ed257bb24b6408ed3da09f19b7a765"
+    expected_digest: "1617ec2496a382dd83bcd4bfceec4882d2421b53377519a5c48240aad70229d6"
+    expected_sphere_digest: "a947cc412b2ec34daf240b520777ff5615d4db05a324e1beaf9cf00323796217"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE04"
     label: "c-entrance-both-open-fast-ganon"
-    expected_digest: "725274626e84f601fa6146b3c6f7bca5671eeab9de3efcd5fd1f6a9841849703"
-    expected_sphere_digest: "038fcc7e00da1d42486afc4f6812dbc093a5718641de6432da181da4dfc69274"
+    expected_digest: "99a7ee2de8d2ce48767f37e628a7c0bd8c5697bad50208f12a7892830d2d421a"
+    expected_sphere_digest: "1e228c38931b697d6af18e1d3d72539a8339407fe43fbc585112068f2888b3ba"
   # Cross-category (Stage 3): caves and dungeons share one shuffle pool, so a
   # cave door can lead to a dungeon interior and vice versa. The full-reachability
   # gate (Logic_ComputeSpheres all-reachable) must accept the permutation.
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true }
     seed: "0x00000000C0FFEE05"
     label: "c-entrance-cross-open-fast-ganon"
-    expected_digest: "63f3da42985898b0daf637b10402a557607876dbc38ac3c8c5a5ba72bc365339"
-    expected_sphere_digest: "23f1eefb5cb5b18a4ba4c30c76ebb358a25d8bb9e96732fe1b99c7ac590612c4"
+    expected_digest: "e1c402dccd56e5d666f7db7fc46c247cc24079cfa688091f80624da1b040d61e"
+    expected_sphere_digest: "95fd7edf8e6a783b6b013932f172219dd55a568729608ca8b59769d3bbe2159b"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

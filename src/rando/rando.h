@@ -14,7 +14,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 43u  // Phase C Stage 2 — Ganon's Tower as an advanced opt-in (shuffle_ganons_tower_entrance; default off). With the full-reachability gate it generates cleanly (retry rejects crystal-gate-circular permutations). Default seeds byte-identical.
+#define kGeneratorVersion 44u  // Phase C — medallion gate travels with the SPOT (task 2.8): the dungeon edge-override now keys on the INTERIOR (lobby) region so MM/TR's medallion-bearing Entrance→Lobby edge is what gets remapped. Changes MM/TR dungeon-shuffle + cross digests; default (no-shuffle) seeds byte-identical.
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

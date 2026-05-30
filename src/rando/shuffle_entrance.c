@@ -144,10 +144,28 @@ static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
 // (medallion) and Ganon's Tower (goal) are deferred — see that file.
 typedef struct RandoDungeon {
   const char *name;
-  const char *entry_region_name;  // logic region resolved via Rando_FindRegionByName
+  const char *entry_region_name;  // logic region resolved via Rando_FindRegionByName.
+                                  // Used for cross-POOL eligibility (inbound-edge
+                                  // count) + the approach analysis. For the medallion
+                                  // dungeons this is the pre-door waypoint (e.g.
+                                  // TurtleRock_Entrance), reached via the approaches.
   uint16 room;                    // entry room (< 0x100)
   uint8 entrance_id;              // overworld front-door entrance-id
+  // The INTERIOR (lobby) region: the to_region of the dungeon's GATED door edge —
+  // the region where the dungeon's locations live. The edge-override keys on THIS
+  // so the door edge (and its predicate) is what gets remapped, tying any door gate
+  // (e.g. MM/TR's medallion, on Entrance→Lobby) to the overworld SPOT rather than
+  // the loaded interior (audit task 2.8). NULL ⇒ single-region dungeon whose entry
+  // region IS its lobby (the registry region is already the door-edge target), so
+  // the override key falls back to entry_region_name with no behavior change.
+  const char *interior_region_name;
 } RandoDungeon;
+
+// The edge-override KEY for a dungeon: its interior (lobby) region, falling back to
+// the entry region for single-region dungeons. See RandoDungeon.interior_region_name.
+static const char *dungeon_override_key(const RandoDungeon *d) {
+  return d->interior_region_name ? d->interior_region_name : d->entry_region_name;
+}
 
 // kEntranceDungeonCount is the FULL table size. The active SHUFFLE pool is the
 // first kEntranceDungeonBaseCount (10) entries by default; Ganon's Tower (the
@@ -175,7 +193,7 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   // ALTTPR-consistent (you tap MM's tablet at MM's overworld spot regardless of
   // what's behind the door). Turtle Rock / Ganon's Tower stay deferred (multi-
   // entrance + goal/crystal); Eastern Palace deferred (2 entry regions).
-  { "misery_mire",          "MiseryMire_Entrance",  0x098, 0x27 },
+  { "misery_mire",          "MiseryMire_Entrance",  0x098, 0x27, "MiseryMire_Lobby" },
   { "eastern_palace",       "EasternPalace_Lobby",  0x0C9, 0x08 },
   // Multi-entrance dungeons, MAIN door only — the extra doors are "contained"
   // (they lead back into the same dungeon), so leaving them vanilla while
@@ -188,7 +206,7 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   //    TurtleRock_Entrance(29) has TWO inbound edges (LW+DW Death Mountain) — the
   //    override remaps both; medallion gate lives in the door predicate (kept).
   { "desert_palace",        "DesertPalace_Lobby",   0x084, 0x09 },
-  { "turtle_rock",          "TurtleRock_Entrance",  0x0D6, 0x35 },
+  { "turtle_rock",          "TurtleRock_Entrance",  0x0D6, 0x35, "TurtleRock_Lobby" },
   // Ganon's Tower — MUST be the LAST entry (index 10). Joins the pool only via
   // the advanced shuffle_ganons_tower_entrance opt-in. GT's crystal-tower gate
   // lives in its door-edge predicate, so under the shuffle it gates whatever
@@ -353,16 +371,19 @@ void Entrance_ApplyEdgeOverrides(const uint8 *assign, int n) {
   Rando_BeginEntranceEdgeOverrides();
   if (assign == NULL) return;
   if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
-  // Dungeon ix's door now leads to dungeon assign[ix]. The door-edge whose
-  // destination is ix's entry region must now land at assign[ix]'s entry region.
-  // Keyed by the (unique) entry region → Rando_SetEntranceEdgeOverride.
+  // Dungeon ix's door now leads to dungeon assign[ix]. The GATED door-edge whose
+  // destination is ix's interior (lobby) region must now land at assign[ix]'s
+  // interior region — keyed by the interior region so the door edge AND its gate
+  // (e.g. MM/TR's medallion, which sits on Entrance→Lobby) move with the SOURCE
+  // spot, not the loaded interior (task 2.8). For single-region dungeons the
+  // interior key == entry region, so this is byte-identical to the old behavior.
   for (int ix = 0; ix < n; ix++) {
-    uint16 from_entry = Rando_FindRegionByName(kDungeons[ix].entry_region_name);
+    uint16 from_lobby = Rando_FindRegionByName(dungeon_override_key(&kDungeons[ix]));
     int j = assign[ix];
     if (j < 0 || j >= kEntranceDungeonCount) continue;
-    uint16 to_entry = Rando_FindRegionByName(kDungeons[j].entry_region_name);
-    if (from_entry == 0xFFFF || to_entry == 0xFFFF) continue;
-    Rando_SetEntranceEdgeOverride(from_entry, to_entry);
+    uint16 to_lobby = Rando_FindRegionByName(dungeon_override_key(&kDungeons[j]));
+    if (from_lobby == 0xFFFF || to_lobby == 0xFFFF) continue;
+    Rando_SetEntranceEdgeOverride(from_lobby, to_lobby);
   }
 }
 
@@ -488,12 +509,18 @@ void Entrance_ApplyCrossOverrides(const uint8 *assign, int n) {
     bool y_cave = (y < ncave);
     // Resolve endpoint e's door (region R_e + predicate P_e) and, if e is a
     // dungeon, its entry region G_e.
+    // G_e is the dungeon's INTERIOR (lobby) region — the gated door edge's
+    // to_region. dungeon_door_edge(G_e) then finds THAT edge, returning its
+    // from_region (R_e = the spot/waypoint) and predicate (P_e = the door gate,
+    // e.g. MM's medallion). Keying on the interior (not the pre-door waypoint)
+    // makes the gate travel with the overworld spot (task 2.8). For single-region
+    // dungeons interior == entry, so this is unchanged.
     uint16 R_e = 0xFFFF, G_e = 0xFFFF; uint32 Pe_off = 0; uint16 Pe_len = 0;
     if (e_cave) {
       R_e = Rando_FindRegionByName(kCaveInteriors[e].region_name);
     } else {
       const RandoDungeon *de = &kDungeons[didx[e - ncave]];
-      G_e = Rando_FindRegionByName(de->entry_region_name);
+      G_e = Rando_FindRegionByName(dungeon_override_key(de));
       dungeon_door_edge(G_e, &R_e, &Pe_off, &Pe_len);
     }
     if (y_cave) {
@@ -511,9 +538,9 @@ void Entrance_ApplyCrossOverrides(const uint8 *assign, int n) {
       // behind it now) — redirect e's edge to the void sink.
       if (!e_cave && G_e != 0xFFFF) Rando_SetEntranceEdgeOverride(G_e, kCrossVoidRegion);
     } else {
-      // Target is a dungeon (entry G_y).
+      // Target is a dungeon — land at its INTERIOR (lobby) region G_y.
       const RandoDungeon *dy = &kDungeons[didx[y - ncave]];
-      uint16 G_y = Rando_FindRegionByName(dy->entry_region_name);
+      uint16 G_y = Rando_FindRegionByName(dungeon_override_key(dy));
       if (G_y == 0xFFFF) continue;
       if (e_cave) {
         // Dungeon behind a cave door: ADD an unconditional edge cave-region → G_y.
@@ -924,6 +951,29 @@ void Entrance_SelfCheck(void) {
         fprintf(stderr, "Entrance_SelfCheck: dungeon %d ('%s') entry region has no "
                         "inbound door-edge — edge-override key is unreachable\n",
                 i, kDungeons[i].entry_region_name);
+        exit(2);
+      }
+      // The edge-override KEY is the INTERIOR (lobby) region (task 2.8). Validate
+      // it the same way: resolves, id < 64 (edge-override array bound), and is the
+      // to_region of the dungeon's GATED door edge (so the gate moves with the
+      // spot). For single-region dungeons interior == entry, already checked above.
+      const char *ikey = dungeon_override_key(&kDungeons[i]);
+      uint16 iid = Rando_FindRegionByName(ikey);
+      if (iid == 0xFFFF) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d interior region '%s' not found\n",
+                i, ikey);
+        exit(2);
+      }
+      if (iid >= 64) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d interior region id %u >= "
+                        "edge-override bound (64)\n", i, iid);
+        exit(2);
+      }
+      uint16 dd_from = 0xFFFF; uint32 dd_off = 0; uint16 dd_len = 0;
+      if (!dungeon_door_edge(iid, &dd_from, &dd_off, &dd_len)) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d interior region '%s' is not the "
+                        "to_region of any door-edge — gate would not move with the spot\n",
+                i, ikey);
         exit(2);
       }
     }
