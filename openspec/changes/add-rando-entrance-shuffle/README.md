@@ -41,7 +41,13 @@ Read in this order:
 - [x] Apply-time plan grounded (`apply_plan.md`) + adversarially reviewed
 - [x] **Stage 0** — settings axes packed + RegionRemap retired (corpus byte-identical)
 - [x] **Stage 1** — coupled cave shuffle: engine + region overrides + door overlay
-      + save-regen + spoiler + native UI. selftest + corpus(57) green.
-- [ ] Stage 1 **playtest** (USER — `apply_plan.md` checklist) + fresh-eyes audit fixes
-- [ ] Stages 2–4 (dungeons / crossed / decoupled) + presets
-- [ ] Archive (Stage 1 minimum, after playtest)
+      + save-regen + spoiler + native UI. Fresh-eyes audited (1 HIGH + 2 MED + 3 LOW
+      fixed).
+- [x] **Stage 2** — dungeon shuffle (6 single-entrance dungeons): per-seed edge
+      overlay + shared door overlay + coupled exit + save-regen + spoiler + UI.
+      Fresh-eyes audited (1 HIGH + 1 LOW fixed). corpus(59) green.
+- [ ] Stages 1–2 **playtest** (USER — `apply_plan.md` checklist) — esp. cave coupling
+      + dungeon coupled-exit (the only seams no automated check covers).
+- [ ] Stage 2b (multi-entrance / 2-region / medallion dungeons) + Stage 3 (crossed)
+      + Stage 4 (decoupled) + presets
+- [ ] Archive (after playtest)

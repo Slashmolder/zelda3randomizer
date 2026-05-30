@@ -125,7 +125,10 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 - [x] 2.6 Save: dungeon bit in `entrance_axes` + shared `entrance_attempt`;
       `Entrance_RuntimeInstall` regenerates both pools at slot-load.
 - [~] 2.7 Playtest dungeon entrance/exit round-trips — USER (see Playtest checklist).
-      Fresh-eyes audit — in progress (parallel agent).
+      Fresh-eyes audit — DONE: 1 HIGH (coupling global leaked past mirror/cached-exit
+      paths → wrong-door warp) + 1 LOW fixed; direction-agreement / no-collision /
+      save-regen / no-double-remap verified correct. The coupled EXIT behavior
+      remains the playtest-only seam.
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 
