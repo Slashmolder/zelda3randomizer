@@ -80,10 +80,10 @@ follow-on changes.
 - [x] 1.14 `kGeneratorVersion` 37→38; corpus regen; default digests byte-identical.
 - [x] 1.15 `--rando-selftest` (+ `Entrance_SelfCheck`) + corpus(57, incl. 2 entrance
       entries) + determinism/audit-guard/codegen/gen-version checks all green.
-- [ ] 1.16 **Playtest** (the only reliable net; USER) — see `apply_plan.md`
-      "Playtest checklist": enter shuffled cave → correct interior → exit returns to
-      SOURCE door (coupled); multi-door caves via each door (audit M2);
-      save/load round-trips π; goal reachable.
+- [x] 1.16 **Playtest CONFIRMED** (USER, 2026-05-30): cave shuffle works and is
+      coupled (enter shuffled cave → different interior → exit returns to the SOURCE
+      door). Remaining checklist nice-to-haves (multi-door caves per audit M2,
+      save/load π round-trip) not separately re-confirmed but the core seam is good.
 - [x] 1.17 Fresh-eyes audit pass — DONE. 1 HIGH (override leak on total placement
       failure) + 2 MED (Inverted/Retro hash bit; unclamped public loop) + 3 LOW all
       fixed (commit dc55487); core closed-form / coupling / save-regen confirmed
@@ -124,11 +124,12 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       the door-edge moves), so `[[prize-shuffle-bit-gates]]` is unaffected.
 - [x] 2.6 Save: dungeon bit in `entrance_axes` + shared `entrance_attempt`;
       `Entrance_RuntimeInstall` regenerates both pools at slot-load.
-- [~] 2.7 Playtest dungeon entrance/exit round-trips — USER (see Playtest checklist).
-      Fresh-eyes audit — DONE: 1 HIGH (coupling global leaked past mirror/cached-exit
-      paths → wrong-door warp) + 1 LOW fixed; direction-agreement / no-collision /
-      save-regen / no-double-remap verified correct. The coupled EXIT behavior
-      remains the playtest-only seam.
+- [x] 2.7 Playtest CONFIRMED (USER, 2026-05-30): dungeon shuffle works and the
+      coupled EXIT is correct — entering Eastern Palace's randomized door loads a
+      different dungeon and leaving returns Link to EP's own door (not the loaded
+      dungeon's), so no stranding. Fresh-eyes audit DONE earlier (1 HIGH + 1 LOW
+      fixed; direction-agreement / no-collision / save-regen / no-double-remap
+      verified). The highest-risk seam is now validated.
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 

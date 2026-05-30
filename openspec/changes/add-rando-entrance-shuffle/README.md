@@ -46,8 +46,13 @@ Read in this order:
 - [x] **Stage 2** — dungeon shuffle (6 single-entrance dungeons): per-seed edge
       overlay + shared door overlay + coupled exit + save-regen + spoiler + UI.
       Fresh-eyes audited (1 HIGH + 1 LOW fixed). corpus(59) green.
-- [ ] Stages 1–2 **playtest** (USER — `apply_plan.md` checklist) — esp. cave coupling
-      + dungeon coupled-exit (the only seams no automated check covers).
-- [ ] Stage 2b (multi-entrance / 2-region / medallion dungeons) + Stage 3 (crossed)
-      + Stage 4 (decoupled) + presets
-- [ ] Archive (after playtest)
+- [x] Stages 1–2 **playtest CONFIRMED** (USER, 2026-05-30): cave coupling AND
+      dungeon coupled-exit both validated (EP's randomized door loads a different
+      dungeon, exit returns to EP's door). The seams no automated check covers are
+      now playtest-good.
+- [x] Stage 2b partial — Misery Mire + Eastern Palace added (8 of 12 dungeons).
+- [ ] Remaining dungeons (DEFERRED by user 2026-05-30): Skull Woods / Desert /
+      Turtle Rock (multi-entrance) + Ganon's Tower (goal/crystal) — need a
+      multi-entrance "move-as-a-unit" + goal-aware mechanism.
+- [ ] Stage 3 (crossed / cross-category) + Stage 4 (decoupled / Insanity) presets.
+- [ ] Archive (Stages 1–2 are playtest-confirmed and archivable on the user's go).
