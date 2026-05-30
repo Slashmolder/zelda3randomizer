@@ -285,6 +285,20 @@ The settings window SHALL include a tab that displays the spoiler/placement of t
 - **WHEN** the viewer is open
 - **THEN** no widget allows the user to modify any placement entry; the viewer is text and tabular display only
 
+### Requirement: Hints viewer respects race-mode suppression
+
+The settings window's read-only Hints tab lists every hint for the active slot, and hints can name item/location information. This viewer dumps all hints at once (unlike in-game telepathic tiles, which the player is meant to discover by playing), so when the active slot's settings have `race_mode = true` (`Rando_GetActiveSettings()->race_mode`) it SHALL NOT render hint text. Unlike the spoiler viewer (hidden entirely), the Hints tab SHALL remain visible but suppress its spoiling content: it shows the hint count and a race-mode indicator, but no hint strings. The suppressed hints remain recoverable through the reveal flow — `Rando_RevealSpoiler` regenerates the full JSON spoiler (including the `hints[]` array) with `race_mode` cleared.
+
+#### Scenario: Hint text hidden in race mode
+
+- **WHEN** the active slot was generated with `race_mode = true` and the user opens the Hints tab
+- **THEN** the tab shows the hint count with a "(race mode)" indicator and a note that hint text is hidden so it cannot spoil item locations, and renders no hint string
+
+#### Scenario: Hint text shown outside race mode
+
+- **WHEN** the active slot's `race_mode = false`
+- **THEN** the Hints tab renders each NPC's hint string in full
+
 ### Requirement: PC kind-toggle on file-select opens the native window
 
 On PC builds, the file-select kind-picker (Vanilla / New-Randomizer / From-share chooser) stays compiled, but its two rando branches redirect to the native window under `Z3R_NATIVE_SETTINGS_WINDOW`. When the player selects an empty slot and chooses "New Randomizer" (the `SelectFile_Settings_Activate` call site at `src/select_file.c:1703`) or "From share string" (which on Switch activates the in-game alphabet picker), the game SHALL call `RandoWindow_OpenForNewSlot(slot_index)` instead. The native window SHALL surface focus (show + raise the startup-hidden window), populate the target slot index in the bridge, and accept settings entry (and share-string paste) as usual. On generation success, the new randomizer slot SHALL be created at the requested slot index. The post-decode `SelectFile_Settings_Activate` call at `src/select_file.c:1990` lives inside the alphabet-picker update flow (part of the guarded-out text-input layer) and therefore compiles out on PC with no redirect; the decoded-seed handoff is moot on PC because the user pastes the share string directly into the native window.

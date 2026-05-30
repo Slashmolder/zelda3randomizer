@@ -42,8 +42,14 @@ extern "C" void RandoHints_Render(void) {
     return;
   }
 
-  // Hints are not spoiler-gated upstream (ALTTPR distributes hints in race
-  // seeds too), but flag race mode so a tester knows the context.
+  // Hints can name item/location info, so in a race they ARE a spoiler. This
+  // viewer dumps every hint at once (unlike in-game telepathic tiles, which the
+  // racer is meant to discover by playing), so in race mode we suppress the hint
+  // TEXT — matching the Spoiler tab (hidden) and the Reachability panel (hides
+  // placed item names). The count is not a placement spoiler, so it is still
+  // shown. The full hints remain recoverable via the reveal flow:
+  // Rando_RevealSpoiler regenerates the JSON with race_mode cleared, which
+  // includes the hints[] array.
   const RandoSettings *settings = Rando_GetActiveSettings();
   bool race = settings && settings->race_mode;
 
@@ -63,6 +69,15 @@ extern "C" void RandoHints_Render(void) {
     ImGui::Separator();
     ImGui::TextDisabled("This slot has no hints (hints may be disabled, or the "
                         "hint generator is not active on this build).");
+    return;
+  }
+
+  // Race mode: suppress the hint text (it can spoil item/location placement).
+  // Show only the count above; direct the user to the reveal flow for the rest.
+  if (race) {
+    ImGui::Separator();
+    ImGui::TextDisabled("Hint text is hidden in race mode so it can't spoil item");
+    ImGui::TextDisabled("locations. Reveal the spoiler to view the hints.");
     return;
   }
 

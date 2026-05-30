@@ -320,6 +320,8 @@ Enumerate every call site:
 - [ ] 21.2 Manual test: generate a slot with `race_mode = false`, confirm Spoiler tab is visible and shows the correct placement from the bridge's owned copy (`bridge.last_generated_placement`, NOT `Placement_GetActive()`)
 - [x] 21.3 Add a regression unit-style check: when `bridge.last_generated_race_mode == true`, the function that builds the tab list omits "Spoiler"
 - [ ] 21.4 Manual test: with a non-race active placement, toggle `pending.race_mode` ON in the settings panel WITHOUT re-generating; confirm Spoiler tab remains visible (gate is on last-generated, not pending)
+- [x] 21.5 Hints tab suppresses hint text in race mode (count + race indicator shown; no hint strings). The Hints viewer dumped all hints regardless of race mode — a spoiler gap the race-mode spec never covered. <!-- done: src/rando/rando_window/rando_hints_panel.cpp gates on Rando_GetActiveSettings()->race_mode; spec'd as "Hints viewer respects race-mode suppression" in specs/randomizer-native-window/spec.md. -->
+- [ ] 21.6 Manual test: generate a `race_mode = true` slot, open the Hints tab — confirm the count + "(race mode)" show and NO hint text appears; then a `race_mode = false` slot shows full hint text. *(Playtest gate — pending owner.)*
 
 ## 22. Cross-platform CI verification
 
