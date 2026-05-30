@@ -3373,14 +3373,16 @@ after:
 
   // #82 Inverted: PreventEnterOnBonk (z3randomizer entrances.asm:194). In
   // Inverted, while in the mirror-warp state (kPlayerState_Mirror == 0x14) a bonk
-  // against the world boundary (overworld_screen_index & 0x40 ==
-  // last_light_vs_dark_world, i.e. NOT mid-cross) must NOT open/enter the
-  // overworld door under Link. Gated so vanilla / Open / Standard / Retro enter
-  // byte-identically.
+  // while CROSSING worlds (overworld_screen_index & 0x40 !=
+  // last_light_vs_dark_world == WorldCache) must NOT open/enter the overworld
+  // door under Link. Upstream takes .done (enter normally) on the BEQ when the
+  // world bit MATCHES the cache, and falls through to block-entry when it
+  // differs — so the guard fires on `!=`. Gated so vanilla / Open / Standard /
+  // Retro enter byte-identically.
   if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */ &&
       link_player_handler_state == kPlayerState_Mirror &&
-      (overworld_screen_index & 0x40) == last_light_vs_dark_world)
+      (overworld_screen_index & 0x40) != last_light_vs_dark_world)
     return;
 
   if (!follower_dropped && (link_pose_for_item == 1 || !CanEnterWithTagalong(kOverworld_Entrance_Id[lx] - 1))) {
