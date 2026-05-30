@@ -82,8 +82,12 @@ follow-on changes.
       entries) + determinism/audit-guard/codegen/gen-version checks all green.
 - [ ] 1.16 **Playtest** (the only reliable net; USER) — see `apply_plan.md`
       "Playtest checklist": enter shuffled cave → correct interior → exit returns to
-      SOURCE door (coupled); save/load round-trips π; goal reachable.
-- [~] 1.17 Fresh-eyes audit pass — in progress (parallel agent).
+      SOURCE door (coupled); multi-door caves via each door (audit M2);
+      save/load round-trips π; goal reachable.
+- [x] 1.17 Fresh-eyes audit pass — DONE. 1 HIGH (override leak on total placement
+      failure) + 2 MED (Inverted/Retro hash bit; unclamped public loop) + 3 LOW all
+      fixed (commit dc55487); core closed-form / coupling / save-regen confirmed
+      correct. M2 (multi-door region split) flagged as the top playtest item.
 
 ## Stage 2 — `shuffle_dungeon_entrances` (room-keyed exit class)
 
