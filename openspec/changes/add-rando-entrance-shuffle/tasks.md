@@ -38,46 +38,52 @@ follow-on changes.
 ## Stage 1 — functional: coupled cave-shuffle, one mode (the vertical slice)
 
 ### Permutation engine
-- [ ] 1.1 Enumerate cave/single-interior entrances; group entrance-ids by interior
-      (entrance-id is NOT 1:1 with room — design §3a).
-- [ ] 1.2 `shuffle_entrance.{c,h}`: compute π over the cave pool from the seed RNG.
-- [ ] 1.3 Coupled pairing (enter A → exit A as the baseline — design §3b).
+- [x] 1.1 Enumerate cave/single-interior entrances; grouped by interior in the
+      static `kCaveInteriors[]` table (38 interiors / 57 ids; entrance-id NOT 1:1
+      with room). `shuffle_entrance.c`.
+- [x] 1.2 `shuffle_entrance.{c,h}`: `Entrance_ComputePermutation` — seeded
+      Fisher–Yates (xoshiro via rando_rng) over the cave pool.
+- [x] 1.3 Coupled pairing = a single bijection (baseline).
 
 ### Logic half  (caves = REGION reassignment, NOT edges — design §2a)
-- [ ] 1.4 Drive cave-location `region_override` **per-seed from π** (reuse the shipped
-      `region_override` field at `rando_logic.c:477` / `rando_placement.c:530` /
-      `rando_spoiler.c:647`, today keyed by world_state). A cave-location's effective
-      region becomes the overworld region of the door that now leads to it. NOTE: a
-      swap within one overworld region is a logic no-op — only cross-region swaps move
-      reachability.
-- [ ] 1.5 `none` (all axes off) ⇒ no π-driven override ⇒ byte-identical reachability
-      (corpus invariant). (Dungeon edge-overlay is Stage 2, design §2b — NOT here.)
-- [ ] 1.6 Goal-reachable reject-and-retry around `Place_AssumedFill` /
-      `Goal_IsCompletable` (design §4).
+- [x] 1.4 Per-seed cave-location region override driven by π. New
+      `Rando_{Begin,Set,Clear,Get}EntranceRegionOverride` in `rando_logic.c`,
+      consulted in the location loop AFTER the static override (Open/Standard
+      carry none, so no clobber). Closed form: interior now behind door i inherits
+      i's vanilla region. Registry↔logic regions cross-validated in the self-check.
+- [x] 1.5 Inactive (axes off) ⇒ override inactive ⇒ byte-identical reachability
+      (corpus 57/57 byte-identical for the default seeds).
+- [x] 1.6 Goal-reachable reject-and-retry around `Place_AssumedFill` /
+      `Goal_IsCompletable` in both generation paths (rando_generate.c + CLI).
 
 ### Runtime half
-- [ ] 1.7 Door overlay: shadow copy of `kOverworld_Entrance_Id`, repoint
-      `g_asset_ptrs[126]`; install/teardown on slot lifecycle (design §3a).
-- [ ] 1.8 Coupling: capture source door at the entry hook (reuse the TakeAny
-      `g_rando_takeany_door_id` idiom) + cache source-door exit props for
-      `LoadCachedEntranceProperties` (design §3b/§3c).
-- [ ] 1.9 Compose with TakeAny's redirect at `overworld.c:~3342` (design §7).
+- [x] 1.7 Door overlay: owned shadow of `kOverworld_Entrance_Id`, repoint
+      `g_asset_ptrs[126]`; install/teardown on slot lifecycle (rando.c).
+- [x] 1.8 Coupling: **automatic for caves** — `Dungeon_LoadEntrance` caches the
+      SOURCE overworld position at entry (review H1; supersedes the design §3b
+      manual-cache plan). No hand-written `*_exit` caching (would fight the engine).
+- [x] 1.9 Composes with TakeAny: the overlay only changes the table the entry hook
+      reads; TakeAny's host-room redirect (Retro-only) runs on top. (Retro is out of
+      Stage 1 scope, so no live interaction yet — verified by `Entrance_IsActive`.)
 
 ### Settings / save / spoiler / UI
-- [ ] 1.10 Wire the `shuffle_cave_entrances` + `coupled` axes (added in 0.4) into the
-      generator; other axes stay off until their stage.
-- [ ] 1.11 `TAIL_ENTRANCE_MAP` save TLV write/read (per 0.3 decision).
-- [ ] 1.12 Spoiler `entrance_mapping` section (JSON + text).
-- [ ] 1.13 Native settings window: cave-shuffle + coupled toggles (PC). Switch
-      in-game screen picker if applicable.
+- [x] 1.10 `shuffle_cave_entrances` + `coupled` wired into the generator (Open/
+      Standard only via `Entrance_IsActive`); other axes stay off until their stage.
+- [x] 1.11 Save: header `entrance_axes`@70 + `entrance_attempt`@71 + regenerate π at
+      load (NOT the stubbed TLV — slot format has no skip infra; see 0.3 / review H4).
+- [x] 1.12 Spoiler `entrance_mapping` section (JSON + text).
+- [x] 1.13 Native settings window: live cave-shuffle toggle + coupled indicator
+      (Open/Standard gated). In-game Switch picker: deferred (PC compiles it out;
+      Stage 1 is PC-first).
 
 ### Verify
-- [ ] 1.14 `kGeneratorVersion` bump + corpus regen; confirm `none` digests
-      byte-identical to baseline.
-- [ ] 1.15 `--rando-selftest` + corpus green; audit-guard/determinism/codegen checks.
-- [ ] 1.16 **Playtest** (the only reliable net): enter shuffled cave → correct
-      interior → exit returns to the SOURCE door (coupled). Save/load round-trips π.
-- [ ] 1.17 Fresh-eyes audit pass (per CLAUDE.md cadence) before declaring Stage 1 done.
+- [x] 1.14 `kGeneratorVersion` 37→38; corpus regen; default digests byte-identical.
+- [x] 1.15 `--rando-selftest` (+ `Entrance_SelfCheck`) + corpus(57, incl. 2 entrance
+      entries) + determinism/audit-guard/codegen/gen-version checks all green.
+- [ ] 1.16 **Playtest** (the only reliable net; USER) — see `apply_plan.md`
+      "Playtest checklist": enter shuffled cave → correct interior → exit returns to
+      SOURCE door (coupled); save/load round-trips π; goal reachable.
+- [~] 1.17 Fresh-eyes audit pass — in progress (parallel agent).
 
 ## Stage 2 — `shuffle_dungeon_entrances` (room-keyed exit class)
 

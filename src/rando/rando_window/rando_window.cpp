@@ -454,6 +454,38 @@ static void Panel_Shuffles() {
   RandoSettings *s = &b->pending;
   bool changed = false;
 
+  // Phase C — entrance shuffle (Stage 1: coupled cave shuffle). Live for
+  // playable slots (Rando_ActivateSidecarSlot regenerates the door overlay).
+  // Open/Standard only — Inverted carries a static region override the per-seed
+  // override would clobber, and Retro re-uses cave host-rooms for TakeAny.
+  ImGui::SeparatorText("Entrance shuffle");
+  {
+    bool ws_ok = (s->world_state == kWorldState_Open ||
+                  s->world_state == kWorldState_Standard);
+    ImGui::BeginDisabled(!ws_ok);
+    bool cave = s->shuffle_cave_entrances != 0;
+    if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
+      s->shuffle_cave_entrances = cave;
+      if (cave) s->coupled = 1;  // coupled is the only Stage 1 mode
+      changed = true;
+    }
+    HelpTooltip("Each overworld cave door leads to a different cave interior; "
+                "exiting returns you to the door you entered. Goal stays "
+                "reachable. (Open/Standard only in this version.)");
+    // Coupled is the only implemented mode for now; show it as a fixed
+    // indicator rather than a live toggle so the widget never lies.
+    ImGui::BeginDisabled(true);
+    bool coupled_show = true;
+    ImGui::Checkbox("Coupled (enter A -> exit A)", &coupled_show);
+    ImGui::EndDisabled();
+    HelpTooltip("Always on in this version. Dungeon / Crossed / decoupled "
+                "(Insanity) entrance modes are coming in later stages.");
+    ImGui::EndDisabled();
+    if (!ws_ok) {
+      ImGui::TextDisabled("Entrance shuffle is Open/Standard only for now.");
+    }
+  }
+
   // boss_shuffle / drop_shuffle live in the settings struct (and the hash), but
   // they are runtime-inert for playable slots (Rando_ActivateSidecarSlot never
   // regenerates them) — matching the in-game screen, we present them as DISABLED
@@ -465,7 +497,6 @@ static void Panel_Shuffles() {
     ImGui::Checkbox("Boss shuffle", &bs);
     ImGui::Checkbox("Drop shuffle", &ds);
     bool off = false;
-    ImGui::Checkbox("Entrance shuffle", &off);
     ImGui::Checkbox("Enemy shuffle", &off);
     ImGui::Checkbox("Glitches", &off);
   }
