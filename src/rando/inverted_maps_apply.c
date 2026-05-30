@@ -39,6 +39,25 @@ void Overworld_ApplyInvertedTiles(void) {
   uint8 scr = (uint8)overworld_screen_index;
   if ((uint16)overworld_screen_index >= 0x80)
     return;
+
+  // #82 fork fix (playtest 2026-05-30): suppress the .map1B overlay entirely on
+  // the Light-World Hyrule Castle screen (0x1B). z3randomizer's data paints an
+  // inverted "pyramid" there (eye-removal, tower sign, facade, + a post-Agahnim
+  // hole), but in this fork it is purely spurious:
+  //   * Cosmetic: its high pyramid map16 blocks need the Dark-World pyramid
+  //     gfx/palette, which can't coexist with the castle gfx loaded on 0x1B, so
+  //     they render as garbage (seen only via full screen rebuilds — mirror /
+  //     cave / flute / S&Q; walking-scroll never runs this overlay).
+  //   * Gameplay: the hole never routed to Ganon. The Ganon drop (kFallHole
+  //     entrance 123 -> room 0x000) is hardcoded to the DW pyramid area 0x5B; a
+  //     fall on area 0x1B lands in a HC room / the Chris-Houlihan fallback. The
+  //     real Ganon access is the DW pyramid hole, which is untouched by this.
+  // Skipping the whole screen-0x1B overlay leaves the clean castle on every
+  // entry method. CreatePyramidHole (overworld.c) — which carves the real DW
+  // pyramid hole — is intentionally NOT changed.
+  if (scr == 0x1B)
+    return;
+
   uint16 off = kInvertedMapOffsets[scr];
   if (off == 0xFFFF)
     return;  // no overlay for this screen
