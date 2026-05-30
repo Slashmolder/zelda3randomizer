@@ -718,6 +718,48 @@ bool ZeldaIsReplaying(void);          // zelda_rtl.h
 bool ZeldaIsEmulatorAttached(void);   // zelda_rtl.h
 }
 
+// --- Dungeon items (maps / compasses / big keys / small keys) --------------
+// Maps/compasses/big keys are per-dungeon WORD bitfields (link_compass 0xF364,
+// link_bigkey 0xF366, link_dungeon_map 0xF368). The bit for game-side dungeon
+// index D is 0x8000 >> D (see rando.c:200-213). For a little-endian word at
+// `base`, that bit lands in byte `base + (D<=7 ? 1 : 0)`, bit position
+// (15 - D) & 7 — so we reuse the byte-oriented Cheats_BitCheckbox.
+struct DbgDungeon { int gidx; const char *name; };
+static const DbgDungeon kDbgDungeons[] = {
+    {0,  "Hyrule Castle / Sewers"},
+    {2,  "Eastern Palace"},
+    {3,  "Desert Palace"},
+    {10, "Tower of Hera"},
+    {4,  "Hyrule Castle Tower"},
+    {5,  "Palace of Darkness"},
+    {6,  "Swamp Palace"},
+    {7,  "Skull Woods"},
+    {8,  "Thieves' Town"},
+    {9,  "Ice Palace"},
+    {11, "Misery Mire"},
+    {12, "Turtle Rock"},
+    {13, "Ganon's Tower"},
+};
+
+static void DbgDungeonBit(const char *id, uint32 wordbase, int gidx) {
+  Cheats_BitCheckbox(id, wordbase + (gidx <= 7 ? 1 : 0), (15 - gidx) & 7);
+}
+
+static void DbgDungeonKeys(int gidx) {
+  int v = g_ram[0xF37C + gidx];
+  if (v > 99) v = 99;
+  ImGui::SetNextItemWidth(96);
+  if (ImGui::SliderInt("##keys", &v, 0, 99)) {
+    Cheats_PokeByte(0xF37C + gidx, v, 0, 99);  // saved per-dungeon slot
+    // If Link is standing in this dungeon, also bump the live counter so the
+    // HUD/doors see it immediately (mirrors SaveDungeonKeys; HC proper raw
+    // index 2 folds into slot 0). cur_palace_index_x2 low byte = 0xff outside.
+    uint8 cur = (uint8)g_ram[0x40C];
+    uint8 cur_slot = (cur == 0xff) ? 0xff : ((cur == 2) ? 0 : (cur >> 1));
+    if (cur != 0xff && cur_slot == gidx) Cheats_PokeByte(0xF36F, v, 0, 99);
+  }
+}
+
 void DbgInventory_Render(void) {
   bool can = Cheats_CanEdit();
   if (!can) {
@@ -746,9 +788,21 @@ void DbgInventory_Render(void) {
       }
     }
     Cheats_ByteSlider("Bombs", 0xF343, 0, 50);
+    // Capacity-upgrade levels (link_bomb_upgrades 0xF370 / link_arrow_upgrades
+    // 0xF371) index kMaxBombsForLevel[]/kMaxArrowsForLevel[] (hud.c:33-34), so
+    // they must stay in [0,7]. Labels show the resulting max the HUD enforces.
+    { static const char *const k[] = {"10", "15", "20", "25", "30", "35", "40", "50"};
+      Cheats_Combo("Bomb capacity", 0xF370, k, 8); }
     Cheats_ByteSlider("Arrows", 0xF377, 0, 70);
+    { static const char *const k[] = {"30", "35", "40", "45", "50", "55", "60", "70"};
+      Cheats_Combo("Arrow capacity", 0xF371, k, 8); }
     Cheats_ByteSlider("Keys (current dungeon)", 0xF36F, 0, 99);
     Cheats_ByteSlider("Magic (128 = full)", 0xF36E, 0, 128);
+    // Magic upgrade (link_magic_consumption 0xF37B): indexes the magic-cost
+    // tables, so it must stay in [0,2]. 2 (Quarter) is a randomizer addition;
+    // vanilla only ever has 0/1. The combo clamps to valid indices.
+    { static const char *const k[] = {"None", "Half (1/2)", "Quarter (1/4)"};
+      Cheats_Combo("Magic upgrade", 0xF37B, k, 3); }
     Cheats_ByteSlider("Heart pieces", 0xF36B, 0, 3);
 
     ImGui::SeparatorText("Hearts");
@@ -812,6 +866,32 @@ void DbgInventory_Render(void) {
         snprintf(lbl, sizeof lbl, "Bottle %d", i + 1);
         Cheats_ComboVals(lbl, 0xF35C + i, k, v, 8);
       }
+    }
+
+    if (ImGui::TreeNode("Dungeon items (maps / compasses / big keys / keys)")) {
+      ImGui::TextDisabled("Maps, compasses and big keys are per-dungeon flags; keys is each dungeon's saved count.");
+      if (ImGui::BeginTable("##dbg_dungeon", 5,
+                            ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("Dungeon", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Map");
+        ImGui::TableSetupColumn("Compass");
+        ImGui::TableSetupColumn("Big Key");
+        ImGui::TableSetupColumn("Keys");
+        ImGui::TableHeadersRow();
+        for (int i = 0; i < (int)(sizeof kDbgDungeons / sizeof kDbgDungeons[0]); i++) {
+          int d = kDbgDungeons[i].gidx;
+          ImGui::TableNextRow();
+          ImGui::PushID(d);
+          ImGui::TableNextColumn(); ImGui::TextUnformatted(kDbgDungeons[i].name);
+          ImGui::TableNextColumn(); DbgDungeonBit("##map", 0xF368, d);
+          ImGui::TableNextColumn(); DbgDungeonBit("##comp", 0xF364, d);
+          ImGui::TableNextColumn(); DbgDungeonBit("##bk", 0xF366, d);
+          ImGui::TableNextColumn(); DbgDungeonKeys(d);
+          ImGui::PopID();
+        }
+        ImGui::EndTable();
+      }
+      ImGui::TreePop();
     }
 
     if (ImGui::TreeNode("Progress (advanced \xe2\x80\x94 will not update randomizer prize/goal tracking)")) {
