@@ -347,6 +347,43 @@ uint16 Rando_GetEntranceRegionOverride(uint16 loc_id) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase C entrance shuffle (Stage 2) — per-seed DUNGEON edge overlay.
+//
+// Dungeons ARE first-class regions with inbound overworld door-edges, so the
+// caves' location-region-override is the wrong tool. Instead we remap the
+// *destination* of dungeon door-edges per π, keyed by the dungeon ENTRY region
+// (each single-entrance dungeon's entry region is the `to_region` of exactly one
+// door-edge). The edge's PREDICATE (the door-access requirement) stays with the
+// door; only where the door leads changes — correct entrance-shuffle semantics.
+// Internal dungeon edges + event gates are untouched (they have a dungeon entry
+// region as `from`, not `to`). Inactive by default ⇒ byte-identical reachability.
+#define kEntranceEdgeOverrideMax 64
+static uint16 g_entrance_edge_override[kEntranceEdgeOverrideMax];
+static bool g_entrance_edge_active = false;
+
+void Rando_BeginEntranceEdgeOverrides(void) {
+  for (int i = 0; i < kEntranceEdgeOverrideMax; i++)
+    g_entrance_edge_override[i] = 0xFFFF;
+  g_entrance_edge_active = true;
+}
+
+void Rando_SetEntranceEdgeOverride(uint16 old_to_region, uint16 new_to_region) {
+  if (old_to_region < kEntranceEdgeOverrideMax)
+    g_entrance_edge_override[old_to_region] = new_to_region;
+}
+
+void Rando_ClearEntranceEdgeOverrides(void) {
+  g_entrance_edge_active = false;
+}
+
+uint16 Rando_GetEntranceEdgeOverride(uint16 to_region) {
+  if (!g_entrance_edge_active || to_region >= kEntranceEdgeOverrideMax)
+    return to_region;
+  uint16 ov = g_entrance_edge_override[to_region];
+  return (ov == 0xFFFF) ? to_region : ov;
+}
+
+// ---------------------------------------------------------------------------
 // Logic_ComputeReachability (task 3.8) — fixed-point expansion.
 //
 // Algorithm:
@@ -436,11 +473,15 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     for (uint32 e = 0; e < kRandoEdgesCount; e++) {
       const RandoEdgeDef *edge = &kRandoEdges[e];
       if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
+      // Phase C Stage 2 — dungeon entrance shuffle remaps a door-edge's
+      // destination per π (keeping its door-access predicate). Identity when
+      // inactive ⇒ byte-identical.
+      uint16 to_region = Rando_GetEntranceEdgeOverride(edge->to_region);
       if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
-      if (bitset_has(g_reachability.region_bitset, edge->to_region)) continue;
+      if (bitset_has(g_reachability.region_bitset, to_region)) continue;
       const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
       if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
-        bitset_set(g_reachability.region_bitset, edge->to_region);
+        bitset_set(g_reachability.region_bitset, to_region);
         changed = true;
       }
     }
@@ -448,11 +489,12 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
       for (uint32 e = 0; e < kRandoEdges_InvertedCount; e++) {
         const RandoEdgeDef *edge = &kRandoEdges_Inverted[e];
         if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
+        uint16 to_region = Rando_GetEntranceEdgeOverride(edge->to_region);
         if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
-        if (bitset_has(g_reachability.region_bitset, edge->to_region)) continue;
+        if (bitset_has(g_reachability.region_bitset, to_region)) continue;
         const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
         if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
-          bitset_set(g_reachability.region_bitset, edge->to_region);
+          bitset_set(g_reachability.region_bitset, to_region);
           changed = true;
         }
       }

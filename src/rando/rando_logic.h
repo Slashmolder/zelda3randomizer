@@ -282,4 +282,13 @@ void Rando_ClearEntranceRegionOverrides(void);
 // none/inactive. For the self-check + tracker.
 uint16 Rando_GetEntranceRegionOverride(uint16 loc_id);
 
+// Phase C entrance shuffle (Stage 2) — per-seed DUNGEON edge overlay. Begin
+// resets to identity + activates; Set remaps a door-edge whose destination is
+// `old_to_region` to land at `new_to_region` instead (keyed by the dungeon entry
+// region); Clear deactivates; Get resolves (returns the input when inactive/none).
+void Rando_BeginEntranceEdgeOverrides(void);
+void Rando_SetEntranceEdgeOverride(uint16 old_to_region, uint16 new_to_region);
+void Rando_ClearEntranceEdgeOverrides(void);
+uint16 Rando_GetEntranceEdgeOverride(uint16 to_region);
+
 #endif  // ZELDA3_RANDO_LOGIC_H_
