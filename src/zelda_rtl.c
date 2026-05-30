@@ -11,6 +11,7 @@
 #include "rando/rando.h"  // add-rando-trackers: tracker visibility flags
 #include "rando/rando_placement.h"  // §8.8 snapshot rando placement TLV
 #include "rando/rando_snapshot_tail.h"  // §8.8 / §8.8a TLV save/load + invariant counter
+#include "rando/rando_hints.h"  // Rando_DumpHintDebug (F12 hint-state diagnostic)
 #include "hud.h"  // add-rando-trackers: per-frame tracker-overlay draw hook
 #include "util.h"
 #include "audio.h"
@@ -913,7 +914,8 @@ void ZeldaDumpDebugState(void) {
   if ((f = fopen("dump_vram.bin", "wb")))  { fwrite(g_zenv.ppu->vram, 2, 0x8000, f); fclose(f); }
   if ((f = fopen("dump_oam.bin", "wb")))   { fwrite(g_zenv.ppu->oam, 2, 0x110, f); fclose(f); }
   if ((f = fopen("dump_cgram.bin", "wb"))) { fwrite(g_zenv.ppu->cgram, 2, 0x100, f); fclose(f); }
-  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_vram.bin / dump_oam.bin / dump_cgram.bin\n");
+  Rando_DumpHintDebug(dialogue_message_index);  // dev: hint-table state -> dump_hints.txt
+  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_vram.bin / dump_oam.bin / dump_cgram.bin / dump_hints.txt\n");
 }
 
 void SaveLoadSlot(int cmd, int which) {

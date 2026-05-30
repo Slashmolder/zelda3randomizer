@@ -230,10 +230,16 @@ static void DrawItemTracker(void *) {
   // Equipment (level/tier overlays).
   snprintf(ov, sizeof ov, "%d", v.sword);  IconChip(kRandoIcon_Sword, v.sword > 0, v.sword > 0 ? ov : nullptr);
   snprintf(ov, sizeof ov, "%d", v.shield); IconChip(kRandoIcon_Shield, v.shield > 0, v.shield > 0 ? ov : nullptr);
-  IconChip(kRandoIcon_Armor, true, v.mail == 2 ? "R" : v.mail == 1 ? "B" : nullptr);
-  snprintf(ov, sizeof ov, "%d", v.gloves); IconChip(kRandoIcon_Gloves, v.gloves > 0, v.gloves > 0 ? ov : nullptr);
+  // Tunic / gloves / boomerang: pick the coloured-variant atlas slot so the
+  // sprite matches the held tier (blue/red mail, Titan's Mitt, magic boomerang).
+  int mail_slot = v.mail == 2 ? kRandoIcon_ArmorRed
+                : v.mail == 1 ? kRandoIcon_ArmorBlue : kRandoIcon_Armor;
+  IconChip(mail_slot, true, nullptr);
+  int glove_slot = v.gloves == 2 ? kRandoIcon_GlovesTitan : kRandoIcon_Gloves;
+  IconChip(glove_slot, v.gloves > 0, nullptr);
   IconChip(kRandoIcon_Bow, v.bow > 0, v.bow == 2 ? "S" : v.bow == 1 ? "W" : nullptr);
-  IconChip(kRandoIcon_Boomerang, v.boomerang > 0, v.boomerang == 2 ? "R" : v.boomerang == 1 ? "B" : nullptr);
+  int boom_slot = v.boomerang == 2 ? kRandoIcon_BoomerangRed : kRandoIcon_Boomerang;
+  IconChip(boom_slot, v.boomerang > 0, nullptr);
   IconChip(kRandoIcon_Hookshot, v.hookshot, nullptr);
   IconChip(kRandoIcon_FireRod, v.firerod, nullptr);
   IconChip(kRandoIcon_IceRod, v.icerod, nullptr);
@@ -275,14 +281,21 @@ static void DrawItemTracker(void *) {
   // assignment (rando_logic dungeon ids). `prize` marks the 10 dungeons that
   // award a pendant/crystal (HC/CT/GT do not).
   ImGui::SeparatorText("Dungeons");
-  static const struct { int game; int logic; const char *name; bool prize; } kDungeonRows[] = {
-      {0,  0,  "Hyrule Castle",    false}, {4,  4,  "Castle Tower",     false},
-      {2,  1,  "Eastern",          true},  {3,  2,  "Desert",           true},
-      {10, 3,  "Tower of Hera",    true},  {5,  5,  "Pal. of Darkness", true},
-      {6,  6,  "Swamp",            true},  {7,  7,  "Skull Woods",      true},
-      {8,  8,  "Thieves'",         true},  {9,  9,  "Ice",              true},
-      {11, 10, "Misery Mire",      true},  {12, 11, "Turtle Rock",      true},
-      {13, 12, "Ganon's Tower",    false},
+  // game = game-side dungeon id (cur_palace_index_x2>>1): drives the prize/
+  //   Agahnim completion and the big-key/map/compass bit (0x8000 >> game).
+  // kidx = small-key array index. Equal to `game` for every dungeon EXCEPT
+  //   Hyrule Castle, whose big-key/map/compass bit is at game id 1 but whose
+  //   small keys share slot 0 with the sewers (SaveDungeonKeys maps raw
+  //   dungeon id 2 -> key slot 0; see src/dungeon.c).
+  // logic = prize-assignment index (rando_logic / kDungeonPrizeLocations order).
+  static const struct { int game; int kidx; int logic; const char *name; bool prize; } kDungeonRows[] = {
+      {1,  0,  0,  "Hyrule Castle",    false}, {4,  4,  4,  "Castle Tower",     false},
+      {2,  2,  1,  "Eastern",          true},  {3,  3,  2,  "Desert",           true},
+      {10, 10, 3,  "Tower of Hera",    true},  {5,  5,  5,  "Pal. of Darkness", true},
+      {6,  6,  6,  "Swamp",            true},  {7,  7,  7,  "Skull Woods",      true},
+      {8,  8,  8,  "Thieves'",         true},  {9,  9,  9,  "Ice",              true},
+      {11, 11, 10, "Misery Mire",      true},  {12, 12, 11, "Turtle Rock",      true},
+      {13, 13, 12, "Ganon's Tower",    false},
   };
   // Prize assignment + shuffle flag drive the spoiler-safe prize column: an
   // unobtained shuffled prize shows "?" (revealing it would spoil); an obtained
@@ -305,7 +318,7 @@ static void DrawItemTracker(void *) {
     for (int i = 0; i < (int)(sizeof(kDungeonRows) / sizeof(kDungeonRows[0])); i++) {
       int d = kDungeonRows[i].game;
       uint16 bit = (uint16)(0x8000u >> d);
-      int keys = v.dungeon_small_keys[d];
+      int keys = v.dungeon_small_keys[kDungeonRows[i].kidx];
 
       // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.
       bool prize_obtained = false; int prize_icon = -1, crystal_num = 0;
@@ -614,6 +627,11 @@ static void DrawMapTracker(void *) {
   ImGui::SameLine();
   ImGui::RadioButton("Dark World", &s_world, 1);
   ImGui::SameLine();
+  // Pin-tuning aid: overlay a 0.0..1.0 normalized grid and a live mouse-coord
+  // readout so pin positions (kLightPins/kDarkPins) can be dialed in by eye.
+  static bool s_show_grid = false;
+  ImGui::Checkbox("Grid", &s_show_grid);
+  ImGui::SameLine();
   ImGui::TextDisabled("(green: checked · yellow: available · grey: locked)");
 
   const WorldPin *pins = s_world ? kDarkPins : kLightPins;
@@ -629,6 +647,29 @@ static void DrawMapTracker(void *) {
     dl->AddImage(s_map_tex[s_world], origin, br);
   else
     dl->AddRectFilled(origin, br, IM_COL32(28, 30, 38, 255), 4.0f);
+
+  // Normalized coordinate grid (every 0.1; brighter every 0.5) with axis
+  // labels along the top (x) and left (y) edges. Toggled by the "Grid" box.
+  if (s_show_grid) {
+    for (int i = 0; i <= 10; i++) {
+      float f = (float)i / 10.0f;
+      ImU32 c = (i % 5 == 0) ? IM_COL32(255, 255, 255, 130) : IM_COL32(255, 255, 255, 45);
+      dl->AddLine(ImVec2(origin.x + f * side, origin.y),
+                  ImVec2(origin.x + f * side, origin.y + side), c);
+      dl->AddLine(ImVec2(origin.x, origin.y + f * side),
+                  ImVec2(origin.x + side, origin.y + f * side), c);
+      char lbl[8];
+      snprintf(lbl, sizeof lbl, "%.1f", f);
+      dl->AddText(ImVec2(origin.x + f * side + 1, origin.y + 1), IM_COL32(255, 235, 90, 220), lbl);
+      dl->AddText(ImVec2(origin.x + 1, origin.y + f * side + 1), IM_COL32(255, 235, 90, 220), lbl);
+    }
+    ImVec2 m = ImGui::GetMousePos();
+    if (m.x >= origin.x && m.x <= origin.x + side && m.y >= origin.y && m.y <= origin.y + side) {
+      char buf[40];
+      snprintf(buf, sizeof buf, "x %.3f  y %.3f", (m.x - origin.x) / side, (m.y - origin.y) / side);
+      dl->AddText(ImVec2(origin.x + 4, origin.y + side - 16), IM_COL32(120, 255, 120, 255), buf);
+    }
+  }
 
   ImVec2 mouse = ImGui::GetMousePos();
   int hover_region = -1;

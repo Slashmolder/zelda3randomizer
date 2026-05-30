@@ -198,6 +198,10 @@ bool Rando_IsHintTileMessage(uint16 msg_id);
 // every other case so the vanilla dialogue decode proceeds unchanged.
 bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer);
 
+// Dev diagnostic: dump the live hint-table state to dump_hints.txt (called from
+// ZeldaDumpDebugState / F12). `cur_msg_id` is the current dialogue_message_index.
+void Rando_DumpHintDebug(uint16 cur_msg_id);
+
 // Self-check (called from Rando_RunAllSelfChecks). Asserts that
 // Rando_GenerateHints produces byte-identical output across consecutive
 // invocations with the same inputs (determinism contract per the

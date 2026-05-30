@@ -424,6 +424,27 @@ bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer) {
   return true;
 }
 
+// Dev diagnostic (F12 / ZeldaDumpDebugState): write the live hint-table state to
+// dump_hints.txt so a telepathic-tile "no hint" report can be diagnosed without
+// a debugger. `cur_msg_id` is the current dialogue_message_index — pass the id
+// of the tile just read to see whether it is a hint tile and which NPC/text it
+// maps to.
+void Rando_DumpHintDebug(uint16 cur_msg_id) {
+  FILE *f = fopen("dump_hints.txt", "w");
+  if (f == NULL) return;
+  int active = 0;
+  for (int i = 1; i < kRandoHintNpc__Count; i++)
+    if (g_hint_table[i].active) active++;
+  fprintf(f, "slot_active=%d  active_hints=%d/%d  cur_dialogue_msg=0x%02X  is_hint_tile=%d\n",
+          (int)g_rando_slot_active, active, (int)kRandoHintNpc__Count - 1,
+          (unsigned)cur_msg_id, (int)Rando_IsHintTileMessage(cur_msg_id));
+  for (int i = 1; i < kRandoHintNpc__Count; i++) {
+    fprintf(f, "  npc %2d active=%d text=%s\n", i, (int)g_hint_table[i].active,
+            g_hint_table[i].text[0] ? g_hint_table[i].text : "(empty)");
+  }
+  fclose(f);
+}
+
 // -----------------------------------------------------------------------------
 // Hints_SelfCheck — determinism assertion.
 //

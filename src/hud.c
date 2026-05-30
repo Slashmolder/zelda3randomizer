@@ -1429,9 +1429,17 @@ static void Hud_Update_Hearts() {  // 8dfb94
 static void Hud_Update_Magic() {  // 8dfc09
   uint16 *dst = &hud_tile_indices_buffer[HUDXY(2, 0)];
   if (link_magic_consumption >= 1) {
-    dst[HUDXY(0, 0)] = 0x28F7;
-    dst[HUDXY(1, 0)] = 0x2851;
-    dst[HUDXY(2, 0)] = 0x28FA;
+    dst[HUDXY(0, 0)] = 0x28F7;  // small "1"
+    dst[HUDXY(1, 0)] = 0x2851;  // "/"
+    // Vanilla only ever had half magic, so it hardcoded the "2" tile here. The
+    // randomizer adds QuarterMagic (link_magic_consumption == 2), which must
+    // read "1/4". There's no bespoke small "4" in the magic-header font, so use
+    // the HUD digit font (char N == digit N, as the rupee/bomb counters do) at
+    // this header's palette 2 — palette-2 index 3 is the black HUD background,
+    // so the digit renders as clean strokes with no counter-box behind it.
+    // consumption: 1 = half ("2" tile 0x28FA), 2 = quarter (digit "4" 0x2804).
+    // Inert under side-by-side vanilla verification: vanilla never sets 2.
+    dst[HUDXY(2, 0)] = (link_magic_consumption >= 2) ? 0x2804 : 0x28FA;
   }
   const uint16 *src = kUpdateMagicPowerTilemap[(link_magic_power + 7) >> 3];
   dst[HUDXY(1, 1)] = src[0];
@@ -2004,6 +2012,12 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Map, &kRandoMapIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Compass, &kRandoCompassIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Shovel, &kHudItemFlute[1]);
+  // Colour/tier variants so the tracker can show the upgraded sprite (the main
+  // loop above renders boomerang/gloves at tier 1 and armor at tier 0=green).
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_BoomerangRed, &kHudItemBoomerang[2]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_GlovesTitan,  &kHudItemGloves[2]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ArmorBlue,    &kHudItemArmor[1]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ArmorRed,     &kHudItemArmor[2]);
   DecodeIconTile2x(out, stride, scratch, sw, pal, kRandoIcon_Heart, kRandoFullHeartTile);
   // Prize sprite icons (4bpp receive-animation art). Pendant = gfx 0x23 (one
   // tile; palettes green pal4 / red pal2 / blue pal1 from kPalette_MainSpr).

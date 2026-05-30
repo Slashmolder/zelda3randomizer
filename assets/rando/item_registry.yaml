@@ -239,12 +239,12 @@ items:
     name: HalfMagic
     category: absolute
     dispatch: direct_half_magic
-    notes: "Sets link_magic_consumption = 2 (half) if currently 1 (full)."
+    notes: "Sets link_magic_consumption = 1 (half) if currently 0 (full). zelda3 uses 0=full,1=half,2=quarter (the cost table is indexed item*3+consumption), NOT the vanilla-SNES 1/2/4 convention."
   - id: 42
     name: QuarterMagic
     category: absolute
     dispatch: direct_quarter_magic
-    notes: "Sets link_magic_consumption = 4 (quarter); applies on top of HalfMagic."
+    notes: "Sets link_magic_consumption = 2 (quarter). zelda3 uses 0=full,1=half,2=quarter, NOT the vanilla-SNES 1/2/4 convention."
 
   # ===========================================================================
   # Bottles (IDs 43..49)

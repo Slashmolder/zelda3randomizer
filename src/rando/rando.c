@@ -1038,16 +1038,26 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // shows hints without re-running the full seed generator.
   {
     RandoSettings hint_settings;
-    Settings_SetDefaults(&hint_settings);
-    if (src->header.settings_ext_present) {
-      hint_settings.hints = src->header.hints_setting;
-      hint_settings.goal = src->header.goal;
+    if (g_rando_active_settings_valid) {
+      // Most reliable source: the full canonical settings blob recovered just
+      // above (the same one the reachability engine consumes). It carries the
+      // real `hints` and `goal` axes, so it is immune to a stale or partially
+      // written header ext byte — which would otherwise leave hints silently
+      // off even though the seed was generated with hints on.
+      hint_settings = g_rando_active_settings;
     } else {
-      // Older slot (or writer that did not populate the ext): default to
-      // hints-on so existing rando slots still surface telepathic-tile hints.
-      // goal stays at the Settings_SetDefaults value (Murahdahla won't fire
-      // unless it happens to be a Triforce/Ganon-hunt default).
-      hint_settings.hints = kHintsMode_On;
+      // No canonical blob (older v1 slot / snapshot restore). Fall back to the
+      // additive header ext byte, or default hints-on for the oldest slots so
+      // existing rando slots still surface telepathic-tile hints. goal stays at
+      // the Settings_SetDefaults value (Murahdahla won't fire unless it happens
+      // to be a Triforce/Ganon-hunt default).
+      Settings_SetDefaults(&hint_settings);
+      if (src->header.settings_ext_present) {
+        hint_settings.hints = src->header.hints_setting;
+        hint_settings.goal = src->header.goal;
+      } else {
+        hint_settings.hints = kHintsMode_On;
+      }
     }
     Rando_GenerateHints(&hint_settings, &g_session_placement_table, NULL);
   }
