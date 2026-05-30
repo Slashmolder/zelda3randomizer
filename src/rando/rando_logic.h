@@ -291,4 +291,17 @@ void Rando_SetEntranceEdgeOverride(uint16 old_to_region, uint16 new_to_region);
 void Rando_ClearEntranceEdgeOverrides(void);
 uint16 Rando_GetEntranceEdgeOverride(uint16 to_region);
 
+// Phase C entrance shuffle (Stage 3 / cross-category) primitives.
+// SetEntranceRegionOverridePred: like the region override, but ALSO AND a
+// predicate (pred_off/pred_len into kRandoPredicateStream; len 0 = none) into the
+// cave-location's reachability — for a cave behind a gated dungeon door so it
+// inherits the door's requirement. Reset by Rando_BeginEntranceRegionOverrides.
+void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
+                                         uint32 pred_off, uint16 pred_len);
+// AddEntranceEdge: add a per-seed edge from_region → to_region (pred_len 0 =
+// unconditional) — for a dungeon behind a cave door. Reset by
+// Rando_BeginEntranceEdgeOverrides; walked when edge overrides are active.
+void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
+                           uint32 pred_off, uint16 pred_len);
+
 #endif  // ZELDA3_RANDO_LOGIC_H_
