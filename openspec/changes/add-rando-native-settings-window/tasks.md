@@ -305,14 +305,14 @@ Enumerate every call site:
 
 ## 20. Two-window input bug sweep
 
-- [ ] 20.1 Manual test: focus the game window, press arrow keys — game responds, settings window does not
-- [ ] 20.2 Manual test: focus the settings window, type letters into a text field — letters appear in the field, game character does not move
-- [ ] 20.3 Manual test: gamepad connected — input always reaches the game regardless of which OS window has focus (proves the `SDL_CONTROLLER*` bypass list in §3.4 works)
-- [ ] 20.4 Manual test: minimize the settings window, confirm game continues; restore the settings window, confirm state is preserved
-- [ ] 20.5 Manual test: close the settings window via OS X-button, confirm game continues, confirm settings window can be re-opened (via the documented hotkey or game-window menu)
-- [ ] 20.6 Manual test: drag the settings window to a second monitor, exit, re-launch — window opens on the same monitor at the same position
-- [ ] 20.7 Manual test: drag the settings window so most of it is off-screen, edit `[rando_window].window_x/y` in `zelda3.ini` to be wildly off-screen, re-launch — window recenters
-- [ ] 20.8 Manual test: headless CLI invocations (`./zelda3 --generate-seed=...`, `./zelda3 --print-assets-hash`, etc.) do NOT open any settings window (proves the §3.1 ordering keeps `RandoWindow_Init` behind the `Maybe*Exit` checks)
+- [x] 20.1 Manual test: focus the game window, press arrow keys — game responds, settings window does not <!-- done: owner playtest 2026-05-30 -->
+- [x] 20.2 Manual test: focus the settings window, type letters into a text field — letters appear in the field, game character does not move <!-- done: owner playtest 2026-05-30 -->
+- [x] 20.3 Manual test: gamepad connected — input always reaches the game regardless of which OS window has focus (proves the `SDL_CONTROLLER*` bypass list in §3.4 works) <!-- done: owner playtest 2026-05-30 -->
+- [x] 20.4 Manual test: minimize the settings window, confirm game continues; restore the settings window, confirm state is preserved <!-- done: owner playtest 2026-05-30 -->
+- [x] 20.5 Manual test: close the settings window via OS X-button, confirm game continues, confirm settings window can be re-opened (via the documented hotkey or game-window menu) <!-- done: owner playtest 2026-05-30 -->
+- [ ] 20.6 Manual test: drag the settings window to a second monitor, exit, re-launch — window opens on the same monitor at the same position <!-- DEFERRED: owner has a single-monitor setup; cannot exercise. Multi-monitor persistence remains unverified — re-test when a second monitor is available, or have another contributor cover it. -->
+- [x] 20.7 Manual test: drag the settings window so most of it is off-screen, edit `[rando_window].window_x/y` in `zelda3.ini` to be wildly off-screen, re-launch — window recenters <!-- done: owner playtest 2026-05-30 -->
+- [x] 20.8 Manual test: headless CLI invocations (`./zelda3 --generate-seed=...`, `./zelda3 --print-assets-hash`, etc.) do NOT open any settings window (proves the §3.1 ordering keeps `RandoWindow_Init` behind the `Maybe*Exit` checks) <!-- done: owner playtest 2026-05-30 -->
 
 ## 21. Spoiler viewer race-mode gate
 
