@@ -466,12 +466,23 @@ static void Panel_Shuffles() {
     bool cave = s->shuffle_cave_entrances != 0;
     if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
       s->shuffle_cave_entrances = cave;
-      s->coupled = cave ? 1 : 0;  // coupled is the only Stage 1 mode
+      s->coupled = (cave || s->shuffle_dungeon_entrances) ? 1 : 0;  // coupled = only mode
       changed = true;
     }
     HelpTooltip("Each overworld cave door leads to a different cave interior; "
                 "exiting returns you to the door you entered. Goal stays "
                 "reachable. (Open/Standard only in this version.)");
+    bool dun = s->shuffle_dungeon_entrances != 0;
+    if (ImGui::Checkbox("Shuffle dungeon entrances", &dun)) {
+      s->shuffle_dungeon_entrances = dun;
+      s->coupled = (dun || s->shuffle_cave_entrances) ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Shuffles the 6 single-entrance dungeons (PoD, Swamp, Thieves' "
+                "Town, Ice Palace, Tower of Hera, Agahnim's Tower) among "
+                "themselves; entering one's door loads another, coupled exit "
+                "returns you. Multi-entrance dungeons (Skull Woods, Desert) + "
+                "Eastern Palace come later.");
     // Coupled is the only implemented mode for now; show it as a fixed
     // indicator rather than a live toggle so the widget never lies.
     ImGui::BeginDisabled(true);

@@ -61,6 +61,34 @@ void Entrance_BuildDoorOverlay(const uint8 *assign, int n,
                                const uint8 *vanilla, uint32 len,
                                uint8 *overlay);
 
+// --- Dungeon pool (Stage 2) ---------------------------------------------------
+
+// True iff dungeon entrance shuffle is active (shuffle_dungeon_entrances +
+// Open/Standard). The 6 cleanly single-entrance dungeons shuffle among themselves.
+bool Entrance_IsDungeonActive(const RandoSettings *settings);
+
+// Compute the dungeon permutation for (seed, attempt) into `assign` (length =
+// dungeon count). Independent of the cave permutation (distinct RNG salt).
+int Entrance_ComputeDungeonPermutation(const RandoSettings *settings, uint64 seed,
+                                       uint8 attempt,
+                                       uint8 assign[kEntranceMaxInteriors]);
+
+// Install / clear the per-seed dungeon EDGE overrides (door-edge destination
+// remap by entry region) into the logic graph.
+void Entrance_ApplyEdgeOverrides(const uint8 *assign, int n);
+void Entrance_ClearEdgeOverrides(void);
+
+// Remap dungeon door slots in `overlay` (built by Entrance_BuildDoorOverlay,
+// which leaves dungeon slots = vanilla). Cave + dungeon entrance-id sets are
+// disjoint, so the passes compose.
+void Entrance_RemapDungeonDoors(const uint8 *assign, int n,
+                                uint8 *overlay, uint32 len);
+
+// Coupling: the exit room the room-keyed search should target so a player who
+// entered the SOURCE dungeon door `vanilla_entrance_id` returns there. 0 if not
+// a v1 dungeon door.
+uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id);
+
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole
 // `  "entrance_mapping": [ ... ],` block (2-space indent, trailing comma) to
@@ -69,6 +97,8 @@ void Entrance_BuildDoorOverlay(const uint8 *assign, int n,
 // of the header).
 void Entrance_WriteSpoilerJson(void *file, const uint8 *assign, int n);
 void Entrance_WriteSpoilerText(void *file, const uint8 *assign, int n);
+// Dungeon entrance_mapping section (Stage 2).
+void Entrance_WriteDungeonSpoilerJson(void *file, const uint8 *assign, int n);
 
 // Self-test (pure; no live assets): permutation is a bijection, region-override
 // closed form is self-consistent (a fixed point is a no-op; a swap moves regions

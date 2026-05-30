@@ -536,6 +536,12 @@ uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
 #define kRandoTakeAnyCaveCount 31
 #define kRandoTakeAnyLocBase   266
 uint8 g_rando_takeany_door_id;  // transient; set by Overworld_UseEntrance
+// Phase C Stage 2 — dungeon entrance-shuffle coupling. Set at the overworld entry
+// hook when a SHUFFLED dungeon door is entered; the dungeon-exit room-keyed search
+// uses it instead of the loaded dungeon's room so the player returns to the SOURCE
+// door (avoids stranding, e.g. exiting on Ice Palace's lake without flippers).
+// 0 = no override. Consumed (cleared) by the exit path.
+uint16 g_rando_entrance_exit_room;
 
 typedef struct { uint8 door_id; uint8 host_entrance; } RandoTakeAnyCaveRt;
 static const RandoTakeAnyCaveRt kRandoTakeAnyCaves[kRandoTakeAnyCaveCount] = {
@@ -954,26 +960,30 @@ static uint8 g_entrance_overlay[kEntranceOverlayMax];
 // feature must tear the overlay down first.
 static const uint8 *g_entrance_overlay_orig = NULL;
 
-// Restore the vanilla door table + clear the logic region overrides. Idempotent.
+// Restore the vanilla door table + clear the logic overrides. Idempotent.
 static void Entrance_RuntimeTeardown(void) {
   if (g_entrance_overlay_orig != NULL) {
     g_asset_ptrs[126] = (void *)g_entrance_overlay_orig;
     g_entrance_overlay_orig = NULL;
   }
   Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
+  g_rando_entrance_exit_room = 0;
 }
 
-// Install the overlay + region overrides for a cave-shuffle slot. Tears down any
-// prior install first (so a slot-switch without an intervening Deactivate is
-// safe). No-op for non-shuffle slots.
+// Install the overlay + logic overrides for an entrance-shuffle slot (caves
+// and/or dungeons). Tears down any prior install first (so a slot-switch without
+// an intervening Deactivate is safe). No-op for non-shuffle slots.
 static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   Entrance_RuntimeTeardown();
-  if (!(h->entrance_axes & kEntranceAxis_ShuffleCaves)) return;
   RandoSettings es;
   memset(&es, 0, sizeof(es));
-  es.shuffle_cave_entrances = 1;
+  es.shuffle_cave_entrances = (h->entrance_axes & kEntranceAxis_ShuffleCaves) ? 1 : 0;
+  es.shuffle_dungeon_entrances = (h->entrance_axes & kEntranceAxis_ShuffleDungeons) ? 1 : 0;
   es.world_state = h->settings_ext_present ? h->world_state : (uint8)kWorldState_Open;
-  if (!Entrance_IsActive(&es)) return;  // Inverted/Retro guard (defense in depth)
+  bool cave = Entrance_IsActive(&es);          // Inverted/Retro guard (defense in depth)
+  bool dun = Entrance_IsDungeonActive(&es);
+  if (!cave && !dun) return;
   const uint8 *ids = kOverworld_Entrance_Id;
   uint32 len = kOverworld_Entrance_Id_SIZE;
   if (ids == NULL || len == 0 || len > kEntranceOverlayMax) return;
@@ -982,16 +992,39 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   uint64 seed = (uint64)sb[21] | ((uint64)sb[22] << 8) | ((uint64)sb[23] << 16) |
                 ((uint64)sb[24] << 24) | ((uint64)sb[25] << 32) |
                 ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
-  uint8 assign[kEntranceMaxInteriors];
-  int ni = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, assign);
-  if (ni <= 0) return;
+  uint8 cave_assign[kEntranceMaxInteriors]; int cave_n = 0;
+  uint8 dun_assign[kEntranceMaxInteriors]; int dun_n = 0;
   // Logic-side overrides so the in-game location tracker reflects the shuffled
   // reachability (gameplay itself reads the baked placement, not reachability).
-  Entrance_ApplyRegionOverrides(assign, ni);
-  // Runtime door overlay.
-  Entrance_BuildDoorOverlay(assign, ni, ids, len, g_entrance_overlay);
+  if (cave) {
+    cave_n = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, cave_assign);
+    Entrance_ApplyRegionOverrides(cave_assign, cave_n);
+  }
+  if (dun) {
+    dun_n = Entrance_ComputeDungeonPermutation(&es, seed, h->entrance_attempt, dun_assign);
+    Entrance_ApplyEdgeOverrides(dun_assign, dun_n);
+  }
+  // Runtime door overlay: cave pass copies vanilla + remaps cave slots (NULL = copy
+  // only), then the dungeon pass remaps the disjoint dungeon slots in place.
+  Entrance_BuildDoorOverlay(cave ? cave_assign : NULL, cave_n, ids, len, g_entrance_overlay);
+  if (dun) Entrance_RemapDungeonDoors(dun_assign, dun_n, g_entrance_overlay, len);
   g_entrance_overlay_orig = (const uint8 *)g_asset_ptrs[126];
   g_asset_ptrs[126] = g_entrance_overlay;
+}
+
+// Coupling helper (Stage 2): for the overworld entry hook. Given the door-slot
+// `lx`, return the room the dungeon-exit room-keyed search should target so the
+// player returns to THIS source door (rather than the loaded dungeon's vanilla
+// door). 0 when the slot isn't a shuffled dungeon door (caves auto-couple; an
+// unredirected door needs no override). Reads the saved vanilla table.
+uint16 Rando_EntranceCoupledExitRoom(uint16 lx) {
+  if (g_entrance_overlay_orig == NULL) return 0;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (lx >= len) return 0;
+  uint8 vanilla_id = g_entrance_overlay_orig[lx];
+  // Only when this door was actually redirected (overlay value differs).
+  if (kOverworld_Entrance_Id[lx] == vanilla_id) return 0;
+  return Entrance_DungeonSourceExitRoom(vanilla_id);  // 0 if not a v1 dungeon door
 }
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {

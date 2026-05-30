@@ -269,6 +269,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // entrance shuffle was applied. Omitted otherwise.
   // -----------------------------------------------------------------------
   Entrance_WriteSpoilerJson(f, s->entrance_assign, s->entrance_count);
+  Entrance_WriteDungeonSpoilerJson(f, s->dungeon_assign, s->dungeon_count);
 
   // -----------------------------------------------------------------------
   // sphere_data — emitted per `randomizer-core / Sphere semantics` when a

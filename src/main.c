@@ -481,18 +481,26 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // so the placer/goal-check see the shuffled reachability, accept the first π
   // under which the goal is completable. Default-off ⇒ byte-identical placement.
   bool ok = false;
-  uint8 entrance_assign[kEntranceMaxInteriors];
-  int entrance_count = 0;
+  uint8 cave_assign[kEntranceMaxInteriors]; int cave_count = 0;
+  uint8 dun_assign[kEntranceMaxInteriors]; int dun_count = 0;
+  bool cave_on = Entrance_IsActive(&settings);
+  bool dun_on = Entrance_IsDungeonActive(&settings);
   Entrance_ClearRegionOverrides();
-  if (Entrance_IsActive(&settings)) {
+  Entrance_ClearEdgeOverrides();
+  if (cave_on || dun_on) {
     for (int att = 0; att < 64; att++) {
-      int ni = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, entrance_assign);
-      Entrance_ApplyRegionOverrides(entrance_assign, ni);
+      if (cave_on) {
+        cave_count = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, cave_assign);
+        Entrance_ApplyRegionOverrides(cave_assign, cave_count);
+      }
+      if (dun_on) {
+        dun_count = Entrance_ComputeDungeonPermutation(&settings, seed_u64, (uint8)att, dun_assign);
+        Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+      }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table) &&
           Goal_IsCompletable(&settings, &table)) {
         ok = true;
-        entrance_count = ni;
         break;
       }
     }
@@ -557,9 +565,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.seed_u64 = seed_u64;
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
-  // Phase C — entrance_mapping section (omitted when entrance_count == 0).
-  spoiler.entrance_assign = (entrance_count > 0) ? entrance_assign : NULL;
-  spoiler.entrance_count = entrance_count;
+  // Phase C — entrance_mapping sections (omitted when the respective count is 0).
+  spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
+  spoiler.entrance_count = cave_count;
+  spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
+  spoiler.dungeon_count = dun_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

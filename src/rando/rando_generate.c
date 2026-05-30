@@ -179,40 +179,49 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // Default-off ⇒ this whole block is skipped and placement is byte-identical.
   uint8 entrance_axes = 0;
   uint8 entrance_attempt = 0;
-  uint8 entrance_assign[kEntranceMaxInteriors];
-  int entrance_count = 0;
+  uint8 cave_assign[kEntranceMaxInteriors];
+  int cave_count = 0;
+  uint8 dun_assign[kEntranceMaxInteriors];
+  int dun_count = 0;
+  bool cave_on = Entrance_IsActive(settings);
+  bool dun_on = Entrance_IsDungeonActive(settings);
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
-  if (Entrance_IsActive(settings)) {
+  Entrance_ClearEdgeOverrides();
+  if (cave_on || dun_on) {
     uint8 canon[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(settings, canon);
     entrance_axes = canon[25];  // == the packed entrance-axis byte
     const int kEntranceMaxRetry = 64;
     for (int att = 0; att < kEntranceMaxRetry; att++) {
-      int n = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, entrance_assign);
-      Entrance_ApplyRegionOverrides(entrance_assign, n);
+      if (cave_on) {
+        cave_count = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, cave_assign);
+        Entrance_ApplyRegionOverrides(cave_assign, cave_count);
+      }
+      if (dun_on) {
+        dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, dun_assign);
+        Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+      }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table) &&
           Goal_IsCompletable(settings, &table)) {
         placed = true;
         entrance_attempt = (uint8)att;
-        entrance_count = n;
         break;
       }
     }
-    // NB: leave the accepted π's region overrides ACTIVE — the spoiler's sphere
-    // + goal computation below must see the shuffled reachability. They are
-    // cleared right after the spoiler block (and at the next generation's start).
+    // NB: leave the accepted π's overrides ACTIVE — the spoiler's sphere + goal
+    // computation below must see the shuffled reachability. Cleared right after
+    // the spoiler block (and at the next generation's start).
   } else {
     placed = Place_AssumedFill(settings, seed_u64, effective_budget, &table);
   }
   if (!placed) {
-    // Audit H1 — clear the entrance overrides on the failure path too. The
-    // success path clears after the spoiler block, but if all attempts failed
-    // the accepted-π overrides were never installed and the LAST attempt's
-    // overrides are still active; a tracker repaint or file-select between this
-    // failed generation and the next would otherwise read leaked reachability.
+    // Audit H1 — clear the entrance overrides on the failure path too (the
+    // success path clears after the spoiler block; a failed generation would
+    // otherwise leak the last attempt's shuffled reachability to the tracker).
     Entrance_ClearRegionOverrides();
+    Entrance_ClearEdgeOverrides();
     if (err != NULL) snprintf(err, err_cap, "placement failed");
     free(entries);
     return false;
@@ -271,9 +280,11 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.settings = settings;
     spoiler.placements = &table;
     spoiler.spheres = &spheres;
-    // Phase C — entrance_mapping section (omitted when entrance_count == 0).
-    spoiler.entrance_assign = (entrance_count > 0) ? entrance_assign : NULL;
-    spoiler.entrance_count = entrance_count;
+    // Phase C — entrance_mapping sections (omitted when the respective count is 0).
+    spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
+    spoiler.entrance_count = cave_count;
+    spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
+    spoiler.dungeon_count = dun_count;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {
@@ -286,10 +297,11 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       fprintf(stderr, "[settings] spoiler write failed: %s\n", spoiler_json_path);
     }
   }
-  // Phase C — the accepted π's region overrides have now fed placement, the
-  // spheres, and the goal check. Clear them so any later reachability (e.g. the
-  // tracker, or the next generation) starts from the identity graph.
+  // Phase C — the accepted π's overrides have now fed placement, the spheres, and
+  // the goal check. Clear them so any later reachability (e.g. the tracker, or the
+  // next generation) starts from the identity graph.
   Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
 
   // Build & write the sidecar slot. Slot kind = Randomizer.
   RandoSidecarSlot slot;

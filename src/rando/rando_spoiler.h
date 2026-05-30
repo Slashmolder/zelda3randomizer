@@ -30,6 +30,10 @@ typedef struct RandoSpoiler {
   // shuffle, which omits the "entrance_mapping" spoiler section.
   const uint8 *entrance_assign;
   int entrance_count;
+  // Phase C Stage 2 — the accepted dungeon permutation (dungeon index → dungeon
+  // index now reached through its overworld door). NULL/0 omits the section.
+  const uint8 *dungeon_assign;
+  int dungeon_count;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

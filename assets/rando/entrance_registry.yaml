@@ -433,3 +433,71 @@ overworld_surface_not_caves:
   - { id: 202, name: "Paradox Cave Lower - Middle",    region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
   - { id: 203, name: "Paradox Cave Upper - Left",      region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
   - { id: 204, name: "Paradox Cave Upper - Right",     region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
+
+# ===========================================================================
+# Dungeon-interior registry for entrance shuffle (Phase C, Stage 2).
+#
+# Same redirect chain as caves, but DUNGEON interiors are rooms < 0x100:
+#   overworld door-slot --kOverworld_Entrance_Id[lx]--> entrance-id
+#   entrance-id         --kEntranceData_rooms[i]------> room (< 0x100)
+# Dungeon entrance-ids are a DISJOINT lower set (0x08..0x34); none fall in the
+# cave range 0x3C..0x72,0x83..0x84 (verified).
+#
+# Provenance: assets/tables.py kEntranceNames (index = entrance-id; [Room #NNN]
+# decimal prefix = room). entry_region cross-checked vs src/rando/logic_data.c
+# kRandoEdges door-edges.
+#
+# v1 SHUFFLED SET = the 6 cleanly single-overworld-entrance dungeons whose entry
+# region is the to_region of exactly one door-edge. Multi-entrance (Skull Woods,
+# Desert Palace) and 2-region (Eastern Palace) are recorded as `deferred` — they
+# need coordinated multi-door / multi-region handling (Stage 2b).
+#
+# Schema: dungeon_id, name, rooms:[entry room hex <0x100], entrance_ids:[hex],
+#   region (overworld area, informational), entry_region (logic region — the
+#   edge-overlay key).
+# ===========================================================================
+dungeons:
+  - dungeon_id: palace_of_darkness
+    name: "Palace of Darkness"
+    rooms: [0x04A]
+    entrance_ids: [0x26]
+    region: DarkWorld_NorthEast
+    entry_region: PalaceOfDarkness
+  - dungeon_id: swamp_palace
+    name: "Swamp Palace"
+    rooms: [0x028]
+    entrance_ids: [0x25]
+    region: DarkWorld_South
+    entry_region: SwampPalace
+  - dungeon_id: thieves_town
+    name: "Thieves' Town"
+    rooms: [0x0DB]
+    entrance_ids: [0x34]
+    region: DarkWorld_NorthWest
+    entry_region: ThievesTown
+  - dungeon_id: ice_palace
+    name: "Ice Palace"
+    rooms: [0x00E]
+    entrance_ids: [0x2D]
+    region: DarkWorld_South
+    entry_region: IcePalace_Lobby
+  - dungeon_id: tower_of_hera
+    name: "Tower of Hera"
+    rooms: [0x077]
+    entrance_ids: [0x33]
+    region: LightWorld_DeathMountain_West
+    entry_region: TowerOfHera_Lobby
+  - dungeon_id: hyrule_castle_tower
+    name: "Hyrule Castle Tower (Agahnim's Tower)"
+    rooms: [0x0E0]
+    entrance_ids: [0x24]
+    region: LightWorld_NorthEast
+    entry_region: HyruleCastleTower
+
+# Deferred (NOT shuffled in v1):
+#  - eastern_palace: clean door (id 0x08 -> room 0xC9) but 2-region logic
+#    (EasternPalace_Lobby 0x09 + EasternPalace_PastArmos 0x0a).
+#  - skull_woods: multi-entrance (front 0x28; secondaries 0x29/0x2A/0x2B + drop-ins).
+#  - desert_palace: multi-entrance (front 0x09; East 0x0A / West 0x0B / Boss 0x0C).
+#  - misery_mire / turtle_rock: medallion-gated doors + (TR) two overworld sources.
+#  - ganons_tower: two overworld sources + goal region.

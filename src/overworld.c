@@ -1792,8 +1792,17 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     LoadCachedEntranceProperties();
   } else {
 
+    // Phase C Stage 2 — dungeon entrance-shuffle coupling: if the player entered a
+    // shuffled dungeon door, key the exit search on the SOURCE dungeon's room (so
+    // they return to the door they entered) instead of the loaded dungeon's room.
+    // Consume it so it can't leak to an unrelated later exit. 0 = normal exit.
+    uint16 exit_room = dungeon_room_index;
+    if (g_rando_entrance_exit_room != 0) {
+      exit_room = g_rando_entrance_exit_room;
+      g_rando_entrance_exit_room = 0;
+    }
     int k = 79;
-    do k--; while (kExitDataRooms[k] != dungeon_room_index);
+    do k--; while (k > 0 && kExitDataRooms[k] != exit_room);
     BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = kExitData_ScrollY[k];
     BG1HOFS_copy2 = BG2HOFS_copy2 = BG1HOFS_copy = BG2HOFS_copy = kExitData_ScrollX[k];
     link_y_coord = kExitData_YCoord[k];
@@ -3353,6 +3362,15 @@ after:
         g_rando_takeany_door_id = (uint8)(lx + 1);
         which_entrance = host;
       }
+    }
+    // Phase C Stage 2 — dungeon entrance-shuffle coupling. If this door is a
+    // SHUFFLED dungeon door (which_entrance above now loads a DIFFERENT dungeon
+    // via the overlay), capture the SOURCE dungeon's room so the dungeon-exit
+    // search returns Link to THIS door (overworld.c "exit" path below), not the
+    // loaded dungeon's vanilla door. 0 for caves (auto-coupled) / unshuffled doors.
+    g_rando_entrance_exit_room = 0;
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      g_rando_entrance_exit_room = Rando_EntranceCoupledExitRoom((uint16)lx);
     }
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;

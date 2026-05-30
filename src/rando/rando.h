@@ -281,6 +281,13 @@ uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
 // Transient (per cave visit), reset on every overworld entrance.
 extern uint8 g_rando_takeany_door_id;
 
+// Phase C Stage 2 — dungeon entrance-shuffle coupling. The overworld entry hook
+// sets g_rando_entrance_exit_room (via Rando_EntranceCoupledExitRoom) when a
+// shuffled dungeon door is entered; the dungeon-exit room-keyed search uses it so
+// the player returns to the SOURCE door. 0 = no override (caves auto-couple).
+extern uint16 g_rando_entrance_exit_room;
+uint16 Rando_EntranceCoupledExitRoom(uint16 lx);
+
 // If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE
 // take-any this seed (rando active + Retro + its slot-0 LOC is in the placement
 // table), return its host-room entrance (0x58/0x60/0x46). Else 0.

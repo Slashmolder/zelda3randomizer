@@ -13,6 +13,10 @@
 // (logic_data.c). Used only by the self-check's registry↔logic cross-validation.
 extern const RandoLocationDef kRandoLocations[];
 extern const uint32 kRandoLocationsCount;
+// The static region-graph edge table — used by the dungeon self-check to confirm
+// each dungeon's entry region is the destination of exactly one door-edge.
+extern const RandoEdgeDef kRandoEdges[];
+extern const uint32 kRandoEdgesCount;
 
 // ---------------------------------------------------------------------------
 // Static cave-interior table — the data home for cave shuffle.
@@ -132,6 +136,30 @@ static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
 // === end generated block ===
 
 // ---------------------------------------------------------------------------
+// Dungeon table (Stage 2) — the 6 cleanly single-overworld-entrance dungeons.
+// Each entry_region is the to_region of exactly one door-edge in kRandoEdges, so
+// the per-seed EDGE overlay (rando_logic.c) can swap door destinations by that
+// key. From assets/rando/entrance_registry.yaml `dungeons:`. Eastern Palace
+// (2-region), Skull Woods / Desert (multi-entrance), Misery Mire / Turtle Rock
+// (medallion) and Ganon's Tower (goal) are deferred — see that file.
+typedef struct RandoDungeon {
+  const char *name;
+  const char *entry_region_name;  // logic region resolved via Rando_FindRegionByName
+  uint16 room;                    // entry room (< 0x100)
+  uint8 entrance_id;              // overworld front-door entrance-id
+} RandoDungeon;
+
+#define kEntranceDungeonCount 6
+static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
+  { "palace_of_darkness",   "PalaceOfDarkness",  0x04A, 0x26 },
+  { "swamp_palace",         "SwampPalace",       0x028, 0x25 },
+  { "thieves_town",         "ThievesTown",       0x0DB, 0x34 },
+  { "ice_palace",           "IcePalace_Lobby",   0x00E, 0x2D },
+  { "tower_of_hera",        "TowerOfHera_Lobby", 0x077, 0x33 },
+  { "hyrule_castle_tower",  "HyruleCastleTower", 0x0E0, 0x24 },
+};
+
+// ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------
 
@@ -210,8 +238,9 @@ void Entrance_ClearRegionOverrides(void) {
 void Entrance_BuildDoorOverlay(const uint8 *assign, int n,
                                const uint8 *vanilla, uint32 len,
                                uint8 *overlay) {
-  if (vanilla == NULL || overlay == NULL || assign == NULL) return;
-  memcpy(overlay, vanilla, len);
+  if (vanilla == NULL || overlay == NULL) return;
+  memcpy(overlay, vanilla, len);     // copy first (so a NULL assign = identity)
+  if (assign == NULL) return;
   for (uint32 d = 0; d < len; d++) {
     int i = interior_of_entrance(vanilla[d]);
     if (i < 0) continue;                 // not a cave door — leave unchanged
@@ -222,6 +251,95 @@ void Entrance_BuildDoorOverlay(const uint8 *assign, int n,
     overlay[d] = kCaveInteriors[j].entrance_ids[0];
   }
   (void)n;
+}
+
+// ---------------------------------------------------------------------------
+// Dungeon engine (Stage 2)
+// ---------------------------------------------------------------------------
+
+// Map a raw entrance-id to its dungeon index, or -1 if not a v1 dungeon door.
+static int dungeon_of_entrance(uint8 ent_id) {
+  for (int i = 0; i < kEntranceDungeonCount; i++) {
+    if (kDungeons[i].entrance_id == ent_id) return i;
+  }
+  return -1;
+}
+
+bool Entrance_IsDungeonActive(const RandoSettings *settings) {
+  if (settings == NULL) return false;
+  if (!settings->shuffle_dungeon_entrances) return false;
+  // Same world-state scope as caves (Open/Standard).
+  if (settings->world_state != kWorldState_Open &&
+      settings->world_state != kWorldState_Standard) {
+    return false;
+  }
+  return true;
+}
+
+int Entrance_ComputeDungeonPermutation(const RandoSettings *settings, uint64 seed,
+                                       uint8 attempt,
+                                       uint8 assign[kEntranceMaxInteriors]) {
+  if (assign == NULL || !Entrance_IsDungeonActive(settings)) return 0;
+  const int n = kEntranceDungeonCount;
+  for (int i = 0; i < n; i++) assign[i] = (uint8)i;
+  RandoRng rng;
+  // Distinct salt from the cave RNG so cave and dungeon permutations are
+  // independent when both axes are on (both still deterministic in
+  // (seed, attempt) for save→regen).
+  Rng_SeedFromU64(&rng, (seed ^ 0xD0D0D0D0D0D0D0D0ull) ^
+                            ((uint64)attempt * 0x9E3779B97F4A7C15ull));
+  for (int i = n - 1; i > 0; i--) {
+    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
+    uint8 t = assign[i]; assign[i] = assign[j]; assign[j] = t;
+  }
+  return n;
+}
+
+void Entrance_ApplyEdgeOverrides(const uint8 *assign, int n) {
+  Rando_BeginEntranceEdgeOverrides();
+  if (assign == NULL) return;
+  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
+  // Dungeon ix's door now leads to dungeon assign[ix]. The door-edge whose
+  // destination is ix's entry region must now land at assign[ix]'s entry region.
+  // Keyed by the (unique) entry region → Rando_SetEntranceEdgeOverride.
+  for (int ix = 0; ix < n; ix++) {
+    uint16 from_entry = Rando_FindRegionByName(kDungeons[ix].entry_region_name);
+    int j = assign[ix];
+    if (j < 0 || j >= kEntranceDungeonCount) continue;
+    uint16 to_entry = Rando_FindRegionByName(kDungeons[j].entry_region_name);
+    if (from_entry == 0xFFFF || to_entry == 0xFFFF) continue;
+    Rando_SetEntranceEdgeOverride(from_entry, to_entry);
+  }
+}
+
+void Entrance_ClearEdgeOverrides(void) {
+  Rando_ClearEntranceEdgeOverrides();
+}
+
+void Entrance_RemapDungeonDoors(const uint8 *assign, int n,
+                                uint8 *overlay, uint32 len) {
+  if (overlay == NULL || assign == NULL) return;
+  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
+  // overlay holds vanilla dungeon entrance-ids here (the cave pass never touches
+  // dungeon slots — the two id sets are disjoint). Redirect each dungeon door to
+  // its image's entrance-id.
+  for (uint32 d = 0; d < len; d++) {
+    int i = dungeon_of_entrance(overlay[d]);
+    if (i < 0) continue;
+    int j = assign[i];
+    if (j < 0 || j >= kEntranceDungeonCount) continue;
+    overlay[d] = kDungeons[j].entrance_id;
+  }
+}
+
+// Coupling helper: given a SOURCE door's vanilla dungeon entrance-id, return the
+// room the room-keyed exit search should target so the player returns to that
+// SOURCE door (not the loaded dungeon's vanilla door). Returns 0 if the id is
+// not a v1 dungeon door.
+uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id) {
+  int i = dungeon_of_entrance(vanilla_entrance_id);
+  if (i < 0) return 0;
+  return kDungeons[i].room;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +373,21 @@ void Entrance_WriteSpoilerText(void *file, const uint8 *assign, int n) {
     fprintf(f, "  %s door -> %s interior (room 0x%03X)\n",
             kCaveInteriors[i].name, kCaveInteriors[j].name, kCaveInteriors[j].room);
   }
+}
+
+void Entrance_WriteDungeonSpoilerJson(void *file, const uint8 *assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || assign == NULL || n <= 0) return;
+  fprintf(f, "  \"dungeon_entrance_mapping\": [\n");
+  for (int i = 0; i < n && i < kEntranceDungeonCount; i++) {
+    int j = assign[i];
+    if (j < 0 || j >= kEntranceDungeonCount) j = i;
+    fprintf(f,
+        "    {\"door\": \"%s\", \"leads_to\": \"%s\", \"leads_to_room\": %u}%s\n",
+        kDungeons[i].name, kDungeons[j].name, kDungeons[j].room,
+        (i + 1 < n && i + 1 < kEntranceDungeonCount) ? "," : "");
+  }
+  fprintf(f, "  ],\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +578,114 @@ void Entrance_SelfCheck(void) {
     }
     if (ov[ndoors] != 0xFE) {
       fprintf(stderr, "Entrance_SelfCheck: non-cave door id was rewritten\n");
+      exit(2);
+    }
+  }
+
+  // (8) DUNGEON pool (Stage 2). Entrance-ids unique + rooms < 0x100; entry
+  //     regions resolve, are distinct, and each is the destination of EXACTLY ONE
+  //     door-edge in kRandoEdges (drift guard — if the graph changes so a dungeon
+  //     entry region gains/loses its single inbound edge, the edge-override key is
+  //     no longer well-defined and this fires).
+  {
+    for (int i = 0; i < kEntranceDungeonCount; i++) {
+      if (kDungeons[i].room >= 0x100) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d room 0x%03X not < 0x100\n",
+                i, kDungeons[i].room);
+        exit(2);
+      }
+      for (int j = i + 1; j < kEntranceDungeonCount; j++) {
+        if (kDungeons[i].entrance_id == kDungeons[j].entrance_id) {
+          fprintf(stderr, "Entrance_SelfCheck: duplicate dungeon entrance-id 0x%02X\n",
+                  kDungeons[i].entrance_id);
+          exit(2);
+        }
+      }
+      uint16 rid = Rando_FindRegionByName(kDungeons[i].entry_region_name);
+      if (rid == 0xFFFF) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d entry region '%s' not found\n",
+                i, kDungeons[i].entry_region_name);
+        exit(2);
+      }
+      // Distinct entry regions.
+      for (int j = i + 1; j < kEntranceDungeonCount; j++) {
+        if (Rando_FindRegionByName(kDungeons[j].entry_region_name) == rid) {
+          fprintf(stderr, "Entrance_SelfCheck: dungeons %d/%d share entry region\n", i, j);
+          exit(2);
+        }
+      }
+      // Exactly one inbound door-edge targets this entry region.
+      int inbound = 0;
+      for (uint32 e = 0; e < kRandoEdgesCount; e++) {
+        if (kRandoEdges[e].to_region == rid) inbound++;
+      }
+      if (inbound != 1) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon %d ('%s') entry region has %d "
+                        "inbound edges (want 1) — edge-override key not well-defined\n",
+                i, kDungeons[i].entry_region_name, inbound);
+        exit(2);
+      }
+    }
+    // Permutation bijection + determinism.
+    RandoSettings ds; Settings_SetDefaults(&ds);
+    ds.shuffle_dungeon_entrances = 1; ds.world_state = kWorldState_Open;
+    uint8 da[kEntranceMaxInteriors], db[kEntranceMaxInteriors];
+    int dn = Entrance_ComputeDungeonPermutation(&ds, 0xBEEF, 0, da);
+    if (dn != kEntranceDungeonCount) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon permutation count %d\n", dn);
+      exit(2);
+    }
+    Entrance_ComputeDungeonPermutation(&ds, 0xBEEF, 0, db);
+    if (memcmp(da, db, dn) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon permutation not deterministic\n");
+      exit(2);
+    }
+    uint8 dseen[kEntranceMaxInteriors]; memset(dseen, 0, sizeof(dseen));
+    for (int i = 0; i < dn; i++) {
+      if (da[i] >= dn || dseen[da[i]]) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon permutation not a bijection\n");
+        exit(2);
+      }
+      dseen[da[i]] = 1;
+    }
+    // Edge-override closed form: forced swap of dungeon 0 (PoD) <-> 1 (Swamp)
+    // remaps each entry region to the other (verified via the getter).
+    uint16 pod = Rando_FindRegionByName(kDungeons[0].entry_region_name);
+    uint16 swamp = Rando_FindRegionByName(kDungeons[1].entry_region_name);
+    uint8 dsw[kEntranceMaxInteriors];
+    for (int i = 0; i < kEntranceDungeonCount; i++) dsw[i] = (uint8)i;
+    dsw[0] = 1; dsw[1] = 0;
+    Entrance_ApplyEdgeOverrides(dsw, kEntranceDungeonCount);
+    if (Rando_GetEntranceEdgeOverride(pod) != swamp ||
+        Rando_GetEntranceEdgeOverride(swamp) != pod) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon edge-override closed form wrong\n");
+      exit(2);
+    }
+    Entrance_ClearEdgeOverrides();
+    if (Rando_GetEntranceEdgeOverride(pod) != pod) {
+      fprintf(stderr, "Entrance_SelfCheck: ClearEdge must restore identity\n");
+      exit(2);
+    }
+    // Dungeon door overlay remap + source-exit-room helper.
+    uint8 dv[16], dov[16];
+    for (int i = 0; i < kEntranceDungeonCount; i++) dv[i] = kDungeons[i].entrance_id;
+    dv[kEntranceDungeonCount] = 0xFE;  // non-dungeon sentinel
+    int dtot = kEntranceDungeonCount + 1;
+    memcpy(dov, dv, dtot);
+    Entrance_RemapDungeonDoors(da, dn, dov, (uint32)dtot);
+    for (int i = 0; i < kEntranceDungeonCount; i++) {
+      if (dov[i] != kDungeons[da[i]].entrance_id) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon door overlay slot %d wrong\n", i);
+        exit(2);
+      }
+    }
+    if (dov[kEntranceDungeonCount] != 0xFE) {
+      fprintf(stderr, "Entrance_SelfCheck: non-dungeon id was rewritten\n");
+      exit(2);
+    }
+    if (Entrance_DungeonSourceExitRoom(kDungeons[0].entrance_id) != kDungeons[0].room ||
+        Entrance_DungeonSourceExitRoom(0xFE) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon source-exit-room helper wrong\n");
       exit(2);
     }
   }

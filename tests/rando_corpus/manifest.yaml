@@ -340,6 +340,18 @@ entries:
     label: "c-entrance-caves-standard-fast-ganon"
     expected_digest: "3929ae606a573e03caa96e826063564154075a6d7dc05484d5ac9816aebdd8fd"
     expected_sphere_digest: "e892c5c87e0203b99ff2b72930dffe3ca2445e676bcaf66e9092d6ec5aa01a08"
+  # Phase C Stage 2 — dungeon entrance shuffle (6 single-entrance dungeons via the
+  # per-seed edge overlay), and caves+dungeons together.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true }
+    seed: "0x00000000C0FFEE03"
+    label: "c-entrance-dungeons-open-fast-ganon"
+    expected_digest: "ff06503500c591e1763fdb8d3c8bfc9a76f63543b340b10efed826ccf15cfe67"
+    expected_sphere_digest: "cea70c4993d506017bd5ebff34f90f455478af6b886514923e97bf2cdc3fca3f"
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true }
+    seed: "0x00000000C0FFEE04"
+    label: "c-entrance-both-open-fast-ganon"
+    expected_digest: "5915b43c470c2f184e8bd3a0cb079df8be1ef969213f7d7b46b2e30f78c0496a"
+    expected_sphere_digest: "d777350323eba5ccf3862d7ebfd47357786321638c88590f4bed0d8f67bd912b"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
