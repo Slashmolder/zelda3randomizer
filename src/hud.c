@@ -1442,11 +1442,17 @@ static void Hud_Update_Magic() {  // 8dfc09
     // Gated on consumption==2 (rando-only) -> inert under vanilla side-by-side
     // RAM/VRAM compare. Mirrors the CopyTilesForSwitchLR custom-HUD-tile pattern.
     if (link_magic_consumption >= 2) {
-      static const uint16 kQuarterSlashTile[8] = {  // 0x51 with col 7 cleared
-        0x8282, 0xC644, 0xCE4A, 0xFE76, 0xFE6E, 0xFE5E, 0xFEBE, 0xFEFE,
+      // The glyph field must be OPAQUE BLACK (palette-2 index 3), not transparent
+      // (index 0): both are colour 0x0000, but index 0 reveals the HUD layer
+      // behind the header — which made the borrowed glyphs look inconsistent
+      // against the original "1/2" (whose field is index 3). These two tiles are
+      // the original 0x51/0xFA with the "2"-merge / "2" strokes recoloured to a
+      // small "4" on the SAME black field, meter pixels (0xFA cols 3-7) kept.
+      static const uint16 kQuarterSlashTile[8] = {  // "/" — "2"-merge col -> black
+        0x8282, 0xC745, 0xCF4B, 0xFF77, 0xFF6F, 0xFF5F, 0xFFBF, 0xFFFF,
       };
-      static const uint16 kQuarterFourTile[8] = {   // small "4" (cols 0-2), meter kept
-        0x0000, 0x0000, 0xA000, 0xA000, 0xE000, 0x2003, 0x2106, 0x3314,
+      static const uint16 kQuarterFourTile[8] = {   // small "4" on a black field
+        0x0000, 0xC0C0, 0xE040, 0xE040, 0xE000, 0xE0C3, 0xE1C6, 0xF3D4,
       };
       memcpy(&g_zenv.vram[0x7000 + 0x51 * 8], kQuarterSlashTile, sizeof kQuarterSlashTile);
       memcpy(&g_zenv.vram[0x7000 + 0xFA * 8], kQuarterFourTile, sizeof kQuarterFourTile);

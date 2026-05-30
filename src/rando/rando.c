@@ -230,6 +230,21 @@ static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  5,  6,  7,  8,  9, 1
 //                                            HCE EP  DP  TH HCT PoD SP  SW  TT  IP  MM  TR  GT
 static const uint8 kSmallKeyGameDungeon[13] = { 0,  2,  3, 10,  4,  5,  6,  7,  8,  9, 11, 12, 13 };
 
+// Canonical dungeon table consumed by the in-game tracker (single source of
+// truth; see rando.h). game_index drives the big-key/map/compass bit and the
+// small-key slot; it MUST equal kSmallKeyGameDungeon[alttpr_index] (asserted in
+// Rando_TrackerSelfCheck). Rows are in tracker display order.
+//   game_index, alttpr_index, prize_logic, has_prize, name
+const RandoTrackerDungeonInfo kRandoTrackerDungeons[kRandoTrackerDungeonCount] = {
+  {  0,  0,  0, false, "Hyrule Castle"    }, {  4,  4,  4, false, "Castle Tower" },
+  {  2,  1,  1, true,  "Eastern"          }, {  3,  2,  2, true,  "Desert" },
+  { 10,  3,  3, true,  "Tower of Hera"    }, {  5,  5,  5, true,  "Pal. of Darkness" },
+  {  6,  6,  6, true,  "Swamp"            }, {  7,  7,  7, true,  "Skull Woods" },
+  {  8,  8,  8, true,  "Thieves'"         }, {  9,  9,  9, true,  "Ice" },
+  { 11, 10, 10, true,  "Misery Mire"      }, { 12, 11, 11, true,  "Turtle Rock" },
+  { 13, 12, 12, false, "Ganon's Tower"    },
+};
+
 static uint8 dungeon_id_for_item_local(uint16 registry_id) {
   // SmallKey 53..65 → GAME-side dungeon index (same translation as
   // BigKey/Map/Compass below). Consumed by dungeon_item_direct_grant's
@@ -1081,6 +1096,11 @@ void Rando_DeactivateSlot(void) {
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
   g_rando_flute_shovel_owned = 0;
+  // Transient Retro take-any redirect target. Reset with the other per-slot
+  // transients so a stale door id from a prior slot can't mis-key a host-room
+  // shop after a slot switch. (Within a slot it is set/cleared by
+  // Overworld_UseEntrance; clearing it here is the slot-boundary backstop.)
+  g_rando_takeany_door_id = 0;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
@@ -2148,6 +2168,36 @@ static void tsc_die(const char *msg) {
 // broad item kit is added. Pure (no file IO; g_ram inventory is zero at selftest
 // time, before game init). Leaves no active slot (Deactivate at the end).
 void Rando_TrackerSelfCheck(void) {
+  // Canonical dungeon-table guard. The in-game tracker reads kRandoTrackerDungeons
+  // for the per-dungeon big-key/map/compass bit (0x8000 >> game_index) and the
+  // small-key slot. game_index MUST match the game's RAM storage convention — a
+  // prior bug drifted Hyrule Castle to game_index 1 (bit 0x4000, a slot the game
+  // never stores into), silently blanking its map/big-key/compass columns. Bind
+  // each row to the authoritative kSmallKeyGameDungeon[] (the same table the item
+  // dispatch uses) so any future drift is a hard headless failure, not a
+  // playtest-only regression.
+  {
+    uint16 seen_bits = 0;
+    for (int i = 0; i < kRandoTrackerDungeonCount; i++) {
+      const RandoTrackerDungeonInfo *r = &kRandoTrackerDungeons[i];
+      if (r->alttpr_index >= 13)
+        tsc_die("tracker dungeon alttpr_index out of range");
+      if (r->game_index != kSmallKeyGameDungeon[r->alttpr_index])
+        tsc_die("tracker dungeon game_index disagrees with kSmallKeyGameDungeon "
+                "(bit/key-slot would mismatch the game's RAM storage)");
+      uint16 bit = dungeon_bit_for_map_or_compass(r->game_index);
+      if (bit == 0)
+        tsc_die("tracker dungeon game_index produces no big-key/map/compass bit");
+      if (seen_bits & bit)
+        tsc_die("two tracker dungeons share a big-key/map/compass bit");
+      seen_bits |= bit;
+    }
+    // Concrete pin: Hyrule Castle (row 0) must read bit 0x8000 — the exact bit the
+    // Map_HCE grant dispatches to (asserted again in the §6.2 dispatch self-check).
+    if (dungeon_bit_for_map_or_compass(kRandoTrackerDungeons[0].game_index) != 0x8000)
+      tsc_die("Hyrule Castle tracker bit is not 0x8000 (Map_HCE storage index)");
+  }
+
   RandoSettings s;
   Settings_SetDefaults(&s);
   uint64 seed = 0x0123456789abcdefull;

@@ -281,22 +281,15 @@ static void DrawItemTracker(void *) {
   // assignment (rando_logic dungeon ids). `prize` marks the 10 dungeons that
   // award a pendant/crystal (HC/CT/GT do not).
   ImGui::SeparatorText("Dungeons");
-  // game = game-side dungeon id (cur_palace_index_x2>>1): drives the prize/
-  //   Agahnim completion and the big-key/map/compass bit (0x8000 >> game).
-  // kidx = small-key array index. Equal to `game` for every dungeon EXCEPT
-  //   Hyrule Castle, whose big-key/map/compass bit is at game id 1 but whose
-  //   small keys share slot 0 with the sewers (SaveDungeonKeys maps raw
-  //   dungeon id 2 -> key slot 0; see src/dungeon.c).
-  // logic = prize-assignment index (rando_logic / kDungeonPrizeLocations order).
-  static const struct { int game; int kidx; int logic; const char *name; bool prize; } kDungeonRows[] = {
-      {1,  0,  0,  "Hyrule Castle",    false}, {4,  4,  4,  "Castle Tower",     false},
-      {2,  2,  1,  "Eastern",          true},  {3,  3,  2,  "Desert",           true},
-      {10, 10, 3,  "Tower of Hera",    true},  {5,  5,  5,  "Pal. of Darkness", true},
-      {6,  6,  6,  "Swamp",            true},  {7,  7,  7,  "Skull Woods",      true},
-      {8,  8,  8,  "Thieves'",         true},  {9,  9,  9,  "Ice",              true},
-      {11, 11, 10, "Misery Mire",      true},  {12, 12, 11, "Turtle Rock",      true},
-      {13, 13, 12, "Ganon's Tower",    false},
-  };
+  // Dungeon rows come from the canonical kRandoTrackerDungeons table (rando.h) —
+  // the single source of truth for each dungeon's game-side index (which drives
+  // both the big-key/map/compass bit `0x8000 >> game_index` and the small-key
+  // slot) and its prize-assignment index. Centralizing the mapping in one place
+  // that Rando_TrackerSelfCheck validates against the game's dispatch tables
+  // keeps the bit from silently drifting off the RAM storage convention (a prior
+  // Hyrule Castle game_index=1 bug blanked its map/big-key/compass columns).
+  const RandoTrackerDungeonInfo *kDungeonRows = kRandoTrackerDungeons;
+  const int kDungeonRowCount = kRandoTrackerDungeonCount;
   // Prize assignment + shuffle flag drive the spoiler-safe prize column: an
   // unobtained shuffled prize shows "?" (revealing it would spoil); an obtained
   // one (or any prize when shuffle is off) shows the real icon.
@@ -315,16 +308,16 @@ static void DrawItemTracker(void *) {
     const ImVec4 on = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
     const ImVec4 off = ImVec4(0.45f, 0.45f, 0.48f, 1.0f);
     const ImVec4 done = ImVec4(0.45f, 0.90f, 0.50f, 1.0f);  // completed dungeon name
-    for (int i = 0; i < (int)(sizeof(kDungeonRows) / sizeof(kDungeonRows[0])); i++) {
-      int d = kDungeonRows[i].game;
+    for (int i = 0; i < kDungeonRowCount; i++) {
+      int d = kDungeonRows[i].game_index;
       uint16 bit = (uint16)(0x8000u >> d);
-      int keys = v.dungeon_small_keys[kDungeonRows[i].kidx];
+      int keys = v.dungeon_small_keys[d];  // small-key slot == game_index
 
       // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.
       bool prize_obtained = false; int prize_icon = -1, crystal_num = 0;
-      if (kDungeonRows[i].prize && prize_assign)
-        prize_icon = PrizeIcon(v, prize_assign[kDungeonRows[i].logic], &prize_obtained, &crystal_num);
-      bool complete = kDungeonRows[i].game == 4 ? v.agahnim : prize_obtained;
+      if (kDungeonRows[i].has_prize && prize_assign)
+        prize_icon = PrizeIcon(v, prize_assign[kDungeonRows[i].prize_logic], &prize_obtained, &crystal_num);
+      bool complete = kDungeonRows[i].game_index == 4 ? v.agahnim : prize_obtained;
 
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
@@ -333,7 +326,7 @@ static void DrawItemTracker(void *) {
 
       // Prize column (doubles as boss-completion indicator).
       ImGui::TableNextColumn();
-      if (kDungeonRows[i].game == 4) {            // Castle Tower -> Agahnim 1
+      if (kDungeonRows[i].game_index == 4) {      // Castle Tower -> Agahnim 1
         ImVec2 p = ImGui::GetCursorScreenPos();
         ImDrawList *dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(p, ImVec2(p.x + 18, p.y + 18),
@@ -345,7 +338,7 @@ static void DrawItemTracker(void *) {
         IconImage(prize_icon, 18.0f, prize_obtained);
         if (crystal_num) { char nb[4]; snprintf(nb, sizeof nb, "%d", crystal_num);
                            OverlayCentered(p, 18.0f, nb, prize_obtained); }
-      } else if (kDungeonRows[i].prize && prize_assign) {
+      } else if (kDungeonRows[i].has_prize && prize_assign) {
         UnknownPrizeCell(18.0f);                  // shuffled + not yet obtained
       } else {
         ImGui::Dummy(ImVec2(18, 18));             // HC / GT / no rando: no prize

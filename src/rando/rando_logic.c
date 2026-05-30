@@ -195,12 +195,9 @@ static bool eval_and(Cursor *c, const PredicateContext *ctx) {
   bool result = true;
   for (uint8 i = 0; i < count; i++) {
     bool child = eval(c, ctx);
-    if (!child) {
-      // Short-circuit: skip remaining children (but we still need to walk
-      // them to advance the cursor). For correctness of the cursor we DO
-      // need to read past them — so iterate without checking.
-      result = false;
-    }
+    // NOTE: despite the name, AND does NOT short-circuit — every child MUST be
+    // evaluated so the cursor advances past its bytecode. Only record falsity.
+    if (!child) result = false;
   }
   return result;
 }
@@ -816,16 +813,43 @@ void Logic_SelfCheck(void) {
                "MEDALLION_OPENS without required medallion should be false");
   }
 
-  // Phase B placeholder ops always evaluate to their zero branch in Phase A
+  // OP_TRICK / OP_GLITCH_LEVEL_AT_LEAST are wired (Slice 4) but resolve to their
+  // OFF branch under default settings (tricks=0, logic=NoGlitches).
   {
     uint8 bc[] = { OP_TRICK, 5 };
     LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
-               "OP_TRICK should always be false in Phase A");
+               "OP_TRICK(5) should be false under default settings (tricks=0)");
   }
   {
     uint8 bc[] = { OP_GLITCH_LEVEL_AT_LEAST, 1 };
     LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
                "OP_GLITCH_LEVEL_AT_LEAST(1) should be false in Phase A (logic=NoGlitches)");
+  }
+
+  // ON-state coverage: assert the bit-shift / threshold math actually fires when
+  // the axis is enabled. Without this, a regression in `1u << trick_id` or the
+  // `>= level` compare passes both selftest and the (default-settings) corpus
+  // silently and only surfaces in playtest — the exact gap this project keeps
+  // hitting. Uses a scratch copy so the shared `settings` stays at defaults.
+  {
+    RandoSettings on = settings;
+    uint8 bc[] = { OP_TRICK, 5 };
+    on.tricks = (uint8)(1u << 5);
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &on) == true,
+               "OP_TRICK(5) should be true when settings.tricks bit 5 is set");
+    on.tricks = (uint8)(1u << 4);  // adjacent bit must NOT satisfy trick 5
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &on) == false,
+               "OP_TRICK(5) must not be satisfied by an adjacent trick bit");
+  }
+  {
+    RandoSettings on = settings;
+    on.logic = 1;  // one glitch tier above NoGlitches
+    uint8 bc1[] = { OP_GLITCH_LEVEL_AT_LEAST, 1 };
+    LSC_ASSERT(Predicate_Evaluate(bc1, sizeof(bc1), &counts, &on) == true,
+               "OP_GLITCH_LEVEL_AT_LEAST(1) should be true when settings.logic>=1");
+    uint8 bc2[] = { OP_GLITCH_LEVEL_AT_LEAST, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc2, sizeof(bc2), &counts, &on) == false,
+               "OP_GLITCH_LEVEL_AT_LEAST(2) should be false when settings.logic==1");
   }
 
   // OP_DIFFICULTY_AT_LEAST against defaults (normal=1)
@@ -838,6 +862,14 @@ void Logic_SelfCheck(void) {
     uint8 bc[] = { OP_DIFFICULTY_AT_LEAST, 2 };
     LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
                "OP_DIFFICULTY_AT_LEAST(2) against defaults (normal=1) should be false");
+  }
+  {
+    // ON-state: difficulty axis above default must satisfy the higher threshold.
+    RandoSettings on = settings;
+    on.item_pool_difficulty = 2;
+    uint8 bc[] = { OP_DIFFICULTY_AT_LEAST, 2 };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &on) == true,
+               "OP_DIFFICULTY_AT_LEAST(2) should be true when item_pool_difficulty>=2");
   }
 
   // Audit L8 — Inverted reachability self-check. Verify the world-state

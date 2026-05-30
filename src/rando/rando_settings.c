@@ -130,15 +130,16 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   return kSettingsCanonicalLen;
 }
 
-// Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the 24-byte
-// canonical bytes and populates `out`. Returns 0 on success, -1 if the
-// input is NULL.
+// Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
+// kSettingsCanonicalLen (28)-byte canonical blob and populates `out`. Returns 0
+// on success, -1 if the input is NULL. Body occupies [0..24] (through
+// drop_shuffle); [25..27] are pad.
 //
-// **Forward-compat note**: pad bytes in[22], in[23] are NOT inspected — a
-// future format extension may repurpose them, and rejecting on non-zero
-// would break reveal of pre-extension suppressed files. Today the
-// serializer (`Settings_CanonicalSerialize`) always writes zero to those pad
-// bytes but the deserializer is permissive.
+// **Forward-compat note**: pad bytes in[25..27] are NOT inspected — a future
+// format extension may repurpose them, and rejecting on non-zero would break
+// reveal of pre-extension suppressed files. Today the serializer
+// (`Settings_CanonicalSerialize`) always writes zero to those pad bytes but the
+// deserializer is permissive.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;

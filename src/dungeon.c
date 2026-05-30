@@ -4466,8 +4466,24 @@ void RoomTag_RoomTrigger_BlockDoor(int k) {  // 81c4e7
 
 // Used for bosses
 void RoomTag_PrizeTriggerDoorDoor(int k) {  // 81c508
-  int t = savegame_is_darkworld ? link_has_crystals : link_which_pendants;
-  if (t & kDungeonCrystalPendantBit[BYTE(cur_palace_index_x2) >> 1]) {
+  // "Has THIS dungeon's prize been collected?" gate that opens the trapdoor/door.
+  // Vanilla keys off the dungeon's fixed pendant/crystal bit, but under
+  // prize_shuffle the placed prize grants a DIFFERENT bit than the dungeon's
+  // vanilla one (so the vanilla-bit test can falsely stay closed -> softlock, or
+  // open on another dungeon's prize). Gate on the rando prize LOCATION instead,
+  // mirroring RoomTag_GetHeartForPrize. Inert in the identity/default case where
+  // the placed prize is the dungeon's vanilla prize. (Gameplay path — verify by
+  // playtest with a non-identity prize_shuffle seed.)
+  uint8 didx = BYTE(cur_palace_index_x2) >> 1;
+  bool prize_collected;
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    uint16 ploc = Rando_GetBossPrizeLocation(didx);
+    prize_collected = (ploc != 0xFFFFu) && Rando_IsLocationChecked(ploc);
+  } else {
+    int t = savegame_is_darkworld ? link_has_crystals : link_which_pendants;
+    prize_collected = (t & kDungeonCrystalPendantBit[didx]) != 0;
+  }
+  if (prize_collected) {
     dung_flag_trapdoors_down = 0;
     dung_cur_door_pos = 0;
     door_animation_step_indicator = 0;

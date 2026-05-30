@@ -200,6 +200,14 @@ int RandoSnapshotTail_Load(FILE *f) {
     uint32 type = get_u32le_bytes(hdr + 0);
     uint32 length = get_u32le_bytes(hdr + 4);
 
+    // `length` is read from an untrusted file. Cap it before any `(long)`-cast
+    // fseek below: on LLP64 (Windows x64) `long` is 32-bit, so a length >=
+    // 0x80000000 casts to a NEGATIVE seek and the loop could rewind and re-read
+    // the same header forever (hang on a corrupt-but-parseable snapshot). The
+    // largest legal payload is the RandoState body (52 + 512*2 = 1076); cap well
+    // above that and bail on anything larger — a real tail never exceeds it.
+    if (length > kRandoSnapshotTail_MaxPayloadBytes) return recognized;
+
     if (type == kRandoSnapshotTail_Type_RandoState) {
       // Payload schema: gen_version[2] + settings_hash[16] + share_string[32]
       //               + placement_table_size[2] + placement_table[...]
