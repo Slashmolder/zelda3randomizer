@@ -268,28 +268,47 @@ extern const uint16 kRandoStartRegionByWorldState[4];
 // found. O(N) linear scan; fine for the few authoring-time uses.
 uint16 Rando_FindRegionByName(const char *name);
 
-// ---------------------------------------------------------------------------
-// RegionRemap overlay (task 3.7a) — runtime entrance-shuffle remapping.
-//
-// Phase A: identity (RegionRemap[e] == e for every entrance). Phase C entrance
-// shuffle swaps in a non-identity table. The static `kRandoEdges` graph is
-// unchanged across phases; only this overlay swaps. OP_REGION_REACHABLE
-// consults the overlay before traversing the static edges.
-//
-// The overlay is a uint16[] of size kRegionRemapCount, mapping entrance ids
-// to interior region ids. `Rando_SetRegionRemap` installs a non-identity
-// table; passing NULL or `Rando_ResetRegionRemap` restores identity.
-// ---------------------------------------------------------------------------
-#define kRegionRemapCount 256
+// NB: the Phase A `RegionRemap` scaffold (RegionRemap_Lookup /
+// Rando_SetRegionRemap / Rando_ResetRegionRemap) was RETIRED in Phase C
+// entrance shuffle. It was dead code (0 install callers, identity in every
+// shipped seed) AND the wrong abstraction — it remapped an OP_REGION_REACHABLE
+// *region operand*, whereas entrance shuffle rewires which interior a
+// door-*edge* terminates at. Caves now use a per-seed location-region override
+// (see rando_logic.c `Rando_SetEntranceRegionOverrides`); dungeons (Stage 2)
+// will use a per-seed edge overlay mirroring kRandoEdges_Inverted. See
+// openspec/changes/add-rando-entrance-shuffle/design.md §1.
 
-// Resolve `entrance_id` through the current overlay. Returns entrance_id
-// unchanged when the overlay is identity (Phase A default).
-uint16 RegionRemap_Lookup(uint16 entrance_id);
+// Phase C entrance shuffle — per-seed cave location-region overrides. Begin
+// resets to identity + activates; Set assigns one location's effective region;
+// Clear deactivates (restoring byte-identical reachability). Driven by
+// shuffle_entrance.c from the entrance permutation.
+void Rando_BeginEntranceRegionOverrides(void);
+void Rando_SetEntranceRegionOverride(uint16 loc_id, uint16 region_id);
+void Rando_ClearEntranceRegionOverrides(void);
+// Returns the current per-seed override region for a location, or 0xFFFF if
+// none/inactive. For the self-check + tracker.
+uint16 Rando_GetEntranceRegionOverride(uint16 loc_id);
 
-// Install a non-identity overlay (Phase C). The pointer is borrowed — caller
-// retains ownership and must keep the array alive until next install / reset.
-// Setting NULL resets to identity. Pass `count` matching the array length.
-void Rando_SetRegionRemap(const uint16 *table, uint16 count);
-void Rando_ResetRegionRemap(void);
+// Phase C entrance shuffle (Stage 2) — per-seed DUNGEON edge overlay. Begin
+// resets to identity + activates; Set remaps a door-edge whose destination is
+// `old_to_region` to land at `new_to_region` instead (keyed by the dungeon entry
+// region); Clear deactivates; Get resolves (returns the input when inactive/none).
+void Rando_BeginEntranceEdgeOverrides(void);
+void Rando_SetEntranceEdgeOverride(uint16 old_to_region, uint16 new_to_region);
+void Rando_ClearEntranceEdgeOverrides(void);
+uint16 Rando_GetEntranceEdgeOverride(uint16 to_region);
+
+// Phase C entrance shuffle (Stage 3 / cross-category) primitives.
+// SetEntranceRegionOverridePred: like the region override, but ALSO AND a
+// predicate (pred_off/pred_len into kRandoPredicateStream; len 0 = none) into the
+// cave-location's reachability — for a cave behind a gated dungeon door so it
+// inherits the door's requirement. Reset by Rando_BeginEntranceRegionOverrides.
+void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
+                                         uint32 pred_off, uint16 pred_len);
+// AddEntranceEdge: add a per-seed edge from_region → to_region (pred_len 0 =
+// unconditional) — for a dungeon behind a cave door. Reset by
+// Rando_BeginEntranceEdgeOverrides; walked when edge overrides are active.
+void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
+                           uint32 pred_off, uint16 pred_len);
 
 #endif  // ZELDA3_RANDO_LOGIC_H_

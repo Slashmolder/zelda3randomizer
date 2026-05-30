@@ -86,7 +86,13 @@ typedef enum {
 //                                              body carries a valid canonical
 //                                              RandoSettings blob; 0 = absent.
 //                                              v1 files read 0 here = absent.)
-//   @71 reserved[9]                          (forward-compat; zero on write)
+//   @71 entrance_axes (u8)                    (Phase C entrance shuffle; packed
+//                                              kEntranceAxis_* byte == canonical
+//                                              [25]. 0 = no entrance shuffle.)
+//   @72 entrance_attempt (u8)                  (Phase C; accepted goal-retry
+//                                              attempt index used to regenerate
+//                                              the cave permutation at slot load)
+//   @73 reserved[7]                            (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===
@@ -152,6 +158,16 @@ typedef struct RandoSlotHeader {
   // rather than guess (a wrong prize_shuffle flag yields confidently-wrong
   // assignments). See Rando_RecoverActiveSettings / Rando_ActivateSidecarSlot.
   uint8 settings_present;       // @70
+  // Phase C entrance shuffle, carried additively in the reserved tail (same
+  // pattern as the hints ext): the packed entrance-axis byte (== canonical
+  // settings byte [25]) and the accepted goal-retry attempt index. Together
+  // with the seed (in share_string) they let slot-load REGENERATE the cave
+  // permutation deterministically (no full-permutation storage / TLV needed).
+  // 0 / 0 for non-entrance-shuffle slots, so older slots are a safe no-op.
+  // (Relocated from @70/@71 to @71/@72 on the main merge, after main claimed @70
+  // for settings_present.)
+  uint8 entrance_axes;          // @71 (kEntranceAxis_* bits; 0 = no shuffle)
+  uint8 entrance_attempt;       // @72 (cave-permutation goal-retry attempt index)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

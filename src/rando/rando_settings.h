@@ -108,7 +108,41 @@ typedef struct RandoSettings {
   // — landed with §66 in the kGenVer 13→14 bump.
   uint8 boss_shuffle;
   uint8 drop_shuffle;
+  // Phase C — entrance shuffle composable axes (binary on/off). All default
+  // off EXCEPT `coupled` (defaults on, the ALTTPR baseline: enter A ⇒ exit A).
+  // Canonical serialization bit-PACKS all five into the previously-zero pad
+  // byte [25] (see kEntranceAxis_* below), so the default settings still
+  // serialize to a zero byte and kSettingsCanonicalLen stays 28 — no
+  // canonical-size-coupling cascade. `coupled`/`cross_category`/`decoupled`
+  // are normalized to 0 when no shuffle axis is active (apply_derived_rules),
+  // so the default packs to 0x00. The four famous ALTTPR modes (Simple /
+  // Restricted / Crossed / Insanity) are UI presets over these axes, not a
+  // stored enum. See add-rando-entrance-shuffle/design.md §5.
+  uint8 shuffle_cave_entrances;     // bool
+  uint8 shuffle_dungeon_entrances;  // bool (Stage 2)
+  uint8 coupled;                    // bool, default ON
+  uint8 cross_category;             // bool (Stage 3) — caves↔dungeons may mix
+  uint8 decoupled;                  // bool (Stage 4) — per-endpoint; implies !coupled
+  // Advanced opt-in: also shuffle Ganon's Tower's entrance. Off by default
+  // because GT's crystal-tower gate travels with its door, which can be circular
+  // at high crystals.tower (the door needs N crystals but leads to a crystal-
+  // bearing dungeon). The full-reachability gate rejects circular permutations,
+  // so a seed that can't be made reachable simply fails to generate — lower
+  // crystals.tower (0 always works) or reroll. Requires shuffle_dungeon_entrances.
+  uint8 shuffle_ganons_tower_entrance;  // bool (advanced)
 } RandoSettings;
+
+// Phase C — bit positions for the packed entrance-axis byte (canonical [25]).
+// Used by Settings_CanonicalSerialize/Deserialize. A zero byte == no entrance
+// shuffle (the default), preserving the byte-identical corpus invariant.
+enum {
+  kEntranceAxis_ShuffleCaves    = 1u << 0,
+  kEntranceAxis_ShuffleDungeons = 1u << 1,
+  kEntranceAxis_Coupled         = 1u << 2,
+  kEntranceAxis_CrossCategory   = 1u << 3,
+  kEntranceAxis_Decoupled       = 1u << 4,
+  kEntranceAxis_ShuffleGanonsTower = 1u << 5,
+};
 
 // ===========================================================================
 // Canonical byte length — every Phase A settings struct serializes to

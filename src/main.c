@@ -50,6 +50,7 @@
 #include "rando/rando_window/game_cheats.h"            // Cheats_SelfCheck (selftest)
 #include "rando/rando_window/game_panels.h"            // Panels_RenderSmokeCheck (selftest)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
+#include "rando/shuffle_entrance.h"                    // Phase C entrance shuffle (CLI generate path)
 #include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
 #include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
 #endif
@@ -553,7 +554,51 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
   // Stamp is then reproducible across machines.
   int effective_budget = (settings.race_mode != 0) ? 0 : budget_seconds;
-  bool ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
+  // Phase C — entrance shuffle: same reject-and-retry as the playable-slot path
+  // (rando_generate.c). Draw a cave permutation π, install its region overrides
+  // so the placer/goal-check see the shuffled reachability, accept the first π
+  // under which the goal is completable. Default-off ⇒ byte-identical placement.
+  bool ok = false;
+  uint8 cave_assign[kEntranceMaxInteriors]; int cave_count = 0;
+  uint8 dun_assign[kEntranceMaxInteriors]; int dun_count = 0;
+  uint8 cross_assign[kEntranceMaxInteriors]; int cross_count = 0;
+  bool cross_on = Entrance_IsCrossActive(&settings);
+  bool cave_on = !cross_on && Entrance_IsActive(&settings);
+  bool dun_on = !cross_on && Entrance_IsDungeonActive(&settings);
+  Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
+  if (cross_on || cave_on || dun_on) {
+    for (int att = 0; att < 64; att++) {
+      if (cross_on) {
+        cross_count = Entrance_ComputeCrossPermutation(&settings, seed_u64, (uint8)att, cross_assign);
+        Entrance_ApplyCrossOverrides(cross_assign, cross_count);
+      } else {
+        if (cave_on) {
+          cave_count = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, cave_assign);
+          Entrance_ApplyRegionOverrides(cave_assign, cave_count);
+        }
+        if (dun_on) {
+          dun_count = Entrance_ComputeDungeonPermutation(&settings, seed_u64, (uint8)att, dun_assign);
+          Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+        }
+      }
+      table.count = 0;
+      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
+        // Require FULL reachability (not just goal-completability) for entrance
+        // shuffle — reject any π that strands placements (e.g. a gated door
+        // leading to the dungeon that grants the gating item). See rando_generate.c.
+        RandoSpheres reach_spheres;
+        if (Logic_ComputeSpheres(&settings, &table, &reach_spheres) &&
+            Goal_IsCompletable(&settings, &table)) {
+          ok = true;
+          break;
+        }
+      }
+    }
+    // Leave overrides active through sphere + spoiler emission below.
+  } else {
+    ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
+  }
   if (!ok) {
     fprintf(stderr, "--generate-seed: placement failed\n");
     free(entries);
@@ -611,6 +656,13 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.seed_u64 = seed_u64;
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
+  // Phase C — entrance_mapping sections (omitted when the respective count is 0).
+  spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
+  spoiler.entrance_count = cave_count;
+  spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
+  spoiler.dungeon_count = dun_count;
+  spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
+  spoiler.cross_count = cross_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

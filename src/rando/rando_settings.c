@@ -30,7 +30,10 @@
 //   offset 22  hints                       bool          (§66, kGenVer 13→14)
 //   offset 23  boss_shuffle                bool          (§66)
 //   offset 24  drop_shuffle                bool          (§66)
-//   offset 25  reserved                    = 0 (forward-compat)
+//   offset 25  entrance_axes (bit-packed)  Phase C — bit0 shuffle_caves,
+//                                          bit1 shuffle_dungeons, bit2 coupled,
+//                                          bit3 cross_category, bit4 decoupled.
+//                                          0x00 for the default (no shuffle).
 //   offset 26  reserved                    = 0
 //   offset 27  reserved                    = 0
 //
@@ -72,6 +75,17 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->hints = kHintsMode_On;
   s->boss_shuffle = 0;
   s->drop_shuffle = 0;
+  // Phase C — entrance shuffle. All shuffle axes default OFF; `coupled`
+  // defaults ON (the ALTTPR baseline, so enabling cave shuffle is coupled
+  // unless the user opts into decoupled). With no shuffle active,
+  // apply_derived_rules() normalizes coupled→0 for serialization, so the
+  // default canonical byte [25] is 0x00 (corpus byte-identical).
+  s->shuffle_cave_entrances = 0;
+  s->shuffle_dungeon_entrances = 0;
+  s->coupled = 1;
+  s->cross_category = 0;
+  s->decoupled = 0;
+  s->shuffle_ganons_tower_entrance = 0;  // advanced opt-in (off by default)
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -86,6 +100,45 @@ void Settings_SetDefaults(RandoSettings *s) {
 static void apply_derived_rules(RandoSettings *s) {
   if (s->goal == kGoal_Completionist) {
     s->accessibility = kAccessibility_Locations;
+  }
+  // Phase C — entrance-axis normalization.
+  // Audit M1: entrance shuffle is only honored on Open/Standard (Inverted carries
+  // a static region override the per-seed one would clobber; Retro re-uses cave
+  // host-rooms for TakeAny — see Entrance_IsActive). So an entrance axis set under
+  // Inverted/Retro produces NO shuffle at runtime; normalize the axes OFF here so
+  // the settings_hash matches the actual (un-shuffled) seed and two
+  // functionally-identical seeds don't hash differently.
+  if (s->world_state != kWorldState_Open &&
+      s->world_state != kWorldState_Standard) {
+    s->shuffle_cave_entrances = 0;
+    s->shuffle_dungeon_entrances = 0;
+  }
+  // The Ganon's Tower opt-in only means anything when dungeon entrances are
+  // being shuffled (GT joins the dungeon pool); normalize it off otherwise so
+  // the hash is stable and the default packs to 0.
+  if (!s->shuffle_dungeon_entrances) {
+    s->shuffle_ganons_tower_entrance = 0;
+  }
+  // Coupling/cross/decoupled are meaningless when no interior class is being
+  // shuffled; force them off so the packed byte [25] is canonical (and 0x00 for
+  // the default — the corpus byte-identical invariant). `decoupled` implies
+  // `!coupled` (per-endpoint shuffle cannot also be coupled). This makes the
+  // (struct → canonical) mapping many-to-one in a well-defined way so the hash
+  // is stable regardless of stray flag values left in the struct.
+  if (!s->shuffle_cave_entrances && !s->shuffle_dungeon_entrances) {
+    s->coupled = 0;
+    s->cross_category = 0;
+    s->decoupled = 0;
+  } else if (s->decoupled) {
+    s->coupled = 0;
+  }
+  // Cross-category mixes the two pools, so it only does anything when BOTH cave
+  // and dungeon shuffle are on (matches Entrance_IsCrossActive). With only one
+  // class shuffled, runtime produces a non-cross seed — normalize the bit off so
+  // the settings_hash matches the actual seed (audit MED-1). Must run AFTER the
+  // both-off clear above so it sees the final cave/dungeon values.
+  if (!s->shuffle_cave_entrances || !s->shuffle_dungeon_entrances) {
+    s->cross_category = 0;
   }
 }
 
@@ -124,7 +177,16 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   out[22] = s->hints;
   out[23] = s->boss_shuffle;
   out[24] = s->drop_shuffle;
-  out[25] = 0;  // pad to multiple of 4
+  // Phase C — entrance-shuffle axes bit-packed into the (formerly zero) pad
+  // byte [25]. apply_derived_rules() has normalized coupled/cross/decoupled,
+  // so this is 0x00 for the default settings (corpus byte-identical) and
+  // kSettingsCanonicalLen stays 28 (no size-coupling cascade).
+  out[25] = (uint8)((s->shuffle_cave_entrances    ? kEntranceAxis_ShuffleCaves    : 0) |
+                    (s->shuffle_dungeon_entrances ? kEntranceAxis_ShuffleDungeons : 0) |
+                    (s->coupled                   ? kEntranceAxis_Coupled         : 0) |
+                    (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
+                    (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
+                    (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0));
   out[26] = 0;
   out[27] = 0;
   return kSettingsCanonicalLen;
@@ -135,10 +197,11 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // on success, -1 if the input is NULL. Body occupies [0..24] (through
 // drop_shuffle); [25..27] are pad.
 //
-// **Forward-compat note**: pad bytes in[25..27] are NOT inspected — a future
-// format extension may repurpose them, and rejecting on non-zero would break
-// reveal of pre-extension suppressed files. Today the serializer
-// (`Settings_CanonicalSerialize`) always writes zero to those pad bytes but the
+// **Forward-compat note**: trailing pad bytes in[26], in[27] are NOT inspected
+// — a future format extension may repurpose them, and rejecting on non-zero
+// would break reveal of pre-extension suppressed files. Byte [25] is the
+// Phase C packed entrance-axis byte (0x00 = no shuffle). Today the serializer
+// (`Settings_CanonicalSerialize`) always writes zero to [26]/[27] but the
 // deserializer is permissive.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
@@ -166,11 +229,20 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.race_mode                  = in[17];
   s.pieces_required            = (uint16)(in[18] | ((uint16)in[19] << 8));
   s.pieces_placed              = (uint16)(in[20] | ((uint16)in[21] << 8));
-  // §66: read hints + shuffle axes (offsets [22..24]). Pad bytes [25..27]
-  // are not inspected — see forward-compat note above.
+  // §66: read hints + shuffle axes (offsets [22..24]). Byte [25] is the Phase C
+  // entrance-axis byte (unpacked below); pad bytes [26..27] are not inspected.
   s.hints                      = in[22];
   s.boss_shuffle               = in[23];
   s.drop_shuffle               = in[24];
+  // Phase C — unpack the entrance-axis byte [25]. A zero byte (the default /
+  // any pre-Phase-C file) yields all-off, coupled-off — identical to a struct
+  // with no entrance shuffle.
+  s.shuffle_cave_entrances     = (in[25] & kEntranceAxis_ShuffleCaves)    ? 1 : 0;
+  s.shuffle_dungeon_entrances  = (in[25] & kEntranceAxis_ShuffleDungeons) ? 1 : 0;
+  s.coupled                    = (in[25] & kEntranceAxis_Coupled)         ? 1 : 0;
+  s.cross_category             = (in[25] & kEntranceAxis_CrossCategory)   ? 1 : 0;
+  s.decoupled                  = (in[25] & kEntranceAxis_Decoupled)       ? 1 : 0;
+  s.shuffle_ganons_tower_entrance = (in[25] & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
   *out = s;
   return 0;
 }
@@ -264,6 +336,105 @@ void Settings_SelfCheck(void) {
     Settings_CanonicalSerialize(&s2, c2);
     if (!settings_byte_eq(canonical, c2, kSettingsCanonicalLen)) {
       fprintf(stderr, "Settings_SelfCheck: CSV-parsed defaults serialize differently\n");
+      exit(2);
+    }
+  }
+  // Phase C — entrance-axis pack/unpack round-trip + default byte-identity.
+  {
+    // Default settings MUST still pack canonical byte [25] = 0 (the corpus
+    // byte-identical invariant — kExpectedCanonical[25]==0 above depends on it).
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    if (cd[25] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: default entrance-axis byte [25]=0x%02x "
+                      "!= 0 (corpus invariant broken)\n", cd[25]);
+      exit(2);
+    }
+    // coupled set but NO shuffle axis active must normalize to 0 (so the
+    // default and "coupled with nothing to couple" hash identically).
+    RandoSettings sc;
+    Settings_SetDefaults(&sc);
+    sc.coupled = 1;
+    uint8 cc[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sc, cc);
+    if (cc[25] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: coupled-without-shuffle must "
+                      "normalize byte [25] to 0 (got 0x%02x)\n", cc[25]);
+      exit(2);
+    }
+    // A coupled cave-shuffle config packs to the expected bits and round-trips.
+    RandoSettings se;
+    Settings_SetDefaults(&se);
+    se.shuffle_cave_entrances = 1;
+    se.coupled = 1;
+    uint8 ce[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&se, ce);
+    if (ce[25] != (kEntranceAxis_ShuffleCaves | kEntranceAxis_Coupled)) {
+      fprintf(stderr, "Settings_SelfCheck: entrance-axis pack mismatch "
+                      "(got 0x%02x)\n", ce[25]);
+      exit(2);
+    }
+    RandoSettings rt;
+    if (Settings_CanonicalDeserialize(ce, &rt) != 0 ||
+        rt.shuffle_cave_entrances != 1 || rt.coupled != 1 ||
+        rt.shuffle_dungeon_entrances != 0 || rt.cross_category != 0 ||
+        rt.decoupled != 0) {
+      fprintf(stderr, "Settings_SelfCheck: entrance-axis deserialize round-trip "
+                      "mismatch\n");
+      exit(2);
+    }
+    // Ganon's Tower opt-in (bit 5) round-trips; it requires dungeon shuffle so it
+    // normalizes off without it.
+    RandoSettings sg;
+    Settings_SetDefaults(&sg);
+    sg.shuffle_dungeon_entrances = 1; sg.shuffle_ganons_tower_entrance = 1;
+    uint8 cg[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sg, cg);
+    RandoSettings rg;
+    if (!(cg[25] & kEntranceAxis_ShuffleGanonsTower) ||
+        Settings_CanonicalDeserialize(cg, &rg) != 0 ||
+        rg.shuffle_ganons_tower_entrance != 1) {
+      fprintf(stderr, "Settings_SelfCheck: GT-entrance axis round-trip mismatch\n");
+      exit(2);
+    }
+    // GT opt-in without dungeon shuffle must normalize off (bit 5 clear).
+    RandoSettings sgn;
+    Settings_SetDefaults(&sgn);
+    sgn.shuffle_ganons_tower_entrance = 1;  // but shuffle_dungeon_entrances = 0
+    uint8 cgn[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sgn, cgn);
+    if (cgn[25] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: GT opt-in without dungeon shuffle must "
+                      "normalize byte [25] to 0 (got 0x%02x)\n", cgn[25]);
+      exit(2);
+    }
+    // decoupled implies !coupled in the serialized form.
+    RandoSettings se2;
+    Settings_SetDefaults(&se2);
+    se2.shuffle_cave_entrances = 1;
+    se2.coupled = 1;
+    se2.decoupled = 1;
+    uint8 ce2[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&se2, ce2);
+    if (ce2[25] & kEntranceAxis_Coupled) {
+      fprintf(stderr, "Settings_SelfCheck: decoupled must clear coupled in the "
+                      "serialized byte (got 0x%02x)\n", ce2[25]);
+      exit(2);
+    }
+    // CSV parse of the new keys round-trips through the canonical bytes.
+    RandoSettings sv;
+    Settings_SetDefaults(&sv);
+    if (Settings_ParseCsv("shuffle_cave_entrances=true,coupled=true", &sv) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: CSV parse of entrance axes failed\n");
+      exit(2);
+    }
+    uint8 cv[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sv, cv);
+    if (!settings_byte_eq(cv, ce, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: CSV-parsed entrance axes serialize "
+                      "differently from the struct path\n");
       exit(2);
     }
   }
@@ -551,6 +722,15 @@ enum {
   // Phase B Slice 7 §63 / Slice 8 §64 — shuffle axes (binary on/off).
   KEY_boss_shuffle,
   KEY_drop_shuffle,
+  // Phase C — entrance shuffle composable axes (binary on/off). Packed into
+  // canonical byte [25]; see RandoSettings header. (27 keys total — well under
+  // the 32-bit `seen` mask.)
+  KEY_shuffle_cave_entrances,
+  KEY_shuffle_dungeon_entrances,
+  KEY_coupled,
+  KEY_cross_category,
+  KEY_decoupled,
+  KEY_shuffle_ganons_tower_entrance,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -723,6 +903,30 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Phase B Slice 8 §64 — drop-shuffle axis. Binary on/off.
     MARK_SEEN(KEY_drop_shuffle);
     if (parse_bool(val, vlen, &s->drop_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "shuffle_cave_entrances")) {
+    // Phase C — entrance shuffle: cave-door class.
+    MARK_SEEN(KEY_shuffle_cave_entrances);
+    if (parse_bool(val, vlen, &s->shuffle_cave_entrances) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "shuffle_dungeon_entrances")) {
+    // Phase C — entrance shuffle: dungeon-door class (Stage 2).
+    MARK_SEEN(KEY_shuffle_dungeon_entrances);
+    if (parse_bool(val, vlen, &s->shuffle_dungeon_entrances) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "coupled")) {
+    // Phase C — coupled return (enter A ⇒ exit A). Default on.
+    MARK_SEEN(KEY_coupled);
+    if (parse_bool(val, vlen, &s->coupled) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "cross_category")) {
+    // Phase C — caves↔dungeons may mix (Stage 3).
+    MARK_SEEN(KEY_cross_category);
+    if (parse_bool(val, vlen, &s->cross_category) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "decoupled")) {
+    // Phase C — per-endpoint independent shuffle (Stage 4); implies !coupled.
+    MARK_SEEN(KEY_decoupled);
+    if (parse_bool(val, vlen, &s->decoupled) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "shuffle_ganons_tower_entrance")) {
+    // Phase C — advanced opt-in: include Ganon's Tower in the dungeon pool.
+    MARK_SEEN(KEY_shuffle_ganons_tower_entrance);
+    if (parse_bool(val, vlen, &s->shuffle_ganons_tower_entrance) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "hints")) {
     // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
     // `spoil.Hints` semantics (`HintService.php:54` tests `=== 'on'`).

@@ -25,9 +25,11 @@
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
+#include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
+#include "../assets.h"     // Phase C entrance overlay: g_asset_ptrs[126] / kOverworld_Entrance_Id
 #include "../features.h"   // g_rando_triforce_piece_count
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
@@ -534,6 +536,19 @@ uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
 #define kRandoTakeAnyCaveCount 31
 #define kRandoTakeAnyLocBase   266
 uint8 g_rando_takeany_door_id;  // transient; set by Overworld_UseEntrance
+// Phase C Stage 2 — dungeon entrance-shuffle coupling. Set at the overworld entry
+// hook when a SHUFFLED dungeon door is entered; the dungeon-exit room-keyed search
+// uses it instead of the loaded dungeon's room so the player returns to the SOURCE
+// door (avoids stranding, e.g. exiting on Ice Palace's lake without flippers).
+// 0 = no override. Consumed (cleared) by the exit path.
+uint16 g_rando_entrance_exit_room;
+// Phase C Stage 3 (cross-category) coupling: set at the entry hook when a CAVE
+// source door is redirected to a DUNGEON interior (cave→dungeon). The loaded
+// dungeon room takes the room-keyed SEARCH exit branch, which would NOT return
+// to the cave; this flag forces the cached-exit branch (the *_exit shadow vars,
+// cached at entry, hold the source cave door's overworld position) so the player
+// returns to the cave door. 0 = normal. Consumed by the exit path.
+uint8 g_rando_entrance_force_cached;
 
 typedef struct { uint8 door_id; uint8 host_entrance; } RandoTakeAnyCaveRt;
 static const RandoTakeAnyCaveRt kRandoTakeAnyCaves[kRandoTakeAnyCaveCount] = {
@@ -932,6 +947,141 @@ extern uint32 g_wanted_zelda_features1;
 // spoiler path. Cleared on Rando_DeactivateSlot.
 static char g_rando_active_share_string[64] = {0};
 
+// ---------------------------------------------------------------------------
+// Phase C entrance shuffle — runtime door overlay. Owns a shadow of the vanilla
+// door→entrance-id table (kOverworld_Entrance_Id = g_asset_ptrs[126]) and
+// repoints the asset pointer while a cave-shuffle slot is active. The
+// permutation is regenerated from (seed, axes, attempt) carried in the slot
+// header, so save/quit + reload restores the same π. Coupling (enter A ⇒ exit A)
+// is automatic for caves: Dungeon_LoadEntrance caches the SOURCE overworld
+// position at entry, before the interior loads from which_entrance.
+// ---------------------------------------------------------------------------
+#define kEntranceOverlayMax 4096
+static uint8 g_entrance_overlay[kEntranceOverlayMax];
+// Saved g_asset_ptrs[126] (the vanilla door table) while the overlay is
+// installed. INVARIANT (audit L1): Entrance_RuntimeTeardown() MUST run before any
+// LoadAssets() reload — LoadAssets unconditionally rewrites every g_asset_ptrs[i]
+// into a fresh buffer, which would both drop the overlay and leave this pointer
+// dangling into the freed asset buffer. Today all LoadAssets call sites are
+// startup/CLI-only (never mid-session), so this is latent; a future hot-reload
+// feature must tear the overlay down first.
+static const uint8 *g_entrance_overlay_orig = NULL;
+
+// Restore the vanilla door table + clear the logic overrides. Idempotent.
+static void Entrance_RuntimeTeardown(void) {
+  if (g_entrance_overlay_orig != NULL) {
+    g_asset_ptrs[126] = (void *)g_entrance_overlay_orig;
+    g_entrance_overlay_orig = NULL;
+  }
+  Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
+  g_rando_entrance_exit_room = 0;
+  g_rando_entrance_force_cached = 0;
+}
+
+// Install the overlay + logic overrides for an entrance-shuffle slot (caves
+// and/or dungeons). Tears down any prior install first (so a slot-switch without
+// an intervening Deactivate is safe). No-op for non-shuffle slots.
+static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
+  Entrance_RuntimeTeardown();
+  RandoSettings es;
+  memset(&es, 0, sizeof(es));
+  es.shuffle_cave_entrances = (h->entrance_axes & kEntranceAxis_ShuffleCaves) ? 1 : 0;
+  es.shuffle_dungeon_entrances = (h->entrance_axes & kEntranceAxis_ShuffleDungeons) ? 1 : 0;
+  es.shuffle_ganons_tower_entrance = (h->entrance_axes & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
+  es.cross_category = (h->entrance_axes & kEntranceAxis_CrossCategory) ? 1 : 0;
+  es.world_state = h->settings_ext_present ? h->world_state : (uint8)kWorldState_Open;
+  bool cross = Entrance_IsCrossActive(&es);    // supersedes the separate paths
+  bool cave = !cross && Entrance_IsActive(&es);// Inverted/Retro guard (defense in depth)
+  bool dun = !cross && Entrance_IsDungeonActive(&es);
+  if (!cross && !cave && !dun) return;
+  // X.1 backward-load: the entrance permutation π is REGENERATED from
+  // (seed, axes, attempt) against this build's interior/dungeon pool. The pool
+  // composition is part of the generator version, so a slot written by a
+  // different generator_version may regenerate a DIFFERENT π → doors that don't
+  // match the baked placement. Warn loudly; entrance-shuffle seeds are
+  // version-locked (regenerate after a randomizer update). The placement itself
+  // is still loaded; only the door layout is at risk.
+  if (Rando_DetectVersionDrift(h, (uint16)kGeneratorVersion)) {
+    fprintf(stderr,
+        "Rando WARNING: this entrance-shuffle slot was generated by version %u "
+        "but this build is version %u. The door layout is regenerated from the "
+        "pool and may not match — regenerate the seed for correct entrances.\n",
+        (unsigned)h->generator_version, (unsigned)kGeneratorVersion);
+  }
+  const uint8 *ids = kOverworld_Entrance_Id;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (ids == NULL || len == 0 || len > kEntranceOverlayMax) return;
+  // seed_u64 lives at raw share_string bytes [21..28] LE (per rando_share layout).
+  const uint8 *sb = h->share_string;
+  uint64 seed = (uint64)sb[21] | ((uint64)sb[22] << 8) | ((uint64)sb[23] << 16) |
+                ((uint64)sb[24] << 24) | ((uint64)sb[25] << 32) |
+                ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+  uint8 cave_assign[kEntranceMaxInteriors]; int cave_n = 0;
+  uint8 dun_assign[kEntranceMaxInteriors]; int dun_n = 0;
+  uint8 cross_assign[kEntranceMaxInteriors]; int cross_n = 0;
+  // Logic-side overrides so the in-game location tracker reflects the shuffled
+  // reachability (gameplay itself reads the baked placement, not reachability).
+  if (cross) {
+    // Crossed: one combined pool. ApplyCrossOverrides installs all 4 cases; the
+    // unified overlay maps every door (cave or dungeon) to its target's id.
+    cross_n = Entrance_ComputeCrossPermutation(&es, seed, h->entrance_attempt, cross_assign);
+    Entrance_ApplyCrossOverrides(cross_assign, cross_n);
+    Entrance_BuildCrossOverlay(cross_assign, cross_n, ids, len, g_entrance_overlay);
+  } else {
+    if (cave) {
+      cave_n = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, cave_assign);
+      Entrance_ApplyRegionOverrides(cave_assign, cave_n);
+    }
+    if (dun) {
+      dun_n = Entrance_ComputeDungeonPermutation(&es, seed, h->entrance_attempt, dun_assign);
+      Entrance_ApplyEdgeOverrides(dun_assign, dun_n);
+    }
+    // Door overlay: cave pass copies vanilla + remaps cave slots (NULL = copy
+    // only), then the dungeon pass remaps the disjoint dungeon slots in place.
+    Entrance_BuildDoorOverlay(cave ? cave_assign : NULL, cave_n, ids, len, g_entrance_overlay);
+    if (dun) Entrance_RemapDungeonDoors(dun_assign, dun_n, g_entrance_overlay, len);
+  }
+  g_entrance_overlay_orig = (const uint8 *)g_asset_ptrs[126];
+  g_asset_ptrs[126] = g_entrance_overlay;
+}
+
+// Coupling helper (Stage 2): for the overworld entry hook. Given the door-slot
+// `lx`, return the room the dungeon-exit room-keyed search should target so the
+// player returns to THIS source door (rather than the loaded dungeon's vanilla
+// door). 0 when the slot isn't a shuffled dungeon door (caves auto-couple; an
+// unredirected door needs no override). Reads the saved vanilla table.
+uint16 Rando_EntranceCoupledExitRoom(uint16 lx) {
+  if (g_entrance_overlay_orig == NULL) return 0;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (lx >= len) return 0;
+  uint8 vanilla_id = g_entrance_overlay_orig[lx];
+  // Only when this door was actually redirected (overlay value differs).
+  if (kOverworld_Entrance_Id[lx] == vanilla_id) return 0;
+  return Entrance_DungeonSourceExitRoom(vanilla_id);  // 0 if not a v1 dungeon door
+}
+
+// Cross-category coupling (Stage 3): true iff door-slot `lx` is a CAVE source
+// door that the overlay redirected to a DUNGEON interior (loaded room < 0x100).
+// Such a door takes the room-keyed search exit (it loads a dungeon room) but must
+// return to the cave — the entry hook sets g_rando_entrance_force_cached so the
+// exit uses the cached source-cave position instead. (cave→cave loads a cave room
+// and already uses the cached branch, so it is intentionally NOT flagged here —
+// keeps the playtest-confirmed within-category path untouched.)
+bool Rando_EntranceForceCachedExit(uint16 lx) {
+  if (g_entrance_overlay_orig == NULL) return false;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (lx >= len) return false;
+  uint8 vanilla_id = g_entrance_overlay_orig[lx];
+  if (!Entrance_IsCaveEntranceId(vanilla_id)) return false;   // source not a cave
+  uint8 target = kOverworld_Entrance_Id[lx];
+  if (target == vanilla_id) return false;                     // not redirected
+  const uint16 *rooms = kEntranceData_rooms;
+  uint32 rc = kEntranceData_rooms_SIZE / 2u;
+  if (rooms == NULL || target >= rc) return false;
+  return rooms[target] < 0x100;                               // loaded a dungeon
+}
+
 // Active slot's recovered settings + shuffle assignments (format_version >= 2
 // slots carry the canonical settings blob). g_rando_active_settings_valid gates
 // the runtime reachability engine the tracker windows consume: when false
@@ -985,6 +1135,12 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_active_world_state = src->header.settings_ext_present
                                    ? src->header.world_state
                                    : (uint8)kWorldState_Open;
+  // Phase C — install the entrance-shuffle door overlay + region overrides for
+  // this slot (no-op when the slot carries no cave shuffle). Done before the
+  // hint regeneration below so hints see the shuffled reachability, and before
+  // the tracker repaint counter bump.
+  Entrance_RuntimeInstall(&src->header);
+
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
 
@@ -1065,6 +1221,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
 }
 
 void Rando_DeactivateSlot(void) {
+  // Phase C — restore the vanilla door table + clear entrance region overrides
+  // before anything else (mirror of Entrance_RuntimeInstall in Activate).
+  Entrance_RuntimeTeardown();
   Placement_Install(NULL);
   g_session_placement_table.entries = NULL;
   g_session_placement_table.count = 0;
@@ -2239,6 +2398,7 @@ void Rando_RunAllSelfChecks(void) {
   RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
   Hints_SelfCheck();
+  Entrance_SelfCheck();
   Rando_TrackerSelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }

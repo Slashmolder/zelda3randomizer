@@ -490,10 +490,12 @@ save/reload — the sentinel persists in the Phase A `kRam_*` block so a mid-run
 load does not re-grant.
 
 Because the inverted topology relabels which overworld tiles a region occupies,
-generation activates a `RegionRemap` overlay (`kInvertedRegionRemap`) at slot
-start when `world_state == Inverted`; Open/Standard/Retro seeds leave the
-identity remap in place. The reachability seed starts from the inverted
-counterpart of Link's House rather than the light-world spawn.
+Inverted ships via a **static alternate edge table** (`kRandoEdges_Inverted[]`,
+walked when `world_state == Inverted`) plus a per-screen visual tile overlay —
+NOT a runtime region remap. The reachability seed starts from the inverted
+counterpart of Link's House rather than the light-world spawn. (The Phase A
+`RegionRemap` scaffold was dead identity code and was **retired** in the Phase C
+entrance-shuffle work; see `add-rando-entrance-shuffle/design.md §1`.)
 
 ## Phase B+ roadmap
 
@@ -539,7 +541,7 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/add-rando-entrance-shuffle/) | Entrance shuffle (Simple / Restricted / Crossed / Insanity). Uses `RegionRemap` overlay activated in Phase B #4a Inverted. | Stub |
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed/Insanity as presets. **Coupled cave + dungeon entrance shuffle implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (a version-drift warning fires; regenerate after an update). `RegionRemap` scaffold retired. Crossed (cross-category) + Insanity (decoupled) modes and Skull Woods multi-entrance are still open. | Stages 1–2 done (playtest-confirmed) |
 
 ### Phase D
 

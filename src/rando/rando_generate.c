@@ -23,6 +23,7 @@
 #include "rando_save.h"       // RandoSidecarSlot, kSlotKind_Randomizer, Rando_WriteSidecarSlot, ...
 #include "rando_spoiler.h"    // RandoSpoiler, Spoiler_ResolvePath, Spoiler_Write
 #include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
+#include "shuffle_entrance.h" // Phase C entrance shuffle (cave permutation + region overrides)
 
 #include <string.h>
 #include <stdio.h>
@@ -168,8 +169,77 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // deterministic kAssumedFillMaxAttempts cap. Reveal also passes 0; this
   // matches both sides so the stamp is reproducible across machines.
   int effective_budget = (budget < 0) ? ((settings->race_mode != 0) ? 0 : 10) : budget;
-  bool placed = Place_AssumedFill(settings, seed_u64, effective_budget, &table);
+
+  // Phase C — entrance shuffle: draw a cave permutation π, install its per-seed
+  // region overrides so the placer/goal-check see the shuffled reachability, run
+  // placement, and accept the first π under which the goal is completable
+  // (reject-and-retry; coupled caves are ≈always solvable so attempt 0 normally
+  // wins). The accepted attempt index is stored in the slot header (with the
+  // packed axis byte) so slot-load regenerates the same π for the door overlay.
+  // Default-off ⇒ this whole block is skipped and placement is byte-identical.
+  uint8 entrance_axes = 0;
+  uint8 entrance_attempt = 0;
+  uint8 cave_assign[kEntranceMaxInteriors];
+  int cave_count = 0;
+  uint8 dun_assign[kEntranceMaxInteriors];
+  int dun_count = 0;
+  uint8 cross_assign[kEntranceMaxInteriors];
+  int cross_count = 0;
+  bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
+  bool cave_on = !cross_on && Entrance_IsActive(settings);
+  bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
+  bool placed = false;
+  Entrance_ClearRegionOverrides();  // ensure a clean logic graph
+  Entrance_ClearEdgeOverrides();
+  if (cross_on || cave_on || dun_on) {
+    uint8 canon[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(settings, canon);
+    entrance_axes = canon[25];  // == the packed entrance-axis byte
+    const int kEntranceMaxRetry = 64;
+    for (int att = 0; att < kEntranceMaxRetry; att++) {
+      if (cross_on) {
+        cross_count = Entrance_ComputeCrossPermutation(settings, seed_u64, (uint8)att, cross_assign);
+        Entrance_ApplyCrossOverrides(cross_assign, cross_count);
+      } else {
+        if (cave_on) {
+          cave_count = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, cave_assign);
+          Entrance_ApplyRegionOverrides(cave_assign, cave_count);
+        }
+        if (dun_on) {
+          dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, dun_assign);
+          Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+        }
+      }
+      table.count = 0;
+      if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
+        // Require FULL reachability, not just goal-completability: an entrance
+        // permutation can make some interiors circularly unreachable (e.g. a
+        // medallion/crystal-gated door leading to the very dungeon that grants
+        // the gating item). Place_AssumedFill accepts a best-effort with stranded
+        // placements; we must REJECT that π and try another rather than ship a
+        // seed with unreachable items. Logic_ComputeSpheres returns true only when
+        // every placement is reachable.
+        RandoSpheres reach_spheres;
+        if (Logic_ComputeSpheres(settings, &table, &reach_spheres) &&
+            Goal_IsCompletable(settings, &table)) {
+          placed = true;
+          entrance_attempt = (uint8)att;
+          break;
+        }
+      }
+    }
+    // NB: leave the accepted π's overrides ACTIVE — the spoiler's sphere + goal
+    // computation below must see the shuffled reachability. Cleared right after
+    // the spoiler block (and at the next generation's start).
+  } else {
+    placed = Place_AssumedFill(settings, seed_u64, effective_budget, &table);
+  }
   if (!placed) {
+    // Audit H1 — clear the entrance overrides on the failure path too (the
+    // success path clears after the spoiler block; a failed generation would
+    // otherwise leak the last attempt's shuffled reachability to the tracker).
+    Entrance_ClearRegionOverrides();
+    Entrance_ClearEdgeOverrides();
     if (err != NULL) snprintf(err, err_cap, "placement failed");
     free(entries);
     return false;
@@ -228,6 +298,13 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.settings = settings;
     spoiler.placements = &table;
     spoiler.spheres = &spheres;
+    // Phase C — entrance_mapping sections (omitted when the respective count is 0).
+    spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
+    spoiler.entrance_count = cave_count;
+    spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
+    spoiler.dungeon_count = dun_count;
+    spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
+    spoiler.cross_count = cross_count;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {
@@ -240,6 +317,11 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       fprintf(stderr, "[settings] spoiler write failed: %s\n", spoiler_json_path);
     }
   }
+  // Phase C — the accepted π's overrides have now fed placement, the spheres, and
+  // the goal check. Clear them so any later reachability (e.g. the tracker, or the
+  // next generation) starts from the identity graph.
+  Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
 
   // Build & write the sidecar slot. Slot kind = Randomizer.
   RandoSidecarSlot slot;
@@ -261,6 +343,13 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // collides with the sewers-passage branch in SpritePrep_UncleAndPriest_bounce —
   // so Link sleeps forever (player_sleep_in_bed_state never advances).
   slot.header.world_state = settings->world_state;
+  // Phase C — carry the entrance-shuffle axes + accepted goal-retry attempt so
+  // slot-load can regenerate the cave permutation π (and install the door
+  // overlay) deterministically from the seed. 0/0 when no shuffle was active.
+  // (Redundant with canon[25] in the settings blob below, but the dedicated
+  // header bytes are what Entrance_RuntimeInstall reads.)
+  slot.header.entrance_axes = entrance_axes;
+  slot.header.entrance_attempt = entrance_attempt;
   // format_version 2: persist the FULL canonical settings blob so a reloaded
   // slot can reproduce the seed's settings + prize/medallion shuffle
   // assignments for the runtime reachability (tracker) engine. The reserved-tail

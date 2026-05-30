@@ -1788,12 +1788,32 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   cur_palace_index_x2 = 0xff;
   num_memorized_tiles = 0;
 
-  if (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100) {
+  // Phase C Stage 2 — dungeon entrance-shuffle coupling. CONSUME the source-room
+  // override UNCONDITIONALLY here (audit HIGH-1): this function is reached not just
+  // by the room-keyed exit search below but also by Magic-Mirror / special-area /
+  // ending warps (overworld.c:697,1914, ending.c) and the cached-exit `if` branch;
+  // clearing only in the search branch let a mirror-out of a shuffled dungeon leak
+  // a stale source room into a LATER unrelated exit → wrong-door warp. Capture once
+  // into a local, zero the global, then use the local only in the search branch.
+  uint16 coupled_exit_room = g_rando_entrance_exit_room;
+  g_rando_entrance_exit_room = 0;
+  // Phase C Stage 3 — a cave→dungeon cross redirect loads a dungeon room (which
+  // would take the search branch) but must return to the SOURCE cave door; the
+  // cached *_exit vars hold that cave position, so force the cached branch.
+  bool force_cached = (g_rando_entrance_force_cached != 0);
+  g_rando_entrance_force_cached = 0;
+
+  if (force_cached ||
+      (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100)) {
     LoadCachedEntranceProperties();
   } else {
 
+    // If the player entered a shuffled dungeon door, key the exit search on the
+    // SOURCE dungeon's room (so they return to the door they entered) instead of
+    // the loaded dungeon's room. 0 = normal exit.
+    uint16 exit_room = (coupled_exit_room != 0) ? coupled_exit_room : dungeon_room_index;
     int k = 79;
-    do k--; while (kExitDataRooms[k] != dungeon_room_index);
+    do k--; while (k > 0 && kExitDataRooms[k] != exit_room);
     BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = kExitData_ScrollY[k];
     BG1HOFS_copy2 = BG2HOFS_copy2 = BG1HOFS_copy = BG2HOFS_copy = kExitData_ScrollX[k];
     link_y_coord = kExitData_YCoord[k];
@@ -3269,12 +3289,20 @@ void Overworld_GetPitDestination() {  // 9bb860
       which_entrance = 130;
       byte_7E010F = 0;
       g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
+      g_rando_entrance_exit_room = 0;  // Phase C — clear stale dungeon-coupling room
+      g_rando_entrance_force_cached = 0;
       return;
     }
   }
   which_entrance = kFallHole_Entrances[i];
   byte_7E010F = 0;
   g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
+  // Phase C Stage 2 — a fall-hole is not a shuffled dungeon DOOR, so any pending
+  // dungeon-coupling source room from a prior door entry must not leak into this
+  // interior's exit. (Stage 3: also clear the cross cave→dungeon force-cached flag,
+  // or it would corrupt this interior's exit branch — matches the Houlihan path.)
+  g_rando_entrance_exit_room = 0;
+  g_rando_entrance_force_cached = 0;
 }
 
 void Overworld_UseEntrance() {  // 9bbbf4
@@ -3353,6 +3381,20 @@ after:
         g_rando_takeany_door_id = (uint8)(lx + 1);
         which_entrance = host;
       }
+    }
+    // Phase C Stage 2 — dungeon entrance-shuffle coupling. If this door is a
+    // SHUFFLED dungeon door (which_entrance above now loads a DIFFERENT dungeon
+    // via the overlay), capture the SOURCE dungeon's room so the dungeon-exit
+    // search returns Link to THIS door (overworld.c "exit" path below), not the
+    // loaded dungeon's vanilla door. 0 for caves (auto-coupled) / unshuffled doors.
+    g_rando_entrance_exit_room = 0;
+    g_rando_entrance_force_cached = 0;
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      g_rando_entrance_exit_room = Rando_EntranceCoupledExitRoom((uint16)lx);
+      // Cross-category: a cave door redirected to a dungeon loads a dungeon room
+      // (search-exit class) but must return to the cave — force the cached exit.
+      if (g_rando_entrance_exit_room == 0)
+        g_rando_entrance_force_cached = Rando_EntranceForceCachedExit((uint16)lx) ? 1 : 0;
     }
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;

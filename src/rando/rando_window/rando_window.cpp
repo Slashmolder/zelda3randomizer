@@ -462,6 +462,107 @@ static void Panel_Shuffles() {
   RandoSettings *s = &b->pending;
   bool changed = false;
 
+  // Phase C — entrance shuffle (Stage 1: coupled cave shuffle). Live for
+  // playable slots (Rando_ActivateSidecarSlot regenerates the door overlay).
+  // Open/Standard only — Inverted carries a static region override the per-seed
+  // override would clobber, and Retro re-uses cave host-rooms for TakeAny.
+  ImGui::SeparatorText("Entrance shuffle");
+  {
+    bool ws_ok = (s->world_state == kWorldState_Open ||
+                  s->world_state == kWorldState_Standard);
+    ImGui::BeginDisabled(!ws_ok);
+
+    // Presets — one-click bundles over the axes. Simple/Restricted both map to
+    // "caves + dungeons, coupled" (within-category). Crossed adds cross_category
+    // (caves and dungeons share one pool). Insanity (needs decoupled) is not
+    // built yet — shown disabled so the button never lies.
+    ImGui::TextUnformatted("Presets:"); ImGui::SameLine();
+    if (ImGui::SmallButton("None")) {
+      s->shuffle_cave_entrances = 0; s->shuffle_dungeon_entrances = 0;
+      s->coupled = 0; s->cross_category = 0; s->decoupled = 0; changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Simple / Restricted")) {
+      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
+      s->coupled = 1; s->cross_category = 0; s->decoupled = 0; changed = true;
+    }
+    HelpTooltip("Caves + dungeons shuffled within their own category, coupled. "
+                "(ALTTPR's Simple and Restricted converge here.)");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Crossed")) {
+      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
+      s->coupled = 1; s->cross_category = 1; s->decoupled = 0; changed = true;
+    }
+    HelpTooltip("Caves and dungeons share one shuffle pool — a cave door can lead "
+                "to a dungeon interior and vice versa, coupled. The generator "
+                "rerolls until every location is reachable.");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(true);
+    ImGui::SmallButton("Insanity");
+    ImGui::EndDisabled();
+    HelpTooltip("Insanity (decoupled — enter A, exit somewhere else) needs the "
+                "decoupled engine, coming in the next stage.");
+
+    bool cave = s->shuffle_cave_entrances != 0;
+    if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
+      s->shuffle_cave_entrances = cave;
+      s->coupled = (cave || s->shuffle_dungeon_entrances) ? 1 : 0;  // coupled = only mode
+      changed = true;
+    }
+    HelpTooltip("Each overworld cave door leads to a different cave interior; "
+                "exiting returns you to the door you entered. Goal stays "
+                "reachable. (Open/Standard only in this version.)");
+    bool dun = s->shuffle_dungeon_entrances != 0;
+    if (ImGui::Checkbox("Shuffle dungeon entrances", &dun)) {
+      s->shuffle_dungeon_entrances = dun;
+      s->coupled = (dun || s->shuffle_cave_entrances) ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Shuffles 10 of 12 dungeons among themselves; entering one's door "
+                "loads another, coupled exit returns you. Desert + Turtle Rock "
+                "shuffle their MAIN door only (extra 'contained' entrances stay "
+                "vanilla). Skull Woods (many separate entrances) is deferred; "
+                "Ganon's Tower is the separate advanced toggle below.");
+    // Advanced opt-in: Ganon's Tower. Gated on dungeon shuffle being on.
+    ImGui::BeginDisabled(!s->shuffle_dungeon_entrances);
+    bool gt = s->shuffle_ganons_tower_entrance != 0;
+    if (ImGui::Checkbox("...also shuffle Ganon's Tower (advanced)", &gt)) {
+      s->shuffle_ganons_tower_entrance = gt;
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    HelpTooltip("Adds Ganon's Tower to the dungeon pool (11th). GT's crystal-tower "
+                "requirement travels with its door, so at high crystals.tower some "
+                "seeds need a few generation retries (the generator never ships an "
+                "unreachable seed — it rerolls the permutation). If a seed won't "
+                "generate, lower crystals.tower (0 always works) or change seed.");
+    // Cross-category: caves and dungeons share one shuffle pool. Needs at least
+    // one class being shuffled; apply_derived_rules() clears it otherwise.
+    ImGui::BeginDisabled(!s->shuffle_cave_entrances && !s->shuffle_dungeon_entrances);
+    bool cross = s->cross_category != 0;
+    if (ImGui::Checkbox("Cross-category (caves <-> dungeons share one pool)", &cross)) {
+      s->cross_category = cross;
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    HelpTooltip("A cave door can lead to a dungeon interior and vice versa. "
+                "Requires cave and/or dungeon shuffle on. The generator rerolls "
+                "the permutation until every location is reachable, so a seed is "
+                "never shipped with a stranded item.");
+    // Coupled is the only implemented mode for now; show it as a fixed
+    // indicator rather than a live toggle so the widget never lies.
+    ImGui::BeginDisabled(true);
+    bool coupled_show = true;
+    ImGui::Checkbox("Coupled (enter A -> exit A)", &coupled_show);
+    ImGui::EndDisabled();
+    HelpTooltip("Always on in this version. Decoupled (Insanity) entrance mode "
+                "is coming in the next stage.");
+    ImGui::EndDisabled();
+    if (!ws_ok) {
+      ImGui::TextDisabled("Entrance shuffle is Open/Standard only for now.");
+    }
+  }
+
   // boss_shuffle / drop_shuffle live in the settings struct (and the hash), but
   // they are runtime-inert for playable slots (Rando_ActivateSidecarSlot never
   // regenerates them) — matching the in-game screen, we present them as DISABLED
@@ -473,7 +574,6 @@ static void Panel_Shuffles() {
     ImGui::Checkbox("Boss shuffle", &bs);
     ImGui::Checkbox("Drop shuffle", &ds);
     bool off = false;
-    ImGui::Checkbox("Entrance shuffle", &off);
     ImGui::Checkbox("Enemy shuffle", &off);
     ImGui::Checkbox("Glitches", &off);
   }
