@@ -14,6 +14,7 @@
 #include "rando_settings.h"
 #include "rando.h"
 #include "rando_hints.h"
+#include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson (Phase C entrance_mapping)
 #include "../config.h"
 #include "../types.h"
 
@@ -262,6 +263,12 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     }
   }
   fprintf(f, "  ],\n");
+
+  // -----------------------------------------------------------------------
+  // entrance_mapping (Phase C) — door interior → loaded interior, when an
+  // entrance shuffle was applied. Omitted otherwise.
+  // -----------------------------------------------------------------------
+  Entrance_WriteSpoilerJson(f, s->entrance_assign, s->entrance_count);
 
   // -----------------------------------------------------------------------
   // sphere_data — emitted per `randomizer-core / Sphere semantics` when a

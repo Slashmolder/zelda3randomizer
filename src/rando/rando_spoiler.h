@@ -25,6 +25,11 @@ typedef struct RandoSpoiler {
   uint32 retry_attempts;               // # of assumed-fill attempts taken before success
   uint32 generation_wall_clock_ms;
   bool goal_completable;
+  // Phase C entrance shuffle — the accepted cave permutation (interior index →
+  // interior index now reached through its door). NULL/0 when no entrance
+  // shuffle, which omits the "entrance_mapping" spoiler section.
+  const uint8 *entrance_assign;
+  int entrance_count;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

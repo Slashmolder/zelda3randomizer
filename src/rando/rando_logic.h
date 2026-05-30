@@ -271,4 +271,15 @@ uint16 Rando_FindRegionByName(const char *name);
 // will use a per-seed edge overlay mirroring kRandoEdges_Inverted. See
 // openspec/changes/add-rando-entrance-shuffle/design.md §1.
 
+// Phase C entrance shuffle — per-seed cave location-region overrides. Begin
+// resets to identity + activates; Set assigns one location's effective region;
+// Clear deactivates (restoring byte-identical reachability). Driven by
+// shuffle_entrance.c from the entrance permutation.
+void Rando_BeginEntranceRegionOverrides(void);
+void Rando_SetEntranceRegionOverride(uint16 loc_id, uint16 region_id);
+void Rando_ClearEntranceRegionOverrides(void);
+// Returns the current per-seed override region for a location, or 0xFFFF if
+// none/inactive. For the self-check + tracker.
+uint16 Rando_GetEntranceRegionOverride(uint16 loc_id);
+
 #endif  // ZELDA3_RANDO_LOGIC_H_

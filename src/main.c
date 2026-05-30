@@ -45,6 +45,7 @@
 #include "rando/rando_window/rando_window.h"          // RandoWindow_* (ImGui settings window)
 #include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
+#include "rando/shuffle_entrance.h"                    // Phase C entrance shuffle (CLI generate path)
 #endif
 
 static bool g_run_without_emu = 0;
@@ -475,7 +476,30 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
   // Stamp is then reproducible across machines.
   int effective_budget = (settings.race_mode != 0) ? 0 : budget_seconds;
-  bool ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
+  // Phase C — entrance shuffle: same reject-and-retry as the playable-slot path
+  // (rando_generate.c). Draw a cave permutation π, install its region overrides
+  // so the placer/goal-check see the shuffled reachability, accept the first π
+  // under which the goal is completable. Default-off ⇒ byte-identical placement.
+  bool ok = false;
+  uint8 entrance_assign[kEntranceMaxInteriors];
+  int entrance_count = 0;
+  Entrance_ClearRegionOverrides();
+  if (Entrance_IsActive(&settings)) {
+    for (int att = 0; att < 64; att++) {
+      int ni = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, entrance_assign);
+      Entrance_ApplyRegionOverrides(entrance_assign, ni);
+      table.count = 0;
+      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table) &&
+          Goal_IsCompletable(&settings, &table)) {
+        ok = true;
+        entrance_count = ni;
+        break;
+      }
+    }
+    // Leave overrides active through sphere + spoiler emission below.
+  } else {
+    ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
+  }
   if (!ok) {
     fprintf(stderr, "--generate-seed: placement failed\n");
     free(entries);
@@ -533,6 +557,9 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.seed_u64 = seed_u64;
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
+  // Phase C — entrance_mapping section (omitted when entrance_count == 0).
+  spoiler.entrance_assign = (entrance_count > 0) ? entrance_assign : NULL;
+  spoiler.entrance_count = entrance_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

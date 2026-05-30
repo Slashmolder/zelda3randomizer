@@ -69,7 +69,13 @@ typedef enum {
 //                                              Dark World. Older slots read 0 == Open == no-op.)
 //   @69 flute_shovel_owned                   (bitfield: 0x01 shovel, 0x02 flute,
 //                                              0x04 flute activated; additive)
-//   @70 reserved[10]                          (forward-compat; zero on write)
+//   @70 entrance_axes (u8)                    (Phase C entrance shuffle; packed
+//                                              kEntranceAxis_* byte == canonical
+//                                              [25]. 0 = no entrance shuffle.)
+//   @71 entrance_attempt (u8)                  (Phase C; accepted goal-retry
+//                                              attempt index used to regenerate
+//                                              the cave permutation at slot load)
+//   @72 reserved[8]                            (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===
@@ -127,6 +133,14 @@ typedef struct RandoSlotHeader {
   // SELECTED function (toggled in the item menu). Bits: 0x01 shovel, 0x02
   // flute, 0x04 flute activated. See kRandoFluteShovel_* / Rando_GrantFluteShovel.
   uint8 flute_shovel_owned;     // @69
+  // Phase C entrance shuffle, carried additively in the reserved tail (same
+  // pattern as the hints ext): the packed entrance-axis byte (== canonical
+  // settings byte [25]) and the accepted goal-retry attempt index. Together
+  // with the seed (in share_string) they let slot-load REGENERATE the cave
+  // permutation deterministically (no full-permutation storage / TLV needed).
+  // 0 / 0 for non-entrance-shuffle slots, so older slots are a safe no-op.
+  uint8 entrance_axes;          // @70 (kEntranceAxis_* bits; 0 = no shuffle)
+  uint8 entrance_attempt;       // @71 (cave-permutation goal-retry attempt index)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

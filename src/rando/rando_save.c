@@ -141,7 +141,12 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   // zero, so old binaries reading a new file ignore it and new binaries reading
   // an old file see 0 (own neither — the safe default).
   buf[69] = h->flute_shovel_owned;
-  memset(buf + 70, 0, kRandoSidecar_SlotHeaderSize - 70);
+  // @70-71 Phase C entrance shuffle (additive; previously zero). The packed
+  // entrance-axis byte + accepted goal-retry attempt let slot-load regenerate
+  // the cave permutation from the seed. 0/0 for non-shuffle slots.
+  buf[70] = h->entrance_axes;
+  buf[71] = h->entrance_attempt;
+  memset(buf + 72, 0, kRandoSidecar_SlotHeaderSize - 72);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -170,6 +175,10 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   // @69 flute_shovel_owned (rando flute/shovel decouple). Pre-field files read
   // 0 here (own neither), the safe default.
   out->flute_shovel_owned = buf[69];
+  // @70-71 Phase C entrance shuffle. Pre-field files read 0/0 (no shuffle), the
+  // safe no-op default.
+  out->entrance_axes = buf[70];
+  out->entrance_attempt = buf[71];
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }

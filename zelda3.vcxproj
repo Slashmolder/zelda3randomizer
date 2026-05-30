@@ -350,6 +350,7 @@
     <ClCompile Include="src\rando\rando_hints.c" />
     <ClCompile Include="src\rando\shuffle_boss.c" />
     <ClCompile Include="src\rando\shuffle_drops.c" />
+    <ClCompile Include="src\rando\shuffle_entrance.c" />
     <ClCompile Include="src\rando\rando_shuffles.c" />
     <ClCompile Include="src\rando\rando_save.c" />
     <ClCompile Include="src\rando\rando_snapshot_tail.c" />

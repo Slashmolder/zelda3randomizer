@@ -311,6 +311,42 @@ bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
 }
 
 // ---------------------------------------------------------------------------
+// Phase C entrance shuffle — per-seed cave location-region overrides.
+//
+// When a cave entrance is shuffled, the cave-location's effective region becomes
+// the vanilla region of whichever overworld door now leads to it (the closed
+// form in shuffle_entrance.c). This is the SAME `effective_region` seam the
+// static Inverted/Retro override uses (below), but driven per-seed by the
+// entrance permutation instead of by world_state. It is consulted AFTER the
+// static override; Stage 1 only supports Open/Standard, which carry no static
+// location override, so there is no clobber. Inactive by default ⇒ the location
+// loop is byte-identical to non-entrance-shuffle reachability.
+#define kEntranceRegionOverrideMax 512
+static uint16 g_entrance_region_override[kEntranceRegionOverrideMax];
+static bool g_entrance_override_active = false;
+
+void Rando_BeginEntranceRegionOverrides(void) {
+  for (int i = 0; i < kEntranceRegionOverrideMax; i++)
+    g_entrance_region_override[i] = 0xFFFF;
+  g_entrance_override_active = true;
+}
+
+void Rando_SetEntranceRegionOverride(uint16 loc_id, uint16 region_id) {
+  if (loc_id < kEntranceRegionOverrideMax)
+    g_entrance_region_override[loc_id] = region_id;
+}
+
+void Rando_ClearEntranceRegionOverrides(void) {
+  g_entrance_override_active = false;
+}
+
+uint16 Rando_GetEntranceRegionOverride(uint16 loc_id) {
+  if (!g_entrance_override_active || loc_id >= kEntranceRegionOverrideMax)
+    return 0xFFFF;
+  return g_entrance_region_override[loc_id];
+}
+
+// ---------------------------------------------------------------------------
 // Logic_ComputeReachability (task 3.8) — fixed-point expansion.
 //
 // Algorithm:
@@ -453,6 +489,12 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         if (ov->region_override != 0xFFFF) {
           effective_region = ov->region_override;
         }
+      }
+      // Phase C — per-seed entrance-shuffle cave region override (takes
+      // precedence; Open/Standard carry no static `ov`, so no conflict).
+      if (g_entrance_override_active && loc->id < kEntranceRegionOverrideMax &&
+          g_entrance_region_override[loc->id] != 0xFFFF) {
+        effective_region = g_entrance_region_override[loc->id];
       }
       if (effective_region != 0xFFFF) {
         if (effective_region >= kReachabilityMaxRegions) continue;

@@ -326,6 +326,20 @@ entries:
     label: "b-race-inverted-fast-ganon"
     expected_digest: "0726475660476ad6e094bdbf721c3278f3ba1929f8ffd6490bbe2045991b4b64"
     expected_sphere_digest: "fe766b8598e9747d2e3aac6fc8be8df134c4645ffe019f6277d904d5f7b7bfd6"
+  # Phase C — entrance shuffle (coupled cave shuffle). These exercise the cave
+  # permutation + per-seed region overrides through the placer, locking in the
+  # deterministic digest. shuffle_cave_entrances active ⇒ digest differs from the
+  # same (settings, seed) without it.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true }
+    seed: "0x00000000C0FFEE01"
+    label: "c-entrance-caves-open-fast-ganon"
+    expected_digest: "15c54c9ee144127fe004fac31537fa5bafc12a5e44f4479f97b3eb0a4727f57c"
+    expected_sphere_digest: "7f5c7d0cbc0afaf5d5fcd1c55ba6275a8132aa9e6b9546af2c1f1c8e8f4c46ed"
+  - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
+    seed: "0x00000000C0FFEE02"
+    label: "c-entrance-caves-standard-fast-ganon"
+    expected_digest: "3929ae606a573e03caa96e826063564154075a6d7dc05484d5ac9816aebdd8fd"
+    expected_sphere_digest: "e892c5c87e0203b99ff2b72930dffe3ca2445e676bcaf66e9092d6ec5aa01a08"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
