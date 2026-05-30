@@ -151,15 +151,22 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       (dungeon-behind-cave) + `Rando_SetEntranceRegionOverridePred` (cave-behind-
       gated-dungeon, inherits the door predicate). Byte-identical when inactive.
       Finding: ALL dungeon doors are item-gated, so cross needs predicate inheritance.
-- [ ] 3.1 **Combined-pool engine** (designed in `design.md §9`, not yet built):
-      unified π over caves + single-edge dungeons (exclude TR/GT — multi-source);
-      4-case dispatch (cave→cave region-override; dungeon→dungeon edge-override;
-      cave→dungeon edge-add + void-region edge-removal; dungeon→cave predicate-
-      carrying override); unified door overlay; the cave-source→dungeon exit flag.
-- [ ] 3.2 Generation wiring (cross retry, full-reachability gate) + corpus + UI.
+- [x] 3.1 **Combined-pool engine** (`design.md §9`, built): unified π over caves +
+      single-edge dungeons (exclude TR/GT — multi-source); 4-case dispatch
+      (cave→cave region-override; dungeon→dungeon edge-override; cave→dungeon
+      edge-add + void-region edge-removal; dungeon→cave predicate-carrying override);
+      unified door overlay (`Entrance_BuildCrossOverlay`); cave-source→dungeon exit
+      flag (`g_rando_entrance_force_cached` + `Rando_EntranceForceCachedExit`).
+- [x] 3.2 Generation wiring (cross retry supersedes cave/dun, full-reachability gate)
+      + corpus (`c-entrance-cross-open-fast-ganon`, 62 entries) + UI (Crossed preset
+      LIVE, cross-category checkbox LIVE). Runtime install branches cross vs
+      cave/dun in `Entrance_RuntimeInstall`; exit coupling in `LoadOverworldFromDungeon`.
 - [ ] 3.3 Playtest + fresh-eyes audit. NOTE: cross-category correctness is NOT
       gate-protected (the gate evaluates the model; a too-permissive model ships a
       runtime softlock) — needs careful build + playtest of model↔runtime match.
+      All four cross directions verified against `Dungeon_LoadEntrance`'s
+      unconditional `*_exit` cache (caching is interior-driven, not door-driven, so
+      a cave-door→dungeon load still caches the source overworld position).
 
 ## Stage 4 — `decoupled` / per-endpoint ("Insanity") — optional / may split
 
@@ -171,11 +178,12 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 
 ## Presets (once the relevant axes ship)
 
-- [~] P.1 Native-window preset buttons: **None** + **Simple/Restricted** (caves +
-      dungeons, coupled — both ALTTPR names converge here until cross-category
-      ships) are LIVE; **Crossed** (needs cross_category) + **Insanity** (needs
-      decoupled) shown DISABLED so no button lies. Individual axis checkboxes serve
-      as Custom. (UI sugar over the axes — no stored enum, per design §5a.)
+- [~] P.1 Native-window preset buttons: **None**, **Simple/Restricted** (caves +
+      dungeons, coupled — both ALTTPR names converge here), and **Crossed**
+      (caves + dungeons + cross_category, coupled) are LIVE; **Insanity** (needs
+      decoupled) shown DISABLED so no button lies. Individual axis checkboxes
+      (incl. live cross-category) serve as Custom. (UI sugar over the axes — no
+      stored enum, per design §5a.)
 - [ ] P.2 Playtest each preset resolves to the right axis combination.
 
 ## Cross-cutting (per `openspec/changes/README.md` conventions)

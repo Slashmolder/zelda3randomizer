@@ -542,6 +542,13 @@ uint8 g_rando_takeany_door_id;  // transient; set by Overworld_UseEntrance
 // door (avoids stranding, e.g. exiting on Ice Palace's lake without flippers).
 // 0 = no override. Consumed (cleared) by the exit path.
 uint16 g_rando_entrance_exit_room;
+// Phase C Stage 3 (cross-category) coupling: set at the entry hook when a CAVE
+// source door is redirected to a DUNGEON interior (cave→dungeon). The loaded
+// dungeon room takes the room-keyed SEARCH exit branch, which would NOT return
+// to the cave; this flag forces the cached-exit branch (the *_exit shadow vars,
+// cached at entry, hold the source cave door's overworld position) so the player
+// returns to the cave door. 0 = normal. Consumed by the exit path.
+uint8 g_rando_entrance_force_cached;
 
 typedef struct { uint8 door_id; uint8 host_entrance; } RandoTakeAnyCaveRt;
 static const RandoTakeAnyCaveRt kRandoTakeAnyCaves[kRandoTakeAnyCaveCount] = {
@@ -969,6 +976,7 @@ static void Entrance_RuntimeTeardown(void) {
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
   g_rando_entrance_exit_room = 0;
+  g_rando_entrance_force_cached = 0;
 }
 
 // Install the overlay + logic overrides for an entrance-shuffle slot (caves
@@ -981,10 +989,12 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   es.shuffle_cave_entrances = (h->entrance_axes & kEntranceAxis_ShuffleCaves) ? 1 : 0;
   es.shuffle_dungeon_entrances = (h->entrance_axes & kEntranceAxis_ShuffleDungeons) ? 1 : 0;
   es.shuffle_ganons_tower_entrance = (h->entrance_axes & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
+  es.cross_category = (h->entrance_axes & kEntranceAxis_CrossCategory) ? 1 : 0;
   es.world_state = h->settings_ext_present ? h->world_state : (uint8)kWorldState_Open;
-  bool cave = Entrance_IsActive(&es);          // Inverted/Retro guard (defense in depth)
-  bool dun = Entrance_IsDungeonActive(&es);
-  if (!cave && !dun) return;
+  bool cross = Entrance_IsCrossActive(&es);    // supersedes the separate paths
+  bool cave = !cross && Entrance_IsActive(&es);// Inverted/Retro guard (defense in depth)
+  bool dun = !cross && Entrance_IsDungeonActive(&es);
+  if (!cross && !cave && !dun) return;
   // X.1 backward-load: the entrance permutation π is REGENERATED from
   // (seed, axes, attempt) against this build's interior/dungeon pool. The pool
   // composition is part of the generator version, so a slot written by a
@@ -1009,20 +1019,29 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
                 ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
   uint8 cave_assign[kEntranceMaxInteriors]; int cave_n = 0;
   uint8 dun_assign[kEntranceMaxInteriors]; int dun_n = 0;
+  uint8 cross_assign[kEntranceMaxInteriors]; int cross_n = 0;
   // Logic-side overrides so the in-game location tracker reflects the shuffled
   // reachability (gameplay itself reads the baked placement, not reachability).
-  if (cave) {
-    cave_n = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, cave_assign);
-    Entrance_ApplyRegionOverrides(cave_assign, cave_n);
+  if (cross) {
+    // Crossed: one combined pool. ApplyCrossOverrides installs all 4 cases; the
+    // unified overlay maps every door (cave or dungeon) to its target's id.
+    cross_n = Entrance_ComputeCrossPermutation(&es, seed, h->entrance_attempt, cross_assign);
+    Entrance_ApplyCrossOverrides(cross_assign, cross_n);
+    Entrance_BuildCrossOverlay(cross_assign, cross_n, ids, len, g_entrance_overlay);
+  } else {
+    if (cave) {
+      cave_n = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, cave_assign);
+      Entrance_ApplyRegionOverrides(cave_assign, cave_n);
+    }
+    if (dun) {
+      dun_n = Entrance_ComputeDungeonPermutation(&es, seed, h->entrance_attempt, dun_assign);
+      Entrance_ApplyEdgeOverrides(dun_assign, dun_n);
+    }
+    // Door overlay: cave pass copies vanilla + remaps cave slots (NULL = copy
+    // only), then the dungeon pass remaps the disjoint dungeon slots in place.
+    Entrance_BuildDoorOverlay(cave ? cave_assign : NULL, cave_n, ids, len, g_entrance_overlay);
+    if (dun) Entrance_RemapDungeonDoors(dun_assign, dun_n, g_entrance_overlay, len);
   }
-  if (dun) {
-    dun_n = Entrance_ComputeDungeonPermutation(&es, seed, h->entrance_attempt, dun_assign);
-    Entrance_ApplyEdgeOverrides(dun_assign, dun_n);
-  }
-  // Runtime door overlay: cave pass copies vanilla + remaps cave slots (NULL = copy
-  // only), then the dungeon pass remaps the disjoint dungeon slots in place.
-  Entrance_BuildDoorOverlay(cave ? cave_assign : NULL, cave_n, ids, len, g_entrance_overlay);
-  if (dun) Entrance_RemapDungeonDoors(dun_assign, dun_n, g_entrance_overlay, len);
   g_entrance_overlay_orig = (const uint8 *)g_asset_ptrs[126];
   g_asset_ptrs[126] = g_entrance_overlay;
 }
@@ -1040,6 +1059,27 @@ uint16 Rando_EntranceCoupledExitRoom(uint16 lx) {
   // Only when this door was actually redirected (overlay value differs).
   if (kOverworld_Entrance_Id[lx] == vanilla_id) return 0;
   return Entrance_DungeonSourceExitRoom(vanilla_id);  // 0 if not a v1 dungeon door
+}
+
+// Cross-category coupling (Stage 3): true iff door-slot `lx` is a CAVE source
+// door that the overlay redirected to a DUNGEON interior (loaded room < 0x100).
+// Such a door takes the room-keyed search exit (it loads a dungeon room) but must
+// return to the cave — the entry hook sets g_rando_entrance_force_cached so the
+// exit uses the cached source-cave position instead. (cave→cave loads a cave room
+// and already uses the cached branch, so it is intentionally NOT flagged here —
+// keeps the playtest-confirmed within-category path untouched.)
+bool Rando_EntranceForceCachedExit(uint16 lx) {
+  if (g_entrance_overlay_orig == NULL) return false;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (lx >= len) return false;
+  uint8 vanilla_id = g_entrance_overlay_orig[lx];
+  if (!Entrance_IsCaveEntranceId(vanilla_id)) return false;   // source not a cave
+  uint8 target = kOverworld_Entrance_Id[lx];
+  if (target == vanilla_id) return false;                     // not redirected
+  const uint16 *rooms = kEntranceData_rooms;
+  uint32 rc = kEntranceData_rooms_SIZE / 2u;
+  if (rooms == NULL || target >= rc) return false;
+  return rooms[target] < 0x100;                               // loaded a dungeon
 }
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {

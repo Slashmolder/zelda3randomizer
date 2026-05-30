@@ -465,10 +465,9 @@ static void Panel_Shuffles() {
     ImGui::BeginDisabled(!ws_ok);
 
     // Presets — one-click bundles over the axes. Simple/Restricted both map to
-    // "caves + dungeons, coupled" (we shuffle within-category by default; the
-    // two ALTTPR names converge until cross-category lands). Crossed (needs
-    // cross_category) and Insanity (needs decoupled) are not built yet — shown
-    // disabled so the buttons never lie.
+    // "caves + dungeons, coupled" (within-category). Crossed adds cross_category
+    // (caves and dungeons share one pool). Insanity (needs decoupled) is not
+    // built yet — shown disabled so the button never lies.
     ImGui::TextUnformatted("Presets:"); ImGui::SameLine();
     if (ImGui::SmallButton("None")) {
       s->shuffle_cave_entrances = 0; s->shuffle_dungeon_entrances = 0;
@@ -480,15 +479,21 @@ static void Panel_Shuffles() {
       s->coupled = 1; s->cross_category = 0; s->decoupled = 0; changed = true;
     }
     HelpTooltip("Caves + dungeons shuffled within their own category, coupled. "
-                "(ALTTPR's Simple and Restricted converge here until "
-                "cross-category ships.)");
+                "(ALTTPR's Simple and Restricted converge here.)");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Crossed")) {
+      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
+      s->coupled = 1; s->cross_category = 1; s->decoupled = 0; changed = true;
+    }
+    HelpTooltip("Caves and dungeons share one shuffle pool — a cave door can lead "
+                "to a dungeon interior and vice versa, coupled. The generator "
+                "rerolls until every location is reachable.");
     ImGui::SameLine();
     ImGui::BeginDisabled(true);
-    ImGui::SmallButton("Crossed"); ImGui::SameLine(); ImGui::SmallButton("Insanity");
+    ImGui::SmallButton("Insanity");
     ImGui::EndDisabled();
-    HelpTooltip("Crossed (caves<->dungeons mix) and Insanity (decoupled) need "
-                "the cross-category / decoupled engine — coming after the "
-                "Stage 1-2 playtest.");
+    HelpTooltip("Insanity (decoupled — enter A, exit somewhere else) needs the "
+                "decoupled engine, coming in the next stage.");
 
     bool cave = s->shuffle_cave_entrances != 0;
     if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
@@ -523,14 +528,27 @@ static void Panel_Shuffles() {
                 "seeds need a few generation retries (the generator never ships an "
                 "unreachable seed — it rerolls the permutation). If a seed won't "
                 "generate, lower crystals.tower (0 always works) or change seed.");
+    // Cross-category: caves and dungeons share one shuffle pool. Needs at least
+    // one class being shuffled; apply_derived_rules() clears it otherwise.
+    ImGui::BeginDisabled(!s->shuffle_cave_entrances && !s->shuffle_dungeon_entrances);
+    bool cross = s->cross_category != 0;
+    if (ImGui::Checkbox("Cross-category (caves <-> dungeons share one pool)", &cross)) {
+      s->cross_category = cross;
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    HelpTooltip("A cave door can lead to a dungeon interior and vice versa. "
+                "Requires cave and/or dungeon shuffle on. The generator rerolls "
+                "the permutation until every location is reachable, so a seed is "
+                "never shipped with a stranded item.");
     // Coupled is the only implemented mode for now; show it as a fixed
     // indicator rather than a live toggle so the widget never lies.
     ImGui::BeginDisabled(true);
     bool coupled_show = true;
     ImGui::Checkbox("Coupled (enter A -> exit A)", &coupled_show);
     ImGui::EndDisabled();
-    HelpTooltip("Always on in this version. Dungeon / Crossed / decoupled "
-                "(Insanity) entrance modes are coming in later stages.");
+    HelpTooltip("Always on in this version. Decoupled (Insanity) entrance mode "
+                "is coming in the next stage.");
     ImGui::EndDisabled();
     if (!ws_ok) {
       ImGui::TextDisabled("Entrance shuffle is Open/Standard only for now.");

@@ -368,6 +368,14 @@ entries:
     label: "c-entrance-both-open-fast-ganon"
     expected_digest: "725274626e84f601fa6146b3c6f7bca5671eeab9de3efcd5fd1f6a9841849703"
     expected_sphere_digest: "038fcc7e00da1d42486afc4f6812dbc093a5718641de6432da181da4dfc69274"
+  # Cross-category (Stage 3): caves and dungeons share one shuffle pool, so a
+  # cave door can lead to a dungeon interior and vice versa. The full-reachability
+  # gate (Logic_ComputeSpheres all-reachable) must accept the permutation.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true }
+    seed: "0x00000000C0FFEE05"
+    label: "c-entrance-cross-open-fast-ganon"
+    expected_digest: "63f3da42985898b0daf637b10402a557607876dbc38ac3c8c5a5ba72bc365339"
+    expected_sphere_digest: "23f1eefb5cb5b18a4ba4c30c76ebb358a25d8bb9e96732fe1b99c7ac590612c4"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

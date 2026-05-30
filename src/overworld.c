@@ -1797,8 +1797,14 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   // into a local, zero the global, then use the local only in the search branch.
   uint16 coupled_exit_room = g_rando_entrance_exit_room;
   g_rando_entrance_exit_room = 0;
+  // Phase C Stage 3 — a cave→dungeon cross redirect loads a dungeon room (which
+  // would take the search branch) but must return to the SOURCE cave door; the
+  // cached *_exit vars hold that cave position, so force the cached branch.
+  bool force_cached = (g_rando_entrance_force_cached != 0);
+  g_rando_entrance_force_cached = 0;
 
-  if (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100) {
+  if (force_cached ||
+      (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100)) {
     LoadCachedEntranceProperties();
   } else {
 
@@ -3284,6 +3290,7 @@ void Overworld_GetPitDestination() {  // 9bb860
       byte_7E010F = 0;
       g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
       g_rando_entrance_exit_room = 0;  // Phase C — clear stale dungeon-coupling room
+      g_rando_entrance_force_cached = 0;
       return;
     }
   }
@@ -3379,8 +3386,13 @@ after:
     // search returns Link to THIS door (overworld.c "exit" path below), not the
     // loaded dungeon's vanilla door. 0 for caves (auto-coupled) / unshuffled doors.
     g_rando_entrance_exit_room = 0;
+    g_rando_entrance_force_cached = 0;
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       g_rando_entrance_exit_room = Rando_EntranceCoupledExitRoom((uint16)lx);
+      // Cross-category: a cave door redirected to a dungeon loads a dungeon room
+      // (search-exit class) but must return to the cave — force the cached exit.
+      if (g_rando_entrance_exit_room == 0)
+        g_rando_entrance_force_cached = Rando_EntranceForceCachedExit((uint16)lx) ? 1 : 0;
     }
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;
