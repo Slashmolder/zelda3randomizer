@@ -624,6 +624,16 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     fprintf(f, "\n");
   }
 
+  // Phase C — entrance shuffle mappings (omitted when not shuffled). Mirrors the
+  // JSON entrance_mapping / dungeon_entrance_mapping sections.
+  if ((s->entrance_assign != NULL && s->entrance_count > 0) ||
+      (s->dungeon_assign != NULL && s->dungeon_count > 0)) {
+    fprintf(f, "ENTRANCE SHUFFLE\n----------------\n");
+    Entrance_WriteSpoilerText(f, s->entrance_assign, s->entrance_count);
+    Entrance_WriteDungeonSpoilerText(f, s->dungeon_assign, s->dungeon_count);
+    fprintf(f, "\n");
+  }
+
   fprintf(f, "Placements (grouped by region):\n");
   fprintf(f, "-------------------------------\n");
   if (s->placements != NULL && s->placements->count > 0) {

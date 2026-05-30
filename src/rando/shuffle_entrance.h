@@ -99,6 +99,7 @@ void Entrance_WriteSpoilerJson(void *file, const uint8 *assign, int n);
 void Entrance_WriteSpoilerText(void *file, const uint8 *assign, int n);
 // Dungeon entrance_mapping section (Stage 2).
 void Entrance_WriteDungeonSpoilerJson(void *file, const uint8 *assign, int n);
+void Entrance_WriteDungeonSpoilerText(void *file, const uint8 *assign, int n);
 
 // Self-test (pure; no live assets): permutation is a bijection, region-override
 // closed form is self-consistent (a fixed point is a no-op; a swap moves regions

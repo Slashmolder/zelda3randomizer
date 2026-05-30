@@ -382,6 +382,18 @@ void Entrance_WriteSpoilerText(void *file, const uint8 *assign, int n) {
   }
 }
 
+void Entrance_WriteDungeonSpoilerText(void *file, const uint8 *assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || assign == NULL || n <= 0) return;
+  fprintf(f, "Dungeon entrance mapping (coupled):\n");
+  for (int i = 0; i < n && i < kEntranceDungeonCount; i++) {
+    int j = assign[i];
+    if (j < 0 || j >= kEntranceDungeonCount) j = i;
+    fprintf(f, "  %s door -> %s%s\n", kDungeons[i].name, kDungeons[j].name,
+            (j == i) ? " (unchanged)" : "");
+  }
+}
+
 void Entrance_WriteDungeonSpoilerJson(void *file, const uint8 *assign, int n) {
   FILE *f = (FILE *)file;
   if (f == NULL || assign == NULL || n <= 0) return;
