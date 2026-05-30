@@ -980,6 +980,7 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   memset(&es, 0, sizeof(es));
   es.shuffle_cave_entrances = (h->entrance_axes & kEntranceAxis_ShuffleCaves) ? 1 : 0;
   es.shuffle_dungeon_entrances = (h->entrance_axes & kEntranceAxis_ShuffleDungeons) ? 1 : 0;
+  es.shuffle_ganons_tower_entrance = (h->entrance_axes & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
   es.world_state = h->settings_ext_present ? h->world_state : (uint8)kWorldState_Open;
   bool cave = Entrance_IsActive(&es);          // Inverted/Retro guard (defense in depth)
   bool dun = Entrance_IsDungeonActive(&es);

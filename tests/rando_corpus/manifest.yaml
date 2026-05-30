@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 42  # Phase C Stage 2 — Desert/Turtle Rock main entrances (10 dungeons; GT reverted) + entrance retry requires full reachability (entrance-shuffle digests change; default seeds byte-identical)
+generator_version: 43  # Phase C Stage 2 — Ganon's Tower advanced opt-in (default off; existing digests unchanged)
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -355,6 +355,14 @@ entries:
     label: "c-entrance-dungeons-open-ganon"
     expected_digest: "9fedfb552c493f2fa353574bd02a2efb1defe1ad6462fadf29cb257d234120fb"
     expected_sphere_digest: "9eaac37d05f211b8c63bbf7b1e14584d9404e742b8cade48cf8a02d58c1b038b"
+  # Ganon's Tower advanced opt-in (11-dungeon pool, goal=ganon, crystals.tower=7).
+  # Locks that the full-reachability gate finds a clean (fully reachable)
+  # permutation despite GT's crystal-gate-on-the-door.
+  - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, shuffle_dungeon_entrances: true, shuffle_ganons_tower_entrance: true }
+    seed: "0x00000000C0FFEE06"
+    label: "c-entrance-dungeons-gt-open-ganon"
+    expected_digest: "1ba040dd441877098f53faf703315c8ee27542d4d5ea3aaf064f89d8544d8715"
+    expected_sphere_digest: "9a6cd8b560057e6f564709755092e80399ed257bb24b6408ed3da09f19b7a765"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE04"
     label: "c-entrance-both-open-fast-ganon"

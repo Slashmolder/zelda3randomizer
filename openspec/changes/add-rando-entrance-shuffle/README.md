@@ -51,10 +51,12 @@ Read in this order:
       dungeon, exit returns to EP's door). The seams no automated check covers are
       now playtest-good.
 - [x] Stage 2b — Misery Mire, Eastern Palace, Desert Palace + Turtle Rock (main
-      doors) added → **10 of 12 dungeons** shuffle. Full-reachability gate added to
-      the retry (rejects any π that strands placements).
-- [ ] Remaining dungeons DEFERRED: Skull Woods (truly multi-entrance) + Ganon's
-      Tower (crystal-tower gate travels with the door → circular reachability;
-      needs the gate to travel with the dungeon). Each needs a new mechanism.
+      doors) → **10 of 12 dungeons** shuffle by default. Full-reachability gate
+      added to the retry (rejects any π that strands placements).
+- [x] **Ganon's Tower** as an advanced opt-in (`shuffle_ganons_tower_entrance`,
+      default off) → 11/12 when on; the reachability gate handles its crystal-gate
+      circularity (reroll / lower crystals.tower if a seed won't generate).
+- [ ] Remaining DEFERRED: Skull Woods only (truly multi-entrance — needs a
+      move-as-a-unit mechanism).
 - [ ] Stage 3 (crossed / cross-category) + Stage 4 (decoupled / Insanity) presets.
 - [ ] Archive (Stages 1–2 are playtest-confirmed and archivable on the user's go).

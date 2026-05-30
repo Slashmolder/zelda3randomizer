@@ -508,8 +508,21 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffles 10 of 12 dungeons among themselves; entering one's door "
                 "loads another, coupled exit returns you. Desert + Turtle Rock "
                 "shuffle their MAIN door only (extra 'contained' entrances stay "
-                "vanilla). Skull Woods (many separate entrances) and Ganon's Tower "
-                "(crystal-gate circularity) are deferred.");
+                "vanilla). Skull Woods (many separate entrances) is deferred; "
+                "Ganon's Tower is the separate advanced toggle below.");
+    // Advanced opt-in: Ganon's Tower. Gated on dungeon shuffle being on.
+    ImGui::BeginDisabled(!s->shuffle_dungeon_entrances);
+    bool gt = s->shuffle_ganons_tower_entrance != 0;
+    if (ImGui::Checkbox("...also shuffle Ganon's Tower (advanced)", &gt)) {
+      s->shuffle_ganons_tower_entrance = gt;
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    HelpTooltip("Adds Ganon's Tower to the dungeon pool (11th). GT's crystal-tower "
+                "requirement travels with its door, so at high crystals.tower some "
+                "seeds need a few generation retries (the generator never ships an "
+                "unreachable seed — it rerolls the permutation). If a seed won't "
+                "generate, lower crystals.tower (0 always works) or change seed.");
     // Coupled is the only implemented mode for now; show it as a fixed
     // indicator rather than a live toggle so the widget never lies.
     ImGui::BeginDisabled(true);

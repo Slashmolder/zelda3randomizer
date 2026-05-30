@@ -85,6 +85,7 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->coupled = 1;
   s->cross_category = 0;
   s->decoupled = 0;
+  s->shuffle_ganons_tower_entrance = 0;  // advanced opt-in (off by default)
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -111,6 +112,12 @@ static void apply_derived_rules(RandoSettings *s) {
       s->world_state != kWorldState_Standard) {
     s->shuffle_cave_entrances = 0;
     s->shuffle_dungeon_entrances = 0;
+  }
+  // The Ganon's Tower opt-in only means anything when dungeon entrances are
+  // being shuffled (GT joins the dungeon pool); normalize it off otherwise so
+  // the hash is stable and the default packs to 0.
+  if (!s->shuffle_dungeon_entrances) {
+    s->shuffle_ganons_tower_entrance = 0;
   }
   // Coupling/cross/decoupled are meaningless when no interior class is being
   // shuffled; force them off so the packed byte [25] is canonical (and 0x00 for
@@ -170,7 +177,8 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->shuffle_dungeon_entrances ? kEntranceAxis_ShuffleDungeons : 0) |
                     (s->coupled                   ? kEntranceAxis_Coupled         : 0) |
                     (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
-                    (s->decoupled                 ? kEntranceAxis_Decoupled       : 0));
+                    (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
+                    (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0));
   out[26] = 0;
   out[27] = 0;
   return kSettingsCanonicalLen;
@@ -225,6 +233,7 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.coupled                    = (in[25] & kEntranceAxis_Coupled)         ? 1 : 0;
   s.cross_category             = (in[25] & kEntranceAxis_CrossCategory)   ? 1 : 0;
   s.decoupled                  = (in[25] & kEntranceAxis_Decoupled)       ? 1 : 0;
+  s.shuffle_ganons_tower_entrance = (in[25] & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
   *out = s;
   return 0;
 }
@@ -365,6 +374,31 @@ void Settings_SelfCheck(void) {
         rt.decoupled != 0) {
       fprintf(stderr, "Settings_SelfCheck: entrance-axis deserialize round-trip "
                       "mismatch\n");
+      exit(2);
+    }
+    // Ganon's Tower opt-in (bit 5) round-trips; it requires dungeon shuffle so it
+    // normalizes off without it.
+    RandoSettings sg;
+    Settings_SetDefaults(&sg);
+    sg.shuffle_dungeon_entrances = 1; sg.shuffle_ganons_tower_entrance = 1;
+    uint8 cg[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sg, cg);
+    RandoSettings rg;
+    if (!(cg[25] & kEntranceAxis_ShuffleGanonsTower) ||
+        Settings_CanonicalDeserialize(cg, &rg) != 0 ||
+        rg.shuffle_ganons_tower_entrance != 1) {
+      fprintf(stderr, "Settings_SelfCheck: GT-entrance axis round-trip mismatch\n");
+      exit(2);
+    }
+    // GT opt-in without dungeon shuffle must normalize off (bit 5 clear).
+    RandoSettings sgn;
+    Settings_SetDefaults(&sgn);
+    sgn.shuffle_ganons_tower_entrance = 1;  // but shuffle_dungeon_entrances = 0
+    uint8 cgn[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sgn, cgn);
+    if (cgn[25] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: GT opt-in without dungeon shuffle must "
+                      "normalize byte [25] to 0 (got 0x%02x)\n", cgn[25]);
       exit(2);
     }
     // decoupled implies !coupled in the serialized form.
@@ -687,6 +721,7 @@ enum {
   KEY_coupled,
   KEY_cross_category,
   KEY_decoupled,
+  KEY_shuffle_ganons_tower_entrance,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -879,6 +914,10 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Phase C — per-endpoint independent shuffle (Stage 4); implies !coupled.
     MARK_SEEN(KEY_decoupled);
     if (parse_bool(val, vlen, &s->decoupled) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "shuffle_ganons_tower_entrance")) {
+    // Phase C — advanced opt-in: include Ganon's Tower in the dungeon pool.
+    MARK_SEEN(KEY_shuffle_ganons_tower_entrance);
+    if (parse_bool(val, vlen, &s->shuffle_ganons_tower_entrance) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "hints")) {
     // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
     // `spoil.Hints` semantics (`HintService.php:54` tests `=== 'on'`).

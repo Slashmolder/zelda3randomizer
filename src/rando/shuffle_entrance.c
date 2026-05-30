@@ -149,7 +149,13 @@ typedef struct RandoDungeon {
   uint8 entrance_id;              // overworld front-door entrance-id
 } RandoDungeon;
 
-#define kEntranceDungeonCount 10
+// kEntranceDungeonCount is the FULL table size. The active SHUFFLE pool is the
+// first kEntranceDungeonBaseCount (10) entries by default; Ganon's Tower (the
+// last entry) joins only when the advanced shuffle_ganons_tower_entrance axis is
+// on (see Entrance_DungeonPoolCount). GT MUST stay last so excluding it = taking
+// the first 10.
+#define kEntranceDungeonBaseCount 10
+#define kEntranceDungeonCount 11
 static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   { "palace_of_darkness",   "PalaceOfDarkness",     0x04A, 0x26 },
   { "swamp_palace",         "SwampPalace",          0x028, 0x25 },
@@ -181,17 +187,28 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   //  - Turtle Rock: main 0x35; mountainface doors stay vanilla. Entry region
   //    TurtleRock_Entrance(29) has TWO inbound edges (LW+DW Death Mountain) — the
   //    override remaps both; medallion gate lives in the door predicate (kept).
-  // Ganon's Tower is DEFERRED (was briefly added, then reverted): GT's
-  // crystal-tower gate lives in its door-edge predicate, so under the shuffle it
-  // travels with the door and gates whatever lands behind GT's door behind 7
-  // crystals. When that's a crystal-bearing dungeon (e.g. Ice Palace), it's
-  // circular (need the crystal to enter, but the dungeon GIVES the crystal) →
-  // frequent unreachable seeds. Fixing it cleanly needs the crystal gate to
-  // travel with the DUNGEON (internal edge), not the door — a logic restructure.
-  // Skull Woods stays deferred (truly many separate interiors, not "contained").
   { "desert_palace",        "DesertPalace_Lobby",   0x084, 0x09 },
   { "turtle_rock",          "TurtleRock_Entrance",  0x0D6, 0x35 },
+  // Ganon's Tower — MUST be the LAST entry (index 10). Joins the pool only via
+  // the advanced shuffle_ganons_tower_entrance opt-in. GT's crystal-tower gate
+  // lives in its door-edge predicate, so under the shuffle it gates whatever
+  // lands behind GT's door behind crystals.tower crystals; at high crystals that
+  // can be circular (the door needs N crystals but leads to a crystal-bearing
+  // dungeon that GIVES one). The full-reachability retry gate rejects circular
+  // permutations, so such a seed simply fails to generate — lower crystals.tower
+  // (0 always works) or reroll. Skull Woods stays deferred (truly multi-entrance).
+  { "ganons_tower",         "GanonsTower_Lobby",    0x00C, 0x37 },
 };
+
+// Active dungeon shuffle-pool size for these settings: the base 10, plus Ganon's
+// Tower when the advanced opt-in is on (and dungeon shuffle is active).
+static int Entrance_DungeonPoolCount(const RandoSettings *settings) {
+  if (settings != NULL && settings->shuffle_ganons_tower_entrance &&
+      Entrance_IsDungeonActive(settings)) {
+    return kEntranceDungeonCount;       // 11 (includes GT)
+  }
+  return kEntranceDungeonBaseCount;     // 10 (GT excluded)
+}
 
 // ---------------------------------------------------------------------------
 // Engine
@@ -291,9 +308,12 @@ void Entrance_BuildDoorOverlay(const uint8 *assign, int n,
 // Dungeon engine (Stage 2)
 // ---------------------------------------------------------------------------
 
-// Map a raw entrance-id to its dungeon index, or -1 if not a v1 dungeon door.
-static int dungeon_of_entrance(uint8 ent_id) {
-  for (int i = 0; i < kEntranceDungeonCount; i++) {
+// Map a raw entrance-id to its dungeon index within the first `count` dungeons
+// (the active pool), or -1 if not present. Bounding by `count` keeps Ganon's
+// Tower (the last entry) untouched when its opt-in is off.
+static int dungeon_of_entrance(uint8 ent_id, int count) {
+  if (count > kEntranceDungeonCount) count = kEntranceDungeonCount;
+  for (int i = 0; i < count; i++) {
     if (kDungeons[i].entrance_id == ent_id) return i;
   }
   return -1;
@@ -314,7 +334,7 @@ int Entrance_ComputeDungeonPermutation(const RandoSettings *settings, uint64 see
                                        uint8 attempt,
                                        uint8 assign[kEntranceMaxInteriors]) {
   if (assign == NULL || !Entrance_IsDungeonActive(settings)) return 0;
-  const int n = kEntranceDungeonCount;
+  const int n = Entrance_DungeonPoolCount(settings);  // 10, or 11 with GT opt-in
   for (int i = 0; i < n; i++) assign[i] = (uint8)i;
   RandoRng rng;
   // Distinct salt from the cave RNG so cave and dungeon permutations are
@@ -358,10 +378,10 @@ void Entrance_RemapDungeonDoors(const uint8 *assign, int n,
   // dungeon slots — the two id sets are disjoint). Redirect each dungeon door to
   // its image's entrance-id.
   for (uint32 d = 0; d < len; d++) {
-    int i = dungeon_of_entrance(overlay[d]);
+    int i = dungeon_of_entrance(overlay[d], n);  // only the active pool [0,n)
     if (i < 0) continue;
     int j = assign[i];
-    if (j < 0 || j >= kEntranceDungeonCount) continue;
+    if (j < 0 || j >= n) continue;
     overlay[d] = kDungeons[j].entrance_id;
   }
 }
@@ -371,7 +391,10 @@ void Entrance_RemapDungeonDoors(const uint8 *assign, int n,
 // SOURCE door (not the loaded dungeon's vanilla door). Returns 0 if the id is
 // not a v1 dungeon door.
 uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id) {
-  int i = dungeon_of_entrance(vanilla_entrance_id);
+  // Full table here (incl. GT): this is only consulted for a door the overlay
+  // actually redirected, so an inactive GT door never reaches it (its caller
+  // bails when the overlay value still equals vanilla).
+  int i = dungeon_of_entrance(vanilla_entrance_id, kEntranceDungeonCount);
   if (i < 0) return 0;
   return kDungeons[i].room;
 }
@@ -684,13 +707,22 @@ void Entrance_SelfCheck(void) {
         exit(2);
       }
     }
-    // Permutation bijection + determinism.
+    // Pool count: base (10) without the GT opt-in, full (11) with it.
     RandoSettings ds; Settings_SetDefaults(&ds);
     ds.shuffle_dungeon_entrances = 1; ds.world_state = kWorldState_Open;
+    uint8 dbase[kEntranceMaxInteriors];
+    if (Entrance_ComputeDungeonPermutation(&ds, 1, 0, dbase) != kEntranceDungeonBaseCount) {
+      fprintf(stderr, "Entrance_SelfCheck: base dungeon pool must be %d (GT excluded)\n",
+              kEntranceDungeonBaseCount);
+      exit(2);
+    }
+    // Turn on the Ganon's Tower opt-in for the full-pool permutation tests below.
+    ds.shuffle_ganons_tower_entrance = 1;
     uint8 da[kEntranceMaxInteriors], db[kEntranceMaxInteriors];
     int dn = Entrance_ComputeDungeonPermutation(&ds, 0xBEEF, 0, da);
     if (dn != kEntranceDungeonCount) {
-      fprintf(stderr, "Entrance_SelfCheck: dungeon permutation count %d\n", dn);
+      fprintf(stderr, "Entrance_SelfCheck: GT-on dungeon permutation count %d (want %d)\n",
+              dn, kEntranceDungeonCount);
       exit(2);
     }
     Entrance_ComputeDungeonPermutation(&ds, 0xBEEF, 0, db);

@@ -123,6 +123,13 @@ typedef struct RandoSettings {
   uint8 coupled;                    // bool, default ON
   uint8 cross_category;             // bool (Stage 3) — caves↔dungeons may mix
   uint8 decoupled;                  // bool (Stage 4) — per-endpoint; implies !coupled
+  // Advanced opt-in: also shuffle Ganon's Tower's entrance. Off by default
+  // because GT's crystal-tower gate travels with its door, which can be circular
+  // at high crystals.tower (the door needs N crystals but leads to a crystal-
+  // bearing dungeon). The full-reachability gate rejects circular permutations,
+  // so a seed that can't be made reachable simply fails to generate — lower
+  // crystals.tower (0 always works) or reroll. Requires shuffle_dungeon_entrances.
+  uint8 shuffle_ganons_tower_entrance;  // bool (advanced)
 } RandoSettings;
 
 // Phase C — bit positions for the packed entrance-axis byte (canonical [25]).
@@ -134,6 +141,7 @@ enum {
   kEntranceAxis_Coupled         = 1u << 2,
   kEntranceAxis_CrossCategory   = 1u << 3,
   kEntranceAxis_Decoupled       = 1u << 4,
+  kEntranceAxis_ShuffleGanonsTower = 1u << 5,
 };
 
 // ===========================================================================

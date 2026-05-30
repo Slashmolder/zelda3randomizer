@@ -120,10 +120,15 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       strands placements (not just goal-incompletable ones), in both generation
       paths. Caught + fixed a real bug where GT's crystal-gate circularity produced
       a seed with 9 unreachable locations.
-- [ ] 2.3 **Deferred**: Skull Woods (truly many separate entrances — needs a
-      multi-entrance move-as-a-unit mechanism) + Ganon's Tower (crystal-tower gate
-      travels with the door → circular reachability; needs the gate to travel with
-      the dungeon). Documented in `shuffle_entrance.c` + `entrance_registry.yaml`.
+- [x] 2.3a **Ganon's Tower** as an ADVANCED OPT-IN (`shuffle_ganons_tower_entrance`,
+      default off) → 11th dungeon when on. Its crystal-tower gate travels with the
+      door, but the full-reachability retry gate (2.2a) rejects the circular
+      permutations and finds a clean one (verified: 12/12 fully-reachable at
+      crystals.tower=7 in testing; never ships an unreachable seed). User can lower
+      crystals.tower if a seed won't generate.
+- [ ] 2.3 **Deferred**: Skull Woods only (truly many separate entrances — needs a
+      multi-entrance move-as-a-unit mechanism). Documented in `shuffle_entrance.c`
+      + `entrance_registry.yaml`.
 - [ ] 2.4 Link's House (room 0x104) special-case — not needed for the 6 (deferred).
 - [x] 2.5 Logic: per-seed **dungeon EDGE overlay** (`Rando_*EntranceEdgeOverride`)
       remaps each door-edge's `to_region` per π, keyed by the (unique) entry region;

@@ -526,13 +526,21 @@ dungeons:
       Main door 0x35 only; mountainface doors stay vanilla. Entry region has two
       inbound edges (LW+DW Death Mountain) — override remaps both. Medallion gate
       lives in the door predicate (kept with the door).
-  # Ganon's Tower is DEFERRED (briefly added then reverted): its crystal-tower
-  # gate lives in the door-edge predicate, so under the shuffle it gates whatever
-  # lands behind GT's door behind 7 crystals — circular when that's a
-  # crystal-bearing dungeon (need the crystal to enter, but the dungeon grants it)
-  # → frequent unreachable seeds. Needs the gate to travel with the dungeon
-  # (internal edge), not the door. (Entry datum if revisited: id 0x37, room 0x0C,
-  # entry_region GanonsTower_Lobby.)
+  - dungeon_id: ganons_tower
+    name: "Ganon's Tower (advanced opt-in)"
+    rooms: [0x00C]
+    entrance_ids: [0x37]
+    region: DarkWorld_DeathMountain_East
+    entry_region: GanonsTower_Lobby
+    notes: >
+      ADVANCED OPT-IN ONLY (shuffle_ganons_tower_entrance; default off). GT joins
+      the pool as the 11th dungeon. Its crystal-tower gate lives in the door-edge
+      predicate, so under the shuffle it gates whatever lands behind GT's door
+      behind crystals.tower crystals — circular at high crystals when that's a
+      crystal-bearing dungeon. The full-reachability retry gate rejects circular
+      permutations (never ships an unreachable seed); at crystals.tower=7 the retry
+      finds a clean permutation in testing, at 0 it always works. Two inbound
+      overworld edges (override remaps both); Pyramid Sanctum entrances stay vanilla.
   - dungeon_id: misery_mire
     name: "Misery Mire"
     rooms: [0x098]
