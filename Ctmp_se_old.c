@@ -677,19 +677,6 @@ static const RandoLocationDef *find_location(uint16 id) {
 }
 
 void Entrance_SelfCheck(void) {
-  // (0) The cross engine uses kCrossVoidRegion (63) as an unreachable sink to
-  //     remove a dungeon's original door-edge (design.md §9 case 3). That only
-  //     works if NO real region owns id 63 — otherwise the void redirect would
-  //     silently make a live region the sink. Guard it (audit LOW-2): if a future
-  //     logic-graph edit ever assigns region 63, this fails the build's selftest
-  //     instead of shipping a quietly-wrong reachability model.
-  if (strcmp(Rando_GetRegionName(kCrossVoidRegion), "(unbound)") != 0) {
-    fprintf(stderr, "Entrance_SelfCheck: kCrossVoidRegion (%d) collides with real "
-                    "region '%s' — pick an unused sink id\n",
-            kCrossVoidRegion, Rando_GetRegionName(kCrossVoidRegion));
-    exit(2);
-  }
-
   // (1) Every entrance-id is unique across interiors (no id backs two interiors)
   //     and every interior's room is in the cached-exit cave class
   //     [0x100,0x180)\{0x104} (so a shuffled cave can never hit the room-keyed

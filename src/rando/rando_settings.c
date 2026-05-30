@@ -132,6 +132,14 @@ static void apply_derived_rules(RandoSettings *s) {
   } else if (s->decoupled) {
     s->coupled = 0;
   }
+  // Cross-category mixes the two pools, so it only does anything when BOTH cave
+  // and dungeon shuffle are on (matches Entrance_IsCrossActive). With only one
+  // class shuffled, runtime produces a non-cross seed — normalize the bit off so
+  // the settings_hash matches the actual seed (audit MED-1). Must run AFTER the
+  // both-off clear above so it sees the final cave/dungeon values.
+  if (!s->shuffle_cave_entrances || !s->shuffle_dungeon_entrances) {
+    s->cross_category = 0;
+  }
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s_in,

@@ -144,6 +144,26 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       dungeon's), so no stranding. Fresh-eyes audit DONE earlier (1 HIGH + 1 LOW
       fixed; direction-agreement / no-collision / save-regen / no-double-remap
       verified). The highest-risk seam is now validated.
+- [ ] 2.8 **OPEN — HIGH, needs a targeted playtest to confirm** (audit 2026-05-30):
+      MEDALLION model↔runtime mismatch for Misery Mire / Turtle Rock under dungeon
+      shuffle. The logic graph attaches the `OP_MEDALLION_OPENS` gate to the INTERIOR
+      `Entry→Lobby` edge (e.g. `TurtleRock_Entrance → TurtleRock_Lobby`,
+      `32_turtle_rock.yaml:98-100`). `Entrance_ApplyEdgeOverrides` redirects the
+      APPROACH edges (overworld → entry_region), so after a swap the model evaluates
+      the **loaded interior's** medallion gate, while the runtime medallion barrier
+      (`LinkItem_Bombos/Ether/Quake` cast at the overworld tile) stays at the
+      **source spot**. PERMISSIVE direction (softlock risk): when MM/TR is the SOURCE
+      door and a NON-medallion dungeon is behind it, the model grants free entry but
+      runtime still demands MM/TR's medallion to open the spot. The full-reachability
+      gate evaluates the MODEL, so it cannot catch this. **Verify by playtest:** load
+      a seed where TR's (or MM's) door leads to a non-medallion dungeon (e.g. PoD) and
+      check whether the overworld spot still demands the medallion to open. If it does,
+      the fix is to make the medallion predicate travel with the SOURCE spot (carry it
+      on the redirected approach edge — the cross §9 case-4 predicate-carrying-override
+      machinery applied to dungeon shuffle), OR exclude MM/TR from the dungeon pool
+      until that lands (safe, but a scope cut that changes corpus digests). NOTE: the
+      6 originally-cleared dungeons (2.5) are non-medallion, so this is strictly an
+      MM/TR concern. Two reasoners on the same source ≠ confirmation — get the dump.
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 

@@ -3299,8 +3299,10 @@ void Overworld_GetPitDestination() {  // 9bb860
   g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
   // Phase C Stage 2 — a fall-hole is not a shuffled dungeon DOOR, so any pending
   // dungeon-coupling source room from a prior door entry must not leak into this
-  // interior's exit.
+  // interior's exit. (Stage 3: also clear the cross cave→dungeon force-cached flag,
+  // or it would corrupt this interior's exit branch — matches the Houlihan path.)
   g_rando_entrance_exit_room = 0;
+  g_rando_entrance_force_cached = 0;
 }
 
 void Overworld_UseEntrance() {  // 9bbbf4
