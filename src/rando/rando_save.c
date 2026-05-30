@@ -582,6 +582,9 @@ void RandoSave_SelfCheck(void) {
   src.header.goal = 4;            // kGoal_TriforceHunt
   src.header.world_state = 2;     // kWorldState_Inverted
   src.header.flute_shovel_owned = 0x05;  // shovel + flute-active (distinct from mushroom 0x01)
+  // Phase C entrance shuffle round-trip coverage (@70/@71).
+  src.header.entrance_axes = 0x05;       // cave + coupled bits (distinct value)
+  src.header.entrance_attempt = 0x03;
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -612,6 +615,9 @@ void RandoSave_SelfCheck(void) {
   if (buf[68] != 2) selfcheck_die("world_state at @68 wrong");
   // Rando flute/shovel decouple: flute_shovel_owned byte layout @69.
   if (buf[69] != 0x05) selfcheck_die("flute_shovel_owned at @69 wrong");
+  // Phase C entrance shuffle: entrance_axes @70, entrance_attempt @71.
+  if (buf[70] != 0x05) selfcheck_die("entrance_axes at @70 wrong");
+  if (buf[71] != 0x03) selfcheck_die("entrance_attempt at @71 wrong");
   // Flat table layout check: location 5 should hold item 50.
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
     selfcheck_die("flat table: loc 5 item slot wrong");
@@ -640,6 +646,8 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.goal != src.header.goal) selfcheck_die("goal round-trip");
   if (dst.header.world_state != src.header.world_state) selfcheck_die("world_state round-trip");
   if (dst.header.flute_shovel_owned != src.header.flute_shovel_owned) selfcheck_die("flute_shovel_owned round-trip");
+  if (dst.header.entrance_axes != src.header.entrance_axes) selfcheck_die("entrance_axes round-trip");
+  if (dst.header.entrance_attempt != src.header.entrance_attempt) selfcheck_die("entrance_attempt round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
