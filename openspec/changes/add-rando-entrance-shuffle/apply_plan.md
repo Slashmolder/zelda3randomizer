@@ -234,11 +234,20 @@ the documented fallback is a source-door exit override (deferred, not built blin
 
 ## Playtest checklist (hand-off — the only reliable net)
 1. Default seed (no entrance shuffle): everything byte-identical, plays as today.
-2. `shuffle_cave_entrances=true,coupled=true`: enter a recognizable cave → a
+2. `shuffle_cave_entrances=true` (Open or Standard): enter a recognizable cave → a
    DIFFERENT interior loads, geometrically correct (Link spawns right, camera ok),
-   walkable; **exit returns to the SAME overworld door** (coupled).
-3. Save + quit inside a shuffled cave, reload: same π restored (TLV round-trip);
-   exit still returns to source door.
-4. Completability: reach the goal on a shuffled seed (spoiler `entrance_mapping`
-   matches what you walk).
-5. Stage 2: EP↔PoD swap — enter EP's door → PoD interior; prize still PoD's.
+   walkable; **exit returns to the SAME overworld door** (coupled — the #1
+   unverified seam; if it exits at the WRONG door the engine is decoupled and the
+   doc fallback in §Runtime applies).
+3. **Multi-door interiors (audit M2 — highest-value check):** the tavern
+   (`0x42/0x43/0x44`), snitch house (`0x3E/0x3F`), and ice-rod/good-bee
+   (`0x56/0x84`) each have 2–3 overworld doors. Enter the shuffled seed through
+   EACH door of such a cave and confirm (a) both land in the SAME permuted
+   interior and (b) each exits back to its own source door. The logic models these
+   as one region per interior; if a cave's two doors are actually in different
+   reachability regions, a check could be mis-gated.
+4. Save + quit inside a shuffled cave, reload: same π restored (header @70/@71 →
+   regenerated π); exit still returns to source door.
+5. Completability: reach the goal on a shuffled seed; the spoiler `entrance_mapping`
+   should match the doors you actually walk through.
+6. Stage 2 (future): EP↔PoD swap — enter EP's door → PoD interior; prize still PoD's.

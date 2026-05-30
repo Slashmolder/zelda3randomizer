@@ -207,6 +207,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     placed = Place_AssumedFill(settings, seed_u64, effective_budget, &table);
   }
   if (!placed) {
+    // Audit H1 — clear the entrance overrides on the failure path too. The
+    // success path clears after the spoiler block, but if all attempts failed
+    // the accepted-π overrides were never installed and the LAST attempt's
+    // overrides are still active; a tracker repaint or file-select between this
+    // failed generation and the next would otherwise read leaked reachability.
+    Entrance_ClearRegionOverrides();
     if (err != NULL) snprintf(err, err_cap, "placement failed");
     free(entries);
     return false;

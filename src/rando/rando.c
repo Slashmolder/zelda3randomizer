@@ -945,7 +945,14 @@ static char g_rando_active_share_string[64] = {0};
 // ---------------------------------------------------------------------------
 #define kEntranceOverlayMax 4096
 static uint8 g_entrance_overlay[kEntranceOverlayMax];
-static const uint8 *g_entrance_overlay_orig = NULL;  // saved g_asset_ptrs[126]
+// Saved g_asset_ptrs[126] (the vanilla door table) while the overlay is
+// installed. INVARIANT (audit L1): Entrance_RuntimeTeardown() MUST run before any
+// LoadAssets() reload — LoadAssets unconditionally rewrites every g_asset_ptrs[i]
+// into a fresh buffer, which would both drop the overlay and leave this pointer
+// dangling into the freed asset buffer. Today all LoadAssets call sites are
+// startup/CLI-only (never mid-session), so this is latent; a future hot-reload
+// feature must tear the overlay down first.
+static const uint8 *g_entrance_overlay_orig = NULL;
 
 // Restore the vanilla door table + clear the logic region overrides. Idempotent.
 static void Entrance_RuntimeTeardown(void) {

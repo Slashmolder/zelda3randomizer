@@ -181,6 +181,10 @@ int Entrance_ComputePermutation(const RandoSettings *settings, uint64 seed,
 void Entrance_ApplyRegionOverrides(const uint8 *assign, int n) {
   Rando_BeginEntranceRegionOverrides();
   if (assign == NULL) return;
+  // Audit M3 — clamp the loop bound to the static table (this is a public entry
+  // point; the `assign[ix]` value is already range-checked below, but the `ix`
+  // index into kCaveInteriors[] must be bounded too).
+  if (n > kEntranceCaveInteriorCount) n = kEntranceCaveInteriorCount;
   // For each interior ix (door fixed in vanilla region R[ix]), the interior now
   // reached through ix's door is J = assign[ix]; J's locations become reachable
   // via R[ix]. So override every location of interior J with interior ix's
@@ -408,25 +412,38 @@ void Entrance_SelfCheck(void) {
     }
   }
 
-  // (7) Door overlay: with a synthetic vanilla table where door d holds the
-  //     first entrance-id of interior d, a known assign rewrites each cave door
-  //     to the representative id of its image; non-cave ids pass through.
+  // (7) Door overlay: build a synthetic vanilla table holding EVERY entrance-id
+  //     of every interior (audit L2 — exercise the non-representative ids of
+  //     multi-door interiors, e.g. 0x43/0x44 for the tavern, not just
+  //     entrance_ids[0]), plus a non-cave sentinel. Each cave door must rewrite
+  //     to the representative id of ITS interior's image; non-cave ids pass
+  //     through.
   {
-    uint8 van[kEntranceCaveInteriorCount + 1];
-    for (int i = 0; i < kEntranceCaveInteriorCount; i++)
-      van[i] = kCaveInteriors[i].entrance_ids[0];
-    van[kEntranceCaveInteriorCount] = 0xFE;  // a non-cave id (sentinel)
-    uint8 ov[kEntranceCaveInteriorCount + 1];
-    Entrance_BuildDoorOverlay(assign, n, van, kEntranceCaveInteriorCount + 1, ov);
+    uint8 van[80];
+    int slot_interior[80];  // which interior each synthetic door belongs to
+    int ndoors = 0;
     for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
-      uint8 want = kCaveInteriors[assign[i]].entrance_ids[0];
-      if (ov[i] != want) {
-        fprintf(stderr, "Entrance_SelfCheck: door overlay slot %d = 0x%02X, "
-                        "want 0x%02X\n", i, ov[i], want);
+      for (int k = 0; k < kCaveInteriors[i].entrance_count; k++) {
+        van[ndoors] = kCaveInteriors[i].entrance_ids[k];
+        slot_interior[ndoors] = i;
+        ndoors++;
+      }
+    }
+    van[ndoors] = 0xFE;  // non-cave sentinel
+    slot_interior[ndoors] = -1;
+    int total = ndoors + 1;
+    uint8 ov[80];
+    Entrance_BuildDoorOverlay(assign, n, van, (uint32)total, ov);
+    for (int d = 0; d < ndoors; d++) {
+      uint8 want = kCaveInteriors[assign[slot_interior[d]]].entrance_ids[0];
+      if (ov[d] != want) {
+        fprintf(stderr, "Entrance_SelfCheck: door overlay door %d (id 0x%02X, "
+                        "interior %d) = 0x%02X, want 0x%02X\n",
+                d, van[d], slot_interior[d], ov[d], want);
         exit(2);
       }
     }
-    if (ov[kEntranceCaveInteriorCount] != 0xFE) {
+    if (ov[ndoors] != 0xFE) {
       fprintf(stderr, "Entrance_SelfCheck: non-cave door id was rewritten\n");
       exit(2);
     }

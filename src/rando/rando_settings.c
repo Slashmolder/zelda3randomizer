@@ -100,13 +100,24 @@ static void apply_derived_rules(RandoSettings *s) {
   if (s->goal == kGoal_Completionist) {
     s->accessibility = kAccessibility_Locations;
   }
-  // Phase C — entrance-axis normalization. Coupling/cross/decoupled are
-  // meaningless when no interior class is being shuffled; force them off so
-  // the packed byte [25] is canonical (and 0x00 for the default — the corpus
-  // byte-identical invariant). `decoupled` implies `!coupled` (per-endpoint
-  // shuffle cannot also be coupled). This makes the (struct → canonical)
-  // mapping many-to-one in a well-defined way so the hash is stable regardless
-  // of stray flag values left in the struct.
+  // Phase C — entrance-axis normalization.
+  // Audit M1: entrance shuffle is only honored on Open/Standard (Inverted carries
+  // a static region override the per-seed one would clobber; Retro re-uses cave
+  // host-rooms for TakeAny — see Entrance_IsActive). So an entrance axis set under
+  // Inverted/Retro produces NO shuffle at runtime; normalize the axes OFF here so
+  // the settings_hash matches the actual (un-shuffled) seed and two
+  // functionally-identical seeds don't hash differently.
+  if (s->world_state != kWorldState_Open &&
+      s->world_state != kWorldState_Standard) {
+    s->shuffle_cave_entrances = 0;
+    s->shuffle_dungeon_entrances = 0;
+  }
+  // Coupling/cross/decoupled are meaningless when no interior class is being
+  // shuffled; force them off so the packed byte [25] is canonical (and 0x00 for
+  // the default — the corpus byte-identical invariant). `decoupled` implies
+  // `!coupled` (per-endpoint shuffle cannot also be coupled). This makes the
+  // (struct → canonical) mapping many-to-one in a well-defined way so the hash
+  // is stable regardless of stray flag values left in the struct.
   if (!s->shuffle_cave_entrances && !s->shuffle_dungeon_entrances) {
     s->coupled = 0;
     s->cross_category = 0;

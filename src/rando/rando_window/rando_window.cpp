@@ -466,7 +466,7 @@ static void Panel_Shuffles() {
     bool cave = s->shuffle_cave_entrances != 0;
     if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
       s->shuffle_cave_entrances = cave;
-      if (cave) s->coupled = 1;  // coupled is the only Stage 1 mode
+      s->coupled = cave ? 1 : 0;  // coupled is the only Stage 1 mode
       changed = true;
     }
     HelpTooltip("Each overworld cave door leads to a different cave interior; "
