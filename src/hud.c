@@ -1431,16 +1431,27 @@ static void Hud_Update_Magic() {  // 8dfc09
   if (link_magic_consumption >= 1) {
     dst[HUDXY(0, 0)] = 0x28F7;  // small "1"
     dst[HUDXY(1, 0)] = 0x2851;  // "/"
-    // Vanilla only ever had half magic, so it hardcoded the "2" tile here. The
-    // randomizer adds QuarterMagic (link_magic_consumption == 2), which must
-    // read "1/4". There's no bespoke small "4" in the magic-header font, so use
-    // the HUD digit font: Hud_IntToDecimal maps digit N to tile char 0x90+N
-    // (the rupee/bomb counters draw 0x2400|char), so "4" is char 0x94. Drawn at
-    // this header's palette 2 (index 3 = black HUD background, index 2 = white),
-    // so it renders as a clean white "4" with no box behind it.
-    // consumption: 1 = half ("2" tile 0x28FA), 2 = quarter (digit "4" = 0x2894).
-    // Inert under side-by-side vanilla verification: vanilla never sets 2.
-    dst[HUDXY(2, 0)] = (link_magic_consumption >= 2) ? 0x2894 : 0x28FA;
+    // Vanilla only ever had half magic, so it hardcoded "1/2" here. The
+    // randomizer adds QuarterMagic (link_magic_consumption == 2) -> "1/4". The
+    // "4" uses the HUD digit font (Hud_IntToDecimal maps digit N to char
+    // 0x90+N, so "4" is char 0x94) drawn at this header's palette 2 (index 3 =
+    // black HUD background, index 2 = white) -> a clean white "4".
+    if (link_magic_consumption >= 2) {
+      // The bespoke "/" tile (char 0x51) carries a right-edge column drawn to
+      // merge with the vanilla "2" glyph; next to "4" it dangles as a stray
+      // vertical. Quarter never draws the "2", and char 0x51 is referenced
+      // nowhere else (verified), so rewrite its VRAM gfx with that column
+      // cleared (orig words & ~0x0101). Gated on consumption==2 (rando-only) ->
+      // inert under vanilla side-by-side RAM/VRAM compare. Mirrors the
+      // CopyTilesForSwitchLR custom-HUD-tile pattern above.
+      static const uint16 kCleanSlashTile[8] = {
+        0x8282, 0xC644, 0xCE4A, 0xFE76, 0xFE6E, 0xFE5E, 0xFEBE, 0xFEFE,
+      };
+      memcpy(&g_zenv.vram[0x7000 + 0x51 * 8], kCleanSlashTile, sizeof kCleanSlashTile);
+      dst[HUDXY(2, 0)] = 0x2894;  // digit "4"
+    } else {
+      dst[HUDXY(2, 0)] = 0x28FA;  // small "2"
+    }
   }
   const uint16 *src = kUpdateMagicPowerTilemap[(link_magic_power + 7) >> 3];
   dst[HUDXY(1, 1)] = src[0];
