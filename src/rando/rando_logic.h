@@ -261,28 +261,14 @@ extern const uint16 kRandoStartRegionByWorldState[4];
 // found. O(N) linear scan; fine for the few authoring-time uses.
 uint16 Rando_FindRegionByName(const char *name);
 
-// ---------------------------------------------------------------------------
-// RegionRemap overlay (task 3.7a) — runtime entrance-shuffle remapping.
-//
-// Phase A: identity (RegionRemap[e] == e for every entrance). Phase C entrance
-// shuffle swaps in a non-identity table. The static `kRandoEdges` graph is
-// unchanged across phases; only this overlay swaps. OP_REGION_REACHABLE
-// consults the overlay before traversing the static edges.
-//
-// The overlay is a uint16[] of size kRegionRemapCount, mapping entrance ids
-// to interior region ids. `Rando_SetRegionRemap` installs a non-identity
-// table; passing NULL or `Rando_ResetRegionRemap` restores identity.
-// ---------------------------------------------------------------------------
-#define kRegionRemapCount 256
-
-// Resolve `entrance_id` through the current overlay. Returns entrance_id
-// unchanged when the overlay is identity (Phase A default).
-uint16 RegionRemap_Lookup(uint16 entrance_id);
-
-// Install a non-identity overlay (Phase C). The pointer is borrowed — caller
-// retains ownership and must keep the array alive until next install / reset.
-// Setting NULL resets to identity. Pass `count` matching the array length.
-void Rando_SetRegionRemap(const uint16 *table, uint16 count);
-void Rando_ResetRegionRemap(void);
+// NB: the Phase A `RegionRemap` scaffold (RegionRemap_Lookup /
+// Rando_SetRegionRemap / Rando_ResetRegionRemap) was RETIRED in Phase C
+// entrance shuffle. It was dead code (0 install callers, identity in every
+// shipped seed) AND the wrong abstraction — it remapped an OP_REGION_REACHABLE
+// *region operand*, whereas entrance shuffle rewires which interior a
+// door-*edge* terminates at. Caves now use a per-seed location-region override
+// (see rando_logic.c `Rando_SetEntranceRegionOverrides`); dungeons (Stage 2)
+// will use a per-seed edge overlay mirroring kRandoEdges_Inverted. See
+// openspec/changes/add-rando-entrance-shuffle/design.md §1.
 
 #endif  // ZELDA3_RANDO_LOGIC_H_

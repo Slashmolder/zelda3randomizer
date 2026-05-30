@@ -1,0 +1,435 @@
+# entrance_registry.yaml — Cave-interior registry for entrance shuffle (Phase C)
+#
+# GROUND-TRUTH DATA ARTIFACT. Do not hand-edit numeric room ids / entrance ids
+# without re-deriving from the cited sources below.
+#
+# Purpose
+# -------
+# Entrance shuffle permutes overworld cave doors. The runtime redirect chain is:
+#   overworld door-slot  --kOverworld_Entrance_Id[lx]-->  entrance-id
+#   entrance-id          --kEntranceData_rooms[i]------->  room (0x1xx)
+# (See src/overworld.c:3342 `which_entrance = kOverworld_Entrance_Id[lx];` and
+#  src/dungeon.c:8448 `dungeon_room_index = kEntranceData_rooms[i];`.)
+#
+# A "cave interior" is one single-screen room in [0x100,0x180). The shuffleable
+# cave entrance-ids are 0x3C..0x72 and 0x83..0x84 (57 ids) backing rooms
+# 0x100..0x127. Several entrance-ids load the SAME room (e.g. 0x42/0x43/0x44 ->
+# 0x103), so the 57 ids collapse to 38 distinct cave interiors that carry an
+# overworld entrance. Two further rooms (0x104 Link's House, 0x11D Blind's
+# Hideout) hold chests but have NO cave entrance-id and are NOT shuffled here
+# (see `excluded:` block).
+#
+# The CLOSED FORM this file serves: under cave permutation, a cave location's
+# new effective logic region = the vanilla `region` of whichever cave-interior
+# *slot* it lands on. So each interior records {rooms, entrance_ids, region,
+# locations}.
+#
+# Provenance of each column
+# --------------------------
+#  - entrance_id -> room : assets/tables.py `kEntranceNames` (the authoritative
+#      vanilla US-ROM entrance-id -> room table; index = entrance-id, the
+#      `[Room #NNN]` decimal prefix = room id). Verified entrance-id range
+#      0x3C..0x72,0x83..0x84.
+#  - chest location -> room : decoded from assets/chest_data.py
+#      the vanilla chest room-words joined to
+#      `CHEST_NAME_BY_ROM_ADDR`. room = room_word & 0x7FFF. This is exact, no
+#      ROM needed.
+#  - region : assets/rando/location_registry.yaml (our 31-region canonical set,
+#      enumerated in src/rando/logic_data.c `kRandoRegionNames[31]`). When a
+#      cave's chest locations carry a region, that region is used verbatim and
+#      cross-checked against the location's overworld area.
+#  - locations: [ids] : numeric ids from location_registry.yaml.
+#
+# Region values are the LOGIC-GRAPH regions actually used by our placer
+# (location_registry.yaml is the source of truth, NOT ALTTPR PHP, per the
+# project's claim-grounding discipline). Note that location_registry uses the
+# OVERWORLD-AREA region for cave locations (e.g. Hype Cave chests = DarkWorld_
+# South), not a per-cave region — there is no per-cave region in the 31-region
+# set. That is exactly the behaviour entrance shuffle needs: the "vanilla
+# region of the slot" is the overworld area the cave door sits in.
+#
+# Schema
+# ------
+# interiors:
+#   - interior_id : stable string id (append-only; never renumber)
+#     name        : human label (vanilla cave name)
+#     rooms       : [room ids] (hex). Usually one; listed as a list for caves
+#                   that span >1 room id (none currently — kept for forward-compat)
+#     entrance_ids: [hex] overworld entrance-ids that load this interior
+#     region      : one of the 31 canonical regions (vanilla logic region of
+#                   the overworld door). null/omitted only for caves whose
+#                   region is ambiguous (flagged in notes).
+#     locations   : [location_registry ids] resident in this interior. May be []
+#                   for "empty" caves (still shuffle as slots).
+#     notes       : provenance / ambiguity flags.
+#
+# Coverage: all 38 entranced cave interiors are listed. 57 entrance-ids total.
+
+format_version: 1
+phase: C
+
+interiors:
+  # --- Light World North West / Kakariko ---------------------------------
+  - interior_id: treasure_shell_game
+    name: "Treasure Shell Game"
+    rooms: [0x100]
+    entrance_ids: [0x3C]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Lost Woods Gamble take-any host in Retro; no vanilla item location."
+
+  - interior_id: snitch_house
+    name: "Snitch House"
+    rooms: [0x101]
+    entrance_ids: [0x3E, 0x3F]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Two entrance-ids (Snitch House 1/2) -> same room 0x101."
+
+  - interior_id: sickboy_house
+    name: "Sick Kid's House"
+    rooms: [0x102]
+    entrance_ids: [0x40]
+    region: LightWorld_NorthWest
+    locations: [168]
+    notes: "Sick Kid (id 168) Npc grant lives in this interior. Not in chest table (Npc pickup); room from kEntranceNames 0x40."
+
+  - interior_id: kakariko_tavern
+    name: "Kakariko Tavern / Pub / Inn"
+    rooms: [0x103]
+    entrance_ids: [0x42, 0x43, 0x44]
+    region: LightWorld_NorthWest
+    locations: [153]
+    notes: "Three entrance-ids (Pub South/North, Inn) -> room 0x103. Chest 'Kakariko Tavern' (id 153) decoded to 0x103 via chest table."
+
+  - interior_id: sahasrahla_hut
+    name: "Sahasrahla's Hut"
+    rooms: [0x105]
+    entrance_ids: [0x45]
+    region: LightWorld_NorthEast
+    locations: [142, 143, 144]
+    notes: "Three chests decoded to room 0x105. The 'Sahasrahla' NPC (id 145) is an OVERWORLD-surface grant outside the hut — NOT placed in this interior; see excluded notes."
+
+  - interior_id: kakariko_library
+    name: "Kakariko Library / Storage Shed"
+    rooms: [0x107]
+    entrance_ids: [0x49, 0x4A]
+    region: LightWorld_South
+    locations: []
+    notes: "Empty interior. FLAG: the 'Library' location (id 186) is the book pulled from UNDER the library building on the overworld surface via Pegasus Boots — it is NOT inside room 0x107. Listed in overworld_surface_not_caves. Two entrance-ids -> 0x107. Region nominal."
+
+  - interior_id: chicken_house
+    name: "Chicken House (Kakariko Sweeper Lady's House)"
+    rooms: [0x108]
+    entrance_ids: [0x4B]
+    region: LightWorld_NorthWest
+    locations: [154]
+    notes: "Chest 'Chicken House' (id 154) decoded to 0x108. Vanilla entrance name for 0x4B is 'Kakariko Sweeper Lady's House' (same room/interior)."
+
+  - interior_id: potion_shop
+    name: "Potion Shop (Witch's Hut)"
+    rooms: [0x109]
+    entrance_ids: [0x4C]
+    region: LightWorld_NorthEast
+    locations: [147]
+    notes: "Potion Shop (id 147) Npc = the Witch trade. Region LightWorld_NorthEast per registry. Not in chest table; room from kEntranceNames 0x4C."
+
+  # --- Dark World North West / Village of Outcasts -----------------------
+  - interior_id: village_chest_game
+    name: "Village of Outcasts Chest Game / Orphanage"
+    rooms: [0x106]
+    entrance_ids: [0x47, 0x48]
+    region: DarkWorld_NorthWest
+    locations: [215]
+    notes: "Chest 'Brewery' (id 215) decoded to room 0x106. NOTE name mismatch: the vanilla entrance name is 'Village of Outcasts Chest Game' but the registry chest in this room is Brewery — chest-table room word is authoritative. Chest Game (id 217) is the MINIGAME chest (room not in chest table; OpenMiniGameChest) — flagged, not bound here."
+
+  - interior_id: bomb_shop
+    name: "The Bomb Shop / Retirement Center"
+    rooms: [0x11C]
+    entrance_ids: [0x53, 0x54]
+    region: DarkWorld_NorthWest
+    locations: [216]
+    notes: "Chest 'C-Shaped House' (id 216) decoded to 0x11C. Two entrance-ids -> 0x11C."
+
+  # --- Light World South -------------------------------------------------
+  - interior_id: aginah_cave
+    name: "Aginah's Cave"
+    rooms: [0x10A]
+    entrance_ids: [0x4D]
+    region: LightWorld_South
+    locations: [175]
+    notes: "Chest 'Aginah's Cave' (id 175) decoded to 0x10A."
+
+  - interior_id: watergate
+    name: "Floodgate / Watergate"
+    rooms: [0x10B]
+    entrance_ids: [0x4E]
+    region: LightWorld_South
+    locations: [173]
+    notes: "Chest 'Floodgate Chest' (id 173) decoded to 0x10B."
+
+  - interior_id: ice_rod_cave
+    name: "Ice Rod Cave / Good Bee Cave"
+    rooms: [0x120]
+    entrance_ids: [0x56, 0x84]
+    region: LightWorld_South
+    locations: [180]
+    notes: "Chest 'Ice Rod Cave' (id 180) decoded to 0x120. Entrance 0x56 'Good Bee Cave' and 0x84 'Ice Rod Cave' BOTH load room 0x120 — they are the SAME interior in vanilla room terms. 'Good Bee' (id NOT in registry as separate chest) is a take-any/bee location; flagged."
+
+  - interior_id: mini_moldorm_cave
+    name: "Mini Moldorm Cave"
+    rooms: [0x123]
+    entrance_ids: [0x6C]
+    region: LightWorld_South
+    locations: [176, 177, 178, 179, 185]
+    notes: "Four chests (176-179) decoded to 0x123. 'Mini Moldorm Cave - NPC' (id 185) is the same interior (NPC pickup, not in chest table) — bound by name/room."
+
+  # --- Death Mountain ----------------------------------------------------
+  - interior_id: mimic_cave
+    name: "Mimic Cave / DM Maze 0011 / Fairy Cave 2"
+    rooms: [0x10C]
+    entrance_ids: [0x4F, 0x50]
+    region: LightWorld_DeathMountain_East
+    locations: [197]
+    notes: "Chest 'Mimic Cave' (id 197) decoded to 0x10C. Two entrance-ids -> 0x10C."
+
+  - interior_id: byrna_gauntlet
+    name: "Byrna Gauntlet (Spike Cave)"
+    rooms: [0x117]
+    entrance_ids: [0x41]
+    region: DarkWorld_DeathMountain_West
+    locations: [229]
+    notes: "Chest 'Spike Cave' (id 229) decoded to 0x117. Vanilla entrance name is 'Byrna Gauntlet'."
+
+  # --- Dark World Mire ---------------------------------------------------
+  - interior_id: mire_shed
+    name: "Mire Shed (Swamp of Evil Heart Piece Hall)"
+    rooms: [0x10D]
+    entrance_ids: [0x5F]
+    region: DarkWorld_Mire
+    locations: [206, 207]
+    notes: "Two chests (Mire Shed L/R, 206/207) decoded to 0x10D."
+
+  # --- Dark World South --------------------------------------------------
+  - interior_id: hype_cave
+    name: "Hype Cave (Storyteller 1 / Fairy Cave 3)"
+    rooms: [0x11E]
+    entrance_ids: [0x3D, 0x55]
+    region: DarkWorld_South
+    locations: [222, 223, 224, 225, 227]
+    notes: "Four chests (222-225) decoded to 0x11E. 'Hype Cave - NPC' (id 227) same interior (NPC). Two entrance-ids -> 0x11E."
+
+  # --- Light World North West (King's Tomb) ------------------------------
+  - interior_id: hall_of_invisibility_cape
+    name: "Hall of the Invisibility Cape (King's Tomb)"
+    rooms: [0x113]
+    entrance_ids: [0x5B]
+    region: LightWorld_NorthWest
+    locations: [152]
+    notes: "Chest \"King's Tomb\" (id 152) decoded to 0x113. Vanilla entrance name is 'Hall of the Invisibility Cape'; the King's Tomb chest sits inside it (reached via graveyard cape/boots route)."
+
+  # --- Light World NW (Pegasus Rocks / Thief Hideout) --------------------
+  - interior_id: thief_hideout
+    name: "Thief Hideout (Pegasus Rocks)"
+    rooms: [0x124]
+    entrance_ids: [0x6D, 0x6E]
+    region: LightWorld_NorthWest
+    locations: [165]
+    notes: "Chest 'Pegasus Rocks' (id 165) decoded to 0x124. Two entrance-ids (Thief Hideout 2, Heart Piece Cave 1) -> 0x124. Pegasus Rocks is a dash-rock pickup (registry flags type Chest but interaction differs)."
+
+  # --- Empty / no-location cave interiors (still shuffle as slots) --------
+  - interior_id: general_store_1
+    name: "General Store 1"
+    rooms: [0x110]
+    entrance_ids: [0x57]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty (shop only)."
+
+  - interior_id: general_store_2
+    name: "General Store 2 / Storyteller Cave 2"
+    rooms: [0x112]
+    entrance_ids: [0x58, 0x5A]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty. Retro TakeAny host room. Two entrance-ids -> 0x112. Region nominal (multiple LW/DW take-any caves redirect here in Retro)."
+
+  - interior_id: archery_game
+    name: "Archery Game"
+    rooms: [0x111]
+    entrance_ids: [0x59]
+    region: DarkWorld_South
+    locations: []
+    notes: "Empty (minigame)."
+
+  - interior_id: general_store_3
+    name: "General Store 3"
+    rooms: [0x10F]
+    entrance_ids: [0x60]
+    region: DarkWorld_NorthWest
+    locations: []
+    notes: "Empty. Retro TakeAny host room (dest 0x60)."
+
+  - interior_id: pond_of_wishing
+    name: "Pond of Wishing / Storyteller Cave 3"
+    rooms: [0x114]
+    entrance_ids: [0x5C, 0x62]
+    region: LightWorld_NorthEast
+    locations: []
+    notes: "Fairy fountain (Waterfall/Pyramid bottle fountains are separate Fountain-type locs 140/141, NOT bound to a cave-interior room here). Two entrance-ids -> 0x114."
+
+  - interior_id: pond_of_happiness
+    name: "Pond of Happiness / Fairy Cave 4"
+    rooms: [0x115]
+    entrance_ids: [0x5D, 0x5E]
+    region: LightWorld_South
+    locations: []
+    notes: "Empty (upgrade fountain). Two entrance-ids -> 0x115."
+
+  - interior_id: warped_pond_of_wishing
+    name: "Warped Pond of Wishing"
+    rooms: [0x116]
+    entrance_ids: [0x63]
+    region: DarkWorld_NorthWest
+    locations: []
+    notes: "Empty (fairy/fountain)."
+
+  - interior_id: chest_shell_game
+    name: "Chest Shell Game 2"
+    rooms: [0x118]
+    entrance_ids: [0x67]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty (minigame). Kakariko Gamble Game take-any host (dest 0x46/0x11F) in Retro."
+
+  - interior_id: blinds_old_hideout
+    name: "Blind's Old Hideout (Thieves' Town overworld door)"
+    rooms: [0x119]
+    entrance_ids: [0x61]
+    region: DarkWorld_NorthWest
+    locations: []
+    notes: "Empty. NOT the same as Blind's Hideout chests (room 0x11D, excluded)."
+
+  - interior_id: storyteller_cave_4
+    name: "Storyteller Cave 4"
+    rooms: [0x11A]
+    entrance_ids: [0x68]
+    region: DarkWorld_NorthEast
+    locations: []
+    notes: "Empty. Palace of Darkness Hint take-any host (dest 0x60) in Retro."
+
+  - interior_id: refill_cave_1
+    name: "Refill Cave 0001/0002"
+    rooms: [0x11B]
+    entrance_ids: [0x51, 0x52]
+    region: LightWorld_NorthEast
+    locations: []
+    notes: "Empty (refill). Two entrance-ids -> 0x11B."
+
+  - interior_id: kakariko_lame_shop
+    name: "Kakariko's Lame Shop / Village House 1"
+    rooms: [0x11F]
+    entrance_ids: [0x46, 0x6B]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty. Retro TakeAny host room (dest 0x46). Two entrance-ids -> 0x11F."
+
+  - interior_id: chez_smithies
+    name: "Chez Smithies (Blacksmith Hut)"
+    rooms: [0x121]
+    entrance_ids: [0x64]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty interior. The 'Blacksmith' (id 220) and 'Purple Chest' (id 221) grants are OVERWORLD-surface NPC interactions, NOT inside this room — excluded."
+
+  - interior_id: fortune_teller
+    name: "Fortune Teller 1/2"
+    rooms: [0x122]
+    entrance_ids: [0x65, 0x66]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty (fortune teller). Two entrance-ids -> 0x122."
+
+  - interior_id: storyteller_cave_5
+    name: "Storyteller Cave 5/6"
+    rooms: [0x10E]
+    entrance_ids: [0x69, 0x6A]
+    region: DarkWorld_NorthEast
+    locations: []
+    notes: "Empty. Two entrance-ids -> 0x10E."
+
+  - interior_id: thief_hideout_3
+    name: "Thief Hideout 3 / Refill Cave 3"
+    rooms: [0x125]
+    entrance_ids: [0x6F, 0x70]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty. Two entrance-ids -> 0x125."
+
+  - interior_id: fairy_cave_5
+    name: "Fairy Cave 5 / Heart Piece Cave 2"
+    rooms: [0x126]
+    entrance_ids: [0x71, 0x72]
+    region: LightWorld_NorthWest
+    locations: []
+    notes: "Empty in registry (heart-piece pickup NOT registered as separate cave loc). Two entrance-ids -> 0x126. FLAG: vanilla has a heart piece here; verify if it needs a location id."
+
+  - interior_id: heart_piece_cave_3
+    name: "Heart Piece Cave 3 (Drop In)"
+    rooms: [0x127]
+    entrance_ids: [0x83]
+    region: LightWorld_DeathMountain_West
+    locations: []
+    notes: "Drop-in cave (entered by falling). Region nominal. FLAG: vanilla heart piece not registered; verify."
+
+# ===========================================================================
+# Caves with chests/locations but NO cave entrance-id (NOT shuffled as caves)
+# ===========================================================================
+excluded:
+  - room: 0x104
+    name: "Link's House"
+    reason: "Special dungeon-style room-keyed exit, excluded from cave shuffle per verified entrance-table facts. Holds chest 'Link's House' (id 174, region LightWorld_South / DarkWorld_South in Inverted)."
+    locations: [174]
+
+  - room: 0x11D
+    name: "Blind's Hideout"
+    reason: "Holds 5 chests (Blind's Hideout Top/Left/Right/Far Left/Far Right, ids 160-164, region LightWorld_NorthWest) but has NO entry in the cave entrance-id range (0x3C-0x72,0x83-0x84). Entered via a bush-covered overworld hole, not a kOverworld_Entrance_Id cave door. FLAG: needs investigation before entrance-shuffling Kakariko — its door mechanism differs."
+    locations: [160, 161, 162, 163, 164]
+
+# ===========================================================================
+# Overworld-SURFACE locations frequently mis-classified as cave-interior.
+# These are NOT inside a shuffleable cave room and must NOT be bound to an
+# interior. Listed here so the entrance-shuffle placer explicitly skips them.
+# ===========================================================================
+overworld_surface_not_caves:
+  - { id: 145, name: "Sahasrahla",        region: LightWorld_NorthEast,          note: "Overworld NPC outside the hut" }
+  - { id: 166, name: "Bottle Merchant",   region: LightWorld_NorthWest,          note: "Overworld NPC" }
+  - { id: 167, name: "Magic Bat",         region: LightWorld_NorthWest,          note: "Powder-thrown grant in a sub-room reached via Magic Bat cave; ALTTPR ties to overworld access, no cave entrance-id of its own" }
+  - { id: 169, name: "Lost Woods Hideout", region: LightWorld_NorthWest,         note: "Overworld standing item (stump)" }
+  - { id: 183, name: "Cave 45",           region: LightWorld_South,              note: "Standing item; reached via a small cave but not in the entranced cave-id set / chest table — verify room if needed" }
+  - { id: 184, name: "Checkerboard Cave", region: LightWorld_South,              note: "Standing item; same caveat as Cave 45" }
+  - { id: 186, name: "Library",          region: LightWorld_South,              note: "Book pulled from under the Library building on the overworld via Pegasus Boots; the building interior (room 0x107) is empty" }
+  - { id: 193, name: "Spectacle Rock Cave", region: LightWorld_DeathMountain_West, note: "DM heart-piece cave (entrance 0x16/0x17 family, OUTSIDE 0x3C-0x72 cave-id range) — not in this registry's shuffle set" }
+  - { id: 195, name: "Spectacle Rock",    region: LightWorld_DeathMountain_West, note: "Overworld standing item" }
+  - { id: 210, name: "Pyramid Fairy - Sword", region: DarkWorld_NorthEast,       note: "Pyramid Fairy trade; reached via Pyramid hole, not a 0x3C-0x72 cave door" }
+  - { id: 211, name: "Pyramid Fairy - Bow",   region: DarkWorld_NorthEast,       note: "Pyramid Fairy trade" }
+  - { id: 213, name: "Pyramid Fairy - Left",  region: DarkWorld_NorthEast,       note: "Pyramid Fairy chest (room not in cave-id set)" }
+  - { id: 214, name: "Pyramid Fairy - Right", region: DarkWorld_NorthEast,       note: "Pyramid Fairy chest" }
+  - { id: 217, name: "Chest Game",        region: DarkWorld_NorthWest,           note: "Minigame chest (room 0x106 area) — handled by OpenMiniGameChest, NOT in the chest table; bind with care" }
+  - { id: 219, name: "Bumper Cave",       region: DarkWorld_NorthWest,           note: "Overworld traverse/ledge heart piece, not a single-screen cave interior" }
+  - { id: 220, name: "Blacksmith",        region: DarkWorld_NorthWest,           note: "Overworld NPC (rescued frog)" }
+  - { id: 221, name: "Purple Chest",      region: DarkWorld_NorthWest,           note: "Overworld NPC (Gary)" }
+  - { id: 196, name: "Spiral Cave",       region: LightWorld_DeathMountain_East, note: "DM cave; entrance OUTSIDE 0x3C-0x72 range (DM mountainface family). Verify room if DM caves are added to shuffle." }
+  - { id: 230, name: "Superbunny Cave - Top",    region: DarkWorld_DeathMountain_East, note: "DM cave, entrance outside 0x3C-0x72 range" }
+  - { id: 231, name: "Superbunny Cave - Bottom", region: DarkWorld_DeathMountain_East, note: "DM cave, entrance outside 0x3C-0x72 range" }
+  - { id: 232, name: "Hookshot Cave - Top Right",    region: DarkWorld_DeathMountain_East, note: "DM cave, entrance outside 0x3C-0x72 range" }
+  - { id: 233, name: "Hookshot Cave - Top Left",     region: DarkWorld_DeathMountain_East, note: "DM cave, entrance outside 0x3C-0x72 range" }
+  - { id: 234, name: "Hookshot Cave - Bottom Left",  region: DarkWorld_DeathMountain_East, note: "DM cave, entrance outside 0x3C-0x72 range" }
+  - { id: 235, name: "Hookshot Cave - Bottom Right", region: DarkWorld_DeathMountain_East, note: "DM cave, entrance outside 0x3C-0x72 range" }
+  - { id: 198, name: "Paradox Cave Lower - Far Left",  region: LightWorld_DeathMountain_East, note: "Paradox Cave; DM entrance family outside 0x3C-0x72" }
+  - { id: 199, name: "Paradox Cave Lower - Left",      region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
+  - { id: 200, name: "Paradox Cave Lower - Right",     region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
+  - { id: 201, name: "Paradox Cave Lower - Far Right", region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
+  - { id: 202, name: "Paradox Cave Lower - Middle",    region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
+  - { id: 203, name: "Paradox Cave Upper - Left",      region: LightWorld_DeathMountain_East, note: "Paradox Cave" }
+  - { id: 204, name: "Paradox Cave Upper - Right",     region: LightWorld_DeathMountain_East, note: "Paradox Cave" }

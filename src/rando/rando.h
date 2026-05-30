@@ -14,7 +14,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 37u  // Phase B Slice 3b — Retro TakeAny caves (62 LOC ids, per-seed active subset); rebased atop main's 36
+#define kGeneratorVersion 38u  // Phase C — entrance-shuffle settings axes (packed canonical [25]) + RegionRemap retired. Default seeds byte-identical (axes default off).
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

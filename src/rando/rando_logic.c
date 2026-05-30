@@ -137,12 +137,11 @@ static bool eval_dungeon_cleared(Cursor *c, const PredicateContext *ctx) {
 }
 
 static bool eval_region_reachable(Cursor *c, const PredicateContext *ctx) {
-  uint16 entrance_id = cursor_u16le(c);
+  uint16 region_id = cursor_u16le(c);
   if (c->error) return false;
-  // RegionRemap overlay (task 3.7a): entrance shuffle in Phase C remaps
-  // entrances to non-identity interiors. Phase A's identity-overlay returns
-  // entrance_id unchanged.
-  uint16 region_id = RegionRemap_Lookup(entrance_id);
+  // OP_REGION_REACHABLE's operand IS a region id (the Phase A `RegionRemap`
+  // indirection was retired in Phase C — it was identity dead code that would
+  // have corrupted this hot predicate if ever populated; see design.md §1).
   // Phase A0: if no reachability bitset has been supplied (e.g., a standalone
   // Predicate_Evaluate call outside of Logic_ComputeReachability), conservatively
   // return false. The placer / tracker pass a populated bitset.
@@ -309,29 +308,6 @@ bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
   ctx.candidate_item = candidate_item;
   ctx.placement_context = 1;
   return Predicate_EvalCtx(bytecode, length, &ctx);
-}
-
-// ---------------------------------------------------------------------------
-// RegionRemap overlay (task 3.7a). Phase A0 default: NULL pointer = identity.
-// ---------------------------------------------------------------------------
-
-static const uint16 *g_region_remap_table = NULL;
-static uint16 g_region_remap_count = 0;
-
-uint16 RegionRemap_Lookup(uint16 entrance_id) {
-  if (g_region_remap_table == NULL) return entrance_id;
-  if (entrance_id >= g_region_remap_count) return entrance_id;
-  return g_region_remap_table[entrance_id];
-}
-
-void Rando_SetRegionRemap(const uint16 *table, uint16 count) {
-  g_region_remap_table = table;
-  g_region_remap_count = (table != NULL) ? count : 0;
-}
-
-void Rando_ResetRegionRemap(void) {
-  g_region_remap_table = NULL;
-  g_region_remap_count = 0;
 }
 
 // ---------------------------------------------------------------------------

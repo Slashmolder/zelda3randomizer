@@ -90,10 +90,12 @@ ops:
     phase: A
     operands: [region_id]
     semantics: |
-      true iff RegionRemap[region_id] is reachable from the start region
-      under the current inventory snapshot. Consults the runtime
-      RegionRemap[entrance_id -> interior_id] overlay before traversing
-      static EdgeDef[].
+      true iff region_id is reachable from the start region under the current
+      inventory snapshot, by traversing the static EdgeDef[] graph (plus any
+      per-world-state / per-seed edge overlay). The operand is a region id
+      directly — the Phase A `RegionRemap` indirection was retired in Phase C
+      entrance shuffle (dead identity code; see add-rando-entrance-shuffle
+      design.md §1).
     contexts: [can_reach, can_place]
     notes: |
       Memoized PER fixed-point iteration of the reachability outer loop

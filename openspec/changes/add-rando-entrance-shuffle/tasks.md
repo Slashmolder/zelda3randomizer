@@ -11,23 +11,29 @@ follow-on changes.
 
 ## Stage 0 — groundwork / decisions (no runtime change)
 
-- [ ] 0.1 Retire `RegionRemap`: confirm zero callers; delete `Rando_SetRegionRemap`
-      / `Rando_ResetRegionRemap` / `RegionRemap_Lookup` + the `eval_region_reachable`
-      indirection, OR mark deprecated with a comment pointing at the edge-overlay.
-      (Rewrites the change's `randomizer-logic` spec delta — see design §1.)
-- [ ] 0.2 Decide door-edge classification home (YAML `door:` marker vs generated
-      side-table) — design §2 open question.
-- [ ] 0.3 Decide save representation: store full π vs store seed+settings and
-      regenerate π deterministically — design §5c.
-- [ ] 0.4 Add the composable entrance axes to `RandoSettings` + canonical
-      serialization. They append after `out[24]`: ≤3 axes fit the existing zero-pad
-      `out[25..27]` (default hash byte-identical); >3 axes (likely, with 5 axes)
-      REQUIRES a `kSettingsCanonicalLen` bump — which per `[[canonical-size-coupling]]`
-      touches 4 coupled sites incl. a `_Static_assert` + corpus constants, NOT a free
-      append. Coordinate exact offsets with parallel Retro work (design §5b/§7).
-- [ ] 0.5 Define the named presets (Simple/Restricted/Crossed/Insanity/Custom) as
-      bundles over the axes (design §5a) — wiring deferred until the axes ship, but
-      reserve the preset enum slots now.
+- [x] 0.1 Retire `RegionRemap`: confirmed zero install callers (`Rando_Set/Reset`)
+      + identity-only `RegionRemap_Lookup`; deleted all three + the two file-statics
+      + header decls + the `eval_region_reachable` indirection (operand is used
+      directly as `region_id`). Updated `op_registry.yaml` OP_REGION_REACHABLE
+      semantics comment. Corpus byte-identical (was a no-op). See `apply_plan.md` 0.1.
+- [x] 0.2 Door-edge classification home: new `assets/rando/entrance_registry.yaml`
+      (38 cave interiors, all 57 entrance-ids) is the data home; the per-interior
+      `region` + member `locations` drive the cave region-override. Dungeon
+      door-edge marking (Stage 2) extends the same file. (See `apply_plan.md` 0.2.)
+- [x] 0.3 Save representation: **revised** — NOT a TLV (the slot format has no
+      TLV-skip infra; review H4). Store `entrance_axes`@70 + `entrance_attempt`@71
+      in the header reserved tail and regenerate π at slot-activate from
+      (seed, axes, attempt). Mirrors the Phase B hints reserved-byte+regen precedent.
+      (See `apply_plan.md` 0.3.)
+- [x] 0.4 Added the 5 composable entrance axes to `RandoSettings` + bit-PACKED them
+      into the existing zero-pad byte `out[25]` (NO `kSettingsCanonicalLen` bump,
+      NO canonical-size-coupling cascade). `apply_derived_rules` normalizes
+      coupled/cross/decoupled→0 when no shuffle active ⇒ default byte 0x00 ⇒ corpus
+      byte-identical. CSV keys + deserialize + Settings_SelfCheck round-trip added.
+      `kGeneratorVersion` 37→38. (See `apply_plan.md` 0.4.)
+- [x] 0.5 Presets (Simple/Restricted/Crossed/Insanity/Custom) are **UI sugar over
+      the axes** (no stored enum) — decided in `apply_plan.md` 0.5; picker wiring in
+      Stage 1.13 / Presets P.1.
 
 ## Stage 1 — functional: coupled cave-shuffle, one mode (the vertical slice)
 
