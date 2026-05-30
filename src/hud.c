@@ -1429,28 +1429,27 @@ static void Hud_Update_Hearts() {  // 8dfb94
 static void Hud_Update_Magic() {  // 8dfc09
   uint16 *dst = &hud_tile_indices_buffer[HUDXY(2, 0)];
   if (link_magic_consumption >= 1) {
-    dst[HUDXY(0, 0)] = 0x28F7;  // small "1"
+    dst[HUDXY(0, 0)] = 0x28F7;  // "1"
     dst[HUDXY(1, 0)] = 0x2851;  // "/"
-    // Vanilla only ever had half magic, so it hardcoded "1/2" here. The
-    // randomizer adds QuarterMagic (link_magic_consumption == 2) -> "1/4". The
-    // "4" uses the HUD digit font (Hud_IntToDecimal maps digit N to char
-    // 0x90+N, so "4" is char 0x94) drawn at this header's palette 2 (index 3 =
-    // black HUD background, index 2 = white) -> a clean white "4".
+    dst[HUDXY(2, 0)] = 0x28FA;  // "2" (half) — gfx rewritten to "4" for quarter
+    // Vanilla only ever had half magic ("1/2"). The randomizer adds QuarterMagic
+    // (link_magic_consumption == 2) -> "1/4". Rather than borrow a mismatched
+    // full-size digit, author size-matched glyphs by rewriting the two right
+    // tiles' gfx IN PLACE: the "/" (char 0x51) with its "2"-merge column cleared,
+    // and a small "4" over the "2" (char 0xFA) that preserves the magic-meter
+    // pixels in the tile's right columns. Both chars are referenced only by this
+    // header (verified) and quarter never shows "1/2", so the rewrite is local.
+    // Gated on consumption==2 (rando-only) -> inert under vanilla side-by-side
+    // RAM/VRAM compare. Mirrors the CopyTilesForSwitchLR custom-HUD-tile pattern.
     if (link_magic_consumption >= 2) {
-      // The bespoke "/" tile (char 0x51) carries a right-edge column drawn to
-      // merge with the vanilla "2" glyph; next to "4" it dangles as a stray
-      // vertical. Quarter never draws the "2", and char 0x51 is referenced
-      // nowhere else (verified), so rewrite its VRAM gfx with that column
-      // cleared (orig words & ~0x0101). Gated on consumption==2 (rando-only) ->
-      // inert under vanilla side-by-side RAM/VRAM compare. Mirrors the
-      // CopyTilesForSwitchLR custom-HUD-tile pattern above.
-      static const uint16 kCleanSlashTile[8] = {
+      static const uint16 kQuarterSlashTile[8] = {  // 0x51 with col 7 cleared
         0x8282, 0xC644, 0xCE4A, 0xFE76, 0xFE6E, 0xFE5E, 0xFEBE, 0xFEFE,
       };
-      memcpy(&g_zenv.vram[0x7000 + 0x51 * 8], kCleanSlashTile, sizeof kCleanSlashTile);
-      dst[HUDXY(2, 0)] = 0x2894;  // digit "4"
-    } else {
-      dst[HUDXY(2, 0)] = 0x28FA;  // small "2"
+      static const uint16 kQuarterFourTile[8] = {   // small "4" (cols 0-2), meter kept
+        0x0000, 0x0000, 0xA000, 0xA000, 0xE000, 0x2003, 0x2106, 0x3314,
+      };
+      memcpy(&g_zenv.vram[0x7000 + 0x51 * 8], kQuarterSlashTile, sizeof kQuarterSlashTile);
+      memcpy(&g_zenv.vram[0x7000 + 0xFA * 8], kQuarterFourTile, sizeof kQuarterFourTile);
     }
   }
   const uint16 *src = kUpdateMagicPowerTilemap[(link_magic_power + 7) >> 3];
