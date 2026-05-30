@@ -627,12 +627,19 @@ static void DrawMapTracker(void *) {
   ImGui::SameLine();
   ImGui::RadioButton("Dark World", &s_world, 1);
   ImGui::SameLine();
-  // Pin-tuning aid: overlay a 0.0..1.0 normalized grid and a live mouse-coord
-  // readout so pin positions (kLightPins/kDarkPins) can be dialed in by eye.
+  // Pin-tuning aids. Pin coords (kLightPins/kDarkPins) are ABSOLUTE texture
+  // coords (0..1 over the full 512px map). Zoom only crops the view (the
+  // playable landmass is the central ~70%; the rest is cloud border that the
+  // game crops too), so the cursor readout reports stable absolute coords at
+  // any zoom — hover where a pin should sit, read x/y, and that's the value.
   static bool s_show_grid = false;
+  static float s_zoom = 1.30f;
   ImGui::Checkbox("Grid", &s_show_grid);
   ImGui::SameLine();
-  ImGui::TextDisabled("(green: checked · yellow: available · grey: locked)");
+  ImGui::SetNextItemWidth(120);
+  ImGui::SliderFloat("Zoom", &s_zoom, 1.0f, 3.0f, "%.2fx");
+  ImGui::SameLine();
+  ImGui::TextDisabled("(green ok · yellow avail · grey locked)");
 
   const WorldPin *pins = s_world ? kDarkPins : kLightPins;
   int npins = s_world ? (int)(sizeof(kDarkPins) / sizeof(kDarkPins[0]))
@@ -643,31 +650,41 @@ static void DrawMapTracker(void *) {
   if (side > 480.0f) side = 480.0f;
   ImDrawList *dl = ImGui::GetWindowDrawList();
   ImVec2 br = ImVec2(origin.x + side, origin.y + side);
+
+  // Crop (UV) window centered on the measured landmass center; zoom shrinks the
+  // visible span. Clamp so the window stays inside the [0,1] texture.
+  const float kMapCx = 0.523f, kMapCy = 0.523f;
+  float half = 0.5f / s_zoom;
+  float u0 = kMapCx - half, u1 = kMapCx + half;
+  float v0 = kMapCy - half, v1 = kMapCy + half;
+  if (u0 < 0) { u1 -= u0; u0 = 0; } if (u1 > 1) { u0 -= (u1 - 1); u1 = 1; if (u0 < 0) u0 = 0; }
+  if (v0 < 0) { v1 -= v0; v0 = 0; } if (v1 > 1) { v0 -= (v1 - 1); v1 = 1; if (v0 < 0) v0 = 0; }
+  float uspan = (u1 - u0) > 1e-4f ? (u1 - u0) : 1e-4f;
+  float vspan = (v1 - v0) > 1e-4f ? (v1 - v0) : 1e-4f;
+  auto tex2sx = [&](float tx) { return origin.x + (tx - u0) / uspan * side; };
+  auto tex2sy = [&](float ty) { return origin.y + (ty - v0) / vspan * side; };
+
   if (s_map_tex[s_world])
-    dl->AddImage(s_map_tex[s_world], origin, br);
+    dl->AddImage(s_map_tex[s_world], origin, br, ImVec2(u0, v0), ImVec2(u1, v1));
   else
     dl->AddRectFilled(origin, br, IM_COL32(28, 30, 38, 255), 4.0f);
 
-  // Normalized coordinate grid (every 0.1; brighter every 0.5) with axis
-  // labels along the top (x) and left (y) edges. Toggled by the "Grid" box.
+  // Grid: absolute 0.1 marks (brighter every 0.5), projected through the crop;
+  // marks scrolled outside the zoomed view are skipped.
   if (s_show_grid) {
     for (int i = 0; i <= 10; i++) {
       float f = (float)i / 10.0f;
       ImU32 c = (i % 5 == 0) ? IM_COL32(255, 255, 255, 130) : IM_COL32(255, 255, 255, 45);
-      dl->AddLine(ImVec2(origin.x + f * side, origin.y),
-                  ImVec2(origin.x + f * side, origin.y + side), c);
-      dl->AddLine(ImVec2(origin.x, origin.y + f * side),
-                  ImVec2(origin.x + side, origin.y + f * side), c);
-      char lbl[8];
-      snprintf(lbl, sizeof lbl, "%.1f", f);
-      dl->AddText(ImVec2(origin.x + f * side + 1, origin.y + 1), IM_COL32(255, 235, 90, 220), lbl);
-      dl->AddText(ImVec2(origin.x + 1, origin.y + f * side + 1), IM_COL32(255, 235, 90, 220), lbl);
-    }
-    ImVec2 m = ImGui::GetMousePos();
-    if (m.x >= origin.x && m.x <= origin.x + side && m.y >= origin.y && m.y <= origin.y + side) {
-      char buf[40];
-      snprintf(buf, sizeof buf, "x %.3f  y %.3f", (m.x - origin.x) / side, (m.y - origin.y) / side);
-      dl->AddText(ImVec2(origin.x + 4, origin.y + side - 16), IM_COL32(120, 255, 120, 255), buf);
+      char lbl[8]; snprintf(lbl, sizeof lbl, "%.1f", f);
+      float sx = tex2sx(f), sy = tex2sy(f);
+      if (sx >= origin.x && sx <= origin.x + side) {
+        dl->AddLine(ImVec2(sx, origin.y), ImVec2(sx, origin.y + side), c);
+        dl->AddText(ImVec2(sx + 1, origin.y + 1), IM_COL32(255, 235, 90, 220), lbl);
+      }
+      if (sy >= origin.y && sy <= origin.y + side) {
+        dl->AddLine(ImVec2(origin.x, sy), ImVec2(origin.x + side, sy), c);
+        dl->AddText(ImVec2(origin.x + 1, sy + 1), IM_COL32(255, 235, 90, 220), lbl);
+      }
     }
   }
 
@@ -681,7 +698,9 @@ static void DrawMapTracker(void *) {
     int st = RegionStatus(total, checked, avail);
     ImU32 col = (st == kCheck_Checked) ? kColChecked
                 : (st == kCheck_Reachable) ? kColReach : kColLocked;
-    ImVec2 c = ImVec2(origin.x + pins[i].x * side, origin.y + pins[i].y * side);
+    ImVec2 c = ImVec2(tex2sx(pins[i].x), tex2sy(pins[i].y));
+    if (c.x < origin.x || c.x > origin.x + side || c.y < origin.y || c.y > origin.y + side)
+      continue;  // pin scrolled outside the zoomed view
     float radius = 9.0f;
     dl->AddCircleFilled(c, radius, col);
     dl->AddCircle(c, radius, IM_COL32(10, 10, 12, 255), 0, 2.0f);
@@ -692,6 +711,23 @@ static void DrawMapTracker(void *) {
     dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), IM_COL32(12, 12, 14, 255), lbl);
     float dx = mouse.x - c.x, dy = mouse.y - c.y;
     if (dx * dx + dy * dy <= radius * radius) hover_region = rid;
+  }
+
+  // Live cursor readout (tuning mode): absolute map coords drawn next to the
+  // cursor, with a crosshair, so a pin position can be read directly.
+  if (s_show_grid && mouse.x >= origin.x && mouse.x <= origin.x + side &&
+      mouse.y >= origin.y && mouse.y <= origin.y + side) {
+    float tx = u0 + (mouse.x - origin.x) / side * uspan;
+    float ty = v0 + (mouse.y - origin.y) / side * vspan;
+    char buf[40]; snprintf(buf, sizeof buf, "x %.3f  y %.3f", tx, ty);
+    ImVec2 ts = ImGui::CalcTextSize(buf);
+    ImVec2 tp(mouse.x + 14, mouse.y + 6);
+    if (tp.x + ts.x > origin.x + side) tp.x = mouse.x - 14 - ts.x;
+    dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 2), ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 2),
+                      IM_COL32(0, 0, 0, 210), 3.0f);
+    dl->AddText(tp, IM_COL32(120, 255, 120, 255), buf);
+    dl->AddLine(ImVec2(mouse.x - 7, mouse.y), ImVec2(mouse.x + 7, mouse.y), IM_COL32(120, 255, 120, 190));
+    dl->AddLine(ImVec2(mouse.x, mouse.y - 7), ImVec2(mouse.x, mouse.y + 7), IM_COL32(120, 255, 120, 190));
   }
   ImGui::Dummy(ImVec2(side, side));
 
