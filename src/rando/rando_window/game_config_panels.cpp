@@ -614,4 +614,240 @@ extern "C" void GameConfig_RenderTab(void) {
   }
 }
 
+// ===========================================================================
+// Debug tab — live inventory/equipment editor. Writes Link's g_ram save block
+// directly (NO INI/Apply). Hard-gated: only in a stable gameplay/menu module,
+// never during replay or while the original ROM is attached for RAM compare.
+// All g_ram writes live in this .cpp (audit guard scans only .c, excludes rando)
+// and are range-clamped, so no out-of-range byte can reach a game-code table.
+// ===========================================================================
+extern "C" {
+extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
+bool ZeldaIsReplaying(void);          // zelda_rtl.h
+bool ZeldaIsEmulatorAttached(void);   // zelda_rtl.h
+void ZeldaDumpDebugState(void);       // zelda_rtl.h (developer state dump)
+}
+
+static uint32 LiveFeatures0(void) { return *(const uint32 *)(g_ram + 0x64c); }  // enhanced_features0
+static uint32 LiveFeatures1(void) { return *(const uint32 *)(g_ram + 0x659); }  // enhanced_features1
+static bool DbgRandoActive(void) { return (LiveFeatures1() & kFeatures1_RandomizerActive) != 0; }
+
+static bool CheatsCanEdit(void) {
+  // Whitelist of stable gameplay/menu modules: 0x07 dungeon, 0x09/0x0B overworld
+  // (run states; 0x08/0x0A are the transient load halves), 0x0E Interface (the
+  // pause/item menu — the most-wanted edit context). Excludes title/file-select
+  // (inventory not loaded), death/cutscene/transition/stub modules.
+  uint8 m = g_ram[0x10];  // main_module_index
+  bool in_game = (m == 0x07 || m == 0x09 || m == 0x0B || m == 0x0E);
+  return in_game && !ZeldaIsReplaying() && !ZeldaIsEmulatorAttached();
+}
+
+static void PokeByte(uint32 addr, int v, int lo, int hi) {
+  if (!CheatsCanEdit()) return;       // re-check the gate at the write (defense in depth)
+  if (v < lo) v = lo;
+  if (v > hi) v = hi;
+  g_ram[addr] = (uint8)v;
+}
+static void PokeWord(uint32 addr, int v, int lo, int hi) {  // little-endian
+  if (!CheatsCanEdit()) return;
+  if (v < lo) v = lo;
+  if (v > hi) v = hi;
+  g_ram[addr] = (uint8)(v & 0xFF);
+  g_ram[addr + 1] = (uint8)((v >> 8) & 0xFF);
+}
+
+// --- widget helpers (read g_ram live for display, write clamped on change) ---
+static void DbgByteSlider(const char *label, uint32 addr, int lo, int hi) {
+  int v = g_ram[addr];
+  if (v > hi) v = hi;
+  if (ImGui::SliderInt(label, &v, lo, hi)) PokeByte(addr, v, lo, hi);
+}
+static void DbgToggle(const char *label, uint32 addr) {
+  bool v = g_ram[addr] != 0;
+  if (ImGui::Checkbox(label, &v)) PokeByte(addr, v ? 1 : 0, 0, 1);
+}
+// Contiguous 0..count-1 combo. A read >= count (e.g. the sword 0xFF in-repair
+// sentinel) previews as index 0 ("None") rather than indexing garbage.
+static void DbgCombo(const char *label, uint32 addr, const char *const *items, int count) {
+  int v = g_ram[addr];
+  if (v < 0 || v >= count) v = 0;
+  if (ImGui::BeginCombo(label, items[v])) {
+    for (int i = 0; i < count; i++) {
+      bool sel = (v == i);
+      if (ImGui::Selectable(items[i], sel) && i != v) PokeByte(addr, i, 0, count - 1);
+      if (sel) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+}
+// Combo over a non-contiguous value set (bow {0,1,3}, bottle contents {0,2..8}).
+static void DbgComboVals(const char *label, uint32 addr, const char *const *items,
+                         const int *vals, int count) {
+  int cur = g_ram[addr], idx = 0;
+  for (int i = 0; i < count; i++) if (vals[i] == cur) idx = i;
+  if (ImGui::BeginCombo(label, items[idx])) {
+    for (int i = 0; i < count; i++) {
+      bool sel = (idx == i);
+      if (ImGui::Selectable(items[i], sel) && i != idx) PokeByte(addr, vals[i], 0, 255);
+      if (sel) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+}
+// One bit of a bitfield byte as a checkbox.
+static void DbgBit(const char *label, uint32 addr, int bit) {
+  uint8 cur = g_ram[addr];
+  bool on = (cur >> bit) & 1;
+  if (ImGui::Checkbox(label, &on))
+    PokeByte(addr, (cur & ~(1 << bit)) | (on ? (1 << bit) : 0), 0, 255);
+}
+
+extern "C" void GameDebug_RenderTab(void) {
+  bool can = CheatsCanEdit();
+  if (!can) {
+    const char *why = ZeldaIsEmulatorAttached()
+                          ? "Disabled while the original ROM is attached (RAM-compare mode)."
+                      : ZeldaIsReplaying() ? "Disabled during snapshot replay."
+                                           : "Load a save and enter the world to edit inventory.";
+    ImGui::TextColored(ImVec4(1, 0.7f, 0.3f, 1), "%s", why);
+  } else {
+    ImGui::TextDisabled("Edits write live save RAM (shown on the HUD next frame). Save in-game to keep them.");
+  }
+  ImGui::Separator();
+
+  // Diagnostics — always available (read-only; useful even at the title screen
+  // or during replay). This is the GUI trigger for the F12 developer dump; the
+  // F12 hotkey itself is the rebindable kKeys_DumpDebugState command (clear its
+  // binding in Controls to disable the hotkey).
+  ImGui::SeparatorText("Diagnostics");
+  static unsigned int s_dump_msg_until = 0;
+  if (ImGui::Button("Dump debug state")) {  // dumps once per click (not per frame)
+    ZeldaDumpDebugState();
+    s_dump_msg_until = SDL_GetTicks() + 3000;
+  }
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Writes dump_gram.bin / dump_vram.bin / dump_oam.bin /\n"
+                      "dump_cgram.bin / dump_hints.txt next to the executable,\n"
+                      "plus a state line to the log. Same as the F12 hotkey.");
+  ImGui::SameLine();
+  ImGui::TextDisabled("(also F12 \xe2\x80\x94 rebindable in Controls > Randomizer)");
+  if (SDL_GetTicks() < s_dump_msg_until) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.4f, 1, 0.4f, 1), "wrote dump_*");
+  }
+  ImGui::Separator();
+
+  if (!can) ImGui::BeginDisabled();
+  if (ImGui::BeginChild("##dbg", ImVec2(0, 0))) {
+    bool rando = DbgRandoActive();
+    int rupcap = (LiveFeatures0() & kFeatures0_CarryMoreRupees) ? 9999 : 999;
+
+    ImGui::SeparatorText("Consumables");
+    {
+      int v = g_ram[0xF362] | (g_ram[0xF363] << 8);
+      if (v > rupcap) v = rupcap;
+      if (ImGui::SliderInt("Rupees", &v, 0, rupcap)) {  // set actual AND goal for an instant change
+        PokeWord(0xF362, v, 0, rupcap);
+        PokeWord(0xF360, v, 0, rupcap);
+      }
+    }
+    DbgByteSlider("Bombs", 0xF343, 0, 50);
+    DbgByteSlider("Arrows", 0xF377, 0, 70);
+    DbgByteSlider("Keys (current dungeon)", 0xF36F, 0, 99);
+    DbgByteSlider("Magic (128 = full)", 0xF36E, 0, 128);
+    DbgByteSlider("Heart pieces", 0xF36B, 0, 3);
+
+    ImGui::SeparatorText("Hearts");
+    {
+      int containers = g_ram[0xF36C] / 8;
+      if (containers < 1) containers = 1;
+      if (ImGui::SliderInt("Heart containers", &containers, 1, 20)) {
+        PokeByte(0xF36C, containers * 8, 8, 160);
+        if (g_ram[0xF36D] > g_ram[0xF36C]) PokeByte(0xF36D, g_ram[0xF36C], 0, 160);  // clamp current<=capacity
+      }
+    }
+    if (ImGui::Button("Refill hearts")) PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
+    ImGui::SameLine();
+    if (ImGui::Button("Refill magic")) PokeByte(0xF36E, 0x80, 0, 128);
+
+    ImGui::SeparatorText("Equipment");
+    { static const char *const k[] = {"None", "Fighter", "Master", "Tempered", "Gold"}; DbgCombo("Sword", 0xF359, k, 5); }
+    { static const char *const k[] = {"None", "Blue", "Red", "Mirror"}; DbgCombo("Shield", 0xF35A, k, 4); }
+    { static const char *const k[] = {"Green", "Blue", "Red"}; DbgCombo("Armor", 0xF35B, k, 3); }
+    { static const char *const k[] = {"None", "Power Glove", "Titan's Mitt"}; DbgCombo("Gloves", 0xF354, k, 3); }
+
+    ImGui::SeparatorText("Items");
+    { static const char *const k[] = {"None", "Bow", "Silver Bow"}; static const int v[] = {0, 1, 3};
+      DbgComboVals("Bow", 0xF340, k, v, 3); }
+    { static const char *const k[] = {"None", "Blue", "Red"}; DbgCombo("Boomerang", 0xF341, k, 3); }  // no "both" — red replaces blue (kHudItemBoomerang has 3 entries)
+    DbgToggle("Hookshot", 0xF342);
+    DbgToggle("Lamp", 0xF34A);
+    DbgToggle("Fire Rod", 0xF345);
+    DbgToggle("Ice Rod", 0xF346);
+    DbgToggle("Hammer", 0xF34B);
+    DbgToggle("Bug Net", 0xF34D);
+    DbgToggle("Book of Mudora", 0xF34E);
+    DbgToggle("Cane of Somaria", 0xF350);
+    DbgToggle("Cane of Byrna", 0xF351);
+    DbgToggle("Magic Cape", 0xF352);
+    DbgToggle("Magic Mirror", 0xF353);
+    DbgToggle("Pegasus Boots", 0xF355);
+    DbgToggle("Flippers", 0xF356);
+    DbgToggle("Moon Pearl", 0xF357);
+    DbgToggle("Bombos Medallion", 0xF347);
+    DbgToggle("Ether Medallion", 0xF348);
+    DbgToggle("Quake Medallion", 0xF349);
+
+    // Mushroom/Powder (0xF344) and Shovel/Flute (0xF34C) share a byte AND have
+    // separate randomizer ownership state — editing the raw byte under rando
+    // desyncs it (the documented "vanilla state as a progress proxy" class).
+    if (rando) ImGui::BeginDisabled();
+    { static const char *const k[] = {"None", "Mushroom", "Magic Powder"}; DbgCombo("Mushroom / Powder", 0xF344, k, 3); }
+    { static const char *const k[] = {"None", "Shovel", "Flute"}; DbgCombo("Shovel / Flute", 0xF34C, k, 3); }
+    if (rando) {
+      ImGui::EndDisabled();
+      ImGui::TextDisabled("(Mushroom/Powder & Shovel/Flute are managed by the randomizer.)");
+    }
+
+    ImGui::SeparatorText("Bottles");
+    {
+      static const char *const k[] = {"No bottle", "Empty", "Red Potion", "Green Potion",
+                                      "Blue Potion", "Fairy", "Bee", "Good Bee"};
+      static const int v[] = {0, 2, 3, 4, 5, 6, 7, 8};  // kHudItemBottles[] index values (skip 1)
+      for (int i = 0; i < 4; i++) {
+        char lbl[24];
+        snprintf(lbl, sizeof lbl, "Bottle %d", i + 1);
+        DbgComboVals(lbl, 0xF35C + i, k, v, 8);
+      }
+    }
+
+    if (ImGui::TreeNode("Progress (advanced \xe2\x80\x94 will not update randomizer prize/goal tracking)")) {
+      ImGui::TextDisabled("Pendants");
+      DbgBit("Pendant of Courage", 0xF374, 0);
+      DbgBit("Pendant of Power", 0xF374, 1);
+      DbgBit("Pendant of Wisdom", 0xF374, 2);
+      ImGui::TextDisabled("Crystals");
+      for (int b = 0; b < 7; b++) {
+        char l[16];
+        snprintf(l, sizeof l, "Crystal %d", b + 1);
+        DbgBit(l, 0xF37A, b);
+      }
+      ImGui::TreePop();
+    }
+
+    ImGui::SeparatorText("Quick actions");
+    if (ImGui::Button("Max consumables")) {
+      PokeWord(0xF362, rupcap, 0, rupcap);
+      PokeWord(0xF360, rupcap, 0, rupcap);
+      PokeByte(0xF343, 50, 0, 50);
+      PokeByte(0xF377, 70, 0, 70);
+      PokeByte(0xF36F, 99, 0, 99);
+      PokeByte(0xF36E, 0x80, 0, 128);
+      PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
+    }
+  }
+  ImGui::EndChild();
+  if (!can) ImGui::EndDisabled();
+}
+
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW

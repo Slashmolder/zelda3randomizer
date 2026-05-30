@@ -55,6 +55,10 @@ enum {
   // Unconditional enum entry (keymap table index stability); the handler in
   // main.c is gated by Z3R_NATIVE_SETTINGS_WINDOW and no-ops on Switch.
   kKeys_OpenSettings,
+  // Developer diagnostic dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line).
+  // Default F12; rebindable, and clearing the binding disables the hotkey. Also
+  // triggerable from the Debug tab button. Handler is in main.c.
+  kKeys_DumpDebugState,
   kKeys_Total,
 };
 

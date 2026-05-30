@@ -16,6 +16,12 @@ extern "C" {
 // inside the top-level "Game Settings" tab item.
 void GameConfig_RenderTab(void);
 
+// Draw the "Debug" tab — a live inventory/equipment/consumables editor that
+// writes Link's g_ram save block directly (no INI/Apply). Gated to in-game,
+// non-replay, non-emulator-attached. Called from rando_window.cpp inside the
+// top-level "Debug" tab item.
+void GameDebug_RenderTab(void);
+
 // Re-sync the working copy from the live g_config + keybind model. Call when the
 // window is (re)opened so the panels show current values.
 void GameConfig_NotifyWindowOpened(void);

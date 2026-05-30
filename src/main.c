@@ -1475,10 +1475,13 @@ int main(int argc, char** argv) {
           // Suppress HandleInput entirely — see comment above.
           break;
         }
-        if (event.key.keysym.sym == SDLK_F12 && !event.key.repeat) {
-          ZeldaDumpDebugState();  // dev diagnostic: dump g_ram + PPU + state line
+        // The debug-state dump (default F12, rebindable as kKeys_DumpDebugState)
+        // writes several files; ignore key auto-repeat so holding the key can't
+        // thrash the disk. The first (non-repeat) press flows through HandleInput
+        // -> HandleCommand -> kKeys_DumpDebugState like any other command.
+        if (event.key.repeat &&
+            FindCmdForSdlKey(event.key.keysym.sym, event.key.keysym.mod) == kKeys_DumpDebugState)
           break;
-        }
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, true);
         break;
       case SDL_KEYUP:
@@ -1849,6 +1852,11 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
       RandoWindow_ToggleConfig();
 #endif
+      break;
+    // Developer state dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line to
+    // the log). Available on all platforms (ZeldaDumpDebugState is core).
+    case kKeys_DumpDebugState:
+      ZeldaDumpDebugState();
       break;
     default: assert(0);
     }

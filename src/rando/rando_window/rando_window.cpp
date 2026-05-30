@@ -1108,6 +1108,13 @@ void RandoWindow_BeginFrame(void) {
         ImGui::EndTabItem();
       }
       s_select_general_once = false;
+
+      // Debug — live inventory/equipment editor (writes g_ram directly; gated to
+      // in-game, non-replay, non-emulator-attached).
+      if (ImGui::BeginTabItem("Debug")) {
+        GameDebug_RenderTab();
+        ImGui::EndTabItem();
+      }
       ImGui::EndTabBar();
     }
   }

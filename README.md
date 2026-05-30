@@ -269,6 +269,7 @@ Additionally, the following commands are available:
 | 1-9 | Load a dungeons playthrough snapshot |
 | Ctrl+1-9 | Run a dungeons playthrough in turbo mode |
 | ` (backquote) | Open the native game-settings window (PC; configurable as `OpenSettings`) |
+| F12 | Dump developer debug state — g_ram/VRAM/OAM/CGRAM + hint state + a log line (configurable as `DumpDebugState`; clear its binding to disable, or trigger it from the Debug tab) |
 
 ### Native game-settings window (PC)
 

@@ -68,6 +68,8 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   N, N, N, N, N, C(SDLK_i), C(SDLK_c), C(SDLK_m),
   // OpenSettings — backquote `` ` `` opens the native game-config window.
   _(SDLK_BACKQUOTE),
+  // DumpDebugState — F12 writes the developer state dump.
+  _(SDLK_F12),
 };
 #undef _
 #undef A
@@ -109,6 +111,8 @@ static const KeyNameId kKeyNameId[] = {
   S(RandoItemTrackerWindow), S(RandoCheckTrackerWindow), S(RandoMapTrackerWindow),
   // Native game-config window toggle (config mode). INI key "OpenSettings".
   S(OpenSettings),
+  // Developer state dump. INI key "DumpDebugState" (default F12).
+  S(DumpDebugState),
 };
 #undef S
 #undef M

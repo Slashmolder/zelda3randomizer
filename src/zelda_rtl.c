@@ -461,6 +461,13 @@ static StateRecorder state_recorder;
 
 bool ZeldaIsReplaying(void) { return state_recorder.replay_mode; }
 
+// True while the original ROM is attached for side-by-side RAM comparison
+// (g_emu_runframe is set only when ZeldaSetupEmuCallbacks ran). The native
+// debug/cheats editor uses this to hard-disable g_ram edits so a UI write the
+// emulated ROM never made can't diverge the comparator. Conservative: true
+// whenever the emulator is attached, even on frames the comparator skips.
+bool ZeldaIsEmulatorAttached(void) { return g_emu_runframe != NULL; }
+
 void StateRecorder_Init(StateRecorder *sr) {
   memset(sr, 0, sizeof(*sr));
 }
