@@ -505,11 +505,11 @@ static void Panel_Shuffles() {
       s->coupled = (dun || s->shuffle_cave_entrances) ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Shuffles 7 single-entrance dungeons (PoD, Swamp, Thieves' Town, "
-                "Ice Palace, Tower of Hera, Agahnim's Tower, Misery Mire) among "
-                "themselves; entering one's door loads another, coupled exit "
-                "returns you. Multi-entrance dungeons (Skull Woods, Desert), "
-                "Eastern Palace, Turtle Rock + Ganon's Tower come later.");
+    HelpTooltip("Shuffles 8 single-entrance dungeons (Eastern Palace, PoD, Swamp, "
+                "Thieves' Town, Ice Palace, Tower of Hera, Agahnim's Tower, Misery "
+                "Mire) among themselves; entering one's door loads another, coupled "
+                "exit returns you. Multi-entrance dungeons (Skull Woods, Desert, "
+                "Turtle Rock) + Ganon's Tower come later.");
     // Coupled is the only implemented mode for now; show it as a fixed
     // indicator rather than a live toggle so the widget never lies.
     ImGui::BeginDisabled(true);

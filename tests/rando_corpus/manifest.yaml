@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 39  # Phase C Stage 2 — Misery Mire added to dungeon pool (dungeon-shuffle digests change; default seeds byte-identical)
+generator_version: 40  # Phase C Stage 2 — Eastern Palace added to dungeon pool (dungeon-shuffle digests change; default seeds byte-identical)
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -345,13 +345,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE03"
     label: "c-entrance-dungeons-open-fast-ganon"
-    expected_digest: "7b4cf374324d88de7b97eb7e8868c617e1ca5247aefabdd3663b0ee6c465a8cb"
-    expected_sphere_digest: "a6fe68d8e55fa31009b21a5a8057195f8e5d6cfe920e9d9d71913b306bde627f"
+    expected_digest: "7754ceeab11352081172c776c9f3c6af59d65aa3f2e4a889fff1ce27c5f92481"
+    expected_sphere_digest: "f89bfc7f9f93bea96b453d5eb182d3283843229eee3efb2b1dd16d77f8fe0282"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE04"
     label: "c-entrance-both-open-fast-ganon"
-    expected_digest: "1b083e9513a029ce7a94931162cbc62f2d2e8635b2ea2e0dd1b32efe3495402d"
-    expected_sphere_digest: "262c7d2804229fc8d9b2c2e00e6117096893e54cb0ebb34f82d7a4d7114e0298"
+    expected_digest: "3c4b317eb6349fdc4db0e1d4bb2a7194786d99780999f091e866e4402f03eef1"
+    expected_sphere_digest: "247c0aedd3f3db73335fe72be31614758a4360bcbaef90e6f7bf6b38dccb2962"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

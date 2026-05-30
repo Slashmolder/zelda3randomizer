@@ -493,6 +493,18 @@ dungeons:
     entrance_ids: [0x24]
     region: LightWorld_NorthEast
     entry_region: HyruleCastleTower
+  - dungeon_id: eastern_palace
+    name: "Eastern Palace"
+    rooms: [0x0C9]
+    entrance_ids: [0x08]
+    region: LightWorld_NorthEast
+    entry_region: EasternPalace_Lobby
+    notes: >
+      Single overworld door. All EP locations bind to EasternPalace_Lobby (9) +
+      EasternPalace_PastArmos (10, child of 9), reached via the one door-edge
+      0x11->9. Region 8 ("EasternPalace") is an empty vestigial structural region
+      (no locations / no outbound edges), so the real entry region is the Lobby
+      (9) and EP fits the single-region model.
   - dungeon_id: misery_mire
     name: "Misery Mire"
     rooms: [0x098]
@@ -505,9 +517,8 @@ dungeons:
       override) — ALTTPR-consistent: MM's tablet is tapped at MM's overworld spot
       to open the door regardless of what's behind it.
 
-# Deferred (NOT shuffled yet):
-#  - eastern_palace: clean door (id 0x08 -> room 0xC9) but 2-region logic
-#    (EasternPalace_Lobby 0x09 + EasternPalace_PastArmos 0x0a).
+# Deferred (NOT shuffled yet) — each needs a mechanism beyond single-door/
+# single-entry-region (multi-entrance coordination or goal/crystal handling):
 #  - skull_woods: multi-entrance (front 0x28; secondaries 0x29/0x2A/0x2B + drop-ins).
 #  - desert_palace: multi-entrance (front 0x09; East 0x0A / West 0x0B / Boss 0x0C).
 #  - turtle_rock: multi-entrance (Main 0x35 + mountainface) + medallion + 2 sources.

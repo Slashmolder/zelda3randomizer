@@ -149,7 +149,7 @@ typedef struct RandoDungeon {
   uint8 entrance_id;              // overworld front-door entrance-id
 } RandoDungeon;
 
-#define kEntranceDungeonCount 7
+#define kEntranceDungeonCount 8
 static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   { "palace_of_darkness",   "PalaceOfDarkness",     0x04A, 0x26 },
   { "swamp_palace",         "SwampPalace",          0x028, 0x25 },
@@ -157,6 +157,12 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   { "ice_palace",           "IcePalace_Lobby",      0x00E, 0x2D },
   { "tower_of_hera",        "TowerOfHera_Lobby",    0x077, 0x33 },
   { "hyrule_castle_tower",  "HyruleCastleTower",    0x0E0, 0x24 },
+  // Eastern Palace — single overworld door (id 0x08 → room 0xC9). Its locations
+  // all live in EasternPalace_Lobby (9) + EasternPalace_PastArmos (10, child of
+  // 9), reached via the one door-edge 0x11→9. Region 8 ("EasternPalace") is an
+  // empty/vestigial structural region (no locations, no outbound edges), so EP's
+  // real entry region is the Lobby (9) and it fits the single-region model. The
+  // earlier "2-region defer" was based on the YAML name, not the actual binding.
   // Misery Mire — single overworld door (id 0x27 → room 0x98), single entry
   // region (MiseryMire_Entrance, one inbound edge 0x02→0x16). Its medallion gate
   // lives in that door-edge predicate, which the override keeps with the door —
@@ -164,6 +170,7 @@ static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   // what's behind the door). Turtle Rock / Ganon's Tower stay deferred (multi-
   // entrance + goal/crystal); Eastern Palace deferred (2 entry regions).
   { "misery_mire",          "MiseryMire_Entrance",  0x098, 0x27 },
+  { "eastern_palace",       "EasternPalace_Lobby",  0x0C9, 0x08 },
 };
 
 // ---------------------------------------------------------------------------
