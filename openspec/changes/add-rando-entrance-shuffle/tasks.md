@@ -196,22 +196,12 @@ discrete arrivals (verified: kExitData, kBirdTravel, ALTTPR StartingAreaExitTabl
 so a NEW per-cave-door arrival seed table (`kCaveExitData_*`) is required, populated
 by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
 
-- [x] D.1 **Logic one-way edges** (caves) — the net hole→exit-hole map is itself a
-      uniform permutation (π_out∘π_in), generated directly (`Entrance_ComputeDecoupledExit`,
-      distinct salt). `Entrance_ApplyDecoupledExitEdges` adds unconditional one-way
-      warps `region(hole i) → region(exit[i])` via `Rando_AddEntranceEdge`, composing
-      on top of any entry/dungeon/cross edge set (Begins only if none active —
-      `Rando_EntranceEdgeOverridesActive`). Entry locations still via the existing cave
-      override. Wired into BOTH generation paths (main.c corpus + rando_generate.c slot
-      — though the slot/runtime stays gated off until D.4). Self-check + corpus entry
-      `c-entrance-decoupled-caves-open-fast-ganon` (63 entries). HEADLESS-verified.
-- [x] D.2 **Generation: reject-and-retry SUFFICES for caves** — empirically 10/10 test
-      seeds generate fully-reachable within the 64-attempt cap (cave doors are dead-end
-      item rooms over a walkable overworld, so one-way cave warps rarely strand the
-      goal; the design's "random π_out almost never works" was overcautious for caves).
-      The full-reachability gate (§2.2a) backstops. Constrained-construction is only
-      needed if dungeon-decoupled (doors that gate whole regions) is added later — DEFER
-      until then. NOTE: decoupled normalizes off without cave shuffle (hash stability).
+- [ ] D.1 **Logic one-way edges** — π_out (interior→door) exit edges + the directed
+      reachability model (entry edge shared with coupled; exit edge unconditional).
+      `Rando_AddEntranceEdge` carries both. HEADLESS-testable (corpus). No asset.
+- [ ] D.2 **Constrained-construction generation** — assumed-fill over EXITS (random
+      π_out strands regions; reject-and-retry too sparse). Full-reachability gate
+      backstops. Deterministic in (seed, attempt). HEADLESS-testable. Algorithmic core.
 - [ ] D.3 **Cave-arrival asset + capture tool** — `kCaveExitData_*` (≈10 seed fields ×
       57 cave doors, shaped like kExitData), populated by a one-shot capture pass that
       drives the real overworld-load/entry-cache path per door; `extract`/`compile`/

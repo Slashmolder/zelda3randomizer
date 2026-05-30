@@ -108,31 +108,6 @@ void Entrance_BuildCrossOverlay(const uint8 *assign, int n, const uint8 *vanilla
 // cached exit for a cave-source door (so a cave→dungeon cross stays coupled).
 bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id);
 
-// --- Decoupled / per-endpoint ("Insanity", Stage 4) --------------------------
-// Decoupled splits entry from exit: entering cave-hole i loads an interior (the
-// existing π_in cave shuffle) but EXITING drops you at a DIFFERENT hole's
-// overworld spot. The net hole→exit-hole map is itself a uniform permutation
-// (π_out∘π_in), so we generate it directly. LOGIC ONLY in this build (D.1/D.2):
-// one-way overworld edges region(hole i) → region(net[i]); the runtime exit
-// redirect + cave-arrival asset (D.3/D.4) are not yet wired, so a decoupled
-// playable SLOT is not installable — only the headless --generate-seed/corpus
-// path exercises it. Caves only for now (dungeon decoupled deferred).
-//
-// Active iff decoupled + shuffle_cave_entrances on + Open/Standard. (cross is a
-// separate axis; decoupled composes on top of the cave entry shuffle.)
-bool Entrance_IsDecoupledActive(const RandoSettings *settings);
-// Net hole→exit-hole permutation for (seed, attempt) into `exit_assign` (length =
-// cave interior count). Distinct RNG salt from the entry/dungeon/cross pools.
-int Entrance_ComputeDecoupledExit(const RandoSettings *settings, uint64 seed,
-                                  uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]);
-// Add the per-seed one-way exit edges region(hole i) → region(exit_assign[i]) to
-// the logic graph (on top of any entry overrides). Unconditional (a cave has no
-// access gate beyond reaching its hole). Cleared by Entrance_ClearEdgeOverrides.
-void Entrance_ApplyDecoupledExitEdges(const uint8 *exit_assign, int n);
-// Spoiler: one-way "decoupled_exit" map (hole → exit hole).
-void Entrance_WriteDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);
-void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
-
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole
 // `  "entrance_mapping": [ ... ],` block (2-space indent, trailing comma) to

@@ -271,7 +271,6 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   Entrance_WriteSpoilerJson(f, s->entrance_assign, s->entrance_count);
   Entrance_WriteDungeonSpoilerJson(f, s->dungeon_assign, s->dungeon_count);
   Entrance_WriteCrossSpoilerJson(f, s->cross_assign, s->cross_count);
-  Entrance_WriteDecoupledSpoilerJson(f, s->decoupled_assign, s->decoupled_count);
 
   // -----------------------------------------------------------------------
   // sphere_data — emitted per `randomizer-core / Sphere semantics` when a
@@ -635,7 +634,6 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     Entrance_WriteSpoilerText(f, s->entrance_assign, s->entrance_count);
     Entrance_WriteDungeonSpoilerText(f, s->dungeon_assign, s->dungeon_count);
     Entrance_WriteCrossSpoilerText(f, s->cross_assign, s->cross_count);
-    Entrance_WriteDecoupledSpoilerText(f, s->decoupled_assign, s->decoupled_count);
     fprintf(f, "\n");
   }
 

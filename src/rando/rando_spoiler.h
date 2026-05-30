@@ -38,10 +38,6 @@ typedef struct RandoSpoiler {
   // cross-eligible dungeons in one pool). NULL/0 omits the section.
   const uint8 *cross_assign;
   int cross_count;
-  // Phase C Stage 4 (D.1/D.2) — the accepted DECOUPLED exit permutation (hole →
-  // emerge-hole). NULL/0 omits the section.
-  const uint8 *decoupled_assign;
-  int decoupled_count;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

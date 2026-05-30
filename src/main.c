@@ -543,14 +543,12 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   uint8 cave_assign[kEntranceMaxInteriors]; int cave_count = 0;
   uint8 dun_assign[kEntranceMaxInteriors]; int dun_count = 0;
   uint8 cross_assign[kEntranceMaxInteriors]; int cross_count = 0;
-  uint8 decoupled_assign[kEntranceMaxInteriors]; int decoupled_count = 0;
   bool cross_on = Entrance_IsCrossActive(&settings);
   bool cave_on = !cross_on && Entrance_IsActive(&settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(&settings);
-  bool decoupled_on = Entrance_IsDecoupledActive(&settings);  // Stage 4 D.1/D.2 (logic+gen)
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on) {
+  if (cross_on || cave_on || dun_on) {
     for (int att = 0; att < 64; att++) {
       if (cross_on) {
         cross_count = Entrance_ComputeCrossPermutation(&settings, seed_u64, (uint8)att, cross_assign);
@@ -564,10 +562,6 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
           dun_count = Entrance_ComputeDungeonPermutation(&settings, seed_u64, (uint8)att, dun_assign);
           Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
         }
-      }
-      if (decoupled_on) {
-        decoupled_count = Entrance_ComputeDecoupledExit(&settings, seed_u64, (uint8)att, decoupled_assign);
-        Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
       }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
@@ -650,8 +644,6 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.dungeon_count = dun_count;
   spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
   spoiler.cross_count = cross_count;
-  spoiler.decoupled_assign = (decoupled_count > 0) ? decoupled_assign : NULL;
-  spoiler.decoupled_count = decoupled_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

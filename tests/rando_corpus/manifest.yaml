@@ -376,16 +376,6 @@ entries:
     label: "c-entrance-cross-open-fast-ganon"
     expected_digest: "e1c402dccd56e5d666f7db7fc46c247cc24079cfa688091f80624da1b040d61e"
     expected_sphere_digest: "95fd7edf8e6a783b6b013932f172219dd55a568729608ca8b59769d3bbe2159b"
-  # Decoupled / "Insanity" (Stage 4 D.1/D.2): caves + decoupled one-way exit warps.
-  # LOGIC + GENERATION only (runtime exit redirect D.3/D.4 not yet wired, so this is
-  # a headless-only entry — no playable slot). Reject-and-retry with the full-
-  # reachability gate suffices for caves (10/10 test seeds generated); constrained
-  # construction (D.2) is only needed if dungeon-decoupled is added later.
-  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, decoupled: true }
-    seed: "0x00000000C0FFEE07"
-    label: "c-entrance-decoupled-caves-open-fast-ganon"
-    expected_digest: "c6f87874342a082b30f04c0f2c17b8e883f065d7c765b92c144ce8766342ac06"
-    expected_sphere_digest: "f6a1f62992a85599aa367c56a0b6ad4f8cbe7465c4bb693a1e9c65f59082b557"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
