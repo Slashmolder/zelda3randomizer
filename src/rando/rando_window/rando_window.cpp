@@ -38,6 +38,7 @@
 #include "rando_window.h"
 #include "rando_window_bridge.h"
 #include "tracker_windows.h"  // Trackers_SetShown/IsShown (Trackers launcher tab)
+#include "game_config_widgets.h"  // GameConfig_* (native game-config panels)
 // kFeatures0_* recommended-features bit constants (compile-time enums; no g_ram
 // access — this TU never invokes the enhanced_features0 macro that writes g_ram).
 #include "../../features.h"
@@ -65,6 +66,11 @@ static void RandoWindow_TabSelfCheck(void);
 static SDL_Window *s_settings_window = nullptr;
 static SDL_GLContext s_settings_gl = nullptr;
 static bool s_wants_shown = false;
+// One-shot tab selection on the next frame: Game Settings when opened in config
+// mode (RandoWindow_ToggleConfig), or the rando "General" tab when opened for a
+// new slot (RandoWindow_OpenForNewSlot). At most one is set at a time.
+static bool s_select_game_settings_once = false;
+static bool s_select_general_once = false;
 
 // Asset-warn "allow once" session bypass — mirrors select_file.c's
 // g_asset_warn_session_bypass. Set by the modal's "Allow once" choice, consumed
@@ -1024,7 +1030,23 @@ static void RandoWindow_TabSelfCheck(void) {
 }
 
 void RandoWindow_ProcessEvent(const void *sdl_event) {
-  ImGui_ImplSDL2_ProcessEvent((const SDL_Event *)sdl_event);
+  const SDL_Event *e = (const SDL_Event *)sdl_event;
+  // Keyboard binding capture intercepts the next non-modifier keydown while a
+  // rebind is armed (the settings window has focus, so this keydown carries its
+  // windowID). Escape cancels. Pure modifier keys are forwarded so ImGui's
+  // modifier state stays consistent and the user can build a modified binding.
+  if (GameConfig_WantsKeyCapture() && e->type == SDL_KEYDOWN) {
+    SDL_Keycode sym = e->key.keysym.sym;
+    if (sym == SDLK_ESCAPE) { GameConfig_CancelCapture(); return; }
+    if (sym == SDLK_LSHIFT || sym == SDLK_RSHIFT || sym == SDLK_LCTRL || sym == SDLK_RCTRL ||
+        sym == SDLK_LALT || sym == SDLK_RALT || sym == SDLK_LGUI || sym == SDLK_RGUI) {
+      ImGui_ImplSDL2_ProcessEvent(e);
+      return;
+    }
+    GameConfig_FeedCapturedKey((int)sym, (int)e->key.keysym.mod);
+    return;  // consume the terminating keydown (its keyup is forwarded normally)
+  }
+  ImGui_ImplSDL2_ProcessEvent(e);
 }
 
 void RandoWindow_BeginFrame(void) {
@@ -1046,24 +1068,48 @@ void RandoWindow_BeginFrame(void) {
     // race-mode Spoiler gate (§21.3) can be self-checked independently of render.
     const char *tabs[8];
     int ntabs = RandoWindow_BuildTabList(b->last_generated_race_mode, tabs, 8);
+    // Two top-level tabs: "Game Settings" (the native game-config panels) and
+    // "Randomizer" (all the rando panels nested under one tab, so the top level
+    // stays clean and symmetric). Game Settings is first so the config-mode open
+    // path (RandoWindow_ToggleConfig) defaults here; the kind-toggle entry opens
+    // straight to the Randomizer tab via s_select_general_once.
     if (ImGui::BeginTabBar("##z3r_tabs")) {
-      for (int i = 0; i < ntabs; i++) {
-        if (ImGui::BeginTabItem(tabs[i])) {
-          if (tabs[i] == kTab_General)            Panel_General();
-          else if (tabs[i] == kTab_Dungeons)      Panel_Dungeons();
-          else if (tabs[i] == kTab_Shuffles)      Panel_Shuffles();
-          else if (tabs[i] == kTab_QualityOfLife) Panel_RecommendedFeatures();
-          else if (tabs[i] == kTab_Trackers)      Panel_Trackers();
-          else if (tabs[i] == kTab_AssetHash)     Panel_AssetHash();
-          else if (tabs[i] == kTab_Spoiler)       Panel_Spoiler();
-          ImGui::EndTabItem();
-        }
+      ImGuiTabItemFlags gsflags = s_select_game_settings_once ? ImGuiTabItemFlags_SetSelected : 0;
+      if (ImGui::BeginTabItem("Game Settings", nullptr, gsflags)) {
+        GameConfig_RenderTab();
+        ImGui::EndTabItem();
       }
+      s_select_game_settings_once = false;
+
+      ImGuiTabItemFlags rflags = s_select_general_once ? ImGuiTabItemFlags_SetSelected : 0;
+      if (ImGui::BeginTabItem("Randomizer", nullptr, rflags)) {
+        if (ImGui::BeginTabBar("##rando_tabs")) {
+          for (int i = 0; i < ntabs; i++) {
+            ImGuiTabItemFlags tflags =
+                (s_select_general_once && tabs[i] == kTab_General) ? ImGuiTabItemFlags_SetSelected : 0;
+            if (ImGui::BeginTabItem(tabs[i], nullptr, tflags)) {
+              if (tabs[i] == kTab_General)            Panel_General();
+              else if (tabs[i] == kTab_Dungeons)      Panel_Dungeons();
+              else if (tabs[i] == kTab_Shuffles)      Panel_Shuffles();
+              else if (tabs[i] == kTab_QualityOfLife) Panel_RecommendedFeatures();
+              else if (tabs[i] == kTab_Trackers)      Panel_Trackers();
+              else if (tabs[i] == kTab_AssetHash)     Panel_AssetHash();
+              else if (tabs[i] == kTab_Spoiler)       Panel_Spoiler();
+              ImGui::EndTabItem();
+            }
+          }
+          ImGui::EndTabBar();
+        }
+        // Generate flow lives inside the Randomizer tab, below its sub-tabs, but
+        // only when a slot is targeted (the kind-toggle "New Randomizer" entry).
+        // In config-mode opens (target_slot_index < 0) it stays hidden.
+        if (b->target_slot_index >= 0)
+          RenderGenerateRow();
+        ImGui::EndTabItem();
+      }
+      s_select_general_once = false;
       ImGui::EndTabBar();
     }
-
-    // Generate flow lives below the tabs so it's always visible/actionable.
-    RenderGenerateRow();
   }
   ImGui::End();
 
@@ -1119,6 +1165,24 @@ void RandoWindow_OpenForNewSlot(int slot_index) {
   // overwrites this). Settings persist across opens; the seed does not.
   g_rando_window_bridge.seed_u64 = RollRandomSeed();
   RandoWindowBridge_RecomputeDerived();  // refresh share string for the new seed
+  s_select_general_once = true;  // open to the rando "General" tab, not Game Settings
+  if (s_settings_window) {
+    SDL_ShowWindow(s_settings_window);
+    SDL_RaiseWindow(s_settings_window);
+  }
+  s_wants_shown = true;
+}
+
+// Open (or close) the window in CONFIG mode — a pure game-settings surface with
+// no randomizer slot targeted (so the generate row is hidden). Toggles.
+void RandoWindow_ToggleConfig(void) {
+  if (s_wants_shown) { RandoWindow_Hide(); return; }
+  // Ensure no slot is targeted so the window is config-only (cancels a stale
+  // kind-toggle target left from a prior, hidden, rando open).
+  if (g_rando_window_bridge.target_slot_index >= 0)
+    RandoWindowBridge_CancelTarget();
+  GameConfig_NotifyWindowOpened();   // sync the panels to the live config
+  s_select_game_settings_once = true;
   if (s_settings_window) {
     SDL_ShowWindow(s_settings_window);
     SDL_RaiseWindow(s_settings_window);
@@ -1130,6 +1194,7 @@ void RandoWindow_Hide(void) {
   if (s_settings_window)
     SDL_HideWindow(s_settings_window);
   s_wants_shown = false;
+  GameConfig_CancelCapture();  // a hidden window can't complete a rebind capture
   // Closing the window cancels a not-yet-consumed generate request AND clears
   // the kind-toggle target, so the game-frame consumer cannot run a generate
   // against a cleared (-1) slot (audit BLOCKER — defense in depth with the

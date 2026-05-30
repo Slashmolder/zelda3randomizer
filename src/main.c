@@ -46,6 +46,7 @@
 #include "rando/rando_window/rando_window_bridge.h"   // RandoWindowBridge_Init
 #include "rando/rando_window/imgui_host.h"            // Z3RHost_* (multi-window host)
 #include "rando/rando_window/tracker_windows.h"       // Trackers_* (item/check/map windows)
+#include "rando/rando_window/game_config_widgets.h"   // GameConfig_* (native game-config panels)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
 #include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
@@ -183,6 +184,36 @@ void ChangeWindowScale(int scale_step) {
     SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   }
 }
+
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+// Absolute window/renderer hooks for the native game-config UI's live-apply
+// (Config_ApplyLive). Distinct from the relative ChangeWindowScale and the XOR
+// fullscreen toggle in HandleCommand_Locked — those are wrong for "set to X".
+int MainHost_SetWindowScale(int scale) {
+  if (scale < 1) scale = 1;
+  // ChangeWindowScale is a relative step that clamps to a screen-fit max; drive
+  // it to the target and report the achieved scale so the caller can persist the
+  // value actually honored (avoids re-clamping an unreachable scale each launch).
+  ChangeWindowScale(scale - (int)g_current_window_scale);
+  g_config.window_scale = g_current_window_scale;
+  return g_current_window_scale;
+}
+
+void MainHost_SetFullscreen(uint8 mode) {
+  if (mode == 1) {  // desktop fullscreen
+    g_win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    SDL_SetWindowFullscreen(g_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+  } else {          // windowed
+    g_win_flags &= ~SDL_WINDOW_FULLSCREEN_DESKTOP;
+    SDL_SetWindowFullscreen(g_window, 0);
+  }
+}
+
+void MainHost_SetNewRenderer(bool on) {
+  if (on) g_ppu_render_flags |= kPpuRenderFlags_NewRenderer;
+  else g_ppu_render_flags &= ~kPpuRenderFlags_NewRenderer;
+}
+#endif  // Z3R_NATIVE_SETTINGS_WINDOW
 
 #define RESIZE_BORDER 20
 static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, void *data) {
@@ -940,6 +971,8 @@ int main(int argc, char** argv) {
   // to guard cross-platform byte-identity (tasks.md §2.2).
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--rando-selftest") == 0) {
+      Config_SelfCheckKeymap();    // keybind-model <-> rebuilt-hash equivalence (game-config UI)
+      Config_SelfCheckIniWriter(); // in-place INI writer fidelity (game-config UI)
       Rando_RunAllSelfChecks();
       return 0;
     }
@@ -1337,6 +1370,16 @@ int main(int argc, char** argv) {
       case SDL_CONTROLLERBUTTONDOWN:
       case SDL_CONTROLLERBUTTONUP: {
         int b = RemapSdlButton(event.cbutton.button);
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+        // Gamepad binding capture: while a rebind is armed, the next button-down
+        // (with currently-held buttons as the combo) is consumed by the config UI
+        // instead of the game. g_gamepad_modifiers does not yet include this
+        // button (we intercept before HandleGamepadInput toggles it).
+        if (b >= 0 && event.type == SDL_CONTROLLERBUTTONDOWN && GameConfig_IsCapturingGamepad()) {
+          GameConfig_FeedCapturedButton(b, g_gamepad_modifiers);
+          break;
+        }
+#endif
         if (b >= 0)
           HandleGamepadInput(b, event.type == SDL_CONTROLLERBUTTONDOWN);
         break;
@@ -1488,6 +1531,14 @@ int main(int argc, char** argv) {
     SDL_UnlockMutex(g_audio_mutex);
 
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    // Game-config apply consumer: the settings UI raises a pending-apply flag;
+    // commit the working copy + rebuild the keymap + live-apply + write the INI
+    // here on the game thread (game GL context current). Runs BEFORE the generate
+    // consumer so a just-applied config is reflected if a generate follows.
+    if (GameConfig_HasPendingApply())
+      GameConfig_ApplyPending();
+    GameConfig_CaptureTick(SDL_GetTicks());  // time out a stuck rebind capture
+
     // Game-side generate consumer: when the settings window requested a generate,
     // run it synchronously on this (game) thread. Blocks the game frame for the
     // generation duration — expected; the UI shows an input-blocking modal.
@@ -1789,6 +1840,14 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
       Trackers_Toggle(j == kKeys_RandoItemTrackerWindow ? kTracker_Item
                       : j == kKeys_RandoCheckTrackerWindow ? kTracker_Check
                                                            : kTracker_Map);
+#endif
+      break;
+    // Native game-config window toggle (config mode). PC: open/hide the Z3R
+    // Settings window on its Game Settings tab. Switch: no window — no-op (the
+    // unconditional case label keeps the keymap index stable; cf. tracker keys).
+    case kKeys_OpenSettings:
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+      RandoWindow_ToggleConfig();
 #endif
       break;
     default: assert(0);

@@ -459,6 +459,8 @@ typedef struct StateRecorder {
 
 static StateRecorder state_recorder;
 
+bool ZeldaIsReplaying(void) { return state_recorder.replay_mode; }
+
 void StateRecorder_Init(StateRecorder *sr) {
   memset(sr, 0, sizeof(*sr));
 }

@@ -35,6 +35,7 @@ IMGUI_SRCS:=$(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgu
             $(IMGUI_DIR)/imgui_widgets.cpp $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp \
             $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp \
             src/rando/rando_window/rando_window.cpp \
+            src/rando/rando_window/game_config_panels.cpp \
             src/rando/rando_window/imgui_host.cpp \
             src/rando/rando_window/tracker_windows.cpp
 CPP_OBJS:=$(IMGUI_SRCS:%.cpp=%.o)

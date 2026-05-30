@@ -268,6 +268,16 @@ Additionally, the following commands are available:
 | Ctrl+F1-F10 | Replay the snapshot |
 | 1-9 | Load a dungeons playthrough snapshot |
 | Ctrl+1-9 | Run a dungeons playthrough in turbo mode |
+| ` (backquote) | Open the native game-settings window (PC; configurable as `OpenSettings`) |
+
+### Native game-settings window (PC)
+
+On Windows/Linux/macOS, press `` ` `` (backquote) — or whatever you bind `OpenSettings` to under `[KeyMap]` — to open the **Z3R Settings** window on its **Game Settings** tab. It configures the game without hand-editing `zelda3.ini`:
+
+- **Controls / Controller** — rebind any keyboard key or gamepad button. Click *Rebind*, then press the key/button (Esc cancels; the window must be focused for keyboard capture). Conflicts steal the binding from the previous owner with a notice.
+- **Video / Audio / Gameplay** — window scale, fullscreen, renderer, widescreen, audio device/MSU, and the `[Features]` gameplay toggles.
+
+Click **Apply** to save. Bindings and gameplay toggles take effect immediately; options marked *(restart)* (audio device, renderer, language, …) are written to the INI and take effect on the next launch. Apply rewrites only the keys it manages in your loaded INI (`zelda3.user.ini` if present, else `zelda3.ini`), preserving comments and everything else; a one-time `.bak` is made before the first rewrite.
 
 ### Randomizer keybindings
 

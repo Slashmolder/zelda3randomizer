@@ -30,6 +30,10 @@ void RandoWindow_ProcessEvent(const void *sdl_event);
 // Show + target the window for a new randomizer slot (kind-toggle entry on PC).
 void RandoWindow_OpenForNewSlot(int slot_index);
 
+// Toggle the window in CONFIG mode — a pure game-settings surface with no
+// randomizer slot targeted (generate row hidden). Bound to kKeys_OpenSettings.
+void RandoWindow_ToggleConfig(void);
+
 // Hide the settings window (settings-window close button / cancel). Clears any
 // pending kind-toggle target so a hidden window doesn't leave a slot waiting.
 void RandoWindow_Hide(void);
