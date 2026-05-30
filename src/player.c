@@ -3137,7 +3137,16 @@ do_mirror:
   if ((overworld_screen_index & 0x40) != last_light_vs_dark_world)
     num_memorized_tiles = 0;
 
-  link_player_handler_state = (link_item_moon_pearl || !(overworld_screen_index & 0x40)) ? kPlayerState_Ground : kPlayerState_PermaBunny;
+  // #82 Inverted: DecideIfBunnyByScreenIndex (z3randomizer bugfixes.asm).
+  // Vanilla becomes a bunny in the DARK world (overworld_screen_index & 0x40
+  // set) without the Moon Pearl; Inverted flips the home world, so the bunny
+  // state happens in the LIGHT world instead. Non-rando paths are byte-identical.
+  bool ow_away_world =
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+        ? !(overworld_screen_index & 0x40)
+        :  (overworld_screen_index & 0x40);
+  link_player_handler_state = (link_item_moon_pearl || !ow_away_world) ? kPlayerState_Ground : kPlayerState_PermaBunny;
 }
 
 void Link_PerformDesertPrayer() {  // 87aa6c
@@ -6449,7 +6458,15 @@ void Link_Initialize() {  // 87f13c
     // If you quit in the middle of red armos knight stomp the lumberjack tree will fall on its own
     bg1_y_offset = bg1_x_offset = 0;
       //bugfix: if you die in a dungeon as a permabunny and continue, you revert back to link
-      if (!link_item_moon_pearl && savegame_is_darkworld) {
+      // #82 Inverted: DecideIfBunny (z3randomizer bugfixes.asm). Bunny when in
+      // the away-world without the Moon Pearl; vanilla away-world = DW
+      // (savegame_is_darkworld set), Inverted away-world = LW (clear).
+      bool init_away_world =
+          ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+           Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+            ? !savegame_is_darkworld
+            :  (savegame_is_darkworld != 0);
+      if (!link_item_moon_pearl && init_away_world) {
         link_player_handler_state = kPlayerState_PermaBunny;
         link_is_bunny = 1;
         link_is_bunny_mirror = 1;

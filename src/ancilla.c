@@ -4264,7 +4264,15 @@ void Ancilla23_LinkPoof(int k) {  // 88d3bc
       if (!ancilla_step[k]) {
         link_animation_steps = 0;
         link_visibility_status = 0;
-        link_is_bunny = link_is_bunny_mirror = BYTE(overworld_screen_index) & 0x40 ? 1 : 0;
+        // #82 Inverted: DecideIfBunnyByScreenIndex (z3randomizer bugfixes.asm).
+        // The poof resolves bunny status from the screen's world bit. Vanilla:
+        // bunny in the DARK world (bit set); Inverted: bunny in the LIGHT world.
+        bool poof_away_world =
+            ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+             Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+              ? !(BYTE(overworld_screen_index) & 0x40)
+              :  (BYTE(overworld_screen_index) & 0x40);
+        link_is_bunny = link_is_bunny_mirror = poof_away_world ? 1 : 0;
         if (link_is_bunny)
           LoadGearPalettes_bunny();
         else

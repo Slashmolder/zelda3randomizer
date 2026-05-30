@@ -495,7 +495,15 @@ setsong:
   link_speed_setting = 0;
   draw_water_ripples_or_grass = 0;
   Dungeon_ResetTorchBackgroundAndPlayerInner();
-  if (!link_item_moon_pearl && savegame_is_darkworld) {
+  // #82 Inverted: DecideIfBunnyByScreenIndex (z3randomizer bugfixes.asm). On
+  // overworld load, bunny when in the away-world without the Moon Pearl. Vanilla
+  // away-world = DW (savegame_is_darkworld set); Inverted away-world = LW (clear).
+  bool ow_load_away_world =
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+        ? !savegame_is_darkworld
+        :  (savegame_is_darkworld != 0);
+  if (!link_item_moon_pearl && ow_load_away_world) {
     link_is_bunny = link_is_bunny_mirror = 1;
     link_player_handler_state = kPlayerState_PermaBunny;
     LoadGearPalettes_bunny();
@@ -3363,6 +3371,18 @@ after:
   if (lx < 0)
     return;
 
+  // #82 Inverted: PreventEnterOnBonk (z3randomizer entrances.asm:194). In
+  // Inverted, while in the mirror-warp state (kPlayerState_Mirror == 0x14) a bonk
+  // against the world boundary (overworld_screen_index & 0x40 ==
+  // last_light_vs_dark_world, i.e. NOT mid-cross) must NOT open/enter the
+  // overworld door under Link. Gated so vanilla / Open / Standard / Retro enter
+  // byte-identically.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */ &&
+      link_player_handler_state == kPlayerState_Mirror &&
+      (overworld_screen_index & 0x40) == last_light_vs_dark_world)
+    return;
+
   if (!follower_dropped && (link_pose_for_item == 1 || !CanEnterWithTagalong(kOverworld_Entrance_Id[lx] - 1))) {
     if (!big_key_door_message_triggered) {
       big_key_door_message_triggered = 1;
@@ -3801,6 +3821,17 @@ uint16 Overworld_FindMap16VRAMAddress(uint16 addr) {  // 9bca69
 }
 
 void Overworld_AnimateEntrance() {  // 9bcac4
+  // #82 Inverted: AnimatedEntranceFix (z3randomizer entrances.asm:215). In
+  // Inverted, when in the LIGHT world (overworld_screen_index & 0x40 == 0) the
+  // overworld entrance-open animation is suppressed and the cutscene trigger is
+  // cleared (the inverted LW topology has no animated entrances to play). Gated
+  // so vanilla / Open / Standard / Retro run the animation byte-identically.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */ &&
+      !(overworld_screen_index & 0x40)) {
+    trigger_special_entrance = 0;
+    return;
+  }
   uint8 j = trigger_special_entrance;
   flag_is_link_immobilized = j;
   flag_unk1 = j;
