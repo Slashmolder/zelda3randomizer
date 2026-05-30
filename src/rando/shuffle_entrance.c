@@ -591,6 +591,20 @@ bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id) {
   return interior_of_entrance(vanilla_entrance_id) >= 0;
 }
 
+// Public: cave interior index that entrance-id `ent_id` belongs to, or -1.
+// Used by the decoupled runtime (D.4) to key the arrival table by interior.
+int Entrance_InteriorOfEntranceId(uint8 ent_id) {
+  return interior_of_entrance(ent_id);
+}
+
+// Public: the representative (first) entrance-id of cave interior `interior`,
+// or 0 if out of range. The decoupled exit replays this door's arrival, and
+// uses its kEntranceData_rooms/doorSettings for the Y-adjust (spike iter4).
+uint8 Entrance_CaveRepresentativeId(int interior) {
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return 0;
+  return kCaveInteriors[interior].entrance_ids[0];
+}
+
 // ---------------------------------------------------------------------------
 // Decoupled / per-endpoint ("Insanity", Stage 4 — D.1/D.2: logic + generation)
 // ---------------------------------------------------------------------------

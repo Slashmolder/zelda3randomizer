@@ -298,6 +298,16 @@ uint16 Rando_EntranceCoupledExitRoom(uint16 lx);
 extern uint8 g_rando_entrance_force_cached;
 bool Rando_EntranceForceCachedExit(uint16 lx);
 
+// Decoupled / Insanity (Stage 4, D.4) runtime hooks. SetEnteredDoor: at the
+// overworld entry hook, record the entered cave door. CaptureArrival: after
+// Dungeon_LoadEntrance caches *_exit, snapshot that door's overworld arrival.
+// ReplaceArrival: at the cave-class exit (before LoadCachedEntranceProperties),
+// swap in net[entered]'s captured arrival so Link emerges at a DIFFERENT door;
+// returns false (→ coupled return) when inactive / target uncaptured.
+void Rando_DecoupledSetEnteredDoor(uint16 lx);
+void Rando_DecoupledCaptureArrival(void);
+bool Rando_DecoupledReplaceArrival(void);
+
 // If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE
 // take-any this seed (rando active + Retro + its slot-0 LOC is in the placement
 // table), return its host-room entrance (0x58/0x60/0x46). Else 0.

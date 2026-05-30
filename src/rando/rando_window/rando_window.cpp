@@ -518,11 +518,15 @@ static void Panel_Shuffles() {
                 "to a dungeon interior and vice versa, coupled. The generator "
                 "rerolls until every location is reachable.");
     ImGui::SameLine();
-    ImGui::BeginDisabled(true);
-    ImGui::SmallButton("Insanity");
-    ImGui::EndDisabled();
-    HelpTooltip("Insanity (decoupled — enter A, exit somewhere else) needs the "
-                "decoupled engine, coming in the next stage.");
+    if (ImGui::SmallButton("Insanity")) {
+      // Caves-only decoupled (D.4): enter a cave door, exit somewhere else.
+      // Dungeon-decoupled is not built yet, so this preset shuffles caves only.
+      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 0;
+      s->coupled = 0; s->cross_category = 0; s->decoupled = 1; changed = true;
+    }
+    HelpTooltip("Decoupled cave doors — enter a cave, exit from a DIFFERENT cave's "
+                "door (one-way warps). Caves only for now (dungeon-decoupled is "
+                "deferred). The generator keeps every location reachable.");
 
     bool cave = s->shuffle_cave_entrances != 0;
     if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
@@ -570,14 +574,28 @@ static void Panel_Shuffles() {
                 "Requires cave and/or dungeon shuffle on. The generator rerolls "
                 "the permutation until every location is reachable, so a seed is "
                 "never shipped with a stranded item.");
-    // Coupled is the only implemented mode for now; show it as a fixed
-    // indicator rather than a live toggle so the widget never lies.
+    // Decoupled (Insanity, D.4): caves only — needs cave shuffle on. Mutually
+    // exclusive with coupled (apply_derived_rules clears coupled when decoupled).
+    ImGui::BeginDisabled(!s->shuffle_cave_entrances);
+    bool decoupled = s->decoupled != 0;
+    if (ImGui::Checkbox("Decoupled cave doors (Insanity) — one-way exits", &decoupled)) {
+      s->decoupled = decoupled;
+      if (decoupled) s->coupled = 0;
+      else s->coupled = (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances) ? 1 : 0;
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    HelpTooltip("Exiting a cave drops you at a DIFFERENT cave's overworld door "
+                "(one-way warps), not the one you entered. Caves only for now. "
+                "First visit to each cave records its exit spot; the generator "
+                "keeps the goal reachable.");
+    // Coupled indicator — derived (off when Decoupled is on).
     ImGui::BeginDisabled(true);
-    bool coupled_show = true;
+    bool coupled_show = (s->decoupled == 0);
     ImGui::Checkbox("Coupled (enter A -> exit A)", &coupled_show);
     ImGui::EndDisabled();
-    HelpTooltip("Always on in this version. Decoupled (Insanity) entrance mode "
-                "is coming in the next stage.");
+    HelpTooltip("Enter A -> exit A. Automatically off when Decoupled (Insanity) "
+                "is enabled.");
     ImGui::EndDisabled();
     if (!ws_ok) {
       ImGui::TextDisabled("Entrance shuffle is Open/Standard only for now.");

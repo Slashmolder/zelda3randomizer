@@ -132,6 +132,10 @@ void Entrance_ApplyDecoupledExitEdges(const uint8 *exit_assign, int n);
 // Spoiler: one-way "decoupled_exit" map (hole → exit hole).
 void Entrance_WriteDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);
 void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
+// D.4 runtime helpers: map an entrance-id → cave interior, and a cave interior's
+// representative entrance-id (for the decoupled arrival-table keying + replay).
+int Entrance_InteriorOfEntranceId(uint8 ent_id);
+uint8 Entrance_CaveRepresentativeId(int interior);
 
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole

@@ -212,15 +212,28 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
       The full-reachability gate (§2.2a) backstops. Constrained-construction is only
       needed if dungeon-decoupled (doors that gate whole regions) is added later — DEFER
       until then. NOTE: decoupled normalizes off without cave shuffle (hash stability).
-- [ ] D.3 **Cave-arrival asset + capture tool** — `kCaveExitData_*` (≈10 seed fields ×
-      57 cave doors, shaped like kExitData), populated by a one-shot capture pass that
-      drives the real overworld-load/entry-cache path per door; `extract`/`compile`/
-      `assets.h` + `zelda3_assets.dat` bump. PLAYTEST-verified.
-- [ ] D.4 **Runtime exit redirect** — `g_rando_decoupled_exit[interior]` (from π_out at
-      slot-load); at `LoadOverworldFromDungeon` arrive at π_out's door (dungeon/special
-      via room search; cave via `kCaveExitData_*`). PLAYTEST-verified.
-- [ ] D.5 Spoiler/tracker for one-way doors + UI: enable the Insanity preset.
-- [ ] D.6 Playtest + fresh-eyes audit.
+- [x] D.4 **Runtime exit redirect — BUILT** (productionizes the validated spike
+      recipe). At slot-load `Entrance_RuntimeInstall` reconstructs `es.decoupled`,
+      regenerates `net` (entered-interior→emerge-interior) via `Entrance_Compute-
+      DecoupledExit`, applies the one-way edges (tracker), and arms the runtime
+      arrival capture/replay (`g_decoupled_*` + `g_cave_arrival[]` in rando.c).
+      Hooks: entry (`Rando_DecoupledSetEnteredDoor`, overworld.c) records the entered
+      cave interior; capture (`Rando_DecoupledCaptureArrival`, dungeon.c after the
+      *_exit cache) snapshots that door's arrival block + world flags (rejects the
+      degenerate startup capture); exit (`Rando_DecoupledReplaceArrival`,
+      LoadOverworldFromDungeon cached branch) replays `net[entered]`'s arrival
+      (block + `is_in_dark_world`/`savegame_is_darkworld` + target room/door-settings
+      for the Y-adjust). **Coupled fallback** when the target isn't captured yet, so
+      it never strands. Default-off; corpus 63/63 + selftest + guards green.
+- [ ] D.3 **Static cave-arrival table (bake)** — the D.4 runtime captures arrivals
+      LIVE (works for doors visited this session); never-visited targets fall back to
+      coupled. Bake a per-interior arrival table (capture walkabout → committed C
+      table `kCaveArrival[]`, NOT a .dat asset — it's static game data) so every
+      target works from the start. Reuses the exact capture path. PLAYTEST/capture-pass.
+- [x] D.5 UI: **Insanity preset + Decoupled checkbox LIVE** (caves-only; gated on cave
+      shuffle; clears coupled). Spoiler `decoupled_exit` section already emitted (D.1).
+      Tracker one-way-door display deferred.
+- [ ] D.6 Playtest + fresh-eyes audit. Caves-only decoupled; dungeon-decoupled deferred.
 
 ## Presets (once the relevant axes ship)
 

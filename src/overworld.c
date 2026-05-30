@@ -1829,6 +1829,11 @@ void LoadOverworldFromDungeon() {  // 82e4a3
 
   if (force_cached ||
       (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100)) {
+    // Decoupled (D.4): on a cave-class exit, replay net[entered]'s captured
+    // arrival so Link emerges at a DIFFERENT door (it overwrites the live *_exit
+    // block + world flags + target room/door-settings). No-op / coupled return
+    // when decoupled is inactive or the target hasn't been captured this session.
+    Rando_DecoupledReplaceArrival();
     LoadCachedEntranceProperties();
   } else {
 
@@ -3451,6 +3456,9 @@ after:
       // (search-exit class) but must return to the cave — force the cached exit.
       if (g_rando_entrance_exit_room == 0)
         g_rando_entrance_force_cached = Rando_EntranceForceCachedExit((uint16)lx) ? 1 : 0;
+      // Decoupled (D.4): remember which cave interior this door belongs to so the
+      // exit can emerge at net[interior]'s door. No-op unless decoupled is active.
+      Rando_DecoupledSetEnteredDoor((uint16)lx);
     }
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;
