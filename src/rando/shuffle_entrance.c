@@ -592,6 +592,80 @@ bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id) {
 }
 
 // ---------------------------------------------------------------------------
+// Decoupled / per-endpoint ("Insanity", Stage 4 — D.1/D.2: logic + generation)
+// ---------------------------------------------------------------------------
+bool Entrance_IsDecoupledActive(const RandoSettings *settings) {
+  if (settings == NULL || !settings->decoupled) return false;
+  // Decoupled composes on top of the cave ENTRY shuffle; caves only for now
+  // (dungeon decoupled deferred). Open/Standard like the rest.
+  if (!settings->shuffle_cave_entrances) return false;
+  return settings->world_state == kWorldState_Open ||
+         settings->world_state == kWorldState_Standard;
+}
+
+int Entrance_ComputeDecoupledExit(const RandoSettings *settings, uint64 seed,
+                                  uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]) {
+  if (exit_assign == NULL || !Entrance_IsDecoupledActive(settings)) return 0;
+  const int n = kEntranceCaveInteriorCount;
+  for (int i = 0; i < n; i++) exit_assign[i] = (uint8)i;
+  RandoRng rng;
+  // Distinct salt from cave entry (none), dungeon (0xD0D0…) and cross (0xC2055…)
+  // so the exit permutation is independent of the entry permutation in (seed,attempt).
+  Rng_SeedFromU64(&rng, (seed ^ 0xE5117E5117E5117Eull) ^
+                            ((uint64)attempt * 0x9E3779B97F4A7C15ull));
+  for (int i = n - 1; i > 0; i--) {
+    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
+    uint8 t = exit_assign[i]; exit_assign[i] = exit_assign[j]; exit_assign[j] = t;
+  }
+  return n;
+}
+
+void Entrance_ApplyDecoupledExitEdges(const uint8 *exit_assign, int n) {
+  if (exit_assign == NULL) return;
+  if (n > kEntranceCaveInteriorCount) n = kEntranceCaveInteriorCount;
+  // Add the one-way warps ON TOP of any entry/dungeon/cross edge set. Only Begin
+  // (which would wipe those) if no edge pass ran this attempt.
+  if (!Rando_EntranceEdgeOverridesActive()) Rando_BeginEntranceEdgeOverrides();
+  for (int i = 0; i < n; i++) {
+    int j = exit_assign[i];
+    if (j < 0 || j >= kEntranceCaveInteriorCount) continue;
+    if (j == i) continue;  // fixed point = coupled-equivalent self-loop (no new reach)
+    uint16 from_r = Rando_FindRegionByName(kCaveInteriors[i].region_name);
+    uint16 to_r   = Rando_FindRegionByName(kCaveInteriors[j].region_name);
+    if (from_r == 0xFFFF || to_r == 0xFFFF || from_r == to_r) continue;
+    // Unconditional: a cave has no access gate beyond reaching its hole, and you
+    // can always walk back out. pred_len 0 ⇒ walked unconditionally.
+    Rando_AddEntranceEdge(from_r, to_r, 0, 0);
+  }
+}
+
+void Entrance_WriteDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || exit_assign == NULL || n <= 0) return;
+  fprintf(f, "  \"decoupled_exit\": [\n");
+  for (int i = 0; i < n && i < kEntranceCaveInteriorCount; i++) {
+    int j = exit_assign[i];
+    if (j < 0 || j >= kEntranceCaveInteriorCount) j = i;
+    fprintf(f, "    {\"hole\": \"%s\", \"exits_to\": \"%s\"}%s\n",
+            kCaveInteriors[i].name, kCaveInteriors[j].name,
+            (i + 1 < n && i + 1 < kEntranceCaveInteriorCount) ? "," : "");
+  }
+  fprintf(f, "  ],\n");
+}
+
+void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || exit_assign == NULL || n <= 0) return;
+  fprintf(f, "\nDecoupled exits (enter hole -> emerge at):\n");
+  for (int i = 0; i < n && i < kEntranceCaveInteriorCount; i++) {
+    int j = exit_assign[i];
+    if (j < 0 || j >= kEntranceCaveInteriorCount) j = i;
+    if (j == i) continue;
+    fprintf(f, "  %s -> %s\n", kCaveInteriors[i].name, kCaveInteriors[j].name);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Spoiler emission
 // ---------------------------------------------------------------------------
 void Entrance_WriteSpoilerJson(void *file, const uint8 *assign, int n) {
@@ -1048,6 +1122,52 @@ void Entrance_SelfCheck(void) {
       fprintf(stderr, "Entrance_SelfCheck: dungeon source-exit-room helper wrong\n");
       exit(2);
     }
+  }
+
+  // (9) DECOUPLED (Stage 4 D.1): exit permutation is a bijection over cave holes,
+  //     deterministic in (seed, attempt), inactive ⇒ empty, and the exit edges add
+  //     only valid region→region warps (skipping fixed points / same-region).
+  {
+    RandoSettings ds = s;  // s already has shuffle_cave_entrances + Open
+    ds.decoupled = 1;
+    if (!Entrance_IsDecoupledActive(&ds)) {
+      fprintf(stderr, "Entrance_SelfCheck: decoupled should be active for cave+Open\n");
+      exit(2);
+    }
+    uint8 ea[kEntranceMaxInteriors], eb[kEntranceMaxInteriors];
+    int en = Entrance_ComputeDecoupledExit(&ds, 0xDEC0, 0, ea);
+    if (en != kEntranceCaveInteriorCount) {
+      fprintf(stderr, "Entrance_SelfCheck: decoupled count %d != %d\n",
+              en, kEntranceCaveInteriorCount);
+      exit(2);
+    }
+    Entrance_ComputeDecoupledExit(&ds, 0xDEC0, 0, eb);
+    if (memcmp(ea, eb, en) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: decoupled exit not deterministic\n");
+      exit(2);
+    }
+    uint8 eseen[kEntranceMaxInteriors]; memset(eseen, 0, sizeof(eseen));
+    for (int i = 0; i < en; i++) {
+      if (ea[i] >= en || eseen[ea[i]]) {
+        fprintf(stderr, "Entrance_SelfCheck: decoupled exit not a bijection\n");
+        exit(2);
+      }
+      eseen[ea[i]] = 1;
+    }
+    // Inactive (no cave shuffle) ⇒ no permutation.
+    RandoSettings dn = s; dn.decoupled = 1; dn.shuffle_cave_entrances = 0;
+    uint8 e0[kEntranceMaxInteriors];
+    if (Entrance_IsDecoupledActive(&dn) ||
+        Entrance_ComputeDecoupledExit(&dn, 1, 0, e0) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: decoupled must be inactive without cave shuffle\n");
+      exit(2);
+    }
+    // Apply the exit edges over a clean graph; must activate edge overrides and
+    // not crash. (We can't easily assert the added-edge count via a getter, but
+    // ApplyDecoupledExitEdges Begins overrides when none are active.)
+    Entrance_ClearEdgeOverrides();
+    Entrance_ApplyDecoupledExitEdges(ea, en);
+    Entrance_ClearEdgeOverrides();
   }
 
   fprintf(stderr, "[Entrance_SelfCheck] OK\n");

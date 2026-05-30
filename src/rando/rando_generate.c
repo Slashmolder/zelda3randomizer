@@ -185,13 +185,19 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   int dun_count = 0;
   uint8 cross_assign[kEntranceMaxInteriors];
   int cross_count = 0;
+  uint8 decoupled_assign[kEntranceMaxInteriors];
+  int decoupled_count = 0;
   bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
   bool cave_on = !cross_on && Entrance_IsActive(settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
+  // Decoupled ("Insanity", D.1/D.2 — LOGIC + GENERATION only; runtime exit redirect
+  // D.3/D.4 not yet wired, so this is exercised only by --generate-seed/corpus, not a
+  // playable slot). Adds one-way exit warps on top of the cave entry shuffle.
+  bool decoupled_on = Entrance_IsDecoupledActive(settings);
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
   Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on) {
+  if (cross_on || cave_on || dun_on || decoupled_on) {
     uint8 canon[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(settings, canon);
     entrance_axes = canon[25];  // == the packed entrance-axis byte
@@ -209,6 +215,13 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
           dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, dun_assign);
           Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
         }
+      }
+      // Decoupled exit warps compose on top of whichever entry pass ran (D.1).
+      // ApplyDecoupledExitEdges begins edge overrides itself only if no edge pass
+      // ran this attempt, so it never wipes the dungeon/cross edge set.
+      if (decoupled_on) {
+        decoupled_count = Entrance_ComputeDecoupledExit(settings, seed_u64, (uint8)att, decoupled_assign);
+        Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
       }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
@@ -305,6 +318,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.dungeon_count = dun_count;
     spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
     spoiler.cross_count = cross_count;
+    spoiler.decoupled_assign = (decoupled_count > 0) ? decoupled_assign : NULL;
+    spoiler.decoupled_count = decoupled_count;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {
