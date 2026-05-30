@@ -52,7 +52,10 @@ SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/
 # `cd src/platform/switch && python ../../../assets/rando_logic_gen.py && make`.
 RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
 
-$(RANDO_CODEGEN_OUTPUTS): $(wildcard $(SRC_DIR)/../assets/rando/*.yaml) $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
+# Recurse into assets/rando/ so logic_parts/**/*.yaml (incl. inverted/**) are
+# prerequisites — a non-recursive *.yaml glob misses the subtree and would ship
+# a stale logic_data.c when only a logic_parts file changed.
+$(RANDO_CODEGEN_OUTPUTS): $(shell find $(SRC_DIR)/../assets/rando -name '*.yaml') $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
 	@echo "Regenerating rando codegen for Switch build"
 	python $(SRC_DIR)/../assets/rando_logic_gen.py
 

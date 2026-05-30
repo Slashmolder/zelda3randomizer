@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 37  # Phase B Slice 3b — Retro TakeAny (bump_rando_corpus.py --apply)
+generator_version: 38  # bump_rando_corpus.py --apply - Inverted Ganon (loc 212) region override
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the

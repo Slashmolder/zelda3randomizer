@@ -92,6 +92,48 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
+    # --- Codegen INPUT-recursion guard ----------------------------------------
+    # The logic graph is assembled from assets/rando/logic_parts/**/*.yaml (incl.
+    # logic_parts/inverted/**). If a build system declares its codegen
+    # prerequisites with a NON-recursive `assets/rando/*.yaml` glob only, editing
+    # a logic_parts file will NOT retrigger codegen on an incremental build — it
+    # silently ships a stale logic_data.c. (Fixed once; this guards the regress.)
+    # A build system passes if it covers the subtree either literally
+    # ("logic_parts") or via a recursive `find assets/rando` over all yaml.
+    if Path("assets/rando/logic_parts").is_dir():
+        import re
+        recursive_find = re.compile(r"find\s+\S*assets[\\/]rando\b")
+
+        def strip_comments(path: Path, text: str) -> str:
+            # Inspect build *code*, not prose — a comment mentioning "logic_parts"
+            # must not mask a non-recursive glob in the actual recipe.
+            if path.suffix == ".vcxproj":
+                return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+            # Makefiles (incl. the Switch Makefile, no suffix): drop #-comment lines.
+            return "\n".join(l for l in text.splitlines()
+                             if not l.lstrip().startswith("#"))
+
+        not_recursive = []
+        for bs in BUILD_SYSTEM_FILES:
+            if not bs.exists():
+                continue
+            text = strip_comments(bs, bs.read_text(encoding="utf-8", errors="replace"))
+            if "logic_parts" in text or recursive_find.search(text):
+                continue
+            not_recursive.append(bs)
+        if not_recursive:
+            for bs in not_recursive:
+                print(f"check_codegen_wiring: {bs} does not declare the "
+                      f"logic_parts/** subtree as a codegen prerequisite.")
+            print(
+                "\nThe rando codegen reads assets/rando/logic_parts/**/*.yaml, but the\n"
+                "above build system(s) wire codegen against a non-recursive glob, so a\n"
+                "logic_parts edit won't retrigger codegen (stale logic_data.c).\n"
+                "Use a recursive form: `$(shell find assets/rando -name '*.yaml')` for\n"
+                "make, or `assets\\rando\\logic_parts\\**\\*.yaml` in the vcxproj Inputs."
+            )
+            return 1
+
     if not args.quiet:
         present = [f for f in EXPECTED_GENERATED if Path(f).exists()]
         print(f"check_codegen_wiring: {len(present)} generated file(s) wired across all build systems.")

@@ -50,6 +50,27 @@ def current_generator_version() -> int:
     return int(match.group(1))
 
 
+def version_line(version: int, note: str = "") -> str:
+    """Render the generator_version line with a provenance comment.
+
+    The comment is REGENERATED from facts on every bump rather than preserved,
+    so it can never go stale (a prior bug left a "Phase B Slice 3b — Retro TakeAny"
+    comment on an unrelated later bump). The bump's rationale belongs in the git
+    commit + the kGeneratorVersion comment in src/rando/rando.h; the manifest
+    comment just records that this field is tool-managed. `--note` appends context.
+    """
+    comment = "bump_rando_corpus.py --apply"
+    if note:
+        comment += f" - {note}"  # ASCII separator — the manifest is hand-editable; avoid non-ASCII
+    return f"generator_version: {version}  # {comment}"
+
+
+# Matches the whole generator_version line (incl. any trailing comment) so the
+# comment is rewritten, not preserved. The capture-free [^\n]* consumes the
+# stale comment that the old `^generator_version:\s*(?:\d+|null)`-only sub left behind.
+VERSION_LINE_RE = re.compile(r"^generator_version:[^\n]*", re.MULTILINE)
+
+
 def manifest_version(manifest_text: str) -> int | None:
     """Parse generator_version from the YAML manifest (very simple parser)."""
     match = re.search(r"^generator_version:\s*(\d+|null)\s*(?:#.*)?$",
@@ -114,6 +135,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--binary", type=Path, default=BINARY,
                         help="Path to the zelda3 binary (default: ./zelda3)")
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
+    parser.add_argument("--note", default="",
+                        help="Short reason appended to the regenerated "
+                             "generator_version provenance comment "
+                             "(e.g. --note 'Inverted Ganon override').")
     args = parser.parse_args(argv)
 
     if not args.manifest.exists():
@@ -148,9 +173,8 @@ def main(argv: list[str]) -> int:
     if not entries:
         # Version mismatch but no entries to regenerate. Just bump the manifest version.
         if args.apply:
-            new_text = re.sub(r"^generator_version:\s*(?:\d+|null)",
-                              f"generator_version: {current}",
-                              text, count=1, flags=re.MULTILINE)
+            new_text = VERSION_LINE_RE.sub(
+                lambda m: version_line(current, args.note), text, count=1)
             args.manifest.write_text(new_text, encoding="utf-8")
             print(f"\nWrote generator_version: {current} to {args.manifest}")
         else:
@@ -187,11 +211,11 @@ def main(argv: list[str]) -> int:
             entry["expected_sphere_digest"] = new_sphere
 
     if args.apply:
-        # Update generator_version + serialize back. Simple text-replace for the
-        # version line; entries are updated in place to preserve comments.
-        new_text = re.sub(r"^generator_version:\s*(?:\d+|null)",
-                          f"generator_version: {current}",
-                          text, count=1, flags=re.MULTILINE)
+        # Update generator_version + serialize back. The version line's comment is
+        # regenerated (never preserved → never stale); entry digests are updated
+        # in place below, which DOES preserve their surrounding comments/layout.
+        new_text = VERSION_LINE_RE.sub(
+            lambda m: version_line(current, args.note), text, count=1)
         # In-place digest update preserves the manifest's comments + layout.
         # We match each entry by its label and replace its expected_digest.
         for (idx, label, old_d, new_d) in changed:

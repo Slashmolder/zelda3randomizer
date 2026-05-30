@@ -63,7 +63,12 @@ OBJS:=$(sort $(SRCS:%.c=%.o))
 # referenced by code via #include directives. assets/chest_data.py supplies
 # the generated chest table + ALTTPR chest-name snapshot consumed
 # by chest_lookup.h emission (§6.3).
-RANDO_GEN_SRCS:=$(wildcard assets/rando/*.yaml) assets/rando_logic_gen.py assets/chest_data.py
+# NOTE: recurse into assets/rando/ — the logic graph is assembled from
+# logic.yaml + macros.yaml + every logic_parts/**/*.yaml (incl. logic_parts/inverted/**).
+# A non-recursive `$(wildcard assets/rando/*.yaml)` misses the logic_parts/ subtree,
+# so editing a logic_parts file would NOT retrigger codegen on an incremental build
+# (stale logic_data.c → silent logic regression). `find` recurses portably.
+RANDO_GEN_SRCS:=$(shell find assets/rando -name '*.yaml') assets/rando_logic_gen.py assets/chest_data.py
 RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
 
 ifeq (${OS},Windows_NT)
