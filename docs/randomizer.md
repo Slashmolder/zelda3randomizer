@@ -470,7 +470,7 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed/Insanity as presets. **Stage 1 (coupled cave shuffle, Open/Standard) implemented** — engine + per-seed region overrides + door overlay + save-regen + spoiler `entrance_mapping` + native-window toggle; awaiting playtest. Stages 2–4 (dungeons / crossed / decoupled) staged. `RegionRemap` scaffold retired (was dead code). | Stage 1 (playtest-pending) |
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed/Insanity as presets. **Stage 1 (coupled cave shuffle) + Stage 2 (dungeon shuffle, 6 single-entrance dungeons) implemented**, Open/Standard — engine + per-seed region overrides (caves) + edge overlay (dungeons) + door overlay + coupled exit + save-regen + spoiler + native-window toggles; awaiting playtest. Stages 2b (multi-entrance/medallion dungeons), 3 (crossed), 4 (decoupled) staged. `RegionRemap` scaffold retired (was dead code). | Stages 1–2 (playtest-pending) |
 
 ### Phase D
 

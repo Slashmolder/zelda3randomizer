@@ -250,4 +250,13 @@ the documented fallback is a source-door exit override (deferred, not built blin
    regenerated π); exit still returns to source door.
 5. Completability: reach the goal on a shuffled seed; the spoiler `entrance_mapping`
    should match the doors you actually walk through.
-6. Stage 2 (future): EP↔PoD swap — enter EP's door → PoD interior; prize still PoD's.
+6. **Stage 2 dungeons** (`shuffle_dungeon_entrances=true`, Open/Standard): the 6
+   single-entrance dungeons (PoD, Swamp, Thieves' Town, Ice Palace, Tower of Hera,
+   Agahnim's Tower) shuffle among themselves. Enter one's overworld door → a
+   DIFFERENT dungeon loads (spoiler `dungeon_entrance_mapping`). **Coupled exit is
+   the #1 dungeon check:** beat/leave the loaded dungeon and confirm you return to
+   the door you ENTERED (not the loaded dungeon's vanilla door) — especially test
+   entering a land dungeon's door that now loads Ice Palace, then exiting: you must
+   NOT be stranded on Ice Palace's lake. Also: enter, then mirror/save-quit/die, and
+   confirm you don't end up at a wrong/stale door (the coupling global is consumed on
+   normal exit; abnormal exits are the known-incomplete edge cases). Goal reachable.

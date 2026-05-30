@@ -101,30 +101,31 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 > OOB). Stage 1 caves provably never hit this (Entrance_SelfCheck asserts pooled
 > rooms ∈ [0x100,0x180)\{0x104}), so the floor guard is deferred to here.
 
-- [ ] 2.0 **Harden the exit-search floor** (`overworld.c:1796`) before remapping the
-      exit class — add a `k > 0` floor + safe fallback. (Vanilla-inert: the OOB
-      can't occur in vanilla, so RAM-compare is unaffected; but a shuffled dungeon
-      room not in `kExitDataRooms` would underflow without it.)
-- [ ] 2.1 Room-keyed exit remap: a parallel rando overlay so a shuffled dungeon
-      exits to the SOURCE overworld door. NB: dungeons differ from caves — the
-      `*_exit` cached-source coupling (automatic for caves) does NOT apply; the
-      exit is recomputed from `kExitData_*[k]` keyed by the LOADED room. So coupling
-      here needs the source door's exit row, not the loaded dungeon's.
-- [ ] 2.2 **Single-entrance dungeons** (EP, PoD, …): one door per dungeon. Extend the
-      cave engine — add a dungeon pool to `shuffle_entrance.c`; the runtime overlay
-      already rewrites `kOverworld_Entrance_Id`, so the entry side is shared.
-- [ ] 2.3 **Multi-entrance dungeon** consistency (Hyrule Castle ~3 / Skull Woods ~4
-      doors — move as a unit / stay mutually consistent).
-- [ ] 2.4 Link's House (room 0x104) special-case folded into the room-keyed class.
-- [ ] 2.5 Logic: dungeons ARE regions with inbound door-edges, so use the per-seed
-      **edge overlay** (NOT region override) — mirror `kRandoEdges_Inverted`
-      selection (`rando_logic.c:432-444`): build a per-seed edge array = base graph
-      with each dungeon door-edge's `to_region` rewritten per π; internal edges +
-      event gates fixed. Watch prize/medallion gates (`[[prize-shuffle-bit-gates]]`
-      — prize tied to dungeon, not door).
-- [ ] 2.6 Save: extend the regen at slot-load to the dungeon pool (the
-      `entrance_axes` dungeon bit + same `entrance_attempt`).
-- [ ] 2.7 Playtest dungeon entrance/exit round-trips + fresh-eyes audit.
+- [x] 2.0 **Hardened the exit-search floor** (`overworld.c:1796`) — `k > 0`. Vanilla
+      OOB can't occur (every vanilla room is in `kExitDataRooms`), so RAM-compare is
+      unaffected; defends shuffled exits + every later stage.
+- [x] 2.1 Room-keyed exit COUPLING: the entry hook captures the SOURCE dungeon's
+      room (`Rando_EntranceCoupledExitRoom`, `g_rando_entrance_exit_room`); the exit
+      search keys on it so the player returns to the entered door (avoids stranding,
+      e.g. Ice Palace lake without flippers). Caves auto-couple; dungeons don't, so
+      this is required. Runtime — playtest-pending.
+- [x] 2.2 **Single-entrance dungeons** — the 6 clean ones (PoD, Swamp, Thieves'
+      Town, Ice Palace, Tower of Hera, Hyrule Castle Tower) in `kDungeons[]`; shared
+      door overlay (cave pass + dungeon pass on disjoint id sets).
+- [ ] 2.3 **Multi-entrance / 2-region** (Skull Woods, Desert, Eastern Palace) +
+      medallion (MM/TR) + goal (GT) — DEFERRED to Stage 2b (need coordinated
+      multi-door / medallion-aware handling). Documented in entrance_registry.yaml.
+- [ ] 2.4 Link's House (room 0x104) special-case — not needed for the 6 (deferred).
+- [x] 2.5 Logic: per-seed **dungeon EDGE overlay** (`Rando_*EntranceEdgeOverride`)
+      remaps each door-edge's `to_region` per π, keyed by the (unique) entry region;
+      the door's access predicate stays put. Self-check cross-validates exactly-one
+      inbound edge per entry region (drift guard). Prize/medallion gates: the 6
+      clean dungeons are non-medallion; prizes stay tied to the dungeon region (only
+      the door-edge moves), so `[[prize-shuffle-bit-gates]]` is unaffected.
+- [x] 2.6 Save: dungeon bit in `entrance_axes` + shared `entrance_attempt`;
+      `Entrance_RuntimeInstall` regenerates both pools at slot-load.
+- [~] 2.7 Playtest dungeon entrance/exit round-trips — USER (see Playtest checklist).
+      Fresh-eyes audit — in progress (parallel agent).
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 
