@@ -14,7 +14,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 38u  // Phase C — entrance-shuffle settings axes (packed canonical [25]) + RegionRemap retired. Default seeds byte-identical (axes default off).
+#define kGeneratorVersion 39u  // Phase C Stage 2 — Misery Mire added to the dungeon-shuffle pool (6→7). Default seeds still byte-identical; dungeon-shuffle digests change.
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

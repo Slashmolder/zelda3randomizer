@@ -493,11 +493,22 @@ dungeons:
     entrance_ids: [0x24]
     region: LightWorld_NorthEast
     entry_region: HyruleCastleTower
+  - dungeon_id: misery_mire
+    name: "Misery Mire"
+    rooms: [0x098]
+    entrance_ids: [0x27]
+    region: DarkWorld_Mire
+    entry_region: MiseryMire_Entrance
+    notes: >
+      Single overworld door, single entry region (one inbound edge 0x02->0x16).
+      Medallion gate is in the door-edge predicate (kept with the door by the
+      override) — ALTTPR-consistent: MM's tablet is tapped at MM's overworld spot
+      to open the door regardless of what's behind it.
 
-# Deferred (NOT shuffled in v1):
+# Deferred (NOT shuffled yet):
 #  - eastern_palace: clean door (id 0x08 -> room 0xC9) but 2-region logic
 #    (EasternPalace_Lobby 0x09 + EasternPalace_PastArmos 0x0a).
 #  - skull_woods: multi-entrance (front 0x28; secondaries 0x29/0x2A/0x2B + drop-ins).
 #  - desert_palace: multi-entrance (front 0x09; East 0x0A / West 0x0B / Boss 0x0C).
-#  - misery_mire / turtle_rock: medallion-gated doors + (TR) two overworld sources.
-#  - ganons_tower: two overworld sources + goal region.
+#  - turtle_rock: multi-entrance (Main 0x35 + mountainface) + medallion + 2 sources.
+#  - ganons_tower: two overworld sources + goal region + crystal gate.

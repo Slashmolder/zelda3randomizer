@@ -149,14 +149,21 @@ typedef struct RandoDungeon {
   uint8 entrance_id;              // overworld front-door entrance-id
 } RandoDungeon;
 
-#define kEntranceDungeonCount 6
+#define kEntranceDungeonCount 7
 static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
-  { "palace_of_darkness",   "PalaceOfDarkness",  0x04A, 0x26 },
-  { "swamp_palace",         "SwampPalace",       0x028, 0x25 },
-  { "thieves_town",         "ThievesTown",       0x0DB, 0x34 },
-  { "ice_palace",           "IcePalace_Lobby",   0x00E, 0x2D },
-  { "tower_of_hera",        "TowerOfHera_Lobby", 0x077, 0x33 },
-  { "hyrule_castle_tower",  "HyruleCastleTower", 0x0E0, 0x24 },
+  { "palace_of_darkness",   "PalaceOfDarkness",     0x04A, 0x26 },
+  { "swamp_palace",         "SwampPalace",          0x028, 0x25 },
+  { "thieves_town",         "ThievesTown",          0x0DB, 0x34 },
+  { "ice_palace",           "IcePalace_Lobby",      0x00E, 0x2D },
+  { "tower_of_hera",        "TowerOfHera_Lobby",    0x077, 0x33 },
+  { "hyrule_castle_tower",  "HyruleCastleTower",    0x0E0, 0x24 },
+  // Misery Mire — single overworld door (id 0x27 → room 0x98), single entry
+  // region (MiseryMire_Entrance, one inbound edge 0x02→0x16). Its medallion gate
+  // lives in that door-edge predicate, which the override keeps with the door —
+  // ALTTPR-consistent (you tap MM's tablet at MM's overworld spot regardless of
+  // what's behind the door). Turtle Rock / Ganon's Tower stay deferred (multi-
+  // entrance + goal/crystal); Eastern Palace deferred (2 entry regions).
+  { "misery_mire",          "MiseryMire_Entrance",  0x098, 0x27 },
 };
 
 // ---------------------------------------------------------------------------
