@@ -915,8 +915,30 @@
        src\rando\item_ids.h, src\rando\chest_lookup.h, src\rando\icon_atlas.h,
        src\rando\direct_grant_icons.h from assets\rando\*.yaml +
        assets\chest_data.py (generated chest table). -->
+  <!-- RandoCodegenInput = EXACTLY the files rando_logic_gen.py reads — no more, no less.
+       Too few → an incremental build skips codegen on a stale-output check and ships a
+       stale logic_data.c. Too many (e.g. @(None), which pulls in tables\zelda3_assets.dat
+       + saves\ref\*.sav that codegen never reads) → spurious rebuilds, or always-run when
+       a listed input is absent in a fresh worktree.
+       NOTE: this MUST be an <ItemGroup>, not a literal glob in the Target's Inputs="...".
+       A Target's Inputs attribute does NOT expand recursive ** — MSBuild treats
+       "logic_parts\**\*.yaml" as a single nonexistent file and rebuilds every time.
+       An ItemGroup Include DOES expand **, so @(RandoCodegenInput) is the real file set
+       and the up-to-date check works (skips when unchanged, fires on any logic_parts edit). -->
+  <ItemGroup>
+    <RandoCodegenInput Include="assets\rando\op_registry.yaml" />
+    <RandoCodegenInput Include="assets\rando\item_registry.yaml" />
+    <RandoCodegenInput Include="assets\rando\location_registry.yaml" />
+    <RandoCodegenInput Include="assets\rando\icon_atlas.yaml" />
+    <RandoCodegenInput Include="assets\rando\direct_grant_icons.yaml" />
+    <RandoCodegenInput Include="assets\rando\logic.yaml" />
+    <RandoCodegenInput Include="assets\rando\macros.yaml" />
+    <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
+    <RandoCodegenInput Include="assets\rando_logic_gen.py" />
+    <RandoCodegenInput Include="assets\chest_data.py" />
+  </ItemGroup>
   <Target Name="RandoCodegen" BeforeTargets="ClCompile"
-          Inputs="@(None);assets\rando\op_registry.yaml;assets\rando\item_registry.yaml;assets\rando\location_registry.yaml;assets\rando\icon_atlas.yaml;assets\rando\direct_grant_icons.yaml;assets\rando_logic_gen.py;assets\chest_data.py"
+          Inputs="@(RandoCodegenInput)"
           Outputs="src\rando\logic_data.c;src\rando\location_ids.h;src\rando\item_ids.h;src\rando\chest_lookup.h;src\rando\icon_atlas.h;src\rando\direct_grant_icons.h">
     <Exec Command="python assets\rando_logic_gen.py" />
   </Target>
