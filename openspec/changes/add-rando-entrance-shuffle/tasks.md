@@ -147,9 +147,19 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
 
 ## Stage 3 — `cross_category` ("Crossed" feel)
 
-- [ ] 3.1 Allow caves↔dungeons to mix in the permutation pool.
-- [ ] 3.2 Constraint wiring on the existing engine (mostly generator-side).
-- [ ] 3.3 Playtest + fresh-eyes audit.
+- [x] 3.0 **Logic primitives built + tested** (`design.md §9`): `Rando_AddEntranceEdge`
+      (dungeon-behind-cave) + `Rando_SetEntranceRegionOverridePred` (cave-behind-
+      gated-dungeon, inherits the door predicate). Byte-identical when inactive.
+      Finding: ALL dungeon doors are item-gated, so cross needs predicate inheritance.
+- [ ] 3.1 **Combined-pool engine** (designed in `design.md §9`, not yet built):
+      unified π over caves + single-edge dungeons (exclude TR/GT — multi-source);
+      4-case dispatch (cave→cave region-override; dungeon→dungeon edge-override;
+      cave→dungeon edge-add + void-region edge-removal; dungeon→cave predicate-
+      carrying override); unified door overlay; the cave-source→dungeon exit flag.
+- [ ] 3.2 Generation wiring (cross retry, full-reachability gate) + corpus + UI.
+- [ ] 3.3 Playtest + fresh-eyes audit. NOTE: cross-category correctness is NOT
+      gate-protected (the gate evaluates the model; a too-permissive model ships a
+      runtime softlock) — needs careful build + playtest of model↔runtime match.
 
 ## Stage 4 — `decoupled` / per-endpoint ("Insanity") — optional / may split
 

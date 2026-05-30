@@ -260,3 +260,61 @@ The real entrance-shuffle *runtime* is in the asm repo `C:/src/z3randomizer`
 `doorframefixes.asm`), NOT the PHP (`EntranceRandomizer.php` shells out to Python;
 its "mt_rand" docstring is stale). Translation discipline per `audit.md §0.10`:
 read the asm, not the comments.
+
+## 9. Cross-category (Crossed) engine design — for the next build step
+
+**Status (2026-05-30):** the two logic PRIMITIVES are implemented + tested
+(byte-identical when inactive): `Rando_AddEntranceEdge` (case 3) and
+`Rando_SetEntranceRegionOverridePred` (case 4) in `rando_logic.c`. The
+combined-pool ENGINE that drives them is designed below but not yet built.
+
+**Key finding:** every dungeon door is item-gated (Moon Pearl / Flippers / Book /
+Mirror / Hammer / crystals / RescuedZelda-in-Standard — verified against
+`logic_parts/*.yaml`). So there is NO "non-gated dungeon" subset to mix freely;
+real cross-category needs the cave-behind-dungeon case to inherit the door's
+predicate. **The full-reachability gate does NOT protect this** (it evaluates the
+MODEL, so a too-permissive model passes a runtime-broken seed) — the model must be
+*exactly* right, which is why this needs careful implementation + playtest.
+
+### The combined permutation π over {cave interiors} ∪ {single-edge dungeons}
+Exclude multi-source dungeons (Turtle Rock, Ganon's Tower — two inbound door-edges
+⇒ ambiguous predicate to inherit) from the cross pool; they stay within the
+dungeon-only sub-pool. Each pool endpoint has a door = (overworld region R,
+predicate P). Cave door: P = TRUE. Dungeon door: P = its door-edge predicate
+(offset/len from the kRandoEdges entry whose `to_region` is the dungeon entry).
+
+For door-of-X → endpoint Y (X = the door's owner), the four cases:
+1. **cave→cave**: `Rando_SetEntranceRegionOverride(Y.locs, R_X)`. [exists]
+2. **dungeon→dungeon**: `Rando_SetEntranceEdgeOverride(X_entry, Y_entry)` (remap
+   X's door-edge to Y's entry; keeps X's predicate). [exists]
+3. **cave→dungeon**: `Rando_AddEntranceEdge(R_X, Y_entry, 0,0)` (unconditional —
+   cave-door access = being in R_X) AND **remove Y's original door-edge** so Y
+   isn't still reachable via its vanilla spot: `Rando_SetEntranceEdgeOverride(
+   Y_entry, kVoidRegion=63)` (redirects Y's original edge to an unreachable void
+   region; the added edge uses Y_entry directly, bypassing the override). [edge-add exists; the void-removal uses the existing edge-override with region 63 — safe: 63 < kReachabilityMaxRegions(256), no locations/edges bind to it]
+4. **dungeon→cave**: `Rando_SetEntranceRegionOverridePred(Y.locs, R_X, P_X.off,
+   P_X.len)` — the cave inherits X's door predicate. [exists]
+
+Invariant: π is a bijection, so each dungeon entry region is the override key
+exactly once (value = what's behind THAT dungeon's door: another dungeon's entry,
+or the void if a cave is behind it) and gets exactly one new inbound (a remapped
+edge from a dungeon source, or an added edge from a cave source). No double-set.
+
+### Runtime
+- **Door overlay**: unify the two passes — for each door slot, write the target
+  endpoint's representative entrance-id (cave OR dungeon; the id sets are
+  disjoint so a single combined map works).
+- **Cross-class exit coupling**: today's coupling handles 3 of 4 cases already
+  (cave-source→anything uses the cached `*_exit`; dungeon-source→dungeon uses the
+  room-keyed search override; dungeon-source→cave loads a cave-room ⇒ cached
+  branch ⇒ uses cached source dungeon pos ⇒ coupled). The ONE new case is
+  **cave-source → dungeon loaded**: the loaded room is <0x100 ⇒ the search branch
+  runs, ignoring the cached source cave pos ⇒ decoupled. FIX: set a flag at the
+  entry hook when the SOURCE door is a cave (cached-class) and force
+  `LoadCachedEntranceProperties()` at the exit regardless of the loaded room
+  (the cached `*_exit` already holds the source cave-door overworld position).
+
+### Generation
+Combined retry: compute the combined π, apply the 4-case overrides, require FULL
+reachability (the existing gate), accept first π where Goal_IsCompletable. Store
+under the existing `cross_category` axis (canonical bit 3). Corpus entry to lock it.
