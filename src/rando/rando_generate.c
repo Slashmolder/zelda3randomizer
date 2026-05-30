@@ -183,24 +183,32 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   int cave_count = 0;
   uint8 dun_assign[kEntranceMaxInteriors];
   int dun_count = 0;
-  bool cave_on = Entrance_IsActive(settings);
-  bool dun_on = Entrance_IsDungeonActive(settings);
+  uint8 cross_assign[kEntranceMaxInteriors];
+  int cross_count = 0;
+  bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
+  bool cave_on = !cross_on && Entrance_IsActive(settings);
+  bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
   Entrance_ClearEdgeOverrides();
-  if (cave_on || dun_on) {
+  if (cross_on || cave_on || dun_on) {
     uint8 canon[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(settings, canon);
     entrance_axes = canon[25];  // == the packed entrance-axis byte
     const int kEntranceMaxRetry = 64;
     for (int att = 0; att < kEntranceMaxRetry; att++) {
-      if (cave_on) {
-        cave_count = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, cave_assign);
-        Entrance_ApplyRegionOverrides(cave_assign, cave_count);
-      }
-      if (dun_on) {
-        dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, dun_assign);
-        Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+      if (cross_on) {
+        cross_count = Entrance_ComputeCrossPermutation(settings, seed_u64, (uint8)att, cross_assign);
+        Entrance_ApplyCrossOverrides(cross_assign, cross_count);
+      } else {
+        if (cave_on) {
+          cave_count = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, cave_assign);
+          Entrance_ApplyRegionOverrides(cave_assign, cave_count);
+        }
+        if (dun_on) {
+          dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, dun_assign);
+          Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+        }
       }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
@@ -295,6 +303,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.entrance_count = cave_count;
     spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
     spoiler.dungeon_count = dun_count;
+    spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
+    spoiler.cross_count = cross_count;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {

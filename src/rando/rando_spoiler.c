@@ -270,6 +270,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // -----------------------------------------------------------------------
   Entrance_WriteSpoilerJson(f, s->entrance_assign, s->entrance_count);
   Entrance_WriteDungeonSpoilerJson(f, s->dungeon_assign, s->dungeon_count);
+  Entrance_WriteCrossSpoilerJson(f, s->cross_assign, s->cross_count);
 
   // -----------------------------------------------------------------------
   // sphere_data — emitted per `randomizer-core / Sphere semantics` when a
@@ -627,10 +628,12 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   // Phase C — entrance shuffle mappings (omitted when not shuffled). Mirrors the
   // JSON entrance_mapping / dungeon_entrance_mapping sections.
   if ((s->entrance_assign != NULL && s->entrance_count > 0) ||
-      (s->dungeon_assign != NULL && s->dungeon_count > 0)) {
+      (s->dungeon_assign != NULL && s->dungeon_count > 0) ||
+      (s->cross_assign != NULL && s->cross_count > 0)) {
     fprintf(f, "ENTRANCE SHUFFLE\n----------------\n");
     Entrance_WriteSpoilerText(f, s->entrance_assign, s->entrance_count);
     Entrance_WriteDungeonSpoilerText(f, s->dungeon_assign, s->dungeon_count);
+    Entrance_WriteCrossSpoilerText(f, s->cross_assign, s->cross_count);
     fprintf(f, "\n");
   }
 

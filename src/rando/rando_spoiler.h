@@ -34,6 +34,10 @@ typedef struct RandoSpoiler {
   // index now reached through its overworld door). NULL/0 omits the section.
   const uint8 *dungeon_assign;
   int dungeon_count;
+  // Phase C Stage 3 — the accepted CROSS-category combined permutation (caves +
+  // cross-eligible dungeons in one pool). NULL/0 omits the section.
+  const uint8 *cross_assign;
+  int cross_count;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

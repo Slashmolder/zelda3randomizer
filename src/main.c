@@ -483,19 +483,26 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   bool ok = false;
   uint8 cave_assign[kEntranceMaxInteriors]; int cave_count = 0;
   uint8 dun_assign[kEntranceMaxInteriors]; int dun_count = 0;
-  bool cave_on = Entrance_IsActive(&settings);
-  bool dun_on = Entrance_IsDungeonActive(&settings);
+  uint8 cross_assign[kEntranceMaxInteriors]; int cross_count = 0;
+  bool cross_on = Entrance_IsCrossActive(&settings);
+  bool cave_on = !cross_on && Entrance_IsActive(&settings);
+  bool dun_on = !cross_on && Entrance_IsDungeonActive(&settings);
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
-  if (cave_on || dun_on) {
+  if (cross_on || cave_on || dun_on) {
     for (int att = 0; att < 64; att++) {
-      if (cave_on) {
-        cave_count = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, cave_assign);
-        Entrance_ApplyRegionOverrides(cave_assign, cave_count);
-      }
-      if (dun_on) {
-        dun_count = Entrance_ComputeDungeonPermutation(&settings, seed_u64, (uint8)att, dun_assign);
-        Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+      if (cross_on) {
+        cross_count = Entrance_ComputeCrossPermutation(&settings, seed_u64, (uint8)att, cross_assign);
+        Entrance_ApplyCrossOverrides(cross_assign, cross_count);
+      } else {
+        if (cave_on) {
+          cave_count = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, cave_assign);
+          Entrance_ApplyRegionOverrides(cave_assign, cave_count);
+        }
+        if (dun_on) {
+          dun_count = Entrance_ComputeDungeonPermutation(&settings, seed_u64, (uint8)att, dun_assign);
+          Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
+        }
       }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
@@ -576,6 +583,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.entrance_count = cave_count;
   spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
   spoiler.dungeon_count = dun_count;
+  spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
+  spoiler.cross_count = cross_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

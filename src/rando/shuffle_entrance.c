@@ -400,6 +400,171 @@ uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id) {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-category engine (Stage 3 / Crossed) — caves + dungeons in ONE pool.
+// See design.md §9. Endpoint index space: e < kEntranceCaveInteriorCount is
+// cave[e]; otherwise it's the (e - kEntranceCaveInteriorCount)-th CROSS-ELIGIBLE
+// dungeon (single-inbound-edge dungeons only; TR/GT excluded — multi-source ⇒
+// ambiguous predicate to inherit). assign[e] = the endpoint now behind e's door.
+// ---------------------------------------------------------------------------
+#define kCrossVoidRegion 63  // unreachable sink: removes a dungeon's original
+                             // door-edge when a cave lands behind it. Safe:
+                             // 63 < kReachabilityMaxRegions(256); no locs/edges.
+
+// Fill `idx` with the kDungeons indices that are cross-eligible (entry region is
+// the destination of EXACTLY ONE door-edge). Stable table order. Returns count.
+static int cross_dungeon_list(uint8 idx[kEntranceDungeonCount]) {
+  int n = 0;
+  for (int i = 0; i < kEntranceDungeonCount; i++) {
+    uint16 rid = Rando_FindRegionByName(kDungeons[i].entry_region_name);
+    if (rid == 0xFFFF) continue;
+    int inbound = 0;
+    for (uint32 e = 0; e < kRandoEdgesCount; e++)
+      if (kRandoEdges[e].to_region == rid) inbound++;
+    if (inbound == 1) idx[n++] = (uint8)i;
+  }
+  return n;
+}
+
+// A dungeon's single door-edge: its from_region + predicate (offset/len). Only
+// valid for cross-eligible (single-edge) dungeons.
+static bool dungeon_door_edge(uint16 entry_region, uint16 *from,
+                              uint32 *pred_off, uint16 *pred_len) {
+  for (uint32 e = 0; e < kRandoEdgesCount; e++) {
+    if (kRandoEdges[e].to_region == entry_region) {
+      *from = kRandoEdges[e].from_region;
+      *pred_off = kRandoEdges[e].predicate_offset;
+      *pred_len = kRandoEdges[e].predicate_length;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Entrance_IsCrossActive(const RandoSettings *settings) {
+  if (settings == NULL || !settings->cross_category) return false;
+  // Cross is the "mix caves + dungeons" master mode; the Crossed preset sets
+  // cave + dungeon + cross together. Open/Standard only (same as the others).
+  if (!settings->shuffle_cave_entrances || !settings->shuffle_dungeon_entrances)
+    return false;
+  return settings->world_state == kWorldState_Open ||
+         settings->world_state == kWorldState_Standard;
+}
+
+// Combined-pool size = caves + cross-eligible dungeons.
+static int cross_pool_count(void) {
+  uint8 didx[kEntranceDungeonCount];
+  return kEntranceCaveInteriorCount + cross_dungeon_list(didx);
+}
+
+int Entrance_ComputeCrossPermutation(const RandoSettings *settings, uint64 seed,
+                                     uint8 attempt, uint8 assign[kEntranceMaxInteriors]) {
+  if (assign == NULL || !Entrance_IsCrossActive(settings)) return 0;
+  int n = cross_pool_count();
+  if (n > kEntranceMaxInteriors) return 0;  // safety (47 << 64)
+  for (int i = 0; i < n; i++) assign[i] = (uint8)i;
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, (seed ^ 0xC2055CA7E5C2055Cull) ^
+                            ((uint64)attempt * 0x9E3779B97F4A7C15ull));
+  for (int i = n - 1; i > 0; i--) {
+    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
+    uint8 t = assign[i]; assign[i] = assign[j]; assign[j] = t;
+  }
+  return n;
+}
+
+// Install the 4-case cross-class overrides from the combined permutation.
+void Entrance_ApplyCrossOverrides(const uint8 *assign, int n) {
+  Rando_BeginEntranceRegionOverrides();
+  Rando_BeginEntranceEdgeOverrides();
+  if (assign == NULL) return;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  const int ncave = kEntranceCaveInteriorCount;
+  if (n != ncave + ndun) return;  // pool mismatch — bail (no partial overrides)
+
+  for (int e = 0; e < n; e++) {
+    int y = assign[e];
+    bool e_cave = (e < ncave);
+    bool y_cave = (y < ncave);
+    // Resolve endpoint e's door (region R_e + predicate P_e) and, if e is a
+    // dungeon, its entry region G_e.
+    uint16 R_e = 0xFFFF, G_e = 0xFFFF; uint32 Pe_off = 0; uint16 Pe_len = 0;
+    if (e_cave) {
+      R_e = Rando_FindRegionByName(kCaveInteriors[e].region_name);
+    } else {
+      const RandoDungeon *de = &kDungeons[didx[e - ncave]];
+      G_e = Rando_FindRegionByName(de->entry_region_name);
+      dungeon_door_edge(G_e, &R_e, &Pe_off, &Pe_len);
+    }
+    if (y_cave) {
+      // Target is a cave: override its locations to e's door region. If e is a
+      // gated dungeon door, the cave inherits e's predicate (P_e).
+      const RandoCaveInterior *yc = &kCaveInteriors[y];
+      for (int k = 0; k < yc->location_count; k++) {
+        if (e_cave) {
+          Rando_SetEntranceRegionOverride(yc->location_ids[k], R_e);
+        } else {
+          Rando_SetEntranceRegionOverridePred(yc->location_ids[k], R_e, Pe_off, Pe_len);
+        }
+      }
+      // If e is a dungeon, its original door-edge must be REMOVED (a cave is
+      // behind it now) — redirect e's edge to the void sink.
+      if (!e_cave && G_e != 0xFFFF) Rando_SetEntranceEdgeOverride(G_e, kCrossVoidRegion);
+    } else {
+      // Target is a dungeon (entry G_y).
+      const RandoDungeon *dy = &kDungeons[didx[y - ncave]];
+      uint16 G_y = Rando_FindRegionByName(dy->entry_region_name);
+      if (G_y == 0xFFFF) continue;
+      if (e_cave) {
+        // Dungeon behind a cave door: ADD an unconditional edge cave-region → G_y.
+        Rando_AddEntranceEdge(R_e, G_y, 0, 0);
+      } else {
+        // Dungeon behind a dungeon door: remap e's edge to G_y (keeps P_e).
+        if (G_e != 0xFFFF) Rando_SetEntranceEdgeOverride(G_e, G_y);
+      }
+    }
+  }
+}
+
+// Build the unified cross door overlay: each door slot → its target endpoint's
+// representative entrance-id (cave or dungeon).
+void Entrance_BuildCrossOverlay(const uint8 *assign, int n, const uint8 *vanilla,
+                                uint32 len, uint8 *overlay) {
+  if (vanilla == NULL || overlay == NULL) return;
+  memcpy(overlay, vanilla, len);
+  if (assign == NULL) return;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  const int ncave = kEntranceCaveInteriorCount;
+  if (n != ncave + ndun) return;
+  for (uint32 d = 0; d < len; d++) {
+    // Determine the door's source endpoint from its vanilla entrance-id.
+    int e = -1;
+    int ci = interior_of_entrance(vanilla[d]);
+    if (ci >= 0) {
+      e = ci;  // cave endpoint
+    } else {
+      int dd = dungeon_of_entrance(vanilla[d], kEntranceDungeonCount);
+      if (dd >= 0) {
+        for (int q = 0; q < ndun; q++) if (didx[q] == dd) { e = ncave + q; break; }
+      }
+    }
+    if (e < 0) continue;  // not a shuffled door (or a TR/GT door — left vanilla)
+    int y = assign[e];
+    if (y < 0 || y >= n) continue;
+    if (y < ncave) overlay[d] = kCaveInteriors[y].entrance_ids[0];
+    else overlay[d] = kDungeons[didx[y - ncave]].entrance_id;
+  }
+}
+
+// True iff door-slot's vanilla entrance-id is a CAVE interior (cached-exit
+// class). Used by the runtime to force the cached exit for a cave-source door
+// that now loads a dungeon (cross-category). 0 = not a cave door.
+bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id) {
+  return interior_of_entrance(vanilla_entrance_id) >= 0;
+}
+
+// ---------------------------------------------------------------------------
 // Spoiler emission
 // ---------------------------------------------------------------------------
 void Entrance_WriteSpoilerJson(void *file, const uint8 *assign, int n) {
@@ -457,6 +622,48 @@ void Entrance_WriteDungeonSpoilerJson(void *file, const uint8 *assign, int n) {
         (i + 1 < n && i + 1 < kEntranceDungeonCount) ? "," : "");
   }
   fprintf(f, "  ],\n");
+}
+
+// Cross-category endpoint name (combined index). Caller passes the eligible
+// dungeon-index list + its count.
+static const char *cross_endpoint_name(int e, const uint8 *didx, int ndun) {
+  if (e < kEntranceCaveInteriorCount) return kCaveInteriors[e].name;
+  int q = e - kEntranceCaveInteriorCount;
+  if (q < ndun) return kDungeons[didx[q]].name;
+  return "?";
+}
+
+void Entrance_WriteCrossSpoilerJson(void *file, const uint8 *assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || assign == NULL || n <= 0) return;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  if (n != kEntranceCaveInteriorCount + ndun) return;
+  fprintf(f, "  \"cross_entrance_mapping\": [\n");
+  for (int e = 0; e < n; e++) {
+    int y = assign[e];
+    if (y < 0 || y >= n) y = e;
+    fprintf(f, "    {\"door\": \"%s\", \"leads_to\": \"%s\"}%s\n",
+            cross_endpoint_name(e, didx, ndun), cross_endpoint_name(y, didx, ndun),
+            (e + 1 < n) ? "," : "");
+  }
+  fprintf(f, "  ],\n");
+}
+
+void Entrance_WriteCrossSpoilerText(void *file, const uint8 *assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || assign == NULL || n <= 0) return;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  if (n != kEntranceCaveInteriorCount + ndun) return;
+  fprintf(f, "Cross-category entrance mapping (caves + dungeons, coupled):\n");
+  for (int e = 0; e < n; e++) {
+    int y = assign[e];
+    if (y < 0 || y >= n) y = e;
+    if (y == e) continue;  // list only the moved doors
+    fprintf(f, "  %s door -> %s\n",
+            cross_endpoint_name(e, didx, ndun), cross_endpoint_name(y, didx, ndun));
+  }
 }
 
 // ---------------------------------------------------------------------------

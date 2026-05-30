@@ -89,6 +89,25 @@ void Entrance_RemapDungeonDoors(const uint8 *assign, int n,
 // a v1 dungeon door.
 uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id);
 
+// --- Cross-category (Crossed, Stage 3) ---------------------------------------
+// Active iff cross_category + cave + dungeon shuffle on + Open/Standard. When
+// active, caves + cross-eligible dungeons shuffle in ONE combined pool (the
+// separate cave/dungeon paths are NOT used).
+bool Entrance_IsCrossActive(const RandoSettings *settings);
+// Combined-pool permutation (caves then cross-eligible dungeons). Returns the
+// pool size, or 0 when inactive.
+int Entrance_ComputeCrossPermutation(const RandoSettings *settings, uint64 seed,
+                                     uint8 attempt, uint8 assign[kEntranceMaxInteriors]);
+// Install the 4-case cross-class logic overrides (region / region+predicate /
+// edge-remap / edge-add) from the combined permutation.
+void Entrance_ApplyCrossOverrides(const uint8 *assign, int n);
+// Build the unified cross door overlay (each door → target endpoint's id).
+void Entrance_BuildCrossOverlay(const uint8 *assign, int n, const uint8 *vanilla,
+                                uint32 len, uint8 *overlay);
+// True iff `vanilla_entrance_id` is a cave interior — the runtime forces the
+// cached exit for a cave-source door (so a cave→dungeon cross stays coupled).
+bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id);
+
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole
 // `  "entrance_mapping": [ ... ],` block (2-space indent, trailing comma) to
@@ -100,6 +119,9 @@ void Entrance_WriteSpoilerText(void *file, const uint8 *assign, int n);
 // Dungeon entrance_mapping section (Stage 2).
 void Entrance_WriteDungeonSpoilerJson(void *file, const uint8 *assign, int n);
 void Entrance_WriteDungeonSpoilerText(void *file, const uint8 *assign, int n);
+// Cross-category combined-pool mapping section (Stage 3).
+void Entrance_WriteCrossSpoilerJson(void *file, const uint8 *assign, int n);
+void Entrance_WriteCrossSpoilerText(void *file, const uint8 *assign, int n);
 
 // Self-test (pure; no live assets): permutation is a bijection, region-override
 // closed form is self-consistent (a fixed point is a no-op; a swap moves regions
