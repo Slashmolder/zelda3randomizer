@@ -3429,6 +3429,9 @@ after:
     }
   } else {
     which_entrance = kOverworld_Entrance_Id[lx];
+    // D.3 capture-for-bake: record the entered door's vanilla cave interior in
+    // EVERY game (vanilla or rando) so the arrival capture works in any mode.
+    Rando_RecordEnteredDoorForCapture((uint16)lx);
     // Phase B Slice 3b — Retro TakeAny redirect. `lx` is the overworld door
     // row-index (== ALTTPR's X); door_id = lx+1. If this cave is an active
     // take-any this seed, capture the door (the disambiguation key — the

@@ -307,8 +307,11 @@ bool Rando_EntranceForceCachedExit(uint16 lx);
 void Rando_DecoupledSetEnteredDoor(uint16 lx);
 void Rando_DecoupledCaptureArrival(void);
 bool Rando_DecoupledReplaceArrival(void);
-// D.3 capture-for-bake: in a NON-entrance-shuffle game, snapshot each entered
-// cave's overworld arrival; auto-dumps cave_arrival_capture.txt at full coverage.
+// D.3 capture-for-bake: snapshot each entered cave's overworld arrival (works in
+// ANY game — keyed by the entered door's vanilla interior). Auto-dumps
+// cave_arrival_capture.txt on each new capture. RecordEnteredDoorForCapture runs
+// at the overworld entry hook to set the key.
+void Rando_RecordEnteredDoorForCapture(uint16 lx);
 void Rando_CaptureArrivalForBake(void);
 
 // If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE

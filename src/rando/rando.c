@@ -987,6 +987,23 @@ static uint16 g_decoupled_entered;                // vanilla interior of entered
 typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid; } RandoCaveArrival;
 static RandoCaveArrival g_cave_arrival[kEntranceMaxInteriors];
 
+// D.3 capture: vanilla cave interior of the door just entered, recorded at the
+// overworld entry hook for EVERY game (shuffle or not) so the capture-for-bake
+// works regardless of mode. 0xFFFF = the entered door isn't a cave.
+static uint16 g_rando_entered_door_interior = 0xFFFF;
+void Rando_RecordEnteredDoorForCapture(uint16 lx) {
+  g_rando_entered_door_interior = 0xFFFF;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (lx >= len) return;
+  // The door's VANILLA entrance-id: the saved original when an overlay is
+  // installed (shuffle), otherwise the live table (vanilla/non-entrance game).
+  uint8 vid = (g_entrance_overlay_orig != NULL) ? g_entrance_overlay_orig[lx]
+                                                : ((const uint8 *)kOverworld_Entrance_Id)[lx];
+  int interior = Entrance_InteriorOfEntranceId(vid);
+  if (interior >= 0 && interior < kEntranceMaxInteriors)
+    g_rando_entered_door_interior = (uint16)interior;
+}
+
 static void Decoupled_Reset(void) {
   g_decoupled_active = 0;
   g_decoupled_n = 0;
@@ -1072,10 +1089,10 @@ static void Rando_DumpArrivalCapture(void) {
 }
 
 void Rando_CaptureArrivalForBake(void) {
-  // Vanilla doors only (no overlay) so which_entrance == the entered cave's id
-  // and the cached *_exit is that cave's own overworld-door arrival.
-  if (g_entrance_overlay_orig != NULL) return;
-  int interior = Entrance_InteriorOfEntranceId(which_entrance);
+  // Key by the entered door's VANILLA interior (recorded at the entry hook), which
+  // is correct in ANY mode: the cached *_exit is always the entered DOOR's
+  // overworld arrival, even when an overlay redirects what loads behind it.
+  int interior = g_rando_entered_door_interior;
   if (interior < 0 || interior >= kEntranceMaxInteriors) return;
   uint16 lx = (uint16)(g_ram[0xC14A] | (g_ram[0xC14B] << 8));  // link_x_coord_exit
   uint16 ly = (uint16)(g_ram[0xC148] | (g_ram[0xC149] << 8));  // link_y_coord_exit
