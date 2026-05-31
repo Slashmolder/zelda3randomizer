@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mirror zelda3.smc and zelda3_assets.dat into the current git worktree.
+"""Mirror zelda3.smc, zelda3_assets.dat, and zelda3.ini into the current git worktree.
 
 The project's ROM (`zelda3.smc` / `zelda3.sfc`) and the extracted asset blob
 (`zelda3_assets.dat`) are gitignored, so freshly-created git worktrees lack
@@ -8,8 +8,15 @@ paths will hit `Die("Failed to read zelda3_assets.dat ...")` and on Windows
 Release builds pop a modal dialog on whoever's desktop the process happens
 to land on.
 
+We also mirror `zelda3.ini` (optional, best-effort). The exe searches parent
+directories for `zelda3.ini`, so a worktree run with no local ini falls back
+to the *main checkout's* ini and writes its F12 state dumps + SRAM saves into
+the main checkout root — polluting it and risking save collisions. A local ini
+keeps dumps/saves inside the worktree. Missing-source-ini is non-fatal: the exe
+still runs via the parent-dir fallback.
+
 Run this script after creating a new worktree (or in an agent's setup
-step) to mirror the ROM + assets from the main worktree. The script is
+step) to mirror the ROM + assets (+ ini) from the main worktree. The script is
 idempotent: if files already exist locally it does nothing.
 
 Usage:
@@ -37,6 +44,7 @@ from pathlib import Path
 
 ROM_NAMES = ("zelda3.sfc", "zelda3.smc")
 ASSETS_NAME = "zelda3_assets.dat"
+INI_NAME = "zelda3.ini"  # optional, best-effort (keeps dumps/saves in the worktree)
 
 
 def find_main_worktree() -> Path | None:
@@ -94,6 +102,7 @@ def main() -> int:
 
     have_rom = find_existing_rom(cwd) is not None
     have_assets = (cwd / ASSETS_NAME).is_file()
+    have_ini = (cwd / INI_NAME).is_file()
 
     if args.verify:
         if have_rom and have_assets:
@@ -105,8 +114,8 @@ def main() -> int:
             print(f"setup_worktree: MISSING {ASSETS_NAME} in {cwd}")
         return 1
 
-    if have_rom and have_assets:
-        print("setup_worktree: nothing to do (rom + assets already present)")
+    if have_rom and have_assets and have_ini:
+        print("setup_worktree: nothing to do (rom + assets + ini already present)")
         return 0
 
     # Resolve the source.
@@ -119,6 +128,12 @@ def main() -> int:
         source = find_main_worktree()
 
     if source is None:
+        # The ini is optional; only a missing ROM/assets is fatal.
+        if have_rom and have_assets:
+            print("setup_worktree: rom + assets present; could not locate main "
+                  "worktree to mirror optional zelda3.ini (skipping -- the exe "
+                  "falls back to a parent-dir ini).", file=sys.stderr)
+            return 0
         print("setup_worktree: could not locate main worktree. Pass --from PATH,",
               file=sys.stderr)
         print("                set ZELDA3_MAIN_WORKTREE, or ensure git knows about",
@@ -158,6 +173,19 @@ def main() -> int:
         dst_assets = cwd / ASSETS_NAME
         print(f"setup_worktree: copy {src_assets} -> {dst_assets}")
         shutil.copy2(src_assets, dst_assets)
+
+    # Optional: mirror zelda3.ini so F12 dumps + SRAM saves stay in the worktree
+    # instead of falling back to the main checkout's ini (and its directory).
+    # Best-effort: a missing source ini is non-fatal.
+    if not have_ini:
+        src_ini = source / INI_NAME
+        if src_ini.is_file():
+            dst_ini = cwd / INI_NAME
+            print(f"setup_worktree: copy {src_ini} -> {dst_ini}")
+            shutil.copy2(src_ini, dst_ini)
+        else:
+            print(f"setup_worktree: source has no {INI_NAME} (optional) -- skipping; "
+                  f"the exe will fall back to a parent-dir ini.", file=sys.stderr)
 
     print("setup_worktree: done.")
     return 0
