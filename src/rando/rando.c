@@ -1067,8 +1067,32 @@ bool Rando_DecoupledReplaceArrival(void) {
 // ---------------------------------------------------------------------------
 static RandoCaveArrival g_cave_capture[kEntranceMaxInteriors];
 static int g_cave_capture_count;
+static bool g_cave_capture_loaded;  // loaded the persisted .bin this session yet?
+
+// Persistence (fixes lost captures across restarts): the in-memory table is
+// reset each launch, so without this a re-launch + one capture would overwrite
+// the .txt with a near-empty table. Load the binary sidecar once at the first
+// capture so the walkabout accumulates across sessions.
+static void Rando_LoadArrivalCaptureIfNeeded(void) {
+  if (g_cave_capture_loaded) return;
+  g_cave_capture_loaded = true;
+  FILE *f = fopen("cave_arrival_capture.bin", "rb");
+  if (f == NULL) return;
+  if (fread(g_cave_capture, sizeof(g_cave_capture), 1, f) == 1) {
+    int n = Entrance_CaveInteriorCount();
+    g_cave_capture_count = 0;
+    for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+      if (g_cave_capture[i].valid) g_cave_capture_count++;
+    fprintf(stderr, "[ARRIVAL-CAPTURE] resumed %d/%d from cave_arrival_capture.bin\n",
+            g_cave_capture_count, n);
+  }
+  fclose(f);
+}
 
 static void Rando_DumpArrivalCapture(void) {
+  // Binary sidecar first (the source of truth for resume across restarts).
+  FILE *b = fopen("cave_arrival_capture.bin", "wb");
+  if (b != NULL) { fwrite(g_cave_capture, sizeof(g_cave_capture), 1, b); fclose(b); }
   FILE *f = fopen("cave_arrival_capture.txt", "wb");
   if (f == NULL) { fprintf(stderr, "[ARRIVAL-CAPTURE] dump fopen failed\n"); return; }
   int n = Entrance_CaveInteriorCount();
@@ -1089,6 +1113,7 @@ static void Rando_DumpArrivalCapture(void) {
 }
 
 void Rando_CaptureArrivalForBake(void) {
+  Rando_LoadArrivalCaptureIfNeeded();  // resume prior session's captures (restart-safe)
   // Key by the entered door's VANILLA interior (recorded at the entry hook), which
   // is correct in ANY mode: the cached *_exit is always the entered DOOR's
   // overworld arrival, even when an overlay redirects what loads behind it.
