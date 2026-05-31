@@ -991,8 +991,11 @@ typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid;
 // door captured this session OR a prior one (option B: just play, it fills in).
 static RandoCaveArrival g_cave_capture[kEntranceMaxInteriors];
 static int g_cave_capture_count;
-static bool g_cave_capture_loaded;  // loaded the persisted .bin this session yet?
+static bool g_cave_capture_loaded;  // initialized the table this session yet?
 static void Rando_LoadArrivalCaptureIfNeeded(void);
+// Committed baked arrival table (the D.3 walkabout result) — the default source
+// so every door is one-way from the start, no on-disk capture needed.
+#include "cave_arrival_baked.h"
 
 // D.3 capture: vanilla cave interior of the door just entered, recorded at the
 // overworld entry hook for EVERY game (shuffle or not) so the capture-for-bake
@@ -1071,17 +1074,26 @@ bool Rando_DecoupledReplaceArrival(void) {
 static void Rando_LoadArrivalCaptureIfNeeded(void) {
   if (g_cave_capture_loaded) return;
   g_cave_capture_loaded = true;
+  int n = Entrance_CaveInteriorCount();
+  // 1) Committed baked table — the default so every door is one-way from launch.
+  for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+    g_cave_capture[i] = kCaveArrivalBaked[i];
+  // 2) Dev overlay: a live capture file (walkabout tool) overrides matching
+  //    entries so re-captures take effect without rebaking. Only valid entries
+  //    overlay, so a partial .bin never erases baked data.
   FILE *f = fopen("cave_arrival_capture.bin", "rb");
-  if (f == NULL) return;
-  if (fread(g_cave_capture, sizeof(g_cave_capture), 1, f) == 1) {
-    int n = Entrance_CaveInteriorCount();
-    g_cave_capture_count = 0;
-    for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
-      if (g_cave_capture[i].valid) g_cave_capture_count++;
-    fprintf(stderr, "[ARRIVAL-CAPTURE] resumed %d/%d from cave_arrival_capture.bin\n",
-            g_cave_capture_count, n);
+  if (f != NULL) {
+    static RandoCaveArrival tmp[kEntranceMaxInteriors];
+    if (fread(tmp, sizeof(tmp), 1, f) == 1)
+      for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+        if (tmp[i].valid) g_cave_capture[i] = tmp[i];
+    fclose(f);
   }
-  fclose(f);
+  g_cave_capture_count = 0;
+  for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+    if (g_cave_capture[i].valid) g_cave_capture_count++;
+  fprintf(stderr, "[ARRIVAL-CAPTURE] arrival table ready: %d/%d doors\n",
+          g_cave_capture_count, n);
 }
 
 static void Rando_DumpArrivalCapture(void) {

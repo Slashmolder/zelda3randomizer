@@ -225,11 +225,16 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
       (block + `is_in_dark_world`/`savegame_is_darkworld` + target room/door-settings
       for the Y-adjust). **Coupled fallback** when the target isn't captured yet, so
       it never strands. Default-off; corpus 63/63 + selftest + guards green.
-- [ ] D.3 **Static cave-arrival table (bake)** — the D.4 runtime captures arrivals
-      LIVE (works for doors visited this session); never-visited targets fall back to
-      coupled. Bake a per-interior arrival table (capture walkabout → committed C
-      table `kCaveArrival[]`, NOT a .dat asset — it's static game data) so every
-      target works from the start. Reuses the exact capture path. PLAYTEST/capture-pass.
+- [x] D.3 **Static cave-arrival table (baked)** — captured via the walkabout tooling
+      (`--dump-cave-doors` locator + per-entry persisted capture; `Rando_Capture-
+      ArrivalForBake`) and committed as `src/rando/cave_arrival_baked.h`
+      (`kCaveArrivalBaked[38]`, 37 captured; interior 37 heart_piece_cave_3 is a
+      fall-in drop cave, left uncaptured → coupled fallback). The runtime preloads it
+      (`Rando_LoadArrivalCaptureIfNeeded`) so every door is one-way from launch with
+      no on-disk capture; a live `cave_arrival_capture.bin` overlays it for dev
+      re-captures. Runtime-only data → placement digests unchanged, no kGenVer bump,
+      corpus stays 63/63. Capture persists across restarts (binary sidecar) after a
+      data-loss bug (in-memory table + game-kill rebuilds) was fixed.
 - [x] D.5 UI: **Insanity preset + Decoupled checkbox LIVE** (caves-only; gated on cave
       shuffle; clears coupled). Spoiler `decoupled_exit` section already emitted (D.1).
       Tracker one-way-door display deferred.
