@@ -1837,8 +1837,22 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     // arrival so Link emerges at a DIFFERENT door (it overwrites the live *_exit
     // block + world flags + target room/door-settings). No-op / coupled return
     // when decoupled is inactive or the target hasn't been captured this session.
-    Rando_DecoupledReplaceArrival(decoupled_entered);
+    bool decoupled_crossed = Rando_DecoupledReplaceArrival(decoupled_entered);
     LoadCachedEntranceProperties();
+    if (decoupled_crossed) {
+      // A one-way decoupled exit can land Link in the OTHER world, but this cached
+      // path (unlike the mirror warp, ancilla.c) never re-evaluates Link's bunny
+      // form for the destination — leaving a DW→LW exit stuck as a Light-World
+      // bunny (and a LW→DW exit wrongly human). Re-derive it from the destination
+      // world + Moon Pearl, matching PreOverworld_LoadProperties / the mirror warp.
+      if (link_item_moon_pearl || !savegame_is_darkworld) {
+        ForceNonbunnyStatus();
+      } else {
+        link_is_bunny = link_is_bunny_mirror = 1;
+        link_player_handler_state = kPlayerState_PermaBunny;
+        LoadGearPalettes_bunny();
+      }
+    }
   } else {
 
     // If the player entered a shuffled dungeon door, key the exit search on the
