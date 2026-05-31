@@ -2166,6 +2166,16 @@ void Overworld_HandleOverlaysAndBombDoors() {  // 82ef29
     else if (overworld_screen_index == 0x2f)
       dung_bg2[1497] = 0x20f;
   }
+  // #82 Inverted: TurtleRockEntranceFix (z3randomizer entrances.asm:207-213,
+  // gated on TurtleRockAutoOpenFix = Rom.php 0x180089). Reaching the Turtle Rock
+  // overworld entrance (screen 0x47) from the tail never casts a medallion, so
+  // the carved-entrance event bit is never set the vanilla way and the door
+  // stays closed. Force save_ow_event_info[0x47] |= 0x20 on arrival so the
+  // carved entrance renders and becomes enterable — completing tail access
+  // (the collision table + peg-solve only get Link TO the tile). Gated so
+  // vanilla / Open / Standard / Retro stay byte-identical.
+  if (rando_inverted_ow && BYTE(overworld_screen_index) == 0x47)
+    save_ow_event_info[0x47] |= 0x20;
   if (BYTE(overworld_screen_index) < 0x80 && save_ow_event_info[BYTE(overworld_screen_index)] & 0x20)
     Overworld_LoadEventOverlay();
   if (save_ow_event_info[BYTE(overworld_screen_index)] & 2) {

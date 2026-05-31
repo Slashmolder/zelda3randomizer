@@ -36,6 +36,7 @@ enum {
   kAsset_ExitData_YCoord       = 136,  // uint16: Link Y on exit
   kAsset_ExitData_CameraX      = 137,  // uint16
   kAsset_ExitData_CameraY      = 138,  // uint16
+  kAsset_BirdTravel_ScreenIndex = 113, // uint16: flute-spot slot -> dest screen
 };
 
 static const InvertedOverride kInvertedOverrides[] = {
@@ -87,6 +88,23 @@ static const InvertedOverride kInvertedOverrides[] = {
   { kAsset_ExitData_YCoord,       2, 0x18, 0x0678 },
   { kAsset_ExitData_CameraX,      2, 0x18, 0x0303 },
   { kAsset_ExitData_CameraY,      2, 0x18, 0x0685 },
+
+  // --- Inverted flute travel: Dark-World destinations (ALTTPR Rom.php:1600). ---
+  // The fork warps Link to raw screen indices (overworld.c FluteMenu path), with
+  // no inverted reinterpretation, so vanilla LW spots send an Inverted player to
+  // the wrong world. Repoint each flute slot to its Dark-World mirror (LW + 0x40).
+  // asset 113 is uint16 (width 2); elem_index is the flute slot (bird_travel_id).
+  // Slot 8 (vanilla 0x5B = DW pyramid) is intentionally NOT overridden: ALTTPR
+  // maps it 0x5B->0x1B for its pyramid->Hyrule-Castle relocation, which this fork
+  // did NOT adopt (Ganon stays in the DW pyramid 0x5B), so vanilla 0x5B is correct.
+  { kAsset_BirdTravel_ScreenIndex, 2, 0, 0x0043 },  // ToH NW      0x03->0x43
+  { kAsset_BirdTravel_ScreenIndex, 2, 1, 0x0056 },  // Coven       0x16->0x56
+  { kAsset_BirdTravel_ScreenIndex, 2, 2, 0x0058 },  // Kakariko    0x18->0x58
+  { kAsset_BirdTravel_ScreenIndex, 2, 3, 0x006C },  // Uncle's E.  0x2C->0x6C
+  { kAsset_BirdTravel_ScreenIndex, 2, 4, 0x006F },  //             0x2F->0x6F
+  { kAsset_BirdTravel_ScreenIndex, 2, 5, 0x0070 },  //             0x30->0x70
+  { kAsset_BirdTravel_ScreenIndex, 2, 6, 0x007B },  //             0x3B->0x7B
+  { kAsset_BirdTravel_ScreenIndex, 2, 7, 0x007F },  // Desert      0x3F->0x7F
 };
 #define kInvertedOverrideCount \
     (sizeof(kInvertedOverrides) / sizeof(kInvertedOverrides[0]))
@@ -117,6 +135,7 @@ static InvertedShadow g_shadows[] = {
   { kAsset_ExitData_YCoord,       {0}, NULL },
   { kAsset_ExitData_CameraX,      {0}, NULL },
   { kAsset_ExitData_CameraY,      {0}, NULL },
+  { kAsset_BirdTravel_ScreenIndex, {0}, NULL },
 };
 #define kInvertedShadowCount (sizeof(g_shadows) / sizeof(g_shadows[0]))
 
