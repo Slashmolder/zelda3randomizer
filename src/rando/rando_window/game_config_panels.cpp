@@ -839,7 +839,20 @@ void DbgInventory_Render(void) {
     Cheats_Toggle("Cane of Byrna", 0xF351);
     Cheats_Toggle("Magic Cape", 0xF352);
     Cheats_Toggle("Magic Mirror", 0xF353);
-    Cheats_Toggle("Pegasus Boots", 0xF355);
+    // Boots are special: the dash *action* is gated by link_ability_flags
+    // (0xF379) bit 2, not the inventory byte (player.c attempt_action via
+    // kAbilityBitmasks). The normal receive path sets both (misc.c:843), so the
+    // plain item-byte toggle leaves boots visible in the menu but unusable.
+    // Toggle the ability bit alongside 0xF355 to keep them coupled.
+    // (Flippers needs no such fix: CheckAbilityToSwim() reads link_item_flippers
+    // directly, so the plain item-byte toggle already enables swimming.)
+    {
+      bool v = g_ram[0xF355] != 0;
+      if (ImGui::Checkbox("Pegasus Boots", &v)) {
+        Cheats_PokeByte(0xF355, v ? 1 : 0, 0, 1);
+        Cheats_PokeBit(0xF379, 2, v);  // link_ability_flags dash bit (0x04)
+      }
+    }
     Cheats_Toggle("Flippers", 0xF356);
     Cheats_Toggle("Moon Pearl", 0xF357);
     Cheats_Toggle("Bombos Medallion", 0xF347);
