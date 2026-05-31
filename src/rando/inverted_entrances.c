@@ -28,6 +28,14 @@ enum {
   kAsset_Overworld_Entrance_Id = 126,  // uint8:  door-slot -> entrance-id
   kAsset_ExitData_ScreenIndex  = 130,  // uint8:  exit-id   -> screen index
   kAsset_ExitDataRooms         = 131,  // uint16: exit-id   -> destination room
+  // Exit-data parallel columns (uint16) — used by full exit-row relocations.
+  kAsset_ExitData_Map16        = 132,  // uint16: map16 load src offset
+  kAsset_ExitData_ScrollX      = 133,  // uint16
+  kAsset_ExitData_ScrollY      = 134,  // uint16
+  kAsset_ExitData_XCoord       = 135,  // uint16: Link X on exit
+  kAsset_ExitData_YCoord       = 136,  // uint16: Link Y on exit
+  kAsset_ExitData_CameraX      = 137,  // uint16
+  kAsset_ExitData_CameraY      = 138,  // uint16
 };
 
 static const InvertedOverride kInvertedOverrides[] = {
@@ -48,6 +56,37 @@ static const InvertedOverride kInvertedOverrides[] = {
   { kAsset_ExitDataRooms,         2, 0x38, 0x00E0 },
   // GT exit (exit-id 0x25) -> AT overworld room (PHP: 0x15AEE +2*0x25 = 0x000C).
   { kAsset_ExitDataRooms,         2, 0x25, 0x000C },
+
+  // --- Inverted Dark-World Death Mountain cave rework (ALTTPR Rom.php:1626-1663).
+  // The DM-west cave doors swap interiors so the DW-DM cave system is navigable
+  // from the DW mainland in Inverted. Door-id values verified against Rom.php;
+  // exit-room / full-row column values transcribed verbatim (PLAYTEST-PENDING). ---
+  // Bumper Cave (Bottom) door 0x15 -> Old Man Cave (West) interior 0x06.
+  { kAsset_Overworld_Entrance_Id, 1, 0x15, 0x06 },
+  { kAsset_ExitDataRooms,         2, 0x17, 0x00F0 },
+  // Old Man Cave (West) door 0x05 -> Bumper Cave (Bottom) interior 0x16.
+  { kAsset_Overworld_Entrance_Id, 1, 0x05, 0x16 },
+  { kAsset_ExitDataRooms,         2, 0x07, 0x00FB },
+  // DM Return Cave (West) door 0x2D -> Bumper Cave (Top) interior 0x17.
+  { kAsset_Overworld_Entrance_Id, 1, 0x2D, 0x17 },
+  { kAsset_ExitDataRooms,         2, 0x2F, 0x00EB },
+  // Old Man Cave (East) door 0x06 -> DM Return Cave (West) interior 0x2E.
+  { kAsset_Overworld_Entrance_Id, 1, 0x06, 0x2E },
+  { kAsset_ExitDataRooms,         2, 0x08, 0x00E6 },
+  // Bumper Cave (Top) door 0x16 -> Dark DM Healer Fairy interior 0x5E.
+  { kAsset_Overworld_Entrance_Id, 1, 0x16, 0x5E },
+  // Dark DM Healer Fairy door 0x6F -> Old Man Cave (East) interior 0x07, with a
+  // full exit-row relocation for exit-id 0x18 (the cave now exits to screen 0x43).
+  { kAsset_Overworld_Entrance_Id, 1, 0x6F, 0x07 },
+  { kAsset_ExitDataRooms,         2, 0x18, 0x00F1 },
+  { kAsset_ExitData_ScreenIndex,  1, 0x18, 0x43 },
+  { kAsset_ExitData_Map16,        2, 0x18, 0x1400 },
+  { kAsset_ExitData_ScrollX,      2, 0x18, 0x0294 },
+  { kAsset_ExitData_ScrollY,      2, 0x18, 0x0600 },
+  { kAsset_ExitData_XCoord,       2, 0x18, 0x02E8 },
+  { kAsset_ExitData_YCoord,       2, 0x18, 0x0678 },
+  { kAsset_ExitData_CameraX,      2, 0x18, 0x0303 },
+  { kAsset_ExitData_CameraY,      2, 0x18, 0x0685 },
 };
 #define kInvertedOverrideCount \
     (sizeof(kInvertedOverrides) / sizeof(kInvertedOverrides[0]))
@@ -71,6 +110,13 @@ static InvertedShadow g_shadows[] = {
   { kAsset_Overworld_Entrance_Id, {0}, NULL },
   { kAsset_ExitData_ScreenIndex,  {0}, NULL },
   { kAsset_ExitDataRooms,         {0}, NULL },
+  { kAsset_ExitData_Map16,        {0}, NULL },
+  { kAsset_ExitData_ScrollX,      {0}, NULL },
+  { kAsset_ExitData_ScrollY,      {0}, NULL },
+  { kAsset_ExitData_XCoord,       {0}, NULL },
+  { kAsset_ExitData_YCoord,       {0}, NULL },
+  { kAsset_ExitData_CameraX,      {0}, NULL },
+  { kAsset_ExitData_CameraY,      {0}, NULL },
 };
 #define kInvertedShadowCount (sizeof(g_shadows) / sizeof(g_shadows[0]))
 

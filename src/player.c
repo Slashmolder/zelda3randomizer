@@ -2690,8 +2690,31 @@ void LinkItem_Flute() {  // 87a3db
     return;
   flute_countdown = 128;
   Ancilla_Sfx2_Near(19);
-  if (player_is_indoors || overworld_screen_index & 0x40 || main_module_index == 11)
-    return;
+  // #82 Inverted: the flute works only in the Dark World, but the Kakariko
+  // weathervane (flute==2 activation) must still be lit at LIGHT-world screen
+  // 0x18. Upstream z3randomizer (flute.asm FreeDuckCheck, hooked at $87A3E2 =
+  // the flute_countdown store) intercepts that activation BEFORE the world gate,
+  // so a plain operand flip of the gate would make Kakariko activation
+  // unreachable in Inverted. Mirror FreeDuckCheck: in active-Inverted rando,
+  // (1) run the screen-0x18 weathervane activation pre-gate while flute is still
+  // inactive, then (2) flip the world gate to block the LIGHT world (instead of
+  // the dark world) for the normal travel-duck call.
+  bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
+                        Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+  if (rando_inverted) {
+    if (!player_is_indoors && link_item_flute == 2 &&
+        overworld_screen_index == 0x18 && link_y_coord >= 0x760 && link_y_coord < 0x7e0 &&
+        link_x_coord >= 0x1cf && link_x_coord < 0x230) {
+      submodule_index = 45;
+      AncillaAdd_ExplodingWeatherVane(55, 0);
+      return;
+    }
+    if (player_is_indoors || !(overworld_screen_index & 0x40) || main_module_index == 11)
+      return;
+  } else {
+    if (player_is_indoors || overworld_screen_index & 0x40 || main_module_index == 11)
+      return;
+  }
   int i = 4;
   do {
     if (ancilla_type[i] == 0x27)

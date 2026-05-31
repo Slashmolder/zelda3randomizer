@@ -4011,7 +4011,15 @@ void Sprite_SpawnPoofGarnish(int j) {  // 85ab9c
 }
 
 void Sprite_6C_MirrorPortal(int k) {  // 85af75
-  if (savegame_is_darkworld) {
+  // #82 Inverted: warp-vortex world visibility (z3randomizer $85AF79). Vanilla
+  // despawns the mirror-portal vortex in the DARK world (visible only in light);
+  // Inverted flips the home world so it is visible/active in the DARK world.
+  bool vortex_hidden_world =
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+        ? (savegame_is_darkworld == 0)
+        : (savegame_is_darkworld != 0);
+  if (vortex_hidden_world) {
     sprite_state[k] = 0;
   } else {
     if (BYTE(overworld_screen_index) >= 0x80)

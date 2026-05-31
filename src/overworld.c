@@ -482,7 +482,15 @@ setsong:
     DecodeAnimatedSpriteTile_variable(0x1e);
   saved_module_for_menu = 9;
   Sprite_ReloadAll_Overworld();
-  if (!(overworld_screen_index & 0x40))
+  // #82 Inverted: residual portal spawn-side (z3randomizer $82B34D). Vanilla
+  // spawns the leftover mirror portal only in the LIGHT world (!(ow&0x40));
+  // Inverted flips the home world, so spawn it in the DARK world instead.
+  bool portal_away_world =
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+        ? (overworld_screen_index & 0x40) != 0
+        : !(overworld_screen_index & 0x40);
+  if (portal_away_world)
     Sprite_InitializeMirrorPortal();
   sound_effect_ambient = sram_progress_indicator < 2 ? 1 : 5;
   if (follower_indicator == 6)
@@ -1392,7 +1400,15 @@ void MirrorWarp_LoadSpritesAndColors() {  // 82b334
   Link_ItemReset_FromOverworldThings();
   Dungeon_ResetTorchBackgroundAndPlayerInner();
   link_player_handler_state = kPlayerState_Mirror;
-  if (!(overworld_screen_index & 0x40))
+  // #82 Inverted: residual portal spawn-side (z3randomizer $82B34D). Vanilla
+  // spawns the leftover mirror portal only in the LIGHT world (!(ow&0x40));
+  // Inverted flips the home world, so spawn it in the DARK world instead.
+  bool portal_away_world =
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+        ? (overworld_screen_index & 0x40) != 0
+        : !(overworld_screen_index & 0x40);
+  if (portal_away_world)
     Sprite_InitializeMirrorPortal();
 }
 

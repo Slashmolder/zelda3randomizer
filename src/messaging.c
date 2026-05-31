@@ -1307,7 +1307,15 @@ void WorldMap_HandleSprites() {  // 8abf66
   uint16 xbak = link_x_coord_spexit;
 
   int k = 15;
-  if (BYTE(overworld_screen_index) < 0x40 && (bird_travel_x_lo[k] | bird_travel_x_hi[k] | bird_travel_y_lo[k] | bird_travel_y_hi[k])) {
+  // #82 Inverted: residual-portal map indicator (z3randomizer $8ABFBB BCS->BCC).
+  // Vanilla shows the leftover-portal marker only on the LIGHT-world map
+  // (screen<0x40); Inverted shows it on the DARK-world map instead. Visual-only.
+  bool show_portal_marker =
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+        ? (BYTE(overworld_screen_index) >= 0x40)
+        : (BYTE(overworld_screen_index) < 0x40);
+  if (show_portal_marker && (bird_travel_x_lo[k] | bird_travel_x_hi[k] | bird_travel_y_lo[k] | bird_travel_y_hi[k])) {
     if (!frame_counter)
       birdtravel_var1[k]++;
     link_x_coord_spexit = bird_travel_x_hi[k] << 8 | bird_travel_x_lo[k];
