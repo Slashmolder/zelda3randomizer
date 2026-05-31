@@ -131,12 +131,14 @@ extern "C" void DbgWarp_Render(void) {
                        "Out-of-range / special entrance ids may softlock or load a broken room.");
     static int s_entrance = 0;
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputInt("Entrance id", &s_entrance);
+    // Hex entry — entrance ids are conventionally written in hex (0x3C..0x84).
+    ImGui::InputScalar("Entrance id (hex)", ImGuiDataType_S32, &s_entrance, NULL, NULL, "%02X",
+                       ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
     if (s_entrance < 0)    s_entrance = 0;
     if (s_entrance > 0x84) s_entrance = 0x84;  // entrance ids run to 0x84 (cave ids 0x83-0x84)
     ImGui::SameLine();
     if (ImGui::Button("Warp to entrance")) DoWarpEntrance((uint8)s_entrance);
-    ImGui::TextDisabled("Range clamped to 0..0x80; verify each id by playtest.");
+    ImGui::TextDisabled("Range clamped to 0..0x84; verify each id by playtest.");
   }
 
   ImGui::EndDisabled();

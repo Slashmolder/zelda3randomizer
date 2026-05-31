@@ -630,18 +630,26 @@ static void DrawMapTracker(void *) {
   ImGui::SameLine();
   ImGui::RadioButton("Dark World", &s_world, 1);
   ImGui::SameLine();
-  // Pin-tuning aids. Pin coords (kLightPins/kDarkPins) are ABSOLUTE texture
-  // coords (0..1 over the full 512px map). Zoom only crops the view (the
-  // playable landmass is the central ~70%; the rest is cloud border that the
-  // game crops too), so the cursor readout reports stable absolute coords at
-  // any zoom — hover where a pin should sit, read x/y, and that's the value.
+  // Pin-tuning aids (grid overlay + zoom slider + live cursor readout). Pin
+  // coords (kLightPins/kDarkPins) are ABSOLUTE texture coords (0..1 over the
+  // full 512px map). Zoom only crops the view (the playable landmass is the
+  // central ~70%; the rest is cloud border that the game crops too), so the
+  // cursor readout reports stable absolute coords at any zoom — hover where a
+  // pin should sit, read x/y, and that's the value.
+  //
+  // The pins are dialed in now, so the toggles are compiled out of normal
+  // builds. Define Z3R_MAP_TRACKER_TUNING to bring back the Grid/Zoom controls
+  // (and the cursor readout) for re-tuning. When off, the map renders at the
+  // tuned fixed zoom with no grid.
   static bool s_show_grid = false;
   static float s_zoom = 1.50f;
+#ifdef Z3R_MAP_TRACKER_TUNING
   ImGui::Checkbox("Grid", &s_show_grid);
   ImGui::SameLine();
   ImGui::SetNextItemWidth(120);
   ImGui::SliderFloat("Zoom", &s_zoom, 1.0f, 3.0f, "%.2fx");
   ImGui::SameLine();
+#endif
   ImGui::TextDisabled("(green ok · yellow avail · grey locked)");
 
   const WorldPin *pins = s_world ? kDarkPins : kLightPins;
