@@ -1304,10 +1304,11 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
       }
     }
     if (decoupled_dun) {
+      // No logic edges (coupled-equivalent reachability is conservative + correct);
+      // net' is the runtime exit-room redirect only. Regenerated from (seed, attempt).
       uint8 dd_assign[kEntranceMaxInteriors];
       int ddn = Entrance_ComputeDungeonDecoupledExit(&es, seed, h->entrance_attempt, dd_assign);
       if (ddn > 0) {
-        Entrance_ApplyDungeonDecoupledExitEdges(dd_assign, ddn);  // tracker reachability
         g_dungeon_decoupled_n = (ddn > kEntranceDungeonCount) ? kEntranceDungeonCount : ddn;
         memcpy(g_dungeon_decoupled_net, dd_assign, (size_t)g_dungeon_decoupled_n);
         g_dungeon_decoupled_active = 1;

@@ -1880,6 +1880,25 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     overworld_unk3 = kExitData_Unk3[k];
     overworld_unk1_neg = -overworld_unk1;
     overworld_unk3_neg = -overworld_unk3;
+    // Dungeon decoupled (Insanity): a one-way dungeon exit can emerge in the OTHER
+    // world (the destination is a DIFFERENT dungeon's door). This search branch sets
+    // the screen index (world bit 0x40) but NOT savegame_is_darkworld / is_in_dark_
+    // world / Link's bunny form — the mirror warp normally does that. Sync them when
+    // the destination world differs from the entry world, else a cross-world dungeon
+    // exit leaves stale world flags (wrong area-head at the next screen edge) and a
+    // wrong/stuck bunny. No-op for coupled/vanilla exits (same world ⇒ no change).
+    uint8 dest_dark = (overworld_screen_index & 0x40) ? 1 : 0;
+    if (dest_dark != (savegame_is_darkworld != 0)) {
+      savegame_is_darkworld = dest_dark;
+      is_in_dark_world = dest_dark;
+      if (link_item_moon_pearl || !dest_dark) {
+        ForceNonbunnyStatus();
+      } else {
+        link_is_bunny = link_is_bunny_mirror = 1;
+        link_player_handler_state = kPlayerState_PermaBunny;
+        LoadGearPalettes_bunny();
+      }
+    }
   }
   Overworld_LoadNewScreenProperties();
 }

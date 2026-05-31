@@ -402,16 +402,16 @@ entries:
     label: "c-entrance-decoupled-caves-open-fast-ganon"
     expected_digest: "c6f87874342a082b30f04c0f2c17b8e883f065d7c765b92c144ce8766342ac06"
     expected_sphere_digest: "f6a1f62992a85599aa367c56a0b6ad4f8cbe7465c4bb693a1e9c65f59082b557"
-  # Dungeon decoupled (Stage 4): dungeon shuffle + one-way dungeon EXITS. Unlike the
-  # cave decoupled path this is fully PLAYABLE (no arrival asset - the runtime reuses
-  # the static kExitData room-keyed exit search). Reject-and-retry suffices here too
-  # (7/7 test seeds generated; the exit warps only ADD overworld traversal). The
-  # digest differs from plain dungeon shuffle, confirming the exit edges are active.
+  # Dungeon decoupled (Stage 4): dungeon shuffle + one-way dungeon EXITS. Fully
+  # PLAYABLE (no arrival asset - the runtime reuses the static kExitData room-keyed
+  # exit search). Reject-and-retry suffices (8/8 test seeds). Logic is coupled-
+  # equivalent (NO decoupled exit edges - one-way exits only change the emerge spot
+  # on the connected overworld, so they can't strand; net' is runtime + spoiler only).
   - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true, decoupled: true }
     seed: "0x00000000D00DEC07"
     label: "c-entrance-dungeon-decoupled-open-fast-ganon"
-    expected_digest: "67846ad09d203401c713363d564e5ba8b2a0302d5f5bc7ad1c4dd116d65528d7"
-    expected_sphere_digest: "bba6d656f3675feb5f5979c2e2435d460a4f5d437638a09b2e6fdd5c638177da"
+    expected_digest: "f02c4d8fdfdab5bc8bed60db566405a9375b3a296fb155aab57f3c758b0094da"
+    expected_sphere_digest: "f20ceaf6cd8f63d411cea837d93832906adebff68eaae040e49312efa9e93905"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

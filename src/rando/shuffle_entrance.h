@@ -156,10 +156,9 @@ bool Entrance_IsDungeonDecoupledActive(const RandoSettings *settings);
 // returns the pool size (10, or 11 with the GT opt-in), 0 when inactive.
 int Entrance_ComputeDungeonDecoupledExit(const RandoSettings *settings, uint64 seed,
                                          uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]);
-// Add the one-way dungeon exit edges lobby(D) → entry_region(net'[D]) (unconditional;
-// the lobby is reachable only after D's entry gate, so the medallion/crystal gate is
-// inherited). Composes on the dungeon entry edge set. Cleared by ClearEdgeOverrides.
-void Entrance_ApplyDungeonDecoupledExitEdges(const uint8 *exit_assign, int n);
+// (Dungeon decoupled adds NO logic edges — coupled-equivalent reachability is
+// correct + conservative since one-way dungeon exits only change the emerge spot on
+// the connected overworld; see the note in shuffle_entrance.c.)
 // Runtime: exit-search target room for a one-way dungeon exit, given the LOADED
 // dungeon's (overlay) entrance-id. 0 if not a pooled dungeon or a self-map (coupled).
 uint16 Entrance_DungeonDecoupledExitRoom(const uint8 *exit_assign, int n,

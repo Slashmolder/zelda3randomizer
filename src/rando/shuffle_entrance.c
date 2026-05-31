@@ -712,24 +712,13 @@ int Entrance_ComputeDungeonDecoupledExit(const RandoSettings *settings, uint64 s
   return n;
 }
 
-void Entrance_ApplyDungeonDecoupledExitEdges(const uint8 *exit_assign, int n) {
-  if (exit_assign == NULL) return;
-  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
-  // Append on top of the dungeon ENTRY edge set (Begin only if no edge pass ran).
-  if (!Rando_EntranceEdgeOverridesActive()) Rando_BeginEntranceEdgeOverrides();
-  for (int d = 0; d < n; d++) {
-    int j = exit_assign[d];
-    if (j < 0 || j >= n) continue;
-    if (j == d) continue;  // self-map = coupled-equivalent (exit your own door)
-    // From the loaded dungeon's LOBBY (reachable only after its entry gate, so that
-    // gate — e.g. MM/TR medallion, GT crystals — is inherited) to the exit door's
-    // entry region. Unconditional: once in the lobby you can turn around and leave.
-    uint16 from_r = Rando_FindRegionByName(dungeon_override_key(&kDungeons[d]));
-    uint16 to_r   = Rando_FindRegionByName(kDungeons[j].entry_region_name);
-    if (from_r == 0xFFFF || to_r == 0xFFFF || from_r == to_r) continue;
-    Rando_AddEntranceEdge(from_r, to_r, 0, 0);
-  }
-}
+// NOTE: dungeon decoupled adds NO logic edges. A one-way dungeon exit only changes
+// WHERE Link emerges on the connected overworld — it never disconnects a region —
+// so coupled-equivalent reachability is correct and conservative (can never strand
+// the goal). An earlier lobby(D)→entry_region(net'[D]) edge was WRONG: for single-
+// region dungeons entry_region_name IS the interior lobby, so the edge granted free
+// access to the target dungeon's gated interior locations (audit HIGH). Modeling
+// warps as logic shortcuts (with the correct overworld approach region) is future work.
 
 uint16 Entrance_DungeonDecoupledExitRoom(const uint8 *exit_assign, int n,
                                          uint8 loaded_entrance_id) {
@@ -1325,18 +1314,6 @@ void Entrance_SelfCheck(void) {
       }
       dseen[da[i]] = 1;
     }
-    Entrance_ClearEdgeOverrides();
-    Entrance_ApplyDungeonDecoupledExitEdges(da, dnn);
-    int dd_c1 = Rando_GetEntranceAddedEdgeCount();
-    Entrance_ClearEdgeOverrides();
-    Entrance_ApplyDungeonDecoupledExitEdges(da, dnn);
-    int dd_c2 = Rando_GetEntranceAddedEdgeCount();
-    if (dd_c1 <= 0 || dd_c2 != dd_c1) {
-      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled edges unstable (%d then %d)\n",
-              dd_c1, dd_c2);
-      exit(2);
-    }
-    Entrance_ClearEdgeOverrides();
     // Runtime room lookup: loaded dungeon 0 → kDungeons[net'[0]].room (0 on self-map),
     // and a non-pool entrance-id → 0.
     int j0 = da[0];

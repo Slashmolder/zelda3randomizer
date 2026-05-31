@@ -245,11 +245,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
         decoupled_count = Entrance_ComputeDecoupledExit(settings, seed_u64, (uint8)att, decoupled_assign);
         Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
       }
-      // Dungeon decoupled: one-way dungeon exit edges lobby(D) → entry(net'[D]),
-      // composing on the dungeon entry edge set (same per-attempt reset applies).
+      // Dungeon decoupled: NO logic edges. A one-way dungeon exit only changes WHERE
+      // Link emerges on the (connected) overworld — it never disconnects anything, so
+      // coupled-equivalent reachability is correct AND conservative (can't strand the
+      // goal). net' is computed for the runtime redirect + spoiler only.
       if (dun_decoupled_on) {
         dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(settings, seed_u64, (uint8)att, dun_decoupled_assign);
-        Entrance_ApplyDungeonDecoupledExitEdges(dun_decoupled_assign, dun_decoupled_count);
       }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {

@@ -719,9 +719,10 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
         decoupled_count = Entrance_ComputeDecoupledExit(&settings, seed_u64, (uint8)att, decoupled_assign);
         Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
       }
+      // Dungeon decoupled: NO logic edges (coupled-equivalent reachability is correct
+      // + conservative; see rando_generate.c). net' is for the runtime + spoiler only.
       if (dun_decoupled_on) {
         dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(&settings, seed_u64, (uint8)att, dun_decoupled_assign);
-        Entrance_ApplyDungeonDecoupledExitEdges(dun_decoupled_assign, dun_decoupled_count);
       }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
