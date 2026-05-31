@@ -305,7 +305,6 @@ bool Rando_EntranceForceCachedExit(uint16 lx);
 // swap in net[entered]'s captured arrival so Link emerges at a DIFFERENT door;
 // returns false (→ coupled return) when inactive / target uncaptured.
 void Rando_DecoupledSetEnteredDoor(uint16 lx);
-void Rando_DecoupledCaptureArrival(void);
 bool Rando_DecoupledReplaceArrival(void);
 // D.3 capture-for-bake: snapshot each entered cave's overworld arrival (works in
 // ANY game — keyed by the entered door's vanilla interior). Auto-dumps

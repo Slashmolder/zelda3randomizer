@@ -8488,12 +8488,9 @@ void Dungeon_LoadEntrance() {  // 82d8b3
     main_tile_theme_index_exit = main_tile_theme_index;
     aux_tile_theme_index_exit = aux_tile_theme_index;
     sprite_graphics_index_exit = sprite_graphics_index;
-    // Decoupled (D.4): snapshot this door's just-cached overworld arrival so a
-    // later decoupled cave exit can replay it from a different door. No-op unless
-    // decoupled is active. Only the non-death entry path caches a real arrival.
-    Rando_DecoupledCaptureArrival();
-    // D.3 capture-for-bake: in a non-entrance-shuffle game, record each cave's
-    // arrival for the static table. No-op when an entrance overlay is installed.
+    // Snapshot this door's just-cached overworld arrival into the persisted
+    // capture table (any mode). The decoupled runtime replays it; it also feeds
+    // the optional bake. Only the non-death entry path caches a real arrival.
     Rando_CaptureArrivalForBake();
   }
   bg1_y_offset = bg1_x_offset = 0;

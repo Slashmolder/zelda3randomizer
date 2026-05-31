@@ -985,7 +985,14 @@ static int   g_decoupled_n;                       // pool size (cave interiors)
 static uint8 g_decoupled_net[kEntranceMaxInteriors];   // entered-interior → emerge
 static uint16 g_decoupled_entered;                // vanilla interior of entered door; 0xFFFF = none
 typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid; } RandoCaveArrival;
-static RandoCaveArrival g_cave_arrival[kEntranceMaxInteriors];
+// Single per-interior overworld-arrival table used by BOTH the bake-capture and
+// the decoupled runtime. Persisted to cave_arrival_capture.bin and reloaded each
+// session, so captures accumulate across restarts and the runtime emerges at any
+// door captured this session OR a prior one (option B: just play, it fills in).
+static RandoCaveArrival g_cave_capture[kEntranceMaxInteriors];
+static int g_cave_capture_count;
+static bool g_cave_capture_loaded;  // loaded the persisted .bin this session yet?
+static void Rando_LoadArrivalCaptureIfNeeded(void);
 
 // D.3 capture: vanilla cave interior of the door just entered, recorded at the
 // overworld entry hook for EVERY game (shuffle or not) so the capture-for-bake
@@ -1008,7 +1015,8 @@ static void Decoupled_Reset(void) {
   g_decoupled_active = 0;
   g_decoupled_n = 0;
   g_decoupled_entered = 0xFFFF;
-  memset(g_cave_arrival, 0, sizeof(g_cave_arrival));
+  // NOTE: do NOT clear g_cave_capture here — it's the persisted arrival table and
+  // must survive slot teardown / reload (that's what makes captures accumulate).
 }
 
 // Entry hook: remember the vanilla cave interior of the door slot just entered
@@ -1021,20 +1029,8 @@ void Rando_DecoupledSetEnteredDoor(uint16 lx) {
   if (interior >= 0 && interior < g_decoupled_n) g_decoupled_entered = (uint16)interior;
 }
 
-// Capture hook (called after Dungeon_LoadEntrance caches *_exit): snapshot the
-// entered door's overworld-arrival block under its vanilla interior. Rejects the
-// degenerate startup capture (link 0,0) per the spike's iter3 finding.
-void Rando_DecoupledCaptureArrival(void) {
-  if (!g_decoupled_active || g_decoupled_entered >= (uint16)g_decoupled_n) return;
-  uint16 lx = (uint16)(g_ram[0xC14A] | (g_ram[0xC14B] << 8));  // link_x_coord_exit
-  uint16 ly = (uint16)(g_ram[0xC148] | (g_ram[0xC149] << 8));  // link_y_coord_exit
-  if (lx < 0x100 && ly < 0x100) return;
-  RandoCaveArrival *e = &g_cave_arrival[g_decoupled_entered];
-  memcpy(e->block, g_ram + 0xC140, 0x32);
-  e->is_dark = g_ram[0xFFF];
-  e->save_dark = g_ram[0xF3CA];
-  e->valid = 1;
-}
+// (Capture is handled by Rando_CaptureArrivalForBake on every cave entry — it
+// fills + persists the same g_cave_capture table the runtime reads below.)
 
 // Exit hook (cave-class cached branch, before LoadCachedEntranceProperties):
 // replace the live *_exit with net[entered]'s captured arrival so Link emerges
@@ -1042,10 +1038,11 @@ void Rando_DecoupledCaptureArrival(void) {
 // target is the same interior, or the target hasn't been captured yet.
 bool Rando_DecoupledReplaceArrival(void) {
   if (!g_decoupled_active || g_decoupled_entered >= (uint16)g_decoupled_n) return false;
+  Rando_LoadArrivalCaptureIfNeeded();  // pull in prior-session captures (persisted)
   int target = g_decoupled_net[g_decoupled_entered];
   if (target < 0 || target >= g_decoupled_n || target == (int)g_decoupled_entered) return false;
-  const RandoCaveArrival *e = &g_cave_arrival[target];
-  if (!e->valid) return false;  // not captured this session → coupled fallback (D.3 bake closes this)
+  const RandoCaveArrival *e = &g_cave_capture[target];
+  if (!e->valid) return false;  // target door not captured yet → coupled fallback (enter it once)
   memcpy(g_ram + 0xC140, e->block, 0x32);
   g_ram[0xFFF] = e->is_dark;      // is_in_dark_world
   g_ram[0xF3CA] = e->save_dark;   // savegame_is_darkworld
@@ -1065,9 +1062,7 @@ bool Rando_DecoupledReplaceArrival(void) {
 // every cave once. The dump is pasted into cave_arrival_baked.h (D.3 bake), which
 // the decoupled runtime preloads so every door is one-way from the start.
 // ---------------------------------------------------------------------------
-static RandoCaveArrival g_cave_capture[kEntranceMaxInteriors];
-static int g_cave_capture_count;
-static bool g_cave_capture_loaded;  // loaded the persisted .bin this session yet?
+// (g_cave_capture / count / loaded are declared above — shared with the runtime.)
 
 // Persistence (fixes lost captures across restarts): the in-memory table is
 // reset each launch, so without this a re-launch + one capture would overwrite
