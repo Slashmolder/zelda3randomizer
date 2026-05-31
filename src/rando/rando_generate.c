@@ -84,7 +84,17 @@ void Rando_InitNewSlotSram(uint8 *target_sram, uint8 world_state) {
       target_sram[0x3C6] = 0x14;  // sram_progress_flags
       target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
       target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
-      target_sram[0x3C8] = 0x01;  // which_starting_point (Sanctuary)
+      // #82 Inverted spawn. which_starting_point indexes kStartingPoint_rooms[]
+      // (dungeon.c): 1 = the Sanctuary, a *Light-World* building whose exit drops
+      // the player in the LW — entirely wrong for an Inverted (DW-home) game, and
+      // the cause of the "spawning in the LW" regression. 0 = Link's House, which
+      // under the active Inverted slot exits to the DW Bomb-Shop position
+      // (screen 0x6C) via the Link's-House<->Bomb-Shop entrance swap — i.e. the
+      // Inverted home, in the DW, navigable to the DW-South early checks. (Open /
+      // Retro leave this at the memset default 0 for the same Link's-House spawn,
+      // there in the LW.) NOTE: baked at generation — an existing slot keeps its
+      // stored value, so this only takes effect for a freshly generated seed.
+      target_sram[0x3C8] = 0x00;  // which_starting_point (Link's House = Inverted home, DW)
       break;
     case kWorldState_Standard:
     default:
@@ -126,10 +136,11 @@ void RandoGenerate_SelfCheck(void) {
       exit(2);
     }
   }
-  // Inverted: Dark-World start with Moon Pearl + Magic Mirror + Sanctuary spawn.
+  // Inverted: Dark-World start with Moon Pearl + Magic Mirror + Link's-House
+  // spawn (which_starting_point 0 -> DW Bomb-Shop position via the entrance swap).
   Rando_InitNewSlotSram(sram, kWorldState_Inverted);
   if (sram[0x3CA] != 0x40 || sram[0x3C5] != 0x02 || sram[0x3C6] != 0x14 ||
-      sram[0x357] != 0x01 || sram[0x353] != 0x02 || sram[0x3C8] != 0x01) {
+      sram[0x357] != 0x01 || sram[0x353] != 0x02 || sram[0x3C8] != 0x00) {
     fprintf(stderr, "RandoGenerate_SelfCheck: Inverted DW start-state SRAM wrong\n");
     exit(2);
   }
