@@ -306,11 +306,13 @@ bool Rando_EntranceForceCachedExit(uint16 lx);
 // returns false (→ coupled return) when inactive / target uncaptured.
 void Rando_DecoupledSetEnteredDoor(uint16 lx);
 bool Rando_DecoupledReplaceArrival(void);
-// D.3 capture-for-bake: snapshot each entered cave's overworld arrival (works in
-// ANY game — keyed by the entered door's vanilla interior). Auto-dumps
-// cave_arrival_capture.txt on each new capture. RecordEnteredDoorForCapture runs
-// at the overworld entry hook to set the key.
+// D.3 capture-for-bake (dev opt-in via ZELDA3_CAPTURE_ARRIVALS): snapshot each
+// entered cave's overworld arrival, keyed by the entered cave interior.
+// RecordEnteredDoorForCapture runs at the walk-in entry hook; RecordEnteredFallhole
+// at the fall-in path (drop caves like heart_piece_cave_3, also sets the decoupled
+// exit key so falling in emerges decoupled).
 void Rando_RecordEnteredDoorForCapture(uint16 lx);
+void Rando_RecordEnteredFallhole(void);
 void Rando_CaptureArrivalForBake(void);
 
 // If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE

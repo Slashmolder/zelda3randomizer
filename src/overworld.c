@@ -3350,6 +3350,9 @@ void Overworld_GetPitDestination() {  // 9bb860
   // or it would corrupt this interior's exit branch — matches the Houlihan path.)
   g_rando_entrance_exit_room = 0;
   g_rando_entrance_force_cached = 0;
+  // Decoupled / capture (D.3/D.4): a drop-in cave is entered by falling, so record
+  // it here (keyed by which_entrance) — lets it be captured and decouple its exit.
+  Rando_RecordEnteredFallhole();
 }
 
 void Overworld_UseEntrance() {  // 9bbbf4

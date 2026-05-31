@@ -1014,6 +1014,19 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
     g_rando_entered_door_interior = (uint16)interior;
 }
 
+// Fall-in (drop) caves have no walk-in door slot — the fall sets which_entrance
+// directly (and the fall-hole table isn't shuffled), so key on it. Lets the
+// capture tool record drop caves (e.g. heart_piece_cave_3) and the decoupled
+// exit emerge elsewhere after falling in.
+void Rando_RecordEnteredFallhole(void) {
+  g_rando_entered_door_interior = 0xFFFF;
+  int interior = Entrance_InteriorOfEntranceId(which_entrance);
+  if (interior < 0 || interior >= kEntranceMaxInteriors) return;
+  g_rando_entered_door_interior = (uint16)interior;
+  if (g_decoupled_active && interior < g_decoupled_n)
+    g_decoupled_entered = (uint16)interior;
+}
+
 static void Decoupled_Reset(void) {
   g_decoupled_active = 0;
   g_decoupled_n = 0;
@@ -1057,30 +1070,36 @@ bool Rando_DecoupledReplaceArrival(void) {
 }
 
 // ---------------------------------------------------------------------------
-// D.3 capture-for-bake: fill a per-interior arrival table from a VANILLA
-// walkabout (no entrance overlay) and auto-dump a ready-to-commit C initializer
-// (cave_arrival_capture.txt next to the exe) once all interiors are captured.
-// Run it by playing a NON-entrance-shuffle game (so which_entrance == the entered
-// cave's own id and the cached *_exit is that cave's overworld door) and entering
-// every cave once. The dump is pasted into cave_arrival_baked.h (D.3 bake), which
-// the decoupled runtime preloads so every door is one-way from the start.
+// D.3 cave-arrival table. Production: the committed kCaveArrivalBaked is loaded
+// once and used by the decoupled runtime (every door one-way from launch). The
+// re-capture/dump tooling below (used to PRODUCE the baked table) is a developer
+// opt-in — set the env var ZELDA3_CAPTURE_ARRIVALS=1 to record fresh arrivals
+// into cave_arrival_capture.{bin,txt} for re-baking. Off by default, so normal
+// play writes no files and prints nothing.
 // ---------------------------------------------------------------------------
-// (g_cave_capture / count / loaded are declared above — shared with the runtime.)
+static bool Rando_ArrivalCaptureEnabled(void) {
+  static int cached = -1;  // -1 unknown, 0 off, 1 on
+  if (cached < 0) {
+    const char *v = getenv("ZELDA3_CAPTURE_ARRIVALS");
+    cached = (v != NULL && v[0] != '\0' && v[0] != '0') ? 1 : 0;
+  }
+  return cached != 0;
+}
 
-// Persistence (fixes lost captures across restarts): the in-memory table is
-// reset each launch, so without this a re-launch + one capture would overwrite
-// the .txt with a near-empty table. Load the binary sidecar once at the first
-// capture so the walkabout accumulates across sessions.
 static void Rando_LoadArrivalCaptureIfNeeded(void) {
   if (g_cave_capture_loaded) return;
   g_cave_capture_loaded = true;
   int n = Entrance_CaveInteriorCount();
-  // 1) Committed baked table — the default so every door is one-way from launch.
+  // Committed baked table — the production source (every door one-way from launch).
   for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
     g_cave_capture[i] = kCaveArrivalBaked[i];
-  // 2) Dev overlay: a live capture file (walkabout tool) overrides matching
-  //    entries so re-captures take effect without rebaking. Only valid entries
-  //    overlay, so a partial .bin never erases baked data.
+  g_cave_capture_count = 0;
+  for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+    if (g_cave_capture[i].valid) g_cave_capture_count++;
+  if (!Rando_ArrivalCaptureEnabled()) return;
+  // Dev re-capture overlay: a live capture file overrides matching entries so
+  // re-captures take effect without rebaking (valid-only, so a partial file
+  // never erases baked data).
   FILE *f = fopen("cave_arrival_capture.bin", "rb");
   if (f != NULL) {
     static RandoCaveArrival tmp[kEntranceMaxInteriors];
@@ -1088,11 +1107,11 @@ static void Rando_LoadArrivalCaptureIfNeeded(void) {
       for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
         if (tmp[i].valid) g_cave_capture[i] = tmp[i];
     fclose(f);
+    g_cave_capture_count = 0;
+    for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+      if (g_cave_capture[i].valid) g_cave_capture_count++;
   }
-  g_cave_capture_count = 0;
-  for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
-    if (g_cave_capture[i].valid) g_cave_capture_count++;
-  fprintf(stderr, "[ARRIVAL-CAPTURE] arrival table ready: %d/%d doors\n",
+  fprintf(stderr, "[ARRIVAL-CAPTURE] capture mode ON — %d/%d doors\n",
           g_cave_capture_count, n);
 }
 
@@ -1120,6 +1139,7 @@ static void Rando_DumpArrivalCapture(void) {
 }
 
 void Rando_CaptureArrivalForBake(void) {
+  if (!Rando_ArrivalCaptureEnabled()) return;  // dev opt-in only; silent otherwise
   Rando_LoadArrivalCaptureIfNeeded();  // resume prior session's captures (restart-safe)
   // Key by the entered door's VANILLA interior (recorded at the entry hook), which
   // is correct in ANY mode: the cached *_exit is always the entered DOOR's
