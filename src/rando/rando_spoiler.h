@@ -42,6 +42,10 @@ typedef struct RandoSpoiler {
   // emerge-hole). NULL/0 omits the section.
   const uint8 *decoupled_assign;
   int decoupled_count;
+  // Phase C Stage 4 (dungeon decoupled) — the accepted one-way DUNGEON exit
+  // permutation (loaded dungeon → exit door). NULL/0 omits the section.
+  const uint8 *dun_decoupled_assign;
+  int dun_decoupled_count;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

@@ -28,6 +28,11 @@ extern "C" {
 // 38). Used to size caller assignment buffers.
 #define kEntranceMaxInteriors 64
 
+// Dungeon shuffle pool sizes (public so the runtime can size the decoupled net
+// buffer). Base 10 dungeons; Ganon's Tower (last) joins only with its opt-in.
+#define kEntranceDungeonBaseCount 10
+#define kEntranceDungeonCount 11
+
 // True iff the active settings request an entrance shuffle that Stage 1
 // supports: shuffle_cave_entrances on, world_state ∈ {Open, Standard}. Inverted
 // and Retro are explicitly out of Stage 1 scope (return false).
@@ -140,6 +145,28 @@ uint8 Entrance_CaveRepresentativeId(int interior);
 // D.3 capture helpers: total cave-interior count (decoupled pool size) + name.
 int Entrance_CaveInteriorCount(void);
 const char *Entrance_CaveInteriorName(int interior);
+
+// Dungeon decoupled (Insanity for dungeons): one-way dungeon EXITS, independent of
+// the cave decoupled path and composed on top of the dungeon ENTRY shuffle. No
+// arrival asset is needed — the runtime reuses the static kExitData room-keyed exit
+// search, just targeting the π_out dungeon's room instead of the source. net'[D] =
+// the dungeon-pool index of the door Link emerges at after exiting loaded dungeon D.
+bool Entrance_IsDungeonDecoupledActive(const RandoSettings *settings);
+// net' permutation over the active dungeon pool for (seed, attempt). Distinct salt;
+// returns the pool size (10, or 11 with the GT opt-in), 0 when inactive.
+int Entrance_ComputeDungeonDecoupledExit(const RandoSettings *settings, uint64 seed,
+                                         uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]);
+// Add the one-way dungeon exit edges lobby(D) → entry_region(net'[D]) (unconditional;
+// the lobby is reachable only after D's entry gate, so the medallion/crystal gate is
+// inherited). Composes on the dungeon entry edge set. Cleared by ClearEdgeOverrides.
+void Entrance_ApplyDungeonDecoupledExitEdges(const uint8 *exit_assign, int n);
+// Runtime: exit-search target room for a one-way dungeon exit, given the LOADED
+// dungeon's (overlay) entrance-id. 0 if not a pooled dungeon or a self-map (coupled).
+uint16 Entrance_DungeonDecoupledExitRoom(const uint8 *exit_assign, int n,
+                                         uint8 loaded_entrance_id);
+// Spoiler: one-way dungeon "dungeon_decoupled_exit" map (loaded dungeon → exit door).
+void Entrance_WriteDungeonDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);
+void Entrance_WriteDungeonDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
 
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole

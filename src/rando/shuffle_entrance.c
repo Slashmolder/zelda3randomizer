@@ -171,9 +171,7 @@ static const char *dungeon_override_key(const RandoDungeon *d) {
 // first kEntranceDungeonBaseCount (10) entries by default; Ganon's Tower (the
 // last entry) joins only when the advanced shuffle_ganons_tower_entrance axis is
 // on (see Entrance_DungeonPoolCount). GT MUST stay last so excluding it = taking
-// the first 10.
-#define kEntranceDungeonBaseCount 10
-#define kEntranceDungeonCount 11
+// the first 10. (kEntranceDungeonBaseCount / kEntranceDungeonCount in the header.)
 static const RandoDungeon kDungeons[kEntranceDungeonCount] = {
   { "palace_of_darkness",   "PalaceOfDarkness",     0x04A, 0x26 },
   { "swamp_palace",         "SwampPalace",          0x028, 0x25 },
@@ -683,6 +681,90 @@ void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, in
     if (j < 0 || j >= kEntranceCaveInteriorCount) j = i;
     if (j == i) continue;
     fprintf(f, "  %s -> %s\n", kCaveInteriors[i].name, kCaveInteriors[j].name);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dungeon decoupled (Insanity for dungeons) — one-way dungeon EXITS
+// ---------------------------------------------------------------------------
+bool Entrance_IsDungeonDecoupledActive(const RandoSettings *settings) {
+  if (settings == NULL || !settings->decoupled) return false;
+  // Composes on the dungeon ENTRY shuffle; NOT on the Crossed pool (separate axis).
+  if (!settings->shuffle_dungeon_entrances || settings->cross_category) return false;
+  return settings->world_state == kWorldState_Open ||
+         settings->world_state == kWorldState_Standard;
+}
+
+int Entrance_ComputeDungeonDecoupledExit(const RandoSettings *settings, uint64 seed,
+                                         uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]) {
+  if (exit_assign == NULL || !Entrance_IsDungeonDecoupledActive(settings)) return 0;
+  const int n = Entrance_DungeonPoolCount(settings);  // 10, or 11 with the GT opt-in
+  for (int i = 0; i < n; i++) exit_assign[i] = (uint8)i;
+  RandoRng rng;
+  // Distinct salt from cave-entry (none) / dungeon-entry / cross / cave-decoupled
+  // (0xE511…) so the dungeon EXIT permutation is independent in (seed, attempt).
+  Rng_SeedFromU64(&rng, (seed ^ 0xD1CE0DEDD1CE0DEDull) ^
+                            ((uint64)attempt * 0x9E3779B97F4A7C15ull));
+  for (int i = n - 1; i > 0; i--) {
+    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
+    uint8 t = exit_assign[i]; exit_assign[i] = exit_assign[j]; exit_assign[j] = t;
+  }
+  return n;
+}
+
+void Entrance_ApplyDungeonDecoupledExitEdges(const uint8 *exit_assign, int n) {
+  if (exit_assign == NULL) return;
+  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
+  // Append on top of the dungeon ENTRY edge set (Begin only if no edge pass ran).
+  if (!Rando_EntranceEdgeOverridesActive()) Rando_BeginEntranceEdgeOverrides();
+  for (int d = 0; d < n; d++) {
+    int j = exit_assign[d];
+    if (j < 0 || j >= n) continue;
+    if (j == d) continue;  // self-map = coupled-equivalent (exit your own door)
+    // From the loaded dungeon's LOBBY (reachable only after its entry gate, so that
+    // gate — e.g. MM/TR medallion, GT crystals — is inherited) to the exit door's
+    // entry region. Unconditional: once in the lobby you can turn around and leave.
+    uint16 from_r = Rando_FindRegionByName(dungeon_override_key(&kDungeons[d]));
+    uint16 to_r   = Rando_FindRegionByName(kDungeons[j].entry_region_name);
+    if (from_r == 0xFFFF || to_r == 0xFFFF || from_r == to_r) continue;
+    Rando_AddEntranceEdge(from_r, to_r, 0, 0);
+  }
+}
+
+uint16 Entrance_DungeonDecoupledExitRoom(const uint8 *exit_assign, int n,
+                                         uint8 loaded_entrance_id) {
+  if (exit_assign == NULL) return 0;
+  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
+  int d = dungeon_of_entrance(loaded_entrance_id, n);  // loaded dungeon's pool index
+  if (d < 0) return 0;                                  // not a pooled dungeon door
+  int j = exit_assign[d];
+  if (j < 0 || j >= n || j == d) return 0;              // self-map → coupled handles it
+  return kDungeons[j].room;
+}
+
+void Entrance_WriteDungeonDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || exit_assign == NULL || n <= 0) return;
+  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
+  fprintf(f, "  \"dungeon_decoupled_exit\": [\n");
+  for (int d = 0; d < n; d++) {
+    int j = exit_assign[d];
+    if (j < 0 || j >= n) j = d;
+    fprintf(f, "    {\"dungeon\": \"%s\", \"exits_to\": \"%s\"}%s\n",
+            kDungeons[d].name, kDungeons[j].name, (d + 1 < n) ? "," : "");
+  }
+  fprintf(f, "  ],\n");
+}
+
+void Entrance_WriteDungeonDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || exit_assign == NULL || n <= 0) return;
+  if (n > kEntranceDungeonCount) n = kEntranceDungeonCount;
+  fprintf(f, "\nDungeon decoupled exits (inside dungeon -> emerge at door):\n");
+  for (int d = 0; d < n; d++) {
+    int j = exit_assign[d];
+    if (j < 0 || j >= n || j == d) continue;
+    fprintf(f, "  %s -> %s\n", kDungeons[d].name, kDungeons[j].name);
   }
 }
 
@@ -1200,6 +1282,70 @@ void Entrance_SelfCheck(void) {
       exit(2);
     }
     Entrance_ClearEdgeOverrides();
+  }
+
+  // (10) DUNGEON DECOUPLED (Stage 4): exit permutation over the dungeon pool is a
+  //      bijection, deterministic, active only for dungeon shuffle (non-cross,
+  //      Open/Standard); the exit edges add a positive/stable count; and the
+  //      runtime room lookup maps a loaded dungeon to net'[D]'s room.
+  {
+    RandoSettings dds = s;
+    dds.decoupled = 1;
+    dds.shuffle_dungeon_entrances = 1;
+    dds.cross_category = 0;
+    if (!Entrance_IsDungeonDecoupledActive(&dds)) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled should be active for dungeon+Open\n");
+      exit(2);
+    }
+    RandoSettings nod = dds; nod.shuffle_dungeon_entrances = 0;
+    RandoSettings crd = dds; crd.cross_category = 1;
+    uint8 z[kEntranceMaxInteriors];
+    if (Entrance_IsDungeonDecoupledActive(&nod) ||
+        Entrance_ComputeDungeonDecoupledExit(&nod, 1, 0, z) != 0 ||
+        Entrance_IsDungeonDecoupledActive(&crd)) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled needs dungeon shuffle + non-cross\n");
+      exit(2);
+    }
+    uint8 da[kEntranceMaxInteriors], db[kEntranceMaxInteriors];
+    int dnn = Entrance_ComputeDungeonDecoupledExit(&dds, 0xD00D, 0, da);
+    if (dnn != Entrance_DungeonPoolCount(&dds)) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled count %d != pool\n", dnn);
+      exit(2);
+    }
+    Entrance_ComputeDungeonDecoupledExit(&dds, 0xD00D, 0, db);
+    if (memcmp(da, db, dnn) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled not deterministic\n");
+      exit(2);
+    }
+    uint8 dseen[kEntranceMaxInteriors]; memset(dseen, 0, sizeof(dseen));
+    for (int i = 0; i < dnn; i++) {
+      if (da[i] >= dnn || dseen[da[i]]) {
+        fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled not a bijection\n");
+        exit(2);
+      }
+      dseen[da[i]] = 1;
+    }
+    Entrance_ClearEdgeOverrides();
+    Entrance_ApplyDungeonDecoupledExitEdges(da, dnn);
+    int dd_c1 = Rando_GetEntranceAddedEdgeCount();
+    Entrance_ClearEdgeOverrides();
+    Entrance_ApplyDungeonDecoupledExitEdges(da, dnn);
+    int dd_c2 = Rando_GetEntranceAddedEdgeCount();
+    if (dd_c1 <= 0 || dd_c2 != dd_c1) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled edges unstable (%d then %d)\n",
+              dd_c1, dd_c2);
+      exit(2);
+    }
+    Entrance_ClearEdgeOverrides();
+    // Runtime room lookup: loaded dungeon 0 → kDungeons[net'[0]].room (0 on self-map),
+    // and a non-pool entrance-id → 0.
+    int j0 = da[0];
+    uint16 want = (j0 == 0) ? 0 : kDungeons[j0].room;
+    if (Entrance_DungeonDecoupledExitRoom(da, dnn, kDungeons[0].entrance_id) != want ||
+        Entrance_DungeonDecoupledExitRoom(da, dnn, 0x00) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled exit room lookup wrong\n");
+      exit(2);
+    }
   }
 
   fprintf(stderr, "[Entrance_SelfCheck] OK\n");

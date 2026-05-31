@@ -3476,6 +3476,12 @@ after:
     g_rando_entrance_force_cached = 0;
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       g_rando_entrance_exit_room = Rando_EntranceCoupledExitRoom((uint16)lx);
+      // Dungeon decoupled (Insanity): a one-way dungeon exit overrides the coupled
+      // (return-to-source) room with the π_out target dungeon's room, so Link emerges
+      // at a DIFFERENT dungeon's overworld door. Non-zero only for a pooled dungeon
+      // door under dungeon-decoupled (self-maps return 0 → the coupled room stands).
+      uint16 ddx = Rando_EntranceDungeonDecoupledExitRoom((uint16)lx);
+      if (ddx != 0) g_rando_entrance_exit_room = ddx;
       // Cross-category: a cave door redirected to a dungeon loads a dungeon room
       // (search-exit class) but must return to the cave — force the cached exit.
       if (g_rando_entrance_exit_room == 0)

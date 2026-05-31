@@ -198,17 +198,20 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   int cross_count = 0;
   uint8 decoupled_assign[kEntranceMaxInteriors];
   int decoupled_count = 0;
+  uint8 dun_decoupled_assign[kEntranceMaxInteriors];
+  int dun_decoupled_count = 0;
   bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
   bool cave_on = !cross_on && Entrance_IsActive(settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
-  // Decoupled ("Insanity"): adds one-way exit warps on top of the cave entry
-  // shuffle (D.1/D.2 logic+generation here; D.3/D.4 runtime exit redirect is wired
-  // via the baked cave-arrival table, so decoupled caves are playable).
+  // Decoupled ("Insanity"): one-way exit warps on top of the entry shuffle. Cave
+  // decoupled redirects cave exits (baked arrival table); dungeon decoupled
+  // redirects dungeon exits (reuses the static kExitData room-keyed exit search).
   bool decoupled_on = Entrance_IsDecoupledActive(settings);
+  bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(settings);
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
   Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on) {
+  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on) {
     uint8 canon[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(settings, canon);
     entrance_axes = canon[25];  // == the packed entrance-axis byte
@@ -241,6 +244,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       if (decoupled_on) {
         decoupled_count = Entrance_ComputeDecoupledExit(settings, seed_u64, (uint8)att, decoupled_assign);
         Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
+      }
+      // Dungeon decoupled: one-way dungeon exit edges lobby(D) → entry(net'[D]),
+      // composing on the dungeon entry edge set (same per-attempt reset applies).
+      if (dun_decoupled_on) {
+        dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(settings, seed_u64, (uint8)att, dun_decoupled_assign);
+        Entrance_ApplyDungeonDecoupledExitEdges(dun_decoupled_assign, dun_decoupled_count);
       }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
@@ -353,6 +362,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.cross_count = cross_count;
     spoiler.decoupled_assign = (decoupled_count > 0) ? decoupled_assign : NULL;
     spoiler.decoupled_count = decoupled_count;
+    spoiler.dun_decoupled_assign = (dun_decoupled_count > 0) ? dun_decoupled_assign : NULL;
+    spoiler.dun_decoupled_count = dun_decoupled_count;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {

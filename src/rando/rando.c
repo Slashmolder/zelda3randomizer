@@ -984,6 +984,12 @@ static uint8 g_decoupled_active;
 static int   g_decoupled_n;                       // pool size (cave interiors)
 static uint8 g_decoupled_net[kEntranceMaxInteriors];   // entered-interior → emerge
 static uint16 g_decoupled_entered;                // vanilla interior of entered door; 0xFFFF = none
+// Dungeon decoupled (Insanity for dungeons): one-way dungeon EXITS. net'[D] = the
+// dungeon-pool index of the door Link emerges at after exiting loaded dungeon D.
+// No arrival table — the runtime just retargets the room-keyed exit search.
+static uint8 g_dungeon_decoupled_active;
+static int   g_dungeon_decoupled_n;
+static uint8 g_dungeon_decoupled_net[kEntranceDungeonCount];
 typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid; } RandoCaveArrival;
 // Single per-interior overworld-arrival table used by BOTH the bake-capture and
 // the decoupled runtime. Persisted to cave_arrival_capture.bin and reloaded each
@@ -1035,6 +1041,11 @@ void Rando_RecordEnteredFallhole(void) {
   g_rando_entered_door_interior = (uint16)interior;
   if (g_decoupled_active && interior < g_decoupled_n)
     g_decoupled_entered = (uint16)interior;
+}
+
+static void Dungeon_Decoupled_Reset(void) {
+  g_dungeon_decoupled_active = 0;
+  g_dungeon_decoupled_n = 0;
 }
 
 static void Decoupled_Reset(void) {
@@ -1205,6 +1216,7 @@ static void Entrance_RuntimeTeardown(void) {
   g_rando_entrance_exit_room = 0;
   g_rando_entrance_force_cached = 0;
   Decoupled_Reset();
+  Dungeon_Decoupled_Reset();
 }
 
 // Install the overlay + logic overrides for an entrance-shuffle slot (caves
@@ -1223,9 +1235,11 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   bool cross = Entrance_IsCrossActive(&es);    // supersedes the separate paths
   bool cave = !cross && Entrance_IsActive(&es);// Inverted/Retro guard (defense in depth)
   bool dun = !cross && Entrance_IsDungeonActive(&es);
-  // Decoupled (D.4) composes on top of the cave entry shuffle (requires it).
+  // Decoupled (D.4) composes on top of the entry shuffle: cave decoupled needs the
+  // cave shuffle, dungeon decoupled needs the dungeon shuffle.
   bool decoupled = Entrance_IsDecoupledActive(&es);
-  if (!cross && !cave && !dun && !decoupled) return;
+  bool decoupled_dun = Entrance_IsDungeonDecoupledActive(&es);
+  if (!cross && !cave && !dun && !decoupled && !decoupled_dun) return;
   // X.1 backward-load: the entrance permutation π is REGENERATED from
   // (seed, axes, attempt) against this build's interior/dungeon pool. The pool
   // composition is part of the generator version, so a slot written by a
@@ -1273,19 +1287,31 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
     Entrance_BuildDoorOverlay(cave ? cave_assign : NULL, cave_n, ids, len, g_entrance_overlay);
     if (dun) Entrance_RemapDungeonDoors(dun_assign, dun_n, g_entrance_overlay, len);
   }
-  // Decoupled (D.4): on top of the cave entry shuffle (cave==true here), install
-  // the exit permutation `net` (regenerated deterministically) + the one-way exit
-  // edges for the tracker, and arm the runtime arrival capture/replay. The cave
-  // door overlay above is π_in (entry); `net` is π_out (exit).
-  if (decoupled) {
-    uint8 dec_assign[kEntranceMaxInteriors];
-    int dn = Entrance_ComputeDecoupledExit(&es, seed, h->entrance_attempt, dec_assign);
-    if (dn > 0) {
-      Entrance_ApplyDecoupledExitEdges(dec_assign, dn);  // tracker reachability
-      Decoupled_Reset();
-      g_decoupled_n = (dn > kEntranceMaxInteriors) ? kEntranceMaxInteriors : dn;
-      memcpy(g_decoupled_net, dec_assign, (size_t)g_decoupled_n);
-      g_decoupled_active = 1;
+  // Decoupled (D.4): install the one-way exit permutation(s) (regenerated
+  // deterministically) + the exit edges for the tracker. Reset both first so a
+  // re-install starts clean; the cave path also arms the runtime arrival replay.
+  if (decoupled || decoupled_dun) {
+    Decoupled_Reset();
+    Dungeon_Decoupled_Reset();
+    if (decoupled) {
+      uint8 dec_assign[kEntranceMaxInteriors];
+      int dn = Entrance_ComputeDecoupledExit(&es, seed, h->entrance_attempt, dec_assign);
+      if (dn > 0) {
+        Entrance_ApplyDecoupledExitEdges(dec_assign, dn);  // tracker reachability
+        g_decoupled_n = (dn > kEntranceMaxInteriors) ? kEntranceMaxInteriors : dn;
+        memcpy(g_decoupled_net, dec_assign, (size_t)g_decoupled_n);
+        g_decoupled_active = 1;
+      }
+    }
+    if (decoupled_dun) {
+      uint8 dd_assign[kEntranceMaxInteriors];
+      int ddn = Entrance_ComputeDungeonDecoupledExit(&es, seed, h->entrance_attempt, dd_assign);
+      if (ddn > 0) {
+        Entrance_ApplyDungeonDecoupledExitEdges(dd_assign, ddn);  // tracker reachability
+        g_dungeon_decoupled_n = (ddn > kEntranceDungeonCount) ? kEntranceDungeonCount : ddn;
+        memcpy(g_dungeon_decoupled_net, dd_assign, (size_t)g_dungeon_decoupled_n);
+        g_dungeon_decoupled_active = 1;
+      }
     }
   }
   g_entrance_overlay_orig = (const uint8 *)g_asset_ptrs[126];
@@ -1326,6 +1352,20 @@ bool Rando_EntranceForceCachedExit(uint16 lx) {
   uint32 rc = kEntranceData_rooms_SIZE / 2u;
   if (rooms == NULL || target >= rc) return false;
   return rooms[target] < 0x100;                               // loaded a dungeon
+}
+
+// Dungeon decoupled (Insanity): the exit-search target room for a one-way dungeon
+// exit. Keyed on the LOADED dungeon (the overlay value at slot lx), so exiting the
+// dungeon physically behind this door emerges at net'[loaded]'s overworld door
+// instead of the source. 0 when inactive, not a pooled dungeon, or a self-map
+// (caller keeps the coupled return-to-source). Mirrors Rando_EntranceCoupledExitRoom.
+uint16 Rando_EntranceDungeonDecoupledExitRoom(uint16 lx) {
+  if (!g_dungeon_decoupled_active) return 0;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (lx >= len) return 0;
+  uint8 loaded_id = ((const uint8 *)kOverworld_Entrance_Id)[lx];  // overlay → loaded dungeon
+  return Entrance_DungeonDecoupledExitRoom(g_dungeon_decoupled_net,
+                                           g_dungeon_decoupled_n, loaded_id);
 }
 
 // Active slot's recovered settings + shuffle assignments (format_version >= 2

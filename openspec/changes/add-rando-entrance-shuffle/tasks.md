@@ -209,9 +209,10 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
       seeds generate fully-reachable within the 64-attempt cap (cave doors are dead-end
       item rooms over a walkable overworld, so one-way cave warps rarely strand the
       goal; the design's "random π_out almost never works" was overcautious for caves).
-      The full-reachability gate (§2.2a) backstops. Constrained-construction is only
-      needed if dungeon-decoupled (doors that gate whole regions) is added later — DEFER
-      until then. NOTE: decoupled normalizes off without cave shuffle (hash stability).
+      The full-reachability gate (§2.2a) backstops. Constrained-construction was
+      flagged as maybe-needed for dungeon-decoupled — but it ALSO suffices there (D.7,
+      7/7 seeds), because one-way dungeon exits only ADD overworld traversal. NOTE:
+      decoupled normalizes off without cave OR dungeon shuffle (hash stability).
 - [x] D.4 **Runtime exit redirect — BUILT** (productionizes the validated spike
       recipe). At slot-load `Entrance_RuntimeInstall` reconstructs `es.decoupled`,
       regenerates `net` (entered-interior→emerge-interior) via `Entrance_Compute-
@@ -228,8 +229,8 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
 - [x] D.3 **Static cave-arrival table (baked)** — captured via the walkabout tooling
       (`--dump-cave-doors` locator + per-entry persisted capture; `Rando_Capture-
       ArrivalForBake`) and committed as `src/rando/cave_arrival_baked.h`
-      (`kCaveArrivalBaked[38]`, 37 captured; interior 37 heart_piece_cave_3 is a
-      fall-in drop cave, left uncaptured → coupled fallback). The runtime preloads it
+      (`kCaveArrivalBaked[38]`, all 38 captured; interior 37 heart_piece_cave_3 turned
+      out to be a normal WALK-IN cave at dark screen 0x22, not a drop cave). The runtime preloads it
       (`Rando_LoadArrivalCaptureIfNeeded`) so every door is one-way from launch with
       no on-disk capture; a live `cave_arrival_capture.bin` overlays it for dev
       re-captures. Runtime-only data → placement digests unchanged, no kGenVer bump,
@@ -238,7 +239,23 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
 - [x] D.5 UI: **Insanity preset + Decoupled checkbox LIVE** (caves-only; gated on cave
       shuffle; clears coupled). Spoiler `decoupled_exit` section already emitted (D.1).
       Tracker one-way-door display deferred.
-- [ ] D.6 Playtest + fresh-eyes audit. Caves-only decoupled; dungeon-decoupled deferred.
+- [x] D.6 Playtest (caves) + fresh-eyes audit DONE. User playtest-confirmed decoupled
+      caves working + fun (2026-05-30) after fixing a cross-world stuck-bunny bug (the
+      cached exit path skipped the mirror-warp's form re-eval; commit 344b8ca). The
+      3-reviewer audit found + fixed 1 HIGH (decoupled exit edges accumulating across
+      retries) + 1 MED-HIGH (g_decoupled_entered not consumed-at-top) + MEDs.
+- [x] D.7 **Dungeon decoupled — BUILT** (Insanity for dungeons; one-way dungeon EXITS).
+      No arrival asset needed: the runtime reuses the static kExitData room-keyed exit
+      search, retargeting `kDungeons[net'[loaded]].room` instead of the source room
+      (`Rando_EntranceDungeonDecoupledExitRoom`, overworld.c entry hook overrides the
+      coupled room). net' = independent permutation over the dungeon pool (`Entrance_
+      ComputeDungeonDecoupledExit`, distinct salt). Logic edges `lobby(D) →
+      entry_region(net'[D])` unconditional (`Entrance_ApplyDungeonDecoupledExitEdges`),
+      keyed on the LOBBY so the medallion/crystal gate is inherited. Composes on the
+      dungeon ENTRY shuffle; scoped to non-Crossed; GT participates with its opt-in.
+      Normalization keeps `decoupled` with cave OR dungeon shuffle. Self-check + JSON/
+      text spoiler + corpus entry `c-entrance-dungeon-decoupled-open-fast-ganon` (64).
+      Existing 63 digests byte-identical → no kGenVer bump. PLAYTEST-PENDING.
 
 ## Presets (once the relevant axes ship)
 

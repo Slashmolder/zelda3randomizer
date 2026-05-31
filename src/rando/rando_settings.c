@@ -140,12 +140,11 @@ static void apply_derived_rules(RandoSettings *s) {
   if (!s->shuffle_cave_entrances || !s->shuffle_dungeon_entrances) {
     s->cross_category = 0;
   }
-  // Decoupled ("Insanity") composes on the cave ENTRY shuffle (Entrance_IsDecoupled-
-  // Active requires shuffle_cave_entrances; dungeon decoupled is deferred). Normalize
-  // the bit off without cave shuffle so the settings_hash matches the actual seed.
-  if (!s->shuffle_cave_entrances) {
-    s->decoupled = 0;
-  }
+  // Decoupled ("Insanity") composes on the cave AND/OR dungeon ENTRY shuffle:
+  // cave-decoupled (Entrance_IsDecoupledActive) needs shuffle_cave_entrances,
+  // dungeon-decoupled (Entrance_IsDungeonDecoupledActive) needs shuffle_dungeon_
+  // entrances. So decoupled is meaningful whenever EITHER shuffle is on — and the
+  // both-off clear above already strips it when neither is. No extra clear needed.
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s_in,

@@ -688,13 +688,15 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   uint8 dun_assign[kEntranceMaxInteriors]; int dun_count = 0;
   uint8 cross_assign[kEntranceMaxInteriors]; int cross_count = 0;
   uint8 decoupled_assign[kEntranceMaxInteriors]; int decoupled_count = 0;
+  uint8 dun_decoupled_assign[kEntranceMaxInteriors]; int dun_decoupled_count = 0;
   bool cross_on = Entrance_IsCrossActive(&settings);
   bool cave_on = !cross_on && Entrance_IsActive(&settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(&settings);
-  bool decoupled_on = Entrance_IsDecoupledActive(&settings);  // Stage 4 D.1/D.2 (logic+gen)
+  bool decoupled_on = Entrance_IsDecoupledActive(&settings);  // Stage 4: cave decoupled
+  bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(&settings);  // dungeon decoupled
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on) {
+  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on) {
     for (int att = 0; att < 64; att++) {
       // Audit (decoupled HIGH) — reset edge overrides every attempt so
       // ApplyDecoupledExitEdges Begins fresh in the cave-only case instead of
@@ -716,6 +718,10 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       if (decoupled_on) {
         decoupled_count = Entrance_ComputeDecoupledExit(&settings, seed_u64, (uint8)att, decoupled_assign);
         Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
+      }
+      if (dun_decoupled_on) {
+        dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(&settings, seed_u64, (uint8)att, dun_decoupled_assign);
+        Entrance_ApplyDungeonDecoupledExitEdges(dun_decoupled_assign, dun_decoupled_count);
       }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
@@ -800,6 +806,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.cross_count = cross_count;
   spoiler.decoupled_assign = (decoupled_count > 0) ? decoupled_assign : NULL;
   spoiler.decoupled_count = decoupled_count;
+  spoiler.dun_decoupled_assign = (dun_decoupled_count > 0) ? dun_decoupled_assign : NULL;
+  spoiler.dun_decoupled_count = dun_decoupled_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

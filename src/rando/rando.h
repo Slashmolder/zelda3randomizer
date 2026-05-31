@@ -293,6 +293,11 @@ extern uint8 g_rando_takeany_door_id;
 // the player returns to the SOURCE door. 0 = no override (caves auto-couple).
 extern uint16 g_rando_entrance_exit_room;
 uint16 Rando_EntranceCoupledExitRoom(uint16 lx);
+// Dungeon decoupled (Insanity): the one-way exit-search target room for door-slot
+// lx, keyed on the LOADED dungeon (overlay) so the exit emerges at net'[loaded]'s
+// door instead of the source. 0 when inactive / not a pooled dungeon / self-map
+// (then the coupled return-to-source applies). Overrides the coupled room at entry.
+uint16 Rando_EntranceDungeonDecoupledExitRoom(uint16 lx);
 // Cross-category (Stage 3): set at the entry hook for a cave→dungeon redirect so
 // the dungeon exit uses the cached source-cave position. Consumed at the exit.
 extern uint8 g_rando_entrance_force_cached;
