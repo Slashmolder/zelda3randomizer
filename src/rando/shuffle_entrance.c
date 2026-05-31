@@ -1183,11 +1183,22 @@ void Entrance_SelfCheck(void) {
       fprintf(stderr, "Entrance_SelfCheck: decoupled must be inactive without cave shuffle\n");
       exit(2);
     }
-    // Apply the exit edges over a clean graph; must activate edge overrides and
-    // not crash. (We can't easily assert the added-edge count via a getter, but
-    // ApplyDecoupledExitEdges Begins overrides when none are active.)
+    // Regression guard (decoupled-edge-accumulation HIGH): the retry loop clears
+    // edge overrides each attempt so ApplyDecoupledExitEdges Begins FRESH rather
+    // than appending onto the previous attempt's edges. Lock that contract: a
+    // clear+apply must add a positive, STABLE count — never grow when repeated.
     Entrance_ClearEdgeOverrides();
     Entrance_ApplyDecoupledExitEdges(ea, en);
+    int dec_c1 = Rando_GetEntranceAddedEdgeCount();
+    Entrance_ClearEdgeOverrides();
+    Entrance_ApplyDecoupledExitEdges(ea, en);
+    int dec_c2 = Rando_GetEntranceAddedEdgeCount();
+    if (dec_c1 <= 0 || dec_c2 != dec_c1) {
+      fprintf(stderr, "Entrance_SelfCheck: decoupled edges unstable across "
+                      "clear+apply (%d then %d) — accumulation regression\n",
+              dec_c1, dec_c2);
+      exit(2);
+    }
     Entrance_ClearEdgeOverrides();
   }
 

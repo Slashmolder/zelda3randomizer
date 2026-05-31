@@ -996,6 +996,14 @@ static void Rando_LoadArrivalCaptureIfNeeded(void);
 // Committed baked arrival table (the D.3 walkabout result) — the default source
 // so every door is one-way from the start, no on-disk capture needed.
 #include "cave_arrival_baked.h"
+// Baked-table length, used to bound reads FROM it. kEntranceCaveInteriorCount (the
+// runtime cave count) is private to shuffle_entrance.c, so couple at the bound we
+// can see here: the table must fit g_cave_capture[]. The load loop also clamps to
+// this length, so bumping the cave count without re-baking degrades to coupled
+// (valid 0) for the new interiors instead of reading past the array.
+#define kCaveArrivalBakedCount ((int)(sizeof(kCaveArrivalBaked) / sizeof(kCaveArrivalBaked[0])))
+_Static_assert(kCaveArrivalBakedCount <= kEntranceMaxInteriors,
+               "baked cave-arrival table exceeds kEntranceMaxInteriors");
 
 // D.3 capture: vanilla cave interior of the door just entered, recorded at the
 // overworld entry hook for EVERY game (shuffle or not) so the capture-for-bake
@@ -1014,10 +1022,12 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
     g_rando_entered_door_interior = (uint16)interior;
 }
 
-// Fall-in (drop) caves have no walk-in door slot — the fall sets which_entrance
-// directly (and the fall-hole table isn't shuffled), so key on it. Lets the
-// capture tool record drop caves (e.g. heart_piece_cave_3) and the decoupled
-// exit emerge elsewhere after falling in.
+// Genuine fall-hole caves (fall-hole table entrance-ids 0x76-0x81) have no
+// walk-in door slot — the fall sets which_entrance directly (the fall-hole table
+// isn't shuffled), so key on it. Lets the capture tool record a fall-in arrival
+// and the decoupled exit emerge elsewhere. Non-cave fall-hole ids resolve to
+// interior -1 below and are ignored. (heart_piece_cave_3 is NOT here — it is a
+// normal walk-in cave handled by the door-slot entry hook.)
 void Rando_RecordEnteredFallhole(void) {
   g_rando_entered_door_interior = 0xFFFF;
   int interior = Entrance_InteriorOfEntranceId(which_entrance);
@@ -1048,15 +1058,27 @@ void Rando_DecoupledSetEnteredDoor(uint16 lx) {
 // (Capture is handled by Rando_CaptureArrivalForBake on every cave entry — it
 // fills + persists the same g_cave_capture table the runtime reads below.)
 
+// Consume-once accessor for the entered-interior global. LoadOverworldFromDungeon
+// reads+clears it at the top UNCONDITIONALLY (same discipline as g_rando_entrance_
+// exit_room / force_cached, audit HIGH-1): this function is reached by mirror /
+// special-area / ending warps too, so a stale entered-interior left set could be
+// consumed by a LATER cave-class exit → wrong-door warp. 0xFFFF = none.
+uint16 Rando_DecoupledConsumeEntered(void) {
+  uint16 v = g_decoupled_entered;
+  g_decoupled_entered = 0xFFFF;
+  return v;
+}
+
 // Exit hook (cave-class cached branch, before LoadCachedEntranceProperties):
 // replace the live *_exit with net[entered]'s captured arrival so Link emerges
-// at a DIFFERENT door. Returns false (→ coupled return) when inactive, the
-// target is the same interior, or the target hasn't been captured yet.
-bool Rando_DecoupledReplaceArrival(void) {
-  if (!g_decoupled_active || g_decoupled_entered >= (uint16)g_decoupled_n) return false;
+// at a DIFFERENT door. `entered` is the consumed entered-interior. Returns false
+// (→ coupled return) when inactive, the target is the same interior, or the
+// target hasn't been captured yet.
+bool Rando_DecoupledReplaceArrival(uint16 entered) {
+  if (!g_decoupled_active || entered >= (uint16)g_decoupled_n) return false;
   Rando_LoadArrivalCaptureIfNeeded();  // pull in prior-session captures (persisted)
-  int target = g_decoupled_net[g_decoupled_entered];
-  if (target < 0 || target >= g_decoupled_n || target == (int)g_decoupled_entered) return false;
+  int target = g_decoupled_net[entered];
+  if (target < 0 || target >= g_decoupled_n || target == (int)entered) return false;
   const RandoCaveArrival *e = &g_cave_capture[target];
   if (!e->valid) return false;  // target door not captured yet → coupled fallback (enter it once)
   memcpy(g_ram + 0xC140, e->block, 0x32);
@@ -1091,7 +1113,7 @@ static void Rando_LoadArrivalCaptureIfNeeded(void) {
   g_cave_capture_loaded = true;
   int n = Entrance_CaveInteriorCount();
   // Committed baked table — the production source (every door one-way from launch).
-  for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+  for (int i = 0; i < n && i < kEntranceMaxInteriors && i < kCaveArrivalBakedCount; i++)
     g_cave_capture[i] = kCaveArrivalBaked[i];
   g_cave_capture_count = 0;
   for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
@@ -1155,17 +1177,21 @@ void Rando_CaptureArrivalForBake(void) {
   e->is_dark = g_ram[0xFFF];
   e->save_dark = g_ram[0xF3CA];
   e->valid = 1;
+  int total = Entrance_CaveInteriorCount();
   if (was_new) {
     g_cave_capture_count++;
-    int total = Entrance_CaveInteriorCount();
     fprintf(stderr, "[ARRIVAL-CAPTURE] %d/%d — interior %d %s\n",
             g_cave_capture_count, total, interior, Entrance_CaveInteriorName(interior));
-    // Rewrite the dump on every NEW capture so a partial walkabout is always
-    // saved (stop anytime and bake what's there); flag completion at full set.
-    Rando_DumpArrivalCapture();
-    if (g_cave_capture_count >= total)
-      fprintf(stderr, "[ARRIVAL-CAPTURE] COMPLETE — all %d captured\n", total);
+  } else {
+    fprintf(stderr, "[ARRIVAL-CAPTURE] re-captured interior %d %s\n",
+            interior, Entrance_CaveInteriorName(interior));
   }
+  // Persist on EVERY capture (new OR re-capture). A re-walk to correct a bad
+  // earlier capture must reach disk, not just RAM — otherwise the stale row
+  // survives and the fix is lost on exit. A partial walkabout stays recoverable.
+  Rando_DumpArrivalCapture();
+  if (was_new && g_cave_capture_count >= total)
+    fprintf(stderr, "[ARRIVAL-CAPTURE] COMPLETE — all %d captured\n", total);
 }
 
 // Restore the vanilla door table + clear the logic overrides. Idempotent.

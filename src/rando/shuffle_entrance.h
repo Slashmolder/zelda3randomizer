@@ -111,12 +111,13 @@ bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id);
 // --- Decoupled / per-endpoint ("Insanity", Stage 4) --------------------------
 // Decoupled splits entry from exit: entering cave-hole i loads an interior (the
 // existing π_in cave shuffle) but EXITING drops you at a DIFFERENT hole's
-// overworld spot. The net hole→exit-hole map is itself a uniform permutation
-// (π_out∘π_in), so we generate it directly. LOGIC ONLY in this build (D.1/D.2):
-// one-way overworld edges region(hole i) → region(net[i]); the runtime exit
-// redirect + cave-arrival asset (D.3/D.4) are not yet wired, so a decoupled
-// playable SLOT is not installable — only the headless --generate-seed/corpus
-// path exercises it. Caves only for now (dungeon decoupled deferred).
+// overworld spot. The exit side is an INDEPENDENT uniform permutation π_out
+// (distinct RNG salt from π_in); it is added to the graph as one-way warps that
+// compose ADDITIVELY on top of the entry shuffle (warps only add reachability,
+// so the model is conservative — it never strands what coupled reach allowed).
+// D.1/D.2 = this logic+generation; D.3/D.4 runtime (baked cave-arrival table) is
+// now wired, so decoupled CAVES are playable. Caves only (dungeon decoupled
+// deferred — its arrival composition π_out∘π_in⁻¹ is future work).
 //
 // Active iff decoupled + shuffle_cave_entrances on + Open/Standard. (cross is a
 // separate axis; decoupled composes on top of the cave entry shuffle.)

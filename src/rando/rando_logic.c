@@ -428,6 +428,12 @@ void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
   g_entrance_override_pred_len[loc_id] = pred_len;
 }
 
+// Count of currently-active added edges (0 when the edge set is inactive). Used
+// by the self-check to guard against cross-attempt accumulation (decoupled HIGH).
+int Rando_GetEntranceAddedEdgeCount(void) {
+  return g_entrance_edge_active ? g_entrance_added_edge_count : 0;
+}
+
 void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
                            uint32 pred_off, uint16 pred_len) {
   if (g_entrance_added_edge_count >= kEntranceAddedEdgeMax) return;

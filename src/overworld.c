@@ -1826,6 +1826,10 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   // cached *_exit vars hold that cave position, so force the cached branch.
   bool force_cached = (g_rando_entrance_force_cached != 0);
   g_rando_entrance_force_cached = 0;
+  // Decoupled (D.4) — consume the entered-interior the SAME way (unconditionally
+  // at the top), so a mirror/special/ending warp can't leave it set for a later
+  // cave-class exit to misuse. Only the cave-class branch below acts on it.
+  uint16 decoupled_entered = Rando_DecoupledConsumeEntered();
 
   if (force_cached ||
       (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100)) {
@@ -1833,7 +1837,7 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     // arrival so Link emerges at a DIFFERENT door (it overwrites the live *_exit
     // block + world flags + target room/door-settings). No-op / coupled return
     // when decoupled is inactive or the target hasn't been captured this session.
-    Rando_DecoupledReplaceArrival();
+    Rando_DecoupledReplaceArrival(decoupled_entered);
     LoadCachedEntranceProperties();
   } else {
 

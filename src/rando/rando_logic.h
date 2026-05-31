@@ -314,5 +314,6 @@ void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
 // Rando_BeginEntranceEdgeOverrides; walked when edge overrides are active.
 void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
                            uint32 pred_off, uint16 pred_len);
+int Rando_GetEntranceAddedEdgeCount(void);
 
 #endif  // ZELDA3_RANDO_LOGIC_H_

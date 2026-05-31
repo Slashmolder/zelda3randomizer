@@ -201,9 +201,9 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
   bool cave_on = !cross_on && Entrance_IsActive(settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
-  // Decoupled ("Insanity", D.1/D.2 — LOGIC + GENERATION only; runtime exit redirect
-  // D.3/D.4 not yet wired, so this is exercised only by --generate-seed/corpus, not a
-  // playable slot). Adds one-way exit warps on top of the cave entry shuffle.
+  // Decoupled ("Insanity"): adds one-way exit warps on top of the cave entry
+  // shuffle (D.1/D.2 logic+generation here; D.3/D.4 runtime exit redirect is wired
+  // via the baked cave-arrival table, so decoupled caves are playable).
   bool decoupled_on = Entrance_IsDecoupledActive(settings);
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
@@ -214,6 +214,14 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     entrance_axes = canon[25];  // == the packed entrance-axis byte
     const int kEntranceMaxRetry = 64;
     for (int att = 0; att < kEntranceMaxRetry; att++) {
+      // Audit (decoupled HIGH) — reset the edge-override set EVERY attempt. The
+      // cave-only entry pass (ApplyRegionOverrides) Begins only REGION overrides,
+      // so ApplyDecoupledExitEdges' "Begin only if no edge pass ran" guard would
+      // otherwise see last attempt's leftover active flag and APPEND onto stale
+      // edges (accumulating across retries → phantom reachability + >64 overflow).
+      // Clearing here makes decoupled Begin fresh in the cave-only case; the
+      // dungeon/cross passes Begin edges themselves so they are unaffected.
+      Entrance_ClearEdgeOverrides();
       if (cross_on) {
         cross_count = Entrance_ComputeCrossPermutation(settings, seed_u64, (uint8)att, cross_assign);
         Entrance_ApplyCrossOverrides(cross_assign, cross_count);

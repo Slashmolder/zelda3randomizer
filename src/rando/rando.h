@@ -305,12 +305,15 @@ bool Rando_EntranceForceCachedExit(uint16 lx);
 // swap in net[entered]'s captured arrival so Link emerges at a DIFFERENT door;
 // returns false (→ coupled return) when inactive / target uncaptured.
 void Rando_DecoupledSetEnteredDoor(uint16 lx);
-bool Rando_DecoupledReplaceArrival(void);
+// Read+clear the entered-interior global (consume-once at LoadOverworldFromDungeon top).
+uint16 Rando_DecoupledConsumeEntered(void);
+bool Rando_DecoupledReplaceArrival(uint16 entered);
 // D.3 capture-for-bake (dev opt-in via ZELDA3_CAPTURE_ARRIVALS): snapshot each
 // entered cave's overworld arrival, keyed by the entered cave interior.
 // RecordEnteredDoorForCapture runs at the walk-in entry hook; RecordEnteredFallhole
-// at the fall-in path (drop caves like heart_piece_cave_3, also sets the decoupled
-// exit key so falling in emerges decoupled).
+// at the genuine fall-hole path (entrance-ids 0x76-0x81; also sets the decoupled
+// exit key so falling in emerges decoupled). NOTE: heart_piece_cave_3 is a normal
+// WALK-IN cave (dark screen 0x22), not a drop cave — it is NOT in the fall-hole table.
 void Rando_RecordEnteredDoorForCapture(uint16 lx);
 void Rando_RecordEnteredFallhole(void);
 void Rando_CaptureArrivalForBake(void);

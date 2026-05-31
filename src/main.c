@@ -696,6 +696,10 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   Entrance_ClearEdgeOverrides();
   if (cross_on || cave_on || dun_on || decoupled_on) {
     for (int att = 0; att < 64; att++) {
+      // Audit (decoupled HIGH) — reset edge overrides every attempt so
+      // ApplyDecoupledExitEdges Begins fresh in the cave-only case instead of
+      // appending onto the prior attempt's leftover edges (see rando_generate.c).
+      Entrance_ClearEdgeOverrides();
       if (cross_on) {
         cross_count = Entrance_ComputeCrossPermutation(&settings, seed_u64, (uint8)att, cross_assign);
         Entrance_ApplyCrossOverrides(cross_assign, cross_count);
