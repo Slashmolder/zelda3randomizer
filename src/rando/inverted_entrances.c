@@ -36,6 +36,10 @@ enum {
   kAsset_ExitData_YCoord       = 136,  // uint16: Link Y on exit
   kAsset_ExitData_CameraX      = 137,  // uint16
   kAsset_ExitData_CameraY      = 138,  // uint16
+  kAsset_ExitData_NormalDoor   = 139,  // uint16
+  kAsset_ExitData_FancyDoor    = 140,  // uint16
+  kAsset_ExitData_Unk1         = 141,  // int8: exit camera-nudge X
+  kAsset_ExitData_Unk3         = 142,  // int8: exit camera-nudge Y
   kAsset_BirdTravel_ScreenIndex = 113, // uint16: flute-spot slot -> dest screen
 };
 
@@ -88,6 +92,15 @@ static const InvertedOverride kInvertedOverrides[] = {
   { kAsset_ExitData_YCoord,       2, 0x18, 0x0678 },
   { kAsset_ExitData_CameraX,      2, 0x18, 0x0303 },
   { kAsset_ExitData_CameraY,      2, 0x18, 0x0685 },
+  // Complete the Healer-fairy exit-0x18 row with the remaining columns ALTTPR
+  // writes (Rom.php:1660-1663): the int8 camera nudge (Unk1/Unk3 = 0x0a/0xf6)
+  // and the door-clear (NormalDoor/FancyDoor -> 0, so the relocated exit shows
+  // no stale door). The int8 columns use width 1. Resolved 0x1602D/0x1607C to
+  // Unk1/Unk3 via the extractor (the only int8 exit columns, +idx single-byte).
+  { kAsset_ExitData_NormalDoor,   2, 0x18, 0x0000 },
+  { kAsset_ExitData_FancyDoor,    2, 0x18, 0x0000 },
+  { kAsset_ExitData_Unk1,         1, 0x18, 0x000A },
+  { kAsset_ExitData_Unk3,         1, 0x18, 0x00F6 },
 
   // --- Inverted flute travel: Dark-World destinations (ALTTPR Rom.php:1600). ---
   // The fork warps Link to raw screen indices (overworld.c FluteMenu path), with
@@ -135,6 +148,10 @@ static InvertedShadow g_shadows[] = {
   { kAsset_ExitData_YCoord,       {0}, NULL },
   { kAsset_ExitData_CameraX,      {0}, NULL },
   { kAsset_ExitData_CameraY,      {0}, NULL },
+  { kAsset_ExitData_NormalDoor,   {0}, NULL },
+  { kAsset_ExitData_FancyDoor,    {0}, NULL },
+  { kAsset_ExitData_Unk1,         {0}, NULL },
+  { kAsset_ExitData_Unk3,         {0}, NULL },
   { kAsset_BirdTravel_ScreenIndex, {0}, NULL },
 };
 #define kInvertedShadowCount (sizeof(g_shadows) / sizeof(g_shadows[0]))

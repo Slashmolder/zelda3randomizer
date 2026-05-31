@@ -2827,6 +2827,11 @@ void HandlePegPuzzles(uint16 pos) {  // 8edd67
     // Mirror that here so the troll-peg hammer interaction is skipped under the
     // active Inverted rando world-state (the peg puzzle behaves as complete).
     // Vanilla / Open / Standard / Retro use the persisted solved-bit unchanged.
+    // NOTE: this guard covers only the LIGHT-world screen-7 peg approach. The
+    // actual Inverted "reach TR from the tail" access opens the entrance via the
+    // screen-0x47 (DW) auto-open in Overworld_HandleOverlaysAndBombDoors + the
+    // screen-0x47 collision table (tile_detect.c); this screen-7 pre-solve is
+    // belt-and-suspenders, not the load-bearing TR-open for the tail route.
     bool inverted_rando =
         (enhanced_features1 & kFeatures1_RandomizerActive) &&
         Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;

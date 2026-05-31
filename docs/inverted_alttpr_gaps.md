@@ -59,6 +59,26 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   side). All visual-only (which colored portal renders / a leftover-portal
   cosmetic), no traversal impact. Left alone rather than guessed.
 
+- **B4 — Flute spot "gargoyle statue" Link-landing nudge (deferred, ambiguous
+  slot).** ALTTPR nudges one Inverted flute destination's Link-landing coord out
+  of a gargoyle statue (`Rom.php:1601-1602`: `kBirdTravel_LinkXCoord`/`LinkYCoord`
+  = 0x07C8/0x01F8). The whole-stack audit flagged this; we left it because the
+  affected flute **slot index is ambiguous** — the audit guessed slot 2
+  (Kakariko), but the coord 0x07C8/0x01F8 decodes to screen col 3 / row 0 = area
+  0x43 (slot 0), so the two disagree. Cosmetic (Link lands near a statue, can
+  still move/mirror). Resolve by playtest: flute to each Inverted spot, find the
+  one that drops Link on/inside a statue, then nudge that specific slot's
+  117/118 coords. (The DM-west exit-0x18 camera nudge from the same audit — Unk1/
+  Unk3 assets 141/142 — WAS resolved and shipped; only this flute-slot one is
+  deferred.)
+
+- **B5 — Flute-menu map icons render at vanilla (Light-World) positions.** The
+  flute-menu destination icons use hardcoded arrays in `messaging.c` (`kBirdTravel_tab1`
+  / `x_lo`/`x_hi`/`y_lo`/`y_hi`), not asset 113, so in Inverted the on-map spot
+  icons display at Light-World coordinates over the (Dark-World) map. Travel still
+  warps correctly (asset 113 is overridden); only the icon position is off.
+  Visual-only; a gated C change to those arrays would close it.
+
 ## C. Resolved as NON-GAPS (researched, no change needed — recorded so they're not re-investigated)
 
 - **C1 — Spawn / Sanctuary relocation.** ALTTPR relocates the Sanctuary spawn to
