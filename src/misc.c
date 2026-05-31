@@ -650,6 +650,24 @@ void Module05_LoadFile() {  // 828136
       LoadDungeonRoomRebuildHUD();
       return;
     }
+    // #82 Inverted spawn fix. The vanilla DW-outdoors respawn
+    // (dungeon_room_index=32 -> the room-0x20 exit) lands on the Pyramid-of-Power
+    // ledge — a sealed pocket with no items to escape, which traps an Inverted
+    // player from the first frame (playtest-confirmed: spawn screen 0x5B, no
+    // movement items). ALTTPR relocates the Inverted start to the navigable
+    // "Dark Chapel"; the fork never ported that. As the navigable replacement,
+    // respawn at the Inverted home — Link's House (room 0x104). Post-escape
+    // (progress>=2) the house is empty, and its overworld exit lands at the DW
+    // Bomb-Shop position (per the inverted Link's-House<->Bomb-Shop exit swap),
+    // which connects to the DW-South early checks. Gated on the active Inverted
+    // slot; vanilla / Open / Standard / Retro DW saves keep the room-32 path.
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+      player_is_indoors = 1;
+      dungeon_room_index = 0x104;  // Link's House (Inverted home)
+      LoadDungeonRoomRebuildHUD();
+      return;
+    }
     Hud_SearchForEquippedItem();
     Hud_Rebuild();
     Hud_UpdateEquippedItem();
