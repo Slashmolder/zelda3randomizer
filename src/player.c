@@ -3017,6 +3017,8 @@ void LinkItem_Mirror() {  // 87a91a
   // (z3randomizer Rom.php $07A943 "Dark to light world mirror"). Vanilla blocks
   // the mirror when outdoors in the LIGHT world (so it works in the DW); Inverted
   // flips that so it works in the LIGHT world and is blocked in the DW (home).
+  // The forward DW->LW direction is handled by the fixed overworld portals
+  // (inverted under-rock/bush warps; see the inverted-portal subsystem).
   // Non-inverted is byte-identical (the ternary collapses to the original term).
   bool rando_inverted_mirror =
       (enhanced_features1 & kFeatures1_RandomizerActive) &&
