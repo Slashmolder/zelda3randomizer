@@ -249,13 +249,17 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
       search, retargeting `kDungeons[net'[loaded]].room` instead of the source room
       (`Rando_EntranceDungeonDecoupledExitRoom`, overworld.c entry hook overrides the
       coupled room). net' = independent permutation over the dungeon pool (`Entrance_
-      ComputeDungeonDecoupledExit`, distinct salt). Logic edges `lobby(D) →
-      entry_region(net'[D])` unconditional (`Entrance_ApplyDungeonDecoupledExitEdges`),
-      keyed on the LOBBY so the medallion/crystal gate is inherited. Composes on the
-      dungeon ENTRY shuffle; scoped to non-Crossed; GT participates with its opt-in.
-      Normalization keeps `decoupled` with cave OR dungeon shuffle. Self-check + JSON/
-      text spoiler + corpus entry `c-entrance-dungeon-decoupled-open-fast-ganon` (64).
-      Existing 63 digests byte-identical → no kGenVer bump. PLAYTEST-PENDING.
+      ComputeDungeonDecoupledExit`, distinct salt). **Logic is coupled-equivalent — NO
+      decoupled exit edges** (fresh-eyes audit HIGH: a `lobby(D)→entry_region(net'[D])`
+      edge wrongly granted gated INTERIOR access because for single-region dungeons
+      entry_region_name IS the lobby). One-way exits only change the emerge spot on the
+      connected overworld, so coupled reachability is correct + conservative. **Cross-
+      world exits** sync world flags + bunny form in the room-keyed search branch (audit
+      HIGH, same class as the cave fix 344b8ca). Composes on the dungeon ENTRY shuffle;
+      scoped to non-Crossed; GT participates with its opt-in. Normalization keeps
+      `decoupled` with cave OR dungeon shuffle. Self-check + JSON/text spoiler + corpus
+      entry `c-entrance-dungeon-decoupled-open-fast-ganon` (64). Existing 63 digests
+      byte-identical → no kGenVer bump. PLAYTEST-PENDING.
 
 ## Presets (once the relevant axes ship)
 
