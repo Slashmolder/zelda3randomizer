@@ -3013,9 +3013,20 @@ void LinkItem_Mirror() {  // 87a91a
   }
   button_mask_b_y &= ~0x40;
 
-  if (is_standing_in_doorway || 
-      !cheatWalkThroughWalls && !(enhanced_features0 & kFeatures0_MirrorToDarkworld) && 
-      !player_is_indoors && !(overworld_screen_index & 0x40)) {
+  // #82 Inverted: the Magic Mirror reverses direction — it transports LW->DW
+  // (z3randomizer Rom.php $07A943 "Dark to light world mirror"). Vanilla blocks
+  // the mirror when outdoors in the LIGHT world (so it works in the DW); Inverted
+  // flips that so it works in the LIGHT world and is blocked in the DW (home).
+  // Non-inverted is byte-identical (the ternary collapses to the original term).
+  bool rando_inverted_mirror =
+      (enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+  bool mirror_blocked_outdoor_world =
+      rando_inverted_mirror ? (overworld_screen_index & 0x40) != 0   // block in DW
+                            : !(overworld_screen_index & 0x40);      // vanilla: block in LW
+  if (is_standing_in_doorway ||
+      (!cheatWalkThroughWalls && !(enhanced_features0 & kFeatures0_MirrorToDarkworld) &&
+       !player_is_indoors && mirror_blocked_outdoor_world)) {
     Ancilla_Sfx2_Near(60);
     return;
   }
@@ -3034,7 +3045,18 @@ void DoSwordInteractionWithTiles_Mirror() {  // 87a95c
     }
   } else if (main_module_index != 11) {
     last_light_vs_dark_world = overworld_screen_index & 0x40;
-    if (last_light_vs_dark_world) {
+    // #82 Inverted: record the residual-portal return coord when leaving the
+    // *away* world (z3randomizer Rom.php $07A96D "residual portal" side). Vanilla
+    // drops the portal when mirroring DW->LW (records in the DW); Inverted mirrors
+    // LW->DW, so record when in the LIGHT world instead — without this the DW-side
+    // residual portal (already flipped downstream) gets a stale coord and the
+    // player is stranded with no way back to the LW. Pairs with the gate flip above.
+    bool record_return_portal =
+        ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+         Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+          ? !last_light_vs_dark_world   // Inverted: leaving the LW
+          :  last_light_vs_dark_world;  // vanilla: leaving the DW
+    if (record_return_portal) {
       bird_travel_y_lo[15] = link_y_coord;
       bird_travel_y_hi[15] = link_y_coord >> 8;
       bird_travel_x_lo[15] = link_x_coord;

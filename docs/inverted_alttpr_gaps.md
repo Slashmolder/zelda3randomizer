@@ -52,12 +52,15 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   runtime room-load hook. TR is fully completable without it (the main-entrance
   auto-open + collision table + peg-solve are already shipped).
 
-- **B3 — Cosmetic / unmappable portal operands (4).** ALTTPR flips four ROM
+- **B3 — Cosmetic / unmappable portal operands (3).** ALTTPR flips three ROM
   operand bytes our portal-reversal pass could not confidently map to a fork C
   branch: `$8283E0` (residual portal world), `$86DB78` (residual portal style
-  byte), `$8DB3C5` (Blue→Red portal sprite graphic), `$87A96D` (residual portal
-  side). All visual-only (which colored portal renders / a leftover-portal
-  cosmetic), no traversal impact. Left alone rather than guessed.
+  byte), `$8DB3C5` (Blue→Red portal sprite graphic). All visual-only (which
+  colored portal renders / a leftover-portal cosmetic), no traversal impact.
+  Left alone rather than guessed. (`$87A96D` was originally mis-listed here as
+  cosmetic — it is NOT: it is the mirror residual-portal return-coord side, now
+  implemented as the second half of the mirror-direction fix in `player.c`
+  `DoSwordInteractionWithTiles_Mirror`.)
 
 - **B4 — Flute spot "gargoyle statue" Link-landing nudge (deferred, ambiguous
   slot).** ALTTPR nudges one Inverted flute destination's Link-landing coord out
