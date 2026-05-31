@@ -228,6 +228,13 @@ static const int kRecCount = (int)(sizeof(kRecBits) / sizeof(kRecBits[0]));
 static void Panel_RecommendedFeatures() {
   RandoWindowBridge *b = &g_rando_window_bridge;
   uint32 *f = &b->pending_recommended_features0;
+  ImGui::TextWrapped(
+      "Quality-of-life features baked into the seed you generate here. They ride "
+      "along with the generated slot and are NOT part of the settings hash or "
+      "share string \xe2\x80\x94 toggling them won't change the seed's identity. "
+      "(The same features for normal play live under Game Settings \xe2\x86\x92 "
+      "Gameplay; this panel only sets what gets stamped into this seed.)");
+  ImGui::Spacing();
   for (int i = 0; i < kRecCount; i++) {
     bool on = (*f & kRecBits[i]) != 0;
     if (ImGui::Checkbox(kRecLabels[i], &on)) {
@@ -360,16 +367,8 @@ static void Panel_General() {
   // (Panel_RecommendedFeatures), not here — they are opt-in and not part of the
   // settings hash, so they don't belong among the core seed-defining axes.
 
-  // ---- Display (window theme; persisted to the sidecar) ----
-  ImGui::SeparatorText("Display");
-  {
-    bool dark = g_rando_window_prefs.dark_theme;
-    if (ImGui::Checkbox("Dark theme", &dark)) {
-      g_rando_window_prefs.dark_theme = dark;  // persisted at shutdown
-      if (dark) ImGui::StyleColorsDark(); else ImGui::StyleColorsLight();
-    }
-    HelpTooltip("Toggles the settings-window theme. Saved to saves/rando_window.ini.");
-  }
+  // Window theme/scale moved to Game Settings -> Interface (it's a property of
+  // this settings window, not a randomizer axis). Don't duplicate it here.
 
   // ---- Seed ----
   ImGui::SeparatorText("Seed");
@@ -1086,7 +1085,7 @@ void RandoWindow_Init(SDL_Window *window, SDL_GLContext gl_context) {
 static const char *const kTab_General         = "General";
 static const char *const kTab_Dungeons        = "Dungeons";
 static const char *const kTab_Shuffles        = "Shuffles";
-static const char *const kTab_QualityOfLife   = "Quality of Life";
+static const char *const kTab_QualityOfLife   = "Seed QoL";
 static const char *const kTab_Trackers        = "Trackers";
 static const char *const kTab_AssetHash       = "Asset Hash";
 static const char *const kTab_Spoiler         = "Spoiler";

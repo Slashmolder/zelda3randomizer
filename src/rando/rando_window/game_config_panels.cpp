@@ -25,6 +25,12 @@
 extern "C" {
 #include "../../config.h"     // g_config, g_keybind_*, Config_* helpers, kKeys_*, kGamepadBtn_*
 #include "../../features.h"   // kFeatures0_* bit constants
+// Randomizer ownership state for the shared item bytes 0xF344 (Mushroom/Powder)
+// and 0xF34C (Shovel/Flute). The Debug inventory editor keeps these in sync when
+// it edits those bytes under rando (see the Items section). Declared here rather
+// than including rando.h to keep this UI TU's dependency surface small.
+extern uint8 g_rando_mushroom_held;       // 1 = true Mushroom possession (rando)
+extern uint8 g_rando_flute_shovel_owned;  // kRandoFluteShovel_* bits: Shovel=0x01, Flute=0x02
 }
 
 // ---------------------------------------------------------------------------
@@ -859,15 +865,48 @@ void DbgInventory_Render(void) {
     Cheats_Toggle("Ether Medallion", 0xF348);
     Cheats_Toggle("Quake Medallion", 0xF349);
 
-    // Mushroom/Powder (0xF344) and Shovel/Flute (0xF34C) share a byte AND have
-    // separate randomizer ownership state — disabled under rando to avoid desync.
-    if (rando) ImGui::BeginDisabled();
-    { static const char *const k[] = {"None", "Mushroom", "Magic Powder"}; Cheats_Combo("Mushroom / Powder", 0xF344, k, 3); }
-    { static const char *const k[] = {"None", "Shovel", "Flute"}; Cheats_Combo("Shovel / Flute", 0xF34C, k, 3); }
-    if (rando) {
-      ImGui::EndDisabled();
-      ImGui::TextDisabled("(Mushroom/Powder & Shovel/Flute are managed by the randomizer.)");
+    // Mushroom/Powder (0xF344) and Shovel/Flute (0xF34C) each share ONE vanilla
+    // byte but have separate randomizer ownership state (g_rando_mushroom_held,
+    // g_rando_flute_shovel_owned). Editing the byte alone would desync rando
+    // logic/tracking, so under an active slot we also write the matching
+    // ownership state on change. These are single-select combos, so they can't
+    // express "own both Shovel AND Flute" — they set ownership to exactly the
+    // chosen item, which is the intuitive debug behavior.
+    {
+      static const char *const k[] = {"None", "Mushroom", "Magic Powder"};
+      int v = g_ram[0xF344]; if (v < 0 || v > 2) v = 0;
+      if (ImGui::BeginCombo("Mushroom / Powder", k[v])) {
+        for (int i = 0; i < 3; i++) {
+          bool sel = (v == i);
+          if (ImGui::Selectable(k[i], sel) && i != v) {
+            Cheats_PokeByte(0xF344, i, 0, 2);
+            // Sync true-Mushroom possession: only "Mushroom" counts as held.
+            if (rando && Cheats_CanEdit()) g_rando_mushroom_held = (i == 1) ? 1 : 0;
+          }
+          if (sel) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+      }
     }
+    {
+      static const char *const k[] = {"None", "Shovel", "Flute"};
+      int v = g_ram[0xF34C]; if (v < 0 || v > 2) v = (v == 3) ? 2 : 0;  // 3=active flute -> "Flute"
+      if (ImGui::BeginCombo("Shovel / Flute", k[v])) {
+        for (int i = 0; i < 3; i++) {
+          bool sel = (v == i);
+          if (ImGui::Selectable(k[i], sel) && i != v) {
+            Cheats_PokeByte(0xF34C, i, 0, 2);  // 0=none, 1=shovel, 2=flute(inactive)
+            // Sync ownership bits to exactly the selected item (Shovel=0x01, Flute=0x02).
+            if (rando && Cheats_CanEdit())
+              g_rando_flute_shovel_owned = (i == 1) ? 0x01 : (i == 2) ? 0x02 : 0x00;
+          }
+          if (sel) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+      }
+    }
+    if (rando)
+      ImGui::TextDisabled("(Editing these also updates the randomizer's ownership tracking.)");
 
     ImGui::SeparatorText("Bottles");
     {
