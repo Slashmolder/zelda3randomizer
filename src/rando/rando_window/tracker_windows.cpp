@@ -324,8 +324,18 @@ static void DrawItemTracker(void *) {
 
       // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.
       bool prize_obtained = false; int prize_icon = -1, crystal_num = 0;
-      if (kDungeonRows[i].prize && prize_assign)
-        prize_icon = PrizeIcon(v, prize_assign[kDungeonRows[i].logic], &prize_obtained, &crystal_num);
+      if (kDungeonRows[i].prize && prize_assign) {
+        // PrizeIcon picks WHICH icon to draw; its "obtained" out-param keys on
+        // the GLOBAL pendant/crystal masks (prize-TYPE ownership), which is
+        // wrong under prize_shuffle — owning a pendant TYPE would light up every
+        // dungeon assigned that type (e.g. a Desert prize showing on Tower of
+        // Hera). Drive completion off whether THIS dungeon's prize location was
+        // actually checked instead.
+        bool type_owned = false;
+        prize_icon = PrizeIcon(v, prize_assign[kDungeonRows[i].logic], &type_owned, &crystal_num);
+        uint16 prize_loc = Rando_GetDungeonPrizeLocation(kDungeonRows[i].logic);
+        prize_obtained = (prize_loc != 0xFFFF) && Rando_IsLocationChecked(prize_loc);
+      }
       bool complete = kDungeonRows[i].game == 4 ? v.agahnim : prize_obtained;
 
       ImGui::TableNextRow();
@@ -369,14 +379,31 @@ static void DrawItemTracker(void *) {
 
 // location_id -> region_id index, built once from the static logic table.
 static uint16 s_loc_region[1024];
+// location_id -> location-type index (parallel to s_loc_region). Lets the check
+// tracker exclude non-check slots. Values mirror
+// assets/rando_logic_gen.py::_location_type_id (APPEND-ONLY list).
+static uint8 s_loc_type[1024];
 static bool s_loc_region_built = false;
 static void BuildLocRegionIndex() {
-  for (int i = 0; i < 1024; i++) s_loc_region[i] = 0xFFFF;
+  for (int i = 0; i < 1024; i++) { s_loc_region[i] = 0xFFFF; s_loc_type[i] = 0xFF; }
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     uint16 id = kRandoLocations[i].id;
-    if (id < 1024) s_loc_region[id] = kRandoLocations[i].region_id;
+    if (id < 1024) {
+      s_loc_region[id] = kRandoLocations[i].region_id;
+      s_loc_type[id]   = kRandoLocations[i].type;
+    }
   }
   s_loc_region_built = true;
+}
+
+// Medallion-type (13) locations are the Misery Mire / Turtle Rock medallion
+// CONFIG slots (which medallion opens the dungeon) — a generation-time setting,
+// NOT an item check. They carry a default-TRUE predicate + 0xFFFF region, so
+// they would otherwise render as permanently "available". Exclude them
+// everywhere the check tracker enumerates placement entries.
+static const uint8 kLocType_Medallion = 13;
+static inline bool LocHiddenFromChecks(uint16 loc) {
+  return loc < 1024 && s_loc_type[loc] == kLocType_Medallion;
 }
 
 // Check status: 0 unreachable, 1 reachable-unchecked, 2 checked.
@@ -408,11 +435,14 @@ static void DrawCheckTracker(void *) {
   static char s_search[64] = "";
   if (race) s_show_items = false;
 
-  // Compute summary counts.
+  // Compute summary counts. n_total stays the placement-table loop bound;
+  // n_visible is the displayed total with hidden (medallion-config) slots removed.
   int n_total = pt ? (int)pt->count : 0;
-  int n_checked = 0, n_reachable = 0;
+  int n_visible = 0, n_checked = 0, n_reachable = 0;
   for (int i = 0; i < n_total; i++) {
     uint16 loc = pt->entries[i].location_id;
+    if (LocHiddenFromChecks(loc)) continue;
+    n_visible++;
     if (Rando_IsLocationChecked(loc)) n_checked++;
     else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
   }
@@ -423,9 +453,9 @@ static void DrawCheckTracker(void *) {
     ImGui::Text("· %d available", n_reachable);
   }
   ImGui::SameLine();
-  ImGui::Text("· %d total", n_total);
-  if (n_total > 0) {
-    ImGui::ProgressBar((float)n_checked / (float)n_total, ImVec2(-FLT_MIN, 0),
+  ImGui::Text("· %d total", n_visible);
+  if (n_visible > 0) {
+    ImGui::ProgressBar((float)n_checked / (float)n_visible, ImVec2(-FLT_MIN, 0),
                        "");
   }
   if (!have_reach) {
@@ -467,6 +497,7 @@ static void DrawCheckTracker(void *) {
     int r_total = 0, r_checked = 0, r_avail = 0;
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
+      if (LocHiddenFromChecks(loc)) continue;
       uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
@@ -489,6 +520,7 @@ static void DrawCheckTracker(void *) {
     ImGui::Indent();
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
+      if (LocHiddenFromChecks(loc)) continue;
       uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
 
@@ -544,6 +576,7 @@ static void RegionTally(const RandoPlacementTable *pt, const RandoReachability *
   int n = pt ? (int)pt->count : 0;
   for (int i = 0; i < n; i++) {
     uint16 loc = pt->entries[i].location_id;
+    if (LocHiddenFromChecks(loc)) continue;
     uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
     if (lr != region_id) continue;
     t++;
