@@ -1,3 +1,32 @@
+## Status: DEFERRED
+
+Deferred to a future change (user decision: keep the single Link's-House inverted
+spawn for now). Two findings from the first implementation attempt that the next
+implementer needs:
+
+1. **The spawn-select menu does NOT fire for Inverted.** `Module05_LoadFile`
+   (`src/misc.c`) takes the `savegame_is_darkworld` branch for an Inverted slot,
+   which routes to Link's House (§B6); the spawn-select menu (`main_module = 27`,
+   `Module1B_SpawnSelect`) lives only in the `else` / Light-World-save branch
+   (misc.c:691), which Inverted never reaches. So this change is **not** just the
+   `kExitData_ScreenIndex` override below — it must ALSO route the Inverted respawn
+   through the spawn-select (or otherwise expose the Dark Chapel as a choice). The
+   exit-screen override alone is inert for the menu (and has a side effect: it
+   makes the Sanctuary *check* exit to the DW). That override was implemented then
+   reverted; do not just re-add it.
+
+2. **Not a beatability fix — parity only.** The fork's Inverted logic graph uses a
+   SINGLE start anchor (`LinksHouse_Inverted`); there is no Dark Chapel region in
+   `logic_parts/inverted/`. The placer never assumes Dark-Chapel access, so seeds
+   are beatable from Link's House without it. This change is ALTTPR parity (a
+   usable second respawn anchor), not a reachability fix.
+
+Grounded exit data (read from the vanilla ROM, so the next attempt need not
+re-derive it):
+- Dark Chapel  = Sanctuary    (`which_starting_point` 1): exit-id `0x01`, `0x13 -> 0x53`
+- Dark Mountain = Mountain Cave (`which_starting_point` 6): exit-id `0x31`, `0x03 -> 0x43`
+- path: `kStartingPoint_rooms` @`0x82DB6E` -> `kExitDataRooms` @`0x82DD8A` -> `kExitData_ScreenIndex` @`0x82DE28`
+
 ## Context
 
 The fork's spawn-select (`Module1B_SpawnSelect`, `src/messaging.c`) maps the menu

@@ -52,24 +52,6 @@ static const InvertedOverride kInvertedOverrides[] = {
   // Link's House exit screen -> dark world (PHP: 0x15B8C +0x00 = 0x6C).
   { kAsset_ExitData_ScreenIndex,  1, 0x00, 0x6C },
 
-  // --- Inverted spawn-select respawn worlds (post-Agahnim "Choose Spawn" menu,
-  // Module1B_SpawnSelect). ALTTPR renames the three slots "@'s House / Dark
-  // Chapel / Dark Mountain" (Rom.php menu_start_2/3) and puts all three in the
-  // Dark World; the fork's Sanctuary + Mountain-Cave slots exit to the LIGHT
-  // World, soft-locking an Inverted player who selects them from the respawn
-  // menu. Override their exit SCREEN to the DW mirror (screen | 0x40); the DW
-  // area shares the LW map position (the 0x40 bit doesn't change the exit's
-  // X/Y/camera base), so only the screen byte changes. Exit-ids + vanilla screens
-  // read from the ROM: kStartingPoint_rooms[idx] (0x82DB6E) -> the exit whose
-  // kExitDataRooms (0x82DD8A) matches -> its kExitData_ScreenIndex (0x82DE28).
-  // (Overriding exit-id 0x01 also makes the Sanctuary always exit to the DW in
-  // Inverted — consistent with it being the Dark Chapel; the check is still
-  // entered from the LW, the player just exits home to the DW.)
-  // Dark Chapel = Sanctuary (which_starting_point 1, exit-id 0x01): 0x13 -> 0x53.
-  { kAsset_ExitData_ScreenIndex,  1, 0x01, 0x53 },
-  // Dark Mountain = Mountain Cave (which_starting_point 6, exit-id 0x31): 0x03 -> 0x43.
-  { kAsset_ExitData_ScreenIndex,  1, 0x31, 0x43 },
-
   // --- Ganon's Tower <-> Agahnim's (Hyrule Castle) Tower ---
   // Vanilla AT door (slot 0x23) now loads the GT interior (0x37).
   { kAsset_Overworld_Entrance_Id, 1, 0x23, 0x37 },
