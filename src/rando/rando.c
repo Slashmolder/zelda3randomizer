@@ -2394,6 +2394,109 @@ void Rando_TrackerSelfCheck(void) {
   fprintf(stderr, "[Tracker_SelfCheck] OK (%d -> %d reachable)\n", n0, n1);
 }
 
+// Build a Randomizer sidecar slot for the given settings/seed into `slot`
+// (placement + canonical settings + share string). Mirrors the slot-build in
+// Rando_TrackerSelfCheck. The static placement scratch is safe to reuse because
+// Rando_ActivateSidecarSlot copies the placements via Placement_Install.
+static void rando_selfcheck_build_slot(RandoSidecarSlot *slot, RandoSettings *s, uint64 seed) {
+  static RandoPlacement entries[512];
+  RandoPlacementTable table = { entries, 0 };
+  if (!Place_AssumedFill(s, seed, 0, &table) && table.count == 0)
+    tsc_die("StartingInventory_SelfCheck: placement failed");
+  memset(slot, 0, sizeof(*slot));
+  slot->header.slot_kind = kSlotKind_Randomizer;
+  slot->header.generator_version = (uint16)kGeneratorVersion;
+  uint16 maxloc = 0;
+  for (uint16 i = 0; i < table.count && i < 512; i++) {
+    slot->placements[i] = table.entries[i];
+    if (table.entries[i].location_id > maxloc) maxloc = table.entries[i].location_id;
+  }
+  slot->placement_count = table.count;
+  slot->header.placement_table_size = (uint16)(((uint32)maxloc + 1) * 2);
+  slot->header.settings_ext_present = 1;
+  slot->header.world_state = s->world_state;
+  slot->header.goal = s->goal;
+  Settings_CanonicalSerialize(s, slot->settings_canonical);
+  slot->header.settings_present = 1;
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  ss.seed_u64 = seed;
+  Share_PackBinary(&ss, slot->header.share_string);
+}
+
+// Runtime starting-inventory injection wiring (Rando_TryGrantStartingInventory).
+// Pure / in-process (no file IO, no full game init) — g_ram is zero at selftest
+// time. Pins the grant + idempotency + Inverted-bunny + cold-boot-dedupe gates
+// so a regression in the runtime grant wiring trips here, not only in playtest.
+// Guards the slot_world_state_persistence (Inverted bunny softlock) + double-
+// grant classes. Leaves no active slot and restores the g_ram cells it touches.
+static void Rando_StartingInventorySelfCheck(void) {
+  // (0) No active slot ⇒ injection must no-op.
+  Rando_DeactivateSlot();
+  g_rando_starting_inventory_granted = 0;
+  if (Rando_TryGrantStartingInventory(NULL))
+    tsc_die("StartingInventory: must no-op when no slot is active");
+
+  RandoSettings s;
+  RandoSidecarSlot slot;
+
+  // (1) Inverted: Moon Pearl + Magic Mirror pre-grant on a FRESH save.
+  Settings_SetDefaults(&s);
+  s.world_state = kWorldState_Inverted;
+  rando_selfcheck_build_slot(&slot, &s, 0x0123456789abcdefull);
+  Rando_ActivateSidecarSlot(&slot);
+  g_rando_starting_inventory_granted = 0;
+  sram_progress_indicator = 0;  // brand-new save (pre-escape)
+  link_item_moon_pearl = 0;
+  link_item_mirror = 0;
+  if (!Rando_TryGrantStartingInventory(NULL))
+    tsc_die("StartingInventory(inverted): first inject should grant");
+  if (g_rando_starting_inventory_granted != 1)
+    tsc_die("StartingInventory(inverted): grant gate not set");
+  if (link_item_moon_pearl != 1)
+    tsc_die("StartingInventory(inverted): Moon Pearl not pre-granted");
+  if (link_item_mirror != 2)
+    tsc_die("StartingInventory(inverted): Magic Mirror not pre-granted");
+  // Idempotent: a second call in the same boot must NOT re-grant.
+  if (Rando_TryGrantStartingInventory(NULL))
+    tsc_die("StartingInventory(inverted): second inject must be deduped");
+  Rando_DeactivateSlot();
+
+  // (2) Standard fresh save: injection grants and sets the gate.
+  Settings_SetDefaults(&s);
+  s.world_state = kWorldState_Standard;
+  rando_selfcheck_build_slot(&slot, &s, 0x3ull);
+  Rando_ActivateSidecarSlot(&slot);
+  g_rando_starting_inventory_granted = 0;
+  sram_progress_indicator = 0;
+  if (!Rando_TryGrantStartingInventory(NULL))
+    tsc_die("StartingInventory(standard): first inject should grant");
+  if (g_rando_starting_inventory_granted != 1)
+    tsc_die("StartingInventory(standard): grant gate not set");
+  Rando_DeactivateSlot();
+
+  // (3) Cold-boot dedupe: an in-progress save (progress > 0) must short-circuit
+  // the escape-fill but still set the within-boot dedupe gate.
+  Settings_SetDefaults(&s);
+  rando_selfcheck_build_slot(&slot, &s, 0x7ull);
+  Rando_ActivateSidecarSlot(&slot);
+  g_rando_starting_inventory_granted = 0;
+  sram_progress_indicator = 1;  // past Uncle's gift
+  if (Rando_TryGrantStartingInventory(NULL))
+    tsc_die("StartingInventory(cold-boot): progress>0 must short-circuit the grant");
+  if (g_rando_starting_inventory_granted != 1)
+    tsc_die("StartingInventory(cold-boot): dedupe gate must still be set");
+  Rando_DeactivateSlot();
+
+  // Restore the g_ram cells we touched so later selfchecks see a clean slate.
+  g_rando_starting_inventory_granted = 0;
+  link_item_moon_pearl = 0;
+  link_item_mirror = 0;
+  sram_progress_indicator = 0;
+  fprintf(stderr, "[StartingInventory_SelfCheck] OK\n");
+}
+
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
   Rando_Rng_SelfCheck();
@@ -2409,5 +2512,6 @@ void Rando_RunAllSelfChecks(void) {
   Hints_SelfCheck();
   Entrance_SelfCheck();
   Rando_TrackerSelfCheck();
+  Rando_StartingInventorySelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }
