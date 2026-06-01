@@ -2029,6 +2029,9 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Map, &kRandoMapIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Compass, &kRandoCompassIcon);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Shovel, &kHudItemFlute[1]);
+  // Magic Powder: the mushroom item box renders the powder when its value is 2,
+  // so its tiles live at kHudItemMushroom[2] ([1] is the mushroom itself).
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_Powder, &kHudItemMushroom[2]);
   // Colour/tier variants so the tracker can show the upgraded sprite (the main
   // loop above renders boomerang/gloves at tier 1 and armor at tier 0=green).
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_BoomerangRed, &kHudItemBoomerang[2]);

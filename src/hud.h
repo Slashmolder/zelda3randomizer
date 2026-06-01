@@ -101,6 +101,9 @@ enum {
   // kHudItemBoxGfxPtrs inventory table) into spare atlas slots 28-30, plus
   // shovel (kHudItemFlute[1]) and a full-heart icon at 32-33.
   kRandoIcon_BigKey = 28, kRandoIcon_Map = 29, kRandoIcon_Compass = 30,
+  // Magic Powder = kHudItemMushroom[2] (the mushroom box's value-2 tiles). Rando
+  // decouples mushroom/powder, so the tracker needs a distinct powder icon.
+  kRandoIcon_Powder = 31,
   kRandoIcon_Shovel = 32, kRandoIcon_Heart = 33,
   // Prize sprite icons (4bpp, decoded via DecodeAnimatedSpriteTile_variable).
   kRandoIcon_PendantGreen = 34, kRandoIcon_PendantRed = 35,

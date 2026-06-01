@@ -257,7 +257,10 @@ static void DrawItemTracker(void *) {
   IconChip(kRandoIcon_Bombos, v.bombos, nullptr);
   IconChip(kRandoIcon_Ether, v.ether, nullptr);
   IconChip(kRandoIcon_Quake, v.quake, nullptr);
-  IconChip(kRandoIcon_Mushroom, v.mushroom || v.powder, v.powder ? "P" : nullptr);
+  // Mushroom and Powder are decoupled under rando (you can hold both), so show
+  // each as its own icon rather than overlaying a "P" on the mushroom.
+  IconChip(kRandoIcon_Mushroom, v.mushroom, nullptr);
+  IconChip(kRandoIcon_Powder, v.powder, nullptr);
   IconChip(kRandoIcon_Flute, v.flute, nullptr);
   IconChip(kRandoIcon_Shovel, v.shovel, nullptr);
   snprintf(ov, sizeof ov, "%d", v.bottles); IconChip(kRandoIcon_Bottle, v.bottles > 0, v.bottles > 0 ? ov : nullptr);
