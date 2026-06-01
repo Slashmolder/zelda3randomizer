@@ -4,6 +4,10 @@
 /.claude/
 .DS_Store
 *.dSYM
+# Generated chest-table artifact (extract_resources.dump_chest_table); consumed by
+# the rando chest_lookup codegen. ROM-derived data — must stay gitignored, never
+# committed (no-committed-ROM-data policy). See assets/chest_data.py.
+/assets/rando/chest_table.gen.bin
 /*.vcxproj.user
 *.aps
 /obj/
