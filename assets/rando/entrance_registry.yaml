@@ -30,10 +30,11 @@
 #      vanilla US-ROM entrance-id -> room table; index = entrance-id, the
 #      `[Room #NNN]` decimal prefix = room id). Verified entrance-id range
 #      0x3C..0x72,0x83..0x84.
-#  - chest location -> room : decoded from assets/chest_data.py
-#      the vanilla chest room-words joined to
-#      `CHEST_NAME_BY_ROM_ADDR`. room = room_word & 0x7FFF. This is exact, no
-#      ROM needed.
+#  - chest location -> room : decoded (one-time, during authoring) from the
+#      vanilla US chest room-words joined to assets/chest_data.py
+#      `CHEST_NAME_BY_ROM_ADDR`. room = room_word & 0x7FFF. The room values are
+#      baked into this file; at codegen time the table is read from the
+#      gitignored assets/rando/chest_table.gen.bin (a generated artifact).
 #  - region : assets/rando/location_registry.yaml (our 31-region canonical set,
 #      enumerated in src/rando/logic_data.c `kRandoRegionNames[31]`). When a
 #      cave's chest locations carry a region, that region is used verbatim and

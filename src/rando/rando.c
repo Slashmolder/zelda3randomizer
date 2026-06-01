@@ -1995,6 +1995,7 @@ void Rando_SelfCheck(void) {
     fprintf(stderr, "Rando_SelfCheck: chest dispatch did not fall back on unmapped\n");
     exit(2);
   }
+#if kRandoChestLookup_COUNT > 0
   // Spot-check the generated kRandoChestLookup table against a curated subset
   // of (room, ordinal, expected_LOC_*) triples. These triples are derived
   // from audit.md §0.3.5 + the in-room ordering of the vanilla chest
@@ -2060,6 +2061,14 @@ void Rando_SelfCheck(void) {
     Placement_Install(NULL);
     g_rando_triforce_piece_count = 0;
   }
+#else
+  // No chest table artifact present (e.g. CI build with no assets): the
+  // kRandoChestLookup table is empty so chest mapping cannot be self-checked.
+  // The unmapped fall-through above already exercises the empty-table path.
+  fprintf(stderr,
+    "Rando_SelfCheck: chest table empty (no assets extracted) - skipping "
+    "chest-mapping spot-checks\n");
+#endif
 
   // §6.2 TriforcePiece counter: install a placement that grants Triforce
   // Piece at Bottle Merchant, dispatch, verify counter ticked AND the

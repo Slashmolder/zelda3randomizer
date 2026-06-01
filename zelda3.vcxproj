@@ -951,7 +951,8 @@
        Regenerates src\rando\logic_data.c, src\rando\location_ids.h,
        src\rando\item_ids.h, src\rando\chest_lookup.h, src\rando\icon_atlas.h,
        src\rando\direct_grant_icons.h from assets\rando\*.yaml +
-       assets\chest_data.py (generated chest table). -->
+       assets\chest_data.py (ALTTPR chest-name catalog; the vanilla chest table
+       itself is read from the gitignored assets\rando\chest_table.gen.bin). -->
   <!-- RandoCodegenInput = EXACTLY the files rando_logic_gen.py reads — no more, no less.
        Too few → an incremental build skips codegen on a stale-output check and ships a
        stale logic_data.c. Too many (e.g. @(None), which pulls in tables\zelda3_assets.dat

@@ -283,15 +283,26 @@ def decode_room_objects(p):
     doors.append({'type':get_byte(p + 1), 'pos' : get_byte(p) >> 4, 'dir' : A & 3})
     p += 2
 
+CHEST_TABLE_ADDR = 0x81e96e
+CHEST_TABLE_LEN = 504  # 168 entries x 3 bytes (US ROM)
+
 @cache
 def get_chest_info():
-  ea = 0x81e96e
+  ea = CHEST_TABLE_ADDR
   all = {}
-  for i in range(504//3):
+  for i in range(CHEST_TABLE_LEN//3):
     room = get_word(ea + i * 3)
     data = get_byte(ea + i * 3 + 2)
     all.setdefault(room & 0x7fff, []).append((data, (room & 0x8000) != 0))
   return all
+
+def dump_chest_table():
+  # Write the chest table to a gitignored artifact for the rando chest_lookup
+  # codegen. Kept separate from the room-sorted kDungeonRoomChests asset blob,
+  # which loses the global ordering the codegen needs.
+  os.makedirs('rando', exist_ok=True)
+  data = bytes(get_bytes(CHEST_TABLE_ADDR, CHEST_TABLE_LEN))
+  open('rando/chest_table.gen.bin', 'wb').write(data)
 
 def _get_entrance_info_one(i, set):
   def get_exit_door(i):
@@ -534,6 +545,7 @@ def main():
   sprite_sheets.decode_sprite_sheets()
   sprite_sheets.decode_hud_icons()
   sprite_sheets.decode_font()
+  dump_chest_table()
  
 if __name__ == "__main__":
   util.load_rom(sys.argv[1] if len(sys.argv) >= 2 else None)

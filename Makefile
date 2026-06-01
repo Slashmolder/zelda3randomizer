@@ -61,8 +61,9 @@ OBJS:=$(sort $(SRCS:%.c=%.o))
 # the YAML registries under assets/rando/ and emits these four files. The
 # wildcard above picks up src/rando/logic_data.c automatically; the headers are
 # referenced by code via #include directives. assets/chest_data.py supplies
-# the generated chest table + ALTTPR chest-name snapshot consumed
-# by chest_lookup.h emission (§6.3).
+# the ALTTPR chest-name catalog consumed by chest_lookup.h emission (§6.3); the
+# vanilla chest TABLE itself is read from the generated
+# assets/rando/chest_table.gen.bin artifact produced by asset extraction.
 # NOTE: recurse into assets/rando/ — the logic graph is assembled from
 # logic.yaml + macros.yaml + every logic_parts/**/*.yaml (incl. logic_parts/inverted/**).
 # A non-recursive `$(wildcard assets/rando/*.yaml)` misses the logic_parts/ subtree,

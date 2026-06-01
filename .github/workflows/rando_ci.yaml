@@ -30,6 +30,11 @@ jobs:
     - name: Install Python deps
       run: pip install pyyaml
 
+    # Repo hygiene — generated/extracted data belongs in gitignored artifacts,
+    # not inlined into source as hex.
+    - name: check_no_embedded_data
+      run: python assets/scripts/check_no_embedded_data.py
+
     # Task 1.0b — Determinism-grep on src/rando/*.[ch]
     - name: check_determinism (1.0b)
       run: python assets/scripts/check_determinism.py

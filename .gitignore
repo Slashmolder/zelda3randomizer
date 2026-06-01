@@ -12,6 +12,9 @@
 /assets/dungeon/*.yaml
 /assets/img/
 /assets/old/
+# Generated chest-table artifact (extract_resources.dump_chest_table);
+# consumed by the rando chest_lookup codegen. See assets/chest_data.py.
+/assets/rando/chest_table.gen.bin
 /zelda3.sfc
 /zelda3.smc
 /saves/*.sav

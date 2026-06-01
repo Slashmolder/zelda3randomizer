@@ -1086,6 +1086,43 @@ def emit_item_ids(items: dict[str, ItemDef], path: Path):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_empty_chest_lookup(path: Path) -> None:
+    """Emit an empty chest_lookup.h (no assets extracted, e.g. CI).
+
+    1-element sentinel array (never read, _COUNT is 0) for portable C89.
+    chest_lookup() bounds its search by _COUNT, so every lookup returns 0xFFFF.
+    """
+    lines = [
+        HEADER_BANNER,
+        "",
+        "// chest_lookup.h — EMPTY: no vanilla chest table was available at",
+        "// codegen time (assets/rando/chest_table.gen.bin absent — no ROM",
+        "// extracted, e.g. a CI build). chest_lookup() returns 0xFFFF for every",
+        "// (room, ordinal), so all chests fall through to vanilla. Re-run asset",
+        "// extraction and rebuild to populate this table for a playable build.",
+        "",
+        "#ifndef ZELDA3_RANDO_CHEST_LOOKUP_H_",
+        "#define ZELDA3_RANDO_CHEST_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "#include \"location_ids.h\"",
+        "",
+        "typedef struct RandoChestLookupEntry {",
+        "  uint16 room;     // 0..319 dungeon room index",
+        "  uint8  ordinal;  // 0..5; in-room chest index = (tile - 0x58)",
+        "  uint16 loc_id;   // LOC_*",
+        "} RandoChestLookupEntry;",
+        "",
+        "// Unused sentinel (kRandoChestLookup_COUNT == 0 — never indexed).",
+        "static const RandoChestLookupEntry kRandoChestLookup[1] = { { 0, 0, 0 } };",
+        "",
+        "#define kRandoChestLookup_COUNT 0",
+        "",
+        "#endif  // ZELDA3_RANDO_CHEST_LOOKUP_H_",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
     """Emit src/rando/chest_lookup.h — (dungeon_room, chest_ordinal) -> LOC_*.
 
@@ -1101,10 +1138,15 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
 
     Returns the number of rows emitted (for diagnostic logging).
     """
-    rows = chest_data.get_chest_lookup_rows()
-    # Validate every chest name resolves to a Chest/BigChest registry entry.
+    # Validate against the catalog (not the table), so name/type/coverage drift
+    # is caught in CI, where the table artifact is absent.
+    DEFERRED_CHEST_NAMES = {"Chest Game"}  # §6.8 minigame path
+    catalog = chest_data.CHEST_NAME_BY_ROM_ADDR
+    catalog_names = {name for (name, _ctype) in catalog.values()}
+
+    # Forward: every catalog chest name resolves to a Chest/BigChest registry entry.
     unknown = []
-    for room, ord_, name, ctype, item, big, addr in rows:
+    for addr, (name, ctype) in catalog.items():
         loc = locations.get(name)
         if loc is None:
             unknown.append((name, addr))
@@ -1121,30 +1163,35 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
             % (len(unknown), msg, " ..." if len(unknown) > 5 else "")
         )
 
-    # Reverse direction: every Chest/BigChest location in the registry must
-    # appear in chest_data (modulo the explicitly-deferred Chest Game). If a
-    # future contributor adds a chest to location_registry.yaml without
-    # updating assets/chest_data.py, the codegen would silently emit a table
-    # missing that location and the runtime would fall through to vanilla
-    # for the new chest. Fail loudly at codegen time instead.
-    DEFERRED_CHEST_NAMES = {"Chest Game"}  # §6.8 minigame path
-    chest_names_in_table = {name for (_room, _ord, name, *_rest) in rows}
-    missing_in_chest_data = []
+    # Reverse: every registry Chest/BigChest must be in the catalog (minus the
+    # deferred Chest Game), else its chest would silently fall through to vanilla.
+    missing_in_catalog = []
     for loc in locations.values():
         if loc.type not in ("Chest", "BigChest"):
             continue
         if loc.name in DEFERRED_CHEST_NAMES:
             continue
-        if loc.name not in chest_names_in_table:
-            missing_in_chest_data.append((loc.name, loc.id))
-    if missing_in_chest_data:
-        msg = ", ".join("%s (loc %d)" % (n, i) for n, i in missing_in_chest_data[:5])
+        if loc.name not in catalog_names:
+            missing_in_catalog.append((loc.name, loc.id))
+    if missing_in_catalog:
+        msg = ", ".join("%s (loc %d)" % (n, i) for n, i in missing_in_catalog[:5])
         raise RuntimeError(
-            "chest_lookup: %d registry chest(s) absent from assets/chest_data.py: %s%s"
-            " — add them to CHEST_NAME_BY_ROM_ADDR with PHP source provenance."
-            % (len(missing_in_chest_data), msg,
-               " ..." if len(missing_in_chest_data) > 5 else "")
+            "chest_lookup: %d registry chest(s) absent from CHEST_NAME_BY_ROM_ADDR: %s%s"
+            " — add them with PHP source provenance."
+            % (len(missing_in_catalog), msg,
+               " ..." if len(missing_in_catalog) > 5 else "")
         )
+
+    # Rows need the generated chest table; absent in CI -> empty lookup (the
+    # runtime falls through to vanilla for every chest).
+    rows = chest_data.get_chest_lookup_rows()
+    if not rows:
+        _write_empty_chest_lookup(path)
+        print(
+            "  NOTE: chest_lookup.h emitted EMPTY (chest_table.gen.bin absent; "
+            "expected in CI). Run asset extraction for a playable build."
+        )
+        return 0
 
     # Sort by (room, ordinal) so the C-side binary search has a sorted key.
     rows.sort(key=lambda r: (r[0], r[1]))
@@ -1160,14 +1207,10 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
         "// OpenChestForItem's iteration (N-th matching room in",
         "// kDungeonRoomChests).",
         "//",
-        "// Source-of-truth provenance:",
-        "//   - In-room ordinals derived from the vanilla chest table",
-        "//     ($81e96e, 168 entries x 3 bytes) snapshot at",
-        "//     assets/chest_data.py (sha256 of the chest table bytes",
-        "//     documented there).",
-        "//   - Chest names sourced from ALTTPR PHP `new Location\\\\Chest(`",
-        "//     declarations at app/Region/Standard/**.php; cross-checked",
-        "//     against assets/rando/location_registry.yaml (audit.md S0.3.5).",
+        "// Source: in-room ordinals from the vanilla chest table (168 x 3 bytes),",
+        "// read at codegen time from the generated chest_table.gen.bin; chest",
+        "// names from ALTTPR PHP app/Region/Standard/**.php, cross-checked against",
+        "// location_registry.yaml.",
         "",
         "#ifndef ZELDA3_RANDO_CHEST_LOOKUP_H_",
         "#define ZELDA3_RANDO_CHEST_LOOKUP_H_",
