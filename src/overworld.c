@@ -2833,7 +2833,10 @@ void HandlePegPuzzles(uint16 pos) {  // 8edd67
       // is RAM, the obtained-bit is save-state).
       if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
           (save_ow_event_info[0x62] & 0x40) == 0) {
-        uint8 lttp = Rando_DispatchVanillaGrant(LOC_Hammer_Pegs, ITEM_PieceOfHeart, 0x26);
+        // lttp code 0x17 is the quarter Piece of Heart (link_heart_pieces +1);
+        // 0x26 is the FULL heart-container code (link_health_capacity += 8) and
+        // would wrongly grant a whole container for a vanilla PoH placement.
+        uint8 lttp = Rando_DispatchVanillaGrant(LOC_Hammer_Pegs, ITEM_PieceOfHeart, 0x17);
         save_ow_event_info[0x62] |= 0x40;
         Rando_ReceiveOrConfirm(lttp, (uint8)Rando_LastDispatchedItemId());
       }
