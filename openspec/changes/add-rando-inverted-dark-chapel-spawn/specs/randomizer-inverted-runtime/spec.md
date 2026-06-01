@@ -1,23 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: Inverted respawn at the Dark Chapel (Dark-World Sanctuary)
+### Requirement: Inverted spawn-select respawn points are in the Dark World
 
-When `Rando_GetActiveWorldState() == Inverted` (under `kFeatures1_RandomizerActive`), the save / respawn spawn point SHALL be the "Dark Chapel" — the Dark-World Sanctuary at overworld screen `0x53` (the Dark-World mirror of the Light-World Sanctuary at `0x13`) — matching ALTTPR `app/Rom.php setInvertedMode()` (the `StartingArea*` block). The Inverted player SHALL spawn and respawn (new game, save-and-quit, death) in the Dark World at the Dark Chapel — not at Link's House and not in the Light World. All behavior SHALL be gated so that non-Inverted / Open / Standard / Retro spawn-select is byte-identical (the fork RAM-compares against the original ROM).
+When `Rando_GetActiveWorldState() == Inverted` (under `kFeatures1_RandomizerActive`), the post-Agahnim spawn-select menu's **"Dark Chapel"** option (Sanctuary, `which_starting_point = 1`) and **"Dark Mountain"** option (Mountain Cave, `which_starting_point = 6`) SHALL respawn the player in the **Dark World** — the Dark Chapel at the Dark-World Sanctuary-mirror (overworld screen `0x53`, the DW mirror of LW `0x13`) and Dark Mountain at the Dark-World Death Mountain — matching ALTTPR `app/Rom.php setInvertedMode()`. The player SHALL NOT land in the Light World from either option. The initial spawn (Link's House, `which_starting_point = 0`) is out of scope and unchanged. All behavior SHALL be gated so that non-Inverted / Open / Standard / Retro spawn-select is byte-identical (the fork RAM-compares against the original ROM).
 
-> **Stub status**: this supersedes the interim Link's-House Inverted spawn (`docs/inverted_alttpr_gaps.md` §B6). The exact spawn-data mechanism — overriding the `kStartingPoint_*` Sanctuary entry's post-exit world/screen for Inverted vs. adding a dedicated Dark-Chapel spawn — is resolved at apply-time per `design.md`; this requirement fixes the contract (a navigable DW-Sanctuary respawn), not the byte values. If the apply-time spike finds the Sanctuary-exit field is not cleanly overridable, the accepted fallback is to keep the Link's-House spawn and close this change as won't-port.
+> **Stub status**: the exact mechanism (an Inverted `kExitData_ScreenIndex` asset-shadow override on the Sanctuary + Mountain-Cave exit-ids, mirroring the existing Link's-House idx-0 → `0x6C` override, vs. a runtime spawn redirect) and the exact exit-ids are resolved at apply-time per `design.md`. This requirement fixes the contract (both menu options land in a navigable Dark World), not the byte values. This supersedes `docs/inverted_alttpr_gaps.md` §D1 (the Mountain-Cave spawn-select world question) and closes the Dark-Chapel half of §B6.
 
 #### Scenario: Non-Inverted spawn-select is unchanged
 - **WHEN** a seed is played in Open, Standard, or Retro, or with no active rando slot
-- **THEN** the Sanctuary spawn (`which_starting_point` 1) lands at the Light-World Sanctuary (screen `0x13`), byte-identical to the pre-change build
+- **THEN** the spawn-select Sanctuary (idx 1) and Mountain Cave (idx 6) options land in the Light World (screens `0x13` / the LW DM cave), byte-identical to the pre-change build
 
-#### Scenario: Inverted new game spawns at the Dark Chapel
-- **WHEN** a fresh Inverted slot is generated and loaded
-- **THEN** the player begins in the Dark World at the Dark Chapel (screen `0x53`, `savegame_is_darkworld = 0x40`) — not at Link's House (screen `0x6C`) and not in the Light World
+#### Scenario: Inverted "Dark Chapel" respawns in the Dark World
+- **WHEN** an Inverted player opens the respawn menu and selects "Dark Chapel" (the Sanctuary slot)
+- **THEN** they respawn in the Dark World at the Dark Chapel (screen `0x53`, `savegame_is_darkworld = 0x40`) — not in the Light World — and the spot is navigable
 
-#### Scenario: Inverted save-and-quit respawns at the Dark Chapel
-- **WHEN** an Inverted player saves-and-quits outdoors in the Dark World and reloads
-- **THEN** they respawn at the Dark Chapel in the Dark World — not the trapped pyramid ledge (screen `0x5B`) and not the Light-World Sanctuary
+#### Scenario: Inverted "Dark Mountain" respawns in the Dark World
+- **WHEN** an Inverted player opens the respawn menu and selects "Dark Mountain" (the Mountain-Cave slot)
+- **THEN** they respawn in the Dark World on Death Mountain — not in the Light-World DM cave
 
-#### Scenario: Inverted death respawns at the Dark Chapel
-- **WHEN** an Inverted player dies outside a dungeon-specific respawn
-- **THEN** they respawn at the Dark Chapel in the Dark World
+#### Scenario: The Link's House spawn is untouched
+- **WHEN** an Inverted slot is freshly generated (the baked `which_starting_point = 0`) or the player selects "@'s House" from the menu
+- **THEN** the spawn is Link's House landing in the Dark World (screen `0x6C`), exactly as before this change (§B6 behavior preserved)

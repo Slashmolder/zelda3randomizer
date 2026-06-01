@@ -1,17 +1,37 @@
-## 1. Source + spawn-mechanism grounding (do FIRST)
+## 1. Ground the spawn-select exit mechanism (do FIRST — no guessing)
 
-- [ ] 1.1 Pin the ALTTPR upstream commit (`git -C ../alttp_vt_randomizer rev-parse HEAD`); re-read `app/Rom.php setInvertedMode()` `StartingArea*` block (~1680-1730) + the Dark-Sanctuary spawn data block (`0x02D8D4..0x02D9B3`); transcribe the exact DW Sanctuary screen + Link-landing coords.
-- [ ] 1.2 **F12 dump the fork's Sanctuary spawn** (`which_starting_point = 1`, via a scratch non-Inverted slot or a temporary bake): record `kStartingPoint_rooms[1]`, the entrance/door fields, and the post-exit `overworld_screen_index` + `savegame_is_darkworld` interaction. Determine WHICH field hardcodes the LW exit (screen `0x13`) — i.e. whether it is an already-shadowed exit-data field (`inverted_entrances.c`) or a `kStartingPoint_*` asset not yet registered.
-- [ ] 1.3 Confirm DW screen `0x53` (the Sanctuary-mirror Dark Chapel) renders correctly and connects to the broader Dark World (F12 BG dump from a walk-in); record the navigability finding.
+- [ ] 1.1 Pin the ALTTPR upstream commit; re-read `app/Rom.php` `menu_start_2/3`
+      (confirm the three Inverted spawn names) + the `StartingArea*` block
+      (~1680-1730) for the Dark-Chapel DW screen/coords reference.
+- [ ] 1.2 **F12-dump the fork's spawn-select** for each option under an Inverted
+      slot: select "Dark Chapel" (idx 1) and "Dark Mountain" (idx 6); record the
+      resulting `overworld_screen_index`, `savegame_is_darkworld`, and the exit-id
+      taken (`LoadOverworldFromDungeon` search on the Sanctuary / Mountain-Cave
+      room). Confirm both currently land in the LW.
+- [ ] 1.3 Confirm the screen comes from `kExitData_ScreenIndex[exit-id]` (not a
+      `kStartingPoint_*`-embedded screen). If it's a `kStartingPoint_*` asset,
+      register that asset in the shadow set instead.
+- [ ] 1.4 Determine the DW targets: Dark Chapel = `0x53` (DW mirror of LW `0x13`);
+      Dark Mountain = the navigable DW Death-Mountain screen for the Mountain-Cave
+      exit. F12 BG-dump `0x53` to confirm it renders + connects to the DW.
 
-## 2. Dark Chapel spawn override
+## 2. Override the spawn-select exit world (Inverted-gated)
 
-- [ ] 2.1 Add an inverted asset-shadow override (the `inverted_entrances.c` pattern) repointing the field identified in 1.2 so the Sanctuary spawn's post-exit world/screen is the DW Sanctuary (screen `0x53`), gated on `Rando_GetActiveWorldState() == Inverted`. If a new asset joins the shadow set, register it.
-- [ ] 2.2 Bake `which_starting_point = 1` (Sanctuary) for Inverted in `Rando_InitNewSlotSram` (`src/rando/rando_generate.c`), replacing the §B6 interim `= 0`; **ship 2.1 in the same change** so the DW-exit override is live before the bake flips (avoid re-introducing the §C1 LW trap). Update `RandoGenerate_SelfCheck`'s expected `sram[0x3C8]` value (0x00 → 0x01).
-- [ ] 2.3 Redirect the `src/misc.c` `Module05_LoadFile` outdoors-DW reload path and the `src/messaging.c` death respawn from Link's House to the Dark-Chapel spawn (gated on Inverted).
+- [ ] 2.1 Add two rows to the Inverted `kExitData_ScreenIndex` override in
+      `src/rando/inverted_entrances.c` (the existing shadow set): Sanctuary
+      exit-id → `0x53`; Mountain-Cave exit-id → the DW DM screen. Mirror the
+      Link's-House idx-0 → `0x6C` precedent. Only the screen byte changes.
+- [ ] 2.2 Confirm the initial spawn (Link's House) and the §B7 warps are
+      unaffected (different exit-ids / assets); the change is additive to the
+      shadow table.
 
 ## 3. Verify (playtest is the only net)
 
-- [ ] 3.1 Playtest: a fresh Inverted seed spawns at the Dark Chapel (DW screen `0x53`); S&Q and death respawn there; F12 dump confirms `savegame_is_darkworld = 0x40` + screen `0x53`, navigable.
-- [ ] 3.2 Confirm the non-Inverted Sanctuary spawn (Open / Standard / Retro) is byte-identical (LW screen `0x13`); run `--rando-selftest` (`RandoGenerate_SelfCheck` green) and the placement corpus (digests unchanged).
-- [ ] 3.3 Update `docs/inverted_alttpr_gaps.md` §B6 — mark the Dark-Chapel exactness resolved (or, on the won't-port fallback, record the finding and keep the Link's-House spawn).
+- [ ] 3.1 Playtest: open the respawn menu in an Inverted seed, pick "Dark Chapel"
+      → F12-confirm DW screen `0x53`, `savegame_is_darkworld = 0x40`, navigable;
+      pick "Dark Mountain" → DW Death Mountain, navigable. Neither lands in the LW.
+- [ ] 3.2 Confirm non-Inverted spawn-select (Open / Standard / Retro) is
+      byte-identical (Sanctuary → LW `0x13`, Mountain Cave → LW DM); run
+      `--rando-selftest` + the placement corpus (digests unchanged).
+- [ ] 3.3 Update `docs/inverted_alttpr_gaps.md`: close §D1 (Mountain-Cave
+      spawn-select) and the Dark-Chapel half of §B6; record the resolved exit-ids.

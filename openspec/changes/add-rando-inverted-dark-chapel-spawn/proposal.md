@@ -1,66 +1,59 @@
 ## Why
 
-ALTTPR's Inverted world-state relocates the save / respawn point to a **"Dark
-Chapel"** — a Dark-World Sanctuary — via the `StartingArea*` block in
-`app/Rom.php setInvertedMode()` (lines ~1680-1730: `StartingAreaExitTable`
-`0x180250`, `StartingAreaExitOffset` `0x180240`, `StartingAreaOverworldDoor`
-`0x180247`, plus the Dark-Sanctuary spawn data block `0x02D8D4..0x02D9B3`).
+The post-Agahnim **spawn-select menu** (`Module1B_SpawnSelect`, `src/messaging.c`)
+offers three respawn points, indexed by `which_starting_point` via
+`kLocationMenuStartPos = {0, 1, 6}`. In ALTTPR Inverted these three are renamed
+"@'s House" / **"Dark Chapel"** / **"Dark Mountain"** (`app/Rom.php` `menu_start_2`
+/ `menu_start_3`) — i.e. Link's House / Sanctuary / Mountain Cave — and ALTTPR
+places **all three in the Dark World** (the "Dark Chapel" is the relocated DW
+Sanctuary; ALTTPR spawns it from a dedicated `StartingArea*` block at
+`Rom.php:1680-1730`, room `0x112`).
 
-This fork has **no `StartingArea*` tables**. The Inverted spawn-point gap was
-closed for *playability* (`docs/inverted_alttpr_gaps.md` §B6 / §C1) by baking
-`which_starting_point = 0` (Link's House), whose exit lands at the DW Bomb-Shop
-position (screen 0x6C) via the Link's-House↔Bomb-Shop entrance swap — navigable
-and in the correct world (DW). But Link's House is **not** ALTTPR's relocated
-Dark Chapel. This is the last Inverted spawn-point divergence.
+The fork's Sanctuary spawn (`which_starting_point = 1`) and Mountain Cave spawn
+(`= 6`) exit to the **Light World** (the Sanctuary at LW screen `0x13`; the DM
+cave in the LW). An F12 dump confirmed the exit screen is hardcoded LW even with
+`savegame_is_darkworld = 0x40` set. So an Inverted player who picks "Dark Chapel"
+or "Dark Mountain" from the respawn menu lands in the Light World and soft-locks
+— the **same LW-trap class** as the initial-spawn bug (`docs/inverted_alttpr_gaps.md`
+§B6 / §C1 / §D1), but reached via the manual respawn menu rather than the baked
+start.
 
-This is a **faithfulness refinement, not a softlock fix** — the current
-Link's-House spawn is fully playable. The change relocates the Inverted respawn
-to the Dark-World Sanctuary (the Dark Chapel) to match ALTTPR exactly.
+This is a **reachability concern, not cosmetic**: the Dark Chapel is a Dark-World
+respawn anchor the player is expected to be able to use, and placements may count
+on it. A broken Dark-Chapel respawn can leave a seed effectively unwinnable from
+that anchor (or, at minimum, soft-lock a player who selects it).
 
 ## What Changes
 
-- **Relocate the Inverted save / respawn spawn from Link's House to the Dark
-  Chapel** — the Dark-World Sanctuary at overworld screen `0x53` (the DW mirror
-  of the Light-World Sanctuary at `0x13`) — matching ALTTPR. Covers new-game
-  spawn, save-and-quit respawn, and death respawn.
-- The fork spawns via the `kStartingPoint_*` assets indexed by
-  `which_starting_point` (`src/dungeon.c:8418`). The Sanctuary entry (index 1)
-  spawns into Sanctuary room `0x12`, whose overworld exit is hardcoded to the
-  **Light World** (screen `0x13`) — which is exactly why baking
-  `which_starting_point = 1` trapped the Inverted player in the LW (§C1).
-  Override the Sanctuary spawn's post-exit world/screen for Inverted so it lands
-  in the DW (screen `0x53`), then bake `which_starting_point = 1` for Inverted
-  (superseding the interim `= 0` Link's-House choice from §B6).
-- All behavior gated on the active Inverted rando world-state; non-Inverted /
-  Open / Standard / Retro spawn-select stays byte-identical (the fork
-  RAM-compares against the original ROM).
+- For an active Inverted slot, the spawn-select **"Dark Chapel" (Sanctuary, idx 1)**
+  and **"Dark Mountain" (Mountain Cave, idx 6)** options SHALL respawn the player
+  in the **Dark World** — the Dark Chapel at the DW Sanctuary-mirror (screen
+  `0x53`) and Dark Mountain at the DW Death Mountain — matching ALTTPR.
+- The **initial spawn (Link's House, `which_starting_point = 0`) is unchanged** —
+  §B6 already lands it in the DW; this change does NOT touch the baked start.
+- Gated on the active Inverted world-state; non-Inverted / Open / Standard / Retro
+  spawn-select is byte-identical (the fork RAM-compares against the original ROM).
 
 ## Capabilities
 
 ### Modified Capabilities
-- `randomizer-inverted-runtime`: ADDS the Inverted spawn-point (Dark Chapel)
-  requirement. The capability is **established in-flight** by the
-  `add-rando-inverted-ganon-relocation` change; this change contributes a
-  *sibling* ADDED requirement (the spawn point), not a modification of Ganon's
-  requirements — so the two changes archive independently without a
-  sequencing conflict.
+- `randomizer-inverted-runtime`: ADDS the Inverted spawn-select respawn-world
+  requirement. Sibling ADDED requirement to the in-flight
+  `add-rando-inverted-ganon-relocation` change (no archive-sequencing conflict).
 
 ## Impact
 
-- **Code:** `src/rando/rando_generate.c` (`Rando_InitNewSlotSram` — bake
-  `which_starting_point = 1` for Inverted; update `RandoGenerate_SelfCheck`'s
-  expected value), `src/rando/inverted_entrances.c` (a new asset-shadow override
-  repointing the Sanctuary spawn's exit world/screen to the DW Sanctuary under
-  the active Inverted slot), `src/misc.c` (`Module05_LoadFile` outdoors-DW
-  reload) + `src/messaging.c` (death respawn) redirected from Link's House to
-  the Dark Chapel.
-- **Supersedes** the interim Link's-House spawn (§B6): the byte that changes is
-  the baked `which_starting_point` plus the new Sanctuary-exit override; §B6's
-  Link's-House path becomes dead for Inverted.
-- **No generation / placement / logic impact:** spawn location is runtime
-  start-state, not placement. No `kGeneratorVersion` / settings-hash / corpus
-  cascade expected beyond the `RandoGenerate_SelfCheck` expected-value update
-  (verify at apply-time).
-- **Verification:** playtest only (the playable-slot path has no automated test,
-  per `CLAUDE.md`); an F12 dump must confirm the spawn lands at DW screen `0x53`
-  with `savegame_is_darkworld = 0x40` and is navigable.
+- **Code:** an Inverted asset-shadow override (the `src/rando/inverted_entrances.c`
+  pattern) repointing the Sanctuary + Mountain-Cave exit *screen* to their DW
+  equivalents (`kExitData_ScreenIndex`) — the Link's-House exit is already
+  overridden the same way (idx 0 → `0x6C`). The Sanctuary's overworld position is
+  identical in both worlds (the world bit `0x40` does not change the exit's
+  X/Y/camera), so only the screen byte changes. Exact exit-ids confirmed at
+  apply-time (F12 dump of the fork's spawn-select, or the extracted exit data).
+- **No initial-spawn change** (§B6's `which_starting_point = 0` stays).
+- **No generation / placement / logic impact** beyond making an
+  already-modeled DW anchor actually reachable. No `kGeneratorVersion` /
+  settings-hash / corpus cascade expected (verify at apply-time).
+- **Verification:** playtest only — pick "Dark Chapel" then "Dark Mountain" from
+  the respawn menu and F12-confirm the spawn lands in the DW (`savegame_is_darkworld
+  = 0x40`, DW screen) and is navigable.
