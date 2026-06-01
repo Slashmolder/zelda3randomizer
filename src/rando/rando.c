@@ -1079,10 +1079,18 @@ void Rando_CrossDecoupledSetExit(uint16 lx) {
   // target forces the search branch at its room (kind 2). Self-map / non-pool
   // (kind 0) leaves the coupled cross return-to-source in place.
   if (kind == 1) {
-    g_cross_decoupled_exit_kind = 1;
-    g_cross_decoupled_exit_cave = (uint8)value;
-    g_rando_entrance_exit_room = 0;
-    g_rando_entrance_force_cached = 0;
+    // Only force the cached branch if the target cave's arrival is actually
+    // CAPTURED — otherwise fall back to the coupled return (kind 0) rather than
+    // forcing a cached replay against a stale *_exit block (the loaded interior may
+    // be a dungeon). The production baked table makes every cave valid, so this
+    // never falls back in shipped play; it's a dev/incomplete-table footgun guard.
+    Rando_LoadArrivalCaptureIfNeeded();
+    if (value < kEntranceMaxInteriors && g_cave_capture[value].valid) {
+      g_cross_decoupled_exit_kind = 1;
+      g_cross_decoupled_exit_cave = (uint8)value;
+      g_rando_entrance_exit_room = 0;
+      g_rando_entrance_force_cached = 0;
+    }
   } else if (kind == 2) {
     g_cross_decoupled_exit_kind = 2;
     g_rando_entrance_exit_room = value;
