@@ -412,6 +412,14 @@ entries:
     label: "c-entrance-dungeon-decoupled-open-fast-ganon"
     expected_digest: "f02c4d8fdfdab5bc8bed60db566405a9375b3a296fb155aab57f3c758b0094da"
     expected_sphere_digest: "f20ceaf6cd8f63d411cea837d93832906adebff68eaae040e49312efa9e93905"
+  # Full decoupled ("Insanity" preset): caves AND dungeons, one-way exits on both.
+  # Both runtimes active on disjoint door sets; logic is coupled-equivalent for the
+  # dungeon side, cave-decoupled adds its exit edges. Converges (5/5 test seeds).
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, decoupled: true }
+    seed: "0x00000000F0FFFFFF"
+    label: "c-entrance-decoupled-both-open-fast-ganon"
+    expected_digest: "fbd066172d1338e640d19feca95ccad09afd38ac65fae85ef9b316c46deea12b"
+    expected_sphere_digest: "869d8d01b549a4f0be6d7134a799070744c83fbe7b8d35239504135897558da1"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

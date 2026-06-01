@@ -493,109 +493,115 @@ static void Panel_Shuffles() {
                   s->world_state == kWorldState_Standard);
     ImGui::BeginDisabled(!ws_ok);
 
-    // Presets — one-click bundles over the axes. Simple/Restricted both map to
-    // "caves + dungeons, coupled" (within-category). Crossed adds cross_category
-    // (caves and dungeons share one pool). Insanity (needs decoupled) is not
-    // built yet — shown disabled so the button never lies.
-    ImGui::TextUnformatted("Presets:"); ImGui::SameLine();
-    if (ImGui::SmallButton("None")) {
+    // Quick presets — one-click bundles over the three groups below (Shuffle /
+    // Exits / Cross). The live controls always reflect the resulting state, so a
+    // preset followed by a tweak is fully transparent.
+    ImGui::TextUnformatted("Quick:"); ImGui::SameLine();
+    if (ImGui::SmallButton("Off")) {
       s->shuffle_cave_entrances = 0; s->shuffle_dungeon_entrances = 0;
+      s->shuffle_ganons_tower_entrance = 0;
       s->coupled = 0; s->cross_category = 0; s->decoupled = 0; changed = true;
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("Simple / Restricted")) {
+    if (ImGui::SmallButton("Simple")) {
       s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
       s->coupled = 1; s->cross_category = 0; s->decoupled = 0; changed = true;
     }
-    HelpTooltip("Caves + dungeons shuffled within their own category, coupled. "
-                "(ALTTPR's Simple and Restricted converge here.)");
+    HelpTooltip("Caves + dungeons shuffled within their own category, coupled "
+                "(enter A -> exit A). ALTTPR's Simple/Restricted converge here.");
     ImGui::SameLine();
     if (ImGui::SmallButton("Crossed")) {
       s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
       s->coupled = 1; s->cross_category = 1; s->decoupled = 0; changed = true;
     }
-    HelpTooltip("Caves and dungeons share one shuffle pool — a cave door can lead "
-                "to a dungeon interior and vice versa, coupled. The generator "
-                "rerolls until every location is reachable.");
+    HelpTooltip("Caves and dungeons share ONE pool - a cave door can lead to a "
+                "dungeon interior and vice versa, coupled.");
     ImGui::SameLine();
     if (ImGui::SmallButton("Insanity")) {
-      // Caves-only decoupled (D.4): enter a cave door, exit somewhere else.
-      // Dungeon-decoupled is not built yet, so this preset shuffles caves only.
-      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 0;
+      // Full decoupled: caves AND dungeons, one-way exits (both runtimes built).
+      s->shuffle_cave_entrances = 1; s->shuffle_dungeon_entrances = 1;
       s->coupled = 0; s->cross_category = 0; s->decoupled = 1; changed = true;
     }
-    HelpTooltip("Decoupled cave doors — enter a cave, exit from a DIFFERENT cave's "
-                "door (one-way warps). Caves only for now (dungeon-decoupled is "
-                "deferred). The generator keeps every location reachable.");
+    HelpTooltip("Decoupled caves AND dungeons - exiting drops you at a DIFFERENT "
+                "door (one-way warps). The generator keeps the goal reachable.");
 
+    ImGui::Spacing();
+    // ---- Group 1: Shuffle (scope — what gets shuffled) ----
+    // `coupled` is fully DERIVED (= a shuffle on && !decoupled); apply_derived_rules
+    // is authoritative, but we keep the struct live-consistent here so the canonical
+    // is right even before the next normalize. The user never sees a `coupled` widget.
+    ImGui::TextUnformatted("Shuffle"); ImGui::SameLine();
     bool cave = s->shuffle_cave_entrances != 0;
-    if (ImGui::Checkbox("Shuffle cave entrances", &cave)) {
+    if (ImGui::Checkbox("Caves", &cave)) {
       s->shuffle_cave_entrances = cave;
-      s->coupled = (cave || s->shuffle_dungeon_entrances) ? 1 : 0;  // coupled = only mode
+      if (!cave && !s->shuffle_dungeon_entrances) { s->decoupled = 0; s->cross_category = 0; }
+      s->coupled = ((s->shuffle_cave_entrances || s->shuffle_dungeon_entrances) && !s->decoupled) ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Each overworld cave door leads to a different cave interior; "
-                "exiting returns you to the door you entered. Goal stays "
-                "reachable. (Open/Standard only in this version.)");
+    HelpTooltip("Each overworld cave door leads to a different cave interior. "
+                "(Open/Standard only in this version.)");
+    ImGui::SameLine();
     bool dun = s->shuffle_dungeon_entrances != 0;
-    if (ImGui::Checkbox("Shuffle dungeon entrances", &dun)) {
+    if (ImGui::Checkbox("Dungeons", &dun)) {
       s->shuffle_dungeon_entrances = dun;
-      s->coupled = (dun || s->shuffle_cave_entrances) ? 1 : 0;
+      if (!dun) s->shuffle_ganons_tower_entrance = 0;
+      if (!dun && !s->shuffle_cave_entrances) { s->decoupled = 0; s->cross_category = 0; }
+      s->coupled = ((s->shuffle_cave_entrances || s->shuffle_dungeon_entrances) && !s->decoupled) ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Shuffles 10 of 12 dungeons among themselves; entering one's door "
-                "loads another, coupled exit returns you. Desert + Turtle Rock "
-                "shuffle their MAIN door only (extra 'contained' entrances stay "
-                "vanilla). Skull Woods (many separate entrances) is deferred; "
-                "Ganon's Tower is the separate advanced toggle below.");
-    // Advanced opt-in: Ganon's Tower. Gated on dungeon shuffle being on.
+    HelpTooltip("Shuffles 10 of 12 dungeons among themselves. Desert + Turtle Rock "
+                "shuffle their MAIN door only; Skull Woods is deferred. Ganon's "
+                "Tower is the advanced add-on to the right.");
+    ImGui::SameLine();
     ImGui::BeginDisabled(!s->shuffle_dungeon_entrances);
     bool gt = s->shuffle_ganons_tower_entrance != 0;
-    if (ImGui::Checkbox("...also shuffle Ganon's Tower (advanced)", &gt)) {
+    if (ImGui::Checkbox("+Ganon's Tower", &gt)) {
       s->shuffle_ganons_tower_entrance = gt;
       changed = true;
     }
     ImGui::EndDisabled();
-    HelpTooltip("Adds Ganon's Tower to the dungeon pool (11th). GT's crystal-tower "
-                "requirement travels with its door, so at high crystals.tower some "
-                "seeds need a few generation retries (the generator never ships an "
-                "unreachable seed — it rerolls the permutation). If a seed won't "
+    HelpTooltip("Adds Ganon's Tower to the dungeon pool (advanced). At high "
+                "crystals.tower some seeds need generation retries (the generator "
+                "never ships an unreachable seed - it rerolls). If a seed won't "
                 "generate, lower crystals.tower (0 always works) or change seed.");
-    // Cross-category: caves and dungeons share one shuffle pool. Needs at least
-    // one class being shuffled; apply_derived_rules() clears it otherwise.
-    ImGui::BeginDisabled(!s->shuffle_cave_entrances && !s->shuffle_dungeon_entrances);
+
+    // ---- Group 2: Exits (coupling — ONE choice, replaces the old two checkboxes) ----
+    bool any_shuffle = (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
+    ImGui::BeginDisabled(!any_shuffle);
+    ImGui::TextUnformatted("Exits  "); ImGui::SameLine();
+    int exits_mode = s->decoupled ? 1 : 0;  // 0 = coupled, 1 = decoupled
+    if (ImGui::RadioButton("Coupled", &exits_mode, 0)) {
+      s->decoupled = 0;
+      s->coupled = any_shuffle ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Enter A -> exit A: leaving an interior returns you to the door you "
+                "came in (the ALTTPR baseline).");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Decoupled", &exits_mode, 1)) {
+      s->decoupled = 1;
+      s->coupled = 0;
+      s->cross_category = 0;  // one-way + cross-pool not supported (mutually exclusive)
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    HelpTooltip("One-way warps: exiting drops you at a DIFFERENT door than you "
+                "entered - applies to whatever is shuffled (caves and/or dungeons). "
+                "Mutually exclusive with Cross-category. The generator keeps the "
+                "goal reachable.");
+
+    // ---- Group 3: Cross-category (pool mixing — coupled-only, needs both classes) ----
+    bool both = (s->shuffle_cave_entrances && s->shuffle_dungeon_entrances);
+    ImGui::BeginDisabled(!both || s->decoupled != 0);
     bool cross = s->cross_category != 0;
-    if (ImGui::Checkbox("Cross-category (caves <-> dungeons share one pool)", &cross)) {
+    if (ImGui::Checkbox("Cross-category (caves & dungeons share one pool)", &cross)) {
       s->cross_category = cross;
       changed = true;
     }
     ImGui::EndDisabled();
-    HelpTooltip("A cave door can lead to a dungeon interior and vice versa. "
-                "Requires cave and/or dungeon shuffle on. The generator rerolls "
-                "the permutation until every location is reachable, so a seed is "
-                "never shipped with a stranded item.");
-    // Decoupled (Insanity, D.4): caves only — needs cave shuffle on. Mutually
-    // exclusive with coupled (apply_derived_rules clears coupled when decoupled).
-    ImGui::BeginDisabled(!s->shuffle_cave_entrances);
-    bool decoupled = s->decoupled != 0;
-    if (ImGui::Checkbox("Decoupled cave doors (Insanity) — one-way exits", &decoupled)) {
-      s->decoupled = decoupled;
-      if (decoupled) s->coupled = 0;
-      else s->coupled = (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances) ? 1 : 0;
-      changed = true;
-    }
-    ImGui::EndDisabled();
-    HelpTooltip("Exiting a cave drops you at a DIFFERENT cave's overworld door "
-                "(one-way warps), not the one you entered. Caves only for now. "
-                "First visit to each cave records its exit spot; the generator "
-                "keeps the goal reachable.");
-    // Coupled indicator — derived (off when Decoupled is on).
-    ImGui::BeginDisabled(true);
-    bool coupled_show = (s->decoupled == 0);
-    ImGui::Checkbox("Coupled (enter A -> exit A)", &coupled_show);
-    ImGui::EndDisabled();
-    HelpTooltip("Enter A -> exit A. Automatically off when Decoupled (Insanity) "
-                "is enabled.");
+    HelpTooltip("A cave door can lead to a dungeon interior and vice versa. Needs "
+                "both Caves and Dungeons on, with Coupled exits (not Decoupled). "
+                "The generator rerolls until every location is reachable.");
     ImGui::EndDisabled();
     if (!ws_ok) {
       ImGui::TextDisabled("Entrance shuffle is Open/Standard only for now.");
