@@ -260,6 +260,26 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
       `decoupled` with cave OR dungeon shuffle. Self-check + JSON/text spoiler + corpus
       entry `c-entrance-dungeon-decoupled-open-fast-ganon` (64). Existing 63 digests
       byte-identical → no kGenVer bump. PLAYTEST-PENDING.
+- [x] D.8 **Cross + Decoupled — BUILT** (one-way exits over the MIXED Crossed pool).
+      Independent π_out over the combined cave+dungeon endpoint space (`Entrance_
+      ComputeCrossDecoupledExit`, distinct salt). A given exit target may be a CAVE
+      (force the cached branch + replay its baked arrival) or a DUNGEON (force the
+      search branch + `exit_room` = its room) — `LoadOverworldFromDungeon` selects the
+      branch by TARGET type via a consumed-at-top `cross_kind`, so a cave-loaded
+      interior can emerge at a dungeon door and vice versa. `Rando_CrossDecoupledSetExit`
+      is authoritative over the coupled exit at the entry hook (falls back to coupled on
+      an uncaptured cave target). NO logic edges (coupled-equivalent, like the other
+      decoupled modes). Gating: cave/dungeon-decoupled now require `!cross`; the
+      normalizer keeps `cross` under `decoupled`. UI re-enables Cross under Decoupled.
+      Self-check (11) + corpus `c-entrance-cross-decoupled-open-fast-ganon` (66, all
+      byte-identical → no kGenVer bump). Fresh-eyes audit: no HIGH; its GT-wrong-warp
+      MEDs were a false premise (GT/TR are multi-inbound ⇒ excluded from the cross
+      pool); hardened the uncaptured-cave-target fallback. PLAYTEST-PENDING — esp.
+      cross-world exits where a cave door emerges at a dungeon (or vice versa).
+- [x] D.9 UI rethink: three groups (Shuffle scope / Exits coupling radio / Cross
+      toggle) replacing the redundant coupled+decoupled checkboxes; `coupled` fully
+      derived; HelpTooltip wraps; tooltips trimmed. Insanity preset = full decoupled
+      (caves+dungeons).
 
 ## Presets (once the relevant axes ship)
 
