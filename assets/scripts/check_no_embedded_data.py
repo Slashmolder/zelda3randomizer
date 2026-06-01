@@ -58,6 +58,17 @@ def scan_file(path: Path) -> list[tuple[int, int]]:
     lines = text.splitlines()
 
     hits: list[tuple[int, int]] = []
+
+    def report(run_len: int, run_start_pos: int) -> None:
+        # Report a finished run once, at its TRUE first line, honoring an
+        # allow marker on that line or up to 3 lines above it.
+        if run_len < HEX_RUN_THRESHOLD:
+            return
+        ln = _line_of(text, run_start_pos)
+        window = "\n".join(lines[max(0, ln - 4):ln])
+        if ALLOW_MARKER not in window:
+            hits.append((ln, run_len))
+
     run_len = 0
     run_start_pos = 0
     prev_end = -1
@@ -66,21 +77,12 @@ def scan_file(path: Path) -> list[tuple[int, int]]:
         is_hex = len(content) >= 8 and len(content) % 2 == 0 and bool(_HEX_RE.match(content))
         if is_hex and run_len > 0 and _GLUE_RE.match(text[prev_end:m.start()]):
             run_len += len(content)          # extend current concatenated run
-        elif is_hex:
-            run_len = len(content)           # start a new run
-            run_start_pos = m.start()
         else:
-            run_len = 0                      # non-hex literal breaks the run
+            report(run_len, run_start_pos)   # previous run ended — report it
+            run_len = len(content) if is_hex else 0
+            run_start_pos = m.start()
         prev_end = m.end()
-
-        if run_len >= HEX_RUN_THRESHOLD:
-            ln = _line_of(text, run_start_pos)
-            # Honor an allow marker on the run's first line or up to 3 lines
-            # above it.
-            window = "\n".join(lines[max(0, ln - 4):ln])
-            if ALLOW_MARKER not in window:
-                hits.append((ln, run_len))
-            run_len = 0  # report once per run
+    report(run_len, run_start_pos)           # final run at EOF
     return hits
 
 
