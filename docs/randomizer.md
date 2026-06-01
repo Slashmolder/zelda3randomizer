@@ -80,11 +80,25 @@ serialization order`. Phase A axes:
 | `crystals.tower` | 0..7 | 7 |
 | `item_pool_difficulty` | `easy`, `normal`, `hard`, `expert` | `normal` |
 | `mode.weapons` | `randomized`, `assured` | `randomized` |
-| `accessibility` | `items`, `locations` | `items` (auto-set to `locations` for Completionist) |
+| `accessibility` | `items`, `locations`, `none` (alias `beatable`; UI label "beatable only") | `items` (auto-set to `locations` for Completionist) |
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
 | `prize_shuffle` | `true`, `false` | `true` |
 | `medallion_shuffle` | `true`, `false` | `true` |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
+
+**Accessibility tiers** (ALTTPR three-way; all three guarantee the seed is
+beatable, differing only in how much *extra* reachability the generator
+enforces):
+
+- `items` — "100% Inventory": every progression item is reachable. Junk
+  (rupees/arrows/bombs), maps, compasses, and heart pieces may be unreachable.
+- `locations` — "100% Locations": every location is reachable (strictest).
+  Auto-selected and locked when the goal is Completionist.
+- `none` — UI label **"beatable only"** (ALTTPR's "Not Guaranteed"): only the
+  goal must be reachable; some items or locations may be unreachable. CSV accepts
+  `beatable` as an alias. This still produces a beatable seed — the old
+  "possibly unwinnable" behavior is no longer on this axis (use the CLI
+  `--allow-broken-seed` flag for diagnostic seeds).
 
 Phase B+ axes (`tricks`, `logic` glitch level, `swordless`, `pyramid_bow_upgrade=arrows`, `race_mode`) are reserved in the settings struct from Phase A.
 

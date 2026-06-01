@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 45u  // Merge: entrance shuffle (was 44 — caves/dungeons/Crossed + medallion-on-spot) + main's Inverted Ganon loc-212 fix (was 38). Both bumped from 37 independently; 45 is the combined generator. Corpus regenerated against the merged binary.
+#define kGeneratorVersion 46u  // 45→46: ALTTPR three-way accessibility ("beatable only"). The per-tier acceptance gate (Accessibility_SeedAcceptable) changes the semantics of all three accessibility values — `items` now requires every progression item reachable, `locations` every location, and `none`/"beatable only" is now guaranteed beatable (no longer ships unwinnable seeds). Share strings carry the version byte so old `none` seeds don't silently reproduce under the new semantics. Corpus regenerated.
 
 // Audit L7 — the share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce

@@ -2783,7 +2783,7 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       switch (s->accessibility) {
         case kAccessibility_Items:     return "ITEMS";
         case kAccessibility_Locations: return "LOCS";
-        case kAccessibility_None:      return "NONE";
+        case kAccessibility_None:      return "BEAT";  // "beatable only"
         default:                       return "ERR";
       }
     case kRow_PrizeShuffle:
@@ -2961,10 +2961,11 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_Accessibility: {
-      // Items / Locations / None — Completionist goal auto-locks to Locations
-      // (kRow_Goal sets it on cycle); cycling here while goal=Completionist
-      // still allows the user to view but the goal-cycle will reassert.
-      // Phase B Slice 4 added `None` (opt-in to possibly-unwinnable seeds).
+      // items / locations / beatable-only (enum None) — Completionist goal
+      // auto-locks to Locations (kRow_Goal sets it on cycle); cycling here while
+      // goal=Completionist still allows the user to view but the goal-cycle will
+      // reassert. kAccessibility_None == "beatable only": the seed is still
+      // guaranteed beatable, only full item/location accessibility is relaxed.
       int n = (int)s->accessibility + delta;
       if (n < kAccessibility_Items) n = kAccessibility_None;
       if (n > kAccessibility_None) n = kAccessibility_Items;

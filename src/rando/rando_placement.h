@@ -107,12 +107,21 @@ void Placement_SelfCheck(void);
 bool Goal_IsCompletable(const RandoSettings *settings,
                         const RandoPlacementTable *placements);
 
-// Should the generator REFUSE this seed because the goal isn't reachable?
-// Returns false (i.e., don't refuse) when settings.accessibility==None — the
-// player explicitly opted in to a possibly-unwinnable seed. Otherwise
-// returns `!Goal_IsCompletable`. The spoiler's `goal_completable` field
-// is always the pure reachability predicate (Goal_IsCompletable); only
-// generation refusal gates honor the accessibility=none opt-out.
+// Accessibility-tier seed acceptance (ALTTPR three-way). Every tier requires
+// the goal be completable (beatable); tiers add extra reachability:
+//   kAccessibility_Locations — every location reachable (strictest)
+//   kAccessibility_Items     — every PROGRESSION item's location reachable
+//   kAccessibility_None       — "beatable only": no extra reachability demand
+// See the definition in rando_placement.c for the full rationale.
+bool Accessibility_SeedAcceptable(const RandoSettings *settings,
+                                  const RandoPlacementTable *placements);
+
+// Should the generator REFUSE this seed? The negation of
+// Accessibility_SeedAcceptable: a seed is refused when it fails the active
+// accessibility tier's bar (beatability for all tiers, plus per-tier
+// reachability). The spoiler's `goal_completable` field is always the pure
+// reachability predicate (Goal_IsCompletable); the refusal gate additionally
+// honors the accessibility tier.
 bool Goal_ShouldRefuse(const RandoSettings *settings,
                        const RandoPlacementTable *placements);
 

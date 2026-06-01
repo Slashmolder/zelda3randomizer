@@ -212,16 +212,15 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
-        // Require FULL reachability, not just goal-completability: an entrance
-        // permutation can make some interiors circularly unreachable (e.g. a
-        // medallion/crystal-gated door leading to the very dungeon that grants
-        // the gating item). Place_AssumedFill accepts a best-effort with stranded
-        // placements; we must REJECT that π and try another rather than ship a
-        // seed with unreachable items. Logic_ComputeSpheres returns true only when
-        // every placement is reachable.
-        RandoSpheres reach_spheres;
-        if (Logic_ComputeSpheres(settings, &table, &reach_spheres) &&
-            Goal_IsCompletable(settings, &table)) {
+        // Accept this entrance permutation only if it meets the active
+        // accessibility tier. Place_AssumedFill accepts a best-effort with
+        // stranded placements; an entrance permutation can additionally make
+        // interiors circularly unreachable (e.g. a medallion/crystal-gated door
+        // leading to the very dungeon that grants the gating item). The tier
+        // predicate REJECTS such a π and we try another: it always requires the
+        // goal be completable, plus per-tier reachability (locations = every
+        // location; items = every progression item; beatable = goal only).
+        if (Accessibility_SeedAcceptable(settings, &table)) {
           placed = true;
           entrance_attempt = (uint8)att;
           break;
@@ -233,6 +232,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     // the spoiler block (and at the next generation's start).
   } else {
     placed = Place_AssumedFill(settings, seed_u64, effective_budget, &table);
+    // Gate the non-entrance path on the active accessibility tier too (this
+    // path previously shipped whatever Place_AssumedFill returned). On reject,
+    // fall through to the shared failure handling below.
+    if (placed && !Accessibility_SeedAcceptable(settings, &table)) {
+      placed = false;
+    }
   }
   if (!placed) {
     // Audit H1 — clear the entrance overrides on the failure path too (the
@@ -240,7 +245,16 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     // otherwise leak the last attempt's shuffled reachability to the tracker).
     Entrance_ClearRegionOverrides();
     Entrance_ClearEdgeOverrides();
-    if (err != NULL) snprintf(err, err_cap, "placement failed");
+    if (err != NULL) {
+      if (settings->accessibility == kAccessibility_Locations)
+        snprintf(err, err_cap,
+                 "no 100%%-locations placement found; try 'items' or 'beatable only'");
+      else if (settings->accessibility == kAccessibility_Items)
+        snprintf(err, err_cap,
+                 "no 100%%-inventory placement found; try 'beatable only'");
+      else
+        snprintf(err, err_cap, "placement failed");
+    }
     free(entries);
     return false;
   }

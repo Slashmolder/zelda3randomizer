@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 45  # Merge: entrance shuffle (44) + main's Inverted Ganon loc-212 fix (38). Regenerated against the merged binary.
+generator_version: 46  # bump_rando_corpus.py --apply - ALTTPR three-way accessibility (beatable only)
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -82,9 +82,16 @@ entries:
     label: "a1-standard-pedestal"
     expected_digest: "c8a2b578e00e20f5da98b58bbf1230ad0d4ecd91be9ffb0bd3e04252cf60eb92"
     expected_sphere_digest: "ba65e2a47de331bdefbefb06ae4e1774c6555ab34ba82f3906466f664d452d2d"
-  - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30 }
+  # Standard triforce-hunt with 30 placed pieces can't meet 100%-inventory
+  # (`items`) — the placer's best-effort strands many pieces — so this entry
+  # uses `accessibility: none` ("beatable only"). It is the key beatable-tier
+  # regression: the same placement that `items`/`locations` would REJECT is
+  # accepted here because the goal is still completable. (accessibility does not
+  # affect Place_AssumedFill output, so the digests are unchanged from when this
+  # was an implicit-`items` entry under the old goal-only gate.)
+  - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, accessibility: none }
     seed: "0x0000000000000012"
-    label: "a1-standard-triforce-hunt"
+    label: "a1-standard-triforce-hunt-beatable"
     expected_digest: "695814eaea0d4054b8785d0c546d58fe7eb7cdad15f6dbdb2a1eac8eee3fa9b1"
     expected_sphere_digest: "20f29e9c50d0321a4c69380d6d31d0366f050a380c7764768ef81231e551aaac"
   - settings: { mode.state: standard, goal: completionist }
@@ -134,12 +141,21 @@ entries:
     label: "a1-open-fg-pool-expert"
     expected_digest: "4740c424e4aecdf90af8c8c75ecfa9f629361ff6d96ab583012bb3bb370fe1ff"
     expected_sphere_digest: "626d04091f2af6611d3b0547cade79631d86fb0a30048ac2b096fd0c42af3cea"
-  # Other settings axes.
+  # Other settings axes. Accessibility tiers (ALTTPR three-way): `items` is the
+  # default exercised by most entries above; `locations` and `none`/"beatable
+  # only" are pinned explicitly here. On a normal open fast-ganon seed all three
+  # tiers accept the same fully-reachable placement, so the beatable entry's
+  # digests match what `items`/`locations` would produce for this seed.
   - settings: { mode.state: open, goal: fast_ganon, accessibility: locations }
     seed: "0x0000000000000023"
     label: "a1-open-fg-acc-locations"
     expected_digest: "880ec7730c18c264c982903c2f4f3629721ba7ef2abaa3f05716e807b157dd8d"
     expected_sphere_digest: "d3aa8e5255ae73c4cc296fb41cfb8fa855896c5bf3d33faddb65aac91cac60d5"
+  - settings: { mode.state: open, goal: fast_ganon, accessibility: none }
+    seed: "0x0000000000000077"
+    label: "a1-open-fg-acc-beatable"
+    expected_digest: "7c7b9b191757d882f3cffe8ac63d2f3447f2840ae7e0f6fc087c8a52ba159fb7"
+    expected_sphere_digest: "e6e533c58e71ec961259d79ba18d409358c9f248f19fb9a464dbb9ddabfc0985"
   - settings: { mode.state: open, goal: fast_ganon, mode.weapons: assured }
     seed: "0x0000000000000024"
     label: "a1-open-fg-weapons-assured"

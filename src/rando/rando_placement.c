@@ -1557,17 +1557,81 @@ bool Goal_IsCompletable(const RandoSettings *settings,
   }
 }
 
-// Should the generator refuse to ship this seed because the goal isn't
-// reachable? Wraps `Goal_IsCompletable` with the accessibility=none opt-out
-// — players who explicitly chose accessibility=none have signed up for
-// possibly-unwinnable seeds. The spoiler's `goal_completable` field is
-// always the pure reachability predicate; only the refusal gate honors
-// the opt-out. (Fresh-eyes audit H1 of e9f20ad.)
+// Pure tier-reachability rule (no logic graph). Given precomputed spheres for a
+// placement whose goal is ALREADY known completable, decide whether the extra
+// per-tier reachability bar is met. Split out from Accessibility_SeedAcceptable
+// so Placement_SelfCheck can exercise the tier discrimination with synthetic
+// spheres (the graph-dependent pieces — Goal_IsCompletable / Logic_Compute-
+// Spheres — are tested by the corpus + their own callers).
+static bool accessibility_reachability_ok(const RandoSettings *settings,
+                                          const RandoPlacementTable *placements,
+                                          const RandoSpheres *spheres) {
+  switch (settings->accessibility) {
+    case kAccessibility_None:
+      return true;  // "beatable only" — no extra reachability demand.
+    case kAccessibility_Locations:
+      return spheres->unreachable_count == 0;  // every location reachable.
+    case kAccessibility_Items:
+    default:
+      // Every PROGRESSION item's location must be reachable; junk / maps /
+      // compasses / hearts may strand (see is_progression_item).
+      for (uint16 i = 0; i < placements->count; i++) {
+        if (!is_progression_item(placements->entries[i].item_id)) continue;
+        if (spheres->sphere_index_by_placement[i] == kSphereIndexUnreachable) {
+          return false;
+        }
+      }
+      return true;
+  }
+}
+
+// Per-tier seed acceptance — the accessibility axis (ALTTPR three-way).
+//
+// EVERY tier requires the goal be completable (the seed is beatable). The three
+// ALTTPR-faithful tiers then differ only in the EXTRA reachability they demand:
+//
+//   kAccessibility_Locations (1) — "100% Locations": every placed location must
+//       be reachable (unreachable_count == 0). Strictest. (kGoal_Completionist
+//       already implies this via its own goal predicate, which iterates every
+//       placement; selecting `locations` with a looser goal makes that bar
+//       explicit.)
+//   kAccessibility_Items (0, default) — "100% Inventory": every PROGRESSION
+//       item's location must be reachable. Junk/consumables (rupees, arrows,
+//       bombs), maps, compasses, and heart pieces/containers may strand (see
+//       is_progression_item). Matches ALTTPR "100% inventory."
+//   kAccessibility_None (2) — UI label "beatable only": goal completability is
+//       the whole bar; items/locations may strand.
+//
+// Strictness nests: locations ⊇ items ⊇ beatable.
+//
+// NOTE: kAccessibility_None keeps its serialized-value name "None" (the value
+// is part of the determinism contract) but its MEANING is ALTTPR's "beatable
+// only" — the seed is still guaranteed completable. The old "ship a literally
+// unwinnable seed" behavior is no longer reachable from this axis; the CLI
+// --allow-broken-seed flag remains for diagnostic seeds.
+bool Accessibility_SeedAcceptable(const RandoSettings *settings,
+                                  const RandoPlacementTable *placements) {
+  if (settings == NULL || placements == NULL) return false;
+  // Beatability is required for every tier.
+  if (!Goal_IsCompletable(settings, placements)) return false;
+  // "beatable only" needs nothing more — skip the sphere walk entirely.
+  if (settings->accessibility == kAccessibility_None) return true;
+  // locations / items inspect per-placement reachability. Logic_ComputeSpheres
+  // fully populates the per-placement index even when it returns false (i.e.
+  // when something is unreachable), so we always read the indices afterward.
+  RandoSpheres spheres;
+  (void)Logic_ComputeSpheres(settings, placements, &spheres);
+  return accessibility_reachability_ok(settings, placements, &spheres);
+}
+
+// Should the generator refuse to ship this seed? A thin negation of the
+// accessibility-tier acceptance predicate. The spoiler's `goal_completable`
+// field is always the pure reachability predicate (Goal_IsCompletable); the
+// refusal gate additionally honors the accessibility tier.
 bool Goal_ShouldRefuse(const RandoSettings *settings,
                        const RandoPlacementTable *placements) {
   if (settings == NULL) return false;
-  if (settings->accessibility == kAccessibility_None) return false;
-  return !Goal_IsCompletable(settings, placements);
+  return !Accessibility_SeedAcceptable(settings, placements);
 }
 
 // ---------------------------------------------------------------------------
@@ -2000,6 +2064,58 @@ void Placement_SelfCheck(void) {
     for (uint8 cave = 0; cave < kTakeAnyCaveCount; cave++)
       if (oroles[cave] != kTakeAnyRole_Inactive)
         selfcheck_die("TakeAny must be inactive outside Retro world-state");
+  }
+
+  // Accessibility tier discrimination (ALTTPR three-way). Exercises the pure
+  // tier rule with synthetic spheres so the nesting locations ⊇ items ⊇
+  // beatable is pinned independent of the logic graph. Placement holds one
+  // progression item (id 10, a weapon ≤ 40) and one junk item (id 105).
+  {
+    RandoPlacement acc_entries[2] = {
+      { 100, 10 },   // progression item
+      { 200, 105 },  // junk item (104..110 → non-progression)
+    };
+    RandoPlacementTable acc_t = { acc_entries, 2 };
+    RandoSettings acc_s;
+    Settings_SetDefaults(&acc_s);
+
+    // Case 1 — only JUNK stranded.
+    RandoSpheres sp;
+    memset(&sp, 0, sizeof(sp));  // 0 == sphere 0 (reachable)
+    sp.sphere_index_by_placement[1] = kSphereIndexUnreachable;
+    sp.unreachable_count = 1;
+    acc_s.accessibility = kAccessibility_Locations;
+    if (accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("locations must reject a stranded (junk) location");
+    acc_s.accessibility = kAccessibility_Items;
+    if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("items must accept a stranded JUNK item");
+    acc_s.accessibility = kAccessibility_None;
+    if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("beatable must accept a stranded junk item");
+
+    // Case 2 — PROGRESSION stranded.
+    memset(&sp, 0, sizeof(sp));
+    sp.sphere_index_by_placement[0] = kSphereIndexUnreachable;  // progression
+    sp.unreachable_count = 1;
+    acc_s.accessibility = kAccessibility_Locations;
+    if (accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("locations must reject a stranded progression item");
+    acc_s.accessibility = kAccessibility_Items;
+    if (accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("items must REJECT a stranded PROGRESSION item");
+    acc_s.accessibility = kAccessibility_None;
+    if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("beatable must accept a stranded progression item");
+
+    // Case 3 — fully reachable: every tier accepts.
+    memset(&sp, 0, sizeof(sp));
+    sp.unreachable_count = 0;
+    for (uint8 a = kAccessibility_Items; a <= kAccessibility_None; a++) {
+      acc_s.accessibility = a;
+      if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+        selfcheck_die("every tier must accept a fully-reachable placement");
+    }
   }
 
   fprintf(stderr, "[Placement_SelfCheck] OK\n");

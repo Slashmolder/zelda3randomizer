@@ -169,11 +169,17 @@ static const char *const kGoalLabels[] = {
     "triforce-hunt", "ganonhunt", "completionist"};
 static const char *const kItemPoolLabels[] = {"easy", "normal", "hard", "expert"};
 static const char *const kDungeonModeLabels[] = {"vanilla", "dungeon", "wild"};
-// Phase-A subset only (spec line 84): mode_weapons = {randomized, assured};
-// accessibility = {items, locations}. Phase B reservations (vanilla/swordless
-// for weapons, none for accessibility) are NOT offered.
+// Phase-A subset only (spec line 84): mode_weapons = {randomized, assured}.
+// Phase B reservations (vanilla/swordless for weapons) are NOT offered.
 static const char *const kModeWeaponsLabels[] = {"randomized", "assured"};
-static const char *const kAccessibilityLabels[] = {"items", "locations"};
+// Accessibility — full ALTTPR three-way (index == enum value):
+//   [0] items        = kAccessibility_Items     ("100% Inventory")
+//   [1] locations    = kAccessibility_Locations ("100% Locations")
+//   [2] beatable only = kAccessibility_None      (ALTTPR "Not Guaranteed")
+// All three guarantee the seed is beatable; they differ in how much extra
+// reachability is required (locations = every location; items = every
+// progression item; beatable only = goal only).
+static const char *const kAccessibilityLabels[] = {"items", "locations", "beatable only"};
 
 // Apply the Completionist accessibility lock to a settings struct. Returns true
 // if the struct was mutated.
@@ -299,13 +305,19 @@ static void Panel_General() {
   // Accessibility — read-only & forced to "locations" while goal=Completionist.
   bool acc_locked = (s->goal == kGoal_Completionist);
   if (acc_locked) ImGui::BeginDisabled();
-  if (EnumCombo("Accessibility", &s->accessibility, kAccessibilityLabels, 2)) {
+  if (EnumCombo("Accessibility", &s->accessibility, kAccessibilityLabels, 3)) {
     s_accessibility_pre_lock = s->accessibility;  // track latest user choice
     changed = true;
   }
   if (acc_locked) {
     ImGui::EndDisabled();
     HelpTooltip("Forced to 'locations' while goal = completionist.");
+  } else {
+    HelpTooltip("All tiers guarantee the seed is beatable.\n"
+                "items: every progression item is reachable (100% inventory).\n"
+                "locations: every location is reachable (100% locations).\n"
+                "beatable only: only the goal is reachable; some items or\n"
+                "locations may be unreachable.");
   }
 
   // ---- Triforce / Ganon Hunt piece fields (only for those goals) ----

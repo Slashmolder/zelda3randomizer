@@ -58,9 +58,13 @@ typedef enum {
 } ModeWeapons;
 
 typedef enum {
-  kAccessibility_Items = 0,
-  kAccessibility_Locations = 1,
-  kAccessibility_None = 2,  // Phase B Slice 4 — un-pinned per add-rando-trick-logic-and-axes §5.
+  kAccessibility_Items = 0,      // "100% Inventory": every progression item reachable
+  kAccessibility_Locations = 1,  // "100% Locations": every location reachable (strictest)
+  // ALTTPR "Not Guaranteed" — exposed as "beatable only" in the UI. The seed is
+  // still guaranteed beatable (goal completable); only full item/location
+  // accessibility is relaxed. (The serialized value name stays "None" because
+  // enum values are part of the determinism contract.)
+  kAccessibility_None = 2,
 } Accessibility;
 
 typedef enum {

@@ -202,16 +202,12 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
               (unsigned)s->spheres->unreachable_count);
       first = false;
     }
-    // Phase B Slice 4 §5.5 — accessibility=none opts in to possibly-unwinnable
-    // seeds. Emit a fallback_warnings entry so the spoiler reader knows the
-    // generator did NOT verify reachability for this seed (the refusal gate
-    // at main.c was skipped).
-    if (s->settings != NULL && s->settings->accessibility == 2) {  // kAccessibility_None
-      fprintf(f, "%s\n      {\"kind\": \"accessibility_none_seed\", "
-                  "\"detail\": \"goal-completability not enforced; seed may be unwinnable\"}",
-              first ? "" : ",");
-      first = false;
-    }
+    // NOTE: there is no longer an `accessibility_none_seed` warning. Under the
+    // ALTTPR three-way accessibility axis, `none` means "beatable only" — the
+    // seed is still guaranteed completable, so the old "may be unwinnable"
+    // warning no longer applies. When `items`/`beatable` intentionally leave
+    // some locations unreachable, the `unreachable_placements` warning above
+    // already surfaces that to the reader for every tier.
     if (!first) fprintf(f, "\n    ");
   }
   fprintf(f, "]\n");

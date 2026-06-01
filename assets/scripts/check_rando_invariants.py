@@ -49,17 +49,20 @@ The spoiler's ``meta.fallback_warnings`` array carries three kinds (see
   - ``unreachable_placements`` -- THE real softlock signal. The placer could not
                                  make every placement reachable. This is a
                                  genuine generation failure.
-  - ``accessibility_none_seed``-- only when accessibility=none (we never set it),
-                                 meaning reachability was deliberately not
-                                 enforced. Also treated as a failure here.
+
+Note: there is no ``accessibility_none_seed`` warning anymore. Under the ALTTPR
+three-way accessibility axis, ``none`` means "beatable only" — such seeds are
+still guaranteed completable, so they are NOT failures. The emitter was removed
+(see rando_spoiler.c) and this guard no longer treats it as a failure. (This
+matrix only ever exercises the default ``accessibility=items`` anyway.)
 
 The task brief's shorthand was "forward-fill / unreachable kinds are failures,"
 but the binary demonstrably emits ``forward_fill_fallback`` on *completable*
 hunt-goal seeds (verified empirically against the shipping binary). Gating on it
 would fail every triforce-hunt/ganonhunt seed despite ``goal_completable==true``.
 The authoritative, code-grounded completability signals are therefore
-``goal_completable == true`` AND no ``unreachable_placements`` (and no
-``accessibility_none_seed``). That is what this script enforces.
+``goal_completable == true`` AND no ``unreachable_placements``. That is what this
+script enforces.
 
 CLI facts (verified against the binary, not assumed)
 ----------------------------------------------------
@@ -112,7 +115,7 @@ SEED_POOL = [1, 12345, 0xABCDEF, 999999, 7]
 
 # fallback_warnings kinds that are genuine generation failures (vs. benign
 # metadata). See module docstring for the full rationale.
-FAILURE_WARNING_KINDS = {"unreachable_placements", "accessibility_none_seed"}
+FAILURE_WARNING_KINDS = {"unreachable_placements"}
 
 GEN_TIMEOUT_S = 90
 

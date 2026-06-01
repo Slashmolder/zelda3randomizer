@@ -521,6 +521,11 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: accessibility=none should parse to 2 (kAccessibility_None)\n");
       exit(2);
     }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("accessibility=beatable", &sl) != 0 || sl.accessibility != 2) {
+      fprintf(stderr, "Settings_SelfCheck: accessibility=beatable alias should parse to 2 (kAccessibility_None)\n");
+      exit(2);
+    }
   }
   // CSV parser rejects out-of-range numeric values.
   {
@@ -682,10 +687,11 @@ static int parse_weapons(const char *v, int vlen, uint8 *out) {
 static int parse_accessibility(const char *v, int vlen, uint8 *out) {
   if (csv_str_eq(v, vlen, "items"))     { *out = kAccessibility_Items;     return 0; }
   if (csv_str_eq(v, vlen, "locations")) { *out = kAccessibility_Locations; return 0; }
-  // Phase B Slice 4 §5 — `none` accepts un-completable seeds (goal-completability
-  // check short-circuits at Goal_IsCompletable). Generation refusal is bypassed
-  // and a `fallback_warnings` entry is emitted to the spoiler.
+  // `none` is ALTTPR's config value (UI label "beatable only"): the seed is
+  // still guaranteed beatable, only full item/location accessibility is relaxed.
+  // Accept `beatable` as a friendlier alias for the same value.
   if (csv_str_eq(v, vlen, "none"))      { *out = kAccessibility_None;      return 0; }
+  if (csv_str_eq(v, vlen, "beatable")) { *out = kAccessibility_None;      return 0; }
   return -1;
 }
 

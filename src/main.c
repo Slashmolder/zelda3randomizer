@@ -584,12 +584,12 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
-        // Require FULL reachability (not just goal-completability) for entrance
-        // shuffle — reject any π that strands placements (e.g. a gated door
-        // leading to the dungeon that grants the gating item). See rando_generate.c.
-        RandoSpheres reach_spheres;
-        if (Logic_ComputeSpheres(&settings, &table, &reach_spheres) &&
-            Goal_IsCompletable(&settings, &table)) {
+        // Accept this entrance permutation only if it meets the active
+        // accessibility tier (always beatable, plus per-tier reachability) —
+        // this rejects any π that strands placements beyond the tier's bar
+        // (e.g. a gated door leading to the dungeon that grants the gating
+        // item). See rando_generate.c.
+        if (Accessibility_SeedAcceptable(&settings, &table)) {
           ok = true;
           break;
         }
@@ -692,18 +692,21 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   }
   if (Goal_ShouldRefuse(&settings, &table) && !allow_broken_seed) {
     fprintf(stderr,
-      "--generate-seed: goal %u is NOT completable for this seed — refusing to\n"
-      "  write spoiler. (Use --allow-broken-seed to write diagnostic spoiler anyway.\n"
-      "  Set accessibility=none to opt-in to possibly-unwinnable seeds.)\n",
-      (unsigned)settings.goal);
+      "--generate-seed: this seed does not meet the accessibility requirement\n"
+      "  for goal %u (accessibility=%u) — refusing to write spoiler. All tiers\n"
+      "  require the goal be beatable; `locations` additionally requires every\n"
+      "  location reachable and `items` every progression item reachable.\n"
+      "  (Use --allow-broken-seed to write a diagnostic spoiler anyway.)\n",
+      (unsigned)settings.goal, (unsigned)settings.accessibility);
     free(entries);
     exit(1);
   }
-  // NOTE: a stricter unreachable_count > 0 refusal was tried but is too
-  // aggressive — the placer's bounded-retry-with-perturbed-seed strategy
-  // produces some seeds where the goal is reachable but a handful of
-  // non-progression items end up at unreachable slots (dungeon-mode key
-  // configurations can't always find valid containment placements). The
+  // NOTE: the per-tier refusal above is honored by Accessibility_SeedAcceptable.
+  // For `items`/`beatable` a handful of NON-progression items (junk, maps,
+  // compasses, hearts) may still land at unreachable slots — the placer's
+  // bounded-retry-with-perturbed-seed strategy can't always find valid
+  // dungeon-mode key containment placements, and tolerating stranded junk there
+  // is intentional (only `locations` demands full reachability). The
   // spoiler's `fallback_warnings: unreachable_placements` rollup surfaces
   // this — users can decide whether to regenerate with a different seed.
   // Phase A2 bounded intra-attempt rewind should reduce these to 0.
