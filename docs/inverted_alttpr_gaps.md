@@ -1,7 +1,8 @@
 # Inverted world-state — known gaps vs. ALTTPR
 
-Status as of branch `inverted-relocation` (the full inverted runtime stack:
-`inverted-proper` → `inverted-entrances` → `inverted-topology` → `inverted-relocation`).
+Status: rebased onto `main`. Covers the full inverted runtime stack plus the
+spawn-point fix (Inverted now spawns at Link's House in the DW — see B6/C1) and
+the DW→LW under-rock warps (see B7). Last updated after the warp port.
 
 This is the register of *known* differences between this fork's Inverted mode and
 ALTTPR's. The authoritative ALTTPR source is `../alttp_vt_randomizer/app/Rom.php`
@@ -82,16 +83,41 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   warps correctly (asset 113 is overridden); only the icon position is off.
   Visual-only; a gated C change to those arrays would close it.
 
+- **B6 — Inverted spawn point (FIXED; Dark-Chapel exactness deferred).** A fresh
+  Inverted slot used to bake `which_starting_point = 1` (Sanctuary, a LW
+  building) → the player spawned in the Light World (hard trap, C1). **Fixed**
+  (`src/rando/rando_generate.c Rando_InitNewSlotSram`): Inverted now bakes
+  `which_starting_point = 0` (Link's House), whose exit lands at the DW Bomb-Shop
+  position (screen 0x6C) via the Link's-House↔Bomb-Shop entrance swap — the
+  Inverted home, in the DW, navigable. The outdoors-DW reload path
+  (`src/misc.c Module05_LoadFile`) is likewise redirected from the trapped pyramid
+  ledge to Link's House. **Remaining divergence:** ALTTPR respawns at a relocated
+  "Dark Chapel" (a DW Sanctuary, `Rom.php:1680-1730` `StartingArea*` block), not
+  Link's House. Functionally equivalent (both navigable DW homes), but not
+  ALTTPR-exact. Tracked by the `add-rando-inverted-dark-chapel-spawn` change.
+
+- **B7 — DW→LW under-rock warps (BUILT; PLAYTEST-PENDING).** In Inverted the
+  Magic Mirror only carries LW→DW; the way *out* of the DW to the LW is a set of
+  fixed under-rock world-warp tiles (overworld-secret type 0x82). The fork never
+  ported them, so an Inverted player had no legitimate DW→LW route. **Added**
+  (`src/rando/inverted_entrances.c InvertedSecrets_Install`): one type-0x82 warp
+  per DW screen that carries one in ALTTPR (`Rom.php:1887-1919`) — screens
+  0x4D/0x4E (DM), 0x50, 0x6F, 0x70/0x78 (Mire), 0x73, 0x75, 0x47. **Playtest
+  risk:** a 0x82 warp only fires if a *liftable rock exists at that tile* in the
+  fork's vanilla tilemap; if ALTTPR added a rock there, that screen also needs a
+  tilemap edit. Confirm by lifting rocks at each screen and F12-dumping a miss.
+
 ## C. Resolved as NON-GAPS (researched, no change needed — recorded so they're not re-investigated)
 
-- **C1 — Spawn / Sanctuary relocation.** ALTTPR relocates the Sanctuary spawn to
-  a "Dark Chapel" via `StartingAreaExitTable`/`StartingAreaOverworldDoor`/
-  `StartingAreaExitOffset` (`Rom.php:1680-1730`). The fork has **no `StartingArea*`
-  tables** — it uses the `kStartingPoint_*` assets + the persisted
-  `savegame_is_darkworld` flag, so an Inverted slot is born in the DW and S&Q /
-  Sanctuary-respawn preserve the world correctly (`src/misc.c:648-674`,
-  `src/messaging.c:797-799`). ALTTPR's relocation is a workaround for a
-  single-entrance-cave spawn system the fork doesn't have.
+- **C1 — Spawn / Sanctuary relocation. *(CORRECTED — this was wrong; see B6.)***
+  This was originally recorded as a non-gap on the theory that the persisted
+  `savegame_is_darkworld` flag made any spawn land in the DW. **Playtest proved
+  otherwise:** a fresh Inverted slot baked `which_starting_point = 1` (the
+  Sanctuary), a *Light-World* building whose exit dropped the player in the LW —
+  the "spawning in the LW" trap. The fork has **no `StartingArea*` / Dark-Chapel
+  tables**, so it cannot reproduce ALTTPR's exact relocated respawn. The spawn
+  *world* is now fixed (B6); the Dark-Chapel *exactness* is a live gap (B6's
+  note) tracked by the `add-rando-inverted-dark-chapel-spawn` OpenSpec change.
 
 - **C2 — Pyramid ExtraHole + the pyramid/HC exit rows.** ALTTPR adds a fall-hole
   at area 0x1B (LW Hyrule Castle) and relocates pyramid/HC exits (`Rom.php`
