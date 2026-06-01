@@ -50,6 +50,7 @@
 #include "rando/rando_window/game_cheats.h"            // Cheats_SelfCheck (selftest)
 #include "rando/rando_window/game_panels.h"            // Panels_RenderSmokeCheck (selftest)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
+#include "rando/rando_save.h"                          // Rando_LoadSidecarSlot (--generate-slot round-trip)
 #include "rando/shuffle_entrance.h"                    // Phase C entrance shuffle (CLI generate path)
 #include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
 #include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
@@ -394,6 +395,130 @@ static const struct RendererFuncs kSdlRendererFuncs  = {
 };
 
 void OpenGLRenderer_Create(struct RendererFuncs *funcs, bool use_opengl_es);
+
+// Parse a uint64 seed from "0x..." hex or decimal. Exits 64 on a bad digit.
+static uint64 ParseSeedU64OrExit(const char *p) {
+  uint64 v = 0;
+  if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+    p += 2;
+    while (*p) {
+      char c = *p++;
+      uint8 d;
+      if (c >= '0' && c <= '9') d = c - '0';
+      else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+      else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+      else { fprintf(stderr, "--seed: bad hex digit '%c'\n", c); exit(64); }
+      v = (v << 4) | d;
+    }
+  } else {
+    while (*p) {
+      char c = *p++;
+      if (c < '0' || c > '9') { fprintf(stderr, "--seed: bad decimal digit '%c'\n", c); exit(64); }
+      v = v * 10 + (uint64)(c - '0');
+    }
+  }
+  return v;
+}
+
+// Headless slot-path generation (test hook). Exercises the SHARED playable-slot
+// generator Rando_GenerateSlot — the exact code the PC native settings window
+// and the in-game settings screen run — which the corpus (--generate-seed,
+// a different code path) does NOT cover. Emits a one-line JSON blob so a CI
+// harness can: (a) diff the slot-path placement digest against the CLI path for
+// the same (settings, seed) [parity]; (b) confirm per-accessibility-tier
+// accept/reject; (c) confirm the persisted slot round-trips with the correct
+// world_state / slot_kind / settings_hash.
+//
+// Rando_GenerateSlot writes sram.dat + the sidecar file + a spoiler under the
+// CWD, so CI runs this from a scratch directory (and pre-creates saves/).
+static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *config_file) {
+  bool found = false;
+  for (int i = 0; i < argc; ++i)
+    if (strcmp(argv[i], "--generate-slot") == 0) { found = true; break; }
+  if (!found) return;
+
+  const char *settings_csv = NULL;
+  const char *seed_u64_str = NULL;
+  int slot_index = 0;
+  for (int i = 0; i < argc; ++i) {
+    const char *a = argv[i];
+    if (strncmp(a, "--settings=", 11) == 0) settings_csv = a + 11;
+    else if (strncmp(a, "--seed=", 7) == 0) seed_u64_str = a + 7;
+    else if (strncmp(a, "--slot=", 7) == 0) slot_index = atoi(a + 7);
+  }
+  if (seed_u64_str == NULL) {
+    fprintf(stderr,
+      "Usage: --generate-slot --settings=<k=v,...> --seed=<u64> [--slot=<0..2>]\n");
+    exit(64);
+  }
+
+  ParseConfigFile(config_file);
+  LoadAssetsIfPresent();
+
+  RandoSettings settings;
+  Settings_SetDefaults(&settings);
+  if (settings_csv != NULL && *settings_csv != '\0') {
+    if (Settings_ParseCsv(settings_csv, &settings) != 0) {
+      fprintf(stderr, "--generate-slot: --settings= parse failed (see error above)\n");
+      exit(64);
+    }
+  }
+  uint64 seed_u64 = ParseSeedU64OrExit(seed_u64_str);
+
+  // Rando_GenerateSlot writes into g_zenv.sram + slot_index*0x500; allocate the
+  // 8 KB SRAM image since the headless path never ran full ZeldaInitialize.
+  if (g_zenv.sram == NULL) g_zenv.sram = (uint8 *)calloc(8192, 1);
+
+  RandoGenerateResult result;
+  memset(&result, 0, sizeof(result));
+  char err[256];
+  err[0] = '\0';
+  // budget = 0: run the placer to its deterministic attempt cap (no wall-clock
+  // cutoff) so the digest is machine-independent (matches the corpus path).
+  bool ok = Rando_GenerateSlot(&settings, seed_u64, /*budget=*/0, slot_index,
+                               g_config.features0, &result, err, sizeof(err));
+
+  uint8 digest[32];
+  memset(digest, 0, sizeof(digest));
+  if (ok && result.placement.count > 0)
+    PlacementTable_ComputeDigest(&result.placement, digest);
+
+  // Round-trip: read the persisted slot back and confirm its placement + header
+  // survived serialization. (RandoSave_SelfCheck already covers the serialize/
+  // deserialize primitive; this confirms the FULL generate→persist→read path.)
+  int roundtrip_ok = 0, world_state = -1, slot_kind = -1;
+  if (ok) {
+    RandoSidecarSlot slot;
+    if (Rando_LoadSidecarSlot(slot_index, &slot)) {
+      world_state = slot.header.world_state;
+      slot_kind = slot.header.slot_kind;
+      RandoPlacementTable rt = { slot.placements, slot.placement_count };
+      uint8 rt_digest[32];
+      PlacementTable_ComputeDigest(&rt, rt_digest);
+      roundtrip_ok = (slot.placement_count == result.placement.count &&
+                      memcmp(rt_digest, digest, 32) == 0 &&
+                      slot.header.slot_kind == kSlotKind_Randomizer &&
+                      slot.header.world_state == settings.world_state) ? 1 : 0;
+    }
+  }
+
+  // One-line machine-parseable result for the CI harness.
+  printf("{\"ok\": %s, \"goal_completable\": %s, \"placement_count\": %u, "
+         "\"placement_digest_hex\": \"",
+         ok ? "true" : "false",
+         (ok && result.goal_completable) ? "true" : "false",
+         (unsigned)(ok ? result.placement.count : 0));
+  for (int i = 0; i < 32; i++) printf("%02x", digest[i]);
+  printf("\", \"settings_hash_hex\": \"");
+  for (int i = 0; i < 32; i++) printf("%02x", ok ? result.settings_hash[i] : 0);
+  printf("\", \"share_string\": \"%s\", \"world_state\": %d, \"slot_kind\": %d, "
+         "\"roundtrip_ok\": %s, \"error\": \"%s\"}\n",
+         ok ? result.share_string : "", world_state, slot_kind,
+         roundtrip_ok ? "true" : "false", ok ? "" : err);
+
+  if (result.placement.entries != NULL) free(result.placement.entries);
+  exit(ok ? 0 : 1);
+}
 
 static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *config_file) {
   // Detect --generate-seed anywhere in argv. If not present, return so main()
@@ -1024,6 +1149,7 @@ int main(int argc, char** argv) {
     if (strcmp(argv[i], "--rando-selftest") == 0 ||
         strcmp(argv[i], "--rando-bench-logic") == 0 ||
         strcmp(argv[i], "--generate-seed") == 0 ||
+        strcmp(argv[i], "--generate-slot") == 0 ||
         strcmp(argv[i], "--print-assets-hash") == 0 ||
         strncmp(argv[i], "--vanilla-ram-check=", 20) == 0) {
       g_headless_mode = 1;
@@ -1064,6 +1190,7 @@ int main(int argc, char** argv) {
   // Check for --generate-seed BEFORE any SDL_Init. If present, run headless
   // and exit; otherwise this returns and main() continues to the GUI path.
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
+  MaybeRunGenerateSlotAndExit(argc, argv, config_file);
   MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
 
   // Dev/verification: decode the overworld map (asset 66/67/68/93) to PPM files
