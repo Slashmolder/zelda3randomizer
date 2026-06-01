@@ -130,12 +130,10 @@ static void apply_derived_rules(RandoSettings *s) {
     s->cross_category = 0;
     s->decoupled = 0;
   } else if (s->decoupled) {
-    // Decoupled (one-way exits) is its OWN coupling mode: never coupled, and
-    // mutually exclusive with cross-category (cross is a COUPLED pool-mixing mode;
-    // one-way cross warps over a single mixed pool are not supported). The UI greys
-    // Cross out under Decoupled.
+    // Decoupled (one-way exits) is its OWN coupling mode: never coupled. It DOES
+    // compose with cross-category — cross-decoupled = one-way exits over the mixed
+    // cave+dungeon pool (Entrance_IsCrossDecoupledActive) — so cross is kept here.
     s->coupled = 0;
-    s->cross_category = 0;
   } else {
     // A shuffle is on and not decoupled ⇒ coupled. `coupled` is fully DERIVED
     // (= shuffle-on && !decoupled), so the settings UI only toggles `decoupled`.

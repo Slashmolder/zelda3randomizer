@@ -1830,14 +1830,30 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   // at the top), so a mirror/special/ending warp can't leave it set for a later
   // cave-class exit to misuse. Only the cave-class branch below acts on it.
   uint16 decoupled_entered = Rando_DecoupledConsumeEntered();
+  // Cross + decoupled (Insanity + Crossed): consume the resolved one-way exit kind
+  // (0 none / 1 cave / 2 dungeon). A CAVE target forces the cached branch (replay
+  // that cave's arrival); a DUNGEON target forces the search branch at its room
+  // (coupled_exit_room was set to it at the entry hook). kind 0 leaves the normal
+  // branch selection. Consumed-at-top like the sibling exit-coupling globals.
+  uint8 cross_cave = 0xFF;
+  uint8 cross_kind = Rando_CrossDecoupledConsumeExit(&cross_cave);
 
-  if (force_cached ||
-      (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100)) {
-    // Decoupled (D.4): on a cave-class exit, replay net[entered]'s captured
+  bool take_cached;
+  if (cross_kind != 0) {
+    take_cached = (cross_kind == 1);  // cave → cached replay; dungeon → search
+  } else {
+    take_cached = force_cached ||
+        (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100);
+  }
+  if (take_cached) {
+    // Decoupled (D.4): on a cave-class exit, replay the target cave's captured
     // arrival so Link emerges at a DIFFERENT door (it overwrites the live *_exit
-    // block + world flags + target room/door-settings). No-op / coupled return
-    // when decoupled is inactive or the target hasn't been captured this session.
-    bool decoupled_crossed = Rando_DecoupledReplaceArrival(decoupled_entered);
+    // block + world flags + target room/door-settings). For cross-decoupled the
+    // target cave was resolved at entry (cross_cave); otherwise it's net[entered].
+    // No-op / coupled return when inactive or the target hasn't been captured.
+    bool decoupled_crossed = (cross_kind == 1)
+        ? Rando_CrossDecoupledReplayCave(cross_cave)
+        : Rando_DecoupledReplaceArrival(decoupled_entered);
     LoadCachedEntranceProperties();
     if (decoupled_crossed) {
       // A one-way decoupled exit can land Link in the OTHER world, but this cached
@@ -3508,6 +3524,10 @@ after:
       // Decoupled (D.4): remember which cave interior this door belongs to so the
       // exit can emerge at net[interior]'s door. No-op unless decoupled is active.
       Rando_DecoupledSetEnteredDoor((uint16)lx);
+      // Cross + decoupled: resolve this door's one-way exit target (cave or dungeon)
+      // and stash it; AUTHORITATIVE over the coupled exit above when active. No-op
+      // otherwise.
+      Rando_CrossDecoupledSetExit((uint16)lx);
     }
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;

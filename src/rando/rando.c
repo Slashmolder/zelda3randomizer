@@ -990,6 +990,14 @@ static uint16 g_decoupled_entered;                // vanilla interior of entered
 static uint8 g_dungeon_decoupled_active;
 static int   g_dungeon_decoupled_n;
 static uint8 g_dungeon_decoupled_net[kEntranceDungeonCount];
+// Cross + decoupled: one-way exits over the MIXED cross pool. net[e] = the endpoint
+// Link emerges at after exiting door e (a cave OR a dungeon). The exit kind is
+// resolved at the entry hook and consumed at LoadOverworldFromDungeon.
+static uint8 g_cross_decoupled_active;
+static int   g_cross_decoupled_n;
+static uint8 g_cross_net[kEntranceMaxInteriors];
+static uint8 g_cross_decoupled_exit_kind;  // 0 none, 1 cave, 2 dungeon (consumed at exit)
+static uint8 g_cross_decoupled_exit_cave;  // target cave interior when kind == 1
 typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid; } RandoCaveArrival;
 // Single per-interior overworld-arrival table used by BOTH the bake-capture and
 // the decoupled runtime. Persisted to cave_arrival_capture.bin and reloaded each
@@ -1048,6 +1056,51 @@ static void Dungeon_Decoupled_Reset(void) {
   g_dungeon_decoupled_n = 0;
 }
 
+static void Cross_Decoupled_Reset(void) {
+  g_cross_decoupled_active = 0;
+  g_cross_decoupled_n = 0;
+  g_cross_decoupled_exit_kind = 0;
+  g_cross_decoupled_exit_cave = 0xFF;
+}
+
+// Entry hook: under cross-decoupled, resolve the source door's one-way exit target
+// (cave or dungeon) and stash it for the exit. For a dungeon target this sets the
+// room-keyed exit search target; a cave target is replayed at the cached branch.
+void Rando_CrossDecoupledSetExit(uint16 lx) {
+  g_cross_decoupled_exit_kind = 0;
+  g_cross_decoupled_exit_cave = 0xFF;
+  if (!g_cross_decoupled_active || g_entrance_overlay_orig == NULL) return;
+  if (lx >= kOverworld_Entrance_Id_SIZE) return;
+  uint16 value = 0;
+  int kind = Entrance_CrossDecoupledExit(g_cross_net, g_cross_decoupled_n,
+                                         g_entrance_overlay_orig[lx], &value);
+  // When active, cross-decoupled is AUTHORITATIVE over the coupled exit the prior
+  // hook set: a cave target forces the cached branch (kind 1, replay), a dungeon
+  // target forces the search branch at its room (kind 2). Self-map / non-pool
+  // (kind 0) leaves the coupled cross return-to-source in place.
+  if (kind == 1) {
+    g_cross_decoupled_exit_kind = 1;
+    g_cross_decoupled_exit_cave = (uint8)value;
+    g_rando_entrance_exit_room = 0;
+    g_rando_entrance_force_cached = 0;
+  } else if (kind == 2) {
+    g_cross_decoupled_exit_kind = 2;
+    g_rando_entrance_exit_room = value;
+    g_rando_entrance_force_cached = 0;
+  }
+}
+
+// Consume-once at LoadOverworldFromDungeon top: returns the exit kind (0 none,
+// 1 cave, 2 dungeon) and writes the target cave interior to *out_cave, clearing
+// both. Same consume-at-top discipline as the sibling exit-coupling globals.
+uint8 Rando_CrossDecoupledConsumeExit(uint8 *out_cave) {
+  uint8 k = g_cross_decoupled_exit_kind;
+  if (out_cave) *out_cave = g_cross_decoupled_exit_cave;
+  g_cross_decoupled_exit_kind = 0;
+  g_cross_decoupled_exit_cave = 0xFF;
+  return k;
+}
+
 static void Decoupled_Reset(void) {
   g_decoupled_active = 0;
   g_decoupled_n = 0;
@@ -1085,21 +1138,41 @@ uint16 Rando_DecoupledConsumeEntered(void) {
 // at a DIFFERENT door. `entered` is the consumed entered-interior. Returns false
 // (→ coupled return) when inactive, the target is the same interior, or the
 // target hasn't been captured yet.
-bool Rando_DecoupledReplaceArrival(uint16 entered) {
-  if (!g_decoupled_active || entered >= (uint16)g_decoupled_n) return false;
+// Replay cave interior `target_cave`'s captured overworld arrival into the live
+// *_exit block + world flags + target room/door-settings (the Y-adjust). Shared by
+// the cave-decoupled and cross-decoupled exit paths. False → not captured (coupled
+// fallback) or out of range.
+static bool Rando_ReplayCaveArrival(int target_cave) {
+  if (target_cave < 0 || target_cave >= kEntranceMaxInteriors) return false;
   Rando_LoadArrivalCaptureIfNeeded();  // pull in prior-session captures (persisted)
-  int target = g_decoupled_net[entered];
-  if (target < 0 || target >= g_decoupled_n || target == (int)entered) return false;
-  const RandoCaveArrival *e = &g_cave_capture[target];
-  if (!e->valid) return false;  // target door not captured yet → coupled fallback (enter it once)
+  const RandoCaveArrival *e = &g_cave_capture[target_cave];
+  if (!e->valid) return false;  // target door not captured yet → coupled fallback
   memcpy(g_ram + 0xC140, e->block, 0x32);
   g_ram[0xFFF] = e->is_dark;      // is_in_dark_world
   g_ram[0xF3CA] = e->save_dark;   // savegame_is_darkworld
   // Target door's room + door-settings drive the cached-exit Y-adjust (spike iter4).
-  uint8 rid = Entrance_CaveRepresentativeId(target);
+  uint8 rid = Entrance_CaveRepresentativeId(target_cave);
   if ((uint32)rid < kEntranceData_rooms_SIZE / 2u) dungeon_room_index = kEntranceData_rooms[rid];
   if ((uint32)rid < kEntranceData_doorSettings_SIZE / 2u) ow_entrance_value = kEntranceData_doorSettings[rid];
   return true;
+}
+
+// Exit hook (cave-class cached branch, before LoadCachedEntranceProperties):
+// replace the live *_exit with net[entered]'s captured arrival so Link emerges
+// at a DIFFERENT door. `entered` is the consumed entered-interior. Returns false
+// (→ coupled return) when inactive, the target is the same interior, or the
+// target hasn't been captured yet.
+bool Rando_DecoupledReplaceArrival(uint16 entered) {
+  if (!g_decoupled_active || entered >= (uint16)g_decoupled_n) return false;
+  int target = g_decoupled_net[entered];
+  if (target < 0 || target >= g_decoupled_n || target == (int)entered) return false;
+  return Rando_ReplayCaveArrival(target);
+}
+
+// Cross-decoupled exit: replay the target CAVE's arrival (target resolved at the
+// entry hook). Returns false (→ coupled return) when not captured.
+bool Rando_CrossDecoupledReplayCave(uint8 target_cave) {
+  return Rando_ReplayCaveArrival((int)target_cave);
 }
 
 // ---------------------------------------------------------------------------
@@ -1217,6 +1290,7 @@ static void Entrance_RuntimeTeardown(void) {
   g_rando_entrance_force_cached = 0;
   Decoupled_Reset();
   Dungeon_Decoupled_Reset();
+  Cross_Decoupled_Reset();
 }
 
 // Install the overlay + logic overrides for an entrance-shuffle slot (caves
@@ -1239,7 +1313,8 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   // cave shuffle, dungeon decoupled needs the dungeon shuffle.
   bool decoupled = Entrance_IsDecoupledActive(&es);
   bool decoupled_dun = Entrance_IsDungeonDecoupledActive(&es);
-  if (!cross && !cave && !dun && !decoupled && !decoupled_dun) return;
+  bool decoupled_cross = Entrance_IsCrossDecoupledActive(&es);  // one-way over the mixed pool
+  if (!cross && !cave && !dun && !decoupled && !decoupled_dun && !decoupled_cross) return;
   // X.1 backward-load: the entrance permutation π is REGENERATED from
   // (seed, axes, attempt) against this build's interior/dungeon pool. The pool
   // composition is part of the generator version, so a slot written by a
@@ -1290,9 +1365,23 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   // Decoupled (D.4): install the one-way exit permutation(s) (regenerated
   // deterministically) + the exit edges for the tracker. Reset both first so a
   // re-install starts clean; the cave path also arms the runtime arrival replay.
-  if (decoupled || decoupled_dun) {
+  if (decoupled || decoupled_dun || decoupled_cross) {
     Decoupled_Reset();
     Dungeon_Decoupled_Reset();
+    Cross_Decoupled_Reset();
+    if (decoupled_cross) {
+      // Cross + decoupled: one-way exits over the mixed pool. NO logic edges
+      // (coupled-equivalent reachability; the ENTRY logic is ApplyCrossOverrides
+      // above). net permutes the combined endpoint space; the runtime resolves a
+      // cave-vs-dungeon target per source door at the entry hook.
+      uint8 cd_assign[kEntranceMaxInteriors];
+      int cdn = Entrance_ComputeCrossDecoupledExit(&es, seed, h->entrance_attempt, cd_assign);
+      if (cdn > 0) {
+        g_cross_decoupled_n = (cdn > kEntranceMaxInteriors) ? kEntranceMaxInteriors : cdn;
+        memcpy(g_cross_net, cd_assign, (size_t)g_cross_decoupled_n);
+        g_cross_decoupled_active = 1;
+      }
+    }
     if (decoupled) {
       uint8 dec_assign[kEntranceMaxInteriors];
       int dn = Entrance_ComputeDecoupledExit(&es, seed, h->entrance_attempt, dec_assign);

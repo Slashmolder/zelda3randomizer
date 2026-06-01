@@ -46,6 +46,10 @@ typedef struct RandoSpoiler {
   // permutation (loaded dungeon → exit door). NULL/0 omits the section.
   const uint8 *dun_decoupled_assign;
   int dun_decoupled_count;
+  // Phase C Stage 4 (cross decoupled) — one-way exit permutation over the MIXED
+  // cross pool (interior → emerge door). NULL/0 omits the section.
+  const uint8 *cross_decoupled_assign;
+  int cross_decoupled_count;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

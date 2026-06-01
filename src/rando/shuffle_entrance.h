@@ -167,6 +167,20 @@ uint16 Entrance_DungeonDecoupledExitRoom(const uint8 *exit_assign, int n,
 void Entrance_WriteDungeonDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);
 void Entrance_WriteDungeonDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
 
+// Cross + Decoupled: one-way exits over the MIXED cross pool. Active iff decoupled
+// + cross. π_out (Entrance_ComputeCrossDecoupledExit, distinct salt) permutes the
+// combined endpoint space; an exit target may be a cave or a dungeon. No logic
+// edges (coupled-equivalent reachability, like the other decoupled modes).
+bool Entrance_IsCrossDecoupledActive(const RandoSettings *settings);
+int Entrance_ComputeCrossDecoupledExit(const RandoSettings *settings, uint64 seed,
+                                       uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]);
+// Runtime: exit target for source door `vanilla_entrance_id` under cross-decoupled.
+// Returns 1 (*value = cave interior to emerge at), 2 (*value = dungeon entry room),
+// or 0 (self-map / non-pool → caller keeps the coupled return-to-source).
+int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n,
+                                uint8 vanilla_entrance_id, uint16 *value);
+void Entrance_WriteCrossDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
+
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole
 // `  "entrance_mapping": [ ... ],` block (2-space indent, trailing comma) to

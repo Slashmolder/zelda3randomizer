@@ -689,14 +689,16 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   uint8 cross_assign[kEntranceMaxInteriors]; int cross_count = 0;
   uint8 decoupled_assign[kEntranceMaxInteriors]; int decoupled_count = 0;
   uint8 dun_decoupled_assign[kEntranceMaxInteriors]; int dun_decoupled_count = 0;
+  uint8 cross_decoupled_assign[kEntranceMaxInteriors]; int cross_decoupled_count = 0;
   bool cross_on = Entrance_IsCrossActive(&settings);
   bool cave_on = !cross_on && Entrance_IsActive(&settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(&settings);
   bool decoupled_on = Entrance_IsDecoupledActive(&settings);  // Stage 4: cave decoupled
   bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(&settings);  // dungeon decoupled
+  bool cross_decoupled_on = Entrance_IsCrossDecoupledActive(&settings);  // cross decoupled
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on) {
+  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
     for (int att = 0; att < 64; att++) {
       // Audit (decoupled HIGH) — reset edge overrides every attempt so
       // ApplyDecoupledExitEdges Begins fresh in the cave-only case instead of
@@ -723,6 +725,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       // + conservative; see rando_generate.c). net' is for the runtime + spoiler only.
       if (dun_decoupled_on) {
         dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(&settings, seed_u64, (uint8)att, dun_decoupled_assign);
+      }
+      // Cross + decoupled: NO logic edges (coupled-equivalent; entry logic is the
+      // cross overrides). net computed for the runtime redirect + spoiler only.
+      if (cross_decoupled_on) {
+        cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(&settings, seed_u64, (uint8)att, cross_decoupled_assign);
       }
       table.count = 0;
       if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
@@ -809,6 +816,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.decoupled_count = decoupled_count;
   spoiler.dun_decoupled_assign = (dun_decoupled_count > 0) ? dun_decoupled_assign : NULL;
   spoiler.dun_decoupled_count = dun_decoupled_count;
+  spoiler.cross_decoupled_assign = (cross_decoupled_count > 0) ? cross_decoupled_assign : NULL;
+  spoiler.cross_decoupled_count = cross_decoupled_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   {

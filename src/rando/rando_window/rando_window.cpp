@@ -579,16 +579,15 @@ static void Panel_Shuffles() {
     if (ImGui::RadioButton("Decoupled", &exits_mode, 1)) {
       s->decoupled = 1;
       s->coupled = 0;
-      s->cross_category = 0;  // one-way + cross-pool not supported (mutually exclusive)
       changed = true;
     }
     ImGui::EndDisabled();
-    HelpTooltip("One-way warps: you exit at a different door. Can't combine with "
-                "Cross-category (not supported yet).");
+    HelpTooltip("One-way warps: you exit at a different door than you entered. "
+                "Works with Cross-category too.");
 
-    // ---- Group 3: Cross-category (pool mixing — coupled-only, needs both classes) ----
+    // ---- Group 3: Cross-category (pool mixing — needs both classes) ----
     bool both = (s->shuffle_cave_entrances && s->shuffle_dungeon_entrances);
-    ImGui::BeginDisabled(!both || s->decoupled != 0);
+    ImGui::BeginDisabled(!both);
     bool cross = s->cross_category != 0;
     if (ImGui::Checkbox("Cross-category (caves & dungeons share one pool)", &cross)) {
       s->cross_category = cross;
@@ -596,7 +595,7 @@ static void Panel_Shuffles() {
     }
     ImGui::EndDisabled();
     HelpTooltip("A cave door can lead to a dungeon and vice versa. Needs both "
-                "Caves and Dungeons on, with Coupled exits (not Decoupled).");
+                "Caves and Dungeons on. Combine with Decoupled for one-way mixing.");
     ImGui::EndDisabled();
     if (!ws_ok) {
       ImGui::TextDisabled("Entrance shuffle is Open/Standard only for now.");

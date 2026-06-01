@@ -313,6 +313,14 @@ void Rando_DecoupledSetEnteredDoor(uint16 lx);
 // Read+clear the entered-interior global (consume-once at LoadOverworldFromDungeon top).
 uint16 Rando_DecoupledConsumeEntered(void);
 bool Rando_DecoupledReplaceArrival(uint16 entered);
+
+// Cross + decoupled runtime: SetExit resolves the source door's one-way exit
+// target (cave or dungeon) at the entry hook. ConsumeExit reads+clears the stashed
+// kind (0 none / 1 cave / 2 dungeon) at the LoadOverworldFromDungeon top, writing
+// the target cave interior to *out_cave. ReplayCave emerges at that cave's arrival.
+void Rando_CrossDecoupledSetExit(uint16 lx);
+uint8 Rando_CrossDecoupledConsumeExit(uint8 *out_cave);
+bool Rando_CrossDecoupledReplayCave(uint8 target_cave);
 // D.3 capture-for-bake (dev opt-in via ZELDA3_CAPTURE_ARRIVALS): snapshot each
 // entered cave's overworld arrival, keyed by the entered cave interior.
 // RecordEnteredDoorForCapture runs at the walk-in entry hook; RecordEnteredFallhole

@@ -200,6 +200,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   int decoupled_count = 0;
   uint8 dun_decoupled_assign[kEntranceMaxInteriors];
   int dun_decoupled_count = 0;
+  uint8 cross_decoupled_assign[kEntranceMaxInteriors];
+  int cross_decoupled_count = 0;
   bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
   bool cave_on = !cross_on && Entrance_IsActive(settings);
   bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
@@ -208,10 +210,11 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // redirects dungeon exits (reuses the static kExitData room-keyed exit search).
   bool decoupled_on = Entrance_IsDecoupledActive(settings);
   bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(settings);
+  bool cross_decoupled_on = Entrance_IsCrossDecoupledActive(settings);  // one-way over mixed pool
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
   Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on) {
+  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
     uint8 canon[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(settings, canon);
     entrance_axes = canon[25];  // == the packed entrance-axis byte
@@ -251,6 +254,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       // goal). net' is computed for the runtime redirect + spoiler only.
       if (dun_decoupled_on) {
         dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(settings, seed_u64, (uint8)att, dun_decoupled_assign);
+      }
+      // Cross + decoupled: also NO logic edges (same conservative coupled-equivalent
+      // reachability; the ENTRY logic is ApplyCrossOverrides above). net is computed
+      // for the runtime exit redirect + spoiler only.
+      if (cross_decoupled_on) {
+        cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(settings, seed_u64, (uint8)att, cross_decoupled_assign);
       }
       table.count = 0;
       if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
@@ -365,6 +374,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.decoupled_count = decoupled_count;
     spoiler.dun_decoupled_assign = (dun_decoupled_count > 0) ? dun_decoupled_assign : NULL;
     spoiler.dun_decoupled_count = dun_decoupled_count;
+    spoiler.cross_decoupled_assign = (cross_decoupled_count > 0) ? cross_decoupled_assign : NULL;
+    spoiler.cross_decoupled_count = cross_decoupled_count;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {

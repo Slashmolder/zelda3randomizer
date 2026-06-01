@@ -634,6 +634,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     Entrance_WriteCrossSpoilerText(f, s->cross_assign, s->cross_count);
     Entrance_WriteDecoupledSpoilerText(f, s->decoupled_assign, s->decoupled_count);
     Entrance_WriteDungeonDecoupledSpoilerText(f, s->dun_decoupled_assign, s->dun_decoupled_count);
+    Entrance_WriteCrossDecoupledSpoilerText(f, s->cross_decoupled_assign, s->cross_decoupled_count);
     fprintf(f, "\n");
   }
 

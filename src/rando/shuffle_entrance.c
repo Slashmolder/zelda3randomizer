@@ -589,6 +589,93 @@ bool Entrance_IsCaveEntranceId(uint8 vanilla_entrance_id) {
   return interior_of_entrance(vanilla_entrance_id) >= 0;
 }
 
+// ---------------------------------------------------------------------------
+// Cross + Decoupled (Stage 4) — one-way exits over the MIXED cross pool.
+// π_out is an independent permutation of the combined endpoint space; exiting
+// the interior behind door e emerges at endpoint net[e]'s door, which may be a
+// CAVE (replay its baked arrival) or a DUNGEON (kExitData room search). Like the
+// other decoupled modes it adds NO logic edges — coupled-equivalent reachability
+// is correct + conservative since every emerge spot is on the connected overworld.
+// ---------------------------------------------------------------------------
+bool Entrance_IsCrossDecoupledActive(const RandoSettings *settings) {
+  return settings != NULL && settings->decoupled && Entrance_IsCrossActive(settings);
+}
+
+int Entrance_ComputeCrossDecoupledExit(const RandoSettings *settings, uint64 seed,
+                                       uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]) {
+  if (exit_assign == NULL || !Entrance_IsCrossDecoupledActive(settings)) return 0;
+  int n = cross_pool_count();
+  if (n > kEntranceMaxInteriors) return 0;
+  for (int i = 0; i < n; i++) exit_assign[i] = (uint8)i;
+  RandoRng rng;
+  // Distinct salt from cross-ENTRY (0xC2055…), cave-decoupled (0xE511…) and
+  // dungeon-decoupled (0xD1CE…) so the exit permutation is independent.
+  Rng_SeedFromU64(&rng, (seed ^ 0xC2055DEC0DEDC205ull) ^
+                            ((uint64)attempt * 0x9E3779B97F4A7C15ull));
+  for (int i = n - 1; i > 0; i--) {
+    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
+    uint8 t = exit_assign[i]; exit_assign[i] = exit_assign[j]; exit_assign[j] = t;
+  }
+  return n;
+}
+
+// Source endpoint index of door `vanilla_entrance_id` in the cross combined pool
+// (cave interior, or ncave + cross-dungeon slot). -1 if not a cross-pool door.
+static int cross_source_endpoint(uint8 vanilla_entrance_id) {
+  int ci = interior_of_entrance(vanilla_entrance_id);
+  if (ci >= 0) return ci;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  int dd = dungeon_of_entrance(vanilla_entrance_id, kEntranceDungeonCount);
+  if (dd >= 0)
+    for (int q = 0; q < ndun; q++)
+      if (didx[q] == dd) return kEntranceCaveInteriorCount + q;
+  return -1;
+}
+
+// Decode a cross endpoint → exit kind: 1 = cave (*value = cave interior),
+// 2 = dungeon (*value = dungeon entry ROOM), 0 = out of range.
+static int cross_endpoint_kind(int endpoint, uint16 *value) {
+  const int ncave = kEntranceCaveInteriorCount;
+  if (endpoint < 0) return 0;
+  if (endpoint < ncave) { if (value) *value = (uint16)endpoint; return 1; }
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  int q = endpoint - ncave;
+  if (q < ndun) { if (value) *value = kDungeons[didx[q]].room; return 2; }
+  return 0;
+}
+
+// Runtime: for source door `vanilla_entrance_id` under cross-decoupled, the exit
+// target kind (1 = cave interior, 2 = dungeon room) into *value, or 0 for a
+// self-map / non-pool door (caller keeps the coupled return-to-source).
+int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n,
+                                uint8 vanilla_entrance_id, uint16 *value) {
+  if (cross_net == NULL || n <= 0) return 0;
+  int e = cross_source_endpoint(vanilla_entrance_id);
+  if (e < 0 || e >= n) return 0;
+  int t = cross_net[e];
+  if (t < 0 || t >= n || t == e) return 0;  // self-map → coupled return
+  return cross_endpoint_kind(t, value);
+}
+
+void Entrance_WriteCrossDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || exit_assign == NULL || n <= 0) return;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  const int ncave = kEntranceCaveInteriorCount;
+  if (n != ncave + ndun) return;
+  fprintf(f, "\nCrossed decoupled exits (interior -> emerge at door):\n");
+  for (int e = 0; e < n; e++) {
+    int t = exit_assign[e];
+    if (t < 0 || t >= n || t == e) continue;
+    const char *en = (e < ncave) ? kCaveInteriors[e].name : kDungeons[didx[e - ncave]].name;
+    const char *tn = (t < ncave) ? kCaveInteriors[t].name : kDungeons[didx[t - ncave]].name;
+    fprintf(f, "  %s -> %s\n", en, tn);
+  }
+}
+
 // Public: cave interior index that entrance-id `ent_id` belongs to, or -1.
 // Used by the decoupled runtime (D.4) to key the arrival table by interior.
 int Entrance_InteriorOfEntranceId(uint8 ent_id) {
@@ -615,9 +702,9 @@ const char *Entrance_CaveInteriorName(int interior) {
 // ---------------------------------------------------------------------------
 bool Entrance_IsDecoupledActive(const RandoSettings *settings) {
   if (settings == NULL || !settings->decoupled) return false;
-  // Decoupled composes on top of the cave ENTRY shuffle; caves only for now
-  // (dungeon decoupled deferred). Open/Standard like the rest.
-  if (!settings->shuffle_cave_entrances) return false;
+  // CAVE decoupled: cave ENTRY shuffle on, NOT cross (cross-decoupled handles the
+  // mixed pool — Entrance_IsCrossDecoupledActive). Open/Standard like the rest.
+  if (!settings->shuffle_cave_entrances || settings->cross_category) return false;
   return settings->world_state == kWorldState_Open ||
          settings->world_state == kWorldState_Standard;
 }
@@ -1321,6 +1408,54 @@ void Entrance_SelfCheck(void) {
     if (Entrance_DungeonDecoupledExitRoom(da, dnn, kDungeons[0].entrance_id) != want ||
         Entrance_DungeonDecoupledExitRoom(da, dnn, 0x00) != 0) {
       fprintf(stderr, "Entrance_SelfCheck: dungeon decoupled exit room lookup wrong\n");
+      exit(2);
+    }
+  }
+
+  // (11) CROSS DECOUPLED: pool-sized bijective permutation over the mixed pool,
+  //      active only with cross + decoupled, and the runtime exit resolver maps a
+  //      source door to a cave (kind 1) or dungeon (kind 2) target.
+  {
+    RandoSettings xc = s;
+    xc.shuffle_dungeon_entrances = 1; xc.cross_category = 1; xc.decoupled = 1;
+    if (!Entrance_IsCrossDecoupledActive(&xc)) {
+      fprintf(stderr, "Entrance_SelfCheck: cross-decoupled should be active for cross+Open\n");
+      exit(2);
+    }
+    RandoSettings nox = xc; nox.cross_category = 0;
+    RandoSettings nod2 = xc; nod2.decoupled = 0;
+    uint8 zz[kEntranceMaxInteriors];
+    if (Entrance_IsCrossDecoupledActive(&nox) || Entrance_IsCrossDecoupledActive(&nod2) ||
+        Entrance_ComputeCrossDecoupledExit(&nox, 1, 0, zz) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: cross-decoupled needs cross + decoupled\n");
+      exit(2);
+    }
+    uint8 xa[kEntranceMaxInteriors], xb[kEntranceMaxInteriors];
+    int xn = Entrance_ComputeCrossDecoupledExit(&xc, 0xC0FFEEull, 0, xa);
+    if (xn <= kEntranceCaveInteriorCount) {  // pool = caves + >=1 cross dungeon
+      fprintf(stderr, "Entrance_SelfCheck: cross-decoupled pool too small (%d)\n", xn);
+      exit(2);
+    }
+    Entrance_ComputeCrossDecoupledExit(&xc, 0xC0FFEEull, 0, xb);
+    if (memcmp(xa, xb, xn) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: cross-decoupled not deterministic\n");
+      exit(2);
+    }
+    uint8 xseen[kEntranceMaxInteriors]; memset(xseen, 0, sizeof(xseen));
+    for (int i = 0; i < xn; i++) {
+      if (xa[i] >= xn || xseen[xa[i]]) {
+        fprintf(stderr, "Entrance_SelfCheck: cross-decoupled not a bijection\n");
+        exit(2);
+      }
+      xseen[xa[i]] = 1;
+    }
+    // Runtime resolver: cave 0's door → net[0]'s endpoint kind (0 self, 1 cave, 2 dun).
+    uint16 xval = 0;
+    int t0 = xa[0];
+    int want = (t0 == 0) ? 0 : ((t0 < kEntranceCaveInteriorCount) ? 1 : 2);
+    if (Entrance_CrossDecoupledExit(xa, xn, kCaveInteriors[0].entrance_ids[0], &xval) != want ||
+        Entrance_CrossDecoupledExit(xa, xn, 0x00, &xval) != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: cross-decoupled exit resolver wrong\n");
       exit(2);
     }
   }
