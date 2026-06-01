@@ -51,6 +51,15 @@ void InvertedEntrances_Install(uint8 world_state);
 // Idempotent; safe to call when nothing is installed.
 void InvertedEntrances_Teardown(void);
 
+// Install the Inverted overworld DW->LW under-rock warps (overworld-secret
+// type-0x82 records). No-op unless world_state == kWorldState_Inverted (2).
+// Additive (vanilla has no warps); rebuilds the kOverworldSecrets blob + _Offs
+// and repoints them. Tears down any prior install first. Idempotent.
+void InvertedSecrets_Install(uint8 world_state);
+
+// Restore the kOverworldSecrets / _Offs asset pointers to vanilla. Idempotent.
+void InvertedSecrets_Teardown(void);
+
 #ifdef __cplusplus
 }
 #endif

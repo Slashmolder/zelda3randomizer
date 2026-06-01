@@ -236,3 +236,129 @@ void InvertedEntrances_Install(uint8 world_state) {
     g_asset_ptrs[s->asset_index] = s->buf;
   }
 }
+
+// ===========================================================================
+// Inverted overworld DW->LW warps (the way OUT of the Dark World).
+//
+// In Inverted, the Magic Mirror only carries LW->DW (the trip home); the way
+// from the DW out to the LW is a set of fixed under-rock "world-warp" tiles —
+// overworld-secret records of type 0x82. Vanilla has ZERO type-0x82 warps, so
+// this is a purely-additive port: we add one warp record to each listed DW
+// screen. A 0x82 warp flips the world at the SAME overworld position
+// (Module09_MirrorWarp toggles savegame_is_darkworld ^= 0x40), so no
+// destination data is needed.
+//
+// The warp tile positions are from ALTTPR's MIT-licensed Rom.php
+// setInvertedMode() — the "Add warps under rocks, etc." block (lines ~1887-1919),
+// the same source as the entrance overrides above. Each PHP write swaps an
+// item-under-bush for (or appends) a type-0x82 warp on a named map; the table
+// rows carry the PHP map label + line. Death Mountain (0x4E) and Misery Mire
+// (0x78) are large areas whose overworld-secret list spans two sub-screens, so
+// the warp is added to both (0x4D/0x4E, 0x70/0x78) to cover whichever screen
+// index is live when the player lifts the rock.
+//
+// Unlike the fixed-width element pokes above, the secret blob is a packed
+// variable-length per-screen record list (3 bytes {pos_lo,pos_hi,type},
+// 0xffff-terminated) indexed by kOverworldSecrets_Offs[screen]. To add a record
+// we rebuild: copy the vanilla blob, APPEND a new list (the screen's vanilla
+// records + the warp + terminator) for each touched screen, and repoint that
+// screen's _Offs entry at the appended list. Untouched screens keep their
+// original offsets into the copied blob.
+enum {
+  kAsset_OverworldSecrets_Offs = 157,  // uint16[0x80]: screen -> byte offset
+  kAsset_OverworldSecrets      = 158,  // uint8[]:      packed 3-byte records
+};
+
+static const struct {
+  uint8  screen;     // overworld_screen_index (all Dark World, >= 0x40)
+  uint8  count;      // number of warp positions on this screen
+  uint16 pos[2];     // warp tile position(s)
+} kInvertedSecretWarps[] = {
+  { 0x4D, 1, { 0x1D4A } },          // "map 78 (DM)" Rom.php:1890 (shared w/ 0x4E)
+  { 0x4E, 1, { 0x1D4A } },
+  { 0x50, 1, { 0x0B2E } },          // "map 80 (top of kak)" Rom.php:1888
+  { 0x6F, 1, { 0x0BB2 } },          // "map 111" Rom.php:1891
+  { 0x70, 1, { 0x1D94 } },          // "map 120 (mire)" Rom.php:1889 (shared w/ 0x78)
+  { 0x78, 1, { 0x1D94 } },
+  { 0x73, 1, { 0x02A8 } },          // "map115" Rom.php:1893
+  { 0x75, 1, { 0x0F50 } },          // Rom.php:1894
+  { 0x47, 2, { 0x069E, 0x06A4 } },  // "map 71" (HC ledge / pyramid) Rom.php:1919
+};
+#define kInvertedSecretWarpCount \
+  (sizeof(kInvertedSecretWarps) / sizeof(kInvertedSecretWarps[0]))
+
+// Shadow buffers for the two secret assets. Sized generously; vanilla packs in
+// ~1.4 KB and the appends add a few hundred bytes.
+#define kSecretsDataMax 4096
+static uint8  g_inv_secrets_data[kSecretsDataMax];
+static uint16 g_inv_secrets_offs[0x80];
+static const uint8 *g_inv_secrets_data_orig = NULL;  // saved g_asset_ptrs[158]
+static const uint8 *g_inv_secrets_offs_orig = NULL;  // saved g_asset_ptrs[157]
+
+void InvertedSecrets_Teardown(void) {
+  if (g_inv_secrets_offs_orig != NULL) {
+    g_asset_ptrs[kAsset_OverworldSecrets_Offs] = (void *)g_inv_secrets_offs_orig;
+    g_inv_secrets_offs_orig = NULL;
+  }
+  if (g_inv_secrets_data_orig != NULL) {
+    g_asset_ptrs[kAsset_OverworldSecrets] = (void *)g_inv_secrets_data_orig;
+    g_inv_secrets_data_orig = NULL;
+  }
+}
+
+void InvertedSecrets_Install(uint8 world_state) {
+  InvertedSecrets_Teardown();
+  if (world_state != (uint8)kWorldState_Inverted) return;
+
+  const uint8  *odata = (const uint8 *)g_asset_ptrs[kAsset_OverworldSecrets];
+  const uint16 *ooffs = (const uint16 *)g_asset_ptrs[kAsset_OverworldSecrets_Offs];
+  uint32 dsize = g_asset_sizes[kAsset_OverworldSecrets];
+  uint32 osize = g_asset_sizes[kAsset_OverworldSecrets_Offs];
+  if (odata == NULL || ooffs == NULL || dsize == 0 ||
+      dsize > kSecretsDataMax || osize < 0x80 * 2) {
+    if (dsize > kSecretsDataMax)
+      fprintf(stderr,
+              "InvertedSecrets: kOverworldSecrets (%u bytes) exceeds cap %u; "
+              "inverted warps skipped.\n",
+              (unsigned)dsize, (unsigned)kSecretsDataMax);
+    return;
+  }
+
+  // Copy vanilla blob + offsets, then append a new list per touched screen.
+  memcpy(g_inv_secrets_data, odata, dsize);
+  memcpy(g_inv_secrets_offs, ooffs, 0x80 * sizeof(uint16));
+  uint32 ap = dsize;  // append cursor
+
+  for (uint32 i = 0; i < kInvertedSecretWarpCount; i++) {
+    uint8 scr = kInvertedSecretWarps[i].screen;
+    uint32 list_start = ap;
+    // Copy the screen's existing vanilla records (everything before 0xffff).
+    const uint8 *src = odata + ooffs[scr];
+    while (!(src[0] == 0xff && src[1] == 0xff)) {
+      if (ap + 5 > kSecretsDataMax) return;  // leave room for a warp + term
+      g_inv_secrets_data[ap + 0] = src[0];
+      g_inv_secrets_data[ap + 1] = src[1];
+      g_inv_secrets_data[ap + 2] = src[2];
+      ap += 3; src += 3;
+    }
+    // Append this screen's warp record(s).
+    for (uint32 j = 0; j < kInvertedSecretWarps[i].count; j++) {
+      if (ap + 5 > kSecretsDataMax) return;
+      uint16 p = kInvertedSecretWarps[i].pos[j];
+      g_inv_secrets_data[ap + 0] = (uint8)(p & 0xff);
+      g_inv_secrets_data[ap + 1] = (uint8)(p >> 8);
+      g_inv_secrets_data[ap + 2] = 0x82;  // world-warp
+      ap += 3;
+    }
+    g_inv_secrets_data[ap + 0] = 0xff;
+    g_inv_secrets_data[ap + 1] = 0xff;
+    ap += 2;
+    g_inv_secrets_offs[scr] = (uint16)list_start;
+  }
+
+  // Repoint last, after all appends succeeded.
+  g_inv_secrets_offs_orig = (const uint8 *)g_asset_ptrs[kAsset_OverworldSecrets_Offs];
+  g_asset_ptrs[kAsset_OverworldSecrets_Offs] = (uint8 *)g_inv_secrets_offs;
+  g_inv_secrets_data_orig = (const uint8 *)g_asset_ptrs[kAsset_OverworldSecrets];
+  g_asset_ptrs[kAsset_OverworldSecrets] = g_inv_secrets_data;
+}

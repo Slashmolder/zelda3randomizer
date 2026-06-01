@@ -1148,6 +1148,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // Inverted slot (the shuffle bails for non-Open/Standard), so the two never
   // contend for g_asset_ptrs[126].
   InvertedEntrances_Install(g_rando_active_world_state);
+  // Inverted DW->LW under-rock warps (overworld-secret type-0x82). Separate
+  // asset set (157/158) from the entrance overrides, so order is independent.
+  InvertedSecrets_Install(g_rando_active_world_state);
 
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
@@ -1235,6 +1238,7 @@ void Rando_DeactivateSlot(void) {
   // #82 Inverted override teardown — reverse of the Activate install order.
   // Restores g_asset_ptrs[126/130/131] to their saved vanilla originals.
   InvertedEntrances_Teardown();
+  InvertedSecrets_Teardown();  // restore g_asset_ptrs[157/158]
   Placement_Install(NULL);
   g_session_placement_table.entries = NULL;
   g_session_placement_table.count = 0;
