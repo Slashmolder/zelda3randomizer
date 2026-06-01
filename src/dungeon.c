@@ -4603,6 +4603,69 @@ void Dung_TagRoutine_BlastWallStuff(int k) {  // 81c68c
   AncillaAdd_BlastWall();
 }
 
+// rando: correct falling prize color under prize_shuffle — PLAYTEST REQUIRED.
+// Maps a dungeon's boss-prize FALLING-SPRITE index to the PLACED prize's color
+// when prize_shuffle reassigned it. Returns `vanilla_idx` (the dungeon's vanilla
+// kBossFinishedFallingItem value) unless rando is active AND the placed prize is
+// a known pendant/crystal. Used ONLY to recolor the falling sprite — the grant
+// already happened via Rando_DispatchVanillaGrant.
+//
+// Index spaces differ:
+//   `didx` = cur_palace_index_x2>>1 (game dungeon id; indexes kBossFinishedFallingItem).
+//   prize-assignment array = rando_logic / kDungeonPrizeLocations order.
+// kGamePrizeDidxToAssignIdx[] maps didx -> assignment index (0xFF = no prize
+// dungeon: HCE / unused / HCT / GT). Mapping verified against the authoritative
+// {game,logic} table in rando_window/tracker_windows.cpp (kDungeonRows).
+//
+// Placed-prize value encoding (see PrizeIcon / Goal_IsCompletable pendant ids):
+//   0=Green, 1=Red, 2=Blue, 3..9=Crystal1..7.
+// kFallingItem_Type[7] = {0x10,0x37,0x39,0x38,0x26,0xf,0x20} (ancilla.c) maps
+// the falling INDEX to a receive-item color code: idx1=0x37 green, idx2=0x39
+// red, idx3=0x38 blue, idx6=0x20 crystal (the code every vanilla crystal
+// dungeon's boss uses; idx4=0x26 is NOT a boss-prize sprite). So:
+//   Green(0)->1  Red(1)->2  Blue(2)->3  Crystal(3..9)->6.
+// (Identity check: EP didx2 vanilla green -> kBossFinishedFallingItem[2]=1; this
+// helper also returns 1 for Green, so the default/identity seed is unchanged.)
+static uint8 RandoFallingPrizeIndex(uint8 didx, uint8 vanilla_idx) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return vanilla_idx;
+  const uint8 *assign = Rando_GetDungeonPrizeAssignment();
+  if (assign == NULL)
+    return vanilla_idx;
+  static const uint8 kGamePrizeDidxToAssignIdx[14] = {
+    0xFF, // 0  HCE (no prize)
+    0xFF, // 1  (unused)
+    1,    // 2  EP
+    2,    // 3  DP
+    0xFF, // 4  HCT (no prize)
+    5,    // 5  PoD
+    6,    // 6  SP
+    7,    // 7  SW
+    8,    // 8  TT
+    9,    // 9  IP
+    3,    // 10 TH
+    10,   // 11 MM
+    11,   // 12 TR
+    0xFF, // 13 GT (no prize)
+  };
+  if (didx >= 14)
+    return vanilla_idx;
+  uint8 aidx = kGamePrizeDidxToAssignIdx[didx];
+  if (aidx == 0xFF)
+    return vanilla_idx;
+  uint8 prize = assign[aidx];
+  switch (prize) {
+    case 0: return 1;  // Green pendant  -> 0x37
+    case 1: return 2;  // Red pendant    -> 0x39
+    case 2: return 3;  // Blue pendant   -> 0x38
+    default:
+      if (prize >= 3 && prize <= 9)
+        return 6;      // Crystal -> 0x20 (the canonical boss crystal falling
+                       // sprite; every vanilla crystal dungeon uses index 6).
+      return vanilla_idx;  // unknown prize id: leave vanilla visual untouched
+  }
+}
+
 // Used for bosses
 void RoomTag_GetHeartForPrize(int k) {  // 81c709
   static const uint8 kBossFinishedFallingItem[13] = { 0, 0, 1, 2, 0, 6, 6, 6, 6, 6, 3, 6, 6 };
@@ -4634,10 +4697,10 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
     // inside Rando_DispatchVanillaGrant's prize_item_direct_grant() path
     // (which sets the prize's bit, not the dungeon's bit).
     //
-    // The visual FallingPrize sprite still spawns using the vanilla
-    // kBossFinishedFallingItem mapping — that's a cosmetic limitation
-    // (player sees the dungeon's vanilla prize falling). The bit set
-    // matches the placed prize per the direct-grant.
+    // The visual FallingPrize sprite below is recolored to the placed prize
+    // via RandoFallingPrizeIndex() (rando color fix), so the player sees the
+    // prize they actually received. The bit set matches the placed prize per
+    // the direct-grant.
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       uint16 prize_loc = Rando_GetBossPrizeLocation(BYTE(cur_palace_index_x2) >> 1);
       if (prize_loc != 0xFFFFu) {
@@ -4647,19 +4710,33 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
         // pre-pass installs the vanilla prize per dungeon if no shuffle
         // override applies.
         uint8 placed_lttp = Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, 0);
-        // Phase B Slice 9 audit L6 — when prize_shuffle places a direct-
-        // grant item here (a different prize bit than the dungeon's vanilla
-        // one), pop the per-item icon ancilla so the player can see what
-        // was actually granted. The vanilla FallingPrize sprite below still
-        // spawns with the dungeon's canonical prize visual (cosmetic
-        // inconsistency); the icon-pop reflects the real grant.
-        if (Rando_ShouldSkipReceive(placed_lttp)) {
-          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-        }
+        // rando: correct falling prize color under prize_shuffle — PLAYTEST
+        // REQUIRED. [duplicate-icon suppression — independently revertible]
+        // The falling-prize sprite below now spawns with the PLACED prize's
+        // color (see RandoFallingPrizeIndex), so the extra direct-grant
+        // confirmation icon would be a SECOND, redundant prize visual (the
+        // "two pendants" bug). Suppress it here for the boss-prize case only.
+        // Rando_ShowDirectGrantConfirmation is purely visual/audio (sfx + HUD
+        // icon refresh + icon ancilla); the actual grant already happened in
+        // Rando_DispatchVanillaGrant above, so dropping this call has no grant
+        // side effect. To revert just this hunk (restore the second icon),
+        // delete the (void) line and uncomment the original block below.
+        (void)placed_lttp;
+        // if (Rando_ShouldSkipReceive(placed_lttp)) {
+        //   Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+        // }
       }
     }
-    if (Ancilla_SpawnFallingPrize(kBossFinishedFallingItem[BYTE(cur_palace_index_x2) >> 1]) < 0)
-      return; // Zelda bugfix. Price won't spawn if we're out of ancillas
+    // rando: correct falling prize color under prize_shuffle — PLAYTEST REQUIRED.
+    // Recolor the SAME falling-prize sprite to the placed prize (vanilla idx
+    // when not rando / identity / unknown). Only the item-index argument
+    // changes; the cutscene still awaits the same spawned ancilla.
+    {
+      uint8 fdidx = BYTE(cur_palace_index_x2) >> 1;
+      uint8 fidx = RandoFallingPrizeIndex(fdidx, kBossFinishedFallingItem[fdidx]);
+      if (Ancilla_SpawnFallingPrize(fidx) < 0)
+        return; // Zelda bugfix. Price won't spawn if we're out of ancillas
+    }
   }
   dung_hdr_tag[k] = 0;
 }

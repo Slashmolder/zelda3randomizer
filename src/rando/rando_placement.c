@@ -165,6 +165,12 @@ static const uint16 kDungeonPrizeLocations[13] = {
   0xFFFF,  // GT (Aga 2 is at 137, Prize_Event pinned separately)
 };
 
+// Public accessor for the per-dungeon prize location (see rando_placement.h).
+uint16 Rando_GetDungeonPrizeLocation(int dungeon_index) {
+  if (dungeon_index < 0 || dungeon_index >= 13) return 0xFFFF;
+  return kDungeonPrizeLocations[dungeon_index];
+}
+
 // Per-dungeon small-key counts (vanilla per ALTTPR config; small_keys.X).
 static const struct { uint16 item_id; uint8 count; } kVanillaSmallKeyCounts[] = {
   { ID_SmallKey_HCE, 1 },

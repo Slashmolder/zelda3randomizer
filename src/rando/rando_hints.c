@@ -380,12 +380,18 @@ static uint8 ascii_to_font(char ch) {
 }
 
 // US message-engine control bytes (Text_DecodeCmd: code = 0x67 + cmd_index).
-//   kTextCmd_1 = 13 -> 0x74 (advance to row 1)
-//   kTextCmd_2 = 14 -> 0x75 (advance to row 2)
+//   kTextCmd_1 = 13 -> 0x74 (jump to visual row 0 / top)
+//   kTextCmd_2 = 14 -> 0x75 (jump to visual row 1 / middle)
+//   kTextCmd_3 = 15 -> 0x76 (jump to visual row 2 / bottom)
 //   kTextCmd_Waitkey = 23 -> 0x7e (pause for input between pages)
 //   kTextCmd_EndMessage = 24 -> 0x7f (terminator; matches Text_LoadCharacterBuffer)
-#define kHintFontCmdLine1   0x74u
-#define kHintFontCmdLine2   0x75u
+// NOTE: 0x74/0x75/0x76 map directly to visual rows 0/1/2 (the message engine's
+// kVWF_RowPositions = {0,2,4}; see messaging.c). Row 0 is implicit (no command),
+// so the encoder's 2nd row must emit 0x75 (row 1) and its 3rd row 0x76 (row 2).
+// The previous values 0x74/0x75 sent the 2nd row to row 0 (overwriting the 1st)
+// and the 3rd row to row 1 — the reported "overlapping/dropped words" glitch.
+#define kHintFontCmdLine1   0x75u
+#define kHintFontCmdLine2   0x76u
 #define kHintFontCmdWaitkey 0x7eu
 #define kHintFontCmdEnd     0x7fu
 

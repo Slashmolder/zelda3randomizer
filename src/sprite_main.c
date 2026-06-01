@@ -1213,6 +1213,58 @@ void Sprite_WishPond3(int k) {
   case 6:
     sprite_ai_state[k] = 7;
     if (!savegame_is_darkworld) {
+      // §6.7 Waterfall Fairy dispatch (light-world mirror of the Pyramid
+      // Fairy branch below). The LW great-fairy waterfall pond accepts two
+      // toss-in trade items:
+      //   sprite_graphics==12 → blue Boomerang toss (vanilla: → red boomerang
+      //                          gfx 42). ALTTPR location: Waterfall Fairy -
+      //                          Left, vanilla reward RedShield (lttp 0x05).
+      //   sprite_graphics==4  → fighter Shield toss (vanilla: → red shield
+      //                          gfx 5). ALTTPR location: Waterfall Fairy -
+      //                          Right, vanilla reward BottleEmpty (lttp 0x16).
+      // The sprite_graphics==22 case is a separate (non-Waterfall-Fairy) trade
+      // and is left on the vanilla path. Vanilla (rando-inactive) play is
+      // unchanged: the dispatch block only runs when rando is active.
+      // Decision logic + skip/break handling mirror the DW Pyramid Fairy
+      // dispatch verbatim. — PLAYTEST REQUIRED (slot grant path has no
+      // automated test).
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        uint16 loc = 0xFFFFu;
+        uint16 vi = 0xFFFFu;
+        uint8 vanilla_lttp = 0;
+        uint8 confirm_head_dir = 0;
+        if (sprite_graphics[k] == 12) {
+          loc = LOC_Waterfall_Fairy_Left;
+          vi = ITEM_RedShield;
+          vanilla_lttp = 0x05;  // RedShield LttP code
+          confirm_head_dir = 1;
+        } else if (sprite_graphics[k] == 4) {
+          loc = LOC_Waterfall_Fairy_Right;
+          vi = ITEM_BottleEmpty;
+          vanilla_lttp = 0x16;  // BottleEmpty LttP code
+          confirm_head_dir = 2;
+        }
+        if (loc != 0xFFFFu) {
+          uint8 placed_lttp = Rando_DispatchVanillaGrant(loc, vi, vanilla_lttp);
+          if (Rando_ShouldSkipReceive(placed_lttp)) {
+            // Direct grant already done. Restore the tossed bow if the slot
+            // tossed was the bow (mirrors case 7), then jump past 7/8/9 to the
+            // message state with the §7.6 confirmation cue.
+            if (sprite_C[k] == 3)
+              (&link_item_bow)[sprite_C[k]] = sprite_D[k];
+            sprite_head_dir[k] = confirm_head_dir;
+            sprite_graphics[k] = 0;
+            sprite_ai_state[k] = 10;
+            Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+            return;
+          }
+          // case 9 grants the placed item via Link_ReceiveItem(sprite_graphics).
+          sprite_graphics[k] = placed_lttp;
+          sprite_head_dir[k] = confirm_head_dir;
+          Sprite_ShowMessageUnconditional(0x8c);
+          break;
+        }
+      }
       if (sprite_graphics[k] == 12) {
         sprite_graphics[k] = 42;
         sprite_head_dir[k] = 1;
@@ -6710,6 +6762,95 @@ void Sprite_HeartPiece(int k) {  // 85f020
 
   if (sprite_delay_aux4[k] || !Sprite_CheckDamageToLink_same_layer(k))
     return;
+
+  // §6.5 standing/freestanding Piece-of-Heart dispatch.
+  //
+  // Sprite_HeartPiece is the single handler for every standing/overworld/
+  // cave PoH pickup. Vanilla unconditionally increments link_heart_pieces.
+  // Under rando the placer can assign a non-PoH item to any of these
+  // locations, so before the vanilla increment we resolve the specific
+  // ALTTPR location and route it through the grant dispatcher.
+  //
+  // The location key reuses HeartUpgrade_SetObtainedFlag's exact
+  // discriminators (so the lookup, the obtained-bit, and the respawn-check
+  // all agree): outdoors keys on BYTE(overworld_screen_index); indoors keys
+  // on dungeon_room_index, with sprite_x_hi[k]&1 splitting the one room that
+  // hosts two PoH (room 283 = Cave 45 / Graveyard Ledge).
+  //
+  // Screen/room keys are sourced from z3randomizer heartpieces.asm
+  // LoadOutdoorValue/LoadIndoorValue (the ALTTPR runtime), cross-referenced
+  // to the ALTTPR PHP 0x18014x / 0x18000x table order. Only entries whose
+  // (screen|room) -> LOC mapping is unambiguous are wired; others omitted.
+  //
+  // Dispatch semantics: if the dispatcher returns the vanilla PoH code
+  // (0x17) the placed item IS a Piece of Heart, so we fall through to the
+  // unchanged vanilla increment path (preserving the quarter mechanic /
+  // message byte-for-byte). If it returns a different code we grant that
+  // item via Link_ReceiveItem and SKIP the vanilla increment; if it returns
+  // the skip-sentinel we fire the §7.6 confirmation cue and skip. In every
+  // dispatched case the obtained-bit is still set so the spot won't respawn.
+  // Vanilla (rando-inactive) play is unchanged. — PLAYTEST REQUIRED (slot
+  // grant path has no automated test).
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    // Outdoor: BYTE(overworld_screen_index) -> standing-PoH LOC.
+    static const struct { uint8 screen; uint16 loc; } kStandingPoHOutdoor[] = {
+      { 0x03, LOC_Spectacle_Rock },     // z3r LoadOutdoorValue $03 (LinkPosX-gated vs Ether; PoH sprite is unique here)
+      { 0x05, LOC_Floating_Island },    // z3r $05 HeartPiece_Mountain_Warp = ALTTPR 0x180141 Floating Island
+      { 0x28, LOC_Maze_Race },          // z3r $28 HeartPiece_Maze
+      { 0x30, LOC_Desert_Ledge },       // z3r $30 (LinkPosX-gated vs Bombos; PoH sprite is unique here)
+      { 0x35, LOC_Lake_Hylia_Island },  // z3r $35 HeartPiece_Lake
+      { 0x3B, LOC_Sunken_Treasure },    // z3r $3B HeartPiece_Swamp = ALTTPR 0x180145 Sunken Treasure
+      { 0x4A, LOC_Bumper_Cave },        // z3r $4A HeartPiece_Cliffside = ALTTPR 0x180146 Bumper Cave
+      { 0x5B, LOC_Pyramid },            // z3r $5B HeartPiece_Pyramid
+      { 0x81, LOC_Zora_s_Ledge },       // z3r $81 HeartPiece_Zora (registry lists vanilla_item Flippers; the in-game sprite is the PoH)
+    };
+    // Indoor: dungeon_room_index (full 16-bit) -> standing-PoH LOC. Room 283
+    // hosts two; sprite_x_hi[k]&1 picks (bit clear = Cave 45, set = Graveyard
+    // Ledge), matching z3r LoadIndoorValue's LinkPosX split + the obtained-bit
+    // (0x4000 = bit clear, 0x2000 = bit set) below.
+    uint16 loc = 0xFFFFu;
+    if (!player_is_indoors) {
+      uint8 scr = BYTE(overworld_screen_index);
+      for (int i = 0; i < (int)(sizeof kStandingPoHOutdoor / sizeof kStandingPoHOutdoor[0]); i++) {
+        if (kStandingPoHOutdoor[i].screen == scr) { loc = kStandingPoHOutdoor[i].loc; break; }
+      }
+    } else {
+      uint16 room = dungeon_room_index;
+      switch (room) {
+        case 225: loc = LOC_Lost_Woods_Hideout; break;   // z3r room 225 Forest_Thieves
+        case 226: loc = LOC_Lumberjack_Tree; break;      // z3r room 226
+        case 234: loc = LOC_Spectacle_Rock_Cave; break;  // z3r room 234 Spectacle_Cave
+        case 283:                                        // z3r room 283 split by Link X-half
+          loc = (sprite_x_hi[k] & 1) ? LOC_Graveyard_Ledge : LOC_Cave_45;
+          break;
+        case 294: loc = LOC_Checkerboard_Cave; break;    // z3r room 294 (Mire_Warp label) = ALTTPR 0x180005 Checkerboard Cave
+        // TODO(playtest): Hammer Pegs (room 295) intentionally omitted —
+        // already dispatched in overworld.c; wiring it here would double-grant.
+        default: break;
+      }
+    }
+    if (loc != 0xFFFFu) {
+      uint8 lttp = Rando_DispatchVanillaGrant(loc, ITEM_PieceOfHeart, 0x17);
+      if (lttp != 0x17) {
+        // Placed item is NOT a vanilla Piece of Heart: grant it directly and
+        // skip the vanilla heart-piece increment so the player doesn't also
+        // get a quarter heart.
+        if (Rando_ShouldSkipReceive(lttp)) {
+          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+        } else {
+          Link_CancelDash();
+          item_receipt_method = 0;
+          Link_ReceiveItem(lttp, 0);
+        }
+        sprite_state[k] = 0;
+        HeartUpgrade_SetObtainedFlag(k);
+        return;
+      }
+      // lttp == 0x17: vanilla PoH placed here — fall through to the unchanged
+      // vanilla increment below (the dispatch still marked the location
+      // checked, so the obtained-bit + counter behave exactly as vanilla).
+    }
+  }
 
   // rando-exempt: this is the generic piece-of-heart pickup sprite handler,
   // not a specific ALTTPR location. The 24 PieceOfHeart placement sites
