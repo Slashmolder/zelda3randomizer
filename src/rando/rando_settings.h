@@ -88,7 +88,9 @@ typedef struct RandoSettings {
   uint8 mode_weapons;               // ModeWeapons
   uint8 accessibility;              // Accessibility
   uint8 pyramid_bow_upgrade;        // PyramidBowUpgrade
-  uint8 region_boss_hearts_in_pool; // bool; Phase A pinned 1 (identity-placed)
+  uint8 region_boss_hearts_in_pool; // bool, INVERTED vs name: 1 (default) = boss
+                                    // hearts PINNED/identity-placed (NOT in pool);
+                                    // 0 = shuffled into the general pool
   uint8 dungeon_small_keys_mode;    // DungeonItemMode
   uint8 dungeon_big_keys_mode;      // DungeonItemMode
   uint8 dungeon_maps_mode;          // DungeonItemMode

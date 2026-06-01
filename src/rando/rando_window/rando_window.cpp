@@ -348,6 +348,18 @@ static void Panel_General() {
     v = s->hints != 0;
     if (ImGui::Checkbox("Hints", &v)) { s->hints = v; changed = true; }
     HelpTooltip("Telepathic-tile hints.");
+    // region_boss_hearts_in_pool is INVERTED relative to its name: 1 = boss
+    // hearts pinned to their boss slots (NOT in the general pool, the default);
+    // 0 = shuffled into the general pool. Map checked -> 0 at the UI layer so the
+    // user-facing label reads naturally and the misleading raw field name/value
+    // is never shown. Do not rename the field — the canonical byte/CSV keys keep
+    // their existing meaning for headless/share-string compat.
+    v = (s->region_boss_hearts_in_pool == 0);
+    if (ImGui::Checkbox("Shuffle boss heart containers", &v)) {
+      s->region_boss_hearts_in_pool = v ? 0 : 1;
+      changed = true;
+    }
+    HelpTooltip("Bosses reward random items instead of hearts.");
   }
 
   // ---- Locked settings (informational; not yet configurable) ----
@@ -357,8 +369,6 @@ static void Panel_General() {
     ImGui::TextDisabled("These axes aren't configurable yet — every seed uses these values:");
     ImGui::BulletText("Logic: NoGlitches");
     ImGui::BulletText("Tricks: none");
-    ImGui::BulletText("Region boss hearts in pool: %s",
-                      s->region_boss_hearts_in_pool ? "yes" : "no");
     ImGui::BulletText("Pyramid bow upgrade: Silvers");
   }
   HelpTooltip("pinned in Phase A");

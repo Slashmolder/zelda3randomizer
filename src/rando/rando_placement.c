@@ -343,9 +343,16 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
 
   // ----- Heart items: PoH and BossHeartContainer counts per ALTTPR vanilla -----
   // Vanilla ALTTPR: 24 Piece-of-Heart + 10 BossHeartContainer (one per dungeon
-  // boss). When region.bossHeartsInPool is false (Phase A default), the 10
-  // boss-heart slots are identity-placed at the boss locations, so the pool
-  // includes BossHeartContainer ×10 anyway — they end up at their _BossHeart slots.
+  // boss), capped lower under Hard/Expert (see bossheart_cap/poh_cap above).
+  // The pool always gets bossheart_cap BossHeartContainer items here; whether
+  // the 10 <Dungeon>_Boss Drop slots can RECEIVE them is governed separately by
+  // the region_boss_hearts_in_pool pin in the placement pass.
+  //
+  // NOTE: region_boss_hearts_in_pool is INVERTED relative to its name — a
+  // non-zero value (the default 1) PINS the 10 boss Drop slots to
+  // BossHeartContainer (identity-placed, so each boss grants its own heart);
+  // a value of 0 leaves those slots as free assumed-fill targets so arbitrary
+  // items can land there and the heart containers are placed elsewhere.
   n = pool_add(out_items, n, capacity, ID_PieceOfHeart, poh_cap);
   n = pool_add(out_items, n, capacity, ID_BossHeartContainer, bossheart_cap);
 
