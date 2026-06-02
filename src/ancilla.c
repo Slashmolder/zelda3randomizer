@@ -3470,7 +3470,17 @@ endif_11:
   ancilla_type[k] = 0;
   flag_unk1 = 0;
   a = ancilla_item_to_link[k];
-  if (ancilla_step[k] == 3 && a != 0x10 && a != 0x26 && a != 0xf && a != 0x20) {
+  // A step-3 (item_receipt_method=3) falling-prize receipt warps Link out of the
+  // dungeon after a boss prize. PrepareDungeonExitFromBossFight() is meaningful
+  // ONLY indoors — it does FindInByteArray(kDungeonExit_From, dungeon_room_index)
+  // + assert/index, which on the overworld reads a stale room id and indexes OOB
+  // (crash / bogus warp). The Ether/Bombos tablets reach this via the same method-3
+  // falling prize; vanilla is safe only because medallions (0x10/0x0f) are excluded.
+  // Under rando a non-medallion tablet item is NOT excluded, so also require
+  // player_is_indoors. Vanilla unaffected: boss prizes are always indoors, and
+  // overworld tablets are always medallions (already excluded).
+  if (ancilla_step[k] == 3 && player_is_indoors &&
+      a != 0x10 && a != 0x26 && a != 0xf && a != 0x20) {
     PrepareDungeonExitFromBossFight();
   }
 
@@ -3759,32 +3769,49 @@ void ObjectSplash_Draw(int k) {  // 88ca22
 
 void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
   if (ancilla_item_to_link[k] != 0x10 && ancilla_item_to_link[k] != 0x0f) {
-    if (dung_savegame_state_bits & 0x4000) {
-      ancilla_type[k] = 0;
-      return;
-    }
-
-    if (!(dung_savegame_state_bits & 0x8000))
-      return;
-
-    if (byte_7E04C2 != 0) {
-      if (byte_7E04C2 == 1) {
-        if (ancilla_item_to_link[k] == 0x20) {
-          sound_effect_ambient = 0x0f;
-          DecodeAnimatedSpriteTile_variable(0x28);
-        } else {
-          DecodeAnimatedSpriteTile_variable(0x23);
-        }
+    // This whole block sequences the BOSS-PRIZE falling sprite behind the
+    // dungeon's heart-container handshake (dung_savegame_state_bits 0x4000/
+    // 0x8000) and decodes the prize tiles. It only ever runs for a non-medallion
+    // code, which in vanilla means a boss prize — always INDOORS. The Ether/
+    // Bombos tablets reuse this same falling-prize ancilla but on the OVERWORLD;
+    // vanilla is safe there only because both tablets grant a medallion (0x10/
+    // 0x0f), which takes the else branch and skips this block entirely. Under
+    // rando the tablet can hold any item, so a non-medallion code reaches here
+    // on the overworld where dung_savegame_state_bits is stale garbage — the
+    // 0x8000 gate would freeze the prize (or 0x4000 would silently delete it).
+    // Gate the entire dungeon handshake on player_is_indoors so an overworld
+    // tablet prize falls and is collectable immediately. Vanilla unaffected:
+    // its only non-medallion falling prizes are boss prizes (indoors). (A crystal
+    // 0x20 placed at a tablet would still run the rising-crystal path on the
+    // overworld — out of scope here; crystals are prize-pool, not item-pool.)
+    if (player_is_indoors) {
+      if (dung_savegame_state_bits & 0x4000) {
+        ancilla_type[k] = 0;
+        return;
       }
-      byte_7E04C2--;
-      return;
-    }
-    if (!ancilla_arr3[k] && ancilla_item_to_link[k] == 0x20) {
-      ancilla_arr3[k] = 1;
-      palette_sp6r_indoors = 4;
-      overworld_palette_aux_or_main = 0x200;
-      Palette_Load_SpriteEnvironment_Dungeon();
-      flag_update_cgram_in_nmi++;
+
+      if (!(dung_savegame_state_bits & 0x8000))
+        return;
+
+      if (byte_7E04C2 != 0) {
+        if (byte_7E04C2 == 1) {
+          if (ancilla_item_to_link[k] == 0x20) {
+            sound_effect_ambient = 0x0f;
+            DecodeAnimatedSpriteTile_variable(0x28);
+          } else {
+            DecodeAnimatedSpriteTile_variable(0x23);
+          }
+        }
+        byte_7E04C2--;
+        return;
+      }
+      if (!ancilla_arr3[k] && ancilla_item_to_link[k] == 0x20) {
+        ancilla_arr3[k] = 1;
+        palette_sp6r_indoors = 4;
+        overworld_palette_aux_or_main = 0x200;
+        Palette_Load_SpriteEnvironment_Dungeon();
+        flag_update_cgram_in_nmi++;
+      }
     }
   } else {
     if (ancilla_G[k]) {
