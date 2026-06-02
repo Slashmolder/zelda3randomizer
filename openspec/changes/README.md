@@ -23,12 +23,12 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 | **B** | 8 | [`add-rando-switch-swkbd`](add-rando-switch-swkbd/) | libnx swkbd wrapper for Switch text input | Full (0/31) | No | 3-5d |
 | **B** | PC | [`add-rando-native-settings-window`](add-rando-native-settings-window/) | Dear ImGui second OS window owns the rando settings UI on PC; in-game screen compile-guarded out behind `Z3R_NATIVE_SETTINGS_WINDOW` | Full (128/143 — **shipped & merged**; remaining = spoiler-viewer polish + manual verify/audit/archive) | No | ✅ shipped, not yet archived |
 | **C** | C1 | [`add-rando-entrance-shuffle`](add-rando-entrance-shuffle/) | Multi-mode composable entrance shuffle (Stages 1-3 built; Stage 4/Insanity deferred); per-seed edge overlay (retires RegionRemap) | Full (46/50) | **Yes** | 4-8w |
-| **D** | D1 | [`add-rando-cosmetic-shuffles`](add-rando-cosmetic-shuffles/) | Palette (4 MVP modes) / sprite (zspr folder pick) / music (song remap) shuffles; `cosmetic_seed` is **client config**, not a slot field — no save-format change | Design + tasks authored (0/37; in active implementation) | No | Sprite small; palette+music medium |
+| **D** | D1 | [`add-rando-cosmetic-shuffles`](archive/2026-06-02-add-rando-cosmetic-shuffles/) | Palette (4 MVP modes) / sprite (zspr folder pick) / music (song remap) shuffles; `cosmetic_seed` is **client config**, not a slot field — no save-format change | ✅ **Archived 2026-06-02** (owner playtest-confirmed) | No | ✅ shipped + archived |
 | **D** | D2 | [`add-rando-customizer-mode`](add-rando-customizer-mode/) | Manual per-location placement + custom pool composition | Stub | No (per-seed; affects `customizer_seed`) | 2-3w |
 | **D** | D3 | [`add-rando-major-glitch`](add-rando-major-glitch/) | Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to HybridMG + NoLogic | Stub | **Yes** | 2-3w |
 | **D** | D4 | [`add-rando-auto-tracker`](add-rando-auto-tracker/) | Local TCP server for external tracker clients | Stub | No | 2-3w |
 
-Total: 19 active changes + 2 archived (`add-randomizer-support`, `add-rando-retro-takeany`). (The table previously listed 15; four were missing from the overview and are now added: `add-rando-beatable-accessibility`, `add-rando-boss-heart-pool-toggle`, `add-rando-inverted-dark-chapel-spawn`, `add-rando-inverted-ganon-relocation`.) Run `openspec validate --changes` to confirm all validate.
+Total: 18 active changes + 3 archived (`add-randomizer-support`, `add-rando-retro-takeany`, `add-rando-cosmetic-shuffles`). (The table previously listed 15; four were missing from the overview and are now added: `add-rando-beatable-accessibility`, `add-rando-boss-heart-pool-toggle`, `add-rando-inverted-dark-chapel-spawn`, `add-rando-inverted-ganon-relocation`.) Run `openspec validate --changes` to confirm all validate.
 
 ## Implementation order
 

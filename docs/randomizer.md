@@ -629,7 +629,7 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | Stub |
+| D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/archive/2026-06-02-add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | ✅ Archived 2026-06-02 |
 | D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Stub |
 | D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level. Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to support `HybridMajorGlitches` + `NoLogic`. | Stub |
 | D4 | [`add-rando-auto-tracker`](../openspec/changes/add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients. | Stub |
