@@ -8563,7 +8563,25 @@ void SpritePrep_FluteKid(int k) {  // 869075
   sprite_subtype2[k] = savegame_is_darkworld >> 6 & 1;
   uint8 flute_level = Rando_FluteShovelEffectiveLevel();  // owns-flute level (rando: ignores selection)
   if (sprite_subtype2[k]) {
-    if (sram_progress_indicator_3 & 8 || flute_level > 2) {
+    // Vanilla spawns Stumpy as a finished tree once the flute quest is done
+    // (flute_level > 2), reusing link_item_flute as a proxy for "Stumpy's check
+    // is collected" — valid in vanilla, where flute==3 implies you already got
+    // his shovel. Under rando the (inactive) flute is shuffled and activated
+    // independently at the Kakariko weathervane (the travel-bird ancilla sets
+    // link_item_flute=3 / kRandoFluteShovel_FluteActive). A player who
+    // warp-activates a found flute before talking to Stumpy would otherwise
+    // freeze him in the tree state here and lose LOC_Stumpy forever — the
+    // case-0 grant gate in Sprite_FluteKid_Stumpy never runs because this prep
+    // diverts straight to ai_state 5. Gate the tree state on the
+    // location-checked bit instead, mirroring that grant gate and ALTTPR's
+    // ItemCheck_TreeKid2 reroute (which keys the tree on NpcFlags & $08, set
+    // when the item is given). sram_progress_indicator_3 & 8 is subsumed: under
+    // rando it is only set by Stumpy's own post-grant cutscene, which already
+    // requires LOC_Stumpy to be checked.
+    bool stumpy_done = (sram_progress_indicator_3 & 8) || (flute_level > 2);
+    if (enhanced_features1 & kFeatures1_RandomizerActive)
+      stumpy_done = Rando_IsLocationChecked(LOC_Stumpy);
+    if (stumpy_done) {
       sprite_graphics[k] = 3;
       sprite_ai_state[k] = 5;
     } else if (flute_level == 2) {
