@@ -245,3 +245,32 @@ receipt-side-effect bug surfaced in this pass.
 Archive-ready (audit-wise), contingent on the one outstanding Ether/Bombos non-medallion
 tablet playtest. Logic graph (prior audit) + runtime fixes (this pass) are sound; corpus
 is byte-identical and Inverted generation is deterministic per the headless run above.
+
+---
+
+## Fresh-eyes audit — 2026-06-02 (round 2, runtime hooks)
+
+A supplementary read-only pass focused on the Inverted *runtime* hooks (the prior
+12.2/15.2 audit covered the logic graph + a first runtime pass). Read all three
+`inverted_*.c`, every Inverted-gated hook in `overworld.c`/`player.c`/`misc.c`/
+`ancilla.c`, the death/S&Q respawn flow, and cross-checked load-bearing values against
+`z3randomizer/darkworldspawn.asm` + `Rom.php setInvertedMode`. **0 HIGH** — "markedly
+more complete and internally consistent than a typical first-pass; non-rando paths
+byte-identical." Detail + ready notes below. All findings
+sit in the deliberately-divergent DW-cave/exit-topology layer (no static oracle):
+
+- **IV1 (MED)** — `inverted_entrances.c:46-103` DM-cave exit-data rows transcribed from
+  ALTTPR's *relocated* (pyramid→HC) topology the fork did not adopt → swapped DM caves may
+  exit to the wrong screen. VERIFY=PLAYTEST.
+- **IV2 (MED)** — `overworld.c:2235-2236` force-opens the TR front overworld entrance on any
+  arrival at DW screen 0x47 (reachable early), not on tail access → sequence break. VERIFY=PLAYTEST.
+- **IV3 (MED, softlock potential)** — the DW→LW "way out" assumes the added type-`0x82` secret
+  reveals tile `0x212` whose tile-type triggers a world warp; unconfirmed. If false, mirror-to-LW
+  + lift-return-rock can't cross back = hard softlock. VERIFY=PLAYTEST FIRST.
+- **IV4/IV5 (LOW)** — escape respawn → LW Sanctuary; Houlihan fall-hole fallback hardcodes LW.
+  Both Mirror-recoverable, not fatal.
+
+Verified correct (this pass): Magic-Mirror direction flip + portal recording; all bunny
+away-world flips; death-respawn world fix (matches `DoWorldFix_Inverted`); flute Inverted
+gate + weathervane pre-gate; mirror-portal vortex flip; cross-world dungeon-exit fixup; GT/AT
+swap rooms (`0x00e0`/`0x000c`, match `Rom.php:1623-1624`); `InvertedSecrets_Install` bounds-safe.

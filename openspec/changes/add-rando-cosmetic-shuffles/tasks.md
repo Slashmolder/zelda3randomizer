@@ -6,7 +6,7 @@
 
 ## 1. Apply-time pre-flight (grounding)
 
-- [ ] 1.1 Pin upstream `../alttp_vt_randomizer/` commit hash + `../z3randomizer/` (asm) hash in `audit.md §"Cosmetic provenance"`. Note: ALTTPR palette transforms are JS-patcher, NOT PHP — the asm/JS are reference only; the fork re-implements transforms in C.
+- [x] 1.1 Pin upstream `../alttp_vt_randomizer/` commit hash + `../z3randomizer/` (asm) hash in `audit.md §"Cosmetic provenance"`. Note: ALTTPR palette transforms are JS-patcher, NOT PHP — the asm/JS are reference only; the fork re-implements transforms in C. <!-- 2026-06-02: alttp_vt @219fcafd, z3randomizer @dcb0a2b; recorded in audit.md. -->`
 - [x] 1.2 ZSPR loader entry path confirmed: `LoadLinkGraphics` → `ParseLinkGraphics` (`main.c`), driven by `g_config.link_graphics`. The folder-pick feeds the same path.
 - [x] 1.3 Palette-load sites: superseded by a single chokepoint — `nmi.c:211` is the *only* flush of `main_palette_buffer` → PPU CGRAM. Transform there (on the CGRAM copy), not per load site.
 - [x] 1.4 **Music chokepoint spike**: `ZeldaPlayMsuAudioTrack` (`audio.c:137`) is the single point a song reaches both MSU and the SPC `APUI00`. `nmi.c:116` stored the original id in `last_music_control` first, so remapping here leaves game-facing state vanilla. Control codes = `& 0xf0 == 0xf0`.
@@ -56,27 +56,27 @@
 
 ## 7. CI + determinism
 
-- [ ] 7.1 Add a cosmetic-determinism CI step: fixed `cosmetic_seed` → identical palette transform output hash + sprite index + song permutation across builds (mirrors the hint-determinism step). NO corpus regen.
+- [x] 7.1 Add a cosmetic-determinism CI step: fixed `cosmetic_seed` → identical palette transform output hash + sprite index + song permutation across builds (mirrors the hint-determinism step). NO corpus regen. <!-- 2026-06-02: `Cosmetic_SelfCheck` added to `Rando_RunAllSelfChecks`, mirroring `Hints_SelfCheck`. CI already runs `--rando-selftest` (rando_ci.yaml:184), so this is gated on every push/PR. Asserts: fixed seed → identical group-perm + song tables (within-run determinism), config-seed==0→slot-seed fallback equivalence, seed-sensitivity, song-map band bijection, group-perm range. Sprite INDEX is excluded (folder/IO-dependent); its cross-platform determinism is handled by the C1 byte-wise sort fix. No corpus regen; no kGen bump. -->`
 - [x] 7.2 Default-settings `placement_digest_hex` byte-identical pre/post — **confirmed** (corpus 67/67 OK).
 - [x] 7.3 `check_audit_guard.py --strict` + `check_determinism.py` green (no new writes; no `rand`/`time`; uses `Rng_*` only).
 
 ## 8. Audit
 
-- [ ] 8.1 Fresh-eyes audit per `[[cluster-audit-cadence]]` after authoring lands; document in `audit.md`, address every HIGH.
+- [x] 8.1 Fresh-eyes audit per `[[cluster-audit-cadence]]` after authoring lands; document in `audit.md`, address every HIGH. <!-- 2026-06-02: audit done, 0 HIGH. Findings C1-C4 in audit.md §"Fresh-eyes audit"; C1 (non-ASCII sprite-sort determinism) fixed in-branch; C2-C4 deferred to playtest/spec follow-ups. -->`
 - [ ] 8.2 Confirm no axis-off path diverges from vanilla rendering (RAM/PPU compare clean for vanilla + each-axis-off).
 
 ## 9. Documentation
 
-- [ ] 9.1 Add a "Cosmetics" section to `docs/randomizer.md`: the 4 INI keys, the `CosmeticSeed=0`→slot-seed default, tournament decoupling, and the out-of-scope list.
+- [x] 9.1 Add a "Cosmetics" section to `docs/randomizer.md`: the 4 INI keys, the `CosmeticSeed=0`→slot-seed default, tournament decoupling, and the out-of-scope list. <!-- 2026-06-02: added after the Hints section. -->`
 - [x] 9.2 `openspec/changes/README.md` D1 row updated (effort revised; no kGen bump; client-config not slot-field).
 
 ## 10. Playtest
 
-- [ ] 10.1 Each palette mode renders correctly across overworld / dungeon / HUD; legible.
-- [ ] 10.2 Sprite shuffle picks a sprite from a folder; same `CosmeticSeed` → same sprite.
-- [ ] 10.3 Music shuffle remaps area music; same `CosmeticSeed` → same remap; MSU pack still plays.
-- [ ] 10.4 Tournament check: two runs, same `share_string`, different `CosmeticSeed` → identical gameplay, distinct look.
-- [ ] 10.5 All axes off → indistinguishable from vanilla.
+- [x] 10.1 Each palette mode renders correctly across overworld / dungeon / HUD; legible. <!-- owner playtest-confirmed 2026-06-02 -->
+- [x] 10.2 Sprite shuffle picks a sprite from a folder; same `CosmeticSeed` → same sprite. <!-- owner playtest-confirmed 2026-06-02 -->
+- [x] 10.3 Music shuffle remaps area music; same `CosmeticSeed` → same remap; MSU pack still plays. <!-- owner playtest-confirmed 2026-06-02 -->
+- [x] 10.4 Tournament check: two runs, same `share_string`, different `CosmeticSeed` → identical gameplay, distinct look. <!-- owner playtest-confirmed 2026-06-02 ("tested these we're good") -->
+- [x] 10.5 All axes off → indistinguishable from vanilla. <!-- owner playtest-confirmed 2026-06-02 -->
 
 ## 11. Archive readiness
 

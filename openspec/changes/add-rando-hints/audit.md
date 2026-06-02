@@ -6,6 +6,25 @@ checkout). Per `CLAUDE.md` "Claim-grounding discipline": source over memory.
 
 ---
 
+## Hint provenance (task 1.1)
+
+The generation algorithm (`design.md §3`, the 6-step `HintService.applyHints`) was
+grounded against the ALTTPR PHP `app/Services/HintService.php`. Pinned upstream,
+verified present as a sibling checkout and `git rev-parse`'d on 2026-06-02:
+
+| Upstream | Role | Pinned commit | Date |
+|---|---|---|---|
+| `../alttp_vt_randomizer/` (PHP) | `HintService.php` (15-tile algorithm), `Text.php` hint strings, `strings/hint.txt` joke pool | `219fcafd029dab597b8db400efafd8f56f8b4edb` | 2024-02-18 |
+
+Note: the fork's implementation deliberately diverges from the 6-step PHP pool
+(no GT-BigKey / Pegasus-Boots pins, no joke-hint fallback; a junk-filtered
+Fisher-Yates over a telepathic-tile pool + Murahdahla on Triforce/Ganon hunt) —
+see task 3.1's `done-differently` note. The pin records the *reference upstream
+the design grounded against*, not a byte-for-byte port target. Determinism is
+self-consistency (same `seed_u64` → same hints), per `design.md D6`.
+
+---
+
 ## Vanilla NPC hint redirects
 
 **Task 1.5 deliverable.** A subset of vanilla NPC dialogue spoils the *vanilla*
@@ -56,16 +75,19 @@ lower-priority redirect targets; handler lines flagged for apply-time confirmati
 ### Excluded — telepathic tiles (already handled by the runtime intercept)
 
 Per `specs/randomizer-hints/spec.md`, the shipped intercept
-(`Rando_RenderHintMessage` / `Rando_IsHintTileMessage`) acts on tele-tile message
-ids `0xB5, 0xB8..0xC7` (= 181, 184..199) ONLY. Those are NOT vanilla-NPC redirect
-targets — they are replaced wholesale by generated tile hints. Notable members
-that *look* like item+location spoilers but fall in (or adjacent to) this range:
+(`Rando_RenderHintMessage` / `Rando_IsHintTileMessage`) acts on the 15 tele-tile
+message ids in `kHintTileMsgIds[]` (`0xB4,0xB5,0xB8..0xBB,0xBE..0xC6`; 0xB4 the
+Eastern Palace tile IS included, 0xC7 the Chris Houlihan room is excluded) ONLY.
+Those are NOT vanilla-NPC redirect targets — they are replaced wholesale by
+generated tile hints. Notable members that *look* like item+location spoilers but
+fall in (or adjacent to) this range:
 
 - **182 (0xB6)** "An orb known as the Moon Pearl is in this tower" — edge case:
-  0xB6 is *between* `0xB5` and `0xB8..0xC7`, so it is **not** in the intercepted
+  0xB6 is *between* `0xB5` and `0xB8..0xBB`, so it is **not** in the intercepted
   set. If 182 renders in-game as a Moon-Pearl-location spoiler, it is an NPC-class
   line, not a tele-tile — re-evaluate at apply-time. (Flagged, not resolved.)
-- 185–199 (0xB9–0xC7): Sahasrahla/Zelda tele-tile hints — handled.
+- 0xB8..0xBB + 0xBE..0xC6: Sahasrahla/Zelda tele-tile hints — handled. (0xBC,
+  0xBD, and 0xC7 are NOT tiles and are not intercepted.)
 
 ### Excluded — fortune-teller NPC (distinct hint dispatcher, RNG flavor)
 
@@ -92,3 +114,27 @@ NPC-redirect table above. Flagged for a future design decision.
 4. The §4 dynamic-dialogue-ID rewrite itself (replacing the *location-referencing
    portion* with the randomized `LOC_*`) remains DEFERRED per
    `specs/randomizer-hints/spec.md` "Vanilla NPC hint redirects (DEFERRED)".
+
+---
+
+## Fresh-eyes audit — 2026-06-02 (task 9.3)
+
+Read-only fresh-eyes pass over `rando_hints.{c,h}`, the hint-NPC dispatch in
+`sprite_main.c`, and `rando_hints_panel.cpp`. **No HIGH.** Hint determinism, buffer
+sizing, race-mode panel suppression, hints-off→vanilla fallback, and dynamic
+dialogue-ID non-collision all verified sound. Findings (detail + ready patches below):
+
+- **MED — Storyteller subtype-4 (msg `0x103`) shows vanilla text, not a hint.**
+  `hint_npc_for_msg` (`rando_hints.c:489`) misses `0x103`. One-line fix
+  (`|| msg_id == 0x103u`). VERIFY=PLAYTEST.
+- **MED — tile-id set doc drift.** `kHintTileMsgIds[]` (`rando_hints.c:374`, 0xB4 in /
+  0xC7 out) disagrees with the header docstring + `design.md:6` (0xB5..0xC7). Code is
+  correct/internally-consistent; reconcile the docs. VERIFY=PLAYTEST (one 0xB4 read).
+- **LOW — fortune-teller world discriminator** uses byte-truthiness vs the sprite's
+  `>>6&1` (`rando_hints.c:495`); diverges only on the cross-world-exit value 1. VERIFY=PLAYTEST.
+- **LOW — `Hints_SelfCheck`** reuses one table; doesn't exercise entry-order stability
+  (order-stability separately verified to hold). VERIFY=BUILD.
+- **LOW — Murahdahla `:` glyph** maps to none (harmless; spoiler-only today). VERIFY=PLAYTEST if NPC wired.
+
+Disposition: 0 HIGH to address before archive; MED/LOW dispositions tracked in the
+report. Task 12.3 (findings addressed) stays open pending the M2/M3/L3 decisions.

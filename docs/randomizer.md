@@ -248,6 +248,37 @@ reveal stamp is over the full canonical JSON, the race-mode corpus entries
 (including a Triforce-Hunt variant that exercises the Murahdahla path) assert hint
 determinism: a drift in regenerated hint text fails the reveal round-trip.
 
+## Cosmetics
+
+Cosmetic shuffles (palette / sprite / music) are **client-local presentation**
+settings, deliberately kept *outside* the seed. They never touch the placement
+table, share string, `settings_hash`, or any canonical serialization — so they
+cause **no `kGeneratorVersion` bump and no corpus change**, and two players on the
+same `share_string` with different cosmetics play a byte-identical game that merely
+*looks* different (the tournament-decoupling property). Each axis defaults OFF, so
+an unopted run — rando or vanilla — is byte-identical to the original game (the
+RAM/PPU compare stays clean).
+
+They are configured via `zelda3.ini` (the normative source; the PC native settings
+window has a convenience "Cosmetics" tab that writes the same keys):
+
+| Key | Section | Values | Meaning |
+|---|---|---|---|
+| `CosmeticSeed` | `[Graphics]` | u64 (accepts `0x…`); default `0` | Seeds the cosmetic RNG. **`0` ⇒ derive from the active slot's `seed_u64`** (a fresh user still gets a shuffled-but-reproducible look); any non-zero value overrides. |
+| `PaletteShuffle` | `[Graphics]` | `vanilla` \| `shuffled` \| `grayscale` \| `negative` (default `vanilla`) | BGR555 CGRAM transform applied after the vanilla palette flush. `shuffled` = per-16-color-group channel permutation; `grayscale` = luma collapse; `negative` = per-channel complement. |
+| `SpriteShuffle` | `[Graphics]` | `off` \| `<folder>` (default `off`) | Deterministically picks one `.zspr` from the folder (filenames sorted with a locale-independent ASCII comparator so the pick is identical on every platform) and feeds it to the existing ZSPR loader. Resolved at launch. |
+| `MusicShuffle` | `[Sound]` | `off` \| `on` (default `off`) | Remaps area background songs (band `[0x01,0x0F]`) via a Fisher-Yates bijection — no song is silenced or duplicated; control codes and out-of-band ids pass through. Game-facing music state is unchanged; only the audible output differs. MSU-1 keys off the remapped id. |
+
+The cosmetic RNG is a **separate stream** from the placement/fill RNG, so cosmetics
+can never perturb generation. Determinism (same effective seed ⇒ identical look on
+every platform) is asserted in CI by `Cosmetic_SelfCheck` (part of
+`--rando-selftest`).
+
+**Out of scope** (tracked elsewhere or deferred): gimmick palette modes
+(dizzy/sick/puke/blackout — need per-frame animated transforms); heart color /
+heart-beep / menu speed / quickswap (cosmetic *setters*, not shuffles — a separate
+QoL change); enemy/enemizer shuffle (gameplay — `add-rando-shuffles-and-minigames`).
+
 ## Tracker windows (PC)
 
 On PC (behind `Z3R_NATIVE_SETTINGS_WINDOW`, the same gate as the native settings

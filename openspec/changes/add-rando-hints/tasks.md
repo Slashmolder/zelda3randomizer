@@ -19,7 +19,7 @@
 
 ## 1. Apply-time pre-flight
 
-- [ ] 1.1 Pin upstream commit hash of `../alttp_vt_randomizer/`. Record in `audit.md §"Hint provenance"`.
+- [x] 1.1 Pin upstream commit hash of `../alttp_vt_randomizer/`. Record in `audit.md §"Hint provenance"`. <!-- 2026-06-02: @219fcafd, recorded in audit.md §"Hint provenance". -->`
 - [ ] 1.2 Grep `src/messaging.c` for the highest currently-used dialogue ID. Carve a dynamic range above it per design.md D2; record in `audit.md §"Hint dialogue ID range"`.
 - [ ] 1.3 Verify hint NPC sprite handler locations in `src/sprite_main.c`: Sahasrahla telepathic, storyteller (which shrine?), bookshelf interaction handler, Murahdahla.
 - [ ] 1.4 Verify per-dialogue text buffer length in `src/messaging.c`. Hint text generator must fit within this cap.
@@ -129,7 +129,7 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 - [x] 9.1 Run `assets/scripts/check_audit_guard.py`. <!-- done (2026-06-01): --strict green; no non-exempt writes. The hint module writes only g_hint_table (module-static) + the messaging buffer, neither tracked. -->
 - [x] 9.2 Run `assets/scripts/check_determinism.py`. <!-- done: green; the module uses Rng_* only, no rand/time/htobe*. -->
-- [ ] 9.3 Fresh-eyes audit per memory `[[cluster-audit-cadence]]` post-translation.
+- [x] 9.3 Fresh-eyes audit per memory `[[cluster-audit-cadence]]` post-translation. <!-- 2026-06-02: done, 0 HIGH; findings in audit.md §"Fresh-eyes audit — 2026-06-02". 12.3 (findings addressed) stays open pending M2/M3/L3 playtest decisions. -->`
 
 ## 10. Documentation
 

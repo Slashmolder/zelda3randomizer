@@ -103,7 +103,9 @@ typedef enum RandoHintsMode {
 // `Text_LoadCharacterBuffer` calls `Rando_RenderHintMessage`, which replaces
 // the vanilla tile text in place when the requested `dialogue_message_index`
 // is one of the 15 vanilla telepathic-tile message IDs (`kHintTileMsgIds`,
-// 0xB5..0xC7). `Rando_IsHintDialogueId` / `Rando_RemapTeleMsg` are vestigial
+// 0xB4,0xB5,0xB8..0xBB,0xBE..0xC6 — 0xB4 IS the Eastern Palace tile and is
+// included; 0xC7 = Chris Houlihan room and is excluded; see the array's comment
+// in rando_hints.c). `Rando_IsHintDialogueId` / `Rando_RemapTeleMsg` are vestigial
 // from the original carve design and are not used at runtime.
 // ---------------------------------------------------------------------------
 #define kRandoHintDialogueBase  0x200u
@@ -185,7 +187,8 @@ void Rando_ClearHints(void);
 // ---------------------------------------------------------------------------
 
 // True when `msg_id` is one of the 15 hint-bearing vanilla telepathic-tile
-// message ids above (0xB4 generic-default excluded). Pure predicate; does
+// message ids above (0xB4 the Eastern Palace tile IS included; 0xC7 the Chris
+// Houlihan room is excluded). Pure predicate; does
 // NOT consult the active hint table or rando-active state.
 bool Rando_IsHintTileMessage(uint16 msg_id);
 

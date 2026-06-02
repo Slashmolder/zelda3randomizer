@@ -49,3 +49,24 @@ medallion playtest landing and (b) NOT archiving while race-mode-reveal's entran
 interaction is unfixed (otherwise a documented-supported race+entrance seed is
 un-revealable). Stage 4 / Insanity remains correctly out of scope. No new code bugs
 found at the audited stage.
+
+---
+
+## Fresh-eyes audit — 2026-06-02 (re §3.3 audit portion)
+
+Read-only fresh-eyes pass over `shuffle_entrance.{c,h}`, `inverted_entrances.{c,h}`,
+and the `overworld.c`/`dungeon.c`/`player.c` entrance hooks. Detail + patches below.
+
+- **Medallion gate (task 2.8) — CLEARED, not a bug.** Traced runtime + model: the
+  MM/TR medallion carves the door via a screen-index ancilla independent of the
+  entrance overlay; the edge-override re-keys `OP_MEDALLION_OPENS` to the source spot
+  in both shuffle directions. Model and runtime agree. (One confirming playtest still
+  nice, but no code change indicated.)
+- **HIGH — dungeon-decoupled one-way exit stranding** (`shuffle_entrance.c:802`).
+  In the **deferred** Insanity/decoupled mode only: destination remap can drop Link at
+  a gated-to-leave spot (Ice Palace island) with no logic edge, so the accessibility
+  gate can't reject. Fix = directed overworld→overworld warp edge (NOT lobby→entry,
+  which was the previously-reverted HIGH). Leave with the deferred Insanity work. VERIFY=PLAYTEST.
+- **LOW — cross-pool GT eligibility** relies on GT's inbound count, not the
+  `shuffle_ganons_tower_entrance` opt-in (latent). VERIFY=BUILD.
+- **LOW — `Entrance_SelfCheck`** doesn't assert interior (lobby) key distinctness (latent). VERIFY=BUILD.
