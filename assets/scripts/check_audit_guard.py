@@ -242,6 +242,79 @@ def is_consumption_or_arithmetic(line: str) -> bool:
     return bool(re.search(r"\b(?:link_item_bombs|link_num_arrows)\s*(?:--|-=)", line))
 
 
+def strip_comments(lines: list[str]) -> list[str]:
+    """Blank out C comments so the write-detection regexes never fire on prose.
+
+    The write regexes (``WRITE_RE`` / ``BOTTLE_WRITE_RE`` / the raw-offset
+    regex) match anywhere on a line, including inside ``//`` and ``/* */``
+    comments. An explanatory comment that happens to contain a tracked-cell
+    token followed by ``=`` — e.g. ``// the bird ancilla sets link_item_flute=3``
+    — would otherwise be misread as an un-dispatched write and fail the guard.
+    (That is exactly the false positive the Stumpy-gate comment in
+    ``sprite_main.c`` tripped, turning the strict CI job red on a comment-only
+    change.) Comment bytes are replaced with spaces, length preserved, so the
+    write regexes see only real code.
+
+    Returns a parallel list of comment-free lines. Block-comment (``/* */``)
+    state carries across lines; string / char literal state resets per line
+    (a C string literal does not span a raw newline). NOTE: exemption
+    detection (``is_exempted``) still runs on the ORIGINAL lines, because the
+    ``// rando-exempt:`` marker itself lives in a comment.
+    """
+    out: list[str] = []
+    in_block = False
+    for line in lines:
+        res: list[str] = []
+        i, n = 0, len(line)
+        in_str = in_chr = False
+        while i < n:
+            c = line[i]
+            two = line[i:i + 2]
+            if in_block:
+                if two == "*/":
+                    in_block = False
+                    res.append("  ")
+                    i += 2
+                else:
+                    res.append(" ")
+                    i += 1
+                continue
+            if in_str:
+                res.append(c)
+                if c == "\\" and i + 1 < n:
+                    res.append(line[i + 1]); i += 2; continue
+                if c == '"':
+                    in_str = False
+                i += 1
+                continue
+            if in_chr:
+                res.append(c)
+                if c == "\\" and i + 1 < n:
+                    res.append(line[i + 1]); i += 2; continue
+                if c == "'":
+                    in_chr = False
+                i += 1
+                continue
+            # Not currently inside a literal or block comment.
+            if two == "//":
+                res.append(" " * (n - i))
+                break
+            if two == "/*":
+                in_block = True
+                res.append("  ")
+                i += 2
+                continue
+            if c == '"':
+                in_str = True
+                res.append(c); i += 1; continue
+            if c == "'":
+                in_chr = True
+                res.append(c); i += 1; continue
+            res.append(c); i += 1
+        out.append("".join(res))
+    return out
+
+
 def scan_file(path: Path, raw_re: re.Pattern[str] | None) -> list[tuple[int, str, str]]:
     """Return [(lineno, line, reason)] for each tracked write site found.
 
@@ -259,13 +332,17 @@ def scan_file(path: Path, raw_re: re.Pattern[str] | None) -> list[tuple[int, str
         print(f"warning: cannot read {path}: {exc}", file=sys.stderr)
         return []
     lines = text.splitlines()
+    # Match the write regexes against comment-free code only; report and run
+    # exemption/dispatch context detection against the original lines.
+    code_lines = strip_comments(lines)
     hits: list[tuple[int, str, str]] = []
     for idx, line in enumerate(lines):
-        if is_consumption_or_arithmetic(line):
+        code = code_lines[idx]
+        if is_consumption_or_arithmetic(code):
             continue
-        sym_match = WRITE_RE.search(line)
-        bottle_match = BOTTLE_WRITE_RE.search(line) if not sym_match else None
-        raw_match = raw_re.search(line) if (raw_re is not None and not sym_match and not bottle_match) else None
+        sym_match = WRITE_RE.search(code)
+        bottle_match = BOTTLE_WRITE_RE.search(code) if not sym_match else None
+        raw_match = raw_re.search(code) if (raw_re is not None and not sym_match and not bottle_match) else None
         match = sym_match or bottle_match or raw_match
         if not match:
             continue
