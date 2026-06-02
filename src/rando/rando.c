@@ -2940,6 +2940,7 @@ void Rando_RunAllSelfChecks(void) {
   TextField_SelfCheck();
   Hints_SelfCheck();
   Entrance_SelfCheck();
+  Cosmetic_SelfCheck();
   Rando_TrackerSelfCheck();
   Rando_StartingInventorySelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");

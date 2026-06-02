@@ -54,4 +54,11 @@ const char *Cosmetic_PickSpriteFile(void);
 // audible SPC/MSU output changes.
 uint8 Cosmetic_RemapSong(uint8 music_ctrl);
 
+// Determinism + structural self-check (called from Rando_RunAllSelfChecks; aborts
+// on failure). Asserts: a fixed seed yields identical derived tables across calls;
+// config_cosmetic_seed==0 resolves to the slot seed; the seed actually drives the
+// output; the song map is a band bijection (identity outside the band); and every
+// group permutation index is in range. The cosmetic-determinism CI net (task 7.1).
+void Cosmetic_SelfCheck(void);
+
 #endif  // ZELDA3_RANDO_SHUFFLE_COSMETIC_H_

@@ -5,11 +5,8 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>   // FindFirstFileA / FindNextFileA
-#define cosmetic_stricmp _stricmp
 #else
 #include <dirent.h>
-#include <strings.h>   // strcasecmp
-#define cosmetic_stricmp strcasecmp
 #endif
 
 #include "shuffle_cosmetic.h"
@@ -35,12 +32,28 @@ static uint8  g_song_map[256];    // identity outside [lo,hi]; bijection within
 static uint64 g_eff_seed;         // effective cosmetic seed (for the sprite pick)
 static bool   g_tables_ready;
 
+// Portable, locale-independent ASCII case-insensitive compare. The sprite-folder
+// sort below MUST be locale-independent: POSIX strcasecmp / Win32 _stricmp
+// collate non-ASCII filename bytes differently across platforms and locales,
+// which would make the same cosmetic_seed pick a different .zspr on different
+// machines — breaking the determinism contract (same seed -> same sprite). Only
+// ASCII A-Z is folded; all other bytes compare verbatim.
+static int cosmetic_ascii_stricmp(const char *a, const char *b) {
+  for (;; a++, b++) {
+    unsigned char ca = (unsigned char)*a, cb = (unsigned char)*b;
+    if (ca >= 'A' && ca <= 'Z') ca += 32;
+    if (cb >= 'A' && cb <= 'Z') cb += 32;
+    if (ca != cb) return (int)ca - (int)cb;
+    if (ca == 0) return 0;
+  }
+}
+
 uint8 Cosmetic_ParsePaletteMode(const char *s) {
   if (!s) return kCosmeticPalette_Vanilla;
-  if (!cosmetic_stricmp(s, "shuffled"))  return kCosmeticPalette_Shuffled;
-  if (!cosmetic_stricmp(s, "grayscale") || !cosmetic_stricmp(s, "greyscale"))
+  if (!cosmetic_ascii_stricmp(s, "shuffled"))  return kCosmeticPalette_Shuffled;
+  if (!cosmetic_ascii_stricmp(s, "grayscale") || !cosmetic_ascii_stricmp(s, "greyscale"))
     return kCosmeticPalette_Grayscale;
-  if (!cosmetic_stricmp(s, "negative") || !cosmetic_stricmp(s, "invert"))
+  if (!cosmetic_ascii_stricmp(s, "negative") || !cosmetic_ascii_stricmp(s, "invert"))
     return kCosmeticPalette_Negative;
   return kCosmeticPalette_Vanilla;  // "vanilla", "off", unknown
 }
@@ -110,11 +123,11 @@ uint8 Cosmetic_RemapSong(uint8 music_ctrl) {
 
 static bool HasZsprExt(const char *name) {
   size_t n = strlen(name);
-  return n > 5 && !cosmetic_stricmp(name + n - 5, ".zspr");
+  return n > 5 && !cosmetic_ascii_stricmp(name + n - 5, ".zspr");
 }
 
 static int CompareNames(const void *a, const void *b) {
-  return cosmetic_stricmp(*(const char *const *)a, *(const char *const *)b);
+  return cosmetic_ascii_stricmp(*(const char *const *)a, *(const char *const *)b);
 }
 
 const char *Cosmetic_PickSpriteFile(void) {
@@ -168,4 +181,75 @@ const char *Cosmetic_PickSpriteFile(void) {
   for (int i = 0; i < count; i++) free(names[i]);
   free(names);
   return result;
+}
+
+// --- Determinism + structural self-check -------------------------------------
+
+void Cosmetic_SelfCheck(void) {
+  const uint64 kSeed = 0x0123456789ABCDEFull;
+  uint8 perm_a[16], song_a[256];
+  Cosmetic_SetSeed(kSeed, 0);
+  memcpy(perm_a, g_group_perm, sizeof perm_a);
+  memcpy(song_a, g_song_map, sizeof song_a);
+
+  // (1) Within-run determinism: the same effective seed rebuilds identical tables.
+  Cosmetic_SetSeed(kSeed, 0);
+  if (memcmp(perm_a, g_group_perm, sizeof perm_a) != 0 ||
+      memcmp(song_a, g_song_map, sizeof song_a) != 0) {
+    fprintf(stderr, "Cosmetic_SelfCheck: non-deterministic tables for a fixed seed.\n");
+    abort();
+  }
+
+  // (2) config_cosmetic_seed==0 falls back to the slot seed: SetSeed(0, S) must
+  // equal SetSeed(S, 0). Guards the seed-resolution in Cosmetic_SetSeed.
+  Cosmetic_SetSeed(0, kSeed);
+  if (memcmp(perm_a, g_group_perm, sizeof perm_a) != 0 ||
+      memcmp(song_a, g_song_map, sizeof song_a) != 0) {
+    fprintf(stderr, "Cosmetic_SelfCheck: config-seed==0 did not resolve to the slot seed.\n");
+    abort();
+  }
+
+  // (3) The seed actually drives the output (guards a 'seed never wired' /
+  // stuck-identity regression). A different seed must change at least one table;
+  // the chance both 16 group perms AND the 15-element band permutation collide
+  // for two distinct seeds is astronomically small.
+  Cosmetic_SetSeed(~kSeed, 0);
+  if (memcmp(perm_a, g_group_perm, sizeof perm_a) == 0 &&
+      memcmp(song_a, g_song_map, sizeof song_a) == 0) {
+    fprintf(stderr, "Cosmetic_SelfCheck: tables are seed-insensitive.\n");
+    abort();
+  }
+
+  // (4) Song map is a bijection within [lo,hi] and identity outside — no song
+  // silenced or duplicated.
+  Cosmetic_SetSeed(kSeed, 0);
+  bool seen[256];
+  memset(seen, 0, sizeof seen);
+  for (int i = 0; i < 256; i++) {
+    uint8 m = g_song_map[i];
+    if (i >= kCosmeticSongLo && i <= kCosmeticSongHi) {
+      if (m < kCosmeticSongLo || m > kCosmeticSongHi) {
+        fprintf(stderr, "Cosmetic_SelfCheck: song map sent in-band id %d out of band.\n", i);
+        abort();
+      }
+      if (seen[m]) {
+        fprintf(stderr, "Cosmetic_SelfCheck: song map is not a bijection (dup %d).\n", m);
+        abort();
+      }
+      seen[m] = true;
+    } else if (m != (uint8)i) {
+      fprintf(stderr, "Cosmetic_SelfCheck: song map perturbed out-of-band id %d.\n", i);
+      abort();
+    }
+  }
+
+  // (5) Every group permutation index is a valid PermuteChannels selector (0..5).
+  for (int i = 0; i < 16; i++) {
+    if (g_group_perm[i] > 5) {
+      fprintf(stderr, "Cosmetic_SelfCheck: group perm %d out of range (%d).\n", i, g_group_perm[i]);
+      abort();
+    }
+  }
+
+  fprintf(stderr, "[Cosmetic_SelfCheck] OK\n");
 }
