@@ -6731,11 +6731,26 @@ void Sprite_HeartContainer(int k) {  // 85ef47
     boss_loc = Rando_GetBossHeartLocation(BYTE(cur_palace_index_x2) >> 1);
   }
   if (sprite_A[k]) {
-    item_receipt_method = 2;
     uint8 lttp_code = 0x3e;
     if (boss_loc != 0xFFFFu) {
       lttp_code = Rando_DispatchVanillaGrant(boss_loc, ITEM_BossHeartContainer, lttp_code);
     }
+    // rando (bossHeartsInPool / item shuffle): the boss-heart slot can hold an
+    // arbitrary item. item_receipt_method=2 produces a step-2 receipt, and
+    // Ancilla22_ItemReceipt only clears flag_is_link_immobilized for the
+    // self-clearing heart code 0x3e — every other code relies on the
+    // `ancilla_step != 2` path, which a step-2 receipt skips. So a non-heart
+    // item granted here leaves Link permanently immobilized while the falling
+    // prize rests unreachable on the floor -> SOFTLOCK (confirmed via F12 dump:
+    // immobilized, capacity unchanged, FallingPrize ancilla parked at step 2).
+    // Vanilla pairs method 2 only with 0x3e; preserve that invariant by routing
+    // any other placed item through the standard method-0 receive (clears
+    // immobilize via the step!=2 path), exactly like the non-boss branch below.
+    // Vanilla play is unchanged: boss_loc is 0xFFFF when rando is inactive, so
+    // lttp_code stays 0x3e and the method is still 2. Skip-receive items take
+    // no receipt at all (Rando_ShowDirectGrantConfirmation), so they never set
+    // immobilize. — PLAYTEST REQUIRED (slot grant path has no automated test).
+    item_receipt_method = (lttp_code == 0x3e) ? 2 : 0;
     Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     dung_savegame_state_bits |= 0x8000;
     return;
