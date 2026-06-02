@@ -1229,6 +1229,19 @@ void Entrance_SelfCheck(void) {
                 i, ikey);
         exit(2);
       }
+      // Interior (lobby) override keys must be mutually DISTINCT too. The
+      // edge-override is keyed on the interior region, so two dungeons sharing an
+      // interior key would silently double-set g_entrance_edge_override[key]
+      // (last-write-wins), corrupting one dungeon's destination. Today the lobbies
+      // are distinct by construction; assert it so a future logic edit can't
+      // reintroduce the drift. Mirrors the entry-region distinctness check above.
+      for (int j = i + 1; j < kEntranceDungeonCount; j++) {
+        if (Rando_FindRegionByName(dungeon_override_key(&kDungeons[j])) == iid) {
+          fprintf(stderr, "Entrance_SelfCheck: dungeons %d/%d share interior (lobby) "
+                          "override key '%s'\n", i, j, ikey);
+          exit(2);
+        }
+      }
     }
     // Pool count: base (10) without the GT opt-in, full (11) with it.
     RandoSettings ds; Settings_SetDefaults(&ds);
