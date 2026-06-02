@@ -17,7 +17,11 @@
 //   0x65d       kRam_RandoSlotActive     (1 byte) — 0 vanilla, 1 randomizer
 //   0x65e       kRam_RandoStartingInventoryGranted (1 byte) — once-per-slot gate
 //   0x65f       kRam_RandoTriforcePieceCount (1 byte) — Phase A TriforceHunt counter
-//   0x660-0x66f reserved                 (16 bytes forward-compat headroom)
+//   0x660       kRam_PreTemperSword      (1 byte) — rando: stash of Link's sword
+//                                         tier during smithy tempering, so the
+//                                         original is restored if the placed
+//                                         Blacksmith reward isn't a sword
+//   0x661-0x66f reserved                 (15 bytes forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
@@ -30,6 +34,7 @@ enum {
   kRam_RandoSlotActive = 0x65d,
   kRam_RandoStartingInventoryGranted = 0x65e,
   kRam_RandoTriforcePieceCount = 0x65f,
+  kRam_PreTemperSword = 0x660,
 };
 
 enum {

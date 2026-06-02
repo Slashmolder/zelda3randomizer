@@ -10742,9 +10742,19 @@ void Smithy_Main(int k) {  // 86b34e
       sprite_ai_state[sprite_E[k]] = 5;
       sprite_ai_state[k] = 5;
       flag_overworld_area_did_change = 0;
+      // Rando: stash the player's real sword tier so case 6 can hand it back if
+      // the placed Blacksmith reward turns out NOT to be a sword. Vanilla always
+      // gives an L3 sword here, so the 255 sentinel is always replaced; under
+      // item shuffle the reward is usually something else (only 4 swords vs
+      // hundreds of locations), which left the player permanently swordless.
+      // Guard `!= 0xFF` so re-entering tempering (e.g. left to fetch the hammer
+      // after paying) can't overwrite a valid stash with the sentinel.
+      if ((enhanced_features1 & kFeatures1_RandomizerActive) && link_sword_type != 0xFF)
+        g_ram[kRam_PreTemperSword] = link_sword_type;
       // rando-exempt: state-shuffle — smithy tempering transient: sword is
       // "taken away" (255 sentinel) for the duration of the upgrade. Cleared
-      // when case 6 "Smithy_GiveTemperedSword" grants the new tier. Not a
+      // when case 6 "Smithy_GiveTemperedSword" grants the new tier (or restores
+      // the stashed tier under rando when the reward isn't a sword). Not a
       // grant. (audit.md §0.2.2)
       link_sword_type = 255;
       sram_progress_indicator_3 |= 128;
@@ -10777,6 +10787,14 @@ void Smithy_Main(int k) {  // 86b34e
       }
       Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
+    // rando-exempt: state-shuffle — restore half of the smithy tempering
+    // transient. The dispatch above queues the placed reward's receipt; if that
+    // reward IS a sword it sets link_sword_type (now, or when the async receipt
+    // ancilla fires — which overwrites this), but if it is NOT a sword
+    // link_sword_type stays at the 255 sentinel set in case 3. Hand back the
+    // tier stashed there so tempering a non-sword reward no longer leaves Link
+    // permanently swordless. Not a grant. (audit.md §0.2.2)
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) && link_sword_type == 0xFF) link_sword_type = g_ram[kRam_PreTemperSword];
     sram_progress_indicator_3 &= ~0x80;
     break;
   case 7:  //
