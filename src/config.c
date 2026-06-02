@@ -19,6 +19,7 @@
 #include "util.h"
 #include "rando/rando_asset_decisions.h"  // Rando_RegisterAssetDecisionFromIni
 #include "rando/rando_settings.h"          // kSettingsCanonicalLen
+#include "rando/shuffle_cosmetic.h"        // Cosmetic_ParsePaletteMode
 #if !defined(_WIN32)
 #include <unistd.h>   // fsync
 #include <sys/stat.h> // mkdir
@@ -523,6 +524,16 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "DimFlashes")) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_DimFlashes);
+    } else if (StringEqualsNoCase(key, "PaletteShuffle")) {
+      g_config.cosmetic_palette_mode = Cosmetic_ParsePaletteMode(value);
+      return true;
+    } else if (StringEqualsNoCase(key, "SpriteShuffle")) {
+      g_config.cosmetic_sprite_dir =
+          (*value && !StringEqualsNoCase(value, "off")) ? value : NULL;
+      return true;
+    } else if (StringEqualsNoCase(key, "CosmeticSeed")) {
+      g_config.cosmetic_seed = (uint64)strtoull(value, NULL, 0);
+      return true;
     }
   } else if (section == 2) {
     if (StringEqualsNoCase(key, "EnableAudio")) {
@@ -554,6 +565,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "ResumeMSU")) {
       return ParseBool(value, &g_config.resume_msu);
+    } else if (StringEqualsNoCase(key, "MusicShuffle")) {
+      return ParseBool(value, &g_config.cosmetic_music_shuffle);
     }
   } else if (section == 3) {
     if (StringEqualsNoCase(key, "Autosave")) {
@@ -1136,10 +1149,12 @@ static const char *const kGfxKeys[] = {
   "WindowSize", "Fullscreen", "WindowScale", "NewRenderer", "EnhancedMode7",
   "IgnoreAspectRatio", "NoSpriteLimits", "LinearFiltering", "OutputMethod",
   "Shader", "LinkGraphics", "DimFlashes",
+  "PaletteShuffle", "SpriteShuffle", "CosmeticSeed",  // cosmetic shuffles (local)
 };
 static const char *const kSndKeys[] = {
   "EnableAudio", "AudioFreq", "AudioChannels", "AudioSamples", "EnableMSU",
   "MSUPath", "MSUVolume", "ResumeMSU",
+  "MusicShuffle",  // cosmetic music shuffle (local)
 };
 static const char *const kGenKeys[] = {
   "Autosave", "ExtendedAspectRatio", "DisplayPerfInTitle", "DisableFrameDelay",
@@ -1218,6 +1233,14 @@ static bool RenderManagedValue(int section, const char *key, char *out, size_t c
     else if (StringEqualsNoCase(key, "Shader")) snprintf(out, cap, "%s", g_config.shader ? g_config.shader : "");
     else if (StringEqualsNoCase(key, "LinkGraphics")) snprintf(out, cap, "%s", g_config.link_graphics ? g_config.link_graphics : "");
     else if (StringEqualsNoCase(key, "DimFlashes")) snprintf(out, cap, "%s", (g_config.features0 & kFeatures0_DimFlashes) ? "true" : "false");
+    else if (StringEqualsNoCase(key, "PaletteShuffle")) {
+      uint8 m = g_config.cosmetic_palette_mode;
+      snprintf(out, cap, "%s", m == kCosmeticPalette_Shuffled ? "shuffled"
+                               : m == kCosmeticPalette_Grayscale ? "grayscale"
+                               : m == kCosmeticPalette_Negative ? "negative" : "vanilla");
+    }
+    else if (StringEqualsNoCase(key, "SpriteShuffle")) snprintf(out, cap, "%s", g_config.cosmetic_sprite_dir ? g_config.cosmetic_sprite_dir : "off");
+    else if (StringEqualsNoCase(key, "CosmeticSeed")) snprintf(out, cap, "%llu", (unsigned long long)g_config.cosmetic_seed);
     else return false;
     return true;
   }
@@ -1236,6 +1259,7 @@ static bool RenderManagedValue(int section, const char *key, char *out, size_t c
     } else if (StringEqualsNoCase(key, "MSUPath")) snprintf(out, cap, "%s", g_config.msu_path ? g_config.msu_path : "");
     else if (StringEqualsNoCase(key, "MSUVolume")) snprintf(out, cap, "%d", g_config.msuvolume);
     else if (StringEqualsNoCase(key, "ResumeMSU")) snprintf(out, cap, "%s", g_config.resume_msu ? "true" : "false");
+    else if (StringEqualsNoCase(key, "MusicShuffle")) snprintf(out, cap, "%s", g_config.cosmetic_music_shuffle ? "true" : "false");
     else return false;
     return true;
   }
@@ -1599,6 +1623,15 @@ uint32 Config_ApplyLive(const Config *prev, const Config *now) {
     restart |= kCfgRestart_Audio;
   if (prev->language != now->language)
     restart |= kCfgRestart_Language;
+
+  // Cosmetic shuffles: the palette mode + music toggle are read live at their
+  // point of use each frame, so they apply immediately. A changed cosmetic_seed
+  // needs the derived palette/music tables rebuilt (seed 0 here resolves to the
+  // slot seed on the next slot load). The sprite-folder pick happens at launch.
+  if (prev->cosmetic_seed != now->cosmetic_seed)
+    Cosmetic_SetSeed(now->cosmetic_seed, 0);
+  if (prev->cosmetic_sprite_dir != now->cosmetic_sprite_dir)
+    restart |= kCfgRestart_Video;
 
   return restart;
 }

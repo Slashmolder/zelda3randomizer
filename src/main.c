@@ -24,6 +24,7 @@
 
 #include "config.h"
 #include "assets.h"
+#include "rando/shuffle_cosmetic.h"
 #include "load_gfx.h"
 #include "util.h"
 #include "audio.h"
@@ -1329,6 +1330,9 @@ int main(int argc, char** argv) {
 
   ParseConfigFile(config_file);
   LoadAssets();
+  // Seed cosmetic shuffles before the sprite pick. No rando slot is active at
+  // launch, so the slot seed is 0; a slot load re-seeds (palette/music) later.
+  Cosmetic_SetSeed(g_config.cosmetic_seed, 0);
   LoadLinkGraphics();
 
   ZeldaInitialize();
@@ -2296,14 +2300,26 @@ static bool ParseLinkGraphics(uint8 *file, size_t length) {
 }
 
 static void LoadLinkGraphics() {
-  if (g_config.link_graphics) {
-    fprintf(stderr, "Loading Link Graphics: %s\n", g_config.link_graphics);
-    size_t length = 0;
-    uint8 *file = ReadWholeFile(g_config.link_graphics, &length);
-    if (file == NULL || !ParseLinkGraphics(file, length))
-      Die("Unable to load file");
+  // Cosmetic sprite shuffle picks one .zspr from the configured folder; falls
+  // back to the explicit LinkGraphics file when off / empty / invalid.
+  const char *picked = Cosmetic_PickSpriteFile();
+  const char *path = picked ? picked : g_config.link_graphics;
+  if (!path)
+    return;
+  fprintf(stderr, "Loading Link Graphics: %s\n", path);
+  size_t length = 0;
+  uint8 *file = ReadWholeFile(path, &length);
+  bool ok = file != NULL && ParseLinkGraphics(file, length);
+  free(file);
+  if (!ok && picked && g_config.link_graphics) {
+    fprintf(stderr, "  cosmetic sprite invalid; falling back to %s\n",
+            g_config.link_graphics);
+    file = ReadWholeFile(g_config.link_graphics, &length);
+    ok = file != NULL && ParseLinkGraphics(file, length);
     free(file);
   }
+  if (!ok)
+    Die("Unable to load file");
 }
 
 

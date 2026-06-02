@@ -4,30 +4,36 @@ Phase A's `randomizer-shuffles / Cosmetic shuffles do not affect logic (Phase D)
 
 **This is a Phase D change.** The community typically considers cosmetic shuffles "polish" — they make a seed feel personalized but don't change gameplay. Many tournaments distribute the same `share_string` to all players but allow each player to add their own `cosmetic_seed` so screenshots look distinct.
 
-## What Changes (intended scope)
+## What Changes (scope)
 
-- **Palette shuffle**: randomize the active palette set within the 25 vanilla palettes (Link's tunic, dungeon palettes, overworld palettes). Per ALTTPR convention, palette shuffle has sub-modes (`vanilla / shuffled / negative / blackout`).
-- **Sprite shuffle**: replace Link's sprite with one from the community sprite pack. Phase D references the existing community sprite-pack format (BPS patches keyed by SHA-256 of sprite asset).
-- **Music shuffle**: shuffle the dungeon background music. Optional MSU-1 integration: shuffled tracks pull from the active MSU-1 pack if one is loaded.
-- **Decoupling**: cosmetic state is per-slot but does NOT participate in `settings_hash`. The `cosmetic_seed` byte stream is a separate slot-header field; two slots with identical placement + different `cosmetic_seed` are gameplay-equivalent.
-- **Per-cosmetic-axis toggles** in the settings screen (each is independently on/off).
+The fork already owns the cosmetic *rendering* primitives ALTTPR applies through its browser ROM-patcher (ZSPR sprite loader `main.c:2278`; MSU-1 / Opus / Deluxe audio; direct palette buffers + `ApplyPaletteFilter`). This change is the deterministic **selection / transform driver** over those primitives — not a from-scratch build. See `design.md` for the per-axis grounding table.
+
+- **Palette shuffle**: deterministic one-shot transforms over the BGR555 palette buffers at palette-load time. MVP modes `vanilla / shuffled (hue-rotate) / grayscale / negative`. ALTTPR's animated gimmick modes (dizzy/sick/puke/blackout) are deferred to a follow-up.
+- **Sprite shuffle**: when pointed at a folder of `.zspr` files, deterministically pick one and load it through the **existing** ZSPR path. Off preserves the configured single sprite.
+- **Music shuffle**: deterministically remap the song the engine queues per area (chokepoint `queued_music_control`, `g_ram+0x132`); MSU-1, when loaded, keys off the remapped id.
+- **Decoupling — client-config, NOT slot-header**: `cosmetic_seed` is a `[Graphics]` key in `zelda3.ini`, separate from the slot and the `share_string`. Same `share_string` + different `cosmetic_seed` ⇒ gameplay-identical, visually-distinct (the tournament use case). `cosmetic_seed = 0` resolves to the active slot's `seed_u64`. **No save-format change.**
+- **Per-axis client config keys**, each defaulting off so unopted play is vanilla-identical.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `randomizer-shuffles`: MODIFIED Requirement on "Cosmetic shuffles do not affect logic (Phase D)" — flesh out the 3-axis (palette / sprite / music) contract.
-- `randomizer-save`: ADDED Requirement for a `cosmetic_seed` slot-header field separate from `settings_hash`.
-- `randomizer-ui`: ADDED Requirement for cosmetic settings in the settings screen.
-- `randomizer-core`: MODIFIED Requirement on `Settings canonical serialization order (normative)` to note that `cosmetic_seed` is NOT part of the canonical-serialization input.
+- `randomizer-shuffles`: MODIFIED Requirement "Cosmetic shuffles do not affect logic (Phase D)" — fleshes the 3-axis contract; pins `cosmetic_seed` as client-local config (not a slot field) and the MVP palette modes.
+
+### Added Capabilities
+
+- `randomizer-ui`: ADDED Requirement "Cosmetic settings surface (client config)" — the four `[Graphics]`/`[Sound]` INI keys. ADDED (not a modification of the existing settings-screen requirements) to avoid stacking an archive-sequencing conflict on the `randomizer-ui` requirements that `add-rando-native-settings-window` already MODIFIES.
+
+> The stub's `randomizer-save` ADDED delta and `randomizer-core` canonical-serialization MODIFIED delta are **dropped**: under the client-config decision there is no slot-header field and `cosmetic_seed` never enters canonical serialization, so neither capability changes.
 
 ## Impact
 
-- **Code**: `src/rando/shuffle_cosmetic.{c,h}` (new), palette table edits in `src/load_gfx.c`, sprite-replacement integration with the existing BPS patcher (commit `fbbb3f9`), music-shuffle integration with `src/audio.c` / `src/spc_player.c` / MSU-1.
-- **Effort**: **3-4 weeks of focused work.** Each axis is independent.
-- **Regression risk**: zero by design. Placement and `settings_hash` are untouched.
+- **Code**: `src/rando/shuffle_cosmetic.{c,h}` (new); palette-load call sites in `src/load_gfx.c`; ZSPR folder-pick at `src/main.c:2278`; song remap at the `queued_music_control` consume site (`src/spc_player.c` / `src/nmi.c` — apply-time spike); four INI keys in `src/config.c`.
+- **Effort**: revised down from the stub's "3-4 weeks each axis" — the primitives exist; this is a selection/transform layer. Sprite axis is small; palette + music are medium.
+- **Determinism**: **no `kGeneratorVersion` bump, no corpus regen, no canonical-size cascade** — cosmetics are outside the generation path. A separate cosmetic-determinism CI step replaces corpus regen.
+- **Regression risk**: structural zero on the generation path; the only runtime risk is rendering/audio, caught by the all-axes-off vanilla-compare + playtest.
 - **Dependencies**: Phase A archived; no Phase B dependency.
 
-## Status (stub)
+## Status
 
-Proposal-only Phase D stub. Detail deferred to Phase D apply-time. Phase D cannot start before Phase A archives.
+Design + tasks authored (was stub). Ready to implement; no generation-path blockers. The one apply-time unknown is the music chokepoint (task 1.4 spike).

@@ -196,3 +196,52 @@ bugs found — the Inverted implementation is sound.** Findings triaged:
   mechanically correct today; captured here for the maintainer. Not applied
   because #2 would change the logic graph (placement/kGen impact) for
   defense-in-depth only.
+
+## Fresh-eyes audit 2026-06-01 (archive-readiness)
+
+Second-pass review focused on the runtime/gameplay layer (the prior audit covered
+the logic graph) and on the THREE recent fixes landed 2026-06-01:
+`6e2de18` (Ether/Bombos tablet overworld dungeon-exit crash), `c78c168` (boss-heart
+-in-pool immobilize softlock), `9593020` (revert of the Dark-Chapel spawn change).
+Reviewed the post-fix state of `Ancilla22_ItemReceipt` / `Ancilla29_MilestoneItemReceipt`
+(ancilla.c) and `Sprite_HeartContainer` (sprite_main.c), and the inverted runtime hooks
+in messaging.c / overworld.c.
+
+Verified clean (the recent fixes are correct):
+- Ether/Bombos fix: both halves are coordinated. Ancilla29's dungeon-handshake block is
+  wrapped in `if (player_is_indoors)` so an overworld tablet skips the stale
+  `dung_savegame_state_bits` gates and falls through to the normal prize-fall/collision
+  path (ancilla.c:3823+); Ancilla22's `PrepareDungeonExitFromBossFight()` step-3 call is
+  also gated on `player_is_indoors` so the OOB room-index lookup can't fire outdoors.
+  Vanilla unaffected (boss prizes always indoors; tablets always medallions/excluded).
+  The Ether/Bombos handler-state reset (ancilla.c:3830-3834) still fires for the tablet
+  receive. Structurally sound — matches the dominant receipt-side-effect bug class.
+- Boss-heart fix: `item_receipt_method = (lttp_code == 0x3e) ? 2 : 0` preserves the
+  vanilla method-2↔0x3e invariant; a non-heart placed item routes through method-0 so
+  the step!=2 path clears `flag_is_link_immobilized`. `dung_savegame_state_bits |= 0x8000`
+  still runs. Skip-receive items take the `Rando_ReceiveOrConfirm` confirmation path and
+  never set immobilize. Correct.
+- Both fixes correctly leave vanilla byte-for-byte identical (gated on rando-active /
+  boss_loc != 0xFFFF). audit-guard / determinism / codegen-wiring all PASS.
+
+### NEW findings
+
+(none NEW that block archive.) The two 2026-06-01 fixes are correct and address the
+exact dominant bug class CLAUDE.md warns about (vanilla receive codes with side effects
+reused under rando). No additional vanilla-state-proxy, region-binding, or
+receipt-side-effect bug surfaced in this pass.
+
+### Note (not a finding — provenance)
+- Both recent fixes carry "PLAYTEST REQUIRED" in their commit messages; the boss-heart
+  one is noted as already confirmed on a live playtest. The Ether/Bombos one
+  ("place a non-medallion item at the tablet, read it, confirm no crash + receive +
+  walk away") is the one remaining playtest gate before archive — it is exactly the
+  no-automated-test slot path. Not a code defect; a verification item.
+- The Dark-Chapel spawn change was reverted (9593020) and re-scoped into the separate
+  `add-rando-inverted-dark-chapel-spawn` change (0/9, NOT an archive candidate). The
+  revert is clean; no residue in this change.
+
+### Verdict
+Archive-ready (audit-wise), contingent on the one outstanding Ether/Bombos non-medallion
+tablet playtest. Logic graph (prior audit) + runtime fixes (this pass) are sound; corpus
+is byte-identical and Inverted generation is deterministic per the headless run above.

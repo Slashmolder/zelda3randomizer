@@ -6,6 +6,7 @@
 #include "snes/ppu.h"
 #include "assets.h"
 #include "audio.h"
+#include "rando/shuffle_cosmetic.h"
 
 static const uint8 kNmiVramAddrs[] = {
   0, 0, 4, 8, 12, 8, 12, 0, 4, 0, 8, 4, 12, 4, 12, 0,
@@ -210,6 +211,9 @@ void NMI_DoUpdates() {  // 8089e0
 
   if (flag_update_cgram_in_nmi) {
     memcpy(g_zenv.ppu->cgram, main_palette_buffer, 0x200);
+    // Cosmetic palette shuffle: transform the PPU CGRAM copy in place, leaving
+    // main_palette_buffer (game RAM) vanilla. No-op unless a palette mode is set.
+    Cosmetic_ApplyPaletteCgram(g_zenv.ppu->cgram, 0x100);
   }
 
   flag_update_hud_in_nmi = 0;

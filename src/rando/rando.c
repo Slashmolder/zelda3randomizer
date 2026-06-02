@@ -27,7 +27,9 @@
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
 #include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
+#include "shuffle_cosmetic.h"  // Cosmetic_SetSeed (cosmetic_seed=0 -> slot seed)
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
+#include "../config.h"  // g_config.cosmetic_seed
 #include "../types.h"
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
 #include "../assets.h"     // Phase C entrance overlay: g_asset_ptrs[126] / kOverworld_Entrance_Id
@@ -1535,6 +1537,18 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // asset set (157/158) from the entrance overrides, so order is independent.
   InvertedSecrets_Install(g_rando_active_world_state);
 
+  // Cosmetic shuffles: when CosmeticSeed is 0 (default), the look tracks the
+  // slot's seed_u64 (share_string bytes [21..28] LE). Re-seeds palette + music
+  // tables; the sprite pick already happened at launch (documented limitation).
+  {
+    const uint8 *sb = src->header.share_string;
+    uint64 slot_seed = (uint64)sb[21] | ((uint64)sb[22] << 8) |
+                       ((uint64)sb[23] << 16) | ((uint64)sb[24] << 24) |
+                       ((uint64)sb[25] << 32) | ((uint64)sb[26] << 40) |
+                       ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+    Cosmetic_SetSeed(g_config.cosmetic_seed, slot_seed);
+  }
+
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
 
@@ -2059,7 +2073,21 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   RandoPlacementTable table;
   table.entries = scratch_entries;
   table.count = 0;
-  if (!Place_AssumedFill(&settings, seed_u64, /*budget_seconds=*/0, &table)) {
+  // Use the SHARED placement+entrance regen (same code the generate path runs)
+  // so the regenerated spoiler — including the entrance_mapping section that
+  // feeds the SHA-256 stamp — is byte-identical. Without this, revealing a
+  // race-mode + entrance-shuffle seed always false-failed as "tampered" because
+  // the regen omitted entrance_mapping (the bug this fix closes). budget 0 = the
+  // deterministic hard cap, matching race-mode generation.
+  //
+  // The accepted π's LOGIC overrides are left active by the helper. For an
+  // active entrance slot this re-derives the identical π (deterministic from
+  // seed/axes/accepted-attempt), so it restores — not pollutes — the slot's
+  // tracker override state; and the in-binary reveal is gated to post-game, so
+  // reachability is moot anyway. The gameplay door overlay is never touched
+  // (the helper applies only logic overrides, not Entrance_RuntimeInstall).
+  RandoEntranceRegen reg;
+  if (!Rando_PlaceWithEntrances(&settings, seed_u64, /*budget_seconds=*/0, &table, &reg)) {
     if (table.count == 0) return kRandoReveal_PlacementFailed;
   }
 
@@ -2090,6 +2118,9 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   regen.settings = &settings;
   regen.placements = &table;
   regen.spheres = &spheres;
+  // Match the generate-time spoiler's entrance_mapping section (the omission of
+  // which caused the stamp mismatch on race-mode + entrance-shuffle seeds).
+  Rando_SpoilerSetEntranceFields(&regen, &reg);
   regen.goal_completable = Goal_IsCompletable(&settings, &table);
   regen.forward_fill_fallback_count = 0;  // stamp normalization
   regen.retry_attempts = 1;               // stamp normalization

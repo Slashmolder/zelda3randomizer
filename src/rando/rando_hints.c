@@ -186,6 +186,24 @@ static void hint_friendly_loc(const char *in, char *out, int outsz) {
   out[n] = '\0';
 }
 
+// Populate one item-location hint slot from placement index `pick`. Shared by
+// the telepathic-tile loop and the fork-extension NPC loop so their text format
+// can never drift.
+static void hint_set_item_placement(RandoHintNpc npc,
+                                    const RandoPlacementTable *placements,
+                                    uint16 pick) {
+  uint16 loc = placements->entries[pick].location_id;
+  uint16 item = placements->entries[pick].item_id;
+  HintEntry *e = &g_hint_table[npc];
+  e->active = 1;
+  e->placement_loc_id = loc;
+  e->placement_item_id = item;
+  char fitem[48], floc[48];
+  hint_friendly_item(Rando_GetItemName(item), fitem, sizeof fitem);
+  hint_friendly_loc(Rando_GetLocationName(loc), floc, sizeof floc);
+  snprintf(e->text, sizeof(e->text), "%s is in %s", fitem, floc);
+}
+
 bool Rando_GenerateHints(const RandoSettings *settings,
                          const RandoPlacementTable *placements,
                          const RandoSpheres *spheres) {
@@ -233,17 +251,22 @@ bool Rando_GenerateHints(const RandoSettings *settings,
        npc <= kRandoHintNpc_TeleSouthEastDarkworldCave;
        npc++) {
     if (pool_cursor >= hintable_count) break;
-    uint16 pick = hintable_indices[pool_cursor++];
-    uint16 loc = placements->entries[pick].location_id;
-    uint16 item = placements->entries[pick].item_id;
-    HintEntry *e = &g_hint_table[npc];
-    e->active = 1;
-    e->placement_loc_id = loc;
-    e->placement_item_id = item;
-    char fitem[48], floc[48];
-    hint_friendly_item(Rando_GetItemName(item), fitem, sizeof fitem);
-    hint_friendly_loc(Rando_GetLocationName(loc), floc, sizeof floc);
-    snprintf(e->text, sizeof(e->text), "%s is in %s", fitem, floc);
+    hint_set_item_placement(npc, placements, hintable_indices[pool_cursor++]);
+  }
+
+  // Fork-extension NPCs (ids 17-19): the Storyteller + Kakariko/Dark-World
+  // Fortune Tellers route existing vanilla NPC dialogue through the hint
+  // generator for extra in-game hint locations. They draw the NEXT picks from
+  // the same shuffled pool (pool_cursor continues), so the 15 tele-tile picks
+  // above are unchanged and a fork hint never duplicates a tile hint. The
+  // Lake-Hylia Fortune Teller (id 20) shares its room with the Kakariko one and
+  // has no runtime discriminator, so it is intentionally NOT populated — at
+  // runtime it surfaces the Kakariko hint (see Rando_RenderHintMessage).
+  for (RandoHintNpc npc = kRandoHintNpc_ForkStoryteller;
+       npc <= kRandoHintNpc_ForkFortuneTellerDark;  // 17..19; skip 20 Lake Hylia
+       npc++) {
+    if (pool_cursor >= hintable_count) break;
+    hint_set_item_placement(npc, placements, hintable_indices[pool_cursor++]);
   }
 
   // Murahdahla — populate when the goal is Triforce-related.
@@ -446,20 +469,40 @@ static int encode_hint_text(const char *text, uint8 *out) {
   return w;
 }
 
+// Fortune Teller reading-message id range (kFortuneTeller_Readings in
+// sprite_main.c): 0xEA..0xF1 and 0xF6..0xFD. The 0xF2..0xF5 gap is the payment /
+// solicit / decline flow, deliberately left to vanilla. These ids are
+// FortuneTeller-exclusive (verified), so no room gate is needed.
+static bool is_fortune_reading_msg(uint16 msg_id) {
+  return (msg_id >= 0xEAu && msg_id <= 0xF1u) || (msg_id >= 0xF6u && msg_id <= 0xFDu);
+}
+
+// Map a dialogue message id to the hint NPC whose text should replace it: the 15
+// telepathic tiles first, then the fork-extension NPCs. Returns
+// kRandoHintNpc_None for non-hint ids (caller falls through to vanilla decode).
+static RandoHintNpc hint_npc_for_msg(uint16 msg_id) {
+  for (int i = 0; i < kHintTileCount; i++)
+    if (kHintTileMsgIds[i] == msg_id)
+      return (RandoHintNpc)(kRandoHintNpc_TeleEasternPalace + i);
+  // Storyteller (Sprite_28_DarkWorldHintNPC): the paid-tip messages 0xFF/0x101/
+  // 0x102 are storyteller-exclusive (verified), so no location gate is needed.
+  if (msg_id == 0xFFu || msg_id == 0x101u || msg_id == 0x102u)
+    return kRandoHintNpc_ForkStoryteller;
+  // Fortune Teller reading -> Kakariko (light world) or Dark-World instance by
+  // the current world. The Lake-Hylia FT shares the Kakariko room with no
+  // runtime discriminator, so it also surfaces the Kakariko hint (id 18).
+  if (is_fortune_reading_msg(msg_id))
+    return savegame_is_darkworld ? kRandoHintNpc_ForkFortuneTellerDark
+                                 : kRandoHintNpc_ForkFortuneTellerKak;
+  return kRandoHintNpc_None;
+}
+
 bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer) {
   if (out_buffer == NULL) return false;
   // Slot-active gate: g_rando_slot_active is a g_ram macro (features.h).
   if (!g_rando_slot_active) return false;
-  if (!Rando_IsHintTileMessage(msg_id)) return false;
 
-  // Map the vanilla tele-message id positionally to a RandoHintNpc.
-  RandoHintNpc npc = kRandoHintNpc_None;
-  for (int i = 0; i < kHintTileCount; i++) {
-    if (kHintTileMsgIds[i] == msg_id) {
-      npc = (RandoHintNpc)(kRandoHintNpc_TeleEasternPalace + i);
-      break;
-    }
-  }
+  RandoHintNpc npc = hint_npc_for_msg(msg_id);
   if (npc == kRandoHintNpc_None) return false;
 
   const char *text = Rando_GetHintString(npc);

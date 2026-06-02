@@ -16,6 +16,53 @@
 #include "rando_settings.h"
 #include "rando_share.h"     // kShareStringBase32MaxLen
 #include "rando_placement.h"  // RandoPlacementTable
+#include "shuffle_entrance.h"  // kEntranceMaxInteriors
+
+struct RandoSpoiler;  // fwd (full def in rando_spoiler.h)
+
+// The accepted entrance-shuffle permutation for one generation: the packed axis
+// byte + accepted attempt index (both stored in the slot header) plus every
+// per-category assignment array and its count. Filled by Rando_PlaceWithEntrances.
+typedef struct RandoEntranceRegen {
+  uint8 entrance_axes;
+  uint8 entrance_attempt;
+  uint8 cave_assign[kEntranceMaxInteriors];            int cave_count;
+  uint8 dun_assign[kEntranceMaxInteriors];             int dun_count;
+  uint8 cross_assign[kEntranceMaxInteriors];           int cross_count;
+  uint8 decoupled_assign[kEntranceMaxInteriors];       int decoupled_count;
+  uint8 dun_decoupled_assign[kEntranceMaxInteriors];   int dun_decoupled_count;
+  uint8 cross_decoupled_assign[kEntranceMaxInteriors]; int cross_decoupled_count;
+} RandoEntranceRegen;
+
+// Shared placement + entrance regeneration, used by BOTH Rando_GenerateSlot and
+// the race-mode reveal path so they produce a byte-identical spoiler (incl. the
+// entrance_mapping section that feeds the SHA-256 stamp — without this, revealing
+// a race-mode + entrance-shuffle seed always false-fails as "tampered").
+//
+// Runs the entrance-attempt loop (or a single accessibility-gated
+// Place_AssumedFill when no entrance axis is active), applying the accepted
+// permutation's logic overrides. On success the overrides are LEFT ACTIVE so the
+// caller's sphere/goal computation sees the shuffled reachability; the caller
+// MUST then EITHER clear them (Entrance_Clear{Region,Edge}Overrides — what
+// Rando_GenerateSlot does) OR ensure they end up matching whatever overlay should
+// be active afterward. The race-mode reveal path (Rando_RevealSpoiler) relies on
+// the latter: it does NOT clear, because for an active entrance slot the re-derived
+// π is identical and thus restores the slot's own overrides — but that is only
+// safe because reveal is either process-exit (CLI) or share-string-matched to the
+// active slot. A new caller that reveals an UNMATCHED slot while a different
+// entrance slot is active MUST clear + re-install the active slot's overlay.
+// Fills `table` and `*reg`; returns true on success. Deterministic from
+// (settings, seed_u64) for a given budget (race-mode generates with budget 0,
+// matching the reveal path).
+bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
+                              int budget_seconds, RandoPlacementTable *table,
+                              RandoEntranceRegen *reg);
+
+// Point a RandoSpoiler's entrance_mapping fields at `reg`'s arrays (NULL when the
+// matching count is 0, per the serializer's omit-empty contract). Shared so the
+// generate and reveal call sites can never drift in which sections they emit.
+void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
+                                    const RandoEntranceRegen *reg);
 
 typedef struct RandoGenerateResult {
   bool ok;

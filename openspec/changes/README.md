@@ -7,24 +7,28 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 | Phase | # | Change | Scope | Authoring | kGen bump | Effort |
 |---|---|---|---|---|---|---|
 | **A** | — | [`add-randomizer-support`](archive/2026-05-29-add-randomizer-support/) | Foundation, RNG, share string, predicate VM, codegen, audit, logic graph (Open + Standard), assumed-fill placement, prize/medallion shuffles, sphere computation, goal-completability, JSON+text spoilers, sidecar save format, §6 grant-site dispatch (43 sites), snapshot tail TLV. | **Archived 2026-05-29** (119/139; the 20 deferrals are tracked in the Phase B/C/D changes below) | n/a (baseline) | ✅ shipped + archived → `openspec/specs/randomizer-*` (6 capabilities) |
-| **B** | 1 | [`add-rando-confirmation-icons`](add-rando-confirmation-icons/) | Visible direct-grant icon ancilla (extends §7.6 audio-only) | Full | No | 3-5d |
-| **B** | 2 | [`add-rando-trackers`](add-rando-trackers/) | In-game item + location overlays; checked-bitmap r/w | Full | No | 1-2w |
-| **B** | 3 | [`add-rando-race-mode-reveal`](add-rando-race-mode-reveal/) | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp | Full | No | 3-5d |
-| **B** | 4a | [`add-rando-inverted-world-state`](add-rando-inverted-world-state/) | Inverted region graph (2977 PHP lines) + RegionRemap + Bug #12 starting-inv | Full (50/77 landed — graph + runtime in; B-inverted macros 2.x, docs, playtest still open) | **Yes** | 4-6w |
-| **B** | 4b | [`add-rando-retro-world-state`](add-rando-retro-world-state/) | Retro shop dispatch + 4 Retro flag pin | Full (1/48) | **Yes** | 1w |
+| **B** | 1 | [`add-rando-confirmation-icons`](add-rando-confirmation-icons/) | Visible direct-grant icon ancilla (extends §7.6 audio-only) | Full (28/34) | No | 3-5d |
+| **B** | 2 | [`add-rando-trackers`](add-rando-trackers/) | In-game item + location overlays; checked-bitmap r/w | Full (4/45) | No | 1-2w |
+| **B** | 3 | [`add-rando-race-mode-reveal`](add-rando-race-mode-reveal/) | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp | Full (29/38) | No | 3-5d |
+| **B** | 3b | [`add-rando-beatable-accessibility`](add-rando-beatable-accessibility/) | ALTTPR three-way accessibility (`Accessibility_SeedAcceptable`); "beatable only" 3rd tier | Full (20/22) | **Yes** (45→46) | 3-5d |
+| **B** | 3c | [`add-rando-boss-heart-pool-toggle`](add-rando-boss-heart-pool-toggle/) | UI toggle for `region_boss_hearts_in_pool` (value inverted vs name); comment fix | Full (11/12) | No | 1-2d |
+| **B** | 4a | [`add-rando-inverted-world-state`](add-rando-inverted-world-state/) | Inverted region graph (2977 PHP lines) + RegionRemap + Bug #12 starting-inv | Full (72/77 landed — graph + runtime in; remaining = docs + playtest) | **Yes** | 4-6w |
+| **B** | 4a-i | [`add-rando-inverted-dark-chapel-spawn`](add-rando-inverted-dark-chapel-spawn/) | Inverted spawn-select Dark Chapel / Dark Mountain respawn-world fix (follow-on to #4a; depends on `add-rando-inverted-world-state`) | Full (0/9) | No | 1-2d |
+| **B** | 4a-ii | [`add-rando-inverted-ganon-relocation`](add-rando-inverted-ganon-relocation/) | Inverted Ganon-under-HC relocation (follow-on to #4a; depends on `add-rando-inverted-world-state`; high-risk gfx spike) | Full (0/19) | **Yes** | 2-3w |
+| **B** | 4b | [`add-rando-retro-world-state`](add-rando-retro-world-state/) | Retro shop dispatch + 4 Retro flag pin | Full (5/48) | **Yes** | 1w |
 | **B** | 4c | [`add-rando-retro-takeany`](archive/2026-05-29-add-rando-retro-takeany/) | 31 TakeAny shop dispatch + RNG-driven activation (promoted from 4b's design §5 split) | ✅ **Archived 2026-05-29** | **Yes** | ✅ shipped + archived |
-| **B** | 5 | [`add-rando-trick-logic-and-axes`](add-rando-trick-logic-and-axes/) | OP_TRICK/OP_DIFFICULTY_AT_LEAST/OP_GLITCH_LEVEL_AT_LEAST + 5 settings un-pins + Bug #7 per-item rewind | Full | **Yes** | 2-3w |
-| **B** | 6 | [`add-rando-hints`](add-rando-hints/) | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla | Full | **Yes** | 2-3w |
-| **B** | 7 | [`add-rando-shuffles-and-minigames`](add-rando-shuffles-and-minigames/) | Boss + drop-pool shuffles + §6.8 minigame dispatch | Full | **Yes** | 2-3w |
-| **B** | 8 | [`add-rando-switch-swkbd`](add-rando-switch-swkbd/) | libnx swkbd wrapper for Switch text input | Full | No | 3-5d |
-| **B** | PC | [`add-rando-native-settings-window`](add-rando-native-settings-window/) | Dear ImGui second OS window owns the rando settings UI on PC; in-game screen compile-guarded out behind `Z3R_NATIVE_SETTINGS_WINDOW` | Full (114/141 — **shipped & merged**; remaining = spoiler-viewer polish 13.7/14.3-5 + manual verify/audit/archive) | No | ✅ shipped, not yet archived |
-| **C** | C1 | [`add-rando-entrance-shuffle`](add-rando-entrance-shuffle/) | 4-mode entrance shuffle (uses RegionRemap from #4a) | Stub | **Yes** | 4-8w |
-| **D** | D1 | [`add-rando-cosmetic-shuffles`](add-rando-cosmetic-shuffles/) | Palette / sprite / music shuffles; `cosmetic_seed` separate from `settings_hash` | Stub | No | 3-4w |
+| **B** | 5 | [`add-rando-trick-logic-and-axes`](add-rando-trick-logic-and-axes/) | OP_TRICK/OP_DIFFICULTY_AT_LEAST/OP_GLITCH_LEVEL_AT_LEAST + 5 settings un-pins + Bug #7 per-item rewind | Full (14/71) | **Yes** | 2-3w |
+| **B** | 6 | [`add-rando-hints`](add-rando-hints/) | New `randomizer-hints` capability: 15 telepathic tiles (ship) + Storyteller/Fortune-Teller fork NPCs (landed 2026-06-01); Murahdahla spoiler-only (needs sprite); bookshelf dropped; binary mode | Full (gen/spoiler/determinism/docs done — open: in-game NPC playtest + fresh-eyes audit) | **Yes** | 2-3w |
+| **B** | 7 | [`add-rando-shuffles-and-minigames`](add-rando-shuffles-and-minigames/) | Boss + drop-pool shuffles + §6.8 minigame dispatch | Full (3/48) | **Yes** | 2-3w |
+| **B** | 8 | [`add-rando-switch-swkbd`](add-rando-switch-swkbd/) | libnx swkbd wrapper for Switch text input | Full (0/31) | No | 3-5d |
+| **B** | PC | [`add-rando-native-settings-window`](add-rando-native-settings-window/) | Dear ImGui second OS window owns the rando settings UI on PC; in-game screen compile-guarded out behind `Z3R_NATIVE_SETTINGS_WINDOW` | Full (128/143 — **shipped & merged**; remaining = spoiler-viewer polish + manual verify/audit/archive) | No | ✅ shipped, not yet archived |
+| **C** | C1 | [`add-rando-entrance-shuffle`](add-rando-entrance-shuffle/) | Multi-mode composable entrance shuffle (Stages 1-3 built; Stage 4/Insanity deferred); per-seed edge overlay (retires RegionRemap) | Full (46/50) | **Yes** | 4-8w |
+| **D** | D1 | [`add-rando-cosmetic-shuffles`](add-rando-cosmetic-shuffles/) | Palette (4 MVP modes) / sprite (zspr folder pick) / music (song remap) shuffles; `cosmetic_seed` is **client config**, not a slot field — no save-format change | Design + tasks authored (0/37; in active implementation) | No | Sprite small; palette+music medium |
 | **D** | D2 | [`add-rando-customizer-mode`](add-rando-customizer-mode/) | Manual per-location placement + custom pool composition | Stub | No (per-seed; affects `customizer_seed`) | 2-3w |
 | **D** | D3 | [`add-rando-major-glitch`](add-rando-major-glitch/) | Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to HybridMG + NoLogic | Stub | **Yes** | 2-3w |
 | **D** | D4 | [`add-rando-auto-tracker`](add-rando-auto-tracker/) | Local TCP server for external tracker clients | Stub | No | 2-3w |
 
-Total: 15 active changes + 2 archived (`add-randomizer-support`, `add-rando-retro-takeany`). All 15 active changes pass `openspec validate --changes`.
+Total: 19 active changes + 2 archived (`add-randomizer-support`, `add-rando-retro-takeany`). (The table previously listed 15; four were missing from the overview and are now added: `add-rando-beatable-accessibility`, `add-rando-boss-heart-pool-toggle`, `add-rando-inverted-dark-chapel-spawn`, `add-rando-inverted-ganon-relocation`.) Run `openspec validate --changes` to confirm all validate.
 
 ## Implementation order
 
@@ -45,7 +49,9 @@ Phase A archive ✅ (2026-05-29)
        │
        ├──► #1, #2, #3 (warm-up, parallel-safe)
        ├──► #4b Retro
-       ├──► #4a Inverted ──────────────────────────► C1 entrance shuffle
+       ├──► #4a Inverted ──┬───────────────────────► C1 entrance shuffle
+       │                   ├──► add-rando-inverted-dark-chapel-spawn (follow-on)
+       │                   └──► add-rando-inverted-ganon-relocation (follow-on)
        ├──► #5 trick logic ─────────────────────────► D3 major glitch
        ├──► #6 hints
        ├──► #7 shuffles + minigames

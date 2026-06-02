@@ -342,6 +342,29 @@ entries:
     label: "b-race-inverted-fast-ganon"
     expected_digest: "0726475660476ad6e094bdbf721c3278f3ba1929f8ffd6490bbe2045991b4b64"
     expected_sphere_digest: "fe766b8598e9747d2e3aac6fc8be8df134c4645ffe019f6277d904d5f7b7bfd6"
+  # Race-mode + Triforce-Hunt reveal round-trip. Triforce-Hunt is the only goal
+  # that populates the Murahdahla hint (rando_hints.c id 16); the suppressed ZRSR
+  # stamp covers the hints[] array, so this entry's reveal regen MUST reproduce
+  # the Murahdahla hint byte-for-byte — the determinism guard for the Murahdahla
+  # path (the 15 tele-tile hints are already covered by the fast_ganon race
+  # entries above, which carry hints=on by default). Same (settings,seed) as
+  # a1-open-triforce-hunt ⇒ identical placement/sphere digests.
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, race_mode: true }
+    seed: "0x0000000000000005"
+    label: "a1-open-triforce-hunt-race"
+    expected_digest: "9f2b735a35edfd176ad00ce5ae9ecf70105023239765825ec81bdaeed1799e66"
+    expected_sphere_digest: "07ef63c767e0b18a81f210338f9cf8eff46b93b08ce2aca18d5a7e92236ddb50"
+  # Race-mode + entrance-shuffle reveal round-trip. The suppressed ZRSR spoiler
+  # carries an entrance_mapping section; the reveal regen MUST reproduce it or the
+  # SHA-256 stamp false-fails as "tampered". Regression guard for the shared
+  # entrance-regen fix (Rando_PlaceWithEntrances). Same (settings,seed) as
+  # c-entrance-caves-open-fast-ganon ⇒ identical placement/sphere digests
+  # (race_mode is a visibility flag, normalized to 0 at reveal).
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, race_mode: true }
+    seed: "0x00000000C0FFEE01"
+    label: "c-entrance-caves-open-fg-race"
+    expected_digest: "15c54c9ee144127fe004fac31537fa5bafc12a5e44f4479f97b3eb0a4727f57c"
+    expected_sphere_digest: "7f5c7d0cbc0afaf5d5fcd1c55ba6275a8132aa9e6b9546af2c1f1c8e8f4c46ed"
   # Phase C — entrance shuffle (coupled cave shuffle). These exercise the cave
   # permutation + per-seed region overrides through the placer, locking in the
   # deterministic digest. shuffle_cave_entrances active ⇒ digest differs from the

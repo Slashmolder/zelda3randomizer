@@ -1,3 +1,22 @@
+# add-rando-hints — task tracking
+
+> **Progress banner (updated 2026-06-01).** Telepathic-tile hints (15) ship and
+> work in-game. This session landed: (a) hardening — a Triforce-Hunt race corpus
+> entry that locks Murahdahla-hint determinism via the reveal stamp, plus a
+> `docs/randomizer.md` Hints section; (b) the fork-extension NPCs — Storyteller +
+> Kakariko/Dark-World Fortune Tellers (ids 17-19) wired end-to-end (generation +
+> dispatch + spoiler + determinism). Commits 7b1874d, 2969958 on branch
+> `claude/cosmetics-and-reveal-fix`.
+>
+> **Mode is binary** (off/on), not the original tri-state — wherever §6/§8/§11
+> say `hints=full`/`sahasrahla`, read "on". **Bookshelf is dropped.** **Murahdahla
+> is spoiler-only** (needs a new sprite for an in-game surface). **Lake-Hylia FT
+> (id 20)** is intentionally not separately wired.
+>
+> **Open before archive:** §11 playtest (in-game NPC surfacing — the only
+> uncovered layer), §9.3 fresh-eyes audit, §12 archive. Determinism/audit-guard/
+> docs/corpus are done.
+
 ## 1. Apply-time pre-flight
 
 - [ ] 1.1 Pin upstream commit hash of `../alttp_vt_randomizer/`. Record in `audit.md §"Hint provenance"`.
@@ -66,10 +85,13 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 - [x] 5.1 Wire `Rando_GetHintDialogueId(NPC_SahasrahlaTelepathic)` at the Sahasrahla telepathic-tile sprite handler. Returns the slot-specific hint dialogue ID; the text engine renders the slot's hint text. <!-- done-differently: not wired at the sprite handler; the Sahasrahla/EP telepathic tile is one of the 15 vanilla tele msg ids intercepted in Text_LoadCharacterBuffer via Rando_RenderHintMessage, so reading any of the 15 tiles surfaces its generated hint in-game -->
 
-- [ ] 5.2 Wire `Rando_GetHintDialogueId(NPC_Storyteller)` at the storyteller sprite handler.
-- [ ] 5.3 Wire `Rando_GetHintDialogueId(NPC_Bookshelf)` at the bookshelf interaction handler.
-- [ ] 5.4 Wire `Rando_GetHintDialogueId(NPC_Murahdahla)` at the Murahdahla sprite handler.
-- [ ] 5.5 Each wiring respects the `kFeatures1_RandomizerActive` gate — vanilla mode returns the vanilla dialogue ID.
+- [x] 5.2 Wire the Storyteller hint. <!-- done (2026-06-01, fork extension ids 17-19): NOT via Rando_GetHintDialogueId at the sprite handler; instead Rando_RenderHintMessage (rando_hints.c) intercepts the storyteller's paid-tip messages 0xff/0x101/0x102 (verified storyteller-exclusive) and the Fortune Teller reading ids 0xEA-0xF1/0xF6-0xFD (FT-exclusive), mapping FT to Kakariko(18)/Dark-World(19) by savegame_is_darkworld. Generator populates ids 17-19 after the tele loop (continuing the same pool cursor). commit 2969958. -->
+- [ ] 5.3 ~~Bookshelf~~ **DROPPED** — design decision (rando_hints.h header): poor discoverability + thematic dilution. Not a gap.
+- [ ] 5.4 Murahdahla in-game surface. <!-- PARTIAL/BLOCKED: the Murahdahla hint TEXT is generated (id 16, Triforce/Ganon-Hunt only) and emitted to the spoiler, but it is spoiler-only in-game — Murahdahla is an ALTTPR asm-added NPC the fork never ported, so surfacing it needs a NEW sprite (graphics/spawn/dialogue), not a handler wire. Out of scope for this pass; tracked as a follow-up. -->
+- [x] 5.5 Each wiring respects the rando-active gate. <!-- done: Rando_RenderHintMessage early-returns unless g_rando_slot_active; vanilla dialogue dispatch is byte-identical. -->
+- [ ] 5.6 **Lake-Hylia Fortune Teller (id 20)** — intentionally NOT wired: shares the Kakariko FT room (0x54) with no runtime discriminator, so at runtime it surfaces the Kakariko hint (18). Distinguishing it needs a sprite-prep change (spatial marker). Deferred. <!-- done-differently: id 20 left unpopulated by the generator on purpose. -->
+
+> **Fork-extension status (2026-06-01)**: 3 of the 4 fork NPCs wired end-to-end at the generation + spoiler + determinism layers (Storyteller 17, Kakariko FT 18, Dark-World FT 19). **In-game NPC dialogue surfacing is playtest-only** (no automated coverage on the slot path) — verify by talking to each NPC in a hints-on rando seed.
 
 ## 6. Settings axis
 
@@ -97,19 +119,22 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 - [x] 8.1 Bump `kGeneratorVersion` in `src/rando/rando.h`. <!-- done: hints joined the canonical hash at kGeneratorVersion 14 (§66) per rando_settings.h:121-122 / rando_settings.c:96; kGeneratorVersion now 36 (rando.h:17) -->
 
-- [ ] 8.2 Regenerate corpus. Add at least 2 Triforce Hunt + hints=full + 2 Fast Ganon + hints=sahasrahla + 2 misc + hints=off seeds.
-- [ ] 8.3 **Critical**: verify `hints == off` seeds produce byte-identical hint behavior to non-hint Phase A behavior (which is no hints at all). `placement_digest_hex` for hints=off seeds matches pre-change baseline.
-- [ ] 8.4 Hint determinism CI step: for at least 1 corpus seed with hints=full, capture the per-NPC hint text; CI fails if hint text drifts across builds.
+- [x] 8.2 Corpus coverage for hint determinism. <!-- done-differently (2026-06-01): hints default ON, so the existing fast_ganon/ganon race-mode entries (b-race-*) already carry hints=on and stamp the hints[] array — their ZRSR reveal round-trip asserts the 15 tele-tile hints regenerate byte-identically. The one uncovered path (Murahdahla, id 16, Triforce-Hunt-only) is now covered by a new race entry a1-open-triforce-hunt-race. Fork ids 17-19 are also stamped by every race entry now. No separate hints=full/sahasrahla axis (binary). commit 7b1874d. -->
+- [x] 8.3 `hints` does not affect placement. <!-- done: hints are generated AFTER placement, so placement_digest_hex is independent of hints on/off; the 69/69 corpus (all placement/sphere digests) is unchanged by the hint generator. -->
+- [x] 8.4 Hint determinism guard. <!-- done-differently: the race-mode reveal round-trip IS the determinism guard — the stamp is over the full canonical JSON incl. hints[], so a hint-text drift fails the round-trip (covers tele tiles + Murahdahla + fork ids 17-19). Plus Hints_SelfCheck asserts byte-identical g_hint_table across consecutive generations. -->
+
+> **Note**: the original §8.2 wording (hints=full / hints=sahasrahla / hints=off seed mix) predates the binary-mode decision; the determinism intent is met via the race-reveal stamp + Hints_SelfCheck rather than a hint-text-capture CI step.
 
 ## 9. Audit
 
-- [ ] 9.1 Run `assets/scripts/check_audit_guard.py`. The hint module writes to `g_rando_hint_dialogue_table` and to `dialogue_id` in the messaging path; neither is in the tracked-inventory-cells set. No new exemptions needed.
-- [ ] 9.2 Run `assets/scripts/check_determinism.py`. No new `rand`/`time`/`htobe*` symbols (use `Rng_*` only).
+- [x] 9.1 Run `assets/scripts/check_audit_guard.py`. <!-- done (2026-06-01): --strict green; no non-exempt writes. The hint module writes only g_hint_table (module-static) + the messaging buffer, neither tracked. -->
+- [x] 9.2 Run `assets/scripts/check_determinism.py`. <!-- done: green; the module uses Rng_* only, no rand/time/htobe*. -->
 - [ ] 9.3 Fresh-eyes audit per memory `[[cluster-audit-cadence]]` post-translation.
 
 ## 10. Documentation
 
-- [ ] 10.1 Add a "Hints" section to `docs/randomizer.md` documenting the `hints=` setting + per-NPC behavior + race-mode interaction (race-mode reveal protects the hints body via stamp).
+- [x] 10.1 Add a "Hints" section to `docs/randomizer.md`. <!-- done (2026-06-01): documents the binary hints setting, tele tiles, Murahdahla (spoiler-only status), fork-extension NPCs (incl. the Lake-Hylia non-wiring), and race-mode stamp/reveal determinism coverage. -->
+- [x] 10.2 Update the race-mode determinism note in `docs/randomizer.md` to reflect that the stamp transitively asserts `hints[]` + `entrance_mapping` regeneration. <!-- done (2026-06-01). -->
 - [x] 10.2 Cross-link this change from the `openspec/changes/` index (README.md). <!-- done: openspec/changes/README.md:17 + docs/randomizer.md:446 both link add-rando-hints -->
 
 
@@ -122,10 +147,13 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 ## 11. Playtest
 
-- [ ] 11.1 Generate a Triforce Hunt + hints=full seed; talk to Murahdahla; verify Triforce-piece hint text references piece locations grouped by sphere.
-- [ ] 11.2 Generate a Fast Ganon + hints=sahasrahla seed; talk to Sahasrahla telepathic tile early-game; verify hint text format.
-- [ ] 11.3 Generate a hints=off seed; verify NPCs play vanilla text.
-- [ ] 11.4 Race-mode + hints test: generate race-mode seed with hints=full; verify suppressed-spoiler doesn't reveal hint text; reveal succeeds and surfaces hint section.
+<!-- Rewritten 2026-06-01 for the as-built binary-mode + fork-extension design. -->
+- [ ] 11.1 Telepathic tiles: read several of the 15 tiles in a hints-on seed; confirm each shows a distinct "<item> is in <location>" hint (not vanilla flavor).
+- [ ] 11.2 **Fork Storyteller**: pay the Dark-World tip NPC; confirm it shows an item-location hint (the health-restore still happens after).
+- [ ] 11.3 **Fork Fortune Tellers**: pay the Kakariko FT and the Dark-World FT; confirm each shows a *different* item-location hint. Pay the **Lake-Hylia FT**; confirm it shows the *Kakariko* hint (the intentional shared-room fallback) and does not crash.
+- [ ] 11.4 `hints=off` seed: confirm tiles + Storyteller + Fortune Tellers all play their vanilla text (no hint substitution).
+- [ ] 11.5 Race-mode: generate a race-mode hints-on seed; confirm the spoiler is suppressed in-game, then `RevealSpoiler` (post-game) surfaces the hints section. (Headless reveal round-trip already passes in the corpus.)
+- [ ] 11.6 Murahdahla: spoiler-only today (no in-game NPC) — confirm a Triforce-Hunt spoiler's `hints[]` contains the `murahdahla` entry. (No in-game step until/unless a Murahdahla sprite is added.)
 
 ## 12. Archive readiness
 

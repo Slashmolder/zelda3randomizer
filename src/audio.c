@@ -7,6 +7,7 @@
 #include "third_party/opus-1.3.1-stripped/opus.h"
 #include "config.h"
 #include "assets.h"
+#include "rando/shuffle_cosmetic.h"
 
 // This needs to hold a lot more things than with just PCM
 typedef struct MsuPlayerResumeInfo {
@@ -135,6 +136,10 @@ static float kVolumeTransitionStepFloat[4];
 static float kVolumeTransitionTargetFloat[4];
 
 void ZeldaPlayMsuAudioTrack(uint8 music_ctrl) {
+  // Cosmetic music shuffle: remap the song here so MSU and the SPC engine stay
+  // consistent. Game-facing music state (last_music_control, music_unk1) was set
+  // by the caller from the original id, so only the audible output changes.
+  music_ctrl = Cosmetic_RemapSong(music_ctrl);
   MsuPlayer *mp = &g_msu_player;
   if (!mp->enabled) {
     mp->resume_info.tag = 0;

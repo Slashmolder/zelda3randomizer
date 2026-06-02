@@ -110,6 +110,15 @@ typedef struct Config {
   const char *shader;
   const char *msu_path;
   const char *language;
+
+  // Cosmetic shuffles (see openspec add-rando-cosmetic-shuffles). These are
+  // client-local presentation options driven by cosmetic_seed; they NEVER touch
+  // the slot, share_string, settings_hash, or generation. All default off so an
+  // unopted run (rando or vanilla) renders byte-identically to the original.
+  uint64 cosmetic_seed;          // 0 = derive from the active slot's seed_u64
+  uint8 cosmetic_palette_mode;   // kCosmeticPalette_* (0 = vanilla / off)
+  bool cosmetic_music_shuffle;   // remap area background songs deterministically
+  const char *cosmetic_sprite_dir;  // folder of .zspr to pick from; NULL = off
 } Config;
 
 enum {

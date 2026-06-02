@@ -38,6 +38,7 @@ extern uint8 g_rando_flute_shovel_owned;  // kRandoFluteShovel_* bits: Shovel=0x
 // ---------------------------------------------------------------------------
 static Config     s_cfg;
 static char       s_path_link[512], s_path_shader[512], s_path_msu[512], s_lang[32];
+static char       s_path_cosmetic_sprite[512];  // cosmetic sprite-shuffle folder
 static uint16     s_kbd[kKeys_Total];
 static PadBinding s_pad[kKeys_Total];
 static int        s_aspect_enum;        // 0=4:3 1=16:9 2=16:10 3=18:9, -1=custom (non-editable)
@@ -120,6 +121,8 @@ static void SyncFromLive(void) {
   snprintf(s_path_shader, sizeof s_path_shader, "%s", g_config.shader ? g_config.shader : "");
   snprintf(s_path_msu, sizeof s_path_msu, "%s", g_config.msu_path ? g_config.msu_path : "");
   snprintf(s_lang, sizeof s_lang, "%s", g_config.language ? g_config.language : "");
+  snprintf(s_path_cosmetic_sprite, sizeof s_path_cosmetic_sprite, "%s",
+           g_config.cosmetic_sprite_dir ? g_config.cosmetic_sprite_dir : "");
   memcpy(s_kbd, g_keybind_kbd, sizeof s_kbd);
   memcpy(s_pad, g_keybind_pad, sizeof s_pad);
   DeriveAspectFromCfg();
@@ -258,6 +261,9 @@ extern "C" void GameConfig_ApplyPending(void) {
   if (strcmp(s_lang, prev.language ? prev.language : "") != 0)
     g_config.language = s_lang[0] ? Config_InternString(s_lang) : NULL;
   else g_config.language = prev.language;
+  if (strcmp(s_path_cosmetic_sprite, prev.cosmetic_sprite_dir ? prev.cosmetic_sprite_dir : "") != 0)
+    g_config.cosmetic_sprite_dir = s_path_cosmetic_sprite[0] ? Config_InternString(s_path_cosmetic_sprite) : NULL;
+  else g_config.cosmetic_sprite_dir = prev.cosmetic_sprite_dir;
 
   // Commit bindings + rebuild the runtime keymap (live).
   memcpy(g_keybind_kbd, s_kbd, sizeof g_keybind_kbd);
@@ -622,6 +628,75 @@ static void Panel_Audio(void) {
   if (ImGui::SliderInt("MSU volume", &vol, 0, 100)) { s_cfg.msuvolume = (uint8)vol; s_dirty = true; }
 }
 
+// UI-ONLY entropy for the cosmetics "New random seed" button (mirrors
+// rando_window.cpp's RollRandomSeed). NOT the game RNG — the cosmetic seed is a
+// pure input to the deterministic cosmetic generator, so this never touches
+// determinism. SplitMix64 over the high-res counter + a monotonic salt so two
+// rolls in the same tick still differ.
+static uint64 CosmeticRollSeed(void) {
+  static uint64 s_salt = 0;
+  s_salt += 0x1234567ull;
+  uint64 x = (uint64)SDL_GetPerformanceCounter() ^ s_salt;
+  x += 0x9E3779B97F4A7C15ull;
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+  return x ^ (x >> 31);
+}
+
+// Cosmetic shuffles are a LOCAL presentation layer: they do not affect the seed,
+// share string, settings hash, or logic (see openspec add-rando-cosmetic-shuffles).
+// Palette mode + music toggle apply live; the sprite-folder pick is launch-time.
+static void Panel_Cosmetics(void) {
+  ImGui::TextWrapped("Local look only. Cosmetics do NOT change the seed, share string, "
+                     "or logic. Two players with the same share string but different "
+                     "Cosmetic seed play the same game with a different look.");
+  ImGui::Separator();
+
+  static const char *const kPal[] = { "Vanilla (off)", "Shuffled", "Grayscale", "Negative" };
+  int pi = s_cfg.cosmetic_palette_mode;
+  if (pi < 0 || pi > 3) pi = 0;
+  if (ComboInt("Palette shuffle", &pi, kPal, 4)) { s_cfg.cosmetic_palette_mode = (uint8)pi; s_dirty = true; }
+  Help("Recolors the palette. Applies live.");
+
+  bool ms = s_cfg.cosmetic_music_shuffle;
+  if (ImGui::Checkbox("Music shuffle (area background songs)", &ms)) { s_cfg.cosmetic_music_shuffle = ms; s_dirty = true; }
+  Help("Remaps the area background music. Applies live. Honors an MSU-1 pack if loaded.");
+
+  // Hex u64 seed input + a "New random seed" button (matches the rando window's
+  // seed field). 0 = derive the look from the loaded slot's seed.
+  static char s_seed_buf[20];
+  static uint64 s_seed_mirror = ~0ull;  // forces a re-format on first use / re-sync
+  if (s_seed_mirror != s_cfg.cosmetic_seed) {
+    snprintf(s_seed_buf, sizeof s_seed_buf, "%016llx", (unsigned long long)s_cfg.cosmetic_seed);
+    s_seed_mirror = s_cfg.cosmetic_seed;
+  }
+  ImGui::SetNextItemWidth(220);
+  if (ImGui::InputText("Cosmetic seed (hex)", s_seed_buf, sizeof s_seed_buf,
+                       ImGuiInputTextFlags_CharsHexadecimal)) {
+    unsigned long long v = 0;
+    if (s_seed_buf[16] == '\0' && sscanf(s_seed_buf, "%llx", &v) == 1) {
+      s_cfg.cosmetic_seed = (uint64)v;
+      s_seed_mirror = s_cfg.cosmetic_seed;  // accept; don't reformat under the cursor
+      s_dirty = true;
+    }
+  }
+  Help("Any 64-bit value (1-16 hex digits). 0 = derive the look from the loaded "
+       "slot's seed; any other value fixes the look across seeds.");
+  ImGui::SameLine();
+  if (ImGui::Button("New random seed")) {
+    s_cfg.cosmetic_seed = CosmeticRollSeed();
+    s_seed_mirror = ~0ull;  // force re-format from the new value
+    s_dirty = true;
+  }
+  ImGui::TextDisabled("decimal: %llu", (unsigned long long)s_cfg.cosmetic_seed);
+
+  ImGui::SeparatorText("Sprite shuffle");
+  if (ImGui::InputText("Sprite folder (.zspr)", s_path_cosmetic_sprite, sizeof s_path_cosmetic_sprite)) s_dirty = true;
+  RestartTag();
+  ImGui::TextDisabled("A folder of .zspr files; one is picked by the cosmetic seed at launch.");
+  ImGui::TextDisabled("Empty = use the single Link graphics from the Video tab.");
+}
+
 static void Panel_Gameplay(void) {
   ImGui::TextWrapped("These take effect immediately.");
   ImGui::SeparatorText("Convenience");
@@ -687,6 +762,7 @@ extern "C" void GameConfig_RenderTab(void) {
       if (ImGui::BeginTabItem("Controller")) { Panel_Controller(); ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Video"))      { Panel_Video();      ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Audio"))      { Panel_Audio();      ImGui::EndTabItem(); }
+      if (ImGui::BeginTabItem("Cosmetics"))  { Panel_Cosmetics();  ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Gameplay"))   { Panel_Gameplay();   ImGui::EndTabItem(); }
       if (ImGui::BeginTabItem("Interface"))  { Panel_Interface();  ImGui::EndTabItem(); }
       ImGui::EndTabBar();

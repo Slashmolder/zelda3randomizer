@@ -203,14 +203,50 @@ spoiler. Exit codes (`kRandoReveal_*`):
 The reveal action is **idempotent**: a second invocation on an already-revealed
 file (first byte `{` instead of `Z`) returns Ok without rewriting. The
 regression corpus exercises the round-trip via `run_rando_corpus.py`'s ZRSR
-sub-path — 3 race-mode entries in `tests/rando_corpus/manifest.yaml` (labels
-prefixed `b-race-`) are part of the determinism CI matrix.
+sub-path — the race-mode entries in `tests/rando_corpus/manifest.yaml` (labels
+prefixed `b-race-`, plus `*-race` variants covering entrance shuffle and
+Triforce-Hunt) are part of the determinism CI matrix. Because the stamp is over
+the full canonical JSON, these entries also transitively assert that the
+regenerated `hints[]` and `entrance_mapping` sections are byte-identical at
+reveal — a regression in either fails the round-trip.
 
 **Tamper detection**: any single-byte flip in the suppressed file produces a
 CRC mismatch on read; reveal returns code 3 without touching the original.
 Hand-crafting a file with a divergent `generator_version` + recomputed CRC
 returns code 5 (`VersionMismatch`) — the gen-version check fires before
 expensive placement regeneration.
+
+## Hints
+
+Hints are **on by default** (`hints=on`; binary on/off, part of the canonical
+settings since `kGeneratorVersion` 14). They never affect placement or logic —
+hint text is generated *after* placement from a sub-RNG seeded by the placement
+digest, so the same `(settings, seed)` always yields byte-identical hints.
+
+**Telepathic tiles (in-game).** Reading any of the 15 vanilla telepathic tiles
+surfaces a generated item-location hint instead of its vanilla flavor text. The
+messaging engine (`Text_LoadCharacterBuffer`) gives the hint system first refusal
+on the 15 vanilla tele-tile message IDs via `Rando_RenderHintMessage`; the
+substitution is gated on an active rando slot, so vanilla play (and the RAM
+compare) is unchanged. `hints=off` leaves the vanilla tile text in place.
+
+**Murahdahla.** On Triforce-Hunt / Ganon-Hunt goals an extra hint summarizes how
+many Triforce pieces are spread across how many regions. It is **spoiler-only
+today** — the in-game Murahdahla NPC is an ALTTPR asm-added sprite the fork has
+not ported, so there is no in-game surface for it yet.
+
+**Fork-extension NPCs** (Storyteller + the Kakariko / Dark-World Fortune Tellers)
+route existing vanilla NPC dialogue through the hint generator for extra in-game
+hint locations. These are a fork addition (not in ALTTPR); spoiler-JSON keys for
+them are `fork_`-prefixed so the ALTTPR-equivalent core (15 tiles + Murahdahla)
+stays diff-clean. The Lake-Hylia Fortune Teller is not wired — it shares its room
+index with the Kakariko one, so it has no runtime discriminator.
+
+**Spoiler + race mode.** The JSON/text spoiler carries a `hints[]` array; under
+race mode it is suppressed inside the ZRSR until `RevealSpoiler`. Because the
+reveal stamp is over the full canonical JSON, the race-mode corpus entries
+(including a Triforce-Hunt variant that exercises the Murahdahla path) assert hint
+determinism: a drift in regenerated hint text fails the reveal round-trip.
 
 ## Tracker windows (PC)
 
@@ -406,6 +442,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
 | 17→32 | Phase-b merge cumulative — slice 4 trick predicates, slice 5 hints generator, slice 7+8 boss/drop algorithms, inverted parity translation, audit-fix passes | 55/55 corpus regenerated (`baa393b`); most defaults inert per the `kgenver_inert_change_exception` invariant but several intermediate bumps shifted Retro/Inverted digests. See `git log v17..v32 -- src/rando/ assets/rando/` |
+| 46→47 | Fork-extension hint NPCs (Storyteller + Kakariko/Dark-World Fortune Tellers, ids 17-19) add 3 entries to the spoiler `hints[]` | **Placement/sphere digests unchanged** (hints are post-placement; `generator_version` is not an RNG input) — corpus 69/69 byte-identical, **not regenerated**. The bump exists only so a pre-fork v46 **race-mode** seed fails reveal with an honest `VersionMismatch` ("regenerate") instead of a misleading stamp `Tampered`, since the race stamp is a SHA over the full spoiler JSON incl. `hints[]`. A reveal-only reproducibility bump, not a placement bump. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

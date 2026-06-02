@@ -147,6 +147,96 @@ void RandoGenerate_SelfCheck(void) {
   fprintf(stderr, "[RandoGenerate_SelfCheck] OK\n");
 }
 
+bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
+                              int budget_seconds, RandoPlacementTable *table,
+                              RandoEntranceRegen *reg) {
+  memset(reg, 0, sizeof(*reg));
+  bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
+  bool cave_on = !cross_on && Entrance_IsActive(settings);
+  bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
+  bool decoupled_on = Entrance_IsDecoupledActive(settings);
+  bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(settings);
+  bool cross_decoupled_on = Entrance_IsCrossDecoupledActive(settings);  // one-way over mixed pool
+  bool placed = false;
+  Entrance_ClearRegionOverrides();  // ensure a clean logic graph
+  Entrance_ClearEdgeOverrides();
+  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
+    uint8 canon[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(settings, canon);
+    reg->entrance_axes = canon[25];  // == the packed entrance-axis byte
+    const int kEntranceMaxRetry = 64;
+    for (int att = 0; att < kEntranceMaxRetry; att++) {
+      // Audit (decoupled HIGH) — reset the edge-override set EVERY attempt so the
+      // cave-only ApplyDecoupledExitEdges Begins fresh instead of appending onto
+      // the prior attempt's leftover edges (phantom reachability + overflow).
+      Entrance_ClearEdgeOverrides();
+      if (cross_on) {
+        reg->cross_count = Entrance_ComputeCrossPermutation(settings, seed_u64, (uint8)att, reg->cross_assign);
+        Entrance_ApplyCrossOverrides(reg->cross_assign, reg->cross_count);
+      } else {
+        if (cave_on) {
+          reg->cave_count = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, reg->cave_assign);
+          Entrance_ApplyRegionOverrides(reg->cave_assign, reg->cave_count);
+        }
+        if (dun_on) {
+          reg->dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, reg->dun_assign);
+          Entrance_ApplyEdgeOverrides(reg->dun_assign, reg->dun_count);
+        }
+      }
+      // Decoupled exit warps compose on top of whichever entry pass ran (D.1).
+      if (decoupled_on) {
+        reg->decoupled_count = Entrance_ComputeDecoupledExit(settings, seed_u64, (uint8)att, reg->decoupled_assign);
+        Entrance_ApplyDecoupledExitEdges(reg->decoupled_assign, reg->decoupled_count);
+      }
+      // Dungeon decoupled: NO logic edges (coupled-equivalent reachability is
+      // correct + conservative); computed for the runtime redirect + spoiler only.
+      if (dun_decoupled_on) {
+        reg->dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(settings, seed_u64, (uint8)att, reg->dun_decoupled_assign);
+      }
+      // Cross + decoupled: also NO logic edges (entry logic is the cross overrides).
+      if (cross_decoupled_on) {
+        reg->cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(settings, seed_u64, (uint8)att, reg->cross_decoupled_assign);
+      }
+      table->count = 0;
+      if (Place_AssumedFill(settings, seed_u64, budget_seconds, table)) {
+        // Accept this permutation only if it meets the active accessibility tier
+        // (always beatable, plus per-tier reachability). Rejects a π that strands
+        // placements beyond the tier's bar (e.g. a gated door leading to the very
+        // dungeon that grants the gating item) and tries another.
+        if (Accessibility_SeedAcceptable(settings, table)) {
+          placed = true;
+          reg->entrance_attempt = (uint8)att;
+          break;
+        }
+      }
+    }
+    // NB: leave the accepted π's overrides ACTIVE — the caller's sphere/goal
+    // computation must see the shuffled reachability. Caller clears afterward.
+  } else {
+    placed = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
+    if (placed && !Accessibility_SeedAcceptable(settings, table)) {
+      placed = false;
+    }
+  }
+  return placed;
+}
+
+void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
+                                    const RandoEntranceRegen *reg) {
+  spoiler->entrance_assign = (reg->cave_count > 0) ? reg->cave_assign : NULL;
+  spoiler->entrance_count = reg->cave_count;
+  spoiler->dungeon_assign = (reg->dun_count > 0) ? reg->dun_assign : NULL;
+  spoiler->dungeon_count = reg->dun_count;
+  spoiler->cross_assign = (reg->cross_count > 0) ? reg->cross_assign : NULL;
+  spoiler->cross_count = reg->cross_count;
+  spoiler->decoupled_assign = (reg->decoupled_count > 0) ? reg->decoupled_assign : NULL;
+  spoiler->decoupled_count = reg->decoupled_count;
+  spoiler->dun_decoupled_assign = (reg->dun_decoupled_count > 0) ? reg->dun_decoupled_assign : NULL;
+  spoiler->dun_decoupled_count = reg->dun_decoupled_count;
+  spoiler->cross_decoupled_assign = (reg->cross_decoupled_count > 0) ? reg->cross_decoupled_assign : NULL;
+  spoiler->cross_decoupled_count = reg->cross_decoupled_count;
+}
+
 bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budget,
                         int slot_index, uint32 recommended_features0,
                         RandoGenerateResult *out, char *err, size_t err_cap) {
@@ -188,108 +278,15 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // wins). The accepted attempt index is stored in the slot header (with the
   // packed axis byte) so slot-load regenerates the same π for the door overlay.
   // Default-off ⇒ this whole block is skipped and placement is byte-identical.
-  uint8 entrance_axes = 0;
-  uint8 entrance_attempt = 0;
-  uint8 cave_assign[kEntranceMaxInteriors];
-  int cave_count = 0;
-  uint8 dun_assign[kEntranceMaxInteriors];
-  int dun_count = 0;
-  uint8 cross_assign[kEntranceMaxInteriors];
-  int cross_count = 0;
-  uint8 decoupled_assign[kEntranceMaxInteriors];
-  int decoupled_count = 0;
-  uint8 dun_decoupled_assign[kEntranceMaxInteriors];
-  int dun_decoupled_count = 0;
-  uint8 cross_decoupled_assign[kEntranceMaxInteriors];
-  int cross_decoupled_count = 0;
-  bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
-  bool cave_on = !cross_on && Entrance_IsActive(settings);
-  bool dun_on = !cross_on && Entrance_IsDungeonActive(settings);
-  // Decoupled ("Insanity"): one-way exit warps on top of the entry shuffle. Cave
-  // decoupled redirects cave exits (baked arrival table); dungeon decoupled
-  // redirects dungeon exits (reuses the static kExitData room-keyed exit search).
-  bool decoupled_on = Entrance_IsDecoupledActive(settings);
-  bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(settings);
-  bool cross_decoupled_on = Entrance_IsCrossDecoupledActive(settings);  // one-way over mixed pool
-  bool placed = false;
-  Entrance_ClearRegionOverrides();  // ensure a clean logic graph
-  Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
-    uint8 canon[kSettingsCanonicalLen];
-    Settings_CanonicalSerialize(settings, canon);
-    entrance_axes = canon[25];  // == the packed entrance-axis byte
-    const int kEntranceMaxRetry = 64;
-    for (int att = 0; att < kEntranceMaxRetry; att++) {
-      // Audit (decoupled HIGH) — reset the edge-override set EVERY attempt. The
-      // cave-only entry pass (ApplyRegionOverrides) Begins only REGION overrides,
-      // so ApplyDecoupledExitEdges' "Begin only if no edge pass ran" guard would
-      // otherwise see last attempt's leftover active flag and APPEND onto stale
-      // edges (accumulating across retries → phantom reachability + >64 overflow).
-      // Clearing here makes decoupled Begin fresh in the cave-only case; the
-      // dungeon/cross passes Begin edges themselves so they are unaffected.
-      Entrance_ClearEdgeOverrides();
-      if (cross_on) {
-        cross_count = Entrance_ComputeCrossPermutation(settings, seed_u64, (uint8)att, cross_assign);
-        Entrance_ApplyCrossOverrides(cross_assign, cross_count);
-      } else {
-        if (cave_on) {
-          cave_count = Entrance_ComputePermutation(settings, seed_u64, (uint8)att, cave_assign);
-          Entrance_ApplyRegionOverrides(cave_assign, cave_count);
-        }
-        if (dun_on) {
-          dun_count = Entrance_ComputeDungeonPermutation(settings, seed_u64, (uint8)att, dun_assign);
-          Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
-        }
-      }
-      // Decoupled exit warps compose on top of whichever entry pass ran (D.1).
-      // ApplyDecoupledExitEdges begins edge overrides itself only if no edge pass
-      // ran this attempt, so it never wipes the dungeon/cross edge set.
-      if (decoupled_on) {
-        decoupled_count = Entrance_ComputeDecoupledExit(settings, seed_u64, (uint8)att, decoupled_assign);
-        Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
-      }
-      // Dungeon decoupled: NO logic edges. A one-way dungeon exit only changes WHERE
-      // Link emerges on the (connected) overworld — it never disconnects anything, so
-      // coupled-equivalent reachability is correct AND conservative (can't strand the
-      // goal). net' is computed for the runtime redirect + spoiler only.
-      if (dun_decoupled_on) {
-        dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(settings, seed_u64, (uint8)att, dun_decoupled_assign);
-      }
-      // Cross + decoupled: also NO logic edges (same conservative coupled-equivalent
-      // reachability; the ENTRY logic is ApplyCrossOverrides above). net is computed
-      // for the runtime exit redirect + spoiler only.
-      if (cross_decoupled_on) {
-        cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(settings, seed_u64, (uint8)att, cross_decoupled_assign);
-      }
-      table.count = 0;
-      if (Place_AssumedFill(settings, seed_u64, effective_budget, &table)) {
-        // Accept this entrance permutation only if it meets the active
-        // accessibility tier. Place_AssumedFill accepts a best-effort with
-        // stranded placements; an entrance permutation can additionally make
-        // interiors circularly unreachable (e.g. a medallion/crystal-gated door
-        // leading to the very dungeon that grants the gating item). The tier
-        // predicate REJECTS such a π and we try another: it always requires the
-        // goal be completable, plus per-tier reachability (locations = every
-        // location; items = every progression item; beatable = goal only).
-        if (Accessibility_SeedAcceptable(settings, &table)) {
-          placed = true;
-          entrance_attempt = (uint8)att;
-          break;
-        }
-      }
-    }
-    // NB: leave the accepted π's overrides ACTIVE — the spoiler's sphere + goal
-    // computation below must see the shuffled reachability. Cleared right after
-    // the spoiler block (and at the next generation's start).
-  } else {
-    placed = Place_AssumedFill(settings, seed_u64, effective_budget, &table);
-    // Gate the non-entrance path on the active accessibility tier too (this
-    // path previously shipped whatever Place_AssumedFill returned). On reject,
-    // fall through to the shared failure handling below.
-    if (placed && !Accessibility_SeedAcceptable(settings, &table)) {
-      placed = false;
-    }
-  }
+  // Phase C — entrance shuffle: draw a cave permutation π, install its per-seed
+  // region overrides so the placer/goal-check see the shuffled reachability, run
+  // placement, accept the first π under which the active accessibility tier is
+  // met, and record the accepted attempt index (stored in the slot header with
+  // the packed axis byte so slot-load regenerates the same π). The same helper
+  // runs at race-mode reveal so the regenerated spoiler is byte-identical.
+  // Default-off ⇒ a single accessibility-gated Place_AssumedFill (byte-identical).
+  RandoEntranceRegen reg;
+  bool placed = Rando_PlaceWithEntrances(settings, seed_u64, effective_budget, &table, &reg);
   if (!placed) {
     // Audit H1 — clear the entrance overrides on the failure path too (the
     // success path clears after the spoiler block; a failed generation would
@@ -364,18 +361,7 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.placements = &table;
     spoiler.spheres = &spheres;
     // Phase C — entrance_mapping sections (omitted when the respective count is 0).
-    spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
-    spoiler.entrance_count = cave_count;
-    spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
-    spoiler.dungeon_count = dun_count;
-    spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
-    spoiler.cross_count = cross_count;
-    spoiler.decoupled_assign = (decoupled_count > 0) ? decoupled_assign : NULL;
-    spoiler.decoupled_count = decoupled_count;
-    spoiler.dun_decoupled_assign = (dun_decoupled_count > 0) ? dun_decoupled_assign : NULL;
-    spoiler.dun_decoupled_count = dun_decoupled_count;
-    spoiler.cross_decoupled_assign = (cross_decoupled_count > 0) ? cross_decoupled_assign : NULL;
-    spoiler.cross_decoupled_count = cross_decoupled_count;
+    Rando_SpoilerSetEntranceFields(&spoiler, &reg);
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {
@@ -419,8 +405,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // overlay) deterministically from the seed. 0/0 when no shuffle was active.
   // (Redundant with canon[25] in the settings blob below, but the dedicated
   // header bytes are what Entrance_RuntimeInstall reads.)
-  slot.header.entrance_axes = entrance_axes;
-  slot.header.entrance_attempt = entrance_attempt;
+  slot.header.entrance_axes = reg.entrance_axes;
+  slot.header.entrance_attempt = reg.entrance_attempt;
   // format_version 2: persist the FULL canonical settings blob so a reloaded
   // slot can reproduce the seed's settings + prize/medallion shuffle
   // assignments for the runtime reachability (tracker) engine. The reserved-tail
