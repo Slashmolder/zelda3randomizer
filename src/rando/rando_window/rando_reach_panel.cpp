@@ -29,14 +29,28 @@ extern "C" {
 // Identical construction to tracker_windows.cpp::BuildLocRegionIndex so the two
 // views group checks the same way.
 static uint16 s_loc_region[1024];
+static uint8 s_loc_type[1024];
 static bool s_loc_region_built = false;
 static void BuildLocRegionIndex() {
-  for (int i = 0; i < 1024; i++) s_loc_region[i] = 0xFFFF;
+  for (int i = 0; i < 1024; i++) { s_loc_region[i] = 0xFFFF; s_loc_type[i] = 0xFF; }
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     uint16 id = kRandoLocations[i].id;
-    if (id < 1024) s_loc_region[id] = kRandoLocations[i].region_id;
+    if (id < 1024) {
+      s_loc_region[id] = kRandoLocations[i].region_id;
+      s_loc_type[id]   = kRandoLocations[i].type;
+    }
   }
   s_loc_region_built = true;
+}
+
+// Medallion-type (13) locations are the MM/TR medallion CONFIG slots (which
+// medallion opens the dungeon) — a generation-time setting, not an item check.
+// They carry a default-TRUE predicate + 0xFFFF region, so they'd otherwise show
+// as permanently "reachable" under "(unbound)" and inflate the totals. Mirror
+// the Check Tracker's LocHiddenFromChecks so the two views agree. (audit T2)
+static const uint8 kLocType_Medallion = 13;
+static inline bool LocHiddenFromChecks(uint16 loc) {
+  return loc < 1024 && s_loc_type[loc] == kLocType_Medallion;
 }
 
 extern "C" void RandoReach_Render(void) {
@@ -58,15 +72,17 @@ extern "C" void RandoReach_Render(void) {
 
   // Summary: reachable (or checked) over total. A check counts toward "reachable"
   // if it is already checked OR currently reachable from the live inventory.
-  int n_reachable = 0;
+  int n_reachable = 0, n_visible = 0;
   for (int i = 0; i < n_total; i++) {
     uint16 loc = pt->entries[i].location_id;
+    if (LocHiddenFromChecks(loc)) continue;  // exclude medallion-config slots (audit T2)
+    n_visible++;
     if (Rando_IsLocationChecked(loc)) n_reachable++;
     else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
   }
-  ImGui::Text("Reachable: %d / %d", n_reachable, n_total);
-  if (n_total > 0)
-    ImGui::ProgressBar((float)n_reachable / (float)n_total, ImVec2(-FLT_MIN, 0), "");
+  ImGui::Text("Reachable: %d / %d", n_reachable, n_visible);
+  if (n_visible > 0)
+    ImGui::ProgressBar((float)n_reachable / (float)n_visible, ImVec2(-FLT_MIN, 0), "");
 
   ImGui::TextDisabled("Reachability is recomputed live from the current inventory.");
 
@@ -98,6 +114,7 @@ extern "C" void RandoReach_Render(void) {
     int r_total = 0, r_reach = 0;
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
+      if (LocHiddenFromChecks(loc)) continue;  // exclude medallion-config slots (audit T2)
       uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
@@ -127,6 +144,7 @@ extern "C" void RandoReach_Render(void) {
 
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
+      if (LocHiddenFromChecks(loc)) continue;  // exclude medallion-config slots (audit T2)
       uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
 

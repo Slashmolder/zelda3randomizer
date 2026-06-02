@@ -1315,6 +1315,13 @@ void RandoWindow_OpenForNewSlot(int slot_index) {
   // overwrites this). Settings persist across opens; the seed does not.
   g_rando_window_bridge.seed_u64 = RollRandomSeed();
   RandoWindowBridge_RecomputeDerived();  // refresh share string for the new seed
+  // Re-sync the Game Settings panels to the live config, mirroring
+  // RandoWindow_ToggleConfig. Without this, opening via the file-select "New
+  // Randomizer" entry leaves the working copy stale; if the user then edits any
+  // Game-Settings field and clicks Apply, the whole stale copy is committed and
+  // reverts live config that drifted since the last sync (window scale, volume,
+  // a live features0 toggle). (audit NW1)
+  GameConfig_NotifyWindowOpened();
   s_select_general_once = true;  // open to the rando "General" tab, not Game Settings
   if (s_settings_window) {
     SDL_ShowWindow(s_settings_window);
