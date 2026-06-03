@@ -49,9 +49,9 @@ extern "C" void RandoHints_Render(void) {
   // placed item names). The count is not a placement spoiler, so it is still
   // shown. The full hints remain recoverable via the reveal flow:
   // Rando_RevealSpoiler regenerates the JSON with race_mode cleared, which
-  // includes the hints[] array.
-  const RandoSettings *settings = Rando_GetActiveSettings();
-  bool race = settings && settings->race_mode;
+  // includes the hints[] array. Fails closed when the active slot's settings
+  // are unknown (snapshot replay / v1 slot), so a race seed can't leak here.
+  bool race = Rando_ActiveSlotHidesSpoiler();
 
   // Count the NPCs that actually have a hint allocated this slot.
   int n_hints = 0;

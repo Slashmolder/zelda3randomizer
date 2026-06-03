@@ -64,9 +64,9 @@ extern "C" void RandoReach_Render(void) {
   const RandoReachability *reach = Rando_GetLiveReachability();  // NULL => unavailable
   bool have_reach = (reach != NULL);
 
-  // Race seeds must never reveal placed item names.
-  const RandoSettings *settings = Rando_GetActiveSettings();
-  bool race = settings && settings->race_mode;
+  // Race seeds must never reveal placed item names. Fails closed when the
+  // active slot's settings are unknown (snapshot replay / v1 slot).
+  bool race = Rando_ActiveSlotHidesSpoiler();
 
   int n_total = pt ? (int)pt->count : 0;
 

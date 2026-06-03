@@ -1746,6 +1746,13 @@ const RandoSettings *Rando_GetActiveSettings(void) {
   return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
 }
 
+bool Rando_ActiveSlotHidesSpoiler(void) {
+  // Fail CLOSED: unknown settings (NULL) are treated as race so a race seed
+  // whose settings weren't recovered (snapshot replay / v1 slot) can't leak.
+  const RandoSettings *s = Rando_GetActiveSettings();
+  return s == NULL || s->race_mode;
+}
+
 // ---------------------------------------------------------------------------
 // Live reachability bridge (tracker windows).
 //

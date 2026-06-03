@@ -427,9 +427,9 @@ static void DrawCheckTracker(void *) {
   const RandoReachability *reach = Rando_GetLiveReachability();  // NULL => suppress
   bool have_reach = (reach != NULL);
 
-  // Spoiler availability: never for race seeds. settings carry race_mode.
-  const RandoSettings *settings = Rando_GetActiveSettings();
-  bool race = settings && settings->race_mode;
+  // Spoiler availability: never for race seeds. Fails closed when the active
+  // slot's settings are unknown (snapshot replay / v1 slot) — see the helper.
+  bool race = Rando_ActiveSlotHidesSpoiler();
 
   // Persistent UI state.
   static bool s_hide_checked = false;

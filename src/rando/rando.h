@@ -539,6 +539,15 @@ bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
 
+// True when the active slot's spoiler-grade data (placed item names, hint text)
+// must stay HIDDEN: either it is a race seed, OR the settings could not be
+// recovered (snapshot-restore / legacy format_version-1 slot), in which case we
+// fail CLOSED. Deriving this policy per call site previously fail-OPENED on NULL
+// settings (`settings && settings->race_mode` => false => revealed), leaking a
+// race seed's placements in the tracker after a snapshot replay. The tracker /
+// reachability / hints panels MUST gate on this, never on the raw settings.
+bool Rando_ActiveSlotHidesSpoiler(void);
+
 // ---------------------------------------------------------------------------
 // Live reachability bridge for the tracker windows. Rando_BuildRuntimeCounts
 // maps the live g_ram inventory into a logical RandoCounts; Rando_GetLiveReach-
