@@ -12,6 +12,11 @@
 // the vanilla kMap8DataToTileAttr, so Link can reach TR by jumping from its tail.
 // Indexed by the map8 tile id (0..0x1FF), exactly like the vanilla attribute table
 // it replaces (upstream invertedstatic.asm: LDA.l Inverted_TR_TileAttributes, X).
+//
+// embedded-data-guard: allow — transcribed verbatim from z3randomizer's
+// MIT-licensed inverted.asm (Inverted_TR_TileAttributes, inverted.asm:98-130), a
+// structural collision-attribute constant (like the blessed ALTTPR chest catalog),
+// not ROM-extracted asset data. Provenance is the cited open-source asm.
 static const uint8 kInvertedTurtleRockTileAttr[512] = {
   0x27,0x27,0x27,0x27,0x27,0x27,0x02,0x02,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,
   0x27,0x01,0x01,0x01,0x01,0x01,0x02,0x02,0x27,0x27,0x27,0x00,0x00,0x00,0x00,0x00,
