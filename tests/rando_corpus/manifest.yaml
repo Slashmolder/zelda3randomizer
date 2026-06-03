@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 46  # bump_rando_corpus.py --apply - ALTTPR three-way accessibility (beatable only)
+generator_version: 48  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -319,7 +319,7 @@ entries:
     seed: "0xDEADBEEF"
     label: "b-inverted-ganon-7-7"
     expected_digest: "5cbfa6fb6f19f80eabeafcdaef9d589cda493a4a13907cb1576c9e797b5eddcb"
-    expected_sphere_digest: "8f51243ba333eb0527f7fd76e7e1b175b12dbeaf9fc4d84b29703c3e0d83b805"
+    expected_sphere_digest: "260886cb892e616a6be7d92c86fb5a7b13ab76f47ad7b63d30f90582e02acc4f"
   # Phase B Slice 6 §7.4 — race-mode round-trip entries. Each generates a
   # 138-byte ZRSR file; run_rando_corpus's reveal sub-path overwrites it
   # with full JSON and parses placement_digest_hex from the revealed meta

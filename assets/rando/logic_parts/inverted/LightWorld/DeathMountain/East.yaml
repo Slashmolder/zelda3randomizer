@@ -134,4 +134,18 @@ locations:
     can_reach: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)"
     source: "app/Region/Inverted/LightWorld/DeathMountain/East.php:26, 178-188"
 
+  # `Floating Island` (id 205): in Inverted it is gated ONLY by the region's
+  # canEnter. Inverted East overrides Standard's initalize() WITHOUT calling
+  # parent and WITHOUT re-setting Floating Island's requirements (verified:
+  # php:62-207 sets Mimic/Paradox/Ether/Spectacle but not Floating Island), so
+  # its requirement_callback stays null and Location::canAccess returns true
+  # (Location.php:106). Without this override the codegen "last-wins" merge
+  # leaves the STRICT Standard predicate (MagicMirror AND MoonPearl AND
+  # CanBombThings AND CanLiftRocks AND East-DW-DM) applied to Inverted, which is
+  # strictly harder than ALTTPR and can make the Piece of Heart unplaceable.
+  - id: "Floating Island"
+    region: LightWorld_DeathMountain_East
+    can_reach: "TRUE()"
+    source: "app/Region/Inverted/LightWorld/DeathMountain/East.php:62-207 (initalize() does not set Floating Island => region-gated only)"
+
 macros: []
