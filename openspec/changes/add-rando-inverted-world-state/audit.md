@@ -238,8 +238,8 @@ receipt-side-effect bug surfaced in this pass.
   walk away") is the one remaining playtest gate before archive — it is exactly the
   no-automated-test slot path. Not a code defect; a verification item.
 - The Dark-Chapel spawn change was reverted (9593020) and re-scoped into the separate
-  `add-rando-inverted-dark-chapel-spawn` change (0/9, NOT an archive candidate). The
-  revert is clean; no residue in this change.
+  `add-rando-inverted-dark-chapel-spawn` change (since completed + archived 2026-06-03).
+  The revert is clean; no residue in this change.
 
 ### Verdict
 Archive-ready (audit-wise), contingent on the one outstanding Ether/Bombos non-medallion

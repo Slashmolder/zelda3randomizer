@@ -13,7 +13,7 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 | **B** | 3b | [`add-rando-beatable-accessibility`](add-rando-beatable-accessibility/) | ALTTPR three-way accessibility (`Accessibility_SeedAcceptable`); "beatable only" 3rd tier | Full (20/22) | **Yes** (45→46) | 3-5d |
 | **B** | 3c | [`add-rando-boss-heart-pool-toggle`](add-rando-boss-heart-pool-toggle/) | UI toggle for `region_boss_hearts_in_pool` (value inverted vs name); comment fix | Full (11/12) | No | 1-2d |
 | **B** | 4a | [`add-rando-inverted-world-state`](add-rando-inverted-world-state/) | Inverted region graph (2977 PHP lines) + RegionRemap + Bug #12 starting-inv | Full (72/77 landed — graph + runtime in; remaining = docs + playtest) | **Yes** | 4-6w |
-| **B** | 4a-i | [`add-rando-inverted-dark-chapel-spawn`](add-rando-inverted-dark-chapel-spawn/) | Inverted spawn-select Dark Chapel / Dark Mountain respawn-world fix (follow-on to #4a; depends on `add-rando-inverted-world-state`) | Full (0/9) | No | 1-2d |
+| **B** | 4a-i | [`add-rando-inverted-dark-chapel-spawn`](archive/2026-06-03-add-rando-inverted-dark-chapel-spawn/) | Inverted spawn-select Dark Chapel / Dark Mountain respawn-world fix (follow-on to #4a; depends on `add-rando-inverted-world-state`) | ✅ **Archived 2026-06-03** (playtest-confirmed) | No | ✅ shipped + archived |
 | **B** | 4a-ii | [`add-rando-inverted-ganon-relocation`](add-rando-inverted-ganon-relocation/) | Inverted Ganon-under-HC relocation (follow-on to #4a; depends on `add-rando-inverted-world-state`; high-risk gfx spike) | Full (0/19) | **Yes** | 2-3w |
 | **B** | 4b | [`add-rando-retro-world-state`](add-rando-retro-world-state/) | Retro shop dispatch + 4 Retro flag pin | Full (5/48) | **Yes** | 1w |
 | **B** | 4c | [`add-rando-retro-takeany`](archive/2026-05-29-add-rando-retro-takeany/) | 31 TakeAny shop dispatch + RNG-driven activation (promoted from 4b's design §5 split) | ✅ **Archived 2026-05-29** | **Yes** | ✅ shipped + archived |
@@ -28,7 +28,7 @@ This directory holds every active and pending OpenSpec change for the zelda3 ran
 | **D** | D3 | [`add-rando-major-glitch`](add-rando-major-glitch/) | Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to HybridMG + NoLogic | Stub | **Yes** | 2-3w |
 | **D** | D4 | [`add-rando-auto-tracker`](add-rando-auto-tracker/) | Local TCP server for external tracker clients | Stub | No | 2-3w |
 
-Total: 18 active changes + 3 archived (`add-randomizer-support`, `add-rando-retro-takeany`, `add-rando-cosmetic-shuffles`). (The table previously listed 15; four were missing from the overview and are now added: `add-rando-beatable-accessibility`, `add-rando-boss-heart-pool-toggle`, `add-rando-inverted-dark-chapel-spawn`, `add-rando-inverted-ganon-relocation`.) Run `openspec validate --changes` to confirm all validate.
+Total: 17 active changes + 4 archived (`add-randomizer-support`, `add-rando-retro-takeany`, `add-rando-cosmetic-shuffles`, `add-rando-inverted-dark-chapel-spawn`). Run `openspec validate --changes` to confirm all validate.
 
 ## Implementation order
 
@@ -50,7 +50,7 @@ Phase A archive ✅ (2026-05-29)
        ├──► #1, #2, #3 (warm-up, parallel-safe)
        ├──► #4b Retro
        ├──► #4a Inverted ──┬───────────────────────► C1 entrance shuffle
-       │                   ├──► add-rando-inverted-dark-chapel-spawn (follow-on)
+       │                   ├──► add-rando-inverted-dark-chapel-spawn ✅ (archived 2026-06-03)
        │                   └──► add-rando-inverted-ganon-relocation (follow-on)
        ├──► #5 trick logic ─────────────────────────► D3 major glitch
        ├──► #6 hints
