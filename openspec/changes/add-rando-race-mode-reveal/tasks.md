@@ -1,3 +1,5 @@
+> **Archive readiness (2026-06-02):** NOT archive-ready as-is. The spec deltas commit two `randomizer-ui` SHALL requirements that are **deferred/unbuilt** — "Race-mode reveal UI" (per-slot file-select reveal menu, §4.1-4.5) and the settings-screen suppression warning line (§5.2). The built surface is the CLI `--reveal-spoiler` + `Rando_RevealSpoiler` + generation-time suppression. Before archiving, carve the two deferred UI SHALLs out into a follow-on change (or down-scope the delta to the built CLI/suppression contract) so the merged spec matches what ships, then owner-playtest the suppression + CLI reveal round-trip. (Owner deferred this on 2026-06-02 — keep active.)
+
 ## 1. Settings struct un-pinning
 
 - [x] 1.1 In `src/rando/rando_settings.h`, un-pin `race_mode` — currently forced to 0; allow user input from settings struct. *(Verified — `race_mode` is already a regular `uint8` field at `rando_settings.h:99`; Settings_SetDefaults assigns 0 (default), CSV parser handles true/false at `rando_settings.c:504-507`, settings-screen toggle at `select_file.c:2612` is wired. No pinning to remove.)*

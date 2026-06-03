@@ -1,3 +1,15 @@
+> ## ⏸ PARKED — Switch work deferred (owner, 2026-06-02)
+>
+> The owner has no Switch development environment available and has punted **all** Switch
+> work for now. This change is **not being worked** and is **not a blocker** for any other
+> change. It stays authored (spec delta + 31 tasks below) so it can be picked up unchanged
+> once a DevKitPro/Switch env exists. No code here is built or verified.
+>
+> Switch is **not broken** by this deferral: the PC native-settings-window move compiled out
+> the in-game settings screen *only on PC* — Switch retains the in-game settings screen +
+> on-screen alphabet picker (the picker-only fallback noted in `proposal.md`). swkbd is a
+> UX upgrade over that fallback, not a fix for a regression.
+
 ## 1. Apply-time pre-flight
 
 - [ ] 1.1 Verify current DevKitPro version + libnx version in `src/platform/switch/Makefile`. Record in `audit.md §"DevKitPro version pin"`.

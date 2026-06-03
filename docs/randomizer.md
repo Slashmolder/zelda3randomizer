@@ -660,7 +660,7 @@ with detail deferred to `/openspec-explore` at apply-time.
 | 1 | [`add-rando-confirmation-icons`](../openspec/changes/add-rando-confirmation-icons/) | 9 | Visible per-item icon ancilla for §6.2 direct-grant placements | Full |
 | 2 | [`add-rando-trackers`](../openspec/changes/add-rando-trackers/) | 1 | In-game item + location tracker overlays + checked-bitmap r/w paths | Full |
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/add-rando-race-mode-reveal/) | 6 | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp verify | Full |
-| 4a | [`add-rando-inverted-world-state`](../openspec/changes/add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | Stub |
+| 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
 | 4b | [`add-rando-retro-world-state`](../openspec/changes/add-rando-retro-world-state/) | 3 | Retro shop locations + dispatch + 4 Retro flags pinned | Full |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/add-rando-trick-logic-and-axes/) | 4 + misc | `OP_TRICK` / `OP_DIFFICULTY_AT_LEAST` / `OP_GLITCH_LEVEL_AT_LEAST` handlers + `swordless` + `accessibility=none` + `pyramid_bow_upgrade=arrows` un-pin + Bug #7 per-item rewind | Stub |
 | 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla generation + dialogue-ID injection | Stub |

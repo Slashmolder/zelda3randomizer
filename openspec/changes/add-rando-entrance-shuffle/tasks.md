@@ -5,6 +5,18 @@ the pool + exit class. Each stage is independently playtestable. The change arch
 when Stage 1 (minimum) is shippable; Stages 2–4 may complete here or split into
 follow-on changes.
 
+> **Archive readiness (2026-06-02):** NOT archive-ready as-is. Stages 1-3 are built and
+> owner-playtested, but `specs/randomizer-shuffles/spec.md:9,21` commits an **Insanity
+> mode SHALL + scenario** that is NOT built (Stage 4 deferred, plus Skull Woods §2.3 and
+> Link's House §2.4). Archiving as-is would write an unbuilt mode into the canonical
+> `randomizer-shuffles` spec. Before archiving: carve the Insanity scenario (and any
+> other deferred-stage SHALLs) into a follow-on change so the delta matches what ships.
+> Also at archive-time reconcile the pre-existing canonical `randomizer-logic` requirement
+> "Per-seed RegionRemap overlay for entrance shuffle" — this change's design retires
+> RegionRemap in favor of the per-seed logic edge overlay, so the delta must MODIFY/replace
+> that baseline requirement rather than leave the stale RegionRemap mechanism in canon.
+> (Owner chose to keep this active on 2026-06-02.)
+
 > Provenance discipline: runtime facts from the asm repo `C:/src/z3randomizer`
 > (`entrances.asm`, `tables.asm`, `doorframefixes.asm`), placement/logic facts from
 > `../alttp_vt_randomizer`. Read source, not comments (per `design.md §8`).

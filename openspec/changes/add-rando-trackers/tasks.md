@@ -53,7 +53,7 @@ test-trigger. Suggested approach when picking this up:
 - [ ] 4.2 SDL hardware-accelerated renderer: same — confirm overlay tile draws via `SDL_RenderCopy` with no z-fighting.
 - [ ] 4.3 OpenGL renderer: confirm the overlay tile draw path goes through the existing `opengl.c` chain. If the renderer composites BG layers via separate shader passes, ensure overlay tiles use the same OAM-priority path as the existing HUD.
 - [ ] 4.4 OpenGL ES renderer: same as OpenGL; usually shares code paths.
-- [ ] 4.5 Switch backend: build on DevKitPro + switch-sdl2; run on dev unit; toggle trackers via Switch button mapping; verify overlay renders at the same anchor as desktop. Measure per-frame cost via the existing `Logic_ComputeReachability` benchmark gate (per `tasks.md §11.8` of `add-randomizer-support`).
+- [ ] 4.5 Switch backend: build on DevKitPro + switch-sdl2; run on dev unit; toggle trackers via Switch button mapping; verify overlay renders at the same anchor as desktop. Measure per-frame cost via the existing `Logic_ComputeReachability` benchmark gate (per `tasks.md §11.8` of `add-randomizer-support`). **⏸ DEFERRED — Switch env unavailable (owner punt 2026-06-02); not an archive blocker. Implement the Switch button-mapping/anchor in code with the rest of §4, but the on-device build+verify waits for a Switch env.**
 - [ ] 4.6 Renderer-toggle smoke (`README.md` "R" toggle): with tracker enabled, cycle through all backends; overlay should re-render without flicker on each toggle.
 
 ## 5. Checked-location bitmap write path
@@ -83,7 +83,7 @@ test-trigger. Suggested approach when picking this up:
 
 - [ ] 8.1 Generate a Fast Ganon seed; play 1 hour; toggle both trackers throughout; verify color/glyph state matches actual inventory + checked-location state.
 - [ ] 8.2 Save mid-run with 47 locations checked; quit; reload; verify the location tracker shows all 47 `*` glyphs on the next reachability recompute.
-- [ ] 8.3 Switch playtest: run on dev unit, repeat the same 1-hour play; verify no per-frame regression visible to the player.
+- [ ] 8.3 Switch playtest: run on dev unit, repeat the same 1-hour play; verify no per-frame regression visible to the player. **⏸ DEFERRED — Switch env unavailable (owner punt 2026-06-02); not an archive blocker.**
 - [ ] 8.4 Colorblind smoke: simulate red-green colorblindness; verify status glyph alone communicates state.
 
 ## 9. Documentation
@@ -96,5 +96,5 @@ test-trigger. Suggested approach when picking this up:
 
 - [ ] 10.1 All five backends green on the smoke test.
 - [ ] 10.2 Bitmap persists across save/load on at least three distinct seeds.
-- [ ] 10.3 Switch build verified via the manual Switch-build-verification gate (per `add-randomizer-support / tasks.md §12.3b`).
+- [ ] 10.3 Switch build verified via the manual Switch-build-verification gate (per `add-randomizer-support / tasks.md §12.3b`). **⏸ DEFERRED — Switch env unavailable (owner punt 2026-06-02); release-cut gate, not an archive blocker.**
 - [ ] 10.4 `openspec archive add-rando-trackers` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{ui,save}/spec.md`.

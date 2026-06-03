@@ -52,6 +52,8 @@
 
 ## 6. RegionRemap overlay table
 
+> **SUPERSEDED as-built (note 2026-06-02):** the RegionRemap accessor-overlay approach in this section was NOT the mechanism that shipped. Inverted activates via a static world-state-keyed graph — codegen builds `world_state_edges[Inverted]` / `world_state_overrides[loc_id][Inverted]` from `logic_parts/inverted/**` (keyed by `kWorldState_Inverted`), and the generator selects those maps when `world_state == Inverted`. `Rando_SetRegionRemap` had no callers and was retired in Phase C (`src/rando/rando_logic.h`). The 6.x checkboxes below reflect the original plan; the archived `specs/randomizer-logic` delta ("World-state-keyed graph selection (Inverted)") describes what actually ships.
+
 - [x] 6.1 Author the Inverted overlay table per design.md D2. Hand-translate from `app/World/Inverted.php` (if present) or derive from per-region PHP files.
 - [x] 6.2 Emit the overlay as `static const uint16 kInvertedRegionRemap[NUM_REGIONS]` in a new generated file (or extend `src/rando/logic_data.c`).
 - [x] 6.3 Wire `Rando_SetRegionRemap(kInvertedRegionRemap)` at generation start when `settings.world_state == Inverted`.
@@ -120,5 +122,5 @@
 
 - [ ] 15.1 CI green on Linux + macOS + Windows; Inverted corpus matches across platforms.
 - [x] 15.2 Fresh-eyes audit findings all addressed. — addressed in commit 90fd4ec; no HIGH findings.
-- [ ] 15.3 Manual playtest confirms Inverted seeds are completable end-to-end. — IN PROGRESS: playtest mostly working; full end-to-end seed completion not yet confirmed (user, 2026-05-29).
+- [x] 15.3 Manual playtest confirms Inverted seeds are completable end-to-end. — owner confirmed Inverted plays correctly for the implemented scope (2026-06-02); the Ganon-under-HC relocation remains tracked separately in `add-rando-inverted-ganon-relocation`.
 - [ ] 15.4 `openspec archive add-rando-inverted-world-state` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{logic,placement,ui}/spec.md`.

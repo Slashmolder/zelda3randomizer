@@ -52,10 +52,11 @@
 - [x] 4.4 Placement corpus: `run_rando_corpus.py --binary=./verify/zelda3.exe` →
   **all 62 entries OK** (every default-settings digest matches the manifest →
   zero baseline churn, no regen / no `kGeneratorVersion` bump needed).
-- [ ] 4.5 Playtest (no automated coverage on the slot grant path): generate a slot
+- [x] 4.5 Playtest (no automated coverage on the slot grant path): generate a slot
   with the toggle ON, kill a boss whose slot was assigned a non-heart item, and
   confirm you receive that item — not a heart container. **(User manual step — the
-  slot grant path is the one surface no headless test covers.)**
+  slot grant path is the one surface no headless test covers.)** — confirmed working
+  by owner playtest (2026-06-02).
 
 ## 5. Audit + archive
 

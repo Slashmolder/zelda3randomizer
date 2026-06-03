@@ -16,19 +16,19 @@ The graph SHALL declare `LinksHouse_Inverted` as the start region; `kRandoStartR
 - **WHEN** a seed is generated with `settings.world_state == Inverted`
 - **THEN** `kRandoStartRegionByWorldState[Inverted]` is not `0xFFFF`; `Logic_ComputeReachability` runs from the declared start region (`LinksHouse_Inverted`)
 
-### Requirement: RegionRemap overlay activation
+### Requirement: World-state-keyed graph selection (Inverted)
 
-When `settings.world_state == Inverted`, the runtime SHALL call `Rando_SetRegionRemap` (scaffolded in Phase A `src/rando/rando_logic.c`) with the Inverted overlay table populated. The overlay SHALL swap Light World ↔ Dark World region accessors so the same `LOC_<...>` location id resolves to the inverted topology at access time.
+When `settings.world_state == Inverted`, the predicate VM SHALL evaluate reachability against the Inverted override graph rather than the base (Standard/Open) graph. The override graph is built at codegen time from `assets/rando/logic_parts/inverted/**` into per-world-state override maps keyed by `world_state_id` (`kWorldState_Inverted`): `world_state_edges[Inverted]` carries the Inverted region edges and `world_state_overrides[loc_id][Inverted]` carries per-location predicate overrides (see `assets/rando_logic_gen.py`). At reachability time the generator selects these world-state-specific edges/overrides for Inverted seeds and the base maps for all other world states.
 
-> **Stub status**: overlay table contents deferred to apply-time. Shape (uint16 region_remap[NUM_REGIONS]) is fixed by Phase A scaffolding.
+The Phase A `Rando_SetRegionRemap` accessor-overlay scaffold is NOT the activation mechanism — it had no callers and was retired in Phase C (see `src/rando/rando_logic.h`: "RETIRED in Phase C"). Inverted ships entirely through the static world-state-keyed graph above.
 
-#### Scenario: Open mode is not remapped
-- **WHEN** the world-state is Open
-- **THEN** `Rando_SetRegionRemap` is not called; region accessors return the unremapped Light/Dark world topology
+#### Scenario: Open/Standard mode uses the base graph
+- **WHEN** the world-state is Open or Standard
+- **THEN** reachability uses the base edge/override maps; the Inverted override map (`world_state_id == kWorldState_Inverted`) contributes nothing and `placement_digest_hex` is byte-identical to pre-Inverted seeds
 
-#### Scenario: Inverted mode is remapped at generation
+#### Scenario: Inverted mode uses the world-state override graph at generation
 - **WHEN** the world-state is Inverted and generation begins
-- **THEN** `Rando_SetRegionRemap` is called with the populated Inverted overlay before the first reachability computation
+- **THEN** the generator selects `world_state_edges[Inverted]` and `world_state_overrides[*][Inverted]` for the first and all subsequent reachability computations; no `Rando_SetRegionRemap` call occurs
 
 ### Requirement: world_state_filter for Inverted-specific locations
 
