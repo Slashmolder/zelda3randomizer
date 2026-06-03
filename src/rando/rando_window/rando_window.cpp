@@ -616,20 +616,17 @@ static void Panel_Shuffles() {
       s->boss_shuffle = bs ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Randomize which boss guards each dungeon (Agahnim 1/2 + Ganon "
-                "stay put; the dungeon's prize is unchanged). EXPERIMENTAL: the "
-                "logic does NOT account for a moved boss's kill requirements, so "
-                "an item-gated boss (Trinexx/Kholdstare/...) can land in a "
-                "dungeon you reach before its item. Not race-safe yet.");
+    HelpTooltip("Randomize which boss guards each dungeon. A boss keeps its own "
+                "weakness, so you may meet one you can't beat until you find the "
+                "right item.");
 
     bool ds = s->drop_shuffle != 0;
     if (ImGui::Checkbox("Drop shuffle", &ds)) {
       s->drop_shuffle = ds ? 1 : 0;
       changed = true;
     }
-    HelpTooltip("Shuffle which prizes enemies drop. A heart floor keeps weak "
-                "early enemies dropping hearts so you are not HP-starved. "
-                "EXPERIMENTAL — drop visuals are playtest-pending.");
+    HelpTooltip("Shuffle which prizes enemies drop; weak early enemies still "
+                "drop hearts so you aren't starved for health.");
 
     // Not yet implemented — kept as disabled placeholders so the panel reflects
     // the full ALTTPR shuffle menu without lying about availability.
