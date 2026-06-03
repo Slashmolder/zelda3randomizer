@@ -15,8 +15,16 @@
 #include "rando.h"
 #include "rando_hints.h"
 #include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson (Phase C entrance_mapping)
+#include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName (Slice 7 spoiler)
 #include "../config.h"
 #include "../types.h"
+
+// Single-source accessor over the vanilla prize-drop table (kPrizeItems[56]) —
+// defined in src/sprite.c (declared in sprite.h). Forward-declared here (rather
+// than including sprite.h, which would drag in variables.h) so the drop_tables
+// section can print the resolved drop item for each shuffled slot without
+// embedding a copy of the ROM-derived table. Keep in sync with sprite.h.
+extern uint8 Sprite_VanillaPrizeItem(uint8 source_index);
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -196,6 +204,14 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
               (unsigned)s->retry_attempts);
       first = false;
     }
+    // Slice 8 §3.5 — drop heart-floor exhausted its retry budget and fell back
+    // to the vanilla identity drop table (essentially never; surfaced so the
+    // reader knows the seed's drop shuffle is a no-op).
+    if (s->drop_used_fallback) {
+      fprintf(f, "%s\n      {\"kind\": \"drop_heart_floor_fallback\"}",
+              first ? "" : ",");
+      first = false;
+    }
     if (s->spheres != NULL && s->spheres->unreachable_count > 0) {
       fprintf(f, "%s\n      {\"kind\": \"unreachable_placements\", \"count\": %u}",
               first ? "" : ",",
@@ -269,6 +285,46 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   Entrance_WriteCrossSpoilerJson(f, s->cross_assign, s->cross_count);
   Entrance_WriteDecoupledSpoilerJson(f, s->decoupled_assign, s->decoupled_count);
   Entrance_WriteDungeonDecoupledSpoilerJson(f, s->dun_decoupled_assign, s->dun_decoupled_count);
+
+  // -----------------------------------------------------------------------
+  // boss_assignments (Slice 7 §6.1) — dungeon → boss now in its boss room.
+  // Emitted only when boss_shuffle is on (boss_assignment != NULL — §6.4); the
+  // dungeon→prize binding is unchanged (EP's prize stays at EP regardless).
+  // -----------------------------------------------------------------------
+  if (s->boss_assignment != NULL) {
+    fprintf(f, "  \"boss_assignments\": [\n");
+    bool first = true;
+    for (uint8 d = 1; d <= 12; d++) {  // dungeons EP..GT; HCE (0) has no boss
+      uint8 idx = s->boss_assignment[d];
+      if (idx == 0xFF) continue;
+      fprintf(f, "%s    {\"dungeon\": %u, \"dungeon_name\": \"%s\", "
+                 "\"boss\": %u, \"boss_name\": \"%s\"}",
+              first ? "" : ",\n", (unsigned)d, BossShuffle_DungeonName(d),
+              (unsigned)idx, BossShuffle_BossName(idx));
+      first = false;
+    }
+    fprintf(f, "%s  ],\n", first ? "" : "\n");
+  }
+
+  // -----------------------------------------------------------------------
+  // drop_tables (Slice 8 §6.2) — the 7 enemy-drop packs after the shuffle,
+  // each as 8 resolved drop item ids (kPrizeItems[drop_map[flat]]). Pack 0 is
+  // the heart-floor pack (guaranteed >=1 heart, id 216 = 0xD8). Emitted only
+  // when drop_shuffle is on (drop_map != NULL — §6.4).
+  // -----------------------------------------------------------------------
+  if (s->drop_map != NULL) {
+    fprintf(f, "  \"drop_tables\": [\n");
+    for (uint8 pack = 0; pack < 7; pack++) {
+      fprintf(f, "    [");
+      for (uint8 slot = 0; slot < 8; slot++) {
+        uint8 flat = (uint8)(pack * 8 + slot);
+        uint8 item = Sprite_VanillaPrizeItem(s->drop_map[flat]);
+        fprintf(f, "%s%u", slot ? ", " : "", (unsigned)item);
+      }
+      fprintf(f, "]%s\n", (pack < 6) ? "," : "");
+    }
+    fprintf(f, "  ],\n");
+  }
 
   // -----------------------------------------------------------------------
   // sphere_data — emitted per `randomizer-core / Sphere semantics` when a
@@ -609,6 +665,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   // Fallback warnings — surface forward-fill / retry / unreachable
   // counts prominently in the text spoiler.
   if (s->forward_fill_fallback_count > 0 || s->retry_attempts > 1 ||
+      s->drop_used_fallback ||
       (s->spheres != NULL && s->spheres->unreachable_count > 0)) {
     fprintf(f, "WARNINGS\n--------\n");
     if (s->forward_fill_fallback_count > 0)
@@ -617,6 +674,9 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     if (s->retry_attempts > 1)
       fprintf(f, "  ! Placer needed %u attempts before producing a seed.\n",
               (unsigned)s->retry_attempts);
+    if (s->drop_used_fallback)
+      fprintf(f, "  ! Drop-pool heart floor exhausted its retries; drop shuffle "
+                 "fell back to the vanilla drop table.\n");
     if (s->spheres != NULL && s->spheres->unreachable_count > 0)
       fprintf(f, "  ! %u placement(s) are unreachable in this seed.\n",
               (unsigned)s->spheres->unreachable_count);
@@ -635,6 +695,34 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     Entrance_WriteDecoupledSpoilerText(f, s->decoupled_assign, s->decoupled_count);
     Entrance_WriteDungeonDecoupledSpoilerText(f, s->dun_decoupled_assign, s->dun_decoupled_count);
     Entrance_WriteCrossDecoupledSpoilerText(f, s->cross_decoupled_assign, s->cross_decoupled_count);
+    fprintf(f, "\n");
+  }
+
+  // Slice 7 — boss assignments (omitted unless boss_shuffle is on).
+  if (s->boss_assignment != NULL) {
+    fprintf(f, "BOSS ASSIGNMENTS\n----------------\n");
+    for (uint8 d = 1; d <= 12; d++) {
+      uint8 idx = s->boss_assignment[d];
+      if (idx == 0xFF) continue;
+      fprintf(f, "  %-20s : %s\n", BossShuffle_DungeonName(d),
+              BossShuffle_BossName(idx));
+    }
+    fprintf(f, "\n");
+  }
+
+  // Slice 8 — drop tables (omitted unless drop_shuffle is on). Each pack is the
+  // 8 resolved drop item ids; pack 0 is the heart-floor pack.
+  if (s->drop_map != NULL) {
+    fprintf(f, "DROP TABLES (item ids, pack 0 = heart floor)\n");
+    fprintf(f, "--------------------------------------------\n");
+    for (uint8 pack = 0; pack < 7; pack++) {
+      fprintf(f, "  pack %u:", (unsigned)pack);
+      for (uint8 slot = 0; slot < 8; slot++) {
+        uint8 flat = (uint8)(pack * 8 + slot);
+        fprintf(f, " %u", (unsigned)Sprite_VanillaPrizeItem(s->drop_map[flat]));
+      }
+      fprintf(f, "\n");
+    }
     fprintf(f, "\n");
   }
 

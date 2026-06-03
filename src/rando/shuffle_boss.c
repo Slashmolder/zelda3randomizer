@@ -274,6 +274,27 @@ bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type) {
   return false;
 }
 
+// Human-readable names for the spoiler. Indices match the kBoss_* enum and the
+// dungeon-id table at the top of this file.
+const char *BossShuffle_BossName(uint8 pool_index) {
+  static const char *kNames[12] = {
+    "Armos Knights", "Lanmolas", "Moldorm", "Agahnim", "Helmasaur King",
+    "Arrghus", "Mothula", "Blind", "Kholdstare", "Vitreous", "Trinexx",
+    "Agahnim 2",
+  };
+  return (pool_index < 12) ? kNames[pool_index] : "?";
+}
+
+const char *BossShuffle_DungeonName(uint8 dungeon_id) {
+  static const char *kNames[13] = {
+    "Hyrule Castle Escape", "Eastern Palace", "Desert Palace", "Tower of Hera",
+    "Hyrule Castle Tower", "Palace of Darkness", "Swamp Palace", "Skull Woods",
+    "Thieves' Town", "Ice Palace", "Misery Mire", "Turtle Rock",
+    "Ganon's Tower",
+  };
+  return (dungeon_id < 13) ? kNames[dungeon_id] : "?";
+}
+
 // ---------------------------------------------------------------------------
 // Self-check (--rando-selftest). The regression corpus hashes only the
 // placement + sphere digests, and boss shuffle is orthogonal to item placement

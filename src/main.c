@@ -755,17 +755,12 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     exit(1);
   }
 
-  // Phase B Slice 7+8 §63/§64 — generate boss + drop shuffle assignments.
-  // The shuffles consume the placement table (for sphere data — Phase B+
-  // refinement) and are deterministic from (settings, seed_u64). Today
-  // the assignments are computed but not yet consumed by sprite handlers
-  // (per-site instrumentation is task #65). Calling here keeps the
-  // algorithms exercised during corpus regression.
-  {
-    uint8 boss_assignment[16];
-    (void)BossShuffle_Generate(&settings, seed_u64, boss_assignment);
-    (void)DropShuffle_Generate(&settings, seed_u64, &table, NULL);
-  }
+  // Phase B Slice 7/8 §63/§64 — boss + drop shuffle assignments for the spoiler
+  // are computed in the spoiler block below (BossShuffle/DropShuffle_Compute*,
+  // the pure forms). They are deterministic from (settings, seed_u64) and
+  // orthogonal to the placement table, so they don't affect placement_digest.
+  // (The runtime install — which makes the sprite substitution fire — happens
+  // at slot load in Rando_ActivateSidecarSlot, not in this headless path.)
 
   // Compute digest for log + spoiler header.
   uint8 placement_digest[32];
@@ -866,6 +861,19 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // spoiler's `fallback_warnings: unreachable_placements` rollup surfaces
   // this — users can decide whether to regenerate with a different seed.
   // Phase A2 bounded intra-attempt rewind should reduce these to 0.
+
+  // Phase B Slice 7/8 — boss + drop shuffle spoiler sections. Pure compute (no
+  // runtime-global side effects); NULL pointers omit the sections when off
+  // (§6.4). These arrays must outlive Spoiler_Write below — keep them here in
+  // the function scope.
+  uint8 boss_assignment_sp[16];
+  uint8 drop_map_sp[kDropTableEntryCount];
+  bool drop_used_fallback_sp = false;
+  BossShuffle_ComputeAssignment(&settings, seed_u64, boss_assignment_sp);
+  DropShuffle_ComputeAssignment(&settings, seed_u64, drop_map_sp, &drop_used_fallback_sp);
+  spoiler.boss_assignment = settings.boss_shuffle ? boss_assignment_sp : NULL;
+  spoiler.drop_map = settings.drop_shuffle ? drop_map_sp : NULL;
+  spoiler.drop_used_fallback = drop_used_fallback_sp;
 
   // Phase B Slice 6 — Spoiler_Write branches on settings.race_mode:
   //   race_mode == 0: full JSON + .txt (existing behavior).

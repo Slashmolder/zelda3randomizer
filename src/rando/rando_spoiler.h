@@ -50,6 +50,17 @@ typedef struct RandoSpoiler {
   // cross pool (interior → emerge door). NULL/0 omits the section.
   const uint8 *cross_decoupled_assign;
   int cross_decoupled_count;
+  // Phase B Slice 7 — boss shuffle. `boss_assignment[16]` is the dungeon-id →
+  // boss-pool-index table (BossShuffle_ComputeAssignment). NULL omits the
+  // `boss_assignments` section (set NULL when boss_shuffle is off — §6.4).
+  const uint8 *boss_assignment;
+  // Phase B Slice 8 — drop-pool shuffle. `drop_map[56]` is the flat-index →
+  // source-index permutation (DropShuffle_ComputeAssignment). NULL omits the
+  // `drop_tables` section (set NULL when drop_shuffle is off — §6.4).
+  const uint8 *drop_map;
+  // True when the drop heart-floor retry budget was exhausted and the table
+  // fell back to the vanilla identity — surfaces as a fallback_warnings entry.
+  bool drop_used_fallback;
 } RandoSpoiler;
 
 // Write JSON spoiler to `out_path`. Returns true on success, false on I/O

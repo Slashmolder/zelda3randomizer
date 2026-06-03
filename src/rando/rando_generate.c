@@ -24,6 +24,8 @@
 #include "rando_spoiler.h"    // RandoSpoiler, Spoiler_ResolvePath, Spoiler_Write
 #include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
 #include "shuffle_entrance.h" // Phase C entrance shuffle (cave permutation + region overrides)
+#include "shuffle_boss.h"     // BossShuffle_ComputeAssignment (Slice 7 spoiler)
+#include "shuffle_drops.h"    // DropShuffle_ComputeAssignment (Slice 8 spoiler)
 
 #include <string.h>
 #include <stdio.h>
@@ -367,6 +369,19 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.spheres = &spheres;
     // Phase C — entrance_mapping sections (omitted when the respective count is 0).
     Rando_SpoilerSetEntranceFields(&spoiler, &reg);
+    // Phase B Slice 7/8 — boss + drop shuffle spoiler sections. Computed with
+    // the PURE forms (no runtime-global side effects: this is the in-game
+    // generate path; the runtime install happens at slot load, not here).
+    // Deterministic from (settings, seed) — identical to the runtime install
+    // and the headless path. NULL pointers omit the section when off (§6.4).
+    uint8 boss_assignment[16];
+    uint8 drop_map[kDropTableEntryCount];
+    bool drop_used_fallback = false;
+    BossShuffle_ComputeAssignment(settings, seed_u64, boss_assignment);
+    DropShuffle_ComputeAssignment(settings, seed_u64, drop_map, &drop_used_fallback);
+    spoiler.boss_assignment = settings->boss_shuffle ? boss_assignment : NULL;
+    spoiler.drop_map = settings->drop_shuffle ? drop_map : NULL;
+    spoiler.drop_used_fallback = drop_used_fallback;
     spoiler.goal_completable = Goal_IsCompletable(settings, &table);
     goal_completable = spoiler.goal_completable;
     {

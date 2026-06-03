@@ -54,6 +54,11 @@ void BossShuffle_ComputeAssignment(const RandoSettings *settings,
 // next (non-shuffle) slot or into vanilla play.
 void BossShuffle_Deactivate(void);
 
+// Human-readable names for the spoiler (boss assignments). `pool_index` is a
+// kBoss_* value (0..11); `dungeon_id` is 0..12. Returns "?" out of range.
+const char *BossShuffle_BossName(uint8 pool_index);
+const char *BossShuffle_DungeonName(uint8 dungeon_id);
+
 // Self-check (invoked from --rando-selftest): asserts determinism, the
 // pinned-Agahnim invariant, the off→identity contract, and that the shuffled
 // assignment is a permutation of the 10-boss pool over the 10 shuffleable
