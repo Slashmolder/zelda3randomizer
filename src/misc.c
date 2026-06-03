@@ -655,14 +655,43 @@ void Module05_LoadFile() {  // 828136
     // ledge — a sealed pocket with no items to escape, which traps an Inverted
     // player from the first frame (playtest-confirmed: spawn screen 0x5B, no
     // movement items). ALTTPR relocates the Inverted start to the navigable
-    // "Dark Chapel"; the fork never ported that. As the navigable replacement,
-    // respawn at the Inverted home — Link's House (room 0x104). Post-escape
-    // (progress>=2) the house is empty, and its overworld exit lands at the DW
-    // Bomb-Shop position (per the inverted Link's-House<->Bomb-Shop exit swap),
-    // which connects to the DW-South early checks. Gated on the active Inverted
-    // slot; vanilla / Open / Standard / Retro DW saves keep the room-32 path.
+    // "Dark Chapel". The fork never ported that; below we route post-Agahnim
+    // Inverted loads through the spawn-select menu (Dark Chapel / Dark Mountain)
+    // and use Link's House as the navigable home for everything else.
+    // Gated on the active Inverted slot; vanilla / Open / Standard / Retro DW
+    // saves keep the room-32 path.
     if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
         Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
+      // add-rando-inverted-dark-chapel-spawn: expose the post-Agahnim spawn-select
+      // menu for Inverted too. ALTTPR renames its three options "@'s House" /
+      // "Dark Chapel" / "Dark Mountain" (Link's House / Sanctuary / Mountain Cave)
+      // and places all three in the Dark World. Vanilla only reaches the menu via
+      // the Light-World-save `else` branch below; an Inverted slot bakes
+      // savegame_is_darkworld=0x40 and lands here, so before this it never saw the
+      // menu (it hard-routed to Link's House). Mirror the LW branch's menu gate
+      // verbatim: a death-revival / pre-Agahnim respawn keeps the §B6 direct
+      // Link's-House spawn; only a post-Agahnim file load opens the menu. The
+      // chosen anchor is forced into the DW by g_rando_inverted_spawn_redirect
+      // (set in Module1B_SpawnSelect, consumed at the overworld exit) instead of
+      // a kExitData asset override — that way the Sanctuary / Mountain-Cave
+      // *checks* (same rooms, entered from the overworld) still exit to the LW.
+      bool inverted_show_spawn_menu = !(mosaic_level ||
+          (death_var5 != 0 && !death_var4) ||
+          sram_progress_indicator < 2 ||
+          which_starting_point == 5);
+      if (inverted_show_spawn_menu) {
+        dialogue_message_index = (link_item_mirror == 2) ? 0x185 : 0x184;
+        Main_ShowTextMessage();
+        Dungeon_LoadPalettes();
+        INIDISP_copy = 15;
+        TM_copy = 4;
+        TS_copy = 0;
+        main_module_index = 27;
+        return;
+      }
+      // Death-revival / pre-Agahnim respawn: §B6 direct Link's-House spawn. The
+      // empty post-escape house exits to the DW Bomb-Shop position (per the
+      // inverted Link's-House<->Bomb-Shop exit swap), connecting to DW-South.
       player_is_indoors = 1;
       dungeon_room_index = 0x104;  // Link's House (Inverted home)
       LoadDungeonRoomRebuildHUD();

@@ -552,6 +552,49 @@ uint16 g_rando_entrance_exit_room;
 // cached at entry, hold the source cave door's overworld position) so the player
 // returns to the cave door. 0 = normal. Consumed by the exit path.
 uint8 g_rando_entrance_force_cached;
+// Inverted spawn-select respawn redirect — see rando.h. Set by
+// Module1B_SpawnSelect (Inverted slots only), consumed by the next
+// LoadOverworldFromDungeon (forces the anchor exit screen |= 0x40 → Dark World).
+uint8 g_rando_inverted_spawn_redirect;
+
+// add-rando-inverted-dark-chapel-spawn: rename the post-Agahnim spawn-select
+// options for an Inverted slot — "Sanctuary" -> "Dark Chapel", "The Mountain
+// Cave" -> "Dark Mountain" (ALTTPR labels). Operates on the FINISHED character
+// buffer (after Text_LoadCharacterBuffer's vanilla decode, so the player-name
+// expansion, [Position] command, and menu structure are all handled normally):
+// just swap the location word's font-byte run in place. The font-byte runs are
+// the US text-alphabet encodings (assets/text_compression.py); the search runs
+// match the vanilla decompressed menu (verified). 0x7F terminates the buffer.
+// embedded-data-guard: allow short UI text font-byte runs (search/replace for the
+// spawn-menu labels), not extracted/generated asset data.
+static void RewriteFontRun(uint8 *buf, const uint8 *find, int fn,
+                           const uint8 *repl, int rn) {
+  int len = 0;
+  while (buf[len] != 0x7F && len < 250) len++;  // buffer end (inclusive 0x7F)
+  if (buf[len] != 0x7F) return;  // no terminator found within cap — refuse to shift
+  for (int i = 0; i + fn <= len; i++) {
+    if (memcmp(buf + i, find, (size_t)fn) != 0) continue;
+    // Shift the tail (including the 0x7F terminator) to fit the replacement.
+    memmove(buf + i + rn, buf + i + fn, (size_t)(len - (i + fn) + 1));
+    memcpy(buf + i, repl, (size_t)rn);
+    return;
+  }
+}
+
+void Rando_RewriteInvertedSpawnMenu(uint16 msg_id, uint8 *buf) {
+  if (buf == NULL) return;
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive)) return;
+  if (Rando_GetActiveWorldState() != 2 /* kWorldState_Inverted */) return;
+  if (msg_id != 0x184 && msg_id != 0x185) return;
+  static const uint8 kSanctuary[]   = {0x12,0x1A,0x27,0x1C,0x2D,0x2E,0x1A,0x2B,0x32};
+  static const uint8 kDarkChapel[]  = {0x03,0x1A,0x2B,0x24,0x59,0x02,0x21,0x1A,0x29,0x1E,0x25};
+  RewriteFontRun(buf, kSanctuary, sizeof(kSanctuary), kDarkChapel, sizeof(kDarkChapel));
+  if (msg_id == 0x185) {  // 3-option menu (Magic Mirror held): also Dark Mountain
+    static const uint8 kMountainCave[]  = {0x13,0x21,0x1E,0x59,0x0C,0x28,0x2E,0x27,0x2D,0x1A,0x22,0x27,0x59,0x02,0x1A,0x2F,0x1E};
+    static const uint8 kDarkMountain[]  = {0x03,0x1A,0x2B,0x24,0x59,0x0C,0x28,0x2E,0x27,0x2D,0x1A,0x22,0x27};
+    RewriteFontRun(buf, kMountainCave, sizeof(kMountainCave), kDarkMountain, sizeof(kDarkMountain));
+  }
+}
 
 typedef struct { uint8 door_id; uint8 host_entrance; } RandoTakeAnyCaveRt;
 static const RandoTakeAnyCaveRt kRandoTakeAnyCaves[kRandoTakeAnyCaveCount] = {
@@ -1298,6 +1341,7 @@ static void Entrance_RuntimeTeardown(void) {
   Entrance_ClearEdgeOverrides();
   g_rando_entrance_exit_room = 0;
   g_rando_entrance_force_cached = 0;
+  g_rando_inverted_spawn_redirect = 0;
   Decoupled_Reset();
   Dungeon_Decoupled_Reset();
   Cross_Decoupled_Reset();
@@ -2870,7 +2914,9 @@ static void Rando_StartingInventorySelfCheck(void) {
   RandoSettings s;
   RandoSidecarSlot slot;
 
-  // (1) Inverted: Moon Pearl + Magic Mirror pre-grant on a FRESH save.
+  // (1) Inverted: Moon Pearl pre-grant on a FRESH save. The Magic Mirror is
+  // deliberately NOT pre-granted (add-rando-inverted-dark-chapel-spawn) — it is a
+  // found item so the spawn-select "Dark Mountain" option unlocks vanilla-style.
   Settings_SetDefaults(&s);
   s.world_state = kWorldState_Inverted;
   rando_selfcheck_build_slot(&slot, &s, 0x0123456789abcdefull);
@@ -2885,8 +2931,8 @@ static void Rando_StartingInventorySelfCheck(void) {
     tsc_die("StartingInventory(inverted): grant gate not set");
   if (link_item_moon_pearl != 1)
     tsc_die("StartingInventory(inverted): Moon Pearl not pre-granted");
-  if (link_item_mirror != 2)
-    tsc_die("StartingInventory(inverted): Magic Mirror not pre-granted");
+  if (link_item_mirror != 0)
+    tsc_die("StartingInventory(inverted): Magic Mirror must NOT be pre-granted");
   // Idempotent: a second call in the same boot must NOT re-grant.
   if (Rando_TryGrantStartingInventory(NULL))
     tsc_die("StartingInventory(inverted): second inject must be deduped");

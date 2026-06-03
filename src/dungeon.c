@@ -8495,7 +8495,20 @@ void Dungeon_LoadEntrance() {  // 82d8b3
   }
   bg1_y_offset = bg1_x_offset = 0;
   WORD(death_var5) = 0;
-  if (WORD(follower_indicator) == 4 || WORD(death_var4)) {
+  // add-rando-inverted-dark-chapel-spawn: the Inverted "Dark Chapel" spawn-select
+  // slot (which_starting_point 1) is the vanilla Dark Chapel room (0x112), reached
+  // via overworld door 0x5A and exiting to DW screen 0x53 — NOT the Light-World
+  // Sanctuary (kStartingPoint slot 1 = room 0x12). Room 0x112 has no kStartingPoint
+  // row, so load it through its real entrance (door 0x5A, via kEntranceData) and
+  // pre-set the cached overworld arrival below so walking back out returns to the
+  // Dark World at screen 0x53. Gated on the active Inverted slot; vanilla / Open /
+  // Standard / Retro keep the kStartingPoint Sanctuary spawn (RAM-compare safe).
+  bool inv_dark_chapel =
+      (enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */ &&
+      which_starting_point == 1 &&
+      (WORD(follower_indicator) == 4 || WORD(death_var4));
+  if ((WORD(follower_indicator) == 4 || WORD(death_var4)) && !inv_dark_chapel) {
     int i = which_starting_point;
     WORD(which_entrance) = kStartingPoint_entrance[i];
     dungeon_room_index = dungeon_room_index2 = kStartingPoint_rooms[i];
@@ -8539,8 +8552,14 @@ void Dungeon_LoadEntrance() {  // 82d8b3
     queued_music_control = kStartingPoint_musicTrack[i];
     if (i == 0 && sram_progress_indicator == 0)
       queued_music_control = 0xff;
-    death_var4 = 0;
+    death_var4 = 0;  // INVARIANT: this branch consumes the spawn signal. Any branch
+                     // that DIVERTS from it (e.g. the inv_dark_chapel entrance-path
+                     // spawn below) MUST also clear death_var4, or the stale flag
+                     // re-routes the NEXT Dungeon_LoadEntrance back here and discards
+                     // its which_entrance (the Dark Chapel re-entry→Link's-House bug).
   } else {
+    if (inv_dark_chapel)
+      WORD(which_entrance) = 0x5A;  // Dark Chapel overworld door 0x5A -> room 0x112
     int i = which_entrance;
     dungeon_room_index = dungeon_room_index2 = kEntranceData_rooms[i];
     BG1VOFS_copy = BG2VOFS_copy = BG1VOFS_copy2 = BG2VOFS_copy2 = kEntranceData_scrollY[i];
@@ -8589,6 +8608,91 @@ void Dungeon_LoadEntrance() {  // 82d8b3
 
     if (dungeon_room_index >= 0x100)
       dung_cur_floor = 0;
+  }
+  // add-rando-inverted-dark-chapel-spawn: finish the Dark Chapel (room 0x112) spawn.
+  // The entrance load above placed Link via the chapel's own door (0x5A); this block
+  // (1) clears the spawn signal so a later door re-entry isn't misrouted to the
+  // kStartingPoint/Link's-House path, (2) pre-loads the *_exit cache with the chapel's
+  // genuine Dark-World screen-0x53 arrival so the NATURAL cached-exit branch (room >=
+  // 0x100) returns Link there on the way out, and (3) repositions Link to the altar.
+  // No search-branch borrow / screen-bit redirect — the cached exit + this genuine
+  // cache makes exit + walk-back-in behave like the normal "walk into the dark
+  // sanctuary" path.
+  if (inv_dark_chapel) {
+    // Clear the spawn-select signal. The vanilla kStartingPoint branch clears
+    // death_var4 (line ~8555); this entrance-path chapel spawn must too. Otherwise
+    // it persists, and a later WALK-IN through the chapel door — which correctly
+    // sets which_entrance=0x5A — re-enters Dungeon_LoadEntrance with death_var4 still
+    // 1 but which_starting_point no longer 1, so the gate at the top routes into the
+    // kStartingPoint branch and loads kStartingPoint_rooms[which_starting_point]
+    // (= Link's House), throwing away which_entrance=0x5A. Log-confirmed: re-entry
+    // fired which_entrance=0x5A but produced NO entrance-path DLE line — it took the
+    // kStartingPoint branch. Clearing death_var4 here makes re-entry load room 0x112.
+    WORD(death_var4) = 0;
+    // EXIT cache: replay the chapel's GENUINE Dark-World overworld arrival (screen
+    // 0x53) when Link leaves. Room 0x112 (>= 0x100, != 0x104) naturally takes the
+    // cached-exit branch in LoadOverworldFromDungeon, which restores this *_exit
+    // block via LoadCachedEntranceProperties — the same screen the normal "walk to
+    // the dark sanctuary and enter" path caches on entry (Dungeon_LoadEntrance, the
+    // non-death branch above). A menu spawn has no real overworld state to cache, so
+    // without this the cached exit replayed garbage; the earlier Sanctuary-room
+    // borrow (g_rando_entrance_exit_room=0x12 + a 0x40 screen-bit redirect) loaded
+    // the *Light-World Sanctuary* screen tagged as 0x53 — a counterfeit whose door
+    // tile sits two rows north of the chapel's, so re-entry never matched the chapel
+    // entrance (F12: lx=89/id=0x5A by position, but the door-tile check failed) and
+    // fell through to Link's House. These values are an F12 capture of *_exit taken
+    // standing inside room 0x112 after a genuine door entry — the chapel door is
+    // fixed, so they are deterministic (like the altar coordinates below).
+    overworld_area_index_exit = 0x0053;
+    WORD(TM_copy_exit) = 0x0016;
+    BG2VOFS_copy2_exit = 0x0400;
+    BG2HOFS_copy2_exit = 0x06DA;
+    link_y_coord_exit = 0x0456;
+    link_x_coord_exit = 0x0758;
+    overworld_screen_index_exit = 0x0053;
+    map16_load_src_off_exit = 0x009C;  // genuine; 0x009A (wrong-folder dump) shifted the
+                                       // tilemap so the chapel door tile mis-read (tab=0)
+    camera_y_coord_scroll_low_exit = 0x046F;
+    camera_x_coord_scroll_low_exit = 0x075F;
+    ow_scroll_vars0_exit.ystart = 0x0400;
+    ow_scroll_vars0_exit.yend   = 0x051E;
+    ow_scroll_vars0_exit.xstart = 0x0600;
+    ow_scroll_vars0_exit.xend   = 0x0700;
+    up_down_scroll_target_exit       = 0x0320;
+    up_down_scroll_target_end_exit   = 0x0600;
+    left_right_scroll_target_exit    = 0x0500;
+    left_right_scroll_target_end_exit = 0x0800;
+    byte_7EC164 = 0x00;
+    main_tile_theme_index_exit  = 0x21;
+    aux_tile_theme_index_exit   = 0x40;
+    sprite_graphics_index_exit  = 0x13;
+    overworld_unk1_exit     = 0x0000;
+    overworld_unk1_neg_exit = 0x0000;
+    overworld_unk3_exit     = 0x0006;   // genuine; wrong-folder dump had the sign flipped
+    overworld_unk3_neg_exit = 0xFFFA;   // (0xFFF6 / 0x000A) -> choppy camera on exit
+    // Wake at the chapel ALTAR, not the south entrance door kEntranceData[0x5A]
+    // computes (player_y ~0x23D8). Room 0x112's interior is NOT a +0x2000 shift of
+    // the Sanctuary's, so a derived altar landed Link in a wall — these coordinates
+    // come from a runtime F12 dump taken standing on the altar tile, captured into
+    // the same framing set the entrance load writes (link / BG scroll / camera /
+    // quadrant / lower-level). room_bounds/theme/music from the entrance load stay
+    // correct for room 0x112; only what moving door->altar changes is overridden.
+    link_x_coord = 0x0478;
+    link_y_coord = 0x22AE;
+    link_direction_facing = 2;  // face down, like the vanilla Sanctuary wake-up
+    BG1VOFS_copy = BG2VOFS_copy = BG1VOFS_copy2 = BG2VOFS_copy2 = 0x2242;
+    BG1HOFS_copy = BG2HOFS_copy = BG1HOFS_copy2 = BG2HOFS_copy2 = 0x0400;
+    camera_y_coord_scroll_low = 0x00B9;
+    camera_y_coord_scroll_hi = camera_y_coord_scroll_low + 2;
+    camera_x_coord_scroll_low = 0x007F;
+    camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
+    quadrant_fullsize_x = 0;
+    quadrant_fullsize_y = 2;
+    link_quadrant_x = 0;
+    link_quadrant_y = 0;
+    link_is_on_lower_level = 0;
+    link_is_on_lower_level_mirror = 0;
+    is_standing_in_doorway = 0;  // altar tile is not a doorway
   }
   player_oam_x_offset = player_oam_y_offset = 0x80;
   link_direction_mask_a = link_direction_mask_b = 0xf;

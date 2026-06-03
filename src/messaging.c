@@ -396,6 +396,21 @@ void Module1B_SpawnSelect() {  // 828586
   uint8 bak = which_starting_point;
   which_starting_point = kLocationMenuStartPos[choice_in_multiselect_box];
   subsubmodule_index = 0;
+  // add-rando-inverted-dark-chapel-spawn: under an Inverted slot, spawn the player
+  // INSIDE the anchor interior (the vanilla spawn-select room — the "Dark Chapel"
+  // IS the Sanctuary interior, "Dark Mountain" the Mountain Cave) exactly as
+  // vanilla does, and arm the redirect so that walking OUT the door lands in the
+  // Dark World instead of the Light World (consumed in LoadOverworldFromDungeon:
+  // Sanctuary 0x13->0x53, Mountain Cave 0x03->0x43; "@'s House" / Link's House is
+  // already 0x6C via its entrance-swap exit override, so the OR is a no-op there).
+  // Keeping the normal indoor -> walk-out-the-door path (LoadDungeonRoomRebuildHUD)
+  // is deliberate: it sets up the overworld screen the way the game expects. An
+  // earlier revision spawned directly outdoors (main_module 8) and the player
+  // could not move — that shortcut skipped the normal door-exit screen setup.
+  // Non-Inverted is untouched, so the menu RAM-compares byte-identical.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */)
+    g_rando_inverted_spawn_redirect = 1;
   LoadDungeonRoomRebuildHUD();
   which_starting_point = bak;
 }
@@ -2340,6 +2355,13 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
     src += TEXTCMD_MULTIBYTE(cmd);
   }
   *dst = 0x7f;
+  // add-rando-inverted-dark-chapel-spawn: for an Inverted slot, rename the
+  // post-Agahnim spawn-select options in the FINISHED buffer — "Sanctuary" ->
+  // "Dark Chapel", "The Mountain Cave" -> "Dark Mountain" (ALTTPR labels). Done
+  // after the vanilla decode so the player-name expansion / position command /
+  // menu structure are all handled normally; this only swaps the location word's
+  // font-byte run. No-op for any non-menu id / non-Inverted slot.
+  Rando_RewriteInvertedSpawnMenu(dialogue_message_index, messaging_text_buffer);
   dialogue_msg_read_pos = 0;
 }
 

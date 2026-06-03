@@ -304,6 +304,23 @@ uint16 Rando_EntranceDungeonDecoupledExitRoom(uint16 lx);
 extern uint8 g_rando_entrance_force_cached;
 bool Rando_EntranceForceCachedExit(uint16 lx);
 
+// Inverted spawn-select respawn redirect (add-rando-inverted-dark-chapel-spawn).
+// Set by Module1B_SpawnSelect when an Inverted slot commits a respawn-menu choice
+// ("@'s House" / "Dark Chapel" / "Dark Mountain"); consumed by the next
+// LoadOverworldFromDungeon, which forces the spawn-anchor's overworld exit into
+// the Dark World (screen |= 0x40). Runtime-gated rather than an asset override so
+// the Sanctuary / Mountain-Cave *checks* (same rooms, but entered from the
+// overworld, not the menu) still exit to the Light World unchanged. 0 = inactive.
+extern uint8 g_rando_inverted_spawn_redirect;
+
+// add-rando-inverted-dark-chapel-spawn: for an active Inverted slot, rename the
+// post-Agahnim spawn-select options "Sanctuary" -> "Dark Chapel" and "The Mountain
+// Cave" -> "Dark Mountain" (ALTTPR labels). Called on the FINISHED character
+// buffer (after Text_LoadCharacterBuffer's vanilla decode) for dialogue 0x184 /
+// 0x185 — swaps the location word's font-byte run in place. No-op for any other
+// id / non-Inverted slot, so vanilla / Open / Standard / Retro are byte-identical.
+void Rando_RewriteInvertedSpawnMenu(uint16 msg_id, uint8 *buf);
+
 // Decoupled / Insanity (Stage 4, D.4) runtime hooks. SetEnteredDoor: at the
 // overworld entry hook, record the entered cave door. CaptureArrival: after
 // Dungeon_LoadEntrance caches *_exit, snapshot that door's overworld arrival.

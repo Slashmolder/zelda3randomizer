@@ -83,7 +83,7 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   warps correctly (asset 113 is overridden); only the icon position is off.
   Visual-only; a gated C change to those arrays would close it.
 
-- **B6 — Inverted spawn point (FIXED; Dark-Chapel exactness deferred).** A fresh
+- **B6 — Inverted spawn point (FIXED & PLAYTEST-CONFIRMED).** A fresh
   Inverted slot used to bake `which_starting_point = 1` (Sanctuary, a LW
   building) → the player spawned in the Light World (hard trap, C1). **Fixed**
   (`src/rando/rando_generate.c Rando_InitNewSlotSram`): Inverted now bakes
@@ -91,10 +91,28 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   position (screen 0x6C) via the Link's-House↔Bomb-Shop entrance swap — the
   Inverted home, in the DW, navigable. The outdoors-DW reload path
   (`src/misc.c Module05_LoadFile`) is likewise redirected from the trapped pyramid
-  ledge to Link's House. **Remaining divergence:** ALTTPR respawns at a relocated
-  "Dark Chapel" (a DW Sanctuary, `Rom.php:1680-1730` `StartingArea*` block), not
-  Link's House. Functionally equivalent (both navigable DW homes), but not
-  ALTTPR-exact. Tracked by the `add-rando-inverted-dark-chapel-spawn` change.
+  ledge to Link's House. **Dark Chapel / Dark Mountain (CONFIRMED).**
+  ALTTPR exposes a post-Agahnim respawn menu whose three options ("@'s House" /
+  "Dark Chapel" / "Dark Mountain") all land in the DW. The fork's `Module05_LoadFile`
+  hard-routed every Inverted DW reload to Link's House, so the menu (`main_module=27`)
+  never fired for Inverted. **Added** (`add-rando-inverted-dark-chapel-spawn`):
+  `Module05_LoadFile` routes a post-Agahnim Inverted load through the spawn-select
+  menu (death / pre-Agahnim respawns keep the direct Link's-House spawn).
+  - **Dark Chapel = vanilla room `0x112`** (the REAL DW chapel, NOT the LW Sanctuary):
+    `Dungeon_LoadEntrance` special-cases the Inverted slot-1 spawn to load room `0x112`
+    via its own door (`which_entrance = 0x5A`) at the altar, exits via the room's
+    cached-exit branch fed a genuine screen-`0x53` `*_exit` cache, and **clears
+    `death_var4`** so walking back IN through the chapel door re-enters room `0x112`
+    (without the clear, the carryover routed the re-entry into the `kStartingPoint`
+    branch → Link's House). Spawn + exit + re-entry all PLAYTEST-CONFIRMED.
+  - **Dark Mountain** keeps the indoor Mountain-Cave spawn + a runtime
+    `g_rando_inverted_spawn_redirect` (`LoadOverworldFromDungeon`'s search branch ORs
+    `0x40` into its exit screen → DW `0x43`). NOT a `kExitData` asset override, so the
+    Mountain-Cave *check* (entered from the overworld) still exits to the LW.
+  - **Dark Mountain is mirror-gated** (vanilla `link_item_mirror == 2`): the fork no
+    longer grants a starting Magic Mirror (only Moon Pearl), so it unlocks when the
+    mirror is found. Logic-safe (placer never pre-collected the mirror; corpus
+    digests unchanged).
 
 - **B7 — DW→LW under-rock warps (BUILT; PLAYTEST-PENDING).** In Inverted the
   Magic Mirror only carries LW→DW; the way *out* of the DW to the LW is a set of
@@ -114,10 +132,10 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   `savegame_is_darkworld` flag made any spawn land in the DW. **Playtest proved
   otherwise:** a fresh Inverted slot baked `which_starting_point = 1` (the
   Sanctuary), a *Light-World* building whose exit dropped the player in the LW —
-  the "spawning in the LW" trap. The fork has **no `StartingArea*` / Dark-Chapel
-  tables**, so it cannot reproduce ALTTPR's exact relocated respawn. The spawn
-  *world* is now fixed (B6); the Dark-Chapel *exactness* is a live gap (B6's
-  note) tracked by the `add-rando-inverted-dark-chapel-spawn` OpenSpec change.
+  the "spawning in the LW" trap. The spawn *world* is now fixed (B6), AND the
+  Dark-Chapel *exactness* is now resolved too: the `add-rando-inverted-dark-chapel-spawn`
+  change spawns "Dark Chapel" into vanilla room `0x112` (the real DW chapel) directly,
+  rather than ALTTPR's `StartingArea*` asset block (B6, playtest-confirmed).
 
 - **C2 — Pyramid ExtraHole + the pyramid/HC exit rows.** ALTTPR adds a fall-hole
   at area 0x1B (LW Hyrule Castle) and relocates pyramid/HC exits (`Rom.php`
@@ -127,12 +145,20 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
 
 ## D. Latent / unverified edges (need a playtest to confirm before fixing)
 
-- **D1 — Mountain-Cave spawn-select world.** Selecting "Mountain Cave" (index 6)
-  from the spawn-select menu in Inverted *may* land in the Light-World DM cave
-  (the menu path sets `which_starting_point` but not the world bit). Unverified.
-  If confirmed, the fix is a one-liner: force `savegame_is_darkworld = 0x40` on an
-  index-6 spawn-select under an active Inverted slot. S&Q and death-respawn are
-  already correct, so this is the only spawn path at risk.
+- **D1 — Mountain-Cave spawn-select world. *(ADDRESSED — see B6; BUILT,
+  PLAYTEST-PENDING.)*** Selecting "Mountain Cave" (index 6) from the spawn-select
+  menu in Inverted would land in the Light-World DM cave. The earlier-hypothesised
+  one-liner (force `savegame_is_darkworld = 0x40` on the index-6 spawn) was wrong
+  on two counts: (a) the spawn-select menu never fired for Inverted at all — the
+  reverted first attempt proved it (`Module05_LoadFile` hard-routed Inverted DW
+  loads to Link's House); and (b) the world bit alone wouldn't move the overworld
+  *exit* screen, which is keyed off `kExitData_ScreenIndex`. Fixed under
+  `add-rando-inverted-dark-chapel-spawn` together with the Dark Chapel (B6): the
+  menu is now reachable for Inverted and the index-6 anchor spawns in the Mountain
+  Cave interior, walking out to the DW Death Mountain (screen `0x43`). Dark Mountain
+  is also **mirror-gated**
+  like vanilla — the fork no longer grants a starting Magic Mirror, so the option
+  only appears once the mirror is found. Awaiting playtest.
 
 ## E. Implemented but PLAYTEST-PENDING (built + audited, runtime-unconfirmed — not gaps, just unverified)
 

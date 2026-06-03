@@ -1766,11 +1766,20 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   // world_state. CLI generation paths that DO have settings should pass them.
   if (g_rando_slot_active == 0) return false;
 
-  // Inverted: pre-grant Moon Pearl + Magic Mirror equivalents. These are
-  // ALSO baked into the fresh-save SRAM image at slot creation
-  // (select_file.c), so this is defense-in-depth — and idempotent, since
-  // Link_ReceiveItem for an already-owned absolute is a no-op bit-set. We
-  // grant ABOVE the once-per-boot and cold-boot gates because:
+  // Inverted: pre-grant Moon Pearl ONLY. The Magic Mirror is intentionally NOT
+  // a starting item (add-rando-inverted-dark-chapel-spawn): ALTTPR places the
+  // mirror in the world (it is not pre-collected), and the post-Agahnim
+  // spawn-select gates its third option ("Dark Mountain") on having the Magic
+  // Mirror (link_item_mirror == 2). Auto-granting the mirror at start made Dark
+  // Mountain a free spawn option from the first frame; leaving it to be found
+  // restores the vanilla unlock. This is logic-safe: Place_AssumedFill never
+  // pre-collected the mirror (only RescuedZelda is pre-granted for non-Standard),
+  // so placement/reachability is unchanged — the player simply must find the
+  // mirror to do LW->DW mirror trips, exactly as the logic graph already assumes.
+  // Moon Pearl stays a start grant (no-bunny in the Light World). This is ALSO
+  // baked into the fresh-save SRAM image at slot creation (rando_generate.c), so
+  // this is defense-in-depth — and idempotent. We grant ABOVE the once-per-boot
+  // and cold-boot gates because:
   //   (a) `settings` is NULL on slot-reload (the sidecar persists only
   //       settings_hash, not the canonical settings blob), so we read the
   //       world_state captured at Rando_ActivateSidecarSlot instead; and
@@ -1791,8 +1800,8 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
       // idempotent and animation-free.
       // rando-exempt: state-shuffle — bunny-state starting inventory (Inverted)
       g_ram[0xF357] = 1;  // link_item_moon_pearl
-      // rando-exempt: state-shuffle — bunny-state starting inventory (Inverted)
-      g_ram[0xF353] = 2;  // link_item_mirror (2 = Magic Mirror)
+      // (Magic Mirror is deliberately NOT granted — see the comment above; it is
+      // a found item so the spawn-select Dark Mountain option unlocks vanilla-style.)
     }
   }
 
@@ -1810,19 +1819,19 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   // the refill, matching ALTTPR's setEscapeFills semantics (refill on each
   // Uncle/Zelda/Sanctuary respawn).
   //
-  // The Inverted Moon-Pearl + Magic-Mirror grant lives ABOVE this gate (see
-  // the top of this function) precisely so it still fires when this cold-boot
-  // guard short-circuits. Those grants are idempotent (Link_ReceiveItem for an
-  // already-owned absolute is a no-op bit-set), so re-running them every boot
-  // is harmless; only the escape-ammo filler below must be guarded.
+  // The Inverted Moon-Pearl grant lives ABOVE this gate (see the top of this
+  // function) precisely so it still fires when this cold-boot guard
+  // short-circuits. That grant is idempotent (a direct already-owned byte-set),
+  // so re-running it every boot is harmless; only the escape-ammo filler below
+  // must be guarded.
   if (g_ram[0xF3C5] != 0) {
     g_rando_starting_inventory_granted = 1;  // dedupe within this boot
     return false;
   }
 
-  // (Inverted Moon Pearl + Magic Mirror are granted ABOVE the cold-boot gate
-  // now — see the top of this function — so the grant fires on reload where
-  // settings is NULL and survives the cold-boot short-circuit.)
+  // (Inverted Moon Pearl is granted ABOVE the cold-boot gate now — see the top
+  // of this function — so the grant fires on reload where settings is NULL and
+  // survives the cold-boot short-circuit. The Magic Mirror is no longer granted.)
 
   // Escape-ammo pre-grant. Prevents impossible-seed cases where the sphere-0
   // weapon needs ammo the player doesn't start with (bow/no-arrows,

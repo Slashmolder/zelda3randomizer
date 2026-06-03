@@ -1838,6 +1838,16 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   uint8 cross_cave = 0xFF;
   uint8 cross_kind = Rando_CrossDecoupledConsumeExit(&cross_cave);
 
+  // add-rando-inverted-dark-chapel-spawn: consume the Inverted spawn-select
+  // redirect the SAME way (clear the global into a local at the top) so a stray
+  // mirror / special / ending warp can't leave it armed for a later unrelated
+  // exit. The redirect drives the room-keyed SEARCH branch to OR 0x40 into the
+  // exit screen. As built this drives only Mountain Cave (0x03 -> 0x43); the Dark
+  // Chapel exits via its own cached *_exit cache (screen 0x53 baked in, see below)
+  // and Link's House is already 0x6C, so the redirect is a no-op for both.
+  bool inverted_spawn_redirect = (g_rando_inverted_spawn_redirect != 0);
+  g_rando_inverted_spawn_redirect = 0;
+
   bool take_cached;
   if (cross_kind != 0) {
     take_cached = (cross_kind == 1);  // cave → cached replay; dungeon → search
@@ -1845,6 +1855,11 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     take_cached = force_cached ||
         (dungeon_room_index != 0x104 && dungeon_room_index < 0x180 && dungeon_room_index >= 0x100);
   }
+  // add-rando-inverted-dark-chapel-spawn: the Dark Chapel interior is room 0x112
+  // (>= 0x100, != 0x104), so it takes the cached-exit branch below. The chapel spawn
+  // (Dungeon_LoadEntrance) pre-loads the genuine DW screen-0x53 arrival into the
+  // *_exit cache, so the cached branch replays the real chapel screen — same as the
+  // normal "walk into the dark sanctuary" entry. No screen-borrow / redirect needed.
   if (take_cached) {
     // Decoupled (D.4): on a cave-class exit, replay the target cave's captured
     // arrival so Link emerges at a DIFFERENT door (it overwrites the live *_exit
@@ -1868,6 +1883,53 @@ void LoadOverworldFromDungeon() {  // 82e4a3
         link_player_handler_state = kPlayerState_PermaBunny;
         LoadGearPalettes_bunny();
       }
+    } else if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      // add-rando-inverted-dark-chapel-spawn: a cached exit can cross worlds — the
+      // Inverted Dark Chapel is a Dark-World interior whose cached arrival is DW
+      // screen 0x53. LoadCachedEntranceProperties restores the screen index (world
+      // bit) but not savegame_is_darkworld / is_in_dark_world / Link's bunny form;
+      // sync them from the restored screen (mirroring the search branch). GATED on
+      // RandomizerActive (defense-in-depth): in vanilla a cached exit never changes
+      // the world — the entry screen's world bit always equals the unchanged
+      // savegame_is_darkworld, so the inner `if` is already a no-op — but gating
+      // guarantees the RAM-compare can't diverge even if a future vanilla path breaks
+      // that load-bearing invariant.
+      uint8 dest_dark = (overworld_screen_index & 0x40) ? 1 : 0;
+      if (dest_dark != (savegame_is_darkworld != 0)) {
+        savegame_is_darkworld = dest_dark;
+        is_in_dark_world = dest_dark;
+        if (link_item_moon_pearl || !dest_dark) {
+          ForceNonbunnyStatus();
+        } else {
+          link_is_bunny = link_is_bunny_mirror = 1;
+          link_player_handler_state = kPlayerState_PermaBunny;
+          LoadGearPalettes_bunny();
+        }
+      }
+    }
+    // add-rando-inverted-dark-chapel-spawn: position Link to re-enter the Dark Chapel.
+    // Screen 0x53's STATIC map already contains the enterable door — the entrance
+    // (ent[89], tilemap pos 0x2AA = col 21, row 5) fires when Link is FACING UP there,
+    // because the up-facing door check reads the cell one to the RIGHT (col 22 = map16
+    // 0xE0, whose subtiles are in kOverworld_Entrance_Tab0/1; asset-decode-verified).
+    // So NO entrance marker is needed (and must NOT be painted — 0xDA4/0xDA6 would
+    // overwrite that 0xE0 and kill the door). Runtime logs proved the trigger is a
+    // precise spot: Link must walk straight UP column 21 (x=0x758) into row 5. The
+    // generic cached `link_y -= 0x10` left Link NORTH of it; a south-facing exit made
+    // him turn before walking up and drift off the column to col 22, missing the door.
+    // Fix: clear any marker, pin Link to column 21 just SOUTH of the door, and face
+    // him UP so simply holding "up" walks him straight into it — exactly the genuine
+    // Link's-House->dark-sanctuary approach. (map16_load_src_off_exit=0x9C, set at
+    // spawn, keeps the tilemap aligned so 0xE0 lands at col 22.)
+    if (dungeon_room_index == 0x112 &&
+        (enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_GetActiveWorldState() == 2) {
+      ow_entrance_value = 0;          // no marker; the static 0xE0 door must survive
+      link_x_coord = 0x0758;          // column 21 — the chapel door's column (exact)
+      link_y_coord = 0x0466;          // row 6, just below the door (closer to the real
+                                      // exit spot; still south of the row-5 trigger so
+                                      // walking up re-enters)
+      WORD(link_direction_facing) = 2; // face DOWN: avoids auto-walking back into the door
     }
   } else {
 
@@ -1896,6 +1958,23 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     overworld_unk3 = kExitData_Unk3[k];
     overworld_unk1_neg = -overworld_unk1;
     overworld_unk3_neg = -overworld_unk3;
+    // add-rando-inverted-dark-chapel-spawn: when this overworld load is an Inverted
+    // spawn-select respawn (flag armed in Module1B_SpawnSelect), force the anchor
+    // into the Dark World. Vanilla exit screens are LW (Sanctuary 0x13, Mountain
+    // Cave 0x03, Link's House 0x2C); ORing the world bit lands the DW mirror
+    // (0x53 "Dark Chapel" / 0x43 DW Death Mountain / 0x6C — the last already DW via
+    // the Link's-House asset override, so this is a no-op there). Setting the world
+    // bit HERE (before the sync block below) lets that block flip
+    // savegame_is_darkworld / is_in_dark_world / bunny for us — same path a
+    // cross-world dungeon exit uses. Done only in the room-keyed search branch, so
+    // a normal Sanctuary/Mountain-Cave *check* visit (flag not armed) is unaffected.
+    if (inverted_spawn_redirect) {
+      overworld_screen_index |= 0x40;
+      overworld_area_index |= 0x40;
+    }
+    // (The Dark Chapel, room 0x112, no longer reaches this search branch — it takes
+    // the cached-exit branch above with a pre-loaded genuine screen-0x53 arrival.
+    // Mountain Cave / Link's House still use this branch + the 0x40 redirect.)
     // Dungeon decoupled (Insanity): a one-way dungeon exit can emerge in the OTHER
     // world (the destination is a DIFFERENT dungeon's door). This search branch sets
     // the screen index (world bit 0x40) but NOT savegame_is_darkworld / is_in_dark_

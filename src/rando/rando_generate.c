@@ -82,8 +82,12 @@ void Rando_InitNewSlotSram(uint8 *target_sram, uint8 world_state) {
       target_sram[0x3CA] = 0x40;  // savegame_is_darkworld (DW)
       target_sram[0x3C5] = 0x02;  // sram_progress_indicator (skip intro)
       target_sram[0x3C6] = 0x14;  // sram_progress_flags
-      target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW)
-      target_sram[0x353] = 0x02;  // link_item_mirror (Magic Mirror)
+      target_sram[0x357] = 0x01;  // link_item_moon_pearl (held; no bunny in DW — Inverted starts in the Dark World)
+      // link_item_mirror is intentionally NOT pre-granted
+      // (add-rando-inverted-dark-chapel-spawn): ALTTPR places the mirror in the
+      // world, and the spawn-select "Dark Mountain" option is gated on owning it
+      // (link_item_mirror == 2). Leaving it to be found restores the vanilla
+      // unlock. Logic-safe — Place_AssumedFill never pre-collects the mirror.
       // #82 Inverted spawn. which_starting_point indexes kStartingPoint_rooms[]
       // (dungeon.c): 1 = the Sanctuary, a *Light-World* building whose exit drops
       // the player in the LW — entirely wrong for an Inverted (DW-home) game, and
@@ -136,11 +140,12 @@ void RandoGenerate_SelfCheck(void) {
       exit(2);
     }
   }
-  // Inverted: Dark-World start with Moon Pearl + Magic Mirror + Link's-House
-  // spawn (which_starting_point 0 -> DW Bomb-Shop position via the entrance swap).
+  // Inverted: Dark-World start with Moon Pearl (NOT the Magic Mirror — that is a
+  // found item, see Rando_InitNewSlotSram) + Link's-House spawn
+  // (which_starting_point 0 -> DW Bomb-Shop position via the entrance swap).
   Rando_InitNewSlotSram(sram, kWorldState_Inverted);
   if (sram[0x3CA] != 0x40 || sram[0x3C5] != 0x02 || sram[0x3C6] != 0x14 ||
-      sram[0x357] != 0x01 || sram[0x353] != 0x02 || sram[0x3C8] != 0x00) {
+      sram[0x357] != 0x01 || sram[0x353] != 0x00 || sram[0x3C8] != 0x00) {
     fprintf(stderr, "RandoGenerate_SelfCheck: Inverted DW start-state SRAM wrong\n");
     exit(2);
   }
