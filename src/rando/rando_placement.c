@@ -1311,21 +1311,6 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
 // the placement is winnable for the active goal.
 // ---------------------------------------------------------------------------
 
-// Build a final-state inventory from a placement table: count[item_id] is the
-// number of times that item appears across all placements. Pre-populated with
-// counts[StartingHeart] = 3.
-static void build_final_inventory(const RandoPlacementTable *t, RandoCounts *out) {
-  memset(out, 0, sizeof(*out));
-  out->by_item_id[121] = 3;  // StartingHeart
-  if (t == NULL) return;
-  for (uint16 i = 0; i < t->count; i++) {
-    uint16 item_id = t->entries[i].item_id;
-    if (item_id < 256 && out->by_item_id[item_id] < 0xFFFF) {
-      out->by_item_id[item_id]++;
-    }
-  }
-}
-
 // Apply vanilla-mode dungeon-item pre-grants to `counts`. Mirror of the
 // pre-grant block in place_assumed_fill_attempt; called by both
 // Goal_IsCompletable and Logic_ComputeSpheres so reachability stays
@@ -1408,11 +1393,35 @@ bool Goal_IsCompletable(const RandoSettings *settings,
   // `goal_completable: true` even for un-completable accessibility=none
   // seeds, which actively misled players who explicitly opted in to
   // an un-completable seed.)
+  // Beatability must be judged against the inventory the player can ACTUALLY
+  // collect (sphere-walked), not the full placed pool. Summing every placed
+  // item over-approximates reachability: a goal-gating crystal can count as
+  // "reachable" through a circular dependency — its location is only reachable
+  // given an item that is itself stranded behind that same crystal. The
+  // accessibility=none ("beatable only") tier skips the per-placement sphere
+  // check in Accessibility_SeedAcceptable, so this completability predicate is
+  // the ONLY backstop against shipping an unbeatable seed there (see the
+  // GT crystal-gate circularity documented at tests/rando_corpus/manifest.yaml).
+  //
+  // Walk spheres first; keep only items from sphere-reachable placements. The
+  // starting basis (StartingHeart + RescuedZelda pre-grant + vanilla dungeon
+  // grants) mirrors Logic_ComputeSpheres exactly, so reachability over this
+  // fixpoint inventory equals the true achievable set.
+  RandoSpheres reachable_spheres;
+  Logic_ComputeSpheres(settings, placements, &reachable_spheres);
   RandoCounts final_inv;
-  build_final_inventory(placements, &final_inv);
-  apply_vanilla_dungeon_item_grants(settings, &final_inv);
+  memset(&final_inv, 0, sizeof(final_inv));
+  final_inv.by_item_id[121] = 3;  // StartingHeart
   if (settings->world_state != kWorldState_Standard) {
     final_inv.by_item_id[122] = 1;  // RescuedZelda pre-granted in non-Standard
+  }
+  apply_vanilla_dungeon_item_grants(settings, &final_inv);
+  for (uint16 i = 0; i < placements->count; i++) {
+    if (reachable_spheres.sphere_index_by_placement[i] == kSphereIndexUnreachable) continue;
+    uint16 item_id = placements->entries[i].item_id;
+    if (item_id < 256 && final_inv.by_item_id[item_id] < 0xFFFF) {
+      final_inv.by_item_id[item_id]++;
+    }
   }
   const RandoReachability *r = Logic_ComputeReachability(&final_inv, settings);
   if (r == NULL) {

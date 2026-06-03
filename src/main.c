@@ -998,7 +998,7 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
   RandoCounts counts;
   memset(&counts, 0, sizeof(counts));
   for (int i = 0; i < 256; i++) counts.by_item_id[i] = 7;  // enough for any HAS_AMOUNT N<=7
-  counts.by_item_id[121] = 3;  // StartingHeart (per build_final_inventory pattern)
+  counts.by_item_id[121] = 3;  // StartingHeart (matches the Logic_ComputeSpheres basis)
   counts.by_item_id[122] = 1;  // RescuedZelda (non-Standard pre-grant)
 
   // Allocate per-iteration sample buffer in performance-counter ticks.
