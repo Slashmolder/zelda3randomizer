@@ -49,5 +49,5 @@
   sprite_main.c is pre-existing on main, unrelated to this change.)
 - [x] 7.4 Race-mode stamp byte-stability: the race corpus entries (52–54) pass
   the ZRSR reveal round-trip, exercising generate-vs-regen byte-identity.
-- [ ] 7.5 Fresh-eyes audit agent pass (new findings only).
+- [x] 7.5 Fresh-eyes audit agent pass (new findings only). <!-- done: found a HIGH — Goal_IsCompletable judged beatability from the FULL placed pool (build_final_inventory), an over-approximation that let the `none` tier (which skips the per-placement sphere walk) accept a circular-unbeatable seed. Fixed: beatability now walks spheres and counts only sphere-reachable items (commit "rando(accessibility): judge beatability against sphere-reachable inventory"). Validated: clean Release|x64 build, --rando-selftest OK, 69/69 corpus digest-identical (no kGeneratorVersion bump). NOTE: the trigger is the placer's rare best-effort fallback; C0FFEE05 converges identically with/without the fix, so no corpus entry locks it — a regression test would need a config that forces the 256-attempt best-effort path. -->
 - [ ] 7.6 Hand back the branch for the user's playtest.
