@@ -1644,12 +1644,33 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
       Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
       Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
+      // Phase B Slice 7/8 — INSTALL the boss + drop shuffle assignments for
+      // this slot. Without this the runtime sprite substitution
+      // (BossShuffle_RemapSpriteType / DropShuffle_Lookup in src/sprite.c) is
+      // a no-op for playable slots (its assignment-active flag never gets set)
+      // — i.e. boss/drop shuffle was runtime-inert in real play. Regenerated
+      // deterministically from (settings, seed) — NOT off the prize/medallion
+      // `shuffle_rng` stream above — exactly matching the headless
+      // --generate-seed path (main.c) and the spoiler, so the bosses/drops the
+      // player sees match the spoiler. Each Generate installs an identity
+      // (passthrough) table when its setting is off, so a non-shuffle slot is
+      // byte-identical to vanilla. The drop shuffle ignores the placement/
+      // sphere args (its heart floor is structural; see shuffle_drops.c).
+      uint8 boss_assignment[16];
+      (void)BossShuffle_Generate(&g_rando_active_settings, ss.seed_u64, boss_assignment);
+      (void)DropShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
+                                 &g_session_placement_table, NULL);
       g_rando_active_settings_valid = true;
     }
   }
   if (!g_rando_active_settings_valid) {
     Rando_SetDungeonPrizeAssignment(NULL);
     Rando_SetMedallionAssignment(NULL);
+    // No trustworthy (settings, seed) — do NOT guess a boss/drop shuffle.
+    // Tear down any assignment a prior slot installed so it can't leak into
+    // this (v1 / snapshot-restored) slot. Fail closed = vanilla bosses/drops.
+    BossShuffle_Deactivate();
+    DropShuffle_Deactivate();
   }
 
   // === Phase B hints: regenerate telepathic-tile hints for this slot ===
@@ -1697,6 +1718,11 @@ void Rando_DeactivateSlot(void) {
   // Restores g_asset_ptrs[126/130/131] to their saved vanilla originals.
   InvertedEntrances_Teardown();
   InvertedSecrets_Teardown();  // restore g_asset_ptrs[157/158]
+  // Phase B Slice 7/8 — tear down the boss + drop shuffle so the sprite
+  // substitution reverts to a hard passthrough (vanilla bosses/drops) once no
+  // rando slot is active; pairs with the install in Rando_ActivateSidecarSlot.
+  BossShuffle_Deactivate();
+  DropShuffle_Deactivate();
   Placement_Install(NULL);
   g_session_placement_table.entries = NULL;
   g_session_placement_table.count = 0;
