@@ -435,9 +435,17 @@ static void Panel_Controls(void) {
       ImGui::TreePop();
     }
     if (ImGui::TreeNode("Randomizer")) {
-      RowsForBase(kKeys_RandoToggleItemTracker, false); RowsForBase(kKeys_RandoToggleLocationTracker, false);
-      RowsForBase(kKeys_RandoRevealSpoiler, false); RowsForBase(kKeys_RandoItemTrackerWindow, false);
-      RowsForBase(kKeys_RandoCheckTrackerWindow, false); RowsForBase(kKeys_RandoMapTrackerWindow, false);
+      // The legacy OAM-overlay toggles (RandoToggleItemTracker /
+      // RandoToggleLocationTracker) are superseded on PC: main.c routes them to
+      // the SAME Trackers_Toggle() calls as the window keys below, so exposing
+      // them here just produced two bindable rows that do the identical thing
+      // (the "duplicate hotkeys" report). They stay in the keymap so any existing
+      // ini binding keeps working — we simply don't surface them as separate
+      // rebindable actions. Bind the Item / Check / Map window keys instead.
+      RowsForBase(kKeys_RandoItemTrackerWindow, false);
+      RowsForBase(kKeys_RandoCheckTrackerWindow, false);
+      RowsForBase(kKeys_RandoMapTrackerWindow, false);
+      RowsForBase(kKeys_RandoRevealSpoiler, false);
       ImGui::TreePop();
     }
   }
@@ -907,8 +915,27 @@ void DbgInventory_Render(void) {
     { static const char *const k[] = {"None", "Power Glove", "Titan's Mitt"}; Cheats_Combo("Gloves", 0xF354, k, 3); }
 
     ImGui::SeparatorText("Items");
-    { static const char *const k[] = {"None", "Bow", "Silver Bow"}; static const int v[] = {0, 1, 3};
-      Cheats_ComboVals("Bow", 0xF340, k, v, 3); }
+    // Bow byte 0xF340 has FIVE states: 0=none, 1=bow/no-arrows, 2=bow/arrows,
+    // 3=silver/no-arrows, 4=silver/arrows. The HUD re-derives the low (has-arrows)
+    // bit every frame from link_num_arrows (hud.c:1488-1499, :428-432), so a plain
+    // exact-value combo {0,1,3} got stranded at "None" the moment the player had
+    // arrows and the byte was bumped to 2/4. Normalize on READ to the tier, and on
+    // WRITE store the no-arrows base (1 or 3); the HUD bumps it to 2/4 if arrows
+    // are present. Tier (wood vs silver) keys off `>= 3`, unaffected by the bump.
+    {
+      static const char *const k[] = {"None", "Bow", "Silver Bow"};
+      int raw = g_ram[0xF340];
+      int idx = (raw == 0) ? 0 : (raw >= 3 ? 2 : 1);
+      if (ImGui::BeginCombo("Bow", k[idx])) {
+        for (int i = 0; i < 3; i++) {
+          bool sel = (idx == i);
+          if (ImGui::Selectable(k[i], sel) && i != idx)
+            Cheats_PokeByte(0xF340, (i == 0) ? 0 : (i == 1) ? 1 : 3, 0, 4);
+          if (sel) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+      }
+    }
     { static const char *const k[] = {"None", "Blue", "Red"}; Cheats_Combo("Boomerang", 0xF341, k, 3); }  // no "both" — red replaces blue
     Cheats_Toggle("Hookshot", 0xF342);
     Cheats_Toggle("Lamp", 0xF34A);
@@ -920,7 +947,16 @@ void DbgInventory_Render(void) {
     Cheats_Toggle("Cane of Somaria", 0xF350);
     Cheats_Toggle("Cane of Byrna", 0xF351);
     Cheats_Toggle("Magic Cape", 0xF352);
-    Cheats_Toggle("Magic Mirror", 0xF353);
+    // Mirror byte 0xF353: 1 = the "scroll" graphic (renders as a map-like icon and
+    // misbehaves — hud.c:1260, misc.c:683, sprite_main.c:11598 all special-case 1),
+    // 2 = the real Magic Mirror. The normal grant gives 2 (misc.c
+    // kValueToGiveItemTo[26]==2), so a plain on/off toggle that wrote 1 showed the
+    // wrong icon. Read "present" as nonzero; write 2 when enabling so it's always
+    // the proper mirror.
+    {
+      bool on = (g_ram[0xF353] != 0);
+      if (ImGui::Checkbox("Magic Mirror", &on)) Cheats_PokeByte(0xF353, on ? 2 : 0, 0, 2);
+    }
     // Boots are special: the dash *action* is gated by link_ability_flags
     // (0xF379) bit 2, not the inventory byte (player.c attempt_action via
     // kAbilityBitmasks). The normal receive path sets both (misc.c:843), so the
@@ -1048,6 +1084,79 @@ void DbgInventory_Render(void) {
       Cheats_PokeByte(0xF36E, 0x80, 0, 128);
       Cheats_PokeByte(0xF36D, g_ram[0xF36C], 0, 160);
     }
+    Help("Tops off rupees, bombs, arrows, current-dungeon keys, magic and hearts. "
+         "Leaves your items, equipment and progress untouched.");
+    ImGui::SameLine();
+    // "Everything at max": every equipment tier, item, medallion, capacity and
+    // counter at its ceiling. Each write goes through the clamped/gated pokes, so
+    // a no-edit gate (replay / emulator / wrong module) leaves RAM untouched. The
+    // few coupled bytes (boots ability bit, bow tier, shared Mushroom/Powder &
+    // Shovel/Flute ownership, mirror value-2) are handled the same way their
+    // individual widgets above handle them.
+    if (ImGui::Button("Max inventory (everything)")) {
+      // Consumables + capacities.
+      Cheats_PokeWord(0xF362, rupcap, 0, rupcap);
+      Cheats_PokeWord(0xF360, rupcap, 0, rupcap);
+      Cheats_PokeByte(0xF343, 50, 0, 50);    // bombs
+      Cheats_PokeByte(0xF370, 7, 0, 7);      // bomb capacity (-> 50)
+      Cheats_PokeByte(0xF377, 70, 0, 70);    // arrows
+      Cheats_PokeByte(0xF371, 7, 0, 7);      // arrow capacity (-> 70)
+      Cheats_PokeByte(0xF36F, 99, 0, 99);    // keys (current dungeon)
+      Cheats_PokeByte(0xF36E, 0x80, 0, 128); // magic (full)
+      Cheats_PokeByte(0xF37B, 2, 0, 2);      // magic upgrade (1/4)
+      // Hearts: 20 containers, fully healed.
+      Cheats_PokeByte(0xF36C, 20 * 8, 8, 160);
+      Cheats_PokeByte(0xF36D, 20 * 8, 0, 160);
+      // Equipment tiers.
+      Cheats_PokeByte(0xF359, 4, 0, 4);  // sword: Gold
+      Cheats_PokeByte(0xF35A, 3, 0, 4);  // shield: Mirror
+      Cheats_PokeByte(0xF35B, 2, 0, 2);  // armor: Red
+      Cheats_PokeByte(0xF354, 2, 0, 2);  // gloves: Titan's Mitt
+      // Items.
+      Cheats_PokeByte(0xF340, 3, 0, 4);  // bow: Silver (HUD bumps to 4 with arrows)
+      Cheats_PokeByte(0xF341, 2, 0, 3);  // boomerang: Red
+      Cheats_PokeByte(0xF342, 1, 0, 1);  // hookshot
+      Cheats_PokeByte(0xF345, 1, 0, 1);  // fire rod
+      Cheats_PokeByte(0xF346, 1, 0, 1);  // ice rod
+      Cheats_PokeByte(0xF34A, 1, 0, 1);  // lamp
+      Cheats_PokeByte(0xF34B, 1, 0, 1);  // hammer
+      Cheats_PokeByte(0xF34D, 1, 0, 1);  // bug net
+      Cheats_PokeByte(0xF34E, 1, 0, 1);  // book of mudora
+      Cheats_PokeByte(0xF350, 1, 0, 1);  // cane of somaria
+      Cheats_PokeByte(0xF351, 1, 0, 1);  // cane of byrna
+      Cheats_PokeByte(0xF352, 1, 0, 1);  // magic cape
+      Cheats_PokeByte(0xF353, 2, 0, 2);  // magic mirror (value 2, not the scroll)
+      Cheats_PokeByte(0xF355, 1, 0, 1);  // pegasus boots (item byte)
+      Cheats_PokeBit(0xF379, 2, true);   // ... + dash ability bit (keeps boots usable)
+      Cheats_PokeByte(0xF356, 1, 0, 1);  // flippers
+      Cheats_PokeByte(0xF357, 1, 0, 1);  // moon pearl
+      Cheats_PokeByte(0xF347, 1, 0, 1);  // bombos
+      Cheats_PokeByte(0xF348, 1, 0, 1);  // ether
+      Cheats_PokeByte(0xF349, 1, 0, 1);  // quake
+      // Shared single-select bytes: give the more-capable variant and keep the
+      // randomizer ownership state in sync (mirrors the combos above).
+      Cheats_PokeByte(0xF344, 2, 0, 2);  // Mushroom/Powder -> Magic Powder
+      Cheats_PokeByte(0xF34C, 2, 0, 2);  // Shovel/Flute -> Flute (inactive)
+      if (rando && Cheats_CanEdit()) {
+        g_rando_mushroom_held = 0;       // Powder, not the raw Mushroom
+        g_rando_flute_shovel_owned = 0x02;  // Flute
+      }
+      // Four empty bottles (the inventory slots; contents stay consumable).
+      for (int i = 0; i < 4; i++) Cheats_PokeByte(0xF35C + i, 2, 0, 8);
+      // All pendants + crystals (advanced: does not update rando prize/goal tracking).
+      Cheats_PokeByte(0xF374, 0x07, 0, 0x07);  // 3 pendant bits
+      Cheats_PokeByte(0xF37A, 0x7F, 0, 0x7F);  // 7 crystal bits
+      // Dungeon maps / compasses / big keys (every game-index bit), and a full key
+      // count in each dungeon's saved slot.
+      Cheats_PokeWord(0xF364, 0xFFFF, 0, 0xFFFF);  // compasses
+      Cheats_PokeWord(0xF366, 0xFFFF, 0, 0xFFFF);  // big keys
+      Cheats_PokeWord(0xF368, 0xFFFF, 0, 0xFFFF);  // maps
+      for (int i = 0; i < (int)(sizeof kDbgDungeons / sizeof kDbgDungeons[0]); i++)
+        Cheats_PokeByte(0xF37C + kDbgDungeons[i].gidx, 99, 0, 99);
+    }
+    Help("Gives every item/equipment tier, all medallions, full capacities, "
+         "20 hearts, all dungeon items, pendants and crystals. Debug edits do "
+         "NOT update the randomizer's prize/goal/check tracking.");
   }
   ImGui::EndChild();
   if (!can) ImGui::EndDisabled();

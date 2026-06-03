@@ -1764,16 +1764,29 @@ int main(int argc, char** argv) {
       case SDL_QUIT:
         running = false;
         break;
-#ifdef Z3R_NATIVE_SETTINGS_WINDOW
       case SDL_WINDOWEVENT:
         // Only game-window window-events reach here (settings-window events were
-        // routed to ImGui above). With a second window open, SDL may not emit
-        // SDL_QUIT when the game window's close button is pressed, so handle the
-        // game-window close explicitly → app shutdown.
-        if (event.window.event == SDL_WINDOWEVENT_CLOSE)
+        // routed to ImGui above, on PC).
+        if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+          // Focus left the game window while keys may be physically held. SDL
+          // delivers the matching SDL_KEYUP to whatever window has focus next
+          // (or nowhere), so the held key's state would never be cleared here —
+          // stranding the game in fast-forward (Tab=Turbo) or with a direction
+          // stuck on (Link keeps walking down). Drop all keyboard-derived input
+          // on focus loss. (Gamepad events are focus-independent — SDL delivers
+          // them regardless of window focus — so g_gamepad_buttons is left as-is;
+          // a real button release still arrives.)
+          g_input1_state = 0;
+          g_turbo = 0;
+        }
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+        // With a second window open, SDL may not emit SDL_QUIT when the game
+        // window's close button is pressed, so handle the game-window close
+        // explicitly → app shutdown.
+        else if (event.window.event == SDL_WINDOWEVENT_CLOSE)
           running = false;
-        break;
 #endif
+        break;
       }
     }
 

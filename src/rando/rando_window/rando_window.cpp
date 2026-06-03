@@ -78,6 +78,15 @@ static bool s_select_general_once = false;
 // by the next Generate gate. File-static so it never leaks across sessions.
 static bool s_asset_warn_session_bypass = false;
 
+// "Randomize seed each generate": when set, TryBeginGenerate() rolls a fresh
+// random seed just before requesting generation, so the common flow (tweak
+// settings, hit Generate, repeat) gets a new seed every time without the user
+// clicking "New random seed" first. Default ON. The checkbox sits in the Seed
+// section (Panel_General) and, while on, DISABLES the manual seed input/roll so
+// it's obvious the user isn't choosing the seed. Pasting a share string clears
+// this (RenderShareRow) so the pasted seed is adopted and the field re-enables.
+static bool s_randomize_seed_each_generate = true;
+
 // Which goal currently owns the forced accessibility=locations lock. When the
 // user leaves Completionist we restore the accessibility value they had before
 // the lock so the combo isn't stuck on "locations".
@@ -402,37 +411,62 @@ static void Panel_General() {
   // ---- Seed ----
   ImGui::SeparatorText("Seed");
   {
+    // Auto-randomize lives WITH the seed controls and gates them: when on (the
+    // default) a fresh seed is rolled at Generate, so the manual seed input/roll
+    // below are disabled to make plain the user isn't choosing the seed. Pinning
+    // a seed (uncheck + type, or paste a share string — which also unchecks)
+    // re-enables them. See TryBeginGenerate / RenderShareRow.
+    ImGui::Checkbox("Randomize seed each generate", &s_randomize_seed_each_generate);
+    HelpTooltip("On (default): a fresh random seed is rolled automatically every "
+                "time you press Generate, so you never have to set one. Uncheck to "
+                "type or keep a specific seed below. (Pasting a share string also "
+                "unchecks this and adopts that seed.)");
+    // Reason for the greyed controls, placed BEFORE them so the cause precedes
+    // the effect (UX review #7).
+    if (s_randomize_seed_each_generate)
+      ImGui::TextDisabled("A fresh seed is rolled when you press Generate; you'll see it once it's ready.");
+
+    // Manual seed controls — disabled while auto-randomize is on.
+    ImGui::BeginDisabled(s_randomize_seed_each_generate);
     // Hex uint64 input. ImGui has no native u64 widget; use a text buffer and
     // parse it back. Hex is the natural representation for a 64-bit seed (and
-    // matches the share-string ethos); the decimal value is shown read-only
-    // below for reference.
+    // matches the share-string ethos); the decimal value is shown read-only below.
     static char seed_buf[20];
     static uint64 seed_buf_mirror = ~0ull;  // forces a re-format on first use
     if (seed_buf_mirror != b->seed_u64) {
       snprintf(seed_buf, sizeof seed_buf, "%016llx", (unsigned long long)b->seed_u64);
       seed_buf_mirror = b->seed_u64;
     }
-    if (ImGui::InputText("Seed (hex)", seed_buf, sizeof seed_buf,
-                         ImGuiInputTextFlags_CharsHexadecimal)) {
-      unsigned long long v = 0;
-      // CharsHexadecimal already blocks non-hex input. seed_buf[16]=='\0'
-      // means <=16 hex digits typed; reject longer pastes so they can't
-      // silently overflow-wrap the u64 under %llx. A shorter value is a
-      // legitimate (smaller) seed — the seed is a pure u64 input.
-      if (seed_buf[16] == '\0' && sscanf(seed_buf, "%llx", &v) == 1) {
-        b->seed_u64 = (uint64)v;
-        seed_buf_mirror = b->seed_u64;  // accept; don't reformat under the cursor
-        changed = true;
+    if (s_randomize_seed_each_generate) {
+      // While auto-randomize is on the live seed is NOT the one that will be
+      // generated (it's rolled at Generate), so showing the concrete value would
+      // mislead (UX review #1). Show a read-only placeholder instead.
+      char rnd[20]; snprintf(rnd, sizeof rnd, "(random)");
+      ImGui::InputText("Seed (hex)", rnd, sizeof rnd, ImGuiInputTextFlags_ReadOnly);
+    } else {
+      if (ImGui::InputText("Seed (hex)", seed_buf, sizeof seed_buf,
+                           ImGuiInputTextFlags_CharsHexadecimal)) {
+        unsigned long long v = 0;
+        // CharsHexadecimal already blocks non-hex input. seed_buf[16]=='\0'
+        // means <=16 hex digits typed; reject longer pastes so they can't
+        // silently overflow-wrap the u64 under %llx. A shorter value is a
+        // legitimate (smaller) seed — the seed is a pure u64 input.
+        if (seed_buf[16] == '\0' && sscanf(seed_buf, "%llx", &v) == 1) {
+          b->seed_u64 = (uint64)v;
+          seed_buf_mirror = b->seed_u64;  // accept; don't reformat under the cursor
+          changed = true;
+        }
       }
+      HelpTooltip("Any 64-bit value (1-16 hex digits). A shorter entry is a smaller seed, not an error.");
+      ImGui::TextDisabled("decimal: %llu", (unsigned long long)b->seed_u64);
     }
-    HelpTooltip("Any 64-bit value (1-16 hex digits). A shorter entry is a smaller seed, not an error.");
-    ImGui::TextDisabled("decimal: %llu", (unsigned long long)b->seed_u64);
     if (ImGui::Button("New random seed")) {
       b->seed_u64 = RollRandomSeed();
       seed_buf_mirror = ~0ull;  // force re-format from the new value
       changed = true;
     }
     HelpTooltip("UI-only entropy (SplitMix64 of the performance counter). The seed is a pure input.");
+    ImGui::EndDisabled();
   }
 
   // ---- Live read-only derived display ----
@@ -441,7 +475,13 @@ static void Panel_General() {
     char hashhex[65];
     HexBytes(b->pending_hash, 32, hashhex, sizeof hashhex);
     ImGui::Text("settings_hash: %s", hashhex);
-    ImGui::TextWrapped("share string: %s", b->share_string[0] ? b->share_string : "(none)");
+    // The share string encodes the seed; while auto-randomize is on the seed
+    // isn't chosen until Generate, so the cached share string would be stale —
+    // show a placeholder rather than a value the player can't actually use yet.
+    if (s_randomize_seed_each_generate)
+      ImGui::TextWrapped("share string: (rolled at Generate \xe2\x80\x94 seed not chosen yet)");
+    else
+      ImGui::TextWrapped("share string: %s", b->share_string[0] ? b->share_string : "(none)");
   }
 
   if (changed) {
@@ -929,6 +969,7 @@ static void RenderShareRow() {
         // decoded seed and warn if the current settings' hash disagrees with the
         // pasted one — we do NOT fabricate widget values from the hash.
         b->seed_u64 = ss.seed_u64;
+        s_randomize_seed_each_generate = false;  // pasted seed is intentional; keep it
         Pending_Changed();
         if (memcmp(b->pending_hash, ss.settings_hash, 16) != 0) {
           snprintf(s_paste_error, sizeof s_paste_error,
@@ -969,6 +1010,13 @@ static bool s_open_gen_modal = false;
 // Begin generation: gate on the asset hash; either open the asset modal or fire.
 static void TryBeginGenerate() {
   RandoWindowBridge *b = &g_rando_window_bridge;
+  // Fresh seed per generate (unless the user pinned one) — see
+  // s_randomize_seed_each_generate. Recompute derived (hash/share string) so the
+  // confirmation modal and any copy reflect the rolled seed.
+  if (s_randomize_seed_each_generate) {
+    b->seed_u64 = RollRandomSeed();
+    Pending_Changed();
+  }
   bool needs_gate = kVanillaAssetsHashKnown &&
                     memcmp(g_assets_hash, kVanillaAssetsHash, 32) != 0 &&
                     !AssetDecision_FindAllow(g_assets_hash) &&
@@ -1066,6 +1114,17 @@ static void RenderGenerateModal() {
       // stays input-blocking until then.
     } else if (status == 2) {
       ImGui::Text("Slot %d is ready.", b->target_slot_index);
+      // Surface the seed the player actually got — especially important with
+      // auto-randomize on, where they never chose it (UX review #2). Offer the
+      // share string right here so the "I got a good seed, how do I keep it?"
+      // moment has an affordance without digging back through the tabs.
+      ImGui::Text("Seed: %016llx", (unsigned long long)b->last_generated_seed_u64);
+      if (ImGui::Button("Copy share string")) {
+        if (b->last_generated_share_string[0])
+          SDL_SetClipboardText(b->last_generated_share_string);
+      }
+      HelpTooltip("Copy this seed's share string to the clipboard (to reproduce or share it later).");
+      ImGui::Spacing();
       ImGui::TextUnformatted("Load it now?");
       ImGui::Spacing();
       if (ImGui::Button("Yes")) {
@@ -1204,6 +1263,19 @@ void RandoWindow_ProcessEvent(const void *sdl_event) {
     }
     GameConfig_FeedCapturedKey((int)sym, (int)e->key.keysym.mod);
     return;  // consume the terminating keydown (its keyup is forwarded normally)
+  }
+  // Let the OpenSettings hotkey CLOSE the window while the settings window has
+  // focus. This keydown carries the settings window's windowID, so the host's
+  // two-window router delivers it here instead of to the game's kKeys_OpenSettings
+  // handler — without this branch the toggle key opens the window but can never
+  // close it (the "can't press it again to close" report). Rebind capture above
+  // already returned, so we never steal a key being assigned; skip when ImGui
+  // wants text input (a focused field) so the key can still be typed; ignore
+  // auto-repeat so a held key doesn't thrash open/closed.
+  if (e->type == SDL_KEYDOWN && !e->key.repeat && !ImGui::GetIO().WantTextInput &&
+      FindCmdForSdlKey(e->key.keysym.sym, (SDL_Keymod)e->key.keysym.mod) == kKeys_OpenSettings) {
+    RandoWindow_Hide();
+    return;
   }
   ImGui_ImplSDL2_ProcessEvent(e);
 }
