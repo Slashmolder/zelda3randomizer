@@ -43,7 +43,10 @@ EXPECTED_GENERATED = [
 
 BUILD_SYSTEM_FILES = [
     Path("Makefile"),
-    Path("Zelda3.vcxproj"),
+    # Lowercase to match the git-tracked filename: on a case-sensitive FS (Linux
+    # CI) `Path("Zelda3.vcxproj").exists()` is False, so file_mentions() returned
+    # False for every generated file and the guard failed spuriously.
+    Path("zelda3.vcxproj"),
     Path("src/platform/switch/Makefile"),
 ]
 
