@@ -306,8 +306,14 @@ static void DrawItemTracker(void *) {
   // unobtained shuffled prize shows "?" (revealing it would spoil); an obtained
   // one (or any prize when shuffle is off) shows the real icon.
   const uint8 *prize_assign = Rando_GetDungeonPrizeAssignment();  // NULL if no rando
+  // Fail CLOSED when the active slot's settings can't be recovered (snapshot
+  // replay / v1 slot, where Rando_GetActiveSettings() is NULL): treat the prize
+  // layout as shuffled so an unobtained prize shows "?" rather than leaking the
+  // real (possibly shuffled, possibly race-seed) assignment. Same NULL-fail-open
+  // class as [[Rando_ActiveSlotHidesSpoiler]] — `rset && rset->prize_shuffle`
+  // would render every dungeon's real prize when settings are unknown.
   const RandoSettings *rset = Rando_GetActiveSettings();
-  bool shuffle_on = rset && rset->prize_shuffle;
+  bool shuffle_on = (rset == NULL) || rset->prize_shuffle;
   if (ImGui::BeginTable("##dungeons", 6,
                         ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
     ImGui::TableSetupColumn("Dungeon");

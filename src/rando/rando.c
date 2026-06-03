@@ -1349,6 +1349,7 @@ static void Entrance_RuntimeTeardown(void) {
   Entrance_ClearEdgeOverrides();
   g_rando_entrance_exit_room = 0;
   g_rando_entrance_force_cached = 0;
+  g_rando_force_cached_room = 0;  // reset the companion room with the flag
   g_rando_inverted_spawn_redirect = 0;
   Decoupled_Reset();
   Dungeon_Decoupled_Reset();
