@@ -303,6 +303,9 @@ uint16 Rando_EntranceDungeonDecoupledExitRoom(uint16 lx);
 // Cross-category (Stage 3): set at the entry hook for a cave→dungeon redirect so
 // the dungeon exit uses the cached source-cave position. Consumed at the exit.
 extern uint8 g_rando_entrance_force_cached;
+// Source cave's room for the force-cached exit, set together with the flag by
+// Rando_EntranceForceCachedExit; consumed at the exit to restore the Y-adjust.
+extern uint16 g_rando_force_cached_room;
 bool Rando_EntranceForceCachedExit(uint16 lx);
 
 // Inverted spawn-select respawn redirect (add-rando-inverted-dark-chapel-spawn).

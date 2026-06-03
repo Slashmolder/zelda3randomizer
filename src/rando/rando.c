@@ -552,6 +552,14 @@ uint16 g_rando_entrance_exit_room;
 // cached at entry, hold the source cave door's overworld position) so the player
 // returns to the cave door. 0 = normal. Consumed by the exit path.
 uint8 g_rando_entrance_force_cached;
+// Source cave's room for the force-cached exit above. Set TOGETHER with
+// g_rando_entrance_force_cached inside Rando_EntranceForceCachedExit, consumed at
+// the overworld-exit top. The cached *_exit shadow vars hold the cave DOOR
+// position but not its ROOM, so the loaded dungeon's room (< 0x124) lingers in
+// dungeon_room_index and skews LoadCachedEntranceProperties' vanilla room-keyed
+// Y-adjust; restoring the cave room here (mirroring Rando_ReplayCaveArrival on
+// the decoupled path) keys the adjust off the cave. 0 = none. (PLAYTEST-PENDING.)
+uint16 g_rando_force_cached_room;
 // Inverted spawn-select respawn redirect — see rando.h. Set by
 // Module1B_SpawnSelect (Inverted slots only), consumed by the next
 // LoadOverworldFromDungeon (forces the anchor exit screen |= 0x40 → Dark World).
@@ -1485,6 +1493,7 @@ uint16 Rando_EntranceCoupledExitRoom(uint16 lx) {
 // and already uses the cached branch, so it is intentionally NOT flagged here —
 // keeps the playtest-confirmed within-category path untouched.)
 bool Rando_EntranceForceCachedExit(uint16 lx) {
+  g_rando_force_cached_room = 0;  // set together with the flag (only on the true path)
   if (g_entrance_overlay_orig == NULL) return false;
   uint32 len = kOverworld_Entrance_Id_SIZE;
   if (lx >= len) return false;
@@ -1495,7 +1504,12 @@ bool Rando_EntranceForceCachedExit(uint16 lx) {
   const uint16 *rooms = kEntranceData_rooms;
   uint32 rc = kEntranceData_rooms_SIZE / 2u;
   if (rooms == NULL || target >= rc) return false;
-  return rooms[target] < 0x100;                               // loaded a dungeon
+  if (rooms[target] >= 0x100) return false;                   // target not a dungeon
+  // Stash the SOURCE cave's room so the exit can restore it into
+  // dungeon_room_index before LoadCachedEntranceProperties (whose vanilla
+  // room-keyed Y-adjust would otherwise see the loaded dungeon room).
+  if (vanilla_id < rc) g_rando_force_cached_room = rooms[vanilla_id];
+  return true;
 }
 
 // Dungeon decoupled (Insanity): the exit-search target room for a one-way dungeon

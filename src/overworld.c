@@ -1826,6 +1826,10 @@ void LoadOverworldFromDungeon() {  // 82e4a3
   // cached *_exit vars hold that cave position, so force the cached branch.
   bool force_cached = (g_rando_entrance_force_cached != 0);
   g_rando_entrance_force_cached = 0;
+  // The source cave's room, captured beside the flag. Consume-at-top (same as the
+  // flag) so a stray non-cached exit can't leave it armed for a later one.
+  uint16 force_cached_room = g_rando_force_cached_room;
+  g_rando_force_cached_room = 0;
   // Decoupled (D.4) — consume the entered-interior the SAME way (unconditionally
   // at the top), so a mirror/special/ending warp can't leave it set for a later
   // cave-class exit to misuse. Only the cave-class branch below acts on it.
@@ -1869,6 +1873,18 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     bool decoupled_crossed = (cross_kind == 1)
         ? Rando_CrossDecoupledReplayCave(cross_cave)
         : Rando_DecoupledReplaceArrival(decoupled_entered);
+    // Cross-category coupled cave→dungeon (force_cached): the cached *_exit block
+    // returns Link to the source cave door, but dungeon_room_index still holds the
+    // loaded DUNGEON room (< 0x124), so LoadCachedEntranceProperties' vanilla
+    // room-keyed Y-adjust (`if (dungeon_room_index < 0x124) link_y -= 0x10`) would
+    // shift Link up 0x10px for caves whose OWN room is >= 0x124 (thief_hideout
+    // 0x124, thief_hideout_3 0x125, fairy_cave_5 0x126, heart_piece_cave_3 0x127).
+    // Restore the source cave room so the adjust keys off the cave. The decoupled
+    // paths already reset dungeon_room_index via their replay helpers, so guard on
+    // !decoupled_crossed. PLAYTEST-PENDING: confirm Link's emergence Y with an F12
+    // dump on a coupled cross seed whose cave→dungeon source room is >= 0x124.
+    if (force_cached && force_cached_room != 0 && !decoupled_crossed)
+      dungeon_room_index = force_cached_room;
     LoadCachedEntranceProperties();
     if (decoupled_crossed) {
       // A one-way decoupled exit can land Link in the OTHER world, but this cached
