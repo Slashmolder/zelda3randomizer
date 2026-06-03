@@ -3022,6 +3022,97 @@ static void Rando_StartingInventorySelfCheck(void) {
   fprintf(stderr, "[StartingInventory_SelfCheck] OK\n");
 }
 
+// End-to-end install check for the boss/drop shuffle runtime wiring (the core
+// fix this slice landed). The per-module self-checks (BossShuffle/DropShuffle_
+// SelfCheck) cover the ALGORITHM; the corpus is blind to boss/drop (orthogonal
+// to placement). NOTHING else proves the slot-activation INSTALL path
+// (Rando_ActivateSidecarSlot) actually regenerates + installs the assignment
+// from the recovered (settings, seed) — so a regression there (wrong seed,
+// off the prize/medallion RNG stream, skipped install, leak on reactivation)
+// would be invisible until playtest. This check closes that gap headlessly:
+// activate a real sidecar slot and assert the installed runtime assignment
+// matches ComputeAssignment for the same (settings, seed).
+static void Rando_ShuffleInstallSelfCheck(void) {
+  RandoSettings s, off;
+  RandoSidecarSlot slot;
+
+  // (1) Shuffle ON: the install must (a) actually shuffle and (b) byte-match
+  // BossShuffle/DropShuffle_ComputeAssignment for the slot's (settings, seed).
+  Settings_SetDefaults(&s);
+  s.boss_shuffle = 1;
+  s.drop_shuffle = 1;
+  const uint64 seedA = 0xA17F0001B0552233ull;
+  rando_selfcheck_build_slot(&slot, &s, seedA);
+  Rando_ActivateSidecarSlot(&slot);
+
+  uint8 exp_boss[16];
+  uint8 exp_drop[kDropTableEntryCount];
+  bool fb = false;
+  BossShuffle_ComputeAssignment(&s, seedA, exp_boss);
+  DropShuffle_ComputeAssignment(&s, seedA, exp_drop, &fb);
+
+  // Non-identity sanity: the chosen seed must produce a real shuffle, else the
+  // match assertions below would pass trivially against the vanilla table.
+  off = s;
+  off.boss_shuffle = 0;
+  off.drop_shuffle = 0;
+  uint8 van_boss[16];
+  uint8 van_drop[kDropTableEntryCount];
+  bool fb2 = false;
+  BossShuffle_ComputeAssignment(&off, seedA, van_boss);
+  DropShuffle_ComputeAssignment(&off, seedA, van_drop, &fb2);
+  bool boss_diff = false, drop_diff = false;
+  for (uint8 d = 0; d < 13; d++) if (exp_boss[d] != van_boss[d]) boss_diff = true;
+  for (uint8 i = 0; i < kDropTableEntryCount; i++) if (exp_drop[i] != van_drop[i]) drop_diff = true;
+  if (!boss_diff) tsc_die("ShuffleInstall: boss_shuffle on produced the identity (test seed is not a shuffle)");
+  if (!drop_diff) tsc_die("ShuffleInstall: drop_shuffle on produced the identity (test seed is not a shuffle)");
+
+  // The installed runtime state must equal ComputeAssignment.
+  for (uint8 d = 0; d < 13; d++)
+    if (BossShuffle_GetForDungeon(d) != exp_boss[d])
+      tsc_die("ShuffleInstall: installed boss assignment != ComputeAssignment(settings, seed)");
+  for (uint8 i = 0; i < kDropTableEntryCount; i++)
+    if (DropShuffle_Lookup(i) != exp_drop[i])
+      tsc_die("ShuffleInstall: installed drop table != ComputeAssignment(settings, seed)");
+
+  // Teardown reverts to a hard passthrough.
+  Rando_DeactivateSlot();
+  if (BossShuffle_GetForDungeon(1) != 0xFF)
+    tsc_die("ShuffleInstall: boss assignment not torn down on deactivate");
+  if (DropShuffle_Lookup(5) != 5)
+    tsc_die("ShuffleInstall: drop table not torn down on deactivate");
+
+  // (2) Reactivation with a DIFFERENT seed must OVERWRITE (no stale leak).
+  const uint64 seedB = 0xB0552244C0FFEE99ull;
+  rando_selfcheck_build_slot(&slot, &s, seedB);
+  Rando_ActivateSidecarSlot(&slot);
+  uint8 expB[16];
+  BossShuffle_ComputeAssignment(&s, seedB, expB);
+  for (uint8 d = 0; d < 13; d++)
+    if (BossShuffle_GetForDungeon(d) != expB[d])
+      tsc_die("ShuffleInstall: reactivation did not overwrite the prior slot's boss assignment");
+  Rando_DeactivateSlot();
+
+  // (3) Shuffle OFF slot: the install still runs (identity), proven because we
+  // enter from a torn-down state — a skipped install would leave 0xFF, not the
+  // vanilla index. (Drop lookup is the identity table.)
+  Settings_SetDefaults(&s);  // boss/drop default off
+  const uint64 seedC = 0x0FF0C0DE0FF0C0DEull;
+  rando_selfcheck_build_slot(&slot, &s, seedC);
+  Rando_ActivateSidecarSlot(&slot);
+  uint8 exp_off[16];
+  BossShuffle_ComputeAssignment(&s, seedC, exp_off);
+  for (uint8 d = 0; d < 13; d++)
+    if (BossShuffle_GetForDungeon(d) != exp_off[d])
+      tsc_die("ShuffleInstall: off-slot identity install mismatch (install skipped?)");
+  for (uint8 i = 0; i < kDropTableEntryCount; i++)
+    if (DropShuffle_Lookup(i) != i)
+      tsc_die("ShuffleInstall: off-slot drop table must be the identity");
+  Rando_DeactivateSlot();
+
+  fprintf(stderr, "[Rando_ShuffleInstallSelfCheck] OK\n");
+}
+
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
   Rando_Rng_SelfCheck();
@@ -3041,5 +3132,6 @@ void Rando_RunAllSelfChecks(void) {
   Cosmetic_SelfCheck();
   Rando_TrackerSelfCheck();
   Rando_StartingInventorySelfCheck();
+  Rando_ShuffleInstallSelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }
