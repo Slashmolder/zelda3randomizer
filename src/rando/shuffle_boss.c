@@ -107,8 +107,9 @@ void BossShuffle_ComputeAssignment(const RandoSettings *settings,
   // stream from other slice's RNG so changing one shuffle setting
   // doesn't perturb the others.
   RandoRng rng;
-  // Salt = "BOSS5HFF" cooked into a 64-bit constant ("BOSSSHFF" in
-  // ASCII = 0x424F5353_53484646; pick a recognizable cousin).
+  // Boss-shuffle salt: a recognizable "BOSSAILF" leetspeak constant
+  // (0xB055A11F repeated) XORed into the seed so this stream is independent of
+  // the drop-shuffle (0xD0DDA1FF...) and prize/medallion streams.
   Rng_SeedFromU64(&rng, seed_u64 ^ 0xB055A11FB055A11Full);
 
   uint8 pool[10];
