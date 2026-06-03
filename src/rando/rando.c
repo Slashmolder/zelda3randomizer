@@ -1644,22 +1644,28 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
       Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
       Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
-      // Phase B Slice 7/8 — INSTALL the boss + drop shuffle assignments for
-      // this slot. Without this the runtime sprite substitution
-      // (BossShuffle_RemapSpriteType / DropShuffle_Lookup in src/sprite.c) is
-      // a no-op for playable slots (its assignment-active flag never gets set)
-      // — i.e. boss/drop shuffle was runtime-inert in real play. Regenerated
-      // deterministically from (settings, seed) — NOT off the prize/medallion
-      // `shuffle_rng` stream above — exactly matching the headless
-      // --generate-seed path (main.c) and the spoiler, so the bosses/drops the
-      // player sees match the spoiler. Each Generate installs an identity
-      // (passthrough) table when its setting is off, so a non-shuffle slot is
-      // byte-identical to vanilla. The drop shuffle ignores the placement/
-      // sphere args (its heart floor is structural; see shuffle_drops.c).
-      uint8 boss_assignment[16];
-      (void)BossShuffle_Generate(&g_rando_active_settings, ss.seed_u64, boss_assignment);
+      // Phase B Slice 8 — INSTALL the drop shuffle for this slot so the runtime
+      // drop substitution (DropShuffle_Lookup in src/sprite.c) fires. Drop
+      // sprites (hearts/rupees/bombs/...) use the always-loaded common prize
+      // GFX, so a shuffled drop renders correctly. Regenerated deterministically
+      // from (settings, seed) — NOT off the prize/medallion `shuffle_rng` stream
+      // above — matching the headless --generate-seed path + the spoiler. Off →
+      // identity (byte-identical to vanilla).
       (void)DropShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
                                  &g_session_placement_table, NULL);
+      // Boss shuffle is DELIBERATELY NOT installed at runtime. A playtest F12
+      // dump (room 0xC8, the EP boss room) proved a pure sprite-type swap
+      // renders garbage: the room loads the VANILLA boss's GFX sheet, so the
+      // substituted boss draws with the wrong tiles, and multi-entry vanilla
+      // bosses (EP = 6 Armos Knight entries) each remap, spawning N copies of
+      // the substituted boss. Correct rendering needs per-boss sprite-GFX
+      // loading + spawn-count handling (a substantial graphics change, and one
+      // that can only be validated by playtest). Until that lands, leaving the
+      // assignment uninstalled keeps RemapSpriteType a passthrough → vanilla
+      // bosses render correctly. The generation-side boss shuffle (algorithm /
+      // spoiler / corpus / self-checks) stays intact for that future work; only
+      // the runtime substitution is held back, and the UI toggle is disabled.
+      BossShuffle_Deactivate();
       g_rando_active_settings_valid = true;
     }
   }
@@ -3022,22 +3028,27 @@ static void Rando_StartingInventorySelfCheck(void) {
   fprintf(stderr, "[StartingInventory_SelfCheck] OK\n");
 }
 
-// End-to-end install check for the boss/drop shuffle runtime wiring (the core
-// fix this slice landed). The per-module self-checks (BossShuffle/DropShuffle_
-// SelfCheck) cover the ALGORITHM; the corpus is blind to boss/drop (orthogonal
-// to placement). NOTHING else proves the slot-activation INSTALL path
-// (Rando_ActivateSidecarSlot) actually regenerates + installs the assignment
-// from the recovered (settings, seed) — so a regression there (wrong seed,
-// off the prize/medallion RNG stream, skipped install, leak on reactivation)
-// would be invisible until playtest. This check closes that gap headlessly:
-// activate a real sidecar slot and assert the installed runtime assignment
-// matches ComputeAssignment for the same (settings, seed).
+// End-to-end install check for the DROP shuffle runtime wiring + a guard that
+// BOSS shuffle stays runtime-disabled. The per-module self-checks
+// (BossShuffle/DropShuffle_SelfCheck) cover the ALGORITHM; the corpus is blind
+// to boss/drop (orthogonal to placement). NOTHING else proves the slot-
+// activation INSTALL path (Rando_ActivateSidecarSlot) regenerates + installs
+// the drop table from the recovered (settings, seed) — so a regression there
+// (wrong seed, off the prize/medallion RNG stream, skipped install, leak on
+// reactivation) would be invisible until playtest. It ALSO guards the
+// deliberate hold-back: boss shuffle must NOT install at runtime (a pure
+// sprite-type swap renders garbage — see Rando_ActivateSidecarSlot), so even a
+// boss_shuffle=1 slot must leave BossShuffle_RemapSpriteType a passthrough.
 static void Rando_ShuffleInstallSelfCheck(void) {
   RandoSettings s, off;
   RandoSidecarSlot slot;
 
-  // (1) Shuffle ON: the install must (a) actually shuffle and (b) byte-match
-  // BossShuffle/DropShuffle_ComputeAssignment for the slot's (settings, seed).
+  // (1) Drop shuffle ON: the install must (a) actually shuffle and (b) byte-
+  // match DropShuffle_ComputeAssignment for the slot's (settings, seed).
+  // Boss shuffle ON in the SAME slot must NOT install at runtime — boss
+  // substitution is held back until per-boss GFX loading lands (a pure
+  // sprite-type swap renders garbage; proven by playtest F12 of the EP boss
+  // room — see Rando_ActivateSidecarSlot). This case guards both at once.
   Settings_SetDefaults(&s);
   s.boss_shuffle = 1;
   s.drop_shuffle = 1;
@@ -3045,66 +3056,60 @@ static void Rando_ShuffleInstallSelfCheck(void) {
   rando_selfcheck_build_slot(&slot, &s, seedA);
   Rando_ActivateSidecarSlot(&slot);
 
-  uint8 exp_boss[16];
   uint8 exp_drop[kDropTableEntryCount];
   bool fb = false;
-  BossShuffle_ComputeAssignment(&s, seedA, exp_boss);
   DropShuffle_ComputeAssignment(&s, seedA, exp_drop, &fb);
 
-  // Non-identity sanity: the chosen seed must produce a real shuffle, else the
-  // match assertions below would pass trivially against the vanilla table.
+  // Non-identity sanity: the chosen seed must produce a real drop shuffle, else
+  // the match assertion below would pass trivially against the vanilla table.
   off = s;
-  off.boss_shuffle = 0;
   off.drop_shuffle = 0;
-  uint8 van_boss[16];
   uint8 van_drop[kDropTableEntryCount];
   bool fb2 = false;
-  BossShuffle_ComputeAssignment(&off, seedA, van_boss);
   DropShuffle_ComputeAssignment(&off, seedA, van_drop, &fb2);
-  bool boss_diff = false, drop_diff = false;
-  for (uint8 d = 0; d < 13; d++) if (exp_boss[d] != van_boss[d]) boss_diff = true;
+  bool drop_diff = false;
   for (uint8 i = 0; i < kDropTableEntryCount; i++) if (exp_drop[i] != van_drop[i]) drop_diff = true;
-  if (!boss_diff) tsc_die("ShuffleInstall: boss_shuffle on produced the identity (test seed is not a shuffle)");
   if (!drop_diff) tsc_die("ShuffleInstall: drop_shuffle on produced the identity (test seed is not a shuffle)");
 
-  // The installed runtime state must equal ComputeAssignment.
-  for (uint8 d = 0; d < 13; d++)
-    if (BossShuffle_GetForDungeon(d) != exp_boss[d])
-      tsc_die("ShuffleInstall: installed boss assignment != ComputeAssignment(settings, seed)");
+  // Drop: installed runtime table must equal ComputeAssignment.
   for (uint8 i = 0; i < kDropTableEntryCount; i++)
     if (DropShuffle_Lookup(i) != exp_drop[i])
       tsc_die("ShuffleInstall: installed drop table != ComputeAssignment(settings, seed)");
-
-  // Teardown reverts to a hard passthrough.
-  Rando_DeactivateSlot();
+  // Boss: must be a runtime passthrough even though boss_shuffle == 1 (the
+  // substitution is deliberately not installed). GetForDungeon → 0xFF and
+  // RemapSpriteType returns the vanilla sprite unchanged.
   if (BossShuffle_GetForDungeon(1) != 0xFF)
-    tsc_die("ShuffleInstall: boss assignment not torn down on deactivate");
+    tsc_die("ShuffleInstall: boss shuffle must NOT install at runtime (renders garbage; held back for GFX work)");
+  if (BossShuffle_RemapSpriteType(0x53) != 0x53)
+    tsc_die("ShuffleInstall: boss remap must be a passthrough while boss runtime install is held back");
+
+  // Teardown reverts the drop table to a hard passthrough.
+  Rando_DeactivateSlot();
   if (DropShuffle_Lookup(5) != 5)
     tsc_die("ShuffleInstall: drop table not torn down on deactivate");
 
-  // (2) Reactivation with a DIFFERENT seed must OVERWRITE (no stale leak).
+  // (2) Reactivation with a DIFFERENT seed must OVERWRITE the drop table (no
+  // stale leak); boss stays uninstalled.
   const uint64 seedB = 0xB0552244C0FFEE99ull;
   rando_selfcheck_build_slot(&slot, &s, seedB);
   Rando_ActivateSidecarSlot(&slot);
-  uint8 expB[16];
-  BossShuffle_ComputeAssignment(&s, seedB, expB);
-  for (uint8 d = 0; d < 13; d++)
-    if (BossShuffle_GetForDungeon(d) != expB[d])
-      tsc_die("ShuffleInstall: reactivation did not overwrite the prior slot's boss assignment");
+  uint8 expB[kDropTableEntryCount];
+  bool fb3 = false;
+  DropShuffle_ComputeAssignment(&s, seedB, expB, &fb3);
+  for (uint8 i = 0; i < kDropTableEntryCount; i++)
+    if (DropShuffle_Lookup(i) != expB[i])
+      tsc_die("ShuffleInstall: reactivation did not overwrite the prior slot's drop table");
+  if (BossShuffle_GetForDungeon(1) != 0xFF)
+    tsc_die("ShuffleInstall: boss must remain uninstalled across reactivation");
   Rando_DeactivateSlot();
 
-  // (3) Shuffle OFF slot: the install still runs (identity), proven because we
-  // enter from a torn-down state — a skipped install would leave 0xFF, not the
-  // vanilla index. (Drop lookup is the identity table.)
+  // (3) Drop OFF slot: the install still runs (identity), proven because we
+  // enter from a torn-down state — a skipped install would also read identity,
+  // so re-confirm via a deactivate/activate boundary leaving the identity table.
   Settings_SetDefaults(&s);  // boss/drop default off
   const uint64 seedC = 0x0FF0C0DE0FF0C0DEull;
   rando_selfcheck_build_slot(&slot, &s, seedC);
   Rando_ActivateSidecarSlot(&slot);
-  uint8 exp_off[16];
-  BossShuffle_ComputeAssignment(&s, seedC, exp_off);
-  for (uint8 d = 0; d < 13; d++)
-    if (BossShuffle_GetForDungeon(d) != exp_off[d])
-      tsc_die("ShuffleInstall: off-slot identity install mismatch (install skipped?)");
   for (uint8 i = 0; i < kDropTableEntryCount; i++)
     if (DropShuffle_Lookup(i) != i)
       tsc_die("ShuffleInstall: off-slot drop table must be the identity");

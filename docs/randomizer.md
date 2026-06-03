@@ -84,8 +84,8 @@ serialization order`. Phase A axes:
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
 | `prize_shuffle` | `true`, `false` | `true` |
 | `medallion_shuffle` | `true`, `false` | `true` |
-| `boss_shuffle` | `true`, `false` | `false` (experimental) |
-| `drop_shuffle` | `true`, `false` | `false` (experimental) |
+| `boss_shuffle` | `true`, `false` | `false` (generation-only — not runtime-enabled; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
+| `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
 
 **Accessibility tiers** (ALTTPR three-way; all three guarantee the seed is
@@ -111,48 +111,59 @@ Two opt-in shuffle modules (`add-rando-shuffles-and-minigames`, kGeneratorVersio
 **orthogonal to item placement** — turning either on never changes the
 `placement_digest` / `sphere_digest` (the corpus carries shuffle-on entries that
 assert exactly this). Their per-seed assignment is *not* stored in the slot; it
-is regenerated deterministically from `(settings, seed)` at slot load
-(`Rando_ActivateSidecarSlot`), so the bosses/drops you see always match the
-spoiler. Determinism is pinned by `BossShuffle_SelfCheck` / `DropShuffle_SelfCheck`
-(part of `--rando-selftest`).
+is regenerated deterministically from `(settings, seed)`. Determinism is pinned
+by `BossShuffle_SelfCheck` / `DropShuffle_SelfCheck` (part of `--rando-selftest`).
 
-- **`boss_shuffle`** — randomizes which boss sprite guards each of the 10
-  shuffleable dungeon boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP, MM, TR).
-  Agahnim 1 (Hyrule Castle Tower), Agahnim 2 (Ganon's Tower), and Ganon stay
-  pinned. The dungeon→prize binding is **unchanged**: EP's pendant stays at EP
-  regardless of which boss is in the room. The shuffled assignment appears in
-  the spoiler under `boss_assignments`.
+**Status:** drop shuffle is **playable**; boss shuffle is **generation-only / not
+runtime-enabled** (see the boss note below) and its toggle is disabled in the UI.
 
-  > ⚠️ **Known limitation (not race-safe).** The logic graph hard-codes each
-  > dungeon's `"<Dungeon> - Boss"` location to its **vanilla** boss-kill
-  > requirements (e.g. Turtle Rock - Boss requires Fire Rod + Ice Rod because
-  > vanilla Trinexx is there). Boss shuffle moves the boss sprite but **not** the
-  > predicate, so it can place an item-gated boss (Trinexx, Kholdstare,
-  > Helmasaur King, Arrghus) in a dungeon you can reach before its required item,
-  > and `Accessibility_SeedAcceptable` / `Goal_IsCompletable` evaluate the
-  > vanilla logic and will not catch it. This is the design decision recorded in
-  > the change's `design.md` D6 ("no predicate changes"). A per-seed boss-kill
-  > predicate override fed to the placer (like the entrance region overrides) is
-  > the proper follow-up. Until then, treat `boss_shuffle` as a casual/practice
-  > option, not a tournament one.
-
-- **`drop_shuffle`** — permutes the 56-entry enemy drop-prize table
+- **`drop_shuffle`** (playable) — permutes the 56-entry enemy drop-prize table
   (`kPrizeItems`, 7 packs × 8 slots). A **heart-drop floor** guarantees pack 0
   (the vanilla heart-heavy pack that weak overworld enemies draw from) keeps at
   least one heart after the shuffle, so you are not HP-starved early. If the
   bounded re-roll budget is exhausted (≈1e-16 chance) the table falls back to the
   vanilla identity and the spoiler records a `drop_heart_floor_fallback` warning.
   The shuffled packs appear in the spoiler under `drop_tables` (resolved drop
-  item ids; pack 0 first).
+  item ids; pack 0 first). Installed at slot load (`Rando_ActivateSidecarSlot`)
+  and consumed at the sprite-drop site (`ForcePrizeDrop`). Drop sprites use the
+  always-loaded common prize GFX, so a shuffled drop renders correctly.
 
   The enemy→pack binding is static (per sprite type), not sphere-indexed, so the
   heart floor is enforced structurally on pack 0 rather than against sphere data
   — the faithful realization of the spec's "a tier reachable in spheres 0-2 keeps
   a heart" in this fork's drop model.
 
-Both are exposed as **experimental** toggles in the PC native settings window
-("Shuffles (experimental)"). Boss/drop *visuals* (the substituted boss rendering,
-the shuffled drops falling) are verified only by playtest — the headless checks
+- **`boss_shuffle`** (generation-only — **not runtime-enabled**) — the generator
+  randomizes which boss guards each of the 10 shuffleable dungeon boss rooms (EP,
+  DP, ToH, PoD, SP, SW, TT, IP, MM, TR; Agahnim 1/2 + Ganon pinned) and emits the
+  assignment in the spoiler under `boss_assignments`. The dungeon→prize binding is
+  unchanged. **But the runtime sprite substitution is deliberately held back**, so
+  loading a `boss_shuffle` slot plays with the vanilla bosses.
+
+  > ⚠️ **Why it isn't playable yet.** The substitution was a pure sprite-*type*
+  > swap, which renders garbage: the boss room loads the **vanilla** boss's
+  > graphics sheet, so a substituted boss draws with the wrong tiles, and
+  > multi-entry vanilla bosses (Eastern Palace is **6** Armos Knight sprites)
+  > each remap, spawning N copies of the new boss. (Confirmed by an F12 dump of
+  > the EP boss room: room 0xC8, six active sprites of type 0x09 = Moldorm, drawn
+  > with the Armos GFX.) Correct rendering needs **per-boss sprite-GFX loading +
+  > spawn-count handling** — a substantial graphics change. The generator,
+  > spoiler, corpus entries, and self-checks stay in place for that future work;
+  > `Rando_ActivateSidecarSlot` calls `BossShuffle_Deactivate` so the runtime is
+  > a passthrough, and `Rando_ShuffleInstallSelfCheck` guards that it stays off.
+  >
+  > **A second, separate gap** also blocks tournament use once rendering is fixed:
+  > the logic graph hard-codes each dungeon's `"<Dungeon> - Boss"` location to its
+  > **vanilla** boss-kill items (e.g. Turtle Rock - Boss requires Fire Rod + Ice
+  > Rod for Trinexx). Boss shuffle moves the boss but not the predicate, so an
+  > item-gated boss can land where you arrive before its item, and the
+  > accessibility check (which evaluates the vanilla logic) won't catch it
+  > (design.md D6). Both the GFX work and a per-seed boss-kill predicate override
+  > are needed before boss shuffle is playable + race-safe.
+
+The drop-shuffle toggle is exposed in the PC native settings window under
+"Shuffles (experimental)"; the boss-shuffle toggle is shown disabled there. The
+shuffled-drops *visuals* are verified only by playtest — the headless checks
 above cover determinism + the structural invariants.
 
 ## Share-string format
@@ -527,7 +538,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
 | 17→32 | Phase-b merge cumulative — slice 4 trick predicates, slice 5 hints generator, slice 7+8 boss/drop algorithms, inverted parity translation, audit-fix passes | 55/55 corpus regenerated (`baa393b`); most defaults inert per the `kgenver_inert_change_exception` invariant but several intermediate bumps shifted Retro/Inverted digests. See `git log v17..v32 -- src/rando/ assets/rando/` |
 | 46→47 | Fork-extension hint NPCs (Storyteller + Kakariko/Dark-World Fortune Tellers, ids 17-19) add 3 entries to the spoiler `hints[]` | **Placement/sphere digests unchanged** (hints are post-placement; `generator_version` is not an RNG input) — corpus 69/69 byte-identical, **not regenerated**. The bump exists only so a pre-fork v46 **race-mode** seed fails reveal with an honest `VersionMismatch` ("regenerate") instead of a misleading stamp `Tampered`, since the race stamp is a SHA over the full spoiler JSON incl. `hints[]`. A reveal-only reproducibility bump, not a placement bump. |
-| 48→49 | `boss_shuffle` / `drop_shuffle` go **live** in playable slots (installed at slot load; native-window toggles); drop shuffle gains a heart floor; spoiler emits `boss_assignments` / `drop_tables` | **All 69 existing placement/sphere digests byte-identical** (boss/drop shuffle is orthogonal to item placement) — corpus regenerated reported 0 digest changes; 10 shuffle-on entries added that assert the orthogonality. Boss/drop *assignment* determinism is pinned by the new self-checks, not the corpus. The bump version-locks the now-live runtime drop algorithm + the shuffle-on race stamp (a shuffle-on v48 race seed would otherwise regenerate different drops/stamp). |
+| 48→49 | **Drop shuffle** goes live in playable slots (installed at slot load; native-window toggle) with a heart floor; the spoiler emits `boss_assignments` / `drop_tables`. (Boss shuffle is generation-only — its runtime substitution is held back; see the Boss & drop shuffle section.) | **All 69 existing placement/sphere digests byte-identical** (boss/drop shuffle is orthogonal to item placement) — corpus regenerated reported 0 digest changes; 10 shuffle-on entries added that assert the orthogonality. Boss/drop *assignment* determinism is pinned by the new self-checks, not the corpus. The bump version-locks the now-live runtime drop algorithm + the shuffle-on race stamp (a shuffle-on v48 race seed would otherwise regenerate different drops/stamp). |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero
