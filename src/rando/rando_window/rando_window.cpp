@@ -602,22 +602,44 @@ static void Panel_Shuffles() {
     }
   }
 
-  // boss_shuffle / drop_shuffle live in the settings struct (and the hash), but
-  // they are runtime-inert for playable slots (Rando_ActivateSidecarSlot never
-  // regenerates them) — matching the in-game screen, we present them as DISABLED
-  // "coming soon" placeholders rather than live toggles, so no widget lies.
-  ImGui::SeparatorText("Shuffles (coming soon)");
-  ImGui::BeginDisabled();
+  // boss_shuffle / drop_shuffle are now LIVE for playable slots: the per-seed
+  // assignment is installed at slot load (Rando_ActivateSidecarSlot) and the
+  // runtime sprite substitution fires. Both default off and are byte-identical
+  // to vanilla when off. Marked EXPERIMENTAL — boss/drop visuals are
+  // playtest-pending, and boss shuffle does NOT yet move each dungeon's
+  // boss-kill LOGIC predicate (see the tooltip + OVERNIGHT_REPORT.md), so it
+  // can place an item-gated boss where it is not yet killable.
+  ImGui::SeparatorText("Shuffles (experimental)");
   {
-    bool bs = s->boss_shuffle != 0, ds = s->drop_shuffle != 0;
-    ImGui::Checkbox("Boss shuffle", &bs);
-    ImGui::Checkbox("Drop shuffle", &ds);
+    bool bs = s->boss_shuffle != 0;
+    if (ImGui::Checkbox("Boss shuffle", &bs)) {
+      s->boss_shuffle = bs ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Randomize which boss guards each dungeon (Agahnim 1/2 + Ganon "
+                "stay put; the dungeon's prize is unchanged). EXPERIMENTAL: the "
+                "logic does NOT account for a moved boss's kill requirements, so "
+                "an item-gated boss (Trinexx/Kholdstare/...) can land in a "
+                "dungeon you reach before its item. Not race-safe yet.");
+
+    bool ds = s->drop_shuffle != 0;
+    if (ImGui::Checkbox("Drop shuffle", &ds)) {
+      s->drop_shuffle = ds ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Shuffle which prizes enemies drop. A heart floor keeps weak "
+                "early enemies dropping hearts so you are not HP-starved. "
+                "EXPERIMENTAL — drop visuals are playtest-pending.");
+
+    // Not yet implemented — kept as disabled placeholders so the panel reflects
+    // the full ALTTPR shuffle menu without lying about availability.
+    ImGui::BeginDisabled();
     bool off = false;
     ImGui::Checkbox("Enemy shuffle", &off);
     ImGui::Checkbox("Glitches", &off);
+    ImGui::EndDisabled();
+    HelpTooltip("not yet implemented");
   }
-  ImGui::EndDisabled();
-  HelpTooltip("not yet active in playable slots");
 
   if (changed) Pending_Changed();
 }
