@@ -47,7 +47,7 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--assets-must-be-vanilla` | Refuses non-vanilla `zelda3_assets.dat` (compares against `kVanillaAssetsHash` in `src/rando/vanilla_assets_hash.h`). |
 | `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
-| `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, shuffles, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
+| `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, prize/medallion shuffles, boss shuffle, drop shuffle, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
 | `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 138-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
 | `--reveal-spoiler=<path>` | Read a suppressed `ZRSR` file at `<path>`, validate magic + CRC + version + stamp, regenerate the placement, and overwrite the file in place with the full JSON. Writes a sibling `.txt` text spoiler. Exits 0 on success; non-zero with a numeric `kRandoReveal_*` code on any failure (CrcMismatch, VersionMismatch, StampMismatch, ParseError, FileNotFound). Idempotent: a second invocation on an already-revealed file is a no-op success. |
 
@@ -84,6 +84,8 @@ serialization order`. Phase A axes:
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
 | `prize_shuffle` | `true`, `false` | `true` |
 | `medallion_shuffle` | `true`, `false` | `true` |
+| `boss_shuffle` | `true`, `false` | `false` (experimental) |
+| `drop_shuffle` | `true`, `false` | `false` (experimental) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
 
 **Accessibility tiers** (ALTTPR three-way; all three guarantee the seed is
@@ -101,6 +103,57 @@ enforces):
   `--allow-broken-seed` flag for diagnostic seeds).
 
 Phase B+ axes (`tricks`, `logic` glitch level, `swordless`, `pyramid_bow_upgrade=arrows`, `race_mode`) are reserved in the settings struct from Phase A.
+
+### Boss & drop shuffle (experimental)
+
+Two opt-in shuffle modules (`add-rando-shuffles-and-minigames`, kGeneratorVersion
+49). Both default **off** and are byte-identical to vanilla when off. They are
+**orthogonal to item placement** — turning either on never changes the
+`placement_digest` / `sphere_digest` (the corpus carries shuffle-on entries that
+assert exactly this). Their per-seed assignment is *not* stored in the slot; it
+is regenerated deterministically from `(settings, seed)` at slot load
+(`Rando_ActivateSidecarSlot`), so the bosses/drops you see always match the
+spoiler. Determinism is pinned by `BossShuffle_SelfCheck` / `DropShuffle_SelfCheck`
+(part of `--rando-selftest`).
+
+- **`boss_shuffle`** — randomizes which boss sprite guards each of the 10
+  shuffleable dungeon boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP, MM, TR).
+  Agahnim 1 (Hyrule Castle Tower), Agahnim 2 (Ganon's Tower), and Ganon stay
+  pinned. The dungeon→prize binding is **unchanged**: EP's pendant stays at EP
+  regardless of which boss is in the room. The shuffled assignment appears in
+  the spoiler under `boss_assignments`.
+
+  > ⚠️ **Known limitation (not race-safe).** The logic graph hard-codes each
+  > dungeon's `"<Dungeon> - Boss"` location to its **vanilla** boss-kill
+  > requirements (e.g. Turtle Rock - Boss requires Fire Rod + Ice Rod because
+  > vanilla Trinexx is there). Boss shuffle moves the boss sprite but **not** the
+  > predicate, so it can place an item-gated boss (Trinexx, Kholdstare,
+  > Helmasaur King, Arrghus) in a dungeon you can reach before its required item,
+  > and `Accessibility_SeedAcceptable` / `Goal_IsCompletable` evaluate the
+  > vanilla logic and will not catch it. This is the design decision recorded in
+  > the change's `design.md` D6 ("no predicate changes"). A per-seed boss-kill
+  > predicate override fed to the placer (like the entrance region overrides) is
+  > the proper follow-up. Until then, treat `boss_shuffle` as a casual/practice
+  > option, not a tournament one.
+
+- **`drop_shuffle`** — permutes the 56-entry enemy drop-prize table
+  (`kPrizeItems`, 7 packs × 8 slots). A **heart-drop floor** guarantees pack 0
+  (the vanilla heart-heavy pack that weak overworld enemies draw from) keeps at
+  least one heart after the shuffle, so you are not HP-starved early. If the
+  bounded re-roll budget is exhausted (≈1e-16 chance) the table falls back to the
+  vanilla identity and the spoiler records a `drop_heart_floor_fallback` warning.
+  The shuffled packs appear in the spoiler under `drop_tables` (resolved drop
+  item ids; pack 0 first).
+
+  The enemy→pack binding is static (per sprite type), not sphere-indexed, so the
+  heart floor is enforced structurally on pack 0 rather than against sphere data
+  — the faithful realization of the spec's "a tier reachable in spheres 0-2 keeps
+  a heart" in this fork's drop model.
+
+Both are exposed as **experimental** toggles in the PC native settings window
+("Shuffles (experimental)"). Boss/drop *visuals* (the substituted boss rendering,
+the shuffled drops falling) are verified only by playtest — the headless checks
+above cover determinism + the structural invariants.
 
 ## Share-string format
 
@@ -474,6 +527,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
 | 17→32 | Phase-b merge cumulative — slice 4 trick predicates, slice 5 hints generator, slice 7+8 boss/drop algorithms, inverted parity translation, audit-fix passes | 55/55 corpus regenerated (`baa393b`); most defaults inert per the `kgenver_inert_change_exception` invariant but several intermediate bumps shifted Retro/Inverted digests. See `git log v17..v32 -- src/rando/ assets/rando/` |
 | 46→47 | Fork-extension hint NPCs (Storyteller + Kakariko/Dark-World Fortune Tellers, ids 17-19) add 3 entries to the spoiler `hints[]` | **Placement/sphere digests unchanged** (hints are post-placement; `generator_version` is not an RNG input) — corpus 69/69 byte-identical, **not regenerated**. The bump exists only so a pre-fork v46 **race-mode** seed fails reveal with an honest `VersionMismatch` ("regenerate") instead of a misleading stamp `Tampered`, since the race stamp is a SHA over the full spoiler JSON incl. `hints[]`. A reveal-only reproducibility bump, not a placement bump. |
+| 48→49 | `boss_shuffle` / `drop_shuffle` go **live** in playable slots (installed at slot load; native-window toggles); drop shuffle gains a heart floor; spoiler emits `boss_assignments` / `drop_tables` | **All 69 existing placement/sphere digests byte-identical** (boss/drop shuffle is orthogonal to item placement) — corpus regenerated reported 0 digest changes; 10 shuffle-on entries added that assert the orthogonality. Boss/drop *assignment* determinism is pinned by the new self-checks, not the corpus. The bump version-locks the now-live runtime drop algorithm + the shuffle-on race stamp (a shuffle-on v48 race seed would otherwise regenerate different drops/stamp). |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

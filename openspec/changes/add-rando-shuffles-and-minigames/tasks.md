@@ -1,7 +1,7 @@
 <!-- =====================================================================
-RECONCILIATION (2026-06-02, claude/shuffles-overnight): The checkboxes
+RECONCILIATION (2026-06-02): The checkboxes
 below were AUTHORED stale. Verified against source in `main`, the real
-state is much further along — see OVERNIGHT_REPORT.md "STEP 0 reality map".
+state is much further along (grounded against the as-built source in `main`).
 Highlights:
   * ALL FOUR minigame sites are DONE+WIRED on main (incl. #78 Hype Cave NPC
     @ sprite_main.c:25930 and #79 Hammer Pegs @ overworld.c:3033 — these were
@@ -26,7 +26,7 @@ Boxes ticked [x] below carry a `done:` note for what was verified/landed.
   - Treasure-Chest minigame (the "pick 1 of 3" handler).
   <!-- done: all 4 located + WIRED on main. Digging player.c:6891; Chest Game dungeon.c:6072; Hammer Pegs overworld.c:3033 (HandlePegPuzzles screen 98); Hype Cave NPC sprite_main.c:25930 (NiceThiefWithGift room 0x11E). -->
 - [x] 1.2 Verify Peg Cave location id is in `assets/rando/location_registry.yaml`. If missing, add append-only. <!-- done: id 218 "Hammer Pegs" present (location_registry.yaml:337). -->
-- [x] 1.3 Verify Treasure-Chest minigame's 3 candidate-chest location ids are in the registry. If missing OR if only 1 exists, add the other 2 as append-only. <!-- done: fork models the chest game as the single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 slots — the runtime is a "rare prize fires once" gate, not a literal 3-chest placement. The D3 3-slot model is N/A to this reimplementation; documented in OVERNIGHT_REPORT.md. -->
+- [x] 1.3 Verify Treasure-Chest minigame's 3 candidate-chest location ids are in the registry. If missing OR if only 1 exists, add the other 2 as append-only. <!-- done: fork models the chest game as the single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 slots — the runtime is a "rare prize fires once" gate, not a literal 3-chest placement. The D3 3-slot model is N/A to this reimplementation. -->
 - [x] 1.4 Grep `../alttp_vt_randomizer/app/Boss.php` + `app/EnemyDrop.php` line counts + record source-line ranges in `audit.md §"Boss-shuffle provenance"` and `§"Drop-pool provenance"`. <!-- done: created audit.md with both sections. Boss.php (185 lines): 12 bosses in BossCollection @ Boss.php:68-128, each with file:line + shuffle role (10 shufflable + Agahnim/Agahnim2 pinned + Ganon out-of-pool = matches design D1). --> <!-- CORRECTION: app/EnemyDrop.php DOES NOT EXIST. Drop pool lives in app/Drops/PrizePack.php (61) + PrizePackSlot.php (60) + the roster in app/World.php:76-87 (11 packs, 63 slots) + sprite table app/Sprite.php (229 entries). Corrected source map recorded in audit.md §"Drop-pool provenance"; update design.md to match. Default-fill + ROM-writer location flagged as open follow-up. -->
 
 ## 2. Boss-shuffle module
@@ -47,14 +47,11 @@ Boxes ticked [x] below carry a `done:` note for what was verified/landed.
 
 ## 3. Drop-pool shuffle module
 
-- [ ] 3.1 Create `src/rando/shuffle_drops.c` + `src/rando/shuffle_drops.h`. API:
-  ```c
-  void DropPoolShuffle_Compute(Rng *rng, const RandoSettings *settings, const PlacementTable *pt, const SphereData *sd, DropTable out_tables[NUM_TIERS]);
-  ```
-- [ ] 3.2 Algorithm: per-tier drop-table permutation with heart-drop constraint per Phase A spec.
-- [ ] 3.3 Heart-drop guarantee: post-shuffle, verify at least one tier reachable in spheres 0-2 contains a heart drop. If violated, retry (bounded budget).
-- [ ] 3.4 Wire into runtime sprite-drop path: existing `Sprite_DropItem` logic consults the shuffled drop tables when `kFeatures1_RandomizerActive && drop_pool_shuffle`.
-- [ ] 3.5 Forward-fill fallback: if heart-drop guarantee retries exhaust, fall back to identity drop-pool with a spoiler `fallback_warnings` entry.
+- [x] 3.1 Create `src/rando/shuffle_drops.c` + `src/rando/shuffle_drops.h`. <!-- done: module exists; API = DropShuffle_Generate (install) / _ComputeAssignment (pure) / _Lookup / _Deactivate / _SelfCheck. The fork models the pool as the flat 56-entry kPrizeItems table, not NUM_TIERS DropTables — permutation over 0..55. -->
+- [x] 3.2 Algorithm: per-tier drop-table permutation with heart-drop constraint per Phase A spec. <!-- done: Fisher-Yates over the 56-entry flat prize table + heart-floor constraint (shuffle_drops.c). -->
+- [x] 3.3 Heart-drop guarantee: post-shuffle, verify at least one tier reachable in spheres 0-2 contains a heart drop. If violated, retry (bounded budget). <!-- done: pack 0 (flat 0..7, the heart-heavy starter pack weak overworld enemies draw from -> sphere-0 reachable) must keep >=1 heart (0xD8); bounded re-roll (16) on the same RNG stream. §3.4 sphere-ordering is N/A — enemy->pack binding is static, not sphere-indexed (documented). -->
+- [x] 3.4 Wire into runtime sprite-drop path: existing `Sprite_DropItem` logic consults the shuffled drop tables when `kFeatures1_RandomizerActive && drop_pool_shuffle`. <!-- done: ForcePrizeDrop (sprite.c:3009) calls DropShuffle_Lookup; install happens at slot load (Rando_ActivateSidecarSlot). Lookup is passthrough until installed. -->
+- [x] 3.5 Forward-fill fallback: if heart-drop guarantee retries exhaust, fall back to identity drop-pool with a spoiler `fallback_warnings` entry. <!-- done: out_used_fallback flag -> spoiler `drop_heart_floor_fallback` entry (JSON fallback_warnings + text WARNINGS). -->
 
 ## 4. §6.8 minigame dispatch
 
@@ -70,32 +67,32 @@ Boxes ticked [x] below carry a `done:` note for what was verified/landed.
 - [x] 5.1 Add `settings.boss_shuffle` boolean field. <!-- done: canonical offset [23], rando_settings.h:115, serialize rando_settings.c:190. -->
 - [x] 5.2 Add `settings.drop_pool_shuffle` boolean field. <!-- done: field is named `drop_shuffle`, canonical offset [24], rando_settings.c:191. -->
 - [x] 5.3 CSV parser accepts `boss_shuffle=true|false` and `drop_pool_shuffle=true|false`. <!-- done: keys `boss_shuffle` + `drop_shuffle`, rando_settings.c:915-923. -->
-- [ ] 5.4 Settings-screen widget: per-toggle.
+- [x] 5.4 Settings-screen widget: per-toggle. <!-- done: live EXPERIMENTAL toggles in the PC native settings window ("Shuffles (experimental)", rando_window.cpp) with caveat tooltips. The in-game SNES screen is compiled out on PC; PC rando settings live in the ImGui window. -->
 
 ## 6. Spoiler integration
 
-- [ ] 6.1 Boss assignments: JSON spoiler emits `boss_assignments: {<DungeonId>: <BossId>}` mapping. Text spoiler under a `Boss Assignments` section.
-- [ ] 6.2 Drop-pool: JSON spoiler emits `drop_tables: [<8 tier objects>]`. Text spoiler under a `Drop Tables` section.
-- [ ] 6.3 Treasure-Chest minigame annotation: each of the 3 slots gets `"choice_group": "treasure_chest"` in its JSON entry.
-- [ ] 6.4 When the shuffle is disabled (`boss_shuffle=false` etc.), omit the corresponding spoiler sections.
+- [x] 6.1 Boss assignments: JSON spoiler emits `boss_assignments` mapping. Text spoiler under a `Boss Assignments` section. <!-- done: JSON `boss_assignments` array of {dungeon, dungeon_name, boss, boss_name}; text BOSS ASSIGNMENTS section. rando_spoiler.c. -->
+- [x] 6.2 Drop-pool: JSON spoiler emits `drop_tables`. Text spoiler under a `Drop Tables` section. <!-- done: JSON `drop_tables` = 7 packs × 8 resolved drop item ids; text DROP TABLES section. -->
+- [~] 6.3 Treasure-Chest minigame annotation: each of the 3 slots gets `"choice_group": "treasure_chest"` in its JSON entry. <!-- N/A: the fork models the chest game as a single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 placement slots, so there is no 3-slot choice group to annotate. -->
+- [x] 6.4 When the shuffle is disabled (`boss_shuffle=false` etc.), omit the corresponding spoiler sections. <!-- done: boss_assignment/drop_map pointers are NULL when off -> sections omitted (verified: OFF seed has neither key). -->
 
 ## 7. Determinism + CI
 
-- [ ] 7.1 Bump `kGeneratorVersion`.
-- [ ] 7.2 Regenerate corpus. Add at least 4 boss-shuffle seeds (across goals) + 4 drop-pool-shuffle seeds + 2 both-on seeds.
-- [ ] 7.3 Verify default-settings digests (`boss_shuffle=false`, `drop_pool_shuffle=false`) remain byte-identical to pre-change baseline.
-- [ ] 7.4 Verify minigame-dispatch wiring doesn't change default-settings digests (sites dispatch to identity per the dispatcher fall-back contract).
+- [x] 7.1 Bump `kGeneratorVersion`. <!-- done: 48->49 with rationale (rando.h). -->
+- [x] 7.2 Regenerate corpus. Add at least 4 boss-shuffle seeds (across goals) + 4 drop-pool-shuffle seeds + 2 both-on seeds. <!-- done: 10 entries added (4 boss / 4 drop / 2 both-on); corpus now 79/79 OK. -->
+- [x] 7.3 Verify default-settings digests remain byte-identical to pre-change baseline. <!-- done: bump_rando_corpus --apply reported 0 digest changes across all 69 existing entries (boss/drop orthogonal to placement). -->
+- [x] 7.4 Verify minigame-dispatch wiring doesn't change default-settings digests. <!-- done: all 4 minigame dispatches gate on RandomizerActive; default corpus byte-identical (the dispatch sites landed earlier; this run did not touch them). -->
 
 ## 8. Audit-guard
 
-- [ ] 8.1 Run `assets/scripts/check_audit_guard.py` after wiring each minigame site. Each new `link_item_*` write must dispatch OR be exempt.
-- [ ] 8.2 Confirm boss-runtime-substitution doesn't write to tracked inventory cells.
+- [x] 8.1 Run `assets/scripts/check_audit_guard.py` after wiring each minigame site. <!-- done: check_audit_guard.py --strict green (29 files, no non-exempt writes). -->
+- [x] 8.2 Confirm boss-runtime-substitution doesn't write to tracked inventory cells. <!-- done: BossShuffle_RemapSpriteType only rewrites sprite_type[k] (the spawned boss sprite); no link_item_* / tracked-cell writes. DropShuffle_Lookup only remaps a prize-table index. -->
 
 ## 9. Documentation
 
-- [ ] 9.1 Update `docs/randomizer.md` settings reference: document `boss_shuffle=` and `drop_pool_shuffle=` axes.
-- [ ] 9.2 Add a "Shuffle modules" subsection covering boss + drop-pool behavior.
-- [ ] 9.3 Cross-link this change from the `openspec/changes/` index (README.md).
+- [x] 9.1 Update `docs/randomizer.md` settings reference: document `boss_shuffle=` and `drop_shuffle=` axes. <!-- done: added to the Settings reference table + a 48->49 bump case study. -->
+- [x] 9.2 Add a "Shuffle modules" subsection covering boss + drop-pool behavior. <!-- done: "Boss & drop shuffle (experimental)" subsection incl. the boss beatability-limitation warning + the drop heart-floor explanation. -->
+- [ ] 9.3 Cross-link this change from the `openspec/changes/` index (README.md). <!-- the change folder's own README.md exists; the openspec changes index cross-link is deferred to archive time (openspec archive updates indexes). -->
 
 ## 9.5. Performance budget verification
 

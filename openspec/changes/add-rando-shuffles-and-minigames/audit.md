@@ -94,7 +94,51 @@ in the ROM/Rom writer; not located in this pass — flagged as an open follow-up
 
 1. Locate the default prize-pack *fill* (which sprites populate '0'..'6' etc.) and
    the ROM writer that emits the packs — needed for task 3.x heart-drop guarantee.
+   *(Resolved differently: this fork does not use the ALTTPR PrizePack model. The
+   default fill IS `kPrizeItems[56]` in `src/sprite.c` and the runtime "writer" is
+   `ForcePrizeDrop`. The heart floor is implemented against pack 0 of that flat
+   table — see `Shuffles+minigames as-built` below.)*
 2. Update task 1.4 + design.md to replace the nonexistent `app/EnemyDrop.php`
    citation with the `app/Drops/` + `app/World.php` + `app/Sprite.php` map above.
 3. Decide whether boss-shuffle needs the `$can_beat` predicates ported or whether
    pinning goal-required bosses (design D1) makes assumed-reachability unnecessary.
+   *(Decision: deferred. Pinning the goal-required bosses is NOT sufficient — the
+   logic graph gates each dungeon's `"- Boss"` location on its VANILLA boss-kill
+   predicate, so a shuffled item-gated boss can strand a non-goal dungeon's prize.
+   Honoring design D6 (no predicate changes), boss shuffle ships experimental +
+   documented; the `$can_beat` port is the proper follow-up. See the as-built
+   note.)*
+
+## Shuffles+minigames as-built (2026-06-03)
+
+Grounded reconciliation after finishing the runtime install + hardening. The
+earlier "Status (2026-05-27)" block above is partly superseded:
+
+- **All 4 minigame sites are DONE+WIRED**, including the two it lists as ⏳/blocked:
+  Hype Cave NPC (#78) at `sprite_main.c:25930` (`NiceThiefWithGift`, room `0x11E`)
+  and Hammer Pegs (#79) at `overworld.c:3033` (`HandlePegPuzzles`, screen 98). Both
+  were completed on `main` after this audit was written. No new minigame wiring was
+  needed.
+- **Drop model**: the fork uses the flat `kPrizeItems[56]` table (7 packs × 8
+  slots), not the ALTTPR PrizePack/PrizePackSlot model. The drop shuffle is a
+  permutation over 0..55; the heart floor pins ≥1 heart (id `0xD8`) into pack 0.
+- **Boss/drop are orthogonal to item placement** — the corpus carries 10 shuffle-on
+  entries whose placement/sphere digests equal their shuffle-off twins (verified
+  byte-identical). Boss/drop *assignment* determinism is pinned by
+  `BossShuffle_SelfCheck` / `DropShuffle_SelfCheck`.
+
+### Shuffles+minigames benchmark (task 9.5.4)
+
+Generation wall-clock over 30 seeds each (desktop Release x64; the value is
+the spoiler's `generation_wall_clock_ms`):
+
+| Settings | p50 | p95 | p99 | max |
+|---|---|---|---|---|
+| default (shuffles off) | 1 ms | 3 ms | 3 ms | 3 ms |
+| boss + drop both on    | 1 ms | 3 ms | 3 ms | 3 ms |
+
+Both-on is indistinguishable from default — boss shuffle is an O(10) permutation
+and drop shuffle is an O(56) permutation with a bounded (≤16) heart-floor re-roll,
+all dwarfed by placement. Far within the 2 s desktop / 5 s Switch budget (§9.5.1).
+The heart-floor retry loop (§9.5.2) never approached its budget in any sampled
+seed; the identity fallback did not fire.
