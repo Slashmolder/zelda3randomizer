@@ -1,29 +1,49 @@
+<!-- =====================================================================
+RECONCILIATION (2026-06-02, claude/shuffles-overnight): The checkboxes
+below were AUTHORED stale. Verified against source in `main`, the real
+state is much further along — see OVERNIGHT_REPORT.md "STEP 0 reality map".
+Highlights:
+  * ALL FOUR minigame sites are DONE+WIRED on main (incl. #78 Hype Cave NPC
+    @ sprite_main.c:25930 and #79 Hammer Pegs @ overworld.c:3033 — these were
+    marked "blocked" but are finished). §4.2/§4.3 are NOT blocked.
+  * Boss + drop shuffle modules + runtime substitution + headless-generation
+    install all exist; the GAP is the runtime install at slot load
+    (Rando_ActivateSidecarSlot) — the feature was runtime-INERT in real play.
+  * Settings axes + canonical serialization + CSV: done. Native toggles were
+    DISABLED placeholders precisely because of the inert-at-runtime gap.
+This run finishes: runtime install, drop heart-drop guarantee + fallback,
+boss/drop self-checks, spoiler boss_assignments/drop_tables, live native
+toggles (experimental), kGenVer 48->49, corpus seeds, docs.
+Boxes ticked [x] below carry a `done:` note for what was verified/landed.
+===================================================================== -->
+
 ## 1. Apply-time pre-flight
 
-- [ ] 1.1 Grep `src/sprite_main.c` for each of the 4 minigame sites — confirm exact patch points + sprite IDs:
+- [x] 1.1 Grep `src/sprite_main.c` for each of the 4 minigame sites — confirm exact patch points + sprite IDs:
   - Digging Game (handlers at lines 931, 7772, 19407+; find the reward-grant site).
   - Hype Cave NPC (the soldier sprite; not the chests).
   - Peg Cave (hammer-pegs sprite + reward-chest open path).
   - Treasure-Chest minigame (the "pick 1 of 3" handler).
-- [ ] 1.2 Verify Peg Cave location id is in `assets/rando/location_registry.yaml`. If missing, add append-only.
-- [ ] 1.3 Verify Treasure-Chest minigame's 3 candidate-chest location ids are in the registry. If missing OR if only 1 exists, add the other 2 as append-only.
+  <!-- done: all 4 located + WIRED on main. Digging player.c:6891; Chest Game dungeon.c:6072; Hammer Pegs overworld.c:3033 (HandlePegPuzzles screen 98); Hype Cave NPC sprite_main.c:25930 (NiceThiefWithGift room 0x11E). -->
+- [x] 1.2 Verify Peg Cave location id is in `assets/rando/location_registry.yaml`. If missing, add append-only. <!-- done: id 218 "Hammer Pegs" present (location_registry.yaml:337). -->
+- [x] 1.3 Verify Treasure-Chest minigame's 3 candidate-chest location ids are in the registry. If missing OR if only 1 exists, add the other 2 as append-only. <!-- done: fork models the chest game as the single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 slots — the runtime is a "rare prize fires once" gate, not a literal 3-chest placement. The D3 3-slot model is N/A to this reimplementation; documented in OVERNIGHT_REPORT.md. -->
 - [x] 1.4 Grep `../alttp_vt_randomizer/app/Boss.php` + `app/EnemyDrop.php` line counts + record source-line ranges in `audit.md §"Boss-shuffle provenance"` and `§"Drop-pool provenance"`. <!-- done: created audit.md with both sections. Boss.php (185 lines): 12 bosses in BossCollection @ Boss.php:68-128, each with file:line + shuffle role (10 shufflable + Agahnim/Agahnim2 pinned + Ganon out-of-pool = matches design D1). --> <!-- CORRECTION: app/EnemyDrop.php DOES NOT EXIST. Drop pool lives in app/Drops/PrizePack.php (61) + PrizePackSlot.php (60) + the roster in app/World.php:76-87 (11 packs, 63 slots) + sprite table app/Sprite.php (229 entries). Corrected source map recorded in audit.md §"Drop-pool provenance"; update design.md to match. Default-fill + ROM-writer location flagged as open follow-up. -->
 
 ## 2. Boss-shuffle module
 
-- [ ] 2.1 Create `src/rando/shuffle_boss.c` + `src/rando/shuffle_boss.h`. API:
+- [x] 2.1 Create `src/rando/shuffle_boss.c` + `src/rando/shuffle_boss.h`. API: <!-- done: module exists; API is BossShuffle_Generate / _GetForDungeon / _RemapSpriteType / _ShouldSuppressSecondary. ComputeAssignment pure-fn added this run. -->
   ```c
   typedef enum { kBoss_HelmasaurKing, kBoss_Lanmolas, ... kBoss_Trinexx, kBoss_ArmosKnights } BossId;
   typedef enum { kDungeon_EP, kDungeon_DP, ... kDungeon_TR } DungeonId;
   
   void BossShuffle_Compute(Rng *rng, const RandoSettings *settings, BossId out_assignments[NUM_DUNGEONS]);
   ```
-- [ ] 2.2 Algorithm: 10-boss permutation per design.md D1. Goal-required bosses (Agahnim 1, Agahnim 2, Ganon) pinned at canonical slots.
-- [ ] 2.3 Implement `BossShuffle_Run` that:
+- [x] 2.2 Algorithm: 10-boss permutation per design.md D1. Goal-required bosses (Agahnim 1, Agahnim 2, Ganon) pinned at canonical slots. <!-- done: Fisher-Yates over kBossShufflePool[10]; slots 4 (HCT/Aga1) + 12 (GT/Aga2) pinned; Ganon out-of-pool. shuffle_boss.c:93. -->
+- [x] 2.3 Implement `BossShuffle_Run` that: <!-- done this run: headless --generate-seed calls BossShuffle_Generate (main.c:766); slot+runtime install added at Rando_ActivateSidecarSlot (recovers settings+seed, same order as prize/medallion). The assignment is regenerated from (settings,seed) at slot load — not stored in slot state (deterministic). -->
   - Runs after `Place_AssumedFill` + sphere computation (per design.md D5 ordering).
   - Calls `BossShuffle_Compute`.
   - Stores result in slot state for runtime substitution.
-- [ ] 2.4 Runtime boss substitution: when a dungeon's boss room loads, the sprite-handler consults the boss-assignment table and substitutes the correct boss sprite. Patch site: `src/dungeon.c` boss-room load path (verify exact site at apply-time).
+- [x] 2.4 Runtime boss substitution: when a dungeon's boss room loads, the sprite-handler consults the boss-assignment table and substitutes the correct boss sprite. <!-- done: src/sprite.c:3693 in Dungeon_LoadSingleSprite — `type = BossShuffle_RemapSpriteType(type)` + orphan-segment suppression at :3678. (Patch site is sprite.c, not dungeon.c.) -->
 
 ## 3. Drop-pool shuffle module
 
@@ -39,16 +59,17 @@
 ## 4. §6.8 minigame dispatch
 
 - [x] 4.1 **Digging Game**: wire `Rando_OnLocationCheck(LOC_Digging_Game, vanilla_item)` at the dig-reward grant site in `src/sprite_main.c`. The sprite handler currently grants vanilla items inline; replace with the dispatcher call. *(Landed in slice 8 #67.)*
-- [ ] 4.2 **Hype Cave NPC**: wire dispatch at the Hype Cave soldier-NPC handler. The 4 chests in Hype Cave are already wired (`chest_lookup.h:203-206`); this site is the 5th, NPC-based. *(Blocked on #78 sprite-handler discovery. ALTTPR stores at SRAM 0x180011 — an event-flag location, not a sprite-dispatch site in the fork's current model. Needs a playtest-verified C-side handler — per `logic_vs_runtime_gap` memory note, wiring runtime intercepts without playtest is the failure mode.)*
-- [ ] 4.3 **Peg Cave**: wire dispatch at the hammer-pegs reward-chest open path. Add `// rando-exempt: state-shuffle — hammer peg state` comments at the peg-state mutation sites. *(Blocked on #79 — Hammer Pegs is a "Standing" location at SRAM 0x180006 needing new instrumentation per audit.md. ALTTPR's reward is a one-time prize after all pegs hammered; the fork has no sprite-handler equivalent yet. Same playtest-gating concern as #78.)*
+- [x] 4.2 **Hype Cave NPC**: wire dispatch at the Hype Cave soldier-NPC handler. <!-- done (NOT blocked — finished on main): sprite_main.c:25930 in NiceThiefWithGift, gated on RandomizerActive AND dungeon_room_index == 0x11E (full 16-bit match avoids low-byte collision); passes 0xFFFF registry-id convention so a placed Rupee100 can't mis-grant 300 rupees; handles direct-grant + confirmation cue. Verified by read, PLAYTEST-PENDING by eye. -->
+- [x] 4.3 **Peg Cave**: wire dispatch at the hammer-pegs reward-chest open path. <!-- done (NOT blocked — finished on main): overworld.c:3033 in HandlePegPuzzles, screen 98, 22nd peg-hit. Sets the obtained-bit BEFORE the tile reveal so the vanilla standing PoH self-cancels; gated on RandomizerActive + (0x40==0) re-trigger guard. lttp code 0x17 (quarter PoH), not 0x26. Verified by read, PLAYTEST-PENDING by eye. -->
+- [x] 4.3-rando-exempt The peg-state mutations carry the audit-guard exemption convention; check_audit_guard.py --strict passes on the wired path.
 - [x] 4.4 **Treasure-Chest minigame**: wire dispatch at the pick-1-of-3 handler. The picked chest's `LOC_<...>` dispatches; the other 2 chests are not dispatched in that play-through. Spoiler annotates the 3 slots as `"choice_group": "treasure_chest"` per design.md D3. *(Landed in slice 8 #67 — `LOC_Chest_Game` dispatch at `src/dungeon.c:5955-5963`.)*
-- [ ] 4.5 Vanilla-mode regression: each new dispatch site preserves byte-identical behavior when `kFeatures1_RandomizerActive` is clear. *(Active for §4.1/§4.4 via the existing audit-guard CI step. §4.2/§4.3 pending.)*
+- [x] 4.5 Vanilla-mode regression: each new dispatch site preserves byte-identical behavior when `kFeatures1_RandomizerActive` is clear. <!-- done: all 4 sites gate on `enhanced_features1 & kFeatures1_RandomizerActive`; the lookups (RemapSpriteType / DropShuffle_Lookup) are passthrough when their assignment-active flag is false, which only Rando_ActivateSidecarSlot sets. check_audit_guard.py --strict green. -->
 
 ## 5. Settings axes
 
-- [ ] 5.1 Add `settings.boss_shuffle` boolean field. Un-pinned (default false; un-pinned in this change). Add to canonical-serialization order.
-- [ ] 5.2 Add `settings.drop_pool_shuffle` boolean field. Same shape.
-- [ ] 5.3 CSV parser accepts `boss_shuffle=true|false` and `drop_pool_shuffle=true|false`.
+- [x] 5.1 Add `settings.boss_shuffle` boolean field. <!-- done: canonical offset [23], rando_settings.h:115, serialize rando_settings.c:190. -->
+- [x] 5.2 Add `settings.drop_pool_shuffle` boolean field. <!-- done: field is named `drop_shuffle`, canonical offset [24], rando_settings.c:191. -->
+- [x] 5.3 CSV parser accepts `boss_shuffle=true|false` and `drop_pool_shuffle=true|false`. <!-- done: keys `boss_shuffle` + `drop_shuffle`, rando_settings.c:915-923. -->
 - [ ] 5.4 Settings-screen widget: per-toggle.
 
 ## 6. Spoiler integration
