@@ -219,6 +219,9 @@ void SpriteModule_Die(int k);
 void Sprite_DoTheDeath(int k);
 void ForcePrizeDrop(int k, uint8 prize, uint8 slot);
 void PrepareEnemyDrop(int k, uint8 item);
+// Vanilla prize-drop table accessor (0..55). Used by the drop-pool shuffle to
+// avoid embedding a copy of the ROM-derived kPrizeItems table in src/rando/.
+uint8 Sprite_VanillaPrizeItem(uint8 source_index);
 void SpriteDeath_Func4(int k);
 void SpriteDeath_DrawPoof(int k);
 void SpriteModule_Fall2(int k);

@@ -3000,6 +3000,17 @@ void Sprite_DoTheDeath(int k) {  // 86f923
   SpriteDeath_Func4(k);
 }
 
+// Accessor over the vanilla prize-drop table (kPrizeItems[56], the 7-pack ×
+// 8-slot enemy-drop roster). Single source of truth for the drop-pool shuffle:
+// the rando layer (shuffle_drops.c heart-floor guarantee + spoiler drop_tables)
+// must NOT embed a copy of this ROM-derived table (the no-embedded-data guard
+// scans src/rando/), so it reads each entry through here instead. Out-of-range
+// returns 0.
+uint8 Sprite_VanillaPrizeItem(uint8 source_index) {
+  if (source_index >= 56) return 0;
+  return kPrizeItems[source_index];
+}
+
 void ForcePrizeDrop(int k, uint8 prize, uint8 slot) {  // 86f9bc
   prize = prize * 8 | prizes_arr1[slot];
   prizes_arr1[slot] = (prizes_arr1[slot] + 1) & 7;

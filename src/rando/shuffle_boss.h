@@ -30,10 +30,35 @@
 //
 // STUB: returns identity (each dungeon keeps its vanilla boss).
 //
-// Returns true on success.
+// Returns true on success. Also INSTALLS the assignment into module-global
+// runtime state (consumed by BossShuffle_RemapSpriteType at sprite-load) and
+// marks the assignment active.
 bool BossShuffle_Generate(const RandoSettings *settings,
                           uint64 seed_u64,
                           uint8 out_assignment[16]);
+
+// Pure assignment computation — NO global side effects. Deterministic from
+// (settings, seed_u64). Writes the dungeon-id → boss-pool-index table into
+// `out_assignment[16]` (0xFF for HCE/unused slots; Agahnim 1/2 pinned at
+// slots 4/12). Used by the spoiler writer (which must not perturb the runtime
+// install) and internally by BossShuffle_Generate. When boss_shuffle is off,
+// writes the identity (vanilla) assignment.
+void BossShuffle_ComputeAssignment(const RandoSettings *settings,
+                                   uint64 seed_u64,
+                                   uint8 out_assignment[16]);
+
+// Clear the installed assignment (slot-teardown). After this,
+// BossShuffle_RemapSpriteType/_ShouldSuppressSecondary are pure passthroughs
+// (vanilla bosses) until the next BossShuffle_Generate. Pairs with
+// Rando_DeactivateSlot so a shuffle slot's assignment can't leak into the
+// next (non-shuffle) slot or into vanilla play.
+void BossShuffle_Deactivate(void);
+
+// Self-check (invoked from --rando-selftest): asserts determinism, the
+// pinned-Agahnim invariant, the off→identity contract, and that the shuffled
+// assignment is a permutation of the 10-boss pool over the 10 shuffleable
+// dungeons. exit(2) on failure.
+void BossShuffle_SelfCheck(void);
 
 // Returns the boss-pool index for `dungeon_id` from the currently
 // installed assignment. Returns 0xFF when no assignment is active

@@ -16,6 +16,8 @@
 #include "rando_logic.h"
 #include "rando_placement.h"
 #include "rando_shuffles.h"
+#include "shuffle_boss.h"   // BossShuffle_Generate/_Deactivate/_SelfCheck (Slice 7)
+#include "shuffle_drops.h"  // DropShuffle_Generate/_Deactivate/_SelfCheck (Slice 8)
 #include "rando_save.h"
 #include "rando_generate.h"  // RandoGenerate_SelfCheck (slot SRAM-init self-test)
 #include "rando_snapshot_tail.h"
@@ -3002,6 +3004,8 @@ void Rando_RunAllSelfChecks(void) {
   Logic_SelfCheck();
   Placement_SelfCheck();
   Shuffles_SelfCheck();
+  BossShuffle_SelfCheck();
+  DropShuffle_SelfCheck();
   RandoSave_SelfCheck();
   RandoGenerate_SelfCheck();
   RandoSnapshotTail_SelfCheck();

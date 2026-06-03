@@ -17,6 +17,8 @@
 #include "rando_settings.h"
 #include "rando_rng.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 // Boss-pool indices — match `Boss::all()` order in `app/Boss.php:68-129`.
 // Agahnim (3) and Agahnim2 (11) are NOT in the shuffle pool; they're
@@ -90,18 +92,15 @@ static void fy_shuffle_u8(RandoRng *rng, uint8 *arr, uint32 n) {
   }
 }
 
-bool BossShuffle_Generate(const RandoSettings *settings,
-                          uint64 seed_u64,
-                          uint8 out_assignment[16]) {
+void BossShuffle_ComputeAssignment(const RandoSettings *settings,
+                                   uint64 seed_u64,
+                                   uint8 out_assignment[16]) {
   // Identity assignment first.
   memcpy(out_assignment, kBossVanilla, sizeof(kBossVanilla));
 
   if (settings == NULL || settings->boss_shuffle == 0) {
-    // Off — identity. Mark active for the API contract; lookup returns
-    // vanilla.
-    memcpy(g_boss_assignment, out_assignment, sizeof(g_boss_assignment));
-    g_boss_assignment_active = true;
-    return true;
+    // Off — identity (each dungeon keeps its vanilla boss).
+    return;
   }
 
   // Deterministic permutation. Salt distinguishes the boss-shuffle RNG
@@ -126,10 +125,25 @@ bool BossShuffle_Generate(const RandoSettings *settings,
   // edits that could touch slots 4/12.
   out_assignment[4]  = kBoss_Agahnim;
   out_assignment[12] = kBoss_Agahnim2;
+}
 
+bool BossShuffle_Generate(const RandoSettings *settings,
+                          uint64 seed_u64,
+                          uint8 out_assignment[16]) {
+  // Compute the pure assignment, then INSTALL it into the runtime globals.
+  // Marking active even when boss_shuffle is off is intentional: the runtime
+  // remap (BossShuffle_RemapSpriteType) is then an explicit identity for an
+  // active rando slot, and only goes back to a hard passthrough on
+  // BossShuffle_Deactivate (slot teardown / vanilla play).
+  BossShuffle_ComputeAssignment(settings, seed_u64, out_assignment);
   memcpy(g_boss_assignment, out_assignment, sizeof(g_boss_assignment));
   g_boss_assignment_active = true;
   return true;
+}
+
+void BossShuffle_Deactivate(void) {
+  g_boss_assignment_active = false;
+  memset(g_boss_assignment, 0xFF, sizeof(g_boss_assignment));
 }
 
 uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
@@ -258,4 +272,97 @@ bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type) {
     return assigned != kBossSecondaries[i].parent_pool_idx;
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Self-check (--rando-selftest). The regression corpus hashes only the
+// placement + sphere digests, and boss shuffle is orthogonal to item placement
+// (it never perturbs either), so boss determinism + the structural invariants
+// can ONLY be pinned here. Exits(2) on any failure.
+// ---------------------------------------------------------------------------
+static void boss_selfcheck_die(const char *msg) {
+  fprintf(stderr, "[BossShuffle_SelfCheck] FAIL: %s\n", msg);
+  exit(2);
+}
+
+void BossShuffle_SelfCheck(void) {
+  RandoSettings s;
+  Settings_SetDefaults(&s);
+
+  // 1) Off → identity (each dungeon keeps its vanilla boss).
+  {
+    RandoSettings off = s;
+    off.boss_shuffle = 0;
+    uint8 a[16];
+    BossShuffle_ComputeAssignment(&off, 0x0123456789ABCDEFull, a);
+    if (memcmp(a, kBossVanilla, sizeof(kBossVanilla)) != 0)
+      boss_selfcheck_die("boss_shuffle off must produce the vanilla assignment");
+  }
+
+  // 2) On → determinism + pinned Agahnim + permutation-of-pool invariant.
+  {
+    RandoSettings on = s;
+    on.boss_shuffle = 1;
+    uint8 a[16], b[16];
+    BossShuffle_ComputeAssignment(&on, 0xDEADBEEFCAFEBABEull, a);
+    BossShuffle_ComputeAssignment(&on, 0xDEADBEEFCAFEBABEull, b);
+    if (memcmp(a, b, sizeof(a)) != 0)
+      boss_selfcheck_die("same seed must produce identical boss assignment");
+    if (a[4] != kBoss_Agahnim)
+      boss_selfcheck_die("Agahnim 1 must stay pinned at HCT (dungeon 4)");
+    if (a[12] != kBoss_Agahnim2)
+      boss_selfcheck_die("Agahnim 2 must stay pinned at GT (dungeon 12)");
+    if (a[0] != 0xFF)
+      boss_selfcheck_die("HCE (dungeon 0) must have no boss");
+    // The 10 shuffleable dungeons hold a permutation of the 10-boss pool:
+    // each pool boss appears exactly once and no Agahnim leaks in.
+    uint8 seen[12] = {0};
+    for (uint32 i = 0; i < 10; i++) {
+      uint8 idx = a[kBossShuffleableDungeons[i]];
+      if (idx == kBoss_Agahnim || idx == kBoss_Agahnim2)
+        boss_selfcheck_die("an Agahnim leaked into a shuffleable dungeon");
+      if (idx >= 12) boss_selfcheck_die("boss-pool index out of range");
+      seen[idx]++;
+    }
+    for (uint32 p = 0; p < 10; p++) {
+      if (seen[kBossShufflePool[p]] != 1)
+        boss_selfcheck_die("shuffleable assignment is not a permutation of the 10-boss pool");
+    }
+  }
+
+  // 3) Runtime remap: hard passthrough with no assignment installed; on-slot
+  // remaps each vanilla boss sprite to a known boss sprite and never touches
+  // the pinned Agahnim sprite (0x7A).
+  {
+    BossShuffle_Deactivate();
+    if (BossShuffle_RemapSpriteType(0x53) != 0x53)
+      boss_selfcheck_die("remap must be a passthrough with no assignment active");
+
+    RandoSettings on = s;
+    on.boss_shuffle = 1;
+    uint8 a[16];
+    (void)BossShuffle_Generate(&on, 0x0Eull, a);
+    if (BossShuffle_RemapSpriteType(0x7A) != 0x7A)
+      boss_selfcheck_die("pinned Agahnim sprite (0x7A) must never be remapped");
+    for (uint32 i = 0; i < kBossSpriteMapCount; i++) {
+      uint8 r = BossShuffle_RemapSpriteType(kBossSpriteMap[i].sprite_type);
+      bool ok = false;
+      for (uint32 j = 0; j < kBossSpriteMapCount; j++)
+        if (kBossSpriteMap[j].sprite_type == r) { ok = true; break; }
+      if (!ok) boss_selfcheck_die("remapped boss sprite is not a known boss type");
+    }
+    // Off-slot remap is identity (active assignment, boss_shuffle off):
+    // every boss sprite maps to itself.
+    RandoSettings off = s;
+    off.boss_shuffle = 0;
+    (void)BossShuffle_Generate(&off, 0x0Eull, a);
+    for (uint32 i = 0; i < kBossSpriteMapCount; i++) {
+      uint8 v = kBossSpriteMap[i].sprite_type;
+      if (BossShuffle_RemapSpriteType(v) != v)
+        boss_selfcheck_die("identity (off) assignment must remap each boss to itself");
+    }
+    BossShuffle_Deactivate();
+  }
+
+  fprintf(stderr, "[BossShuffle_SelfCheck] OK\n");
 }
