@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 48  # bump_rando_corpus.py --apply
+generator_version: 49  # bump_rando_corpus.py --apply - boss/drop shuffle live; placement unchanged
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -452,6 +452,65 @@ entries:
     label: "c-entrance-cross-decoupled-open-fast-ganon"
     expected_digest: "7258eab9b24ffe419543b08ff373071a034b2d014221ce9fbfcd699e85517ae7"
     expected_sphere_digest: "5d452a9cb364c2007b887ed80be61e8a7d5aa3d399c2c3e0d5812345c04724b0"
+
+  # Phase B Slice 7/8 (add-rando-shuffles-and-minigames, kGenVer 49) — boss +
+  # drop shuffle. These flags are ORTHOGONAL to item placement, so each entry's
+  # placement_digest + sphere_digest equals its shuffle-off twin (verified: a
+  # boss-on seed is byte-identical to the same seed boss-off). The corpus value
+  # is exactly that regression guard — that turning the shuffle on never
+  # perturbs placement/spheres. Boss/drop *assignment* determinism is pinned by
+  # BossShuffle_SelfCheck / DropShuffle_SelfCheck (the corpus only hashes
+  # placement + spheres). >=4 boss + >=4 drop + 2 both-on per tasks.md §7.2.
+  - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true }
+    seed: "0x5701"
+    label: "b-boss-open-fast-ganon"
+    expected_digest: "a429f0f896cce23987d1f93b00ccd57c07db45263ba83bbcc74eea788114e276"
+    expected_sphere_digest: "e932015e008584674733f40fa32adf40001fef5770af121e7b4fe37c6143f604"
+  - settings: { mode.state: standard, goal: ganon, boss_shuffle: true }
+    seed: "0x5702"
+    label: "b-boss-standard-ganon"
+    expected_digest: "470fa4ad6a3bd67382d86552c4857a1dbdb87118fc2a0bdba0591c5d35c693e3"
+    expected_sphere_digest: "eddcf606f8da7ff7d3abcba1536794a75ef73e34b967001809e0ce1c92180506"
+  - settings: { mode.state: open, goal: dungeons, boss_shuffle: true }
+    seed: "0x5703"
+    label: "b-boss-open-dungeons"
+    expected_digest: "41a8b249845bc5314f1b7ebcf2de9e4552142a0e289fb3e6bb5fa53fcd4e963c"
+    expected_sphere_digest: "edb1f27d8f73b3c32b3a1d7f2bd29e27cdc8d98b93984c8b854eab10982f83b0"
+  - settings: { mode.state: inverted, goal: fast_ganon, boss_shuffle: true }
+    seed: "0x5704"
+    label: "b-boss-inverted-fast-ganon"
+    expected_digest: "2c7f11855463650e481b3307203755868a431102c5354f0c78f154788be10ab5"
+    expected_sphere_digest: "fe33353a16d65db9890857666814fc5a9c7d98bd4d1fe38c4cbae8f30b2aaf43"
+  - settings: { mode.state: open, goal: fast_ganon, drop_shuffle: true }
+    seed: "0x5711"
+    label: "b-drop-open-fast-ganon"
+    expected_digest: "77f72273ec26859c08cf432752f8d2f1b17460fc26489190ba0aa647ada96c5c"
+    expected_sphere_digest: "575ce3b4cd23b5abef4e8d42f226106ee80c1bf007db052b931f4a97091181ed"
+  - settings: { mode.state: open, goal: ganon, drop_shuffle: true }
+    seed: "0x5712"
+    label: "b-drop-open-ganon"
+    expected_digest: "4d624ab551c29d618b18287577ebc4352d856e020e77cf8a12eb825fec227fa8"
+    expected_sphere_digest: "2df11b0226d97117c180d6251ebb7a72aa8ea994b26479d63c67122ef615de7d"
+  - settings: { mode.state: standard, goal: fast_ganon, drop_shuffle: true }
+    seed: "0x5713"
+    label: "b-drop-standard-fast-ganon"
+    expected_digest: "3468c9d4dc42489b8e5769a67723a39642f025010de32792c2b04f81548ca559"
+    expected_sphere_digest: "a8d6efba1e2b460a885a4606df0ffe16f18f4adfc9b73c28c5a7ea9d9652ba5e"
+  - settings: { mode.state: retro, goal: ganon, drop_shuffle: true }
+    seed: "0x5714"
+    label: "b-drop-retro-ganon"
+    expected_digest: "9c2a0ba2cdbfaffd208ed8fd354ad19cc58f46369cf03c634a485400d1b8ecea"
+    expected_sphere_digest: "5fdc0fdd1cf60334cf5c3574f501096dcacb04118b4916d18c86ea03db4430b3"
+  - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
+    seed: "0x5721"
+    label: "b-bossdrop-open-fast-ganon"
+    expected_digest: "0df090a0f0b9e2894c0ff6d5dc53f744082742a1ecd24aa09adc1b8c4a4a17e7"
+    expected_sphere_digest: "6c0697228cb56b5b51a83d87e934214f3dd60fccd19f14a535bf5d5c8db10b96"
+  - settings: { mode.state: open, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30, boss_shuffle: true, drop_shuffle: true }
+    seed: "0x5722"
+    label: "b-bossdrop-open-triforce"
+    expected_digest: "7036a6af5656692d75c48050041df4353734777d06e492710e19a805b57b2131"
+    expected_sphere_digest: "c1abdf420146cc5cfa91920b1162ec4efb9b1ce04ff8f9a025a57efb72eb7a77"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
