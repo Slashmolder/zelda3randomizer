@@ -59,4 +59,26 @@ This change bundles boss + drop shuffles + the minigame dispatch because all thr
 
 ## Status
 
-**Fully authored** as of 2026-05-26. Promoted from initial stub. design.md captures boss-pool composition (10 shuffleable + 3 pinned bosses), drop-pool tier algorithm with heart-drop constraint, Treasure-Chest minigame slot grouping (3 candidates, 1 reward), and post-sphere shuffle ordering. See [README.md](README.md) for the file index.
+**Implemented (2026-06-03), with boss-shuffle runtime deferred.** As built
+(kGeneratorVersion 49):
+
+- **Minigame dispatch (§6.8): complete.** All four sites are wired and
+  gated — Digging Game (`player.c`), Treasure-Chest (`dungeon.c`), Hammer Pegs
+  (`overworld.c`), Hype Cave NPC (`sprite_main.c`). The fork models the
+  Treasure-Chest game as a single `LOC_Chest_Game` rare-prize location, not a
+  3-slot choice group (design.md D3 N/A).
+- **Drop-pool shuffle: complete + playable.** Flat 56-entry `kPrizeItems`
+  permutation with a pack-0 heart floor + identity fallback; installed at slot
+  load and consumed at `ForcePrizeDrop`; playtest-confirmed working.
+- **Boss shuffle: generation-only; runtime substitution DEFERRED.** The 10-boss
+  generator, spoiler `boss_assignments`, corpus entries, and self-checks are in
+  place, but a playtest showed a pure sprite-type swap renders garbage (the boss
+  room loads the vanilla boss's GFX; multi-entry bosses spawn N copies — F12 dump
+  of the EP boss room). Runtime substitution + the UI toggle are held back
+  pending per-boss sprite-GFX loading; `Rando_ActivateSidecarSlot` does not
+  install the boss assignment. A per-seed boss-kill predicate override (design.md
+  D6) is the second prerequisite for beatability-safe boss shuffle.
+
+design.md captures the original boss-pool composition (10 shuffleable + 3 pinned)
+and the drop algorithm. See the spec deltas for the reconciled as-built contract
+and [README.md](README.md) for the file index.

@@ -2,25 +2,49 @@
 
 ### Requirement: §6.8 Minigame dispatch sites
 
-Four minigame sites SHALL route through `Rando_OnLocationCheck(LOC_<...>, vanilla_item_id)`:
+Four minigame reward sites SHALL route their reward through the rando dispatcher
+(`Rando_OnLocationCheck` / `Rando_DispatchVanillaGrant`) so a seed can place any
+item at the site, and SHALL preserve byte-identical vanilla behavior when
+`kFeatures1_RandomizerActive` is clear:
 
-1. **`LOC_Digging_Game`** (location id 228) — Digging Game in the Light World. Dispatch fires when the player wins a dig and the digging-game-guy sprite hands over the item. Sprite handlers in `src/sprite_main.c` (`SpritePrep_DiggingGameGuy_bounce` at line 7772, draw at 19407+). Exact patch point deferred to apply-time grep.
-2. **`LOC_Hype_Cave_NPC`** (location id 227) — the soldier NPC in Hype Cave (the 4 chests in Hype Cave are already wired via the §6.3 universal chest hook per `src/rando/chest_lookup.h:203-206`).
-3. **Peg Cave** — hammer-pegs reward chest opening. Location ID may need to be added to `assets/rando/location_registry.yaml`; verify at apply-time. Sprite handlers in `src/sprite_main.c` (hammer-pegs sprite + reward-chest open).
-4. **Treasure-Chest minigame** — the "pick one of three chests" game in Village of Outcasts. Special handling: the game has 3 candidate chests but only 1 reward; dispatch fires for the picked chest only.
-
-When `kFeatures1_RandomizerActive` is clear, the minigame handlers SHALL preserve byte-identical vanilla behavior — the dispatcher fall-back returns the vanilla item id and the inline grant proceeds.
-
-> **Stub status**: per-site patch points deferred to apply-time. Peg Cave location-id presence verification deferred.
+1. **`LOC_Digging_Game`** (location id 228) — the Digging Game. Dispatched at the
+   PoH "win" outcome in `DiggingGameGuy_AttemptPrizeSpawn` (`src/player.c`); on a
+   direct-grant placement the `0xeb` reward sprite is suppressed so the player
+   doesn't also receive the vanilla Piece of Heart.
+2. **`LOC_Hype_Cave_NPC`** (location id 227) — the gift NPC in Hype Cave (the 4
+   Hype Cave chests are wired separately via the §6.3 universal chest hook).
+   Dispatched in `NiceThiefWithGift` (`src/sprite_main.c`), gated on the full
+   16-bit room index `0x11E` and passing the `0xFFFF` registry-id convention so a
+   placed item can't mis-grant the vanilla 300-rupee code.
+3. **`LOC_Hammer_Pegs`** (location id 218) — the hammer-pegs Piece of Heart.
+   Dispatched at the once-per-save 22nd-peg trigger in `HandlePegPuzzles`
+   (`src/overworld.c`, screen 98); the obtained-bit is set before the tile reveal
+   so the vanilla standing Piece of Heart self-cancels.
+4. **`LOC_Chest_Game`** — the Treasure-Chest minigame in the Village of Outcasts.
+   Dispatched at the rare-prize branch of `OpenMiniGameChest` (`src/dungeon.c`),
+   which fires once per save (a `dung_savegame_state_bits` gate). The fork models
+   the game as this single rare-prize location, not three placement slots.
 
 #### Scenario: Digging Game routed through dispatcher
 - **WHEN** the player wins a Digging Game dig in a rando slot
-- **THEN** `Rando_OnLocationCheck(LOC_Digging_Game, <vanilla>)` fires; the placement-table substitute is granted; the spoiler reflects the assignment
+- **THEN** `Rando_DispatchVanillaGrant(LOC_Digging_Game, ...)` fires; the placed
+  item is granted and the vanilla Piece-of-Heart reward sprite is suppressed on a
+  direct-grant placement
+
+#### Scenario: Hammer Pegs and Hype Cave NPC route through the dispatcher
+- **WHEN** the player hammers the last peg (Hammer Pegs) or receives the Hype
+  Cave gift NPC's item in a rando slot
+- **THEN** the placed item for `LOC_Hammer_Pegs` / `LOC_Hype_Cave_NPC` is granted
+  once, and the corresponding vanilla reward does not also spawn
 
 #### Scenario: Vanilla mode minigames unchanged
-- **WHEN** the binary is in vanilla mode (`kFeatures1_RandomizerActive` clear) and the player wins a Digging Game dig
-- **THEN** the Digging Game grants its vanilla item; `g_ram` after the grant is bit-identical to pre-rando-change behavior
+- **WHEN** the binary is in vanilla mode (`kFeatures1_RandomizerActive` clear) and
+  the player wins any of the four minigames
+- **THEN** the minigame grants its vanilla item; `g_ram` after the grant is
+  bit-identical to pre-rando-change behavior
 
-#### Scenario: Treasure-Chest minigame dispatches only the picked chest
-- **WHEN** the player picks chest #2 of 3 in the Treasure-Chest minigame
-- **THEN** dispatch fires once for the picked chest's `LOC_<id>`; the other two chests do NOT dispatch (they were never reachable in this play)
+#### Scenario: Treasure-Chest minigame dispatches its single reward location
+- **WHEN** the player wins the once-per-save rare prize in the Treasure-Chest
+  minigame
+- **THEN** dispatch fires once for `LOC_Chest_Game`; consolation outcomes stay
+  vanilla
