@@ -1,5 +1,11 @@
 # 03_pyramid_fairy.yaml — synthesized multi-slot grant site
 #
+# NOTE (add-rando-fairy-chest-model): this example is now historical. The
+# Pyramid Fairy Sword/Bow Trade slots shown below were RETIRED from the live
+# pool — the pond is a two-chest model (Left/Right, granted on contact). This
+# file is documentation only (not consumed by codegen); kept to illustrate the
+# Trade type + multi-slot pattern.
+#
 # Exercises: Trade location type, world_state_filter for conditional
 # locations, OP_WORLDSTATE_EQ, multi-location grant from a single event.
 #

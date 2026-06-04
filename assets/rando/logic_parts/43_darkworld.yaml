@@ -170,32 +170,16 @@ locations:
     can_reach: "TRUE()"
     source: "app/Region/Standard/DarkWorld/NorthEast.php:33"
 
-  # `Pyramid Fairy - Sword` (php:103-114): hasSword AND
-  #   (Crystal5 AND Crystal6 AND south-DW reachable AND
-  #     ((MoonPearl AND Hammer) OR (canOWYBA AND hasABottle) OR (MagicMirror AND DefeatAgahnim)))
-  #   OR (canMirrorClip AND MagicMirror AND
-  #        ((canSuperSpeed AND canSpinSpeed) OR canOneFrameClipOW OR (canBootsClip AND Boots)))
-  # Slice 4 §7: surfaces canOWYBA+hasABottle via CanPearlBypass() (which
-  # already includes HasABottle()). The canMirrorClip outer subtree stays
-  # dropped — no CanMirrorClip / CanSuperSpeed / CanSpinSpeed macros exist
-  # in macros.yaml (Phase B reservation); listing the inner disjuncts as
-  # top-level OR would be a correctness regression because canMirrorClip
-  # is the AND-gate on the whole subtree. The Sword/Bow/Left/Right chests
-  # share this predicate shape (PHP is mechanically identical).
-  - id: "Pyramid Fairy - Sword"
-    region: DarkWorld_NorthEast
-    can_reach: "HasSword(1) AND OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR CanPearlBypass() OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"
-    source: "app/Region/Standard/DarkWorld/NorthEast.php:103-114"
-
-  # `Pyramid Fairy - Bow` (php:116-127): canShootArrows AND
-  # (same Crystal/DW gate as Sword). Slice 4 §7: mirrors Sword.
-  - id: "Pyramid Fairy - Bow"
-    region: DarkWorld_NorthEast
-    can_reach: "CanShootArrowsL1() AND OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR CanPearlBypass() OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"
-    source: "app/Region/Standard/DarkWorld/NorthEast.php:116-127"
-
-  # `Pyramid Fairy - Left` (php:131-141): Crystal gate only (no weapon
-  # requirement). Same DW/Crystal predicate as the Sword/Bow chests.
+  # Pyramid Fairy. ALTTPR delivers this pond as TWO chests (Left/Right); the
+  # Sword/Bow Trade slots (the vanilla throw-in upgrade) were RETIRED — see
+  # change add-rando-fairy-chest-model. The runtime grants Left/Right on contact
+  # (Sprite_WishPond3). Both are reach-only (NO weapon requirement) — that is
+  # the whole point: the chest model needs no sword/bow. The DW/Crystal gate
+  # below mirrors the PHP; the canMirrorClip outer subtree stays dropped (no
+  # CanMirrorClip / CanSuperSpeed / CanSpinSpeed macros in macros.yaml — Phase B
+  # reservation; CanPearlBypass() surfaces canOWYBA+hasABottle).
+  #
+  # `Pyramid Fairy - Left` (php:131-141): Crystal gate only (no weapon).
   - id: "Pyramid Fairy - Left"
     region: DarkWorld_NorthEast
     can_reach: "OP_HAS_PRIZE(Prize_Crystal5) AND OP_HAS_PRIZE(Prize_Crystal6) AND OP_REGION_REACHABLE(DarkWorld_South) AND ((HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)) OR CanPearlBypass() OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(DefeatAgahnim)))"

@@ -412,8 +412,9 @@ overworld_surface_not_caves:
   - { id: 186, name: "Library",          region: LightWorld_South,              note: "Book pulled from under the Library building on the overworld via Pegasus Boots; the building interior (room 0x107) is empty" }
   - { id: 193, name: "Spectacle Rock Cave", region: LightWorld_DeathMountain_West, note: "DM heart-piece cave (entrance 0x16/0x17 family, OUTSIDE 0x3C-0x72 cave-id range) — not in this registry's shuffle set" }
   - { id: 195, name: "Spectacle Rock",    region: LightWorld_DeathMountain_West, note: "Overworld standing item" }
-  - { id: 210, name: "Pyramid Fairy - Sword", region: DarkWorld_NorthEast,       note: "Pyramid Fairy trade; reached via Pyramid hole, not a 0x3C-0x72 cave door" }
-  - { id: 211, name: "Pyramid Fairy - Bow",   region: DarkWorld_NorthEast,       note: "Pyramid Fairy trade" }
+  # ids 210/211 (Pyramid Fairy - Sword/Bow) retired — chest model, see change
+  # add-rando-fairy-chest-model. These were doc-only (never emitted to the
+  # entrance shuffle set); Left/Right remain as the pond's two checks.
   - { id: 213, name: "Pyramid Fairy - Left",  region: DarkWorld_NorthEast,       note: "Pyramid Fairy chest (room not in cave-id set)" }
   - { id: 214, name: "Pyramid Fairy - Right", region: DarkWorld_NorthEast,       note: "Pyramid Fairy chest" }
   - { id: 217, name: "Chest Game",        region: DarkWorld_NorthWest,           note: "Minigame chest (room 0x106 area) — handled by OpenMiniGameChest, NOT in the chest table; bind with care" }

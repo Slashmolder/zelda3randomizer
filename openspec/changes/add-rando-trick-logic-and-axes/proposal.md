@@ -1,5 +1,12 @@
 ## Why
 
+> **Dependency note (add-rando-fairy-chest-model, 2026-06-03):** the swordless-mode
+> `can_place` work in this change references `LOC_Pyramid_Fairy_Sword` (and `_Bow`).
+> Those two Pyramid Fairy Trade slots have since been **retired** from the placement
+> pool (the pond is now a two-chest model granting `Pyramid_Fairy_Left/Right`). Before
+> implementing swordless here, re-point that logic to a still-existing sword slot — the
+> retired LOC ids (210/211) no longer resolve.
+
 Phase A pinned three logic-relaxation axes to their safest values and reserved op-codes / settings bits for Phase B activation:
 
 - `tricks = none` (per `audit.md §0.5`); `OP_TRICK` reserved at op-code 15 per `assets/rando/op_registry.yaml`.

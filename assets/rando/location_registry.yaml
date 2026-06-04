@@ -322,8 +322,11 @@ locations:
   # ===========================================================================
   - { id: 208, name: "Catfish",                               region: DarkWorld_NorthEast, type: Standing, vanilla_item: Quake,        source: "app/Region/Standard/DarkWorld/NorthEast.php:32" }
   - { id: 209, name: "Pyramid",                               region: DarkWorld_NorthEast, type: Standing, vanilla_item: PieceOfHeart, source: "app/Region/Standard/DarkWorld/NorthEast.php:33" }
-  - { id: 210, name: "Pyramid Fairy - Sword",                 region: DarkWorld_NorthEast, type: Trade,    vanilla_item: L2Sword,      source: "app/Region/Standard/DarkWorld/NorthEast.php:34", notes: "Synthesized site per audit §0.3.4; fall-back vanilla_item=L1Sword per §6.7 if rando off." }
-  - { id: 211, name: "Pyramid Fairy - Bow",                   region: DarkWorld_NorthEast, type: Trade,    vanilla_item: SilverArrowUpgrade, source: "app/Region/Standard/DarkWorld/NorthEast.php:35", notes: "Synthesized site; fall-back vanilla_item=Bow per §6.7." }
+  # ids 210/211 (Pyramid Fairy - Sword/Bow Trade slots) RETIRED: ALTTPR delivers
+  # this pond as TWO chests (Left/Right), not a throw-in upgrade. The runtime
+  # (Sprite_WishPond3) now grants Left/Right directly on contact; the Trade slots
+  # were a vanilla-toss artifact and are dropped from the pool. The id gap is
+  # harmless (ids are id-keyed). See change add-rando-fairy-chest-model.
   - { id: 212, name: "Ganon",                                 region: DarkWorld_NorthEast, type: Prize_Event, vanilla_item: DefeatAgahnim, source: "app/Region/Standard/DarkWorld/NorthEast.php:36", notes: "Re-located to LightWorld/NorthEast.php:19 in Inverted. Game-end signal is Module19_TriforceRoom entry; no dedicated flag bit." }
   - { id: 213, name: "Pyramid Fairy - Left",                  region: DarkWorld_NorthEast, type: Chest,    vanilla_item: SilverArrowUpgrade, source: "app/Region/Standard/DarkWorld/NorthEast.php:40", notes: "Conditional in ALTTPR; Phase A treats as always-present per audit §0.3.5." }
   - { id: 214, name: "Pyramid Fairy - Right",                 region: DarkWorld_NorthEast, type: Chest,    vanilla_item: BottleEmpty,  source: "app/Region/Standard/DarkWorld/NorthEast.php:41", notes: "Conditional in ALTTPR; Phase A treats as always-present." }

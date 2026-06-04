@@ -1150,9 +1150,62 @@ void Sprite_WishPond3(int k) {
     break;
   case 1:
     if (!choice_in_multiselect_box) {
-      Sprite_ShowMessageUnconditional(0x8a);
-      sprite_ai_state[k] = 2;
-      flag_is_link_immobilized = 1;
+      // Chest-model fairy (rando): drop the vanilla "throw an item in" entirely
+      // and hand over the next un-collected of this pond's two checks directly,
+      // like opening a chest. The vanilla toss is a poor fit under item shuffle —
+      // you may not own the sword/bow it expects, the toss CONSUMES/upgrades the
+      // item, owning a higher tier locks the check out, and the toss picker
+      // (RenderText_FindYItem) hard-FREEZES on an empty Y-inventory. ALTTPR
+      // itself replaces both ponds with two chests (NorthEast.php / z3r
+      // hooks.asm "2 chests, fat fairy room"). Granting on contact makes the
+      // runtime requirement exactly "reach the pond", which MATCHES the
+      // reach-only placement logic for Waterfall/Pyramid Left/Right — no
+      // throwable-item residual, no freeze, no consume, no lockout. Off-rando:
+      // the untouched vanilla toss path runs (preserves the RAM-compare).
+      if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        uint16 loc = 0xFFFFu, vi = 0xFFFFu;
+        uint8 vlttp = 0;
+        if (!savegame_is_darkworld) {  // Waterfall Fairy (LW)
+          if (!Rando_IsLocationChecked(LOC_Waterfall_Fairy_Left)) {
+            loc = LOC_Waterfall_Fairy_Left;  vi = ITEM_RedShield;          vlttp = 0x05;
+          } else if (!Rando_IsLocationChecked(LOC_Waterfall_Fairy_Right)) {
+            loc = LOC_Waterfall_Fairy_Right; vi = ITEM_BottleEmpty;        vlttp = 0x16;
+          }
+        } else {                       // Pyramid Fairy (DW)
+          if (!Rando_IsLocationChecked(LOC_Pyramid_Fairy_Left)) {
+            // SilverArrowUpgrade vanilla code is 0x3b (sets link_item_bow=3,
+            // silver bow); NOT 0x43 (that writes link_arrow_filler) — see
+            // progressive_to_lttp in rando.c.
+            loc = LOC_Pyramid_Fairy_Left;    vi = ITEM_SilverArrowUpgrade; vlttp = 0x3b;
+          } else if (!Rando_IsLocationChecked(LOC_Pyramid_Fairy_Right)) {
+            loc = LOC_Pyramid_Fairy_Right;   vi = ITEM_BottleEmpty;        vlttp = 0x16;
+          }
+        }
+        if (loc == 0xFFFFu) {
+          Sprite_ShowMessageUnconditional(0x14b);  // both collected — dismiss
+        } else {
+          uint8 lttp = Rando_DispatchVanillaGrant(loc, vi, vlttp);
+          if (Rando_ShouldSkipReceive(lttp)) {
+            // Direct-write item (prize/dungeon bit, magic, triforce): no
+            // Link_ReceiveItem; the §7.6 cue pops the per-item icon.
+            Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+          } else {
+            // Normal item: standard over-head receive (method 0), mirroring the
+            // freestanding-PoH grant site. No fairy cutscene / no toss.
+            Link_CancelDash();
+            item_receipt_method = 0;
+            Link_ReceiveItem(lttp, 0);
+          }
+        }
+        // Idle the pond; delay + Sprite_CheckIfLinkIsBusy (case 0) prevents a
+        // same-touch re-fire, so the player re-contacts for the second check.
+        sprite_ai_state[k] = 0;
+        sprite_delay_main[k] = 255;
+      } else {
+        Sprite_ShowMessageUnconditional(0x8a);
+        sprite_ai_state[k] = 2;
+        flag_is_link_immobilized = 1;
+      }
     } else {
       Sprite_ShowMessageUnconditional(0x14b);
       sprite_ai_state[k] = 0;
@@ -1213,71 +1266,9 @@ void Sprite_WishPond3(int k) {
   case 6:
     sprite_ai_state[k] = 7;
     if (!savegame_is_darkworld) {
-      // §6.7 Waterfall Fairy. ALTTPR models these as TWO Flippers-only CHEST
-      // checks (Waterfall Fairy - Left/Right, type Chest) — NOT item-specific
-      // tosses. The earlier item-keyed dispatch (boomerang->Left, shield->Right)
-      // was wrong: it required OWNING and TOSSING that exact item, and because
-      // the vanilla pond UPGRADES the tossed boomerang/shield (consuming the
-      // base item), upgrading either one permanently locked out its check.
-      //
-      // Correct behavior under rando: grant the NEXT un-collected check on ANY
-      // toss, and ALWAYS restore the tossed item (case 2 zeroed it; case 7 only
-      // restores the bow). So a single throwable item collects both checks over
-      // two tosses, the player never loses an item, and no upgrade can lock a
-      // check out. Once both are collected we end without the vanilla upgrade
-      // (ALTTPR has no wishing-pond upgrade — the two checks are the reward).
-      // — PLAYTEST REQUIRED (slot grant path has no automated test).
-      //
-      // OPEN ITEM — the toss-to-summon route leaves a logic-vs-runtime gap
-      // (logic: Flippers; runtime: Flippers + one throwable item). BUT the gap
-      // is nearly non-binding: the toss picker (messaging.c RenderText_FindYItem)
-      // offers ANY Y-item you own, and Bombs (slot 3) qualify and are shop-
-      // buyable — so "have something to throw" is almost always satisfiable, and
-      // likely already implied by the logic's bomb-availability assumptions. The
-      // only exotic failure is reaching the waterfall with zero Y-items AND no
-      // reachable/affordable bomb source. Options, in order of effort:
-      //   (a) Leave as-is and accept the (very low) residual; optionally add an
-      //       explicit "can produce a throwable item" clause to the Waterfall
-      //       Fairy - Left/Right logic (assets/rando/logic.yaml, today just
-      //       HAS_ITEM(Flippers)) to close it formally — fuzzy to express.
-      //   (b) Make these true Flippers-only pickups like ALTTPR's two chests:
-      //       grant both on reach/contact with no toss (needs a room-entry /
-      //       proximity hook, no chests exist in this room); logic stays correct
-      //       as-is. Higher effort, fully removes the residual.
-      if (enhanced_features1 & kFeatures1_RandomizerActive) {
-        uint16 loc = 0xFFFFu, vi = 0xFFFFu;
-        uint8 vanilla_lttp = 0, hd = 0;
-        if (!Rando_IsLocationChecked(LOC_Waterfall_Fairy_Left)) {
-          loc = LOC_Waterfall_Fairy_Left;  vi = ITEM_RedShield;   vanilla_lttp = 0x05; hd = 1;
-        } else if (!Rando_IsLocationChecked(LOC_Waterfall_Fairy_Right)) {
-          loc = LOC_Waterfall_Fairy_Right; vi = ITEM_BottleEmpty; vanilla_lttp = 0x16; hd = 2;
-        }
-        // Give the tossed item back regardless (no upgrade / no consume).
-        (&link_item_bow)[sprite_C[k]] = sprite_D[k];
-        Hud_RefreshIcon();
-        if (loc == 0xFFFFu) {
-          // Both checks already collected — end the interaction (no upgrade).
-          sprite_graphics[k] = 0;
-          sprite_head_dir[k] = 0;
-          sprite_ai_state[k] = 10;
-          return;
-        }
-        uint8 placed_lttp = Rando_DispatchVanillaGrant(loc, vi, vanilla_lttp);
-        if (Rando_ShouldSkipReceive(placed_lttp)) {
-          // Direct grant already applied; jump past 7/8/9 to the message state
-          // with the §7.6 confirmation cue.
-          sprite_graphics[k] = 0;
-          sprite_head_dir[k] = hd;
-          sprite_ai_state[k] = 10;
-          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-          return;
-        }
-        // case 9 grants the placed item via Link_ReceiveItem(sprite_graphics).
-        sprite_graphics[k] = placed_lttp;
-        sprite_head_dir[k] = hd;
-        Sprite_ShowMessageUnconditional(0x8c);
-        break;
-      }
+      // Rando grants the Waterfall's two checks directly in case 1 (chest
+      // model) and never advances past ai_state 1, so only the vanilla
+      // toss-upgrade path reaches case 6.
       if (sprite_graphics[k] == 12) {
         sprite_graphics[k] = 42;
         sprite_head_dir[k] = 1;
@@ -1292,63 +1283,9 @@ void Sprite_WishPond3(int k) {
         return;
       }
     } else {
-      // §6.7 Pyramid Fairy dispatch (synthesized multi-slot grant site).
-      // The Pyramid Fairy in vanilla DarkWorld accepts two toss-in items:
-      //   graphics==2  → L1Sword vestigial path (the sword-toss trade slot)
-      //   graphics==22 → Bow → Bow+Silvers (the bow-toss trade slot)
-      // graphics==58 is the L4-sword "you already have it" rejection branch
-      // (Sprite_ShowMessageUnconditional(0x14f) below) — vanilla LttP never
-      // grants from that branch, so dispatching it would inject an extra
-      // Pyramid Fairy Sword for L4-sword players who toss a sword. Skip 58.
-      //
-      // Per audit.md §0.3.4 and ALTTPR `app/Region/Standard/DarkWorld/
-      // NorthEast.php:34-35,59-60`: vanilla fall-backs are L2Sword for the
-      // sword slot (the post-temper result), SilverArrowUpgrade for the
-      // bow slot (the silvers-trade result).
-      if (enhanced_features1 & kFeatures1_RandomizerActive) {
-        uint16 loc = 0xFFFFu;
-        uint16 vi = 0xFFFFu;
-        uint8 vanilla_lttp = 0;
-        if (sprite_graphics[k] == 2) {
-          loc = LOC_Pyramid_Fairy_Sword;
-          vi = ITEM_L2Sword;
-          vanilla_lttp = 1;  // L2Sword LttP code
-        } else if (sprite_graphics[k] == 22) {
-          loc = LOC_Pyramid_Fairy_Bow;
-          vi = ITEM_SilverArrowUpgrade;
-          vanilla_lttp = 0x43;  // SilverArrowUpgrade LttP code
-        }
-        if (loc != 0xFFFFu) {
-          uint8 placed_lttp = Rando_DispatchVanillaGrant(loc, vi, vanilla_lttp);
-          if (Rando_ShouldSkipReceive(placed_lttp)) {
-            // Direct grant already done. Run the case-7 bow restoration
-            // inline (otherwise the player loses the tossed bow), then
-            // jump past case 8/9 to the message state.
-            if (sprite_C[k] == 3)
-              (&link_item_bow)[sprite_C[k]] = sprite_D[k];
-            sprite_head_dir[k] = (loc == LOC_Pyramid_Fairy_Sword) ? 5 : 3;
-            sprite_graphics[k] = 0;
-            sprite_ai_state[k] = 10;
-            // §7.6 audit follow-up: bypassing case 7/8/9 skips the palette-
-            // filter cutscene + Link_ReceiveItem visual, so the player sees
-            // only the kWishPondMsgs message. Add the generic §7.6 cue so
-            // there's at least an audio + HUD-refresh confirmation that the
-            // direct-grant fired (vs the prior commit's incorrect claim
-            // that the state machine alone provided thematic confirmation).
-            // Slice 9 — pass the placed item id resolved by the dispatch
-            // above so the per-item icon ancilla pops.
-            Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-            return;
-          }
-          // Set sprite_graphics[k] to the dispatched LttP code so case 9
-          // grants the placed item via Link_ReceiveItem.
-          sprite_graphics[k] = placed_lttp;
-          if (sprite_head_dir[k] == 0)
-            sprite_head_dir[k] = (loc == LOC_Pyramid_Fairy_Sword) ? 5 : 3;
-          Sprite_ShowMessageUnconditional(0x8c);
-          break;
-        }
-      }
+      // Rando grants the Pyramid's two checks (Left/Right) directly in case 1
+      // (chest model) and never advances past ai_state 1, so only the vanilla
+      // sword/bow toss-upgrade path reaches case 6.
       if (sprite_graphics[k] == 58) {
         sprite_graphics[k] = 59;
         sprite_head_dir[k] = 4;
