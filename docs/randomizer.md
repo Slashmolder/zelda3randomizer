@@ -828,7 +828,8 @@ The four flags and their as-built status:
   wrong door. The practical effect of the divergence: fork-Retro is *stricter*
   (you must find the right dungeon's keys) but fully beatable; ALTTPR-Retro is more
   lenient. Track: the single-pool collapse needs the key-door logic rewrite +
-  playtest, not a blind runtime intercept.
+  playtest, not a blind runtime intercept — scoped as the follow-up change
+  `openspec/changes/add-rando-retro-generic-keys`.
 
 What randomizes in Retro is the **shop economy**, not the shop inventory: the 9
 regular shops keep their vanilla inventory (identity-pinned) but the player must
