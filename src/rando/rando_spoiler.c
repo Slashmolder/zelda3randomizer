@@ -806,6 +806,10 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   if (s->placements != NULL && s->placements->count > 0) {
     // logic.schema.yaml type-enum ordinals (mirror rando_placement.c LOCTYPE_*).
     enum { kLocTypeShop = 14, kLocTypeShopUpgrade = 15, kLocTypeTakeAny = 16 };
+    // 160 provably exceeds the max possible shop-class location count: 27 Shop +
+    // 2 ShopUpgrade + 62 TakeAny (31 caves × 2 slots) = 91 registry entries, of
+    // which only ~9 TakeAny slots are ever active per seed. The `sn < 160` guard
+    // below therefore never truncates — it is a hard backstop, not a real cap.
     static struct { uint16 loc; uint16 item; uint8 type; } shop_rows[160];
     uint16 sn = 0;
     uint16 cnt = s->placements->count;
