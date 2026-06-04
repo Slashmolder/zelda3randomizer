@@ -33,7 +33,7 @@ Every call site that invokes the dispatcher and may receive `kRandoLttpSkip` SHA
 - `src/player.c:594` (Ether tablet) — passes the item id resolved from the tablet's placement-table entry.
 - `src/player.c:634` (Bombos tablet) — passes the item id resolved from the tablet's placement-table entry.
 - `src/player.c:3886` (generic direct-grant cue from the player module) — passes the granted item id from the call-site's local context.
-- `src/sprite_main.c:1273` (Pyramid Fairy item drop, §6.7) — passes the placement-table-resolved item id at the active `LOC_Pyramid_Fairy_Sword` / `LOC_Pyramid_Fairy_Bow` slot.
+- `src/sprite_main.c` `Sprite_WishPond3` (great-fairy pond grant, §6.7) — passes the placement-table-resolved item id for the pond's granted check. (The Pyramid `Sword`/`Bow` Trade slots originally enumerated here were retired and the grant relocated to a chest-model contact grant of `*_Fairy_Left`/`Right` by `add-rando-fairy-chest-model`; the §7.6 cue still fires from the relocated site.)
 - `src/sprite_main.c:18586` (generic direct-grant cue from a sprite handler) — passes the granted item id from the call-site's local context.
 
 When this change lands, all 5 call sites SHALL be updated in the same commit; no partial migration is permitted. New call sites added by future changes (e.g., Slice 8 minigame dispatch) inherit the same contract.

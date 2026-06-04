@@ -657,7 +657,8 @@ with detail deferred to `/openspec-explore` at apply-time.
 
 | # | Change | Slice | Scope | Status |
 |---|---|---|---|---|
-| 1 | [`add-rando-confirmation-icons`](../openspec/changes/add-rando-confirmation-icons/) | 9 | Visible per-item icon ancilla for §6.2 direct-grant placements | Full |
+| 1 | [`add-rando-confirmation-icons`](../openspec/changes/archive/2026-06-04-add-rando-confirmation-icons/) | 9 | Visible per-item icon ancilla for §6.2 direct-grant placements | ✅ Archived 2026-06-04 |
+| 1b | [`add-rando-fairy-chest-model`](../openspec/changes/archive/2026-06-04-add-rando-fairy-chest-model/) | 9 | Great-fairy ponds → two reach-only chest-model checks; retire Pyramid Sword/Bow | ✅ Archived 2026-06-04 |
 | 2 | [`add-rando-trackers`](../openspec/changes/add-rando-trackers/) | 1 | In-game item + location tracker overlays + checked-bitmap r/w paths | Full |
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/add-rando-race-mode-reveal/) | 6 | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp verify | Full |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
