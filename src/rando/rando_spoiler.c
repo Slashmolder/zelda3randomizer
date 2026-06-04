@@ -241,7 +241,9 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"crystals_ganon\": %u,\n", s->settings->crystals_ganon);
   fprintf(f, "    \"crystals_tower\": %u,\n", s->settings->crystals_tower);
   fprintf(f, "    \"item_pool_difficulty\": %u,\n", s->settings->item_pool_difficulty);
-  fprintf(f, "    \"dungeon_small_keys_mode\": %u,\n", s->settings->dungeon_small_keys_mode);
+  // Emit the EFFECTIVE small-keys mode (Retro pins Wild) so the spoiler matches
+  // the canonical hash + actual placement, not the user's raw (overridden) field.
+  fprintf(f, "    \"dungeon_small_keys_mode\": %u,\n", Settings_EffectiveSmallKeysMode(s->settings));
   fprintf(f, "    \"dungeon_big_keys_mode\": %u,\n", s->settings->dungeon_big_keys_mode);
   fprintf(f, "    \"dungeon_maps_mode\": %u,\n", s->settings->dungeon_maps_mode);
   fprintf(f, "    \"dungeon_compasses_mode\": %u,\n", s->settings->dungeon_compasses_mode);
@@ -397,6 +399,72 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     if (!first) fprintf(f, "\n  ");
   }
   fprintf(f, "],\n");
+
+  // shops[] (tasks §8.2-8.3) — the Retro shop / capacity-upgrade / take-any
+  // placements, carrying their region (so consumers can group by region) and an
+  // identity_placed flag for the Capacity Upgrade slots. Emitted ONLY when
+  // shop-class locations are placed (Retro), so non-Retro JSON is byte-identical
+  // (the key is omitted entirely, not emitted empty). This changes the JSON
+  // bytes for Retro seeds, which feed the race-mode stamp — version-locked by
+  // the kGeneratorVersion bump that ships with Retro wild-keys.
+  if (s->placements != NULL && s->placements->count > 0) {
+    enum { kLocTypeShop = 14, kLocTypeShopUpgrade = 15, kLocTypeTakeAny = 16 };
+    bool any = false;
+    for (uint16 i = 0; i < s->placements->count && !any; i++) {
+      uint16 loc = s->placements->entries[i].location_id;
+      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
+        if (kRandoLocations[j].id == loc) {
+          uint8 t = kRandoLocations[j].type;
+          if (t == kLocTypeShop || t == kLocTypeShopUpgrade || t == kLocTypeTakeAny)
+            any = true;
+          break;
+        }
+      }
+    }
+    if (any) {
+      fprintf(f, "  \"shops\": [\n");
+      bool first = true;
+      // Sorted by location_id for determinism (matches placements[] order).
+      uint16 n = s->placements->count;
+      if (n > 512) n = 512;
+      RandoPlacement local[512];
+      memcpy(local, s->placements->entries, n * sizeof(RandoPlacement));
+      qsort(local, n, sizeof(RandoPlacement), placement_cmp);
+      for (uint16 i = 0; i < n; i++) {
+        uint16 loc = local[i].location_id;
+        uint8 t = 0xFF;
+        uint16 region_id = 0xFFFF;
+        for (uint32 j = 0; j < kRandoLocationsCount; j++) {
+          if (kRandoLocations[j].id == loc) {
+            t = kRandoLocations[j].type;
+            region_id = kRandoLocations[j].region_id;
+            break;
+          }
+        }
+        if (t != kLocTypeShop && t != kLocTypeShopUpgrade && t != kLocTypeTakeAny)
+          continue;
+        const char *type_str = (t == kLocTypeShopUpgrade) ? "ShopUpgrade"
+                             : (t == kLocTypeTakeAny)      ? "TakeAny"
+                                                          : "Shop";
+        // Shop-class locations are identity-pinned and carry no logic-region
+        // binding (region_id == 0xFFFF), so the location NAME is the grouping
+        // key (e.g. "Light World Kakariko Shop - 1" groups under that shop). The
+        // bound region is emitted only when one actually exists.
+        const char *lname = Rando_GetLocationName(loc);
+        fprintf(f, "%s    {\"location\": %u, \"name\": \"%s\", \"item\": %u, "
+                   "\"type\": \"%s\"",
+                first ? "" : ",\n", loc, lname, local[i].item_id, type_str);
+        if (region_id != 0xFFFF)
+          fprintf(f, ", \"region\": \"%s\"", Rando_GetRegionName(region_id));
+        if (t == kLocTypeShopUpgrade)
+          fprintf(f, ", \"identity_placed\": true");
+        fprintf(f, "}");
+        first = false;
+      }
+      fprintf(f, "%s  ],\n", first ? "" : "\n");
+    }
+  }
+
   fprintf(f, "  \"playthrough\": [],\n");
   fprintf(f, "  \"regions\": []\n");
 

@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 50  # bump_rando_corpus.py --apply - retire Pyramid Fairy Sword/Bow; chest-model fairy ponds
+generator_version: 51  # bump_rando_corpus.py --apply - Retro wildKeys (small_keys=Wild) + JSON shops[]
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -102,13 +102,13 @@ entries:
   - settings: { mode.state: retro, goal: ganon }
     seed: "0x0000000000000014"
     label: "a1-retro-ganon"
-    expected_digest: "32181819912fe440bcba19e0d3428f2b105a2960ce5b3ec1e34133dfaa1ca56d"
-    expected_sphere_digest: "d72a662ff90452de2fc720a16cd076fe42654ed1e812686b339ca1f226964998"
+    expected_digest: "791bbd311cf334a894e68839b1496b41bf2e2526bfef54c90944824ce15052e4"
+    expected_sphere_digest: "a27044d22016ca036bdcf378af5aeb2961df2ec7c1b2a59ea35e2f7fc5270973"
   - settings: { mode.state: retro, goal: fast_ganon }
     seed: "0x0000000000000015"
     label: "a1-retro-fast-ganon"
-    expected_digest: "012cda58898abb056156b647a96503b95a785a5cacfe98a18af083e2370cab09"
-    expected_sphere_digest: "fd81c9f854a9c3441b06b43ec28608f3775dab3037bf401eeffbcb5824b36c71"
+    expected_digest: "81c3f829f06ce018175ce5e73b86e0e8272b71d6e815c676e987188562d6884e"
+    expected_sphere_digest: "8aa5bfc9a7acdd766e43463c9a9018e39da8de7ab5fc82d977dbc086a823c6bd"
   # crystals.* variations.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
     seed: "0x0000000000000016"
@@ -304,8 +304,8 @@ entries:
   - settings: { mode.state: retro, goal: completionist }
     seed: "0x52455452"   # "RETR"
     label: "celebrity-retro-completionist"
-    expected_digest: "0bba57ee15df19a52d4fca526831642406180a7ee9a32c096d6555d76cde2dd3"
-    expected_sphere_digest: "f5d6b28994e260eab123277c69e0c079e85f7f95ca25a0abde4ca5d4ecd6b40d"
+    expected_digest: "d939c3867fd3d89a6df4923e5efd4df65987487d94eb683c522f891d02a07f5c"
+    expected_sphere_digest: "94e7529964eb6dab9ff271b3c7e6ab36bc3d81debdba7a62e84751d193ec5f77"
   # Phase B Slice 2 (kGeneratorVersion 11) — Inverted seeds. Captured against
   # the world-state-aware predicate/edge/region override path. 1-2 unreachable
   # placements per seed is currently expected (graph gaps tracked in tasks
@@ -499,8 +499,8 @@ entries:
   - settings: { mode.state: retro, goal: ganon, drop_shuffle: true }
     seed: "0x5714"
     label: "b-drop-retro-ganon"
-    expected_digest: "cea19a773bc4f35362f2023bad1e14665144678600240e72f77fb2d4f0d57d04"
-    expected_sphere_digest: "cd43540bacdd1d29f300e5058d237fdb52604c1b1068b7a3221c457445d86cf6"
+    expected_digest: "d8406b92d031ab0c8c4af9ccfb1139ee4206c13c6d69b7a3b62f25b4986e222f"
+    expected_sphere_digest: "db56fe7bd8e56ad96e0689a60f5624157bfcf4548bedcd957124c57c6d79e214"
   - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
     seed: "0x5721"
     label: "b-bossdrop-open-fast-ganon"

@@ -2027,7 +2027,7 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
     };
     for (int g = 0; g < 14; g++) {
       uint16 bit = (uint16)(0x8000u >> g);
-      if (st->dungeon_small_keys_mode != kDungeonItemMode_Vanilla &&
+      if (Settings_EffectiveSmallKeysMode(st) != kDungeonItemMode_Vanilla &&
           kGToSmallKey[g] != 0xFFFF)
         out->by_item_id[kGToSmallKey[g]] = link_keys_earned_per_dungeon[g];
       if (st->dungeon_big_keys_mode != kDungeonItemMode_Vanilla &&

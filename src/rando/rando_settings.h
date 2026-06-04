@@ -167,6 +167,24 @@ enum {
 // on / Randomized weapons / Items-accessibility / Silvers / 20-of-30 pieces).
 void Settings_SetDefaults(RandoSettings *s);
 
+// Effective small-keys mode after Retro pinning. ALTTPR's Retro world-state
+// forces `region.wildKeys` (small keys enter the general/wild pool, no longer
+// restricted to their own dungeon — app/World/Retro.php). The fork realizes
+// that by treating `dungeon_small_keys_mode` as Wild whenever
+// `world_state == Retro`, reusing the existing (corpus-tested) Wild placement +
+// cross-dungeon key-credit runtime (rando.c key grant). This is the SINGLE
+// source of truth for the override: it is applied identically in
+// apply_derived_rules (so the canonical settings hash reflects Wild) and at
+// every placer read site (so placement matches the hash) — both key off
+// world_state, so the hash and placement can never desync. Returns the user's
+// raw mode for non-Retro seeds.
+//
+// NOTE: this is `wildKeys` only. ALTTPR Retro also sets `rom.genericKeys`
+// (one shared key pool, any key opens any door); that requires rewriting the
+// per-dungeon key-door LOGIC predicates and is NOT done here — keys keep their
+// dungeon identity (see docs/randomizer.md "Retro world-state").
+uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
+
 // Serialize to a fixed-layout little-endian byte sequence. Always writes
 // kSettingsCanonicalLen bytes. Returns kSettingsCanonicalLen.
 int Settings_CanonicalSerialize(const RandoSettings *s,

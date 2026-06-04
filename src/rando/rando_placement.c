@@ -208,7 +208,7 @@ static const uint16 kCompasses[] = {
 // reachability bridge (Rando_BuildRuntimeCounts), so both agree exactly.
 void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *settings) {
   if (counts == NULL || settings == NULL) return;
-  if (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++)
       counts->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
   }
@@ -359,7 +359,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   // ----- Dungeon items (per dungeon_items.* mode) -----
   // Vanilla: NOT in pool (placed at vanilla locations by the placement
   // algorithm's identity rule). Dungeon/Wild: add to pool.
-  if (settings->dungeon_small_keys_mode != kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveSmallKeysMode(settings) != kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
       n = pool_add(out_items, n, capacity, kVanillaSmallKeyCounts[i].item_id, kVanillaSmallKeyCounts[i].count);
     }
@@ -567,7 +567,7 @@ static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
   // Determine the active mode for this item class.
   uint8 mode;
   if (candidate_item >= 53 && candidate_item <= 65) {
-    mode = settings->dungeon_small_keys_mode;
+    mode = Settings_EffectiveSmallKeysMode(settings);
   } else if (candidate_item >= 66 && candidate_item <= 76) {
     mode = settings->dungeon_big_keys_mode;
   } else if (candidate_item == 124 || (candidate_item >= 77 && candidate_item <= 87)) {
@@ -1093,7 +1093,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // through to the assumed-fill placer.
       continue;
     } else if (vi >= 53 && vi <= 65) {
-      vanilla_pin = (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla);
+      vanilla_pin = (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla);
     } else if (vi >= 66 && vi <= 76) {
       vanilla_pin = (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla);
     } else if ((vi >= 77 && vi <= 87) || vi == 124) {
@@ -1324,7 +1324,7 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
 // assumed-fill inventory model stays consistent across modes.
 static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCounts *out) {
   if (s == NULL || out == NULL) return;
-  if (s->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
       out->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
     }
