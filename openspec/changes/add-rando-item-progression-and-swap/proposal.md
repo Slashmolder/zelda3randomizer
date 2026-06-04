@@ -1,0 +1,32 @@
+## Why
+
+A grant-discipline pass on the rando slot path (merged as `b73e9bb`) changed how several shared-byte items are granted, added an item-menu swap, and fixed two "vanilla precondition gates a shuffled location" grant-site bugs. The published `randomizer-placement` spec drifted from the as-built behavior and, for magic, was already factually wrong:
+
+- The `HalfMagic` / `QuarterMagic` grant scenario specs the **old absolute** behavior ("set to 2 (half) if currently 1 (full); subsequent `QuarterMagic` grant sets it to 4") AND uses the **wrong vanilla-SNES `1/2/4` convention** — this port's `link_magic_consumption` is `0 = full, 1 = half, 2 = quarter` (the cost table is indexed `item*3 + consumption`). The as-built grant is now **strictly progressive** (each magic upgrade advances one tier, order-independent), which the spec must reflect.
+- Boomerang/bow never-downgrade, the progressive-boomerang collapse, and the item-menu Press-A swap are **new grant semantics** with no spec coverage.
+- The Magic Bat (missable) and Flute Spot (re-grant / duplicate) grant-site fixes are unspecced correctness properties of the shuffled-location grant path.
+
+This change reconciles the spec with the merged implementation. It is **runtime-only**: no placement/digest/settings change (79/79 corpus digests unchanged), no `kGeneratorVersion` bump, no save `format_version` bump.
+
+## What Changes
+
+- **Magic upgrades are strictly progressive.** Both `HalfMagic` and `QuarterMagic` advance `link_magic_consumption` by exactly one tier (`0 → 1 → 2`, capped at 2), regardless of which item, in `magic_upgrade_direct_grant` (`rando.c`) and the Magic Bat identity write (`sprite_main.c`). Deliberate divergence from ALTTPR, whose `QuarterMagic` jumps straight to ¼ (`newitems.asm`); placement-neutral because no logic predicate requires ¼ specifically (the magic macro is satisfied at ≥ half). The spec scenario + bullet are corrected (incl. the `0/1/2` convention).
+- **Boomerang is strictly progressive** (1st collected = blue, 2nd = red; item color ignored), safe because **no logic predicate requires a boomerang** of either color (verified against `assets/rando/**`). **Bow is never-downgrade with item identity kept** (wood item → wood, silver → silver) because silver-vs-wood IS a logic gate; collapsing it would desync the placer from runtime.
+- **Never-downgrade for all shared-byte upgrade items.** Under rando, an absolute byte-write never lowers an already-higher tier (write iff `v > *p`), protecting sword/shield/gloves/mail/bow/boomerang from out-of-order downgrades. The clamp **EXEMPTS** `link_arrow_filler` (codes `0x43`/`0x44`) — a per-frame drain counter, not a tier — which keeps the vanilla absolute write.
+- **Item-menu swap (Press A).** When the player owns both tiers, pressing A on the highlighted Y-slot swaps the selected tier: flute↔shovel (pre-existing), blue↔red boomerang, wood↔silver arrows. True ownership is tracked in persisted bitfields (`g_rando_boomerang_owned` / `g_rando_bow_owned`), so a swapped-down byte never loses the higher tier across save/reload.
+- **Trigger-based location re-collect safety.** Two grant sites that relied on a vanilla one-shot side effect are now gated on `Rando_IsLocationChecked(LOC_*)` under rando: the **Magic Bat** (its `link_magic_consumption >= 2` summon guard made the location uncollectable once ¼ magic was reached elsewhere — now non-rando-only) and the **Flute Spot** dig (`Ancilla36_Flute`; the flute/shovel toggle re-enabled the shovel dig → infinite re-grant; a Triforce piece there = instant win).
+
+## Decisions and rationale (for the record)
+
+- **Progressive-collapse only when tiers are logically interchangeable.** Boomerang collapses cleanly (no logic gate); the bow cannot (silver is a real gate), so it keeps item identity + never-downgrade. Magic collapses cleanly (the macro needs only ≥ half). This is the load-bearing rule that distinguishes the boomerang and bow treatments.
+- **A blanket never-downgrade clamp needs a counter exemption.** `link_arrow_filler` is a drain countdown, not a monotonic tier; the clamp silently dropped a paid 10-arrow shop grant while a prior fill was mid-drain. Exempted via codes `0x43`/`0x44`. (`link_bomb_filler` / `link_magic_filler` only ever take negative `v`, so they never reach the clamp.) Found by the fresh-eyes audit.
+- **Ownership in the additive reserved tail, no format bump.** `boomerang_owned` / `bow_owned` live at slot-header `@73` / `@74` inside the existing `reserved[16]` block — the same additive convention as `mushroom_held` / `flute_shovel_owned` / `world_state` / entrance bytes, none of which were broken out into the `randomizer-save` slot-header table. So there is **no `randomizer-save` delta** and no `format_version` bump.
+- **Diverge from ALTTPR on `QuarterMagic` deliberately.** ALTTPR's `QuarterMagic` jumps to ¼; this port caps at +1 tier so neither magic pickup is wasted and the ½ tier cannot be skipped. Internally consistent and placement-neutral.
+
+## Impact
+
+- **Code (merged `b73e9bb`):** `src/misc.c` (grant routing + clamp + `arrow_filler` exemption), `src/rando/rando.c` (Grant helpers, magic, snapshots, ownership persistence), `src/hud.c` / `hud.h` (swap + slot ids), `src/rando/rando_save.{c,h}` (`@73`/`@74` + round-trip), `src/sprite_main.c` (Magic Bat), `src/ancilla.c` (Flute Spot), `src/rando/rando_window/game_config_panels.cpp` (debug ownership sync).
+- **Docs (`7e54117`):** `CLAUDE.md` (bug-class taxonomy: the location-guard form), `docs/randomizer.md` (In-game item behavior + the `@73`/`@74` save fields).
+- **Capabilities:** `randomizer-placement` — MODIFIED "Item types receivable via dispatcher" (magic bullet + scenario corrected to progressive / `0-1-2`); ADDED "Shared-byte item grants — never-downgrade, progressive collapse, and item-menu swap"; ADDED "Trigger-based location re-collect safety".
+- **No data/codegen/version change:** no `kGeneratorVersion` bump, no corpus regen (79/79 unchanged), no settings/canonical change, no save `format_version` bump.
+- **Verification:** build + `--rando-selftest` green; corpus 79/79; `check_audit_guard --strict` clean; a parallel fresh-eyes audit caught + fixed the `arrow_filler` clamp regression and a debug-combo ownership desync. **Playtest-pending (owner — the slot grant path has no automated test):** progressive boomerang/magic in both pickup orders; the three Press-A swaps; Magic Bat collectable at ¼ magic; Flute Spot grants once (re-dig yields nothing).
