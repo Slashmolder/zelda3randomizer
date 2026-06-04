@@ -700,31 +700,48 @@ The four flags and their as-built status:
   generator only selects/places active caves' slots under Retro — so the flag is
   effectively pinned by `world_state == Retro`. See the spoiler "Shops" section
   for the active caves and their rewards.
-- **`genericKeys`** — *deferred (documented).* In ALTTPR this unifies the
-  per-dungeon small-key counters into one shared pool so any key opens any
-  locked door. It is **not** wired here, by design: the fork's Retro keeps
-  `dungeon_small_keys_mode = Vanilla`, so small keys remain placed within their
-  own dungeon (see `wildKeys` below) and are therefore always collected in the
-  dungeon that needs them — a shared pool would be functionally invisible.
-  Unifying the counter would also have to keep four runtime sync points (door
-  consume, dungeon-enter load, dungeon-exit save, key grant) perfectly in step
-  with zero headless validation and a real soft-lock risk, so it is intentionally
-  left for when wild key placement lands. Track: `genericKeys` runtime must ship
-  **together with** wild key placement, not before it.
-- **`wildKeys`** — *placement/logic only; not currently active.* This flag would
-  let small keys be placed anywhere in the world rather than pinned to their
-  dungeon. It is purely a placement concern (no runtime change). The fork's Retro
-  does not yet flip `dungeon_small_keys_mode` to wild, so keys are still
-  vanilla-placed per dungeon. Enabling true wild keys is a **generation** change
-  (it moves Retro placement digests and would need its own `kGeneratorVersion`
-  bump + corpus regen), so it is out of scope for the "runtime flags must not
-  move digests" contract and is recorded as a known gap.
+- **`wildKeys`** — *implemented, generation.* Retro forces small keys out of
+  their vanilla dungeon spots and into the general/wild pool. Implemented via
+  `Settings_EffectiveSmallKeysMode()`, which pins `dungeon_small_keys_mode = Wild`
+  whenever `world_state == Retro`. To keep the determinism contract intact the
+  override is applied through that single helper in BOTH `apply_derived_rules`
+  (so the canonical `settings_hash` reflects Wild) and at every placer +
+  reachability-bridge read site (so placement and the tracker match the hash) —
+  both key off `world_state`, so the hash and the placement can never desync. It
+  reuses the fork's existing, corpus-tested Wild placement and the cross-dungeon
+  key-credit runtime (a key for dungeon B found in dungeon A is credited to B's
+  counter, `rando.c` key grant), so **no new runtime is needed** and keys keep
+  their dungeon identity. This is a generation change: `kGeneratorVersion` 50→51,
+  the 4 Retro corpus digests regenerated (non-Retro byte-identical). Verified
+  headless: all Retro goals stay beatable with 30 small keys in the wild pool and
+  0 unreachable placements.
+- **`genericKeys`** — *deferred (documented).* In ALTTPR this also unifies the
+  per-dungeon key counters into one shared pool so **any** key opens **any**
+  locked door. The fork delivers the *placement* half via `wildKeys` above, but
+  keeps **per-dungeon key identity**: a Turtle Rock key found in Eastern Palace is
+  carried to Turtle Rock (the fork credits it to TR), rather than opening any door
+  anywhere. The literal single-pool collapse is **not** wired because the fork
+  models small keys in *logic* per dungeon (`HAS_ITEM(SmallKey_<Dungeon>)`), so
+  merging them requires rewriting every key-door predicate into a shared-pool
+  count — the hard "key-logic" reachability problem, with zero headless validation
+  and direct soft-lock risk if a seed strands you having spent a shared key on the
+  wrong door. The practical effect of the divergence: fork-Retro is *stricter*
+  (you must find the right dungeon's keys) but fully beatable; ALTTPR-Retro is more
+  lenient. Track: the single-pool collapse needs the key-door logic rewrite +
+  playtest, not a blind runtime intercept.
 
 What randomizes in Retro is the **shop economy**, not the shop inventory: the 9
 regular shops keep their vanilla inventory (identity-pinned) but the player must
 find the shops and pay rupees; the 2 Capacity Upgrade slots are identity-placed;
 the active Take-Any caves carry placed items. See the placement/dispatch detail
 in `openspec/changes/add-rando-retro-world-state/`.
+
+Both spoiler formats surface the Retro shop placements: the `.txt` spoiler has a
+grouped **Shops** section (shop-name headings, identity-placed Capacity Upgrade
+slots flagged), and the `.json` spoiler carries a Retro-only **`shops[]`** array
+(`location` / `name` / `item` / `type`, with `identity_placed: true` on the
+Capacity Upgrade slots). Both are emitted only for seeds that actually place
+shop-class locations, so non-Retro spoilers are unchanged.
 
 ## Phase B+ roadmap
 
