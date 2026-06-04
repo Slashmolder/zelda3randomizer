@@ -669,6 +669,63 @@ counterpart of Link's House rather than the light-world spawn. (The Phase A
 `RegionRemap` scaffold was dead identity code and was **retired** in the Phase C
 entrance-shuffle work; see `add-rando-entrance-shuffle/design.md §1`.)
 
+### Retro world-state
+
+Retro **extends Open** (same region graph, same Open starting state) and turns
+on ALTTPR's "retro" ruleset. Per `app/World/Retro.php` it forces four flags.
+The fork does **not** store these as settings bytes — they are *computed* from
+`world_state == Retro` at the point of use (no new serialized fields, canonical
+length stays 28, default Open/Standard/Inverted placement digests unchanged).
+The canonical runtime gate is `Rando_IsRetroActive()` (rando.c): true iff a
+rando slot is active and its world-state is Retro; when false the vanilla code
+path runs byte-identically.
+
+The four flags and their as-built status:
+
+- **`rupeeBow`** — *implemented, runtime.* Firing the bow spends **rupees**, not
+  arrows: 10 rupees per wood-arrow shot, 50 per silver-arrow shot (matching
+  ALTTPR `retro.asm` / `tables.asm` `ArrowMode*Cost`). The arrow counter is left
+  untouched (in ALTTPR it is a 0/1 capability sentinel). If Link can't afford a
+  shot the bow gives the empty-ammo beep. The branch lives in `LinkItem_Bow`
+  (`player.c`) behind `Rando_IsRetroActive()`; the archery minigame keeps its
+  vanilla arrow-refill path. *(Bow-fire rupee spend is runtime-only and is
+  PLAYTEST-PENDING; the HUD still shows the arrow counter rather than a rupee
+  gauge — a deferred cosmetic refinement.)*
+- **`takeAnys`** — *implemented (shipped separately).* The 31 "Take Any" caves
+  become enterable; per seed ~5 are activated and offer a free take-once item.
+  Built by the archived `add-rando-retro-takeany` change: a per-seed
+  overworld-door redirect into a take-any host room + a free-grant
+  `ShopItem_TakeAny`. The runtime gates on exactly the same condition
+  (`Rando_GetActiveWorldState() == kWorldState_Retro` + rando-active), and the
+  generator only selects/places active caves' slots under Retro — so the flag is
+  effectively pinned by `world_state == Retro`. See the spoiler "Shops" section
+  for the active caves and their rewards.
+- **`genericKeys`** — *deferred (documented).* In ALTTPR this unifies the
+  per-dungeon small-key counters into one shared pool so any key opens any
+  locked door. It is **not** wired here, by design: the fork's Retro keeps
+  `dungeon_small_keys_mode = Vanilla`, so small keys remain placed within their
+  own dungeon (see `wildKeys` below) and are therefore always collected in the
+  dungeon that needs them — a shared pool would be functionally invisible.
+  Unifying the counter would also have to keep four runtime sync points (door
+  consume, dungeon-enter load, dungeon-exit save, key grant) perfectly in step
+  with zero headless validation and a real soft-lock risk, so it is intentionally
+  left for when wild key placement lands. Track: `genericKeys` runtime must ship
+  **together with** wild key placement, not before it.
+- **`wildKeys`** — *placement/logic only; not currently active.* This flag would
+  let small keys be placed anywhere in the world rather than pinned to their
+  dungeon. It is purely a placement concern (no runtime change). The fork's Retro
+  does not yet flip `dungeon_small_keys_mode` to wild, so keys are still
+  vanilla-placed per dungeon. Enabling true wild keys is a **generation** change
+  (it moves Retro placement digests and would need its own `kGeneratorVersion`
+  bump + corpus regen), so it is out of scope for the "runtime flags must not
+  move digests" contract and is recorded as a known gap.
+
+What randomizes in Retro is the **shop economy**, not the shop inventory: the 9
+regular shops keep their vanilla inventory (identity-pinned) but the player must
+find the shops and pay rupees; the 2 Capacity Upgrade slots are identity-placed;
+the active Take-Any caves carry placed items. See the placement/dispatch detail
+in `openspec/changes/add-rando-retro-world-state/`.
+
 ## Phase B+ roadmap
 
 Planned (not promised) follow-on work.
