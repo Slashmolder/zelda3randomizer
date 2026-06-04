@@ -48,13 +48,13 @@ Changing this order — or the field widths, or the enum value assignments — i
 - **WHEN** a seed is generated with `settings.tricks` having any bit set
 - **THEN** the `settings_hash` differs from the equivalent `tricks=0` seed; CI corpus regenerates accordingly
 
-#### Scenario: Swordless mode rejects sword placement at Pyramid Fairy Sword slot
+#### Scenario: Swordless mode removes swords from the pool
 - **WHEN** a seed has `settings.mode_weapons == swordless`
-- **THEN** the `LOC_Pyramid_Fairy_Sword` slot's `can_place` predicate rejects all sword items; the slot is filled with a non-sword item from the pool
+- **THEN** the item pool contains no sword items (the `RandomAssumed` pool builder emits the Randomized equipment set minus `ProgressiveSword`, plus a guaranteed silver-arrow source), so no sword can be placed at any location; the swordless logic + runtime (op `OP_MODEWEAPONS_EQ`, `Rando_IsSwordlessActive`) let the Hammer / Bug-Catching Net stand in for the sword. (The original draft's `LOC_Pyramid_Fairy_Sword` `can_place` mechanism is OBSOLETE — that slot was retired by `add-rando-fairy-chest-model`; sword-removal is done at pool-build time instead.)
 
-#### Scenario: pyramid_bow_upgrade=false (Phase B Bow+Arrows variant)
-- **WHEN** a seed has `settings.region_pyramid_bow_upgrade == false`
-- **THEN** the Pyramid Fairy trade-in grants Bow+Arrows rather than Bow+SilverArrows; spoiler reflects this
+#### Scenario: pyramid_bow_upgrade=false — NOT shipped (obsolete under the fairy-chest model)
+- **WHEN** the `region_pyramid_bow_upgrade=false` (`arrows`) variant is considered
+- **THEN** it is left pinned to `silvers` and NOT exposed: the fairy-chest-model change deleted the Pyramid Fairy bow trade-in this axis controlled (`Sprite_WishPond3` now grants the Pyramid Fairy chests directly and nothing reads `pyramid_bow_upgrade`), so un-pinning would expose a no-op setting
 
 #### Scenario: accessibility=none allows un-completable seeds
 - **WHEN** a seed has `settings.accessibility == none`

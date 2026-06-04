@@ -705,6 +705,8 @@ static int parse_dungeon_mode(const char *v, int vlen, uint8 *out) {
 static int parse_weapons(const char *v, int vlen, uint8 *out) {
   if (csv_str_eq(v, vlen, "randomized")) { *out = kModeWeapons_Randomized; return 0; }
   if (csv_str_eq(v, vlen, "assured"))    { *out = kModeWeapons_Assured;    return 0; }
+  // Phase B un-pin: swordless. `vanilla` (=2) stays reserved/out of scope.
+  if (csv_str_eq(v, vlen, "swordless"))  { *out = kModeWeapons_Swordless;  return 0; }
   return -1;
 }
 

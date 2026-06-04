@@ -113,13 +113,13 @@ locations:
   # canDungeonRevive=false → MoonPearl; swordless=false → HasSword(1).
   - id: "Skull Woods - Boss"
     region: SkullWoods
-    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND HasSword(1) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
     source: "app/Region/Standard/SkullWoods.php:128-151"
 
   # Prize (php:66, 124-126, 163) — can_complete = Boss canAccess.
   - id: "Skull Woods - Prize"
     region: SkullWoods
-    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND HasSword(1) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
+    can_reach: "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
     source: "app/Region/Standard/SkullWoods.php:66, 124-126, 163 (can_complete = Boss access)"
 
 macros:

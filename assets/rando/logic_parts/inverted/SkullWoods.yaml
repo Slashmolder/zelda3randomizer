@@ -87,7 +87,7 @@ locations:
   #   AND wildCompasses/wildMaps guards                       [collapse to TRUE]
   - id: "Skull Woods - Boss"
     region: SkullWoods
-    can_reach: "HAS_ITEM(FireRod) AND HasSword(1) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
+    can_reach: "HAS_ITEM(FireRod) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
     source: "app/Region/Inverted/SkullWoods.php:28-40"
 
   # Skull Woods - Prize: inherited from Standard parent via
@@ -96,7 +96,7 @@ locations:
   # The Boss predicate now follows the Inverted override above.
   - id: "Skull Woods - Prize"
     region: SkullWoods
-    can_reach: "HAS_ITEM(FireRod) AND HasSword(1) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
+    can_reach: "HAS_ITEM(FireRod) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillMothula(world)"
     source: "app/Region/Inverted/SkullWoods.php:28-40 (Prize = can_complete = Boss access)"
 
 locations_notes: |

@@ -7034,7 +7034,13 @@ void BombosTablet(int k) {  // 85f355
     player_handler_timer = 0;
     link_position_mode = 32;
     sound_effect_1 = 0;
-    if (!sign8(link_sword_type) && link_sword_type >= 2) {
+    // Swordless (ALTTPR setSwordlessMode / AllowHammerTablets): a tablet normally
+    // grants its medallion only with the Master Sword owned (link_sword_type>=2).
+    // Under swordless, owning the Hammer substitutes (the Book is the *equipped*
+    // item here, so this must test hammer OWNERSHIP, not equipped). Matches the
+    // logic gate `HasSword2() OR (swordless AND Hammer)`. Gated → vanilla untouched.
+    if (Rando_IsSwordlessActive() ? (link_item_hammer != 0)
+                                  : (!sign8(link_sword_type) && link_sword_type >= 2)) {
       sprite_ai_state[k]++;
       BombosTablet_StartCutscene();
       sprite_delay_main[k] = 64;
@@ -7060,7 +7066,10 @@ void EtherTablet(int k) {  // 85f3c4
     player_handler_timer = 0;
     link_position_mode = 32;
     sound_effect_1 = 0;
-    if (!sign8(link_sword_type) && link_sword_type >= 2) {
+    // Swordless: Hammer ownership substitutes for the Master Sword (see the
+    // BombosTablet note above; ALTTPR AllowHammerTablets). Gated → vanilla untouched.
+    if (Rando_IsSwordlessActive() ? (link_item_hammer != 0)
+                                  : (!sign8(link_sword_type) && link_sword_type >= 2)) {
       sprite_ai_state[k]++;
       EtherTablet_StartCutscene();
       sprite_delay_main[k] = 64;
@@ -19522,7 +19531,17 @@ void Sprite_EvilBarrier(int k) {  // 9df06b
   sprite_graphics[k] = frame_counter >> 1 & 3;
   if (Sprite_ReturnIfInactive(k))
     return;
-  if (Sprite_CheckDamageFromLink(k) && link_sword_type < 2) {
+  // Swordless: the Agahnim-Tower-entrance Evil Barrier normally cancels any hit
+  // from a non-master-sword (link_sword_type < 2) and electrocutes Link, so a
+  // swordless player's hammer never breaks it. The fork's HCT-entry logic grants
+  // entry via `swordless && Hammer` (HyruleCastleTower.php can_enter), so the
+  // runtime must honor it: mirror ALTTPR's GetSwordLevelForEvilBarrier (asm hook
+  // at $9DF086 / AllowHammerEvilBarrier...) by treating the sword as master-level
+  // under swordless — the hammer's zap damage then sticks and breaks the barrier
+  // (approach from the side to avoid the passive proximity zap below). Gated →
+  // vanilla / non-swordless behavior is byte-identical.
+  uint8 evil_barrier_sword = Rando_IsSwordlessActive() ? 0xFF : link_sword_type;
+  if (Sprite_CheckDamageFromLink(k) && evil_barrier_sword < 2) {
     sprite_hit_timer[k] = 0;
     Sprite_AttemptDamageToLinkPlusRecoil(k);
     if (!countdown_for_blink)

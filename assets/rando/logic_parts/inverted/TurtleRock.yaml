@@ -118,7 +118,8 @@ edges:
   # read on the DW-EDM-side rock.
   - from: DarkWorld_DeathMountain_East
     to: TurtleRock_Entrance
-    predicate: "OP_MEDALLION_OPENS(TurtleRock_Entrance) AND HasSword(1) AND HAS_ITEM(CaneOfSomaria)"
+    # §4 swordless: the Quake cast needs no sword under swordless (inert default).
+    predicate: "OP_MEDALLION_OPENS(TurtleRock_Entrance) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND HAS_ITEM(CaneOfSomaria)"
     source: "app/Region/Inverted/TurtleRock.php:53-62 (enterTop closure)"
 
   # Approach via the LW-EDM mirror warp (enterMiddle / enterBottom). The

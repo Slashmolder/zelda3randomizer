@@ -149,7 +149,11 @@ macros:
   # The "kill-after-melt" disjunct `Hammer OR HasSword(1)` is satisfied by
   # HasSword(2) (since HasSword(2) ⇒ HasSword(1)); so the predicate reduces
   # to HasSword(2) AND CanMeltThings(world).
+  # §4 swordless: ALTTPR (itemPlacement!='basic' → first clause TRUE) kills
+  # Kholdstare with `canMeltThings && (Hammer || hasSword || ...)`. Under
+  # swordless the Hammer path applies (Boss.php:111). Add the inert swordless
+  # branch; CanMeltThings already gained its own swordless (Bombos) branch.
   - name: CanKillKholdstare
     parameters: [world]
-    body: "HasSword2() AND CanMeltThings(world)"
+    body: "(HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND CanMeltThings(world)"
     source: "app/Boss.php:108-114 (Kholdstare can_beat)"

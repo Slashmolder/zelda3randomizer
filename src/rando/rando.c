@@ -1881,6 +1881,18 @@ bool Rando_ActiveSlotHidesSpoiler(void) {
   return s == NULL || s->race_mode;
 }
 
+// True when the active slot is swordless (mode.weapons=swordless). Gates the
+// runtime swordless patches (hammer damages Ganon/Agahnim, medallions cast
+// without a sword, Agahnim curtains pre-opened, tablets hammer-readable) so they
+// fire ONLY under swordless and never alter vanilla/non-swordless behavior.
+// Fails to "not swordless" when settings are unknown (NULL — snapshot replay /
+// pre-swordless v1 slot): such slots can never be swordless, and behaving
+// vanilla is the safe default.
+bool Rando_IsSwordlessActive(void) {
+  const RandoSettings *s = Rando_GetActiveSettings();
+  return s != NULL && s->mode_weapons == kModeWeapons_Swordless;
+}
+
 // ---------------------------------------------------------------------------
 // Live reachability bridge (tracker windows).
 //

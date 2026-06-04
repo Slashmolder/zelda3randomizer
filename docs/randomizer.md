@@ -79,7 +79,7 @@ serialization order`. Phase A axes:
 | `crystals.ganon` | 0..7 | 7 |
 | `crystals.tower` | 0..7 | 7 |
 | `item_pool_difficulty` | `easy`, `normal`, `hard`, `expert` | `normal` |
-| `mode.weapons` | `randomized`, `assured` | `randomized` |
+| `mode.weapons` | `randomized`, `assured`, `swordless` | `randomized` |
 | `accessibility` | `items`, `locations`, `none` (alias `beatable`; UI label "beatable only") | `items` (auto-set to `locations` for Completionist) |
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
 | `prize_shuffle` | `true`, `false` | `true` |
@@ -102,7 +102,96 @@ enforces):
   "possibly unwinnable" behavior is no longer on this axis (use the CLI
   `--allow-broken-seed` flag for diagnostic seeds).
 
-Phase B+ axes (`tricks`, `logic` glitch level, `swordless`, `pyramid_bow_upgrade=arrows`, `race_mode`) are reserved in the settings struct from Phase A.
+### Tricks & glitch logic
+
+Two logic-relaxation axes let the placer assume the player will perform certain
+out-of-logic techniques, opening locations that vanilla logic leaves unreachable.
+Both default OFF; default seeds are byte-identical with or without this feature
+(every trick/glitch gate collapses to `false`).
+
+| Axis | Values | Default |
+|---|---|---|
+| `tricks` | `none` \| comma/`+`-joined trick ids \| `0xNN` mask | `none` |
+| `logic` | `NoGlitches`, `OverworldGlitches`, `MajorGlitches` (`HybridMG`/`NoLogic` → Phase D) | `NoGlitches` |
+
+`--settings=tricks=pearl-bypass+boots-clip` enables those bits (CSV uses kebab ids;
+unknown names are a hard error). The 8 trick bits:
+
+| id | wired? | maps to ALTTPR |
+|---|---|---|
+| `boots-clip` | yes (38 gates) | `config('canBootsClip')` |
+| `fake-flippers` | yes (6) | `config('canFakeFlipper')` |
+| `bunny-revival` | yes (50) | `config('canBunnyRevive')` |
+| `dark-room-nav` | yes (42) | `item.require.Lamp=0` |
+| `pearl-bypass` | yes (72) | `config('canOWYBA')` |
+| `bomb-jump` | no | *(fork placeholder — no ALTTPR flag)* |
+| `hookshot-clip` | no | *(fork placeholder — no ALTTPR flag)* |
+| `lobotomy` | no | *(fork placeholder — no ALTTPR flag)* |
+
+The 3 placeholder bits exist in the settings field but no logic predicate reads
+them; enabling one has no placement effect (and surfaces the unverified warning).
+
+### Tricks / glitch logic — ROM-version verification
+
+ALTTPR targets the **Japanese 1.0** ROM; this fork targets **US 1.0**. A trick in
+ALTTPR's logic graph may have JP/US timing differences, different mechanics, or be
+absent on US 1.0. Each entry in `assets/rando/op_registry.yaml`'s `tricks:` and
+`glitch_levels:` tables carries a `rom_version_status`:
+
+| status | meaning |
+|---|---|
+| `untested-on-us10` | in the upstream graph; nobody has confirmed it on US 1.0 (default) |
+| `verified-us10` | performed end-to-end on a real US 1.0 build (named contributor + date) |
+| `cross-version` | pure player skill (e.g. `dark-room-nav`) or verified identical JP↔US |
+| `jp10-only` | confirmed NOT to work on US 1.0 — codegen **rejects** it in any gate |
+| `us10-different` | exists on both ROMs but with different timing/mechanics |
+
+When a seed enables a trick (or reaches a glitch level) whose status is
+`untested-on-us10`, `jp10-only`, or `us10-different`, the spoiler's
+`fallback_warnings` gains an `unverified_tricks_enabled` entry naming the offenders
+— informational, so race admins / seed validators can decide whether to accept.
+`cross-version` and `verified-us10` never warn. The current baseline ships every
+wired trick as `untested-on-us10` except `dark-room-nav` (`cross-version`);
+per-trick US-1.0 verification is a follow-on playtest workstream.
+
+**Upgrading a trick to `verified-us10`** (contributor guide): perform the trick
+end-to-end on a real US 1.0 build at the gated location, record the date + your
+handle, change `rom_version_status` in `op_registry.yaml`, regenerate
+(`python assets/rando_logic_gen.py`), and note the evidence in the change's
+`audit.md`. A `jp10-only` finding is more urgent — set the status (the codegen will
+then fail any gate that references it, forcing the predicate to be removed).
+
+### Swordless mode (`mode.weapons=swordless`)
+
+No swords are placed in the pool; the hammer (and bug-net) stand in for the sword
+everywhere the game normally requires it. Ported from ALTTPR's `setSwordlessMode`
+(`Rom.php`), reimplemented in C rather than as ROM patches. Default seeds (any
+non-swordless `mode.weapons`) are byte-identical — every swordless branch is gated
+on `mode_weapons==swordless` / `Rando_IsSwordlessActive()`.
+
+**Logic** (predicate op `OP_MODEWEAPONS_EQ`, all inert under the default):
+- **Ganon**: `swordless ? (Hammer + silver arrows) : Master Sword`. Silver arrows
+  are required *only* in swordless (ALTTPR `region.requireBetterBow`).
+- **Agahnim 1 & 2**: Hammer or Bug-Catching Net (reflect his energy with either).
+- **Medallion casts** (Ether→Misery Mire, Quake→Turtle Rock): no sword needed.
+- **Bosses**: Kholdstare (melt + Hammer) and Trinexx (Fire+Ice Rod + Hammer) gained
+  their swordless Hammer-kill path; every other boss already had a non-sword option.
+- **Tablets** (Ether/Bombos): read with Book of Mudora + Hammer.
+- **Pool**: swords removed, a Silver Arrow Upgrade guaranteed (Ganon needs silvers).
+
+**Runtime** (C equivalents of the `setSwordlessMode` ROM writes):
+- Hammer damages **Ganon** (the melee-immunity threshold rises so his phases take
+  hammer hits; silver arrows still finish him).
+- **Medallions** cast without a sword; **tablets** grant on Hammer ownership.
+- The **Agahnim-Tower altar** + **Skull-Woods back-entry** curtains are pre-opened in
+  the slot's SRAM at generation.
+- The **Evil Barrier** at the Agahnim-Tower overworld entrance breaks with the Hammer
+  (approach from the side — the passive proximity zap is unchanged from vanilla).
+
+**Status:** validated end-to-end by playtest (a full swordless game was beaten,
+2026-06-04) on US 1.0. The `b-swordless-*` corpus seeds pin the swordless placement.
+Combining swordless with the (experimental, runtime-disabled) boss shuffle is not
+supported — see the boss-shuffle note below.
 
 ### Boss & drop shuffle (experimental)
 
@@ -160,6 +249,17 @@ runtime-enabled** (see the boss note below) and its toggle is disabled in the UI
   > accessibility check (which evaluates the vanilla logic) won't catch it
   > (design.md D6). Both the GFX work and a per-seed boss-kill predicate override
   > are needed before boss shuffle is playable + race-safe.
+  >
+  > **Swordless interaction** (swordless fresh-eyes audit, LOW): when the boss
+  > shuffle *does* become runtime-live, the per-seed boss-kill predicate override
+  > MUST be swordless-aware — ALTTPR forbids Kholdstare/Trinexx outside their home
+  > dungeons under swordless (`canPlaceBoss`, e.g. `Region.php:98-105`,
+  > `GanonsTower.php:151`) because their swordless kills (hammer + melt / fire+ice)
+  > are tighter than a sword. Today this is **moot** — boss shuffle is a
+  > runtime passthrough and is logic-decoupled, so a swordless slot always faces
+  > vanilla bosses in their vanilla rooms, which the swordless logic + runtime
+  > handle correctly. Exclude Kholdstare/Trinexx from the shuffle under swordless
+  > (or gate them) at the same time the predicate override lands.
 
 The drop-shuffle toggle is exposed in the PC native settings window under
 "Shuffles (experimental)"; the boss-shuffle toggle is shown disabled there. The
@@ -762,7 +862,7 @@ with detail deferred to `/openspec-explore` at apply-time.
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/add-rando-race-mode-reveal/) | 6 | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp verify | Full |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
 | 4b | [`add-rando-retro-world-state`](../openspec/changes/add-rando-retro-world-state/) | 3 | Retro shop locations + dispatch + 4 Retro flags pinned | Full |
-| 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/add-rando-trick-logic-and-axes/) | 4 + misc | `OP_TRICK` / `OP_DIFFICULTY_AT_LEAST` / `OP_GLITCH_LEVEL_AT_LEAST` handlers + `swordless` + `accessibility=none` + `pyramid_bow_upgrade=arrows` un-pin + Bug #7 per-item rewind | Stub |
+| 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
 | 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla generation + dialogue-ID injection | Stub |
 | 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | Stub |
 | 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |

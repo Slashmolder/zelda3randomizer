@@ -85,7 +85,9 @@ edges:
   # swordless mode is Phase A=pinned-off, so HasSword(1) required.
   - from: MiseryMire_Entrance
     to: MiseryMire_Lobby
-    predicate: "OP_MEDALLION_OPENS(MiseryMire_Entrance) AND HasSword(1)"
+    # §4 swordless: the medallion cast that opens MM needs a sword in vanilla
+    # (MiseryMire.php:139 `swordless || hasSword()`). Inert under randomized.
+    predicate: "OP_MEDALLION_OPENS(MiseryMire_Entrance) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1))"
     source: "app/Region/Standard/MiseryMire.php:136-139"
 
 locations:

@@ -49,6 +49,22 @@ When `settings.logic == NoGlitches` (Phase A default), every `OP_GLITCH_LEVEL_AT
 - **WHEN** a seed has `settings.logic == OverworldGlitches` and the Bumper Cave Ledge location's predicate includes `OP_GLITCH_LEVEL_AT_LEAST OverworldGlitches`
 - **THEN** the location is reachable (subject to its other predicate constraints)
 
+### Requirement: OP_MODEWEAPONS_EQ predicate handler
+
+`OP_MODEWEAPONS_EQ mode_weapons` (op-code 18) SHALL evaluate true when `settings.mode_weapons == mode_weapons`. The operand encoding mirrors the enum: `randomized=0`, `assured=1`, `vanilla=2`, `swordless=3`. The op exists so the logic graph can express swordless-mode relaxations (`mode.weapons=swordless`) without conflating them with the world-state or goal axes.
+
+When `settings.mode_weapons != swordless` (the default `randomized`), every `OP_MODEWEAPONS_EQ(swordless)` predicate evaluates false; the swordless logic branches collapse to their non-swordless form so default-settings reachability — and the corpus placement/sphere digests — are preserved byte-for-byte.
+
+Each swordless logic branch SHALL be authored as a pure inert addition: a branch of the form `(OP_MODEWEAPONS_EQ(swordless) AND X) OR ((NOT OP_MODEWEAPONS_EQ(swordless)) AND Y)` SHALL reduce to `Y` when not swordless, and a branch of the form `(OP_MODEWEAPONS_EQ(swordless) OR Z)` SHALL reduce to `Z`.
+
+#### Scenario: Default seed reproduces non-swordless reachability
+- **WHEN** a seed has `settings.mode_weapons == randomized` (or `assured`)
+- **THEN** every `OP_MODEWEAPONS_EQ(swordless)` predicate evaluates false; the Ganon / Agahnim / medallion-cast / boss / tablet predicates reduce to their existing non-swordless form and the corpus digests are unchanged
+
+#### Scenario: Swordless Ganon requires Hammer + silver arrows
+- **WHEN** a seed has `settings.mode_weapons == swordless`
+- **THEN** the Ganon predicate's weapon clause requires the Hammer AND a silver-arrow source (instead of the Master Sword); the runtime honors this (Hammer damages Ganon, silver arrows finish him)
+
 ### Requirement: Per-trick ROM-version verification status
 
 ALTTPR upstream targets the Japanese 1.0 ROM; this fork targets the US 1.0 ROM. Tricks and glitch-level mechanics that ALTTPR's logic graph assumes available may have JP/US timing differences, mechanic differences, or be entirely absent on US 1.0. The randomizer SHALL track per-trick ROM-version verification status so users can distinguish "ALTTPR says this trick exists" from "we have confirmed this trick works on US 1.0."

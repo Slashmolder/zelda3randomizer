@@ -84,10 +84,10 @@ locations:
   #   && has(KeyA1, 2)
   #   && has(Lamp, item.require.Lamp default 1)
   #   && (hasSword() || (swordless && (Hammer || BugCatchingNet)))
-  # canEnter is on the entry edge above. Swordless branch dropped (Phase A).
-  # can_complete is inherited unchanged from the parent; only the parent's
-  # can_enter was overridden by Inverted.
+  # canEnter is on the entry edge above. §4 swordless: Agahnim 1 defeatable with
+  # Hammer/BugCatchingNet under swordless (inert under randomized). Mirrors the
+  # Standard HCT override. can_complete is otherwise inherited from the parent.
   - id: "Agahnim"
     region: HyruleCastleTower
-    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HasSword(1)"
+    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND (HasSword(1) OR (OP_MODEWEAPONS_EQ(swordless) AND (HAS_ITEM(Hammer) OR HAS_ITEM(BugCatchingNet))))"
     source: "app/Region/Standard/HyruleCastleTower.php:62-68 (can_complete + prize, inherited)"

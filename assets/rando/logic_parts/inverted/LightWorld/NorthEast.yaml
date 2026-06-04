@@ -148,14 +148,15 @@ locations:
   #     Agahnim2-reachability separately and world-state-agnostically. Encoding
   #     them in the predicate would diverge Inverted from the tested Standard
   #     model for no behavioral gain.
-  #   - swordless/requireBetterBow/requireBetterSword branches (php:188-205)
-  #     drop per the region-config/weapons-mode discipline at the top of file.
+  #   - §4 swordless: the swordless weapon branch (swordless ? Hammer+silvers :
+  #     hasSword2) is now wired, matching the Standard Ganon override
+  #     (43_darkworld.yaml). Inert under randomized so Inverted does not diverge.
   # CanExtendMagic(world, 1) mirrors the Standard authoring shorthand
   # (43_darkworld.yaml) rather than php's per-branch canExtendMagic(2/3/4) —
   # kept identical to Standard so Inverted does not silently diverge.
   - id: "Ganon"
     region: LightWorld_NorthEast
-    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND HasSword2() AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
-    source: "app/Region/Inverted/LightWorld/NorthEast.php:144-228"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer) AND CanShootSilvers()) OR ((NOT OP_MODEWEAPONS_EQ(swordless)) AND HasSword2())) AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
+    source: "app/Region/Inverted/LightWorld/NorthEast.php:144-228 + World.php:269-273"
 
 macros: []

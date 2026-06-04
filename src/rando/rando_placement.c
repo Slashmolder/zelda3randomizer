@@ -283,8 +283,21 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     n = pool_add(out_items, n, capacity, ID_ProgressiveArmor, armor_cap);
     n = pool_add(out_items, n, capacity, ID_ProgressiveGlove, 2);
     n = pool_add(out_items, n, capacity, ID_ProgressiveBow, bow_cap);
+  } else if (settings->mode_weapons == kModeWeapons_Swordless) {
+    // Swordless (ALTTPR Randomizer.php:224-239 + World.php:269-273): NO swords in
+    // the pool. Mirror the Randomized equipment set MINUS ProgressiveSword. Silver
+    // arrows are 100% required for Ganon under swordless, so guarantee a silver
+    // source: ProgressiveBow (bow_cap) PLUS a standalone SilverArrowUpgrade (so
+    // CanShootSilvers holds even when the difficulty overflow cap pins bow_cap=1).
+    // The removed sword slots are absorbed by the junk pad. Runtime: the swordless
+    // gates (Rando_IsSwordlessActive) let hammer/net stand in for the sword.
+    n = pool_add(out_items, n, capacity, ID_ProgressiveShield, shield_cap);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveArmor, armor_cap);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveGlove, 2);
+    n = pool_add(out_items, n, capacity, ID_ProgressiveBow, bow_cap);
+    n = pool_add(out_items, n, capacity, ID_SilverArrowUpgrade, 1);
   } else {
-    // Absolute weapon mode (Phase B 'vanilla' / Phase B 'swordless' reserved):
+    // Absolute weapon mode (Phase B 'vanilla' reserved):
     // emit one of each tier as a distinct item.
     n = pool_add(out_items, n, capacity, ID_L1Sword, 1);
     n = pool_add(out_items, n, capacity, ID_L2Sword, 1);
@@ -657,6 +670,35 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
 //      strategy; this is the cross-attempt retry strategy.)
 // ---------------------------------------------------------------------------
 #define kAssumedFillMaxAttempts 256
+
+// Per-item bounded rewind (Bug #7 / add-rando-trick-logic-and-axes design D1).
+// When a progression item has no reachable+placeable location, the placer
+// rewinds the last kPerItemRewindWindow placed progression items (reopening
+// their slots + returning them to the assumed inventory), reshuffles that
+// window, and retries — exploring a different local arrangement before falling
+// back to the reachability-ignoring forward-fill. Bounded by
+// kPerItemRewindBudget rewind events per attempt so it always terminates.
+//
+// Setting kPerItemRewindBudget to 0 disables the rewind entirely: the placer
+// then reproduces the pre-Bug-#7 forward-fill behavior byte-for-byte (the
+// happy path — an item with a candidate — is identical either way, drawing the
+// same single Rng_NextRange). Any positive value only diverges on the
+// no-candidate path, which default/easy seeds never hit, so their
+// placement_digests are preserved regardless.
+//
+// SHIPPED GATED OFF (=0). Rationale: the while-loop refactor is verified
+// byte-identical at budget=0 (corpus 79/79). At budget=10 (design D1's value),
+// 11 hard corpus seeds change and all stay goal_completable, BUT the design-D1
+// reshuffle-and-retry algorithm did NOT improve placement quality on the hard
+// seeds measured — TH/expert/0xABC123 went 1→3 forward-fills, std ganon-hunt
+// uses 10 — i.e. it churns the RNG without reducing the forward-fill safety-
+// valve usage. Enabling it would change 11 corpus digests + force a kGen bump
+// for no demonstrated benefit, and the quality outcome can only be judged by
+// playtest. The mechanism is complete,
+// terminating, and completability-preserving; flip to 10 and re-bench on a
+// known-hard seed to evaluate/tune (design D1 explicitly calls N=10 "a guess").
+#define kPerItemRewindBudget 0   // 0 = disabled (shipped); design D1 value is 10
+#define kPerItemRewindWindow 10  // # of placements rewound per event (design D1 "last N")
 
 static PlacementStats g_last_placement_stats;
 
@@ -1160,8 +1202,21 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     shuffle_u16(progression + dungeon_prog_n, (uint16)(prog_n - dungeon_prog_n), &rng);
 
   // ----- 5. Place each progression item -----
+  //
+  // Per-item bounded rewind (Bug #7 / design D1): on a no-candidate item, rewind
+  // the last N placements + reshuffle before forward-filling. `prog_slot[i]` is
+  // the open-slot index where progression[i] landed (0xFFFF if unplaced/forward-
+  // filled), so a rewind can reopen exactly the slots it reclaims. The happy
+  // path (cand_n > 0) is byte-for-byte identical to the pre-rewind code — one
+  // Rng_NextRange draw — so seeds that never hit the no-candidate branch keep
+  // byte-identical digests regardless of kPerItemRewindBudget.
   uint16 fallback_count = 0;
-  for (uint16 i = 0; i < prog_n; i++) {
+  static uint16 prog_slot[256];
+  for (uint16 t = 0; t < prog_n; t++) prog_slot[t] = 0xFFFF;
+  uint16 rewind_budget = kPerItemRewindBudget;  // per-attempt event budget
+  static uint16 candidates[512];
+  uint16 i = 0;
+  while (i < prog_n) {
     uint16 item = progression[i];
     // Remove from assumed inventory before computing reachability.
     if (counts.by_item_id[item] > 0) counts.by_item_id[item]--;
@@ -1169,7 +1224,6 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
 
     // Find candidate locations: open + reachable + accepts item.
-    static uint16 candidates[512];
     uint16 cand_n = 0;
     for (uint16 k = 0; k < open_n; k++) {
       if (placement_at[k] != 0xFFFF) continue;
@@ -1181,33 +1235,72 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
 
     if (cand_n > 0) {
       uint32 pick = Rng_NextRange(&rng, cand_n);
-      placement_at[candidates[pick]] = item;
-    } else {
-      // Forward-fill fallback: place at any open + can_place location
-      // (ignore reachability). If still nothing, take the first open slot
-      // regardless of can_place — last-resort recovery.
-      cand_n = 0;
+      uint16 slot = candidates[pick];
+      placement_at[slot] = item;
+      prog_slot[i] = slot;
+      i++;
+      continue;
+    }
+
+    // No reachable+placeable candidate. Try per-item bounded rewind before the
+    // forward-fill fallback. Clamp the rewind window so it never crosses the
+    // dungeon/non-dungeon tier boundary — dungeon items are placed first
+    // because they have the most restrictive can_place; mixing tiers would
+    // break that ordering invariant.
+    if (rewind_budget > 0) {
+      uint16 floor = (i >= dungeon_prog_n) ? dungeon_prog_n : 0;
+      uint16 n = kPerItemRewindWindow;
+      if (n > (uint16)(i - floor)) n = (uint16)(i - floor);
+      if (n > 0) {
+        // Return the current (unplaceable) item to the assumed inventory; it is
+        // re-placed when the loop walks the reshuffled window forward again.
+        counts.by_item_id[item]++;
+        for (uint16 rr = 0; rr < n; rr++) {
+          uint16 j = (uint16)(i - 1 - rr);
+          uint16 sl = prog_slot[j];
+          if (sl != 0xFFFF) placement_at[sl] = 0xFFFF;  // reopen slot
+          prog_slot[j] = 0xFFFF;
+          counts.by_item_id[progression[j]]++;          // back to unplaced
+        }
+        // Reshuffle the window [i-n, i] (n+1 items, incl. the stuck one) so the
+        // deterministic retry explores a different order instead of reproducing
+        // the identical failure.
+        shuffle_u16(progression + (i - n), (uint16)(n + 1), &rng);
+        rewind_budget--;
+        g_last_placement_stats.per_item_rewind_count++;
+        i = (uint16)(i - n);
+        continue;
+      }
+      // n == 0 (nothing left to rewind in this tier): fall through to forward-fill.
+    }
+
+    // Forward-fill fallback: place at any open + can_place location (ignore
+    // reachability). If still nothing, take the first open slot regardless of
+    // can_place — last-resort recovery.
+    cand_n = 0;
+    for (uint16 k = 0; k < open_n; k++) {
+      if (placement_at[k] != 0xFFFF) continue;
+      const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+      if (!location_accepts_item(loc, item, &counts, settings)) continue;
+      candidates[cand_n++] = k;
+    }
+    if (cand_n == 0) {
       for (uint16 k = 0; k < open_n; k++) {
         if (placement_at[k] != 0xFFFF) continue;
-        const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
-        if (!location_accepts_item(loc, item, &counts, settings)) continue;
         candidates[cand_n++] = k;
       }
-      if (cand_n == 0) {
-        for (uint16 k = 0; k < open_n; k++) {
-          if (placement_at[k] != 0xFFFF) continue;
-          candidates[cand_n++] = k;
-        }
-      }
-      if (cand_n == 0) {
-        fprintf(stderr, "Place_AssumedFill: no open location for progression item %u\n",
-                (unsigned)item);
-        return false;
-      }
-      uint32 pick = Rng_NextRange(&rng, cand_n);
-      placement_at[candidates[pick]] = item;
-      fallback_count++;
     }
+    if (cand_n == 0) {
+      fprintf(stderr, "Place_AssumedFill: no open location for progression item %u\n",
+              (unsigned)item);
+      return false;
+    }
+    uint32 pick = Rng_NextRange(&rng, cand_n);
+    uint16 slot = candidates[pick];
+    placement_at[slot] = item;
+    prog_slot[i] = slot;
+    fallback_count++;
+    i++;
   }
 
   // ----- 6. Fill remaining open locations with junk -----

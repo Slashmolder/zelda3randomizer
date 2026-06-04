@@ -224,6 +224,49 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     // warning no longer applies. When `items`/`beatable` intentionally leave
     // some locations unreachable, the `unreachable_placements` warning above
     // already surfaces that to the reader for every tier.
+    //
+    // §12.6.4 — surface tricks / glitch levels the user enabled that are NOT
+    // yet confirmed to behave on the US 1.0 ROM (ALTTPR targets JP 1.0). This is
+    // informational (the seed still generates); race admins / seed validators
+    // decide whether to accept. cross-version + verified-us10 do NOT warn.
+    {
+      bool any_unverified = false;
+      for (uint32 i = 0; i < kRandoTrickStatusCount; i++) {
+        const RandoTrickStatus *ts = &kRandoTrickStatus[i];
+        if ((s->settings->tricks & (uint8)(1u << ts->bit)) == 0) continue;
+        if (ts->rom_version_status == kRomVerStatus_CrossVersion ||
+            ts->rom_version_status == kRomVerStatus_VerifiedUs10) continue;
+        if (!any_unverified) {
+          fprintf(f, "%s\n      {\"kind\": \"unverified_tricks_enabled\", \"names\": [",
+                  first ? "" : ",");
+          any_unverified = true;
+        } else {
+          fprintf(f, ", ");
+        }
+        fprintf(f, "\"%s\"", ts->id);
+      }
+      // Glitch levels: logic >= level enables that tier's gates, so warn for
+      // every non-zero level the seed reaches whose status is unverified.
+      for (uint32 i = 0; i < kRandoGlitchLevelStatusCount; i++) {
+        const RandoGlitchLevelStatus *gs = &kRandoGlitchLevelStatus[i];
+        if (gs->level == 0) continue;                 // no_glitches never warns
+        if (s->settings->logic < gs->level) continue; // tier not reached
+        if (gs->rom_version_status == kRomVerStatus_CrossVersion ||
+            gs->rom_version_status == kRomVerStatus_VerifiedUs10) continue;
+        if (!any_unverified) {
+          fprintf(f, "%s\n      {\"kind\": \"unverified_tricks_enabled\", \"names\": [",
+                  first ? "" : ",");
+          any_unverified = true;
+        } else {
+          fprintf(f, ", ");
+        }
+        fprintf(f, "\"%s\"", gs->id);
+      }
+      if (any_unverified) {
+        fprintf(f, "]}");
+        first = false;
+      }
+    }
     if (!first) fprintf(f, "\n    ");
   }
   fprintf(f, "]\n");

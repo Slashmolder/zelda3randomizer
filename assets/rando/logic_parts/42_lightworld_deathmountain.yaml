@@ -71,10 +71,12 @@ locations:
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:31"
 
   # `Ether Tablet` (West.php:50-54): BookOfMudora AND hasSword(2)
-  # AND Tower of Hera reachable. swordless-mode (Hammer) branch drops.
+  # AND Tower of Hera reachable. §4 swordless: reads with Book+Hammer
+  # (West.php:51-52 `hasSword(2) || (swordless && Hammer)`). Inert under
+  # randomized. Runtime: EtherTablet cutscene accepts hammer.
   - id: "Ether Tablet"
     region: LightWorld_DeathMountain_West
-    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND OP_REGION_REACHABLE(TowerOfHera_Lobby)"
+    can_reach: "HAS_ITEM(BookOfMudora) AND (HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND OP_REGION_REACHABLE(TowerOfHera_Lobby)"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:50-54"
 
   # `Spectacle Rock` (West.php:56-60): MagicMirror OR boots-clip.
