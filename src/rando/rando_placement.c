@@ -144,7 +144,8 @@ enum {
 // must match assets/rando/location_registry.yaml (id = 266 + 2*cave + slot).
 #define kTakeAnyCaveCount 31
 #define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
-#define LOCTYPE_TakeAny   16    // logic.schema.yaml type enum ordinal
+// LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now live in rando_logic.h
+// (shared with the spoiler emitters so the ordinals can't drift between files).
 
 // Dungeon → Prize location id, for prize-shuffle placement. Indexed by
 // dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
@@ -885,7 +886,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
 // The runtime does NOT re-run this selection; it reads the placement table to
 // learn which caves are active and what each slot grants. The runtime's own
 // (door_id, host_entrance) cave table lives in src/rando/rando.c.
-// (kTakeAnyCaveCount / kTakeAnyLocBase / LOCTYPE_TakeAny defined near the top.)
+// (kTakeAnyCaveCount / kTakeAnyLocBase defined near the top; LOCTYPE_TakeAny in rando_logic.h.)
 // ---------------------------------------------------------------------------
 enum { kTakeAnyRole_Inactive = 0, kTakeAnyRole_Potion = 1, kTakeAnyRole_Weapon = 2 };
 
@@ -1074,8 +1075,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   const uint8 LOCTYPE_Prize_Pendant = 11;
   const uint8 LOCTYPE_Prize_Event   = 12;
   const uint8 LOCTYPE_Medallion     = 13;
-  const uint8 LOCTYPE_Shop          = 14;  // Phase B Slice 3a #53 part 2 — Retro regular shop slot
-  const uint8 LOCTYPE_ShopUpgrade   = 15;  // Phase B Slice 3a — identity-placed Capacity Upgrade slots
+  // LOCTYPE_Shop (14) / LOCTYPE_ShopUpgrade (15) come from rando_logic.h (shared).
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
     uint16 vi = loc->vanilla_item_id;

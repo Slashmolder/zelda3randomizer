@@ -174,9 +174,20 @@ typedef struct RandoLocationDef {
   uint16 can_place_length;
   uint32 always_allow_offset;
   uint16 always_allow_length;
-  uint8 type;                  // location-type enum (Chest/BigChest/.../Medallion)
+  uint8 type;                  // location-type enum (Chest/BigChest/.../Medallion);
+                               // shop-class ordinals shared below (LOCTYPE_*)
   uint8 world_state_filter;    // bitmask: 0=all worlds, else bit per world-state
 } RandoLocationDef;
+
+// logic.schema.yaml location-type ordinals that are referenced across modules —
+// the placer (rando_placement.c) and the spoiler emitters (rando_spoiler.c).
+// Shared here so the shop-class ordinals can't drift between files. (Other type
+// ordinals stay local to rando_placement.c; they are single-site.)
+enum {
+  LOCTYPE_Shop        = 14,  // Retro regular shop slot (identity-pinned inventory)
+  LOCTYPE_ShopUpgrade = 15,  // Retro capacity-upgrade slot (identity-placed)
+  LOCTYPE_TakeAny     = 16,  // Retro take-any cave slot
+};
 
 typedef struct RandoRegionDef {
   uint16 id;

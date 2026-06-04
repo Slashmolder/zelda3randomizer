@@ -89,6 +89,49 @@ static int placement_cmp(const void *a, const void *b) {
   return 0;
 }
 
+// Look up a location def by id (replaces hand-inlined kRandoLocations scans).
+// Returns NULL if the id is not in the registry.
+static const RandoLocationDef *find_location(uint16 id) {
+  for (uint32 j = 0; j < kRandoLocationsCount; j++)
+    if (kRandoLocations[j].id == id) return &kRandoLocations[j];
+  return NULL;
+}
+
+// One shop-class placement row, gathered once for both spoiler emitters (the
+// JSON `shops[]` array and the text `Shops:` section).
+typedef struct { uint16 loc; uint16 item; uint8 type; uint16 region_id; } SpoilerShopRow;
+
+static int spoiler_shoprow_cmp(const void *a, const void *b) {
+  uint16 la = ((const SpoilerShopRow *)a)->loc;
+  uint16 lb = ((const SpoilerShopRow *)b)->loc;
+  return (la > lb) - (la < lb);
+}
+
+// Collect the shop-class placements (LOCTYPE_Shop / ShopUpgrade / TakeAny — the
+// Retro shop / capacity-upgrade / take-any slots) into `out`, sorted by location
+// id so each shop's contiguous slots stay grouped. Returns the count (0 ⇒ no
+// shop-class locations placed, i.e. a non-Retro seed). `cap` bounds `out`; 160
+// exceeds the max possible shop-class count (27 Shop + 2 ShopUpgrade + 62 TakeAny
+// = 91), so it never truncates — it is a hard backstop, not a real cap.
+static uint16 collect_shop_rows(const RandoSpoiler *s, SpoilerShopRow *out, uint16 cap) {
+  uint16 n = 0;
+  if (s == NULL || s->placements == NULL) return 0;
+  for (uint16 i = 0; i < s->placements->count && n < cap; i++) {
+    uint16 loc = s->placements->entries[i].location_id;
+    const RandoLocationDef *d = find_location(loc);
+    if (d == NULL) continue;
+    if (d->type != LOCTYPE_Shop && d->type != LOCTYPE_ShopUpgrade &&
+        d->type != LOCTYPE_TakeAny) continue;
+    out[n].loc = loc;
+    out[n].item = s->placements->entries[i].item_id;
+    out[n].type = d->type;
+    out[n].region_id = d->region_id;
+    n++;
+  }
+  qsort(out, n, sizeof(out[0]), spoiler_shoprow_cmp);
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // JSON writer
 // ---------------------------------------------------------------------------
@@ -450,61 +493,30 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // (the key is omitted entirely, not emitted empty). This changes the JSON
   // bytes for Retro seeds, which feed the race-mode stamp — version-locked by
   // the kGeneratorVersion bump that ships with Retro wild-keys.
-  if (s->placements != NULL && s->placements->count > 0) {
-    enum { kLocTypeShop = 14, kLocTypeShopUpgrade = 15, kLocTypeTakeAny = 16 };
-    bool any = false;
-    for (uint16 i = 0; i < s->placements->count && !any; i++) {
-      uint16 loc = s->placements->entries[i].location_id;
-      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-        if (kRandoLocations[j].id == loc) {
-          uint8 t = kRandoLocations[j].type;
-          if (t == kLocTypeShop || t == kLocTypeShopUpgrade || t == kLocTypeTakeAny)
-            any = true;
-          break;
-        }
-      }
-    }
-    if (any) {
+  {
+    SpoilerShopRow shops[160];
+    uint16 sn = collect_shop_rows(s, shops, 160);
+    if (sn > 0) {
       fprintf(f, "  \"shops\": [\n");
-      bool first = true;
-      // Sorted by location_id for determinism (matches placements[] order).
-      uint16 n = s->placements->count;
-      if (n > 512) n = 512;
-      RandoPlacement local[512];
-      memcpy(local, s->placements->entries, n * sizeof(RandoPlacement));
-      qsort(local, n, sizeof(RandoPlacement), placement_cmp);
-      for (uint16 i = 0; i < n; i++) {
-        uint16 loc = local[i].location_id;
-        uint8 t = 0xFF;
-        uint16 region_id = 0xFFFF;
-        for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-          if (kRandoLocations[j].id == loc) {
-            t = kRandoLocations[j].type;
-            region_id = kRandoLocations[j].region_id;
-            break;
-          }
-        }
-        if (t != kLocTypeShop && t != kLocTypeShopUpgrade && t != kLocTypeTakeAny)
-          continue;
-        const char *type_str = (t == kLocTypeShopUpgrade) ? "ShopUpgrade"
-                             : (t == kLocTypeTakeAny)      ? "TakeAny"
-                                                          : "Shop";
+      for (uint16 i = 0; i < sn; i++) {
+        const char *type_str = (shops[i].type == LOCTYPE_ShopUpgrade) ? "ShopUpgrade"
+                             : (shops[i].type == LOCTYPE_TakeAny)      ? "TakeAny"
+                                                                      : "Shop";
         // Shop-class locations are identity-pinned and carry no logic-region
-        // binding (region_id == 0xFFFF), so the location NAME is the grouping
-        // key (e.g. "Light World Kakariko Shop - 1" groups under that shop). The
-        // bound region is emitted only when one actually exists.
-        const char *lname = Rando_GetLocationName(loc);
+        // binding (region_id == 0xFFFF), so the location NAME is the grouping key
+        // (e.g. "Light World Kakariko Shop - 1"); a bound region is emitted only
+        // when one actually exists.
+        const char *lname = Rando_GetLocationName(shops[i].loc);
         fprintf(f, "%s    {\"location\": %u, \"name\": \"%s\", \"item\": %u, "
                    "\"type\": \"%s\"",
-                first ? "" : ",\n", loc, lname, local[i].item_id, type_str);
-        if (region_id != 0xFFFF)
-          fprintf(f, ", \"region\": \"%s\"", Rando_GetRegionName(region_id));
-        if (t == kLocTypeShopUpgrade)
+                i ? ",\n" : "", shops[i].loc, lname, shops[i].item, type_str);
+        if (shops[i].region_id != 0xFFFF)
+          fprintf(f, ", \"region\": \"%s\"", Rando_GetRegionName(shops[i].region_id));
+        if (shops[i].type == LOCTYPE_ShopUpgrade)
           fprintf(f, ", \"identity_placed\": true");
         fprintf(f, "}");
-        first = false;
       }
-      fprintf(f, "%s  ],\n", first ? "" : "\n");
+      fprintf(f, "\n  ],\n");
     }
   }
 
@@ -853,23 +865,21 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
       rows[i].location_id = s->placements->entries[i].location_id;
       rows[i].item_id = s->placements->entries[i].item_id;
       rows[i].region_id = 0xFFFF;
-      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-        if (kRandoLocations[j].id == rows[i].location_id) {
-          rows[i].region_id = kRandoLocations[j].region_id;
-          // Audit H1 — under Inverted, a location may be assigned to a
-          // different region via Rando_FindPredicateOverride. Honor that
-          // override here so the grouped spoiler text matches the
-          // runtime's reachability view (e.g., Ether Tablet shows under
-          // LightWorld_DeathMountain_East, not the base West region).
-          if (s->settings != NULL) {
-            const RandoLocationPredOverride *ov =
-                Rando_FindPredicateOverride(rows[i].location_id,
-                                            s->settings->world_state);
-            if (ov != NULL && ov->region_override != 0xFFFF) {
-              rows[i].region_id = ov->region_override;
-            }
+      const RandoLocationDef *d = find_location(rows[i].location_id);
+      if (d != NULL) {
+        rows[i].region_id = d->region_id;
+        // Audit H1 — under Inverted, a location may be assigned to a different
+        // region via Rando_FindPredicateOverride. Honor that override here so the
+        // grouped spoiler text matches the runtime's reachability view (e.g.,
+        // Ether Tablet shows under LightWorld_DeathMountain_East, not the base
+        // West region).
+        if (s->settings != NULL) {
+          const RandoLocationPredOverride *ov =
+              Rando_FindPredicateOverride(rows[i].location_id,
+                                          s->settings->world_state);
+          if (ov != NULL && ov->region_override != 0xFFFF) {
+            rows[i].region_id = ov->region_override;
           }
-          break;
         }
       }
     }
@@ -914,54 +924,19 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   // spoilers are byte-unchanged. This is TEXT-spoiler only: the .txt is never
   // written in race mode and is not part of the race-mode stamp (computed over
   // the JSON), so this section cannot move any placement / sphere digest or stamp.
-  if (s->placements != NULL && s->placements->count > 0) {
-    // logic.schema.yaml type-enum ordinals (mirror rando_placement.c LOCTYPE_*).
-    enum { kLocTypeShop = 14, kLocTypeShopUpgrade = 15, kLocTypeTakeAny = 16 };
-    // 160 provably exceeds the max possible shop-class location count: 27 Shop +
-    // 2 ShopUpgrade + 62 TakeAny (31 caves × 2 slots) = 91 registry entries, of
-    // which only ~9 TakeAny slots are ever active per seed. The `sn < 160` guard
-    // below therefore never truncates — it is a hard backstop, not a real cap.
-    static struct { uint16 loc; uint16 item; uint8 type; } shop_rows[160];
-    uint16 sn = 0;
-    uint16 cnt = s->placements->count;
-    for (uint16 i = 0; i < cnt && sn < 160; i++) {
-      uint16 loc = s->placements->entries[i].location_id;
-      uint8 t = 0xFF;
-      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-        if (kRandoLocations[j].id == loc) { t = kRandoLocations[j].type; break; }
-      }
-      if (t == kLocTypeShop || t == kLocTypeShopUpgrade || t == kLocTypeTakeAny) {
-        shop_rows[sn].loc = loc;
-        shop_rows[sn].item = s->placements->entries[i].item_id;
-        shop_rows[sn].type = t;
-        sn++;
-      }
-    }
+  {
+    SpoilerShopRow shops[160];
+    uint16 sn = collect_shop_rows(s, shops, 160);
     if (sn > 0) {
-      // Insertion sort by location_id (clusters each shop's contiguous slots).
-      for (uint16 i = 1; i < sn; i++) {
-        uint16 j = i;
-        while (j > 0 && shop_rows[j - 1].loc > shop_rows[j].loc) {
-          uint16 tl = shop_rows[j - 1].loc, ti = shop_rows[j - 1].item;
-          uint8 tt = shop_rows[j - 1].type;
-          shop_rows[j - 1].loc = shop_rows[j].loc;
-          shop_rows[j - 1].item = shop_rows[j].item;
-          shop_rows[j - 1].type = shop_rows[j].type;
-          shop_rows[j].loc = tl;
-          shop_rows[j].item = ti;
-          shop_rows[j].type = tt;
-          j--;
-        }
-      }
       fprintf(f, "Shops:\n");
       fprintf(f, "------\n");
       char cur_shop[64];
       cur_shop[0] = '\0';
       for (uint16 i = 0; i < sn; i++) {
-        const char *lname = Rando_GetLocationName(shop_rows[i].loc);
-        // Group heading = the location name with the trailing " - <slot>"
-        // suffix stripped (e.g. "Light World Kakariko Shop - 1" -> heading
-        // "Light World Kakariko Shop"). Caps/Take-Any names follow the same shape.
+        const char *lname = Rando_GetLocationName(shops[i].loc);
+        // Group heading = the location name with the trailing " - <slot>" suffix
+        // stripped (e.g. "Light World Kakariko Shop - 1" -> "Light World Kakariko
+        // Shop"). Capacity-upgrade / take-any names follow the same shape.
         char shop_name[64];
         size_t k = 0;
         for (const char *p = lname; *p && k < sizeof(shop_name) - 1; p++) {
@@ -975,9 +950,9 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
           strncpy(cur_shop, shop_name, sizeof(cur_shop) - 1);
           cur_shop[sizeof(cur_shop) - 1] = '\0';
         }
-        const char *iname = Rando_GetItemName(shop_rows[i].item);
+        const char *iname = Rando_GetItemName(shops[i].item);
         const char *tag =
-            (shop_rows[i].type == kLocTypeShopUpgrade) ? "  [identity-placed]" : "";
+            (shops[i].type == LOCTYPE_ShopUpgrade) ? "  [identity-placed]" : "";
         fprintf(f, "  %-44s -> %s%s\n", lname, iname, tag);
       }
       fprintf(f, "\n");
