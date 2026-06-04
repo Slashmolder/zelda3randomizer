@@ -44,7 +44,7 @@
 # direct-grant item's destination RAM cell:
 #   - Find the LttP receive code whose kMemoryLocationToGiveItemTo[code] equals
 #     the cell the direct-grant writes (link_dungeon_map=0xf368, link_compass=
-#     0xf364, link_bigkey=0xf36b, link_num_keys=0xf36f, link_which_pendants=
+#     0xf364, link_bigkey=0xf366, link_num_keys=0xf36f, link_which_pendants=
 #     0xf374, link_has_crystals=0xf37a). See prize_item_direct_grant /
 #     dungeon_item_direct_grant in src/rando/rando.c.
 #   - Read gfx = kReceiveItemGfx[code], big = kReceiveItem_Tab1[code],
@@ -88,17 +88,17 @@ icons:
   Prize_Crystal7: { gfx: 0x28, big: 2, oam_flags: 0x3c, notes: "crystal bundle (lttp 0x20)" }
 
   # --- dungeon items: BigKey (gfx 0x2f, lttp 0x17) ---
-  BigKey_EasternPalace:    { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_DesertPalace:     { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_TowerOfHera:      { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_PalaceOfDarkness: { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_SwampPalace:      { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_SkullWoods:       { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_ThievesTown:      { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_IcePalace:        { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_MiseryMire:       { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_TurtleRock:       { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
-  BigKey_GanonsTower:      { gfx: 0x2f, big: 2, oam_flags: 0x32, notes: "big-key bundle (lttp 0x17)" }
+  BigKey_EasternPalace:    { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_DesertPalace:     { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_TowerOfHera:      { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_PalaceOfDarkness: { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_SwampPalace:      { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_SkullWoods:       { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_ThievesTown:      { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_IcePalace:        { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_MiseryMire:       { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_TurtleRock:       { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
+  BigKey_GanonsTower:      { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "big-key bundle (lttp 0x32 -> link_bigkey 0xf366; gfx 0x22, big 2=Tab1[0x32], oam 0x38 per z3r itemdatatables.asm). Was wrongly lttp 0x17 -> 0xf36b=link_heart_pieces -> gfx 0x2f (heart icon)." }
 
   # --- dungeon items: Map (gfx 0x21, lttp 0x33) ---
   Map_HyruleCastleEscape: { gfx: 0x21, big: 2, oam_flags: 0x38, notes: "map bundle (lttp 0x33)" }

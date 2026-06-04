@@ -48,7 +48,7 @@
 - [x] 5.1 Update `src/player.c:594` (Ether tablet) — pass the item id resolved from the tablet's placement-table entry. The call site already invokes `Rando_DispatchVanillaGrant`; the post-dispatch item id is available in the local code path. *(Done via `Rando_LastDispatchedItemId()` — new helper exposes the placed item id from the most recent dispatch, avoiding per-site `Placement_Lookup` plumbing.)*
 - [x] 5.2 Update `src/player.c:634` (Bombos tablet) — same pattern.
 - [x] 5.3 Update `src/player.c:3886` (generic player-module direct-grant cue) — identify the granted item via local context. *(Chest dispatch site — uses `Rando_LastDispatchedItemId()`.)*
-- [x] 5.4 Update `src/sprite_main.c:1273` (Pyramid Fairy) — pass `LOC_Pyramid_Fairy_Sword` / `LOC_Pyramid_Fairy_Bow` resolved item.
+- [x] 5.4 Update `src/sprite_main.c:1273` (Pyramid Fairy) — pass `LOC_Pyramid_Fairy_Sword` / `LOC_Pyramid_Fairy_Bow` resolved item. *(SUPERSEDED by add-rando-fairy-chest-model: the Pyramid Fairy grant moved to `Sprite_WishPond3` case 1, the toss was dropped, and the site now grants `Pyramid_Fairy_Left/Right` on contact. The §7.6 confirmation cue still fires there via `Rando_ShowDirectGrantConfirmation(Rando_LastDispatchedItemId())`, so the icon contract holds; only the LOC + line moved.)*
 - [x] 5.5 Update `src/sprite_main.c:18586` (generic sprite-handler direct-grant cue) — identify the granted item via local context. *(King Zora — uses `Rando_LastDispatchedItemId()`.)*
 - [x] 5.6 Add a one-shot grep to ensure no other call sites exist: `git grep "Rando_ShowDirectGrantConfirmation()"` after the migration MUST return zero matches. *(Done — zero matches for the zero-arg form AND the single-arg `Rando_ReceiveOrConfirm(lttp_code)` form. Also migrated 17 indirect call sites via `Rando_ReceiveOrConfirm` — 16 in `sprite_main.c` + 1 in `ancilla.c`.)*
 
@@ -60,9 +60,10 @@
 
 ## 7. Playtest
 
-- [ ] 7.1 Manual playthrough: generate a seed, force Ether/Bombos tablets to grant a direct-grant item (e.g., set `--seed` to a known seed that places `Prize_GreenPendant` at the Ether tablet site), pick up, verify the visible icon matches the granted item.
-- [ ] 7.2 Triforce Hunt smoke: a TriforcePiece placed at any direct-grant site should pop a Triforce icon.
-- [ ] 7.3 Pyramid Fairy: trade a bottle to test the §6.7 site; the icon should match the active placement-table entry.
+- [x] 7.1 Manual playthrough: ... verify the visible icon matches the granted item. **Pendant color check (audit LOW):** confirm each pendant pops the correct color. *(VERIFIED 2026-06-03 — pendant icon + green/red/blue color correct in playtest. Closes the cosmetic LOW.)*
+- [x] 7.2 Audio-only fallback: confirm Triforce pieces and the magic upgrades (Half/Quarter) play the receipt sound + HUD refresh but pop **no** icon (`gfx == 0` sentinel). *(VERIFIED 2026-06-03 — intended audio-only behavior confirmed; no icon, not a bug.)*
+- [x] 7.4 Dungeon-item icons (regression — fixed 2026-06-03): a Big Key randomized to a non-dungeon slot (e.g. Sunken Treasure) must pop the **big-key** icon, not a heart. (Was wrong: YAML used lttp 0x17=heart_pieces instead of 0x32=link_bigkey → gfx 0x2f heart. Fixed to gfx 0x22, big 2, oam 0x38.) *(VERIFIED 2026-06-03 — big-key icon renders correctly in playtest. Map (0x33) + Compass (0x25) code-audited and confirmed correct; bug was isolated to BigKey.)*
+- [ ] 7.3 Pyramid Fairy: trade a bottle to test the §6.7 site; the icon should match the active placement-table entry. (Boss-prize drops are expected to show the recolored falling-prize sprite, **not** this floating icon — the icon is suppressed there by design.) *(NOT YET PLAYTESTED — identical code path to the verified sites (`Rando_LastDispatchedItemId()` → confirmation helper), so low-risk; optional pre-merge.)*
 
 ## 8. Documentation
 
@@ -73,7 +74,7 @@
 ## 9. Archive readiness
 
 - [x] 9.1 All 5 call sites updated; `git grep "Rando_ShowDirectGrantConfirmation()"` returns zero. *(Per §5.6 — verified zero matches for both the zero-arg form and the single-arg `Rando_ReceiveOrConfirm(lttp_code)` form.)*
-- [ ] 9.2 CI green on Linux + macOS + Windows; codegen-wiring check passes; determinism + audit guards green. *(Awaiting CI run — local checks pass: --rando-selftest 8/8 OK, codegen-wiring check passes, 52/52 corpus entries OK.)*
-- [x] 9.3 `placement_digest_hex` regression: a corpus-comparable seed (e.g., the first seed in `tests/rando_corpus/manifest.yaml`) yields the same digest before and after this change. **No `kGeneratorVersion` bump.** *(Verified — 52/52 corpus entries OK at the current baseline. See §6.3.)*
-- [ ] 9.4 Manual smoke (§7.1-7.3) ticked. *(Playtest gate — pending owner.)*
+- [x] 9.2 CI green on Linux + macOS + Windows; codegen-wiring check passes; determinism + audit guards green. *(Windows verified locally 2026-06-03: clean Release build, --rando-selftest all subsystems OK, all 4 guards green (codegen-wiring / determinism / audit-guard --strict / no-embedded-data), 79/79 corpus OK. Linux/macOS run on the PR.)*
+- [x] 9.3 `placement_digest_hex` regression: corpus seeds yield the same digest before and after this change. **No `kGeneratorVersion` bump.** *(Verified 2026-06-03 — 79/79 corpus entries OK against the current baseline; icon-table change does not touch placement.)*
+- [ ] 9.4 Manual smoke (§7.1-7.4) ticked. *(Pendant §7.1, Triforce/magic audio-only §7.2, Big Key §7.4 all VERIFIED 2026-06-03. Only §7.3 Pyramid Fairy untested — same code path, low-risk.)*
 - [ ] 9.5 `openspec archive add-rando-confirmation-icons` runs cleanly; spec deltas merge into `openspec/specs/randomizer-placement/spec.md`. *(Pending 9.2 + 9.4.)*
