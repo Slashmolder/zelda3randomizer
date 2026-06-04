@@ -795,6 +795,80 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   }
   fprintf(f, "\n");
 
+  // Shops (tasks §8.1) — a dedicated grouping of the Retro shop / capacity-
+  // upgrade / take-any slots. These also appear under their region headings
+  // above; this section re-lists them grouped by shop for at-a-glance reading
+  // and flags the identity-placed Capacity Upgrade slots. Emitted only when
+  // shop-class locations are actually placed (i.e. Retro seeds), so non-Retro
+  // spoilers are byte-unchanged. This is TEXT-spoiler only: the .txt is never
+  // written in race mode and is not part of the race-mode stamp (computed over
+  // the JSON), so this section cannot move any placement / sphere digest or stamp.
+  if (s->placements != NULL && s->placements->count > 0) {
+    // logic.schema.yaml type-enum ordinals (mirror rando_placement.c LOCTYPE_*).
+    enum { kLocTypeShop = 14, kLocTypeShopUpgrade = 15, kLocTypeTakeAny = 16 };
+    static struct { uint16 loc; uint16 item; uint8 type; } shop_rows[160];
+    uint16 sn = 0;
+    uint16 cnt = s->placements->count;
+    for (uint16 i = 0; i < cnt && sn < 160; i++) {
+      uint16 loc = s->placements->entries[i].location_id;
+      uint8 t = 0xFF;
+      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
+        if (kRandoLocations[j].id == loc) { t = kRandoLocations[j].type; break; }
+      }
+      if (t == kLocTypeShop || t == kLocTypeShopUpgrade || t == kLocTypeTakeAny) {
+        shop_rows[sn].loc = loc;
+        shop_rows[sn].item = s->placements->entries[i].item_id;
+        shop_rows[sn].type = t;
+        sn++;
+      }
+    }
+    if (sn > 0) {
+      // Insertion sort by location_id (clusters each shop's contiguous slots).
+      for (uint16 i = 1; i < sn; i++) {
+        uint16 j = i;
+        while (j > 0 && shop_rows[j - 1].loc > shop_rows[j].loc) {
+          uint16 tl = shop_rows[j - 1].loc, ti = shop_rows[j - 1].item;
+          uint8 tt = shop_rows[j - 1].type;
+          shop_rows[j - 1].loc = shop_rows[j].loc;
+          shop_rows[j - 1].item = shop_rows[j].item;
+          shop_rows[j - 1].type = shop_rows[j].type;
+          shop_rows[j].loc = tl;
+          shop_rows[j].item = ti;
+          shop_rows[j].type = tt;
+          j--;
+        }
+      }
+      fprintf(f, "Shops:\n");
+      fprintf(f, "------\n");
+      char cur_shop[64];
+      cur_shop[0] = '\0';
+      for (uint16 i = 0; i < sn; i++) {
+        const char *lname = Rando_GetLocationName(shop_rows[i].loc);
+        // Group heading = the location name with the trailing " - <slot>"
+        // suffix stripped (e.g. "Light World Kakariko Shop - 1" -> heading
+        // "Light World Kakariko Shop"). Caps/Take-Any names follow the same shape.
+        char shop_name[64];
+        size_t k = 0;
+        for (const char *p = lname; *p && k < sizeof(shop_name) - 1; p++) {
+          if (p[0] == ' ' && p[1] == '-' && p[2] == ' ') break;  // slot separator
+          shop_name[k++] = *p;
+        }
+        shop_name[k] = '\0';
+        if (strcmp(shop_name, cur_shop) != 0) {
+          if (cur_shop[0] != '\0') fprintf(f, "\n");
+          fprintf(f, "[%s]\n", shop_name);
+          strncpy(cur_shop, shop_name, sizeof(cur_shop) - 1);
+          cur_shop[sizeof(cur_shop) - 1] = '\0';
+        }
+        const char *iname = Rando_GetItemName(shop_rows[i].item);
+        const char *tag =
+            (shop_rows[i].type == kLocTypeShopUpgrade) ? "  [identity-placed]" : "";
+        fprintf(f, "  %-44s -> %s%s\n", lname, iname, tag);
+      }
+      fprintf(f, "\n");
+    }
+  }
+
   // Hints — Phase B Slice 5 §3. Mirrors the JSON `hints[]` array. The
   // section is omitted entirely when no hints are populated (settings.hints
   // == kHintsMode_Off, or non-rando spoiler context). Runtime telepathic-
