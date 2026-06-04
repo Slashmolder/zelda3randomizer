@@ -54,6 +54,10 @@ Three of the four flags are pinned by this change:
 - **WHEN** a Retro seed is generated
 - **THEN** `Settings_EffectiveSmallKeysMode` reports `Wild`, the small-key items enter the general pool (placeable outside their dungeon), and the seed remains `goal_completable` with no unreachable placements
 
+#### Scenario: settings UI reflects the forced small-keys mode
+- **WHEN** `world_state == Retro` is selected in the settings UI
+- **THEN** the small-keys control is shown locked/disabled at "wild" with a "forced by Retro" reason (mirroring the Completionist→accessibility lock); the user's underlying small-keys choice is left untouched and is restored if they switch off Retro
+
 ### Requirement: Junk-pool padding accommodates Retro shop locations
 
 `BuildItemPool` already pads junk to fill the `|locations|` count (per Phase A pool-construction). The Retro branch SHALL produce a junk-padded pool whose size matches `|Open locations| + |Retro shop locations|`. The junk-pool rotation is the same as Phase A — items are drawn from `SmallMagic / Arrow1 / Arrow10 / Bombs1 / Bombs3 / Bombs10`, with `Rupoor` added when `item_pool_difficulty ∈ {hard, expert}`.

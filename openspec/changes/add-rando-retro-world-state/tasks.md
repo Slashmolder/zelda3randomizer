@@ -73,12 +73,16 @@ Add **7 new item-registry IDs** per `design.md` §4 Risk 3 resolution table. The
 
 ## 10. Testing
 
-- [ ] 10.1 **PLAYTEST** Generate a Retro Fast Ganon seed; first shop purchase grants the placement substitute at vanilla rupee cost. <!-- headless side verified (dispatch wired, selftest+corpus green); in-game grant PLAYTEST-PENDING. -->
-- [ ] 10.2 **[3b-deferred] PLAYTEST** Enter a Take-Any cave; dispatch fires + placement item granted. <!-- runtime built in archived 3b; in-game confirmation pending. -->
-- [ ] 10.3 **PLAYTEST** Buy bomb-capacity upgrade; identity-placement works. <!-- dispatch wired; pending. -->
-- [ ] 10.4 **PLAYTEST** Vanilla-mode regression: non-rando shop; g_ram bit-identical. <!-- by construction the rupeeBow + dispatch paths are gated on kFeatures1_RandomizerActive (and Retro); vanilla source path is unchanged. Eyeball pending. -->
-- [x] 10.5 Cross-platform digest determinism. <!-- Windows verified (79/79); Linux/macOS covered by CI; deterministic runner ⇒ identical digests. -->
-- [x] 10.6 **NEW** Headless regression after the rupeeBow + spoiler changes: build clean (-Werror), selftest OK, corpus 79/79 (digests unchanged), audit-guard green. <!-- done 2026-06-04. -->
+- [x] 10.1 **PLAYTEST** Generate a Retro seed; shop purchase grants the placed item at vanilla rupee cost. <!-- owner playtest 2026-06-04: shops sell their vanilla inventory (identity-pinned) for rupees — confirmed working. (Required the chest-table fix first — see 10.7.) -->
+- [x] 10.2 **PLAYTEST** Enter a Take-Any cave; dispatch fires + placement item granted; cave is one-shot. <!-- owner playtest 2026-06-04: took the sword from a cave, returned → empty. No dupe. -->
+- [x] 10.3 **PLAYTEST** Capacity upgrade works (identity-placed). <!-- owner playtest 2026-06-04: donate-rupees-for-+5 fountain grants the upgrade. -->
+- [ ] 10.4 **PLAYTEST** Vanilla-mode regression: non-rando shop; g_ram bit-identical. <!-- by construction the rupeeBow + dispatch paths are gated on kFeatures1_RandomizerActive (and Retro); vanilla source path is unchanged. Eyeball still pending (low risk). -->
+- [x] 10.5 Cross-platform digest determinism. <!-- Windows verified; Linux/macOS covered by CI; deterministic runner ⇒ identical digests. -->
+- [x] 10.6 Headless regression (post-merge): build clean (-Werror), selftest OK, corpus 87/87 (only the 4 Retro digests moved for wildKeys; main's trick/swordless seeds byte-identical), audit-guard + determinism + genver(53) green. <!-- done 2026-06-04. -->
+- [x] 10.7 **PLAYTEST** rupeeBow + chest dispatch + placement. <!-- owner playtest 2026-06-04: rupeeBow confirmed (10 wood / 50 silver, rupee-gated, arrow-independent; arrow HUD count still shows — cosmetic). Placement (chests + NPCs) confirmed AFTER fixing the worktree's empty chest_lookup.h (missing chest_table.gen.bin → every chest granted vanilla; see lessons.md §1, setup_worktree.py fix). -->
+- [x] 10.8 **PLAYTEST→FIX** UI reflects forced wildKeys. <!-- owner feedback: the PC "Small keys" combo looked editable under Retro though it is forced to Wild; fixed (rando_window.cpp) to lock + tooltip, mirroring the Completionist→accessibility lock. -->
+- [ ] 10.9 **PLAYTEST** Full goal clear (Retro). <!-- owner playtest 2026-06-04: progressing, got close, not yet finished — the last unverified bit. wildKeys cross-dungeon key usability + reachability confirmed implicitly so far. -->
+- [ ] 10.10 **PLAYTEST** wildKeys explicit: a small key found outside its dungeon opens that dungeon's door; no key lost across enter/exit. <!-- forced on for Retro (owner decision); spot-confirm during the full clear. -->
 
 ## 11. Documentation
 
@@ -88,6 +92,7 @@ Add **7 new item-registry IDs** per `design.md` §4 Risk 3 resolution table. The
 
 ## 12. Archive readiness
 
-- [ ] 12.1 CI green on Linux + macOS + Windows; corpus + audit-guard + determinism green. <!-- Windows green locally; CI runs the same guards. -->
-- [ ] 12.2 **PLAYTEST** Manual playthrough confirms dispatch + un-gate + the rupeeBow rupee deduction. <!-- the single remaining gate before archive — see docs/randomizer.md "PLAYTEST-PENDING". -->
-- [ ] 12.3 `openspec archive add-rando-retro-world-state` runs cleanly. <!-- after playtest sign-off. -->
+- [ ] 12.1 CI green on Linux + macOS + Windows; corpus + audit-guard + determinism green. <!-- Windows green locally; CI runs the same guards. Pending the merge + CI run. -->
+- [ ] 12.2 **PLAYTEST** Manual playthrough confirms dispatch + un-gate + rupeeBow. <!-- MOSTLY DONE 2026-06-04 (owner): rupeeBow, TakeAny one-shot, shops, capacity, chest+NPC placement, UI lock all confirmed (§10.1-10.8). Remaining: a full goal clear (§10.9) + explicit wildKeys cross-dungeon spot-check (§10.10). -->
+- [ ] 12.3 `openspec archive add-rando-retro-world-state` runs cleanly. <!-- after the full-clear sign-off + merge. genericKeys carved out to add-rando-retro-generic-keys (#4b-i). -->
+- [x] 12.4 **NEW** lessons.md authored (chest-table trap, half-a-flag-pair difficulty inversion, UI-reflect-forced-settings, the EffectiveSmallKeysMode determinism pattern, kGenVer merge collision, corpus-vs-playtest). <!-- done 2026-06-04. -->

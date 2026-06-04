@@ -814,7 +814,9 @@ The four flags and their as-built status:
   their dungeon identity. This is a generation change: `kGeneratorVersion` 50→51,
   the 4 Retro corpus digests regenerated (non-Retro byte-identical). Verified
   headless: all Retro goals stay beatable with 30 small keys in the wild pool and
-  0 unreachable placements.
+  0 unreachable placements. Because Retro forces this, the settings UI shows the
+  **Small keys** control locked to "wild" (greyed out, with a "forced by Retro"
+  tooltip) — your own small-keys pick is preserved and restored if you leave Retro.
 - **`genericKeys`** — *deferred (documented).* In ALTTPR this also unifies the
   per-dungeon key counters into one shared pool so **any** key opens **any**
   locked door. The fork delivers the *placement* half via `wildKeys` above, but
