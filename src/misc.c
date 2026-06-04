@@ -877,9 +877,34 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   // Rando_GrantFluteShovel records true ownership separately and raises the
   // shared byte without ever downgrading, so both survive; the player swaps
   // which one the slot performs via the item-menu toggle (Hud_NormalMenu).
-  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-      (j == 0x13 || j == 0x14 || j == 0x4a)) {
-    Rando_GrantFluteShovel((uint8)j);
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    // Rando: a shared-byte upgrade item must never DOWNGRADE when its lower
+    // tier is acquired after the higher one (the byte holds what rando shuffles
+    // as independent items). Flute/shovel and boomerang/bow additionally track
+    // true ownership so the player can swap the slot's tier in the item menu
+    // (see Rando_Grant* / Hud_NormalMenu); every other absolute byte-write
+    // (sword 0x00-0x03, shield 0x04-0x06, gloves 0x1b/0x1c, …) just clamps to
+    // never-downgrade via `v > *p`. Decreases use negative `v` (sign8) or are
+    // special-cased in the chain below, so they never reach this clamp.
+    if (j == 0x13 || j == 0x14 || j == 0x4a) {
+      Rando_GrantFluteShovel((uint8)j);
+    } else if (j == 0x0c || j == 0x2a) {           // any boomerang (blue/red item)
+      // Progressive: item color is ignored — 1st collected = blue, 2nd = red.
+      Rando_GrantBoomerang();
+    } else if (j == 0x0b || j == 0x3a || j == 0x3b) {  // wood bow / silver arrows
+      Rando_GrantBow((uint8)j);
+    } else if (j == 0x43 || j == 0x44) {
+      // link_arrow_filler (0xF376) is a per-frame DRAIN countdown that the HUD
+      // pays into link_num_arrows — NOT a monotonic tier. The never-downgrade
+      // clamp below would wrongly DROP an arrow grant while a prior fill is
+      // still mid-drain (e.g. a 2nd 10-arrow shop purchase — rupees spent, no
+      // arrows). Absolute-write it, exactly like vanilla. (bomb/magic filler
+      // only ever take negative `v`, so they never reach the clamp.)
+      if (!sign8(v))
+        *p = v;
+    } else if (!sign8(v) && v > *p) {
+      *p = v;
+    }
   } else if (!sign8(v)) {
     *p = v;
   }

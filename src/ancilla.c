@@ -4123,7 +4123,19 @@ void Ancilla36_Flute(int k) {  // 88cfaa
       if (Ancilla_CheckLinkCollision(k, 2, &coll_out) && !related_to_hookshot && link_auxiliary_state == 0) {
         ancilla_type[k] = 0;
         item_receipt_method = 0;
-        {
+        // Anti-re-grant guard (rando): the Flute Spot dig has no vanilla
+        // "already dug" bit. Vanilla relies on the dig flipping link_item_flute
+        // to 2 (flute selected) so the shovel can no longer dig this tile. Under
+        // the flute/shovel decouple the player keeps the shovel selectable — and
+        // a NON-flute placed item never flips the byte at all — so re-digging
+        // would re-dispatch this NON-idempotent grant (duplicate item /
+        // re-ticked Triforce counter / re-written prize bit), a trivial dupe
+        // when a Triforce piece or progressive item sits here. Once
+        // LOC_Flute_Spot is checked, despawn (above) without re-granting.
+        // Vanilla always grants the (fixed) flute, so leave it alone. Mirrors
+        // the Ether/Bombos tablet anti-re-grant guard (player.c).
+        if (!(enhanced_features1 & kFeatures1_RandomizerActive) ||
+            !Rando_IsLocationChecked(LOC_Flute_Spot)) {
           uint8 lttp_code = 0x14;  // OcarinaInactive (Flute from FluteBoy duck)
           if (enhanced_features1 & kFeatures1_RandomizerActive) {
             lttp_code = Rando_DispatchVanillaGrant(LOC_Flute_Spot, ITEM_OcarinaInactive, lttp_code);

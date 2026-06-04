@@ -353,12 +353,14 @@ static int prize_item_direct_grant(uint16 registry_id) {
 // of these items at non-Magic-Bat slots need a direct-write here.
 // Returns 1 on success.
 static int magic_upgrade_direct_grant(uint16 registry_id) {
-  if (registry_id == ITEM_HalfMagic) {
-    if (link_magic_consumption < 1) link_magic_consumption = 1;
-    return 1;
-  }
-  if (registry_id == ITEM_QuarterMagic) {
-    link_magic_consumption = 2;
+  if (registry_id == ITEM_HalfMagic || registry_id == ITEM_QuarterMagic) {
+    // Strictly progressive: each magic upgrade advances ONE tier
+    // (full=0 -> half=1 -> quarter=2), regardless of which item it is, so the
+    // 1st pickup is always 1/2 and the 2nd is always 1/4 in any collection
+    // order — no pickup is ever wasted. (Deliberate local choice: ALTTPR's
+    // QuarterMagic jumps straight to 1/4; this caps at +1 tier instead. Never
+    // downgrades because it only ever increments.)
+    if (link_magic_consumption < 2) link_magic_consumption++;
     return 1;
   }
   return 0;
@@ -713,6 +715,8 @@ bool g_rando_show_location_tracker = false;
 uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 uint8 g_rando_mushroom_held = 0;
 uint8 g_rando_flute_shovel_owned = 0;
+uint8 g_rando_boomerang_owned = 0;
+uint8 g_rando_bow_owned = 0;
 
 // Phase B Inverted runtime — the active slot's world_state, captured at
 // Rando_ActivateSidecarSlot from the slot header's additive @68 byte (only
@@ -796,6 +800,67 @@ uint8 Rando_FluteShovelEffectiveLevel(void) {
   return level;
 }
 
+// Boomerang/bow decouple — see rando.h. Called from the receive-item path
+// (AncillaAdd_ItemReceipt, misc.c) under rando instead of the vanilla
+// unconditional `*p = v`, so a lower-tier pickup never downgrades the slot and
+// the higher tier is remembered for the item-menu swap.
+void Rando_GrantBoomerang(void) {
+  // Strictly PROGRESSIVE: the FIRST boomerang collected is always blue, the
+  // SECOND always red — regardless of which item (Blue/Red) is actually placed
+  // at the location. The ownership bits are the tier counter; the byte
+  // (link_item_boomerang) tracks the currently-SELECTED color, which the player
+  // swaps blue<->red in the item menu once both are owned (Hud_NormalMenu /
+  // Rando_BoomerangCanToggle). Safe because no logic predicate ever requires a
+  // boomerang of either color (verified: assets/rando has no Boomerang gate).
+  //
+  // Fold the current byte tier into ownership first (pre-feature-save / debug
+  // poke compat): byte 1 (blue) implies blue owned; byte 2 (red) implies both,
+  // since red can't exist without having advanced through blue.
+  if (link_item_boomerang >= 1) g_rando_boomerang_owned |= kRandoBoomerang_Blue;
+  if (link_item_boomerang >= 2) g_rando_boomerang_owned |= kRandoBoomerang_Red;
+  // Advance to the next unowned tier (never downgrades — increment only).
+  if (!(g_rando_boomerang_owned & kRandoBoomerang_Blue)) {
+    g_rando_boomerang_owned |= kRandoBoomerang_Blue;
+    if (link_item_boomerang < 1) link_item_boomerang = 1;  // select blue
+  } else if (!(g_rando_boomerang_owned & kRandoBoomerang_Red)) {
+    g_rando_boomerang_owned |= kRandoBoomerang_Red;
+    link_item_boomerang = 2;  // select the newly-granted red
+  }
+  // both tiers owned: capped, no change.
+}
+
+void Rando_GrantBow(uint8 lttp_code) {
+  // Fold the current tier into ownership (pre-feature save / debug-poke compat):
+  // the byte only ever shows a tier the player actually has.
+  if (link_item_bow >= 1) g_rando_bow_owned |= kRandoBow_Wood;
+  if (link_item_bow >= 3) g_rando_bow_owned |= kRandoBow_Silver;
+  bool silver = (lttp_code == 0x3b);
+  // Silver arrows imply a basic bow, so record both — the swap is then available
+  // even on a silver-first pickup, and the wood tier is never "lost".
+  g_rando_bow_owned |= silver ? (kRandoBow_Silver | kRandoBow_Wood) : kRandoBow_Wood;
+  uint8 target = silver ? 3 : 1;  // the no-arrows form of this strength tier
+  if (link_item_bow < target) {
+    // Raising the strength tier (or first pickup). Preserve the current arrow
+    // bit so a silver upgrade on a wood+arrows bow stays "has arrows".
+    bool has_arrows = (link_item_bow == 2 || link_item_bow == 4);
+    link_item_bow = has_arrows ? (uint8)(target + 1) : target;
+  }
+  // link_item_bow >= target already (e.g. silver owned, re-granting wood): leave
+  // the higher tier in place — never downgrade.
+}
+
+bool Rando_BoomerangCanToggle(void) {
+  return g_rando_slot_active &&
+         (g_rando_boomerang_owned & kRandoBoomerang_Blue) &&
+         (g_rando_boomerang_owned & kRandoBoomerang_Red);
+}
+
+bool Rando_BowCanToggle(void) {
+  // Owning silver implies the wood capability (Rando_GrantBow sets both bits),
+  // so a single silver bit is enough to offer the wood<->silver arrow swap.
+  return g_rando_slot_active && (g_rando_bow_owned & kRandoBow_Silver) != 0;
+}
+
 void Rando_MarkLocationChecked(uint16 location_id) {
   if (!g_rando_slot_active) return;
   if (location_id >= 512) return;
@@ -825,6 +890,11 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // Persist flute/shovel ownership so owning both survives save/reload (the
   // single link_item_flute byte can't carry it — see Rando_GrantFluteShovel).
   out_slot->header.flute_shovel_owned = g_rando_flute_shovel_owned;
+  // Persist boomerang/bow ownership for the same reason: a swapped-down byte
+  // (blue selected, or wood arrows selected) must not lose the higher tier
+  // across save/reload. See Rando_GrantBoomerang / Rando_GrantBow.
+  out_slot->header.boomerang_owned = g_rando_boomerang_owned;
+  out_slot->header.bow_owned = g_rando_bow_owned;
 }
 
 void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
@@ -1576,6 +1646,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = src->header.mushroom_held;
   g_rando_flute_shovel_owned = src->header.flute_shovel_owned;
+  g_rando_boomerang_owned = src->header.boomerang_owned;
+  g_rando_bow_owned = src->header.bow_owned;
   // Phase B Inverted runtime — capture the slot's world_state from the
   // additive @68 ext byte. Only trust it when settings_ext_present is set
   // (older slots wrote 0 there, which already maps to kWorldState_Open).
@@ -1745,6 +1817,8 @@ void Rando_DeactivateSlot(void) {
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = 0;
   g_rando_flute_shovel_owned = 0;
+  g_rando_boomerang_owned = 0;
+  g_rando_bow_owned = 0;
   // Transient Retro take-any redirect target. Reset with the other per-slot
   // transients so a stale door id from a prior slot can't mis-key a host-room
   // shop after a slot switch. (Within a slot it is set/cleared by
@@ -1826,11 +1900,16 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   out->by_item_id[ITEM_ProgressiveArmor] = link_armor;          // 0=green,1=blue,2=red
   out->by_item_id[ITEM_ProgressiveGlove] = link_item_gloves;    // 0..2
   // Bow byte is non-linear: 0 none, 1-2 wood, 3-4 silver (see progressive_to_lttp).
+  // Read true ownership (g_rando_bow_owned) so a player who owns silver but has
+  // the slot toggled to wood arrows still counts as silver-capable; fall back to
+  // the raw byte for pre-feature saves (ownership 0).
   uint8 bowb = link_item_bow;
-  if (bowb >= 3) {
+  bool has_silver = (g_rando_bow_owned & kRandoBow_Silver) || bowb >= 3;
+  bool has_bow = (g_rando_bow_owned & kRandoBow_Wood) || bowb >= 1;
+  if (has_silver) {
     out->by_item_id[ITEM_ProgressiveBow] = 2;
     out->by_item_id[ITEM_SilverArrowUpgrade] = 1;
-  } else if (bowb >= 1) {
+  } else if (has_bow) {
     out->by_item_id[ITEM_ProgressiveBow] = 1;
   }
 
@@ -1853,9 +1932,14 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   out->by_item_id[ITEM_Flippers] = link_item_flippers ? 1 : 0;
   out->by_item_id[ITEM_MoonPearl] = link_item_moon_pearl ? 1 : 0;
 
-  // Boomerangs: byte 1=blue, 2=red (separate rando items).
-  if (link_item_boomerang == 1) out->by_item_id[ITEM_BlueBoomerang] = 1;
-  else if (link_item_boomerang == 2) out->by_item_id[ITEM_RedBoomerang] = 1;
+  // Boomerangs: byte 1=blue, 2=red (separate rando items). Read true ownership
+  // (g_rando_boomerang_owned) so a player who owns both but has the slot toggled
+  // to one color still counts as having the other; fall back to the raw byte for
+  // pre-feature saves (ownership 0).
+  if ((g_rando_boomerang_owned & kRandoBoomerang_Blue) || link_item_boomerang == 1)
+    out->by_item_id[ITEM_BlueBoomerang] = 1;
+  if ((g_rando_boomerang_owned & kRandoBoomerang_Red) || link_item_boomerang == 2)
+    out->by_item_id[ITEM_RedBoomerang] = 1;
 
   // Mushroom / Powder share byte 0xF344 (1=mushroom, 2=powder); true mushroom
   // possession is tracked separately in rando state so Powder-first can't lock
@@ -2000,9 +2084,17 @@ void Rando_FillItemView(RandoItemView *out) {
   out->shield = link_shield_type;     // 0..3
   out->mail = link_armor;             // 0 green, 1 blue, 2 red
   out->gloves = link_item_gloves;     // 0..2
+  // Bow/boomerang: prefer true rando ownership (a swapped-down byte must not
+  // read as the lower tier); fall back to the raw bytes with no slot active.
   uint8 bowb = link_item_bow;
-  out->bow = (bowb >= 3) ? 2 : (bowb >= 1 ? 1 : 0);  // wood/silver
-  out->boomerang = (link_item_boomerang <= 2) ? link_item_boomerang : 0;
+  if (g_rando_slot_active && (g_rando_bow_owned & kRandoBow_Silver))
+    out->bow = 2;                                    // silver
+  else
+    out->bow = (bowb >= 3) ? 2 : (bowb >= 1 ? 1 : 0);  // wood/silver
+  if (g_rando_slot_active && (g_rando_boomerang_owned & kRandoBoomerang_Red))
+    out->boomerang = 2;                              // red
+  else
+    out->boomerang = (link_item_boomerang <= 2) ? link_item_boomerang : 0;
 
   out->hookshot = link_item_hookshot != 0;
   out->firerod = link_item_fire_rod != 0;
@@ -2622,15 +2714,16 @@ void Rando_SelfCheck(void) {
     g_rando_triforce_piece_count = 0;
   }
 
-  // §6.2 HalfMagic/QuarterMagic direct-write tests. Placement HalfMagic at
-  // Bottle Merchant; dispatch should write link_magic_consumption=1 and
-  // return kRandoLttpSkip.
+  // §6.2 HalfMagic/QuarterMagic direct-write tests. Magic upgrades are STRICTLY
+  // PROGRESSIVE: either item advances link_magic_consumption by exactly one tier
+  // (0->1->2), capped at 2, regardless of collection order, and never downgrades.
   {
     static RandoPlacement entries[1];
     entries[0].location_id = 166;
     entries[0].item_id = ITEM_HalfMagic;  // 41
     RandoPlacementTable t = { entries, 1 };
     Placement_Install(&t);
+    // HalfMagic from full -> half.
     link_magic_consumption = 0;
     uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
     if (lttp != kRandoLttpSkip) {
@@ -2638,15 +2731,29 @@ void Rando_SelfCheck(void) {
       exit(2);
     }
     if (link_magic_consumption != 1) {
-      fprintf(stderr, "Rando_SelfCheck: HalfMagic dispatch should set link_magic_consumption=1\n");
+      fprintf(stderr, "Rando_SelfCheck: HalfMagic dispatch (from 0) should advance to 1 (half)\n");
       exit(2);
     }
-    // Same site with QuarterMagic should escalate.
+    // A SECOND magic upgrade (QuarterMagic) advances half -> quarter.
     entries[0].item_id = ITEM_QuarterMagic;  // 42
     Placement_Install(&t);
     Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
     if (link_magic_consumption != 2) {
-      fprintf(stderr, "Rando_SelfCheck: QuarterMagic dispatch should set link_magic_consumption=2\n");
+      fprintf(stderr, "Rando_SelfCheck: 2nd magic upgrade should advance to 2 (quarter)\n");
+      exit(2);
+    }
+    // A THIRD upgrade is capped (never exceeds quarter, never downgrades).
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_magic_consumption != 2) {
+      fprintf(stderr, "Rando_SelfCheck: magic upgrade past quarter should stay 2\n");
+      exit(2);
+    }
+    // Progressive, order-independent: QuarterMagic collected FIRST gives half
+    // (one tier), not quarter — the new behavior vs the old absolute jump-to-2.
+    link_magic_consumption = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_magic_consumption != 1) {
+      fprintf(stderr, "Rando_SelfCheck: QuarterMagic from 0 should advance to 1 (progressive, not jump to 2)\n");
       exit(2);
     }
     Placement_Install(NULL);

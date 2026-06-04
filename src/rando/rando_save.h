@@ -92,7 +92,11 @@ typedef enum {
 //   @72 entrance_attempt (u8)                  (Phase C; accepted goal-retry
 //                                              attempt index used to regenerate
 //                                              the cave permutation at slot load)
-//   @73 reserved[7]                            (forward-compat; zero on write)
+//   @73 boomerang_owned (u8)                   (rando boomerang decouple bitfield:
+//                                              0x01 blue, 0x02 red; additive)
+//   @74 bow_owned (u8)                         (rando bow decouple bitfield:
+//                                              0x01 wood, 0x02 silver; additive)
+//   @75 reserved[5]                            (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===
@@ -168,6 +172,15 @@ typedef struct RandoSlotHeader {
   // for settings_present.)
   uint8 entrance_axes;          // @71 (kEntranceAxis_* bits; 0 = no shuffle)
   uint8 entrance_attempt;       // @72 (cave-permutation goal-retry attempt index)
+  // Boomerang/bow ownership bitfields, carried additively in the reserved tail
+  // (older binaries wrote these as zero). The vanilla link_item_boomerang /
+  // link_item_bow bytes are single slots that can't represent owning both tiers,
+  // which rando shuffles as independent items. We persist true ownership here
+  // and treat the byte as the currently-SELECTED tier (toggled in the item
+  // menu). boomerang: 0x01 blue, 0x02 red. bow: 0x01 wood, 0x02 silver. See
+  // kRandoBoomerang_* / kRandoBow_* / Rando_GrantBoomerang / Rando_GrantBow.
+  uint8 boomerang_owned;        // @73
+  uint8 bow_owned;              // @74
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

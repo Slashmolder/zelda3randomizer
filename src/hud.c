@@ -673,25 +673,45 @@ void Hud_NormalMenu() {  // 8ddf15
     }
   }
 
-  // Rando flute/shovel toggle. The shovel and flute share this single Y-slot
-  // (link_item_flute: 1=shovel, 2=flute, 3=active flute) but are independent
-  // shuffled items. When the player owns both, pressing A on the highlighted
-  // flute/shovel slot swaps which function the slot performs — mirroring
-  // ALTTPR's item-menu swap. Without it the second-acquired item would be
-  // unreachable. A is otherwise unused in this menu; ownership of both is
-  // tracked in g_rando_flute_shovel_owned (one byte can't represent it).
+  // Rando item-menu swap. Several Y-slots pack what rando shuffles as
+  // independent items into one byte: flute/shovel (link_item_flute: 1=shovel,
+  // 2=flute, 3=active flute), boomerang (link_item_boomerang: 1=blue, 2=red)
+  // and bow (link_item_bow: 1/2=wood, 3/4=silver arrows). When the player owns
+  // both tiers, pressing A on the highlighted slot swaps which tier the slot
+  // performs — mirroring ALTTPR's item-menu swap. Without it the lower tier
+  // would be unreachable after a never-downgrade grant. A is otherwise unused
+  // in this menu; ownership is tracked in g_rando_*_owned (one byte can't
+  // represent it). See the Rando_Grant* helpers (rando.c) for the grants.
   if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-      (filtered_joypad_L & kJoypadL_A) &&
-      *GetCurrentItemButtonPtr(GetCurrentItemButtonIndex()) == kHudItem_Flute &&
-      Rando_FluteShovelCanToggle()) {
-    // rando-exempt: player toggle of the flute/shovel SELECTED function, not an
-    // item grant — ownership in g_rando_flute_shovel_owned is unchanged. Gated
-    // on already owning both. See Rando_GrantFluteShovel (rando.c) for the grant.
-    link_item_flute = (link_item_flute == 1)
-        ? ((g_rando_flute_shovel_owned & kRandoFluteShovel_FluteActive) ? 3 : 2)
-        : 1;
-    timer_for_flashing_circle = 16;
-    sound_effect_2 = 32;  // menu select sound
+      (filtered_joypad_L & kJoypadL_A)) {
+    uint8 cur_slot = *GetCurrentItemButtonPtr(GetCurrentItemButtonIndex());
+    bool swapped = true;
+    if (cur_slot == kHudItem_Flute && Rando_FluteShovelCanToggle()) {
+      // rando-exempt: player toggle of the flute/shovel SELECTED function, not
+      // an item grant — ownership in g_rando_flute_shovel_owned is unchanged.
+      // Gated on already owning both. See Rando_GrantFluteShovel (rando.c).
+      link_item_flute = (link_item_flute == 1)
+          ? ((g_rando_flute_shovel_owned & kRandoFluteShovel_FluteActive) ? 3 : 2)
+          : 1;
+    } else if (cur_slot == kHudItem_Boomerang && Rando_BoomerangCanToggle()) {
+      // rando-exempt: player toggle of the boomerang SELECTED color, not an item
+      // grant — ownership in g_rando_boomerang_owned is unchanged. Gated on
+      // already owning both. See Rando_GrantBoomerang (rando.c).
+      link_item_boomerang = (link_item_boomerang == 2) ? 1 : 2;  // red <-> blue
+    } else if (cur_slot == kHudItem_Bow && Rando_BowCanToggle()) {
+      // rando-exempt: player toggle of the bow arrow tier (SELECTED), not an item
+      // grant — ownership in g_rando_bow_owned is unchanged. Gated on owning
+      // silver (which implies wood). Preserves the arrow bit (parity): silver
+      // 3/4 <-> wood 1/2. See Rando_GrantBow (rando.c).
+      link_item_bow = (link_item_bow >= 3) ? (link_item_bow - 2)
+                                           : (link_item_bow + 2);
+    } else {
+      swapped = false;
+    }
+    if (swapped) {
+      timer_for_flashing_circle = 16;
+      sound_effect_2 = 32;  // menu select sound
+    }
   }
 
   Hud_DrawYButtonItems();

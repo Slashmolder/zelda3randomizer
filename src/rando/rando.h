@@ -456,6 +456,51 @@ bool Rando_FluteShovelCanToggle(void);
 // no rando slot is active, so the vanilla side-by-side path is byte-identical.
 uint8 Rando_FluteShovelEffectiveLevel(void);
 
+// Boomerang / bow decouple + item-menu swap.
+//
+// Like the flute/shovel pair, these are independent shuffled items that vanilla
+// packs into a single Y-slot byte:
+//   * Boomerang (link_item_boomerang, 0xF341): 1 = blue, 2 = magical/red.
+//   * Bow       (link_item_bow,       0xF340): 1/2 = wood (no-arrows/arrows),
+//                                              3/4 = silver (no-arrows/arrows).
+// Both are tracked with persistent ownership bits, but they grant differently:
+//   * Boomerang is STRICTLY PROGRESSIVE — the 1st collected is always blue, the
+//     2nd always red, regardless of which item is placed there (item color is
+//     ignored). Safe because no logic predicate requires a boomerang.
+//   * Bow is NEVER-DOWNGRADE — each item grants its own tier (wood item → wood,
+//     silver arrows → silver) and a lower pickup can never lower the slot. (Bow
+//     IS distinguished by logic — silver vs wood — so its item identity is kept.)
+// In both cases the byte tracks the currently-SELECTED tier; once the player
+// owns BOTH tiers, pressing A on the highlighted slot (Hud_NormalMenu) swaps
+// which tier the slot performs — mirroring ALTTPR's item-menu swap (and the
+// existing flute/shovel toggle). Ownership is persisted via
+// RandoSlotHeader.boomerang_owned / .bow_owned so a swapped-down byte can't lose
+// the higher tier across save/reload.
+enum {
+  kRandoBoomerang_Blue = 0x01,  // blue boomerang obtained
+  kRandoBoomerang_Red  = 0x02,  // magical (red) boomerang obtained
+};
+extern uint8 g_rando_boomerang_owned;
+enum {
+  kRandoBow_Wood   = 0x01,  // a bow obtained (wood-arrow capability)
+  kRandoBow_Silver = 0x02,  // silver arrows obtained (implies a bow)
+};
+extern uint8 g_rando_bow_owned;
+// Record a boomerang pickup (progressive: advances to the next unowned tier —
+// 1st collected = blue, 2nd = red — regardless of which boomerang item it is).
+// Call only when rando is active, from the receive path in misc.c.
+void Rando_GrantBoomerang(void);
+// Record a bow pickup (lttp_code: 0x0b/0x3a = wood bow, 0x3b = silver arrows):
+// set the ownership bit(s) and raise link_item_bow's strength tier without
+// downgrading, preserving the current arrow bit. Call only when rando is active.
+void Rando_GrantBow(uint8 lttp_code);
+// True iff a rando slot is active and the player owns BOTH boomerang colors, so
+// the Y-slot can be toggled between blue and red in the item menu.
+bool Rando_BoomerangCanToggle(void);
+// True iff a rando slot is active and the player owns silver arrows (which imply
+// a bow), so the Y-slot can be toggled between wood and silver arrows.
+bool Rando_BowCanToggle(void);
+
 // Phase B Inverted runtime — the active slot's world_state (WorldState enum),
 // captured at Rando_ActivateSidecarSlot from the slot header's additive @68
 // byte. Returns kWorldState_Open (0) when no slot is active or the slot

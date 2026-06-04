@@ -31,6 +31,8 @@ extern "C" {
 // than including rando.h to keep this UI TU's dependency surface small.
 extern uint8 g_rando_mushroom_held;       // 1 = true Mushroom possession (rando)
 extern uint8 g_rando_flute_shovel_owned;  // kRandoFluteShovel_* bits: Shovel=0x01, Flute=0x02
+extern uint8 g_rando_boomerang_owned;     // kRandoBoomerang_* bits: Blue=0x01, Red=0x02
+extern uint8 g_rando_bow_owned;           // kRandoBow_* bits: Wood=0x01, Silver=0x02
 }
 
 // ---------------------------------------------------------------------------
@@ -929,14 +931,39 @@ void DbgInventory_Render(void) {
       if (ImGui::BeginCombo("Bow", k[idx])) {
         for (int i = 0; i < 3; i++) {
           bool sel = (idx == i);
-          if (ImGui::Selectable(k[i], sel) && i != idx)
+          if (ImGui::Selectable(k[i], sel) && i != idx) {
             Cheats_PokeByte(0xF340, (i == 0) ? 0 : (i == 1) ? 1 : 3, 0, 4);
+            // Keep rando ownership in sync (Wood=0x01, Silver=0x03=wood|silver),
+            // mirroring the Shovel/Flute combo, so the in-menu wood<->silver swap
+            // lights up and persists to the sidecar. No-op with no active slot.
+            if (rando && Cheats_CanEdit())
+              g_rando_bow_owned = (i == 0) ? 0x00 : (i == 1) ? 0x01 : 0x03;
+          }
           if (sel) ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
       }
     }
-    { static const char *const k[] = {"None", "Blue", "Red"}; Cheats_Combo("Boomerang", 0xF341, k, 3); }  // no "both" — red replaces blue
+    // Boomerang byte 0xF341: 0=none, 1=blue, 2=red. Progressive under rando
+    // (red selected ⇒ owns both tiers), so sync ownership like the Shovel/Flute
+    // combo, so the in-menu blue<->red swap lights up and persists.
+    {
+      static const char *const k[] = {"None", "Blue", "Red"};
+      int raw = g_ram[0xF341];
+      int idx = (raw >= 2) ? 2 : raw;
+      if (ImGui::BeginCombo("Boomerang", k[idx])) {
+        for (int i = 0; i < 3; i++) {
+          bool sel = (idx == i);
+          if (ImGui::Selectable(k[i], sel) && i != idx) {
+            Cheats_PokeByte(0xF341, i, 0, 2);
+            if (rando && Cheats_CanEdit())
+              g_rando_boomerang_owned = (i == 0) ? 0x00 : (i == 1) ? 0x01 : 0x03;
+          }
+          if (sel) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+      }
+    }
     Cheats_Toggle("Hookshot", 0xF342);
     Cheats_Toggle("Lamp", 0xF34A);
     Cheats_Toggle("Fire Rod", 0xF345);
@@ -1140,6 +1167,8 @@ void DbgInventory_Render(void) {
       if (rando && Cheats_CanEdit()) {
         g_rando_mushroom_held = 0;       // Powder, not the raw Mushroom
         g_rando_flute_shovel_owned = 0x02;  // Flute
+        g_rando_boomerang_owned = 0x03;  // own Blue + Red (so the menu swap works)
+        g_rando_bow_owned = 0x03;        // own Wood + Silver (so the menu swap works)
       }
       // Four empty bottles (the inventory slots; contents stay consumable).
       for (int i = 0; i < 4; i++) Cheats_PokeByte(0xF35C + i, 2, 0, 8);

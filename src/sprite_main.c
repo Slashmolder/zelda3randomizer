@@ -11677,7 +11677,15 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
   Sprite_MoveZ(k);
   switch(sprite_ai_state[k]) {
   case 0:  // wait for summon
-    if (link_magic_consumption >= 2)
+    // Vanilla blocks re-summon once magic is maxed. Vanilla magic never exceeds
+    // half (1), so this is unreachable in vanilla — but under rando the bat's
+    // item is SHUFFLED and reaching quarter magic (2) from another source must
+    // NOT make this location uncollectable (the classic "vanilla precondition
+    // gates a shuffled location" bug). Under rando the Rando_IsLocationChecked
+    // guard below is the sole re-grant gate, so skip the magic-level gate.
+    // (Non-rando path byte-identical to before.)
+    if (!(enhanced_features1 & kFeatures1_RandomizerActive) &&
+        link_magic_consumption >= 2)
       return;
     // Anti-re-grant guard. Vanilla's grant (case 3) sets the magic-consumption
     // byte to the HalfMagic value, which is idempotent — re-summoning the bat
@@ -11755,8 +11763,12 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
         uint16 placed = Rando_OnLocationCheck(LOC_Magic_Bat, ITEM_HalfMagic);
         if (placed == ITEM_HalfMagic) {
-          // Identity (or no override) — vanilla direct write.
-          link_magic_consumption = 1;  // rando-exempt: identity HalfMagic at Magic Bat
+          // Identity (or no override) — strictly-progressive magic advance
+          // (full->half->quarter), matching magic_upgrade_direct_grant so a
+          // Magic Bat HalfMagic stacks onto a magic upgrade found elsewhere
+          // instead of being wasted. Never downgrades (increment only).
+          if (link_magic_consumption < 2)
+            link_magic_consumption++;  // rando-exempt: progressive HalfMagic at Magic Bat
         } else {
           // Non-identity placement. Re-dispatch so the direct-grant helpers
           // (prize-bit, dungeon-item, TriforcePiece counter, etc.) AND the

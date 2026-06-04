@@ -164,7 +164,13 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   // from @70/@71 on the main merge after main took @70 for settings_present.)
   buf[71] = h->entrance_axes;
   buf[72] = h->entrance_attempt;
-  memset(buf + 73, 0, kRandoSidecar_SlotHeaderSize - 73);
+  // @73-74 boomerang/bow ownership (additive; previously zero). Lets a
+  // swapped-down byte keep the higher tier across save/reload. Pre-field readers
+  // see these in the reserved tail and ignore them; new readers of an old file
+  // see 0 (own neither — the safe default). See Rando_GrantBoomerang/Bow.
+  buf[73] = h->boomerang_owned;
+  buf[74] = h->bow_owned;
+  memset(buf + 75, 0, kRandoSidecar_SlotHeaderSize - 75);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -201,6 +207,10 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   // safe no-op default.
   out->entrance_axes = buf[71];
   out->entrance_attempt = buf[72];
+  // @73-74 boomerang/bow ownership (rando decouple). Pre-field files read 0/0
+  // (own neither), the safe default.
+  out->boomerang_owned = buf[73];
+  out->bow_owned = buf[74];
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }
@@ -646,6 +656,9 @@ void RandoSave_SelfCheck(void) {
   // Phase C entrance shuffle round-trip coverage (@71/@72).
   src.header.entrance_axes = 0x05;       // cave + coupled bits (distinct value)
   src.header.entrance_attempt = 0x03;
+  // Boomerang/bow ownership round-trip coverage (@73/@74).
+  src.header.boomerang_owned = 0x03;     // blue + red
+  src.header.bow_owned = 0x03;           // wood + silver
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -720,6 +733,8 @@ void RandoSave_SelfCheck(void) {
   if (memcmp(dst.settings_canonical, src.settings_canonical, kSettingsCanonicalLen) != 0) selfcheck_die("settings_canonical round-trip");
   if (dst.header.entrance_axes != src.header.entrance_axes) selfcheck_die("entrance_axes round-trip");
   if (dst.header.entrance_attempt != src.header.entrance_attempt) selfcheck_die("entrance_attempt round-trip");
+  if (dst.header.boomerang_owned != src.header.boomerang_owned) selfcheck_die("boomerang_owned round-trip");
+  if (dst.header.bow_owned != src.header.bow_owned) selfcheck_die("bow_owned round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).

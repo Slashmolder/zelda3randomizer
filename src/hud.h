@@ -3,6 +3,8 @@
 
 enum kHudItems {
 
+  kHudItem_Bow = 1,
+  kHudItem_Boomerang = 2,
   kHudItem_Bombs = 4,
   kHudItem_Mushroom = 5,
   kHudItem_Hammer = 12,
