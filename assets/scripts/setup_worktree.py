@@ -141,6 +141,14 @@ def main() -> int:
             print("setup_worktree: rom + assets present; could not locate main "
                   "worktree to mirror optional zelda3.ini (skipping -- the exe "
                   "falls back to a parent-dir ini).", file=sys.stderr)
+            if not have_chest:
+                # Not optional: an absent chest table → empty chest_lookup.h → all
+                # chests grant vanilla. We can't mirror it (no source), so warn loudly.
+                print(f"setup_worktree: WARNING {CHEST_TABLE_REL} is MISSING and no "
+                      f"source was found to mirror it -- worktree chest_lookup.h will "
+                      f"be EMPTY and ALL CHESTS will grant their vanilla item. Pass "
+                      f"--from <main-worktree>, set ZELDA3_MAIN_WORKTREE, or run "
+                      f"`python assets/restool.py --extract-from-rom`.", file=sys.stderr)
             return 0
         print("setup_worktree: could not locate main worktree. Pass --from PATH,",
               file=sys.stderr)

@@ -2429,6 +2429,11 @@ void LinkItem_Bow() {  // 87a006
 
   int obj = AncillaAdd_Arrow(9, link_direction_facing, 2, link_x_coord, link_y_coord);
   if (obj >= 0) {
+    // Capture the archery-minigame state BEFORE the refill decrements it: the
+    // LAST minigame shot takes archery_game_arrows_left 1->0, and the Retro
+    // guard below keys off that counter — without this snapshot the final free
+    // minigame arrow would be charged rupees (or blocked if Link is broke).
+    uint8 archery_shot = archery_game_arrows_left;  // nonzero = a minigame shot
     if (archery_game_arrows_left) {
       archery_game_arrows_left--;
       link_num_arrows += 2;
@@ -2439,9 +2444,10 @@ void LinkItem_Bow() {  // 87a006
     // like ALTTPR retro.asm DecrementArrows / tables.asm ArrowMode*Cost). Gated
     // on Rando_IsRetroActive() so the vanilla arrow-consume path below stays
     // byte-identical when rando is inactive or the seed is not Retro. The
-    // archery minigame keeps vanilla behavior (it refills its own arrows; the
-    // ALTTPR retro patch likewise special-cases the arrow-game room 0x111).
-    if (Rando_IsRetroActive() && !archery_game_arrows_left &&
+    // archery minigame keeps vanilla behavior (`archery_shot` excludes every
+    // minigame shot, incl. the last; ALTTPR's retro patch likewise special-cases
+    // the arrow-game room 0x111).
+    if (Rando_IsRetroActive() && !archery_shot &&
         !archery_game_out_of_arrows) {
       uint16 cost = (link_item_bow >= 3) ? 50 : 10;  // silver vs wood bow tier
       if (link_rupees_goal >= cost) {
