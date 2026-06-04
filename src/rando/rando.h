@@ -509,6 +509,17 @@ bool Rando_BowCanToggle(void);
 // is unavailable.
 uint8 Rando_GetActiveWorldState(void);
 
+// True iff a rando slot is active AND its world-state is Retro. This is the
+// canonical RUNTIME gate for the four Retro gameplay flags (rupeeBow /
+// genericKeys / takeAnys / wildKeys). Per design.md §8 Risk 8 the flags are
+// NOT serialized bits — they are *computed* from `world_state == Retro` at the
+// point of use, so no new bytes enter the settings struct and the canonical
+// length stays 28. A gameplay site that must diverge under Retro wraps its
+// divergence in this test; when it returns false the vanilla code path runs
+// byte-identically (rando inactive OR non-Retro world-state). Mirrors the
+// inline gate the TakeAny runtime already uses (Rando_TakeAnyHostByDoorIndex).
+bool Rando_IsRetroActive(void);
+
 // True when the Hyrule Castle escape story sequence (uncle death / sewers /
 // cell rescue / throne push) must NOT engage. Non-Standard rando seeds
 // (Open / Inverted / Retro) start POST-escape: the placer pre-grants
