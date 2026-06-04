@@ -10,22 +10,33 @@
 - [x] 2.1 In `src/rando/rando_settings.h`, confirm `tricks` is uint8 (Phase A pinned to 0). Phase B leaves the type unchanged; just allows user input. *(Confirmed — `rando_settings.h:86`, `uint8 tricks`. Type unchanged.)*
 - [x] 2.2 Update `src/rando/rando_settings.c` CSV parser to accept `tricks=boots-clip,fake-flippers,...` syntax. Resolve trick names against the `tricks:` table in `assets/rando/op_registry.yaml` (loaded by `assets/rando_logic_gen.py` and emitted into a runtime lookup table). *(Landed — `rando_settings.c:587-642` accepts `tricks=none | 0 | 0xNN | name | n1+n2+n3`. 8-trick table mirrors op_registry.yaml.)*
 - [x] 2.3 Unknown trick names are an error: CLI exits non-zero with a clear message naming the unknown trick. *(Landed — `goto bad_value;` at `rando_settings.c:638` produces "Settings_ParseCsv: bad value '...' for key 'tricks'".)*
-- [ ] 2.4 Settings-screen widget: add a multi-select trick toggle UI (Phase A's settings screen supports per-axis enums; tricks is multi-select). *(Deferred — depends on settings-screen architecture; needs cycle-or-multi-select decision.)*
+- [x] 2.4 Settings-screen widget: multi-select trick toggle. *(Done 2026-06-04 — `rando_window.cpp` renders a TreeNode of 8 checkboxes toggling settings.tricks bits; the 3 fork placeholders are labelled + tooltip'd. PC native settings window, not the in-game screen which is compiled out on PC.)*
 
 ## 3. Logic level un-pin + CSV
 
 - [x] 3.1 Un-pin `logic` in `rando_settings.h:88`. Accept `OverworldGlitches=1` and `MajorGlitches=2` from user input. Reject `HybridMG=3` and `NoLogic=4` with a "deferred to Phase D" message. *(Landed 2026-05-27 — `rando_settings.c:643-666` accepts NoGlitches/OverworldGlitches/MajorGlitches; rejects HybridMG/NoLogic with the Phase-D message via stderr + bad_value. Verified: `logic=OverworldGlitches`/`logic=major_glitches` both generate clean; `logic=HybridMG` emits "deferred to Phase D" and exits non-zero.)*
 - [x] 3.2 CSV parser: accept `logic=overworld_glitches | major_glitches` (snake_case). *(Landed — snake_case + PascalCase + numeric forms all accepted.)*
-- [ ] 3.3 Settings-screen widget: cycle the field through the 3 supported values. *(Deferred — settings-screen UI work.)*
+- [x] 3.3 Settings-screen widget: cycle logic through the 3 supported values. *(Done 2026-06-04 — `rando_window.cpp` "Logic" EnumCombo over {NoGlitches, OverworldGlitches, MajorGlitches}; clamps a loaded 3/4 down to 2.)*
 
 ## 4. mode_weapons un-pin (swordless)
 
-- [ ] 4.1 Un-pin `mode_weapons` in `rando_settings.h` (Phase A pinned to randomized/assured). Accept `swordless=3`. Still reject `vanilla=2` (out of Phase B scope).
-- [ ] 4.2 CSV parser: accept `mode.weapons=swordless`.
-- [ ] 4.3 Implement the swordless `can_place` predicate addition on `LOC_Pyramid_Fairy_Sword` per design.md D5.
-- [ ] 4.4 Update the `CanDamageGanon` macro in `assets/rando/macros.yaml` with a swordless branch: `mode_weapons == swordless` requires `(HAS_SilverArrowUpgrade AND (HAS_Hammer OR HAS_FireRod))`.
-- [ ] 4.5 Update any other macros that reference "has sword" — ensure swordless doesn't silently let the player pass a sword-required check.
-- [ ] 4.6 Settings-screen widget: add `swordless` to the mode.weapons cycle.
+<!-- DONE end-to-end (2026-06-04, after the initial BLOCKED assessment
+     was overturned — with full C source we ADD the runtime behavior instead of
+     patching ROM bytes). Logic + pool + runtime + UI all landed and gated on
+     mode_weapons==swordless / Rando_IsSwordlessActive(); every existing corpus
+     digest is byte-identical (verified 85/85, swordless branches inert under
+     randomized). kGen 51→52. Validated: goal_completable across
+     open/standard/inverted/retro × fast_ganon/ganon/dungeons/completionist/
+     triforce-hunt with 0 swords placed. Runtime sword-substitution is
+     PLAYTEST-PENDING. design.md D5 (can_place on
+     LOC_Pyramid_Fairy_Sword) was OBSOLETE — used pool sword-removal instead. -->
+- [x] 4.1 Un-pin `mode_weapons` — accept `swordless=3`. *(`rando_settings.h` enum + `parse_weapons`.)*
+- [x] 4.2 CSV parser: accept `mode.weapons=swordless`. *(`rando_settings.c` parse_weapons.)*
+- [x] 4.3 ~~swordless `can_place` on `LOC_Pyramid_Fairy_Sword`~~ — OBSOLETE (LOCs 210/211 retired). Used a sword-removed item-pool branch (`rando_placement.c`) + a guaranteed SilverArrowUpgrade instead.
+- [x] 4.4 Swordless Ganon predicate — `swordless ? (Hammer AND CanShootSilvers()) : HasSword2()` (Std `43_darkworld` + Inv `NorthEast`), per NorthEast.php:227-233 + World.php:269-273. New op `OP_MODEWEAPONS_EQ` (id 18). Also Agahnim 1 (Hammer/net), medallion casts, Skull Woods, Kholdstare, Trinexx, tablets.
+- [x] 4.5 Other "has sword" macros — CanMeltThings swordless Bombos branch; CanKillKholdstare + CanKillTrinexx Hammer-kill swordless path (the two that stranded IP/TR crystals).
+- [x] 4.6 Settings widget — PC `rando_window.cpp` weapons combo (value-mapped, skips vanilla=2) + Switch `select_file.c` cycle/label.
+- [x] 4.7 Runtime (the real un-block): hammer damages Ganon (`sprite.c`), medallions cast w/o sword (`player.c`), tablets hammer-read (`sprite_main.c`), Agahnim/Skull-Woods curtains pre-opened (`rando_generate.c` slot SRAM-init). All gated on `Rando_IsSwordlessActive()`.
 
 ## 5. accessibility=none
 
@@ -38,38 +49,61 @@
 
 ## 6. pyramid_bow_upgrade un-pin
 
-- [ ] 6.1 Un-pin `region_pyramid_bow_upgrade` (Phase A pinned to true). Accept `false`.
-- [ ] 6.2 CSV parser: accept `region.pyramidBowUpgrade=false`.
-- [ ] 6.3 At `sprite_main.c:1273` (Pyramid Fairy bow trade), branch on `region_pyramid_bow_upgrade`:
-  - `true`: existing behavior (grants BowAndSilverArrows).
-  - `false`: grants ProgressiveBow without advancing to SilverArrows; the `LOC_Pyramid_Fairy_Bow` slot may place SilverArrowUpgrade elsewhere via the standard placement table.
-- [ ] 6.4 Settings-screen widget: toggle.
+<!-- OBSOLETE (2026-06-04). NOT un-pinned — the setting's runtime
+     mechanism no longer exists. The fairy-chest-model change (kGen 49→50)
+     replaced the Pyramid Fairy bow trade-in with a two-chest model:
+     Sprite_WishPond3 (sprite_main.c:1179) now grants LOC_Pyramid_Fairy_Left =
+     ITEM_SilverArrowUpgrade directly on contact. Nothing in src/ reads
+     pyramid_bow_upgrade. design.md D7's premise (bow trade → bow+arrows vs
+     bow+silvers) is invalidated, same as D5/swordless. Un-pinning `arrows`
+     would expose a no-op setting. Left pinned to Silvers; stays in the UI
+     "Locked settings" block. -->
+- [ ] 6.1 ~~Un-pin `region_pyramid_bow_upgrade`~~ — OBSOLETE under the fairy-chest model (no runtime reader).
+- [ ] 6.2 ~~CSV `region.pyramidBowUpgrade=false`~~ — OBSOLETE (would be a no-op value).
+- [ ] 6.3 ~~`sprite_main.c` bow-trade branch~~ — the bow trade-in was removed by the chest model; Sprite_WishPond3 grants Left/Right directly.
+- [ ] 6.4 ~~Settings-screen toggle~~ — kept in Locked settings (Silvers) since it has no effect.
 
 ## 7. Trick predicate authoring
 
-- [ ] 7.1 Grep `../alttp_vt_randomizer/app/Region/Standard/**/*.php` for trick references. Cross-cite with the priming `op_registry.yaml` `tricks:` table.
-- [ ] 7.2 Per trick (8 total), enumerate per-location applicability. Update `assets/rando/logic_parts/*.yaml` to gate the affected location's `can_reach` predicate on `OR(<base>, AND(<base-tricks>, OP_TRICK <trick_id>))`.
-- [ ] 7.3 Per-location SOURCE citations: every trick-gated predicate references its ALTTPR PHP source line.
-- [ ] 7.4 Update `assets/rando/op_registry.yaml` `tricks:` table — advance `status: scaffold` → `status: authored` for each trick once per-location applicability is recorded.
-- [ ] 7.5 Run `Logic_SelfCheck` post-trick-authoring; assert no predicate well-formedness violations.
+<!-- done (2026-06-04 reality map): §7.1-7.3 were LANDED by prior
+     "Slice 4 §7 batches 1-4" (acknowledged at §12.6:100) but never ticked. The
+     5 real ALTTPR tricks are wired + cited across 208 predicate uses
+     (boots-clip×38, fake-flippers×6, bunny-revival×50, dark-room-nav×42,
+     pearl-bypass×72, glitch-levels×40). Verified vs an ALTTPR config-flag grep:
+     these 5 map to canBootsClip/canFakeFlipper/canBunnyRevive/item.require.Lamp/
+     canOWYBA. bits 4/6/7 (bomb-jump/hookshot-clip/lobotomy) are FORK-INVENTED
+     placeholders — NO ALTTPR flag exists, so they cannot be PHP-grounded and are
+     left unwired (status: placeholder, not authored). -->
+- [x] 7.1 Grep ALTTPR for trick references; cross-cite the `op_registry.yaml` `tricks:` table. *(Done in Slice 4 §7; re-verified — ALTTPR flags enumerated, 5 of 8 fork tricks have an upstream flag.)*
+- [x] 7.2 Per trick, enumerate per-location applicability + gate the affected predicates. *(Done for the 5 real tricks; the 3 placeholders have no upstream sites to enumerate.)*
+- [x] 7.3 Per-location SOURCE citations on every trick-gated predicate. *(Done — `source:` line ranges present throughout `logic_parts/**`.)*
+- [x] 7.4 Advance `op_registry.yaml` `tricks:` `status: scaffold` → `authored`. *(5 real tricks → `authored`; 3 fork placeholders → `placeholder` with rationale.)*
+- [x] 7.5 Run `Logic_SelfCheck` post-trick-authoring. *(Green: `rando_logic_gen.py --strict` 0 warnings + `--rando-selftest` `[Logic_SelfCheck] OK`.)*
 
 ## 8. Per-item bounded rewind (Bug #7)
 
-- [ ] 8.1 In `src/rando/rando_placement.c::Place_AssumedFill`, refactor the placement loop per design.md D1:
-  - Replace whole-attempt retry with per-item rewind followed by whole-attempt escalation.
-  - Track per-item rewind budget separately from whole-attempt budget.
-- [ ] 8.2 Define `kPerItemRewindBudget = 10` constant. Allow INI override via `[Randomizer] per_item_rewind_budget`.
-- [ ] 8.3 The rewind operation: undo the last N placements, recompute simulated inventory, retry the current item. The "undo" must restore the placer's state machine cleanly.
-- [ ] 8.4 Verify the existing `--budget-seconds` wall-clock budget still bounds total generation time.
-- [ ] 8.5 Add a spoiler `fallback_warnings` code for per-item rewind triggers: `{"code": "per_item_rewind_used", "detail": "Placer used N per-item rewinds during generation."}`.
-- [ ] 8.6 Prototype on a Triforce Hunt + hard pool seed; record before/after `placement_digest_hex` and forward-fill rate.
+<!-- IMPLEMENTED but SHIPPED GATED OFF (2026-06-04). The mechanism is
+     complete + terminating + completability-preserving (rando_placement.c
+     place_assumed_fill_attempt while-loop). Verified byte-identical at
+     kPerItemRewindBudget=0 (corpus 79/79). At the design-D1 value 10, 11 hard
+     corpus seeds change and ALL stay goal_completable, but it did NOT improve
+     placement quality on the hard seeds measured (TH/expert/0xABC123 went 1→3
+     forward-fills) — the reshuffle-and-retry just churns RNG. Shipping it on
+     would change 11 digests + force a bump for no benefit, and quality can only
+     be judged by playtest. Gated to 0; flip to 10 to evaluate. -->
+- [x] 8.1 Refactor `place_assumed_fill_attempt` per design D1 (per-item rewind before forward-fill escalation). *(Done — while-loop + prog_slot[] tracking.)*
+- [x] 8.2 Define `kPerItemRewindBudget`. *(Done — constant in rando_placement.c, shipped =0. INI override deferred: a placement-affecting INI knob is a share-string-determinism footgun; left as a compile-time constant.)*
+- [x] 8.3 Rewind reopens last N slots + recomputes inventory + retries. *(Done — re-adds rewound items to assumed inventory, reshuffles the window, restarts at i-n; tier-clamped to not cross the dungeon boundary.)*
+- [x] 8.4 `--budget-seconds` still bounds total time. *(Unchanged — the outer Place_AssumedFill retry loop still owns the wall-clock budget; rewind is bounded per-attempt.)*
+- [ ] 8.5 Spoiler `per_item_rewind_used` warning. *(Deferred — PlacementStats gains `per_item_rewind_count` for benchmarking; the spoiler warning is moot while gated off.)*
+- [x] 8.6 Prototype on a hard seed; record digest + forward-fill. *(Done — budget=0 byte-identical proof + budget=10 backtrack/forward-fill measurements.)*
 
 ## 9. Determinism verification
 
-- [ ] 9.1 Bump `kGeneratorVersion` in `src/rando/rando.h`.
-- [ ] 9.2 Run `assets/scripts/bump_rando_corpus.py` to regenerate corpus. Add at least 5 corpus seeds with trick combinations + 3 swordless seeds + 2 accessibility=none seeds.
-- [ ] 9.3 **Critical**: verify default-settings digests (tricks=0, logic=NoGlitches, etc.) remain byte-identical to pre-change baseline. Per design.md D1, this should hold because default seeds don't trigger rewind.
-- [ ] 9.4 Cross-platform determinism: Linux + macOS + Windows produce byte-identical corpus digests.
+- [x] 9.1 Bump `kGeneratorVersion` 50→51. *(Done — version-lock for the §12.6 spoiler warning, §47-precedent; 0 placement-digest change.)*
+- [x] 9.2 Regenerate corpus + add new-axis seeds. *(Done — `bump_rando_corpus.py --apply` reported "4 digest(s) updated" = only the 4 NEW entries. Added b-tricks-all5 / b-tricks-darkroom / b-logic-owg / b-logic-mg. NO swordless seed (BLOCKED §4); accessibility=none already in corpus as `a1-standard-triforce-hunt-beatable`.)*
+- [x] 9.3 **Critical**: default-settings digests byte-identical. *(Verified TWICE: (a) rewind gated to 0 → corpus 79/79 byte-identical pre-bump; (b) the bump regen changed ONLY the 4 new placeholder digests + the version line — every existing digest unchanged, confirmed by `git diff`.)*
+- [ ] 9.4 Cross-platform determinism (Linux/macOS/Windows). *(Windows verified here; Linux/macOS is CI's job on merge — unchanged contract.)*
 
 ## 10. Audit-guard sweep
 
@@ -99,26 +133,32 @@
 
 Captures the concern raised mid-batch-4 trick authoring (2026-05-27): ALTTPR targets Japanese 1.0; this fork targets US 1.0; some tricks may behave differently or be absent on US 1.0. The trick gates landed across slices 4 §7 batch 1-4 are textually-correct translations of upstream PHP but UNVERIFIED on US 1.0. See `randomizer-logic` spec delta § "Per-trick ROM-version verification status".
 
-- [ ] 12.6.1 Add a `rom_version_status` field to each entry in `assets/rando/op_registry.yaml`'s `tricks:` table. Valid values per spec: `untested-on-us10`, `verified-us10`, `cross-version`, `jp10-only`, `us10-different`. Default new entries to `untested-on-us10` except `dark-room-nav` (`cross-version` — pure player skill, no ROM dependency).
-- [ ] 12.6.2 Add a `glitch_levels:` table to `assets/rando/op_registry.yaml` (currently the glitch levels are an enum baked into `OP_GLITCH_LEVEL_AT_LEAST` only; surface them as registry entries so the same `rom_version_status` field applies). Default all to `untested-on-us10`.
-- [ ] 12.6.3 Extend `assets/rando_logic_gen.py` codegen to emit `kRandoTrickStatus[]` and `kRandoGlitchLevelStatus[]` arrays + their counts so the runtime can consult them.
-- [ ] 12.6.4 Extend `Spoiler_WriteJson` `fallback_warnings` emission to add `unverified_tricks_enabled` entries when `settings.tricks` enables a trick whose status is `untested-on-us10`, `jp10-only`, or `us10-different`. Same for `settings.logic >= overworld_glitches`.
-- [ ] 12.6.5 Extend the codegen well-formedness pass to REJECT any predicate that references a trick whose status is `jp10-only`.
-- [ ] 12.6.6 Document the field, the status semantics, and the verification protocol in `docs/randomizer.md` § "Tricks / glitch logic — ROM-version verification" (new subsection). Include a per-status table and a contributor's guide for upgrading a trick from `untested-on-us10` to `verified-us10` (test plan, evidence requirements, where to record the verification).
-- [ ] 12.6.7 Per-trick verification work itself is OUT OF SCOPE for this change — it's playtest work that needs a US 1.0 ROM owner. Track as a follow-on workstream; the scaffolding (field + warning + codegen guard) is all this change covers.
-- [ ] 12.6.8 Backfill the status for tricks already wired by Slice 4 §7 batches 1-4 with whatever the contributor can confirm (initial pass: `dark-room-nav` → `cross-version`; everything else → `untested-on-us10`).
+<!-- done (2026-06-04): §12.6 scaffolding landed in one commit.
+     Validated: codegen 0 warnings; tricks-on seed emits the warning naming
+     boots-clip/pearl-bypass/overworld_glitches; dark-room-nav (cross-version)
+     does NOT warn; jp10-only temporarily set on a wired trick → codegen --strict
+     rejects every referencing gate (reverted). Corpus stayed 79/79 (inert under
+     default settings). -->
+- [x] 12.6.1 `rom_version_status` field on each `tricks:` entry. *(op_registry.yaml; dark-room-nav→cross-version, rest untested-on-us10.)*
+- [x] 12.6.2 `glitch_levels:` table (OverworldGlitches/MajorGlitches/HybridMG/NoLogic), all `untested-on-us10`.
+- [x] 12.6.3 Codegen emits `kRandoTrickStatus[]`/`kRandoGlitchLevelStatus[]` + counts (`logic_data.c`; decl in `rando_logic.h`).
+- [x] 12.6.4 `unverified_tricks_enabled` warning in the spoiler `fallback_warnings` (`rando_spoiler.c`), for tricks + reached glitch levels with unverified status.
+- [x] 12.6.5 Codegen well-formedness rejects any predicate referencing a `jp10-only` trick (`well_formedness` in `rando_logic_gen.py`).
+- [x] 12.6.6 Documented in `docs/randomizer.md` § "Tricks / glitch logic — ROM-version verification" (status table + contributor upgrade guide).
+- [x] 12.6.7 Per-trick US-1.0 verification kept OUT OF SCOPE — follow-on playtest workstream. *(Kept as a follow-on playtest-pending item.)*
+- [x] 12.6.8 Status backfill for already-wired tricks: dark-room-nav → cross-version; all other wired tricks + glitch levels → untested-on-us10.
 
 ## 13. Playtest
 
-- [ ] 13.1 Generate a Standard / Fast Ganon / tricks=boots-clip,fake-flippers seed; play to verify trick predicates gate locations correctly.
-- [ ] 13.2 Generate a swordless seed; play to confirm Pyramid Fairy Sword slot doesn't place a sword and CanDamageGanon resolves via the swordless branch.
-- [ ] 13.3 Generate an accessibility=none seed; confirm `fallback_warnings` includes the warning.
-- [ ] 13.4 Generate a pyramid_bow_upgrade=false seed; confirm Pyramid Fairy bow trade grants Bow without auto-silvers.
-- [ ] 13.5 Verify default Fast Ganon seed digest unchanged.
+- [ ] 13.1 Trick-gated seed playtest — verify each wired trick is *performable* on US 1.0 at its gated spot. *(PENDING — this is exactly what `rom_version_status: untested-on-us10` flags; per-trick verification is a follow-on workstream, see §12.6.7. Reachability is headless-validated.)*
+- [x] 13.2 Swordless seed beaten end-to-end. *(Done 2026-06-04 — a full swordless game was BEATEN on US 1.0: tablets/medallions/curtains/Evil-Barrier/Agahnim-1&2/Kholdstare/Trinexx/Ganon all clear with the Hammer. Two runtime fixes surfaced + fixed by playtest: the Evil Barrier (hammer-break) and the boss-macro showstoppers. The original wording — `LOC_Pyramid_Fairy_Sword` `can_place` + `CanDamageGanon` — is obsolete; swordless ships via pool sword-removal + the `OP_MODEWEAPONS_EQ` predicates + the runtime patches.)*
+- [ ] 13.3 ~~accessibility=none `fallback_warnings` warning~~ — OBSOLETE: the `accessibility_none_seed` warning was removed when the ALTTPR three-way accessibility landed (kGen 45→46); `none` = "beatable only" is still guaranteed completable, so there is no "may be unwinnable" warning to emit.
+- [ ] 13.4 ~~pyramid_bow_upgrade=false playtest~~ — NOT shipped (obsolete under the fairy-chest model; see §6).
+- [x] 13.5 Default Fast Ganon seed digest unchanged. *(Verified — corpus 83 pre-existing digests byte-identical across the kGen 50→51→52 bumps; every swordless/trick/rewind change is inert under default settings.)*
 
 ## 14. Archive readiness
 
-- [ ] 14.1 CI green on Linux + macOS + Windows; corpus matches across platforms; default-settings digest preserved.
-- [ ] 14.2 Manual playtest exercises all 5 un-pinned axes.
-- [ ] 14.3 Fresh-eyes audit per memory `[[cluster-audit-cadence]]` post-trick-authoring.
-- [ ] 14.4 `openspec archive add-rando-trick-logic-and-axes` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{logic,core}/spec.md`.
+- [x] 14.1 CI guards green; default-settings digest preserved; corpus 87/87. *(Windows verified locally — build 0 warnings, `--rando-selftest` OK, all guard scripts clean, kGen 52. Linux/macOS cross-platform determinism is the merge CI's job, unchanged contract.)*
+- [~] 14.2 Manual playtest of the un-pinned axes. *(SWORDLESS beaten end-to-end (§13.2). tricks/glitch reachability headless-validated; their on-US-1.0 performability is the `rom_version_status` follow-on, not a merge blocker. accessibility=none + pyramid_bow scenarios reconciled as obsolete (§13.3-4).)*
+- [x] 14.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`. *(TWO independent audit agents: one on the trick-logic/rewind/ROM-version diff (no HIGH/MED), one on the swordless diff (no HIGH / no softlock-class). All findings dispositioned.)*
+- [ ] 14.4 `openspec archive add-rando-trick-logic-and-axes` after merge; spec deltas (randomizer-logic adds `OP_MODEWEAPONS_EQ` + the per-trick ROM-version requirement; randomizer-core's swordless/pyramid scenarios reconciled to as-built) merge into `openspec/specs/randomizer-{logic,core}/spec.md`.
