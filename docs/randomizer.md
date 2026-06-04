@@ -43,7 +43,7 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--seed=0x...` | uint64 seed value. Required for single-seed mode. |
 | `--out-spoiler=<path>` | JSON spoiler path. Also writes a sibling `.txt` text spoiler. |
 | `--out-share-string=<path>` | Optional file for the raw base32 share string. |
-| `--budget-seconds=<n>` | Bounds the placement retry budget (default 5). Exhausted budget accepts the best-so-far attempt. |
+| `--budget-seconds=<n>` | Bounds the placement retry budget (default 0). Exhausted budget accepts the best-so-far attempt. |
 | `--assets-must-be-vanilla` | Refuses non-vanilla `zelda3_assets.dat` (compares against `kVanillaAssetsHash` in `src/rando/vanilla_assets_hash.h`). |
 | `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |

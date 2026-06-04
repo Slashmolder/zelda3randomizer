@@ -467,6 +467,18 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   uint8 *target_sram = g_zenv.sram + slot_index * 0x500;
   Rando_InitNewSlotSram(target_sram, settings->world_state);
 
+  // Swordless (ALTTPR InitialSram::setSwordlessCurtains, initsramtable.asm:21,23):
+  // pre-open the sword-cut curtains that would otherwise wall off the Agahnim
+  // Tower altar room and the Skull Woods back entry — a swordless player can
+  // never cut them. ROOM_DATA is at slot-relative offset 0x000; bit 0x80 is the
+  // curtain quadrant of room byte 0x61 (Aga-Tower altar) / 0x93 (Skull Woods).
+  // Baked at generation, so only fresh swordless slots get it (same caveat as the
+  // other start-state bytes). PLAYTEST-PENDING: confirm both curtains render open.
+  if (settings->mode_weapons == kModeWeapons_Swordless) {
+    target_sram[0x61] |= 0x80;  // Agahnim Tower altar curtain pre-opened
+    target_sram[0x93] |= 0x80;  // Skull Woods back-entry curtain pre-opened
+  }
+
   Intro_FixCksum(target_sram);
 
   if (!Rando_WriteSidecarSlot(slot_index, &slot, target_sram, 0x500)) {

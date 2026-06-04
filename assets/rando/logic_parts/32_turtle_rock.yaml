@@ -97,7 +97,9 @@ edges:
   # to the Phase A medallion+sword+somaria form.
   - from: TurtleRock_Entrance
     to: TurtleRock_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND ((OP_MEDALLION_OPENS(TurtleRock_Entrance) AND HasSword(1) AND HAS_ITEM(CaneOfSomaria)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    # §4 swordless: the Quake cast that opens TR needs a sword in vanilla
+    # (TurtleRock.php:91 `swordless || hasSword()`). Inert under randomized.
+    predicate: "HAS_ITEM(RescuedZelda) AND ((OP_MEDALLION_OPENS(TurtleRock_Entrance) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND HAS_ITEM(CaneOfSomaria)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/TurtleRock.php:87-101, 257-264 (entrance)"
 
 locations:
@@ -213,10 +215,13 @@ macros:
   #   FireRod AND IceRod
   #   AND (itemPlacement !== 'basic' || swordless || hasSword(3) || (canExtendMagic(2) AND hasSword(2)))
   #   AND (hasSword(3) || Hammer || (canExtendMagic(2) AND hasSword(2)) || (canExtendMagic(4) AND hasSword))
-  # Phase A: drop !== 'basic' advanced branch and swordless.
-  # First conjunct: hasSword(3) OR (canExtendMagic(2) AND hasSword(2)).
-  # Second conjunct: stays.
+  # §4 swordless: the first conjunct rendered ALTTPR's
+  # `(itemPlacement!='basic' || swordless || hasSword(3) || ...)`. With the fork's
+  # non-basic placement that whole clause is TRUE in ALTTPR; the fork kept it as a
+  # sword gate, which strands Trinexx swordless. Add the swordless disjunct — the
+  # second conjunct already accepts Hammer, so swordless = FireRod+IceRod+Hammer
+  # (Boss.php:121-122). Inert under randomized.
   - name: CanKillTrinexx
     parameters: [world]
-    body: "HAS_ITEM(FireRod) AND HAS_ITEM(IceRod) AND (HasSword3() OR (CanExtendMagic(world, 2) AND HasSword2())) AND (HasSword3() OR HAS_ITEM(Hammer) OR (CanExtendMagic(world, 2) AND HasSword2()) OR (CanExtendMagic(world, 4) AND HasSword(1)))"
+    body: "HAS_ITEM(FireRod) AND HAS_ITEM(IceRod) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword3() OR (CanExtendMagic(world, 2) AND HasSword2())) AND (HasSword3() OR HAS_ITEM(Hammer) OR (CanExtendMagic(world, 2) AND HasSword2()) OR (CanExtendMagic(world, 4) AND HasSword(1)))"
     source: "app/Boss.php:119-125 (Trinexx can_beat)"

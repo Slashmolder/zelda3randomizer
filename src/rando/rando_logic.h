@@ -58,7 +58,10 @@ typedef enum {
   OP_TRICK = 15,
   OP_DIFFICULTY_AT_LEAST = 16,
   OP_GLITCH_LEVEL_AT_LEAST = 17,
-  OP__COUNT = 18,
+  // Phase B swordless — settings.mode_weapons == operand. Used by the Ganon /
+  // Agahnim / CanMeltThings predicates to add a swordless branch.
+  OP_MODEWEAPONS_EQ = 18,
+  OP__COUNT = 19,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -199,6 +202,38 @@ extern const RandoEdgeDef kRandoEdges[];
 extern const uint32 kRandoEdgesCount;
 extern const uint8 kRandoPredicateStream[];
 extern const uint32 kRandoPredicateStreamSize;
+
+// ---------------------------------------------------------------------------
+// §12.6 — per-trick / per-glitch-level ROM-version verification status.
+// ALTTPR targets the Japanese 1.0 ROM; this fork targets US 1.0. A trick that
+// exists in ALTTPR's logic graph may have JP/US timing/mechanic differences or
+// be absent on US 1.0. The generator consults these tables to warn (in the
+// spoiler `fallback_warnings`) when a seed enables an unverified trick / level.
+// The string→int encoding is produced by ROM_VER_STATUS in rando_logic_gen.py.
+// ---------------------------------------------------------------------------
+typedef enum {
+  kRomVerStatus_UntestedUs10  = 0,  // in the upstream graph; not confirmed on US 1.0 (default)
+  kRomVerStatus_VerifiedUs10  = 1,  // performed end-to-end on a real US 1.0 build
+  kRomVerStatus_CrossVersion  = 2,  // pure player skill / verified identical JP↔US
+  kRomVerStatus_Jp10Only      = 3,  // confirmed NOT to work on US 1.0 (codegen forbids in gates)
+  kRomVerStatus_Us10Different = 4,  // exists on both but with different timing/mechanics
+} RandoRomVerStatus;
+
+typedef struct RandoTrickStatus {
+  uint8 bit;                  // settings.tricks bit position
+  uint8 rom_version_status;   // RandoRomVerStatus
+  const char *id;             // kebab-case trick id (e.g. "pearl-bypass")
+} RandoTrickStatus;
+extern const RandoTrickStatus kRandoTrickStatus[];
+extern const uint32 kRandoTrickStatusCount;
+
+typedef struct RandoGlitchLevelStatus {
+  uint8 level;                // settings.logic value (1=OverworldGlitches, 2=MajorGlitches, ...)
+  uint8 rom_version_status;   // RandoRomVerStatus
+  const char *id;             // e.g. "overworld_glitches"
+} RandoGlitchLevelStatus;
+extern const RandoGlitchLevelStatus kRandoGlitchLevelStatus[];
+extern const uint32 kRandoGlitchLevelStatusCount;
 
 // Phase B Slice 2 — per-world-state location-predicate override.
 // When `settings.world_state == kWorldState_Inverted` (or Retro, future),

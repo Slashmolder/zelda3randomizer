@@ -233,6 +233,14 @@ static bool eval_glitch(Cursor *c, const PredicateContext *ctx) {
   if (c->error || ctx->settings == NULL) return false;
   return ctx->settings->logic >= level;
 }
+// Phase B swordless — settings.mode_weapons == operand. The Ganon/Agahnim/
+// CanMeltThings predicates branch on OP_MODEWEAPONS_EQ(swordless); under the
+// default (randomized) it is false so those swordless disjuncts are inert.
+static bool eval_modeweapons_eq(Cursor *c, const PredicateContext *ctx) {
+  uint8 mw = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  return ctx->settings->mode_weapons == mw;
+}
 
 static bool eval(Cursor *c, const PredicateContext *ctx) {
   uint8 op = cursor_u8(c);
@@ -256,6 +264,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_TRICK:                  return eval_trick(c, ctx);
     case OP_DIFFICULTY_AT_LEAST:    return eval_difficulty(c, ctx);
     case OP_GLITCH_LEVEL_AT_LEAST:  return eval_glitch(c, ctx);
+    case OP_MODEWEAPONS_EQ:         return eval_modeweapons_eq(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -1003,6 +1012,19 @@ void Logic_SelfCheck(void) {
     uint8 bc2[] = { OP_GLITCH_LEVEL_AT_LEAST, 2 };
     LSC_ASSERT(Predicate_Evaluate(bc2, sizeof(bc2), &counts, &on) == false,
                "OP_GLITCH_LEVEL_AT_LEAST(2) should be false when settings.logic==1");
+  }
+  // OP_MODEWEAPONS_EQ (swordless) — off under default (randomized=0), on at 3.
+  {
+    uint8 bc[] = { OP_MODEWEAPONS_EQ, 3 };  // 3 = swordless
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == false,
+               "OP_MODEWEAPONS_EQ(swordless) should be false under default (randomized)");
+    RandoSettings on = settings;
+    on.mode_weapons = 3;
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &on) == true,
+               "OP_MODEWEAPONS_EQ(swordless) should be true when mode_weapons==3");
+    uint8 bc0[] = { OP_MODEWEAPONS_EQ, 0 };  // randomized
+    LSC_ASSERT(Predicate_Evaluate(bc0, sizeof(bc0), &counts, &on) == false,
+               "OP_MODEWEAPONS_EQ(randomized) should be false when mode_weapons==3");
   }
 
   // OP_DIFFICULTY_AT_LEAST against defaults (normal=1)

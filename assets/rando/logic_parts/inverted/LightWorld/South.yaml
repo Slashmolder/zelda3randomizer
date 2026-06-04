@@ -108,10 +108,10 @@ locations:
 
   # `Bombos Tablet` (php:156-161): BookOfMudora AND hasSword(2). Note: in
   # Inverted this is the LightWorld tablet — Link must already be in LW.
-  # The swordless-mode alternative (Hammer) drops.
+  # §4 swordless: read with Book+Hammer (inert under randomized).
   - id: "Bombos Tablet"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2()"
+    can_reach: "HAS_ITEM(BookOfMudora) AND (HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer)))"
     source: "app/Region/Inverted/LightWorld/South.php:156-161"
 
   # `Cave 45` (php:163-169): MoonPearl (other branches drop).

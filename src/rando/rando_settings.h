@@ -52,9 +52,8 @@ typedef enum {
 typedef enum {
   kModeWeapons_Randomized = 0,
   kModeWeapons_Assured = 1,
-  // Phase B reservations:
-  // kModeWeapons_Vanilla = 2,
-  // kModeWeapons_Swordless = 3,
+  // kModeWeapons_Vanilla = 2,  // still reserved (out of Phase B scope)
+  kModeWeapons_Swordless = 3,   // no swords in the pool; runtime swordless patches active
 } ModeWeapons;
 
 typedef enum {

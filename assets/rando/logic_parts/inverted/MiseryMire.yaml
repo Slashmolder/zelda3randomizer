@@ -86,11 +86,11 @@ edges:
   #    OR (Ether in slot AND has Ether)
   #    OR (Quake in slot AND has Quake))
   #   AND (swordless OR hasSword())
-  # The medallion-shuffle table is encoded by OP_MEDALLION_OPENS;
-  # swordless mode is Phase A-pinned-off, so HasSword(1) required.
+  # The medallion-shuffle table is encoded by OP_MEDALLION_OPENS.
+  # §4 swordless: the cast needs no sword under swordless (inert under randomized).
   - from: MiseryMire_Entrance
     to: MiseryMire_Lobby
-    predicate: "OP_MEDALLION_OPENS(MiseryMire_Entrance) AND HasSword(1)"
+    predicate: "OP_MEDALLION_OPENS(MiseryMire_Entrance) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1))"
     source: "app/Region/Inverted/MiseryMire.php:31-35"
 
 locations:

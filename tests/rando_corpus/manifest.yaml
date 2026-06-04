@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 50  # bump_rando_corpus.py --apply - retire Pyramid Fairy Sword/Bow; chest-model fairy ponds
+generator_version: 52  # bump_rando_corpus.py --apply - swordless mode end-to-end
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -511,6 +511,52 @@ entries:
     label: "b-bossdrop-open-triforce"
     expected_digest: "efc95aa9ed9f0681fc69036c7babbd5b2483af545ccade27705f2f590770d5ab"
     expected_sphere_digest: "5a883f27efc89870bcf693df83f81ccdac210b959b0fac80917542ece0c9148a"
+  # add-rando-trick-logic-and-axes §9.4 — exercise the un-pinned trick + glitch
+  # axes (tricks-on, OverworldGlitches, MajorGlitches). Digests filled by
+  # bump_rando_corpus.py --apply; they pin the current trick-gated logic graph so
+  # any future change to a trick predicate fails the corpus. (No swordless seed
+  # in this block; swordless is covered by the b-swordless-* entries below.)
+  - settings: { mode.state: open, goal: fast_ganon, tricks: "boots-clip+fake-flippers+bunny-revival+dark-room-nav+pearl-bypass" }
+    seed: "0x7415C0DE"
+    label: "b-tricks-all5-open-fast-ganon"
+    expected_digest: "385ba1e7e49b8d125f449efc3fc34963e93aab958816742266740e9d5ccfd909"
+  - settings: { mode.state: open, goal: fast_ganon, tricks: "dark-room-nav" }
+    seed: "0x7415DA12"
+    label: "b-tricks-darkroom-open-fast-ganon"
+    expected_digest: "44e9d71334b95727f6c112e6ce20f5cb165325560de5e1d6a20bf20f0bf3c4dd"
+  - settings: { mode.state: open, goal: fast_ganon, logic: overworld_glitches }
+    seed: "0x06701C45"
+    label: "b-logic-owg-open-fast-ganon"
+    expected_digest: "8f039c1b8749bc73dc6ac2b3fd9593e060e7ac4a13cc0ff2354c11bfdcd2a704"
+  - settings: { mode.state: open, goal: fast_ganon, logic: major_glitches }
+    seed: "0x6A106C45"
+    label: "b-logic-mg-open-fast-ganon"
+    expected_digest: "229669334f42b565c2e41893c45c824bdc90c1f6534c71136f92865214cd51af"
+  # §4 swordless — exercises the swordless logic graph + sword-removed pool. Pins
+  # the swordless placement so any future change to a swordless gate fails the
+  # corpus. goal_completable verified at capture. (Runtime sword-substitution is
+  # playtest-pending and not corpus-testable.)
+  - settings: { mode.state: open, goal: fast_ganon, mode.weapons: swordless }
+    seed: "0x53574F5244"
+    label: "b-swordless-open-fast-ganon"
+    expected_digest: "962b7c1f7001001cc5224cc3ca3a688217cf1aaa23fda9f49f3184931c36b123"
+  - settings: { mode.state: standard, goal: fast_ganon, mode.weapons: swordless }
+    seed: "0x5357445354"
+    label: "b-swordless-standard-fast-ganon"
+    expected_digest: "7c79f34e630c3c9fb2d90f8ba34b04c63590b00d0198ebe79bb15ba74419b714"
+  # Per the swordless fresh-eyes audit (LOW #3): pin harder swordless goals so a
+  # future regression in the swordless boss macros (CanKillKholdstare /
+  # CanKillTrinexx — the showstoppers) or the swordless Ganon predicate is caught
+  # headlessly. `ganon` needs 7 crystals → every DW boss incl. Kholdstare(IP) +
+  # Trinexx(TR); `completionist` needs every location.
+  - settings: { mode.state: open, goal: ganon, mode.weapons: swordless }
+    seed: "0x5357474E"
+    label: "b-swordless-open-ganon"
+    expected_digest: "8e1ac5d29e68d941f7d750b8a5aef379dc76ff43bc7c38378629b761b1feb851"
+  - settings: { mode.state: open, goal: completionist, mode.weapons: swordless }
+    seed: "0x53574350"
+    label: "b-swordless-open-completionist"
+    expected_digest: "a78883f4b82107bc75b11cd295460dc17485f35ce3d58ffa6954bdeeb66f8c58"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

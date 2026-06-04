@@ -121,9 +121,10 @@ locations:
   # the inner clause drop, leaving Hammer as the survivor.
   # NOTE: see reviewer flag in header — registry assigns this to
   # LightWorld_DeathMountain_West.
+  # §4 swordless: read with Book+Hammer (inert under randomized).
   - id: "Ether Tablet"
     region: LightWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)"
+    can_reach: "HAS_ITEM(BookOfMudora) AND (HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)"
     source: "app/Region/Inverted/LightWorld/DeathMountain/East.php:25, 161-176"
 
   # `Spectacle Rock` (php:26 added; php:178-188): MoonPearl AND (Hammer OR

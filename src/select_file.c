@@ -2777,6 +2777,7 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       switch (s->mode_weapons) {
         case kModeWeapons_Randomized: return "RAND";
         case kModeWeapons_Assured:    return "ASUR";
+        case kModeWeapons_Swordless:  return "SWLS";
         default:                      return "ERR";
       }
     case kRow_Accessibility:
@@ -2953,10 +2954,17 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_ModeWeapons: {
-      // Phase A supports only Randomized + Assured for mode.weapons.
-      int n = (int)s->mode_weapons + delta;
-      if (n < kModeWeapons_Randomized) n = kModeWeapons_Assured;
-      if (n > kModeWeapons_Assured) n = kModeWeapons_Randomized;
+      // Randomized + Assured + Swordless; skip the reserved vanilla=2 so the
+      // cycle steps 0 -> 1 -> 3 -> 0 (and reverse).
+      int n = (int)s->mode_weapons;
+      if (delta >= 0)
+        n = (n == kModeWeapons_Randomized) ? kModeWeapons_Assured
+          : (n == kModeWeapons_Assured)    ? kModeWeapons_Swordless
+          :                                  kModeWeapons_Randomized;
+      else
+        n = (n == kModeWeapons_Randomized) ? kModeWeapons_Swordless
+          : (n == kModeWeapons_Swordless)  ? kModeWeapons_Assured
+          :                                  kModeWeapons_Randomized;
       s->mode_weapons = (uint8)n;
       break;
     }

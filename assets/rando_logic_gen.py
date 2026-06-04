@@ -764,6 +764,10 @@ GOALS = {"ganon": 0, "fast_ganon": 1, "dungeons": 2, "pedestal": 3, "triforce_hu
 # Glitch levels mirror the `logic` axis: NoGlitches=0, OverworldGlitches=1,
 # MajorGlitches=2, HybridMG=3, NoLogic=4.
 DIFFICULTY_LEVELS = {"easy": 0, "normal": 1, "hard": 2, "expert": 3}
+# Phase B swordless — OP_MODEWEAPONS_EQ operand. Mirrors `ModeWeapons` in
+# src/rando/rando_settings.h. `swordless` is the only Phase B-exposed value
+# beyond randomized/assured, but all four map for completeness.
+MODE_WEAPONS = {"randomized": 0, "assured": 1, "vanilla": 2, "swordless": 3}
 GLITCH_LEVELS = {
     "no_glitches": 0,
     "overworld_glitches": 1,
@@ -774,6 +778,74 @@ GLITCH_LEVELS = {
 # Populated by load_tricks(op_registry) at codegen startup; keys are trick
 # ids (e.g. "boots-clip"), values are bit positions (0..7).
 TRICK_BITS: dict[str, int] = {}
+
+# §12.6 — ROM-version verification status. The string→int encoding MUST match
+# the `RandoRomVerStatus` enum in src/rando/rando_logic.h.
+ROM_VER_STATUS = {
+    "untested-on-us10": 0,
+    "verified-us10": 1,
+    "cross-version": 2,
+    "jp10-only": 3,
+    "us10-different": 4,
+}
+# Populated by load_trick_status(op_registry) at codegen startup; keys are
+# trick ids in BOTH kebab (`boots-clip`) and snake (`boots_clip`) form (snake is
+# what OP_TRICK predicate bodies use), values are the rom_version_status string.
+# Used by well_formedness to reject jp10-only tricks in predicate bodies (§12.6.5).
+TRICK_STATUS: dict[str, str] = {}
+
+
+def load_trick_status(path: Path) -> tuple[list[dict], dict[str, str]]:
+    """Parse `tricks:` rom_version_status (§12.6.1).
+
+    Returns (rows, id_to_status):
+      rows = [{bit, id, status_int}] sorted by bit — for emitting kRandoTrickStatus[].
+      id_to_status = {kebab_id: status_str, snake_id: status_str} — for
+        well_formedness jp10-only rejection (predicate bodies use the snake id).
+    """
+    doc = load_yaml(path)
+    rows: list[dict] = []
+    id_to_status: dict[str, str] = {}
+    for raw in doc.get("tricks", []):
+        bit = raw["bit"]
+        canonical = raw["id"]
+        status = raw.get("rom_version_status", "untested-on-us10")
+        if status not in ROM_VER_STATUS:
+            raise ParseError(
+                f"trick {canonical!r}: rom_version_status {status!r} not in "
+                f"{sorted(ROM_VER_STATUS)}")
+        rows.append({"bit": bit, "id": canonical, "status_int": ROM_VER_STATUS[status]})
+        id_to_status[canonical] = status
+        snake = canonical.replace("-", "_")
+        if snake != canonical:
+            id_to_status[snake] = status
+    rows.sort(key=lambda r: r["bit"])
+    return rows, id_to_status
+
+
+def load_glitch_levels(path: Path) -> list[dict]:
+    """Parse the `glitch_levels:` table (§12.6.2).
+
+    Returns [{level, id, status_int}] sorted by level — for emitting
+    kRandoGlitchLevelStatus[]. `level` is the settings.logic value.
+    """
+    doc = load_yaml(path)
+    rows: list[dict] = []
+    for raw in doc.get("glitch_levels", []):
+        level = raw["level"]
+        gid = raw["id"]
+        if gid in GLITCH_LEVELS and GLITCH_LEVELS[gid] != level:
+            raise ParseError(
+                f"glitch_level {gid!r}: level {level} disagrees with the "
+                f"codegen GLITCH_LEVELS map ({GLITCH_LEVELS[gid]})")
+        status = raw.get("rom_version_status", "untested-on-us10")
+        if status not in ROM_VER_STATUS:
+            raise ParseError(
+                f"glitch_level {gid!r}: rom_version_status {status!r} not in "
+                f"{sorted(ROM_VER_STATUS)}")
+        rows.append({"level": level, "id": gid, "status_int": ROM_VER_STATUS[status]})
+    rows.sort(key=lambda r: r["level"])
+    return rows
 
 
 def load_tricks(path: Path) -> dict[str, int]:
@@ -902,6 +974,13 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
                 f"OP_GLITCH_LEVEL_AT_LEAST: unknown glitch level {name!r}; "
                 f"known: {sorted(GLITCH_LEVELS.keys())}")
         out.append(GLITCH_LEVELS[name])
+    elif op_name == "MODEWEAPONS_EQ":
+        name = _resolve_ident(args[0])
+        if name not in MODE_WEAPONS:
+            raise ParseError(
+                f"OP_MODEWEAPONS_EQ: unknown mode.weapons {name!r}; "
+                f"known: {sorted(MODE_WEAPONS.keys())}")
+        out.append(MODE_WEAPONS[name])
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 
@@ -1016,6 +1095,15 @@ def well_formedness(ast, ops, items, regions, locations, context: str, phase_a_o
             errors.append(f"Phase B op {name!r} not allowed in Phase A predicate ({context})")
         if name == "ITEM_IS" and context not in ("can_place", "always_allow"):
             errors.append(f"OP_ITEM_IS only allowed in placement-context predicates (can_place / always_allow), used in {context}")
+        # §12.6.5 — a predicate MUST NOT reference a trick whose
+        # rom_version_status is jp10-only (confirmed NOT to work on US 1.0).
+        if name == "TRICK" and args:
+            tname = _resolve_ident(args[0])
+            if TRICK_STATUS.get(tname) == "jp10-only":
+                errors.append(
+                    f"OP_TRICK({tname}) references a jp10-only trick (does not "
+                    f"work on US 1.0); remove it from {context} or change its "
+                    f"rom_version_status in op_registry.yaml")
         # Validate operand references (best-effort)
         if name in ("HAS_ITEM", "HAS_AMOUNT", "ITEM_IS"):
             it = _resolve_ident(args[0]) if args else None
@@ -1453,6 +1541,8 @@ def emit_logic_data(
     logic_loc_preds: dict[str, LocationDef] | None = None,
     compiled_overrides: dict[int, list[tuple[str, dict[str, bytes]]]] | None = None,
     compiled_world_state_edges: dict[int, list[tuple[EdgeDef, bytes]]] | None = None,
+    trick_status_rows: list[dict] | None = None,
+    glitch_status_rows: list[dict] | None = None,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -1831,6 +1921,34 @@ def emit_logic_data(
             out.append(f"const uint32 kRandoEdges_{ws_name}Count = 0;")
         out.append("")
 
+    # -----------------------------------------------------------------------
+    # §12.6 — ROM-version verification status tables. The runtime consults
+    # these so the spoiler can warn when a seed enables a trick / glitch level
+    # not yet confirmed to behave on the US 1.0 ROM. Struct + enum are declared
+    # in rando_logic.h.
+    # -----------------------------------------------------------------------
+    tr = trick_status_rows or []
+    out.append("// §12.6 — ROM-version verification status (op_registry.yaml tricks/glitch_levels).")
+    out.append(f"const RandoTrickStatus kRandoTrickStatus[{max(len(tr), 1)}] = {{")
+    if tr:
+        for r in tr:
+            out.append('  { %d, %d, "%s" },' % (r["bit"], r["status_int"], r["id"]))
+    else:
+        out.append('  { 0, 0, "" },')
+    out.append("};")
+    out.append(f"const uint32 kRandoTrickStatusCount = {len(tr)};")
+    out.append("")
+    gl = glitch_status_rows or []
+    out.append(f"const RandoGlitchLevelStatus kRandoGlitchLevelStatus[{max(len(gl), 1)}] = {{")
+    if gl:
+        for r in gl:
+            out.append('  { %d, %d, "%s" },' % (r["level"], r["status_int"], r["id"]))
+    else:
+        out.append('  { 0, 0, "" },')
+    out.append("};")
+    out.append(f"const uint32 kRandoGlitchLevelStatusCount = {len(gl)};")
+    out.append("")
+
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
@@ -1896,8 +2014,11 @@ def main(argv=None):
     # Phase B §56 — populate the OP_TRICK operand lookup. The codegen now
     # resolves `OP_TRICK(boots-clip)` to the bit-position operand byte;
     # without this load, every trick reference would fail well-formedness.
-    global TRICK_BITS
+    global TRICK_BITS, TRICK_STATUS
     TRICK_BITS = load_tricks(ops_path)
+    # §12.6 — ROM-version verification status for tricks + glitch levels.
+    trick_status_rows, TRICK_STATUS = load_trick_status(ops_path)
+    glitch_status_rows = load_glitch_levels(ops_path)
     items = load_items(items_path)
     locations = load_locations(locs_path)
     if not schema_path.exists():
@@ -2163,7 +2284,9 @@ def main(argv=None):
     emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates,
                     out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds,
                     compiled_overrides=compiled_overrides,
-                    compiled_world_state_edges=compiled_world_state_edges)
+                    compiled_world_state_edges=compiled_world_state_edges,
+                    trick_status_rows=trick_status_rows,
+                    glitch_status_rows=glitch_status_rows)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     icon_atlas_count = emit_icon_atlas(
         Path("assets/rando/icon_atlas.yaml"),

@@ -12,6 +12,7 @@
 //   sram_progress_indicator_3  0xF3C9  variables.h:1119  (NPC-trade bits)
 //   link_which_pendants        0xF374  variables.h:1107  (pendant bits)
 //   link_has_crystals          0xF37A  variables.h:1112  (crystal bits)
+//   save_ow_event_info         0xF280  variables.h:1061  (per-screen OW event bits)
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "imgui.h"
 #include "game_cheats.h"
@@ -77,6 +78,16 @@ extern "C" void DbgFlags_Render(void) {
     Cheats_BitCheckbox("Sanctuary rescue cutscene seen", 0xF3C6, 1);
     Cheats_BitCheckbox("Zelda rescued", 0xF3C6, 2);
     Cheats_BitCheckbox("Uncle left house", 0xF3C6, 4);
+
+    // -- World events (save_ow_event_info 0xF280, per-screen overworld bits) -----
+    // Pyramid of Power screen = 0x5b; bit5 0x20 = "Ganon's hole carved" (set by
+    // CreatePyramidHole after Agahnim 2, overworld.c:3931). The hole renders on the
+    // next load of that screen (Overworld_LoadEventOverlay case 0x5b). Rando-safe:
+    // it's an overworld access state, not a tracked location, so placement is
+    // unaffected — kept enabled under the randomizer (the whole point is testing
+    // the Ganon fight without clearing Ganon's Tower).
+    ImGui::SeparatorText("World events");
+    Cheats_BitCheckbox("Pyramid of Power hole open", 0xF280 + 0x5b, 5);
 
     // -- NPC trades (sram_progress_indicator_3 0xF3C9, bits) -----------------
     // Each maps to a LOC_* whose checked-state the randomizer tracks separately,

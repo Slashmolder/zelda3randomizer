@@ -198,6 +198,18 @@ ops:
       so any predicate referencing this op evaluates to its zero-glitch branch.
     contexts: [can_reach, can_place]
 
+  - id: 18
+    name: OP_MODEWEAPONS_EQ
+    phase: B
+    operands: [mode_weapons]
+    semantics: |
+      settings.mode_weapons == operand (randomized=0, assured=1, vanilla=2,
+      swordless=3). Added for swordless mode (add-rando-trick-logic-and-axes §4):
+      the Ganon / Agahnim / CanMeltThings predicates gate their swordless branch
+      on OP_MODEWEAPONS_EQ(swordless). Under the default (randomized) it is false,
+      so the swordless disjuncts are inert and default placement is unchanged.
+    contexts: [can_reach, can_place]
+
 # ---------------------------------------------------------------------------
 # Phase B trick bit-position scaffolding (priming for `add-rando-trick-logic-and-axes`)
 # ---------------------------------------------------------------------------
@@ -217,6 +229,18 @@ ops:
 #
 # Initial 8 tricks (the "canonical 5" + 3 fill, per Phase B risk register R11):
 
+# `status:` values
+#   scaffold    — bit reserved, no predicates wired (the priming state).
+#   authored    — predicates wired across logic_parts/** + PHP-cited; maps to a
+#                 real ALTTPR config flag (verified by an ALTTPR config-flag grep).
+#   placeholder — fork-invented trick id with NO upstream ALTTPR flag to ground.
+#                 Cannot be PHP-authored; the bit exists but no predicate reads it.
+#
+# `rom_version_status:` (§12.6 — ALTTPR targets JP 1.0; this fork is US 1.0)
+#   untested-on-us10 | verified-us10 | cross-version | jp10-only | us10-different
+#   Default new entries to `untested-on-us10`, except pure player-skill tricks
+#   (no ROM dependency) which are `cross-version`. Per-trick US-1.0 verification
+#   is OUT OF SCOPE here (playtest work) — see tasks §12.6.7.
 tricks:
   - bit: 0
     id: boots-clip
@@ -225,8 +249,13 @@ tricks:
       Using boots to clip into a tile slightly inside an obstacle, enabling
       out-of-bounds traversal or shortcuts.
     sources:
-      # apply-time: cite ALTTPR PHP closures referencing this trick
-    status: scaffold
+      # ALTTPR config flag `canBootsClip` (134 region-closure uses). Wired in the
+      # fork via macros.yaml CanBootsClip = OP_TRICK(boots_clip) AND HAS_ITEM(Boots),
+      # composed at e.g. logic_parts/10_desert_palace.yaml, 11_tower_of_hera.yaml,
+      # 31_misery_mire.yaml, logic.yaml:286 (Lake Hylia island).
+      - "app/Region/**: config('canBootsClip', false) — 134 uses"
+    status: authored
+    rom_version_status: untested-on-us10
 
   - bit: 1
     id: fake-flippers
@@ -234,7 +263,12 @@ tricks:
     description: |
       Traversing water without flippers using sprite-based water bounce.
     sources:
-    status: scaffold
+      # ALTTPR config flag `canFakeFlipper` (33 uses). Fork macro CanFakeFlippers
+      # = OP_TRICK(fake_flippers); composed `HAS_ITEM(Flippers) OR CanFakeFlippers()`
+      # at swim sites (logic.yaml:286, 30_ice_palace.yaml:68).
+      - "app/Region/**: config('canFakeFlipper', false) — 33 uses"
+    status: authored
+    rom_version_status: untested-on-us10
 
   - bit: 2
     id: bunny-revival
@@ -242,17 +276,28 @@ tricks:
     description: |
       Recovering from bunny-state mid-movement to chain into walls/screens.
     sources:
-    status: scaffold
+      # ALTTPR config flag `canBunnyRevive` (145 uses) + ItemCollection.php:457-466
+      # canBunnyRevive(). Fork macro CanBunnyRevival = OP_TRICK(bunny_revival) AND
+      # CanBunnyRevive(world); 50 predicate uses across logic_parts/**.
+      - "app/Region/**: config('canBunnyRevive', false) — 145 uses"
+      - "app/Support/ItemCollection.php:457-466 (canBunnyRevive)"
+    status: authored
+    rom_version_status: untested-on-us10
 
   - bit: 3
     id: dark-room-nav
     name: "Dark room navigation"
     description: |
-      Navigating dark rooms without the lamp by memorizing layouts. Some
-      community considers this not a glitch but a tech skill; settings axis
-      treats it as a trick toggle.
+      Navigating dark rooms without the lamp by memorizing layouts. Pure player
+      skill (memorize the layout) — no ROM-version dependency, hence cross-version.
     sources:
-    status: scaffold
+      # ALTTPR `item.require.Lamp` config (default 1); setting it to 0 drops the
+      # Lamp requirement on dark-room gates. Fork macro CanDarkRoomNav =
+      # OP_TRICK(dark_room_nav); composed `HAS_ITEM(Lamp) OR CanDarkRoomNav()`
+      # at 42 dark-room predicate sites (EP/HCT/PoD/...).
+      - "config/alttp.php + app/Region/**: item.require.Lamp — 42 dark-room gates"
+    status: authored
+    rom_version_status: cross-version
 
   - bit: 4
     id: bomb-jump
@@ -260,7 +305,11 @@ tricks:
     description: |
       Using a bomb's knockback to vault over an obstacle.
     sources:
-    status: scaffold
+      # NO corresponding ALTTPR config flag exists (config-flag grep finds no
+      # canBombJump). Fork-invented placeholder; cannot be PHP-grounded. The
+      # CanBombJump macro exists but is referenced by ZERO predicates.
+    status: placeholder
+    rom_version_status: untested-on-us10
 
   - bit: 5
     id: pearl-bypass
@@ -270,7 +319,13 @@ tricks:
       (Distinct from Inverted-world bunny-state at start; this trick applies
       when in dark world without pearl in Open/Standard.)
     sources:
-    status: scaffold
+      # ALTTPR config flag `canOWYBA` (Over-World Y-Button-Aim, 203 uses) — the
+      # bottle-assisted dark-world bunny traversal. Fork macro CanPearlBypass =
+      # OP_TRICK(pearl_bypass) AND HasABottle(); 72 predicate uses, the most-wired
+      # trick (composed `HAS_ITEM(MoonPearl) OR CanPearlBypass()`).
+      - "app/Region/**: config('canOWYBA', false) — 203 uses"
+    status: authored
+    rom_version_status: untested-on-us10
 
   - bit: 6
     id: hookshot-clip
@@ -278,7 +333,10 @@ tricks:
     description: |
       Hookshot through a wall onto a target normally unreachable.
     sources:
-    status: scaffold
+      # NO corresponding ALTTPR config flag exists. Fork-invented placeholder;
+      # cannot be PHP-grounded. CanHookshotClip macro exists, ZERO predicate uses.
+    status: placeholder
+    rom_version_status: untested-on-us10
 
   - bit: 7
     id: lobotomy
@@ -288,8 +346,48 @@ tricks:
       the 8th trick if community prioritizes; replace if a higher-priority
       Phase B trick emerges.
     sources:
-    status: scaffold
+      # NO corresponding ALTTPR config flag exists (community meme name).
+      # Fork-invented placeholder; cannot be PHP-grounded. ZERO predicate uses.
+    status: placeholder
+    rom_version_status: untested-on-us10
 
-# Note: when Phase B `add-rando-trick-logic-and-axes` applies, the `status:`
-# field for each trick advances from "scaffold" to "authored" once the
-# per-location applicability is recorded in the logic_parts YAML files.
+# ---------------------------------------------------------------------------
+# Glitch levels (§12.6.2). Surfaced as registry entries so the same
+# `rom_version_status` field + the spoiler `unverified_tricks_enabled` warning
+# apply to OP_GLITCH_LEVEL_AT_LEAST tiers the same way they apply to tricks.
+# `level` is the settings.logic value (matches rando_settings.h `logic` enum +
+# the codegen GLITCH_LEVELS map). NoGlitches (0) is the default tier and is
+# NEVER unverified, so it is intentionally absent.
+# ---------------------------------------------------------------------------
+glitch_levels:
+  - level: 1
+    id: overworld_glitches
+    name: "Overworld Glitches"
+    description: |
+      OWG tier. ALTTPR `canOneFrameClipOW` (134) and related overworld clips.
+      KNOWN GAP (fresh-eyes audit 2026-06-04): the as-built Slice 4 §7 graph gates
+      every glitch site at OP_GLITCH_LEVEL_AT_LEAST(major_glitches) (tier 2) — there
+      are currently ZERO OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) (tier 1) gates.
+      So `logic=OverworldGlitches` is presently a PLACEMENT NO-OP (byte-identical to
+      NoGlitches); only `logic=MajorGlitches` changes reachability. This is the SAFE
+      direction (stronger than upstream — never opens a location too early). Proper
+      OWG fidelity (re-map `canOneFrameClipOW`/`canBootsClip`-OW sites to tier 1) is
+      follow-on work and is US-1.0 unverified regardless — see tasks §12.5/playtest.
+    rom_version_status: untested-on-us10
+  - level: 2
+    id: major_glitches
+    name: "Major Glitches"
+    description: |
+      MG tier. ALTTPR canMirrorClip/canMirrorWrap/canOneFrameClipUW/etc.
+      40 predicate uses of OP_GLITCH_LEVEL_AT_LEAST(major_glitches) in the graph.
+    rom_version_status: untested-on-us10
+  - level: 3
+    id: hybrid_major_glitches
+    name: "Hybrid Major Glitches"
+    description: "Reserved for Phase D (add-rando-major-glitch); not user-selectable yet."
+    rom_version_status: untested-on-us10
+  - level: 4
+    id: no_logic
+    name: "No Logic"
+    description: "Reserved for Phase D; not user-selectable yet."
+    rom_version_status: untested-on-us10

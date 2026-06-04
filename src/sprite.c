@@ -15,6 +15,7 @@
 #include "assets.h"
 #include "rando/shuffle_boss.h"
 #include "rando/shuffle_drops.h"
+#include "rando/rando.h"  // Rando_IsSwordlessActive (swordless Ganon damage)
 static const uint16 kOamGetBufferPos_Tab0[6] = {0x171, 0x201, 0x31, 0xc1, 0x141, 0x1d1};
 static const uint16 kOamGetBufferPos_Tab1[48] = {
    0x30,  0x50,  0x80,  0xb0,  0xe0, 0x110, 0x140, 0x170, 0x1d0, 0x1d4, 0x1dc, 0x1e0, 0x1e4, 0x1ec, 0x1f0, 0x1f8,
@@ -2661,7 +2662,13 @@ uint8 Sprite_CheckDamageFromLink(int k) {  // 86f2b4
     return kCheckDamageFromPlayer_Carry | kCheckDamageFromPlayer_Ne;
 
   if (link_item_in_hand & 10) {
-    if (sprite_type[k] >= 0xd6)
+    // Swordless (ALTTPR setSwordlessMode / HammerableGanon, asm $86F2EA): with
+    // the hammer in hand, sprites >= 0xd6 (Ganon 0xd6/0xd7) are normally immune
+    // to melee — Ganon takes damage only via the sword's special path. Under
+    // swordless the threshold rises to 0xd8 so the hammer can knock Ganon through
+    // his phase thresholds (silver arrows still finish him). Gated, so non-
+    // swordless behavior is byte-identical.
+    if (sprite_type[k] >= (Rando_IsSwordlessActive() ? 0xd8 : 0xd6))
       return 0;
     if (sprite_state[k] == 11 && sprite_unk5[k] != 0) {
       sprite_state[k] = 2;

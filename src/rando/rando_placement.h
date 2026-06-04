@@ -53,6 +53,7 @@ typedef struct PlacementStats {
   uint16 forward_fill_fallback_count;  // # of placements that fell to forward-fill
   uint8 attempts_used;                 // # of assumed-fill attempts taken
   uint16 best_unreachable_count;       // unreachable placements in the accepted attempt
+  uint32 per_item_rewind_count;        // total per-item rewind events across all attempts (Bug #7)
 } PlacementStats;
 const PlacementStats *Placement_GetLastStats(void);
 

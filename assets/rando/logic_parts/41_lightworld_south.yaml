@@ -100,11 +100,12 @@ locations:
   # `Bombos Tablet` (php:136-142): BookOfMudora AND hasSword(2) AND
   # (canBootsClip+Boots OR canOneFrameClipOW OR mirror+south-DW).
   # Phase A retained mirror+south-DW only. Phase B Slice 4 §7 surfaces
-  # boots-clip + OWG. The swordless-mode Hammer alternative still drops
-  # (swordless is a Phase B mode_weapons axis tracked separately).
+  # boots-clip + OWG. §4 swordless: the tablet reads with Book+Hammer under
+  # swordless (South.php:137-138 `hasSword(2) || (swordless && Hammer)`).
+  # Inert under randomized. Runtime: BombosTablet cutscene accepts hammer.
   - id: "Bombos Tablet"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(BookOfMudora) AND HasSword2() AND ((HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "HAS_ITEM(BookOfMudora) AND (HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND ((HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
     source: "app/Region/Standard/LightWorld/South.php:136-142"
 
   # `Cave 45` (php:144-148):

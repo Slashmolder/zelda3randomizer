@@ -102,13 +102,16 @@ macros:
   # ===========================================================================
   - name: CanMeltThings
     parameters: [world]
-    body: "HAS_ITEM(FireRod) OR (HAS_ITEM(Bombos) AND HasSword(1))"
+    body: "HAS_ITEM(FireRod) OR (HAS_ITEM(Bombos) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)))"
     source: "app/Support/ItemCollection.php:402-406"
     notes: |
-      ALTTPR: `FireRod OR (Bombos AND (swordless OR hasSword()))`. Phase A
-      pins `mode.weapons != swordless`, so the swordless-mode disjunct is
-      dropped here; Bombos requires a sword to cast. Phase B re-adds the
-      `WORLDSTATE_EQ(swordless)` branch when swordless-mode lands.
+      ALTTPR: `FireRod OR (Bombos AND (swordless OR hasSword()))`. The swordless
+      branch landed in Phase B (add-rando-trick-logic-and-axes §4): under
+      swordless the runtime lets you cast Bombos without a sword (see
+      Rando_IsSwordlessActive), so OP_MODEWEAPONS_EQ(swordless) satisfies the
+      cast prerequisite; otherwise a sword is required. Under the default
+      (randomized) OP_MODEWEAPONS_EQ(swordless) is false → reduces to the
+      Phase A shape `FireRod OR (Bombos AND HasSword(1))`, default-digest-preserving.
 
   # ===========================================================================
   # canFly — duck fast-travel.

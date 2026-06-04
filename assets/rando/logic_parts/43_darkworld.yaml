@@ -194,21 +194,26 @@ locations:
   # `Ganon` (NorthEast.php:186-234): the prize-event for clearing the game.
   # Phase A goal=fast_ganon: the dungeons/ganonhunt/crystals guards drop
   # (fast_ganon needs no DefeatAgahnim2 nor crystals.ganon count).
-  # Surviving body: MoonPearl AND
-  #   ((swordless+Hammer+Lamp branch dropped) OR
-  #    (hasSword(2) AND (Lamp OR (FireRod AND canExtendMagic(world, 3)))) OR
-  #    (hasSword(3) AND (Lamp OR (FireRod AND canExtendMagic(world, 2)))))
-  # Phase A inline: we use the hasSword(2)+Lamp disjunct as the minimum;
-  # extended-magic+FireRod is a Phase A authoring shorthand using
-  # CanExtendMagic(world, 1) (the default 2-bar form).
-  # Slice 4 §7: NorthEast.php pearl gate includes a canOWYBA+bottle
-  # alternative (`MoonPearl OR (canOWYBA AND hasABottle)`). PHP for Ganon
-  # has NO canBunnyRevive disjunct on the pearl gate — distinguish from
-  # other DW pearl-OR sites that surface CanBunnyRevival.
+  # Surviving body: MoonPearl AND silvers-clause AND weapon-clause AND lamp-clause.
+  # Weapon clause (NorthEast.php:228-233):
+  #   (swordless AND Hammer AND (Lamp OR FireRod+magic1))
+  #   OR (hasSword(2) AND (Lamp OR FireRod+magic3))
+  #   OR (hasSword(3) AND (Lamp OR FireRod+magic2))
+  # Silvers clause (NorthEast.php:227): `!requireBetterBow || canShootArrows(2)`.
+  # `requireBetterBow` is set true ONLY in swordless (World.php:269-273) → silvers
+  # are required iff swordless. Phase A authoring shorthand uses CanExtendMagic
+  # (world, 1) for the FireRod magic budget (more permissive than ALTTPR's 2/3).
+  # §4 swordless: weapon clause becomes `swordless ? (Hammer AND CanShootSilvers())
+  # : HasSword2()`. Under the default (randomized) OP_MODEWEAPONS_EQ(swordless) is
+  # false → the NOT-swordless arm reduces to bare HasSword2(), so default seeds are
+  # byte-identical. Runtime: under swordless the Hammer damages Ganon (see
+  # Rando_IsSwordlessActive in misc/sprite code); silvers still finish him.
+  # Slice 4 §7: NorthEast.php pearl gate includes a canOWYBA+bottle alternative;
+  # PHP for Ganon has NO canBunnyRevive disjunct on the pearl gate.
   - id: "Ganon"
     region: DarkWorld_NorthEast
-    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND HasSword2() AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
-    source: "app/Region/Standard/DarkWorld/NorthEast.php:186-234"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer) AND CanShootSilvers()) OR ((NOT OP_MODEWEAPONS_EQ(swordless)) AND HasSword2())) AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
+    source: "app/Region/Standard/DarkWorld/NorthEast.php:186-234 + World.php:269-273 (requireBetterBow)"
 
   # ===========================================================================
   # Dark World — North West (NorthWest.php:14-167)

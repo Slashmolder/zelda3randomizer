@@ -185,9 +185,11 @@ static const char *const kGoalLabels[] = {
     "triforce-hunt", "ganonhunt", "completionist"};
 static const char *const kItemPoolLabels[] = {"easy", "normal", "hard", "expert"};
 static const char *const kDungeonModeLabels[] = {"vanilla", "dungeon", "wild"};
-// Phase-A subset only (spec line 84): mode_weapons = {randomized, assured}.
-// Phase B reservations (vanilla/swordless for weapons) are NOT offered.
-static const char *const kModeWeaponsLabels[] = {"randomized", "assured"};
+// mode_weapons: randomized=0, assured=1, swordless=3 are exposed. vanilla=2 stays
+// reserved (out of scope), so the combo maps display rows to enum values
+// NON-contiguously (can't use the index==value EnumCombo helper).
+static const struct { uint8 value; const char *label; } kModeWeaponsOptions[] = {
+    {0, "randomized"}, {1, "assured"}, {3, "swordless"}};
 // Accessibility — full ALTTPR three-way (index == enum value):
 //   [0] items        = kAccessibility_Items     ("100% Inventory")
 //   [1] locations    = kAccessibility_Locations ("100% Locations")
@@ -196,6 +198,18 @@ static const char *const kModeWeaponsLabels[] = {"randomized", "assured"};
 // reachability is required (locations = every location; items = every
 // progression item; beatable only = goal only).
 static const char *const kAccessibilityLabels[] = {"items", "locations", "beatable only"};
+// Phase B — glitch logic level (index == settings.logic enum value). The UI
+// offers the three shipped tiers; HybridMG(3)/NoLogic(4) are Phase D and not
+// selectable here. Per add-rando-trick-logic-and-axes §3.3.
+static const char *const kLogicLabels[] = {"NoGlitches", "OverworldGlitches", "MajorGlitches"};
+// Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
+// the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
+// three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
+// placeholders with NO logic gates — toggling them changes nothing.
+static const char *const kTrickUiNames[] = {
+    "boots-clip", "fake-flippers", "bunny-revival", "dark-room-nav",
+    "bomb-jump", "pearl-bypass", "hookshot-clip", "lobotomy"};
+static const bool kTrickWired[] = {true, true, true, true, false, true, false, false};
 
 // Apply the Completionist accessibility lock to a settings struct. Returns true
 // if the struct was mutated.
@@ -316,7 +330,24 @@ static void Panel_General() {
   }
 
   if (EnumCombo("Item pool difficulty", &s->item_pool_difficulty, kItemPoolLabels, 4)) changed = true;
-  if (EnumCombo("Weapons mode", &s->mode_weapons, kModeWeaponsLabels, 2)) changed = true;
+  // Weapons mode — custom combo because the exposed values (0,1,3) skip the
+  // reserved vanilla=2.
+  {
+    const char *wpreview = "?";
+    for (auto &o : kModeWeaponsOptions)
+      if (o.value == s->mode_weapons) { wpreview = o.label; break; }
+    if (ImGui::BeginCombo("Weapons mode", wpreview)) {
+      for (auto &o : kModeWeaponsOptions) {
+        bool sel = (s->mode_weapons == o.value);
+        if (ImGui::Selectable(o.label, sel) && !sel) { s->mode_weapons = o.value; changed = true; }
+        if (sel) ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    HelpTooltip("swordless: no swords in the pool — hammer/net stand in for the\n"
+                "sword (Ganon, Agahnim, medallions, tablets, curtains). UNVERIFIED\n"
+                "on US 1.0; verify by playtest before racing it.");
+  }
 
   // Accessibility — read-only & forced to "locations" while goal=Completionist.
   bool acc_locked = (s->goal == kGoal_Completionist);
@@ -334,6 +365,38 @@ static void Panel_General() {
                 "locations: every location is reachable (100% locations).\n"
                 "beatable only: only the goal is reachable; some items or\n"
                 "locations may be unreachable.");
+  }
+
+  // ---- Logic & tricks (Phase B logic-relaxation axes) ----
+  ImGui::SeparatorText("Logic & tricks");
+  // Glitch logic level. UI offers the 3 shipped tiers; clamp a loaded value of
+  // 3/4 (Phase D) down so the combo preview is valid.
+  if (s->logic > 2) s->logic = 2;
+  if (EnumCombo("Logic", &s->logic, kLogicLabels, 3)) changed = true;
+  HelpTooltip("NoGlitches (default) = vanilla logic.\n"
+              "OverworldGlitches / MajorGlitches assume out-of-logic glitch\n"
+              "routes. UNVERIFIED on US 1.0 (ALTTPR targets JP 1.0) — the\n"
+              "spoiler flags an `unverified_tricks_enabled` warning.");
+  // Tricks — multi-select bitmask. Each checkbox toggles one settings.tricks bit.
+  if (ImGui::TreeNodeEx("Tricks (out-of-logic techniques)",
+                        s->tricks ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+    ImGui::TextDisabled("Enabling a trick assumes the player can perform it.\n"
+                        "All are UNVERIFIED on US 1.0 except dark-room-nav.");
+    for (int i = 0; i < 8; i++) {
+      bool on = (s->tricks & (uint8)(1u << i)) != 0;
+      char lbl[64];
+      snprintf(lbl, sizeof(lbl), "%s%s", kTrickUiNames[i],
+               kTrickWired[i] ? "" : " (placeholder)");
+      if (ImGui::Checkbox(lbl, &on)) {
+        if (on) s->tricks |= (uint8)(1u << i);
+        else    s->tricks &= (uint8)~(1u << i);
+        changed = true;
+      }
+      if (!kTrickWired[i])
+        HelpTooltip("Fork-invented placeholder — no ALTTPR logic gate is wired "
+                    "to this bit, so toggling it changes nothing.");
+    }
+    ImGui::TreePop();
   }
 
   // ---- Triforce / Ganon Hunt piece fields (only for those goals) ----
@@ -395,8 +458,6 @@ static void Panel_General() {
   // of disabled controls, which read as broken/confusing widgets.
   if (ImGui::CollapsingHeader("Locked settings (fixed in this version)")) {
     ImGui::TextDisabled("These axes aren't configurable yet — every seed uses these values:");
-    ImGui::BulletText("Logic: NoGlitches");
-    ImGui::BulletText("Tricks: none");
     ImGui::BulletText("Pyramid bow upgrade: Silvers");
   }
   HelpTooltip("pinned in Phase A");

@@ -2747,7 +2747,12 @@ void LinkItem_Ether() {  // 87a494
     return;
   button_mask_b_y &= ~0x40;
 
-  if (is_standing_in_doorway || flag_block_link_menu || dung_savegame_state_bits & 0x8000 || !((uint8)(link_sword_type + 1) & ~1) ||
+  // Swordless (ALTTPR setSwordlessMode / AllowSwordlessMedallionUse, asm
+  // CheckMedallionSword): the medallion cast (Bombos/Ether/Quake) normally needs a
+  // sword (`(sword+1)&~1`==0 means no-sword → blocked). Under swordless the cast is
+  // permitted without a sword so Ether/Quake can open Misery Mire / Turtle Rock.
+  // Gated so non-swordless behavior is byte-identical.
+  if (is_standing_in_doorway || flag_block_link_menu || dung_savegame_state_bits & 0x8000 || (!Rando_IsSwordlessActive() && !((uint8)(link_sword_type + 1) & ~1)) ||
       follower_dropped && follower_indicator == 13) {
     Ancilla_Sfx2_Near(60);
     return;
@@ -2796,7 +2801,12 @@ void LinkItem_Bombos() {  // 87a569
     return;
   button_mask_b_y &= ~0x40;
 
-  if (is_standing_in_doorway || flag_block_link_menu || dung_savegame_state_bits & 0x8000 || !((uint8)(link_sword_type + 1) & ~1) ||
+  // Swordless (ALTTPR setSwordlessMode / AllowSwordlessMedallionUse, asm
+  // CheckMedallionSword): the medallion cast (Bombos/Ether/Quake) normally needs a
+  // sword (`(sword+1)&~1`==0 means no-sword → blocked). Under swordless the cast is
+  // permitted without a sword so Ether/Quake can open Misery Mire / Turtle Rock.
+  // Gated so non-swordless behavior is byte-identical.
+  if (is_standing_in_doorway || flag_block_link_menu || dung_savegame_state_bits & 0x8000 || (!Rando_IsSwordlessActive() && !((uint8)(link_sword_type + 1) & ~1)) ||
       follower_dropped && follower_indicator == 13) {
     Ancilla_Sfx2_Near(60);
     return;
@@ -2844,7 +2854,12 @@ void LinkItem_Quake() {  // 87a64b
     return;
   button_mask_b_y &= ~0x40;
 
-  if (is_standing_in_doorway || flag_block_link_menu || dung_savegame_state_bits & 0x8000 || !((uint8)(link_sword_type + 1) & ~1) ||
+  // Swordless (ALTTPR setSwordlessMode / AllowSwordlessMedallionUse, asm
+  // CheckMedallionSword): the medallion cast (Bombos/Ether/Quake) normally needs a
+  // sword (`(sword+1)&~1`==0 means no-sword → blocked). Under swordless the cast is
+  // permitted without a sword so Ether/Quake can open Misery Mire / Turtle Rock.
+  // Gated so non-swordless behavior is byte-identical.
+  if (is_standing_in_doorway || flag_block_link_menu || dung_savegame_state_bits & 0x8000 || (!Rando_IsSwordlessActive() && !((uint8)(link_sword_type + 1) & ~1)) ||
       follower_dropped && follower_indicator == 13) {
     Ancilla_Sfx2_Near(60);
     return;
