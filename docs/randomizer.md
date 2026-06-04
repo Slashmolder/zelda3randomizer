@@ -166,6 +166,29 @@ The drop-shuffle toggle is exposed in the PC native settings window under
 shuffled-drops *visuals* are verified only by playtest — the headless checks
 above cover determinism + the structural invariants.
 
+## In-game item behavior
+
+Several items that vanilla packs two-into-one byte are shuffled as independent
+items by the randomizer, so their grant/selection behavior differs from vanilla:
+
+- **Boomerang** and **magic upgrade** are *progressive*: the **1st** one you
+  collect is always the lower tier (blue boomerang / ½ magic) and the **2nd** is
+  always the higher tier (red boomerang / ¼ magic), regardless of which item the
+  seed actually placed. You can never be downgraded, and no pickup is wasted.
+- **Bow** keeps item identity but **never downgrades**: a wood bow grants wood, a
+  silver-arrow upgrade grants silver, and collecting the lower one after the
+  higher one does nothing (your silver bow stays silver). (Bow is distinct from
+  boomerang here because wood-vs-silver is a real logic requirement.)
+- **Sword / shield / gloves / mail** likewise never downgrade if a seed hands you
+  a lower tier after a higher one.
+
+**Item-menu swap (Press A):** when you own *both* tiers of a shared-slot item,
+highlight that slot in the inventory menu and press **A** to swap which tier is
+selected — **flute ↔ shovel**, **blue ↔ red boomerang**, and **wood ↔ silver
+arrows** (the bow). The selected tier persists across save/reload. (Useful e.g.
+to fire wood arrows instead of consuming silver, or to use the shovel after the
+flute became your selected Y-item.)
+
 ## Share-string format
 
 Magic prefix: `ZRSS` (Zelda Rando Share String). Distinct from alttpr.com's
@@ -195,7 +218,9 @@ slots as vanilla. Sidecar layout:
 Slot header records: `slot_kind`, `generator_version`, `settings_hash`,
 `share_string`, `last_vanilla_write_version`, `sram_slot_checksum_at_last_write`,
 `placement_table_size`, `flags`, `mushroom_held`, hints/`goal`/`world_state`/
-`flute_shovel_owned` ext bytes, and (`@70`) `settings_present`.
+`flute_shovel_owned` ext bytes, (`@70`) `settings_present`, (`@71`/`@72`)
+entrance-shuffle axes/attempt, and (`@73`/`@74`) `boomerang_owned`/`bow_owned`
+(the progressive/swap ownership bitfields; reserved tail now `@75`–`@79`).
 
 **format_version 2** (added with the rich tracker windows): each slot appends a
 `kSettingsCanonicalLen`-byte canonical `RandoSettings` blob after the checked
