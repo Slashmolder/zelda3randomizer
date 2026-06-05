@@ -73,15 +73,20 @@ Examples:
 ## Settings reference
 
 Full per-axis documentation lives in `randomizer-core / Settings canonical
-serialization order`. Phase A axes:
+serialization order`. The **Setting key** column below is the literal token you
+pass to `--settings=key=value` (parsed by `Settings_ParseCsv` in
+`src/rando/rando_settings.c` — an unknown key is a hard parse error, not a
+silent ignore). Note a few canonical *axis* names differ from their CLI key:
+the `world_state` axis is set via `mode.state`, and the item-pool-difficulty
+axis via `item_pool`.
 
-| Axis | Values | Default |
+| Setting key | Values | Default |
 |---|---|---|
-| `world_state` | `open`, `standard`, `inverted`, `retro` | `open` |
+| `mode.state` | `open`, `standard`, `inverted`, `retro` | `open` |
 | `goal` | `ganon`, `fast_ganon`, `dungeons`, `pedestal`, `triforce-hunt`, `ganonhunt`, `completionist` | `fast_ganon` |
 | `crystals.ganon` | 0..7 | 7 |
 | `crystals.tower` | 0..7 | 7 |
-| `item_pool_difficulty` | `easy`, `normal`, `hard`, `expert` | `normal` |
+| `item_pool` (alias `item.pool`) | `easy`, `normal`, `hard`, `expert` | `normal` |
 | `mode.weapons` | `randomized`, `assured`, `swordless` | `randomized` |
 | `accessibility` | `items`, `locations`, `none` (alias `beatable`; UI label "beatable only") | `items` (auto-set to `locations` for Completionist) |
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
@@ -89,6 +94,8 @@ serialization order`. Phase A axes:
 | `medallion_shuffle` | `true`, `false` | `true` |
 | `boss_shuffle` | `true`, `false` | `false` (generation-only — not runtime-enabled; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
+| `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | `true` — ⚠ **value is inverted vs the key name.** `true` (the default) = boss-heart containers are **pinned** (identity-placed, NOT in the shuffle pool); `false` = hearts are shuffled **into** the pool. The native-settings UI hides this inversion behind the checkbox **"Shuffle boss heart containers"** (checked ⇒ `false`). Setting `false` changes placement. |
+| `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
 
 **Accessibility tiers** (ALTTPR three-way; all three guarantee the seed is

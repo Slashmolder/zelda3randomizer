@@ -688,7 +688,7 @@ entries:
 # YAML *string* (per randomizer-core / CLI manifest schema — YAML 1.1 vs 1.2
 # uint64 parsing portability).
 #
-#   - settings: { mode.state: open, goal: dungeons, item_pool_difficulty: normal }
+#   - settings: { mode.state: open, goal: dungeons, item_pool: normal }
 #     seed: "0xTBD"
 #     label: "all-bosses-12-min"
 #     expected_digest: "<filled-after-first-run>"
