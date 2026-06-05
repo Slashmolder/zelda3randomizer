@@ -29,8 +29,9 @@ All implementation landed in commit `b73e9bb` (squash-merged to `main`); docs in
 - [x] 4.3 Fresh-eyes audit (two parallel agents) — found + fixed: the `arrow_filler` clamp regression (2.3) and the debug-combo ownership desync (2.7).
 
 ## 5. Playtest (owner — slot grant path has no automated test)
-- [ ] 5.1 Magic progressive: collect the two magic upgrades in BOTH orders → ½ then ¼; `QuarterMagic`-first gives ½.
-- [ ] 5.2 Boomerang progressive: 1st pickup = blue, 2nd = red regardless of placed item; Press-A swaps blue↔red.
-- [ ] 5.3 Bow: a silver pickup gives silver, a later wood pickup does not downgrade; Press-A swaps wood↔silver arrows.
-- [ ] 5.4 Magic Bat is collectable when already at ¼ magic; no re-grant after collection.
-- [ ] 5.5 Flute Spot grants once; toggling back to shovel and re-digging the tile yields nothing.
+> Owner playtest-confirmed 2026-06-04.
+- [x] 5.1 Magic progressive: collect the two magic upgrades in BOTH orders → ½ then ¼; `QuarterMagic`-first gives ½.
+- [x] 5.2 Boomerang progressive: 1st pickup = blue, 2nd = red regardless of placed item; Press-A swaps blue↔red.
+- [x] 5.3 Bow: a silver pickup gives silver, a later wood pickup does not downgrade; Press-A swaps wood↔silver arrows.
+- [x] 5.4 Magic Bat is collectable when already at ¼ magic; no re-grant after collection.
+- [x] 5.5 Flute Spot grants once; toggling back to shovel and re-digging the tile yields nothing.

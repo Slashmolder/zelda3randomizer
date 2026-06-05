@@ -1,70 +1,88 @@
-# Zelda3
-A reimplementation of Zelda 3.
+# Zelda 3 Randomizer
 
-Our discord server is: https://discord.gg/AJJbJAzNNJ
+An **in-binary item randomizer** for *The Legend of Zelda: A Link to the Past*,
+built on top of [snesrev/zelda3](https://github.com/snesrev/zelda3) — the
+reverse-engineered C reimplementation of the full game.
 
-## About
+The randomizer ships **inside the same `zelda3` executable** as the vanilla
+port. There is no separate patcher and no `.sfc` to distribute: you build the
+game once, enable the randomizer per save slot, and play. Seed generation
+(logic, placement, spoilers) runs natively in C; placement is deterministic and
+reproducible from a short share string.
 
-This is a reverse engineered clone of Zelda 3 - A Link to the Past.
+Our Discord server is: https://discord.gg/AJJbJAzNNJ
 
-It's around 70-80kLOC of C code, and reimplements all parts of the original game. The game is playable from start to end.
+## What this is (and what it's built on)
 
-You need a copy of the ROM to extract game resources (levels, images). Then once that's done, the ROM is no longer needed.
+This project stands on two bodies of prior work, and would not exist without
+either of them:
 
-It uses the PPU and DSP implementation from [LakeSnes](https://github.com/elzo-d/LakeSnes), but with lots of speed optimizations.
-Additionally, it can be configured to also run the original machine code side by side. Then the RAM state is compared after each frame, to verify that the C implementation is correct.
+- **[snesrev/zelda3](https://github.com/snesrev/zelda3)** — the ~70–80 kLOC C
+  reimplementation of ALTTP that this is a fork of. It reimplements the entire
+  game (playable start to finish) and uses the PPU/DSP from
+  [LakeSnes](https://github.com/elzo-d/LakeSnes) for rendering and for an
+  optional side-by-side RAM-compare verification mode. The original authors also
+  drew heavily on spannerism's Zelda 3 JP disassembly and other community
+  documentation of the game's functions and RAM map.
 
-I got much assistance from spannerism's Zelda 3 JP disassembly and the other ones that documented loads of function names and variables.
+- **ALTTPR (`alttp_vt_randomizer`)** — the long-running community Link to the
+  Past randomizer. **Our randomizer logic is hand-translated from ALTTPR**: the
+  region/location graph (`assets/rando/logic.yaml` and
+  `assets/rando/logic_parts/`), the named logic macros
+  (`assets/rando/macros.yaml`), the canonical location/region/prize naming, and
+  the assumed-fill placement approach all derive from the upstream MIT-licensed
+  PHP randomizer. Every translated predicate carries an inline
+  `source: app/<path>:<line-range>` citation back to the upstream source.
+  Full attribution and licensing are in [`NOTICE`](NOTICE).
 
-## Additional features
+ALTTPR is MIT-licensed; so is snesrev/zelda3; so is this project. See
+[`LICENSE.txt`](LICENSE.txt) and [`NOTICE`](NOTICE) for the complete set of
+upstream copyright notices we preserve.
 
-A bunch of features have been added that are not supported by the original game. Some of them are:
+> You need a copy of the original US ROM only to **extract game resources**
+> (levels, images, music) into `zelda3_assets.dat`. After that one-time step the
+> ROM is no longer needed — the game and the randomizer run entirely from the
+> extracted assets.
 
-Support for pixel shaders.
+## Randomizer
 
-Support for enhanced aspect ratios of 16:9 or 16:10.
+The randomizer activates **per save slot** from the file-select screen. On
+PC, seeds are configured in a dedicated native settings window (see below); a
+headless CLI is available for automation and for the regression test corpus.
 
-Higher quality world map.
+`kGeneratorVersion` in [`src/rando/rando.h`](src/rando/rando.h) is the
+authoritative marker of the live placement/serialization format — it advances
+whenever a placement-affecting change ships. The
+[`docs/randomizer.md`](docs/randomizer.md) reference and the OpenSpec changes
+under [`openspec/changes/`](openspec/changes/) (start at its `README.md` index)
+are the source of truth for current scope and per-feature status.
 
-Support for MSU audio tracks.
+Capabilities that have landed include:
 
-Secondary item slot on button X (Hold X in inventory to select).
+- **World states**: Open, Standard, Inverted, and Retro.
+- **Goals**: `ganon`, `fast_ganon`, `dungeons`, `pedestal`, `triforce-hunt`,
+  `ganonhunt`, and `completionist`, with configurable crystal/tower
+  requirements and Triforce-piece counts.
+- **Shuffles**: prize shuffle, medallion shuffle, multi-mode entrance shuffle
+  (caves / dungeons / Ganon's-Tower / crossed), and experimental boss / enemy-
+  drop shuffles.
+- **Item / logic options**: accessibility tiers (items / locations / beatable),
+  swordless mode, progressive item handling, trick-logic difficulty tiers, and
+  a Retro mode (shops, take-anys, rupee bow, wild small keys).
+- **Hints**: telepathic-tile hints plus fork hint NPCs.
+- **Spoilers**: JSON + text spoilers with sphere breakdown, region-grouped
+  placements, and fallback-warning rollup.
+- **Race mode**: on-disk spoiler suppression at generate time, with a verified
+  `--reveal-spoiler` flow that regenerates placement and checks a SHA-256 stamp.
+- **Deterministic, reproducible placement** with a share-string format, a
+  sidecar save format, and a cross-platform (Linux/macOS) regression corpus
+  wired into CI.
 
-Switching current item with L/R keys.
+### Generating a seed from the command line
 
-## Randomizer (Phase A — most subsystems landed; tracker overlays + race-mode reveal Phase B)
+The CLI generation mode is the headless entry point (it's also what the
+regression corpus drives). It needs the extracted `zelda3_assets.dat`:
 
-This fork is adding an in-binary randomizer. The randomizer ships inside the
-same `zelda3` executable and is enabled per-slot from the file-select screen.
-
-Randomizer status (`kGeneratorVersion` in `src/rando/rando.h` is the authoritative
-version marker — 36 at time of writing; Phase A foundation is archived to
-`openspec/specs/randomizer-*`, Phase B is in progress):
-- Foundation, RNG, share-string, predicate VM, codegen, audit: landed
-- Logic graph (31 regions / 266 location checks / 13 dungeons + overworld):
-  landed for Open + Standard; Inverted + Retro overlays in progress (Phase B)
-- Assumed-fill placement with bounded retry + wall-clock budget,
-  prize/medallion shuffles, sphere computation, goal-completability with
-  strict refusal: landed
-- JSON + text spoilers with fallback-warning rollup, sphere_digest, region-
-  grouped placements: landed
-- Sidecar save format with atomic-commit + snapshot tail-TLV: landed
-- 50-seed regression corpus + cross-platform CI (Linux/macOS): landed
-- D7 init-order replay guard (`--vanilla-ram-check` CLI + CI step): landed
-- §6 grant-site dispatch: 13+ NPC sites, universal chest dispatch with
-  164-entry chest_lookup codegen (164 of 165 ALTTPR chests covered),
-  boss dual-grant, Pyramid Fairy synthesized site, Ether/Bombos tablets,
-  Magic Bat. §6.3 chest_lookup populated via assets/chest_data.py +
-  assets/rando_logic_gen.py. Minigame dispatch (§6.8) deferred.
-- File-select kind-toggle, settings screen with all 7 Phase A goals +
-  presets + asset-warn dialog, alphabet picker for share-string paste,
-  Generate action end-to-end (settings → placement → spoiler + sidecar
-  → return-to-file-select with cursor on the just-generated slot),
-  5-icon visual hash widget on slot banners: landed (§9 UI sprint)
-- In-game tracker overlays + race-mode reveal flow: Phase B
-
-The CLI generation mode is fully functional for single-seed runs across all
-7 Phase A goals × Open/Standard/Retro world states:
 ```sh
 ./zelda3 --generate-seed \
   --settings=mode.state=open,goal=fast_ganon,crystals.ganon=7,crystals.tower=7 \
@@ -72,160 +90,203 @@ The CLI generation mode is fully functional for single-seed runs across all
   --out-spoiler=./spoilers/demo.json
 ```
 
-CLI flags:
-- `--settings=k=v,...` — comma-separated settings overrides (see
-  `docs/randomizer.md` for the full key reference).
-- `--seed=0x...` — uint64 seed.
-- `--out-spoiler=<path>` — JSON spoiler output path (also writes `.txt`).
-- `--out-share-string=<path>` — optional file for the base32 share string.
-- `--budget-seconds=<n>` — bound the placement retry budget (default 5).
-- `--assets-must-be-vanilla` — refuse non-vanilla zelda3_assets.dat blobs.
-- `--allow-broken-seed` — skip the goal-completability refusal (diagnostic).
+| Flag | Effect |
+|---|---|
+| `--settings=k=v,...` | Comma-separated settings overrides (full key reference in [`docs/randomizer.md`](docs/randomizer.md)). |
+| `--seed=0x...` | uint64 seed. |
+| `--out-spoiler=<path>` | JSON spoiler output path (also writes a sibling `.txt`). |
+| `--out-share-string=<path>` | Optional file for the base32 share string. |
+| `--budget-seconds=<n>` | Bound the placement retry budget (default 0). |
+| `--assets-must-be-vanilla` | Refuse a non-vanilla `zelda3_assets.dat`. |
+| `--allow-broken-seed` | Skip the goal-completability refusal (diagnostic). |
+| `--race-mode` | Suppress the on-disk spoiler at generate time. |
+| `--reveal-spoiler=<path>` | Reveal a previously-suppressed race spoiler (regenerate, verify SHA-256 stamp, write full JSON). |
 
-Self-tests (cross-platform determinism):
+Determinism self-tests (no ROM/assets required — they run before asset load):
+
 ```sh
 ./zelda3 --rando-selftest
 ```
 
-Init-order replay guard (D7 — verifies no existing vanilla game code
-writes to the addresses claimed for randomizer state):
-```sh
-python assets/scripts/check_init_order.py --binary=./bin/x64-Release/zelda3.exe
-```
+For contributors: the regression corpus, the logic-VM benchmark
+(`./zelda3 --rando-bench-logic`), the init-order replay guard
+(`assets/scripts/check_init_order.py`), and a set of pure-Python source guards
+(`assets/scripts/check_*.py`) run in CI. See
+[`docs/randomizer.md`](docs/randomizer.md) ("Source-level CI guards") for the
+full list and the generator-version bump policy.
 
-Logic-VM benchmark (CI gate: median ≤ 5 ms desktop):
-```sh
-./zelda3 --rando-bench-logic --bench-iters=1000
-```
+### Native game-settings window (PC)
+
+On Windows/Linux/macOS, press `` ` `` (backquote) — or whatever you bind
+`OpenSettings` to under `[KeyMap]` — to open the **Z3R Settings** window. It
+owns the randomizer settings UI on PC and also configures the game without
+hand-editing `zelda3.ini`:
+
+- **Game Settings** — rebind keyboard/controller, window scale, fullscreen,
+  renderer, widescreen, audio device/MSU, and the `[Features]` gameplay toggles.
+- **Randomizer** — configure and generate a playable seed slot.
+
+Click **Apply** to save. Bindings and gameplay toggles take effect immediately;
+options marked *(restart)* are written to the INI and apply on next launch.
+Apply rewrites only the keys it manages in your loaded INI (`zelda3.user.ini` if
+present, else `zelda3.ini`), preserving comments; a one-time `.bak` is made
+before the first rewrite.
 
 ### `[Randomizer]` INI section
-
-Add to `zelda3.ini`:
 
 ```ini
 [Randomizer]
 ; Bitmask of kFeatures1_* (src/features.h). 1 = kFeatures1_RandomizerActive.
-; Per-slot rather than global once UI lands; this is the global default.
+; Per-slot rather than global once a slot is active; this is the global default.
 Features1 = 0
 
 ; Directory where the JSON / text spoilers land. Default: ./spoilers/
 SpoilerDir = ./spoilers
 
 ; Race-mode default for new slots. When true, the spoiler is stamped but
-; suppressed from the in-game tracker. (Phase B feature; flag reserved here.)
+; suppressed from the in-game tracker.
 RaceMode = false
 
-; Developer-only override per docs/randomizer.md "RAM-compare safety". When
+; Developer-only override (see docs/randomizer.md "RAM-compare safety"). When
 ; true AND a rando slot is active, the dual-runtime RAM compare keeps running
-; (expect spew). NOT documented in the user-facing key map. Default false.
+; (expect spew). Default false.
 DebugForceRamCompare = false
 ```
 
-Full reference: `docs/randomizer.md`. The OpenSpec spec baseline `openspec/specs/randomizer-*/` is the source of truth for scope and acceptance (Phase A archived 2026-05-29; active follow-on changes live under `openspec/changes/`).
+### Randomizer keybindings
 
-## How to Play:
+Bind these in `zelda3.ini` under `[KeyMap]`. Default: unbound (overlays hidden).
+Both toggles reset to hidden on each launch and on slot deactivate.
 
-Option 1: Launcher by RadzPrower (windows only) https://github.com/ajohns6/Zelda-3-Launcher
+| Key id | Action |
+| ---- | ------ |
+| RandoToggleItemTracker | Show/hide the in-game item-tracker overlay |
+| RandoToggleLocationTracker | Show/hide the in-game location-tracker overlay |
 
-Option 2: Building it yourself
+Full reference: [`docs/randomizer.md`](docs/randomizer.md).
 
-Visit Wiki for more info on building the project: https://github.com/snesrev/zelda3/wiki
+## Additional (non-randomizer) features
 
-## Installing Python & libraries on Windows (required for asset extraction steps)
-1. Download [Python](https://www.python.org/ftp/python/3.11.1/python-3.11.1-amd64.exe) installer and install with "Add to PATH" checkbox checked
-2. Open the command prompt
-3. Type `python -m pip install --upgrade pip pillow pyyaml` and hit enter
-4. Close the command prompt
+A number of quality-of-life features inherited from / added on top of the
+upstream reimplementation are also available:
 
-## Compiling on Windows with TCC (1mb Tiny C Compiler)
-1. Download the project by clicking "Code > Download ZIP" on the github page
-2. Extract the ZIP to your hard drive
-3. Place the USA rom named `zelda3.sfc` in the root directory.
-4. Double-click `extract_assets.bat` in the main dir to create `zelda3_assets.dat` in that same dir
-5. Download [TCC](https://github.com/FitzRoyX/tinycc/releases/download/tcc_20221020/tcc_20221020.zip) and extract to the "\third_party" subfolder
-6. Download [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.26.3/SDL2-devel-2.26.3-VC.zip) and extract to the "\third_party" subfolder
-7. Double-click `run_with_tcc.bat` in the main dir to create `zelda3.exe` in that same dir
-8. Configure with `zelda3.ini` in the main dir
+- Pixel-shader support.
+- Enhanced aspect ratios (16:9 or 16:10).
+- Higher-quality world map.
+- MSU audio-track support.
+- Secondary item slot on button X (hold X in the inventory to select).
+- Switching the current item with the L/R keys.
 
-## Compiling on Windows with Visual Studio (4.5gb IDE and compiler)
-Same Steps 1-4 above<br/>
-8. Double-click `Zelda3.sln`<br/>
-9. Install the **Desktop development with C++** workload with the VS Installer if you don't have it already (it should prompt you to do this).<br/>
-10. Change "debug" to "release" in the top dropdown<br/>
-12. Choose "build > build Zelda3" in the menu to create `zelda3.exe` in the "/bin/release" subfolder<br/>
-13. Configure with `zelda3.ini` in the main dir<br/>
+These are configured via the `[Features]` section of `zelda3.ini` (see
+`src/features.h` for the full `kFeatures0_*` bitfield) or the native settings
+window.
 
-## Installing libraries on Linux/MacOS
-1. Open a terminal
-2. Install pip if not already installed
-```sh
-python3 -m ensurepip
-```
-3. Clone the repo and `cd` into it
-```sh
-git clone https://github.com/snesrev/zelda3
-cd zelda3
-```
-4. Install requirements using pip
-```sh
-python3 -m pip install -r requirements.txt
-```
-> **Tip (Linux/macOS):** if you have [uv](https://docs.astral.sh/uv/), you can
-> skip this step entirely. The `Makefile` auto-detects `uv` and runs the asset /
-> codegen tooling in an isolated, auto-provisioned environment (deps from
-> `requirements.txt`) — no manual `pip install` or venv needed. It falls back to
-> the system `python3` when `uv` isn't installed. (Windows builds use `python`
-> directly and are unaffected.)
-5. Install SDL2
-* Ubuntu/Debian `sudo apt install libsdl2-dev`
-* Fedora Linux `sudo dnf install SDL2-devel`
-* Arch Linux `sudo pacman -S sdl2`
-* macOS: `brew install sdl2` (you can get homebrew [here](https://brew.sh/))
+## How to play
 
-## Compiling on Linux/MacOS
-1. Place your US ROM file named `zelda3.sfc` in `zelda3`
-2. Compile
-```sh
-make
-```
-<details>
-<summary>
-Advanced make usage ...
-</summary>
+**Option 1 — Launcher** by RadzPrower (Windows only):
+https://github.com/ajohns6/Zelda-3-Launcher
 
-```sh
-make -j$(nproc) # run on all core
-make clean all  # clear gen+obj and rebuild
-CC=clang make   # specify compiler
-```
-</details>
+**Option 2 — Build it yourself** (see below). The upstream build wiki is also a
+useful reference: https://github.com/snesrev/zelda3/wiki
+
+## Asset extraction (run once, before any build)
+
+Place the USA ROM named `zelda3.sfc` (US region, SHA256
+`66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb`) in the repo
+root, then:
+
+- **Windows**: double-click `extract_assets.bat`
+- **Any platform**: `python assets/restool.py --extract-from-rom`
+
+This creates `zelda3_assets.dat`. Both the `zelda3` executable and
+`zelda3_assets.dat` must sit next to each other for the game to run.
+
+## Installing Python & libraries on Windows (required for asset extraction)
+1. Download [Python](https://www.python.org/ftp/python/3.11.1/python-3.11.1-amd64.exe) and install with "Add to PATH" checked.
+2. Open the command prompt.
+3. Run `python -m pip install --upgrade pip pillow pyyaml`.
+4. Close the command prompt.
+
+## Compiling on Windows with TCC (1 MB Tiny C Compiler)
+1. Download the project ("Code > Download ZIP" on GitHub) and extract it.
+2. Place the USA ROM named `zelda3.sfc` in the root directory.
+3. Double-click `extract_assets.bat` to create `zelda3_assets.dat`.
+4. Download [TCC](https://github.com/FitzRoyX/tinycc/releases/download/tcc_20221020/tcc_20221020.zip) and extract to `third_party/`.
+5. Download [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.26.3/SDL2-devel-2.26.3-VC.zip) and extract to `third_party/`.
+6. Double-click `run_with_tcc.bat` to create `zelda3.exe`.
+7. Configure via `zelda3.ini` in the main dir.
+
+## Compiling on Windows with Visual Studio (4.5 GB IDE and compiler)
+Same asset-extraction steps as above, then:
+1. Double-click `Zelda3.sln`.
+2. Install the **Desktop development with C++** workload with the VS Installer if you don't have it (it should prompt you).
+3. Change "debug" to "release" in the top dropdown.
+4. Choose "Build > Build Zelda3" to create `zelda3.exe` in the `bin/<platform>-<config>` subfolder (e.g. `bin/x64-Release/`).
+5. Configure via `zelda3.ini` in the main dir.
+
+## Installing libraries on Linux/macOS
+1. Open a terminal.
+2. Install pip if needed: `python3 -m ensurepip`.
+3. Clone the repo and `cd` into it:
+   ```sh
+   git clone https://github.com/snesrev/zelda3
+   cd zelda3
+   ```
+4. Install requirements: `python3 -m pip install -r requirements.txt`.
+   > **Tip:** if you have [uv](https://docs.astral.sh/uv/), you can skip this
+   > step. The `Makefile` auto-detects `uv` and runs the asset / codegen tooling
+   > in an isolated, auto-provisioned environment (deps from `requirements.txt`)
+   > — no manual `pip install` or venv needed. It falls back to system `python3`
+   > when `uv` isn't installed. (Windows builds use `python` directly and are
+   > unaffected.)
+5. Install SDL2:
+   * Ubuntu/Debian: `sudo apt install libsdl2-dev`
+   * Fedora: `sudo dnf install SDL2-devel`
+   * Arch: `sudo pacman -S sdl2`
+   * macOS: `brew install sdl2` (homebrew [here](https://brew.sh/))
+
+## Compiling on Linux/macOS
+1. Place the US ROM named `zelda3.sfc` in the repo root.
+2. Build:
+   ```sh
+   make
+   ```
+   <details>
+   <summary>Advanced make usage …</summary>
+
+   ```sh
+   make -j$(nproc) # use all cores
+   make clean all  # clear gen+obj and rebuild
+   CC=clang make   # specify compiler
+   ```
+   </details>
 
 ## Nintendo Switch
 
-You need [DevKitPro](https://devkitpro.org/wiki/Getting_Started) and [Atmosphere](https://github.com/Atmosphere-NX/Atmosphere) installed.
+You need [DevKitPro](https://devkitpro.org/wiki/Getting_Started) and
+[Atmosphere](https://github.com/Atmosphere-NX/Atmosphere) installed.
 
 ```sh
 (dkp-)pacman -S git switch-dev switch-sdl2 switch-tools
-cd platform/switch
-make # Add -j$(nproc) to build using all cores ( Optional )
-# You can test the build directly onto the switch ( Optional )
-nxlink -s zelda3.nro
+cd src/platform/switch
+make # add -j$(nproc) to build using all cores (optional)
+nxlink -s zelda3.nro # test directly on the switch (optional)
 ```
 
-## More Compilation Help
+## More compilation help
 
-Look at the wiki at https://github.com/snesrev/zelda3/wiki for more help.
+See the upstream wiki: https://github.com/snesrev/zelda3/wiki
 
-The ROM needs to be named `zelda3.sfc` and has to be from the US region with this exact SHA256 hash
-`66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb`
-
-In case you're planning to move the executable to a different location, please include the file `zelda3_assets.dat`.
+The ROM must be named `zelda3.sfc`, US region, with SHA256
+`66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb`. If you move
+the executable, bring `zelda3_assets.dat` with it.
 
 ## Usage and controls
 
-The game supports snapshots. The joypad input history is also saved in the snapshot. It's thus possible to replay a playthrough in turbo mode to verify that the game behaves correctly.
-
-The game is run with `./zelda3` and takes an optional path to the ROM-file, which will verify for each frame that the C code matches the original behavior.
+The game supports snapshots. The joypad input history is saved in the snapshot,
+so a playthrough can be replayed in turbo mode to verify the game behaves
+correctly. Running `./zelda3` with an optional path to the ROM file verifies,
+each frame, that the C code matches the original behavior (side-by-side mode).
 
 | Button | Key         |
 | ------ | ----------- |
@@ -242,9 +303,9 @@ The game is run with `./zelda3` and takes an optional path to the ROM-file, whic
 | L      | C           |
 | R      | V           |
 
-The keys can be reconfigured in zelda3.ini
+Keys are reconfigurable in `zelda3.ini` (or the native settings window).
 
-Additionally, the following commands are available:
+Additional commands:
 
 | Key | Action                |
 | --- | --------------------- |
@@ -259,11 +320,11 @@ Additionally, the following commands are available:
 | T   | Toggle replay turbo mode  |
 | O   | Set dungeon key to 1  |
 | K   | Clear all input history from the joypad log  |
-| L   | Stop replaying a shapshot  |
+| L   | Stop replaying a snapshot  |
 | R   | Toggle between fast and slow renderer |
 | F   | Display renderer performance |
 | F1-F10 | Load snapshot      |
-| Alt+Enter | Toggle Fullscreen     |
+| Alt+Enter | Toggle fullscreen     |
 | Shift+F1-F10 | Save snapshot |
 | Ctrl+F1-F10 | Replay the snapshot |
 | 1-9 | Load a dungeons playthrough snapshot |
@@ -271,33 +332,18 @@ Additionally, the following commands are available:
 | ` (backquote) | Open the native game-settings window (PC; configurable as `OpenSettings`) |
 | F12 | Dump developer debug state — g_ram/VRAM/OAM/CGRAM + hint state + a log line (configurable as `DumpDebugState`; clear its binding to disable, or trigger it from the Debug tab) |
 
-### Native game-settings window (PC)
+## Credits & license
 
-On Windows/Linux/macOS, press `` ` `` (backquote) — or whatever you bind `OpenSettings` to under `[KeyMap]` — to open the **Z3R Settings** window on its **Game Settings** tab. It configures the game without hand-editing `zelda3.ini`:
+- **snesrev / elzo_d** — the zelda3 reimplementation and the LakeSnes PPU/DSP
+  core this is forked from (MIT).
+- **ALTTPR (`alttp_vt_randomizer`), © 2016 sporchia and contributors** — the
+  randomizer logic, macros, naming, and placement approach our generator is
+  hand-translated from (MIT).
+- spannerism and the wider community for the JP disassembly and the function /
+  RAM-map documentation the reimplementation relied on.
+- Opus, SHA-256, and the other vendored third-party components — see
+  [`LICENSE.txt`](LICENSE.txt) and [`NOTICE`](NOTICE).
 
-- **Controls / Controller** — rebind any keyboard key or gamepad button. Click *Rebind*, then press the key/button (Esc cancels; the window must be focused for keyboard capture). Conflicts steal the binding from the previous owner with a notice.
-- **Video / Audio / Gameplay** — window scale, fullscreen, renderer, widescreen, audio device/MSU, and the `[Features]` gameplay toggles.
-
-Click **Apply** to save. Bindings and gameplay toggles take effect immediately; options marked *(restart)* (audio device, renderer, language, …) are written to the INI and take effect on the next launch. Apply rewrites only the keys it manages in your loaded INI (`zelda3.user.ini` if present, else `zelda3.ini`), preserving comments and everything else; a one-time `.bak` is made before the first rewrite.
-
-### Randomizer keybindings
-
-Bind these in `zelda3.ini` under `[KeyMap]`. Default: unbound (overlays hidden). Both toggles reset to hidden on each launch and on slot deactivate.
-
-| Key id | Action |
-| ---- | ------ |
-| RandoToggleItemTracker | Show/hide the in-game item-tracker overlay |
-| RandoToggleLocationTracker | Show/hide the in-game location-tracker overlay |
-
-### Randomizer CLI
-
-| Flag | Action |
-| ---- | ------ |
-| --generate-seed --settings=... --seed=... --out-spoiler=... | Generate a seed headlessly |
-| --race-mode | Suppress the on-disk spoiler at generate time (race-admin feature) |
-| --reveal-spoiler=&lt;path&gt; | Reveal a previously-suppressed spoiler — regenerate placement, verify SHA-256 stamp, write full JSON |
-
-
-## License
-
-This project is licensed under the MIT license. See 'LICENSE.txt' for details.
+This project is licensed under the MIT license. See [`LICENSE.txt`](LICENSE.txt)
+for the full text and [`NOTICE`](NOTICE) for the upstream copyright notices we
+preserve.

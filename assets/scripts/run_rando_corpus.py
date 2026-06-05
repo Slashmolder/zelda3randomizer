@@ -25,7 +25,6 @@ Usage (activated):
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
@@ -80,8 +79,6 @@ def run_activated(binary: Path, manifest: dict) -> int:
     if not binary.exists():
         print(f"run_rando_corpus: binary {binary} not found. Build first.")
         return 1
-    import json
-    import subprocess
     import tempfile
 
     failures = 0
@@ -111,7 +108,7 @@ def run_activated(binary: Path, manifest: dict) -> int:
                 print(f"  FAIL [{idx}] {label}: spoiler not written")
                 failures += 1
                 continue
-            # Phase B Slice 6 §7.4 — race-mode entries emit a 134-byte
+            # Phase B Slice 6 §7.4 — race-mode entries emit a 138-byte
             # suppressed binary (magic ZRSR). Verify by reading the file,
             # checking the magic + CRC32, then invoking --reveal-spoiler
             # on a sibling copy to confirm the stamp matches the

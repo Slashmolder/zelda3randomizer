@@ -71,6 +71,18 @@ jobs:
     - name: run_rando_corpus (1.0a, manifest schema)
       run: python assets/scripts/run_rando_corpus.py --schema-only
 
+    # Corpus-version sync — the manifest's generator_version must equal
+    # kGeneratorVersion in src/rando/rando.h. Catches a version bump that
+    # forgot to re-stamp the corpus manifest (incl. digest-neutral bumps).
+    - name: check_corpus_version_sync
+      run: python assets/scripts/check_corpus_version_sync.py
+
+    # Logic-graph silent-override guard — a later base-level logic YAML must not
+    # silently change a location/macro/region declared in an earlier one
+    # (the King-Zora / Eastern-Palace weaker-predicate regression class).
+    - name: check_logic_overrides
+      run: python assets/scripts/check_logic_overrides.py
+
     # Codegen well-formedness in --strict mode. The build invokes
     # rando_logic_gen.py in non-strict mode (warnings logged but
     # build proceeds). CI runs it strictly so any new well-formedness

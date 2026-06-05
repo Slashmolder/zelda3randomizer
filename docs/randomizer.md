@@ -21,8 +21,11 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 
 1. Extract assets per the top-level `README.md` (one-time `python assets/restool.py --extract-from-rom`).
 2. Build per the standard instructions (`make` on Linux/macOS; `Zelda3.sln` on Windows).
-3. The randomizer activates on a per-slot basis from the file-select screen
-   (Phase A2). Until the UI lands, headless CLI generation is the entry point:
+3. The randomizer activates on a per-slot basis from the file-select screen.
+   On PC, seeds are configured in the native settings window (press `` ` ``);
+   the in-game settings screen serves the same role on Switch. Headless CLI
+   generation is the automation entry point (and what the regression corpus
+   drives):
 
    ```sh
    ./zelda3 --generate-seed \
@@ -70,15 +73,20 @@ Examples:
 ## Settings reference
 
 Full per-axis documentation lives in `randomizer-core / Settings canonical
-serialization order`. Phase A axes:
+serialization order`. The **Setting key** column below is the literal token you
+pass to `--settings=key=value` (parsed by `Settings_ParseCsv` in
+`src/rando/rando_settings.c` — an unknown key is a hard parse error, not a
+silent ignore). Note a few canonical *axis* names differ from their CLI key:
+the `world_state` axis is set via `mode.state`, and the item-pool-difficulty
+axis via `item_pool`.
 
-| Axis | Values | Default |
+| Setting key | Values | Default |
 |---|---|---|
-| `world_state` | `open`, `standard`, `inverted`, `retro` | `open` |
+| `mode.state` | `open`, `standard`, `inverted`, `retro` | `open` |
 | `goal` | `ganon`, `fast_ganon`, `dungeons`, `pedestal`, `triforce-hunt`, `ganonhunt`, `completionist` | `fast_ganon` |
 | `crystals.ganon` | 0..7 | 7 |
 | `crystals.tower` | 0..7 | 7 |
-| `item_pool_difficulty` | `easy`, `normal`, `hard`, `expert` | `normal` |
+| `item_pool` (alias `item.pool`) | `easy`, `normal`, `hard`, `expert` | `normal` |
 | `mode.weapons` | `randomized`, `assured`, `swordless` | `randomized` |
 | `accessibility` | `items`, `locations`, `none` (alias `beatable`; UI label "beatable only") | `items` (auto-set to `locations` for Completionist) |
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
@@ -86,6 +94,8 @@ serialization order`. Phase A axes:
 | `medallion_shuffle` | `true`, `false` | `true` |
 | `boss_shuffle` | `true`, `false` | `false` (generation-only — not runtime-enabled; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
+| `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | `true` — ⚠ **value is inverted vs the key name.** `true` (the default) = boss-heart containers are **pinned** (identity-placed, NOT in the shuffle pool); `false` = hearts are shuffled **into** the pool. The native-settings UI hides this inversion behind the checkbox **"Shuffle boss heart containers"** (checked ⇒ `false`). Setting `false` changes placement. |
+| `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
 
 **Accessibility tiers** (ALTTPR three-way; all three guarantee the seed is
@@ -549,9 +559,32 @@ Example:
 link_bottle_info[btidx] = 2;
 ```
 
-`assets/scripts/check_audit_guard.py` enforces this convention in CI. After
-Phase 0 closes (now done — see `audit.md` §0.9), the guard transitions from
-report-only to strict at the start of §6 work.
+`assets/scripts/check_audit_guard.py` enforces this convention in CI; it now
+runs in `--strict` mode (see `.github/workflows/rando_ci.yaml`), so an
+undispatched, un-exempted inventory write fails the build.
+
+## Source-level CI guards (for contributors)
+
+The `rando-source-guards` job in `.github/workflows/rando_ci.yaml` runs a set of
+pure-Python checks that need **no build, no ROM, and no assets** — they read the
+source and YAML directly, so they're cheap and run on every push/PR. The full
+set lives in `assets/scripts/check_*.py`; the ones most likely to catch a
+regression while authoring logic or bumping the generator:
+
+| Guard | What it catches |
+|---|---|
+| `check_audit_guard.py --strict` | An inventory-cell write that neither dispatches through `Rando_OnLocationCheck` nor carries a `// rando-exempt:` reason. |
+| `check_no_embedded_data.py` | A long inline hex/data blob that belongs in a gitignored generated artifact. |
+| `check_determinism.py` / `check_byte_order.py` | Non-deterministic calls (`rand()`, `time()`, float) or unpinned byte order in `src/rando/`. |
+| `check_codegen_wiring.py` | A generated file referenced in one build system but not all three (Makefile / MSVC / Switch). |
+| `check_generator_version.py` | A change to a bump-trigger path (see the policy below) that forgot to advance `kGeneratorVersion` (PR-gated). |
+| `check_corpus_version_sync.py` | The corpus manifest's `generator_version` drifting out of sync with `kGeneratorVersion` — including a digest-neutral bump that forgot to re-stamp the manifest. |
+| `check_logic_overrides.py` | A later base-level logic YAML **silently overriding** a location / macro / region declared in an earlier one with a *different* predicate — the King-Zora / Eastern-Palace "weaker predicate silently wins" regression class. Intentional overrides are allowlisted in the script with a reason. |
+
+`rando_logic_gen.py --strict` also runs here (well-formedness, including the
+`region: 0xFFFF` binding warning). Build-dependent guards (`check_init_order`,
+`check_link_symbols`, the corpus with `--binary`, and the benchmark gate) run in
+the separate build/determinism jobs.
 
 ## Generator version (`kGeneratorVersion`) bump policy
 
@@ -767,7 +800,7 @@ walked when `world_state == Inverted`) plus a per-screen visual tile overlay —
 NOT a runtime region remap. The reachability seed starts from the inverted
 counterpart of Link's House rather than the light-world spawn. (The Phase A
 `RegionRemap` scaffold was dead identity code and was **retired** in the Phase C
-entrance-shuffle work; see `add-rando-entrance-shuffle/design.md §1`.)
+entrance-shuffle work; see `archive/2026-06-05-add-rando-entrance-shuffle/design.md §1`.)
 
 ### Retro world-state
 
@@ -846,29 +879,31 @@ slots flagged), and the `.json` spoiler carries a Retro-only **`shops[]`** array
 Capacity Upgrade slots). Both are emitted only for seeds that actually place
 shop-class locations, so non-Retro spoilers are unchanged.
 
-## Phase B+ roadmap
+## Phase B+ status
 
-Planned (not promised) follow-on work.
+Most of the Phase B work below has **shipped and been archived** — the
+per-row Status column is authoritative. The handful still in progress are
+marked as such. The top-of-document banner and the
+[`openspec/changes/` index](../openspec/changes/README.md) carry the live
+picture; this table is a slice-level cross-reference.
 
 ### Phase B — chunked into 9 OpenSpec changes (2026-05-26)
 
-All 9 changes are authored at `openspec/changes/add-rando-*` and pass
-`openspec validate --changes`. Warm-up changes are fully authored
-(proposal + spec deltas + tasks); larger changes are proposal-only stubs
-with detail deferred to `/openspec-explore` at apply-time.
+The changes are authored at `openspec/changes/add-rando-*` (archived ones
+under `openspec/changes/archive/`) and pass `openspec validate --changes`.
 
 | # | Change | Slice | Scope | Status |
 |---|---|---|---|---|
 | 1 | [`add-rando-confirmation-icons`](../openspec/changes/archive/2026-06-04-add-rando-confirmation-icons/) | 9 | Visible per-item icon ancilla for §6.2 direct-grant placements | ✅ Archived 2026-06-04 |
 | 1b | [`add-rando-fairy-chest-model`](../openspec/changes/archive/2026-06-04-add-rando-fairy-chest-model/) | 9 | Great-fairy ponds → two reach-only chest-model checks; retire Pyramid Sword/Bow | ✅ Archived 2026-06-04 |
 | 2 | [`add-rando-trackers`](../openspec/changes/add-rando-trackers/) | 1 | In-game item + location tracker overlays + checked-bitmap r/w paths | Full |
-| 3 | [`add-rando-race-mode-reveal`](../openspec/changes/add-rando-race-mode-reveal/) | 6 | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp verify | Full |
+| 3 | [`add-rando-race-mode-reveal`](../openspec/changes/archive/2026-06-05-add-rando-race-mode-reveal/) | 6 | Spoiler suppression + CLI `--reveal-spoiler` + `RandoRevealSpoiler` keybind + SHA-256 stamp verify (built scope; in-binary reveal-UI + settings warning carved to `add-rando-race-mode-reveal-ui`) | ✅ Archived 2026-06-05 |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
 | 4b | [`add-rando-retro-world-state`](../openspec/changes/archive/2026-06-04-add-rando-retro-world-state/) | 3 | Retro shop dispatch + rupeeBow/takeAnys/wildKeys pinned (genericKeys → #4b-i) | ✅ Archived 2026-06-04 |
 | 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b | Scaffolded |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
-| 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla generation + dialogue-ID injection | Stub |
-| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | Stub |
+| 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: 15 telepathic-tile hints + Storyteller/Fortune-Teller fork NPCs + Murahdahla (spoiler-only) + dialogue-ID injection | In-progress (gen/spoiler/determinism/docs done; in-game NPC playtest + audit open) |
+| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle generation-only) |
 | 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |
 
 See the [`openspec/changes/` index](../openspec/changes/README.md) for the
@@ -892,7 +927,7 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed/Insanity as presets. **Coupled cave + dungeon entrance shuffle implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (a version-drift warning fires; regenerate after an update). `RegionRemap` scaffold retired. Crossed (cross-category) + Insanity (decoupled) modes and Skull Woods multi-entrance are still open. | Stages 1–2 done (playtest-confirmed) |
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (a version-drift warning fires; regenerate after an update). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (full decoupled) is **built and shipped** as a live native-window preset — the cave-arrival table is baked (`src/rando/cave_arrival_baked.h`, preloaded so every door is one-way from launch); cave-decoupled is playtest-confirmed, the dungeon/cross-decoupled arms carry the usual built-but-playtest-pending caveat. Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 |
 
 ### Phase D
 

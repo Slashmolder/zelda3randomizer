@@ -558,13 +558,137 @@ entries:
     label: "b-swordless-open-completionist"
     expected_digest: "a78883f4b82107bc75b11cd295460dc17485f35ce3d58ffa6954bdeeb66f8c58"
 
+  # Corpus expansion (2026-06-05): close the under-covered world-state gaps.
+  # Swordless was Open-only (Inverted was the documented highest-risk gap), so
+  # add swordless × Inverted/Retro/Standard-ganon. Inverted was 3 fast_ganon
+  # entries → broaden across every goal + accessibility/boss+drop/expert-pool.
+  # Retro was fast_ganon/ganon-only → broaden across goals + accessibility +
+  # boss+drop. Plus Standard major-glitches logic. Digests captured on the
+  # reference Windows build at kGeneratorVersion 53; all goal_completable.
+  - settings: { mode.state: inverted, goal: fast_ganon, mode.weapons: swordless }
+    seed: "0xC0FFEE0000000001"
+    label: "b-swordless-inverted-fast-ganon"
+    expected_digest: "5cf54657814e25d7e294dd591ecb8d64d0887c4f5a8ce8b4834b19230f3d5361"
+    expected_sphere_digest: "dc836235d621bf270cf9bf66a50e87edac0a38124a25d2530ec3e7049832e255"
+  - settings: { mode.state: inverted, goal: ganon, crystals.ganon: 7, crystals.tower: 7, mode.weapons: swordless }
+    seed: "0xC0FFEE0000000002"
+    label: "b-swordless-inverted-ganon-7-7"
+    expected_digest: "5eb565ef836b8a0b734bb21cab08c77f2e36ee4c7824fe245938f11f08729bae"
+    expected_sphere_digest: "7456cba16dac25eacf6c2fba4bc9555e62293f34c5c74d0293f0a3872a2b0bc9"
+  - settings: { mode.state: inverted, goal: completionist, mode.weapons: swordless }
+    seed: "0xC0FFEE0000000003"
+    label: "b-swordless-inverted-completionist"
+    expected_digest: "81ac295646b3498a936e9d5b7c9d1a3ea6cd69603bcaac5cd2d076be0ef97d17"
+    expected_sphere_digest: "bdf1c7c52407ff492e070fcf0fd6fdb18d1a8462e3233ef67a248f6cfd70be3f"
+  - settings: { mode.state: retro, goal: fast_ganon, mode.weapons: swordless }
+    seed: "0xC0FFEE0000000004"
+    label: "b-swordless-retro-fast-ganon"
+    expected_digest: "080b8b9f3dab4cda5ed0ce2599ff08b01d64f17c60c577cfb3779ecdeed3fee4"
+    expected_sphere_digest: "59b661159206a8fbb7abab285f418e51885e93de70ec0782b87f10fe51d24245"
+  - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, mode.weapons: swordless }
+    seed: "0xC0FFEE0000000005"
+    label: "b-swordless-standard-ganon-7-7"
+    expected_digest: "32e8980f7a6c439d466f58b55ec09528accbdeeb03a11d1d736b313b27bf2de7"
+    expected_sphere_digest: "99d73b0270b440eb032c392a03e3489a5334bec2cec09f935f4afab90ccfb7f3"
+  - settings: { mode.state: inverted, goal: dungeons }
+    seed: "0xC0FFEE0000000011"
+    label: "b-inverted-dungeons"
+    expected_digest: "70f0e8434ac964e2e9eb4c2d1d1c2b1c12d0fe7bee8741d49f99dea377124905"
+    expected_sphere_digest: "83a46f5840e0e72bbcbc716bea266690ec0e418bbf7f65259b9efad3043c7324"
+  - settings: { mode.state: inverted, goal: pedestal }
+    seed: "0xC0FFEE0000000012"
+    label: "b-inverted-pedestal"
+    expected_digest: "1d86e4ad5cbc4d12dbdf85feb0b6adee8a57bf6a048586968a6bf9c75947b500"
+    expected_sphere_digest: "7a4f945243ca693c16fc6417c72b58146f1f91fe08dc7d99848ee93aec79149a"
+  - settings: { mode.state: inverted, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30 }
+    seed: "0xC0FFEE0000000013"
+    label: "b-inverted-triforce-hunt"
+    expected_digest: "2afefbe2338884f2663dc35727df6de80aaf62ebd6abf1ff1d4cd67755ed6958"
+    expected_sphere_digest: "9368da8a377526cca10480fa0cc94cff184ffaf17398623e0d181969a8e2adbc"
+  - settings: { mode.state: inverted, goal: completionist }
+    seed: "0xC0FFEE0000000014"
+    label: "b-inverted-completionist"
+    expected_digest: "1937437864ad39043e680bc864b6ea232bd251bb68ccd3e29a785571f225e76f"
+    expected_sphere_digest: "fa518370091d861c12fd87a64d4425908385e1a27950e563a844376ce110de03"
+  - settings: { mode.state: inverted, goal: fast_ganon, accessibility: none }
+    seed: "0xC0FFEE0000000015"
+    label: "b-inverted-acc-beatable"
+    expected_digest: "03d1e1f5df2082dce45fc2749b410db62c1f2ab8b8b54b00822435ca3a64f86a"
+    expected_sphere_digest: "5787bd60f20242562a7c055484f2771415fbb0571a3a99366337c95591ee6c3d"
+  - settings: { mode.state: inverted, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
+    seed: "0xC0FFEE0000000016"
+    label: "b-inverted-boss-drop"
+    expected_digest: "b8cf031efa946f5b1d985bd1308a892b40be4a9a20e31e5908709daff995c62e"
+    expected_sphere_digest: "01976866dedaf08b133f622d118f43bbe41c3d2b1bbc80ebfd54655ebb09074d"
+  - settings: { mode.state: inverted, goal: fast_ganon, item_pool: expert }
+    seed: "0xC0FFEE0000000017"
+    label: "b-inverted-pool-expert"
+    expected_digest: "97e116f00421d73b66c5a418d698ab975b8e5cdd8c9d705762d6794089b33369"
+    expected_sphere_digest: "dc6fe86fb6fddbecbfb39d7f22ab523115bffa1f09b4da4638f591410cfaf13c"
+  - settings: { mode.state: retro, goal: dungeons }
+    seed: "0xC0FFEE0000000021"
+    label: "b-retro-dungeons"
+    expected_digest: "4f561172320057b4a77bec5af739cc11f71bee049247c22633b1e5e65f7cde48"
+    expected_sphere_digest: "ccf4353cbce175615ceca0e21636b3f5936447c2afdafbda6e1050fdc06a9008"
+  - settings: { mode.state: retro, goal: pedestal }
+    seed: "0xC0FFEE0000000022"
+    label: "b-retro-pedestal"
+    expected_digest: "a977606f6f9434979f2efcb8246d6e5e3848be9e703ad75d46c670a0c025e8db"
+    expected_sphere_digest: "897aca59f931b9ed285b6c7cd98689cb7ecbee81449d3e92be539551677a3ebc"
+  - settings: { mode.state: retro, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30 }
+    seed: "0xC0FFEE0000000023"
+    label: "b-retro-triforce-hunt"
+    expected_digest: "5f2faa4dcf8d087f48563b04fc8aea2ba62a9a5de4395918a55f5700999ab934"
+    expected_sphere_digest: "c795b4e33b188ec2f34bfeb06109a210445c2620fa994055353c253fbdc0fb97"
+  - settings: { mode.state: retro, goal: fast_ganon, accessibility: none }
+    seed: "0xC0FFEE0000000024"
+    label: "b-retro-acc-beatable"
+    expected_digest: "7570eea274c11dd029afa41afc3e7987986ef68384fff90099ae0eda1825d62e"
+    expected_sphere_digest: "cf6b767343e325bd24afc57ecaf93778bd223e6c3563abff1c7876a33a1b7f78"
+  - settings: { mode.state: retro, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
+    seed: "0xC0FFEE0000000025"
+    label: "b-retro-boss-drop"
+    expected_digest: "4276cde66fc4ca344d245b3b5f6e5fb66961d798c1ff7b3ddfca5373bdbdb1ed"
+    expected_sphere_digest: "5e2050db173ea4dd05ce6063ae48319d8d4c0fae7cd4dbad6e06420b997e1796"
+  - settings: { mode.state: standard, goal: fast_ganon, logic: major_glitches }
+    seed: "0xC0FFEE0000000031"
+    label: "b-logic-mg-standard"
+    expected_digest: "4381dfed7b0b47e7a493a4979c2ec9d67c47305a48ceb7655661a5f8634753f2"
+    expected_sphere_digest: "a4c43a58baa4196f7a9231d8ce25189a2816ebc9df178ff304caade8ba6a5244"
+
+  # Boss-heart-pool toggle (settable via the existing `region_boss_hearts_in_pool`
+  # / `region.bossHeartsInPool` CLI key). NOTE the field is INVERTED vs its name:
+  # the default 1 = boss hearts PINNED (identity-placed, not in the pool); the
+  # value below `=false` (0) puts the boss heart containers INTO the shuffle pool
+  # — the non-default path, which changes placement (verified). One per world state.
+  - settings: { mode.state: open, goal: fast_ganon, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000041"
+    label: "b-bossheart-pool-open-fast-ganon"
+    expected_digest: "07cd192a824aa92aff1d15f22f1ff66a7a272ecd373a2918a7f62c4db69d4c43"
+    expected_sphere_digest: "59fcdd0bc6e2d2f4c07b10a9c080c8c10bb2d30c1eaccd6bc436f0b15ece0803"
+  - settings: { mode.state: inverted, goal: fast_ganon, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000042"
+    label: "b-bossheart-pool-inverted-fast-ganon"
+    expected_digest: "8b6a264c575b1f241193c2f618ef4ab5bb046e4a57e2a76dfb0ae87f793c7e99"
+    expected_sphere_digest: "802d7003ef44ee39e9b78585795f033e06c4741c3468ca205f2c029f347b2b18"
+  - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000043"
+    label: "b-bossheart-pool-standard-ganon-7-7"
+    expected_digest: "c4777093e13d909be274d4353c7e56488343dd75423b5047981ed3814271a369"
+    expected_sphere_digest: "70b33bb455bb3f7c9b8ca7cf1f55ddc0ee0eaa6b20d00476c835b22fe5fa225f"
+  - settings: { mode.state: retro, goal: fast_ganon, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000044"
+    label: "b-bossheart-pool-retro-fast-ganon"
+    expected_digest: "5ebe15320110b0089ed68212663fce9e0a6bfeb2867a5bd1bcec8712823d33b5"
+    expected_sphere_digest: "11641374cff7021bdfa1d334f917aecbd7e39aebbf7f126fbb4fe172eaf60f04"
+
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
 # next session can populate them in order. Each MUST include `seed` as a
 # YAML *string* (per randomizer-core / CLI manifest schema — YAML 1.1 vs 1.2
 # uint64 parsing portability).
 #
-#   - settings: { mode.state: open, goal: dungeons, item_pool_difficulty: normal }
+#   - settings: { mode.state: open, goal: dungeons, item_pool: normal }
 #     seed: "0xTBD"
 #     label: "all-bosses-12-min"
 #     expected_digest: "<filled-after-first-run>"

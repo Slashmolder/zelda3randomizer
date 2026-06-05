@@ -28,6 +28,7 @@ from pathlib import Path
 #   - src/rando/item_ids.h          (from assets/rando/item_registry.yaml — task 3.2)
 #   - src/rando/chest_lookup.h      (from assets/chest_data.py + location_registry.yaml — task 6.3)
 #   - src/rando/icon_atlas.h        (from assets/rando/icon_atlas.yaml — task 9.4b)
+#   - src/rando/direct_grant_icons.h (from assets/rando/direct_grant_icons.yaml — task 9.x)
 #
 # Note: src/rando/vanilla_assets_hash.h is NOT in this list. It's hand-
 # maintained (the dump tool overwrites it) and pulled in via #include, so
