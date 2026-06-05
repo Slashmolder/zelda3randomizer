@@ -40,6 +40,7 @@
 #include "rando/shuffle_boss.h"  // BossShuffle_Generate (Slice 7 §63)
 #include "rando/shuffle_drops.h"  // DropShuffle_Generate (Slice 8 §64)
 #include "rando/rando_hints.h"  // Rando_GenerateHints (Slice 5 §3)
+#include "rando/auto_tracker.h"  // AutoTracker_* (opt-in local tracker server)
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
@@ -1218,6 +1219,20 @@ int main(int argc, char** argv) {
     SwitchDirectory();
   }
 
+  // --auto-tracker: force-enable the opt-in tracker server regardless of the
+  // [AutoTracker] INI setting. Extract + compact it out of argv here so it is
+  // not mistaken for the ROM path consumed by LoadRom(argv[0]) below.
+  bool force_auto_tracker = false;
+  for (int i = 0; i < argc;) {
+    if (strcmp(argv[i], "--auto-tracker") == 0) {
+      force_auto_tracker = true;
+      for (int j = i; j < argc - 1; j++) argv[j] = argv[j + 1];
+      argc--;
+    } else {
+      i++;
+    }
+  }
+
   // Check for --rando-selftest BEFORE any SDL_Init. Runs the sub-system
   // self-tests (SHA-256 NIST vectors + xoshiro256** determinism + future
   // checks) and exits. CI invokes this on every Linux/macOS/Windows runner
@@ -1545,6 +1560,17 @@ int main(int argc, char** argv) {
 
   ZeldaReadSram();
 
+  // Opt-in auto-tracker server (default off). Observation-only; never started in
+  // headless/CLI modes (those exit before here, but guard explicitly). On Switch
+  // AutoTracker_Init is a no-op stub. See src/rando/auto_tracker.{c,h}.
+  if (!g_headless_mode) {
+    AutoTrackerConfig at_cfg;
+    at_cfg.enabled = g_config.auto_tracker_enabled || force_auto_tracker;
+    at_cfg.port = g_config.auto_tracker_port;
+    at_cfg.allow_remote = g_config.auto_tracker_allow_remote;
+    AutoTracker_Init(&at_cfg);
+  }
+
   for (int i = 0; i < SDL_NumJoysticks(); i++)
     OpenOneGamepad(i);
 
@@ -1842,6 +1868,11 @@ int main(int argc, char** argv) {
     bool is_replay = ZeldaRunFrame(inputs);
     SDL_UnlockMutex(g_audio_mutex);
 
+    // Auto-tracker: accept subscribers + emit a JSON snapshot when rando state
+    // changed this frame. Runs every frame (before the turbo frame-skip below)
+    // so connections are serviced promptly. No-op when the server is disabled.
+    AutoTracker_ServiceFrame();
+
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
     // Game-config apply consumer: the settings UI raises a pending-apply flag;
     // commit the working copy + rebuild the keymap + live-apply + write the INI
@@ -1984,6 +2015,10 @@ int main(int argc, char** argv) {
   if (g_settings_window)
     SDL_DestroyWindow(g_settings_window);
 #endif
+
+  // Close the auto-tracker server (drops subscribers, releases the listener).
+  // No-op when it was never started. Observation-only; nothing game-state here.
+  AutoTracker_Shutdown();
 
   SDL_DestroyWindow(window);
   SDL_Quit();

@@ -105,6 +105,13 @@ typedef struct Config {
   // short-circuits when rando is active). Not documented in user-facing keys.
   bool rando_debug_force_ram_compare;
 
+  // Auto-tracker server ([AutoTracker] section; see src/rando/auto_tracker.{c,h}).
+  // Opt-in, observation-only local TCP server for external tracker tools. All
+  // default off / localhost so an un-opted build behaves byte-identically.
+  bool auto_tracker_enabled;       // default false (also force-enabled by --auto-tracker)
+  uint16 auto_tracker_port;        // default 17400 (0 => server uses the default)
+  bool auto_tracker_allow_remote;  // default false => bind 127.0.0.1; true => 0.0.0.0
+
   const char *link_graphics;
   char *memory_buffer;
   const char *shader;

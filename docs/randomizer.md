@@ -534,6 +534,113 @@ in `saves/rando_window.ini` is not yet implemented (windows open from the
 Trackers tab / hotkeys each session). (Keysanity reachability and the dark-world
 map background — earlier follow-ups — are now implemented.)
 
+## Auto-tracker (external clients)
+
+For external tracker tools (EmoTracker, PopTracker, custom OBS overlays) the
+binary can run a small, **opt-in** TCP server that re-emits the same state the
+in-game trackers render — inventory, live reachability, and the checked-location
+bitmap — as **newline-delimited JSON**. Clients subscribe to the stream instead
+of peeking at emulator memory via `usb2snes` / SNI. Lives in
+`src/rando/auto_tracker.{c,h}`; wired into `main.c` (init / per-frame service /
+shutdown) and `config.c` (the `[AutoTracker]` section).
+
+**Off by default.** When disabled the module is a no-op — no socket is opened and
+the binary behaves byte-identically to a build without it. It is **observation
+only**: it never writes `g_ram` or any game state, and it is **subscribe-only** —
+clients receive the stream and cannot inject state back (any bytes a client sends
+are discarded). It does not affect placement, RNG, or determinism, and is never
+started under `--rando-selftest` or the headless CLI paths.
+
+### Enabling
+
+`zelda3.ini`:
+
+```ini
+[AutoTracker]
+Enabled = true       ; default false
+Port = 17400         ; default 17400
+AllowRemote = false  ; default false -> bind 127.0.0.1; true -> bind 0.0.0.0
+```
+
+Or force-enable from the command line without editing the INI:
+
+```
+zelda3 --auto-tracker
+```
+
+Or start/stop it **live from the settings window** (PC): the **Trackers** tab has an
+*"Enable auto-tracker server"* toggle with a status line (bind address, port, and
+connected-client count). The toggle controls the listener for the current session;
+the boot default plus the port / remote-access settings still come from the INI
+above. (The toggle is part of the PC native settings window; the INI / CLI options
+remain the way to enable it on Switch or in headless setups.)
+
+**Security.** The listener binds `127.0.0.1` (localhost-only) by default; remote
+machines cannot connect. `AllowRemote = true` binds `0.0.0.0` and exposes the
+stream to the local network — opt in only on a trusted LAN. There is no inbound
+command channel regardless of bind address.
+
+### Wire protocol
+
+A TCP stream of UTF-8 JSON objects, **one object per line** (`\n`-terminated).
+On connect a client receives a one-time `catalog` message, then a full `state`
+snapshot; thereafter a fresh `state` snapshot is sent whenever the rando state
+changes (the same `reachability_state_counter` advance that refreshes the in-game
+trackers — item grants, location checks, slot activation — plus active-slot and
+goal-completion transitions). Each message is self-contained (a full snapshot, not
+a delta), so a client only needs the latest line.
+
+`catalog` — sent once per connection; maps the numeric location ids used in every
+later `state` message to human-readable names, so a client never has to hardcode
+this fork's id space:
+
+```json
+{"type":"catalog","locations":[{"id":0,"name":"Sanctuary","region":"HyruleCastleEscape"}, ...]}
+```
+
+`state` — the live snapshot. When no randomizer slot is loaded the line is minimal
+(`active:false`); once a slot is active it carries the full inventory /
+reachability / checked view:
+
+```json
+{"type":"state","msg":7,"counter":42,"active":true,"game_completed":false,
+ "settings":{"world_state":"open","goal":"ganon","crystals_ganon":7,"crystals_tower":7},
+ "items":{"sword":2,"shield":0,"mail":0,"gloves":1,"bow":1,"boomerang":0,"bottles":1,
+          "magic":0,"hearts":4,"heart_pieces":1,"crystals":0,"pendants":1,
+          "crystal_mask":0,"pendant_mask":1,"hookshot":true,"firerod":false, ...},
+ "dungeons":[{"name":"Eastern Palace","small_keys":0,"big_key":false,"map":true,"compass":false}, ...],
+ "reachable_available":true,
+ "checked":[10,23,47],
+ "reachable":[1,2,5,88]}
+```
+
+Field reference (`state`):
+
+- `msg` — monotonic message sequence number for this server session.
+- `counter` — the `reachability_state_counter` value the snapshot reflects.
+- `active` — a randomizer slot is loaded. When `false`, only `type`/`msg`/`counter`/
+  `active` are present.
+- `game_completed` — the game has reached the Ending/Credits (goal beaten).
+- `settings` — `world_state`, `goal`, `crystals_ganon`/`crystals_tower`
+  (+ `pieces_required` for the hunt goals); `null` when the slot's settings can't
+  be recovered (snapshot-restore / legacy slot).
+- `items` — the live inventory view (mirrors the in-game Item Tracker). Tiered
+  items are levels (`sword` 0–4, `bow` 0–2, `magic` 0–2 = 1×/½×/¼×, …); the rest
+  are booleans. `crystal_mask`/`pendant_mask` are bitfields per prize.
+- `dungeons` — per-dungeon `small_keys` count + `big_key`/`map`/`compass` flags.
+- `reachable_available` — whether logic-based reachability is available (false on
+  legacy slots whose settings can't be recovered → `reachable` is empty).
+- `checked` — location ids the player has checked.
+- `reachable` — unchecked location ids reachable now under current logic.
+
+**Spoiler-safe by construction.** The stream exposes only the player's own
+inventory, the locations they have *checked*, and which unchecked locations are
+*reachable* — never which item sits at an unchecked location. So it carries no
+placement spoiler and is safe even for race seeds without any race-mode gate.
+
+**Switch.** Networking on Switch (libnx) is deferred; `auto_tracker.c` compiles to
+no-op stubs there, so the Switch build links cleanly with the server omitted.
+
 ## Audit comment convention (for contributors)
 
 Per `audit.md` §0.9, every write to a tracked inventory cell (`link_item_*`,
@@ -936,7 +1043,7 @@ Items folded into the changes above:
 | D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/archive/2026-06-02-add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | ✅ Archived 2026-06-02 |
 | D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Stub |
 | D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level. Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to support `HybridMajorGlitches` + `NoLogic`. | Stub |
-| D4 | [`add-rando-auto-tracker`](../openspec/changes/add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients. | Stub |
+| D4 | [`add-rando-auto-tracker`](../openspec/changes/archive/2026-06-05-add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients (NDJSON; see *Auto-tracker (external clients)* above). | ✅ Archived 2026-06-05 |
 
 All Phase C/D changes are proposal-only stubs (proposal + 1-3 minimal spec deltas) — full design + tasks deferred to apply-time. Phase C requires Phase B #4a archived; Phase D D3 requires Phase B #5 archived.
 

@@ -56,6 +56,7 @@ extern "C" {
 #include "../rando_logic.h"      // Rando_GetRegionName/LocationName/ItemName, kRandoLocations
 #include "../vanilla_assets_hash.h"  // kVanillaAssetsHash, kVanillaAssetsHashKnown
 #include "../../config.h"        // g_config (R2: snapshot features0 at open), g_rando_window_prefs
+#include "../auto_tracker.h"     // AutoTracker_IsRunning/SetEnabled/GetClientCount/GetBindInfo
 }
 
 // Forward declarations (definitions appear later but are referenced from
@@ -860,6 +861,40 @@ static void Panel_Trackers() {
     ImGui::SameLine();
     ImGui::TextColored(shown ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
                        shown ? "open" : "closed");
+  }
+
+  // Auto-tracker server: publishes the same live state as newline-delimited JSON
+  // over a local TCP socket for external consumers (custom OBS overlays, scripts).
+  // The toggle starts/stops the listener live this session; the boot default and
+  // the bind config live in zelda3.ini [AutoTracker]. Observation-only.
+  ImGui::SeparatorText("Auto-tracker server (external clients)");
+  ImGui::TextWrapped(
+      "Publish live inventory / reachability / checked-location state as "
+      "newline-delimited JSON over a local TCP socket, so external tools can "
+      "subscribe without reading emulator memory. Observation-only and "
+      "spoiler-safe (never reveals placement). Set the boot default, port, and "
+      "remote access in zelda3.ini [AutoTracker].");
+  ImGui::Spacing();
+
+  bool running = AutoTracker_IsRunning();
+  uint16 at_port = 0;
+  bool at_remote = false;
+  AutoTracker_GetBindInfo(&at_port, &at_remote);
+
+  bool toggle = running;
+  if (ImGui::Checkbox("Enable auto-tracker server", &toggle))
+    running = AutoTracker_SetEnabled(toggle);  // reflects the actual result (a failed bind stays off)
+
+  if (running) {
+    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "listening on %s:%u  —  %d client(s)",
+                       at_remote ? "0.0.0.0" : "127.0.0.1", (unsigned)at_port,
+                       AutoTracker_GetClientCount());
+    if (at_remote)
+      ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.2f, 1.0f),
+                         "Remote access is ON — reachable from the local network.");
+  } else {
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "off  (would bind %s:%u)",
+                       at_remote ? "0.0.0.0" : "127.0.0.1", (unsigned)at_port);
   }
 }
 

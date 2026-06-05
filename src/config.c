@@ -369,6 +369,8 @@ static int GetIniSection(const char *s) {
     return 7;
   if (StringEqualsNoCase(s, "[rando_window]"))
     return 8;
+  if (StringEqualsNoCase(s, "[AutoTracker]"))
+    return 9;
   return -1;
 }
 
@@ -713,6 +715,19 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_rando_window_prefs.dark_theme);
     }
     return false;
+  } else if (section == 9) {
+    // [AutoTracker] — opt-in local tracker server (src/rando/auto_tracker.{c,h}).
+    // Defaults set in ParseConfigFile before the file is read; missing keys keep
+    // the (off / localhost) defaults so an un-opted build is byte-identical.
+    if (StringEqualsNoCase(key, "Enabled")) {
+      return ParseBool(value, &g_config.auto_tracker_enabled);
+    } else if (StringEqualsNoCase(key, "Port")) {
+      g_config.auto_tracker_port = (uint16)strtoul(value, (char**)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "AllowRemote")) {
+      return ParseBool(value, &g_config.auto_tracker_allow_remote);
+    }
+    return false;
   }
   return false;
 }
@@ -772,6 +787,11 @@ void ParseConfigFile(const char *filename) {
   g_config.rando_spoiler_dir = NULL;         // resolved at runtime: <exe-dir>/spoilers
   g_config.rando_race_mode_default = false;
   g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
+
+  // [AutoTracker] defaults — opt-in, observation-only, localhost-only.
+  g_config.auto_tracker_enabled = false;
+  g_config.auto_tracker_port = 17400;
+  g_config.auto_tracker_allow_remote = false;
 
   // Reset the editable keybind model before parsing. Keyboard 0 = unbound;
   // gamepad button -1 (kGamepadBtn_Invalid) = unbound (a zero-init would mean
