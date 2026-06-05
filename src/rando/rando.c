@@ -2369,6 +2369,22 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   // Match the generate-time spoiler's entrance_mapping section (the omission of
   // which caused the stamp mismatch on race-mode + entrance-shuffle seeds).
   Rando_SpoilerSetEntranceFields(&regen, &reg);
+  // Match the generate-time spoiler's boss_assignments / drop_map sections
+  // (see Rando_GenerateSlot in rando_generate.c). Omitting these caused the
+  // SHA-256 stamp to mismatch for race seeds generated with boss_shuffle or
+  // drop_shuffle on — same omission class as the entrance_mapping fix above.
+  // The buffers are declared at function scope so they outlive Spoiler_WriteJson
+  // (stamp input) and the later Spoiler_WriteText. Computed from the PURE forms
+  // (no runtime-global side effects), deterministic from (settings, seed) →
+  // byte-identical to the generate path. NULL pointers omit the section when off.
+  uint8 regen_boss_assignment[16];
+  uint8 regen_drop_map[kDropTableEntryCount];
+  bool regen_drop_used_fallback = false;
+  BossShuffle_ComputeAssignment(&settings, seed_u64, regen_boss_assignment);
+  DropShuffle_ComputeAssignment(&settings, seed_u64, regen_drop_map, &regen_drop_used_fallback);
+  regen.boss_assignment = settings.boss_shuffle ? regen_boss_assignment : NULL;
+  regen.drop_map = settings.drop_shuffle ? regen_drop_map : NULL;
+  regen.drop_used_fallback = regen_drop_used_fallback;
   regen.goal_completable = Goal_IsCompletable(&settings, &table);
   regen.forward_fill_fallback_count = 0;  // stamp normalization
   regen.retry_attempts = 1;               // stamp normalization
@@ -2505,13 +2521,15 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   // §62 cluster-audit MED-1 — anti-cheat gate. Race-mode's design intent
   // is the spoiler stays off-disk until post-race. An in-binary key with
   // no terminal-state gate lets a self-disciplined runner peek mid-race
-  // and defeats the design. Gate the in-binary action on game-completion
-  // (main_module_index 24 = Ending intro, 25 = Credits — both set after
-  // Ganon dies / Triforce collected, on the Ganon-defeat / Triforce-collected
-  // path).
+  // and defeats the design. Gate the in-binary action on game-completion:
+  // the seed is beaten ONLY at TriforceRoom (0x19) or Credits (0x1A).
+  // Deliberately NOT `>= 0x18` — that also matches GanonEmerges (0x18, the
+  // fight is only just starting) and SpawnSelect (0x1B, the spawn-point menu
+  // the load path transiently passes through, blipping "completed" for one
+  // frame on slot load). Mirrors the beaten check in auto_tracker.c.
   // The `--reveal-spoiler=<path>` CLI flow stays unconditional (no in-
   // game state to check) for tournament admins / post-race tooling.
-  if (main_module_index < 24) {
+  if (!(main_module_index == 0x19 || main_module_index == 0x1A)) {
     fprintf(stderr,
             "rando reveal: refused — game not yet completed "
             "(use --reveal-spoiler CLI flag for tournament admin reveals).\n");
@@ -2525,11 +2543,11 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
 
 bool Rando_CanRevealActiveSlotSpoiler(void) {
   // Mirrors the gate inside Rando_RevealActiveSlotSpoiler(): an active slot with
-  // a captured share string, past the anti-cheat completion threshold
-  // (main_module_index >= 24 = Ending intro / Credits). Keep the threshold in
-  // sync with that function.
+  // a captured share string, past the anti-cheat completion threshold — the seed
+  // is beaten ONLY at TriforceRoom (0x19) or Credits (0x1A). Keep this in sync
+  // with that function (and the beaten check in auto_tracker.c).
   return g_rando_slot_active && g_rando_active_share_string[0] != '\0' &&
-         main_module_index >= 24;
+         (main_module_index == 0x19 || main_module_index == 0x1A);
 }
 
 // ---------------------------------------------------------------------------
