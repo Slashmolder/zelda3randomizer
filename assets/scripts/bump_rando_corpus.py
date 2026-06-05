@@ -25,7 +25,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
@@ -204,8 +203,8 @@ def main(argv: list[str]) -> int:
             print(f"  [{i}] {entry.get('label', '?')}: {old[:8]}... -> {new[:8]}...")
         else:
             print(f"  [{i}] {entry.get('label', '?')}: unchanged")
-        # Sphere digest is optional — only update if the field was already
-        # present in the manifest, OR if the user opts in via --with-spheres.
+        # Sphere digest is optional — only update entries whose manifest row
+        # already carries an expected_sphere_digest field.
         if old_sphere and new_sphere and new_sphere != old_sphere:
             sphere_changes.append((i, old_sphere, new_sphere))
             entry["expected_sphere_digest"] = new_sphere

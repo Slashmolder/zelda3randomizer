@@ -5,10 +5,11 @@
 // the generated assignment is written but not consumed by the game
 // (BossShuffle_GetForDungeon is read-only API surface).
 //
-// ALTTPR upstream: app/Boss.php — 13 bosses. Agahnim and Agahnim2 are
-// pinned (HCT and GT top). The 11 remaining bosses shuffle across the
-// 11 non-Agahnim dungeon-boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP,
-// MM, TR, GT).
+// ALTTPR upstream: app/Boss.php. Agahnim and Agahnim2 are pinned (HCT and
+// GT top). The 10 remaining bosses shuffle across the 10 non-Agahnim
+// dungeon-boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP, MM, TR) — GT's
+// boss (Agahnim2) is pinned, so GT is not a shuffle room. (Matches
+// kBossShuffleableDungeons[10] / kBossShufflePool[10] below.)
 //
 // Determinism: Fisher-Yates shuffle keyed by (seed_u64 XOR salt) via
 // the project's xoshiro256** RNG (rando_rng.h).

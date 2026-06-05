@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Benchmark CI gate (tasks.md §1.0h, §3.11).
 
-Asserts:
-  - ``Logic_ComputeReachability`` median < 5 ms on reference desktop CI
-  - same < 20 ms on Switch (manual run, not blocking CI)
+Measures end-to-end seed-generation wall-clock at default settings: runs the
+binary's ``--generate-seed`` mode ``--samples`` times (default 10) and asserts
+the median ``generation_wall_clock_ms`` (read from the spoiler meta block) is
+under ``--target-ms`` (default 2000 — the ``randomizer-core`` "Default-settings
+benchmark < 2s" budget).
 
-across 1000 invocations on the full Phase A logic graph.
-
-**A0 status (scaffold)**: ``Logic_ComputeReachability`` doesn't exist yet
-(lands in task 3.8). Script exits clean until then. The script is wired into
-CI now so the gate is live from the moment the function lands.
+If the binary isn't built, the script prints a scaffold notice and exits clean
+(0), so it's a no-op until a build is present.
 
 Usage:
-  python assets/scripts/run_rando_benchmarks.py --binary=./zelda3
+  python assets/scripts/run_rando_benchmarks.py --binary=./zelda3 --samples=10
 """
 from __future__ import annotations
 

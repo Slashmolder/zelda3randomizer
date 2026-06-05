@@ -88,8 +88,9 @@ def changed_files(base_sha: str, head_sha: str) -> list[str]:
 
 
 def matches_glob(path: str, pattern: str) -> bool:
-    # Use pathlib's match — handles ``**`` since Python 3.13; fall back to
-    # naive prefix check for compatibility with older runners.
+    # fnmatch has no recursive ``**`` support, so collapse ``**/`` -> ``*/`` and
+    # ``**`` -> ``*`` first, then match. Good enough for the bump-trigger globs
+    # (e.g. ``src/rando/**``) and works on every supported Python (3.10+).
     from fnmatch import fnmatch
     return fnmatch(path, pattern.replace("**/", "*/").replace("**", "*"))
 
