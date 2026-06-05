@@ -117,7 +117,7 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 ## 8. Determinism + CI
 
-- [x] 8.1 Bump `kGeneratorVersion` in `src/rando/rando.h`. <!-- done: hints joined the canonical hash at kGeneratorVersion 14 (§66) per rando_settings.h:121-122 / rando_settings.c:96; kGeneratorVersion now 36 (rando.h:17) -->
+- [x] 8.1 Bump `kGeneratorVersion` in `src/rando/rando.h`. <!-- done: hints joined the canonical hash at kGeneratorVersion 14 (§66) per rando_settings.h:121-122 / rando_settings.c:96. (kGeneratorVersion is the live marker in src/rando/rando.h and advances on every placement-affecting bump; don't quote a fixed number here — it re-rots.) -->
 
 - [x] 8.2 Corpus coverage for hint determinism. <!-- done-differently (2026-06-01): hints default ON, so the existing fast_ganon/ganon race-mode entries (b-race-*) already carry hints=on and stamp the hints[] array — their ZRSR reveal round-trip asserts the 15 tele-tile hints regenerate byte-identically. The one uncovered path (Murahdahla, id 16, Triforce-Hunt-only) is now covered by a new race entry a1-open-triforce-hunt-race. Fork ids 17-19 are also stamped by every race entry now. No separate hints=full/sahasrahla axis (binary). commit 7b1874d. -->
 - [x] 8.3 `hints` does not affect placement. <!-- done: hints are generated AFTER placement, so placement_digest_hex is independent of hints on/off; the 69/69 corpus (all placement/sphere digests) is unchanged by the hint generator. -->
