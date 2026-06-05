@@ -543,7 +543,21 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   const char *out_share_string = NULL;
   const char *manifest_path = NULL;
   const char *out_dir = NULL;
-  int budget_seconds = 5;
+  // Default 0 = deterministic: run the placer to its fixed attempt cap
+  // (kAssumedFillMaxAttempts) with NO wall-clock cutoff. A positive
+  // --budget-seconds reintroduces a CPU-time cutoff on the retry loop, which
+  // makes the SELECTED attempt (and thus placement_digest + goal_completable)
+  // depend on machine speed/load for any seed that needs more than the budget's
+  // worth of retries — i.e. non-deterministic output. That silently breaks the
+  // corpus's cross-platform byte-identical contract (a slow CI runner produces a
+  // different digest) and surfaces as flaky "uncompletable, refusing" rejections
+  // for hard seeds (e.g. triforce-hunt with pieces_placed=30) that ARE
+  // completable on the deterministic path. The in-game slot generator already
+  // uses budget=0 for exactly this reason (see Rando_GenerateSlot call above);
+  // headless generation MUST match. The full cap is cheap (<~1s even on the
+  // hardest seeds — the loop returns the instant an attempt fully completes).
+  // The flag stays for batch/debug callers that knowingly want a time bound.
+  int budget_seconds = 0;
   bool assets_must_be_vanilla = false;
   bool race_mode = false;  // Phase B Slice 6 — set settings.race_mode = 1
 

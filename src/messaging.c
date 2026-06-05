@@ -824,8 +824,16 @@ void Death_Func15(bool count_as_death) {  // 89f50f
 
   death_var4 = link_health_current = kHealthAfterDeath[link_health_capacity >> 3];
   uint8 i = BYTE(cur_palace_index_x2);
-  if (i != 0xff)
-    link_keys_earned_per_dungeon[(i == 2 ? 0 : i) >> 1] = link_num_keys;
+  if (i != 0xff) {
+    // rando-exempt: state-shuffle — death-time key save (mirrors
+    // SaveDungeonKeys). Under Retro genericKeys, persist to the shared pool slot
+    // instead of the per-dungeon slot so the shared counter is authoritative at
+    // death (parity with the other key-save sites). Not a grant.
+    if (Rando_IsGenericKeysActive())
+      link_generic_keys = link_num_keys;
+    else
+      link_keys_earned_per_dungeon[(i == 2 ? 0 : i) >> 1] = link_num_keys;
+  }
   Sprite_ResetAll();
   if (death_var2 == 0xffff && (!(enhanced_features0 & kFeatures0_MiscBugFixes) || count_as_death))
     death_save_counter++;

@@ -178,11 +178,22 @@ void Settings_SetDefaults(RandoSettings *s);
 // world_state, so the hash and placement can never desync. Returns the user's
 // raw mode for non-Retro seeds.
 //
-// NOTE: this is `wildKeys` only. ALTTPR Retro also sets `rom.genericKeys`
-// (one shared key pool, any key opens any door); that requires rewriting the
-// per-dungeon key-door LOGIC predicates and is NOT done here — keys keep their
-// dungeon identity (see docs/randomizer.md "Retro world-state").
+// NOTE: this is `wildKeys` (the placement-side override). ALTTPR Retro ALSO sets
+// `rom.genericKeys` (one shared key pool, any key opens any door) — that is
+// `Settings_GenericKeysActive` below, which collapses the per-dungeon key-door
+// LOGIC predicates onto the shared GenericKey count. The two are complementary:
+// wildKeys lets keys spawn anywhere; genericKeys makes them fungible.
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
+
+// True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
+// `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like
+// `Settings_EffectiveSmallKeysMode` this is *computed* from world_state, not a
+// serialized bit, so no new canonical bytes enter the settings struct. Used by
+// BuildItemPool (substitute each per-dungeon SmallKey with the fungible
+// GenericKey) and by the predicate VM (a per-dungeon small-key requirement is
+// satisfied by holding >=1 GenericKey — mirrors ALTTPR ItemCollection::has()'s
+// ShopKey wildcard at app/Support/ItemCollection.php:271-273). NULL-safe.
+bool Settings_GenericKeysActive(const RandoSettings *s);
 
 // Serialize to a fixed-layout little-endian byte sequence. Always writes
 // kSettingsCanonicalLen bytes. Returns kSettingsCanonicalLen.

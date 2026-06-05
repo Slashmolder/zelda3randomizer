@@ -136,6 +136,8 @@ enum {
   ID_SmallMagic = 104, ID_Arrow1 = 105, ID_Arrow10 = 106,
   ID_Bombs1 = 107, ID_Bombs3 = 108, ID_Bombs10 = 109, ID_Rupoor = 110,
   ID_Map_HCE = 124,
+  ID_GenericKey = 125,  // Retro shared small-key (ROM 0xAF); substituted for every
+                        // per-dungeon SmallKey under genericKeys (Settings_GenericKeysActive)
   ID_BluePotion = 126,  // unbottled BluePotion (ROM 0x30); Phase B Slice 3b TakeAny reward
 };
 
@@ -374,8 +376,16 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   // Vanilla: NOT in pool (placed at vanilla locations by the placement
   // algorithm's identity rule). Dungeon/Wild: add to pool.
   if (Settings_EffectiveSmallKeysMode(settings) != kDungeonItemMode_Vanilla) {
+    // Under Retro genericKeys, every per-dungeon SmallKey is the fungible
+    // GenericKey instead (ALTTPR Location::getItem swaps each Item\Key for KeyGK
+    // — app/Location.php:201,268). Same per-dungeon COUNTS and same in-pool slots
+    // (one substitution per entry, count 0 entries no-op), so the pool size is
+    // unchanged; only the item identity changes. wildKeys already routes them
+    // wild. Non-Retro keeps per-dungeon identity.
+    bool generic = Settings_GenericKeysActive(settings);
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
-      n = pool_add(out_items, n, capacity, kVanillaSmallKeyCounts[i].item_id, kVanillaSmallKeyCounts[i].count);
+      uint16 key_id = generic ? (uint16)ID_GenericKey : kVanillaSmallKeyCounts[i].item_id;
+      n = pool_add(out_items, n, capacity, key_id, kVanillaSmallKeyCounts[i].count);
     }
   }
   if (settings->dungeon_big_keys_mode != kDungeonItemMode_Vanilla) {
@@ -495,7 +505,13 @@ static bool is_progression_item(uint16 item_id) {
   // Prize pendants (111..113) and crystals (114..120) — progression
   // (gate Sahasrahla / Pedestal / Ganon's Tower / Ganon).
   if (item_id >= 111 && item_id <= 120) return true;
-  // Virtual items (121+) — NOT in pool; not progression.
+  // GenericKey (125) — the Retro shared small key. Progression: it gates the
+  // small-key doors. Only ever in the pool under genericKeys (BuildItemPool
+  // substitution), so classifying it unconditionally leaves non-Retro pools
+  // unaffected. It must be in the assumed inventory so the door-reachability
+  // collapse (rando_logic.c) sees the shared GenericKey count during fill.
+  if (item_id == 125) return true;
+  // Virtual items (121+, except 125 above) — NOT in pool; not progression.
   return false;
 }
 
@@ -715,15 +731,21 @@ bool Place_AssumedFill(const RandoSettings *settings,
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
 
-  // Budget timer: if budget_seconds > 0, abort
-  // additional retry attempts once the elapsed CPU time exceeds the
-  // budget. Each individual attempt still runs to completion; the budget
-  // only gates the retry loop. clock() is process CPU time and is a fine
-  // proxy for wall-clock here (the placer is single-threaded CPU-bound);
-  // it also satisfies the determinism guard's blocklist of wall-clock APIs
-  // (`time()`, `clock_gettime`). The budget is NOT used to influence
-  // placement output — it just decides when to stop retrying — so it
-  // does not break placement determinism.
+  // Budget timer: if budget_seconds > 0, abort additional retry attempts once
+  // the elapsed CPU time exceeds the budget. Each individual attempt still runs
+  // to completion; the budget only gates the retry loop.
+  //
+  // DETERMINISM WARNING: a positive budget DOES affect output. When no attempt
+  // fully completes, the loop ships the best-so-far; cutting the loop off early
+  // (on a slow/loaded machine) selects a different best-so-far than a fast run,
+  // so placement_digest + goal_completable become machine-dependent for any seed
+  // that needs more retries than the budget allows. Pass budget_seconds=0 (the
+  // headless --generate-seed default and the slot-generator default) for a fully
+  // deterministic run to the fixed kAssumedFillMaxAttempts cap — the corpus's
+  // cross-platform byte-identical contract REQUIRES budget=0. A positive budget
+  // is only for batch/debug callers that knowingly accept non-determinism for a
+  // time bound. (clock() is allowed by the determinism guard's wall-clock
+  // blocklist, but that does NOT make a positive budget deterministic.)
   clock_t start_clock = clock();
 
   uint16 best_unreachable = 0xFFFF;
@@ -1327,7 +1349,18 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // No junk item fits this slot's can_place — fall back to the slot's
       // vanilla item, which always satisfies (since vanilla is what shipped
       // there). This also covers the pool-cardinality-mismatch case.
-      placement_at[k] = loc->vanilla_item_id;
+      uint16 fb = loc->vanilla_item_id;
+      // Under Retro genericKeys, a per-dungeon SmallKey fallback must become the
+      // fungible GenericKey (mirrors ALTTPR Location::getItem swapping any
+      // Item\Key to KeyGK). The only slot that hits this under Retro is the
+      // Swamp Palace Entrance forced-key (can_place = OP_ITEM_IS(SmallKey_SP),
+      // which no pool item satisfies once keys are generic). Without the swap it
+      // would hold a dead per-dungeon key that the genericKeys runtime never
+      // grants (the shared-counter grant only fires for GenericKey).
+      if (Settings_GenericKeysActive(settings) &&
+          fb >= ID_SmallKey_HCE && fb <= ID_SmallKey_GT)
+        fb = ID_GenericKey;
+      placement_at[k] = fb;
     }
   }
 
@@ -2226,6 +2259,47 @@ void Placement_SelfCheck(void) {
       acc_s.accessibility = a;
       if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
         selfcheck_die("every tier must accept a fully-reachable placement");
+    }
+  }
+
+  // Retro genericKeys end-to-end: generate full Retro seeds and assert the
+  // shared-pool key routing never strands the goal. For each seed: the goal is
+  // completable, there are zero unreachable placements, the pool holds the
+  // fungible GenericKey, and NO per-dungeon SmallKey (53-65) leaked into the
+  // placement (every key — including the Swamp Palace Entrance forced key — is
+  // generic). This is the headless guard for task 3.3; the in-game playtest
+  // remains the real acceptance gate for key-strand beatability.
+  {
+    static RandoPlacement gk_entries[512];
+    static const uint64 kGkSeeds[3] = {
+      0x00000000000000AFull,  // the hard-pool corpus seed's mnemonic
+      0x0000000000003039ull,  // 12345
+      0xC0FFEE0000000044ull,
+    };
+    for (uint8 si = 0; si < 3; si++) {
+      RandoSettings gks;
+      Settings_SetDefaults(&gks);
+      gks.world_state = kWorldState_Retro;
+      gks.goal = kGoal_Ganon;  // needs the 7 crystal dungeons + GT (key-heavy)
+      RandoPlacementTable gkt = { gk_entries, 0 };
+      if (!Place_AssumedFill(&gks, kGkSeeds[si], 0, &gkt))
+        selfcheck_die("Retro genericKeys: Place_AssumedFill produced no placement");
+      if (!Goal_IsCompletable(&gks, &gkt))
+        selfcheck_die("Retro genericKeys: goal not completable (key strand?)");
+      RandoSpheres gsp;
+      Logic_ComputeSpheres(&gks, &gkt, &gsp);
+      if (gsp.unreachable_count != 0)
+        selfcheck_die("Retro genericKeys: unreachable placement(s) (key strand?)");
+      uint16 generic = 0, leaked = 0;
+      for (uint16 e = 0; e < gkt.count; e++) {
+        uint16 it = gkt.entries[e].item_id;
+        if (it == ID_GenericKey) generic++;
+        else if (it >= ID_SmallKey_HCE && it <= ID_SmallKey_GT) leaked++;
+      }
+      if (generic == 0)
+        selfcheck_die("Retro genericKeys: no GenericKey in the placement");
+      if (leaked != 0)
+        selfcheck_die("Retro genericKeys: a per-dungeon SmallKey leaked into a Retro seed");
     }
   }
 

@@ -7401,6 +7401,9 @@ void Sprite_BonkKey(int k) {  // 85fc04
     // ALTTPR location_id; grants the dungeon's vanilla SmallKey of the
     // current room. Drop-pool shuffle lands in Phase B.
     link_num_keys++;
+    // rando-exempt: drop-pool — under Retro genericKeys link_num_keys is backed
+    // by the shared pool slot; persist the dropped key immediately.
+    if (Rando_IsGenericKeysActive()) link_generic_keys = link_num_keys;
     sprite_state[k] = 0;
     dung_savegame_state_bits |= (sprite_die_action[k] ? 0x2000 : 0x4000);
     SpriteSfx_QueueSfx3WithPan(k, 0x2f);

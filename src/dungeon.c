@@ -5236,6 +5236,10 @@ void Dungeon_ProcessTorchesAndDoors() {  // 81ce70
       } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a && link_num_keys != 0) {
         // rando-exempt: consumption — small key spent on locked door. (audit.md §0.2.4)
         link_num_keys -= 1;
+        // rando-exempt: consumption write-through — under Retro genericKeys the
+        // live counter is backed by the shared pool slot; persist the spend
+        // immediately so it survives even without an exit-save. (audit.md §0.2.4)
+        if (Rando_IsGenericKeysActive()) link_generic_keys = link_num_keys;
 has_key_for_door:
         door_animation_step_indicator = 0;
         dung_cur_door_pos = pos;
@@ -6583,7 +6587,12 @@ void Module_PreDungeon() {  // 82821e
   uint8 d = cur_palace_index_x2;
   // rando-exempt: state-shuffle — restore per-dungeon key count when entering
   // dungeon (or sentinel 0xff outside). Not a grant. (audit.md §0.2.2)
-  link_num_keys = (d != 0xff) ? link_keys_earned_per_dungeon[d == 2 ? 0 : (d >> 1)] : 0xff;
+  // Under Retro genericKeys, restore the live counter from the shared pool slot
+  // instead — keys are fungible across dungeons.
+  if (Rando_IsGenericKeysActive())
+    link_num_keys = (d != 0xff) ? link_generic_keys : 0xff;
+  else
+    link_num_keys = (d != 0xff) ? link_keys_earned_per_dungeon[d == 2 ? 0 : (d >> 1)] : 0xff;
   Hud_Rebuild();
   dung_num_lit_torches = 0;
   hdr_dungeon_dark_with_lantern = 0;
@@ -8000,7 +8009,11 @@ void Module11_02_LoadEntrance() {  // 829b1c
   uint8 dung = BYTE(cur_palace_index_x2);
   // rando-exempt: state-shuffle — restore per-dungeon key count on entrance
   // load (or 0xff sentinel outside). Not a grant. (audit.md §0.2.2)
-  link_num_keys = (dung != 255) ? link_keys_earned_per_dungeon[((dung == 2) ? 0 : dung) >> 1] : 255;
+  // Under Retro genericKeys, restore the live counter from the shared pool slot.
+  if (Rando_IsGenericKeysActive())
+    link_num_keys = (dung != 255) ? link_generic_keys : 255;
+  else
+    link_num_keys = (dung != 255) ? link_keys_earned_per_dungeon[((dung == 2) ? 0 : dung) >> 1] : 255;
   Hud_Rebuild();
   link_this_controls_sprite_oam = 4;
   player_near_pit_state = 3;
@@ -8070,6 +8083,13 @@ void SaveDungeonKeys() {  // 82a1c7
   uint8 idx = cur_palace_index_x2;
   if (idx == 0xff)
     return;
+  // rando-exempt: state-shuffle — under Retro genericKeys, persist the live
+  // count back to the shared pool slot instead of the per-dungeon slot. Not a
+  // grant. (audit.md §0.2.2)
+  if (Rando_IsGenericKeysActive()) {
+    link_generic_keys = link_num_keys;
+    return;
+  }
   if (idx == 2)
     idx = 0;
   link_keys_earned_per_dungeon[idx >> 1] = link_num_keys;

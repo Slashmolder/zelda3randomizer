@@ -103,6 +103,12 @@ uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s) {
   return s->dungeon_small_keys_mode;
 }
 
+bool Settings_GenericKeysActive(const RandoSettings *s) {
+  // Retro pins rom.genericKeys on (app/World/Retro.php). Computed from
+  // world_state — never a serialized bit (canonical length unchanged).
+  return s != NULL && s->world_state == kWorldState_Retro;
+}
+
 static void apply_derived_rules(RandoSettings *s) {
   if (s->goal == kGoal_Completionist) {
     s->accessibility = kAccessibility_Locations;

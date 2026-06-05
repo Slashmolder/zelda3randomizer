@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 53  # bump_rando_corpus.py --apply - merge: re-version Retro wildKeys above main swordless (52->53)
+generator_version: 54  # bump_rando_corpus.py --apply - Retro genericKeys
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -102,13 +102,13 @@ entries:
   - settings: { mode.state: retro, goal: ganon }
     seed: "0x0000000000000014"
     label: "a1-retro-ganon"
-    expected_digest: "791bbd311cf334a894e68839b1496b41bf2e2526bfef54c90944824ce15052e4"
-    expected_sphere_digest: "a27044d22016ca036bdcf378af5aeb2961df2ec7c1b2a59ea35e2f7fc5270973"
+    expected_digest: "5cf725388585cbadff94127106dd07964c7593061cfeb8f6801964c27b15b50a"
+    expected_sphere_digest: "0442012043795d04212512641297e3e20cfde9ac0dfa8a73bd1ecbb251bc9c97"
   - settings: { mode.state: retro, goal: fast_ganon }
     seed: "0x0000000000000015"
     label: "a1-retro-fast-ganon"
-    expected_digest: "81c3f829f06ce018175ce5e73b86e0e8272b71d6e815c676e987188562d6884e"
-    expected_sphere_digest: "8aa5bfc9a7acdd766e43463c9a9018e39da8de7ab5fc82d977dbc086a823c6bd"
+    expected_digest: "a38606795e70acabb0c633e15b9853638e0b950319bc9d07e3bee9c545ffa178"
+    expected_sphere_digest: "a14dab8b5afe6f07eef27921b1533debc54ba952bd47d9f28351ad3d3ee16cce"
   # crystals.* variations.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
     seed: "0x0000000000000016"
@@ -304,8 +304,8 @@ entries:
   - settings: { mode.state: retro, goal: completionist }
     seed: "0x52455452"   # "RETR"
     label: "celebrity-retro-completionist"
-    expected_digest: "d939c3867fd3d89a6df4923e5efd4df65987487d94eb683c522f891d02a07f5c"
-    expected_sphere_digest: "94e7529964eb6dab9ff271b3c7e6ab36bc3d81debdba7a62e84751d193ec5f77"
+    expected_digest: "fff534a8906c36f0118e9edfb2421003be92e441961c4dbbf4ddacad0b2285d2"
+    expected_sphere_digest: "60c0c5f8aa6d5ccfbde5e64da4704b3ba41ff7a28519f75e3b908a8eae26bcdf"
   # Phase B Slice 2 (kGeneratorVersion 11) — Inverted seeds. Captured against
   # the world-state-aware predicate/edge/region override path. 1-2 unreachable
   # placements per seed is currently expected (graph gaps tracked in tasks
@@ -499,8 +499,8 @@ entries:
   - settings: { mode.state: retro, goal: ganon, drop_shuffle: true }
     seed: "0x5714"
     label: "b-drop-retro-ganon"
-    expected_digest: "d8406b92d031ab0c8c4af9ccfb1139ee4206c13c6d69b7a3b62f25b4986e222f"
-    expected_sphere_digest: "db56fe7bd8e56ad96e0689a60f5624157bfcf4548bedcd957124c57c6d79e214"
+    expected_digest: "2057e579103cb844c86626adffa459fb1d8944ab137be23b71f473bd4625a08c"
+    expected_sphere_digest: "da815c6bece18c36dfd902a096e8684ed6d8d76d90d6acb9ace02f6457920f5c"
   - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
     seed: "0x5721"
     label: "b-bossdrop-open-fast-ganon"
@@ -583,8 +583,8 @@ entries:
   - settings: { mode.state: retro, goal: fast_ganon, mode.weapons: swordless }
     seed: "0xC0FFEE0000000004"
     label: "b-swordless-retro-fast-ganon"
-    expected_digest: "080b8b9f3dab4cda5ed0ce2599ff08b01d64f17c60c577cfb3779ecdeed3fee4"
-    expected_sphere_digest: "59b661159206a8fbb7abab285f418e51885e93de70ec0782b87f10fe51d24245"
+    expected_digest: "d10ca67ed090694abb6b470318b934b62a118ed06bbfaa28933b275382ae1fae"
+    expected_sphere_digest: "da0f6323f742ab684795009b87e3981e1c26ea7e3fe7f552c23585d1fe165930"
   - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, mode.weapons: swordless }
     seed: "0xC0FFEE0000000005"
     label: "b-swordless-standard-ganon-7-7"
@@ -628,28 +628,28 @@ entries:
   - settings: { mode.state: retro, goal: dungeons }
     seed: "0xC0FFEE0000000021"
     label: "b-retro-dungeons"
-    expected_digest: "4f561172320057b4a77bec5af739cc11f71bee049247c22633b1e5e65f7cde48"
-    expected_sphere_digest: "ccf4353cbce175615ceca0e21636b3f5936447c2afdafbda6e1050fdc06a9008"
+    expected_digest: "86595537e52a302b0c425e6dd96030a5d50a3477c4c0352a31d199cfeb91fc94"
+    expected_sphere_digest: "c06fef1816458ccf5ef2e35f46dec272e7a7bc12e2b09a1927213b2f87ed3fb8"
   - settings: { mode.state: retro, goal: pedestal }
     seed: "0xC0FFEE0000000022"
     label: "b-retro-pedestal"
-    expected_digest: "a977606f6f9434979f2efcb8246d6e5e3848be9e703ad75d46c670a0c025e8db"
-    expected_sphere_digest: "897aca59f931b9ed285b6c7cd98689cb7ecbee81449d3e92be539551677a3ebc"
+    expected_digest: "dfd7a6005baeca2acea10f460f01839feda77e260318ef7fa879d12a59416cb5"
+    expected_sphere_digest: "397fe327665991d9b1cef1d430bf3abd1b92fd5d1efdda28250950861acc69fa"
   - settings: { mode.state: retro, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30 }
     seed: "0xC0FFEE0000000023"
     label: "b-retro-triforce-hunt"
-    expected_digest: "5f2faa4dcf8d087f48563b04fc8aea2ba62a9a5de4395918a55f5700999ab934"
-    expected_sphere_digest: "c795b4e33b188ec2f34bfeb06109a210445c2620fa994055353c253fbdc0fb97"
+    expected_digest: "5700874cc5177d6be02d958e012b69899d1b3a5fea891d5b686d3ecba1c6b549"
+    expected_sphere_digest: "a97d95ab8ab52c7fa2bb7fcff86d1179ee596ce7a0e9540b58e781aed8fb9929"
   - settings: { mode.state: retro, goal: fast_ganon, accessibility: none }
     seed: "0xC0FFEE0000000024"
     label: "b-retro-acc-beatable"
-    expected_digest: "7570eea274c11dd029afa41afc3e7987986ef68384fff90099ae0eda1825d62e"
-    expected_sphere_digest: "cf6b767343e325bd24afc57ecaf93778bd223e6c3563abff1c7876a33a1b7f78"
+    expected_digest: "1634aa0abac01a98459f0cbc55234cb4a48ae03ee3fe2741fed2e7a8732cff0a"
+    expected_sphere_digest: "3b28d77255a050b4d814974953e332c6ff6744cb74acfa5987595938d6335f7a"
   - settings: { mode.state: retro, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
     seed: "0xC0FFEE0000000025"
     label: "b-retro-boss-drop"
-    expected_digest: "4276cde66fc4ca344d245b3b5f6e5fb66961d798c1ff7b3ddfca5373bdbdb1ed"
-    expected_sphere_digest: "5e2050db173ea4dd05ce6063ae48319d8d4c0fae7cd4dbad6e06420b997e1796"
+    expected_digest: "b9bb2f10a0787be6476d11e506b820ff18aa06776c4b97a2965ae2404f86b0bd"
+    expected_sphere_digest: "25807ab466b7b30c60192ecade46c9c373d2f067864c1ee340b029145e3b55db"
   - settings: { mode.state: standard, goal: fast_ganon, logic: major_glitches }
     seed: "0xC0FFEE0000000031"
     label: "b-logic-mg-standard"
@@ -679,8 +679,17 @@ entries:
   - settings: { mode.state: retro, goal: fast_ganon, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000044"
     label: "b-bossheart-pool-retro-fast-ganon"
-    expected_digest: "5ebe15320110b0089ed68212663fce9e0a6bfeb2867a5bd1bcec8712823d33b5"
-    expected_sphere_digest: "11641374cff7021bdfa1d334f917aecbd7e39aebbf7f126fbb4fe172eaf60f04"
+    expected_digest: "f7b7c4c5897daa5bb2d0fe3d7a0a1972b28a341cd8ddbfbb549a2cbce1e5a723"
+    expected_sphere_digest: "583db1b40b2a490843afe6bbdc1155a65c9121638554fc46a572a776e55dde6d"
+  # genericKeys hard-pool stressor (add-rando-retro-generic-keys §5.3): a hard
+  # item pool + ganon goal (all 7 crystal dungeons + GT) maximizes shared-key
+  # routing pressure across the deepest key-door chains (PoD-6/SW-3/TR-4/GT-4).
+  # Seed 0xAF = the GenericKey ROM byte, a mnemonic. Captured at kGeneratorVersion 54.
+  - settings: { mode.state: retro, goal: ganon, item_pool: hard }
+    seed: "0x00000000000000AF"
+    label: "b-retro-genericKeys-hardpool-ganon"
+    expected_digest: "e00161484fff2a7ceae484aa2834f0cb94629092b6e8685fba897658d2dd39ba"
+    expected_sphere_digest: "b44f68990dde645bf0bf8535de60aa042a643ad992a3148172995730ffe0c48f"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

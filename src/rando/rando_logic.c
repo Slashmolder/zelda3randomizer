@@ -9,6 +9,7 @@
 
 #include "rando_logic.h"
 #include "rando.h"
+#include "item_ids.h"  // ITEM_GenericKey / ITEM_SmallKey_* (genericKeys collapse)
 
 #include <assert.h>
 #include <stdio.h>
@@ -57,9 +58,30 @@ static uint16 cursor_u16le(Cursor *c) {
 
 static bool eval(Cursor *c, const PredicateContext *ctx);
 
+// genericKeys (Retro) small-key collapse — a direct port of ALTTPR
+// ItemCollection::has() (app/Support/ItemCollection.php:271-273): when generic
+// keys are in effect, ANY per-dungeon small-key requirement (regardless of the
+// requested amount) is satisfied by holding >=1 GenericKey. Big keys, maps and
+// compasses are unaffected (they keep per-dungeon identity under Retro). The
+// per-dungeon SmallKey ids are 53..65 (item_registry.yaml, contiguous
+// ITEM_SmallKey_HyruleCastleEscape..ITEM_SmallKey_GanonsTower). When generic
+// keys are NOT active the caller falls through to the normal per-dungeon count,
+// so non-Retro evaluation is byte-identical.
+static bool logic_generic_keys_active(const PredicateContext *ctx) {
+  return ctx->settings != NULL &&
+         ctx->settings->world_state == (uint8)kWorldState_Retro;
+}
+
+static bool item_is_small_key(uint16 item_id) {
+  return item_id >= ITEM_SmallKey_HyruleCastleEscape &&
+         item_id <= ITEM_SmallKey_GanonsTower;
+}
+
 static bool eval_has_item(Cursor *c, const PredicateContext *ctx) {
   uint16 item_id = cursor_u16le(c);
   if (c->error || item_id >= 256) return false;
+  if (item_is_small_key(item_id) && logic_generic_keys_active(ctx))
+    return ctx->counts->by_item_id[ITEM_GenericKey] >= 1;
   return ctx->counts->by_item_id[item_id] >= 1;
 }
 
@@ -67,6 +89,8 @@ static bool eval_has_amount(Cursor *c, const PredicateContext *ctx) {
   uint16 item_id = cursor_u16le(c);
   uint8 n = cursor_u8(c);
   if (c->error || item_id >= 256) return false;
+  if (item_is_small_key(item_id) && logic_generic_keys_active(ctx))
+    return ctx->counts->by_item_id[ITEM_GenericKey] >= 1;  // any key opens any door
   return ctx->counts->by_item_id[item_id] >= n;
 }
 
@@ -1086,6 +1110,53 @@ void Logic_SelfCheck(void) {
                  "LinksHouse should NOT be reachable under world_state=Inverted "
                  "(gated by world_state_filter)");
     }
+  }
+
+  // genericKeys (Retro) small-key collapse — the cross-dungeon key dependency.
+  // Under Retro, any per-dungeon small-key predicate is satisfied by holding
+  // >=1 GenericKey, so a single generic key opens BOTH a PoD 5-key door AND a
+  // TR 4-key door (the shared-pool semantics). Big keys are NOT collapsed. When
+  // genericKeys is off the per-dungeon count rules unchanged.
+  {
+    RandoCounts gk;
+    memset(&gk, 0, sizeof(gk));
+    RandoSettings retro;
+    Settings_SetDefaults(&retro);
+    retro.world_state = kWorldState_Retro;
+
+    // Operand bytes (item ids are u16 little-endian in the bytecode).
+    #define LSC_U16(id) (uint8)((id) & 0xff), (uint8)((id) >> 8)
+    uint8 pod5[] = { OP_HAS_AMOUNT, LSC_U16(ITEM_SmallKey_PalaceOfDarkness), 5 };
+    uint8 tr4[]  = { OP_HAS_AMOUNT, LSC_U16(ITEM_SmallKey_TurtleRock), 4 };
+    uint8 sp1[]  = { OP_HAS_ITEM,   LSC_U16(ITEM_SmallKey_SwampPalace) };
+    uint8 bkpod[]= { OP_HAS_ITEM,   LSC_U16(ITEM_BigKey_PalaceOfDarkness) };
+
+    // 0 generic keys → every small-key door closed (no per-dungeon keys exist).
+    LSC_ASSERT(Predicate_Evaluate(pod5, sizeof(pod5), &gk, &retro) == false,
+               "Retro: PoD 5-key door must be closed with 0 generic keys");
+    LSC_ASSERT(Predicate_Evaluate(tr4, sizeof(tr4), &gk, &retro) == false,
+               "Retro: TR 4-key door must be closed with 0 generic keys");
+
+    // 1 generic key → BOTH the PoD-5 and TR-4 doors open (cross-dungeon share),
+    // and the Swamp Palace single-key door opens — all from one shared key.
+    gk.by_item_id[ITEM_GenericKey] = 1;
+    LSC_ASSERT(Predicate_Evaluate(pod5, sizeof(pod5), &gk, &retro) == true,
+               "Retro: 1 generic key must open the PoD 5-key door (collapse)");
+    LSC_ASSERT(Predicate_Evaluate(tr4, sizeof(tr4), &gk, &retro) == true,
+               "Retro: the SAME generic key must open the TR 4-key door (cross-dungeon)");
+    LSC_ASSERT(Predicate_Evaluate(sp1, sizeof(sp1), &gk, &retro) == true,
+               "Retro: 1 generic key must open the Swamp Palace small-key door");
+    // Big keys keep per-dungeon identity — NOT satisfied by a generic key.
+    LSC_ASSERT(Predicate_Evaluate(bkpod, sizeof(bkpod), &gk, &retro) == false,
+               "Retro: a generic key must NOT satisfy a BigKey requirement");
+
+    // Non-Retro: the collapse is OFF — a generic key does not open a small-key
+    // door (the per-dungeon count rules, and no per-dungeon key is held).
+    RandoSettings open;
+    Settings_SetDefaults(&open);  // world_state defaults to Open
+    LSC_ASSERT(Predicate_Evaluate(pod5, sizeof(pod5), &gk, &open) == false,
+               "non-Retro: a generic key must NOT collapse small-key doors");
+    #undef LSC_U16
   }
 
   fprintf(stderr, "[Logic_SelfCheck] OK\n");

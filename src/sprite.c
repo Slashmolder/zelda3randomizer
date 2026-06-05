@@ -1407,6 +1407,9 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     // keys from enemy drops grant the vanilla SmallKey of the current dungeon
     // (link_num_keys is a per-dungeon counter that interprets correctly).
     link_num_keys += 1;
+    // rando-exempt: drop-pool — under Retro genericKeys link_num_keys is backed
+    // by the shared pool slot; persist the dropped key immediately.
+    if (Rando_IsGenericKeysActive()) link_generic_keys = link_num_keys;
     goto after_getkey;
   case 13:
     item_receipt_method = 0;

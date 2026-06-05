@@ -307,6 +307,23 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
   return 0;
 }
 
+// Retro genericKeys grant — a GenericKey (id 125, ROM 0xAF) pickup feeds the
+// single shared small-key pool, not a per-dungeon counter. Bump the persisted
+// shared counter `link_generic_keys` (link_keys_earned_per_dungeon[15] = ALTTPR
+// $7EF38B); when the player is standing in a dungeon the LIVE counter
+// link_num_keys mirrors the shared one (loaded on entry, write-through on
+// consume), so resync it too. Outside a dungeon link_num_keys is the 0xff
+// sentinel and is left alone — it reloads from the shared slot on the next
+// dungeon entry. Mirrors ALTTPR newitems.asm KeyGK (+1 to CurrentGenericKeys).
+static void rando_grant_generic_key(void) {
+  // rando-exempt: grant — Retro shared generic small-key counter.
+  if (link_generic_keys < 0xfe) link_generic_keys += 1;
+  if ((uint8)cur_palace_index_x2 != 0xff) {
+    // rando-exempt: grant — live counter mirrors the shared pool in-dungeon.
+    link_num_keys = link_generic_keys;
+  }
+}
+
 // §6.2 prize-item direct-grant. The 7 crystals + 3 pendants OR into
 // `link_has_crystals` / `link_which_pendants`. Each prize has a fixed bit
 // per vanilla LttP convention (kDungeonCrystalPendantBit[] indexed by
@@ -412,6 +429,15 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   // placements where the placed item belongs to a DIFFERENT dungeon we write
   // that specific dungeon's bit (BigKey/Map/Compass) or counter slot (SmallKey).
   if (dungeon_item_direct_grant(placed)) {
+    return kRandoLttpSkip;
+  }
+
+  // Retro genericKeys shared small-key. GenericKey (125) has dispatch
+  // `vanilla:0xAF`, which the LttP receive path does NOT understand — route it to
+  // the shared-counter grant instead and skip the vanilla dispatcher. Only ever
+  // placed under genericKeys (Retro), so no settings gate is needed here.
+  if (placed == ITEM_GenericKey) {
+    rando_grant_generic_key();
     return kRandoLttpSkip;
   }
 
@@ -735,6 +761,12 @@ uint8 Rando_GetActiveWorldState(void) {
 bool Rando_IsRetroActive(void) {
   return (enhanced_features1 & kFeatures1_RandomizerActive) &&
          Rando_GetActiveWorldState() == (uint8)kWorldState_Retro;
+}
+
+// genericKeys is pinned on for Retro (app/World/Retro.php), so the runtime gate
+// equals Rando_IsRetroActive today. Distinct name: see the rando.h doc comment.
+bool Rando_IsGenericKeysActive(void) {
+  return Rando_IsRetroActive();
 }
 
 bool Rando_SuppressHyruleCastleEscape(void) {
@@ -2052,6 +2084,13 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
           kGToCompass[g] != 0xFFFF && (link_compass & bit))
         out->by_item_id[kGToCompass[g]] = 1;
     }
+    // Retro genericKeys — the per-dungeon SmallKey cells above are all 0 under
+    // genericKeys (keys live in the shared slot). Feed the live tracker/reach
+    // panel the real shared count so the predicate VM's small-key collapse
+    // (any door open with >=1 GenericKey) evaluates against the player's actual
+    // keys. Matches the gen-time assumed inventory (by_item_id[ITEM_GenericKey]).
+    if (Settings_GenericKeysActive(st))
+      out->by_item_id[ITEM_GenericKey] = link_generic_keys;
   }
 }
 
