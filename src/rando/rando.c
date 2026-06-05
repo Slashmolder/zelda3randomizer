@@ -700,12 +700,11 @@ uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
   if (cave < 0) return vanilla_lttp_code;
   uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
   // Grant the placed item (Rando_OnLocationCheck inside also marks loc checked).
-  // NOTE (latent): the weapon cave's Rupee300 reward (only when mode.weapons is
-  // vanilla/swordless — modes reserved/unreachable today, see
-  // rando_settings.h) has no vanilla LttP dispatch code (rupees are granted by
-  // a separate path), so it would fall through to `vanilla_lttp_code`. When
-  // those weapon modes are enabled, give Rupee300 a real grant here. The
-  // default ProgressiveSword reward dispatches correctly via progressive_to_lttp.
+  // The weapon cave's Rupee300 reward (only when mode.weapons is vanilla/swordless)
+  // resolves through Rando_DispatchVanillaGrant -> progressive_to_lttp, which maps
+  // ITEM_Rupee300 -> LttP code 0x46; Link_ReceiveItem(0x46) drives the receipt
+  // ancilla whose Ancilla_AddRupees grants +300 rupees (src/ancilla.c). The default
+  // ProgressiveSword reward likewise dispatches via progressive_to_lttp.
   uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, vanilla_lttp_code);
   // Lock the whole cave: mark every active slot's LOC checked so the other
   // offered item vanishes and the cave stays empty on revisit (matches the asm
@@ -767,6 +766,20 @@ bool Rando_IsRetroActive(void) {
 // equals Rando_IsRetroActive today. Distinct name: see the rando.h doc comment.
 bool Rando_IsGenericKeysActive(void) {
   return Rando_IsRetroActive();
+}
+
+// Retro genericKeys BUYABLE shop-slot grant (ALTTPR ShopKey, Randomizer.php:746-747
+// — `$shop->addInventory(1, Item::get('ShopKey', ...), 100)`). The predicate VM
+// treats holding >=1 GenericKey as opening EVERY small-key door (eval_has_item /
+// eval_has_amount wildcard), but the placed GenericKey pool is FINITE (~30) and
+// decrements per door, so keys spent out of order can strand a progression door.
+// ALTTPR avoids that with an UNLIMITED buyable ShopKey supply; the fork had dropped
+// it. This is that supply: each purchase feeds the shared counter exactly like a
+// GenericKey pickup, with no cap on how many can be bought (re-enter the shop room
+// to buy again). Same grant as rando_grant_generic_key(); the shop handler owns the
+// rupee cost + purchase feedback. Only reached from the genericKeys-gated shop slot.
+void Rando_GrantGenericKeyPurchase(void) {
+  rando_grant_generic_key();
 }
 
 bool Rando_SuppressHyruleCastleEscape(void) {

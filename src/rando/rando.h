@@ -544,6 +544,15 @@ bool Rando_IsRetroActive(void);
 // false the vanilla per-dungeon key path runs byte-identically.
 bool Rando_IsGenericKeysActive(void);
 
+// Rando_GrantGenericKeyPurchase — grant one shared generic small key, the way an
+// in-world GenericKey pickup would (bumps the persisted shared counter, and the
+// live link_num_keys when standing in a dungeon). Called by the Retro genericKeys
+// BUYABLE shop slot (ShopItem_GenericKey, src/sprite_main.c) on each purchase to
+// provide ALTTPR's unlimited ShopKey supply, so the predicate VM's >=1 small-key
+// wildcard is sound against the finite placed-key pool. The shop handler owns the
+// rupee cost and purchase feedback; this only does the grant.
+void Rando_GrantGenericKeyPurchase(void);
+
 // True when the Hyrule Castle escape story sequence (uncle death / sewers /
 // cell rescue / throne push) must NOT engage. Non-Standard rando seeds
 // (Open / Inverted / Retro) start POST-escape: the placer pre-grants
