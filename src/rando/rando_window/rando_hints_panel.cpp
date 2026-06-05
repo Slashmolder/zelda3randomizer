@@ -37,7 +37,6 @@ static const char *PrettifyNpcLabel(const char *id, char *buf, size_t buflen) {
 
 extern "C" void RandoHints_Render(void) {
   if (!Rando_IsActive()) {
-    ImGui::TextDisabled("No randomizer slot active.");
     ImGui::TextDisabled("Start or load a randomizer slot to view its hints.");
     return;
   }

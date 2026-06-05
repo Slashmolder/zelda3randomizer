@@ -1,3 +1,26 @@
+> **As-built (2026-06-04).** The requirements below were drafted for an **in-game
+> OAM overlay** drawn by `src/hud.c`. After the PC UI moved to Dear ImGui
+> second-OS-windows (`add-rando-native-settings-window`), the trackers were
+> delivered on PC as **three rich native ImGui windows** — Item, Check (tri-state
+> reachability), and Map (`src/rando/rando_window/tracker_windows.cpp` +
+> `rando_reach_panel.cpp`). The `hud.c` OAM overlay is retained as the **Switch
+> path** only (its toggle flags are settable only on Switch; on PC the same toggle
+> keys open the native window — `src/main.c:2113-2126`). Read the "in-game overlay"
+> language below as satisfied **done-differently** on PC by the native window, with
+> these as-built divergences:
+>
+> - The native windows are movable OS windows; the `[randomizer] tracker_anchor`
+>   ini key was not implemented. The OAM overlay uses fixed anchors.
+> - The per-frame **OAM-cache gated on `reachability_state_counter`** was not
+>   implemented for the OAM overlay (it recomputes the fixed-size grid each frame —
+>   cheap); the native window redraws via ImGui by design.
+> - The OAM **location** overlay is **2-state** (checked / not-checked); the
+>   **tri-state** (`?`/`.`/`*`) reachability coloring is delivered by the native
+>   **Check Tracker** window, not the OAM overlay.
+> - The "Backend parity" / "renderer-backend compatibility" scenarios apply to the
+>   OAM-overlay (Switch) path; the PC native windows composite independently of the
+>   game's SNES renderer and are not drawn through the OAM/BG pipeline.
+
 ## MODIFIED Requirements
 
 ### Requirement: Optional in-game item tracker (Phase B)

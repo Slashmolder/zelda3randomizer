@@ -55,7 +55,7 @@ static inline bool LocHiddenFromChecks(uint16 loc) {
 
 extern "C" void RandoReach_Render(void) {
   if (!Rando_IsActive()) {
-    ImGui::TextDisabled("No randomizer slot active.");
+    ImGui::TextDisabled("Start or load a randomizer slot to view reachability.");
     return;
   }
   if (!s_loc_region_built) BuildLocRegionIndex();

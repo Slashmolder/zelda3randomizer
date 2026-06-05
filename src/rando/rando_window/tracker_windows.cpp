@@ -185,8 +185,12 @@ static void Chip(const char *label, int state, float width = 92.0f) {
   ImGui::SameLine();
 }
 
-// Leveled chip: shows "name Lk" (or a custom level label). state derived from level>0.
-static void LevelChip(const char *name, int level, const char *level_text = nullptr) {
+// Leveled chip: shows "name Lk" (or a custom level label). state derived from
+// level>0, unless `always_present` forces the "have" color (audit T3: Magic is
+// always owned at 1x — the level text conveys 1x/½x/¼x, so the chip should read
+// as present, not as a dim "not obtained" chip when at base 1x / level 0).
+static void LevelChip(const char *name, int level, const char *level_text = nullptr,
+                      bool always_present = false) {
   char buf[40];
   if (level_text)
     snprintf(buf, sizeof buf, "%s: %s", name, level_text);
@@ -194,7 +198,7 @@ static void LevelChip(const char *name, int level, const char *level_text = null
     snprintf(buf, sizeof buf, "%s %d", name, level);
   else
     snprintf(buf, sizeof buf, "%s", name);
-  Chip(buf, level > 0 ? 1 : 0);
+  Chip(buf, (always_present || level > 0) ? 1 : 0);
 }
 
 static void SectionHeader(const char *text) {
@@ -207,7 +211,6 @@ static void DrawItemTracker(void *) {
   BeginFullWindow("Item Tracker##z3r");
 
   if (!Rando_IsActive()) {
-    ImGui::TextDisabled("No randomizer slot active.");
     ImGui::TextDisabled("Item state below reflects the current save's inventory.");
     ImGui::Spacing();
   }
@@ -265,8 +268,9 @@ static void DrawItemTracker(void *) {
   IconChip(kRandoIcon_Shovel, v.shovel, nullptr);
   snprintf(ov, sizeof ov, "%d", v.bottles); IconChip(kRandoIcon_Bottle, v.bottles > 0, v.bottles > 0 ? ov : nullptr);
   ImGui::NewLine();
-  // Magic is a consumption rate (no item sprite) — show as a chip.
-  LevelChip("Magic", v.magic, kMagic[v.magic <= 2 ? v.magic : 0]);
+  // Magic is a consumption rate (no item sprite) — show as a chip. Always
+  // present (every player starts at 1x); the level text conveys 1x/½x/¼x.
+  LevelChip("Magic", v.magic, kMagic[v.magic <= 2 ? v.magic : 0], /*always_present=*/true);
   ImGui::NewLine();
 
   SectionHeader("Stats");
@@ -422,7 +426,6 @@ static void DrawCheckTracker(void *) {
   BeginFullWindow("Check Tracker##z3r");
 
   if (!Rando_IsActive()) {
-    ImGui::TextDisabled("No randomizer slot active.");
     ImGui::TextDisabled("Start or load a randomizer slot to track checks.");
     ImGui::End();
     return;
@@ -646,7 +649,7 @@ static void DrawMapTracker(void *) {
   BeginFullWindow("Map Tracker##z3r");
 
   if (!Rando_IsActive()) {
-    ImGui::TextDisabled("No randomizer slot active.");
+    ImGui::TextDisabled("Start or load a randomizer slot to view the map.");
     ImGui::End();
     return;
   }
