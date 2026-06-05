@@ -379,3 +379,47 @@ Placement and goal-completability SHALL reflect the active mechanism.
   edges representing a dungeon's internal room-to-room progression and event gates
   remain fixed
 
+### Requirement: Generic small-key door reachability
+
+When `genericKeys` is in effect (Retro), key-door reachability SHALL evaluate
+against the **shared `GenericKey` count** rather than per-dungeon
+`SmallKey_<Dungeon>` possession. The placer SHALL guarantee that the generic-key
+pool is reachable in an order that never strands the player behind a locked door
+they cannot open (the assumed-fill shared-key invariant — see ALTTPR
+`app/Filler/RandomAssumed.php`). A predicate that today reads
+`HAS_ITEM_COUNT(SmallKey_<Dungeon>, n)` SHALL, under `genericKeys`, be satisfied
+by the shared generic-key count subject to that no-strand guarantee.
+
+When `genericKeys` is NOT in effect, key-door predicates SHALL be byte-identical
+to the per-dungeon behavior (the generated logic for non-Retro seeds is
+unchanged).
+
+> **As built (archived 2026-06-05):** the chosen mechanism is a predicate-VM
+> collapse in `src/rando/rando_logic.c` — under `world_state == Retro`,
+> `eval_has_item` / `eval_has_amount` short-circuit ANY per-dungeon small-key
+> requirement to `by_item_id[ITEM_GenericKey] >= 1`, a direct port of ALTTPR
+> `ItemCollection::has()`'s ShopKey wildcard (`app/Support/ItemCollection.php`).
+> `GenericKey` is treated as ordinary fungible progression by the assumed-fill, so
+> no per-door floor or logic-graph rewrite is needed; big keys / maps / compasses
+> are unaffected. Non-Retro evaluation is byte-identical (the collapse is
+> world_state-gated). The acceptance bar remains the playtest of each goal at hard
+> pool with no key-strand; the headless `Logic_SelfCheck` adds a cross-dungeon
+> collapse assertion.
+
+#### Scenario: Any key opens any door at runtime
+- **WHEN** the player holds one or more generic keys in a Retro seed and reaches
+  any small-key door in any dungeon
+- **THEN** the door opens and the shared key count decreases by one, regardless of
+  which dungeon the key was found in
+
+#### Scenario: Placer never strands a Retro seed
+- **WHEN** a Retro (genericKeys) seed is generated
+- **THEN** every locked door on the path to the goal is reachable with keys the
+  player can collect first; the seed is `goal_completable` with no unreachable
+  placements across the corpus's Retro entries (including a hard-pool seed)
+
+#### Scenario: Non-Retro reachability unchanged
+- **WHEN** logic is generated for a non-Retro seed
+- **THEN** key-door predicates gate on per-dungeon `SmallKey_<Dungeon>` exactly as
+  before this change
+

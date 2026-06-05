@@ -575,7 +575,7 @@ Three of the four flags are pinned by this change:
 - `takeAnys = true` — Take-Any caves are enterable (delivered by `add-rando-retro-takeany`; gated on `world_state == Retro`).
 - `wildKeys = true` — small keys are placed in the general/wild pool rather than pinned to their dungeon, via `Settings_EffectiveSmallKeysMode()` (pins `dungeon_small_keys_mode = Wild` for Retro). Keys retain per-dungeon identity; the fork's cross-dungeon key-credit runtime makes a key found outside its dungeon usable inside it.
 
-> **Scope note — `genericKeys` deferred to a follow-up.** ALTTPR's `rom.genericKeys` (one shared key pool; *any* key opens *any* locked door) is NOT pinned by this change. The fork models small keys in *logic* per dungeon (`HAS_ITEM(SmallKey_<Dungeon>)`), so collapsing to a single pool requires rewriting every key-door predicate into a shared-pool count (the key-logic reachability problem) plus a shared-counter runtime — work with its own playtest gate and softlock surface. Under this change keys keep dungeon identity (wildKeys-only), which is fully beatable but stricter than ALTTPR. The single-pool collapse lands in the follow-up change `add-rando-retro-generic-keys`, which will MODIFY this requirement to add `genericKeys = true`.
+> **Scope note — `genericKeys` SHIPPED in the follow-up.** ALTTPR's `rom.genericKeys` (one shared key pool; *any* key opens *any* locked door) was NOT pinned by *this* change — it kept per-dungeon key identity (wildKeys-only), fully beatable but stricter than ALTTPR. The single-pool collapse landed in the follow-up `add-rando-retro-generic-keys` (archived 2026-06-05), which — to avoid an archive-sequencing conflict — ADDED a separate requirement ("Retro generic small-key pool", below) rather than modifying this one. That requirement is now the authority for genericKeys: under Retro, `BuildItemPool` substitutes each per-dungeon `SmallKey_<Dungeon>` with the fungible `GenericKey`, the predicate VM collapses any small-key requirement onto "hold ≥1 `GenericKey`", and a single SRAM-persisted shared counter backs the live small-key count. See also the `randomizer-logic` requirement "Generic small-key door reachability".
 
 #### Scenario: Retro flags applied at generation
 - **WHEN** a Retro seed is generated
@@ -637,4 +637,46 @@ The randomizer SHALL expose `Rando_RevealSpoiler(slot_index)` that:
 #### Scenario: CLI counterpart `--reveal-spoiler`
 - **WHEN** the CLI is invoked as `./zelda3 --reveal-spoiler=<path-to-suppressed-file>`
 - **THEN** the process runs the reveal action against the supplied path and exits zero on success / non-zero on any failure (with the specific failure code printed to stderr)
+
+### Requirement: Retro generic small-key pool
+
+When `settings.world_state == Retro`, ALTTPR's `rom.genericKeys` SHALL be in
+effect: small keys form a single shared pool and any small key opens any locked
+door. At pool construction, every per-dungeon small-key item (`SmallKey_<Dungeon>`)
+SHALL be substituted with the fungible `GenericKey` item (registry id 125, ROM
+0xAF), matching ALTTPR `app/Location.php` (`Item\Key` → `KeyGK` under
+`rom.genericKeys`). The generic keys SHALL be placed in the general/wild pool
+(the `wildKeys` placement from `add-rando-retro-world-state` already routes small
+keys there); per-dungeon `SmallKey_<Dungeon>` items SHALL NOT enter the Retro
+pool. `genericKeys` is computed from `world_state == Retro` (no new settings
+bytes; `kSettingsCanonicalLen` unchanged).
+
+This change supersedes the deferral recorded in `add-rando-retro-world-state`'s
+"Retro world-state config-flag pinning" requirement (which pinned `rupeeBow` /
+`takeAnys` / `wildKeys` and explicitly left `genericKeys` to this follow-up).
+
+> **As built (archived 2026-06-05):** the placement substitution is gated on
+> `world_state == Retro` in `BuildItemPool`; it is coupled to the "Generic
+> small-key door reachability" requirement (`randomizer-logic`) — implemented as a
+> predicate-VM collapse onto the shared `GenericKey` count — and to a single
+> SRAM-persisted shared counter (`link_keys_earned_per_dungeon[15]` = ALTTPR
+> `$7EF38B`) backing the live small-key count under `Rando_IsGenericKeysActive()`.
+> `kGeneratorVersion` 53→54; only Retro corpus digests moved.
+
+#### Scenario: Small keys become a single fungible pool
+- **WHEN** a Retro seed is generated
+- **THEN** the placement pool contains `GenericKey` items (count = the sum of the
+  per-dungeon small-key counts) and no `SmallKey_<Dungeon>` items; the seed is
+  `goal_completable` with no unreachable placements
+
+#### Scenario: Non-Retro key placement unchanged
+- **WHEN** a non-Retro seed is generated (Open / Standard / Inverted)
+- **THEN** small keys retain per-dungeon identity per the seed's
+  `dungeon_small_keys_mode`; `placement_digest` is byte-identical to the
+  pre-change baseline
+
+#### Scenario: Determinism bump scoped to Retro
+- **WHEN** the corpus is regenerated after this change
+- **THEN** only Retro entries' `placement_digest` / `sphere_digest` move; every
+  non-Retro entry is byte-identical, and `kGeneratorVersion` advances
 

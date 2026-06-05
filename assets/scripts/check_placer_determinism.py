@@ -100,21 +100,40 @@ def check_source() -> int:
 
 
 def _generate(binary: Path, extra_args: list[str]) -> dict | None:
-    """Run --generate-seed for the canary; return its meta dict, or None on refusal."""
-    with tempfile.TemporaryDirectory() as td:
-        out = Path(td) / "o.json"
-        r = subprocess.run(
-            [str(binary), "--generate-seed",
-             f"--settings={CANARY_SETTINGS}", f"--seed={CANARY_SEED}",
-             f"--out-spoiler={out}", *extra_args],
-            capture_output=True, timeout=120,
-        )
-        if not out.exists():
-            print(f"check_placer_determinism: canary refused / wrote no spoiler "
-                  f"(exit {r.returncode}). stderr:\n{r.stderr.decode(errors='replace')[:500]}",
-                  file=sys.stderr)
-            return None
-        return json.loads(out.read_text(encoding="utf-8")).get("meta", {})
+    """Run --generate-seed for the canary; return its meta dict, or None on failure.
+
+    None means the generator refused (wrote no spoiler) OR the run errored — both
+    are treated as a guard failure by the caller. The refusal path is the one to
+    watch: with accessibility=none the canary is written only if the best-of-N
+    forward-filled result is still goal-completable, so a future placer/logic
+    shift could make this seed un-completable and refused EVERY run. That would
+    look like a determinism breakage but is really "re-pick the canary" — see the
+    caller's message.
+    """
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "o.json"
+            r = subprocess.run(
+                [str(binary), "--generate-seed",
+                 f"--settings={CANARY_SETTINGS}", f"--seed={CANARY_SEED}",
+                 f"--out-spoiler={out}", *extra_args],
+                capture_output=True, timeout=180,
+            )
+            if not out.exists():
+                print(f"check_placer_determinism: canary wrote no spoiler "
+                      f"(exit {r.returncode}). If this PERSISTS across runs the "
+                      f"canary is likely no longer goal-completable under the "
+                      f"current placer/logic — re-select CANARY_SEED/CANARY_SETTINGS "
+                      f"(it must be BOTH retry-loop-exhausting and goal-completable). "
+                      f"stderr:\n{r.stderr.decode(errors='replace')[:500]}",
+                      file=sys.stderr)
+                return None
+            return json.loads(out.read_text(encoding="utf-8")).get("meta", {})
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError,
+            OSError, json.JSONDecodeError) as e:
+        print(f"check_placer_determinism: canary generation errored: {e!r}",
+              file=sys.stderr)
+        return None
 
 
 def _digests(meta: dict) -> tuple[str | None, str | None]:
@@ -122,9 +141,19 @@ def _digests(meta: dict) -> tuple[str | None, str | None]:
 
 
 def _is_hard(meta: dict) -> bool:
-    """True iff the canary exhausted the retry loop (forward-fill fired)."""
+    """True iff the canary EXHAUSTED the retry loop (ran the full attempt cap).
+
+    Both `forward_fill_fallback` and `unreachable_placements` warnings are emitted
+    ONLY on the exhausted-loop path (Place_AssumedFill prints them when no attempt
+    achieved full reachability with zero forward-fills — i.e. it ran all
+    kAssumedFillMaxAttempts). Either one proves the seed exercised the retry loop,
+    which is the whole point of the canary. (Checking only forward_fill_fallback
+    would miss a seed that exhausts the loop but whose best attempt happened to
+    forward-fill nothing — narrower than this guard wants.)
+    """
+    HARD_KINDS = {"forward_fill_fallback", "unreachable_placements"}
     for w in meta.get("fallback_warnings", []):
-        if w.get("kind") == "forward_fill_fallback" and w.get("count", 0) > 0:
+        if w.get("kind") in HARD_KINDS and w.get("count", 0) > 0:
             return True
     return False
 
@@ -196,7 +225,12 @@ def main(argv: list[str]) -> int:
     rc = check_source()
     if args.source_only or rc != 0:
         return rc
-    return check_binary(args.binary)
+    # Local-Windows ergonomics: the default is `zelda3` (no extension, matching
+    # the CI/Make convention); fall back to `zelda3.exe` if only that exists.
+    binary = args.binary
+    if not binary.exists() and binary.with_suffix(".exe").exists():
+        binary = binary.with_suffix(".exe")
+    return check_binary(binary)
 
 
 if __name__ == "__main__":

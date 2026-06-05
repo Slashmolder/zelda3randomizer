@@ -957,21 +957,31 @@ The four flags and their as-built status:
   0 unreachable placements. Because Retro forces this, the settings UI shows the
   **Small keys** control locked to "wild" (greyed out, with a "forced by Retro"
   tooltip) — your own small-keys pick is preserved and restored if you leave Retro.
-- **`genericKeys`** — *deferred (documented).* In ALTTPR this also unifies the
-  per-dungeon key counters into one shared pool so **any** key opens **any**
-  locked door. The fork delivers the *placement* half via `wildKeys` above, but
-  keeps **per-dungeon key identity**: a Turtle Rock key found in Eastern Palace is
-  carried to Turtle Rock (the fork credits it to TR), rather than opening any door
-  anywhere. The literal single-pool collapse is **not** wired because the fork
-  models small keys in *logic* per dungeon (`HAS_ITEM(SmallKey_<Dungeon>)`), so
-  merging them requires rewriting every key-door predicate into a shared-pool
-  count — the hard "key-logic" reachability problem, with zero headless validation
-  and direct soft-lock risk if a seed strands you having spent a shared key on the
-  wrong door. The practical effect of the divergence: fork-Retro is *stricter*
-  (you must find the right dungeon's keys) but fully beatable; ALTTPR-Retro is more
-  lenient. Track: the single-pool collapse needs the key-door logic rewrite +
-  playtest, not a blind runtime intercept — scoped as the follow-up change
-  `openspec/changes/add-rando-retro-generic-keys`.
+- **`genericKeys`** — *implemented, generation + runtime.* Retro unifies the
+  per-dungeon key counters into **one shared pool**, so **any** small key opens
+  **any** locked door — matching ALTTPR. (Big keys, maps and compasses keep their
+  dungeon identity; only small keys become fungible.) Three coupled pieces, all
+  gated on `world_state == Retro` so non-Retro is byte-identical:
+  - *Placement* — `BuildItemPool` substitutes every per-dungeon `SmallKey_<Dungeon>`
+    with the fungible `GenericKey` (ROM `0xAF`), mirroring ALTTPR `Location::getItem`
+    swapping each `Item\Key` for `KeyGK`. Same per-dungeon counts, so the pool size
+    is unchanged; `wildKeys` (above) already places them wild.
+  - *Logic* — the predicate VM collapses any per-dungeon small-key requirement onto
+    "hold ≥1 `GenericKey`", a direct port of ALTTPR `ItemCollection::has()`'s ShopKey
+    wildcard (`app/Support/ItemCollection.php`). This is intentionally permissive
+    (one key satisfies every small-key door in logic); the assumed-fill + key
+    abundance keep seeds beatable, exactly as upstream.
+  - *Runtime* — a single SRAM-persisted shared counter (`link_generic_keys` =
+    `link_keys_earned_per_dungeon[15]` = ALTTPR's `$7EF38B`) backs the live
+    `link_num_keys` via dungeon enter-load / exit-save / death-save / door-consume
+    write-through and the key grants, gated on `Rando_IsGenericKeysActive()`.
+  This is a generation change: `kGeneratorVersion` 53→54, the Retro corpus digests
+  regenerated (non-Retro byte-identical), `settings_hash` / canonical layout
+  unchanged (genericKeys is computed from `world_state`, no new byte). Verified
+  headless: `--rando-selftest` (incl. a cross-dungeon collapse check — one key
+  opens a Palace-of-Darkness 5-key door AND a Turtle Rock 4-key door), corpus
+  green, and every Retro goal beatable with 0 unreachable placements. Landed as
+  `openspec/changes/archive/2026-06-05-add-rando-retro-generic-keys`.
 
 What randomizes in Retro is the **shop economy**, not the shop inventory: the 9
 regular shops keep their vanilla inventory (identity-pinned) but the player must
@@ -1007,7 +1017,7 @@ under `openspec/changes/archive/`) and pass `openspec validate --changes`.
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/archive/2026-06-05-add-rando-race-mode-reveal/) | 6 | Spoiler suppression + CLI `--reveal-spoiler` + `RandoRevealSpoiler` keybind + SHA-256 stamp verify (built scope; in-binary reveal-UI + settings warning carved to `add-rando-race-mode-reveal-ui`) | ✅ Archived 2026-06-05 |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
 | 4b | [`add-rando-retro-world-state`](../openspec/changes/archive/2026-06-04-add-rando-retro-world-state/) | 3 | Retro shop dispatch + rupeeBow/takeAnys/wildKeys pinned (genericKeys → #4b-i) | ✅ Archived 2026-06-04 |
-| 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b | Scaffolded |
+| 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/archive/2026-06-05-add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b. Placement + logic-collapse + SRAM shared-counter runtime; kGenVer 53→54 | ✅ Archived 2026-06-05 |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
 | 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: 15 telepathic-tile hints + Storyteller/Fortune-Teller fork NPCs + Murahdahla (spoiler-only) + dialogue-ID injection | In-progress (gen/spoiler/determinism/docs done; in-game NPC playtest + audit open) |
 | 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle generation-only) |
