@@ -194,7 +194,7 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       + corpus (`c-entrance-cross-open-fast-ganon`, 62 entries) + UI (Crossed preset
       LIVE, cross-category checkbox LIVE). Runtime install branches cross vs
       cave/dun in `Entrance_RuntimeInstall`; exit coupling in `LoadOverworldFromDungeon`.
-- [x] 3.3 Playtest + fresh-eyes audit. *(Owner playtest-confirmed 2026-06-04 for the built modes — Simple/Restricted/Crossed + coupled. Insanity/decoupled is carved to `add-rando-entrance-shuffle-insanity`, runtime-blocked on the cave-arrival fork.)* NOTE: cross-category correctness is NOT
+- [x] 3.3 Playtest + fresh-eyes audit. *(Owner playtest-confirmed 2026-06-04 for the built presets — Simple/Restricted/Crossed + coupled, plus cave-decoupled. The full-decoupled Insanity preset is built (the cave-arrival table is baked + preloaded, `src/rando/cave_arrival_baked.h`) and shipped as a live native-window preset; its dungeon/cross-decoupled arms are tracked at D.7/D.8.)* NOTE: cross-category correctness is NOT
       gate-protected (the gate evaluates the model; a too-permissive model ships a
       runtime softlock) — needs careful build + playtest of model↔runtime match.
       All four cross directions verified against `Dungeon_LoadEntrance`'s
@@ -295,13 +295,14 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
 
 ## Presets (once the relevant axes ship)
 
-- [~] P.1 Native-window preset buttons: **None**, **Simple/Restricted** (caves +
-      dungeons, coupled — both ALTTPR names converge here), and **Crossed**
-      (caves + dungeons + cross_category, coupled) are LIVE; **Insanity** (needs
-      decoupled) shown DISABLED so no button lies. Individual axis checkboxes
-      (incl. live cross-category) serve as Custom. (UI sugar over the axes — no
-      stored enum, per design §5a.)
-- [x] P.2 Playtest each preset resolves to the right axis combination. *(Owner playtest-confirmed 2026-06-04 — Simple/Restricted/Crossed + Custom; Insanity shown disabled, carved to `add-rando-entrance-shuffle-insanity`.)*
+- [x] P.1 Native-window preset buttons: **None**, **Simple/Restricted** (caves +
+      dungeons, coupled — both ALTTPR names converge here), **Crossed**
+      (caves + dungeons + cross_category, coupled), and **Insanity** (full
+      decoupled: caves + dungeons, one-way — both runtimes built, cave-arrival
+      table baked) are all LIVE. Individual axis checkboxes (incl. live
+      cross-category) serve as Custom. (UI sugar over the axes — no stored enum,
+      per design §5a.)
+- [x] P.2 Playtest each preset resolves to the right axis combination. *(Owner playtest-confirmed 2026-06-04 — Simple/Restricted/Crossed/Insanity + Custom. The Insanity preset (full decoupled: caves + dungeons, one-way) is a LIVE native-window button, not disabled.)*
 
 ## Cross-cutting (per `openspec/changes/README.md` conventions)
 - [x] X.1 Backward-load: `Rando_ActivateSidecarSlot`→`Entrance_RuntimeInstall` now

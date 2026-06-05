@@ -4,15 +4,11 @@
 
 The entrance-shuffle module SHALL be exposed as **composable boolean axes** —
 `shuffle_cave_entrances`, `shuffle_dungeon_entrances`, `coupled` (default on),
-`cross_category` — and SHALL maintain logic correctness: every required
+`cross_category`, `decoupled` — and SHALL maintain logic correctness: every required
 dungeon and item remains reachable for the active goal under the resulting entrance
-map. The named ALTTPR modes Simple, Restricted, and Crossed SHALL be
+map. The four named ALTTPR modes (Simple, Restricted, Crossed, Insanity) SHALL be
 realized as **presets** over these axes (plus a Custom mode); each mode scenario
-below is the contract its preset must satisfy. The **Insanity** preset (the
-`decoupled` axis — per-endpoint cave/dungeon cross-mapping) is carved to follow-up
-change `add-rando-entrance-shuffle-insanity`: its generation + logic landed but the
-runtime cave-arrival replay path is blocked on an asset fork, so it is not yet
-playable. See change `design.md §5a`.
+below is the contract its preset must satisfy. See change `design.md §5a`.
 
 **Phase C activation**: the composable entrance axes are added to the settings. The entrance permutation π SHALL be computed deterministically from `(share_string, generator_version)` and SHALL drive BOTH a runtime door overlay (`kOverworld_Entrance_Id`) and a per-seed logic edge overlay (per `randomizer-logic` — the retired `RegionRemap` scaffold is NOT used; see change `design.md §1`). The shuffle module SHALL run during generation such that the placer sees the entrance-remapped graph when computing reachability.
 
@@ -21,6 +17,10 @@ When all entrance axes are off (the default), the module SHALL be a no-op; no ov
 #### Scenario: Simple mode swaps single-entrance dungeons only
 - **WHEN** entrance shuffle is Simple
 - **THEN** only single-entrance dungeons are shuffled among themselves and multi-entrance dungeons retain their vanilla entrance layout
+
+#### Scenario: Insanity mode permits cave-to-dungeon mappings
+- **WHEN** entrance shuffle is Insanity
+- **THEN** any overworld entrance may map to any interior, including cross-mappings between cave and dungeon interiors
 
 #### Scenario: Entrance shuffle preserves goal reachability
 - **WHEN** an entrance-shuffled seed is generated

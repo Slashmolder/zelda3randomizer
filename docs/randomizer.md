@@ -793,7 +793,7 @@ walked when `world_state == Inverted`) plus a per-screen visual tile overlay —
 NOT a runtime region remap. The reachability seed starts from the inverted
 counterpart of Link's House rather than the light-world spawn. (The Phase A
 `RegionRemap` scaffold was dead identity code and was **retired** in the Phase C
-entrance-shuffle work; see `add-rando-entrance-shuffle/design.md §1`.)
+entrance-shuffle work; see `archive/2026-06-05-add-rando-entrance-shuffle/design.md §1`.)
 
 ### Retro world-state
 
@@ -920,7 +920,7 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (a version-drift warning fires; regenerate after an update). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (decoupled) runtime is carved to `add-rando-entrance-shuffle-insanity` (generation+logic shipped, runtime blocked on the cave-arrival fork); Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 (Insanity → C1-i) |
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (a version-drift warning fires; regenerate after an update). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (full decoupled) is **built and shipped** as a live native-window preset — the cave-arrival table is baked (`src/rando/cave_arrival_baked.h`, preloaded so every door is one-way from launch); cave-decoupled is playtest-confirmed, the dungeon/cross-decoupled arms carry the usual built-but-playtest-pending caveat. Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 |
 
 ### Phase D
 
