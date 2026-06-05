@@ -3481,7 +3481,14 @@ void Overworld_GetPitDestination() {  // 9bb860
     if (kFallHole_Pos[i] == pos && kFallHole_Area[i] == overworld_area_index)
       break;
     if (--i < 0) {
-      savegame_is_darkworld = 0;
+      // #82 Inverted: vanilla hardcodes the LIGHT world for the unmatched
+      // (Chris-Houlihan) fall-hole fallback because vanilla's home world is the
+      // LW. In Inverted the home world is the DARK world, so an unmatched pit
+      // must keep Link in the DW (0x40) rather than flipping him to the LW.
+      // Gated so vanilla / Open / Standard / Retro stay byte-identical.
+      bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
+                            Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+      savegame_is_darkworld = rando_inverted ? 0x40 : 0;
       // Chris Houlihan's room
       which_entrance = 130;
       byte_7E010F = 0;

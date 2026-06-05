@@ -107,6 +107,19 @@ static const InvertedOverride kInvertedOverrides[] = {
   // no inverted reinterpretation, so vanilla LW spots send an Inverted player to
   // the wrong world. Repoint each flute slot to its Dark-World mirror (LW + 0x40).
   // asset 113 is uint16 (width 2); elem_index is the flute slot (bird_travel_id).
+  // Repointing ONLY the screen index (not the sibling map16/scroll/coord/camera
+  // columns of the bird-travel row, assets 114-122) is correct and sufficient:
+  // those columns are world-mirror-INVARIANT by construction. compile_resources.py
+  // builds them as `t['scroll_xy']/xy/camera_xy + base`, where
+  // base_x=(screen&7)<<9, base_y=(screen&56)<<6 — bit 0x40 (the world bit) does
+  // not overlap &7 or &56, so a screen and its +0x40 mirror share identical
+  // base/coord/scroll values, and kBirdTravel_Map16LoadSrcOff (get_loadoffs) is a
+  // pure function of scroll/load coords with no screen-index term. The only
+  // per-world differences (sprite gfx, tile theme 0x20/0x21, misc gfx) are
+  // re-derived from the OVERRIDDEN overworld_screen_index inside
+  // Overworld_LoadGFXAndScreenSize at flute-load time, so no row recompute is
+  // needed here. (Do not "fix" this by overriding the full row with unverified
+  // DW values — that would diverge from the correct mirror framing.)
   // Slot 8 (vanilla 0x5B = DW pyramid) is intentionally NOT overridden: ALTTPR
   // maps it 0x5B->0x1B for its pyramid->Hyrule-Castle relocation, which this fork
   // did NOT adopt (Ganon stays in the DW pyramid 0x5B), so vanilla 0x5B is correct.
