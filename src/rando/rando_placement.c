@@ -1252,27 +1252,6 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   uint16 i = 0;
   while (i < prog_n) {
     uint16 item = progression[i];
-    // FIX #9 (defensive, randomizer-placement spec steps 5/6) — refuse to place
-    // a copy of `item` beyond its pool cap. The pool count of `item` (its number
-    // of copies in progression[]) IS its registry max, and BuildItemPool already
-    // caps every item (bottles at 4, progressives at their tier counts), so this
-    // branch is provably unreachable today — a safety net that keeps an over-
-    // supplied pool (a future setting) from over-placing a Bottle (ids 43-49) or
-    // a progressive. It draws NO rng and only fires when already over cap, so
-    // every existing placement_digest is byte-identical. Skip the item entirely
-    // (leave it in the assumed inventory; never decremented below) so no location
-    // is consumed by a phantom over-cap copy.
-    {
-      uint16 placed_copies = 0, pool_copies = 0;
-      for (uint16 k = 0; k < open_n; k++)
-        if (placement_at[k] == item) placed_copies++;
-      for (uint16 t = 0; t < prog_n; t++)
-        if (progression[t] == item) pool_copies++;
-      // Bottles share one hard cap of 4 total (link_bottle_info has 4 slots).
-      bool is_bottle = (item >= ID_BottleEmpty && item <= ID_BottleWithBluePotion);
-      uint16 cap = is_bottle ? 4 : pool_copies;
-      if (placed_copies >= cap) { i++; continue; }
-    }
     // Remove from assumed inventory before computing reachability.
     if (counts.by_item_id[item] > 0) counts.by_item_id[item]--;
 
