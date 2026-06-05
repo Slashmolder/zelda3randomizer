@@ -2440,9 +2440,15 @@ void LinkItem_Bow() {  // 87a006
     }
     // Retro world-state (rupeeBow): owning the bow lets Link fire as long as he
     // can afford the rupee cost — wood arrows cost 10 rupees, silver 50 — and
-    // the arrow counter is never spent (it is a 0/1 capability sentinel, just
-    // like ALTTPR retro.asm DecrementArrows / tables.asm ArrowMode*Cost). Gated
-    // on Rando_IsRetroActive() so the vanilla arrow-consume path below stays
+    // link_num_arrows is never decremented (rupee mode pays in rupees, not
+    // ammo; cost table mirrors ALTTPR tables.asm ArrowMode*Cost). NOTE: this
+    // port is deliberately MORE permissive than ALTTPR retro.asm DecrementArrows
+    // — that .rupees path requires CurrentArrows != 0 to fire (and the bow grant
+    // seeds CurrentArrows=1 / ArrowsFiller=1 in newitems.asm so the gate passes).
+    // This fork's Rando_GrantBow does NOT seed link_num_arrows, so re-adding the
+    // arrow-count gate here would make the bow unfireable; bow ownership alone
+    // is the capability. Gated on Rando_IsRetroActive() so the vanilla
+    // arrow-consume path below stays
     // byte-identical when rando is inactive or the seed is not Retro. The
     // archery minigame keeps vanilla behavior (`archery_shot` excludes every
     // minigame shot, incl. the last; ALTTPR's retro patch likewise special-cases
@@ -6927,6 +6933,15 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
     // sprite for Phase B simplicity; promoting those to per-item spawned
     // sprites is a Slice-9-flavored follow-up.
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      // Anti-farm guard: Rando_DispatchVanillaGrant -> Rando_OnLocationCheck is
+      // NOT idempotent (it re-marks the location and re-returns the placed item
+      // on every call). Sprite_D5_DigGameGuy case 1 resets the only re-roll
+      // guard (beamos_x_hi[0]=0) on each paid 80-rupee replay, so without this
+      // a Triforce piece / progressive / prize placed here would FARM. Once
+      // LOC_Digging_Game is checked, suppress the win outright: no re-dispatch,
+      // no 0xeb prize sprite. (Same rationale as the tablet guards above.)
+      if (Rando_IsLocationChecked(LOC_Digging_Game))
+        return;
       uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_Digging_Game, ITEM_PieceOfHeart, 0x17);
       if (Rando_ShouldSkipReceive(placed_lttp)) {
         Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
