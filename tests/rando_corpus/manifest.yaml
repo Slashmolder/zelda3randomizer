@@ -656,6 +656,32 @@ entries:
     expected_digest: "4381dfed7b0b47e7a493a4979c2ec9d67c47305a48ceb7655661a5f8634753f2"
     expected_sphere_digest: "a4c43a58baa4196f7a9231d8ce25189a2816ebc9df178ff304caade8ba6a5244"
 
+  # Boss-heart-pool toggle (settable via the existing `region_boss_hearts_in_pool`
+  # / `region.bossHeartsInPool` CLI key). NOTE the field is INVERTED vs its name:
+  # the default 1 = boss hearts PINNED (identity-placed, not in the pool); the
+  # value below `=false` (0) puts the boss heart containers INTO the shuffle pool
+  # — the non-default path, which changes placement (verified). One per world state.
+  - settings: { mode.state: open, goal: fast_ganon, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000041"
+    label: "b-bossheart-pool-open-fast-ganon"
+    expected_digest: "07cd192a824aa92aff1d15f22f1ff66a7a272ecd373a2918a7f62c4db69d4c43"
+    expected_sphere_digest: "59fcdd0bc6e2d2f4c07b10a9c080c8c10bb2d30c1eaccd6bc436f0b15ece0803"
+  - settings: { mode.state: inverted, goal: fast_ganon, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000042"
+    label: "b-bossheart-pool-inverted-fast-ganon"
+    expected_digest: "8b6a264c575b1f241193c2f618ef4ab5bb046e4a57e2a76dfb0ae87f793c7e99"
+    expected_sphere_digest: "802d7003ef44ee39e9b78585795f033e06c4741c3468ca205f2c029f347b2b18"
+  - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000043"
+    label: "b-bossheart-pool-standard-ganon-7-7"
+    expected_digest: "c4777093e13d909be274d4353c7e56488343dd75423b5047981ed3814271a369"
+    expected_sphere_digest: "70b33bb455bb3f7c9b8ca7cf1f55ddc0ee0eaa6b20d00476c835b22fe5fa225f"
+  - settings: { mode.state: retro, goal: fast_ganon, region_boss_hearts_in_pool: false }
+    seed: "0xC0FFEE0000000044"
+    label: "b-bossheart-pool-retro-fast-ganon"
+    expected_digest: "5ebe15320110b0089ed68212663fce9e0a6bfeb2867a5bd1bcec8712823d33b5"
+    expected_sphere_digest: "11641374cff7021bdfa1d334f917aecbd7e39aebbf7f126fbb4fe172eaf60f04"
+
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
 # next session can populate them in order. Each MUST include `seed` as a
