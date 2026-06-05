@@ -563,7 +563,22 @@ static void Panel_Dungeons() {
   bool changed = false;
 
   ImGui::SeparatorText("Dungeon item modes");
-  if (EnumCombo("Small keys", &s->dungeon_small_keys_mode, kDungeonModeLabels, 3)) changed = true;
+  // Small keys is forced to "wild" under Retro (ALTTPR region.wildKeys), so render
+  // it locked rather than letting it masquerade as a free choice — mirrors the
+  // Completionist -> accessibility lock above. The stored value is left untouched
+  // (the generator overrides it via Settings_EffectiveSmallKeysMode), so the user's
+  // own pick is preserved if they switch off Retro. (Retro forces only small keys;
+  // big keys / maps / compasses stay user-controlled.)
+  bool sk_forced_wild = (s->world_state == kWorldState_Retro);
+  if (sk_forced_wild) {
+    ImGui::BeginDisabled();
+    uint8 sk_shown = (uint8)kDungeonItemMode_Wild;
+    EnumCombo("Small keys", &sk_shown, kDungeonModeLabels, 3);
+    ImGui::EndDisabled();
+    HelpTooltip("Forced to 'wild' by Retro world-state (region.wildKeys).");
+  } else {
+    if (EnumCombo("Small keys", &s->dungeon_small_keys_mode, kDungeonModeLabels, 3)) changed = true;
+  }
   if (EnumCombo("Big keys", &s->dungeon_big_keys_mode, kDungeonModeLabels, 3)) changed = true;
   if (EnumCombo("Maps", &s->dungeon_maps_mode, kDungeonModeLabels, 3)) changed = true;
   if (EnumCombo("Compasses", &s->dungeon_compasses_mode, kDungeonModeLabels, 3)) changed = true;

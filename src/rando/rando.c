@@ -732,6 +732,11 @@ uint8 Rando_GetActiveWorldState(void) {
   return g_rando_slot_active ? g_rando_active_world_state : (uint8)kWorldState_Open;
 }
 
+bool Rando_IsRetroActive(void) {
+  return (enhanced_features1 & kFeatures1_RandomizerActive) &&
+         Rando_GetActiveWorldState() == (uint8)kWorldState_Retro;
+}
+
 bool Rando_SuppressHyruleCastleEscape(void) {
   return (enhanced_features1 & kFeatures1_RandomizerActive) &&
          Rando_GetActiveWorldState() != (uint8)kWorldState_Standard;
@@ -2034,7 +2039,7 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
     };
     for (int g = 0; g < 14; g++) {
       uint16 bit = (uint16)(0x8000u >> g);
-      if (st->dungeon_small_keys_mode != kDungeonItemMode_Vanilla &&
+      if (Settings_EffectiveSmallKeysMode(st) != kDungeonItemMode_Vanilla &&
           kGToSmallKey[g] != 0xFFFF)
         out->by_item_id[kGToSmallKey[g]] = link_keys_earned_per_dungeon[g];
       if (st->dungeon_big_keys_mode != kDungeonItemMode_Vanilla &&

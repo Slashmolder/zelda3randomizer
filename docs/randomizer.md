@@ -769,6 +769,83 @@ counterpart of Link's House rather than the light-world spawn. (The Phase A
 `RegionRemap` scaffold was dead identity code and was **retired** in the Phase C
 entrance-shuffle work; see `add-rando-entrance-shuffle/design.md §1`.)
 
+### Retro world-state
+
+Retro **extends Open** (same region graph, same Open starting state) and turns
+on ALTTPR's "retro" ruleset. Per `app/World/Retro.php` it forces four flags.
+The fork does **not** store these as settings bytes — they are *computed* from
+`world_state == Retro` at the point of use (no new serialized fields, canonical
+length stays 28, default Open/Standard/Inverted placement digests unchanged).
+The canonical runtime gate is `Rando_IsRetroActive()` (rando.c): true iff a
+rando slot is active and its world-state is Retro; when false the vanilla code
+path runs byte-identically.
+
+The four flags and their as-built status:
+
+- **`rupeeBow`** — *implemented, runtime.* Firing the bow spends **rupees**, not
+  arrows: 10 rupees per wood-arrow shot, 50 per silver-arrow shot (matching
+  ALTTPR `retro.asm` / `tables.asm` `ArrowMode*Cost`). The arrow counter is left
+  untouched (in ALTTPR it is a 0/1 capability sentinel). If Link can't afford a
+  shot the bow gives the empty-ammo beep. The branch lives in `LinkItem_Bow`
+  (`player.c`) behind `Rando_IsRetroActive()`; the archery minigame keeps its
+  vanilla arrow-refill path. *(Bow-fire rupee spend is runtime-only and is
+  PLAYTEST-PENDING; the HUD still shows the arrow counter rather than a rupee
+  gauge — a deferred cosmetic refinement.)*
+- **`takeAnys`** — *implemented (shipped separately).* The 31 "Take Any" caves
+  become enterable; per seed ~5 are activated and offer a free take-once item.
+  Built by the archived `add-rando-retro-takeany` change: a per-seed
+  overworld-door redirect into a take-any host room + a free-grant
+  `ShopItem_TakeAny`. The runtime gates on exactly the same condition
+  (`Rando_GetActiveWorldState() == kWorldState_Retro` + rando-active), and the
+  generator only selects/places active caves' slots under Retro — so the flag is
+  effectively pinned by `world_state == Retro`. See the spoiler "Shops" section
+  for the active caves and their rewards.
+- **`wildKeys`** — *implemented, generation.* Retro forces small keys out of
+  their vanilla dungeon spots and into the general/wild pool. Implemented via
+  `Settings_EffectiveSmallKeysMode()`, which pins `dungeon_small_keys_mode = Wild`
+  whenever `world_state == Retro`. To keep the determinism contract intact the
+  override is applied through that single helper in BOTH `apply_derived_rules`
+  (so the canonical `settings_hash` reflects Wild) and at every placer +
+  reachability-bridge read site (so placement and the tracker match the hash) —
+  both key off `world_state`, so the hash and the placement can never desync. It
+  reuses the fork's existing, corpus-tested Wild placement and the cross-dungeon
+  key-credit runtime (a key for dungeon B found in dungeon A is credited to B's
+  counter, `rando.c` key grant), so **no new runtime is needed** and keys keep
+  their dungeon identity. This is a generation change: `kGeneratorVersion` 50→51,
+  the 4 Retro corpus digests regenerated (non-Retro byte-identical). Verified
+  headless: all Retro goals stay beatable with 30 small keys in the wild pool and
+  0 unreachable placements. Because Retro forces this, the settings UI shows the
+  **Small keys** control locked to "wild" (greyed out, with a "forced by Retro"
+  tooltip) — your own small-keys pick is preserved and restored if you leave Retro.
+- **`genericKeys`** — *deferred (documented).* In ALTTPR this also unifies the
+  per-dungeon key counters into one shared pool so **any** key opens **any**
+  locked door. The fork delivers the *placement* half via `wildKeys` above, but
+  keeps **per-dungeon key identity**: a Turtle Rock key found in Eastern Palace is
+  carried to Turtle Rock (the fork credits it to TR), rather than opening any door
+  anywhere. The literal single-pool collapse is **not** wired because the fork
+  models small keys in *logic* per dungeon (`HAS_ITEM(SmallKey_<Dungeon>)`), so
+  merging them requires rewriting every key-door predicate into a shared-pool
+  count — the hard "key-logic" reachability problem, with zero headless validation
+  and direct soft-lock risk if a seed strands you having spent a shared key on the
+  wrong door. The practical effect of the divergence: fork-Retro is *stricter*
+  (you must find the right dungeon's keys) but fully beatable; ALTTPR-Retro is more
+  lenient. Track: the single-pool collapse needs the key-door logic rewrite +
+  playtest, not a blind runtime intercept — scoped as the follow-up change
+  `openspec/changes/add-rando-retro-generic-keys`.
+
+What randomizes in Retro is the **shop economy**, not the shop inventory: the 9
+regular shops keep their vanilla inventory (identity-pinned) but the player must
+find the shops and pay rupees; the 2 Capacity Upgrade slots are identity-placed;
+the active Take-Any caves carry placed items. See the placement/dispatch detail
+in `openspec/changes/archive/2026-06-04-add-rando-retro-world-state/`.
+
+Both spoiler formats surface the Retro shop placements: the `.txt` spoiler has a
+grouped **Shops** section (shop-name headings, identity-placed Capacity Upgrade
+slots flagged), and the `.json` spoiler carries a Retro-only **`shops[]`** array
+(`location` / `name` / `item` / `type`, with `identity_placed: true` on the
+Capacity Upgrade slots). Both are emitted only for seeds that actually place
+shop-class locations, so non-Retro spoilers are unchanged.
+
 ## Phase B+ roadmap
 
 Planned (not promised) follow-on work.
@@ -787,7 +864,8 @@ with detail deferred to `/openspec-explore` at apply-time.
 | 2 | [`add-rando-trackers`](../openspec/changes/add-rando-trackers/) | 1 | In-game item + location tracker overlays + checked-bitmap r/w paths | Full |
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/add-rando-race-mode-reveal/) | 6 | Spoiler suppression + `RevealSpoiler` action with SHA-256 stamp verify | Full |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
-| 4b | [`add-rando-retro-world-state`](../openspec/changes/add-rando-retro-world-state/) | 3 | Retro shop locations + dispatch + 4 Retro flags pinned | Full |
+| 4b | [`add-rando-retro-world-state`](../openspec/changes/archive/2026-06-04-add-rando-retro-world-state/) | 3 | Retro shop dispatch + rupeeBow/takeAnys/wildKeys pinned (genericKeys → #4b-i) | ✅ Archived 2026-06-04 |
+| 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b | Scaffolded |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
 | 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: Sahasrahla / storyteller / bookshelf / Murahdahla generation + dialogue-ID injection | Stub |
 | 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | Stub |

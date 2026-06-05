@@ -45,6 +45,13 @@ from pathlib import Path
 ROM_NAMES = ("zelda3.sfc", "zelda3.smc")
 ASSETS_NAME = "zelda3_assets.dat"
 INI_NAME = "zelda3.ini"  # optional, best-effort (keeps dumps/saves in the worktree)
+# Generated/gitignored ROM-extracted chest table, read by rando_logic_gen.py at
+# codegen time to build src/rando/chest_lookup.h (the (room,ordinal)->LOC map the
+# runtime chest dispatch uses). If it is ABSENT when the codegen runs, chest_lookup.h
+# is emitted EMPTY and *every chest grants its vanilla item* — a silent, very
+# confusing playtest failure (placement is correct, but no chest resolves to its
+# placed item). Mirror it so worktree builds dispatch chests correctly.
+CHEST_TABLE_REL = os.path.join("assets", "rando", "chest_table.gen.bin")
 
 
 def find_main_worktree() -> Path | None:
@@ -103,6 +110,7 @@ def main() -> int:
     have_rom = find_existing_rom(cwd) is not None
     have_assets = (cwd / ASSETS_NAME).is_file()
     have_ini = (cwd / INI_NAME).is_file()
+    have_chest = (cwd / CHEST_TABLE_REL).is_file()
 
     if args.verify:
         if have_rom and have_assets:
@@ -114,8 +122,8 @@ def main() -> int:
             print(f"setup_worktree: MISSING {ASSETS_NAME} in {cwd}")
         return 1
 
-    if have_rom and have_assets and have_ini:
-        print("setup_worktree: nothing to do (rom + assets + ini already present)")
+    if have_rom and have_assets and have_ini and have_chest:
+        print("setup_worktree: nothing to do (rom + assets + ini + chest table already present)")
         return 0
 
     # Resolve the source.
@@ -133,6 +141,14 @@ def main() -> int:
             print("setup_worktree: rom + assets present; could not locate main "
                   "worktree to mirror optional zelda3.ini (skipping -- the exe "
                   "falls back to a parent-dir ini).", file=sys.stderr)
+            if not have_chest:
+                # Not optional: an absent chest table → empty chest_lookup.h → all
+                # chests grant vanilla. We can't mirror it (no source), so warn loudly.
+                print(f"setup_worktree: WARNING {CHEST_TABLE_REL} is MISSING and no "
+                      f"source was found to mirror it -- worktree chest_lookup.h will "
+                      f"be EMPTY and ALL CHESTS will grant their vanilla item. Pass "
+                      f"--from <main-worktree>, set ZELDA3_MAIN_WORKTREE, or run "
+                      f"`python assets/restool.py --extract-from-rom`.", file=sys.stderr)
             return 0
         print("setup_worktree: could not locate main worktree. Pass --from PATH,",
               file=sys.stderr)
@@ -186,6 +202,25 @@ def main() -> int:
         else:
             print(f"setup_worktree: source has no {INI_NAME} (optional) -- skipping; "
                   f"the exe will fall back to a parent-dir ini.", file=sys.stderr)
+
+    # Mirror the generated chest table so the worktree's rando codegen can build a
+    # populated chest_lookup.h. Without it, chest_lookup.h is emitted EMPTY and
+    # every chest grants vanilla (silent runtime breakage). Best-effort: a missing
+    # source table is non-fatal here but loudly warned, since the symptom is
+    # baffling at playtest time.
+    if not have_chest:
+        src_chest = source / CHEST_TABLE_REL
+        if src_chest.is_file():
+            dst_chest = cwd / CHEST_TABLE_REL
+            dst_chest.parent.mkdir(parents=True, exist_ok=True)
+            print(f"setup_worktree: copy {src_chest} -> {dst_chest}")
+            shutil.copy2(src_chest, dst_chest)
+        else:
+            print(f"setup_worktree: WARNING source has no {CHEST_TABLE_REL} -- "
+                  f"worktree chest_lookup.h will be EMPTY and ALL CHESTS will grant "
+                  f"their vanilla item. Run `python assets/restool.py --extract-from-rom` "
+                  f"in {source} to generate it, then re-run this script + rebuild.",
+                  file=sys.stderr)
 
     print("setup_worktree: done.")
     return 0

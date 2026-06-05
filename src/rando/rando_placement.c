@@ -144,7 +144,8 @@ enum {
 // must match assets/rando/location_registry.yaml (id = 266 + 2*cave + slot).
 #define kTakeAnyCaveCount 31
 #define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
-#define LOCTYPE_TakeAny   16    // logic.schema.yaml type enum ordinal
+// LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now live in rando_logic.h
+// (shared with the spoiler emitters so the ordinals can't drift between files).
 
 // Dungeon → Prize location id, for prize-shuffle placement. Indexed by
 // dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
@@ -208,7 +209,7 @@ static const uint16 kCompasses[] = {
 // reachability bridge (Rando_BuildRuntimeCounts), so both agree exactly.
 void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *settings) {
   if (counts == NULL || settings == NULL) return;
-  if (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++)
       counts->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
   }
@@ -372,7 +373,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   // ----- Dungeon items (per dungeon_items.* mode) -----
   // Vanilla: NOT in pool (placed at vanilla locations by the placement
   // algorithm's identity rule). Dungeon/Wild: add to pool.
-  if (settings->dungeon_small_keys_mode != kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveSmallKeysMode(settings) != kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
       n = pool_add(out_items, n, capacity, kVanillaSmallKeyCounts[i].item_id, kVanillaSmallKeyCounts[i].count);
     }
@@ -580,7 +581,7 @@ static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
   // Determine the active mode for this item class.
   uint8 mode;
   if (candidate_item >= 53 && candidate_item <= 65) {
-    mode = settings->dungeon_small_keys_mode;
+    mode = Settings_EffectiveSmallKeysMode(settings);
   } else if (candidate_item >= 66 && candidate_item <= 76) {
     mode = settings->dungeon_big_keys_mode;
   } else if (candidate_item == 124 || (candidate_item >= 77 && candidate_item <= 87)) {
@@ -885,7 +886,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
 // The runtime does NOT re-run this selection; it reads the placement table to
 // learn which caves are active and what each slot grants. The runtime's own
 // (door_id, host_entrance) cave table lives in src/rando/rando.c.
-// (kTakeAnyCaveCount / kTakeAnyLocBase / LOCTYPE_TakeAny defined near the top.)
+// (kTakeAnyCaveCount / kTakeAnyLocBase defined near the top; LOCTYPE_TakeAny in rando_logic.h.)
 // ---------------------------------------------------------------------------
 enum { kTakeAnyRole_Inactive = 0, kTakeAnyRole_Potion = 1, kTakeAnyRole_Weapon = 2 };
 
@@ -1074,8 +1075,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   const uint8 LOCTYPE_Prize_Pendant = 11;
   const uint8 LOCTYPE_Prize_Event   = 12;
   const uint8 LOCTYPE_Medallion     = 13;
-  const uint8 LOCTYPE_Shop          = 14;  // Phase B Slice 3a #53 part 2 — Retro regular shop slot
-  const uint8 LOCTYPE_ShopUpgrade   = 15;  // Phase B Slice 3a — identity-placed Capacity Upgrade slots
+  // LOCTYPE_Shop (14) / LOCTYPE_ShopUpgrade (15) come from rando_logic.h (shared).
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
     uint16 vi = loc->vanilla_item_id;
@@ -1135,7 +1135,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // through to the assumed-fill placer.
       continue;
     } else if (vi >= 53 && vi <= 65) {
-      vanilla_pin = (settings->dungeon_small_keys_mode == kDungeonItemMode_Vanilla);
+      vanilla_pin = (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla);
     } else if (vi >= 66 && vi <= 76) {
       vanilla_pin = (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla);
     } else if ((vi >= 77 && vi <= 87) || vi == 124) {
@@ -1417,7 +1417,7 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
 // assumed-fill inventory model stays consistent across modes.
 static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCounts *out) {
   if (s == NULL || out == NULL) return;
-  if (s->dungeon_small_keys_mode == kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
       out->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
     }

@@ -97,10 +97,22 @@ void Settings_SetDefaults(RandoSettings *s) {
 // Applied on a private copy in Settings_CanonicalSerialize so any external
 // caller's struct is left untouched and the hash is consistent regardless of
 // how the struct was populated.
+uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s) {
+  if (s->world_state == kWorldState_Retro)
+    return kDungeonItemMode_Wild;  // Retro forces region.wildKeys
+  return s->dungeon_small_keys_mode;
+}
+
 static void apply_derived_rules(RandoSettings *s) {
   if (s->goal == kGoal_Completionist) {
     s->accessibility = kAccessibility_Locations;
   }
+  // Retro forces wildKeys: normalize the small-keys mode to Wild so the
+  // canonical settings hash matches the actual (Wild-placed) seed. The placer
+  // reads the same override via Settings_EffectiveSmallKeysMode, so hash and
+  // placement always agree. (genericKeys — one shared pool — is NOT applied;
+  // keys keep dungeon identity. See the helper's doc comment.)
+  s->dungeon_small_keys_mode = Settings_EffectiveSmallKeysMode(s);
   // Phase C — entrance-axis normalization.
   // Audit M1: entrance shuffle is only honored on Open/Standard (Inverted carries
   // a static region override the per-seed one would clobber; Retro re-uses cave

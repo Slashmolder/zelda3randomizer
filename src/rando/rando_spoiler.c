@@ -89,6 +89,49 @@ static int placement_cmp(const void *a, const void *b) {
   return 0;
 }
 
+// Look up a location def by id (replaces hand-inlined kRandoLocations scans).
+// Returns NULL if the id is not in the registry.
+static const RandoLocationDef *find_location(uint16 id) {
+  for (uint32 j = 0; j < kRandoLocationsCount; j++)
+    if (kRandoLocations[j].id == id) return &kRandoLocations[j];
+  return NULL;
+}
+
+// One shop-class placement row, gathered once for both spoiler emitters (the
+// JSON `shops[]` array and the text `Shops:` section).
+typedef struct { uint16 loc; uint16 item; uint8 type; uint16 region_id; } SpoilerShopRow;
+
+static int spoiler_shoprow_cmp(const void *a, const void *b) {
+  uint16 la = ((const SpoilerShopRow *)a)->loc;
+  uint16 lb = ((const SpoilerShopRow *)b)->loc;
+  return (la > lb) - (la < lb);
+}
+
+// Collect the shop-class placements (LOCTYPE_Shop / ShopUpgrade / TakeAny — the
+// Retro shop / capacity-upgrade / take-any slots) into `out`, sorted by location
+// id so each shop's contiguous slots stay grouped. Returns the count (0 ⇒ no
+// shop-class locations placed, i.e. a non-Retro seed). `cap` bounds `out`; 160
+// exceeds the max possible shop-class count (27 Shop + 2 ShopUpgrade + 62 TakeAny
+// = 91), so it never truncates — it is a hard backstop, not a real cap.
+static uint16 collect_shop_rows(const RandoSpoiler *s, SpoilerShopRow *out, uint16 cap) {
+  uint16 n = 0;
+  if (s == NULL || s->placements == NULL) return 0;
+  for (uint16 i = 0; i < s->placements->count && n < cap; i++) {
+    uint16 loc = s->placements->entries[i].location_id;
+    const RandoLocationDef *d = find_location(loc);
+    if (d == NULL) continue;
+    if (d->type != LOCTYPE_Shop && d->type != LOCTYPE_ShopUpgrade &&
+        d->type != LOCTYPE_TakeAny) continue;
+    out[n].loc = loc;
+    out[n].item = s->placements->entries[i].item_id;
+    out[n].type = d->type;
+    out[n].region_id = d->region_id;
+    n++;
+  }
+  qsort(out, n, sizeof(out[0]), spoiler_shoprow_cmp);
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // JSON writer
 // ---------------------------------------------------------------------------
@@ -284,7 +327,9 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"crystals_ganon\": %u,\n", s->settings->crystals_ganon);
   fprintf(f, "    \"crystals_tower\": %u,\n", s->settings->crystals_tower);
   fprintf(f, "    \"item_pool_difficulty\": %u,\n", s->settings->item_pool_difficulty);
-  fprintf(f, "    \"dungeon_small_keys_mode\": %u,\n", s->settings->dungeon_small_keys_mode);
+  // Emit the EFFECTIVE small-keys mode (Retro pins Wild) so the spoiler matches
+  // the canonical hash + actual placement, not the user's raw (overridden) field.
+  fprintf(f, "    \"dungeon_small_keys_mode\": %u,\n", Settings_EffectiveSmallKeysMode(s->settings));
   fprintf(f, "    \"dungeon_big_keys_mode\": %u,\n", s->settings->dungeon_big_keys_mode);
   fprintf(f, "    \"dungeon_maps_mode\": %u,\n", s->settings->dungeon_maps_mode);
   fprintf(f, "    \"dungeon_compasses_mode\": %u,\n", s->settings->dungeon_compasses_mode);
@@ -440,6 +485,41 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     if (!first) fprintf(f, "\n  ");
   }
   fprintf(f, "],\n");
+
+  // shops[] (tasks §8.2-8.3) — the Retro shop / capacity-upgrade / take-any
+  // placements, carrying their region (so consumers can group by region) and an
+  // identity_placed flag for the Capacity Upgrade slots. Emitted ONLY when
+  // shop-class locations are placed (Retro), so non-Retro JSON is byte-identical
+  // (the key is omitted entirely, not emitted empty). This changes the JSON
+  // bytes for Retro seeds, which feed the race-mode stamp — version-locked by
+  // the kGeneratorVersion bump that ships with Retro wild-keys.
+  {
+    SpoilerShopRow shops[160];
+    uint16 sn = collect_shop_rows(s, shops, 160);
+    if (sn > 0) {
+      fprintf(f, "  \"shops\": [\n");
+      for (uint16 i = 0; i < sn; i++) {
+        const char *type_str = (shops[i].type == LOCTYPE_ShopUpgrade) ? "ShopUpgrade"
+                             : (shops[i].type == LOCTYPE_TakeAny)      ? "TakeAny"
+                                                                      : "Shop";
+        // Shop-class locations are identity-pinned and carry no logic-region
+        // binding (region_id == 0xFFFF), so the location NAME is the grouping key
+        // (e.g. "Light World Kakariko Shop - 1"); a bound region is emitted only
+        // when one actually exists.
+        const char *lname = Rando_GetLocationName(shops[i].loc);
+        fprintf(f, "%s    {\"location\": %u, \"name\": \"%s\", \"item\": %u, "
+                   "\"type\": \"%s\"",
+                i ? ",\n" : "", shops[i].loc, lname, shops[i].item, type_str);
+        if (shops[i].region_id != 0xFFFF)
+          fprintf(f, ", \"region\": \"%s\"", Rando_GetRegionName(shops[i].region_id));
+        if (shops[i].type == LOCTYPE_ShopUpgrade)
+          fprintf(f, ", \"identity_placed\": true");
+        fprintf(f, "}");
+      }
+      fprintf(f, "\n  ],\n");
+    }
+  }
+
   fprintf(f, "  \"playthrough\": [],\n");
   fprintf(f, "  \"regions\": []\n");
 
@@ -785,23 +865,21 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
       rows[i].location_id = s->placements->entries[i].location_id;
       rows[i].item_id = s->placements->entries[i].item_id;
       rows[i].region_id = 0xFFFF;
-      for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-        if (kRandoLocations[j].id == rows[i].location_id) {
-          rows[i].region_id = kRandoLocations[j].region_id;
-          // Audit H1 — under Inverted, a location may be assigned to a
-          // different region via Rando_FindPredicateOverride. Honor that
-          // override here so the grouped spoiler text matches the
-          // runtime's reachability view (e.g., Ether Tablet shows under
-          // LightWorld_DeathMountain_East, not the base West region).
-          if (s->settings != NULL) {
-            const RandoLocationPredOverride *ov =
-                Rando_FindPredicateOverride(rows[i].location_id,
-                                            s->settings->world_state);
-            if (ov != NULL && ov->region_override != 0xFFFF) {
-              rows[i].region_id = ov->region_override;
-            }
+      const RandoLocationDef *d = find_location(rows[i].location_id);
+      if (d != NULL) {
+        rows[i].region_id = d->region_id;
+        // Audit H1 — under Inverted, a location may be assigned to a different
+        // region via Rando_FindPredicateOverride. Honor that override here so the
+        // grouped spoiler text matches the runtime's reachability view (e.g.,
+        // Ether Tablet shows under LightWorld_DeathMountain_East, not the base
+        // West region).
+        if (s->settings != NULL) {
+          const RandoLocationPredOverride *ov =
+              Rando_FindPredicateOverride(rows[i].location_id,
+                                          s->settings->world_state);
+          if (ov != NULL && ov->region_override != 0xFFFF) {
+            rows[i].region_id = ov->region_override;
           }
-          break;
         }
       }
     }
@@ -837,6 +915,49 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     }
   }
   fprintf(f, "\n");
+
+  // Shops (tasks §8.1) — a dedicated grouping of the Retro shop / capacity-
+  // upgrade / take-any slots. These also appear under their region headings
+  // above; this section re-lists them grouped by shop for at-a-glance reading
+  // and flags the identity-placed Capacity Upgrade slots. Emitted only when
+  // shop-class locations are actually placed (i.e. Retro seeds), so non-Retro
+  // spoilers are byte-unchanged. This is TEXT-spoiler only: the .txt is never
+  // written in race mode and is not part of the race-mode stamp (computed over
+  // the JSON), so this section cannot move any placement / sphere digest or stamp.
+  {
+    SpoilerShopRow shops[160];
+    uint16 sn = collect_shop_rows(s, shops, 160);
+    if (sn > 0) {
+      fprintf(f, "Shops:\n");
+      fprintf(f, "------\n");
+      char cur_shop[64];
+      cur_shop[0] = '\0';
+      for (uint16 i = 0; i < sn; i++) {
+        const char *lname = Rando_GetLocationName(shops[i].loc);
+        // Group heading = the location name with the trailing " - <slot>" suffix
+        // stripped (e.g. "Light World Kakariko Shop - 1" -> "Light World Kakariko
+        // Shop"). Capacity-upgrade / take-any names follow the same shape.
+        char shop_name[64];
+        size_t k = 0;
+        for (const char *p = lname; *p && k < sizeof(shop_name) - 1; p++) {
+          if (p[0] == ' ' && p[1] == '-' && p[2] == ' ') break;  // slot separator
+          shop_name[k++] = *p;
+        }
+        shop_name[k] = '\0';
+        if (strcmp(shop_name, cur_shop) != 0) {
+          if (cur_shop[0] != '\0') fprintf(f, "\n");
+          fprintf(f, "[%s]\n", shop_name);
+          strncpy(cur_shop, shop_name, sizeof(cur_shop) - 1);
+          cur_shop[sizeof(cur_shop) - 1] = '\0';
+        }
+        const char *iname = Rando_GetItemName(shops[i].item);
+        const char *tag =
+            (shops[i].type == LOCTYPE_ShopUpgrade) ? "  [identity-placed]" : "";
+        fprintf(f, "  %-44s -> %s%s\n", lname, iname, tag);
+      }
+      fprintf(f, "\n");
+    }
+  }
 
   // Hints — Phase B Slice 5 §3. Mirrors the JSON `hints[]` array. The
   // section is omitted entirely when no hints are populated (settings.hints
