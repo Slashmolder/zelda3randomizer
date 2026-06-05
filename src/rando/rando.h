@@ -612,6 +612,14 @@ void Rando_SetMedallionAssignment(const uint8 *assignment);       // [kRandoMeda
 const uint8 *Rando_GetDungeonPrizeAssignment(void);
 const uint8 *Rando_GetMedallionAssignment(void);
 
+// Runtime medallion-open gate for the Misery Mire (entrance_index 0) and Turtle
+// Rock (entrance_index 1) overworld doors. `cast_medallion` is the item-registry
+// id of the medallion the player just cast (Bombos=25, Ether=26, Quake=27).
+// Returns true iff that medallion matches the shuffled assignment for the
+// entrance. False when no assignment is installed (v1 / snapshot-restored slot)
+// or entrance_index is out of range — callers fall back to the vanilla mapping.
+bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index);
+
 // ---------------------------------------------------------------------------
 // Active-slot settings recovery (format_version >= 2). On slot activation the
 // canonical settings blob is deserialized and the prize/medallion shuffle

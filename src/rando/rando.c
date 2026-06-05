@@ -1089,6 +1089,20 @@ void Rando_SetMedallionAssignment(const uint8 *assignment) {
 const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assignment; }
 const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
 
+// Runtime open gate for the medallion-shuffled MM/TR overworld doors. The placer
+// and tracker consult g_medallion_assignment via OP_MEDALLION_OPENS; the ancilla
+// spell handlers consult it here so the dungeon actually opens for whichever
+// medallion the seed requires. entrance_index: 0 = Misery Mire, 1 = Turtle Rock
+// (the kRandoMedallionEntranceCount ordering used by MedallionShuffle_Run and
+// the logic codegen's _resolve_entrance_id). Returns false when no assignment is
+// installed so the caller can keep the vanilla Ether->MM / Quake->TR mapping.
+bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index) {
+  const uint8 *assignment = g_medallion_assignment;
+  if (assignment == NULL || entrance_index >= kRandoMedallionEntranceCount)
+    return false;
+  return assignment[entrance_index] == cast_medallion;
+}
+
 // ---------------------------------------------------------------------------
 // Session-persistent placement storage. The sidecar struct lives in the
 // file-select cache (and is overwritten when the cache reloads), so we copy
