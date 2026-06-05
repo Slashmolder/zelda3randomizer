@@ -194,7 +194,7 @@ Single-entrance dungeons FIRST (EP↔PoD — low risk), then multi-entrance.
       + corpus (`c-entrance-cross-open-fast-ganon`, 62 entries) + UI (Crossed preset
       LIVE, cross-category checkbox LIVE). Runtime install branches cross vs
       cave/dun in `Entrance_RuntimeInstall`; exit coupling in `LoadOverworldFromDungeon`.
-- [ ] 3.3 Playtest + fresh-eyes audit. NOTE: cross-category correctness is NOT
+- [x] 3.3 Playtest + fresh-eyes audit. *(Owner playtest-confirmed 2026-06-04 for the built modes — Simple/Restricted/Crossed + coupled. Insanity/decoupled is carved to `add-rando-entrance-shuffle-insanity`, runtime-blocked on the cave-arrival fork.)* NOTE: cross-category correctness is NOT
       gate-protected (the gate evaluates the model; a too-permissive model ships a
       runtime softlock) — needs careful build + playtest of model↔runtime match.
       All four cross directions verified against `Dungeon_LoadEntrance`'s
@@ -301,7 +301,7 @@ by a capture pass (reuse the engine — the seeds aren't ROM-stored for caves).
       decoupled) shown DISABLED so no button lies. Individual axis checkboxes
       (incl. live cross-category) serve as Custom. (UI sugar over the axes — no
       stored enum, per design §5a.)
-- [ ] P.2 Playtest each preset resolves to the right axis combination.
+- [x] P.2 Playtest each preset resolves to the right axis combination. *(Owner playtest-confirmed 2026-06-04 — Simple/Restricted/Crossed + Custom; Insanity shown disabled, carved to `add-rando-entrance-shuffle-insanity`.)*
 
 ## Cross-cutting (per `openspec/changes/README.md` conventions)
 - [x] X.1 Backward-load: `Rando_ActivateSidecarSlot`→`Entrance_RuntimeInstall` now

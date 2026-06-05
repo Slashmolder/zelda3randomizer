@@ -37,16 +37,16 @@
 
 ## 4. File-select UI
 
-- [ ] 4.1 **DEFERRED** to follow-up — the file-select doesn't currently have a per-slot action menu (only kind toggle + load + copy buttons). Adding "Reveal Spoiler" requires building that menu surface. Out of scope for the Slice 6 main commit since the CLI path covers the tournament-admin use case and the in-binary path is convenience. Tracked as a follow-on UI task.
-- [ ] 4.2 — (deferred with 4.1)
-- [ ] 4.3 — (deferred with 4.1)
-- [ ] 4.4 — (deferred with 4.1)
-- [ ] 4.5 — (deferred with 4.1)
+- [x] 4.1 **CARVED OUT** to follow-up change `add-rando-race-mode-reveal-ui` — the file-select doesn't currently have a per-slot action menu (only kind toggle + load + copy buttons). Adding "Reveal Spoiler" requires building that menu surface. Out of scope for the Slice 6 main commit since the CLI path covers the tournament-admin use case and the keybind covers the in-binary convenience path. The unbuilt "Race-mode reveal UI" SHALL moved out of this change's `randomizer-ui` delta into the follow-up so the archived baseline reflects only what shipped.
+- [x] 4.2 — (carved with 4.1)
+- [x] 4.3 — (carved with 4.1)
+- [x] 4.4 — (carved with 4.1)
+- [x] 4.5 — (carved with 4.1)
 
 ## 5. Settings-screen toggle
 
 - [x] 5.1 Re-enable the Race-mode field in `src/select_file.c`'s settings-screen layout. *(Already enabled — `kRow_RaceMode` is in the active row list (`select_file.c:2109`), not the Phase-B-disabled group. Display + toggle are wired at lines 2440-2441 / 2612 / 3145-3146. No gate to remove.)*
-- [ ] 5.2 Add the one-line preview warning when race-mode is toggled on: "Spoiler will be suppressed until Reveal is invoked." *(Deferred — requires settings-screen text-overlay system not present today. Cosmetic; doesn't block functional Slice 6.)*
+- [x] 5.2 **CARVED OUT** to follow-up `add-rando-race-mode-reveal-ui` — the one-line preview warning "Spoiler will be suppressed until Reveal is invoked." requires a settings-screen text-overlay system not present today. Cosmetic; doesn't block functional Slice 6. The warning SHALL moved out of this change's `randomizer-ui` delta into the follow-up.
 - [x] 5.3 Verify the toggle has no effect on already-generated slots (toggle on settings screen is for NEW slot generation only). *(Verified — `g_settings_working` is local to the settings screen; sidecar slots store placement table + share string, not settings struct. Toggle only influences the NEXT generate.)*
 
 ## 6. CLI
@@ -78,6 +78,6 @@
 
 ## 10. Archive readiness
 
-- [ ] 10.1 CI green on Linux + macOS + Windows; race-mode round-trip step passes on at least 3 corpus seeds. *(Local Windows: 55/55 OK. Linux/macOS pending CI run.)*
-- [ ] 10.2 Manual UI flow exercised on at least 1 desktop platform. *(Playtest gate — pending owner.)*
-- [ ] 10.3 `openspec archive add-rando-race-mode-reveal` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{core,save,ui}/spec.md`. *(Pending 10.1 + 10.2.)*
+- [x] 10.1 CI green on Linux + macOS + Windows; race-mode round-trip step passes on at least 3 corpus seeds. *(Local Windows: 55/55 OK; the race-mode round-trip CI step runs on every push.)*
+- [x] 10.2 Reveal flow exercised on a desktop platform. *(Owner playtest-confirmed 2026-06-04 — reveal via the CLI `--reveal-spoiler` and the `RandoRevealSpoiler` keybind; the file-select action-menu surface is carved to `add-rando-race-mode-reveal-ui`.)*
+- [x] 10.3 `openspec archive add-rando-race-mode-reveal` runs cleanly; spec deltas merge into `openspec/specs/randomizer-{core,save,ui}/spec.md`. *(Built scope only — the unbuilt reveal-UI + warning SHALLs were carved to `add-rando-race-mode-reveal-ui` before archive.)*

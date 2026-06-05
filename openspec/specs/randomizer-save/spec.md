@@ -165,15 +165,23 @@ The spoiler log JSON SHALL be written to disk at slot-creation time at `<spoiler
 
 ### Requirement: Race-mode spoiler suppression (Phase B)
 
-When race mode is enabled, the on-disk spoiler at slot-creation time SHALL contain only the share string and a SHA-256 stamp of the full spoiler. A reveal action SHALL regenerate the spoiler from the share string and verify the stamp matches.
+When race mode is enabled, the on-disk spoiler at slot-creation time SHALL contain only the share string, a `generator_version`, and a SHA-256 stamp of the full spoiler that would have been generated with `race_mode` cleared. A reveal action SHALL regenerate the spoiler from the share string and verify the stamp matches.
+
+The on-disk suppressed-file format SHALL be the file format defined in `randomizer-core / Spoiler-log emission` Race-mode suppression section. The format includes a CRC32 to detect file-system corruption or tampering.
+
+The reveal action SHALL be the `Rando_RevealSpoiler(slot_index)` entry point defined in `randomizer-core / Race-mode reveal action`, callable from the file-select UI (see `randomizer-ui / Race-mode reveal UI`) or from the CLI's `--reveal-spoiler=<path>` flag.
 
 #### Scenario: Race-mode file contains only stamp
 - **WHEN** a race-mode slot is created
-- **THEN** the on-disk file contains only the share string and the SHA-256 stamp
+- **THEN** the on-disk file contains the magic header `ZRSR`, the generator_version (u16 LE), the SHA-256 stamp, the length-prefixed share-string (64-byte buffer with leading length), the canonical-serialized settings (24 bytes, with `race_mode` cleared), and the CRC32 — and nothing else; the total size is exactly 134 bytes. The settings field is included because the sidecar slot does not preserve `RandoSettings` and reveal needs it to regenerate placement deterministically.
 
 #### Scenario: Reveal verifies stamp
 - **WHEN** the player triggers reveal for a race-mode slot
-- **THEN** the full spoiler is regenerated, written to disk, and its SHA-256 matches the stamp; mismatch is reported as a verification failure
+- **THEN** the full spoiler is regenerated, written to disk, and its SHA-256 matches the stamp; mismatch is reported as a verification failure and the suppressed file is preserved unchanged
+
+#### Scenario: Sidecar slot survives unchanged across reveal
+- **WHEN** the reveal action completes (success or failure)
+- **THEN** the sidecar's slot bytes, placement table, and checked-location bitmap are unchanged; reveal touches only files in `<spoiler_dir>`, not in `<saves_dir>`
 
 ### Requirement: Snapshot interoperability
 
@@ -200,4 +208,52 @@ On load, after `StateRecorder_Load`'s standard chunks complete (and the existing
 #### Scenario: Newer binary reads older rando snapshot (cross-version TLV)
 - **WHEN** a v1.1 binary loads a rando snapshot whose `TAIL_RANDO_STATE` payload was written by v1.0
 - **THEN** the v1.1 TLV consumer reads the `generator_version` field at the start of the payload, dispatches on that version to select the appropriate payload-schema parser, and processes the rest of the payload accordingly. The TLV-payload-schema-version detection is the consumer's responsibility; the `generator_version` field is the discriminator. Payload format MAY evolve across generator versions (e.g., adding entrance-shuffle data in Phase C); the embedded `generator_version` lets newer consumers parse older payloads correctly
+
+### Requirement: Entrance-permutation persistence via the header reserved tail
+
+When an entrance shuffle is active for a generated slot, the sidecar slot SHALL
+persist enough state to restore the entrance permutation π on slot load **without
+storing the full permutation**, by carrying it additively in the previously-zero
+header reserved tail and **regenerating π deterministically** at load. This
+supersedes the original stubbed `TAIL_ENTRANCE_MAP` TLV design: the slot file
+format has no TLV-skip infrastructure after the bitmap (unlike the snapshot-tail
+format), and three multi-slot packers sum the fixed `RandoSave_SlotOnDiskSize`, so
+a variable-length tail is not viable without a format break. Because π for a given
+attempt is a pure function of `(seed, settings axes, attempt)`, regeneration is
+cheaper and equally robust — the same precedent the Phase B hints settings
+extension established.
+
+The slot header (80 bytes, unchanged size) SHALL carry, in the reserved tail:
+- `@70 entrance_axes` (uint8) — the packed entrance-axis byte (identical to the
+  canonical settings byte `[25]`; `kEntranceAxis_*` bits). `0` ⇒ no entrance
+  shuffle.
+- `@71 entrance_attempt` (uint8) — the accepted goal-retry attempt index whose
+  permutation π was used.
+
+On slot load, when `entrance_axes` has the cave-shuffle bit set AND the slot's
+`world_state` is in the supported set (Open/Standard), the runtime SHALL
+regenerate π from the seed (recovered from the stored `share_string`),
+`entrance_axes`, and `entrance_attempt`, then install the door overlay + per-seed
+region overrides. When `entrance_axes == 0` the bytes are zero and the slot is
+byte-identical (sans these two additive bytes, which older binaries already treat
+as reserved) to a non-entrance-shuffle slot.
+
+#### Scenario: Entrance-shuffle slot round-trip
+- **WHEN** a coupled cave-shuffle slot is written and read back
+- **THEN** `entrance_axes` + `entrance_attempt` round-trip byte-identical, and the
+  runtime regenerates the SAME permutation π (so the same door→interior mapping
+  and region overrides are restored)
+
+#### Scenario: Older binary ignores the entrance bytes
+- **WHEN** a Phase A or Phase B binary (no Phase C support) reads a Phase C
+  entrance-shuffle slot
+- **THEN** it reads the header through `@69` and treats `@70`/`@71` as reserved
+  (ignored); the slot loads as a vanilla-entrance seed (graceful degradation — the
+  door overlay is simply not installed)
+
+#### Scenario: No entrance bytes when shuffle is off
+- **WHEN** a Phase C binary writes a slot with no entrance shuffle active
+- **THEN** `entrance_axes == 0` and `entrance_attempt == 0`; the slot is
+  byte-identical to a Phase B slot for the same seed (the two additive bytes were
+  already zero)
 

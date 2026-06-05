@@ -50,3 +50,19 @@ Placement and goal-completability SHALL reflect the active mechanism.
 - **THEN** only door-edges (overworld-region → dungeon-region) are rewritten by π;
   edges representing a dungeon's internal room-to-room progression and event gates
   remain fixed
+
+## REMOVED Requirements
+
+### Requirement: Per-seed RegionRemap overlay for entrance shuffle
+
+**Reason**: The Phase A `RegionRemap` accessor-overlay scaffold was retired — it
+had no callers and would corrupt the 10+ live `OP_REGION_REACHABLE` predicates if
+populated (it remaps a region-lookup operand). Entrance shuffle ships through the
+two-mechanism per-seed reachability added by this change (cave location-region
+reassignment + dungeon door-edge overlay), not a RegionRemap overlay. The baseline
+already records the retirement under the Inverted "static world-state-keyed graph"
+requirement.
+
+**Migration**: None — the removed requirement described an unused scaffold. Entrance-
+shuffle reachability is now specified by "Per-seed entrance reachability — two
+mechanisms by interior class" (added above).

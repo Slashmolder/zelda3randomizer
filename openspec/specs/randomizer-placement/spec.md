@@ -38,7 +38,7 @@ The dispatcher SHALL grant any item type listed in the audit deliverable's "rece
 - **Progressive items** (mandatory for ALTTPR-style placement): `ProgressiveSword`, `ProgressiveShield`, `ProgressiveArmor`, `ProgressiveGlove`, `ProgressiveBow`. Each grant advances the corresponding `link_item_*` by one level via a new helper; at-max grants are a generator error in well-formed seeds.
 - All vanilla absolute `link_item_*` items, **`SilverArrowUpgrade`** (standalone upgrade item used in absolute-bow mode).
 - **`TriforcePiece`** — required by Triforce Hunt and Ganon Hunt; grant path adds 1 to the player's triforce-piece counter and updates the HUD.
-- **Magic upgrades** as items: `HalfMagic`, `QuarterMagic` — grant path writes to `link_magic_consumption` (1 = full, 2 = half, 4 = quarter per vanilla semantics; new helper).
+- **Magic upgrades** as items: `HalfMagic`, `QuarterMagic` — the grant is **strictly progressive**: each magic upgrade advances `link_magic_consumption` by exactly one tier (capped at the maximum), regardless of which of the two items it is. **This port uses `0 = full, 1 = half, 2 = quarter`** (the cost table is indexed `item*3 + consumption`), NOT the vanilla-SNES `1/2/4` convention. Grant path: `magic_upgrade_direct_grant` plus the Magic Bat identity write. This deliberately diverges from ALTTPR (whose `QuarterMagic` jumps straight to quarter); capping at +1 tier wastes no pickup and cannot skip the half tier, and is placement-neutral because no logic predicate requires quarter specifically (the magic macro is satisfied at ≥ half).
 - **Bottle-with-contents** as distinct item IDs: `BottleEmpty`, `BottleWithFairy`, `BottleWithBee`, `BottleWithGoodBee`, `BottleWithRedPotion`, `BottleWithGreenPotion`, `BottleWithBluePotion`.
 - **Heart items** as two distinct IDs: `PieceOfHeart` (granted via the vanilla PoH path — 4 pieces = +1 max HP via the existing quarters mechanic) and `BossHeartContainer` (granted via a direct +1 max HP path, no quarters mechanic). The dispatcher routes each ID to the correct receive code.
 - Small keys (per dungeon), big keys (per dungeon), maps, compasses.
@@ -72,9 +72,11 @@ Item types not in the receivable enumeration SHALL NOT be placed by the generato
 - **WHEN** the dispatcher grants `TriforcePiece` and the player has `triforce_pieces < pieces_required`
 - **THEN** the triforce-piece counter increments, the HUD updates, the goal predicate is re-evaluated, and the standard receive animation/SFX plays
 
-#### Scenario: HalfMagic / QuarterMagic grant
-- **WHEN** the dispatcher grants `HalfMagic`
-- **THEN** `link_magic_consumption` is set to 2 (half) if currently 1 (full); the standard receive animation plays; subsequent `QuarterMagic` grant sets it to 4
+#### Scenario: HalfMagic / QuarterMagic grant is strictly progressive
+- **WHEN** the dispatcher grants a magic upgrade (`HalfMagic` OR `QuarterMagic`) while `link_magic_consumption == 0` (full)
+- **THEN** `link_magic_consumption` advances to 1 (half) — the 1st magic upgrade collected is always half, regardless of which of the two items it is
+- **AND WHEN** a second magic upgrade (`HalfMagic` OR `QuarterMagic`) is granted while `link_magic_consumption == 1`
+- **THEN** it advances to 2 (quarter); any further magic-upgrade grant is capped at 2 (never exceeds quarter, never downgrades)
 
 #### Scenario: PieceOfHeart vs BossHeartContainer routing
 - **WHEN** the dispatcher grants `PieceOfHeart`
@@ -371,4 +373,41 @@ The decision (single entry vs. peer entry) is recorded in design.md after apply-
 #### Scenario: Take-Any cave in Open is not enterable
 - **WHEN** the player walks up to the entrance of `20 Rupee Cave` in an Open seed
 - **THEN** the entrance does not accept the player; vanilla behavior holds (Take-Any caves are gated by `region.takeAnys = false` in Open)
+
+### Requirement: Shared-byte item grants — never-downgrade, progressive collapse, and item-menu swap
+
+Several items that vanilla packs two-or-more tiers into a single Y-slot byte are shuffled by the randomizer as independent items. Under `kFeatures1_RandomizerActive`, the grant path SHALL NOT let acquiring a lower tier after a higher one downgrade the slot, and SHALL track true ownership independently of the shared byte so a player who owns multiple tiers never loses one. Specifically:
+
+- **Never-downgrade (all shared-byte upgrade items).** An absolute byte-write SHALL only raise the byte (write iff `v > current`), never lower it — protecting sword, shield, gloves, mail, bow, and boomerang from out-of-order downgrades. This clamp SHALL EXEMPT non-tier counter bytes: `link_arrow_filler` (receive codes `0x43`/`0x44`) is a per-frame drain countdown, not a tier, and SHALL keep the vanilla absolute write (the clamp would otherwise silently drop a paid arrow grant while a prior fill is still draining).
+- **Progressive collapse (boomerang, magic).** Where the two shuffled tiers are **logically interchangeable** (no logic predicate distinguishes them), the grant SHALL collapse them into a single progressive ladder: the 1st collected gives tier 1, the 2nd gives tier 2, regardless of which item is placed. Boomerang (blue = 1, red = 2) and magic (half = 1, quarter = 2) are collapsed this way.
+- **Item identity preserved when a tier is a logic gate (bow).** Where a logic predicate DOES distinguish the tiers — silver vs wood arrows for the bow — the grant SHALL keep item identity (a wood-bow item grants wood, a silver-arrow item grants silver) under never-downgrade, so the placer cannot desync from runtime.
+- **Item-menu swap (Press A).** When the player owns BOTH tiers of a shared-slot item, pressing A on that highlighted slot in the inventory menu SHALL swap which tier the slot performs (the shared byte tracks the *selected* tier): flute↔shovel, blue↔red boomerang, wood↔silver arrows. Ownership SHALL persist across save/reload via per-item bitfields carried additively in the slot-header reserved tail (`boomerang_owned` @73, `bow_owned` @74 — no `format_version` bump), so a swapped-down byte never loses the higher tier.
+
+#### Scenario: Progressive boomerang ignores item identity
+- **WHEN** the dispatcher grants either a `BlueBoomerang` or a `RedBoomerang` item while the player owns no boomerang
+- **THEN** the player receives the blue boomerang (tier 1), regardless of which item was placed
+- **AND WHEN** a second boomerang item (either color) is granted
+- **THEN** the player receives the red boomerang (tier 2) and owns both; pressing A on the boomerang slot swaps the selected color
+
+#### Scenario: Bow keeps identity and never downgrades
+- **WHEN** the player owns the silver bow and the dispatcher grants a wood-bow item
+- **THEN** the bow strength is unchanged (stays silver) — never downgraded
+- **AND WHEN** the player owns both wood and silver
+- **THEN** pressing A on the bow slot swaps between wood and silver arrows, preserving the arrow-present state
+
+#### Scenario: Never-downgrade exempts the arrow-fill counter
+- **WHEN** the dispatcher grants an arrow refill (receive code `0x43`/`0x44` → `link_arrow_filler`) while a prior fill is still draining
+- **THEN** the new fill value is written absolutely (vanilla behavior), NOT clamped — the never-downgrade rule does not apply to drain/counter bytes
+
+### Requirement: Trigger-based location re-collect safety
+
+A location whose grant fires from a re-triggerable in-world action (an NPC summon, a dig, a tablet read) SHALL, under `kFeatures1_RandomizerActive`, gate its grant on `Rando_IsLocationChecked(LOC_*)` so the shuffled item is granted exactly once. Vanilla often relied on the grant's own side effect to disable re-triggering; the randomizer breaks that equivalence in two directions the gate fixes: (a) a vanilla precondition that, once satisfied from elsewhere, makes the location uncollectable (MISSABLE); (b) a re-enabled one-shot action that re-runs the non-idempotent grant (RE-GRANT / duplicate). The non-rando path SHALL remain byte-identical (RAM-compare preserved).
+
+#### Scenario: Magic Bat is collectable regardless of magic level
+- **WHEN** the player reaches the Magic Bat having already obtained quarter magic (`link_magic_consumption == 2`) from another location
+- **THEN** the bat still appears and grants its shuffled item — the vanilla `link_magic_consumption >= 2` summon guard applies only off-rando; under rando `Rando_IsLocationChecked(LOC_Magic_Bat)` is the sole re-grant gate
+
+#### Scenario: Flute Spot grants exactly once
+- **WHEN** the player digs the Flute Spot, collects its shuffled item, then (via the flute/shovel decouple) toggles back to the shovel and re-digs the same tile
+- **THEN** the re-dig grants nothing — the grant is gated on `!Rando_IsLocationChecked(LOC_Flute_Spot)`, preventing the duplicate that vanilla avoided only by flipping `link_item_flute` out of a shovel-selectable state
 
