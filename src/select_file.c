@@ -3484,6 +3484,22 @@ static void SelectFile_Settings_HandleGenerate(void) {
   // Generate within the same session continues to gate normally.
   bool consumed_bypass = g_asset_warn_session_bypass;
   g_asset_warn_session_bypass = false;
+  // Inert-header case: a --placeholder vanilla_assets_hash.h (all-zeros,
+  // kVanillaAssetsHashKnown==0) disables the comparison below, so the gate is
+  // skipped entirely. Warn once (mirrors the CLI path in main.c) so a modified-
+  // assets build doesn't pass the anti-cheat check silently. Dead branch when
+  // the real hash is baked in (kVanillaAssetsHashKnown==1).
+  if (!kVanillaAssetsHashKnown) {
+    static bool warned_inert_asset_gate = false;
+    if (!warned_inert_asset_gate) {
+      warned_inert_asset_gate = true;
+      fprintf(stderr,
+        "[settings] WARNING the vanilla assets hash is not baked into\n"
+        "  vanilla_assets_hash.h (--placeholder build); the modified-assets\n"
+        "  check is INERT and Generate will not prompt. Run\n"
+        "  `python assets/scripts/dump_vanilla_assets_hash.py` and rebuild to activate it.\n");
+    }
+  }
   if (kVanillaAssetsHashKnown &&
       memcmp(g_assets_hash, kVanillaAssetsHash, 32) != 0 &&
       !AssetDecision_FindAllow(g_assets_hash) &&
