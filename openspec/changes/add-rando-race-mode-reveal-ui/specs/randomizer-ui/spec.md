@@ -1,3 +1,28 @@
+> **As-built (2026-06-04).** The "file-select per-slot action menu" surface below
+> was delivered instead in the **PC native ImGui window** (`rando_window.cpp`,
+> `Panel_General` → "Race-mode spoiler" section), because the PC settings/admin UI
+> is the native window (the SNES settings screen is compiled out on PC) and
+> `select_file.c` is a hot, render-regression-prone file. Read "file-select per-slot
+> action menu" as satisfied **done-differently** by the native-window section, with
+> these divergences:
+>
+> - **Active slot, not arbitrary per-slot.** The reveal targets the *active*
+>   (loaded) race-mode slot via `Rando_RevealActiveSlotSpoiler()`; revealing a slot
+>   you can see but have not loaded stays the admin path (CLI `--reveal-spoiler`).
+> - **Anti-cheat completion gate.** The in-binary button is enabled only after the
+>   seed is completed (`main_module_index >= 24`), via the new
+>   `Rando_CanRevealActiveSlotSpoiler()` accessor — mirroring the core's existing
+>   MED-1 gate so an in-binary reveal can't be used to peek mid-race. The CLI stays
+>   unconditional for tournament admins.
+> - **Missing-file → result, not hidden.** When the suppressed file is absent, the
+>   reveal returns `FileNotFound` and the result dialog surfaces it (with a
+>   restore-from-backup recommendation) rather than the entry being hidden.
+> - **Switch** retains the existing reveal keybind + CLI; the native-window UI is
+>   PC-only.
+>
+> The visibility gate uses `Rando_ActiveSlotHidesSpoiler()` (fail-closed) per the
+> race-mode spoiler-leak invariant.
+
 ## ADDED Requirements
 
 ### Requirement: Race-mode reveal UI

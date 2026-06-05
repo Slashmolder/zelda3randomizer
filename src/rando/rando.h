@@ -155,6 +155,14 @@ const char *Rando_RevealResultDescription(RandoRevealResult r);
 // reveal).
 RandoRevealResult Rando_RevealActiveSlotSpoiler(void);
 
+// True when an in-binary reveal of the active slot's spoiler is allowed right
+// now: a race-mode slot is active AND the anti-cheat completion gate inside
+// Rando_RevealActiveSlotSpoiler() would currently pass (seed completed). UI uses
+// this to enable the Reveal button with a clear "after you finish the seed"
+// state instead of surfacing a confusing FileNotFound when the gate refuses
+// pre-completion. (Tournament admins bypass the gate via --reveal-spoiler.)
+bool Rando_CanRevealActiveSlotSpoiler(void);
+
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
 // Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
 // items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.

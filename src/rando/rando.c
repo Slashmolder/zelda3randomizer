@@ -2484,6 +2484,15 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   return r;
 }
 
+bool Rando_CanRevealActiveSlotSpoiler(void) {
+  // Mirrors the gate inside Rando_RevealActiveSlotSpoiler(): an active slot with
+  // a captured share string, past the anti-cheat completion threshold
+  // (main_module_index >= 24 = Ending intro / Credits). Keep the threshold in
+  // sync with that function.
+  return g_rando_slot_active && g_rando_active_share_string[0] != '\0' &&
+         main_module_index >= 24;
+}
+
 // ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).
 //

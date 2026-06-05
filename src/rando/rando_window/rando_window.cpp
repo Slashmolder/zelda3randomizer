@@ -48,13 +48,14 @@
 // rando_share.h / rando_placement.h in under extern "C"; the rest are added
 // here (also under extern "C" so the C++ linker resolves the C symbols).
 extern "C" {
+#include "../rando.h"            // Rando_IsActive / Rando_ActiveSlotHidesSpoiler /
+                                 // Rando_RevealActiveSlotSpoiler / Rando_CanRevealActiveSlotSpoiler /
+                                 // Rando_RevealResultDescription + g_assets_hash. (rando.h's lone
+                                 // _Static_assert is C++-guarded — cf. tracker_windows.cpp.)
 #include "../rando_asset_decisions.h"  // AssetDecision_FindAllow / _Persist
 #include "../rando_logic.h"      // Rando_GetRegionName/LocationName/ItemName, kRandoLocations
 #include "../vanilla_assets_hash.h"  // kVanillaAssetsHash, kVanillaAssetsHashKnown
 #include "../../config.h"        // g_config (R2: snapshot features0 at open), g_rando_window_prefs
-// g_assets_hash is declared in rando.h, but that header uses C11 _Static_assert
-// (not valid in this C++ TU), so declare just the symbol we need here.
-extern uint8 g_assets_hash[32];
 }
 
 // Forward declarations (definitions appear later but are referenced from
@@ -292,6 +293,79 @@ static void Panel_General() {
   RandoSettings *s = &b->pending;
   bool changed = false;
 
+  // ---- Race-mode spoiler reveal (active slot) -----------------------------
+  // Deferred in-binary UI from add-rando-race-mode-reveal-ui (§1). Shown only
+  // for an ACTIVE race-mode slot — gated on Rando_ActiveSlotHidesSpoiler(), the
+  // fail-closed helper every spoiler/hint UI must use (see memory
+  // race_mode_null_settings_failopen). The reveal action itself is anti-cheat
+  // gated in the core (refused until the seed is completed); we pre-gate the
+  // button on Rando_CanRevealActiveSlotSpoiler() so the player gets a clear
+  // "after you finish" state rather than a confusing FileNotFound. Tournament
+  // admins reveal any time via the --reveal-spoiler CLI flag.
+  if (Rando_IsActive() && Rando_ActiveSlotHidesSpoiler()) {
+    static int s_reveal_result = -1;       // RandoRevealResult; -1 = none yet
+    static bool s_reveal_open_result = false;
+
+    ImGui::SeparatorText("Race-mode spoiler");
+    // Wording stays accurate when settings couldn't be recovered (v1 slot /
+    // snapshot restore): ActiveSlotHidesSpoiler() fails closed there too, and a
+    // non-race slot simply returns FileNotFound from the reveal below.
+    ImGui::TextWrapped("This slot's spoiler is suppressed on disk. Reveal "
+                       "regenerates the placement and writes the spoiler file.");
+
+    bool can_reveal = Rando_CanRevealActiveSlotSpoiler();
+    ImGui::BeginDisabled(!can_reveal);
+    if (ImGui::Button("Reveal Spoiler"))
+      ImGui::OpenPopup("Reveal spoiler?##z3r_reveal_confirm");
+    ImGui::EndDisabled();
+    if (!can_reveal) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("(available after you finish the seed)");
+      HelpTooltip("Anti-cheat: the in-binary reveal unlocks after the seed is "
+                  "completed. Tournament admins can reveal any time with the "
+                  "--reveal-spoiler CLI flag.");
+    }
+
+    // Confirmation modal.
+    if (ImGui::BeginPopupModal("Reveal spoiler?##z3r_reveal_confirm", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextWrapped("Reveal the spoiler? This writes the placement to the "
+                         "seed's spoiler .json on disk. The race-mode bit stays "
+                         "set on the slot.");
+      ImGui::Separator();
+      if (ImGui::Button("Reveal", ImVec2(120, 0))) {
+        s_reveal_result = (int)Rando_RevealActiveSlotSpoiler();
+        s_reveal_open_result = true;  // promote to the result modal next frame
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
+    }
+
+    // Result modal — opened the frame after the action ran (can't nest a second
+    // OpenPopup inside the confirm modal's CloseCurrentPopup).
+    if (s_reveal_open_result) {
+      s_reveal_open_result = false;
+      ImGui::OpenPopup("Reveal result##z3r_reveal_result");
+    }
+    if (ImGui::BeginPopupModal("Reveal result##z3r_reveal_result", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      RandoRevealResult r = (RandoRevealResult)s_reveal_result;
+      bool ok = (r == kRandoReveal_Ok);
+      ImGui::TextColored(ok ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f)
+                            : ImVec4(1.0f, 0.5f, 0.4f, 1.0f),
+                         "%s", ok ? "Spoiler revealed." : "Reveal failed.");
+      ImGui::TextWrapped("%s", Rando_RevealResultDescription(r));
+      ImGui::Separator();
+      if (ImGui::Button("OK", ImVec2(120, 0)))
+        ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
+    }
+    ImGui::Spacing();
+  }
+
   // ---- Preset gallery ----
   ImGui::SeparatorText("Presets");
   for (int i = 0; i < kPreset__Count; i++) {
@@ -436,6 +510,11 @@ static void Panel_General() {
     v = s->race_mode != 0;
     if (ImGui::Checkbox("Race mode", &v)) { s->race_mode = v; changed = true; }
     HelpTooltip("Suppress the spoiler for the generated slot.");
+    // §2.1 — preview the consequence of enabling race mode (deferred from
+    // add-rando-race-mode-reveal; the toggle itself shipped earlier).
+    if (s->race_mode)
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                         "Spoiler will be suppressed until Reveal is invoked.");
     v = s->hints != 0;
     if (ImGui::Checkbox("Hints", &v)) { s->hints = v; changed = true; }
     HelpTooltip("Telepathic-tile hints.");
