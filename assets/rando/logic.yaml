@@ -323,8 +323,12 @@ macros:
   # NotADungeonItem — the can_place restriction the PHP setFillRules
   # closures spell out as `!(item instanceof Key||BigKey||Map||Compass)`
   # in HCE Secret Passage (php:101-106) and Link's Uncle (php:108-114).
-  # Phase A: the `region.wild*` config flags are pinned false, so the
-  # filter applies unconditionally to all dungeon items in our pool.
+  # The filter must bar EVERY dungeon item from these always-reachable
+  # slots. `region.wild*` and Retro genericKeys are now LIVE (no longer
+  # pinned false), so SmallKey_DesertPalace/SmallKey_EasternPalace (the
+  # fungible-under-wild small keys) and the Retro GenericKey (id 125) are
+  # enumerated below too — otherwise an early Key could land on Link's
+  # Uncle / Secret Passage, violating the `!(item instanceof Key)` rule.
   - name: NotADungeonItem
     parameters: []
     # Enumerates every small-key/big-key/map/compass id present in our
@@ -376,4 +380,7 @@ macros:
       AND NOT OP_ITEM_IS(BigKey_GanonsTower)
       AND NOT OP_ITEM_IS(Map_GanonsTower)
       AND NOT OP_ITEM_IS(Compass_GanonsTower)
+      AND NOT OP_ITEM_IS(SmallKey_EasternPalace)
+      AND NOT OP_ITEM_IS(SmallKey_DesertPalace)
+      AND NOT OP_ITEM_IS(GenericKey)
     source: "app/Region/Standard/HyruleCastleEscape.php:101-106, 110-113 (setFillRules dungeon-item closures)"

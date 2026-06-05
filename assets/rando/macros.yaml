@@ -484,6 +484,18 @@ macros:
       glitch only when the user opted in; the boots prereq is the actual
       mechanic.
 
+      Intentionally gated on the trick BIT (OP_TRICK) only — NOT on
+      OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches). A logic=OWG, tricks=0
+      seed therefore will NOT route boots-clip progression. This is the
+      deliberate SAFE direction documented in op_registry.yaml's
+      glitch_levels overworld_glitches entry: there are ZERO tier-1
+      (overworld_glitches) gates in the graph — the as-built OWG sites are
+      pinned at tier-2 (major_glitches) at the predicate level, so adding a
+      tier-1 disjunct here would silently over-reach across all ~134
+      boots-clip predicate sites (US-1.0-unverified). Proper OWG fidelity
+      is follow-on work (tasks §12.5); do not OR in a tier-1 glitch level
+      without re-auditing every CanBootsClip()/major_glitches composition.
+
   - name: CanFakeFlippers
     parameters: []
     body: "OP_TRICK(fake_flippers)"
@@ -528,6 +540,14 @@ macros:
       Limited dark-world traversal without Moon Pearl via bunny-state
       tech that requires a bottle. The closest ALTTPR equivalent is
       canOWYBA. Usage: `HAS_ITEM(MoonPearl) OR CanPearlBypass()`.
+
+      Like CanBootsClip, intentionally gated on the trick BIT only — NOT
+      on OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches). The 72 predicate
+      sites that compose CanPearlBypass() already pin their parallel glitch
+      disjunct at major_glitches (tier 2); ORing a tier-1 level into this
+      macro would silently open all of them at the OWG tier (the
+      over-reach op_registry.yaml's overworld_glitches entry warns against,
+      US-1.0-unverified). See CanBootsClip's note for the full rationale.
 
   - name: CanHookshotClip
     parameters: []

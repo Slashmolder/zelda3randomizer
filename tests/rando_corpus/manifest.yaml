@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 54  # bump_rando_corpus.py --apply - Retro genericKeys
+generator_version: 55  # bump_rando_corpus.py --apply - NotADungeonItem bans DP/EP small keys + GenericKey at Uncle/Secret-Passage
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
