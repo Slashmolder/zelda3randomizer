@@ -1775,7 +1775,18 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     ShareString ss;
     if (Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk) {
       RandoRng shuffle_rng;
-      Rng_SeedFromU64(&shuffle_rng, ss.seed_u64);
+      // FIX #6 — the placer seeds the prize/medallion shuffle from the ACCEPTED
+      // attempt's per-attempt seed, not the base seed. place_assumed_fill_attempt
+      // runs PrizeShuffle_Run/MedallionShuffle_Run on attempt_seed =
+      // base_seed ^ (attempt * 0x9E3779B97F4A7C15) (see Place_AssumedFill). Re-
+      // derive with the SAME perturbation so the runtime falling-prize sprite
+      // (dungeon.c RandoFallingPrizeIndex) + OP_HAS_PRIZE tracker reachability
+      // agree with the prize/medallion BAKED into the stored placement table.
+      // prize_attempt is 0 for the common attempt-0 case and for older/v1 slots
+      // (XOR with 0 == the legacy base-seed derivation), preserving compat.
+      uint64 shuffle_seed = ss.seed_u64 ^
+          ((uint64)src->header.prize_attempt * 0x9E3779B97F4A7C15ull);
+      Rng_SeedFromU64(&shuffle_rng, shuffle_seed);
       PrizeShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_prize_assignment);
       MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
       Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);

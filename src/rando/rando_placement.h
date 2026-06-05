@@ -54,6 +54,15 @@ typedef struct PlacementStats {
   uint8 attempts_used;                 // # of assumed-fill attempts taken
   uint16 best_unreachable_count;       // unreachable placements in the accepted attempt
   uint32 per_item_rewind_count;        // total per-item rewind events across all attempts (Bug #7)
+  // FIX #6 — the assumed-fill attempt index whose per-attempt seed produced the
+  // prize/medallion shuffle BAKED into the accepted placement table.
+  // place_assumed_fill_attempt seeds PrizeShuffle_Run/MedallionShuffle_Run from
+  // attempt_seed = base_seed ^ (attempt * 0x9E3779B97F4A7C15), so the runtime
+  // MUST re-derive those assignments with the SAME perturbation at slot load,
+  // not from the base seed (= attempt 0). The slot header persists this so
+  // Rando_ActivateSidecarSlot can reproduce the baked assignment. 0 for the
+  // common case where attempt 0 was accepted (matches the legacy behavior).
+  uint8 prize_attempt;                 // accepted prize/medallion shuffle attempt index
 } PlacementStats;
 const PlacementStats *Placement_GetLastStats(void);
 

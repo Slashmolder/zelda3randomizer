@@ -96,7 +96,16 @@ typedef enum {
 //                                              0x01 blue, 0x02 red; additive)
 //   @74 bow_owned (u8)                         (rando bow decouple bitfield:
 //                                              0x01 wood, 0x02 silver; additive)
-//   @75 reserved[5]                            (forward-compat; zero on write)
+//   @75 prize_attempt (u8)                     (FIX #6; accepted assumed-fill
+//                                              attempt index whose per-attempt
+//                                              seed produced the prize/medallion
+//                                              shuffle baked into the placement
+//                                              table. Re-applied at slot load so
+//                                              the runtime falling-prize sprite /
+//                                              OP_HAS_PRIZE tracker match the
+//                                              stored table. 0 = attempt 0 =
+//                                              legacy behavior; older slots read 0.)
+//   @76 reserved[4]                            (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
 // === Phase B hints (Slice 5): settings extension in the reserved tail ===
@@ -181,6 +190,16 @@ typedef struct RandoSlotHeader {
   // kRandoBoomerang_* / kRandoBow_* / Rando_GrantBoomerang / Rando_GrantBow.
   uint8 boomerang_owned;        // @73
   uint8 bow_owned;              // @74
+  // FIX #6 — accepted assumed-fill attempt index (@75), carried additively in
+  // the reserved tail (same pattern as the entrance/boomerang/bow bytes). The
+  // placer bakes a per-attempt prize/medallion shuffle into the table seeded
+  // from base_seed ^ (attempt * 0x9E3779B97F4A7C15); persisting the accepted
+  // attempt lets Rando_ActivateSidecarSlot re-derive the SAME assignments at
+  // load instead of re-deriving from the base seed (= attempt 0), which would
+  // desync the runtime falling-prize sprite + OP_HAS_PRIZE tracker from the
+  // stored table whenever attempt != 0. Older slots / pre-field writers read 0
+  // (== attempt 0 == legacy behavior, the XOR-with-0 identity).
+  uint8 prize_attempt;          // @75
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
