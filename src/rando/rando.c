@@ -700,12 +700,11 @@ uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
   if (cave < 0) return vanilla_lttp_code;
   uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
   // Grant the placed item (Rando_OnLocationCheck inside also marks loc checked).
-  // NOTE (latent): the weapon cave's Rupee300 reward (only when mode.weapons is
-  // vanilla/swordless — modes reserved/unreachable today, see
-  // rando_settings.h) has no vanilla LttP dispatch code (rupees are granted by
-  // a separate path), so it would fall through to `vanilla_lttp_code`. When
-  // those weapon modes are enabled, give Rupee300 a real grant here. The
-  // default ProgressiveSword reward dispatches correctly via progressive_to_lttp.
+  // The weapon cave's Rupee300 reward (only when mode.weapons is vanilla/swordless)
+  // resolves through Rando_DispatchVanillaGrant -> progressive_to_lttp, which maps
+  // ITEM_Rupee300 -> LttP code 0x46; Link_ReceiveItem(0x46) drives the receipt
+  // ancilla whose Ancilla_AddRupees grants +300 rupees (src/ancilla.c). The default
+  // ProgressiveSword reward likewise dispatches via progressive_to_lttp.
   uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, vanilla_lttp_code);
   // Lock the whole cave: mark every active slot's LOC checked so the other
   // offered item vanishes and the cave stays empty on revisit (matches the asm
@@ -767,6 +766,20 @@ bool Rando_IsRetroActive(void) {
 // equals Rando_IsRetroActive today. Distinct name: see the rando.h doc comment.
 bool Rando_IsGenericKeysActive(void) {
   return Rando_IsRetroActive();
+}
+
+// Retro genericKeys BUYABLE shop-slot grant (ALTTPR ShopKey, Randomizer.php:746-747
+// — `$shop->addInventory(1, Item::get('ShopKey', ...), 100)`). The predicate VM
+// treats holding >=1 GenericKey as opening EVERY small-key door (eval_has_item /
+// eval_has_amount wildcard), but the placed GenericKey pool is FINITE (~30) and
+// decrements per door, so keys spent out of order can strand a progression door.
+// ALTTPR avoids that with an UNLIMITED buyable ShopKey supply; the fork had dropped
+// it. This is that supply: each purchase feeds the shared counter exactly like a
+// GenericKey pickup, with no cap on how many can be bought (re-enter the shop room
+// to buy again). Same grant as rando_grant_generic_key(); the shop handler owns the
+// rupee cost + purchase feedback. Only reached from the genericKeys-gated shop slot.
+void Rando_GrantGenericKeyPurchase(void) {
+  rando_grant_generic_key();
 }
 
 bool Rando_SuppressHyruleCastleEscape(void) {
@@ -1088,6 +1101,20 @@ void Rando_SetMedallionAssignment(const uint8 *assignment) {
 }
 const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assignment; }
 const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
+
+// Runtime open gate for the medallion-shuffled MM/TR overworld doors. The placer
+// and tracker consult g_medallion_assignment via OP_MEDALLION_OPENS; the ancilla
+// spell handlers consult it here so the dungeon actually opens for whichever
+// medallion the seed requires. entrance_index: 0 = Misery Mire, 1 = Turtle Rock
+// (the kRandoMedallionEntranceCount ordering used by MedallionShuffle_Run and
+// the logic codegen's _resolve_entrance_id). Returns false when no assignment is
+// installed so the caller can keep the vanilla Ether->MM / Quake->TR mapping.
+bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index) {
+  const uint8 *assignment = g_medallion_assignment;
+  if (assignment == NULL || entrance_index >= kRandoMedallionEntranceCount)
+    return false;
+  return assignment[entrance_index] == cast_medallion;
+}
 
 // ---------------------------------------------------------------------------
 // Session-persistent placement storage. The sidecar struct lives in the
@@ -1748,7 +1775,18 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     ShareString ss;
     if (Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk) {
       RandoRng shuffle_rng;
-      Rng_SeedFromU64(&shuffle_rng, ss.seed_u64);
+      // FIX #6 — the placer seeds the prize/medallion shuffle from the ACCEPTED
+      // attempt's per-attempt seed, not the base seed. place_assumed_fill_attempt
+      // runs PrizeShuffle_Run/MedallionShuffle_Run on attempt_seed =
+      // base_seed ^ (attempt * 0x9E3779B97F4A7C15) (see Place_AssumedFill). Re-
+      // derive with the SAME perturbation so the runtime falling-prize sprite
+      // (dungeon.c RandoFallingPrizeIndex) + OP_HAS_PRIZE tracker reachability
+      // agree with the prize/medallion BAKED into the stored placement table.
+      // prize_attempt is 0 for the common attempt-0 case and for older/v1 slots
+      // (XOR with 0 == the legacy base-seed derivation), preserving compat.
+      uint64 shuffle_seed = ss.seed_u64 ^
+          ((uint64)src->header.prize_attempt * 0x9E3779B97F4A7C15ull);
+      Rng_SeedFromU64(&shuffle_rng, shuffle_seed);
       PrizeShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_prize_assignment);
       MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
       Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
@@ -1787,6 +1825,18 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     BossShuffle_Deactivate();
     DropShuffle_Deactivate();
   }
+
+  // Persist the swordless flag in g_ram so a StateRecorder snapshot captures it
+  // (g_ram is restored verbatim by LoadSnesState on replay/Ctrl+F1 restore, but
+  // the C-static g_rando_active_settings is NOT). Rando_IsSwordlessActive falls
+  // back to this byte when post-restore settings are NULL, keeping the runtime
+  // swordless patches (hammer-Ganon/Agahnim, medallion/tablet/curtain) firing.
+  // Authoritative against the recovered settings: 0 unless this slot is known
+  // swordless. Cleared in Rando_DeactivateSlot. Rando-gated — vanilla never
+  // touches this byte.
+  g_rando_swordless = (g_rando_active_settings_valid &&
+                       g_rando_active_settings.mode_weapons == kModeWeapons_Swordless)
+                          ? 1 : 0;
 
   // === Phase B hints: regenerate telepathic-tile hints for this slot ===
   // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
@@ -1889,6 +1939,11 @@ void Rando_DeactivateSlot(void) {
   // Rando_TryGrantStartingInventory still gates on sram_progress_indicator
   // so in-progress saves aren't re-granted.
   g_rando_starting_inventory_granted = 0;
+
+  // Clear the persisted swordless flag so a stale byte can't make a subsequent
+  // non-swordless / non-rando slot read as swordless (pairs with the write in
+  // Rando_ActivateSidecarSlot).
+  g_rando_swordless = 0;
 }
 
 // Whether the active slot's settings were recovered (format_version >= 2 blob)
@@ -1917,12 +1972,18 @@ bool Rando_ActiveSlotHidesSpoiler(void) {
 // runtime swordless patches (hammer damages Ganon/Agahnim, medallions cast
 // without a sword, Agahnim curtains pre-opened, tablets hammer-readable) so they
 // fire ONLY under swordless and never alter vanilla/non-swordless behavior.
-// Fails to "not swordless" when settings are unknown (NULL — snapshot replay /
-// pre-swordless v1 slot): such slots can never be swordless, and behaving
-// vanilla is the safe default.
+// When settings are known, that is authoritative. When settings are unknown
+// (NULL — snapshot replay-restore or pre-swordless v1 slot), fall back to the
+// persisted g_rando_swordless flag in g_ram, which LoadSnesState restores
+// verbatim and Rando_ActivateSidecarSlot set from the slot's recovered
+// settings. Without this fallback a Ctrl+F1 replay-restore of a swordless seed
+// (which doesn't re-run activation) would revert to sword-required gates
+// (medallion/tablet/Agahnim/Ganon) and softlock. Gated on an active slot so a
+// cleared/zero byte under a non-rando slot reads as not-swordless.
 bool Rando_IsSwordlessActive(void) {
   const RandoSettings *s = Rando_GetActiveSettings();
-  return s != NULL && s->mode_weapons == kModeWeapons_Swordless;
+  if (s != NULL) return s->mode_weapons == kModeWeapons_Swordless;
+  return g_rando_slot_active != 0 && g_rando_swordless != 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2369,6 +2430,22 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   // Match the generate-time spoiler's entrance_mapping section (the omission of
   // which caused the stamp mismatch on race-mode + entrance-shuffle seeds).
   Rando_SpoilerSetEntranceFields(&regen, &reg);
+  // Match the generate-time spoiler's boss_assignments / drop_map sections
+  // (see Rando_GenerateSlot in rando_generate.c). Omitting these caused the
+  // SHA-256 stamp to mismatch for race seeds generated with boss_shuffle or
+  // drop_shuffle on — same omission class as the entrance_mapping fix above.
+  // The buffers are declared at function scope so they outlive Spoiler_WriteJson
+  // (stamp input) and the later Spoiler_WriteText. Computed from the PURE forms
+  // (no runtime-global side effects), deterministic from (settings, seed) →
+  // byte-identical to the generate path. NULL pointers omit the section when off.
+  uint8 regen_boss_assignment[16];
+  uint8 regen_drop_map[kDropTableEntryCount];
+  bool regen_drop_used_fallback = false;
+  BossShuffle_ComputeAssignment(&settings, seed_u64, regen_boss_assignment);
+  DropShuffle_ComputeAssignment(&settings, seed_u64, regen_drop_map, &regen_drop_used_fallback);
+  regen.boss_assignment = settings.boss_shuffle ? regen_boss_assignment : NULL;
+  regen.drop_map = settings.drop_shuffle ? regen_drop_map : NULL;
+  regen.drop_used_fallback = regen_drop_used_fallback;
   regen.goal_completable = Goal_IsCompletable(&settings, &table);
   regen.forward_fill_fallback_count = 0;  // stamp normalization
   regen.retry_attempts = 1;               // stamp normalization
@@ -2505,13 +2582,15 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   // §62 cluster-audit MED-1 — anti-cheat gate. Race-mode's design intent
   // is the spoiler stays off-disk until post-race. An in-binary key with
   // no terminal-state gate lets a self-disciplined runner peek mid-race
-  // and defeats the design. Gate the in-binary action on game-completion
-  // (main_module_index 24 = Ending intro, 25 = Credits — both set after
-  // Ganon dies / Triforce collected, on the Ganon-defeat / Triforce-collected
-  // path).
+  // and defeats the design. Gate the in-binary action on game-completion:
+  // the seed is beaten ONLY at TriforceRoom (0x19) or Credits (0x1A).
+  // Deliberately NOT `>= 0x18` — that also matches GanonEmerges (0x18, the
+  // fight is only just starting) and SpawnSelect (0x1B, the spawn-point menu
+  // the load path transiently passes through, blipping "completed" for one
+  // frame on slot load). Mirrors the beaten check in auto_tracker.c.
   // The `--reveal-spoiler=<path>` CLI flow stays unconditional (no in-
   // game state to check) for tournament admins / post-race tooling.
-  if (main_module_index < 24) {
+  if (!(main_module_index == 0x19 || main_module_index == 0x1A)) {
     fprintf(stderr,
             "rando reveal: refused — game not yet completed "
             "(use --reveal-spoiler CLI flag for tournament admin reveals).\n");
@@ -2525,11 +2604,11 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
 
 bool Rando_CanRevealActiveSlotSpoiler(void) {
   // Mirrors the gate inside Rando_RevealActiveSlotSpoiler(): an active slot with
-  // a captured share string, past the anti-cheat completion threshold
-  // (main_module_index >= 24 = Ending intro / Credits). Keep the threshold in
-  // sync with that function.
+  // a captured share string, past the anti-cheat completion threshold — the seed
+  // is beaten ONLY at TriforceRoom (0x19) or Credits (0x1A). Keep this in sync
+  // with that function (and the beaten check in auto_tracker.c).
   return g_rando_slot_active && g_rando_active_share_string[0] != '\0' &&
-         main_module_index >= 24;
+         (main_module_index == 0x19 || main_module_index == 0x1A);
 }
 
 // ---------------------------------------------------------------------------

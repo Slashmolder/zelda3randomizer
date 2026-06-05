@@ -1207,6 +1207,22 @@ static void TryBeginGenerate() {
     b->seed_u64 = RollRandomSeed();
     Pending_Changed();
   }
+  // Inert-header case: a --placeholder vanilla_assets_hash.h (all-zeros,
+  // kVanillaAssetsHashKnown==0) makes the comparison below vacuous, so the asset
+  // modal never opens. Warn once (mirrors the CLI path in main.c) so a modified-
+  // assets build doesn't pass the anti-cheat check silently. Dead branch when the
+  // real hash is baked in (kVanillaAssetsHashKnown==1).
+  if (!kVanillaAssetsHashKnown) {
+    static bool warned_inert_asset_gate = false;
+    if (!warned_inert_asset_gate) {
+      warned_inert_asset_gate = true;
+      fprintf(stderr,
+        "[rando_window] WARNING the vanilla assets hash is not baked into\n"
+        "  vanilla_assets_hash.h (--placeholder build); the modified-assets\n"
+        "  check is INERT and Generate will not prompt. Run\n"
+        "  `python assets/scripts/dump_vanilla_assets_hash.py` and rebuild to activate it.\n");
+    }
+  }
   bool needs_gate = kVanillaAssetsHashKnown &&
                     memcmp(g_assets_hash, kVanillaAssetsHash, 32) != 0 &&
                     !AssetDecision_FindAllow(g_assets_hash) &&

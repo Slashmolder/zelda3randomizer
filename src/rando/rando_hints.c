@@ -485,15 +485,20 @@ static RandoHintNpc hint_npc_for_msg(uint16 msg_id) {
     if (kHintTileMsgIds[i] == msg_id)
       return (RandoHintNpc)(kRandoHintNpc_TeleEasternPalace + i);
   // Storyteller (Sprite_28_DarkWorldHintNPC): the paid-tip messages 0xFF/0x101/
-  // 0x102 are storyteller-exclusive (verified), so no location gate is needed.
-  if (msg_id == 0xFFu || msg_id == 0x101u || msg_id == 0x102u)
+  // 0x102/0x103 are storyteller-exclusive (verified — subtype2 cases 0/1/2/3 each
+  // call Sprite_ShowMessageUnconditional with one of these ids after
+  // DarkWorldHintNPC_HandlePayment succeeds), so no location gate is needed.
+  if (msg_id == 0xFFu || msg_id == 0x101u || msg_id == 0x102u || msg_id == 0x103u)
     return kRandoHintNpc_ForkStoryteller;
   // Fortune Teller reading -> Kakariko (light world) or Dark-World instance by
   // the current world. The Lake-Hylia FT shares the Kakariko room with no
   // runtime discriminator, so it also surfaces the Kakariko hint (id 18).
+  // Sprite_FortuneTeller selects its light/dark instance via
+  // (savegame_is_darkworld >> 6) & 1, not the raw byte — match it so the hint
+  // picks the same world the sprite renders for.
   if (is_fortune_reading_msg(msg_id))
-    return savegame_is_darkworld ? kRandoHintNpc_ForkFortuneTellerDark
-                                 : kRandoHintNpc_ForkFortuneTellerKak;
+    return ((savegame_is_darkworld >> 6) & 1) ? kRandoHintNpc_ForkFortuneTellerDark
+                                              : kRandoHintNpc_ForkFortuneTellerKak;
   return kRandoHintNpc_None;
 }
 

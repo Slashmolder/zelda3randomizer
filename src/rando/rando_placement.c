@@ -754,6 +754,12 @@ bool Place_AssumedFill(const RandoSettings *settings,
   static RandoPlacement best_entries[512];
   uint16 best_count = 0;
   bool best_complete = false;
+  // FIX #6 — track which attempt produced the best-scored placement. The
+  // prize/medallion shuffle baked into that attempt's table was seeded from
+  // attempt_seed (base ^ best_attempt*0x9E37..), so the runtime must persist +
+  // re-apply best_attempt, not re-derive from the base seed. (kAssumedFillMax-
+  // Attempts is 256, so the index fits a uint8: range 0..255.)
+  uint8 best_attempt = 0;
 
   for (int attempt = 0; attempt < kAssumedFillMaxAttempts; attempt++) {
     if (budget_seconds > 0 && attempt > 0) {
@@ -852,6 +858,9 @@ bool Place_AssumedFill(const RandoSettings *settings,
       // Best possible outcome — accept this placement.
       g_last_placement_stats.forward_fill_fallback_count = 0;
       g_last_placement_stats.best_unreachable_count = 0;
+      // FIX #6 — this attempt's per-attempt seed (attempt_seed above) is what
+      // seeded the prize/medallion shuffle baked into `out`; persist it.
+      g_last_placement_stats.prize_attempt = (uint8)attempt;
       return true;
     }
     // Track best-so-far (fewest unreachable + fewest fallbacks). Treat
@@ -869,6 +878,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
       best_count = out->count;
       for (uint16 i = 0; i < out->count; i++) best_entries[i] = out->entries[i];
       best_complete = full_reach;
+      best_attempt = (uint8)attempt;  // FIX #6 — attempt that baked this table's prize/medallion
     }
   }
   // All attempts exhausted; restore the best-scored placement.
@@ -880,6 +890,8 @@ bool Place_AssumedFill(const RandoSettings *settings,
   out->count = best_count;
   g_last_placement_stats.forward_fill_fallback_count = best_fallback;
   g_last_placement_stats.best_unreachable_count = best_unreachable;
+  // FIX #6 — the restored table is `best_entries`, baked by attempt `best_attempt`.
+  g_last_placement_stats.prize_attempt = best_attempt;
   fprintf(stderr,
           "Place_AssumedFill: best of %d attempts: %u unreachable placement(s), %u forward-fill fallback(s).\n",
           kAssumedFillMaxAttempts, (unsigned)best_unreachable, (unsigned)best_fallback);

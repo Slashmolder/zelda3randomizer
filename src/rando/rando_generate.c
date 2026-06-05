@@ -443,6 +443,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       slot.header.flags |= kRandoSlotFlag_ForwardFillUsed;
       used_forward_fill = true;
     }
+    // FIX #6 — persist the accepted assumed-fill attempt index so slot-load can
+    // re-derive the prize/medallion shuffle with the SAME per-attempt seed the
+    // placer baked into the table (Rando_ActivateSidecarSlot). The stats reflect
+    // the accepted Place_AssumedFill call: Rando_PlaceWithEntrances breaks on the
+    // accepted attempt and nothing re-runs placement before this point.
+    slot.header.prize_attempt = st->prize_attempt;
   }
   // Copy placements + compute placement_table_size (BYTES = 2 * max_loc_id + 2).
   if (table.count > (uint16)(sizeof(slot.placements) / sizeof(slot.placements[0]))) {

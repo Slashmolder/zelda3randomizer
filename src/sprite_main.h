@@ -930,6 +930,7 @@ void ShopItem_Arrows(int k);
 void ShopItem_Bombs(int k);
 void ShopItem_Bee(int k);
 void ShopItem_TakeAny(int k);  // Phase B Slice 3b — Retro take-any cave item
+void ShopItem_GenericKey(int k);  // Retro genericKeys — buyable generic small key (ALTTPR ShopKey)
 void ShopItem_HandleReceipt(int k, uint8 item);
 void ShopItem_PlayBeep(int k);
 bool ShopItem_CheckForAPress(int k);

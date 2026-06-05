@@ -2349,6 +2349,28 @@ void Ancilla32_BlastWallFireball(int k) {  // 88aa35
   Ancilla_SetOam(GetOamCurPtr(), pt.x, pt.y, kBlastWallFireball_Char[blastwall_var12[k] & 8 ? 0 : blastwall_var12[k] & 4 ? 1 : 2], 0x22, 0);
 }
 
+// Medallion shuffle (rando): in vanilla the entrance-open is hardcoded per spell
+// (Ether opens Misery Mire on screen 0x70, Quake opens Turtle Rock on 0x47, and
+// Bombos opens nothing). Under medallion_shuffle the required medallion can be
+// any of the three, so each spell handler routes its cast medallion through here
+// and we open whichever screen the player is standing on iff that medallion
+// matches the shuffled assignment. Mirrors the two vanilla open blocks exactly
+// (event-bit + Ancilla_CheckForEntranceTrigger gate, trigger_special_entrance
+// 3=MM / 4=TR). Entrance index 0 = MM, 1 = TR.
+static void Ancilla_RandoTryOpenMedallionEntrance(uint8 cast_medallion) {
+  if (BYTE(overworld_screen_index) == 0x70 && !(save_ow_event_info[0x70] & 0x20) &&
+      Rando_MedallionOpens(cast_medallion, 0) && Ancilla_CheckForEntranceTrigger(2)) {
+    trigger_special_entrance = 3;
+    subsubmodule_index = 0;
+    BYTE(R16) = 0;
+  } else if (BYTE(overworld_screen_index) == 0x47 && !(save_ow_event_info[0x47] & 0x20) &&
+             Rando_MedallionOpens(cast_medallion, 1) && Ancilla_CheckForEntranceTrigger(3)) {
+    trigger_special_entrance = 4;
+    subsubmodule_index = 0;
+    BYTE(R16) = 0;
+  }
+}
+
 void Ancilla18_EtherSpell(int k) {  // 88aaa0
   if (submodule_index)
     return;
@@ -2490,7 +2512,10 @@ void EtherSpell_HandleRadialSpin(int k) {  // 88abef
   link_cant_change_direction = 0;
   flag_unk1 = 0;
 
-  if (BYTE(overworld_screen_index) == 0x70 && !(save_ow_event_info[0x70] & 0x20) && Ancilla_CheckForEntranceTrigger(2)) {
+  if (Rando_GetMedallionAssignment() != NULL) {
+    // Medallion shuffle: open whichever entrance this Ether cast matches.
+    Ancilla_RandoTryOpenMedallionEntrance(ITEM_Ether);
+  } else if (BYTE(overworld_screen_index) == 0x70 && !(save_ow_event_info[0x70] & 0x20) && Ancilla_CheckForEntranceTrigger(2)) {
     trigger_special_entrance = 3;
     subsubmodule_index = 0;
     BYTE(R16) = 0;
@@ -2798,6 +2823,11 @@ void BombosSpell_ControlBlasting(int kk) {  // 88b40d
   step_counter_for_spin_attack = 0;
   link_cant_change_direction = 0;
   flag_unk1 = 0;
+  // Medallion shuffle: Bombos never opens an entrance in vanilla, but it can be
+  // the assigned medallion for MM/TR under the shuffle. Gated on an installed
+  // assignment so the vanilla Bombos cast stays a no-op here (RAM-compare safe).
+  if (Rando_GetMedallionAssignment() != NULL)
+    Ancilla_RandoTryOpenMedallionEntrance(ITEM_Bombos);
   if (link_player_handler_state != kPlayerState_ReceivingBombos) {
     link_player_handler_state = kPlayerState_Ground;
     link_delay_timer_spin_attack = 0;
@@ -2875,7 +2905,10 @@ void Ancilla1C_QuakeSpell(int k) {  // 88b66a
   flag_unk1 = 0;
   bg1_x_offset = 0;
   bg1_y_offset = 0;
-  if (BYTE(overworld_screen_index) == 0x47 && !(save_ow_event_info[0x47] & 0x20) && Ancilla_CheckForEntranceTrigger(3)) {
+  if (Rando_GetMedallionAssignment() != NULL) {
+    // Medallion shuffle: open whichever entrance this Quake cast matches.
+    Ancilla_RandoTryOpenMedallionEntrance(ITEM_Quake);
+  } else if (BYTE(overworld_screen_index) == 0x47 && !(save_ow_event_info[0x47] & 0x20) && Ancilla_CheckForEntranceTrigger(3)) {
     trigger_special_entrance = 4;
     subsubmodule_index = 0;
     BYTE(R16) = 0;

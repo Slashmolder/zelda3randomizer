@@ -170,7 +170,12 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   // see 0 (own neither — the safe default). See Rando_GrantBoomerang/Bow.
   buf[73] = h->boomerang_owned;
   buf[74] = h->bow_owned;
-  memset(buf + 75, 0, kRandoSidecar_SlotHeaderSize - 75);
+  // @75 prize_attempt (FIX #6; additive, previously zero). The accepted assumed-
+  // fill attempt index used to re-derive the prize/medallion shuffle at slot
+  // load. Pre-field readers see it in the reserved tail and ignore it; new
+  // readers of an old file see 0 (== attempt 0 == legacy behavior).
+  buf[75] = h->prize_attempt;
+  memset(buf + 76, 0, kRandoSidecar_SlotHeaderSize - 76);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -211,6 +216,9 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   // (own neither), the safe default.
   out->boomerang_owned = buf[73];
   out->bow_owned = buf[74];
+  // @75 prize_attempt (FIX #6). Pre-field files read 0 here (== attempt 0 ==
+  // legacy behavior), the safe no-op default.
+  out->prize_attempt = buf[75];
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }
@@ -659,6 +667,8 @@ void RandoSave_SelfCheck(void) {
   // Boomerang/bow ownership round-trip coverage (@73/@74).
   src.header.boomerang_owned = 0x03;     // blue + red
   src.header.bow_owned = 0x03;           // wood + silver
+  // FIX #6 prize/medallion accepted-attempt round-trip coverage (@75).
+  src.header.prize_attempt = 0x07;       // distinct non-zero attempt index
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -701,6 +711,7 @@ void RandoSave_SelfCheck(void) {
   // Phase C entrance shuffle: entrance_axes @71, entrance_attempt @72.
   if (buf[71] != 0x05) selfcheck_die("entrance_axes at @71 wrong");
   if (buf[72] != 0x03) selfcheck_die("entrance_attempt at @72 wrong");
+  if (buf[75] != 0x07) selfcheck_die("prize_attempt at @75 wrong");
   // Flat table layout check: location 5 should hold item 50.
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 5 * 2) != 50)
     selfcheck_die("flat table: loc 5 item slot wrong");
@@ -735,6 +746,7 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.entrance_attempt != src.header.entrance_attempt) selfcheck_die("entrance_attempt round-trip");
   if (dst.header.boomerang_owned != src.header.boomerang_owned) selfcheck_die("boomerang_owned round-trip");
   if (dst.header.bow_owned != src.header.bow_owned) selfcheck_die("bow_owned round-trip");
+  if (dst.header.prize_attempt != src.header.prize_attempt) selfcheck_die("prize_attempt round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).

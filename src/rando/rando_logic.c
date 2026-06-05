@@ -97,10 +97,17 @@ static bool eval_has_amount(Cursor *c, const PredicateContext *ctx) {
 static bool eval_has_any_of(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   bool result = false;
+  bool generic = logic_generic_keys_active(ctx);
   for (uint8 i = 0; i < count; i++) {
     uint16 item_id = cursor_u16le(c);
     if (c->error || item_id >= 256) { result = false; continue; }
-    if (ctx->counts->by_item_id[item_id] >= 1) result = true;
+    // genericKeys (Retro) small-key collapse — mirror eval_has_item /
+    // eval_has_amount: any per-dungeon SmallKey requirement is satisfied by
+    // holding >=1 GenericKey. Inert under default settings (no author uses
+    // HAS_ANY for a SmallKey today) but kept consistent so a future logic_parts
+    // file that lists a SmallKey in HAS_ANY can't desync from the runtime pool.
+    uint16 eff_id = (generic && item_is_small_key(item_id)) ? ITEM_GenericKey : item_id;
+    if (ctx->counts->by_item_id[eff_id] >= 1) result = true;
   }
   return result;
 }
@@ -109,9 +116,22 @@ static bool eval_has_any_count(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   // Sum the counts across all ids, then compare to threshold.
   uint32 sum = 0;
+  bool generic = logic_generic_keys_active(ctx);
+  bool added_generic = false;
   for (uint8 i = 0; i < count; i++) {
     uint16 item_id = cursor_u16le(c);
     if (c->error || item_id >= 256) continue;
+    // genericKeys (Retro) small-key collapse — fold every per-dungeon SmallKey
+    // id in the list into the single shared GenericKey count, added at most
+    // once so multiple SmallKey ids don't multiply-count the shared pool.
+    // Inert under default settings (no author uses HAS_ANY for a SmallKey).
+    if (generic && item_is_small_key(item_id)) {
+      if (!added_generic) {
+        sum += ctx->counts->by_item_id[ITEM_GenericKey];
+        added_generic = true;
+      }
+      continue;
+    }
     sum += ctx->counts->by_item_id[item_id];
   }
   uint8 n = cursor_u8(c);

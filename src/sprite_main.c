@@ -8119,6 +8119,17 @@ void SpritePrep_Shopkeeper(int k) {  // 868bf1
   default:
     assert(0);
   }
+  // Retro genericKeys — add the ALTTPR buyable ShopKey slot (Randomizer.php:746-747:
+  // 5 random shops get a 100-rupee unlimited generic key). The fork's shop layout is
+  // fixed, so add it to every standard 3-item shop (cases 0/1/5/7/8) as a 4th slot,
+  // kind 16. This is the unlimited supply that makes the >=1 small-key wildcard sound
+  // against the finite placed-key pool. Take-any caves returned above, so this never
+  // fires there; vanilla / non-Retro seeds skip it (gate false), leaving spawns
+  // byte-identical.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) && Rando_IsGenericKeysActive() &&
+      (j == 0 || j == 1 || j == 5 || j == 7 || j == 8)) {
+    ShopKeeper_SpawnShopItem(k, 3, 16);
+  }
 }
 
 void SpritePrep_Storyteller(int k) {  // 868c9e
@@ -25775,6 +25786,7 @@ void Sprite_BB_Shopkeeper(int k) {  // 9eeeef
   case 12: ShopItem_Bombs(k); break;
   case 13: ShopItem_Bee(k); break;
   case 14: case 15: ShopItem_TakeAny(k); break;  // Phase B Slice 3b — take-any (14=heart,15=potion icon)
+  case 16: ShopItem_GenericKey(k); break;  // Retro genericKeys — buyable generic small key
   }
 }
 
@@ -26006,7 +26018,11 @@ void ShopItem_RedPotion150(int k) {  // 9ef16e
 }
 
 void ShopKeeper_SpawnShopItem(int k, int pos, int what) {  // 9ef1b3
-  static const int8 kShopKeeper_ItemX[3] = {-44, 8, 60};
+  // Slots 0..2 are the vanilla three; slot 3 (X=104) is the Retro genericKeys
+  // buyable generic-key column (added only under Rando_IsGenericKeysActive). The
+  // X offset is to the right of the vanilla three — playtest-tunable if it
+  // overlaps room geometry in any host shop.
+  static const int8 kShopKeeper_ItemX[4] = {-44, 8, 60, 104};
   SpriteSpawnInfo info;
   int j = Sprite_SpawnDynamicallyEx(k, 0xbb, &info, 12);
   assert(j >= 0);
@@ -26154,6 +26170,32 @@ void ShopItem_Bee(int k) {  // 9ef322
   }
 }
 
+// Retro genericKeys — the buyable generic small-key shop slot (ALTTPR ShopKey,
+// price 100, unlimited supply). Mirrors ShopItem_Heart's purchase shape: deduct
+// the rupees, despawn this item, grant one shared generic key, and show the
+// direct-grant confirmation cue. "Unlimited" = re-enter the shop room to buy
+// again (the slot respawns on room load, like every vanilla shop item). Only
+// spawned under Rando_IsGenericKeysActive(), so there is no vanilla path here.
+void ShopItem_GenericKey(int k) {
+  SpriteDraw_ShopItem(k);
+  if (Sprite_ReturnIfInactive(k))
+    return;
+  Sprite_BehaveAsBarrier(k);
+  if (ShopItem_CheckForAPress(k)) {
+    if (ShopItem_HandleCost(100)) {
+      sprite_state[k] = 0;
+      item_receipt_method = 0;
+      Rando_GrantGenericKeyPurchase();
+      // GenericKey (id 125) has no kDirectGrantIcons[] entry (gfx==0), so this
+      // falls back to the audio + HUD confirmation cue — no icon ancilla.
+      Rando_ShowDirectGrantConfirmation((uint8)ITEM_GenericKey);
+    } else {
+      Sprite_ShowMessageUnconditional(0x17c);
+      ShopItem_PlayBeep(k);
+    }
+  }
+}
+
 void ShopItem_HandleReceipt(int k, uint8 item) {  // 9ef366
   static const uint16 kShopKeeper_GiveItemMsgs[7] = {0x168, 0x167, 0x167, 0x16c, 0x169, 0x16a, 0x16b};
   item_receipt_method = 0;
@@ -26265,6 +26307,20 @@ void SpriteDraw_ShopItem(int k) {  // 9ef4ce
   // Both are present in every host room's GFX (those rooms sell RedPotion + a
   // heart in vanilla). The "150"/"10" the player saw earlier was me drawing the
   // price-digit rows; these draw only the item.
+  // Retro genericKeys buyable slot (kind 16): price "100" digit tiles + an item
+  // icon. Digit tiles are the shop's price font ('1'=0x0231, '0'=0x0230) used by
+  // the vanilla price rows above; the icon reuses RedPotion's big-tile (0x02c0,
+  // loaded in every standard shop) as a placeholder — there is no confirmed key
+  // tile in shop GFX (same constraint the take-any sword fell back on). The
+  // "100" makes the slot unambiguous; swap 0x02c0 to a real key tile if one is
+  // present in shop GFX at playtest. Must precede the >=14 take-any branch.
+  if (sprite_subtype2[k] == 16) {
+    static const DrawMultipleData kGenericKeySlot[4] = {
+      {-4, 16, 0x0231, 0}, { 4, 16, 0x0230, 0}, {12, 16, 0x0230, 0},
+      { 0,  0, 0x02c0, 2} };
+    Sprite_DrawMultiplePlayerDeferred(k, kGenericKeySlot, 4, NULL);
+    return;
+  }
   if (sprite_subtype2[k] >= 14) {
     static const DrawMultipleData kTakeAnyHeart[2] = {
       {4, 8, 0x0329, 0}, {4, 11, 0x0338, 0} };
