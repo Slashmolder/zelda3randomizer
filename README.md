@@ -108,6 +108,13 @@ Determinism self-tests (no ROM/assets required — they run before asset load):
 ./zelda3 --rando-selftest
 ```
 
+For contributors: the regression corpus, the logic-VM benchmark
+(`./zelda3 --rando-bench-logic`), the init-order replay guard
+(`assets/scripts/check_init_order.py`), and a set of pure-Python source guards
+(`assets/scripts/check_*.py`) run in CI. See
+[`docs/randomizer.md`](docs/randomizer.md) ("Source-level CI guards") for the
+full list and the generator-version bump policy.
+
 ### Native game-settings window (PC)
 
 On Windows/Linux/macOS, press `` ` `` (backquote) — or whatever you bind
@@ -214,7 +221,7 @@ Same asset-extraction steps as above, then:
 1. Double-click `Zelda3.sln`.
 2. Install the **Desktop development with C++** workload with the VS Installer if you don't have it (it should prompt you).
 3. Change "debug" to "release" in the top dropdown.
-4. Choose "Build > Build Zelda3" to create `zelda3.exe` in the `bin/release` subfolder.
+4. Choose "Build > Build Zelda3" to create `zelda3.exe` in the `bin/<platform>-<config>` subfolder (e.g. `bin/x64-Release/`).
 5. Configure via `zelda3.ini` in the main dir.
 
 ## Installing libraries on Linux/macOS

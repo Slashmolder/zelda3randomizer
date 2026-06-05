@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Benchmark CI gate (tasks.md §1.0h, §3.11).
 
-Measures end-to-end seed-generation wall-clock at default settings: runs the
-binary's ``--generate-seed`` mode ``--samples`` times (default 10) and asserts
-the median ``generation_wall_clock_ms`` (read from the spoiler meta block) is
-under ``--target-ms`` (default 2000 — the ``randomizer-core`` "Default-settings
-benchmark < 2s" budget).
+Runs the binary's ``--generate-seed`` mode ``--samples`` times (default 10) at a
+fixed representative configuration (``mode.state=open,goal=fast_ganon``, one seed
+per sample) and asserts the **median end-to-end wall-clock** — measured in this
+script with ``time.monotonic()``, so it includes process launch + spoiler I/O —
+is under ``--target-ms`` (default 2000, the ``randomizer-core`` "< 2s" budget).
+The spoiler's own ``meta.generation_wall_clock_ms`` (placement time only) is read
+and printed as a secondary diagnostic but does NOT drive the pass/fail gate.
 
 If the binary isn't built, the script prints a scaffold notice and exits clean
 (0), so it's a no-op until a build is present.

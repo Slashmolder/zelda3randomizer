@@ -22,14 +22,16 @@ catch the general "a duplicate declaration changed the predicate" case. This
 guard does.
 
 What it flags (fails CI):
-  * A **location** id declared in ≥2 base-level files where the effective
-    predicate tuple (region, can_reach, can_place, always_allow) DIFFERS between
-    declarations — i.e. a later file silently changed the predicate.
-  * A **macro** name redefined across base-level files with a different
-    body/params.
+  * A **location** id declared in ≥2 base-level files where the effective tuple
+    (region, can_reach, can_place, always_allow, type, vanilla_item) DIFFERS
+    between declarations — i.e. a later file silently changed the predicate or
+    the vanilla mapping/type the codegen emits.
+  * A **macro** name redefined across base-level files (including
+    ``macros.yaml``, the lowest-priority macro source the inline macros override)
+    with a different body/params.
   * A **region** id redeclared across base-level files with a different
-    (parent, dungeon) binding (the King-Zora "stub overwrote the real binding"
-    case).
+    (parent, dungeon, world_state_filter) binding (the King-Zora "stub overwrote
+    the real binding" case, plus a silently-dropped world-state gate).
 
 Intentional overrides are allowlisted below with a reason. Today the only
 intentional set is the Eastern Palace locations, where logic_parts/01
@@ -58,22 +60,31 @@ except ImportError:
 RANDO_ASSETS = Path("assets/rando")
 LOGIC_YAML = RANDO_ASSETS / "logic.yaml"
 LOGIC_PARTS = RANDO_ASSETS / "logic_parts"
+# macros.yaml is the canonical home of the named macros and is loaded at LOWEST
+# priority by the codegen (`{**macros, **logic_macros}` in rando_logic_gen.py),
+# so an inline macro can silently override it — include it in the macro scan.
+MACROS_YAML = RANDO_ASSETS / "macros.yaml"
 
 # ---------------------------------------------------------------------------
 # Intentional, reviewed overrides. A base-level duplicate whose predicate
 # legitimately supersedes an earlier file goes here with a reason. Anything not
 # listed that changes a predicate across base files fails the guard.
 # ---------------------------------------------------------------------------
-# Eastern Palace: logic_parts/01_eastern_palace.yaml intentionally overrides the
-# logic.yaml seed entries with the corrected predicates — the dark-room-nav
-# `(HAS_ITEM(Lamp) OR CanDarkRoomNav())` form on the Lamp gates, and the
-# Compass/Map `always_allow` on the Big Chest (see CLAUDE.md "item.require.Lamp
-# dark-room pattern" and the EP weaker-predicate regression note).
+# Eastern Palace: the whole EP block in logic.yaml is superseded seed data —
+# logic_parts/01_eastern_palace.yaml is the authoritative copy and intentionally
+# overrides it (the dark-room-nav `(HAS_ITEM(Lamp) OR CanDarkRoomNav())` form on
+# the Lamp gates, the Compass/Map `always_allow` on the Big Chest, and the
+# `vanilla_item` mappings). See CLAUDE.md "item.require.Lamp dark-room pattern"
+# and the EP weaker-predicate regression note. All 7 EP locations differ.
+_EP = "EP authoritative copy in logic_parts/01 supersedes logic.yaml seed data"
 INTENTIONAL_LOCATION_OVERRIDES = {
-    "Eastern Palace - Big Chest": "EP big-chest always_allow Compass/Map (logic_parts supersedes logic.yaml)",
-    "Eastern Palace - Big Key Chest": "EP dark-room-nav Lamp gate (logic_parts supersedes logic.yaml)",
-    "Eastern Palace - Boss": "EP dark-room-nav Lamp gate (logic_parts supersedes logic.yaml)",
-    "Eastern Palace - Prize": "EP dark-room-nav Lamp gate (logic_parts supersedes logic.yaml)",
+    "Eastern Palace - Big Chest": _EP,
+    "Eastern Palace - Big Key Chest": _EP,
+    "Eastern Palace - Boss": _EP,
+    "Eastern Palace - Cannonball Chest": _EP,
+    "Eastern Palace - Compass Chest": _EP,
+    "Eastern Palace - Map Chest": _EP,
+    "Eastern Palace - Prize": _EP,
 }
 INTENTIONAL_MACRO_OVERRIDES: dict[str, str] = {}
 INTENTIONAL_REGION_OVERRIDES: dict[str, str] = {}
@@ -95,6 +106,11 @@ def _is_base_level(path: Path) -> bool:
 
 def base_level_files() -> list[Path]:
     files: list[Path] = []
+    # macros.yaml first: it's the lowest-priority macro source (no locations /
+    # regions / edges), so listing it ahead of the logic files reflects the
+    # codegen's "inline macros override macros.yaml" precedence.
+    if MACROS_YAML.exists():
+        files.append(MACROS_YAML)
     if LOGIC_YAML.exists():
         files.append(LOGIC_YAML)
     if LOGIC_PARTS.is_dir():
@@ -107,12 +123,16 @@ def load(path: Path) -> dict:
 
 
 def loc_predicate(raw: dict) -> tuple:
-    # Defaults must match rando_logic_gen._merge_logic_doc exactly.
+    # Defaults must match rando_logic_gen._merge_logic_doc exactly. Includes
+    # type + vanilla_item: both flow into the emitted location struct
+    # (type_id / vanilla_id), so a silent change to either is a real override.
     return (
         _norm(raw.get("region", "")),
         _norm(raw.get("can_reach", "TRUE()")),
         _norm(raw.get("can_place", "TRUE()")),
         _norm(raw.get("always_allow", "FALSE()")),
+        _norm(raw.get("type", "Chest")),
+        _norm(raw.get("vanilla_item", "")),
     )
 
 
@@ -150,7 +170,11 @@ def main(argv: list[str]) -> int:
             key = raw.get("id")
             if key is None:
                 continue
-            val = (raw.get("parent"), raw.get("dungeon"))
+            # parent/dungeon = connectivity binding (King-Zora loss); the
+            # world_state_filter (as a tuple for hashability) catches a silently
+            # dropped world-state gate.
+            val = (raw.get("parent"), raw.get("dungeon"),
+                   tuple(raw.get("world_state_filter") or []))
             regions.setdefault(key, []).append((rel, val))
 
     conflicts: list[str] = []
