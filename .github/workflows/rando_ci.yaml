@@ -77,6 +77,14 @@ jobs:
     - name: check_corpus_version_sync
       run: python assets/scripts/check_corpus_version_sync.py
 
+    # Placer determinism (static prong) — the --generate-seed default budget must
+    # be 0. A positive default puts a wall-clock cutoff on Place_AssumedFill's
+    # retry loop (clock() is wall-clock on Windows), making placement
+    # machine-speed-dependent. The runtime prong runs in the rando-determinism
+    # job below (needs the binary).
+    - name: check_placer_determinism (static)
+      run: python assets/scripts/check_placer_determinism.py --source-only
+
     # Logic-graph silent-override guard — a later base-level logic YAML must not
     # silently change a location/macro/region declared in an earlier one
     # (the King-Zora / Eastern-Palace weaker-predicate regression class).
@@ -212,6 +220,15 @@ jobs:
     # placement`. Any digest diff here surfaces a non-determinism bug.
     - name: Run regression corpus (cross-platform digest check)
       run: python assets/scripts/run_rando_corpus.py --binary=./zelda3
+
+    # Placer determinism (runtime prong) — the corpus only exercises seeds that
+    # complete on the first attempt, so it never guards the retry loop where
+    # non-determinism hides. This runs a deliberately HARD seed (one that
+    # exhausts the retry loop) several times and asserts byte-identical
+    # placement + sphere digests, catching any run-to-run non-determinism the
+    # all-easy corpus seeds miss.
+    - name: Run placer determinism canary (runtime)
+      run: python assets/scripts/check_placer_determinism.py --binary=./zelda3
 
     # Benchmark gate (tasks.md §3.11 / spec: "Default-settings benchmark < 2s").
     # Runs the binary 10 times at default settings; asserts median <= 2000ms.
