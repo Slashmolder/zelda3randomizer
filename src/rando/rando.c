@@ -1802,6 +1802,18 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     DropShuffle_Deactivate();
   }
 
+  // Persist the swordless flag in g_ram so a StateRecorder snapshot captures it
+  // (g_ram is restored verbatim by LoadSnesState on replay/Ctrl+F1 restore, but
+  // the C-static g_rando_active_settings is NOT). Rando_IsSwordlessActive falls
+  // back to this byte when post-restore settings are NULL, keeping the runtime
+  // swordless patches (hammer-Ganon/Agahnim, medallion/tablet/curtain) firing.
+  // Authoritative against the recovered settings: 0 unless this slot is known
+  // swordless. Cleared in Rando_DeactivateSlot. Rando-gated — vanilla never
+  // touches this byte.
+  g_rando_swordless = (g_rando_active_settings_valid &&
+                       g_rando_active_settings.mode_weapons == kModeWeapons_Swordless)
+                          ? 1 : 0;
+
   // === Phase B hints: regenerate telepathic-tile hints for this slot ===
   // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
   // of (settings, placement table); the generator (rando_hints.c) reads only
@@ -1903,6 +1915,11 @@ void Rando_DeactivateSlot(void) {
   // Rando_TryGrantStartingInventory still gates on sram_progress_indicator
   // so in-progress saves aren't re-granted.
   g_rando_starting_inventory_granted = 0;
+
+  // Clear the persisted swordless flag so a stale byte can't make a subsequent
+  // non-swordless / non-rando slot read as swordless (pairs with the write in
+  // Rando_ActivateSidecarSlot).
+  g_rando_swordless = 0;
 }
 
 // Whether the active slot's settings were recovered (format_version >= 2 blob)
@@ -1931,12 +1948,18 @@ bool Rando_ActiveSlotHidesSpoiler(void) {
 // runtime swordless patches (hammer damages Ganon/Agahnim, medallions cast
 // without a sword, Agahnim curtains pre-opened, tablets hammer-readable) so they
 // fire ONLY under swordless and never alter vanilla/non-swordless behavior.
-// Fails to "not swordless" when settings are unknown (NULL — snapshot replay /
-// pre-swordless v1 slot): such slots can never be swordless, and behaving
-// vanilla is the safe default.
+// When settings are known, that is authoritative. When settings are unknown
+// (NULL — snapshot replay-restore or pre-swordless v1 slot), fall back to the
+// persisted g_rando_swordless flag in g_ram, which LoadSnesState restores
+// verbatim and Rando_ActivateSidecarSlot set from the slot's recovered
+// settings. Without this fallback a Ctrl+F1 replay-restore of a swordless seed
+// (which doesn't re-run activation) would revert to sword-required gates
+// (medallion/tablet/Agahnim/Ganon) and softlock. Gated on an active slot so a
+// cleared/zero byte under a non-rando slot reads as not-swordless.
 bool Rando_IsSwordlessActive(void) {
   const RandoSettings *s = Rando_GetActiveSettings();
-  return s != NULL && s->mode_weapons == kModeWeapons_Swordless;
+  if (s != NULL) return s->mode_weapons == kModeWeapons_Swordless;
+  return g_rando_slot_active != 0 && g_rando_swordless != 0;
 }
 
 // ---------------------------------------------------------------------------

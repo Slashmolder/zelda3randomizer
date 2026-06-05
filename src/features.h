@@ -21,7 +21,13 @@
 //                                         tier during smithy tempering, so the
 //                                         original is restored if the placed
 //                                         Blacksmith reward isn't a sword
-//   0x661-0x66f reserved                 (15 bytes forward-compat headroom)
+//   0x661       kRam_RandoSwordless      (1 byte) — rando: 1 when the active
+//                                         slot is swordless. Persisted in g_ram
+//                                         so a snapshot replay-restore (which
+//                                         restores g_ram but not the C-static
+//                                         RandoSettings) keeps the swordless
+//                                         runtime patches firing.
+//   0x662-0x66f reserved                 (14 bytes forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
@@ -35,6 +41,7 @@ enum {
   kRam_RandoStartingInventoryGranted = 0x65e,
   kRam_RandoTriforcePieceCount = 0x65f,
   kRam_PreTemperSword = 0x660,
+  kRam_RandoSwordless = 0x661,
 };
 
 enum {
@@ -90,6 +97,7 @@ enum {
 #define g_rando_slot_active (*(uint8*)(g_ram+0x65d))
 #define g_rando_starting_inventory_granted (*(uint8*)(g_ram+0x65e))
 #define g_rando_triforce_piece_count (*(uint8*)(g_ram+0x65f))
+#define g_rando_swordless (*(uint8*)(g_ram+0x661))
 #define msu_curr_sample (*(uint32*)(g_ram+0x650))
 #define msu_volume (*(uint8*)(g_ram+0x654))
 #define msu_track (*(uint8*)(g_ram+0x655))

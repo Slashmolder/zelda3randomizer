@@ -242,6 +242,21 @@ int RandoSnapshotTail_Load(FILE *f) {
         }
         continue;
       }
+      // Reject an ODD or oversized placement_table_bytes BEFORE the fread.
+      // The `location_count > 512` check above bounds location_count (=
+      // placement_table_bytes/2, integer-truncated), but the fread below uses
+      // the raw placement_table_bytes: an odd value like 1025 truncates to
+      // location_count==512 (passes the >512 reject) yet would fread 1025
+      // bytes into `raw[1024]` — a 1-byte stack overflow. Require an exact
+      // even round-trip and a hard ≤1024 cap. Skip the body + continue,
+      // mirroring the location_count>512 reject branch.
+      if (placement_table_bytes != (uint16)(location_count * 2u) ||
+          placement_table_bytes > 1024) {
+        if (placement_table_bytes > 0 && fseek(f, (long)placement_table_bytes, SEEK_CUR) != 0) {
+          return recognized;
+        }
+        continue;
+      }
       if (placement_table_bytes > 0) {
         uint8 raw[1024];  // max 512 locations × 2 bytes
         if (fread(raw, 1, placement_table_bytes, f) != placement_table_bytes) {
