@@ -639,6 +639,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_GameChangingBugFixes);
     } else if (StringEqualsNoCase(key, "CancelBirdTravel")) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_CancelBirdTravel);
+    } else if (StringEqualsNoCase(key, "EasyMinigames")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_EasyMinigames);
     }
   } else if (section == 6) {
     // [Randomizer] section — tasks.md §1.6. Defaults set in ParseConfigFile
@@ -781,6 +783,11 @@ static void SetLoadedIniPath(const char *p) {
 
 void ParseConfigFile(const char *filename) {
   g_config.msuvolume = 100;  // default msu volume, 100%
+
+  // QoL: the Digging Game / Chest Game are easy by default (`EasyMinigames = 0`
+  // in zelda3.ini restores vanilla odds). Set before the INI is read so a
+  // missing key keeps it on; ParseBoolBit clears it on an explicit 0.
+  g_config.features0 |= kFeatures0_EasyMinigames;
 
   // [Randomizer] defaults (tasks.md §1.6). Missing INI keys keep these.
   g_config.features1 = 0;                    // rando bank empty by default
@@ -1185,6 +1192,7 @@ static const char *const kFeatKeys[] = {
   "CollectItemsWithSword", "BreakPotsWithSword", "DisableLowHealthBeep",
   "SkipIntroOnKeypress", "ShowMaxItemsInYellow", "MoreActiveBombs",
   "CarryMoreRupees", "MiscBugFixes", "GameChangingBugFixes", "CancelBirdTravel",
+  "EasyMinigames",
 };
 static const uint32 kFeatMasks[] = {
   kFeatures0_SwitchLR, kFeatures0_SwitchLRLimit, kFeatures0_TurnWhileDashing,
@@ -1193,6 +1201,7 @@ static const uint32 kFeatMasks[] = {
   kFeatures0_SkipIntroOnKeypress, kFeatures0_ShowMaxItemsInYellow,
   kFeatures0_MoreActiveBombs, kFeatures0_CarryMoreRupees, kFeatures0_MiscBugFixes,
   kFeatures0_GameChangingBugFixes, kFeatures0_CancelBirdTravel,
+  kFeatures0_EasyMinigames,
 };
 _Static_assert(countof(kFeatKeys) == countof(kFeatMasks),
                "feature key/mask tables must stay aligned");

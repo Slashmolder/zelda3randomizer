@@ -6915,13 +6915,22 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
   if (link_y_coord >= 0xb18)
     return;
   int j = GetRandomNumber() & 7;
+  // Easy minigames (kFeatures0_EasyMinigames, default on): the vanilla win is
+  // case 4 (1/8) AND >=25 digs AND a 1/4 roll (~1 in 130 digs past 25) -
+  // agonizing. Force the win once a half-competent number of digs is in, and
+  // (in case 4) drop the >=25-digs / 1-in-4 gates. The once-per-paid-session
+  // guard (beamos_x_hi[0]) still applies. Mirrors ALTTPR RigDigRNG.
+  bool easy_minigames = (enhanced_features0 & kFeatures0_EasyMinigames) != 0;
+  if (easy_minigames && !beamos_x_hi[0] && beamos_x_hi[1] >= 8)
+    j = 4;
   uint8 item_to_spawn;
   switch (j) {
   case 0: case 1: case 2: case 3:
     item_to_spawn = kDiggingGameGuy_Items[j];
     break;
   case 4:
-    if (beamos_x_hi[1] < 25 || beamos_x_hi[0] || GetRandomNumber() & 3)
+    if (beamos_x_hi[0] ||
+        (!easy_minigames && (beamos_x_hi[1] < 25 || (GetRandomNumber() & 3))))
       return;
     // Phase B Slice 8 §67 — Digging Game minigame dispatch. Case 4 is the
     // PoH "win" outcome (vanilla lttp code 0x17 — the quarter Piece of Heart;

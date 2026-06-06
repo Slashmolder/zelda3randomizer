@@ -6053,6 +6053,12 @@ uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
     if (t >= 2 && t == r16) {
       t = (t + 1) & 7;
     }
+    // Easy minigames (kFeatures0_EasyMinigames, default on): win the rare prize
+    // (the placed item) on the first chest, matching ALTTPR RigChestRNG. The
+    // once-per-savegame gate below still applies - after the win, t==7 degrades
+    // to a consolation prize, so this can't farm.
+    if (enhanced_features0 & kFeatures0_EasyMinigames)
+      t = 7;
     if (t == 7) {
       if (dung_savegame_state_bits & 0x4000) {
         t = 0;

@@ -78,6 +78,14 @@ enum {
   kFeatures0_SwitchLRLimit = 32768,
 
   kFeatures0_DimFlashes = 65536,
+
+  // Make the Digging Game and Chest Game winnable for a half-competent player
+  // (digging: guaranteed win within ~8 digs; chest game: win on the first
+  // chest). Default ON (see ParseConfigFile). Behavior-affecting, so it diverges
+  // from the original-ROM RAM compare - toggle off (EasyMinigames = 0) for
+  // side-by-side vanilla verification. Read at point-of-use in
+  // DiggingGameGuy_AttemptPrizeSpawn (player.c) + OpenMiniGameChest (dungeon.c).
+  kFeatures0_EasyMinigames = 131072,
 };
 
 // Enum values for kRam_Features1 (randomizer feature flags).
