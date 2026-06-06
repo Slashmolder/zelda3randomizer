@@ -1999,7 +1999,14 @@ static void BlitSpriteTile(uint32 *out, int stride, int aslot, const uint16 *pal
 static void DecodeSpriteIcon(uint32 *out, int stride, int aslot, uint8 gfx,
                              const uint16 *pal) {
   DecodeAnimatedSpriteTile_variable(gfx);
-  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd40], 0, 0, 2);
+  // gfx 0x23/0x28 are 16x16 receive sprites = 4 quadrant tiles
+  // (WriteTo4BPPBuffer_at_7F4000 emits TL/TR/BL/BR at 0xbd40/60/80/a0). Blit all
+  // four at 1x; reading only the top-left tile at 2x showed just the gem's
+  // top-left quarter (the "blob"). Mirrors the crystal decode below.
+  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd40], 0, 0, 1);
+  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd60], 8, 0, 1);
+  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd80], 0, 8, 1);
+  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbda0], 8, 8, 1);
 }
 
 // Dungeon-item HUD icons (not in kHudItemBoxGfxPtrs — these are drawn directly
