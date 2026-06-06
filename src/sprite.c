@@ -16,6 +16,8 @@
 #include "rando/shuffle_boss.h"
 #include "rando/shuffle_drops.h"
 #include "rando/rando.h"  // Rando_IsSwordlessActive (swordless Ganon damage)
+#include "rando/location_ids.h"  // LOC_Tower_of_Hera_Basement_Cage (cage-key dispatch)
+#include "rando/item_ids.h"      // ITEM_SmallKey_TowerOfHera (cage-key dispatch)
 static const uint16 kOamGetBufferPos_Tab0[6] = {0x171, 0x201, 0x31, 0xc1, 0x141, 0x1d1};
 static const uint16 kOamGetBufferPos_Tab1[48] = {
    0x30,  0x50,  0x80,  0xb0,  0xe0, 0x110, 0x140, 0x170, 0x1d0, 0x1d4, 0x1dc, 0x1e0, 0x1e4, 0x1ec, 0x1f0, 0x1f8,
@@ -1402,6 +1404,25 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     link_hearts_filler += 56;
     break;
   case 12:
+    // Rando: the Tower of Hera basement freestanding key (room 0x87) is the
+    // ALTTPR "Tower of Hera - Basement Cage" Standing location. Grant the PLACED
+    // item and mark the location checked instead of the vanilla small key (else
+    // the tracker never clears and the placed item is lost). Keyed on room 0x87
+    // like z3randomizer (stats.asm); gated on location-checked so only the one
+    // cage key dispatches; any enemy-drop key here still grants vanilla below.
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        dungeon_room_index == 0x87 &&
+        !Rando_IsLocationChecked(LOC_Tower_of_Hera_Basement_Cage)) {
+      uint8 cage_lttp = Rando_DispatchVanillaGrant(
+          LOC_Tower_of_Hera_Basement_Cage, ITEM_SmallKey_TowerOfHera, 0x24);
+      if (cage_lttp != 0x24) {
+        if (Rando_ShouldSkipReceive(cage_lttp))
+          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+        else { item_receipt_method = 0; Link_ReceiveItem(cage_lttp, 0); }
+        goto after_getkey;
+      }
+      // vanilla ToH key placed here: fall through to the vanilla key grant.
+    }
     // rando-exempt: drop-pool (Phase B) — small key from killed-sprite drop.
     // The drop-pool shuffle is Phase B work per task 7.2; in Phase A1 small
     // keys from enemy drops grant the vanilla SmallKey of the current dungeon
