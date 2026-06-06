@@ -2300,7 +2300,8 @@ void Rando_FillItemView(RandoItemView *out) {
   // tracker and placement use — NOT the HUD display order. The per-crystal
   // link_has_crystals bits mirror prize_item_direct_grant: C1=0x10, C2=0x02,
   // C3=0x01, C4=0x40, C5=0x04, C6=0x20, C7=0x08. pendant_mask bit0=green,
-  // 1=blue, 2=red (kPendantMask order; PrizeIcon maps each prize to its bit).
+  // 1=red (ToH/Wisdom), 2=blue (DP/Power) by in-game DISPLAY color (the registry
+  // Red/Blue Pendant names are swapped vs display); PrizeIcon maps prize->bit.
   static const uint8 kCrystalMask[7] = { 0x10, 0x02, 0x01, 0x40, 0x04, 0x20, 0x08 };
   static const uint8 kPendantMask[3] = { 4, 1, 2 };
   uint8 cbits = link_has_crystals, pbits = link_which_pendants;

@@ -49,14 +49,17 @@ extern "C" void DbgFlags_Render(void) {
     // and softlock below 2 (the intro/escape never runs). So under rando we
     // expose only {Zelda saved, Master Sword} via ComboVals (values {2,3}),
     // which makes "below 2" unwritable; vanilla exposes the full 0..3.
+    // sram_progress_indicator (0xF3C5) also drives the pause/quest screen: it
+    // shows PENDANTS while < 3 and CRYSTALS at 3 ("Master Sword"). This is the
+    // flag to flip to preview pendants vs crystals.
     ImGui::SeparatorText("Story stage");
     if (rando) {
-      static const char *const k[] = {"Zelda saved", "Master Sword"};
+      static const char *const k[] = {"Zelda saved (pause: pendants)", "Master Sword (pause: crystals)"};
       static const int v[] = {2, 3};
       Cheats_ComboVals("Story stage", 0xF3C5, k, v, 2);
       ImGui::TextDisabled("(randomizer: cannot drop below \"Zelda saved\" \xe2\x80\x94 lower values softlock)");
     } else {
-      static const char *const k[] = {"Intro", "Uncle left", "Zelda saved", "Master Sword"};
+      static const char *const k[] = {"Intro", "Uncle left", "Zelda saved (pendants)", "Master Sword (crystals)"};
       Cheats_Combo("Story stage", 0xF3C5, k, 4);
     }
 

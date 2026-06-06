@@ -130,8 +130,10 @@ static int PrizeIcon(const RandoItemView &v, uint8 prize, bool *obtained, int *c
   *crystal_num = 0;
   switch (prize) {
     case 0: *obtained = (v.pendant_mask & 1) != 0; return kRandoIcon_PendantGreen;  // green
-    case 1: *obtained = (v.pendant_mask & 4) != 0; return kRandoIcon_PendantRed;    // red
-    case 2: *obtained = (v.pendant_mask & 2) != 0; return kRandoIcon_PendantBlue;   // blue
+    // The registry's Red/Blue Pendant names are swapped vs the in-game display:
+    // RedPendant grants DP/Power (shows BLUE), BluePendant grants ToH/Wisdom (RED).
+    case 1: *obtained = (v.pendant_mask & 4) != 0; return kRandoIcon_PendantBlue;   // DP/Power -> blue
+    case 2: *obtained = (v.pendant_mask & 2) != 0; return kRandoIcon_PendantRed;    // ToH/Wisdom -> red
     default:
       if (prize >= 3 && prize <= 9) {           // Crystal1..7
         *crystal_num = prize - 2;

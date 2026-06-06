@@ -1089,12 +1089,13 @@ void DbgInventory_Render(void) {
       // The Flags editor used to duplicate this (disabled under rando); pendants
       // and crystals are dungeon prizes, so they live here with the dungeon items
       // and work under rando too. Edits do NOT update rando prize/goal tracking.
-      // Pendant bits (link_which_pendants 0xF374) per rando.c:312-314: bit2 green/
-      // Courage (EP), bit1 red/Power (DP), bit0 blue/Wisdom (ToH).
+      // Pendant bits (link_which_pendants 0xF374) per rando.c:312-314, by in-game
+      // display color: bit2 green/Courage (EP), bit1 blue/Power (DP), bit0 red/
+      // Wisdom (ToH). (The registry's Red/Blue Pendant item names are swapped.)
       ImGui::SeparatorText("Pendants");
       Cheats_BitCheckbox("Pendant of Courage (green)", 0xF374, 2);
-      Cheats_BitCheckbox("Pendant of Power (red)", 0xF374, 1);
-      Cheats_BitCheckbox("Pendant of Wisdom (blue)", 0xF374, 0);
+      Cheats_BitCheckbox("Pendant of Power (blue)", 0xF374, 1);
+      Cheats_BitCheckbox("Pendant of Wisdom (red)", 0xF374, 0);
       // Crystal bits (link_has_crystals 0xF37A) by dungeon per rando.c:315-321.
       // (The numbered "Crystal N" goal-counter name does NOT track this bit order.)
       ImGui::SeparatorText("Crystals");
