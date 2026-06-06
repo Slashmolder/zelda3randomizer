@@ -2612,6 +2612,37 @@ const char *Rando_RevealResultDescription(RandoRevealResult r) {
 //     not exercised — shouldn't happen in practice);
 //   - the resolved spoiler path doesn't exist (non-race slot, or the
 //     race-mode file was already revealed / never written).
+// Race-mode reveal completion latch. main_module_index is 0x19/0x1A only WHILE
+// the Triforce room / credits are on screen; once the player leaves (file
+// select, or reloads the beaten save) it reads not-beaten and the reveal would
+// refuse even though the seed is done. Latch completion per session, keyed to
+// the active slot's share string (loading a different slot re-keys and clears
+// it). Ticked each frame from the main loop (Rando_NoteFrameForReveal).
+// Session-scoped: an app restart clears it (re-beat, or use --reveal-spoiler).
+static bool g_reveal_beaten = false;
+static char g_reveal_beaten_share[sizeof g_rando_active_share_string] = {0};
+
+void Rando_NoteFrameForReveal(void) {
+  if (!g_rando_slot_active || g_rando_active_share_string[0] == 0)
+    return;
+  if (strcmp(g_reveal_beaten_share, g_rando_active_share_string) != 0) {
+    snprintf(g_reveal_beaten_share, sizeof g_reveal_beaten_share, "%s",
+             g_rando_active_share_string);
+    g_reveal_beaten = false;
+  }
+  if (main_module_index == 0x19 || main_module_index == 0x1A)
+    g_reveal_beaten = true;
+}
+
+// True iff the active slot's seed has been beaten this session (or the ending
+// is on screen now). Both reveal gates route through this so they stay in sync.
+static bool Rando_ActiveSlotBeaten(void) {
+  if (main_module_index == 0x19 || main_module_index == 0x1A)
+    return true;
+  return g_reveal_beaten &&
+         strcmp(g_reveal_beaten_share, g_rando_active_share_string) == 0;
+}
+
 RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   if (!g_rando_slot_active || g_rando_active_share_string[0] == '\0') {
     fprintf(stderr, "rando reveal: no active randomizer slot.\n");
@@ -2628,7 +2659,7 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
   // frame on slot load). Mirrors the beaten check in auto_tracker.c.
   // The `--reveal-spoiler=<path>` CLI flow stays unconditional (no in-
   // game state to check) for tournament admins / post-race tooling.
-  if (!(main_module_index == 0x19 || main_module_index == 0x1A)) {
+  if (!Rando_ActiveSlotBeaten()) {
     fprintf(stderr,
             "rando reveal: refused — game not yet completed "
             "(use --reveal-spoiler CLI flag for tournament admin reveals).\n");
@@ -2646,7 +2677,7 @@ bool Rando_CanRevealActiveSlotSpoiler(void) {
   // is beaten ONLY at TriforceRoom (0x19) or Credits (0x1A). Keep this in sync
   // with that function (and the beaten check in auto_tracker.c).
   return g_rando_slot_active && g_rando_active_share_string[0] != '\0' &&
-         (main_module_index == 0x19 || main_module_index == 0x1A);
+         Rando_ActiveSlotBeaten();
 }
 
 // ---------------------------------------------------------------------------

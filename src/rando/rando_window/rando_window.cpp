@@ -322,9 +322,7 @@ static void Panel_General() {
     if (!can_reveal) {
       ImGui::SameLine();
       ImGui::TextDisabled("(available after you finish the seed)");
-      HelpTooltip("Anti-cheat: the in-binary reveal unlocks after the seed is "
-                  "completed. Tournament admins can reveal any time with the "
-                  "--reveal-spoiler CLI flag.");
+      HelpTooltip("Beat the seed to unlock (admins: --reveal-spoiler).");
     }
 
     // Confirmation modal.
@@ -1008,6 +1006,32 @@ static void RenderSpoilerSaveRow() {
 // locations (e.g. Ether Tablet) would group under their Standard region here; the
 // runtime/file spoiler honors the override. Threading world_state through the
 // bridge is deferred — see TODO. Read-only either way.
+// Case-insensitive substring test (empty needle matches everything).
+static bool SpoilerCiContains(const char *hay, const char *needle) {
+  if (!needle[0]) return true;
+  for (; *hay; ++hay) {
+    const char *h = hay, *n = needle;
+    while (*h && *n) {
+      char a = *h, b = *n;
+      if (a >= 'A' && a <= 'Z') a += 32;
+      if (b >= 'A' && b <= 'Z') b += 32;
+      if (a != b) break;
+      ++h; ++n;
+    }
+    if (!*n) return true;
+  }
+  return false;
+}
+
+// True if a spoiler row matches the search text (location, item, or region).
+static bool SpoilerRowMatches(const char *filter, uint16 loc, uint16 item,
+                              uint16 region) {
+  if (!filter[0]) return true;
+  return SpoilerCiContains(Rando_GetLocationName(loc), filter) ||
+         SpoilerCiContains(Rando_GetItemName(item), filter) ||
+         SpoilerCiContains(Rando_GetRegionName(region), filter);
+}
+
 static void Panel_Spoiler() {
   const RandoWindowBridge *b = &g_rando_window_bridge;
   if (!b->has_last_generated) {
@@ -1024,6 +1048,12 @@ static void Panel_Spoiler() {
 
   // Save-spoiler controls (§14.4 file, §14.5 clipboard).
   RenderSpoilerSaveRow();
+
+  // Search/filter the placement list (case-insensitive substring).
+  static char s_spoiler_filter[64] = "";
+  ImGui::SetNextItemWidth(-1.0f);
+  ImGui::InputTextWithHint("##spoiler_filter", "Search locations / items...",
+                           s_spoiler_filter, sizeof s_spoiler_filter);
   ImGui::Separator();
 
   // Build (region_id, location_id, item_id) rows, then sort by (region, loc)
@@ -1066,6 +1096,20 @@ static void Panel_Spoiler() {
   // BeginDisabled/EndDisabled so it reads unambiguously as read-only (§14.6) while
   // the header expand/collapse and the column sort stay interactive (navigation,
   // not editing).
+  // Apply the search filter: compact rows[] to matching entries so empty
+  // regions don't render a header and per-region counts reflect the filter.
+  if (s_spoiler_filter[0]) {
+    uint16 w = 0;
+    for (uint16 i = 0; i < n; i++) {
+      if (SpoilerRowMatches(s_spoiler_filter, rows[i].location_id,
+                            rows[i].item_id, rows[i].region_id))
+        rows[w++] = rows[i];
+    }
+    n = w;
+    if (n == 0)
+      ImGui::TextDisabled("No placements match this search.");
+  }
+
   if (truncated)
     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f),
                        "Note: showing the first %d of %u placements (display cap).",

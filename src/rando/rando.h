@@ -165,6 +165,10 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void);
 // pre-completion. (Tournament admins bypass the gate via --reveal-spoiler.)
 bool Rando_CanRevealActiveSlotSpoiler(void);
 
+// Per-frame tick (main loop) that latches "this slot's seed was beaten" so the
+// reveal survives leaving the credits screen. See rando.c.
+void Rando_NoteFrameForReveal(void);
+
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
 // Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
 // items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.

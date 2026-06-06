@@ -1867,6 +1867,7 @@ int main(int argc, char** argv) {
     SDL_LockMutex(g_audio_mutex);
     bool is_replay = ZeldaRunFrame(inputs);
     SDL_UnlockMutex(g_audio_mutex);
+    Rando_NoteFrameForReveal();  // latch seed-completion for the race reveal gate
 
     // Auto-tracker: accept subscribers + emit a JSON snapshot when rando state
     // changed this frame. Runs every frame (before the turbo frame-skip below)
