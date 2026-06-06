@@ -141,9 +141,12 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
     case ITEM_Rupee100: return 0x40;
     case ITEM_Rupee300: return 0x46;
     // Rupoor: ALTTPR-only item (vanilla LttP doesn't have it). No vanilla
-    // LttP code grants Rupoor; §6.2 follow-on. Phase A1 falls back to
-    // vanilla item (which is fine — Rupoor only appears in hard/expert
-    // pools per the spec, infrequent at most slots).
+    // LttP code grants Rupoor, so progressive_to_lttp returns 0xFF here — the
+    // grant is handled directly by the ITEM_Rupoor case in
+    // Rando_DispatchVanillaGrant (rupee drain + kRandoLttpSkip). It must NOT
+    // fall through to the vanilla-item fallback: at chests whose US-ROM vanilla
+    // item is progression (Zelda's Cell / Link's House / Secret Passage = Lamp)
+    // that fallback granted a duplicate real item.
     // HalfMagic / QuarterMagic: no LttP receive code in this port grants
     // them. kValueToGiveItemTo[32]=-1 means code 0x20's "magic" branch in
     // Link_ReceiveItem runs special palette/cape logic but does NOT write to
@@ -438,6 +441,23 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   // placed under genericKeys (Retro), so no settings gate is needed here.
   if (placed == ITEM_GenericKey) {
     rando_grant_generic_key();
+    return kRandoLttpSkip;
+  }
+
+  // Rupoor (ALTTPR-only junk item, dispatch `direct_rupoor`). Vanilla ALTTP has
+  // no Rupoor, so NO Link_ReceiveItem code grants it. Without a handler here it
+  // falls through to the vanilla-LttP fallback at the bottom of this function
+  // and grants the CHEST'S US-ROM vanilla item instead — and three chests
+  // (Hyrule Castle - Zelda's Cell, Link's House, Secret Passage) carry US ROM
+  // item byte 0x12 = LAMP. That silently turned a junk Rupoor into a duplicate
+  // progression Lamp ("got the Lamp twice"). Match ALTTPR (newitems.asm
+  // .rupoor): drain RupoorDeduction (=10) rupees from link_rupees_goal; the HUD
+  // ticker (hud.c) animates the displayed count down and plays the drain sfx.
+  // Clamp at 0 — if the goal underflowed below link_rupees_actual the ticker's
+  // fill branch would instead race the count UPWARD (the existing shop/cost
+  // sites use the same `>= cost` guard).
+  if (placed == ITEM_Rupoor) {
+    link_rupees_goal = (link_rupees_goal >= 10) ? (uint16)(link_rupees_goal - 10) : 0;
     return kRandoLttpSkip;
   }
 
@@ -2825,6 +2845,50 @@ void Rando_SelfCheck(void) {
     }
     Placement_Install(NULL);
     g_rando_triforce_piece_count = 0;
+  }
+
+  // Regression guard — "got the Lamp twice". A Rupoor (ITEM_Rupoor, ALTTPR-only
+  // junk, dispatch direct_rupoor) placed at a chest whose US-ROM vanilla item is
+  // the Lamp (Hyrule Castle - Zelda's Cell, room 128, vanilla byte 0x12) must
+  // dispatch to kRandoLttpSkip and DRAIN rupees — NOT fall through to the
+  // vanilla code and grant a duplicate Lamp (the original bug: Rupoor had no
+  // dispatch handler, so Rando_DispatchVanillaGrant returned vanilla_lttp_code).
+  {
+    uint16 rupoor_loc = chest_lookup(128, 0);  // Hyrule Castle - Zelda's Cell
+    if (rupoor_loc != 0xFFFFu) {
+      static RandoPlacement entries[1];
+      entries[0].location_id = rupoor_loc;
+      entries[0].item_id = ITEM_Rupoor;  // 110
+      RandoPlacementTable t = { entries, 1 };
+      Placement_Install(&t);
+      link_rupees_goal = 50;
+      uint8 lttp = Rando_ChestDispatch(128, 0, 0x12);  // 0x12 = vanilla Lamp
+      if (lttp != kRandoLttpSkip) {
+        fprintf(stderr,
+          "Rando_SelfCheck: Rupoor chest dispatch should return kRandoLttpSkip "
+          "(got 0x%02x) — would grant the chest's vanilla item (Lamp 0x12)\n",
+          (unsigned)lttp);
+        exit(2);
+      }
+      if (link_rupees_goal != 40) {
+        fprintf(stderr,
+          "Rando_SelfCheck: Rupoor should drain 10 rupees (goal 50 -> 40, got %u)\n",
+          (unsigned)link_rupees_goal);
+        exit(2);
+      }
+      // Floor: with < 10 rupees the goal must clamp to 0, never underflow (an
+      // underflowed goal would make the HUD ticker race the count UPWARD).
+      link_rupees_goal = 4;
+      (void)Rando_ChestDispatch(128, 0, 0x12);
+      if (link_rupees_goal != 0) {
+        fprintf(stderr,
+          "Rando_SelfCheck: Rupoor with <10 rupees should clamp goal to 0 (got %u)\n",
+          (unsigned)link_rupees_goal);
+        exit(2);
+      }
+      Placement_Install(NULL);
+      link_rupees_goal = 0;
+    }
   }
 #else
   // No chest table artifact present (e.g. CI build with no assets): the
