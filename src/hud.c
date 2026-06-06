@@ -1943,6 +1943,36 @@ static void DecodeIconQuad(uint32 *out, int stride, const uint16 *scratch,
   }
 }
 
+// Like DecodeIconQuad, but treats a palette entry of 0 as transparent (skip).
+// The quest-screen pendant tiles fill their whole cell with a background pixel
+// (not pix 0), so the synthesized pendant palette sets that entry to 0 to drop
+// the box fill and leave a clean transparent-background gem.
+static void DecodePendantQuad(uint32 *out, int stride, const uint16 *scratch,
+                              int scratch_words, const uint16 *pal,
+                              int aslot, const ItemBoxGfx *icon) {
+  for (int q = 0; q < 4; q++) {
+    uint16 w = icon->v[q];
+    int chr = w & 0x3ff, subpal = (w >> 10) & 7;
+    bool hflip = (w & 0x4000) != 0, vflip = (w & 0x8000) != 0;
+    int qx = (q & 1) * 8, qy = (q >= 2) ? 8 : 0;
+    for (int r = 0; r < 8; r++) {
+      int srow = vflip ? (7 - r) : r;
+      if (chr * 8 + srow >= scratch_words) continue;
+      uint16 word = scratch[chr * 8 + srow];
+      for (int cc = 0; cc < 8; cc++) {
+        int pix = hflip ? (((word >> cc) & 1) | ((word >> (7 + cc)) & 2))
+                        : (((word >> (7 - cc)) & 1) | ((word >> (14 - cc)) & 2));
+        if (pix == 0) continue;
+        uint16 col = pal[subpal * 4 + pix];
+        if (col == 0) continue;  // background sentinel -> transparent
+        uint32 rgba = (uint32)((col & 0x1f) << 3) | ((uint32)(((col >> 5) & 0x1f) << 3) << 8) |
+                      ((uint32)(((col >> 10) & 0x1f) << 3) << 16) | 0xff000000u;
+        out[(qy + r) * stride + aslot * kRandoIconSize + (qx + cc)] = rgba;
+      }
+    }
+  }
+}
+
 // Decode a single 8x8 2bpp HUD tile (tilemap word `w`) 2x-scaled into the
 // 16x16 atlas slot `aslot`. For icons that are one HUD tile (the full heart).
 static void DecodeIconTile2x(uint32 *out, int stride, const uint16 *scratch,
@@ -1989,24 +2019,6 @@ static void BlitSpriteTile(uint32 *out, int stride, int aslot, const uint16 *pal
           out[(py + row * scale + dy) * stride + aslot * kRandoIconSize + (px + col * scale + dx)] = rgba;
     }
   }
-}
-
-// Decode a single-tile 4bpp sprite icon (the receive-animation art for `gfx`)
-// 2x-scaled into atlas slot `aslot`. DecodeAnimatedSpriteTile_variable(gfx)
-// decompresses the bundle into g_ram[0xbd40..] (char 0x24 = top-left tile).
-// State-immune: decompresses from asset packs, not live VRAM. NOTE: clobbers
-// the g_ram[0x14000]/0xbd40 decomp scratch — fine for the one-shot atlas build.
-static void DecodeSpriteIcon(uint32 *out, int stride, int aslot, uint8 gfx,
-                             const uint16 *pal) {
-  DecodeAnimatedSpriteTile_variable(gfx);
-  // gfx 0x23/0x28 are 16x16 receive sprites = 4 quadrant tiles
-  // (WriteTo4BPPBuffer_at_7F4000 emits TL/TR/BL/BR at 0xbd40/60/80/a0). Blit all
-  // four at 1x; reading only the top-left tile at 2x showed just the gem's
-  // top-left quarter (the "blob"). Mirrors the crystal decode below.
-  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd40], 0, 0, 1);
-  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd60], 8, 0, 1);
-  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbd80], 0, 8, 1);
-  BlitSpriteTile(out, stride, aslot, pal, &g_ram[0xbda0], 8, 8, 1);
 }
 
 // Dungeon-item HUD icons (not in kHudItemBoxGfxPtrs — these are drawn directly
@@ -2066,22 +2078,36 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ArmorBlue,    &kHudItemArmor[1]);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ArmorRed,     &kHudItemArmor[2]);
   DecodeIconTile2x(out, stride, scratch, sw, pal, kRandoIcon_Heart, kRandoFullHeartTile);
-  // Prize sprite icons (4bpp receive-animation art). Pendant = gfx 0x23 (one
-  // tile; palettes green pal4 / red pal2 / blue pal1 from kPalette_MainSpr).
-  // Pendant gem (gfx 0x23) draws with palette indices 9/13/14 (-> pal[8]/[12]/
-  // [13]: dark accent / body / highlight; verified by index-map dump). The
-  // receive sprite borrows the dungeon's sprite palette in vanilla (there is no
-  // static green/blue/red pendant asset), so synthesize canonical gem palettes
-  // per hue (BGR555: r | g<<5 | b<<10, each 0-31).
-  static uint16 pgreen[15] = {0}, pblue[15] = {0}, pred[15] = {0};
-#define Z3R_BGR(r, g, b) ((uint16)((r) | ((g) << 5) | ((b) << 10)))
-  pgreen[8] = Z3R_BGR(1, 8, 1);  pgreen[12] = Z3R_BGR(4, 22, 5);  pgreen[13] = Z3R_BGR(20, 31, 17);
-  pblue[8]  = Z3R_BGR(2, 2, 11); pblue[12]  = Z3R_BGR(6, 9, 27);  pblue[13]  = Z3R_BGR(19, 21, 31);
-  pred[8]   = Z3R_BGR(9, 1, 1);  pred[12]   = Z3R_BGR(27, 4, 4);  pred[13]   = Z3R_BGR(31, 17, 16);
-#undef Z3R_BGR
-  DecodeSpriteIcon(out, stride, kRandoIcon_PendantGreen, 0x23, pgreen);
-  DecodeSpriteIcon(out, stride, kRandoIcon_PendantRed,   0x23, pred);
-  DecodeSpriteIcon(out, stride, kRandoIcon_PendantBlue,  0x23, pblue);
+  // Pendant icons: reuse the SAME static HUD artwork the in-game progress screen
+  // draws (Hud_DrawProgressIcons_Pendants): one template gem (chars 0x12b-0x12e
+  // in HUD pack 0x69) recolored per hue by the tilemap palette nibble - green =
+  // sub-palette 1 (0x25xx), blue = 3 (0x2dxx), red = 7 (0x3dxx). Decode them via
+  // the same DecodeIconQuad path as big-key/map/compass (4 quadrant tiles, real
+  // HUD palette) to get a proper gem. The old gfx-0x23 path blitted only the
+  // TOP-LEFT quarter of the 16x16 receive sprite at 2x (WriteTo4BPPBuffer_at_
+  // 7F4000 emits 4 tiles 0xbd40/60/80/a0; it read only 0xbd40) with a
+  // hand-synthesized 3-index palette - a colored "blob".
+  static const ItemBoxGfx kPendantGreenIcon = {{0x252b, 0x252c, 0x252d, 0x252e}};
+  static const ItemBoxGfx kPendantBlueIcon  = {{0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e}};
+  static const ItemBoxGfx kPendantRedIcon   = {{0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e}};
+  // kHudPalData (gameplay HUD palette) only carries CGRAM row 0; the pendant
+  // colors live at the tiles' palette nibbles 1/3/7, which the quest screen
+  // loads into CGRAM at draw time. Borrowing kHudPalData washes the gems white
+  // and swaps green<->red. Synthesize the pendant hues at sub-palettes 1 (green)
+  // / 3 (blue) / 7 (red): pix 1/2/3 = dark / body / highlight of each hue.
+  static uint16 pendpal[32];
+  memset(pendpal, 0, sizeof pendpal);
+#define Z3R_PEND_BGR(r, g, b) ((uint16)((r) | ((g) << 5) | ((b) << 10)))
+  // pix 3 = the tile's background fill -> 0 (transparent); pix 1/2 = gem shades.
+  // pix 1 = gem (hue), pix 2 = the pendant outline (WHITE — the quest-screen
+  // white lines), pix 3 = background fill (transparent). Matches the pause menu.
+  pendpal[5]  = Z3R_PEND_BGR(6, 26, 6);  pendpal[6]  = Z3R_PEND_BGR(31, 31, 31); pendpal[7]  = 0;
+  pendpal[13] = Z3R_PEND_BGR(6, 12, 30); pendpal[14] = Z3R_PEND_BGR(31, 31, 31); pendpal[15] = 0;
+  pendpal[29] = Z3R_PEND_BGR(31, 6, 6);  pendpal[30] = Z3R_PEND_BGR(31, 31, 31); pendpal[31] = 0;
+#undef Z3R_PEND_BGR
+  DecodePendantQuad(out, stride, scratch, sw, pendpal, kRandoIcon_PendantGreen, &kPendantGreenIcon);
+  DecodePendantQuad(out, stride, scratch, sw, pendpal, kRandoIcon_PendantBlue,  &kPendantBlueIcon);
+  DecodePendantQuad(out, stride, scratch, sw, pendpal, kRandoIcon_PendantRed,   &kPendantRedIcon);
   // Crystal = gfx 0x28, a 16x16 diamond spread across 4 quadrant tiles
   // (TL=0xbd40, TR=0xbd60, BL=0xbd80, BR=0xbda0; arrangement verified by PNG
   // dump). Colored with kPalette_MiscSprite_Indoors row 4 (offset 4*7) — the
@@ -2090,7 +2116,16 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   // The crystal art only uses color indices 1-6 (PNG-verified), so BlitSpriteTile's
   // pal[idx-1] stays within this 7-entry row.
   DecodeAnimatedSpriteTile_variable(0x28);
-  { const uint16 *cp = kPalette_MiscSprite_Indoors + 4 * 7;
+  {
+    // The dungeon sprite palette (kPalette_MiscSprite_Indoors row 4) renders the
+    // crystal with a near-black facet that reads as a hole on the tracker.
+    // Synthesize a clean dark->light purple ramp (indices 1..6 -> cp[0..5]) for
+    // a faceted-but-solid crystal, matching the receive sprite's magenta hue.
+#define Z3R_CRY_BGR(r, g, b) ((uint16)((r) | ((g) << 5) | ((b) << 10)))
+    static const uint16 cp[7] = {
+      Z3R_CRY_BGR(9, 3, 14), Z3R_CRY_BGR(14, 5, 21), Z3R_CRY_BGR(20, 9, 27),
+      Z3R_CRY_BGR(25, 15, 31), Z3R_CRY_BGR(28, 23, 31), Z3R_CRY_BGR(31, 30, 31), 0 };
+#undef Z3R_CRY_BGR
     BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd40], 0, 0, 1);
     BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd60], 8, 0, 1);
     BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd80], 0, 8, 1);
