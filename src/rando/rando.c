@@ -462,7 +462,25 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   }
 
   uint8 lttp = Rando_VanillaItemForRegistryId(placed);
-  if (lttp != 0xFF) return lttp;
+  if (lttp != 0xFF) {
+    // Boomerang is strictly PROGRESSIVE under rando: the 1st collected is always
+    // blue, the 2nd always red — regardless of which color item the placer put
+    // at this location (see Rando_GrantBoomerang). This returned LttP code drives
+    // BOTH the grant routing (-> Rando_GrantBoomerang, already progressive) AND
+    // the receive-animation graphic + "You got the … Boomerang" text. Without
+    // this remap, collecting the RED item FIRST plays the magical-boomerang
+    // animation even though the player is actually granted blue. Re-derive the
+    // shown color from current ownership so it always matches the tier being
+    // granted: blue (0x0c) until blue is owned, then red (0x2a). Computed
+    // pre-grant — g_rando_boomerang_owned / link_item_boomerang still hold the
+    // state before this pickup, exactly as Rando_GrantBoomerang reads them.
+    if (placed == ITEM_BlueBoomerang || placed == ITEM_RedBoomerang) {
+      bool blue_owned = (g_rando_boomerang_owned & kRandoBoomerang_Blue) ||
+                        link_item_boomerang >= 1;
+      lttp = blue_owned ? 0x2a : 0x0c;
+    }
+    return lttp;
+  }
 
   // §6.2 partial: progressive items translate via current-tier lookup.
   uint8 prog_lttp = progressive_to_lttp(placed);
