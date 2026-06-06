@@ -1085,19 +1085,23 @@ void DbgInventory_Render(void) {
       ImGui::TreePop();
     }
 
-    if (ImGui::TreeNode("Progress (advanced \xe2\x80\x94 will not update randomizer prize/goal tracking)")) {
-      ImGui::TextDisabled("Pendants");
-      // Bit order per rando.c:312-314 (vanilla bit allocation): bit0=Blue/ToH=
-      // Wisdom, bit1=Red/DP=Power, bit2=Green/EP=Courage.
-      Cheats_BitCheckbox("Pendant of Wisdom", 0xF374, 0);
-      Cheats_BitCheckbox("Pendant of Power", 0xF374, 1);
-      Cheats_BitCheckbox("Pendant of Courage", 0xF374, 2);
-      ImGui::TextDisabled("Crystals");
-      for (int b = 0; b < 7; b++) {
-        char l[16];
-        snprintf(l, sizeof l, "Crystal %d", b + 1);
-        Cheats_BitCheckbox(l, 0xF37A, b);
-      }
+    if (ImGui::TreeNode("Pendants & Crystals (advanced â will not update randomizer prize/goal tracking)")) {
+      // The Flags editor used to duplicate this (disabled under rando); pendants
+      // and crystals are dungeon prizes, so they live here with the dungeon items
+      // and work under rando too. Edits do NOT update rando prize/goal tracking.
+      // Pendant bits (link_which_pendants 0xF374) per rando.c:312-314: bit2 green/
+      // Courage (EP), bit1 red/Power (DP), bit0 blue/Wisdom (ToH).
+      ImGui::SeparatorText("Pendants");
+      Cheats_BitCheckbox("Pendant of Courage (green)", 0xF374, 2);
+      Cheats_BitCheckbox("Pendant of Power (red)", 0xF374, 1);
+      Cheats_BitCheckbox("Pendant of Wisdom (blue)", 0xF374, 0);
+      // Crystal bits (link_has_crystals 0xF37A) by dungeon per rando.c:315-321.
+      // (The numbered "Crystal N" goal-counter name does NOT track this bit order.)
+      ImGui::SeparatorText("Crystals");
+      static const char *const kCrystalLabel[7] = {
+          "Skull Woods", "Swamp Palace", "Ice Palace", "Turtle Rock",
+          "Palace of Darkness", "Misery Mire", "Thieves' Town" };
+      for (int b = 0; b < 7; b++) Cheats_BitCheckbox(kCrystalLabel[b], 0xF37A, b);
       ImGui::TreePop();
     }
 

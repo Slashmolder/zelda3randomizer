@@ -10,8 +10,6 @@
 //   sram_progress_indicator   0xF3C5  variables.h:1115  (story stage value 0..3)
 //   sram_progress_flags        0xF3C6  variables.h:1116  (story bits)
 //   sram_progress_indicator_3  0xF3C9  variables.h:1119  (NPC-trade bits)
-//   link_which_pendants        0xF374  variables.h:1107  (pendant bits)
-//   link_has_crystals          0xF37A  variables.h:1112  (crystal bits)
 //   save_ow_event_info         0xF280  variables.h:1061  (per-screen OW event bits)
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "imgui.h"
@@ -109,47 +107,6 @@ extern "C" void DbgFlags_Render(void) {
       ImGui::TextDisabled("(disabled under randomizer \xe2\x80\x94 managed separately)");
     }
 
-    // -- Pendants & Crystals -------------------------------------------------
-    // Pendant bits (link_which_pendants 0xF374), per rando.c:312-314:
-    //   bit2 0x04 = Green Pendant  (Courage, EP)
-    //   bit1 0x02 = Red Pendant    (Power,   DP)
-    //   bit0 0x01 = Blue Pendant   (Wisdom,  ToH)
-    // Crystal bits (link_has_crystals 0xF37A), per rando.c:315-321 (dungeon map):
-    //   0x01 SW, 0x02 SP, 0x04 IP, 0x08 TR, 0x10 PoD, 0x20 MM, 0x40 TT.
-    // These won't update the randomizer's prize/goal tracking and desync under
-    // prize_shuffle, so they live behind an "advanced" node AND are disabled
-    // under rando.
-    if (ImGui::TreeNode("Pendants & Crystals (advanced \xe2\x80\x94 will not update randomizer prize/goal tracking)")) {
-      if (rando) ImGui::BeginDisabled();
-
-      ImGui::SeparatorText("Pendants");
-      Cheats_BitCheckbox("Pendant of Courage (green)", 0xF374, 2);
-      Cheats_BitCheckbox("Pendant of Power (red)", 0xF374, 1);
-      Cheats_BitCheckbox("Pendant of Wisdom (blue)", 0xF374, 0);
-
-      ImGui::SeparatorText("Crystals");
-      // Labels are by RAM bit position (mask = 1<<b). Dungeon names per
-      // rando.c:315-321: 0x01 SW, 0x02 SP, 0x04 IP, 0x08 TR, 0x10 PoD, 0x20 MM,
-      // 0x40 TT. (The numbered "Crystal N" in rando.c is the goal-counter name,
-      // which does NOT track the bit order; we name by dungeon to avoid that
-      // ambiguity.)
-      static const char *const kCrystalLabel[7] = {
-          "Skull Woods",         // bit0 0x01
-          "Swamp Palace",        // bit1 0x02
-          "Ice Palace",          // bit2 0x04
-          "Turtle Rock",         // bit3 0x08
-          "Palace of Darkness",  // bit4 0x10
-          "Misery Mire",         // bit5 0x20
-          "Thieves' Town",       // bit6 0x40
-      };
-      for (int b = 0; b < 7; b++) Cheats_BitCheckbox(kCrystalLabel[b], 0xF37A, b);
-
-      if (rando) {
-        ImGui::EndDisabled();
-        ImGui::TextDisabled("(disabled under randomizer \xe2\x80\x94 prize_shuffle desync)");
-      }
-      ImGui::TreePop();
-    }
   }
   ImGui::EndChild();
   if (!can) ImGui::EndDisabled();
