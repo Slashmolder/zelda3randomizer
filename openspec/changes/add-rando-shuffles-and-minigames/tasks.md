@@ -15,6 +15,17 @@ This run finishes: runtime install, drop heart-drop guarantee + fallback,
 boss/drop self-checks, spoiler boss_assignments/drop_tables, live native
 toggles (experimental), kGenVer 48->49, corpus seeds, docs.
 Boxes ticked [x] below carry a `done:` note for what was verified/landed.
+
+CLOSE-OUT STATUS (2026-06-06): Drop shuffle + all 4 minigames are
+DONE end-to-end (gen + runtime + spoiler + UI). Boss shuffle ships GEN +
+SPOILER only; its runtime substitution was implemented then DEACTIVATED
+(see §2.4) because a pure sprite-type swap renders garbage without per-boss
+GFX loading. Boss-shuffle RUNTIME is carved to a FOLLOW-UP change
+(add-rando-boss-shuffle-runtime-gfx, not yet authored). Remaining before
+archive: §10 playtest (drops + 4 minigames; boss-runtime playtest moves to
+the follow-up), then §11. The change archives as "drops + minigames + boss
+generation"; the boss-runtime-rendering requirement is satisfied by the
+follow-up.
 ===================================================================== -->
 
 ## 1. Apply-time pre-flight
@@ -43,7 +54,7 @@ Boxes ticked [x] below carry a `done:` note for what was verified/landed.
   - Runs after `Place_AssumedFill` + sphere computation (per design.md D5 ordering).
   - Calls `BossShuffle_Compute`.
   - Stores result in slot state for runtime substitution.
-- [x] 2.4 Runtime boss substitution: when a dungeon's boss room loads, the sprite-handler consults the boss-assignment table and substitutes the correct boss sprite. <!-- done: src/sprite.c:3693 in Dungeon_LoadSingleSprite — `type = BossShuffle_RemapSpriteType(type)` + orphan-segment suppression at :3678. (Patch site is sprite.c, not dungeon.c.) -->
+- [~] 2.4 Runtime boss substitution: when a dungeon's boss room loads, the sprite-handler consults the boss-assignment table and substitutes the correct boss sprite. <!-- IMPLEMENTED THEN DEACTIVATED (2026-06-06 reconciliation): the substitution code exists at src/sprite.c (BossShuffle_RemapSpriteType + orphan-segment suppression), but slot install calls BossShuffle_Deactivate() unconditionally (rando.c:1853) and RandoGenerate_SelfCheck tsc_die()s if it ever installs (rando.c:3447) — a pure sprite-type swap renders GARBAGE because the boss room loads the VANILLA boss's GFX sheet (proven by an F12 dump of the EP boss room). Correct rendering needs per-boss sprite-GFX loading, a substantial graphics change held back to a FOLLOW-UP. The native-window toggle is a disabled "Coming soon" placeholder. So at runtime boss shuffle is INERT; only generation + spoiler ship. -->
 
 ## 3. Drop-pool shuffle module
 
