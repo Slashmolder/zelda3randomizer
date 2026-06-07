@@ -557,9 +557,7 @@ static void Panel_General() {
     // re-enables them. See TryBeginGenerate / RenderShareRow.
     ImGui::Checkbox("Randomize seed each generate", &s_randomize_seed_each_generate);
     HelpTooltip("On (default): rolls a fresh seed each Generate. Uncheck to "
-                "set a specific seed below."
-                ""
-                "");
+                "set a specific seed below.");
     // Reason for the greyed controls, placed BEFORE them so the cause precedes
     // the effect (UX review #7).
     if (s_randomize_seed_each_generate)

@@ -107,7 +107,7 @@ enum {
   // decouples mushroom/powder, so the tracker needs a distinct powder icon.
   kRandoIcon_Powder = 31,
   kRandoIcon_Shovel = 32, kRandoIcon_Heart = 33,
-  // Prize sprite icons (4bpp, decoded via DecodeAnimatedSpriteTile_variable).
+  // Prize icons (pendants + crystal), decoded from HUD scratch tiles.
   kRandoIcon_PendantGreen = 34, kRandoIcon_PendantRed = 35,
   kRandoIcon_PendantBlue = 36, kRandoIcon_Crystal = 37,
   // Tier/colour variants. The inventory table renders each item at a single
