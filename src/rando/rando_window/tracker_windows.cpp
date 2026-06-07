@@ -464,10 +464,10 @@ static void DrawCheckTracker(void *) {
   ImGui::Text("Checks: %d checked", n_checked);
   if (have_reach) {
     ImGui::SameLine();
-    ImGui::Text("· %d available", n_reachable);
+    ImGui::Text("%d available", n_reachable);
   }
   ImGui::SameLine();
-  ImGui::Text("· %d total", n_visible);
+  ImGui::Text("%d total", n_visible);
   if (n_visible > 0) {
     ImGui::ProgressBar((float)n_checked / (float)n_visible, ImVec2(-FLT_MIN, 0),
                        "");
@@ -523,10 +523,10 @@ static void DrawCheckTracker(void *) {
     const char *rname = (region_id == 0xFFFF) ? "(unbound)" : Rando_GetRegionName(region_id);
     char header[128];
     if (have_reach)
-      snprintf(header, sizeof header, "%s — %d avail · %d/%d checked###reg%u",
+      snprintf(header, sizeof header, "%s - %d avail, %d/%d checked###reg%u",
                rname, r_avail, r_checked, r_total, region_id);
     else
-      snprintf(header, sizeof header, "%s — %d/%d checked###reg%u",
+      snprintf(header, sizeof header, "%s - %d/%d checked###reg%u",
                rname, r_checked, r_total, region_id);
 
     if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
@@ -697,7 +697,7 @@ static void DrawMapTracker(void *) {
   ImGui::SliderFloat("Zoom", &s_zoom, 1.0f, 3.0f, "%.2fx");
   ImGui::SameLine();
 #endif
-  ImGui::TextDisabled("(green ok · yellow avail · grey locked)");
+  ImGui::TextDisabled("(green ok, yellow avail, grey locked)");
 
   const WorldPin *pins = s_world ? kDarkPins : kLightPins;
   int npins = s_world ? (int)(sizeof(kDarkPins) / sizeof(kDarkPins[0]))
@@ -825,9 +825,9 @@ static void DrawMapTracker(void *) {
                                           : ImVec4(0.55f, 0.55f, 0.58f, 1);
     ImGui::PushStyleColor(ImGuiCol_Text, c);
     if (have_reach)
-      ImGui::Text("%s — %d avail · %d/%d", Rando_GetRegionName(rid), avail, checked, total);
+      ImGui::Text("%s - %d avail, %d/%d", Rando_GetRegionName(rid), avail, checked, total);
     else
-      ImGui::Text("%s — %d/%d", Rando_GetRegionName(rid), checked, total);
+      ImGui::Text("%s - %d/%d", Rando_GetRegionName(rid), checked, total);
     ImGui::PopStyleColor();
   }
   ImGui::EndChild();

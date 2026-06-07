@@ -34,7 +34,7 @@ extern "C" void DbgFlags_Render(void) {
     ImGui::TextDisabled("Edits write live save RAM. Save in-game to keep them.");
   }
   ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1),
-                     "Debug flags \xe2\x80\x94 setting these can put the game in an inconsistent "
+                     "Debug flags - setting these can put the game in an inconsistent "
                      "story state; for testing only.");
   ImGui::Separator();
 
@@ -54,12 +54,12 @@ extern "C" void DbgFlags_Render(void) {
     // flag to flip to preview pendants vs crystals.
     ImGui::SeparatorText("Story stage");
     if (rando) {
-      static const char *const k[] = {"Zelda saved (pause: pendants)", "Master Sword (pause: crystals)"};
+      static const char *const k[] = {"Zelda saved", "Master Sword"};
       static const int v[] = {2, 3};
       Cheats_ComboVals("Story stage", 0xF3C5, k, v, 2);
-      ImGui::TextDisabled("(randomizer: cannot drop below \"Zelda saved\" \xe2\x80\x94 lower values softlock)");
+      ImGui::TextDisabled("(can't go below Zelda saved under randomizer)");
     } else {
-      static const char *const k[] = {"Intro", "Uncle left", "Zelda saved (pendants)", "Master Sword (crystals)"};
+      static const char *const k[] = {"Intro", "Uncle left", "Zelda saved", "Master Sword"};
       Cheats_Combo("Story stage", 0xF3C5, k, 4);
     }
 
@@ -107,7 +107,7 @@ extern "C" void DbgFlags_Render(void) {
     Cheats_BitCheckbox("Blacksmiths (freed/tempered)", 0xF3C9, 5);
     if (rando) {
       ImGui::EndDisabled();
-      ImGui::TextDisabled("(disabled under randomizer \xe2\x80\x94 managed separately)");
+      ImGui::TextDisabled("(disabled under randomizer - managed separately)");
     }
 
   }

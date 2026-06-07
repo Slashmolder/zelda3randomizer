@@ -125,7 +125,7 @@ extern "C" void RandoReach_Render(void) {
 
     const char *rname = (region_id == 0xFFFF) ? "(unbound)" : Rando_GetRegionName(region_id);
     char header[128];
-    snprintf(header, sizeof header, "%s — %d/%d reachable###reg%u",
+    snprintf(header, sizeof header, "%s - %d/%d reachable###reg%u",
              rname ? rname : "(region)", r_reach, r_total, region_id);
     if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
 
@@ -164,7 +164,7 @@ extern "C" void RandoReach_Render(void) {
       if (checked) {
         ImGui::TextColored(col_checked, "checked");
       } else if (!have_reach) {
-        ImGui::TextColored(col_locked, "—");
+        ImGui::TextColored(col_locked, "-");
       } else if (reachable) {
         ImGui::TextColored(col_reach, "reachable");
       } else {

@@ -269,8 +269,8 @@ static void Panel_RecommendedFeatures() {
   ImGui::TextWrapped(
       "Quality-of-life features baked into the seed you generate here. They ride "
       "along with the generated slot and are NOT part of the settings hash or "
-      "share string \xe2\x80\x94 toggling them won't change the seed's identity. "
-      "(The same features for normal play live under Game Settings \xe2\x86\x92 "
+      "share string - toggling them won't change the seed's identity. "
+      "(The same features for normal play live under Game Settings -> "
       "Gameplay; this panel only sets what gets stamped into this seed.)");
   ImGui::Spacing();
   for (int i = 0; i < kRecCount; i++) {
@@ -417,7 +417,7 @@ static void Panel_General() {
       }
       ImGui::EndCombo();
     }
-    HelpTooltip("swordless: no swords in the pool — hammer/net stand in for the\n"
+    HelpTooltip("swordless: no swords in the pool - hammer/net stand in for the\n"
                 "sword (Ganon, Agahnim, medallions, tablets, curtains). UNVERIFIED\n"
                 "on US 1.0; verify by playtest before racing it.");
   }
@@ -448,7 +448,7 @@ static void Panel_General() {
   if (EnumCombo("Logic", &s->logic, kLogicLabels, 3)) changed = true;
   HelpTooltip("NoGlitches (default) = vanilla logic.\n"
               "OverworldGlitches / MajorGlitches assume out-of-logic glitch\n"
-              "routes. UNVERIFIED on US 1.0 (ALTTPR targets JP 1.0) — the\n"
+              "routes. UNVERIFIED on US 1.0 (ALTTPR targets JP 1.0) - the\n"
               "spoiler flags an `unverified_tricks_enabled` warning.");
   // Tricks — multi-select bitmask. Each checkbox toggles one settings.tricks bit.
   if (ImGui::TreeNodeEx("Tricks (out-of-logic techniques)",
@@ -466,7 +466,7 @@ static void Panel_General() {
         changed = true;
       }
       if (!kTrickWired[i])
-        HelpTooltip("Fork-invented placeholder — no ALTTPR logic gate is wired "
+        HelpTooltip("Fork-invented placeholder - no ALTTPR logic gate is wired "
                     "to this bit, so toggling it changes nothing.");
     }
     ImGui::TreePop();
@@ -528,14 +528,14 @@ static void Panel_General() {
       s->region_boss_hearts_in_pool = v ? 0 : 1;
       changed = true;
     }
-    HelpTooltip("Bosses reward random items instead of hearts.");
+    HelpTooltip("Off (default): each boss drops its heart. On: hearts join the shuffled item pool.");
   }
 
   // ---- Locked settings (informational; not yet configurable) ----
   // Rendered as plain read-only text under a collapsed header rather than a row
   // of disabled controls, which read as broken/confusing widgets.
   if (ImGui::CollapsingHeader("Locked settings (fixed in this version)")) {
-    ImGui::TextDisabled("These axes aren't configurable yet — every seed uses these values:");
+    ImGui::TextDisabled("These axes aren't configurable yet - every seed uses these values:");
     ImGui::BulletText("Pyramid bow upgrade: Silvers");
   }
   HelpTooltip("pinned in Phase A");
@@ -556,10 +556,10 @@ static void Panel_General() {
     // a seed (uncheck + type, or paste a share string — which also unchecks)
     // re-enables them. See TryBeginGenerate / RenderShareRow.
     ImGui::Checkbox("Randomize seed each generate", &s_randomize_seed_each_generate);
-    HelpTooltip("On (default): a fresh random seed is rolled automatically every "
-                "time you press Generate, so you never have to set one. Uncheck to "
-                "type or keep a specific seed below. (Pasting a share string also "
-                "unchecks this and adopts that seed.)");
+    HelpTooltip("On (default): rolls a fresh seed each Generate. Uncheck to "
+                "set a specific seed below."
+                ""
+                "");
     // Reason for the greyed controls, placed BEFORE them so the cause precedes
     // the effect (UX review #7).
     if (s_randomize_seed_each_generate)
@@ -618,7 +618,7 @@ static void Panel_General() {
     // isn't chosen until Generate, so the cached share string would be stale —
     // show a placeholder rather than a value the player can't actually use yet.
     if (s_randomize_seed_each_generate)
-      ImGui::TextWrapped("share string: (rolled at Generate \xe2\x80\x94 seed not chosen yet)");
+      ImGui::TextWrapped("share string: (rolled at Generate - seed not chosen yet)");
     else
       ImGui::TextWrapped("share string: %s", b->share_string[0] ? b->share_string : "(none)");
   }
@@ -818,7 +818,7 @@ static void Panel_Shuffles() {
     ImGui::BeginDisabled();
     bool off = false;
     ImGui::Checkbox("Boss shuffle", &off);
-    HelpTooltip("Coming soon — needs per-boss graphics loading before it renders "
+    HelpTooltip("Coming soon - needs per-boss graphics loading before it renders "
                 "correctly.");
     ImGui::Checkbox("Enemy shuffle", &off);
     ImGui::Checkbox("Glitches", &off);
@@ -884,12 +884,12 @@ static void Panel_Trackers() {
     running = AutoTracker_SetEnabled(toggle);  // reflects the actual result (a failed bind stays off)
 
   if (running) {
-    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "listening on %s:%u  —  %d client(s)",
+    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "listening on %s:%u  -  %d client(s)",
                        at_remote ? "0.0.0.0" : "127.0.0.1", (unsigned)at_port,
                        AutoTracker_GetClientCount());
     if (at_remote)
       ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.2f, 1.0f),
-                         "Remote access is ON — reachable from the local network.");
+                         "Remote access is ON - reachable from the local network.");
   } else {
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "off  (would bind %s:%u)",
                        at_remote ? "0.0.0.0" : "127.0.0.1", (unsigned)at_port);
@@ -1208,7 +1208,7 @@ static void RenderShareRow() {
         if (memcmp(b->pending_hash, ss.settings_hash, 16) != 0) {
           snprintf(s_paste_error, sizeof s_paste_error,
                    "Seed adopted. Note: current settings differ from the pasted "
-                   "string's settings (the share string cannot restore settings — "
+                   "string's settings (the share string cannot restore settings - "
                    "pick them to match).");
         }
       } else {
@@ -1485,14 +1485,14 @@ static void RandoWindow_TabSelfCheck(void) {
   if (TabListContains(tabs, n, kTab_Spoiler)) {
     fprintf(stderr,
             "[rando_window] SELF-CHECK FAILED: Spoiler tab present under "
-            "race-mode (must be omitted). (§21.3)\n");
+            "race-mode (must be omitted).\n");
     exit(2);
   }
   n = RandoWindow_BuildTabList(/*race_mode=*/false, tabs, 8);
   if (!TabListContains(tabs, n, kTab_Spoiler)) {
     fprintf(stderr,
             "[rando_window] SELF-CHECK FAILED: Spoiler tab missing for a "
-            "non-race generation (must be present). (§21.3)\n");
+            "non-race generation (must be present).\n");
     exit(2);
   }
 }
