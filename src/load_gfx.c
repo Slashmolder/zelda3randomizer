@@ -555,7 +555,15 @@ void WriteTo4BPPBuffer_at_7F4000(uint8 a) {  // 80d4db
   Expand3To4High(&g_ram[0x9000] + 0x2d40 + 0x40, src + 0x180, g_ram, 2);
 }
 
+// add-rando-field-item-sprites: which gfx index currently occupies the shared
+// receive-item VRAM slot (chars 0x24/0x34), so the field-item drawer can skip a
+// redundant re-decompress when it already owns the slot. 0xFFFF = unknown/dirty.
+// Any DecodeAnimatedSpriteTile_variable call (item receipt, direct-grant icon,
+// or another field item) invalidates it, so the next field-item draw repaints.
+uint16 g_recv_item_slot_owner = 0xFFFFu;
+
 void DecodeAnimatedSpriteTile_variable(uint8 a) {  // 80d4ed
+  g_recv_item_slot_owner = 0xFFFFu;  // slot content is about to change
   uint8 y = (a == 0x23 || a >= 0x37) ? 0x5d :
             (a == 0xc || a >= 0x24) ? 0x5c : 0x5b;
   Decomp_spr(&g_ram[0x14600], y);

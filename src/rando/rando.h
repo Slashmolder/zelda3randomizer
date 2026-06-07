@@ -233,6 +233,39 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 
 // ---------------------------------------------------------------------------
+// Field item sprites (add-rando-field-item-sprites) — draw the PLACED item's
+// graphics at free-standing item locations instead of the vanilla sprite.
+//
+// The gfx come from the existing per-item receipt decompressor
+// (DecodeAnimatedSpriteTile_variable) writing the shared receive-item VRAM slot
+// (chars 0x24/0x34); the item->gfx mapping reuses kDirectGrantIcons[]. The draw
+// helper loads the slot on demand (cached via g_recv_item_slot_owner). Because
+// that slot holds ONE item at a time, only one field item per screen renders its
+// real gfx — a second standing item on the same screen shows this one's
+// (documented limitation; phase 2 = a dedicated slot).
+//
+// Split across TUs: the resolver (placement + icon table) lives in rando.c; the
+// gfx-load + OAM draw live in sprite.c (the OAM/gfx primitives are there).
+// ---------------------------------------------------------------------------
+
+// True when field-item sprites should be drawn: active rando slot AND the
+// client-local field_item_sprites toggle (read live). Inert in non-rando play.
+bool Rando_FieldItemSpritesActive(void);
+
+// Resolve a free-standing location to a drawable placed-item icon. Returns
+// false (draw the vanilla sprite) when field-item sprites are inactive, the
+// placement equals the vanilla item, or the placed item has no receive gfx
+// (the audio-only sentinel). On true, fills the kDirectGrantIcons fields.
+bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
+                            uint8 *out_gfx, uint8 *out_big, uint8 *out_oam_flags);
+
+// DRAW (call each frame in place of the vanilla sprite draw): draw the placed
+// item's icon (chars 0x24/0x34) at sprite `k`'s position, loading its gfx into
+// the shared slot on demand. Returns true when it drew (caller skips the vanilla
+// draw); false when the vanilla sprite should be drawn instead.
+bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id);
+
+// ---------------------------------------------------------------------------
 // Rando_ChestDispatch — universal chest grant-site hook.
 //
 // Hooked at Link_PerformOpenChest, AFTER OpenChestForItem returns the item

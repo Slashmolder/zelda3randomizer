@@ -1553,6 +1553,66 @@ void Sprite_PrepAndDrawSingleLargeNoPrep(int k, PrepOamCoordsRet *info) {  // 86
     SpriteDraw_Shadow(k, info);
 }
 
+// add-rando-field-item-sprites (draw half) — draw the placed item's gfx for a
+// free-standing item sprite, loading it into the shared receive-item VRAM slot
+// on demand. See rando.h for the contract.
+//
+// Generic for any standing-item sprite: a single call resolves the placement,
+// (re)loads the gfx only when the slot isn't already showing it, and draws. The
+// slot (chars 0x24/0x34) is shared with the item-receipt + direct-grant-icon
+// ancillae; g_recv_item_slot_owner (invalidated by every gfx load) lets us skip
+// the decompress when we already own it, yet repaint after a receipt clobbers
+// it. Single slot => one field item per screen renders its real gfx; a second
+// standing item on the same screen shows this one's (documented limitation; a
+// dedicated slot is the phase-2 fix).
+bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id) {
+  uint8 gfx, big, oam_flags;
+  if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
+    return false;  // vanilla placement / no gfx — caller draws the vanilla sprite
+  PrepOamCoordsRet info;
+  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
+    return true;   // off-screen: handled (don't draw the vanilla sprite either)
+  if (g_recv_item_slot_owner != gfx) {
+    // Mirror the receive-item gfx load (misc.c AncillaAdd_ItemReceipt): shield
+    // decompress BEFORE the tile expand, sword AFTER.
+    if (gfx == 0x20 || gfx == 0x2d || gfx == 0x2e) {
+      DecompressShieldGraphics();
+      Palette_Load_Shield();
+    }
+    DecodeAnimatedSpriteTile_variable(gfx);  // resets g_recv_item_slot_owner
+    if (gfx == 6 || gfx == 0x18) {
+      DecompressSwordGraphics();
+      Palette_Load_Sword();
+    }
+    g_recv_item_slot_owner = gfx;  // we own the slot now
+  }
+  // Reserve our own OAM block before drawing. A standing item sprite reserves
+  // only ((sprite_flags2&0x1f)+1)*4 BYTES = one 4-byte OAM entry (e.g. the
+  // mushroom), enough for its vanilla single-tile draw. An 8x16 item (big==0)
+  // needs TWO entries; without a fresh reservation the second tile (oam+1)
+  // overflows into the next sprite's block and gets clobbered wherever the
+  // scene is busy (proven by an F12 OAM dump: outdoors a rupee lost its bottom
+  // half to an adjacent sprite; indoors, with no following sprite, it survived).
+  // Reserve from the same region the sprite system uses for this sprite so
+  // layering is unchanged. (4 bytes per entry: 8 = two entries, 4 = one.)
+  uint8 nbytes = (big == 0) ? 8 : 4;
+  if (sort_sprites_setting) {
+    if (sprite_floor[k])
+      Oam_AllocateFromRegionF(nbytes);
+    else
+      Oam_AllocateFromRegionD(nbytes);
+  } else {
+    Oam_AllocateFromRegionA(nbytes);
+  }
+  // Draw from the slot exactly as Ancilla44_RandoIconReceipt does:
+  // char 0x24 (top), 0x34 (bottom) when 8x16.
+  OamEnt *oam = GetOamCurPtr();
+  SetOamHelper0(oam, info.x, info.y, 0x24, oam_flags, big);
+  if (big == 0)
+    SetOamHelper0(oam + 1, info.x, info.y + 8, 0x34, oam_flags, 0);
+  return true;
+}
+
 void SpriteDraw_Shadow_custom(int k, PrepOamCoordsRet *info, uint8 a) {  // 86dc5c
   uint16 y = Sprite_GetY(k) + a;
   info->y = y;

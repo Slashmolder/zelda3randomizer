@@ -144,3 +144,18 @@ icons:
   SmallKey_MiseryMire:         { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24)" }
   SmallKey_TurtleRock:         { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24)" }
   SmallKey_GanonsTower:        { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24)" }
+
+  # --- ALTTPR / Retro direct-grant items with no vanilla LttP receive bundle ---
+  #     These had no LttP code, so on the field (add-rando-field-item-sprites)
+  #     they fell back to the vanilla sprite and at grant they were audio-only.
+  #     Map each to the closest existing bundle:
+  #       GenericKey (Retro shared key) -> small-key bundle (gfx 0x0f).
+  #       Rupoor (ALTTPR junk) -> green-rupee bundle: ALTTPR's Rupoor IS a green
+  #         rupee. Values = the green-rupee (Rupee1) receive code 0x34:
+  #         gfx kReceiveItemGfx[0x34]=0x24, big kReceiveItem_Tab1[0x34]=0,
+  #         oam_flags (kWishPond2_OamFlags[0x34]=4)*2|0x30 = 0x38.
+  #     TriforcePiece stays audio-only / vanilla field fallback: it has NO sprite
+  #     gfx bundle (Triforce-Hunt HUD counter only); a real field icon would need
+  #     new triforce sprite art (asset-pipeline work), out of scope here.
+  GenericKey: { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24); Retro shared key" }
+  Rupoor:     { gfx: 0x24, big: 0, oam_flags: 0x38, notes: "green-rupee bundle (lttp 0x34); ALTTPR Rupoor is a green rupee" }

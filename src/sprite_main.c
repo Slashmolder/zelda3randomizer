@@ -2182,8 +2182,13 @@ void MasterSword_Main(int k) {  // 8588d6
     sprite_state[k] = 0;
     return;
   }
-  if (sprite_ai_state[k] != 5)
-    MasterSword_Draw(k);
+  if (sprite_ai_state[k] != 5) {
+    // add-rando-field-item-sprites: show the placed item on the pedestal (and
+    // rising during the ceremony) instead of the Master Sword. Falls back to the
+    // 6-tile sword when the placement is the sword, has no gfx, or rando is off.
+    if (!Rando_TryDrawFieldItemSprite(k, LOC_Master_Sword_Pedestal, ITEM_L2Sword))
+      MasterSword_Draw(k);
+  }
   switch (sprite_ai_state[k]) {
   case 0:  // waiting
     if (Sprite_CheckIfLinkIsBusy() || !Sprite_CheckDamageToLink_same_layer(k) || link_direction_facing != 2 ||
@@ -6576,7 +6581,9 @@ void SpritePrep_Mushroom(int k) {  // 85ee53
 }
 
 void Sprite_E7_Mushroom(int k) {  // 85ee78
-  SpriteDraw_SingleLarge(k);
+  // add-rando-field-item-sprites: draw the placed item; vanilla mushroom otherwise.
+  if (!Rando_TryDrawFieldItemSprite(k, LOC_Mushroom, ITEM_Mushroom))
+    SpriteDraw_SingleLarge(k);
   if (Sprite_CheckIfLinkIsBusy())
     return;
 
@@ -6634,9 +6641,19 @@ void Sprite_HeartContainer(int k) {  // 85ef47
     sprite_G[k] = 1;
   }
 
+  // add-rando-field-item-sprites: resolve the boss-heart location once, shared by
+  // the field-item draw below and the grant dispatch further down.
+  uint16 boss_loc = 0xFFFFu;
+  if (player_is_indoors && (enhanced_features1 & kFeatures1_RandomizerActive))
+    boss_loc = Rando_GetBossHeartLocation(BYTE(cur_palace_index_x2) >> 1);
+
   if (BYTE(dungeon_room_index2) == 6 && !sprite_z[k])
     SpriteDraw_WaterRipple_WithOamAdjust(k);
-  SpriteDraw_SingleLarge(k);
+  // Show the placed boss-reward item (e.g. under bossHeartsInPool) instead of the
+  // heart container; vanilla heart when the placement is the heart / no gfx / off.
+  if (boss_loc == 0xFFFFu ||
+      !Rando_TryDrawFieldItemSprite(k, boss_loc, ITEM_BossHeartContainer))
+    SpriteDraw_SingleLarge(k);
   if (Sprite_ReturnIfInactive(k))
     return;
   sprite_z_vel[k] -= 2;
@@ -6663,10 +6680,7 @@ void Sprite_HeartContainer(int k) {  // 85ef47
   // slots, so the dispatch is a no-op (returns the original lttp_code) for
   // vanilla play. When Phase B's boss-shuffle rolls out, the dispatch
   // already-fires correctly.
-  uint16 boss_loc = 0xFFFFu;
-  if (player_is_indoors && (enhanced_features1 & kFeatures1_RandomizerActive)) {
-    boss_loc = Rando_GetBossHeartLocation(BYTE(cur_palace_index_x2) >> 1);
-  }
+  // boss_loc resolved at the top of the handler (shared with the field-item draw).
   if (sprite_A[k]) {
     uint8 lttp_code = 0x3e;
     if (boss_loc != 0xFFFFu) {
@@ -6707,15 +6721,69 @@ void Sprite_HeartContainer(int k) {  // 85ef47
     dung_savegame_state_bits |= (sprite_x_hi[k] & 1) ? 0x2000 : 0x4000;
 }
 
+// §6.5 standing/freestanding Piece-of-Heart location resolution. Sprite_Heart
+// Piece is the single handler for every standing/overworld/cave PoH pickup;
+// this maps the current (screen | room) to the specific ALTTPR location so the
+// field-item draw, the prep-time gfx DMA, and the collect-time grant dispatch
+// all agree. Returns 0xFFFF when the spot isn't an unambiguously-wired PoH.
+//
+// Screen/room keys mirror HeartUpgrade_SetObtainedFlag's discriminators and are
+// sourced from z3randomizer heartpieces.asm LoadOutdoorValue/LoadIndoorValue,
+// cross-referenced to the ALTTPR 0x18014x / 0x18000x table order. Only entries
+// whose (screen|room) -> LOC mapping is unambiguous are wired.
+static uint16 StandingPoH_Location(int k) {
+  static const struct { uint8 screen; uint16 loc; } kStandingPoHOutdoor[] = {
+    { 0x03, LOC_Spectacle_Rock },     // z3r $03 (LinkPosX-gated vs Ether; PoH sprite is unique here)
+    { 0x05, LOC_Floating_Island },    // z3r $05 HeartPiece_Mountain_Warp = 0x180141 Floating Island
+    { 0x28, LOC_Maze_Race },          // z3r $28 HeartPiece_Maze
+    { 0x30, LOC_Desert_Ledge },       // z3r $30 (LinkPosX-gated vs Bombos; PoH sprite is unique here)
+    { 0x35, LOC_Lake_Hylia_Island },  // z3r $35 HeartPiece_Lake
+    { 0x3B, LOC_Sunken_Treasure },    // z3r $3B HeartPiece_Swamp = 0x180145 Sunken Treasure
+    { 0x4A, LOC_Bumper_Cave },        // z3r $4A HeartPiece_Cliffside = 0x180146 Bumper Cave
+    { 0x5B, LOC_Pyramid },            // z3r $5B HeartPiece_Pyramid
+    { 0x81, LOC_Zora_s_Ledge },       // z3r $81 HeartPiece_Zora (registry lists Flippers; in-game sprite is the PoH)
+  };
+  if (!player_is_indoors) {
+    uint8 scr = BYTE(overworld_screen_index);
+    for (int i = 0; i < (int)(sizeof kStandingPoHOutdoor / sizeof kStandingPoHOutdoor[0]); i++) {
+      if (kStandingPoHOutdoor[i].screen == scr)
+        return kStandingPoHOutdoor[i].loc;
+    }
+    return 0xFFFFu;
+  }
+  // Indoor: dungeon_room_index. Room 283 hosts two PoH; sprite_x_hi[k]&1 picks
+  // (bit clear = Cave 45, set = Graveyard Ledge), matching the obtained-bit
+  // split in HeartUpgrade_SetObtainedFlag.
+  switch (dungeon_room_index) {
+    case 225: return LOC_Lost_Woods_Hideout;   // z3r room 225 Forest_Thieves
+    case 226: return LOC_Lumberjack_Tree;      // z3r room 226
+    case 234: return LOC_Spectacle_Rock_Cave;  // z3r room 234 Spectacle_Cave
+    case 283: return (sprite_x_hi[k] & 1) ? LOC_Graveyard_Ledge : LOC_Cave_45;
+    case 294: return LOC_Checkerboard_Cave;    // z3r room 294 = 0x180005 Checkerboard Cave
+    // Hammer Pegs (room 295) intentionally omitted — dispatched in overworld.c;
+    // wiring it here would double-grant.
+    default:  return 0xFFFFu;
+  }
+}
+
 void Sprite_HeartPiece(int k) {  // 85f020
   static const uint16 kHeartPieceMsg[4] = {0x158, 0x155, 0x156, 0x157};
+  // add-rando-field-item-sprites: resolve the placed-item location once so the
+  // draw swap and the collect dispatch agree on the same key.
+  uint16 rando_loc = (enhanced_features1 & kFeatures1_RandomizerActive)
+                         ? StandingPoH_Location(k) : 0xFFFFu;
   if (!sprite_ai_state[k]) {
     sprite_ai_state[k]++;
     HeartUpgrade_CheckIfAlreadyObtained(k);
     if (!sprite_state[k])
       return;
   }
-  SpriteDraw_SingleLarge(k);
+  // Draw the placed item's sprite under rando (the helper loads its gfx on
+  // demand). Falls back to the vanilla PoH sprite when the placement is a PoH,
+  // has no gfx, or rando is inactive.
+  if (rando_loc == 0xFFFFu ||
+      !Rando_TryDrawFieldItemSprite(k, rando_loc, ITEM_PieceOfHeart))
+    SpriteDraw_SingleLarge(k);
   if (Sprite_ReturnIfInactive(k))
     return;
   if (Sprite_CheckIfLinkIsBusy())
@@ -6765,43 +6833,9 @@ void Sprite_HeartPiece(int k) {  // 85f020
   // Vanilla (rando-inactive) play is unchanged. — PLAYTEST REQUIRED (slot
   // grant path has no automated test).
   if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    // Outdoor: BYTE(overworld_screen_index) -> standing-PoH LOC.
-    static const struct { uint8 screen; uint16 loc; } kStandingPoHOutdoor[] = {
-      { 0x03, LOC_Spectacle_Rock },     // z3r LoadOutdoorValue $03 (LinkPosX-gated vs Ether; PoH sprite is unique here)
-      { 0x05, LOC_Floating_Island },    // z3r $05 HeartPiece_Mountain_Warp = ALTTPR 0x180141 Floating Island
-      { 0x28, LOC_Maze_Race },          // z3r $28 HeartPiece_Maze
-      { 0x30, LOC_Desert_Ledge },       // z3r $30 (LinkPosX-gated vs Bombos; PoH sprite is unique here)
-      { 0x35, LOC_Lake_Hylia_Island },  // z3r $35 HeartPiece_Lake
-      { 0x3B, LOC_Sunken_Treasure },    // z3r $3B HeartPiece_Swamp = ALTTPR 0x180145 Sunken Treasure
-      { 0x4A, LOC_Bumper_Cave },        // z3r $4A HeartPiece_Cliffside = ALTTPR 0x180146 Bumper Cave
-      { 0x5B, LOC_Pyramid },            // z3r $5B HeartPiece_Pyramid
-      { 0x81, LOC_Zora_s_Ledge },       // z3r $81 HeartPiece_Zora (registry lists vanilla_item Flippers; the in-game sprite is the PoH)
-    };
-    // Indoor: dungeon_room_index (full 16-bit) -> standing-PoH LOC. Room 283
-    // hosts two; sprite_x_hi[k]&1 picks (bit clear = Cave 45, set = Graveyard
-    // Ledge), matching z3r LoadIndoorValue's LinkPosX split + the obtained-bit
-    // (0x4000 = bit clear, 0x2000 = bit set) below.
-    uint16 loc = 0xFFFFu;
-    if (!player_is_indoors) {
-      uint8 scr = BYTE(overworld_screen_index);
-      for (int i = 0; i < (int)(sizeof kStandingPoHOutdoor / sizeof kStandingPoHOutdoor[0]); i++) {
-        if (kStandingPoHOutdoor[i].screen == scr) { loc = kStandingPoHOutdoor[i].loc; break; }
-      }
-    } else {
-      uint16 room = dungeon_room_index;
-      switch (room) {
-        case 225: loc = LOC_Lost_Woods_Hideout; break;   // z3r room 225 Forest_Thieves
-        case 226: loc = LOC_Lumberjack_Tree; break;      // z3r room 226
-        case 234: loc = LOC_Spectacle_Rock_Cave; break;  // z3r room 234 Spectacle_Cave
-        case 283:                                        // z3r room 283 split by Link X-half
-          loc = (sprite_x_hi[k] & 1) ? LOC_Graveyard_Ledge : LOC_Cave_45;
-          break;
-        case 294: loc = LOC_Checkerboard_Cave; break;    // z3r room 294 (Mire_Warp label) = ALTTPR 0x180005 Checkerboard Cave
-        // TODO(playtest): Hammer Pegs (room 295) intentionally omitted —
-        // already dispatched in overworld.c; wiring it here would double-grant.
-        default: break;
-      }
-    }
+    // Resolved once at the top of the handler by StandingPoH_Location(k) — the
+    // same key the field-item draw + prep-time gfx DMA use, so all three agree.
+    uint16 loc = rando_loc;
     if (loc != 0xFFFFu) {
       uint8 lttp = Rando_DispatchVanillaGrant(loc, ITEM_PieceOfHeart, 0x17);
       if (lttp != 0x17) {
@@ -7412,7 +7446,9 @@ void Sprite_BonkKey(int k) {  // 85fc04
 }
 
 void Sprite_BookOfMudora(int k) {  // 85fc9e
-  SpriteDraw_SingleLarge(k);
+  // add-rando-field-item-sprites: draw the placed item; vanilla book otherwise.
+  if (!Rando_TryDrawFieldItemSprite(k, LOC_Library, ITEM_BookOfMudora))
+    SpriteDraw_SingleLarge(k);
   if (Sprite_ReturnIfInactive(k))
     return;
   if (Sprite_CheckDamageToLink_same_layer(k))

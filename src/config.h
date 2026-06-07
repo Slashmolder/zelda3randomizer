@@ -126,6 +126,14 @@ typedef struct Config {
   uint8 cosmetic_palette_mode;   // kCosmeticPalette_* (0 = vanilla / off)
   bool cosmetic_music_shuffle;   // remap area background songs deterministically
   const char *cosmetic_sprite_dir;  // folder of .zspr to pick from; NULL = off
+
+  // Field item sprites (add-rando-field-item-sprites): draw the placed item's
+  // graphics at free-standing item locations under an active rando slot. Visual
+  // only; never touches placement / share_string / settings_hash / generation.
+  // Read live (per-frame) so toggling takes effect without a restart. Default
+  // ON (ALTTPR-style); set FieldItemSprites = 0 in [Graphics] to see vanilla
+  // sprites. Inert in non-rando play regardless.
+  bool field_item_sprites;       // default true
 } Config;
 
 enum {

@@ -536,6 +536,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
     } else if (StringEqualsNoCase(key, "CosmeticSeed")) {
       g_config.cosmetic_seed = (uint64)strtoull(value, NULL, 0);
       return true;
+    } else if (StringEqualsNoCase(key, "FieldItemSprites")) {
+      return ParseBool(value, &g_config.field_item_sprites);
     }
   } else if (section == 2) {
     if (StringEqualsNoCase(key, "EnableAudio")) {
@@ -794,6 +796,7 @@ void ParseConfigFile(const char *filename) {
   g_config.rando_spoiler_dir = NULL;         // resolved at runtime: <exe-dir>/spoilers
   g_config.rando_race_mode_default = false;
   g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
+  g_config.field_item_sprites = true;        // add-rando-field-item-sprites: ON by default
 
   // [AutoTracker] defaults — opt-in, observation-only, localhost-only.
   g_config.auto_tracker_enabled = false;

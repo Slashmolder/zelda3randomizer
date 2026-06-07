@@ -478,6 +478,47 @@ every platform) is asserted in CI by `Cosmetic_SelfCheck` (part of
 heart-beep / menu speed / quickswap (cosmetic *setters*, not shuffles — a separate
 QoL change); enemy/enemizer shuffle (gameplay — `add-rando-shuffles-and-minigames`).
 
+## Field item sprites
+
+Under an active randomizer slot, free-standing item locations draw the **placed**
+item's graphic instead of the vanilla sprite — a Piece-of-Heart spot that grants
+the Bow shows a Bow, a Library book randomized to a red rupee shows a red rupee.
+It's **on by default and has no UI** (a hidden `FieldItemSprites` key in
+`[Graphics]`, default `1`, exists only as a dev/escape-hatch). Purely visual:
+gated on `kFeatures1_RandomizerActive`, so vanilla play is byte-identical, and it
+**never** touches placement / share string / `settings_hash` / `kGeneratorVersion`
+/ the corpus (a draw-only consumer of the placement table).
+
+**How it works.** The draw resolves the location's placed item with
+`Placement_Lookup`, maps it to an LttP receive code via the same chain the grant
+uses (`Rando_VanillaItemForRegistryId` + the progressive boomerang-colour remap,
+then `progressive_to_lttp`), and renders the receive-animation graphic exactly as
+`Ancilla_ReceiveItem_Draw` does — gfx/size/palette indexed by that code
+(`kReceiveItemGfx` / `kReceiveItem_Tab1` / `kWishPond2_OamFlags`), chars
+`0x24`/`0x34` out of the shared receive-item VRAM slot. The slot is loaded on
+demand (cached by `g_recv_item_slot_owner`, invalidated by any
+`DecodeAnimatedSpriteTile_variable` call) so it survives an item receipt or
+direct-grant icon repainting it. 8×16 items reserve their own OAM block so the
+bottom tile can't be clobbered by a busy scene.
+
+**Covered sites:** all standing Pieces of Heart (Zora's Ledge, Pyramid, Lake
+Hylia, Spectacle Rock, Sunken Treasure, the cave/hideout PoH, …), the Book of
+Mudora, the Mushroom, the Master Sword pedestal (the placed item rises through
+the pendant ceremony), and the boss-reward Heart Container (visible under
+`bossHeartsInPool`).
+
+**Out of scope / limitations:**
+- **Chests** stay closed (ALTTPR doesn't reveal chest contents).
+- **Medallion tablets** stay tablets — they render a stone slab you read, not a
+  floating item; the location still grants the placed item.
+- **Items with no receive graphic** (HalfMagic / QuarterMagic / TriforcePiece) fall
+  back to the vanilla sprite.
+- **One field item per screen** renders its real graphic: the receive-item VRAM
+  slot holds a single item at a time, so two *different* field items sharing a
+  screen would show the same (last-loaded) graphic. Standing items are effectively
+  always solo per screen, so this is documented rather than fixed; a dedicated
+  per-item slot is the path if a real two-item screen ever turns up.
+
 ## Tracker windows (PC)
 
 On PC (behind `Z3R_NATIVE_SETTINGS_WINDOW`, the same gate as the native settings

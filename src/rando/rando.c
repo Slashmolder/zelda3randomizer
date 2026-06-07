@@ -1066,6 +1066,82 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
 }
 
 // ---------------------------------------------------------------------------
+// Field item sprites (add-rando-field-item-sprites) — resolver half. The draw
+// half (gfx DMA + OAM) lives in sprite.c. See rando.h for the contract.
+// ---------------------------------------------------------------------------
+bool Rando_FieldItemSpritesActive(void) {
+  // Active rando slot AND the client-local field_item_sprites toggle (read live
+  // from zelda3.ini / the native window, so toggling takes effect without a
+  // restart). Inert in non-rando play regardless of the toggle.
+  return (enhanced_features1 & kFeatures1_RandomizerActive) != 0 &&
+         g_config.field_item_sprites;
+}
+
+// Palette/priority table, indexed by LttP receive code (defined in sprite_main.c,
+// declared in sprite.h — redeclared here to avoid pulling sprite.h into rando.c).
+extern const uint8 kWishPond2_OamFlags[76];
+
+// Resolve a placed item to the LttP receive code that drives its receive-
+// animation graphic — the SAME chain Rando_DispatchVanillaGrant uses to pick the
+// shown item (Rando_VanillaItemForRegistryId primary + the progressive-boomerang
+// colour remap, falling back to progressive_to_lttp), MINUS the side effects.
+// Returns 0xFF when the item has no LttP receive code. Keep in sync with the
+// resolution block in Rando_DispatchVanillaGrant (a draw/grant drift here is the
+// bug class that left rupees, then boomerangs, drawing as the vanilla sprite).
+static uint8 rando_item_display_lttp(uint16 placed) {
+  uint8 lttp = Rando_VanillaItemForRegistryId(placed);
+  if (lttp != 0xFF) {
+    if (placed == ITEM_BlueBoomerang || placed == ITEM_RedBoomerang) {
+      bool blue_owned = (g_rando_boomerang_owned & kRandoBoomerang_Blue) ||
+                        link_item_boomerang >= 1;
+      lttp = blue_owned ? 0x2a : 0x0c;  // red once blue owned, else blue
+    }
+    return lttp;
+  }
+  return progressive_to_lttp(placed);  // progressive items (sword/bow/...) or 0xFF
+}
+
+bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
+                            uint8 *out_gfx, uint8 *out_big, uint8 *out_oam_flags) {
+  if (!Rando_FieldItemSpritesActive())
+    return false;
+  // Placement_Lookup returns vanilla_item_id when no table is active or the
+  // location is absent — both mean "draw the vanilla sprite".
+  uint16 placed = Placement_Lookup(location_id, vanilla_item_id);
+  if (placed == vanilla_item_id)
+    return false;
+
+  // Tier 1 — items the normal receive animation draws (rupees, equipment,
+  // boomerang, bottles, ...). Mirror Ancilla_ReceiveItem_Draw EXACTLY: gfx,
+  // size, and palette are all indexed by the LttP receive code, so the field
+  // sprite looks like the held-aloft pickup. NOTE: kDirectGrantIcons does NOT
+  // cover these — it only holds the Slice-9 direct-grant items, which is why a
+  // placed red rupee (code 0x36) / boomerang previously fell back to vanilla.
+  uint8 code = rando_item_display_lttp(placed);
+  if (code < 76 && kReceiveItemGfx[code] != 0xff) {
+    *out_gfx = kReceiveItemGfx[code];
+    *out_big = kReceiveItem_Tab1[code];
+    uint8 a = kWishPond2_OamFlags[code];
+    if (a & 0x80)               // sign8 fallback, matching Ancilla_ReceiveItem_Draw
+      a = 5;
+    *out_oam_flags = (uint8)(a * 2 | 0x30);
+    return true;
+  }
+
+  // Tier 2 — direct-grant items (small keys, ...) that have a Slice-9 icon but
+  // no receive gfx. gfx==0 entries (HalfMagic/QuarterMagic/TriforcePiece) have
+  // no drawable sprite → fall back to the vanilla sprite.
+  const size_t n = sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
+  if ((size_t)placed < n && kDirectGrantIcons[placed].gfx != 0) {
+    *out_gfx = kDirectGrantIcons[placed].gfx;
+    *out_big = kDirectGrantIcons[placed].big;
+    *out_oam_flags = kDirectGrantIcons[placed].oam_flags;
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // §6.6 boss-kill dispatch helpers. Each boss kill grants TWO rando locations
 // (BossHeart + Prize). Phase A's default `bossHeartsInPool=false` policy
 // identity-places BossHeartContainer at every _Boss slot — so the dispatch
