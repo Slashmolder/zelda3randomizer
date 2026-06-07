@@ -864,7 +864,21 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
 
   int j = link_receiveitem_index;
   if (j == 0) {
-    g_ram[kMemoryLocationToGiveItemTo[4]] = kValueToGiveItemTo[0];
+    // Vanilla "GiveSwordAndShield": receiving the L1 (Fighter) sword also grants
+    // the Fighter shield. In vanilla this fires once (from Uncle), but under rando
+    // a tier-0 ProgressiveSword translates to code 0 (progressive_to_lttp), so any
+    // first-sword pickup runs it — and the player may already hold a higher shield
+    // from a separately-shuffled drop. Clamp this side-effect to never-downgrade,
+    // exactly like the absolute-write clamp below; otherwise a sword pickup resets
+    // a Red/Mirror shield back to Fighter. Vanilla path keeps the unconditional set.
+    uint8 *shield = &g_ram[kMemoryLocationToGiveItemTo[4]];  // link_shield_type
+    uint8 sv = (uint8)kValueToGiveItemTo[0];                 // 1 = Fighter shield
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      // rando-exempt: never-downgrade the shield (mirrors the v > *p clamp below)
+      if (sv > *shield) *shield = sv;
+    } else {
+      *shield = sv;
+    }
   }
 
   uint8 v = kValueToGiveItemTo[j];
