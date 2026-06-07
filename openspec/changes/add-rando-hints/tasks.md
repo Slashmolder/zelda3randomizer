@@ -113,7 +113,7 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 - [x] 7.3 When `settings.hints == off`, omit the section. <!-- done: hints=off leaves g_hint_table empty (Rando_GenerateHints early-returns), so the text "Hints:" section is gated on any_hint (rando_spoiler.c:693-697) and the JSON array is empty -->
 
-- [ ] 7.4 Add a `meta.hints_count` integer to the JSON spoiler for tooling.
+- [x] 7.4 Add a `meta.hints_count` integer to the JSON spoiler for tooling. <!-- done: rando_spoiler.c emits "meta.hints_count" = number of populated hint NPCs (counts non-NULL Rando_GetHintString over the NPC enum), placed right after goal_completable. JSON-only field; corpus digests unaffected (110/110 OK on a fresh WSL gcc -Werror build). Verified: hints=on → count 18 == len(hints[]); hints=off → 0. -->`
 
 ## 8. Determinism + CI
 

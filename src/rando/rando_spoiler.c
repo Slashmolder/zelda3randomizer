@@ -229,6 +229,16 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "    \"goal_completable\": %s,\n",
           s->goal_completable ? "true" : "false");
+  // hints_count: number of populated hint NPCs (0 when hints==Off or no
+  // hints were generated). Mirrors the length of the hints[] array below;
+  // a tooling convenience so consumers can branch without parsing hints[].
+  {
+    uint16 hints_count = 0;
+    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
+      if (Rando_GetHintString((RandoHintNpc)npc) != NULL) hints_count++;
+    }
+    fprintf(f, "    \"hints_count\": %u,\n", (unsigned)hints_count);
+  }
   // fallback_warnings: each non-zero counter from the placer surfaces
   // here. Plus an "unreachable_placements" rollup when the placer could
   // not produce a fully-reachable seed.
