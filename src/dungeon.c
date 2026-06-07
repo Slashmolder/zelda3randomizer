@@ -6596,11 +6596,13 @@ void Module_PreDungeon() {  // 82821e
   // rando-exempt: state-shuffle — restore per-dungeon key count when entering
   // dungeon (or sentinel 0xff outside). Not a grant. (audit.md §0.2.2)
   // Under Retro genericKeys, restore the live counter from the shared pool slot
-  // instead — keys are fungible across dungeons.
-  if (Rando_IsGenericKeysActive())
-    link_num_keys = (d != 0xff) ? link_generic_keys : 0xff;
-  else
-    link_num_keys = (d != 0xff) ? link_keys_earned_per_dungeon[d == 2 ? 0 : (d >> 1)] : 0xff;
+  // instead — keys are fungible across dungeons. The per-dungeon array is only
+  // indexed in-dungeon (d != 0xff); indexing it with the sentinel would be OOB.
+  link_num_keys = (d != 0xff)
+                      ? (Rando_IsGenericKeysActive()
+                             ? link_generic_keys
+                             : link_keys_earned_per_dungeon[d == 2 ? 0 : (d >> 1)])
+                      : 0xff;
   Hud_Rebuild();
   dung_num_lit_torches = 0;
   hdr_dungeon_dark_with_lantern = 0;
@@ -8018,10 +8020,12 @@ void Module11_02_LoadEntrance() {  // 829b1c
   // rando-exempt: state-shuffle — restore per-dungeon key count on entrance
   // load (or 0xff sentinel outside). Not a grant. (audit.md §0.2.2)
   // Under Retro genericKeys, restore the live counter from the shared pool slot.
-  if (Rando_IsGenericKeysActive())
-    link_num_keys = (dung != 255) ? link_generic_keys : 255;
-  else
-    link_num_keys = (dung != 255) ? link_keys_earned_per_dungeon[((dung == 2) ? 0 : dung) >> 1] : 255;
+  // The per-dungeon array is only indexed in-dungeon (dung != 255).
+  link_num_keys = (dung != 255)
+                      ? (Rando_IsGenericKeysActive()
+                             ? link_generic_keys
+                             : link_keys_earned_per_dungeon[((dung == 2) ? 0 : dung) >> 1])
+                      : 255;
   Hud_Rebuild();
   link_this_controls_sprite_oam = 4;
   player_near_pit_state = 3;
