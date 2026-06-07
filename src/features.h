@@ -81,9 +81,10 @@ enum {
 
   // Make the Digging Game and Chest Game winnable for a half-competent player
   // (digging: guaranteed win within ~8 digs; chest game: win on the first
-  // chest). Default ON (see ParseConfigFile). Behavior-affecting, so it diverges
-  // from the original-ROM RAM compare - toggle off (EasyMinigames = 0) for
-  // side-by-side vanilla verification. Read at point-of-use in
+  // chest). Behavior-affecting (diverges from the original-ROM RAM compare), so
+  // it is RANDO-ONLY by default: forced on under the randomizer, OFF in vanilla
+  // and side-by-side. Vanilla players opt in with `EasyMinigames = 1`. Applied
+  // at point-of-use (gated on kFeatures1_RandomizerActive) in
   // DiggingGameGuy_AttemptPrizeSpawn (player.c) + OpenMiniGameChest (dungeon.c).
   kFeatures0_EasyMinigames = 131072,
 };

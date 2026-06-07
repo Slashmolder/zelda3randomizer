@@ -6915,18 +6915,21 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
   if (link_y_coord >= 0xb18)
     return;
   int j = GetRandomNumber() & 7;
-  // Easy minigames (kFeatures0_EasyMinigames, default on): the vanilla win is
+  // Easy minigames (kFeatures0_EasyMinigames; rando-on, vanilla opt-in): the
   // case 4 (1/8) AND >=25 digs AND a 1/4 roll (~1 in 130 digs past 25) -
   // agonizing. Force the win once a half-competent number of digs is in, and
   // (in case 4) drop the >=25-digs / 1-in-4 gates. The once-per-paid-session
   // guard (beamos_x_hi[0]) still applies. Mirrors ALTTPR RigDigRNG.
-  bool easy_minigames = (enhanced_features0 & kFeatures0_EasyMinigames) != 0;
+  // Easy Minigames: ON automatically under the randomizer; in vanilla it's an
+  // opt-in flag that defaults OFF (so the original-ROM side-by-side RAM compare
+  // is unaffected). The vanilla path never reads rando state.
+  bool rando = (enhanced_features1 & kFeatures1_RandomizerActive) != 0;
+  bool easy_minigames = rando || (enhanced_features0 & kFeatures0_EasyMinigames);
   // Don't force the win on a post-win rando replay: case 4 suppresses the
   // re-grant once LOC_Digging_Game is checked, which would rob the player of
   // the vanilla cases 0-3 consolation prizes they'd still roll without easy
   // mode. Let the RNG run naturally on replay instead.
-  bool rando_already_won = (enhanced_features1 & kFeatures1_RandomizerActive) &&
-                           Rando_IsLocationChecked(LOC_Digging_Game);
+  bool rando_already_won = rando && Rando_IsLocationChecked(LOC_Digging_Game);
   if (easy_minigames && !beamos_x_hi[0] && beamos_x_hi[1] >= 8 && !rando_already_won)
     j = 4;
   uint8 item_to_spawn;

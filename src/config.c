@@ -784,10 +784,10 @@ static void SetLoadedIniPath(const char *p) {
 void ParseConfigFile(const char *filename) {
   g_config.msuvolume = 100;  // default msu volume, 100%
 
-  // QoL: the Digging Game / Chest Game are easy by default (`EasyMinigames = 0`
-  // in zelda3.ini restores vanilla odds). Set before the INI is read so a
-  // missing key keeps it on; ParseBoolBit clears it on an explicit 0.
-  g_config.features0 |= kFeatures0_EasyMinigames;
+  // QoL: the Digging Game / Chest Game easy-win. Default OFF for vanilla so the
+  // original-ROM side-by-side compare is unaffected; opt in with
+  // `EasyMinigames = 1` in zelda3.ini. The randomizer forces it on at
+  // point-of-use (kFeatures1_RandomizerActive) without changing this default.
 
   // [Randomizer] defaults (tasks.md §1.6). Missing INI keys keep these.
   g_config.features1 = 0;                    // rando bank empty by default
