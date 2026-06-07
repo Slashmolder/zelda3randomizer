@@ -929,7 +929,7 @@ static void Panel_AssetHash() {
 // a C11 _Static_assert that is invalid in this C++ TU.
 static void RenderSpoilerSaveRow() {
   static char s_save_path[512] = "spoiler.json";
-  static char s_save_status[256];
+  static char s_save_status[576];  // >= s_save_path[512] + longest literal, so snprintf can't truncate
 
   ImGui::SetNextItemWidth(360.0f);
   ImGui::InputText("##spoiler_path", s_save_path, sizeof s_save_path);
