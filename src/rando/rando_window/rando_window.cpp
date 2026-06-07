@@ -417,9 +417,10 @@ static void Panel_General() {
       }
       ImGui::EndCombo();
     }
-    HelpTooltip("swordless: no swords in the pool - hammer/net stand in for the\n"
-                "sword (Ganon, Agahnim, medallions, tablets, curtains). UNVERIFIED\n"
-                "on US 1.0; verify by playtest before racing it.");
+    HelpTooltip("randomized: swords are shuffled into the item pool.\n"
+                "assured: you start with a sword; the rest are shuffled.\n"
+                "swordless: no swords - the hammer/net cover sword-only\n"
+                "checks (Ganon, Agahnim, medallions, tablets, curtains).");
   }
 
   // Accessibility — read-only & forced to "locations" while goal=Completionist.
@@ -436,7 +437,7 @@ static void Panel_General() {
     HelpTooltip("All tiers guarantee the seed is beatable.\n"
                 "items: every progression item is reachable (100% inventory).\n"
                 "locations: every location is reachable (100% locations).\n"
-                "beatable only: only the goal is reachable; some items or\n"
+                "beatable only: only the goal is reachable; some items or "
                 "locations may be unreachable.");
   }
 
@@ -446,15 +447,13 @@ static void Panel_General() {
   // 3/4 (Phase D) down so the combo preview is valid.
   if (s->logic > 2) s->logic = 2;
   if (EnumCombo("Logic", &s->logic, kLogicLabels, 3)) changed = true;
-  HelpTooltip("NoGlitches (default) = vanilla logic.\n"
-              "OverworldGlitches / MajorGlitches assume out-of-logic glitch\n"
-              "routes. UNVERIFIED on US 1.0 (ALTTPR targets JP 1.0) - the\n"
-              "spoiler flags an `unverified_tricks_enabled` warning.");
+  HelpTooltip("NoGlitches (default): items are always reachable without glitches.\n"
+              "OverworldGlitches / MajorGlitches: logic may expect glitch routes,\n"
+              "so some items need advanced techniques to reach.");
   // Tricks — multi-select bitmask. Each checkbox toggles one settings.tricks bit.
   if (ImGui::TreeNodeEx("Tricks (out-of-logic techniques)",
                         s->tricks ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-    ImGui::TextDisabled("Enabling a trick assumes the player can perform it.\n"
-                        "All are UNVERIFIED on US 1.0 except dark-room-nav.");
+    ImGui::TextDisabled("Enabling a trick assumes the player can perform it.");
     for (int i = 0; i < 8; i++) {
       bool on = (s->tricks & (uint8)(1u << i)) != 0;
       char lbl[64];
@@ -466,8 +465,8 @@ static void Panel_General() {
         changed = true;
       }
       if (!kTrickWired[i])
-        HelpTooltip("Fork-invented placeholder - no ALTTPR logic gate is wired "
-                    "to this bit, so toggling it changes nothing.");
+        HelpTooltip("Placeholder - this trick has no logic effect yet, "
+                    "so toggling it changes nothing.");
     }
     ImGui::TreePop();
   }
@@ -602,7 +601,7 @@ static void Panel_General() {
       seed_buf_mirror = ~0ull;  // force re-format from the new value
       changed = true;
     }
-    HelpTooltip("UI-only entropy (SplitMix64 of the performance counter). The seed is a pure input.");
+    HelpTooltip("Roll a fresh random seed value.");
     ImGui::EndDisabled();
   }
 
@@ -753,8 +752,7 @@ static void Panel_Shuffles() {
       changed = true;
     }
     ImGui::EndDisabled();
-    HelpTooltip("Adds Ganon's Tower to the dungeon pool. High crystals.tower may "
-                "need a reroll; it never ships unreachable.");
+    HelpTooltip("Adds Ganon's Tower to the dungeon shuffle pool.");
 
     // ---- Group 2: Exits (coupling — ONE choice, replaces the old two checkboxes) ----
     bool any_shuffle = (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
