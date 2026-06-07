@@ -1997,26 +1997,42 @@ static void DecodeIconTile2x(uint32 *out, int stride, const uint16 *scratch,
   }
 }
 
-// Render one 8x8 4bpp sprite tile (32 bytes at `tile`, planar 0/1 at +0/+1 of
-// each row, planes 2/3 at +0x10) into atlas slot `aslot` at pixel (px,py),
-// `scale`x. pal = 15-color sub-palette (BGR555), color index c -> pal[c-1]
-// (index 0 transparent).
-static void BlitSpriteTile(uint32 *out, int stride, int aslot, const uint16 *pal,
-                           const uint8 *tile, int px, int py, int scale) {
-  for (int row = 0; row < 8; row++) {
-    for (int col = 0; col < 8; col++) {
-      int bit = 7 - col;
-      int idx = ((tile[row * 2] >> bit) & 1) |
-                (((tile[row * 2 + 1] >> bit) & 1) << 1) |
-                (((tile[0x10 + row * 2] >> bit) & 1) << 2) |
-                (((tile[0x11 + row * 2] >> bit) & 1) << 3);
-      if (idx == 0) continue;  // transparent
-      uint16 c = pal[idx - 1];
-      uint32 rgba = (uint32)((c & 0x1f) << 3) | ((uint32)(((c >> 5) & 0x1f) << 3) << 8) |
-                    ((uint32)(((c >> 10) & 0x1f) << 3) << 16) | 0xff000000u;
-      for (int dy = 0; dy < scale; dy++)
-        for (int dx = 0; dx < scale; dx++)
-          out[(py + row * scale + dy) * stride + aslot * kRandoIconSize + (px + col * scale + dx)] = rgba;
+// Decode the in-game crystal HUD art (2 horizontal 8x8 2bpp tiles = 16x8),
+// vertically centered in the 16x16 atlas slot. Same reliable `scratch` HUD-tile
+// path as DecodePendantQuad (palette entry 0 -> transparent) so the tracker
+// crystal matches Hud_DrawProgressIcons_Crystals, not the state-dependent
+// sprite-gfx path that left a garbage blob.
+static void DecodeCrystalHud(uint32 *out, int stride, const uint16 *scratch,
+                             int scratch_words, const uint16 *pal,
+                             int aslot, const ItemBoxGfx *icon) {
+  // The HUD crystal is a small 16x8 gem; render it 2x and clip so the centered
+  // diamond fills the 16x16 slot (comparable to the 16x16 pendant icons).
+  for (int q = 0; q < 2; q++) {
+    uint16 w = icon->v[q];
+    int chr = w & 0x3ff, subpal = (w >> 10) & 7;
+    bool hflip = (w & 0x4000) != 0, vflip = (w & 0x8000) != 0;
+    int qx = q * 8;
+    for (int r = 0; r < 8; r++) {
+      int srow = vflip ? (7 - r) : r;
+      if (chr * 8 + srow >= scratch_words) continue;
+      uint16 word = scratch[chr * 8 + srow];
+      for (int cc = 0; cc < 8; cc++) {
+        int pix = hflip ? (((word >> cc) & 1) | ((word >> (7 + cc)) & 2))
+                        : (((word >> (7 - cc)) & 1) | ((word >> (14 - cc)) & 2));
+        if (pix == 0) continue;
+        uint16 col = pal[subpal * 4 + pix];
+        if (col == 0) continue;
+        uint32 rgba = (uint32)((col & 0x1f) << 3) | ((uint32)(((col >> 5) & 0x1f) << 3) << 8) |
+                      ((uint32)(((col >> 10) & 0x1f) << 3) << 16) | 0xff000000u;
+        int sx = (qx + cc) * 2 - 8;  // 2x; center the gem horizontally
+        int sy = r * 2;              // 2x; fills the 16px slot height
+        for (int dy = 0; dy < 2; dy++)
+          for (int dx = 0; dx < 2; dx++) {
+            int px2 = sx + dx, py2 = sy + dy;
+            if (px2 < 0 || px2 >= kRandoIconSize || py2 >= kRandoIconSize) continue;
+            out[py2 * stride + aslot * kRandoIconSize + px2] = rgba;
+          }
+      }
     }
   }
 }
@@ -2108,28 +2124,24 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodePendantQuad(out, stride, scratch, sw, pendpal, kRandoIcon_PendantGreen, &kPendantGreenIcon);
   DecodePendantQuad(out, stride, scratch, sw, pendpal, kRandoIcon_PendantBlue,  &kPendantBlueIcon);
   DecodePendantQuad(out, stride, scratch, sw, pendpal, kRandoIcon_PendantRed,   &kPendantRedIcon);
-  // Crystal = gfx 0x28, a 16x16 diamond spread across 4 quadrant tiles
-  // (TL=0xbd40, TR=0xbd60, BL=0xbd80, BR=0xbda0; arrangement verified by PNG
-  // dump). Colored with kPalette_MiscSprite_Indoors row 4 (offset 4*7) — the
-  // same source the game loads into sprite palette 6 for the crystal receipt
-  // (ancilla.c: palette_sp6r_indoors=4 -> Palette_Load_SpriteEnvironment_Dungeon).
-  // The crystal art only uses color indices 1-6 (PNG-verified), so BlitSpriteTile's
-  // pal[idx-1] stays within this 7-entry row.
-  DecodeAnimatedSpriteTile_variable(0x28);
+  // Crystal: reuse the in-game pause-menu crystal HUD art (chars 0x144/0x145 in
+  // HUD pack 0x69 -- the filled-crystal tiles Hud_DrawProgressIcons_Crystals
+  // draws as 0x2D44/0x2D45) so the tracker matches the real game. The old
+  // gfx-0x28 sprite path read the crystal sprite buffer, which the atlas build
+  // never populates (no crystal-receipt context), so it indexed past the
+  // synthesized palette into out-of-bounds garbage (a brown blob).
+  // Blue hue synthesized like the pendants (sub-palette 1).
   {
-    // The dungeon sprite palette (kPalette_MiscSprite_Indoors row 4) renders the
-    // crystal with a near-black facet that reads as a hole on the tracker.
-    // Synthesize a clean dark->light purple ramp (indices 1..6 -> cp[0..5]) for
-    // a faceted-but-solid crystal, matching the receive sprite's magenta hue.
+    static uint16 crypal[32];
+    memset(crypal, 0, sizeof crypal);
 #define Z3R_CRY_BGR(r, g, b) ((uint16)((r) | ((g) << 5) | ((b) << 10)))
-    static const uint16 cp[7] = {
-      Z3R_CRY_BGR(9, 3, 14), Z3R_CRY_BGR(14, 5, 21), Z3R_CRY_BGR(20, 9, 27),
-      Z3R_CRY_BGR(25, 15, 31), Z3R_CRY_BGR(28, 23, 31), Z3R_CRY_BGR(31, 30, 31), 0 };
+    crypal[5] = Z3R_CRY_BGR(7, 15, 27);   // pix1 = gem facet (dark blue)
+    crypal[6] = Z3R_CRY_BGR(20, 28, 31);  // pix2 = gem body (light blue)
+    crypal[7] = 0;                        // pix3 = cell background -> transparent
 #undef Z3R_CRY_BGR
-    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd40], 0, 0, 1);
-    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd60], 8, 0, 1);
-    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbd80], 0, 8, 1);
-    BlitSpriteTile(out, stride, kRandoIcon_Crystal, cp, &g_ram[0xbda0], 8, 8, 1); }
+    static const ItemBoxGfx kCrystalIcon = {{0x2544, 0x2545, 0, 0}};
+    DecodeCrystalHud(out, stride, scratch, sw, crypal, kRandoIcon_Crystal, &kCrystalIcon);
+  }
   return n;
 }
 
