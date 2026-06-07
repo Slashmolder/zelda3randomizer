@@ -168,8 +168,21 @@ static at_sock at_listen(uint16 port, bool allow_remote) {
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof addr);
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = htonl(allow_remote ? INADDR_ANY : INADDR_LOOPBACK);
+  // Network byte order is big-endian. Assemble the port + address bytes
+  // explicitly rather than via the BSD byte-swap macros: the byte-order pin
+  // (check_byte_order) forbids them in src/rando/, and writing the bytes
+  // directly is host-endian-independent (and byte-identical to what the macros
+  // would produce). memset already zeroed both fields, so INADDR_ANY (0.0.0.0)
+  // needs no further writes.
+  uint8 *port_be = (uint8 *)&addr.sin_port;
+  port_be[0] = (uint8)(port >> 8);
+  port_be[1] = (uint8)(port & 0xff);
+  if (!allow_remote) {
+    // INADDR_LOOPBACK = 127.0.0.1 -> big-endian bytes {127, 0, 0, 1}.
+    uint8 *loopback_be = (uint8 *)&addr.sin_addr.s_addr;
+    loopback_be[0] = 127;
+    loopback_be[3] = 1;
+  }
 
   if (bind(s, (struct sockaddr *)&addr, sizeof addr) != 0) { at_close(s); return AT_BAD_SOCK; }
   if (listen(s, 4) != 0) { at_close(s); return AT_BAD_SOCK; }

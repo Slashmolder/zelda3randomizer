@@ -230,6 +230,12 @@ def main(argv: list[str]) -> int:
     binary = args.binary
     if not binary.exists() and binary.with_suffix(".exe").exists():
         binary = binary.with_suffix(".exe")
+    # subprocess runs a bare name like "zelda3" via a $PATH lookup (cwd is not on
+    # $PATH), so a relative --binary=./zelda3 — which str(Path(...)) normalizes to
+    # "zelda3" — fails with FileNotFoundError even though the file exists relative
+    # to cwd. Resolve to an absolute path first (matching run_rando_corpus.py).
+    if binary.exists():
+        binary = binary.resolve()
     return check_binary(binary)
 
 

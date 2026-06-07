@@ -20,11 +20,11 @@ jobs:
     name: Rando source guards (Linux)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         # Need history for the kGeneratorVersion bump-gate diff
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.10'
     - name: Install Python deps
@@ -118,8 +118,8 @@ jobs:
         - name: Windows
           os: windows-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.10'
     - name: Install Python deps
@@ -175,8 +175,8 @@ jobs:
         - name: Mac
           os: macos-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.10'
     - name: Install Python deps
