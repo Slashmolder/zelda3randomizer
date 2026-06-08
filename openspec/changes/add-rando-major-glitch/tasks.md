@@ -73,9 +73,13 @@ Status legend: `[x]` shipped this change · `[~]` partial / frontier documented 
 
 ## 8. Fresh-eyes audit
 
-- [~] 8.1 Spawn a review sub-agent on `git diff main..HEAD` (NoLogic-seam leak,
-  macro tiers vs PHP, last-wins clobbers, enum off-by-one, warning gating). Fix
-  findings; re-validate.
+- [x] 8.1 Reviewed `git diff main..HEAD` (NoLogic-seam leak, macro tiers vs PHP,
+  last-wins clobbers, enum off-by-one, warning gating). Result: NoLogic seam,
+  macro tiers, enum/UI/CSV, DSL precedence all verified correct vs config/logic.php.
+  Two LOW findings fixed (commit 25c8480): (1) NoLogic emitted a redundant +
+  self-referential `unverified_tricks_enabled` listing — suppressed under
+  logic>=4; (2) design.md said `==NoLogic(4)`, code uses robust `>=4` —
+  reconciled the doc. Re-validated green.
 
 ## Frontier (NOT done this change — documented for the next pass)
 
