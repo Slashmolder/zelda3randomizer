@@ -770,7 +770,54 @@ void OverworldOverlay_HandleRain() {  // 82a4cd
   BG1VOFS_copy2 += kOverworld_DrawBadWeather_Y[i] << 8;
 }
 
+// #82 Inverted: the DW->LW "under-rock" world-warps sit beneath rocks that the
+// inverted overlay (inverted_maps.c / Overworld_ApplyInvertedTiles) only draws
+// on a FULL screen rebuild — mirror / flute / cave-exit / save-and-quit. A
+// walking-scroll entry skips that overlay, so the rock (and thus the warp record
+// under it) is missing when you simply walk onto the screen. Re-assert just the
+// single liftable rock tile for the current warp screen here; this runs every
+// frame in the walking state, so the tile is restored the frame the screen
+// settles and on any partial redraw. The {pos,tile} pairs mirror the overlay
+// rows in inverted_maps.c exactly (pos is the dung_bg2 byte offset; overlay's
+// field is 0x2000 + pos). We skip when the tile already shows the rock OR the
+// revealed warp swirl (0x0212), so lifting the rock is never re-covered before
+// the player can step onto the warp. Reusable by design (the warp flips worlds
+// and may be used repeatedly), so it is NOT gated on a location-checked flag.
+static const struct {
+  uint8  screen;  // overworld_screen_index (Dark World)
+  uint16 pos;     // dung_bg2 byte offset of the warp rock
+  uint16 tile;    // liftable-rock map16 value
+} kInvertedWarpRocks[] = {
+  { 0x73, 0x02A8, 0x020F },
+  { 0x50, 0x0B2E, 0x020F },
+  { 0x6F, 0x0BB2, 0x020F },
+  { 0x4E, 0x1D4A, 0x0239 },
+  { 0x70, 0x1D94, 0x0239 },
+  { 0x78, 0x1D94, 0x0239 },
+  { 0x75, 0x0F50, 0x0239 },
+  { 0x47, 0x069E, 0x0239 },
+  { 0x47, 0x06A4, 0x0239 },
+};
+
+static void Overworld_EnsureInvertedWarpRock(void) {
+  if (!((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */))
+    return;
+  uint8 scr = (uint8)overworld_screen_index;
+  for (uint32 i = 0; i < sizeof(kInvertedWarpRocks) / sizeof(kInvertedWarpRocks[0]); i++) {
+    if (kInvertedWarpRocks[i].screen != scr)
+      continue;
+    uint16 pos = kInvertedWarpRocks[i].pos;
+    uint16 cur = dung_bg2[pos >> 1];
+    if (cur == kInvertedWarpRocks[i].tile || cur == 0x0212)
+      continue;  // rock already placed, or warp already revealed — leave it
+    Overworld_DrawMap16_Persist(pos, kInvertedWarpRocks[i].tile);
+    nmi_load_bg_from_vram = 1;
+  }
+}
+
 void Module09_00_PlayerControl() {  // 82a53c
+  Overworld_EnsureInvertedWarpRock();
   if (!(flag_custom_spell_anim_active | flag_is_link_immobilized | flag_block_link_menu | trigger_special_entrance)) {
     if (filtered_joypad_H & 0x10) {
       overworld_map_state = 0;
