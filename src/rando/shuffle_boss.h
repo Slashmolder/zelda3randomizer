@@ -6,8 +6,13 @@
 // required bosses (Agahnim 1, Agahnim 2, Ganon) are pinned to their
 // canonical slots and never appear elsewhere in the pool.
 //
-// Status: STUB. Wiring landing place; full assignment algorithm + per-
-// site sprite-handler instrumentation is Phase B follow-up work.
+// Status: LIVE (experimental). The assignment algorithm + the runtime RENDER
+// redirect (BossShuffle_RenderHomeRoom — the Enemizer pointer-redirect model)
+// are shipped; the shuffle pool is the 7 redirect-clean bosses (Blind /
+// Kholdstare / Trinexx are pinned — they need home-room ENVIRONMENT a sprite +
+// gfx + palette redirect can't carry). The earlier per-entry sprite-type swap
+// (BossShuffle_RemapSpriteType / _ShouldSuppressSecondary) is SUPERSEDED and
+// retained only for the selftest cross-check; the game never calls it.
 //
 // ALTTPR upstream: app/Boss.php (boss-pool definition + assignment rules).
 
@@ -17,22 +22,19 @@
 #include "../types.h"
 #include "rando_placement.h"
 
-// One-shot generation entry. Builds the per-dungeon boss assignment
-// based on the active settings (boss_shuffle setting — currently
-// reserved, not exposed as a CSV key). Deterministic from
-// (settings, seed_u64).
+// One-shot generation entry. Builds the per-dungeon boss assignment based on
+// the active settings (boss_shuffle — a live CSV key / canonical settings byte).
+// Deterministic from (settings, seed_u64).
 //
-// `out_assignment` is sized to one byte per dungeon-id (currently 13);
-// each entry is the sprite_id (or boss-pool index) assigned to that
-// dungeon's boss room. The mapping table is consumed by the per-site
-// sprite handlers (TBD) that read the active boss assignment when
-// spawning a boss.
-//
-// STUB: returns identity (each dungeon keeps its vanilla boss).
+// `out_assignment` is sized to one byte per dungeon-id; each entry is the
+// boss-pool index assigned to that dungeon's boss room. The table is consumed at
+// runtime by the render redirect (BossShuffle_RenderHomeRoom) and by the logic
+// VM (OP_CAN_KILL_BOSS, via Rando_SetBossAssignment) so each dungeon's
+// boss/prize gates on the SHUFFLED boss's kill predicate. When boss_shuffle is
+// off, writes the identity (vanilla) assignment.
 //
 // Returns true on success. Also INSTALLS the assignment into module-global
-// runtime state (consumed by BossShuffle_RemapSpriteType at sprite-load) and
-// marks the assignment active.
+// runtime state and marks the assignment active.
 bool BossShuffle_Generate(const RandoSettings *settings,
                           uint64 seed_u64,
                           uint8 out_assignment[16]);
@@ -70,6 +72,13 @@ void BossShuffle_SelfCheck(void);
 // (boss shuffle off, or no slot loaded).
 uint8 BossShuffle_GetForDungeon(uint8 dungeon_id);
 
+// SUPERSEDED — do NOT call at runtime. The live model is the render redirect
+// (BossShuffle_RenderHomeRoom, below). This per-entry sprite-type swap was the
+// original architecture; a pure type swap loads the wrong GFX sheet and
+// mis-spawns formation bosses, so it was replaced. Retained ONLY so
+// BossShuffle_SelfCheck can cross-check the pool/mapping tables. Historical
+// contract follows.
+//
 // Per-site instrumentation entry — Phase B §65.
 //
 // Given the vanilla boss sprite type the room data wants to spawn
@@ -86,6 +95,9 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id);
 // 0xCB Trinexx, 0xCE Blind.
 uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type);
 
+// SUPERSEDED — do NOT call at runtime (see BossShuffle_RemapSpriteType above).
+// Retained only for the selftest cross-check.
+//
 // Per-site instrumentation — audit §65 M1 follow-up.
 //
 // Returns true if `vanilla_sprite_type` is a room-data secondary segment

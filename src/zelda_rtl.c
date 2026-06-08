@@ -594,6 +594,19 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
   // do NOT insert bytes before the TLV chain or change the magic.
   (void)RandoSnapshotTail_Load(f);
 
+  // The snapshot reinstalls the placement table (above) but NOT the hint table:
+  // g_hint_table is a module-static in rando_hints.c, not part of g_ram and not
+  // serialized into the snapshot. Left alone it would hold the PREVIOUS seed's
+  // hints — so after a Ctrl+F1/F-key snapshot restore (or --replay) the
+  // telepathic tiles / fortune tellers would surface hints pointing at the wrong
+  // items (or, on a fresh-process load, zero-init garbage). Clear it so those
+  // surfaces fail safe to vanilla text. (Regenerating the slot's actual hints
+  // here — like Rando_ActivateSidecarSlot does — would need the settings, which
+  // the snapshot doesn't carry; the slot/select-file load path remains the way
+  // to get live hints. This snapshot/replay path is the edge case.) No-op when
+  // no rando slot is active.
+  Rando_ClearHints();
+
   // §8.8a ordering-invariant tripwire. assert() compiles out under NDEBUG
   // (Release builds), so we also do a runtime check under rando-active that
   // logs to stderr and skips the TLV reinstall's effect — preferable to

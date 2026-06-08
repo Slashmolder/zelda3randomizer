@@ -6942,14 +6942,18 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
         (!easy_minigames && (beamos_x_hi[1] < 25 || (GetRandomNumber() & 3))))
       return;
     // Phase B Slice 8 §67 — Digging Game minigame dispatch. Case 4 is the
-    // PoH "win" outcome (vanilla lttp code 0x17 — the quarter Piece of Heart;
-    // 0x26 is the full heart-container code, NOT a PoH). Direct-grant items
-    // (HalfMagic/Triforce/prize bits) are applied in-place by
-    // Rando_DispatchVanillaGrant; on skip-sentinel return we suppress the
-    // 0xeb sprite spawn so the player doesn't also get a vanilla PoH.
-    // Non-direct-grant placements (Bow/Sword/Bottle/...) stay on the PoH
-    // sprite for Phase B simplicity; promoting those to per-item spawned
-    // sprites is a Slice-9-flavored follow-up.
+    // "win" outcome (vanilla lttp code 0x17 — the quarter Piece of Heart;
+    // 0x26 is the full heart-container code, NOT a PoH). Under rando the placed
+    // item is granted via Rando_ReceiveOrConfirm: direct-grant items
+    // (HalfMagic/Triforce/prize/dungeon bits) are applied in-place by
+    // Rando_DispatchVanillaGrant and fire only the confirmation cue, while
+    // non-direct-grant placements (Bow/Sword/Bottle/Hookshot/...) are handed to
+    // Link_ReceiveItem. Either way we then RETURN without spawning the 0xeb PoH
+    // sprite, so the player gets exactly the placed item and never a stray PoH.
+    // (Earlier this branch only handled direct-grant items and fell through to
+    // the PoH sprite for everything else — that silently swapped a placed
+    // progression item for a Piece of Heart while marking the location checked,
+    // making the seed uncompletable. Mirrors the Hammer Pegs dispatch.)
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       // Anti-farm guard: Rando_DispatchVanillaGrant -> Rando_OnLocationCheck is
       // NOT idempotent (it re-marks the location and re-returns the placed item
@@ -6961,11 +6965,9 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
       if (Rando_IsLocationChecked(LOC_Digging_Game))
         return;
       uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_Digging_Game, ITEM_PieceOfHeart, 0x17);
-      if (Rando_ShouldSkipReceive(placed_lttp)) {
-        Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-        beamos_x_hi[0] = 0xeb;  // mark "win consumed" so we don't re-roll
-        return;
-      }
+      beamos_x_hi[0] = 0xeb;  // mark "win consumed" so we don't re-roll
+      Rando_ReceiveOrConfirm(placed_lttp, (uint8)Rando_LastDispatchedItemId());
+      return;
     }
     item_to_spawn = beamos_x_hi[0] = 0xeb;
     break;
