@@ -35,6 +35,13 @@ Total: 6 active changes + 21 archived. The 19 rando-prefixed archived changes ar
 
 One follow-up change was carved out at archive time so the archived baseline reflected only built scope: `add-rando-race-mode-reveal-ui` (#3-i, the deferred in-binary reveal UI + settings warning) — since **built in the native window + archived 2026-06-05**. The `add-rando-entrance-shuffle` Insanity preset was **not** carved — it is built and ships as a live native-window preset (the cave-arrival table is baked); only its dungeon/cross-decoupled arms carry the usual playtest caveat.
 
+## New proposals (2026-06-08, post-roadmap)
+
+Two changes proposed outside the original Phase A–D randomizer roadmap:
+
+- [`add-jp-glitch-restoration`](add-jp-glitch-restoration/) — **non-rando game feature.** A single "Restore JP 1.0 glitches" gameplay checkbox (`kFeatures0` bit 18) that re-introduces glitches patched out of the US 1.0 ROM this port reimplements. The six-glitch catalog is web-grounded. Fresh-eyes-audited: **no glitch is a one-line slice** — Fake Flippers is the lowest-risk first target but is MEDIUM (multi-site swim-entry gate set + the JP 8-frame grace mechanism, not the unreachable `:1721` branch); the other five need a JP-vs-US disassembly-diff spike. Default-off + `!ZeldaIsEmulatorAttached()` gate; no rando/corpus/`kGeneratorVersion` impact. Proposal — not implemented.
+- [`add-rando-enemy-shuffle`](add-rando-enemy-shuffle/) — **new rando slot axis.** Sprite-type substitution (which enemy spawns where), GFX-sheet-constrained, deterministic per-seed, mirroring the boss-shuffle install model. Placement byte-identical for all seeds (sweep-confirmed logic-free); `enemy_shuffle` packs into a **reserved canonical pad bit** so `kSettingsCanonicalLen` stays 28 and the default `settings_hash` is unchanged (kGen 58→59 version-locks the live axis). Fresh-eyes-audited (3 HIGH / 5 MED folded in). MVP is sprite-shuffle-only; HP/damage/etc. deferred. Builds on `add-rando-shuffles-and-minigames`. Proposal — not implemented.
+
 ## Switch work — PARKED (owner, 2026-06-02)
 
 The owner has no Switch development environment and has punted **all** Switch work until one is available. This is a standing policy, not a per-change decision:
