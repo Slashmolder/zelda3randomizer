@@ -148,15 +148,20 @@ playable (experimental); the render is playtest-only validated.
 
 ## 10. Playtest
 
-- [ ] 10.1 Generate a boss_shuffle=true seed; play through Eastern Palace; verify the boss is randomized but the prize stays with EP.
-- [ ] 10.2 Generate a drop_pool_shuffle=true seed; kill a low-tier enemy multiple times; verify drops match the shuffled tier table.
-- [ ] 10.3 Heart-drop early-game smoke: in a drop_pool_shuffle seed, kill 20 enemies in the first 30 minutes; verify at least 1 heart drops (heart-drop guarantee).
-- [ ] 10.4 Treasure-Chest minigame: play the minigame; verify dispatch fires for the picked chest only.
-- [ ] 10.5 Digging Game: play the dig minigame; verify dispatch fires for the reward.
+<!-- §10 playtest done by the owner 2026-06-07, EXCEPT the Digging Game FIX (10.5):
+     the item-loss fix landed on branch claude/epic-snyder-de07b4 (commit 24fde70)
+     AFTER/outside the owner's main build, so its new grant path is playtest-pending
+     on a build that includes the fix. Boss/drop/other minigames are unchanged from
+     main and ARE covered. -->
+- [x] 10.1 Generate a boss_shuffle=true seed; play through Eastern Palace; verify the boss is randomized but the prize stays with EP.
+- [x] 10.2 Generate a drop_pool_shuffle=true seed; kill a low-tier enemy multiple times; verify drops match the shuffled tier table.
+- [x] 10.3 Heart-drop early-game smoke: in a drop_pool_shuffle seed, kill 20 enemies in the first 30 minutes; verify at least 1 heart drops (heart-drop guarantee).
+- [x] 10.4 Treasure-Chest minigame: play the minigame; verify dispatch fires for the picked chest only.
+- [~] 10.5 Digging Game: play the dig minigame; verify dispatch fires for the reward. <!-- PLAYTEST-PENDING on a build with 24fde70: win the dig game in a seed whose Digging Game holds a NON-direct-grant item (e.g. Bow/Bottle) and confirm you RECEIVE that item (receive animation) and NOT a stray Piece of Heart. The fix is build -Werror + --rando-selftest + corpus-110/110 green; runtime confirmation outstanding. -->
 
 ## 11. Archive readiness
 
-- [ ] 11.1 CI green; corpus matches.
-- [ ] 11.2 Manual playtest covers all 4 minigame sites + both shuffles on/off.
-- [ ] 11.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`.
-- [ ] 11.4 `openspec archive add-rando-shuffles-and-minigames` runs cleanly.
+- [x] 11.1 CI green; corpus matches. <!-- gcc -O2 -Werror (WSL) + --rando-selftest + corpus 110/110 byte-identical, 2026-06-07. -->
+- [~] 11.2 Manual playtest covers all 4 minigame sites + both shuffles on/off. <!-- owner 2026-06-07: boss/drop/Treasure-Chest/Hammer-Pegs/Hype-Cave + on/off covered; Digging Game FIX (24fde70) playtest-pending per §10.5. -->
+- [x] 11.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`. <!-- this session: 1 HIGH (Digging Game item-loss) + MED/LOW; fixes in 24fde70. -->
+- [ ] 11.4 `openspec archive add-rando-shuffles-and-minigames` runs cleanly. <!-- gated on the §10.5 Digging Game playtest. -->

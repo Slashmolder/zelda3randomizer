@@ -1,9 +1,10 @@
 // shuffle_boss.c — Phase B Slice 7 (add-rando-shuffles-and-minigames).
 //
-// Phase B §63 lands the deterministic permutation algorithm; per-site
-// sprite-handler instrumentation (§65) still pending. Until that lands
-// the generated assignment is written but not consumed by the game
-// (BossShuffle_GetForDungeon is read-only API surface).
+// The deterministic permutation algorithm + the runtime RENDER redirect
+// (BossShuffle_RenderHomeRoom — Enemizer pointer-redirect model) are shipped and
+// the assignment IS consumed by the game: the render redirect at room load plus
+// the logic VM's OP_CAN_KILL_BOSS gate. The earlier per-entry sprite-type swap
+// (BossShuffle_RemapSpriteType) is superseded, kept only for the selftest.
 //
 // ALTTPR upstream: app/Boss.php. Pinned (not shuffled): Agahnim 1 (HCT),
 // Agahnim 2 (GT top), Blind (TT), Kholdstare (IP), Trinexx (TR) — the last three

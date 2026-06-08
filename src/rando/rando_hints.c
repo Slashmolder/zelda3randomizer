@@ -272,12 +272,14 @@ bool Rando_GenerateHints(const RandoSettings *settings,
   // Murahdahla — populate when the goal is Triforce-related.
   if (settings->goal == kGoal_TriforceHunt || settings->goal == kGoal_GanonHunt) {
     // Count regions that hold at least one TriforcePiece placement.
-    // Stash up to N region ids in a small fixed buffer for the summary
-    // text. region_id is uint16 in `RandoLocationDef`; the dedupe array
-    // matches that width so two distinct regions ≥ 256 don't collide
-    // (kRandoRegions is append-only, so the 256-region threshold could
-    // be crossed in a future slice). Audit-of-audit LOW-2 of phase-b.
-    uint16 seen_regions[16] = {0};
+    // Stash the distinct region ids in a fixed buffer for the summary text.
+    // The buffer MUST cover every region or the "across N regions" tally
+    // silently caps and under-reports: there are 26 distinct location regions
+    // today (location_registry.yaml) and pieces_placed can reach ~50, so a
+    // [16] cap mis-counted wide Triforce-Hunt seeds. Sized to 64 for append-only
+    // headroom. region_id is uint16 in `RandoLocationDef`; the dedupe array
+    // matches that width so two distinct regions ≥ 256 don't collide.
+    uint16 seen_regions[64] = {0};
     uint8 seen_count = 0;
     uint16 piece_count = 0;  // uint16 — `settings.pieces_placed` is uint16
                               // (range up to 65535); a uint8 here would wrap
@@ -452,7 +454,12 @@ static int encode_hint_text(const char *text, uint8 *out) {
     }
 
     // Emit the word's glyphs (hard-wrap if a single word exceeds the row).
-    for (const char *q = p; q < word_end && w < 240; q++) {
+    // Guard at 239 (not 240): one iteration can write TWO bytes — a row command
+    // on a hard-wrap AND the glyph — so reserving a byte keeps the write cursor
+    // <= 240, leaving room for the caller's terminator at out[w] within the soft
+    // cap. (Real hints are short and never approach this; it only bit a
+    // pathological >240-byte string, which could push w to 241.)
+    for (const char *q = p; q < word_end && w < 239; q++) {
       if (col >= kHintMaxCharsPerLine) {
         if (row >= 2) return w;  // box full mid-word — stop
         row++;

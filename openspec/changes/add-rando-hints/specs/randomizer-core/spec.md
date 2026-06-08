@@ -28,7 +28,7 @@ The JSON spoiler SHALL include a top-level `hints` array, populated only when `s
 - `dialogue_id` (integer): the spoiler-label dialogue id `kRandoHintDialogueBase (0x200) + (npc_index - 1)`. This is a label only — it is NOT a runtime dialogue-table key.
 - `text` (string): the rendered hint text.
 
-The text spoiler SHALL mirror the JSON content under a `Hints:` heading with one line per entry, and SHALL be omitted entirely when no hint entry is populated. The settings block of the JSON spoiler SHALL additionally carry `"hints": <0|1>`. There is NO `meta.hints_count` field.
+The text spoiler SHALL mirror the JSON content under a `Hints:` heading with one line per entry, and SHALL be omitted entirely when no hint entry is populated. The settings block of the JSON spoiler SHALL additionally carry `"hints": <0|1>`. The spoiler's `meta` block SHALL also carry a `hints_count` integer — the number of populated hint NPCs (0 when `hints=off`) — for tooling.
 
 > **As-built note**: an earlier draft specified `source`/`kind` fields and a `goal-progress` Murahdahla shape with one entry per piece location. The implementation emits `{npc, dialogue_id, text}` and a single Murahdahla *region-summary* entry (region count, not per-piece/per-sphere). Full per-location flavor text and joke filler are deferred.
 
