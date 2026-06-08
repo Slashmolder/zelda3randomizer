@@ -1028,16 +1028,26 @@ void DbgInventory_Render(void) {
       }
     }
     {
-      static const char *const k[] = {"None", "Shovel", "Flute"};
-      int v = g_ram[0xF34C]; if (v < 0 || v > 2) v = (v == 3) ? 2 : 0;  // 3=active flute -> "Flute"
+      // link_item_flute (0xF34C) tiers: 1=shovel, 2=flute (inactive — dug up but
+      // the bird isn't woken, so it WON'T warp), 3=flute (active — "bird woken":
+      // vanilla requires playing the flute at the Kakariko weathervane to go
+      // 2->3, after which the flute summons the bird to warp). The active tier is
+      // exposed here so flute warp works without performing that weathervane step
+      // (player.c LinkItem_Flute: ==2 only fires the weathervane, ==3 warps).
+      static const char *const k[] = {"None", "Shovel", "Flute (inactive)",
+                                      "Flute (active - bird woken)"};
+      int v = g_ram[0xF34C]; if (v < 0 || v > 3) v = 0;  // value == display index (0..3)
       if (ImGui::BeginCombo("Shovel / Flute", k[v])) {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
           bool sel = (v == i);
           if (ImGui::Selectable(k[i], sel) && i != v) {
-            Cheats_PokeByte(0xF34C, i, 0, 2);  // 0=none, 1=shovel, 2=flute(inactive)
-            // Sync ownership bits to exactly the selected item (Shovel=0x01, Flute=0x02).
+            Cheats_PokeByte(0xF34C, i, 0, 3);  // 0=none,1=shovel,2=flute,3=active flute
+            // Sync rando ownership to exactly the selected item: Shovel=0x01,
+            // inactive Flute=0x02, active Flute=Flute|FluteActive=0x06 — matching
+            // Rando_GrantFluteShovel(0x4a). See kRandoFluteShovel_* (rando.h).
             if (rando && Cheats_CanEdit())
-              g_rando_flute_shovel_owned = (i == 1) ? 0x01 : (i == 2) ? 0x02 : 0x00;
+              g_rando_flute_shovel_owned =
+                  (i == 1) ? 0x01 : (i == 2) ? 0x02 : (i == 3) ? 0x06 : 0x00;
           }
           if (sel) ImGui::SetItemDefaultFocus();
         }
