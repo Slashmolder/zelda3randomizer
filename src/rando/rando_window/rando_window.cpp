@@ -203,7 +203,8 @@ static const char *const kAccessibilityLabels[] = {"items", "locations", "beatab
 // Phase B — glitch logic level (index == settings.logic enum value). The UI
 // offers the three shipped tiers; HybridMG(3)/NoLogic(4) are Phase D and not
 // selectable here. Per add-rando-trick-logic-and-axes §3.3.
-static const char *const kLogicLabels[] = {"NoGlitches", "OverworldGlitches", "MajorGlitches"};
+static const char *const kLogicLabels[] = {"NoGlitches", "OverworldGlitches", "MajorGlitches",
+                                           "HybridMajorGlitches", "NoLogic"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -443,13 +444,15 @@ static void Panel_General() {
 
   // ---- Logic & tricks (Phase B logic-relaxation axes) ----
   ImGui::SeparatorText("Logic & tricks");
-  // Glitch logic level. UI offers the 3 shipped tiers; clamp a loaded value of
-  // 3/4 (Phase D) down so the combo preview is valid.
-  if (s->logic > 2) s->logic = 2;
-  if (EnumCombo("Logic", &s->logic, kLogicLabels, 3)) changed = true;
+  // Glitch logic level. Phase D (add-rando-major-glitch) opens all 5 tiers.
+  if (s->logic > 4) s->logic = 4;
+  if (EnumCombo("Logic", &s->logic, kLogicLabels, 5)) changed = true;
   HelpTooltip("NoGlitches (default): items are always reachable without glitches.\n"
-              "OverworldGlitches / MajorGlitches: logic may expect glitch routes,\n"
-              "so some items need advanced techniques to reach.");
+              "OverworldGlitches / MajorGlitches / HybridMajorGlitches: logic may\n"
+              "expect glitch routes, so some items need advanced techniques to reach\n"
+              "(MajorGlitches is the most permissive tier; all are unverified on the\n"
+              "US 1.0 ROM). NoLogic: reachability is NOT enforced at all — items can\n"
+              "land anywhere and the seed may be impossible.");
   // Tricks — multi-select bitmask. Each checkbox toggles one settings.tricks bit.
   if (ImGui::TreeNodeEx("Tricks (out-of-logic techniques)",
                         s->tricks ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {

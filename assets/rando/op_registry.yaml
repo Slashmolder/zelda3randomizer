@@ -273,11 +273,13 @@ tricks:
       Using boots to clip into a tile slightly inside an obstacle, enabling
       out-of-bounds traversal or shortcuts.
     sources:
-      # ALTTPR config flag `canBootsClip` (134 region-closure uses). Wired in the
-      # fork via macros.yaml CanBootsClip = OP_TRICK(boots_clip) AND HAS_ITEM(Boots),
-      # composed at e.g. logic_parts/10_desert_palace.yaml, 11_tower_of_hera.yaml,
-      # 31_misery_mire.yaml, logic.yaml:286 (Lake Hylia island).
-      - "app/Region/**: config('canBootsClip', false) — 134 uses"
+      # ALTTPR config flag `canBootsClip` — an OWG-group flag (config/logic.php:9,
+      # 18,28 → OWG/HMG/MG). Phase D (§5) macro: CanBootsClip = (OP_TRICK(boots_clip)
+      # OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)) AND HAS_ITEM(Boots), so the
+      # trick BIT is now ONE of two enablers (the other is logic>=OWG). Composed at
+      # logic_parts/10_desert_palace.yaml, 11_tower_of_hera.yaml, 31_misery_mire.yaml,
+      # logic.yaml:286 (Lake Hylia island).
+      - "app/Region/**: config('canBootsClip', false) — 134 uses; config/logic.php:9,18,28"
     status: authored
     rom_version_status: untested-on-us10
 
@@ -287,10 +289,11 @@ tricks:
     description: |
       Traversing water without flippers using sprite-based water bounce.
     sources:
-      # ALTTPR config flag `canFakeFlipper` (33 uses). Fork macro CanFakeFlippers
-      # = OP_TRICK(fake_flippers); composed `HAS_ITEM(Flippers) OR CanFakeFlippers()`
-      # at swim sites (logic.yaml:286, 30_ice_palace.yaml:68).
-      - "app/Region/**: config('canFakeFlipper', false) — 33 uses"
+      # ALTTPR config flag `canFakeFlipper` — OWG-group (config/logic.php:7,16,26).
+      # Phase D (§5) macro: CanFakeFlippers = OP_TRICK(fake_flippers) OR
+      # OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches); composed `HAS_ITEM(Flippers)
+      # OR CanFakeFlippers()` at swim sites (logic.yaml:286, 30_ice_palace.yaml:68).
+      - "app/Region/**: config('canFakeFlipper', false) — 33 uses; config/logic.php:7,16,26"
     status: authored
     rom_version_status: untested-on-us10
 
@@ -343,11 +346,13 @@ tricks:
       (Distinct from Inverted-world bunny-state at start; this trick applies
       when in dark world without pearl in Open/Standard.)
     sources:
-      # ALTTPR config flag `canOWYBA` (Over-World Y-Button-Aim, 203 uses) — the
-      # bottle-assisted dark-world bunny traversal. Fork macro CanPearlBypass =
-      # OP_TRICK(pearl_bypass) AND HasABottle(); 72 predicate uses, the most-wired
-      # trick (composed `HAS_ITEM(MoonPearl) OR CanPearlBypass()`).
-      - "app/Region/**: config('canOWYBA', false) — 203 uses"
+      # ALTTPR config flag `canOWYBA` (Over-World Y-Button-Aim) — the bottle-assisted
+      # dark-world bunny traversal. A MajorGlitches-EXCLUSIVE flag (config/logic.php:33
+      # — MG only, NOT OWG/HMG). Phase D (§5) macro: CanPearlBypass =
+      # (OP_TRICK(pearl_bypass) OR (>=major_glitches AND NOT >=hybrid_major_glitches))
+      # AND HasABottle() — opens at MG but not HMG; trick bit is the independent
+      # opt-in. 72 predicate uses (composed `HAS_ITEM(MoonPearl) OR CanPearlBypass()`).
+      - "app/Region/**: config('canOWYBA', false) — 203 uses; config/logic.php:33 (MG-only)"
     status: authored
     rom_version_status: untested-on-us10
 
@@ -388,30 +393,50 @@ glitch_levels:
     id: overworld_glitches
     name: "Overworld Glitches"
     description: |
-      OWG tier. ALTTPR `canOneFrameClipOW` (134) and related overworld clips.
-      KNOWN GAP (fresh-eyes audit 2026-06-04): the as-built Slice 4 §7 graph gates
-      every glitch site at OP_GLITCH_LEVEL_AT_LEAST(major_glitches) (tier 2) — there
-      are currently ZERO OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) (tier 1) gates.
-      So `logic=OverworldGlitches` is presently a PLACEMENT NO-OP (byte-identical to
-      NoGlitches); only `logic=MajorGlitches` changes reachability. This is the SAFE
-      direction (stronger than upstream — never opens a location too early). Proper
-      OWG fidelity (re-map `canOneFrameClipOW`/`canBootsClip`-OW sites to tier 1) is
-      follow-on work and is US-1.0 unverified regardless — see tasks §12.5/playtest.
+      OWG tier. ALTTPR OverworldGlitches flag set (config/logic.php:5-13):
+      canSuperBunny, canFakeFlipper, canSuperSpeed, canBootsClip, canMirrorClip,
+      canWaterWalk, canDungeonRevive. Phase D (add-rando-major-glitch §5) folded
+      the OWG-group level into the CanBootsClip + CanFakeFlippers macros, so
+      `logic=OverworldGlitches` is NO LONGER a placement no-op — boots-clip and
+      fake-flipper sites now route at tier 1. PARTIAL: the remaining OWG-group
+      techniques (canSuperSpeed/canSuperBunny/canMirrorClip/canWaterWalk/
+      canDungeonRevive) still ride the raw OP_GLITCH_LEVEL_AT_LEAST(major_glitches)
+      threshold sites, so they stay closed at OWG (the SAFE direction — never opens
+      too early). Reclassifying those raw sites to tier 1 is frontier F1 (per-site
+      technique ID). US-1.0 unverified regardless — see design.md + tasks F1/F4.
     rom_version_status: untested-on-us10
   - level: 2
     id: major_glitches
     name: "Major Glitches"
     description: |
-      MG tier. ALTTPR canMirrorClip/canMirrorWrap/canOneFrameClipUW/etc.
-      40 predicate uses of OP_GLITCH_LEVEL_AT_LEAST(major_glitches) in the graph.
+      MG tier — the MOST permissive (config/logic.php:24-37: OWG-group +
+      canMirrorWrap + canOWYBA + canOneFrameClipOW + canOneFrameClipUW +
+      canTransitionWrapped). Phase D §5: canOWYBA (MG-exclusive) folded into
+      CanPearlBypass via `>=major_glitches AND NOT >=hybrid_major_glitches`, so it
+      opens at MG but NOT HMG. ~40 raw OP_GLITCH_LEVEL_AT_LEAST(major_glitches)
+      threshold sites (canOneFrameClipOW/UW etc.) remain — frontier F1.
     rom_version_status: untested-on-us10
   - level: 3
     id: hybrid_major_glitches
     name: "Hybrid Major Glitches"
-    description: "Reserved for Phase D (add-rando-major-glitch); not user-selectable yet."
+    description: |
+      HMG tier (config/logic.php:14-23): OWG-group + canOneFrameClipUW. A
+      technique SUBSET of MajorGlitches (HMG ⊂ MG), so there are ZERO
+      HMG-exclusive locations. Opened for user input in Phase D
+      (add-rando-major-glitch §2). canOneFrameClipUW rides
+      OP_GLITCH_LEVEL_AT_LEAST(major_glitches) (>=2, true at MG+HMG); the
+      MG-exclusive techniques (canOWYBA folded into CanPearlBypass, plus the raw
+      canOneFrameClipOW/canMirrorWrap/canTransitionWrapped threshold sites) are
+      correctly closed at HMG only where they use the MG-exclusive form — the raw
+      threshold sites still over-reach at HMG (frontier F1).
     rom_version_status: untested-on-us10
   - level: 4
     id: no_logic
     name: "No Logic"
-    description: "Reserved for Phase D; not user-selectable yet."
+    description: |
+      NoLogic tier — NOT in config/logic.php (no technique flags). Opened for
+      user input in Phase D (§2). The predicate VM short-circuits the reachability
+      eval (rando_logic.c Predicate_EvalCtx, placement_context==0) so every
+      location is reachable and goal-completability passes vacuously; can_place
+      confinement stays live. Carries the dedicated no_logic_seed spoiler warning.
     rom_version_status: untested-on-us10

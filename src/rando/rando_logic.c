@@ -354,6 +354,19 @@ bool Predicate_EvalCtx(const uint8 *bytecode, uint16 length,
   if (bytecode == NULL || length == 0 || ctx == NULL || ctx->counts == NULL) {
     return false;
   }
+  // Phase D (add-rando-major-glitch) NoLogic short-circuit. At logic==NoLogic the
+  // REACHABILITY eval (placement_context==0) treats every location as reachable:
+  // goal-completability and all accessibility tiers then pass vacuously, so the
+  // --generate-seed strict refusal (main.c) does not fire and the seed has no
+  // reachability guarantee. Mirrors ALTTPR World.php:93 (regions not initialized
+  // under NoLogic). Placement can_place predicates (placement_context==1) are
+  // deliberately NOT short-circuited — confinement (dungeon keys etc.) stays live
+  // so the seed remains structurally valid/loadable. See design.md D1. Fires only
+  // at logic==NoLogic(4), which no non-NoLogic seed uses, so no other digest moves.
+  if (ctx->settings != NULL && ctx->settings->logic >= 4 /* NoLogic */ &&
+      ctx->placement_context == 0) {
+    return true;
+  }
   Cursor c = { bytecode, bytecode + length, false };
   bool result = eval(&c, ctx);
   // Either we consumed the entire stream, or hit an error. Malformed bytecode

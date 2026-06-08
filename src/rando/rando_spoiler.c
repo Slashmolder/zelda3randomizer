@@ -271,6 +271,17 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
               (unsigned)s->spheres->unreachable_count);
       first = false;
     }
+    // Phase D (add-rando-major-glitch) — NoLogic seeds enforce NO reachability:
+    // the predicate VM short-circuits the reachability eval (rando_logic.c), so
+    // placement ignores progression gating and the seed may be un-completable.
+    // Emitted by reading settings directly (the unverified_tricks_enabled
+    // pattern below). The spec pins this entry's shape to {"code","detail"},
+    // distinct from the {"kind"} shape of the placer-counter warnings above.
+    if (s->settings->logic >= 4 /* NoLogic */) {
+      fprintf(f, "%s\n      {\"code\": \"no_logic_seed\", \"detail\": \"Seed generated with logic=NoLogic; reachability is not enforced. The seed may be un-completable.\"}",
+              first ? "" : ",");
+      first = false;
+    }
     // NOTE: there is no longer an `accessibility_none_seed` warning. Under the
     // ALTTPR three-way accessibility axis, `none` means "beatable only" — the
     // seed is still guaranteed completable, so the old "may be unwinnable"
@@ -300,7 +311,12 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
       }
       // Glitch levels: logic >= level enables that tier's gates, so warn for
       // every non-zero level the seed reaches whose status is unverified.
-      for (uint32 i = 0; i < kRandoGlitchLevelStatusCount; i++) {
+      // Suppressed entirely under NoLogic (logic>=4): the reachability eval is
+      // short-circuited (rando_logic.c), so NO glitch-tier gate actually
+      // evaluates, and the dedicated no_logic_seed warning above already covers
+      // the seed — listing every tier (including no_logic itself) here would be
+      // misleading "in-use" noise. Phase D (add-rando-major-glitch) audit fix.
+      for (uint32 i = 0; i < kRandoGlitchLevelStatusCount && s->settings->logic < 4; i++) {
         const RandoGlitchLevelStatus *gs = &kRandoGlitchLevelStatus[i];
         if (gs->level == 0) continue;                 // no_glitches never warns
         if (s->settings->logic < gs->level) continue; // tier not reached
