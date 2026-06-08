@@ -541,9 +541,25 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: logic=major_glitches should parse to 2\n");
       exit(2);
     }
+    // Phase D (add-rando-major-glitch) — HybridMG / NoLogic now parse.
     Settings_SetDefaults(&sl);
-    if (Settings_ParseCsv("logic=HybridMG", &sl) == 0) {
-      fprintf(stderr, "Settings_SelfCheck: logic=HybridMG should reject (Phase D)\n");
+    if (Settings_ParseCsv("logic=HybridMG", &sl) != 0 || sl.logic != 3) {
+      fprintf(stderr, "Settings_SelfCheck: logic=HybridMG should parse to 3\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("logic=hybrid_major_glitches", &sl) != 0 || sl.logic != 3) {
+      fprintf(stderr, "Settings_SelfCheck: logic=hybrid_major_glitches should parse to 3\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("logic=no_logic", &sl) != 0 || sl.logic != 4) {
+      fprintf(stderr, "Settings_SelfCheck: logic=no_logic should parse to 4\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sl);
+    if (Settings_ParseCsv("logic=NoLogic", &sl) != 0 || sl.logic != 4) {
+      fprintf(stderr, "Settings_SelfCheck: logic=NoLogic should parse to 4\n");
       exit(2);
     }
     Settings_SetDefaults(&sl);
@@ -893,14 +909,16 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
       s->tricks = mask;
     }
   } else if (csv_str_eq(key, klen, "logic")) {
-    // Phase B Slice 4 — un-pinned to accept OWG / MajorGlitches in addition
-    // to NoGlitches (the Phase A default). Phase D will lift the
-    // HybridMG / NoLogic ceiling. Per `add-rando-trick-logic-and-axes` §3.1.
-    //   logic=NoGlitches | none | 0    → 0 (default)
-    //   logic=OverworldGlitches | overworld_glitches | 1 → 1
-    //   logic=MajorGlitches | major_glitches | 2     → 2
-    //   logic=HybridMG | hybrid_mg | 3                → reject (Phase D)
-    //   logic=NoLogic | no_logic | 4                  → reject (Phase D)
+    // Phase B Slice 4 un-pinned OWG / MajorGlitches; Phase D
+    // (add-rando-major-glitch §2) lifts the HybridMG / NoLogic ceiling.
+    //   logic=NoGlitches | none | 0                       → 0 (default)
+    //   logic=OverworldGlitches | overworld_glitches | 1  → 1
+    //   logic=MajorGlitches | major_glitches | 2          → 2
+    //   logic=HybridMG | hybrid_mg | hybrid_major_glitches | 3 → 3
+    //   logic=NoLogic | no_logic | 4                      → 4
+    // NOTE: per the ALTTPR tier model (config/logic.php) MajorGlitches is the
+    // MOST permissive tier; HybridMG (3) is numerically above it but a technique
+    // SUBSET. NoLogic (4) short-circuits reachability entirely. See design.md.
     MARK_SEEN(KEY_logic);
     if (csv_str_eq(val, vlen, "NoGlitches") || csv_str_eq(val, vlen, "none") || csv_str_eq(val, vlen, "0")) {
       s->logic = 0;
@@ -908,10 +926,11 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
       s->logic = 1;
     } else if (csv_str_eq(val, vlen, "MajorGlitches") || csv_str_eq(val, vlen, "major_glitches") || csv_str_eq(val, vlen, "2")) {
       s->logic = 2;
-    } else if (csv_str_eq(val, vlen, "HybridMG") || csv_str_eq(val, vlen, "hybrid_mg") || csv_str_eq(val, vlen, "3") ||
-               csv_str_eq(val, vlen, "NoLogic") || csv_str_eq(val, vlen, "no_logic") || csv_str_eq(val, vlen, "4")) {
-      fprintf(stderr, "Settings_ParseCsv: logic=%.*s is deferred to Phase D (not yet supported)\n", vlen, val);
-      goto bad_value;
+    } else if (csv_str_eq(val, vlen, "HybridMG") || csv_str_eq(val, vlen, "hybrid_mg") ||
+               csv_str_eq(val, vlen, "hybrid_major_glitches") || csv_str_eq(val, vlen, "3")) {
+      s->logic = 3;
+    } else if (csv_str_eq(val, vlen, "NoLogic") || csv_str_eq(val, vlen, "no_logic") || csv_str_eq(val, vlen, "4")) {
+      s->logic = 4;
     } else {
       goto bad_value;
     }

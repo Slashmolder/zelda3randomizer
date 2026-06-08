@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 58  # bump_rando_corpus.py --apply - pin Kholdstare+Trinexx (boss pool 9->7); only boss_shuffle=true entries move
+generator_version: 59  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -535,6 +535,26 @@ entries:
     seed: "0x6A106C45"
     label: "b-logic-mg-open-fast-ganon"
     expected_digest: "229669334f42b565c2e41893c45c824bdc90c1f6534c71136f92865214cd51af"
+  # Phase D (add-rando-major-glitch) — HybridMG + NoLogic tiers.
+  # HybridMG is a technique SUBSET of MajorGlitches (HMG = OWG + oneFrameClipUW).
+  # Because the as-built glitch gates are bare `OP_GLITCH_LEVEL_AT_LEAST(
+  # major_glitches)` (`>=2`, open at both MG=2 and HMG=3), HMG and MG share
+  # reachability today — at an IDENTICAL seed their placement_digest is equal
+  # (verified at apply-time: seed 0x1234 -> both baeee180...; the documented raw-
+  # threshold over-reach, frontier F1). This entry uses a distinct seed to pin
+  # HMG determinism independently. settings_hash differs from MG (logic 3 vs 2).
+  - settings: { mode.state: open, goal: fast_ganon, logic: hybrid_mg }
+    seed: "0x48BD6C45"
+    label: "b-logic-hmg-open-fast-ganon"
+    expected_digest: "e6cf6d331e640a25bc31156518b792264d0bc0e7e9a7998d0a00b30404e738fc"
+  # NoLogic — reachability short-circuited; placement ignores progression gating
+  # (can_place confinement still live). accessibility=none per the hunt/no-logic
+  # convention (judge by spoiler WRITTEN, not by unreachable_placements). The
+  # no_logic_seed fallback_warning is asserted present at capture.
+  - settings: { mode.state: open, goal: fast_ganon, logic: no_logic, accessibility: none }
+    seed: "0x4E0106C4"
+    label: "b-logic-nologic-open-fast-ganon"
+    expected_digest: "eb7f06e472541ff51b3dc7e8e5f45e1e9f81dccf007f3ccd06d45015f0b83bbd"
   # §4 swordless — exercises the swordless logic graph + sword-removed pool. Pins
   # the swordless placement so any future change to a swordless gate fails the
   # corpus. goal_completable verified at capture. (Runtime sword-substitution is
