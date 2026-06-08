@@ -29,6 +29,7 @@
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
 #include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
+#include "inverted_maps.h"  // InvertedHoleBlocks_Install (no-art Ganon pit shadow)
 #include "shuffle_cosmetic.h"  // Cosmetic_SetSeed (cosmetic_seed=0 -> slot seed)
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../config.h"  // g_config.cosmetic_seed
@@ -1860,6 +1861,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // Inverted DW->LW under-rock warps (overworld-secret type-0x82). Separate
   // asset set (157/158) from the entrance overrides, so order is independent.
   InvertedSecrets_Install(g_rando_active_world_state);
+  // Inverted hole-only Ganon relocation: append the no-art pit blocks to a
+  // kMap16ToMap8 (asset 70) shadow. Separate asset, order-independent.
+  InvertedHoleBlocks_Install(g_rando_active_world_state);
 
   // Cosmetic shuffles: when CosmeticSeed is 0 (default), the look tracks the
   // slot's seed_u64 (share_string bytes [21..28] LE). Re-seeds palette + music
@@ -2012,6 +2016,7 @@ void Rando_DeactivateSlot(void) {
   // Restores g_asset_ptrs[126/130/131] to their saved vanilla originals.
   InvertedEntrances_Teardown();
   InvertedSecrets_Teardown();  // restore g_asset_ptrs[157/158]
+  InvertedHoleBlocks_Teardown();  // restore g_asset_ptrs[70]
   // Phase B Slice 7/8 — tear down the boss + drop shuffle so the sprite
   // substitution reverts to a hard passthrough (vanilla bosses/drops) once no
   // rando slot is active; pairs with the install in Rando_ActivateSidecarSlot.

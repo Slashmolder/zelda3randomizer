@@ -87,6 +87,20 @@ uint8 Overworld_GetTileAttributeAtLocation(uint16 x, uint16 y) {  // 80882e
   if (rv >= 0x10 && rv < 0x1C) {
     rv |= (t >> 14) & 1;
   }
+  // Hole-only Inverted Ganon pit (screen 0x1B, post-Agahnim). The no-art pit is
+  // built from solid castle tile 0x037, which has no pit behavior, so force it to
+  // TileBehavior_Pit (0x20) — otherwise Link cannot fall in. Gated on the Inverted
+  // world-state + the pyramid-hole bit (save_ow_event_info[0x5B] & 0x20), so
+  // non-Inverted / pre-Agahnim 0x1B is byte-identical. NOTE: this is per-char, so
+  // any OTHER char-0x037 tile reachable on 0x1B would also become a pit — verify
+  // by playtest (walk the castle screen post-Agahnim); swap the pit char if so.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */ &&
+      (uint8)overworld_screen_index == 0x1B &&
+      (save_ow_event_info[0x5B] & 0x20) &&
+      (t & 0x1ff) == 0x037) {
+    return 0x20;
+  }
   return rv;
 }
 

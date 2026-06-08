@@ -120,9 +120,13 @@ static const InvertedOverride kInvertedOverrides[] = {
   // Overworld_LoadGFXAndScreenSize at flute-load time, so no row recompute is
   // needed here. (Do not "fix" this by overriding the full row with unverified
   // DW values — that would diverge from the correct mirror framing.)
-  // Slot 8 (vanilla 0x5B = DW pyramid) is intentionally NOT overridden: ALTTPR
-  // maps it 0x5B->0x1B for its pyramid->Hyrule-Castle relocation, which this fork
-  // did NOT adopt (Ganon stays in the DW pyramid 0x5B), so vanilla 0x5B is correct.
+  // Slot 8 (vanilla 0x5B = DW pyramid) maps to 0x1B for the hole-only Ganon
+  // relocation (ALTTPR Rom.php:1600, the 9th flute spot = 0x001B). 0x1B is the LW
+  // mirror of 0x5B (differs only by the 0x40 world bit), so the screen-index-only
+  // override is valid here exactly as for slots 0-7. This is also the practical way
+  // to REACH the relocated Ganon in normal play (the DW->LW under-rock warps are
+  // still playtest-pending/incomplete): flute to slot 8 -> arrive at LW Hyrule
+  // Castle -> fall into the pit -> Ganon.
   { kAsset_BirdTravel_ScreenIndex, 2, 0, 0x0043 },  // ToH NW      0x03->0x43
   { kAsset_BirdTravel_ScreenIndex, 2, 1, 0x0056 },  // Coven       0x16->0x56
   { kAsset_BirdTravel_ScreenIndex, 2, 2, 0x0058 },  // Kakariko    0x18->0x58
@@ -131,6 +135,7 @@ static const InvertedOverride kInvertedOverrides[] = {
   { kAsset_BirdTravel_ScreenIndex, 2, 5, 0x0070 },  //             0x30->0x70
   { kAsset_BirdTravel_ScreenIndex, 2, 6, 0x007B },  //             0x3B->0x7B
   { kAsset_BirdTravel_ScreenIndex, 2, 7, 0x007F },  // Desert      0x3F->0x7F
+  { kAsset_BirdTravel_ScreenIndex, 2, 8, 0x001B },  // Ganon/HC    0x5B->0x1B
 };
 #define kInvertedOverrideCount \
     (sizeof(kInvertedOverrides) / sizeof(kInvertedOverrides[0]))

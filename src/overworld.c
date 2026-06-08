@@ -3517,6 +3517,25 @@ void Ancilla_TerminateWaterfallSplashes() {  // 8ffd3c
 }
 
 void Overworld_GetPitDestination() {  // 9bb860
+  // Hole-only Inverted Ganon relocation: any fall on area 0x1B (LW Hyrule Castle)
+  // post-Agahnim routes to the Ganon room via entrance 0x7B — the same drop the
+  // DW pyramid uses (kFallHole entries 8-10, area 0x5B -> 0x7B). The only pit on
+  // 0x1B is the relocated Ganon pit (the 0x037 attr override in tile_detect.c), so
+  // a position match isn't needed. Gated on Inverted + the pyramid-hole bit, so
+  // non-Inverted / pre-Agahnim 0x1B is byte-identical (the dormant vanilla 0x1B
+  // fall-hole entry, pos 0x170 -> 0x7D, is unaffected outside this gate).
+  bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
+                        Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
+  if (rando_inverted && overworld_area_index == 0x1B &&
+      (save_ow_event_info[0x5B] & 0x20)) {
+    which_entrance = 0x7B;
+    byte_7E010F = 0;
+    g_rando_takeany_door_id = 0;
+    g_rando_entrance_exit_room = 0;
+    g_rando_entrance_force_cached = 0;
+    Rando_RecordEnteredFallhole();
+    return;
+  }
   uint16 x = (link_x_coord & ~7);
   uint16 y = (link_y_coord & ~7);
   uint16 pos = ((y - overworld_offset_base_y) & overworld_offset_mask_y) << 3;
@@ -3525,7 +3544,14 @@ void Overworld_GetPitDestination() {  // 9bb860
 
   int i = 36 / 2;
   for (;;) {
-    if (kFallHole_Pos[i] == pos && kFallHole_Area[i] == overworld_area_index)
+    // Inverted hole-only relocation: the DW pyramid (area 0x5B) is no longer a
+    // Ganon access — Ganon moved to the LW castle (0x1B, handled above). Its
+    // fall-hole entries (-> entrance 0x7B) must NOT match, so a fall at the
+    // pyramid drops to the Chris-Houlihan fallback below (kept in the DW), not to
+    // Ganon. Faithful to ALTTPR repointing the pyramid hole entrances off 0x5B
+    // (Rom.php:1842-1844). Non-Inverted is byte-identical.
+    if (kFallHole_Pos[i] == pos && kFallHole_Area[i] == overworld_area_index &&
+        !(rando_inverted && overworld_area_index == 0x5B))
       break;
     if (--i < 0) {
       // #82 Inverted: vanilla hardcodes the LIGHT world for the unmatched
@@ -3533,8 +3559,6 @@ void Overworld_GetPitDestination() {  // 9bb860
       // LW. In Inverted the home world is the DARK world, so an unmatched pit
       // must keep Link in the DW (0x40) rather than flipping him to the LW.
       // Gated so vanilla / Open / Standard / Retro stay byte-identical.
-      bool rando_inverted = (enhanced_features1 & kFeatures1_RandomizerActive) &&
-                            Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */;
       savegame_is_darkworld = rando_inverted ? 0x40 : 0;
       // Chris Houlihan's room
       which_entrance = 130;
@@ -3958,18 +3982,22 @@ void CreatePyramidHole() {  // 9bc2a7
   // are shared.
   if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
-    Overworld_DrawMap16_Persist(0x43e, 0x046d);
-    Overworld_DrawMap16_Persist(0x440, 0x0e39);
-    Overworld_DrawMap16_Persist(0x4bc, 0x0e3a);
-    Overworld_DrawMap16_Persist(0x4be, 0x0e3b);
-    Overworld_DrawMap16_Persist(0x4c0, 0x0e3c);
-    Overworld_DrawMap16_Persist(0x4c2, 0x0e3d);
-    Overworld_DrawMap16_Persist(0x53c, 0x0e3e);
-    Overworld_DrawMap16_Persist(0x53e, 0x0e3f);
-    Overworld_DrawMap16_Persist(0x540, 0x0e40);
-    Overworld_DrawMap16_Persist(0x542, 0x0e41);
-    Overworld_DrawMap16_Persist(0x5be, 0x0490);
-    Overworld_DrawMap16_Persist(0x5c0, 0x0491);
+    // Hole-only relocation: carve the no-art Ganon pit on screen 0x1B (a 2-tone
+    // dark diamond). The old code placed the pyramid-facade/hole blocks
+    // (0x046d/0x0e39.. /0x0490/0x0491) here, but those render as garbage with the
+    // castle gfx/palette; the pit blocks live in the InvertedHoleBlocks_Install
+    // map16 shadow. Footprint + block layout are shared with the static reload
+    // paint in Overworld_ApplyInvertedTiles (inverted_maps_apply.c).
+    //
+    // Only animate the carve when actually on the castle screen (0x1B). The
+    // retreat-bat slam can fire while the player is at the DW pyramid (0x5B —
+    // the bat isn't repositioned to the castle in this fork), and carving the pit
+    // blocks there would draw a spurious dark hole on the pyramid. When the carve
+    // is skipped, the static reload paint in Overworld_ApplyInvertedTiles draws
+    // the pit the next time the player loads screen 0x1B (gated on the same
+    // post-Agahnim bit set below), so the castle hole still appears.
+    if ((uint8)overworld_screen_index == 0x1B)
+      Inverted_CarveCastleHole();
   } else {
     Overworld_DrawMap16_Persist(0x3bc, 0xe3f);
     Overworld_DrawMap16_Persist(0x3be, 0xe40);

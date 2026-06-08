@@ -21,6 +21,9 @@
 //   dir bit (0x0080) selects vertical (+0x80) vs horizontal (+0x02) increment.
 #include "inverted_maps.h"
 #include "../variables.h"  // g_ram, overworld_screen_index, save_ow_event_info, etc.
+#include "../assets.h"     // g_asset_ptrs/g_asset_sizes (map16 table shadow)
+#include "../overworld.h"  // Overworld_DrawMap16_Persist (animated carve)
+#include <string.h>
 
 static inline void OWW_WriteTile(uint16 pos, uint16 tile) {
   // pos is the WRAM low address ($7E0000+pos); the map16 buffer (dung_bg2) is
@@ -35,28 +38,122 @@ static inline void OWW_WriteTile(uint16 pos, uint16 tile) {
   *(uint16 *)(g_ram + pos) = tile;
 }
 
+// ---------------------------------------------------------------------------
+// No-art Inverted Ganon pit on screen 0x1B (hole-only relocation).
+//
+// ALTTPR paints a full "pyramid" facade + a custom-gfx hole here. The facade and
+// hole map16 blocks are authored for the DW-pyramid palette and share palette
+// rows with the base Hyrule-Castle tiles, so they render mint-green/garbage with
+// the castle gfx/palette loaded on 0x1B (the reason the whole overlay was
+// suppressed). The faithful fix needs custom non-vanilla art (z3randomizer
+// data/sheet73.gfx, which is unlicensed and not in this fork's ROM-extracted
+// asset set).
+//
+// Instead we render ONLY the Ganon pit, with NO new art: a 2-tone dark diamond
+// built from a solid castle tile (char 0x037) that already renders cleanly on
+// 0x1B — color #292929 at palette row 4 (interior) and #393129 at row 7 (rim).
+// The facade is skipped entirely, so screen 0x1B looks like normal Hyrule Castle
+// plus a dark pit (post-Agahnim). See the OpenSpec change spike-findings.md.
+//
+// The two pit blocks don't exist in the vanilla map16 table, so we append them
+// to a shadow of kMap16ToMap8 (asset 70) at the first free block ids, gated on
+// the Inverted world-state. OverworldCopyMap16ToBuffer indexes the table by
+// block id with no bounds check, so new high block ids are safe — and they are
+// only ever placed at the 0x1B pit, so no other screen is affected.
+enum {
+  kAsset_Map16ToMap8 = 70,
+  kInvHoleInteriorTile = 0x1037,  // char 0x037 | (palette 4 << 10)  -> #292929
+  kInvHoleRimTile      = 0x1C37,  // char 0x037 | (palette 7 << 10)  -> #393129
+};
+
+// The pit footprint: dung_bg2 byte offsets (live map16 buffer, g_ram[0x2000+pos])
+// matching the positions CreatePyramidHole carves. interior=1 -> dark center,
+// interior=0 -> rim. A 4x4 diamond (corners omitted) reads as a round hole.
+static const struct { uint16 pos; uint8 interior; } kInvCastleHoleCells[] = {
+  {0x43e, 0}, {0x440, 0},
+  {0x4bc, 0}, {0x4be, 1}, {0x4c0, 1}, {0x4c2, 0},
+  {0x53c, 0}, {0x53e, 1}, {0x540, 1}, {0x542, 0},
+  {0x5be, 0}, {0x5c0, 0},
+};
+#define kInvCastleHoleCellCount \
+  (int)(sizeof(kInvCastleHoleCells) / sizeof(kInvCastleHoleCells[0]))
+
+// Shadow buffer for the map16 table (vanilla ~30 KB) + 2 appended pit blocks.
+static uint8  g_inv_map16_shadow[32768];
+static const uint8 *g_inv_map16_orig = NULL;  // saved g_asset_ptrs[70]
+static uint32 g_inv_map16_orig_size = 0;
+static uint16 g_inv_hole_interior_id = 0;     // resolved block ids (first-free)
+static uint16 g_inv_hole_rim_id = 0;
+
+void InvertedHoleBlocks_Teardown(void) {
+  if (g_inv_map16_orig != NULL) {
+    g_asset_ptrs[kAsset_Map16ToMap8] = g_inv_map16_orig;
+    g_asset_sizes[kAsset_Map16ToMap8] = g_inv_map16_orig_size;
+    g_inv_map16_orig = NULL;
+  }
+  // Reset the resolved pit block ids so a stale id can't be painted if the carve/
+  // static paint ever runs after teardown without a successful re-install (audit
+  // LOW-1). Both consumers are world_state==Inverted-gated and a live Inverted slot
+  // always re-installs, so this is purely defensive.
+  g_inv_hole_interior_id = 0;
+  g_inv_hole_rim_id = 0;
+}
+
+void InvertedHoleBlocks_Install(uint8 world_state) {
+  InvertedHoleBlocks_Teardown();
+  if (world_state != 2 /* kWorldState_Inverted */)
+    return;
+  uint32 sz = g_asset_sizes[kAsset_Map16ToMap8];
+  uint32 nblk = sz / 8;                 // first free block id
+  uint32 need = (nblk + 2) * 8;         // room for 2 appended blocks
+  if (need > sizeof(g_inv_map16_shadow))
+    return;                             // unexpected table size: leave vanilla
+  g_inv_map16_orig = g_asset_ptrs[kAsset_Map16ToMap8];
+  g_inv_map16_orig_size = sz;
+  memcpy(g_inv_map16_shadow, g_inv_map16_orig, sz);
+  g_inv_hole_interior_id = (uint16)nblk;
+  g_inv_hole_rim_id = (uint16)(nblk + 1);
+  uint16 *blk = (uint16 *)g_inv_map16_shadow;
+  for (int j = 0; j < 4; j++) {
+    blk[g_inv_hole_interior_id * 4 + j] = kInvHoleInteriorTile;
+    blk[g_inv_hole_rim_id * 4 + j] = kInvHoleRimTile;
+  }
+  g_asset_ptrs[kAsset_Map16ToMap8] = g_inv_map16_shadow;
+  g_asset_sizes[kAsset_Map16ToMap8] = need;
+}
+
+// Animated carve (post-Agahnim bat slam): write the pit into the live buffer and
+// queue the matching VRAM upload. Called from CreatePyramidHole's Inverted branch.
+void Inverted_CarveCastleHole(void) {
+  for (int i = 0; i < kInvCastleHoleCellCount; i++) {
+    uint16 blk = kInvCastleHoleCells[i].interior ? g_inv_hole_interior_id
+                                                 : g_inv_hole_rim_id;
+    Overworld_DrawMap16_Persist(kInvCastleHoleCells[i].pos, blk);
+  }
+}
+
 void Overworld_ApplyInvertedTiles(void) {
   uint8 scr = (uint8)overworld_screen_index;
   if ((uint16)overworld_screen_index >= 0x80)
     return;
 
-  // #82 fork fix (playtest 2026-05-30): suppress the .map1B overlay entirely on
-  // the Light-World Hyrule Castle screen (0x1B). z3randomizer's data paints an
-  // inverted "pyramid" there (eye-removal, tower sign, facade, + a post-Agahnim
-  // hole), but in this fork it is purely spurious:
-  //   * Cosmetic: its high pyramid map16 blocks need the Dark-World pyramid
-  //     gfx/palette, which can't coexist with the castle gfx loaded on 0x1B, so
-  //     they render as garbage (seen only via full screen rebuilds — mirror /
-  //     cave / flute / S&Q; walking-scroll never runs this overlay).
-  //   * Gameplay: the hole never routed to Ganon. The Ganon drop (kFallHole
-  //     entrance 123 -> room 0x000) is hardcoded to the DW pyramid area 0x5B; a
-  //     fall on area 0x1B lands in a HC room / the Chris-Houlihan fallback. The
-  //     real Ganon access is the DW pyramid hole, which is untouched by this.
-  // Skipping the whole screen-0x1B overlay leaves the clean castle on every
-  // entry method. CreatePyramidHole (overworld.c) — which carves the real DW
-  // pyramid hole — is intentionally NOT changed.
-  if (scr == 0x1B)
+  // Screen 0x1B (LW Hyrule Castle): hole-only Inverted Ganon relocation. The
+  // spurious "pyramid" facade overlay is NOT painted (it renders as garbage with
+  // the castle gfx/palette — see the no-art note above). Instead we paint ONLY
+  // the no-art Ganon pit, and only once Agahnim is defeated (the pyramid-hole
+  // bit, save_ow_event_info[0x5B] & 0x20 — the same gate the DW-pyramid hole and
+  // CreatePyramidHole use). Before Agahnim the screen is the clean castle.
+  // (NOTE: this static path runs on full screen rebuilds; walking-scroll into
+  // 0x1B is handled by the live carve. Verify both by playtest.)
+  if (scr == 0x1B) {
+    if (save_ow_event_info[0x5B] & 0x20) {
+      for (int i = 0; i < kInvCastleHoleCellCount; i++)
+        OWW_WriteTile((uint16)(0x2000 + kInvCastleHoleCells[i].pos),
+                      kInvCastleHoleCells[i].interior ? g_inv_hole_interior_id
+                                                      : g_inv_hole_rim_id);
+    }
     return;
+  }
 
   uint16 off = kInvertedMapOffsets[scr];
   if (off == 0xFFFF)

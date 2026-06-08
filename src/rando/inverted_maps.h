@@ -46,4 +46,14 @@ extern const uint16 kInvertedMapOffsets[128];  // 0xFFFF = no overlay for screen
 // Inverted world-state.
 void Overworld_ApplyInvertedTiles(void);
 
+// No-art Inverted Ganon pit (hole-only relocation, screen 0x1B). Install/teardown
+// append two solid dark map16 blocks to a kMap16ToMap8 (asset 70) shadow, gated
+// on the Inverted world-state; call alongside the other Inverted asset shadows in
+// Rando_ActivateSlot / Deactivate. Inverted_CarveCastleHole writes the pit into
+// the live buffer (animated post-Agahnim reveal); the static reload paint lives in
+// Overworld_ApplyInvertedTiles.
+void InvertedHoleBlocks_Install(uint8 world_state);
+void InvertedHoleBlocks_Teardown(void);
+void Inverted_CarveCastleHole(void);
+
 #endif  // RANDO_INVERTED_MAPS_H_
