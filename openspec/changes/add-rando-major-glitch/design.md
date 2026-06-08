@@ -122,8 +122,10 @@ frontier.
 `Predicate_EvalCtx` (`rando_logic.c`) is the single funnel for both reachability
 (`Predicate_Evaluate`, `placement_context==0`) and placement `can_place`
 (`Predicate_EvaluatePlacement`, `placement_context==1`). When
-`settings->logic == NoLogic(4)` **and** `placement_context == 0`, return `true`
-before evaluating bytecode.
+`settings->logic >= NoLogic(4)` **and** `placement_context == 0`, return `true`
+before evaluating bytecode. (`>=` not `==` defensively: NoLogic is the top enum
+value, so `>=4` is equivalent to `==4` for any in-range byte but also fails safe
+on an out-of-range deserialized `logic` byte.)
 
 Effect: reachability/spheres/`Goal_IsCompletable`/`Accessibility_SeedAcceptable`
 all see a fully-open world → `goal_completable` is vacuously true →
@@ -224,7 +226,7 @@ classification (logic=0 unchanged; logic≥1 each PHP-cited).
 
 | Risk | Mitigation |
 |---|---|
-| NoLogic short-circuit leaks into a non-NoLogic path | Gated on `logic==4 && placement_context==0`; corpus proves no logic<4 digest moves. |
+| NoLogic short-circuit leaks into a non-NoLogic path | Gated on `logic>=4 && placement_context==0`; corpus proves no logic<4 digest moves. |
 | Macro fold over-reaches a tier | Each technique's tier is read from `config/logic.php`; fold is OR-INSIDE the conjunction (CLAUDE.md invariant), dead at logic=0. |
 | Raw-threshold HMG over-reach | Left as documented frontier; honest scoping (HMG⊂MG means net reachability already correct where an OWG path exists). |
 | US-1.0 performability unknown | All tiers `untested-on-us10`; NoLogic carries `no_logic_seed`; playtest list in report. |

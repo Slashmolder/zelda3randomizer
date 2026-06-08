@@ -311,7 +311,12 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
       }
       // Glitch levels: logic >= level enables that tier's gates, so warn for
       // every non-zero level the seed reaches whose status is unverified.
-      for (uint32 i = 0; i < kRandoGlitchLevelStatusCount; i++) {
+      // Suppressed entirely under NoLogic (logic>=4): the reachability eval is
+      // short-circuited (rando_logic.c), so NO glitch-tier gate actually
+      // evaluates, and the dedicated no_logic_seed warning above already covers
+      // the seed — listing every tier (including no_logic itself) here would be
+      // misleading "in-use" noise. Phase D (add-rando-major-glitch) audit fix.
+      for (uint32 i = 0; i < kRandoGlitchLevelStatusCount && s->settings->logic < 4; i++) {
         const RandoGlitchLevelStatus *gs = &kRandoGlitchLevelStatus[i];
         if (gs->level == 0) continue;                 // no_glitches never warns
         if (s->settings->logic < gs->level) continue; // tier not reached
