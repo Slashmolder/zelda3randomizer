@@ -19,16 +19,44 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
 
 ## A. Deliberate divergences (intentional — not bugs)
 
-- **A1 — Ganon stays in the Dark-World pyramid.** ALTTPR moves Ganon under
-  Hyrule Castle (LW); this fork keeps the vanilla DW-pyramid Ganon. The
-  screen-0x1B inverted "pyramid" overlay is deliberately suppressed
-  (`src/rando/inverted_maps_apply.c:43-57`), and the Ganon drop (`kFallHole`
-  entrance 123 → room 0x000) stays hardcoded to DW pyramid area 0x5B. This single
-  choice makes several ALTTPR writes *dead* for our topology (see C2, and the
-  dropped pyramid/HC exit rows). **Reversing this is the subject of the
-  `add-rando-inverted-ganon-relocation` OpenSpec change** — it is large
-  (fall-hole + room access + overlay + exit-data + flute slot 8), hence its own
-  change rather than a backlog line.
+- **A1 — Ganon relocated to Hyrule Castle via a NO-ART pit (hole-only; SHIPPED on
+  branch `claude/inverted-ganon-holeonly`, alpha, playtest-confirmed).** ALTTPR
+  moves Ganon under the LW Hyrule Castle; this fork now does too, via a hole-only
+  approach (see below). The history:
+  - **Spike (2026-06-06): the FAITHFUL facade is paused.** An offline renderer
+    (real decompressed gfx + the exact 4bpp `Do3To4High/Low`→OW-palette pipeline,
+    cross-validated against the known DW-pyramid look) proved the full `.map1B`
+    overlay (facade **and** hole) renders **mint-green** on the castle screen: it
+    is authored for the DW-pyramid palette and shares palette rows — including the
+    LOW halves the base castle stonework uses — with the base Hyrule-Castle tiles,
+    so it is irreducible without ALTTPR's custom non-vanilla art
+    (`z3randomizer/data/sheet73.gfx` + map16 redefs + 1 shading color,
+    `Rom.php:1798-1879`), which is unlicensed and not in this fork's
+    ROM-extracted asset set. The faithful facade stays paused. Full evidence:
+    `openspec/changes/add-rando-inverted-ganon-relocation/spike-findings.md`.
+  - **Hole-only as-built (SHIPPED).** Rather than the facade, render ONLY a Ganon
+    pit at screen 0x1B with **no new art**: a 2-tone dark diamond built from a
+    solid castle tile (char 0x037) already loaded on 0x1B — #292929 interior
+    (pal 4) + #393129 rim (pal 7), via two map16 blocks appended to a
+    `kMap16ToMap8` (asset 70) runtime shadow (`InvertedHoleBlocks_Install`). The
+    fall works via a per-char pit-attr override (char 0x037 → `0x20` on Inverted
+    0x1B post-Agahnim, `tile_detect.c`) + an `Overworld_GetPitDestination`
+    special-case (Inverted 0x1B post-Agahnim → entrance `0x7B`, the Ganon room).
+    Flute slot 8 is repointed `0x5B→0x1B` (faithful, but inert in the current
+    8-spot flute menu). Death-at-Ganon uses the existing Inverted spawn-select
+    menu (recoverable). **The DW-pyramid hole is REMOVED** — under Inverted a fall
+    at the pyramid (area 0x5B) no longer matches its Ganon entries and drops to the
+    Chris-Houlihan fallback instead (`Overworld_GetPitDestination`), and the
+    animated carve is gated to screen 0x1B so no spurious hole forms on the pyramid;
+    Ganon lives ONLY under the LW castle (faithful to ALTTPR's repointed pyramid
+    hole entrances). All Inverted-gated; non-Inverted byte-identical.
+    Playtest-confirmed: pit renders, fall→Ganon, death recoverable, LW reachable.
+  - **Reachability:** normal-play DW→LW access (to reach the LW castle) is provided
+    by the under-rock world-warps (B7), now in `main`.
+  - **Deferred (optional):** the faithful facade (needs custom art); a 9th
+    flute-menu spot for the castle; walking-scroll verification of the pit overlay.
+    The C2 non-gaps stay non-gaps (the fall-hole pos was handled at runtime, not via
+    the sorted `kFallHole_*` table).
 
 ## B. Unimplemented gaps (would-be ALTTPR-faithful, deliberately not built yet)
 

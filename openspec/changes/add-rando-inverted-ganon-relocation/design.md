@@ -37,8 +37,40 @@ Authoritative source: ALTTPR `../alttp_vt_randomizer/app/Rom.php setInvertedMode
 
 Runtime feature gated on the Inverted world-state; no save-data migration. Existing Inverted slots load unchanged (the world_state byte already drives the gate). Rollback is a straight revert (re-suppress the 0x1B overlay, restore the DW-pyramid fall-hole bound, drop the exit/flute rows, restore the `0x40` death respawn). Asset-blob consumers must regenerate `zelda3_assets.dat` after the fall-hole extraction change.
 
+## Spike resolution (2026-06-06) — PAUSED
+
+The §1 spike was executed with an offline renderer that decompresses the real BG
+gfx the castle screen loads and reproduces the exact 4bpp `Do3To4High/Low` →
+overworld-palette pipeline (`LoadBackgroundGraphics` / `Palette_Load_OWBG*`),
+cross-validated against the known DW-pyramid appearance (it reproduces it exactly).
+
+**Finding:** the `.map1B` overlay (both the always-painted facade *and* the
+post-Agahnim hole) renders **mint-green / wrong-colored** on screen 0x1B with
+vanilla assets. The overlay tiles are authored for the **DW-pyramid palette**;
+screen 0x1B loads the **castle palette** (main theme 0x20, aux theme 36, bgpal 2,
+mode 0), whose rows 5/6/7 HIGH halves hold castle colors (green/white/gray) instead
+of pyramid brown. The gfx *content* is coherent (shapes are right), so this is a
+pure palette conflict — **but it is irreducible**: the overlay shares palette rows
+with the base Hyrule-Castle tiles, *including the LOW halves the base stonework
+uses* (pal2-L, pal5-L, pal6-L), so neither loading the pyramid palette wholesale
+nor a per-row override can fix the overlay without corrupting the surrounding
+castle. This is exactly why ALTTPR ships **custom non-vanilla art**
+(`z3randomizer/data/sheet73.gfx`) drawn to look right *with the castle palette*,
+plus map16 block redefinitions (`Rom.php:1798-1840`) and one added shading color
+(`0x1BE8DA=0x39AD`).
+
+Replicating that in the fork is a **large gfx-pipeline change** (a new gitignored
+non-vanilla gfx asset + a gated VRAM-load hook on screen 0x1B + map16 redefinition
+data + a palette tweak) that runs against the fork's vanilla-extraction +
+no-committed-data model — and the result is **playtest-only** to validate. Per the
+§1.3 STOP rule the change is **paused**: the `if (scr == 0x1B) return;` suppression
+stays, Ganon stays in the DW pyramid, and no source/asset changes were made. Full
+evidence + the most-promising future approach are in `spike-findings.md`.
+
 ## Open Questions
 
-- **The gfx/palette technique for screen 0x1B** (the spike) — unresolved until tasks §1; it determines feasibility and the bulk of the effort.
-- **Does the existing Inverted logic graph route Ganon access through an 0x1B location or assume 0x5B?** Confirm `logic_parts/inverted/` + `Goal_IsCompletable` don't encode the DW-pyramid position in a way that needs updating (likely fine — logic gates on crystals + Agahnim 2, not a screen id — but verify).
-- **Does relocating the fall-hole affect the Chris-Houlihan fallback** (the area-0x1B fall currently lands there)? Confirm the new ExtraHole entry takes precedence and the fallback is unaffected for non-Inverted.
+- **The gfx/palette technique for screen 0x1B** (the spike) — **RESOLVED: no
+  tractable vanilla-asset technique exists; the faithful fix needs ALTTPR's custom
+  gfx (a large change). Paused.** See the Spike resolution above + `spike-findings.md`.
+- **Does the existing Inverted logic graph route Ganon access through an 0x1B location or assume 0x5B?** **RESOLVED: no.** `logic_parts/inverted/` gates Ganon on crystals + Agahnim 2 and `removeItem("Ganon")` from DW NorthEast (`DarkWorld/NorthEast.yaml:16,94-99`); no screen id is encoded anywhere, so the logic needs no change regardless of where Ganon physically renders. (Confirms the relocation is purely runtime/rendering — which is the blocked part.)
+- **Does relocating the fall-hole affect the Chris-Houlihan fallback** (the area-0x1B fall currently lands there)? Not reached — phase 3 is blocked on the spike. (When unblocked: the §3.2 gate must keep the non-Inverted area-0x1B fall on the existing `--i < 0` Houlihan fallback, byte-identical.)
