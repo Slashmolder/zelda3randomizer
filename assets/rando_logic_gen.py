@@ -759,6 +759,52 @@ def encode_predicate(ast, ops: dict[str, OpDef], items: dict[str, ItemDef], regi
 
 WORLD_STATES = {"open": 0, "standard": 1, "inverted": 2, "retro": 3}
 GOALS = {"ganon": 0, "fast_ganon": 1, "dungeons": 2, "pedestal": 3, "triforce_hunt": 4, "ganonhunt": 5, "completionist": 6}
+
+# ---------------------------------------------------------------------------
+# Boss-shuffle runtime (OP_CAN_KILL_BOSS) dispatch tables.
+#
+# BOSS_KILL_BODIES is indexed by boss-pool index — this order is the CONTRACT
+# shared with src/rando/shuffle_boss.c (the kBoss_* enum) and the runtime boss
+# assignment that BossShuffle_ComputeAssignment produces. Each body reuses the
+# canonical per-dungeon CanKill<Boss> macro, so OP_CAN_KILL_BOSS(<Dungeon>) with
+# boss_shuffle OFF compiles to the SAME reachability as the inline macro it
+# replaces (default placement byte-identical). `world` is a free ident the
+# CanKill* macros accept for arity parity but never read (CanExtendMagic /
+# CanMeltThings ignore it) — identical to how the location predicates pass it.
+BOSS_KILL_BODIES = [
+    "CanKillArmosKnights()",     # 0  kBoss_ArmosKnights
+    "CanKillLanmolas(world)",    # 1  kBoss_Lanmolas
+    "CanKillMoldorm()",          # 2  kBoss_Moldorm
+    "CanKillAgahnim2()",         # 3  kBoss_Agahnim   (pinned; Aga1≈Aga2 kill rule)
+    "CanKillHelmasaurKing(world)",  # 4  kBoss_HelmasaurKing
+    "CanKillArrghus(world)",     # 5  kBoss_Arrghus
+    "CanKillMothula(world)",     # 6  kBoss_Mothula
+    "CanKillBlind(world)",       # 7  kBoss_Blind
+    "CanKillKholdstare(world)",  # 8  kBoss_Kholdstare
+    "CanKillVitreous(world)",    # 9  kBoss_Vitreous
+    "CanKillTrinexx(world)",     # 10 kBoss_Trinexx
+    "CanKillAgahnim2()",         # 11 kBoss_Agahnim2  (pinned)
+]
+
+# dungeon-id (HCE=0..GT=12) → vanilla boss-pool index. MIRRORS shuffle_boss.c
+# kBossVanilla; 0xFF = no boss (HCE) / unused. Used by OP_CAN_KILL_BOSS when no
+# per-seed boss assignment is installed (NULL context). Logic_SelfCheck
+# cross-checks this against shuffle_boss.c's vanilla map at runtime.
+DUNGEON_VANILLA_BOSS = [
+    0xFF,  # 0  HyruleCastleEscape (no boss)
+    0,     # 1  EasternPalace      → ArmosKnights
+    1,     # 2  DesertPalace       → Lanmolas
+    2,     # 3  TowerOfHera        → Moldorm
+    3,     # 4  HyruleCastleTower  → Agahnim   (pinned)
+    4,     # 5  PalaceOfDarkness   → HelmasaurKing
+    5,     # 6  SwampPalace        → Arrghus
+    6,     # 7  SkullWoods         → Mothula
+    7,     # 8  ThievesTown        → Blind
+    8,     # 9  IcePalace          → Kholdstare
+    9,     # 10 MiseryMire         → Vitreous
+    10,    # 11 TurtleRock         → Trinexx
+    11,    # 12 GanonsTower        → Agahnim2  (pinned)
+]
 # Phase B Slice 4 §56 — operand lookup tables for the three Phase B ops.
 # Difficulty enum mirrors `ItemPoolDifficulty` in `src/rando/rando_settings.h`.
 # Glitch levels mirror the `logic` axis: NoGlitches=0, OverworldGlitches=1,
@@ -949,6 +995,10 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
         out.append(_resolve_prize_id(_resolve_ident(args[0])))
     elif op_name == "MEDALLION_OPENS":
         out.append(_resolve_entrance_id(_resolve_ident(args[0])))
+    elif op_name == "CAN_KILL_BOSS":
+        # operand = dungeon id (HCE=0..GT=12); the runtime resolves the boss
+        # currently assigned to that dungeon and evaluates its kill predicate.
+        out.append(_resolve_dungeon_id(_resolve_ident(args[0])))
     elif op_name == "ITEM_IS":
         out += struct.pack("<H", _resolve_item(args[0], items))
     elif op_name == "TRICK":
@@ -1543,6 +1593,8 @@ def emit_logic_data(
     compiled_world_state_edges: dict[int, list[tuple[EdgeDef, bytes]]] | None = None,
     trick_status_rows: list[dict] | None = None,
     glitch_status_rows: list[dict] | None = None,
+    boss_kill_predicates: list[bytes] | None = None,
+    dungeon_vanilla_boss: list[int] | None = None,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -1639,6 +1691,14 @@ def emit_logic_data(
                 ws_edge_offsets.setdefault(ws_id, []).append(
                     (from_idx, to_idx, 1 if edge_def.one_way else 0, ep_offset)
                 )
+
+    # Boss-shuffle runtime — per-boss kill predicates (OP_CAN_KILL_BOSS). Append
+    # to the same stream; kRandoBossKillPred[] references (offset, length).
+    boss_kill_offsets: list[tuple[int, int]] = []
+    for enc in (boss_kill_predicates or []):
+        boss_kill_offsets.append((len(stream), len(enc)))
+        stream += enc
+
     # Emit the stream as a uint8 array.
     out.append("// Predicate bytecode stream — concatenated per the encoding documented in")
     out.append("// assets/rando_logic_gen.py. Locations and edges reference (offset, length).")
@@ -1653,6 +1713,30 @@ def emit_logic_data(
     out.append("};")
     out.append(f"const uint32 kRandoPredicateStreamSize = {len(stream)};")
     out.append("")
+
+    # Boss-shuffle runtime — OP_CAN_KILL_BOSS dispatch tables.
+    out.append("// Boss-shuffle runtime — per-boss kill predicate table (OP_CAN_KILL_BOSS).")
+    out.append("// Indexed by boss-pool index (kBoss_* in src/rando/shuffle_boss.c).")
+    out.append("// Type definition: rando_logic.h::RandoBossKillPred.")
+    if boss_kill_offsets:
+        out.append(f"const RandoBossKillPred kRandoBossKillPred[{len(boss_kill_offsets)}] = {{")
+        for bi, (off, length) in enumerate(boss_kill_offsets):
+            out.append(f"  {{ {off}, {length} }},  // boss {bi}")
+        out.append("};")
+        out.append(f"const uint32 kRandoBossKillPredCount = {len(boss_kill_offsets)};")
+    else:
+        out.append("const RandoBossKillPred kRandoBossKillPred[1] = { { 0, 0 } };")
+        out.append("const uint32 kRandoBossKillPredCount = 0;")
+    out.append("")
+    out.append("// dungeon-id (HCE=0..GT=12) -> vanilla boss-pool index (0xFF = no boss).")
+    out.append("// Mirrors src/rando/shuffle_boss.c kBossVanilla; OP_CAN_KILL_BOSS fallback")
+    out.append("// when no per-seed boss assignment is installed.")
+    dvb = list(dungeon_vanilla_boss) if dungeon_vanilla_boss else [0xFF] * 13
+    out.append(f"const uint8 kRandoDungeonVanillaBoss[{len(dvb)}] = {{")
+    out.append("  " + ", ".join(f"0x{b & 0xFF:02x}" for b in dvb) + ",")
+    out.append("};")
+    out.append("")
+
     # LocationDef table — typedef lives in rando_logic.h; emit only the array.
     out.append("// Location table — one row per location_registry.yaml entry.")
     out.append("// Type definition: rando_logic.h::RandoLocationDef.")
@@ -2268,6 +2352,27 @@ def main(argv=None):
                     (e, b"\x0d\x00")
                 )
 
+    # Boss-shuffle runtime — compile the per-boss kill predicates for
+    # OP_CAN_KILL_BOSS dispatch. Same parse→resolve→expand→encode pipeline as
+    # locations; each body reuses a canonical CanKill<Boss> macro so the
+    # off-shuffle resolution is byte-identical to the inline predicate. The list
+    # order is the boss-pool-index contract (see BOSS_KILL_BODIES).
+    boss_kill_predicates = []
+    for bi, body in enumerate(BOSS_KILL_BODIES):
+        try:
+            ast = parse_predicate(body)
+            ast = resolve_calls(ast, ops, all_macros)
+            ast = expand_macros(ast, all_macros, parsed_macro_bodies, ops)
+            errs = well_formedness(ast, ops, items, logic_regions, locations,
+                                   f"boss_kill[{bi}]")
+            if errs:
+                for e in errs:
+                    all_errors.append(f"boss_kill[{bi}] ({body}): {e}")
+            boss_kill_predicates.append(encode_predicate(ast, ops, items, logic_regions, locations))
+        except ParseError as e:
+            all_errors.append(f"boss_kill[{bi}] ({body}): parse error: {e}")
+            boss_kill_predicates.append(b"\x0d\x00")  # safe default: FALSE
+
     if all_errors:
         for err in all_errors:
             print(f"WARN: {err}", file=sys.stderr)
@@ -2286,7 +2391,9 @@ def main(argv=None):
                     compiled_overrides=compiled_overrides,
                     compiled_world_state_edges=compiled_world_state_edges,
                     trick_status_rows=trick_status_rows,
-                    glitch_status_rows=glitch_status_rows)
+                    glitch_status_rows=glitch_status_rows,
+                    boss_kill_predicates=boss_kill_predicates,
+                    dungeon_vanilla_boss=DUNGEON_VANILLA_BOSS)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     icon_atlas_count = emit_icon_atlas(
         Path("assets/rando/icon_atlas.yaml"),

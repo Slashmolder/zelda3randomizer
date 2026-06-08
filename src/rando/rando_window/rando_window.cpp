@@ -792,13 +792,12 @@ static void Panel_Shuffles() {
     }
   }
 
-  // Drop shuffle is LIVE (installed at slot load; drop sprites use the always-
-  // loaded common prize GFX, so shuffled drops render correctly). Boss shuffle
-  // is DISABLED here: the runtime substitution is held back because a pure
-  // sprite-type swap renders garbage (the room loads the vanilla boss's GFX,
-  // and multi-entry bosses spawn N copies) — proven by a playtest F12 dump of
-  // the EP boss room. Correct rendering needs per-boss GFX loading; until then
-  // the toggle stays off so the window can't enable a broken feature.
+  // Drop + boss shuffle are both LIVE. Drop sprites use the always-loaded common
+  // prize GFX. Boss shuffle now redirects a shuffled boss room's sprite-data +
+  // sprite-graphics to the assigned boss's home boss room (the Enemizer
+  // pointer-redirect model), so the substituted boss renders with the right tiles
+  // and the right formation/count, and the logic gates each prize on the shuffled
+  // boss's kill predicate (OP_CAN_KILL_BOSS) so it can't strand.
   ImGui::SeparatorText("Shuffles (experimental)");
   {
     bool ds = s->drop_shuffle != 0;
@@ -809,24 +808,22 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffle which prizes enemies drop; weak early enemies still "
                 "drop hearts so you aren't starved for health.");
 
-    // Not-yet-playable placeholders. Boss shuffle's generator is done, but the
-    // in-game boss GFX loading isn't, so it would render garbage — kept off.
+    bool bs = s->boss_shuffle != 0;
+    if (ImGui::Checkbox("Boss shuffle", &bs)) {
+      s->boss_shuffle = bs ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Randomize which boss guards each dungeon. "
+                "Agahnim, Ganon, Blind, Kholdstare, and Trinexx stay put.");
+
+    // Not-yet-playable placeholders.
     ImGui::BeginDisabled();
     bool off = false;
-    ImGui::Checkbox("Boss shuffle", &off);
-    HelpTooltip("Coming soon - needs per-boss graphics loading before it renders "
-                "correctly.");
     ImGui::Checkbox("Enemy shuffle", &off);
     ImGui::Checkbox("Glitches", &off);
     ImGui::EndDisabled();
     HelpTooltip("not yet implemented");
   }
-
-  // Defensive: if an imported slot / older state set boss_shuffle, the disabled
-  // checkbox above can't clear it, so force it off here — the runtime ignores
-  // it anyway, but this keeps the (one-way) settings_hash honest about what the
-  // window can actually produce.
-  if (s->boss_shuffle) { s->boss_shuffle = 0; changed = true; }
 
   if (changed) Pending_Changed();
 }

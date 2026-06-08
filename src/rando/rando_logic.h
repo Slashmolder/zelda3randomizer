@@ -61,7 +61,12 @@ typedef enum {
   // Phase B swordless — settings.mode_weapons == operand. Used by the Ganon /
   // Agahnim / CanMeltThings predicates to add a swordless branch.
   OP_MODEWEAPONS_EQ = 18,
-  OP__COUNT = 19,
+  // Boss-shuffle runtime — "can kill the boss assigned to dungeon_id". Resolves
+  // the per-seed boss assignment (boss_assignment, NULL→vanilla) then evaluates
+  // that boss's kill predicate from kRandoBossKillPred[]. boss_shuffle off ⇒
+  // vanilla identity ⇒ byte-identical to the inline CanKill<Boss> it replaces.
+  OP_CAN_KILL_BOSS = 19,
+  OP__COUNT = 20,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -102,6 +107,11 @@ typedef struct PredicateContext {
   // Per-seed shuffle tables:
   const uint8 *dungeon_prize_assignment;       // [kRandoDungeonCount]; entries are prize ids 0..9
   const uint8 *medallion_entrance_assignment;  // [kRandoMedallionEntranceCount]; entries are item ids
+  // Boss-shuffle assignment: [kRandoDungeonCount]; entry = boss-pool index
+  // (kBoss_* in shuffle_boss.c) currently in that dungeon's boss room. NULL when
+  // the placer/slot hasn't installed it — OP_CAN_KILL_BOSS then falls back to
+  // kRandoDungeonVanillaBoss (vanilla boss), so reachability is unchanged.
+  const uint8 *boss_assignment;                // [kRandoDungeonCount]; entries are boss-pool indices
 
   // Per-iteration reachability state (filled by Logic_ComputeReachability;
   // unused by standalone Predicate_Evaluate calls — pass 0 / NULL).
@@ -213,6 +223,24 @@ extern const RandoEdgeDef kRandoEdges[];
 extern const uint32 kRandoEdgesCount;
 extern const uint8 kRandoPredicateStream[];
 extern const uint32 kRandoPredicateStreamSize;
+
+// Boss-shuffle runtime — OP_CAN_KILL_BOSS dispatch tables (emitted by
+// assets/rando_logic_gen.py). Indexed by boss-pool index (kBoss_* in
+// src/rando/shuffle_boss.c): 0=Armos, 1=Lanmolas, 2=Moldorm, 3=Agahnim,
+// 4=Helmasaur, 5=Arrghus, 6=Mothula, 7=Blind, 8=Kholdstare, 9=Vitreous,
+// 10=Trinexx, 11=Agahnim2. Each entry points at that boss's kill predicate in
+// kRandoPredicateStream (the same compiled bytecode the inline CanKill<Boss>
+// macro produces, so the off-shuffle resolution is byte-identical).
+typedef struct RandoBossKillPred {
+  uint32 offset;   // into kRandoPredicateStream
+  uint16 length;   // bytes; 0 = no predicate (always false)
+} RandoBossKillPred;
+extern const RandoBossKillPred kRandoBossKillPred[];
+extern const uint32 kRandoBossKillPredCount;
+// dungeon-id (HCE=0..GT=12) → vanilla boss-pool index, or 0xFF for HCE/unused.
+// Mirrors shuffle_boss.c kBossVanilla; used by OP_CAN_KILL_BOSS when no per-seed
+// boss assignment is installed. Logic_SelfCheck cross-checks the two.
+extern const uint8 kRandoDungeonVanillaBoss[kRandoDungeonCount];
 
 // ---------------------------------------------------------------------------
 // §12.6 — per-trick / per-glitch-level ROM-version verification status.

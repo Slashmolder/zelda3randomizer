@@ -92,7 +92,7 @@ axis via `item_pool`.
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
 | `prize_shuffle` | `true`, `false` | `true` |
 | `medallion_shuffle` | `true`, `false` | `true` |
-| `boss_shuffle` | `true`, `false` | `false` (generation-only — not runtime-enabled; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
+| `boss_shuffle` | `true`, `false` | `false` (playable, experimental — kGenVer 56; render via the Enemizer redirect model; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | `true` — ⚠ **value is inverted vs the key name.** `true` (the default) = boss-heart containers are **pinned** (identity-placed, NOT in the shuffle pool); `false` = hearts are shuffled **into** the pool. The native-settings UI hides this inversion behind the checkbox **"Shuffle boss heart containers"** (checked ⇒ `false`). Setting `false` changes placement. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -205,16 +205,26 @@ supported — see the boss-shuffle note below.
 
 ### Boss & drop shuffle (experimental)
 
-Two opt-in shuffle modules (`add-rando-shuffles-and-minigames`, kGeneratorVersion
-49). Both default **off** and are byte-identical to vanilla when off. They are
-**orthogonal to item placement** — turning either on never changes the
-`placement_digest` / `sphere_digest` (the corpus carries shuffle-on entries that
-assert exactly this). Their per-seed assignment is *not* stored in the slot; it
-is regenerated deterministically from `(settings, seed)`. Determinism is pinned
-by `BossShuffle_SelfCheck` / `DropShuffle_SelfCheck` (part of `--rando-selftest`).
+Two opt-in shuffle modules (`add-rando-shuffles-and-minigames`). Both default
+**off** and are byte-identical to vanilla when off. Their per-seed assignment is
+*not* stored in the slot; it is regenerated deterministically from
+`(settings, seed)`. Determinism is pinned by `BossShuffle_SelfCheck` /
+`DropShuffle_SelfCheck` (part of `--rando-selftest`).
 
-**Status:** drop shuffle is **playable**; boss shuffle is **generation-only / not
-runtime-enabled** (see the boss note below) and its toggle is disabled in the UI.
+- **Drop** shuffle is **orthogonal to item placement** — turning it on never
+  changes `placement_digest` / `sphere_digest` (the corpus asserts a drop-on
+  entry equals its drop-off twin).
+- **Boss** shuffle WAS orthogonal, but as of **kGeneratorVersion 56** it affects
+  placement: each dungeon's `- Boss`/`- Prize` now gates on the *shuffled* boss's
+  kill predicate (see the boss note), so a `boss_shuffle=true` seed can move
+  placement/spheres vs its boss-off twin. `boss_shuffle=false` (the default, and
+  every non-boss corpus entry) stays byte-identical.
+
+**Status:** drop shuffle is **playable**; boss shuffle is now **playable
+(experimental)** — beatability logic (kGenVer 56) + the runtime render (the
+Enemizer redirect model) are both live and the UI toggle is enabled. A few bosses
+in non-home rooms have known cosmetic/spawn quirks (see the boss note); playtest
+feedback wanted.
 
 - **`drop_shuffle`** (playable) — permutes the 56-entry enemy drop-prize table
   (`kPrizeItems`, 7 packs × 8 slots). A **heart-drop floor** guarantees pack 0
@@ -232,36 +242,47 @@ runtime-enabled** (see the boss note below) and its toggle is disabled in the UI
   — the faithful realization of the spec's "a tier reachable in spheres 0-2 keeps
   a heart" in this fork's drop model.
 
-- **`boss_shuffle`** (generation-only — **not runtime-enabled**) — the generator
-  randomizes which boss guards each of the 10 shuffleable dungeon boss rooms (EP,
-  DP, ToH, PoD, SP, SW, TT, IP, MM, TR; Agahnim 1/2 + Ganon pinned) and emits the
-  assignment in the spoiler under `boss_assignments`. The dungeon→prize binding is
-  unchanged. **But the runtime sprite substitution is deliberately held back**, so
-  loading a `boss_shuffle` slot plays with the vanilla bosses.
+- **`boss_shuffle`** (playable, experimental) — randomizes which boss guards each
+  of the 10 shuffleable dungeon boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP, MM,
+  TR; Agahnim 1/2 + Ganon pinned) and emits the assignment in the spoiler under
+  `boss_assignments`. The dungeon->prize binding is unchanged. As of kGenVer 56
+  the logic graph tracks the shuffled boss (beatability) AND the runtime renders
+  it (the Enemizer redirect model); both are live and the UI toggle is enabled.
 
-  > ⚠️ **Why it isn't playable yet.** The substitution was a pure sprite-*type*
-  > swap, which renders garbage: the boss room loads the **vanilla** boss's
-  > graphics sheet, so a substituted boss draws with the wrong tiles, and
-  > multi-entry vanilla bosses (Eastern Palace is **6** Armos Knight sprites)
-  > each remap, spawning N copies of the new boss. (Confirmed by an F12 dump of
-  > the EP boss room: room 0xC8, six active sprites of type 0x09 = Moldorm, drawn
-  > with the Armos GFX.) Correct rendering needs **per-boss sprite-GFX loading +
-  > spawn-count handling** — a substantial graphics change. The generator,
-  > spoiler, corpus entries, and self-checks stay in place for that future work;
-  > `Rando_ActivateSidecarSlot` calls `BossShuffle_Deactivate` so the runtime is
-  > a passthrough, and `Rando_ShuffleInstallSelfCheck` guards that it stays off.
+  > ✅ **Beatability (landed, kGenVer 56).** The "second gap" the earlier note
+  > flagged is now closed in logic. Each dungeon's `"<Dungeon> - Boss"`/`- Prize`
+  > location gates on a new predicate-VM op **`OP_CAN_KILL_BOSS(dungeon)`** (macro
+  > `CanKillBoss`) that resolves the dungeon's *currently assigned* boss and
+  > evaluates *that* boss's kill predicate — so a fire/ice-gated boss (Trinexx,
+  > Kholdstare) shuffled into a fireless-reachable dungeon can no longer strand
+  > its prize. With `boss_shuffle` off the op resolves to the vanilla boss, so
+  > default placement is byte-identical. Headless-guarded by `Logic_SelfCheck`
+  > (direct op resolution) + `Placement_SelfCheck` (boss_shuffle=1 seeds across
+  > goals are completable with 0 unreachable). This corrects design.md D6.
   >
-  > **A second, separate gap** also blocks tournament use once rendering is fixed:
-  > the logic graph hard-codes each dungeon's `"<Dungeon> - Boss"` location to its
-  > **vanilla** boss-kill items (e.g. Turtle Rock - Boss requires Fire Rod + Ice
-  > Rod for Trinexx). Boss shuffle moves the boss but not the predicate, so an
-  > item-gated boss can land where you arrive before its item, and the
-  > accessibility check (which evaluates the vanilla logic) won't catch it
-  > (design.md D6). Both the GFX work and a per-seed boss-kill predicate override
-  > are needed before boss shuffle is playable + race-safe.
+  > ✅ **Render (live, experimental — the Enemizer pointer-redirect model).** When
+  > a shuffled boss room loads, `Rando_ActivateSidecarSlot` has installed the boss
+  > assignment and `BossShuffle_RenderHomeRoom` redirects BOTH the room's
+  > sprite-data list AND its sprite-graphics index to the assigned boss's vanilla
+  > HOME boss room (`dungeon.c` / `sprite.c`). The home room already holds the
+  > correct boss formation (right count, coords, trigger overlords) drawn with the
+  > correct gfx, so the substituted boss renders + fights like its vanilla self.
+  > (This replaced the earlier per-entry sprite-TYPE swap, which rendered garbage
+  > and mis-spawned formation bosses.) Off / vanilla play is byte-identical (the
+  > redirect returns a no-op). The render is PLAYTEST-ONLY validated — it could not
+  > be confirmed headless. KNOWN RISKS. **Blind** is now PINNED to Thieves' Town (kGenVer 57, not
+  > shuffled): TT has no Blind sprite — it spawns Blind via a maiden sequence + a
+  > TT-only state bit (`dung_savegame_state_bits & 0x2000`), so a Blind shuffled
+  > elsewhere never spawned (playtest-confirmed strand). Pinning is the fix;
+  > making Blind shuffleable is enemizer-class (synthetic 0xCE + forcing the
+  > 0x2000 gate + maiden suppression both directions) and is deferred.
+  > **Trinexx / Kholdstare** in NON-home rooms miss their room-shell object-layer
+  > setup (Enemizer special-cases these too) — may look wrong; killability TBD by
+  > playtest (still in the pool pending confirmation). The other shuffleable
+  > bosses use the redirect + spawn-coord alignment cleanly.
   >
-  > **Swordless interaction** (swordless fresh-eyes audit, LOW): when the boss
-  > shuffle *does* become runtime-live, the per-seed boss-kill predicate override
+  > **Swordless interaction** (swordless fresh-eyes audit, LOW): now that boss
+  > shuffle is runtime-live, a remaining caveat — the per-seed boss-kill override
   > MUST be swordless-aware — ALTTPR forbids Kholdstare/Trinexx outside their home
   > dungeons under swordless (`canPlaceBoss`, e.g. `Region.php:98-105`,
   > `GanonsTower.php:151`) because their swordless kills (hammer + melt / fire+ice)
@@ -845,6 +866,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 17→32 | Phase-b merge cumulative — slice 4 trick predicates, slice 5 hints generator, slice 7+8 boss/drop algorithms, inverted parity translation, audit-fix passes | 55/55 corpus regenerated (`baa393b`); most defaults inert per the `kgenver_inert_change_exception` invariant but several intermediate bumps shifted Retro/Inverted digests. See `git log v17..v32 -- src/rando/ assets/rando/` |
 | 46→47 | Fork-extension hint NPCs (Storyteller + Kakariko/Dark-World Fortune Tellers, ids 17-19) add 3 entries to the spoiler `hints[]` | **Placement/sphere digests unchanged** (hints are post-placement; `generator_version` is not an RNG input) — corpus 69/69 byte-identical, **not regenerated**. The bump exists only so a pre-fork v46 **race-mode** seed fails reveal with an honest `VersionMismatch` ("regenerate") instead of a misleading stamp `Tampered`, since the race stamp is a SHA over the full spoiler JSON incl. `hints[]`. A reveal-only reproducibility bump, not a placement bump. |
 | 48→49 | **Drop shuffle** goes live in playable slots (installed at slot load; native-window toggle) with a heart floor; the spoiler emits `boss_assignments` / `drop_tables`. (Boss shuffle is generation-only — its runtime substitution is held back; see the Boss & drop shuffle section.) | **All 69 existing placement/sphere digests byte-identical** (boss/drop shuffle is orthogonal to item placement) — corpus regenerated reported 0 digest changes; 10 shuffle-on entries added that assert the orthogonality. Boss/drop *assignment* determinism is pinned by the new self-checks, not the corpus. The bump version-locks the now-live runtime drop algorithm + the shuffle-on race stamp (a shuffle-on v48 race seed would otherwise regenerate different drops/stamp). |
+| 55→56 | **Boss-shuffle beatability logic** — each shuffleable dungeon's `- Boss`/`- Prize` gates on the new `OP_CAN_KILL_BOSS(dungeon)` op (the *shuffled* boss's kill predicate) instead of the inline vanilla `CanKill<Boss>` macro, so an item-gated boss can't strand its prize once boss shuffle is runtime-live (corrects design.md D6; boss shuffle is **no longer** placement-orthogonal). | **Only `boss_shuffle=true` entries move** — 6 of the 8 boss-on corpus entries (4 placement + 2 sphere); the other 2 boss-on + all 102 boss-off entries are **byte-identical** (with the assignment at the vanilla identity the op resolves to the vanilla boss-kill predicate). Boss assignment install added to `Place_AssumedFill` (base seed). settings_hash / canonical layout unchanged (boss_shuffle was already canonical field #23). The runtime *render* (Enemizer redirect model) landed separately as a runtime-only change — no further bump (corpus byte-identical). |
+| 56→57 | **Pin Blind to Thieves' Town** in the boss-shuffle pool (10→9 shuffleable bosses). Blind has no boss sprite in its room data (TT-only maiden spawn + a `dung_savegame_state_bits & 0x2000` gate), so a Blind shuffled elsewhere never spawned (confirmed strand); pinning is the clean fix. | Changes the boss assignment for every `boss_shuffle=true` seed (9-perm + Blind pinned), so the boss-on placement/sphere digests move (7 entries); `boss_shuffle=false` stays byte-identical. settings_hash / canonical layout unchanged. Corpus regenerated. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero
@@ -1061,7 +1084,7 @@ under `openspec/changes/archive/`) and pass `openspec validate --changes`.
 | 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/archive/2026-06-05-add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b. Placement + logic-collapse + SRAM shared-counter runtime; kGenVer 53→54 | ✅ Archived 2026-06-05 |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
 | 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: 15 telepathic-tile hints + Storyteller/Fortune-Teller fork NPCs + Murahdahla (spoiler-only) + dialogue-ID injection | In-progress (gen/spoiler/determinism/docs done; in-game NPC playtest + audit open) |
-| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle generation-only) |
+| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle playable/experimental — kGenVer 56 beatability + Enemizer-redirect render) |
 | 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |
 
 See the [`openspec/changes/` index](../openspec/changes/README.md) for the

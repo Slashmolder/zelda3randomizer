@@ -135,7 +135,7 @@ locations:
   #   AND wildCompasses/wildMaps guards                     [TRUE]
   - id: "Desert Palace - Boss"
     region: DesertPalace_PastLanmolas
-    can_reach: "HAS_ITEM(MoonPearl) AND CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillLanmolas(world)"
+    can_reach: "HAS_ITEM(MoonPearl) AND CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)"
     # setFillRules / setAlwaysAllow inherited from Standard php:108-120;
     # mirrored in 10_desert_palace.yaml. Phase B integration: confirm
     # codegen carries these through the inherited-by-default path.
@@ -149,7 +149,7 @@ locations:
   # The Boss predicate is the Inverted override above; Prize mirrors it.
   - id: "Desert Palace - Prize"
     region: DesertPalace_PastLanmolas
-    can_reach: "HAS_ITEM(MoonPearl) AND CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillLanmolas(world)"
+    can_reach: "HAS_ITEM(MoonPearl) AND CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)"
     source: "app/Region/Inverted/DesertPalace.php:59-79 (Prize = can_complete = Boss access)"
 
 locations_notes: |

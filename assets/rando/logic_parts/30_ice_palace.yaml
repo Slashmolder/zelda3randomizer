@@ -132,13 +132,13 @@ locations:
   # wildCompasses/wildMaps both default false → those disjuncts collapse to TRUE.
   - id: "Ice Palace - Boss"
     region: IcePalace_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillKholdstare(world) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
+    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillBoss(IcePalace) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
     source: "app/Region/Standard/IcePalace.php:108-117"
 
   # Ice Palace - Prize (php:154 → can_complete = Boss canAccess).
   - id: "Ice Palace - Prize"
     region: IcePalace_Lobby
-    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillKholdstare(world) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
+    can_reach: "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillBoss(IcePalace) AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)"
     source: "app/Region/Standard/IcePalace.php:104-106, 154 (can_complete = Boss access)"
 
 macros:

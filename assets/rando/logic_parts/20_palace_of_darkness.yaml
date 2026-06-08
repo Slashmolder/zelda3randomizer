@@ -188,14 +188,14 @@ locations:
   # `item.require.Lamp=0` config-level dark-room-nav semantics).
   - id: "Palace of Darkness - Boss"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
+    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillBoss(PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:160-180"
 
   # Prize (php:65, 156-158, 194) — can_complete = Boss canAccess. Mirrors
   # the Boss `Lamp OR CanDarkRoomNav()` pattern (same closure, same gate).
   - id: "Palace of Darkness - Prize"
     region: PalaceOfDarkness
-    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillHelmasaurKing(world)"
+    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillBoss(PalaceOfDarkness)"
     source: "app/Region/Standard/PalaceOfDarkness.php:65, 156-158, 194 (can_complete = Boss access)"
 
 macros:

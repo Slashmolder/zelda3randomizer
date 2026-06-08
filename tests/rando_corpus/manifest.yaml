@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 55  # bump_rando_corpus.py --apply - NotADungeonItem bans DP/EP/Generic keys at Uncle/Secret-Passage (audit MED #7)
+generator_version: 58  # bump_rando_corpus.py --apply - pin Kholdstare+Trinexx (boss pool 9->7); only boss_shuffle=true entries move
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -453,14 +453,17 @@ entries:
     expected_digest: "30cc424a5b25739d00f93f62c485e2c3f2298f946a29e9d58e5c700126dff4bc"
     expected_sphere_digest: "9d59c70602855e1917a85bb109b538a095711c399a8fcd9ba0d4f8a39dd254c0"
 
-  # Phase B Slice 7/8 (add-rando-shuffles-and-minigames, kGenVer 49) — boss +
-  # drop shuffle. These flags are ORTHOGONAL to item placement, so each entry's
-  # placement_digest + sphere_digest equals its shuffle-off twin (verified: a
-  # boss-on seed is byte-identical to the same seed boss-off). The corpus value
-  # is exactly that regression guard — that turning the shuffle on never
-  # perturbs placement/spheres. Boss/drop *assignment* determinism is pinned by
-  # BossShuffle_SelfCheck / DropShuffle_SelfCheck (the corpus only hashes
-  # placement + spheres). >=4 boss + >=4 drop + 2 both-on per tasks.md §7.2.
+  # Phase B Slice 7/8 (add-rando-shuffles-and-minigames) — boss + drop shuffle.
+  # DROP shuffle stays ORTHOGONAL to item placement (a drop-on seed is byte-
+  # identical to its drop-off twin). BOSS shuffle is NO LONGER orthogonal as of
+  # kGenVer 56 (boss-shuffle runtime): each dungeon's `- Boss`/`- Prize` now gates
+  # on OP_CAN_KILL_BOSS(dungeon) — the SHUFFLED boss's kill predicate — so a
+  # boss-on seed CAN move placement/sphere vs its boss-off twin (it does for
+  # ~6 of the 8 boss-on entries here; the rest happen to be unperturbed by their
+  # assignment). boss_shuffle=FALSE (every other entry) stays byte-identical —
+  # the op resolves to the vanilla boss-kill predicate. Boss/drop *assignment*
+  # determinism is pinned by BossShuffle_SelfCheck / DropShuffle_SelfCheck.
+  # >=4 boss + >=4 drop + 2 both-on per tasks.md §7.2.
   - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true }
     seed: "0x5701"
     label: "b-boss-open-fast-ganon"
@@ -619,7 +622,7 @@ entries:
     seed: "0xC0FFEE0000000016"
     label: "b-inverted-boss-drop"
     expected_digest: "b8cf031efa946f5b1d985bd1308a892b40be4a9a20e31e5908709daff995c62e"
-    expected_sphere_digest: "01976866dedaf08b133f622d118f43bbe41c3d2b1bbc80ebfd54655ebb09074d"
+    expected_sphere_digest: "2bd60f10a2a65a2866aff64dc1a25109fd08068e0552dcbef6334e6a27d3e58a"
   - settings: { mode.state: inverted, goal: fast_ganon, item_pool: expert }
     seed: "0xC0FFEE0000000017"
     label: "b-inverted-pool-expert"

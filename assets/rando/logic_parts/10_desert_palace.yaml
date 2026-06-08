@@ -140,7 +140,7 @@ locations:
     region: DesertPalace_PastLanmolas
     type: Drop
     vanilla_item: BossHeartContainer
-    can_reach: "CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillLanmolas(world)"
+    can_reach: "CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)"
     # setFillRules (php:108-116):
     #   if (!bossNormalLocation && item is dungeon-item-class) return false
     #   return !in_array(item, [KeyP2, BigKeyP2])
@@ -158,7 +158,7 @@ locations:
     region: DesertPalace_PastLanmolas
     type: Prize_Pendant
     vanilla_item: Prize_RedPendant
-    can_reach: "CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillLanmolas(world)"
+    can_reach: "CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)"
     source: "app/Region/Standard/DesertPalace.php:62, 92-94, 130 (can_complete = Boss access)"
 
 macros:

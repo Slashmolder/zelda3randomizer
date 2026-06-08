@@ -19,6 +19,7 @@
 #include "rando/rando.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
+#include "rando/shuffle_boss.h"  // BossShuffle_RenderHomeRoom (boss-shuffle render)
 
 // todo: move to config
 static const uint16 kBossRooms[] = {
@@ -3713,6 +3714,26 @@ void Dungeon_LoadHeader() {  // 81b564
   palette_sp6l = dpi->pal3;
   aux_tile_theme_index = hdr_ptr[2];
   sprite_graphics_index = hdr_ptr[3] + 0x40;
+  // Boss-shuffle RENDER: a shuffled boss room loads the ASSIGNED boss's sprite
+  // graphics AND sprite palette (from its home boss room's header), so the
+  // substituted boss draws with the correct tiles AND colors instead of the
+  // vanilla boss's. The room's BG palette (palette_main_indoors) stays THIS
+  // room's so the room itself looks unchanged — only the boss's sprite palette
+  // slots (sp0l/sp5l/sp6l) follow the boss. Boss rooms are boss-only, so taking
+  // the home room's sprite palette can't mis-color a non-boss sprite. Returns
+  // 0xFFFF (no redirect) when boss shuffle is off / not a shuffled boss room —
+  // then everything keeps the vanilla values above (byte-identical).
+  {
+    uint16 boss_gfx_room = BossShuffle_RenderHomeRoom(dungeon_room_index);
+    if (boss_gfx_room != 0xFFFF) {
+      const uint8 *bh = GetRoomHeaderPtr(boss_gfx_room);
+      sprite_graphics_index = bh[3] + 0x40;
+      const DungPalInfo *bdpi = &kDungPalinfos[bh[1]];
+      palette_sp0l = bdpi->pal1;
+      palette_sp5l = bdpi->pal2;
+      palette_sp6l = bdpi->pal3;
+    }
+  }
   dung_hdr_collision_2 = hdr_ptr[4];
   dung_hdr_tag[0] = hdr_ptr[5];
   dung_hdr_tag[1] = hdr_ptr[6];

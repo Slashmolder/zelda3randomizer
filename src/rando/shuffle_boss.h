@@ -59,10 +59,10 @@ void BossShuffle_Deactivate(void);
 const char *BossShuffle_BossName(uint8 pool_index);
 const char *BossShuffle_DungeonName(uint8 dungeon_id);
 
-// Self-check (invoked from --rando-selftest): asserts determinism, the
-// pinned-Agahnim invariant, the off→identity contract, and that the shuffled
-// assignment is a permutation of the 10-boss pool over the 10 shuffleable
-// dungeons. exit(2) on failure.
+// Self-check (invoked from --rando-selftest): asserts determinism, the pinned-boss
+// invariants (Agahnim 1/2 + Blind/Kholdstare/Trinexx stay at their slots), the
+// off→identity contract, and that the shuffled assignment is a permutation of the
+// 7-boss pool over the 7 shuffleable dungeons. exit(2) on failure.
 void BossShuffle_SelfCheck(void);
 
 // Returns the boss-pool index for `dungeon_id` from the currently
@@ -110,5 +110,31 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type);
 // boss's logic and so naturally come along with the remapped boss
 // instead of the orphaned vanilla one — no suppression needed.
 bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type);
+
+// Runtime RENDER redirect (the live model; supersedes RemapSpriteType). When
+// `room` is a shuffled boss room (boss shuffle active AND its assigned boss !=
+// its vanilla boss), returns the assigned boss's vanilla HOME boss-room index —
+// the room whose sprite-data list AND sprite-graphics index the engine should
+// load instead, so the substituted boss renders with the right tiles + the right
+// formation/count (the Enemizer pointer-redirect model). Returns 0xFFFF when no
+// redirect applies (boss shuffle off, `room` not a shuffleable boss room, or the
+// assignment is the vanilla identity) — the caller then uses `room` unchanged, so
+// vanilla / boss-off play is byte-identical. Consulted by Dungeon_LoadSprites
+// (sprite list) and the dungeon room-header load (sprite-graphics index).
+uint16 BossShuffle_RenderHomeRoom(uint16 room);
+
+// Render redirect WITH anchor info for coordinate alignment. Like
+// BossShuffle_RenderHomeRoom but also returns (via out params) the two boss
+// SPRITE types the caller anchors on: `dest_vanilla_sprite` = this dungeon's
+// vanilla boss (its position in THIS room is the target), `home_boss_sprite` =
+// the assigned boss (its position in the home room is the source). The caller
+// finds each anchor in the respective room's sprite data and shifts the
+// redirected formation by (dest_anchor - home_anchor), so the substituted boss
+// spawns where the dungeon's own boss did (reachable) instead of at the home
+// room's coords (which can land behind a wall / one screen over). Returns true
+// when a redirect applies (same condition as RenderHomeRoom != 0xFFFF).
+bool BossShuffle_GetRenderRedirect(uint16 room, uint16 *home_room,
+                                   uint8 *dest_vanilla_sprite,
+                                   uint8 *home_boss_sprite);
 
 #endif  // ZELDA3_RANDO_SHUFFLE_BOSS_H_

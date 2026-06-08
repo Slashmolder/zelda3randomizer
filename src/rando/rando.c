@@ -1206,6 +1206,9 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
 // ---------------------------------------------------------------------------
 static const uint8 *g_dungeon_prize_assignment = NULL;
 static const uint8 *g_medallion_assignment = NULL;
+// Boss-shuffle LOGIC assignment (OP_CAN_KILL_BOSS). Independent of the
+// shuffle_boss.c sprite-substitution activation: this drives reachability only.
+static const uint8 *g_boss_logic_assignment = NULL;
 
 void Rando_SetDungeonPrizeAssignment(const uint8 *assignment) {
   g_dungeon_prize_assignment = assignment;
@@ -1213,8 +1216,12 @@ void Rando_SetDungeonPrizeAssignment(const uint8 *assignment) {
 void Rando_SetMedallionAssignment(const uint8 *assignment) {
   g_medallion_assignment = assignment;
 }
+void Rando_SetBossAssignment(const uint8 *assignment) {
+  g_boss_logic_assignment = assignment;
+}
 const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assignment; }
 const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
+const uint8 *Rando_GetBossAssignment(void) { return g_boss_logic_assignment; }
 
 // Runtime open gate for the medallion-shuffled MM/TR overworld doors. The placer
 // and tracker consult g_medallion_assignment via OP_MEDALLION_OPENS; the ancilla
@@ -1792,6 +1799,12 @@ static bool g_rando_active_settings_valid = false;
 // aren't repopulated on a slot reload).
 static uint8 g_rando_active_prize_assignment[kRandoDungeonCount];
 static uint8 g_rando_active_medallion_assignment[kRandoMedallionEntranceCount];
+// Boss-shuffle assignment for the active slot — drives BOTH the render redirect
+// (BossShuffle_Generate installs g_boss_assignment in shuffle_boss.c) AND the
+// in-game logic VM (Rando_SetBossAssignment, so OP_CAN_KILL_BOSS reachability /
+// the tracker agree with the bosses actually spawned). Regenerated from
+// (settings, base seed) at slot load, same as prize/medallion.
+static uint8 g_rando_active_boss_assignment[16];
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   if (src == NULL || src->header.slot_kind != kSlotKind_Randomizer) {
@@ -1914,19 +1927,20 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       // identity (byte-identical to vanilla).
       (void)DropShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
                                  &g_session_placement_table, NULL);
-      // Boss shuffle is DELIBERATELY NOT installed at runtime. A playtest F12
-      // dump (room 0xC8, the EP boss room) proved a pure sprite-type swap
-      // renders garbage: the room loads the VANILLA boss's GFX sheet, so the
-      // substituted boss draws with the wrong tiles, and multi-entry vanilla
-      // bosses (EP = 6 Armos Knight entries) each remap, spawning N copies of
-      // the substituted boss. Correct rendering needs per-boss sprite-GFX
-      // loading + spawn-count handling (a substantial graphics change, and one
-      // that can only be validated by playtest). Until that lands, leaving the
-      // assignment uninstalled keeps RemapSpriteType a passthrough → vanilla
-      // bosses render correctly. The generation-side boss shuffle (algorithm /
-      // spoiler / corpus / self-checks) stays intact for that future work; only
-      // the runtime substitution is held back, and the UI toggle is disabled.
-      BossShuffle_Deactivate();
+      // Boss shuffle RENDER (Enemizer pointer-redirect model). INSTALL the boss
+      // assignment so a shuffled boss room redirects its sprite-data + sprite-gfx
+      // to the assigned boss's home boss room (BossShuffle_RenderHomeRoom, consumed
+      // in dungeon.c / sprite.c). Regenerated from (settings, BASE seed) — matching
+      // the placer's logic install (Place_AssumedFill) + the spoiler — so the
+      // bosses spawned at runtime are exactly the ones placement gated on. Off →
+      // vanilla identity → RenderHomeRoom returns 0xFFFF → byte-identical to
+      // vanilla. Also install the SAME table into the logic VM
+      // (Rando_SetBossAssignment) so the in-game tracker / OP_CAN_KILL_BOSS
+      // reachability agree with the spawned bosses (else the tracker would gate on
+      // the vanilla boss while the shuffled one is in the room).
+      (void)BossShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
+                                 g_rando_active_boss_assignment);
+      Rando_SetBossAssignment(g_rando_active_boss_assignment);
       g_rando_active_settings_valid = true;
     }
   }
@@ -1937,6 +1951,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     // Tear down any assignment a prior slot installed so it can't leak into
     // this (v1 / snapshot-restored) slot. Fail closed = vanilla bosses/drops.
     BossShuffle_Deactivate();
+    Rando_SetBossAssignment(NULL);  // logic VM falls back to vanilla boss-kill
     DropShuffle_Deactivate();
   }
 
@@ -2001,6 +2016,7 @@ void Rando_DeactivateSlot(void) {
   // substitution reverts to a hard passthrough (vanilla bosses/drops) once no
   // rando slot is active; pairs with the install in Rando_ActivateSidecarSlot.
   BossShuffle_Deactivate();
+  Rando_SetBossAssignment(NULL);  // logic VM back to vanilla boss-kill fallback
   DropShuffle_Deactivate();
   Placement_Install(NULL);
   g_session_placement_table.entries = NULL;
@@ -3477,9 +3493,9 @@ static void Rando_StartingInventorySelfCheck(void) {
 // the drop table from the recovered (settings, seed) — so a regression there
 // (wrong seed, off the prize/medallion RNG stream, skipped install, leak on
 // reactivation) would be invisible until playtest. It ALSO guards the
-// deliberate hold-back: boss shuffle must NOT install at runtime (a pure
-// sprite-type swap renders garbage — see Rando_ActivateSidecarSlot), so even a
-// boss_shuffle=1 slot must leave BossShuffle_RemapSpriteType a passthrough.
+// boss-shuffle RENDER install: a boss_shuffle=1 slot MUST install the boss
+// assignment (render redirect + logic VM) matching ComputeAssignment, and a
+// boss_shuffle=0 slot MUST leave the render a hard passthrough (vanilla).
 static void Rando_ShuffleInstallSelfCheck(void) {
   RandoSettings s, off;
   RandoSidecarSlot slot;
@@ -3516,18 +3532,34 @@ static void Rando_ShuffleInstallSelfCheck(void) {
   for (uint8 i = 0; i < kDropTableEntryCount; i++)
     if (DropShuffle_Lookup(i) != exp_drop[i])
       tsc_die("ShuffleInstall: installed drop table != ComputeAssignment(settings, seed)");
-  // Boss: must be a runtime passthrough even though boss_shuffle == 1 (the
-  // substitution is deliberately not installed). GetForDungeon → 0xFF and
-  // RemapSpriteType returns the vanilla sprite unchanged.
-  if (BossShuffle_GetForDungeon(1) != 0xFF)
-    tsc_die("ShuffleInstall: boss shuffle must NOT install at runtime (renders garbage; held back for GFX work)");
-  if (BossShuffle_RemapSpriteType(0x53) != 0x53)
-    tsc_die("ShuffleInstall: boss remap must be a passthrough while boss runtime install is held back");
+  // Boss: the render install must be LIVE for a boss_shuffle=1 slot, must match
+  // BossShuffle_ComputeAssignment for (settings, base seed), the LOGIC assignment
+  // must be installed too, and the render redirect must fire for >=1 boss room
+  // (else the test seed is not a real shuffle and these checks pass trivially).
+  {
+    uint8 exp_boss[16];
+    BossShuffle_ComputeAssignment(&s, seedA, exp_boss);
+    for (uint8 d = 0; d < 13; d++)
+      if (BossShuffle_GetForDungeon(d) != exp_boss[d])
+        tsc_die("ShuffleInstall: installed boss assignment != ComputeAssignment(settings, seed)");
+    if (Rando_GetBossAssignment() == NULL)
+      tsc_die("ShuffleInstall: boss LOGIC assignment not installed for a boss_shuffle=1 slot");
+    static const uint16 kBossRoomsSC[10] = {200,51,7,90,6,41,172,222,144,164};
+    bool any_redirect = false;
+    for (uint8 i = 0; i < 10; i++)
+      if (BossShuffle_RenderHomeRoom(kBossRoomsSC[i]) != 0xFFFF) any_redirect = true;
+    if (!any_redirect)
+      tsc_die("ShuffleInstall: boss_shuffle=1 produced no render redirect (test seed is not a shuffle)");
+  }
 
   // Teardown reverts the drop table to a hard passthrough.
   Rando_DeactivateSlot();
   if (DropShuffle_Lookup(5) != 5)
     tsc_die("ShuffleInstall: drop table not torn down on deactivate");
+  if (BossShuffle_GetForDungeon(1) != 0xFF || Rando_GetBossAssignment() != NULL)
+    tsc_die("ShuffleInstall: boss assignment not torn down on deactivate");
+  if (BossShuffle_RenderHomeRoom(200) != 0xFFFF)
+    tsc_die("ShuffleInstall: boss render redirect not a passthrough after teardown");
 
   // (2) Reactivation with a DIFFERENT seed must OVERWRITE the drop table (no
   // stale leak); boss stays uninstalled.
@@ -3540,8 +3572,13 @@ static void Rando_ShuffleInstallSelfCheck(void) {
   for (uint8 i = 0; i < kDropTableEntryCount; i++)
     if (DropShuffle_Lookup(i) != expB[i])
       tsc_die("ShuffleInstall: reactivation did not overwrite the prior slot's drop table");
-  if (BossShuffle_GetForDungeon(1) != 0xFF)
-    tsc_die("ShuffleInstall: boss must remain uninstalled across reactivation");
+  {
+    uint8 expBoss[16];
+    BossShuffle_ComputeAssignment(&s, seedB, expBoss);
+    for (uint8 d = 0; d < 13; d++)
+      if (BossShuffle_GetForDungeon(d) != expBoss[d])
+        tsc_die("ShuffleInstall: reactivation did not overwrite the prior slot boss assignment");
+  }
   Rando_DeactivateSlot();
 
   // (3) Drop OFF slot: the install still runs (identity), proven because we
@@ -3554,6 +3591,14 @@ static void Rando_ShuffleInstallSelfCheck(void) {
   for (uint8 i = 0; i < kDropTableEntryCount; i++)
     if (DropShuffle_Lookup(i) != i)
       tsc_die("ShuffleInstall: off-slot drop table must be the identity");
+  // Boss off: installed (vanilla identity) but the render redirect MUST be a hard
+  // passthrough for every boss room -> byte-identical to vanilla.
+  {
+    static const uint16 kBossRoomsOff[10] = {200,51,7,90,6,41,172,222,144,164};
+    for (uint8 i = 0; i < 10; i++)
+      if (BossShuffle_RenderHomeRoom(kBossRoomsOff[i]) != 0xFFFF)
+        tsc_die("ShuffleInstall: boss_shuffle=0 must produce no render redirect (vanilla)");
+  }
   Rando_DeactivateSlot();
 
   fprintf(stderr, "[Rando_ShuffleInstallSelfCheck] OK\n");

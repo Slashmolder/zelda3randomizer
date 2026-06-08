@@ -3,52 +3,92 @@
 ### Requirement: Boss shuffle (Phase B)
 
 The boss-shuffle generator SHALL randomize the boss assigned to each dungeon's
-boss room from a 10-boss pool while keeping the dungeon's reward (crystal or
-pendant from prize shuffle) tied to the dungeon, not to the boss. Bosses required
-by the active goal SHALL remain at their canonical slots. The assignment SHALL be
+boss room from a 7-boss pool while keeping the dungeon's reward (crystal or pendant
+from prize shuffle) tied to the dungeon, not to the boss. The assignment SHALL be
 deterministic from `(settings, seed)` and SHALL be emitted in the spoiler under
 `boss_assignments`.
 
-The 10-boss permutation runs at generation time and is orthogonal to item
-placement (it never changes `placement_digest` / `sphere_digest`). Goal-required
-bosses pinned at their canonical slots:
-- Agahnim 1 (Hyrule Castle Tower)
-- Agahnim 2 (Ganon's Tower top)
-- Ganon (Pyramid) — out of the boss pool entirely.
+The permutation runs at generation time and is orthogonal to item placement
+(`boss_shuffle == false` is byte-identical; only boss-on seeds move, via the
+boss-kill predicate below). Bosses pinned at their canonical slots (NOT shuffled):
+- **Goal/identity-pinned**: Agahnim 1 (Hyrule Castle Tower), Agahnim 2 (Ganon's
+  Tower top), Ganon (Pyramid) — Agahnim 1/2 also share sprite_type 0x7A.
+- **Environment-pinned**: Blind (Thieves' Town), Kholdstare (Ice Palace), Trinexx
+  (Turtle Rock) — their fights need home-room environment the runtime render can't
+  supply (see "deferred special-case bosses" below + design.md D7).
 
-**Runtime substitution is DEFERRED (generation-only).** A pure sprite-type swap
-renders incorrectly: a dungeon boss room loads the *vanilla* boss's graphics
-sheet (so a substituted boss draws with the wrong tiles), and multi-entry vanilla
-bosses (e.g. Eastern Palace is six Armos Knight sprite entries) each remap into N
-copies of the substituted boss. Correct runtime substitution requires per-boss
-sprite-GFX loading and spawn-count handling, which is deferred to a follow-up.
-Until then `Rando_ActivateSidecarSlot` SHALL NOT install the boss assignment
-(bosses render vanilla), and the `boss_shuffle` toggle SHALL be disabled in the
-PC native settings window. (A separate, also-deferred gap: the logic graph gates
-each dungeon's `"<Dungeon> - Boss"` location on its vanilla boss-kill items, so a
-per-seed boss-kill predicate override is also required before boss shuffle is
-beatability-safe — design.md D6.)
+The seven shuffleable bosses — Armos Knights, Lanmolas, Moldorm, Helmasaur King,
+Arrghus, Mothula, Vitreous — permute across the seven non-pinned dungeon-boss rooms
+(EP, DP, ToH, PoD, SP, SW, MM).
+
+**Runtime substitution is LIVE** (the Enemizer pointer-redirect model): a shuffled
+boss room loads the assigned boss's HOME boss-room sprite list, sprite-graphics
+index, AND sprite palette, and shifts the formation to the dungeon's own boss spot,
+so the substituted boss spawns reachable with correct tiles, colors, and spawn
+count. The `boss_shuffle` toggle SHALL be exposed in the PC native settings window.
+
+**Beatability:** each dungeon's `"<Dungeon> - Boss"` / `- Prize` location SHALL be
+gated on the kill predicate of its *currently assigned* boss (not its vanilla boss),
+via the `OP_CAN_KILL_BOSS(dungeon)` predicate-VM op — so an item-gated boss (e.g.
+Trinexx's FireRod+IceRod) shuffled into a dungeon cannot strand its prize
+(design.md D6).
 
 #### Scenario: Boss assignment is generated and deterministic
 - **WHEN** `boss_shuffle == true` for a given seed
 - **THEN** the per-dungeon boss assignment is computed deterministically from
-  `(settings, seed)`, the goal-required bosses stay pinned, the 10 shuffleable
-  dungeons hold a permutation of the 10-boss pool, and the spoiler lists the
-  assignment under `boss_assignments`
+  `(settings, seed)`, the pinned bosses (Agahnim 1/2, Ganon, Blind, Kholdstare,
+  Trinexx) stay at their canonical slots, the 7 shuffleable dungeons hold a
+  permutation of the 7-boss pool, and the spoiler lists the assignment under
+  `boss_assignments`
 
 #### Scenario: Boss shuffle does not perturb item placement
-- **WHEN** the same seed is generated with `boss_shuffle` on versus off
-- **THEN** the `placement_digest` and `sphere_digest` are byte-identical
+- **WHEN** the same seed is generated with `boss_shuffle` off
+- **THEN** the `placement_digest` and `sphere_digest` are byte-identical to the
+  pre-boss-shuffle baseline (only `boss_shuffle == true` seeds move, via the
+  boss-kill predicate)
 
-#### Scenario: Boss runtime substitution is deferred
+#### Scenario: Boss runtime substitution renders the assigned boss
 - **WHEN** a `boss_shuffle == true` slot is loaded and played
-- **THEN** every dungeon's boss renders as its vanilla boss (the runtime
-  substitution is not installed), pending the per-boss GFX-loading follow-up
+- **THEN** each of the seven shuffleable dungeons renders and fights its *assigned*
+  boss with correct tiles, colors, formation, and a reachable spawn position, and
+  the dungeon's `- Boss` / `- Prize` gate evaluates against that assigned boss
 
 #### Scenario: Disabled boss shuffle preserves vanilla bosses
 - **WHEN** `boss_shuffle == false`
 - **THEN** every dungeon's boss is its vanilla boss; the spoiler `boss_assignments`
   section is omitted
+
+### Requirement: Boss shuffle — deferred special-case bosses
+
+Blind, Kholdstare, and Trinexx SHALL remain pinned to their vanilla dungeons until a
+follow-up supplies the home-room ENVIRONMENT their fights require — environment the
+sprite/gfx/palette redirect does not carry. Each is playtest- or Enemizer-confirmed:
+
+- **Blind (Thieves' Town)** — TT's boss room has no Blind sprite (`0xCE`); Blind is
+  produced by a maiden-follower sequence and only materializes when
+  `dung_savegame_state_bits & 0x2000` (set by a TT-only trigger) is true. Un-pinning
+  requires (forward) a synthetic `0xCE` spawn + forcing that bit, and (reverse)
+  suppressing the maiden when TT's assigned boss ≠ Blind.
+- **Kholdstare (Ice Palace)** and **Trinexx (Turtle Rock)** — their encase / floor
+  fights need the home room's "effect" byte (`$00AD` / header byte 4) plus a BG2
+  object (the ice block / lava floor). Un-pinning requires carrying that header byte
+  and injecting the room object into the destination room.
+
+Because no headless test covers boss rendering or fight mechanics, un-pinning any of
+the three SHALL be validated by end-to-end playtest. See design.md D7 for the full
+per-boss requirements (with Enemizer references).
+
+#### Scenario: Special-case bosses stay pinned
+- **WHEN** `boss_shuffle == true`
+- **THEN** Blind is at Thieves' Town, Kholdstare at Ice Palace, and Trinexx at Turtle
+  Rock in every assignment; none appears in another dungeon and no other boss appears
+  in theirs
+
+#### Scenario: Un-pinning a special-case boss requires playtest validation
+- **WHEN** a follow-up adds the home-room environment to make one of the three
+  shuffleable
+- **THEN** the change is validated by end-to-end playtest (the corpus and
+  `--rando-selftest` do not exercise boss rendering or fight mechanics)
 
 ### Requirement: Drop-pool shuffle (Phase B)
 

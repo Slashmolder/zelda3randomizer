@@ -5,11 +5,12 @@
 // the generated assignment is written but not consumed by the game
 // (BossShuffle_GetForDungeon is read-only API surface).
 //
-// ALTTPR upstream: app/Boss.php. Agahnim and Agahnim2 are pinned (HCT and
-// GT top). The 10 remaining bosses shuffle across the 10 non-Agahnim
-// dungeon-boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP, MM, TR) — GT's
-// boss (Agahnim2) is pinned, so GT is not a shuffle room. (Matches
-// kBossShuffleableDungeons[10] / kBossShufflePool[10] below.)
+// ALTTPR upstream: app/Boss.php. Pinned (not shuffled): Agahnim 1 (HCT),
+// Agahnim 2 (GT top), Blind (TT), Kholdstare (IP), Trinexx (TR) — the last three
+// depend on home-room environment the redirect can't supply (see the
+// kBossShuffleableDungeons comment). The remaining 7 bosses shuffle across 7
+// dungeon-boss rooms (EP, DP, ToH, PoD, SP, SW, MM). (Matches
+// kBossShuffleableDungeons[7] / kBossShufflePool[7] below.)
 //
 // Determinism: Fisher-Yates shuffle keyed by (seed_u64 XOR salt) via
 // the project's xoshiro256** RNG (rando_rng.h).
@@ -17,6 +18,7 @@
 #include "shuffle_boss.h"
 #include "rando_settings.h"
 #include "rando_rng.h"
+#include "rando_logic.h"  // kRandoDungeonVanillaBoss / kRandoBossKillPredCount cross-check
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,25 +64,41 @@ static const uint8 kBossVanilla[16] = {
   0xFF, 0xFF, 0xFF,    // 13-15 unused
 };
 
-// Dungeon-ids whose boss is shuffleable (excludes HCE=0, HCT=4, GT=12).
-// Per ALTTPR's app/Boss.php, both Agahnim 1 (HCT) and Agahnim 2 (GT top)
-// are pinned — they share sprite_type 0x7A (the runtime discriminates by
-// `is_in_dark_world` inside `Sprite_7A_Agahnim`), so pinning both is the
-// only safe option without per-call-site world disambiguation. The
-// shuffleable pool is 10 bosses across 10 dungeon-boss rooms.
-static const uint8 kBossShuffleableDungeons[10] = {
-  1, 2, 3, 5, 6, 7, 8, 9, 10, 11,
+// Dungeon-ids whose boss is shuffleable. Excludes HCE=0, HCT=4 (Agahnim 1),
+// GT=12 (Agahnim 2) — the Agahnims share sprite_type 0x7A (the runtime
+// discriminates by `is_in_dark_world` inside `Sprite_7A_Agahnim`), so pinning
+// both is the only safe option without per-call-site world disambiguation.
+//
+// ALSO excludes three bosses that depend on their HOME room's ENVIRONMENT, which
+// the sprite+gfx+palette redirect can't supply (each playtest- or Enemizer-
+// confirmed); all are PINNED to their vanilla dungeon:
+//   - TT=8  Blind     — TT has no Blind sprite; it spawns via a maiden-follower
+//     sequence and only materializes when `dung_savegame_state_bits & 0x2000`
+//     (set by that TT-only sequence) is true. Shuffled elsewhere it never spawns
+//     (playtest-confirmed strand).
+//   - IP=9  Kholdstare and TR=11 Trinexx — their fights need the room's "effect"
+//     ($00AD / header byte 4) + BG2-object setup (the ice block / lava floor).
+//     The redirect carries the boss + shell SPRITES but not the room environment,
+//     so the encase/melt (Kholdstare) and floor (Trinexx) sequences don't init —
+//     Kholdstare spawned un-encased in Desert Palace (playtest-confirmed), and
+//     Trinexx uses the identical mechanism (Enemizer special-cases both:
+//     AddShellAndMoveObjectData + header bytes, BossRandomizer.cs:226-260).
+// Making these shuffleable is enemizer-class room-object/header surgery and can't
+// be validated headless — deferred. Net: 7 shuffleable bosses across 7 dungeon-
+// boss rooms (the set that works with a pure sprite/gfx/palette redirect).
+static const uint8 kBossShuffleableDungeons[7] = {
+  1, 2, 3, 5, 6, 7, 10,
 };
 
-// Phase A pool of shuffleable bosses (10 entries, excluding both
-// Agahnims). The vanilla mapping (kBossVanilla) places these at the
-// dungeons listed above.
-static const uint8 kBossShufflePool[10] = {
+// Pool of shuffleable bosses (7 entries: excludes both Agahnims, Blind,
+// Kholdstare, Trinexx — see kBossShuffleableDungeons). The vanilla mapping
+// (kBossVanilla) places these at the dungeons listed above.
+static const uint8 kBossShufflePool[7] = {
   kBoss_ArmosKnights, kBoss_Lanmolas, kBoss_Moldorm,
   kBoss_HelmasaurKing, kBoss_Arrghus, kBoss_Mothula,
-  kBoss_Blind, kBoss_Kholdstare, kBoss_Vitreous,
-  kBoss_Trinexx,
+  kBoss_Vitreous,
 };
+#define kBossShufflePoolCount ((uint32)(sizeof(kBossShufflePool) / sizeof(kBossShufflePool[0])))
 
 static uint8 g_boss_assignment[16];
 static bool g_boss_assignment_active = false;
@@ -113,12 +131,12 @@ void BossShuffle_ComputeAssignment(const RandoSettings *settings,
   // the drop-shuffle (0xD0DDA1FF...) and prize/medallion streams.
   Rng_SeedFromU64(&rng, seed_u64 ^ 0xB055A11FB055A11Full);
 
-  uint8 pool[10];
+  uint8 pool[kBossShufflePoolCount];
   memcpy(pool, kBossShufflePool, sizeof(pool));
-  fy_shuffle_u8(&rng, pool, 10);
+  fy_shuffle_u8(&rng, pool, kBossShufflePoolCount);
 
   // Assign shuffled pool to the shuffleable dungeon slots in order.
-  for (uint32 i = 0; i < 10; i++) {
+  for (uint32 i = 0; i < kBossShufflePoolCount; i++) {
     uint8 dungeon = kBossShuffleableDungeons[i];
     out_assignment[dungeon] = pool[i];
   }
@@ -276,6 +294,97 @@ bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Runtime RENDER — the Enemizer pointer-redirect model (add-rando-boss-shuffle
+// render). The old per-entry BossShuffle_RemapSpriteType/_ShouldSuppressSecondary
+// approach (a sprite-TYPE swap) is SUPERSEDED — it rendered garbage (the room
+// kept the vanilla boss's GFX) and mis-spawned formation bosses (slot-hardcoded
+// Armos/Lanmolas). Instead, when a dungeon's boss room loads under boss shuffle,
+// the engine redirects BOTH the room's sprite-data list AND its sprite-graphics
+// index to the ASSIGNED boss's vanilla HOME boss room — exactly what Enemizer
+// does by repointing DungeonRoomSpritePointer→BossPointer + setting header byte 3
+// →BossGraphics (../Enemizer/EnemizerLibrary/BossRandomizer/BossRandomizer.cs:
+// 219-223). The home room already holds the correct boss formation (right count,
+// right coords, its trigger overlords) drawn with the correct gfx, so the
+// substituted boss renders + plays like its vanilla self, in the new room.
+//
+// Boss-room dungeon_room_index per shuffleable dungeon (standard ALTTP room ids,
+// ROM-version-stable; cross-checked against Enemizer RoomIdConstants). Index =
+// dungeon-id (same table as kBossVanilla). 0xFFFF = no single shuffleable boss
+// room (HCE / the pinned Agahnim slots / GT).
+static const uint16 kBossRoom[16] = {
+  0xFFFF,  // 0  HCE  (no boss)
+  200,     // 1  EP   (0xC8) Armos Knights
+  51,      // 2  DP   (0x33) Lanmolas
+  7,       // 3  ToH  (0x07) Moldorm
+  0xFFFF,  // 4  HCT  (Agahnim 1 — pinned)
+  90,      // 5  PoD  (0x5A) Helmasaur King
+  6,       // 6  SP   (0x06) Arrghus
+  41,      // 7  SW   (0x29) Mothula
+  172,     // 8  TT   (0xAC) Blind
+  222,     // 9  IP   (0xDE) Kholdstare
+  144,     // 10 MM   (0x90) Vitreous
+  164,     // 11 TR   (0xA4) Trinexx
+  0xFFFF,  // 12 GT   (Agahnim 2 — pinned)
+  0xFFFF, 0xFFFF, 0xFFFF,
+};
+
+// boss-pool index → that boss's vanilla HOME boss room (the redirect target).
+// = kBossRoom[dungeon where the boss is vanilla]. Pinned Agahnims → 0xFFFF (never
+// assigned to a shuffle slot, so never a redirect target).
+static const uint16 kBossHomeRoom[12] = {
+  [kBoss_ArmosKnights]  = 200,
+  [kBoss_Lanmolas]      = 51,
+  [kBoss_Moldorm]       = 7,
+  [kBoss_Agahnim]       = 0xFFFF,
+  [kBoss_HelmasaurKing] = 90,
+  [kBoss_Arrghus]       = 6,
+  [kBoss_Mothula]       = 41,
+  [kBoss_Blind]         = 172,
+  [kBoss_Kholdstare]    = 222,
+  [kBoss_Vitreous]      = 144,
+  [kBoss_Trinexx]       = 164,
+  [kBoss_Agahnim2]      = 0xFFFF,
+};
+
+uint16 BossShuffle_RenderHomeRoom(uint16 room) {
+  if (!g_boss_assignment_active) return 0xFFFF;
+  for (uint8 d = 0; d < 16; d++) {
+    if (kBossRoom[d] != room) continue;
+    uint8 assigned = g_boss_assignment[d];
+    // Identity (vanilla boss stays) or invalid → no redirect → byte-identical to
+    // vanilla. Note kBossVanilla[d] is the dungeon's own vanilla boss.
+    if (assigned >= 12 || assigned == kBossVanilla[d]) return 0xFFFF;
+    return kBossHomeRoom[assigned];  // 0xFFFF for a pinned boss (can't happen)
+  }
+  return 0xFFFF;  // not a shuffleable boss room
+}
+
+bool BossShuffle_GetRenderRedirect(uint16 room, uint16 *home_room,
+                                   uint8 *dest_vanilla_sprite,
+                                   uint8 *home_boss_sprite) {
+  if (!g_boss_assignment_active) return false;
+  for (uint8 d = 0; d < 16; d++) {
+    if (kBossRoom[d] != room) continue;
+    uint8 assigned = g_boss_assignment[d];
+    uint8 vanilla = kBossVanilla[d];
+    if (assigned >= 12 || assigned == vanilla) return false;  // identity / invalid
+    uint16 hr = kBossHomeRoom[assigned];
+    if (hr == 0xFFFF) return false;  // pinned boss — can't happen
+    *home_room = hr;
+    // The dungeon's vanilla boss is the anchor in THIS room; the assigned boss is
+    // the anchor in its home room. The caller shifts the redirected formation by
+    // (dest_anchor - home_anchor) so the substituted boss lands where the vanilla
+    // boss spawned (reachable), not at the home room's coords. Agahnim entries are
+    // poisoned to 0xFF here, but neither can be a vanilla shuffleable-dungeon boss
+    // nor an assigned pool boss, so they never reach this point.
+    *dest_vanilla_sprite = kBossPoolIdxToSprite[vanilla];
+    *home_boss_sprite = kBossPoolIdxToSprite[assigned];
+    return true;
+  }
+  return false;  // not a shuffleable boss room
+}
+
 // Human-readable names for the spoiler. Indices match the kBoss_* enum and the
 // dungeon-id table at the top of this file.
 const char *BossShuffle_BossName(uint8 pool_index) {
@@ -337,19 +446,27 @@ void BossShuffle_SelfCheck(void) {
       boss_selfcheck_die("Agahnim 2 must stay pinned at GT (dungeon 12)");
     if (a[0] != 0xFF)
       boss_selfcheck_die("HCE (dungeon 0) must have no boss");
-    // The 10 shuffleable dungeons hold a permutation of the 10-boss pool:
-    // each pool boss appears exactly once and no Agahnim leaks in.
+    if (a[8] != kBoss_Blind)
+      boss_selfcheck_die("Blind must stay pinned at Thieves' Town (dungeon 8)");
+    if (a[9] != kBoss_Kholdstare)
+      boss_selfcheck_die("Kholdstare must stay pinned at Ice Palace (dungeon 9)");
+    if (a[11] != kBoss_Trinexx)
+      boss_selfcheck_die("Trinexx must stay pinned at Turtle Rock (dungeon 11)");
+    // The 7 shuffleable dungeons hold a permutation of the 7-boss pool: each pool
+    // boss appears exactly once; no pinned boss (Agahnim/Blind/Kholdstare/Trinexx)
+    // leaks in.
     uint8 seen[12] = {0};
-    for (uint32 i = 0; i < 10; i++) {
+    for (uint32 i = 0; i < kBossShufflePoolCount; i++) {
       uint8 idx = a[kBossShuffleableDungeons[i]];
-      if (idx == kBoss_Agahnim || idx == kBoss_Agahnim2)
-        boss_selfcheck_die("an Agahnim leaked into a shuffleable dungeon");
+      if (idx == kBoss_Agahnim || idx == kBoss_Agahnim2 || idx == kBoss_Blind ||
+          idx == kBoss_Kholdstare || idx == kBoss_Trinexx)
+        boss_selfcheck_die("a pinned boss (Agahnim/Blind/Kholdstare/Trinexx) leaked into a shuffleable dungeon");
       if (idx >= 12) boss_selfcheck_die("boss-pool index out of range");
       seen[idx]++;
     }
-    for (uint32 p = 0; p < 10; p++) {
+    for (uint32 p = 0; p < kBossShufflePoolCount; p++) {
       if (seen[kBossShufflePool[p]] != 1)
-        boss_selfcheck_die("shuffleable assignment is not a permutation of the 10-boss pool");
+        boss_selfcheck_die("shuffleable assignment is not a permutation of the 7-boss pool");
     }
   }
 
@@ -385,6 +502,22 @@ void BossShuffle_SelfCheck(void) {
         boss_selfcheck_die("identity (off) assignment must remap each boss to itself");
     }
     BossShuffle_Deactivate();
+  }
+
+  // 4) Codegen↔C contract: the OP_CAN_KILL_BOSS dispatch tables in logic_data.c
+  // (kRandoDungeonVanillaBoss / kRandoBossKillPred, emitted by rando_logic_gen.py)
+  // MUST agree with this module's kBossVanilla map + boss-pool size. A drift here
+  // would silently gate a dungeon's `- Boss`/`- Prize` on the WRONG boss's kill
+  // predicate (a strand-class bug invisible to the corpus). kRandoDungeonVanillaBoss
+  // is sized kRandoDungeonCount (13); kBossVanilla covers slots 0..12.
+  {
+    for (uint8 d = 0; d < 13; d++) {
+      if (kRandoDungeonVanillaBoss[d] != kBossVanilla[d])
+        boss_selfcheck_die("kRandoDungeonVanillaBoss (codegen) != kBossVanilla (shuffle_boss.c)");
+    }
+    // 12-entry boss-kill predicate table (10 shuffleable + Agahnim 1/2).
+    if (kRandoBossKillPredCount != 12)
+      boss_selfcheck_die("kRandoBossKillPredCount must be 12 (boss pool incl. both Agahnims)");
   }
 
   fprintf(stderr, "[BossShuffle_SelfCheck] OK\n");

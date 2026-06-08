@@ -70,14 +70,23 @@ This change bundles boss + drop shuffles + the minigame dispatch because all thr
 - **Drop-pool shuffle: complete + playable.** Flat 56-entry `kPrizeItems`
   permutation with a pack-0 heart floor + identity fallback; installed at slot
   load and consumed at `ForcePrizeDrop`; playtest-confirmed working.
-- **Boss shuffle: generation-only; runtime substitution DEFERRED.** The 10-boss
-  generator, spoiler `boss_assignments`, corpus entries, and self-checks are in
-  place, but a playtest showed a pure sprite-type swap renders garbage (the boss
-  room loads the vanilla boss's GFX; multi-entry bosses spawn N copies — F12 dump
-  of the EP boss room). Runtime substitution + the UI toggle are held back
-  pending per-boss sprite-GFX loading; `Rando_ActivateSidecarSlot` does not
-  install the boss assignment. A per-seed boss-kill predicate override (design.md
-  D6) is the second prerequisite for beatability-safe boss shuffle.
+- **Boss shuffle: generation + beatability logic + runtime RENDER landed (experimental).**
+  The 10-boss generator, spoiler `boss_assignments`, corpus entries, and
+  self-checks are in place. **Beatability logic LANDED (kGeneratorVersion 56,
+  2026-06-07):** the per-seed boss-kill predicate override (`OP_CAN_KILL_BOSS`,
+  macro `CanKillBoss`) — design.md D6's second prerequisite — now gates each
+  dungeon's `- Boss`/`- Prize` on the *shuffled* boss's kill predicate, so an
+  item-gated boss can't strand its prize. Headless-validated (Logic + Placement
+  self-checks; corpus 110/110, only boss-on entries moved); gated-off-safe.
+  **Runtime RENDER LANDED (experimental, 2026-06-07):** ported Enemizer's
+  `BossRandomizer` pointer-redirect model — `BossShuffle_RenderHomeRoom` redirects
+  a shuffled boss room's sprite-data list AND sprite-graphics index to the assigned
+  boss's vanilla HOME boss room (`dungeon.c` / `sprite.c`), so its correct
+  formation + gfx render in the new room (the per-entry sprite-type swap was
+  scrapped). `Rando_ActivateSidecarSlot` installs the assignment; the UI toggle is
+  live. Runtime-only -> corpus 110/110 byte-identical. The render is PLAYTEST-ONLY
+  validated (not confirmable headless); known risks: Blind (maiden spawn),
+  Trinexx/Kholdstare in non-home rooms (room-shell tiles).
 
 design.md captures the original boss-pool composition (10 shuffleable + 3 pinned)
 and the drop algorithm. See the spec deltas for the reconciled as-built contract

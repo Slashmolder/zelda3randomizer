@@ -347,6 +347,21 @@ macros:
       to TRUE()).
 
   # ===========================================================================
+  # CanKillBoss — boss-shuffle runtime dispatch (add-rando-shuffles-and-minigames).
+  # Resolves the boss CURRENTLY ASSIGNED to <dungeon> (boss-shuffle) and evaluates
+  # that boss's kill predicate. boss_shuffle OFF ⇒ the assignment is the vanilla
+  # identity, so this is byte-identical to the inline CanKill<VanillaBoss> macro
+  # it replaces at each dungeon's `- Boss`/`- Prize` location. The argument is the
+  # DUNGEON (HCE..GT), not a boss — the dungeon picks the boss at eval time. GT's
+  # internal miniboss gauntlet + the pinned Agahnim slots keep their direct
+  # CanKill<Boss> calls (they are never shuffled).
+  # ===========================================================================
+  - name: CanKillBoss
+    parameters: [dungeon]
+    body: "OP_CAN_KILL_BOSS(dungeon)"
+    source: "app/Boss.php (Boss::canBeat for the dungeon's assigned boss; resolved at eval)"
+
+  # ===========================================================================
   # canBombThings — requires the player to actually have a bomb refill item.
   # ===========================================================================
   - name: CanBombThings

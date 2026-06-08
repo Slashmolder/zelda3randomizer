@@ -127,7 +127,7 @@ locations:
     region: TowerOfHera_Lobby
     type: Drop
     vanilla_item: BossHeartContainer
-    can_reach: "CanKillMoldorm() AND HAS_ITEM(BigKey_TowerOfHera)"
+    can_reach: "CanKillBoss(TowerOfHera) AND HAS_ITEM(BigKey_TowerOfHera)"
     # setFillRules (php:149-158): `bossNormalLocation=true` makes the
     # dungeon-item ban unreachable; default TRUE.
     # setAlwaysAllow (php:159-162): when bossNormalLocation=true (default),
@@ -141,7 +141,7 @@ locations:
     region: TowerOfHera_Lobby
     type: Prize_Pendant
     vanilla_item: Prize_BluePendant
-    can_reach: "CanKillMoldorm() AND HAS_ITEM(BigKey_TowerOfHera)"
+    can_reach: "CanKillBoss(TowerOfHera) AND HAS_ITEM(BigKey_TowerOfHera)"
     source: "app/Region/Standard/TowerOfHera.php:60, 139-141, 170 (can_complete = Boss access)"
 
 macros:

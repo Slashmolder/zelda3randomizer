@@ -26,6 +26,37 @@ archive: §10 playtest (drops + 4 minigames; boss-runtime playtest moves to
 the follow-up), then §11. The change archives as "drops + minigames + boss
 generation"; the boss-runtime-rendering requirement is satisfied by the
 follow-up.
+
+UPDATE (2026-06-07, boss-shuffle runtime work — branch claude/boss-shuffle-runtime):
+All three boss-runtime prerequisites LANDED (2026-06-07). Boss shuffle is now
+playable (experimental); the render is playtest-only validated.
+  * BEATABILITY LOGIC — LANDED (kGenVer 56). The boss-kill predicate override
+    (design.md D6 correction): a new VM op OP_CAN_KILL_BOSS gates each dungeon's
+    `- Boss`/`- Prize` on the SHUFFLED boss's kill predicate so no item-gated boss
+    can strand its prize. Headless-validated (Logic + Placement self-checks,
+    corpus 110/110 — only boss-on entries moved). Gated-off-safe: with the runtime
+    sprite swap still off, boss_shuffle is UI-clamped off, so no strand can occur
+    in play; the logic is correct + ready for when rendering lands. See §2.4b.
+  * RENDER (GFX + spawn count) — LANDED via the Enemizer pointer-redirect model
+    (the per-entry sprite-type swap was scrapped as the wrong architecture). When
+    a shuffled boss room loads, BossShuffle_RenderHomeRoom redirects BOTH its
+    sprite-data list AND its sprite-graphics index to the assigned boss's vanilla
+    HOME boss room (dungeon.c / sprite.c), so the home room's correct formation +
+    gfx render in the new room. Rando_ActivateSidecarSlot installs the assignment;
+    the ShuffleInstall self-check is INVERTED (asserts install + non-passthrough
+    redirect); the UI toggle is live. Runtime-only -> corpus 110/110 byte-identical.
+    PLAYTEST-ONLY validated (could not be confirmed headless). KNOWN RISKS: Blind
+    (maiden spawn), Trinexx/Kholdstare in non-home rooms (room-shell tiles).
+  * PLAYTEST OUTCOME (2026-06-07): the 7 redirect-clean bosses (Armos, Lanmolas,
+    Moldorm, Helmasaur, Arrghus, Mothula, Vitreous) confirmed working after two
+    render fixes — spawn-coord alignment (boss shifts to the dungeon's OWN boss spot,
+    not the home coords; Mothula->DP spawned behind a wall before) + sprite-palette
+    redirect (boss draws with its own colors; Lanmolas->EP had garbled mounds before).
+    The 3 KNOWN-RISK bosses are CONFIRMED broken (Blind->EP empty room; Kholdstare->DP
+    un-encased) and now PINNED (kGenVer 57 Blind, 58 Kholdstare+Trinexx): each needs
+    home-room environment the redirect can't carry. Pool is 10->7. Per-boss un-pin
+    requirements: design.md D7 + randomizer-shuffles/spec.md "deferred special-case
+    bosses".
 ===================================================================== -->
 
 ## 1. Apply-time pre-flight
@@ -54,7 +85,10 @@ follow-up.
   - Runs after `Place_AssumedFill` + sphere computation (per design.md D5 ordering).
   - Calls `BossShuffle_Compute`.
   - Stores result in slot state for runtime substitution.
-- [~] 2.4 Runtime boss substitution: when a dungeon's boss room loads, the sprite-handler consults the boss-assignment table and substitutes the correct boss sprite. <!-- IMPLEMENTED THEN DEACTIVATED (2026-06-06 reconciliation): the substitution code exists at src/sprite.c (BossShuffle_RemapSpriteType + orphan-segment suppression), but slot install calls BossShuffle_Deactivate() unconditionally (rando.c:1853) and RandoGenerate_SelfCheck tsc_die()s if it ever installs (rando.c:3447) — a pure sprite-type swap renders GARBAGE because the boss room loads the VANILLA boss's GFX sheet (proven by an F12 dump of the EP boss room). Correct rendering needs per-boss sprite-GFX loading, a substantial graphics change held back to a FOLLOW-UP. The native-window toggle is a disabled "Coming soon" placeholder. So at runtime boss shuffle is INERT; only generation + spoiler ship. -->
+- [x] 2.4 Runtime boss substitution (RENDER): when a dungeon's boss room loads, spawn the assigned boss with correct GFX + spawn count. <!-- IMPLEMENTED 2026-06-06, PAUSED, then LANDED 2026-06-07 (render live, experimental, via the Enemizer pointer-redirect model — BossShuffle_RenderHomeRoom redirects sprite-data + gfx to the assigned boss's home room; the per-entry RemapSpriteType hooks were removed). The historical pause notes below are retained for context: the per-entry sprite-type swap exists at src/sprite.c (BossShuffle_RemapSpriteType + orphan-segment suppression), but slot install calls BossShuffle_Deactivate() unconditionally (rando.c ~:1929) and the Rando_ShuffleInstallSelfCheck tsc_die()s if it ever installs (rando.c ~:3523) — a pure sprite-type swap renders GARBAGE (the boss room loads the VANILLA boss's GFX sheet) AND mis-spawns formation bosses. 2026-06-07 spike verdict: the per-entry-swap is the WRONG ARCHITECTURE and is enemizer-class to fix: Armos (sprite 0x53) hard-indexes sprite slots 0-5 (Sprite_53_ArmosKnight: for j=5..0 sprite_health[j]) and counts entries via byte_7E0FF8++ per SpritePrep; Lanmolas (0x54) indexes kLanmola_InitDelay[k] at slots 0-2 — so a formation boss CANNOT be spawned from a single-entry room (and a single boss substituted into EP's 6 entries spawns 6 copies). z3randomizer asm only RESERVES space for enemizer (grep: no boss-gfx/spawn table). The correct model is a port of Enemizer's BossRandomizer (MIT, ../Enemizer/EnemizerLibrary/BossRandomizer/): per boss a BossGraphics byte (Armos=9, Lanmola=11, Moldorm=12, Helmasaur=21, Arrghus=20, Mothula=26, Blind=32, Kholdstare=22, Vitreous=22, Trinexx=23) → written to room-header byte 3 (the fork's sprite_graphics_index = hdr_ptr[3]+0x40 at dungeon.c ~:3715), PLUS a BossSpriteArray of literal {y,x,type} room entries (Armos = 6 knights + 1 trigger overlord 0x19; Lanmolas/Kholdstare/Trinexx = 3; the rest = 1) that REPLACES the room's boss sprite-data, PLUS Trinexx/Kholdstare special-room cleanup (BossRandomizer.cs:249/256). This render work can ONLY be validated by an F12 VRAM/OAM dump or playtest, which an autonomous run can't do → runtime install stays DEACTIVATED; no dormant render code committed. The native-window toggle stays a disabled "Coming soon" placeholder. -->
+- [x] 2.4b Boss-kill predicate override (BEATABILITY) — the hard co-requisite for §2.4. <!-- done 2026-06-07 (kGenVer 56): new VM op OP_CAN_KILL_BOSS(dungeon) (macro CanKillBoss; op_registry id 19) resolves the dungeon's ASSIGNED boss (PredicateContext.boss_assignment, installed by Place_AssumedFill from the base seed; NULL→vanilla via kRandoDungeonVanillaBoss) then re-enters the evaluator on kRandoBossKillPred[boss] (each entry reuses the canonical CanKill<Boss> macro). The 10 shuffleable dungeons' Boss/Prize locations (Standard logic_parts + Inverted overrides) gate on CanKillBoss(<Dungeon>) instead of the inline CanKill<VanillaBoss>, so a fire/ice-gated boss can't strand a fireless-reachable dungeon's prize (corrects design.md D6). GT minibosses + pinned Agahnim 1/2 keep direct CanKill calls. boss_shuffle OFF → vanilla identity → byte-identical placement (corpus: only boss-on entries moved). Headless guards: Logic_SelfCheck (direct op resolution) + Placement_SelfCheck (boss_shuffle=1 across goals → completable + 0 unreachable) + BossShuffle_SelfCheck codegen↔C cross-check. Gated-off-safe until §2.4 render lands. -->
+- [x] 2.4c Re-activate runtime install + invert ShuffleInstall self-check + enable UI toggle. <!-- done 2026-06-07: rando.c install flipped Deactivate()->Generate() + Rando_SetBossAssignment (base seed); ShuffleInstall self-check INVERTED (asserts install matches ComputeAssignment + non-passthrough render redirect + teardown passthrough); rando_window.cpp boss Checkbox live, defensive clamp dropped. Runtime-only -> corpus 110/110 byte-identical. -->
+- [x] 2.4-rando-exempt The boss-kill predicate override touches no tracked g_ram cell (OP_CAN_KILL_BOSS is a pure logic-VM op + a borrowed assignment pointer); check_audit_guard.py --strict green.
 
 ## 3. Drop-pool shuffle module
 

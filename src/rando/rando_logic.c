@@ -286,6 +286,34 @@ static bool eval_modeweapons_eq(Cursor *c, const PredicateContext *ctx) {
   return ctx->settings->mode_weapons == mw;
 }
 
+// Boss-shuffle runtime — "can kill the boss assigned to dungeon_id". Resolves
+// the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
+// via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
+// kill predicate (kRandoBossKillPred[boss]). The outer cursor `c` advances past
+// exactly the 1-byte dungeon operand; the sub-predicate runs on its own cursor
+// so the length-consumed invariant of the caller is preserved.
+//
+// With boss_shuffle off the installed assignment is the vanilla identity (and a
+// NULL assignment falls back to the same vanilla map), so this resolves to the
+// dungeon's vanilla boss-kill predicate — byte-identical reachability to the
+// inline CanKill<Boss> macro it replaced. No boss-kill predicate references
+// OP_CAN_KILL_BOSS, so the re-entry can't recurse unboundedly.
+static bool eval_can_kill_boss(Cursor *c, const PredicateContext *ctx) {
+  uint8 dungeon = cursor_u8(c);
+  if (c->error || dungeon >= kRandoDungeonCount) return false;
+  uint8 boss = (ctx->boss_assignment != NULL)
+                   ? ctx->boss_assignment[dungeon]
+                   : kRandoDungeonVanillaBoss[dungeon];
+  if (boss >= kRandoBossKillPredCount) return false;  // 0xFF (HCE/unused) → false
+  const RandoBossKillPred *p = &kRandoBossKillPred[boss];
+  if (p->length == 0) return false;
+  Cursor sub = { kRandoPredicateStream + p->offset,
+                 kRandoPredicateStream + p->offset + p->length, false };
+  bool r = eval(&sub, ctx);
+  if (sub.error) c->error = true;  // propagate malformed-bytecode signal
+  return r;
+}
+
 static bool eval(Cursor *c, const PredicateContext *ctx) {
   uint8 op = cursor_u8(c);
   if (c->error) return false;
@@ -309,6 +337,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_DIFFICULTY_AT_LEAST:    return eval_difficulty(c, ctx);
     case OP_GLITCH_LEVEL_AT_LEAST:  return eval_glitch(c, ctx);
     case OP_MODEWEAPONS_EQ:         return eval_modeweapons_eq(c, ctx);
+    case OP_CAN_KILL_BOSS:          return eval_can_kill_boss(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -570,6 +599,10 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   // that case, which makes prize-gated / medallion-gated areas unreachable).
   ctx.dungeon_prize_assignment = Rando_GetDungeonPrizeAssignment();
   ctx.medallion_entrance_assignment = Rando_GetMedallionAssignment();
+  // Boss-shuffle assignment for OP_CAN_KILL_BOSS. NULL ⇒ vanilla boss fallback,
+  // so a graph with no boss assignment installed gates each `- Boss` on its
+  // vanilla boss-kill predicate (byte-identical to the pre-op logic).
+  ctx.boss_assignment = Rando_GetBossAssignment();
   // cleared_dungeons_bitmask gets recomputed at the end of each fixed-point
   // iteration based on which boss locations have been reached. See below.
 
@@ -1017,6 +1050,53 @@ void Logic_SelfCheck(void) {
     counts.by_item_id[26] = 0;
     LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == false,
                "MEDALLION_OPENS without required medallion should be false");
+  }
+
+  // CAN_KILL_BOSS — resolves the dungeon's ASSIGNED boss, then evaluates THAT
+  // boss's kill predicate. The same op + dungeon yields different results under
+  // different assignments — the core of boss-shuffle beatability. Self-contained
+  // (local counts + default settings) so it doesn't disturb the shared fixtures.
+  {
+    uint8 bc[] = { OP_CAN_KILL_BOSS, 1 };  // dungeon 1 = EasternPalace
+    RandoCounts c2;
+    RandoSettings s2;
+    Settings_SetDefaults(&s2);  // randomized weapons (not swordless)
+    PredicateContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.counts = &c2;
+    ctx.settings = &s2;
+
+    // (a) NULL assignment -> vanilla boss: EP = Armos Knights (a single sword
+    // suffices). No weapon -> false; a sword -> true.
+    memset(&c2, 0, sizeof(c2));
+    ctx.boss_assignment = NULL;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == false,
+               "CAN_KILL_BOSS(EP) vanilla(Armos) with no weapon should be false");
+    c2.by_item_id[ITEM_L1Sword] = 1;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == true,
+               "CAN_KILL_BOSS(EP) vanilla(Armos) with a sword should be true");
+
+    // (b) Shuffle Trinexx (boss-pool index 10) into EP. Trinexx needs FireRod
+    // AND IceRod AND a real weapon tier — so the single L1 sword that killed
+    // Armos is NOT enough. Proves the op tracks the SHUFFLED boss.
+    uint8 boss_assignment[kRandoDungeonCount];
+    memset(boss_assignment, 0xff, sizeof(boss_assignment));
+    boss_assignment[1] = 10;  // EasternPalace <- Trinexx
+    ctx.boss_assignment = boss_assignment;
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == false,
+               "CAN_KILL_BOSS(EP) shuffled(Trinexx) with only an L1 sword should be false");
+    memset(&c2, 0, sizeof(c2));
+    c2.by_item_id[ITEM_FireRod] = 1;
+    c2.by_item_id[ITEM_IceRod] = 1;
+    c2.by_item_id[ITEM_ProgressiveSword] = 3;  // HasSword3 satisfies both sword conjuncts
+    LSC_ASSERT(Predicate_EvalCtx(bc, sizeof(bc), &ctx) == true,
+               "CAN_KILL_BOSS(EP) shuffled(Trinexx) with fire+ice+sword3 should be true");
+
+    // (c) No-boss dungeon (HCE=0 -> vanilla map 0xFF) resolves to false, not OOB.
+    uint8 bc0[] = { OP_CAN_KILL_BOSS, 0 };
+    ctx.boss_assignment = NULL;
+    LSC_ASSERT(Predicate_EvalCtx(bc0, sizeof(bc0), &ctx) == false,
+               "CAN_KILL_BOSS(HCE=no boss) should be false");
   }
 
   // OP_TRICK / OP_GLITCH_LEVEL_AT_LEAST are wired (Slice 4) but resolve to their

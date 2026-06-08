@@ -102,12 +102,20 @@ in the ROM/Rom writer; not located in this pass — flagged as an open follow-up
    citation with the `app/Drops/` + `app/World.php` + `app/Sprite.php` map above.
 3. Decide whether boss-shuffle needs the `$can_beat` predicates ported or whether
    pinning goal-required bosses (design D1) makes assumed-reachability unnecessary.
-   *(Decision: deferred. Pinning the goal-required bosses is NOT sufficient — the
-   logic graph gates each dungeon's `"- Boss"` location on its VANILLA boss-kill
-   predicate, so a shuffled item-gated boss can strand a non-goal dungeon's prize.
-   Honoring design D6 (no predicate changes), boss shuffle ships experimental +
-   documented; the `$can_beat` port is the proper follow-up. See the as-built
-   note.)*
+   *(Decision: deferred → **RESOLVED & LANDED 2026-06-07, kGenVer 56.** Pinning the
+   goal-required bosses is NOT sufficient — the logic graph gated each dungeon's
+   `"- Boss"` location on its VANILLA boss-kill predicate, so a shuffled item-gated
+   boss could strand a non-goal dungeon's prize. design D6's "no predicate changes"
+   was wrong (see the D6 correction). The `$can_beat` port shipped as a single VM op
+   `OP_CAN_KILL_BOSS(dungeon)` (macro `CanKillBoss`) that resolves the dungeon's
+   assigned boss at eval and evaluates that boss's kill predicate — each
+   `kRandoBossKillPred[]` entry reuses the fork's already-ported `CanKill<Boss>`
+   macro (the `$can_beat` translations), so off-shuffle is byte-identical. The 10
+   shuffleable dungeons' Boss/Prize (Standard + Inverted) were rewired; GT
+   minibosses + pinned Agahnim 1/2 keep direct calls. Headless-guarded by
+   Logic_SelfCheck + Placement_SelfCheck. NOTE: this is the BEATABILITY half only —
+   the runtime sprite RENDER is still paused at a spike (enemizer-class; an
+   Enemizer BossRandomizer port is the next step). See tasks.md §2.4/§2.4b.)*
 
 ## Shuffles+minigames as-built (2026-06-03)
 

@@ -151,14 +151,14 @@ locations:
   # Default `tricks=0` collapses CanDarkRoomNav() to FALSE → Phase A shape.
   - id: "Misery Mire - Boss"
     region: MiseryMire_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillBoss(MiseryMire)"
     source: "app/Region/Standard/MiseryMire.php:110-117"
 
   # MM - Prize (php:156 → can_complete = Boss canAccess).
   # Phase B Slice 4 §7: mirror the Boss Lamp/CanDarkRoomNav substitution.
   - id: "Misery Mire - Prize"
     region: MiseryMire_Lobby
-    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillVitreous(world)"
+    can_reach: "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_MiseryMire) AND CanKillBoss(MiseryMire)"
     source: "app/Region/Standard/MiseryMire.php:106-108, 156 (can_complete = Boss access)"
 
 macros:

@@ -232,7 +232,7 @@ locations:
   # to TRUE. itemPlacement=='advanced' branch dropped.
   - id: "Eastern Palace - Boss"
     region: EasternPalace_PastArmos
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillBoss(EasternPalace)"
     # setFillRules (php:92-101): if !bossNormalLocation && item is dungeon
     # item → false. Phase A pins bossNormalLocation=true so the condition
     # is unreachable → can_place = TRUE (default).
@@ -248,7 +248,7 @@ locations:
   # EP - Prize (php:58, 111) — can_complete = Boss canAccess.
   - id: "Eastern Palace - Prize"
     region: EasternPalace_PastArmos
-    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillArmosKnights()"
+    can_reach: "CanShootArrowsL1() AND HAS_ITEM(Lamp) AND HAS_ITEM(BigKey_EasternPalace) AND CanKillBoss(EasternPalace)"
     source: "app/Region/Standard/EasternPalace.php:58, 80-82, 111 (can_complete = Boss access)"
 
   # ===========================================================================

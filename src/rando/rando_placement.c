@@ -16,6 +16,7 @@
 #include "rando_logic.h"
 #include "rando_rng.h"
 #include "rando_shuffles.h"
+#include "shuffle_boss.h"   // BossShuffle_ComputeAssignment (boss-shuffle reachability)
 #include "item_ids.h"
 #include "location_ids.h"
 #include "../types.h"
@@ -730,6 +731,18 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // Reset stats — caller reads via Placement_GetLastStats() after we return.
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
+
+  // Boss-shuffle runtime — install the per-seed boss assignment into the LOGIC
+  // VM so OP_CAN_KILL_BOSS gates each `- Boss`/`- Prize` on the SHUFFLED boss's
+  // kill predicate. Computed from the BASE seed (NOT the per-attempt seed) so it
+  // matches the runtime install (Rando_ActivateSidecarSlot regenerates from the
+  // base seed too) — the assignment is attempt-independent. boss_shuffle off ⇒
+  // vanilla identity ⇒ OP_CAN_KILL_BOSS resolves to the vanilla boss-kill
+  // predicate (placement byte-identical). Static so the borrowed pointer outlives
+  // this call's reachability evaluations (CLI generates one seed at a time).
+  static uint8 g_boss_assignment_for_reach[16];
+  BossShuffle_ComputeAssignment(settings, seed_u64, g_boss_assignment_for_reach);
+  Rando_SetBossAssignment(g_boss_assignment_for_reach);
 
   // Budget timer: if budget_seconds > 0, abort additional retry attempts once
   // the elapsed CPU time exceeds the budget. Each individual attempt still runs
@@ -2313,6 +2326,63 @@ void Placement_SelfCheck(void) {
       if (leaked != 0)
         selfcheck_die("Retro genericKeys: a per-dungeon SmallKey leaked into a Retro seed");
     }
+  }
+
+  // Boss-shuffle reachability (add-rando-shuffles-and-minigames boss-runtime,
+  // workstream 2). The ONLY automated net for the boss-shuffle strand bug: with
+  // boss_shuffle on, each dungeon's `- Boss`/`- Prize` gates on OP_CAN_KILL_BOSS
+  // (the SHUFFLED boss's kill predicate). Generate boss_shuffle=1 seeds across
+  // goals/world-states that REQUIRE the dungeon prizes (dungeons / ganon force
+  // every crystal+pendant dungeon reachable) and assert the generator honors the
+  // shuffled boss-kill requirements without stranding: goal completable + zero
+  // unreachable placements. A non-identity assignment must actually be installed
+  // (else the test trivially passes against vanilla). Sprite substitution stays
+  // runtime-off; this validates the LOGIC half (the half that can strand).
+  {
+    static RandoPlacement bs_entries[512];
+    struct { uint8 ws; uint8 goal; uint64 seed; } kBsCases[] = {
+      { kWorldState_Open,     kGoal_Dungeons,  0x00000000B0550001ull },
+      { kWorldState_Standard, kGoal_Ganon,     0x00000000B0550002ull },
+      { kWorldState_Open,     kGoal_FastGanon, 0x00000000B0550003ull },
+      { kWorldState_Inverted, kGoal_Ganon,     0x00000000B0550004ull },
+      { kWorldState_Standard, kGoal_Dungeons,  0x00000000B0550005ull },
+    };
+    const uint8 nbs = (uint8)(sizeof(kBsCases) / sizeof(kBsCases[0]));
+    for (uint8 ci = 0; ci < nbs; ci++) {
+      RandoSettings bss;
+      Settings_SetDefaults(&bss);
+      bss.world_state = kBsCases[ci].ws;
+      bss.goal = kBsCases[ci].goal;
+      bss.boss_shuffle = 1;
+      RandoPlacementTable bst = { bs_entries, 0 };
+      if (!Place_AssumedFill(&bss, kBsCases[ci].seed, 0, &bst))
+        selfcheck_die("boss shuffle: Place_AssumedFill produced no placement");
+      // The boss assignment the placer installed must be a real (non-identity)
+      // shuffle, so the boss-kill gate is genuinely exercised. Check only the 7
+      // SHUFFLEABLE dungeons — HCE (0) is always 0xFF, and the pinned slots
+      // (Agahnim 4/12, Blind 8, Kholdstare 9, Trinexx 11) always equal vanilla, so
+      // including them would add dead entries that can never satisfy non_identity.
+      const uint8 *ba = Rando_GetBossAssignment();
+      if (ba == NULL) selfcheck_die("boss shuffle: assignment not installed by placer");
+      static const uint8 kShufDng[7] = {1, 2, 3, 5, 6, 7, 10};
+      static const uint8 kVanBoss[13] = {0xFF, 0,1,2,3,4,5,6,7,8,9,10,11};
+      bool non_identity = false;
+      for (uint8 i = 0; i < 7; i++)
+        if (ba[kShufDng[i]] != kVanBoss[kShufDng[i]]) non_identity = true;
+      if (!non_identity)
+        selfcheck_die("boss shuffle: installed assignment is the identity (test not exercising the shuffle)");
+      if (!Goal_IsCompletable(&bss, &bst))
+        selfcheck_die("boss shuffle: goal not completable (boss-kill strand?)");
+      RandoSpheres bsp;
+      Logic_ComputeSpheres(&bss, &bst, &bsp);
+      if (bsp.unreachable_count != 0)
+        selfcheck_die("boss shuffle: unreachable placement(s) (boss-kill strand?)");
+    }
+    // Restore the vanilla-identity assignment so later self-checks / callers
+    // don't observe a stale boss-on assignment (Place_AssumedFill installs per
+    // call, but be explicit — the next non-boss Place_AssumedFill overwrites it
+    // anyway with the vanilla identity for boss_shuffle=0).
+    Rando_SetBossAssignment(NULL);
   }
 
   fprintf(stderr, "[Placement_SelfCheck] OK\n");

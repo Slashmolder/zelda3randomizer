@@ -66,6 +66,10 @@ ALTTPR's `app/Boss.php` defines the boss pool. Per Phase A spec scenario "Requir
 
 **Decision**: 10-boss permutation. Agahnim 1/2 + Ganon stay at their slots regardless of `boss_shuffle == true`.
 
+> **Superseded by D7 (as-built):** the shuffleable pool is **7**, not 10. Blind,
+> Kholdstare, and Trinexx are also pinned — they depend on home-room environment the
+> runtime redirect can't supply. See D7 for the per-boss requirements to un-pin them.
+
 ### D2: Drop-pool tiers
 
 ALTTPR's drop pool is **not** in an `app/EnemyDrop.php` (that file does not exist — see `audit.md §"Drop-pool provenance"` for the correction). It is modelled by `app/Drops/PrizePack.php` (61) + `app/Drops/PrizePackSlot.php` (60), with the pack **roster** declared in `app/World.php:76-87`: **11 prize packs / 63 slots** — 7 numbered enemy-drop packs `'0'..'6'` (8 slots each) plus the special packs `'pull'` (3), `'crab'` (2), `'stun'` (1), `'fish'` (1). The droppable sprite ids live in `app/Sprite.php` (229 `new Sprite(...)` entries). The shuffle randomizes which prize sprites fill each pack's slots.
@@ -98,9 +102,91 @@ Per Phase A spec scenario "Drop-pool runs after item placement": drop-pool shuff
 
 ### D6: Boss-shuffle predicate interaction
 
-Phase A's `CanKillMostThings` macro (etc.) uses boss-class identity macros, not per-boss IDs. So boss shuffle doesn't break existing predicates: the "can kill Helmasaur King" macro asks for the right items regardless of which dungeon Helmasaur is in.
+Phase A's `CanKillMostThings` macro (etc.) uses boss-class identity macros, not per-boss IDs. So boss shuffle doesn't break *general-enemy* predicates: the "can kill most things" macro asks for the right items regardless of which dungeon a boss is in.
 
-**Decision**: no predicate changes required. Boss shuffle is purely a runtime-substitution; the logic graph stays vanilla.
+**Original decision (CONTRADICTED by the as-built — see correction below)**: no predicate changes required. Boss shuffle is purely a runtime-substitution; the logic graph stays vanilla.
+
+**Correction (2026-06-07, boss-shuffle runtime workstream 2).** The original D6 reasoning was wrong for the *per-dungeon boss-kill* gate. Each dungeon's `"- <Dungeon> - Boss"` (and `- Prize`, which gates on Boss access) location is gated on its VANILLA boss's kill predicate — `Eastern Palace - Boss` requires `CanKillArmosKnights`, `Turtle Rock - Boss` requires `CanKillTrinexx` (FireRod+IceRod), etc. (`assets/rando/logic_parts/*`). The moment runtime substitution is active, a dungeon whose boss got shuffled is still gated on the *wrong* boss's kill predicate — e.g. Kholdstare (needs a fire source) shuffled into a fireless-reachable dungeon, but gated as if it still held the easy vanilla boss → **strand**. So per-seed predicate changes ARE required for beatability-safe boss shuffle.
+
+As built (kGeneratorVersion 56): a new VM op **`OP_CAN_KILL_BOSS(dungeon_id)`** (macro `CanKillBoss(<Dungeon>)`, `assets/rando/op_registry.yaml` id 19) resolves the dungeon's *currently assigned* boss from the per-seed boss assignment (`PredicateContext.boss_assignment`, installed by the placer from the base seed in `Place_AssumedFill`; NULL→vanilla via `kRandoDungeonVanillaBoss`) and re-enters the evaluator on that boss's kill predicate (`kRandoBossKillPred[]`, each entry reusing the canonical `CanKill<Boss>` macro). The 10 shuffleable dungeons' Boss/Prize locations (Standard + Inverted) were rewired from the inline `CanKill<VanillaBoss>` to `CanKillBoss(<Dungeon>)`. With `boss_shuffle` off the assignment is the vanilla identity, so placement is byte-identical (corpus: only the boss-on entries move). GT's internal miniboss gauntlet + the pinned Agahnim 1/2 keep their direct `CanKill<Boss>` calls (never shuffled). This logic is **landed and gated-off-safe** even though the runtime *sprite* substitution stays deactivated (see §2.4 / the boss-runtime spike) — it is correct and ready for when the GFX/spawn work lands. Headless guard: `Logic_SelfCheck` (direct op resolution) + `Placement_SelfCheck` (boss_shuffle=1 seeds across goals are completable with 0 unreachable).
+
+### D7: Runtime render (as-built) + special-case bosses deferred
+
+**Correction to D1 (2026-06-07, boss-shuffle runtime workstream 1).** D1's "10-boss
+permutation" is superseded: the shuffleable pool is **7** bosses. The runtime render
+is the **Enemizer pointer-redirect model** (`../Enemizer/EnemizerLibrary/BossRandomizer/`,
+MIT) — for a shuffled boss room the engine loads the *assigned* boss's vanilla HOME
+boss-room data instead of this room's:
+
+- **sprite list** (`Dungeon_LoadSprites`) — the boss's full formation + trigger
+  overlords, so spawn-count is correct (Armos = 6 entries, Lanmolas = 3, etc.);
+- **sprite-graphics index** (room-header load, `hdr[3]+0x40`) — correct tiles;
+- **sprite palette** (`palette_sp0l/sp5l/sp6l` from `kDungPalinfos[home_hdr[1]]`) —
+  correct colors; the room BG palette (`palette_main_indoors`) stays this room's;
+- **coordinate alignment** — the formation is shifted by `(this dungeon's vanilla-boss
+  anchor) − (the assigned boss's home-room anchor)` so it spawns where the dungeon's
+  own boss did (reachable) instead of at the home room's coords (which can land behind
+  a wall / one screen over).
+
+Off / non-boss-room → 0xFFFF redirect → byte-identical to vanilla. **Seven bosses
+render + fight correctly with this pure redirect** (playtest-confirmed): Armos Knights,
+Lanmolas, Moldorm, Helmasaur King, Arrghus, Mothula, Vitreous. They shuffle across
+EP, DP, ToH, PoD, SP, SW, MM.
+
+**Three bosses CANNOT use the pure redirect and are PINNED to their home dungeon**
+(kGeneratorVersion 56→57 Blind, 57→58 Kholdstare+Trinexx). Each depends on home-room
+*environment* (a maiden sequence, a room "effect", a BG2 object) that the
+sprite/gfx/palette redirect does not carry. To make any of them shuffleable, a
+follow-up must additionally supply that environment, in BOTH directions (the boss into
+another room, AND another boss into this boss's home room). Per-boss requirements
+(grounded in F12 dumps + the fork code + Enemizer):
+
+1. **Blind — Thieves' Town (dungeon 8).** TT's boss room has **no Blind sprite
+   (0xCE)**. Blind is produced by a maiden-follower sequence: the player rescues the
+   maiden (`0xB7` `SpritePrep_BlindMaiden`) earlier in TT; she follows Link into the
+   boss room; a TT trigger sets `dung_savegame_state_bits & 0x2000`; and
+   `Sprite_CE_Blind` / `SpritePrep_Blind_PrepareBattle` only materializes the boss
+   when that bit is set (otherwise it sets `sprite_state = 0` and despawns).
+   Playtest-confirmed strand: Blind → Eastern Palace = empty room, no killable boss.
+   **Required to un-pin:**
+   - *Forward (Blind into another dungeon):* inject a synthetic `0xCE` Blind at the
+     dest room's boss anchor (Enemizer `BossSpriteArray {0x05,0x09,0xCE}`) **and**
+     force `dung_savegame_state_bits |= 0x2000` on boss-room entry so PrepareBattle
+     takes the spawn branch (Enemizer `RemoveBlindSpawnCode`), with `follower_indicator
+     != 6` (no maiden present).
+   - *Reverse (another boss into TT):* suppress the maiden so she doesn't follow into
+     TT's boss room and transform on top of the substituted boss — remove the `0xB7`
+     from her basement spawn when TT's assigned boss ≠ Blind (Enemizer
+     `RemoveMaidenFromThievesTown`).
+
+2. **Kholdstare — Ice Palace (dungeon 9).** The redirect *does* bring the shell sprite
+   (`0xA3`), Kholdstare (`0xA2`), and sub-parts (`0xA4`), but the encase-and-melt
+   fight needs IP's room **environment**: the room "effect" byte
+   (`dung_hdr_collision_2` = `$00AD` = header byte 4) **plus** a BG2 ice-block object.
+   Playtest-confirmed (F12, Kholdstare → Desert Palace): shell present but **un-encased**
+   because `$00AD` was DP's `0`, not IP's, so the freeze sequence never initialized and
+   the fire-rod-melt couldn't proceed. **Required to un-pin:**
+   - Set the dest room's "effect" (`$00AD` / header byte 4) to IP's value (Enemizer
+     writes header byte 4 = `01`).
+   - Add/move the BG2 ice-block object into the dest room (Enemizer
+     `AddShellAndMoveObjectData` + header byte 0 BG2 properties).
+   - Verify the `0xA3`↔`0xA2`↔`0xA4` state machine initializes correctly against the
+     foreign room's geometry.
+   - Enemizer ref: `BossRandomizer.cs:238-260`.
+
+3. **Trinexx — Turtle Rock (dungeon 11).** Same class as Kholdstare: needs TR's room
+   "effect" + BG2 object (the lava/ice floor + rock setup). NOT individually
+   playtest-confirmed; pinned **by association** — Enemizer special-cases it with the
+   identical mechanism (`AddShellAndMoveObjectData` + header bytes, `BossRandomizer.cs:226-235`).
+   **Required to un-pin:** as Kholdstare, with TR's shell object id + effect value.
+
+**General gate for un-pinning any of the three:** the redirect must additionally carry
+the home room's relevant HEADER bytes (`$00AD` effect, BG2 properties) and/or inject
+room OBJECTS — room-environment surgery whose only validation is end-to-end **playtest**
+(no headless test covers boss rendering or fight mechanics — the corpus + `--rando-selftest`
+cover only placement/predicate). Until that lands, the supported set is the 7-boss
+shuffle; `BossShuffle_SelfCheck` asserts the three (plus Agahnim 1/2) stay pinned and
+the 7 shuffleable dungeons hold a permutation of the 7-boss pool.
 
 ## Risks / Trade-offs
 

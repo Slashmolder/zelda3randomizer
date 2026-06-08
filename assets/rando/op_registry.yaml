@@ -210,6 +210,30 @@ ops:
       so the swordless disjuncts are inert and default placement is unchanged.
     contexts: [can_reach, can_place]
 
+  - id: 19
+    name: OP_CAN_KILL_BOSS
+    phase: B
+    operands: [dungeon_id]
+    semantics: |
+      true iff Link can defeat the boss CURRENTLY ASSIGNED to dungeon_id under
+      boss-shuffle. The op resolves dungeon_id -> assigned boss-pool index via the
+      per-seed boss assignment (PredicateContext.boss_assignment, installed by the
+      placer the same way prize/medallion are; NULL falls back to the vanilla boss
+      via kRandoDungeonVanillaBoss), then evaluates that boss's kill predicate from
+      kRandoBossKillPred[]. Added for runtime boss shuffle
+      (add-rando-shuffles-and-minigames boss-runtime): each dungeon's `- Boss`
+      / `- Prize` location gates on CanKillBoss(<Dungeon>) instead of the vanilla
+      CanKill<Boss> macro, so a shuffled item-gated boss can't strand the prize.
+      With boss_shuffle off the assignment is the vanilla identity, so the op
+      resolves to the dungeon's vanilla boss-kill predicate — byte-identical to the
+      inline macro it replaces (default-settings placement unchanged).
+    contexts: [can_reach, can_place]
+    notes: |
+      The boss-pool index order (kBoss_* in src/rando/shuffle_boss.c) is the
+      contract shared by kRandoBossKillPred[] (codegen) and the runtime boss
+      assignment (BossShuffle_ComputeAssignment). Logic_SelfCheck cross-checks
+      kRandoDungeonVanillaBoss against shuffle_boss.c's vanilla map.
+
 # ---------------------------------------------------------------------------
 # Phase B trick bit-position scaffolding (priming for `add-rando-trick-logic-and-axes`)
 # ---------------------------------------------------------------------------

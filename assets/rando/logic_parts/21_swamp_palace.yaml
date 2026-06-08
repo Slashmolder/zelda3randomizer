@@ -129,13 +129,13 @@ locations:
   # plus the wildCompasses/wildMaps clauses (both vacuous under Phase A).
   - id: "Swamp Palace - Boss"
     region: SwampPalace
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillBoss(SwampPalace)"
     source: "app/Region/Standard/SwampPalace.php:154-175"
 
   # Prize (php:61, 150-152, 195) — can_complete = Boss canAccess.
   - id: "Swamp Palace - Prize"
     region: SwampPalace
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillBoss(SwampPalace)"
     source: "app/Region/Standard/SwampPalace.php:61, 150-152, 195 (can_complete = Boss access)"
 
 macros:

@@ -205,7 +205,7 @@ locations:
     region: SwampPalace
     type: Drop
     vanilla_item: BossHeartContainer
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillBoss(SwampPalace)"
     # setFillRules (php:113-122): bossNormalLocation=true makes the
     # dungeon-item ban unreachable; default TRUE.
     # setAlwaysAllow (php:123-126): when bossNormalLocation=true (default),
@@ -222,7 +222,7 @@ locations:
     region: SwampPalace
     type: Prize_Crystal
     vanilla_item: Prize_Crystal2
-    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillArrghus(world)"
+    can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer) AND CanKillBoss(SwampPalace)"
     source: "app/Region/Inverted/SwampPalace.php:102-126 (inherited can_complete = Boss access)"
 
 # Note on macros: CanKillArrghus is defined in `21_swamp_palace.yaml`; codegen

@@ -104,13 +104,13 @@ locations:
   # by the edge. wildCompasses/wildMaps clauses vacuous (Phase A pins false).
   - id: "Thieves' Town - Boss"
     region: ThievesTown
-    can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) AND CanKillBlind(world)"
+    can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) AND CanKillBoss(ThievesTown)"
     source: "app/Region/Standard/ThievesTown.php:97-116"
 
   # Prize (php:59, 93-95, 128) — can_complete = Boss canAccess.
   - id: "Thieves' Town - Prize"
     region: ThievesTown
-    can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) AND CanKillBlind(world)"
+    can_reach: "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) AND CanKillBoss(ThievesTown)"
     source: "app/Region/Standard/ThievesTown.php:59, 93-95, 128 (can_complete = Boss access)"
 
 macros:

@@ -3736,13 +3736,66 @@ void Sprite_DisableAll() {  // 89c22f
     garnish_type[k] = 0;
 }
 
+// Boss-shuffle render: find the first room-data entry of `boss_type` in `room`'s
+// sprite list (skipping the sort byte; only real sprites, x < 0xe0). Returns its
+// {y,x} room-tile coords — the boss's spawn ANCHOR for that room. False if absent
+// (e.g. Blind, which TT spawns via a maiden trigger, not a sprite entry).
+static bool BossRoom_FindAnchor(uint16 room, uint8 boss_type, uint8 *out_y, uint8 *out_x) {
+  const uint8 *s = kDungeonSprites + kDungeonSpriteOffs[room];
+  s++;  // skip sort_sprites_setting
+  for (; *s != 0xff; s += 3) {
+    if (s[2] == boss_type && s[1] < 0xe0) { *out_y = s[0]; *out_x = s[1]; return true; }
+  }
+  return false;
+}
+
 void Dungeon_LoadSprites() {  // 89c290
-  const uint8 *src = kDungeonSprites + kDungeonSpriteOffs[dungeon_room_index2];
+  // Boss-shuffle RENDER (Enemizer pointer-redirect model): if this is a shuffled
+  // boss room, load the ASSIGNED boss's HOME boss-room sprite list (its full
+  // formation + trigger overlords) instead of this room's vanilla-boss entries,
+  // and SHIFT the formation so the boss lands where THIS dungeon's vanilla boss
+  // spawned. Without the shift the boss spawns at the home room's coords, which in
+  // a differently-walled room can land one screen over / behind a wall (the room
+  // looks empty + the boss is unreachable). The shift delta = (this room's vanilla
+  // boss anchor) - (the assigned boss's home-room anchor). Off / not-a-boss-room
+  // (redirect false, delta 0) → byte-identical to vanilla.
+  uint16 src_room = dungeon_room_index2;
+  uint16 home_room;
+  uint8 dest_bt, home_bt;
+  int dy = 0, dx = 0;
+  if (BossShuffle_GetRenderRedirect(dungeon_room_index2, &home_room, &dest_bt, &home_bt)) {
+    src_room = home_room;
+    uint8 ay, ax, by, bx;
+    if (BossRoom_FindAnchor(dungeon_room_index2, dest_bt, &ay, &ax) &&
+        BossRoom_FindAnchor(home_room, home_bt, &by, &bx)) {
+      // The room-data y/x bytes pack the 16px-granular intra-quadrant POSITION in
+      // bits 0-4 only; bits 5-7 carry the floor flag (y bit 7) + sprite subtype
+      // (y bits 5-6, x bits 5-7) — see Dungeon_LoadSingleSprite. So the alignment
+      // delta is a POSITION-FIELD difference, not a raw-byte difference.
+      dy = (int)(ay & 0x1f) - (int)(by & 0x1f);
+      dx = (int)(ax & 0x1f) - (int)(bx & 0x1f);
+    }
+  }
+  const uint8 *src = kDungeonSprites + kDungeonSpriteOffs[src_room];
   byte_7E0FB1 = dungeon_room_index2 >> 3 & 0xfe;
   byte_7E0FB0 = (dungeon_room_index2 & 0xf) << 1;
   sort_sprites_setting = *src++;
-  for (int k = 0; *src != 0xff; src += 3)
-    k = Dungeon_LoadSingleSprite(k, src) + 1;
+  for (int k = 0; *src != 0xff; src += 3) {
+    uint8 ent[3] = { src[0], src[1], src[2] };
+    // Shift only real boss sprites; leave overlords (x >= 0xe0) + the 0xe4 control
+    // entry untouched (their bytes are markers, not coordinates). Shift ONLY the
+    // 5-bit position field (bits 0-4) and PRESERVE bits 5-7 per entry, so each
+    // formation member keeps its own floor flag (y bit 7) + subtype (y bits 5-6,
+    // x bits 5-7). Clamp the field to [0,0x1f] — stays in-quadrant, and x can never
+    // reach the 0xe0 overlord range (its preserved high bits are < 0xe0 here).
+    if ((dy || dx) && ent[1] < 0xe0 && ent[2] != 0xe4) {
+      int py = (int)(ent[0] & 0x1f) + dy; if (py < 0) py = 0; else if (py > 0x1f) py = 0x1f;
+      int px = (int)(ent[1] & 0x1f) + dx; if (px < 0) px = 0; else if (px > 0x1f) px = 0x1f;
+      ent[0] = (uint8)((ent[0] & 0xe0) | py);
+      ent[1] = (uint8)((ent[1] & 0xe0) | px);
+    }
+    k = Dungeon_LoadSingleSprite(k, ent) + 1;
+  }
 }
 
 void Sprite_ManuallySetDeathFlagUW(int k) {  // 89c2f5
@@ -3762,24 +3815,11 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
     Dungeon_LoadSingleOverlord(src);
     return k - 1;
   }
-  // Audit M1 follow-up — suppress orphan boss secondaries (Trinexx
-  // arms 0xCC/0xCD, KholdstareShell 0xA3) when the parent boss has been
-  // shuffled out of this dungeon. Return k-1 with the same convention
-  // used by the 0xE4/overlord branches so the caller's `k = ... + 1`
-  // recipe leaves the slot index unchanged for the next entry.
-  //
-  // Cluster-audit LOW-4 — this branch fires BEFORE the
-  // `sprite_where_in_room` killed-bit gate at line 3667 reads
-  // `1 << k`, so the killed-bit lookup never sees the suppressed
-  // sprite's slot. That is correct under the current room-data load
-  // order (TR/IP list their secondaries after the primary, so by the
-  // time we suppress a secondary the slot `k` was already consumed
-  // by the primary and the bit refers to the PRIMARY's death, not the
-  // secondary's). If a future room-data edit interleaves boss-segment
-  // sprites or puts secondaries first, this assumption needs revisit.
-  if (BossShuffle_ShouldSuppressSecondary(type)) {
-    return k - 1;
-  }
+  // Boss-shuffle render note: the old per-entry BossShuffle_ShouldSuppressSecondary
+  // / BossShuffle_RemapSpriteType hooks were removed here — the live model
+  // redirects the WHOLE room sprite list to the assigned boss's home room
+  // (Dungeon_LoadSprites), so each entry is already the correct boss type +
+  // formation. A per-entry remap on top of that would double-shuffle.
   if (!(kSpriteInit_DeflBits[type] & 1) && (sprite_where_in_room[dungeon_room_index2] & (1 << k)))
     return k;
   sprite_state[k] = 8;
@@ -3788,11 +3828,6 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
   Sprite_SetY(k, ((y << 4) & 0x1ff) + (byte_7E0FB1 << 8));
   byte_7E0FB6 = x;
   Sprite_SetX(k, ((x << 4) & 0x1ff) + (byte_7E0FB0 << 8));
-  // Per-site boss-shuffle instrumentation (Phase B §65). When the
-  // sprite being spawned is a recognized vanilla boss, substitute the
-  // shuffle-assigned boss. Returns `type` unchanged when boss_shuffle
-  // is off or `type` is not a boss sprite.
-  type = BossShuffle_RemapSpriteType(type);
   sprite_type[k] = type;
   tmp_counter = (tmp_counter & 0x60) >> 2;
   sprite_subtype[k] = tmp_counter | byte_7E0FB6 >> 5;

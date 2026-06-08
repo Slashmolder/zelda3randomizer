@@ -200,13 +200,13 @@ locations:
   #   AND wildCompasses/wildMaps disjuncts (collapse TRUE).
   - id: "Turtle Rock - Boss"
     region: TurtleRock_Lobby
-    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillBoss(TurtleRock)"
     source: "app/Region/Standard/TurtleRock.php:228-242"
 
   # TR - Prize (php:266 → can_complete = Boss canAccess).
   - id: "Turtle Rock - Prize"
     region: TurtleRock_Lobby
-    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillTrinexx(world)"
+    can_reach: "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) AND CanKillBoss(TurtleRock)"
     source: "app/Region/Standard/TurtleRock.php:224-226, 266 (can_complete = Boss access)"
 
 macros:

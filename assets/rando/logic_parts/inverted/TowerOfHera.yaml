@@ -134,7 +134,7 @@ locations:
     region: TowerOfHera_Lobby
     type: Drop
     vanilla_item: BossHeartContainer
-    can_reach: "CanKillMoldorm() AND HAS_ITEM(BigKey_TowerOfHera)"
+    can_reach: "CanKillBoss(TowerOfHera) AND HAS_ITEM(BigKey_TowerOfHera)"
     # setFillRules (php:86-95): bossNormalLocation=true makes the dungeon-item
     # ban unreachable; default TRUE.
     # setAlwaysAllow (php:96-99): when bossNormalLocation=true (default),
