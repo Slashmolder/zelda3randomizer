@@ -25,11 +25,12 @@ Hint generation SHALL be deterministic: the same `(settings, seed)` SHALL produc
 The randomizer SHALL populate the following hint sources:
 
 1. **15 telepathic tiles** (ALTTPR-canonical) — per `app/Services/HintService.php:59-75`, the upstream ships exactly 15 telepathic-tile sources. The list is positionally stable: Eastern Palace, Tower of Hera Floor 4, Spectacle Rock, Swamp Entrance, Thieves Town Upstairs, Misery Mire, Palace of Darkness, Desert Bonk Torch Room, Castle Tower, Ice Large Room, Turtle Rock, Ice Entrance, Ice Stalfos Knights Room, Tower of Hera Entrance, South-East Darkworld Cave. Each is assigned one distinct non-junk placement and surfaced in-game (per the placement-capability "Telepathic-tile hint dispatch" requirement).
-2. **Murahdahla** — emitted only on `goal ∈ {triforce-hunt, ganon-hunt}`, as a static region-summary line (count of pieces and count of regions holding them). Murahdahla is **spoiler-only**; no in-game NPC handler is wired.
+2. **Fork-extension NPCs** — three vanilla NPCs whose dialogue is rerouted through the hint path for additional in-game hint surfaces: the **Storyteller** (`fork_storyteller`, id 17) and the **Kakariko** + **Dark-World Fortune Tellers** (`fork_fortune_teller_kakariko` id 18 / `fork_fortune_teller_dark_world` id 19). Each draws the next pick from the same shuffled pool after the 15 tiles, so a fork hint never duplicates a tile hint. The **Lake-Hylia Fortune Teller** (`fork_fortune_teller_lake_hylia`, id 20) is intentionally NOT populated — it shares the Kakariko room with no runtime discriminator, so in-game it surfaces the Kakariko hint.
+3. **Murahdahla** — emitted only on `goal ∈ {triforce-hunt, ganon-hunt}`, as a static region-summary line (count of pieces and count of regions holding them). Murahdahla is **spoiler-only**; no in-game NPC handler is wired (the fork never ported the ALTTPR Murahdahla sprite).
 
-The hint-text format SHALL be the stable form `"The <item> lies at <location>."` (Murahdahla: `"Murahdahla: N Triforce piece(s) placed across M region(s)."`).
+The hint-text format SHALL be the stable form `"<item> is in <location>"` (Murahdahla: `"Murahdahla: N Triforce piece(s) placed across M region(s)."`).
 
-> **As-built note**: a prior draft of this requirement listed a third group, "Fork extensions" (Storyteller + 3 Fortune Tellers), as supported. These exist only as reserved enum ids (`kRandoHintNpc_Fork*`, prefixed `fork_` in spoiler keys) and are **NOT wired in-game** — no sprite handler routes through them. Bookshelf hints were dropped (poor discoverability). ALTTPR-line-by-line text fidelity (per-location flavor from `Text.php`) and the joke-pool fallback are deferred; only the structural port shipped.
+> **As-built note**: a prior draft of this requirement listed "Fork extensions" as reserved-but-unwired enum ids. They were subsequently wired end-to-end (generation + in-game dispatch + spoiler) for the Storyteller and the two distinguishable Fortune Tellers (ids 17-19); the Lake-Hylia FT (20) is a deliberate shared-room non-wiring. Bookshelf hints were dropped (poor discoverability). ALTTPR line-by-line text fidelity (per-location flavor from `Text.php`) and the joke-pool fallback are deferred; only the structural port shipped.
 
 #### Scenario: Triforce Hunt populates Murahdahla
 - **WHEN** a seed has `settings.goal ∈ {triforce-hunt, ganon-hunt}` and `settings.hints == on`
@@ -39,9 +40,9 @@ The hint-text format SHALL be the stable form `"The <item> lies at <location>."`
 - **WHEN** a seed has `settings.goal ∉ {triforce-hunt, ganon-hunt}` and `settings.hints == on`
 - **THEN** the spoiler `hints` array does NOT contain a `RandoHintNpc_Murahdahla` entry
 
-#### Scenario: Fork-extension NPCs are not surfaced in-game
-- **WHEN** any seed is generated with `settings.hints == on`
-- **THEN** no `fork_storyteller` / `fork_fortune_teller_*` entry is populated and no in-game NPC dispatches a fork-extension hint
+#### Scenario: Fork-extension NPCs surface their hints in-game
+- **WHEN** a seed is generated with `settings.hints == on` and the player talks to the Storyteller or reads the Kakariko / Dark-World Fortune Teller
+- **THEN** the NPC's vanilla dialogue is replaced with that fork NPC's generated `"<item> is in <location>"` hint (the Lake-Hylia Fortune Teller surfaces the Kakariko hint by shared-room fallback)
 
 ### Requirement: Vanilla NPC hint redirects (DEFERRED — not implemented)
 

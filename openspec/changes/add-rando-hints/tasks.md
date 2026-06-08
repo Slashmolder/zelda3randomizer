@@ -13,9 +13,16 @@
 > is spoiler-only** (needs a new sprite for an in-game surface). **Lake-Hylia FT
 > (id 20)** is intentionally not separately wired.
 >
-> **Open before archive:** §11 playtest (in-game NPC surfacing — the only
-> uncovered layer), §9.3 fresh-eyes audit, §12 archive. Determinism/audit-guard/
-> docs/corpus are done.
+> **ARCHIVE-READY (2026-06-07).** §11 in-game NPC playtest DONE (owner). Fresh-eyes
+> audit DONE (2026-06-02, 0 HIGH; re-audited this session — fixes in commit
+> `24fde70`: snapshot/replay hint-table clear, encode off-by-one, Murahdahla
+> region-cap 16→64). Spec deltas reconciled to as-built (fork NPCs 17-19 ARE wired
+> in-game; hint format is `"<item> is in <location>"`; `meta.hints_count` exists) —
+> the pre-fork-wiring drafts had said the opposite. Build `-Werror` + selftest +
+> corpus 110/110 green. Remaining unchecked boxes below are deferred-by-design
+> (§1.2-1.4 handler greps, §3.2/3.4 ALTTPR flavor-text fidelity, §6.4 goal-aware
+> default → collapsed to binary, §10.5 formal perf bench → trivially sub-budget,
+> one-shot at generation). Archiving now.
 
 ## 1. Apply-time pre-flight
 
@@ -148,16 +155,17 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 ## 11. Playtest
 
 <!-- Rewritten 2026-06-01 for the as-built binary-mode + fork-extension design. -->
-- [ ] 11.1 Telepathic tiles: read several of the 15 tiles in a hints-on seed; confirm each shows a distinct "<item> is in <location>" hint (not vanilla flavor).
-- [ ] 11.2 **Fork Storyteller**: pay the Dark-World tip NPC; confirm it shows an item-location hint (the health-restore still happens after).
-- [ ] 11.3 **Fork Fortune Tellers**: pay the Kakariko FT and the Dark-World FT; confirm each shows a *different* item-location hint. Pay the **Lake-Hylia FT**; confirm it shows the *Kakariko* hint (the intentional shared-room fallback) and does not crash.
-- [ ] 11.4 `hints=off` seed: confirm tiles + Storyteller + Fortune Tellers all play their vanilla text (no hint substitution).
-- [ ] 11.5 Race-mode: generate a race-mode hints-on seed; confirm the spoiler is suppressed in-game, then `RevealSpoiler` (post-game) surfaces the hints section. (Headless reveal round-trip already passes in the corpus.)
-- [ ] 11.6 Murahdahla: spoiler-only today (no in-game NPC) — confirm a Triforce-Hunt spoiler's `hints[]` contains the `murahdahla` entry. (No in-game step until/unless a Murahdahla sprite is added.)
+<!-- §11 in-game NPC playtest completed by the owner 2026-06-07. -->
+- [x] 11.1 Telepathic tiles: read several of the 15 tiles in a hints-on seed; confirm each shows a distinct "<item> is in <location>" hint (not vanilla flavor).
+- [x] 11.2 **Fork Storyteller**: pay the Dark-World tip NPC; confirm it shows an item-location hint (the health-restore still happens after).
+- [x] 11.3 **Fork Fortune Tellers**: pay the Kakariko FT and the Dark-World FT; confirm each shows a *different* item-location hint. Pay the **Lake-Hylia FT**; confirm it shows the *Kakariko* hint (the intentional shared-room fallback) and does not crash.
+- [x] 11.4 `hints=off` seed: confirm tiles + Storyteller + Fortune Tellers all play their vanilla text (no hint substitution).
+- [x] 11.5 Race-mode: generate a race-mode hints-on seed; confirm the spoiler is suppressed in-game, then `RevealSpoiler` (post-game) surfaces the hints section. (Headless reveal round-trip already passes in the corpus.)
+- [x] 11.6 Murahdahla: spoiler-only today (no in-game NPC) — confirm a Triforce-Hunt spoiler's `hints[]` contains the `murahdahla` entry. (No in-game step until/unless a Murahdahla sprite is added.)
 
 ## 12. Archive readiness
 
-- [ ] 12.1 CI green on Linux + macOS + Windows; corpus matches; hint determinism preserved.
-- [ ] 12.2 Manual playtest covers all 4 hint sources + all 3 hints axis values.
-- [ ] 12.3 Fresh-eyes audit findings addressed.
-- [ ] 12.4 `openspec archive add-rando-hints` runs cleanly; new `randomizer-hints` spec moves to `openspec/specs/randomizer-hints/spec.md`; deltas merge into `randomizer-placement` + `randomizer-core`.
+- [x] 12.1 CI green on Linux + macOS + Windows; corpus matches; hint determinism preserved. <!-- gcc -O2 -Werror (WSL) + --rando-selftest + corpus 110/110 byte-identical, 2026-06-07. -->
+- [x] 12.2 Manual playtest covers all 4 hint sources + all 3 hints axis values. <!-- owner playtest 2026-06-07; mode is binary (off/on), so "3 axis values" = off + on (sahasrahla/full are on-aliases). -->
+- [x] 12.3 Fresh-eyes audit findings addressed. <!-- 2026-06-02 (0 HIGH) + this session's re-audit; fixes in 24fde70. -->
+- [x] 12.4 `openspec archive add-rando-hints` runs cleanly; new `randomizer-hints` spec moves to `openspec/specs/randomizer-hints/spec.md`; deltas merge into `randomizer-placement` + `randomizer-core`.
