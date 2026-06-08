@@ -491,35 +491,37 @@ macros:
   # ===========================================================================
   - name: CanBootsClip
     parameters: []
-    body: "OP_TRICK(boots_clip) AND HAS_ITEM(Boots)"
-    source: "app/Region/.../West.php:58 (canBootsClip + PegasusBoots)"
+    body: "(OP_TRICK(boots_clip) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)) AND HAS_ITEM(Boots)"
+    source: "config/logic.php:9,18,28 (canBootsClip @ OWG/HMG/MG) + region `config('canBootsClip') && has('PegasusBoots')`"
     notes: |
       Mirrors ALTTPR's `$world->config('canBootsClip', false) &&
-      $items->has('PegasusBoots')` pattern. The trick gate exposes the
-      glitch only when the user opted in; the boots prereq is the actual
-      mechanic.
+      $items->has('PegasusBoots')`. canBootsClip is an OverworldGlitches-group
+      flag — config/logic.php enables it at OverworldGlitches (line 9), HybridMG
+      (18), AND MajorGlitches (28) — so the glitch-level disjunct is
+      OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) (true at logic>=1). The boots
+      prereq applies to BOTH the trick and the glitch-level path.
 
-      Intentionally gated on the trick BIT (OP_TRICK) only — NOT on
-      OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches). A logic=OWG, tricks=0
-      seed therefore will NOT route boots-clip progression. This is the
-      deliberate SAFE direction documented in op_registry.yaml's
-      glitch_levels overworld_glitches entry: there are ZERO tier-1
-      (overworld_glitches) gates in the graph — the as-built OWG sites are
-      pinned at tier-2 (major_glitches) at the predicate level, so adding a
-      tier-1 disjunct here would silently over-reach across all ~134
-      boots-clip predicate sites (US-1.0-unverified). Proper OWG fidelity
-      is follow-on work (tasks §12.5); do not OR in a tier-1 glitch level
-      without re-auditing every CanBootsClip()/major_glitches composition.
+      Phase D (add-rando-major-glitch §5) folds the glitch level into the macro
+      (was trick-bit-only). The fork's trick BIT remains as an independent
+      fine-grained opt-in (a fork extension over ALTTPR, which drives the
+      technique purely from the logic level). Default (logic=0, tricks=0)
+      collapses both disjuncts to false → the trick-only form → digest-identical;
+      verified on the NoGlitches + b-tricks-* corpus entries (unchanged).
+      OWG/MG seeds move (faithful — ALTTPR enables boots-clip at those tiers).
 
   - name: CanFakeFlippers
     parameters: []
-    body: "OP_TRICK(fake_flippers)"
-    source: "ALTTPR `canFakeFlippers` toggle"
+    body: "OP_TRICK(fake_flippers) OR OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    source: "config/logic.php:7,16,26 (canFakeFlipper @ OWG/HMG/MG)"
     notes: |
-      ALTTPR upstream rarely gates locations directly on canFakeFlippers
-      — it's used in macros like canSwim() with a fallback. Phase B
-      uses this macro as the gating predicate; callers compose
-      `HAS_ITEM(Flippers) OR CanFakeFlippers()` at swim sites.
+      ALTTPR `config('canFakeFlipper', false)` — no item prereq (fake-flippers
+      needs only the technique). canFakeFlipper is an OWG-group flag
+      (config/logic.php enables it at OverworldGlitches line 7, HybridMG 16,
+      MajorGlitches 26), so the level disjunct is
+      OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches). Phase D folds the level in;
+      the trick bit stays an independent fork opt-in. Callers compose
+      `HAS_ITEM(Flippers) OR CanFakeFlippers()`. Default (logic=0, tricks=0) →
+      false → digest-identical.
 
   - name: CanDarkRoomNav
     parameters: []
@@ -542,27 +544,42 @@ macros:
   - name: CanBunnyRevival
     parameters: [world]
     body: "OP_TRICK(bunny_revival) AND CanBunnyRevive(world)"
-    source: "ALTTPR `canBunnyRevive` toggle"
+    source: "ALTTPR `canBunnyRevive` config flag (customizer toggle, NOT a logic-level flag)"
     notes: |
       Bunny-state recovery mid-movement. Composes with the CanBunnyRevive
       bottle+net prereq macro (already in Phase A).
 
+      DELIBERATELY trick-bit-only, NOT folded with a glitch level (unlike
+      CanBootsClip/CanFakeFlippers/CanPearlBypass in Phase D §5). `canBunnyRevive`
+      is NOT enabled by ANY entry in config/logic.php — the OWG/HMG/MG flag sets
+      use `canSuperBunny` + `canDungeonRevive`, never `canBunnyRevive` (verified
+      by an apply-time grep: `canBunnyRevive => true` appears nowhere in config/).
+      It is a standalone customizer toggle upstream. Folding a glitch-level
+      disjunct here would over-reach. Do NOT "fix" this to match the siblings.
+
   - name: CanPearlBypass
     parameters: []
-    body: "OP_TRICK(pearl_bypass) AND HasABottle()"
-    source: "ALTTPR `canOWYBA` (Over-World Y-Bot Aim with bottle)"
+    body: "(OP_TRICK(pearl_bypass) OR (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches)))) AND HasABottle()"
+    source: "config/logic.php:33 (canOWYBA @ MajorGlitches ONLY) + region `config('canOWYBA') && hasABottle()`"
     notes: |
-      Limited dark-world traversal without Moon Pearl via bunny-state
-      tech that requires a bottle. The closest ALTTPR equivalent is
-      canOWYBA. Usage: `HAS_ITEM(MoonPearl) OR CanPearlBypass()`.
+      ALTTPR `config('canOWYBA', false) && $items->hasABottle()` — Over-World
+      Y-Button-Aim, the bottle-assisted dark-world bunny traversal. canOWYBA is a
+      MajorGlitches-EXCLUSIVE flag: config/logic.php enables it ONLY at
+      MajorGlitches (line 33), NOT at OverworldGlitches or HybridMG.
 
-      Like CanBootsClip, intentionally gated on the trick BIT only — NOT
-      on OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches). The 72 predicate
-      sites that compose CanPearlBypass() already pin their parallel glitch
-      disjunct at major_glitches (tier 2); ORing a tier-1 level into this
-      macro would silently open all of them at the OWG tier (the
-      over-reach op_registry.yaml's overworld_glitches entry warns against,
-      US-1.0-unverified). See CanBootsClip's note for the full rationale.
+      Because the fork enum numbers MajorGlitches=2 < HybridMajorGlitches=3, the
+      monotone OP_GLITCH_LEVEL_AT_LEAST(>=) cannot express "MG but not HMG" with a
+      single threshold. The MG-exclusive form is
+      `OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND NOT
+      OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches)`, true only at logic==2
+      (at logic==4 NoLogic it is false, but NoLogic short-circuits reachability,
+      so it never matters). See design.md D4 + the glitch-logic-tier-model memo.
+
+      Phase D (§5) folds this in; the trick bit stays an independent fork opt-in;
+      the bottle prereq applies to BOTH paths. Usage:
+      `HAS_ITEM(MoonPearl) OR CanPearlBypass()`. Default (logic=0, tricks=0) →
+      false → digest-identical. MG seeds move (OWYBA now in logic at MG);
+      HMG/OWG seeds do NOT gain OWYBA (correct — MG-exclusive).
 
   - name: CanHookshotClip
     parameters: []

@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 59  # bump_rando_corpus.py --apply
+generator_version: 60  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -530,19 +530,20 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, logic: overworld_glitches }
     seed: "0x06701C45"
     label: "b-logic-owg-open-fast-ganon"
-    expected_digest: "8f039c1b8749bc73dc6ac2b3fd9593e060e7ac4a13cc0ff2354c11bfdcd2a704"
+    expected_digest: "cb25f444f71c9b04de0614e115f8e87cf0fe0eadd03c143845c35f9fdc7fb489"
   - settings: { mode.state: open, goal: fast_ganon, logic: major_glitches }
     seed: "0x6A106C45"
     label: "b-logic-mg-open-fast-ganon"
-    expected_digest: "229669334f42b565c2e41893c45c824bdc90c1f6534c71136f92865214cd51af"
+    expected_digest: "c53b7487007d2e6142359fce444f66ee05e1667d32306bf34160f9c6c2a73979"
   # Phase D (add-rando-major-glitch) — HybridMG + NoLogic tiers.
   # HybridMG is a technique SUBSET of MajorGlitches (HMG = OWG + oneFrameClipUW).
-  # Because the as-built glitch gates are bare `OP_GLITCH_LEVEL_AT_LEAST(
-  # major_glitches)` (`>=2`, open at both MG=2 and HMG=3), HMG and MG share
-  # reachability today — at an IDENTICAL seed their placement_digest is equal
-  # (verified at apply-time: seed 0x1234 -> both baeee180...; the documented raw-
-  # threshold over-reach, frontier F1). This entry uses a distinct seed to pin
-  # HMG determinism independently. settings_hash differs from MG (logic 3 vs 2).
+  # After the §5 macro fold, HMG and MG DIFFER at an identical seed: canOWYBA is
+  # MajorGlitches-EXCLUSIVE (CanPearlBypass `>=MG AND NOT >=HMG`) so it opens at
+  # MG but not HMG, while boots-clip/fake-flipper (OWG-group) open at both
+  # (verified apply-time at seed 0x48BD6C45: OWG c6fed908 / MG b9f99741 / HMG
+  # e6cf6d33 — all distinct). The remaining over-reach is the ~40 raw
+  # OP_GLITCH_LEVEL_AT_LEAST(major_glitches) threshold sites (canOneFrameClipOW
+  # etc.) that still open at HMG — frontier F1. settings_hash differs from MG.
   - settings: { mode.state: open, goal: fast_ganon, logic: hybrid_mg }
     seed: "0x48BD6C45"
     label: "b-logic-hmg-open-fast-ganon"
@@ -676,8 +677,8 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, logic: major_glitches }
     seed: "0xC0FFEE0000000031"
     label: "b-logic-mg-standard"
-    expected_digest: "4381dfed7b0b47e7a493a4979c2ec9d67c47305a48ceb7655661a5f8634753f2"
-    expected_sphere_digest: "a4c43a58baa4196f7a9231d8ce25189a2816ebc9df178ff304caade8ba6a5244"
+    expected_digest: "cdbd9a1070f2b137b870fa5bb2c24ba52f67d784a1f7d0affd490b85fec49805"
+    expected_sphere_digest: "55e36fc5c0bb975b41c5e5bd5976f91ba7412ff431ad3fa643dd91ab3f2ea4a3"
 
   # Boss-heart-pool toggle (settable via the existing `region_boss_hearts_in_pool`
   # / `region.bossHeartsInPool` CLI key). NOTE the field is INVERTED vs its name:
