@@ -12,8 +12,9 @@ the upstream runtime asm is `../z3randomizer/inverted.asm` + `entrances.asm` +
 source and the fork's current handling.
 
 Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
-(authoritative source → fork asset-array map) and the OpenSpec change
-`openspec/changes/add-rando-inverted-ganon-relocation/` (covers item D1 below).
+(authoritative source → fork asset-array map) and the archived OpenSpec change
+`openspec/changes/archive/2026-06-08-add-rando-inverted-ganon-relocation/`
+(the Ganon relocation; covers item A1 below).
 
 ---
 
@@ -33,7 +34,7 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
     (`z3randomizer/data/sheet73.gfx` + map16 redefs + 1 shading color,
     `Rom.php:1798-1879`), which is unlicensed and not in this fork's
     ROM-extracted asset set. The faithful facade stays paused. Full evidence:
-    `openspec/changes/add-rando-inverted-ganon-relocation/spike-findings.md`.
+    `openspec/changes/archive/2026-06-08-add-rando-inverted-ganon-relocation/spike-findings.md`.
   - **Hole-only as-built (SHIPPED).** Rather than the facade, render ONLY a Ganon
     pit at screen 0x1B with **no new art**: a 2-tone dark diamond built from a
     solid castle tile (char 0x037) already loaded on 0x1B — #292929 interior
