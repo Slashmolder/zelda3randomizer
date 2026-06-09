@@ -295,7 +295,16 @@ tricks:
       # OR CanFakeFlippers()` at swim sites (logic.yaml:286, 30_ice_palace.yaml:68).
       - "app/Region/**: config('canFakeFlipper', false) — 33 uses; config/logic.php:7,16,26"
     status: authored
-    rom_version_status: untested-on-us10
+    # add-rando-major-glitch F4 — VERIFIED on US 1.0. Fake Flippers is one of the
+    # six JP-1.0 glitches restored + owner-playtest-confirmed by
+    # add-jp-glitch-restoration (archive 2026-06-09; gate at src/player.c:1778).
+    # add-rando-major-glitch D6 now FORCES kFeatures0_RestoreJpGlitches on for any
+    # seed enabling this trick, so the runtime can always perform the assumed swim.
+    # `canFakeFlipper` is the ONLY ALTTPR OWG flag that maps 1:1 to a restored
+    # glitch and is independently addressable as a trick bit, so it is the only
+    # entry flipped; the glitch LEVELS stay untested (they bundle un-restored
+    # techniques — see the glitch_levels notes below).
+    rom_version_status: verified-us10
 
   - bit: 2
     id: bunny-revival
@@ -404,6 +413,16 @@ glitch_levels:
       threshold sites, so they stay closed at OWG (the SAFE direction — never opens
       too early). Reclassifying those raw sites to tier 1 is frontier F1 (per-site
       technique ID). US-1.0 unverified regardless — see design.md + tasks F1/F4.
+      # F4 honesty: of the 7 OWG techniques, exactly TWO are restored+performable
+      # on US 1.0 — canFakeFlipper (flipped verified-us10 as the fake-flippers
+      # trick) and canSuperSpeed (Superspeed glitch, owner-confirmed). The level
+      # STAYS untested because the other 5 (canSuperBunny/canBootsClip/
+      # canMirrorClip/canWaterWalk/canDungeonRevive) are NOT restored by
+      # add-jp-glitch-restoration and are US-1.0-unperformed-on-this-fork; flipping
+      # the level would falsely suppress the unverified warning for seeds routing
+      # through them. canSuperSpeed has no independent trick bit, so it cannot be
+      # flipped in isolation — it rides this level's status. See the
+      # OVERNIGHT_REPORT performability ledger.
     rom_version_status: untested-on-us10
   - level: 2
     id: major_glitches
