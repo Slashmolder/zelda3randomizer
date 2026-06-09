@@ -157,12 +157,18 @@ need = {}
 for sid in range(0xF3):
     e = ents.get(sid)
     if e is None:
-        need[sid] = 0  # unknown -> not KNOWN bit
+        need[sid] = 0  # unknown -> not KNOWN bit -> pins ALL slots at runtime
         continue
     mask = 0x80
     for p in range(4):
         if e["subs"][p]:
             mask |= (1 << p)
+    # AddGroup(n) entries (the 8 village NPCs: SweepingLady/RunningMan/... use
+    # whole-group sheets with NO AddSubgroupN) would otherwise pin nothing and get
+    # reshuffled into garbage (fresh-eyes audit MED-HIGH). Conservatively pin ALL
+    # slots so any area holding one is ineligible.
+    if e["group"] is not None:
+        mask |= 0x0F
     need[sid] = mask
 boss_ids = sorted(sid for sid, e in ents.items() if sid <= 0xF2 and is_boss(e))
 
