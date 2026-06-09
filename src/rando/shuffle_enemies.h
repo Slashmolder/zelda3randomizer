@@ -92,6 +92,25 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type);
 // row for the load (slot N == 0 means "inherit the previously-loaded sheet").
 void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row);
 
+// === Enemy STAT randomization (HP / contact damage) ===
+//
+// Called from SpritePrep_LoadProperties (src/sprite.c) on the per-type init
+// values. Deterministic per (seed, sprite type) — every Octorok in a seed shares
+// its scaled stats. Always-on with enemy_shuffle; a pure passthrough when the
+// shuffle is off, so vanilla play is byte-identical. SOFTLOCK-SAFE: HP scaling
+// never makes an enemy unkillable (Link can always keep attacking; bounded
+// factor, clamp >= 1), and a 0-HP (non-killable) sprite is left untouched so
+// NPCs/objects are unaffected.
+//
+// ScaleHealth: returns `base` HP scaled by a per-type factor in [0.5x .. 2.0x],
+//   clamped to [1, 255]; `base == 0` returns 0.
+// ScaleDamage: `sprite_bump_damage` is a flag+class byte (low nibble = damage
+//   class into kPlayerDamages, high bits = immunity/special flags). We perturb
+//   ONLY a plain class (value 1..8, no high bits) by a mild deterministic -1/0/+1,
+//   clamped [1, 8]; flagged/boss-attack values are returned unchanged.
+uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base);
+uint8 EnemyShuffle_ScaleDamage(uint8 type, uint8 base);
+
 // Self-check (--rando-selftest): asserts determinism, the off→passthrough
 // contract, that excluded types/markers are never substituted, that every
 // candidate produced for a synthetic loaded-sheet set is in-sheet + killable /

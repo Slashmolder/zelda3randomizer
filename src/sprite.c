@@ -4173,11 +4173,13 @@ void SpritePrep_LoadProperties(int k) {  // 8db818
   SpritePrep_ResetProperties(k);
   int j = sprite_type[k];
   sprite_flags2[k] = kSpriteInit_Flags2[j];
-  sprite_health[k] = kSpriteInit_Health[j];
+  // add-rando-enemy-shuffle — randomize HP/contact-damage per (seed, type) when
+  // enemy_shuffle is active (passthrough otherwise → vanilla byte-identical).
+  sprite_health[k] = EnemyShuffle_ScaleHealth((uint8)j, kSpriteInit_Health[j]);
   sprite_flags4[k] = kSpriteInit_Flags4[j];
   sprite_flags5[k] = kSpriteInit_Flags5[j];
   sprite_defl_bits[k] = kSpriteInit_DeflBits[j];
-  sprite_bump_damage[k] = kSpriteInit_BumpDamage[j];
+  sprite_bump_damage[k] = EnemyShuffle_ScaleDamage((uint8)j, kSpriteInit_BumpDamage[j]);
   sprite_flags[k] = kSpriteInit_Flags[j];
   sprite_room[k] = player_is_indoors ? dungeon_room_index2 : overworld_area_index;
   sprite_flags3[k] = kSpriteInit_Flags3[j];

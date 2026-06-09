@@ -656,6 +656,38 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
 }
 
 // ---------------------------------------------------------------------------
+// Enemy STAT randomization (HP / contact damage) — see shuffle_enemies.h.
+// Deterministic per (seed, sprite type); always-on with enemy_shuffle. A dedicated
+// RNG stream (distinct salt) so it doesn't perturb the sheet/pick streams.
+#define kEnemyShuffleStatSalt 0x57A7570000ull  // "STATs"
+
+uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base) {
+  if (!g_enemy_shuffle_active || base == 0) return base;  // 0 HP = non-killable
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, g_enemy_shuffle_seed ^ ((uint64)type << 8) ^ kEnemyShuffleStatSalt);
+  uint32 mult = 8 + Rng_NextRange(&rng, 25);   // [8,32]/16 = 0.5x .. 2.0x
+  uint32 v = ((uint32)base * mult) / 16u;
+  if (v < 1) v = 1;
+  if (v > 255) v = 255;
+  return (uint8)v;
+}
+
+uint8 EnemyShuffle_ScaleDamage(uint8 type, uint8 base) {
+  if (!g_enemy_shuffle_active) return base;
+  // Only a PLAIN damage class (1..8, no high flag bits) is perturbed; flagged /
+  // boss-attack / immunity values (>= 0x10) are left exactly as vanilla.
+  if (base == 0 || base >= 0x10) return base;
+  uint32 cls = base & 0x0fu;
+  if (cls < 1 || cls > 8) return base;
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, g_enemy_shuffle_seed ^ ((uint64)type << 8) ^ (kEnemyShuffleStatSalt + 1u));
+  int nc = (int)cls + ((int)Rng_NextRange(&rng, 3) - 1);  // -1 / 0 / +1
+  if (nc < 1) nc = 1;
+  if (nc > 8) nc = 8;
+  return (uint8)nc;  // base < 0x10 ⇒ no flag bits to preserve
+}
+
+// ---------------------------------------------------------------------------
 // Self-check (--rando-selftest). Enemy shuffle is orthogonal to item placement
 // (the corpus is blind to it), so determinism + the structural invariants can
 // ONLY be pinned here. exit(2) on any failure.
@@ -911,6 +943,49 @@ void EnemyShuffle_SelfCheck(void) {
         if (!reachable) enemy_selfcheck_die("vanilla sheet never a choose_slot_sheet outcome");
       }
     }
+  }
+
+  // 7) Stat randomization (HP / contact damage): determinism, bounds, the
+  //    non-killable + flagged-damage passthroughs, and off→passthrough.
+  {
+    RandoSettings on; Settings_SetDefaults(&on); on.enemy_shuffle = 1;
+    if (!EnemyShuffle_Generate(&on, 0xABCDEF0123456789ull))
+      enemy_selfcheck_die("Generate(on) for stat check failed");
+
+    if (EnemyShuffle_ScaleHealth(0x08, 0) != 0)
+      enemy_selfcheck_die("ScaleHealth(0) must stay 0 (non-killable sprite)");
+    for (uint32 t = 0; t < 256; t++) {
+      for (uint32 b = 1; b <= 255; b += 17) {
+        uint8 a = EnemyShuffle_ScaleHealth((uint8)t, (uint8)b);
+        if (a != EnemyShuffle_ScaleHealth((uint8)t, (uint8)b))
+          enemy_selfcheck_die("ScaleHealth not deterministic");
+        if (a < 1) enemy_selfcheck_die("ScaleHealth produced 0 for a killable enemy");
+        uint32 lo = ((uint32)b * 8u) / 16u; if (lo < 1) lo = 1;
+        uint32 hi = ((uint32)b * 32u) / 16u; if (hi > 255) hi = 255;
+        if (a < lo || a > hi) enemy_selfcheck_die("ScaleHealth outside [0.5x, 2x]");
+      }
+    }
+
+    if (EnemyShuffle_ScaleDamage(0x12, 0) != 0)
+      enemy_selfcheck_die("ScaleDamage(0) must stay 0");
+    if (EnemyShuffle_ScaleDamage(0x12, 0x83) != 0x83 ||
+        EnemyShuffle_ScaleDamage(0x12, 0x40) != 0x40 ||
+        EnemyShuffle_ScaleDamage(0x12, 0x14) != 0x14)
+      enemy_selfcheck_die("ScaleDamage must leave a flagged value (>=0x10) unchanged");
+    for (uint32 t = 0; t < 256; t++) {
+      for (uint32 c = 1; c <= 8; c++) {
+        uint8 d = EnemyShuffle_ScaleDamage((uint8)t, (uint8)c);
+        if (d != EnemyShuffle_ScaleDamage((uint8)t, (uint8)c))
+          enemy_selfcheck_die("ScaleDamage not deterministic");
+        if (d < 1 || d > 8) enemy_selfcheck_die("ScaleDamage class left [1,8]");
+      }
+    }
+
+    EnemyShuffle_Deactivate();
+    if (EnemyShuffle_ScaleHealth(0x08, 20) != 20)
+      enemy_selfcheck_die("ScaleHealth must passthrough when shuffle is off");
+    if (EnemyShuffle_ScaleDamage(0x08, 3) != 3)
+      enemy_selfcheck_die("ScaleDamage must passthrough when shuffle is off");
   }
 
   fprintf(stderr, "[EnemyShuffle_SelfCheck] OK\n");
