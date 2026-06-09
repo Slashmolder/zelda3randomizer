@@ -312,6 +312,18 @@ static int settings_byte_eq(const uint8 *a, const uint8 *b, int n) {
   return 1;
 }
 
+// add-rando-major-glitch D6 — see rando_settings.h for the contract. A seed
+// whose placement assumed a restored JP-1.0 glitch must run with the JP-glitch
+// runtime flag forced on. The fork `logic` enum is NoGlitches=0,
+// OverworldGlitches=1, MajorGlitches=2, HybridMG=3, NoLogic=4 (rando_settings.c
+// CSV parser); fake-flippers is tricks bit 1 (op_registry.yaml). Raw integers
+// match the house style (the spoiler/parser also use `logic < 4`, `bit 1`).
+bool Rando_SettingsAssumeJpGlitches(const RandoSettings *s) {
+  enum { kLogic_OverworldGlitches = 1, kTrickBit_FakeFlippers = 1 };
+  return s->logic >= kLogic_OverworldGlitches ||
+         (s->tricks & (1u << kTrickBit_FakeFlippers)) != 0;
+}
+
 void Settings_SelfCheck(void) {
   RandoSettings s;
   Settings_SetDefaults(&s);
@@ -635,6 +647,44 @@ void Settings_SelfCheck(void) {
     Settings_SetDefaults(&sl);
     if (Settings_ParseCsv("accessibility=beatable", &sl) != 0 || sl.accessibility != 2) {
       fprintf(stderr, "Settings_SelfCheck: accessibility=beatable alias should parse to 2 (kAccessibility_None)\n");
+      exit(2);
+    }
+  }
+  // add-rando-major-glitch D6 — Rando_SettingsAssumeJpGlitches: a glitch seed
+  // must force the JP-glitch runtime flag; a plain / non-glitch-trick seed must
+  // NOT. Mirrors the coupling predicate exactly (logic>=OWG OR fake-flippers).
+  {
+    RandoSettings sj;
+    Settings_SetDefaults(&sj);
+    if (Rando_SettingsAssumeJpGlitches(&sj)) {
+      fprintf(stderr, "Settings_SelfCheck: default seed must NOT assume JP glitches\n");
+      exit(2);
+    }
+    // Every glitch logic tier (1..4) assumes glitches.
+    static const char *const kGlitchLogics[] = {
+      "logic=overworld_glitches", "logic=major_glitches",
+      "logic=hybrid_mg", "logic=no_logic"};
+    for (size_t i = 0; i < sizeof(kGlitchLogics) / sizeof(kGlitchLogics[0]); i++) {
+      Settings_SetDefaults(&sj);
+      if (Settings_ParseCsv(kGlitchLogics[i], &sj) != 0 ||
+          !Rando_SettingsAssumeJpGlitches(&sj)) {
+        fprintf(stderr, "Settings_SelfCheck: %s must assume JP glitches\n", kGlitchLogics[i]);
+        exit(2);
+      }
+    }
+    // The fake-flippers trick (logic=0) assumes glitches (it maps 1:1 to the
+    // restored Fake Flippers glitch).
+    Settings_SetDefaults(&sj);
+    if (Settings_ParseCsv("tricks=fake-flippers", &sj) != 0 ||
+        !Rando_SettingsAssumeJpGlitches(&sj)) {
+      fprintf(stderr, "Settings_SelfCheck: tricks=fake-flippers must assume JP glitches\n");
+      exit(2);
+    }
+    // boots-clip / dark-room-nav are NOT restored JP glitches — must NOT force.
+    Settings_SetDefaults(&sj);
+    if (Settings_ParseCsv("tricks=boots-clip+dark-room-nav", &sj) != 0 ||
+        Rando_SettingsAssumeJpGlitches(&sj)) {
+      fprintf(stderr, "Settings_SelfCheck: non-fake-flippers tricks must NOT force JP glitches\n");
       exit(2);
     }
   }

@@ -54,7 +54,8 @@ edges:
   # INSIDE its original conjunction so the surrounding precondition
   # chain (RescuedZelda, MoonPearl, canLiftDarkRocks) stays intact:
   #   * line 136: `canMeltThings OR canOneFrameClipUW` →
-  #     `CanMeltThings(world) OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)`
+  #     `CanMeltThings(world) OR CanOneFrameClipUW()`  (F1: first-class macro,
+  #     body = OP_GLITCH_LEVEL_AT_LEAST(major_glitches) = HMG+MG → DIGEST-NEUTRAL)
   #   * line 138: `Flippers OR canFakeFlipper` →
   #     `HAS_ITEM(Flippers) OR CanFakeFlippers()`
   # The SDW-route branch (lines 140-151) stays dropped: every internal
@@ -65,7 +66,7 @@ edges:
   # dropped it; do not resurface here.
   - from: LightWorld_South
     to: IcePalace_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (CanMeltThings(world) OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)) AND HAS_ITEM(MoonPearl) AND (HAS_ITEM(Flippers) OR CanFakeFlippers()) AND CanLiftDarkRocks()"
+    predicate: "HAS_ITEM(RescuedZelda) AND (CanMeltThings(world) OR CanOneFrameClipUW()) AND HAS_ITEM(MoonPearl) AND (HAS_ITEM(Flippers) OR CanFakeFlippers()) AND CanLiftDarkRocks()"
     source: "app/Region/Standard/IcePalace.php:132-152 (can_enter closure)"
 
 locations:

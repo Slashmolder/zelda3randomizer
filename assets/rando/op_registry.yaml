@@ -281,6 +281,11 @@ tricks:
       # logic.yaml:286 (Lake Hylia island).
       - "app/Region/**: config('canBootsClip', false) — 134 uses; config/logic.php:9,18,28"
     status: authored
+    # untested grounded (romdiff 2026-06-09): NOT jp10-only — LinkState_Dashing +
+    # the collision routines are byte-identical JP↔US and tile_detect.c reproduces
+    # the sub-tile corner math bit-for-bit. Cross-version ROM; the corner-clip
+    # frame/sub-pixel feasibility on this build is playtest-pending. (See
+    # TEN_TECHNIQUES.md / the glitch_levels grounding note.)
     rom_version_status: untested-on-us10
 
   - bit: 1
@@ -295,7 +300,16 @@ tricks:
       # OR CanFakeFlippers()` at swim sites (logic.yaml:286, 30_ice_palace.yaml:68).
       - "app/Region/**: config('canFakeFlipper', false) — 33 uses; config/logic.php:7,16,26"
     status: authored
-    rom_version_status: untested-on-us10
+    # add-rando-major-glitch F4 — VERIFIED on US 1.0. Fake Flippers is one of the
+    # six JP-1.0 glitches restored + owner-playtest-confirmed by
+    # add-jp-glitch-restoration (archive 2026-06-09; gate at src/player.c:1778).
+    # add-rando-major-glitch D6 now FORCES kFeatures0_RestoreJpGlitches on for any
+    # seed enabling this trick, so the runtime can always perform the assumed swim.
+    # `canFakeFlipper` is the ONLY ALTTPR OWG flag that maps 1:1 to a restored
+    # glitch and is independently addressable as a trick bit, so it is the only
+    # entry flipped; the glitch LEVELS stay untested (they bundle un-restored
+    # techniques — see the glitch_levels notes below).
+    rom_version_status: verified-us10
 
   - bit: 2
     id: bunny-revival
@@ -354,6 +368,10 @@ tricks:
       # opt-in. 72 predicate uses (composed `HAS_ITEM(MoonPearl) OR CanPearlBypass()`).
       - "app/Region/**: config('canOWYBA', false) — 203 uses; config/logic.php:33 (MG-only)"
     status: authored
+    # untested grounded (romdiff 2026-06-09): NOT jp10-only — the bunny + bottle
+    # path is byte-identical JP↔US and the fork ports the bunny state machine
+    # faithfully. Cross-version ROM; the OWYBA setup's frame-feasibility on this
+    # build is playtest-pending. (See TEN_TECHNIQUES.md / glitch_levels grounding.)
     rom_version_status: untested-on-us10
 
   - bit: 6
@@ -387,6 +405,25 @@ tricks:
 # `level` is the settings.logic value (matches rando_settings.h `logic` enum +
 # the codegen GLITCH_LEVELS map). NoGlitches (0) is the default tier and is
 # NEVER unverified, so it is intentionally absent.
+#
+# WHY the levels stay `untested-on-us10` (grounded, JP-vs-US ROM sweep
+# 2026-06-09, _jpglitch_spike/romdiff.py — see TEN_TECHNIQUES.md): of the 10
+# glitch techniques the JP-glitch restoration did NOT make performable
+# (everything except canFakeFlipper + canSuperSpeed), a per-technique
+# careful_diff confirmed NONE is JP-1.0-exclusive — every enabling collision/
+# movement/bunny/swim/dungeon routine is byte-identical JP↔US (relocation only),
+# and the fork faithfully reproduces the substrate (sub-tile corner-collision
+# tables, subpixel velocity-before-collision ordering, the bunny state machine).
+# So they are CROSS-VERSION ROM, but their fork-reimpl frame-feasibility (esp.
+# the 1-frame clips canOneFrameClipOW/UW) is unconfirmed → honest
+# `untested-on-us10`, NOT `cross-version` (that bar needs a positive playtest)
+# and NOT `jp10-only`. (Earlier draft flagged canMirrorWrap + canTransitionWrapped
+# as us10-different; a deeper romdiff 2026-06-09 CORRECTED that — the
+# mirror-warp / screen-entry DESTINATION + position + camera math is BYTE-IDENTICAL
+# JP↔US; the only delta is the destination screen's overworld MUSIC selection
+# [$7F5B00 = overworld_music[] WRAM, not a dest table; writes differ at $12C/$12D],
+# which has no reachability effect. So those two are cross-version ROM like the
+# rest → untested-on-us10, NOT us10-different. See their macros.yaml notes.)
 # ---------------------------------------------------------------------------
 glitch_levels:
   - level: 1
@@ -404,6 +441,16 @@ glitch_levels:
       threshold sites, so they stay closed at OWG (the SAFE direction — never opens
       too early). Reclassifying those raw sites to tier 1 is frontier F1 (per-site
       technique ID). US-1.0 unverified regardless — see design.md + tasks F1/F4.
+      # F4 honesty: of the 7 OWG techniques, exactly TWO are restored+performable
+      # on US 1.0 — canFakeFlipper (flipped verified-us10 as the fake-flippers
+      # trick) and canSuperSpeed (Superspeed glitch, owner-confirmed). The level
+      # STAYS untested because the other 5 (canSuperBunny/canBootsClip/
+      # canMirrorClip/canWaterWalk/canDungeonRevive) are NOT restored by
+      # add-jp-glitch-restoration and are US-1.0-unperformed-on-this-fork; flipping
+      # the level would falsely suppress the unverified warning for seeds routing
+      # through them. canSuperSpeed has no independent trick bit, so it cannot be
+      # flipped in isolation — it rides this level's status. See the
+      # OVERNIGHT_REPORT performability ledger.
     rom_version_status: untested-on-us10
   - level: 2
     id: major_glitches

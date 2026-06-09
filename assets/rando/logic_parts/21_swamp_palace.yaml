@@ -65,14 +65,18 @@ locations:
   #   canOneFrameClipUW || wildKeys || item == KeyD2
   # Phase A + Slice 4 §7: wildKeys collapses to FALSE; canOneFrameClipUW
   # un-pins under `logic=MajorGlitches` (per config/logic.php it's enabled
-  # at MajorGlitches AND HybridMG tiers — translated to `OP_GLITCH_LEVEL_AT_LEAST(major_glitches)`).
+  # at MajorGlitches AND HybridMG tiers).
+  # add-rando-major-glitch F1: reclassified the raw OP_GLITCH_LEVEL_AT_LEAST(
+  # major_glitches) stand-in to the first-class CanOneFrameClipUW() macro
+  # (body = OP_GLITCH_LEVEL_AT_LEAST(major_glitches), so DIGEST-NEUTRAL —
+  # canOneFrameClipUW IS the HMG+MG tier; SwampPalace.php:88-91 fillrule).
   # When the trick is active, the entrance slot relaxes to accept any item
   # (mire-back-entry makes the slot non-key-locked). Defaults
   # (logic=NoGlitches) collapse to OP_ITEM_IS(SmallKey_SwampPalace).
   - id: "Swamp Palace - Entrance"
     region: SwampPalace
     can_reach: "TRUE()"
-    can_place: "OP_ITEM_IS(SmallKey_SwampPalace) OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
+    can_place: "OP_ITEM_IS(SmallKey_SwampPalace) OR CanOneFrameClipUW()"
     source: "app/Region/Standard/SwampPalace.php:50, 87-91"
 
   # Big Chest (php:93-104). After trick collapse:

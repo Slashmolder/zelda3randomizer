@@ -105,7 +105,7 @@ locations:
   # Inert under randomized. Runtime: BombosTablet cutscene accepts hammer.
   - id: "Bombos Tablet"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(BookOfMudora) AND (HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND ((HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "HAS_ITEM(BookOfMudora) AND (HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND ((HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/LightWorld/South.php:136-142"
 
   # `Cave 45` (php:144-148):
@@ -115,7 +115,7 @@ locations:
   # the boots-clip + OWG alternatives at the top level.
   - id: "Cave 45"
     region: LightWorld_South
-    can_reach: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
+    can_reach: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()"
     source: "app/Region/Standard/LightWorld/South.php:144-148"
 
   # `Checkerboard Cave` (php:150-155): canLiftRocks AND mirror+Mire

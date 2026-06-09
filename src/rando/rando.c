@@ -1253,6 +1253,11 @@ static RandoPlacementTable g_session_placement_table;
 // mirror the feature-bit update into the wanted bank as well as the
 // in-RAM enhanced bank (zelda_rtl.c's frame loop syncs wanted → enhanced).
 extern uint32 g_wanted_zelda_features1;
+// add-rando-major-glitch D6 — the features0 wanted bank (the source the
+// per-frame mirror syncs into enhanced_features0). Forcing the JP-glitch bit
+// here (not just enhanced_features0) survives the per-frame re-sync AND a
+// mid-session Config_ApplyLive (which rewrites wanted from g_config.features0).
+extern uint32 g_wanted_zelda_features;
 
 // §62 — cache for the active slot's textual share string (50 base32 chars +
 // NUL). Populated at Rando_ActivateSidecarSlot from the slot header's raw
@@ -1968,6 +1973,26 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     // add-rando-enemy-shuffle — fail closed: tear down any prior slot's enemy
     // substitution so it can't leak into this (v1 / snapshot-restored) slot.
     EnemyShuffle_Deactivate();
+  }
+
+  // add-rando-major-glitch D6 — couple a glitch-logic slot to the JP-1.0
+  // glitch runtime flag. AUTHORITATIVE runtime guarantee: runs on EVERY slot
+  // activation (generate->play AND reload->play, incl. imported share strings),
+  // unlike the generate-time recommend path. When the recovered settings show
+  // the placement assumed a restored glitch (logic>=OverworldGlitches or the
+  // fake-flippers trick), force the flag on live: g_config (persist),
+  // g_wanted_zelda_features (survives the per-frame mirror + a mid-session
+  // Config_ApplyLive), and enhanced_features0 (this frame). Only force ON,
+  // never off — a non-glitch slot leaves the user's own setting untouched, so a
+  // plain logic=0 / no-glitch-trick seed never gets the flag forced. The
+  // point-of-use gate JpGlitchEnabled() still self-suppresses under side-by-side
+  // (!ZeldaIsEmulatorAttached()), so this stays RAM-compare-safe. features0 is
+  // config state, NOT canonical settings → placement/corpus byte-identical.
+  if (g_rando_active_settings_valid &&
+      Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
+    g_config.features0      |= kFeatures0_RestoreJpGlitches;
+    g_wanted_zelda_features |= kFeatures0_RestoreJpGlitches;
+    enhanced_features0      |= kFeatures0_RestoreJpGlitches;
   }
 
   // Persist the swordless flag in g_ram so a StateRecorder snapshot captures it

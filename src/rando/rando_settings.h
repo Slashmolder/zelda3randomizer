@@ -239,6 +239,20 @@ void Settings_HashShort(const RandoSettings *s, uint8 out_hash[16]);
 // code 2 on failure.
 void Settings_SelfCheck(void);
 
+// add-rando-major-glitch D6 — true when this seed's PLACEMENT assumed the
+// player can perform a restored JP-1.0 glitch, so the runtime MUST force
+// kFeatures0_RestoreJpGlitches on (else an assumed-fill-certified seed becomes
+// an unreachable-item soft-softlock). Two triggers:
+//   logic >= 1 (OverworldGlitches) — every glitch tier assumes the OWG
+//     technique set, of which Fake Flippers (canFakeFlipper) + Superspeed
+//     (canSuperSpeed) are restored on this US-1.0 build.
+//   tricks bit 1 (fake-flippers) — the fake-flippers placement trick maps 1:1
+//     to the restored Fake Flippers glitch and is independent of logic.
+// Only fake-flippers among the 8 tricks maps to a restored glitch; the rest
+// (boots-clip/pearl-bypass/...) are cross-version or unrestored and do NOT
+// force the flag. Pure function of settings — no features0 dependency.
+bool Rando_SettingsAssumeJpGlitches(const RandoSettings *s);
+
 // ---------------------------------------------------------------------------
 // CLI `--settings=k=v,...` parser (tasks.md §1.6a, randomizer-core spec).
 //

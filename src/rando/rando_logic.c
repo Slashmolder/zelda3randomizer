@@ -354,17 +354,34 @@ bool Predicate_EvalCtx(const uint8 *bytecode, uint16 length,
   if (bytecode == NULL || length == 0 || ctx == NULL || ctx->counts == NULL) {
     return false;
   }
-  // Phase D (add-rando-major-glitch) NoLogic short-circuit. At logic==NoLogic the
-  // REACHABILITY eval (placement_context==0) treats every location as reachable:
-  // goal-completability and all accessibility tiers then pass vacuously, so the
-  // --generate-seed strict refusal (main.c) does not fire and the seed has no
-  // reachability guarantee. Mirrors ALTTPR World.php:93 (regions not initialized
-  // under NoLogic). Placement can_place predicates (placement_context==1) are
-  // deliberately NOT short-circuited — confinement (dungeon keys etc.) stays live
-  // so the seed remains structurally valid/loadable. See design.md D1. Fires only
-  // at logic==NoLogic(4), which no non-NoLogic seed uses, so no other digest moves.
-  if (ctx->settings != NULL && ctx->settings->logic >= 4 /* NoLogic */ &&
-      ctx->placement_context == 0) {
+  // Phase D (add-rando-major-glitch) NoLogic short-circuit. At logic==NoLogic
+  // EVERY predicate — reachability (placement_context==0) AND the LOGIC-level
+  // placement can_place (placement_context==1) — returns true.
+  //
+  // Reachability-true (D1) → goal-completability and all accessibility tiers pass
+  // vacuously, so the --generate-seed strict refusal (main.c) does not fire and
+  // the seed has no reachability guarantee (mirrors ALTTPR World.php:93 — regions
+  // not initialized under NoLogic).
+  //
+  // can_place-true (F5; was D1-deferred, now built per owner request) bypasses the
+  // LOGIC-level can_place PREDICATES — the NotADungeonItem fill ban and item-locked
+  // slots (e.g. Swamp Palace Entrance's `OP_ITEM_IS(SmallKey_SwampPalace)`) — so
+  // placement is no longer LOGIC-constrained. SCOPE NOTE: the structural dungeon-
+  // item MODE containment ("Dungeon-mode small key stays in its dungeon") is the
+  // C-level `dungeon_mode_accepts_item` check in rando_placement.c, OUTSIDE this
+  // predicate VM, and is deliberately STILL respected — it is an explicit MODE
+  // choice (not a logic rule) and keeps Dungeon-mode keys runtime-grantable. So
+  // F5 = "NoLogic ignores placement LOGIC", NOT "dungeon keys anywhere even in
+  // Dungeon mode" (that would override a deliberate setting + risk ungrantable
+  // keys — see design.md D1). Verified: a NoLogic + wild-keys seed's placement
+  // DIFFERS from the pre-F5 confined placement (c0f5e87c -> 8be3e395 at seed
+  // 0xF5F5), while the default Vanilla-keys NoLogic seed is BYTE-IDENTICAL (its
+  // dungeon items are pre-pinned, never subject to can_place).
+  //
+  // Fires only at logic==NoLogic(4): no logic<4 digest moves; the default-keys
+  // NoLogic corpus entry is unchanged and a NoLogic+wild-keys entry pins F5's
+  // effect. See design.md D1/F5.
+  if (ctx->settings != NULL && ctx->settings->logic >= 4 /* NoLogic */) {
     return true;
   }
   Cursor c = { bytecode, bytecode + length, false };

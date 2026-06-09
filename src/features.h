@@ -103,6 +103,32 @@ enum {
   // at point-of-use (gated on kFeatures1_RandomizerActive) in
   // DiggingGameGuy_AttemptPrizeSpawn (player.c) + OpenMiniGameChest (dungeon.c).
   kFeatures0_EasyMinigames = 131072,
+
+  // Re-introduce glitches present in the Japanese 1.0 ALTTP ROM but patched out
+  // of the US 1.0 ROM this project reimplements (Fake Flippers et al.).
+  // BEHAVIOR-AFFECTING: every restored glitch diverges from the original
+  // US-1.0 RAM every frame, so this is DEFAULT-OFF and ALSO suppressed under
+  // side-by-side comparison. Each glitch's point-of-use gate is
+  //   (enhanced_features0 & kFeatures0_RestoreJpGlitches) && !ZeldaIsEmulatorAttached()
+  // so attaching the original ROM keeps the per-frame RAM/SRAM/VRAM comparator
+  // clean even if a user manually enabled the flag. The flag means "enable
+  // every JP-1.0 glitch this build has verified-and-implemented"; adding a
+  // verified glitch later needs no new flag/save-format/migration.
+  kFeatures0_RestoreJpGlitches = 262144,  // bit 18
+
+  // Select the destination overworld music/ambient the way the Japanese 1.0
+  // ROM does (instead of US 1.0) in the two routines that run after a mirror
+  // warp / long screen transition (MirrorWarp_FinalizeAndLoadDestination and
+  // Overworld_FinalizeEntryOntoScreen). JP keys the post-warp track off world
+  // state + screen index + progress rather than re-reading the overworld_music
+  // scratch table, so the chosen song/ambient diverges from the US-1.0
+  // reference RAM every frame. DEFAULT-OFF and suppressed under side-by-side
+  // (point-of-use gate is
+  //   (enhanced_features0 & kFeatures0_JpOverworldMusic) && !ZeldaIsEmulatorAttached()
+  // ) so attaching the original US ROM keeps the RAM comparator clean. Only the
+  // $12C/$12D (music_control/sound_effect_ambient) writes change; the
+  // destination, Link position, screen index and camera math are untouched.
+  kFeatures0_JpOverworldMusic = 524288,  // bit 19
 };
 
 // Enum values for kRam_Features1 (randomizer feature flags).

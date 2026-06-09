@@ -139,9 +139,21 @@ that reachability/goal-completability pass vacuously and the seed generate +
 write a spoiler — they say nothing about confinement. Keeping `can_place` live
 preserves the placer's structural invariants (dungeon small/big keys stay in
 placeable dungeon slots), so a NoLogic seed remains **structurally valid and
-loadable** at runtime even though progression is un-gated. Short-circuiting
-`can_place` too ("items literally anywhere") risks ungrantable runtime keys and
-is *not* required by the spec; deferred. Documented trade-off, not an oversight.
+loadable** at runtime even though progression is un-gated.
+
+**F5 update (close-out, built per owner request):** the can_place short-circuit
+under NoLogic is now ALSO applied — but only to the **LOGIC-level** can_place
+predicates (the NotADungeonItem fill ban, item-locked slots like Swamp Palace
+Entrance). The **structural dungeon-item MODE containment**
+(`dungeon_mode_accepts_item` in `rando_placement.c`, a C check OUTSIDE the
+predicate VM) is deliberately STILL respected: "Dungeon-mode small key stays in
+its dungeon" is an explicit MODE choice and keeps Dungeon-mode keys
+runtime-grantable, not a logic rule. So F5 means "NoLogic ignores placement
+LOGIC", NOT "dungeon keys anywhere even in Dungeon mode" — the latter (full
+mode-override, the original "ungrantable runtime keys" risk this paragraph
+flagged) remains a deliberate non-goal. F5 changes NoLogic + SHUFFLED-key
+placement (verified A/B at seed 0xF5F5: c0f5e87c→8be3e395) while default
+Vanilla-keys NoLogic (dungeon items pre-pinned) is byte-identical.
 
 Determinism: the short-circuit fires only at `logic==4`, which no pre-existing
 corpus seed uses → **zero non-NoLogic digests move.** The NoLogic placement
@@ -210,6 +222,70 @@ flags tiers 1-3 as `untested-on-us10`; tier 4 (NoLogic) is added with its own
 existing `unverified_tricks_enabled` spoiler warning fires for every reached
 tier whose status is unverified. All newly-meaningful tiers default to
 `unverified` until playtest confirms performability on US 1.0.
+
+### D6 — Couple glitch-logic seeds to the JP-glitch runtime flag (close-out, 2026-06-08)
+
+The predecessor `add-jp-glitch-restoration` (archived 2026-06-09) restored all
+six cataloged JP-1.0 glitches behind `kFeatures0_RestoreJpGlitches` (bit 18,
+default off) and explicitly deferred "auto-coupling glitch-logic to this flag"
+to *this* change, flagging `fake-flippers` *trick* + flag-off as an "unsupported
+combination". D6 resolves that: a seed whose **placement assumed** a restored
+glitch must run with the flag on, or the assumed-fill-certified seed becomes an
+unreachable-item soft-softlock.
+
+**Predicate** (`Rando_SettingsAssumeJpGlitches`, `rando_settings.c`):
+`logic >= OverworldGlitches(1) OR (tricks & fake_flippers_bit(1))`. Only
+`fake-flippers` among the 8 tricks maps to a restored glitch; boots-clip,
+pearl-bypass, bunny-revival, hookshot-clip, etc. are cross-version or unrestored,
+so they do NOT force the flag.
+
+**Mechanism: FORCE-on (not recommend/warn), at two points:**
+- `Rando_GenerateSlot` — OR the bit into the slot's `recommended_features0`, so
+  the existing recommend→`g_config.features0` apply turns it on at generate.
+- `Rando_ActivateSidecarSlot` — the **authoritative** runtime guarantee: runs on
+  EVERY slot activation (generate→play AND reload→play, incl. imported share
+  strings), forcing `g_config.features0` + `g_wanted_zelda_features` (survives
+  the per-frame mirror AND a mid-session `Config_ApplyLive`) + `enhanced_features0`.
+
+**Why FORCE over recommend:** a glitch seed without the glitch executable is the
+worst failure mode (a softlock the placer certified completable). The JP-glitch
+change's "auto-coupling is a non-goal" was scoped to *that* change; this change
+owns the coupling. (The JP-glitch spec delta's "unsupported combination" wording
+is reconciled: the combination is now SUPPORTED — fake-flippers forces the flag.)
+
+**RAM-compare safety:** the point-of-use gate `JpGlitchEnabled()` still
+self-suppresses under `!ZeldaIsEmulatorAttached()`, so a forced glitch seed under
+side-by-side neither diverges nor performs the glitch (inherently a non-glitch
+mode; out of scope).
+
+**Determinism:** `features0` is config state, NOT canonical settings — it does
+not touch `RandoSettings`/`kSettingsCanonicalLen`/`settings_hash`. The corpus
+path (`--generate-seed` → `Place_AssumedFill`) never calls `Rando_GenerateSlot`;
+the slot path computes placement before features0 is touched. **Corpus
+byte-identical, no kGen bump.** Verified: 112/112 unchanged after D6.
+
+### The glitch → technique → performability ledger (D6 ground truth)
+
+Of the six restored JP glitches, mapping to ALTTPR *logic* techniques:
+
+| Restored glitch | ALTTPR technique | reachability role | rom_version flip |
+|---|---|---|---|
+| Fake Flippers | `canFakeFlipper` (OWG) | YES | fake-flippers trick → verified-us10 (F4) |
+| Superspeed | `canSuperSpeed` (OWG) | YES | none (no isolable registry entry; rides OWG level) |
+| Spindash | — (superspeed-initiation; `canSpinSpeed` item path) | indirect | none |
+| Itemdash | — (Y+A speed-tech enabler) | no | none |
+| Death Hole | — (death+pit phantom transition; no config flag) | no | none |
+| Mirror Block Erase | — (dungeon push-block delete; ≠ canMirrorClip/Wrap OW glitches) | no | none |
+
+**Exactly 2 of 12 ALTTPR techniques become performable** (`canFakeFlipper`,
+`canSuperSpeed`). The other 10 (`canSuperBunny`/`canBootsClip`/`canMirrorClip`/
+`canWaterWalk`/`canDungeonRevive`/`canOneFrameClipUW`/`canMirrorWrap`/`canOWYBA`/
+`canOneFrameClipOW`/`canTransitionWrapped`) are NOT covered by the restoration —
+they are cross-version physics or deeper tech, US-1.0-**unverified on this fork**
+(NOT proven impossible). Consequence: a `tricks=fake-flippers` (logic=0) seed is
+FULLY performable end-to-end; an OWG/HMG/MG seed is PARTIAL (it forces the flag,
+making fakeFlipper/superSpeed performable, but may still route an item behind an
+un-restored technique). This is the remaining playtest frontier.
 
 ## Validation strategy
 
