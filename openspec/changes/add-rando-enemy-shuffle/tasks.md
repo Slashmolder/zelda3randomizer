@@ -79,6 +79,25 @@
 > **0/112** changed. Hook `EnemyShuffle_ReshuffleCurrentRoomSheets(row)` in
 > `Gfx_LoadSpritesInner` + `InitializeTilesets` (`src/load_gfx.c`), after the 4
 > subgroup ids resolve, before decompress.
+>
+> **As-built v2 (slots 0,1,2 + widened table).** The reshuffle now covers subgroup
+> slots **0, 1, 2** (the enemy slots), and the constraint tables are **GENERATED
+> from the Enemizer (MIT) source** by `assets/scripts/gen_enemy_shuffle_tables.py`
+> (parses `SpriteRequirement.cs`/`SpriteConstants.cs`) — replacing the hand tables
+> that dropped Walking Zora's sheet 68 and `0x16`/`0xBC`. The generator emits the
+> randomizable enemy table (ALL required slots per enemy; OR-within-slot → most-
+> common vanilla sheet), `kSheetNeed[256]` (per-type pin mask, bit7 KNOWN | bits
+> 3..0 needs slot 3..0), the boss set, and per-slot dungeon/overworld pools — and
+> ASSERTS the disjointness invariant the position-unaware picker relies on. The
+> randomizable enemy set widened **~31 → 49** (soldier/archer variants, Bari,
+> Bush Hoarder, …) so EVERY pick has more types, not just the reshuffle. One room
+> walk yields a blocked-slot bitmask; each owned, unpinned slot reshuffles from its
+> pool (dungeon pools each self-contain a killable+key enemy → key rooms fillable),
+> inheriting/pinned slots restore from a 3-byte per-slot vanilla shadow (g_ram
+> `0x662..0x664`). Diag relocated to `0x665..0x667` (calls / cumulative slots-
+> changed / last blocked-mask). Still runtime-only — corpus **0/112**, kGen stays
+> **62**. The Zora "hybrid" bug taught the rule now enforced: **every enemy must
+> list ALL its slots** (generator + selfcheck guard it).
 
 - [x] **Why / true-random.** Re-assigns subgroup SLOT 2 (the themed-enemy slot) so the picker (which reads the LIVE `sprite_gfx_subset_*`) draws a wider, cross-family pool. Vanilla slot-2 sheet is ALWAYS a candidate (vanilla-inclusive) — `choose_pos2` picks uniformly over `{12,23,28,35,38,40,46} ∪ {vanilla}`.
 - [x] **Where (zelda3).** Reordered `Gfx_LoadSpritesInner` to resolve all 4 ids then hook then decompress (behavior-identical); `InitializeTilesets` hook inserted after its 4-id resolve. The hook rewrites `sprite_gfx_subset_2` (g_ram 0xC2FE) BEFORE decompress so VRAM + picker agree; cached-redecompress paths (mirror warp etc.) reproduce it for free. Room/area sprite TYPE list walked at load time via new `Dungeon_GetRoomSpritePtr` / existing `GetOverworldSpritePtr` (asset blob — list available before parse; key on `dungeon_room_index` / `overworld_area_index`).
