@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 61  # bump_rando_corpus.py --apply
+generator_version: 62  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -547,7 +547,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, logic: hybrid_mg }
     seed: "0x48BD6C45"
     label: "b-logic-hmg-open-fast-ganon"
-    expected_digest: "e6cf6d331e640a25bc31156518b792264d0bc0e7e9a7998d0a00b30404e738fc"
+    expected_digest: "c6fed9085208610ba81b975e244d29c919ce9bff6778b20b9eaacc01652b0f31"
   # NoLogic — reachability short-circuited; placement ignores progression gating
   # (can_place confinement still live). accessibility=none per the hunt/no-logic
   # convention (judge by spoiler WRITTEN, not by unreachable_placements). The

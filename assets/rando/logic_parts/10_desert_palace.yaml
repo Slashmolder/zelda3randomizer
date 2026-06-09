@@ -55,7 +55,7 @@ edges:
   # (tricks=0, logic=NoGlitches) collapse both new branches to FALSE.
   - from: LightWorld_South
     to: DesertPalace_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(BookOfMudora) OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(BookOfMudora) OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/DesertPalace.php:122-128 (can_enter closure)"
 
   # Boss-room access: PHP boss predicate carries an inline gate that's the
@@ -71,7 +71,7 @@ edges:
   # cross-region disjunct is dropped per audit §0.10.2.
   - from: DesertPalace_Lobby
     to: DesertPalace_PastLanmolas
-    predicate: "CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
+    predicate: "CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW()"
     source: "app/Region/Standard/DesertPalace.php:96-102 (Boss spatial gate)"
 
 locations:

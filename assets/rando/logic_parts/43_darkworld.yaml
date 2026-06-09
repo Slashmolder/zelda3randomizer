@@ -136,13 +136,13 @@ locations:
   # canSuperBunny+MagicMirror branch stays dropped — no CanSuperBunny macro.
   - id: "Mire Shed - Left"
     region: DarkWorld_Mire
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanOneFrameClipOW() OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
     source: "app/Region/Standard/DarkWorld/Mire.php:66-74"
 
   # `Mire Shed - Right` (Mire.php:76-84): identical shape to Left.
   - id: "Mire Shed - Right"
     region: DarkWorld_Mire
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanOneFrameClipOW() OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
     source: "app/Region/Standard/DarkWorld/Mire.php:76-84"
 
   # ===========================================================================
@@ -160,7 +160,7 @@ locations:
   # FALSE → predicate reduces to Phase A's `MoonPearl AND CanLiftRocks()`.
   - id: "Catfish"
     region: DarkWorld_NorthEast
-    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/DarkWorld/NorthEast.php:95-101"
 
   # `Pyramid` (php:33) — no setRequirements; default TRUE (reachability
@@ -253,7 +253,7 @@ locations:
   # disjuncts stay dropped — no macros.
   - id: "Hammer Pegs"
     region: DarkWorld_NorthWest
-    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftDarkRocks() OR ((CanFakeFlippers() OR HAS_ITEM(Flippers)) AND (OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR CanBootsClip())))"
+    can_reach: "HAS_ITEM(Hammer) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftDarkRocks() OR ((CanFakeFlippers() OR HAS_ITEM(Flippers)) AND (CanOneFrameClipOW() OR CanBootsClip())))"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:96-106"
 
   # `Bumper Cave` (NorthWest.php:108-116):
@@ -269,7 +269,7 @@ locations:
   # Defaults (logic=NoGlitches, tricks=0) collapse the new branches to FALSE.
   - id: "Bumper Cave"
     region: DarkWorld_NorthWest
-    can_reach: "OP_GLITCH_LEVEL_AT_LEAST(major_glitches) OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanBootsClip() OR (HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape))))"
+    can_reach: "CanOneFrameClipOW() OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanBootsClip() OR (HAS_ITEM(Hookshot) AND CanLiftRocks() AND HAS_ITEM(Cape))))"
     source: "app/Region/Standard/DarkWorld/NorthWest.php:108-116"
 
   # `Blacksmith` (NorthWest.php:118-128): (itemPlacement!=='basic' ||
@@ -367,12 +367,12 @@ locations:
   # canSuperBunny still dropped (no macro).
   - id: "Superbunny Cave - Top"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)))"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR CanOneFrameClipOW()))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:58-63"
 
   - id: "Superbunny Cave - Bottom"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches)))"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR CanOneFrameClipOW()))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:65-70"
 
   # PHP shape (East.php:72-91 for the four Hookshot Cave chests):
@@ -384,17 +384,17 @@ locations:
   # canBunnyRevive — distinguish from other DW sites.
   - id: "Hookshot Cave - Top Right"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:72-77"
 
   - id: "Hookshot Cave - Top Left"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:79-84"
 
   - id: "Hookshot Cave - Bottom Left"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:86-91"
 
   # `Hookshot Cave - Bottom Right` (East.php:93-98): Hookshot OR (Boots in
@@ -402,7 +402,7 @@ locations:
   # canLiftRocks gate with the same trick disjuncts as the other three.
   - id: "Hookshot Cave - Bottom Right"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR OP_GLITCH_LEVEL_AT_LEAST(major_glitches))"
+    can_reach: "HAS_ITEM(Hookshot) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW())"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:93-98"
 
 macros: []
