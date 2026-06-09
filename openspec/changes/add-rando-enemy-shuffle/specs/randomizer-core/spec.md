@@ -8,7 +8,7 @@ Because `enemy_shuffle` defaults off (the bit is 0) and draws no fill RNG / adds
 - **Default-settings seeds keep a byte-identical `settings_hash`** (the canonical bytes are unchanged for the default tuple), and
 - **all seeds keep a byte-identical `placement_digest_hex`** (enemy shuffle is orthogonal to item placement).
 
-Adding the axis SHALL still advance `kGeneratorVersion` (58 → 59): it version-locks a new *live runtime* axis (so an older binary surfaces the upgrade warning rather than silently ignoring an enemy-shuffle slot), and a seed with `enemy_shuffle` on serializes a non-zero pad bit, changing *that* seed's `settings_hash`. The corpus regenerates (manifest `generator_version` advances); because no corpus seed enables `enemy_shuffle`, every regenerated digest SHALL be byte-identical to the pre-change baseline.
+Adding the axis SHALL still advance `kGeneratorVersion` by one (60 → 61 as-built against the v60 `main` baseline; the absolute pair tracks `main`'s current value at merge): it version-locks a new *live runtime* axis (so an older binary surfaces the upgrade warning rather than silently ignoring an enemy-shuffle slot), and a seed with `enemy_shuffle` on serializes a non-zero pad bit, changing *that* seed's `settings_hash`. The corpus regenerates (manifest `generator_version` advances); because no corpus seed enables `enemy_shuffle`, every regenerated digest SHALL be byte-identical to the pre-change baseline.
 
 > **Reconciliation note (apply-time):** the normative field list under `Settings canonical serialization order (normative)` still enumerates only the Phase A axes (1–21). The `hints` / `boss_shuffle` / `drop_shuffle` axes (`add-rando-shuffles-and-minigames`, `add-rando-hints`) and the bit-packed entrance-axis byte (`add-rando-entrance-shuffle`) already extended the struct's canonical layout in source (`rando_settings.h:108-150`, `rando_settings.c:206-221`) ahead of that spec text. The apply-time task SHALL reconcile the full normative list to as-built — read `rando_settings.{h,c}` for the authoritative byte map — and add `enemy_shuffle`'s pad bit there.
 
@@ -18,7 +18,7 @@ Adding the axis SHALL still advance `kGeneratorVersion` (58 → 59): it version-
 
 #### Scenario: kGeneratorVersion bump + backward load
 - **WHEN** the axis is added
-- **THEN** `kGeneratorVersion` advances to 59 and a slot written by 58 loads on the new binary with the one-time informational warning (per `randomizer-save / upgrade safety`), no regeneration required
+- **THEN** `kGeneratorVersion` advances by one (60 → 61 as-built) and a slot written by the prior version loads on the new binary with the one-time informational warning (per `randomizer-save / upgrade safety`), no regeneration required
 
 #### Scenario: Toggling enemy_shuffle changes only that seed's settings hash
 - **WHEN** `enemy_shuffle` is toggled on for a seed

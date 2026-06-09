@@ -19,7 +19,7 @@ There is **no `SpriteRequirement` analog in zelda3 today** — it must be author
 ### Settings axis + UI
 
 - New `enemy_shuffle` (uint8 bool) field in `RandoSettings`. In the canonical serialization it is **bit-packed into a reserved pad bit** (e.g. byte `[26]` bit 0) — NOT appended as a new byte. `kSettingsCanonicalLen` stays **28** (no size-coupling cascade), following the entrance-shuffle precedent that packed into pad byte `[25]` (`rando_settings.c:210-219`). Default off ⇒ default-settings `settings_hash` byte-identical.
-- `kGeneratorVersion` 58 → 59 (version-locks the new live runtime axis; an `enemy_shuffle=on` seed flips a pad bit, changing only *that* seed's `settings_hash`).
+- `kGeneratorVersion` +1 (60 → 61 as-built; main advanced 58→60 under this proposal via Phase D, so the absolute pair tracks main's current value at merge). Version-locks the new live runtime axis; an `enemy_shuffle=on` seed flips a pad bit, changing only *that* seed's `settings_hash`.
 - Checkbox in the rando-settings panel (`src/rando/rando_window/rando_window.cpp`, where `boss_shuffle`/`drop_shuffle` are wired). PC native window only; in-game screen compiled out on PC.
 
 ## Capabilities

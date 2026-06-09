@@ -71,7 +71,7 @@ A pure enemy-type shuffle is **logic-free for our purposes** — the fresh-eyes 
 
 ### D8: Determinism + corpus
 
-**`enemy_shuffle` does NOT grow the canonical layout (audit H1).** It packs into a reserved pad bit (e.g. byte `[26]` bit 0 — the deserializer's permissive trailing pad, the intended extension surface), exactly as the entrance-shuffle axes packed into pad byte `[25]` to avoid the size cascade. `kSettingsCanonicalLen` stays **28**; no size-coupling cascade (the ≥6 coupled sites + `_Static_assert` are untouched). `kGeneratorVersion` still bumps 58→59 — to version-lock a new *live runtime* axis and because an `enemy_shuffle=on` seed serializes a non-zero pad bit (changing *that* seed's `settings_hash`) — but **default-settings `settings_hash` AND all-seeds `placement_digest_hex` stay byte-identical**. The corpus regenerates only its manifest `generator_version`; digests are unchanged (no corpus seed enables the axis). Validate per `CLAUDE.md`: WSL `make zelda3`, `bump_rando_corpus.py --apply`, 3-way diff vs unmodified `main` — expect **zero** digest movement.
+**`enemy_shuffle` does NOT grow the canonical layout (audit H1).** It packs into a reserved pad bit (e.g. byte `[26]` bit 0 — the deserializer's permissive trailing pad, the intended extension surface), exactly as the entrance-shuffle axes packed into pad byte `[25]` to avoid the size cascade. `kSettingsCanonicalLen` stays **28**; no size-coupling cascade (the ≥6 coupled sites + `_Static_assert` are untouched). `kGeneratorVersion` still bumps by one (60→61 as-built) — to version-lock a new *live runtime* axis and because an `enemy_shuffle=on` seed serializes a non-zero pad bit (changing *that* seed's `settings_hash`) — but **default-settings `settings_hash` AND all-seeds `placement_digest_hex` stay byte-identical**. The corpus regenerates only its manifest `generator_version`; digests are unchanged (no corpus seed enables the axis). Validate per `CLAUDE.md`: WSL `make zelda3`, `bump_rando_corpus.py --apply`, 3-way diff vs unmodified `main` — expect **zero** digest movement.
 
 `EnemyShuffle_SelfCheck` asserts: an active shuffle never picks outside the resolved loaded-sheet set, never replaces an excluded type/marker, and preserves the killable+key/water/directional invariants for a sampled room set. It MUST be registered in `Rando_RunAllSelfChecks` (`rando.c:3620-3621`, where `BossShuffle_SelfCheck`/`DropShuffle_SelfCheck` are wired) or it won't run under `--rando-selftest` (audit L3).
 
@@ -106,4 +106,12 @@ Corrections folded in from an adversarial review (each re-verified against sourc
 - **OAM ordering (LOW).** Spurious — `flags2` is read at `SpritePrep_LoadProperties` (`sprite.c:4144`) after the swap; only the overrun concern is real. D6 corrected.
 - **Self-check registration (LOW).** Must register in `Rando_RunAllSelfChecks`. D8 corrected.
 
-Confirmed sound by the audit: `kGeneratorVersion=58`, the boss-shuffle install precedent, `Sprite_HEX_*` symbol basis (178 symbols), and the core determinism bet (placement byte-identical) — the headline claim holds.
+Confirmed sound by the audit: the boss-shuffle install precedent, `Sprite_HEX_*` symbol basis (178 symbols), and the core determinism bet (placement byte-identical) — the headline claim holds.
+
+## Post-implementation reconciliation (2026-06-08)
+
+Folded back from the implementation branch `claude/rando-enemy-shuffle` (build-verified + `--rando-selftest` green; not playtested):
+
+- **kGen drift.** `main` advanced 58→60 (Phase D `add-rando-major-glitch`) while this proposal was open, so the as-built bump is **60→61**, not the 58→59 originally drafted. The branch + corpus regen used the correct v60 baseline and reported **0/112 digests changed**, proving the placement-byte-identical claim. The absolute pair tracks `main`'s value at merge.
+- **GFX `0`-inheritance handled in code.** Picks read live `sprite_gfx_subset_0..3` directly rather than the static `kSpriteTilesets` row, so no `load_gfx.c` change was needed (D3's concern resolved at the read site).
+- **First-pass table is intentionally small** (~30 unambiguous-safe enemies; everything uncertain `do_not_randomize`) — sound but low-variety; widening + OAM-footprint modeling + render/softlock validation are the playtest-gated remainder.

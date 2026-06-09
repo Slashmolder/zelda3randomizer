@@ -48,7 +48,7 @@ No glitch ships behind the flag until its JP behavior is grounded:
 From the research dossier (anchors to confirm during the spike, not asserted as the fix):
 
 - **Fake Flippers** → the gate is a SET of sites, not one branch (audit correction):
-  - **Walk-into-water entry guard** `src/player.c:3192-3213` — `:3193 if (link_item_flippers)` sets `kPlayerState_Swimming`; the no-flippers fall-through calls `CheckAbilityToSwim()` (`:3212`).
+  - **Deep-water swim guard** in `LinkState_CrossingWorlds` (`src/player.c:3172`; guard at `:3192-3213`) — `:3193 if (link_item_flippers)` sets `kPlayerState_Swimming`; the no-flippers fall-through calls `CheckAbilityToSwim()` (`:3212`).
   - **Eject decision** `CheckAbilityToSwim` `:129-136` — no flippers ⇒ `submodule_index = player_is_indoors ? 20 : 42` (the eject). This is what blocks the normal walk-in case; `:1721` is *unreachable* there.
   - **Handler eject** `PlayerHandler_04_Swimming` `:1721` (`if (!link_item_flippers) return;`) — reached only via the **un-flipper-checked** ledge/jump-into-water sites that set swim state directly: `:710-712` and `:918-920` (both `kPlayerState_Swimming` + `Link_SetToDeepWater()` with no flipper check).
   - **JP grace window** — the faithful change restores an ~8-frame grace before eject (and relies on existing screen-transition code preserving swim state for the lock), rather than removing the eject. The spike confirms where the per-frame eject lives vs. where a frame-counter grace would slot in.
@@ -89,3 +89,10 @@ Corrections folded in from an adversarial review (each re-verified against sourc
 - **Rando `fake-flippers` trick ↔ this flag (MED).** Trick-on + flag-off is a soft-softlock hazard; marked unsupported in the spec delta.
 
 Confirmed sound by the audit: flag-bit arithmetic (`262144` = bit 18, free), "no version flag in src/", OpenSpec structure (new capability + ADDED requirement on `game-config-ui`), `FeatureCheckbox` helper exists.
+
+## Post-implementation reconciliation (2026-06-08)
+
+Folded back from the implementation branch `claude/jp-glitch-restoration` (build-verified, not playtested):
+
+- **Function name.** The deep-water swim guard cited at `src/player.c:3192-3213` lives in `LinkState_CrossingWorlds` (def `:3172`), not a distinct "walk-in" handler — the line numbers and the eject set are correct; only the colloquial name was loose. The shipped code names the real function. References above corrected.
+- **WSL build covers the UI.** The WSL `make` build defines `Z3R_NATIVE_SETTINGS_WINDOW`, so the ImGui checkbox compiles under it — there is no MSBuild-only gap for this change (contrary to D6's caution).
