@@ -17,6 +17,7 @@
 
 #include "../zelda_rtl.h"     // g_zenv, ZeldaWriteSram
 #include "../config.h"        // g_config (.features0)
+#include "../features.h"      // kFeatures0_RestoreJpGlitches (D6 glitch coupling)
 #include "../load_gfx.h"      // kSrmOffs_Name, kSrmOffs_DiedCounter
 #include "../select_file.h"   // Intro_FixCksum
 #include "rando.h"            // kGeneratorVersion
@@ -495,6 +496,19 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   }
   // Commit the vanilla SRAM image too (sidecar first by spec; then sram.dat).
   ZeldaWriteSram();
+
+  // add-rando-major-glitch D6 — couple a glitch-logic seed to the JP-1.0
+  // glitch runtime flag. The placer ASSUMED restored glitches are performable
+  // for logic>=OverworldGlitches / fake-flippers seeds; the runtime MUST
+  // provide them or this assumed-fill-certified seed is an unreachable-item
+  // soft-softlock. Force the bit into the slot's recommended features so the
+  // apply below turns it on. features0 is config state (NOT canonical
+  // settings) → placement is byte-identical; the corpus never moves.
+  // The slot-LOAD path (Rando_ActivateSidecarSlot) re-forces this live on
+  // every reload, so the guarantee holds even for imported share strings.
+  if (Rando_SettingsAssumeJpGlitches(settings)) {
+    recommended_features0 |= kFeatures0_RestoreJpGlitches;
+  }
 
   // Apply recommended-features panel choices (if user toggled). Per spec
   // the user must opt in explicitly; we honor whatever state the panel
