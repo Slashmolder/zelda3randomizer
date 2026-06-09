@@ -107,7 +107,7 @@ typedef struct EnemyConstraint {
 // sheet ids). Cross-checked entry-by-entry against SpriteRequirement.cs.
 static const EnemyConstraint kEnemyTable[ES_TABLE_LEN] = {
   // --- killable melee/common enemies (safe in key & shutter rooms) ---
-  [0x08] = E_RAND(ESF_KILLABLE, 12, 24),                 // Octorok (one-way)
+  [0x08] = E_RAND(ESF_KILLABLE, 12),                     // Octorok (one-way) — Enemizer sub2=[12,24] is OR-within-slot-2; record one (sheets_loaded is AND, so listing both wrongly required BOTH)
   [0x0A] = E_RAND(ESF_KILLABLE, 12),                     // Octorok (four-way)
   [0x0E] = E_RAND(ESF_KILLABLE, 22, 23),                 // Snapdragon
   [0x11] = E_RAND(ESF_KILLABLE, 22),                     // Hinox
@@ -142,7 +142,11 @@ static const EnemyConstraint kEnemyTable[ES_TABLE_LEN] = {
   [0xAA] = E_RAND(ESF_KILLABLE | ESF_CANNOT_KEY, 27),    // Pikit (shield-eater)
 
   // --- water-capable (water-only rooms draw from these; CannotHaveKey) ---
-  [0x56] = E_RAND(ESF_KILLABLE | ESF_WATER | ESF_CANNOT_KEY, 12),  // Walking Zora
+  // Walking Zora needs sheets in TWO slots: sub2=12 (head) AND sub3=68 (body).
+  // Listing only 12 let the picker spawn a Zora wherever 12 was loaded but 68 was
+  // not (e.g. a Buzzblob area with slot 3 == 17), drawing the body from the wrong
+  // sheet → "hybrid zora+buzzblob" (owner F12, area 0x3C). Both sheets required.
+  [0x56] = E_RAND(ESF_KILLABLE | ESF_WATER | ESF_CANNOT_KEY, 12, 68),  // Walking Zora
 
   // --- flying (excluded from DontUseFlyingSprites rooms; CannotHaveKey) ---
   [0x00] = E_RAND(ESF_CANNOT_KEY | ESF_FLYING, 17),      // Raven
@@ -760,6 +764,23 @@ void EnemyShuffle_SelfCheck(void) {
         }
       }
       if (!ok) enemy_selfcheck_die("a safe slot-2 pool sheet has no killable+key candidate");
+    }
+
+    // (a2) Multi-slot enemies must require ALL their sheets — a missing slot lets
+    // the picker spawn them where part of their gfx isn't loaded (garbage render,
+    // e.g. Walking Zora head on sheet 12 + body on a wrong slot-3 sheet). Guard
+    // the two known two-slot randomizable enemies: Walking Zora (12+68) and
+    // Snapdragon (22+23) must NOT be in-sheet when only one of their sheets loads.
+    {
+      uint8 only12[4] = { 12, 0, 0, 0 };   // Zora head sheet, no body sheet 68
+      if (sheets_loaded(0x56, only12))
+        enemy_selfcheck_die("Walking Zora admissible with only sheet 12 (missing sub3=68 → hybrid render)");
+      uint8 only23[4] = { 23, 0, 0, 0 };   // Snapdragon slot-2 sheet, no sub0=22
+      if (sheets_loaded(0x0E, only23))
+        enemy_selfcheck_die("Snapdragon admissible with only sheet 23 (missing sub0=22)");
+      uint8 both[4] = { 22, 0, 23, 0 };
+      if (!sheets_loaded(0x0E, both))
+        enemy_selfcheck_die("Snapdragon NOT admissible with both its sheets loaded");
     }
 
     // (b) type_blocks_pos2 classification spot checks.
