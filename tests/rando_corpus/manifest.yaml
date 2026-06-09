@@ -583,6 +583,16 @@ entries:
     seed: "0x1357"
     label: "b-logic-hmg-inverted-fast-ganon"
     expected_digest: "fa5d83c1b3f06e53dbfa81c94281362e953d976010307e7885fa788f156d619f"
+  # add-rando-major-glitch F1-followon guard — the inverted MG tier. The
+  # F1-followon's inverted Ice Palace change (canOneFrameClipUW on the melt-
+  # factor) opens at MG too, not just HMG; this entry guards that MG-side change
+  # (the inverted-HMG entry above did not). inv-MG (94189dba) != inv-HMG, since MG
+  # adds canOneFrameClipOW + the MG-exclusive set over HMG. Same seed as the HMG
+  # inverted entry for a clean tier comparison.
+  - settings: { mode.state: inverted, goal: fast_ganon, logic: major_glitches }
+    seed: "0x1357"
+    label: "b-logic-mg-inverted-fast-ganon"
+    expected_digest: "94189dba0c7ddbf5eb7ce41417279ebd095de2a69b9dbbf68ab25ff3b40d6f77"
   # §4 swordless — exercises the swordless logic graph + sword-removed pool. Pins
   # the swordless placement so any future change to a swordless gate fails the
   # corpus. goal_completable verified at capture. (Runtime sword-substitution is
