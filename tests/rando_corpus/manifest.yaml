@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 63  # bump_rando_corpus.py --apply
+generator_version: 64  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -549,14 +549,28 @@ entries:
     seed: "0x48BD6C45"
     label: "b-logic-hmg-open-fast-ganon"
     expected_digest: "3057370132c32ee589b590619d92957f5531b7dba21c7d08d1cda8c1ae5366ee"
-  # NoLogic — reachability short-circuited; placement ignores progression gating
-  # (can_place confinement still live). accessibility=none per the hunt/no-logic
-  # convention (judge by spoiler WRITTEN, not by unreachable_placements). The
-  # no_logic_seed fallback_warning is asserted present at capture.
+  # NoLogic — reachability short-circuited; placement ignores progression gating.
+  # As of F5 (kGen 64), the LOGIC-level can_place predicates are ALSO short-
+  # circuited under NoLogic; this DEFAULT entry uses Vanilla keys (dungeon items
+  # pre-pinned, never subject to can_place) so it stays BYTE-IDENTICAL — the
+  # F5 effect is pinned by b-logic-nologic-wildkeys below. accessibility=none per
+  # the hunt/no-logic convention (judge by spoiler WRITTEN, not by
+  # unreachable_placements). The no_logic_seed fallback_warning is present.
   - settings: { mode.state: open, goal: fast_ganon, logic: no_logic, accessibility: none }
     seed: "0x4E0106C4"
     label: "b-logic-nologic-open-fast-ganon"
     expected_digest: "eb7f06e472541ff51b3dc7e8e5f45e1e9f81dccf007f3ccd06d45015f0b83bbd"
+  # add-rando-major-glitch F5 — NoLogic + WILD keys exercises the can_place
+  # short-circuit: dungeon keys are in the general pool, so the NotADungeonItem
+  # fill ban + item-locked slots (Swamp Palace Entrance) WOULD constrain them
+  # under logic<NoLogic, but F5 lifts those LOGIC predicates. Verified the
+  # placement DIFFERS from the pre-F5 confined run (c0f5e87c -> 8be3e395 at this
+  # seed), so this entry guards F5 against regression. (Dungeon-MODE containment
+  # is N/A here — wild keys, not Dungeon mode.) accessibility=none.
+  - settings: { mode.state: open, goal: fast_ganon, logic: no_logic, accessibility: none, dungeon_items.small_keys: wild }
+    seed: "0xF5F5"
+    label: "b-logic-nologic-wildkeys"
+    expected_digest: "8be3e395cf565e058e20ef9caa149619148efaba63822d7fefffdc5ca1c903de"
   # add-rando-major-glitch F3 — inverted-region glitch parity. The
   # logic_parts/inverted/** closures use canOneFrameClipOW at 9 sites (Hookshot
   # Cave x4, Catfish, Bumper Cave, King Zora, King's Tomb, Ice Palace), each
