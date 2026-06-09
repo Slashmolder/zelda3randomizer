@@ -537,13 +537,14 @@ entries:
     expected_digest: "c53b7487007d2e6142359fce444f66ee05e1667d32306bf34160f9c6c2a73979"
   # Phase D (add-rando-major-glitch) — HybridMG + NoLogic tiers.
   # HybridMG is a technique SUBSET of MajorGlitches (HMG = OWG + oneFrameClipUW).
-  # After the §5 macro fold, HMG and MG DIFFER at an identical seed: canOWYBA is
-  # MajorGlitches-EXCLUSIVE (CanPearlBypass `>=MG AND NOT >=HMG`) so it opens at
-  # MG but not HMG, while boots-clip/fake-flipper (OWG-group) open at both
-  # (verified apply-time at seed 0x48BD6C45: OWG c6fed908 / MG b9f99741 / HMG
-  # e6cf6d33 — all distinct). The remaining over-reach is the ~40 raw
-  # OP_GLITCH_LEVEL_AT_LEAST(major_glitches) threshold sites (canOneFrameClipOW
-  # etc.) that still open at HMG — frontier F1. settings_hash differs from MG.
+  # F1 (canOneFrameClipOW reclassified to MG-exclusive) closed the raw-threshold
+  # over-reach at HMG, so HMG's ONLY delta over OWG is now canOneFrameClipUW
+  # (Swamp entrance fillrule + Ice melt-bypass). At seed 0x48BD6C45 those do not
+  # change the placement, so post-F1 HMG == OWG here (c6fed908), while MG stays
+  # DISTINCT (b9f99741) via canOneFrameClipOW + canOWYBA — both MG-exclusive.
+  # (Pre-F1 the HMG digest was e6cf6d33, over-reaching canOneFrameClipOW; that
+  # is the digest F1 corrected — see kGeneratorVersion 61→62.) settings_hash
+  # still differs from MG (logic byte differs).
   - settings: { mode.state: open, goal: fast_ganon, logic: hybrid_mg }
     seed: "0x48BD6C45"
     label: "b-logic-hmg-open-fast-ganon"
@@ -556,6 +557,18 @@ entries:
     seed: "0x4E0106C4"
     label: "b-logic-nologic-open-fast-ganon"
     expected_digest: "eb7f06e472541ff51b3dc7e8e5f45e1e9f81dccf007f3ccd06d45015f0b83bbd"
+  # add-rando-major-glitch F3 — inverted-region glitch parity. The
+  # logic_parts/inverted/** closures use canOneFrameClipOW at 9 sites (Hookshot
+  # Cave x4, Catfish, Bumper Cave, King Zora, King's Tomb, Ice Palace), each
+  # reclassified to the MG-exclusive CanOneFrameClipOW() macro (F3). This is the
+  # ONLY inverted-glitch corpus coverage. The inverted HMG placement DIFFERS from
+  # inverted MG (verified at capture: inv-MG 94189dba != inv-HMG 0b2ea3e9) —
+  # proving the reclassification closes canOneFrameClipOW at HMG for the inverted
+  # graph too (without it, raw `>=2` is true at both so they would be identical).
+  - settings: { mode.state: inverted, goal: fast_ganon, logic: hybrid_mg }
+    seed: "0x1357"
+    label: "b-logic-hmg-inverted-fast-ganon"
+    expected_digest: "0b2ea3e979813fc1ce3096b34a4a79834cd70509444d1f9d83afdea31eafb8b0"
   # §4 swordless — exercises the swordless logic graph + sword-removed pool. Pins
   # the swordless placement so any future change to a swordless gate fails the
   # corpus. goal_completable verified at capture. (Runtime sword-substitution is
