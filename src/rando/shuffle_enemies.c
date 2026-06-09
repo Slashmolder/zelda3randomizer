@@ -372,6 +372,9 @@ static const uint8 kEsOverworldPoolCount[ES_RESHUFFLE_SLOTS] = { 3, 2, 9, 3 };
 // — edit gen_enemy_shuffle_tables.py, not this block). bit7 = KNOWN (the sprite
 // has an Enemizer entry); bits 3..0 = needs subgroup slot 3..0. A non-randomizable
 // present sprite PINS the slots it needs; an UNKNOWN (need == 0) or a boss pins
+// (see below). embedded-data-guard: allow structural sprite-id→sheet/slot facts
+// (per-type pin masks + the enemy/pool tables in this TU) — generated from the
+// Enemizer MIT source, NOT extracted ROM data; the catalog is the crash surface.
 // ALL reshuffled slots. This pin set is the crash-safety surface — a missing slot
 // bit lets the picker spawn a sprite where part of its gfx isn't loaded.
 static const uint8 kSheetNeed[256] = {
