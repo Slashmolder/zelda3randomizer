@@ -599,6 +599,126 @@ macros:
       replacement if a higher-priority Phase B trick emerges.
 
   # ===========================================================================
+  # F2 — first-class technique macros for the un-modeled glitch techniques
+  # (add-rando-major-glitch frontier F2). ALTTPR's `config('canX', false)` flags
+  # that have NO fork trick bit and were previously stood in for by the raw
+  # OP_GLITCH_LEVEL_AT_LEAST(major_glitches) threshold at ~40 sites. These are
+  # PURE TECHNIQUE GATES (the `config('canX')` half only) — the per-site item
+  # conjunct stays at the call site, exactly as the PHP composes
+  # `config('canX') && <site items>` (the same item can differ per site, e.g.
+  # canSuperSpeed pairs with canSpinSpeed() at most sites but has('PegasusBoots')
+  # at GanonsTower.php:410, so the item CANNOT be baked into the macro).
+  #
+  # Tier→threshold (config/logic.php, the fork enum NoGlitches=0..NoLogic=4):
+  #   OWG-group       → OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)  (>=1; OWG/HMG/MG)
+  #   canOneFrameClipUW → OP_GLITCH_LEVEL_AT_LEAST(major_glitches)    (>=2; HMG+MG only,
+  #                       since the only non-short-circuited levels >=2 are {MG=2,HMG=3})
+  #   MG-exclusive    → OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND
+  #                     (NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches))  (true only at MG=2)
+  #
+  # DIGEST-NEUTRAL until wired: defining a macro that no predicate references
+  # emits no bytecode change. The ~40 raw threshold sites still read
+  # OP_GLITCH_LEVEL_AT_LEAST(major_glitches) until F1 reclassifies each to its
+  # matching macro here. Default (logic=0) → every macro false → unchanged.
+  # ===========================================================================
+  - name: CanSuperSpeed
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    source: "config/logic.php:8,17,27 (canSuperSpeed @ OWG/HMG/MG)"
+    notes: |
+      ALTTPR `config('canSuperSpeed', false)` — boots-dash superspeed traversal.
+      OWG-group flag (OWG line 8, HMG 17, MG 27). Composes at sites with the
+      item helper, e.g. `CanSuperSpeed() AND CanSpinSpeed()` (DesertPalace.php:100,
+      IcePalace.php:146) or `CanSuperSpeed() AND HAS_ITEM(Boots)`
+      (GanonsTower.php:410). Restored + owner-playtest-confirmed on US 1.0
+      (Superspeed, add-jp-glitch-restoration) but has no independent trick bit,
+      so rom_version_status rides the overworld_glitches level (still untested —
+      the level bundles un-restored techniques). See OVERNIGHT_REPORT ledger.
+
+  - name: CanSuperBunny
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    source: "config/logic.php:6,15,25 (canSuperBunny @ OWG/HMG/MG)"
+    notes: |
+      ALTTPR `config('canSuperBunny', false)` — dark-world super-bunny traversal
+      (moving while in bunny state without the Moon Pearl). OWG-group flag (OWG
+      line 6, HMG 15, MG 25). Per-site item conjunct stays at the call site.
+      NOT restored by add-jp-glitch-restoration → US-1.0 unverified.
+
+  - name: CanMirrorClip
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    source: "config/logic.php:10,19,29 (canMirrorClip @ OWG/HMG/MG)"
+    notes: |
+      ALTTPR `config('canMirrorClip', false)` — mirror-assisted terrain clip
+      (distinct from the dungeon Mirror Block Erase glitch). OWG-group flag (OWG
+      line 10, HMG 19, MG 29). Typically pairs with has('PegasusBoots') and/or
+      Mirror at the site. NOT restored → US-1.0 unverified.
+
+  - name: CanWaterWalk
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    source: "config/logic.php:11,20,30 (canWaterWalk @ OWG/HMG/MG)"
+    notes: |
+      ALTTPR `config('canWaterWalk', false)` — boots water-walk. OWG-group flag
+      (OWG line 11, HMG 20, MG 30). Pairs with has('PegasusBoots') at the site.
+      NOT restored → US-1.0 unverified.
+
+  - name: CanDungeonRevive
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches)"
+    source: "config/logic.php:12,21,32 (canDungeonRevive @ OWG/HMG/MG)"
+    notes: |
+      ALTTPR `config('canDungeonRevive', false)` — dungeon bunny-revival routing
+      (distinct from the customizer `canBunnyRevive` toggle, which CanBunnyRevival
+      models). OWG-group flag (OWG line 12, HMG 21, MG 32). NOT restored →
+      US-1.0 unverified.
+
+  - name: CanOneFrameClipUW
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(major_glitches)"
+    source: "config/logic.php:22,35 (canOneFrameClipUW @ HMG/MG — NOT OWG)"
+    notes: |
+      ALTTPR `config('canOneFrameClipUW', false)` — underworld one-frame clip.
+      Enabled at HybridMG (line 22) AND MajorGlitches (line 35) but NOT
+      OverworldGlitches. The threshold OP_GLITCH_LEVEL_AT_LEAST(major_glitches)
+      (>=2) is true at exactly {MG=2, HMG=3} (NoLogic=4 short-circuits
+      reachability), which is precisely the HMG+MG set — the one technique whose
+      enabled-set is expressible as a single monotone threshold above OWG.
+      NOT restored → US-1.0 unverified.
+
+  - name: CanMirrorWrap
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches))"
+    source: "config/logic.php:31 (canMirrorWrap @ MajorGlitches ONLY)"
+    notes: |
+      ALTTPR `config('canMirrorWrap', false)` — mirror screen-wrap. MajorGlitches-
+      EXCLUSIVE flag (line 31; absent from OWG and HMG). The MG-exclusive form
+      OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND NOT
+      OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches) is true only at logic==2
+      (the non-monotonic-enum problem — see CanPearlBypass + design.md D4).
+      NOT restored → US-1.0 unverified.
+
+  - name: CanOneFrameClipOW
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches))"
+    source: "config/logic.php:34 (canOneFrameClipOW @ MajorGlitches ONLY)"
+    notes: |
+      ALTTPR `config('canOneFrameClipOW', false)` — overworld one-frame clip
+      (the single most common raw threshold, 35 PHP uses). MajorGlitches-EXCLUSIVE
+      (line 34; absent from OWG and HMG). MG-exclusive form (true only at
+      logic==2). NOT restored → US-1.0 unverified.
+
+  - name: CanTransitionWrapped
+    parameters: []
+    body: "OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND (NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches))"
+    source: "config/logic.php:36 (canTransitionWrapped @ MajorGlitches ONLY)"
+    notes: |
+      ALTTPR `config('canTransitionWrapped', false)` — transition-wrap routing.
+      MajorGlitches-EXCLUSIVE (line 36; absent from OWG and HMG). MG-exclusive
+      form (true only at logic==2). NOT restored → US-1.0 unverified.
+
+  # ===========================================================================
   # hasABottle — at least one bottle of any kind.
   # ===========================================================================
   - name: HasABottle
