@@ -265,6 +265,7 @@ void Dungeon_ResetSprites();
 void Dungeon_CacheTransSprites();
 void Sprite_DisableAll();
 void Dungeon_LoadSprites();
+const uint8 *Dungeon_GetRoomSpritePtr(uint16 room);
 void Sprite_ManuallySetDeathFlagUW(int k);
 int Dungeon_LoadSingleSprite(int k, const uint8 *src);
 void Dungeon_LoadSingleOverlord(const uint8 *src);

@@ -32,6 +32,7 @@
 #include "shuffle_enemies.h"
 #include "rando_settings.h"
 #include "rando_rng.h"
+#include "../features.h"   // kRam_EnemyShuffleVanPos2 (reserved-block allocation)
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -284,6 +285,226 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
   return cands[idx];
 }
 
+// ===========================================================================
+// Sprite-group SHEET RESHUFFLE (design.md D4 — the variety unlock).
+//
+// The MVP picker (EnemyShuffle_Pick*) only chooses among enemies whose GFX sheet
+// is ALREADY loaded for the room/area, so swaps are same-family. The reshuffle
+// widens that pool by RE-ASSIGNING which sprite GFX sheet loads into subgroup
+// SLOT 2 (the "themed enemy" slot) at sheet-load time — so an Octorok room can
+// load the Gibdo/Zazak/Pengator/Eyegore sheet and the existing picker gets the
+// wider pool for free (it reads the LIVE sprite_gfx_subset_* we rewrite here).
+//
+// SCOPE (phase 1, conservative — playtest-gated widening per CLAUDE.md): SLOT 2
+// ONLY. A room/area is reshuffle-eligible only when slot 2 is provably FREE:
+// every present sprite is either a randomizable enemy (the picker substitutes it)
+// or a KNOWN type that does NOT need slot 2, and NO overlord is present
+// (overlord-spawned sprites bypass the picker, so a slot-2-spawning overlord
+// would render garbage). Enemizer's four position whitelists are DISJOINT (a
+// sheet id belongs to exactly one slot), so a slot-2 sheet only ever holds slot-2
+// enemies — each enemy's tiles land in their canonical VRAM region and the
+// picker's "sheet loaded" test stays sound without a position-aware change.
+//
+// ANTI-GARBAGE: the slot-2 pool is restricted to sheets that EACH self-contain a
+// killable + key-capable enemy, so after a swap the picker ALWAYS finds a valid
+// substitution for every slot-2 enemy (no vanilla passthrough with a now-missing
+// sheet) and dungeon key/shutter rooms stay fillable. The room's vanilla slot-2
+// sheet is ALWAYS a candidate (owner constraint: true-random, vanilla-inclusive).
+//
+// INHERITANCE: kSpriteTilesets rows with a 0 in slot 2 INHERIT the prior room's
+// sheet, so a reshuffle could leak into a later room that needs a specific slot-2
+// sheet. We track the true VANILLA-resolved slot-2 sheet in a snapshot-safe g_ram
+// shadow (kRam_EnemyShuffleVanPos2): eligible rooms reshuffle FROM it; INELIGIBLE
+// rooms RESTORE it — so a leaked sheet can never reach a room that pins slot 2.
+//
+// Determinism: per-(seed, room/area), reproducible for races, regenerated from
+// (seed, settings) like the picker. Rides the existing enemy_shuffle activation
+// (no separate settings axis — owner decision); off ⇒ this is never called.
+// ===========================================================================
+
+// The vanilla-slot-2 inheritance shadow lives at kRam_EnemyShuffleVanPos2
+// (features.h reserved block). Snapshot-safe so a Ctrl+F1 restore keeps the
+// inheritance chain intact.
+
+// Distinct RNG salt for the sheet choice (independent of the pick salts above).
+#define kEnemyShuffleSheetSalt 0x5348454554ull  // "SHEET"
+
+// Set to 1 to emit playtest diagnostics into the reserved g_ram block (read via
+// an F12 dump). 0x663 hook-calls, 0x664 slot-2 changed, 0x665 ineligible/restored,
+// 0x666 last vanilla slot-2, 0x667 last chosen slot-2. Flip to 0 before merge.
+#define ES_RESHUFFLE_DIAG 1
+
+// Slot-2 reshuffle pool — Enemizer PotentialSubset2 restricted to sheets that
+// each self-contain a killable, key-capable randomizable enemy in kEnemyTable
+// (so a dungeon swap is always fillable + garbage-free):
+//   12→Crab/Octorok, 23→Moblin, 28→Rat/Rope, 35→Gibdo, 38→Pengator,
+//   40→Zazak/Gibo, 46→Green Eyegore.
+static const uint8 kEsSafePos2Pool[] = { 12, 23, 28, 35, 38, 40, 46 };
+#define kEsSafePos2PoolCount (sizeof(kEsSafePos2Pool)/sizeof(kEsSafePos2Pool[0]))
+
+// Sprite-type ids in 0x00..0xF2 with NO Enemizer SpriteRequirement entry
+// (commented-out / unused / glitch sprites). A room containing one is treated as
+// UNKNOWN ⇒ slot 2 ineligible (we can't prove the sprite's sheet need → restore).
+static const uint8 kEsUnknownLowTypes[] = {
+  0x02, 0x05, 0x07, 0x0C, 0x70, 0x77, 0x79, 0x85, 0x87
+};
+#define kEsUnknownLowCount (sizeof(kEsUnknownLowTypes)/sizeof(kEsUnknownLowTypes[0]))
+
+// Sprite-type ids whose tiles live in subgroup SLOT 2 (Enemizer sub2 non-empty),
+// verified-complete from SpriteRequirement.cs. A NON-randomizable present sprite
+// from this set pins slot 2 ⇒ ineligible. (Randomizable members are checked
+// first — the picker substitutes them — so listing them here is harmless.)
+static const uint8 kEsPos2NeedTypes[] = {
+  0x01, 0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x10, 0x12, 0x20, 0x2C, 0x36, 0x4B, 0x4C,
+  0x50, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5D, 0x5E, 0x5F, 0x60, 0x62, 0x6D,
+  0x6E, 0x6F, 0x78, 0x7A, 0x81, 0x83, 0x84, 0x86, 0x88, 0x89, 0x8B, 0x8C, 0x8D,
+  0x8E, 0x90, 0x92, 0x99, 0x9A, 0x9B, 0x9E, 0xA0, 0xA1, 0xA2, 0xA4, 0xA5, 0xA6,
+  0xAD, 0xBB, 0xC0, 0xC1, 0xC3, 0xC7, 0xC8, 0xCA, 0xCE, 0xD6, 0xED, 0xF2
+};
+#define kEsPos2NeedCount (sizeof(kEsPos2NeedTypes)/sizeof(kEsPos2NeedTypes[0]))
+
+// Implemented in sprite.c / overworld.c — the asset-blob room/area sprite-data
+// pointer, walked here for the room's TYPE list at sheet-load time (before
+// Dungeon_LoadSprites / Overworld_LoadSprites parse it). Forward-declared to keep
+// this TU free of the heavy sprite/overworld headers (same spirit as the g_ram
+// direct reads). Signatures must match the definitions.
+extern const uint8 *Dungeon_GetRoomSpritePtr(uint16 room);
+extern const uint8 *GetOverworldSpritePtr(int area);
+
+static bool type_is_known(uint8 t) {
+  if (t > 0xF2) return false;
+  for (uint32 i = 0; i < kEsUnknownLowCount; i++)
+    if (kEsUnknownLowTypes[i] == t) return false;
+  return true;
+}
+
+static bool type_needs_pos2(uint8 t) {
+  for (uint32 i = 0; i < kEsPos2NeedCount; i++)
+    if (kEsPos2NeedTypes[i] == t) return true;
+  return false;
+}
+
+// Boss / boss-secondary sprite ids (Enemizer class=boss). A boss room is NEVER
+// slot-2-eligible: boss shuffle can REDIRECT a vanilla boss room to host a
+// different boss (Dungeon_LoadSprites src_room redirect, shuffle_boss.c), and a
+// boss's sheets are loaded by the room header + spawned outside the picker — so a
+// slot-2 reshuffle there would garbage the boss. Most bosses also need slot 2 (so
+// already pin), but Armos Knights / Lanmolas / Vitreous / Trinexx need slot 3 and
+// would otherwise slip through eligible; listing the full set is unambiguous.
+static const uint8 kEsBossTypes[] = {
+  0x09, 0x53, 0x54, 0x7A, 0x88, 0x8C, 0x8D, 0x92, 0xA2, 0xA3, 0xA4,
+  0xBD, 0xBE, 0xBF, 0xC1, 0xCB, 0xCC, 0xCD, 0xCE, 0xD6
+};
+#define kEsBossCount (sizeof(kEsBossTypes)/sizeof(kEsBossTypes[0]))
+
+static bool type_is_boss(uint8 t) {
+  for (uint32 i = 0; i < kEsBossCount; i++)
+    if (kEsBossTypes[i] == t) return true;
+  return false;
+}
+
+// A present sprite that PINS slot 2 to its current sheet (so we must not
+// reshuffle the room). Randomizable enemies never pin (the picker substitutes
+// them). Bosses (boss-shuffle redirect hazard), unknown ids, and slot-2-needing
+// non-randomizable sprites all pin. Pure — selfchecked.
+static bool type_blocks_pos2(uint8 t) {
+  if (table_is_randomizable(t)) return false;
+  if (type_is_boss(t)) return true;
+  return !type_is_known(t) || type_needs_pos2(t);
+}
+
+// Deterministic slot-2 choice: uniform over the safe pool ∪ {van2} (vanilla is
+// always a possible outcome). `van2` is guaranteed non-zero by the caller. Pure.
+static uint8 choose_pos2(uint8 van2, uint64 key) {
+  uint8 cands[kEsSafePos2PoolCount + 1];
+  uint32 n = 0;
+  bool van_in_pool = false;
+  for (uint32 i = 0; i < kEsSafePos2PoolCount; i++) {
+    cands[n++] = kEsSafePos2Pool[i];
+    if (kEsSafePos2Pool[i] == van2) van_in_pool = true;
+  }
+  if (!van_in_pool) cands[n++] = van2;
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, key);
+  return cands[Rng_NextRange(&rng, n)];
+}
+
+// Walk a dungeon room's sprite TYPE list; true iff slot 2 is free to reshuffle.
+// Skips the leading sort_sprites_setting byte; entries are {y,x,type} until 0xff;
+// type 0xe4 = control entry; x >= 0xe0 = overlord (conservatively pins slot 2).
+#define kEsMaxSpriteScan 96  // defensive cap on the room/area list walk
+
+static bool dungeon_pos2_eligible(uint16 room) {
+  const uint8 *src = Dungeon_GetRoomSpritePtr(room);
+  src++;  // sort_sprites_setting
+  for (int i = 0; src[0] != 0xff; src += 3, i++) {
+    if (i >= kEsMaxSpriteScan) return false;  // malformed / unterminated → conservative
+    uint8 x = src[1], type = src[2];
+    if (type == 0xe4) continue;     // control entry (die-action marker)
+    if (x >= 0xe0) return false;    // overlord present (conservative)
+    if (type_blocks_pos2(type)) return false;
+  }
+  return true;
+}
+
+// Walk an overworld area's sprite TYPE list; true iff slot 2 is free. Entries are
+// 3-byte; type 0xf4 = sprite-count marker; type >= 0xf3 = overlord (conservative).
+static bool ow_pos2_eligible(uint16 area) {
+  const uint8 *src = GetOverworldSpritePtr((int)area);
+  for (int i = 0; src[0] != 0xff; src += 3, i++) {
+    if (i >= kEsMaxSpriteScan) return false;  // malformed / unterminated → conservative
+    uint8 type = src[2];
+    if (type == 0xf4) continue;     // sprite-count marker
+    if (type >= 0xf3) return false; // overlord present (conservative)
+    if (type_blocks_pos2(type)) return false;
+  }
+  return true;
+}
+
+void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
+  if (!g_enemy_shuffle_active || tileset_row == NULL) return;
+
+  // Only act inside a dungeon (0x07) or overworld (0x08 load / 0x09 transition)
+  // room load. Other InitializeTilesets callers (attract, select-file, ending,
+  // dungeon-map preview) must not be touched.
+  uint8 module = g_ram[0x10];                 // main_module_index
+  bool is_dungeon = (module == 0x07);
+  bool is_ow = (module == 0x08 || module == 0x09);
+  if (!is_dungeon && !is_ow) return;
+  if (g_ram[0xAA3] >= 0x80) return;           // sprite_graphics_index: 0x80| = map preview
+
+  // True vanilla-resolved slot 2: this row's own sheet if it loads one, else the
+  // inherited value tracked in the shadow. A 0 baseline = no trustworthy vanilla
+  // yet (pre-first-room); leave the loaded sheet untouched.
+  uint8 van2 = (tileset_row[2] != 0) ? tileset_row[2]
+                                     : g_ram[kRam_EnemyShuffleVanPos2];
+  if (van2 == 0) return;
+  g_ram[kRam_EnemyShuffleVanPos2] = van2;
+
+  bool eligible;
+  uint64 key;
+  if (is_dungeon) {
+    uint16 room = (uint16)(g_ram[0xA0] | (g_ram[0xA1] << 8));  // dungeon_room_index
+    eligible = dungeon_pos2_eligible(room);
+    key = g_enemy_shuffle_seed ^ (uint64)room ^ kEnemyShuffleSheetSalt;
+  } else {
+    uint16 area = (uint16)(g_ram[0x40A] | (g_ram[0x40B] << 8)); // overworld_area_index
+    eligible = ow_pos2_eligible(area);
+    key = g_enemy_shuffle_seed ^ ((uint64)area << 20) ^ kEnemyShuffleSheetSalt;
+  }
+
+  uint8 chosen = eligible ? choose_pos2(van2, key) : van2;
+  g_ram[0xC2FE] = chosen;  // sprite_gfx_subset_2 — what the picker + decompress see
+
+#if ES_RESHUFFLE_DIAG
+  if (g_ram[0x663] < 0xff) g_ram[0x663]++;
+  if (eligible && chosen != van2 && g_ram[0x664] < 0xff) g_ram[0x664]++;
+  if (!eligible && g_ram[0x665] < 0xff) g_ram[0x665]++;
+  g_ram[0x666] = van2;
+  g_ram[0x667] = chosen;
+#endif
+}
+
 // ---------------------------------------------------------------------------
 // Public API.
 
@@ -296,6 +517,10 @@ bool EnemyShuffle_Generate(const struct RandoSettings *settings,
   }
   g_enemy_shuffle_seed = seed_u64 ^ kEnemyShuffleSalt;
   g_enemy_shuffle_active = true;
+  // Seed the sheet-reshuffle inheritance shadow from the currently-loaded slot 2
+  // so the first room that INHERITS slot 2 has a vanilla baseline. A room that
+  // loads its own slot 2 (tileset_row[2] != 0) overrides this immediately.
+  g_ram[kRam_EnemyShuffleVanPos2] = g_ram[0xC2FE];
   return true;
 }
 
@@ -501,6 +726,66 @@ void EnemyShuffle_SelfCheck(void) {
   // 5) After deactivate, picks are passthrough again.
   if (EnemyShuffle_PickDungeon(0x52, 0, 0x12) != 0x12)
     enemy_selfcheck_die("post-deactivate PickDungeon must be a passthrough");
+
+  // 6) Sheet-reshuffle (design.md D4) pure-logic invariants.
+  {
+    // (a) Pool integrity: every safe slot-2 sheet self-contains a randomizable,
+    // killable, key-capable enemy (so a dungeon swap is always fillable). This is
+    // the anti-garbage + anti-softlock guarantee — if the table ever drifts so a
+    // pool sheet loses its candidate, FAIL here rather than ship a bad seed.
+    for (uint32 i = 0; i < kEsSafePos2PoolCount; i++) {
+      uint8 sheet = kEsSafePos2Pool[i];
+      uint8 live1[4] = { 0, 0, sheet, 0 };  // ONLY this sheet loaded (in slot 2)
+      bool ok = false;
+      for (uint32 t = 0; t < ES_TABLE_LEN; t++) {
+        const EnemyConstraint *c = &kEnemyTable[t];
+        if ((c->flags & ESF_RANDOMIZABLE) && (c->flags & ESF_KILLABLE) &&
+            !(c->flags & ESF_CANNOT_KEY) && sheets_loaded((uint8)t, live1)) {
+          ok = true; break;
+        }
+      }
+      if (!ok) enemy_selfcheck_die("a safe slot-2 pool sheet has no killable+key candidate");
+    }
+
+    // (b) type_blocks_pos2 classification spot checks.
+    if (type_blocks_pos2(0x12))   // Moblin: randomizable ⇒ never pins (substituted)
+      enemy_selfcheck_die("randomizable enemy wrongly pins slot 2");
+    if (!type_blocks_pos2(0x92))  // Helmasaur King: boss, needs slot 2 ⇒ pins
+      enemy_selfcheck_die("a slot-2 boss failed to pin slot 2");
+    if (!type_blocks_pos2(0x90))  // Wallmaster: do-not-randomize, needs slot 2 ⇒ pins
+      enemy_selfcheck_die("Wallmaster failed to pin slot 2");
+    if (!type_blocks_pos2(0x53))  // Armos Knights: a SLOT-3 boss — must still pin (boss-shuffle redirect)
+      enemy_selfcheck_die("a slot-3 boss (Armos Knights) failed to pin slot 2");
+    if (!type_blocks_pos2(0x54))  // Lanmolas: another slot-3 boss ⇒ must pin
+      enemy_selfcheck_die("a slot-3 boss (Lanmolas) failed to pin slot 2");
+    if (!type_blocks_pos2(0x05))  // unclassified id ⇒ pins (conservative)
+      enemy_selfcheck_die("an unknown type failed to pin slot 2");
+    if (type_blocks_pos2(0x1C))   // Statue: known, slot-3 object ⇒ does NOT pin slot 2
+      enemy_selfcheck_die("a slot-3 object wrongly pinned slot 2");
+    if (type_blocks_pos2(0x21))   // Push switch: known, slot-3 object ⇒ does NOT pin
+      enemy_selfcheck_die("a slot-3 switch wrongly pinned slot 2");
+
+    // (c) choose_pos2: deterministic, always in pool ∪ {van2}, vanilla-inclusive.
+    for (uint8 van2 = 1; van2 != 0; van2++) {           // every non-zero baseline
+      uint64 k = 0x1234567800000000ull ^ van2;
+      uint8 a = choose_pos2(van2, k);
+      uint8 b = choose_pos2(van2, k);
+      if (a != b) enemy_selfcheck_die("choose_pos2 is not deterministic");
+      bool in_set = (a == van2);
+      for (uint32 i = 0; i < kEsSafePos2PoolCount; i++)
+        if (kEsSafePos2Pool[i] == a) in_set = true;
+      if (!in_set) enemy_selfcheck_die("choose_pos2 returned a sheet outside pool ∪ {van2}");
+      if (a == 0) enemy_selfcheck_die("choose_pos2 returned sheet 0 (would mis-load)");
+    }
+    // Vanilla-inclusive: for a van2 OUTSIDE the pool, some key yields van2.
+    {
+      uint8 outside = 18;  // Geldman sheet — not in kEsSafePos2Pool
+      bool reachable = false;
+      for (uint64 k = 0; k < 256 && !reachable; k++)
+        if (choose_pos2(outside, k) == outside) reachable = true;
+      if (!reachable) enemy_selfcheck_die("vanilla slot-2 sheet is never a choose_pos2 outcome");
+    }
+  }
 
   fprintf(stderr, "[EnemyShuffle_SelfCheck] OK\n");
 }

@@ -3750,6 +3750,14 @@ static bool BossRoom_FindAnchor(uint16 room, uint8 boss_type, uint8 *out_y, uint
   return false;
 }
 
+// Asset-blob room sprite-data pointer for `room` (a dungeon_room_index value).
+// Exposed for the enemy-shuffle SHEET reshuffle, which walks the room's sprite
+// TYPE list at GFX-sheet-load time (before Dungeon_LoadSprites parses it into
+// sprite_type[]). Mirrors the pointer math used below + in BossRoom_FindAnchor.
+const uint8 *Dungeon_GetRoomSpritePtr(uint16 room) {
+  return kDungeonSprites + kDungeonSpriteOffs[room];
+}
+
 void Dungeon_LoadSprites() {  // 89c290
   // Boss-shuffle RENDER (Enemizer pointer-redirect model): if this is a shuffled
   // boss room, load the ASSIGNED boss's HOME boss-room sprite list (its full

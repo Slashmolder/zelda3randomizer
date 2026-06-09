@@ -6,6 +6,7 @@
 #include "player.h"
 #include "sprite.h"
 #include "assets.h"
+#include "rando/shuffle_enemies.h"  // EnemyShuffle_ReshuffleCurrentRoomSheets (sheet reshuffle)
 
 // Allow this to be overwritten
 uint16 kGlovesColor[2] = {0x52f6, 0x376};
@@ -624,20 +625,28 @@ void Gfx_LoadSpritesInner(uint8 *dst) {  // 80d706
   const uint8 *p = kSpriteTilesets[sprite_graphics_index];
   int len;
 
+  // Resolve all four subgroup ids first (a 0 entry inherits the prior sheet),
+  // then let the enemy-shuffle SHEET reshuffle rewrite slot 2 BEFORE any
+  // decompress — so the sheet actually loaded into VRAM matches what the picker
+  // sees (EnemyShuffle_Pick* reads sprite_gfx_subset_*). Reordering all-resolve-
+  // then-all-decompress is behavior-identical to the original interleaving
+  // (Decomp_spr has no effect on the subset ids); a no-op when the shuffle is off.
   if (p[0])
     sprite_gfx_subset_0 = p[0];
-  len = Decomp_spr(dst, sprite_gfx_subset_0);
-  assert(len == 0x600);
   if (p[1])
     sprite_gfx_subset_1 = p[1];
-  len = Decomp_spr(dst + 0x600, sprite_gfx_subset_1);
-  assert(len == 0x600);
   if (p[2])
     sprite_gfx_subset_2 = p[2];
-  len = Decomp_spr(dst + 0x600*2, sprite_gfx_subset_2);
-  assert(len == 0x600);
   if (p[3])
     sprite_gfx_subset_3 = p[3];
+  EnemyShuffle_ReshuffleCurrentRoomSheets(p);
+
+  len = Decomp_spr(dst, sprite_gfx_subset_0);
+  assert(len == 0x600);
+  len = Decomp_spr(dst + 0x600, sprite_gfx_subset_1);
+  assert(len == 0x600);
+  len = Decomp_spr(dst + 0x600*2, sprite_gfx_subset_2);
+  assert(len == 0x600);
   len = Decomp_spr(dst + 0x600*3, sprite_gfx_subset_3);
   assert(len == 0x600);
   incremental_counter_for_vram = 0;
@@ -827,6 +836,7 @@ void InitializeTilesets() {  // 80e19b
   if (p[1]) sprite_gfx_subset_1 = p[1];
   if (p[2]) sprite_gfx_subset_2 = p[2];
   if (p[3]) sprite_gfx_subset_3 = p[3];
+  EnemyShuffle_ReshuffleCurrentRoomSheets(p);  // rando: may rewrite sprite_gfx_subset_2
 
   LoadSpriteGraphics(&g_zenv.vram[0x5000], sprite_gfx_subset_0, &g_ram[0x7800]);
   LoadSpriteGraphics(&g_zenv.vram[0x5400], sprite_gfx_subset_1, &g_ram[0x7e00]);

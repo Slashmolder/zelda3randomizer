@@ -77,6 +77,21 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type);
 // stores `pick + 1` into sprite_where_in_overworld (preserving the +1 bias).
 uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type);
 
+// === Sprite-group SHEET reshuffle hook (design.md D4 — the variety unlock) ===
+//
+// Called from the GFX-sheet load (Gfx_LoadSpritesInner / InitializeTilesets in
+// src/load_gfx.c) AFTER the four subgroup ids are resolved from `tileset_row`
+// (= kSpriteTilesets[sprite_graphics_index]) but BEFORE any sheet is
+// decompressed. When enemy_shuffle is active in a dungeon/overworld room load it
+// may RE-ASSIGN which sheet loads into subgroup slot 2 (the "themed enemy" slot)
+// — widening the pool the existing EnemyShuffle_Pick* draws from (they read the
+// LIVE sprite_gfx_subset_*, which this rewrites). A no-op when the shuffle is
+// off, outside a room/area load (attract/menu/etc.), or when slot 2 is pinned by
+// a non-substituted sprite (see shuffle_enemies.c for the eligibility +
+// anti-garbage + inheritance model). `tileset_row` is the 4-byte kSpriteTilesets
+// row for the load (slot N == 0 means "inherit the previously-loaded sheet").
+void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row);
+
 // Self-check (--rando-selftest): asserts determinism, the off→passthrough
 // contract, that excluded types/markers are never substituted, that every
 // candidate produced for a synthetic loaded-sheet set is in-sheet + killable /
