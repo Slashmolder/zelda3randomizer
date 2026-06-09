@@ -417,10 +417,13 @@ tricks:
 # So they are CROSS-VERSION ROM, but their fork-reimpl frame-feasibility (esp.
 # the 1-frame clips canOneFrameClipOW/UW) is unconfirmed → honest
 # `untested-on-us10`, NOT `cross-version` (that bar needs a positive playtest)
-# and NOT `jp10-only`. EXCEPTION: canMirrorWrap + canTransitionWrapped are
-# us10-different (the mirror-warp / screen-entry DESTINATION + camera-bound math
-# is version-refactored: US $7F5B00,x special-area table vs JP hardcoded pendant
-# logic; the fork ports the US side) — see their macros.yaml notes.
+# and NOT `jp10-only`. (Earlier draft flagged canMirrorWrap + canTransitionWrapped
+# as us10-different; a deeper romdiff 2026-06-09 CORRECTED that — the
+# mirror-warp / screen-entry DESTINATION + position + camera math is BYTE-IDENTICAL
+# JP↔US; the only delta is the destination screen's overworld MUSIC selection
+# [$7F5B00 = overworld_music[] WRAM, not a dest table; writes differ at $12C/$12D],
+# which has no reachability effect. So those two are cross-version ROM like the
+# rest → untested-on-us10, NOT us10-different. See their macros.yaml notes.)
 # ---------------------------------------------------------------------------
 glitch_levels:
   - level: 1

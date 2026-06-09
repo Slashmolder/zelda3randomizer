@@ -697,12 +697,16 @@ macros:
       OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND NOT
       OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches) is true only at logic==2
       (the non-monotonic-enum problem — see CanPearlBypass + design.md D4).
-      US-1.0 status = us10-different (romdiff confirm, 2026-06-09): NOT JP-only-
-      patched, but the mirror-warp DESTINATION/camera-bound math is version-
-      refactored — US MirrorWarp_FinalizeAndLoadDestination ($82B260) uses the
-      $7F5B00,x special-area table where JP hardcodes via pendant checks. The fork
-      ports the US side, so US-1.0 wrap behavior is the preserved target; JP wrap
-      setups may not transfer 1:1. Static-analysis finding — confirm by playtest.
+      US-1.0 status = CROSS-VERSION gameplay (deeper romdiff 2026-06-09 CORRECTS
+      an earlier "us10-different" misread): in MirrorWarp_FinalizeAndLoadDestination
+      ($82B260) the warp DESTINATION + Link position + screen-index + camera/scroll
+      math is BYTE-IDENTICAL JP↔US. The ONLY JP↔US delta is the destination
+      screen's overworld MUSIC + ambient-sound selection (the "$7F5B00,x table" is
+      `overworld_music[]`, a WRAM scratch buffer, NOT a destination table; writes
+      differ only at $12C music_control / $12D sound_effect_ambient). So the wrap
+      behaves identically on both ROMs — canMirrorWrap is cross-version ROM like
+      the other un-restored techniques; fork-fidelity / frame-feasibility stays
+      playtest-pending → untested-on-us10. (No us10-different wrap delta exists.)
 
   - name: CanOneFrameClipOW
     parameters: []
@@ -721,12 +725,16 @@ macros:
     notes: |
       ALTTPR `config('canTransitionWrapped', false)` — transition-wrap routing.
       MajorGlitches-EXCLUSIVE (line 36; absent from OWG and HMG). MG-exclusive
-      form (true only at logic==2). US-1.0 status = us10-different (romdiff
-      confirm, 2026-06-09): NOT JP-only-patched — the transition/scroll routines
-      are byte-identical JP↔US, but the screen-ENTRY destination math is version-
-      refactored (US Overworld_FinalizeEntryOntoScreen $82C242 uses the $7F5B00,x
-      table where JP hardcodes). Fork ports the US side; JP transition-wrap setups
-      may not transfer 1:1. Static-analysis finding — confirm by playtest.
+      form (true only at logic==2). US-1.0 status = CROSS-VERSION gameplay (deeper
+      romdiff 2026-06-09 CORRECTS an earlier "us10-different" misread): in
+      Overworld_FinalizeEntryOntoScreen ($82C242) the Link position
+      (link_x/y_coord) + screen-index ($8A) + camera/scroll math is BYTE-IDENTICAL
+      JP↔US; the divergence (US `LDA $7F5B00,x; LSR` vs JP `LDA $130; CMP #$F1`) is
+      the destination screen's MUSIC selection ONLY (music_unk1==0xf1 gate →
+      music_control/sound_effect_ambient; $7F5B00 = `overworld_music[]` WRAM, NOT a
+      destination table). So transition-wrap behaves identically on both ROMs —
+      cross-version ROM; fork-fidelity / frame-feasibility playtest-pending →
+      untested-on-us10. (No us10-different wrap delta exists.)
 
   # ===========================================================================
   # hasABottle — at least one bottle of any kind.
