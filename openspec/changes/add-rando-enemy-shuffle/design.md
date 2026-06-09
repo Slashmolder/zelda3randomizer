@@ -49,9 +49,16 @@ Additional per-pick constraints (from Enemizer; the beatability invariants — a
 - **Water rooms need water-capable sprites**: a water-only room draws from `is_water` enemies only.
 - **Per-room excludes** (anti-softlock): the immovable-sprite room list (~60 rooms, `DontUseImmovableSpritesRooms`), the flying-sprite room list, per-sprite do-not-randomize room lists, and hard excludes (Mimic Cave, Agahnim-tower bridge) — port into a per-room constraint map (`SpriteRequirement.cs:897-956` + per-sprite `AddDontRandomizeRooms`).
 
-### D4: MVP keeps sheets fixed (no group re-shuffle)
+### D4: MVP keeps sheets fixed (no group re-shuffle) — SUPERSEDED in phase 1 (slot 2)
 
-Enemizer first re-shuffles each group's 4 subgroup sheets to widen the enemy pool, then picks. The MVP **does not** — it picks only within the sheets a room already loads. This shrinks variety but removes a whole class of crash risk (no VRAM/sheet bookkeeping changes) and keeps the change to a pure type substitution. Group re-shuffle is a clean follow-on once the constraint table is proven.
+Enemizer first re-shuffles each group's 4 subgroup sheets to widen the enemy pool, then picks. The MVP **did not** — it picked only within the sheets a room already loads. This shrank variety but removed a whole class of crash risk and kept the change to a pure type substitution.
+
+**As-built (the §7.4 reshuffle, phase 1).** The reshuffle now lands, scoped to subgroup **SLOT 2 only**, ALWAYS-ON when `enemy_shuffle` (no new canonical axis — owner decision), default-off via the parent flag. Key facts that made it safe without Enemizer's full two-stage (global-group-reshuffle + per-room-re-home) machinery:
+- **Disjoint position whitelists.** Enemizer's four `PotentialSubsetN` pools share no sheet id, so a sheet id determines its slot. Loading only slot-2 sheets into slot 2 keeps every enemy's tiles in their canonical VRAM region → the existing picker's "sheet loaded in any slot" test stays sound; **no position-aware picker change needed.**
+- **Per-room runtime, not global ROM patch.** We reshuffle one slot per room at load time (the list is walkable at sheet-load time — agent-verified), so there is no shared-group-table to re-home rooms around; eligibility + a vanilla shadow replace Enemizer's Preserve-pins + per-room group re-selection.
+- **Eligibility = slot 2 FREE** (no boss / overlord / unknown / slot-2-needing non-randomized sprite present), a safe **pool that guarantees a killable+key candidate** (no vanilla-passthrough garbage, key/shutter rooms fillable), and a **vanilla-inheritance shadow** that restores vanilla slot 2 in ineligible rooms (kills the `kSpriteTilesets` slot-2==0 leak).
+
+Widening to slots 0/1/3, overlord-id decoding (to free overlord rooms), and OW-specific pools are the playtest-gated remainder (see tasks.md §7.4). The MVP's "sheets fixed" stance survives only for those not-yet-reshuffled slots.
 
 ### D5: Room-environment-dependent sprites stay out
 

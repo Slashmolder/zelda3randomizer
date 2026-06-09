@@ -11,18 +11,20 @@
 > follow-ons (§7) out of scope. **Deviation:** kGeneratorVersion is **60→61**,
 > not the brief's 58→59 — the worktree base already carried Phase D bumps to 60.
 
-> **⏭ NEXT LARGE TASK (resume here) — the SHEET-GROUP RESHUFFLE (variety unlock).**
-> The MVP is **merged to main** (`807cce8`, default-off) and playtest-CONFIRMED
-> working but **low-variety**: it only substitutes within the GFX sheets a room
-> already loads, so swaps are same-family and most enemies pass through (owner F12:
-> active, 7/35 substituted). The variety unlock is to **re-assign which sprite GFX
-> sheets load per room/area** so a much wider enemy pool becomes available — see the
-> expanded **§7.4** below for the full starting brief (code anchors, Enemizer ref,
-> the crash risks, determinism/install, validation). Owner explicitly wants TRUE
-> random (vanilla-inclusive; do NOT exclude the vanilla type from picks). **Step 0
-> next session:** fresh worktree off CURRENT main; decide extend-this-change vs a new
-> `add-rando-enemy-sheet-reshuffle` change (recommend NEW — this MVP change can then
-> archive). Other deferred axes (HP/damage/etc.) are §7.1–7.3, lower priority.
+> **SHEET-GROUP RESHUFFLE (variety unlock) — BUILT, PLAYTEST-PENDING (§7.4).**
+> Decided (owner): EXTEND this change (not a new one); ALWAYS-ON when
+> `enemy_shuffle` (no new canonical axis). Phase 1 = subgroup **SLOT 2 only**
+> (the "themed enemy" slot), dungeon + overworld, landed build-verified: WSL
+> `-Werror` green, `EnemyShuffle_SelfCheck` extended + green, corpus regen
+> **0/112 digests changed** (only `generator_version` 61→62 — placement byte-
+> identical, the orthogonality claim holds). See **§7.4** for the as-built model.
+> Eligibility (slot 2 free) + a safe slot-2 pool + a vanilla-inheritance shadow
+> make it crash/softlock-safe BY CONSTRUCTION on paper — but **render/crash/
+> softlock are playtest-only** (no headless net), so this is NOT done until the
+> owner playtests (diagnostics in g_ram `0x663-0x667` under `ES_RESHUFFLE_DIAG`).
+> Conservative by design (boss rooms + overlord rooms + unknown-type rooms are
+> skipped); WIDENING (more slots, overlord decoding, OW-specific pools) is the
+> playtest-gated remainder. Other deferred axes (HP/damage/etc.) are §7.1–7.3.
 
 ## 1. Constraint table (the correctness surface — do this first)
 
@@ -70,14 +72,20 @@
 - [ ] 7.1 Enemy HP randomization (clamp/scale `sprite_health[k]` / `kSpriteInit_Health[243]`).
 - [ ] 7.2 Enemy damage randomization (`kSpriteInit_BumpDamage[243]`).
 - [ ] 7.3 Killable thief, bush-enemy spawn, absorbables-in-place-of-enemies, randomize-on-hit.
-### 7.4 Sprite-group sheet reshuffle — the VARIETY UNLOCK (design D4) [NEXT LARGE TASK]
+### 7.4 Sprite-group sheet reshuffle — the VARIETY UNLOCK (design D4) [BUILT — PLAYTEST-PENDING]
 
-- [ ] **Why.** The MVP only substitutes within the sheets a room/area ALREADY loads → same-family swaps + mostly passthrough. The unlock: RE-ASSIGN which sprite GFX sheets load per room/area, widening the candidate pool (an octorok room could spawn stalfos). Owner wants TRUE random — **vanilla-inclusive; never exclude the vanilla type from a pick.**
-- [ ] **Where (zelda3).** `kSpriteTilesets[144][4]` (`src/load_gfx.c:59`) = the per-index 4-subgroup sheet table; loaded by `Gfx_LoadSpritesInner` (`load_gfx.c:623-642`, each subset `if (p[N])`); room/area selects its index via `sprite_graphics_index` (dungeon `hdr[3]+0x40`; overworld `overworld_sprite_gfx[i]`). Override the 4 subgroup sheet ids for a room/area, and the existing `EnemyShuffle_Pick*` (which already reads the LIVE sheets `sprite_gfx_subset_0..3`) gets the wider pool for free.
-- [ ] **Enemizer ref** (`C:\src\Enemizer`): `EnemizerLibrary/EnemyRandomizer/SpriteGroupCollection.RandomizeDungeonGroups()` shuffles each group's 4 subgroup bytes (`SpriteGroupBaseAddress + groupId*4 + 0..3` ≡ `kSpriteTilesets[idx][0..3]`) BEFORE picking; `SpriteRequirement.cs` ties sprites to needed subgroup sheets.
-- [ ] **Crash risks (the hard part — design D3).** (a) The room's NON-randomized sprites (NPCs, objects, unsubstituted enemies) also need their sheets — don't blindly reassign all 4 subgroups or their tiles break; constrain the reshuffle to keep required sheets loadable. (b) Timing: the override must be live when `Gfx_LoadSpritesInner` runs for the room/area. (c) The constraint table's `sheets[]` data (`shuffle_enemies.c`) becomes LOAD-BEARING (MVP under-exercises it) — a wrong sheet → garbage/crash. (d) OAM footprint (still unmodelled, §3.4) bites harder on cross-family swaps.
-- [ ] **Determinism + install.** Deterministic per-(seed, room/area), installed at slot activation (mirror `EnemyShuffle_Generate`). Decide: a separate `enemy_shuffle_sheets` canonical axis (pack a free pad bit, e.g. `[26]` bit1 or `[27]`; kGen bump; placement stays byte-identical — orthogonal) vs always-on when `enemy_shuffle`.
-- [ ] **Validation.** Playtest-dominated (render/crash/softlock — no headless net). Use the `[[gram-diagnostic-counters]]` technique; stage on a few dungeons + overworld before widening. Fresh-eyes audit before merge.
+> **As-built (phase 1, slot 2 only).** Decided: EXTEND this change; ALWAYS-ON
+> when `enemy_shuffle` (no new axis). kGeneratorVersion **61→62**; corpus
+> **0/112** changed. Hook `EnemyShuffle_ReshuffleCurrentRoomSheets(row)` in
+> `Gfx_LoadSpritesInner` + `InitializeTilesets` (`src/load_gfx.c`), after the 4
+> subgroup ids resolve, before decompress.
+
+- [x] **Why / true-random.** Re-assigns subgroup SLOT 2 (the themed-enemy slot) so the picker (which reads the LIVE `sprite_gfx_subset_*`) draws a wider, cross-family pool. Vanilla slot-2 sheet is ALWAYS a candidate (vanilla-inclusive) — `choose_pos2` picks uniformly over `{12,23,28,35,38,40,46} ∪ {vanilla}`.
+- [x] **Where (zelda3).** Reordered `Gfx_LoadSpritesInner` to resolve all 4 ids then hook then decompress (behavior-identical); `InitializeTilesets` hook inserted after its 4-id resolve. The hook rewrites `sprite_gfx_subset_2` (g_ram 0xC2FE) BEFORE decompress so VRAM + picker agree; cached-redecompress paths (mirror warp etc.) reproduce it for free. Room/area sprite TYPE list walked at load time via new `Dungeon_GetRoomSpritePtr` / existing `GetOverworldSpritePtr` (asset blob — list available before parse; key on `dungeon_room_index` / `overworld_area_index`).
+- [x] **Enemizer port (`C:\src\Enemizer`).** Position whitelists from `SpriteGroupCollection` `PotentialSubsetN` (DISJOINT — a sheet id ⇒ one slot, so the picker's "sheet loaded" test stays sound with no position-aware change). Per-type slot-2/known/boss classification (`kEsPos2NeedTypes` / `kEsUnknownLowTypes` / `kEsBossTypes`) from `SpriteRequirement.cs` (verified-complete extraction).
+- [x] **Crash/softlock model (design D3).** (a) ELIGIBILITY: slot 2 reshuffled only when FREE — every present sprite is a randomizable enemy (substituted) or a known non-slot-2 type; ANY overlord (spawns bypass the picker) / boss (boss-shuffle redirect) / unknown type ⇒ ineligible. (b) ANTI-GARBAGE pool: each slot-2 pool sheet self-contains a killable+key enemy ⇒ the picker always finds a valid substitution (no vanilla-passthrough with a missing sheet) and key/shutter rooms stay fillable. (c) INHERITANCE leak (kSpriteTilesets slot-2==0): a snapshot-safe shadow (`kRam_EnemyShuffleVanPos2` @ 0x662) restores vanilla slot 2 in ineligible rooms so a leak never reaches a slot-2-pinning room. (d) OAM footprint still unmodelled (§3.4) — playtest watch-item, mitigated by the conservative pool.
+- [x] **Determinism + install.** Per-(seed, room/area) RNG (`kEnemyShuffleSheetSalt`, distinct from the pick salts); rides the existing `EnemyShuffle_Generate` activation (shadow seeded there). No new canonical axis (owner decision: always-on when `enemy_shuffle`).
+- [ ] **Validation — PLAYTEST PENDING (the only net).** `EnemyShuffle_SelfCheck` extended (pool integrity, `type_blocks_pos2` incl. pos3-bosses, `choose_pos2` determinism + vanilla-inclusive) — green. Render/crash/softlock need the owner: diagnostics in g_ram `0x663-0x667` under `ES_RESHUFFLE_DIAG` (calls / slot-2-changed / ineligible / last-vanilla / last-chosen). Stage a few dungeons + overworld; then widen (more slots, overlord-id decoding, OW-specific pools) and turn `ES_RESHUFFLE_DIAG` off + fresh-eyes audit before merge.
 
 ## 8. Audit
 
