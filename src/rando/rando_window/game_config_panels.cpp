@@ -735,6 +735,8 @@ static void Panel_Gameplay(void) {
   // Honest in-window status for the active glitch set. Update as more glitches
   // land. (Faithful per the JP-vs-US ROM diff.)
   ImGui::TextDisabled("Currently: Fake Flippers, Death Hole, Itemdash, Spindash, Superspeed, Mirror Block Erase (JP-faithful).");
+  FeatureCheckbox("JP 1.0 overworld music", kFeatures0_JpOverworldMusic,
+                  "Use the Japanese 1.0 overworld track/ambient after mirror warps and screen transitions.");
 
   ImGui::SeparatorText("General");
   bool autosave = s_cfg.autosave;

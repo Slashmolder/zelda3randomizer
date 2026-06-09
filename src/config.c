@@ -645,6 +645,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_EasyMinigames);
     } else if (StringEqualsNoCase(key, "RestoreJpGlitches")) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_RestoreJpGlitches);
+    } else if (StringEqualsNoCase(key, "JpOverworldMusic")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_JpOverworldMusic);
     }
   } else if (section == 6) {
     // [Randomizer] section — tasks.md §1.6. Defaults set in ParseConfigFile
@@ -1197,7 +1199,7 @@ static const char *const kFeatKeys[] = {
   "CollectItemsWithSword", "BreakPotsWithSword", "DisableLowHealthBeep",
   "SkipIntroOnKeypress", "ShowMaxItemsInYellow", "MoreActiveBombs",
   "CarryMoreRupees", "MiscBugFixes", "GameChangingBugFixes", "CancelBirdTravel",
-  "EasyMinigames", "RestoreJpGlitches",
+  "EasyMinigames", "RestoreJpGlitches", "JpOverworldMusic",
 };
 static const uint32 kFeatMasks[] = {
   kFeatures0_SwitchLR, kFeatures0_SwitchLRLimit, kFeatures0_TurnWhileDashing,
@@ -1207,6 +1209,7 @@ static const uint32 kFeatMasks[] = {
   kFeatures0_MoreActiveBombs, kFeatures0_CarryMoreRupees, kFeatures0_MiscBugFixes,
   kFeatures0_GameChangingBugFixes, kFeatures0_CancelBirdTravel,
   kFeatures0_EasyMinigames, kFeatures0_RestoreJpGlitches,
+  kFeatures0_JpOverworldMusic,
 };
 _Static_assert(countof(kFeatKeys) == countof(kFeatMasks),
                "feature key/mask tables must stay aligned");

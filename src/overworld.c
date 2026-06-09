@@ -1376,6 +1376,15 @@ void Module09_MirrorWarp() {  // 82b1fa
   }
 }
 
+// JP-1.0 overworld music/ambient selection (kFeatures0_JpOverworldMusic).
+// Default-off and suppressed under side-by-side so the JP music — which
+// diverges from the US-1.0 reference RAM every frame — never trips the
+// comparator. Mirrors JpGlitchEnabled() in player.c.
+static bool JpOwMusicEnabled(void) {
+  return (enhanced_features0 & kFeatures0_JpOverworldMusic) &&
+         !ZeldaIsEmulatorAttached();
+}
+
 void MirrorWarp_FinalizeAndLoadDestination() {  // 82b260
   HdmaSetup(0, 0xf2fb, 0x41, 0, (uint8)WH0, 0);
   IrisSpotlight_ResetTable();
@@ -1384,11 +1393,34 @@ void MirrorWarp_FinalizeAndLoadDestination() {  // 82b260
   ReloadPreviouslyLoadedSheets();
   Overworld_SetSongList();
   HDMAEN_copy = 0x80;
-  uint8 m = overworld_music[BYTE(overworld_screen_index)];
-  music_control = m & 0xf;
-  sound_effect_ambient = m >> 4;
-  if (BYTE(overworld_screen_index) >= 0x40 && !link_item_moon_pearl)
-    music_control = 4;
+  if (JpOwMusicEnabled()) {
+    // JP 1.0 ($82B260, off 131BD-1320D): pick the post-mirror-warp track from
+    // world state + screen index + progress instead of re-reading the just-built
+    // overworld_music[] scratch table. Ambient ($12D) is left untouched except
+    // on the three special pyramid/HC screens 0x43/0x45/0x47.
+    uint8 s = BYTE(overworld_screen_index);
+    uint8 x = 4;
+    if (!(savegame_is_darkworld && !link_item_moon_pearl)) {
+      x = 9;
+      if (s < 0x40) {
+        x = 2;
+        if (s == 0x18 && sram_progress_indicator < 3)
+          x = 7;
+      }
+    }
+    music_control = x;
+    if (s == 0x40 || s == 0x43 || s == 0x45 || s == 0x47) {
+      if (s != 0x40)
+        sound_effect_ambient = 9;
+      music_control = link_item_moon_pearl ? 0xd : 4;
+    }
+  } else {
+    uint8 m = overworld_music[BYTE(overworld_screen_index)];
+    music_control = m & 0xf;
+    sound_effect_ambient = m >> 4;
+    if (BYTE(overworld_screen_index) >= 0x40 && !link_item_moon_pearl)
+      music_control = 4;
+  }
 
   saved_module_for_menu = submodule_index;
   submodule_index = 0;
@@ -1796,10 +1828,22 @@ void Overworld_FinalizeEntryOntoScreen() {  // 82c242
   if ((d & 0xfe) == kOverworld_Func8_tab[byte_7E069C]) {
     submodule_index = 0;
     subsubmodule_index = 0;
-    uint8 m = overworld_music[BYTE(overworld_screen_index)];
-    sound_effect_ambient = m >> 4;
-    if (music_unk1 == 0xf1)
-      music_control = m & 0xf;
+    if (JpOwMusicEnabled()) {
+      // JP 1.0 ($82C242, off 141B3-141CE): when the transition track is armed
+      // (music_unk1 == 0xf1) set music_control from screen+progress rather than
+      // from overworld_music[]. JP does NOT write sound_effect_ambient here.
+      if (music_unk1 == 0xf1) {
+        uint8 x = 2;
+        if (BYTE(overworld_screen_index) == 0x18 && sram_progress_indicator < 3)
+          x = 7;
+        music_control = x;
+      }
+    } else {
+      uint8 m = overworld_music[BYTE(overworld_screen_index)];
+      sound_effect_ambient = m >> 4;
+      if (music_unk1 == 0xf1)
+        music_control = m & 0xf;
+    }
   }
   Overworld_OperateCameraScroll();
   if (BYTE(overworld_screen_trans_dir_bits2))
