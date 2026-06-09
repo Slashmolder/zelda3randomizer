@@ -11,6 +11,19 @@
 > follow-ons (§7) out of scope. **Deviation:** kGeneratorVersion is **60→61**,
 > not the brief's 58→59 — the worktree base already carried Phase D bumps to 60.
 
+> **⏭ NEXT LARGE TASK (resume here) — the SHEET-GROUP RESHUFFLE (variety unlock).**
+> The MVP is **merged to main** (`807cce8`, default-off) and playtest-CONFIRMED
+> working but **low-variety**: it only substitutes within the GFX sheets a room
+> already loads, so swaps are same-family and most enemies pass through (owner F12:
+> active, 7/35 substituted). The variety unlock is to **re-assign which sprite GFX
+> sheets load per room/area** so a much wider enemy pool becomes available — see the
+> expanded **§7.4** below for the full starting brief (code anchors, Enemizer ref,
+> the crash risks, determinism/install, validation). Owner explicitly wants TRUE
+> random (vanilla-inclusive; do NOT exclude the vanilla type from picks). **Step 0
+> next session:** fresh worktree off CURRENT main; decide extend-this-change vs a new
+> `add-rando-enemy-sheet-reshuffle` change (recommend NEW — this MVP change can then
+> archive). Other deferred axes (HP/damage/etc.) are §7.1–7.3, lower priority.
+
 ## 1. Constraint table (the correctness surface — do this first)
 
 - [x] 1.1 Per-enemy-type constraint table authored in `src/rando/shuffle_enemies.c` (`kEnemyTable[256]`), cross-checked against Enemizer `SpriteRequirement.cs` (the Enemizer SpriteId IS the SNES type byte → identity mapping; `Sprite_HEX_*` ids in `sprite_main.h` confirm the symbol names). Flags: `ESF_RANDOMIZABLE`, `ESF_KILLABLE`, `ESF_CANNOT_KEY` (independent of killable), `ESF_WATER`, `ESF_NEVER_DUNGEON`/`ESF_NEVER_OVERWORLD`, `ESF_FLYING`, plus a required-`sheets[]` list. **CONSERVATIVE first pass:** only a SMALL, sound candidate pool (~30 unambiguous killable/common enemies + a few flying/water/key-banned) is `ESF_RANDOMIZABLE`; everything else (NPC/object/overlord/boss/mini-boss/absorbable/unknown) is `do_not_randomize` (the zero default). OAM footprint is NOT yet modelled (see §3.4 / Remaining). **Widen only with playtest** — the table is the SOLE beatability enforcer (logic models no kill-clear).
@@ -57,7 +70,14 @@
 - [ ] 7.1 Enemy HP randomization (clamp/scale `sprite_health[k]` / `kSpriteInit_Health[243]`).
 - [ ] 7.2 Enemy damage randomization (`kSpriteInit_BumpDamage[243]`).
 - [ ] 7.3 Killable thief, bush-enemy spawn, absorbables-in-place-of-enemies, randomize-on-hit.
-- [ ] 7.4 Enemizer's sprite-group subgroup re-shuffle (widen the per-room pool by re-assigning loaded sheets) — design D4.
+### 7.4 Sprite-group sheet reshuffle — the VARIETY UNLOCK (design D4) [NEXT LARGE TASK]
+
+- [ ] **Why.** The MVP only substitutes within the sheets a room/area ALREADY loads → same-family swaps + mostly passthrough. The unlock: RE-ASSIGN which sprite GFX sheets load per room/area, widening the candidate pool (an octorok room could spawn stalfos). Owner wants TRUE random — **vanilla-inclusive; never exclude the vanilla type from a pick.**
+- [ ] **Where (zelda3).** `kSpriteTilesets[144][4]` (`src/load_gfx.c:59`) = the per-index 4-subgroup sheet table; loaded by `Gfx_LoadSpritesInner` (`load_gfx.c:623-642`, each subset `if (p[N])`); room/area selects its index via `sprite_graphics_index` (dungeon `hdr[3]+0x40`; overworld `overworld_sprite_gfx[i]`). Override the 4 subgroup sheet ids for a room/area, and the existing `EnemyShuffle_Pick*` (which already reads the LIVE sheets `sprite_gfx_subset_0..3`) gets the wider pool for free.
+- [ ] **Enemizer ref** (`C:\src\Enemizer`): `EnemizerLibrary/EnemyRandomizer/SpriteGroupCollection.RandomizeDungeonGroups()` shuffles each group's 4 subgroup bytes (`SpriteGroupBaseAddress + groupId*4 + 0..3` ≡ `kSpriteTilesets[idx][0..3]`) BEFORE picking; `SpriteRequirement.cs` ties sprites to needed subgroup sheets.
+- [ ] **Crash risks (the hard part — design D3).** (a) The room's NON-randomized sprites (NPCs, objects, unsubstituted enemies) also need their sheets — don't blindly reassign all 4 subgroups or their tiles break; constrain the reshuffle to keep required sheets loadable. (b) Timing: the override must be live when `Gfx_LoadSpritesInner` runs for the room/area. (c) The constraint table's `sheets[]` data (`shuffle_enemies.c`) becomes LOAD-BEARING (MVP under-exercises it) — a wrong sheet → garbage/crash. (d) OAM footprint (still unmodelled, §3.4) bites harder on cross-family swaps.
+- [ ] **Determinism + install.** Deterministic per-(seed, room/area), installed at slot activation (mirror `EnemyShuffle_Generate`). Decide: a separate `enemy_shuffle_sheets` canonical axis (pack a free pad bit, e.g. `[26]` bit1 or `[27]`; kGen bump; placement stays byte-identical — orthogonal) vs always-on when `enemy_shuffle`.
+- [ ] **Validation.** Playtest-dominated (render/crash/softlock — no headless net). Use the `[[gram-diagnostic-counters]]` technique; stage on a few dungeons + overworld before widening. Fresh-eyes audit before merge.
 
 ## 8. Audit
 
