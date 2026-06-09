@@ -76,7 +76,7 @@ edges:
   # and canOneFrameClipUW lack macros — documented drops.
   - from: LightWorld_South
     to: IcePalace_Lobby
-    predicate: "CanMeltThings(world) AND (HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR CanOneFrameClipOW())"
+    predicate: "(CanMeltThings(world) OR CanOneFrameClipUW()) AND (HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed()))"
     source: "app/Region/Inverted/IcePalace.php:22-44 (can_enter closure)"
 
 locations: []

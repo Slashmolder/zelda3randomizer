@@ -136,13 +136,13 @@ locations:
   # canSuperBunny+MagicMirror branch stays dropped — no CanSuperBunny macro.
   - id: "Mire Shed - Left"
     region: DarkWorld_Mire
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanOneFrameClipOW() OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanSuperBunny() AND HAS_ITEM(MagicMirror)) OR (CanPearlBypass() AND (CanOneFrameClipOW() OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
     source: "app/Region/Standard/DarkWorld/Mire.php:66-74"
 
   # `Mire Shed - Right` (Mire.php:76-84): identical shape to Left.
   - id: "Mire Shed - Right"
     region: DarkWorld_Mire
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanOneFrameClipOW() OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
+    can_reach: "HAS_ITEM(MoonPearl) OR (CanSuperBunny() AND HAS_ITEM(MagicMirror)) OR (CanPearlBypass() AND (CanOneFrameClipOW() OR HasBottle(2) OR (HAS_ITEM(MagicMirror) AND HAS_ITEM(BugCatchingNet) AND CanBunnyRevival(world)) OR CanBootsClip()))"
     source: "app/Region/Standard/DarkWorld/Mire.php:76-84"
 
   # ===========================================================================
@@ -367,12 +367,12 @@ locations:
   # canSuperBunny still dropped (no macro).
   - id: "Superbunny Cave - Top"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR CanOneFrameClipOW()))"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanSuperBunny() OR (CanPearlBypass() AND (CanBootsClip() OR CanOneFrameClipOW()))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:58-63"
 
   - id: "Superbunny Cave - Bottom"
     region: DarkWorld_DeathMountain_East
-    can_reach: "HAS_ITEM(MoonPearl) OR (CanPearlBypass() AND (CanBootsClip() OR CanOneFrameClipOW()))"
+    can_reach: "HAS_ITEM(MoonPearl) OR CanSuperBunny() OR (CanPearlBypass() AND (CanBootsClip() OR CanOneFrameClipOW()))"
     source: "app/Region/Standard/DarkWorld/DeathMountain/East.php:65-70"
 
   # PHP shape (East.php:72-91 for the four Hookshot Cave chests):

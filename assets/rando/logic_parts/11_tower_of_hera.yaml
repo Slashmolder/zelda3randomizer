@@ -52,7 +52,7 @@ edges:
   # lacks a macro (no spin-speed kit in this fork yet) so it's dropped.
   - from: LightWorld_DeathMountain_West
     to: TowerOfHera_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MagicMirror) OR (HAS_ITEM(Hookshot) AND HAS_ITEM(Hammer)) OR CanBootsClip() OR CanOneFrameClipOW())"
+    predicate: "HAS_ITEM(RescuedZelda) AND (HAS_ITEM(MagicMirror) OR (HAS_ITEM(Hookshot) AND HAS_ITEM(Hammer)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed()))"
     source: "app/Region/Standard/TowerOfHera.php:103-109, 164-168 (can_enter + $main)"
 
 locations:

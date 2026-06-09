@@ -71,7 +71,7 @@ edges:
   # cross-region disjunct is dropped per audit §0.10.2.
   - from: DesertPalace_Lobby
     to: DesertPalace_PastLanmolas
-    predicate: "CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW()"
+    predicate: "CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())"
     source: "app/Region/Standard/DesertPalace.php:96-102 (Boss spatial gate)"
 
 locations:

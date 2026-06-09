@@ -37,7 +37,7 @@ edges:
   # collapse both new branches to FALSE.
   - from: LightWorld_NorthEast
     to: LightWorld_DeathMountain_West
-    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp)) OR CanOneFrameClipOW() OR CanBootsClip()"
+    predicate: "CanFly(world) OR (CanLiftRocks() AND HAS_ITEM(Lamp)) OR CanOneFrameClipOW() OR CanBootsClip() OR (CanSuperSpeed() AND CanSpinSpeed())"
     source: "app/Region/Standard/LightWorld/DeathMountain/West.php:62-70"
 
   # DM East entry — `can_enter` (East.php:89-98):
