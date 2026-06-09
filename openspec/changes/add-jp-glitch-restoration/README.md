@@ -4,7 +4,7 @@ A single "Restore JP 1.0 glitches" gameplay checkbox that re-introduces glitches
 
 ## Status
 
-**Proposal — not yet implemented.** Authored 2026-06-07; revised 2026-06-08 after a fresh-eyes audit. The "find what's patched" research is complete (six-glitch catalog in `proposal.md`, web-grounded). **No glitch is a zero-spike slice.** **Fake Flippers** is the lowest-risk first target but is **MEDIUM**: the often-cited `src/player.c:1721` is dead code for the walk-in case (blocked earlier at `:3193`), the real gate is a multi-site set, and the true JP glitch is an ~8-frame swim grace + transition lock, not free-swim. The other five glitches are gated behind a JP-vs-US disassembly-diff spike (Task 1) and may individually resolve to INFEASIBLE.
+**Implementation in progress** on branch `claude/jp-glitch-restoration`. The JP-vs-US disassembly spike (2026-06-08) ground-truthed all six glitches. **3 IMPLEMENTED faithful** (Fake Flippers, Death Hole, Itemdash — each an exact gated JP↔US delta; WSL `-Werror` build green; owner playtest-pending). **3 NEEDS-MORE-WORK** (Superspeed/Spindash/Mirror Block Erase — no JP↔US code delta; not shipped). **Fake Flippers ROM truth**: JP omits *only* the per-frame recheck in `PlayerHandler_04_Swimming` (`:1721`); the entry ejects are byte-identical JP↔US, so the faithful fix gates that one site (the over-gated free-swim approximation was rejected on playtest). No 8-frame grace counter exists.
 
 ## Read these in order
 
@@ -27,4 +27,4 @@ A single "Restore JP 1.0 glitches" gameplay checkbox that re-introduces glitches
 ## Sources
 
 - Glitch catalog: <https://alttp-wiki.net/index.php/JP_1.0>, <https://alttp-wiki.net/index.php/Version_Differences> (per-glitch pages cited in `proposal.md`).
-- Fake Flippers cause + JP 8-frame grace mechanism: <https://alttp-wiki.net/index.php/Fake_Flippers> → gate set `src/player.c:3193`, `:129-136`, `:1721`, `:710`, `:918`.
+- Fake Flippers / Death Hole / Itemdash mechanisms: the JP-vs-US ROM diff (see `design.md` Post-implementation reconciliation). Faithful gate sites: `PlayerHandler_04_Swimming` `:1721` (FF), `LinkState_Pits` `:1576` (Death Hole), `PlayerHandler_00_Ground_3` `:249` (Itemdash).

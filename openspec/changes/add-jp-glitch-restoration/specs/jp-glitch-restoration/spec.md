@@ -32,15 +32,17 @@ A glitch SHALL NOT ship behind the master flag until its JP-1.0 behavior is grou
 
 ### Requirement: Fake Flippers restoration (first target)
 
-When `kFeatures0_RestoreJpGlitches` is set (and the original ROM is not attached), the system SHALL restore the JP-1.0 swim behavior at the swim-entry gate set, so the documented Fake Flippers technique works. JP-1.0 did not re-evaluate `link_item_flippers` every frame — it allowed an **~8-frame grace** in deep water before ejecting a flipperless Link, which the technique exploits by triggering a screen transition during the grace window to lock the swim state. The US-1.0 path this port reimplements blocks it at multiple sites: the deep-water swim guard in `LinkState_CrossingWorlds` (`src/player.c:3193`) routes a flipperless Link to `CheckAbilityToSwim` (`:129-136`) which sets the eject submodule (20/42); and the swim handler re-ejects every frame (`:1721`) on the ledge/jump-into-water paths that set swim state without a flipper check (`:710`, `:918`). With the flag set, the implementation SHALL restore the grace-window behavior across that gate set (not merely delete one eject).
+When `kFeatures0_RestoreJpGlitches` is set (and the original ROM is not attached), the system SHALL reproduce JP-1.0 Fake Flippers byte-for-byte by gating EXACTLY the one site the JP-vs-US 65816 ROM diff shows US 1.0 added: the per-frame flipperless eject in `PlayerHandler_04_Swimming` (`src/player.c:1721`). The two swim-ENTRY ejects — `CheckAbilityToSwim` (`:129-136`) and the deep-water guard in `LinkState_CrossingWorlds` (`:3192-3213`) — are **byte-identical JP↔US** and SHALL NOT be gated: a flipperless Link who walks onto deep water is ejected in *both* versions. The glitch is reached only via the un-flipper-checked ledge/recoil entry sites (`:710`, `:918`), which set swim state directly; with the recheck gated, that state persists, exactly as on JP 1.0.
 
-The restored behavior SHALL be the JP grace window, NOT permanent flipperless swimming. If reproducing the grace window in the C control flow proves impractical, the build MAY ship a **free-swim approximation** (eject suppressed) only if it is explicitly labeled as an approximation (not JP-faithful) in the UI/docs.
+There is **no 8-frame grace counter** in the ROM (that was a runner-technique description, not JP code — JP simply omits the recheck). The "free-swim approximation" that *also* gated the entry sites (letting Link walk into water flipperless) is **rejected**: it is a strictly-easier always-on ability, not the glitch, and does not match JP.
 
-> **Spike status**: even this best-understood glitch requires a short grounding pass (per the verification gate) to confirm where the per-frame eject lives versus where a frame-counter grace slots in. Feasibility is MEDIUM, not a single branch flip.
+#### Scenario: JP flipperless swim restored with the flag on (correct entry)
+- **WHEN** Link has no flippers, `kFeatures0_RestoreJpGlitches` is set, the original ROM is not attached, and Link enters deep water via a ledge/recoil path (which sets swim state without a flipper check)
+- **THEN** the per-frame recheck no longer ejects him and he keeps swimming (JP-1.0 behavior)
 
-#### Scenario: JP swim grace restored with the flag on
-- **WHEN** Link has no flippers, `kFeatures0_RestoreJpGlitches` is set, the original ROM is not attached, and Link enters deep water and triggers a screen transition within the grace window
-- **THEN** the swim state is retained (JP-1.0 Fake Flippers behavior), rather than Link being ejected by the US per-frame check
+#### Scenario: Walk-into-water still ejects (entry is JP-identical)
+- **WHEN** Link has no flippers, the flag is set, and he walks directly onto a deep-water tile
+- **THEN** he is ejected — the entry guard is byte-identical JP↔US, so a flipperless walk-in never swims in either version (this is what makes it the glitch, not an "always-swim" ability)
 
 #### Scenario: US per-frame eject preserved with the flag off
 - **WHEN** Link has no flippers and `kFeatures0_RestoreJpGlitches` is not set
