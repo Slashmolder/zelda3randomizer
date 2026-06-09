@@ -213,10 +213,15 @@ def dpool(p):  # dungeon: whitelist sheet with a single-slot killable+key enemy
 def opool(p):  # overworld: whitelist sheet with ANY randomizable enemy in slot p
     return [s for s in WHITELIST[p] if s in sheet_has_any[p]]
 
+# Number of subgroup slots the runtime reshuffles (must match ES_RESHUFFLE_SLOTS
+# in shuffle_enemies.c). Slots 0,1,2 are the enemy slots; slot 3 is mostly objects
+# (it pins often) but carries a few enemies (Armos/Tektite 16, Buzzblob 17, Pikit 27).
+RESHUFFLE_SLOTS = 4
+
 # DISJOINTNESS INVARIANT: a sheet we ever load into slot p must be used by enemies
 # ONLY in slot p (else the position-unaware "sheet loaded" test mis-admits an
 # enemy that needs it elsewhere -> garbage). Assert it for every pool member.
-for p in range(3):
+for p in range(RESHUFFLE_SLOTS):
     for s in set(dpool(p)) | set(opool(p)):
         used = sheet_positions.get(s, {p})
         assert used == {p}, f"AMBIGUOUS pool sheet {s} for slot {p}: enemies use it in {used}"
@@ -249,10 +254,12 @@ for sid, name, flagexpr, sheets in rows:
     print(f"  [0x{sid:02X}] = {{ (ESF_RANDOMIZABLE | {flagexpr}), {{ {sh} }} }},  // {name}")
 print("};")
 print()
-for p in range(3):  # slots 0,1,2 reshuffle
+for p in range(RESHUFFLE_SLOTS):
     print(f"static const uint8 kEsDungeonPool{p}[] = {{ {', '.join(str(s) for s in dpool(p))} }};")
     print(f"static const uint8 kEsOverworldPool{p}[] = {{ {', '.join(str(s) for s in opool(p))} }};")
+print("// counts:  dungeon = {" + ", ".join(str(len(dpool(p))) for p in range(RESHUFFLE_SLOTS)) +
+      "}   overworld = {" + ", ".join(str(len(opool(p))) for p in range(RESHUFFLE_SLOTS)) + "}")
 print()
 print("// pool sanity (dungeon pools must be non-empty so key rooms stay fillable):")
-for p in range(3):
+for p in range(RESHUFFLE_SLOTS):
     print(f"//   slot {p}: dungeon={dpool(p)}  overworld={opool(p)}")
