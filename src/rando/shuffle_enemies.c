@@ -328,11 +328,11 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 // (no separate settings axis — owner decision); off ⇒ this is never called.
 // ===========================================================================
 
-// Per-slot vanilla shadows live at kRam_EnemyShuffleVanSubset[0..2] (= 0x662..4,
+// Per-slot vanilla shadows live at kRam_EnemyShuffleVanSubset[0..3] (= 0x662..5,
 // features.h reserved block). Snapshot-safe so a Ctrl+F1 restore keeps the
 // inheritance chain intact. Slot s vanilla = tileset_row[s] if it loads one, else
 // the inherited shadow.
-#define kRam_EnemyShuffleVanSubset kRam_EnemyShuffleVanPos2  /* 0x662..0x664 */
+#define kRam_EnemyShuffleVanSubset kRam_EnemyShuffleVanPos2  /* 0x662..0x665 */
 
 // Distinct RNG salt for the sheet choice (independent of the pick salts above).
 #define kEnemyShuffleSheetSalt 0x5348454554ull  // "SHEET"
@@ -661,8 +661,16 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
 // RNG stream (distinct salt) so it doesn't perturb the sheet/pick streams.
 #define kEnemyShuffleStatSalt 0x57A7570000ull  // "STATs"
 
+// Bosses are EXCLUDED from stat scaling. They're already excluded from
+// substitution + reshuffle; the stat axis was the only leak. The hard reason:
+// Helmasaur King (0x92) indexes kHelmasaurKing_Tab1[13] by `sprite_health >> 2`
+// (sprite_main.c) — vanilla HP 48 → index 12 (the last valid slot); ANY upward HP
+// scale reads OUT OF BOUNDS (fresh-eyes audit HIGH). Other bosses self-clamp or
+// gate on damage-underflow sentinels, but scaling them is tedious/pointless and
+// the table-index hazard makes a blanket boss exemption the safe, simple rule.
 uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base) {
   if (!g_enemy_shuffle_active || base == 0) return base;  // 0 HP = non-killable
+  if (type_is_boss(type)) return base;                    // bosses keep vanilla HP
   RandoRng rng;
   Rng_SeedFromU64(&rng, g_enemy_shuffle_seed ^ ((uint64)type << 8) ^ kEnemyShuffleStatSalt);
   uint32 mult = 8 + Rng_NextRange(&rng, 25);   // [8,32]/16 = 0.5x .. 2.0x
@@ -674,6 +682,7 @@ uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base) {
 
 uint8 EnemyShuffle_ScaleDamage(uint8 type, uint8 base) {
   if (!g_enemy_shuffle_active) return base;
+  if (type_is_boss(type)) return base;  // bosses keep vanilla contact damage too
   // Only a PLAIN damage class (1..8, no high flag bits) is perturbed; flagged /
   // boss-attack / immunity values (>= 0x10) are left exactly as vanilla.
   if (base == 0 || base >= 0x10) return base;
@@ -911,7 +920,7 @@ void EnemyShuffle_SelfCheck(void) {
     // ArmosCoordinator 0x19) must be 0 → the runtime pins ALL.
     if (kOverlordNeed[0x15] != 0x04)  // WizzrobeSpawner → slot 2 (Wizzrobe 37/41)
       enemy_selfcheck_die("WizzrobeSpawner overlord need wrong");
-    if (kOverlordNeed[0x05] != 0x01)  // FallingStalfos → slot 0 (StalfosHead 31)
+    if (kOverlordNeed[0x05] != 0x01)  // FallingStalfos → slot 0 (its falling-stalfos gfx on sheet 31)
       enemy_selfcheck_die("FallingStalfos overlord need wrong");
     if (kOverlordNeed[0x09] != 0x04)  // WallmasterSpawner → slot 2 (Wallmaster 35)
       enemy_selfcheck_die("WallmasterSpawner overlord need wrong");
@@ -954,6 +963,11 @@ void EnemyShuffle_SelfCheck(void) {
 
     if (EnemyShuffle_ScaleHealth(0x08, 0) != 0)
       enemy_selfcheck_die("ScaleHealth(0) must stay 0 (non-killable sprite)");
+    // Bosses must NOT scale — Helmasaur King (0x92) indexes a 13-entry table by
+    // sprite_health>>2; any upward scale reads OOB (fresh-eyes audit HIGH).
+    if (EnemyShuffle_ScaleHealth(0x92, 48) != 48 || EnemyShuffle_ScaleHealth(0x53, 100) != 100 ||
+        EnemyShuffle_ScaleDamage(0x92, 5) != 5)
+      enemy_selfcheck_die("stat scaling must leave bosses at vanilla (Helmasaur OOB regression)");
     for (uint32 t = 0; t < 256; t++) {
       for (uint32 b = 1; b <= 255; b += 17) {
         uint8 a = EnemyShuffle_ScaleHealth((uint8)t, (uint8)b);
