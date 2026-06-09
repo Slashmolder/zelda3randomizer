@@ -355,11 +355,16 @@ static const uint8 kEsUnknownLowTypes[] = {
 // from this set pins slot 2 ⇒ ineligible. (Randomizable members are checked
 // first — the picker substitutes them — so listing them here is harmless.)
 static const uint8 kEsPos2NeedTypes[] = {
-  0x01, 0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x10, 0x12, 0x20, 0x2C, 0x36, 0x4B, 0x4C,
-  0x50, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5D, 0x5E, 0x5F, 0x60, 0x62, 0x6D,
-  0x6E, 0x6F, 0x78, 0x7A, 0x81, 0x83, 0x84, 0x86, 0x88, 0x89, 0x8B, 0x8C, 0x8D,
-  0x8E, 0x90, 0x92, 0x99, 0x9A, 0x9B, 0x9E, 0xA0, 0xA1, 0xA2, 0xA4, 0xA5, 0xA6,
-  0xAD, 0xBB, 0xC0, 0xC1, 0xC3, 0xC7, 0xC8, 0xCA, 0xCE, 0xD6, 0xED, 0xF2
+  0x01, 0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x10, 0x12, 0x16, 0x20, 0x2C, 0x36, 0x4B,
+  0x4C, 0x50, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5D, 0x5E, 0x5F, 0x60, 0x62,
+  0x6D, 0x6E, 0x6F, 0x78, 0x7A, 0x81, 0x83, 0x84, 0x86, 0x88, 0x89, 0x8B, 0x8C,
+  0x8D, 0x8E, 0x90, 0x92, 0x99, 0x9A, 0x9B, 0x9E, 0xA0, 0xA1, 0xA2, 0xA4, 0xA5,
+  0xA6, 0xAD, 0xBB, 0xBC, 0xC0, 0xC1, 0xC3, 0xC7, 0xC8, 0xCA, 0xCE, 0xD6, 0xED,
+  0xF2
+  // 0x16 (Sahasrahla/Aginah, sub2=76) + 0xBC (Drunk-in-the-Inn, sub2=74) were
+  // missing from the extraction agent's summary list (fresh-eyes audit HIGH);
+  // both pin slot 2 and would otherwise render corrupt. Full set re-derived from
+  // SpriteRequirement.cs rows (every sub2-non-empty id ≤0xF2).
 };
 #define kEsPos2NeedCount (sizeof(kEsPos2NeedTypes)/sizeof(kEsPos2NeedTypes[0]))
 
@@ -473,11 +478,12 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   if (!is_dungeon && !is_ow) return;
   if (g_ram[0xAA3] >= 0x80) return;           // sprite_graphics_index: 0x80| = map preview
 
-  // True vanilla-resolved slot 2: this row's own sheet if it loads one, else the
-  // inherited value tracked in the shadow. A 0 baseline = no trustworthy vanilla
-  // yet (pre-first-room); leave the loaded sheet untouched.
-  uint8 van2 = (tileset_row[2] != 0) ? tileset_row[2]
-                                     : g_ram[kRam_EnemyShuffleVanPos2];
+  // True vanilla-resolved slot 2: this row's own sheet if it loads one (a fixed
+  // per-room value), else the inherited value tracked in the shadow. A 0 baseline
+  // = no trustworthy vanilla yet (the shadow is 0 = "not established" until the
+  // first room that loads its own slot 2); leave the loaded sheet untouched.
+  bool owns_pos2 = (tileset_row[2] != 0);
+  uint8 van2 = owns_pos2 ? tileset_row[2] : g_ram[kRam_EnemyShuffleVanPos2];
   if (van2 == 0) return;
   g_ram[kRam_EnemyShuffleVanPos2] = van2;
 
@@ -493,13 +499,19 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
     key = g_enemy_shuffle_seed ^ ((uint64)area << 20) ^ kEnemyShuffleSheetSalt;
   }
 
-  uint8 chosen = eligible ? choose_pos2(van2, key) : van2;
+  // Only reshuffle rooms that OWN their slot 2 (tileset_row[2] != 0). A room that
+  // INHERITS slot 2 is restored to the vanilla shadow instead — this both kills
+  // the inheritance leak AND keeps the choice DETERMINISTIC per (seed, room):
+  // choose_pos2 is then only ever fed van2 == tileset_row[2] (a fixed per-room
+  // constant), never the visit-order-dependent shadow.
+  bool reshuffle = owns_pos2 && eligible;
+  uint8 chosen = reshuffle ? choose_pos2(van2, key) : van2;
   g_ram[0xC2FE] = chosen;  // sprite_gfx_subset_2 — what the picker + decompress see
 
 #if ES_RESHUFFLE_DIAG
-  if (g_ram[0x663] < 0xff) g_ram[0x663]++;
-  if (eligible && chosen != van2 && g_ram[0x664] < 0xff) g_ram[0x664]++;
-  if (!eligible && g_ram[0x665] < 0xff) g_ram[0x665]++;
+  if (g_ram[0x663] < 0xff) g_ram[0x663]++;                       // hook calls
+  if (chosen != van2 && g_ram[0x664] < 0xff) g_ram[0x664]++;     // slot 2 actually changed
+  if (!reshuffle && g_ram[0x665] < 0xff) g_ram[0x665]++;         // restored (inherit/ineligible)
   g_ram[0x666] = van2;
   g_ram[0x667] = chosen;
 #endif
@@ -517,16 +529,19 @@ bool EnemyShuffle_Generate(const struct RandoSettings *settings,
   }
   g_enemy_shuffle_seed = seed_u64 ^ kEnemyShuffleSalt;
   g_enemy_shuffle_active = true;
-  // Seed the sheet-reshuffle inheritance shadow from the currently-loaded slot 2
-  // so the first room that INHERITS slot 2 has a vanilla baseline. A room that
-  // loads its own slot 2 (tileset_row[2] != 0) overrides this immediately.
-  g_ram[kRam_EnemyShuffleVanPos2] = g_ram[0xC2FE];
+  // Reset the sheet-reshuffle inheritance shadow to 0 = "not established". The
+  // first room that loads its OWN slot 2 (tileset_row[2] != 0) establishes it;
+  // until then, a room that INHERITS slot 2 (and so resolves van2 == 0) is left
+  // untouched by the van2 == 0 guard — avoids reshuffling/restoring from the
+  // stale file-select/menu sheet that happens to be loaded at slot activation.
+  g_ram[kRam_EnemyShuffleVanPos2] = 0;
   return true;
 }
 
 void EnemyShuffle_Deactivate(void) {
   g_enemy_shuffle_active = false;
   g_enemy_shuffle_seed = 0;
+  g_ram[kRam_EnemyShuffleVanPos2] = 0;  // drop the inheritance shadow
 }
 
 bool EnemyShuffle_IsActive(void) {
@@ -758,6 +773,10 @@ void EnemyShuffle_SelfCheck(void) {
       enemy_selfcheck_die("a slot-3 boss (Armos Knights) failed to pin slot 2");
     if (!type_blocks_pos2(0x54))  // Lanmolas: another slot-3 boss ⇒ must pin
       enemy_selfcheck_die("a slot-3 boss (Lanmolas) failed to pin slot 2");
+    if (!type_blocks_pos2(0x16))  // Sahasrahla/Aginah NPC (sub2=76) — audit HIGH regression guard
+      enemy_selfcheck_die("Sahasrahla/Aginah (slot-2 NPC) failed to pin slot 2");
+    if (!type_blocks_pos2(0xBC))  // Drunk-in-the-Inn NPC (sub2=74) — audit HIGH regression guard
+      enemy_selfcheck_die("Drunk-in-the-Inn (slot-2 NPC) failed to pin slot 2");
     if (!type_blocks_pos2(0x05))  // unclassified id ⇒ pins (conservative)
       enemy_selfcheck_die("an unknown type failed to pin slot 2");
     if (type_blocks_pos2(0x1C))   // Statue: known, slot-3 object ⇒ does NOT pin slot 2
