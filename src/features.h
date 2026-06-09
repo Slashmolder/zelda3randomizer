@@ -27,18 +27,21 @@
 //                                         restores g_ram but not the C-static
 //                                         RandoSettings) keeps the swordless
 //                                         runtime patches firing.
-//   0x662       kRam_EnemyShuffleVanPos2 (1 byte) — rando: the vanilla-resolved
-//                                         sprite GFX subgroup-2 sheet for the
-//                                         current room/area, tracked by the
-//                                         enemy-shuffle SHEET reshuffle so an
-//                                         inherited (kSpriteTilesets slot 2 == 0)
-//                                         room can be restored to vanilla instead
-//                                         of a leaked reshuffle. Snapshot-safe.
-//   0x663-0x667 reserved                 (enemy-shuffle sheet-reshuffle PLAYTEST
+//   0x662-0x664 kRam_EnemyShuffleVanPos2 (3 bytes) — rando: the vanilla-resolved
+//                                         sprite GFX subgroup sheet for slots
+//                                         0,1,2 of the current room/area, tracked
+//                                         by the enemy-shuffle SHEET reshuffle so
+//                                         an inherited (kSpriteTilesets slot == 0)
+//                                         room is restored to vanilla instead of a
+//                                         leaked reshuffle. Snapshot-safe. (The
+//                                         enum name keeps its original ...VanPos2
+//                                         spelling; it is the base of the 3-byte
+//                                         per-slot shadow array.)
+//   0x665-0x667 reserved                 (enemy-shuffle sheet-reshuffle PLAYTEST
 //                                         diagnostics under ES_RESHUFFLE_DIAG —
-//                                         hook-calls / slot-2-changed / ineligible
-//                                         / last-vanilla / last-chosen; freed when
-//                                         the diag flag is turned off before merge)
+//                                         hook-calls / cumulative-slots-changed /
+//                                         last-room-blocked-mask; freed when the
+//                                         diag flag is turned off before merge)
 //   0x668-0x66f reserved                 (8 bytes forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
