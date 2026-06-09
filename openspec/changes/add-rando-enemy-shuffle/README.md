@@ -4,7 +4,7 @@ A randomizer **enemy shuffle** axis: randomize **which enemy spawns** in each du
 
 ## Status
 
-**Proposal — not yet implemented.** Authored 2026-06-07; revised 2026-06-08 after a fresh-eyes audit (3 HIGH / 5 MED folded in — see `design.md` "Audit notes"). Scope (owner decision): **sprite-type substitution only** (MVP), as a **randomizer slot axis**. HP/damage/killable-thief/bush/absorbables are deferred follow-on axes (`tasks.md §7`).
+**MVP implemented + squash-merged to main (2026-06-08, `807cce8`).** Sprite-type substitution is live (default-off): build-verified, `--rando-selftest` green, corpus byte-identical, runtime-confirmed substituting. **KNOWN LIMITATION:** low variety (swaps limited to already-loaded sheets + the conservative table). The variety unlock is the **sheet-group reshuffle** (`design.md` D4), deferred; render/crash/softlock playtest also pending. Scope (owner decision): **sprite-type substitution only** (MVP); HP/damage/killable-thief/bush/absorbables are deferred follow-on axes (`tasks.md §7`).
 
 ## Read these in order
 
