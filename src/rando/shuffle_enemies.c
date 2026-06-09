@@ -439,6 +439,17 @@ static bool type_is_boss(uint8 t) {
   return false;
 }
 
+// Dungeon overlord spawn-sheet need (GENERATED), indexed by overlord_type — the
+// room-data src[2] of an x>=0xe0 entry (Dungeon_LoadSingleOverlord writes it to
+// overlord_type[k]; Enemizer numbers the same overlord 0x100+type). bits 3..0 =
+// the slots the overlord's SPAWNED sprite needs. A non-zero entry pins ONLY those
+// slots (the spawner room can reshuffle the others); a 0 entry (incl. unknown
+// overlords, MovingFloor, the boss-spawning ArmosCoordinator, BombTrap) makes the
+// room pin ALL slots — conservative, since the spawned sprite bypasses the picker.
+static const uint8 kOverlordNeed[32] = {
+  [0x02]=0x04, [0x03]=0x04, [0x05]=0x01, [0x06]=0x04, [0x08]=0x02, [0x09]=0x04, [0x0A]=0x08, [0x0B]=0x08, [0x10]=0x04, [0x11]=0x04, [0x12]=0x04, [0x13]=0x04, [0x14]=0x08, [0x15]=0x04, [0x16]=0x02, [0x17]=0x01, [0x18]=0x01,
+};
+
 // A present sprite PINS the slots it needs (so we must not reshuffle them).
 // Randomizable enemies never pin (the picker substitutes them). Pure.
 static bool type_blocks_slot(uint8 t, int slot) {
@@ -475,7 +486,7 @@ static uint8 choose_slot_sheet(int slot, uint8 van, uint64 key, bool is_dungeon)
 // x>=0xe0=overlord. Overworld list: {b,b,type} until 0xff, 0xf4=count,
 // type>=0xf3=overlord.
 static uint8 room_blocked_slots(bool is_dungeon, uint16 key) {
-  const uint8 ALL = (uint8)((1u << ES_RESHUFFLE_SLOTS) - 1u);  // 0x07
+  const uint8 ALL = (uint8)((1u << ES_RESHUFFLE_SLOTS) - 1u);  // 0x0F
   const uint8 *src;
   if (is_dungeon) { src = Dungeon_GetRoomSpritePtr(key); src++; }
   else            { src = GetOverworldSpritePtr((int)key); }
@@ -485,10 +496,19 @@ static uint8 room_blocked_slots(bool is_dungeon, uint16 key) {
     uint8 type = src[2];
     if (is_dungeon) {
       if (type == 0xe4) continue;     // control entry
-      if (src[1] >= 0xe0) return ALL; // overlord
+      if (src[1] >= 0xe0) {           // overlord — pin ONLY the slots its SPAWNED
+        // sprite needs (decoded from overlord_type = src[2]); the rest of the
+        // room can still reshuffle. A 0 entry (unknown / no-spawn-sheet / the
+        // boss-spawning ArmosCoordinator) conservatively pins ALL slots.
+        uint8 on = (type < 32) ? kOverlordNeed[type] : 0;
+        if (on == 0) return ALL;
+        blocked |= on;
+        if (blocked == ALL) return ALL;
+        continue;
+      }
     } else {
       if (type == 0xf4) continue;     // sprite-count marker
-      if (type >= 0xf3) return ALL;   // overlord
+      if (type >= 0xf3) return ALL;   // overlord (overworld decode is a future micro-opt)
     }
     if (table_is_randomizable(type)) continue;          // substituted by the picker
     if (type_is_boss(type) || !type_is_known(type)) return ALL;
@@ -853,6 +873,20 @@ void EnemyShuffle_SelfCheck(void) {
       enemy_selfcheck_die("Drunk-in-the-Inn failed to pin its slots");
     if (type_blocks_slot(0x1C, 2))   // Statue: slot-3 object ⇒ does NOT pin slot 2
       enemy_selfcheck_die("a slot-3 object wrongly pinned slot 2");
+
+    // (c2) Overlord spawn-slot decode (kOverlordNeed) — pins only the spawned
+    // sprite's slot; no-spawn-sheet overlords (incl. the boss-spawning
+    // ArmosCoordinator 0x19) must be 0 → the runtime pins ALL.
+    if (kOverlordNeed[0x15] != 0x04)  // WizzrobeSpawner → slot 2 (Wizzrobe 37/41)
+      enemy_selfcheck_die("WizzrobeSpawner overlord need wrong");
+    if (kOverlordNeed[0x05] != 0x01)  // FallingStalfos → slot 0 (StalfosHead 31)
+      enemy_selfcheck_die("FallingStalfos overlord need wrong");
+    if (kOverlordNeed[0x09] != 0x04)  // WallmasterSpawner → slot 2 (Wallmaster 35)
+      enemy_selfcheck_die("WallmasterSpawner overlord need wrong");
+    if (kOverlordNeed[0x07] != 0x00)  // MovingFloor spawns no sheet sprite ⇒ pin-all
+      enemy_selfcheck_die("MovingFloor overlord should have no spawn-need (pin-all)");
+    if (kOverlordNeed[0x19] != 0x00)  // ArmosCoordinator spawns a BOSS ⇒ pin-all
+      enemy_selfcheck_die("ArmosCoordinator overlord must be pin-all (boss safety)");
 
     // (d) choose_slot_sheet: deterministic, in pool ∪ {van}, non-zero, vanilla-incl.
     for (int slot = 0; slot < ES_RESHUFFLE_SLOTS; slot++) {

@@ -248,6 +248,25 @@ print("};")
 print()
 print("static const uint8 kEsBossTypes[] = {\n  " + fmt_ids(boss_ids) + "\n};")
 print()
+# Dungeon overlord spawn-sheet need, indexed by overlord_type (= Enemizer id -
+# 0x100 = the room-data src[2] for an x>=0xe0 entry). bits 3..0 = the slots the
+# overlord's SPAWNED sprite needs (Enemizer's AddSubgroupN on the 0x10N entry).
+# An overlord with a non-zero mask pins ONLY those slots (frees the rest);
+# overlords with NO spawn-sheet (MovingFloor 0x07, ArmosCoordinator 0x19 which
+# spawns a BOSS, BombTrap 0x1A) get 0 → the runtime conservatively pins ALL slots.
+ov_need = {}
+for sid, e in ents.items():
+    if 0x100 <= sid <= 0x1FF:
+        m = 0
+        for p in range(4):
+            if e["subs"][p]:
+                m |= (1 << p)
+        if m:
+            ov_need[sid - 0x100] = m
+print("static const uint8 kOverlordNeed[32] = {")
+print("  " + ", ".join(f"[0x{t:02X}]=0x{ov_need[t]:02X}" for t in sorted(ov_need)) + ",")
+print("};")
+print()
 print("static const EnemyConstraint kEnemyTable[ES_TABLE_LEN] = {")
 for sid, name, flagexpr, sheets in rows:
     sh = ", ".join(str(s) for s in sheets)
