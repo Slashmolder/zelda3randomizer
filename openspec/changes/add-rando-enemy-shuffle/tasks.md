@@ -98,6 +98,27 @@
 > changed / last blocked-mask). Still runtime-only — corpus **0/112**, kGen stays
 > **62**. The Zora "hybrid" bug taught the rule now enforced: **every enemy must
 > list ALL its slots** (generator + selfcheck guard it).
+>
+> **As-built v3 (owner: "be complete" — slot 3 + overlord decode + HP/damage).**
+> Three more axes, each its own revertable commit:
+> 1. **Slot 3** (all 4 subgroup slots): `ES_RESHUFFLE_SLOTS` 3→4. Slot 3 is mostly
+>    objects (statues/switches on 82/83 pin it via `kSheetNeed` bit3, so it
+>    reshuffles rarely) but carries Armos/Tektite 16, Buzzblob/Bush Hoarder 17,
+>    Pikit 27. Pools: dungeon `{16}`, overworld `{17,16,27}`. 4-byte shadow now
+>    0x662..0x665; **diag moved to 0x666 (calls) / 0x667 (cumulative slots-changed)
+>    / 0x668 (last blocked-mask)**.
+> 2. **Dungeon overlord decode**: instead of pinning ALL slots on any overlord,
+>    decode `overlord_type = src[2]` (Enemizer id 0x100+type — verified against
+>    `kOverlordFuncs`) and pin ONLY the slots its SPAWNED sprite needs (generated
+>    `kOverlordNeed[32]`), freeing the rest of spawner/trap rooms. No-spawn-sheet
+>    overlords (the boss-spawning ArmosCoordinator 0x19, MovingFloor, BombTrap,
+>    unknown) stay pin-ALL. Overworld overlords still pin-all (future micro-opt).
+> 3. **HP / contact-damage randomization** (`SpritePrep_LoadProperties` hook):
+>    per-(seed,type) HP ×[0.5..2.0] clamped [1,255] (0-HP sprites untouched →
+>    NPCs/objects unaffected; softlock-safe — never unkillable, logic-free); damage
+>    is a flag-preserving ±1 *class* nudge on plain values 1..8 only (`bump_damage`
+>    is `class | flags`). Always-on with `enemy_shuffle`; revert the single commit
+>    to drop it. Still corpus **0/112**, kGen **62** (all runtime, placement-orthogonal).
 
 - [x] **Why / true-random.** Re-assigns subgroup SLOT 2 (the themed-enemy slot) so the picker (which reads the LIVE `sprite_gfx_subset_*`) draws a wider, cross-family pool. Vanilla slot-2 sheet is ALWAYS a candidate (vanilla-inclusive) — `choose_pos2` picks uniformly over `{12,23,28,35,38,40,46} ∪ {vanilla}`.
 - [x] **Where (zelda3).** Reordered `Gfx_LoadSpritesInner` to resolve all 4 ids then hook then decompress (behavior-identical); `InitializeTilesets` hook inserted after its 4-id resolve. The hook rewrites `sprite_gfx_subset_2` (g_ram 0xC2FE) BEFORE decompress so VRAM + picker agree; cached-redecompress paths (mirror warp etc.) reproduce it for free. Room/area sprite TYPE list walked at load time via new `Dungeon_GetRoomSpritePtr` / existing `GetOverworldSpritePtr` (asset blob — list available before parse; key on `dungeon_room_index` / `overworld_area_index`).
