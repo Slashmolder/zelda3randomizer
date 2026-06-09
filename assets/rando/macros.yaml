@@ -697,7 +697,12 @@ macros:
       OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND NOT
       OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches) is true only at logic==2
       (the non-monotonic-enum problem — see CanPearlBypass + design.md D4).
-      NOT restored → US-1.0 unverified.
+      US-1.0 status = us10-different (romdiff confirm, 2026-06-09): NOT JP-only-
+      patched, but the mirror-warp DESTINATION/camera-bound math is version-
+      refactored — US MirrorWarp_FinalizeAndLoadDestination ($82B260) uses the
+      $7F5B00,x special-area table where JP hardcodes via pendant checks. The fork
+      ports the US side, so US-1.0 wrap behavior is the preserved target; JP wrap
+      setups may not transfer 1:1. Static-analysis finding — confirm by playtest.
 
   - name: CanOneFrameClipOW
     parameters: []
@@ -716,7 +721,12 @@ macros:
     notes: |
       ALTTPR `config('canTransitionWrapped', false)` — transition-wrap routing.
       MajorGlitches-EXCLUSIVE (line 36; absent from OWG and HMG). MG-exclusive
-      form (true only at logic==2). NOT restored → US-1.0 unverified.
+      form (true only at logic==2). US-1.0 status = us10-different (romdiff
+      confirm, 2026-06-09): NOT JP-only-patched — the transition/scroll routines
+      are byte-identical JP↔US, but the screen-ENTRY destination math is version-
+      refactored (US Overworld_FinalizeEntryOntoScreen $82C242 uses the $7F5B00,x
+      table where JP hardcodes). Fork ports the US side; JP transition-wrap setups
+      may not transfer 1:1. Static-analysis finding — confirm by playtest.
 
   # ===========================================================================
   # hasABottle — at least one bottle of any kind.
