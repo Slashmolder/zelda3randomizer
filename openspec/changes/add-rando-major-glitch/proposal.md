@@ -24,6 +24,7 @@ These two are Phase D because they introduce significantly more complex predicat
 
 - `randomizer-core`: MODIFIED Requirement on `Settings canonical serialization order (normative)` to confirm the `logic` enum un-pin extends to values 3 and 4.
 - `randomizer-logic`: MODIFIED Requirement on `OP_GLITCH_LEVEL_AT_LEAST` (Phase B added the predicate handler; this change extends the supported threshold space to include `HybridMajorGlitches` and `NoLogic` short-circuit semantics).
+- `jp-glitch-restoration`: MODIFIED Requirement on `Interaction with the randomizer fake-flippers placement trick` — the close-out pass (D6) couples glitch-logic seeds to `kFeatures0_RestoreJpGlitches` (force-on), turning the previously-"unsupported" fake-flippers-trick + flag-off combination into a SUPPORTED one. (Frontier F1–F3, F4-partial also landed in this pass — see `tasks.md`.)
 
 ## Impact
 

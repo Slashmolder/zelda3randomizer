@@ -141,16 +141,21 @@ unknown names are a hard error). The 8 trick bits:
 The 3 placeholder bits exist in the settings field but no logic predicate reads
 them; enabling one has no placement effect (and surfaces the unverified warning).
 
-> **Unsupported combination — `fake-flippers` trick + runtime JP-glitch flag OFF.**
-> The `fake-flippers` *placement* trick (above) only tells the placer it MAY
-> assume a flipperless swim; it does **not** make swimming executable at runtime.
-> The runtime side is the separate `[Features] RestoreJpGlitches` toggle
-> (`kFeatures0_RestoreJpGlitches`, the in-game/native-window "Restore JP 1.0
-> glitches" checkbox). Enabling the `fake-flippers` trick while that runtime flag
-> is **off** is unsupported: the placer can route an item behind a swim the
-> player cannot perform → unreachable item / soft-softlock. The two are **not**
-> auto-coupled (auto-coupling is a future change); keep them in sync manually. See
-> `openspec/changes/archive/2026-06-09-add-jp-glitch-restoration/`.
+> **Glitch seeds auto-enable the JP-glitch runtime flag (`add-rando-major-glitch`
+> D6).** The `fake-flippers` *placement* trick only tells the placer it MAY assume
+> a flipperless swim; the runtime side is the `[Features] RestoreJpGlitches` toggle
+> (`kFeatures0_RestoreJpGlitches`, the "Restore JP 1.0 glitches" checkbox). To
+> avoid routing an item behind a glitch the build can't perform, any seed that
+> **assumes a restored JP-1.0 glitch** — `logic >= OverworldGlitches`, OR the
+> `fake-flippers` trick enabled — now **forces** that flag on at runtime: at
+> generate time (via the slot's `recommended_features0`) and on every slot load
+> (`Rando_ActivateSidecarSlot`, so reloads and imported share strings are covered).
+> Only `fake-flippers` among the tricks couples (it maps 1:1 to a restored glitch);
+> a plain `logic=NoGlitches`/non-glitch-trick seed never gets the flag forced.
+> Note this guarantees the runtime can perform the **restored** subset (Fake
+> Flippers + Superspeed); an OWG/HMG/MG seed may still route through an
+> un-restored technique (boots-clip, mirror-clip, water-walk, one-frame-clip, …)
+> that this US-1.0 build does not perform — those tiers remain playtest-pending.
 
 ### Tricks / glitch logic — ROM-version verification
 
@@ -172,8 +177,14 @@ When a seed enables a trick (or reaches a glitch level) whose status is
 `fallback_warnings` gains an `unverified_tricks_enabled` entry naming the offenders
 — informational, so race admins / seed validators can decide whether to accept.
 `cross-version` and `verified-us10` never warn. The current baseline ships every
-wired trick as `untested-on-us10` except `dark-room-nav` (`cross-version`);
-per-trick US-1.0 verification is a follow-on playtest workstream.
+wired trick as `untested-on-us10` except `dark-room-nav` (`cross-version`) and
+`fake-flippers` (`verified-us10` — Fake Flippers was restored + playtest-confirmed
+by `add-jp-glitch-restoration`, and `add-rando-major-glitch` D6 force-enables the
+runtime flag for any fake-flippers seed, so the assumed swim is always
+executable). The glitch *levels* stay `untested-on-us10` — each bundles
+techniques the JP-glitch restoration does not cover (`canSuperSpeed` is performable
+but has no isolable registry entry; the rest are un-restored). Per-trick/-tier
+US-1.0 verification is a follow-on playtest workstream.
 
 **Upgrading a trick to `verified-us10`** (contributor guide): perform the trick
 end-to-end on a real US 1.0 build at the gated location, record the date + your
@@ -1127,7 +1138,7 @@ Items folded into the changes above:
 |---|---|---|---|
 | D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/archive/2026-06-02-add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | ✅ Archived 2026-06-02 |
 | D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Stub |
-| D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level. Extends Phase B #5's `OP_GLITCH_LEVEL_AT_LEAST` to support `HybridMajorGlitches` + `NoLogic`. | Stub |
+| D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level: `HybridMajorGlitches` + `NoLogic` un-pin + NoLogic reachability short-circuit (logic graph merged to main). **Close-out pass** (D6 couples glitch seeds to `kFeatures0_RestoreJpGlitches`; F1/F3 reclassify the raw `major_glitches` thresholds to first-class `CanOneFrameClipOW`/`CanOneFrameClipUW` macros, closing canOneFrameClipOW at HMG; F2 authors the 9 missing technique macros; F4 flips `fake-flippers` → `verified-us10`). kGen 62. | Applied; close-out playtest-pending |
 | D4 | [`add-rando-auto-tracker`](../openspec/changes/archive/2026-06-05-add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients (NDJSON; see *Auto-tracker (external clients)* above). | ✅ Archived 2026-06-05 |
 
 All Phase C/D changes are proposal-only stubs (proposal + 1-3 minimal spec deltas) — full design + tasks deferred to apply-time. Phase C requires Phase B #4a archived; Phase D D3 requires Phase B #5 archived.

@@ -81,20 +81,45 @@ Status legend: `[x]` shipped this change · `[~]` partial / frontier documented 
   logic>=4; (2) design.md said `==NoLogic(4)`, code uses robust `>=4` —
   reconciled the doc. Re-validated green.
 
-## Frontier (NOT done this change — documented for the next pass)
+## 9. Couple glitch-logic seeds to the JP-glitch runtime flag — D6
 
-- [ ] F1 Per-site reclassification of the ~40 raw `OP_GLITCH_LEVEL_AT_LEAST(
-  major_glitches)` threshold sites into OWG-group / HMG+MG (`>=2`) / MG-exclusive
-  (`>=2 AND NOT >=3`). Needs per-site ALTTPR technique ID (which of
-  canOneFrameClipOW/UW, canMirrorClip, canWaterWalk, canMirrorWrap, ... each
-  stands for). Until then HMG over-reaches MG at these specific sites.
-- [ ] F2 First-class macros for the un-modeled techniques (canSuperSpeed /
-  canSpinSpeed-composed, canMirrorClip, canWaterWalk, canSuperBunny,
-  canDungeonRevive, canTransitionWrapped, canOneFrameClipUW) so the raw thresholds
-  read like the PHP.
-- [ ] F3 Inverted-region glitch parity (the Inverted Region closures use the same
-  flags heavily — `Inverted/DarkWorld/NorthEast.php` etc.).
-- [ ] F4 US-1.0 performability verification per technique/tier (playtest); flip
-  `rom_version_status` as each is confirmed.
+(Close-out pass, 2026-06-08, after `add-jp-glitch-restoration` made the six
+JP-1.0 glitches executable.)
+
+- [x] 9.1 `Rando_SettingsAssumeJpGlitches` (`rando_settings.c`):
+  `logic>=OverworldGlitches OR (tricks & fake_flippers)`. Only fake-flippers
+  among the 8 tricks maps to a restored glitch.
+- [x] 9.2 `Rando_GenerateSlot` ORs the flag into `recommended_features0`;
+  `Rando_ActivateSidecarSlot` force-applies it live (config + wanted mirror +
+  enhanced) on EVERY slot load — the authoritative reload-safe guarantee.
+- [x] 9.3 FORCE-on (not recommend/warn) — a glitch seed without the glitch
+  executable is the worst failure mode. Resolves the JP-glitch spec's
+  `fake-flippers` "unsupported combination" deferral.
+- [x] 9.4 Corpus byte-identical (features0 ≠ canonical; corpus path bypasses
+  `Rando_GenerateSlot`). `Rando_SettingsAssumeJpGlitches` assertions in
+  `Settings_SelfCheck` (`--rando-selftest`). No kGen bump for D6.
+
+## Frontier
+
+- [x] F1 Per-site reclassification of the raw `OP_GLITCH_LEVEL_AT_LEAST(
+  major_glitches)` threshold sites. PHP-verified every standard site against
+  `app/Region/**`: all 30 = `canOneFrameClipOW` (MG-exclusive →
+  `>=2 AND NOT >=3`, closes at HMG); Swamp/Ice = `canOneFrameClipUW` (HMG+MG,
+  digest-neutral rename). Moves ONLY `b-logic-hmg` (verified 1/112). kGen 61→62.
+- [x] F2 First-class macros authored (`CanSuperSpeed`/`CanSuperBunny`/
+  `CanMirrorClip`/`CanWaterWalk`/`CanDungeonRevive`/`CanOneFrameClipUW`/
+  `CanMirrorWrap`/`CanOneFrameClipOW`/`CanTransitionWrapped`), pure level gates,
+  each tier cited by `config/logic.php` line. Digest-neutral (unwired until F1).
+- [x] F3 Inverted-region parity — all 9 inverted sites = `canOneFrameClipOW`
+  (PHP-verified), reclassified. Digest-neutral for existing corpus (all inverted
+  entries logic=0); added `b-logic-hmg-inverted-fast-ganon` coverage.
+- [~] F4 US-1.0 performability: `fake-flippers` flipped `verified-us10` (Fake
+  Flippers restored + playtest-confirmed + D6 forces the flag). The glitch LEVELS
+  + `canSuperSpeed` (no isolable entry) + the 10 un-restored techniques stay
+  `untested-on-us10` — playtest-pending. See the performability ledger (design.md
+  D6). **Note: surfacing the deliberately-DROPPED PHP disjuncts (canSuperSpeed/
+  canMirrorClip/canSuperBunny/canWaterWalk/canDungeonRevive at the ~30 sites) is a
+  further frontier — F1 only reclassified the EXISTING raw threshold, it did not
+  add new reachability paths.**
 - [ ] F5 NoLogic `can_place` short-circuit ("items literally anywhere") if a
   use-case needs it — currently confinement is preserved (D1).
