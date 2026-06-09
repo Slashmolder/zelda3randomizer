@@ -116,10 +116,28 @@ JP-1.0 glitches executable.)
 - [~] F4 US-1.0 performability: `fake-flippers` flipped `verified-us10` (Fake
   Flippers restored + playtest-confirmed + D6 forces the flag). The glitch LEVELS
   + `canSuperSpeed` (no isolable entry) + the 10 un-restored techniques stay
-  `untested-on-us10` — playtest-pending. See the performability ledger (design.md
-  D6). **Note: surfacing the deliberately-DROPPED PHP disjuncts (canSuperSpeed/
-  canMirrorClip/canSuperBunny/canWaterWalk/canDungeonRevive at the ~30 sites) is a
-  further frontier — F1 only reclassified the EXISTING raw threshold, it did not
-  add new reachability paths.**
-- [ ] F5 NoLogic `can_place` short-circuit ("items literally anywhere") if a
-  use-case needs it — currently confinement is preserved (D1).
+  `untested-on-us10` — playtest-pending. **Now GROUNDED** (JP-vs-US ROM sweep +
+  per-technique careful_diff, 2026-06-09 — see TEN_TECHNIQUES.md): NONE of the 10
+  is `jp10-only` (no US patch removes them); 8 are cross-version ROM with faithful
+  fork substrate (frame-feasibility playtest-pending); `canMirrorWrap` +
+  `canTransitionWrapped` are `us10-different` (version-refactored camera-dest math,
+  fork ports the US side). op_registry notes updated.
+- [~] F1 follow-on (PARTIAL) Surface the deliberately-DROPPED ALTTPR disjuncts at
+  the reclassified sites using the F2 macros. Clean/non-nested sites done
+  (canSuperBunny standalone + &&Mirror, canSuperSpeed&&canSpinSpeed,
+  canWaterWalk&&Boots, inverted Ice canOneFrameClipUW+canSuperSpeed), each
+  PHP-verified; ONLY the two HMG entries move (canSuperBunny opens at HMG;
+  canSuperSpeed/waterWalk are ⊆ canBootsClip → digest-cosmetic). kGen 62→63.
+  DEFERRED (playtest-pending — add unverified-tech assumptions, hard to validate
+  headlessly): the nested/conditional/ambiguous sites (TR/GT dungeonRevive,
+  DM-East mirror-clip, Mimic Cave, inverted King's Tomb hasABottle(2), inverted
+  King Zora cross-region) — fully PHP-mapped in TEN_TECHNIQUES.md.
+- [x] F5 NoLogic `can_place` short-circuit (built per owner request). At
+  logic==NoLogic the LOGIC-level can_place predicates (NotADungeonItem ban,
+  item-locked slots) are short-circuited too — placement no longer LOGIC-
+  constrained. The structural dungeon-item MODE containment
+  (`dungeon_mode_accepts_item`, outside the predicate VM) is deliberately STILL
+  respected (Dungeon mode keeps keys grantable — a MODE choice, not logic; full
+  mode-override is a documented non-goal). Verified F5 changes NoLogic+wild-keys
+  (c0f5e87c→8be3e395) while default Vanilla-keys NoLogic is byte-identical. kGen
+  63→64; new `b-logic-nologic-wildkeys` corpus entry pins it.

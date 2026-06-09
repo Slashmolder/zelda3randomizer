@@ -139,9 +139,21 @@ that reachability/goal-completability pass vacuously and the seed generate +
 write a spoiler — they say nothing about confinement. Keeping `can_place` live
 preserves the placer's structural invariants (dungeon small/big keys stay in
 placeable dungeon slots), so a NoLogic seed remains **structurally valid and
-loadable** at runtime even though progression is un-gated. Short-circuiting
-`can_place` too ("items literally anywhere") risks ungrantable runtime keys and
-is *not* required by the spec; deferred. Documented trade-off, not an oversight.
+loadable** at runtime even though progression is un-gated.
+
+**F5 update (close-out, built per owner request):** the can_place short-circuit
+under NoLogic is now ALSO applied — but only to the **LOGIC-level** can_place
+predicates (the NotADungeonItem fill ban, item-locked slots like Swamp Palace
+Entrance). The **structural dungeon-item MODE containment**
+(`dungeon_mode_accepts_item` in `rando_placement.c`, a C check OUTSIDE the
+predicate VM) is deliberately STILL respected: "Dungeon-mode small key stays in
+its dungeon" is an explicit MODE choice and keeps Dungeon-mode keys
+runtime-grantable, not a logic rule. So F5 means "NoLogic ignores placement
+LOGIC", NOT "dungeon keys anywhere even in Dungeon mode" — the latter (full
+mode-override, the original "ungrantable runtime keys" risk this paragraph
+flagged) remains a deliberate non-goal. F5 changes NoLogic + SHUFFLED-key
+placement (verified A/B at seed 0xF5F5: c0f5e87c→8be3e395) while default
+Vanilla-keys NoLogic (dungeon items pre-pinned) is byte-identical.
 
 Determinism: the short-circuit fires only at `logic==4`, which no pre-existing
 corpus seed uses → **zero non-NoLogic digests move.** The NoLogic placement
