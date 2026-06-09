@@ -1,0 +1,88 @@
+// shuffle_enemies.{c,h} — add-rando-enemy-shuffle (sprite-type substitution).
+//
+// Randomizes WHICH enemy sprite spawns in each dungeon room / overworld area,
+// constrained so nothing crashes (GFX-sheet-safe) and nothing softlocks
+// (killable in key/shutter/water rooms). A randomizer slot axis: deterministic
+// from (settings, seed), reproducible for races. Mirrors the boss-shuffle
+// install precedent (shuffle_boss.{c,h}) exactly: a one-shot Generate that
+// installs a module-global, a Deactivate that tears it down on slot teardown /
+// the fail-closed invalid-settings path, and a SelfCheck wired into
+// Rando_RunAllSelfChecks.
+//
+// SCOPE (MVP, owner decision): sprite-TYPE substitution only. NO HP / damage /
+// killable-thief / bush-enemy / absorbable axes (deferred follow-ons). NO
+// sprite-group subgroup re-shuffle — the pick stays within the sheets a room
+// ALREADY loads (smaller pool, zero VRAM bookkeeping, zero crash risk).
+//
+// Reference (constraints, NOT code): Enemizer SpriteRequirement.cs (MIT). We
+// mine the per-sprite flags + room exclusion lists; the mechanism is our own.
+//
+// BEATABILITY: logic models NO per-room kill-clear (every CanKill<X> macro is a
+// player-firepower test over bosses/mini-bosses, all EXCLUDED here — see
+// design.md D7), so a table bug does NOT move placement_digest and is invisible
+// to the corpus / --rando-selftest. The constraint table is therefore the SOLE
+// beatability enforcer; unknown-safety sprites are marked do_not_randomize.
+
+#ifndef ZELDA3_RANDO_SHUFFLE_ENEMIES_H_
+#define ZELDA3_RANDO_SHUFFLE_ENEMIES_H_
+
+#include "../types.h"
+
+struct RandoSettings;
+
+// One-shot generation + INSTALL entry. Deterministic from (settings, seed_u64)
+// via a dedicated xoshiro256** stream forked off the seed (so the fill RNG is
+// unperturbed and the result is cross-platform self-consistent). Installs a
+// module-global "active" flag + the per-seed RNG seed consumed at sprite load.
+//
+// When enemy_shuffle is off (or settings == NULL) this is a no-op install: the
+// module reports inactive and the load paths take the vanilla branch (so an
+// off slot is byte-identical to a non-shuffled slot). Returns true on success.
+//
+// NOTE: unlike boss shuffle there is no precomputed assignment table — the
+// substitution is computed per-room/per-area at load time, because the
+// candidate pool depends on which GFX sheets are LIVE-loaded for that
+// room/area (sprite_gfx_subset_0..3), which is load-history dependent and not
+// known at generation time. Determinism comes from a per-room/per-area RNG
+// derived from (seed, room/area key), not from a stored permutation.
+bool EnemyShuffle_Generate(const struct RandoSettings *settings,
+                           uint64 seed_u64);
+
+// Clear the installed shuffle (slot teardown / fail-closed invalid-settings
+// path). After this the load paths are pure passthroughs (vanilla enemies)
+// until the next EnemyShuffle_Generate. Pairs with Rando_DeactivateSlot so a
+// shuffle slot's substitution can't leak into a later (non-shuffle) slot or
+// vanilla play — mirrors BossShuffle_Deactivate / DropShuffle_Deactivate.
+void EnemyShuffle_Deactivate(void);
+
+// True iff an enemy shuffle is installed AND enabled for the active slot.
+// The sprite load paths gate on this before doing any work.
+bool EnemyShuffle_IsActive(void);
+
+// === Sprite-load substitution hooks (consumed in src/sprite.c) ===
+//
+// DUNGEON: given the room-data type byte for a single sprite entry in
+// `room` (dungeon_room_index2) at list position `slot`, return the substituted
+// sprite type (or the input unchanged when no substitution applies: shuffle
+// inactive, the type is excluded/marker, or no valid candidate exists). The
+// caller writes the result into sprite_type[k] — a pure type-byte swap; the
+// bit-packed y/x bytes are NOT touched. `slot` (the entry's index in the room's
+// sprite list) is mixed into the per-room RNG so two identical types in one
+// room can map to different replacements deterministically.
+uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type);
+
+// OVERWORLD: given the area-data type byte for an overworld sprite entry in
+// `area` (overworld_area_index) at list position `slot`, return the substituted
+// sprite type (or the input unchanged when no substitution applies). The caller
+// stores `pick + 1` into sprite_where_in_overworld (preserving the +1 bias).
+uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type);
+
+// Self-check (--rando-selftest): asserts determinism, the off→passthrough
+// contract, that excluded types/markers are never substituted, that every
+// candidate produced for a synthetic loaded-sheet set is in-sheet + killable /
+// key-capable / water as required, and the structural integrity of the
+// constraint table. exit(2) on failure. MUST be registered in
+// Rando_RunAllSelfChecks or it won't run.
+void EnemyShuffle_SelfCheck(void);
+
+#endif  // ZELDA3_RANDO_SHUFFLE_ENEMIES_H_

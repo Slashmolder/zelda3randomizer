@@ -18,6 +18,7 @@
 #include "rando_shuffles.h"
 #include "shuffle_boss.h"   // BossShuffle_Generate/_Deactivate/_SelfCheck (Slice 7)
 #include "shuffle_drops.h"  // DropShuffle_Generate/_Deactivate/_SelfCheck (Slice 8)
+#include "shuffle_enemies.h"  // EnemyShuffle_Generate/_Deactivate/_SelfCheck (enemy shuffle)
 #include "rando_save.h"
 #include "rando_generate.h"  // RandoGenerate_SelfCheck (slot SRAM-init self-test)
 #include "rando_snapshot_tail.h"
@@ -1945,6 +1946,13 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       (void)BossShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
                                  g_rando_active_boss_assignment);
       Rando_SetBossAssignment(g_rando_active_boss_assignment);
+      // add-rando-enemy-shuffle — INSTALL the enemy (sprite-type) substitution
+      // for this slot so the runtime swap (EnemyShuffle_PickDungeon/_Overworld
+      // in src/sprite.c) fires. Regenerated deterministically from
+      // (settings, BASE seed) — matching the headless path — so it's
+      // reproducible for races. Off → inactive → vanilla enemies (byte-identical).
+      // Orthogonal to placement (draws no fill RNG, adds no predicate).
+      (void)EnemyShuffle_Generate(&g_rando_active_settings, ss.seed_u64);
       g_rando_active_settings_valid = true;
     }
   }
@@ -1957,6 +1965,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     BossShuffle_Deactivate();
     Rando_SetBossAssignment(NULL);  // logic VM falls back to vanilla boss-kill
     DropShuffle_Deactivate();
+    // add-rando-enemy-shuffle — fail closed: tear down any prior slot's enemy
+    // substitution so it can't leak into this (v1 / snapshot-restored) slot.
+    EnemyShuffle_Deactivate();
   }
 
   // Persist the swordless flag in g_ram so a StateRecorder snapshot captures it
@@ -2023,6 +2034,7 @@ void Rando_DeactivateSlot(void) {
   BossShuffle_Deactivate();
   Rando_SetBossAssignment(NULL);  // logic VM back to vanilla boss-kill fallback
   DropShuffle_Deactivate();
+  EnemyShuffle_Deactivate();  // add-rando-enemy-shuffle — revert to vanilla enemies
   Placement_Install(NULL);
   g_session_placement_table.entries = NULL;
   g_session_placement_table.count = 0;
@@ -3619,6 +3631,7 @@ void Rando_RunAllSelfChecks(void) {
   Shuffles_SelfCheck();
   BossShuffle_SelfCheck();
   DropShuffle_SelfCheck();
+  EnemyShuffle_SelfCheck();  // add-rando-enemy-shuffle
   RandoSave_SelfCheck();
   RandoGenerate_SelfCheck();
   RandoSnapshotTail_SelfCheck();

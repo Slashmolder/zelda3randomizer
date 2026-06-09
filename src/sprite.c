@@ -15,6 +15,7 @@
 #include "assets.h"
 #include "rando/shuffle_boss.h"
 #include "rando/shuffle_drops.h"
+#include "rando/shuffle_enemies.h"  // add-rando-enemy-shuffle (sprite-type substitution)
 #include "rando/rando.h"  // Rando_IsSwordlessActive (swordless Ganon damage)
 #include "rando/location_ids.h"  // LOC_Tower_of_Hera_Basement_Cage (cage-key dispatch)
 #include "rando/item_ids.h"      // ITEM_SmallKey_TowerOfHera (cage-key dispatch)
@@ -3780,7 +3781,8 @@ void Dungeon_LoadSprites() {  // 89c290
   byte_7E0FB1 = dungeon_room_index2 >> 3 & 0xfe;
   byte_7E0FB0 = (dungeon_room_index2 & 0xf) << 1;
   sort_sprites_setting = *src++;
-  for (int k = 0; *src != 0xff; src += 3) {
+  uint8 es_slot = 0;  // add-rando-enemy-shuffle — stable per-entry list position
+  for (int k = 0; *src != 0xff; src += 3, es_slot++) {
     uint8 ent[3] = { src[0], src[1], src[2] };
     // Shift only real boss sprites; leave overlords (x >= 0xe0) + the 0xe4 control
     // entry untouched (their bytes are markers, not coordinates). Shift ONLY the
@@ -3793,6 +3795,17 @@ void Dungeon_LoadSprites() {  // 89c290
       int px = (int)(ent[1] & 0x1f) + dx; if (px < 0) px = 0; else if (px > 0x1f) px = 0x1f;
       ent[0] = (uint8)((ent[0] & 0xe0) | py);
       ent[1] = (uint8)((ent[1] & 0xe0) | px);
+    }
+    // add-rando-enemy-shuffle — substitute the sprite TYPE byte (a pure type-byte
+    // swap; the bit-packed y/x bytes above are NOT touched). Skip control (0xe4)
+    // + overlord (x >= 0xe0) markers so we never re-key on a marker. The pick is
+    // a passthrough when the shuffle is off / the type is excluded / no candidate
+    // exists, so vanilla + enemy-shuffle-off play is byte-identical. dungeon_room_
+    // index2 is the room key (matches the boss-shift src_room selection above —
+    // we deliberately key on the ROOM the player is in, not the redirected
+    // src_room, so substitution is per-visited-room deterministic).
+    if (ent[1] < 0xe0 && ent[2] != 0xe4) {
+      ent[2] = EnemyShuffle_PickDungeon(dungeon_room_index2, es_slot, ent[2]);
     }
     k = Dungeon_LoadSingleSprite(k, ent) + 1;
   }
@@ -3899,7 +3912,8 @@ void Overworld_LoadSprites() {  // 89c4ac
   const uint8 *src = GetOverworldSpritePtr(overworld_area_index);
   uint8 b;
 
-  for (; (b = src[0]) != 0xff; src += 3) {
+  uint8 es_slot = 0;  // add-rando-enemy-shuffle — stable per-entry list position
+  for (; (b = src[0]) != 0xff; src += 3, es_slot++) {
     if (src[2] == 0xf4) {
       byte_7E0FFD++;
       continue;
@@ -3907,7 +3921,16 @@ void Overworld_LoadSprites() {  // 89c4ac
     uint8 r2 = (src[0] >> 4) << 2;
     uint8 r6 = (src[1] >> 4) + r2;
     uint8 r5 = src[1] & 0xf | src[0] << 4;
-    sprite_where_in_overworld[r5 | r6 << 8] = src[2] + 1;
+    // add-rando-enemy-shuffle — substitute the overworld sprite TYPE, then keep
+    // the +1 bias (the stored map value is type+1; overlords are stored as
+    // >= 0xf4 here, i.e. type >= 0xf3). Skip overlord types (>= 0xf3) so we never
+    // re-key a marker; EnemyShuffle_PickOverworld is also a passthrough for
+    // excluded / off / no-candidate cases ⇒ vanilla play byte-identical.
+    uint8 es_type = src[2];
+    if (es_type < 0xf3) {
+      es_type = EnemyShuffle_PickOverworld((uint8)overworld_area_index, es_slot, es_type);
+    }
+    sprite_where_in_overworld[r5 | r6 << 8] = es_type + 1;
   }
 }
 

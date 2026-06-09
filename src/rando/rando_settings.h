@@ -135,7 +135,22 @@ typedef struct RandoSettings {
   // so a seed that can't be made reachable simply fails to generate — lower
   // crystals.tower (0 always works) or reroll. Requires shuffle_dungeon_entrances.
   uint8 shuffle_ganons_tower_entrance;  // bool (advanced)
+  // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis. Binary
+  // on/off, default off. Like boss/drop shuffle this is ORTHOGONAL to item
+  // placement (draws no fill RNG, adds no logic predicate), so it does NOT grow
+  // the canonical layout: it bit-PACKS into the reserved pad bit [26] bit 0 (the
+  // deserializer's permissive trailing pad — the intended extension surface), so
+  // kSettingsCanonicalLen stays 28 and default-settings settings_hash stays
+  // byte-identical. See kEnemyShuffleAxis_* below + Settings_CanonicalSerialize.
+  uint8 enemy_shuffle;  // bool
 } RandoSettings;
+
+// add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
+// [26]). A zero byte == no enemy shuffle (the default), preserving the
+// byte-identical corpus invariant. [26] was previously always-zero reserved pad.
+enum {
+  kEnemyShuffleAxis_Enabled = 1u << 0,
+};
 
 // Phase C — bit positions for the packed entrance-axis byte (canonical [25]).
 // Used by Settings_CanonicalSerialize/Deserialize. A zero byte == no entrance
@@ -159,6 +174,10 @@ enum {
 // Layout per spec — see Settings_CanonicalSerialize.
 // Phase B Slice 7+8 §66: bumped from 24→28 to absorb `hints`, `boss_shuffle`,
 // `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
+// Phase C bit-packs the entrance axes into pad byte [25]; add-rando-enemy-shuffle
+// bit-packs `enemy_shuffle` into pad byte [26] (bit0). LENGTH STAYS 28 — both
+// reused previously-zero pad bytes, so no size-coupling cascade. [27] is the last
+// remaining pad byte.
 #define kSettingsCanonicalLen 28
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal

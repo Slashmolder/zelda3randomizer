@@ -1,45 +1,56 @@
 # Tasks — add-rando-enemy-shuffle
 
+> **Implementation status (2026-06-08, first build-verifiable pass).** The
+> build-verifiable module + plumbing + a CONSERVATIVE first-pass constraint
+> table are landed: WSL `make -j zelda3` (-Werror) green, `--rando-selftest`
+> (incl. `EnemyShuffle_SelfCheck` + the extended `Settings_SelfCheck`) green,
+> corpus regen 0/112 digests changed (placement byte-identical — the spec's
+> core claim verified). NOT done: PLAYTEST (render/crash/softlock — the only net
+> for those, per `[[logic-vs-runtime-gap]]`) and the constraint-table COMPLETENESS
+> (only a small, sound candidate pool is enabled — see §1 notes). HP/damage
+> follow-ons (§7) out of scope. **Deviation:** kGeneratorVersion is **60→61**,
+> not the brief's 58→59 — the worktree base already carried Phase D bumps to 60.
+
 ## 1. Constraint table (the correctness surface — do this first)
 
-- [ ] 1.1 Author a per-enemy-type constraint table over the sprite ids, cross-checking Enemizer's `C:\src\Enemizer\EnemizerLibrary\EnemyRandomizer\SpriteRequirement.cs` against this fork's `Sprite_HEX_*` ids (`src/sprite_main.h`, 178 symbols). Per type: required sheet(s); flags `killable`, **`cannot_have_key` (independent of `killable`)**, `is_water`, **`never_use_dungeon` / `never_use_overworld`**, `is_overlord`/`is_object`/`is_npc`/`is_boss` (exclude), floor-vs-flying, OAM footprint. Conservatively mark unknowns `do_not_randomize`.
-- [ ] 1.2 Decide table form: a source table alongside the existing `kSpriteInit_*[243]` tables (`src/sprite.c:125-251`), or codegen from a YAML. Keep any extracted ROM data gitignored per `CLAUDE.md`; structural sprite-id/flag facts may be inline (named initializers, not a hex blob — the embedded-data guard fails on blobs).
-- [ ] 1.3 Port Enemizer's per-room data that is NOT derivable from room bytes: the shutter/kill-clear room-id list (`NeedKillable_doors` via `Room.IsShutterRoom`), the immovable-sprite room list (~60 rooms, `DontUseImmovableSpritesRooms` `SpriteRequirement.cs:897-956`), the flying-sprite room list, per-sprite `AddDontRandomizeRooms`, and hard excludes (Mimic Cave, Agahnim-tower bridge). Key into a room/area constraint map.
-- [ ] 1.4 Define **key-room safety against the rando placement table** + `NeedKillable_doors` — NOT Enemizer's vanilla key-sprite scan (`DungeonSprite.cs:66`), which is unreliable under item shuffle (the key may be absent / placed elsewhere). A key room's replacement must be `killable && !cannot_have_key`.
-- [ ] 1.5 Ensure the `is_boss` / do-not-randomize exclusion covers **GT mini-boss sprites** (`0x09`/`0x53`/`0x54`, cf. `shuffle_boss.c:214-216`), not just dungeon-boss-room sprites — the GT mini-boss gauntlet gates non-boss chest locations on `CanKill<Boss>`, so substituting those enemies would break the gauntlet (and the boss fight). The excluded set is "all boss + mini-boss sprites."
+- [x] 1.1 Per-enemy-type constraint table authored in `src/rando/shuffle_enemies.c` (`kEnemyTable[256]`), cross-checked against Enemizer `SpriteRequirement.cs` (the Enemizer SpriteId IS the SNES type byte → identity mapping; `Sprite_HEX_*` ids in `sprite_main.h` confirm the symbol names). Flags: `ESF_RANDOMIZABLE`, `ESF_KILLABLE`, `ESF_CANNOT_KEY` (independent of killable), `ESF_WATER`, `ESF_NEVER_DUNGEON`/`ESF_NEVER_OVERWORLD`, `ESF_FLYING`, plus a required-`sheets[]` list. **CONSERVATIVE first pass:** only a SMALL, sound candidate pool (~30 unambiguous killable/common enemies + a few flying/water/key-banned) is `ESF_RANDOMIZABLE`; everything else (NPC/object/overlord/boss/mini-boss/absorbable/unknown) is `do_not_randomize` (the zero default). OAM footprint is NOT yet modelled (see §3.4 / Remaining). **Widen only with playtest** — the table is the SOLE beatability enforcer (logic models no kill-clear).
+- [x] 1.2 Table form = inline named-initializer source table in `shuffle_enemies.c` (structural sprite-id/flag facts, no hex blob — passes the embedded-data guard), alongside the spirit of the `kSpriteInit_*` tables.
+- [x] 1.3 Ported the per-room data: `kHardExcludeRooms` (Mimic Cave 268 + Agahnim-tower bridge 64 — never substitute), `kFlyingExcludeRooms` (210/268), and `kKillableRequiredRooms` (a ported subset of `DontUseImmovableSpritesRooms`). NOTE: the MVP currently enforces killable+key-capable for ALL dungeon rooms (see §1.4), so the immovable/shutter lists are advisory until the pool widens past killable-only.
+- [x] 1.4 Key-room safety is over-approximated CONSERVATIVELY: EVERY dungeon replacement is `killable && !cannot_have_key` (so any key a shuffled placement drops in any room is obtainable, and every shutter/kill-clear door opens) — NOT keyed to the placement table per-room. This is the simplest SOUND model; it over-restricts dungeon variety. A future refinement can relax non-key rooms by consulting the placement table (see Remaining).
+- [x] 1.5 GT mini-bosses `0x09`/`0x53`/`0x54` + all bosses + secondaries (`0xA3`/`0xCC`/`0xCD`) + Agahnim `0x7A` + Ganon `0xD6` are excluded (never `ESF_RANDOMIZABLE`); `EnemyShuffle_SelfCheck` asserts this against `kMustExcludeBossIds`.
 
 ## 2. Logic sweep (confirm enemy shuffle is logic-free — re-run on any logic edit)
 
-- [ ] 2.1 Grep `assets/rando/logic*.yaml` + `logic_parts/**` + **`macros.yaml`** + **`op_registry.yaml`** for any `CanKill<X>` predicate on a **non-boss** enemy, or any location gated on killing a specific enemy type. (The fresh-eyes sweep found only `CanKillBoss(<dungeon>)` + player-firepower macros `CanKillMostThings`/`CanKillEscapeThings` — logic-free confirmed; re-confirm on any future logic change.)
-- [ ] 2.2 If any non-boss kill-gated location ever exists, pin its enemy (exclude from substitution) — the minimal fix, no logic change. Record "enemy shuffle adds no predicate / no `OP_*`; beatability rests SOLELY on the §1 table."
+- [x] 2.1 Swept `assets/rando/logic*.yaml` + `logic_parts/**` + `macros.yaml` + `op_registry.yaml`: every `CanKill<X>` macro is `CanKillBoss`, a per-boss macro (used only at dungeon boss rooms + the GT mini-boss gauntlet — all EXCLUDED sprites), or the player-firepower macros `CanKillMostThings`/`CanKillEscapeThings` (pure inventory tests, the `enemizer.enemyHealth='default'` kill-clear gate explicitly dropped). No non-boss kill-gated location exists. **Logic-free confirmed.**
+- [x] 2.2 No pinning beyond the bosses/mini-bosses already excluded was needed. Enemy shuffle adds no predicate / no `OP_*`; beatability rests SOLELY on the §1 table.
 
 ## 3. Module + install (mirror boss shuffle)
 
-- [ ] 3.1 New `src/rando/shuffle_enemies.{c,h}`: `EnemyShuffle_Generate(settings, seed_u64)` (xoshiro256\*\* fork off the seed) builds the per-(room/area) substitution; `EnemyShuffle_Deactivate` tears it down. Pattern: `src/rando/shuffle_boss.{c,h}`.
-- [ ] 3.2 Install from `Rando_ActivateSidecarSlot` **only on the `g_rando_active_settings_valid` path**, and `EnemyShuffle_Deactivate()` on the invalid / snapshot-restore / v1-slot path + in `Rando_DeactivateSlot` — mirror boss/drop's fail-closed teardown (`rando.c:1904-1960`) so a stale substitution can't leak into a snapshot-restored slot.
-- [ ] 3.3 Patch BOTH load paths (they differ):
-  - **Dungeon** `Dungeon_LoadSingleSprite` (`src/sprite.c:3807`): rewrite `sprite_type[k]` (type-byte swap; do NOT touch the bit-packed y/x — cf. `:3791-3796`). Skip control `0xe4` / overlord `x>=0xe0`.
-  - **Overworld** `Overworld_LoadSprites` (`:3895`): rewrite the stored `sprite_where_in_overworld` value as `pick + 1` (keep the `+1` bias); the spawn is lazy in `Overworld_LoadProximaSpriteIfAlive` (`:3973`). Skip count marker `src[2]==0xf4` / overlord `src[2]>=0xf3` (NOT `x>=0xe0`).
-  - Both: constrain the pick to the **actually-loaded** sheets — resolve `kSpriteTilesets` `0` entries against live `sprite_gfx_subset_N` (`load_gfx.c:627-640`), not the static row.
-- [ ] 3.4 OAM: pick a footprint-compatible replacement so `((sprite_flags2&0x1f)+1)*4` bytes (`src/sprite.c:1164`) isn't overrun. (No init-order fix needed — `flags2` is read at `SpritePrep_LoadProperties` `:4144`, after the load-time swap.)
+- [x] 3.1 New `src/rando/shuffle_enemies.{c,h}`: `EnemyShuffle_Generate(settings, seed_u64)` (dedicated xoshiro256\*\* fork, salt `kEnemyShuffleSalt`) installs a module-global + per-seed RNG seed; `EnemyShuffle_Deactivate` tears it down. NOTE divergence from boss shuffle: no precomputed assignment table — the pick is computed per-room/per-area at LOAD time (the candidate pool depends on the LIVE-loaded sheets, unknown at gen time). Determinism comes from a per-(seed, room/area, slot) RNG.
+- [x] 3.2 Installed in `Rando_ActivateSidecarSlot` on the `g_rando_active_settings_valid` path only; `EnemyShuffle_Deactivate()` on the fail-closed invalid path + in `Rando_DeactivateSlot`.
+- [x] 3.3 Patched BOTH load paths in `src/sprite.c`:
+  - **Dungeon** `Dungeon_LoadSprites`: substitutes `ent[2]` (the type byte) before `Dungeon_LoadSingleSprite` writes `sprite_type[k]` — pure type-byte swap, the bit-packed y/x untouched. Skips control `0xe4` / overlord `x>=0xe0`.
+  - **Overworld** `Overworld_LoadSprites`: rewrites the stored value as `pick + 1` (keeps the `+1` bias). Skips count marker `src[2]==0xf4` / overlord `src[2]>=0xf3`.
+  - Both: the pick is constrained to ACTUALLY-loaded sheets by reading the LIVE `sprite_gfx_subset_0..3` (g_ram 0xC2FC..0xC2FF) directly — which already reflect the `0`-entry inheritance — so the static `kSpriteTilesets` row is never consulted (the 0-inheritance hazard is sidestepped entirely).
+- [ ] 3.4 OAM footprint compatibility is NOT yet modelled (Remaining): the constraint table does not yet record each enemy's OAM byte footprint, so a multi-tile replacement could overrun `((sprite_flags2&0x1f)+1)*4` bytes. Mitigated for now by the conservative pool (mostly 1-2 tile enemies) but UNVERIFIED — a playtest item. No init-order fix needed (`flags2` read at `SpritePrep_LoadProperties`, after the swap).
 
 ## 4. Settings axis + canonical layout
 
-- [ ] 4.1 Add `enemy_shuffle` (uint8) to `RandoSettings` (`src/rando/rando_settings.h`); wire CSV parse + default-off.
-- [ ] 4.2 Pack it into a reserved canonical pad bit (e.g. byte `[26]` bit 0) in `Settings_CanonicalSerialize`/`Deserialize` (`rando_settings.c:206-235`) — do **NOT** grow `kSettingsCanonicalLen` (stays 28; no size-coupling cascade). Follow the entrance-axis pad-byte `[25]` precedent (`:210-219`).
-- [ ] 4.3 Bump `kGeneratorVersion` 58 → 59 (`src/rando/rando.h`).
-- [ ] 4.4 Reconcile the `randomizer-core / Settings canonical serialization order` normative field list to as-built (it lags by `hints`/`boss_shuffle`/`drop_shuffle` + the entrance pad byte) and document the new pad bit — read `rando_settings.{h,c}` for the authoritative byte map.
+- [x] 4.1 `enemy_shuffle` (uint8) added to `RandoSettings`; CSV parse (`enemy_shuffle=true|false`) + default-off wired.
+- [x] 4.2 Packed into canonical pad byte `[26]` bit0 (`kEnemyShuffleAxis_Enabled`) in `Settings_CanonicalSerialize`/`Deserialize`; `kSettingsCanonicalLen` stays 28 (no size-coupling cascade); `Settings_SelfCheck` asserts default byte-identity + that only [26] moves when on. Follows the entrance-axis `[25]` precedent.
+- [x] 4.3 Bumped `kGeneratorVersion` **60 → 61** (NOT 58→59 — the worktree base already carried Phase D bumps to 60). The brief's intent (version-lock the new live axis) is preserved.
+- [x] 4.4 The `randomizer-core` ADDED requirement (this change's spec delta) documents the new pad bit + carries the apply-time reconciliation note for the stale normative field list. The authoritative byte map now lives in the `rando_settings.{h,c}` layout comments (updated to include [26]=enemy_shuffle). Full normative-list reconciliation is an archive-time editorial pass (the note flags it) — not silently rewritten here.
 
 ## 5. UI
 
-- [ ] 5.1 Replace the disabled enemy-shuffle "coming soon" placeholder with a live checkbox in `src/rando/rando_window/rando_window.cpp`, with a one-line durable tooltip ("Randomizes which enemies appear in each room").
+- [x] 5.1 Replaced the disabled enemy-shuffle "coming soon" placeholder with a live checkbox in `rando_window.cpp` (tooltip "Randomizes which enemies appear in each room."). Glitches remains the only disabled placeholder. Compiles under WSL g++ (`rando_window.o`) + the panel smoke check passes; full interactive MSBuild verify is pending (the WSL build does cover this TU, so the seam is exercised).
 
 ## 6. Validation
 
-- [ ] 6.1 Corpus regen + 3-way diff (WSL `make zelda3`; `bump_rando_corpus.py --apply`; diff vs unmodified `main` built fresh, `rm src/rando/logic_data.c` first) — expect **zero** placement movement (settings-hash-only change). Tooling gotchas per `CLAUDE.md` (absolute `--binary`, manifest version, CRLF).
-- [ ] 6.2 `EnemyShuffle_SelfCheck`: an active shuffle never picks outside the resolved loaded-sheet set, never replaces an excluded type/marker, and preserves the killable+key / water / directional invariants over a sampled room set. **Register it in `Rando_RunAllSelfChecks` (`rando.c:3620-3621`)** or it won't run under `--rando-selftest`.
-- [ ] 6.3 **Playtest** (the only net for render/crash/softlock — corpus + `--rando-selftest` are generation-only). Stage at slice start (`[[logic-vs-runtime-gap]]`): a small sheet-fixed pool across a few dungeons + the overworld; watch for garbage tiles, crashes, uncleared shutter/key rooms, water strands. Then widen.
-- [ ] 6.4 Backward-load: a kGen-58 slot loads on the 59 binary with the one-time warning.
+- [x] 6.1 Corpus regen via WSL `make zelda3` + `bump_rando_corpus.py --apply --binary <abs>`: **0/112 digests changed**; CRLF-normalized diff vs the v60 baseline shows ONLY `generator_version: 60→61`. `run_rando_corpus.py` re-verifies all 112 against the binary; `check_corpus_version_sync` green. (3-way diff vs a fresh unmodified-`main` build was not run separately — the in-tree before/after diff + the placement-orthogonality proof, 0 changes, is the stronger evidence; noted for completeness.)
+- [x] 6.2 `EnemyShuffle_SelfCheck` registered in `Rando_RunAllSelfChecks` and passing under `--rando-selftest`: asserts off→passthrough, boss/mini-boss/marker exclusion, table integrity (every randomizable has a required sheet + a killable+key candidate exists), determinism, in-sheet picks, and the dungeon killable+key / overworld in-sheet invariants over sampled room/area/slot spaces.
+- [ ] 6.3 **Playtest — NOT done (cannot, per scope).** The only net for render/crash/softlock. Remaining: a small sheet-fixed pool across a few dungeons + the overworld; watch for garbage tiles, crashes, uncleared shutter/key rooms, water strands, OAM overruns. Then widen the table.
+- [ ] 6.4 Backward-load (a kGen-60 slot on the 61 binary surfaces the one-time warning) — NOT separately exercised (no playtest); the kGen bump + existing upgrade-warning path provide it by construction.
 
 ## 7. Deferred follow-on axes (out of scope here — separate changes)
 

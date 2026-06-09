@@ -819,10 +819,16 @@ static void Panel_Shuffles() {
     HelpTooltip("Randomize which boss guards each dungeon. "
                 "Agahnim, Ganon, Blind, Kholdstare, and Trinexx stay put.");
 
+    bool es = s->enemy_shuffle != 0;
+    if (ImGui::Checkbox("Enemy shuffle", &es)) {
+      s->enemy_shuffle = es ? 1 : 0;
+      changed = true;
+    }
+    HelpTooltip("Randomizes which enemies appear in each room.");
+
     // Not-yet-playable placeholders.
     ImGui::BeginDisabled();
     bool off = false;
-    ImGui::Checkbox("Enemy shuffle", &off);
     ImGui::Checkbox("Glitches", &off);
     ImGui::EndDisabled();
     HelpTooltip("not yet implemented");

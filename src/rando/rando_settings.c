@@ -34,7 +34,8 @@
 //                                          bit1 shuffle_dungeons, bit2 coupled,
 //                                          bit3 cross_category, bit4 decoupled.
 //                                          0x00 for the default (no shuffle).
-//   offset 26  reserved                    = 0
+//   offset 26  enemy_shuffle (bit-packed)  add-rando-enemy-shuffle — bit0
+//                                          enemy_shuffle. 0x00 for the default.
 //   offset 27  reserved                    = 0
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
@@ -86,6 +87,9 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->cross_category = 0;
   s->decoupled = 0;
   s->shuffle_ganons_tower_entrance = 0;  // advanced opt-in (off by default)
+  // add-rando-enemy-shuffle — enemy (sprite-type) substitution. Default OFF, so
+  // the packed pad byte [26] is 0x00 (corpus byte-identical).
+  s->enemy_shuffle = 0;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -217,7 +221,10 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
                     (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
                     (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0));
-  out[26] = 0;
+  // add-rando-enemy-shuffle — enemy shuffle bit-packed into the formerly-zero
+  // pad byte [26]. Default off ⇒ 0x00 (corpus byte-identical; kSettingsCanonicalLen
+  // stays 28, no size-coupling cascade). Mirrors the entrance-axis pack at [25].
+  out[26] = (uint8)(s->enemy_shuffle ? kEnemyShuffleAxis_Enabled : 0);
   out[27] = 0;
   return kSettingsCanonicalLen;
 }
@@ -225,14 +232,14 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
 // kSettingsCanonicalLen (28)-byte canonical blob and populates `out`. Returns 0
 // on success, -1 if the input is NULL. Body occupies [0..24] (through
-// drop_shuffle); [25..27] are pad.
+// drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle, [27] = pad.
 //
-// **Forward-compat note**: trailing pad bytes in[26], in[27] are NOT inspected
-// — a future format extension may repurpose them, and rejecting on non-zero
-// would break reveal of pre-extension suppressed files. Byte [25] is the
-// Phase C packed entrance-axis byte (0x00 = no shuffle). Today the serializer
-// (`Settings_CanonicalSerialize`) always writes zero to [26]/[27] but the
-// deserializer is permissive.
+// **Forward-compat note**: trailing pad byte in[27] is NOT inspected — a future
+// format extension may repurpose it, and rejecting on non-zero would break
+// reveal of pre-extension suppressed files. Byte [25] is the Phase C packed
+// entrance-axis byte (0x00 = no shuffle); byte [26] is the add-rando-enemy-shuffle
+// packed pad byte (bit0 = enemy_shuffle, 0x00 = no enemy shuffle, unpacked below).
+// The deserializer is permissive on [27].
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;
@@ -273,6 +280,10 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.cross_category             = (in[25] & kEntranceAxis_CrossCategory)   ? 1 : 0;
   s.decoupled                  = (in[25] & kEntranceAxis_Decoupled)       ? 1 : 0;
   s.shuffle_ganons_tower_entrance = (in[25] & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
+  // add-rando-enemy-shuffle — unpack the enemy-shuffle bit from pad byte [26].
+  // A zero byte (the default / any pre-enemy-shuffle file) yields enemy_shuffle=0,
+  // identical to a struct with no enemy shuffle. Byte [27] stays uninspected.
+  s.enemy_shuffle = (in[26] & kEnemyShuffleAxis_Enabled) ? 1 : 0;
   *out = s;
   return 0;
 }
@@ -464,6 +475,60 @@ void Settings_SelfCheck(void) {
     Settings_CanonicalSerialize(&sv, cv);
     if (!settings_byte_eq(cv, ce, kSettingsCanonicalLen)) {
       fprintf(stderr, "Settings_SelfCheck: CSV-parsed entrance axes serialize "
+                      "differently from the struct path\n");
+      exit(2);
+    }
+  }
+  // add-rando-enemy-shuffle — enemy_shuffle pack/unpack round-trip + default
+  // byte-identity. Default MUST keep pad byte [26]==0 (the corpus byte-identical
+  // invariant; kExpectedCanonical[26]==0 above depends on it).
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    if (cd[26] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: default enemy-shuffle byte [26]=0x%02x "
+                      "!= 0 (corpus invariant broken)\n", cd[26]);
+      exit(2);
+    }
+    // enemy_shuffle on packs bit0 and round-trips; placement-orthogonal so the
+    // ONLY changed canonical byte is [26].
+    RandoSettings se;
+    Settings_SetDefaults(&se);
+    se.enemy_shuffle = 1;
+    uint8 ce[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&se, ce);
+    if (ce[26] != kEnemyShuffleAxis_Enabled) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_shuffle pack mismatch "
+                      "(got 0x%02x)\n", ce[26]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 26) continue;
+      if (ce[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: enemy_shuffle changed canonical byte "
+                        "[%d] (expected only [26] to move)\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rt;
+    if (Settings_CanonicalDeserialize(ce, &rt) != 0 || rt.enemy_shuffle != 1) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_shuffle deserialize round-trip "
+                      "mismatch\n");
+      exit(2);
+    }
+    // CSV parse of the new key round-trips through the canonical bytes.
+    RandoSettings sv;
+    Settings_SetDefaults(&sv);
+    if (Settings_ParseCsv("enemy_shuffle=true", &sv) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: CSV parse of enemy_shuffle failed\n");
+      exit(2);
+    }
+    uint8 cv[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sv, cv);
+    if (!settings_byte_eq(cv, ce, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: CSV-parsed enemy_shuffle serializes "
                       "differently from the struct path\n");
       exit(2);
     }
@@ -785,6 +850,8 @@ enum {
   KEY_cross_category,
   KEY_decoupled,
   KEY_shuffle_ganons_tower_entrance,
+  // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis (binary).
+  KEY_enemy_shuffle,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -960,6 +1027,11 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Phase B Slice 8 §64 — drop-shuffle axis. Binary on/off.
     MARK_SEEN(KEY_drop_shuffle);
     if (parse_bool(val, vlen, &s->drop_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "enemy_shuffle")) {
+    // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis. Binary
+    // on/off. Packed into canonical pad byte [26] bit0 (see RandoSettings header).
+    MARK_SEEN(KEY_enemy_shuffle);
+    if (parse_bool(val, vlen, &s->enemy_shuffle) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "shuffle_cave_entrances")) {
     // Phase C — entrance shuffle: cave-door class.
     MARK_SEEN(KEY_shuffle_cave_entrances);
