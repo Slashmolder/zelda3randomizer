@@ -37,12 +37,12 @@
 //                                         Snapshot-safe. (The enum name keeps its
 //                                         original ...VanPos2 spelling; it is the
 //                                         base of the 4-byte per-slot shadow array.)
-//   0x666-0x668 reserved                 (enemy-shuffle sheet-reshuffle PLAYTEST
-//                                         diagnostics under ES_RESHUFFLE_DIAG —
-//                                         hook-calls / cumulative-slots-changed /
-//                                         last-room-blocked-mask; freed when the
-//                                         diag flag is turned off before merge)
-//   0x669-0x66f reserved                 (7 bytes forward-compat headroom)
+//   0x666-0x66f reserved                 (10 bytes forward-compat headroom; when
+//                                         ES_RESHUFFLE_DIAG is built =1, the
+//                                         enemy-shuffle reshuffle writes PLAYTEST
+//                                         diagnostics to 0x666-0x668 — hook-calls /
+//                                         cumulative-slots-changed / last-room-
+//                                         blocked-mask. Default-off, so reserved.)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).

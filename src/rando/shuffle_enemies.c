@@ -338,9 +338,9 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 #define kEnemyShuffleSheetSalt 0x5348454554ull  // "SHEET"
 
 // Set to 1 to emit playtest diagnostics into the reserved g_ram block (read via
-// an F12 dump). 0x666 hook-calls, 0x667 cumulative slots-changed, 0x668 last
-// room's blocked-slot bitmask. Flip to 0 before merge.
-#define ES_RESHUFFLE_DIAG 1
+// an F12 dump): 0x666 hook-calls, 0x667 cumulative slots-changed, 0x668 last
+// room's blocked-slot bitmask. OFF for merge — turn back to 1 for playtest.
+#define ES_RESHUFFLE_DIAG 0
 
 // We reshuffle ALL FOUR subgroup slots. Slots 0,1,2 are the enemy slots; slot 3
 // is mostly objects (it pins often, so it reshuffles rarely) but carries a few
