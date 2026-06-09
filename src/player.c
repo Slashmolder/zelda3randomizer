@@ -90,6 +90,39 @@ static inline uint8 BitSum4(uint8 t) {
   return (t & 1) + ((t >> 1) & 1) + ((t >> 2) & 1) + ((t >> 3) & 1);
 }
 
+// JP-1.0 glitch restoration — runtime gate.
+//
+// Returns true when the player has opted into the JP-1.0 glitch set AND the
+// original ROM is NOT attached for side-by-side comparison (so the US-1.0 RAM
+// compare stays clean when the flag is off or the emulator is on).
+//
+// FAITHFUL to JP 1.0, per the JP-vs-US 65816 ROM diff. Each restored glitch
+// corresponds to an EXACT instruction the US 1.0 release ADDED; gating that one
+// site reproduces JP-1.0 behavior byte-for-byte:
+//   - Fake Flippers: US adds a per-frame flipper recheck in the swim *handler*
+//     (PlayerHandler_04_Swimming) — the ONLY JP<->US swim delta. The swim-ENTRY
+//     ejects (CheckAbilityToSwim, LinkState_CrossingWorlds) are byte-identical
+//     JP<->US and are NOT gated: walk-into-water still ejects a flipperless Link
+//     in both versions. The glitch is reached only via the un-flipper-checked
+//     ledge/recoil entry sites (Link enters swim state directly), exactly as on
+//     JP 1.0. There is NO "8-frame grace" counter in the ROM — that was a
+//     runner-technique description, not JP code; JP simply omits the recheck.
+//   - Death Hole: US adds `link_disable_sprite_damage++` per pit-fall frame;
+//     JP omits it.
+//   - Itemdash + Spindash + Superspeed (ONE guard): US adds a StartDash guard
+//     that skips the whole item-and-sword block (Link_HandleYItem AND
+//     Link_HandleSwordCooldown) on the dash-start frame; JP runs it. Y-item =
+//     Itemdash; spin-charge pipeline = Spindash; the armed speed=0x10 state
+//     either leaves (then walking off a staircase) = Superspeed. All playtested.
+//   - Mirror Block Erase: in the indoor mirror path (DoSwordInteractionWithTiles_
+//     Mirror), JP clears the changeable-dungeon-object indices BEFORE saving the
+//     room; US 1.0 reordered the save ahead of the (now-conditional) clear, so a
+//     mid-push block is no longer flagged absent / erased on the mirror reload.
+static bool JpGlitchEnabled(void) {
+  return (enhanced_features0 & kFeatures0_RestoreJpGlitches) &&
+         !ZeldaIsEmulatorAttached();
+}
+
 void Dungeon_HandleLayerChange() {  // 81ff05
   link_is_on_lower_level_mirror = 1;
   if (kind_of_in_room_staircase == 0)
@@ -129,6 +162,10 @@ void CacheCameraProperties() {  // 81ff28
 void CheckAbilityToSwim() {  // 81ffb6
   if (!link_is_bunny_mirror && link_item_flippers)
     return;
+  // NOTE: this swim-ENTRY eject is byte-identical JP<->US — do NOT gate it for
+  // Fake Flippers (gating it lets Link walk straight into water, which is the
+  // "always swim" bug, not the glitch). The only JP<->US delta is the per-frame
+  // recheck in PlayerHandler_04_Swimming. See JpGlitchEnabled.
   if (link_item_moon_pearl)
     link_is_bunny_mirror = 0;
   link_visibility_status = 0xc;
@@ -246,7 +283,16 @@ void PlayerHandler_00_Ground_3() {  // 8781a0
 
   if (!Link_HandleToss()) {
     Link_HandleAPress();
-    if ((link_state_bits | link_grabbing_wall) == 0 && link_unk_master_sword == 0 && link_player_handler_state != kPlayerState_StartDash) {
+    // JP-1.0 Itemdash + Spindash + Superspeed (FAITHFUL — JP-vs-US ROM diff): US
+    // 1.0 ADDED the StartDash term to skip this ENTIRE item-and-sword block on the
+    // dash-start frame; JP 1.0 runs it unconditionally. One guard, three glitches:
+    // Link_HandleYItem (below) = item-use-while-dashing (Itemdash; Hookdash/
+    // Medalliondash arm Superspeed); Link_HandleSwordCooldown (the button_b_frames
+    // spin-charge pipeline) = spin-while-dashing (Spindash). Superspeed is the
+    // armed link_speed_setting==0x10 + walking-control state either leaves, then
+    // activated by walking off a manual staircase. Playtest-confirmed (all three).
+    if ((link_state_bits | link_grabbing_wall) == 0 && link_unk_master_sword == 0 &&
+        (JpGlitchEnabled() || link_player_handler_state != kPlayerState_StartDash)) {
       Link_HandleYItem();
       // Ensure we're not handling potions. Things further
       // down don't assume this and change the module indexes randomly.
@@ -1573,7 +1619,12 @@ endif_1:
   link_give_damage = 0;
   link_is_transforming = 0;
   Link_ForceUnequipCape_quietly();
-  link_disable_sprite_damage++;
+  // JP-1.0 Death Hole (FAITHFUL — JP-vs-US ROM diff): US 1.0 ADDED this per-frame
+  // increment during a pit fall; JP 1.0 omits it. The death+pit same-frame race
+  // that yields the Death Hole warp depends on this counter staying at its entry
+  // value (1) through the fall, as on JP.
+  if (!JpGlitchEnabled())
+    link_disable_sprite_damage++;
   if (!sign8(--byte_7E005C))
     return;
   uint8 x = ++link_this_controls_sprite_oam;
@@ -1718,7 +1769,13 @@ void PlayerHandler_04_Swimming() {  // 87963b
   link_spin_attack_step_counter = 0;
   link_state_bits = 0;
   link_picking_throw_state = 0;
-  if (!link_item_flippers)
+  // JP-1.0 Fake Flippers (FAITHFUL — JP-vs-US ROM diff): this per-frame
+  // flipperless eject is the ONLY swim code US 1.0 added vs JP 1.0; JP omits it.
+  // Gating exactly this site (and NOT the byte-identical entry ejects in
+  // CheckAbilityToSwim / LinkState_CrossingWorlds) reproduces JP 1.0: walk-into-
+  // water still ejects, but a Link who entered via the un-flipper-checked
+  // ledge/jump-in sites keeps swimming. There is no JP "grace counter".
+  if (!link_item_flippers && !JpGlitchEnabled())
     return;
 
   if (!(swimcoll_var7[0] | swimcoll_var7[1])) {
@@ -3085,10 +3142,23 @@ void DoSwordInteractionWithTiles_Mirror() {  // 87a95c
   if (player_is_indoors) {
     if (flag_block_link_menu)
       return;
-    Mirror_SaveRoomData();
-    if (sound_effect_1 != 60) {
+    // JP-1.0 Mirror Block Erase (FAITHFUL — JP-vs-US ROM diff at $87:A95C): JP 1.0
+    // clears the changeable-dungeon-object indices ($5FC/$5FD) UNCONDITIONALLY and
+    // BEFORE saving the room, so a block that is mid-push (a changeable object) is
+    // flagged absent when Mirror_SaveRoomData -> Dungeon_FlagRoomData_Quadrants
+    // records the room — erasing it on the mirror reload. US 1.0 reordered the save
+    // ahead of the (now sound_effect_1!=60-gated) clear, which fixes it. Restore the
+    // JP order exactly under the flag; the else-branch is byte-identical to US 1.0.
+    if (JpGlitchEnabled()) {
       index_of_changable_dungeon_objs[0] = 0;
       index_of_changable_dungeon_objs[1] = 0;
+      Mirror_SaveRoomData();
+    } else {
+      Mirror_SaveRoomData();
+      if (sound_effect_1 != 60) {
+        index_of_changable_dungeon_objs[0] = 0;
+        index_of_changable_dungeon_objs[1] = 0;
+      }
     }
   } else if (main_module_index != 11) {
     last_light_vs_dark_world = overworld_screen_index & 0x40;
@@ -3190,6 +3260,8 @@ void LinkState_CrossingWorlds() {  // 87a9b1
     goto do_mirror;
 
   if (BitSum4(tiledetect_deepwater) >= 2) {
+    // Byte-identical JP<->US: walk-into-deep-water requires flippers in BOTH
+    // versions. NOT gated for Fake Flippers (see JpGlitchEnabled).
     if (link_item_flippers) {
       link_is_in_deep_water = 1;
       link_some_direction_bits = link_direction_last;

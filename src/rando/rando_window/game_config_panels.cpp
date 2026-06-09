@@ -729,6 +729,13 @@ static void Panel_Gameplay(void) {
   FeatureCheckbox("Misc bug fixes", kFeatures0_MiscBugFixes, "Various fixes that don't change behavior.");
   FeatureCheckbox("Game-changing bug fixes", kFeatures0_GameChangingBugFixes, "Advanced fixes that alter game behavior.");
 
+  ImGui::SeparatorText("Glitches");
+  FeatureCheckbox("Restore JP 1.0 glitches", kFeatures0_RestoreJpGlitches,
+                  "Re-enables glitches removed in the US 1.0 release.");
+  // Honest in-window status for the active glitch set. Update as more glitches
+  // land. (Faithful per the JP-vs-US ROM diff.)
+  ImGui::TextDisabled("Currently: Fake Flippers, Death Hole, Itemdash, Spindash, Superspeed, Mirror Block Erase (JP-faithful).");
+
   ImGui::SeparatorText("General");
   bool autosave = s_cfg.autosave;
   if (ImGui::Checkbox("Autosave on quit / reload on start", &autosave)) { s_cfg.autosave = autosave; s_dirty = true; }

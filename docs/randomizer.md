@@ -141,6 +141,17 @@ unknown names are a hard error). The 8 trick bits:
 The 3 placeholder bits exist in the settings field but no logic predicate reads
 them; enabling one has no placement effect (and surfaces the unverified warning).
 
+> **Unsupported combination — `fake-flippers` trick + runtime JP-glitch flag OFF.**
+> The `fake-flippers` *placement* trick (above) only tells the placer it MAY
+> assume a flipperless swim; it does **not** make swimming executable at runtime.
+> The runtime side is the separate `[Features] RestoreJpGlitches` toggle
+> (`kFeatures0_RestoreJpGlitches`, the in-game/native-window "Restore JP 1.0
+> glitches" checkbox). Enabling the `fake-flippers` trick while that runtime flag
+> is **off** is unsupported: the placer can route an item behind a swim the
+> player cannot perform → unreachable item / soft-softlock. The two are **not**
+> auto-coupled (auto-coupling is a future change); keep them in sync manually. See
+> `openspec/changes/archive/2026-06-09-add-jp-glitch-restoration/`.
+
 ### Tricks / glitch logic — ROM-version verification
 
 ALTTPR targets the **Japanese 1.0** ROM; this fork targets **US 1.0**. A trick in
