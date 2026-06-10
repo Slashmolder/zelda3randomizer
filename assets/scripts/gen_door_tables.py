@@ -142,8 +142,12 @@ class RuleRecorder:
 
 
 def normalize_lambda(src):
-    """Strip the call-site wrapper, keep the lambda body text."""
+    """Strip the call-site wrapper, keep the lambda/def body text."""
     src = ' '.join(src.split())
+    # `def name(state): return BODY` rules (e.g. hidden_pits_rule)
+    m = re.match(r'def \w+\(state\): return (.*)$', src)
+    if m:
+        return m.group(1).strip()
     i = src.find('lambda state:')
     if i < 0:
         return src
@@ -434,6 +438,49 @@ def harvest(world, P, recorder):
         key_drops = {k: list(v) if isinstance(v, (list, tuple)) else v
                      for k, v in RegionsMod.key_drop_data.items()}
 
+    # Wiring provenance: which pre-connect list wired each door (classifies the
+    # shuffle pool: default/one_way-wired Normal+Spiral doors are the
+    # intensity-1 stubs; everything else is static).
+    import DoorShuffle as DS
+    wiring = {}
+    for a, b in DS.default_door_connections:
+        wiring[a] = wiring[b] = 'default'
+    for a, b in DS.default_one_way_connections:
+        wiring.setdefault(a, 'one_way')
+        wiring.setdefault(b, 'one_way')
+    for a, b in DS.interior_doors:
+        wiring[a] = wiring[b] = 'interior'
+    for a, _ in DS.logical_connections:
+        wiring[a] = 'logical'
+    for a, _ in DS.falldown_pits:
+        wiring[a] = 'falldown'
+    for a, _ in DS.dungeon_warps:
+        wiring[a] = 'warp'
+    for a, b in DS.open_edges:
+        wiring[a] = wiring[b] = 'open'
+    for a, b in DS.straight_staircases:
+        wiring[a] = wiring[b] = 'straight'
+    for a, b in DS.ladders:
+        wiring[a] = wiring[b] = 'ladder'
+    for d in doors:
+        d['wiring'] = wiring.get(d['name'])
+    vanilla_pairs = {
+        'two_way': list(DS.default_door_connections),
+        'one_way': list(DS.default_one_way_connections),
+    }
+
+    # Stitcher-side static data (required paths, portals, dead-end allowances).
+    from source.dungeon import DungeonStitcher as StitchMod
+    import DungeonGenerator as DGMod
+    stitcher = {
+        'boss_path_checks': list(StitchMod.boss_path_checks),
+        'drop_path_checks': list(StitchMod.drop_path_checks),
+        'dungeon_boss_sectors': {k: list(v) for k, v in DGMod.dungeon_boss_sectors.items()},
+        'default_dungeon_entrances': {k: list(v) for k, v in DGMod.default_dungeon_entrances.items()},
+        'drop_entrances': {k: list(v) for k, v in DGMod.drop_entrances.items()},
+        'dungeon_dead_end_allowance': dict(DGMod.dungeon_dead_end_allowance),
+    }
+
     return {
         'dungeons': dungeons,
         'regions': regions,
@@ -443,7 +490,411 @@ def harvest(world, P, recorder):
         'rooms': rooms,
         'paired_doors': paired,
         'key_drop_data': key_drops,
+        'vanilla_pairs': vanilla_pairs,
+        'stitcher': stitcher,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase B1: rule translation — harvested rule descriptors -> door-rule IR.
+#
+# IR node forms (tuples):
+#   ('true',) ('false',)
+#   ('vm', '<fork DSL string>')        — pure item/macro term, compiled into
+#                                        kRandoPredicateStream by rando_logic_gen
+#   ('event', '<event name>')          — oracle-internal monotone event
+#   ('creach', '<region name>', 'blue'|'orange') — per-crystal-state reach query
+#   ('and', [..]) ('or', [..]) ('not', x)
+#
+# Every leaf the translator cannot map is a hard ERROR (listed for curation in
+# door_rules_overrides.yaml) — unparsed rules ship as IMPASSABLE, never as free.
+# ---------------------------------------------------------------------------
+
+import ast as pyast
+
+# Reference item name -> fork DSL term for plain `state.has('X', player)`.
+HAS_ITEM_MAP = {
+    'Hammer': 'HAS_ITEM(Hammer)',
+    'Hookshot': 'HAS_ITEM(Hookshot)',
+    'Lamp': 'HAS_ITEM(Lamp)',
+    'Fire Rod': 'HAS_ITEM(FireRod)',
+    'Ice Rod': 'HAS_ITEM(IceRod)',
+    'Cane of Somaria': 'HAS_ITEM(CaneOfSomaria)',
+    'Cane of Byrna': 'HAS_ITEM(CaneOfByrna)',
+    'Cape': 'HAS_ITEM(Cape)',
+    'Flippers': 'HAS_ITEM(Flippers)',
+    'Magic Powder': 'HAS_ITEM(MagicPowder)',
+    'Mushroom': 'HAS_ITEM(Mushroom)',
+    'Blue Boomerang': 'HAS_ITEM(BlueBoomerang)',
+    'Red Boomerang': 'HAS_ITEM(RedBoomerang)',
+    'Moon Pearl': 'HAS_ITEM(MoonPearl)',
+    'Bow': 'CanShootArrowsL1()',
+    'Silver Arrows': 'CanShootArrowsL2()',
+    'Big Key (Ganons Tower)': 'HAS_ITEM(BigKey_GanonsTower)',
+    'Pegasus Boots': 'HAS_ITEM(Boots)',
+    # kill-rule sword tiers (any-sword disjunctions simplify via A|(A&B) fold)
+    'Fighter Sword': 'HasSword(1)',
+    'Master Sword': 'HasSword2()',
+    'Tempered Sword': 'HasSword3()',
+    'Golden Sword': 'HasSword(4)',
+}
+
+# Events granted by event locations inside dungeons (monotone unlocks). The
+# Swamp ones are listed for completeness; Swamp is pinned at MVP and the
+# translator asserts NEGATED event tests occur only there.
+KNOWN_EVENTS = {
+    'Trench 1 Filled', 'Trench 2 Filled', 'Drained Swamp', 'Open Floodgate',
+    'Hidden Pits', 'Convenient Block', 'Shining Light', 'Maiden Rescued',
+    'Maiden Unmasked', 'Attic Cracked Floor',
+}
+
+# Zero-arg macro calls: reference CollectionState method -> fork DSL.
+MACRO_MAP = {
+    'can_use_bombs': 'CanBombThings()',
+    'can_shoot_arrows': 'CanShootArrowsL1()',
+    'has_Boots': 'HAS_ITEM(Boots)',
+    'has_fire_source': '(HAS_ITEM(Lamp) OR HAS_ITEM(FireRod))',
+    'can_lift_rocks': 'CanLiftRocks()',
+    'can_lift_heavy_rocks': 'CanLiftDarkRocks()',
+    'can_melt_things': 'CanMeltThings(world)',
+    'has_Mirror': 'HAS_ITEM(MagicMirror)',
+    'has_sword': 'HasSword(1)',
+    'has_beam_sword': 'HasSword2()',
+    'has_blunt_weapon': '(HasSword(1) OR HAS_ITEM(Hammer))',
+    # DR can_hit_crystal (BaseClasses.py:1211): bombs|arrows|blunt|boomerangs|
+    # hookshot|fire|ice|somaria|byrna.
+    'can_hit_crystal': ('(CanBombThings() OR CanShootArrowsL1() OR HasSword(1) OR '
+                        'HAS_ITEM(Hammer) OR HAS_ITEM(BlueBoomerang) OR '
+                        'HAS_ITEM(RedBoomerang) OR HAS_ITEM(Hookshot) OR '
+                        'HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR '
+                        'HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna))'),
+    # DR can_avoid_lasers (BaseClasses.py:1280); fork TR idiom includes Byrna.
+    'can_avoid_lasers': '(CanBlockLasers() OR HAS_ITEM(Cape) OR HAS_ITEM(CaneOfByrna))',
+    # DR can_hit_crystal_through_barrier (BaseClasses.py:1223): bombs|arrows|
+    # boomerangs|fire|ice|somaria (NO blunt/hookshot/byrna).
+    'can_hit_crystal_through_barrier': ('(CanBombThings() OR CanShootArrowsL1() OR '
+                                        'HAS_ITEM(BlueBoomerang) OR HAS_ITEM(RedBoomerang) OR '
+                                        'HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR '
+                                        'HAS_ITEM(CaneOfSomaria))'),
+}
+
+# DR small-key names -> fork item enum names (vanilla key-logic at-location
+# rules attach these on a few HC chests; HC is pinned but tables stay complete).
+SM_KEY_MAP = {
+    'Small Key (Escape)': 'SmallKey_HyruleCastleEscape',
+    'Small Key (Eastern Palace)': 'SmallKey_EasternPalace',
+    'Small Key (Desert Palace)': 'SmallKey_DesertPalace',
+    'Small Key (Tower of Hera)': 'SmallKey_TowerOfHera',
+    'Small Key (Agahnims Tower)': 'SmallKey_HyruleCastleTower',
+    'Small Key (Palace of Darkness)': 'SmallKey_PalaceOfDarkness',
+    'Small Key (Swamp Palace)': 'SmallKey_SwampPalace',
+    'Small Key (Skull Woods)': 'SmallKey_SkullWoods',
+    'Small Key (Thieves Town)': 'SmallKey_ThievesTown',
+    'Small Key (Ice Palace)': 'SmallKey_IcePalace',
+    'Small Key (Misery Mire)': 'SmallKey_MiseryMire',
+    'Small Key (Turtle Rock)': 'SmallKey_TurtleRock',
+    'Small Key (Ganons Tower)': 'SmallKey_GanonsTower',
+}
+
+
+class RuleError(Exception):
+    pass
+
+
+class RuleTranslator:
+    def __init__(self, model):
+        self.model = model
+        self.region_names = {r['name'] for r in model['regions']}
+        self.region_dungeon = {r['name']: r['dungeon'] for r in model['regions']}
+        self.dungeon_fork = {d['index']: d['fork_name'] for d in model['dungeons']}
+        self.errors = []   # (spot, body, message)
+
+    # -- descriptor entry points ------------------------------------------
+
+    def translate_entry_list(self, spot, entries, spot_dungeon):
+        """Compose the ordered (op, descriptor) list into one IR tree."""
+        cur = ('true',)
+        for op, descr in entries:
+            ir = self.translate_descr(spot, descr, spot_dungeon)
+            if op == 'set':
+                cur = ir
+            elif op == 'or':
+                cur = ('or', [cur, ir])
+            else:  # 'and'
+                cur = ('and', [cur, ir])
+        return simplify_ir(cur)
+
+    def translate_descr(self, spot, descr, spot_dungeon):
+        try:
+            if 'ast' in descr:
+                return self.translate_rule_ast(descr['ast'])
+            return self.translate_lambda(spot, descr, spot_dungeon)
+        except RuleError as e:
+            self.errors.append((spot, json.dumps(descr)[:200], str(e)))
+            return ('false',)
+
+    # -- structured Rule objects (challenge/kill rules) --------------------
+
+    def translate_rule_ast(self, node):
+        t = node['rule_type']
+        if t == 'Static':
+            return ('true',) if node['principal'] else ('false',)
+        if t == 'Conjunction':
+            return simplify_ir(('and', [self.translate_rule_ast(s) for s in node.get('sub_rules', [])]))
+        if t == 'Disjunction':
+            return simplify_ir(('or', [self.translate_rule_ast(s) for s in node.get('sub_rules', [])]))
+        if t == 'Negate':
+            return ('not', self.translate_rule_ast(node['sub_rules'][0]))
+        if t == 'Item':
+            name = node['principal']
+            if name in HAS_ITEM_MAP and node['count'] == 1:
+                return ('vm', HAS_ITEM_MAP[name])
+            raise RuleError(f'unmapped AST item {name} x{node["count"]}')
+        if t == 'ExtendMagic':
+            magic = node['principal'] if isinstance(node['principal'], int) else 16
+            return ('vm', f'CanExtendMagic(world, {max(1, magic // 8)})')
+        raise RuleError(f'unmapped AST rule_type {t}')
+
+    # -- lambda descriptors -------------------------------------------------
+
+    def translate_lambda(self, spot, descr, spot_dungeon, depth=0):
+        src = descr['src']
+        closure = descr['closure']
+        if src in ('<unrecoverable>', '<depth-limit>'):
+            raise RuleError(src)
+        try:
+            tree = pyast.parse(src, mode='eval').body
+        except SyntaxError as e:
+            raise RuleError(f'unparseable body: {src!r} ({e})')
+        return self.expr(spot, tree, closure, spot_dungeon, depth)
+
+    def expr(self, spot, node, closure, spot_dungeon, depth):
+        if isinstance(node, pyast.BoolOp):
+            op = 'and' if isinstance(node.op, pyast.And) else 'or'
+            return simplify_ir((op, [self.expr(spot, v, closure, spot_dungeon, depth)
+                                     for v in node.values]))
+        if isinstance(node, pyast.UnaryOp) and isinstance(node.op, pyast.Not):
+            inner = self.expr(spot, node.operand, closure, spot_dungeon, depth)
+            if inner[0] == 'event':
+                dgn = self.dungeon_fork.get(spot_dungeon, '?')
+                if dgn not in ('SwampPalace',):
+                    raise RuleError(f'negated event {inner[1]!r} outside Swamp ({dgn})')
+            return ('not', inner)
+        if isinstance(node, (pyast.Constant,)):
+            if node.value is True:
+                return ('true',)
+            if node.value is False:
+                return ('false',)
+            raise RuleError(f'constant {node.value!r}')
+        if isinstance(node, pyast.Name):
+            # closure variable: bool literal or nested rule descriptor
+            val = closure.get(node.id)
+            if isinstance(val, dict):
+                if depth > 24:
+                    raise RuleError('closure depth')
+                return self.translate_lambda(spot, val, spot_dungeon, depth + 1)
+            if val == 'True':
+                return ('true',)
+            if val == 'False':
+                return ('false',)
+            raise RuleError(f'unresolved name {node.id} = {val!r}')
+        if isinstance(node, pyast.Call):
+            return self.call(spot, node, closure, spot_dungeon, depth)
+        if isinstance(node, pyast.Attribute):
+            # state.world.can_take_damage — fork has no OHKO mode at MVP
+            if unparse(node) == 'state.world.can_take_damage':
+                return ('true',)
+            raise RuleError(f'attribute {unparse(node)!r}')
+        if isinstance(node, pyast.Subscript):
+            if unparse(node).startswith('state.world.free_lamp_cone'):
+                return ('vm', 'CanDarkRoomNav()')
+            raise RuleError(f'subscript {unparse(node)!r}')
+        raise RuleError(f'expr {unparse(node)!r}')
+
+    def call(self, spot, node, closure, spot_dungeon, depth):
+        text = unparse(node)
+        fn = node.func
+        fn_text = unparse(fn)
+
+        # rule1(state) / rule2(state): nested closure lambdas
+        if isinstance(fn, pyast.Name):
+            val = closure.get(fn.id)
+            if isinstance(val, dict):
+                if depth > 24:
+                    raise RuleError('closure depth')
+                return self.translate_lambda(spot, val, spot_dungeon, depth + 1)
+            raise RuleError(f'call to unresolved {fn.id}')
+
+        # boss defeat forms
+        if fn_text.endswith('.can_defeat'):
+            owner = unparse(fn.value)
+            if (owner == 'location.parent_region.dungeon.boss'
+                    or re.match(r"world\.get_location\(.*\)\.parent_region\.dungeon\.boss$", owner)):
+                dgn = self.dungeon_fork.get(spot_dungeon)
+                if dgn is None:
+                    raise RuleError('boss rule outside dungeon')
+                if dgn == 'CastleTower':
+                    # Agahnim 1 — fork idiom (12_hyrule_castle_tower.yaml "Agahnim")
+                    return ('vm', '(HasSword(1) OR (OP_MODEWEAPONS_EQ(swordless) AND '
+                                  '(HAS_ITEM(Hammer) OR HAS_ITEM(BugCatchingNet))))')
+                return ('vm', f'CanKillBoss({dgn})')
+            m = re.match(r"world\.get_region\('([^']+)', player\)\.dungeon\.bosses\['(\w+)'\]", owner)
+            if m:
+                slot = m.group(2)
+                if slot == 'bottom':
+                    return ('vm', 'CanKillArmosKnights()')
+                if slot == 'middle':
+                    return ('vm', 'CanKillLanmolas(world)')
+                if slot == 'top':
+                    return ('vm', 'CanKillMoldorm()')
+                raise RuleError(f'GT boss slot {slot}')
+            raise RuleError(f'boss form {owner!r}')
+
+        if not fn_text.startswith('state.'):
+            raise RuleError(f'call {text!r}')
+        meth = fn_text[len('state.'):]
+
+        if meth == 'has':
+            name = self.const_arg(node.args[0], closure)
+            count = 1
+            if len(node.args) >= 3:
+                count = self.const_arg(node.args[2], closure)
+            if name in KNOWN_EVENTS:
+                if count != 1:
+                    raise RuleError(f'event with count {name}')
+                return ('event', name)
+            if name in HAS_ITEM_MAP and count == 1:
+                return ('vm', HAS_ITEM_MAP[name])
+            raise RuleError(f'has({name!r}, count={count})')
+
+        if meth in ('can_reach_blue', 'can_reach_orange'):
+            m = re.match(r"world\.get_region\('([^']+)', player\)", unparse(node.args[0]))
+            if not m or m.group(1) not in self.region_names:
+                raise RuleError(f'creach region in {text!r}')
+            return ('creach', m.group(1), 'blue' if meth == 'can_reach_blue' else 'orange')
+
+        if meth == 'can_reach':
+            # state.can_reach('R', 'Region', player) — any-crystal-state reach
+            rname = self.const_arg(node.args[0], closure)
+            if len(node.args) >= 2 and self.const_arg(node.args[1], closure) != 'Region':
+                raise RuleError(f'can_reach non-region {text!r}')
+            if rname not in self.region_names:
+                raise RuleError(f'can_reach unknown region {rname!r}')
+            return ('reach', rname)
+
+        if meth == 'has_sm_key':
+            key = self.const_arg(node.args[0], closure)
+            if key not in SM_KEY_MAP:
+                raise RuleError(f'has_sm_key {key!r}')
+            return ('vm', f'HAS_AMOUNT({SM_KEY_MAP[key]}, 1)')
+
+        if meth == 'has_hearts':
+            # Fork stance (31_misery_mire.yaml Spike Chest): cantTakeDamage
+            # defaults false -> hearts checks collapse to TRUE.
+            return ('true',)
+
+        if meth == 'can_extend_magic':
+            magic = 16
+            for a in node.args[1:]:
+                v = self.const_arg(a, closure, allow_fail=True)
+                if isinstance(v, int):
+                    magic = v
+                    break
+            bars = max(1, magic // 8)
+            return ('vm', f'CanExtendMagic(world, {bars})')
+
+        if meth == 'can_kill_most_things':
+            enemies = 5
+            for a in node.args[1:]:
+                v = self.const_arg(a, closure, allow_fail=True)
+                if isinstance(v, int):
+                    enemies = v
+            return ('vm', f'CanKillMostThings(world, {enemies})')
+
+        if meth in MACRO_MAP:
+            return ('vm', MACRO_MAP[meth])
+
+        raise RuleError(f'method {meth!r} in {text!r}')
+
+    def const_arg(self, node, closure, allow_fail=False):
+        if isinstance(node, pyast.Constant):
+            return node.value
+        if isinstance(node, pyast.Name):
+            val = closure.get(node.id)
+            if isinstance(val, str):
+                try:
+                    return pyast.literal_eval(val)
+                except (ValueError, SyntaxError):
+                    pass
+        if allow_fail:
+            return None
+        raise RuleError(f'non-const arg {unparse(node)!r}')
+
+
+def unparse(node):
+    try:
+        return pyast.unparse(node)
+    except AttributeError:  # py<3.9
+        import io
+        return pyast.dump(node)
+
+
+def simplify_ir(node):
+    """Flatten nests, drop true/false identities, fold A OR (A AND B) -> A."""
+    kind = node[0]
+    if kind in ('and', 'or'):
+        flat = []
+        for c in node[1]:
+            c = simplify_ir(c)
+            if c[0] == kind:
+                flat.extend(c[1])
+            else:
+                flat.append(c)
+        # identity / absorbing elements
+        if kind == 'and':
+            flat = [c for c in flat if c != ('true',)]
+            if any(c == ('false',) for c in flat):
+                return ('false',)
+            if not flat:
+                return ('true',)
+        else:
+            flat = [c for c in flat if c != ('false',)]
+            if any(c == ('true',) for c in flat):
+                return ('true',)
+            if not flat:
+                return ('false',)
+        # dedup + absorption: A OR (A AND ...) -> A
+        uniq = []
+        for c in flat:
+            if c not in uniq:
+                uniq.append(c)
+        if kind == 'or':
+            atoms = [c for c in uniq if c[0] not in ('and',)]
+            uniq = [c for c in uniq
+                    if not (c[0] == 'and' and any(a in c[1] for a in atoms))]
+        if len(uniq) == 1:
+            return uniq[0]
+        return (kind, uniq)
+    if kind == 'not':
+        return ('not', simplify_ir(node[1]))
+    return node
+
+
+def fold_vm(node):
+    """Collapse pure-vm subtrees into single DSL strings."""
+    kind = node[0]
+    if kind in ('and', 'or'):
+        children = [fold_vm(c) for c in node[1]]
+        if all(c[0] == 'vm' for c in children):
+            j = ' AND ' if kind == 'and' else ' OR '
+            return ('vm', '(' + j.join(c[1] for c in children) + ')')
+        return (kind, children)
+    if kind == 'not':
+        inner = fold_vm(node[1])
+        if inner[0] == 'vm':
+            return ('vm', f'(NOT {inner[1]})')
+        return ('not', inner)
+    return node
 
 
 def dump_stats(model):
@@ -492,6 +943,7 @@ def main():
     ap.add_argument('--ref', default=os.environ.get('DOOR_RANDO_REF',
                     os.path.join(REPO, '..', 'ALttPDoorRandomizer')))
     ap.add_argument('--dump-stats', action='store_true')
+    ap.add_argument('--check-rules', action='store_true')
     ap.add_argument('--out-json', default=os.path.join(REPO, 'assets', 'rando',
                                                        'door_tables.gen.json'))
     args = ap.parse_args()
@@ -511,6 +963,23 @@ def main():
 
     if args.dump_stats:
         dump_stats(model)
+
+    if args.check_rules:
+        tr = RuleTranslator(model)
+        n_vm = n_mixed = 0
+        region_dgn = {r['name']: r['dungeon'] for r in model['regions']}
+        for e in model['edges'] + model['locations'] :
+            dgn = region_dgn.get(e.get('from') or e.get('region'))
+            ir = tr.translate_entry_list(e['name'], e['rules'], dgn)
+            ir = fold_vm(ir)
+            if ir[0] == 'vm':
+                n_vm += 1
+            elif ir[0] not in ('true', 'false'):
+                n_mixed += 1
+        print(f'rule check: vm-only={n_vm} mixed={n_mixed} errors={len(tr.errors)}')
+        for spot, body, msg in tr.errors[:30]:
+            print(f'  ERR {spot}: {msg}\n      {body[:160]}')
+        return 1 if tr.errors else 0
     return 0
 
 
