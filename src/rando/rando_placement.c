@@ -14,6 +14,7 @@
 #include "rando_placement.h"
 #include "rando.h"
 #include "rando_logic.h"
+#include "shuffle_doors.h"  // door-shuffle bk_restricted placement ban
 #include "rando_rng.h"
 #include "rando_shuffles.h"
 #include "shuffle_boss.h"   // BossShuffle_ComputeAssignment (boss-shuffle reachability)
@@ -627,6 +628,17 @@ static bool location_accepts_item(const RandoLocationDef *loc,
   // predicate VM so the can_place YAML doesn't need to enumerate every
   // dungeon item per location.
   if (!dungeon_mode_accepts_item(loc, candidate_item, settings)) return false;
+
+  // Door shuffle — bk_restricted placement ban (add-rando-door-shuffle):
+  // the key-door prover marks the locations reachable ONLY past a dungeon's
+  // (un-relocated) big-key door; placing that big key there self-locks the
+  // seed in a way the reachability gate alone cannot catch. Inert when no
+  // door layout is installed.
+  if (candidate_item >= 66 && candidate_item <= 76) {  // BigKey_* ids
+    const struct DoorShuffleLayout *dl = Rando_GetDoorLogicLayout(NULL);
+    if (dl != NULL && DoorShuffle_BkRestricted(dl, loc->id))
+      return false;
+  }
 
   // Phase B Slice 2 — per-world-state can_place/always_allow override.
   // Inverted seeds may have different can_place predicates per location.

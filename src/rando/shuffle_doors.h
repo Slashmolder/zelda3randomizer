@@ -52,6 +52,15 @@ bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
 // by door_registry.yaml, so equal layouts digest equally across builds.
 uint32 DoorShuffle_LayoutDigest(const DoorShuffleLayout *l);
 
+// True iff the prover banned the big key from this fork location (consulted
+// by the placer next to dungeon-mode containment).
+static inline bool DoorShuffle_BkRestricted(const DoorShuffleLayout *l, uint16 loc_id) {
+  for (int i = 0; i < l->bk_restricted_count; i++)
+    if (l->bk_restricted[i] == loc_id)
+      return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Explorer query API — the single reachability model shared by the stitcher
 // (lenient), the prover (key-door state machine), and the logic oracle
