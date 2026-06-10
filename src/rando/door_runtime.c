@@ -29,6 +29,10 @@ static bool g_door_staircase_ctx;       // inside Dungeon_DetectStaircase's spir
 static bool g_door_toggles_overridden;  // latch: last Trans override consumed the toggles
 static uint16 g_door_spiral_pending;    // dest door id for the pending spiral fixup
 static uint16 g_door_spiral_source;     // source door id of the pending spiral
+// In-room px of the SOURCE staircase head (captured by Rando_DoorSpiralDest
+// while the source attr table is loaded; only read while pending is armed).
+static uint16 g_door_spiral_src_x;
+static uint16 g_door_spiral_src_y;
 
 // Per-room catalog index: doors sorted by room; g_room_first[room] = first
 // slot in g_door_by_room, -1 = no doors. Built once (the catalog is const).
@@ -366,6 +370,26 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
     uint16 dest_id = g_door_link[g_door_by_room[i]];
     if (dest_id == kDoorRt_NoOverride || dest_id >= kDoorTbl_DoorCount)
       return vanilla_byte;
+    // Anchor the SOURCE staircase head while the source room's attr table is
+    // still loaded, with the exact scan Rando_DoorSpiralFixup runs on the
+    // destination — the fixup translates the whole mid-walk tableau by the
+    // head-to-head delta, so both anchors must be found the same way.
+    int sbase = (link_is_on_lower_level & 1) ? 0x1000 : 0;
+    int spos = -1;
+    for (int p = sbase; p < sbase + 0x1000 - 0x40; p++) {
+      uint8 sat = dung_bg2_attr_table[p];
+      if (sat != 0x5e && sat != 0x5f)
+        continue;
+      uint8 sa2 = dung_bg2_attr_table[p + 0x40];
+      if ((sa2 & 0xf8) == 0x30 && (sa2 & 3) == (slot & 3)) {
+        spos = p;
+        break;
+      }
+    }
+    if (spos < 0)
+      return vanilla_byte;  // defensive: no source anchor, keep the vanilla spiral
+    g_door_spiral_src_x = (spos & 0x3f) << 3;
+    g_door_spiral_src_y = ((spos >> 6) & 0x3f) << 3;
     g_door_spiral_source = g_door_by_room[i];
     g_door_spiral_pending = dest_id;
     return kDoorTblDoors[dest_id].room;
@@ -386,8 +410,9 @@ void Rando_DoorSpiralFixup(void) {
   // The vanilla flow already applied the grid-granular move
   // (Dungeon_AdjustAfterSpiralStairs with prev = the SOURCE room), keeping
   // Link's intra-room offset. Vanilla spiral pairs share that offset;
-  // shuffled ones need not — locate the destination staircase tile in the
-  // freshly loaded room and apply the intra-room delta to Link + camera.
+  // shuffled ones need not — locate the destination staircase head in the
+  // freshly loaded room and translate by the head-to-head delta against the
+  // source anchor captured in Rando_DoorSpiralDest.
   // The scan is keyed to the DESTINATION door's layer (the +0x1000 attr half
   // is the lower level — Dungeon_DetectStaircase's `pos |= 0x1000` form) and
   // matches the slot bits only (attr2 = 0x30 | up_down<<2 | slot; the up/down
@@ -409,14 +434,56 @@ void Rando_DoorSpiralFixup(void) {
     return;  // defensive: leave vanilla offset (playtest-visible, not fatal)
   int tx = (found_pos & 0x3f) << 3;        // x within supertile, px
   int ty = ((found_pos >> 6) & 0x3f) << 3; // y within supertile, px
-  int cur_x = link_x_coord & 0x1FF, cur_y = link_y_coord & 0x1FF;
-  int dxp = tx - cur_x, dyp = ty - cur_y;
+  int dxp = tx - (int)g_door_spiral_src_x;
+  int dyp = ty - (int)g_door_spiral_src_y;
+
+  // Translate the whole mid-spiral walk tableau, not just Link: the walk
+  // choreography is position-anchored. tiledetect_which_y_pos[1] is the
+  // walk X target (seeded at entry; HandleLinkOnSpiralStairs terminates the
+  // walk-in on low-byte equality against it, and ONLY that termination calls
+  // RepositionLinkAfterSpiralStairs, which restores link_visibility_status —
+  // a stale target leaves Link permanently invisible while the timer-driven
+  // stages finish around him). [0] is the entry Y, the stair-walk sprite
+  // clip line (player_oam). The delta keeps Link's walk progress relative
+  // to the stair structure, exactly as a vanilla (same-offset) pair would.
   link_x_coord += dxp;
   link_y_coord += dyp;
-  BG2HOFS_copy2 += dxp;
-  BG2VOFS_copy2 += dyp;
-  link_quadrant_x = ((link_x_coord & 0x1FF) >= 256) ? 1 : 0;
-  link_quadrant_y = ((link_y_coord & 0x1FF) >= 256) ? 2 : 0;
+  tiledetect_which_y_pos[1] += dxp;
+  tiledetect_which_y_pos[0] += dyp;
+
+  // Per-axis quadrant-coupled state, as in DoorRt_Arrive: re-anchor the
+  // confined camera stops (a0/a1 move 0x100 with a quadrant flip), follow-
+  // shift the camera then CLAMP into [a0,a1] (the per-frame camera stops
+  // are equality tests — out-of-range scrolls unbounded), and re-seed the
+  // follow thresholds from the camera phase.
+  uint8 new_qx = ((link_x_coord & 0x1FF) >= 256) ? 1 : 0;
+  if (new_qx != link_quadrant_x) {
+    int qa = new_qx ? 0x100 : -0x100;
+    room_bounds_x.a0 += qa;
+    room_bounds_x.a1 += qa;
+    link_quadrant_x = new_qx;
+  }
+  int cam = (int)BG2HOFS_copy2 + dxp;
+  if (cam < (int)room_bounds_x.a0) cam = room_bounds_x.a0;
+  if (cam > (int)room_bounds_x.a1) cam = room_bounds_x.a1;
+  BG2HOFS_copy2 = (uint16)cam;
+  camera_x_coord_scroll_low = (cam & 0x1ff) + 127;
+  camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
+
+  uint8 new_qy = ((link_y_coord & 0x1FF) >= 256) ? 2 : 0;
+  if (new_qy != link_quadrant_y) {
+    int qa = new_qy ? 0x100 : -0x100;
+    room_bounds_y.a0 += qa;
+    room_bounds_y.a1 += qa;
+    link_quadrant_y = new_qy;
+  }
+  cam = (int)BG2VOFS_copy2 + dyp;
+  if (cam < (int)room_bounds_y.a0) cam = room_bounds_y.a0;
+  if (cam > (int)room_bounds_y.a1) cam = room_bounds_y.a1;
+  BG2VOFS_copy2 = (uint16)cam;
+  camera_y_coord_scroll_low = (cam & 0x1ff) + 120;
+  camera_y_coord_scroll_hi = camera_y_coord_scroll_low + 2;
+
   Dungeon_AdjustQuadrant();
   for (int i = 0; i < 20; i++)
     tagalong_y_hi[i] = link_y_coord >> 8;
