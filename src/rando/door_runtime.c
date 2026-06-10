@@ -346,6 +346,48 @@ void Rando_DoorStaircaseContext(bool entering) {
   g_door_staircase_ctx = entering;
 }
 
+// Spiral head position from the room's staircase OBJECT list. The 0x5e/0x5f
+// head attrs and the 0x30|down<<2|slot stair byte are STAMPED into the attr
+// table by Dungeon_LoadObjectAttribute from dung_inter_starcases[] plus the
+// cumulative category counters — but that stamping runs inside the CHUNKED
+// attribute loader (overworld_map_state, kicked off only from spiral stage 7),
+// while Dungeon_LoadRoom fills the object list synchronously. Scanning the
+// attr table at the stage-3 arrival fixup therefore reads the SOURCE room's
+// stale attrs, finds the source's own head, and computes a zero delta — Link
+// strands at the source-relative offset in the destination room (the playtest
+// "empty walled box" trap). The object list is valid the moment
+// Dungeon_LoadRoom returns, on both the capture and fixup sides.
+//
+// Stamp facts (Dungeon_LoadObjectAttribute): slot bits = list index & 3
+// (t = 0x3030 + k*0x101; the southdown reset keeps the low bits), the head
+// tile of both spiral categories is list_pos + XY(1,0), and spiral heads are
+// stamped on the BG2 attr half only (WriteAttr2), so no layer keying.
+// Returns the attr-table pos index of the head tile, or -1.
+static int DoorRt_SpiralHeadPosFromList(uint8 slot, bool going_up) {
+  const struct { uint16 end; uint8 spiral, up; } cats[10] = {
+    { dung_num_inter_room_upnorth_stairs, 0, 1 },
+    { dung_num_wall_upnorth_spiral_stairs, 1, 1 },
+    { dung_num_wall_upnorth_spiral_stairs_2, 1, 1 },
+    { dung_num_inter_room_upnorth_straight_stairs, 0, 1 },
+    { dung_num_inter_room_upsouth_straight_stairs, 0, 1 },
+    { dung_num_inter_room_southdown_stairs, 0, 0 },
+    { dung_num_wall_downnorth_spiral_stairs, 1, 0 },
+    { dung_num_wall_downnorth_spiral_stairs_2, 1, 0 },
+    { dung_num_inter_room_downnorth_straight_stairs, 0, 0 },
+    { dung_num_inter_room_downsouth_straight_stairs, 0, 0 },
+  };
+  int i = 0;
+  for (int c = 0; c < 10; c++) {
+    for (; i != cats[c].end && i < 32; i += 2) {
+      int k = i >> 1;
+      if (!cats[c].spiral || (cats[c].up != 0) != going_up || (k & 3) != (slot & 3))
+        continue;
+      return dung_inter_starcases[k] + 1;  // + XY(1,0): the head tile
+    }
+  }
+  return -1;
+}
+
 uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_byte) {
   g_door_spiral_pending = 0xFFFF;
   g_door_spiral_source = 0xFFFF;
@@ -370,22 +412,10 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
     uint16 dest_id = g_door_link[g_door_by_room[i]];
     if (dest_id == kDoorRt_NoOverride || dest_id >= kDoorTbl_DoorCount)
       return vanilla_byte;
-    // Anchor the SOURCE staircase head while the source room's attr table is
-    // still loaded, with the exact scan Rando_DoorSpiralFixup runs on the
-    // destination — the fixup translates the whole mid-walk tableau by the
-    // head-to-head delta, so both anchors must be found the same way.
-    int sbase = (link_is_on_lower_level & 1) ? 0x1000 : 0;
-    int spos = -1;
-    for (int p = sbase; p < sbase + 0x1000 - 0x40; p++) {
-      uint8 sat = dung_bg2_attr_table[p];
-      if (sat != 0x5e && sat != 0x5f)
-        continue;
-      uint8 sa2 = dung_bg2_attr_table[p + 0x40];
-      if ((sa2 & 0xf8) == 0x30 && (sa2 & 3) == (slot & 3)) {
-        spos = p;
-        break;
-      }
-    }
+    // Anchor the SOURCE staircase head from the staircase object list — the
+    // same locator the destination fixup uses, so the head-to-head delta is
+    // definitionally consistent on both ends.
+    int spos = DoorRt_SpiralHeadPosFromList(slot, d->direction == kDoorTblDir_Up);
     if (spos < 0)
       return vanilla_byte;  // defensive: no source anchor, keep the vanilla spiral
     g_door_spiral_src_x = (spos & 0x3f) << 3;
@@ -412,24 +442,15 @@ void Rando_DoorSpiralFixup(void) {
   // Link's intra-room offset. Vanilla spiral pairs share that offset;
   // shuffled ones need not — locate the destination staircase head in the
   // freshly loaded room and translate by the head-to-head delta against the
-  // source anchor captured in Rando_DoorSpiralDest.
-  // The scan is keyed to the DESTINATION door's layer (the +0x1000 attr half
-  // is the lower level — Dungeon_DetectStaircase's `pos |= 0x1000` form) and
-  // matches the slot bits only (attr2 = 0x30 | up_down<<2 | slot; the up/down
-  // bit differs from the source by construction — the stitcher pairs spirals
-  // strictly Up<->Down).
-  int base = dst->layer ? 0x1000 : 0;
-  int found_pos = -1;
-  for (int pos = base; pos < base + 0x1000 - 0x40; pos++) {
-    uint8 at = dung_bg2_attr_table[pos];
-    if (at != 0x5e && at != 0x5f)
-      continue;
-    uint8 a2 = dung_bg2_attr_table[pos + 0x40];  // attr2 row below the head
-    if ((a2 & 0xf8) == 0x30 && (a2 & 3) == (dst->door_index & 3)) {
-      found_pos = pos;
-      break;
-    }
-  }
+  // source anchor captured in Rando_DoorSpiralDest. The locator reads the
+  // staircase OBJECT list, NOT the derived attr table: Dungeon_LoadRoom (just
+  // above) fills the list synchronously, while the attr table only rebuilds in
+  // the chunked loader from spiral stage 7 — scanning it here found the
+  // SOURCE room's own head and produced a zero delta (the up/down bit differs
+  // from the source by construction — the stitcher pairs spirals strictly
+  // Up<->Down — so the match keys on slot + direction).
+  int found_pos = DoorRt_SpiralHeadPosFromList(dst->door_index,
+                                               dst->direction == kDoorTblDir_Up);
   if (found_pos < 0)
     return;  // defensive: leave vanilla offset (playtest-visible, not fatal)
   int tx = (found_pos & 0x3f) << 3;        // x within supertile, px
