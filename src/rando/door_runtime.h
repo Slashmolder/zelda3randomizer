@@ -21,6 +21,10 @@ void DoorRt_Reset(void);
 void DoorRt_SetLink(uint16 door_a, uint16 door_b);  // one directed half-link
 void DoorRt_Activate(void);
 bool DoorRt_Active(void);
+// True iff a layout's link table is installed this session (independent of
+// the kFeatures1_DoorShuffleActive RAM bit — used by the snapshot-restore
+// reconcile, which clears a restored bit that has no installed layout).
+bool DoorRt_Installed(void);
 uint16 DoorRt_GetLink(uint16 door_id);  // kDoorRt_NoOverride when unshuffled
 
 // dungeon.c hook: normal edge doors. Returns true when an override fired —
@@ -55,6 +59,12 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
 // intra-room slot delta between the source and destination spiral doors
 // (vanilla pairs share their intra-room position; shuffled ones need not).
 void Rando_DoorSpiralFixup(void);
+
+// Called at the end of Module07_0E_13_SetRoomAndLayerAndCache (which sets the
+// layer from the SOURCE room header's per-staircase plane — vanilla-correct,
+// wrong under redirect): re-asserts the destination door's layer and consumes
+// the pending spiral redirect. No-op when none is pending.
+void Rando_DoorSpiralLayerFix(void);
 
 // ---------------------------------------------------------------------------
 // Stage-1b door-KIND overlay: makes the layout's RELOCATED small-key doors

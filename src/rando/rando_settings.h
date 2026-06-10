@@ -217,6 +217,11 @@ void Settings_SetDefaults(RandoSettings *s);
 // wildKeys lets keys spawn anywhere; genericKeys makes them fungible.
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
 
+// add-rando-door-shuffle — like the small-keys helper: an active door shuffle
+// forces in-dungeon big keys at every placer read (containment + the
+// bk_restricted ban keep the big key beatably placed under a shuffled layout).
+uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s);
+
 // add-rando-door-shuffle — the normalized (post-derived-rules) door_shuffle
 // value; definitionally the canonical byte [27], so generation, runtime
 // install, and settings_hash always agree (vanilla under Inverted/Retro,

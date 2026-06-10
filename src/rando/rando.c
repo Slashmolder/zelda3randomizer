@@ -1625,6 +1625,15 @@ static void Entrance_RuntimeTeardown(void) {
 // Install the overlay + logic overrides for an entrance-shuffle slot (caves
 // and/or dungeons). Tears down any prior install first (so a slot-switch without
 // an intervening Deactivate is safe). No-op for non-shuffle slots.
+// seed_u64 lives at raw share_string bytes [21..28] LE (rando_share layout).
+// Single decoder shared by the entrance regen, the door-shuffle regen, and
+// the cosmetic seed — a layout move must change exactly one place.
+static uint64 SlotSeedFromShareString(const uint8 *sb) {
+  return (uint64)sb[21] | ((uint64)sb[22] << 8) | ((uint64)sb[23] << 16) |
+         ((uint64)sb[24] << 24) | ((uint64)sb[25] << 32) |
+         ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+}
+
 static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   Entrance_RuntimeTeardown();
   RandoSettings es;
@@ -1663,9 +1672,7 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   if (ids == NULL || len == 0 || len > kEntranceOverlayMax) return;
   // seed_u64 lives at raw share_string bytes [21..28] LE (per rando_share layout).
   const uint8 *sb = h->share_string;
-  uint64 seed = (uint64)sb[21] | ((uint64)sb[22] << 8) | ((uint64)sb[23] << 16) |
-                ((uint64)sb[24] << 24) | ((uint64)sb[25] << 32) |
-                ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+  uint64 seed = SlotSeedFromShareString(sb);
   uint8 cave_assign[kEntranceMaxInteriors]; int cave_n = 0;
   uint8 dun_assign[kEntranceMaxInteriors]; int dun_n = 0;
   uint8 cross_assign[kEntranceMaxInteriors]; int cross_n = 0;
@@ -1833,11 +1840,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     RandoSettings ds;
     if (Settings_CanonicalDeserialize(src->settings_canonical, &ds) == 0 &&
         Settings_EffectiveDoorShuffle(&ds) != kDoorShuffle_Vanilla) {
-      const uint8 *sb = src->header.share_string;
-      uint64 slot_seed = (uint64)sb[21] | ((uint64)sb[22] << 8) |
-                         ((uint64)sb[23] << 16) | ((uint64)sb[24] << 24) |
-                         ((uint64)sb[25] << 32) | ((uint64)sb[26] << 40) |
-                         ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+      uint64 slot_seed = SlotSeedFromShareString(src->header.share_string);
       bool ok = DoorShuffle_Generate(slot_seed, src->header.door_attempt,
                                      kDoorShuffle_MvpDungeonMask, &s_door_layout);
       uint32 digest = ok ? (DoorShuffle_LayoutDigest(&s_door_layout) & 0xFFFFFF) : 0;
@@ -1948,14 +1951,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // Cosmetic shuffles: when CosmeticSeed is 0 (default), the look tracks the
   // slot's seed_u64 (share_string bytes [21..28] LE). Re-seeds palette + music
   // tables; the sprite pick already happened at launch (documented limitation).
-  {
-    const uint8 *sb = src->header.share_string;
-    uint64 slot_seed = (uint64)sb[21] | ((uint64)sb[22] << 8) |
-                       ((uint64)sb[23] << 16) | ((uint64)sb[24] << 24) |
-                       ((uint64)sb[25] << 32) | ((uint64)sb[26] << 40) |
-                       ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
-    Cosmetic_SetSeed(g_config.cosmetic_seed, slot_seed);
-  }
+  Cosmetic_SetSeed(g_config.cosmetic_seed,
+                   SlotSeedFromShareString(src->header.share_string));
 
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;

@@ -217,7 +217,7 @@ void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *set
     for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++)
       counts->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
   }
-  if (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveBigKeysMode(settings) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++)
       counts->by_item_id[kBigKeys[i]] = 1;
   }
@@ -390,7 +390,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       n = pool_add(out_items, n, capacity, key_id, kVanillaSmallKeyCounts[i].count);
     }
   }
-  if (settings->dungeon_big_keys_mode != kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveBigKeysMode(settings) != kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++) {
       n = pool_add(out_items, n, capacity, kBigKeys[i], 1);
     }
@@ -601,7 +601,7 @@ static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
   if (candidate_item >= 53 && candidate_item <= 65) {
     mode = Settings_EffectiveSmallKeysMode(settings);
   } else if (candidate_item >= 66 && candidate_item <= 76) {
-    mode = settings->dungeon_big_keys_mode;
+    mode = Settings_EffectiveBigKeysMode(settings);
   } else if (candidate_item == 124 || (candidate_item >= 77 && candidate_item <= 87)) {
     mode = settings->dungeon_maps_mode;
   } else if (candidate_item >= 88 && candidate_item <= 98) {
@@ -1196,7 +1196,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     } else if (vi >= 53 && vi <= 65) {
       vanilla_pin = (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla);
     } else if (vi >= 66 && vi <= 76) {
-      vanilla_pin = (settings->dungeon_big_keys_mode == kDungeonItemMode_Vanilla);
+      vanilla_pin = (Settings_EffectiveBigKeysMode(settings) == kDungeonItemMode_Vanilla);
     } else if ((vi >= 77 && vi <= 87) || vi == 124) {
       vanilla_pin = (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla);
     } else if (vi >= 88 && vi <= 98) {
@@ -1492,7 +1492,7 @@ static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCount
       out->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
     }
   }
-  if (s->dungeon_big_keys_mode == kDungeonItemMode_Vanilla) {
+  if (Settings_EffectiveBigKeysMode(s) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++) {
       out->by_item_id[kBigKeys[i]] = 1;
     }

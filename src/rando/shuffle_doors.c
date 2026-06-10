@@ -609,16 +609,28 @@ static void Door_ExploreStaged(const DoorShuffleLayout *layout, uint8 dungeon,
 // ---------------------------------------------------------------------------
 
 // Hook buckets in reference order; hook_from_door: spiral -> Stairs, normal ->
-// its direction. type_map pairs North<->South, West<->East, Stairs<->Stairs.
-enum { kHook_North, kHook_South, kHook_West, kHook_East, kHook_Stairs, kHook_COUNT };
+// its direction. type_map pairs North<->South, West<->East.
+//
+// DEVIATION from the reference's single Stairs<->Stairs bucket: spirals pair
+// strictly Up<->Down. The reference allows Up<->Up, but the engine's spiral
+// walk-out machinery (Dungeon_SyncBackgroundsFromSpiralStairs offsets, the
+// dung_cur_floor +-1, SpiralStairs_MakeNearbyWallsLowPriority — all keyed on
+// the SOURCE which_staircase_index bit 2) assumes the arrival tile is the
+// opposite-direction stair, which is true for every vanilla pair. Enforcing
+// Up<->Down keeps that geometry contract; per-dungeon pools are balanced
+// (the pool is built from vanilla Up<->Down pairs), so a perfect matching
+// always exists.
+enum { kHook_North, kHook_South, kHook_West, kHook_East,
+       kHook_StairsUp, kHook_StairsDown, kHook_COUNT };
 static const uint8 kOppositeHook[kHook_COUNT] = {
-  kHook_South, kHook_North, kHook_East, kHook_West, kHook_Stairs,
+  kHook_South, kHook_North, kHook_East, kHook_West,
+  kHook_StairsDown, kHook_StairsUp,
 };
 
 static uint8 HookOfDoor(uint16 door) {
   const DoorTblDoor *d = &kDoorTblDoors[door];
   if (d->type == kDoorTblType_SpiralStairs)
-    return kHook_Stairs;
+    return d->direction == kDoorTblDir_Up ? kHook_StairsUp : kHook_StairsDown;
   switch (d->direction) {
   case kDoorTblDir_North: return kHook_North;
   case kDoorTblDir_South: return kHook_South;

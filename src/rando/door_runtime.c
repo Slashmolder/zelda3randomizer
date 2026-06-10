@@ -116,6 +116,10 @@ bool DoorRt_Active(void) {
   return g_door_rt_active && (enhanced_features1 & kFeatures1_DoorShuffleActive) != 0;
 }
 
+bool DoorRt_Installed(void) {
+  return g_door_rt_active;
+}
+
 // ---------------------------------------------------------------------------
 // Exit-door resolution
 // ---------------------------------------------------------------------------
@@ -165,7 +169,9 @@ static int DoorRt_ResolveExit(uint8 dir) {
       continue;
     if (d->flags & kDoorTblFlag_VanillaTeleport)
       continue;
-    if (d->layer != (link_is_on_lower_level ? 1 : 0))
+    // link_is_on_lower_level can transiently hold 2/3 during staircase
+    // sequences (Module07_0E_00 priority values); bit 0 is the layer.
+    if (d->layer != (link_is_on_lower_level & 1))
       continue;
     int slot = DoorRt_OuterSlot(dir, d->pos_byte);
     if (slot < 0)
@@ -229,8 +235,11 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
   default:
     return;
   }
-  dungeon_room_index2 = virtual_room;
-  dungeon_room_index_prev = virtual_room;
+  // Vanilla Dungeon_AdjustForTeleportDoors takes a uint8 room, so index2/prev
+  // always get a zero high byte; mask the same way (a top-row north arrival
+  // would otherwise wrap the uint16 below zero).
+  dungeon_room_index2 = (uint8)virtual_room;
+  dungeon_room_index_prev = (uint8)virtual_room;
 
   bool horizontal = (dst->direction == kDoorTblDir_West || dst->direction == kDoorTblDir_East);
 
@@ -338,8 +347,14 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
   g_door_spiral_source = 0xFFFF;
   if (!DoorRt_Active())
     return vanilla_byte;
-  if (attr != 0x38 && attr != 0x39)
-    return vanilla_byte;  // straight/water stairs are not shuffled (intensity 1)
+  // Spiral (circular) staircases carry head attrs 0x5e/0x5f and route to
+  // submodule 14 (Module07_0E_SpiralStairs — the kDungeonSubmodules table is
+  // the authority; the helper on that branch is misleadingly named
+  // UsedForStraightInterRoomStaircase). Attrs 0x38/0x39 are the STRAIGHT
+  // inter-room stairs (submodule 18/19, Module07_11) and 0x26 the fat stairs
+  // (submodule 6) — neither is shuffled at intensity 1.
+  if (attr != 0x5e && attr != 0x5f)
+    return vanilla_byte;
   if (room >= 256 || g_room_first[room] < 0)
     return vanilla_byte;
   int first = g_room_first[room];
@@ -362,22 +377,30 @@ void Rando_DoorSpiralFixup(void) {
   if (g_door_spiral_pending == 0xFFFF)
     return;
   const DoorTblDoor *dst = &kDoorTblDoors[g_door_spiral_pending];
-  g_door_spiral_pending = 0xFFFF;
+  // NB: g_door_spiral_pending stays armed — Rando_DoorSpiralLayerFix consumes
+  // it after Module07_0E_13_SetRoomAndLayerAndCache's layer write (which would
+  // otherwise clobber the destination layer from the stale SOURCE-header
+  // cur_staircase_plane).
   g_door_spiral_source = 0xFFFF;
 
   // The vanilla flow already applied the grid-granular move
   // (Dungeon_AdjustAfterSpiralStairs with prev = the SOURCE room), keeping
   // Link's intra-room offset. Vanilla spiral pairs share that offset;
   // shuffled ones need not — locate the destination staircase tile in the
-  // freshly loaded room (attr2 marker 0x30|slot under the staircase head
-  // attr) and apply the intra-room delta to Link + camera.
-  int want = 0x30 | (dst->door_index & 3);
+  // freshly loaded room and apply the intra-room delta to Link + camera.
+  // The scan is keyed to the DESTINATION door's layer (the +0x1000 attr half
+  // is the lower level — Dungeon_DetectStaircase's `pos |= 0x1000` form) and
+  // matches the slot bits only (attr2 = 0x30 | up_down<<2 | slot; the up/down
+  // bit differs from the source by construction — the stitcher pairs spirals
+  // strictly Up<->Down).
+  int base = dst->layer ? 0x1000 : 0;
   int found_pos = -1;
-  for (int pos = 0; pos < 0x1000; pos++) {
+  for (int pos = base; pos < base + 0x1000 - 0x40; pos++) {
     uint8 at = dung_bg2_attr_table[pos];
-    if (at != 0x38 && at != 0x39)
+    if (at != 0x5e && at != 0x5f)
       continue;
-    if (dung_bg2_attr_table[pos + 0x40] == want) {  // attr2 row below the head
+    uint8 a2 = dung_bg2_attr_table[pos + 0x40];  // attr2 row below the head
+    if ((a2 & 0xf8) == 0x30 && (a2 & 3) == (dst->door_index & 3)) {
       found_pos = pos;
       break;
     }
@@ -394,11 +417,22 @@ void Rando_DoorSpiralFixup(void) {
   BG2VOFS_copy2 += dyp;
   link_quadrant_x = ((link_x_coord & 0x1FF) >= 256) ? 1 : 0;
   link_quadrant_y = ((link_y_coord & 0x1FF) >= 256) ? 2 : 0;
-  link_is_on_lower_level = dst->layer;
-  link_is_on_lower_level_mirror = dst->layer;
   Dungeon_AdjustQuadrant();
   for (int i = 0; i < 20; i++)
     tagalong_y_hi[i] = link_y_coord >> 8;
+}
+
+void Rando_DoorSpiralLayerFix(void) {
+  if (g_door_spiral_pending == 0xFFFF)
+    return;
+  const DoorTblDoor *dst = &kDoorTblDoors[g_door_spiral_pending];
+  g_door_spiral_pending = 0xFFFF;
+  // Module07_0E_13_SetRoomAndLayerAndCache just set the layer from
+  // kTeleportPitLevel1/2[cur_staircase_plane] — the SOURCE room header's
+  // per-staircase plane, which describes the VANILLA destination. The
+  // redirected destination door record is the layer authority.
+  link_is_on_lower_level = dst->layer;
+  link_is_on_lower_level_mirror = dst->layer;
 }
 
 // ---------------------------------------------------------------------------

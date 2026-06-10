@@ -7663,6 +7663,10 @@ void Module07_0E_00_InitPriorityAndScreens() {  // 8291c4
 void Module07_0E_13_SetRoomAndLayerAndCache() {  // 8291dd
   link_is_on_lower_level_mirror = kTeleportPitLevel1[cur_staircase_plane];
   link_is_on_lower_level = kTeleportPitLevel2[cur_staircase_plane];
+  // door shuffle: cur_staircase_plane came from the SOURCE room's header and
+  // describes the vanilla destination; on a redirected spiral the destination
+  // door record overrides the layer (no-op when no redirect is pending).
+  Rando_DoorSpiralLayerFix();
   TM_copy |= 0x10;
   TS_copy &= 0xf;
   if (!(which_staircase_index & 4))

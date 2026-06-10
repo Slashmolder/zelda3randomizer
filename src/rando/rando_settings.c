@@ -107,7 +107,22 @@ void Settings_SetDefaults(RandoSettings *s) {
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s) {
   if (s->world_state == kWorldState_Retro)
     return kDungeonItemMode_Wild;  // Retro forces region.wildKeys
+  // add-rando-door-shuffle: an active door shuffle forces in-dungeon keys
+  // (the key-door prover's containment assumption). apply_derived_rules
+  // mirrors this on the canonical copy; this helper carries it to every
+  // placer read so hash and placement can't disagree (the Retro precedent).
+  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
+    return kDungeonItemMode_Dungeon;
   return s->dungeon_small_keys_mode;
+}
+
+uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s) {
+  // add-rando-door-shuffle: in-dungeon big keys are forced alongside small
+  // keys — Dungeon containment plus the bk_restricted ban together keep the
+  // big key beatably placed under a shuffled layout.
+  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
+    return kDungeonItemMode_Dungeon;
+  return s->dungeon_big_keys_mode;
 }
 
 bool Settings_GenericKeysActive(const RandoSettings *s) {
@@ -190,15 +205,10 @@ static void apply_derived_rules(RandoSettings *s) {
   // Normalizing here (not refusing) keeps the settings_hash equal to the
   // actually-generated seed, the same convention as the entrance-axis
   // normalization above.
+  s->door_shuffle = Settings_EffectiveDoorShuffle(s);
   if (s->door_shuffle != kDoorShuffle_Vanilla) {
-    if ((s->world_state != kWorldState_Open && s->world_state != kWorldState_Standard) ||
-        s->logic != 0 /* NoGlitches */ ||
-        s->shuffle_cave_entrances || s->shuffle_dungeon_entrances) {
-      s->door_shuffle = kDoorShuffle_Vanilla;
-    } else {
-      s->dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
-      s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
-    }
+    s->dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+    s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
   }
 }
 
@@ -323,11 +333,21 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
 }
 
 uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s) {
-  // The normalized (post-derived-rules) door_shuffle value — definitionally
-  // the canonical byte [27], so generation and settings_hash always agree.
-  uint8 canon[kSettingsCanonicalLen];
-  Settings_CanonicalSerialize(s, canon);
-  return (uint8)(canon[27] & kDoorShuffleAxis_Mask);
+  // The normalized door_shuffle value — a PURE computation of the same MVP
+  // pins apply_derived_rules enforces (which defers to this helper, so the
+  // canonical byte [27] equals this by construction; it must NOT serialize,
+  // since Settings_EffectiveSmallKeysMode consults it from inside
+  // apply_derived_rules). Honored only on Open/Standard + NoGlitches, yields
+  // to an entrance-shuffle request. Reads the RAW entrance axes: every state
+  // where derived rules would normalize those axes off (Inverted/Retro) is
+  // already excluded by the world-state check.
+  if (s == NULL || s->door_shuffle == kDoorShuffle_Vanilla)
+    return kDoorShuffle_Vanilla;
+  if ((s->world_state != kWorldState_Open && s->world_state != kWorldState_Standard) ||
+      s->logic != 0 /* NoGlitches */ ||
+      s->shuffle_cave_entrances || s->shuffle_dungeon_entrances)
+    return kDoorShuffle_Vanilla;
+  return (uint8)(s->door_shuffle & kDoorShuffleAxis_Mask);
 }
 
 void Settings_ComputeHash(const RandoSettings *s, uint8 out_hash[32]) {

@@ -583,12 +583,42 @@ static uint16 g_door_logic_mask;
 static uint32 g_door_oracle_gen = 1;
 static uint32 g_door_oracle_cache_gen[kDoorTbl_DungeonCount];
 static DoorExploreResult g_door_oracle_cache[kDoorTbl_DungeonCount];
+// Input fingerprint per cached flood: the flood's outcome is a pure function
+// of (inventory counts, portal set, held keys, big key) for a fixed layout.
+// Assumed fill calls Logic_ComputeReachability hundreds of times with mostly
+// IDENTICAL inventory; re-flooding per fixed-point pass made a basic seed
+// take minutes. When the fingerprint matches, the pass-stale cache entry is
+// still exact — reuse it across generations.
+static uint64 g_door_oracle_cache_fp[kDoorTbl_DungeonCount];
+static uint64 g_door_counts_fp;       // FNV over ctx->counts, per oracle gen
+static uint32 g_door_counts_fp_gen;
 static bool g_in_door_oracle;
+// Per-counts memo for the vm-pred leaves (see door_vm_pred_cb).
+#define kDoorVmMemoMax 128
+static uint8 g_door_vm_memo[kDoorVmMemoMax];  // 0 unknown / 1 false / 2 true
+static uint64 g_door_vm_memo_fp;
+
+static uint64 door_fnv64(uint64 h, const void *data, size_t n) {
+  const uint8 *p = (const uint8 *)data;
+  for (size_t i = 0; i < n; i++) {
+    h ^= p[i];
+    h *= 0x100000001B3ull;
+  }
+  return h;
+}
 
 void Rando_SetDoorLogicLayout(const struct DoorShuffleLayout *layout, uint16 active_mask) {
   g_door_logic_layout = layout;
   g_door_logic_mask = layout ? active_mask : 0;
-  g_door_oracle_gen++;  // invalidate the cache
+  g_door_oracle_gen++;
+  // Hard-invalidate the flood cache + vm-pred memo: the input fingerprints
+  // deliberately exclude the layout pointer and the settings/boss-assignment
+  // context (constant within a run), so a NEW install must drop everything.
+  memset(g_door_oracle_cache_gen, 0, sizeof(g_door_oracle_cache_gen));
+  memset(g_door_oracle_cache_fp, 0, sizeof(g_door_oracle_cache_fp));
+  memset(g_door_vm_memo, 0, sizeof(g_door_vm_memo));
+  g_door_vm_memo_fp = ~0ull;
+  g_door_counts_fp_gen = 0;
 }
 
 const struct DoorShuffleLayout *Rando_GetDoorLogicLayout(uint16 *active_mask_out) {
@@ -597,15 +627,29 @@ const struct DoorShuffleLayout *Rando_GetDoorLogicLayout(uint16 *active_mask_out
   return g_door_logic_layout;
 }
 
+// Per-counts memo for the vm-pred leaves: they are pure functions of the
+// inventory counts (verified: no door vm pred expands to OP_REGION_REACHABLE
+// or OP_DOORS_*), and some expand large (CanKillMostThings). A flood
+// evaluates them per edge; without the memo a basic seed's fill spent most
+// of its time re-running the same 69 predicates thousands of times.
 static bool door_vm_pred_cb(void *ud, uint16 vm_index) {
   const PredicateContext *ctx = (const PredicateContext *)ud;
   if (vm_index >= kDoorVmPredsCount)
     return false;
+  if (g_door_vm_memo_fp != g_door_counts_fp) {
+    memset(g_door_vm_memo, 0, sizeof(g_door_vm_memo));
+    g_door_vm_memo_fp = g_door_counts_fp;
+  }
+  if (vm_index < kDoorVmMemoMax && g_door_vm_memo[vm_index])
+    return g_door_vm_memo[vm_index] == 2;
   // Door vm-pred leaves are pure item/macro terms (the door-table translator
   // never emits OP_DOORS_* into them), so this cannot recurse into the
   // oracle; g_in_door_oracle guards the invariant.
-  return Predicate_EvalCtx(kRandoPredicateStream + kDoorVmPreds[vm_index].off,
-                           kDoorVmPreds[vm_index].len, ctx);
+  bool v = Predicate_EvalCtx(kRandoPredicateStream + kDoorVmPreds[vm_index].off,
+                             kDoorVmPreds[vm_index].len, ctx);
+  if (vm_index < kDoorVmMemoMax)
+    g_door_vm_memo[vm_index] = v ? 2 : 1;
+  return v;
 }
 
 static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateContext *ctx,
@@ -645,11 +689,31 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
     if (n < 12)
       portals[n++] = g->door_region;
   }
+
+  // Flood-skip: identical inputs (counts + portal set + keys) for a fixed
+  // layout yield the identical result regardless of generation.
+  if (g_door_counts_fp_gen != g_door_oracle_gen) {
+    g_door_counts_fp = ctx->counts
+        ? door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
+                     sizeof(ctx->counts->by_item_id))
+        : 0;
+    g_door_counts_fp_gen = g_door_oracle_gen;
+  }
+  uint64 fp = door_fnv64(g_door_counts_fp ^ (0xD00Eull + dungeon),
+                         portals, (size_t)n * sizeof(portals[0]));
+  fp = door_fnv64(fp, &held_keys[dungeon], 1);
+  fp = door_fnv64(fp, &big_key_held[dungeon], 1);
+  if (fp == g_door_oracle_cache_fp[dungeon] && g_door_oracle_cache_gen[dungeon] != 0) {
+    g_door_oracle_cache_gen[dungeon] = g_door_oracle_gen;
+    return &g_door_oracle_cache[dungeon];
+  }
+
   g_in_door_oracle = true;
   DoorExplore_Run(g_door_logic_layout, dungeon, portals, n, gates_out,
                   &g_door_oracle_cache[dungeon]);
   g_in_door_oracle = false;
   g_door_oracle_cache_gen[dungeon] = g_door_oracle_gen;
+  g_door_oracle_cache_fp[dungeon] = fp;
   return &g_door_oracle_cache[dungeon];
 }
 
