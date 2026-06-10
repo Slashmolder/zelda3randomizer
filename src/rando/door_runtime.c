@@ -60,6 +60,14 @@ static uint16 g_door_spiral_source;     // source door id of the pending spiral
 // while the source attr table is loaded; only read while pending is armed).
 static uint16 g_door_spiral_src_x;
 static uint16 g_door_spiral_src_y;
+// Deferred perpendicular fine alignment for redirected door arrivals: the
+// slot delta for Link plus the clamped camera target, panned in across the
+// transition scroll by Rando_DoorScrollFinePan (see the deferral comment in
+// DoorRt_Arrive). axis_y = the perpendicular axis is Y (E/W travel).
+static bool g_door_fine_active;
+static bool g_door_fine_axis_y;
+static int g_door_fine_link;            // remaining Link fine delta, px
+static uint16 g_door_fine_cam_target;
 
 // Per-room catalog index: doors sorted by room; g_room_first[room] = first
 // slot in g_door_by_room, -1 = no doors. Built once (the catalog is const).
@@ -106,6 +114,7 @@ void DoorRt_Reset(void) {
   g_door_toggles_overridden = false;
   g_door_spiral_pending = 0xFFFF;
   g_door_spiral_source = 0xFFFF;
+  g_door_fine_active = false;
   DoorRt_KindOverlayClear();
 }
 
@@ -305,14 +314,24 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
       link_quadrant_y = new_q;
     }
     int fine = target_in_room - (int)(link_y_coord & 0x1ff);
-    link_y_coord += fine;
     int cam = (int)BG2VOFS_copy2 + fine;
     uint8 fs = DoorRt_DestFullsize(D, link_quadrant_x, link_quadrant_y, true);
     int lo = fs ? room_bounds_y.b0 : room_bounds_y.a0;
     int hi = fs ? room_bounds_y.b1 : room_bounds_y.a1;
     if (cam < lo) cam = lo;
     if (cam > hi) cam = hi;
-    BG2VOFS_copy2 = (uint16)cam;
+    // DEFER the fine alignment (Link delta + camera target): applying it at
+    // trigger time shifts the visible tilemap window by a non-512 amount,
+    // and for the ~8 pre-scroll upload frames the screen shows whatever
+    // stale room last occupied those VRAM rows (the playtest "flashes a
+    // different room"). The whole-512 translation above is tilemap-modulo
+    // invisible, so holding the fine delta keeps the pre-scroll frames
+    // pixel-identical to the source view; Rando_DoorScrollFinePan pans
+    // Link + camera to the stored targets during the scroll.
+    g_door_fine_active = true;
+    g_door_fine_axis_y = true;
+    g_door_fine_link = fine;
+    g_door_fine_cam_target = (uint16)cam;
     camera_y_coord_scroll_low = (cam & 0x1ff) + 120;
     camera_y_coord_scroll_hi = camera_y_coord_scroll_low + 2;
   } else {
@@ -325,14 +344,17 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
       link_quadrant_x = new_q;
     }
     int fine = target_in_room - (int)(link_x_coord & 0x1ff);
-    link_x_coord += fine;
     int cam = (int)BG2HOFS_copy2 + fine;
     uint8 fs = DoorRt_DestFullsize(D, link_quadrant_x, link_quadrant_y, false);
     int lo = fs ? room_bounds_x.b0 : room_bounds_x.a0;
     int hi = fs ? room_bounds_x.b1 : room_bounds_x.a1;
     if (cam < lo) cam = lo;
     if (cam > hi) cam = hi;
-    BG2HOFS_copy2 = (uint16)cam;
+    // Deferred fine alignment — see the Y-arm comment above.
+    g_door_fine_active = true;
+    g_door_fine_axis_y = false;
+    g_door_fine_link = fine;
+    g_door_fine_cam_target = (uint16)cam;
     camera_x_coord_scroll_low = (cam & 0x1ff) + 127;
     camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
   }
@@ -359,6 +381,20 @@ bool Rando_DoorTransOverride(uint8 dir) {
   if (!DoorRt_Active() || g_door_staircase_ctx)
     return false;
   int exit_id = DoorRt_ResolveExit(dir);
+  // TEMP DIAG (ES_DOORRT_DIAG) — revert before merge: dump the whole
+  // resolution chain into the reserved g_ram block for F12 capture
+  // (Lobby E miss: which filter dropped the door?).
+  g_ram[0x662] = dir;
+  g_ram[0x663]++;
+  *(uint16 *)(g_ram + 0x664) = (uint16)(exit_id < 0 ? 0xFFFE : exit_id);
+  g_ram[0x666] = link_is_on_lower_level;
+  *(uint16 *)(g_ram + 0x667) =
+      (uint16)((dir == kDoorTblDir_North || dir == kDoorTblDir_South)
+                   ? ((link_x_coord + 8) & 0x1FF)
+                   : ((link_y_coord + 12) & 0x1FF));
+  *(uint16 *)(g_ram + 0x669) =
+      (exit_id >= 0) ? g_door_link[exit_id] : 0xFFFD;
+  *(uint16 *)(g_ram + 0x66b) = dungeon_room_index;
   if (exit_id < 0)
     return false;
   uint16 dest_id = g_door_link[exit_id];
@@ -377,6 +413,44 @@ bool Rando_DoorTransConsumedToggles(void) {
 
 void Rando_DoorStaircaseContext(bool entering) {
   g_door_staircase_ctx = entering;
+}
+
+// Called from DungeonTransition_ScrollRoom each scroll frame (scroll_done on
+// the terminator frame). Pans the deferred perpendicular fine alignment in
+// at the scroll speed (8px/frame), flushing any remainder when the scroll
+// ends so the landing/walk-out states see the final position. BG1 follows by
+// delta (not assignment) to preserve scrolling-floor offsets. No-op unless a
+// redirected arrival armed it.
+void Rando_DoorScrollFinePan(bool scroll_done) {
+  if (!g_door_fine_active)
+    return;
+  int ls = g_door_fine_link;
+  if (!scroll_done) {
+    if (ls > 8) ls = 8;
+    if (ls < -8) ls = -8;
+  }
+  g_door_fine_link -= ls;
+  if (g_door_fine_axis_y) {
+    link_y_coord += ls;
+    int cs = (int)g_door_fine_cam_target - (int)BG2VOFS_copy2;
+    if (!scroll_done) {
+      if (cs > 8) cs = 8;
+      if (cs < -8) cs = -8;
+    }
+    BG2VOFS_copy2 += cs;
+    BG1VOFS_copy2 += cs;
+  } else {
+    link_x_coord += ls;
+    int cs = (int)g_door_fine_cam_target - (int)BG2HOFS_copy2;
+    if (!scroll_done) {
+      if (cs > 8) cs = 8;
+      if (cs < -8) cs = -8;
+    }
+    BG2HOFS_copy2 += cs;
+    BG1HOFS_copy2 += cs;
+  }
+  if (scroll_done)
+    g_door_fine_active = false;
 }
 
 // --- Spiral stair list / record correspondence ------------------------------
@@ -675,6 +749,9 @@ void Rando_DoorSpiralFixup(void) {
 void DoorRt_ClearSpiralPending(void) {
   g_door_spiral_pending = 0xFFFF;
   g_door_spiral_source = 0xFFFF;
+  // Abort any in-flight arrival fine-pan too (this is the snapshot-restore /
+  // teardown "cancel transition fixups" hook).
+  g_door_fine_active = false;
 }
 
 void Rando_DoorSpiralLayerFix(void) {

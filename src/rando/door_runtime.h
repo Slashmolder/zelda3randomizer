@@ -47,6 +47,12 @@ bool Rando_DoorTransConsumedToggles(void);
 // spiral authority).
 void Rando_DoorStaircaseContext(bool entering);
 
+// dungeon.c hook (DungeonTransition_ScrollRoom): pans the deferred
+// perpendicular fine alignment of a redirected arrival in during the
+// transition scroll; scroll_done=true on the terminator frame flushes the
+// remainder. No-op unless DoorRt_Arrive armed it.
+void Rando_DoorScrollFinePan(bool scroll_done);
+
 // dungeon.c hook: spiral staircases. Returns the destination room byte
 // (vanilla_byte when unshuffled/off). `attr` is the staircase tile attribute
 // (0x5e/0x5f circular spirals only — straight/fat stair attrs 0x38/0x39/0x26

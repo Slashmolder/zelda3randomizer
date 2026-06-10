@@ -8479,14 +8479,17 @@ void DungeonTransition_ScrollRoom() {  // 82be03
       link_y_coord += kStaircaseTab3[i];
   }
 
-  if ((t & 0x1fc) == (&up_down_scroll_target)[i]) {
+  bool scroll_done = (t & 0x1fc) == (&up_down_scroll_target)[i];
+  if (scroll_done) {
     SetAndSaveVisitedQuadrantFlags();
     subsubmodule_index++;
     transition_counter = 0;
     if (submodule_index == 2)
       WaterFlood_BuildOneQuadrantForVRAM();
   }
-
+  // door shuffle: pan a redirected arrival's deferred perpendicular fine
+  // alignment in during the scroll (no-op when nothing is armed).
+  Rando_DoorScrollFinePan(scroll_done);
 }
 
 void Module07_11_0A_ScrollCamera() {  // 82be75
