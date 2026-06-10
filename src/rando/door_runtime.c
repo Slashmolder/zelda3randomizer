@@ -22,6 +22,33 @@
 #include <stdio.h>
 #include <string.h>
 
+extern const uint8 kLayoutQuadrantFlags[];  // dungeon.c quadrant-confinement table
+
+// Confinement (quadrant_fullsize_*) for a destination room that is NOT
+// loaded yet: the arrival camera clamp needs the legal window before the
+// room's layout loads. Mirrors Dungeon_AdjustForRoomLayout minus the
+// blastwall runtime flags (zero at load; a blastwall would only WIDEN the
+// window, so the narrow pick stays legal). The layout|starting-quadrant
+// byte follows the 1-byte floor header in the room data
+// (RoomDraw_DrawFloors consumes exactly one byte before
+// dung_layout_and_starting_quadrant is read). Returns 2 = full-size
+// (camera may roam [b0,b1]) or 0 = confined to the quadrant window [a0,a1].
+// Clamping into the WRONG window is not symmetric: too-narrow parks the
+// camera at a quadrant rest with Link possibly at the screen edge (the
+// "can't see Link" rail-ledge playtest bug — a boundary-slot door in a
+// full-size room); too-wide leaves the camera between confined stops, and
+// the per-frame equality stops then never match (unbounded scroll).
+static uint8 DoorRt_DestFullsize(uint16 room, uint8 quad_x, uint8 quad_y, bool y_axis) {
+  if (room >= 256)
+    return 0;
+  const uint8 *p = GetDungeonRoomLayout(room);
+  uint8 composite = p[1] | quad_y | quad_x;
+  uint8 mask = y_axis ? (quad_y ? 8 : 4) : (quad_x ? 2 : 1);
+  if (composite >= 32)
+    return 0;  // defensive: malformed layout byte, take the confined window
+  return (kLayoutQuadrantFlags[composite] & mask) == 0 ? 2 : 0;
+}
+
 static uint16 g_door_link[kDoorTbl_DoorCount];
 static bool g_door_rt_active;
 static bool g_door_rt_index_built;
@@ -280,8 +307,11 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
     int fine = target_in_room - (int)(link_y_coord & 0x1ff);
     link_y_coord += fine;
     int cam = (int)BG2VOFS_copy2 + fine;
-    if (cam < (int)room_bounds_y.a0) cam = room_bounds_y.a0;
-    if (cam > (int)room_bounds_y.a1) cam = room_bounds_y.a1;
+    uint8 fs = DoorRt_DestFullsize(D, link_quadrant_x, link_quadrant_y, true);
+    int lo = fs ? room_bounds_y.b0 : room_bounds_y.a0;
+    int hi = fs ? room_bounds_y.b1 : room_bounds_y.a1;
+    if (cam < lo) cam = lo;
+    if (cam > hi) cam = hi;
     BG2VOFS_copy2 = (uint16)cam;
     camera_y_coord_scroll_low = (cam & 0x1ff) + 120;
     camera_y_coord_scroll_hi = camera_y_coord_scroll_low + 2;
@@ -297,8 +327,11 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
     int fine = target_in_room - (int)(link_x_coord & 0x1ff);
     link_x_coord += fine;
     int cam = (int)BG2HOFS_copy2 + fine;
-    if (cam < (int)room_bounds_x.a0) cam = room_bounds_x.a0;
-    if (cam > (int)room_bounds_x.a1) cam = room_bounds_x.a1;
+    uint8 fs = DoorRt_DestFullsize(D, link_quadrant_x, link_quadrant_y, false);
+    int lo = fs ? room_bounds_x.b0 : room_bounds_x.a0;
+    int hi = fs ? room_bounds_x.b1 : room_bounds_x.a1;
+    if (cam < lo) cam = lo;
+    if (cam > hi) cam = hi;
     BG2HOFS_copy2 = (uint16)cam;
     camera_x_coord_scroll_low = (cam & 0x1ff) + 127;
     camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
@@ -607,13 +640,6 @@ void Rando_DoorSpiralFixup(void) {
     room_bounds_x.a1 += qa;
     link_quadrant_x = new_qx;
   }
-  int cam = (int)BG2HOFS_copy2 + dxp;
-  if (cam < (int)room_bounds_x.a0) cam = room_bounds_x.a0;
-  if (cam > (int)room_bounds_x.a1) cam = room_bounds_x.a1;
-  BG2HOFS_copy2 = (uint16)cam;
-  camera_x_coord_scroll_low = (cam & 0x1ff) + 127;
-  camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
-
   uint8 new_qy = ((link_y_coord & 0x1FF) >= 256) ? 2 : 0;
   if (new_qy != link_quadrant_y) {
     int qa = new_qy ? 0x100 : -0x100;
@@ -621,9 +647,22 @@ void Rando_DoorSpiralFixup(void) {
     room_bounds_y.a1 += qa;
     link_quadrant_y = new_qy;
   }
+  uint8 fsx = DoorRt_DestFullsize(dst->room, link_quadrant_x, link_quadrant_y, false);
+  int cam = (int)BG2HOFS_copy2 + dxp;
+  int lo = fsx ? room_bounds_x.b0 : room_bounds_x.a0;
+  int hi = fsx ? room_bounds_x.b1 : room_bounds_x.a1;
+  if (cam < lo) cam = lo;
+  if (cam > hi) cam = hi;
+  BG2HOFS_copy2 = (uint16)cam;
+  camera_x_coord_scroll_low = (cam & 0x1ff) + 127;
+  camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
+
+  uint8 fsy = DoorRt_DestFullsize(dst->room, link_quadrant_x, link_quadrant_y, true);
   cam = (int)BG2VOFS_copy2 + dyp;
-  if (cam < (int)room_bounds_y.a0) cam = room_bounds_y.a0;
-  if (cam > (int)room_bounds_y.a1) cam = room_bounds_y.a1;
+  lo = fsy ? room_bounds_y.b0 : room_bounds_y.a0;
+  hi = fsy ? room_bounds_y.b1 : room_bounds_y.a1;
+  if (cam < lo) cam = lo;
+  if (cam > hi) cam = hi;
   BG2VOFS_copy2 = (uint16)cam;
   camera_y_coord_scroll_low = (cam & 0x1ff) + 120;
   camera_y_coord_scroll_hi = camera_y_coord_scroll_low + 2;
