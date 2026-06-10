@@ -849,19 +849,25 @@ int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l) {
       }
     }
   }
-  // (b) every overlaid room keeps the same multiset of pos_bytes, and only
-  // rooms of shuffled dungeons are overlaid at all.
+  // (b) every overlaid room keeps the same multiset of pos_bytes (kind
+  // changes preserve the low byte; swaps only permute entries).
   for (int r = 0; r < g_kind_nrooms; r++) {
     const DoorRtKindRoom *kr = &g_kind_rooms[r];
     int tr = g_tblroom_of[kr->room];
-    uint32 want = 0, got = 0;  // order-independent: sum of (pos_byte+1)^2
+    uint8 want[8], got[8];
     for (int i = 0; i < kr->count; i++) {
-      uint32 v = (uint32)kDoorTblRoomDoors[kDoorTblRooms[tr].first + i].pos_byte + 1;
-      want += v * v;
-      uint32 w = (uint32)(kr->e[i].overlay_word & 0xFF) + 1;
-      got += w * w;
+      want[i] = kDoorTblRoomDoors[kDoorTblRooms[tr].first + i].pos_byte;
+      got[i] = (uint8)(kr->e[i].overlay_word & 0xFF);
     }
-    if (want != got) {
+    for (int i = 1; i < kr->count; i++) {  // insertion sort both
+      for (int j = i; j > 0 && want[j - 1] > want[j]; j--) {
+        uint8 t = want[j]; want[j] = want[j - 1]; want[j - 1] = t;
+      }
+      for (int j = i; j > 0 && got[j - 1] > got[j]; j--) {
+        uint8 t = got[j]; got[j] = got[j - 1]; got[j - 1] = t;
+      }
+    }
+    if (memcmp(want, got, kr->count) != 0) {
       fprintf(stderr, "door-kind-selfcheck: room %02x pos_byte multiset changed\n", kr->room);
       fails++;
     }
