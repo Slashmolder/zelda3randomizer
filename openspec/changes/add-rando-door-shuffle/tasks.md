@@ -1,9 +1,8 @@
 # Tasks — door shuffle
 
 Restructured to the as-built stages (see `design.md §13` for the deviation
-changelog). Stages 0/1/3/4 are in the tree; Stage 2 (stitcher/prover) and
-Stage 1b (door-KIND overlay) are the in-flight remainder, followed by the
-version/corpus close-out and the verification gates.
+changelog). Stages 0/1/1b/2/3/4 are in the tree; the version/corpus close-out
+and the verification gates remain.
 
 ## Stage 0 — Static topology codegen ✓ DONE
 
@@ -41,23 +40,44 @@ version/corpus close-out and the verification gates.
   `Rando_DoorSpiralFixup()` from `Dungeon_InitializeRoomFromSpecial` (intra-room
   delta + dest-layer). Hole/teleport/straight-stair sites untouched (follow-on).
 
-## Stage 1b — Door-KIND overlay (committed scope, IN FLIGHT)
+## Stage 1b — Door-KIND overlay ✓ DONE
 
-- [ ] 1b.1 Per-(room, doorListPos) kind override consulted at the THREE raw
-  door-list reader seams: the door-object draw path (`RoomData_DrawObject_Door`),
-  `Dungeon_LoadHeader`'s raw door-word copy + current-room scan, and
-  `Dungeon_LoadAdjacentRoomDoors` (keyed by its room argument); everything
+- [x] 1b.1 Per-(room, doorListPos) kind override (`Rando_DoorListWord` in
+  `door_runtime.c`, install `DoorRt_InstallKindOverlay`) consulted at the THREE
+  raw door-list reader seams: the door-object draw fetch feeding
+  `RoomData_DrawObject_Door` (in `RoomDraw_DrawAllObjects`'s post-0xfff0 loop),
+  `Dungeon_LoadHeader`'s raw door-word copy into `dung_door_tilemap_address[]`,
+  and `Dungeon_LoadAdjacentRoomDoors` (keyed by its room argument); everything
   downstream of the parsed door type inherits.
-- [ ] 1b.2 Stateful-position constraint: port the reference's door-list
-  position-swap so every chosen key door (BOTH halves, per-half feasibility)
-  occupies a pos<4 entry; the constraint lives in the key-door candidate search
-  (it shapes the digest).
-- [ ] 1b.3 Partner open-bit mirror via the door pairing + suppression of
-  physical-neighbor open-bit propagation for shuffled edge slots.
-- [ ] 1b.4 Skull Pinball WS trap→Normal mutation + runtime consequence; vanilla key
-  doors whose kind moved away render/behave as Normal.
-- [ ] 1b.5 Selftest asserts: overlay entries == prover's key-door set; every overlay
-  key door at pos<4 post-swap; paired-open invariant.
+- [x] 1b.2 Stateful-position constraint: as-built the candidate search
+  (`door_keylogic.c FindCandidates`, mirroring the reference's own
+  `find_key_door_candidates` `0 <= doorListPos < 4` filter on BOTH halves)
+  guarantees pos<4, so it shapes the digest; the runtime swap
+  (`verify_door_list_pos`/`Room.next_free` port in `DoorRt_KindMakeSmallKey`)
+  is implemented as a defensive dead path that hard-errors when no swap target
+  exists.
+- [x] 1b.3 Partner open-bit mirror via the door pairing
+  (`Rando_DoorKeyOpenMirror` at `Dungeon_OpeningLockedDoor_Combined`'s step12
+  bit-write, both directions, live bits for same-supertile pairs +
+  `Rando_DoorKeySlotAlreadyOpen` consume guard for their stale f0 attr) +
+  suppression of physical-neighbor open-bit propagation for shuffled edge
+  slots (`Rando_DoorAdjOpenSuppressed` in
+  `Dungeon_CheckAdjacentRoomsForOpenDoors`'s non-trapdoor arm).
+- [x] 1b.4 ~~Skull Pinball WS trap→Normal mutation + runtime consequence~~
+  RECONCILED to the Stage-2 as-built decision: generation keeps Pinball WS
+  blocked (`check_for_pinball_fix` is NOT modeled — see the deviation note at
+  the top of `shuffle_doors.c`), so there is no runtime mutation and the
+  overlay never touches it (selfcheck asserts Blocked doors unchanged).
+  Vanilla key doors whose kind moved away render/behave as Normal
+  (Normal/NormalLow by layer); un-chosen vanilla key STAIRS keep their
+  StairKey kind and are pre-opened instead (`Rando_DoorPreopenBits` — the C
+  door list is 0xffff-terminated, so the reference's `Room.delete`/`mirror`
+  would truncate it).
+- [x] 1b.5 Selftest (`DoorRt_KindOverlaySelfCheck`, run per layout in
+  `DoorShuffle_SelfTest` and at slot activation next to the digest-drift
+  refusal): every chosen key door + partner keyed at pos<4, per-room pos_byte
+  multiset preserved, abandoned vanilla key doors un-keyed, blocked/pinned
+  doors untouched.
 
 ## Stage 2 — Stitcher + key prover (IN FLIGHT, against the `shuffle_doors.h` contract)
 
