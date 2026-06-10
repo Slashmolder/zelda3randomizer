@@ -37,6 +37,7 @@
 #include "rando/rando_share.h"
 #include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
 #include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
+#include "rando/shuffle_doors.h"  // DoorShuffle_SelfTest for --door-selftest
 #include "rando/shuffle_boss.h"  // BossShuffle_Generate (Slice 7 §63)
 #include "rando/shuffle_drops.h"  // DropShuffle_Generate (Slice 8 §64)
 #include "rando/rando_hints.h"  // Rando_GenerateHints (Slice 5 §3)
@@ -1201,6 +1202,7 @@ int main(int argc, char** argv) {
   // setup pops modal dialogs on the developer's desktop.
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--rando-selftest") == 0 ||
+        strcmp(argv[i], "--door-selftest") == 0 ||
         strcmp(argv[i], "--rando-bench-logic") == 0 ||
         strcmp(argv[i], "--generate-seed") == 0 ||
         strcmp(argv[i], "--generate-slot") == 0 ||
@@ -1247,6 +1249,12 @@ int main(int argc, char** argv) {
 #endif
       Rando_RunAllSelfChecks();
       return 0;
+    }
+    if (strcmp(argv[i], "--door-selftest") == 0) {
+      // Door-shuffle generation net: stitch + prove every shuffleable
+      // dungeon across N seeds; connectivity / prover / determinism /
+      // oracle==stitcher cross-checks (add-rando-door-shuffle).
+      return DoorShuffle_SelfTest();
     }
   }
 

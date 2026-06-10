@@ -3222,6 +3222,44 @@ const DoorTblPath kDoorTblPaths[kDoorTbl_PathCount] = {
   {8,0,283},
 };
 
+const DoorTblPortal kDoorTblPortals[kDoorTbl_PortalCount] = {
+  {0,0,5}, // Hyrule Castle Lobby
+  {0,0,9}, // Hyrule Castle West Lobby
+  {0,0,3}, // Hyrule Castle East Lobby
+  {0,0,30}, // Sewers Rat Path
+  {0,0,23}, // Sanctuary
+  {1,0,54}, // Eastern Lobby
+  {2,0,68}, // Desert Back Lobby
+  {2,0,85}, // Desert Main Lobby
+  {2,0,95}, // Desert West Lobby
+  {2,0,79}, // Desert East Lobby
+  {3,0,113}, // Hera Lobby
+  {4,0,137}, // Tower Lobby
+  {5,0,183}, // PoD Lobby
+  {6,0,225}, // Swamp Lobby
+  {7,0,249}, // Skull 1 Lobby
+  {7,0,268}, // Skull Pinball
+  {7,0,265}, // Skull Left Drop
+  {7,0,269}, // Skull Pot Circle
+  {7,0,251}, // Skull 2 East Lobby
+  {7,0,253}, // Skull 2 West Lobby
+  {7,0,258}, // Skull Back Drop
+  {7,0,256}, // Skull 3 Lobby
+  {8,0,302}, // Thieves Lobby
+  {9,0,346}, // Ice Lobby
+  {10,0,401}, // Mire Lobby
+  {11,0,462}, // TR Main Lobby
+  {11,0,451}, // TR Eye Bridge
+  {11,0,425}, // TR Big Chest Entrance
+  {11,0,460}, // TR Lazy Eyes
+  {12,0,542}, // GT Lobby
+  {0,1,30}, // Sewers Rat Path
+  {7,1,268}, // Skull Pinball
+  {7,1,265}, // Skull Left Drop
+  {7,1,269}, // Skull Pot Circle
+  {7,1,258}, // Skull Back Drop
+};
+
 const DoorTblRoom kDoorTblRooms[kDoorTbl_RoomCount] = {
   {0x1,2,0},
   {0x2,3,2},

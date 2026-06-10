@@ -1221,6 +1221,31 @@ class TableBuilder:
                           'region': self.region_id['Thieves Attic Window'], 'kind': 'boss'})
         self.paths = paths
 
+        # ---- portals (entrance lobbies + drop arrivals) ---------------------
+        ref_dgn_index = {d['ref_name']: d['index'] for d in m['dungeons']}
+        portals = []
+        for dname, lobbies in st['default_dungeon_entrances'].items():
+            di = ref_dgn_index.get(dname)
+            if di is None:
+                continue
+            for rname in lobbies:
+                if rname not in self.region_id:
+                    self.problem(f'portal lobby {rname!r} ({dname}): unknown region')
+                    continue
+                portals.append({'dungeon': di, 'region': self.region_id[rname],
+                                'is_drop': 0, 'name': rname})
+        for dname, drops in st['drop_entrances'].items():
+            di = ref_dgn_index.get(dname)
+            if di is None:
+                continue
+            for rname in drops:
+                if rname not in self.region_id:
+                    self.problem(f'drop entrance {rname!r} ({dname}): unknown region')
+                    continue
+                portals.append({'dungeon': di, 'region': self.region_id[rname],
+                                'is_drop': 1, 'name': rname})
+        self.portals = portals
+
         # ---- room door lists (kind overlay) + paired doors ------------------
         self.rooms_sorted = sorted(room_doorlists.items())
         self.paired = [(self.door_id[p['a']], self.door_id[p['b']], 1 if p['pair'] else 0)
@@ -1333,6 +1358,9 @@ def emit_c(builder, out_h, out_c, out_preds):
     H.append('typedef struct DoorTblPath {\n'
              '  uint8 dungeon;\n  uint8 kind;  // 0 = boss/required, 1 = drop-exit\n'
              '  uint16 region;\n} DoorTblPath;\n\n')
+    H.append('typedef struct DoorTblPortal {\n'
+             '  uint8 dungeon;\n  uint8 is_drop;  // 1 = hole/drop arrival, not a walk-in lobby\n'
+             '  uint16 region;\n} DoorTblPortal;\n\n')
     H.append('typedef struct DoorTblRoomDoor {\n  uint8 pos_byte;\n  uint8 kind;\n} DoorTblRoomDoor;\n')
     H.append('typedef struct DoorTblRoom {\n'
              '  uint8 room;\n  uint8 count;\n  uint16 first;  // into kDoorTblRoomDoors\n'
@@ -1349,6 +1377,7 @@ def emit_c(builder, out_h, out_c, out_preds):
         'kDoorTbl_DropKeyCount': len(builder.drop_keys),
         'kDoorTbl_DungeonCount': len(builder.dungeons),
         'kDoorTbl_PathCount': len(builder.paths),
+        'kDoorTbl_PortalCount': len(builder.portals),
         'kDoorTbl_RoomCount': len(builder.rooms_sorted),
         'kDoorTbl_PairedKindCount': len(builder.paired),
         'kDoorTbl_VmPredCount': len(builder.vm_preds),
@@ -1366,6 +1395,7 @@ def emit_c(builder, out_h, out_c, out_preds):
              'extern const DoorTblDropKey kDoorTblDropKeys[kDoorTbl_DropKeyCount];\n'
              'extern const DoorTblDungeon kDoorTblDungeons[kDoorTbl_DungeonCount];\n'
              'extern const DoorTblPath kDoorTblPaths[kDoorTbl_PathCount];\n'
+             'extern const DoorTblPortal kDoorTblPortals[kDoorTbl_PortalCount];\n'
              'extern const DoorTblRoom kDoorTblRooms[kDoorTbl_RoomCount];\n'
              'extern const DoorTblRoomDoor kDoorTblRoomDoors[];\n'
              'extern const DoorTblPairedKind kDoorTblPairedKinds[kDoorTbl_PairedKindCount];\n'
@@ -1445,6 +1475,10 @@ def emit_c(builder, out_h, out_c, out_preds):
     rows = ['  {%d,%d,%d},' % (p['dungeon'], 0 if p['kind'] == 'boss' else 1, p['region'])
             for p in builder.paths]
     C.append('const DoorTblPath kDoorTblPaths[kDoorTbl_PathCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,%d}, // %s' % (p['dungeon'], p['is_drop'], p['region'], p['name'])
+            for p in builder.portals]
+    C.append('const DoorTblPortal kDoorTblPortals[kDoorTbl_PortalCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
 
     room_rows, rd_rows = [], []
     for room, entries in builder.rooms_sorted:

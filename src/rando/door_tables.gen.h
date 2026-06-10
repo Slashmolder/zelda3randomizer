@@ -111,6 +111,12 @@ typedef struct DoorTblPath {
   uint16 region;
 } DoorTblPath;
 
+typedef struct DoorTblPortal {
+  uint8 dungeon;
+  uint8 is_drop;  // 1 = hole/drop arrival, not a walk-in lobby
+  uint16 region;
+} DoorTblPortal;
+
 typedef struct DoorTblRoomDoor {
   uint8 pos_byte;
   uint8 kind;
@@ -135,6 +141,7 @@ typedef struct DoorTblPairedKind {
 #define kDoorTbl_DropKeyCount 32
 #define kDoorTbl_DungeonCount 13
 #define kDoorTbl_PathCount 16
+#define kDoorTbl_PortalCount 35
 #define kDoorTbl_RoomCount 186
 #define kDoorTbl_PairedKindCount 38
 #define kDoorTbl_VmPredCount 69
@@ -150,6 +157,7 @@ extern const DoorTblEvent kDoorTblEvents[kDoorTbl_EventCount];
 extern const DoorTblDropKey kDoorTblDropKeys[kDoorTbl_DropKeyCount];
 extern const DoorTblDungeon kDoorTblDungeons[kDoorTbl_DungeonCount];
 extern const DoorTblPath kDoorTblPaths[kDoorTbl_PathCount];
+extern const DoorTblPortal kDoorTblPortals[kDoorTbl_PortalCount];
 extern const DoorTblRoom kDoorTblRooms[kDoorTbl_RoomCount];
 extern const DoorTblRoomDoor kDoorTblRoomDoors[];
 extern const DoorTblPairedKind kDoorTblPairedKinds[kDoorTbl_PairedKindCount];
