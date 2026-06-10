@@ -428,6 +428,16 @@ static int FindCandidates(const KeyCtx *kc, DoorKeyPair *out) {
       continue;
     if (d->pos == 0xFF || d->pos >= 4)
       continue;
+    // okay_normals/okay_interiors admit DoorKind.BigKey because the reference
+    // pipeline runs shuffle_big_key_doors FIRST and excludes its picks via the
+    // `used` set passed into find_small_key_door_candidates. Under
+    // door_type_mode=original the big-key doors are unmoved, so `used` == the
+    // vanilla big-key doors (+ the special set get_special_big_key_doors:
+    // Cellblock / Blind's Cell) — exclude them here or a vanilla BK door could
+    // be re-keyed as a small-key door (the kind overlay would faithfully
+    // un-big-key it at runtime).
+    if (d->kind == kDoorKind_BigKey || (d->flags & kDoorTblFlag_VanillaBigKey))
+      continue;
     uint16 partner;
     switch (d->type) {
     case kDoorTblType_Interior:
@@ -452,6 +462,8 @@ static int FindCandidates(const KeyCtx *kc, DoorKeyPair *out) {
       if (!KindOkayNormal(p->kind) || p->pos == 0xFF || p->pos >= 4)
         continue;
       if (p->flags & kDoorTblFlag_Blocked)
+        continue;
+      if (p->kind == kDoorKind_BigKey || (p->flags & kDoorTblFlag_VanillaBigKey))
         continue;
       if (!ValidKeyDoorPair((uint16)door, partner))
         continue;
