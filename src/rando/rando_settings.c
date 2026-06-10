@@ -90,6 +90,9 @@ void Settings_SetDefaults(RandoSettings *s) {
   // add-rando-enemy-shuffle — enemy (sprite-type) substitution. Default OFF, so
   // the packed pad byte [26] is 0x00 (corpus byte-identical).
   s->enemy_shuffle = 0;
+  // add-rando-door-shuffle — intra-dungeon door shuffle. Default vanilla, so
+  // the packed pad byte [27] is 0x00 (corpus byte-identical).
+  s->door_shuffle = kDoorShuffle_Vanilla;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -174,6 +177,29 @@ static void apply_derived_rules(RandoSettings *s) {
   // dungeon-decoupled (Entrance_IsDungeonDecoupledActive) needs shuffle_dungeon_
   // entrances. So decoupled is meaningful whenever EITHER shuffle is on — and the
   // both-off clear above already strips it when neither is. No extra clear needed.
+
+  // add-rando-door-shuffle — MVP compatibility pins (design plan P1-P5):
+  //  * honored only on Open/Standard (Inverted has its own logic tree; Retro
+  //    collapses per-key-door HAS_AMOUNT thresholds to GenericKey>=1) and only
+  //    under NoGlitches logic (the door oracle models no glitch traversal);
+  //  * mutually exclusive with entrance shuffle (both redirect dungeon
+  //    topology; the per-seed lobby assumptions interact) — door shuffle
+  //    yields to an explicit entrance-shuffle request;
+  //  * forces in-dungeon small AND big keys: the key-door prover's
+  //    containment assumption + the bk_restricted ban require both.
+  // Normalizing here (not refusing) keeps the settings_hash equal to the
+  // actually-generated seed, the same convention as the entrance-axis
+  // normalization above.
+  if (s->door_shuffle != kDoorShuffle_Vanilla) {
+    if ((s->world_state != kWorldState_Open && s->world_state != kWorldState_Standard) ||
+        s->logic != 0 /* NoGlitches */ ||
+        s->shuffle_cave_entrances || s->shuffle_dungeon_entrances) {
+      s->door_shuffle = kDoorShuffle_Vanilla;
+    } else {
+      s->dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+      s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
+    }
+  }
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
@@ -225,7 +251,11 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // pad byte [26]. Default off ⇒ 0x00 (corpus byte-identical; kSettingsCanonicalLen
   // stays 28, no size-coupling cascade). Mirrors the entrance-axis pack at [25].
   out[26] = (uint8)(s->enemy_shuffle ? kEnemyShuffleAxis_Enabled : 0);
-  out[27] = 0;
+  // add-rando-door-shuffle — door_shuffle axis in the (formerly zero) pad
+  // byte [27] bits 0-1. apply_derived_rules() normalized incompatible combos,
+  // so the default packs to 0x00 (corpus byte-identical) and
+  // kSettingsCanonicalLen stays 28.
+  out[27] = (uint8)(s->door_shuffle & kDoorShuffleAxis_Mask);
   return kSettingsCanonicalLen;
 }
 
@@ -282,8 +312,12 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.shuffle_ganons_tower_entrance = (in[25] & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
   // add-rando-enemy-shuffle — unpack the enemy-shuffle bit from pad byte [26].
   // A zero byte (the default / any pre-enemy-shuffle file) yields enemy_shuffle=0,
-  // identical to a struct with no enemy shuffle. Byte [27] stays uninspected.
+  // identical to a struct with no enemy shuffle.
   s.enemy_shuffle = (in[26] & kEnemyShuffleAxis_Enabled) ? 1 : 0;
+  // add-rando-door-shuffle — unpack the door_shuffle axis from pad byte [27]
+  // bits 0-1. A zero byte (the default / any pre-door-shuffle file) yields
+  // vanilla. Bits 2-7 stay uninspected (the remaining extension surface).
+  s.door_shuffle = in[27] & kDoorShuffleAxis_Mask;
   *out = s;
   return 0;
 }
@@ -902,6 +936,9 @@ enum {
   KEY_shuffle_ganons_tower_entrance,
   // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis (binary).
   KEY_enemy_shuffle,
+  // add-rando-door-shuffle — door_shuffle axis (vanilla|basic). Packed into
+  // canonical byte [27]; see RandoSettings header.
+  KEY_door_shuffle,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -1077,6 +1114,13 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Phase B Slice 8 §64 — drop-shuffle axis. Binary on/off.
     MARK_SEEN(KEY_drop_shuffle);
     if (parse_bool(val, vlen, &s->drop_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "door_shuffle")) {
+    // add-rando-door-shuffle — intra-dungeon door shuffle (vanilla|basic).
+    // Packed into canonical pad byte [27] bits 0-1 (see RandoSettings header).
+    MARK_SEEN(KEY_door_shuffle);
+    if (csv_str_eq(val, vlen, "vanilla")) s->door_shuffle = kDoorShuffle_Vanilla;
+    else if (csv_str_eq(val, vlen, "basic")) s->door_shuffle = kDoorShuffle_Basic;
+    else goto bad_value;
   } else if (csv_str_eq(key, klen, "enemy_shuffle")) {
     // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis. Binary
     // on/off. Packed into canonical pad byte [26] bit0 (see RandoSettings header).

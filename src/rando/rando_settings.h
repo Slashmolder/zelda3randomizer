@@ -143,6 +143,12 @@ typedef struct RandoSettings {
   // kSettingsCanonicalLen stays 28 and default-settings settings_hash stays
   // byte-identical. See kEnemyShuffleAxis_* below + Settings_CanonicalSerialize.
   uint8 enemy_shuffle;  // bool
+  // add-rando-door-shuffle — intra-dungeon door-connection shuffle.
+  // 0 = vanilla, 1 = basic (per-dungeon pool, intensity 1: Normal + spiral
+  // doors, original key-door counts relocated + prover-validated). Packs into
+  // canonical pad byte [27] bits 0-1; default 0 keeps the default
+  // settings_hash byte-identical and kSettingsCanonicalLen at 28.
+  uint8 door_shuffle;
 } RandoSettings;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
@@ -150,6 +156,13 @@ typedef struct RandoSettings {
 // byte-identical corpus invariant. [26] was previously always-zero reserved pad.
 enum {
   kEnemyShuffleAxis_Enabled = 1u << 0,
+};
+
+// add-rando-door-shuffle — door_shuffle axis values (canonical [27] bits 0-1).
+enum {
+  kDoorShuffle_Vanilla = 0,
+  kDoorShuffle_Basic = 1,
+  kDoorShuffleAxis_Mask = 3,
 };
 
 // Phase C — bit positions for the packed entrance-axis byte (canonical [25]).
