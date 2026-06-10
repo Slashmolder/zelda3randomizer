@@ -38,7 +38,7 @@ def main():
         if not os.path.isfile(p) or os.path.getsize(p) == 0:
             return fail(f'missing or empty: {p}')
 
-    with open(h_path) as f:
+    with open(h_path, encoding='utf-8') as f:
         h = f.read()
     counts = dict(re.findall(r'#define (kDoorTbl_\w+) (\d+)', h))
     counts = {k: int(v) for k, v in counts.items()}
@@ -49,7 +49,7 @@ def main():
     if counts['kDoorTbl_DungeonCount'] != 13:
         return fail(f"kDoorTbl_DungeonCount = {counts['kDoorTbl_DungeonCount']}, expected 13")
 
-    with open(c_path) as f:
+    with open(c_path, encoding='utf-8') as f:
         c = f.read()
     door_rows = c.count('\n', c.find('kDoorTblDoors['), c.find('};', c.find('kDoorTblDoors['))) - 1
     if door_rows != counts['kDoorTbl_DoorCount']:
@@ -57,12 +57,12 @@ def main():
 
     # registry: door count must match (ids are append-only; gen_door_tables
     # verifies per-name ids — here we catch a stale regen vs registry edit).
-    with open(reg_path) as f:
+    with open(reg_path, encoding='utf-8') as f:
         reg_ids = re.findall(r'- \{ id: (\d+),', f.read())
     if len(reg_ids) != counts['kDoorTbl_DoorCount']:
         return fail(f"registry has {len(reg_ids)} doors, tables have {counts['kDoorTbl_DoorCount']}")
 
-    with open(preds_path) as f:
+    with open(preds_path, encoding='utf-8') as f:
         preds = json.load(f)
     if len(preds.get('predicates', [])) != counts['kDoorTbl_VmPredCount']:
         return fail(f"predicates manifest {len(preds.get('predicates', []))} != "

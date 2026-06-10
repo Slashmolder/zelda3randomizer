@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 65  # bump_rando_corpus.py --apply
+generator_version: 66  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -751,6 +751,20 @@ entries:
     label: "b-retro-genericKeys-hardpool-ganon"
     expected_digest: "dd2e7efd74958a456aacbe97f7b82f55cce38d0030422f5f5146324bf3893570"
     expected_sphere_digest: "90c25b709ca25f22455a4f2319593c35480eca455ea154150afecded16ff0ac8"
+
+  # add-rando-door-shuffle — basic door shuffle (intensity 1, HC+Swamp pinned,
+  # in-dungeon keys forced by apply_derived_rules). Guards the door phase in
+  # the headless pipeline + the oracle-driven placement. Captured at
+  # kGeneratorVersion 66.
+  - settings: { mode.state: open, goal: ganon, door_shuffle: basic }
+    seed: "0x000000000000D004"
+    label: "c-door-basic-open-ganon"
+    expected_digest: "f70aa2402ab9c108331d2aaee9e2fa087c9200b0c3254e47ac2d753b1c6ff0e5"
+
+  - settings: { mode.state: standard, goal: fast_ganon, door_shuffle: basic }
+    seed: "0x000000000000D005"
+    label: "c-door-basic-standard-fastganon"
+    expected_digest: "661e739f99207347e20c8e2c9c85afd706f2f4d8a43428915895a5e4665da79d"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
