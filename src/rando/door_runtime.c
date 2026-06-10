@@ -346,24 +346,40 @@ void Rando_DoorStaircaseContext(bool entering) {
   g_door_staircase_ctx = entering;
 }
 
-// Spiral head position from the room's staircase OBJECT list. The 0x5e/0x5f
-// head attrs and the 0x30|down<<2|slot stair byte are STAMPED into the attr
-// table by Dungeon_LoadObjectAttribute from dung_inter_starcases[] plus the
-// cumulative category counters — but that stamping runs inside the CHUNKED
-// attribute loader (overworld_map_state, kicked off only from spiral stage 7),
-// while Dungeon_LoadRoom fills the object list synchronously. Scanning the
-// attr table at the stage-3 arrival fixup therefore reads the SOURCE room's
-// stale attrs, finds the source's own head, and computes a zero delta — Link
-// strands at the source-relative offset in the destination room (the playtest
-// "empty walled box" trap). The object list is valid the moment
-// Dungeon_LoadRoom returns, on both the capture and fixup sides.
+// --- Spiral stair list / record correspondence ------------------------------
 //
-// Stamp facts (Dungeon_LoadObjectAttribute): slot bits = list index & 3
-// (t = 0x3030 + k*0x101; the southdown reset keeps the low bits), the head
-// tile of both spiral categories is list_pos + XY(1,0), and spiral heads are
-// stamped on the BG2 attr half only (WriteAttr2), so no layer keying.
-// Returns the attr-table pos index of the head tile, or -1.
-static int DoorRt_SpiralHeadPosFromList(uint8 slot, bool going_up) {
+// The 0x5e/0x5f head attrs and the 0x30|down<<2|slot stair byte are STAMPED
+// into the attr table by Dungeon_LoadObjectAttribute from
+// dung_inter_starcases[] plus the cumulative category counters — but that
+// stamping runs inside the CHUNKED attribute loader (overworld_map_state,
+// kicked off only from spiral stage 7), while Dungeon_LoadRoom fills the
+// object list synchronously. Scanning the attr table at the stage-3 arrival
+// fixup therefore reads the SOURCE room's stale attrs, finds the source's own
+// head, and computes a zero delta — Link strands at the source-relative
+// offset in the destination room (the playtest "empty walled box" trap). The
+// object list is valid the moment Dungeon_LoadRoom returns, on both sides.
+//
+// Stamp facts (Dungeon_LoadObjectAttribute): the attr2 slot bits equal the
+// stair's LIST INDEX (t = 0x3030 + k*0x101; the southdown reset keeps the
+// low bits), and the head tile of both spiral categories is the stored list
+// value + XY(1,0). The stored 0x1000 bit is the layer half.
+//
+// The door RECORDS' door_index is NOT that slot: it is the reference's own
+// 0x13B000-table ordering, which disagrees with the engine in multi-spiral
+// rooms (vanilla header proof: GT Lobby stair0 -> 0x6b = the Up stair, but
+// the reference gives the Up stair doorIndex 2). Records are therefore
+// matched by (direction, quadrant) — the ss() quadrant equals the head's
+// quadrant — with an intra-group x-rank <-> door_index-rank bijection for
+// the side-by-side pairs (PoD Compass/Dark Basement, Swamp Elbow/Drain:
+// West/Left carries the smaller door_index).
+
+typedef struct DoorRtSpiralStair {
+  uint16 head_pos;  // attr pos of the head tile (may carry the 0x1000 layer bit)
+  uint8 cat_up;     // 1 = up spiral, 0 = down spiral, 0xFF = non-spiral slot
+} DoorRtSpiralStair;
+
+// Room staircase list in engine slot order (attr2 slot bits == index).
+static int DoorRt_SpiralStairList(DoorRtSpiralStair out[8]) {
   const struct { uint16 end; uint8 spiral, up; } cats[10] = {
     { dung_num_inter_room_upnorth_stairs, 0, 1 },
     { dung_num_wall_upnorth_spiral_stairs, 1, 1 },
@@ -376,15 +392,129 @@ static int DoorRt_SpiralHeadPosFromList(uint8 slot, bool going_up) {
     { dung_num_inter_room_downnorth_straight_stairs, 0, 0 },
     { dung_num_inter_room_downsouth_straight_stairs, 0, 0 },
   };
-  int i = 0;
+  int i = 0, n = 0;
   for (int c = 0; c < 10; c++) {
-    for (; i != cats[c].end && i < 32; i += 2) {
-      int k = i >> 1;
-      if (!cats[c].spiral || (cats[c].up != 0) != going_up || (k & 3) != (slot & 3))
-        continue;
-      return dung_inter_starcases[k] + 1;  // + XY(1,0): the head tile
+    for (; i != cats[c].end && i < 16 && n < 8; i += 2, n++) {
+      out[n].cat_up = cats[c].spiral ? cats[c].up : 0xFF;
+      out[n].head_pos = dung_inter_starcases[i >> 1] + 1;  // + XY(1,0): head tile
     }
   }
+  return n;
+}
+
+static uint8 DoorRt_SpiralHeadQuadrant(uint16 pos) {
+  int x = (pos & 0x3f) << 3, y = ((pos >> 6) & 0x3f) << 3;
+  return (uint8)((y >= 256 ? 2 : 0) | (x >= 256 ? 1 : 0));
+}
+
+// (room, engine slot) -> spiral door record id, or 0xFFFF. head_out gets the
+// stair's head attr pos.
+static uint16 DoorRt_SpiralRecordForSlot(uint16 room, uint8 slot, uint16 *head_out) {
+  DoorRtSpiralStair list[8];
+  int n = DoorRt_SpiralStairList(list);
+  if (slot >= n || list[slot].cat_up == 0xFF)
+    return 0xFFFF;
+  uint8 up = list[slot].cat_up;
+  uint16 hp = list[slot].head_pos;
+  uint8 hq = DoorRt_SpiralHeadQuadrant(hp);
+  int hx = hp & 0x3f;
+  int xrank = 0;
+  for (int k = 0; k < n; k++) {
+    if (k == slot || list[k].cat_up != up)
+      continue;
+    if (DoorRt_SpiralHeadQuadrant(list[k].head_pos) != hq)
+      continue;
+    int kx = list[k].head_pos & 0x3f;
+    if (kx < hx || (kx == hx && k < slot))
+      xrank++;
+  }
+  uint8 want_dir = up ? kDoorTblDir_Up : kDoorTblDir_Down;
+  if (room >= 256 || g_room_first[room] < 0)
+    return 0xFFFF;
+  int first = g_room_first[room];
+  int end = (room < 255) ? g_room_first[room + 1] : kDoorTbl_DoorCount;
+  uint16 only_dir = 0xFFFF;
+  int dir_matches = 0;
+  uint16 best = 0xFFFF;
+  for (int i2 = first; i2 < end; i2++) {
+    uint16 id = g_door_by_room[i2];
+    const DoorTblDoor *d = &kDoorTblDoors[id];
+    if (d->type != kDoorTblType_SpiralStairs || d->direction != want_dir)
+      continue;
+    dir_matches++;
+    only_dir = id;
+    if (d->quadrant != hq)
+      continue;
+    int rank = 0;
+    for (int i3 = first; i3 < end; i3++) {
+      uint16 id3 = g_door_by_room[i3];
+      const DoorTblDoor *d3 = &kDoorTblDoors[id3];
+      if (id3 == id || d3->type != kDoorTblType_SpiralStairs ||
+          d3->direction != want_dir || d3->quadrant != hq)
+        continue;
+      if (d3->door_index < d->door_index ||
+          (d3->door_index == d->door_index && id3 < id))
+        rank++;
+    }
+    if (rank == xrank)
+      best = id;
+  }
+  // Quadrant-boundary tolerance: a room with exactly one spiral of this
+  // direction is unambiguous even if the ss() quadrant disagrees by a tile.
+  if (best == 0xFFFF && dir_matches == 1)
+    best = only_dir;
+  if (best != 0xFFFF && head_out)
+    *head_out = hp;
+  return best;
+}
+
+// Destination record -> its stair's head attr pos in the freshly loaded room,
+// or -1 (caller keeps the vanilla offset).
+static int DoorRt_SpiralHeadForRecord(const DoorTblDoor *dst) {
+  DoorRtSpiralStair list[8];
+  int n = DoorRt_SpiralStairList(list);
+  uint8 up = (dst->direction == kDoorTblDir_Up) ? 1 : 0;
+  uint16 room = dst->room;
+  if (room >= 256 || g_room_first[room] < 0)
+    return -1;
+  int first = g_room_first[room];
+  int end = (room < 255) ? g_room_first[room + 1] : kDoorTbl_DoorCount;
+  uint16 dst_id = (uint16)(dst - kDoorTblDoors);
+  int rrank = 0;
+  for (int i2 = first; i2 < end; i2++) {
+    uint16 id = g_door_by_room[i2];
+    const DoorTblDoor *d = &kDoorTblDoors[id];
+    if (id == dst_id || d->type != kDoorTblType_SpiralStairs ||
+        d->direction != dst->direction || d->quadrant != dst->quadrant)
+      continue;
+    if (d->door_index < dst->door_index ||
+        (d->door_index == dst->door_index && id < dst_id))
+      rrank++;
+  }
+  int only_cat = -1, cat_count = 0;
+  for (int k = 0; k < n; k++) {
+    if (list[k].cat_up != up)
+      continue;
+    cat_count++;
+    only_cat = k;
+    if (DoorRt_SpiralHeadQuadrant(list[k].head_pos) != dst->quadrant)
+      continue;
+    int kx = list[k].head_pos & 0x3f;
+    int xrank = 0;
+    for (int k2 = 0; k2 < n; k2++) {
+      if (k2 == k || list[k2].cat_up != up)
+        continue;
+      if (DoorRt_SpiralHeadQuadrant(list[k2].head_pos) != dst->quadrant)
+        continue;
+      int k2x = list[k2].head_pos & 0x3f;
+      if (k2x < kx || (k2x == kx && k2 < k))
+        xrank++;
+    }
+    if (xrank == rrank)
+      return list[k].head_pos;
+  }
+  if (cat_count == 1)
+    return list[only_cat].head_pos;  // quadrant-boundary tolerance
   return -1;
 }
 
@@ -401,30 +531,24 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
   // (submodule 6) — neither is shuffled at intensity 1.
   if (attr != 0x5e && attr != 0x5f)
     return vanilla_byte;
-  if (room >= 256 || g_room_first[room] < 0)
+  // Resolve the engine stair slot (attr2 bits) to its door record via the
+  // staircase-list bijection — door_index is NOT the engine slot (see the
+  // correspondence block above), so a direct door_index==slot match picks
+  // the wrong record in multi-spiral rooms (GT Lobby, GT Torch/Hope, PoD,
+  // Hera, Ice...). The list also yields the SOURCE head anchor for the
+  // arrival fixup's head-to-head translation.
+  uint16 src_head = 0;
+  uint16 src_id = DoorRt_SpiralRecordForSlot(room, slot & 3, &src_head);
+  if (src_id == 0xFFFF)
+    return vanilla_byte;  // defensive: unresolvable stair, keep the vanilla spiral
+  uint16 dest_id = g_door_link[src_id];
+  if (dest_id == kDoorRt_NoOverride || dest_id >= kDoorTbl_DoorCount)
     return vanilla_byte;
-  int first = g_room_first[room];
-  int end = (room < 255) ? g_room_first[room + 1] : kDoorTbl_DoorCount;
-  for (int i = first; i < end; i++) {
-    const DoorTblDoor *d = &kDoorTblDoors[g_door_by_room[i]];
-    if (d->type != kDoorTblType_SpiralStairs || d->door_index != slot)
-      continue;
-    uint16 dest_id = g_door_link[g_door_by_room[i]];
-    if (dest_id == kDoorRt_NoOverride || dest_id >= kDoorTbl_DoorCount)
-      return vanilla_byte;
-    // Anchor the SOURCE staircase head from the staircase object list — the
-    // same locator the destination fixup uses, so the head-to-head delta is
-    // definitionally consistent on both ends.
-    int spos = DoorRt_SpiralHeadPosFromList(slot, d->direction == kDoorTblDir_Up);
-    if (spos < 0)
-      return vanilla_byte;  // defensive: no source anchor, keep the vanilla spiral
-    g_door_spiral_src_x = (spos & 0x3f) << 3;
-    g_door_spiral_src_y = ((spos >> 6) & 0x3f) << 3;
-    g_door_spiral_source = g_door_by_room[i];
-    g_door_spiral_pending = dest_id;
-    return kDoorTblDoors[dest_id].room;
-  }
-  return vanilla_byte;
+  g_door_spiral_src_x = (src_head & 0x3f) << 3;
+  g_door_spiral_src_y = ((src_head >> 6) & 0x3f) << 3;
+  g_door_spiral_source = src_id;
+  g_door_spiral_pending = dest_id;
+  return kDoorTblDoors[dest_id].room;
 }
 
 void Rando_DoorSpiralFixup(void) {
@@ -444,13 +568,12 @@ void Rando_DoorSpiralFixup(void) {
   // freshly loaded room and translate by the head-to-head delta against the
   // source anchor captured in Rando_DoorSpiralDest. The locator reads the
   // staircase OBJECT list, NOT the derived attr table: Dungeon_LoadRoom (just
-  // above) fills the list synchronously, while the attr table only rebuilds in
-  // the chunked loader from spiral stage 7 — scanning it here found the
-  // SOURCE room's own head and produced a zero delta (the up/down bit differs
-  // from the source by construction — the stitcher pairs spirals strictly
-  // Up<->Down — so the match keys on slot + direction).
-  int found_pos = DoorRt_SpiralHeadPosFromList(dst->door_index,
-                                               dst->direction == kDoorTblDir_Up);
+  // above) fills the list synchronously, while the attr table only rebuilds
+  // in the chunked loader from spiral stage 7 — scanning it here found the
+  // SOURCE room's own head and produced a zero delta. Record-to-stair
+  // matching goes through the (direction, quadrant, x-rank) bijection (see
+  // the correspondence block above DoorRt_SpiralStairList).
+  int found_pos = DoorRt_SpiralHeadForRecord(dst);
   if (found_pos < 0)
     return;  // defensive: leave vanilla offset (playtest-visible, not fatal)
   int tx = (found_pos & 0x3f) << 3;        // x within supertile, px
