@@ -192,123 +192,112 @@ static int DoorRt_ResolveExit(uint8 dir) {
 
 // ---------------------------------------------------------------------------
 // Arrival — generalized Dungeon_AdjustForTeleportDoors (both axes + slot
-// correction + layer + quadrant). The transition machinery (camera targets +
-// bounds Add/Sub at the Trans_* entry) is re-based by absolute-target
-// arithmetic, exactly like the vanilla teleport-door routine.
+// correction + layer + quadrant). The mid-transition tableau set up by the
+// Trans_* entry (camera targets, bounds Add/Sub, quadrant toggle) is
+// TRANSLATED by whole supertiles onto the destination, then the perpendicular
+// axis is fine-aligned to the dst door slot with its quadrant-coupled state
+// re-derived.
 // ---------------------------------------------------------------------------
 
 static void DoorRt_Arrive(const DoorTblDoor *dst) {
   uint16 D = dst->room;
-  // The virtual neighbor Link "comes from": just outside dst's arrival edge.
-  // Mirrors Dungeon_AdjustForTeleportDoors's (room∓1, flag) convention; the
-  // routine sets dungeon_room_index2/_prev to that virtual room so the next
-  // room load resyncs them (Dungeon_LoadRoom does BYTE(index2)=BYTE(index)).
   int slot = DoorRt_OuterSlot(dst->direction, dst->pos_byte);
   if (slot < 0)
     slot = 1;  // defensive: arrival door should always be an outer slot
 
-  dungeon_room_index = D;
-
-  // Grid-granular scroll-axis target (256px units), exactly the vanilla
-  // teleport-door arithmetic: Dungeon_AdjustForTeleportDoors(virtual, flag)
-  // computes target_hi = (virtual_col * 2) + flag with the LOW byte preserved.
-  // The preserved low byte is SMALL when traveling east/south (just crossed a
-  // 0x..00 boundary) and LARGE when traveling west/north (just crossed back
-  // over one), so the correct targets are asymmetric:
-  //   west-door arrival (moving east):  virtual = D-1,    flag +1 -> col*2 - 1
-  //   east-door arrival (moving west):  virtual = D+1,    flag -1 -> col*2 + 1
-  // (A +2 east/south target — one full unit past the room — strands Link in
-  // the virtual neighbor's coordinate space with D's collision loaded: the
-  // playtest "collision doesn't match visuals" bug.)
-  int dx_hi, dy_hi;
-  uint16 virtual_room = D;
+  // Pairing is strictly opposite-direction (kOppositeHook), so dst's wall
+  // side determines the travel direction and therefore which vanilla
+  // neighbor N0 = S + step the replaced room-index line would have entered.
+  // dungeon_room_index2/_prev get the virtual neighbor just outside dst's
+  // arrival edge (uint8, like Dungeon_AdjustForTeleportDoors — the next room
+  // load resyncs index2 via BYTE(index2)=BYTE(index)).
+  int step;
+  uint16 virtual_room;
   switch (dst->direction) {
-  case kDoorTblDir_West:   // arriving through dst's west door, moving east
-    dx_hi = ((D & 0xf) << 1) - 1;
-    dy_hi = -1;            // perpendicular: computed from slot below
-    virtual_room = D - 1;
-    break;
-  case kDoorTblDir_East:   // arriving through dst's east door, moving west
-    dx_hi = ((D & 0xf) << 1) + 1;
-    dy_hi = -1;
-    virtual_room = D + 1;
-    break;
-  case kDoorTblDir_North:  // arriving through dst's north door, moving south
-    dy_hi = ((D & 0xf0) >> 3) - 1;
-    dx_hi = -1;
-    virtual_room = D - 0x10;
-    break;
-  case kDoorTblDir_South:  // arriving through dst's south door, moving north
-    dy_hi = ((D & 0xf0) >> 3) + 1;
-    dx_hi = -1;
-    virtual_room = D + 0x10;
-    break;
+  case kDoorTblDir_West:   step = 1;     virtual_room = D - 1;    break;  // moving east
+  case kDoorTblDir_East:   step = -1;    virtual_room = D + 1;    break;  // moving west
+  case kDoorTblDir_North:  step = 0x10;  virtual_room = D - 0x10; break;  // moving south
+  case kDoorTblDir_South:  step = -0x10; virtual_room = D + 0x10; break;  // moving north
   default:
     return;
   }
-  // Vanilla Dungeon_AdjustForTeleportDoors takes a uint8 room, so index2/prev
-  // always get a zero high byte; mask the same way (a top-row north arrival
-  // would otherwise wrap the uint16 below zero).
+
+  uint16 S = dungeon_room_index;  // hook replaced the vanilla step, so still the source
+  dungeon_room_index = D;
   dungeon_room_index2 = (uint8)virtual_room;
   dungeon_room_index_prev = (uint8)virtual_room;
 
+  // Translate the whole mid-transition tableau (Link, camera, bounds) by a
+  // whole number of supertiles per axis, mapping the vanilla target N0 onto
+  // D — the Dungeon_AdjustForTeleportDoors / AdjustAfterSpiralStairs pattern.
+  // A whole-512 delta preserves every within-512 phase relation the
+  // transition machinery depends on (the masked up_down/left_right scroll
+  // stop, the camera-follow thresholds, the landing snap), regardless of
+  // which side of a 256px boundary the trigger fired on. Re-deriving hi
+  // bytes instead breaks the masked scroll terminator and the camera scrolls
+  // up to a full extra supertile, dragging Link out of the room (the
+  // "weird camera scrolling" playtest bug).
+  int n0_col = (S & 0xf) + (step == 1 ? 1 : step == -1 ? -1 : 0);
+  int n0_row = (S >> 4) + (step == 0x10 ? 1 : step == -0x10 ? -1 : 0);
+  int dx = (((D & 0xf) - n0_col) << 9);
+  int dy = ((((int)(D >> 4)) - n0_row) << 9);
+  link_x_coord += dx;
+  BG2HOFS_copy2 += dx;
+  room_bounds_x.a0 += dx;
+  room_bounds_x.a1 += dx;
+  room_bounds_x.b0 += dx;
+  room_bounds_x.b1 += dx;
+  link_y_coord += dy;
+  BG2VOFS_copy2 += dy;
+  room_bounds_y.a0 += dy;
+  room_bounds_y.a1 += dy;
+  room_bounds_y.b0 += dy;
+  room_bounds_y.b1 += dy;
+
+  // Perpendicular axis: align Link to dst's door slot. Unlike the scroll
+  // axis this is a fine (non-512) shift, so the quadrant-coupled state must
+  // be re-derived by hand: the confined camera stops (a0/a1 move 0x100 with
+  // a quadrant toggle — vanilla couples them in AdjustQuadrantAndCamera_*),
+  // the camera itself (follow Link, then CLAMP into the confined window
+  // [a0,a1] — the per-frame camera stops are equality tests, so a camera
+  // outside its stop range scrolls unbounded), and the follow thresholds
+  // (within-512 Link-phase trigger lines that track the camera 1:1; their
+  // vanilla seeds are camera_rest_phase + 127 for X / + 120 for Y).
   bool horizontal = (dst->direction == kDoorTblDir_West || dst->direction == kDoorTblDir_East);
-
-  // Scroll axis: move to the just-outside-the-edge 256px unit, keeping the
-  // low byte (the door-mouth offset along the walk direction) — vanilla
-  // teleport behavior.
   if (horizontal) {
-    int xx = dx_hi - (link_x_coord >> 8);
-    link_x_coord += xx << 8;
-    BG2HOFS_copy2 += xx << 8;
-    room_bounds_x.a1 += xx << 8;
-    room_bounds_x.b1 += xx << 8;
-    room_bounds_x.a0 += xx << 8;
-    room_bounds_x.b0 += xx << 8;
-  } else {
-    int yy = dy_hi - (link_y_coord >> 8);
-    link_y_coord += yy << 8;
-    BG2VOFS_copy2 += yy << 8;
-    room_bounds_y.a1 += yy << 8;
-    room_bounds_y.b1 += yy << 8;
-    room_bounds_y.a0 += yy << 8;
-    room_bounds_y.b0 += yy << 8;
-  }
-
-  // Perpendicular axis: grid-granular re-base to D's row/column (vanilla
-  // style — bounds shift with the grid delta), then a fine slot delta on the
-  // coordinate + camera only (bounds are room-granular and stay put).
-  if (horizontal) {
-    int target_hi = (D & 0xf0) >> 3;  // D's top row, 256px units
-    int yy = target_hi - (link_y_coord >> 8);
-    link_y_coord += yy << 8;
-    BG2VOFS_copy2 += yy << 8;
-    room_bounds_y.a1 += yy << 8;
-    room_bounds_y.b1 += yy << 8;
-    room_bounds_y.a0 += yy << 8;
-    room_bounds_y.b0 += yy << 8;
-    // fine: Link's y within the supertile -> the dst door row
     int target_in_room = 128 + slot * 128;  // door rows 120..152; Link y anchor
-    int cur_in_room = link_y_coord & 0x1FF;
-    int fine = target_in_room - cur_in_room;
+    uint8 new_q = (target_in_room >= 256) ? 2 : 0;
+    if (new_q != link_quadrant_y) {
+      int qa = new_q ? 0x100 : -0x100;
+      room_bounds_y.a0 += qa;
+      room_bounds_y.a1 += qa;
+      link_quadrant_y = new_q;
+    }
+    int fine = target_in_room - (int)(link_y_coord & 0x1ff);
     link_y_coord += fine;
-    BG2VOFS_copy2 += fine;
-    link_quadrant_y = (target_in_room >= 256) ? 2 : 0;
+    int cam = (int)BG2VOFS_copy2 + fine;
+    if (cam < (int)room_bounds_y.a0) cam = room_bounds_y.a0;
+    if (cam > (int)room_bounds_y.a1) cam = room_bounds_y.a1;
+    BG2VOFS_copy2 = (uint16)cam;
+    camera_y_coord_scroll_low = (cam & 0x1ff) + 120;
+    camera_y_coord_scroll_hi = camera_y_coord_scroll_low + 2;
   } else {
-    int target_hi = (D & 0xf) << 1;
-    int xx = target_hi - (link_x_coord >> 8);
-    link_x_coord += xx << 8;
-    BG2HOFS_copy2 += xx << 8;
-    room_bounds_x.a1 += xx << 8;
-    room_bounds_x.b1 += xx << 8;
-    room_bounds_x.a0 += xx << 8;
-    room_bounds_x.b0 += xx << 8;
     int target_in_room = 116 + slot * 128;  // door columns 112..136; Link x anchor
-    int cur_in_room = link_x_coord & 0x1FF;
-    int fine = target_in_room - cur_in_room;
+    uint8 new_q = (target_in_room >= 256) ? 1 : 0;
+    if (new_q != link_quadrant_x) {
+      int qa = new_q ? 0x100 : -0x100;
+      room_bounds_x.a0 += qa;
+      room_bounds_x.a1 += qa;
+      link_quadrant_x = new_q;
+    }
+    int fine = target_in_room - (int)(link_x_coord & 0x1ff);
     link_x_coord += fine;
-    BG2HOFS_copy2 += fine;
-    link_quadrant_x = (target_in_room >= 256) ? 1 : 0;
+    int cam = (int)BG2HOFS_copy2 + fine;
+    if (cam < (int)room_bounds_x.a0) cam = room_bounds_x.a0;
+    if (cam > (int)room_bounds_x.a1) cam = room_bounds_x.a1;
+    BG2HOFS_copy2 = (uint16)cam;
+    camera_x_coord_scroll_low = (cam & 0x1ff) + 127;
+    camera_x_coord_scroll_hi = camera_x_coord_scroll_low + 2;
   }
 
   // Layer authority: the destination door record (the vanilla layer/palace
