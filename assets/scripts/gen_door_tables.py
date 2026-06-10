@@ -13,14 +13,19 @@ primitives (set_rule / add_rule / ...) to record each lambda's SOURCE at call
 time — composition (add_lamp_requirement etc.) is recorded as an ordered op
 list per spot, which sidesteps closure opacity.
 
-Outputs (all gitignored; build fails without them via check_door_tables.py):
+Outputs — COMMITTED reference-derived artifacts (CI and fresh clones lack the
+reference checkout, so they cannot regenerate; check_door_tables.py guards
+count/registry consistency):
   src/rando/door_tables.gen.h / .c
-  assets/rando/door_tables.gen.json   (debug/inspection intermediate)
+  assets/rando/door_predicates.gen.json (vm-pred manifest for rando_logic_gen.py)
+  assets/rando/door_tables.gen.json     (debug/inspection intermediate; gitignored)
 
 Committed inputs:
   assets/rando/door_registry.yaml       (frozen door-stub ids; created by --init-registry)
   assets/rando/door_portals.yaml        (per-portal access gates, hand-curated)
-  assets/rando/door_rules_overrides.yaml (hand-curated rules the extractor can't parse)
+(The translator currently parses every harvested rule — 0 errors — so no
+hand-curated overrides file exists; if a future reference update introduces an
+unparseable rule, it ships as IMPASSABLE until curated.)
 
 Usage:
   python assets/scripts/gen_door_tables.py --ref C:/src/ALttPDoorRandomizer [--dump-stats]
