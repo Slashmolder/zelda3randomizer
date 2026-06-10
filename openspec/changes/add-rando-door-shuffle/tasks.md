@@ -138,9 +138,9 @@ and the verification gates remain.
 
 ## Stage 5 — Version / corpus close-out (OPEN — after Stage 2 lands)
 
-- [ ] 5.1 `kGeneratorVersion` bump (re-grep the live value at commit — the worktree
+- [x] 5.1 `kGeneratorVersion` bump (re-grep the live value at commit — the worktree
   base is 65; concurrent branches contend) + one-line rationale.
-- [ ] 5.2 Corpus: add a `door_shuffle=basic` seed; `bump_rando_corpus.py --apply`
+- [x] 5.2 Corpus: add a `door_shuffle=basic` seed; `bump_rando_corpus.py --apply`
   (absolute `--binary`, fresh build, `rm src/rando/logic_data.c` to force codegen);
   restore CRLF manifest; `check_corpus_version_sync` green.
 - [ ] 5.3 **3-way corpus regen** proving `door_shuffle == vanilla` byte-identical
