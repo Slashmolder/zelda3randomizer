@@ -322,6 +322,14 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   return 0;
 }
 
+uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s) {
+  // The normalized (post-derived-rules) door_shuffle value — definitionally
+  // the canonical byte [27], so generation and settings_hash always agree.
+  uint8 canon[kSettingsCanonicalLen];
+  Settings_CanonicalSerialize(s, canon);
+  return (uint8)(canon[27] & kDoorShuffleAxis_Mask);
+}
+
 void Settings_ComputeHash(const RandoSettings *s, uint8 out_hash[32]) {
   uint8 buf[kSettingsCanonicalLen];
   Settings_CanonicalSerialize(s, buf);

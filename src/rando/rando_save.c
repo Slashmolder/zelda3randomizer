@@ -175,7 +175,13 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   // load. Pre-field readers see it in the reserved tail and ignore it; new
   // readers of an old file see 0 (== attempt 0 == legacy behavior).
   buf[75] = h->prize_attempt;
-  memset(buf + 76, 0, kRandoSidecar_SlotHeaderSize - 76);
+  // @76-79 door shuffle (claims the reserved tail): accepted door_attempt +
+  // 24-bit layout digest for the activation drift hard-fail. Zero on
+  // vanilla-door slots (== the old reserved zeros).
+  buf[76] = h->door_attempt;
+  buf[77] = (uint8)(h->door_digest24 & 0xff);
+  buf[78] = (uint8)((h->door_digest24 >> 8) & 0xff);
+  buf[79] = (uint8)((h->door_digest24 >> 16) & 0xff);
   return kRandoSidecar_SlotHeaderSize;
 }
 
@@ -219,6 +225,9 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   // @75 prize_attempt (FIX #6). Pre-field files read 0 here (== attempt 0 ==
   // legacy behavior), the safe no-op default.
   out->prize_attempt = buf[75];
+  // @76-79 door shuffle. Pre-field files read zeros (vanilla doors, digest 0).
+  out->door_attempt = buf[76];
+  out->door_digest24 = (uint32)buf[77] | ((uint32)buf[78] << 8) | ((uint32)buf[79] << 16);
   // remaining reserved bytes ignored — forward-compat
   return kRandoSidecar_SlotHeaderSize;
 }

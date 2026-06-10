@@ -19,6 +19,13 @@
 #define kDoorShuffle_MaxKeyDoors 10
 #define kDoorShuffle_MaxBkRestricted 96
 
+// MVP shuffled-dungeon mask: all 13 kDoorTblDungeons EXCEPT the pins —
+// Hyrule Castle (index 0: forced escape start + Zelda escort + std key
+// special-casing) and Swamp Palace (index 6: the unique non-monotone
+// water-level rule cluster + drain/flood runtime risk). See the
+// add-rando-door-shuffle design pins P4'/P5.
+#define kDoorShuffle_MvpDungeonMask ((uint16)(0x1FFF & ~(1u << 0) & ~(1u << 6)))
+
 typedef struct DoorShuffleLayout {
   // pairing[door_id] = partner door id, 0xFFFF = unshuffled (vanilla).
   // Both directed halves are present for coupled pairs. Doors outside the

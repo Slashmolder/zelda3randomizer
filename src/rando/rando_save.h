@@ -200,6 +200,16 @@ typedef struct RandoSlotHeader {
   // stored table whenever attempt != 0. Older slots / pre-field writers read 0
   // (== attempt 0 == legacy behavior, the XOR-with-0 identity).
   uint8 prize_attempt;          // @75
+  // add-rando-door-shuffle (@76-79, claims the reserved[4] tail). The door
+  // layout is NOT serialized — it regenerates from (base_seed, settings,
+  // door_attempt) at activation. door_digest24 is a 24-bit fold of
+  // DoorShuffle_LayoutDigest over the ACCEPTED layout; activation recomputes
+  // it from the regenerated layout and HARD-FAILS on mismatch (a drifted
+  // interior layout can make the certified-beatable placement unbeatable —
+  // unlike entrance shuffle's non-blocking drift warning). Both zero on
+  // vanilla-door slots / pre-field writers.
+  uint8 door_attempt;           // @76
+  uint32 door_digest24;         // @77-79 (3 bytes LE on disk)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

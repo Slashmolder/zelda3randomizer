@@ -762,6 +762,26 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       }
     }
     // Leave overrides active through sphere + spoiler emission below.
+  } else if (Settings_EffectiveDoorShuffle(&settings) != kDoorShuffle_Vanilla) {
+    // add-rando-door-shuffle — door phase, mirroring Rando_PlaceWithEntrances'
+    // arm (the headless pipeline is hand-rolled; both seams MUST stay in
+    // step or corpus seeds diverge from in-game slots). Mutually exclusive
+    // with entrance shuffle per apply_derived_rules.
+    static DoorShuffleLayout headless_door_layout;
+    for (uint32 datt = 0; datt < 16; datt++) {
+      if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
+                                &headless_door_layout))
+        continue;
+      Rando_SetDoorLogicLayout(&headless_door_layout, headless_door_layout.shuffled_mask);
+      table.count = 0;
+      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table) &&
+          Accessibility_SeedAcceptable(&settings, &table)) {
+        ok = true;
+        break;
+      }
+      Rando_SetDoorLogicLayout(NULL, 0);
+    }
+    // Layout stays installed through sphere + spoiler emission below.
   } else {
     ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
   }

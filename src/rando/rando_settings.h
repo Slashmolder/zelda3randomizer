@@ -217,6 +217,12 @@ void Settings_SetDefaults(RandoSettings *s);
 // wildKeys lets keys spawn anywhere; genericKeys makes them fungible.
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
 
+// add-rando-door-shuffle — the normalized (post-derived-rules) door_shuffle
+// value; definitionally the canonical byte [27], so generation, runtime
+// install, and settings_hash always agree (vanilla under Inverted/Retro,
+// glitched logic, or entrance shuffle — the MVP pins).
+uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s);
+
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like
 // `Settings_EffectiveSmallKeysMode` this is *computed* from world_state, not a
