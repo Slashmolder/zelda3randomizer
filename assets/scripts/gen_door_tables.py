@@ -338,6 +338,7 @@ def harvest(world, P, recorder):
         regions.append({
             'name': r.name,
             'dungeon': dungeon_by_region[r.name],
+            'crystal_switch': bool(getattr(r, 'crystal_switch', False)),
             'locations': [l.name for l in r.locations],
         })
 
@@ -481,6 +482,11 @@ def harvest(world, P, recorder):
         'dungeon_dead_end_allowance': dict(DGMod.dungeon_dead_end_allowance),
     }
 
+    # RoomData enum values (= the ROM door-list byte codes the C engine reads).
+    from RoomData import DoorKind, Position
+    door_kind_values = {m.name: m.value for m in DoorKind}
+    position_values = {m.name: m.value for m in Position}
+
     return {
         'dungeons': dungeons,
         'regions': regions,
@@ -492,6 +498,8 @@ def harvest(world, P, recorder):
         'key_drop_data': key_drops,
         'vanilla_pairs': vanilla_pairs,
         'stitcher': stitcher,
+        'door_kind_values': door_kind_values,
+        'position_values': position_values,
     }
 
 
@@ -897,6 +905,577 @@ def fold_vm(node):
     return node
 
 
+# ---------------------------------------------------------------------------
+# Phase B2: table building + C emission.
+# ---------------------------------------------------------------------------
+
+DIR_ENUM = {'North': 0, 'South': 1, 'West': 2, 'East': 3, 'Up': 4, 'Down': 5, None: 0xFF}
+TYPE_ENUM = {'Normal': 0, 'SpiralStairs': 1, 'StraightStairs': 2, 'Ladder': 3,
+             'Open': 4, 'Hole': 5, 'Warp': 6, 'Interior': 7, 'Logical': 8}
+CRYSTAL_ENUM = {'Null': 0, 'Blue': 1, 'Orange': 2, 'Either': 3}
+EVENT_ORDER = ['Trench 1 Filled', 'Trench 2 Filled', 'Drained Swamp', 'Open Floodgate',
+               'Hidden Pits', 'Convenient Block', 'Shining Light', 'Maiden Rescued',
+               'Maiden Unmasked', 'Attic Cracked Floor']
+# event name -> granting reference location
+EVENT_GRANT_LOC = {
+    'Trench 1 Filled': 'Trench 1 Switch',
+    'Trench 2 Filled': 'Trench 2 Switch',
+    'Drained Swamp': 'Swamp Drain',
+    'Open Floodgate': "Swamp Palace - Big Chest",  # resolved dynamically below
+    'Hidden Pits': 'Skull Star Tile',
+    'Convenient Block': 'Ice Block Drop',
+    'Shining Light': 'Attic Cracked Floor',
+    'Maiden Rescued': 'Suspicious Maiden',
+    'Maiden Unmasked': 'Revealing Light',
+    'Attic Cracked Floor': 'Attic Cracked Floor',
+}
+# reference location name -> fork location name where normalization fails
+LOC_NAME_FIX = {
+    "Hyrule Castle - Zelda's Chest": "Hyrule Castle - Zelda's Cell",
+    # DR renamed ALTTPR's Moldorm Chest (the post-Moldorm-2 chest).
+    "Ganons Tower - Validation Chest": "Ganon's Tower - Moldorm Chest",
+}
+
+# Vanilla NON-POSITIONAL Normal connections = the engine's teleport doors
+# (the `(link_tile_below & 0xcf) == 0x89` branch reading
+# dung_hdr_travel_destinations[3/4]) — discovered by the positional
+# cross-check; currently Hyrule Castle's 1F<->2F hall doors only. These stay
+# Normal-typed in the pool model but carry kDoorTblFlag_VanillaTeleport so the
+# runtime hooks them at the teleport read site instead of the positional line.
+VANILLA_TELEPORT_PAIRS = {
+    ('Hyrule Castle East Hall W', 'Hyrule Castle Back Hall E'),
+    ('Hyrule Castle West Hall E', 'Hyrule Castle Back Hall W'),
+}
+
+# Doors whose two halves vanilla-connect across a palace-index boundary may
+# carry the bit-1 (cur_palace_index_x2) transition toggle; basic shuffle keeps
+# doors within one reference dungeon, and Rando_DoorArrive leaves the palace
+# index unchanged, so any pool door pair crossing such a boundary must fail
+# codegen. The check uses the per-room palace mapping derivable from dungeon
+# membership: all rooms referenced by one reference-dungeon's doors must agree.
+
+
+def norm_loc(s):
+    s = s.lower().replace("'", '').replace('-', ' ')
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+class TableBuilder:
+    def __init__(self, model, repo):
+        self.model = model
+        self.repo = repo
+        self.problems = []
+
+        import yaml
+        with open(os.path.join(repo, 'assets', 'rando', 'location_registry.yaml')) as f:
+            locreg = yaml.safe_load(f)
+        self.fork_locs = {l['name']: l['id'] for l in locreg['locations'] if not l.get('deprecated')}
+        self.fork_locs_norm = {norm_loc(n): i for n, i in self.fork_locs.items()}
+        with open(os.path.join(repo, 'assets', 'rando', 'item_registry.yaml')) as f:
+            itemreg = yaml.safe_load(f)
+        self.fork_items = {i['name']: i['id'] for i in itemreg['items']}
+
+    def problem(self, msg):
+        self.problems.append(msg)
+
+    def build(self):
+        m = self.model
+        # ---- regions sorted by (dungeon, name) => contiguous per-dungeon ----
+        regions = sorted(m['regions'], key=lambda r: (r['dungeon'], r['name']))
+        self.region_id = {r['name']: i for i, r in enumerate(regions)}
+        self.regions = regions
+
+        # ---- doors: physical dungeon doors, sorted by name (frozen ids) ----
+        doors = [d for d in sorted(m['doors'], key=lambda d: d['name'])
+                 if d['region'] is not None]
+        self.door_id = {d['name']: i for i, d in enumerate(doors)}
+        self.doors = doors
+
+        # rooms join: (room, doorListPos) -> (pos_byte, kind)
+        room_doorlists = {}
+        for room in m['rooms']:
+            entries = []
+            for pos_name, kind_name in room['door_list']:
+                entries.append((m['position_values'][pos_name], m['door_kind_values'][kind_name]))
+            room_doorlists[room['index']] = entries
+        self.room_doorlists = room_doorlists
+
+        for d in doors:
+            d['id'] = self.door_id[d['name']]
+            d['pos_byte'] = 0xFF
+            d['kind'] = 0xFF
+            if d['pos'] is not None and d['pos'] >= 0:
+                entries = room_doorlists.get(d['room'])
+                if entries is None or d['pos'] >= len(entries):
+                    self.problem(f"door {d['name']}: doorListPos {d['pos']} out of range for room {d['room']:#x}")
+                else:
+                    d['pos_byte'], d['kind'] = entries[d['pos']]
+
+        # ---- pool membership + vanilla pairs ----
+        pool_types = ('Normal', 'SpiralStairs')
+        pair_of = {}
+        one_way_pairs = []
+        for a, b in m['vanilla_pairs']['two_way']:
+            if a in self.door_id and b in self.door_id:
+                pair_of[a] = b
+                pair_of[b] = a
+        for a, b in m['vanilla_pairs']['one_way']:
+            if a in self.door_id and b in self.door_id:
+                one_way_pairs.append((a, b))
+        self.vanilla_two_way = [(a, b) for a, b in m['vanilla_pairs']['two_way']
+                                if a in self.door_id and b in self.door_id]
+        self.vanilla_one_way = one_way_pairs
+        for d in doors:
+            d['in_pool'] = (d['type'] in pool_types
+                            and (d['name'] in pair_of
+                                 or any(d['name'] in p for p in one_way_pairs)))
+
+        # ---- verification: vanilla connectivity is positional -------------
+        DELTA = {('East', 'West'): 1, ('West', 'East'): -1,
+                 ('South', 'North'): 0x10, ('North', 'South'): -0x10}
+        for a, b in self.vanilla_two_way:
+            da, db = doors[self.door_id[a]], doors[self.door_id[b]]
+            if (a, b) in VANILLA_TELEPORT_PAIRS or (b, a) in VANILLA_TELEPORT_PAIRS:
+                da['vanilla_teleport'] = db['vanilla_teleport'] = True
+            elif da['type'] == 'Normal' and db['type'] == 'Normal':
+                key = (da['direction'], db['direction'])
+                if key not in DELTA:
+                    self.problem(f'vanilla pair {a}<->{b}: directions {key} not opposite')
+                elif db['room'] - da['room'] != DELTA[key]:
+                    self.problem(f'vanilla pair {a}<->{b}: rooms {da["room"]:#x}->{db["room"]:#x} '
+                                 f'not positional for {key}')
+            if da['room'] >= 0x100 or db['room'] >= 0x100:
+                self.problem(f'vanilla pair {a}<->{b}: room >= 0x100')
+
+        # ---- rules ----------------------------------------------------------
+        tr = RuleTranslator(m)
+        self.vm_preds = []        # ordered unique DSL strings
+        self.vm_index = {}
+        self.rule_blob = bytearray()
+        self.rule_offsets = {}    # ir-key -> offset
+        region_dgn = {r['name']: r['dungeon'] for r in m['regions']}
+
+        def vm_idx(dsl):
+            if dsl not in self.vm_index:
+                self.vm_index[dsl] = len(self.vm_preds)
+                self.vm_preds.append(dsl)
+            return self.vm_index[dsl]
+
+        def encode(ir, out):
+            k = ir[0]
+            if k == 'true':
+                out.append(0)
+            elif k == 'false':
+                out.append(1)
+            elif k in ('and', 'or'):
+                out.append(2 if k == 'and' else 3)
+                out.append(len(ir[1]))
+                for c in ir[1]:
+                    encode(c, out)
+            elif k == 'not':
+                out.append(4)
+                encode(ir[1], out)
+            elif k == 'vm':
+                i = vm_idx(ir[1])
+                out.extend((5, i & 0xFF, i >> 8))
+            elif k == 'event':
+                out.extend((6, EVENT_ORDER.index(ir[1])))
+            elif k == 'creach':
+                rid = self.region_id[ir[1]]
+                out.extend((7, rid & 0xFF, rid >> 8, 0 if ir[2] == 'blue' else 1))
+            elif k == 'reach':
+                rid = self.region_id[ir[1]]
+                out.extend((8, rid & 0xFF, rid >> 8))
+            else:
+                raise RuleError(f'encode {k}')
+
+        def rule_ref(spot, entries, dungeon):
+            if not entries:
+                return 0xFFFF  # always true
+            ir = fold_vm(tr.translate_entry_list(spot, entries, dungeon))
+            if ir == ('true',):
+                return 0xFFFF
+            key = repr(ir)
+            if key not in self.rule_offsets:
+                off = len(self.rule_blob)
+                buf = bytearray()
+                encode(ir, buf)
+                self.rule_blob.extend(buf)
+                self.rule_offsets[key] = off
+            return self.rule_offsets[key]
+
+        # ---- edges ---------------------------------------------------------
+        edges = []
+        for e in m['edges']:
+            dgn = region_dgn[e['from']]
+            door = e.get('door')
+            door_id = self.door_id.get(door, 0xFFFF) if door else 0xFFFF
+            cls = 'static'
+            if door and door in self.door_id:
+                dd = self.doors[self.door_id[door]]
+                if dd['in_pool']:
+                    cls = 'pool'
+            edges.append({
+                'name': e['name'],
+                'from': self.region_id[e['from']],
+                'to': self.region_id[e['to']],
+                'rule': rule_ref(e['name'], e['rules'], dgn),
+                'door': door_id,
+                'cls': cls,
+            })
+        self.edges = edges
+
+        # ---- locations / events / drop keys --------------------------------
+        locations, events, drop_keys = [], {}, []
+        for l in m['locations']:
+            dgn = region_dgn[l['region']]
+            name = LOC_NAME_FIX.get(l['name'], l['name'])
+            rule = rule_ref(l['name'], l['rules'], dgn)
+            fork_id = self.fork_locs.get(name)
+            if fork_id is None:
+                fork_id = self.fork_locs_norm.get(norm_loc(name))
+            forced = l.get('forced_item') or ''
+            if fork_id is not None:
+                locations.append({'name': name, 'fork_id': fork_id,
+                                  'region': self.region_id[l['region']], 'rule': rule})
+            elif forced in EVENT_ORDER or l['name'] in EVENT_GRANT_LOC.values():
+                # event location: grants `forced` (or the event mapped to it)
+                ev = forced if forced in EVENT_ORDER else None
+                if ev is None:
+                    ev = next((k for k, v in EVENT_GRANT_LOC.items() if v == l['name'])
+                              , None)
+                if ev is None:
+                    self.problem(f'event location {l["name"]}: no event mapping')
+                else:
+                    events[ev] = {'region': self.region_id[l['region']], 'rule': rule}
+            elif forced.startswith('Small Key'):
+                drop_keys.append({'name': l['name'], 'dungeon': dgn,
+                                  'region': self.region_id[l['region']], 'rule': rule})
+            elif forced.startswith('Big Key'):
+                # HC Big Key Drop — fork has no such location; HC is pinned and
+                # big-key drops aren't modeled (BK comes from the fork pool).
+                pass
+            elif l['name'] in ('Agahnim 1', 'Agahnim 2', "Frozen Lake Ledge?"):
+                pass  # fork models these via its own Prize_Event locations
+            else:
+                self.problem(f'location {l["name"]!r}: no fork id, not event/drop (forced={forced!r})')
+        # multi-grant events: 'Attic Cracked Floor' grants 'Shining Light' too —
+        # resolved by aliasing below if missing.
+        for ev in EVENT_ORDER:
+            if ev not in events:
+                grant = EVENT_GRANT_LOC.get(ev)
+                alias = next((e for e in events.values() if False), None)
+                if grant and any(l['name'] == grant for l in m['locations']):
+                    # granted by a location that mapped to another event or fork id
+                    src = next(l for l in m['locations'] if l['name'] == grant)
+                    events[ev] = {'region': self.region_id[src['region']],
+                                  'rule': rule_ref(src['name'], src['rules'],
+                                                   region_dgn[src['region']])}
+                else:
+                    self.problem(f'event {ev!r}: no granting location found')
+        self.locations = locations
+        self.events = events
+        self.drop_keys = drop_keys
+        self.tr_errors = tr.errors
+
+        # ---- dungeons -------------------------------------------------------
+        dgns = []
+        for d in m['dungeons']:
+            rng = [i for i, r in enumerate(regions) if r['dungeon'] == d['index']]
+            sk = f"SmallKey_{d['fork_name']}" if d['fork_name'] != 'HyruleCastle' else 'SmallKey_HyruleCastleEscape'
+            if d['fork_name'] == 'CastleTower':
+                sk = 'SmallKey_HyruleCastleTower'
+            bk = f"BigKey_{d['fork_name']}"
+            dgns.append({
+                'ref_name': d['ref_name'],
+                'fork_name': d['fork_name'],
+                'chest_small_keys': d['chest_small_keys'],
+                'has_big_key': d['has_big_key'],
+                'region_first': min(rng) if rng else 0,
+                'region_count': len(rng),
+                'small_key_item': self.fork_items.get(sk, 0xFFFF),
+                'big_key_item': self.fork_items.get(bk, 0xFFFF) if d['has_big_key'] else 0xFFFF,
+            })
+            if rng and (max(rng) - min(rng) + 1) != len(rng):
+                self.problem(f'dungeon {d["ref_name"]}: regions not contiguous')
+            if d['has_big_key'] and dgns[-1]['big_key_item'] == 0xFFFF:
+                self.problem(f'dungeon {d["ref_name"]}: fork big key item {bk} not found')
+            if dgns[-1]['small_key_item'] == 0xFFFF:
+                self.problem(f'dungeon {d["ref_name"]}: fork small key item {sk} not found')
+        self.dungeons = dgns
+
+        # ---- required paths -------------------------------------------------
+        st = m['stitcher']
+        paths = []
+        for rname in st['boss_path_checks']:
+            if rname in self.region_id:
+                paths.append({'dungeon': region_dgn[rname], 'region': self.region_id[rname],
+                              'kind': 'boss'})
+        for rname in st['drop_path_checks']:
+            if rname in self.region_id:
+                paths.append({'dungeon': region_dgn[rname], 'region': self.region_id[rname],
+                              'kind': 'drop'})
+        # TT basic-mode attic-window path (determine_paths_for_dungeon)
+        if 'Thieves Attic Window' in self.region_id:
+            paths.append({'dungeon': region_dgn['Thieves Attic Window'],
+                          'region': self.region_id['Thieves Attic Window'], 'kind': 'boss'})
+        self.paths = paths
+
+        # ---- room door lists (kind overlay) + paired doors ------------------
+        self.rooms_sorted = sorted(room_doorlists.items())
+        self.paired = [(self.door_id[p['a']], self.door_id[p['b']], 1 if p['pair'] else 0)
+                       for p in m['paired_doors']
+                       if p['a'] in self.door_id and p['b'] in self.door_id]
+        return self
+
+
+def check_registry(builder, registry_path, init):
+    """door_registry.yaml freezes door name -> id (digest stability across builds).
+
+    Returns a list of problems (empty = consistent). With init=True (or no file
+    yet) the registry is (re)written from the current build instead.
+    """
+    import yaml
+    current = {d['name']: i for i, d in enumerate(builder.doors)}
+    if init or not os.path.isfile(registry_path):
+        with open(registry_path, 'w', newline='\n') as f:
+            f.write('# door_registry.yaml — FROZEN door-stub ids for door shuffle.\n'
+                    '# Generated by gen_door_tables.py --init-registry; ids are\n'
+                    '# append-only (the per-seed door-layout digest hashes door ids, so\n'
+                    '# a re-numbering invalidates every door-shuffle save).\n'
+                    'format_version: 1\ndoors:\n')
+            for name, i in sorted(current.items(), key=lambda kv: kv[1]):
+                f.write(f'  - {{ id: {i}, name: "{name}" }}\n')
+        return []
+    with open(registry_path) as f:
+        reg = yaml.safe_load(f)
+    frozen = {e['name']: e['id'] for e in reg['doors']}
+    problems = []
+    for name, i in frozen.items():
+        if current.get(name) != i:
+            problems.append(f'registry drift: {name!r} frozen id {i}, current {current.get(name)}')
+    for name in current:
+        if name not in frozen:
+            problems.append(f'registry missing new door {name!r} (append it explicitly)')
+    return problems
+
+
+def emit_c(builder, out_h, out_c, out_preds):
+    H = []
+    C = []
+    doors, regions = builder.doors, builder.regions
+
+    name_blob = []
+    name_off = {}
+
+    def s_off(s):
+        if s not in name_off:
+            name_off[s] = sum(len(x) + 1 for x in name_blob)
+            name_blob.append(s)
+        return name_off[s]
+
+    H.append('// door_tables.gen.h — GENERATED by assets/scripts/gen_door_tables.py. Do not edit.\n')
+    H.append('#pragma once\n#include "../types.h"\n\n')
+    H.append('enum {  // DoorTbl door types\n'
+             '  kDoorTblType_Normal, kDoorTblType_SpiralStairs, kDoorTblType_StraightStairs,\n'
+             '  kDoorTblType_Ladder, kDoorTblType_Open, kDoorTblType_Hole, kDoorTblType_Warp,\n'
+             '  kDoorTblType_Interior, kDoorTblType_Logical,\n};\n')
+    H.append('enum {  // DoorTbl directions\n'
+             '  kDoorTblDir_North, kDoorTblDir_South, kDoorTblDir_West, kDoorTblDir_East,\n'
+             '  kDoorTblDir_Up, kDoorTblDir_Down,\n};\n')
+    H.append('enum {  // DoorTblDoor flags\n'
+             '  kDoorTblFlag_Toggle = 0x1, kDoorTblFlag_Blocked = 0x2,\n'
+             '  kDoorTblFlag_Trapped = 0x4, kDoorTblFlag_Stonewall = 0x8,\n'
+             '  kDoorTblFlag_VanillaSmallKey = 0x10, kDoorTblFlag_VanillaBigKey = 0x20,\n'
+             '  kDoorTblFlag_Ugly = 0x40, kDoorTblFlag_DeadEnd = 0x80,\n'
+             '  kDoorTblFlag_Portal = 0x100, kDoorTblFlag_InPool = 0x200,\n'
+             '  kDoorTblFlag_CrystalBlue = 0x400, kDoorTblFlag_CrystalOrange = 0x800,\n'
+             '  kDoorTblFlag_VanillaTeleport = 0x1000,\n};\n')
+    H.append('enum {  // DoorTblEvent ids\n')
+    for i, ev in enumerate(EVENT_ORDER):
+        H.append(f'  kDoorEvent_{re.sub(r"[^A-Za-z0-9]", "", ev)} = {i},\n')
+    H.append('};\n')
+    H.append('enum {  // door-rule bytecode ops (kDoorTblRuleBlob)\n'
+             '  kDoorRuleOp_True, kDoorRuleOp_False, kDoorRuleOp_And, kDoorRuleOp_Or,\n'
+             '  kDoorRuleOp_Not, kDoorRuleOp_Vm, kDoorRuleOp_Event, kDoorRuleOp_CReach,\n'
+             '  kDoorRuleOp_Reach,\n};\n\n')
+
+    H.append('typedef struct DoorTblDoor {\n'
+             '  uint16 name_off;\n  uint16 region;          // kDoorTblRegions index\n'
+             '  uint16 vanilla_partner;  // door id, 0xFFFF none\n  uint16 flags;\n'
+             '  uint8 room;\n  uint8 type;\n  uint8 direction;\n'
+             '  uint8 door_index;        // 0..2 within the edge\n  uint8 layer;\n'
+             '  uint8 pos;               // doorListPos, 0xFF none\n'
+             '  uint8 pos_byte;          // RoomData Position code (door-list low byte)\n'
+             '  uint8 kind;              // RoomData DoorKind code (door-list high byte)\n'
+             '  uint8 trap_flag;\n  uint8 quadrant;\n  int8 shift_x;\n  int8 shift_y;\n'
+             '  uint8 dungeon;\n} DoorTblDoor;\n\n')
+    H.append('typedef struct DoorTblRegion {\n'
+             '  uint16 name_off;\n  uint8 dungeon;\n  uint8 flags;  // 1 = crystal switch present\n'
+             '} DoorTblRegion;\n\n')
+    H.append('typedef struct DoorTblEdge {\n'
+             '  uint16 from_region;\n  uint16 to_region;\n'
+             '  uint16 rule;   // offset into kDoorTblRuleBlob, 0xFFFF = always\n'
+             '  uint16 door;   // door id this edge crosses, 0xFFFF = logical\n'
+             '  uint8 is_pool; // 1 = vanilla connection of a shuffleable stub\n'
+             '} DoorTblEdge;\n\n')
+    H.append('typedef struct DoorTblPair {\n  uint16 a, b;\n  uint8 one_way;\n} DoorTblPair;\n\n')
+    H.append('typedef struct DoorTblLocation {\n'
+             '  uint16 fork_loc_id;\n  uint16 region;\n  uint16 rule;\n} DoorTblLocation;\n\n')
+    H.append('typedef struct DoorTblEvent {\n'
+             '  uint8 event_id;\n  uint16 region;\n  uint16 rule;\n} DoorTblEvent;\n\n')
+    H.append('typedef struct DoorTblDropKey {\n'
+             '  uint8 dungeon;\n  uint16 region;\n  uint16 rule;\n} DoorTblDropKey;\n\n')
+    H.append('typedef struct DoorTblDungeon {\n'
+             '  uint16 name_off;\n  uint8 chest_small_keys;\n  uint8 has_big_key;\n'
+             '  uint16 region_first;\n  uint16 region_count;\n'
+             '  uint16 small_key_item;\n  uint16 big_key_item;\n} DoorTblDungeon;\n\n')
+    H.append('typedef struct DoorTblPath {\n'
+             '  uint8 dungeon;\n  uint8 kind;  // 0 = boss/required, 1 = drop-exit\n'
+             '  uint16 region;\n} DoorTblPath;\n\n')
+    H.append('typedef struct DoorTblRoomDoor {\n  uint8 pos_byte;\n  uint8 kind;\n} DoorTblRoomDoor;\n')
+    H.append('typedef struct DoorTblRoom {\n'
+             '  uint8 room;\n  uint8 count;\n  uint16 first;  // into kDoorTblRoomDoors\n'
+             '} DoorTblRoom;\n\n')
+    H.append('typedef struct DoorTblPairedKind {\n  uint16 a, b;\n  uint8 pair;\n} DoorTblPairedKind;\n\n')
+
+    counts = {
+        'kDoorTbl_DoorCount': len(doors),
+        'kDoorTbl_RegionCount': len(regions),
+        'kDoorTbl_EdgeCount': len(builder.edges),
+        'kDoorTbl_PairCount': len(builder.vanilla_two_way) + len(builder.vanilla_one_way),
+        'kDoorTbl_LocationCount': len(builder.locations),
+        'kDoorTbl_EventCount': len(builder.events),
+        'kDoorTbl_DropKeyCount': len(builder.drop_keys),
+        'kDoorTbl_DungeonCount': len(builder.dungeons),
+        'kDoorTbl_PathCount': len(builder.paths),
+        'kDoorTbl_RoomCount': len(builder.rooms_sorted),
+        'kDoorTbl_PairedKindCount': len(builder.paired),
+        'kDoorTbl_VmPredCount': len(builder.vm_preds),
+        'kDoorTbl_RuleBlobSize': len(builder.rule_blob),
+    }
+    for k, v in counts.items():
+        H.append(f'#define {k} {v}\n')
+    H.append('\nextern const char kDoorTblNames[];\n'
+             'extern const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount];\n'
+             'extern const DoorTblRegion kDoorTblRegions[kDoorTbl_RegionCount];\n'
+             'extern const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount];\n'
+             'extern const DoorTblPair kDoorTblVanillaPairs[kDoorTbl_PairCount];\n'
+             'extern const DoorTblLocation kDoorTblLocations[kDoorTbl_LocationCount];\n'
+             'extern const DoorTblEvent kDoorTblEvents[kDoorTbl_EventCount];\n'
+             'extern const DoorTblDropKey kDoorTblDropKeys[kDoorTbl_DropKeyCount];\n'
+             'extern const DoorTblDungeon kDoorTblDungeons[kDoorTbl_DungeonCount];\n'
+             'extern const DoorTblPath kDoorTblPaths[kDoorTbl_PathCount];\n'
+             'extern const DoorTblRoom kDoorTblRooms[kDoorTbl_RoomCount];\n'
+             'extern const DoorTblRoomDoor kDoorTblRoomDoors[];\n'
+             'extern const DoorTblPairedKind kDoorTblPairedKinds[kDoorTbl_PairedKindCount];\n'
+             'extern const uint8 kDoorTblRuleBlob[kDoorTbl_RuleBlobSize];\n')
+
+    # ------------------------------------------------------------------ C --
+    C.append('// door_tables.gen.c — GENERATED by assets/scripts/gen_door_tables.py. Do not edit.\n')
+    C.append('// embedded-data-guard: allow — generated from the ALttPDoorRandomizer\n'
+             '// reference (MIT) by gen_door_tables.py; gitignored, never hand-edited.\n')
+    C.append('#include "door_tables.gen.h"\n\n')
+
+    rows = []
+    for d in doors:
+        flags = ((1 if d['toggle'] else 0)
+                 | (2 if d['blocked'] else 0)
+                 | (4 if d['trapped'] else 0)
+                 | (8 if d['stonewall'] else 0)
+                 | (0x10 if d['small_key'] else 0)
+                 | (0x20 if d['big_key'] else 0)
+                 | (0x40 if d['ugly'] else 0)
+                 | (0x80 if d['dead_end'] else 0)
+                 | (0x100 if d['portal_able'] else 0)
+                 | (0x200 if d['in_pool'] else 0)
+                 | (0x400 if d['crystal'] in ('Blue', 'Either') else 0)
+                 | (0x800 if d['crystal'] in ('Orange', 'Either') else 0)
+                 | (0x1000 if d.get('vanilla_teleport') else 0))
+        partner = 0xFFFF
+        if d.get('dest_door') and d['dest_door'] in builder.door_id:
+            partner = builder.door_id[d['dest_door']]
+        rows.append('  {%d,%d,%d,0x%x,0x%x,%d,%d,%d,%d,%d,0x%x,0x%x,0x%x,%d,%d,%d,%d}, // %s' % (
+            s_off(d['name']), builder.region_id[d['region']], partner, flags,
+            d['room'] if d['room'] is not None and d['room'] >= 0 else 0xFF,
+            TYPE_ENUM[d['type']], DIR_ENUM[d['direction']],
+            max(0, d['door_index']) if d['door_index'] is not None else 0,
+            max(0, d['layer']) if d['layer'] is not None else 0,
+            d['pos'] if d['pos'] is not None and d['pos'] >= 0 else 0xFF,
+            d['pos_byte'], d['kind'], d['trap_flag'] or 0,
+            d['quadrant'] if d['quadrant'] is not None else 0,
+            clamp_i8(d['shift_x']), clamp_i8(d['shift_y']), d['dungeon'], d['name']))
+    C.append('const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,%d}, // %s' % (s_off(r['name']), r['dungeon'],
+                                     1 if r['crystal_switch'] else 0, r['name'])
+            for r in regions]
+    C.append('const DoorTblRegion kDoorTblRegions[kDoorTbl_RegionCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,0x%x,%d,%d}, // %s' % (e['from'], e['to'], e['rule'], e['door'],
+                                             1 if e['cls'] == 'pool' else 0, e['name'])
+            for e in builder.edges]
+    C.append('const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = []
+    for a, b in builder.vanilla_two_way:
+        rows.append('  {%d,%d,0}, // %s <-> %s' % (builder.door_id[a], builder.door_id[b], a, b))
+    for a, b in builder.vanilla_one_way:
+        rows.append('  {%d,%d,1}, // %s -> %s' % (builder.door_id[a], builder.door_id[b], a, b))
+    C.append('const DoorTblPair kDoorTblVanillaPairs[kDoorTbl_PairCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,0x%x}, // %s' % (l['fork_id'], l['region'], l['rule'], l['name'])
+            for l in sorted(builder.locations, key=lambda l: l['fork_id'])]
+    C.append('const DoorTblLocation kDoorTblLocations[kDoorTbl_LocationCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,0x%x}, // %s' % (EVENT_ORDER.index(ev), info['region'], info['rule'], ev)
+            for ev, info in sorted(builder.events.items(), key=lambda kv: EVENT_ORDER.index(kv[0]))]
+    C.append('const DoorTblEvent kDoorTblEvents[kDoorTbl_EventCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,0x%x}, // %s' % (k['dungeon'], k['region'], k['rule'], k['name'])
+            for k in builder.drop_keys]
+    C.append('const DoorTblDropKey kDoorTblDropKeys[kDoorTbl_DropKeyCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,%d,%d,%d,%d,%d}, // %s' % (
+        s_off(d['ref_name']), d['chest_small_keys'], 1 if d['has_big_key'] else 0,
+        d['region_first'], d['region_count'], d['small_key_item'], d['big_key_item'],
+        d['ref_name']) for d in builder.dungeons]
+    C.append('const DoorTblDungeon kDoorTblDungeons[kDoorTbl_DungeonCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,%d},' % (p['dungeon'], 0 if p['kind'] == 'boss' else 1, p['region'])
+            for p in builder.paths]
+    C.append('const DoorTblPath kDoorTblPaths[kDoorTbl_PathCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    room_rows, rd_rows = [], []
+    for room, entries in builder.rooms_sorted:
+        room_rows.append('  {0x%x,%d,%d},' % (room, len(entries), len(rd_rows)))
+        for pos_byte, kind in entries:
+            rd_rows.append('  {0x%x,0x%x},' % (pos_byte, kind))
+    C.append('const DoorTblRoom kDoorTblRooms[kDoorTbl_RoomCount] = {\n' + '\n'.join(room_rows) + '\n};\n\n')
+    C.append('const DoorTblRoomDoor kDoorTblRoomDoors[] = {\n' + '\n'.join(rd_rows) + '\n};\n\n')
+
+    rows = ['  {%d,%d,%d},' % (a, b, p) for a, b, p in builder.paired]
+    C.append('const DoorTblPairedKind kDoorTblPairedKinds[kDoorTbl_PairedKindCount] = {\n' + '\n'.join(rows) + '\n};\n\n')
+
+    blob = ', '.join(str(b) for b in builder.rule_blob)
+    C.append('const uint8 kDoorTblRuleBlob[kDoorTbl_RuleBlobSize] = { ' + blob + ' };\n\n')
+
+    esc = ''.join(s.replace('\\', '\\\\').replace('"', '\\"') + '\\0' for s in name_blob)
+    C.append('const char kDoorTblNames[] = "' + esc + '";\n')
+
+    with open(out_h, 'w', newline='\n') as f:
+        f.write(''.join(H))
+    with open(out_c, 'w', newline='\n') as f:
+        f.write(''.join(C))
+    with open(out_preds, 'w', newline='\n') as f:
+        json.dump({'format_version': 1, 'predicates': builder.vm_preds}, f, indent=1)
+
+
+def clamp_i8(v):
+    v = int(v)
+    return max(-128, min(127, v if v < 128 else v - 256)) if v > 127 else v
+
+
 def dump_stats(model):
     from collections import Counter
     doors = model['doors']
@@ -944,6 +1523,8 @@ def main():
                     os.path.join(REPO, '..', 'ALttPDoorRandomizer')))
     ap.add_argument('--dump-stats', action='store_true')
     ap.add_argument('--check-rules', action='store_true')
+    ap.add_argument('--init-registry', action='store_true')
+    ap.add_argument('--no-emit', action='store_true')
     ap.add_argument('--out-json', default=os.path.join(REPO, 'assets', 'rando',
                                                        'door_tables.gen.json'))
     args = ap.parse_args()
@@ -980,6 +1561,31 @@ def main():
         for spot, body, msg in tr.errors[:30]:
             print(f'  ERR {spot}: {msg}\n      {body[:160]}')
         return 1 if tr.errors else 0
+
+    if args.no_emit:
+        return 0
+
+    builder = TableBuilder(model, REPO).build()
+    problems = list(builder.problems)
+    for spot, body, msg in builder.tr_errors:
+        problems.append(f'rule error at {spot}: {msg}')
+    registry_path = os.path.join(REPO, 'assets', 'rando', 'door_registry.yaml')
+    problems += check_registry(builder, registry_path, args.init_registry)
+    if problems:
+        print(f'gen_door_tables: {len(problems)} problem(s):', file=sys.stderr)
+        for p in problems[:40]:
+            print('  ' + p, file=sys.stderr)
+        return 1
+
+    out_h = os.path.join(REPO, 'src', 'rando', 'door_tables.gen.h')
+    out_c = os.path.join(REPO, 'src', 'rando', 'door_tables.gen.c')
+    out_preds = os.path.join(REPO, 'assets', 'rando', 'door_predicates.gen.json')
+    emit_c(builder, out_h, out_c, out_preds)
+    print(f'gen_door_tables: emitted {out_c}')
+    print(f'  doors={len(builder.doors)} regions={len(builder.regions)} '
+          f'edges={len(builder.edges)} locations={len(builder.locations)} '
+          f'events={len(builder.events)} drop_keys={len(builder.drop_keys)} '
+          f'vm_preds={len(builder.vm_preds)} rule_blob={len(builder.rule_blob)}B')
     return 0
 
 

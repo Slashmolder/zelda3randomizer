@@ -69,3 +69,4 @@ __pycache__
 # tracked reference doc docs/randomizer.md has no underscore, so it stays
 # tracked; the underscore-suffixed planning files are ignored.
 /docs/randomizer_*.md
+/assets/rando/door_tables.gen.json
