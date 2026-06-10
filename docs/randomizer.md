@@ -319,6 +319,43 @@ The drop-shuffle toggle is exposed in the PC native settings window under
 shuffled-drops *visuals* are verified only by playtest — the headless checks
 above cover determinism + the structural invariants.
 
+### Door shuffle (experimental)
+
+`door_shuffle=basic` (`add-rando-door-shuffle`) randomizes each dungeon's
+**interior door-to-door connections** — walking through a door can land you in
+a different room of the same dungeon than vanilla, and the small-key doors are
+relocated onto the new connections (vanilla per-dungeon counts, validated by a
+key-door softlock prover). Ported from ALttPDoorRandomizer's basic mode at
+intensity 1 (normal doors + spiral staircases shuffle; holes, warps, straight
+stairs and open edges stay vanilla).
+
+MVP constraints (normalized automatically — the settings hash always matches
+the actually-generated seed):
+
+- Open/Standard world states + NoGlitches logic only (vanilla doors otherwise).
+- Mutually exclusive with entrance shuffle (door shuffle yields).
+- Forces in-dungeon small + big keys.
+- **Hyrule Castle and Swamp Palace keep vanilla doors** (HC: the forced escape
+  start + Zelda escort; Swamp: its water-level state machine).
+- The dungeon map still shows room *positions*; with shuffled doors its implied
+  adjacency no longer matches the connections.
+
+The layout is **not stored in the save** — it regenerates from
+`(seed, settings, door_attempt @76)` at slot activation, and a persisted
+24-bit layout digest (@77-79) **hard-fails activation on mismatch** (a drifted
+interior layout could make the certified-beatable placement unbeatable, so
+unlike entrance shuffle's non-blocking version-drift warning, a door-shuffle
+slot refuses to load on a build that regenerates a different layout). The
+spoiler gains a `door_shuffle` section listing every pairing + the relocated
+key doors with their worst-case key thresholds. Logic-side, dungeon-interior
+reachability is computed by the same crystal-barrier-aware explorer the
+generator uses (single model — placer and generator cannot drift), seeded from
+the entrance lobbies reachable under current logic.
+
+`--door-selftest` runs the generation net headlessly (connectivity, prover
+acceptance, determinism, oracle/stitcher agreement for every shuffleable
+dungeon across many seeds).
+
 ## In-game item behavior
 
 Several items that vanilla packs two-into-one byte are shuffled as independent
