@@ -826,6 +826,14 @@ static void Panel_Shuffles() {
     }
     HelpTooltip("Randomizes which enemies appear in each room.");
 
+    bool drs = s->door_shuffle != 0;
+    if (ImGui::Checkbox("Door shuffle", &drs)) {
+      s->door_shuffle = drs ? kDoorShuffle_Basic : kDoorShuffle_Vanilla;
+      changed = true;
+    }
+    HelpTooltip("Shuffles each dungeon's interior door connections; key doors "
+                "move too. Hyrule Castle and Swamp Palace stay vanilla.");
+
     // Not-yet-playable placeholders.
     ImGui::BeginDisabled();
     bool off = false;
