@@ -595,6 +595,12 @@ static uint32 g_door_counts_fp_gen;
 static bool g_in_door_oracle;
 // Per-counts memo for the vm-pred leaves (see door_vm_pred_cb).
 #define kDoorVmMemoMax 128
+// The flood-skip fingerprint masks (CollectVmAt in shuffle_doors.c) and this
+// memo both cap at 128 vm indices; the memo fails safe past the cap but the
+// MASK would fail UNSOUND (a dropped index = a missed reflood trigger) —
+// refuse to compile instead.
+_Static_assert(kDoorTbl_VmPredCount <= kDoorVmMemoMax,
+               "door vm preds exceed the fingerprint/memo width");
 static uint8 g_door_vm_memo[kDoorVmMemoMax];  // 0 unknown / 1 false / 2 true
 static uint64 g_door_vm_memo_fp;
 

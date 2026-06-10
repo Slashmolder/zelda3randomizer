@@ -422,6 +422,11 @@ void Rando_DoorSpiralFixup(void) {
     tagalong_y_hi[i] = link_y_coord >> 8;
 }
 
+void DoorRt_ClearSpiralPending(void) {
+  g_door_spiral_pending = 0xFFFF;
+  g_door_spiral_source = 0xFFFF;
+}
+
 void Rando_DoorSpiralLayerFix(void) {
   if (g_door_spiral_pending == 0xFFFF)
     return;

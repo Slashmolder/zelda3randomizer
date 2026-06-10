@@ -354,10 +354,11 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"crystals_ganon\": %u,\n", s->settings->crystals_ganon);
   fprintf(f, "    \"crystals_tower\": %u,\n", s->settings->crystals_tower);
   fprintf(f, "    \"item_pool_difficulty\": %u,\n", s->settings->item_pool_difficulty);
-  // Emit the EFFECTIVE small-keys mode (Retro pins Wild) so the spoiler matches
-  // the canonical hash + actual placement, not the user's raw (overridden) field.
+  // Emit the EFFECTIVE key modes (Retro pins Wild; door shuffle pins Dungeon
+  // for both) so the spoiler matches the canonical hash + actual placement,
+  // not the user's raw (overridden) fields.
   fprintf(f, "    \"dungeon_small_keys_mode\": %u,\n", Settings_EffectiveSmallKeysMode(s->settings));
-  fprintf(f, "    \"dungeon_big_keys_mode\": %u,\n", s->settings->dungeon_big_keys_mode);
+  fprintf(f, "    \"dungeon_big_keys_mode\": %u,\n", Settings_EffectiveBigKeysMode(s->settings));
   fprintf(f, "    \"dungeon_maps_mode\": %u,\n", s->settings->dungeon_maps_mode);
   fprintf(f, "    \"dungeon_compasses_mode\": %u,\n", s->settings->dungeon_compasses_mode);
   fprintf(f, "    \"prize_shuffle\": %s,\n", s->settings->prize_shuffle ? "true" : "false");

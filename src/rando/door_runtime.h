@@ -49,7 +49,8 @@ void Rando_DoorStaircaseContext(bool entering);
 
 // dungeon.c hook: spiral staircases. Returns the destination room byte
 // (vanilla_byte when unshuffled/off). `attr` is the staircase tile attribute
-// (0x38/0x39 spirals only — straight/water stair attrs must not redirect).
+// (0x5e/0x5f circular spirals only — straight/fat stair attrs 0x38/0x39/0x26
+// must not redirect).
 // When a redirect is chosen, a pending intra-room fixup is armed and applied
 // by Rando_DoorSpiralFixup() during Dungeon_InitializeRoomFromSpecial.
 uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_byte);
@@ -65,6 +66,11 @@ void Rando_DoorSpiralFixup(void);
 // wrong under redirect): re-asserts the destination door's layer and consumes
 // the pending spiral redirect. No-op when none is pending.
 void Rando_DoorSpiralLayerFix(void);
+
+// Drop an armed mid-sequence spiral redirect (snapshot-restore reconcile:
+// the pending state is process state; a restore during the staircase
+// sequence must not let it fire on a later unrelated room load).
+void DoorRt_ClearSpiralPending(void);
 
 // ---------------------------------------------------------------------------
 // Stage-1b door-KIND overlay: makes the layout's RELOCATED small-key doors

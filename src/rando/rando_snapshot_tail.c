@@ -286,6 +286,9 @@ int RandoSnapshotTail_Load(FILE *f) {
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
       Rando_SetSnapshotContext(gen_version, settings_hash, share_string);
+      // Any restore drops an armed mid-staircase spiral redirect (process
+      // state; it must not fire on a later unrelated room load).
+      DoorRt_ClearSpiralPending();
       // add-rando-door-shuffle — the door redirect / kind-overlay tables are
       // PROCESS state installed by slot activation, not snapshot state. If
       // the restored RAM claims door shuffle but no layout is installed this
