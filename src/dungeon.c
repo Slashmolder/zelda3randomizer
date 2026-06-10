@@ -20,6 +20,7 @@
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 #include "rando/shuffle_boss.h"  // BossShuffle_RenderHomeRoom (boss-shuffle render)
+#include "rando/door_runtime.h"  // door-shuffle redirect hooks (add-rando-door-shuffle)
 
 // todo: move to config
 static const uint16 kBossRooms[] = {
@@ -2076,15 +2077,20 @@ void Dungeon_StartInterRoomTrans_Left() {
         BYTE(dungeon_room_index_prev) = dungeon_room_index2;
         Dungeon_AdjustAfterSpiralStairs();
       }
-      dungeon_room_index--;
+      // door shuffle: the redirect is consulted exactly where the positional
+      // room-index change happens; identity/off takes the vanilla line.
+      if (!Rando_DoorTransOverride(kDoorTblDir_West))
+        dungeon_room_index--;
     }
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -2125,14 +2131,18 @@ void Dungeon_StartInterRoomTrans_Up() {
       BYTE(dungeon_room_index_prev) = BYTE(dungeon_room_index2);
       Dungeon_AdjustAfterSpiralStairs();
     }
-    BYTE(dungeon_room_index) -= 0x10;
+    // door shuffle redirect (no-op when off / identity / staircase context).
+    if (!Rando_DoorTransOverride(kDoorTblDir_North))
+      BYTE(dungeon_room_index) -= 0x10;
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -2160,14 +2170,18 @@ void Dungeon_StartInterRoomTrans_Down() {
       BYTE(dungeon_room_index_prev) = dungeon_room_index2;
       Dungeon_AdjustAfterSpiralStairs();
     }
-    BYTE(dungeon_room_index) += 16;
+    // door shuffle redirect (no-op when off / identity / staircase context).
+    if (!Rando_DoorTransOverride(kDoorTblDir_South))
+      BYTE(dungeon_room_index) += 16;
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -4359,14 +4373,21 @@ void Dungeon_DetectStaircase() {  // 81c329
 
   if (at == 0x38 || at == 0x39) {
     staircase_var1 = 0x20;
+    // door shuffle §2d: the Trans_* edge-door hook is a no-op in staircase
+    // context — the header-dest override below is the sole spiral authority.
+    Rando_DoorStaircaseContext(true);
     if (at == 0x38)
       Dungeon_StartInterRoomTrans_Up();
     else
       Dungeon_StartInterRoomTrans_Down();
+    Rando_DoorStaircaseContext(false);
   }
 
   int j = (which_staircase_index & 3);
-  BYTE(dungeon_room_index) = dung_hdr_travel_destinations[j + 1];
+  // door shuffle: spiral destination override, keyed (room, slot, attr) at
+  // the read site (the destination's own header reload is untouched).
+  BYTE(dungeon_room_index) = Rando_DoorSpiralDest(
+      dungeon_room_index_prev, j, at, dung_hdr_travel_destinations[j + 1]);
   cur_staircase_plane = dung_hdr_staircase_plane[j];
   byte_7E0492 = (link_is_on_lower_level || link_is_on_lower_level_mirror) ? 2 : 0;
   subsubmodule_index = 0;
@@ -7155,6 +7176,12 @@ void Dungeon_InitializeRoomFromSpecial() {  // 828ce2
   LoadTransAuxGFX();
   Dungeon_LoadCustomTileAttr();
   BYTE(dungeon_room_index2) = BYTE(dungeon_room_index);
+  // door shuffle: a redirected spiral keeps the vanilla grid-granular
+  // adjustment above (prev = source room) but the destination staircase's
+  // intra-room position may differ — apply the slot delta now that the
+  // destination room's attr table is loaded. No-op unless a spiral redirect
+  // is pending.
+  Rando_DoorSpiralFixup();
   Follower_Initialize();
   subsubmodule_index += 1;
 }
@@ -8205,15 +8232,19 @@ void Dungeon_StartInterRoomTrans_Right() {  // 82b63a
         BYTE(dungeon_room_index_prev) = dungeon_room_index2;
         Dungeon_AdjustAfterSpiralStairs();
       }
-      dungeon_room_index += 1;
+      // door shuffle redirect (no-op when off / identity / staircase context).
+      if (!Rando_DoorTransOverride(kDoorTblDir_East))
+        dungeon_room_index += 1;
     }
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;

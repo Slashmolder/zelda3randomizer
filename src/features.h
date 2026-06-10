@@ -140,7 +140,9 @@ enum {
   // Future bits reserved (per add-randomizer-support proposal):
   //   2  kFeatures1_ReservedTracker
   //   4  kFeatures1_ReservedSpoilerSuppress
-  //   ...
+  // Door shuffle (add-rando-door-shuffle): gates the door-redirect hooks in
+  // dungeon.c. Identity (flag set, all links NO_OVERRIDE) is vanilla.
+  kFeatures1_DoorShuffleActive = 8,
 };
 
 #define enhanced_features0 (*(uint32*)(g_ram+0x64c))
