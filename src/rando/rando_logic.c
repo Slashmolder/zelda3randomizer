@@ -10,6 +10,7 @@
 #include "rando_logic.h"
 #include "rando.h"
 #include "item_ids.h"  // ITEM_GenericKey / ITEM_SmallKey_* (genericKeys collapse)
+#include "shuffle_doors.h"  // door-shuffle oracle (OP_DOORS_LOC_REACHABLE)
 
 #include <assert.h>
 #include <stdio.h>
@@ -298,6 +299,11 @@ static bool eval_modeweapons_eq(Cursor *c, const PredicateContext *ctx) {
 // dungeon's vanilla boss-kill predicate — byte-identical reachability to the
 // inline CanKill<Boss> macro it replaced. No boss-kill predicate references
 // OP_CAN_KILL_BOSS, so the re-entry can't recurse unboundedly.
+// Door-shuffle ops — bodies live after the per-seed install section below
+// (they consult the installed layout + the explorer-backed oracle).
+static bool eval_doors_active(Cursor *c, const PredicateContext *ctx);
+static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx);
+
 static bool eval_can_kill_boss(Cursor *c, const PredicateContext *ctx) {
   uint8 dungeon = cursor_u8(c);
   if (c->error || dungeon >= kRandoDungeonCount) return false;
@@ -338,6 +344,8 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_GLITCH_LEVEL_AT_LEAST:  return eval_glitch(c, ctx);
     case OP_MODEWEAPONS_EQ:         return eval_modeweapons_eq(c, ctx);
     case OP_CAN_KILL_BOSS:          return eval_can_kill_boss(c, ctx);
+    case OP_DOORS_ACTIVE:           return eval_doors_active(c, ctx);
+    case OP_DOORS_LOC_REACHABLE:    return eval_doors_loc_reachable(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -557,6 +565,125 @@ void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
 }
 
 // ---------------------------------------------------------------------------
+// Door shuffle — per-seed layout install + the OP_DOORS_* oracle.
+//
+// The oracle runs the SAME crystal-aware explorer the stitcher and key
+// prover use (DoorExplore_Run), seeded from the portal lobbies whose
+// kDoorPortalGates row holds under the current region bitset, with Vm rule
+// leaves bound to the compiled fork predicate stream (kDoorVmPreds) and
+// key-door edges gated by the prover's worst-case thresholds. Results are
+// memoized per (dungeon, fixed-point pass): within one pass counts are fixed
+// and the region bitset only grows between passes, so a stale-by-one-pass
+// cache can only underestimate — the loop exits only after a zero-change
+// pass, whose cache inputs are exact. Monotone, converges.
+// ---------------------------------------------------------------------------
+
+static const DoorShuffleLayout *g_door_logic_layout;
+static uint16 g_door_logic_mask;
+static uint32 g_door_oracle_gen = 1;
+static uint32 g_door_oracle_cache_gen[kDoorTbl_DungeonCount];
+static DoorExploreResult g_door_oracle_cache[kDoorTbl_DungeonCount];
+static bool g_in_door_oracle;
+
+void Rando_SetDoorLogicLayout(const struct DoorShuffleLayout *layout, uint16 active_mask) {
+  g_door_logic_layout = layout;
+  g_door_logic_mask = layout ? active_mask : 0;
+  g_door_oracle_gen++;  // invalidate the cache
+}
+
+const struct DoorShuffleLayout *Rando_GetDoorLogicLayout(uint16 *active_mask_out) {
+  if (active_mask_out)
+    *active_mask_out = g_door_logic_mask;
+  return g_door_logic_layout;
+}
+
+static bool door_vm_pred_cb(void *ud, uint16 vm_index) {
+  const PredicateContext *ctx = (const PredicateContext *)ud;
+  if (vm_index >= kDoorVmPredsCount)
+    return false;
+  // Door vm-pred leaves are pure item/macro terms (the door-table translator
+  // never emits OP_DOORS_* into them), so this cannot recurse into the
+  // oracle; g_in_door_oracle guards the invariant.
+  return Predicate_EvalCtx(kRandoPredicateStream + kDoorVmPreds[vm_index].off,
+                           kDoorVmPreds[vm_index].len, ctx);
+}
+
+static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateContext *ctx,
+                                                DoorExploreGates *gates_out) {
+  // The gates are rebuilt every call (cheap); the flood itself is cached.
+  static uint8 held_keys[kDoorTbl_DungeonCount];
+  static uint8 big_key_held[kDoorTbl_DungeonCount];
+  for (int i = 0; i < kDoorTbl_DungeonCount; i++) {
+    uint16 sk = kDoorTblDungeons[i].small_key_item;
+    uint16 bk = kDoorTblDungeons[i].big_key_item;
+    held_keys[i] = (sk != 0xFFFF && ctx->counts) ? ctx->counts->by_item_id[sk] : 0;
+    big_key_held[i] = (bk == 0xFFFF) ? 1
+                      : ((ctx->counts && ctx->counts->by_item_id[bk]) ? 1 : 0);
+  }
+  gates_out->vm_pred = door_vm_pred_cb;
+  gates_out->ud = (void *)ctx;
+  gates_out->held_keys = held_keys;
+  gates_out->big_key_held = big_key_held;
+  gates_out->key_thresholds = g_door_logic_layout;
+
+  if (g_door_oracle_cache_gen[dungeon] == g_door_oracle_gen)
+    return &g_door_oracle_cache[dungeon];
+
+  uint16 portals[12];
+  int n = 0;
+  for (uint32 i = 0; i < kDoorPortalGatesCount; i++) {
+    const RandoDoorPortalGate *g = &kDoorPortalGates[i];
+    if (g->dungeon != dungeon || g->fork_region == 0xFFFF)
+      continue;
+    if (ctx->reachable_regions_bitset == NULL)
+      continue;
+    if (!((ctx->reachable_regions_bitset[g->fork_region >> 3] >> (g->fork_region & 7)) & 1))
+      continue;
+    if (g->pred_len &&
+        !Predicate_EvalCtx(kRandoPredicateStream + g->pred_off, g->pred_len, ctx))
+      continue;
+    if (n < 12)
+      portals[n++] = g->door_region;
+  }
+  g_in_door_oracle = true;
+  DoorExplore_Run(g_door_logic_layout, dungeon, portals, n, gates_out,
+                  &g_door_oracle_cache[dungeon]);
+  g_in_door_oracle = false;
+  g_door_oracle_cache_gen[dungeon] = g_door_oracle_gen;
+  return &g_door_oracle_cache[dungeon];
+}
+
+static bool eval_doors_active(Cursor *c, const PredicateContext *ctx) {
+  uint8 d = cursor_u8(c);
+  (void)ctx;
+  return g_door_logic_layout != NULL && d < kDoorTbl_DungeonCount &&
+         ((g_door_logic_mask >> d) & 1) != 0;
+}
+
+static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx) {
+  uint16 loc_id = cursor_u16le(c);
+  if (g_door_logic_layout == NULL || g_in_door_oracle)
+    return false;
+  // kDoorTblLocations is sorted by fork_loc_id — binary search.
+  int lo = 0, hi = kDoorTbl_LocationCount - 1, found = -1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kDoorTblLocations[mid].fork_loc_id == loc_id) { found = mid; break; }
+    if (kDoorTblLocations[mid].fork_loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  if (found < 0)
+    return false;
+  const DoorTblLocation *dl = &kDoorTblLocations[found];
+  uint8 dungeon = kDoorTblRegions[dl->region].dungeon;
+  DoorExploreGates gates;
+  const DoorExploreResult *r = door_oracle_get(dungeon, ctx, &gates);
+  if (!DoorExplore_Reached(r, dl->region))
+    return false;
+  return DoorExplore_EvalRule(dl->rule, r, &gates);
+}
+
+// ---------------------------------------------------------------------------
 // Logic_ComputeReachability (task 3.8) — fixed-point expansion.
 //
 // Algorithm:
@@ -640,6 +767,10 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   // depth is well under 32 in practice (per ALTTPR's region nesting).
   for (int iter = 0; iter < 64; iter++) {
     bool changed = false;
+    // Door shuffle: invalidate the oracle memo each pass — counts are fixed
+    // for this whole call, but the region bitset (portal availability) grows
+    // between passes.
+    g_door_oracle_gen++;
 
     // Expand reachable regions via edges.
     // Phase B Slice 2 — also walk per-world-state edges. The base

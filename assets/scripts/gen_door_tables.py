@@ -1502,7 +1502,26 @@ def emit_c(builder, out_h, out_c, out_preds):
     with open(out_c, 'w', newline='\n') as f:
         f.write(''.join(C))
     with open(out_preds, 'w', newline='\n') as f:
-        json.dump({'format_version': 1, 'predicates': builder.vm_preds}, f, indent=1)
+        json.dump({
+            'format_version': 1,
+            # Unique fork-DSL strings referenced by kDoorRuleOp_Vm leaves;
+            # rando_logic_gen.py compiles them into kRandoPredicateStream and
+            # emits kDoorVmPreds[{off,len}] in matching order.
+            'predicates': builder.vm_preds,
+            # Fork locations under door-shuffle control: rando_logic_gen wraps
+            # each location's can_reach as
+            #   (NOT DOORS_ACTIVE(d) AND vanilla) OR
+            #   (DOORS_ACTIVE(d) AND DOORS_LOC_REACHABLE(loc))
+            'locations': [{'fork_id': l['fork_id'],
+                           'dungeon': builder.regions[l['region']]['dungeon']}
+                          for l in sorted(builder.locations, key=lambda l: l['fork_id'])],
+            # Portal lobbies (door-table region ids) for the oracle's seeding
+            # gates; joined with the hand-curated door_portals.yaml by name.
+            'portals': [{'name': p['name'], 'dungeon': p['dungeon'],
+                         'door_region': p['region'], 'is_drop': p['is_drop']}
+                        for p in builder.portals],
+            'dungeons': [d['fork_name'] for d in builder.dungeons],
+        }, f, indent=1)
 
 
 def clamp_i8(v):

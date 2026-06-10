@@ -93,6 +93,14 @@ void DoorExplore_Run(const DoorShuffleLayout *layout, uint8 dungeon,
 // True iff `region` is visited in either crystal state.
 bool DoorExplore_Reached(const DoorExploreResult *r, uint16 region);
 
+// Evaluate a door-table rule blob (kDoorTblRuleBlob offset; 0xFFFF = always
+// true) against an exploration result (Event/CReach/Reach leaves) and the
+// gates' vm_pred (Vm leaves; NULL gates/vm_pred = lenient true). Used by the
+// explorer internally for edge rules and by the logic oracle for at-location
+// rules after the flood.
+bool DoorExplore_EvalRule(uint16 rule_off, const DoorExploreResult *r,
+                          const DoorExploreGates *gates);
+
 // Self-test (wired to --door-selftest): for every shuffleable dungeon x N
 // seeds, generate + assert connectivity, prover acceptance, determinism
 // (regenerate -> identical digest), and full-inventory oracle==stitcher

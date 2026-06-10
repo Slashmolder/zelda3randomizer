@@ -31,6 +31,12 @@ bool DoorExplore_Reached(const DoorExploreResult *r, uint16 region) {
   return ((r->visited_blue[region >> 3] | r->visited_orange[region >> 3]) >> (region & 7)) & 1;
 }
 
+bool DoorExplore_EvalRule(uint16 rule_off, const DoorExploreResult *r,
+                          const DoorExploreGates *gates) {
+  (void)rule_off; (void)r; (void)gates;
+  return false;  // stub: no layout can be installed yet, never queried
+}
+
 int DoorShuffle_SelfTest(void) {
   fprintf(stderr, "door-selftest: generation not implemented yet (Stage 2 stub)\n");
   return 1;
