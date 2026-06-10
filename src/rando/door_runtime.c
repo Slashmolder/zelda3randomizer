@@ -209,7 +209,18 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
 
   dungeon_room_index = D;
 
-  int dx_hi, dy_hi;        // grid-granular target (256px units), vanilla-style
+  // Grid-granular scroll-axis target (256px units), exactly the vanilla
+  // teleport-door arithmetic: Dungeon_AdjustForTeleportDoors(virtual, flag)
+  // computes target_hi = (virtual_col * 2) + flag with the LOW byte preserved.
+  // The preserved low byte is SMALL when traveling east/south (just crossed a
+  // 0x..00 boundary) and LARGE when traveling west/north (just crossed back
+  // over one), so the correct targets are asymmetric:
+  //   west-door arrival (moving east):  virtual = D-1,    flag +1 -> col*2 - 1
+  //   east-door arrival (moving west):  virtual = D+1,    flag -1 -> col*2 + 1
+  // (A +2 east/south target — one full unit past the room — strands Link in
+  // the virtual neighbor's coordinate space with D's collision loaded: the
+  // playtest "collision doesn't match visuals" bug.)
+  int dx_hi, dy_hi;
   uint16 virtual_room = D;
   switch (dst->direction) {
   case kDoorTblDir_West:   // arriving through dst's west door, moving east
@@ -217,8 +228,8 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
     dy_hi = -1;            // perpendicular: computed from slot below
     virtual_room = D - 1;
     break;
-  case kDoorTblDir_East:
-    dx_hi = ((D & 0xf) << 1) + 2;
+  case kDoorTblDir_East:   // arriving through dst's east door, moving west
+    dx_hi = ((D & 0xf) << 1) + 1;
     dy_hi = -1;
     virtual_room = D + 1;
     break;
@@ -227,8 +238,8 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
     dx_hi = -1;
     virtual_room = D - 0x10;
     break;
-  case kDoorTblDir_South:
-    dy_hi = ((D & 0xf0) >> 3) + 2;
+  case kDoorTblDir_South:  // arriving through dst's south door, moving north
+    dy_hi = ((D & 0xf0) >> 3) + 1;
     dx_hi = -1;
     virtual_room = D + 0x10;
     break;
