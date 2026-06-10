@@ -13,11 +13,13 @@
 //     produce an inter-room transition.
 #include "door_runtime.h"
 #include "rando.h"
+#include "door_keylogic.h"  // Door_PartnerOf (chosen-pair partner resolution)
 
 #include "../variables.h"
 #include "../features.h"
 #include "../dungeon.h"  // Dungeon_AdjustQuadrant
 
+#include <stdio.h>
 #include <string.h>
 
 static uint16 g_door_link[kDoorTbl_DoorCount];
@@ -33,6 +35,39 @@ static uint16 g_door_spiral_source;     // source door id of the pending spiral
 static int16 g_room_first[256];
 static uint16 g_door_by_room[kDoorTbl_DoorCount];
 
+// --- Stage-1b kind-overlay state (see the section at the end of the file) ---
+enum {
+  kDoorRtKindF_SmallKey = 1,  // overlaid chosen key half (kind 0x1C, or kept StairKey* for spirals)
+  kDoorRtKindF_Suppress = 2,  // adjacency open-propagation suppressed for this slot
+  kDoorRtKindF_Preopen = 4,   // un-chosen vanilla stair-key: force open-state at room load
+};
+typedef struct DoorRtKindEntry {
+  uint16 vanilla_word;  // expected engine door word (pos_byte | kind << 8)
+  uint16 overlay_word;  // substituted word (== vanilla_word when untouched)
+  uint8 flags;          // kDoorRtKindF_*
+  uint8 partner_room;   // cross-entry small-key partner half (0xFF slot = none)
+  uint8 partner_slot;
+} DoorRtKindEntry;
+typedef struct DoorRtKindRoom {
+  uint8 room;
+  uint8 count;  // vanilla door-list length (kDoorTblRooms; max 8)
+  DoorRtKindEntry e[8];
+} DoorRtKindRoom;
+static DoorRtKindRoom g_kind_rooms[kDoorTbl_RoomCount];  // overlay rooms are a
+static int g_kind_nrooms;                                // subset of the catalog rooms
+static int16 g_kind_room_of[256];      // room byte -> g_kind_rooms index, -1 none
+static bool g_kind_overlay_active;
+static bool g_kind_lookup_built;
+static int16 g_tblroom_of[256];        // room byte -> kDoorTblRooms row, -1 none
+static uint8 g_kind_warned[256 / 8];   // once-per-room engine-vs-catalog drift warning
+
+static void DoorRt_KindOverlayClear(void) {
+  g_kind_nrooms = 0;
+  g_kind_overlay_active = false;
+  memset(g_kind_room_of, 0xFF, sizeof(g_kind_room_of));
+  memset(g_kind_warned, 0, sizeof(g_kind_warned));
+}
+
 void DoorRt_Reset(void) {
   memset(g_door_link, 0xFF, sizeof(g_door_link));
   g_door_rt_active = false;
@@ -40,6 +75,7 @@ void DoorRt_Reset(void) {
   g_door_toggles_overridden = false;
   g_door_spiral_pending = 0xFFFF;
   g_door_spiral_source = 0xFFFF;
+  DoorRt_KindOverlayClear();
 }
 
 void DoorRt_SetLink(uint16 door_a, uint16 door_b) {
@@ -363,4 +399,511 @@ void Rando_DoorSpiralFixup(void) {
   Dungeon_AdjustQuadrant();
   for (int i = 0; i < 20; i++)
     tagalong_y_hi[i] = link_y_coord >> 8;
+}
+
+// ---------------------------------------------------------------------------
+// Stage-1b door-KIND overlay (relocated small-key doors).
+//
+// Port of the reference's reassign_key_doors / change_door_to_small_key /
+// verify_door_list_pos / Room.next_free (ALttPDoorRandomizer DoorShuffle.py +
+// RoomData.py, MIT), adapted to the C engine's door-list shape:
+//   * The engine door word is pos_byte | kind << 8 (RoomData_DrawObject_Door:
+//     door_type = a >> 8, position nibble = a >> 4 & 0xf, direction = a & 3).
+//   * The list is 0xffff-TERMINATED (RoomDraw_DrawAllObjects / GetRoomDoorInfo),
+//     so the reference's Room.delete (write 0xFFFF) / Room.mirror tricks for
+//     un-chosen stair keys would truncate the list. DEVIATION: un-chosen
+//     vanilla stair keys keep their StairKey kind and are PRE-OPENED instead
+//     (Rando_DoorPreopenBits at Dungeon_LoadHeader): an open stair-lock slot
+//     draws nothing (Door_Up_StairMaskLocked early-out) and never writes the
+//     f0 lock attr (Dungeon_LoadSingleDoorAttribute), i.e. exactly "no lock".
+//   * Open-state bits exist per door SLOT 0-3 (save_dung_info & 0xf000;
+//     RoomDraw_FlagDoorsAndGetFinalType honors opened-state only for
+//     (slot&7) < 4, and Dungeon_LoadHeader pre-opens slots 4-7 via | 0xf00).
+//     The slot == door-list index whenever no kind in {0x12 ExitToOw,
+//     0x14 DungeonChanger/ThroneRoom, 0x16 ToggleFlag/PlayerBgChange}
+//     precedes the entry (those RoomDraw_Door_* arms do not advance
+//     dung_cur_door_idx). Install HARD-ERRORS if a flagged entry's slot
+//     drifts from its index (none do in the US data; the adjacency scan in
+//     Dungeon_CheckAdjacentRoomsForOpenDoors conflates index with slot the
+//     same way, so this is also a vanilla-consistency requirement).
+//
+// Skull Pinball WS (kind 0x18 Trap, kDoorTblFlag_Blocked|Trapped) is NEVER
+// touched: generation keeps it blocked (shuffle_doors.c models vanilla
+// trap_door_mode; check_for_pinball_fix's runtime mutation is not modeled),
+// it is not a vanilla small key (no VanillaSmallKey flag), and Blocked doors
+// are never key-door candidates (door_keylogic.c FindCandidates).
+// ---------------------------------------------------------------------------
+
+// DR Room.next_free blacklist: kinds with state/locks that must keep their
+// slot; everything else may swap above index 4.
+static bool DoorRt_KindSwappable(uint8 kind) {
+  switch (kind) {
+  case 0x1C: case 0x28: case 0x2E: case 0x36: case 0x18: case 0x38:
+  case 0x44: case 0x4A: case 0x1E: case 0x20: case 0x22: case 0x26:
+  case 0x30: case 0x2A:
+    return false;
+  }
+  return true;
+}
+
+// Kinds whose RoomDraw_Door_* arm does NOT advance dung_cur_door_idx (door
+// words that consume a list index but no engine slot).
+static bool DoorRt_KindAdvancesSlot(uint8 kind) {
+  return kind != 0x12 && kind != 0x14 && kind != 0x16;
+}
+
+static void DoorRt_BuildTblRoomLookup(void) {
+  if (g_kind_lookup_built)
+    return;
+  memset(g_tblroom_of, 0xFF, sizeof(g_tblroom_of));
+  for (int i = 0; i < kDoorTbl_RoomCount; i++)
+    g_tblroom_of[kDoorTblRooms[i].room] = (int16)i;
+  g_kind_lookup_built = true;
+}
+
+// Get-or-create the overlay record for `room`, seeded from the catalog's
+// vanilla door list. NULL on inconsistent catalog data.
+static DoorRtKindRoom *DoorRt_KindRoomGet(uint8 room) {
+  if (g_kind_room_of[room] >= 0)
+    return &g_kind_rooms[g_kind_room_of[room]];
+  int tr = g_tblroom_of[room];
+  if (tr < 0) {
+    fprintf(stderr, "door-kind-overlay: room %02x missing from kDoorTblRooms\n", room);
+    return NULL;
+  }
+  const DoorTblRoom *r = &kDoorTblRooms[tr];
+  if (r->count > 8) {
+    fprintf(stderr, "door-kind-overlay: room %02x door list too long (%d)\n", room, r->count);
+    return NULL;
+  }
+  DoorRtKindRoom *kr = &g_kind_rooms[g_kind_nrooms];
+  kr->room = room;
+  kr->count = r->count;
+  for (int i = 0; i < r->count; i++) {
+    const DoorTblRoomDoor *rd = &kDoorTblRoomDoors[r->first + i];
+    kr->e[i].vanilla_word = (uint16)(rd->pos_byte | (rd->kind << 8));
+    kr->e[i].overlay_word = kr->e[i].vanilla_word;
+    kr->e[i].flags = 0;
+    kr->e[i].partner_room = 0xFF;
+    kr->e[i].partner_slot = 0xFF;
+  }
+  g_kind_room_of[room] = (int16)g_kind_nrooms++;
+  return kr;
+}
+
+// Resolve door `door_id` to its overlay room + current entry index (entries
+// may have been swapped by an earlier DoorRt_KindMakeSmallKey). The door is
+// identified by its catalog (room, pos); a swap moves the WORD but the swap
+// bookkeeping below always converts pos -> current index right away, so a
+// door's entry is found by matching its pos_byte among entries that came from
+// its vanilla pos. We track swaps per room with a tiny permutation.
+static uint8 g_kind_perm[kDoorTbl_RoomCount][8];  // perm[room_rec][vanilla_pos] = current idx
+
+static int DoorRt_KindEntryIdx(const DoorRtKindRoom *kr, uint8 vanilla_pos) {
+  if (vanilla_pos >= kr->count)
+    return -1;
+  return g_kind_perm[(int)(kr - g_kind_rooms)][vanilla_pos];
+}
+
+// change_door_to_small_key + verify_door_list_pos: ensure the door's entry
+// sits at slot < 4 (swap wholesale with the lowest swappable entry if not —
+// dead code today: FindCandidates in door_keylogic.c, like the reference's
+// find_key_door_candidates, only emits candidates with doorListPos < 4), then
+// set its kind. `kind_keep` keeps the vanilla kind (chosen spiral key stairs:
+// the StairKey* kind IS the small-key behavior for stairs). Returns the final
+// entry index, -1 on hard error.
+static int DoorRt_KindMakeSmallKey(uint16 door_id, bool kind_keep) {
+  const DoorTblDoor *d = &kDoorTblDoors[door_id];
+  if (d->pos == 0xFF) {
+    fprintf(stderr, "door-kind-overlay: chosen key door %d has no door-list entry\n", door_id);
+    return -1;
+  }
+  DoorRtKindRoom *kr = DoorRt_KindRoomGet(d->room);
+  if (!kr)
+    return -1;
+  int idx = DoorRt_KindEntryIdx(kr, d->pos);
+  if (idx < 0) {
+    fprintf(stderr, "door-kind-overlay: door %d pos %d out of range (room %02x)\n",
+            door_id, d->pos, d->room);
+    return -1;
+  }
+  if ((kr->e[idx].vanilla_word & 0xFF) != d->pos_byte) {
+    fprintf(stderr, "door-kind-overlay: catalog drift door %d (room %02x pos %d)\n",
+            door_id, d->room, d->pos);
+    return -1;
+  }
+  if (idx >= 4) {
+    // verify_door_list_pos: swap with Room.next_free (lowest index < 4 whose
+    // kind is swappable). Entries swap wholesale (pos_byte travels with kind).
+    int free_idx = -1;
+    for (int i = 0; i < 4 && i < kr->count; i++) {
+      if (!(kr->e[i].flags & kDoorRtKindF_SmallKey) &&
+          DoorRt_KindSwappable((uint8)(kr->e[i].overlay_word >> 8))) {
+        free_idx = i;
+        break;
+      }
+    }
+    if (free_idx < 0) {
+      fprintf(stderr, "door-kind-overlay: no swap slot < 4 for key door %d (room %02x)\n",
+              door_id, d->room);
+      return -1;
+    }
+    DoorRtKindEntry t = kr->e[free_idx];
+    kr->e[free_idx] = kr->e[idx];
+    kr->e[idx] = t;
+    // update the pos->idx permutation for the two moved entries
+    uint8 *perm = g_kind_perm[(int)(kr - g_kind_rooms)];
+    for (int p = 0; p < kr->count; p++) {
+      if (perm[p] == idx) perm[p] = (uint8)free_idx;
+      else if (perm[p] == free_idx) perm[p] = (uint8)idx;
+    }
+    idx = free_idx;
+  }
+  if (!kind_keep)
+    kr->e[idx].overlay_word = (uint16)((kr->e[idx].overlay_word & 0xFF) | (0x1C << 8));
+  kr->e[idx].flags |= kDoorRtKindF_SmallKey | kDoorRtKindF_Suppress;
+  return idx;
+}
+
+// Validate that every flagged entry's engine SLOT equals its list index (see
+// the slot/index note in the header comment above).
+static bool DoorRt_KindCheckSlots(void) {
+  for (int r = 0; r < g_kind_nrooms; r++) {
+    const DoorRtKindRoom *kr = &g_kind_rooms[r];
+    int slot = 0;
+    for (int i = 0; i < kr->count; i++) {
+      if (kr->e[i].flags && slot != i) {
+        fprintf(stderr, "door-kind-overlay: room %02x entry %d maps to slot %d\n",
+                kr->room, i, slot);
+        return false;
+      }
+      if (DoorRt_KindAdvancesSlot((uint8)(kr->e[i].overlay_word >> 8)))
+        slot++;
+    }
+  }
+  return true;
+}
+
+bool DoorRt_InstallKindOverlay(const DoorShuffleLayout *l) {
+  DoorRt_KindOverlayClear();
+  DoorRt_BuildTblRoomLookup();
+  if (!l)
+    return true;  // no layout = identity overlay
+  for (int r = 0; r < kDoorTbl_RoomCount; r++)
+    for (int p = 0; p < 8; p++)
+      g_kind_perm[r][p] = (uint8)p;
+
+  // Track chosen halves by door id so the un-key pass skips them.
+  static uint8 chosen[(kDoorTbl_DoorCount + 7) / 8];
+  memset(chosen, 0, sizeof(chosen));
+
+  bool ok = true;
+  // --- 1. chosen key doors: kind = SmallKey on both halves -----------------
+  for (uint8 d = 0; d < kDoorTbl_DungeonCount && ok; d++) {
+    if (!((l->shuffled_mask >> d) & 1))
+      continue;
+    for (int i = 0; i < l->key_door_count[d] && ok; i++) {
+      uint16 a = l->key_doors[d][i];
+      if (a >= kDoorTbl_DoorCount) {
+        fprintf(stderr, "door-kind-overlay: bad key door id %d (dungeon %d)\n", a, d);
+        ok = false;
+        break;
+      }
+      const DoorTblDoor *da = &kDoorTblDoors[a];
+      chosen[a >> 3] |= 1 << (a & 7);
+      if (da->type == kDoorTblType_SpiralStairs) {
+        // Spiral candidates are vanilla key stairs (FindCandidates requires a
+        // StairKey* kind); the entry keeps its kind — only flag it as chosen
+        // so the un-key pass leaves it locked. No partner (a spiral key locks
+        // only its own direction; DoorKeyPair.b == 0xFFFF).
+        if (DoorRt_KindMakeSmallKey(a, /*kind_keep=*/true) < 0)
+          ok = false;
+        continue;
+      }
+      // Mirror find_key_door_candidates' partner semantics exactly:
+      // Interior -> vanilla_partner (the pair shares ONE list entry — same
+      // room + pos); Normal -> the layout pairing (Door_PartnerOf).
+      uint16 b = Door_PartnerOf(a, l);
+      if (b == 0xFFFF || b >= kDoorTbl_DoorCount) {
+        fprintf(stderr, "door-kind-overlay: key door %d has no partner (dungeon %d)\n", a, d);
+        ok = false;
+        break;
+      }
+      const DoorTblDoor *db = &kDoorTblDoors[b];
+      chosen[b >> 3] |= 1 << (b & 7);
+      int ia = DoorRt_KindMakeSmallKey(a, false);
+      if (ia < 0) {
+        ok = false;
+        break;
+      }
+      if (da->type == kDoorTblType_Interior && db->room == da->room && db->pos == da->pos)
+        continue;  // shared entry: one write, one open bit, no mirror needed
+      int ib = DoorRt_KindMakeSmallKey(b, false);
+      if (ib < 0) {
+        ok = false;
+        break;
+      }
+      // Cross-entry pair (different rooms, or same supertile at two edges):
+      // link both directions for the key-open partner mirror.
+      DoorRtKindRoom *ka = &g_kind_rooms[g_kind_room_of[da->room]];
+      DoorRtKindRoom *kb = &g_kind_rooms[g_kind_room_of[db->room]];
+      ka->e[ia].partner_room = db->room;
+      ka->e[ia].partner_slot = (uint8)ib;
+      kb->e[ib].partner_room = da->room;
+      kb->e[ib].partner_slot = (uint8)ia;
+    }
+  }
+
+  // --- 2. abandoned vanilla key doors: un-key (reassign_key_doors's
+  //        not-in-proposal arms) ---------------------------------------------
+  for (int door = 0; door < kDoorTbl_DoorCount && ok; door++) {
+    const DoorTblDoor *d = &kDoorTblDoors[door];
+    if (!(d->flags & kDoorTblFlag_VanillaSmallKey))
+      continue;
+    if (!((l->shuffled_mask >> d->dungeon) & 1))
+      continue;
+    if ((chosen[door >> 3] >> (door & 7)) & 1)
+      continue;
+    if (d->pos == 0xFF)
+      continue;
+    DoorRtKindRoom *kr = DoorRt_KindRoomGet(d->room);
+    if (!kr) {
+      ok = false;
+      break;
+    }
+    int idx = DoorRt_KindEntryIdx(kr, d->pos);
+    if (idx < 0 || (kr->e[idx].vanilla_word & 0xFF) != d->pos_byte) {
+      fprintf(stderr, "door-kind-overlay: catalog drift un-keying door %d (room %02x)\n",
+              door, d->room);
+      ok = false;
+      break;
+    }
+    if (kr->e[idx].flags & kDoorRtKindF_SmallKey)
+      continue;  // entry already keyed by a chosen pair (interior twin id)
+    if (d->type == kDoorTblType_SpiralStairs) {
+      kr->e[idx].flags |= kDoorRtKindF_Preopen;  // see the deviation note above
+    } else {
+      // change(doorListPos, DoorKind.Normal); by-layer NormalLow for lower-BG
+      // doors (the reference writes flat Normal; no vanilla small-key NORMAL
+      // door sits on layer 1 in the US data, so this only matters defensively).
+      uint8 nk = d->layer ? 0x02 : 0x00;
+      kr->e[idx].overlay_word = (uint16)((kr->e[idx].overlay_word & 0xFF) | (nk << 8));
+    }
+  }
+
+  // --- 3. propagation suppression for every re-stitched pool door ----------
+  // Any door the layout re-paired no longer faces its physical neighbor, so
+  // the neighbor's open flags must not leak into its slot (and vice versa its
+  // own bit is the sole authority). Trap/blastwall kinds are unaffected: the
+  // suppression hook sits in the non-trapdoor arm only.
+  for (int door = 0; door < kDoorTbl_DoorCount && ok; door++) {
+    const DoorTblDoor *d = &kDoorTblDoors[door];
+    if (l->pairing[door] == 0xFFFF || d->pos == 0xFF)
+      continue;
+    if (!((l->shuffled_mask >> d->dungeon) & 1))
+      continue;
+    DoorRtKindRoom *kr = DoorRt_KindRoomGet(d->room);
+    if (!kr) {
+      ok = false;
+      break;
+    }
+    int idx = DoorRt_KindEntryIdx(kr, d->pos);
+    if (idx >= 0)
+      kr->e[idx].flags |= kDoorRtKindF_Suppress;
+  }
+
+  if (ok)
+    ok = DoorRt_KindCheckSlots();
+  if (!ok) {
+    DoorRt_KindOverlayClear();
+    return false;
+  }
+  g_kind_overlay_active = true;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Kind-overlay dungeon.c hooks
+// ---------------------------------------------------------------------------
+
+static const DoorRtKindEntry *DoorRt_KindEntryAt(uint16 room, int index) {
+  if (!g_kind_overlay_active || room >= 256 || index < 0)
+    return NULL;
+  int r = g_kind_room_of[room];
+  if (r < 0 || index >= g_kind_rooms[r].count)
+    return NULL;
+  return &g_kind_rooms[r].e[index];
+}
+
+uint16 Rando_DoorListWord(uint16 room, int index, uint16 vanilla_word) {
+  if (!DoorRt_Active())
+    return vanilla_word;
+  const DoorRtKindEntry *e = DoorRt_KindEntryAt(room, index);
+  if (!e || e->overlay_word == e->vanilla_word)
+    return vanilla_word;
+  if (vanilla_word != e->vanilla_word) {
+    // Engine door list disagrees with the generated catalog — never write a
+    // kind into a list we don't model (fail to vanilla, warn once per room).
+    if (!((g_kind_warned[room >> 3] >> (room & 7)) & 1)) {
+      g_kind_warned[room >> 3] |= 1 << (room & 7);
+      fprintf(stderr,
+              "door-kind-overlay: room %02x entry %d engine word %04x != catalog %04x "
+              "(overlay skipped)\n",
+              room, index, vanilla_word, e->vanilla_word);
+    }
+    return vanilla_word;
+  }
+  return e->overlay_word;
+}
+
+uint16 Rando_DoorPreopenBits(uint16 room) {
+  if (!DoorRt_Active() || !g_kind_overlay_active || room >= 256)
+    return 0;
+  int r = g_kind_room_of[room];
+  if (r < 0)
+    return 0;
+  uint16 bits = 0;
+  const DoorRtKindRoom *kr = &g_kind_rooms[r];
+  for (int i = 0; i < kr->count && i < 4; i++) {
+    if (kr->e[i].flags & kDoorRtKindF_Preopen)
+      bits |= 0x8000 >> i;  // kUpperBitmasks[i] form (save_dung_info 0xf000)
+  }
+  return bits;
+}
+
+bool Rando_DoorAdjOpenSuppressed(uint16 room, int slot) {
+  if (!DoorRt_Active())
+    return false;
+  const DoorRtKindEntry *e = DoorRt_KindEntryAt(room, slot);
+  return e != NULL && (e->flags & (kDoorRtKindF_Suppress | kDoorRtKindF_SmallKey)) != 0;
+}
+
+void Rando_DoorKeyOpenMirror(uint16 room, int slot) {
+  if (!DoorRt_Active())
+    return;
+  const DoorRtKindEntry *e = DoorRt_KindEntryAt(room, slot);
+  if (!e || !(e->flags & kDoorRtKindF_SmallKey) || e->partner_slot == 0xFF ||
+      e->partner_slot >= 4)
+    return;
+  uint16 bit = 0x8000 >> e->partner_slot;
+  // Persist the partner half's open bit directly (its room is not loaded; the
+  // bit lands where Dung_SaveDataForCurrentRoom would put it). For a SAME-room
+  // partner also set the live bits — Dung_SaveDataForCurrentRoom rewrites
+  // save_dung_info from dung_door_opened at room exit, so the live bit is the
+  // one that must be authoritative there.
+  save_dung_info[e->partner_room] |= bit;
+  if (e->partner_room == (uint8)room) {
+    dung_door_opened |= bit;
+    dung_door_opened_incl_adjacent |= bit;
+  }
+}
+
+bool Rando_DoorKeySlotAlreadyOpen(int slot) {
+  if (!DoorRt_Active() || slot < 0 || slot >= 4)
+    return false;
+  const DoorRtKindEntry *e = DoorRt_KindEntryAt(dungeon_room_index, slot);
+  if (!e || !(e->flags & kDoorRtKindF_SmallKey))
+    return false;
+  return (dung_door_opened & (0x8000 >> slot)) != 0;
+}
+
+// ---------------------------------------------------------------------------
+// Kind-overlay selftest (called per layout from DoorShuffle_SelfTest)
+// ---------------------------------------------------------------------------
+
+int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l) {
+  int fails = 0;
+  if (!DoorRt_InstallKindOverlay(l)) {
+    fprintf(stderr, "door-kind-selfcheck: install failed\n");
+    return 1;
+  }
+  // (a) every chosen key door + partner: SmallKey-flagged entry at index < 4
+  // with a key kind (0x1C, or a kept StairKey* kind for spirals).
+  for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
+    if (!((l->shuffled_mask >> d) & 1))
+      continue;
+    for (int i = 0; i < l->key_door_count[d]; i++) {
+      uint16 half[2];
+      half[0] = l->key_doors[d][i];
+      half[1] = (kDoorTblDoors[half[0]].type == kDoorTblType_SpiralStairs)
+                    ? 0xFFFF
+                    : Door_PartnerOf(half[0], l);
+      for (int h = 0; h < 2; h++) {
+        if (half[h] == 0xFFFF)
+          continue;
+        const DoorTblDoor *dd = &kDoorTblDoors[half[h]];
+        int r = (dd->room < 256) ? g_kind_room_of[dd->room] : -1;
+        int idx = -1;
+        if (r >= 0)
+          idx = DoorRt_KindEntryIdx(&g_kind_rooms[r], dd->pos);
+        const DoorRtKindEntry *e = (r >= 0 && idx >= 0) ? &g_kind_rooms[r].e[idx] : NULL;
+        uint8 kind = e ? (uint8)(e->overlay_word >> 8) : 0xFF;
+        bool key_kind = kind == 0x1C || kind == 0x20 || kind == 0x22 || kind == 0x26;
+        if (!e || idx >= 4 || !(e->flags & kDoorRtKindF_SmallKey) || !key_kind) {
+          fprintf(stderr,
+                  "door-kind-selfcheck: chosen half %d (dungeon %d) not keyed at slot<4 "
+                  "(idx %d kind %02x)\n",
+                  half[h], d, idx, kind);
+          fails++;
+        }
+      }
+    }
+  }
+  // (b) every overlaid room keeps the same multiset of pos_bytes, and only
+  // rooms of shuffled dungeons are overlaid at all.
+  for (int r = 0; r < g_kind_nrooms; r++) {
+    const DoorRtKindRoom *kr = &g_kind_rooms[r];
+    int tr = g_tblroom_of[kr->room];
+    uint32 want = 0, got = 0;  // order-independent: sum of (pos_byte+1)^2
+    for (int i = 0; i < kr->count; i++) {
+      uint32 v = (uint32)kDoorTblRoomDoors[kDoorTblRooms[tr].first + i].pos_byte + 1;
+      want += v * v;
+      uint32 w = (uint32)(kr->e[i].overlay_word & 0xFF) + 1;
+      got += w * w;
+    }
+    if (want != got) {
+      fprintf(stderr, "door-kind-selfcheck: room %02x pos_byte multiset changed\n", kr->room);
+      fails++;
+    }
+  }
+  // (c) abandoned vanilla key doors in shuffled dungeons are un-keyed
+  // (Normal/NormalLow kind, or Preopen for stairs); Blocked doors untouched
+  // (covers Skull Pinball WS); pinned-dungeon doors untouched.
+  for (int door = 0; door < kDoorTbl_DoorCount; door++) {
+    const DoorTblDoor *dd = &kDoorTblDoors[door];
+    if (dd->pos == 0xFF || dd->room >= 256)
+      continue;
+    bool shuffled = ((l->shuffled_mask >> dd->dungeon) & 1) != 0;
+    int r = g_kind_room_of[dd->room];
+    if (r < 0) {
+      if ((dd->flags & kDoorTblFlag_VanillaSmallKey) && shuffled) {
+        fprintf(stderr, "door-kind-selfcheck: vanilla key door %d room not overlaid\n", door);
+        fails++;
+      }
+      continue;
+    }
+    int idx = DoorRt_KindEntryIdx(&g_kind_rooms[r], dd->pos);
+    if (idx < 0)
+      continue;
+    const DoorRtKindEntry *e = &g_kind_rooms[r].e[idx];
+    uint8 kind = (uint8)(e->overlay_word >> 8);
+    if (!shuffled || (dd->flags & kDoorTblFlag_Blocked)) {
+      if (e->overlay_word != e->vanilla_word) {
+        fprintf(stderr, "door-kind-selfcheck: pinned/blocked door %d kind changed\n", door);
+        fails++;
+      }
+      continue;
+    }
+    if ((dd->flags & kDoorTblFlag_VanillaSmallKey) && !(e->flags & kDoorRtKindF_SmallKey)) {
+      bool unkeyed = (dd->type == kDoorTblType_SpiralStairs)
+                         ? (e->flags & kDoorRtKindF_Preopen) != 0
+                         : (kind == 0x00 || kind == 0x02);
+      if (!unkeyed) {
+        fprintf(stderr, "door-kind-selfcheck: vanilla key door %d not un-keyed (kind %02x)\n",
+                door, kind);
+        fails++;
+      }
+    }
+  }
+  return fails;
 }

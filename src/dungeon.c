@@ -2369,6 +2369,11 @@ step12:
     m = kUpperBitmasks[dung_bg2_attr_table[dung_cur_door_pos] & 7];
     dung_door_opened_incl_adjacent |= m;
     dung_door_opened |= m;
+    // door-shuffle: a relocated key door's logical partner half is NOT the
+    // physically adjacent room (which the vanilla adjacency sync covers), so
+    // mirror the open bit into the partner's room/slot explicitly. No-op for
+    // vanilla doors / big-key doors / door shuffle off.
+    Rando_DoorKeyOpenMirror(dungeon_room_index, dung_bg2_attr_table[dung_cur_door_pos] & 7);
     ctr = 4;
   }
   door_open_closed_counter = ctr;
@@ -2695,11 +2700,19 @@ void RoomDraw_DrawAllObjects(const uint8 *level_data) {  // 8188e4
       break;
     RoomData_DrawObject(d, level_data);
   }
+  // door-shuffle kind overlay: the door words after the 0xfff0 marker are the
+  // same list GetRoomDoorInfo(dungeon_room_index) points at; route the fetch
+  // through the overlay so relocated/un-keyed door KINDS draw and register
+  // (door_type_and_slot[]) consistently with the other two list consumers
+  // (Dungeon_LoadHeader, Dungeon_LoadAdjacentRoomDoors). Identity when door
+  // shuffle is off.
+  int door_index = 0;
   for (;;) {
     dung_load_ptr_offs += 2;
     uint16 d = WORD(level_data[dung_load_ptr_offs]);
     if (d == 0xffff)
       return;
+    d = Rando_DoorListWord(dungeon_room_index, door_index++, d);
     RoomData_DrawObject_Door(d);
   }
 }
@@ -3770,11 +3783,22 @@ void Dungeon_LoadHeader() {  // 81b564
   dung_door_opened_incl_adjacent = dung_door_opened | 0xf00;
   dung_savegame_state_bits = (x & 0xff0) << 4;
   dung_quadrants_visited = x & 0xf;
+  // door-shuffle kind overlay: un-chosen vanilla stair-key locks render open
+  // (their StairKey kind stays; Door_Up_StairMaskLocked's opened arm draws no
+  // lock and Dungeon_LoadSingleDoorAttribute writes no f0 attr). 0 when door
+  // shuffle is off.
+  x = Rando_DoorPreopenBits(dungeon_room_index);
+  dung_door_opened |= x;
+  dung_door_opened_incl_adjacent |= x;
 
   const uint16 *dp = GetRoomDoorInfo(dungeon_room_index);
   int i = 0;
-  for (; dp[i] != 0xffff; i++)
-    dung_door_tilemap_address[i] = dp[i];
+  for (; dp[i] != 0xffff; i++) {
+    // door-shuffle kind overlay on the raw door-word copy: the adjacency scan
+    // below reads kinds from these words (dung_door_tilemap_address holds the
+    // raw list until RoomDraw replaces it with tilemap addresses).
+    dung_door_tilemap_address[i] = Rando_DoorListWord(dungeon_room_index, i, dp[i]);
+  }
   dung_door_tilemap_address[i] = 0;
 
   if (((dungeon_room_index - 1) & 0xf) != 0xf)
@@ -3822,6 +3846,16 @@ void Dungeon_CheckAdjacentRoomsForOpenDoors(int idx, int room) {  // 81b759
             // not trapdoor
             if (!(adjacent_doors_flags & kUpperBitmasks[i]))
               break;
+            // door-shuffle: a re-stitched pool/key door's open state is owned
+            // by its own room's save bits (+ the key-open partner mirror in
+            // Dungeon_OpeningLockedDoor_Combined). The PHYSICAL neighbor at
+            // the matching slot is not its logical partner, so its open flag
+            // must not leak — otherwise a kind<0x02/==0x40 neighbor door
+            // (unconditionally flagged open in Dungeon_LoadAdjacentRoomDoors)
+            // pre-opens a relocated key door unpaid. Trapdoor arm above is
+            // untouched (it tests room continuity, not the neighbor's flags).
+            if (Rando_DoorAdjOpenSuppressed(dungeon_room_index, j))
+              break;
           }
           dung_door_opened_incl_adjacent |= kUpperBitmasks[j];
           break;
@@ -3836,6 +3870,11 @@ void Dungeon_LoadAdjacentRoomDoors(int room) {  // 81b7ef
   adjacent_doors_flags = (save_dung_info[room] & 0xf000) | 0xf00;
   for (int i = 0; ; i++) {
     uint16 a = dp[i];
+    // door-shuffle kind overlay on the NEIGHBOR's list: a relocated key door
+    // there must read kind 0x1C (so the kind<0x02 unconditional-open branch
+    // below cannot flag it) and an un-keyed one must read Normal.
+    if (a != 0xffff)
+      a = Rando_DoorListWord((uint16)room, i, a);
     adjacent_doors[i] = a;
     if (a == 0xffff)
       break;
@@ -5275,6 +5314,12 @@ void Dungeon_ProcessTorchesAndDoors() {  // 81ce70
           dialogue_message_index = 0x7a;
           Main_ShowTextMessage();
         }
+      } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a &&
+                 Rando_DoorKeySlotAlreadyOpen(k)) {
+        // door-shuffle: the SAME-room partner half already paid for this key
+        // pair (Rando_DoorKeyOpenMirror set our bit live, but the f0 lock
+        // attr is only rebuilt on room load) — open without consuming.
+        goto has_key_for_door;
       } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a && link_num_keys != 0) {
         // rando-exempt: consumption — small key spent on locked door. (audit.md §0.2.4)
         link_num_keys -= 1;

@@ -28,6 +28,7 @@
 //     runtime door mutation is NOT modeled, so no proposal may rely on it.
 #include "shuffle_doors.h"
 #include "door_keylogic.h"
+#include "door_runtime.h"  // DoorRt_KindOverlaySelfCheck (Stage-1b kind overlay)
 #include "rando_rng.h"
 
 #include <stdio.h>
@@ -1177,6 +1178,13 @@ int DoorShuffle_SelfTest(void) {
         fprintf(stderr, "door-selftest: %s seed %d: greedy key sim cannot complete\n", name, seed);
         hard_fail = true;
       }
+      // (g) Stage-1b kind overlay: every chosen key half keyed at slot<4,
+      // pos_byte multisets preserved, abandoned vanilla key doors un-keyed,
+      // blocked/pinned doors untouched.
+      if (DoorRt_KindOverlaySelfCheck(&layout) != 0) {
+        fprintf(stderr, "door-selftest: %s seed %d: kind-overlay selfcheck failed\n", name, seed);
+        hard_fail = true;
+      }
     }
     int ok = kSeeds - fail;
     printf("door-selftest: %-18s ok %2d/%2d  retries %2d  keydoors avg %.1f  bk_restr avg %.1f\n",
@@ -1212,6 +1220,10 @@ int DoorShuffle_SelfTest(void) {
       if (full.shuffled_mask != kDoorShuffle_MvpDungeonMask) {
         fprintf(stderr, "door-selftest: full-mask seed %d shuffled_mask %x\n",
                 seed, full.shuffled_mask);
+        hard_fail = true;
+      }
+      if (DoorRt_KindOverlaySelfCheck(&full) != 0) {
+        fprintf(stderr, "door-selftest: full-mask seed %d kind-overlay selfcheck failed\n", seed);
         hard_fail = true;
       }
     }

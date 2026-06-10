@@ -11,6 +11,7 @@
 #pragma once
 #include "../types.h"
 #include "door_tables.gen.h"
+#include "shuffle_doors.h"  // DoorShuffleLayout (kind overlay install)
 
 #define kDoorRt_NoOverride 0xFFFF
 
@@ -54,3 +55,68 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
 // intra-room slot delta between the source and destination spiral doors
 // (vanilla pairs share their intra-room position; shuffled ones need not).
 void Rando_DoorSpiralFixup(void);
+
+// ---------------------------------------------------------------------------
+// Stage-1b door-KIND overlay: makes the layout's RELOCATED small-key doors
+// physically real (render locked, consume a key, persist opened state) and
+// un-keys the vanilla key doors the layout abandoned. Mirrors the reference's
+// reassign_key_doors / change_door_to_small_key / verify_door_list_pos
+// (ALttPDoorRandomizer DoorShuffle.py, MIT). Installed from
+// Rando_ActivateSidecarSlot's door_active block; cleared by DoorRt_Reset.
+// ---------------------------------------------------------------------------
+
+// Build the per-room kind overlay from the layout. Returns false (with a
+// stderr diagnostic) on any structural violation — chosen key half without a
+// list entry, no swap target below index 4, slot!=index drift — in which case
+// the overlay is left EMPTY (identity) and the caller must refuse the slot:
+// a chosen key door the overlay can't render makes the certified-beatable
+// placement unbeatable.
+bool DoorRt_InstallKindOverlay(const DoorShuffleLayout *l);
+
+// Selftest: install the overlay for `l` and verify the kind-overlay
+// invariants (chosen halves keyed at slot<4, pos_byte multiset preserved,
+// abandoned vanilla key doors un-keyed, blocked/pinned doors untouched).
+// Returns 0 on success, the number of violations otherwise (stderr details).
+int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l);
+
+// dungeon.c seam: the single door-list-word override. All three door-list
+// consumers (RoomDraw_DrawAllObjects's post-0xfff0 door loop,
+// Dungeon_LoadHeader's raw-word copy into dung_door_tilemap_address[], and
+// Dungeon_LoadAdjacentRoomDoors's neighbor scan) route their fetch through
+// this. `index` is the 0-based position in the room's door list (==
+// doorListPos == engine door slot for every overlaid room — enforced at
+// install). Identity when the overlay is inactive, the room is not overlaid,
+// or the engine's word differs from the catalog's expected vanilla word
+// (data drift fail-safe: never substitute kinds into a list we don't model).
+uint16 Rando_DoorListWord(uint16 room, int index, uint16 vanilla_word);
+
+// dungeon.c seam (Dungeon_LoadHeader, right after
+// dung_door_opened_incl_adjacent = dung_door_opened | 0xf00): open-state bits
+// (kUpperBitmasks form, slots 0-3 in 0xf000) to force-set for this room.
+// Un-chosen vanilla key STAIRS keep their StairKey kind but render/behave
+// open (the C door list is 0xffff-terminated, so the reference's
+// Room.delete/mirror trick would truncate it; pre-opening is equivalent:
+// Door_Up_StairMaskLocked draws no lock and the f0 attr is never written).
+uint16 Rando_DoorPreopenBits(uint16 room);
+
+// dungeon.c seam (Dungeon_CheckAdjacentRoomsForOpenDoors, non-trapdoor arm):
+// true = do NOT propagate the physical neighbor's open flag into this room's
+// door slot. A re-stitched pool/key door's open state is owned by its own
+// room's save_dung_info bits (plus the key-open partner mirror); the physical
+// neighbor at the matching slot is not its logical partner, so a Normal
+// neighbor door must not pre-open a relocated key door unpaid.
+bool Rando_DoorAdjOpenSuppressed(uint16 room, int slot);
+
+// dungeon.c seam (Dungeon_OpeningLockedDoor_Combined, the step12 arm that
+// sets dung_door_opened): mirror the just-opened overlay key door's bit into
+// its partner half's room (save_dung_info[partner_room], persisted), or into
+// the live dung_door_opened when the partner sits in the SAME room. No-op for
+// non-overlaid slots (vanilla doors, big-key doors).
+void Rando_DoorKeyOpenMirror(uint16 room, int slot);
+
+// dungeon.c seam (Dungeon_ProcessTorchesAndDoors small-key consume branch):
+// true iff the current room's door `slot` is an overlaid small-key half whose
+// open bit is already set (the partner half paid for the pair this visit; the
+// f0 attr is stale because the room wasn't reloaded). The caller opens the
+// door without consuming a key.
+bool Rando_DoorKeySlotAlreadyOpen(int slot);

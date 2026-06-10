@@ -1849,6 +1849,17 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
         Rando_DeactivateSlot();
         return;
       }
+      // Stage-1b — validate the kind overlay (relocated key doors) BEFORE any
+      // slot state installs, on the same refusal pathway as digest drift: a
+      // chosen key door the overlay can't render makes the certified-beatable
+      // placement unbeatable, so refuse rather than load.
+      if (DoorRt_KindOverlaySelfCheck(&s_door_layout) != 0) {
+        fprintf(stderr,
+                "Rando: door-shuffle kind overlay rejected this layout "
+                "— refusing to activate this slot on this build\n");
+        Rando_DeactivateSlot();
+        return;
+      }
       door_active = true;
     }
   }
@@ -1902,6 +1913,14 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     for (int i = 0; i < kDoorTbl_DoorCount; i++) {
       if (s_door_layout.pairing[i] != 0xFFFF)
         DoorRt_SetLink((uint16)i, s_door_layout.pairing[i]);
+    }
+    // Stage-1b kind overlay (relocated/un-keyed key-door KINDS). Cannot fail
+    // here — DoorRt_KindOverlaySelfCheck validated this exact layout in the
+    // gate above — but stay on the refusal pathway if it ever does.
+    if (!DoorRt_InstallKindOverlay(&s_door_layout)) {
+      fprintf(stderr, "Rando: door-shuffle kind overlay install failed — deactivating slot\n");
+      Rando_DeactivateSlot();
+      return;
     }
     DoorRt_Activate();
     g_wanted_zelda_features1 |= kFeatures1_DoorShuffleActive;
