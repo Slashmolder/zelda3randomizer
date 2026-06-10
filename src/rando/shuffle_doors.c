@@ -1215,8 +1215,10 @@ int DoorShuffle_SelfTest(void) {
         hard_fail = true;
       }
     }
-    printf("door-selftest: full-mask (0x%x) x5 ok, last bk_restricted %d\n",
-           kDoorShuffle_MvpDungeonMask, full.bk_restricted_count);
+    // Digest printed so CI logs cross-check byte-identity across platforms.
+    printf("door-selftest: full-mask (0x%x) x5 ok, last bk_restricted %d, digest %08x\n",
+           kDoorShuffle_MvpDungeonMask, full.bk_restricted_count,
+           DoorShuffle_LayoutDigest(&full));
   }
 
   if (hard_fail) {
