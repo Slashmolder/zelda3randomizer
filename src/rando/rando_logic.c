@@ -690,8 +690,10 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
       portals[n++] = g->door_region;
   }
 
-  // Flood-skip: identical inputs (counts + portal set + keys) for a fixed
-  // layout yield the identical result regardless of generation.
+  // Flood-skip: a flood's outcome is a pure function of (the vm-pred results
+  // the dungeon's rules reference, held keys, big key, portal set) for a
+  // fixed layout. Fingerprint exactly those — assumed fill changes one item
+  // at a time, and most changes flip no predicate relevant to most dungeons.
   if (g_door_counts_fp_gen != g_door_oracle_gen) {
     g_door_counts_fp = ctx->counts
         ? door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
@@ -699,8 +701,19 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
         : 0;
     g_door_counts_fp_gen = g_door_oracle_gen;
   }
-  uint64 fp = door_fnv64(g_door_counts_fp ^ (0xD00Eull + dungeon),
-                         portals, (size_t)n * sizeof(portals[0]));
+  uint64 vm_mask[2];
+  DoorExplore_RelevantVmMask(dungeon, vm_mask);
+  uint64 vm_bits[2] = { 0, 0 };
+  for (int w = 0; w < 2; w++) {
+    for (int b = 0; b < 64; b++) {
+      if (!((vm_mask[w] >> b) & 1))
+        continue;
+      if (door_vm_pred_cb((void *)ctx, (uint16)(w * 64 + b)))
+        vm_bits[w] |= 1ull << b;
+    }
+  }
+  uint64 fp = door_fnv64(0xD00Eull + dungeon, vm_bits, sizeof(vm_bits));
+  fp = door_fnv64(fp, portals, (size_t)n * sizeof(portals[0]));
   fp = door_fnv64(fp, &held_keys[dungeon], 1);
   fp = door_fnv64(fp, &big_key_held[dungeon], 1);
   if (fp == g_door_oracle_cache_fp[dungeon] && g_door_oracle_cache_gen[dungeon] != 0) {

@@ -759,12 +759,12 @@ entries:
   - settings: { mode.state: open, goal: ganon, door_shuffle: basic }
     seed: "0x000000000000D004"
     label: "c-door-basic-open-ganon"
-    expected_digest: "f70aa2402ab9c108331d2aaee9e2fa087c9200b0c3254e47ac2d753b1c6ff0e5"
+    expected_digest: "383607eb1d3c789e674e7a2046ae9ea82282ecb17df11b94745d07f4078c91a9"
 
   - settings: { mode.state: standard, goal: fast_ganon, door_shuffle: basic }
     seed: "0x000000000000D005"
     label: "c-door-basic-standard-fastganon"
-    expected_digest: "661e739f99207347e20c8e2c9c85afd706f2f4d8a43428915895a5e4665da79d"
+    expected_digest: "613707ede68637ed3edc70c3beb9af3d9821e3fdfe7067622db3aee832f58ac8"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

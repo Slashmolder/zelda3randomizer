@@ -117,6 +117,12 @@ bool DoorExplore_Reached(const DoorExploreResult *r, uint16 region);
 bool DoorExplore_EvalRule(uint16 rule_off, const DoorExploreResult *r,
                           const DoorExploreGates *gates);
 
+// Bitmask (over kDoorVmPreds indices, 128-bit) of the vm predicates whose
+// value can influence `dungeon`'s flood or at-location rules. The logic
+// oracle fingerprints exactly these results to skip refloods when an
+// inventory change is irrelevant to the dungeon.
+void DoorExplore_RelevantVmMask(uint8 dungeon, uint64 out_mask[2]);
+
 // Self-test (wired to --door-selftest): for every shuffleable dungeon x N
 // seeds, generate + assert connectivity, prover acceptance, determinism
 // (regenerate -> identical digest), and full-inventory oracle==stitcher

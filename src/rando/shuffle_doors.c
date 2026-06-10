@@ -229,6 +229,92 @@ typedef struct RuleEnv {
   void *ud;
 } RuleEnv;
 
+// Collect the kDoorRuleOp_Vm indices a rule references (mirror of
+// EvalRuleAt's traversal — the blob is preorder, so operands must be skipped
+// structurally, never scanned linearly). Feeds the per-dungeon relevant-vm
+// masks used by the logic oracle's flood-skip fingerprint.
+static void CollectVmAt(int *pos, uint64 mask[2]) {
+  uint8 op = kDoorTblRuleBlob[(*pos)++];
+  switch (op) {
+  case kDoorRuleOp_True:
+  case kDoorRuleOp_False:
+    return;
+  case kDoorRuleOp_And:
+  case kDoorRuleOp_Or: {
+    int n = kDoorTblRuleBlob[(*pos)++];
+    for (int i = 0; i < n; i++)
+      CollectVmAt(pos, mask);
+    return;
+  }
+  case kDoorRuleOp_Not:
+    CollectVmAt(pos, mask);
+    return;
+  case kDoorRuleOp_Vm: {
+    uint16 idx = kDoorTblRuleBlob[*pos] | (kDoorTblRuleBlob[*pos + 1] << 8);
+    *pos += 2;
+    if (idx < 128)
+      mask[idx >> 6] |= 1ull << (idx & 63);
+    return;
+  }
+  case kDoorRuleOp_Event:
+    (*pos)++;
+    return;
+  case kDoorRuleOp_CReach:
+    *pos += 3;
+    return;
+  case kDoorRuleOp_Reach:
+    *pos += 2;
+    return;
+  default:
+    return;  // corrupt blob: nothing to collect
+  }
+}
+
+static void CollectVm(uint16 rule_off, uint64 mask[2]) {
+  if (rule_off == 0xFFFF)
+    return;
+  int pos = rule_off;
+  CollectVmAt(&pos, mask);
+}
+
+// Per-dungeon mask of vm-pred indices referenced by ANY rule the dungeon's
+// flood or at-location evaluation can touch (edges from its regions, its
+// locations, its drop keys, its events; external events conservatively taint
+// every dungeon). Lazily built; const tables make it process-stable.
+static uint64 g_door_vm_masks[kDoorTbl_DungeonCount][2];
+static bool g_door_vm_masks_ready;
+
+void DoorExplore_RelevantVmMask(uint8 dungeon, uint64 out_mask[2]) {
+  if (!g_door_vm_masks_ready) {
+    memset(g_door_vm_masks, 0, sizeof(g_door_vm_masks));
+    uint64 external[2] = { 0, 0 };
+    for (int e = 0; e < kDoorTbl_EdgeCount; e++) {
+      uint8 d = kDoorTblRegions[kDoorTblEdges[e].from_region].dungeon;
+      CollectVm(kDoorTblEdges[e].rule, g_door_vm_masks[d]);
+    }
+    for (int i = 0; i < kDoorTbl_LocationCount; i++) {
+      uint8 d = kDoorTblRegions[kDoorTblLocations[i].region].dungeon;
+      CollectVm(kDoorTblLocations[i].rule, g_door_vm_masks[d]);
+    }
+    for (int i = 0; i < kDoorTbl_DropKeyCount; i++)
+      CollectVm(kDoorTblDropKeys[i].rule, g_door_vm_masks[kDoorTblDropKeys[i].dungeon]);
+    for (int i = 0; i < kDoorTbl_EventCount; i++) {
+      if (kDoorTblEvents[i].region == 0xFFFF)
+        CollectVm(kDoorTblEvents[i].rule, external);
+      else
+        CollectVm(kDoorTblEvents[i].rule,
+                  g_door_vm_masks[kDoorTblRegions[kDoorTblEvents[i].region].dungeon]);
+    }
+    for (int d = 0; d < kDoorTbl_DungeonCount; d++) {
+      g_door_vm_masks[d][0] |= external[0];
+      g_door_vm_masks[d][1] |= external[1];
+    }
+    g_door_vm_masks_ready = true;
+  }
+  out_mask[0] = g_door_vm_masks[dungeon][0];
+  out_mask[1] = g_door_vm_masks[dungeon][1];
+}
+
 static bool EvalRuleAt(const RuleEnv *env, int *pos) {
   uint8 op = kDoorTblRuleBlob[(*pos)++];
   switch (op) {
