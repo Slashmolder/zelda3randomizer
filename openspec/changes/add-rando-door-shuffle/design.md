@@ -28,8 +28,10 @@ surface area:
    lands Link in room/edge B                      D's reachability + per-door key
                      │                            thresholds, room-granular
    sparse redirect consulted INSIDE the            │
-   quadrant-gate of the transition fns            per-seed dungeon door-graph over
-   (generalizes the vanilla teleport-door)        codegen'd per-room regions
+   quadrant-gate of the transition fns            static OP_DOORS_* ops querying a
+   (generalizes the vanilla teleport-door)        reachability ORACLE = the same
+                                                  explorer the stitcher/prover use
+                                                  (Arch-2, §4 — as built)
 ```
 
 Both halves are fed by the same `D` computed once during generation
@@ -68,6 +70,19 @@ rewrite. Door shuffle is categorically harder:
 **Committed scope (Milestone B) shuffles only Normal + Spiral** (intensity 1). So the
 hard case is the four `Dungeon_StartInterRoomTrans_*` functions; spirals are a
 header-byte override (with the aliasing caveat in §2d).
+
+**As built, only the intensity-1 sites are hooked at all.** The four
+`Dungeon_StartInterRoomTrans_*` supertile-boundary branches consult
+`Rando_DoorTransOverride(dir)`, and the spiral header-dest read in
+`Dungeon_DetectStaircase` goes through `Rando_DoorSpiralDest(room, slot, attr,
+vanilla_byte)`. Hole/pit, vanilla-teleport-door, and straight-stair sites are
+untouched (intensity-2+ follow-on). The "EASY (table byte)" rows above remain true
+but unexercised. **Codegen discovery:** the positional vanilla-connectivity
+cross-check (Stage 0) found that Hyrule Castle's two 1F↔2F hall door pairs —
+Normal-typed in the reference model — are the *engine's* `0x89` teleport doors
+(the `dung_hdr_travel_destinations[3/4]` branch). They carry
+`kDoorTblFlag_VanillaTeleport` in the catalog (the exit resolver skips them) and
+HC is pinned (§ pins), so no committed-scope layout can touch them.
 
 ### 2b. The sparse-override model + the control-flow contract
 
@@ -125,6 +140,35 @@ genuine correctness gate is the **flag-ON, all-`NO_OVERRIDE`, RAM-compare run** 
 that path actually executes the hooks. The off-path corpus check merely proves the
 dead-when-off code is inert.
 
+**As built (Stage 1).** The hook shape is `if (!Rando_DoorTransOverride(dir))
+dungeon_room_index--;` (resp. `++` / `±= 0x10`) — the override guards the vanilla
+positional line *inside* the supertile-boundary branch, after the early returns,
+exactly per points 1/4. Two as-built refinements to points 2/5:
+
+- **Override-arm toggle semantics:** when the override fires, `DoorRt_Arrive` has
+  already applied room index, Link/camera/bounds, quadrant, and layer; the caller
+  then *skips* the `room_transitioning_flags` layer/palace toggle block via the
+  self-clearing latch `Rando_DoorTransConsumedToggles()` — the toggles encode the
+  POSITIONAL partner's relationship, meaningless for the shuffled pair. The
+  function's unconditional `room_transitioning_flags = 0` at the tail still runs
+  (no stale flag, honoring point 2). The **destination door record is the layer
+  authority**; `cur_palace_index_x2` is left untouched (basic never crosses a
+  palace boundary — codegen fails any pool pair that would).
+- **Identity-gate nuance (deviation from point 5, recorded deliberately):** the
+  all-`NO_OVERRIDE` path executes the full exit-door *resolver* (room index lookup,
+  slot matching) and then runs the *vanilla* room-index line — the room-index write
+  is NOT routed through a rewritten common arm. Point 5's "identity must exercise
+  the rewritten branch" is therefore satisfied for the resolver/hook machinery but
+  not for the destination-application code (`DoorRt_Arrive`), which by definition
+  diverges from the ROM and can only be playtest-verified. The flag-ON RAM-compare
+  gate proves the hooks + resolver are transparent; arrival correctness is on the
+  playtest matrix.
+
+`DoorRt_Arrive` also sets `dungeon_room_index2`/`_prev` to the arrival edge's
+*virtual positional neighbor* so the next room load resyncs them and both
+`Dungeon_AdjustAfterSpiralStairs` sites see a zero delta (point 3), and resyncs the
+tagalong y-high bytes.
+
 ### 2c. Arbitrary-room arrival (`Rando_DoorArrive`)
 
 The vanilla teleport-door routine `Dungeon_AdjustForTeleportDoors` already repositions
@@ -171,6 +215,20 @@ fight** for the same transition. Resolution:
   attribute — NOT from a door-stub id. The codegen door-registry MUST map each spiral stub
   to its runtime staircase slot so generator and runtime agree (§2e/§3a).
 
+**As built:** `Dungeon_DetectStaircase` brackets its `…Trans_Up/Down` calls with
+`Rando_DoorStaircaseContext(true/false)` (the edge-door hook no-ops inside), and the
+header read becomes `BYTE(dungeon_room_index) = Rando_DoorSpiralDest(prev_room, slot,
+attr, dung_hdr_travel_destinations[slot+1])` — keyed (room, slot, attr) at the read
+site, never a blanket header overwrite; straight/water-stair attrs return the vanilla
+byte. A chosen redirect arms a **pending intra-room fixup** applied by
+`Rando_DoorSpiralFixup()` from `Dungeon_InitializeRoomFromSpecial` *after* the vanilla
+grid-granular adjust: it locates the destination staircase tile in the freshly loaded
+room (attr 0x38/0x39 with the slot marker on the row below) and applies the intra-room
+delta to Link/camera/quadrant, setting the layer from the dest door record (vanilla
+spiral pairs share their intra-room offset; shuffled ones need not). The uint8
+`BYTE(dungeon_room_index)` store stands — codegen asserts every cataloged door's room
+is `< 0x100` (§9.4 resolved), so a uint16 path was unnecessary.
+
 ### 2e. Door-stub identity (the engine assigns none)
 
 Door records carry only `{edge, position-slot, kind}` — no id. We codegen a **stable
@@ -204,6 +262,15 @@ neighbor, and (b) when partner doors differ in slot the tilemap-slot match can s
 fail. Door-open bits live in `save_dung_info[room]` nibble `0xF000`, keyed by the physical
 room (unchanged). This is the most likely "shutter won't open / key door re-locks" runtime
 bug and is a named Milestone-B audit item.
+
+**As built this hazard grew into a first-class committed work item — the Stage-1b
+door-KIND overlay** (see the `randomizer-door-runtime` delta and §13 R2/R3): three raw
+door-list reader seams consult a per-(room, doorListPos) kind override; the engine's
+4-stateful-doors-per-supertile limit forces a pos<4 **both-halves** position-swap
+constraint on key-door candidates; paired key-door halves need an explicit partner
+open-bit mirror plus suppression of the physical-neighbor propagation scan; and the
+reference's Skull Pinball trap→Normal mutation rides along. In flight at spec-update
+time, alongside the Stage-2 stitcher/prover.
 
 ## 3. Generation half — the door-shuffle generator (`randomizer-shuffles`)
 
@@ -286,7 +353,7 @@ Skipped for Milestone B, designed in §8: the cross-dungeon polarity/distributio
 intensity 2/3; door-type big/all/chaos + trap shuffle/removal; decouple; wild/universal
 keys; pottery/key-drop pools.
 
-## 4. Logic half — per-seed dungeon door-graph (`randomizer-logic`) — REVISED
+## 4. Logic half — the door-shuffle reachability oracle (`randomizer-logic`) — AS BUILT (Arch-2)
 
 ### 4a. Why the region graph can't express it (evidence)
 
@@ -313,57 +380,79 @@ proved this infeasible**, and I verified it:
   `DoorRules` (the `AllowSmall` self-locking exemption, the `needed_keys_w_bk` vs
   `_wo_bk` two-valued thresholds, the `bk_restricted` placement ban).
 
-### 4c. The chosen approach — a per-seed dungeon door-graph over codegen'd per-room regions
+### 4c. The chosen approach — AS BUILT: Arch-2, a reachability ORACLE behind two static ops
 
-Two facts make a faithful, feasible design:
+The pre-implementation plan (§4c-original, summarized below for the record) was a
+**static-region port**: add the reference's ~579 per-room regions to the fork's region
+table, bump `kReachabilityMaxRegions` past 256, wire layout `D` as per-seed door-edges
+(a door-owned clone of entrance shuffle's added-edge machinery), and select per-door key
+thresholds from a precompiled `HAS_AMOUNT(SmallKey_X, k)` offset family. The
+implementation plan's adversarial review (round 1) replaced it with **Arch-2**, and that
+is what shipped. Why the static port lost:
 
-1. **The fork already has the right per-seed *primitives*** — entrance shuffle shipped
-   them (verified in `rando_logic.c`): per-seed per-location **region reassignment**
-   (`Rando_SetEntranceRegionOverride[Pred]`), per-seed **edge `to_region` remap**
-   (`Rando_SetEntranceEdgeOverride`), and per-seed **added edges that carry a predicate
-   offset** (`g_entrance_added_edges{from,to,pred_off,pred_len}`). They are capped at 64
-   and entrance-owned, so door shuffle needs its **own parallel set, sized for the door
-   graph** — but the *pattern is proven and walked inside `Logic_ComputeReachability`*.
-2. **Per-seed key thresholds are expressible without a new VM op** by **precompiling the
-   threshold family** `HAS_AMOUNT(SmallKey_<dgn>, k)` for `k = 0..maxkeys(dgn)` (and the
-   big-key predicate) into the static `kRandoPredicateStream` at codegen, then **selecting
-   the offset for the prover's worst-case N per door** in the per-seed edge's `pred_off`.
-   A finite family (≤ ~8 per dungeon) covers every reachable N.
+- **Two-model drift.** The stitcher and key prover already need a faithful C explorer
+  over the door graph (crystal states, events, required paths) to generate and validate
+  layouts. The static port would have *re-expressed the same connectivity a second time*
+  in the fork's region/edge/predicate vocabulary — two models of one dungeon that can
+  silently disagree (the exact generator-vs-logic desync class the placer cannot catch).
+  Arch-2 makes the generator's explorer the *single* model and lets the logic query it.
+- **Statefulness the flat fixed-point can't express.** The reference's dungeon
+  reachability is stateful per exploration: dual blue/orange **crystal-switch** states
+  (a region can be reachable in one barrier state only), monotone **events**
+  (trench fills, Thieves' Town maiden states, Attic Cracked Floor) granted *during* the
+  flood, and Swamp-class water toggles. `Logic_ComputeReachability`'s flat region bitset
+  has no per-state dimension; encoding blue/orange × event combinations as static
+  regions/edges would explode the graph well past the 579 baseline. The explorer already
+  carries exactly this state.
+- **Key economy is a *flood property*, not an inventory predicate.** Drop keys (§1c of
+  the plan) count toward a door's threshold only when their room is *reached in the
+  current exploration state* — `HAS_AMOUNT` offsets can't see that. The oracle computes
+  `held = chest-key counts + reachable drop-key rooms` inside the flood, symmetric with
+  the prover.
 
-So the chosen mechanism (an **Option-A-prime**: room-granular, but using the proven
-per-seed-edge machinery rather than a static graph rewrite):
+**The shipped mechanism** (`rando_logic.c` + `shuffle_doors.h` + `rando_logic_gen.py` +
+`op_registry.yaml` ids 20/21):
 
-- **Static (codegen):** add the reference's **per-room dungeon regions** to the region
-  table (we *port* `dungeon_regions`, which is already room-granular — we do not invent
-  regions). They are **inert when door shuffle is off** (no base edge references them; the
-  vanilla base graph still routes through the single dungeon node) ⇒ byte-identical
-  reachability for `doorShuffle == vanilla`. Also codegen the `HAS_AMOUNT(SmallKey_X, k)`
-  predicate family.
-  - **Region-cap bump (review finding — load-bearing).** The reference declares ~**579**
-    room regions (`Regions.py` `create_dungeon_region` — grep-confirm the exact count;
-    NOT the "~200" an earlier draft guessed). The fork's reachability bitset is hard-capped
-    at `kReachabilityMaxRegions = 256` (`rando_logic.c`) and **silently treats any region
-    id ≥ 256 as unreachable**. Porting the room regions therefore REQUIRES raising that cap
-    (likely 256 → 768/1024). The bump is mechanical — region ids are `uint16` everywhere and
-    no `_Static_assert`/corpus constant couples the cap — but it is load-bearing and MUST be
-    in the plan: (i) size the cap from a grep, not the guess; (ii) re-prove the off-path
-    byte-identical claim *after* the bump (changing `reachable_regions_count` from 256 widens
-    the bound in every `OP_REGION_REACHABLE` eval — inert only because no current id ≥ 256);
-    (iii) re-measure the Switch reachability budget (today ~<20 ms over ~31 regions; this is
-    a ~20× larger region graph).
-- **Per seed (door shuffle on):** (a) reassign each dungeon **location** to its **room
-  region** via a door-shuffle region-override; (b) wire the **room-region connectivity** of
-  layout `D` as per-seed door-edges, each key-door edge's `pred_off` = the precompiled
-  `HAS_AMOUNT(SmallKey_X, N_door)` selected from the prover's worst-case N; (c) honor
-  `bk_restricted` as a **big-key placement ban** (a per-location forbid, extending
-  `dungeon_mode_accepts_item`).
-  - **Use a SEPARATE region-override array, not entrance shuffle's (review finding).** The
-    shipped `g_entrance_region_override[loc_id]` is loc-id-keyed and entrance-owned;
-    entrance cross-shuffle also writes dungeon-adjacent location overrides, so reusing it
-    races door shuffle vs. entrance shuffle (last-writer-wins). Door shuffle gets its own
-    `g_door_region_override[]` walked alongside, with defined precedence — OR committed-scope
-    door shuffle is declared mutually exclusive with entrance shuffle (guarded at
-    generation). Decide in the §9 spike.
+- **Two STATIC predicate-VM ops** — `OP_DOORS_ACTIVE(dungeon_u8)` and
+  `OP_DOORS_LOC_REACHABLE(loc_u16)` — evaluated against per-seed C state (the installed
+  `DoorShuffleLayout`), the `OP_MEDALLION_OPENS` / `OP_CAN_KILL_BOSS` precedent. §4b's
+  no-bytecode-synthesis rule is honored: the stream stays static; only the *state* the
+  ops consult is per-seed.
+- **Codegen wrap** (`rando_logic_gen.py`, fed by `door_predicates.gen.json`): every
+  door-controlled location's `can_reach` becomes
+  `(NOT DOORS_ACTIVE(d) AND vanilla) OR (DOORS_ACTIVE(d) AND DOORS_LOC_REACHABLE(loc))`.
+  Inactive ⇒ exactly the vanilla bytes evaluate ⇒ corpus byte-identical (3-way regen
+  proof). `DOORS_ACTIVE` is per-dungeon off the layout's `shuffled_mask`, so **pinned
+  dungeons (HC, Swamp) evaluate pure vanilla** even with a layout installed.
+- **The oracle = `DoorExplore_Run`** — the SAME crystal-aware explorer the stitcher and
+  prover use, with Vm rule leaves bound to the compiled fork predicate stream
+  (`kDoorVmPreds`; pure item/macro terms, never `OP_DOORS_*`, so no recursion —
+  `g_in_door_oracle` asserts it) and key-door edges gated by the prover's worst-case
+  thresholds plus the drop-key economy.
+- **Portal seeding (the round-1 BLOCKER fix):** the fork's region graph carries ~one
+  region per dungeon, so the oracle cannot infer *which portals* of a multi-portal
+  dungeon (Desert, Skull, TR ledges, Tower) are independently enterable. The committed
+  table `assets/rando/door_portals.yaml` → `kDoorPortalGates` maps each reference portal
+  lobby to the **fork region** gating it + an optional static-stream predicate; the
+  oracle seeds its flood from portals whose gate holds under the *live region bitset*.
+  Gates are monotone (regions+items only); a too-strong gate only under-seeds
+  (conservative-safe). The SAME table feeds the generator's portal analysis, so the two
+  sides cannot disagree about enterability.
+- **Memoization:** the flood is cached per dungeon and invalidated every
+  `Logic_ComputeReachability` fixed-point pass (counts are fixed per call; the region
+  bitset only grows between passes, so a stale-by-one-pass cache can only
+  *under*-estimate, and the zero-change exit pass evaluates with exact inputs —
+  monotone, converges).
+- `bk_restricted` ships as a real **big-key placement ban** in the placer
+  (`DoorShuffle_BkRestricted` next to `dungeon_mode_accepts_item`), exactly as the
+  original §4c demanded.
+
+What the rewrite made moot: NO 579-region YAML port, NO `kReachabilityMaxRegions` bump
+(the cap stays 256; door regions live in the door tables' own namespace), NO per-seed
+door-edge arrays or region overrides (the entrance/door namespace-collision risk
+evaporated — the modes are mutually exclusive anyway, §4d), NO precompiled threshold
+family, and no Switch reachability-budget re-measure (the oracle floods ≤13 dungeons
+per pass, memoized).
 
 **Worst-case N is safe.** Using the prover's worst-case threshold (skipping the
 `AllowSmall` / two-valued relaxations) can only ever *over*-estimate keys-needed, which
@@ -371,28 +460,31 @@ makes the placer *more* conservative — it never certifies a location reachable
 keys than reality, so it never ships an unbeatable seed. The relaxations (which let the
 placer be *less* conservative) are a later optimization, not a correctness requirement.
 `bk_restricted`, by contrast, is **not** a relaxation — placing the big key behind its own
-big-key door is unbeatable — so it MUST ship in the MVP as a real placement ban.
+big-key door is unbeatable — so it ships in the MVP as a real placement ban.
 
-This is the **largest net-new logic piece** in the change and the #1 thing to spike +
-playtest before committing Milestone B. It is bigger than the pre-review framing admitted
-— but it is grounded in shipped, tested per-seed primitives + a precompiled-threshold
-trick, not in a non-existent runtime-predicate facility.
-
-### 4d. Containment + key modes (MVP constraint)
+### 4d. Containment + key modes + world states (MVP pins, as built)
 
 `dungeon_mode_accepts_item` gives whole-dungeon **containment** ("this small key lands in
-its own dungeon"), *not* per-location reachability — those are now supplied by §4c's
-per-door thresholds. MVP forces `dungeon_small_keys_mode == Dungeon` so the solver's
-containment assumption holds, and **also** requires `dungeon_big_keys_mode == Dungeon` so
-`bk_restricted` can be enforced as an in-dungeon placement ban (Dungeon mode alone only
-pins the BK to *some* in-dungeon location, not *away from* the softlocking ones — the ban
-does the rest). `Wild`/`Universal` keys × door shuffle (tracking `outside_keys`) is a
-follow-on. **Retro world-state also degenerates the thresholds** — `eval_has_amount`
-collapses any `HAS_AMOUNT(SmallKey_X, N)` to `GenericKey >= 1` regardless of N (the generic
-shared-key pool), so per-door thresholds are flattened (the reference guards this too:
-`analyze_dungeon`/`valid_key_placement` early-return for universal keys). MVP guard: door
-shuffle coerces/refuses incompatible key modes **and Retro** with a spoiler note (or
-documents the intentional collapse).
+its own dungeon"), *not* per-location reachability — that is the oracle's job. The pins
+live in `apply_derived_rules` (`rando_settings.c`), normalizing (not refusing) so the
+`settings_hash` matches the actually-generated seed — the entrance-axis convention:
+
+- door shuffle ⇒ force `dungeon_small_keys_mode == Dungeon` AND
+  `dungeon_big_keys_mode == Dungeon` (containment + the `bk_restricted` ban together);
+- honored only on **Open/Standard** world states (Inverted has its own logic tree;
+  **Retro** degenerates thresholds — `eval_has_amount` collapses any
+  `HAS_AMOUNT(SmallKey_X, N)` to `GenericKey >= 1`, flattening per-door key math; the
+  reference guards universal keys the same way) and only under **NoGlitches** logic
+  (the oracle models no glitch traversal);
+- **mutually exclusive with entrance shuffle** — door shuffle yields to an explicit
+  entrance-shuffle request (both redirect dungeon topology; the portal-gate table
+  assumes vanilla lobby reachability);
+- dungeon pins: **Hyrule Castle in ALL world states** + **Swamp Palace**
+  (`kDoorShuffle_MvpDungeonMask`, `shuffle_doors.h`) — see the plan pins P4'/P5;
+  Thieves' Town is deliberately NOT pinned (the maiden/attic events are ported as
+  explorer events).
+
+`Wild`/`Universal` keys × door shuffle (tracking `outside_keys`) stays a follow-on.
 
 ## 5. Settings model + canonical serialization (`randomizer-core`)
 
@@ -412,6 +504,12 @@ defaults still pack to zero. (The deserializer already ignores `[27]`; note the 
 `[27]` is claimed.) **The baseline `randomizer-core` "Settings canonical serialization
 order" spec requirement is stale** (it predates the `[25]`/`[26]` axes); this
 change therefore adds an ADDED requirement rather than restating the drifted order (§ specs).
+
+**As built:** `door_shuffle ∈ {vanilla, basic}` in canonical `[27]` **bits 0-1**
+(`kDoorShuffleAxis_Mask`); `intensity` is pinned to 1 and not serialized at all. CSV key
+`door_shuffle`. `Settings_EffectiveDoorShuffle` reports the normalized value by reading
+canonical byte `[27]` post-serialization (definitionally post-`apply_derived_rules`).
+The native settings window exposes a "Door shuffle" checkbox mapping to vanilla/basic.
 
 ## 6. Save / regen / version-locking (`randomizer-save`)
 
@@ -437,6 +535,20 @@ alternative; the digest catches the actual divergence, including same-version po
 commit** (the version-drift rule) — `62` is illustrative and is already contended by
 concurrent unmerged branches (sheet-reshuffle/customizer at 62, major-glitch close-out at
 64), so this will likely land higher.
+
+**As built:** the sidecar header claims the whole `reserved[4]` tail — `door_attempt`
+at **@76** plus a **24-bit layout digest at @77-79** (3 bytes LE; the low 24 bits of
+`DoorShuffle_LayoutDigest` over pairings + key doors + thresholds + `bk_restricted`),
+both zero on vanilla-door slots and for pre-field writers (`rando_save.{c,h}`).
+`Rando_ActivateSidecarSlot` regenerates the layout from the share-string seed +
+settings + `door_attempt` BEFORE installing any slot state, recomputes the digest, and
+**hard-fails on mismatch or generation failure** — `Rando_DeactivateSlot()` + a stderr
+diagnostic, the slot refused for this session but the file untouched (non-destructive;
+still loadable by the build that wrote it). The plan's fancier pre-activation
+select-file classifier seam (an "incompatible" render kind cached in the sidecar
+classifier) was NOT built — the activation-time refusal is the smaller seam and covers
+the correctness requirement; the UI polish can follow if drift refusals turn out to be
+user-visible in practice.
 
 ## 7. Milestones (the staged plan)
 
@@ -472,21 +584,37 @@ concurrent unmerged branches (sheet-reshuffle/customizer at 62, major-glitch clo
   always left to force fire.
 - **Decouple:** one-way half-edges; `connect_one_way` + the anti-degenerate-cycle guard.
 
-## 9. Open design questions / decisions needed
+## 9. Open design questions — ALL RESOLVED (as built)
 
-1. **§4c is the load-bearing decision** — confirm the per-room-region + per-seed-door-graph
-   + precompiled-threshold mechanism by a generation spike on one dungeon (does the
-   reachability fixed-point produce the prover's intended sphere?). The infeasible
-   arbitrary-predicate path is recorded in §4b so it isn't re-proposed.
-2. **`Rando_DoorArrive`** per edge/slot/layer — the delicate routine; build an offline
-   "spawn at door X" harness (the offline-renderer precedent) to validate without playtest.
-3. **Door-type byte application** — regenerated asset vs runtime door-list overlay (§3d).
-4. **16-bit destinations** — confirm no committed-scope target is ≥ 0x100 (§2c).
-5. **Door-stub id freeze** — pin in `door_registry.yaml`; stable across versions.
-6. **Shutter/door-open sync** (§2g) — the most likely "won't open" bug; explicit audit item.
-7. **Artifact lifecycle** — is the codegen table committed-but-gitignored (needs
-   `setup_worktree.py` mirroring, like `chest_table.gen.bin`) or regenerated-at-build (then
-   the guard must verify the *generator ran*)? Decide and wire the matching guard.
+1. **§4c spike** — SUPERSEDED by Arch-2 (§4c as built): the static-region +
+   precompiled-threshold mechanism was replaced wholesale by the oracle in the
+   implementation plan's round-1 review, so the "does the fixed-point reproduce the
+   prover's sphere" question dissolved — the oracle IS the prover's explorer. The
+   remaining oracle≡stitcher agreement check is a `--door-selftest` gate, not a design
+   question. The infeasible arbitrary-predicate path stays recorded in §4b.
+2. **`Rando_DoorArrive` validation** — built as `DoorRt_Arrive` (+ the spiral fixup);
+   correctness rides the flag-ON identity gate for the hook machinery and the playtest
+   matrix for the arrival math itself (§2b as-built note). No offline harness was built.
+3. **Door-type byte application** — RESOLVED: **runtime door-list overlay** (the
+   Stage-1b door-KIND overlay, §2g/`randomizer-door-runtime`); the `kDungeonRoom` asset
+   stays vanilla and the diff stays seed-scoped.
+4. **16-bit destinations** — RESOLVED: `gen_door_tables.py` fails codegen if any
+   cataloged vanilla pair's room is `≥ 0x100`, so every committed-scope destination fits
+   the byte-wide paths (the spiral `BYTE(...)` store stands).
+5. **Door-stub id freeze** — RESOLVED: `assets/rando/door_registry.yaml` (committed)
+   pins append-only ids; the layout digest hashes door ids, so a re-numbering would
+   invalidate every door-shuffle save — `check_door_tables.py` enforces registry/header
+   agreement.
+6. **Shutter/door-open sync** — RESOLVED into the named Stage-1b kind-overlay scope
+   (partner open-bit mirror + neighbor-propagation suppression, §2g as-built note).
+7. **Artifact lifecycle** — RESOLVED: the door tables are **COMMITTED**
+   reference-derived artifacts (`src/rando/door_tables.gen.{c,h}` +
+   `assets/rando/door_predicates.gen.json`), because regeneration needs a local
+   ALttPDoorRandomizer checkout that CI and fresh clones lack. `check_door_tables.py`
+   (wired into `rando_ci.yaml`) guards *consistency* — missing/empty files, header
+   counts vs data vs the frozen registry, predicate-manifest count vs
+   `kDoorTbl_VmPredCount` — rather than regeneration. (The debug intermediate
+   `door_tables.gen.json` stays gitignored.)
 
 ## 10. Verification & the fails-open trap
 
@@ -569,3 +697,65 @@ concurrent unmerged branches (sheet-reshuffle/customizer at 62, major-glitch clo
   the pad byte), `setup_worktree.py` mirror precedent, the codegen-precedent citation, and
   the ADDED-vs-MODIFIED choices all check out. No residual showstopper; the plan is
   implementation-ready for Milestone A.
+
+## 13. Implementation changelog (the 4-round plan review + as-built deviations)
+
+Between this design and the code, a separate implementation plan went through **four
+adversarial review rounds**; the surviving decisions are what shipped. Summary:
+
+- **Round 1** — endorsed **Arch-2** (the oracle, §4c as built) over the §4c static-region
+  port, and found the **portal-seeding BLOCKER**: the oracle had no way to know which
+  portals of a multi-portal dungeon are enterable. Fix = the committed
+  `door_portals.yaml` gate table, shared by generator and oracle. Also: per-dungeon
+  `DOORS_ACTIVE` (pinned dungeons evaluate pure vanilla), oracle-returns-false with no
+  layout, the drop-key economy (`held = chest keys + reachable drop-key rooms`,
+  symmetric prover/oracle), and the memo-per-fixed-point-pass monotonicity argument.
+- **Round 2** — surfaced the **door-KIND overlay** as first-class committed scope (a
+  relocated key door must be physically real — N1) and a cluster of N-findings folded
+  into the plan: the live-stitcher entry point (`DungeonStitcher.generate_dungeon`; the
+  reviewer's claim it didn't exist was REFUTED with evidence — the deprecated
+  `DungeonGenerator` sibling had been read instead), `RoomData.py` position bytes for
+  slot derivation, the palace-index codegen guard, both generation seams
+  (slot + headless) named, the non-destructive refusal seam, big-key doors NOT relocated
+  in `original` mode, and the Desert Back intensity-1 waiver.
+- **Round 3** — hardened the kind overlay: there are **three** raw door-list reader
+  seams (not one); the **stateful pos<4 constraint** (door-open state persists only for
+  door-list slots 0-3 — relocated key doors need the reference's position-swap); the
+  **partner open-bit mirror + neighbor-propagation suppression** (double-spend re-lock /
+  unpaid pre-open); deterministic integer-only `ncr` sampling for
+  `find_valid_combination`; and the digest-verdict caching note for the refusal seam.
+- **Round 4** — sign-off with conditional edits: the pos<4 swap feasibility is evaluated
+  **per-half** (BOTH halves of a pair must land at pos<4 — a half left at pos≥4 is
+  force-opened at load and voids the mirror).
+
+**As-built deviations from this design** (each argued through the review, none silent):
+
+1. §4c static-region port → **Arch-2 oracle** (two static ops + `DoorExplore_Run`); the
+   region-cap bump, per-seed door-edges, threshold family, and separate region-override
+   array all became moot (§4c as built).
+2. The door tables are **committed**, not gitignored-and-regenerated (§9.7) — CI has no
+   reference checkout; `check_door_tables.py` guards consistency.
+3. Hole/teleport/straight-stair sites are **not hooked** (intensity-1 scope literalism);
+   HC's two vanilla-teleport Normal-typed pairs are flagged + pinned away (§2a as-built).
+4. The identity gate exercises the resolver, not a rewritten destination-application arm
+   (§2b as-built note — the deliberate softening of §2b.5).
+5. Slot-drift refusal lives at **activation** (`Rando_ActivateSidecarSlot` hard-fail),
+   not a pre-activation select-file classifier render kind (§6 as-built).
+6. Spiral plane: `cur_staircase_plane` still reads the SOURCE header at the transition;
+   the destination layer is applied by the post-load fixup from the dest door record
+   (§2d as-built) — up↔up pairs and source-derived floor cosmetics accepted as designed.
+7. MVP pins (§4d as built): Open/Standard + NoGlitches only, entrance-shuffle mutual
+   exclusion (door yields), in-dungeon small+big keys forced, HC pinned in ALL world
+   states (not just standard), Swamp pinned. Normalization is silent
+   (`apply_derived_rules`), not refuse-with-note.
+
+**Status at spec-update time (2026-06-09):** Stage 0 (codegen + committed tables +
+guard), Stage 1 (runtime redirect + hooks), Stage 3 (ops/oracle/portal gates/location
+wrap + `bk_restricted` ban), and Stage 4 (settings axis, sidecar @76-79, generation in
+both pipelines, activation regen + hard-fail, UI checkbox, spoiler section,
+`--door-selftest` CLI) are in the tree. **In flight:** Stage 2 (the stitcher + key
+prover behind the `shuffle_doors.h` contract — `shuffle_doors.c` is a stub whose
+`DoorShuffle_Generate` returns false, so a `basic` request currently exhausts its
+attempts and generation fails cleanly) and Stage 1b (the door-KIND overlay). Open:
+`kGeneratorVersion` bump + corpus seed + 3-way regen, the flag-ON RAM-compare identity
+run, the playtest matrix, and `docs/randomizer.md`.
