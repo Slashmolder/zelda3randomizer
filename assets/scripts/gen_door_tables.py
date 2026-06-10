@@ -254,6 +254,12 @@ def build_reference_world(ref_path):
         DS.connect_two_way(world, a, b, P)
     for a, b in DS.default_one_way_connections:
         DS.connect_one_way(world, a, b, P)
+    # Spiral staircases are intensity-1 pool stubs exactly like
+    # default_door_connections (DoorShuffle.create_door_spoiler shuffles
+    # [Normal, SpiralStairs] at intensity 1); wire their vanilla pairings so
+    # the harvest captures the vanilla edges + partners for the pool.
+    for a, b in DS.spiral_staircases:
+        DS.connect_two_way(world, a, b, P)
 
     # --- Rule capture: patch the primitives, then run set_rules. -----------
     recorder = RuleRecorder()
@@ -449,6 +455,8 @@ def harvest(world, P, recorder):
     for a, b in DS.default_one_way_connections:
         wiring.setdefault(a, 'one_way')
         wiring.setdefault(b, 'one_way')
+    for a, b in DS.spiral_staircases:
+        wiring[a] = wiring[b] = 'spiral'
     for a, b in DS.interior_doors:
         wiring[a] = wiring[b] = 'interior'
     for a, _ in DS.logical_connections:
@@ -466,14 +474,16 @@ def harvest(world, P, recorder):
     for d in doors:
         d['wiring'] = wiring.get(d['name'])
     vanilla_pairs = {
-        'two_way': list(DS.default_door_connections),
+        'two_way': list(DS.default_door_connections) + list(DS.spiral_staircases),
         'one_way': list(DS.default_one_way_connections),
     }
 
     # Stitcher-side static data (required paths, portals, dead-end allowances).
     from source.dungeon import DungeonStitcher as StitchMod
+    from BaseClasses import flooded_keys as flooded_keys_map
     import DungeonGenerator as DGMod
     stitcher = {
+        'flooded_keys': dict(flooded_keys_map),
         'boss_path_checks': list(StitchMod.boss_path_checks),
         'drop_path_checks': list(StitchMod.drop_path_checks),
         'dungeon_boss_sectors': {k: list(v) for k, v in DGMod.dungeon_boss_sectors.items()},
@@ -921,7 +931,6 @@ EVENT_GRANT_LOC = {
     'Trench 1 Filled': 'Trench 1 Switch',
     'Trench 2 Filled': 'Trench 2 Switch',
     'Drained Swamp': 'Swamp Drain',
-    'Open Floodgate': "Swamp Palace - Big Chest",  # resolved dynamically below
     'Hidden Pits': 'Skull Star Tile',
     'Convenient Block': 'Ice Block Drop',
     'Shining Light': 'Attic Cracked Floor',
@@ -929,6 +938,11 @@ EVENT_GRANT_LOC = {
     'Maiden Unmasked': 'Revealing Light',
     'Attic Cracked Floor': 'Attic Cracked Floor',
 }
+# Events granted OUTSIDE the shuffled dungeons ('Floodgate' lives at the Dam,
+# a cave region): no in-dungeon granting row exists. Emitted with region
+# 0xFFFF — the explorer treats their Event leaves as externally-supplied
+# (lenient: true; the Stage-3 oracle binds them to fork logic).
+EXTERNAL_EVENTS = {'Open Floodgate'}
 # reference location name -> fork location name where normalization fails
 LOC_NAME_FIX = {
     "Hyrule Castle - Zelda's Chest": "Hyrule Castle - Zelda's Cell",
@@ -1089,12 +1103,13 @@ class TableBuilder:
             else:
                 raise RuleError(f'encode {k}')
 
-        def rule_ref(spot, entries, dungeon):
-            if not entries:
-                return 0xFFFF  # always true
-            ir = fold_vm(tr.translate_entry_list(spot, entries, dungeon))
+        def rule_ref(spot, entries, dungeon, extra_irs=None):
+            ir = tr.translate_entry_list(spot, entries, dungeon) if entries else ('true',)
+            if extra_irs:
+                ir = simplify_ir(('and', [ir] + list(extra_irs)))
+            ir = fold_vm(ir)
             if ir == ('true',):
-                return 0xFFFF
+                return 0xFFFF  # always true
             key = repr(ir)
             if key not in self.rule_offsets:
                 off = len(self.rule_blob)
@@ -1105,32 +1120,60 @@ class TableBuilder:
             return self.rule_offsets[key]
 
         # ---- edges ---------------------------------------------------------
+        # door.req_event is the stitcher's own event gate (ExplorationState
+        # event_doors); it is NOT part of the recorded access rules, so AND the
+        # mapped event into the edge rule (event names differ from the granting
+        # location names that req_event uses).
+        REQ_EVENT_TO_EVENT = {
+            'Trench 1 Switch': 'Trench 1 Filled',
+            'Trench 2 Switch': 'Trench 2 Filled',
+            'Swamp Drain': 'Drained Swamp',
+        }
         edges = []
         for e in m['edges']:
             dgn = region_dgn[e['from']]
             door = e.get('door')
             door_id = self.door_id.get(door, 0xFFFF) if door else 0xFFFF
             cls = 'static'
+            extra = None
             if door and door in self.door_id:
                 dd = self.doors[self.door_id[door]]
                 if dd['in_pool']:
                     cls = 'pool'
+                if dd.get('req_event'):
+                    ev = REQ_EVENT_TO_EVENT.get(dd['req_event'])
+                    if ev is None:
+                        self.problem(f"door {door}: unmapped req_event {dd['req_event']!r}")
+                    else:
+                        extra = [('event', ev)]
             edges.append({
                 'name': e['name'],
                 'from': self.region_id[e['from']],
                 'to': self.region_id[e['to']],
-                'rule': rule_ref(e['name'], e['rules'], dgn),
+                'rule': rule_ref(e['name'], e['rules'], dgn, extra),
                 'door': door_id,
                 'cls': cls,
             })
         self.edges = edges
 
         # ---- locations / events / drop keys --------------------------------
+        # ExplorationState.flooded_key_check: a trench event fires only once
+        # its flooded pot-key LOCATION was found — model as AND Reach(that
+        # location's region) on the event rule.
+        flooded = m['stitcher'].get('flooded_keys', {})
+        loc_region_name = {l['name']: l['region'] for l in m['locations']}
         locations, events, drop_keys = [], {}, []
         for l in m['locations']:
             dgn = region_dgn[l['region']]
             name = LOC_NAME_FIX.get(l['name'], l['name'])
-            rule = rule_ref(l['name'], l['rules'], dgn)
+            extra = None
+            if l['name'] in flooded:
+                fl = flooded[l['name']]
+                if fl in loc_region_name:
+                    extra = [('reach', loc_region_name[fl])]
+                else:
+                    self.problem(f"flooded key location {fl!r} (for {l['name']}) not found")
+            rule = rule_ref(l['name'], l['rules'], dgn, extra)
             fork_id = self.fork_locs.get(name)
             if fork_id is None:
                 fork_id = self.fork_locs_norm.get(norm_loc(name))
@@ -1162,17 +1205,20 @@ class TableBuilder:
         # multi-grant events: 'Attic Cracked Floor' grants 'Shining Light' too —
         # resolved by aliasing below if missing.
         for ev in EVENT_ORDER:
-            if ev not in events:
-                grant = EVENT_GRANT_LOC.get(ev)
-                alias = next((e for e in events.values() if False), None)
-                if grant and any(l['name'] == grant for l in m['locations']):
-                    # granted by a location that mapped to another event or fork id
-                    src = next(l for l in m['locations'] if l['name'] == grant)
-                    events[ev] = {'region': self.region_id[src['region']],
-                                  'rule': rule_ref(src['name'], src['rules'],
-                                                   region_dgn[src['region']])}
-                else:
-                    self.problem(f'event {ev!r}: no granting location found')
+            if ev in events:
+                continue
+            if ev in EXTERNAL_EVENTS:
+                events[ev] = {'region': 0xFFFF, 'rule': 0xFFFF}
+                continue
+            grant = EVENT_GRANT_LOC.get(ev)
+            if grant and any(l['name'] == grant for l in m['locations']):
+                # granted by a location that mapped to another event or fork id
+                src = next(l for l in m['locations'] if l['name'] == grant)
+                events[ev] = {'region': self.region_id[src['region']],
+                              'rule': rule_ref(src['name'], src['rules'],
+                                               region_dgn[src['region']])}
+            else:
+                self.problem(f'event {ev!r}: no granting location found')
         self.locations = locations
         self.events = events
         self.drop_keys = drop_keys

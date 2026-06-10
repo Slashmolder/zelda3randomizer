@@ -134,8 +134,8 @@ typedef struct DoorTblPairedKind {
 
 #define kDoorTbl_DoorCount 1200
 #define kDoorTbl_RegionCount 577
-#define kDoorTbl_EdgeCount 1061
-#define kDoorTbl_PairCount 149
+#define kDoorTbl_EdgeCount 1161
+#define kDoorTbl_PairCount 199
 #define kDoorTbl_LocationCount 134
 #define kDoorTbl_EventCount 10
 #define kDoorTbl_DropKeyCount 32
@@ -145,7 +145,7 @@ typedef struct DoorTblPairedKind {
 #define kDoorTbl_RoomCount 186
 #define kDoorTbl_PairedKindCount 38
 #define kDoorTbl_VmPredCount 69
-#define kDoorTbl_RuleBlobSize 750
+#define kDoorTbl_RuleBlobSize 761
 
 extern const char kDoorTblNames[];
 extern const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount];

@@ -14,7 +14,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {174,71,14,0x0,0x73,7,1,0,0,0,0x60,0x36,0x0,2,78,78,2}, // Desert Big Chest SW
   {194,72,45,0x0,0x73,7,1,2,0,2,0x80,0x0,0x0,2,78,78,2}, // Desert Bonk Torch SE
   {215,73,65535,0x386,0x33,0,1,0,0,0,0x61,0x18,0x4,2,78,78,2}, // Desert Boss SW
-  {230,74,65535,0x0,0x53,1,5,0,0,255,0xff,0xff,0x0,0,-128,15,2}, // Desert Bridge Down Stairs
+  {230,74,49,0x200,0x53,1,5,0,0,255,0xff,0xff,0x0,0,-128,15,2}, // Desert Bridge Down Stairs
   {256,74,26,0x0,0x53,7,1,0,0,0,0x60,0x36,0x0,2,78,78,2}, // Desert Bridge SW
   {273,75,16,0x380,0x75,0,1,2,0,1,0x81,0x0,0x0,3,78,78,2}, // Desert Cannonball S
   {293,76,47,0x0,0x73,7,3,2,0,1,0x82,0x38,0x0,2,78,78,2}, // Desert Circle of Pots ES
@@ -53,7 +53,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {1074,89,58,0x0,0x73,4,1,0,0,255,0xff,0xff,0x0,3,78,78,2}, // Desert Sandworm Corner S Edge
   {1104,89,13,0x0,0x73,7,2,2,0,1,0x82,0x38,0x0,2,78,78,2}, // Desert Sandworm Corner WS
   {1130,91,3,0x0,0x63,7,1,0,0,1,0x60,0x36,0x0,2,78,78,2}, // Desert Tiles 1 SW
-  {1148,91,65535,0x10,0x63,1,4,0,0,0,0x0,0x20,0x0,0,108,27,2}, // Desert Tiles 1 Up Stairs
+  {1148,91,10,0x210,0x63,1,4,0,0,0,0x0,0x20,0x0,0,108,27,2}, // Desert Tiles 1 Up Stairs
   {1173,92,54,0x10,0x43,7,0,2,0,1,0x80,0x1c,0x0,2,78,78,2}, // Desert Tiles 2 NE
   {1191,92,5,0x310,0x43,0,1,2,0,2,0x81,0x1c,0x0,3,78,78,2}, // Desert Tiles 2 SE
   {1209,93,0,0x0,0x75,7,1,0,0,0,0x60,0x38,0x0,2,78,78,2}, // Desert Trap Room SW
@@ -64,7 +64,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {1313,95,65535,0x100,0x83,0,1,0,0,1,0x61,0xa,0x0,2,78,78,2}, // Desert West S
   {1327,97,46,0x0,0x83,4,0,0,0,255,0xff,0xff,0x0,1,78,78,2}, // Desert West Wing N Edge
   {1351,97,55,0x0,0x83,7,2,2,0,2,0x82,0x0,0x0,2,78,78,2}, // Desert West Wing WS
-  {1371,36,65535,0x0,0xda,1,5,0,0,255,0xff,0xff,0x0,2,-128,17,1}, // Eastern Attic Start Down Stairs
+  {1371,36,86,0x200,0xda,1,5,0,0,255,0xff,0xff,0x0,2,-128,17,1}, // Eastern Attic Start Down Stairs
   {1403,36,93,0x200,0xda,0,2,2,0,0,0x22,0x18,0x4,2,78,78,1}, // Eastern Attic Start WS
   {1426,37,68,0x200,0xb8,0,3,0,0,1,0x63,0x0,0x0,2,78,78,1}, // Eastern Big Key EN
   {1445,37,95,0x220,0xb8,0,0,2,0,0,0x20,0x1e,0x0,2,78,78,1}, // Eastern Big Key NE
@@ -90,7 +90,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {1932,46,111,0x200,0xba,0,0,0,0,1,0x0,0x18,0x2,2,78,78,1}, // Eastern Dark Square NW
   {1955,47,115,0x0,0x99,7,0,2,0,2,0x80,0x0,0x0,2,78,78,1}, // Eastern Darkness NE
   {1975,47,77,0x310,0x99,0,1,1,0,1,0x71,0x1c,0x0,2,78,78,1}, // Eastern Darkness S
-  {1994,47,65535,0x10,0x99,1,4,0,0,0,0x60,0x20,0x0,2,108,26,1}, // Eastern Darkness Up Stairs
+  {1994,47,60,0x210,0x99,1,4,0,0,0,0x60,0x20,0x0,2,108,26,1}, // Eastern Darkness Up Stairs
   {2021,48,64,0x200,0xd8,0,0,2,0,0,0x20,0x18,0x4,2,78,78,1}, // Eastern Duo Eyegores NE
   {2045,48,117,0x0,0xd8,7,1,2,0,1,0x80,0x36,0x0,2,78,78,1}, // Eastern Duo Eyegores SE
   {2069,49,114,0x0,0xaa,7,3,0,0,2,0x62,0x0,0x0,2,78,78,1}, // Eastern East Wing EN
@@ -133,15 +133,15 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {2892,484,239,0x300,0x8c,0,1,0,0,4,0x61,0x0,0x0,2,78,78,12}, // GT Big Chest SW
   {2908,485,234,0x0,0x1c,7,1,2,0,0,0x80,0x36,0x0,2,78,78,12}, // GT Big Key Room SE
   {2927,486,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Blocked Stairs Block Path
-  {2956,486,65535,0x0,0x8c,1,5,3,0,255,0xff,0xff,0x0,2,64,18,12}, // GT Blocked Stairs Down Stairs
+  {2956,486,199,0x200,0x8c,1,5,3,0,255,0xff,0xff,0x0,2,64,18,12}, // GT Blocked Stairs Down Stairs
   {2986,487,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Bob's Room Hole
   {3005,487,238,0x300,0x8c,0,1,2,0,5,0x81,0x0,0x0,3,78,78,12}, // GT Bob's Room SE
   {3022,489,255,0x10,0x3d,7,3,0,0,1,0x62,0x1c,0x0,2,78,78,12}, // GT Bomb Conveyor EN
   {3042,489,149,0x0,0x3d,7,1,0,0,3,0x60,0x2e,0x0,2,78,78,12}, // GT Bomb Conveyor SW
-  {3062,490,65535,0x0,0x1d,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,12}, // GT Brightly Lit Hall Down Stairs
+  {3062,490,201,0x200,0x1d,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,12}, // GT Brightly Lit Hall Down Stairs
   {3095,490,122,0x220,0x1d,0,0,0,0,0,0x0,0x1e,0x0,2,78,78,12}, // GT Brightly Lit Hall NW
   {3119,491,264,0x0,0x5c,7,1,2,0,0,0x80,0x2e,0x0,2,78,78,12}, // GT Cannonball Bridge SE
-  {3143,491,65535,0x0,0x5c,1,4,0,0,255,0xff,0xff,0x0,1,108,26,12}, // GT Cannonball Bridge Up Stairs
+  {3143,491,202,0x200,0x5c,1,4,0,0,255,0xff,0xff,0x0,1,108,26,12}, // GT Cannonball Bridge Up Stairs
   {3174,491,212,0x200,0x5c,0,2,0,0,1,0x2,0x0,0x0,2,78,78,12}, // GT Cannonball Bridge WN
   {3198,492,161,0x0,0x9d,7,3,0,0,2,0x62,0x0,0x0,2,78,78,12}, // GT Compass Room EN
   {3217,492,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Compass Room Warp
@@ -169,7 +169,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {3931,499,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Crystal Conveyor to Corner Barrier - Blue
   {3976,499,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Crystal Conveyor to Ranged Crystal
   {4014,504,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Crystal Inner Circle Barrier - Orange
-  {4055,505,65535,0xc00,0x6b,1,5,0,0,255,0xff,0xff,0x0,0,0,18,12}, // GT Crystal Paths Down Stairs
+  {4055,505,248,0xe00,0x6b,1,5,0,0,255,0xff,0xff,0x0,0,0,18,12}, // GT Crystal Paths Down Stairs
   {4084,505,251,0xc00,0x6b,7,1,0,0,3,0x60,0x18,0x0,2,78,78,12}, // GT Crystal Paths SW
   {4104,506,224,0x380,0x7b,0,1,0,0,0,0x61,0x18,0x4,2,78,78,12}, // GT DMs Room SW
   {4119,507,213,0x220,0x6b,0,0,2,0,0,0x20,0x1e,0x0,2,78,78,12}, // GT Dash Hall NE
@@ -203,10 +203,10 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {5065,520,291,0x10,0x7d,7,1,0,0,2,0x60,0x1c,0x0,2,78,78,12}, // GT Firesnake Room SW
   {5086,521,235,0x6,0x1c,7,3,2,0,1,0x82,0x18,0x2,2,78,78,12}, // GT Four Torches ES
   {5105,521,189,0x0,0x1c,7,0,0,0,2,0x60,0x28,0x0,2,78,78,12}, // GT Four Torches NW
-  {5124,521,65535,0x0,0x1c,1,4,0,0,255,0xff,0xff,0x0,2,44,27,12}, // GT Four Torches Up Stairs
+  {5124,521,129,0x200,0x1c,1,4,0,0,255,0xff,0xff,0x0,2,44,27,12}, // GT Four Torches Up Stairs
   {5150,522,65535,0x206,0x4c,0,3,2,0,0,0x83,0x18,0x4,2,78,78,12}, // GT Frozen Over ES
-  {5168,522,65535,0x0,0x4c,1,4,0,0,255,0xff,0xff,0x0,1,108,26,12}, // GT Frozen Over Up Stairs
-  {5193,523,65535,0x0,0x5d,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,12}, // GT Gauntlet 1 Down Stairs
+  {5168,522,134,0x200,0x4c,1,4,0,0,255,0xff,0xff,0x0,1,108,26,12}, // GT Frozen Over Up Stairs
+  {5193,523,137,0x200,0x5d,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,12}, // GT Gauntlet 1 Down Stairs
   {5219,523,204,0x0,0x5d,7,2,0,0,2,0x62,0x18,0x0,2,78,78,12}, // GT Gauntlet 1 WN
   {5236,524,203,0x0,0x5d,7,3,0,0,2,0x62,0x18,0x0,2,78,78,12}, // GT Gauntlet 2 EN
   {5253,524,206,0x0,0x5d,7,1,0,0,0,0x60,0x18,0x0,2,78,78,12}, // GT Gauntlet 2 SW
@@ -236,7 +236,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {5788,533,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Hookshot South Entry to Ranged Crystal
   {5830,535,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Hookshot South-Mid Path
   {5857,536,281,0x200,0x8c,0,3,0,0,0,0x63,0x18,0x4,2,78,78,12}, // GT Hope Room EN
-  {5873,536,65535,0x0,0x8c,1,4,0,2,255,0xff,0xff,0x0,1,108,51,12}, // GT Hope Room Up Stairs
+  {5873,536,246,0x200,0x8c,1,4,0,2,255,0xff,0xff,0x0,1,108,51,12}, // GT Hope Room Up Stairs
   {5896,536,284,0x10,0x8c,7,2,0,0,2,0x62,0x1c,0x0,2,78,78,12}, // GT Hope Room WN
   {5912,537,127,0x0,0x1c,7,0,2,0,0,0x80,0x36,0x0,2,78,78,12}, // GT Ice Armos NE
   {5928,537,197,0x0,0x1c,7,2,2,0,1,0x82,0x18,0x0,2,78,78,12}, // GT Ice Armos WS
@@ -249,10 +249,10 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {6081,540,261,0x0,0x6c,7,0,0,0,1,0x60,0x18,0x0,2,78,78,12}, // GT Lanmolas 2 NW
   {6098,541,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Left Moldorm Ledge Drop Down
   {6130,541,151,0x210,0x4d,0,0,0,0,0,0x0,0x1c,0x0,2,78,78,12}, // GT Left Moldorm Ledge NW
-  {6155,542,65535,0x0,0xc,1,5,1,1,255,0xff,0xff,0x0,0,-128,15,12}, // GT Lobby Left Down Stairs
-  {6181,542,65535,0x0,0xc,1,5,0,1,255,0xff,0xff,0x0,1,-128,18,12}, // GT Lobby Right Down Stairs
+  {6155,542,286,0x200,0xc,1,5,1,1,255,0xff,0xff,0x0,0,-128,15,12}, // GT Lobby Left Down Stairs
+  {6181,542,232,0x200,0xc,1,5,0,1,255,0xff,0xff,0x0,1,-128,18,12}, // GT Lobby Right Down Stairs
   {6208,542,65535,0x100,0xc,0,1,1,0,0,0x71,0xa,0x0,2,78,78,12}, // GT Lobby S
-  {6219,542,65535,0x0,0xc,1,4,2,0,255,0xff,0xff,0x0,0,-20,27,12}, // GT Lobby Up Stairs
+  {6219,542,165,0x200,0xc,1,4,2,0,255,0xff,0xff,0x0,0,-20,27,12}, // GT Lobby Up Stairs
   {6238,543,218,0x10,0x8b,7,2,2,0,1,0x82,0x1c,0x0,2,78,78,12}, // GT Map Room WS
   {6253,544,253,0x0,0x6b,7,3,2,0,2,0x82,0x18,0x0,2,78,78,12}, // GT Mimics 1 ES
   {6268,544,166,0x0,0x6b,7,0,0,0,3,0x60,0x18,0x0,2,78,78,12}, // GT Mimics 1 NW
@@ -262,14 +262,14 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {6339,546,132,0x10,0x3d,7,2,0,0,1,0x62,0x1c,0x0,2,78,78,12}, // GT Mini Helmasaur Room WN
   {6365,547,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Moldorm Gap
   {6380,547,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Moldorm Hole
-  {6396,548,65535,0x0,0xa6,1,4,0,0,255,0xff,0xff,0x0,1,108,27,12}, // GT Moldorm Pit Up Stairs
+  {6396,548,265,0x200,0xa6,1,4,0,0,255,0xff,0xff,0x0,1,108,27,12}, // GT Moldorm Pit Up Stairs
   {6421,549,267,0x380,0x7d,0,1,2,0,0,0x81,0x18,0x4,3,78,78,12}, // GT Petting Zoo SE
   {6439,550,272,0x0,0x8d,7,3,2,0,4,0x82,0x0,0x0,2,78,78,12}, // GT Pots n Blocks ES
   {6459,551,242,0x6,0x6c,7,1,0,0,1,0x60,0x18,0x2,2,78,78,12}, // GT Quad Pot SW
-  {6474,551,65535,0x0,0x6c,1,4,0,0,255,0xff,0xff,0x0,0,108,27,12}, // GT Quad Pot Up Stairs
+  {6474,551,309,0x200,0x6c,1,4,0,0,255,0xff,0xff,0x0,0,108,27,12}, // GT Quad Pot Up Stairs
   {6496,552,292,0x200,0x7c,0,3,2,0,1,0x83,0x2e,0x0,2,78,78,12}, // GT Randomizer Room ES
   {6518,553,136,0x0,0x5c,7,0,2,0,0,0x80,0x2e,0x0,2,78,78,12}, // GT Refill NE
-  {6531,554,65535,0x0,0x4d,1,5,0,0,255,0xff,0xff,0x0,1,-128,18,12}, // GT Right Moldorm Ledge Down Stairs
+  {6531,554,258,0x200,0x4d,1,5,0,0,255,0xff,0xff,0x0,1,-128,18,12}, // GT Right Moldorm Ledge Down Stairs
   {6566,554,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Right Moldorm Ledge Drop Down
   {6599,556,259,0x200,0x8d,0,0,2,0,3,0x20,0x0,0x0,2,78,78,12}, // GT Speed Torch NE
   {6617,555,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Speed Torch North Path
@@ -290,7 +290,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {6990,561,141,0x200,0x96,0,2,0,0,1,0x2,0x0,0x0,2,78,78,12}, // GT Torch Cross WN
   {7008,488,233,0x10,0x8c,7,3,0,0,2,0x62,0x1c,0x0,2,78,78,12}, // GT Torch EN
   {7020,488,125,0x6,0x8c,7,1,0,0,1,0x60,0x38,0x2,2,78,78,12}, // GT Torch SW
-  {7032,488,65535,0x0,0x8c,1,4,1,2,255,0xff,0xff,0x0,0,108,51,12}, // GT Torch Up Stairs
+  {7032,488,245,0x200,0x8c,1,4,1,2,255,0xff,0xff,0x0,0,108,51,12}, // GT Torch Up Stairs
   {7051,488,143,0x200,0x8c,0,2,0,0,3,0x2,0x0,0x0,2,78,78,12}, // GT Torch WN
   {7063,562,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Validation Block Path
   {7088,563,200,0x200,0x4d,0,2,2,0,1,0x22,0x0,0x0,2,78,78,12}, // GT Validation WS
@@ -313,33 +313,33 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {7653,571,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Warp Maze - Rando Rail Warp
   {7684,572,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Warp Maze - Right Section Warp
   {7718,573,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,12}, // GT Warp Maze Exit Section Warp Spot
-  {7754,574,65535,0x0,0xa5,1,5,0,0,255,0xff,0xff,0x0,0,-128,18,12}, // GT Wizzrobes 1 Down Stairs
+  {7754,574,262,0x200,0xa5,1,5,0,0,255,0xff,0xff,0x0,0,-128,18,12}, // GT Wizzrobes 1 Down Stairs
   {7781,574,171,0x0,0xa5,7,1,0,0,2,0x60,0x38,0x0,2,78,78,12}, // GT Wizzrobes 1 SW
   {7799,575,142,0x200,0xa5,0,0,2,0,0,0x20,0x18,0x4,2,78,78,12}, // GT Wizzrobes 2 NE
   {7817,575,170,0x0,0xa5,7,1,2,0,1,0x80,0x38,0x0,2,78,78,12}, // GT Wizzrobes 2 SE
-  {7835,98,65535,0x0,0x27,1,5,0,0,255,0xff,0xff,0x0,1,-64,98,3}, // Hera 4F Down Stairs
+  {7835,98,363,0x200,0x27,1,5,0,0,255,0xff,0xff,0x0,1,-64,98,3}, // Hera 4F Down Stairs
   {7855,98,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera 4F Holes
-  {7869,98,65535,0x0,0x27,1,4,1,0,255,0xff,0xff,0x0,0,44,107,3}, // Hera 4F Up Stairs
-  {7887,99,65535,0x0,0x17,1,5,1,0,255,0xff,0xff,0x0,0,64,98,3}, // Hera 5F Down Stairs
+  {7869,98,316,0x200,0x27,1,4,1,0,255,0xff,0xff,0x0,0,44,107,3}, // Hera 4F Up Stairs
+  {7887,99,315,0x200,0x17,1,5,1,0,255,0xff,0xff,0x0,0,64,98,3}, // Hera 5F Down Stairs
   {7907,99,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera 5F Normal Holes
   {7928,99,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera 5F Orange Path
   {7948,99,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera 5F Pothole Chain
   {7970,99,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera 5F Star Hole
-  {7988,99,65535,0x0,0x17,1,4,0,0,255,0xff,0xff,0x0,1,-100,106,3}, // Hera 5F Up Stairs
+  {7988,99,335,0x200,0x17,1,4,0,0,255,0xff,0xff,0x0,1,-100,106,3}, // Hera 5F Up Stairs
   {8006,102,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Back Ranged Crystal Exit
   {8036,101,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Back to Front Barrier - Orange
   {8072,101,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Back to Ranged Crystal
   {8100,104,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Basement Cage Crystal Exit
-  {8132,103,65535,0x0,0x87,1,4,3,2,255,0xff,0xff,0x0,2,124,66,3}, // Hera Basement Cage Up Stairs
+  {8132,103,350,0x200,0x87,1,4,3,2,255,0xff,0xff,0x0,2,124,66,3}, // Hera Basement Cage Up Stairs
   {8161,103,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Basement Cage to Crystal
-  {8191,105,65535,0xc00,0x31,1,5,2,2,255,0xff,0xff,0x0,3,112,58,3}, // Hera Beetles Down Stairs
+  {8191,105,353,0xe00,0x31,1,5,2,2,255,0xff,0xff,0x0,3,112,58,3}, // Hera Beetles Down Stairs
   {8216,105,65535,0xc00,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Beetles Holes Front
   {8241,105,65535,0xc00,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Beetles Holes Landing
   {8268,105,356,0xc00,0x31,7,2,2,0,1,0x82,0x36,0x0,2,78,78,3}, // Hera Beetles WS
   {8284,98,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Big Chest Hook Path
   {8309,106,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Big Chest Landing Exit
   {8337,106,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Big Chest Landing Holes
-  {8366,107,65535,0x0,0x7,1,5,0,0,255,0xff,0xff,0x0,1,-80,97,3}, // Hera Boss Down Stairs
+  {8366,107,321,0x200,0x7,1,5,0,0,255,0xff,0xff,0x0,1,-80,97,3}, // Hera Boss Down Stairs
   {8388,107,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Boss Inner Hole
   {8409,107,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Boss Outer Hole
   {8430,109,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Down Stairs Landing Ranged Crystal Exit
@@ -354,10 +354,10 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {8727,111,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Front to Lobby Barrier - Blue
   {8762,111,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Front to Up Stairs Barrier - Orange
   {8803,114,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Lobby Crystal Exit
-  {8827,108,65535,0x0,0x77,1,5,3,1,255,0xff,0xff,0x0,2,-112,33,3}, // Hera Lobby Down Stairs
-  {8850,101,65535,0x10,0x77,1,5,1,1,1,0x30,0x26,0x0,0,-128,18,3}, // Hera Lobby Key Stairs
+  {8827,108,326,0x200,0x77,1,5,3,1,255,0xff,0xff,0x0,2,-112,33,3}, // Hera Lobby Down Stairs
+  {8850,101,366,0x210,0x77,1,5,1,1,1,0x30,0x26,0x0,0,-128,18,3}, // Hera Lobby Key Stairs
   {8872,113,65535,0x100,0x77,0,1,1,1,0,0xa1,0xc,0x0,2,78,78,3}, // Hera Lobby S
-  {8885,123,65535,0x0,0x77,1,4,2,1,255,0xff,0xff,0x0,3,92,43,3}, // Hera Lobby Up Stairs
+  {8885,123,328,0x200,0x77,1,4,2,1,255,0xff,0xff,0x0,3,92,43,3}, // Hera Lobby Up Stairs
   {8906,113,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Lobby to Crystal
   {8928,113,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Lobby to Front Barrier - Blue
   {8963,116,331,0x0,0x31,7,3,2,0,1,0x82,0x36,0x0,2,78,78,3}, // Hera Startile Corner ES
@@ -367,10 +367,10 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {9079,118,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Startile Wide Crystal Exit
   {9111,117,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Startile Wide Holes
   {9136,117,359,0x0,0x31,7,1,0,0,0,0x60,0x1e,0x0,2,78,78,3}, // Hera Startile Wide SW
-  {9158,117,65535,0x0,0x31,1,4,0,0,255,0xff,0xff,0x0,1,-84,107,3}, // Hera Startile Wide Up Stairs
+  {9158,117,313,0x200,0x31,1,4,0,0,255,0xff,0xff,0x0,1,-84,107,3}, // Hera Startile Wide Up Stairs
   {9187,117,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Startile Wide to Crystal
   {9217,119,370,0x400,0x87,7,3,0,0,0,0x62,0x38,0x0,2,78,78,3}, // Hera Tile Room EN
-  {9235,119,65535,0xc00,0x87,1,4,1,2,255,0xff,0xff,0x0,0,108,50,3}, // Hera Tile Room Up Stairs
+  {9235,119,351,0xe00,0x87,1,4,1,2,255,0xff,0xff,0x0,0,108,50,3}, // Hera Tile Room Up Stairs
   {9260,120,369,0x0,0x87,7,0,2,0,1,0x80,0x0,0x0,2,78,78,3}, // Hera Torches NE
   {9276,122,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Tridorm Crystal Exit
   {9302,121,367,0x800,0x87,7,1,2,0,1,0x80,0x0,0x0,2,78,78,3}, // Hera Tridorm SE
@@ -379,7 +379,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {9358,124,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Up Stairs Landing Ranged Crystal Exit
   {9401,123,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Up Stairs Landing to Ranged Crystal
   {9442,123,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,3}, // Hera Up Stairs to Front Barrier - Orange
-  {9483,0,65535,0x0,0x1,1,5,0,1,255,0xff,0xff,0x0,0,0,42,0}, // Hyrule Castle Back Hall Down Stairs
+  {9483,0,413,0x200,0x1,1,5,0,1,255,0xff,0xff,0x0,0,0,42,0}, // Hyrule Castle Back Hall Down Stairs
   {9519,0,380,0x1200,0x1,0,3,0,1,1,0x93,0x46,0x0,2,78,78,0}, // Hyrule Castle Back Hall E
   {9545,0,394,0x1200,0x1,0,2,0,1,0,0x32,0x46,0x0,2,78,78,0}, // Hyrule Castle Back Hall W
   {9571,2,381,0x300,0x52,0,1,1,0,2,0x71,0x0,0x0,2,78,78,0}, // Hyrule Castle East Hall S
@@ -405,19 +405,19 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {10123,9,395,0x200,0x60,0,0,2,1,0,0x50,0x40,0x0,2,78,78,0}, // Hyrule Castle West Lobby N
   {10150,9,65535,0x100,0x60,0,1,2,0,2,0x81,0x0,0x0,3,78,78,0}, // Hyrule Castle West Lobby S
   {10177,11,402,0x0,0x71,7,2,0,1,2,0xb2,0x44,0x0,2,78,78,0}, // Hyrule Dungeon Armory Boomerang WS
-  {10212,13,65535,0x0,0x71,1,5,0,1,255,0xff,0xff,0x0,0,-88,17,0}, // Hyrule Dungeon Armory Down Stairs
+  {10212,13,423,0x200,0x71,1,5,0,1,255,0xff,0xff,0x0,0,-88,17,0}, // Hyrule Dungeon Armory Down Stairs
   {10246,12,400,0x0,0x71,7,3,0,1,2,0xb2,0x44,0x0,2,78,78,0}, // Hyrule Dungeon Armory ES
   {10271,12,404,0x10,0x71,7,0,0,0,0,0x60,0x1c,0x0,2,78,78,0}, // Hyrule Dungeon Armory Interior Key Door N
   {10313,13,403,0x10,0x71,7,1,0,0,0,0x60,0x1c,0x0,2,78,78,0}, // Hyrule Dungeon Armory Interior Key Door S
   {10355,12,411,0x300,0x71,0,1,0,1,1,0x91,0x44,0x2,2,78,78,0}, // Hyrule Dungeon Armory S
   {10379,14,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,0}, // Hyrule Dungeon Cell Exit
   {10404,15,65535,0x20,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,0}, // Hyrule Dungeon Cellblock Door
-  {10434,15,65535,0x0,0x80,1,4,0,0,255,0xff,0xff,0x0,0,68,26,0}, // Hyrule Dungeon Cellblock Up Stairs
+  {10434,15,422,0x200,0x80,1,4,0,0,255,0xff,0xff,0x0,0,68,26,0}, // Hyrule Dungeon Cellblock Up Stairs
   {10469,16,421,0x0,0x81,4,3,0,1,255,0xff,0xff,0x0,3,78,78,0}, // Hyrule Dungeon Guardroom Abyss Edge
   {10505,16,419,0x0,0x81,4,3,0,0,255,0xff,0xff,0x0,1,78,78,0}, // Hyrule Dungeon Guardroom Catwalk Edge
   {10543,16,405,0x200,0x81,0,0,0,1,0,0x30,0x40,0x0,2,78,78,0}, // Hyrule Dungeon Guardroom N
   {10570,17,416,0x10,0x72,7,1,1,0,0,0x70,0x1c,0x0,2,78,78,0}, // Hyrule Dungeon Map Room Key Door S
-  {10605,17,65535,0x0,0x72,1,4,0,2,255,0xff,0xff,0x0,0,-20,75,0}, // Hyrule Dungeon Map Room Up Stairs
+  {10605,17,375,0x200,0x72,1,4,0,2,255,0xff,0xff,0x0,0,-20,75,0}, // Hyrule Dungeon Map Room Up Stairs
   {10639,19,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,0}, // Hyrule Dungeon North Abyss Catwalk Dropdown
   {10683,19,418,0x0,0x72,4,1,0,0,255,0xff,0xff,0x0,2,78,78,0}, // Hyrule Dungeon North Abyss Catwalk Edge
   {10723,18,412,0x10,0x72,7,0,1,0,0,0x70,0x1c,0x0,2,78,78,0}, // Hyrule Dungeon North Abyss Key Door N
@@ -426,13 +426,13 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {10845,21,410,0x0,0x82,4,2,0,0,255,0xff,0xff,0x0,0,78,78,0}, // Hyrule Dungeon South Abyss Catwalk West Edge
   {10890,20,417,0x0,0x82,4,0,0,1,255,0xff,0xff,0x0,0,78,78,0}, // Hyrule Dungeon South Abyss North Edge
   {10928,20,409,0x0,0x82,4,2,0,1,255,0xff,0xff,0x0,2,78,78,0}, // Hyrule Dungeon South Abyss West Edge
-  {10965,22,65535,0x0,0x70,1,5,1,0,255,0xff,0xff,0x0,0,88,17,0}, // Hyrule Dungeon Staircase Down Stairs
-  {11002,22,65535,0x0,0x70,1,4,2,2,255,0xff,0xff,0x0,0,-108,50,0}, // Hyrule Dungeon Staircase Up Stairs
+  {10965,22,408,0x200,0x70,1,5,1,0,255,0xff,0xff,0x0,0,88,17,0}, // Hyrule Dungeon Staircase Down Stairs
+  {11002,22,401,0x200,0x70,1,4,2,2,255,0xff,0xff,0x0,0,-108,50,0}, // Hyrule Dungeon Staircase Up Stairs
   {11037,313,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Antechamber Hole
   {11058,313,519,0x200,0xce,0,0,2,0,0,0x20,0x18,0x4,2,78,78,9}, // Ice Antechamber NE
   {11077,314,518,0x0,0xbe,7,1,2,0,2,0x80,0x0,0x0,2,78,78,9}, // Ice Anti-Fairy SE
-  {11095,314,65535,0x0,0xbe,1,4,0,0,255,0xff,0xff,0x0,1,108,26,9}, // Ice Anti-Fairy Up Stairs
-  {11120,315,65535,0x10,0x9e,1,5,0,0,0,0x20,0x22,0x0,1,-128,17,9}, // Ice Backwards Room Down Stairs
+  {11095,314,428,0x200,0xbe,1,4,0,0,255,0xff,0xff,0x0,1,108,26,9}, // Ice Anti-Fairy Up Stairs
+  {11120,315,427,0x210,0x9e,1,5,0,0,0,0x20,0x22,0x0,1,-128,17,9}, // Ice Backwards Room Down Stairs
   {11151,315,65535,0x400,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Backwards Room Hole
   {11175,315,467,0x0,0x9e,7,1,2,0,1,0x80,0x1e,0x0,2,78,78,9}, // Ice Backwards Room SE
   {11197,316,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Big Chest Landing Push Blocks
@@ -480,33 +480,33 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {12196,338,481,0x0,0x5e,3,1,5,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Firebar Down Ladder
   {12220,338,510,0x0,0x5e,7,3,2,0,3,0x82,0x0,0x0,2,78,78,9}, // Ice Firebar ES
   {12235,339,453,0x0,0x1e,7,3,2,0,1,0x82,0x18,0x0,2,78,78,9}, // Ice Floor Switch ES
-  {12255,339,65535,0x0,0x1e,1,4,0,0,255,0xff,0xff,0x0,2,108,26,9}, // Ice Floor Switch Up Stairs
+  {12255,339,489,0x200,0x1e,1,4,0,0,255,0xff,0xff,0x0,2,108,26,9}, // Ice Floor Switch Up Stairs
   {12282,340,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Freezors Bomb Hole
   {12305,340,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Freezors Hole
   {12323,341,522,0x0,0x7e,7,3,2,0,1,0x82,0x36,0x0,2,78,78,9}, // Ice Freezors Ledge ES
   {12345,341,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Freezors Ledge Hole
   {12369,340,473,0x0,0x7e,3,0,4,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Freezors Up Ladder
-  {12392,355,65535,0x0,0x3f,1,5,0,0,255,0xff,0xff,0x0,2,-72,17,9}, // Ice Hammer Block Down Stairs
+  {12392,355,512,0x200,0x3f,1,5,0,0,255,0xff,0xff,0x0,2,-72,17,9}, // Ice Hammer Block Down Stairs
   {12421,355,524,0x0,0x3f,7,3,2,0,0,0x82,0x18,0x0,2,78,78,9}, // Ice Hammer Block ES
   {12441,342,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Hammer Block Path
   {12463,343,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Hookshot Balcony Path
   {12489,343,514,0x0,0x7f,7,1,0,0,1,0x60,0x0,0x0,2,78,78,9}, // Ice Hookshot Balcony SW
   {12513,344,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Hookshot Ledge Path
   {12537,344,520,0x206,0x7f,0,2,0,0,0,0x2,0x18,0x4,2,78,78,9}, // Ice Hookshot Ledge WN
-  {12559,345,65535,0x10,0xe,1,5,0,0,0,0x60,0x22,0x0,2,-128,17,9}, // Ice Jelly Key Down Stairs
+  {12559,345,476,0x210,0xe,1,5,0,0,0,0x60,0x22,0x0,2,-128,17,9}, // Ice Jelly Key Down Stairs
   {12585,345,492,0x0,0xe,7,3,2,0,1,0x82,0x18,0x0,2,78,78,9}, // Ice Jelly Key ES
   {12602,346,65535,0x100,0xe,0,1,2,0,2,0x81,0xa,0x0,3,78,78,9}, // Ice Lobby SE
   {12615,346,490,0x0,0xe,7,2,2,0,1,0x82,0x18,0x0,2,78,78,9}, // Ice Lobby WS
-  {12628,347,65535,0x0,0x8e,1,5,0,0,255,0xff,0xff,0x0,1,80,17,9}, // Ice Lonely Freezor Down Stairs
+  {12628,347,526,0x200,0x8e,1,5,0,0,255,0xff,0xff,0x0,1,80,17,9}, // Ice Lonely Freezor Down Stairs
   {12659,347,521,0x210,0x8e,0,0,2,0,0,0x20,0x1c,0x0,2,78,78,9}, // Ice Lonely Freezor NE
   {12681,348,442,0x300,0x9f,0,1,0,0,1,0x61,0x18,0x2,2,78,78,9}, // Ice Many Pots SW
   {12698,348,466,0x200,0x9f,0,2,2,0,0,0x22,0x18,0x4,2,78,78,9}, // Ice Many Pots WS
-  {12715,349,65535,0x0,0x4e,1,5,0,0,255,0xff,0xff,0x0,1,-64,82,9}, // Ice Narrow Corridor Down Stairs
+  {12715,349,502,0x200,0x4e,1,5,0,0,255,0xff,0xff,0x0,1,-64,82,9}, // Ice Narrow Corridor Down Stairs
   {12747,349,439,0x0,0x4e,7,2,0,0,0,0x62,0x18,0x0,2,78,78,9}, // Ice Narrow Corridor WN
   {12770,350,469,0x0,0x1f,7,3,2,0,1,0x82,0x38,0x0,2,78,78,9}, // Ice Pengator Switch ES
   {12793,350,454,0x200,0x1f,0,2,2,0,0,0x22,0x18,0x4,2,78,78,9}, // Ice Pengator Switch WS
   {12816,351,509,0x200,0x6e,0,0,2,0,0,0x20,0x18,0x4,2,78,78,9}, // Ice Pengator Trap NE
-  {12837,351,65535,0x0,0x6e,1,4,0,0,255,0xff,0xff,0x0,1,-84,90,9}, // Ice Pengator Trap Up Stairs
+  {12837,351,497,0x200,0x6e,1,4,0,0,255,0xff,0xff,0x0,1,-84,90,9}, // Ice Pengator Trap Up Stairs
   {12865,354,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Refill Crystal Exit
   {12889,353,517,0x210,0xbf,0,2,2,0,0,0x22,0x1c,0x0,2,78,78,9}, // Ice Refill WS
   {12903,353,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Refill to Crystal
@@ -515,11 +515,11 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {12961,356,472,0x0,0x5e,7,0,2,0,1,0x80,0x38,0x0,2,78,78,9}, // Ice Spike Cross NE
   {12980,356,501,0x300,0x5e,0,1,2,0,2,0x81,0x0,0x0,3,78,78,9}, // Ice Spike Cross SE
   {12999,356,474,0x0,0x5e,7,2,2,0,3,0x82,0x0,0x0,2,78,78,9}, // Ice Spike Cross WS
-  {13018,357,65535,0x0,0x5f,1,5,3,0,255,0xff,0xff,0x0,2,72,17,9}, // Ice Spike Room Down Stairs
-  {13045,357,65535,0x0,0x5f,1,4,4,0,255,0xff,0xff,0x0,2,-92,26,9}, // Ice Spike Room Up Stairs
+  {13018,357,515,0x200,0x5f,1,5,3,0,255,0xff,0xff,0x0,2,72,17,9}, // Ice Spike Room Down Stairs
+  {13045,357,482,0x200,0x5f,1,4,4,0,255,0xff,0xff,0x0,2,-92,26,9}, // Ice Spike Room Up Stairs
   {13070,357,507,0x210,0x5f,0,2,2,0,0,0x22,0x1c,0x0,2,78,78,9}, // Ice Spike Room WS
   {13088,358,486,0x0,0x7f,7,0,0,0,1,0x60,0x0,0x0,2,78,78,9}, // Ice Spikeball NW
-  {13105,358,65535,0x0,0x7f,1,4,0,0,255,0xff,0xff,0x0,2,52,26,9}, // Ice Spikeball Up Stairs
+  {13105,358,511,0x200,0x7f,1,4,0,0,255,0xff,0xff,0x0,2,52,26,9}, // Ice Spikeball Up Stairs
   {13129,359,446,0x0,0x3e,7,1,2,0,0,0x80,0x18,0x0,2,78,78,9}, // Ice Stalfos Hint SE
   {13149,360,504,0x210,0xbe,0,3,2,0,1,0x83,0x1c,0x0,2,78,78,9}, // Ice Switch Room ES
   {13168,360,426,0x0,0xbe,7,0,2,0,2,0x80,0x0,0x0,2,78,78,9}, // Ice Switch Room NE
@@ -530,9 +530,9 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {13257,362,433,0x0,0x3f,3,0,2,0,255,0xff,0xff,0x0,2,78,78,9}, // Ice Tongue Pull Up Ladder
   {13283,362,483,0x0,0x3f,7,2,2,0,0,0x82,0x18,0x0,2,78,78,9}, // Ice Tongue Pull WS
   {13302,363,443,0x200,0xae,0,3,0,0,0,0x63,0x0,0x0,2,78,78,9}, // Iced T EN
-  {13312,363,65535,0x0,0xae,1,4,0,0,255,0xff,0xff,0x0,1,60,26,9}, // Iced T Up Stairs
+  {13312,363,493,0x200,0xae,1,4,0,0,255,0xff,0xff,0x0,1,60,26,9}, // Iced T Up Stairs
   {13329,364,598,0x200,0xd2,0,0,2,0,0,0x20,0x18,0x4,2,78,78,10}, // Mire 2 NE
-  {13339,364,65535,0x0,0xd2,1,4,0,0,255,0xff,0xff,0x0,3,124,26,10}, // Mire 2 Up Stairs
+  {13339,364,630,0x200,0xd2,1,4,0,0,255,0xff,0xff,0x0,3,124,26,10}, // Mire 2 Up Stairs
   {13356,365,540,0x220,0xa0,0,0,0,0,0,0x0,0x1e,0x0,2,78,78,10}, // Mire Antechamber NW
   {13376,365,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Antechamber Orange Barrier
   {13408,366,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Attic Hint Hole
@@ -551,7 +551,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {13665,374,661,0x0,0xc1,7,3,0,0,2,0x62,0x36,0x0,2,78,78,10}, // Mire Compass Room EN
   {13686,374,649,0x0,0xc1,7,1,0,0,3,0x60,0x36,0x0,2,78,78,10}, // Mire Compass Room SW
   {13707,376,650,0x200,0xd1,0,0,0,0,1,0x0,0x0,0x0,2,78,78,10}, // Mire Conveyor Barrier NW
-  {13732,376,65535,0x0,0xd1,1,4,0,0,255,0xff,0xff,0x0,0,-100,26,10}, // Mire Conveyor Barrier Up Stairs
+  {13732,376,654,0x200,0xd1,1,4,0,0,255,0xff,0xff,0x0,0,-100,26,10}, // Mire Conveyor Barrier Up Stairs
   {13764,377,605,0x210,0xc1,0,3,2,0,1,0x83,0x1c,0x0,2,78,78,10}, // Mire Conveyor Crystal ES
   {13789,375,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Conveyor Crystal Exit
   {13816,377,626,0x300,0xc1,0,1,2,0,7,0x81,0x0,0x0,3,78,78,10}, // Mire Conveyor Crystal SE
@@ -572,7 +572,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {14205,383,561,0xc00,0x92,7,1,0,0,1,0x60,0x2e,0x0,2,78,78,10}, // Mire Crystal Top SW
   {14225,384,606,0x10,0x93,7,1,2,0,1,0x80,0x1c,0x0,2,78,78,10}, // Mire Dark Shooters SE
   {14247,384,538,0x0,0x93,7,1,0,0,0,0x60,0x38,0x0,2,78,78,10}, // Mire Dark Shooters SW
-  {14269,384,65535,0x0,0x93,1,4,0,2,255,0xff,0xff,0x0,0,-20,50,10}, // Mire Dark Shooters Up Stairs
+  {14269,384,610,0x200,0x93,1,4,0,2,255,0xff,0xff,0x0,0,-20,50,10}, // Mire Dark Shooters Up Stairs
   {14298,385,575,0x6,0xc3,7,3,1,0,2,0x72,0x38,0x1,2,78,78,10}, // Mire Failure Bridge E
   {14320,385,592,0x200,0xc3,0,2,1,0,5,0x12,0x0,0x0,2,78,78,10}, // Mire Failure Bridge W
   {14342,388,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Falling Bridge Failure Path
@@ -583,8 +583,8 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {14495,386,621,0x0,0xc3,7,2,0,0,1,0x62,0x38,0x0,2,78,78,10}, // Mire Falling Bridge WN
   {14518,388,615,0x6,0xc3,7,2,2,0,3,0x82,0x36,0x8,2,78,78,10}, // Mire Falling Bridge WS
   {14541,389,559,0xe00,0x91,0,3,2,0,0,0x83,0x0,0x0,2,78,78,10}, // Mire Falling Foes ES
-  {14562,389,65535,0xc00,0x91,1,4,0,0,255,0xff,0xff,0x0,1,108,-101,10}, // Mire Falling Foes Up Stairs
-  {14590,390,65535,0x0,0xa0,1,5,0,0,255,0xff,0xff,0x0,1,-128,-110,10}, // Mire Firesnake Skip Down Stairs
+  {14562,389,580,0xe00,0x91,1,4,0,0,255,0xff,0xff,0x0,1,108,-101,10}, // Mire Falling Foes Up Stairs
+  {14590,390,579,0x200,0xa0,1,5,0,0,255,0xff,0xff,0x0,1,-128,-110,10}, // Mire Firesnake Skip Down Stairs
   {14622,390,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Firesnake Skip Orange Barrier
   {14657,391,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Fishbone Blue Barrier
   {14684,391,65535,0x806,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Fishbone Blue Barrier Bypass
@@ -614,7 +614,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {15211,399,536,0x200,0xb3,0,0,0,0,2,0x0,0x0,0x0,2,78,78,10}, // Mire Ledgehop NW
   {15228,399,638,0x10,0xb3,7,1,0,0,0,0x60,0x1c,0x0,2,78,78,10}, // Mire Ledgehop SW
   {15245,399,534,0x200,0xb3,0,2,0,1,1,0x32,0x40,0x0,2,78,78,10}, // Mire Ledgehop WN
-  {15262,400,65535,0x0,0xa2,1,5,0,1,255,0xff,0xff,0x0,0,0,18,10}, // Mire Left Bridge Down Stairs
+  {15262,400,568,0x200,0xa2,1,5,0,1,255,0xff,0xff,0x0,0,0,18,10}, // Mire Left Bridge Down Stairs
   {15291,400,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Left Bridge Hook Path
   {15318,400,535,0x310,0xa2,0,1,1,0,0,0x71,0x1c,0x0,2,78,78,10}, // Mire Left Bridge S
   {15337,401,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Lobby Gap
@@ -634,7 +634,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {15636,407,541,0x0,0xd1,7,1,2,0,3,0x80,0x0,0x0,2,78,78,10}, // Mire Neglected Room SE
   {15659,408,537,0x200,0xa2,0,3,1,0,2,0x73,0x0,0x0,2,78,78,10}, // Mire Over Bridge E
   {15678,408,584,0x200,0xa2,0,2,1,0,1,0x12,0x0,0x0,2,78,78,10}, // Mire Over Bridge W
-  {15697,410,65535,0x0,0x98,1,5,0,0,255,0xff,0xff,0x0,3,-112,17,10}, // Mire Post-Gap Down Stairs
+  {15697,410,528,0x200,0x98,1,5,0,0,255,0xff,0xff,0x0,3,-112,17,10}, // Mire Post-Gap Down Stairs
   {15723,410,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Post-Gap Gap
   {15741,411,624,0x380,0xa2,0,1,2,0,3,0x81,0x0,0x0,3,78,78,10}, // Mire Right Bridge SE
   {15762,412,645,0x0,0x92,7,3,0,0,0,0x62,0x2e,0x0,2,78,78,10}, // Mire Shooter Rupees EN
@@ -658,7 +658,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {16191,420,532,0x0,0x97,7,3,2,0,0,0x82,0x0,0x0,2,78,78,10}, // Mire Torches Bottom ES
   {16214,420,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Torches Bottom Holes
   {16240,420,656,0x0,0x97,7,0,0,0,1,0x60,0x0,0x0,2,78,78,10}, // Mire Torches Bottom NW
-  {16263,421,65535,0x0,0x97,1,5,0,0,255,0xff,0xff,0x0,0,-80,17,10}, // Mire Torches Top Down Stairs
+  {16263,421,547,0x200,0x97,1,5,0,0,255,0xff,0xff,0x0,0,-80,17,10}, // Mire Torches Top Down Stairs
   {16292,421,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,10}, // Mire Torches Top Holes
   {16315,421,653,0x0,0x97,7,1,0,0,1,0x60,0x0,0x0,2,78,78,10}, // Mire Torches Top SW
   {16335,422,533,0x6,0xd1,7,3,2,0,0,0x82,0x38,0x4,2,78,78,10}, // Mire Warping Pool ES
@@ -692,9 +692,9 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {17168,153,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Arena Right to Landing Barrier - Blue
   {17210,153,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Arena Right to Ranged Crystal
   {17244,155,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Basement Ledge Drop Down
-  {17273,155,65535,0x10,0xa,1,4,0,0,0,0x10,0x20,0x0,0,-20,26,5}, // PoD Basement Ledge Up Stairs
+  {17273,155,690,0x210,0xa,1,4,0,0,0,0x10,0x20,0x0,0,-20,26,5}, // PoD Basement Ledge Up Stairs
   {17302,156,713,0x200,0x1a,0,2,1,0,2,0x12,0x2e,0x0,2,78,78,5}, // PoD Big Chest Balcony W
-  {17326,157,65535,0x0,0x3a,1,5,0,0,255,0xff,0xff,0x0,0,0,17,5}, // PoD Big Key Landing Down Stairs
+  {17326,157,688,0x200,0x3a,1,5,0,0,255,0xff,0xff,0x0,0,0,17,5}, // PoD Big Key Landing Down Stairs
   {17358,157,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Big Key Landing Hole
   {17383,158,65535,0x206,0x5a,0,1,2,0,0,0x81,0x18,0x4,2,78,78,5}, // PoD Boss SE
   {17395,161,729,0x8,0x1b,3,1,1,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Bow Statue Down Ladder
@@ -708,15 +708,15 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {17688,159,763,0x0,0x1b,7,1,0,0,0,0x60,0x36,0x0,2,78,78,5}, // PoD Bow Statue SW
   {17706,163,776,0x0,0xb,7,2,1,0,1,0x82,0x38,0x0,2,78,78,5}, // PoD Callback WS
   {17722,163,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Callback Warp
-  {17740,164,65535,0x0,0x1a,1,5,1,0,255,0xff,0xff,0x0,1,-80,17,5}, // PoD Compass Room E Down Stairs
+  {17740,164,711,0x200,0x1a,1,5,1,0,255,0xff,0xff,0x0,1,-80,17,5}, // PoD Compass Room E Down Stairs
   {17771,164,739,0x10,0x1a,7,1,1,0,0,0x80,0x1c,0x0,2,78,78,5}, // PoD Compass Room SE
-  {17791,164,65535,0x0,0x1a,1,5,0,0,255,0xff,0xff,0x0,1,80,18,5}, // PoD Compass Room W Down Stairs
+  {17791,164,712,0x200,0x1a,1,5,0,0,255,0xff,0xff,0x0,1,80,18,5}, // PoD Compass Room W Down Stairs
   {17822,164,732,0x0,0x1a,7,2,0,0,4,0x62,0x0,0x0,2,78,78,5}, // PoD Compass Room WN
   {17842,165,754,0x0,0x3b,2,0,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Conveyor North Stairs
   {17868,165,761,0x300,0x3b,0,1,0,0,0,0x61,0x0,0x0,2,78,78,5}, // PoD Conveyor SW
   {17884,166,692,0x220,0x6a,0,0,2,0,0,0x20,0x1e,0x0,2,78,78,5}, // PoD Dark Alley NE
-  {17902,167,65535,0x0,0x6a,1,4,1,0,255,0xff,0xff,0x0,1,-100,27,5}, // PoD Dark Basement E Up Stairs
-  {17932,167,65535,0x0,0x6a,1,4,0,0,255,0xff,0xff,0x0,1,60,27,5}, // PoD Dark Basement W Up Stairs
+  {17902,167,704,0x200,0x6a,1,4,1,0,255,0xff,0xff,0x0,1,-100,27,5}, // PoD Dark Basement E Up Stairs
+  {17932,167,706,0x200,0x6a,1,4,0,0,255,0xff,0xff,0x0,1,60,27,5}, // PoD Dark Basement W Up Stairs
   {17962,168,689,0x200,0x19,0,3,1,0,0,0x73,0x2e,0x0,2,78,78,5}, // PoD Dark Maze E
   {17978,168,738,0x210,0x19,0,3,0,0,1,0x63,0x1c,0x0,2,78,78,5}, // PoD Dark Maze EN
   {17995,170,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Dark Pegs Landing Ranged Crystal Exit
@@ -747,7 +747,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {18811,180,674,0x300,0x1a,0,1,2,0,5,0x81,0x0,0x0,3,78,78,5}, // PoD Harmless Hellway SE
   {18835,181,778,0x0,0x4b,7,0,2,0,2,0x80,0x28,0x0,2,78,78,5}, // PoD Jelly Hall NE
   {18853,181,762,0x0,0x4b,7,0,0,0,1,0x60,0x28,0x0,2,78,78,5}, // PoD Jelly Hall NW
-  {18871,182,65535,0x0,0x4a,1,5,1,0,255,0xff,0xff,0x0,0,-128,18,5}, // PoD Left Cage Down Stairs
+  {18871,182,774,0x200,0x4a,1,5,1,0,255,0xff,0xff,0x0,0,-128,18,5}, // PoD Left Cage Down Stairs
   {18897,182,747,0x0,0x4a,7,1,0,0,0,0x60,0x18,0x0,2,78,78,5}, // PoD Left Cage SW
   {18914,183,759,0x0,0x4a,7,0,1,0,3,0x70,0x0,0x0,2,78,78,5}, // PoD Lobby N
   {18926,183,760,0x0,0x4a,7,0,2,0,1,0x80,0x18,0x0,2,78,78,5}, // PoD Lobby NE
@@ -761,7 +761,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {19087,185,708,0x0,0x2b,2,1,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Map Balcony South Stairs
   {19116,185,671,0x200,0x2b,0,2,2,0,1,0x22,0x2e,0x0,2,78,78,5}, // PoD Map Balcony WS
   {19135,185,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Map Balcony to Ranged Crystal
-  {19169,187,65535,0x0,0x4a,1,5,0,0,255,0xff,0xff,0x0,1,-128,18,5}, // PoD Middle Cage Down Stairs
+  {19169,187,780,0x200,0x4a,1,5,0,0,255,0xff,0xff,0x0,1,-128,18,5}, // PoD Middle Cage Down Stairs
   {19197,187,771,0x210,0x4a,0,0,1,0,2,0x10,0x1c,0x0,2,78,78,5}, // PoD Middle Cage N
   {19215,187,745,0x0,0x4a,7,1,1,0,3,0x70,0x0,0x0,2,78,78,5}, // PoD Middle Cage S
   {19233,187,746,0x0,0x4a,7,1,2,0,1,0x80,0x18,0x0,2,78,78,5}, // PoD Middle Cage SE
@@ -778,18 +778,18 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {19445,190,758,0x310,0x3a,0,1,1,0,0,0x71,0x1c,0x0,2,78,78,5}, // PoD Pit Room S
   {19460,192,764,0xe00,0x2b,0,0,0,0,2,0x0,0x18,0x1,2,78,78,5}, // PoD Sexy Statue NW
   {19479,192,666,0xe00,0x2b,0,2,1,0,3,0x42,0x2,0x0,2,78,78,5}, // PoD Sexy Statue W
-  {19497,193,65535,0x0,0x9,1,4,1,0,255,0xff,0xff,0x0,0,108,27,5}, // PoD Shooter Room Up Stairs
+  {19497,193,743,0x200,0x9,1,4,1,0,255,0xff,0xff,0x0,0,108,27,5}, // PoD Shooter Room Up Stairs
   {19524,194,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Stalfos Basement Warp
   {19550,195,702,0x0,0xb,7,3,1,0,1,0x82,0x38,0x0,2,78,78,5}, // PoD Turtle Party ES
   {19570,195,750,0x0,0xb,7,0,1,0,0,0x60,0x36,0x0,2,78,78,5}, // PoD Turtle Party NW
   {19590,196,741,0x0,0x4b,7,1,2,0,2,0x80,0x28,0x0,2,78,78,5}, // PoD Warp Hint SE
   {19607,196,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Warp Hint Warp
-  {19626,197,65535,0x0,0x9,1,4,0,0,255,0xff,0xff,0x0,1,108,26,5}, // PoD Warp Room Up Stairs
+  {19626,197,757,0x200,0x9,1,4,0,0,255,0xff,0xff,0x0,1,108,26,5}, // PoD Warp Room Up Stairs
   {19650,197,65535,0x0,0xff,6,255,0,0,255,0xff,0xff,0x0,2,78,78,5}, // PoD Warp Room Warp
   {19669,23,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,0}, // Sanctuary Mirror Route
   {19692,23,65535,0x207,0x12,0,0,1,0,0,0x40,0x2,0x0,2,78,78,0}, // Sanctuary N
   {19704,23,65535,0x180,0x12,0,1,1,0,2,0xa1,0x2,0x0,2,78,78,0}, // Sanctuary S
-  {19716,25,65535,0x0,0x41,1,5,0,0,255,0xff,0xff,0x0,1,-80,18,0}, // Sewers Behind Tapestry Down Stairs
+  {19716,25,799,0x200,0x41,1,5,0,0,255,0xff,0xff,0x0,1,-80,18,0}, // Sewers Behind Tapestry Down Stairs
   {19751,25,391,0x306,0x41,0,1,1,0,0,0x71,0x18,0x4,2,78,78,0}, // Sewers Behind Tapestry S
   {19776,26,806,0x200,0x21,0,3,2,0,2,0x83,0x0,0x0,2,78,78,0}, // Sewers Dark Aquabats ES
   {19800,26,792,0x0,0x21,7,0,1,0,1,0x70,0x0,0x0,2,78,78,0}, // Sewers Dark Aquabats N
@@ -797,18 +797,18 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {19852,27,798,0x0,0x32,2,1,1,0,255,0xff,0xff,0x0,2,78,78,0}, // Sewers Dark Cross South Stairs
   {19883,28,802,0x210,0x21,0,0,2,0,0,0x20,0x1c,0x0,2,78,78,0}, // Sewers Key Rat NE
   {19901,28,788,0x0,0x21,7,1,1,0,1,0x70,0x0,0x0,2,78,78,0}, // Sewers Key Rat S
-  {19918,35,65535,0x0,0x2,1,5,0,1,255,0xff,0xff,0x0,1,-128,18,0}, // Sewers Pull Switch Down Stairs
+  {19918,35,804,0x200,0x2,1,5,0,1,255,0xff,0xff,0x0,1,-128,18,0}, // Sewers Pull Switch Down Stairs
   {19949,29,807,0x0,0x2,7,0,1,1,1,0xa0,0x40,0x0,2,78,78,0}, // Sewers Pull Switch N
   {19970,29,783,0x301,0x2,0,1,1,1,0,0xa1,0x44,0x4,2,78,78,0}, // Sewers Pull Switch S
   {19991,30,800,0x0,0x11,7,2,0,0,0,0x62,0x28,0x0,2,78,78,0}, // Sewers Rat Path WN
   {20010,30,801,0x0,0x11,7,2,2,0,1,0x82,0x28,0x0,2,78,78,0}, // Sewers Rat Path WS
   {20029,31,790,0x0,0x42,2,0,1,0,255,0xff,0xff,0x0,2,78,78,0}, // Sewers Rope Room North Stairs
-  {20059,31,65535,0x0,0x42,1,4,0,0,255,0xff,0xff,0x0,1,-100,27,0}, // Sewers Rope Room Up Stairs
+  {20059,31,785,0x200,0x42,1,4,0,0,255,0xff,0xff,0x0,1,-100,27,0}, // Sewers Rope Room Up Stairs
   {20086,32,796,0x0,0x11,7,3,0,0,0,0x62,0x28,0x0,2,78,78,0}, // Sewers Secret Room EN
   {20108,32,797,0x0,0x11,7,3,2,0,1,0x82,0x28,0x0,2,78,78,0}, // Sewers Secret Room ES
   {20130,30,791,0x310,0x11,0,1,2,0,2,0x81,0x1c,0x0,3,78,78,0}, // Sewers Secret Room Key Door S
   {20160,30,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,0}, // Sewers Secret Room Push Block
-  {20190,33,65535,0x0,0x11,1,4,0,2,255,0xff,0xff,0x0,1,108,51,0}, // Sewers Secret Room Up Stairs
+  {20190,33,793,0x200,0x11,1,4,0,2,255,0xff,0xff,0x0,1,108,51,0}, // Sewers Secret Room Up Stairs
   {20219,34,789,0x310,0x22,0,1,1,0,0,0x71,0x1c,0x0,2,78,78,0}, // Sewers Water S
   {20234,34,787,0x200,0x22,0,2,2,0,1,0x22,0x0,0x0,2,78,78,0}, // Sewers Water W
   {20249,35,794,0x0,0x2,7,1,1,1,1,0xa0,0x40,0x0,2,78,78,0}, // Sewers Yet More Rats S
@@ -862,7 +862,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {21223,276,849,0x200,0x49,0,0,0,0,0,0x0,0x32,0x0,2,78,78,7}, // Skull Vines NW
   {21238,277,831,0x0,0x59,7,3,2,0,3,0xb2,0x40,0x0,2,78,78,7}, // Skull West Bridge Nook ES
   {21264,278,816,0x10,0x56,7,1,0,0,0,0x60,0x1c,0x0,2,78,78,7}, // Skull X Room SW
-  {21280,198,65535,0x0,0x54,1,5,0,0,255,0xff,0xff,0x0,2,-128,18,6}, // Swamp Attic Down Stairs
+  {21280,198,966,0x200,0x54,1,5,0,0,255,0xff,0xff,0x0,2,-128,18,6}, // Swamp Attic Down Stairs
   {21304,198,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Attic Left Pit
   {21325,198,65535,0x0,0xff,5,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Attic Right Pit
   {21347,199,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Barrier - Orange
@@ -874,10 +874,10 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {21503,201,899,0x0,0x76,7,3,2,0,1,0xb2,0x2,0x0,2,78,78,6}, // Swamp Basement Shallows ES
   {21530,201,961,0x201,0x76,0,0,0,0,2,0x30,0x2,0x0,2,78,78,6}, // Swamp Basement Shallows NW
   {21557,202,959,0x0,0x66,7,1,2,1,0,0xb0,0x8,0x0,2,78,78,6}, // Swamp Behind Waterfall SE
-  {21583,202,65535,0x0,0x66,1,4,0,0,255,0xff,0xff,0x0,1,108,26,6}, // Swamp Behind Waterfall Up Stairs
+  {21583,202,873,0x200,0x66,1,4,0,0,255,0xff,0xff,0x0,1,108,26,6}, // Swamp Behind Waterfall Up Stairs
   {21616,203,862,0x200,0x35,0,2,0,0,1,0x2,0x0,0x0,2,78,78,6}, // Swamp Big Key Ledge WN
   {21639,204,65535,0x206,0x6,0,1,0,0,0,0x61,0x18,0x4,2,78,78,6}, // Swamp Boss SW
-  {21653,205,65535,0x0,0x16,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,6}, // Swamp C Down Stairs
+  {21653,205,870,0x200,0x16,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,6}, // Swamp C Down Stairs
   {21673,205,963,0x0,0x16,7,1,2,0,2,0x80,0x0,0x0,2,78,78,6}, // Swamp C SE
   {21684,206,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Compass Donut Push Block
   {21715,206,888,0x0,0x46,7,1,0,0,1,0x90,0x2,0x0,2,78,78,6}, // Swamp Compass Donut SW
@@ -895,14 +895,14 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {22166,211,876,0x0,0x46,7,0,0,0,1,0x90,0x2,0x0,2,78,78,6}, // Swamp Donut Bottom NW
   {22188,212,908,0x200,0x46,0,0,1,0,0,0x40,0x2,0x0,2,78,78,6}, // Swamp Donut Top N
   {22206,212,887,0x0,0x46,7,1,2,0,2,0xb0,0x2,0x0,2,78,78,6}, // Swamp Donut Top SE
-  {22225,213,65535,0x0,0x76,1,4,0,0,255,0xff,0xff,0x0,1,44,27,6}, // Swamp Drain Left Up Stairs
+  {22225,213,913,0x200,0x76,1,4,0,0,255,0xff,0xff,0x0,1,44,27,6}, // Swamp Drain Left Up Stairs
   {22252,214,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Drain Right Switch
-  {22277,214,65535,0x0,0x76,1,4,1,0,255,0xff,0xff,0x0,1,-100,27,6}, // Swamp Drain Right Up Stairs
+  {22277,214,926,0x200,0x76,1,4,1,0,255,0xff,0xff,0x0,1,-100,27,6}, // Swamp Drain Right Up Stairs
   {22305,213,866,0x0,0x76,7,2,0,1,0,0x92,0x2,0x0,2,78,78,6}, // Swamp Drain WN
-  {22320,215,65535,0x10,0x28,1,5,0,0,0,0x0,0x22,0x0,0,-128,17,6}, // Swamp Entrance Down Stairs
+  {22320,215,918,0x210,0x28,1,5,0,0,0,0x0,0x22,0x0,0,-128,17,6}, // Swamp Entrance Down Stairs
   {22347,215,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Entrance Moat
   {22367,216,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Flooded Room Ladder
-  {22393,216,65535,0x0,0x76,1,4,2,0,255,0xff,0xff,0x0,3,-84,26,6}, // Swamp Flooded Room Up Stairs
+  {22393,216,921,0x200,0x76,1,4,2,0,255,0xff,0xff,0x0,3,-84,26,6}, // Swamp Flooded Room Up Stairs
   {22422,217,867,0x0,0x76,7,2,2,1,1,0xb2,0x2,0x0,2,78,78,6}, // Swamp Flooded Room WS
   {22444,217,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Flooded Spot Ladder
   {22470,218,946,0x10,0x37,7,1,0,0,2,0x60,0x1c,0x0,2,78,78,6}, // Swamp Hammer Switch SW
@@ -917,20 +917,20 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {22666,219,877,0x210,0x36,0,2,0,0,2,0x2,0x1c,0x0,2,78,78,6}, // Swamp Hub WN
   {22679,219,957,0x200,0x36,0,2,2,0,3,0x22,0x0,0x0,2,78,78,6}, // Swamp Hub WS
   {22692,223,962,0x0,0x16,7,1,1,0,0,0x70,0x2e,0x0,2,78,78,6}, // Swamp I S
-  {22702,224,65535,0x0,0x26,1,5,0,0,255,0xff,0xff,0x0,1,64,17,6}, // Swamp Left Elbow Down Stairs
+  {22702,224,891,0x200,0x26,1,5,0,0,255,0xff,0xff,0x0,1,64,17,6}, // Swamp Left Elbow Down Stairs
   {22731,224,928,0x0,0x26,7,2,0,0,3,0x62,0x0,0x0,2,78,78,6}, // Swamp Left Elbow WN
   {22751,225,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp Lobby Moat
   {22768,225,65535,0x100,0x28,0,1,1,0,1,0x71,0xa,0x0,2,78,78,6}, // Swamp Lobby S
   {22782,226,919,0x200,0x37,0,3,0,0,1,0x63,0x2e,0x0,2,78,78,6}, // Swamp Map Ledge EN
-  {22801,228,65535,0x0,0x38,1,4,0,0,255,0xff,0xff,0x0,0,108,26,6}, // Swamp Pot Row Up Stairs
+  {22801,228,895,0x200,0x38,1,4,0,0,255,0xff,0xff,0x0,0,108,26,6}, // Swamp Pot Row Up Stairs
   {22825,228,917,0x200,0x38,0,2,0,0,0,0x2,0x2e,0x0,2,78,78,6}, // Swamp Pot Row WN
   {22842,228,936,0x210,0x38,0,2,2,0,1,0x22,0x1c,0x0,2,78,78,6}, // Swamp Pot Row WS
-  {22859,229,65535,0x0,0x26,1,5,2,0,255,0xff,0xff,0x0,3,-64,18,6}, // Swamp Push Statue Down Stairs
+  {22859,229,898,0x200,0x26,1,5,2,0,255,0xff,0xff,0x0,3,-64,18,6}, // Swamp Push Statue Down Stairs
   {22889,229,927,0x0,0x26,7,0,2,0,2,0x80,0x36,0x0,2,78,78,6}, // Swamp Push Statue NE
   {22910,229,929,0x0,0x26,7,0,0,0,1,0x60,0x36,0x0,2,78,78,6}, // Swamp Push Statue NW
   {22931,229,907,0x310,0x26,0,1,1,0,0,0x71,0x1c,0x0,2,78,78,6}, // Swamp Push Statue S
   {22951,230,960,0x0,0x66,7,1,0,1,3,0x90,0x40,0x0,2,78,78,6}, // Swamp Refill SW
-  {22967,231,65535,0x0,0x26,1,5,1,0,255,0xff,0xff,0x0,1,-80,18,6}, // Swamp Right Elbow Down Stairs
+  {22967,231,893,0x200,0x26,1,5,1,0,255,0xff,0xff,0x0,1,-80,18,6}, // Swamp Right Elbow Down Stairs
   {22997,231,922,0x0,0x26,7,1,2,0,2,0x80,0x36,0x0,2,78,78,6}, // Swamp Right Elbow SE
   {23018,232,914,0x0,0x26,7,3,0,0,3,0x62,0x0,0x0,2,78,78,6}, // Swamp Shooters EN
   {23036,232,923,0x0,0x26,7,1,0,0,1,0x60,0x36,0x0,2,78,78,6}, // Swamp Shooters SW
@@ -970,7 +970,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {23905,245,874,0x0,0x16,7,0,2,0,2,0x80,0x0,0x0,2,78,78,6}, // Swamp Waterway NE
   {23923,245,933,0x10,0x16,7,0,0,0,1,0x60,0x1c,0x0,2,78,78,6}, // Swamp Waterway NW
   {23941,246,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp West Block Path Drop Down
-  {23973,246,65535,0x0,0x34,1,4,0,0,255,0xff,0xff,0x0,2,108,27,6}, // Swamp West Block Path Up Stairs
+  {23973,246,858,0x200,0x34,1,4,0,0,255,0xff,0xff,0x0,2,108,27,6}, // Swamp West Block Path Up Stairs
   {24005,247,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp West Ledge Drop Down
   {24032,247,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,6}, // Swamp West Ledge Hook Path
   {24059,248,953,0x200,0x34,0,3,2,0,1,0x83,0x0,0x0,2,78,78,6}, // Swamp West Shallows ES
@@ -984,7 +984,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {24224,429,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Chain Chomps Bottom Ranged Crystal Exit
   {24267,428,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Chain Chomps Bottom to Ranged Crystal
   {24308,428,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Chain Chomps Bottom to Top Barrier - Orange
-  {24355,430,65535,0x10,0xb6,1,5,0,0,0,0x0,0x22,0x0,0,-128,18,11}, // TR Chain Chomps Down Stairs
+  {24355,430,1060,0x210,0xb6,1,5,0,0,0,0x0,0x22,0x0,0,-128,18,11}, // TR Chain Chomps Down Stairs
   {24383,428,1062,0x10,0xb6,7,1,0,0,3,0x60,0x1c,0x0,2,78,78,11}, // TR Chain Chomps SW
   {24402,431,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Chain Chomps Top Crystal Exit
   {24435,430,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Chain Chomps Top to Bottom Barrier - Orange
@@ -1006,7 +1006,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {25041,438,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Crystaroller Bottom to Middle Barrier - Orange
   {25091,438,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Crystaroller Bottom to Ranged Crystal
   {25132,440,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Crystaroller Chest to Middle Barrier - Blue
-  {25179,443,65535,0x10,0x4,1,5,0,0,0,0x0,0x22,0x0,0,-128,18,11}, // TR Crystaroller Down Stairs
+  {25179,443,1018,0x210,0x4,1,5,0,0,0,0x0,0x22,0x0,0,-128,18,11}, // TR Crystaroller Down Stairs
   {25207,442,65535,0xc00,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Crystaroller Middle Ranged Crystal Exit
   {25250,441,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Crystaroller Middle to Bottom Barrier - Orange
   {25300,441,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Crystaroller Middle to Bottom Bypass
@@ -1022,7 +1022,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {25656,446,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Dark Ride Normal Path
   {25681,445,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Dark Ride Return Path
   {25706,447,1019,0x300,0xb5,0,1,0,0,0,0x61,0x18,0x4,2,78,78,11}, // TR Dark Ride SW
-  {25722,446,65535,0x0,0xb5,1,4,0,0,255,0xff,0xff,0x0,0,108,27,11}, // TR Dark Ride Up Stairs
+  {25722,446,1002,0x200,0xb5,1,4,0,0,255,0xff,0xff,0x0,0,108,27,11}, // TR Dark Ride Up Stairs
   {25745,448,1017,0x200,0xc5,0,0,0,0,1,0x0,0x0,0x0,2,78,78,11}, // TR Dash Bridge NW
   {25763,448,1028,0x300,0xc5,0,1,0,0,2,0x61,0x0,0x0,2,78,78,11}, // TR Dash Bridge SW
   {25781,448,986,0x210,0xc5,0,2,2,0,0,0x22,0x1c,0x0,2,78,78,11}, // TR Dash Bridge WS
@@ -1064,7 +1064,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {26381,462,65535,0x100,0xd6,0,1,2,0,1,0x81,0xa,0x0,3,78,78,11}, // TR Main Lobby SE
   {26398,463,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,11}, // TR Pipe Ledge Drop Down
   {26422,463,1050,0x206,0x15,0,2,2,0,0,0x22,0x18,0x4,2,78,78,11}, // TR Pipe Ledge WS
-  {26439,464,65535,0x0,0x15,1,4,0,0,255,0xff,0xff,0x0,0,108,27,11}, // TR Pipe Pit Up Stairs
+  {26439,464,980,0x200,0x15,1,4,0,0,255,0xff,0xff,0x0,0,108,27,11}, // TR Pipe Pit Up Stairs
   {26461,464,1045,0x200,0x15,0,2,0,0,1,0x2,0x0,0x0,2,78,78,11}, // TR Pipe Pit WN
   {26476,465,981,0x10,0xb6,7,0,0,0,3,0x60,0x1c,0x0,2,78,78,11}, // TR Pokey 1 NW
   {26490,465,1041,0x310,0xb6,0,1,0,0,2,0x61,0x1c,0x0,2,78,78,11}, // TR Pokey 1 SW
@@ -1095,7 +1095,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {27017,279,1143,0x0,0xcb,4,1,0,1,255,0xff,0xff,0x0,2,78,78,8}, // Thieves Ambush S Edge
   {27039,279,1144,0x0,0xcb,4,1,0,1,255,0xff,0xff,0x0,3,78,78,8}, // Thieves Ambush SE Edge
   {27062,280,65535,0x400,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,8}, // Thieves Attic Blue Barrier
-  {27089,280,65535,0x0,0x64,1,5,0,0,255,0xff,0xff,0x0,2,-128,17,8}, // Thieves Attic Down Stairs
+  {27089,280,1157,0x200,0x64,1,5,0,0,255,0xff,0xff,0x0,2,-128,17,8}, // Thieves Attic Down Stairs
   {27115,280,1128,0x400,0x64,7,3,2,0,0,0x82,0x38,0x0,2,78,78,8}, // Thieves Attic ES
   {27132,281,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,8}, // Thieves Attic Hint Orange Barrier
   {27166,280,65535,0x800,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,8}, // Thieves Attic Orange Barrier
@@ -1107,7 +1107,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {27325,284,1086,0x0,0xcc,4,2,0,1,255,0xff,0xff,0x0,0,78,78,8}, // Thieves BK Corner WN Edge
   {27351,284,1087,0x0,0xcc,4,2,0,1,255,0xff,0xff,0x0,2,78,78,8}, // Thieves BK Corner WS Edge
   {27377,285,65535,0x0,0xff,8,255,0,0,255,0xff,0xff,0x0,2,78,78,8}, // Thieves Basement Block Path
-  {27405,285,65535,0x0,0x45,1,4,0,0,255,0xff,0xff,0x0,0,108,26,8}, // Thieves Basement Block Up Stairs
+  {27405,285,1123,0x200,0x45,1,4,0,0,255,0xff,0xff,0x0,0,108,26,8}, // Thieves Basement Block Up Stairs
   {27438,285,1120,0x200,0x45,0,2,0,0,0,0x2,0x18,0x4,2,78,78,8}, // Thieves Basement Block WN
   {27464,286,1116,0x0,0xdb,4,3,0,1,255,0xff,0xff,0x0,3,78,78,8}, // Thieves Big Chest Nook ES Edge
   {27495,287,1122,0x10,0x44,7,3,2,0,1,0x82,0x1c,0x0,2,78,78,8}, // Thieves Big Chest Room ES
@@ -1127,7 +1127,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {27863,294,1104,0x200,0x44,0,3,0,0,2,0x63,0x0,0x0,2,78,78,8}, // Thieves Conveyor Bridge EN
   {27890,294,1148,0x200,0x44,0,3,2,0,3,0x83,0x0,0x0,2,78,78,8}, // Thieves Conveyor Bridge ES
   {27917,294,1106,0x10,0x44,7,2,2,0,1,0x82,0x1c,0x0,2,78,78,8}, // Thieves Conveyor Bridge WS
-  {27944,295,65535,0x0,0xbc,1,5,0,0,255,0xff,0xff,0x0,0,-128,17,8}, // Thieves Conveyor Maze Down Stairs
+  {27944,295,1103,0x200,0xbc,1,5,0,0,255,0xff,0xff,0x0,0,-128,17,8}, // Thieves Conveyor Maze Down Stairs
   {27978,295,1133,0x0,0xbc,7,3,0,0,2,0x62,0x18,0x0,2,78,78,8}, // Thieves Conveyor Maze EN
   {28003,295,1152,0x0,0xbc,7,1,0,0,6,0x60,0x0,0x0,2,78,78,8}, // Thieves Conveyor Maze SW
   {28028,295,1162,0x200,0xbc,0,2,0,0,4,0x2,0x0,0x0,2,78,78,8}, // Thieves Conveyor Maze WN
@@ -1161,7 +1161,7 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {28743,307,1149,0x200,0xcc,0,0,0,0,1,0x0,0x2e,0x0,2,78,78,8}, // Thieves Rail Ledge NW
   {28765,307,1085,0x200,0xcc,0,2,1,0,2,0x12,0x28,0x0,2,78,78,8}, // Thieves Rail Ledge W
   {28786,308,1140,0xf00,0xab,0,1,0,0,1,0x61,0x0,0x0,2,78,78,8}, // Thieves Spike Switch SW
-  {28810,308,65535,0xc10,0xab,1,4,0,0,0,0x60,0x20,0x0,2,108,26,8}, // Thieves Spike Switch Up Stairs
+  {28810,308,1091,0xe10,0xab,1,4,0,0,0,0x60,0x20,0x0,2,108,26,8}, // Thieves Spike Switch Up Stairs
   {28841,309,1151,0x200,0xbb,0,3,2,0,5,0x83,0x0,0x0,2,78,78,8}, // Thieves Spike Track ES
   {28864,309,1163,0x0,0xbb,7,0,2,0,3,0x80,0x0,0x0,2,78,78,8}, // Thieves Spike Track NE
   {28887,309,1138,0x0,0xbb,7,2,2,0,2,0x82,0x0,0x0,2,78,78,8}, // Thieves Spike Track WS
@@ -1178,31 +1178,31 @@ const DoorTblDoor kDoorTblDoors[kDoorTbl_DoorCount] = {
   {29119,129,1169,0x0,0x40,2,0,0,0,255,0xff,0xff,0x0,2,78,78,4}, // Tower Catwalk North Stairs
   {29146,130,1191,0x10,0xb0,7,3,2,0,2,0x82,0x1c,0x0,2,78,78,4}, // Tower Circle of Pots ES
   {29170,130,1195,0x0,0xb0,7,0,0,0,0,0x60,0x18,0x0,2,78,78,4}, // Tower Circle of Pots NW
-  {29194,131,65535,0x10,0xc0,1,4,0,0,2,0x20,0x20,0x0,1,108,27,4}, // Tower Dark Archers Up Stairs
+  {29194,131,1196,0x210,0xc0,1,4,0,0,2,0x20,0x20,0x0,1,108,27,4}, // Tower Dark Archers Up Stairs
   {29223,131,1180,0x0,0xc0,7,2,0,0,0,0x62,0x36,0x0,2,78,78,4}, // Tower Dark Archers WN
-  {29245,132,65535,0x0,0xd0,1,4,2,0,255,0xff,0xff,0x0,3,-116,27,4}, // Tower Dark Chargers Up Stairs
+  {29245,132,1182,0x200,0xd0,1,4,2,0,255,0xff,0xff,0x0,3,-116,27,4}, // Tower Dark Chargers Up Stairs
   {29275,132,1179,0x10,0xd0,7,2,2,0,0,0x82,0x1c,0x0,2,78,78,4}, // Tower Dark Chargers WS
   {29298,133,1189,0x0,0xd0,7,3,0,0,1,0x62,0x38,0x0,2,78,78,4}, // Tower Dark Maze EN
   {29317,133,1177,0x10,0xd0,7,3,2,0,0,0x82,0x1c,0x0,2,78,78,4}, // Tower Dark Maze ES
   {29336,134,1175,0x0,0xc0,7,3,0,0,0,0x62,0x36,0x0,2,78,78,4}, // Tower Dark Pits EN
   {29355,134,1183,0x0,0xc0,7,3,2,0,1,0x82,0x38,0x0,2,78,78,4}, // Tower Dark Pits ES
-  {29374,135,65535,0x0,0xc0,1,5,2,0,255,0xff,0xff,0x0,3,-96,18,4}, // Tower Dual Statues Down Stairs
+  {29374,135,1176,0x200,0xc0,1,5,2,0,255,0xff,0xff,0x0,3,-96,18,4}, // Tower Dual Statues Down Stairs
   {29405,135,1181,0x0,0xc0,7,2,2,0,1,0x82,0x38,0x0,2,78,78,4}, // Tower Dual Statues WS
   {29427,136,1199,0x0,0xe0,7,3,0,0,0,0x62,0x38,0x0,2,78,78,4}, // Tower Gold Knights EN
   {29449,136,1186,0x0,0xe0,7,1,0,0,1,0x60,0x38,0x0,2,78,78,4}, // Tower Gold Knights SW
   {29471,137,1185,0x0,0xe0,7,0,0,0,1,0x60,0x38,0x0,2,78,78,4}, // Tower Lobby NW
   {29486,137,65535,0x100,0xe0,0,1,0,0,3,0x61,0xa,0x0,2,78,78,4}, // Tower Lobby S
-  {29500,138,65535,0x0,0xd0,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,4}, // Tower Lone Statue Down Stairs
+  {29500,138,1198,0x200,0xd0,1,5,0,0,255,0xff,0xff,0x0,1,-128,17,4}, // Tower Lone Statue Down Stairs
   {29530,138,1178,0x0,0xd0,7,2,0,0,1,0x62,0x38,0x0,2,78,78,4}, // Tower Lone Statue WN
-  {29551,139,65535,0x0,0xb0,1,4,2,2,255,0xff,0xff,0x0,3,-116,51,4}, // Tower Pacifist Run Up Stairs
+  {29551,139,1192,0x200,0xb0,1,4,2,2,255,0xff,0xff,0x0,3,-116,51,4}, // Tower Pacifist Run Up Stairs
   {29580,139,1172,0x10,0xb0,7,2,2,0,2,0x82,0x1c,0x0,2,78,78,4}, // Tower Pacifist Run WS
-  {29602,140,65535,0x0,0x40,1,5,0,1,255,0xff,0xff,0x0,3,-96,18,4}, // Tower Push Statue Down Stairs
+  {29602,140,1190,0x200,0x40,1,5,0,1,255,0xff,0xff,0x0,3,-96,18,4}, // Tower Push Statue Down Stairs
   {29632,140,1170,0x0,0x40,7,2,2,1,0,0xb2,0x40,0x0,2,78,78,4}, // Tower Push Statue WS
   {29653,141,1197,0x0,0xb0,7,3,0,0,1,0x62,0x18,0x0,2,78,78,4}, // Tower Red Guards EN
   {29673,141,1173,0x0,0xb0,7,1,0,0,0,0x60,0x18,0x0,2,78,78,4}, // Tower Red Guards SW
-  {29693,142,65535,0x0,0xb0,1,5,0,0,255,0xff,0xff,0x0,1,-128,18,4}, // Tower Red Spears Down Stairs
+  {29693,142,1174,0x200,0xb0,1,5,0,0,255,0xff,0xff,0x0,1,-128,18,4}, // Tower Red Spears Down Stairs
   {29722,142,1194,0x0,0xb0,7,2,0,0,1,0x62,0x18,0x0,2,78,78,4}, // Tower Red Spears WN
-  {29742,143,65535,0x10,0xe0,1,4,0,0,2,0x20,0x20,0x0,1,108,26,4}, // Tower Room 03 Up Stairs
+  {29742,143,1188,0x210,0xe0,1,4,0,0,2,0x20,0x20,0x0,1,108,26,4}, // Tower Room 03 Up Stairs
   {29766,143,1184,0x0,0xe0,7,2,2,0,0,0x62,0x38,0x0,2,78,78,4}, // Tower Room 03 WN
 };
 
@@ -1795,6 +1795,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {70,92,0xffff,5,1}, // Desert Beamos Hall NE
   {71,76,0xffff,7,0}, // Desert Big Chest SW
   {72,89,0xffff,8,0}, // Desert Bonk Torch SE
+  {74,91,0xffff,10,1}, // Desert Bridge Down Stairs
   {74,83,0xffff,11,0}, // Desert Bridge SW
   {75,77,0xffff,12,1}, // Desert Cannonball S
   {76,89,0xffff,13,0}, // Desert Circle of Pots ES
@@ -1831,6 +1832,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {89,72,0xffff,45,0}, // Desert Sandworm Corner NE
   {89,76,0xffff,47,0}, // Desert Sandworm Corner WS
   {91,68,0xffff,48,0}, // Desert Tiles 1 SW
+  {91,74,0xffff,49,1}, // Desert Tiles 1 Up Stairs
   {92,70,0xffff,51,1}, // Desert Tiles 2 SE
   {92,94,0xffff,50,0}, // Desert Tiles 2 NE
   {93,67,0xffff,52,0}, // Desert Trap Room SW
@@ -1840,6 +1842,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {95,82,0xffff,56,0}, // Desert West Lobby NW
   {97,89,0xffff,58,0}, // Desert West Wing N Edge
   {97,95,0xffff,59,0}, // Desert West Wing WS
+  {36,47,0xffff,60,1}, // Eastern Attic Start Down Stairs
   {36,51,0xffff,61,1}, // Eastern Attic Start WS
   {37,41,0xffff,62,1}, // Eastern Big Key EN
   {37,53,0xffff,63,1}, // Eastern Big Key NE
@@ -1863,6 +1866,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {46,41,0x3,82,1}, // Eastern Dark Square Key Door WN
   {46,45,0x3,81,0}, // Eastern Dark Square EN
   {47,43,0x3,85,1}, // Eastern Darkness S
+  {47,36,0x3,86,1}, // Eastern Darkness Up Stairs
   {47,63,0x3,84,0}, // Eastern Darkness NE
   {48,64,0xffff,88,0}, // Eastern Duo Eyegores SE
   {48,38,0x6,87,1}, // Eastern Duo Eyegores NE
@@ -1903,16 +1907,20 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {484,488,0xffff,125,0}, // GT Big Chest NW
   {484,539,0xffff,126,1}, // GT Big Chest SW
   {485,537,0xffff,127,0}, // GT Big Key Room SE
+  {486,521,0xffff,129,1}, // GT Blocked Stairs Down Stairs
   {486,484,0xffff,128,0}, // GT Blocked Stairs Block Path
   {487,539,0xffff,131,1}, // GT Bob's Room SE
   {487,537,0xc,130,0}, // GT Bob's Room Hole
+  {488,542,0xffff,286,1}, // GT Torch Up Stairs
   {488,494,0xffff,287,1}, // GT Torch WN
   {488,536,0xffff,284,0}, // GT Torch EN
   {488,484,0xffff,285,0}, // GT Torch SW
   {489,546,0xffff,132,0}, // GT Bomb Conveyor EN
   {489,497,0xc,133,0}, // GT Bomb Conveyor SW
+  {490,522,0xffff,134,1}, // GT Brightly Lit Hall Down Stairs
   {490,482,0xffff,135,1}, // GT Brightly Lit Hall NW
   {491,528,0xffff,138,1}, // GT Cannonball Bridge WN
+  {491,523,0xffff,137,1}, // GT Cannonball Bridge Up Stairs
   {491,553,0xf,136,0}, // GT Cannonball Bridge SE
   {492,503,0xffff,139,0}, // GT Compass Room EN
   {492,496,0xffff,140,0}, // GT Compass Room Warp
@@ -1940,6 +1948,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {503,492,0xffff,161,0}, // GT Crystal Conveyor WN
   {503,501,0x2b,158,0}, // GT Crystal Conveyor Left to Corner Barrier - Orange
   {504,497,0xffff,164,0}, // GT Crystal Inner Circle Barrier - Orange
+  {505,542,0xffff,165,1}, // GT Crystal Paths Down Stairs
   {505,544,0xffff,166,0}, // GT Crystal Paths SW
   {506,532,0xffff,167,1}, // GT DMs Room SW
   {507,545,0xffff,169,0}, // GT Dash Hall SE
@@ -1971,8 +1980,11 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {518,559,0xffff,193,0}, // GT Falling Torches Hole
   {519,520,0x9,195,0}, // GT Firesnake Room Hook Path
   {520,570,0xffff,196,0}, // GT Firesnake Room SW
+  {521,486,0xffff,199,1}, // GT Four Torches Up Stairs
   {521,516,0x4a,198,0}, // GT Four Torches NW
   {521,537,0xffff,197,0}, // GT Four Torches ES
+  {522,490,0xffff,201,1}, // GT Frozen Over Up Stairs
+  {523,491,0xffff,202,1}, // GT Gauntlet 1 Down Stairs
   {523,524,0xffff,203,0}, // GT Gauntlet 1 WN
   {524,523,0xffff,204,0}, // GT Gauntlet 2 EN
   {524,525,0xffff,205,0}, // GT Gauntlet 2 SW
@@ -2001,6 +2013,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {535,531,0x9,230,0}, // GT Hookshot South-Mid Path
   {535,533,0x5a,227,0}, // GT Hookshot Platform Blue Barrier
   {535,533,0x5e,226,0}, // GT Hookshot Platform Barrier Bypass
+  {536,542,0xffff,232,1}, // GT Hope Room Up Stairs
   {536,488,0xffff,233,0}, // GT Hope Room WN
   {536,560,0x61,231,1}, // GT Hope Room EN
   {537,485,0x64,234,0}, // GT Ice Armos NE
@@ -2013,6 +2026,9 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {540,551,0x67,242,0}, // GT Lanmolas 2 NW
   {541,547,0xffff,243,0}, // GT Left Moldorm Ledge Drop Down
   {541,497,0xffff,244,1}, // GT Left Moldorm Ledge NW
+  {542,488,0xffff,245,1}, // GT Lobby Left Down Stairs
+  {542,505,0xffff,248,1}, // GT Lobby Up Stairs
+  {542,536,0xffff,246,1}, // GT Lobby Right Down Stairs
   {543,535,0xffff,249,0}, // GT Map Room WS
   {544,505,0x6,251,0}, // GT Mimics 1 NW
   {544,545,0x6,250,0}, // GT Mimics 1 ES
@@ -2022,11 +2038,14 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {546,489,0xffff,255,0}, // GT Mini Helmasaur Room WN
   {547,548,0xffff,257,0}, // GT Moldorm Hole
   {547,562,0x6a,256,0}, // GT Moldorm Gap
+  {548,554,0xffff,258,1}, // GT Moldorm Pit Up Stairs
   {549,556,0x6d,259,1}, // GT Petting Zoo SE
   {550,555,0xffff,260,0}, // GT Pots n Blocks ES
   {551,540,0xffff,261,0}, // GT Quad Pot SW
+  {551,574,0xffff,262,1}, // GT Quad Pot Up Stairs
   {552,571,0xc,263,1}, // GT Randomizer Room ES
   {553,491,0xc,264,0}, // GT Refill NE
+  {554,548,0xffff,265,1}, // GT Right Moldorm Ledge Down Stairs
   {554,547,0xffff,266,0}, // GT Right Moldorm Ledge Drop Down
   {555,550,0xffff,272,0}, // GT Speed Torch WS
   {555,499,0x70,269,1}, // GT Speed Torch SE
@@ -2066,27 +2085,37 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {572,565,0xffff,307,0}, // GT Warp Maze - Right Section Warp
   {573,539,0xffff,290,1}, // GT Warp Maze (Pits) ES
   {573,567,0xffff,308,0}, // GT Warp Maze Exit Section Warp Spot
+  {574,551,0xffff,309,1}, // GT Wizzrobes 1 Down Stairs
   {574,508,0x7e,310,0}, // GT Wizzrobes 1 SW
   {575,508,0x7e,312,0}, // GT Wizzrobes 2 SE
   {575,493,0x7e,311,1}, // GT Wizzrobes 2 NE
+  {98,117,0xffff,313,1}, // Hera 4F Down Stairs
+  {98,99,0xffff,315,1}, // Hera 4F Up Stairs
   {98,106,0x9,332,0}, // Hera Big Chest Hook Path
   {98,101,0xffff,314,0}, // Hera 4F Holes
+  {99,98,0xffff,316,1}, // Hera 5F Down Stairs
+  {99,107,0xffff,321,1}, // Hera 5F Up Stairs
   {99,106,0xffff,320,0}, // Hera 5F Star Hole
   {99,110,0xffff,319,0}, // Hera 5F Pothole Chain
   {99,98,0xffff,317,0}, // Hera 5F Normal Holes
   {99,100,0x81,318,0}, // Hera 5F Orange Path
   {101,111,0x85,323,0}, // Hera Back to Front Barrier - Orange
+  {101,119,0xffff,351,1}, // Hera Lobby Key Stairs
   {101,102,0x89,324,0}, // Hera Back to Ranged Crystal
   {102,101,0xffff,322,0}, // Hera Back Ranged Crystal Exit
   {103,104,0x38,327,0}, // Hera Basement Cage to Crystal
+  {103,108,0xffff,326,1}, // Hera Basement Cage Up Stairs
   {104,103,0xffff,325,0}, // Hera Basement Cage Crystal Exit
+  {105,123,0xffff,328,1}, // Hera Beetles Down Stairs
   {105,116,0x8c,331,0}, // Hera Beetles WS
   {105,111,0xffff,329,0}, // Hera Beetles Holes Front
   {105,123,0xffff,330,0}, // Hera Beetles Holes Landing
   {106,98,0xffff,333,0}, // Hera Big Chest Landing Exit
   {106,117,0xffff,334,0}, // Hera Big Chest Landing Holes
+  {107,99,0xffff,335,1}, // Hera Boss Down Stairs
   {107,99,0xffff,337,0}, // Hera Boss Outer Hole
   {107,98,0xffff,336,0}, // Hera Boss Inner Hole
+  {108,103,0xffff,350,1}, // Hera Lobby Down Stairs
   {108,111,0x8f,340,0}, // Hera Down Stairs to Front Barrier - Blue
   {108,109,0x93,339,0}, // Hera Down Stairs Landing to Ranged Crystal
   {109,108,0xffff,338,0}, // Hera Down Stairs Landing Ranged Crystal Exit
@@ -2106,9 +2135,11 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {116,111,0xffff,357,0}, // Hera Startile Corner Holes Front
   {116,108,0xffff,358,0}, // Hera Startile Corner Holes Landing
   {117,116,0xffff,362,0}, // Hera Startile Wide SW
+  {117,98,0xffff,363,1}, // Hera Startile Wide Up Stairs
   {117,101,0xffff,361,0}, // Hera Startile Wide Holes
   {117,118,0x38,364,0}, // Hera Startile Wide to Crystal
   {118,117,0xffff,360,0}, // Hera Startile Wide Crystal Exit
+  {119,101,0xffff,366,1}, // Hera Tile Room Up Stairs
   {119,121,0xb0,365,0}, // Hera Tile Room EN
   {120,121,0xffff,367,0}, // Hera Torches NE
   {121,119,0xb4,370,0}, // Hera Tridorm WN
@@ -2116,10 +2147,12 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {121,122,0x38,371,0}, // Hera Tridorm to Crystal
   {122,121,0xffff,368,0}, // Hera Tridorm Crystal Exit
   {123,111,0xbc,374,0}, // Hera Up Stairs to Front Barrier - Orange
+  {123,105,0xffff,353,1}, // Hera Lobby Up Stairs
   {123,124,0xc0,373,0}, // Hera Up Stairs Landing to Ranged Crystal
   {124,123,0xffff,372,0}, // Hera Up Stairs Landing Ranged Crystal Exit
   {0,2,0xffff,376,1}, // Hyrule Castle Back Hall E
   {0,8,0xffff,377,1}, // Hyrule Castle Back Hall W
+  {0,17,0xffff,375,1}, // Hyrule Castle Back Hall Down Stairs
   {1,25,0xffff,391,1}, // Hyrule Castle Throne Room N
   {1,7,0xffff,390,0}, // Hyrule Castle Tapestry Backwards
   {2,0,0xffff,380,1}, // Hyrule Castle East Hall W
@@ -2144,12 +2177,15 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {12,13,0xffff,403,0}, // Hyrule Dungeon Armory Interior Key Door N
   {12,11,0xffff,402,0}, // Hyrule Dungeon Armory ES
   {13,12,0xffff,404,0}, // Hyrule Dungeon Armory Interior Key Door S
+  {13,22,0xffff,401,1}, // Hyrule Dungeon Armory Down Stairs
   {14,15,0xffff,406,0}, // Hyrule Dungeon Cell Exit
+  {15,22,0xffff,408,1}, // Hyrule Dungeon Cellblock Up Stairs
   {15,14,0xffff,407,0}, // Hyrule Dungeon Cellblock Door
   {16,21,0xffff,410,0}, // Hyrule Dungeon Guardroom Catwalk Edge
   {16,20,0xffff,409,0}, // Hyrule Dungeon Guardroom Abyss Edge
   {16,12,0xffff,411,1}, // Hyrule Dungeon Guardroom N
   {17,18,0xffff,412,0}, // Hyrule Dungeon Map Room Key Door S
+  {17,0,0xffff,413,1}, // Hyrule Dungeon Map Room Up Stairs
   {18,20,0xffff,417,0}, // Hyrule Dungeon North Abyss South Edge
   {18,17,0xffff,416,0}, // Hyrule Dungeon North Abyss Key Door N
   {19,21,0xffff,415,0}, // Hyrule Dungeon North Abyss Catwalk Edge
@@ -2158,10 +2194,14 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {20,16,0xffff,421,0}, // Hyrule Dungeon South Abyss West Edge
   {21,19,0xffff,418,0}, // Hyrule Dungeon South Abyss Catwalk North Edge
   {21,16,0xffff,419,0}, // Hyrule Dungeon South Abyss Catwalk West Edge
+  {22,13,0xffff,423,1}, // Hyrule Dungeon Staircase Up Stairs
+  {22,15,0xffff,422,1}, // Hyrule Dungeon Staircase Down Stairs
   {313,360,0xffff,425,1}, // Ice Antechamber NE
   {313,323,0xce,424,0}, // Ice Antechamber Hole
+  {314,315,0xffff,427,1}, // Ice Anti-Fairy Up Stairs
   {314,360,0xffff,426,0}, // Ice Anti-Fairy SE
   {315,334,0xffff,430,0}, // Ice Backwards Room SE
+  {315,314,0xffff,428,1}, // Ice Backwards Room Down Stairs
   {315,336,0xd1,429,0}, // Ice Backwards Room Hole
   {316,317,0xffff,431,0}, // Ice Big Chest Landing Push Blocks
   {317,333,0xffff,432,0}, // Ice Big Chest View ES
@@ -2207,6 +2247,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {337,361,0xffff,471,0}, // Ice Falling Square Hole
   {338,356,0xffff,474,0}, // Ice Firebar ES
   {338,340,0xffff,473,0}, // Ice Firebar Down Ladder
+  {339,345,0xffff,476,1}, // Ice Floor Switch Up Stairs
   {339,329,0xffff,475,0}, // Ice Floor Switch ES
   {340,338,0xffff,481,0}, // Ice Freezors Up Ladder
   {340,317,0xffff,478,0}, // Ice Freezors Hole
@@ -2219,17 +2260,22 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {344,361,0xffff,488,1}, // Ice Hookshot Ledge WN
   {344,343,0x9,487,0}, // Ice Hookshot Ledge Path
   {345,346,0xffff,490,0}, // Ice Jelly Key ES
+  {345,339,0xffff,489,1}, // Ice Jelly Key Down Stairs
   {346,345,0xed,492,0}, // Ice Lobby WS
   {347,361,0xffff,494,1}, // Ice Lonely Freezor NE
+  {347,363,0xffff,493,1}, // Ice Lonely Freezor Down Stairs
   {348,324,0xffff,495,1}, // Ice Many Pots SW
   {348,334,0xffff,496,1}, // Ice Many Pots WS
   {349,321,0xffff,498,0}, // Ice Narrow Corridor WN
+  {349,351,0xffff,497,1}, // Ice Narrow Corridor Down Stairs
   {350,330,0xffff,500,1}, // Ice Pengator Switch WS
   {350,335,0xffff,499,0}, // Ice Pengator Switch ES
+  {351,349,0xffff,502,1}, // Ice Pengator Trap Up Stairs
   {351,356,0xffff,501,1}, // Ice Pengator Trap NE
   {353,360,0xffff,504,1}, // Ice Refill WS
   {353,354,0xf0,505,0}, // Ice Refill to Crystal
   {354,353,0xffff,503,0}, // Ice Refill Crystal Exit
+  {355,357,0xffff,482,1}, // Ice Hammer Block Down Stairs
   {355,362,0xce,483,0}, // Ice Hammer Block ES
   {355,342,0xce,506,0}, // Ice Right H Path
   {356,351,0xffff,509,1}, // Ice Spike Cross SE
@@ -2237,7 +2283,10 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {356,357,0xffff,507,1}, // Ice Spike Cross ES
   {356,337,0xffff,508,0}, // Ice Spike Cross NE
   {357,356,0xffff,513,1}, // Ice Spike Room WS
+  {357,355,0xffff,512,1}, // Ice Spike Room Up Stairs
+  {357,358,0xffff,511,1}, // Ice Spike Room Down Stairs
   {358,343,0xffff,514,0}, // Ice Spikeball NW
+  {358,357,0xffff,515,1}, // Ice Spikeball Up Stairs
   {359,326,0xffff,516,0}, // Ice Stalfos Hint SE
   {360,314,0xffff,518,0}, // Ice Switch Room NE
   {360,353,0xffff,517,1}, // Ice Switch Room ES
@@ -2247,7 +2296,9 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {361,344,0xffff,520,1}, // Ice Tall Hint EN
   {362,318,0xffff,523,0}, // Ice Tongue Pull Up Ladder
   {362,355,0xffff,524,0}, // Ice Tongue Pull WS
+  {363,347,0xffff,526,1}, // Iced T Up Stairs
   {363,324,0xffff,525,1}, // Iced T EN
+  {364,410,0xffff,528,1}, // Mire 2 Up Stairs
   {364,394,0x100,527,1}, // Mire 2 NE
   {365,390,0x103,530,0}, // Mire Antechamber Orange Barrier
   {365,371,0xffff,529,1}, // Mire Antechamber NW
@@ -2267,6 +2318,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {374,373,0x107,542,0}, // Mire Compass Blue Barrier
   {375,377,0xffff,549,0}, // Mire Conveyor Crystal Exit
   {376,419,0xffff,546,1}, // Mire Conveyor Barrier NW
+  {376,421,0xffff,547,1}, // Mire Conveyor Barrier Up Stairs
   {377,375,0x38,552,0}, // Mire Conveyor to Crystal
   {377,419,0xffff,551,0}, // Mire Conveyor Crystal WS
   {377,394,0xffff,548,1}, // Mire Conveyor Crystal ES
@@ -2284,6 +2336,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {382,417,0x3,563,0}, // Mire Crystal Right ES
   {382,381,0x121,564,0}, // Mire Crystal Right Orange Barrier
   {383,381,0x11e,565,0}, // Mire Crystal Top SW
+  {384,400,0x3,568,1}, // Mire Dark Shooters Up Stairs
   {384,370,0x125,567,0}, // Mire Dark Shooters SW
   {384,398,0x3,566,0}, // Mire Dark Shooters SE
   {385,394,0xffff,570,1}, // Mire Failure Bridge W
@@ -2296,6 +2349,8 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {388,386,0x128,573,0}, // Mire Falling Bridge Hook Path
   {388,387,0xffff,571,0}, // Mire Falling Bridge Failure Path
   {389,380,0xffff,578,1}, // Mire Falling Foes ES
+  {389,390,0xffff,579,1}, // Mire Falling Foes Up Stairs
+  {390,389,0xffff,580,1}, // Mire Firesnake Skip Down Stairs
   {390,365,0x12b,581,0}, // Mire Firesnake Skip Orange Barrier
   {391,408,0xffff,584,1}, // Mire Fishbone E
   {391,413,0xffff,582,0}, // Mire Fishbone Blue Barrier
@@ -2325,6 +2380,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {399,368,0xffff,609,1}, // Mire Ledgehop WN
   {399,369,0xffff,607,1}, // Mire Ledgehop NW
   {400,368,0xffff,612,1}, // Mire Left Bridge S
+  {400,384,0xffff,610,1}, // Mire Left Bridge Down Stairs
   {400,411,0x9,611,0}, // Mire Left Bridge Hook Path
   {401,410,0x128,613,0}, // Mire Lobby Gap
   {402,394,0xffff,616,1}, // Mire Lone Shooter WS
@@ -2343,6 +2399,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {408,369,0xffff,628,1}, // Mire Over Bridge E
   {408,391,0xffff,629,1}, // Mire Over Bridge W
   {410,401,0x128,631,0}, // Mire Post-Gap Gap
+  {410,364,0xffff,630,1}, // Mire Post-Gap Down Stairs
   {411,406,0xffff,632,1}, // Mire Right Bridge SE
   {412,417,0x11e,633,0}, // Mire Shooter Rupees EN
   {413,391,0x147,634,0}, // Mire South Fish Blue Barrier
@@ -2366,6 +2423,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {420,421,0xffff,653,0}, // Mire Torches Bottom NW
   {420,366,0xffff,651,0}, // Mire Torches Bottom ES
   {420,422,0xffff,652,0}, // Mire Torches Bottom Holes
+  {421,376,0xffff,654,1}, // Mire Torches Top Down Stairs
   {421,420,0xffff,656,0}, // Mire Torches Top SW
   {421,376,0xffff,655,0}, // Mire Torches Top Holes
   {422,367,0xffff,657,0}, // Mire Warping Pool ES
@@ -2398,7 +2456,9 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {153,154,0x33,686,0}, // PoD Arena Right to Ranged Crystal
   {154,153,0xffff,684,0}, // PoD Arena Right Ranged Crystal Exit
   {155,194,0xffff,687,0}, // PoD Basement Ledge Drop Down
+  {155,157,0xffff,688,1}, // PoD Basement Ledge Up Stairs
   {156,168,0xc,689,1}, // PoD Big Chest Balcony W
+  {157,155,0xffff,690,1}, // PoD Big Key Landing Down Stairs
   {157,194,0xffff,691,0}, // PoD Big Key Landing Hole
   {159,189,0xffff,701,0}, // PoD Bow Statue SW
   {159,161,0x162,696,0}, // PoD Bow Statue Left to Right Barrier - Orange
@@ -2413,9 +2473,13 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {163,166,0x3,703,0}, // PoD Callback Warp
   {164,180,0xffff,705,0}, // PoD Compass Room SE
   {164,178,0xffff,707,0}, // PoD Compass Room WN
+  {164,167,0xffff,706,1}, // PoD Compass Room W Down Stairs
+  {164,167,0xffff,704,1}, // PoD Compass Room E Down Stairs
   {165,185,0xffff,708,0}, // PoD Conveyor North Stairs
   {165,188,0xffff,709,1}, // PoD Conveyor SW
   {166,158,0x3,710,1}, // PoD Dark Alley NE
+  {167,164,0x3,712,1}, // PoD Dark Basement W Up Stairs
+  {167,164,0x3,711,1}, // PoD Dark Basement E Up Stairs
   {168,178,0x3,714,1}, // PoD Dark Maze EN
   {168,156,0x11e,713,1}, // PoD Dark Maze E
   {169,161,0x3,729,0}, // PoD Dark Pegs Up Ladder
@@ -2447,6 +2511,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {181,188,0x4a,742,0}, // PoD Jelly Hall NW
   {181,196,0x4a,741,0}, // PoD Jelly Hall NE
   {182,183,0xffff,744,0}, // PoD Left Cage SW
+  {182,193,0xffff,743,1}, // PoD Left Cage Down Stairs
   {183,187,0xffff,745,0}, // PoD Lobby N
   {183,182,0xffff,747,0}, // PoD Lobby NW
   {183,187,0xffff,746,0}, // PoD Lobby NE
@@ -2461,6 +2526,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {187,183,0xffff,759,0}, // PoD Middle Cage S
   {187,183,0xffff,760,0}, // PoD Middle Cage SE
   {187,190,0xffff,758,1}, // PoD Middle Cage N
+  {187,197,0xffff,757,1}, // PoD Middle Cage Down Stairs
   {188,165,0x6,761,1}, // PoD Mimics 1 NW
   {188,181,0x4a,762,0}, // PoD Mimics 1 SW
   {189,192,0xffff,764,1}, // PoD Mimics 2 SW
@@ -2474,13 +2540,16 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {191,190,0xffff,766,0}, // PoD Pit Room Block Path S
   {192,153,0xffff,773,1}, // PoD Sexy Statue W
   {192,189,0xffff,772,1}, // PoD Sexy Statue NW
+  {193,182,0xffff,774,1}, // PoD Shooter Room Up Stairs
   {194,197,0xffff,775,0}, // PoD Stalfos Basement Warp
   {195,163,0x16d,776,0}, // PoD Turtle Party ES
   {195,184,0x16d,777,0}, // PoD Turtle Party NW
   {196,181,0x4a,778,0}, // PoD Warp Hint SE
   {196,197,0xffff,779,0}, // PoD Warp Hint Warp
+  {197,187,0xffff,780,1}, // PoD Warp Room Up Stairs
   {197,196,0xffff,781,0}, // PoD Warp Room Warp
   {25,1,0x3,786,1}, // Sewers Behind Tapestry S
+  {25,31,0x3,785,1}, // Sewers Behind Tapestry Down Stairs
   {26,34,0x3,787,1}, // Sewers Dark Aquabats ES
   {26,28,0x3,788,0}, // Sewers Dark Aquabats N
   {27,34,0x3,789,1}, // Sewers Dark Cross Key Door N
@@ -2493,11 +2562,14 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {30,33,0xffff,803,0}, // Sewers Secret Room Push Block
   {30,32,0x4a,797,0}, // Sewers Rat Path WS
   {30,32,0x4a,796,0}, // Sewers Rat Path WN
+  {31,25,0x3,799,1}, // Sewers Rope Room Up Stairs
   {31,27,0x3,798,0}, // Sewers Rope Room North Stairs
   {32,30,0xffff,801,0}, // Sewers Secret Room ES
   {32,30,0xffff,800,0}, // Sewers Secret Room EN
+  {33,35,0xffff,804,1}, // Sewers Secret Room Up Stairs
   {34,27,0x3,805,1}, // Sewers Water S
   {34,26,0x3,806,1}, // Sewers Water W
+  {35,33,0xffff,793,1}, // Sewers Pull Switch Down Stairs
   {35,29,0xffff,807,0}, // Sewers Yet More Rats S
   {249,270,0xffff,810,1}, // Skull 1 Lobby WS
   {249,267,0xffff,808,0}, // Skull 1 Lobby ES
@@ -2545,6 +2617,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {276,273,0x1b1,855,1}, // Skull Vines NW
   {277,263,0xffff,856,0}, // Skull West Bridge Nook ES
   {278,254,0xffff,857,0}, // Skull X Room SW
+  {198,246,0xffff,858,1}, // Swamp Attic Down Stairs
   {198,247,0xffff,859,0}, // Swamp Attic Left Pit
   {198,200,0xffff,860,0}, // Swamp Attic Right Pit
   {199,203,0xffff,862,1}, // Swamp Barrier EN
@@ -2556,7 +2629,9 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {201,213,0xffff,866,0}, // Swamp Basement Shallows EN
   {201,217,0xffff,867,0}, // Swamp Basement Shallows ES
   {202,244,0xffff,869,0}, // Swamp Behind Waterfall SE
+  {202,205,0xffff,870,1}, // Swamp Behind Waterfall Up Stairs
   {203,199,0xffff,871,1}, // Swamp Big Key Ledge WN
+  {205,202,0xffff,873,1}, // Swamp C Down Stairs
   {205,245,0xffff,874,0}, // Swamp C SE
   {206,211,0xffff,876,0}, // Swamp Compass Donut SW
   {206,212,0xffff,875,0}, // Swamp Compass Donut Push Block
@@ -2574,12 +2649,16 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {211,206,0xffff,888,0}, // Swamp Donut Bottom NW
   {212,219,0xffff,889,1}, // Swamp Donut Top N
   {212,211,0xffff,890,0}, // Swamp Donut Top SE
-  {213,201,0x1d1,894,0}, // Swamp Drain WN
-  {214,213,0x1d1,892,0}, // Swamp Drain Right Switch
-  {215,225,0x1d3,896,0}, // Swamp Entrance Moat
-  {216,217,0x1d1,897,0}, // Swamp Flooded Room Ladder
-  {217,201,0x1d1,899,0}, // Swamp Flooded Room WS
-  {217,216,0x1da,900,0}, // Swamp Flooded Spot Ladder
+  {213,224,0x1d1,891,1}, // Swamp Drain Left Up Stairs
+  {213,201,0x1d8,894,0}, // Swamp Drain WN
+  {214,213,0x1d8,892,0}, // Swamp Drain Right Switch
+  {214,231,0xffff,893,1}, // Swamp Drain Right Up Stairs
+  {215,228,0xffff,895,1}, // Swamp Entrance Down Stairs
+  {215,225,0x1da,896,0}, // Swamp Entrance Moat
+  {216,229,0xffff,898,1}, // Swamp Flooded Room Up Stairs
+  {216,217,0x1d8,897,0}, // Swamp Flooded Room Ladder
+  {217,201,0x1d8,899,0}, // Swamp Flooded Room WS
+  {217,216,0x1d1,900,0}, // Swamp Flooded Spot Ladder
   {218,238,0xffff,901,0}, // Swamp Hammer Switch SW
   {218,220,0xc,902,1}, // Swamp Hammer Switch WN
   {219,237,0xffff,904,1}, // Swamp Hub ES
@@ -2593,15 +2672,19 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {221,219,0xffff,906,0}, // Swamp Hub North Ledge Drop Down
   {223,245,0xc,912,0}, // Swamp I S
   {224,232,0xffff,914,0}, // Swamp Left Elbow WN
+  {224,213,0xffff,913,1}, // Swamp Left Elbow Down Stairs
   {225,215,0x1e1,915,0}, // Swamp Lobby Moat
   {226,228,0xc,917,1}, // Swamp Map Ledge EN
+  {228,215,0xffff,918,1}, // Swamp Pot Row Up Stairs
   {228,226,0xc,919,1}, // Swamp Pot Row WN
   {228,236,0xffff,920,1}, // Swamp Pot Row WS
   {229,221,0xffff,924,1}, // Swamp Push Statue S
   {229,232,0xffff,923,0}, // Swamp Push Statue NW
   {229,231,0xffff,922,0}, // Swamp Push Statue NE
+  {229,216,0xffff,921,1}, // Swamp Push Statue Down Stairs
   {230,244,0xffff,925,0}, // Swamp Refill SW
   {231,229,0xffff,927,0}, // Swamp Right Elbow SE
+  {231,214,0xffff,926,1}, // Swamp Right Elbow Down Stairs
   {232,229,0xffff,929,0}, // Swamp Shooters SW
   {232,224,0xffff,928,0}, // Swamp Shooters EN
   {233,209,0xffff,931,0}, // Swamp Shortcut NE
@@ -2639,6 +2722,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {245,205,0x1f9,963,0}, // Swamp Waterway NE
   {245,223,0x206,962,0}, // Swamp Waterway N
   {245,234,0x1f9,964,0}, // Swamp Waterway NW
+  {246,198,0xffff,966,1}, // Swamp West Block Path Up Stairs
   {246,248,0xffff,965,0}, // Swamp West Block Path Drop Down
   {247,248,0xffff,967,0}, // Swamp West Ledge Drop Down
   {247,200,0x9,968,0}, // Swamp West Ledge Hook Path
@@ -2653,6 +2737,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {428,429,0x213,978,0}, // TR Chain Chomps Bottom to Ranged Crystal
   {429,428,0xffff,977,0}, // TR Chain Chomps Bottom Ranged Crystal Exit
   {430,431,0x38,984,0}, // TR Chain Chomps Top to Crystal
+  {430,464,0xffff,980,1}, // TR Chain Chomps Down Stairs
   {430,428,0x221,983,0}, // TR Chain Chomps Top to Bottom Barrier - Orange
   {431,430,0xffff,982,0}, // TR Chain Chomps Top Crystal Exit
   {432,455,0xffff,985,1}, // TR Compass Room NW
@@ -2680,9 +2765,11 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {441,438,0x269,1005,0}, // TR Crystaroller Middle to Bottom Bypass
   {442,441,0xffff,1003,0}, // TR Crystaroller Middle Ranged Crystal Exit
   {443,441,0x26c,1012,0}, // TR Crystaroller Top to Middle Barrier - Orange
+  {443,446,0xffff,1002,1}, // TR Crystaroller Down Stairs
   {443,444,0x38,1011,0}, // TR Crystaroller Top to Crystal
   {444,443,0xffff,1010,0}, // TR Crystaroller Top Crystal Exit
   {445,447,0x125,1016,0}, // TR Dark Ride Return Path
+  {446,443,0x3,1018,1}, // TR Dark Ride Up Stairs
   {446,447,0x125,1015,0}, // TR Dark Ride Normal Path
   {446,445,0x125,1014,0}, // TR Dark Ride Ledge Path
   {447,448,0x125,1017,1}, // TR Dark Ride SW
@@ -2725,6 +2812,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {462,461,0x61,1056,0}, // TR Main Lobby Gap
   {463,459,0xffff,1059,1}, // TR Pipe Ledge WS
   {463,464,0xffff,1058,0}, // TR Pipe Ledge Drop Down
+  {464,430,0xffff,1060,1}, // TR Pipe Pit Up Stairs
   {464,457,0xffff,1061,1}, // TR Pipe Pit WN
   {465,455,0xffff,1063,1}, // TR Pokey 1 SW
   {465,428,0xffff,1062,0}, // TR Pokey 1 NW
@@ -2754,6 +2842,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {279,284,0xffff,1087,0}, // Thieves Ambush ES Edge
   {279,284,0xffff,1086,0}, // Thieves Ambush EN Edge
   {279,307,0x4a,1085,1}, // Thieves Ambush E
+  {280,308,0xffff,1091,1}, // Thieves Attic Down Stairs
   {280,296,0x28c,1092,0}, // Thieves Attic ES
   {280,281,0x290,1094,0}, // Thieves Attic Orange Barrier
   {280,282,0x28c,1090,0}, // Thieves Attic Blue Barrier
@@ -2765,6 +2854,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {284,292,0xffff,1098,0}, // Thieves BK Corner S Edge
   {284,292,0xffff,1099,0}, // Thieves BK Corner SW Edge
   {284,298,0xffff,1097,1}, // Thieves BK Corner NE
+  {285,295,0xffff,1103,1}, // Thieves Basement Block Up Stairs
   {285,294,0xffff,1104,1}, // Thieves Basement Block WN
   {285,290,0x294,1102,0}, // Thieves Basement Block Path
   {286,292,0xffff,1105,0}, // Thieves Big Chest Nook ES Edge
@@ -2787,6 +2877,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {295,306,0xffff,1125,0}, // Thieves Conveyor Maze SW
   {295,298,0xffff,1124,0}, // Thieves Conveyor Maze EN
   {295,312,0xffff,1126,1}, // Thieves Conveyor Maze WN
+  {295,285,0xffff,1123,1}, // Thieves Conveyor Maze Down Stairs
   {296,280,0xffff,1128,0}, // Thieves Cricket Hall Left WS
   {296,297,0xffff,1127,0}, // Thieves Cricket Hall Left Edge
   {297,296,0xffff,1130,0}, // Thieves Cricket Hall Right Edge
@@ -2816,6 +2907,7 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {307,279,0x4a,1155,1}, // Thieves Rail Ledge W
   {307,284,0xffff,1153,0}, // Thieves Rail Ledge Drop Down
   {308,299,0xffff,1156,1}, // Thieves Spike Switch SW
+  {308,280,0xffff,1157,1}, // Thieves Spike Switch Up Stairs
   {309,301,0xffff,1160,0}, // Thieves Spike Track WS
   {309,305,0xffff,1158,1}, // Thieves Spike Track ES
   {309,312,0xffff,1159,0}, // Thieves Spike Track NE
@@ -2832,22 +2924,30 @@ const DoorTblEdge kDoorTblEdges[kDoorTbl_EdgeCount] = {
   {130,141,0xffff,1173,0}, // Tower Circle of Pots NW
   {130,139,0xffff,1172,0}, // Tower Circle of Pots ES
   {131,134,0x3,1175,0}, // Tower Dark Archers WN
+  {131,142,0x3,1174,1}, // Tower Dark Archers Up Stairs
   {132,133,0x3,1177,0}, // Tower Dark Chargers WS
+  {132,135,0x3,1176,1}, // Tower Dark Chargers Up Stairs
   {133,138,0x3,1178,0}, // Tower Dark Maze EN
   {133,132,0x3,1179,0}, // Tower Dark Maze ES
   {134,135,0x3,1181,0}, // Tower Dark Pits ES
   {134,131,0x3,1180,0}, // Tower Dark Pits EN
+  {135,132,0x3,1182,1}, // Tower Dual Statues Down Stairs
   {135,134,0x3,1183,0}, // Tower Dual Statues WS
   {136,137,0xffff,1185,0}, // Tower Gold Knights SW
   {136,143,0xffff,1184,0}, // Tower Gold Knights EN
   {137,136,0xffff,1186,0}, // Tower Lobby NW
+  {138,143,0x3,1188,1}, // Tower Lone Statue Down Stairs
   {138,133,0x3,1189,0}, // Tower Lone Statue WN
   {139,130,0xffff,1191,0}, // Tower Pacifist Run WS
+  {139,140,0xffff,1190,1}, // Tower Pacifist Run Up Stairs
+  {140,139,0xffff,1192,1}, // Tower Push Statue Down Stairs
   {140,129,0xffff,1193,0}, // Tower Push Statue WS
   {141,142,0xffff,1194,0}, // Tower Red Guards EN
   {141,130,0xffff,1195,0}, // Tower Red Guards SW
+  {142,131,0xffff,1196,1}, // Tower Red Spears Down Stairs
   {142,141,0xffff,1197,0}, // Tower Red Spears WN
   {143,136,0xffff,1199,0}, // Tower Room 03 WN
+  {143,138,0xffff,1198,1}, // Tower Room 03 Up Stairs
 };
 
 const DoorTblPair kDoorTblVanillaPairs[kDoorTbl_PairCount] = {
@@ -2987,6 +3087,56 @@ const DoorTblPair kDoorTblVanillaPairs[kDoorTbl_PairCount] = {
   {311,142,0}, // GT Wizzrobes 2 NE <-> GT Conveyor Bridge SE
   {141,283,0}, // GT Conveyor Bridge EN <-> GT Torch Cross WN
   {151,244,0}, // GT Crystal Circles SW <-> GT Left Moldorm Ledge NW
+  {375,413,0}, // Hyrule Castle Back Hall Down Stairs <-> Hyrule Dungeon Map Room Up Stairs
+  {401,423,0}, // Hyrule Dungeon Armory Down Stairs <-> Hyrule Dungeon Staircase Up Stairs
+  {422,408,0}, // Hyrule Dungeon Staircase Down Stairs <-> Hyrule Dungeon Cellblock Up Stairs
+  {785,799,0}, // Sewers Behind Tapestry Down Stairs <-> Sewers Rope Room Up Stairs
+  {804,793,0}, // Sewers Secret Room Up Stairs <-> Sewers Pull Switch Down Stairs
+  {86,60,0}, // Eastern Darkness Up Stairs <-> Eastern Attic Start Down Stairs
+  {49,10,0}, // Desert Tiles 1 Up Stairs <-> Desert Bridge Down Stairs
+  {350,326,0}, // Hera Lobby Down Stairs <-> Hera Basement Cage Up Stairs
+  {351,366,0}, // Hera Lobby Key Stairs <-> Hera Tile Room Up Stairs
+  {353,328,0}, // Hera Lobby Up Stairs <-> Hera Beetles Down Stairs
+  {363,313,0}, // Hera Startile Wide Up Stairs <-> Hera 4F Down Stairs
+  {315,316,0}, // Hera 4F Up Stairs <-> Hera 5F Down Stairs
+  {321,335,0}, // Hera 5F Up Stairs <-> Hera Boss Down Stairs
+  {1198,1188,0}, // Tower Room 03 Up Stairs <-> Tower Lone Statue Down Stairs
+  {1176,1182,0}, // Tower Dark Chargers Up Stairs <-> Tower Dual Statues Down Stairs
+  {1174,1196,0}, // Tower Dark Archers Up Stairs <-> Tower Red Spears Down Stairs
+  {1190,1192,0}, // Tower Pacifist Run Up Stairs <-> Tower Push Statue Down Stairs
+  {743,774,0}, // PoD Left Cage Down Stairs <-> PoD Shooter Room Up Stairs
+  {757,780,0}, // PoD Middle Cage Down Stairs <-> PoD Warp Room Up Stairs
+  {688,690,0}, // PoD Basement Ledge Up Stairs <-> PoD Big Key Landing Down Stairs
+  {706,712,0}, // PoD Compass Room W Down Stairs <-> PoD Dark Basement W Up Stairs
+  {704,711,0}, // PoD Compass Room E Down Stairs <-> PoD Dark Basement E Up Stairs
+  {895,918,0}, // Swamp Entrance Down Stairs <-> Swamp Pot Row Up Stairs
+  {966,858,0}, // Swamp West Block Path Up Stairs <-> Swamp Attic Down Stairs
+  {921,898,0}, // Swamp Push Statue Down Stairs <-> Swamp Flooded Room Up Stairs
+  {913,891,0}, // Swamp Left Elbow Down Stairs <-> Swamp Drain Left Up Stairs
+  {926,893,0}, // Swamp Right Elbow Down Stairs <-> Swamp Drain Right Up Stairs
+  {870,873,0}, // Swamp Behind Waterfall Up Stairs <-> Swamp C Down Stairs
+  {1157,1091,0}, // Thieves Spike Switch Up Stairs <-> Thieves Attic Down Stairs
+  {1123,1103,0}, // Thieves Conveyor Maze Down Stairs <-> Thieves Basement Block Up Stairs
+  {489,476,0}, // Ice Jelly Key Down Stairs <-> Ice Floor Switch Up Stairs
+  {497,502,0}, // Ice Narrow Corridor Down Stairs <-> Ice Pengator Trap Up Stairs
+  {512,482,0}, // Ice Spike Room Up Stairs <-> Ice Hammer Block Down Stairs
+  {511,515,0}, // Ice Spike Room Down Stairs <-> Ice Spikeball Up Stairs
+  {493,526,0}, // Ice Lonely Freezor Down Stairs <-> Iced T Up Stairs
+  {428,427,0}, // Ice Backwards Room Down Stairs <-> Ice Anti-Fairy Up Stairs
+  {630,528,0}, // Mire Post-Gap Down Stairs <-> Mire 2 Up Stairs
+  {610,568,0}, // Mire Left Bridge Down Stairs <-> Mire Dark Shooters Up Stairs
+  {547,654,0}, // Mire Conveyor Barrier Up Stairs <-> Mire Torches Top Down Stairs
+  {579,580,0}, // Mire Falling Foes Up Stairs <-> Mire Firesnake Skip Down Stairs
+  {980,1060,0}, // TR Chain Chomps Down Stairs <-> TR Pipe Pit Up Stairs
+  {1002,1018,0}, // TR Crystaroller Down Stairs <-> TR Dark Ride Up Stairs
+  {245,286,0}, // GT Lobby Left Down Stairs <-> GT Torch Up Stairs
+  {248,165,0}, // GT Lobby Up Stairs <-> GT Crystal Paths Down Stairs
+  {246,232,0}, // GT Lobby Right Down Stairs <-> GT Hope Room Up Stairs
+  {129,199,0}, // GT Blocked Stairs Down Stairs <-> GT Four Torches Up Stairs
+  {137,202,0}, // GT Cannonball Bridge Up Stairs <-> GT Gauntlet 1 Down Stairs
+  {262,309,0}, // GT Quad Pot Up Stairs <-> GT Wizzrobes 1 Down Stairs
+  {258,265,0}, // GT Moldorm Pit Up Stairs <-> GT Right Moldorm Ledge Down Stairs
+  {201,134,0}, // GT Frozen Over Up Stairs <-> GT Brightly Lit Hall Down Stairs
   {795,783,1}, // Sewers Pull Switch S -> Sanctuary N
   {87,64,1}, // Eastern Duo Eyegores NE -> Eastern Boss SE
   {53,9,1}, // Desert Wall Slide NW -> Desert Boss SW
@@ -3076,8 +3226,8 @@ const DoorTblLocation kDoorTblLocations[kDoorTbl_LocationCount] = {
   {74,279,0xffff}, // Thieves' Town - Ambush Chest
   {75,287,0x12}, // Thieves' Town - Big Chest
   {76,289,0xffff}, // Thieves' Town - Blind's Cell
-  {77,291,0x2e4}, // Thieves' Town - Boss
-  {78,291,0x2e4}, // Thieves' Town - Prize
+  {77,291,0x2ef}, // Thieves' Town - Boss
+  {78,291,0x2ef}, // Thieves' Town - Prize
   {79,318,0xffff}, // Ice Palace - Big Key Chest
   {80,325,0xffff}, // Ice Palace - Compass Chest
   {81,342,0xce}, // Ice Palace - Map Chest
@@ -3096,19 +3246,19 @@ const DoorTblLocation kDoorTblLocations[kDoorTbl_LocationCount] = {
   {94,415,0xffff}, // Misery Mire - Spike Chest
   {95,371,0x2c4}, // Misery Mire - Boss
   {96,371,0x2c4}, // Misery Mire - Prize
-  {97,430,0x2d3}, // Turtle Rock - Chain Chomps
+  {97,430,0x2de}, // Turtle Rock - Chain Chomps
   {98,432,0xffff}, // Turtle Rock - Compass Chest
   {99,471,0xffff}, // Turtle Rock - Roller Room - Left
   {100,471,0xffff}, // Turtle Rock - Roller Room - Right
   {101,424,0xffff}, // Turtle Rock - Big Chest
   {102,459,0xffff}, // Turtle Rock - Big Key Chest
   {103,440,0xffff}, // Turtle Rock - Crystaroller Room
-  {104,451,0x2db}, // Turtle Rock - Eye Bridge - Bottom Left
-  {105,451,0x2db}, // Turtle Rock - Eye Bridge - Bottom Right
-  {106,451,0x2db}, // Turtle Rock - Eye Bridge - Top Left
-  {107,451,0x2db}, // Turtle Rock - Eye Bridge - Top Right
-  {108,427,0x2d0}, // Turtle Rock - Boss
-  {109,427,0x2d0}, // Turtle Rock - Prize
+  {104,451,0x2e6}, // Turtle Rock - Eye Bridge - Bottom Left
+  {105,451,0x2e6}, // Turtle Rock - Eye Bridge - Bottom Right
+  {106,451,0x2e6}, // Turtle Rock - Eye Bridge - Top Left
+  {107,451,0x2e6}, // Turtle Rock - Eye Bridge - Top Right
+  {108,427,0x2db}, // Turtle Rock - Boss
+  {109,427,0x2db}, // Turtle Rock - Prize
   {110,488,0x4d}, // Ganons Tower - Bob's Torch
   {111,506,0x9}, // Ganons Tower - DMs Room - Top Left
   {112,506,0x9}, // Ganons Tower - DMs Room - Top Right
@@ -3140,15 +3290,15 @@ const DoorTblLocation kDoorTblLocations[kDoorTbl_LocationCount] = {
 };
 
 const DoorTblEvent kDoorTblEvents[kDoorTbl_EventCount] = {
-  {0,218,0x12}, // Trench 1 Filled
-  {1,207,0xffff}, // Trench 2 Filled
+  {0,218,0x2d3}, // Trench 1 Filled
+  {1,207,0x2d0}, // Trench 2 Filled
   {2,214,0xffff}, // Drained Swamp
-  {3,219,0xffff}, // Open Floodgate
+  {3,65535,0xffff}, // Open Floodgate
   {4,258,0xffff}, // Hidden Pits
   {5,332,0xffff}, // Convenient Block
   {6,283,0xc}, // Shining Light
   {7,289,0xffff}, // Maiden Rescued
-  {8,291,0x2de}, // Maiden Unmasked
+  {8,291,0x2e9}, // Maiden Unmasked
   {9,283,0xc}, // Attic Cracked Floor
 };
 
@@ -4015,6 +4165,6 @@ const DoorTblPairedKind kDoorTblPairedKinds[kDoorTbl_PairedKindCount] = {
   {1085,1155,1},
 };
 
-const uint8 kDoorTblRuleBlob[kDoorTbl_RuleBlobSize] = { 5, 0, 0, 5, 1, 0, 5, 2, 0, 5, 3, 0, 5, 4, 0, 5, 5, 0, 5, 6, 0, 7, 241, 1, 1, 5, 7, 0, 7, 243, 1, 0, 5, 8, 0, 7, 245, 1, 0, 7, 245, 1, 1, 7, 247, 1, 1, 7, 253, 1, 1, 1, 7, 255, 1, 0, 5, 9, 0, 7, 0, 2, 1, 5, 10, 0, 7, 2, 2, 1, 7, 2, 2, 0, 5, 11, 0, 5, 12, 0, 5, 13, 0, 7, 21, 2, 0, 5, 14, 0, 7, 23, 2, 0, 5, 15, 0, 5, 16, 0, 5, 17, 0, 5, 18, 0, 5, 19, 0, 5, 20, 0, 5, 21, 0, 7, 45, 2, 1, 5, 22, 0, 7, 46, 2, 1, 5, 23, 0, 7, 99, 0, 1, 7, 101, 0, 1, 5, 24, 0, 5, 25, 0, 7, 108, 0, 0, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 108, 0, 0, 7, 111, 0, 0, 7, 111, 0, 1, 5, 27, 0, 7, 113, 0, 0, 7, 119, 0, 0, 7, 121, 0, 0, 7, 121, 0, 1, 7, 123, 0, 1, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 123, 0, 1, 5, 28, 0, 7, 59, 1, 0, 7, 65, 1, 1, 7, 66, 1, 1, 7, 77, 1, 1, 7, 77, 1, 0, 7, 78, 1, 1, 7, 78, 1, 0, 5, 29, 0, 3, 2, 5, 9, 0, 7, 97, 1, 0, 3, 2, 5, 16, 0, 6, 5, 5, 30, 0, 7, 109, 1, 1, 7, 118, 1, 0, 5, 31, 0, 7, 123, 1, 0, 7, 124, 1, 0, 7, 125, 1, 1, 7, 125, 1, 0, 5, 32, 0, 7, 126, 1, 1, 5, 33, 0, 5, 34, 0, 7, 134, 1, 1, 7, 138, 1, 0, 7, 139, 1, 0, 7, 140, 1, 0, 7, 141, 1, 0, 7, 148, 1, 0, 7, 149, 1, 0, 7, 157, 1, 0, 5, 35, 0, 7, 147, 0, 0, 7, 147, 0, 1, 7, 150, 0, 0, 7, 152, 0, 1, 7, 153, 0, 0, 7, 159, 0, 1, 5, 36, 0, 7, 161, 0, 1, 5, 37, 0, 2, 2, 7, 171, 0, 0, 5, 1, 0, 5, 38, 0, 7, 173, 0, 1, 7, 173, 0, 0, 3, 7, 5, 2, 0, 5, 4, 0, 5, 39, 0, 5, 21, 0, 5, 40, 0, 5, 16, 0, 2, 2, 5, 3, 0, 7, 173, 0, 1, 7, 175, 0, 1, 5, 41, 0, 3, 2, 5, 12, 0, 6, 4, 6, 4, 5, 42, 0, 7, 199, 0, 1, 7, 200, 0, 1, 7, 243, 0, 0, 3, 3, 5, 26, 0, 5, 43, 0, 2, 2, 5, 3, 0, 7, 209, 0, 0, 6, 2, 2, 2, 5, 44, 0, 6, 3, 3, 2, 5, 44, 0, 6, 2, 2, 3, 5, 44, 0, 6, 3, 5, 45, 0, 7, 233, 0, 0, 4, 6, 0, 2, 2, 5, 44, 0, 6, 0, 5, 44, 0, 2, 2, 5, 44, 0, 6, 1, 4, 6, 1, 5, 46, 0, 5, 47, 0, 5, 48, 0, 7, 172, 1, 1, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 172, 1, 1, 7, 174, 1, 1, 7, 177, 1, 0, 7, 179, 1, 0, 5, 49, 0, 7, 180, 1, 0, 7, 182, 1, 1, 3, 5, 5, 2, 0, 5, 21, 0, 5, 40, 0, 5, 16, 0, 2, 2, 5, 3, 0, 7, 182, 1, 1, 7, 184, 1, 0, 7, 185, 1, 1, 7, 185, 1, 0, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 185, 1, 1, 5, 50, 0, 7, 187, 1, 1, 7, 210, 1, 0, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 210, 1, 0, 7, 212, 1, 0, 5, 51, 0, 5, 52, 0, 7, 24, 1, 0, 7, 24, 1, 1, 5, 53, 0, 7, 43, 1, 1, 7, 43, 1, 0, 7, 44, 1, 0, 7, 45, 1, 1, 7, 56, 1, 0, 5, 54, 0, 5, 55, 0, 5, 56, 0, 5, 57, 0, 7, 103, 0, 1, 5, 58, 0, 5, 59, 0, 5, 60, 0, 5, 61, 0, 5, 62, 0, 5, 63, 0, 5, 64, 0, 5, 65, 0, 2, 2, 8, 174, 1, 5, 26, 0, 5, 66, 0, 2, 2, 6, 6, 6, 7, 2, 2, 6, 8, 5, 67, 0, 5, 68, 0 };
+const uint8 kDoorTblRuleBlob[kDoorTbl_RuleBlobSize] = { 5, 0, 0, 5, 1, 0, 5, 2, 0, 5, 3, 0, 5, 4, 0, 5, 5, 0, 5, 6, 0, 7, 241, 1, 1, 5, 7, 0, 7, 243, 1, 0, 5, 8, 0, 7, 245, 1, 0, 7, 245, 1, 1, 7, 247, 1, 1, 7, 253, 1, 1, 1, 7, 255, 1, 0, 5, 9, 0, 7, 0, 2, 1, 5, 10, 0, 7, 2, 2, 1, 7, 2, 2, 0, 5, 11, 0, 5, 12, 0, 5, 13, 0, 7, 21, 2, 0, 5, 14, 0, 7, 23, 2, 0, 5, 15, 0, 5, 16, 0, 5, 17, 0, 5, 18, 0, 5, 19, 0, 5, 20, 0, 5, 21, 0, 7, 45, 2, 1, 5, 22, 0, 7, 46, 2, 1, 5, 23, 0, 7, 99, 0, 1, 7, 101, 0, 1, 5, 24, 0, 5, 25, 0, 7, 108, 0, 0, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 108, 0, 0, 7, 111, 0, 0, 7, 111, 0, 1, 5, 27, 0, 7, 113, 0, 0, 7, 119, 0, 0, 7, 121, 0, 0, 7, 121, 0, 1, 7, 123, 0, 1, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 123, 0, 1, 5, 28, 0, 7, 59, 1, 0, 7, 65, 1, 1, 7, 66, 1, 1, 7, 77, 1, 1, 7, 77, 1, 0, 7, 78, 1, 1, 7, 78, 1, 0, 5, 29, 0, 3, 2, 5, 9, 0, 7, 97, 1, 0, 3, 2, 5, 16, 0, 6, 5, 5, 30, 0, 7, 109, 1, 1, 7, 118, 1, 0, 5, 31, 0, 7, 123, 1, 0, 7, 124, 1, 0, 7, 125, 1, 1, 7, 125, 1, 0, 5, 32, 0, 7, 126, 1, 1, 5, 33, 0, 5, 34, 0, 7, 134, 1, 1, 7, 138, 1, 0, 7, 139, 1, 0, 7, 140, 1, 0, 7, 141, 1, 0, 7, 148, 1, 0, 7, 149, 1, 0, 7, 157, 1, 0, 5, 35, 0, 7, 147, 0, 0, 7, 147, 0, 1, 7, 150, 0, 0, 7, 152, 0, 1, 7, 153, 0, 0, 7, 159, 0, 1, 5, 36, 0, 7, 161, 0, 1, 5, 37, 0, 2, 2, 7, 171, 0, 0, 5, 1, 0, 5, 38, 0, 7, 173, 0, 1, 7, 173, 0, 0, 3, 7, 5, 2, 0, 5, 4, 0, 5, 39, 0, 5, 21, 0, 5, 40, 0, 5, 16, 0, 2, 2, 5, 3, 0, 7, 173, 0, 1, 7, 175, 0, 1, 5, 41, 0, 3, 2, 5, 12, 0, 6, 4, 6, 4, 5, 42, 0, 7, 199, 0, 1, 7, 200, 0, 1, 7, 243, 0, 0, 3, 3, 5, 26, 0, 5, 43, 0, 2, 2, 5, 3, 0, 7, 209, 0, 0, 3, 2, 5, 44, 0, 6, 2, 6, 2, 2, 2, 5, 44, 0, 6, 3, 2, 3, 5, 44, 0, 6, 3, 5, 45, 0, 7, 233, 0, 0, 4, 6, 0, 2, 2, 5, 44, 0, 6, 0, 5, 44, 0, 2, 2, 5, 44, 0, 6, 1, 4, 6, 1, 5, 46, 0, 5, 47, 0, 5, 48, 0, 7, 172, 1, 1, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 172, 1, 1, 7, 174, 1, 1, 7, 177, 1, 0, 7, 179, 1, 0, 5, 49, 0, 7, 180, 1, 0, 7, 182, 1, 1, 3, 5, 5, 2, 0, 5, 21, 0, 5, 40, 0, 5, 16, 0, 2, 2, 5, 3, 0, 7, 182, 1, 1, 7, 184, 1, 0, 7, 185, 1, 1, 7, 185, 1, 0, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 185, 1, 1, 5, 50, 0, 7, 187, 1, 1, 7, 210, 1, 0, 3, 2, 5, 26, 0, 2, 2, 5, 3, 0, 7, 210, 1, 0, 7, 212, 1, 0, 5, 51, 0, 5, 52, 0, 7, 24, 1, 0, 7, 24, 1, 1, 5, 53, 0, 7, 43, 1, 1, 7, 43, 1, 0, 7, 44, 1, 0, 7, 45, 1, 1, 7, 56, 1, 0, 5, 54, 0, 5, 55, 0, 5, 56, 0, 5, 57, 0, 7, 103, 0, 1, 5, 58, 0, 5, 59, 0, 5, 60, 0, 5, 61, 0, 5, 62, 0, 5, 63, 0, 5, 64, 0, 8, 240, 0, 2, 2, 5, 6, 0, 8, 235, 0, 5, 65, 0, 2, 2, 8, 174, 1, 5, 26, 0, 5, 66, 0, 2, 2, 6, 6, 6, 7, 2, 2, 6, 8, 5, 67, 0, 5, 68, 0 };
 
 const char kDoorTblNames[] = "Desert Arrow Pot Corner NW\0Desert Arrow Pot Corner S Edge\0Desert Arrow Pot Corner W Edge\0Desert Back Lobby NW\0Desert Back Lobby S\0Desert Beamos Hall NE\0Desert Beamos Hall WS\0Desert Big Chest SW\0Desert Bonk Torch SE\0Desert Boss SW\0Desert Bridge Down Stairs\0Desert Bridge SW\0Desert Cannonball S\0Desert Circle of Pots ES\0Desert Circle of Pots NW\0Desert Compass Key Door WN\0Desert Compass NE\0Desert Dead End Edge\0Desert East Lobby S\0Desert East Lobby WS\0Desert East Wing ES\0Desert East Wing Key Door EN\0Desert East Wing N Edge\0Desert East Wing W Edge\0Desert Fairy Fountain SW\0Desert Four Statues ES\0Desert Four Statues NW\0Desert Left Alcove Path\0Desert Main Lobby E Edge\0Desert Main Lobby Left Path\0Desert Main Lobby N Edge\0Desert Main Lobby NE Edge\0Desert Main Lobby NW Edge\0Desert Main Lobby Right Path\0Desert Main Lobby S\0Desert Map SE\0Desert Map SW\0Desert North Hall E Edge\0Desert North Hall NE\0Desert North Hall NW\0Desert North Hall SE Edge\0Desert North Hall SW Edge\0Desert North Hall W Edge\0Desert Right Alcove Path\0Desert Sandworm Corner E Edge\0Desert Sandworm Corner NE\0Desert Sandworm Corner S Edge\0Desert Sandworm Corner WS\0Desert Tiles 1 SW\0Desert Tiles 1 Up Stairs\0Desert Tiles 2 NE\0Desert Tiles 2 SE\0Desert Trap Room SW\0Desert Wall Slide NW\0Desert Wall Slide SE\0Desert West Lobby ES\0Desert West Lobby NW\0Desert West S\0Desert West Wing N Edge\0Desert West Wing WS\0Eastern Attic Start Down Stairs\0Eastern Attic Start WS\0Eastern Big Key EN\0Eastern Big Key NE\0Eastern Boss SE\0Eastern Cannonball Hell ES\0Eastern Cannonball Hell WS\0Eastern Cannonball Ledge Key Door EN\0Eastern Cannonball Ledge WN\0Eastern Cannonball N\0Eastern Cannonball S\0Eastern Compass Room EN\0Eastern Compass Room SW\0Eastern Courtyard EN\0Eastern Courtyard Ledge E\0Eastern Courtyard Ledge S\0Eastern Courtyard Ledge W\0Eastern Courtyard N\0Eastern Courtyard Potholes\0Eastern Courtyard WN\0Eastern Dark Pots WN\0Eastern Dark Square EN\0Eastern Dark Square Key Door WN\0Eastern Dark Square NW\0Eastern Darkness NE\0Eastern Darkness S\0Eastern Darkness Up Stairs\0Eastern Duo Eyegores NE\0Eastern Duo Eyegores SE\0Eastern East Wing EN\0Eastern East Wing ES\0Eastern East Wing W\0Eastern Fairies' Warp\0Eastern False Switches ES\0Eastern False Switches WS\0Eastern Hint Tile Blocked Path SE\0Eastern Hint Tile EN\0Eastern Hint Tile Push Block\0Eastern Hint Tile WN\0Eastern Lobby Bridge N\0Eastern Lobby Bridge S\0Eastern Lobby Left Ledge SW\0Eastern Lobby N\0Eastern Lobby NE\0Eastern Lobby NW\0Eastern Lobby Right Ledge SE\0Eastern Lobby S\0Eastern Map Balcony Hook Path\0Eastern Map Balcony WS\0Eastern Map Room Drop Down\0Eastern Map Room NE\0Eastern Map Valley SW\0Eastern Map Valley WN\0Eastern Pot Switch SE\0Eastern Pot Switch WN\0Eastern Rupees SE\0Eastern Single Eyegore ES\0Eastern Single Eyegore NE\0Eastern Stalfos Spawn ES\0Eastern Stalfos Spawn NW\0Eastern West Wing E\0Eastern West Wing WS\0GT Agahnim 2 SW\0GT Beam Dash ES\0GT Beam Dash WS\0GT Big Chest NW\0GT Big Chest SW\0GT Big Key Room SE\0GT Blocked Stairs Block Path\0GT Blocked Stairs Down Stairs\0GT Bob's Room Hole\0GT Bob's Room SE\0GT Bomb Conveyor EN\0GT Bomb Conveyor SW\0GT Brightly Lit Hall Down Stairs\0GT Brightly Lit Hall NW\0GT Cannonball Bridge SE\0GT Cannonball Bridge Up Stairs\0GT Cannonball Bridge WN\0GT Compass Room EN\0GT Compass Room Warp\0GT Conveyor Bridge EN\0GT Conveyor Bridge SE\0GT Conveyor Cross EN\0GT Conveyor Cross Hammer Path\0GT Conveyor Cross Hookshot Path\0GT Conveyor Cross WN\0GT Conveyor Star Pits EN\0GT Crystal Circles Barrier - Orange\0GT Crystal Circles NW\0GT Crystal Circles Ranged Crystal Exit\0GT Crystal Circles SW\0GT Crystal Circles to Ranged Crystal\0GT Crystal Conveyor Corner Ranged Crystal Exit\0GT Crystal Conveyor Corner to Barrier - Blue\0GT Crystal Conveyor Corner to Barrier - Orange\0GT Crystal Conveyor Corner to Left Bypass\0GT Crystal Conveyor Corner to Ranged Crystal\0GT Crystal Conveyor Left to Corner Barrier - Orange\0GT Crystal Conveyor NE\0GT Crystal Conveyor Ranged Crystal Exit\0GT Crystal Conveyor WN\0GT Crystal Conveyor to Corner Barrier - Blue\0GT Crystal Conveyor to Ranged Crystal\0GT Crystal Inner Circle Barrier - Orange\0GT Crystal Paths Down Stairs\0GT Crystal Paths SW\0GT DMs Room SW\0GT Dash Hall NE\0GT Dash Hall SE\0GT Dashing Bridge NE\0GT Dashing Bridge NW\0GT Double Switch EN\0GT Double Switch Entry Ranged Switches Exit\0GT Double Switch Entry to Left Barrier - Orange\0GT Double Switch Entry to Pot Corners Barrier - Orange\0GT Double Switch Entry to Ranged Switches\0GT Double Switch Exit to Blue Barrier\0GT Double Switch Left Crystal Exit\0GT Double Switch Left to Crystal\0GT Double Switch Left to Entry Barrier - Orange\0GT Double Switch Left to Entry Bypass\0GT Double Switch Left to Exit Bypass\0GT Double Switch Left to Pot Corners Bypass\0GT Double Switch NW\0GT Double Switch Pot Corners Ranged Switches Exit\0GT Double Switch Pot Corners to Entry Barrier - Orange\0GT Double Switch Pot Corners to Exit Barrier - Blue\0GT Double Switch Pot Corners to Ranged Switches\0GT Fairy Abyss SW\0GT Falling Bridge WN\0GT Falling Bridge WS\0GT Falling Torches Down Ladder\0GT Falling Torches Hole\0GT Falling Torches NE\0GT Firesnake Room Hook Path\0GT Firesnake Room SW\0GT Four Torches ES\0GT Four Torches NW\0GT Four Torches Up Stairs\0GT Frozen Over ES\0GT Frozen Over Up Stairs\0GT Gauntlet 1 Down Stairs\0GT Gauntlet 1 WN\0GT Gauntlet 2 EN\0GT Gauntlet 2 SW\0GT Gauntlet 3 NW\0GT Gauntlet 3 SW\0GT Gauntlet 4 NW\0GT Gauntlet 4 SW\0GT Gauntlet 5 NW\0GT Gauntlet 5 WS\0GT Hidden Spikes EN\0GT Hidden Spikes SE\0GT Hidden Star ES\0GT Hidden Star Warp\0GT HookShot South Entry Ranged Crystal Exit\0GT Hookshot EN\0GT Hookshot ES\0GT Hookshot East-Mid Path\0GT Hookshot Entry Blue Barrier\0GT Hookshot Mid-East Path\0GT Hookshot Mid-North Path\0GT Hookshot Mid-South Path\0GT Hookshot NW\0GT Hookshot North-Mid Path\0GT Hookshot Platform Barrier Bypass\0GT Hookshot Platform Blue Barrier\0GT Hookshot SW\0GT Hookshot South Entry to Ranged Crystal\0GT Hookshot South-Mid Path\0GT Hope Room EN\0GT Hope Room Up Stairs\0GT Hope Room WN\0GT Ice Armos NE\0GT Ice Armos WS\0GT Invisible Bridges WS\0GT Invisible Catwalk ES\0GT Invisible Catwalk NE\0GT Invisible Catwalk NW\0GT Invisible Catwalk WS\0GT Lanmolas 2 ES\0GT Lanmolas 2 NW\0GT Left Moldorm Ledge Drop Down\0GT Left Moldorm Ledge NW\0GT Lobby Left Down Stairs\0GT Lobby Right Down Stairs\0GT Lobby S\0GT Lobby Up Stairs\0GT Map Room WS\0GT Mimics 1 ES\0GT Mimics 1 NW\0GT Mimics 2 NE\0GT Mimics 2 WS\0GT Mini Helmasaur Room SE\0GT Mini Helmasaur Room WN\0GT Moldorm Gap\0GT Moldorm Hole\0GT Moldorm Pit Up Stairs\0GT Petting Zoo SE\0GT Pots n Blocks ES\0GT Quad Pot SW\0GT Quad Pot Up Stairs\0GT Randomizer Room ES\0GT Refill NE\0GT Right Moldorm Ledge Down Stairs\0GT Right Moldorm Ledge Drop Down\0GT Speed Torch NE\0GT Speed Torch North Path\0GT Speed Torch SE\0GT Speed Torch South Path\0GT Speed Torch WN\0GT Speed Torch WS\0GT Spike Crystal Left to Right Barrier - Orange\0GT Spike Crystal Left to Right Bypass\0GT Spike Crystal Right to Left Barrier - Orange\0GT Spike Crystals WN\0GT Spike Crystals Warp\0GT Staredown Up Ladder\0GT Staredown WS\0GT Tile Room EN\0GT Tile Room WN\0GT Torch Cross ES\0GT Torch Cross WN\0GT Torch EN\0GT Torch SW\0GT Torch Up Stairs\0GT Torch WN\0GT Validation Block Path\0GT Validation WS\0GT Warp Maze (Pits) ES\0GT Warp Maze (Rails) NW\0GT Warp Maze (Rails) WS\0GT Warp Maze - Left Section Warp\0GT Warp Maze - Main Rails Best Warp\0GT Warp Maze - Main Rails Mid Left Warp\0GT Warp Maze - Main Rails Mid Right Warp\0GT Warp Maze - Main Rails Right Mid Warp\0GT Warp Maze - Main Rails Right Top Warp\0GT Warp Maze - Mid Section Left Warp\0GT Warp Maze - Mid Section Right Warp\0GT Warp Maze - Pit Exit Warp\0GT Warp Maze - Pit Section Warp Spot\0GT Warp Maze - Pot Rail Warp\0GT Warp Maze - Rail Choice Left Warp\0GT Warp Maze - Rail Choice Right Warp\0GT Warp Maze - Rando Rail Warp\0GT Warp Maze - Right Section Warp\0GT Warp Maze Exit Section Warp Spot\0GT Wizzrobes 1 Down Stairs\0GT Wizzrobes 1 SW\0GT Wizzrobes 2 NE\0GT Wizzrobes 2 SE\0Hera 4F Down Stairs\0Hera 4F Holes\0Hera 4F Up Stairs\0Hera 5F Down Stairs\0Hera 5F Normal Holes\0Hera 5F Orange Path\0Hera 5F Pothole Chain\0Hera 5F Star Hole\0Hera 5F Up Stairs\0Hera Back Ranged Crystal Exit\0Hera Back to Front Barrier - Orange\0Hera Back to Ranged Crystal\0Hera Basement Cage Crystal Exit\0Hera Basement Cage Up Stairs\0Hera Basement Cage to Crystal\0Hera Beetles Down Stairs\0Hera Beetles Holes Front\0Hera Beetles Holes Landing\0Hera Beetles WS\0Hera Big Chest Hook Path\0Hera Big Chest Landing Exit\0Hera Big Chest Landing Holes\0Hera Boss Down Stairs\0Hera Boss Inner Hole\0Hera Boss Outer Hole\0Hera Down Stairs Landing Ranged Crystal Exit\0Hera Down Stairs Landing to Ranged Crystal\0Hera Down Stairs to Front Barrier - Blue\0Hera Fairies' Warp\0Hera Front Crystal Exit\0Hera Front to Back Barrier - Orange\0Hera Front to Back Bypass\0Hera Front to Crystal\0Hera Front to Down Stairs Barrier - Blue\0Hera Front to Lobby Barrier - Blue\0Hera Front to Up Stairs Barrier - Orange\0Hera Lobby Crystal Exit\0Hera Lobby Down Stairs\0Hera Lobby Key Stairs\0Hera Lobby S\0Hera Lobby Up Stairs\0Hera Lobby to Crystal\0Hera Lobby to Front Barrier - Blue\0Hera Startile Corner ES\0Hera Startile Corner Holes Front\0Hera Startile Corner Holes Landing\0Hera Startile Corner NW\0Hera Startile Wide Crystal Exit\0Hera Startile Wide Holes\0Hera Startile Wide SW\0Hera Startile Wide Up Stairs\0Hera Startile Wide to Crystal\0Hera Tile Room EN\0Hera Tile Room Up Stairs\0Hera Torches NE\0Hera Tridorm Crystal Exit\0Hera Tridorm SE\0Hera Tridorm WN\0Hera Tridorm to Crystal\0Hera Up Stairs Landing Ranged Crystal Exit\0Hera Up Stairs Landing to Ranged Crystal\0Hera Up Stairs to Front Barrier - Orange\0Hyrule Castle Back Hall Down Stairs\0Hyrule Castle Back Hall E\0Hyrule Castle Back Hall W\0Hyrule Castle East Hall S\0Hyrule Castle East Hall SW\0Hyrule Castle East Hall W\0Hyrule Castle East Lobby N\0Hyrule Castle East Lobby NW\0Hyrule Castle East Lobby S\0Hyrule Castle East Lobby W\0Hyrule Castle Lobby E\0Hyrule Castle Lobby North Stairs\0Hyrule Castle Lobby S\0Hyrule Castle Lobby W\0Hyrule Castle Lobby WN\0Hyrule Castle Tapestry Backwards\0Hyrule Castle Throne Room N\0Hyrule Castle Throne Room South Stairs\0Hyrule Castle Throne Room Tapestry\0Hyrule Castle West Hall E\0Hyrule Castle West Hall S\0Hyrule Castle West Lobby E\0Hyrule Castle West Lobby EN\0Hyrule Castle West Lobby N\0Hyrule Castle West Lobby S\0Hyrule Dungeon Armory Boomerang WS\0Hyrule Dungeon Armory Down Stairs\0Hyrule Dungeon Armory ES\0Hyrule Dungeon Armory Interior Key Door N\0Hyrule Dungeon Armory Interior Key Door S\0Hyrule Dungeon Armory S\0Hyrule Dungeon Cell Exit\0Hyrule Dungeon Cellblock Door\0Hyrule Dungeon Cellblock Up Stairs\0Hyrule Dungeon Guardroom Abyss Edge\0Hyrule Dungeon Guardroom Catwalk Edge\0Hyrule Dungeon Guardroom N\0Hyrule Dungeon Map Room Key Door S\0Hyrule Dungeon Map Room Up Stairs\0Hyrule Dungeon North Abyss Catwalk Dropdown\0Hyrule Dungeon North Abyss Catwalk Edge\0Hyrule Dungeon North Abyss Key Door N\0Hyrule Dungeon North Abyss South Edge\0Hyrule Dungeon South Abyss Catwalk North Edge\0Hyrule Dungeon South Abyss Catwalk West Edge\0Hyrule Dungeon South Abyss North Edge\0Hyrule Dungeon South Abyss West Edge\0Hyrule Dungeon Staircase Down Stairs\0Hyrule Dungeon Staircase Up Stairs\0Ice Antechamber Hole\0Ice Antechamber NE\0Ice Anti-Fairy SE\0Ice Anti-Fairy Up Stairs\0Ice Backwards Room Down Stairs\0Ice Backwards Room Hole\0Ice Backwards Room SE\0Ice Big Chest Landing Push Blocks\0Ice Big Chest View ES\0Ice Big Key Down Ladder\0Ice Big Key Push Block\0Ice Bomb Drop Hole\0Ice Bomb Drop Path\0Ice Bomb Drop SE\0Ice Bomb Jump Catwalk Orange Barrier\0Ice Bomb Jump EN\0Ice Bomb Jump Ledge Orange Barrier\0Ice Bomb Jump NW\0Ice Catwalk NW\0Ice Catwalk WN\0Ice Compass Room NE\0Ice Conveyor Crystal Exit\0Ice Conveyor NE\0Ice Conveyor SW\0Ice Conveyor to Crystal\0Ice Cross Bottom Push Block Left\0Ice Cross Bottom Push Block Right\0Ice Cross Bottom SE\0Ice Cross Left Push Block\0Ice Cross Left WS\0Ice Cross Right ES\0Ice Cross Right Push Block Bottom\0Ice Cross Right Push Block Top\0Ice Cross Top NE\0Ice Cross Top Push Block Bottom\0Ice Cross Top Push Block Right\0Ice Crystal Block Exit\0Ice Crystal Block Hole\0Ice Crystal Left Blue Barrier\0Ice Crystal Left Orange Barrier\0Ice Crystal Left WS\0Ice Crystal Right Blue Hole\0Ice Crystal Right ES\0Ice Crystal Right NE\0Ice Crystal Right Orange Barrier\0Ice Dead End WS\0Ice Fairy Warp\0Ice Falling Square Hole\0Ice Falling Square SE\0Ice Firebar Down Ladder\0Ice Firebar ES\0Ice Floor Switch ES\0Ice Floor Switch Up Stairs\0Ice Freezors Bomb Hole\0Ice Freezors Hole\0Ice Freezors Ledge ES\0Ice Freezors Ledge Hole\0Ice Freezors Up Ladder\0Ice Hammer Block Down Stairs\0Ice Hammer Block ES\0Ice Hammer Block Path\0Ice Hookshot Balcony Path\0Ice Hookshot Balcony SW\0Ice Hookshot Ledge Path\0Ice Hookshot Ledge WN\0Ice Jelly Key Down Stairs\0Ice Jelly Key ES\0Ice Lobby SE\0Ice Lobby WS\0Ice Lonely Freezor Down Stairs\0Ice Lonely Freezor NE\0Ice Many Pots SW\0Ice Many Pots WS\0Ice Narrow Corridor Down Stairs\0Ice Narrow Corridor WN\0Ice Pengator Switch ES\0Ice Pengator Switch WS\0Ice Pengator Trap NE\0Ice Pengator Trap Up Stairs\0Ice Refill Crystal Exit\0Ice Refill WS\0Ice Refill to Crystal\0Ice Right H Path\0Ice Spike Cross ES\0Ice Spike Cross NE\0Ice Spike Cross SE\0Ice Spike Cross WS\0Ice Spike Room Down Stairs\0Ice Spike Room Up Stairs\0Ice Spike Room WS\0Ice Spikeball NW\0Ice Spikeball Up Stairs\0Ice Stalfos Hint SE\0Ice Switch Room ES\0Ice Switch Room NE\0Ice Switch Room SE\0Ice Tall Hint EN\0Ice Tall Hint SE\0Ice Tall Hint WS\0Ice Tongue Pull Up Ladder\0Ice Tongue Pull WS\0Iced T EN\0Iced T Up Stairs\0Mire 2 NE\0Mire 2 Up Stairs\0Mire Antechamber NW\0Mire Antechamber Orange Barrier\0Mire Attic Hint Hole\0Mire Attic Hint WS\0Mire BK Chest Ledge WS\0Mire BK Door Room EN\0Mire BK Door Room N\0Mire Bent Bridge SW\0Mire Bent Bridge W\0Mire Block X NW\0Mire Block X WS\0Mire Boss SW\0Mire Chest View NE\0Mire Compass Blue Barrier\0Mire Compass Chest Exit\0Mire Compass Room EN\0Mire Compass Room SW\0Mire Conveyor Barrier NW\0Mire Conveyor Barrier Up Stairs\0Mire Conveyor Crystal ES\0Mire Conveyor Crystal Exit\0Mire Conveyor Crystal SE\0Mire Conveyor Crystal WS\0Mire Conveyor to Crystal\0Mire Cross ES\0Mire Cross SW\0Mire Crystal Dead End Left Barrier\0Mire Crystal Dead End NW\0Mire Crystal Dead End Right Barrier\0Mire Crystal Left Blue Barrier\0Mire Crystal Left WS\0Mire Crystal Mid Blue Barrier\0Mire Crystal Mid NW\0Mire Crystal Mid Orange Barrier\0Mire Crystal Right ES\0Mire Crystal Right Orange Barrier\0Mire Crystal Top SW\0Mire Dark Shooters SE\0Mire Dark Shooters SW\0Mire Dark Shooters Up Stairs\0Mire Failure Bridge E\0Mire Failure Bridge W\0Mire Falling Bridge Failure Path\0Mire Falling Bridge Hook Only Path\0Mire Falling Bridge Hook Path\0Mire Falling Bridge Primary Path\0Mire Falling Bridge W\0Mire Falling Bridge WN\0Mire Falling Bridge WS\0Mire Falling Foes ES\0Mire Falling Foes Up Stairs\0Mire Firesnake Skip Down Stairs\0Mire Firesnake Skip Orange Barrier\0Mire Fishbone Blue Barrier\0Mire Fishbone Blue Barrier Bypass\0Mire Fishbone E\0Mire Fishbone SE\0Mire Hidden Shooters Block Path N\0Mire Hidden Shooters Block Path S\0Mire Hidden Shooters ES\0Mire Hidden Shooters NE\0Mire Hidden Shooters SE\0Mire Hidden Shooters WS\0Mire Hub E\0Mire Hub ES\0Mire Hub Lower Blue Barrier\0Mire Hub NE\0Mire Hub Right Blue Barrier\0Mire Hub Right EN\0Mire Hub SE\0Mire Hub Switch Blue Barrier N\0Mire Hub Switch Blue Barrier S\0Mire Hub Top Blue Barrier\0Mire Hub Top NW\0Mire Hub Upper Blue Barrier\0Mire Hub WN\0Mire Hub WS\0Mire Key Rupees NE\0Mire Ledgehop NW\0Mire Ledgehop SW\0Mire Ledgehop WN\0Mire Left Bridge Down Stairs\0Mire Left Bridge Hook Path\0Mire Left Bridge S\0Mire Lobby Gap\0Mire Lobby S\0Mire Lone Shooter ES\0Mire Lone Shooter WS\0Mire Lone Warp SW\0Mire Lone Warp Warp\0Mire Map Spike Side Blue Barrier\0Mire Map Spike Side Drop Down\0Mire Map Spike Side EN\0Mire Map Spot Blue Barrier\0Mire Map Spot WN\0Mire Minibridge NE\0Mire Minibridge SE\0Mire Neglected Room NE\0Mire Neglected Room SE\0Mire Over Bridge E\0Mire Over Bridge W\0Mire Post-Gap Down Stairs\0Mire Post-Gap Gap\0Mire Right Bridge SE\0Mire Shooter Rupees EN\0Mire South Fish Blue Barrier\0Mire Spike Barrier ES\0Mire Spike Barrier NE\0Mire Spike Barrier SE\0Mire Spikes NW\0Mire Spikes SW\0Mire Spikes WS\0Mire Square Rail NW\0Mire Square Rail WS\0Mire Tall Dark and Roomy ES\0Mire Tall Dark and Roomy Ranged Crystal Exit\0Mire Tall Dark and Roomy WN\0Mire Tall Dark and Roomy WS\0Mire Tall Dark and Roomy to Ranged Crystal\0Mire Tile Room ES\0Mire Tile Room NW\0Mire Tile Room SW\0Mire Torches Bottom ES\0Mire Torches Bottom Holes\0Mire Torches Bottom NW\0Mire Torches Top Down Stairs\0Mire Torches Top Holes\0Mire Torches Top SW\0Mire Warping Pool ES\0Mire Warping Pool Warp\0Mire Wizzrobe Bypass EN\0Mire Wizzrobe Bypass NE\0Mire Wizzrobe Bypass WN\0PoD Arena Bridge Drop Down\0PoD Arena Bridge Ranged Crystal Exit\0PoD Arena Bridge SE\0PoD Arena Bridge to Ranged Crystal\0PoD Arena Crystals E\0PoD Arena Landing Bonk Path\0PoD Arena Landing to Main Barrier - Blue\0PoD Arena Landing to North Barrier - Orange\0PoD Arena Landing to Right Barrier - Blue\0PoD Arena Ledge ES\0PoD Arena Ledge Ranged Crystal Exit\0PoD Arena Ledge to Ranged Crystal\0PoD Arena Main NE\0PoD Arena Main NW\0PoD Arena Main Ranged Crystal Exit\0PoD Arena Main SW\0PoD Arena Main to Landing Barrier - Blue\0PoD Arena Main to Landing Bypass\0PoD Arena Main to Ranged Crystal\0PoD Arena Main to Right Bypass\0PoD Arena North Drop Down\0PoD Arena North to Landing Barrier - Orange\0PoD Arena Right Ranged Crystal Exit\0PoD Arena Right to Landing Barrier - Blue\0PoD Arena Right to Ranged Crystal\0PoD Basement Ledge Drop Down\0PoD Basement Ledge Up Stairs\0PoD Big Chest Balcony W\0PoD Big Key Landing Down Stairs\0PoD Big Key Landing Hole\0PoD Boss SE\0PoD Bow Statue Down Ladder\0PoD Bow Statue Left Crystal Exit\0PoD Bow Statue Left to Crystal\0PoD Bow Statue Left to Right Barrier - Orange\0PoD Bow Statue Left to Right Bypass\0PoD Bow Statue Ranged Crystal Exit\0PoD Bow Statue Right to Left Barrier - Orange\0PoD Bow Statue Right to Ranged Crystal\0PoD Bow Statue SW\0PoD Callback WS\0PoD Callback Warp\0PoD Compass Room E Down Stairs\0PoD Compass Room SE\0PoD Compass Room W Down Stairs\0PoD Compass Room WN\0PoD Conveyor North Stairs\0PoD Conveyor SW\0PoD Dark Alley NE\0PoD Dark Basement E Up Stairs\0PoD Dark Basement W Up Stairs\0PoD Dark Maze E\0PoD Dark Maze EN\0PoD Dark Pegs Landing Ranged Crystal Exit\0PoD Dark Pegs Landing to Ranged Crystal\0PoD Dark Pegs Landing to Right\0PoD Dark Pegs Left Ranged Crystal Exit\0PoD Dark Pegs Left to Middle Barrier - Blue\0PoD Dark Pegs Left to Ranged Crystal\0PoD Dark Pegs Middle Ranged Crystal Exit\0PoD Dark Pegs Middle to Left Barrier - Blue\0PoD Dark Pegs Middle to Left Bypass\0PoD Dark Pegs Middle to Ranged Crystal\0PoD Dark Pegs Middle to Right Barrier - Orange\0PoD Dark Pegs Right to Landing\0PoD Dark Pegs Right to Middle Barrier - Orange\0PoD Dark Pegs Right to Middle Bypass\0PoD Dark Pegs Up Ladder\0PoD Dark Pegs WN\0PoD Fairy Pool WS\0PoD Falling Bridge EN\0PoD Falling Bridge Mid Path N\0PoD Falling Bridge Mid Path S\0PoD Falling Bridge Path N\0PoD Falling Bridge Path S\0PoD Falling Bridge SW\0PoD Falling Bridge WN\0PoD Harmless Hellway NE\0PoD Harmless Hellway SE\0PoD Jelly Hall NE\0PoD Jelly Hall NW\0PoD Left Cage Down Stairs\0PoD Left Cage SW\0PoD Lobby N\0PoD Lobby NE\0PoD Lobby NW\0PoD Lobby S\0PoD Lonely Turtle EN\0PoD Lonely Turtle SW\0PoD Map Balcony Drop Down\0PoD Map Balcony ES\0PoD Map Balcony Ranged Crystal Exit\0PoD Map Balcony South Stairs\0PoD Map Balcony WS\0PoD Map Balcony to Ranged Crystal\0PoD Middle Cage Down Stairs\0PoD Middle Cage N\0PoD Middle Cage S\0PoD Middle Cage SE\0PoD Mimics 1 NW\0PoD Mimics 1 SW\0PoD Mimics 2 NW\0PoD Mimics 2 SW\0PoD Pit Room Block Path N\0PoD Pit Room Block Path S\0PoD Pit Room Bomb Hole\0PoD Pit Room Freefall\0PoD Pit Room NE\0PoD Pit Room NW\0PoD Pit Room S\0PoD Sexy Statue NW\0PoD Sexy Statue W\0PoD Shooter Room Up Stairs\0PoD Stalfos Basement Warp\0PoD Turtle Party ES\0PoD Turtle Party NW\0PoD Warp Hint SE\0PoD Warp Hint Warp\0PoD Warp Room Up Stairs\0PoD Warp Room Warp\0Sanctuary Mirror Route\0Sanctuary N\0Sanctuary S\0Sewers Behind Tapestry Down Stairs\0Sewers Behind Tapestry S\0Sewers Dark Aquabats ES\0Sewers Dark Aquabats N\0Sewers Dark Cross Key Door N\0Sewers Dark Cross South Stairs\0Sewers Key Rat NE\0Sewers Key Rat S\0Sewers Pull Switch Down Stairs\0Sewers Pull Switch N\0Sewers Pull Switch S\0Sewers Rat Path WN\0Sewers Rat Path WS\0Sewers Rope Room North Stairs\0Sewers Rope Room Up Stairs\0Sewers Secret Room EN\0Sewers Secret Room ES\0Sewers Secret Room Key Door S\0Sewers Secret Room Push Block\0Sewers Secret Room Up Stairs\0Sewers Water S\0Sewers Water W\0Sewers Yet More Rats S\0Skull 1 Lobby ES\0Skull 1 Lobby S\0Skull 1 Lobby WS\0Skull 2 East Lobby NW\0Skull 2 East Lobby SW\0Skull 2 East Lobby WS\0Skull 2 West Lobby ES\0Skull 2 West Lobby Ledge Pits\0Skull 2 West Lobby NW\0Skull 2 West Lobby Pits\0Skull 2 West Lobby S\0Skull 3 Lobby EN\0Skull 3 Lobby NW\0Skull 3 Lobby SW\0Skull Back Drop Star Path\0Skull Big Chest Hookpath\0Skull Big Chest N\0Skull Big Key EN\0Skull Big Key SW\0Skull Compass Room ES\0Skull Compass Room NE\0Skull Compass Room WS\0Skull East Bridge WN\0Skull East Bridge WS\0Skull Final Drop Hole\0Skull Final Drop WS\0Skull Left Drop ES\0Skull Lone Pot WN\0Skull Map Room SE\0Skull Map Room WS\0Skull Pinball NE\0Skull Pinball WS\0Skull Pot Circle Star Path\0Skull Pot Circle WN\0Skull Pot Prison ES\0Skull Pot Prison SE\0Skull Pull Switch EN\0Skull Pull Switch S\0Skull Small Hall ES\0Skull Small Hall WS\0Skull Spike Corner ES\0Skull Spike Corner SW\0Skull Star Pits ES\0Skull Star Pits SW\0Skull Torch Room WN\0Skull Torch Room WS\0Skull Vines EN\0Skull Vines NW\0Skull West Bridge Nook ES\0Skull X Room SW\0Swamp Attic Down Stairs\0Swamp Attic Left Pit\0Swamp Attic Right Pit\0Swamp Barrier - Orange\0Swamp Barrier EN\0Swamp Barrier Ledge - Orange\0Swamp Barrier Ledge Drop Down\0Swamp Barrier Ledge Hook Path\0Swamp Basement Shallows EN\0Swamp Basement Shallows ES\0Swamp Basement Shallows NW\0Swamp Behind Waterfall SE\0Swamp Behind Waterfall Up Stairs\0Swamp Big Key Ledge WN\0Swamp Boss SW\0Swamp C Down Stairs\0Swamp C SE\0Swamp Compass Donut Push Block\0Swamp Compass Donut SW\0Swamp Crystal Switch EN\0Swamp Crystal Switch Inner Crystal Exit\0Swamp Crystal Switch Inner to Crystal\0Swamp Crystal Switch Inner to Outer Barrier - Blue\0Swamp Crystal Switch Inner to Outer Bypass\0Swamp Crystal Switch Outer Ranged Crystal Exit\0Swamp Crystal Switch Outer to Inner Barrier - Blue\0Swamp Crystal Switch Outer to Inner Bypass\0Swamp Crystal Switch Outer to Ranged Crystal\0Swamp Crystal Switch SE\0Swamp Donut Bottom NE\0Swamp Donut Bottom NW\0Swamp Donut Top N\0Swamp Donut Top SE\0Swamp Drain Left Up Stairs\0Swamp Drain Right Switch\0Swamp Drain Right Up Stairs\0Swamp Drain WN\0Swamp Entrance Down Stairs\0Swamp Entrance Moat\0Swamp Flooded Room Ladder\0Swamp Flooded Room Up Stairs\0Swamp Flooded Room WS\0Swamp Flooded Spot Ladder\0Swamp Hammer Switch SW\0Swamp Hammer Switch WN\0Swamp Hub Dead Ledge EN\0Swamp Hub ES\0Swamp Hub Hook Path\0Swamp Hub North Ledge Drop Down\0Swamp Hub North Ledge N\0Swamp Hub S\0Swamp Hub Side Hook Path\0Swamp Hub WN\0Swamp Hub WS\0Swamp I S\0Swamp Left Elbow Down Stairs\0Swamp Left Elbow WN\0Swamp Lobby Moat\0Swamp Lobby S\0Swamp Map Ledge EN\0Swamp Pot Row Up Stairs\0Swamp Pot Row WN\0Swamp Pot Row WS\0Swamp Push Statue Down Stairs\0Swamp Push Statue NE\0Swamp Push Statue NW\0Swamp Push Statue S\0Swamp Refill SW\0Swamp Right Elbow Down Stairs\0Swamp Right Elbow SE\0Swamp Shooters EN\0Swamp Shooters SW\0Swamp Shortcut Blue Barrier\0Swamp Shortcut NE\0Swamp T NW\0Swamp T SW\0Swamp Trench 1 Alcove S\0Swamp Trench 1 Approach Dry\0Swamp Trench 1 Approach ES\0Swamp Trench 1 Approach Key\0Swamp Trench 1 Approach Swim Depart\0Swamp Trench 1 Departure Approach\0Swamp Trench 1 Departure Dry\0Swamp Trench 1 Departure Key\0Swamp Trench 1 Departure WS\0Swamp Trench 1 Key Approach\0Swamp Trench 1 Key Ledge Depart\0Swamp Trench 1 Key Ledge Dry\0Swamp Trench 1 Key Ledge NW\0Swamp Trench 1 Nexus Approach\0Swamp Trench 1 Nexus Key\0Swamp Trench 1 Nexus N\0Swamp Trench 2 Alcove S\0Swamp Trench 2 Blocks N\0Swamp Trench 2 Blocks Pots\0Swamp Trench 2 Departure WS\0Swamp Trench 2 Departure Wet\0Swamp Trench 2 Pots Blue Barrier\0Swamp Trench 2 Pots Dry\0Swamp Trench 2 Pots ES\0Swamp Trench 2 Pots Wet\0Swamp Waterfall Room NE\0Swamp Waterfall Room NW\0Swamp Waterfall Room SW\0Swamp Waterway N\0Swamp Waterway NE\0Swamp Waterway NW\0Swamp West Block Path Drop Down\0Swamp West Block Path Up Stairs\0Swamp West Ledge Drop Down\0Swamp West Ledge Hook Path\0Swamp West Shallows ES\0Swamp West Shallows Push Blocks\0TR Big Chest Entrance Gap\0TR Big Chest Entrance SE\0TR Big Chest Gap\0TR Big Chest NE\0TR Big View WS\0TR Boss SW\0TR Chain Chomps Bottom Ranged Crystal Exit\0TR Chain Chomps Bottom to Ranged Crystal\0TR Chain Chomps Bottom to Top Barrier - Orange\0TR Chain Chomps Down Stairs\0TR Chain Chomps SW\0TR Chain Chomps Top Crystal Exit\0TR Chain Chomps Top to Bottom Barrier - Orange\0TR Chain Chomps Top to Crystal\0TR Compass Room NW\0TR Crystal Maze ES\0TR Crystal Maze End Ranged Crystal Exit\0TR Crystal Maze End to Interior Barrier - Blue\0TR Crystal Maze End to Ranged Crystal\0TR Crystal Maze Interior to End Barrier - Blue\0TR Crystal Maze Interior to End Bypass\0TR Crystal Maze Interior to Start Barrier - Blue\0TR Crystal Maze Interior to Start Bypass\0TR Crystal Maze North Stairs\0TR Crystal Maze Start Crystal Exit\0TR Crystal Maze Start to Crystal\0TR Crystal Maze Start to Interior Barrier - Blue\0TR Crystaroller Bottom Ranged Crystal Exit\0TR Crystaroller Bottom to Middle Barrier - Orange\0TR Crystaroller Bottom to Ranged Crystal\0TR Crystaroller Chest to Middle Barrier - Blue\0TR Crystaroller Down Stairs\0TR Crystaroller Middle Ranged Crystal Exit\0TR Crystaroller Middle to Bottom Barrier - Orange\0TR Crystaroller Middle to Bottom Bypass\0TR Crystaroller Middle to Chest Barrier - Blue\0TR Crystaroller Middle to Ranged Crystal\0TR Crystaroller Middle to Top Barrier - Orange\0TR Crystaroller SW\0TR Crystaroller Top Crystal Exit\0TR Crystaroller Top to Crystal\0TR Crystaroller Top to Middle Barrier - Orange\0TR Dark Ride Backward Path\0TR Dark Ride Ledge Path\0TR Dark Ride Normal Path\0TR Dark Ride Return Path\0TR Dark Ride SW\0TR Dark Ride Up Stairs\0TR Dash Bridge NW\0TR Dash Bridge SW\0TR Dash Bridge WS\0TR Dash Room ES\0TR Dash Room NW\0TR Dash Room SW\0TR Dodgers NE\0TR Dodgers SE\0TR Dodgers WN\0TR Eye Bridge NW\0TR Eye Bridge SW\0TR Final Abyss Balcony Path\0TR Final Abyss Ledge Path\0TR Final Abyss NW\0TR Final Abyss South Stairs\0TR Hallway ES\0TR Hallway NW\0TR Hallway WS\0TR Hub EN\0TR Hub ES\0TR Hub Ledges Path\0TR Hub NE\0TR Hub NW\0TR Hub Path\0TR Hub SE\0TR Hub SW\0TR Lava Dual Pipes EN\0TR Lava Dual Pipes SW\0TR Lava Dual Pipes WN\0TR Lava Escape NW\0TR Lava Escape SE\0TR Lava Island ES\0TR Lava Island WS\0TR Lazy Eyes ES\0TR Lazy Eyes SE\0TR Lobby Ledge Gap\0TR Lobby Ledge NE\0TR Main Lobby Gap\0TR Main Lobby SE\0TR Pipe Ledge Drop Down\0TR Pipe Ledge WS\0TR Pipe Pit Up Stairs\0TR Pipe Pit WN\0TR Pokey 1 NW\0TR Pokey 1 SW\0TR Pokey 2 Bottom Ranged Crystal Exit\0TR Pokey 2 Bottom to Ranged Crystal\0TR Pokey 2 Bottom to Top Barrier - Blue\0TR Pokey 2 EN\0TR Pokey 2 ES\0TR Pokey 2 Top Crystal Exit\0TR Pokey 2 Top to Bottom Barrier - Blue\0TR Pokey 2 Top to Crystal\0TR Refill SE\0TR Roller Room SW\0TR Rupees SE\0TR Tile Room NE\0TR Tile Room SE\0TR Tongue Pull NE\0TR Tongue Pull WS\0TR Torches Ledge WS\0TR Torches NW\0TR Torches WN\0TR Twin Pokeys EN\0TR Twin Pokeys NW\0TR Twin Pokeys SW\0Thieves Ambush E\0Thieves Ambush EN Edge\0Thieves Ambush ES Edge\0Thieves Ambush S Edge\0Thieves Ambush SE Edge\0Thieves Attic Blue Barrier\0Thieves Attic Down Stairs\0Thieves Attic ES\0Thieves Attic Hint Orange Barrier\0Thieves Attic Orange Barrier\0Thieves Attic Switch Blue Barrier\0Thieves Attic Window WS\0Thieves BK Corner NE\0Thieves BK Corner S Edge\0Thieves BK Corner SW Edge\0Thieves BK Corner WN Edge\0Thieves BK Corner WS Edge\0Thieves Basement Block Path\0Thieves Basement Block Up Stairs\0Thieves Basement Block WN\0Thieves Big Chest Nook ES Edge\0Thieves Big Chest Room ES\0Thieves Blind's Cell Door\0Thieves Blind's Cell Exit\0Thieves Blind's Cell WS\0Thieves Blocked Entry Path\0Thieves Blocked Entry SW\0Thieves Boss SE\0Thieves Compass Room N Edge\0Thieves Compass Room NW Edge\0Thieves Compass Room W\0Thieves Compass Room WS Edge\0Thieves Conveyor Block Path\0Thieves Conveyor Block WN\0Thieves Conveyor Bridge Block Path\0Thieves Conveyor Bridge EN\0Thieves Conveyor Bridge ES\0Thieves Conveyor Bridge WS\0Thieves Conveyor Maze Down Stairs\0Thieves Conveyor Maze EN\0Thieves Conveyor Maze SW\0Thieves Conveyor Maze WN\0Thieves Cricket Hall Left Edge\0Thieves Cricket Hall Left WS\0Thieves Cricket Hall Right ES\0Thieves Cricket Hall Right Edge\0Thieves Hallway NE\0Thieves Hallway SE\0Thieves Hallway WN\0Thieves Hallway WS\0Thieves Hellway Blue Barrier\0Thieves Hellway Crystal Blue Barrier\0Thieves Hellway Crystal EN\0Thieves Hellway Crystal ES\0Thieves Hellway Crystal Orange Barrier\0Thieves Hellway NW\0Thieves Hellway Orange Barrier\0Thieves Lobby E\0Thieves Lobby N Edge\0Thieves Lobby NE Edge\0Thieves Lobby S\0Thieves Lonely Zazak ES\0Thieves Lonely Zazak NW\0Thieves Lonely Zazak WS\0Thieves Pot Alcove Bottom SW\0Thieves Pot Alcove Mid ES\0Thieves Pot Alcove Mid WS\0Thieves Pot Alcove Top NW\0Thieves Rail Ledge Drop Down\0Thieves Rail Ledge NW\0Thieves Rail Ledge W\0Thieves Spike Switch SW\0Thieves Spike Switch Up Stairs\0Thieves Spike Track ES\0Thieves Spike Track NE\0Thieves Spike Track WS\0Thieves Trap EN\0Thieves Triple Bypass EN\0Thieves Triple Bypass SE\0Thieves Triple Bypass WN\0Tower Agahnim 1 SW\0Tower Altar NW\0Tower Altar SW\0Tower Antechamber NW\0Tower Antechamber South Stairs\0Tower Catwalk ES\0Tower Catwalk North Stairs\0Tower Circle of Pots ES\0Tower Circle of Pots NW\0Tower Dark Archers Up Stairs\0Tower Dark Archers WN\0Tower Dark Chargers Up Stairs\0Tower Dark Chargers WS\0Tower Dark Maze EN\0Tower Dark Maze ES\0Tower Dark Pits EN\0Tower Dark Pits ES\0Tower Dual Statues Down Stairs\0Tower Dual Statues WS\0Tower Gold Knights EN\0Tower Gold Knights SW\0Tower Lobby NW\0Tower Lobby S\0Tower Lone Statue Down Stairs\0Tower Lone Statue WN\0Tower Pacifist Run Up Stairs\0Tower Pacifist Run WS\0Tower Push Statue Down Stairs\0Tower Push Statue WS\0Tower Red Guards EN\0Tower Red Guards SW\0Tower Red Spears Down Stairs\0Tower Red Spears WN\0Tower Room 03 Up Stairs\0Tower Room 03 WN\0Hyrule Castle Back Hall\0Hyrule Castle Behind Tapestry\0Hyrule Castle East Hall\0Hyrule Castle East Lobby\0Hyrule Castle East Portal\0Hyrule Castle Lobby\0Hyrule Castle South Portal\0Hyrule Castle Throne Room\0Hyrule Castle West Hall\0Hyrule Castle West Lobby\0Hyrule Castle West Portal\0Hyrule Dungeon Armory Boomerang\0Hyrule Dungeon Armory Main\0Hyrule Dungeon Armory North Branch\0Hyrule Dungeon Cell\0Hyrule Dungeon Cellblock\0Hyrule Dungeon Guardroom\0Hyrule Dungeon Map Room\0Hyrule Dungeon North Abyss\0Hyrule Dungeon North Abyss Catwalk\0Hyrule Dungeon South Abyss\0Hyrule Dungeon South Abyss Catwalk\0Hyrule Dungeon Staircase\0Sanctuary\0Sanctuary Portal\0Sewers Behind Tapestry\0Sewers Dark Aquabats\0Sewers Dark Cross\0Sewers Key Rat\0Sewers Pull Switch\0Sewers Rat Path\0Sewers Rope Room\0Sewers Secret Room\0Sewers Secret Room Blocked Path\0Sewers Water\0Sewers Yet More Rats\0Eastern Attic Start\0Eastern Big Key\0Eastern Boss\0Eastern Cannonball\0Eastern Cannonball Hell\0Eastern Cannonball Ledge\0Eastern Compass Room\0Eastern Courtyard\0Eastern Courtyard Ledge\0Eastern Dark Pots\0Eastern Dark Square\0Eastern Darkness\0Eastern Duo Eyegores\0Eastern East Wing\0Eastern Fairies\0Eastern False Switches\0Eastern Hint Tile\0Eastern Hint Tile Blocked Path\0Eastern Lobby\0Eastern Lobby Bridge\0Eastern Lobby Left Ledge\0Eastern Lobby Right Ledge\0Eastern Map Balcony\0Eastern Map Room\0Eastern Map Valley\0Eastern Portal\0Eastern Pot Switch\0Eastern Rupees\0Eastern Single Eyegore\0Eastern Stalfos Spawn\0Eastern West Wing\0Desert Arrow Pot Corner\0Desert Back Lobby\0Desert Back Portal\0Desert Beamos Hall\0Desert Big Chest Room\0Desert Bonk Torch\0Desert Boss\0Desert Bridge\0Desert Cannonball\0Desert Circle of Pots\0Desert Compass Room\0Desert Dead End\0Desert East Lobby\0Desert East Portal\0Desert East Wing\0Desert Fairy Fountain\0Desert Four Statues\0Desert Left Alcove\0Desert Main Lobby\0Desert Map Room\0Desert North Hall\0Desert Right Alcove\0Desert Sandworm Corner\0Desert South Portal\0Desert Tiles 1\0Desert Tiles 2\0Desert Trap Room\0Desert Wall Slide\0Desert West Lobby\0Desert West Portal\0Desert West Wing\0Hera 4F\0Hera 5F\0Hera 5F Pot Block\0Hera Back\0Hera Back - Ranged Crystal\0Hera Basement Cage\0Hera Basement Cage - Crystal\0Hera Beetles\0Hera Big Chest Landing\0Hera Boss\0Hera Down Stairs Landing\0Hera Down Stairs Landing - Ranged Crystal\0Hera Fairies\0Hera Front\0Hera Front - Crystal\0Hera Lobby\0Hera Lobby - Crystal\0Hera Portal\0Hera Startile Corner\0Hera Startile Wide\0Hera Startile Wide - Crystal\0Hera Tile Room\0Hera Torches\0Hera Tridorm\0Hera Tridorm - Crystal\0Hera Up Stairs Landing\0Hera Up Stairs Landing - Ranged Crystal\0Agahnims Tower Portal\0Tower Agahnim 1\0Tower Altar\0Tower Antechamber\0Tower Catwalk\0Tower Circle of Pots\0Tower Dark Archers\0Tower Dark Chargers\0Tower Dark Maze\0Tower Dark Pits\0Tower Dual Statues\0Tower Gold Knights\0Tower Lobby\0Tower Lone Statue\0Tower Pacifist Run\0Tower Push Statue\0Tower Red Guards\0Tower Red Spears\0Tower Room 03\0Palace of Darkness Portal\0PoD Arena Bridge\0PoD Arena Bridge - Ranged Crystal\0PoD Arena Landing\0PoD Arena Ledge\0PoD Arena Ledge - Ranged Crystal\0PoD Arena Main\0PoD Arena Main - Ranged Crystal\0PoD Arena North\0PoD Arena Right\0PoD Arena Right - Ranged Crystal\0PoD Basement Ledge\0PoD Big Chest Balcony\0PoD Big Key Landing\0PoD Boss\0PoD Bow Statue Left\0PoD Bow Statue Left - Crystal\0PoD Bow Statue Right\0PoD Bow Statue Right - Ranged Crystal\0PoD Callback\0PoD Compass Room\0PoD Conveyor\0PoD Dark Alley\0PoD Dark Basement\0PoD Dark Maze\0PoD Dark Pegs Landing\0PoD Dark Pegs Landing - Ranged Crystal\0PoD Dark Pegs Left\0PoD Dark Pegs Left - Ranged Crystal\0PoD Dark Pegs Middle\0PoD Dark Pegs Middle - Ranged Crystal\0PoD Dark Pegs Right\0PoD Fairy Pool\0PoD Falling Bridge\0PoD Falling Bridge Ledge\0PoD Falling Bridge Mid\0PoD Harmless Hellway\0PoD Jelly Hall\0PoD Left Cage\0PoD Lobby\0PoD Lonely Turtle\0PoD Map Balcony\0PoD Map Balcony - Ranged Crystal\0PoD Middle Cage\0PoD Mimics 1\0PoD Mimics 2\0PoD Pit Room\0PoD Pit Room Blocked\0PoD Sexy Statue\0PoD Shooter Room\0PoD Stalfos Basement\0PoD Turtle Party\0PoD Warp Hint\0PoD Warp Room\0Swamp Attic\0Swamp Barrier\0Swamp Barrier Ledge\0Swamp Basement Shallows\0Swamp Behind Waterfall\0Swamp Big Key Ledge\0Swamp Boss\0Swamp C\0Swamp Compass Donut\0Swamp Crystal Switch Inner\0Swamp Crystal Switch Inner - Crystal\0Swamp Crystal Switch Outer\0Swamp Crystal Switch Outer - Ranged Crystal\0Swamp Donut Bottom\0Swamp Donut Top\0Swamp Drain Left\0Swamp Drain Right\0Swamp Entrance\0Swamp Flooded Room\0Swamp Flooded Spot\0Swamp Hammer Switch\0Swamp Hub\0Swamp Hub Dead Ledge\0Swamp Hub North Ledge\0Swamp Hub Side Ledges\0Swamp I\0Swamp Left Elbow\0Swamp Lobby\0Swamp Map Ledge\0Swamp Portal\0Swamp Pot Row\0Swamp Push Statue\0Swamp Refill\0Swamp Right Elbow\0Swamp Shooters\0Swamp Shortcut\0Swamp T\0Swamp Trench 1 Alcove\0Swamp Trench 1 Approach\0Swamp Trench 1 Departure\0Swamp Trench 1 Key Ledge\0Swamp Trench 1 Nexus\0Swamp Trench 2 Alcove\0Swamp Trench 2 Blocks\0Swamp Trench 2 Departure\0Swamp Trench 2 Pots\0Swamp Waterfall Room\0Swamp Waterway\0Swamp West Block Path\0Swamp West Ledge\0Swamp West Shallows\0Skull 1 Lobby\0Skull 1 Portal\0Skull 2 East Lobby\0Skull 2 East Portal\0Skull 2 West Lobby\0Skull 2 West Lobby Ledge\0Skull 2 West Portal\0Skull 3 Lobby\0Skull 3 Portal\0Skull Back Drop\0Skull Big Chest\0Skull Big Key\0Skull Boss\0Skull Compass Room\0Skull East Bridge\0Skull Final Drop\0Skull Left Drop\0Skull Lone Pot\0Skull Map Room\0Skull Pinball\0Skull Pot Circle\0Skull Pot Prison\0Skull Pull Switch\0Skull Small Hall\0Skull Spike Corner\0Skull Star Pits\0Skull Torch Room\0Skull Vines\0Skull West Bridge Nook\0Skull X Room\0Thieves Ambush\0Thieves Attic\0Thieves Attic Hint\0Thieves Attic Switch\0Thieves Attic Window\0Thieves BK Corner\0Thieves Basement Block\0Thieves Big Chest Nook\0Thieves Big Chest Room\0Thieves Blind's Cell\0Thieves Blind's Cell Interior\0Thieves Blocked Entry\0Thieves Boss\0Thieves Compass Room\0Thieves Conveyor Block\0Thieves Conveyor Bridge\0Thieves Conveyor Maze\0Thieves Cricket Hall Left\0Thieves Cricket Hall Right\0Thieves Hallway\0Thieves Hellway\0Thieves Hellway N Crystal\0Thieves Hellway S Crystal\0Thieves Lobby\0Thieves Lonely Zazak\0Thieves Pot Alcove Bottom\0Thieves Pot Alcove Mid\0Thieves Pot Alcove Top\0Thieves Rail Ledge\0Thieves Spike Switch\0Thieves Spike Track\0Thieves Town Portal\0Thieves Trap\0Thieves Triple Bypass\0Ice Antechamber\0Ice Anti-Fairy\0Ice Backwards Room\0Ice Big Chest Landing\0Ice Big Chest View\0Ice Big Key\0Ice Bomb Drop\0Ice Bomb Drop - Top\0Ice Bomb Jump Catwalk\0Ice Bomb Jump Ledge\0Ice Boss\0Ice Catwalk\0Ice Compass Room\0Ice Conveyor\0Ice Conveyor - Crystal\0Ice Cross Bottom\0Ice Cross Left\0Ice Cross Right\0Ice Cross Top\0Ice Crystal Block\0Ice Crystal Left\0Ice Crystal Right\0Ice Dead End\0Ice Fairy\0Ice Falling Square\0Ice Firebar\0Ice Floor Switch\0Ice Freezors\0Ice Freezors Ledge\0Ice Hammer Block\0Ice Hookshot Balcony\0Ice Hookshot Ledge\0Ice Jelly Key\0Ice Lobby\0Ice Lonely Freezor\0Ice Many Pots\0Ice Narrow Corridor\0Ice Pengator Switch\0Ice Pengator Trap\0Ice Portal\0Ice Refill\0Ice Refill - Crystal\0Ice Right H\0Ice Spike Cross\0Ice Spike Room\0Ice Spikeball\0Ice Stalfos Hint\0Ice Switch Room\0Ice Tall Hint\0Ice Tongue Pull\0Iced T\0Mire 2\0Mire Antechamber\0Mire Attic Hint\0Mire BK Chest Ledge\0Mire BK Door Room\0Mire Bent Bridge\0Mire Block X\0Mire Boss\0Mire Chest View\0Mire Compass Chest\0Mire Compass Room\0Mire Conveyor - Crystal\0Mire Conveyor Barrier\0Mire Conveyor Crystal\0Mire Cross\0Mire Crystal Dead End\0Mire Crystal Left\0Mire Crystal Mid\0Mire Crystal Right\0Mire Crystal Top\0Mire Dark Shooters\0Mire Failure Bridge\0Mire Falling Bridge - Chest\0Mire Falling Bridge - Failure\0Mire Falling Bridge - Primary\0Mire Falling Foes\0Mire Firesnake Skip\0Mire Fishbone\0Mire Hidden Shooters\0Mire Hidden Shooters Blocked\0Mire Hub\0Mire Hub Right\0Mire Hub Switch\0Mire Hub Top\0Mire Key Rupees\0Mire Ledgehop\0Mire Left Bridge\0Mire Lobby\0Mire Lone Shooter\0Mire Lone Warp\0Mire Map Spike Side\0Mire Map Spot\0Mire Minibridge\0Mire Neglected Room\0Mire Over Bridge\0Mire Portal\0Mire Post-Gap\0Mire Right Bridge\0Mire Shooter Rupees\0Mire South Fish\0Mire Spike Barrier\0Mire Spikes\0Mire Square Rail\0Mire Tall Dark and Roomy\0Mire Tall Dark and Roomy - Ranged Crystal\0Mire Tile Room\0Mire Torches Bottom\0Mire Torches Top\0Mire Warping Pool\0Mire Wizzrobe Bypass\0TR Big Chest\0TR Big Chest Entrance\0TR Big View\0TR Boss\0TR Chain Chomps Bottom\0TR Chain Chomps Bottom - Ranged Crystal\0TR Chain Chomps Top\0TR Chain Chomps Top - Crystal\0TR Compass Room\0TR Crystal Maze End\0TR Crystal Maze End - Ranged Crystal\0TR Crystal Maze Interior\0TR Crystal Maze Start\0TR Crystal Maze Start - Crystal\0TR Crystaroller Bottom\0TR Crystaroller Bottom - Ranged Crystal\0TR Crystaroller Chest\0TR Crystaroller Middle\0TR Crystaroller Middle - Ranged Crystal\0TR Crystaroller Top\0TR Crystaroller Top - Crystal\0TR Dark Ride Ledges\0TR Dark Ride North Platform\0TR Dark Ride South Platform\0TR Dash Bridge\0TR Dash Room\0TR Dodgers\0TR Eye Bridge\0TR Final Abyss Balcony\0TR Final Abyss Ledge\0TR Hallway\0TR Hub\0TR Hub Ledges\0TR Lava Dual Pipes\0TR Lava Escape\0TR Lava Island\0TR Lazy Eyes\0TR Lobby Ledge\0TR Main Lobby\0TR Pipe Ledge\0TR Pipe Pit\0TR Pokey 1\0TR Pokey 2 Bottom\0TR Pokey 2 Bottom - Ranged Crystal\0TR Pokey 2 Top\0TR Pokey 2 Top - Crystal\0TR Refill\0TR Roller Room\0TR Rupees\0TR Tile Room\0TR Tongue Pull\0TR Torches\0TR Torches Ledge\0TR Twin Pokeys\0Turtle Rock Chest Portal\0Turtle Rock Eye Bridge Portal\0Turtle Rock Lazy Eyes Portal\0Turtle Rock Main Portal\0GT Agahnim 2\0GT Beam Dash\0GT Big Chest\0GT Big Key Room\0GT Blocked Stairs\0GT Bob's Room\0GT Bob's Torch\0GT Bomb Conveyor\0GT Brightly Lit Hall\0GT Cannonball Bridge\0GT Compass Room\0GT Conveyor Bridge\0GT Conveyor Cross\0GT Conveyor Cross Across Pits\0GT Conveyor Star Pits\0GT Crystal Circles\0GT Crystal Circles - Ranged Crystal\0GT Crystal Conveyor\0GT Crystal Conveyor - Ranged Crystal\0GT Crystal Conveyor Corner\0GT Crystal Conveyor Corner - Ranged Crystal\0GT Crystal Conveyor Left\0GT Crystal Inner Circle\0GT Crystal Paths\0GT DMs Room\0GT Dash Hall\0GT Dashing Bridge\0GT Double Switch Entry\0GT Double Switch Entry - Ranged Switches\0GT Double Switch Exit\0GT Double Switch Left\0GT Double Switch Left - Crystal\0GT Double Switch Pot Corners\0GT Double Switch Pot Corners - Ranged Switches\0GT Fairy Abyss\0GT Falling Bridge\0GT Falling Torches\0GT Firesnake Room\0GT Firesnake Room Ledge\0GT Four Torches\0GT Frozen Over\0GT Gauntlet 1\0GT Gauntlet 2\0GT Gauntlet 3\0GT Gauntlet 4\0GT Gauntlet 5\0GT Hidden Spikes\0GT Hidden Star\0GT Hookshot East Platform\0GT Hookshot Mid Platform\0GT Hookshot North Platform\0GT Hookshot South Entry\0GT Hookshot South Entry - Ranged Crystal\0GT Hookshot South Platform\0GT Hope Room\0GT Ice Armos\0GT Invisible Bridges\0GT Invisible Catwalk\0GT Lanmolas 2\0GT Left Moldorm Ledge\0GT Lobby\0GT Map Room\0GT Mimics 1\0GT Mimics 2\0GT Mini Helmasaur Room\0GT Moldorm\0GT Moldorm Pit\0GT Petting Zoo\0GT Pots n Blocks\0GT Quad Pot\0GT Randomizer Room\0GT Refill\0GT Right Moldorm Ledge\0GT Speed Torch\0GT Speed Torch Upper\0GT Spike Crystal Left\0GT Spike Crystal Right\0GT Staredown\0GT Tile Room\0GT Torch Cross\0GT Validation\0GT Validation Door\0GT Warp Maze - Left Section\0GT Warp Maze - Main Rails\0GT Warp Maze - Mid Section\0GT Warp Maze - Pit Exit Warp Spot\0GT Warp Maze - Pit Section\0GT Warp Maze - Pot Rail\0GT Warp Maze - Rail Choice\0GT Warp Maze - Rando Rail\0GT Warp Maze - Right Section\0GT Warp Maze Exit Section\0GT Wizzrobes 1\0GT Wizzrobes 2\0Ganons Tower Portal\0Hyrule Castle\0Eastern Palace\0Desert Palace\0Tower of Hera\0Agahnims Tower\0Palace of Darkness\0Swamp Palace\0Skull Woods\0Thieves Town\0Ice Palace\0Misery Mire\0Turtle Rock\0Ganons Tower\0";
