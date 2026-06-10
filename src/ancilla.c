@@ -4183,7 +4183,21 @@ void Ancilla36_Flute(int k) {  // 88cfaa
   Point16U pt;
   Ancilla_PrepAdjustedOamCoord(k, &pt);
   OamEnt *oam = GetOamCurPtr();
-  Ancilla_SetOam(oam, pt.x, pt.y - (int8)ancilla_z[k], 0x24, HIBYTE(oam_priority_value) | 4, 2);
+  // Field item sprites: show the PLACED item flying out of the dig instead of
+  // the vanilla flute. Same slot/draw scheme as Rando_TryDrawFieldItemSprite
+  // (gfx loaded on demand into chars 0x24/0x34; size+palette from the icon).
+  // The spawn (AncillaAdd_DugUpFlute) only reserves a second OAM entry when the
+  // icon was 8x16 at spawn time, so gate the second tile on that reservation.
+  uint8 gfx, big, flags;
+  if (Rando_GetFieldItemIcon(LOC_Flute_Spot, ITEM_OcarinaInactive, &gfx, &big, &flags)) {
+    Rando_EnsureRecvItemSlotGfx(gfx);
+    int y = pt.y - (int8)ancilla_z[k];
+    Ancilla_SetOam(oam, pt.x, y, 0x24, flags, big);
+    if (big == 0 && ancilla_numspr[k] >= 8)
+      Ancilla_SetOam(oam + 1, pt.x, y + 8, 0x34, flags, 0);
+  } else {
+    Ancilla_SetOam(oam, pt.x, pt.y - (int8)ancilla_z[k], 0x24, HIBYTE(oam_priority_value) | 4, 2);
+  }
   if (oam->y == 0xf0)
     ancilla_type[k] = 0;
 }
