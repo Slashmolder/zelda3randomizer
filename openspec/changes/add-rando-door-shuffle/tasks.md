@@ -23,7 +23,7 @@ and the verification gates remain.
 - [x] 0.5 `assets/rando/door_portals.yaml` — hand-curated per-portal gate rows
   (fork region + optional predicate), compiled to `kDoorPortalGates`.
 
-## Stage 1 — Runtime redirect layer ✓ DONE (identity RAM-compare run still open, see 6.2)
+## Stage 1 — Runtime redirect layer ✓ DONE (identity RAM-compare PASSED, see 6.2)
 
 - [x] 1.1 `kFeatures1_DoorShuffleActive` (`src/features.h`).
 - [x] 1.2 `src/rando/door_runtime.{c,h}` — `g_door_link[]` sparse override +
@@ -150,9 +150,11 @@ and the verification gates remain.
 ## Stage 6 — Verification gates (OPEN)
 
 - [ ] 6.1 `--door-selftest` green (Stage 2 gate).
-- [ ] 6.2 **Flag-ON, all-`NO_OVERRIDE` RAM-compare run** side-by-side against the
+- [x] 6.2 **Flag-ON, all-`NO_OVERRIDE` RAM-compare run** side-by-side against the
   ROM (user-assisted; the only check that executes the hooks) + flag-off corpus
-  byte-identical.
+  byte-identical. PASSED 2026-06-10: `--door-identity-check zelda3.smc` through
+  multiple dungeons, zero RAM-compare divergence (Milestone A gate); flag-off
+  corpus 117/117.
 - [ ] 6.3 **Playtest matrix** (user): per shuffled dungeon class — beatable, no
   softlock, arrival per edge/layer, relocated key doors + un-keyed vanilla doors,
   spirals, TT maiden escort, Skull Pinball, shutters.
