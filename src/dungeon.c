@@ -4427,7 +4427,9 @@ void Dungeon_DetectStaircase() {  // 81c329
   // the read site (the destination's own header reload is untouched).
   BYTE(dungeon_room_index) = Rando_DoorSpiralDest(
       dungeon_room_index_prev, j, at, dung_hdr_travel_destinations[j + 1]);
-  cur_staircase_plane = dung_hdr_staircase_plane[j];
+  // door shuffle: the header plane describes the VANILLA destination; a
+  // redirected spiral substitutes the shuffled destination's plane class.
+  cur_staircase_plane = Rando_DoorSpiralPlane(dung_hdr_staircase_plane[j]);
   byte_7E0492 = (link_is_on_lower_level || link_is_on_lower_level_mirror) ? 2 : 0;
   subsubmodule_index = 0;
   bitmask_of_dragstate = 0;

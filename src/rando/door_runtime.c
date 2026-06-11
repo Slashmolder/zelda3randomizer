@@ -60,6 +60,14 @@ static uint16 g_door_spiral_source;     // source door id of the pending spiral
 // while the source attr table is loaded; only read while pending is armed).
 static uint16 g_door_spiral_src_x;
 static uint16 g_door_spiral_src_y;
+// Destination stair plane (0/1) from the staircase object list's stored
+// 0x1000 half bit — the engine's own truth, set by the fixup once the dest
+// room is loaded. The RECORD's layer field is NOT a plane for spirals: it is
+// the reference's 2-bit transition signature (HTH=0/HTL=1/LTH=2/LTL=3,
+// bit1 = own side's plane) — writing it raw into link_is_on_lower_level
+// produced the illegal layer 2 (GT playtest "wrong layer").
+static uint8 g_door_spiral_dst_layer;
+static bool g_door_spiral_dst_layer_valid;
 // Deferred perpendicular fine alignment for redirected door arrivals: the
 // slot delta for Link plus the clamped camera target, panned in across the
 // transition scroll by Rando_DoorScrollFinePan (see the deferral comment in
@@ -683,6 +691,8 @@ void Rando_DoorSpiralFixup(void) {
   int found_pos = DoorRt_SpiralHeadForRecord(dst);
   if (found_pos < 0)
     return;  // defensive: leave vanilla offset (playtest-visible, not fatal)
+  g_door_spiral_dst_layer = (found_pos & 0x1000) ? 1 : 0;
+  g_door_spiral_dst_layer_valid = true;
   int tx = (found_pos & 0x3f) << 3;        // x within supertile, px
   int ty = ((found_pos >> 6) & 0x3f) << 3; // y within supertile, px
   int dxp = tx - (int)g_door_spiral_src_x;
@@ -749,6 +759,7 @@ void Rando_DoorSpiralFixup(void) {
 void DoorRt_ClearSpiralPending(void) {
   g_door_spiral_pending = 0xFFFF;
   g_door_spiral_source = 0xFFFF;
+  g_door_spiral_dst_layer_valid = false;
   // Abort any in-flight arrival fine-pan too (this is the snapshot-restore /
   // teardown "cancel transition fixups" hook).
   g_door_fine_active = false;
@@ -761,10 +772,29 @@ void Rando_DoorSpiralLayerFix(void) {
   g_door_spiral_pending = 0xFFFF;
   // Module07_0E_13_SetRoomAndLayerAndCache just set the layer from
   // kTeleportPitLevel1/2[cur_staircase_plane] — the SOURCE room header's
-  // per-staircase plane, which describes the VANILLA destination. The
-  // redirected destination door record is the layer authority.
-  link_is_on_lower_level = dst->layer;
-  link_is_on_lower_level_mirror = dst->layer;
+  // per-staircase plane, which describes the VANILLA destination. The true
+  // authority is the destination stair's own plane: the object-list half
+  // bit captured by the fixup (fallback: bit1 of the record's HTH/HTL/
+  // LTH/LTL signature — never the raw field, which is not a plane).
+  uint8 layer = g_door_spiral_dst_layer_valid ? g_door_spiral_dst_layer
+                                              : (uint8)((dst->layer >> 1) & 1);
+  g_door_spiral_dst_layer_valid = false;
+  link_is_on_lower_level = layer;
+  link_is_on_lower_level_mirror = layer;
+}
+
+// Called right after Dungeon_DetectStaircase loads cur_staircase_plane from
+// the SOURCE room header (which describes the VANILLA destination). For a
+// redirected spiral, substitute the SHUFFLED destination's plane class so
+// the downstream plane gymnastics (RepositionLinkAfterSpiralStairs' TM/TS
+// branch, Module07_0E_13's kTeleportPitLevel) act on the true target:
+// low-plane stairs (signature bit1) behave like vanilla plane 2, high-plane
+// like plane 0.
+uint8 Rando_DoorSpiralPlane(uint8 vanilla_plane) {
+  if (g_door_spiral_pending == 0xFFFF)
+    return vanilla_plane;
+  const DoorTblDoor *dst = &kDoorTblDoors[g_door_spiral_pending];
+  return ((dst->layer >> 1) & 1) ? 2 : 0;
 }
 
 // ---------------------------------------------------------------------------

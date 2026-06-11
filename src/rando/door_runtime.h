@@ -67,6 +67,12 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
 // (vanilla pairs share their intra-room position; shuffled ones need not).
 void Rando_DoorSpiralFixup(void);
 
+// Called right after Dungeon_DetectStaircase sets cur_staircase_plane (the
+// SOURCE header's value, describing the VANILLA destination): returns the
+// SHUFFLED destination's plane class for a pending spiral redirect (vanilla
+// value otherwise), keeping the TM/TS plane gymnastics target-consistent.
+uint8 Rando_DoorSpiralPlane(uint8 vanilla_plane);
+
 // Called at the end of Module07_0E_13_SetRoomAndLayerAndCache (which sets the
 // layer from the SOURCE room header's per-staircase plane — vanilla-correct,
 // wrong under redirect): re-asserts the destination door's layer and consumes
