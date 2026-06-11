@@ -1144,7 +1144,7 @@ void DbgInventory_Render(void) {
     // few coupled bytes (boots ability bit, bow tier, shared Mushroom/Powder &
     // Shovel/Flute ownership, mirror value-2) are handled the same way their
     // individual widgets above handle them.
-    if (ImGui::Button("Max inventory (everything)")) {
+    if (ImGui::Button("Max inventory")) {
       // Consumables + capacities.
       Cheats_PokeWord(0xF362, rupcap, 0, rupcap);
       Cheats_PokeWord(0xF360, rupcap, 0, rupcap);
@@ -1187,10 +1187,10 @@ void DbgInventory_Render(void) {
       // Shared single-select bytes: give the more-capable variant and keep the
       // randomizer ownership state in sync (mirrors the combos above).
       Cheats_PokeByte(0xF344, 2, 0, 2);  // Mushroom/Powder -> Magic Powder
-      Cheats_PokeByte(0xF34C, 2, 0, 2);  // Shovel/Flute -> Flute (inactive)
+      Cheats_PokeByte(0xF34C, 3, 0, 3);  // Shovel/Flute -> Flute (active - bird woken)
       if (rando && Cheats_CanEdit()) {
         g_rando_mushroom_held = 0;       // Powder, not the raw Mushroom
-        g_rando_flute_shovel_owned = 0x02;  // Flute
+        g_rando_flute_shovel_owned = 0x06;  // Flute (active - bird woken: Flute|FluteActive)
         g_rando_boomerang_owned = 0x03;  // own Blue + Red (so the menu swap works)
         g_rando_bow_owned = 0x03;        // own Wood + Silver (so the menu swap works)
       }
