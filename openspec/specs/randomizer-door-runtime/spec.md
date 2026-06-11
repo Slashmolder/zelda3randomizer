@@ -1,5 +1,8 @@
-## ADDED Requirements
+# randomizer-door-runtime Specification
 
+## Purpose
+TBD - created by archiving change add-rando-door-shuffle. Update Purpose after archive.
+## Requirements
 ### Requirement: Runtime door-redirect layer (sparse override, intensity-1 hook set)
 
 The engine SHALL support redirecting a dungeon room-to-room transition to an
@@ -19,8 +22,13 @@ The committed (intensity-1) hook set SHALL be exactly:
   centers); non-catalog rooms and non-catalog exits fast-path vanilla.
 - **Spiral staircases** — `Rando_DoorSpiralDest(room, slot, attr, vanilla_byte)` at
   the header-destination read in `Dungeon_DetectStaircase`, keyed by (source room,
-  `which_staircase_index & 3`, tile attribute); only spiral attrs (0x38/0x39)
-  redirect — straight/water stairs sharing the site do not. The `…Trans_Up/Down`
+  `which_staircase_index & 3`, tile attribute); only spiral head attrs (0x5e/0x5f,
+  submodule 14) redirect — the straight inter-room stairs (0x38/0x39) and fat
+  stairs (0x26) sharing the site do not. The engine stair slot is resolved to its
+  door record via the staircase-list bijection (direction, quadrant, x-rank — the
+  catalog `door_index` is the reference's own table ordering, not the engine's
+  attr2 slot), and `cur_staircase_plane` is substituted with the shuffled
+  destination's plane class (`Rando_DoorSpiralPlane`). The `…Trans_Up/Down`
   hook is a no-op in staircase context (`Rando_DoorStaircaseContext`), so the
   header override is the sole spiral authority.
 
@@ -73,9 +81,14 @@ and Hyrule Castle is pinned, so no committed-scope layout touches them.
   (keyed by the specific staircase slot and spiral attribute; an unshuffled
   staircase reads its vanilla header byte), and after the destination room loads,
   `Rando_DoorSpiralFixup` (called from `Dungeon_InitializeRoomFromSpecial`, after
-  the vanilla grid-granular adjust) locates the destination staircase tile and
-  applies the intra-room delta to Link/camera/quadrant, setting the layer from the
-  destination door record
+  the vanilla grid-granular adjust) locates the destination staircase head via
+  the staircase OBJECT list (`dung_inter_starcases` — filled synchronously by
+  `Dungeon_LoadRoom`; the derived attr table is stamped too late) and translates
+  the whole mid-walk tableau (Link, camera, quadrant, and the position-anchored
+  walk-choreography targets `tiledetect_which_y_pos[0/1]`) by the head-to-head
+  delta; the arrival layer is the destination stair's plane half bit from that
+  list (the spiral record's `layer` field is the reference's HTH/HTL/LTH/LTL
+  transition signature, with bit1 as the pre-load fallback plane)
 
 ### Requirement: Generalized arbitrary-room arrival
 
@@ -83,8 +96,12 @@ When a transition is redirected, the engine SHALL place Link and the camera at t
 **arrival door's** edge/slot/layer in the destination room — not merely at the same
 intra-room offset. Arrival (`DoorRt_Arrive`, generalizing the vanilla teleport-door
 routine `Dungeon_AdjustForTeleportDoors` to both axes) SHALL set Link's coordinates
-(scroll axis re-based to just inside the arrival edge; perpendicular axis corrected
-to the destination door's slot center), camera/room-bounds, quadrant flags, and the
+(scroll axis re-based to just inside the arrival edge by whole-supertile tableau
+translation; perpendicular axis corrected to the destination door's slot center —
+the fine slot delta is deferred and panned in during the transition scroll so the
+pre-upload frames never expose stale VRAM), camera/room-bounds (clamped into the
+destination's true legal window — full-size vs quadrant-confined, computed
+pre-load from the room-data layout byte), quadrant flags, and the
 layer from the destination door record, and SHALL set
 `dungeon_room_index2`/`dungeon_room_index_prev` to the arrival edge's virtual
 positional neighbor so the room load resynchronizes them (and the spiral-adjust
@@ -100,9 +117,11 @@ sites see a zero delta). Followers are carried (tagalong y-high resync).
 
 #### Scenario: Arrival layer comes from the destination door record
 
-- **WHEN** a redirect connects doors on different BG layers
+- **WHEN** a redirect connects normal edge doors on different BG layers
 - **THEN** `link_is_on_lower_level` (and its mirror) are set from the destination
-  door's layer field — not from the source door's transition toggles
+  door's layer field — not from the source door's transition toggles (spiral
+  arrivals derive the plane from the staircase object list instead; see the
+  spiral scenario)
 
 ### Requirement: Environment coherence under redirect
 
@@ -164,3 +183,4 @@ trap→Normal mutation SHALL be ported with its runtime consequence.
   admits no pos<4 door-list entry (even after a swap)
 - **THEN** the pair is rejected as a key-door candidate (the constraint lives in
   the candidate search and therefore participates in the layout digest)
+
