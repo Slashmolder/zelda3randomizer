@@ -494,6 +494,18 @@ static uint8 room_blocked_slots(bool is_dungeon, uint16 key) {
   if (is_dungeon) { src = Dungeon_GetRoomSpritePtr(key); src++; }
   else            { src = GetOverworldSpritePtr((int)key); }
   uint8 blocked = 0;
+  // NON-SPRITE sheet consumers are invisible to the sprite-list walk below: the
+  // pushable-grave ancilla (Ancilla24_Gravestone) draws OBJ page-1 chars
+  // 0xC8/0xD8 = subgroup SLOT 3, so the graveyard screen (the only area with
+  // pushable-grave tiles — kMoveGravestone_* covers exactly its 15 graves) must
+  // pin slot 3 or pushing a grave renders another sheet's tiles (playtest-caught,
+  // F12-confirmed: slot 3 reshuffled 14->17). The other page-1 non-sprite draws
+  // are safe without a pin: the bed spread is slot 0 in Link's house, pinned by
+  // the uncle's room-data entry; the Master Sword ceremony sparkle (slot 2) is
+  // rando-gated OFF in misc.c; the Somaria block + item/effect ancillae draw
+  // from the always-loaded OBJ page-0 common sheets.
+  if (!is_dungeon && key == 0x14)
+    blocked |= 1u << 3;
   for (int i = 0; src[0] != 0xff; src += 3, i++) {
     if (i >= kEsMaxSpriteScan) return ALL;  // malformed / unterminated → conservative
     uint8 type = src[2];

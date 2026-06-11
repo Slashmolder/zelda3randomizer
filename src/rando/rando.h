@@ -276,6 +276,12 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
 // draw); false when the vanilla sprite should be drawn instead.
 bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id);
 
+// Load `gfx` into the shared receive-item VRAM slot (chars 0x24/0x34) unless it
+// already holds it (g_recv_item_slot_owner cache; handles the sword/shield
+// decompress side-loads). For draw sites that render the slot themselves —
+// e.g. the Flute Spot dig ancilla. Implemented in sprite.c.
+void Rando_EnsureRecvItemSlotGfx(uint8 gfx);
+
 // ---------------------------------------------------------------------------
 // Rando_ChestDispatch — universal chest grant-site hook.
 //

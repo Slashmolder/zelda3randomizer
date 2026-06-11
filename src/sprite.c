@@ -1566,6 +1566,27 @@ void Sprite_PrepAndDrawSingleLargeNoPrep(int k, PrepOamCoordsRet *info) {  // 86
 // it. Single slot => one field item per screen renders its real gfx; a second
 // standing item on the same screen shows this one's (documented limitation; a
 // dedicated slot is the phase-2 fix).
+// Load `gfx` into the shared receive-item VRAM slot (chars 0x24/0x34) unless
+// the slot already holds it. Shared by the standing-sprite draw below and the
+// Flute Spot dig ancilla (Ancilla36_Flute), which renders the placed item the
+// same way.
+void Rando_EnsureRecvItemSlotGfx(uint8 gfx) {
+  if (g_recv_item_slot_owner == gfx)
+    return;
+  // Mirror the receive-item gfx load (misc.c AncillaAdd_ItemReceipt): shield
+  // decompress BEFORE the tile expand, sword AFTER.
+  if (gfx == 0x20 || gfx == 0x2d || gfx == 0x2e) {
+    DecompressShieldGraphics();
+    Palette_Load_Shield();
+  }
+  DecodeAnimatedSpriteTile_variable(gfx);  // resets g_recv_item_slot_owner
+  if (gfx == 6 || gfx == 0x18) {
+    DecompressSwordGraphics();
+    Palette_Load_Sword();
+  }
+  g_recv_item_slot_owner = gfx;  // we own the slot now
+}
+
 bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id) {
   uint8 gfx, big, oam_flags;
   if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
@@ -1573,20 +1594,7 @@ bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item
   PrepOamCoordsRet info;
   if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
     return true;   // off-screen: handled (don't draw the vanilla sprite either)
-  if (g_recv_item_slot_owner != gfx) {
-    // Mirror the receive-item gfx load (misc.c AncillaAdd_ItemReceipt): shield
-    // decompress BEFORE the tile expand, sword AFTER.
-    if (gfx == 0x20 || gfx == 0x2d || gfx == 0x2e) {
-      DecompressShieldGraphics();
-      Palette_Load_Shield();
-    }
-    DecodeAnimatedSpriteTile_variable(gfx);  // resets g_recv_item_slot_owner
-    if (gfx == 6 || gfx == 0x18) {
-      DecompressSwordGraphics();
-      Palette_Load_Sword();
-    }
-    g_recv_item_slot_owner = gfx;  // we own the slot now
-  }
+  Rando_EnsureRecvItemSlotGfx(gfx);
   // Reserve our own OAM block before drawing. A standing item sprite reserves
   // only ((sprite_flags2&0x1f)+1)*4 BYTES = one 4-byte OAM entry (e.g. the
   // mushroom), enough for its vanilla single-tile draw. An 8x16 item (big==0)

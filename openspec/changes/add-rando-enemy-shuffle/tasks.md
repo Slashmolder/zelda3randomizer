@@ -119,6 +119,24 @@
 >    is a flag-preserving ±1 *class* nudge on plain values 1..8 only (`bump_damage`
 >    is `class | flags`). Always-on with `enemy_shuffle`; revert the single commit
 >    to drop it. Still corpus **0/112**, kGen **62** (all runtime, placement-orthogonal).
+>
+> **MERGED to main** 2026-06-09 at kGen **65** (re-based from 62 — main advanced
+> 61→62→63→64 via add-rando-major-glitch concurrently; corpus regen 0 digests
+> changed). Default-off; placement byte-identical. ES_RESHUFFLE_DIAG built OFF.
+>
+> ⚠️ **SPEC DELTAS ARE STALE — reconcile before `openspec archive`** (per the
+> CLAUDE.md "reconcile deltas against as-built BEFORE archiving" discipline). The
+> `specs/randomizer-shuffles` delta still describes the **slot-2-only MVP**; the
+> as-built is: reshuffle of subgroup slots **0,1,2,3** (generated Enemizer-sourced
+> `kEnemyTable`/`kSheetNeed`/pools/`kOverlordNeed`, disjointness-asserted),
+> dungeon-overlord spawn-slot decoding, and a whole **HP/contact-damage
+> randomization axis the delta does not mention at all** (bosses exempt). The
+> `randomizer-core` canonical-pad-bit delta is still accurate (the axis is one bit;
+> the reshuffle + stats are runtime). Reconcile, and only THEN archive.
+>
+> PLAYTEST STILL PENDING for the new axes (render/crash/softlock — the only net):
+> stage slot-3 / overlord-freed spawner rooms / the HP-damage feel; rebuild with
+> `ES_RESHUFFLE_DIAG=1` for the F12 diagnostics (g_ram 0x666-0x668).
 
 - [x] **Why / true-random.** Re-assigns subgroup SLOT 2 (the themed-enemy slot) so the picker (which reads the LIVE `sprite_gfx_subset_*`) draws a wider, cross-family pool. Vanilla slot-2 sheet is ALWAYS a candidate (vanilla-inclusive) — `choose_pos2` picks uniformly over `{12,23,28,35,38,40,46} ∪ {vanilla}`.
 - [x] **Where (zelda3).** Reordered `Gfx_LoadSpritesInner` to resolve all 4 ids then hook then decompress (behavior-identical); `InitializeTilesets` hook inserted after its 4-id resolve. The hook rewrites `sprite_gfx_subset_2` (g_ram 0xC2FE) BEFORE decompress so VRAM + picker agree; cached-redecompress paths (mirror warp etc.) reproduce it for free. Room/area sprite TYPE list walked at load time via new `Dungeon_GetRoomSpritePtr` / existing `GetOverworldSpritePtr` (asset blob — list available before parse; key on `dungeon_room_index` / `overworld_area_index`).

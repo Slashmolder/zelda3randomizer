@@ -1406,14 +1406,25 @@ void Sprite_EE_MovableMantle(int k) {
   // the lamp gate when rando is active.
   bool no_lamp_gate = !link_item_torch &&
                       !(enhanced_features1 & kFeatures1_RandomizerActive);
-  if (follower_indicator != 1 || no_lamp_gate || link_is_running || sprite_G[k] == 0x90 || sign8(link_actual_vel_x - 24))
+  // ALTTPR parity (z3randomizer lampmantlecone.asm CheckForZelda): once the
+  // escape is over (sram_progress_indicator >= 2) the throne is pushable
+  // WITHOUT the Zelda follower. Vanilla uses "Zelda following" as its
+  // escape-in-progress sentinel, which seals the castle->sewers route forever
+  // after she's delivered — but the ALTTPR-faithful logic counts that route
+  // open post-escape (and from a cold start in Open/Inverted/Retro seeds).
+  bool zelda_ok = follower_indicator == 1 ||
+      ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+       sram_progress_indicator >= 2);
+  if (!zelda_ok || no_lamp_gate || link_is_running || sprite_G[k] == 0x90 || sign8(link_actual_vel_x - 24))
     return;
 
-  // The throne-push beat sets the escape-only sewers respawn pointer. It only
-  // reaches here with Zelda following (follower_indicator==1), which a
-  // post-escape non-Standard rando seed never has — but guard the write for
-  // completeness so the escape respawn pointer can't be set under rando.
-  if (!Rando_SuppressHyruleCastleEscape())
+  // The throne-push beat sets the escape-only sewers respawn pointer. Restrict
+  // the write to the real escape (Zelda actually following): a post-escape
+  // lone push (zelda_ok via progress >= 2 above) must NOT re-arm the escape
+  // respawn pointer, or a save-and-quit would spawn the player back in the
+  // escape-only sewers region. Vanilla always has follower_indicator == 1
+  // here, so this is behavior-neutral outside rando.
+  if (!Rando_SuppressHyruleCastleEscape() && follower_indicator == 1)
     which_starting_point = 4;
   sprite_subtype2[k]++;
 
@@ -7679,6 +7690,20 @@ void SpriteModule_Initialize(int k) {  // 86864d
 }
 
 void SpritePrep_Mantle(int k) {  // 868841
+  // ALTTPR parity (z3randomizer lampmantlecone.asm Mantle_CorrectPosition,
+  // hooked at this same ROM address): once the escape is complete
+  // (sram_progress_flags & 4 = Zelda delivered to Sanctuary), spawn the throne
+  // already pushed aside so the castle->sewers route stays open. Vanilla
+  // leaves it closed and gates the push on the Zelda follower (see
+  // Sprite_EE_MovableMantle), sealing a route the ALTTPR-faithful logic
+  // counts as open (e.g. Sewers - Dark Cross = Lamp only). Only the throne
+  // room uses sprite 0xEE; the Sanctuary altar is type 0x73.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      (sram_progress_flags & 4)) {
+    sprite_x_lo[k] = 0x0a;  // +8 below = 0x312, the fully-pushed position
+    sprite_x_hi[k] = 3;
+    sprite_G[k] = 0x90;     // fully-pushed state; the push handler early-outs
+  }
   sprite_y_lo[k] += 3;
   sprite_x_lo[k] += 8;
 }

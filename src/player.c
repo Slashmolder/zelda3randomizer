@@ -6874,7 +6874,19 @@ void AncillaAdd_DugUpFlute(uint8 a, uint8 y) {  // 898c73
   ancilla_z[k] = 0;
   ancilla_z_vel[k] = 24;
   ancilla_x_vel[k] = link_direction_facing == 4 ? -8 : 8;
-  DecodeAnimatedSpriteTile_variable(12);
+  // Field item sprites: when a non-flute item is placed at the Flute Spot, the
+  // draw (Ancilla36_Flute) shows that item, loading its gfx on demand. The
+  // type's default OAM reservation (kAncilla_Pflags[0x36] = 4 bytes) is one
+  // entry — enough for the vanilla 16x16 flute, not for an 8x16 item's two
+  // tiles (the OAM budget is in BYTES; an unreserved second tile gets
+  // scene-dependently clobbered, see Rando_TryDrawFieldItemSprite).
+  uint8 gfx, big, oam_flags;
+  if (Rando_GetFieldItemIcon(LOC_Flute_Spot, ITEM_OcarinaInactive, &gfx, &big, &oam_flags)) {
+    if (big == 0)
+      ancilla_numspr[k] = 8;
+  } else {
+    DecodeAnimatedSpriteTile_variable(12);
+  }
   Ancilla_SetXY(k, 0x490, 0xa8a);
 }
 
