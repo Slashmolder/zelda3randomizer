@@ -1595,6 +1595,8 @@ def emit_logic_data(
     glitch_status_rows: list[dict] | None = None,
     boss_kill_predicates: list[bytes] | None = None,
     dungeon_vanilla_boss: list[int] | None = None,
+    door_vm_preds: list[bytes] | None = None,
+    door_portal_rows: list[tuple] | None = None,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -1699,6 +1701,18 @@ def emit_logic_data(
         boss_kill_offsets.append((len(stream), len(enc)))
         stream += enc
 
+    # Door shuffle — Vm-leaf predicates (door_predicates.gen.json order) +
+    # portal seeding gate predicates. Appended to the same stream.
+    door_vm_offsets: list[tuple[int, int]] = []
+    for enc in (door_vm_preds or []):
+        door_vm_offsets.append((len(stream), len(enc)))
+        stream += enc
+    door_portal_offsets: list[tuple] = []
+    for (dgn, is_drop, door_region, fork_region, enc, pname) in (door_portal_rows or []):
+        off, length = (len(stream), len(enc)) if enc else (0, 0)
+        stream += enc
+        door_portal_offsets.append((dgn, is_drop, door_region, fork_region, off, length, pname))
+
     # Emit the stream as a uint8 array.
     out.append("// Predicate bytecode stream — concatenated per the encoding documented in")
     out.append("// assets/rando_logic_gen.py. Locations and edges reference (offset, length).")
@@ -1727,6 +1741,30 @@ def emit_logic_data(
     else:
         out.append("const RandoBossKillPred kRandoBossKillPred[1] = { { 0, 0 } };")
         out.append("const uint32 kRandoBossKillPredCount = 0;")
+    out.append("")
+
+    # Door shuffle — Vm-pred + portal-gate tables (rando_logic.h types).
+    out.append("// Door-shuffle Vm-leaf predicates (door_predicates.gen.json order).")
+    if door_vm_offsets:
+        out.append(f"const RandoDoorVmPred kDoorVmPreds[{len(door_vm_offsets)}] = {{")
+        for off, length in door_vm_offsets:
+            out.append(f"  {{ {off}, {length} }},")
+        out.append("};")
+        out.append(f"const uint32 kDoorVmPredsCount = {len(door_vm_offsets)};")
+    else:
+        out.append("const RandoDoorVmPred kDoorVmPreds[1] = { { 0, 0 } };")
+        out.append("const uint32 kDoorVmPredsCount = 0;")
+    out.append("")
+    out.append("// Door-shuffle portal seeding gates (door_portals.yaml).")
+    if door_portal_offsets:
+        out.append(f"const RandoDoorPortalGate kDoorPortalGates[{len(door_portal_offsets)}] = {{")
+        for (dgn, is_drop, door_region, fork_region, off, length, pname) in door_portal_offsets:
+            out.append(f"  {{ {dgn}, {is_drop}, {door_region}, {fork_region}, {off}, {length} }},  // {pname}")
+        out.append("};")
+        out.append(f"const uint32 kDoorPortalGatesCount = {len(door_portal_offsets)};")
+    else:
+        out.append("const RandoDoorPortalGate kDoorPortalGates[1] = { { 0, 0, 0, 0xFFFF, 0, 0 } };")
+        out.append("const uint32 kDoorPortalGatesCount = 0;")
     out.append("")
     out.append("// dungeon-id (HCE=0..GT=12) -> vanilla boss-pool index (0xFF = no boss).")
     out.append("// Mirrors src/rando/shuffle_boss.c kBossVanilla; OP_CAN_KILL_BOSS fallback")
@@ -2379,6 +2417,78 @@ def main(argv=None):
         if args.strict:
             sys.exit(1)
 
+    # --- Door shuffle (add-rando-door-shuffle) -----------------------------
+    # Compile the door-table Vm-leaf predicates + portal gates, and wrap each
+    # door-controlled location's can_reach as
+    #   (NOT DOORS_ACTIVE(d) AND vanilla) OR (DOORS_ACTIVE(d) AND DOORS_LOC_REACHABLE(loc))
+    # — evaluates to exactly the vanilla bytes' result while inactive.
+    door_vm_preds: list[bytes] = []
+    door_portal_rows: list[tuple] = []
+    door_manifest_path = Path("assets/rando/door_predicates.gen.json")
+    door_portals_path = Path("assets/rando/door_portals.yaml")
+    if door_manifest_path.exists():
+        import json as _json
+        door_man = _json.loads(door_manifest_path.read_text())
+
+        def compile_door_src(src: str, label: str) -> bytes:
+            try:
+                d_ast = parse_predicate(src)
+                d_ast = resolve_calls(d_ast, ops, all_macros)
+                d_ast = expand_macros(d_ast, all_macros, parsed_macro_bodies, ops)
+                d_errs = well_formedness(d_ast, ops, items, logic_regions, locations, "can_reach")
+                if d_errs:
+                    for e in d_errs:
+                        all_errors.append(f"door {label}: {e}")
+                return encode_predicate(d_ast, ops, items, logic_regions, locations)
+            except ParseError as e:
+                all_errors.append(f"door {label}: parse error: {e}")
+                return b"\x0d\x00"  # FALSE — conservative (unparsed => impassable)
+
+        for di, src in enumerate(door_man.get("predicates", [])):
+            door_vm_preds.append(compile_door_src(src, f"vmpred[{di}] {src[:60]!r}"))
+
+        if door_portals_path.exists():
+            door_portals_doc = yaml.safe_load(door_portals_path.read_text())
+            gates_by_name = {p["name"]: p for p in door_portals_doc.get("portals", [])}
+            _sorted_rids = sorted(logic_regions.keys()) if logic_regions else []
+            _rid_index = {r: i for i, r in enumerate(_sorted_rids)}
+            for p in door_man.get("portals", []):
+                g = gates_by_name.get(p["name"])
+                if g is None:
+                    all_errors.append(f"door portal {p['name']!r}: no door_portals.yaml row")
+                    continue
+                fr = g.get("fork_region")
+                if fr is None:
+                    fr_idx = 0xFFFF
+                else:
+                    fr_idx = _rid_index.get(fr)
+                    if fr_idx is None:
+                        all_errors.append(f"door portal {p['name']!r}: unknown fork region {fr!r}")
+                        continue
+                enc = compile_door_src(g["predicate"], f"portal {p['name']}") if g.get("predicate") else b""
+                door_portal_rows.append((p["dungeon"], p["is_drop"], p["door_region"],
+                                         fr_idx, enc, p["name"]))
+        else:
+            all_errors.append("door_portals.yaml missing (door tables present)")
+
+        _OP_AND, _OP_OR, _OP_NOT, _OP_DA, _OP_DLR = 12, 13, 14, 20, 21
+        _loc_by_id = {l.id: (name, l) for name, l in locations.items()}
+        for entry in door_man.get("locations", []):
+            fid, dgn = entry["fork_id"], entry["dungeon"]
+            pair = _loc_by_id.get(fid)
+            if pair is None:
+                all_errors.append(f"door location id {fid}: not in location registry")
+                continue
+            loc_key, _loc = pair
+            enc = location_predicates.get(loc_key)
+            if enc is None:
+                all_errors.append(f"door location {loc_key!r}: no compiled predicates")
+                continue
+            v = enc["can_reach"]
+            enc["can_reach"] = (bytes([_OP_OR, 2, _OP_AND, 2, _OP_NOT, _OP_DA, dgn]) + v +
+                                bytes([_OP_AND, 2, _OP_DA, dgn,
+                                       _OP_DLR, fid & 0xFF, (fid >> 8) & 0xFF]))
+
     # Emit artifacts.
     out_headers = Path(args.out_headers)
     out_data = Path(args.out_data)
@@ -2393,7 +2503,9 @@ def main(argv=None):
                     trick_status_rows=trick_status_rows,
                     glitch_status_rows=glitch_status_rows,
                     boss_kill_predicates=boss_kill_predicates,
-                    dungeon_vanilla_boss=DUNGEON_VANILLA_BOSS)
+                    dungeon_vanilla_boss=DUNGEON_VANILLA_BOSS,
+                    door_vm_preds=door_vm_preds,
+                    door_portal_rows=door_portal_rows)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     icon_atlas_count = emit_icon_atlas(
         Path("assets/rando/icon_atlas.yaml"),

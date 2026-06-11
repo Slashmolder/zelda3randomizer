@@ -143,6 +143,12 @@ typedef struct RandoSettings {
   // kSettingsCanonicalLen stays 28 and default-settings settings_hash stays
   // byte-identical. See kEnemyShuffleAxis_* below + Settings_CanonicalSerialize.
   uint8 enemy_shuffle;  // bool
+  // add-rando-door-shuffle — intra-dungeon door-connection shuffle.
+  // 0 = vanilla, 1 = basic (per-dungeon pool, intensity 1: Normal + spiral
+  // doors, original key-door counts relocated + prover-validated). Packs into
+  // canonical pad byte [27] bits 0-1; default 0 keeps the default
+  // settings_hash byte-identical and kSettingsCanonicalLen at 28.
+  uint8 door_shuffle;
 } RandoSettings;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
@@ -150,6 +156,13 @@ typedef struct RandoSettings {
 // byte-identical corpus invariant. [26] was previously always-zero reserved pad.
 enum {
   kEnemyShuffleAxis_Enabled = 1u << 0,
+};
+
+// add-rando-door-shuffle — door_shuffle axis values (canonical [27] bits 0-1).
+enum {
+  kDoorShuffle_Vanilla = 0,
+  kDoorShuffle_Basic = 1,
+  kDoorShuffleAxis_Mask = 3,
 };
 
 // Phase C — bit positions for the packed entrance-axis byte (canonical [25]).
@@ -203,6 +216,17 @@ void Settings_SetDefaults(RandoSettings *s);
 // LOGIC predicates onto the shared GenericKey count. The two are complementary:
 // wildKeys lets keys spawn anywhere; genericKeys makes them fungible.
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
+
+// add-rando-door-shuffle — like the small-keys helper: an active door shuffle
+// forces in-dungeon big keys at every placer read (containment + the
+// bk_restricted ban keep the big key beatably placed under a shuffled layout).
+uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s);
+
+// add-rando-door-shuffle — the normalized (post-derived-rules) door_shuffle
+// value; definitionally the canonical byte [27], so generation, runtime
+// install, and settings_hash always agree (vanilla under Inverted/Retro,
+// glitched logic, or entrance shuffle — the MVP pins).
+uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s);
 
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like

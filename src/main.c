@@ -37,6 +37,9 @@
 #include "rando/rando_share.h"
 #include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
 #include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
+#include "rando/shuffle_doors.h"  // DoorShuffle_SelfTest for --door-selftest
+#include "rando/door_runtime.h"  // DoorRt_* (--door-identity-check)
+#include "features.h"           // kFeatures1_DoorShuffleActive
 #include "rando/shuffle_boss.h"  // BossShuffle_Generate (Slice 7 §63)
 #include "rando/shuffle_drops.h"  // DropShuffle_Generate (Slice 8 §64)
 #include "rando/rando_hints.h"  // Rando_GenerateHints (Slice 5 §3)
@@ -761,6 +764,26 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       }
     }
     // Leave overrides active through sphere + spoiler emission below.
+  } else if (Settings_EffectiveDoorShuffle(&settings) != kDoorShuffle_Vanilla) {
+    // add-rando-door-shuffle — door phase, mirroring Rando_PlaceWithEntrances'
+    // arm (the headless pipeline is hand-rolled; both seams MUST stay in
+    // step or corpus seeds diverge from in-game slots). Mutually exclusive
+    // with entrance shuffle per apply_derived_rules.
+    static DoorShuffleLayout headless_door_layout;
+    for (uint32 datt = 0; datt < 16; datt++) {
+      if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
+                                &headless_door_layout))
+        continue;
+      Rando_SetDoorLogicLayout(&headless_door_layout, headless_door_layout.shuffled_mask);
+      table.count = 0;
+      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table) &&
+          Accessibility_SeedAcceptable(&settings, &table)) {
+        ok = true;
+        break;
+      }
+      Rando_SetDoorLogicLayout(NULL, 0);
+    }
+    // Layout stays installed through sphere + spoiler emission below.
   } else {
     ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
   }
@@ -1201,6 +1224,7 @@ int main(int argc, char** argv) {
   // setup pops modal dialogs on the developer's desktop.
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--rando-selftest") == 0 ||
+        strcmp(argv[i], "--door-selftest") == 0 ||
         strcmp(argv[i], "--rando-bench-logic") == 0 ||
         strcmp(argv[i], "--generate-seed") == 0 ||
         strcmp(argv[i], "--generate-slot") == 0 ||
@@ -1223,9 +1247,20 @@ int main(int argc, char** argv) {
   // [AutoTracker] INI setting. Extract + compact it out of argv here so it is
   // not mistaken for the ROM path consumed by LoadRom(argv[0]) below.
   bool force_auto_tracker = false;
+  bool door_identity_check = false;
   for (int i = 0; i < argc;) {
     if (strcmp(argv[i], "--auto-tracker") == 0) {
       force_auto_tracker = true;
+      for (int j = i; j < argc - 1; j++) argv[j] = argv[j + 1];
+      argc--;
+    } else if (strcmp(argv[i], "--door-identity-check") == 0) {
+      // add-rando-door-shuffle Milestone-A identity gate: activate the door
+      // redirect layer with an EMPTY (all-NO_OVERRIDE) link table on a
+      // vanilla session. Run with the ROM attached
+      // (`zelda3 --door-identity-check zelda3.sfc`): the side-by-side
+      // RAM-compare then exercises the transition hooks/resolver on every
+      // dungeon edge walk — any divergence from the ROM is a hook bug.
+      door_identity_check = true;
       for (int j = i; j < argc - 1; j++) argv[j] = argv[j + 1];
       argc--;
     } else {
@@ -1247,6 +1282,12 @@ int main(int argc, char** argv) {
 #endif
       Rando_RunAllSelfChecks();
       return 0;
+    }
+    if (strcmp(argv[i], "--door-selftest") == 0) {
+      // Door-shuffle generation net: stitch + prove every shuffleable
+      // dungeon across N seeds; connectivity / prover / determinism /
+      // oracle==stitcher cross-checks (add-rando-door-shuffle).
+      return DoorShuffle_SelfTest();
     }
   }
 
@@ -1381,6 +1422,15 @@ int main(int argc, char** argv) {
   // Delay actually setting those features in ram until any snapshots finish playing.
   g_wanted_zelda_features = g_config.features0;
   g_wanted_zelda_features1 = g_config.features1;  // randomizer flags (defaults to 0 until [randomizer] section parsed in 1.6)
+  if (door_identity_check) {
+    // Milestone-A identity gate: hooks live, every link NO_OVERRIDE. The
+    // per-frame mirror in zelda_rtl.c carries the bit into enhanced_features1.
+    DoorRt_Reset();
+    DoorRt_Activate();
+    g_wanted_zelda_features1 |= kFeatures1_DoorShuffleActive;
+    fprintf(stderr, "door-identity-check: redirect hooks ACTIVE with an empty "
+                    "link table; run side-by-side vs the ROM (vanilla session)\n");
+  }
 
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
                        g_config.enhanced_mode7 * kPpuRenderFlags_4x4Mode7 |

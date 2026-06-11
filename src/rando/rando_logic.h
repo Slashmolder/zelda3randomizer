@@ -66,7 +66,17 @@ typedef enum {
   // that boss's kill predicate from kRandoBossKillPred[]. boss_shuffle off ⇒
   // vanilla identity ⇒ byte-identical to the inline CanKill<Boss> it replaces.
   OP_CAN_KILL_BOSS = 19,
-  OP__COUNT = 20,
+  // Door shuffle (add-rando-door-shuffle). OP_DOORS_ACTIVE(door_dungeon_idx):
+  // a layout is installed AND that dungeon's shuffled_mask bit is set (pinned
+  // dungeons stay clear -> vanilla branch of the codegen wrap).
+  // OP_DOORS_LOC_REACHABLE(loc_u16): the door-shuffle oracle — the same
+  // crystal-aware explorer the stitcher/prover use, seeded from the portal
+  // lobbies whose kDoorPortalGates row holds under the current region bitset,
+  // gated by inventory + per-key-door worst-case thresholds. False when no
+  // layout is installed.
+  OP_DOORS_ACTIVE = 20,
+  OP_DOORS_LOC_REACHABLE = 21,
+  OP__COUNT = 22,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -389,5 +399,42 @@ void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
 void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
                            uint32 pred_off, uint16 pred_len);
 int Rando_GetEntranceAddedEdgeCount(void);
+
+// ---------------------------------------------------------------------------
+// Door shuffle (add-rando-door-shuffle) — logic-side install + generated data.
+// ---------------------------------------------------------------------------
+
+// Compiled fork-DSL predicates referenced by door-table rule-blob Vm leaves
+// (emitted by rando_logic_gen.py from assets/rando/door_predicates.gen.json,
+// index-matched to that manifest).
+typedef struct RandoDoorVmPred {
+  uint32 off;
+  uint16 len;
+} RandoDoorVmPred;
+extern const RandoDoorVmPred kDoorVmPreds[];
+extern const uint32 kDoorVmPredsCount;
+
+// Portal seeding gates (door_portals.yaml): the oracle floods a dungeon from
+// exactly the portal lobbies whose fork_region bit is set in the current
+// reachability bitset AND whose optional predicate holds. fork_region 0xFFFF
+// = never independently enterable (TR ledge doors).
+typedef struct RandoDoorPortalGate {
+  uint8 dungeon;       // kDoorTblDungeons index
+  uint8 is_drop;
+  uint16 door_region;  // door-table region id of the lobby
+  uint16 fork_region;  // fork logic region id, 0xFFFF = never
+  uint32 pred_off;     // extra gate predicate, len 0 = none
+  uint16 pred_len;
+} RandoDoorPortalGate;
+extern const RandoDoorPortalGate kDoorPortalGates[];
+extern const uint32 kDoorPortalGatesCount;
+
+// Install/clear the per-seed door layout for logic evaluation (generation
+// installs before Place_AssumedFill; slot activation installs the regenerated
+// layout; teardown clears). `layout` must outlive the install. active_mask
+// bit = kDoorTblDungeons index actually shuffled (pins excluded by caller).
+struct DoorShuffleLayout;
+void Rando_SetDoorLogicLayout(const struct DoorShuffleLayout *layout, uint16 active_mask);
+const struct DoorShuffleLayout *Rando_GetDoorLogicLayout(uint16 *active_mask_out);
 
 #endif  // ZELDA3_RANDO_LOGIC_H_

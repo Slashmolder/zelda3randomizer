@@ -234,6 +234,37 @@ ops:
       assignment (BossShuffle_ComputeAssignment). Logic_SelfCheck cross-checks
       kRandoDungeonVanillaBoss against shuffle_boss.c's vanilla map.
 
+
+  - id: 20
+    name: OP_DOORS_ACTIVE
+    phase: C
+    operands: [door_dungeon_idx]
+    semantics: |
+      true iff a door-shuffle layout is installed AND its shuffled_mask has the
+      bit for door_dungeon_idx (the kDoorTblDungeons index, NOT the game's
+      palace index). Pinned dungeons (Hyrule Castle, Swamp Palace at MVP) keep
+      the bit clear, so their locations evaluate the vanilla branch of the
+      codegen wrap. Added for add-rando-door-shuffle: every door-controlled
+      location's can_reach is wrapped as
+      (NOT DOORS_ACTIVE(d) AND vanilla) OR (DOORS_ACTIVE(d) AND DOORS_LOC_REACHABLE(loc)),
+      which evaluates to exactly the vanilla predicate while inactive.
+
+  - id: 21
+    name: OP_DOORS_LOC_REACHABLE
+    phase: C
+    operands: [location_id_u16]
+    semantics: |
+      Door-shuffle oracle query: true iff the location is reachable inside its
+      (shuffled) dungeon under the installed layout, given current inventory
+      counts, the worst-case per-key-door thresholds from the key prover, and
+      the portal lobbies whose kDoorPortalGates row evaluates true against the
+      current region bitset. False when no layout is installed (tracker before
+      activation, vanilla seeds). Evaluated by DoorExplore_Run — the same
+      crystal-aware explorer the stitcher and prover use, so generator and
+      logic cannot drift.
+
+
+
 # ---------------------------------------------------------------------------
 # Phase B trick bit-position scaffolding (priming for `add-rando-trick-logic-and-axes`)
 # ---------------------------------------------------------------------------

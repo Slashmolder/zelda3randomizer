@@ -20,6 +20,9 @@
 
 #include "rando_snapshot_tail.h"
 #include "rando_placement.h"
+#include "door_runtime.h"   // DoorRt_Installed (door-shuffle restore reconcile)
+#include "../features.h"    // enhanced_features1 / kFeatures1_DoorShuffleActive
+#include "../variables.h"   // g_ram (the features macro)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -283,6 +286,23 @@ int RandoSnapshotTail_Load(FILE *f) {
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
       Rando_SetSnapshotContext(gen_version, settings_hash, share_string);
+      // Any restore drops an armed mid-staircase spiral redirect (process
+      // state; it must not fire on a later unrelated room load).
+      DoorRt_ClearSpiralPending();
+      // add-rando-door-shuffle — the door redirect / kind-overlay tables are
+      // PROCESS state installed by slot activation, not snapshot state. If
+      // the restored RAM claims door shuffle but no layout is installed this
+      // session (snapshot replayed on a fresh launch / different slot), clear
+      // the bit and warn: silently-vanilla doors on a save whose placement
+      // assumed the shuffled graph is the worse failure. (A snapshot from a
+      // DIFFERENT door-shuffle slot than the activated one keeps the
+      // activated layout — same process-state tolerance as the entrance
+      // overlay / boss shuffle.)
+      if ((enhanced_features1 & kFeatures1_DoorShuffleActive) && !DoorRt_Installed()) {
+        fprintf(stderr, "RandoSnapshotTail: door-shuffle bit restored without an "
+                        "installed layout — clearing (activate the slot first)\n");
+        enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+      }
       recognized++;
       continue;
     }

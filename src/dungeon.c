@@ -20,6 +20,7 @@
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 #include "rando/shuffle_boss.h"  // BossShuffle_RenderHomeRoom (boss-shuffle render)
+#include "rando/door_runtime.h"  // door-shuffle redirect hooks (add-rando-door-shuffle)
 
 // todo: move to config
 static const uint16 kBossRooms[] = {
@@ -2076,15 +2077,20 @@ void Dungeon_StartInterRoomTrans_Left() {
         BYTE(dungeon_room_index_prev) = dungeon_room_index2;
         Dungeon_AdjustAfterSpiralStairs();
       }
-      dungeon_room_index--;
+      // door shuffle: the redirect is consulted exactly where the positional
+      // room-index change happens; identity/off takes the vanilla line.
+      if (!Rando_DoorTransOverride(kDoorTblDir_West))
+        dungeon_room_index--;
     }
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -2125,14 +2131,18 @@ void Dungeon_StartInterRoomTrans_Up() {
       BYTE(dungeon_room_index_prev) = BYTE(dungeon_room_index2);
       Dungeon_AdjustAfterSpiralStairs();
     }
-    BYTE(dungeon_room_index) -= 0x10;
+    // door shuffle redirect (no-op when off / identity / staircase context).
+    if (!Rando_DoorTransOverride(kDoorTblDir_North))
+      BYTE(dungeon_room_index) -= 0x10;
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -2160,14 +2170,18 @@ void Dungeon_StartInterRoomTrans_Down() {
       BYTE(dungeon_room_index_prev) = dungeon_room_index2;
       Dungeon_AdjustAfterSpiralStairs();
     }
-    BYTE(dungeon_room_index) += 16;
+    // door shuffle redirect (no-op when off / identity / staircase context).
+    if (!Rando_DoorTransOverride(kDoorTblDir_South))
+      BYTE(dungeon_room_index) += 16;
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -2355,6 +2369,11 @@ step12:
     m = kUpperBitmasks[dung_bg2_attr_table[dung_cur_door_pos] & 7];
     dung_door_opened_incl_adjacent |= m;
     dung_door_opened |= m;
+    // door-shuffle: a relocated key door's logical partner half is NOT the
+    // physically adjacent room (which the vanilla adjacency sync covers), so
+    // mirror the open bit into the partner's room/slot explicitly. No-op for
+    // vanilla doors / big-key doors / door shuffle off.
+    Rando_DoorKeyOpenMirror(dungeon_room_index, dung_bg2_attr_table[dung_cur_door_pos] & 7);
     ctr = 4;
   }
   door_open_closed_counter = ctr;
@@ -2681,11 +2700,19 @@ void RoomDraw_DrawAllObjects(const uint8 *level_data) {  // 8188e4
       break;
     RoomData_DrawObject(d, level_data);
   }
+  // door-shuffle kind overlay: the door words after the 0xfff0 marker are the
+  // same list GetRoomDoorInfo(dungeon_room_index) points at; route the fetch
+  // through the overlay so relocated/un-keyed door KINDS draw and register
+  // (door_type_and_slot[]) consistently with the other two list consumers
+  // (Dungeon_LoadHeader, Dungeon_LoadAdjacentRoomDoors). Identity when door
+  // shuffle is off.
+  int door_index = 0;
   for (;;) {
     dung_load_ptr_offs += 2;
     uint16 d = WORD(level_data[dung_load_ptr_offs]);
     if (d == 0xffff)
       return;
+    d = Rando_DoorListWord(dungeon_room_index, door_index++, d);
     RoomData_DrawObject_Door(d);
   }
 }
@@ -3756,11 +3783,22 @@ void Dungeon_LoadHeader() {  // 81b564
   dung_door_opened_incl_adjacent = dung_door_opened | 0xf00;
   dung_savegame_state_bits = (x & 0xff0) << 4;
   dung_quadrants_visited = x & 0xf;
+  // door-shuffle kind overlay: un-chosen vanilla stair-key locks render open
+  // (their StairKey kind stays; Door_Up_StairMaskLocked's opened arm draws no
+  // lock and Dungeon_LoadSingleDoorAttribute writes no f0 attr). 0 when door
+  // shuffle is off.
+  x = Rando_DoorPreopenBits(dungeon_room_index);
+  dung_door_opened |= x;
+  dung_door_opened_incl_adjacent |= x;
 
   const uint16 *dp = GetRoomDoorInfo(dungeon_room_index);
   int i = 0;
-  for (; dp[i] != 0xffff; i++)
-    dung_door_tilemap_address[i] = dp[i];
+  for (; dp[i] != 0xffff; i++) {
+    // door-shuffle kind overlay on the raw door-word copy: the adjacency scan
+    // below reads kinds from these words (dung_door_tilemap_address holds the
+    // raw list until RoomDraw replaces it with tilemap addresses).
+    dung_door_tilemap_address[i] = Rando_DoorListWord(dungeon_room_index, i, dp[i]);
+  }
   dung_door_tilemap_address[i] = 0;
 
   if (((dungeon_room_index - 1) & 0xf) != 0xf)
@@ -3808,6 +3846,16 @@ void Dungeon_CheckAdjacentRoomsForOpenDoors(int idx, int room) {  // 81b759
             // not trapdoor
             if (!(adjacent_doors_flags & kUpperBitmasks[i]))
               break;
+            // door-shuffle: a re-stitched pool/key door's open state is owned
+            // by its own room's save bits (+ the key-open partner mirror in
+            // Dungeon_OpeningLockedDoor_Combined). The PHYSICAL neighbor at
+            // the matching slot is not its logical partner, so its open flag
+            // must not leak — otherwise a kind<0x02/==0x40 neighbor door
+            // (unconditionally flagged open in Dungeon_LoadAdjacentRoomDoors)
+            // pre-opens a relocated key door unpaid. Trapdoor arm above is
+            // untouched (it tests room continuity, not the neighbor's flags).
+            if (Rando_DoorAdjOpenSuppressed(dungeon_room_index, j))
+              break;
           }
           dung_door_opened_incl_adjacent |= kUpperBitmasks[j];
           break;
@@ -3822,6 +3870,11 @@ void Dungeon_LoadAdjacentRoomDoors(int room) {  // 81b7ef
   adjacent_doors_flags = (save_dung_info[room] & 0xf000) | 0xf00;
   for (int i = 0; ; i++) {
     uint16 a = dp[i];
+    // door-shuffle kind overlay on the NEIGHBOR's list: a relocated key door
+    // there must read kind 0x1C (so the kind<0x02 unconditional-open branch
+    // below cannot flag it) and an un-keyed one must read Normal.
+    if (a != 0xffff)
+      a = Rando_DoorListWord((uint16)room, i, a);
     adjacent_doors[i] = a;
     if (a == 0xffff)
       break;
@@ -4359,15 +4412,24 @@ void Dungeon_DetectStaircase() {  // 81c329
 
   if (at == 0x38 || at == 0x39) {
     staircase_var1 = 0x20;
+    // door shuffle §2d: the Trans_* edge-door hook is a no-op in staircase
+    // context — the header-dest override below is the sole spiral authority.
+    Rando_DoorStaircaseContext(true);
     if (at == 0x38)
       Dungeon_StartInterRoomTrans_Up();
     else
       Dungeon_StartInterRoomTrans_Down();
+    Rando_DoorStaircaseContext(false);
   }
 
   int j = (which_staircase_index & 3);
-  BYTE(dungeon_room_index) = dung_hdr_travel_destinations[j + 1];
-  cur_staircase_plane = dung_hdr_staircase_plane[j];
+  // door shuffle: spiral destination override, keyed (room, slot, attr) at
+  // the read site (the destination's own header reload is untouched).
+  BYTE(dungeon_room_index) = Rando_DoorSpiralDest(
+      dungeon_room_index_prev, j, at, dung_hdr_travel_destinations[j + 1]);
+  // door shuffle: the header plane describes the VANILLA destination; a
+  // redirected spiral substitutes the shuffled destination's plane class.
+  cur_staircase_plane = Rando_DoorSpiralPlane(dung_hdr_staircase_plane[j]);
   byte_7E0492 = (link_is_on_lower_level || link_is_on_lower_level_mirror) ? 2 : 0;
   subsubmodule_index = 0;
   bitmask_of_dragstate = 0;
@@ -5254,6 +5316,12 @@ void Dungeon_ProcessTorchesAndDoors() {  // 81ce70
           dialogue_message_index = 0x7a;
           Main_ShowTextMessage();
         }
+      } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a &&
+                 Rando_DoorKeySlotAlreadyOpen(k)) {
+        // door-shuffle: the SAME-room partner half already paid for this key
+        // pair (Rando_DoorKeyOpenMirror set our bit live, but the f0 lock
+        // attr is only rebuilt on room load) — open without consuming.
+        goto has_key_for_door;
       } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a && link_num_keys != 0) {
         // rando-exempt: consumption — small key spent on locked door. (audit.md §0.2.4)
         link_num_keys -= 1;
@@ -7155,6 +7223,12 @@ void Dungeon_InitializeRoomFromSpecial() {  // 828ce2
   LoadTransAuxGFX();
   Dungeon_LoadCustomTileAttr();
   BYTE(dungeon_room_index2) = BYTE(dungeon_room_index);
+  // door shuffle: a redirected spiral keeps the vanilla grid-granular
+  // adjustment above (prev = source room) but the destination staircase's
+  // intra-room position may differ — apply the slot delta now that the
+  // destination room's attr table is loaded. No-op unless a spiral redirect
+  // is pending.
+  Rando_DoorSpiralFixup();
   Follower_Initialize();
   subsubmodule_index += 1;
 }
@@ -7591,6 +7665,10 @@ void Module07_0E_00_InitPriorityAndScreens() {  // 8291c4
 void Module07_0E_13_SetRoomAndLayerAndCache() {  // 8291dd
   link_is_on_lower_level_mirror = kTeleportPitLevel1[cur_staircase_plane];
   link_is_on_lower_level = kTeleportPitLevel2[cur_staircase_plane];
+  // door shuffle: cur_staircase_plane came from the SOURCE room's header and
+  // describes the vanilla destination; on a redirected spiral the destination
+  // door record overrides the layer (no-op when no redirect is pending).
+  Rando_DoorSpiralLayerFix();
   TM_copy |= 0x10;
   TS_copy &= 0xf;
   if (!(which_staircase_index & 4))
@@ -8205,15 +8283,19 @@ void Dungeon_StartInterRoomTrans_Right() {  // 82b63a
         BYTE(dungeon_room_index_prev) = dungeon_room_index2;
         Dungeon_AdjustAfterSpiralStairs();
       }
-      dungeon_room_index += 1;
+      // door shuffle redirect (no-op when off / identity / staircase context).
+      if (!Rando_DoorTransOverride(kDoorTblDir_East))
+        dungeon_room_index += 1;
     }
     submodule_index = 2;
-    if (room_transitioning_flags & 1) {
-      link_is_on_lower_level ^= 1;
-      link_is_on_lower_level_mirror = link_is_on_lower_level;
-    }
-    if (room_transitioning_flags & 2) {
-      cur_palace_index_x2 ^= 2;
+    if (!Rando_DoorTransConsumedToggles()) {
+      if (room_transitioning_flags & 1) {
+        link_is_on_lower_level ^= 1;
+        link_is_on_lower_level_mirror = link_is_on_lower_level;
+      }
+      if (room_transitioning_flags & 2) {
+        cur_palace_index_x2 ^= 2;
+      }
     }
   }
   room_transitioning_flags = 0;
@@ -8399,14 +8481,17 @@ void DungeonTransition_ScrollRoom() {  // 82be03
       link_y_coord += kStaircaseTab3[i];
   }
 
-  if ((t & 0x1fc) == (&up_down_scroll_target)[i]) {
+  bool scroll_done = (t & 0x1fc) == (&up_down_scroll_target)[i];
+  if (scroll_done) {
     SetAndSaveVisitedQuadrantFlags();
     subsubmodule_index++;
     transition_counter = 0;
     if (submodule_index == 2)
       WaterFlood_BuildOneQuadrantForVRAM();
   }
-
+  // door shuffle: pan a redirected arrival's deferred perpendicular fine
+  // alignment in during the scroll (no-op when nothing is armed).
+  Rando_DoorScrollFinePan(scroll_done);
 }
 
 void Module07_11_0A_ScrollCamera() {  // 82be75

@@ -24,6 +24,15 @@
 #include "rando_save.h"       // RandoSidecarSlot, kSlotKind_Randomizer, Rando_WriteSidecarSlot, ...
 #include "rando_spoiler.h"    // RandoSpoiler, Spoiler_ResolvePath, Spoiler_Write
 #include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
+#include "shuffle_doors.h"    // door-shuffle generation (add-rando-door-shuffle)
+
+// add-rando-door-shuffle — generation-side layout + accepted-attempt state.
+// The layout must outlive Rando_PlaceWithEntrances: the installed logic
+// pointer (Rando_SetDoorLogicLayout) references it through the caller's
+// sphere/goal computation.
+static DoorShuffleLayout g_door_gen_layout;
+static uint8 g_door_gen_attempt;
+static uint32 g_door_gen_digest24;
 #include "shuffle_entrance.h" // Phase C entrance shuffle (cave permutation + region overrides)
 #include "shuffle_boss.h"     // BossShuffle_ComputeAssignment (Slice 7 spoiler)
 #include "shuffle_drops.h"    // DropShuffle_ComputeAssignment (Slice 8 spoiler)
@@ -220,6 +229,31 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     }
     // NB: leave the accepted π's overrides ACTIVE — the caller's sphere/goal
     // computation must see the shuffled reachability. Caller clears afterward.
+  } else if (Settings_EffectiveDoorShuffle(settings) != kDoorShuffle_Vanilla) {
+    // add-rando-door-shuffle — door phase. Mutually exclusive with entrance
+    // shuffle (apply_derived_rules), so it owns this arm. Generate a layout
+    // per door_attempt (stitch + key-prove every unpinned dungeon), install
+    // it for the logic oracle, then run placement; a placement/accessibility
+    // failure tries the next attempt. The accepted attempt + layout digest
+    // are persisted (@76-79) so activation can regenerate + drift-check.
+    for (uint32 datt = 0; datt < 16; datt++) {
+      if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
+                                &g_door_gen_layout))
+        continue;
+      Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
+      table->count = 0;
+      if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
+          Accessibility_SeedAcceptable(settings, table)) {
+        placed = true;
+        g_door_gen_attempt = (uint8)datt;
+        g_door_gen_digest24 = DoorShuffle_LayoutDigest(&g_door_gen_layout) & 0xFFFFFF;
+        break;
+      }
+      Rando_SetDoorLogicLayout(NULL, 0);
+    }
+    // NB: the accepted layout stays INSTALLED — the caller's sphere/goal
+    // computation must see the shuffled reachability (slot activation later
+    // re-installs its own regenerated copy).
   } else {
     placed = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
     if (placed && !Accessibility_SeedAcceptable(settings, table)) {
@@ -228,6 +262,13 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
   }
   return placed;
 }
+
+void Rando_GetDoorGeneration(uint8 *attempt_out, uint32 *digest24_out) {
+  if (attempt_out) *attempt_out = g_door_gen_attempt;
+  if (digest24_out) *digest24_out = g_door_gen_digest24;
+}
+
+// (door-shuffle statics declared at the top of this file)
 
 void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
                                     const RandoEntranceRegen *reg) {
@@ -450,6 +491,12 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     // the accepted Place_AssumedFill call: Rando_PlaceWithEntrances breaks on the
     // accepted attempt and nothing re-runs placement before this point.
     slot.header.prize_attempt = st->prize_attempt;
+  }
+  // add-rando-door-shuffle — persist the accepted door_attempt + layout digest
+  // (zero/zero when door shuffle was off; the digest is the activation-time
+  // drift hard-fail).
+  if (Settings_EffectiveDoorShuffle(settings) != kDoorShuffle_Vanilla) {
+    Rando_GetDoorGeneration(&slot.header.door_attempt, &slot.header.door_digest24);
   }
   // Copy placements + compute placement_table_size (BYTES = 2 * max_loc_id + 2).
   if (table.count > (uint16)(sizeof(slot.placements) / sizeof(slot.placements[0]))) {

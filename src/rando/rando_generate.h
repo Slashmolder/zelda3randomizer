@@ -64,6 +64,12 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
 void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
                                     const RandoEntranceRegen *reg);
 
+// add-rando-door-shuffle — the door_attempt + 24-bit layout digest of the
+// ACCEPTED door layout from the last successful Rando_PlaceWithEntrances door
+// phase (zero when door shuffle was off). Persisted at sidecar @76-79 so
+// activation can regenerate + drift-check.
+void Rando_GetDoorGeneration(uint8 *attempt_out, uint32 *digest24_out);
+
 typedef struct RandoGenerateResult {
   bool ok;
   bool used_forward_fill;

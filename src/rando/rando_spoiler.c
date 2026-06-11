@@ -15,6 +15,7 @@
 #include "rando.h"
 #include "rando_hints.h"
 #include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson (Phase C entrance_mapping)
+#include "shuffle_doors.h"     // DoorShuffleLayout (door_shuffle spoiler section)
 #include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName (Slice 7 spoiler)
 #include "../config.h"
 #include "../types.h"
@@ -353,10 +354,11 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"crystals_ganon\": %u,\n", s->settings->crystals_ganon);
   fprintf(f, "    \"crystals_tower\": %u,\n", s->settings->crystals_tower);
   fprintf(f, "    \"item_pool_difficulty\": %u,\n", s->settings->item_pool_difficulty);
-  // Emit the EFFECTIVE small-keys mode (Retro pins Wild) so the spoiler matches
-  // the canonical hash + actual placement, not the user's raw (overridden) field.
+  // Emit the EFFECTIVE key modes (Retro pins Wild; door shuffle pins Dungeon
+  // for both) so the spoiler matches the canonical hash + actual placement,
+  // not the user's raw (overridden) fields.
   fprintf(f, "    \"dungeon_small_keys_mode\": %u,\n", Settings_EffectiveSmallKeysMode(s->settings));
-  fprintf(f, "    \"dungeon_big_keys_mode\": %u,\n", s->settings->dungeon_big_keys_mode);
+  fprintf(f, "    \"dungeon_big_keys_mode\": %u,\n", Settings_EffectiveBigKeysMode(s->settings));
   fprintf(f, "    \"dungeon_maps_mode\": %u,\n", s->settings->dungeon_maps_mode);
   fprintf(f, "    \"dungeon_compasses_mode\": %u,\n", s->settings->dungeon_compasses_mode);
   fprintf(f, "    \"prize_shuffle\": %s,\n", s->settings->prize_shuffle ? "true" : "false");
@@ -399,6 +401,47 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   Entrance_WriteCrossSpoilerJson(f, s->cross_assign, s->cross_count);
   Entrance_WriteDecoupledSpoilerJson(f, s->decoupled_assign, s->decoupled_count);
   Entrance_WriteDungeonDecoupledSpoilerJson(f, s->dun_decoupled_assign, s->dun_decoupled_count);
+
+  // -----------------------------------------------------------------------
+  // door_shuffle (add-rando-door-shuffle) — per-dungeon door pairings +
+  // relocated key doors with worst-case thresholds. Reads the layout the
+  // generation pipeline leaves installed through spoiler emission. Omitted
+  // when door shuffle is off.
+  // -----------------------------------------------------------------------
+  {
+    uint16 door_mask = 0;
+    const DoorShuffleLayout *dl = Rando_GetDoorLogicLayout(&door_mask);
+    if (dl != NULL && door_mask != 0) {
+      fprintf(f, "  \"door_shuffle\": {\n");
+      bool first_dgn = true;
+      for (int d = 0; d < kDoorTbl_DungeonCount; d++) {
+        if (!((door_mask >> d) & 1)) continue;
+        fprintf(f, "%s    \"%s\": {\n", first_dgn ? "" : ",\n",
+                kDoorTblNames + kDoorTblDungeons[d].name_off);
+        first_dgn = false;
+        fprintf(f, "      \"doors\": [");
+        bool first_pair = true;
+        for (int i = 0; i < kDoorTbl_DoorCount; i++) {
+          uint16 p = dl->pairing[i];
+          if (p == 0xFFFF || p < (uint16)i) continue;  // each link once
+          if (kDoorTblDoors[i].dungeon != d) continue;
+          fprintf(f, "%s\n        [\"%s\", \"%s\"]", first_pair ? "" : ",",
+                  kDoorTblNames + kDoorTblDoors[i].name_off,
+                  kDoorTblNames + kDoorTblDoors[p].name_off);
+          first_pair = false;
+        }
+        fprintf(f, "\n      ],\n      \"key_doors\": [");
+        for (int k = 0; k < dl->key_door_count[d]; k++) {
+          fprintf(f, "%s\n        { \"door\": \"%s\", \"keys_needed\": %d }",
+                  k ? "," : "",
+                  kDoorTblNames + kDoorTblDoors[dl->key_doors[d][k]].name_off,
+                  dl->key_worst_case[d][k]);
+        }
+        fprintf(f, "\n      ]\n    }");
+      }
+      fprintf(f, "\n  },\n");
+    }
+  }
 
   // -----------------------------------------------------------------------
   // boss_assignments (Slice 7 §6.1) — dungeon → boss now in its boss room.

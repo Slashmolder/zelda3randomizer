@@ -39,6 +39,11 @@ jobs:
     - name: check_determinism (1.0b)
       run: python assets/scripts/check_determinism.py
 
+    # Door-shuffle tables — committed reference-derived artifacts; counts must
+    # stay consistent with the frozen registry (door ids are save-affecting).
+    - name: check_door_tables
+      run: python assets/scripts/check_door_tables.py
+
     # Task 1.0c — Byte-order pin grep on src/rando/*.[ch]
     - name: check_byte_order (1.0c)
       run: python assets/scripts/check_byte_order.py

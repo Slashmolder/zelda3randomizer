@@ -19,6 +19,8 @@
 #include "shuffle_boss.h"   // BossShuffle_Generate/_Deactivate/_SelfCheck (Slice 7)
 #include "shuffle_drops.h"  // DropShuffle_Generate/_Deactivate/_SelfCheck (Slice 8)
 #include "shuffle_enemies.h"  // EnemyShuffle_Generate/_Deactivate/_SelfCheck (enemy shuffle)
+#include "shuffle_doors.h"   // DoorShuffle_Generate/LayoutDigest (door shuffle)
+#include "door_runtime.h"    // DoorRt_* (door-shuffle runtime redirect)
 #include "rando_save.h"
 #include "rando_generate.h"  // RandoGenerate_SelfCheck (slot SRAM-init self-test)
 #include "rando_snapshot_tail.h"
@@ -1623,6 +1625,15 @@ static void Entrance_RuntimeTeardown(void) {
 // Install the overlay + logic overrides for an entrance-shuffle slot (caves
 // and/or dungeons). Tears down any prior install first (so a slot-switch without
 // an intervening Deactivate is safe). No-op for non-shuffle slots.
+// seed_u64 lives at raw share_string bytes [21..28] LE (rando_share layout).
+// Single decoder shared by the entrance regen, the door-shuffle regen, and
+// the cosmetic seed — a layout move must change exactly one place.
+static uint64 SlotSeedFromShareString(const uint8 *sb) {
+  return (uint64)sb[21] | ((uint64)sb[22] << 8) | ((uint64)sb[23] << 16) |
+         ((uint64)sb[24] << 24) | ((uint64)sb[25] << 32) |
+         ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+}
+
 static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   Entrance_RuntimeTeardown();
   RandoSettings es;
@@ -1661,9 +1672,7 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   if (ids == NULL || len == 0 || len > kEntranceOverlayMax) return;
   // seed_u64 lives at raw share_string bytes [21..28] LE (per rando_share layout).
   const uint8 *sb = h->share_string;
-  uint64 seed = (uint64)sb[21] | ((uint64)sb[22] << 8) | ((uint64)sb[23] << 16) |
-                ((uint64)sb[24] << 24) | ((uint64)sb[25] << 32) |
-                ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
+  uint64 seed = SlotSeedFromShareString(sb);
   uint8 cave_assign[kEntranceMaxInteriors]; int cave_n = 0;
   uint8 dun_assign[kEntranceMaxInteriors]; int dun_n = 0;
   uint8 cross_assign[kEntranceMaxInteriors]; int cross_n = 0;
@@ -1818,6 +1827,45 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     Rando_DeactivateSlot();
     return;
   }
+  // add-rando-door-shuffle — regenerate the door layout BEFORE installing any
+  // slot state. The layout is not serialized; it regenerates from
+  // (seed, settings, door_attempt @76). Drift HARD-FAILS: a regenerated
+  // layout whose digest differs from the persisted @77-79 value can make the
+  // certified-beatable placement unbeatable, so the slot is refused (treated
+  // as no-rando) rather than silently loaded — unlike entrance shuffle's
+  // non-blocking version-drift warning. Vanilla-door slots skip all of this.
+  static DoorShuffleLayout s_door_layout;
+  bool door_active = false;
+  if (src->header.settings_present) {
+    RandoSettings ds;
+    if (Settings_CanonicalDeserialize(src->settings_canonical, &ds) == 0 &&
+        Settings_EffectiveDoorShuffle(&ds) != kDoorShuffle_Vanilla) {
+      uint64 slot_seed = SlotSeedFromShareString(src->header.share_string);
+      bool ok = DoorShuffle_Generate(slot_seed, src->header.door_attempt,
+                                     kDoorShuffle_MvpDungeonMask, &s_door_layout);
+      uint32 digest = ok ? (DoorShuffle_LayoutDigest(&s_door_layout) & 0xFFFFFF) : 0;
+      if (!ok || digest != src->header.door_digest24) {
+        fprintf(stderr,
+                "Rando: door-shuffle layout drift (regen digest %06x != slot %06x) "
+                "— refusing to activate this slot on this build\n",
+                (unsigned)digest, (unsigned)src->header.door_digest24);
+        Rando_DeactivateSlot();
+        return;
+      }
+      // Stage-1b — validate the kind overlay (relocated key doors) BEFORE any
+      // slot state installs, on the same refusal pathway as digest drift: a
+      // chosen key door the overlay can't render makes the certified-beatable
+      // placement unbeatable, so refuse rather than load.
+      if (DoorRt_KindOverlaySelfCheck(&s_door_layout) != 0) {
+        fprintf(stderr,
+                "Rando: door-shuffle kind overlay rejected this layout "
+                "— refusing to activate this slot on this build\n");
+        Rando_DeactivateSlot();
+        return;
+      }
+      door_active = true;
+    }
+  }
   uint16 n = src->placement_count;
   if (n > kRando_SessionPlacementCapacity) n = kRando_SessionPlacementCapacity;
   memcpy(g_session_placements, src->placements, (size_t)n * sizeof(RandoPlacement));
@@ -1858,6 +1906,35 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // the tracker repaint counter bump.
   Entrance_RuntimeInstall(&src->header);
 
+  // add-rando-door-shuffle — install the drift-checked regenerated layout:
+  // logic oracle + the runtime redirect table. (Mutually exclusive with
+  // entrance shuffle per apply_derived_rules, so the two installs never
+  // contend.) The Stage-1b door-KIND overlay installs here too once built.
+  if (door_active) {
+    Rando_SetDoorLogicLayout(&s_door_layout, s_door_layout.shuffled_mask);
+    DoorRt_Reset();
+    for (int i = 0; i < kDoorTbl_DoorCount; i++) {
+      if (s_door_layout.pairing[i] != 0xFFFF)
+        DoorRt_SetLink((uint16)i, s_door_layout.pairing[i]);
+    }
+    // Stage-1b kind overlay (relocated/un-keyed key-door KINDS). Cannot fail
+    // here — DoorRt_KindOverlaySelfCheck validated this exact layout in the
+    // gate above — but stay on the refusal pathway if it ever does.
+    if (!DoorRt_InstallKindOverlay(&s_door_layout)) {
+      fprintf(stderr, "Rando: door-shuffle kind overlay install failed — deactivating slot\n");
+      Rando_DeactivateSlot();
+      return;
+    }
+    DoorRt_Activate();
+    g_wanted_zelda_features1 |= kFeatures1_DoorShuffleActive;
+    enhanced_features1 |= kFeatures1_DoorShuffleActive;
+  } else {
+    DoorRt_Reset();
+    Rando_SetDoorLogicLayout(NULL, 0);
+    g_wanted_zelda_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+    enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+  }
+
   // #82 Inverted world-state — repoint the static Inverted entrance/exit
   // overrides (Link's House<->Bomb Shop, GT<->AT). No-op unless the slot is
   // Inverted. Runs AFTER Entrance_RuntimeInstall, which is itself a no-op on an
@@ -1874,14 +1951,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // Cosmetic shuffles: when CosmeticSeed is 0 (default), the look tracks the
   // slot's seed_u64 (share_string bytes [21..28] LE). Re-seeds palette + music
   // tables; the sprite pick already happened at launch (documented limitation).
-  {
-    const uint8 *sb = src->header.share_string;
-    uint64 slot_seed = (uint64)sb[21] | ((uint64)sb[22] << 8) |
-                       ((uint64)sb[23] << 16) | ((uint64)sb[24] << 24) |
-                       ((uint64)sb[25] << 32) | ((uint64)sb[26] << 40) |
-                       ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
-    Cosmetic_SetSeed(g_config.cosmetic_seed, slot_seed);
-  }
+  Cosmetic_SetSeed(g_config.cosmetic_seed,
+                   SlotSeedFromShareString(src->header.share_string));
 
   // Force the tracker to repaint after activation.
   g_reachability_state_counter++;
@@ -2048,6 +2119,12 @@ void Rando_DeactivateSlot(void) {
   // Phase C — restore the vanilla door table + clear entrance region overrides
   // before anything else (mirror of Entrance_RuntimeInstall in Activate).
   Entrance_RuntimeTeardown();
+  // add-rando-door-shuffle — clear the per-seed door redirect + logic layout
+  // (mirror of DoorShuffle_RuntimeInstall in Activate).
+  DoorRt_Reset();
+  Rando_SetDoorLogicLayout(NULL, 0);
+  g_wanted_zelda_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+  enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
   // #82 Inverted override teardown — reverse of the Activate install order.
   // Restores g_asset_ptrs[126/130/131] to their saved vanilla originals.
   InvertedEntrances_Teardown();

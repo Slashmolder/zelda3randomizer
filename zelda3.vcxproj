@@ -396,6 +396,10 @@
     <ClCompile Include="src\rando\rando_placement.c" />
     <ClCompile Include="src\rando\rando_spoiler.c" />
     <ClCompile Include="src\rando\rando_hints.c" />
+    <ClCompile Include="src\rando\door_runtime.c" />
+    <ClCompile Include="src\rando\door_tables.gen.c" />
+    <ClCompile Include="src\rando\door_keylogic.c" />
+    <ClCompile Include="src\rando\shuffle_doors.c" />
     <ClCompile Include="src\rando\shuffle_boss.c" />
     <ClCompile Include="src\rando\shuffle_drops.c" />
     <ClCompile Include="src\rando\shuffle_enemies.c" />
