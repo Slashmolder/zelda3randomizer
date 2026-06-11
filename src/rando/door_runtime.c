@@ -389,20 +389,6 @@ bool Rando_DoorTransOverride(uint8 dir) {
   if (!DoorRt_Active() || g_door_staircase_ctx)
     return false;
   int exit_id = DoorRt_ResolveExit(dir);
-  // TEMP DIAG (ES_DOORRT_DIAG) — revert before merge: dump the whole
-  // resolution chain into the reserved g_ram block for F12 capture
-  // (Lobby E miss: which filter dropped the door?).
-  g_ram[0x662] = dir;
-  g_ram[0x663]++;
-  *(uint16 *)(g_ram + 0x664) = (uint16)(exit_id < 0 ? 0xFFFE : exit_id);
-  g_ram[0x666] = link_is_on_lower_level;
-  *(uint16 *)(g_ram + 0x667) =
-      (uint16)((dir == kDoorTblDir_North || dir == kDoorTblDir_South)
-                   ? ((link_x_coord + 8) & 0x1FF)
-                   : ((link_y_coord + 12) & 0x1FF));
-  *(uint16 *)(g_ram + 0x669) =
-      (exit_id >= 0) ? g_door_link[exit_id] : 0xFFFD;
-  *(uint16 *)(g_ram + 0x66b) = dungeon_room_index;
   if (exit_id < 0)
     return false;
   uint16 dest_id = g_door_link[exit_id];
