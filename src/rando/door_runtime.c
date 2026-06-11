@@ -1219,7 +1219,7 @@ int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l) {
         if (half[h] == 0xFFFF)
           continue;
         const DoorTblDoor *dd = &kDoorTblDoors[half[h]];
-        int r = (dd->room < 256) ? g_kind_room_of[dd->room] : -1;
+        int r = g_kind_room_of[dd->room];  // room is uint8; always < 256 (gen-asserted)
         int idx = -1;
         if (r >= 0)
           idx = DoorRt_KindEntryIdx(&g_kind_rooms[r], dd->pos);
@@ -1264,7 +1264,7 @@ int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l) {
   // (covers Skull Pinball WS); pinned-dungeon doors untouched.
   for (int door = 0; door < kDoorTbl_DoorCount; door++) {
     const DoorTblDoor *dd = &kDoorTblDoors[door];
-    if (dd->pos == 0xFF || dd->room >= 256)
+    if (dd->pos == 0xFF)  // room is uint8; always < 256 (gen-asserted)
       continue;
     bool shuffled = ((l->shuffled_mask >> dd->dungeon) & 1) != 0;
     int r = g_kind_room_of[dd->room];
