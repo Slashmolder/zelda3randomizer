@@ -386,6 +386,11 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
 
 bool Rando_DoorTransOverride(uint8 dir) {
   g_door_toggles_overridden = false;
+  // Defensive: a fine-pan armed by a previous override must never leak into
+  // this transition's scroll (inter-room transitions always reach ScrollRoom,
+  // which consumes it, but clear unconditionally at every transition start so
+  // no abort path can carry one across).
+  g_door_fine_active = false;
   if (!DoorRt_Active() || g_door_staircase_ctx)
     return false;
   int exit_id = DoorRt_ResolveExit(dir);

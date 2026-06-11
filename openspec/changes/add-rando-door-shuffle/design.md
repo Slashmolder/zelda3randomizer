@@ -741,21 +741,60 @@ adversarial review rounds**; the surviving decisions are what shipped. Summary:
    (§2b as-built note — the deliberate softening of §2b.5).
 5. Slot-drift refusal lives at **activation** (`Rando_ActivateSidecarSlot` hard-fail),
    not a pre-activation select-file classifier render kind (§6 as-built).
-6. Spiral plane: `cur_staircase_plane` still reads the SOURCE header at the transition;
-   the destination layer is applied by the post-load fixup from the dest door record
-   (§2d as-built) — up↔up pairs and source-derived floor cosmetics accepted as designed.
+6. Spiral plane (§2d as-built, revised in playtest hardening):
+   `cur_staircase_plane` is substituted at the transition with the SHUFFLED
+   destination's plane class (`Rando_DoorSpiralPlane`; the spiral record's
+   `layer` field is the reference's HTH/HTL/LTH/LTL transition signature, NOT
+   a plane — bit1 is the stair's own plane), and the arrival layer authority
+   is the destination stair's plane half bit from the staircase object list
+   (captured by the fixup), signature bit1 as the pre-load fallback.
+   Source-derived floor cosmetics (`dung_cur_floor ±1`) accepted as designed.
 7. MVP pins (§4d as built): Open/Standard + NoGlitches only, entrance-shuffle mutual
    exclusion (door yields), in-dungeon small+big keys forced, HC pinned in ALL world
    states (not just standard), Swamp pinned. Normalization is silent
    (`apply_derived_rules`), not refuse-with-note.
 
-**Status at spec-update time (2026-06-09):** Stage 0 (codegen + committed tables +
-guard), Stage 1 (runtime redirect + hooks), Stage 3 (ops/oracle/portal gates/location
-wrap + `bk_restricted` ban), and Stage 4 (settings axis, sidecar @76-79, generation in
-both pipelines, activation regen + hard-fail, UI checkbox, spoiler section,
-`--door-selftest` CLI) are in the tree. **In flight:** Stage 2 (the stitcher + key
-prover behind the `shuffle_doors.h` contract — `shuffle_doors.c` is a stub whose
-`DoorShuffle_Generate` returns false, so a `basic` request currently exhausts its
-attempts and generation fails cleanly) and Stage 1b (the door-KIND overlay). Open:
-`kGeneratorVersion` bump + corpus seed + 3-way regen, the flag-ON RAM-compare identity
-run, the playtest matrix, and `docs/randomizer.md`.
+**Status at merge time (2026-06-10):** all stages in the tree (0, 1, 1b, 2, 3, 4);
+kGeneratorVersion 66; corpus 117/117 (115 pre-existing digests byte-identical + two
+door seeds); `--door-selftest` 260/260 with gcc == MSVC digests; the flag-ON identity
+RAM-compare gate PASSED (user-run, multi-dungeon, zero divergence).
+
+**Playtest hardening (2026-06-10, runtime-only — every fix digest-neutral, corpus
+re-verified):** the live playtest of a door seed (Thieves' Town beaten end-to-end
+incl. maiden escort; GT spirals exercised) drove seven arrival-correctness fixes in
+`door_runtime.c` + the `dungeon.c` seams:
+
+1. Normal-door arrival = whole-supertile tableau TRANSLATION (Link + camera + all
+   four `room_bounds` fields per axis from the vanilla neighbor onto the destination)
+   — hi-byte re-derivation broke the engine's masked-512 equality terminators
+   (camera scrolled a full extra supertile).
+2. Spiral arrivals translate the WALK TABLEAU (Link + `tiledetect_which_y_pos[0/1]`,
+   the position-anchored choreography targets) — a stale walk target leaves Link
+   permanently invisible (only the walk-termination path restores visibility).
+3. Spiral anchors come from the staircase OBJECT LIST (`dung_inter_starcases` + the
+   category counters — filled synchronously by `Dungeon_LoadRoom`), never the derived
+   attr table (stamped only from spiral stage 7; scanning it at the stage-3 fixup
+   reads the SOURCE room and silently no-ops the translation).
+4. Spiral slot→record resolution is a (direction, quadrant, x-rank↔doorIndex-rank)
+   bijection — the registry `door_index` is the reference's own table ordering, not
+   the engine's attr2 slot (vanilla-header proof: GT Lobby stair0 = the Up stair).
+5. The arrival camera clamps into the room's TRUE legal window (full-size [b0,b1] vs
+   confined [a0,a1], computed pre-load from the room-data layout byte via
+   `kLayoutQuadrantFlags`) — both wrong windows misbehave (edge-parked Link vs
+   unbounded equality-stop scroll).
+6. The perpendicular fine slot alignment is DEFERRED past the pre-scroll upload
+   frames and panned in during the scroll (`Rando_DoorScrollFinePan`) — applying it
+   at trigger time exposes stale VRAM rows ("flashes a different room"); the
+   whole-512 components are tilemap-modulo invisible.
+7. Spiral plane/layer: deviation item 6 above.
+
+Closed as NOT-a-bug during the same playtest: open edges keep vanilla connections
+(by design, reference-faithful); Blocked|Trapped doors (Thieves Lobby E, Skull
+Pinball WS) are vanilla-one-way — pooled for the arrival direction, blocked-outbound
+in both graphs; the reference's `challenge_room_rules` kill gates were verified
+already-captured (the ~30 rule-less kill-room doors are `Static(true)` in the
+reference itself under default enemy stats; Basement Block Path = `CanLiftRocks` ✓).
+
+Remaining playtest surface (non-blocking): PoD's side-by-side same-quadrant spiral
+pairs (the x-rank disambiguation), mid-dungeon snapshot restore, full-seed clears
+across the other shuffled dungeons.
