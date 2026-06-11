@@ -118,10 +118,12 @@ JP-1.0 glitches executable.)
   + `canSuperSpeed` (no isolable entry) + the 10 un-restored techniques stay
   `untested-on-us10` — playtest-pending. **Now GROUNDED** (JP-vs-US ROM sweep +
   per-technique careful_diff, 2026-06-09 — see TEN_TECHNIQUES.md): NONE of the 10
-  is `jp10-only` (no US patch removes them); 8 are cross-version ROM with faithful
-  fork substrate (frame-feasibility playtest-pending); `canMirrorWrap` +
-  `canTransitionWrapped` are `us10-different` (version-refactored camera-dest math,
-  fork ports the US side). op_registry notes updated.
+  is `jp10-only` (no US patch removes them); ALL 10 are cross-version ROM with
+  faithful fork substrate (frame-feasibility playtest-pending). That includes
+  `canMirrorWrap`/`canTransitionWrapped` — their only JP↔US delta is the
+  destination screen's MUSIC selection (no reachability effect); an initial
+  `us10-different` read was disproved by the deeper romdiff (TEN_TECHNIQUES.md
+  #8/#9). op_registry notes updated.
 - [~] F1 follow-on (PARTIAL) Surface the deliberately-DROPPED ALTTPR disjuncts at
   the reclassified sites using the F2 macros. Clean/non-nested sites done
   (canSuperBunny standalone + &&Mirror, canSuperSpeed&&canSpinSpeed,

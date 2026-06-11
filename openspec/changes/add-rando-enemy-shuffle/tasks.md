@@ -16,15 +16,16 @@
 > `enemy_shuffle` (no new canonical axis). Phase 1 = subgroup **SLOT 2 only**
 > (the "themed enemy" slot), dungeon + overworld, landed build-verified: WSL
 > `-Werror` green, `EnemyShuffle_SelfCheck` extended + green, corpus regen
-> **0/112 digests changed** (only `generator_version` 61→62 — placement byte-
-> identical, the orthogonality claim holds). See **§7.4** for the as-built model.
+> **0/112 digests changed** (only `generator_version` moved — branch-built as
+> 61→62, landed as **64→65** at the merge; placement byte-identical, the
+> orthogonality claim holds). See **§7.4** for the as-built model.
 > Eligibility (slot 2 free) + a safe slot-2 pool + a vanilla-inheritance shadow
 > make it crash/softlock-safe BY CONSTRUCTION on paper — but **render/crash/
 > softlock are playtest-only** (no headless net), so this is NOT done until the
-> owner playtests (diagnostics in g_ram `0x663-0x667` under `ES_RESHUFFLE_DIAG`).
-> Conservative by design (boss rooms + overlord rooms + unknown-type rooms are
-> skipped); WIDENING (more slots, overlord decoding, OW-specific pools) is the
-> playtest-gated remainder. Other deferred axes (HP/damage/etc.) are §7.1–7.3.
+> owner playtests. Conservative by design (boss rooms + unknown-type rooms are
+> skipped); the widening has since landed (§7.4 as-built v3): all 4 subgroup
+> slots, dungeon-overlord decode, + per-seed HP/contact-damage randomization
+> (kGen 64→65; bosses exempt). Remaining deferred axes are §7.1–7.3.
 
 ## 1. Constraint table (the correctness surface — do this first)
 
@@ -122,7 +123,8 @@
 >
 > **MERGED to main** 2026-06-09 at kGen **65** (re-based from 62 — main advanced
 > 61→62→63→64 via add-rando-major-glitch concurrently; corpus regen 0 digests
-> changed). Default-off; placement byte-identical. ES_RESHUFFLE_DIAG built OFF.
+> changed). Default-off; placement byte-identical. The `ES_RESHUFFLE_DIAG`
+> bring-up diagnostics were removed before push.
 >
 > ⚠️ **SPEC DELTAS ARE STALE — reconcile before `openspec archive`** (per the
 > CLAUDE.md "reconcile deltas against as-built BEFORE archiving" discipline). The
@@ -135,15 +137,16 @@
 > the reshuffle + stats are runtime). Reconcile, and only THEN archive.
 >
 > PLAYTEST STILL PENDING for the new axes (render/crash/softlock — the only net):
-> stage slot-3 / overlord-freed spawner rooms / the HP-damage feel; rebuild with
-> `ES_RESHUFFLE_DIAG=1` for the F12 diagnostics (g_ram 0x666-0x668).
+> stage slot-3 / overlord-freed spawner rooms / the HP-damage feel. (The
+> bring-up diagnostics were removed; re-add temporary g_ram counters per the
+> F12-dump workflow if needed.)
 
 - [x] **Why / true-random.** Re-assigns subgroup SLOT 2 (the themed-enemy slot) so the picker (which reads the LIVE `sprite_gfx_subset_*`) draws a wider, cross-family pool. Vanilla slot-2 sheet is ALWAYS a candidate (vanilla-inclusive) — `choose_pos2` picks uniformly over `{12,23,28,35,38,40,46} ∪ {vanilla}`.
 - [x] **Where (zelda3).** Reordered `Gfx_LoadSpritesInner` to resolve all 4 ids then hook then decompress (behavior-identical); `InitializeTilesets` hook inserted after its 4-id resolve. The hook rewrites `sprite_gfx_subset_2` (g_ram 0xC2FE) BEFORE decompress so VRAM + picker agree; cached-redecompress paths (mirror warp etc.) reproduce it for free. Room/area sprite TYPE list walked at load time via new `Dungeon_GetRoomSpritePtr` / existing `GetOverworldSpritePtr` (asset blob — list available before parse; key on `dungeon_room_index` / `overworld_area_index`).
 - [x] **Enemizer port (`C:\src\Enemizer`).** Position whitelists from `SpriteGroupCollection` `PotentialSubsetN` (DISJOINT — a sheet id ⇒ one slot, so the picker's "sheet loaded" test stays sound with no position-aware change). Per-type slot-2/known/boss classification (`kEsPos2NeedTypes` / `kEsUnknownLowTypes` / `kEsBossTypes`) from `SpriteRequirement.cs`. NOTE: the fresh-eyes audit (HIGH) caught two slot-2 NPCs (`0x16` Sahasrahla/Aginah, `0xBC` Drunk) dropped by the extraction-agent summary; the set was re-derived from every `sub2`-non-empty id and both are now selfcheck-guarded. Treat the pin set as the crash-safety surface — any future-added slot-2 sprite MUST be added here.
 - [x] **Crash/softlock model (design D3).** (a) ELIGIBILITY: slot 2 reshuffled only when FREE — every present sprite is a randomizable enemy (substituted) or a known non-slot-2 type; ANY overlord (spawns bypass the picker) / boss (boss-shuffle redirect) / unknown type ⇒ ineligible. (b) ANTI-GARBAGE pool: each slot-2 pool sheet self-contains a killable+key enemy ⇒ the picker always finds a valid substitution (no vanilla-passthrough with a missing sheet) and key/shutter rooms stay fillable. (c) INHERITANCE leak (kSpriteTilesets slot-2==0): a snapshot-safe shadow (`kRam_EnemyShuffleVanPos2` @ 0x662) restores vanilla slot 2 in ineligible rooms so a leak never reaches a slot-2-pinning room. (d) OAM footprint still unmodelled (§3.4) — playtest watch-item, mitigated by the conservative pool.
 - [x] **Determinism + install.** Per-(seed, room/area) RNG (`kEnemyShuffleSheetSalt`, distinct from the pick salts). Only rooms that OWN slot 2 (`tileset_row[2] != 0`) are reshuffled — inheriting rooms are restored to the vanilla shadow — so `choose_pos2` only ever sees a fixed per-room baseline (race-deterministic, not visit-order-dependent; audit MED). Rides the existing `EnemyShuffle_Generate` activation (shadow reset to 0 = "not established" there). No new canonical axis (owner decision: always-on when `enemy_shuffle`).
-- [ ] **Validation — PLAYTEST PENDING (the only net).** `EnemyShuffle_SelfCheck` extended (pool integrity, `type_blocks_pos2` incl. pos3-bosses, `choose_pos2` determinism + vanilla-inclusive) — green. Render/crash/softlock need the owner: diagnostics in g_ram `0x663-0x667` under `ES_RESHUFFLE_DIAG` (calls / slot-2-changed / ineligible / last-vanilla / last-chosen). Stage a few dungeons + overworld; then widen (more slots, overlord-id decoding, OW-specific pools) and turn `ES_RESHUFFLE_DIAG` off + fresh-eyes audit before merge.
+- [ ] **Validation — PLAYTEST PENDING (the only net).** `EnemyShuffle_SelfCheck` extended (pool integrity, `type_blocks_pos2` incl. pos3-bosses, `choose_pos2` determinism + vanilla-inclusive) — green. Render/crash/softlock need the owner: stage a few dungeons + overworld. (The `ES_RESHUFFLE_DIAG` bring-up counters have been removed; re-add temporary g_ram counters if diagnostics are needed.) The widening (more slots, overlord-id decoding, OW-specific pools) has since landed — see the v3 blockquote above.
 
 ## 8. Audit
 

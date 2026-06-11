@@ -163,5 +163,5 @@ playable (experimental); the render is playtest-only validated.
 
 - [x] 11.1 CI green; corpus matches. <!-- gcc -O2 -Werror (WSL) + --rando-selftest + corpus 110/110 byte-identical, 2026-06-07. -->
 - [~] 11.2 Manual playtest covers all 4 minigame sites + both shuffles on/off. <!-- owner 2026-06-07: boss/drop/Treasure-Chest/Hammer-Pegs/Hype-Cave + on/off covered; Digging Game FIX (24fde70) playtest-pending per §10.5. -->
-- [x] 11.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`. <!-- this session: 1 HIGH (Digging Game item-loss) + MED/LOW; fixes in 24fde70. -->
+- [x] 11.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`. <!-- 2026-06-07 audit: 1 HIGH (Digging Game item-loss) + MED/LOW; fixes in 24fde70. -->
 - [ ] 11.4 `openspec archive add-rando-shuffles-and-minigames` runs cleanly. <!-- gated on the §10.5 Digging Game playtest. -->

@@ -1,12 +1,11 @@
 # add-rando-hints — task tracking
 
 > **Progress banner (updated 2026-06-01).** Telepathic-tile hints (15) ship and
-> work in-game. This session landed: (a) hardening — a Triforce-Hunt race corpus
+> work in-game. Landed 2026-06-01: (a) hardening — a Triforce-Hunt race corpus
 > entry that locks Murahdahla-hint determinism via the reveal stamp, plus a
 > `docs/randomizer.md` Hints section; (b) the fork-extension NPCs — Storyteller +
 > Kakariko/Dark-World Fortune Tellers (ids 17-19) wired end-to-end (generation +
-> dispatch + spoiler + determinism). Commits 7b1874d, 2969958 on branch
-> `claude/cosmetics-and-reveal-fix`.
+> dispatch + spoiler + determinism). Commits 7b1874d, 2969958.
 >
 > **Mode is binary** (off/on), not the original tri-state — wherever §6/§8/§11
 > say `hints=full`/`sahasrahla`, read "on". **Bookshelf is dropped.** **Murahdahla
@@ -14,7 +13,7 @@
 > (id 20)** is intentionally not separately wired.
 >
 > **ARCHIVE-READY (2026-06-07).** §11 in-game NPC playtest DONE (owner). Fresh-eyes
-> audit DONE (2026-06-02, 0 HIGH; re-audited this session — fixes in commit
+> audit DONE (2026-06-02, 0 HIGH; re-audited 2026-06-07 — fixes in commit
 > `24fde70`: snapshot/replay hint-table clear, encode off-by-one, Murahdahla
 > region-cap 16→64). Spec deltas reconciled to as-built (fork NPCs 17-19 ARE wired
 > in-game; hint format is `"<item> is in <location>"`; `meta.hints_count` exists) —
@@ -167,5 +166,5 @@ Per design.md §57 audit: ALTTPR's HintService.php produces ONLY 15 telepathic t
 
 - [x] 12.1 CI green on Linux + macOS + Windows; corpus matches; hint determinism preserved. <!-- gcc -O2 -Werror (WSL) + --rando-selftest + corpus 110/110 byte-identical, 2026-06-07. -->
 - [x] 12.2 Manual playtest covers all 4 hint sources + all 3 hints axis values. <!-- owner playtest 2026-06-07; mode is binary (off/on), so "3 axis values" = off + on (sahasrahla/full are on-aliases). -->
-- [x] 12.3 Fresh-eyes audit findings addressed. <!-- 2026-06-02 (0 HIGH) + this session's re-audit; fixes in 24fde70. -->
+- [x] 12.3 Fresh-eyes audit findings addressed. <!-- 2026-06-02 (0 HIGH) + the 2026-06-07 re-audit; fixes in 24fde70. -->
 - [x] 12.4 `openspec archive add-rando-hints` runs cleanly; new `randomizer-hints` spec moves to `openspec/specs/randomizer-hints/spec.md`; deltas merge into `randomizer-placement` + `randomizer-core`.

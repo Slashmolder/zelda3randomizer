@@ -4,7 +4,7 @@ A randomizer **enemy shuffle** axis: randomize **which enemy spawns** in each du
 
 ## Status
 
-**MVP implemented + squash-merged to main (2026-06-08, `807cce8`).** Sprite-type substitution is live (default-off): build-verified, `--rando-selftest` green, corpus byte-identical, runtime-confirmed substituting. **KNOWN LIMITATION:** low variety (swaps limited to already-loaded sheets + the conservative table). The variety unlock is the **sheet-group reshuffle** (`design.md` D4), deferred; render/crash/softlock playtest also pending. Scope (owner decision): **sprite-type substitution only** (MVP); HP/damage/killable-thief/bush/absorbables are deferred follow-on axes (`tasks.md §7`).
+**MVP implemented + squash-merged to main (2026-06-08, `807cce8`).** Sprite-type substitution is live (default-off): build-verified, `--rando-selftest` green, corpus byte-identical, runtime-confirmed substituting. **The sheet-group reshuffle (`design.md` D4 / `tasks.md` §7.4 — the variety unlock, all 4 subgroup slots, dungeon-overlord-aware) and per-seed enemy HP/contact-damage randomization have since shipped too** (kGen 64→65; bosses exempt from stat scaling). Render/crash/softlock playtest still pending. Remaining deferred axes: killable-thief/bush/absorbables (`tasks.md §7`).
 
 ## Read these in order
 
