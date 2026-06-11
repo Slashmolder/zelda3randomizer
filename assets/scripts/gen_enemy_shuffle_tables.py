@@ -165,7 +165,7 @@ for sid in range(0xF3):
             mask |= (1 << p)
     # AddGroup(n) entries (the 8 village NPCs: SweepingLady/RunningMan/... use
     # whole-group sheets with NO AddSubgroupN) would otherwise pin nothing and get
-    # reshuffled into garbage (fresh-eyes audit MED-HIGH). Conservatively pin ALL
+    # reshuffled into garbage. Conservatively pin ALL
     # slots so any area holding one is ineligible.
     if e["group"] is not None:
         mask |= 0x0F

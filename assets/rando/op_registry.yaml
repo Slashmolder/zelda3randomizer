@@ -316,7 +316,8 @@ tricks:
     # the collision routines are byte-identical JP↔US and tile_detect.c reproduces
     # the sub-tile corner math bit-for-bit. Cross-version ROM; the corner-clip
     # frame/sub-pixel feasibility on this build is playtest-pending. (See
-    # TEN_TECHNIQUES.md / the glitch_levels grounding note.)
+    # openspec/changes/add-rando-major-glitch/TEN_TECHNIQUES.md / the
+    # glitch_levels grounding note.)
     rom_version_status: untested-on-us10
 
   - bit: 1
@@ -402,7 +403,9 @@ tricks:
     # untested grounded (romdiff 2026-06-09): NOT jp10-only — the bunny + bottle
     # path is byte-identical JP↔US and the fork ports the bunny state machine
     # faithfully. Cross-version ROM; the OWYBA setup's frame-feasibility on this
-    # build is playtest-pending. (See TEN_TECHNIQUES.md / glitch_levels grounding.)
+    # build is playtest-pending. (See
+    # openspec/changes/add-rando-major-glitch/TEN_TECHNIQUES.md /
+    # glitch_levels grounding.)
     rom_version_status: untested-on-us10
 
   - bit: 6
@@ -438,7 +441,8 @@ tricks:
 # NEVER unverified, so it is intentionally absent.
 #
 # WHY the levels stay `untested-on-us10` (grounded, JP-vs-US ROM sweep
-# 2026-06-09, _jpglitch_spike/romdiff.py — see TEN_TECHNIQUES.md): of the 10
+# 2026-06-09, _jpglitch_spike/romdiff.py — see
+# openspec/changes/add-rando-major-glitch/TEN_TECHNIQUES.md): of the 10
 # glitch techniques the JP-glitch restoration did NOT make performable
 # (everything except canFakeFlipper + canSuperSpeed), a per-technique
 # careful_diff confirmed NONE is JP-1.0-exclusive — every enabling collision/
@@ -448,13 +452,13 @@ tricks:
 # So they are CROSS-VERSION ROM, but their fork-reimpl frame-feasibility (esp.
 # the 1-frame clips canOneFrameClipOW/UW) is unconfirmed → honest
 # `untested-on-us10`, NOT `cross-version` (that bar needs a positive playtest)
-# and NOT `jp10-only`. (Earlier draft flagged canMirrorWrap + canTransitionWrapped
-# as us10-different; a deeper romdiff 2026-06-09 CORRECTED that — the
-# mirror-warp / screen-entry DESTINATION + position + camera math is BYTE-IDENTICAL
-# JP↔US; the only delta is the destination screen's overworld MUSIC selection
-# [$7F5B00 = overworld_music[] WRAM, not a dest table; writes differ at $12C/$12D],
-# which has no reachability effect. So those two are cross-version ROM like the
-# rest → untested-on-us10, NOT us10-different. See their macros.yaml notes.)
+# and NOT `jp10-only`. (canMirrorWrap + canTransitionWrapped are NOT
+# us10-different — the mirror-warp / screen-entry DESTINATION + position +
+# camera math is BYTE-IDENTICAL JP↔US; the only delta is the destination
+# screen's overworld MUSIC selection [$7F5B00 = overworld_music[] WRAM, not a
+# dest table; writes differ at $12C/$12D], which has no reachability effect.
+# So those two are cross-version ROM like the rest → untested-on-us10. See
+# their macros.yaml notes.)
 # ---------------------------------------------------------------------------
 glitch_levels:
   - level: 1

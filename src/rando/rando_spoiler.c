@@ -316,7 +316,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
       // short-circuited (rando_logic.c), so NO glitch-tier gate actually
       // evaluates, and the dedicated no_logic_seed warning above already covers
       // the seed — listing every tier (including no_logic itself) here would be
-      // misleading "in-use" noise. Phase D (add-rando-major-glitch) audit fix.
+      // misleading "in-use" noise.
       for (uint32 i = 0; i < kRandoGlitchLevelStatusCount && s->settings->logic < 4; i++) {
         const RandoGlitchLevelStatus *gs = &kRandoGlitchLevelStatus[i];
         if (gs->level == 0) continue;                 // no_glitches never warns

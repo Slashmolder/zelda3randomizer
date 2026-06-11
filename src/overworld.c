@@ -4027,8 +4027,8 @@ void CreatePyramidHole() {  // 9bc2a7
   if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
       Rando_GetActiveWorldState() == 2 /* kWorldState_Inverted */) {
     // Hole-only relocation: carve the no-art Ganon pit on screen 0x1B (a 2-tone
-    // dark diamond). The old code placed the pyramid-facade/hole blocks
-    // (0x046d/0x0e39.. /0x0490/0x0491) here, but those render as garbage with the
+    // dark diamond). The pyramid-facade/hole blocks (0x046d/0x0e39../0x0490/
+    // 0x0491) are deliberately NOT placed here — they render as garbage with the
     // castle gfx/palette; the pit blocks live in the InvertedHoleBlocks_Install
     // map16 shadow. Footprint + block layout are shared with the static reload
     // paint in Overworld_ApplyInvertedTiles (inverted_maps_apply.c).

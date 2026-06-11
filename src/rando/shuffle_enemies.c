@@ -15,7 +15,7 @@
 // LIVE from sprite_gfx_subset_0..3 (g_ram 0xC2FC..0xC2FF), which already
 // reflect the kSpriteTilesets row AND the 0-entry inheritance (a 0 subgroup
 // entry leaves the previously-loaded sheet in place — Gfx_LoadSpritesInner,
-// load_gfx.c:627-640). Reading the live subset values sidesteps the
+// load_gfx.c). Reading the live subset values sidesteps the
 // 0-inheritance hazard entirely (we never consult the static kSpriteTilesets
 // row). The required-sheet sets come from Enemizer's per-sprite AddSubgroupN
 // lists (SpriteRequirement.cs).
@@ -301,7 +301,7 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 // load the Gibdo/Zazak/Pengator/Eyegore sheet and the existing picker gets the
 // wider pool for free (it reads the LIVE sprite_gfx_subset_* we rewrite here).
 //
-// SCOPE (phase 1, conservative — playtest-gated widening per CLAUDE.md): SLOT 2
+// SCOPE (phase 1, conservative — playtest-gated widening): SLOT 2
 // ONLY. A room/area is reshuffle-eligible only when slot 2 is provably FREE:
 // every present sprite is either a randomizable enemy (the picker substitutes it)
 // or a KNOWN type that does NOT need slot 2, and NO overlord is present
@@ -336,11 +336,6 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 
 // Distinct RNG salt for the sheet choice (independent of the pick salts above).
 #define kEnemyShuffleSheetSalt 0x5348454554ull  // "SHEET"
-
-// Set to 1 to emit playtest diagnostics into the reserved g_ram block (read via
-// an F12 dump): 0x666 hook-calls, 0x667 cumulative slots-changed, 0x668 last
-// room's blocked-slot bitmask. OFF for merge — turn back to 1 for playtest.
-#define ES_RESHUFFLE_DIAG 0
 
 // We reshuffle ALL FOUR subgroup slots. Slots 0,1,2 are the enemy slots; slot 3
 // is mostly objects (it pins often, so it reshuffles rarely) but carries a few
@@ -548,16 +543,15 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   // Key on dungeon_room_index (0xA0), NOT dungeon_room_index2 (0x48E): at
   // sheet-load time _index is the room being entered (its header drove the loaded
   // sheets) while _index2 is still the PREVIOUS room — it is assigned `= _index`
-  // one line before Dungeon_LoadSprites runs (e.g. Module07_02_01_LoadNextRoom
-  // dungeon.c:6900-6901). So the hook (reads _index) walks the same room the
+  // one line before Dungeon_LoadSprites runs (e.g. Module07_02_01_LoadNextRoom,
+  // dungeon.c). So the hook (reads _index) walks the same room the
   // picker (reads _index2 == _index by then) substitutes — they converge; reading
-  // _index2 here would instead walk the PREVIOUS room's list. (Audit-verified.)
+  // _index2 here would instead walk the PREVIOUS room's list.
   uint16 key16 = is_dungeon
       ? (uint16)(g_ram[0xA0] | (g_ram[0xA1] << 8))    // dungeon_room_index
       : (uint16)(g_ram[0x40A] | (g_ram[0x40B] << 8)); // overworld_area_index
   uint8 blocked = room_blocked_slots(is_dungeon, key16);
 
-  uint8 changed = 0;
   for (int slot = 0; slot < ES_RESHUFFLE_SLOTS; slot++) {
     // True vanilla-resolved sheet for this slot: the row's own sheet if it loads
     // one (a fixed per-room value), else the inherited shadow. 0 = not yet
@@ -578,15 +572,7 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
       chosen = choose_slot_sheet(slot, van, k, is_dungeon);
     }
     g_ram[0xC2FC + slot] = chosen;  // sprite_gfx_subset_{slot} — picker + decompress
-    if (chosen != van) changed++;
   }
-
-#if ES_RESHUFFLE_DIAG
-  // Diag at 0x666-0x668 (the 4-byte per-slot shadow now occupies 0x662-0x665).
-  if (g_ram[0x666] < 0xff) g_ram[0x666]++;                          // hook calls
-  if (g_ram[0x667] <= (uint8)(0xff - changed)) g_ram[0x667] += changed; // cumulative slots changed
-  g_ram[0x668] = blocked;                                           // last room's blocked mask
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -680,7 +666,7 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
 // substitution + reshuffle; the stat axis was the only leak. The hard reason:
 // Helmasaur King (0x92) indexes kHelmasaurKing_Tab1[13] by `sprite_health >> 2`
 // (sprite_main.c) — vanilla HP 48 → index 12 (the last valid slot); ANY upward HP
-// scale reads OUT OF BOUNDS (fresh-eyes audit HIGH). Other bosses self-clamp or
+// scale reads OUT OF BOUNDS. Other bosses self-clamp or
 // gate on damage-underflow sentinels, but scaling them is tedious/pointless and
 // the table-index hazard makes a blanket boss exemption the safe, simple rule.
 uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base) {
@@ -915,7 +901,7 @@ void EnemyShuffle_SelfCheck(void) {
       if (!type_blocks_slot(0x53, s)) enemy_selfcheck_die("a slot-3 boss (Armos Knights) failed to pin");
       if (!type_blocks_slot(0x05, s)) enemy_selfcheck_die("an unknown type failed to pin a slot");
       // AddGroup(6) village NPCs (no AddSubgroupN) must pin ALL slots, else the
-      // reshuffle garbages them (fresh-eyes audit MED-HIGH). Spot-check two.
+      // reshuffle garbages them. Spot-check two.
       if (!type_blocks_slot(0x74, s)) enemy_selfcheck_die("a group-NPC (RunningMan) failed to pin a slot");
       if (!type_blocks_slot(0x2A, s)) enemy_selfcheck_die("a group-NPC (SweepingLady) failed to pin a slot");
     }
@@ -923,7 +909,7 @@ void EnemyShuffle_SelfCheck(void) {
       enemy_selfcheck_die("Wallmaster failed to pin slot 2");
     if (type_blocks_slot(0x90, 0))   // ... but NOT slot 0
       enemy_selfcheck_die("Wallmaster wrongly pinned slot 0");
-    if (!type_blocks_slot(0x16, 2))  // Sahasrahla/Aginah (sub2=76) — audit regression guard
+    if (!type_blocks_slot(0x16, 2))  // Sahasrahla/Aginah (sub2=76) pins slot 2
       enemy_selfcheck_die("Sahasrahla/Aginah failed to pin slot 2");
     if (!type_blocks_slot(0xBC, 2) || !type_blocks_slot(0xBC, 0))  // Drunk needs slots 0,1,2,3
       enemy_selfcheck_die("Drunk-in-the-Inn failed to pin its slots");
@@ -979,7 +965,7 @@ void EnemyShuffle_SelfCheck(void) {
     if (EnemyShuffle_ScaleHealth(0x08, 0) != 0)
       enemy_selfcheck_die("ScaleHealth(0) must stay 0 (non-killable sprite)");
     // Bosses must NOT scale — Helmasaur King (0x92) indexes a 13-entry table by
-    // sprite_health>>2; any upward scale reads OOB (fresh-eyes audit HIGH).
+    // sprite_health>>2; any upward scale reads OOB.
     if (EnemyShuffle_ScaleHealth(0x92, 48) != 48 || EnemyShuffle_ScaleHealth(0x53, 100) != 100 ||
         EnemyShuffle_ScaleDamage(0x92, 5) != 5)
       enemy_selfcheck_die("stat scaling must leave bosses at vanilla (Helmasaur OOB regression)");

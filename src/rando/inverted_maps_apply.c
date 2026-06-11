@@ -92,8 +92,8 @@ void InvertedHoleBlocks_Teardown(void) {
     g_inv_map16_orig = NULL;
   }
   // Reset the resolved pit block ids so a stale id can't be painted if the carve/
-  // static paint ever runs after teardown without a successful re-install (audit
-  // LOW-1). Both consumers are world_state==Inverted-gated and a live Inverted slot
+  // static paint ever runs after teardown without a successful re-install.
+  // Both consumers are world_state==Inverted-gated and a live Inverted slot
   // always re-installs, so this is purely defensive.
   g_inv_hole_interior_id = 0;
   g_inv_hole_rim_id = 0;

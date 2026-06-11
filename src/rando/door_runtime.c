@@ -34,8 +34,8 @@ extern const uint8 kLayoutQuadrantFlags[];  // dungeon.c quadrant-confinement ta
 // dung_layout_and_starting_quadrant is read). Returns 2 = full-size
 // (camera may roam [b0,b1]) or 0 = confined to the quadrant window [a0,a1].
 // Clamping into the WRONG window is not symmetric: too-narrow parks the
-// camera at a quadrant rest with Link possibly at the screen edge (the
-// "can't see Link" rail-ledge playtest bug — a boundary-slot door in a
+// camera at a quadrant rest with Link possibly off-screen at the edge
+// (symptom: Link not visible at a rail ledge — a boundary-slot door in a
 // full-size room); too-wide leaves the camera between confined stops, and
 // the per-frame equality stops then never match (unbounded scroll).
 static uint8 DoorRt_DestFullsize(uint16 room, uint8 quad_x, uint8 quad_y, bool y_axis) {
@@ -283,8 +283,8 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
   // stop, the camera-follow thresholds, the landing snap), regardless of
   // which side of a 256px boundary the trigger fired on. Re-deriving hi
   // bytes instead breaks the masked scroll terminator and the camera scrolls
-  // up to a full extra supertile, dragging Link out of the room (the
-  // "weird camera scrolling" playtest bug).
+  // up to a full extra supertile, dragging Link out of the room (symptom:
+  // runaway camera scrolling on arrival).
   int n0_col = (S & 0xf) + (step == 1 ? 1 : step == -1 ? -1 : 0);
   int n0_row = (S >> 4) + (step == 0x10 ? 1 : step == -0x10 ? -1 : 0);
   int dx = (((D & 0xf) - n0_col) << 9);
