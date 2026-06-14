@@ -40,6 +40,7 @@
 #include "tracker_windows.h"  // Trackers_SetShown/IsShown (Trackers launcher tab)
 #include "game_config_widgets.h"  // GameConfig_* (native game-config panels)
 #include "game_panels.h"          // Rando*_Render (reachability/hints sub-tabs)
+#include "file_dialog.h"          // FileDialog::OpenFile (customizer "Browse..." button)
 // kFeatures0_* recommended-features bit constants (compile-time enums; no g_ram
 // access — this TU never invokes the enhanced_features0 macro that writes g_ram).
 #include "../../features.h"
@@ -642,8 +643,23 @@ static void Panel_General() {
       ImGui::InputTextWithHint("##customizer_path",
                                "path to manifest .yaml (see assets/rando/customizer.example.yaml)",
                                s_customizer_path, sizeof s_customizer_path);
+      // Browse... opens the OS-native file picker; on a successful pick it fills
+      // the path field and auto-loads (one-click convenience). The text field
+      // remains a fallback when no native dialog backend is available.
+      bool do_load = false;
       ImGui::SameLine();
-      if (ImGui::Button("Load manifest")) {
+      if (ImGui::Button("Browse...")) {
+        char picked[sizeof s_customizer_path];
+        if (FileDialog::OpenFile("Select customizer manifest", s_customizer_path,
+                                 "YAML manifest", "*.yaml *.yml",
+                                 picked, sizeof picked)) {
+          snprintf(s_customizer_path, sizeof s_customizer_path, "%s", picked);
+          do_load = true;
+        }
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Load manifest")) do_load = true;
+      if (do_load) {
         char lerr[200];
         CustomizerManifest parsed;
         if (Customizer_LoadFile(s_customizer_path, &parsed, lerr, sizeof lerr) != 0) {

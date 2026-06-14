@@ -46,7 +46,8 @@ IMGUI_SRCS:=$(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgu
             src/rando/rando_window/rando_hints_panel.cpp \
             src/rando/rando_window/panels_selftest.cpp \
             src/rando/rando_window/imgui_host.cpp \
-            src/rando/rando_window/tracker_windows.cpp
+            src/rando/rando_window/tracker_windows.cpp \
+            src/rando/rando_window/file_dialog.cpp
 CPP_OBJS:=$(IMGUI_SRCS:%.cpp=%.o)
 # The bridge .c lives under src/rando/rando_window/ — the src/rando/*.c glob is
 # non-recursive and does NOT pick it up, so add it explicitly here (PC only).

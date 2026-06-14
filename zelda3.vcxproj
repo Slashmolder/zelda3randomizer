@@ -321,6 +321,13 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
+    <ClCompile Include="src\rando\rando_window\file_dialog.cpp">
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <!-- portable-file-dialogs pulls in <future>/<regex>, which want C++
+           exception handling enabled (the rest of the project builds EH-off). -->
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="third_party\imgui\imgui.cpp">
       <LanguageStandard>stdcpp17</LanguageStandard>
       <TreatWarningAsError>false</TreatWarningAsError>
