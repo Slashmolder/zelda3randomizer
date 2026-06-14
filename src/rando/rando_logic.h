@@ -96,7 +96,7 @@ typedef struct RandoCounts {
 // Phase A: per-seed shuffle tables exposed to the VM.
 //
 // - dungeon_prize_assignment[d] = prize_id placed at dungeon d's _Prize slot.
-//   Indexed by dungeon id (per the dungeon-id table in op_registry.yaml).
+//   Indexed by kRandoDungeon_* order from dungeon_ids.h.
 //   Phase A defaults: identity (each dungeon holds its vanilla prize).
 // - medallion_entrance_assignment[e] = item_id of the medallion that opens
 //   entrance e. e ∈ {MiseryMire_Entrance, TurtleRock_Entrance}.

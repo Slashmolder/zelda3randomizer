@@ -958,14 +958,16 @@ static bool Door_CheckValid(const DoorShuffleLayout *layout, uint8 dungeon,
   // 2b. 'Thieves Boss' (appended separately from boss_path_checks in
   // determine_paths_for_dungeon; the harvested path table only carries the
   // boss_path_checks list).
-  if (dungeon == 8 && g_door_idx.thieves_boss_region != 0xFFFF &&
+  if (dungeon == kDoorShuffleTblDungeon_ThievesTown &&
+      g_door_idx.thieves_boss_region != 0xFFFF &&
       !DoorExplore_Reached(staged, g_door_idx.thieves_boss_region))
     return false;
   // 2c. Blind's maiden escort: ('Thieves Blind's Cell', 'Thieves Boss') —
   // the fork pins Blind in Thieves Town (boss shuffle), so always required.
   // Guard the boss region too (mirrors 2b): an unresolved 0xFFFF target would
   // index visited_blue[0xFFFF>>3] OOB inside DoorExplore_Reached.
-  if (dungeon == 8 && g_door_idx.blind_cell_region != 0xFFFF &&
+  if (dungeon == kDoorShuffleTblDungeon_ThievesTown &&
+      g_door_idx.blind_cell_region != 0xFFFF &&
       g_door_idx.thieves_boss_region != 0xFFFF) {
     if (!Door_PathFromReaches(layout, dungeon, g_door_idx.blind_cell_region,
                               &g_door_idx.thieves_boss_region, 1))
