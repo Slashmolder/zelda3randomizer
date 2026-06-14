@@ -7406,8 +7406,18 @@ void Sprite_DashItem(int k) {  // 85fbf7
   }
 }
 
+static uint16 Sprite_BonkKeyRandoLocation(void) {
+  switch (dungeon_room_index) {
+  case 0x73: return LOC_Desert_Palace_Torch;
+  case 0x8c: return LOC_Ganon_s_Tower_Bob_s_Torch;
+  default:    return 0xffff;
+  }
+}
+
 void Sprite_BonkKey(int k) {  // 85fc04
-  Sprite_DrawThinAndTall(k);
+  uint16 loc = Sprite_BonkKeyRandoLocation();
+  if (loc == 0xffff || !Rando_TryDrawFieldItemSprite(k, loc, 0xffffu))
+    Sprite_DrawThinAndTall(k);
   if (Sprite_ReturnIfInactive(k))
     return;
   if (Sprite_CheckDamageToLink_same_layer(k))
@@ -7439,17 +7449,19 @@ void Sprite_BonkKey(int k) {  // 85fc04
       sprite_floor[k] = link_is_on_lower_level;
     break;
   case 3:  // give to player
-    // rando-exempt: drop-pool (Phase B) — dash-triggered key drop. The drop
-    // is tied to a room state bit (kakariko well chunks etc.), not an
-    // ALTTPR location_id; grants the dungeon's vanilla SmallKey of the
-    // current room. Drop-pool shuffle lands in Phase B.
-    link_num_keys++;
-    // rando-exempt: drop-pool — under Retro genericKeys link_num_keys is backed
-    // by the shared pool slot; persist the dropped key immediately.
-    if (Rando_IsGenericKeysActive()) link_generic_keys = link_num_keys;
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) && loc != 0xffff) {
+      item_receipt_method = 0;
+      uint8 lttp_code = Rando_DispatchVanillaGrant(loc, 0xffffu, 0x24);
+      Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());
+    } else {
+      link_num_keys++;
+      // rando-exempt: drop-pool — under Retro genericKeys link_num_keys is
+      // backed by the shared pool slot; persist the dropped key immediately.
+      if (Rando_IsGenericKeysActive()) link_generic_keys = link_num_keys;
+      SpriteSfx_QueueSfx3WithPan(k, 0x2f);
+    }
     sprite_state[k] = 0;
     dung_savegame_state_bits |= (sprite_die_action[k] ? 0x2000 : 0x4000);
-    SpriteSfx_QueueSfx3WithPan(k, 0x2f);
     break;
   }
 }
