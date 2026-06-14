@@ -314,8 +314,9 @@ static void DrawItemTracker(void *) {
     const ImVec4 done = ImVec4(0.45f, 0.90f, 0.50f, 1.0f);  // completed dungeon name
     for (int i = 0; i < (int)kRandoDungeonRuntimeRowCount; i++) {
       const RandoDungeonRuntimeRow *row = &kRandoDungeonRuntimeRows[i];
-      int d = row->game_dungeon;
-      uint16 bit = Rando_DungeonBitForGameDungeon((uint8)d);
+      uint16 bigkey_bit = Rando_DungeonBitForGameDungeon(row->bigkey_game_dungeon);
+      uint16 map_bit = Rando_DungeonBitForGameDungeon(row->map_game_dungeon);
+      uint16 compass_bit = Rando_DungeonBitForGameDungeon(row->compass_game_dungeon);
       int keys = v.dungeon_small_keys[row->key_slot];
 
       // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.
@@ -332,7 +333,7 @@ static void DrawItemTracker(void *) {
         uint16 prize_loc = Rando_GetDungeonPrizeLocation(row->rando_dungeon);
         prize_obtained = (prize_loc != 0xFFFF) && Rando_IsLocationChecked(prize_loc);
       }
-      bool complete = row->game_dungeon == kGameDungeon_HyruleCastleTower ? v.agahnim : prize_obtained;
+      bool complete = row->rando_dungeon == kRandoDungeon_HyruleCastleTower ? v.agahnim : prize_obtained;
 
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
@@ -341,7 +342,7 @@ static void DrawItemTracker(void *) {
 
       // Prize column (doubles as boss-completion indicator).
       ImGui::TableNextColumn();
-      if (row->game_dungeon == kGameDungeon_HyruleCastleTower) {  // Castle Tower -> Agahnim 1
+      if (row->rando_dungeon == kRandoDungeon_HyruleCastleTower) {  // Castle Tower -> Agahnim 1
         ImVec2 p = ImGui::GetCursorScreenPos();
         ImDrawList *dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(p, ImVec2(p.x + 18, p.y + 18),
@@ -363,9 +364,9 @@ static void DrawItemTracker(void *) {
       ImGui::TableNextColumn();
       ImGui::TextColored(keys > 0 ? on : off, "x%d", keys);
       // Big key / map / compass: the real dungeon-HUD sprites, dimmed when absent.
-      ImGui::TableNextColumn(); IconImage(kRandoIcon_BigKey, 18.0f, (v.bigkey_bits & bit) != 0);
-      ImGui::TableNextColumn(); IconImage(kRandoIcon_Map, 18.0f, (v.map_bits & bit) != 0);
-      ImGui::TableNextColumn(); IconImage(kRandoIcon_Compass, 18.0f, (v.compass_bits & bit) != 0);
+      ImGui::TableNextColumn(); IconImage(kRandoIcon_BigKey, 18.0f, (v.bigkey_bits & bigkey_bit) != 0);
+      ImGui::TableNextColumn(); IconImage(kRandoIcon_Map, 18.0f, (v.map_bits & map_bit) != 0);
+      ImGui::TableNextColumn(); IconImage(kRandoIcon_Compass, 18.0f, (v.compass_bits & compass_bit) != 0);
     }
     ImGui::EndTable();
   }

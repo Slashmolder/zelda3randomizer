@@ -389,15 +389,17 @@ static void at_append_dungeons(AtStr *s, const RandoItemView *v) {
   int count = (int)kRandoDungeonRuntimeRowCount;
   for (int i = 0; i < count; i++) {
     const RandoDungeonRuntimeRow *row = &kRandoDungeonRuntimeRows[i];
-    uint8 g = row->game_dungeon;
-    uint16 bit = Rando_DungeonBitForGameDungeon(g);
+    uint16 bigkey_bit = Rando_DungeonBitForGameDungeon(row->bigkey_game_dungeon);
+    uint16 map_bit = Rando_DungeonBitForGameDungeon(row->map_game_dungeon);
+    uint16 compass_bit = Rando_DungeonBitForGameDungeon(row->compass_game_dungeon);
     if (i) at_str_puts(s, ",");
     at_str_puts(s, "{\"name\":");
     at_json_str(s, row->name);
     at_str_printf(s, ",\"small_keys\":%u,\"big_key\":%s,\"map\":%s,\"compass\":%s}",
                   (unsigned)v->dungeon_small_keys[row->key_slot],
-                  at_b((v->bigkey_bits & bit) != 0), at_b((v->map_bits & bit) != 0),
-                  at_b((v->compass_bits & bit) != 0));
+                  at_b((v->bigkey_bits & bigkey_bit) != 0),
+                  at_b((v->map_bits & map_bit) != 0),
+                  at_b((v->compass_bits & compass_bit) != 0));
   }
   at_str_puts(s, "]");
 }

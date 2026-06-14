@@ -19,12 +19,22 @@
 #define kDoorShuffle_MaxKeyDoors 10
 #define kDoorShuffle_MaxBkRestricted 96
 
+// Door-table dungeon indices come from generated door_tables.gen.*. They are a
+// third domain: not kRandoDungeon_* and not cur_palace_index_x2>>1.
+enum {
+  kDoorShuffleTblDungeon_HyruleCastle = 0,
+  kDoorShuffleTblDungeon_SwampPalace = 6,
+  kDoorShuffleTblDungeon_ThievesTown = 8,
+};
+
 // MVP shuffled-dungeon mask: all 13 kDoorTblDungeons EXCEPT the pins —
-// Hyrule Castle (index 0: forced escape start + Zelda escort + std key
-// special-casing) and Swamp Palace (index 6: the unique non-monotone
-// water-level rule cluster + drain/flood runtime risk). See the
+// Hyrule Castle (forced escape start + Zelda escort + std key special-casing)
+// and Swamp Palace (the unique non-monotone water-level rule cluster +
+// drain/flood runtime risk). See the
 // add-rando-door-shuffle design pins P4'/P5.
-#define kDoorShuffle_MvpDungeonMask ((uint16)(0x1FFF & ~(1u << 0) & ~(1u << 6)))
+#define kDoorShuffle_MvpDungeonMask \
+  ((uint16)(0x1FFF & ~(1u << kDoorShuffleTblDungeon_HyruleCastle) & \
+            ~(1u << kDoorShuffleTblDungeon_SwampPalace)))
 
 typedef struct DoorShuffleLayout {
   // pairing[door_id] = partner door id, 0xFFFF = unshuffled (vanilla).

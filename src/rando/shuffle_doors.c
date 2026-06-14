@@ -109,7 +109,8 @@ void DoorIdx_Init(void) {
     if (strstr(n, "- Prize")) cls |= kDoorLoc_Prize;
     if (strstr(n, "- Big Chest")) cls |= kDoorLoc_BigChest;
     if (strstr(n, "Blind's Cell") || strstr(n, "Zelda's Cell")) cls |= kDoorLoc_BkLockedName;
-    if (kDoorTblRegions[kDoorTblLocations[i].region].dungeon == 8 /* Thieves */ &&
+    if (kDoorTblRegions[kDoorTblLocations[i].region].dungeon ==
+            kDoorShuffleTblDungeon_ThievesTown &&
         StrSuffix(n, "- Boss"))
       cls |= kDoorLoc_ThievesBoss;
     x->loc_class[i] = cls;

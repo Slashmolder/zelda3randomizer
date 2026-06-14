@@ -3598,6 +3598,14 @@ static void Rando_DungeonIdSelfCheck(void) {
     fprintf(stderr, "Rando_SelfCheck: boss/prize game mapping mismatch\n");
     exit(2);
   }
+  if (kRandoDungeonRuntimeRows[0].key_slot != kGameDungeon_HyruleCastleEscape ||
+      kRandoDungeonRuntimeRows[0].bigkey_game_dungeon != kGameDungeon_None ||
+      kRandoDungeonRuntimeRows[0].map_game_dungeon != kGameDungeon_HyruleCastleEscape ||
+      kRandoDungeonRuntimeRows[0].compass_game_dungeon != kGameDungeon_None ||
+      kRandoDungeonRuntimeRows[0].rando_dungeon != kRandoDungeon_HyruleCastleEscape) {
+    fprintf(stderr, "Rando_SelfCheck: HCE runtime row axis mismatch\n");
+    exit(2);
+  }
 }
 
 void Rando_SelfCheck(void) {

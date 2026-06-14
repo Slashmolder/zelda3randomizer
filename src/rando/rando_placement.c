@@ -166,8 +166,8 @@ enum {
   LOCTYPE_Medallion     = 13,
 };
 
-// Dungeon → Prize location id, for prize-shuffle placement. Indexed by
-// dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
+// kRandoDungeon_* -> Prize location id, for prize-shuffle placement.
+// 0xFFFF = no Prize location for that dungeon.
 // File-scope so Goal_IsCompletable can consult it for prize-reachability checks.
 static const uint16 kDungeonPrizeLocations[13] = {
   0xFFFF,  // HCE
@@ -186,9 +186,9 @@ static const uint16 kDungeonPrizeLocations[13] = {
 };
 
 // Public accessor for the per-dungeon prize location (see rando_placement.h).
-uint16 Rando_GetDungeonPrizeLocation(int dungeon_index) {
-  if (dungeon_index < 0 || dungeon_index >= 13) return 0xFFFF;
-  return kDungeonPrizeLocations[dungeon_index];
+uint16 Rando_GetDungeonPrizeLocation(int rando_dungeon) {
+  if (rando_dungeon < 0 || rando_dungeon >= kRandoDungeonCount) return 0xFFFF;
+  return kDungeonPrizeLocations[rando_dungeon];
 }
 
 // Per-dungeon small-key counts (vanilla per ALTTPR config; small_keys.X).

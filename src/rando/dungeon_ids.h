@@ -275,8 +275,13 @@ static inline uint16 Rando_BossPrizeLocationForGameDungeon(uint8 game_dungeon) {
 #endif  // __cplusplus
 
 typedef struct RandoDungeonRuntimeRow {
-  uint8 game_dungeon;
+  // Small-key counters and item bitfields are separate game RAM axes. Hyrule
+  // Castle proper folds keys into HCE/Sewers slot 0, while the rando Map_HCE
+  // item uses map bit 0. Do not collapse these into one "dungeon id" field.
   uint8 key_slot;
+  uint8 bigkey_game_dungeon;
+  uint8 map_game_dungeon;
+  uint8 compass_game_dungeon;
   uint8 rando_dungeon;
   uint8 has_prize;
   const char *name;
@@ -284,21 +289,44 @@ typedef struct RandoDungeonRuntimeRow {
 } RandoDungeonRuntimeRow;
 
 #define kRandoDungeonRuntimeRowCount 13
+#define RANDO_RUNTIME_ROW(key, big, map, compass, rando, prize, name, short_name) \
+  { key, big, map, compass, rando, prize, name, short_name }
+#define RANDO_RUNTIME_ROW_ALL(game, rando, prize, name, short_name) \
+  RANDO_RUNTIME_ROW(game, game, game, game, rando, prize, name, short_name)
 static const RandoDungeonRuntimeRow kRandoDungeonRuntimeRows[kRandoDungeonRuntimeRowCount] = {
-  { kGameDungeon_HyruleCastleEscape, kGameDungeon_HyruleCastleEscape, kRandoDungeon_HyruleCastleEscape, 0, "Hyrule Castle / Sewers", "Hyrule Castle" },
-  { kGameDungeon_HyruleCastleTower, kGameDungeon_HyruleCastleTower,  kRandoDungeon_HyruleCastleTower,  0, "Castle Tower",       "Castle Tower" },
-  { kGameDungeon_EasternPalace,     kGameDungeon_EasternPalace,      kRandoDungeon_EasternPalace,      1, "Eastern Palace",     "Eastern" },
-  { kGameDungeon_DesertPalace,      kGameDungeon_DesertPalace,       kRandoDungeon_DesertPalace,       1, "Desert Palace",      "Desert" },
-  { kGameDungeon_TowerOfHera,       kGameDungeon_TowerOfHera,        kRandoDungeon_TowerOfHera,        1, "Tower of Hera",      "Tower of Hera" },
-  { kGameDungeon_PalaceOfDarkness,  kGameDungeon_PalaceOfDarkness,   kRandoDungeon_PalaceOfDarkness,   1, "Palace of Darkness", "Pal. of Darkness" },
-  { kGameDungeon_SwampPalace,       kGameDungeon_SwampPalace,        kRandoDungeon_SwampPalace,        1, "Swamp Palace",       "Swamp" },
-  { kGameDungeon_SkullWoods,        kGameDungeon_SkullWoods,         kRandoDungeon_SkullWoods,         1, "Skull Woods",        "Skull Woods" },
-  { kGameDungeon_ThievesTown,       kGameDungeon_ThievesTown,        kRandoDungeon_ThievesTown,        1, "Thieves Town",       "Thieves'" },
-  { kGameDungeon_IcePalace,         kGameDungeon_IcePalace,          kRandoDungeon_IcePalace,          1, "Ice Palace",         "Ice" },
-  { kGameDungeon_MiseryMire,        kGameDungeon_MiseryMire,         kRandoDungeon_MiseryMire,         1, "Misery Mire",        "Misery Mire" },
-  { kGameDungeon_TurtleRock,        kGameDungeon_TurtleRock,         kRandoDungeon_TurtleRock,         1, "Turtle Rock",        "Turtle Rock" },
-  { kGameDungeon_GanonsTower,       kGameDungeon_GanonsTower,        kRandoDungeon_GanonsTower,        0, "Ganons Tower",       "Ganon's Tower" },
+  RANDO_RUNTIME_ROW(kGameDungeon_HyruleCastleEscape, kGameDungeon_None,
+                    kGameDungeon_HyruleCastleEscape, kGameDungeon_None,
+                    kRandoDungeon_HyruleCastleEscape, 0,
+                    "Hyrule Castle / Sewers", "Hyrule Castle"),
+  RANDO_RUNTIME_ROW(kGameDungeon_HyruleCastleTower, kGameDungeon_None,
+                    kGameDungeon_None, kGameDungeon_None,
+                    kRandoDungeon_HyruleCastleTower, 0,
+                    "Castle Tower", "Castle Tower"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_EasternPalace, kRandoDungeon_EasternPalace,
+                        1, "Eastern Palace", "Eastern"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_DesertPalace, kRandoDungeon_DesertPalace,
+                        1, "Desert Palace", "Desert"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_TowerOfHera, kRandoDungeon_TowerOfHera,
+                        1, "Tower of Hera", "Tower of Hera"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_PalaceOfDarkness, kRandoDungeon_PalaceOfDarkness,
+                        1, "Palace of Darkness", "Pal. of Darkness"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_SwampPalace, kRandoDungeon_SwampPalace,
+                        1, "Swamp Palace", "Swamp"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_SkullWoods, kRandoDungeon_SkullWoods,
+                        1, "Skull Woods", "Skull Woods"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_ThievesTown, kRandoDungeon_ThievesTown,
+                        1, "Thieves Town", "Thieves'"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_IcePalace, kRandoDungeon_IcePalace,
+                        1, "Ice Palace", "Ice"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_MiseryMire, kRandoDungeon_MiseryMire,
+                        1, "Misery Mire", "Misery Mire"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_TurtleRock, kRandoDungeon_TurtleRock,
+                        1, "Turtle Rock", "Turtle Rock"),
+  RANDO_RUNTIME_ROW_ALL(kGameDungeon_GanonsTower, kRandoDungeon_GanonsTower,
+                        0, "Ganons Tower", "Ganon's Tower"),
 };
+#undef RANDO_RUNTIME_ROW_ALL
+#undef RANDO_RUNTIME_ROW
 
 typedef struct RandoDungeonDebugRow {
   uint8 game_dungeon;

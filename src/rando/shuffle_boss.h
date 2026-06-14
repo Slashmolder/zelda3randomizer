@@ -26,8 +26,8 @@
 // the active settings (boss_shuffle — a live CSV key / canonical settings byte).
 // Deterministic from (settings, seed_u64).
 //
-// `out_assignment` is sized to one byte per dungeon-id; each entry is the
-// boss-pool index assigned to that dungeon's boss room. The table is consumed at
+// `out_assignment` is sized to one byte per kRandoDungeon_* slot; each entry is
+// the boss-pool index assigned to that dungeon's boss room. The table is consumed at
 // runtime by the render redirect (BossShuffle_RenderHomeRoom) and by the logic
 // VM (OP_CAN_KILL_BOSS, via Rando_SetBossAssignment) so each dungeon's
 // boss/prize gates on the SHUFFLED boss's kill predicate. When boss_shuffle is
@@ -41,8 +41,8 @@ bool BossShuffle_Generate(const RandoSettings *settings,
 
 // Pure assignment computation — NO global side effects. Deterministic from
 // (settings, seed_u64). Writes the dungeon-id → boss-pool-index table into
-// `out_assignment[16]` (0xFF for HCE/unused slots; Agahnim 1/2 pinned at
-// slots 4/12). Used by the spoiler writer (which must not perturb the runtime
+// `out_assignment[16]` (0xFF for HCE/unused slots; Agahnim 1/2 pinned at their
+// kRandoDungeon_* slots). Used by the spoiler writer (which must not perturb the runtime
 // install) and internally by BossShuffle_Generate. When boss_shuffle is off,
 // writes the identity (vanilla) assignment.
 void BossShuffle_ComputeAssignment(const RandoSettings *settings,
@@ -57,9 +57,10 @@ void BossShuffle_ComputeAssignment(const RandoSettings *settings,
 void BossShuffle_Deactivate(void);
 
 // Human-readable names for the spoiler (boss assignments). `pool_index` is a
-// kBoss_* value (0..11); `dungeon_id` is 0..12. Returns "?" out of range.
+// kBoss_* value (0..11); `rando_dungeon` is a kRandoDungeon_* slot. Returns "?"
+// out of range.
 const char *BossShuffle_BossName(uint8 pool_index);
-const char *BossShuffle_DungeonName(uint8 dungeon_id);
+const char *BossShuffle_DungeonName(uint8 rando_dungeon);
 
 // Self-check (invoked from --rando-selftest): asserts determinism, the pinned-boss
 // invariants (Agahnim 1/2 + Blind/Kholdstare/Trinexx stay at their slots), the
@@ -67,10 +68,10 @@ const char *BossShuffle_DungeonName(uint8 dungeon_id);
 // 7-boss pool over the 7 shuffleable dungeons. exit(2) on failure.
 void BossShuffle_SelfCheck(void);
 
-// Returns the boss-pool index for `dungeon_id` from the currently
+// Returns the boss-pool index for `rando_dungeon` from the currently
 // installed assignment. Returns 0xFF when no assignment is active
 // (boss shuffle off, or no slot loaded).
-uint8 BossShuffle_GetForDungeon(uint8 dungeon_id);
+uint8 BossShuffle_GetForDungeon(uint8 rando_dungeon);
 
 // SUPERSEDED — do NOT call at runtime. The live model is the render redirect
 // (BossShuffle_RenderHomeRoom, below). This per-entry sprite-type swap was the
@@ -113,9 +114,9 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type);
 //
 // Known room-data secondaries (sprites that appear alongside their
 // primary in dungeon room data, NOT spawned by runtime boss logic):
-//   0xCC Trinexx left arm  → TR  (dungeon 11), parent kBoss_Trinexx
-//   0xCD Trinexx right arm → TR  (dungeon 11), parent kBoss_Trinexx
-//   0xA3 KholdstareShell   → IP  (dungeon 9),  parent kBoss_Kholdstare
+//   0xCC Trinexx left arm  → TR, parent kBoss_Trinexx
+//   0xCD Trinexx right arm → TR, parent kBoss_Trinexx
+//   0xA3 KholdstareShell   → IP, parent kBoss_Kholdstare
 //
 // Other bosses' segments (Mothula beams 0x89, Arrghi puffs 0x8D,
 // VitreousEye 0xBE, BlindHead) are spawned at runtime by the primary
