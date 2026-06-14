@@ -197,6 +197,23 @@ static uint8 progressive_to_lttp(uint16 registry_id) {
   }
 }
 
+// True for the progressive items whose progressive_to_lttp result depends on
+// the player's CURRENT tier — so a 0xFF return from progressive_to_lttp means
+// "already at max tier", NOT "unknown item". Keep in sync with the tiered
+// cases in progressive_to_lttp above.
+static bool rando_is_progressive_item(uint16 registry_id) {
+  switch (registry_id) {
+    case ITEM_ProgressiveSword:
+    case ITEM_ProgressiveShield:
+    case ITEM_ProgressiveArmor:
+    case ITEM_ProgressiveGlove:
+    case ITEM_ProgressiveBow:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // §6.2 per-placed-dungeon counter helpers. The vanilla LttP dispatcher
 // Link_ReceiveItem indexes by `cur_palace_index_x2 >> 1` (the player's
 // current dungeon). For rando placements where a key/map/compass belongs to
@@ -742,6 +759,17 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   // §6.2 partial: progressive items translate via current-tier lookup.
   uint8 prog_lttp = progressive_to_lttp(placed);
   if (prog_lttp != 0xFF) return prog_lttp;
+
+  // A KNOWN progressive item already at its max tier yields 0xFF here (no
+  // higher tier to grant). Skip the grant instead of falling through to the
+  // chest's vanilla item: otherwise a maxed ProgressiveBow collected at
+  // Desert Palace - Big Chest would grant that chest's vanilla Power Glove (an
+  // unrelated duplicate). The location is already marked checked
+  // (Rando_OnLocationCheck above), so skipping leaves the player at max tier
+  // with no spurious item. Mainly reachable via the item-give debug cheat —
+  // you can't normally collect a progressive beyond its pool count — but
+  // granting the wrong item is never correct.
+  if (rando_is_progressive_item(placed)) return kRandoLttpSkip;
 
   // Placed item has no vanilla LttP dispatch path remaining. Fall back to
   // the vanilla LttP code so the game keeps running with the vanilla grant
@@ -3856,6 +3884,46 @@ void Rando_SelfCheck(void) {
       }
       Placement_Install(NULL);
       link_rupees_goal = 0;
+    }
+  }
+
+  // Progressive-item grant regression — a progressive item collected while
+  // ALREADY at max tier must SKIP (kRandoLttpSkip), NOT fall through to the
+  // chest's vanilla item. Original bug: a (customizer-pinned) ProgressiveBow at
+  // Desert Palace - Big Chest (room 115, ord 0; vanilla LttP code 0x1b =
+  // Power Glove) granted the Power Glove when the player already had the silver
+  // bow (e.g. via the item-give cheat). See rando_is_progressive_item /
+  // Rando_DispatchVanillaGrant.
+  {
+    uint16 bow_loc = chest_lookup(115, 0);  // Desert Palace - Big Chest
+    if (bow_loc != 0xFFFFu) {
+      static RandoPlacement entries[1];
+      entries[0].location_id = bow_loc;
+      entries[0].item_id = ITEM_ProgressiveBow;
+      RandoPlacementTable t = { entries, 1 };
+      Placement_Install(&t);
+      uint8 saved_bow = link_item_bow;
+      // Maxed (silver bow + arrows): must skip, not grant vanilla 0x1b.
+      link_item_bow = 4;
+      uint8 lttp = Rando_ChestDispatch(115, 0, 0x1b);
+      if (lttp != kRandoLttpSkip) {
+        fprintf(stderr,
+          "Rando_SelfCheck: maxed ProgressiveBow chest should skip (got 0x%02x) "
+          "- would grant the chest's vanilla item (Power Glove)\n",
+          (unsigned)lttp);
+        exit(2);
+      }
+      // Un-owned: must still grant the wooden-bow code (0x0b), never skip/vanilla.
+      link_item_bow = 0;
+      lttp = Rando_ChestDispatch(115, 0, 0x1b);
+      if (lttp != 0x0b) {
+        fprintf(stderr,
+          "Rando_SelfCheck: un-owned ProgressiveBow chest should grant wood bow "
+          "(0x0b), got 0x%02x\n", (unsigned)lttp);
+        exit(2);
+      }
+      link_item_bow = saved_bow;
+      Placement_Install(NULL);
     }
   }
 #else
