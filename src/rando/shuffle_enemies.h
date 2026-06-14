@@ -41,10 +41,11 @@ struct RandoSettings;
 //
 // NOTE: unlike boss shuffle there is no precomputed assignment table — the
 // substitution is computed per-room/per-area at load time, because the
-// candidate pool depends on which GFX sheets are LIVE-loaded for that
-// room/area (sprite_gfx_subset_0..3), which is load-history dependent and not
-// known at generation time. Determinism comes from a per-room/per-area RNG
-// derived from (seed, room/area key), not from a stored permutation.
+// candidate pool depends on which GFX sheets are resolved for that room/area
+// (sprite_gfx_subset_0..3 after the sheet resolver snapshots them), which is
+// load-history dependent and not known at generation time. Determinism comes
+// from a per-room/per-area RNG derived from (seed, room/area key), not from a
+// stored permutation.
 bool EnemyShuffle_Generate(const struct RandoSettings *settings,
                            uint64 seed_u64);
 
@@ -84,10 +85,11 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type);
 // (= kSpriteTilesets[sprite_graphics_index]) but BEFORE any sheet is
 // decompressed. When enemy_shuffle is active in a dungeon/overworld room load it
 // may RE-ASSIGN which sheet loads into any owned, unpinned subgroup slot among
-// 0..3, widening the pool the existing EnemyShuffle_Pick* draws from (they read
-// the LIVE sprite_gfx_subset_*, which this rewrites). A no-op when the shuffle is
-// off, outside a room/area load (attract/menu/etc.), or when a subgroup slot is
-// pinned by a non-substituted sprite (see shuffle_enemies.c for the eligibility +
+// 0..3, widening the pool the existing EnemyShuffle_Pick* draws from. It also
+// snapshots the resolved sheet set with the room/area key, so the picker can
+// reject stale transition state. A no-op when the shuffle is off, outside a
+// room/area load (attract/menu/etc.), or when a subgroup slot is pinned by a
+// non-substituted sprite (see shuffle_enemies.c for the eligibility +
 // anti-garbage + inheritance model). `tileset_row` is the 4-byte kSpriteTilesets
 // row for the load (slot N == 0 means "inherit the previously-loaded sheet").
 void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row);

@@ -11,14 +11,13 @@
 // (seed, settings) at activation, exactly like boss/drop shuffle).
 //
 // ANTI-CRASH (design.md D3, non-negotiable): every candidate's required GFX
-// sheet(s) must be a subset of the room/area's actually-loaded sheets — read
-// LIVE from sprite_gfx_subset_0..3 (g_ram 0xC2FC..0xC2FF), which already
-// reflect the kSpriteTilesets row AND the 0-entry inheritance (a 0 subgroup
-// entry leaves the previously-loaded sheet in place — Gfx_LoadSpritesInner,
-// load_gfx.c). Reading the live subset values sidesteps the
-// 0-inheritance hazard entirely (we never consult the static kSpriteTilesets
-// row). The required-sheet sets come from Enemizer's per-sprite AddSubgroupN
-// lists (SpriteRequirement.cs).
+// sheet(s) must be a subset of the room/area's actually-loaded sheets. The sheet
+// resolver records a snapshot of sprite_gfx_subset_0..3 (g_ram 0xC2FC..0xC2FF)
+// together with the room/area key that produced it; the picker only substitutes
+// when that key matches the sprite list being loaded. This preserves the
+// 0-inheritance model while avoiding stale live-sheet state during multi-step
+// dungeon transitions. The required-sheet sets come from Enemizer's per-sprite
+// AddSubgroupN lists (SpriteRequirement.cs).
 //
 // BEATABILITY (design.md D7): the constraint table is the SOLE enforcer (logic
 // models no per-room kill-clear). Conservative first pass: unknown-safety
@@ -32,15 +31,16 @@
 #include "shuffle_enemies.h"
 #include "rando_settings.h"
 #include "rando_rng.h"
-#include "../features.h"   // kRam_EnemyShuffleVanPos2 (reserved-block allocation)
+#include "../assets.h"     // vanilla sprite-list blobs for context gating
+#include "../features.h"   // kRam_EnemyShuffle* reserved-block allocations
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-// Live game-state RAM (defined in zelda_rtl.c). We read sprite_gfx_subset_0..3
-// (0xC2FC..0xC2FF) directly to learn the room/area's actually-loaded sheets,
-// avoiding variables.h's macro wall in this TU (same pattern as
-// rando_placement.c). The fork's g_ram is 131072 bytes; 0xC2FF is well inside.
+// Live game-state RAM (defined in zelda_rtl.c). We read/write
+// sprite_gfx_subset_0..3 (0xC2FC..0xC2FF) directly, avoiding variables.h's macro
+// wall in this TU (same pattern as rando_placement.c). The fork's g_ram is
+// 131072 bytes; 0xC2FF is well inside.
 extern uint8 g_ram[131072];
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,6 @@ static const EnemyConstraint kEnemyTable[ES_TABLE_LEN] = {
   [0x56] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY | ESF_WATER), { 12, 68 } },  // Walking Zora (slots 2+3)
   [0x58] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 12 } },  // Crab
   [0x6A] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 70, 73 } },  // Ball-n-chain trooper (slots 0+1)
-  [0x6B] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 70, 73 } },  // Cannon soldier (slots 0+1)
   [0x6D] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 28 } },  // Rat
   [0x6E] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 28 } },  // Rope
   [0x6F] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY), { 28 } },  // Keese
@@ -241,15 +240,174 @@ static bool room_in_list(uint16 room, const uint16 *list, uint32 n) {
   return false;
 }
 
-// Read the LIVE loaded sprite sheet set (g_ram 0xC2FC..0xC2FF). These already
-// reflect the 0-inheritance (a 0 subgroup entry retained the prior sheet), so
-// the constraint check is sound without consulting the static kSpriteTilesets
-// row. (Direct g_ram read keeps this TU free of variables.h's macro wall.)
-static void read_live_sheets(uint8 out[4]) {
-  out[0] = g_ram[0xC2FC];
-  out[1] = g_ram[0xC2FD];
-  out[2] = g_ram[0xC2FE];
-  out[3] = g_ram[0xC2FF];
+enum {
+  kEsResolvedContext_None = 0,
+  kEsResolvedContext_Dungeon = 1,
+  kEsResolvedContext_Overworld = 2,
+};
+
+#define kEsMaxSpriteScan 96  // defensive cap on room/area list walks
+
+static uint16 ram_read_u16(uint32 addr) {
+  return (uint16)(g_ram[addr] | (g_ram[addr + 1] << 8));
+}
+
+static void ram_write_u16(uint32 addr, uint16 value) {
+  g_ram[addr] = (uint8)value;
+  g_ram[addr + 1] = (uint8)(value >> 8);
+}
+
+static void clear_resolved_sheet_snapshot(void) {
+  for (int i = 0; i < 4; i++)
+    g_ram[kRam_EnemyShuffleLiveSubset + i] = 0;
+  ram_write_u16(kRam_EnemyShuffleLiveKey, 0);
+  g_ram[kRam_EnemyShuffleLiveContext] = kEsResolvedContext_None;
+}
+
+static void write_resolved_sheet_snapshot(uint8 context, uint16 key) {
+  for (int i = 0; i < 4; i++)
+    g_ram[kRam_EnemyShuffleLiveSubset + i] = g_ram[0xC2FC + i];
+  ram_write_u16(kRam_EnemyShuffleLiveKey, key);
+  g_ram[kRam_EnemyShuffleLiveContext] = context;
+}
+
+// Read the resolved loaded sprite sheet set for this exact room/area key. The
+// equality check against the live subset globals catches any later sheet rewrite
+// after the resolver snapshot; if that happens, fail closed to vanilla rather
+// than picking an enemy whose graphics may no longer be loaded.
+static bool read_resolved_sheets(uint8 context, uint16 key, uint8 out[4]) {
+  if (g_ram[kRam_EnemyShuffleLiveContext] != context)
+    return false;
+  if (ram_read_u16(kRam_EnemyShuffleLiveKey) != key)
+    return false;
+  for (int i = 0; i < 4; i++) {
+    uint8 sheet = g_ram[kRam_EnemyShuffleLiveSubset + i];
+    if (sheet != g_ram[0xC2FC + i])
+      return false;
+    out[i] = sheet;
+  }
+  return true;
+}
+
+// A sprite can be sheet-compatible but still be wrong for the loader context:
+// overworld and dungeon code paths differ in palette setup, draw variants, and
+// spawn assumptions. Derive this context allowlist from the vanilla room/area
+// sprite blobs instead of maintaining another hand-audited table. Manual
+// ESF_NEVER_* bans still win for fork-specific hazards.
+static uint8 g_enemy_vanilla_context[ES_TABLE_LEN];
+static uint8 g_enemy_overworld_palette[ES_TABLE_LEN][32];  // 256-bit palette-id set per type
+static bool g_enemy_vanilla_context_ready = false;
+
+enum {
+  kEsAsset_DungeonSprites = 58,
+  kEsAsset_DungeonSpriteOffs = 59,
+  kEsAsset_OverworldSpriteOffs = 159,
+  kEsAsset_OverworldSprites = 160,
+  kEsAsset_OverworldSpritePalettes = 162,
+};
+
+static void mark_vanilla_context_type(uint8 type, uint8 context) {
+  g_enemy_vanilla_context[type] |= context;
+}
+
+static void mark_overworld_palette_type(uint8 type, uint8 palette) {
+  g_enemy_overworld_palette[type][palette >> 3] |= (uint8)(1u << (palette & 7));
+}
+
+static void invalidate_vanilla_context_table(void) {
+  memset(g_enemy_vanilla_context, 0, sizeof(g_enemy_vanilla_context));
+  memset(g_enemy_overworld_palette, 0, sizeof(g_enemy_overworld_palette));
+  g_enemy_vanilla_context_ready = false;
+}
+
+static bool vanilla_context_assets_ready(void) {
+  return kDungeonSprites != NULL && kDungeonSpriteOffs != NULL &&
+         kOverworldSprites != NULL && kOverworldSpriteOffs != NULL &&
+         kOverworldSpritePalettes != NULL &&
+         kDungeonSprites_SIZE > 0 &&
+         kDungeonSpriteOffs_SIZE >= sizeof(kDungeonSpriteOffs[0]) &&
+         kOverworldSprites_SIZE > 0 &&
+         kOverworldSpriteOffs_SIZE >= sizeof(kOverworldSpriteOffs[0]) &&
+         kOverworldSpritePalettes_SIZE > 0;
+}
+
+static void scan_dungeon_context_list(const uint8 *src) {
+  if (src == NULL) return;
+  src++;  // leading sort byte
+  for (int i = 0; src[0] != 0xff; src += 3, i++) {
+    if (i >= kEsMaxSpriteScan) return;
+    uint8 type = src[2];
+    if (type == 0xe4) continue;  // control marker
+    if (src[1] >= 0xe0) continue;  // overlord, not a normal sprite
+    mark_vanilla_context_type(type, kEsResolvedContext_Dungeon);
+  }
+}
+
+static void scan_overworld_context_list(const uint8 *src, uint8 palette) {
+  if (src == NULL) return;
+  for (int i = 0; src[0] != 0xff; src += 3, i++) {
+    if (i >= kEsMaxSpriteScan) return;
+    uint8 type = src[2];
+    if (type == 0xf4) continue;  // sprite-count marker
+    if (type >= 0xf3) continue;  // overlord, not a normal sprite
+    mark_vanilla_context_type(type, kEsResolvedContext_Overworld);
+    mark_overworld_palette_type(type, palette);
+  }
+}
+
+static bool overworld_offset_palette(uint32 offset_index, uint8 *palette) {
+  uint32 stage = offset_index / 144u;
+  uint32 area = offset_index % 144u;
+  uint32 pal_stage = (area < 64) ? stage : 3u;
+  uint32 pal_index = (area & 63u) + pal_stage * 64u;
+  if (pal_index >= kOverworldSpritePalettes_SIZE)
+    return false;
+  *palette = kOverworldSpritePalettes[pal_index];
+  return true;
+}
+
+static void build_vanilla_context_table(void) {
+  if (g_enemy_vanilla_context_ready)
+    return;
+  invalidate_vanilla_context_table();
+  if (!vanilla_context_assets_ready())
+    return;
+
+  if (kDungeonSprites != NULL && kDungeonSpriteOffs != NULL) {
+    uint32 room_count = kDungeonSpriteOffs_SIZE / (uint32)sizeof(kDungeonSpriteOffs[0]);
+    for (uint32 room = 0; room < room_count; room++) {
+      uint16 off = kDungeonSpriteOffs[room];
+      if (off < kDungeonSprites_SIZE)
+        scan_dungeon_context_list(kDungeonSprites + off);
+    }
+  }
+
+  if (kOverworldSprites != NULL && kOverworldSpriteOffs != NULL) {
+    uint32 list_count = kOverworldSpriteOffs_SIZE / (uint32)sizeof(kOverworldSpriteOffs[0]);
+    for (uint32 i = 0; i < list_count; i++) {
+      uint16 off = kOverworldSpriteOffs[i];
+      uint8 palette;
+      if (off < kOverworldSprites_SIZE && overworld_offset_palette(i, &palette))
+        scan_overworld_context_list(kOverworldSprites + off, palette);
+    }
+  }
+
+  g_enemy_vanilla_context_ready = true;
+}
+
+static bool candidate_allowed_in_context(uint8 type, bool is_dungeon, uint8 overworld_palette) {
+  const EnemyConstraint *c = &kEnemyTable[type];
+  if (!(c->flags & ESF_RANDOMIZABLE)) return false;
+  if (is_dungeon && (c->flags & ESF_NEVER_DUNGEON)) return false;
+  if (!is_dungeon && (c->flags & ESF_NEVER_OVERWORLD)) return false;
+  build_vanilla_context_table();
+  uint8 context = is_dungeon ? kEsResolvedContext_Dungeon : kEsResolvedContext_Overworld;
+  if ((g_enemy_vanilla_context[type] & context) == 0)
+    return false;
+  if (!is_dungeon &&
+      !(g_enemy_overworld_palette[type][overworld_palette >> 3] & (1u << (overworld_palette & 7))))
+    return false;
+  return true;
 }
 
 // Core pick. `key` keys the per-entry RNG (room/area id mixed with slot).
@@ -263,8 +421,8 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
                               bool require_key_capable,
                               bool require_water,
                               bool forbid_flying,
-                              bool never_dungeon_ok,
-                              bool never_overworld_ok) {
+                              bool is_dungeon_context,
+                              uint8 overworld_palette) {
   // Build the candidate list deterministically (table order is fixed), filtered
   // by the context constraints + in-sheet test. Cap is generous.
   uint8 cands[ES_TABLE_LEN];
@@ -276,10 +434,7 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
     if (require_key_capable && (c->flags & ESF_CANNOT_KEY)) continue;
     if (require_water && !(c->flags & ESF_WATER)) continue;
     if (forbid_flying && (c->flags & ESF_FLYING)) continue;
-    // Directional bans: never_*_ok==false means we're in that context and must
-    // skip sprites banned there.
-    if (!never_dungeon_ok && (c->flags & ESF_NEVER_DUNGEON)) continue;
-    if (!never_overworld_ok && (c->flags & ESF_NEVER_OVERWORLD)) continue;
+    if (!candidate_allowed_in_context((uint8)t, is_dungeon_context, overworld_palette)) continue;
     if (!sheets_loaded((uint8)t, live)) continue;
     cands[ncand++] = (uint8)t;
   }
@@ -337,10 +492,11 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 // Distinct RNG salt for the sheet choice (independent of the pick salts above).
 #define kEnemyShuffleSheetSalt 0x5348454554ull  // "SHEET"
 
-// We reshuffle ALL FOUR subgroup slots. Slots 0,1,2 are the enemy slots; slot 3
-// is mostly objects (it pins often, so it reshuffles rarely) but carries a few
-// enemies (Armos/Tektite 16, Buzzblob/Bush Hoarder/Raven 17, Pikit 27).
+// The widening machinery covers all four subgroup slots. Runtime widening is
+// disabled until sprite palette requirements are modeled; current builds force
+// vanilla-resolved sheets and still use the snapshot guard for type substitution.
 #define ES_RESHUFFLE_SLOTS 4
+#define ES_ENABLE_SHEET_WIDENING 0
 
 // Per-slot reshuffle pools (GENERATED by gen_enemy_shuffle_tables.py). DUNGEON
 // pools: each sheet self-contains a SINGLE-slot killable + key-capable enemy, so
@@ -474,8 +630,6 @@ static uint8 choose_slot_sheet(int slot, uint8 van, uint64 key, bool is_dungeon)
   return cands[Rng_NextRange(&rng, n)];
 }
 
-#define kEsMaxSpriteScan 96  // defensive cap on the room/area list walk
-
 // Walk the room/area sprite TYPE list ONCE and return a bitmask of slots that
 // must NOT be reshuffled (bit s = slot s pinned). An overlord (its spawns bypass
 // the picker), a boss (boss-shuffle redirect), or an unknown sprite pins ALL
@@ -539,6 +693,7 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   bool is_ow = (module == 0x08 || module == 0x09);
   if (!is_dungeon && !is_ow) return;
   if (g_ram[0xAA3] >= 0x80) return;           // sprite_graphics_index: 0x80| = map preview
+  uint8 context = is_dungeon ? kEsResolvedContext_Dungeon : kEsResolvedContext_Overworld;
 
   // Key on dungeon_room_index (0xA0), NOT dungeon_room_index2 (0x48E): at
   // sheet-load time _index is the room being entered (its header drove the loaded
@@ -550,7 +705,12 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   uint16 key16 = is_dungeon
       ? (uint16)(g_ram[0xA0] | (g_ram[0xA1] << 8))    // dungeon_room_index
       : (uint16)(g_ram[0x40A] | (g_ram[0x40B] << 8)); // overworld_area_index
-  uint8 blocked = room_blocked_slots(is_dungeon, key16);
+  // F12 playtest found that widening to a non-vanilla sheet can load correct
+  // tiles with the wrong room sprite palette. Until sheet reshuffle also models
+  // palette requirements, force every slot through the vanilla-resolved sheet.
+  uint8 blocked = (uint8)((1u << ES_RESHUFFLE_SLOTS) - 1u);
+  if (ES_ENABLE_SHEET_WIDENING)
+    blocked = room_blocked_slots(is_dungeon, key16);
 
   for (int slot = 0; slot < ES_RESHUFFLE_SLOTS; slot++) {
     // True vanilla-resolved sheet for this slot: the row's own sheet if it loads
@@ -573,6 +733,7 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
     }
     g_ram[0xC2FC + slot] = chosen;  // sprite_gfx_subset_{slot} — picker + decompress
   }
+  write_resolved_sheet_snapshot(context, key16);
 }
 
 // ---------------------------------------------------------------------------
@@ -594,6 +755,7 @@ bool EnemyShuffle_Generate(const struct RandoSettings *settings,
   // sheet that happens to be loaded at slot activation.
   for (int s = 0; s < ES_RESHUFFLE_SLOTS; s++)
     g_ram[kRam_EnemyShuffleVanSubset + s] = 0;
+  clear_resolved_sheet_snapshot();
   return true;
 }
 
@@ -602,6 +764,7 @@ void EnemyShuffle_Deactivate(void) {
   g_enemy_shuffle_seed = 0;
   for (int s = 0; s < ES_RESHUFFLE_SLOTS; s++)
     g_ram[kRam_EnemyShuffleVanSubset + s] = 0;  // drop the inheritance shadows
+  clear_resolved_sheet_snapshot();
 }
 
 bool EnemyShuffle_IsActive(void) {
@@ -619,7 +782,8 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type) {
     return vanilla_type;
 
   uint8 live[4];
-  read_live_sheets(live);
+  if (!read_resolved_sheets(kEsResolvedContext_Dungeon, room, live))
+    return vanilla_type;
 
   // Conservative dungeon policy (MVP): EVERY dungeon replacement must be
   // killable && key-capable (so any key a shuffled item placement drops here is
@@ -635,8 +799,8 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type) {
                           /*require_key_capable=*/true,
                           require_water,
                           /*forbid_flying=*/forbid_flying,
-                          /*never_dungeon_ok=*/false,  // we ARE a dungeon
-                          /*never_overworld_ok=*/true);
+                          /*is_dungeon_context=*/true,
+                          /*overworld_palette=*/0);
 }
 
 uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
@@ -644,7 +808,8 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
   if (!table_is_randomizable(vanilla_type)) return vanilla_type;
 
   uint8 live[4];
-  read_live_sheets(live);
+  if (!read_resolved_sheets(kEsResolvedContext_Overworld, area, live))
+    return vanilla_type;
 
   // Overworld has no key/shutter rooms, so no killable/key constraint is needed
   // for beatability. We still keep the pool to randomizable enemies whose sheet
@@ -652,13 +817,14 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
   uint64 key = ((uint64)area << 8) ^ (uint64)slot ^ 0x0000000000000700ull;
   // Keep a water-only source (ESF_WATER) in water — derive from the source type.
   bool require_water = (kEnemyTable[vanilla_type].flags & ESF_WATER) != 0;
+  uint8 overworld_palette = g_ram[0xFD40 + (area & 63)];  // overworld_sprite_palettes[area&63]
   return pick_replacement(key, vanilla_type, live,
                           /*require_killable=*/false,
                           /*require_key_capable=*/false,
                           require_water,
                           /*forbid_flying=*/false,
-                          /*never_dungeon_ok=*/true,
-                          /*never_overworld_ok=*/false);  // we ARE overworld
+                          /*is_dungeon_context=*/false,
+                          overworld_palette);
 }
 
 // ---------------------------------------------------------------------------
@@ -734,6 +900,56 @@ static const uint8 kMustExcludeBossIds[] = {
 void EnemyShuffle_SelfCheck(void) {
   RandoSettings s;
   Settings_SetDefaults(&s);
+  bool installed_synthetic_context_assets = false;
+  const uint8 *saved_context_asset_ptrs[5];
+  uint32 saved_context_asset_sizes[5];
+
+  // --rando-selftest runs before LoadAssets(), but the context scanner should
+  // still be exercised. Install tiny vanilla-like sprite blobs only for this
+  // process when the real asset blob is absent; runtime with absent assets stays
+  // fail-closed because this harness is self-check local.
+  if (!vanilla_context_assets_ready()) {
+    static const uint8 synth_dungeon_sprites[] = {
+      0x00,                 // sort byte
+      0x00, 0x00, 0x6D,     // Rat: dungeon-context spot check
+      0x00, 0x00, 0x41,     // sword soldier: sheet-73 dungeon pick candidate
+      0xff
+    };
+    static const uint16 synth_dungeon_offs[] = { 0 };
+    static const uint8 synth_overworld_sprites[] = {
+      0x00, 0x00, 0x08,     // Octorok: overworld-context spot check
+      0x00, 0x00, 0x12,     // Moblin: sheet-23 overworld pick candidate
+      0xff,
+      0x00, 0x00, 0x4A,     // Bomb guard: allowed only on its vanilla palette
+      0xff
+    };
+    enum { kSynthOverworldPal3Off = 7 };
+    static const uint16 synth_overworld_offs[] = { 0, kSynthOverworldPal3Off };
+    static const uint8 synth_overworld_palettes[] = { 0, 3 };
+    const uint32 idx[5] = {
+      kEsAsset_DungeonSprites,
+      kEsAsset_DungeonSpriteOffs,
+      kEsAsset_OverworldSpriteOffs,
+      kEsAsset_OverworldSprites,
+      kEsAsset_OverworldSpritePalettes,
+    };
+    for (int i = 0; i < 5; i++) {
+      saved_context_asset_ptrs[i] = g_asset_ptrs[idx[i]];
+      saved_context_asset_sizes[i] = g_asset_sizes[idx[i]];
+    }
+    g_asset_ptrs[kEsAsset_DungeonSprites] = synth_dungeon_sprites;
+    g_asset_sizes[kEsAsset_DungeonSprites] = sizeof(synth_dungeon_sprites);
+    g_asset_ptrs[kEsAsset_DungeonSpriteOffs] = (const uint8 *)synth_dungeon_offs;
+    g_asset_sizes[kEsAsset_DungeonSpriteOffs] = sizeof(synth_dungeon_offs);
+    g_asset_ptrs[kEsAsset_OverworldSpriteOffs] = (const uint8 *)synth_overworld_offs;
+    g_asset_sizes[kEsAsset_OverworldSpriteOffs] = sizeof(synth_overworld_offs);
+    g_asset_ptrs[kEsAsset_OverworldSprites] = synth_overworld_sprites;
+    g_asset_sizes[kEsAsset_OverworldSprites] = sizeof(synth_overworld_sprites);
+    g_asset_ptrs[kEsAsset_OverworldSpritePalettes] = synth_overworld_palettes;
+    g_asset_sizes[kEsAsset_OverworldSpritePalettes] = sizeof(synth_overworld_palettes);
+    invalidate_vanilla_context_table();
+    installed_synthetic_context_assets = true;
+  }
 
   // 1) Off → inactive passthrough.
   {
@@ -758,6 +974,22 @@ void EnemyShuffle_SelfCheck(void) {
   if (table_is_randomizable(0xe4) || table_is_randomizable(0x76) /*Zelda*/ ||
       table_is_randomizable(0x1c) /*Statue*/ || table_is_randomizable(0xd8) /*Heart*/)
     enemy_selfcheck_die("a marker/NPC/object/absorbable id is randomizable");
+  if (table_is_randomizable(0x6B))
+    enemy_selfcheck_die("Cannon soldier is randomizable despite invalid vanilla spawn path");
+  if (!candidate_allowed_in_context(0x12, false, 0))
+    enemy_selfcheck_die("Moblin must remain an overworld-eligible palette-0 candidate");
+  if (!candidate_allowed_in_context(0x6D, true, 0))
+    enemy_selfcheck_die("Rat must remain a dungeon-eligible vanilla-context candidate");
+  if (candidate_allowed_in_context(0x44, false, 0))
+    enemy_selfcheck_die("Assault sword soldier is overworld-eligible despite vanilla-context guard");
+  if (candidate_allowed_in_context(0x6A, false, 0))
+    enemy_selfcheck_die("Ball-n-chain trooper is overworld-eligible despite vanilla-context guard");
+  if (candidate_allowed_in_context(0x6B, true, 0) || candidate_allowed_in_context(0x6B, false, 0))
+    enemy_selfcheck_die("Cannon soldier is context-eligible despite being non-randomizable");
+  if (!candidate_allowed_in_context(0x4A, false, 3))
+    enemy_selfcheck_die("Bomb guard must remain overworld-eligible on its vanilla palette");
+  if (candidate_allowed_in_context(0x4A, false, 0))
+    enemy_selfcheck_die("Bomb guard is overworld-eligible on a non-vanilla palette");
 
   // 3) Table integrity: every RANDOMIZABLE entry has >=1 required sheet (a
   // sheet-less entry would match every room and could load garbage), and every
@@ -774,12 +1006,22 @@ void EnemyShuffle_SelfCheck(void) {
   // key rooms could never be filled and beatability would silently fail).
   {
     bool any_keyable = false;
+    bool any_dungeon_keyable = false;
+    bool any_overworld = false;
     for (uint32 t = 0; t < ES_TABLE_LEN; t++) {
       const EnemyConstraint *c = &kEnemyTable[t];
       if ((c->flags & ESF_RANDOMIZABLE) && (c->flags & ESF_KILLABLE) &&
-          !(c->flags & ESF_CANNOT_KEY)) { any_keyable = true; break; }
+          !(c->flags & ESF_CANNOT_KEY)) {
+        any_keyable = true;
+        if (candidate_allowed_in_context((uint8)t, true, 0))
+          any_dungeon_keyable = true;
+      }
+      if (candidate_allowed_in_context((uint8)t, false, 0))
+        any_overworld = true;
     }
     if (!any_keyable) enemy_selfcheck_die("no killable+key-capable candidate exists");
+    if (!any_dungeon_keyable) enemy_selfcheck_die("no dungeon-context killable+key-capable candidate exists");
+    if (!any_overworld) enemy_selfcheck_die("no overworld-context candidate exists");
   }
 
   // 4) On → determinism + in-sheet + killable/key invariants over a synthetic
@@ -795,8 +1037,26 @@ void EnemyShuffle_SelfCheck(void) {
     // Save + set a synthetic loaded set that loads a broad common pool:
     // sheets 12,22,23,73 cover Octorok/Snapdragon/Moblin/soldiers.
     uint8 sav[4] = { g_ram[0xC2FC], g_ram[0xC2FD], g_ram[0xC2FE], g_ram[0xC2FF] };
+    uint8 sav_snapshot[7];
+    for (int i = 0; i < 7; i++)
+      sav_snapshot[i] = g_ram[kRam_EnemyShuffleLiveSubset + i];
+    uint8 sav_ow_pal[64];
+    for (int i = 0; i < 64; i++) {
+      sav_ow_pal[i] = g_ram[0xFD40 + i];
+      g_ram[0xFD40 + i] = 0;
+    }
     g_ram[0xC2FC] = 12; g_ram[0xC2FD] = 22; g_ram[0xC2FE] = 23; g_ram[0xC2FF] = 73;
     uint8 live[4] = { 12, 22, 23, 73 };
+
+    // Active but missing/mismatched sheet snapshots must fail closed to vanilla,
+    // rather than consulting stale live sheets from a previous room transition.
+    clear_resolved_sheet_snapshot();
+    if (EnemyShuffle_PickDungeon(0x52, 3, 0x12) != 0x12)
+      enemy_selfcheck_die("PickDungeon substituted without a matching sheet snapshot");
+    write_resolved_sheet_snapshot(kEsResolvedContext_Dungeon, 0x51);
+    if (EnemyShuffle_PickDungeon(0x52, 3, 0x12) != 0x12)
+      enemy_selfcheck_die("PickDungeon substituted with a stale room sheet snapshot");
+    write_resolved_sheet_snapshot(kEsResolvedContext_Dungeon, 0x52);
 
     // Determinism: same (room, slot, type) → same pick.
     uint8 a = EnemyShuffle_PickDungeon(0x52, 3, 0x12);
@@ -808,6 +1068,7 @@ void EnemyShuffle_SelfCheck(void) {
     // vanilla passthrough (when the room is hard-excluded / no candidate).
     for (uint16 room = 0; room < 300; room += 7) {
       bool hard = room_in_list(room, kHardExcludeRooms, kHardExcludeRoomsCount);
+      write_resolved_sheet_snapshot(kEsResolvedContext_Dungeon, room);
       for (uint8 slot = 0; slot < 4; slot++) {
         uint8 r = EnemyShuffle_PickDungeon(room, slot, 0x12 /*Moblin, randomizable*/);
         if (hard) {
@@ -818,6 +1079,8 @@ void EnemyShuffle_SelfCheck(void) {
         const EnemyConstraint *c = &kEnemyTable[r];
         if (!(c->flags & ESF_RANDOMIZABLE))
           enemy_selfcheck_die("dungeon pick is not randomizable");
+        if (!candidate_allowed_in_context(r, true, 0))
+          enemy_selfcheck_die("dungeon pick is not vanilla-context eligible");
         if (!(c->flags & ESF_KILLABLE))
           enemy_selfcheck_die("dungeon pick is not killable (key/shutter softlock risk)");
         if (c->flags & ESF_CANNOT_KEY)
@@ -829,12 +1092,15 @@ void EnemyShuffle_SelfCheck(void) {
 
     // Overworld picks must be randomizable + in-sheet (no killable constraint).
     for (uint8 area = 0; area < 64; area += 5) {
+      write_resolved_sheet_snapshot(kEsResolvedContext_Overworld, area);
       for (uint8 slot = 0; slot < 3; slot++) {
         uint8 r = EnemyShuffle_PickOverworld(area, slot, 0x08 /*Octorok*/);
         if (r == 0x08) continue;
         const EnemyConstraint *c = &kEnemyTable[r];
         if (!(c->flags & ESF_RANDOMIZABLE))
           enemy_selfcheck_die("overworld pick is not randomizable");
+        if (!candidate_allowed_in_context(r, false, 0))
+          enemy_selfcheck_die("overworld pick is not vanilla-context eligible");
         if (!sheets_loaded(r, live))
           enemy_selfcheck_die("overworld pick references an unloaded sheet (CRASH risk)");
       }
@@ -849,12 +1115,31 @@ void EnemyShuffle_SelfCheck(void) {
     // Restore g_ram + deactivate.
     g_ram[0xC2FC] = sav[0]; g_ram[0xC2FD] = sav[1];
     g_ram[0xC2FE] = sav[2]; g_ram[0xC2FF] = sav[3];
+    for (int i = 0; i < 7; i++)
+      g_ram[kRam_EnemyShuffleLiveSubset + i] = sav_snapshot[i];
+    for (int i = 0; i < 64; i++)
+      g_ram[0xFD40 + i] = sav_ow_pal[i];
     EnemyShuffle_Deactivate();
   }
 
   // 5) After deactivate, picks are passthrough again.
   if (EnemyShuffle_PickDungeon(0x52, 0, 0x12) != 0x12)
     enemy_selfcheck_die("post-deactivate PickDungeon must be a passthrough");
+
+  if (installed_synthetic_context_assets) {
+    const uint32 idx[5] = {
+      kEsAsset_DungeonSprites,
+      kEsAsset_DungeonSpriteOffs,
+      kEsAsset_OverworldSpriteOffs,
+      kEsAsset_OverworldSprites,
+      kEsAsset_OverworldSpritePalettes,
+    };
+    for (int i = 0; i < 5; i++) {
+      g_asset_ptrs[idx[i]] = saved_context_asset_ptrs[i];
+      g_asset_sizes[idx[i]] = saved_context_asset_sizes[i];
+    }
+    invalidate_vanilla_context_table();
+  }
 
   // 6) Sheet-reshuffle (design.md D4) pure-logic invariants — per reshuffled slot.
   {

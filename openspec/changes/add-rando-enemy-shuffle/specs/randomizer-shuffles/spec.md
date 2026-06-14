@@ -25,14 +25,15 @@ Enemy shuffle SHALL NOT touch item placement: it draws no fill RNG and adds no l
 
 ### Requirement: Enemy shuffle GFX-sheet reshuffle and replacement safety
 
-Every replacement enemy SHALL be drawn only from the set of enemies whose graphics-sheet requirement is satisfied by the room/area's **actually-loaded** sprite sheets. The loaded set derives from `sprite_graphics_index` → `kSpriteTilesets[index][0..3]` (`src/load_gfx.c:59`), **but a `0` subgroup entry does NOT load a sheet — it retains the previously-loaded `sprite_gfx_subset_N`** (`Gfx_LoadSpritesInner` loads each subset only `if (p[N])`, `load_gfx.c:627-640`), so the live loaded set depends on load history. The constraint check SHALL resolve safety against the live `sprite_gfx_subset_0..3` values. A replacement whose required sheets are not all present in the actually-loaded set SHALL NOT be selected.
+Every replacement enemy SHALL be drawn only from the set of enemies whose graphics-sheet requirement is satisfied by the room/area's **actually-loaded** sprite sheets and whose sprite type is observed in the same vanilla loader context (dungeon or overworld). For overworld areas, the replacement SHALL also require the current `overworld_sprite_palettes[area&63]` value to be one that vanilla uses with that sprite type. The loaded set derives from `sprite_graphics_index` → `kSpriteTilesets[index][0..3]` (`src/load_gfx.c:59`), **but a `0` subgroup entry does NOT load a sheet — it retains the previously-loaded `sprite_gfx_subset_N`** (`Gfx_LoadSpritesInner` loads each subset only `if (p[N])`, `load_gfx.c:627-640`), so the live loaded set depends on load history. The constraint check SHALL resolve safety against the live `sprite_gfx_subset_0..3` values. A replacement whose required sheets are not all present in the actually-loaded set, whose type is not present in vanilla sprite data for the current loader context, or whose overworld palette is not observed with that type in vanilla overworld data, SHALL NOT be selected.
 
-When `enemy_shuffle` is active during a dungeon or overworld room/area sheet load, `EnemyShuffle_ReshuffleCurrentRoomSheets(row)` SHALL be allowed to widen the replacement pool by rewriting any **owned, unpinned** sprite subgroup slot among slots `0,1,2,3` before sprite graphics are decompressed. The reshuffle SHALL be runtime-only and SHALL use the same parent `enemy_shuffle` axis (no additional canonical setting). For each subgroup slot:
+When `enemy_shuffle` is active during a dungeon or overworld room/area sheet load, `EnemyShuffle_ReshuffleCurrentRoomSheets(row)` SHALL resolve the room/area's loaded sprite subgroup sheets and snapshot that resolved set before sprite graphics are decompressed. Runtime sheet widening MAY rewrite **owned, unpinned** subgroup slots among slots `0,1,2,3` only when the implementation also preserves the required sprite palettes for the chosen sheets. Until palette requirements are modeled, all subgroup slots SHALL resolve to the room/area's vanilla-resolved sheets. The hook SHALL be runtime-only and SHALL use the same parent `enemy_shuffle` axis (no additional canonical setting). For each subgroup slot:
 
 - The current room/area's vanilla-resolved sheet is the row's non-zero sheet, or the per-slot inherited vanilla shadow when the row has `0`.
-- A slot may reshuffle only if the row owns that slot and no present sprite/control object pins it.
-- The chosen sheet SHALL be deterministic from `(seed, room_or_area, slot)`, SHALL be drawn from that slot's generated dungeon/overworld pool plus the vanilla-resolved sheet, and SHALL never be `0`.
+- A slot may reshuffle only if the row owns that slot, no present sprite/control object pins it, and the chosen sheet's palette requirements are satisfied by the room/area.
+- The chosen sheet SHALL be deterministic from `(seed, room_or_area, slot)`, SHALL be drawn from that slot's generated dungeon/overworld pool plus the vanilla-resolved sheet, and SHALL never be `0`; while palette-aware widening is disabled, the chosen sheet SHALL be the vanilla-resolved sheet.
 - Inherited or pinned slots SHALL restore the vanilla-resolved sheet so a prior room's reshuffle cannot leak through `0`-inheritance.
+- The resolved sheet set SHALL be snapshotted with the room/area key that produced it. The sprite-type picker SHALL substitute only when that snapshot key matches the sprite list being loaded and still matches the live `sprite_gfx_subset_0..3`; if the snapshot is missing, stale, or overwritten by a later transition step, the picker SHALL leave the source sprite unchanged.
 
 The generated tables SHALL be sourced from Enemizer's MIT `SpriteRequirement.cs` / `SpriteConstants.cs` through `assets/scripts/gen_enemy_shuffle_tables.py`, not from hand summaries. The generated data SHALL include:
 
@@ -40,6 +41,8 @@ The generated tables SHALL be sourced from Enemizer's MIT `SpriteRequirement.cs`
 - `kSheetNeed[256]` with `KNOWN` and per-slot pin bits for every known type; group-level/NPC/object/boss/unknown types SHALL pin conservatively.
 - Per-slot dungeon and overworld sheet pools whose members are disjoint by slot, preserving the position-unaware picker invariant.
 - `kOverlordNeed[32]` for dungeon overlord spawn-slot needs; a known spawning overlord pins only the slots its spawned sprite needs, while unknown/no-spawn/boss-spawning overlords pin all slots. Overworld overlords still pin all slots.
+
+The runtime SHALL also derive a compact context allowlist from the shipped vanilla sprite blobs (`kDungeonSprites`/`kDungeonSpriteOffs` and all stages of `kOverworldSprites`/`kOverworldSpriteOffs`). During the overworld scan it SHALL record the `kOverworldSpritePalettes` value for each list and derive a per-type overworld palette allowlist. Candidate selection SHALL require those allowlists in addition to generated sheet requirements and manual `never_use_*` bans, so a sprite that merely has compatible sheets is not enough to appear in the other loader context or under the wrong overworld sprite palette.
 
 The module SHALL NOT substitute entries flagged boss (or boss secondary) / object / NPC / do-not-randomize in the per-enemy constraint table, nor the per-context control and overlord markers — which differ between load paths:
 - **Dungeon**: control entry `type == 0xe4`; overlord `x >= 0xe0` (`Dungeon_LoadSingleSprite`).
@@ -51,13 +54,25 @@ Excluded entries pass through unchanged.
 - **WHEN** enemy shuffle picks a replacement for a room whose loaded sheet set (after resolving `0`-inheritance against live `sprite_gfx_subset_N`) is known
 - **THEN** the chosen enemy's required sheet(s) are a subset of that loaded set; no enemy needing an unloaded sheet is ever placed, including in rooms whose `kSpriteTilesets` row has `0` entries
 
-#### Scenario: Reshuffle widens only safe subgroup slots
+#### Scenario: Replacement stays within vanilla loader context
+- **WHEN** enemy shuffle builds the candidate pool for a dungeon room or overworld area
+- **THEN** it excludes any enemy type that is not present in vanilla sprite data for that same loader context, even if that enemy's sheets are currently loaded
+
+#### Scenario: Overworld replacement stays within vanilla sprite palette context
+- **WHEN** enemy shuffle builds the candidate pool for an overworld area
+- **THEN** it excludes any enemy type whose vanilla overworld occurrences do not use the area's current `overworld_sprite_palettes[area&63]` value, even if that enemy's sheets are currently loaded
+
+#### Scenario: Sheet resolver preserves palette-safe subgroup slots
 - **WHEN** a dungeon/overworld room owns subgroup slot `N` and no present sprite/overlord/object pins that slot
-- **THEN** the runtime may load a deterministic sheet from the generated slot-`N` pool or the vanilla sheet before decompression; if the slot is inherited or pinned, the vanilla-resolved sheet is restored instead
+- **THEN** the runtime may load a deterministic sheet from the generated slot-`N` pool or the vanilla sheet before decompression only if that sheet is palette-safe for the room/area; otherwise the vanilla-resolved sheet is restored
 
 #### Scenario: Multi-slot enemy requirements are complete
 - **WHEN** a candidate enemy requires sheets in more than one subgroup slot
 - **THEN** every required sheet must be present in the live loaded set before that enemy can be selected
+
+#### Scenario: Stale transition sheet state fails closed
+- **WHEN** a dungeon/overworld sprite list is loaded after a different room/area resolved sprite sheets
+- **THEN** enemy shuffle does not use the stale sheet set to select replacements; affected entries pass through vanilla unless a matching snapshot exists for the current room/area
 
 #### Scenario: Overlord rooms pin only known spawned-sheet needs
 - **WHEN** a dungeon room contains an overlord marker with a generated `kOverlordNeed` entry
@@ -74,7 +89,7 @@ Logic does NOT model per-room kill-clear (the rando graph has no `CanKill<X>` pr
 - **Dungeon-global killable + key-capable replacements**: `killable` and "may carry a key" are **independent** flags (Enemizer's `CannotHaveKey` is separate from `Killable` — e.g. Keese/Buzzblob/Geldman are killable but key-banned, `SpriteRequirement.cs`). As built, every substituted dungeon enemy SHALL satisfy `killable && !cannot_have_key`, not only rooms that are known key/shutter rooms. This over-approximates key/shutter safety and avoids relying on vanilla key-sprite scans, which are unreliable under item shuffle.
 - **Room hard excludes**: Mimic Cave and Agahnim's Tower final bridge SHALL never substitute any enemy.
 - **Flying restrictions**: rooms in the flying-exclude list SHALL not receive flying replacements.
-- **Directional bans**: per-enemy `never_use_dungeon` / `never_use_overworld` flags (Enemizer `NeverUseDungeon`/`NeverUseOverworld`) SHALL constrain the candidate pool by load context. (Several such sprites are additionally fully `do_not_randomize` in Enemizer; the directional flag covers the partially-restricted remainder.)
+- **Context safety**: the candidate pool SHALL be constrained by load context using both generated/manual directional bans (`never_use_dungeon` / `never_use_overworld`) and the runtime-derived vanilla-context allowlist. In overworld, it SHALL also be constrained by the runtime-derived per-type sprite-palette allowlist. A sprite whose sheets happen to be loaded is not eligible unless vanilla uses that sprite type in the same dungeon/overworld loader context and, for overworld, under the current sprite palette.
 - **Boss / mini-boss / environment-dependent enemies**: bosses, GT mini-bosses, boss secondaries, Agahnim, Ganon, NPCs, quest objects, and unknown-safety sprites SHALL never be substituted or used to free reshuffle slots.
 
 > **As-built note:** `ESF_WATER` is recorded in the table, but the current picker does not yet enable a water-only room classifier (`require_water` is never set). Therefore this change does not claim a water-only-room guarantee; water stranding remains a playtest watch item / future refinement before archive.
@@ -87,9 +102,13 @@ Logic does NOT model per-room kill-clear (the rando graph has no `CanKill<X>` pr
 - **WHEN** the room is Mimic Cave or Agahnim's Tower final bridge
 - **THEN** enemy shuffle leaves every sprite unchanged
 
-#### Scenario: Directional ban respected
-- **WHEN** an enemy flagged `never_use_overworld` is a candidate for an overworld area (or `never_use_dungeon` for a dungeon room)
+#### Scenario: Context restrictions respected
+- **WHEN** an enemy is flagged `never_use_overworld` / `never_use_dungeon`, or does not appear in vanilla data for the current loader context
 - **THEN** it is excluded from that context's candidate pool
+
+#### Scenario: Overworld palette restrictions respected
+- **WHEN** an enemy appears in vanilla overworld data but not with the current area's overworld sprite palette id
+- **THEN** it is excluded from that overworld area's candidate pool
 
 #### Scenario: Boss and mini-boss logic remains valid
 - **WHEN** a dungeon or GT mini-boss location is gated by `CanKillBoss` or a direct `CanKill<Boss>` macro

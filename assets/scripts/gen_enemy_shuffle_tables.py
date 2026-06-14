@@ -153,6 +153,14 @@ def killable(e):    return "SetKillable" in e["flags"]
 def cannot_key(e):  return "SetCannotHaveKey" in e["flags"] or "SetWaterSprite" in e["flags"]
 def water(e):       return "SetWaterSprite" in e["flags"]
 
+# Fork-local safety override found by playtest/F12 dumps. Keep this beside the
+# Enemizer-derived predicates so regenerating the C table preserves the runtime
+# safety decision.
+MANUAL_DO_NOT_RANDOMIZE = {
+    0x6B,  # Cannon soldier: handler only behaves as a spawned cannonball path.
+}
+MANUAL_NEVER_OVERWORLD = set()
+
 # Vanilla per-(slot,sheet) frequency from kSpriteTilesets[144][4] in load_gfx.c —
 # used to pick the most-common sheet for an OR-within-position requirement (so a
 # soldier's [13,73] resolves to 73, the common one, maximizing admission).
@@ -193,6 +201,8 @@ EXTRA_NONKILL = {0x00, 0x01, 0x19, 0x26, 0x9B}  # Raven, Vulture, Poe, Hardhat, 
 
 def randomizable(sid, e):
     if sid > 0xF2:
+        return False
+    if sid in MANUAL_DO_NOT_RANDOMIZE:
         return False
     if dnr(e):
         return False
@@ -239,7 +249,7 @@ for sid in sorted(s for s in ents if randomizable(s, ents[s])):
     if cannot_key(e): flagbits.append("NK")
     if water(e): flagbits.append("W")
     if never_dun(e) and not never_ow(e): flagbits.append("ND")
-    if never_ow(e) and not never_dun(e): flagbits.append("NO")
+    if (never_ow(e) and not never_dun(e)) or sid in MANUAL_NEVER_OVERWORLD: flagbits.append("NO")
     if sid in FLYERS: flagbits.append("FLY")
     sheets = [s for (_p, s) in rs]
     flagexpr = " | ".join(ESF[f] for f in flagbits) if flagbits else "0"
