@@ -68,8 +68,8 @@ typedef enum {
 
 typedef enum {
   kPyramidBowUpgrade_Silvers = 0,
-  // Phase B reservation:
-  // kPyramidBowUpgrade_Arrows = 1,
+  // Legacy serialized slot. The Pyramid Fairy trade-in was retired by the
+  // fairy chest model, so this no longer controls placement or runtime grants.
 } PyramidBowUpgrade;
 
 // ===========================================================================
@@ -90,10 +90,9 @@ typedef struct RandoSettings {
   uint8 logic;                      // Phase A: 0 (NoGlitches); Phase B+ reserved
   uint8 mode_weapons;               // ModeWeapons
   uint8 accessibility;              // Accessibility
-  uint8 pyramid_bow_upgrade;        // PyramidBowUpgrade
-  uint8 region_boss_hearts_in_pool; // bool, INVERTED vs name: 1 (default) = boss
-                                    // hearts PINNED/identity-placed (NOT in pool);
-                                    // 0 = shuffled into the general pool
+  uint8 pyramid_bow_upgrade;        // legacy/no-op; canonicalized to Silvers
+  uint8 region_boss_hearts_in_pool; // legacy/no-op; canonicalized to 0 so boss
+                                    // heart drops are always shuffled
   uint8 dungeon_small_keys_mode;    // DungeonItemMode
   uint8 dungeon_big_keys_mode;      // DungeonItemMode
   uint8 dungeon_maps_mode;          // DungeonItemMode
@@ -149,13 +148,38 @@ typedef struct RandoSettings {
   // canonical pad byte [27] bits 0-1; default 0 keeps the default
   // settings_hash byte-identical and kSettingsCanonicalLen at 28.
   uint8 door_shuffle;
+  // add-rando-customizer-mode — when set, generation pins the customizer
+  // manifest's locations and assumed-fill completes the rest (see customizer.h).
+  // Serialized as canonical byte [26] bit1 (kCustomizerAxis_Active, alongside
+  // enemy_shuffle's bit0; door_shuffle owns [27] bits 0-1): default 0 ⇒
+  // byte-identical default settings_hash + corpus, no size-coupling cascade.
+  uint8 customizer_active;  // bool
+  // add-rando-traps — frequency for masquerade trap items. 0=off, 1=low,
+  // 2=medium, 3=high. Serialized in canonical byte [26] bits 2-3, sharing the
+  // extension byte with enemy_shuffle/customizer. Default off keeps the default
+  // settings_hash and corpus placements byte-identical; nonzero replaces
+  // eligible final junk-filled placements with trap items.
+  uint8 traps;
 } RandoSettings;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
 // [26]). A zero byte == no enemy shuffle (the default), preserving the
 // byte-identical corpus invariant. [26] was previously always-zero reserved pad.
+// add-rando-customizer-mode shares this byte at bit1 and add-rando-traps uses
+// bits 2-3 (zero by default likewise).
 enum {
   kEnemyShuffleAxis_Enabled = 1u << 0,
+  kCustomizerAxis_Active    = 1u << 1,
+};
+
+// add-rando-traps — frequency enum + packed canonical [26] bit field.
+enum {
+  kTrapFrequency_Off = 0,
+  kTrapFrequency_Low = 1,
+  kTrapFrequency_Medium = 2,
+  kTrapFrequency_High = 3,
+  kTrapAxis_Shift = 2,
+  kTrapAxis_Mask = 3u << kTrapAxis_Shift,
 };
 
 // add-rando-door-shuffle — door_shuffle axis values (canonical [27] bits 0-1).
@@ -188,9 +212,11 @@ enum {
 // Phase B Slice 7+8 §66: bumped from 24→28 to absorb `hints`, `boss_shuffle`,
 // `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
 // Phase C bit-packs the entrance axes into pad byte [25]; add-rando-enemy-shuffle
-// bit-packs `enemy_shuffle` into pad byte [26] (bit0). LENGTH STAYS 28 — both
-// reused previously-zero pad bytes, so no size-coupling cascade. [27] is the last
-// remaining pad byte.
+// bit-packs `enemy_shuffle` into pad byte [26] (bit0), add-rando-customizer-mode
+// shares it (bit1), and add-rando-traps packs `traps` into [26] bits 2-3;
+// add-rando-door-shuffle packs its axis into [27] (bits 0-1).
+// LENGTH STAYS 28 — all reused previously-zero pad bytes, so no size-coupling
+// cascade. [26] bits 4-7 + [27] bits 2-7 are the remaining extension surface.
 #define kSettingsCanonicalLen 28
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
@@ -245,11 +271,25 @@ int Settings_CanonicalSerialize(const RandoSettings *s,
 
 // Inverse of Settings_CanonicalSerialize. Reads `kSettingsCanonicalLen`
 // bytes and populates `out`. Returns 0 on success, non-zero on input error
-// (NULL pointer or non-zero pad bytes). Phase B Slice 6 — needed by the
-// race-mode reveal pipeline to reconstruct settings from the suppressed
-// spoiler file.
+// (NULL pointer, or an out-of-range enum byte — see Settings_Validate).
+// Phase B Slice 6 — needed by the race-mode reveal pipeline to reconstruct
+// settings from the suppressed spoiler file.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out);
+
+// FIX #5 — range-check every serialized ENUM/count field of a settings struct
+// against its defined range (world_state, goal, crystals, logic tier, dungeon
+// item modes, accessibility, the boolean axes, ...). Returns true when all are
+// in range. The byte-blob paths (sidecar slot activation, suppressed-spoiler
+// reveal, native-window prefs restore) previously copied enum bytes RAW, so a
+// corrupt/foreign blob flowed into consumers like `1u << settings->world_state`
+// (UB for ws >= 32). The bit-PACKED flag bytes (canonical [25]-[27]) are NOT
+// inspected here: Settings_CanonicalDeserialize masks their defined bits and
+// deliberately stays permissive on undefined bits (forward-compat — see the
+// deserializer's contract); pieces_required/placed accept the full uint16
+// range the CLI parser allows. Called by Settings_CanonicalDeserialize, so a
+// blob with an out-of-range enum now fails deserialization (return -2).
+bool Settings_Validate(const RandoSettings *s);
 
 // Compute SHA-256 of the canonical-serialized bytes. Writes 32 bytes.
 void Settings_ComputeHash(const RandoSettings *s, uint8 out_hash[32]);

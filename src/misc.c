@@ -863,6 +863,12 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   uint8 t;
 
   int j = link_receiveitem_index;
+  // Defensive bound guard: every array below (kValueToGiveItemTo,
+  // kMemoryLocationToGiveItemTo, …) is sized 76 (0x4C) and indexed by j. The
+  // currently-defined receive codes are all < 0x4C, so this is a no-op today; it
+  // exists so a future receive code >= 0x4C can't read past these tables.
+  if (j >= 76)
+    return;
   if (j == 0) {
     // Vanilla "GiveSwordAndShield": receiving the L1 (Fighter) sword also grants
     // the Fighter shield. In vanilla this fires once (from Uncle), but under rando

@@ -277,7 +277,7 @@ interiors:
     entrance_ids: [0x5C, 0x62]
     region: LightWorld_NorthEast
     locations: []
-    notes: "Fairy fountain (Waterfall/Pyramid bottle fountains are separate Fountain-type locs 140/141, NOT bound to a cave-interior room here). Two entrance-ids -> 0x114."
+    notes: "Fairy fountain (the Waterfall/Pyramid bottle Fountain-type locs 140/141 were RETIRED — see location_registry.yaml; each fairy pond has exactly its two Left/Right checks). Two entrance-ids -> 0x114."
 
   - interior_id: pond_of_happiness
     name: "Pond of Happiness / Fairy Cave 4"

@@ -51,6 +51,20 @@ void InvertedEntrances_Install(uint8 world_state);
 // Idempotent; safe to call when nothing is installed.
 void InvertedEntrances_Teardown(void);
 
+// The saved PRISTINE g_asset_ptrs[126] (entrance-id table) while the Inverted
+// override is installed; NULL when not installed. Entrance_PristineVanillaIds
+// (rando.c) consults this so the entrance-shuffle digest/overlay always
+// computes over the true vanilla table — e.g. when the native window generates
+// an entrance-shuffle seed while an Inverted slot is still active, asset 126
+// points at this subsystem's shadow, not the vanilla table.
+const uint8 *InvertedEntrances_SavedEntranceIdOrig(void);
+
+// Test support (--rando-selftest): the distinct asset indices this subsystem
+// shadows. Writes up to `cap` indices into `out`; returns the total count.
+// Lets the contamination selfcheck synthesize sources for absent assets
+// (selftest runs without zelda3_assets.dat) without duplicating the list.
+int InvertedEntrances_ShadowedAssets(uint8 *out, int cap);
+
 // Install the Inverted overworld DW->LW under-rock warps (overworld-secret
 // type-0x82 records). No-op unless world_state == kWorldState_Inverted (2).
 // Additive (vanilla has no warps); rebuilds the kOverworldSecrets blob + _Offs

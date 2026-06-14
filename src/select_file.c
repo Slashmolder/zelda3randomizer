@@ -2505,6 +2505,7 @@ enum {
   kRow_MedallionShuffle,
   kRow_RaceMode,
   kRow_Hints,              // Slice 5 — telepathic-tile hints (on/off)
+  kRow_Traps,              // add-rando-traps — off/low/medium/high
   // Phase-B disabled rows (label-only; cursor skips over input but A
   // refuses with a tooltip-style refusal sound).
   kRow_EntranceShuffle_Disabled,
@@ -2712,6 +2713,7 @@ static const char *RowLabel(int row) {
     case kRow_MedallionShuffle:          return "MEDAL";
     case kRow_RaceMode:                  return "RACE";
     case kRow_Hints:                     return "HINTS";
+    case kRow_Traps:                     return "TRAPS";
     case kRow_EntranceShuffle_Disabled:  return "ENT B";
     case kRow_EnemyShuffle_Disabled:     return "ENEMY B";
     case kRow_BossShuffle_Disabled:      return "BOSS B";
@@ -2795,6 +2797,14 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       return s->race_mode ? "ON" : "OFF";
     case kRow_Hints:
       return s->hints ? "ON" : "OFF";
+    case kRow_Traps:
+      switch (s->traps) {
+        case kTrapFrequency_Off:    return "OFF";
+        case kTrapFrequency_Low:    return "LOW";
+        case kTrapFrequency_Medium: return "MED";
+        case kTrapFrequency_High:   return "HIGH";
+        default:                    return "ERR";
+      }
     case kRow_EntranceShuffle_Disabled:
     case kRow_EnemyShuffle_Disabled:
     case kRow_BossShuffle_Disabled:
@@ -2986,6 +2996,13 @@ static void CycleRow(int row, int delta) {
     case kRow_MedallionShuffle: s->medallion_shuffle ^= 1; break;
     case kRow_RaceMode: s->race_mode ^= 1; break;
     case kRow_Hints: s->hints ^= 1; break;
+    case kRow_Traps: {
+      int n = (int)s->traps + delta;
+      if (n < kTrapFrequency_Off) n = kTrapFrequency_High;
+      if (n > kTrapFrequency_High) n = kTrapFrequency_Off;
+      s->traps = (uint8)n;
+      break;
+    }
     default:
       mutated = false;
       break;
@@ -3405,6 +3422,7 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_PiecesPlaced:
       case kRow_ModeWeapons:
       case kRow_Accessibility:
+      case kRow_Traps:
         CycleRow(row, +1);  // A = forward cycle, same as Right
         break;
       case kRow_PrizeShuffle:
@@ -3535,8 +3553,12 @@ static void SelectFile_Settings_HandleGenerate(void) {
   // the relocated body of this function (from Settings_ComputeHash onward):
   // placement + share + spoiler files + sidecar slot write + SRAM commit +
   // recommended-features apply + SelectFile_NotifySlotWritten. budget = -1 →
-  // race-aware default (race?0:10). out=NULL → no placement copy (the in-game
-  // flow does not need one). See src/rando/rando_generate.c.
+  // Rando_GenerateSlot resolves it to a DETERMINISTIC 0 (no wall-clock cutoff,
+  // full kAssumedFillMaxAttempts cap) for BOTH race and non-race — see
+  // `effective_budget = (budget < 0) ? 0 : budget` in rando_generate.c. A
+  // positive default would select a machine-speed-dependent best-so-far and
+  // break share/regen reproducibility, which check_placer_determinism.py guards.
+  // out=NULL → no placement copy (the in-game flow does not need one).
   char errbuf[256];
   if (!Rando_GenerateSlot(&g_settings_working, seed_u64, -1, g_settings_target_slot,
                           g_rec_working_features0, NULL, errbuf, sizeof errbuf)) {

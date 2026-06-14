@@ -294,34 +294,34 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 // ===========================================================================
 // Sprite-group SHEET RESHUFFLE (design.md D4 — the variety unlock).
 //
-// The MVP picker (EnemyShuffle_Pick*) only chooses among enemies whose GFX sheet
-// is ALREADY loaded for the room/area, so swaps are same-family. The reshuffle
-// widens that pool by RE-ASSIGNING which sprite GFX sheet loads into subgroup
-// SLOT 2 (the "themed enemy" slot) at sheet-load time — so an Octorok room can
-// load the Gibdo/Zazak/Pengator/Eyegore sheet and the existing picker gets the
-// wider pool for free (it reads the LIVE sprite_gfx_subset_* we rewrite here).
+// The basic picker (EnemyShuffle_Pick*) only chooses among enemies whose GFX
+// sheets are ALREADY loaded for the room/area, so swaps are same-family. The
+// reshuffle widens that pool by RE-ASSIGNING which sprite GFX sheet loads into
+// subgroup slots 0..3 at sheet-load time — so an Octorok room can load a different
+// enemy-family sheet and the existing picker gets the wider pool for free (it
+// reads the LIVE sprite_gfx_subset_* values we rewrite here).
 //
-// SCOPE (phase 1, conservative — playtest-gated widening): SLOT 2
-// ONLY. A room/area is reshuffle-eligible only when slot 2 is provably FREE:
-// every present sprite is either a randomizable enemy (the picker substitutes it)
-// or a KNOWN type that does NOT need slot 2, and NO overlord is present
-// (overlord-spawned sprites bypass the picker, so a slot-2-spawning overlord
-// would render garbage). Enemizer's four position whitelists are DISJOINT (a
-// sheet id belongs to exactly one slot), so a slot-2 sheet only ever holds slot-2
-// enemies — each enemy's tiles land in their canonical VRAM region and the
-// picker's "sheet loaded" test stays sound without a position-aware change.
+// SCOPE: all four subgroup slots. A room/area may reshuffle only an OWNED slot
+// that is provably free: every present sprite is either randomizable (the picker
+// substitutes it) or a known non-randomizable type that does not need that slot.
+// Unknowns and bosses pin all slots; dungeon overlords pin only the generated
+// slots needed by their spawned sprite, while unknown/no-spawn/boss-spawning
+// overlords and overworld overlords pin all slots. Enemizer's four position
+// whitelists are DISJOINT (a sheet id belongs to exactly one slot), so each
+// enemy's tiles land in their canonical VRAM region and the picker's
+// "sheet loaded" test stays sound without a position-aware change.
 //
-// ANTI-GARBAGE: the slot-2 pool is restricted to sheets that EACH self-contain a
-// killable + key-capable enemy, so after a swap the picker ALWAYS finds a valid
-// substitution for every slot-2 enemy (no vanilla passthrough with a now-missing
-// sheet) and dungeon key/shutter rooms stay fillable. The room's vanilla slot-2
-// sheet is ALWAYS a candidate (owner constraint: true-random, vanilla-inclusive).
+// ANTI-GARBAGE: each dungeon slot pool is restricted to sheets that self-contain
+// a killable + key-capable enemy, so after a swap the picker ALWAYS finds a valid
+// substitution for that slot (no vanilla passthrough with a now-missing sheet) and
+// dungeon key/shutter rooms stay fillable. The room's vanilla sheet is ALWAYS a
+// candidate (owner constraint: true-random, vanilla-inclusive).
 //
-// INHERITANCE: kSpriteTilesets rows with a 0 in slot 2 INHERIT the prior room's
-// sheet, so a reshuffle could leak into a later room that needs a specific slot-2
-// sheet. We track the true VANILLA-resolved slot-2 sheet in a snapshot-safe g_ram
-// shadow (kRam_EnemyShuffleVanPos2): eligible rooms reshuffle FROM it; INELIGIBLE
-// rooms RESTORE it — so a leaked sheet can never reach a room that pins slot 2.
+// INHERITANCE: kSpriteTilesets rows with a 0 in a slot INHERIT the prior room's
+// sheet, so a reshuffle could leak into a later room that needs a specific sheet.
+// We track the true VANILLA-resolved sheet per slot in a snapshot-safe g_ram
+// shadow (kRam_EnemyShuffleVanSubset): eligible rooms reshuffle FROM it;
+// ineligible rooms RESTORE it — so a leaked sheet can never reach a pinned slot.
 //
 // Determinism: per-(seed, room/area), reproducible for races, regenerated from
 // (seed, settings) like the picker. Rides the existing enemy_shuffle activation
@@ -627,10 +627,13 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type) {
   // job of this table). Flying is forbidden in the flying-exclude rooms.
   bool forbid_flying = room_in_list(room, kFlyingExcludeRooms, kFlyingExcludeRoomsCount);
   uint64 key = ((uint64)room << 8) ^ (uint64)slot ^ 0x000000000000D000ull;
+  // A water-only source (ESF_WATER, e.g. Walking Zora) must be replaced by a
+  // water-capable enemy, not a land one — drive the constraint from the source.
+  bool require_water = (kEnemyTable[vanilla_type].flags & ESF_WATER) != 0;
   return pick_replacement(key, vanilla_type, live,
                           /*require_killable=*/true,
                           /*require_key_capable=*/true,
-                          /*require_water=*/false,
+                          require_water,
                           /*forbid_flying=*/forbid_flying,
                           /*never_dungeon_ok=*/false,  // we ARE a dungeon
                           /*never_overworld_ok=*/true);
@@ -647,10 +650,12 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
   // for beatability. We still keep the pool to randomizable enemies whose sheet
   // is loaded (anti-crash) and honor the never_overworld directional ban.
   uint64 key = ((uint64)area << 8) ^ (uint64)slot ^ 0x0000000000000700ull;
+  // Keep a water-only source (ESF_WATER) in water — derive from the source type.
+  bool require_water = (kEnemyTable[vanilla_type].flags & ESF_WATER) != 0;
   return pick_replacement(key, vanilla_type, live,
                           /*require_killable=*/false,
                           /*require_key_capable=*/false,
-                          /*require_water=*/false,
+                          require_water,
                           /*forbid_flying=*/false,
                           /*never_dungeon_ok=*/true,
                           /*never_overworld_ok=*/false);  // we ARE overworld
@@ -672,6 +677,11 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
 uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base) {
   if (!g_enemy_shuffle_active || base == 0) return base;  // 0 HP = non-killable
   if (type_is_boss(type)) return base;                    // bosses keep vanilla HP
+  // Only perturb genuine randomizable combat enemies. Non-randomizable specials
+  // / NPCs / objects (the same set substitution leaves alone) keep vanilla HP, as
+  // does the 0xFF "invulnerable sentinel" — scaling it could drop it below the
+  // sentinel and make an intended-invulnerable sprite killable.
+  if (!table_is_randomizable(type) || base == 0xFF) return base;
   RandoRng rng;
   Rng_SeedFromU64(&rng, g_enemy_shuffle_seed ^ ((uint64)type << 8) ^ kEnemyShuffleStatSalt);
   uint32 mult = 8 + Rng_NextRange(&rng, 25);   // [8,32]/16 = 0.5x .. 2.0x
@@ -684,6 +694,9 @@ uint8 EnemyShuffle_ScaleHealth(uint8 type, uint8 base) {
 uint8 EnemyShuffle_ScaleDamage(uint8 type, uint8 base) {
   if (!g_enemy_shuffle_active) return base;
   if (type_is_boss(type)) return base;  // bosses keep vanilla contact damage too
+  // Same randomizable-only gate as ScaleHealth: leave non-combat / non-randomizable
+  // sprites' contact damage exactly as vanilla.
+  if (!table_is_randomizable(type)) return base;
   // Only a PLAIN damage class (1..8, no high flag bits) is perturbed; flagged /
   // boss-attack / immunity values (>= 0x10) are left exactly as vanilla.
   if (base == 0 || base >= 0x10) return base;

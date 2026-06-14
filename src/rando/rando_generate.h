@@ -70,6 +70,14 @@ void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
 // activation can regenerate + drift-check.
 void Rando_GetDoorGeneration(uint8 *attempt_out, uint32 *digest24_out);
 
+// Clears every per-generation logic overlay Rando_PlaceWithEntrances may have
+// left installed (entrance region/edge overrides + the door logic layout).
+// Rando_GenerateSlot calls this at every exit after its sphere/goal/spoiler
+// work; DoorShuffle_SelfTest exercises it in the cross-generation leak
+// regression check. Does NOT touch slot-activation overlays — activation
+// installs its own regenerated copies after this runs.
+void Rando_ClearGenerationLogicOverlays(void);
+
 typedef struct RandoGenerateResult {
   bool ok;
   bool used_forward_fill;
@@ -82,9 +90,13 @@ typedef struct RandoGenerateResult {
 
 // Game-thread only. Runs the full playable-slot generation: placement + share +
 // spoiler files + sidecar slot write + SRAM commit + recommended-features apply.
-// Does NOT call Placement_Install (install is slot-load-only). budget<0 => race-aware
-// default (race?0:10). If out!=NULL, out->placement is an independently malloc'd copy
-// the CALLER owns. Returns false + err on failure (no slot written).
+// Does NOT call Placement_Install (install is slot-load-only). budget<0 => 0
+// (no wall-clock cutoff: the placer runs to its deterministic attempt cap, so
+// the placement a share-string receiver regenerates is machine-independent —
+// see the Place_AssumedFill DETERMINISM WARNING; explicit positive budgets are
+// honored for diagnostic use only). If out!=NULL, out->placement is an
+// independently malloc'd copy the CALLER owns. Returns false + err on failure
+// (no slot written).
 bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budget,
                         int slot_index, uint32 recommended_features0,
                         RandoGenerateResult *out, char *err, size_t err_cap);

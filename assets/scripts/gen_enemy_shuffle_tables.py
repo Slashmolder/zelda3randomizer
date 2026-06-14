@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the enemy-shuffle constraint tables from the Enemizer (MIT) source.
 
-Parses C:\\src\\Enemizer SpriteRequirement.cs + SpriteConstants.cs and emits C
+Parses Enemizer's SpriteRequirement.cs + SpriteConstants.cs and emits C
 initializers for src/rando/shuffle_enemies.c:
   - kSheetNeed[256]   per-type bit7=KNOWN | bits3..0 = needs subgroup slot 3..0
   - kEsBossTypes[]    boss/secondary ids (<=0xF2)
@@ -13,14 +13,66 @@ We parse the SOURCE, not a hand summary — re-transcription dropped sheet 68 fr
 Walking Zora (the "hybrid zora+buzzblob" bug) and 0x16/0xBC from the pin set.
 
 Run:  python assets/scripts/gen_enemy_shuffle_tables.py [ENEMIZER_DIR]
+      ENEMIZER_DIR=/path/to/Enemizer python assets/scripts/gen_enemy_shuffle_tables.py
 Paste the printed blocks into shuffle_enemies.c (they are structural sprite-id /
 sheet-id facts — allowed inline; not extracted ROM data).
 """
 import re, sys, os
+from pathlib import Path
 
-ENZ = sys.argv[1] if len(sys.argv) > 1 else r"C:\src\Enemizer"
-REQ = os.path.join(ENZ, "EnemizerLibrary", "EnemyRandomizer", "SpriteRequirement.cs")
-CON = os.path.join(ENZ, "EnemizerLibrary", "EnemyRandomizer", "SpriteConstants.cs")
+def source_files(root):
+    root = Path(root).expanduser().resolve()
+    return (
+        root / "EnemizerLibrary" / "EnemyRandomizer" / "SpriteRequirement.cs",
+        root / "EnemizerLibrary" / "EnemyRandomizer" / "SpriteConstants.cs",
+    )
+
+def resolve_enemizer_dir():
+    if len(sys.argv) > 2:
+        print("gen_enemy_shuffle_tables: expected at most one ENEMIZER_DIR argument",
+              file=sys.stderr)
+        print("usage: python assets/scripts/gen_enemy_shuffle_tables.py [ENEMIZER_DIR]",
+              file=sys.stderr)
+        raise SystemExit(64)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    candidates = []
+    if len(sys.argv) == 2:
+        candidates.append(Path(sys.argv[1]))
+    elif os.environ.get("ENEMIZER_DIR"):
+        candidates.append(Path(os.environ["ENEMIZER_DIR"]))
+    else:
+        candidates.extend([
+            repo_root.parent / "Enemizer",
+            Path.cwd().resolve().parent / "Enemizer",
+            Path.cwd().resolve() / "Enemizer",
+        ])
+
+    seen = set()
+    checked = []
+    for candidate in candidates:
+        root = candidate.expanduser().resolve()
+        if root in seen:
+            continue
+        seen.add(root)
+        req, con = source_files(root)
+        checked.append(root)
+        if req.is_file() and con.is_file():
+            return root, req, con
+
+    print("gen_enemy_shuffle_tables: could not find Enemizer source files.",
+          file=sys.stderr)
+    print("  Pass ENEMIZER_DIR, set the ENEMIZER_DIR environment variable,",
+          file=sys.stderr)
+    print("  or place an Enemizer checkout next to this repository.",
+          file=sys.stderr)
+    for root in checked:
+        req, con = source_files(root)
+        print(f"  checked: {req}", file=sys.stderr)
+        print(f"           {con}", file=sys.stderr)
+    raise SystemExit(64)
+
+ENZ, REQ, CON = resolve_enemizer_dir()
 
 # Enemizer's per-position candidate-sheet whitelists (PotentialSubsetN). DISJOINT.
 WHITELIST = {
@@ -105,8 +157,8 @@ def water(e):       return "SetWaterSprite" in e["flags"]
 # used to pick the most-common sheet for an OR-within-position requirement (so a
 # soldier's [13,73] resolves to 73, the common one, maximizing admission).
 def load_tileset_freq():
-    txt = open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                            "src", "load_gfx.c"), encoding="utf-8", errors="ignore").read()
+    txt = open(Path(__file__).resolve().parents[2] / "src" / "load_gfx.c",
+               encoding="utf-8", errors="ignore").read()
     m = re.search(r"kSpriteTilesets\[144\]\[4\]\s*=\s*\{(.*?)\n\};", txt, re.S)
     freq = {0: {}, 1: {}, 2: {}, 3: {}}
     if m:

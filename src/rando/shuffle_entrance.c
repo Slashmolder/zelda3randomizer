@@ -155,7 +155,7 @@ typedef struct RandoDungeon {
   // the region where the dungeon's locations live. The edge-override keys on THIS
   // so the door edge (and its predicate) is what gets remapped, tying any door gate
   // (e.g. MM/TR's medallion, on Entrance→Lobby) to the overworld SPOT rather than
-  // the loaded interior (audit task 2.8). NULL ⇒ single-region dungeon whose entry
+  // the loaded interior. NULL ⇒ single-region dungeon whose entry
   // region IS its lobby (the registry region is already the door-edge target), so
   // the override key falls back to entry_region_name with no behavior change.
   const char *interior_region_name;
@@ -276,7 +276,7 @@ int Entrance_ComputePermutation(const RandoSettings *settings, uint64 seed,
 void Entrance_ApplyRegionOverrides(const uint8 *assign, int n) {
   Rando_BeginEntranceRegionOverrides();
   if (assign == NULL) return;
-  // Audit M3 — clamp the loop bound to the static table (this is a public entry
+  // clamp the loop bound to the static table (this is a public entry
   // point; the `assign[ix]` value is already range-checked below, but the `ix`
   // index into kCaveInteriors[] must be bounded too).
   if (n > kEntranceCaveInteriorCount) n = kEntranceCaveInteriorCount;
@@ -601,20 +601,37 @@ bool Entrance_IsCrossDecoupledActive(const RandoSettings *settings) {
   return settings != NULL && settings->decoupled && Entrance_IsCrossActive(settings);
 }
 
+// Forward decl — defined with the dungeon-decoupled compute below.
+static bool dungeon_is_water_isolated(int idx);
+
 int Entrance_ComputeCrossDecoupledExit(const RandoSettings *settings, uint64 seed,
                                        uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]) {
   if (exit_assign == NULL || !Entrance_IsCrossDecoupledActive(settings)) return 0;
   int n = cross_pool_count();
   if (n > kEntranceMaxInteriors) return 0;
   for (int i = 0; i < n; i++) exit_assign[i] = (uint8)i;
+  // Pin water-isolated DUNGEON endpoints (Ice/Swamp) out of the exit shuffle —
+  // same one-way-strand risk as dungeon-decoupled. Cross-pool
+  // positions [0,ncave) are caves (walkable); [ncave,n) are dungeons via didx.
+  const int ncave = kEntranceCaveInteriorCount;
+  uint8 didx[kEntranceDungeonCount];
+  cross_dungeon_list(didx);
+  uint8 mobile[kEntranceMaxInteriors];
+  int nmob = 0;
+  for (int i = 0; i < n; i++) {
+    bool pinned = (i >= ncave) && dungeon_is_water_isolated(didx[i - ncave]);
+    if (!pinned) mobile[nmob++] = (uint8)i;
+  }
   RandoRng rng;
   // Distinct salt from cross-ENTRY (0xC2055…), cave-decoupled (0xE511…) and
   // dungeon-decoupled (0xD1CE…) so the exit permutation is independent.
   Rng_SeedFromU64(&rng, (seed ^ 0xC2055DEC0DEDC205ull) ^
                             ((uint64)attempt * 0x9E3779B97F4A7C15ull));
-  for (int i = n - 1; i > 0; i--) {
-    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
-    uint8 t = exit_assign[i]; exit_assign[i] = exit_assign[j]; exit_assign[j] = t;
+  for (int k = nmob - 1; k > 0; k--) {
+    uint32 m = Rng_NextRange(&rng, (uint32)(k + 1));
+    uint8 t = exit_assign[mobile[k]];
+    exit_assign[mobile[k]] = exit_assign[mobile[m]];
+    exit_assign[mobile[m]] = t;
   }
   return n;
 }
@@ -674,6 +691,31 @@ void Entrance_WriteCrossDecoupledSpoilerText(void *file, const uint8 *exit_assig
     const char *tn = (t < ncave) ? kCaveInteriors[t].name : kDungeons[didx[t - ncave]].name;
     fprintf(f, "  %s -> %s\n", en, tn);
   }
+}
+
+// JSON sibling of the text emitter above (the JSON spoiler carried
+// every other entrance/decoupled mapping but was missing cross-decoupled, so an
+// external tracker couldn't see Insanity-Crossed one-way exits). Mirrors the
+// dungeon-decoupled JSON emitter's style: emits ALL n rows (a self-map shows
+// from==exits_to) over the mixed pool (caves [0,ncave) via kCaveInteriors,
+// dungeons [ncave,n) via the cross dungeon list).
+void Entrance_WriteCrossDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n) {
+  FILE *f = (FILE *)file;
+  if (f == NULL || exit_assign == NULL || n <= 0) return;
+  uint8 didx[kEntranceDungeonCount];
+  int ndun = cross_dungeon_list(didx);
+  const int ncave = kEntranceCaveInteriorCount;
+  if (n != ncave + ndun) return;
+  fprintf(f, "  \"cross_decoupled_exit\": [\n");
+  for (int e = 0; e < n; e++) {
+    int t = exit_assign[e];
+    if (t < 0 || t >= n) t = e;
+    const char *en = (e < ncave) ? kCaveInteriors[e].name : kDungeons[didx[e - ncave]].name;
+    const char *tn = (t < ncave) ? kCaveInteriors[t].name : kDungeons[didx[t - ncave]].name;
+    fprintf(f, "    {\"from\": \"%s\", \"exits_to\": \"%s\"}%s\n",
+            en, tn, (e + 1 < n) ? "," : "");
+  }
+  fprintf(f, "  ],\n");
 }
 
 // Public: cave interior index that entrance-id `ent_id` belongs to, or -1.
@@ -782,19 +824,45 @@ bool Entrance_IsDungeonDecoupledActive(const RandoSettings *settings) {
          settings->world_state == kWorldState_Standard;
 }
 
+// a one-way dungeon EXIT deposits Link on the connected overworld at
+// net'[loaded]'s door. For a WATER-ISOLATED door — reachable AND leavable only
+// with Flippers — that is a STRAND: the decoupled modes add NO logic exit edges,
+// so the accessibility gate proved the door reachable WITH Flippers but never
+// proved the emerge tile escapable WITHOUT them (recoverable via Mirror /
+// save-and-quit, but a softlock-trap). Ice Palace (DW-SE frozen island) and
+// Swamp Palace (drained-swamp pool) are the two dungeons whose overworld→lobby
+// edge is Flippers-gated (logic_parts/30_ice_palace.yaml, 21_swamp_palace.yaml).
+// Pin them OUT of the decoupled exit shuffle as fixed points until the
+// overworld→overworld warp-edge model (design.md D.1) lands.
+static bool dungeon_is_water_isolated(int idx) {
+  if (idx < 0 || idx >= kEntranceDungeonCount) return false;
+  const char *nm = kDungeons[idx].name;
+  return strcmp(nm, "ice_palace") == 0 || strcmp(nm, "swamp_palace") == 0;
+}
+
 int Entrance_ComputeDungeonDecoupledExit(const RandoSettings *settings, uint64 seed,
                                          uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]) {
   if (exit_assign == NULL || !Entrance_IsDungeonDecoupledActive(settings)) return 0;
   const int n = Entrance_DungeonPoolCount(settings);  // 10, or 11 with the GT opt-in
   for (int i = 0; i < n; i++) exit_assign[i] = (uint8)i;
+  // Shuffle only the MOBILE (non-water-isolated) dungeons among themselves; the
+  // pinned water-isolated dungeons keep their identity exit so no one-way exit
+  // can strand Link on a Flippers-gated door. A fixed-point exit
+  // returns Link to the door he just walked in through — coupled-equivalent.
+  uint8 mobile[kEntranceMaxInteriors];
+  int nmob = 0;
+  for (int i = 0; i < n; i++)
+    if (!dungeon_is_water_isolated(i)) mobile[nmob++] = (uint8)i;
   RandoRng rng;
   // Distinct salt from cave-entry (none) / dungeon-entry / cross / cave-decoupled
   // (0xE511…) so the dungeon EXIT permutation is independent in (seed, attempt).
   Rng_SeedFromU64(&rng, (seed ^ 0xD1CE0DEDD1CE0DEDull) ^
                             ((uint64)attempt * 0x9E3779B97F4A7C15ull));
-  for (int i = n - 1; i > 0; i--) {
-    uint32 j = Rng_NextRange(&rng, (uint32)(i + 1));
-    uint8 t = exit_assign[i]; exit_assign[i] = exit_assign[j]; exit_assign[j] = t;
+  for (int k = nmob - 1; k > 0; k--) {
+    uint32 m = Rng_NextRange(&rng, (uint32)(k + 1));
+    uint8 t = exit_assign[mobile[k]];
+    exit_assign[mobile[k]] = exit_assign[mobile[m]];
+    exit_assign[mobile[m]] = t;
   }
   return n;
 }
@@ -804,7 +872,7 @@ int Entrance_ComputeDungeonDecoupledExit(const RandoSettings *settings, uint64 s
 // so coupled-equivalent reachability is correct and conservative (can never strand
 // the goal). An earlier lobby(D)→entry_region(net'[D]) edge was WRONG: for single-
 // region dungeons entry_region_name IS the interior lobby, so the edge granted free
-// access to the target dungeon's gated interior locations (audit HIGH). Modeling
+// access to the target dungeon's gated interior locations. Modeling
 // warps as logic shortcuts (with the correct overworld approach region) is future work.
 
 uint16 Entrance_DungeonDecoupledExitRoom(const uint8 *exit_assign, int n,
@@ -960,7 +1028,7 @@ void Entrance_SelfCheck(void) {
   // (0) The cross engine uses kCrossVoidRegion (63) as an unreachable sink to
   //     remove a dungeon's original door-edge (design.md §9 case 3). That only
   //     works if NO real region owns id 63 — otherwise the void redirect would
-  //     silently make a live region the sink. Guard it (audit LOW-2): if a future
+  //     silently make a live region the sink. Guard it: if a future
   //     logic-graph edit ever assigns region 63, this fails the build's selftest
   //     instead of shipping a quietly-wrong reachability model.
   if (strcmp(Rando_GetRegionName(kCrossVoidRegion), "(unbound)") != 0) {
@@ -973,7 +1041,7 @@ void Entrance_SelfCheck(void) {
   // (1) Every entrance-id is unique across interiors (no id backs two interiors)
   //     and every interior's room is in the cached-exit cave class
   //     [0x100,0x180)\{0x104} (so a shuffled cave can never hit the room-keyed
-  //     exit SEARCH — review M4).
+  //     exit SEARCH).
   for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
     uint16 room = kCaveInteriors[i].room;
     if (!(room >= 0x100 && room < 0x180 && room != 0x104)) {
@@ -1115,7 +1183,7 @@ void Entrance_SelfCheck(void) {
   }
 
   // (7) Door overlay: build a synthetic vanilla table holding EVERY entrance-id
-  //     of every interior (audit L2 — exercise the non-representative ids of
+  //     of every interior (exercise the non-representative ids of
   //     multi-door interiors, e.g. 0x43/0x44 for the tavern, not just
   //     entrance_ids[0]), plus a non-cave sentinel. Each cave door must rewrite
   //     to the representative id of ITS interior's image; non-cave ids pass
@@ -1176,7 +1244,7 @@ void Entrance_SelfCheck(void) {
                 i, kDungeons[i].entry_region_name);
         exit(2);
       }
-      // Audit LOW-3 — the edge-override array is keyed by region id and bounded by
+      // the edge-override array is keyed by region id and bounded by
       // kEntranceEdgeOverrideMax (64); a region id ≥ that would be silently dropped
       // on the logic side (runtime redirected, logic identity → desync). Guard it.
       if (rid >= 64) {

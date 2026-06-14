@@ -69,6 +69,24 @@ static uint32 get_u32le(const uint8 *p) {
 }
 
 // ---------------------------------------------------------------------------
+// CRC-32 for the file header's `file_crc` field (FIX #13 — the field was
+// written as 0 and never verified). Standard reflected CRC-32 (poly
+// 0xEDB88320, init/xorout 0xFFFFFFFF) — the SAME algorithm as src/util.c's
+// static `crc32` (the BPS patcher); re-stated here because that one is
+// file-local. Chosen over rando_share's CRC-16-CCITT because the on-disk
+// field is u32. Known vector: "123456789" → 0xCBF43926 (selfcheck).
+// ---------------------------------------------------------------------------
+static uint32 rs_crc32(const uint8 *data, size_t length) {
+  uint32 crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < length; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++)
+      crc = (crc >> 1) ^ ((crc & 1) * 0xEDB88320u);
+  }
+  return crc ^ 0xFFFFFFFF;
+}
+
+// ---------------------------------------------------------------------------
 // On-disk sizing
 //
 // Per spec (randomizer-save § Slot header): `placement_table_size` is the
@@ -84,9 +102,22 @@ static uint32 slot_on_disk_size_base(uint16 placement_table_size) {
   return kRandoSidecar_SlotHeaderSize + placements_bytes + bitmap_bytes;
 }
 
-// Public size is the CURRENT format (version 2): base + the settings blob.
+// Format-version-aware slot size: v1 = base, v2 adds the settings blob,
+// v3 adds the extension block. Any future version >= 3 is sized as v3 by the
+// caller's contract (RandoSave_ReadFile refuses files it can't slot-walk —
+// a larger future layout fails the next slot's magic check).
+static uint32 slot_on_disk_size_versioned(uint16 placement_table_size,
+                                          uint16 format_version) {
+  uint32 total = slot_on_disk_size_base(placement_table_size);
+  if (format_version >= 2) total += kSettingsCanonicalLen;
+  if (format_version >= 3) total += kRandoSidecar_SlotExtV3Size;
+  return total;
+}
+
+// Public size is the CURRENT format (version 3): base + settings blob + ext.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size) {
-  return slot_on_disk_size_base(placement_table_size) + kSettingsCanonicalLen;
+  return slot_on_disk_size_versioned(placement_table_size,
+                                     kRandoSidecar_FileFormatVersion);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +274,12 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
 // ---------------------------------------------------------------------------
 uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 buf_size) {
   if (slot == NULL || buf == NULL) return 0;
+  // FIX #13 — an ODD placement_table_size is a caller bug (the table is a
+  // uint16[] and the generator always writes (max_loc+1)*2). The sizing above
+  // counts the raw byte size while the body below writes location_count*2
+  // bytes, so an odd size would leave ONE uninitialized buffer byte between
+  // the table and the bitmap. Reject explicitly rather than leak it.
+  if (slot->header.placement_table_size & 1) return 0;
   uint32 size = RandoSave_SlotOnDiskSize(slot->header.placement_table_size);
   if (buf_size < size) return 0;
   uint32 location_count = (uint32)slot->header.placement_table_size / 2;
@@ -267,34 +304,57 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     }
   }
   p += location_count * 2;
+  // Checked-bitmap span invariant: the on-disk bitmap is exactly
+  // ((location_count + 7) >> 3) bytes and is NOT resized here (format/compat).
+  // Every checkable location_id is < location_count (== placement_table_size/2),
+  // so every legitimately-set checked bit falls within this span — same bound
+  // the placement scatter above enforces (loc < location_count). As defense, if
+  // location_count isn't byte-aligned, mask the out-of-span high bits of the
+  // final partial byte so a stray bit beyond the last location can't ride along
+  // (operates on the output buffer; `slot` is const and untouched).
   uint32 bitmap_bytes = (location_count + 7) >> 3;
   memcpy(p, slot->checked_bitmap, bitmap_bytes);
+  if (bitmap_bytes > 0 && (location_count & 7) != 0) {
+    p[bitmap_bytes - 1] &= (uint8)((1u << (location_count & 7)) - 1);
+  }
   p += bitmap_bytes;
   // format_version 2: canonical settings blob trails the bitmap. Always written
   // (zeroed when settings_present == 0); RandoSave_SlotOnDiskSize accounts for it.
   memcpy(p, slot->settings_canonical, kSettingsCanonicalLen);
+  p += kSettingsCanonicalLen;
+  // format_version 3: slot extension block trails the blob (the 80-byte header
+  // is full — see rando_save.h). @0-2 entrance_digest24 LE, @3-7 reserved zero.
+  p[0] = (uint8)(slot->header.entrance_digest24 & 0xff);
+  p[1] = (uint8)((slot->header.entrance_digest24 >> 8) & 0xff);
+  p[2] = (uint8)((slot->header.entrance_digest24 >> 16) & 0xff);
+  p[3] = p[4] = p[5] = p[6] = p[7] = 0;
   return size;
 }
 
-// Version-aware slot deserialize. `with_settings` is true for the current
-// (version-2) layout, which has a trailing canonical settings blob; false for
-// the older version-1 layout (no blob). RandoSave_ReadFile passes the value
-// derived from the file's format_version.
+// Version-aware slot deserialize. `format_version` is the FILE's declared
+// version: v1 has no trailing settings blob, v2 adds the blob, v3 adds the
+// extension block after it. RandoSave_ReadFile passes the file's value.
 static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
-                                         RandoSidecarSlot *out, bool with_settings) {
+                                         RandoSidecarSlot *out, uint16 format_version) {
   if (buf == NULL || out == NULL) return 0;
+  bool with_settings = (format_version >= 2);
+  bool with_ext = (format_version >= 3);
   memset(out, 0, sizeof(*out));
   uint32 hdr_used = deserialize_slot_header(buf, buf_size, &out->header);
   if (hdr_used == 0) return 0;
+  // FIX #13 — the placement table is a uint16[]: every legitimate writer
+  // produces an even byte size ((max_loc+1)*2). An odd size is corruption;
+  // treat it like a bad magic rather than silently halving it (the writer/
+  // loader would disagree on where the bitmap starts).
+  if (out->header.placement_table_size & 1) return 0;
   uint32 location_count = (uint32)out->header.placement_table_size / 2;
   // Sanity-check against the in-memory bound — we cannot store more sparse
   // pairs than the static array can hold.
   if (location_count > (sizeof(out->placements) / sizeof(out->placements[0]))) {
     return 0;
   }
-  uint32 total = with_settings
-                     ? RandoSave_SlotOnDiskSize(out->header.placement_table_size)
-                     : slot_on_disk_size_base(out->header.placement_table_size);
+  uint32 total = slot_on_disk_size_versioned(out->header.placement_table_size,
+                                             format_version);
   if (buf_size < total) return 0;
   const uint8 *p = buf + kRandoSidecar_SlotHeaderSize;
   // Gather the flat array back into the sparse in-memory list. Sentinel
@@ -323,18 +383,29 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
   p += bitmap_bytes;
   if (with_settings) {
     memcpy(out->settings_canonical, p, kSettingsCanonicalLen);
+    p += kSettingsCanonicalLen;
   } else {
     // A v1 file physically has no blob — force settings_present off so a stray
     // @70 byte can't be mistaken for a (nonexistent) valid blob.
     out->header.settings_present = 0;
   }
+  if (with_ext) {
+    // format_version 3: extension block (@0-2 entrance_digest24 LE; @3-7
+    // reserved, ignored for forward-compat).
+    out->header.entrance_digest24 =
+        (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16);
+  } else {
+    // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
+    // the legacy warn-only entrance version-drift behavior for old slots.
+    out->header.entrance_digest24 = 0;
+  }
   return total;
 }
 
 uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecarSlot *out) {
-  // Public entry assumes the current (version-2) layout. RandoSave_ReadFile
+  // Public entry assumes the current (version-3) layout. RandoSave_ReadFile
   // uses the version-aware static directly for older files.
-  return deserialize_slot_versioned(buf, buf_size, out, true);
+  return deserialize_slot_versioned(buf, buf_size, out, kRandoSidecar_FileFormatVersion);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +514,12 @@ static bool atomic_write_and_commit(const char *final_path,
 bool RandoSave_WriteFile(const char *path,
                          const RandoSidecarSlot slots[kRandoSidecar_SlotCount]) {
   if (path == NULL) return false;
+  // FIX #13 — refuse odd placement_table_size up front. RandoSave_SerializeSlot
+  // rejects it too, but failing HERE keeps the buffer arithmetic below sound
+  // (a 0-return mid-loop would shift every later slot and write garbage).
+  for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+    if (slots[i].header.placement_table_size & 1) return false;
+  }
   // Compute total size.
   uint32 total = kRandoSidecar_FileHeaderSize;
   for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
@@ -456,6 +533,15 @@ bool RandoSave_WriteFile(const char *path,
   for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
     off += RandoSave_SerializeSlot(&slots[i], buf + off, total - off);
   }
+
+  // FIX #13 — file_crc (header @8) now carries a real CRC-32 over the SLOT
+  // region (every byte after the 16-byte file header; the crc field itself
+  // lives inside the header, so it is excluded by construction). Patch it in
+  // after the slots are serialized. A computed value of 0 is written as-is —
+  // readers treat 0 as "legacy, no CRC" (every pre-FIX file has 0 here), so
+  // that 1-in-2^32 file simply skips verification.
+  put_u32le(buf + 8, rs_crc32(buf + kRandoSidecar_FileHeaderSize,
+                              total - kRandoSidecar_FileHeaderSize));
 
   bool ok = atomic_write_and_commit(path, buf, total);
   free(buf);
@@ -481,14 +567,30 @@ bool RandoSave_ReadFile(const char *path,
   uint32 hdr_used = RandoSave_DeserializeFileHeader(buf, (uint32)fsize, &fh);
   if (hdr_used == 0 || fh.slot_count != kRandoSidecar_SlotCount) { free(buf); return false; }
 
-  // Slots in a version-2 file carry a trailing settings blob; version-1 files
-  // do not. Key the body layout on the file's declared format_version so an old
-  // (v1) sidecar still loads correctly (its slots are 28 bytes shorter).
-  bool with_settings = (fh.format_version >= 2);
+  // FIX #13 — verify file_crc when present. 0 = legacy file (every writer
+  // before the CRC landed wrote 0) → accept without verification. The CRC
+  // covers the slot region only (bytes after the 16-byte header), matching
+  // the writer.
+  if (fh.file_crc != 0) {
+    uint32 actual = rs_crc32(buf + kRandoSidecar_FileHeaderSize,
+                             (uint32)fsize - kRandoSidecar_FileHeaderSize);
+    if (actual != fh.file_crc) {
+      fprintf(stderr,
+              "RandoSave_ReadFile: sidecar CRC mismatch (file %08x != computed %08x) "
+              "— treating file as corrupt\n",
+              (unsigned)fh.file_crc, (unsigned)actual);
+      free(buf);
+      return false;
+    }
+  }
+
+  // Key the body layout on the file's declared format_version so older
+  // sidecars still load correctly: v1 slots lack the settings blob (28 bytes
+  // shorter than v2), v2 slots lack the v3 extension block (8 bytes shorter).
   uint32 off = hdr_used;
   for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
     uint32 used = deserialize_slot_versioned(buf + off, (uint32)fsize - off,
-                                             &out_slots[i], with_settings);
+                                             &out_slots[i], fh.format_version);
     if (used == 0) { free(buf); return false; }
     off += used;
   }
@@ -592,7 +694,10 @@ bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
   // Defensive: ensure placement_count and placement_table_size are
   // consistent with the in-memory sparse list bounds. If
   // placement_table_size implies more locations than the static array can
-  // hold, refuse — caller-side bug.
+  // hold, refuse — caller-side bug. An ODD byte size is likewise a caller
+  // bug (the table is a uint16[]); RandoSave_WriteFile would refuse it too,
+  // but failing here names the offending slot write (FIX #13).
+  if (s.header.placement_table_size & 1) return false;
   uint32 loc_count = (uint32)s.header.placement_table_size / 2u;
   if (loc_count > (sizeof(s.placements) / sizeof(s.placements[0]))) {
     return false;
@@ -678,6 +783,9 @@ void RandoSave_SelfCheck(void) {
   src.header.bow_owned = 0x03;           // wood + silver
   // FIX #6 prize/medallion accepted-attempt round-trip coverage (@75).
   src.header.prize_attempt = 0x07;       // distinct non-zero attempt index
+  // FIX #4 entrance-layout digest round-trip coverage (format_version 3
+  // extension block, @0-2 after the settings blob).
+  src.header.entrance_digest24 = 0xABCDEF;
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -709,13 +817,20 @@ void RandoSave_SelfCheck(void) {
   // Rando flute/shovel decouple: flute_shovel_owned byte layout @69.
   if (buf[69] != 0x05) selfcheck_die("flute_shovel_owned at @69 wrong");
   // format_version 2: settings_present @70, and the canonical blob trails the
-  // bitmap at offset (base size = header + placements + bitmap).
+  // bitmap at offset (base size = header + placements + bitmap). format_version
+  // 3: the extension block (entrance_digest24 LE @0-2) trails the blob.
   if (buf[70] != 1) selfcheck_die("settings_present at @70 wrong");
   {
-    uint32 base = RandoSave_SlotOnDiskSize(src.header.placement_table_size) - kSettingsCanonicalLen;
-    if (buf[base] != 0xC0) selfcheck_die("settings_canonical blob not at expected offset");
-    if (buf[base + kSettingsCanonicalLen - 1] != (uint8)(0xC0 + kSettingsCanonicalLen - 1))
+    uint32 blob = RandoSave_SlotOnDiskSize(src.header.placement_table_size)
+                  - kSettingsCanonicalLen - kRandoSidecar_SlotExtV3Size;
+    if (buf[blob] != 0xC0) selfcheck_die("settings_canonical blob not at expected offset");
+    if (buf[blob + kSettingsCanonicalLen - 1] != (uint8)(0xC0 + kSettingsCanonicalLen - 1))
       selfcheck_die("settings_canonical blob tail wrong");
+    uint32 ext = blob + kSettingsCanonicalLen;
+    if (buf[ext] != 0xEF || buf[ext + 1] != 0xCD || buf[ext + 2] != 0xAB)
+      selfcheck_die("entrance_digest24 not at expected v3 ext offset (LE)");
+    for (uint32 r = 3; r < kRandoSidecar_SlotExtV3Size; r++)
+      if (buf[ext + r] != 0) selfcheck_die("v3 ext reserved bytes must be zero");
   }
   // Phase C entrance shuffle: entrance_axes @71, entrance_attempt @72.
   if (buf[71] != 0x05) selfcheck_die("entrance_axes at @71 wrong");
@@ -756,6 +871,7 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.boomerang_owned != src.header.boomerang_owned) selfcheck_die("boomerang_owned round-trip");
   if (dst.header.bow_owned != src.header.bow_owned) selfcheck_die("bow_owned round-trip");
   if (dst.header.prize_attempt != src.header.prize_attempt) selfcheck_die("prize_attempt round-trip");
+  if (dst.header.entrance_digest24 != src.header.entrance_digest24) selfcheck_die("entrance_digest24 round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
@@ -902,12 +1018,78 @@ void RandoSave_SelfCheck(void) {
     uint32 v1_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v1_bitmap;  // NO blob
 
     RandoSidecarSlot v1dst;
-    uint32 v1_used = deserialize_slot_versioned(v1buf, v1_total, &v1dst, false);
+    uint32 v1_used = deserialize_slot_versioned(v1buf, v1_total, &v1dst, 1);
     if (v1_used != v1_total) selfcheck_die("v1 compat: used != base total (blob must be absent)");
     if (v1dst.header.settings_present != 0) selfcheck_die("v1 compat: settings_present must be forced 0");
+    if (v1dst.header.entrance_digest24 != 0) selfcheck_die("v1 compat: entrance_digest24 must be forced 0");
     if (v1dst.placement_count != 1 || v1dst.placements[0].location_id != 5 ||
         v1dst.placements[0].item_id != 50) selfcheck_die("v1 compat: placement round-trip");
     if (v1dst.checked_bitmap[0] != 0x05) selfcheck_die("v1 compat: bitmap round-trip");
+  }
+
+  // -------------------------------------------------------------------------
+  // format_version 2 backward-compat: a v2 slot has the settings blob but NO
+  // v3 extension block. Deserialize with format_version=2 (the path
+  // RandoSave_ReadFile takes for a v2 file) and confirm the blob loads while
+  // entrance_digest24 is forced 0 (= legacy warn-only entrance behavior).
+  // -------------------------------------------------------------------------
+  {
+    uint8 v2buf[256];
+    memset(v2buf, 0, sizeof(v2buf));
+    serialize_slot_header(&src.header, v2buf);
+    uint32 loc_count = (uint32)src.header.placement_table_size / 2;
+    uint8 *p = v2buf + kRandoSidecar_SlotHeaderSize;
+    for (uint32 i = 0; i < loc_count; i++) put_u16le(p + i * 2, kRandoSidecar_NoPlacementSentinel);
+    put_u16le(p + 5 * 2, 50);
+    p += loc_count * 2;
+    uint32 v2_bitmap = (loc_count + 7) >> 3;
+    p[0] = 0x05;
+    p += v2_bitmap;
+    memcpy(p, src.settings_canonical, kSettingsCanonicalLen);
+    uint32 v2_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v2_bitmap +
+                      kSettingsCanonicalLen;  // NO ext block
+
+    RandoSidecarSlot v2dst;
+    uint32 v2_used = deserialize_slot_versioned(v2buf, v2_total, &v2dst, 2);
+    if (v2_used != v2_total) selfcheck_die("v2 compat: used != v2 total (ext must be absent)");
+    if (v2dst.header.entrance_digest24 != 0) selfcheck_die("v2 compat: entrance_digest24 must be forced 0");
+    if (v2dst.header.settings_present != 1) selfcheck_die("v2 compat: settings_present round-trip");
+    if (memcmp(v2dst.settings_canonical, src.settings_canonical, kSettingsCanonicalLen) != 0)
+      selfcheck_die("v2 compat: settings blob round-trip");
+    if (v2dst.placement_count != 1 || v2dst.placements[0].location_id != 5 ||
+        v2dst.placements[0].item_id != 50) selfcheck_die("v2 compat: placement round-trip");
+    if (v2dst.checked_bitmap[0] != 0x05) selfcheck_die("v2 compat: bitmap round-trip");
+  }
+
+  // -------------------------------------------------------------------------
+  // FIX #13 — file_crc algorithm vector + odd placement_table_size rejection.
+  // -------------------------------------------------------------------------
+  {
+    // Standard CRC-32 check vector: CRC32("123456789") == 0xCBF43926.
+    if (rs_crc32((const uint8 *)"123456789", 9) != 0xCBF43926u) {
+      selfcheck_die("rs_crc32 known-vector mismatch (not standard CRC-32)");
+    }
+    // An odd placement_table_size must be refused on BOTH sides: the writer
+    // would otherwise leak one uninitialized buffer byte (sizing counts the
+    // raw odd size; the body writes location_count*2), and a loader given an
+    // odd size would disagree with the writer on where the bitmap starts.
+    RandoSidecarSlot odd = src;
+    odd.header.placement_table_size = 43;  // odd — corrupt by construction
+    uint8 odd_buf[256];
+    if (RandoSave_SerializeSlot(&odd, odd_buf, sizeof(odd_buf)) != 0) {
+      selfcheck_die("serialize must reject odd placement_table_size");
+    }
+    // Loader side: serialize the valid slot afresh (`buf` was magic-corrupted
+    // by an earlier reject test), then corrupt the size field (@61 u16 LE) to
+    // an odd value — deserialize must reject it.
+    uint8 corrupt[256];
+    uint32 cw = RandoSave_SerializeSlot(&src, corrupt, sizeof(corrupt));
+    if (cw == 0) selfcheck_die("re-serialize for odd-size loader test");
+    put_u16le(corrupt + 61, 43);
+    RandoSidecarSlot odd_dst;
+    if (RandoSave_DeserializeSlot(corrupt, cw, &odd_dst) != 0) {
+      selfcheck_die("deserialize must reject odd placement_table_size");
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -952,7 +1134,7 @@ void RandoSave_SelfCheck(void) {
     // locations), drift the version, deserialize on the "newer binary",
     // and confirm `placement_table_size` round-trips exactly.
     //
-    // Vacuous-by-construction note (audit follow-up): the cross-registry
+    // Vacuous-by-construction note: the cross-registry
     // failure mode this is meant to guard against (a loader that re-derives
     // from current-binary registry count instead of reading the slot's own
     // size) is structurally impossible in `RandoSave_DeserializeSlot` —

@@ -190,6 +190,22 @@ void InvertedEntrances_Teardown(void) {
   }
 }
 
+// See header — the saved pristine asset-126 pointer while installed, else NULL.
+// Install captures it AFTER Entrance_RuntimeTeardown has run (activation order
+// in Rando_ActivateSidecarSlot), so it is always the raw vanilla table, never
+// another subsystem's shadow.
+const uint8 *InvertedEntrances_SavedEntranceIdOrig(void) {
+  InvertedShadow *s = FindShadow(kAsset_Overworld_Entrance_Id);
+  return s != NULL ? s->orig : NULL;
+}
+
+// See header — test support: enumerate the shadowed asset indices.
+int InvertedEntrances_ShadowedAssets(uint8 *out, int cap) {
+  for (int i = 0; i < (int)kInvertedShadowCount && i < cap; i++)
+    out[i] = g_shadows[i].asset_index;
+  return (int)kInvertedShadowCount;
+}
+
 void InvertedEntrances_Install(uint8 world_state) {
   // Tear down any prior install first, so a slot-switch without an intervening
   // Teardown is safe (mirrors Entrance_RuntimeInstall's leading Teardown).

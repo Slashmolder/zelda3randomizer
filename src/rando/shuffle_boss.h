@@ -98,7 +98,7 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type);
 // SUPERSEDED — do NOT call at runtime (see BossShuffle_RemapSpriteType above).
 // Retained only for the selftest cross-check.
 //
-// Per-site instrumentation — audit §65 M1 follow-up.
+// Per-site instrumentation.
 //
 // Returns true if `vanilla_sprite_type` is a room-data secondary segment
 // of a boss whose primary has been remapped to something else (i.e., the

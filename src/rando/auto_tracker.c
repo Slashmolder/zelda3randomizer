@@ -525,6 +525,8 @@ static struct {
   uint32 last_counter;
   bool last_active;
   bool last_completed;
+  uint8 last_prog;   // last sram_progress_indicator (Standard castle-escape bumps
+                     // RescuedZelda-gated reachability WITHOUT moving the counter)
   uint32 msg_seq;
 } g_at;
 
@@ -709,8 +711,14 @@ void AutoTracker_ServiceFrame(void) {
   // 0x1B) — which otherwise blips game_completed=true for one frame on slot load.
   bool completed = active && (main_module_index == 0x19 || main_module_index == 0x1A);
 
+  // sram_progress_indicator is folded into the change test (and Rando_GetLive-
+  // Reachability's own memo key): in a Standard seed the castle-escape sets it to
+  // 2, enabling every RescuedZelda-gated region WITHOUT bumping the reachability
+  // counter — without this, subscribers keep a stale `reachable` set until the
+  // next location check.
   bool changed = !g_at.have_last || counter != g_at.last_counter ||
-                 active != g_at.last_active || completed != g_at.last_completed;
+                 active != g_at.last_active || completed != g_at.last_completed ||
+                 (uint8)sram_progress_indicator != g_at.last_prog;
 
   bool any_new = false;
   for (int i = 0; i < AT_MAX_CLIENTS; i++)
@@ -745,6 +753,7 @@ void AutoTracker_ServiceFrame(void) {
       g_at.last_counter = counter;
       g_at.last_active = active;
       g_at.last_completed = completed;
+      g_at.last_prog = (uint8)sram_progress_indicator;
     }
     at_str_free(&snap);
   }

@@ -796,3 +796,23 @@ items:
       named Item class in app/Item.php (modeled inline at shop-region
       construction). Phase B Slice 3a adds the registry entry so the
       shop-dispatch path can route through the placement table.
+
+  - id: 132
+    name: TrapDamage
+    category: trap
+    dispatch: direct_trap_damage
+    notes: |
+      Masquerade trap. Looks like a legitimate item in field/direct-grant
+      confirmation paths, but on pickup shows the trap message, deals
+      non-lethal damage, and skips Link_ReceiveItem. Inserted only when
+      settings.traps is nonzero.
+
+  - id: 133
+    name: TrapFreeze
+    category: trap
+    dispatch: direct_trap_freeze
+    notes: |
+      Masquerade trap. Looks like a legitimate item in field/direct-grant
+      confirmation paths, but on pickup shows the trap message, briefly
+      freezes/stuns Link, and skips Link_ReceiveItem. Inserted only when
+      settings.traps is nonzero.

@@ -403,6 +403,7 @@
     <ClCompile Include="src\rando\shuffle_boss.c" />
     <ClCompile Include="src\rando\shuffle_drops.c" />
     <ClCompile Include="src\rando\shuffle_enemies.c" />
+    <ClCompile Include="src\rando\customizer.c" />
     <ClCompile Include="src\rando\shuffle_entrance.c" />
     <ClCompile Include="src\rando\shuffle_cosmetic.c" />
     <ClCompile Include="src\rando\inverted_entrances.c" />
@@ -960,8 +961,15 @@
        src\rando\item_ids.h, src\rando\chest_lookup.h, src\rando\icon_atlas.h,
        src\rando\direct_grant_icons.h from assets\rando\*.yaml +
        assets\chest_data.py (ALTTPR chest-name catalog; the vanilla chest table
-       itself is read from the gitignored assets\rando\chest_table.gen.bin). -->
+       itself is read from the gitignored assets\rando\chest_table.gen.bin) +
+       the committed door-shuffle manifest assets\rando\door_predicates.gen.json
+       (emitted by gen_door_tables.py from a reference checkout, NOT by this
+       build) and its companion assets\rando\door_portals.yaml. -->
   <!-- RandoCodegenInput = EXACTLY the files rando_logic_gen.py reads — no more, no less.
+       Two deliberate exceptions: assets\rando\chest_table.gen.bin (gitignored — absent in
+       a fresh worktree, and an absent Input makes the Target always-run, see below) and
+       assets\rando\logic.schema.yaml (existence-checked only, contents never parsed, so
+       it cannot affect the outputs).
        Too few → an incremental build skips codegen on a stale-output check and ships a
        stale logic_data.c. Too many (e.g. @(None), which pulls in tables\zelda3_assets.dat
        + saves\ref\*.sav that codegen never reads) → spurious rebuilds, or always-run when
@@ -979,6 +987,8 @@
     <RandoCodegenInput Include="assets\rando\direct_grant_icons.yaml" />
     <RandoCodegenInput Include="assets\rando\logic.yaml" />
     <RandoCodegenInput Include="assets\rando\macros.yaml" />
+    <RandoCodegenInput Include="assets\rando\door_predicates.gen.json" />
+    <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
     <RandoCodegenInput Include="assets\rando_logic_gen.py" />
     <RandoCodegenInput Include="assets\chest_data.py" />

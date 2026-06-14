@@ -6,7 +6,7 @@
 // main thread, so NO mutex is needed. The ownership split is a discipline, not a lock:
 //   UI side mutates:   pending, pending_recommended_features0, seed_u64,
 //                      target_slot_index, generate_requested, load_requested,
-//                      load_slot_index.
+//                      load_slot_index, paste_armed, last_pasted_settings_hash16.
 //   Game side mutates: generate_in_progress, generate_status, generate_error,
 //                      last_generated_* (the spoiler-viewer snapshot).
 // No field is written by both sides.
@@ -39,6 +39,11 @@ typedef struct RandoWindowBridge {
   uint64 seed_u64;                       // UI-chosen seed
   int target_slot_index;                 // kind-toggle target; -1 = none
 
+  // add-rando-share-string-v2 D6 — armed on every successful paste; cleared
+  // only by the Generate-anyway confirm. UI side owns both.
+  bool paste_armed;
+  uint8 last_pasted_settings_hash16[16];
+
   bool generate_requested;               // UI sets true; game consumes at frame start
   bool load_requested;                   // UI "Load it now" sets true; game consumes at frame start
   int load_slot_index;                   // slot to load when load_requested (UI sets; game reads)
@@ -59,6 +64,12 @@ typedef struct RandoWindowBridge {
   // last_generated_placement; UI reads. (game owns)
   RandoSettings last_generated_settings;
   char last_generated_share_string[kShareStringBase32MaxLen];
+  // v2 EXCHANGE form of the just-generated seed, for the post-generate
+  // "Copy share string" affordance (the most natural share action). Distinct
+  // from the v1 identity string above, which stays the spoiler-file form
+  // (design D1). Empty under customizer (no v2 form, D5) — the copy button
+  // falls back to the v1 string. (game owns)
+  char last_generated_share_string_v2[kShareStringBase32MaxLen];
   uint64 last_generated_seed_u64;
   bool last_generated_goal_completable;
 } RandoWindowBridge;
@@ -69,8 +80,12 @@ extern RandoWindowBridge g_rando_window_bridge;
 // generate-time snapshot (last_generated_*) and calls Spoiler_Write. Lives in the
 // C bridge TU because rando_spoiler.h uses a C11 _Static_assert invalid in the
 // C++ window TU. `txt_path` may be NULL to skip the text companion (clipboard
-// path). Returns true on success. Caller (UI) is on the main thread; this only
-// reads bridge snapshot state + writes the named files (no g_ram).
+// path). Returns true on success. Caller (UI) is on the main thread; this
+// reads bridge snapshot state + writes the named files (no g_ram). It DOES
+// swap the shared hint globals for the write — Spoiler_Write consumes
+// Rando_GetHintString at write time, so the snapshot's hints are regenerated
+// (deterministic from settings+placement) before the write and the active
+// slot's hints are re-installed after (cleared when no slot is active).
 bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_path);
 
 // Lifecycle / derived state.

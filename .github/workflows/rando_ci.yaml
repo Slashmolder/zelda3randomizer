@@ -66,9 +66,17 @@ jobs:
           --base-sha "${{ github.event.pull_request.base.sha }}" \
           --head-sha "${{ github.event.pull_request.head.sha }}"
 
-    - name: check_generator_version (1.0e, push event — presence-only)
+    - name: check_generator_version (1.0e, push event — diff vs before)
       if: github.event_name != 'pull_request'
-      run: python assets/scripts/check_generator_version.py
+      # On a direct push (e.g. a merge that lands via push) diff the push range
+      # so a bump-trigger edit without a version bump fails HERE too, not only on
+      # the PR event (audit L20). github.event.before is 000…0 on the first push
+      # / a force-push; the script's git diff then errors and the check degrades
+      # to presence-only (returns 0), so this can never false-fail.
+      run: |
+        python assets/scripts/check_generator_version.py \
+          --base-sha "${{ github.event.before }}" \
+          --head-sha "${{ github.sha }}"
 
     # Task 1.0a — Regression-corpus manifest schema check. This job does NOT
     # build, so run schema-only; the full corpus (with --binary) runs in the
@@ -150,12 +158,11 @@ jobs:
       shell: bash
       run: python assets/scripts/check_init_order.py
 
-    # Task 1.0f — Link-time symbol blocklist (scaffold; activates when src/rando/*.o exists)
-    # No build step in A0 because src/rando/ is empty. When the first rando .c
-    # file lands, add ``- run: make zelda3`` and then the script will scan objects.
-    - name: check_link_symbols (1.0f)
-      shell: bash
-      run: python assets/scripts/check_link_symbols.py
+    # Task 1.0f (check_link_symbols) does NOT run here: it scans compiled
+    # src/rando/*.o objects, and this job never builds — invoking it pre-build
+    # was a guaranteed no-op "clean pass". It runs post-build in the
+    # rando-determinism job below (with --require-objects so it can never
+    # silently scan nothing again).
 
     # Task 1.0h — Benchmark gates (scaffold; activates with task 3.8)
     - name: run_rando_benchmarks (1.0h)
@@ -206,10 +213,28 @@ jobs:
     - name: Build (just the binary)
       run: make -j2 zelda3
 
+    # Task 1.0f — Link-time symbol blocklist. An ARTIFACT check: scans the
+    # just-built src/rando/*.o via `nm -u` for forbidden non-deterministic
+    # symbols (rand/time/...), so it must run AFTER the build.
+    # --require-objects: zero objects here means the guard is broken, not
+    # clean — fail instead of the local-ergonomics pass.
+    - name: check_link_symbols (1.0f, post-build)
+      run: python assets/scripts/check_link_symbols.py --require-objects
+
     - name: Run --rando-selftest
       env:
         DISPLAY: ''  # confirm headless: no display server required
       run: ./zelda3 --rando-selftest
+
+    # Door-shuffle generation net (add-rando-door-shuffle): stitches + proves
+    # every shuffleable dungeon across N seeds (connectivity / prover /
+    # determinism / oracle==stitcher cross-checks). Like --rando-selftest it
+    # runs from committed tables BEFORE LoadAssets (see main.c argv handling),
+    # so no zelda3_assets.dat is needed.
+    - name: Run --door-selftest
+      env:
+        DISPLAY: ''
+      run: ./zelda3 --door-selftest
 
     # Task 1.2 / 11.2 init-order replay guard (D7). Replays each
     # saves/ref/Chapter*.sav via the binary's --vanilla-ram-check CLI mode

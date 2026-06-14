@@ -33,6 +33,10 @@ extern uint8 g_rando_mushroom_held;       // 1 = true Mushroom possession (rando
 extern uint8 g_rando_flute_shovel_owned;  // kRandoFluteShovel_* bits: Shovel=0x01, Flute=0x02
 extern uint8 g_rando_boomerang_owned;     // kRandoBoomerang_* bits: Blue=0x01, Red=0x02
 extern uint8 g_rando_bow_owned;           // kRandoBow_* bits: Wood=0x01, Silver=0x02
+// Retro genericKeys: the small-key pool collapses to one shared counter
+// link_generic_keys (0xF38B); the per-dungeon slots (0xF37C+gidx) are dead. The
+// dungeon-keys widgets read/write the shared slot instead under this mode.
+bool Rando_IsGenericKeysActive(void);
 }
 
 // ---------------------------------------------------------------------------
@@ -847,10 +851,20 @@ static void DbgDungeonBit(const char *id, uint32 wordbase, int gidx) {
 }
 
 static void DbgDungeonKeys(int gidx) {
-  int v = g_ram[0xF37C + gidx];
+  // Under Retro genericKeys the per-dungeon slots are dead — the small-key pool
+  // is the single shared counter link_generic_keys (0xF38B), which SaveDungeonKeys
+  // writes instead of the per-dungeon slot. Read/write that shared byte so this
+  // widget's readout matches the real pool (the per-dungeon write would be a no-op).
+  bool generic = Rando_IsGenericKeysActive();
+  int v = g_ram[generic ? 0xF38B : (0xF37C + gidx)];
   if (v > 99) v = 99;
   ImGui::SetNextItemWidth(96);
   if (ImGui::SliderInt("##keys", &v, 0, 99)) {
+    if (generic) {
+      Cheats_PokeByte(0xF38B, v, 0, 99);  // shared generic-key pool
+      Cheats_PokeByte(0xF36F, v, 0, 99);  // live counter (HUD/doors see it now)
+      return;
+    }
     Cheats_PokeByte(0xF37C + gidx, v, 0, 99);  // saved per-dungeon slot
     // If Link is standing in this dungeon, also bump the live counter so the
     // HUD/doors see it immediately (mirrors SaveDungeonKeys; HC proper raw
@@ -1204,8 +1218,15 @@ void DbgInventory_Render(void) {
       Cheats_PokeWord(0xF364, 0xFFFF, 0, 0xFFFF);  // compasses
       Cheats_PokeWord(0xF366, 0xFFFF, 0, 0xFFFF);  // big keys
       Cheats_PokeWord(0xF368, 0xFFFF, 0, 0xFFFF);  // maps
-      for (int i = 0; i < (int)(sizeof kDbgDungeons / sizeof kDbgDungeons[0]); i++)
-        Cheats_PokeByte(0xF37C + kDbgDungeons[i].gidx, 99, 0, 99);
+      if (Rando_IsGenericKeysActive()) {
+        // Retro genericKeys: the per-dungeon slots are dead — fill the single
+        // shared pool (0xF38B) + the live counter (mirrors DbgDungeonKeys).
+        Cheats_PokeByte(0xF38B, 99, 0, 99);
+        Cheats_PokeByte(0xF36F, 99, 0, 99);
+      } else {
+        for (int i = 0; i < (int)(sizeof kDbgDungeons / sizeof kDbgDungeons[0]); i++)
+          Cheats_PokeByte(0xF37C + kDbgDungeons[i].gidx, 99, 0, 99);
+      }
     }
     Help("Gives every item/equipment tier, all medallions, full capacities, "
          "20 hearts, all dungeon items, pendants and crystals. Debug edits do "

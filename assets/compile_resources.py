@@ -753,6 +753,38 @@ def print_sound_banks():
     name, data = compile_music.print_song(song)
     add_asset_uint8(name, data)
 
+def print_rando_custom_item_gfx():
+  # Custom item sprites for the randomizer (add-rando-field-item-custom-art):
+  # ALTTPR items with no vanilla receive-item bundle (entry 0 = Triforce Piece).
+  # Source: assets/rando/custom_item_gfx.png — a committed, MIT-licensed,
+  # indexed-colour sheet of stacked 16x16 cells whose PIXEL VALUES are the SNES
+  # 4bpp pixel indices (regenerate with assets/scripts/gen_custom_item_gfx_png.py;
+  # the PNG's RGB palette is preview-only). Emitted layout per entry (0x80
+  # bytes): 0x40 bytes top 8px row (chars 0x24/0x25), then 0x40 bytes bottom
+  # row (chars 0x34/0x35) — the same shape WriteTo4BPPBuffer_at_7F4000 leaves
+  # in the shared receive-item slot, so the C side can memcpy it straight in.
+  image = Image.open('rando/custom_item_gfx.png')
+  assert image.mode == 'P' and image.width == 16 and image.height % 16 == 0, \
+      'custom_item_gfx.png must be indexed-colour, 16px wide, 16px-cell rows'
+  data = image.tobytes()
+  def encode_4bit_sprite(data, offset, pitch):
+    b = [0] * 32
+    for y in range(8):
+      for x in range(8):
+        v = data[offset + y * pitch + x]
+        assert v < 16, 'custom_item_gfx.png pixel index out of 4bpp range'
+        b[y*2+0] |= (v & 1) << (7-x)
+        b[y*2+1] |= (v >> 1 & 1) << (7-x)
+        b[y*2+16] |= (v >> 2 & 1) << (7-x)
+        b[y*2+17] |= (v >> 3 & 1) << (7-x)
+    return bytes(b)
+  b = b''
+  for cell in range(image.height // 16):
+    for ty in range(2):
+      for tx in range(2):
+        b += encode_4bit_sprite(data, (cell * 16 + ty * 8) * 16 + tx * 8, 16)
+  add_asset_uint8('kRandoCustomItemGfx', b)
+
 def print_all(args):
   print_sound_banks()
   print_dungeon_rooms()
@@ -767,6 +799,7 @@ def print_all(args):
   print_tilemaps()
   print_overworld()
   print_overworld_tables()
+  print_rando_custom_item_gfx()
 
 def write_assets_to_file(print_header = False):
   key_sig = b''

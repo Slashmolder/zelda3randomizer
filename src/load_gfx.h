@@ -35,8 +35,9 @@ void LoadFollowerGraphics();
 void WriteTo4BPPBuffer_at_7F4000(uint8 a);
 void DecodeAnimatedSpriteTile_variable(uint8 a);
 // add-rando-field-item-sprites: gfx index currently in the receive-item VRAM
-// slot (chars 0x24/0x34); 0xFFFF = dirty. Invalidated by every
-// DecodeAnimatedSpriteTile_variable call so the field-item drawer re-DMAs.
+// slot (chars 0x24/0x34); 0xFFFF = dirty. Invalidated by every slot repaint
+// (WriteTo4BPPBuffer_at_7F4000 / DecodeAnimatedSpriteTile_variable) and by
+// snapshot restore, so the field-item drawer re-DMAs.
 extern uint16 g_recv_item_slot_owner;
 void Expand3To4High(uint8 *dst, const uint8 *src, const uint8 *base, int num);
 void LoadTransAuxGFX();

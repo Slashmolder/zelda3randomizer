@@ -6660,8 +6660,8 @@ void Sprite_HeartContainer(int k) {  // 85ef47
 
   if (BYTE(dungeon_room_index2) == 6 && !sprite_z[k])
     SpriteDraw_WaterRipple_WithOamAdjust(k);
-  // Show the placed boss-reward item (e.g. under bossHeartsInPool) instead of the
-  // heart container; vanilla heart when the placement is the heart / no gfx / off.
+  // Show the placed boss-reward item instead of the heart container; vanilla
+  // heart when the placement is the heart / no gfx / off.
   if (boss_loc == 0xFFFFu ||
       !Rando_TryDrawFieldItemSprite(k, boss_loc, ITEM_BossHeartContainer))
     SpriteDraw_SingleLarge(k);
@@ -6686,19 +6686,17 @@ void Sprite_HeartContainer(int k) {  // 85ef47
   // §6.6 dispatch: when this heart-container drop is inside a dungeon AND
   // the current dungeon is one of the 10 main-boss dungeons (EP/DP/TH/PoD/
   // SP/SW/TT/IP/MM/TR), route the grant through Rando_DispatchVanillaGrant
-  // for the matching LOC_<Dungeon>_Boss slot. Phase A's default policy
-  // (`bossHeartsInPool=false`) identity-places BossHeartContainer at these
-  // slots, so the dispatch is a no-op (returns the original lttp_code) for
-  // vanilla play. When Phase B's boss-shuffle rolls out, the dispatch
-  // already-fires correctly.
+  // for the matching LOC_<Dungeon>_Boss slot. Those boss-heart drops are
+  // shuffled locations; when the placed item happens to be BossHeartContainer,
+  // the dispatch is a no-op and the player gets the vanilla heart container.
   // boss_loc resolved at the top of the handler (shared with the field-item draw).
   if (sprite_A[k]) {
     uint8 lttp_code = 0x3e;
     if (boss_loc != 0xFFFFu) {
       lttp_code = Rando_DispatchVanillaGrant(boss_loc, ITEM_BossHeartContainer, lttp_code);
     }
-    // rando (bossHeartsInPool / item shuffle): the boss-heart slot can hold an
-    // arbitrary item. item_receipt_method=2 produces a step-2 receipt, and
+    // In rando, the boss-heart slot can hold an arbitrary item.
+    // item_receipt_method=2 produces a step-2 receipt, and
     // Ancilla22_ItemReceipt only clears flag_is_link_immobilized for the
     // self-clearing heart code 0x3e — every other code relies on the
     // `ancilla_step != 2` path, which a step-2 receipt skips. So a non-heart
@@ -8434,12 +8432,14 @@ void SpritePrep_KingZora(int k) {  // 868f0f
   // elsewhere first would despawn Zora before his placed check is collected,
   // making LOC_King_Zora unreachable (and any progression placed there would
   // make the seed unbeatable). Gate the despawn on whether the location has
-  // actually been checked (Sprite_Zora_RegurgitateFlippers dispatches
-  // Rando_DispatchVanillaGrant(LOC_King_Zora, ...), which marks it). Once
-  // checked he despawns as before, so a revisit can't re-trigger the 500-rupee
-  // regurgitate (Rando_OnLocationCheck is NOT idempotent — a second dispatch
-  // would re-grant). Keep the vanilla proxy when rando is inactive so the
-  // RAM-compare path stays byte-identical.
+  // actually been checked. The reward is dispatched at PICKUP, not spawn: the
+  // regurgitated medallion (sprite type 0xc0, flags3 0x54) routes to
+  // Sprite_Catfish_QuakeMedallion, which dispatches
+  // Rando_DispatchVanillaGrant(LOC_King_Zora, ...) — marking the location — only
+  // when Link collects it. Once checked he despawns as before, so a later
+  // revisit can't re-trigger the 500-rupee regurgitate (Rando_OnLocationCheck is
+  // NOT idempotent — a second dispatch would re-grant). Keep the vanilla proxy
+  // when rando is inactive so the RAM-compare path stays byte-identical.
   bool already_collected = (enhanced_features1 & kFeatures1_RandomizerActive)
                                ? Rando_IsLocationChecked(LOC_King_Zora)
                                : (bool)link_item_flippers;
@@ -11845,6 +11845,16 @@ void Sprite_3A_MagicBat(int k) {  // 86c044
       // here would silently substitute the wrong item). Peek the
       // placement first to disambiguate.
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        // NOTE: this peek and the Rando_DispatchVanillaGrant below (non-identity
+        // branch) BOTH funnel through Rando_OnLocationCheck, so LOC_Magic_Bat is
+        // checked twice in this frame. All of that function's side effects are
+        // idempotent/benign here: Rando_MarkLocationChecked just sets a bit; the
+        // mushroom-held flag is a set-to-1; and g_rando_oncheck_call_count is a
+        // snapshot-load DELTA tripwire (not an absolute count), so a second bump
+        // within one frame doesn't trip it. A side-effect-free Placement_Lookup
+        // peek exists but lives in rando_placement.h (not included here); the
+        // double-call is harmless, so it's left as-is rather than widening the
+        // include surface of this hot file.
         uint16 placed = Rando_OnLocationCheck(LOC_Magic_Bat, ITEM_HalfMagic);
         if (placed == ITEM_HalfMagic) {
           // Identity (or no override) — strictly-progressive magic advance
@@ -18991,16 +19001,50 @@ void Sprite_Catfish_QuakeMedallion(int k) {  // 9ddf54
     if (!submodule_index && Sprite_CheckDamageToLink_same_layer(k)) {
       sprite_state[k] = 0;
       item_receipt_method = 0;
-      uint8 lttp_code = sprite_A[k];  // = 0x11 (Quake) per Catfish_RegurgitateMedallion
+      // sprite type 0xc0 is shared by TWO rewards: the Great Catfish's
+      // regurgitated Quake medallion (sprite_A = 0x11, sprite_flags3 = 0x58)
+      // and King Zora's regurgitated Flippers (sprite_A = 30, sprite_flags3 =
+      // 0x54). sprite_flags3 is written once at spawn and is NOT touched again
+      // anywhere on the 0xc0 reward sprite's path (neither this handler nor its
+      // draw helpers mutate it), so it is the stable discriminator between the
+      // two sources. Without it the shared pickup would always dispatch
+      // LOC_Catfish, consuming the Catfish's check at King Zora and stranding
+      // whatever was placed at the Catfish.
+      uint8 lttp_code = sprite_A[k];  // Catfish: 0x11 (Quake); King Zora: 30 (Flippers)
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
-        lttp_code = Rando_DispatchVanillaGrant(LOC_Catfish, ITEM_Quake, lttp_code);
+        uint16 loc_id; uint16 vanilla_item;
+        if (sprite_flags3[k] == 0x54) {  // King Zora's regurgitated reward
+          loc_id = LOC_King_Zora;
+          vanilla_item = ITEM_Flippers;
+        } else {                         // the real Great Catfish (flags3 0x58)
+          loc_id = LOC_Catfish;
+          vanilla_item = ITEM_Quake;
+        }
+        lttp_code = Rando_DispatchVanillaGrant(loc_id, vanilla_item, lttp_code);
       }
       Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
     }
   }
   if (sprite_delay_aux3[k])
     Oam_AllocateFromRegionC(8);
-  SpriteDraw_SingleLarge(k);
+  // Draw the PLACED item's icon instead of the vanilla Flippers/Quake tile so
+  // the floating reward looks randomized from spawn — not vanilla-until-grabbed
+  // — exactly like a free-standing field item. Same flags3 discriminator as the
+  // grant below; gated on the field-item-sprites toggle (Rando_TryDrawField-
+  // ItemSprite → Rando_GetFieldItemIcon, which also handles big/small OAM + the
+  // custom-art palette). Falls back to the vanilla SpriteDraw_SingleLarge when
+  // rando is inactive, the placement equals the vanilla item, or the placed item
+  // has no receive gfx. The placed gfx loads on this first draw frame (before
+  // the frame is displayed), so there is no one-frame vanilla flash.
+  bool rando_drew_item = false;
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    bool is_zora = (sprite_flags3[k] == 0x54);
+    rando_drew_item = Rando_TryDrawFieldItemSprite(
+        k, is_zora ? LOC_King_Zora : LOC_Catfish,
+        is_zora ? (uint16)ITEM_Flippers : (uint16)ITEM_Quake);
+  }
+  if (!rando_drew_item)
+    SpriteDraw_SingleLarge(k);
   if (Sprite_ReturnIfInactive(k))
     return;
   Sprite_MoveXYZ(k);
@@ -19162,25 +19206,19 @@ void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
   sprite_y_vel[j] = 16;
   // sprite_A[j] becomes the LttP receive code when Link picks up the
   // spawned medallion. Vanilla: 30 (0x1e) = Flippers (kMemoryLocationToGiveItemTo
-  // index 30 = 0xf356 = link_item_flippers). With rando active, dispatch
-  // through the placement table → the placed item's LttP code lands here.
+  // index 30 = 0xf356 = link_item_flippers). King Zora and the Great Catfish
+  // BOTH spawn sprite type 0xc0; the shared pickup handler
+  // (Sprite_Catfish_QuakeMedallion) routes on sprite_A: 0 -> BigFish boss,
+  // 0x80 -> splash, anything else -> the QuakeMedallion pickup. 30 keeps King
+  // Zora on the pickup path. Under rando the placement dispatch is DEFERRED to
+  // pickup (Sprite_Catfish_QuakeMedallion) — disambiguated there by the stable
+  // sprite_flags3 == 0x54 marker set below — so the reward is only granted when
+  // Link actually collects it (closes the spawn-time missable window), and so a
+  // direct-grant/skip result can never reach BigFish via sprite_A == 0.
   sprite_A[j] = 30;
-  if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_King_Zora, ITEM_Flippers, 30);
-    if (Rando_ShouldSkipReceive(placed_lttp)) {
-      // Direct-grant already wrote the placed item (HalfMagic / prize / etc.).
-      // Despawn the regurgitated-flippers sprite so we don't double-grant
-      // and so that pickup interaction won't re-trigger Link_ReceiveItem.
-      sprite_state[j] = 0;
-      // §7.6 + Slice 9 — King Zora direct-grant cue with placed-item icon.
-      Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-      return;
-    }
-    sprite_A[j] = placed_lttp;
-  }
   SpriteSfx_QueueSfx2WithPan(j, 0x20);
   sprite_flags2[j] = 0x83;
-  sprite_flags3[j] = 0x54;
+  sprite_flags3[j] = 0x54;  // discriminator: King Zora reward vs Catfish (0x58)
   sprite_oam_flags[j] = 0x54 & 15;
   sprite_delay_aux3[j] = 0x30;
   DecodeAnimatedSpriteTile_variable(0x11);
@@ -26247,8 +26285,8 @@ void ShopItem_GenericKey(int k) {
       sprite_state[k] = 0;
       item_receipt_method = 0;
       Rando_GrantGenericKeyPurchase();
-      // GenericKey (id 125) has no kDirectGrantIcons[] entry (gfx==0), so this
-      // falls back to the audio + HUD confirmation cue — no icon ancilla.
+      // GenericKey maps to the small-key bundle in kDirectGrantIcons[] (gfx
+      // 0x0f via direct_grant_icons.yaml), so this also pops the key icon.
       Rando_ShowDirectGrantConfirmation((uint8)ITEM_GenericKey);
     } else {
       Sprite_ShowMessageUnconditional(0x17c);

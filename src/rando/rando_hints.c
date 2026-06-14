@@ -117,6 +117,8 @@ static bool item_is_junk(uint16 item_id) {
     case ITEM_Bombs3:
     case ITEM_Bombs10:
     case ITEM_Rupoor:
+    case ITEM_TrapDamage:
+    case ITEM_TrapFreeze:
       return true;
     default:
       return false;

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -85,7 +86,17 @@ static const uint8 kVanillaAssetsHash[32] = {{
 
 #endif  // ZELDA3_RANDO_VANILLA_ASSETS_HASH_H_
 """
-    args.header.write_text(content, encoding="utf-8")
+    # Atomic write (same rationale as assets/rando_logic_gen.py's atomic_write_text):
+    # vanilla_assets_hash.h is an order-only codegen prereq the Makefile glob-builds
+    # against, so a parallel `make -j` must never read it mid-write. Write a sibling
+    # temp, fsync, then os.replace() (atomic rename) — a reader sees a complete file.
+    # newline default → bytes byte-for-byte identical to the prior write_text.
+    _tmp = args.header.with_name(args.header.name + ".tmp")
+    with open(_tmp, "w", encoding="utf-8") as _f:
+        _f.write(content)
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, args.header)
     print(f"wrote:        {args.header}")
     if known:
         print(f"  kVanillaAssetsHashKnown is now 1 — --assets-must-be-vanilla active.")

@@ -4803,8 +4803,18 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
         // icon refresh + icon ancilla); the actual grant already happened in
         // Rando_DispatchVanillaGrant above, so dropping this call has no grant
         // side effect. To revert just this hunk (restore the second icon),
-        // delete the (void) line and uncomment the original block below.
-        (void)placed_lttp;
+        // replace the branch below with `(void)placed_lttp;` and uncomment the
+        // original block.
+        //
+        // Defensive: boss-prize slots are pre-pinned to prizes, so the dispatch
+        // ALWAYS direct-grants and returns kRandoLttpSkip — the branch below is a
+        // no-op today. But if a future placement ever puts a NON-prize item here,
+        // the dispatch returns a real lttp code and the item would otherwise be
+        // silently dropped (dispatch already marked the location checked). Route
+        // it through Link_ReceiveItem so the placed item is actually granted (the
+        // falling-prize recolor below still applies to the visual).
+        if (!Rando_ShouldSkipReceive(placed_lttp))
+          Link_ReceiveItem(placed_lttp, 0);
         // if (Rando_ShouldSkipReceive(placed_lttp)) {
         //   Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
         // }

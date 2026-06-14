@@ -5,16 +5,12 @@ Rejects new writes to inventory-state cells (``link_item_*``, ``link_bottle_info
 ``link_has_crystals``, etc.) outside the documented dispatch path or the
 exemption list in ``openspec/changes/archive/2026-05-29-add-randomizer-support/audit.md``.
 
-The guard is the long-term enforcement for the Phase 0 audit's discipline:
-once §6 instrumentation lands, every grant-site write goes through
-``Rando_OnLocationCheck`` (or carries an explicit exemption comment). Any new
-write that doesn't match either pattern is a regression.
+The guard enforces the documented grant-write rule: every grant-site write goes
+through ``Rando_OnLocationCheck`` (or carries an explicit exemption comment).
+Any new write that doesn't match either pattern is a regression.
 
-**A0 status (scaffold)**: ``audit.md`` exists but acceptance checks 0.8a-e
-aren't all ticked yet. Until they are, the guard cannot consult a stable
-exemption list, so it runs in **report-only mode** (logs new writes but
-returns zero). When 0.8e ticks (§6 unblocked), flip ``--strict`` on in the
-CI workflow.
+By default the script is report-only (logs new writes but returns zero). Use
+``--strict`` when the exemption list is stable enough for CI enforcement.
 
 Usage:
   python assets/scripts/check_audit_guard.py             # report-only
@@ -36,15 +32,13 @@ EXEMPTION_COMMENT = "rando-exempt:"
 # `kMemoryLocationToGiveItemTo[j]`) and then write through `*p`. Any
 # unflagged `*p[?]\s*[|&^+-]?=` write inside a function whose body
 # mentions one of these names is suspicious because the regex-based
-# direct-cell match above can't catch indirect writes. See memory note
-# `audit_guard_indirect_writes` and §7.7 of add-randomizer-support
-# audit (the pendant double-grant in misc.c:739).
+# direct-cell match above can't catch indirect writes.
 INDIRECT_DISPATCH_TABLES = [
     "kMemoryLocationToGiveItemTo",
     "kValueToGiveItemTo",
 ]
 
-# Cells the audit tracks. Mirrors audit.md §0.1.1 dispatch-table cells.
+# Cells the guard tracks for randomizer grant-write enforcement.
 TRACKED_CELLS = [
     "link_item_bow",
     "link_item_boomerang",
@@ -97,7 +91,6 @@ BOTTLE_WRITE_RE = re.compile(r"\blink_bottle_info\s*\[[^\]]+\]\s*(?:=(?!=)|\+=|-
 # Raw-offset writes (e.g. ``g_ram[0xF374] |= 1`` or ``*(uint8*)(g_ram+0xF374) = 1``)
 # bypass the symbol-name regex above. Parsed from variables.h at scan time so
 # the offsets stay in lockstep with the C-side macro definitions.
-# Cluster-audit (post-e9f20ad) memory note `audit_guard_indirect_writes`.
 DEFINE_RE = re.compile(
     # Accepts both project-style `uint8` / `int16` and stdint-style
     # `uint8_t` / `int16_t` casts. If `variables.h` ever migrates to
@@ -153,7 +146,7 @@ def build_raw_write_regex(offsets: dict[int, str]) -> re.Pattern[str] | None:
     )
     return re.compile(pattern, re.IGNORECASE)
 
-# Dispatch funnel patterns — these are "blessed" writes the audit knows about.
+# Dispatch funnel patterns — these are known allowed write paths.
 DISPATCH_CONTEXT_PATTERNS = [
     re.compile(r"Rando_OnLocationCheck\s*\("),
     re.compile(r"Link_ReceiveItem\s*\("),
@@ -165,7 +158,7 @@ def is_exempted(file_lines: list[str], lineno_zero_based: int) -> bool:
     """Check if the line carries an explicit ``// rando-exempt:`` comment.
 
     Accepts the marker on the same line OR within the preceding contiguous
-    comment block of up to 12 lines (audit rationales often span several
+    comment block of up to 12 lines (exemption rationales often span several
     sentences). The walk-back stops at any blank or non-comment line, so the
     marker has to be in a comment block that's contiguous with the write.
     """
@@ -197,6 +190,18 @@ def is_in_dispatch_context(file_lines: list[str], lineno_zero_based: int) -> boo
     function don't get absorbed into this site's window. Without the
     boundary stop, e.g. a write at the top of function B would falsely
     "see" a `Link_ReceiveItem(...)` near the bottom of function A.
+
+    KNOWN LIMITATION: this is a PROXIMITY heuristic, not a
+    data-flow check — it blesses a tracked-cell write whenever a dispatch
+    funnel call merely appears in the window, even if that call is unrelated
+    to the written cell. It can therefore false-NEGATIVE on a genuinely
+    un-dispatched write that happens to sit a few lines from an unrelated
+    Link_ReceiveItem(...). The reliable escape hatch is the explicit
+    `// rando-exempt: <reason>` comment (checked FIRST in scan_file); prefer
+    it over relying on dispatch proximity. The window is deliberately loose
+    to avoid false-positives on the many legitimate NPC-grant sites; tighten
+    only with care (a same-statement / cell-referencing check) since it can
+    break currently-passing sites.
     """
     # Walk backward from the line above the write site to the start of the
     # current function (or up to 12 lines, whichever is closer).
@@ -365,7 +370,7 @@ def scan_indirect_dispatch_warnings(files: list[Path]) -> list[tuple[Path, str]]
 
     The regex-based scan above misses writes through pointers like
     ``*p = ...`` where ``p`` came from ``kMemoryLocationToGiveItemTo[j]``.
-    Flag those files as "manual audit needed" — auditor confirms every
+    Flag those files as "manual review needed" — a reviewer confirms every
     ``*p`` write in the function carries either a dispatch context or
     an exemption comment.
     """
@@ -384,7 +389,7 @@ def scan_indirect_dispatch_warnings(files: list[Path]) -> list[tuple[Path, str]]
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--strict", action="store_true", help="fail on violation (audit.md 0.8e must have ticked)")
+    parser.add_argument("--strict", action="store_true", help="fail on violation")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -409,9 +414,8 @@ def main(argv: list[str]) -> int:
     # The guard's job is to catch vanilla-side writes that DIDN'T
     # route through rando, not to police rando's own implementation.
     # Indirect-dispatch advisory still surfaces `src/rando/rando.c`
-    # for its `kValueToGiveItemTo` reference, so the auditor's eyeball
+    # for its `kValueToGiveItemTo` reference, so the manual-review
     # path still covers it.
-    # Audit-of-audit LOW-1 of phase-b (e9f20ad cluster-audit follow-on).
     all_c = sorted(SRC_DIR.rglob("*.c"))
     files = [p for p in all_c if "rando" not in p.parts]
     total = 0
@@ -424,8 +428,8 @@ def main(argv: list[str]) -> int:
                 print(f"  > {line}")
 
     # Indirect-dispatch advisory — not a hard error, but flags files
-    # the auditor must eyeball for ``*p`` writes through dispatch
-    # tables that the regex above can't catch.
+    # that need manual review for ``*p`` writes through dispatch tables
+    # that the regex above can't catch.
     # Pass the full file set (including src/rando) so rando-side
     # references to the dispatch tables also surface in the advisory.
     indirect_files = scan_indirect_dispatch_warnings(all_c)
@@ -434,8 +438,7 @@ def main(argv: list[str]) -> int:
         print("check_audit_guard: indirect-dispatch-table references detected.")
         print("  The regex scan above catches direct symbol-name + raw-offset writes,")
         print("  but `*p = ...` writes via these dispatch-table pointers need manual")
-        print("  eyeball. See memory note `audit_guard_indirect_writes` and §7.7 of")
-        print("  add-randomizer-support audit (misc.c:739 pendant double-grant).")
+        print("  review.")
         for path, tbl in indirect_files:
             print(f"  [advisory] {path}: references {tbl}")
 

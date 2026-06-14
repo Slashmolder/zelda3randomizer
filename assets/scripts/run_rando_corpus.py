@@ -158,7 +158,7 @@ def run_activated(binary: Path, manifest: dict) -> int:
                           f"mismatch: expected {expected[:16]}, got {got_pd[:16]}")
                     failures += 1
                     continue
-                # Cluster-audit M2 (of e9f20ad audit): also check sphere
+                # also check sphere
                 # digest. Previously skipped in the ZRSR sub-path, leaving
                 # the manifest's expected_sphere_digest for race-mode entries
                 # unenforced.

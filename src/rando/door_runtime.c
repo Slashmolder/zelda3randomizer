@@ -122,6 +122,11 @@ void DoorRt_Reset(void) {
   g_door_toggles_overridden = false;
   g_door_spiral_pending = 0xFFFF;
   g_door_spiral_source = 0xFFFF;
+  // Mirror DoorRt_ClearSpiralPending: a stale captured dest layer must not
+  // survive a teardown/reactivation, or the next spiral arrival's
+  // Rando_DoorSpiralLayerFix consumes the previous session's plane.
+  g_door_spiral_dst_layer = 0;
+  g_door_spiral_dst_layer_valid = false;
   g_door_fine_active = false;
   DoorRt_KindOverlayClear();
 }

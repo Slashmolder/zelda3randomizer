@@ -222,10 +222,18 @@ locations:
   - { id: 139, name: "Misery Mire Medallion",                 region: MedallionConfig, type: Medallion, vanilla_item: Ether,  source: "app/Region/Standard/Medallions.php:31" }
 
   # ===========================================================================
-  # Fountains (IDs 140..141) — Standard / Open only
+  # Fountains (IDs 140..141) — RETIRED
   # ===========================================================================
-  - { id: 140, name: "Waterfall Bottle",                      region: LightWorld_NorthEast, type: Fountain, vanilla_item: BottleEmpty, source: "app/Region/Standard/Fountains.php:30" }
-  - { id: 141, name: "Pyramid Bottle",                        region: DarkWorld_NorthEast, type: Fountain, vanilla_item: BottleEmpty, source: "app/Region/Standard/Fountains.php:31" }
+  # ids 140\141 (Waterfall Bottle\Pyramid Bottle Fountain slots) RETIRED: ALTTPR
+  # EXCLUDES Fountain locations from the main fill (app/World.php:518,536) and
+  # pins a random bottle there via Randomizer::setFountains — they are the
+  # bottle-toss refill, not shuffle slots. The fork's pond runtime
+  # (Sprite_WishPond3, see change add-rando-fairy-chest-model) grants exactly
+  # TWO checks per fairy (Left/Right) on contact and has no toss, so these two
+  # slots had NO runtime grant site — anything placed there was uncollectable
+  # (unbeatable-seed risk). Each fairy pond keeps its two real checks:
+  # Waterfall Fairy - Left/Right (149/150), Pyramid Fairy - Left/Right (213/214).
+  # The id gap is harmless (ids are id-keyed).
 
   # ===========================================================================
   # Light World — North East (IDs 142..150)

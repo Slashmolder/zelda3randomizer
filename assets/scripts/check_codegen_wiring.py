@@ -9,9 +9,12 @@ The recurring failure mode in multi-build-system projects: a contributor adds
 opaquely on Windows CI. This guard enumerates the *expected* set of generated
 files and asserts each one is referenced in every build system.
 
-**A0 status (scaffold)**: no generated files exist yet (logic_data.c, etc.
-land in Phase A1). The script knows the protocol and exits clean until at
-least one generated file is declared.
+All checks are pure text greps over the three build files — they do NOT need
+the (gitignored) generated files to exist, so the guard is fully live on a
+fresh checkout / CI runner where codegen has not run yet. (It originally
+skipped itself when no generated file existed — a scaffold gate from before
+codegen landed — which meant the CI source-guards job, which never runs
+codegen, silently skipped every check.)
 
 Usage:
   python assets/scripts/check_codegen_wiring.py
@@ -19,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -52,13 +56,30 @@ BUILD_SYSTEM_FILES = [
 ]
 
 
+def strip_comments(path: Path, text: str) -> str:
+    """Inspect build *code*, not prose — a comment mentioning a generated file
+    must not mask its absence from the actual rule/recipe/item group."""
+    if path.suffix == ".vcxproj":
+        return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    # Makefiles (incl. the Switch Makefile, no suffix): drop #-comment lines.
+    return "\n".join(l for l in text.splitlines()
+                     if not l.lstrip().startswith("#"))
+
+
 def file_mentions(path: Path, needle: str) -> bool:
     if not path.exists():
         return False
-    text = path.read_text(encoding="utf-8", errors="replace")
-    # Match either the full path or just the basename — different build systems
-    # phrase references differently.
-    return needle in text or Path(needle).name in text
+    text = strip_comments(path, path.read_text(encoding="utf-8", errors="replace"))
+    # Normalize separators (the vcxproj uses backslashes) and require at least
+    # the immediate parent dir: "rando/logic_data.c". Build systems reference
+    # these files with a path prefix (src/rando/..., $(SRC_DIR)/rando/...,
+    # src\rando\...), while prose/echo strings tend to use the bare basename —
+    # a bare-basename mention (e.g. the Makefile recipe's @echo listing) must
+    # NOT satisfy parity, or a file dropped from the real rule goes unnoticed.
+    text = text.replace("\\", "/")
+    needle = needle.replace("\\", "/")
+    dir_qualified = "/".join(needle.split("/")[-2:])
+    return needle in text or dir_qualified in text
 
 
 def main(argv: list[str]) -> int:
@@ -66,21 +87,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
-    # If no generated files have been declared yet, there's nothing to check.
-    if not any(Path(f).exists() for f in EXPECTED_GENERATED):
-        # Also accept if the assets/rando/ pipeline hasn't been set up — that
-        # means codegen hasn't started yet.
-        if not args.quiet:
-            print(
-                "check_codegen_wiring: no generated rando files exist yet.\n"
-                "  scaffold A0 pass — guard activates when first generated file lands."
-            )
-        return 0
-
     missing: list[tuple[str, list[Path]]] = []
     for gen in EXPECTED_GENERATED:
-        if not Path(gen).exists():
-            continue  # only check declared-and-present files
+        # Deliberately no existence check: these are gitignored codegen
+        # OUTPUTS, absent on a fresh checkout (and in the no-build CI job).
+        # file_mentions() is a text grep over the build files, which is all
+        # the parity contract needs.
         missing_in = [bs for bs in BUILD_SYSTEM_FILES if not file_mentions(bs, gen)]
         if missing_in:
             missing.append((gen, missing_in))
@@ -105,17 +117,9 @@ def main(argv: list[str]) -> int:
     # A build system passes if it covers the subtree either literally
     # ("logic_parts") or via a recursive `find assets/rando` over all yaml.
     if Path("assets/rando/logic_parts").is_dir():
-        import re
+        # A comment mentioning "logic_parts" must not mask a non-recursive glob
+        # in the actual recipe — hence strip_comments (shared with file_mentions).
         recursive_find = re.compile(r"find\s+\S*assets[\\/]rando\b")
-
-        def strip_comments(path: Path, text: str) -> str:
-            # Inspect build *code*, not prose — a comment mentioning "logic_parts"
-            # must not mask a non-recursive glob in the actual recipe.
-            if path.suffix == ".vcxproj":
-                return re.sub(r"<!--.*?-->", "", text, flags=re.S)
-            # Makefiles (incl. the Switch Makefile, no suffix): drop #-comment lines.
-            return "\n".join(l for l in text.splitlines()
-                             if not l.lstrip().startswith("#"))
 
         not_recursive = []
         for bs in BUILD_SYSTEM_FILES:
@@ -139,8 +143,8 @@ def main(argv: list[str]) -> int:
             return 1
 
     if not args.quiet:
-        present = [f for f in EXPECTED_GENERATED if Path(f).exists()]
-        print(f"check_codegen_wiring: {len(present)} generated file(s) wired across all build systems.")
+        print(f"check_codegen_wiring: {len(EXPECTED_GENERATED)} generated file(s) wired "
+              f"across all build systems (+ logic_parts recursion).")
     return 0
 
 

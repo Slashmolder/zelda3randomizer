@@ -117,11 +117,11 @@ typedef struct PredicateContext {
   // Per-seed shuffle tables:
   const uint8 *dungeon_prize_assignment;       // [kRandoDungeonCount]; entries are prize ids 0..9
   const uint8 *medallion_entrance_assignment;  // [kRandoMedallionEntranceCount]; entries are item ids
-  // Boss-shuffle assignment: [kRandoDungeonCount]; entry = boss-pool index
+  // Boss-shuffle assignment: [16]; entry = boss-pool index
   // (kBoss_* in shuffle_boss.c) currently in that dungeon's boss room. NULL when
   // the placer/slot hasn't installed it — OP_CAN_KILL_BOSS then falls back to
   // kRandoDungeonVanillaBoss (vanilla boss), so reachability is unchanged.
-  const uint8 *boss_assignment;                // [kRandoDungeonCount]; entries are boss-pool indices
+  const uint8 *boss_assignment;                // [16]; entries are boss-pool indices
 
   // Per-iteration reachability state (filled by Logic_ComputeReachability;
   // unused by standalone Predicate_Evaluate calls — pass 0 / NULL).
@@ -249,7 +249,9 @@ extern const RandoBossKillPred kRandoBossKillPred[];
 extern const uint32 kRandoBossKillPredCount;
 // dungeon-id (HCE=0..GT=12) → vanilla boss-pool index, or 0xFF for HCE/unused.
 // Mirrors shuffle_boss.c kBossVanilla; used by OP_CAN_KILL_BOSS when no per-seed
-// boss assignment is installed. Logic_SelfCheck cross-checks the two.
+// boss assignment is installed. BossShuffle_SelfCheck (shuffle_boss.c) element-
+// wise cross-checks this against kBossVanilla — both run via
+// Rando_RunAllSelfChecks (the check lives there, not in Logic_SelfCheck).
 extern const uint8 kRandoDungeonVanillaBoss[kRandoDungeonCount];
 
 // ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@
 #include "rando/vanilla_assets_hash.h"  // kVanillaAssetsHash + kVanillaAssetsHashKnown
 #include "rando/rando_settings.h"
 #include "rando/rando_placement.h"
+#include "rando/customizer.h"  // manifest pins
 #include "rando/rando_spoiler.h"
 #include "rando/rando_share.h"
 #include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
@@ -40,9 +41,9 @@
 #include "rando/shuffle_doors.h"  // DoorShuffle_SelfTest for --door-selftest
 #include "rando/door_runtime.h"  // DoorRt_* (--door-identity-check)
 #include "features.h"           // kFeatures1_DoorShuffleActive
-#include "rando/shuffle_boss.h"  // BossShuffle_Generate (Slice 7 §63)
-#include "rando/shuffle_drops.h"  // DropShuffle_Generate (Slice 8 §64)
-#include "rando/rando_hints.h"  // Rando_GenerateHints (Slice 5 §3)
+#include "rando/shuffle_boss.h"  // BossShuffle_Generate
+#include "rando/shuffle_drops.h"  // DropShuffle_Generate
+#include "rando/rando_hints.h"  // Rando_GenerateHints
 #include "rando/auto_tracker.h"  // AutoTracker_* (opt-in local tracker server)
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
@@ -56,7 +57,7 @@
 #include "rando/rando_window/game_panels.h"            // Panels_RenderSmokeCheck (selftest)
 #include "rando/rando_generate.h"                     // Rando_GenerateSlot (generate consumer)
 #include "rando/rando_save.h"                          // Rando_LoadSidecarSlot (--generate-slot round-trip)
-#include "rando/shuffle_entrance.h"                    // Phase C entrance shuffle (CLI generate path)
+#include "rando/shuffle_entrance.h"                    // entrance shuffle for CLI generate path
 #include "rando/rando_map.h"                          // RandoMap_DumpPpm (map decoder + dev dump)
 #include "hud.h"                                       // Hud_RandoBuildIconAtlas (item-icon dev dump)
 #endif
@@ -66,9 +67,7 @@ static bool g_run_without_emu = 0;
 // When true, Die() skips the SDL_ShowSimpleMessageBox popup and just
 // prints to stderr + exits. Set by CLI flags like --rando-selftest,
 // --generate-seed, --rando-bench-logic, --print-assets-hash. Without
-// this, a failure during a headless CI/batch run pops a modal dialog
-// on whoever's desktop the process happens to land on (e.g., a worktree
-// agent's failed --generate-seed pops dialogs on the developer's screen).
+// this, a failure during a headless CI/batch run can block on a modal dialog.
 static bool g_headless_mode = 0;
 
 // Forwards
@@ -150,9 +149,7 @@ static uint16 g_gamepad_last_cmd[kGamepadBtn_Count];
 void NORETURN Die(const char *error) {
 #if defined(NDEBUG) && defined(_WIN32)
   // Skip the modal popup in headless / CLI mode (--rando-selftest,
-  // --generate-seed, --rando-bench-logic, --print-assets-hash). Otherwise
-  // a failed batch run (e.g., a worktree agent calling --generate-seed
-  // without zelda3_assets.dat) pops dialogs on the developer's desktop.
+  // --generate-seed, --rando-bench-logic, --print-assets-hash).
   if (!g_headless_mode)
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kWindowTitle, error, NULL);
 #endif
@@ -444,16 +441,19 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
 
   const char *settings_csv = NULL;
   const char *seed_u64_str = NULL;
+  const char *customizer_path = NULL;  // slot-path customizer parity
   int slot_index = 0;
   for (int i = 0; i < argc; ++i) {
     const char *a = argv[i];
     if (strncmp(a, "--settings=", 11) == 0) settings_csv = a + 11;
     else if (strncmp(a, "--seed=", 7) == 0) seed_u64_str = a + 7;
     else if (strncmp(a, "--slot=", 7) == 0) slot_index = atoi(a + 7);
+    else if (strncmp(a, "--customizer=", 13) == 0) customizer_path = a + 13;
   }
   if (seed_u64_str == NULL) {
     fprintf(stderr,
-      "Usage: --generate-slot --settings=<k=v,...> --seed=<u64> [--slot=<0..2>]\n");
+      "Usage: --generate-slot --settings=<k=v,...> --seed=<u64> [--slot=<0..2>]\n"
+      "                       [--customizer=<manifest.yaml>]\n");
     exit(64);
   }
 
@@ -469,6 +469,31 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
     }
   }
   uint64 seed_u64 = ParseSeedU64OrExit(seed_u64_str);
+
+  // Install the manifest exactly like the native window does before its
+  // generate request, so this CLI path exercises the same slot path
+  // (Rando_GenerateSlot validates the race-mode exclusion).
+  static CustomizerManifest slot_customizer_manifest;  // borrowed by Customizer_Install
+  if (customizer_path != NULL) {
+    char cerr[160];
+    if (Customizer_LoadFile(customizer_path, &slot_customizer_manifest, cerr, sizeof cerr) != 0) {
+      fprintf(stderr, "--generate-slot: --customizer: %s\n", cerr);
+      exit(64);
+    }
+    if (slot_customizer_manifest.pin_count == 0 &&
+        slot_customizer_manifest.pool_add_count == 0 &&
+        slot_customizer_manifest.pool_remove_count == 0) {
+      // An empty / comments-only manifest is a user mistake (they asked for
+      // customizer mode but specified nothing). Reject clearly — mirrors the
+      // --generate-seed path (MaybeRunGenerateSeedAndExit) and the native
+      // window's pre-load check, so all three entry points agree.
+      fprintf(stderr, "--generate-slot: --customizer: manifest '%s' contains no placements or pool_overrides\n",
+              customizer_path);
+      exit(64);
+    }
+    Customizer_Install(&slot_customizer_manifest);
+    settings.customizer_active = 1;
+  }
 
   // Rando_GenerateSlot writes into g_zenv.sram + slot_index*0x500; allocate the
   // 8 KB SRAM image since the headless path never ran full ZeldaInitialize.
@@ -546,6 +571,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   const char *out_spoiler = NULL;
   const char *out_share_string = NULL;
   const char *manifest_path = NULL;
+  const char *customizer_path = NULL;
   const char *out_dir = NULL;
   // Default 0 = deterministic: run the placer to its fixed attempt cap
   // (kAssumedFillMaxAttempts) with NO wall-clock cutoff. A positive
@@ -563,7 +589,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // The flag stays for batch/debug callers that knowingly want a time bound.
   int budget_seconds = 0;
   bool assets_must_be_vanilla = false;
-  bool race_mode = false;  // Phase B Slice 6 — set settings.race_mode = 1
+  bool race_mode = false;
 
   for (int i = 0; i < argc; ++i) {
     const char *a = argv[i];
@@ -572,6 +598,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     else if (strncmp(a, "--out-spoiler=", 14) == 0) out_spoiler = a + 14;
     else if (strncmp(a, "--out-share-string=", 19) == 0) out_share_string = a + 19;
     else if (strncmp(a, "--manifest=", 11) == 0) manifest_path = a + 11;
+    else if (strncmp(a, "--customizer=", 13) == 0) customizer_path = a + 13;
     else if (strncmp(a, "--out-dir=", 10) == 0) out_dir = a + 10;
     else if (strncmp(a, "--budget-seconds=", 17) == 0) budget_seconds = atoi(a + 17);
     else if (strcmp(a, "--assets-must-be-vanilla") == 0) assets_must_be_vanilla = true;
@@ -586,6 +613,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       "Usage:\n"
       "  Single seed: --generate-seed --settings=<k=v,...> --seed=<u64> --out-spoiler=<path>\n"
       "               [--out-share-string=<path>] [--budget-seconds=<n>] [--assets-must-be-vanilla]\n"
+      "               [--customizer=<manifest.yaml>] [--allow-broken-seed]\n"
       "  Batch:       --generate-seed --manifest=<yaml> [--budget-seconds=<n>] [--out-dir=<path>]\n");
     exit(64);
   }
@@ -603,7 +631,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     if (!kVanillaAssetsHashKnown) {
       fprintf(stderr,
         "--assets-must-be-vanilla: WARNING the vanilla assets hash is not yet\n"
-        "  baked into vanilla_assets_hash.h (Phase A1 placeholder is all-zeros).\n"
+        "  baked into vanilla_assets_hash.h (placeholder is all-zeros).\n"
         "  Run `python assets/scripts/dump_vanilla_assets_hash.py` against a\n"
         "  clean asset extraction and commit the result to activate this check.\n"
         "  Proceeding with current assets.\n");
@@ -629,7 +657,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     exit(64);
   }
 
-  // ----- Phase A1 single-seed pipeline -----
+  // ----- Single-seed pipeline -----
   // Settings: parse --settings=k=v,... via Settings_ParseCsv. Defaults populate
   // the struct first; missing keys keep defaults.
   RandoSettings settings;
@@ -641,11 +669,10 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     }
   }
 
-  // Phase B Slice 6 — --race-mode override (highest precedence; can also be
-  // set via --settings=race_mode=true, but --race-mode is the canonical CLI).
-  // Slice 6 audit M2 — warn if the user explicitly typed
-  // `--settings=race_mode=false` alongside `--race-mode`, so a typo doesn't
-  // silently produce a non-race-mode seed.
+  // --race-mode override (highest precedence; can also be set via
+  // --settings=race_mode=true, but --race-mode is the canonical CLI). Warn if
+  // the user explicitly typed `--settings=race_mode=false` alongside
+  // `--race-mode`, so a typo doesn't silently produce a non-race-mode seed.
   if (race_mode && settings_csv != NULL && settings.race_mode == 0 &&
       strstr(settings_csv, "race_mode=") != NULL) {
     fprintf(stderr,
@@ -653,6 +680,45 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       "generating a race-mode seed.\n");
   }
   if (race_mode) settings.race_mode = 1;
+
+  // Load + install the manifest (if any) BEFORE placement. The manifest pins a
+  // subset of locations; Place_AssumedFill's customizer block consumes the
+  // installed manifest and assumed-fill completes the rest.
+  // The struct lives on this function's stack until exit(), so the borrowed
+  // Customizer_Install pointer stays valid for the whole generation.
+  CustomizerManifest customizer_manifest;
+  if (customizer_path != NULL) {
+    char cerr[160];
+    if (Customizer_LoadFile(customizer_path, &customizer_manifest, cerr, sizeof cerr) != 0) {
+      fprintf(stderr, "--customizer: %s\n", cerr);
+      exit(64);
+    }
+    if (customizer_manifest.pin_count == 0 &&
+        customizer_manifest.pool_add_count == 0 &&
+        customizer_manifest.pool_remove_count == 0) {
+      // An empty / comments-only manifest is a user mistake (they asked for
+      // customizer mode but specified nothing). Reject clearly rather than
+      // entering customizer mode with no placements or pool overrides.
+      fprintf(stderr, "--customizer: manifest '%s' contains no placements or pool_overrides\n",
+              customizer_path);
+      exit(64);
+    }
+    // Mutually exclusive with race mode: the race reveal regenerates placement
+    // from (seed, settings) alone — without the manifest the §3c pins cannot be
+    // reproduced, so reveal would hard-fail instead of verifying the stamp.
+    // Fail closed at generation (mirrors Rando_GenerateSlot's slot-path guard).
+    if (settings.race_mode) {
+      fprintf(stderr, "--customizer: cannot be combined with --race (the race "
+                      "reveal cannot regenerate manifest pins)\n");
+      exit(64);
+    }
+    Customizer_Install(&customizer_manifest);
+    settings.customizer_active = 1;
+    fprintf(stderr, "--customizer: loaded %u placement(s), +%u/-%u pool overrides from %s\n",
+            (unsigned)customizer_manifest.pin_count,
+            (unsigned)customizer_manifest.pool_add_count,
+            (unsigned)customizer_manifest.pool_remove_count, customizer_path);
+  }
 
   // Seed: parse hex or decimal uint64 from --seed=<u64>.
   uint64 seed_u64 = 0;
@@ -693,12 +759,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   clock_t gen_start = clock();
 
   // Run placement (assumed fill with bounded retry + wall-clock budget).
-  // Phase B Slice 6 audit H1 — race-mode generation always uses
-  // budget_seconds=0 so the placer runs to its deterministic
-  // kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
+  // Race-mode generation always uses budget_seconds=0 so the placer runs to its
+  // deterministic kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
   // Stamp is then reproducible across machines.
   int effective_budget = (settings.race_mode != 0) ? 0 : budget_seconds;
-  // Phase C — entrance shuffle: same reject-and-retry as the playable-slot path
+  // Entrance shuffle: same reject-and-retry as the playable-slot path
   // (rando_generate.c). Draw a cave permutation π, install its region overrides
   // so the placer/goal-check see the shuffled reachability, accept the first π
   // under which the goal is completable. Default-off ⇒ byte-identical placement.
@@ -719,8 +784,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   Entrance_ClearEdgeOverrides();
   if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
     for (int att = 0; att < 64; att++) {
-      // Audit (decoupled HIGH) — reset edge overrides every attempt so
-      // ApplyDecoupledExitEdges Begins fresh in the cave-only case instead of
+      // Reset edge overrides every attempt so ApplyDecoupledExitEdges begins
+      // fresh in the cave-only case instead of
       // appending onto the prior attempt's leftover edges (see rando_generate.c).
       Entrance_ClearEdgeOverrides();
       if (cross_on) {
@@ -761,14 +826,18 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
           ok = true;
           break;
         }
+      } else if (Customizer_LastError()[0] != '\0') {
+        // A customizer pin error is deterministic — no entrance permutation
+        // will fix it, so stop retrying immediately.
+        break;
       }
     }
     // Leave overrides active through sphere + spoiler emission below.
   } else if (Settings_EffectiveDoorShuffle(&settings) != kDoorShuffle_Vanilla) {
-    // add-rando-door-shuffle — door phase, mirroring Rando_PlaceWithEntrances'
-    // arm (the headless pipeline is hand-rolled; both seams MUST stay in
-    // step or corpus seeds diverge from in-game slots). Mutually exclusive
-    // with entrance shuffle per apply_derived_rules.
+    // Door-shuffle path, mirroring Rando_PlaceWithEntrances. The headless
+    // pipeline is hand-rolled; both paths must stay in step or corpus seeds
+    // diverge from in-game slots. Mutually exclusive with entrance shuffle per
+    // apply_derived_rules.
     static DoorShuffleLayout headless_door_layout;
     for (uint32 datt = 0; datt < 16; datt++) {
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
@@ -788,14 +857,18 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
   }
   if (!ok) {
-    fprintf(stderr, "--generate-seed: placement failed\n");
+    const char *cerr = Customizer_LastError();
+    if (cerr[0] != '\0')
+      fprintf(stderr, "--generate-seed: customizer placement failed: %s\n", cerr);
+    else
+      fprintf(stderr, "--generate-seed: placement failed\n");
     free(entries);
     exit(1);
   }
 
-  // Phase B Slice 7/8 §63/§64 — boss + drop shuffle assignments for the spoiler
-  // are computed in the spoiler block below (BossShuffle/DropShuffle_Compute*,
-  // the pure forms). They are deterministic from (settings, seed_u64) and
+  // Boss + drop shuffle assignments for the spoiler are computed in the
+  // spoiler block below (BossShuffle/DropShuffle_Compute*, the pure forms).
+  // They are deterministic from (settings, seed_u64) and
   // orthogonal to the placement table, so they don't affect placement_digest.
   // (The runtime install — which makes the sprite substitution fire — happens
   // at slot load in Rando_ActivateSidecarSlot, not in this headless path.)
@@ -818,6 +891,29 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     exit(1);
   }
 
+  // Also compute the v2 EXCHANGE string
+  // (magic ZRS2 | version | settings_len | settings_canonical | seed | crc):
+  // it embeds the full canonical settings so a paste restores (settings, seed).
+  // v2 is transport-only: every stored/compared surface (spoiler filename,
+  // meta.share_string, sidecar, ZRSR, race stamps) stays the v1 string above.
+  // Customizer placements depend on a manifest file no share string can carry,
+  // so customizer seeds emit no v2 form; share_string_v2 stays empty and the v1
+  // string is the fallback.
+  char share_string_v2[kShareStringBase32MaxLen];
+  share_string_v2[0] = '\0';
+  if (!settings.customizer_active) {
+    ShareString ss2;
+    memset(&ss2, 0, sizeof(ss2));
+    ss2.version = (uint8)kGeneratorVersion;
+    ss2.seed_u64 = seed_u64;
+    Settings_CanonicalSerialize(&settings, ss2.settings_canonical);
+    if (Share_EncodeV2(&ss2, share_string_v2, sizeof(share_string_v2)) <= 0) {
+      fprintf(stderr, "--generate-seed: v2 share string encoding failed\n");
+      free(entries);
+      exit(1);
+    }
+  }
+
   // Compute spheres for sphere_data emission.
   RandoSpheres spheres;
   bool spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
@@ -826,7 +922,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
             (unsigned)spheres.unreachable_count, (unsigned)(spheres.max_sphere + 1));
   }
 
-  // Phase B Slice 5 §3 — populate per-NPC hint texts. No-op when
+  // Populate per-NPC hint texts. No-op when
   // settings.hints == kHintsMode_Off. Output reaches users via the
   // spoiler's `hints[]` array; runtime telepathic-tile intercept is
   // playtest-gated (#85).
@@ -839,7 +935,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.seed_u64 = seed_u64;
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
-  // Phase C — entrance_mapping sections (omitted when the respective count is 0).
+  // entrance_mapping sections (omitted when the respective count is 0).
   spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
   spoiler.entrance_count = cave_count;
   spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
@@ -898,9 +994,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // is intentional (only `locations` demands full reachability). The
   // spoiler's `fallback_warnings: unreachable_placements` rollup surfaces
   // this — users can decide whether to regenerate with a different seed.
-  // Phase A2 bounded intra-attempt rewind should reduce these to 0.
-
-  // Phase B Slice 7/8 — boss + drop shuffle spoiler sections. Pure compute (no
+  //
+  // Boss + drop shuffle spoiler sections. Pure compute (no
   // runtime-global side effects); NULL pointers omit the sections when off
   // (§6.4). These arrays must outlive Spoiler_Write below — keep them here in
   // the function scope.
@@ -913,7 +1008,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.drop_map = settings.drop_shuffle ? drop_map_sp : NULL;
   spoiler.drop_used_fallback = drop_used_fallback_sp;
 
-  // Phase B Slice 6 — Spoiler_Write branches on settings.race_mode:
+  // Spoiler_Write behavior depends on settings.race_mode:
   //   race_mode == 0: full JSON + .txt (existing behavior).
   //   race_mode == 1: suppressed binary (ZRSR header) at <out_spoiler>; no .txt.
   size_t out_len = strlen(out_spoiler);
@@ -935,12 +1030,20 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     exit(1);
   }
   if (txt_path != NULL) free(txt_path);
+  // The accepted door layout stayed installed through the sphere/goal/spoiler
+  // work above. This process exits below, but clear it anyway for symmetry with
+  // Rando_GenerateSlot (which must clear, or the next same-process generation
+  // places against stale door reachability).
+  Rando_SetDoorLogicLayout(NULL, 0);
 
-  // Optionally write the share string to its own file.
+  // Optionally write the share string to its own file. This is the
+  // distribute-to-players artifact, so it gets the v2 exchange string
+  // customizer seeds have no v2 form and fall back to v1. Single line, no
+  // trailing newline.
   if (out_share_string != NULL) {
     FILE *sf = fopen(out_share_string, "wb");
     if (sf != NULL) {
-      fputs(share_string, sf);
+      fputs(share_string_v2[0] != '\0' ? share_string_v2 : share_string, sf);
       fclose(sf);
     }
   }
@@ -951,12 +1054,17 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   fprintf(stderr,
     "--generate-seed: OK\n"
     "  seed: 0x%016llx\n"
-    "  share_string: %s\n"
+    "  share_string: %s\n",
+    (unsigned long long)seed_u64,
+    share_string);
+  // v2 exchange line. Omitted for customizer seeds, which have no v2 form;
+  // repeating the v1 string here would be misleading.
+  if (share_string_v2[0] != '\0')
+    fprintf(stderr, "  share_string_v2: %s\n", share_string_v2);
+  fprintf(stderr,
     "  placements: %u\n"
     "  placement_digest: %02x%02x%02x%02x%02x%02x%02x%02x...\n"
     "  spoiler.json: %s\n",
-    (unsigned long long)seed_u64,
-    share_string,
     (unsigned)table.count,
     placement_digest[0], placement_digest[1], placement_digest[2], placement_digest[3],
     placement_digest[4], placement_digest[5], placement_digest[6], placement_digest[7],
@@ -966,7 +1074,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   exit(0);
 }
 
-// Phase B Slice 6 — --reveal-spoiler=<path> headless reveal path.
+// --reveal-spoiler=<path> headless reveal path.
 // Reads the suppressed spoiler at <path>, verifies its integrity,
 // regenerates the placement deterministically from the embedded settings +
 // share-string-derived seed, stamps it, and overwrites <path> with the
@@ -1029,10 +1137,9 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
     exit(64);
   }
 
-  // Build representative settings + "full inventory" counts. Phase A1's
-  // populated graph today is Open / FastGanon (Standard/Inverted/Retro
-  // start_region wiring is a follow-on per audit_phase_a1 line 144). Defaults
-  // already pin world_state=Open / goal=FastGanon — the bench just runs them.
+  // Build representative settings + "full inventory" counts. The populated
+  // graph today is Open / FastGanon; defaults already pin that world/goal pair,
+  // so the bench just runs them.
   RandoSettings settings;
   Settings_SetDefaults(&settings);
 
@@ -1054,10 +1161,8 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
     exit(1);
   }
 
-  // SDL_GetPerformanceCounter / SDL_GetPerformanceFrequency are usable
-  // without SDL_Init per SDL2 API contract (verified against SDL source —
-  // both functions wrap platform raw clocks: QPC on Windows, monotonic
-  // clock on POSIX, no init state). Avoiding clock_gettime here keeps the
+  // SDL_GetPerformanceCounter / SDL_GetPerformanceFrequency are usable without
+  // SDL_Init per SDL2 API contract. Avoiding clock_gettime here keeps the
   // src/rando/ determinism guard clean (no rando file uses time/clock_gettime).
   uint64_t freq = SDL_GetPerformanceFrequency();
   if (freq == 0) {
@@ -1212,6 +1317,81 @@ static void PersistRandoWindowState(void) {
   }
   Config_SaveRandoWindowIni("saves/rando_window.ini");
 }
+
+// Game-side generate consumer, shared by the RUNNING and PAUSED main-loop
+// paths: when the settings window requested a generate, run it synchronously
+// on this (game) thread. Blocks the frame for the generation duration —
+// expected; the UI shows an input-blocking modal until generate_status flips.
+// Safe to run while paused: Rando_GenerateSlot only computes placement and
+// writes the TARGET slot's SRAM image + sidecar — it never touches g_ram or
+// the in-flight frame state, so the paused game is unaffected. Its in-session
+// side effects on the ACTIVE seed's globals — it rewrites the hint table with
+// the new seed's hints (Rando_GenerateHints) and clears the logic-side
+// entrance/door overlays (Rando_ClearGenerationLogicOverlays) — are undone by
+// the two restore calls at the bottom. (Without the paused path call the
+// window's no-cancel "Generating seed..." modal sat stuck until unpause.)
+static void ConsumeRandoWindowGenerateRequest(void) {
+  if (!RandoWindowBridge_ConsumeGenerateRequest())
+    return;
+  RandoGenerateResult res; char err[256] = {0};
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  bool ok = Rando_GenerateSlot(&b->pending, b->seed_u64, -1, b->target_slot_index,
+                               b->pending_recommended_features0, &res, err, sizeof err);
+  if (ok) {
+    RandoWindowBridge_StoreGenerated(&res.placement, NULL, res.race_mode);  // bridge copies
+    free(res.placement.entries);                                            // free our owned copy
+    // Snapshot the settings/share/seed that produced this placement so the
+    // Spoiler tab's "Save spoiler" writes an accurate RandoSpoiler even after
+    // the user edits `pending`. (game thread owns last_generated_*.)
+    b->last_generated_settings = b->pending;
+    b->last_generated_seed_u64 = b->seed_u64;
+    b->last_generated_goal_completable = res.goal_completable;
+    strncpy(b->last_generated_share_string, res.share_string,
+            sizeof b->last_generated_share_string - 1);
+    b->last_generated_share_string[sizeof b->last_generated_share_string - 1] = '\0';
+    // Cache the v2 EXCHANGE string for the post-generate "Copy share string"
+    // button: res.share_string is the v1 (seed-only) identity form, but the
+    // natural share action after generating should hand out the lossless v2
+    // token so the recipient restores settings+seed. v1 stays the spoiler
+    // identity (above). Customizer seeds have no v2 form; leave it
+    // empty so the button falls back to v1.
+    b->last_generated_share_string_v2[0] = '\0';
+    if (!b->last_generated_settings.customizer_active) {
+      ShareString ssv2;
+      memset(&ssv2, 0, sizeof(ssv2));
+      ssv2.version = (uint8)kGeneratorVersion;
+      ssv2.seed_u64 = b->last_generated_seed_u64;
+      Settings_CanonicalSerialize(&b->last_generated_settings, ssv2.settings_canonical);
+      Share_EncodeV2(&ssv2, b->last_generated_share_string_v2,
+                     sizeof b->last_generated_share_string_v2);
+    }
+    RandoWindowBridge_SetGenerateResult(2, "");
+    // Persist the settings the player just generated with NOW (not only at
+    // exit) so a crash/softlock/kill can't revert them — makes settings
+    // sticky for the next seed.
+    PersistRandoWindowState();
+  } else {
+    RandoWindowBridge_SetGenerateResult(-1, err);
+  }
+  // Rando_GenerateSlot writes the new seed's hints into the global hint table
+  // (Rando_GenerateHints in rando_generate.c). Restore the active slot's hints
+  // so generating a seed mid-session without loading it does not leave
+  // telepathic tiles / fortune tellers showing the unloaded seed's hints.
+  // Placed after the if/else so it covers both arms. Today only the success
+  // arm reaches hint regeneration, but the restore is idempotent.
+  // Safe with no active slot: clears to vanilla text.
+  Rando_RegenerateActiveSlotHints();
+  // The same generation also clears the active slot's logic-side entrance/door
+  // overlays and repoints the logic-VM prize/medallion/boss assignment pointers
+  // at the placer's statics for the new seed. Without reinstalling active-slot
+  // state, tracker/map reachability would read the vanilla graph until reload
+  // and the active seed could drop the wrong falling boss prize (dungeon.c
+  // RandoFallingPrizeIndex) and obey the unloaded seed's MM/TR medallion
+  // gates (ancilla.c) until slot reload. Replay the activation-time installs.
+  // Safe with no active slot: leaves the stores cleared and the assignments
+  // NULL (fail-closed). Gameplay-side installs were never disturbed.
+  Rando_ReinstallActiveSlotLogicOverlays();
+}
 #endif
 
 #undef main
@@ -1221,7 +1401,7 @@ int main(int argc, char** argv) {
   // Detect headless-mode CLI flags up-front and set the global before any
   // Die() can fire (e.g., from LoadAssets in a worktree without
   // zelda3_assets.dat). Without this guard, batch tooling that fails its
-  // setup pops modal dialogs on the developer's desktop.
+  // setup can block on modal dialogs.
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--rando-selftest") == 0 ||
         strcmp(argv[i], "--door-selftest") == 0 ||
@@ -1254,9 +1434,8 @@ int main(int argc, char** argv) {
       for (int j = i; j < argc - 1; j++) argv[j] = argv[j + 1];
       argc--;
     } else if (strcmp(argv[i], "--door-identity-check") == 0) {
-      // add-rando-door-shuffle Milestone-A identity gate: activate the door
-      // redirect layer with an EMPTY (all-NO_OVERRIDE) link table on a
-      // vanilla session. Run with the ROM attached
+      // Door identity gate: activate the door redirect layer with an EMPTY
+      // (all-NO_OVERRIDE) link table on a vanilla session. Run with the ROM attached
       // (`zelda3 --door-identity-check zelda3.sfc`): the side-by-side
       // RAM-compare then exercises the transition hooks/resolver on every
       // dungeon edge walk — any divergence from the ROM is a hook bug.
@@ -1286,7 +1465,7 @@ int main(int argc, char** argv) {
     if (strcmp(argv[i], "--door-selftest") == 0) {
       // Door-shuffle generation net: stitch + prove every shuffleable
       // dungeon across N seeds; connectivity / prover / determinism /
-      // oracle==stitcher cross-checks (add-rando-door-shuffle).
+      // oracle==stitcher cross-checks.
       return DoorShuffle_SelfTest();
     }
   }
@@ -1514,7 +1693,7 @@ int main(int argc, char** argv) {
   // after Initialize above; NULL under the default SDL software renderer) so we
   // can restore it after the settings window's GL setup makes the settings
   // context current — otherwise the game would render against the settings
-  // context and the per-frame restore would bind the wrong context. (audit HIGH)
+  // context and the per-frame restore would bind the wrong context.
   SDL_GLContext game_gl_ctx = SDL_GL_GetCurrentContext();
 
   g_settings_window = SDL_CreateWindow(
@@ -1554,6 +1733,12 @@ int main(int argc, char** argv) {
         Settings_CanonicalSerialize(&restored, reser) == kSettingsCanonicalLen &&
         memcmp(reser, g_rando_window_prefs.settings_canonical, kSettingsCanonicalLen) == 0) {
       g_rando_window_bridge.pending = restored;
+      // The manifest is session state (the window owns the storage; nothing
+      // re-installs it at startup), so a persisted
+      // customizer_active bit must not survive the restart: it would block
+      // Generate with "no manifest loaded" for no visible reason. The user
+      // re-enables the toggle + reloads the manifest per session.
+      g_rando_window_bridge.pending.customizer_active = 0;
     } else {
       Settings_SetDefaults(&g_rando_window_bridge.pending);
     }
@@ -1570,7 +1755,11 @@ int main(int argc, char** argv) {
   // Tracker windows (item/check/map) — created hidden on the multi-window host.
   // Z3RHost_Create saves/restores the current ImGui + GL context, so the settings
   // window's context stays current and the game context is untouched here.
+  Trackers_SetGameWindow(g_window);
   Trackers_Init();
+  if (g_rando_window_prefs.tracker_tiled_layout_on_startup) {
+    Trackers_ApplyTiledLayout();
+  }
 
   // Restore the game's GL context: the settings window's GL setup above left the
   // settings context current. NULL under the software renderer → nothing to do.
@@ -1790,8 +1979,8 @@ int main(int argc, char** argv) {
               // (alphabet picker) decodes the buffer on its next Update tick.
               // Also call HandleKey for symmetry / self-check observability.
               //
-              // §9 cluster-2 audit MED-3: skip auto-repeat KEYDOWNs. SDL
-              // emits repeat KEYDOWN every ~30ms when a key is held, which
+              // Skip auto-repeat KEYDOWNs. SDL emits repeat KEYDOWN every
+              // ~30ms when a key is held, which
               // would re-fire submit every frame and prevent the OK overlay
               // countdown from completing while the user held Enter.
               if (!event.key.repeat) {
@@ -1894,6 +2083,18 @@ int main(int argc, char** argv) {
       if (GameConfig_HasPendingApply())
         GameConfig_ApplyPending();
       GameConfig_CaptureTick(SDL_GetTicks());
+      // Consume a pending generate request even while paused (mirrors the
+      // unpaused path's ordering: config apply -> generate consume -> window
+      // render). The window's Generate button is not pause-gated; without this
+      // the request stayed queued and the UI's input-blocking no-cancel
+      // "Generating seed..." modal sat stuck until unpause. Generation is
+      // pause-safe — see ConsumeRandoWindowGenerateRequest. The "Load it now"
+      // request is deliberately NOT consumed here: SelectFile_LoadRandoSlot
+      // activates the slot and rewrites WRAM (CopySaveToWRAM) + stages the
+      // file-select module hand-off, i.e. it mutates the very game state the
+      // user froze; leaving it queued defers the load to the unpause instant,
+      // which is exactly the running path's semantics (the request is not lost).
+      ConsumeRandoWindowGenerateRequest();
       if (RandoWindow_WantsShown()) {
         SDL_GLContext prev = SDL_GL_GetCurrentContext();
         RandoWindow_BeginFrame();
@@ -1934,34 +2135,9 @@ int main(int argc, char** argv) {
     GameConfig_CaptureTick(SDL_GetTicks());  // time out a stuck rebind capture
 
     // Game-side generate consumer: when the settings window requested a generate,
-    // run it synchronously on this (game) thread. Blocks the game frame for the
-    // generation duration — expected; the UI shows an input-blocking modal.
-    if (RandoWindowBridge_ConsumeGenerateRequest()) {
-      RandoGenerateResult res; char err[256] = {0};
-      RandoWindowBridge *b = &g_rando_window_bridge;
-      bool ok = Rando_GenerateSlot(&b->pending, b->seed_u64, -1, b->target_slot_index,
-                                   b->pending_recommended_features0, &res, err, sizeof err);
-      if (ok) {
-        RandoWindowBridge_StoreGenerated(&res.placement, NULL, res.race_mode);  // bridge copies
-        free(res.placement.entries);                                            // free our owned copy
-        // Snapshot the settings/share/seed that produced this placement so the
-        // Spoiler tab's "Save spoiler" writes an accurate RandoSpoiler even after
-        // the user edits `pending`. (game thread owns last_generated_*.)
-        b->last_generated_settings = b->pending;
-        b->last_generated_seed_u64 = b->seed_u64;
-        b->last_generated_goal_completable = res.goal_completable;
-        strncpy(b->last_generated_share_string, res.share_string,
-                sizeof b->last_generated_share_string - 1);
-        b->last_generated_share_string[sizeof b->last_generated_share_string - 1] = '\0';
-        RandoWindowBridge_SetGenerateResult(2, "");
-        // Persist the settings the player just generated with NOW (not only at
-        // exit) so a crash/softlock/kill can't revert them — makes settings
-        // sticky for the next seed.
-        PersistRandoWindowState();
-      } else {
-        RandoWindowBridge_SetGenerateResult(-1, err);
-      }
-    }
+    // run it synchronously on this (game) thread (shared helper — also consumed
+    // by the paused path above, so a pause can't strand the UI's modal).
+    ConsumeRandoWindowGenerateRequest();
 
     // "Load it now" consumer (§13.7): the UI raises a load request after a
     // successful generate; perform the file-select load here on the game thread
@@ -2206,7 +2382,7 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
     case kKeys_ToggleRenderer: g_ppu_render_flags ^= kPpuRenderFlags_NewRenderer; break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
-    // Phase B Slice 1 — tracker overlay toggles. On PC the OAM overlay is
+    // Tracker overlay toggles. On PC the OAM overlay is
     // superseded by the rich ImGui windows, so these legacy keys open the
     // corresponding window (so existing bindings keep working); on Switch they
     // toggle the OAM overlay as before. In-memory only; reset to hidden each launch.
@@ -2224,7 +2400,7 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
       g_rando_show_location_tracker = !g_rando_show_location_tracker;
 #endif
       break;
-    // Phase B Slice 6 §62 — reveal the active slot's race-mode ZRSR spoiler.
+    // Reveal the active slot's race-mode ZRSR spoiler.
     // The reveal action logs its outcome to stderr; on success the on-disk
     // file is overwritten with the full JSON + .txt companion.
     case kKeys_RandoRevealSpoiler:

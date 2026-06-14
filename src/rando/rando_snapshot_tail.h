@@ -40,6 +40,12 @@
 
 // Type discriminators.
 #define kRandoSnapshotTail_Type_RandoState 1u
+// per-slot canonical settings + prize_attempt + the 4 process-static
+// ownership bytes (mushroom/flute-shovel/boomerang/bow). Carried as a SEPARATE
+// TLV (not folded into RandoState) so older binaries — which expect RandoState's
+// length to be exactly 52 + placement_table_bytes — skip it as an unknown type
+// and still read the placement table, per the format's append-a-new-type rule.
+#define kRandoSnapshotTail_Type_RandoSettings 2u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + 512*2 = 1076 bytes); the loader rejects
@@ -63,6 +69,15 @@ bool Rando_HasSnapshotContext(void);
 uint16 Rando_GetSnapshotGeneratorVersion(void);
 const uint8 *Rando_GetSnapshotSettingsHash(void);  // [16]
 const uint8 *Rando_GetSnapshotShareString(void);   // [32]
+
+// settings sub-context for the type-2 RandoSettings TLV. The active slot
+// installs its canonical settings blob (kSettingsCanonicalLen bytes) + the
+// accepted prize_attempt here so RandoSnapshotTail_Save can emit the type-2 TLV.
+// Pass NULL to clear (a v1/no-blob slot): the type-2 TLV is then suppressed and a
+// cold replay degrades to placement-only. Independent of the type-1 context above
+// — Rando_ClearSnapshotContext clears both.
+void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
+                                      uint8 prize_attempt);
 
 // ---------------------------------------------------------------------------
 // Save: append the TLV chain to `f` (already at end of the 4-chunk write).

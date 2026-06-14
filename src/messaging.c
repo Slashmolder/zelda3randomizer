@@ -2310,6 +2310,12 @@ uint32 Text_DecodeCmd(uint8 a, const uint8 *src) {
 
 // Perform initial parsing of the string, expanding words, processing some commands, etc.
 void Text_LoadCharacterBuffer() {  // 8ec4e2
+  // add-rando-traps: runtime-only trap pickup message. Render before hints and
+  // before vanilla dialogue lookup because this id is not present in assets.
+  if (Rando_RenderTrapMessage(dialogue_message_index, messaging_text_buffer)) {
+    dialogue_msg_read_pos = 0;
+    return;
+  }
   // Phase B hints: telepathic-tile interception. When the randomizer slot is
   // active, hints are enabled, and the requested dialogue id is one of the 15
   // ALTTPR telepathic-tile ids, render a generated hint directly into the

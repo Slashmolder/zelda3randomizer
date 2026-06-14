@@ -701,10 +701,20 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
   // fixed layout. Fingerprint exactly those — assumed fill changes one item
   // at a time, and most changes flip no predicate relevant to most dungeons.
   if (g_door_counts_fp_gen != g_door_oracle_gen) {
-    g_door_counts_fp = ctx->counts
+    uint64 fp = ctx->counts
         ? door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
                      sizeof(ctx->counts->by_item_id))
         : 0;
+    // A door VM predicate can read settings->mode_weapons (swordless) via
+    // OP_MODEWEAPONS_EQ, so the per-counts memo/flood fingerprint is NOT a pure
+    // function of the inventory counts. Fold mode_weapons in too so a
+    // future caller that evaluates the same door layout under two settings
+    // differing only in swordless can't get a stale memoized result. Memo-key
+    // only — never affects the computed value, so placement is byte-identical.
+    if (ctx->settings)
+      fp = door_fnv64(fp, &ctx->settings->mode_weapons,
+                      sizeof(ctx->settings->mode_weapons));
+    g_door_counts_fp = fp;
     g_door_counts_fp_gen = g_door_oracle_gen;
   }
   uint64 vm_mask[2];
@@ -807,6 +817,37 @@ static inline bool bitset_has(const uint8 *bs, uint16 idx) {
   return (bs[idx >> 3] >> (idx & 7)) & 1;
 }
 
+// under Inverted the placer should evaluate the INVERTED graph, not
+// base ∪ inverted. A base edge whose (from,to) pair ALSO has an Inverted edge is
+// SHADOWED: the Inverted edge (walked separately below) is authoritative for that
+// pair, and walking the looser base edge too leaks base reachability — e.g. the
+// base Desert/EP entrance edges gate on RescuedZelda-only, while their Inverted
+// counterparts require MoonPearl, so the unshadowed base edge let the Desert
+// interior be reached in the Inverted model without the pearl. Precompute the
+// shadowed-base-edge set once from the constant edge tables; the base loop skips
+// these when world_state==Inverted. (Beatability is unchanged — the runtime
+// pre-grants MoonPearl in Inverted — but this restores ALTTPR-faithful Inverted
+// placement, so Inverted placement_digests move; the rest stay byte-identical.)
+// Bitmap of (from,to) region pairs that an Inverted edge covers (compile-time
+// sized on kReachabilityMaxRegions so it isn't a file-scope VLA — kRandoEdgesCount
+// is a runtime const). A base edge whose pair is set is shadowed under Inverted.
+static uint8 g_inverted_pair_set[kReachabilityMaxRegions][(kReachabilityMaxRegions + 7) >> 3];
+static bool g_inverted_pair_ready = false;
+static void compute_inverted_shadow(void) {
+  if (g_inverted_pair_ready) return;
+  memset(g_inverted_pair_set, 0, sizeof(g_inverted_pair_set));
+  for (uint32 j = 0; j < kRandoEdges_InvertedCount; j++) {
+    uint16 f = kRandoEdges_Inverted[j].from_region, t = kRandoEdges_Inverted[j].to_region;
+    if (f < kReachabilityMaxRegions && t < kReachabilityMaxRegions)
+      g_inverted_pair_set[f][t >> 3] |= (uint8)(1u << (t & 7));
+  }
+  g_inverted_pair_ready = true;
+}
+static inline bool base_edge_inverted_shadowed(uint16 from, uint16 to) {
+  if (from >= kReachabilityMaxRegions || to >= kReachabilityMaxRegions) return false;
+  return (g_inverted_pair_set[from][to >> 3] >> (to & 7)) & 1;
+}
+
 const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
                                                    const RandoSettings *settings) {
   if (counts == NULL || settings == NULL) return NULL;
@@ -846,6 +887,12 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   // cleared_dungeons_bitmask gets recomputed at the end of each fixed-point
   // iteration based on which boss locations have been reached. See below.
 
+  // L7 — precompute (once) which base edges an inverted edge shadows, so the
+  // base-edge walk can skip them under Inverted (the inverted edge is then the
+  // sole authority for that (from,to) pair).
+  const bool inverted = (settings->world_state == 2 /* kWorldState_Inverted */);
+  if (inverted) compute_inverted_shadow();
+
   // Fixed-point iteration. Cap at 64 iterations to bound runtime; the graph
   // depth is well under 32 in practice (per ALTTPR's region nesting).
   for (int iter = 0; iter < 64; iter++) {
@@ -856,14 +903,17 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     g_door_oracle_gen++;
 
     // Expand reachable regions via edges.
-    // Phase B Slice 2 — also walk per-world-state edges. The base
-    // kRandoEdges array carries the Standard/Open/Retro graph; Inverted
-    // adds its own edges (DarkWorld_South → IcePalace, LightWorld mirror
-    // back to DarkWorld, etc.). When the active world state is Inverted,
-    // both tables are walked.
+    // Phase B Slice 2 — also walk per-world-state edges. The base kRandoEdges
+    // array carries the Standard/Open/Retro graph; Inverted adds its own edges
+    // (DarkWorld_South → IcePalace, LightWorld mirror back to DarkWorld, etc.).
+    // Under Inverted both tables are walked, BUT a base edge shadowed by an
+    // inverted edge for the same (from,to) is skipped (L7) so the Inverted graph
+    // REPLACES — not unions with — the base graph for those pairs.
     for (uint32 e = 0; e < kRandoEdgesCount; e++) {
       const RandoEdgeDef *edge = &kRandoEdges[e];
       if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
+      if (inverted && base_edge_inverted_shadowed(edge->from_region, edge->to_region))
+        continue;  // L7: the inverted edge for this (from,to) pair is authoritative
       // Phase C Stage 2 — dungeon entrance shuffle remaps a door-edge's
       // destination per π (keeping its door-access predicate). Identity when
       // inactive ⇒ byte-identical.
@@ -913,16 +963,28 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     // Expand reachable locations: a location is reachable iff
     //   (a) its world_state_filter permits the active world_state,
     //   (b) its region is in the reachable_region set (when the location
-    //       has a region_id binding; locations with region_id == 0xFFFF
-    //       are treated as "always-reachable region" — used for fountains
-    //       and a handful of standalone locations), AND
+    //       has a region_id binding; a location with region_id == 0xFFFF
+    //       would be treated as "always-reachable region" — a defensive
+    //       fallback; every currently generated location has a binding,
+    //       since the unbound Fountain slots 140/141 were retired), AND
     //   (c) its can_reach predicate evaluates true under the current
     //       inventory snapshot.
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
+      // Bound loc->id before indexing the [kReachabilityMaxLocations]-sized
+      // bitset. Every shipping id is < 512 (a codegen _Static_assert
+      // enforces it), so this never fires today; it fails CLOSED (the location
+      // is simply treated unreachable) if a future registry append overflows,
+      // mirroring the bounded cleared-dungeons boss loop instead of corrupting
+      // adjacent memory.
+      if (loc->id >= kReachabilityMaxLocations) continue;
       if (bitset_has(g_reachability.location_bitset, loc->id)) continue;
       if (loc->world_state_filter != 0) {
-        if (!(loc->world_state_filter & (1u << settings->world_state))) continue;
+        // Guard the shift: world_state is validated at every byte entry point
+        // (Settings_Validate), but a shift by >=32 would be UB if a new caller
+        // bypasses validation. Unknown world_state = filter never matches.
+        if (settings->world_state >= 32 ||
+            !(loc->world_state_filter & (1u << settings->world_state))) continue;
       }
       // Phase B Slice 2 — consult the per-world-state override table.
       // Inverted seeds get a different can_reach predicate per location;
@@ -1415,7 +1477,7 @@ void Logic_SelfCheck(void) {
                "OP_DIFFICULTY_AT_LEAST(2) should be true when item_pool_difficulty>=2");
   }
 
-  // Audit L8 — Inverted reachability self-check. Verify the world-state
+  // Inverted reachability self-check. Verify the world-state
   // override path actually fires by computing reachability under Inverted
   // and asserting that `LinksHouse_Inverted` (the Inverted start region)
   // is reachable while `LinksHouse` (the Standard start) is NOT.
@@ -1447,8 +1509,12 @@ void Logic_SelfCheck(void) {
       LSC_ASSERT(Reachability_HasRegion(inv_reach, lhi),
                  "LinksHouse_Inverted should be reachable under world_state=Inverted");
     }
-    // The Standard start region has world_state_filter excluding Inverted;
-    // it should NOT be in the reachable set under Inverted.
+    // The Standard start region (LinksHouse) should NOT be in the reachable set
+    // under Inverted. NOTE: this exclusion is by GRAPH TOPOLOGY — it is
+    // not the Inverted start region and no edge points TO it — NOT by its
+    // world_state_filter. Region world_state_filter is metadata that
+    // reachability never consults (only LOCATIONS are ws-filtered); per-world
+    // region scoping must therefore be done via edges, not the filter.
     if (lhs != 0xFFFF && lhs != lhi && inv_reach != NULL) {
       LSC_ASSERT(!Reachability_HasRegion(inv_reach, lhs),
                  "LinksHouse should NOT be reachable under world_state=Inverted "

@@ -180,6 +180,7 @@ int Entrance_ComputeCrossDecoupledExit(const RandoSettings *settings, uint64 see
 int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n,
                                 uint8 vanilla_entrance_id, uint16 *value);
 void Entrance_WriteCrossDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
+void Entrance_WriteCrossDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);
 
 // Emit the spoiler "entrance_mapping" section (door interior → loaded interior)
 // for permutation `assign` (length `n`). The JSON form writes the whole

@@ -7,7 +7,7 @@
 //   g_settings_working        -> *settings
 //   g_settings_target_slot    -> slot_index
 //   g_rec_working_features0    -> recommended_features0
-//   budget literal             -> (budget < 0 ? (settings->race_mode ? 0 : 10) : budget)
+//   budget literal             -> (budget < 0 ? 0 : budget)  // deterministic default
 //   SelectFile_ResetSidecarCache()/selectfile_arr1[slot]=1 -> SelectFile_NotifySlotWritten(slot)
 // On any failure path it returns false with a message in `err` and frees the
 // working `entries`. It does NOT call Placement_Install (install is slot-load-
@@ -36,6 +36,7 @@ static uint32 g_door_gen_digest24;
 #include "shuffle_entrance.h" // Phase C entrance shuffle (cave permutation + region overrides)
 #include "shuffle_boss.h"     // BossShuffle_ComputeAssignment (Slice 7 spoiler)
 #include "shuffle_drops.h"    // DropShuffle_ComputeAssignment (Slice 8 spoiler)
+#include "customizer.h"       // Customizer_GetActive/_LastError (slot-path pins)
 
 #include <string.h>
 #include <stdio.h>
@@ -183,7 +184,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     reg->entrance_axes = canon[25];  // == the packed entrance-axis byte
     const int kEntranceMaxRetry = 64;
     for (int att = 0; att < kEntranceMaxRetry; att++) {
-      // Audit (decoupled HIGH) — reset the edge-override set EVERY attempt so the
+      // reset the edge-override set EVERY attempt so the
       // cave-only ApplyDecoupledExitEdges Begins fresh instead of appending onto
       // the prior attempt's leftover edges (phantom reachability + overflow).
       Entrance_ClearEdgeOverrides();
@@ -225,6 +226,10 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
           reg->entrance_attempt = (uint8)att;
           break;
         }
+      } else if (Customizer_LastError()[0] != '\0') {
+        // A customizer pin error is deterministic — no entrance permutation
+        // will fix it, so stop retrying immediately (mirrors the CLI).
+        break;
       }
     }
     // NB: leave the accepted π's overrides ACTIVE — the caller's sphere/goal
@@ -250,6 +255,8 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         break;
       }
       Rando_SetDoorLogicLayout(NULL, 0);
+      if (Customizer_LastError()[0] != '\0')
+        break;  // deterministic customizer pin error — no layout will fix it
     }
     // NB: the accepted layout stays INSTALLED — the caller's sphere/goal
     // computation must see the shuffled reachability (slot activation later
@@ -266,6 +273,18 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
 void Rando_GetDoorGeneration(uint8 *attempt_out, uint32 *digest24_out) {
   if (attempt_out) *attempt_out = g_door_gen_attempt;
   if (digest24_out) *digest24_out = g_door_gen_digest24;
+}
+
+void Rando_ClearGenerationLogicOverlays(void) {
+  Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
+  // add-rando-door-shuffle — the accepted door layout is left installed by
+  // Rando_PlaceWithEntrances for the caller's sphere/goal/spoiler work; it
+  // MUST be cleared with the entrance overrides or the NEXT same-process
+  // generation (doors off) places against stale door reachability
+  // (eval_doors_active keys purely off the installed pointer) and its slot —
+  // saved with door_digest 0 — is certified against the wrong logic graph.
+  Rando_SetDoorLogicLayout(NULL, 0);
 }
 
 // (door-shuffle statics declared at the top of this file)
@@ -294,10 +313,31 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // Refuse an out-of-range slot BEFORE any SRAM/sidecar write. The SRAM init
   // below indexes g_zenv.sram + slot_index*0x500, so a negative slot_index
   // (e.g. the window closed mid-request, clearing the kind-toggle target to
-  // -1) would memset/write BEFORE the buffer. Audit BLOCKER fix.
+  // -1) would memset/write BEFORE the buffer.
   if (slot_index < 0 || slot_index >= kRandoSidecar_SlotCount) {
     if (err != NULL) snprintf(err, err_cap, "invalid slot index %d", slot_index);
     return false;
+  }
+
+  // add-rando-customizer-mode — customizer_active requires an installed
+  // manifest (the placer hard-errors otherwise; refuse with a clearer message
+  // here), and is mutually exclusive with race mode: the race reveal
+  // regenerates placement from (seed, settings) alone, and without the
+  // manifest the §3c pins cannot be reproduced — reveal would fail instead of
+  // verifying the stamp. Fail closed at generation.
+  if (settings->customizer_active) {
+    if (Customizer_GetActive() == NULL) {
+      if (err != NULL)
+        snprintf(err, err_cap, "customizer mode is on but no manifest is loaded");
+      return false;
+    }
+    if (settings->race_mode) {
+      if (err != NULL)
+        snprintf(err, err_cap,
+                 "race mode cannot be combined with customizer mode (the race "
+                 "reveal cannot regenerate manifest pins)");
+      return false;
+    }
   }
 
   // Compute settings_hash (already cached as short).
@@ -313,12 +353,14 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     return false;
   }
   RandoPlacementTable table = { entries, 0 };
-  // Use a generous budget so even Triforce-Hunt configurations succeed.
-  // Phase B Slice 6 audit H1 — race-mode generation must pass
-  // budget_seconds=0 (no wall-clock cutoff) so the placer runs to its
-  // deterministic kAssumedFillMaxAttempts cap. Reveal also passes 0; this
-  // matches both sides so the stamp is reproducible across machines.
-  int effective_budget = (budget < 0) ? ((settings->race_mode != 0) ? 0 : 10) : budget;
+  // Default budget is 0 (no wall-clock cutoff) so the placer runs to its
+  // deterministic kAssumedFillMaxAttempts cap — see the DETERMINISM WARNING
+  // at Place_AssumedFill. A positive budget selects a machine-speed-dependent
+  // best-so-far, but the share string carries only (seed, settings_hash) and
+  // the receiver REGENERATES placement, so a non-zero default diverges on
+  // hard seeds. Race-mode reveal also passes 0; explicit positive budgets
+  // from the caller are still honored (diagnostic use).
+  int effective_budget = (budget < 0) ? 0 : budget;
 
   // Phase C — entrance shuffle: draw a cave permutation π, install its per-seed
   // region overrides so the placer/goal-check see the shuffled reachability, run
@@ -337,13 +379,16 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   RandoEntranceRegen reg;
   bool placed = Rando_PlaceWithEntrances(settings, seed_u64, effective_budget, &table, &reg);
   if (!placed) {
-    // Audit H1 — clear the entrance overrides on the failure path too (the
+    // clear the logic overlays on the failure path too (the
     // success path clears after the spoiler block; a failed generation would
     // otherwise leak the last attempt's shuffled reachability to the tracker).
-    Entrance_ClearRegionOverrides();
-    Entrance_ClearEdgeOverrides();
+    Rando_ClearGenerationLogicOverlays();
     if (err != NULL) {
-      if (settings->accessibility == kAccessibility_Locations)
+      // A customizer pin error is the root cause when set — surface it instead
+      // of the generic accessibility advice (mirrors the CLI failure path).
+      if (Customizer_LastError()[0] != '\0')
+        snprintf(err, err_cap, "customizer: %s", Customizer_LastError());
+      else if (settings->accessibility == kAccessibility_Locations)
         snprintf(err, err_cap,
                  "no 100%%-locations placement found; try 'items' or 'beatable only'");
       else if (settings->accessibility == kAccessibility_Items)
@@ -366,6 +411,9 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   int share_len = Share_Encode(&ss, share_string, sizeof(share_string));
   if (share_len <= 0) {
     if (err != NULL) snprintf(err, err_cap, "share string encode failed");
+    // This early return sits BEFORE the post-spoiler clear below — drop the
+    // entrance/door overlays here too or they leak to the next generation.
+    Rando_ClearGenerationLogicOverlays();
     free(entries);
     return false;
   }
@@ -436,11 +484,13 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       fprintf(stderr, "[settings] spoiler write failed: %s\n", spoiler_json_path);
     }
   }
-  // Phase C — the accepted π's overrides have now fed placement, the spheres, and
-  // the goal check. Clear them so any later reachability (e.g. the tracker, or the
-  // next generation) starts from the identity graph.
-  Entrance_ClearRegionOverrides();
-  Entrance_ClearEdgeOverrides();
+  // The accepted overlays (entrance π overrides AND the door logic layout)
+  // have now fed placement, the spheres, the goal check, and the spoiler.
+  // Clear them so any later reachability (e.g. the tracker, or the next
+  // generation) starts from the identity graph — slot activation re-installs
+  // its own regenerated copies. (The door attempt/digest read below comes
+  // from Rando_GetDoorGeneration's statics, not the installed layout.)
+  Rando_ClearGenerationLogicOverlays();
 
   // Build & write the sidecar slot. Slot kind = Randomizer.
   RandoSidecarSlot slot;
@@ -469,6 +519,14 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // header bytes are what Entrance_RuntimeInstall reads.)
   slot.header.entrance_axes = reg.entrance_axes;
   slot.header.entrance_attempt = reg.entrance_attempt;
+  // FIX #4 — 24-bit digest of the entrance layout these header fields
+  // regenerate (mirrors door_digest24 below): Rando_ActivateSidecarSlot
+  // recomputes it from the SAME header fields via the SAME layout computation
+  // and refuses the slot on mismatch, so an entrance algorithm/pool change
+  // can't silently install a layout the placement wasn't certified against.
+  // 0 when no entrance axis is active. Reads share_string + world_state +
+  // settings_ext_present from the header, all populated above.
+  slot.header.entrance_digest24 = Rando_EntranceLayoutDigest24(&slot.header);
   // format_version 2: persist the FULL canonical settings blob so a reloaded
   // slot can reproduce the seed's settings + prize/medallion shuffle
   // assignments for the runtime reachability (tracker) engine. The reserved-tail

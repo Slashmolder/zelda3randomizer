@@ -88,11 +88,45 @@ def changed_files(base_sha: str, head_sha: str) -> list[str]:
 
 
 def matches_glob(path: str, pattern: str) -> bool:
-    # fnmatch has no recursive ``**`` support, so collapse ``**/`` -> ``*/`` and
-    # ``**`` -> ``*`` first, then match. Good enough for the bump-trigger globs
-    # (e.g. ``src/rando/**``) and works on every supported Python (3.10+).
-    from fnmatch import fnmatch
-    return fnmatch(path, pattern.replace("**/", "*/").replace("**", "*"))
+    # Translate the glob to a regex with PROPER recursive ``**`` semantics.
+    # ``**/`` matches zero or more leading path segments, so ``src/rando/**/*.c``
+    # matches BOTH ``src/rando/rando.c`` (top level) AND ``src/rando/sub/x.c``;
+    # ``*`` matches within a single segment; bare ``**`` matches anything.
+    # The previous ``**/``->``*/`` fnmatch collapse required a literal
+    # intermediate ``/`` and therefore SILENTLY EXCLUDED every top-level file —
+    # logic.yaml, rando_placement.c, rando.h (the file defining the version
+    # itself) — defeating the bump gate for the overwhelming majority of
+    # placement-affecting edits.
+    import re as _re
+    regex, i = "", 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            regex += r"(?:[^/]+/)*"
+            i += 3
+        elif pattern.startswith("**", i):
+            regex += r".*"
+            i += 2
+        elif pattern[i] == "*":
+            regex += r"[^/]*"
+            i += 1
+        elif pattern[i] == "?":
+            regex += r"[^/]"
+            i += 1
+        else:
+            regex += _re.escape(pattern[i])
+            i += 1
+    return _re.fullmatch(regex, path) is not None
+
+
+# Self-test the glob matcher at import (cheap) so a future refactor of the
+# recursive translation can't silently re-break top-level coverage.
+assert matches_glob("src/rando/rando_placement.c", "src/rando/**/*.c")
+assert matches_glob("src/rando/rando.h", "src/rando/**/*.h")
+assert matches_glob("assets/rando/logic.yaml", "assets/rando/**/*.yaml")
+assert matches_glob("assets/rando/logic_parts/01_eastern_palace.yaml", "assets/rando/**/*.yaml")
+assert matches_glob("src/rando/rando_window/rando_window.h", "src/rando/**/*.h")
+assert not matches_glob("src/rando/rando.c", "src/rando/**/*.h")
+assert not matches_glob("src/main.c", "src/rando/**/*.c")
 
 
 def main(argv: list[str]) -> int:

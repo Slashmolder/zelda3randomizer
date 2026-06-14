@@ -8,11 +8,12 @@
 #include "snes/snes_regs.h"
 #include "snes/dma.h"
 #include "spc_player.h"
-#include "rando/rando.h"  // add-rando-trackers: tracker visibility flags
+#include "rando/rando.h"  // tracker visibility flags
 #include "rando/rando_placement.h"  // §8.8 snapshot rando placement TLV
 #include "rando/rando_snapshot_tail.h"  // §8.8 / §8.8a TLV save/load + invariant counter
 #include "rando/rando_hints.h"  // Rando_DumpHintDebug (F12 hint-state diagnostic)
-#include "hud.h"  // add-rando-trackers: per-frame tracker-overlay draw hook
+#include "hud.h"  // per-frame tracker-overlay draw hook
+#include "load_gfx.h"  // g_recv_item_slot_owner (invalidated on snapshot restore)
 #include "util.h"
 #include "audio.h"
 #include "assets.h"
@@ -263,9 +264,10 @@ static void ClearOamBuffer() {  // 80841e
 static void ZeldaRunGameLoop() {
   frame_counter++;
   ClearOamBuffer();
+  Rando_TickTrapEffects();
   Module_MainRouting();
-  // add-rando-trackers (Phase B Slice 1): draw the in-game tracker overlays
-  // here, after the game has built OAM for the frame and BEFORE
+  // Draw the in-game tracker overlays here, after the game has built OAM for
+  // the frame and BEFORE
   // NMI_PrepareSprites packs the extended-OAM table, so overlay sprites are
   // uploaded with the rest of OAM. No-op unless rando is active and a tracker
   // toggle is on.
@@ -294,14 +296,13 @@ void ZeldaInitialize() {
   // Randomizer cells: explicit zero before any game code or snapshot reads
   // them. g_ram is static zero-init so this is defense-in-depth — protects
   // against future reorderings that move kRam_Rando* reads earlier in init.
-  // Per add-randomizer-support tasks.md §1.1, §1.2 (D7 init-order guard).
   enhanced_features1 = 0;
   g_rando_slot_active = 0;
   g_rando_starting_inventory_granted = 0;
 
-  // add-rando-trackers: launch state is always hidden. The per-seed deactivate
-  // path in rando.c also clears these on slot switch; this is the cold-init
-  // guard so a fresh process never shows a stale overlay.
+  // Launch state is always hidden. The per-seed deactivate path in rando.c also
+  // clears these on slot switch; this keeps a fresh process from showing a
+  // stale overlay.
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
 }
@@ -606,6 +607,13 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
   // to get live hints. This snapshot/replay path is the edge case.) No-op when
   // no rando slot is active.
   Rando_ClearHints();
+
+  // Same class of fix for the receive-item slot-owner cache (a load_gfx.c
+  // static, not in g_ram): the restore just replaced the slot's BUFFER
+  // contents wholesale, so a surviving owner value would make
+  // Rando_EnsureRecvItemSlotGfx skip reloading tiles that are no longer
+  // there.
+  g_recv_item_slot_owner = 0xFFFFu;
 
   // §8.8a ordering-invariant tripwire. assert() compiles out under NDEBUG
   // (Release builds), so we also do a runtime check under rando-active that

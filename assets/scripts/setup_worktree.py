@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Mirror zelda3.smc, zelda3_assets.dat, and zelda3.ini into the current git worktree.
+"""Mirror local, gitignored runtime/build inputs into the current git worktree.
 
 The project's ROM (`zelda3.smc` / `zelda3.sfc`) and the extracted asset blob
 (`zelda3_assets.dat`) are gitignored, so freshly-created git worktrees lack
-them. A worktree agent that runs `--generate-seed` or other asset-loading
-paths will hit `Die("Failed to read zelda3_assets.dat ...")` and on Windows
-Release builds pop a modal dialog on whoever's desktop the process happens
-to land on.
+them. Asset-loading CLI paths need those files before they can run.
+
+On Windows/MSBuild, SDL2 is also gitignored under `third_party/SDL2-2.32.10/`.
+Mirror that directory from the main worktree so a fresh worktree can build
+without manually re-extracting the SDL2-devel zip.
 
 We also mirror `zelda3.ini` (optional, best-effort). The exe searches parent
 directories for `zelda3.ini`, so a worktree run with no local ini falls back
@@ -15,9 +16,9 @@ the main checkout root — polluting it and risking save collisions. A local ini
 keeps dumps/saves inside the worktree. Missing-source-ini is non-fatal: the exe
 still runs via the parent-dir fallback.
 
-Run this script after creating a new worktree (or in an agent's setup
-step) to mirror the ROM + assets (+ ini) from the main worktree. The script is
-idempotent: if files already exist locally it does nothing.
+Run this script after creating a new worktree to mirror the ROM + assets +
+Windows SDL2 (+ ini) from the main worktree.
+The script is idempotent: if files already exist locally it does nothing.
 
 Usage:
     python assets/scripts/setup_worktree.py              # auto-detect main worktree
@@ -27,10 +28,11 @@ Usage:
 Resolution order for the source:
     1. --from PATH command-line override
     2. ZELDA3_MAIN_WORKTREE environment variable
-    3. `git worktree list` -- pick the entry without a worktree-specific
-       subdirectory marker (i.e., the main checkout)
+    3. `git worktree list` -- prefer the checkout with a real `.git`
+       directory, then fall back to the shortest path
 
-Exits 0 if assets are present (or were successfully mirrored), 1 otherwise.
+Exits 0 if required inputs are present (or were successfully mirrored), 1
+otherwise. On Windows, vendored SDL2 is required; on other platforms it is not.
 """
 
 from __future__ import annotations
@@ -52,14 +54,23 @@ INI_NAME = "zelda3.ini"  # optional, best-effort (keeps dumps/saves in the workt
 # confusing playtest failure (placement is correct, but no chest resolves to its
 # placed item). Mirror it so worktree builds dispatch chests correctly.
 CHEST_TABLE_REL = os.path.join("assets", "rando", "chest_table.gen.bin")
+SDL2_REL = os.path.join("third_party", "SDL2-2.32.10")
+SDL2_REQUIRED_RELS = (
+    os.path.join(SDL2_REL, "include", "SDL.h"),
+    os.path.join(SDL2_REL, "lib", "x64", "SDL2.lib"),
+    os.path.join(SDL2_REL, "lib", "x64", "SDL2.dll"),
+    os.path.join(SDL2_REL, "lib", "x86", "SDL2.lib"),
+    os.path.join(SDL2_REL, "lib", "x86", "SDL2.dll"),
+)
+SDL2_REQUIRED_ON_THIS_PLATFORM = os.name == "nt"
 
 
 def find_main_worktree() -> Path | None:
     """Run `git worktree list --porcelain` and return the main worktree's path.
 
-    Heuristic: the main worktree is the one whose path does NOT contain
-    `.claude/worktrees/` (those are the agent-isolation worktrees this
-    script is meant to populate).
+    Heuristic: linked worktrees normally have a `.git` file that points back
+    to the main checkout's metadata, while the main checkout has a `.git`
+    directory. If that signal is unavailable, prefer the shortest path.
     """
     try:
         out = subprocess.check_output(
@@ -75,12 +86,9 @@ def find_main_worktree() -> Path | None:
         if line.startswith("worktree "):
             candidates.append(Path(line[len("worktree "):].strip()))
 
-    # Filter out agent-isolation worktrees.
-    main_candidates = [
-        p for p in candidates
-        if ".claude/worktrees" not in p.as_posix()
-        and ".claude\\worktrees" not in str(p)
-    ]
+    main_candidates = [p for p in candidates if (p / ".git").is_dir()]
+    if not main_candidates:
+        main_candidates = candidates
     if not main_candidates:
         return None
     # Prefer the shortest path — if multiple main-style worktrees exist,
@@ -97,6 +105,17 @@ def find_existing_rom(d: Path) -> Path | None:
     return None
 
 
+def has_vendored_sdl2(d: Path) -> bool:
+    return all((d / rel).is_file() for rel in SDL2_REQUIRED_RELS)
+
+
+def print_missing_sdl2(prefix: str, d: Path) -> None:
+    missing = [rel for rel in SDL2_REQUIRED_RELS if not (d / rel).is_file()]
+    print(f"{prefix} missing vendored SDL2 under {d / SDL2_REL}", file=sys.stderr)
+    for rel in missing:
+        print(f"  missing: {rel}", file=sys.stderr)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from", dest="source", default=None,
@@ -111,19 +130,29 @@ def main() -> int:
     have_assets = (cwd / ASSETS_NAME).is_file()
     have_ini = (cwd / INI_NAME).is_file()
     have_chest = (cwd / CHEST_TABLE_REL).is_file()
+    have_sdl2 = has_vendored_sdl2(cwd)
+    need_sdl2 = SDL2_REQUIRED_ON_THIS_PLATFORM
 
     if args.verify:
-        if have_rom and have_assets:
-            print("setup_worktree: OK (rom + assets present)")
+        if have_rom and have_assets and (have_sdl2 or not need_sdl2):
+            if need_sdl2:
+                print("setup_worktree: OK (rom + assets + SDL2 present)")
+            else:
+                print("setup_worktree: OK (rom + assets present)")
             return 0
         if not have_rom:
             print(f"setup_worktree: MISSING {ROM_NAMES} in {cwd}")
         if not have_assets:
             print(f"setup_worktree: MISSING {ASSETS_NAME} in {cwd}")
+        if need_sdl2 and not have_sdl2:
+            print_missing_sdl2("setup_worktree:", cwd)
         return 1
 
-    if have_rom and have_assets and have_ini and have_chest:
-        print("setup_worktree: nothing to do (rom + assets + ini + chest table already present)")
+    if have_rom and have_assets and have_ini and have_chest and (have_sdl2 or not need_sdl2):
+        if need_sdl2:
+            print("setup_worktree: nothing to do (rom + assets + ini + chest table + SDL2 already present)")
+        else:
+            print("setup_worktree: nothing to do (rom + assets + ini + chest table already present)")
         return 0
 
     # Resolve the source.
@@ -137,7 +166,7 @@ def main() -> int:
 
     if source is None:
         # The ini is optional; only a missing ROM/assets is fatal.
-        if have_rom and have_assets:
+        if have_rom and have_assets and (have_sdl2 or not need_sdl2):
             print("setup_worktree: rom + assets present; could not locate main "
                   "worktree to mirror optional zelda3.ini (skipping -- the exe "
                   "falls back to a parent-dir ini).", file=sys.stderr)
@@ -150,6 +179,8 @@ def main() -> int:
                       f"--from <main-worktree>, set ZELDA3_MAIN_WORKTREE, or run "
                       f"`python assets/restool.py --extract-from-rom`.", file=sys.stderr)
             return 0
+        if need_sdl2 and not have_sdl2:
+            print_missing_sdl2("setup_worktree:", cwd)
         print("setup_worktree: could not locate main worktree. Pass --from PATH,",
               file=sys.stderr)
         print("                set ZELDA3_MAIN_WORKTREE, or ensure git knows about",
@@ -189,6 +220,24 @@ def main() -> int:
         dst_assets = cwd / ASSETS_NAME
         print(f"setup_worktree: copy {src_assets} -> {dst_assets}")
         shutil.copy2(src_assets, dst_assets)
+
+    # Windows/MSBuild requires the gitignored SDL2-devel VC package. Copy the
+    # whole directory so both x64 and Win32 project platforms stay usable.
+    if need_sdl2 and not have_sdl2:
+        src_sdl2 = source / SDL2_REL
+        if not has_vendored_sdl2(source):
+            print_missing_sdl2("setup_worktree: source", source)
+            print("setup_worktree: re-extract third_party/SDL2-2.32.10/ from "
+                  "libsdl.org's SDL2-devel-2.32.10-VC.zip, then re-run this "
+                  "script.", file=sys.stderr)
+            return 1
+        dst_sdl2 = cwd / SDL2_REL
+        if dst_sdl2.exists() and not dst_sdl2.is_dir():
+            print(f"setup_worktree: {dst_sdl2} exists but is not a directory.",
+                  file=sys.stderr)
+            return 1
+        print(f"setup_worktree: copy {src_sdl2} -> {dst_sdl2}")
+        shutil.copytree(src_sdl2, dst_sdl2, dirs_exist_ok=True)
 
     # Optional: mirror zelda3.ini so F12 dumps + SRAM saves stay in the worktree
     # instead of falling back to the main checkout's ini (and its directory).

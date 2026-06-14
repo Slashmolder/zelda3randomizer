@@ -30,8 +30,10 @@
 #include "door_keylogic.h"
 #include "door_runtime.h"  // DoorRt_KindOverlaySelfCheck (Stage-1b kind overlay)
 #include "rando_rng.h"
+#include "rando_generate.h"  // Rando_PlaceWithEntrances + overlay clear (leak selftest)
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // From the generated logic tables (rando_logic.h pulls in much more; the
@@ -628,9 +630,13 @@ static bool RegionInList(uint16 r, const uint16 *list, int n) {
 // arrival regions — they are origins; the is_drop==1 rows only mark which).
 static int Door_AllPortalOrigins(uint8 dungeon, uint16 *out) {
   int n = 0;
-  for (int i = 0; i < kDoorTbl_PortalCount; i++)
-    if (kDoorTblPortals[i].dungeon == dungeon && !kDoorTblPortals[i].is_drop)
+  for (int i = 0; i < kDoorTbl_PortalCount; i++) {
+    if (kDoorTblPortals[i].dungeon == dungeon && !kDoorTblPortals[i].is_drop) {
+      if (n >= kDoorGen_MaxOrigins)
+        break;  // table outgrew kDoorGen_MaxOrigins: fail closed, don't overflow
       out[n++] = kDoorTblPortals[i].region;
+    }
+  }
   return n;
 }
 
@@ -679,6 +685,8 @@ static void Door_ExploreStaged(const DoorShuffleLayout *layout, uint8 dungeon,
       for (int k = 0; k < 2; k++) {
         uint16 en = g_door_idx.staged[s].enabler[k];
         if (en != 0xFFFF && DoorExplore_Reached(out, en)) {
+          if (*origin_count >= kDoorGen_MaxOrigins)
+            break;  // origin array full: fail closed (skip), don't overflow
           origins[(*origin_count)++] = lobby;
           grew = true;
           break;
@@ -954,7 +962,10 @@ static bool Door_CheckValid(const DoorShuffleLayout *layout, uint8 dungeon,
     return false;
   // 2c. Blind's maiden escort: ('Thieves Blind's Cell', 'Thieves Boss') —
   // the fork pins Blind in Thieves Town (boss shuffle), so always required.
-  if (dungeon == 8 && g_door_idx.blind_cell_region != 0xFFFF) {
+  // Guard the boss region too (mirrors 2b): an unresolved 0xFFFF target would
+  // index visited_blue[0xFFFF>>3] OOB inside DoorExplore_Reached.
+  if (dungeon == 8 && g_door_idx.blind_cell_region != 0xFFFF &&
+      g_door_idx.thieves_boss_region != 0xFFFF) {
     if (!Door_PathFromReaches(layout, dungeon, g_door_idx.blind_cell_region,
                               &g_door_idx.thieves_boss_region, 1))
       return false;
@@ -1329,6 +1340,70 @@ int DoorShuffle_SelfTest(void) {
     printf("door-selftest: full-mask (0x%x) x5 ok, last bk_restricted %d, digest %08x\n",
            kDoorShuffle_MvpDungeonMask, full.bk_restricted_count,
            DoorShuffle_LayoutDigest(&full));
+  }
+
+  // Cross-generation door-layout leak regression:
+  // Rando_PlaceWithEntrances leaves the accepted door layout installed for the
+  // caller's sphere/goal/spoiler work; Rando_GenerateSlot's overlay clear MUST
+  // drop it, or the next vanilla-doors generation in the same process places
+  // against stale door reachability (and saves a slot with door_digest 0
+  // certified against the wrong logic graph). Sequence: vanilla-doors digest →
+  // doors-ON generation (layout installed by contract) → the same
+  // Rando_ClearGenerationLogicOverlays the slot path runs → vanilla-doors
+  // digest again; first and third must be byte-identical.
+  {
+    bool leak_fail = false;
+    RandoSettings st;
+    Settings_SetDefaults(&st);
+    const uint64 s = 0xD00DCAFE0000BEEFull;
+    RandoPlacement *entries =
+        (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+    if (entries == NULL) {
+      fprintf(stderr, "door-selftest: leak check: OOM\n");
+      return 1;
+    }
+    RandoPlacementTable table = { entries, 0 };
+    uint8 digest_before[32], digest_after[32];
+    if (!Place_AssumedFill(&st, s, 0, &table)) {
+      fprintf(stderr, "door-selftest: leak check: vanilla placement failed\n");
+      leak_fail = true;
+    } else {
+      PlacementTable_ComputeDigest(&table, digest_before);
+      RandoSettings st_doors = st;
+      st_doors.door_shuffle = kDoorShuffle_Basic;
+      RandoEntranceRegen reg;
+      table.count = 0;
+      if (!Rando_PlaceWithEntrances(&st_doors, s, /*budget_seconds=*/0, &table, &reg)) {
+        fprintf(stderr, "door-selftest: leak check: doors-ON generation failed\n");
+        leak_fail = true;
+      } else if (Rando_GetDoorLogicLayout(NULL) == NULL) {
+        // The doors-ON arm must leave the layout installed (the contract the
+        // clear exists for) — a NULL here would make this check vacuous.
+        fprintf(stderr, "door-selftest: leak check: doors-ON left no layout installed\n");
+        leak_fail = true;
+      } else {
+        Rando_ClearGenerationLogicOverlays();
+        if (Rando_GetDoorLogicLayout(NULL) != NULL) {
+          fprintf(stderr, "door-selftest: leak check: clear left the door layout installed\n");
+          leak_fail = true;
+        }
+        table.count = 0;
+        if (!Place_AssumedFill(&st, s, 0, &table)) {
+          fprintf(stderr, "door-selftest: leak check: post-clear vanilla placement failed\n");
+          leak_fail = true;
+        } else {
+          PlacementTable_ComputeDigest(&table, digest_after);
+          if (memcmp(digest_before, digest_after, sizeof(digest_before)) != 0) {
+            fprintf(stderr,
+                    "door-selftest: leak check: vanilla digest changed after a doors-ON generation\n");
+            leak_fail = true;
+          }
+        }
+      }
+    }
+    free(entries);
+    printf("door-selftest: cross-generation leak check %s\n", leak_fail ? "FAILED" : "ok");
+    hard_fail |= leak_fail;
   }
 
   if (hard_fail) {

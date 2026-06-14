@@ -24,10 +24,14 @@ and "uncompletable, refusing". The fix was to default the budget to 0
 
 This guard has two prongs:
 
-  1. `--source-only` (no build): a STATIC assert that the `--generate-seed`
-     default budget is 0. Deterministically locks the specific fix — a
-     positive default can never silently return. Runs in the cheap
-     source-guards job.
+  1. `--source-only` (no build): a STATIC assert that the default budget is 0
+     on BOTH generator entry points — the headless `--generate-seed` CLI
+     (src/main.c `int budget_seconds = 0;`) and the playable-slot generator
+     (src/rando/rando_generate.c: the `effective_budget` mapping of a
+     negative/"use default" budget must contain no nonzero literal, i.e.
+     budget<0 resolves to 0). Deterministically locks the specific fix — a
+     positive default can never silently return on either path. Runs in the
+     cheap source-guards job.
 
   2. `--binary=<path>`: a RUNTIME check that a deliberately HARD seed (one that
      exhausts the retry loop — verified via its `forward_fill_fallback`
@@ -53,6 +57,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 MAIN_C = REPO / "src" / "main.c"
+RANDO_GENERATE_C = REPO / "src" / "rando" / "rando_generate.c"
 
 # The CANARY: a seed that EXHAUSTS the retry loop (never fully completes → runs
 # the full attempt cap and forward-fills), so it is exactly the budget-sensitive
@@ -71,8 +76,20 @@ RUNS = 3
 # only matches the declaration's default.
 _BUDGET_DEFAULT_RE = re.compile(r"\bint\s+budget_seconds\s*=\s*(\d+)\s*;")
 
+# The SLOT generator (Rando_GenerateSlot, called by both the in-game settings
+# screen and the PC native settings window) takes `budget` with budget<0
+# meaning "use the default", resolved by an `effective_budget = ...;`
+# assignment. The determinism contract requires that default to resolve to 0:
+# any nonzero integer literal in the RHS is a wall-clock default smuggled in
+# (e.g. the historical `(budget < 0) ? ((settings->race_mode != 0) ? 0 : 10)
+# : budget`, which made non-race slot generation machine-speed-dependent).
+# Checking "no nonzero literal" rather than one exact expression keeps the
+# guard robust to how the fixed mapping is phrased.
+_EFFECTIVE_BUDGET_RE = re.compile(r"\beffective_budget\s*=\s*(.*?);", re.S)
+_INT_LITERAL_RE = re.compile(r"\b(?:0[xX][0-9a-fA-F]+|\d+)\b")
 
-def check_source() -> int:
+
+def _check_main_c() -> int:
     if not MAIN_C.exists():
         print(f"check_placer_determinism: {MAIN_C} not found", file=sys.stderr)
         return 1
@@ -94,9 +111,48 @@ def check_source() -> int:
               f"deterministic full-attempt cap); pass --budget-seconds only for "
               f"batch/debug callers that accept non-determinism.", file=sys.stderr)
         return 1
-    print("check_placer_determinism: OK (--generate-seed default budget is 0 — "
-          "deterministic).")
     return 0
+
+
+def _check_slot_generator() -> int:
+    if not RANDO_GENERATE_C.exists():
+        print(f"check_placer_determinism: {RANDO_GENERATE_C} not found",
+              file=sys.stderr)
+        return 1
+    text = RANDO_GENERATE_C.read_text(encoding="utf-8")
+    matches = _EFFECTIVE_BUDGET_RE.findall(text)
+    if not matches:
+        print("check_placer_determinism: could not find an `effective_budget = "
+              "...;` assignment in src/rando/rando_generate.c — the guard needs "
+              "updating (was the slot-generator budget refactored?). Failing "
+              "closed to preserve the determinism contract.", file=sys.stderr)
+        return 1
+    rc = 0
+    for rhs in matches:
+        nonzero = [t for t in _INT_LITERAL_RE.findall(rhs) if int(t, 0) != 0]
+        if nonzero:
+            print(f"check_placer_determinism: src/rando/rando_generate.c resolves "
+                  f"the slot-generator default budget with a NONZERO literal "
+                  f"({', '.join(nonzero)}) in `effective_budget = "
+                  f"{' '.join(rhs.split())};`. The negative/'use default' budget "
+                  f"MUST resolve to 0: a positive budget is a wall-clock cutoff "
+                  f"on Place_AssumedFill's retry loop, so slot generation (the "
+                  f"in-game settings screen + native settings window) becomes "
+                  f"machine-speed-dependent and can diverge from the headless "
+                  f"--generate-seed result for the same (settings, seed).",
+                  file=sys.stderr)
+            rc = 1
+    return rc
+
+
+def check_source() -> int:
+    rc = _check_main_c()
+    rc |= _check_slot_generator()
+    if rc == 0:
+        print("check_placer_determinism: OK (default budgets are 0 on both the "
+              "--generate-seed CLI and the Rando_GenerateSlot slot generator — "
+              "deterministic).")
+    return rc
 
 
 def _generate(binary: Path, extra_args: list[str]) -> dict | None:

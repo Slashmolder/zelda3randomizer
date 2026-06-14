@@ -7,8 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../rando.h"  // kGeneratorVersion
+#include "../rando.h"  // kGeneratorVersion, Rando_RegenerateActiveSlotHints
 #include "../rando_spoiler.h"  // RandoSpoiler, Spoiler_Write (§14.4/§14.5)
+#include "../rando_hints.h"    // Rando_GenerateHints/Rando_ClearHints (snapshot-consistent hints)
+#include "../customizer.h"     // Customizer_GetActive (Validate: manifest loaded?)
 
 RandoWindowBridge g_rando_window_bridge;
 
@@ -17,9 +19,7 @@ bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_
   if (!b->has_last_generated || b->last_generated_placement.entries == NULL)
     return false;
   // Build the spoiler from the generate-time SNAPSHOT (not `pending`, which the
-  // user may have edited since). Hints are NOT re-emitted (re-running
-  // Rando_GenerateHints would mutate shared hint state); this is a convenience
-  // export of the displayed placement. Spheres are not snapshotted for the native
+  // user may have edited since). Spheres are not snapshotted for the native
   // path, so sphere_data is omitted (NULL).
   RandoSpoiler sp;
   memset(&sp, 0, sizeof sp);
@@ -30,7 +30,28 @@ bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_
   sp.placements = &b->last_generated_placement;
   sp.spheres = NULL;
   sp.goal_completable = b->last_generated_goal_completable;
-  return Spoiler_Write(&sp, json_path, txt_path);
+  // Spoiler_Write reads the hint GLOBALS (Rando_GetHintString over rando_hints.c's
+  // g_hint_table) at write time, and those are overwritten by ANY slot activation
+  // (Rando_ActivateSidecarSlot), newer generation, or race reveal — writing here
+  // without re-installing would mix THIS snapshot's placement with ANOTHER
+  // slot's hints. Hints are a pure deterministic function of (settings.hints/
+  // .goal, placement) — the sub-RNG is seeded from the placement digest, and
+  // Hints_SelfCheck asserts run-to-run byte-identity — so regenerating from the
+  // snapshotted settings+placement reproduces the generate-time hints exactly
+  // (the spheres arg is reserved/unused).
+  Rando_GenerateHints(&b->last_generated_settings, &b->last_generated_placement, NULL);
+  bool ok = Spoiler_Write(&sp, json_path, txt_path);
+  // Restore the ACTIVE slot's hint state so in-game telepathic tiles / fortune
+  // tellers keep showing the active seed's hints after a spoiler export.
+  // Rando_RegenerateActiveSlotHints REPLAYS Rando_ActivateSidecarSlot's hint
+  // block exactly — including the v1/no-blob fallbacks (header-ext
+  // hints_setting/goal, default-on for the oldest slots), which a
+  // Rando_GetActiveSettings()-based restore here used to miss (it returns NULL
+  // for those slots even though activation regenerated their hints, leaving
+  // vanilla text until slot reload). No slot active / snapshot restore still
+  // fails safe to a cleared table — vanilla text.
+  Rando_RegenerateActiveSlotHints();
+  return ok;
 }
 
 void RandoWindowBridge_RecomputeDerived(void) {
@@ -39,9 +60,22 @@ void RandoWindowBridge_RecomputeDerived(void) {
   ShareString ss;
   memset(&ss, 0, sizeof ss);
   ss.version = (uint8)kGeneratorVersion;
-  memcpy(ss.settings_hash, b->pending_hash, 16);
   ss.seed_u64 = b->seed_u64;
-  if (Share_Encode(&ss, b->share_string, (int)sizeof b->share_string) <= 0) {
+  // The cached display/copy string is the v2 EXCHANGE form (settings + seed,
+  // add-rando-share-string-v2 D1/D2) — EXCEPT under customizer mode, where it
+  // stays v1 (seed + hash): customizer placements depend on a local manifest
+  // file no share string can carry (design D5). The v1 IDENTITY string
+  // (last_generated_share_string, spoiler filename/meta) is produced
+  // elsewhere and unaffected.
+  int n;
+  if (b->pending.customizer_active) {
+    memcpy(ss.settings_hash, b->pending_hash, 16);
+    n = Share_Encode(&ss, b->share_string, (int)sizeof b->share_string);
+  } else {
+    Settings_CanonicalSerialize(&b->pending, ss.settings_canonical);
+    n = Share_EncodeV2(&ss, b->share_string, (int)sizeof b->share_string);
+  }
+  if (n <= 0) {
     b->share_string[0] = '\0';
   }
 }
@@ -131,7 +165,7 @@ int RandoWindowBridge_Validate(const RandoSettings *s, char *out_err, size_t cap
   // path (select_file.c) and the CLI. Do NOT add constraints the game allows:
   //   - goal ∈ {triforce-hunt, ganonhunt}: pieces_required must not exceed
   //     pieces_placed (BuildItemPool refuses pieces_required > pieces_placed).
-  // NOTE (audit round 3): crystals_tower may freely exceed crystals_ganon. The
+  // NOTE: crystals_tower may freely exceed crystals_ganon. The
   // in-game UI (CycleRow allows 0..7 on both), the CLI, and Goal_IsCompletable
   // all permit it — the Ganon's-Tower entry crystal gate is independent of the
   // Ganon-vulnerability gate — so the native window must NOT block it. The
@@ -148,6 +182,26 @@ int RandoWindowBridge_Validate(const RandoSettings *s, char *out_err, size_t cap
                "Pieces required (%u) cannot exceed pieces placed (%u).",
                (unsigned)s->pieces_required, (unsigned)s->pieces_placed);
     return 1;
+  }
+
+  // add-rando-customizer-mode — both rejections mirror Rando_GenerateSlot's
+  // fail-closed guards; validating here surfaces them as inline UI errors
+  // (disabled Generate button) instead of a post-generate failure modal.
+  if (s->customizer_active) {
+    if (Customizer_GetActive() == NULL) {
+      if (out_err != NULL && cap > 0)
+        snprintf(out_err, cap,
+                 "Customizer mode is on but no manifest is loaded. Load one "
+                 "below or turn customizer mode off.");
+      return 1;
+    }
+    if (s->race_mode) {
+      if (out_err != NULL && cap > 0)
+        snprintf(out_err, cap,
+                 "Race mode cannot be combined with customizer mode (the race "
+                 "reveal cannot regenerate manifest pins).");
+      return 1;
+    }
   }
 
   return 0;

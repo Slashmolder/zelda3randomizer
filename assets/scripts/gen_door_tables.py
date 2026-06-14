@@ -552,7 +552,10 @@ HAS_ITEM_MAP = {
     'Red Boomerang': 'HAS_ITEM(RedBoomerang)',
     'Moon Pearl': 'HAS_ITEM(MoonPearl)',
     'Bow': 'CanShootArrowsL1()',
-    'Silver Arrows': 'CanShootArrowsL2()',
+    # macros.yaml's level-2 archery macro is CanShootSilvers (CanShootArrowsL2
+    # does not exist — an unknown macro makes rando_logic_gen compile the WHOLE
+    # predicate to constant FALSE, walling off the affected door edges).
+    'Silver Arrows': 'CanShootSilvers()',
     'Big Key (Ganons Tower)': 'HAS_ITEM(BigKey_GanonsTower)',
     'Pegasus Boots': 'HAS_ITEM(Boots)',
     # kill-rule sword tiers (any-sword disjunctions simplify via A|(A&B) fold)
@@ -1296,6 +1299,29 @@ class TableBuilder:
                 portals.append({'dungeon': di, 'region': self.region_id[rname],
                                 'is_drop': 1, 'name': rname})
         self.portals = portals
+        # C consumers (Door_AllPortalOrigins / Door_ExploreStaged in
+        # shuffle_doors.c) append portal origins into fixed
+        # uint16[kDoorGen_MaxOrigins] arrays — the generator is the spec for
+        # that bound, so enforce it here instead of overflowing at runtime.
+        # Count the population the STATIC consumer actually appends:
+        # Door_AllPortalOrigins walks only the !is_drop rows (is_drop==1 rows
+        # mark which regions are drop arrivals; they are never appended as
+        # origins themselves). Door_ExploreStaged can additionally re-append
+        # staged lobbies at runtime, but that append is bounds-guarded
+        # fail-closed on the C side, so this static check covers the static
+        # population only — conservatively, since staged lobbies are drawn
+        # from regions Door_InitialOrigins first excluded.
+        kDoorGen_MaxOrigins = 12  # door_keylogic.h, grow in lockstep
+        per_dungeon = {}
+        for p in portals:
+            if p['is_drop']:
+                continue
+            per_dungeon[p['dungeon']] = per_dungeon.get(p['dungeon'], 0) + 1
+        for di, cnt in sorted(per_dungeon.items()):
+            if cnt > kDoorGen_MaxOrigins:
+                self.problem(f'dungeon {di}: {cnt} entrance-portal rows exceed '
+                             f'kDoorGen_MaxOrigins={kDoorGen_MaxOrigins} '
+                             f'(door_keylogic.h must grow in lockstep)')
 
         # ---- room door lists (kind overlay) + paired doors ------------------
         self.rooms_sorted = sorted(room_doorlists.items())

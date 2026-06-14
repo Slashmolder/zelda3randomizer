@@ -98,9 +98,8 @@ locations:
     region: EasternPalace_PastArmos
     type: Drop
     vanilla_item: BossHeartContainer
-    # Boss-heart slot. In Phase A this is identity-placed
-    # (settings.region_boss_hearts_in_pool=true → placer hardcodes the
-    # BossHeartContainer here). The can_reach is the boss kill itself.
+    # Boss-heart slot. This is shuffled like an ordinary drop location; the
+    # can_reach is the boss kill itself.
     can_reach: "CanKillArmosKnights() AND HAS_ITEM(BigKey_EasternPalace)"
     source: "app/Region/Standard/EasternPalace.php:56"
 

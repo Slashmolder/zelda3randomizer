@@ -835,6 +835,22 @@ static void DrawMapTracker(void *) {
 }
 
 // ---- Lifecycle -------------------------------------------------------------
+static SDL_Window *s_game_window = nullptr;
+
+static int ClampInt(int v, int lo, int hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static void SetWindowGeometry(SDL_Window *win, int x, int y, int w, int h) {
+  if (!win || w <= 0 || h <= 0) return;
+  SDL_SetWindowSize(win, w, h);
+  SDL_SetWindowPosition(win, x, y);
+}
+
+void Trackers_SetGameWindow(void *game_window) {
+  s_game_window = (SDL_Window *)game_window;
+}
+
 void Trackers_Init(void) {
   s_win[kTracker_Item]  = Z3RHost_Create("Z3R Item Tracker",  360, 520, DrawItemTracker,  nullptr);
   s_win[kTracker_Check] = Z3RHost_Create("Z3R Check Tracker", 420, 680, DrawCheckTracker, nullptr);
@@ -865,6 +881,56 @@ void Trackers_ApplyGeometry(int kind, int x, int y, int w, int h) {
 void Trackers_GetGeometry(int kind, int *x, int *y, int *w, int *h) {
   if (kind < 0 || kind >= kTracker_Count) { if (x) *x = 0; if (y) *y = 0; if (w) *w = 0; if (h) *h = 0; return; }
   Z3RHost_GetGeometry(s_win[kind], x, y, w, h);
+}
+
+void Trackers_ApplyTiledLayout(void) {
+  if (!s_game_window) return;
+  uint32 game_flags = SDL_GetWindowFlags(s_game_window);
+  if (game_flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP))
+    return;
+  SDL_RestoreWindow(s_game_window);
+
+  int display = SDL_GetWindowDisplayIndex(s_game_window);
+  if (display < 0) display = 0;
+
+  SDL_Rect bounds;
+  if (SDL_GetDisplayUsableBounds(display, &bounds) != 0 &&
+      SDL_GetDisplayBounds(display, &bounds) != 0) {
+    return;
+  }
+
+  int left_w = ClampInt(bounds.w * 16 / 100, 300, 430);
+  int right_w = ClampInt(bounds.w * 19 / 100, 340, 470);
+  const int min_game_w = 640;
+  int game_w = bounds.w - left_w - right_w;
+  if (game_w < min_game_w) {
+    int deficit = min_game_w - game_w;
+    int cut_left = deficit / 2;
+    int cut_right = deficit - cut_left;
+    left_w = ClampInt(left_w - cut_left, 260, left_w);
+    right_w = ClampInt(right_w - cut_right, 300, right_w);
+    game_w = bounds.w - left_w - right_w;
+  }
+  if (game_w < 320) return;
+
+  int min_map_h = bounds.h >= 700 ? 360 : bounds.h / 2;
+  int max_map_h = bounds.h - 260;
+  if (max_map_h < min_map_h) max_map_h = bounds.h / 2;
+  int map_h = ClampInt(bounds.h * 59 / 100, min_map_h, max_map_h);
+  int item_h = bounds.h - map_h;
+
+  int game_x = bounds.x + left_w;
+  int right_x = game_x + game_w;
+
+  Trackers_ApplyGeometry(kTracker_Check, bounds.x, bounds.y, left_w, bounds.h);
+  SetWindowGeometry(s_game_window, game_x, bounds.y, game_w, bounds.h);
+  Trackers_ApplyGeometry(kTracker_Map, right_x, bounds.y, right_w, map_h);
+  Trackers_ApplyGeometry(kTracker_Item, right_x, bounds.y + map_h, right_w, item_h);
+
+  Trackers_SetShown(kTracker_Check, true);
+  Trackers_SetShown(kTracker_Map, true);
+  Trackers_SetShown(kTracker_Item, true);
+  SDL_RaiseWindow(s_game_window);
 }
 
 void Trackers_Shutdown(void) {

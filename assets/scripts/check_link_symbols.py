@@ -13,14 +13,16 @@ references to:
 Catches things like a helper in ``src/zelda_rtl.c`` named ``ZeldaRandU32`` that
 the rando module unknowingly links against.
 
-**A0 status (scaffold)**: ``src/rando/*.o`` doesn't exist yet (no source files
-to compile). Until then, the script reports "no objects, clean pass." The
-script is wired into CI now so the gate is live from the moment the first
-rando object builds.
+This is an ARTIFACT check: it needs compiled ``src/rando/*.o`` objects, so it
+must run AFTER a build (CI: the rando-determinism job, right after
+``make zelda3``). Without objects it normally reports "no objects, clean pass"
+for local ergonomics — pass ``--require-objects`` in CI so a missing build (or
+a moved object directory) fails loudly instead of silently scanning nothing.
 
 Usage:
   python assets/scripts/check_link_symbols.py
   python assets/scripts/check_link_symbols.py --object-dir=build/
+  python assets/scripts/check_link_symbols.py --require-objects   # CI, post-build
 """
 from __future__ import annotations
 
@@ -74,16 +76,36 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--object-dir", type=Path, default=Path("."))
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--require-objects", action="store_true",
+                        help="fail when no src/rando/*.o objects (or no nm) are "
+                             "found instead of passing — for CI jobs that run "
+                             "after a build, where 'nothing to scan' means the "
+                             "guard is broken, not clean")
     args = parser.parse_args(argv)
 
     objects = find_rando_objects(args.object_dir)
     if not objects:
+        if args.require_objects:
+            print(
+                "check_link_symbols: no src/rando/*.o objects found under "
+                f"{args.object_dir.resolve()} but --require-objects was passed. "
+                "This invocation runs post-build, so zero objects means the build "
+                "didn't run or the object layout moved — refusing the fail-open "
+                "'clean pass'.", file=sys.stderr,
+            )
+            return 1
         if not args.quiet:
             print(
-                "check_link_symbols: no src/rando/*.o objects found.\n"
-                "  scaffold A0 pass — guard activates when first rando source file builds."
+                "check_link_symbols: no src/rando/*.o objects found — nothing to "
+                "scan (build first, or pass --object-dir; CI uses --require-objects)."
             )
         return 0
+
+    if args.require_objects and shutil.which("nm") is None:
+        print("check_link_symbols: nm not available but --require-objects was "
+              "passed — every scan would silently return clean. Failing closed.",
+              file=sys.stderr)
+        return 1
 
     total_violations = 0
     for obj in objects:

@@ -18,6 +18,7 @@
 #include "rando_rng.h"
 #include "rando_shuffles.h"
 #include "shuffle_boss.h"   // BossShuffle_ComputeAssignment (boss-shuffle reachability)
+#include "customizer.h"     // Customizer_GetActive (customizer-mode pins)
 #include "item_ids.h"
 #include "location_ids.h"
 #include "../types.h"
@@ -141,6 +142,8 @@ enum {
   ID_GenericKey = 125,  // Retro shared small-key (ROM 0xAF); substituted for every
                         // per-dungeon SmallKey under genericKeys (Settings_GenericKeysActive)
   ID_BluePotion = 126,  // unbottled BluePotion (ROM 0x30); Phase B Slice 3b TakeAny reward
+  ID_TrapDamage = 132,
+  ID_TrapFreeze = 133,
 };
 
 // Phase B Slice 3b — Retro TakeAny constants (used by BuildItemPool's junk-pad
@@ -150,6 +153,17 @@ enum {
 #define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
 // LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now live in rando_logic.h
 // (shared with the spoiler emitters so the ordinals can't drift between files).
+
+// Placer-local location-type ordinals (per logic.schema.yaml's types index).
+// File-scope so BuildItemPool's junk-pad target and the pre-place pin pass in
+// place_assumed_fill_attempt share one definition (see location_is_prepinned).
+enum {
+  LOCTYPE_Drop          = 7,
+  LOCTYPE_Prize_Crystal = 10,
+  LOCTYPE_Prize_Pendant = 11,
+  LOCTYPE_Prize_Event   = 12,
+  LOCTYPE_Medallion     = 13,
+};
 
 // Dungeon → Prize location id, for prize-shuffle placement. Indexed by
 // dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
@@ -235,6 +249,106 @@ void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *set
 static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_id, uint16 n) {
   for (uint16 i = 0; i < n && used < capacity; i++) pool[used++] = item_id;
   return used;
+}
+
+// shared pre-pin predicate. Returns true when the placer's
+// pre-place pass (place_assumed_fill_attempt §3b) pins `loc` to a fixed item:
+// vanilla identity (event / medallion slots, Retro shop + capacity-upgrade
+// slots, vanilla-mode dungeon items) or the prize assignment (Prize_Pendant /
+// Prize_Crystal — prize ids are never pool items). A pre-pinned slot never
+// consumes an item from the shuffle pool, so BuildItemPool's junk-pad target
+// must EXCLUDE it. Keeping the §3b pass and the junk-pad target on this ONE
+// predicate prevents the two from drifting.
+//
+// TakeAny slots are intentionally NOT covered here: both callers handle them
+// separately (per-seed active set; reward-pinned outside the pool).
+static bool location_is_prepinned(const RandoLocationDef *loc,
+                                  const RandoSettings *settings) {
+  // Always pinned, independent of settings:
+  //   - Prize_Event / Medallion: virtual event triggers + medallion config
+  //     slots, pinned to their vanilla item.
+  //   - Shop / ShopUpgrade: Retro shop inventory + capacity upgrades are
+  //     identity-placed (per ALTTPR Randomizer.php Retro shops).
+  //   - Prize_Pendant / Prize_Crystal: pinned per the prize-shuffle assignment.
+  if (loc->type == LOCTYPE_Prize_Event || loc->type == LOCTYPE_Medallion ||
+      loc->type == LOCTYPE_Shop || loc->type == LOCTYPE_ShopUpgrade ||
+      loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal)
+    return true;
+  uint16 vi = loc->vanilla_item_id;
+  // Vanilla-mode dungeon items are identity-placed (and never added to the
+  // pool by BuildItemPool — the two are flip sides of the same mode check).
+  if (vi >= 53 && vi <= 65)
+    return Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla;
+  if (vi >= 66 && vi <= 76)
+    return Settings_EffectiveBigKeysMode(settings) == kDungeonItemMode_Vanilla;
+  if ((vi >= 77 && vi <= 87) || vi == 124)
+    return settings->dungeon_maps_mode == kDungeonItemMode_Vanilla;
+  if (vi >= 88 && vi <= 98)
+    return settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla;
+  return false;
+}
+
+static uint16 trap_count_for_frequency(uint8 traps) {
+  switch (traps & 3) {
+    case kTrapFrequency_Low:    return 4;
+    case kTrapFrequency_Medium: return 8;
+    case kTrapFrequency_High:   return 16;
+    default:                    return 0;
+  }
+}
+
+static bool trap_replacement_candidate(uint16 item_id) {
+  switch (item_id) {
+    case ID_Rupee1:
+    case ID_Rupee5:
+    case ID_Rupee20:
+    case ID_Rupee100:
+    case ID_Rupee300:
+    case ID_SmallMagic:
+    case ID_Arrow1:
+    case ID_Arrow10:
+    case ID_Bombs1:
+    case ID_Bombs3:
+    case ID_Bombs10:
+    case ID_Rupoor:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
+                                                const uint8 *junk_filled,
+                                                uint16 n,
+                                                const RandoSettings *settings,
+                                                RandoRng *rng) {
+  uint16 wanted = trap_count_for_frequency(settings ? settings->traps : 0);
+  if (wanted == 0) return 0;
+
+  uint16 eligible[512];
+  uint16 eligible_n = 0;
+  for (uint16 idx = 0; idx < n && eligible_n < (uint16)(sizeof eligible / sizeof eligible[0]); idx++) {
+    if (!junk_filled[idx]) continue;
+    if (!trap_replacement_candidate(placement_at[idx])) continue;
+    eligible[eligible_n++] = idx;
+  }
+  for (int i = (int)eligible_n - 1; i > 0; i--) {
+    uint32 j = rng ? Rng_NextRange(rng, (uint32)(i + 1)) : 0;
+    uint16 tmp = eligible[i];
+    eligible[i] = eligible[(uint16)j];
+    eligible[(uint16)j] = tmp;
+  }
+
+  uint16 injected = 0;
+  // Replace final junk-filled slots after fill, not BuildItemPool entries: the
+  // placer may have more junk than open slots, and pool-level traps could be
+  // shuffled into dropped junk.
+  while (injected < wanted && injected < eligible_n) {
+    uint16 idx = eligible[injected];
+    placement_at[idx] = (injected & 1) ? ID_TrapFreeze : ID_TrapDamage;
+    injected++;
+  }
+  return injected;
 }
 
 uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 capacity) {
@@ -362,15 +476,8 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   // ----- Heart items: PoH and BossHeartContainer counts per ALTTPR vanilla -----
   // Vanilla ALTTPR: 24 Piece-of-Heart + 10 BossHeartContainer (one per dungeon
   // boss), capped lower under Hard/Expert (see bossheart_cap/poh_cap above).
-  // The pool always gets bossheart_cap BossHeartContainer items here; whether
-  // the 10 <Dungeon>_Boss Drop slots can RECEIVE them is governed separately by
-  // the region_boss_hearts_in_pool pin in the placement pass.
-  //
-  // NOTE: region_boss_hearts_in_pool is INVERTED relative to its name — a
-  // non-zero value (the default 1) PINS the 10 boss Drop slots to
-  // BossHeartContainer (identity-placed, so each boss grants its own heart);
-  // a value of 0 leaves those slots as free assumed-fill targets so arbitrary
-  // items can land there and the heart containers are placed elsewhere.
+  // Boss-heart drops are regular assumed-fill locations now, so the boss heart
+  // containers always enter the pool.
   n = pool_add(out_items, n, capacity, ID_PieceOfHeart, poh_cap);
   n = pool_add(out_items, n, capacity, ID_BossHeartContainer, bossheart_cap);
 
@@ -436,7 +543,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   }
 
   // ----- Junk-pad to match world-state-filtered location count -----
-  // Per audit N5: BuildItemPool used to pad to kRandoLocationsCount
+  // BuildItemPool used to pad to kRandoLocationsCount
   // unconditionally; that's wrong when locations carry a world_state_filter
   // (Phase A1 has none, but adding Inverted/Retro-specific locations later
   // would break). Count the locations whose filter accepts the active
@@ -452,14 +559,21 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   const uint16 rotation_n = (uint16)(sizeof(kJunkRotation) / sizeof(kJunkRotation[0]));
   uint16 target = 0;
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
-    uint8 wsf = kRandoLocations[i].world_state_filter;
+    const RandoLocationDef *loc = &kRandoLocations[i];
+    uint8 wsf = loc->world_state_filter;
     if (wsf == 0 || (wsf & (1u << settings->world_state))) {
       // Phase B Slice 3b — TakeAny LOCs are reward-pinned by role in the placer
       // (not pool-filled) and only a fixed 9-of-62 emit per seed. Excluding them
       // from the junk-pad target keeps the pool sized to the actual fillable
       // (non-pinned) slot count, so existing non-TakeAny Retro placements stay
       // decision-stable when TakeAny lands. See design.md §"Pool/pad".
-      if (kRandoLocations[i].type == LOCTYPE_TakeAny) continue;
+      if (loc->type == LOCTYPE_TakeAny) continue;
+      // pre-pinned slots (prizes, events, medallions, shops,
+      // vanilla-mode dungeon items) are identity-placed by
+      // the §3b pin pass and never consume a pool item. Counting them here
+      // oversized the pool by the pin count, and the junk-fill surplus drop
+      // then silently discarded a random subset of the pool every seed.
+      if (location_is_prepinned(loc, settings)) continue;
       target++;
     }
   }
@@ -531,7 +645,7 @@ static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
 // order: HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9,
 // MM=10, TR=11, GT=12). Returns 0xFF if the item is not a dungeon item.
 //
-// Per audit NEW-1: BigKey/Map/Compass enums in item_registry.yaml skip
+// BigKey/Map/Compass enums in item_registry.yaml skip
 // HCT (no big key/map/compass for HCT), NOT just HCE. The simple
 // arithmetic mapping (`item_id - base + 1`) was wrong for 8 of 11
 // dungeons. Use a per-class array index → dungeon-id table that
@@ -561,7 +675,7 @@ static uint8 dungeon_id_for_item(uint16 item_id) {
 }
 
 // Determine if `loc` is inside a dungeon. Returns 0..12 (dungeon id) or 0xFF.
-// Audit H2 — also consults Rando_FindPredicateOverride so a per-world-state
+// also consults Rando_FindPredicateOverride so a per-world-state
 // override that moves a location across a dungeon boundary is honored.
 // Today no Inverted override crosses dungeons (Ether/Spectacle Rock are
 // overworld), but the guard prevents a latent regression when Slice 3+
@@ -736,6 +850,23 @@ const PlacementStats *Placement_GetLastStats(void) {
   return &g_last_placement_stats;
 }
 
+static uint64 placement_attempt_seed(uint64 base_seed, uint8 attempt) {
+  return base_seed ^ ((uint64)attempt * 0x9E3779B97F4A7C15ull);
+}
+
+static void install_shuffle_assignments_for_attempt(const RandoSettings *settings,
+                                                    uint64 base_seed,
+                                                    uint8 attempt) {
+  uint8 prize_assignment[kRandoDungeonCount];
+  uint8 medallion_assignment[kRandoMedallionEntranceCount];
+  RandoRng shuffle_rng;
+  Rng_SeedFromU64(&shuffle_rng, placement_attempt_seed(base_seed, attempt));
+  PrizeShuffle_Run(settings, &shuffle_rng, prize_assignment);
+  MedallionShuffle_Run(settings, &shuffle_rng, medallion_assignment);
+  Rando_SetDungeonPrizeAssignment(prize_assignment);
+  Rando_SetMedallionAssignment(medallion_assignment);
+}
+
 bool Place_AssumedFill(const RandoSettings *settings,
                        uint64 seed_u64,
                        int budget_seconds,
@@ -743,6 +874,9 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // Reset stats — caller reads via Placement_GetLastStats() after we return.
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
+  // Customizer mode — clear any stale hard-error from a prior call. The
+  // attempt function sets it on an illegal pin (see §3c).
+  Customizer__ClearError();
 
   // Boss-shuffle runtime — install the per-seed boss assignment into the LOGIC
   // VM so OP_CAN_KILL_BOSS gates each `- Boss`/`- Prize` on the SHUFFLED boss's
@@ -750,11 +884,12 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // matches the runtime install (Rando_ActivateSidecarSlot regenerates from the
   // base seed too) — the assignment is attempt-independent. boss_shuffle off ⇒
   // vanilla identity ⇒ OP_CAN_KILL_BOSS resolves to the vanilla boss-kill
-  // predicate (placement byte-identical). Static so the borrowed pointer outlives
-  // this call's reachability evaluations (CLI generates one seed at a time).
-  static uint8 g_boss_assignment_for_reach[16];
-  BossShuffle_ComputeAssignment(settings, seed_u64, g_boss_assignment_for_reach);
-  Rando_SetBossAssignment(g_boss_assignment_for_reach);
+  // predicate (placement byte-identical). The setter copies the bytes into
+  // owned reachability state, so the local generation source need not outlive
+  // this call.
+  uint8 boss_assignment_for_reach[16];
+  BossShuffle_ComputeAssignment(settings, seed_u64, boss_assignment_for_reach);
+  Rando_SetBossAssignment(boss_assignment_for_reach);
 
   // Budget timer: if budget_seconds > 0, abort additional retry attempts once
   // the elapsed CPU time exceeds the budget. Each individual attempt still runs
@@ -805,10 +940,14 @@ bool Place_AssumedFill(const RandoSettings *settings,
     // Perturb the seed per attempt so each retry produces a different
     // progression order. The first attempt uses the unmodified seed so
     // single-seed determinism holds when the first attempt succeeds.
-    uint64 attempt_seed = seed_u64 ^ ((uint64)attempt * 0x9E3779B97F4A7C15ull);
+    uint64 attempt_seed = placement_attempt_seed(seed_u64, (uint8)attempt);
     uint16 fallback_count = 0;
     if (!place_assumed_fill_attempt(settings, attempt_seed, out, &fallback_count)) {
-      // Inner attempt itself failed catastrophically (couldn't place an
+      // A customizer pin error is deterministic (the pins don't depend on the
+      // per-attempt seed), so retrying is futile — fail now and let the caller
+      // surface Customizer_LastError().
+      if (Customizer_LastError()[0] != '\0') return false;
+      // Otherwise the inner attempt failed catastrophically (couldn't place an
       // item even with forward-fill). Continue retrying with a new seed.
       continue;
     }
@@ -917,6 +1056,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   g_last_placement_stats.best_unreachable_count = best_unreachable;
   // FIX #6 — the restored table is `best_entries`, baked by attempt `best_attempt`.
   g_last_placement_stats.prize_attempt = best_attempt;
+  install_shuffle_assignments_for_attempt(settings, seed_u64, best_attempt);
   fprintf(stderr,
           "Place_AssumedFill: best of %d attempts: %u unreachable placement(s), %u forward-fill fallback(s).\n",
           kAssumedFillMaxAttempts, (unsigned)best_unreachable, (unsigned)best_fallback);
@@ -1006,6 +1146,118 @@ static uint16 takeany_reward(const RandoSettings *settings,
   }
 }
 
+// Customizer mode — remove ONE instance of `item` from the to-place pool
+// (progression[] first, then junk[]). Preserves the dungeon-prefix invariant
+// (the first *dungeon_prog_n entries of progression[] are dungeon items, placed
+// first). Returns true if an instance was found+removed, false if `item` was
+// not in the pool (an out-of-pool pin — harmless; see the call site).
+static bool customizer_pool_remove_one(uint16 *progression, uint16 *prog_n,
+                                       uint16 *dungeon_prog_n, uint16 *junk,
+                                       uint16 *junk_n, uint16 item) {
+  for (uint16 t = 0; t < *prog_n; t++) {
+    if (progression[t] != item) continue;
+    bool in_dungeon_prefix = (t < *dungeon_prog_n);
+    for (uint16 u = t; u + 1 < *prog_n; u++) progression[u] = progression[u + 1];
+    (*prog_n)--;
+    if (in_dungeon_prefix && *dungeon_prog_n > 0) (*dungeon_prog_n)--;
+    return true;
+  }
+  for (uint16 t = 0; t < *junk_n; t++) {
+    if (junk[t] != item) continue;
+    for (uint16 u = t; u + 1 < *junk_n; u++) junk[u] = junk[u + 1];
+    (*junk_n)--;
+    return true;
+  }
+  return false;
+}
+
+// Customizer pool_overrides `add`: insert `item` into the to-place pool,
+// mirroring BuildItemPool's partition — a dungeon item (small/big key, ids
+// 53..76) goes to the FRONT of the dungeon prefix, other progression appends to
+// progression[], junk appends to junk[]. Capacity-guarded (a full array drops
+// the add). is_progression_item classifies exactly as the pool builder does.
+static void customizer_pool_add_one(uint16 *progression, uint16 *prog_n,
+                                    uint16 *dungeon_prog_n, uint16 prog_cap,
+                                    uint16 *junk, uint16 *junk_n, uint16 junk_cap,
+                                    uint16 item) {
+  if (is_progression_item(item)) {
+    if (*prog_n >= prog_cap) return;
+    bool is_dungeon_item = (item >= 53 && item <= 76);
+    if (is_dungeon_item) {
+      for (uint16 j = *prog_n; j > *dungeon_prog_n; j--) progression[j] = progression[j - 1];
+      progression[*dungeon_prog_n] = item;
+      (*dungeon_prog_n)++;
+      (*prog_n)++;
+    } else {
+      progression[(*prog_n)++] = item;
+    }
+  } else {
+    if (*junk_n >= junk_cap) return;
+    junk[(*junk_n)++] = item;
+  }
+}
+
+// per-item legality caps for customizer manifests. The runtime can
+// only honor a bounded number of copies of the progressive items and bottles:
+//
+//   - progressive_to_lttp (rando.c) returns 0xFF once an item's tier ladder is
+//     exhausted (sword 4 tiers, shield 3, armor 2, glove 2, bow 2), and
+//     Rando_DispatchVanillaGrant's 0xFF fallback then grants the slot's
+//     VANILLA ROM item — so a 5th ProgressiveSword grants junk or, worse, a
+//     duplicate of the slot's vanilla progression item.
+//   - bottles: ItemReceipt_GiveBottledItem (misc.c) fills the first empty
+//     link_bottle_info slot; there are exactly 4 slots and a 5th bottle of ANY
+//     variant is a silent no-op. All 7 bottle variants count against one cap.
+//
+// Per item id, the count the placer will emit is max(pins, pool_after) where
+// pool_after = in-pool copies − effective removes + adds (each pin consumes a
+// matching pool copy when one exists; out-of-pool pins are pure overflow, per
+// the pin loop below). Sum that over each cap class and reject the manifest
+// when it exceeds the cap. Validated against the settings-dependent pool
+// BEFORE any override/pin mutates it, as a HARD deterministic error through
+// the customizer error channel — surfaced by both the CLI (--customizer) and
+// the native settings window. Non-progressive duplicates (a 2nd Lamp, a 2nd
+// SilverArrowUpgrade, ...) are harmless never-downgrade re-grants and stay
+// uncapped. Placement legality (location/dungeon confinement) is enforced
+// separately at pin time.
+static bool customizer_validate_item_caps(const CustomizerManifest *cm,
+                                          const uint16 *progression, uint16 prog_n,
+                                          const uint16 *junk, uint16 junk_n) {
+  static const struct { uint16 first, last; uint16 cap; const char *what; const char *why; } kCaps[] = {
+    { ID_ProgressiveSword,  ID_ProgressiveSword,      4, "ProgressiveSword",       "the sword ladder has 4 tiers" },
+    { ID_ProgressiveShield, ID_ProgressiveShield,     3, "ProgressiveShield",      "the shield ladder has 3 tiers" },
+    { ID_ProgressiveArmor,  ID_ProgressiveArmor,      2, "ProgressiveArmor",       "the armor ladder has 2 tiers" },
+    { ID_ProgressiveGlove,  ID_ProgressiveGlove,      2, "ProgressiveGlove",       "the glove ladder has 2 tiers" },
+    { ID_ProgressiveBow,    ID_ProgressiveBow,        2, "ProgressiveBow",         "the bow ladder has 2 tiers" },
+    { ID_BottleEmpty,       ID_BottleWithBluePotion,  4, "bottles (all variants)", "Link has 4 bottle slots" },
+  };
+  for (uint16 c = 0; c < (uint16)(sizeof kCaps / sizeof kCaps[0]); c++) {
+    uint16 total = 0;
+    for (uint16 id = kCaps[c].first; id <= kCaps[c].last; id++) {
+      uint16 base = 0, removes = 0, adds = 0, pins = 0;
+      for (uint16 i = 0; i < prog_n; i++) if (progression[i] == id) base++;
+      for (uint16 i = 0; i < junk_n; i++) if (junk[i] == id) base++;
+      for (uint16 r = 0; r < cm->pool_remove_count; r++) if (cm->pool_remove[r] == id) removes++;
+      for (uint16 a = 0; a < cm->pool_add_count; a++) if (cm->pool_add[a] == id) adds++;
+      for (uint16 p = 0; p < cm->pin_count; p++) if (cm->pins[p].item_id == id) pins++;
+      // remove is best-effort: it cannot remove more copies than the pool has
+      // (and removes apply BEFORE adds, so adds never feed removes).
+      uint16 pool_after = (uint16)(base - (removes < base ? removes : base) + adds);
+      total = (uint16)(total + (pins > pool_after ? pins : pool_after));
+    }
+    if (total > kCaps[c].cap) {
+      char msg[160];
+      snprintf(msg, sizeof msg,
+               "manifest yields %u %s but at most %u can be granted (%s); "
+               "remove pool copies or pins",
+               (unsigned)total, kCaps[c].what, (unsigned)kCaps[c].cap, kCaps[c].why);
+      Customizer__SetError(msg);
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool place_assumed_fill_attempt(const RandoSettings *settings,
                                        uint64 seed_u64,
                                        RandoPlacementTable *out,
@@ -1018,17 +1270,18 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   uint16 pool_n = BuildItemPool(settings, pool, 512);
   if (pool_n == 0) return false;
 
-  // Run prize + medallion shuffles. Their outputs are stored as static state
-  // that Logic_ComputeReachability picks up via Rando_GetDungeonPrizeAssignment
-  // / Rando_GetMedallionAssignment. The placer needs these BEFORE running
+  // Run prize + medallion shuffles. Their outputs are installed into owned
+  // reachability state by Rando_SetDungeonPrizeAssignment /
+  // Rando_SetMedallionAssignment. The placer needs these BEFORE running
   // reachability, otherwise OP_HAS_PRIZE / OP_MEDALLION_OPENS evaluate to
-  // false everywhere and most of the graph is unreachable.
+  // false everywhere and most of the graph is unreachable. Keep local copies
+  // for the prize-pin pass below.
   //
   // Note: this state is process-global, which is fine here because the CLI
   // generates one seed at a time. Multi-seed batch generation (task 1.6a
   // batch form) would need to re-install per iteration.
-  static uint8 prize_assignment[kRandoDungeonCount];
-  static uint8 medallion_assignment[kRandoMedallionEntranceCount];
+  uint8 prize_assignment[kRandoDungeonCount];
+  uint8 medallion_assignment[kRandoMedallionEntranceCount];
   {
     // Use a dedicated RNG seeded from seed_u64 so the shuffles are
     // deterministic per (seed, settings) — independent of the placer's RNG
@@ -1128,43 +1381,31 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // Item id ranges (per item_registry.yaml):
   //   53..65 = small keys, 66..76 = big keys, 77..87 = maps (plus id 124 = Map_HCE),
   //   88..98 = compasses.
-  // Location type ids: Prize_Event = 12, Prize_Pendant = 11, Prize_Crystal = 10,
-  // Medallion = 13 (per logic.schema.yaml).
-  const uint8 LOCTYPE_Prize_Crystal = 10;
-  const uint8 LOCTYPE_Prize_Pendant = 11;
-  const uint8 LOCTYPE_Prize_Event   = 12;
-  const uint8 LOCTYPE_Medallion     = 13;
-  // LOCTYPE_Shop (14) / LOCTYPE_ShopUpgrade (15) come from rando_logic.h (shared).
+  //
+  // The per-class pin conditions live in location_is_prepinned (file scope),
+  // SHARED with BuildItemPool's junk-pad target: a pre-pinned slot never
+  // consumes a pool item, so the pool is sized to the non-pinned slot count
+  // and the pin set + pool size cannot drift apart. This pass
+  // additionally handles the two pin classes whose pinned ITEM is not the
+  // vanilla identity: TakeAny (per-seed role reward) and Prize_Pendant /
+  // Prize_Crystal (prize-shuffle assignment).
+  //
+  // Rationale for the always-pinned types (details in location_is_prepinned):
+  //   - ShopUpgrade: Capacity Upgrade slots (Bomb +5 / Arrow +5) are
+  //     identity-placed per design.md §1a + proposal.md:41 — the slot exists
+  //     in the registry so the shop dispatcher can route the grant through the
+  //     uniform Rando_DispatchVanillaGrant call shape, but the player still
+  //     buys the capacity upgrade for rupees as in vanilla.
+  //   - Shop: Phase B Slice 3a #53 part 2 — per ALTTPR `Randomizer.php:737-750`,
+  //     Retro shops retain their vanilla inventory (the randomization is that
+  //     the player must find shops + pay rupees to survive, NOT that shop
+  //     inventory is shuffled).
+  //   - Prize_Event / Medallion: virtual event triggers + medallion config
+  //     slots, always vanilla.
   for (uint16 k = 0; k < open_n; k++) {
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
     uint16 vi = loc->vanilla_item_id;
-    bool vanilla_pin = false;
-    if (loc->type == LOCTYPE_Prize_Event || loc->type == LOCTYPE_Medallion) {
-      // Always pin event / medallion locations to vanilla item.
-      vanilla_pin = true;
-    } else if (loc->type == LOCTYPE_ShopUpgrade) {
-      // Phase B Slice 3a — Capacity Upgrade slots (Bomb +5 / Arrow +5)
-      // are identity-placed per design.md §1a + proposal.md:41. The slot
-      // exists in the registry so the shop dispatcher can route the grant
-      // through the uniform Rando_DispatchVanillaGrant call shape, but
-      // the placer pins the upgrade to its vanilla item so the player
-      // still buys the capacity upgrade for rupees as in vanilla.
-      vanilla_pin = true;
-    } else if (loc->type == LOCTYPE_Shop) {
-      // Phase B Slice 3a #53 part 2 — Retro regular shop slots are
-      // identity-placed. Per ALTTPR `Randomizer.php:737-750`, Retro shops
-      // retain their vanilla inventory (the randomization is that the
-      // player must find shops + pay rupees to survive, NOT that shop
-      // inventory is shuffled). The slot exists in `location_registry.yaml`
-      // so the future shop-sprite-handler dispatch (#53 part 1 — sprite
-      // discovery deferred) can route the grant through the uniform
-      // Rando_DispatchVanillaGrant call, but the placer pins the item
-      // to its vanilla_item_id so the shop sells what it sold in vanilla.
-      // No pool addition is needed — `vanilla_pin = true` + the existing
-      // junk-pad logic means the Retro location count is exactly absorbed
-      // by the existing pool size.
-      vanilla_pin = true;
-    } else if (loc->type == LOCTYPE_TakeAny) {
+    if (loc->type == LOCTYPE_TakeAny) {
       // Phase B Slice 3b — active TakeAny caves are pinned to their per-seed
       // role reward (potion cave: BluePotion@0 / BossHeart@1; weapon cave:
       // ProgressiveSword|Rupee300 @0). Only active LOCs reach this point —
@@ -1193,29 +1434,144 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // in kDungeonPrizeLocations (shouldn't happen for Prize_* types) fall
       // through to the assumed-fill placer.
       continue;
-    } else if (vi >= 53 && vi <= 65) {
-      vanilla_pin = (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla);
-    } else if (vi >= 66 && vi <= 76) {
-      vanilla_pin = (Settings_EffectiveBigKeysMode(settings) == kDungeonItemMode_Vanilla);
-    } else if ((vi >= 77 && vi <= 87) || vi == 124) {
-      vanilla_pin = (settings->dungeon_maps_mode == kDungeonItemMode_Vanilla);
-    } else if (vi >= 88 && vi <= 98) {
-      vanilla_pin = (settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla);
-    } else {
-      // Spec scenario "Phase A boss-heart slots are identity-placed":
-      // each <Dungeon>_BossHeart drop (10 of them; vanilla_item=51) is
-      // pinned to BossHeartContainer when region_boss_hearts_in_pool=1
-      // (the Phase A default). Identified by type=Drop + vanilla_item=51
-      // so the Sanctuary chest (also vanilla_item=51 but type=Chest) is
-      // NOT pinned.
-      const uint8 LOCTYPE_Drop = 7;  // per logic.schema.yaml types index
-      if (loc->type == LOCTYPE_Drop && vi == 51 &&
-          settings->region_boss_hearts_in_pool != 0) {
-        vanilla_pin = true;
-      }
     }
-    if (vanilla_pin) {
+    // Every remaining pin class places the slot's vanilla identity:
+    // Prize_Event / Medallion / Shop / ShopUpgrade, vanilla-mode dungeon
+    // items
+    // (per-class conditions + rationale in location_is_prepinned).
+    if (location_is_prepinned(loc, settings)) {
       placement_at[k] = vi;
+    }
+  }
+
+  // ----- 3c. Customizer pins (add-rando-customizer-mode) -----
+  //
+  // When a customizer manifest is installed, PIN each manifest location to its
+  // chosen item and remove that item from the to-place pool, so assumed fill
+  // (below) completes the remaining locations exactly as in a normal seed. The
+  // whole block is gated on customizer_active: with no manifest it is never
+  // entered, so this function stays byte-for-byte identical to the
+  // non-customizer placer (the regression corpus is the zero-regression proof).
+  //
+  // A pin error (unknown/closed location, non-customizable type, or a slot the
+  // current dungeon-item settings already vanilla-place) is a HARD,
+  // deterministic failure: set the customizer error channel and return false.
+  // Place_AssumedFill detects the error and stops retrying.
+  if (settings->customizer_active) {
+    const CustomizerManifest *cm = Customizer_GetActive();
+    if (cm == NULL) {
+      // customizer_active set but no manifest installed → internal bug.
+      Customizer__SetError("customizer_active set but no manifest installed");
+      return false;
+    }
+    // reject a manifest whose pool overrides + pins exceed a
+    // per-item grant cap (progressive ladders / bottle slots) before any of
+    // them mutate the pool. Hard deterministic error; sets the error channel.
+    if (!customizer_validate_item_caps(cm, progression, prog_n, junk, junk_n))
+      return false;
+    // pool_overrides: apply remove-then-add to the pool BEFORE pins (so a pin
+    // can consume an added item). remove is best-effort (an item not in the
+    // settings-dependent pool is a silent no-op); add inserts into the correct
+    // tier. Determinism holds — both walk the manifest in order, before the
+    // tier shuffles.
+    for (uint16 r = 0; r < cm->pool_remove_count; r++) {
+      customizer_pool_remove_one(progression, &prog_n, &dungeon_prog_n,
+                                 junk, &junk_n, cm->pool_remove[r]);
+    }
+    for (uint16 a = 0; a < cm->pool_add_count; a++) {
+      customizer_pool_add_one(progression, &prog_n, &dungeon_prog_n,
+                              (uint16)(sizeof progression / sizeof progression[0]),
+                              junk, &junk_n,
+                              (uint16)(sizeof junk / sizeof junk[0]),
+                              cm->pool_add[a]);
+    }
+    // pin_count == 0 is tolerated as a harmless no-op (the loop runs zero
+    // times). The CLI rejects an empty manifest before installing, so this only
+    // guards a future caller that installs a zero-pin manifest.
+    for (uint16 pi = 0; pi < cm->pin_count; pi++) {
+      uint16 loc_id = cm->pins[pi].location_id;
+      uint16 item_id = cm->pins[pi].item_id;
+      uint16 slot = 0xFFFF;
+      for (uint16 k = 0; k < open_n; k++) {
+        if (kRandoLocations[open_loc_idx[k]].id == loc_id) { slot = k; break; }
+      }
+      if (slot == 0xFFFF) {
+        char msg[160];
+        snprintf(msg, sizeof msg,
+                 "pinned location '%s' is not an open item location for this world state",
+                 Rando_GetLocationName(loc_id));
+        Customizer__SetError(msg);
+        return false;
+      }
+      const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[slot]];
+      // Reject non-customizable location TYPES (computed-item slots: prize /
+      // medallion / shop / capacity-upgrade / take-any).
+      if (loc->type == LOCTYPE_Prize_Crystal || loc->type == LOCTYPE_Prize_Pendant ||
+          loc->type == LOCTYPE_Prize_Event   || loc->type == LOCTYPE_Medallion ||
+          loc->type == LOCTYPE_Shop          || loc->type == LOCTYPE_ShopUpgrade ||
+          loc->type == LOCTYPE_TakeAny) {
+        char msg[160];
+        snprintf(msg, sizeof msg,
+                 "pinned location '%s' has a non-customizable type "
+                 "(prize/medallion/shop/take-any)",
+                 Rando_GetLocationName(loc_id));
+        Customizer__SetError(msg);
+        return false;
+      }
+      // Reject a slot the settings already vanilla-place (vanilla-mode dungeon
+      // item). Overriding it would silently drop an item that is NOT in the
+      // pool, which can make the seed unbeatable in a way the user did not
+      // intend — surface it instead.
+      if (placement_at[slot] != 0xFFFF) {
+        char msg[160];
+        snprintf(msg, sizeof msg,
+                 "pinned location '%s' is vanilla-placed under the current "
+                 "dungeon-item settings",
+                 Rando_GetLocationName(loc_id));
+        Customizer__SetError(msg);
+        return false;
+      }
+      // Reject non-grantable ITEMS: prizes (ids 111..120, placed by the prize
+      // shuffle, not the pool) and virtual event items (StartingHeart 121,
+      // RescuedZelda 122, DefeatAgahnim 123). These have no pool entry and no
+      // grant path — pinning one would emit a non-grantable item the runtime
+      // dispatcher can't honor.
+      if (item_id >= ITEM_Prize_GreenPendant && item_id <= ITEM_DefeatAgahnim) {
+        char msg[160];
+        snprintf(msg, sizeof msg,
+                 "pinned item '%s' is a prize/event item that cannot be hand-placed",
+                 Rando_GetItemName(item_id));
+        Customizer__SetError(msg);
+        return false;
+      }
+      // Enforce the location's placement legality (dungeon-item confinement +
+      // any can_place / always_allow predicate, e.g. a forced-key slot). The
+      // can_place predicate tests the candidate ITEM, not player inventory, so a
+      // zeroed RandoCounts is the correct "no inventory assumptions" context.
+      // Without this a key could be pinned outside its dungeon, or a non-key
+      // onto a forced-key slot — structurally invalid even when coincidentally
+      // beatable.
+      {
+        RandoCounts cz;
+        memset(&cz, 0, sizeof cz);
+        if (!location_accepts_item(loc, item_id, &cz, settings)) {
+          char msg[160];
+          snprintf(msg, sizeof msg,
+                   "pinned item '%s' is not allowed at location '%s' "
+                   "(dungeon-item confinement or a forced-item slot)",
+                   Rando_GetItemName(item_id), Rando_GetLocationName(loc_id));
+          Customizer__SetError(msg);
+          return false;
+        }
+      }
+      placement_at[slot] = item_id;
+      // Remove the pinned item from the pool so assumed fill does not place a
+      // second copy. An out-of-pool pin (nothing to remove) is allowed: the
+      // pool then has one item too many for the remaining slots and a single
+      // junk item is dropped at fill time, which is harmless (progression is
+      // always placed first and always fits).
+      customizer_pool_remove_one(progression, &prog_n, &dungeon_prog_n,
+                                 junk, &junk_n, item_id);
     }
   }
 
@@ -1370,6 +1726,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // because the progression item was placed elsewhere first.
   shuffle_u16(junk, junk_n, &rng);
   uint8 junk_consumed[512] = {0};
+  uint8 junk_filled[512] = {0};
   for (uint16 k = 0; k < open_n; k++) {
     if (placement_at[k] != 0xFFFF) continue;
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
@@ -1379,6 +1736,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       if (!location_accepts_item(loc, junk[j], &counts, settings)) continue;
       placement_at[k] = junk[j];
       junk_consumed[j] = 1;
+      junk_filled[k] = 1;
       placed = true;
       break;
     }
@@ -1400,6 +1758,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       placement_at[k] = fb;
     }
   }
+  (void)inject_traps_into_junk_placements(placement_at, junk_filled, open_n, settings, &rng);
 
   // ----- 7. Emit placement table -----
   for (uint16 k = 0; k < open_n; k++) {
@@ -1442,13 +1801,13 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
   // Phase B Retro is up to 265 entries (266 catalog minus 1 Inverted-only
   // entry per the world_state filter); Phase A peaked at ~250. Sized at
   // 512 to match kRando_SessionPlacementCapacity in rando.c and leave
-  // room for Phase C+. Silent truncation at the old 256 cap was H1 of the
-  // 2026-05-27 cluster audit — the missing 9 Retro Light-World shop /
-  // capacity-upgrade slots dropped out of placement_digest_hex when sorted
-  // by location_id; corpus coverage was silently degraded.
+  // room for Phase C+. Silent truncation at the old 256 cap dropped the
+  // missing 9 Retro Light-World shop / capacity-upgrade slots out of
+  // placement_digest_hex when sorted by location_id; corpus coverage was
+  // silently degraded.
   // Must be >= kRando_SessionPlacementCapacity (currently 512).
   // The two constants are decoupled by translation unit; the assert below
-  // catches the coupling at build time. Cluster-audit LOW L3 of e9f20ad.
+  // catches the coupling at build time.
   enum { kDigestLocalCap = 512 };
   _Static_assert(kDigestLocalCap >= 512,
                  "kDigestLocalCap must keep pace with kRando_SessionPlacementCapacity");
@@ -1479,7 +1838,7 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
 // Goal_IsCompletable and Logic_ComputeSpheres so reachability stays
 // consistent with what the placer assumed.
 //
-// Audit N3: maps/compasses are pre-granted here in Vanilla mode but in
+// maps/compasses are pre-granted here in Vanilla mode but in
 // Dungeon/Wild mode they go through the pool's junk[] path (not the
 // progression[] inventory-assumption). Today no predicate consults map or
 // compass IDs, so the asymmetry is harmless. If a future predicate gates
@@ -1551,8 +1910,8 @@ bool Goal_IsCompletable(const RandoSettings *settings,
 
   // Pure reachability predicate — does NOT consider accessibility=none.
   // For "should the generator refuse to ship this seed?", call
-  // Goal_ShouldRefuse instead. (Fresh-eyes audit H1 of e9f20ad — the
-  // earlier short-circuit-to-true here made the spoiler report
+  // Goal_ShouldRefuse instead. (The earlier short-circuit-to-true here made
+  // the spoiler report
   // `goal_completable: true` even for un-completable accessibility=none
   // seeds, which actively misled players who explicitly opted in to
   // an un-completable seed.)
@@ -1654,7 +2013,7 @@ bool Goal_IsCompletable(const RandoSettings *settings,
         fprintf(stderr, "Goal_IsCompletable(pedestal): Master Sword Pedestal unreachable\n");
         return false;
       }
-      // Per audit N2: don't trust the placement count alone — verify that
+      // don't trust the placement count alone — verify that
       // each colored pendant's holding _Prize location is reachable. The
       // pendant placement could be at an unreachable Prize_* slot if the
       // dungeon holding that pendant cannot be cleared.
@@ -1867,7 +2226,7 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
     remaining -= added_this_sphere;
     sphere++;
   }
-  // Audit N4: distinguish "fixed-point reached" from "kSphereMaxCount hit".
+  // distinguish "fixed-point reached" from "kSphereMaxCount hit".
   // The latter is rare (logic depth > 32) but silent failure would mark
   // late-sphere reachable placements as unreachable — surface it explicitly.
   if (sphere == kSphereMaxCount && remaining > 0) {
@@ -2109,29 +2468,69 @@ void Placement_SelfCheck(void) {
     selfcheck_die("placement digest collision on different items");
   }
 
-  // BuildItemPool: with default settings (Open), pool size equals the
-  // count of locations active in the Open world-state (= kRandoLocationsCount
-  // minus any Inverted/Retro-only locations like Bomb Merchant). With NULL
-  // settings, the function safely returns 0.
+  // BuildItemPool: with default settings (Open), pool size equals the count
+  // of FILLABLE locations active in the Open world-state — i.e. excluding
+  // TakeAny slots and the slots the §3b pre-place pass pins (prizes, events,
+  // medallions, vanilla-mode dungeon items), which never consume a pool item.
+  // With NULL settings, the function safely
+  // returns 0.
   {
     RandoSettings defaults;
     Settings_SetDefaults(&defaults);
     uint16 pool[512];
     uint16 n = BuildItemPool(&defaults, pool, 512);
-    // Compute expected = count of locations whose world_state_filter accepts Open (bit 0).
+    // Expected = count of Open-active locations that are neither TakeAny nor
+    // pre-pinned under default settings (mirrors the junk-pad target loop).
     uint16 expected = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
-      uint8 wsf = kRandoLocations[i].world_state_filter;
-      if (wsf == 0 || (wsf & (1u << kWorldState_Open))) expected++;
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      uint8 wsf = loc->world_state_filter;
+      if (!(wsf == 0 || (wsf & (1u << kWorldState_Open)))) continue;
+      if (loc->type == LOCTYPE_TakeAny) continue;
+      if (location_is_prepinned(loc, &defaults)) continue;
+      expected++;
     }
     if (n != expected) {
       fprintf(stderr, "[Placement_SelfCheck] BuildItemPool returned %u, expected %u\n",
               (unsigned)n, (unsigned)expected);
       selfcheck_die("BuildItemPool count mismatch");
     }
+    uint16 default_traps = 0;
+    for (uint16 i = 0; i < n; i++)
+      if (pool[i] == ID_TrapDamage || pool[i] == ID_TrapFreeze) default_traps++;
+    if (default_traps != 0) selfcheck_die("default BuildItemPool must not contain traps");
     // NULL settings → 0 (safe rejection, not crash).
     uint16 n_null = BuildItemPool(NULL, pool, 512);
     if (n_null != 0) selfcheck_die("BuildItemPool(NULL) should return 0");
+  }
+
+  // add-rando-traps — frequency replaces final junk-filled placements (not
+  // pre-fill pool entries, which can be dropped) and alternates damage/freeze.
+  // Default-off was asserted above.
+  {
+    RandoSettings s;
+    static const struct { uint8 freq; uint16 count; } kTrapCases[] = {
+      { kTrapFrequency_Low, 4 },
+      { kTrapFrequency_Medium, 8 },
+      { kTrapFrequency_High, 16 },
+    };
+    for (uint8 c = 0; c < (uint8)(sizeof(kTrapCases) / sizeof(kTrapCases[0])); c++) {
+      Settings_SetDefaults(&s);
+      s.traps = kTrapCases[c].freq;
+      static RandoPlacement trap_entries[512];
+      RandoPlacementTable tt = { trap_entries, 0 };
+      if (!Place_AssumedFill(&s, (uint64)(0x54524150u + c), 0, &tt))
+        selfcheck_die("trap placement selfcheck could not generate a placement");
+      uint16 damage = 0, freeze = 0;
+      for (uint16 i = 0; i < tt.count; i++) {
+        if (tt.entries[i].item_id == ID_TrapDamage) damage++;
+        else if (tt.entries[i].item_id == ID_TrapFreeze) freeze++;
+      }
+      if (damage + freeze != kTrapCases[c].count)
+        selfcheck_die("trap frequency placed wrong number of traps");
+      if (damage != freeze)
+        selfcheck_die("trap frequency should alternate damage/freeze evenly");
+    }
   }
 
   // BuildItemPool refuses pieces_required > pieces_placed for
@@ -2174,7 +2573,7 @@ void Placement_SelfCheck(void) {
     }
   }
 
-  // Audit NEW-1: dungeon_id_for_item mapping for the keys-skip-HCT enums.
+  // dungeon_id_for_item mapping for the keys-skip-HCT enums.
   // Pins the lookup table so a future formula-based regression breaks the
   // selftest before a corpus run.
   {

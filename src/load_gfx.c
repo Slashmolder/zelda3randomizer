@@ -551,19 +551,33 @@ void LoadFollowerGraphics() {  // 80d423
 }
 
 void WriteTo4BPPBuffer_at_7F4000(uint8 a) {  // 80d4db
+  // Invalidate here, not (only) in DecodeAnimatedSpriteTile_variable: the
+  // rupee-receipt animation (Ancilla22_ItemReceipt) repaints the slot by
+  // calling this directly each animation tick, and a stale owner would make
+  // Rando_EnsureRecvItemSlotGfx skip reloading a field item's tiles forever
+  // after the slot contents change.
+  g_recv_item_slot_owner = 0xFFFFu;  // slot content is about to change
   uint8 *src = &g_ram[0x14000] + kDecodeAnimatedSpriteTile_Tab[a];
   Expand3To4High(&g_ram[0x9000] + 0x2d40, src, g_ram, 2);
   Expand3To4High(&g_ram[0x9000] + 0x2d40 + 0x40, src + 0x180, g_ram, 2);
 }
 
-// add-rando-field-item-sprites: which gfx index currently occupies the shared
-// receive-item VRAM slot (chars 0x24/0x34), so the field-item drawer can skip a
+// Which gfx index currently occupies the shared receive-item VRAM slot
+// (chars 0x24/0x34), so the field-item drawer can skip a
 // redundant re-decompress when it already owns the slot. 0xFFFF = unknown/dirty.
-// Any DecodeAnimatedSpriteTile_variable call (item receipt, direct-grant icon,
-// or another field item) invalidates it, so the next field-item draw repaints.
+// Every slot repaint invalidates it — WriteTo4BPPBuffer_at_7F4000 (which all
+// repaints funnel through: item receipt incl. the rupee animation ticks,
+// direct-grant icon, another field item) and DecodeAnimatedSpriteTile_variable
+// — so the next field-item draw repaints. Snapshot restore invalidates it too
+// (StateRecorder_Load): the buffer lives in g_ram but this cache does not.
 uint16 g_recv_item_slot_owner = 0xFFFFu;
 
 void DecodeAnimatedSpriteTile_variable(uint8 a) {  // 80d4ed
+  // Custom item gfx ids (kRandoCustomGfx_*, 0x80 bit) are not bundle indices;
+  // they must route through Rando_EnsureRecvItemSlotGfx, which handles them
+  // before ever calling here. A leak would index kDecodeAnimatedSpriteTile_Tab
+  // out of bounds.
+  assert(!(a & 0x80));
   g_recv_item_slot_owner = 0xFFFFu;  // slot content is about to change
   uint8 y = (a == 0x23 || a >= 0x37) ? 0x5d :
             (a == 0xc || a >= 0x24) ? 0x5c : 0x5b;
@@ -626,7 +640,7 @@ void Gfx_LoadSpritesInner(uint8 *dst) {  // 80d706
   int len;
 
   // Resolve all four subgroup ids first (a 0 entry inherits the prior sheet),
-  // then let the enemy-shuffle SHEET reshuffle rewrite slot 2 BEFORE any
+  // then let the enemy-shuffle SHEET reshuffle rewrite any safe subgroup slot BEFORE any
   // decompress — so the sheet actually loaded into VRAM matches what the picker
   // sees (EnemyShuffle_Pick* reads sprite_gfx_subset_*). Reordering all-resolve-
   // then-all-decompress is behavior-identical to the original interleaving
@@ -836,7 +850,7 @@ void InitializeTilesets() {  // 80e19b
   if (p[1]) sprite_gfx_subset_1 = p[1];
   if (p[2]) sprite_gfx_subset_2 = p[2];
   if (p[3]) sprite_gfx_subset_3 = p[3];
-  EnemyShuffle_ReshuffleCurrentRoomSheets(p);  // rando: may rewrite sprite_gfx_subset_2
+  EnemyShuffle_ReshuffleCurrentRoomSheets(p);  // rando: may rewrite subgroup slots 0..3
 
   LoadSpriteGraphics(&g_zenv.vram[0x5000], sprite_gfx_subset_0, &g_ram[0x7800]);
   LoadSpriteGraphics(&g_zenv.vram[0x5400], sprite_gfx_subset_1, &g_ram[0x7e00]);

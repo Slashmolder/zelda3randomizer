@@ -22,6 +22,10 @@ enum {
   kTracker_Count = 3,
 };
 
+// Install the main game SDL_Window pointer used by the layout preset. Passes an
+// opaque pointer to avoid exporting SDL headers through this C-callable surface.
+void Trackers_SetGameWindow(void *game_window);
+
 // Create the (hidden) tracker windows. Call once at startup, after the settings
 // window is initialized (so the host restores the settings ImGui context).
 void Trackers_Init(void);
@@ -38,6 +42,10 @@ bool Trackers_IsShown(int kind);
 // Geometry persistence (saves/rando_window.ini). Apply before first show.
 void Trackers_ApplyGeometry(int kind, int x, int y, int w, int h);
 void Trackers_GetGeometry(int kind, int *x, int *y, int *w, int *h);
+
+// One-click layout preset: show Check Tracker on the left, the game in the
+// center, and Map/Item Tracker stacked on the right.
+void Trackers_ApplyTiledLayout(void);
 
 void Trackers_Shutdown(void);
 

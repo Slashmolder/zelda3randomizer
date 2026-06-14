@@ -21,6 +21,7 @@
 #include "shuffle_enemies.h"  // EnemyShuffle_Generate/_Deactivate/_SelfCheck (enemy shuffle)
 #include "shuffle_doors.h"   // DoorShuffle_Generate/LayoutDigest (door shuffle)
 #include "door_runtime.h"    // DoorRt_* (door-shuffle runtime redirect)
+#include "customizer.h"  // Customizer_SelfCheck (add-rando-customizer-mode)
 #include "rando_save.h"
 #include "rando_generate.h"  // RandoGenerate_SelfCheck (slot SRAM-init self-test)
 #include "rando_snapshot_tail.h"
@@ -41,6 +42,7 @@
 #include "../assets.h"     // Phase C entrance overlay: g_asset_ptrs[126] / kOverworld_Entrance_Id
 #include "../features.h"   // g_rando_triforce_piece_count
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
+#include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
 #include "../player.h"     // §7.6 Link_ReceiveItem
 #include "third_party/sha256/sha256.h"
@@ -402,6 +404,227 @@ uint16 Rando_LastDispatchedItemId(void) {
   return g_last_dispatched_item_id;
 }
 
+static uint8 trap_ascii_to_font(char ch) {
+  if (ch >= 'A' && ch <= 'Z') return (uint8)(ch - 'A');
+  if (ch >= 'a' && ch <= 'z') return (uint8)(26 + (ch - 'a'));
+  if (ch >= '0' && ch <= '9') return (uint8)(52 + (ch - '0'));
+  switch (ch) {
+    case '!': return 62;
+    case '?': return 63;
+    case '-': return 64;
+    case '.': return 65;
+    case ',': return 66;
+    case '\'': return 81;
+    case ' ': return 89;
+    default: return 89;
+  }
+}
+
+static int trap_write_ascii(uint8 *out, int o, const char *text) {
+  while (*text && o < 240) out[o++] = trap_ascii_to_font(*text++);
+  return o;
+}
+
+bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer) {
+  if (msg_id != kRandoTrapDialogueId || out_buffer == NULL) return false;
+  int o = 0;
+  o = trap_write_ascii(out_buffer, o, "You are");
+  out_buffer[o++] = 0x75;  // visual row 1 (middle)
+  o = trap_write_ascii(out_buffer, o, "a fool!");
+  out_buffer[o++] = 0x7f;  // terminator
+  return true;
+}
+
+static bool rando_is_trap_item(uint16 item_id) {
+  return item_id == ITEM_TrapDamage || item_id == ITEM_TrapFreeze;
+}
+
+enum {
+  kRandoTrapEffect_None = 0,
+  kRandoTrapEffect_Damage = 1,
+  kRandoTrapEffect_Freeze = 2,
+};
+
+static uint8 g_rando_trap_stun_timer;
+static uint8 g_rando_trap_effect;
+static uint8 g_rando_trap_bad_sfx_timer;
+static uint8 g_rando_trap_shove_timer;
+static uint8 g_rando_trap_shove_dir;
+static uint8 g_rando_trap_owns_forced_move;
+
+static void rando_clear_trap_effect(void) {
+  if (g_rando_trap_owns_forced_move) {
+    force_move_any_direction = 0;
+    g_rando_trap_owns_forced_move = 0;
+  }
+  g_rando_trap_stun_timer = 0;
+  g_rando_trap_effect = kRandoTrapEffect_None;
+  g_rando_trap_bad_sfx_timer = 0;
+  g_rando_trap_shove_timer = 0;
+  g_rando_trap_shove_dir = 0;
+}
+
+static bool rando_trap_stun_can_tick(void) {
+  return main_module_index == 7 || main_module_index == 9 || main_module_index == 11;
+}
+
+static void rando_neutralize_trap_motion(void) {
+  joypad1H_last = 0;
+  joypad1L_last = 0;
+  filtered_joypad_H = 0;
+  filtered_joypad_L = 0;
+  force_move_any_direction = 0;
+  g_rando_trap_owns_forced_move = 0;
+
+  Link_CancelDash();
+  link_speed_setting = 0;
+  link_y_vel = 0;
+  link_x_vel = 0;
+  link_actual_vel_x = 0;
+  link_actual_vel_y = 0;
+  link_actual_vel_z = 0;
+  link_actual_vel_z_copy = 0;
+  link_auxiliary_state = 0;
+  button_mask_b_y = 0;
+  bitfield_for_a_button = 0;
+  button_b_frames = 0;
+  link_delay_timer_spin_attack = 0;
+  link_spin_attack_step_counter = 0;
+  link_state_bits = 0;
+  link_picking_throw_state = 0;
+  link_grabbing_wall = 0;
+  link_moving_against_diag_tile = 0;
+  link_var30d = 0;
+  link_var30e = 0;
+  some_animation_timer_steps = 0;
+  Link_ResetSwimmingState();
+}
+
+static uint8 rando_trap_recoil_dir(void) {
+  static const uint8 kOppositeFacingDir[4] = {4, 8, 1, 2};
+  return kOppositeFacingDir[(link_direction_facing >> 1) & 3];
+}
+
+static bool rando_is_bad_trap_wall_spark_residue(int k) {
+  return ancilla_type[k] == 0x24 &&
+         ancilla_item_to_link[k] == 5 &&
+         ancilla_aux_timer[k] == 1 &&
+         ancilla_timer[k] == 0 &&
+         ancilla_step[k] == 4 &&
+         ancilla_arr3[k] == 0 &&
+         ancilla_G[k] == 0 &&
+         ancilla_L[k] == 0;
+}
+
+static void rando_selfcheck_seed_bad_trap_wall_spark_residue(int k) {
+  ancilla_type[k] = 0x24;
+  ancilla_item_to_link[k] = 5;
+  ancilla_aux_timer[k] = 1;
+  ancilla_timer[k] = 0;
+  ancilla_step[k] = 4;
+  ancilla_arr3[k] = 0;
+  ancilla_G[k] = 0;
+  ancilla_L[k] = 0;
+}
+
+static void rando_clear_bad_trap_wall_spark_residue(void) {
+  if (!g_rando_slot_active) return;
+  if (link_something_with_hookshot || (bitmask_of_dragstate & 4)) return;
+
+  for (int k = 0; k < 5; k++) {
+    // Earlier trap feedback accidentally spawned type 0x24 through the wall
+    // spark helper. Type 0x24 is the gravestone ancilla and does not expire
+    // unless the real grave-push state owns it.
+    if (rando_is_bad_trap_wall_spark_residue(k)) {
+      ancilla_type[k] = 0;
+    }
+  }
+}
+
+static void rando_tick_trap_reveal_feedback(void) {
+  if (g_rando_trap_bad_sfx_timer == 0) return;
+  if (--g_rando_trap_bad_sfx_timer != 0) return;
+
+  uint8 pan = Link_CalculateSfxPan();
+  sound_effect_2 = pan | 0x26;
+  sound_effect_1 = pan | (g_rando_trap_effect == kRandoTrapEffect_Freeze
+                              ? 0x15
+                              : 0x24);
+  if (g_rando_slot_active) {
+    AncillaAdd_SwordSwingSparkle(0x26, 4);
+    if (g_rando_trap_effect == kRandoTrapEffect_Damage)
+      AncillaAdd_DashTremor(29, 1);
+  }
+}
+
+static void rando_apply_damage_trap_shove(void) {
+  if (g_rando_trap_effect != kRandoTrapEffect_Damage ||
+      g_rando_trap_shove_timer == 0)
+    return;
+  force_move_any_direction = g_rando_trap_shove_dir;
+  link_direction = g_rando_trap_shove_dir;
+  link_direction_last = g_rando_trap_shove_dir;
+  link_speed_setting = 12;
+  g_rando_trap_owns_forced_move = 1;
+  g_rando_trap_shove_timer--;
+}
+
+static void rando_apply_freeze_trap_pulse(void) {
+  if (g_rando_trap_effect != kRandoTrapEffect_Freeze) return;
+  if ((g_rando_trap_stun_timer & 7) == 0 || countdown_for_blink < 6)
+    countdown_for_blink = 10;
+}
+
+void Rando_TickTrapEffects(void) {
+  rando_clear_bad_trap_wall_spark_residue();
+
+  if (g_rando_trap_stun_timer == 0) return;
+
+  // Let the player dismiss the trap dialogue; the actual freeze begins once
+  // control returns to normal overworld/dungeon gameplay. The bad reveal cue is
+  // delayed too, otherwise the VWF letter blip can overwrite it in the same
+  // frame.
+  if (main_module_index == 14 && dialogue_message_index == kRandoTrapDialogueId)
+    return;
+
+  if (!rando_trap_stun_can_tick()) return;
+  rando_tick_trap_reveal_feedback();
+  rando_neutralize_trap_motion();
+  rando_apply_damage_trap_shove();
+  rando_apply_freeze_trap_pulse();
+  if (--g_rando_trap_stun_timer == 0) {
+    g_rando_trap_effect = kRandoTrapEffect_None;
+    g_rando_trap_shove_timer = 0;
+    g_rando_trap_shove_dir = 0;
+  }
+}
+
+static void rando_trigger_trap(uint16 item_id) {
+  Sprite_ShowMessageUnconditional(kRandoTrapDialogueId);
+  g_rando_trap_bad_sfx_timer = 8;
+
+  if (item_id == ITEM_TrapDamage) {
+    const uint8 damage = 8;  // one heart, clamped non-lethal
+    if (link_health_current != 0) {
+      link_health_current = (link_health_current > damage)
+          ? (uint8)(link_health_current - damage)
+          : 1;
+    }
+    link_hearts_filler = 0;
+    countdown_for_blink = 64;
+    g_rando_trap_effect = kRandoTrapEffect_Damage;
+    g_rando_trap_stun_timer = 40;
+    g_rando_trap_shove_timer = 12;
+    g_rando_trap_shove_dir = rando_trap_recoil_dir();
+  } else {
+    countdown_for_blink = 32;
+    g_rando_trap_effect = kRandoTrapEffect_Freeze;
+    g_rando_trap_stun_timer = 96;
+    g_rando_trap_shove_timer = 0;
+    g_rando_trap_shove_dir = 0;
+  }
+}
+
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code) {
@@ -462,6 +685,11 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   // sites use the same `>= cost` guard).
   if (placed == ITEM_Rupoor) {
     link_rupees_goal = (link_rupees_goal >= 10) ? (uint16)(link_rupees_goal - 10) : 0;
+    return kRandoLttpSkip;
+  }
+
+  if (rando_is_trap_item(placed)) {
+    rando_trigger_trap(placed);
     return kRandoLttpSkip;
   }
 
@@ -1031,26 +1259,30 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // site lets each integration choose whether to add the cue.
 // ---------------------------------------------------------------------------
 void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
-  // Cluster audit LOW-5 — every caller passes `(uint8)Rando_LastDispatched
+  // every caller passes `(uint8)Rando_LastDispatched
   // ItemId()`; the cast loses precision if the sentinel value 0xFFFF
   // ever reaches us. The skip-sentinel path only runs AFTER a successful
   // Rando_DispatchVanillaGrant, which populates g_last_dispatched_item_id
-  // with a valid item id (< ITEM__COUNT, currently 125), so the
+  // with a valid item id (< ITEM__COUNT), so the
   // truncation is unreachable in normal flow. The bounds check at
   // `(size_t)item_id < icon_table_len` defends the array access
   // regardless; this assert just makes the invariant explicit so a
   // future change that calls this WITHOUT a prior dispatch fires loudly.
   assert(item_id != 0xFFu /* sentinel byte from 0xFFFF truncation */ ||
          Rando_LastDispatchedItemId() != 0xFFFFu);
+  // Traps deliberately start with the normal direct-grant chime; the trap-owned
+  // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
   // Slice 9 — look up the per-item icon. Entries with gfx == 0 (the audio-only
-  // fallback sentinel: HalfMagic / QuarterMagic / TriforcePiece — no vanilla
-  // receive-item GFX) fall back to audio + HUD only, preserving Phase A
-  // behavior. gfx != 0 spawns a per-item icon ancilla that DMAs the item's
-  // receive-animation sprite bundle and draws it above Link, mirroring the
-  // vanilla pickup animation.
+  // fallback sentinel; no mapped item uses it anymore, it remains as the safe
+  // default for future unmapped items) fall back to audio + HUD only. gfx != 0
+  // spawns a per-item icon ancilla that loads the item's sprite bundle — or,
+  // for gfx ids with the 0x80 bit (TriforcePiece / magic decanters / Rupoor
+  // custom art, add-rando-field-item-custom-art), the kRandoCustomGfx_* tile
+  // + palette — and draws it above Link, mirroring the vanilla pickup
+  // animation.
   const size_t icon_table_len =
       sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
   if ((size_t)item_id < icon_table_len) {
@@ -1132,9 +1364,11 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
     return true;
   }
 
-  // Tier 2 — direct-grant items (small keys, ...) that have a Slice-9 icon but
-  // no receive gfx. gfx==0 entries (HalfMagic/QuarterMagic/TriforcePiece) have
-  // no drawable sprite → fall back to the vanilla sprite.
+  // Tier 2 — items with a Slice-9 icon but no receive gfx: direct-grant items
+  // (small keys, ...) and the custom-art items (TriforcePiece / HalfMagic /
+  // QuarterMagic / Rupoor — gfx 0x80 bit, add-rando-field-item-custom-art;
+  // Rando_EnsureRecvItemSlotGfx loads their tile + SP3-upper palette). gfx==0
+  // entries (none currently mapped) fall back to the vanilla sprite.
   const size_t n = sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
   if ((size_t)placed < n && kDirectGrantIcons[placed].gfx != 0) {
     *out_gfx = kDirectGrantIcons[placed].gfx;
@@ -1147,10 +1381,8 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
 
 // ---------------------------------------------------------------------------
 // §6.6 boss-kill dispatch helpers. Each boss kill grants TWO rando locations
-// (BossHeart + Prize). Phase A's default `bossHeartsInPool=false` policy
-// identity-places BossHeartContainer at every _Boss slot — so the dispatch
-// is still fired for uniformity (caller treats the no-op identity case as
-// "the player gets a heart container, vanilla behavior").
+// (BossHeart + Prize). Boss-heart drops are shuffled locations; the dispatch
+// treats the identity BossHeartContainer placement as vanilla behavior.
 //
 // Dungeon ID layout (cur_palace_index_x2 >> 1) — game-side convention.
 // Derived from kDungeonCrystalPendantBit / kBossFinishedFallingItem
@@ -1208,20 +1440,41 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
 // ---------------------------------------------------------------------------
 // Per-seed shuffle-assignment globals consumed by Logic_ComputeReachability.
 // ---------------------------------------------------------------------------
+static uint8 g_dungeon_prize_assignment_store[kRandoDungeonCount];
+static uint8 g_medallion_assignment_store[kRandoMedallionEntranceCount];
 static const uint8 *g_dungeon_prize_assignment = NULL;
 static const uint8 *g_medallion_assignment = NULL;
 // Boss-shuffle LOGIC assignment (OP_CAN_KILL_BOSS). Independent of the
 // shuffle_boss.c sprite-substitution activation: this drives reachability only.
+static uint8 g_boss_logic_assignment_store[16];
 static const uint8 *g_boss_logic_assignment = NULL;
 
 void Rando_SetDungeonPrizeAssignment(const uint8 *assignment) {
-  g_dungeon_prize_assignment = assignment;
+  if (assignment == NULL) {
+    g_dungeon_prize_assignment = NULL;
+    return;
+  }
+  memcpy(g_dungeon_prize_assignment_store, assignment,
+         sizeof(g_dungeon_prize_assignment_store));
+  g_dungeon_prize_assignment = g_dungeon_prize_assignment_store;
 }
 void Rando_SetMedallionAssignment(const uint8 *assignment) {
-  g_medallion_assignment = assignment;
+  if (assignment == NULL) {
+    g_medallion_assignment = NULL;
+    return;
+  }
+  memcpy(g_medallion_assignment_store, assignment,
+         sizeof(g_medallion_assignment_store));
+  g_medallion_assignment = g_medallion_assignment_store;
 }
 void Rando_SetBossAssignment(const uint8 *assignment) {
-  g_boss_logic_assignment = assignment;
+  if (assignment == NULL) {
+    g_boss_logic_assignment = NULL;
+    return;
+  }
+  memcpy(g_boss_logic_assignment_store, assignment,
+         sizeof(g_boss_logic_assignment_store));
+  g_boss_logic_assignment = g_boss_logic_assignment_store;
 }
 const uint8 *Rando_GetDungeonPrizeAssignment(void) { return g_dungeon_prize_assignment; }
 const uint8 *Rando_GetMedallionAssignment(void) { return g_medallion_assignment; }
@@ -1262,10 +1515,11 @@ extern uint32 g_wanted_zelda_features1;
 extern uint32 g_wanted_zelda_features;
 
 // §62 — cache for the active slot's textual share string (50 base32 chars +
-// NUL). Populated at Rando_ActivateSidecarSlot from the slot header's raw
-// binary; consumed by Rando_RevealActiveSlotSpoiler to resolve the on-disk
-// spoiler path. Cleared on Rando_DeactivateSlot.
-static char g_rando_active_share_string[64] = {0};
+// NUL; the v1 IDENTITY string — the slot stores the v1 raw blob, design D1 of
+// add-rando-share-string-v2). Populated at Rando_ActivateSidecarSlot from the
+// slot header's raw binary; consumed by Rando_RevealActiveSlotSpoiler to
+// resolve the on-disk spoiler path. Cleared on Rando_DeactivateSlot.
+static char g_rando_active_share_string[kShareStringBase32MaxLen] = {0};
 
 // ---------------------------------------------------------------------------
 // Phase C entrance shuffle — runtime door overlay. Owns a shadow of the vanilla
@@ -1279,7 +1533,7 @@ static char g_rando_active_share_string[64] = {0};
 #define kEntranceOverlayMax 4096
 static uint8 g_entrance_overlay[kEntranceOverlayMax];
 // Saved g_asset_ptrs[126] (the vanilla door table) while the overlay is
-// installed. INVARIANT (audit L1): Entrance_RuntimeTeardown() MUST run before any
+// installed. INVARIANT: Entrance_RuntimeTeardown() MUST run before any
 // LoadAssets() reload — LoadAssets unconditionally rewrites every g_asset_ptrs[i]
 // into a fresh buffer, which would both drop the overlay and leave this pointer
 // dangling into the freed asset buffer. Today all LoadAssets call sites are
@@ -1451,7 +1705,7 @@ void Rando_DecoupledSetEnteredDoor(uint16 lx) {
 
 // Consume-once accessor for the entered-interior global. LoadOverworldFromDungeon
 // reads+clears it at the top UNCONDITIONALLY (same discipline as g_rando_entrance_
-// exit_room / force_cached, audit HIGH-1): this function is reached by mirror /
+// exit_room / force_cached): this function is reached by mirror /
 // special-area / ending warps too, so a stale entered-interior left set could be
 // consumed by a LATER cave-class exit → wrong-door warp. 0xFFFF = none.
 uint16 Rando_DecoupledConsumeEntered(void) {
@@ -1634,8 +1888,60 @@ static uint64 SlotSeedFromShareString(const uint8 *sb) {
          ((uint64)sb[26] << 40) | ((uint64)sb[27] << 48) | ((uint64)sb[28] << 56);
 }
 
-static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
-  Entrance_RuntimeTeardown();
+// Everything Entrance_RuntimeInstall installs for one slot, computed PURELY
+// (no global writes): the per-mode permutations, the decoupled exit nets, and
+// the built door overlay. Shared by the installer below and
+// Rando_EntranceLayoutDigest24 (FIX #4) so the activation-time digest can
+// never drift from what actually installs — any algorithm/pool change that
+// alters an installed table alters the digest.
+typedef struct EntranceRuntimeLayout {
+  bool cross, cave, dun;                         // entry-shuffle modes
+  bool decoupled, decoupled_dun, decoupled_cross;// one-way exit modes
+  int cave_n, dun_n, cross_n, dec_n, dd_n, cd_n;
+  uint8 cave_assign[kEntranceMaxInteriors];
+  uint8 dun_assign[kEntranceMaxInteriors];
+  uint8 cross_assign[kEntranceMaxInteriors];
+  uint8 dec_assign[kEntranceMaxInteriors];
+  uint8 dd_assign[kEntranceMaxInteriors];
+  uint8 cd_assign[kEntranceMaxInteriors];
+  uint32 overlay_len;
+  uint8 overlay[kEntranceOverlayMax];
+} EntranceRuntimeLayout;
+
+// Scratch shared by Entrance_ComputeLayout's two callers (install + digest).
+// File-static rather than stack — the overlay member is kEntranceOverlayMax
+// bytes. Both callers run sequentially on the main thread.
+static EntranceRuntimeLayout s_entrance_layout_scratch;
+
+// The TRUE pristine vanilla entrance-id table, regardless of which subsystem
+// currently owns g_asset_ptrs[126]. Two subsystems repoint 126 and
+// each saves the pointer it displaced: the Inverted static override
+// (inverted_entrances.c — active for the whole life of an Inverted slot) and
+// the entrance-shuffle overlay (g_entrance_overlay_orig). Resolution prefers
+// the deepest saved original: Inverted's saved pointer is captured after
+// Entrance_RuntimeTeardown (activation order), so it is always the raw vanilla
+// table; the overlay's saved pointer is likewise pristine because activation
+// tears the Inverted override down before Entrance_RuntimeInstall captures.
+// Reading the live table here instead used to bake an INVERTED-id digest into
+// sidecars generated while an Inverted slot was active (permanent false
+// refusal after restart) and false-refuse a clean entrance slot activated over
+// a still-installed Inverted slot.
+static const uint8 *Entrance_PristineVanillaIds(void) {
+  const uint8 *inv_orig = InvertedEntrances_SavedEntranceIdOrig();
+  if (inv_orig != NULL) return inv_orig;
+  if (g_entrance_overlay_orig != NULL) return g_entrance_overlay_orig;
+  return (const uint8 *)kOverworld_Entrance_Id;
+}
+
+// Compute the full entrance layout that `h`'s (entrance_axes, world_state,
+// share-string seed, entrance_attempt) regenerate. Returns false when no
+// entrance mode is active or the vanilla door table is unavailable. Reads the
+// PRISTINE vanilla door table (Entrance_PristineVanillaIds) even while a
+// slot's overlay — or an Inverted slot's static override — currently owns
+// asset 126, so the generation-time digest, a slot-switch digest, and the
+// installed overlay all see the same base.
+static bool Entrance_ComputeLayout(const RandoSlotHeader *h, EntranceRuntimeLayout *out) {
+  memset(out, 0, sizeof(*out));
   RandoSettings es;
   memset(&es, 0, sizeof(es));
   es.shuffle_cave_entrances = (h->entrance_axes & kEntranceAxis_ShuffleCaves) ? 1 : 0;
@@ -1644,103 +1950,176 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   es.cross_category = (h->entrance_axes & kEntranceAxis_CrossCategory) ? 1 : 0;
   es.decoupled = (h->entrance_axes & kEntranceAxis_Decoupled) ? 1 : 0;
   es.world_state = h->settings_ext_present ? h->world_state : (uint8)kWorldState_Open;
-  bool cross = Entrance_IsCrossActive(&es);    // supersedes the separate paths
-  bool cave = !cross && Entrance_IsActive(&es);// Inverted/Retro guard (defense in depth)
-  bool dun = !cross && Entrance_IsDungeonActive(&es);
+  out->cross = Entrance_IsCrossActive(&es);    // supersedes the separate paths
+  out->cave = !out->cross && Entrance_IsActive(&es);// Inverted/Retro guard (defense in depth)
+  out->dun = !out->cross && Entrance_IsDungeonActive(&es);
   // Decoupled (D.4) composes on top of the entry shuffle: cave decoupled needs the
   // cave shuffle, dungeon decoupled needs the dungeon shuffle.
-  bool decoupled = Entrance_IsDecoupledActive(&es);
-  bool decoupled_dun = Entrance_IsDungeonDecoupledActive(&es);
-  bool decoupled_cross = Entrance_IsCrossDecoupledActive(&es);  // one-way over the mixed pool
-  if (!cross && !cave && !dun && !decoupled && !decoupled_dun && !decoupled_cross) return;
-  // X.1 backward-load: the entrance permutation π is REGENERATED from
-  // (seed, axes, attempt) against this build's interior/dungeon pool. The pool
-  // composition is part of the generator version, so a slot written by a
+  out->decoupled = Entrance_IsDecoupledActive(&es);
+  out->decoupled_dun = Entrance_IsDungeonDecoupledActive(&es);
+  out->decoupled_cross = Entrance_IsCrossDecoupledActive(&es);  // one-way over the mixed pool
+  if (!out->cross && !out->cave && !out->dun &&
+      !out->decoupled && !out->decoupled_dun && !out->decoupled_cross)
+    return false;
+  const uint8 *ids = Entrance_PristineVanillaIds();
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (ids == NULL || len == 0 || len > kEntranceOverlayMax) return false;
+  out->overlay_len = len;
+  // seed_u64 lives at raw share_string bytes [21..28] LE (per rando_share layout).
+  uint64 seed = SlotSeedFromShareString(h->share_string);
+  if (out->cross) {
+    // Crossed: one combined pool; the unified overlay maps every door (cave or
+    // dungeon) to its target's id.
+    out->cross_n = Entrance_ComputeCrossPermutation(&es, seed, h->entrance_attempt, out->cross_assign);
+    Entrance_BuildCrossOverlay(out->cross_assign, out->cross_n, ids, len, out->overlay);
+  } else {
+    if (out->cave)
+      out->cave_n = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, out->cave_assign);
+    if (out->dun)
+      out->dun_n = Entrance_ComputeDungeonPermutation(&es, seed, h->entrance_attempt, out->dun_assign);
+    // Door overlay: cave pass copies vanilla + remaps cave slots (NULL = copy
+    // only), then the dungeon pass remaps the disjoint dungeon slots in place.
+    Entrance_BuildDoorOverlay(out->cave ? out->cave_assign : NULL, out->cave_n, ids, len, out->overlay);
+    if (out->dun) Entrance_RemapDungeonDoors(out->dun_assign, out->dun_n, out->overlay, len);
+  }
+  // One-way exit permutations (regenerated deterministically; distinct salts).
+  if (out->decoupled_cross) {
+    int n = Entrance_ComputeCrossDecoupledExit(&es, seed, h->entrance_attempt, out->cd_assign);
+    out->cd_n = (n > kEntranceMaxInteriors) ? kEntranceMaxInteriors : n;
+  }
+  if (out->decoupled) {
+    int n = Entrance_ComputeDecoupledExit(&es, seed, h->entrance_attempt, out->dec_assign);
+    out->dec_n = (n > kEntranceMaxInteriors) ? kEntranceMaxInteriors : n;
+  }
+  if (out->decoupled_dun) {
+    int n = Entrance_ComputeDungeonDecoupledExit(&es, seed, h->entrance_attempt, out->dd_assign);
+    out->dd_n = (n > kEntranceDungeonCount) ? kEntranceDungeonCount : n;
+  }
+  return true;
+}
+
+// FIX #4 — see rando_save.h. 24-bit FNV-1a fold (same recipe as
+// DoorShuffle_LayoutDigest) over EVERYTHING Entrance_ComputeLayout produces:
+// mode flags, every active permutation/net (count + bytes), and the built
+// door overlay. Called at generation (store) and activation (compare).
+uint32 Rando_EntranceLayoutDigest24(const RandoSlotHeader *hdr) {
+  EntranceRuntimeLayout *lay = &s_entrance_layout_scratch;
+  if (hdr == NULL || !Entrance_ComputeLayout(hdr, lay)) return 0;
+  uint64 h = 0xcbf29ce484222325ull;
+#define DIG8(b) (h = (h ^ (uint8)(b)) * 0x100000001b3ull)
+  DIG8((lay->cross ? 1 : 0) | (lay->cave ? 2 : 0) | (lay->dun ? 4 : 0) |
+       (lay->decoupled ? 8 : 0) | (lay->decoupled_dun ? 16 : 0) |
+       (lay->decoupled_cross ? 32 : 0));
+  DIG8(lay->cross_n);
+  for (int i = 0; i < lay->cross_n; i++) DIG8(lay->cross_assign[i]);
+  DIG8(lay->cave_n);
+  for (int i = 0; i < lay->cave_n; i++) DIG8(lay->cave_assign[i]);
+  DIG8(lay->dun_n);
+  for (int i = 0; i < lay->dun_n; i++) DIG8(lay->dun_assign[i]);
+  DIG8(lay->dec_n);
+  for (int i = 0; i < lay->dec_n; i++) DIG8(lay->dec_assign[i]);
+  DIG8(lay->dd_n);
+  for (int i = 0; i < lay->dd_n; i++) DIG8(lay->dd_assign[i]);
+  DIG8(lay->cd_n);
+  for (int i = 0; i < lay->cd_n; i++) DIG8(lay->cd_assign[i]);
+  DIG8(lay->overlay_len & 0xFF);
+  DIG8((lay->overlay_len >> 8) & 0xFF);
+  for (uint32 i = 0; i < lay->overlay_len; i++) DIG8(lay->overlay[i]);
+#undef DIG8
+  uint32 d = (uint32)(h ^ (h >> 32)) & 0xFFFFFF;
+  return d != 0 ? d : 1;  // 0 is reserved for "absent" (legacy/no-shuffle headers)
+}
+
+// LOGIC-side (tracker/placer reachability) override installation for one
+// computed entrance layout: the cross/cave/dungeon region+edge overrides plus
+// the decoupled one-way exit edges. Extracted from Entrance_RuntimeInstall so
+// Rando_ReinstallActiveSlotLogicOverlays can replay EXACTLY these
+// sub-steps after a mid-session generation cleared the override stores —
+// without touching the gameplay-side installs (asset-126 door overlay,
+// decoupled runtime nets), which generation never disturbs. The Apply* calls
+// self-reset their stores (Rando_Begin*Overrides), so no explicit Clear is
+// needed first; ApplyDecoupledExitEdges layers onto the edge set begun by the
+// dungeon/cross pass, or Begins it itself for cave-only decoupled.
+static void Entrance_ApplyLogicOverrides(const EntranceRuntimeLayout *lay) {
+  if (lay->cross) {
+    // ApplyCrossOverrides installs all 4 cross-class override cases.
+    Entrance_ApplyCrossOverrides(lay->cross_assign, lay->cross_n);
+  } else {
+    if (lay->cave) Entrance_ApplyRegionOverrides(lay->cave_assign, lay->cave_n);
+    if (lay->dun) Entrance_ApplyEdgeOverrides(lay->dun_assign, lay->dun_n);
+  }
+  // dec_n > 0 only when the cave-decoupled axis computed an exit net (see
+  // Entrance_ComputeLayout) — the same condition the install site used.
+  if (lay->dec_n > 0)
+    Entrance_ApplyDecoupledExitEdges(lay->dec_assign, lay->dec_n);  // tracker reachability
+}
+
+static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
+  Entrance_RuntimeTeardown();
+  EntranceRuntimeLayout *lay = &s_entrance_layout_scratch;
+  if (!Entrance_ComputeLayout(h, lay)) return;
+  // X.1 backward-load, LEGACY slots only (entrance_digest24 == 0 — pre-digest
+  // sidecars): the entrance permutation π is REGENERATED from (seed, axes,
+  // attempt) against this build's interior/dungeon pool, so a slot written by a
   // different generator_version may regenerate a DIFFERENT π → doors that don't
-  // match the baked placement. Warn loudly; entrance-shuffle seeds are
-  // version-locked (regenerate after a randomizer update). The placement itself
-  // is still loaded; only the door layout is at risk.
-  if (Rando_DetectVersionDrift(h, (uint16)kGeneratorVersion)) {
+  // match the baked placement. Warn loudly; the placement itself still loads.
+  // Slots WITH a digest don't need the warning: Rando_ActivateSidecarSlot
+  // already hard-failed on any actual layout drift (FIX #4), so reaching here
+  // means the regenerated layout is certified identical.
+  if (h->entrance_digest24 == 0 &&
+      Rando_DetectVersionDrift(h, (uint16)kGeneratorVersion)) {
     fprintf(stderr,
         "Rando WARNING: this entrance-shuffle slot was generated by version %u "
         "but this build is version %u. The door layout is regenerated from the "
         "pool and may not match — regenerate the seed for correct entrances.\n",
         (unsigned)h->generator_version, (unsigned)kGeneratorVersion);
   }
-  const uint8 *ids = kOverworld_Entrance_Id;
-  uint32 len = kOverworld_Entrance_Id_SIZE;
-  if (ids == NULL || len == 0 || len > kEntranceOverlayMax) return;
-  // seed_u64 lives at raw share_string bytes [21..28] LE (per rando_share layout).
-  const uint8 *sb = h->share_string;
-  uint64 seed = SlotSeedFromShareString(sb);
-  uint8 cave_assign[kEntranceMaxInteriors]; int cave_n = 0;
-  uint8 dun_assign[kEntranceMaxInteriors]; int dun_n = 0;
-  uint8 cross_assign[kEntranceMaxInteriors]; int cross_n = 0;
   // Logic-side overrides so the in-game location tracker reflects the shuffled
   // reachability (gameplay itself reads the baked placement, not reachability).
-  if (cross) {
-    // Crossed: one combined pool. ApplyCrossOverrides installs all 4 cases; the
-    // unified overlay maps every door (cave or dungeon) to its target's id.
-    cross_n = Entrance_ComputeCrossPermutation(&es, seed, h->entrance_attempt, cross_assign);
-    Entrance_ApplyCrossOverrides(cross_assign, cross_n);
-    Entrance_BuildCrossOverlay(cross_assign, cross_n, ids, len, g_entrance_overlay);
-  } else {
-    if (cave) {
-      cave_n = Entrance_ComputePermutation(&es, seed, h->entrance_attempt, cave_assign);
-      Entrance_ApplyRegionOverrides(cave_assign, cave_n);
-    }
-    if (dun) {
-      dun_n = Entrance_ComputeDungeonPermutation(&es, seed, h->entrance_attempt, dun_assign);
-      Entrance_ApplyEdgeOverrides(dun_assign, dun_n);
-    }
-    // Door overlay: cave pass copies vanilla + remaps cave slots (NULL = copy
-    // only), then the dungeon pass remaps the disjoint dungeon slots in place.
-    Entrance_BuildDoorOverlay(cave ? cave_assign : NULL, cave_n, ids, len, g_entrance_overlay);
-    if (dun) Entrance_RemapDungeonDoors(dun_assign, dun_n, g_entrance_overlay, len);
-  }
-  // Decoupled (D.4): install the one-way exit permutation(s) (regenerated
-  // deterministically) + the exit edges for the tracker. Reset both first so a
-  // re-install starts clean; the cave path also arms the runtime arrival replay.
-  if (decoupled || decoupled_dun || decoupled_cross) {
+  // Shared with the replay helper — see Entrance_ApplyLogicOverrides.
+  Entrance_ApplyLogicOverrides(lay);
+  memcpy(g_entrance_overlay, lay->overlay, lay->overlay_len);
+  // Decoupled (D.4): install the one-way exit permutation(s) + the exit edges
+  // for the tracker. Reset all first so a re-install starts clean; the cave
+  // path also arms the runtime arrival replay.
+  if (lay->decoupled || lay->decoupled_dun || lay->decoupled_cross) {
     Decoupled_Reset();
     Dungeon_Decoupled_Reset();
     Cross_Decoupled_Reset();
-    if (decoupled_cross) {
+    if (lay->cd_n > 0) {
       // Cross + decoupled: one-way exits over the mixed pool. NO logic edges
       // (coupled-equivalent reachability; the ENTRY logic is ApplyCrossOverrides
       // above). net permutes the combined endpoint space; the runtime resolves a
       // cave-vs-dungeon target per source door at the entry hook.
-      uint8 cd_assign[kEntranceMaxInteriors];
-      int cdn = Entrance_ComputeCrossDecoupledExit(&es, seed, h->entrance_attempt, cd_assign);
-      if (cdn > 0) {
-        g_cross_decoupled_n = (cdn > kEntranceMaxInteriors) ? kEntranceMaxInteriors : cdn;
-        memcpy(g_cross_net, cd_assign, (size_t)g_cross_decoupled_n);
-        g_cross_decoupled_active = 1;
-      }
+      g_cross_decoupled_n = lay->cd_n;
+      memcpy(g_cross_net, lay->cd_assign, (size_t)g_cross_decoupled_n);
+      g_cross_decoupled_active = 1;
     }
-    if (decoupled) {
-      uint8 dec_assign[kEntranceMaxInteriors];
-      int dn = Entrance_ComputeDecoupledExit(&es, seed, h->entrance_attempt, dec_assign);
-      if (dn > 0) {
-        Entrance_ApplyDecoupledExitEdges(dec_assign, dn);  // tracker reachability
-        g_decoupled_n = (dn > kEntranceMaxInteriors) ? kEntranceMaxInteriors : dn;
-        memcpy(g_decoupled_net, dec_assign, (size_t)g_decoupled_n);
-        g_decoupled_active = 1;
-      }
+    if (lay->dec_n > 0) {
+      // (The matching logic-side exit edges installed above via
+      // Entrance_ApplyLogicOverrides; only the runtime net lives here.)
+      g_decoupled_n = lay->dec_n;
+      memcpy(g_decoupled_net, lay->dec_assign, (size_t)g_decoupled_n);
+      g_decoupled_active = 1;
     }
-    if (decoupled_dun) {
+    if (lay->dd_n > 0) {
       // No logic edges (coupled-equivalent reachability is conservative + correct);
-      // net' is the runtime exit-room redirect only. Regenerated from (seed, attempt).
-      uint8 dd_assign[kEntranceMaxInteriors];
-      int ddn = Entrance_ComputeDungeonDecoupledExit(&es, seed, h->entrance_attempt, dd_assign);
-      if (ddn > 0) {
-        g_dungeon_decoupled_n = (ddn > kEntranceDungeonCount) ? kEntranceDungeonCount : ddn;
-        memcpy(g_dungeon_decoupled_net, dd_assign, (size_t)g_dungeon_decoupled_n);
-        g_dungeon_decoupled_active = 1;
-      }
+      // net' is the runtime exit-room redirect only.
+      g_dungeon_decoupled_n = lay->dd_n;
+      memcpy(g_dungeon_decoupled_net, lay->dd_assign, (size_t)g_dungeon_decoupled_n);
+      g_dungeon_decoupled_active = 1;
     }
   }
-  g_entrance_overlay_orig = (const uint8 *)g_asset_ptrs[126];
+  // Capture via the pristine resolver, not the live g_asset_ptrs[126]: equal
+  // to the live pointer in every sane state (the activation-order
+  // teardown below guarantees the Inverted override is off 126 before this
+  // runs, and the leading Entrance_RuntimeTeardown NULLed our own saved
+  // pointer), but if a future path ever reaches here with the Inverted shadow
+  // still installed, the overlay's "vanilla" lookups (coupled-exit /
+  // force-cached / capture hooks) and the teardown restore stay pristine
+  // instead of inheriting the contaminated shadow — install and digest can
+  // never diverge.
+  g_entrance_overlay_orig = Entrance_PristineVanillaIds();
   g_asset_ptrs[126] = g_entrance_overlay;
 }
 
@@ -1809,10 +2188,16 @@ uint16 Rando_EntranceDungeonDecoupledExitRoom(uint16 lx) {
 // confidently-wrong prize/medallion gating.
 static RandoSettings g_rando_active_settings;
 static bool g_rando_active_settings_valid = false;
-// Session-lifetime buffers the predicate VM borrows via Rando_Get*Assignment().
-// These MUST outlive activation — the setters store the pointer, not a copy — so
-// they live here as file-statics, NOT in the placer's function-statics (which
-// aren't repopulated on a slot reload).
+// distinguishes "settings valid because a GENUINE slot is active" (false)
+// from "valid because a snapshot COLD-REPLAY restored them" (true). The cold-
+// replay gate must protect a genuine active slot, yet still let a NEW cold replay
+// supersede a PRIOR one — else a 2nd Ctrl+F1 of a different seed (slot still not
+// loaded) would early-return and keep the 1st seed's world_state/Inverted/shuffles.
+static bool g_rando_settings_from_cold_replay = false;
+// Active-slot assignment replay sources. Rando_Set*Assignment copies these into
+// the VM-owned assignment stores; keeping the active seed's bytes here lets
+// Rando_ReinstallActiveSlotLogicOverlays restore them after an out-of-band
+// generation clobbers the VM stores.
 static uint8 g_rando_active_prize_assignment[kRandoDungeonCount];
 static uint8 g_rando_active_medallion_assignment[kRandoMedallionEntranceCount];
 // Boss-shuffle assignment for the active slot — drives BOTH the render redirect
@@ -1821,11 +2206,131 @@ static uint8 g_rando_active_medallion_assignment[kRandoMedallionEntranceCount];
 // the tracker agree with the bosses actually spawned). Regenerated from
 // (settings, base seed) at slot load, same as prize/medallion.
 static uint8 g_rando_active_boss_assignment[16];
+// the EXACT settings the activation hint block synthesized for the
+// ACTIVE slot: the full recovered blob when valid, else the header-ext /
+// default fallbacks (v1/no-blob slots still get regenerated hints; their
+// Rando_GetActiveSettings() is NULL). Rando_RegenerateActiveSlotHints() replays
+// Rando_GenerateHints over these + the installed placement, so out-of-band
+// hint-table clobbers (the native window's spoiler export regenerates hints
+// from its generate-time snapshot) can restore the active seed's in-game hints
+// exactly — activation and restore share one code path and cannot drift.
+static RandoSettings g_rando_active_hint_settings;
+static bool g_rando_active_hint_settings_valid = false;
+// replay inputs for Rando_ReinstallActiveSlotLogicOverlays(): the
+// ACTIVE slot's header (the same fields Entrance_RuntimeInstall and the door
+// regen consumed at activation) plus whether activation installed a door logic
+// layout. Captured once the slot's installs begin; invalidated by
+// Rando_DeactivateSlot — including every activation refusal path, which routes
+// through it.
+static RandoSlotHeader g_rando_active_header;
+static bool g_rando_active_header_valid = false;
+static bool g_rando_active_door_logic = false;
+// The ACTIVE slot's regenerated door layout. Persistent storage is required —
+// Rando_SetDoorLogicLayout stores the POINTER — and file scope (rather than the
+// former function-local static in Rando_ActivateSidecarSlot) lets the replay
+// helper regenerate into the same storage. Generation uses its own
+// static (g_door_gen_layout in rando_generate.c), so a mid-session generation
+// never clobbers these bytes — only the installed pointer.
+static DoorShuffleLayout s_active_door_layout;
+
+// Re-derive + install this slot's logic-side shuffle assignments
+// (prize/medallion + boss/drop/enemy) from (settings, BASE seed, prize_attempt)
+// into the active-slot stores. Factored out of Rando_ActivateSidecarSlot so the
+// snapshot cold-replay restore (Rando_SnapshotColdReplayRestore, below) re-derives
+// IDENTICALLY and the two can't drift. Writes the g_rando_active_* assignment
+// statics and repoints the VM via Rando_Set*Assignment (which now copy).
+//
+// shuffle_seed mirrors FIX #6 EXACTLY: the placer seeds prize/medallion from the
+// ACCEPTED attempt's per-attempt seed (base ^ attempt*golden — see Place_AssumedFill),
+// so re-derive with the same perturbation or the runtime falling-prize sprite
+// (dungeon.c RandoFallingPrizeIndex) + OP_HAS_PRIZE reachability disagree with the
+// prize/medallion BAKED into the placement table. prize_attempt is 0 for attempt-0
+// + v1 slots (XOR 0 == the legacy base-seed derivation). DropShuffle ignores the
+// placement-table arg (shuffle_drops.c), so g_session_placement_table being empty
+// on the cold-replay path is harmless.
+static void install_active_shuffles(const RandoSettings *s, uint64 base_seed,
+                                    uint8 prize_attempt) {
+  RandoRng shuffle_rng;
+  uint64 shuffle_seed = base_seed ^ ((uint64)prize_attempt * 0x9E3779B97F4A7C15ull);
+  Rng_SeedFromU64(&shuffle_rng, shuffle_seed);
+  PrizeShuffle_Run(s, &shuffle_rng, g_rando_active_prize_assignment);
+  MedallionShuffle_Run(s, &shuffle_rng, g_rando_active_medallion_assignment);
+  Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
+  Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
+  (void)DropShuffle_Generate(s, base_seed, &g_session_placement_table, NULL);
+  (void)BossShuffle_Generate(s, base_seed, g_rando_active_boss_assignment);
+  Rando_SetBossAssignment(g_rando_active_boss_assignment);
+  (void)EnemyShuffle_Generate(s, base_seed);
+}
+
+// snapshot cold-replay restore. Called by RandoSnapshotTail_Load when a
+// type-2 RandoSettings TLV is read, to reconstruct the slot's logic-side state
+// (prize/medallion/boss/drop/enemy assignments + Inverted installs + the JP-glitch
+// coupling) from the snapshot-carried (canonical settings, share string→seed,
+// prize_attempt). Mirrors the corresponding arm of Rando_ActivateSidecarSlot via
+// the shared install_active_shuffles helper, so the two can't drift.
+//
+// GATED on "no slot validly active": fires ONLY on a genuine cold replay — a
+// fresh launch where the player pressed Ctrl+F1 on a rando snapshot WITHOUT first
+// loading the slot, so nothing ran activation (g_rando_active_settings_valid is
+// false). A within-session replay (the slot IS active) is left UNTOUCHED so the
+// activation installs (the LIFO g_asset_ptrs[126] overlay stack, door redirects,
+// etc.) aren't disturbed and can't double-install. (A v1/no-blob slot emits no
+// type-2 TLV, so this never fires under it.) The caller restores the 4
+// process-static ownership bytes unconditionally — that is separate, time-varying
+// snapshot state this function does not touch.
+void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
+                                     const uint8 *share_string_raw,
+                                     uint8 prize_attempt) {
+  if (s == NULL || share_string_raw == NULL) return;
+  // Protect a GENUINE active slot (don't disturb its installs), but allow a new
+  // cold replay to supersede a PRIOR cold replay's restore.
+  if (g_rando_active_settings_valid && !g_rando_settings_from_cold_replay) return;
+
+  g_rando_active_settings = *s;
+  g_rando_active_world_state = s->world_state;
+  uint64 seed = SlotSeedFromShareString(share_string_raw);
+  install_active_shuffles(&g_rando_active_settings, seed, prize_attempt);
+  // Inverted runtime installs (mirror Rando_ActivateSidecarSlot). Each is a
+  // no-op unless world_state == Inverted; InvertedEntrances_Install self-tears-
+  // down its prior overlay (leading Teardown), and on a true cold replay nothing
+  // else owns g_asset_ptrs[126], so the stack stays LIFO-clean.
+  InvertedEntrances_Install(g_rando_active_world_state);
+  InvertedSecrets_Install(g_rando_active_world_state);
+  InvertedHoleBlocks_Install(g_rando_active_world_state);
+  g_rando_active_settings_valid = true;
+  g_rando_settings_from_cold_replay = true;  // mark the source.
+  // JP-glitch coupling (mirror activation D6): a glitch-logic seed forces the
+  // JP-glitch runtime flag so the replayed frames reproduce the assumed glitches.
+  if (Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
+    g_config.features0      |= kFeatures0_RestoreJpGlitches;
+    g_wanted_zelda_features |= kFeatures0_RestoreJpGlitches;
+    enhanced_features0      |= kFeatures0_RestoreJpGlitches;
+  }
+}
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   if (src == NULL || src->header.slot_kind != kSlotKind_Randomizer) {
     Rando_DeactivateSlot();
     return;
+  }
+  rando_clear_trap_effect();
+  // FIX #5 — refuse a slot whose canonical settings blob fails range
+  // validation (Settings_CanonicalDeserialize now rejects out-of-range enum
+  // bytes via Settings_Validate; undefined FLAG bits stay permissive). The
+  // blob drives the door-shuffle gate, the prize/medallion regen, and the
+  // tracker reachability below — a corrupt enum there would either flow into
+  // `1u << world_state`-style consumers or silently skip the door drift gate.
+  // Same refusal pathway as the digest-drift checks: deactivate, don't guess.
+  if (src->header.settings_present) {
+    RandoSettings vs;
+    if (Settings_CanonicalDeserialize(src->settings_canonical, &vs) != 0) {
+      fprintf(stderr,
+              "Rando: slot settings blob failed range validation (corrupt sidecar?) "
+              "— refusing to activate this slot\n");
+      Rando_DeactivateSlot();
+      return;
+    }
   }
   // add-rando-door-shuffle — regenerate the door layout BEFORE installing any
   // slot state. The layout is not serialized; it regenerates from
@@ -1834,7 +2339,6 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // certified-beatable placement unbeatable, so the slot is refused (treated
   // as no-rando) rather than silently loaded — unlike entrance shuffle's
   // non-blocking version-drift warning. Vanilla-door slots skip all of this.
-  static DoorShuffleLayout s_door_layout;
   bool door_active = false;
   if (src->header.settings_present) {
     RandoSettings ds;
@@ -1842,8 +2346,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
         Settings_EffectiveDoorShuffle(&ds) != kDoorShuffle_Vanilla) {
       uint64 slot_seed = SlotSeedFromShareString(src->header.share_string);
       bool ok = DoorShuffle_Generate(slot_seed, src->header.door_attempt,
-                                     kDoorShuffle_MvpDungeonMask, &s_door_layout);
-      uint32 digest = ok ? (DoorShuffle_LayoutDigest(&s_door_layout) & 0xFFFFFF) : 0;
+                                     kDoorShuffle_MvpDungeonMask, &s_active_door_layout);
+      uint32 digest = ok ? (DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFF) : 0;
       if (!ok || digest != src->header.door_digest24) {
         fprintf(stderr,
                 "Rando: door-shuffle layout drift (regen digest %06x != slot %06x) "
@@ -1856,7 +2360,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       // slot state installs, on the same refusal pathway as digest drift: a
       // chosen key door the overlay can't render makes the certified-beatable
       // placement unbeatable, so refuse rather than load.
-      if (DoorRt_KindOverlaySelfCheck(&s_door_layout) != 0) {
+      if (DoorRt_KindOverlaySelfCheck(&s_active_door_layout) != 0) {
         fprintf(stderr,
                 "Rando: door-shuffle kind overlay rejected this layout "
                 "— refusing to activate this slot on this build\n");
@@ -1866,6 +2370,26 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       door_active = true;
     }
   }
+  // FIX #4 — entrance-layout drift gate, mirroring the door-shuffle digest
+  // gate above. The entrance permutation is REGENERATED from (seed, axes,
+  // attempt) at install; if a kGeneratorVersion bump changed the entrance
+  // algorithm or pool, the regenerated layout silently differs from the one
+  // the placement was certified against (doors that don't match the baked
+  // placement can make a certified-beatable seed unbeatable). Recompute the
+  // digest from the header and refuse on mismatch. entrance_digest24 == 0 =
+  // legacy slot (pre-digest sidecar) or no entrance shuffle — those keep the
+  // warn-only version-drift behavior inside Entrance_RuntimeInstall.
+  if (src->header.entrance_digest24 != 0) {
+    uint32 edigest = Rando_EntranceLayoutDigest24(&src->header);
+    if (edigest != src->header.entrance_digest24) {
+      fprintf(stderr,
+              "Rando: entrance-shuffle layout drift (regen digest %06x != slot %06x) "
+              "— refusing to activate this slot on this build\n",
+              (unsigned)edigest, (unsigned)src->header.entrance_digest24);
+      Rando_DeactivateSlot();
+      return;
+    }
+  }
   uint16 n = src->placement_count;
   if (n > kRando_SessionPlacementCapacity) n = kRando_SessionPlacementCapacity;
   memcpy(g_session_placements, src->placements, (size_t)n * sizeof(RandoPlacement));
@@ -1873,6 +2397,12 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_session_placement_table.count = n;
   Placement_Install(&g_session_placement_table);
   g_rando_slot_active = 1;
+  // capture the replay inputs for
+  // Rando_ReinstallActiveSlotLogicOverlays BEFORE the entrance/door installs
+  // below, so the helper replays exactly the header those installs read. A
+  // refusal below routes through Rando_DeactivateSlot, which invalidates this.
+  g_rando_active_header = src->header;
+  g_rando_active_header_valid = true;
   g_wanted_zelda_features1 |= kFeatures1_RandomizerActive;
   enhanced_features1 |= kFeatures1_RandomizerActive;
 
@@ -1885,6 +2415,14 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   Rando_SetSnapshotContext(src->header.generator_version,
                            src->header.settings_hash,
                            src->header.share_string);
+  // also capture the canonical settings blob + prize_attempt so a COLD
+  // snapshot replay (Ctrl+F1 on a fresh launch with the slot not loaded) can
+  // reconstruct world_state + the prize/medallion/boss/drop/enemy assignments +
+  // Inverted installs via Rando_SnapshotColdReplayRestore. NULL (a v1/no-blob
+  // slot) suppresses the type-2 TLV, so cold replay degrades to placement-only.
+  Rando_SetSnapshotSettingsContext(
+      src->header.settings_present ? src->settings_canonical : NULL,
+      src->header.prize_attempt);
 
   // Phase B Slice 1 — copy the slot's checked-location bitmap into the
   // session state. Bitmap size matches between slot and session
@@ -1900,6 +2438,16 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_active_world_state = src->header.settings_ext_present
                                    ? src->header.world_state
                                    : (uint8)kWorldState_Open;
+  // tear down any PRIOR slot's Inverted override BEFORE the
+  // entrance overlay installs over g_asset_ptrs[126]. Without this, switching
+  // straight from an Inverted slot to an entrance-shuffle slot would let
+  // Entrance_RuntimeInstall run while the Inverted shadow still owns 126, and
+  // this slot's InvertedEntrances_Install below (whose leading Teardown
+  // restores 126) would then yank the freshly-installed overlay back out from
+  // under the shuffle. Keeps the 126 save/restore stack strictly LIFO; the
+  // digest gate above is contamination-proof independently via
+  // Entrance_PristineVanillaIds.
+  InvertedEntrances_Teardown();
   // Phase C — install the entrance-shuffle door overlay + region overrides for
   // this slot (no-op when the slot carries no cave shuffle). Done before the
   // hint regeneration below so hints see the shuffled reachability, and before
@@ -1911,16 +2459,17 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // entrance shuffle per apply_derived_rules, so the two installs never
   // contend.) The Stage-1b door-KIND overlay installs here too once built.
   if (door_active) {
-    Rando_SetDoorLogicLayout(&s_door_layout, s_door_layout.shuffled_mask);
+    Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
+    g_rando_active_door_logic = true;  // replay-input capture
     DoorRt_Reset();
     for (int i = 0; i < kDoorTbl_DoorCount; i++) {
-      if (s_door_layout.pairing[i] != 0xFFFF)
-        DoorRt_SetLink((uint16)i, s_door_layout.pairing[i]);
+      if (s_active_door_layout.pairing[i] != 0xFFFF)
+        DoorRt_SetLink((uint16)i, s_active_door_layout.pairing[i]);
     }
     // Stage-1b kind overlay (relocated/un-keyed key-door KINDS). Cannot fail
     // here — DoorRt_KindOverlaySelfCheck validated this exact layout in the
     // gate above — but stay on the refusal pathway if it ever does.
-    if (!DoorRt_InstallKindOverlay(&s_door_layout)) {
+    if (!DoorRt_InstallKindOverlay(&s_active_door_layout)) {
       fprintf(stderr, "Rando: door-shuffle kind overlay install failed — deactivating slot\n");
       Rando_DeactivateSlot();
       return;
@@ -1931,6 +2480,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   } else {
     DoorRt_Reset();
     Rando_SetDoorLogicLayout(NULL, 0);
+    g_rando_active_door_logic = false;  // replay-input capture
     g_wanted_zelda_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
     enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
   }
@@ -1982,54 +2532,14 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       Settings_CanonicalDeserialize(src->settings_canonical, &g_rando_active_settings) == 0) {
     ShareString ss;
     if (Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk) {
-      RandoRng shuffle_rng;
-      // FIX #6 — the placer seeds the prize/medallion shuffle from the ACCEPTED
-      // attempt's per-attempt seed, not the base seed. place_assumed_fill_attempt
-      // runs PrizeShuffle_Run/MedallionShuffle_Run on attempt_seed =
-      // base_seed ^ (attempt * 0x9E3779B97F4A7C15) (see Place_AssumedFill). Re-
-      // derive with the SAME perturbation so the runtime falling-prize sprite
-      // (dungeon.c RandoFallingPrizeIndex) + OP_HAS_PRIZE tracker reachability
-      // agree with the prize/medallion BAKED into the stored placement table.
-      // prize_attempt is 0 for the common attempt-0 case and for older/v1 slots
-      // (XOR with 0 == the legacy base-seed derivation), preserving compat.
-      uint64 shuffle_seed = ss.seed_u64 ^
-          ((uint64)src->header.prize_attempt * 0x9E3779B97F4A7C15ull);
-      Rng_SeedFromU64(&shuffle_rng, shuffle_seed);
-      PrizeShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_prize_assignment);
-      MedallionShuffle_Run(&g_rando_active_settings, &shuffle_rng, g_rando_active_medallion_assignment);
-      Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
-      Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
-      // Phase B Slice 8 — INSTALL the drop shuffle for this slot so the runtime
-      // drop substitution (DropShuffle_Lookup in src/sprite.c) fires. Drop
-      // sprites (hearts/rupees/bombs/...) use the always-loaded common prize
-      // GFX, so a shuffled drop renders correctly. Regenerated deterministically
-      // from (settings, seed) — NOT off the prize/medallion `shuffle_rng` stream
-      // above — matching the headless --generate-seed path + the spoiler. Off →
-      // identity (byte-identical to vanilla).
-      (void)DropShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
-                                 &g_session_placement_table, NULL);
-      // Boss shuffle RENDER (Enemizer pointer-redirect model). INSTALL the boss
-      // assignment so a shuffled boss room redirects its sprite-data + sprite-gfx
-      // to the assigned boss's home boss room (BossShuffle_RenderHomeRoom, consumed
-      // in dungeon.c / sprite.c). Regenerated from (settings, BASE seed) — matching
-      // the placer's logic install (Place_AssumedFill) + the spoiler — so the
-      // bosses spawned at runtime are exactly the ones placement gated on. Off →
-      // vanilla identity → RenderHomeRoom returns 0xFFFF → byte-identical to
-      // vanilla. Also install the SAME table into the logic VM
-      // (Rando_SetBossAssignment) so the in-game tracker / OP_CAN_KILL_BOSS
-      // reachability agree with the spawned bosses (else the tracker would gate on
-      // the vanilla boss while the shuffled one is in the room).
-      (void)BossShuffle_Generate(&g_rando_active_settings, ss.seed_u64,
-                                 g_rando_active_boss_assignment);
-      Rando_SetBossAssignment(g_rando_active_boss_assignment);
-      // add-rando-enemy-shuffle — INSTALL the enemy (sprite-type) substitution
-      // for this slot so the runtime swap (EnemyShuffle_PickDungeon/_Overworld
-      // in src/sprite.c) fires. Regenerated deterministically from
-      // (settings, BASE seed) — matching the headless path — so it's
-      // reproducible for races. Off → inactive → vanilla enemies (byte-identical).
-      // Orthogonal to placement (draws no fill RNG, adds no predicate).
-      (void)EnemyShuffle_Generate(&g_rando_active_settings, ss.seed_u64);
+      // Re-derive + install prize/medallion/boss/drop/enemy assignments from the
+      // recovered (settings, seed, prize_attempt). Factored into a shared helper
+      // (above) so the snapshot cold-replay restore re-derives identically — see
+      // the helper comment for the FIX #6 / falling-prize rationale.
+      install_active_shuffles(&g_rando_active_settings, ss.seed_u64,
+                              src->header.prize_attempt);
       g_rando_active_settings_valid = true;
+      g_rando_settings_from_cold_replay = false;  // a GENUINE slot activation.
     }
   }
   if (!g_rando_active_settings_valid) {
@@ -2079,7 +2589,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
                           ? 1 : 0;
 
   // === Phase B hints: regenerate telepathic-tile hints for this slot ===
-  // Resolves the prior audit-of-audit HIGH-3 TODO. Hints are a pure function
+  // Hints are a pure function
   // of (settings, placement table); the generator (rando_hints.c) reads only
   // the `hints` and `goal` axes from RandoSettings. Rather than the one-way
   // settings_hash, the slot header carries those two axes additively in its
@@ -2087,32 +2597,133 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // struct from defaults, override `hints`/`goal` from the ext, and
   // regenerate — so a slot loaded from disk (including share-string imports)
   // shows hints without re-running the full seed generator.
-  {
-    RandoSettings hint_settings;
-    if (g_rando_active_settings_valid) {
-      // Most reliable source: the full canonical settings blob recovered just
-      // above (the same one the reachability engine consumes). It carries the
-      // real `hints` and `goal` axes, so it is immune to a stale or partially
-      // written header ext byte — which would otherwise leave hints silently
-      // off even though the seed was generated with hints on.
-      hint_settings = g_rando_active_settings;
+  if (g_rando_active_settings_valid) {
+    // Most reliable source: the full canonical settings blob recovered just
+    // above (the same one the reachability engine consumes). It carries the
+    // real `hints` and `goal` axes, so it is immune to a stale or partially
+    // written header ext byte — which would otherwise leave hints silently
+    // off even though the seed was generated with hints on.
+    g_rando_active_hint_settings = g_rando_active_settings;
+  } else {
+    // No canonical blob (older v1 slot / snapshot restore). Fall back to the
+    // additive header ext byte, or default hints-on for the oldest slots so
+    // existing rando slots still surface telepathic-tile hints. goal stays at
+    // the Settings_SetDefaults value (Murahdahla won't fire unless it happens
+    // to be a Triforce/Ganon-hunt default).
+    Settings_SetDefaults(&g_rando_active_hint_settings);
+    if (src->header.settings_ext_present) {
+      g_rando_active_hint_settings.hints = src->header.hints_setting;
+      g_rando_active_hint_settings.goal = src->header.goal;
     } else {
-      // No canonical blob (older v1 slot / snapshot restore). Fall back to the
-      // additive header ext byte, or default hints-on for the oldest slots so
-      // existing rando slots still surface telepathic-tile hints. goal stays at
-      // the Settings_SetDefaults value (Murahdahla won't fire unless it happens
-      // to be a Triforce/Ganon-hunt default).
-      Settings_SetDefaults(&hint_settings);
-      if (src->header.settings_ext_present) {
-        hint_settings.hints = src->header.hints_setting;
-        hint_settings.goal = src->header.goal;
-      } else {
-        hint_settings.hints = kHintsMode_On;
-      }
+      g_rando_active_hint_settings.hints = kHintsMode_On;
     }
-    Rando_GenerateHints(&hint_settings, &g_session_placement_table, NULL);
   }
+  g_rando_active_hint_settings_valid = true;
+  // single code path with the out-of-band restore: the synthesized
+  // hint settings persist in g_rando_active_hint_settings so the bridge's
+  // spoiler export can replay this exact regeneration after clobbering the
+  // hint globals.
+  Rando_RegenerateActiveSlotHints();
   // === Phase B hints: end ===
+}
+
+// regenerate the hint table for the CURRENTLY-ACTIVE slot,
+// replaying exactly the activation-time hint block above (including the
+// v1/no-blob header-ext fallbacks captured in g_rando_active_hint_settings).
+// Called by activation itself and by RandoWindowBridge_WriteSpoilerFiles after
+// its snapshot-hints export overwrote the hint globals. Clears the table
+// (vanilla text) when no slot is active — matching the snapshot-restore
+// convention.
+void Rando_RegenerateActiveSlotHints(void) {
+  const RandoPlacementTable *pt = Placement_GetActive();
+  if (!g_rando_active_hint_settings_valid || pt == NULL || pt->entries == NULL) {
+    Rando_ClearHints();
+    return;
+  }
+  Rando_GenerateHints(&g_rando_active_hint_settings, pt, NULL);
+}
+
+// reinstall the ACTIVE slot's LOGIC-side overlays after an
+// out-of-band generation cleared them. Rando_GenerateSlot unconditionally
+// clears the entrance region/edge override stores (Rando_PlaceWithEntrances'
+// leading clears) and the door logic layout (Rando_ClearGenerationLogicOverlays
+// → Rando_SetDoorLogicLayout(NULL, 0)) — the same global stores
+// Rando_ActivateSidecarSlot populated for the active slot — and never
+// reinstalls, so generating a seed mid-session WITHOUT loading it reverted
+// tracker/map LOGIC reachability to the vanilla graph until slot reload.
+//
+// This replays EXACTLY the activation install sub-steps from the captured
+// active-slot header:
+//   - entrance: Entrance_ComputeLayout over the header — the identical
+//     (seed, entrance_axes, entrance_attempt) regeneration (and the same
+//     pristine-table resolution, Entrance_PristineVanillaIds) that
+//     Entrance_RuntimeInstall ran at activation — then the shared
+//     Entrance_ApplyLogicOverrides sub-step;
+//   - door: DoorShuffle_Generate from (seed, door_attempt) — identical inputs
+//     to activation — re-installed via Rando_SetDoorLogicLayout. The digest
+//     refusal re-check is deliberately SKIPPED: activation already validated
+//     this exact regenerated layout against the slot's door_digest24 (drift
+//     hard-fails there), and DoorShuffle_Generate is deterministic, so the
+//     layout regenerated here is byte-identical to the validated one.
+// Gameplay-side installs (the asset-126 entrance overlay, decoupled runtime
+// nets, DoorRt redirects, and the boss/drop/enemy RENDER shuffles — generation
+// calls only the pure BossShuffle_/DropShuffle_ComputeAssignment forms and
+// never EnemyShuffle_*) are NOT touched by generation, so this helper leaves
+// them alone — it is logic-side only. No active slot: leave the stores CLEARED
+// (the correct idle state, matching what generation left) and return.
+void Rando_ReinstallActiveSlotLogicOverlays(void) {
+  // generation also replaces the logic-VM shuffle assignments
+  // with the placer's per-run data (Place_AssumedFill installs boss plus
+  // prize/medallion assignment bytes), i.e. the NEW seed's data.
+  // Not tracker-only: RandoFallingPrizeIndex (dungeon.c) picks the falling
+  // boss prize and the ancilla.c medallion casts gate MM/TR off these. The
+  // active arrays (g_rando_active_{prize,medallion,boss}_assignment) are
+  // file-statics that ONLY activation writes — generation never touches their
+  // bytes — so copying them back into the assignment stores is sufficient;
+  // mirror activation's install arm (condition: the settings block succeeded)
+  // or its fail-closed NULL arm.
+  if (g_rando_active_settings_valid) {
+    Rando_SetDungeonPrizeAssignment(g_rando_active_prize_assignment);
+    Rando_SetMedallionAssignment(g_rando_active_medallion_assignment);
+    Rando_SetBossAssignment(g_rando_active_boss_assignment);
+  } else {
+    Rando_SetDungeonPrizeAssignment(NULL);
+    Rando_SetMedallionAssignment(NULL);
+    Rando_SetBossAssignment(NULL);
+  }
+  if (!g_rando_active_header_valid) {
+    Entrance_ClearRegionOverrides();
+    Entrance_ClearEdgeOverrides();
+    Rando_SetDoorLogicLayout(NULL, 0);
+    return;
+  }
+  EntranceRuntimeLayout *lay = &s_entrance_layout_scratch;
+  if (Entrance_ComputeLayout(&g_rando_active_header, lay)) {
+    Entrance_ApplyLogicOverrides(lay);
+  } else {
+    // Non-entrance slot: cleared stores ARE the activation-time logic state.
+    Entrance_ClearRegionOverrides();
+    Entrance_ClearEdgeOverrides();
+  }
+  if (g_rando_active_door_logic) {
+    uint64 slot_seed = SlotSeedFromShareString(g_rando_active_header.share_string);
+    if (DoorShuffle_Generate(slot_seed, g_rando_active_header.door_attempt,
+                             kDoorShuffle_MvpDungeonMask, &s_active_door_layout)) {
+      Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
+    } else {
+      // Unreachable for a validly-activated slot (the same deterministic
+      // inputs generated at activation); fail closed rather than install a
+      // half-written layout.
+      fprintf(stderr,
+              "Rando: door layout reinstall regeneration failed — door logic cleared\n");
+      Rando_SetDoorLogicLayout(NULL, 0);
+    }
+  } else {
+    Rando_SetDoorLogicLayout(NULL, 0);
+  }
+  // Force a tracker recompute (mirrors activation): the stores round-tripped
+  // through a cleared state, so don't trust any cached reachability.
+  g_reachability_state_counter++;
 }
 
 void Rando_DeactivateSlot(void) {
@@ -2141,6 +2752,7 @@ void Rando_DeactivateSlot(void) {
   g_session_placement_table.entries = NULL;
   g_session_placement_table.count = 0;
   g_rando_slot_active = 0;
+  rando_clear_trap_effect();
   g_wanted_zelda_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   enhanced_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   // Pair with the SetSnapshotContext in Activate — leaving stale metadata
@@ -2165,7 +2777,10 @@ void Rando_DeactivateSlot(void) {
   g_rando_show_location_tracker = false;
 
   // Phase B Slice 5 — clear the hint set so it doesn't leak across slot
-  // switches once the hint generator lands (stub today; no-op).
+  // switches once the hint generator lands (stub today; no-op). Also
+  // invalidate the captured hint settings so a post-deactivation
+  // Rando_RegenerateActiveSlotHints() clears rather than replaying a stale slot.
+  g_rando_active_hint_settings_valid = false;
   Rando_ClearHints();
 
   // §62 — clear the share-string cache; reveal action returns FileNotFound
@@ -2173,12 +2788,19 @@ void Rando_DeactivateSlot(void) {
   g_rando_active_share_string[0] = '\0';
 
   // Reachability: invalidate the recovered settings and NULL the shuffle
-  // assignment pointers. Without this, switching to a vanilla/empty slot would
+  // assignments. Without this, switching to a vanilla/empty slot would
   // leave eval_has_prize / eval_medallion_opens reading the prior slot's stale
   // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
   g_rando_active_settings_valid = false;
+  g_rando_settings_from_cold_replay = false;  // reset the source flag.
   Rando_SetDungeonPrizeAssignment(NULL);
   Rando_SetMedallionAssignment(NULL);
+
+  // invalidate the logic-overlay replay inputs so a
+  // post-deactivation Rando_ReinstallActiveSlotLogicOverlays() clears the
+  // stores instead of replaying a stale slot.
+  g_rando_active_header_valid = false;
+  g_rando_active_door_logic = false;
 
   // Reset the starting-inventory gate so an in-session slot-switch (slot A
   // already received its grant, then user backs out and loads slot B) lets
@@ -2330,7 +2952,7 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   // RescuedZelda: pre-collected in non-Standard worlds; in Standard it is earned
   // at the castle escape (sram_progress_indicator >= 2 == Zelda at sanctuary).
   // Use the SAME world-state source the reachability graph walks (the recovered
-  // settings) so the event derivation can't diverge from the graph (audit LOW).
+  // settings) so the event derivation can't diverge from the graph.
   uint8 ws = g_rando_active_settings_valid ? g_rando_active_settings.world_state
                                            : g_rando_active_world_state;
   bool rescued = (ws != (uint8)kWorldState_Standard) || (sram_progress_indicator >= 2);
@@ -2423,7 +3045,7 @@ const RandoReachability *Rando_GetLiveReachability(void) {
   // sram_progress_indicator feeds RescuedZelda in Standard (Rando_BuildRuntime-
   // Counts) but does NOT bump the reachability counter when it advances during
   // the castle-escape cutscene — so fold it into the memo key, else RescuedZelda
-  // -gated regions stay dark until the next unrelated location check (audit M1).
+  // -gated regions stay dark until the next unrelated location check.
   uint8 prog = sram_progress_indicator;
   if (g_live_reach_valid && cur == g_live_reach_counter && prog == g_live_reach_progress) {
     return Reachability_Snapshot(false);  // stable cached snapshot
@@ -2483,7 +3105,7 @@ void Rando_FillItemView(RandoItemView *out) {
   // Shared-byte items. With a rando slot active, true ownership is in rando
   // state (the vanilla bytes are single slots that can't represent both). With
   // no slot active that state isn't tracked, so fall back to the raw vanilla
-  // bytes for the informational view (audit LOW).
+  // bytes for the informational view.
   if (g_rando_slot_active) {
     out->mushroom = Rando_MushroomHeld() || link_item_mushroom == 1;
     out->powder = link_item_mushroom == 2;
@@ -2623,7 +3245,7 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   uint64 seed_u64 = ss.seed_u64;
 
   // Regenerate the placement table.
-  // Slice 6 audit H2 — pass budget_seconds=0 (no wall-clock cutoff) so the
+  // pass budget_seconds=0 (no wall-clock cutoff) so the
   // placer runs to its hard 8-attempt cap. This makes the placer's behavior
   // deterministic at reveal regardless of machine speed; combined with the
   // stamp's H1 normalization of attempts_used/forward_fill_fallback_count,
@@ -2665,7 +3287,7 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   (void)Rando_GenerateHints(&settings, &table, &spheres);
 
   // Build the spoiler view and write to a tmp file for stamp computation.
-  // Slice 6 audit H1 — forward_fill_fallback_count and retry_attempts are
+  // forward_fill_fallback_count and retry_attempts are
   // normalized in compute_stamp via the same constants (see
   // rando_spoiler.c). At reveal, the regen spoiler is also normalized so
   // the JSON bytes are byte-identical to the generate-time stamp input.
@@ -2703,14 +3325,13 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
 
   // Write JSON to a tmp file next to the suppressed path so we can read it
   // back and SHA-256 it without disturbing the suppressed file.
-  // Slice 6 audit M3 — removed dead tmpfile() open/close scaffolding.
   char tmp_path[1280];
   if (snprintf(tmp_path, sizeof(tmp_path), "%s.reveal-tmp", suppressed_path) >= (int)sizeof(tmp_path)) {
     return kRandoReveal_WriteFailed;
   }
 
   // Cleanup epilogue is reached via `goto fail` from every error path so
-  // .reveal-tmp never leaks (Slice 6 audit M1).
+  // .reveal-tmp never leaks.
   uint8 *bytes = NULL;
   RandoRevealResult result = kRandoReveal_WriteFailed;
 
@@ -2732,14 +3353,14 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   sha256_buffer(bytes, (size_t)flen, calc_stamp);
 
   if (memcmp(calc_stamp, hdr.spoiler_stamp, 32) != 0) {
-    // Slice 6 audit H3 — leave the suppressed file untouched on stamp
+    // leave the suppressed file untouched on stamp
     // mismatch. The fact that we never wrote to suppressed_path is the
     // invariant.
     result = kRandoReveal_StampMismatch;
     goto fail;
   }
 
-  // Stamp matched. Audit M1 — write to `.partial`, fsync-equivalent close,
+  // Stamp matched. Write to `.partial`, fsync-equivalent close,
   // then rename atomically over the suppressed file. The previous
   // fopen("wb") + fwrite pattern truncated the suppressed file before
   // writing; a mid-write failure (disk full, IO error) would lose the
@@ -2790,8 +3411,8 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   result = kRandoReveal_Ok;
 
 fail:
-  // Always drop the .reveal-tmp scratch file (Slice 6 audit M1) and free
-  // the in-memory bytes (Slice 6 audit M1). `result` carries the outcome.
+  // Always drop the .reveal-tmp scratch file and free
+  // the in-memory bytes. `result` carries the outcome.
   if (bytes != NULL) free(bytes);
   remove(tmp_path);
   return result;
@@ -2860,7 +3481,7 @@ RandoRevealResult Rando_RevealActiveSlotSpoiler(void) {
     fprintf(stderr, "rando reveal: no active randomizer slot.\n");
     return kRandoReveal_FileNotFound;
   }
-  // §62 cluster-audit MED-1 — anti-cheat gate. Race-mode's design intent
+  // anti-cheat gate. Race-mode's design intent
   // is the spoiler stays off-disk until post-race. An in-binary key with
   // no terminal-state gate lets a self-disciplined runner peek mid-race
   // and defeats the design. Gate the in-binary action on game-completion:
@@ -3160,6 +3781,323 @@ void Rando_SelfCheck(void) {
     "chest-mapping spot-checks\n");
 #endif
 
+  // add-rando-traps — direct dispatch, non-lethal damage clamp, trap-owned
+  // freeze timer, and generated dialogue buffer.
+  {
+    uint8 buf[32];
+    if (!Rando_RenderTrapMessage(kRandoTrapDialogueId, buf) ||
+        buf[0] != 24 || buf[1] != 40 || buf[2] != 46 || buf[7] != 0x75 ||
+        buf[15] != 0x7f) {
+      fprintf(stderr, "Rando_SelfCheck: trap message render mismatch\n");
+      exit(2);
+    }
+    if (Rando_RenderTrapMessage(0x00B5, buf)) {
+      fprintf(stderr, "Rando_SelfCheck: trap renderer should ignore non-trap ids\n");
+      exit(2);
+    }
+
+    uint8 saved_main = main_module_index;
+    uint8 saved_sub = submodule_index;
+    uint8 saved_subsub = subsubmodule_index;
+    uint8 saved_saved = saved_module_for_menu;
+    uint16 saved_dialogue = dialogue_message_index;
+    uint8 saved_msg = messaging_module;
+    uint8 saved_0223 = byte_7E0223;
+    uint8 saved_health = link_health_current;
+    uint8 saved_hearts_filler = link_hearts_filler;
+    uint8 saved_blink = countdown_for_blink;
+    uint8 saved_aux = link_auxiliary_state;
+    uint8 saved_timer = link_incapacitated_timer;
+    uint8 saved_vx = link_actual_vel_x;
+    uint8 saved_vy = link_actual_vel_y;
+    uint8 saved_vz = link_actual_vel_z;
+    uint8 saved_vzc = link_actual_vel_z_copy;
+    uint16 saved_z = link_z_coord;
+    uint8 saved_speed = link_speed_setting;
+    uint8 saved_sfx1 = sound_effect_1;
+    uint8 saved_sfx2 = sound_effect_2;
+    uint8 saved_trap_timer = g_rando_trap_stun_timer;
+    uint8 saved_trap_effect = g_rando_trap_effect;
+    uint8 saved_trap_bad_sfx = g_rando_trap_bad_sfx_timer;
+    uint8 saved_trap_shove_timer = g_rando_trap_shove_timer;
+    uint8 saved_trap_shove_dir = g_rando_trap_shove_dir;
+    uint8 saved_trap_owns_force = g_rando_trap_owns_forced_move;
+    uint8 saved_jh = joypad1H_last;
+    uint8 saved_jl = joypad1L_last;
+    uint8 saved_fh = filtered_joypad_H;
+    uint8 saved_fl = filtered_joypad_L;
+    uint16 saved_force = force_move_any_direction;
+    uint8 saved_yvel = link_y_vel;
+    uint8 saved_xvel = link_x_vel;
+    uint8 saved_button_mask = button_mask_b_y;
+    uint8 saved_a_bitfield = bitfield_for_a_button;
+    uint8 saved_button_b = button_b_frames;
+    uint8 saved_sword_delay = link_delay_timer_spin_attack;
+    uint8 saved_spin_step = link_spin_attack_step_counter;
+    uint8 saved_state_bits = link_state_bits;
+    uint8 saved_pick_state = link_picking_throw_state;
+    uint8 saved_grabbing = link_grabbing_wall;
+    uint8 saved_diag = link_moving_against_diag_tile;
+    uint8 saved_running = link_is_running;
+    uint8 saved_dash_countdown = link_countdown_for_dash;
+    uint8 saved_cant_dir = link_cant_change_direction;
+    uint8 saved_30d = link_var30d;
+    uint8 saved_30e = link_var30e;
+    uint8 saved_dir = link_direction;
+    uint8 saved_dir_last = link_direction_last;
+    uint8 saved_dir_facing = link_direction_facing;
+    uint8 saved_anim_timer_steps = some_animation_timer_steps;
+    uint8 saved_swim_countdown = swimming_countdown;
+    uint8 saved_swim_faster = link_maybe_swim_faster;
+    uint8 saved_swim_hard = link_swim_hard_stroke;
+    uint16 saved_swim1[2] = { swimcoll_var1[0], swimcoll_var1[1] };
+    uint16 saved_swim3[2] = { swimcoll_var3[0], swimcoll_var3[1] };
+    uint16 saved_swim5[2] = { swimcoll_var5[0], swimcoll_var5[1] };
+    uint16 saved_swim7[2] = { swimcoll_var7[0], swimcoll_var7[1] };
+    uint16 saved_swim9[2] = { swimcoll_var9[0], swimcoll_var9[1] };
+    uint8 saved_slot_active = g_rando_slot_active;
+    uint8 saved_hookshot = link_something_with_hookshot;
+    uint8 saved_drag = bitmask_of_dragstate;
+    uint8 saved_ancilla_type[5];
+    uint8 saved_ancilla_item[5];
+    uint8 saved_ancilla_aux[5];
+    uint8 saved_ancilla_timer[5];
+    uint8 saved_ancilla_step[5];
+    uint8 saved_ancilla_arr3[5];
+    uint8 saved_ancilla_g[5];
+    uint8 saved_ancilla_l[5];
+    for (int k = 0; k < 5; k++) {
+      saved_ancilla_type[k] = ancilla_type[k];
+      saved_ancilla_item[k] = ancilla_item_to_link[k];
+      saved_ancilla_aux[k] = ancilla_aux_timer[k];
+      saved_ancilla_timer[k] = ancilla_timer[k];
+      saved_ancilla_step[k] = ancilla_step[k];
+      saved_ancilla_arr3[k] = ancilla_arr3[k];
+      saved_ancilla_g[k] = ancilla_G[k];
+      saved_ancilla_l[k] = ancilla_L[k];
+    }
+
+    static RandoPlacement trap_entries[1];
+    trap_entries[0].location_id = 166;
+    trap_entries[0].item_id = ITEM_TrapDamage;
+    RandoPlacementTable tt = { trap_entries, 1 };
+    Placement_Install(&tt);
+    link_is_running = 0;
+    link_health_current = 4;
+    link_incapacitated_timer = 0;
+    link_auxiliary_state = 0;
+    link_direction_facing = 0;
+    rando_clear_trap_effect();
+    uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != kRandoLttpSkip || link_health_current != 1 ||
+        g_rando_trap_stun_timer != 40 ||
+        g_rando_trap_effect != kRandoTrapEffect_Damage ||
+        g_rando_trap_bad_sfx_timer != 8 ||
+        g_rando_trap_shove_timer != 12 || g_rando_trap_shove_dir != 4 ||
+        link_incapacitated_timer != 0 || link_auxiliary_state != 0 ||
+        dialogue_message_index != kRandoTrapDialogueId) {
+      fprintf(stderr, "Rando_SelfCheck: TrapDamage dispatch/effect mismatch\n");
+      exit(2);
+    }
+    joypad1H_last = 0x0f;
+    filtered_joypad_H = 0x0f;
+    Rando_TickTrapEffects();
+    if (g_rando_trap_stun_timer != 40 || g_rando_trap_bad_sfx_timer != 8 ||
+        joypad1H_last != 0x0f || filtered_joypad_H != 0x0f) {
+      fprintf(stderr, "Rando_SelfCheck: trap timer should pause during dialogue\n");
+      exit(2);
+    }
+    dialogue_message_index = 0;
+    main_module_index = 9;
+    g_rando_trap_bad_sfx_timer = 1;
+    sound_effect_1 = 0;
+    sound_effect_2 = 0;
+    joypad1H_last = 0x0f;
+    joypad1L_last = 0x80;
+    filtered_joypad_H = 0x0f;
+    filtered_joypad_L = 0x80;
+    force_move_any_direction = 0x000f;
+    link_y_vel = 5;
+    link_x_vel = 6;
+    link_actual_vel_y = 7;
+    link_actual_vel_x = 8;
+    link_actual_vel_z = 9;
+    link_actual_vel_z_copy = 10;
+    button_b_frames = 8;
+    link_state_bits = 0xff;
+    swimcoll_var3[1] = 1;
+    swimcoll_var7[0] = 0x180;
+    link_swim_hard_stroke = 0xc0;
+    Rando_TickTrapEffects();
+    if (g_rando_trap_stun_timer != 39 || g_rando_trap_shove_timer != 11 ||
+        g_rando_trap_bad_sfx_timer != 0 ||
+        (sound_effect_2 & 0x3f) != 0x26 || sound_effect_1 == 0 ||
+        joypad1H_last != 0 ||
+        joypad1L_last != 0 || filtered_joypad_H != 0 ||
+        filtered_joypad_L != 0 || force_move_any_direction != 4 ||
+        g_rando_trap_owns_forced_move == 0 ||
+        link_direction != 4 || link_direction_last != 4 ||
+        link_speed_setting != 12 ||
+        link_y_vel != 0 || link_x_vel != 0 ||
+        link_actual_vel_y != 0 || link_actual_vel_x != 0 ||
+        link_actual_vel_z != 0 || link_actual_vel_z_copy != 0 ||
+        button_b_frames != 0 || link_state_bits != 0 ||
+        swimcoll_var3[1] != 0 || swimcoll_var7[0] != 0 ||
+        link_swim_hard_stroke != 0 || link_incapacitated_timer != 0) {
+      fprintf(stderr, "Rando_SelfCheck: trap timer tick did not neutralize motion\n");
+      exit(2);
+    }
+    rando_clear_trap_effect();
+    if (g_rando_trap_stun_timer != 0 || g_rando_trap_owns_forced_move != 0 ||
+        force_move_any_direction != 0) {
+      fprintf(stderr, "Rando_SelfCheck: trap clear should drop forced movement\n");
+      exit(2);
+    }
+    trap_entries[0].item_id = ITEM_TrapFreeze;
+    link_health_current = 0x28;
+    link_incapacitated_timer = 0;
+    link_auxiliary_state = 0;
+    rando_clear_trap_effect();
+    lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (lttp != kRandoLttpSkip || link_health_current != 0x28 ||
+        g_rando_trap_stun_timer != 96 ||
+        g_rando_trap_effect != kRandoTrapEffect_Freeze ||
+        g_rando_trap_bad_sfx_timer != 8 ||
+        g_rando_trap_shove_timer != 0 || g_rando_trap_shove_dir != 0 ||
+        link_incapacitated_timer != 0 || link_auxiliary_state != 0 ||
+        dialogue_message_index != kRandoTrapDialogueId) {
+      fprintf(stderr, "Rando_SelfCheck: TrapFreeze dispatch/effect mismatch\n");
+      exit(2);
+    }
+    dialogue_message_index = 0;
+    main_module_index = 9;
+    countdown_for_blink = 0;
+    Rando_TickTrapEffects();
+    if (g_rando_trap_stun_timer != 95 || force_move_any_direction != 0 ||
+        countdown_for_blink != 10 || g_rando_trap_effect != kRandoTrapEffect_Freeze) {
+      fprintf(stderr, "Rando_SelfCheck: TrapFreeze tick/pulse mismatch\n");
+      exit(2);
+    }
+    g_rando_slot_active = 1;
+    g_rando_trap_stun_timer = 0;
+    link_something_with_hookshot = 0;
+    bitmask_of_dragstate = 0;
+    for (int k = 0; k < 5; k++) {
+      rando_selfcheck_seed_bad_trap_wall_spark_residue(k);
+    }
+    Rando_TickTrapEffects();
+    for (int k = 0; k < 5; k++) {
+      if (ancilla_type[k] != 0) {
+        fprintf(stderr, "Rando_SelfCheck: stale trap gravestone residue not cleared\n");
+        exit(2);
+      }
+    }
+    const int residue_slot = 2;
+    rando_selfcheck_seed_bad_trap_wall_spark_residue(residue_slot);
+    link_something_with_hookshot = 1;
+    bitmask_of_dragstate = 0;
+    Rando_TickTrapEffects();
+    if (ancilla_type[residue_slot] != 0x24) {
+      fprintf(stderr, "Rando_SelfCheck: hookshot-owned gravestone was cleared\n");
+      exit(2);
+    }
+    rando_selfcheck_seed_bad_trap_wall_spark_residue(residue_slot);
+    link_something_with_hookshot = 0;
+    bitmask_of_dragstate = 4;
+    Rando_TickTrapEffects();
+    if (ancilla_type[residue_slot] != 0x24) {
+      fprintf(stderr, "Rando_SelfCheck: drag-owned gravestone was cleared\n");
+      exit(2);
+    }
+    rando_selfcheck_seed_bad_trap_wall_spark_residue(residue_slot);
+    link_something_with_hookshot = 0;
+    bitmask_of_dragstate = 0;
+    Rando_TickTrapEffects();
+    if (ancilla_type[residue_slot] != 0) {
+      fprintf(stderr, "Rando_SelfCheck: stale trap gravestone residue not cleared\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+
+    main_module_index = saved_main;
+    submodule_index = saved_sub;
+    subsubmodule_index = saved_subsub;
+    saved_module_for_menu = saved_saved;
+    dialogue_message_index = saved_dialogue;
+    messaging_module = saved_msg;
+    byte_7E0223 = saved_0223;
+    link_health_current = saved_health;
+    link_hearts_filler = saved_hearts_filler;
+    countdown_for_blink = saved_blink;
+    link_auxiliary_state = saved_aux;
+    link_incapacitated_timer = saved_timer;
+    link_actual_vel_x = saved_vx;
+    link_actual_vel_y = saved_vy;
+    link_actual_vel_z = saved_vz;
+    link_actual_vel_z_copy = saved_vzc;
+    link_z_coord = saved_z;
+    link_speed_setting = saved_speed;
+    sound_effect_1 = saved_sfx1;
+    sound_effect_2 = saved_sfx2;
+    g_rando_trap_stun_timer = saved_trap_timer;
+    g_rando_trap_effect = saved_trap_effect;
+    g_rando_trap_bad_sfx_timer = saved_trap_bad_sfx;
+    g_rando_trap_shove_timer = saved_trap_shove_timer;
+    g_rando_trap_shove_dir = saved_trap_shove_dir;
+    g_rando_trap_owns_forced_move = saved_trap_owns_force;
+    joypad1H_last = saved_jh;
+    joypad1L_last = saved_jl;
+    filtered_joypad_H = saved_fh;
+    filtered_joypad_L = saved_fl;
+    force_move_any_direction = saved_force;
+    link_y_vel = saved_yvel;
+    link_x_vel = saved_xvel;
+    button_mask_b_y = saved_button_mask;
+    bitfield_for_a_button = saved_a_bitfield;
+    button_b_frames = saved_button_b;
+    link_delay_timer_spin_attack = saved_sword_delay;
+    link_spin_attack_step_counter = saved_spin_step;
+    link_state_bits = saved_state_bits;
+    link_picking_throw_state = saved_pick_state;
+    link_grabbing_wall = saved_grabbing;
+    link_moving_against_diag_tile = saved_diag;
+    link_is_running = saved_running;
+    link_countdown_for_dash = saved_dash_countdown;
+    link_cant_change_direction = saved_cant_dir;
+    link_var30d = saved_30d;
+    link_var30e = saved_30e;
+    link_direction = saved_dir;
+    link_direction_last = saved_dir_last;
+    link_direction_facing = saved_dir_facing;
+    some_animation_timer_steps = saved_anim_timer_steps;
+    swimming_countdown = saved_swim_countdown;
+    link_maybe_swim_faster = saved_swim_faster;
+    link_swim_hard_stroke = saved_swim_hard;
+    swimcoll_var1[0] = saved_swim1[0];
+    swimcoll_var1[1] = saved_swim1[1];
+    swimcoll_var3[0] = saved_swim3[0];
+    swimcoll_var3[1] = saved_swim3[1];
+    swimcoll_var5[0] = saved_swim5[0];
+    swimcoll_var5[1] = saved_swim5[1];
+    swimcoll_var7[0] = saved_swim7[0];
+    swimcoll_var7[1] = saved_swim7[1];
+    swimcoll_var9[0] = saved_swim9[0];
+    swimcoll_var9[1] = saved_swim9[1];
+    g_rando_slot_active = saved_slot_active;
+    link_something_with_hookshot = saved_hookshot;
+    bitmask_of_dragstate = saved_drag;
+    for (int k = 0; k < 5; k++) {
+      ancilla_type[k] = saved_ancilla_type[k];
+      ancilla_item_to_link[k] = saved_ancilla_item[k];
+      ancilla_aux_timer[k] = saved_ancilla_aux[k];
+      ancilla_timer[k] = saved_ancilla_timer[k];
+      ancilla_step[k] = saved_ancilla_step[k];
+      ancilla_arr3[k] = saved_ancilla_arr3[k];
+      ancilla_G[k] = saved_ancilla_g[k];
+      ancilla_L[k] = saved_ancilla_l[k];
+    }
+  }
+
   // §6.2 TriforcePiece counter: install a placement that grants Triforce
   // Piece at Bottle Merchant, dispatch, verify counter ticked AND the
   // dispatch returned kRandoLttpSkip (caller bypasses Link_ReceiveItem).
@@ -3395,7 +4333,7 @@ void Rando_SelfCheck(void) {
       }
     }
     // Atlas size sanity: every emitted tile MUST appear in kHashIconAtlas.
-    // §9 cluster-3 audit LOW: the original loop's ternary always evaluated
+    // the original loop's ternary always evaluated
     // to 0 and discarded the result via (void)expected — effectively dead
     // code. Rewrite as a real membership check.
     for (int i = 0; i < 5; ++i) {
@@ -3723,6 +4661,312 @@ static void Rando_ShuffleInstallSelfCheck(void) {
   fprintf(stderr, "[Rando_ShuffleInstallSelfCheck] OK\n");
 }
 
+// guard — the entrance-shuffle digest (and therefore the installed
+// overlay, which shares Entrance_ComputeLayout) must read the PRISTINE vanilla
+// entrance-id table even while the Inverted static override owns
+// g_asset_ptrs[126]. Repro of the field bug: generating an entrance-shuffle
+// seed from the native window while an Inverted slot was active baked a digest
+// over the INVERTED table into the sidecar (permanent false refusal after
+// restart), and activating a clean entrance slot over a still-installed
+// Inverted slot false-refused once. Asserts digest(pristine) ==
+// digest(Inverted installed) == digest(after teardown) for a fixed
+// (seed, axes, attempt). The selftest runs without zelda3_assets.dat, so any
+// absent shadowed asset gets a synthetic all-zero source for the duration
+// (restored after); with real assets loaded the real tables are used.
+static void Rando_EntranceContaminationSelfCheck(void) {
+  enum { kSynthSize = 0x100, kMaxShadowed = 32 };
+  static const uint8 zero_src[kSynthSize];  // shared read-only synthetic source
+  uint8 idx[kMaxShadowed];
+  bool synth[kMaxShadowed] = { false };
+  int n = InvertedEntrances_ShadowedAssets(idx, kMaxShadowed);
+  if (n > kMaxShadowed)
+    tsc_die("EntranceContamination: shadowed-asset list outgrew kMaxShadowed");
+  for (int i = 0; i < n; i++) {
+    if (g_asset_ptrs[idx[i]] == NULL) {
+      g_asset_ptrs[idx[i]] = zero_src;
+      g_asset_sizes[idx[i]] = kSynthSize;
+      synth[i] = true;
+    }
+  }
+
+  // Fixed entrance-shuffle header: cave shuffle, Open world, attempt 0, fixed
+  // seed in share_string bytes [21..28] (the layout SlotSeedFromShareString reads).
+  RandoSlotHeader h;
+  memset(&h, 0, sizeof(h));
+  h.slot_kind = kSlotKind_Randomizer;
+  h.generator_version = (uint16)kGeneratorVersion;
+  h.entrance_axes = kEntranceAxis_ShuffleCaves;
+  h.settings_ext_present = 1;
+  h.world_state = (uint8)kWorldState_Open;
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  ss.seed_u64 = 0xC0A7A317D16E5713ull;
+  Share_PackBinary(&ss, h.share_string);
+
+  uint32 d0 = Rando_EntranceLayoutDigest24(&h);
+  if (d0 == 0) tsc_die("EntranceContamination: baseline digest unavailable");
+
+  // Install the REAL Inverted override (headless-safe: it only repoints asset
+  // pointers), then prove the digest is computed over the pristine table, not
+  // the live (inverted) one.
+  InvertedEntrances_Install((uint8)kWorldState_Inverted);
+  const uint8 *saved = InvertedEntrances_SavedEntranceIdOrig();
+  if (saved == NULL)
+    tsc_die("EntranceContamination: inverted install did not take (test setup)");
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  if (len == 0 ||
+      memcmp((const uint8 *)kOverworld_Entrance_Id, saved, len) == 0)
+    tsc_die("EntranceContamination: live table identical to pristine (trivial test)");
+  uint32 d1 = Rando_EntranceLayoutDigest24(&h);
+  InvertedEntrances_Teardown();
+  uint32 d2 = Rando_EntranceLayoutDigest24(&h);
+
+  // Restore the synthetic sources before any assertion can exit. (tsc_die
+  // exits the process, so restoration only matters on the OK path, but keep
+  // the asset table clean before the checks for hygiene.)
+  for (int i = 0; i < n; i++) {
+    if (synth[i]) {
+      g_asset_ptrs[idx[i]] = NULL;
+      g_asset_sizes[idx[i]] = 0;
+    }
+  }
+  if (d1 != d0)
+    tsc_die("EntranceContamination: digest drifted while the Inverted override owned asset 126");
+  if (d2 != d0)
+    tsc_die("EntranceContamination: digest drifted after Inverted teardown");
+  fprintf(stderr, "[Rando_EntranceContaminationSelfCheck] OK\n");
+}
+
+// guard (+ assignment arm) — generate-then-reinstall must
+// restore the ACTIVE slot's LOGIC overlays (entrance region/edge overrides +
+// door logic layout) AND the logic-VM prize/medallion/boss assignment
+// pointers, and with NO active slot the reinstall must be a safe clearing
+// no-op with the assignments NULLed (fail-closed). Fakes the active-slot
+// replay inputs (g_rando_active_header / g_rando_active_door_logic /
+// g_rando_active_settings_valid + the active assignment arrays
+// — the exact stores Rando_ReinstallActiveSlotLogicOverlays reads) directly,
+// since full Rando_ActivateSidecarSlot needs a real sidecar slot. Entrance and
+// door arms are exercised on SEPARATE fake slots (the two shuffles are
+// mutually exclusive in real slots per apply_derived_rules). Headless-safe:
+// synthesizes asset 126 when absent (the logic overrides derive from
+// kCaveInteriors/kDungeons + the permutation, not the id-table bytes).
+static uint64 ReinstallCheck_FoldLogicState(void) {
+  // FNV-1a over the observable override state, via the same getters the
+  // reachability engine uses. Bounds mirror rando_logic.c's stores
+  // (kEntranceRegionOverrideMax = 512, kEntranceEdgeOverrideMax = 64); the
+  // getters bound-check, so over-iteration is harmless.
+  uint64 h = 0xcbf29ce484222325ull;
+  for (uint32 i = 0; i < 512; i++) {
+    uint16 v = Rando_GetEntranceRegionOverride((uint16)i);
+    h = (h ^ (v & 0xFF)) * 0x100000001b3ull;
+    h = (h ^ (v >> 8)) * 0x100000001b3ull;
+  }
+  for (uint32 i = 0; i < 64; i++) {
+    uint16 v = Rando_GetEntranceEdgeOverride((uint16)i);
+    h = (h ^ (v & 0xFF)) * 0x100000001b3ull;
+    h = (h ^ (v >> 8)) * 0x100000001b3ull;
+  }
+  return h;
+}
+
+static void Rando_ReinstallOverlaysSelfCheck(void) {
+  static const uint8 zero_ids[0x100];
+  bool synth = false;
+  if (g_asset_ptrs[126] == NULL) {
+    g_asset_ptrs[126] = zero_ids;
+    g_asset_sizes[126] = sizeof(zero_ids);
+    synth = true;
+  }
+
+  // Generation-style clobber values for the assignment stores: stand-ins for
+  // the placer's per-run assignments (boss + prize/medallion) that
+  // Place_AssumedFill installs on every run.
+  static uint8 gen_prize[kRandoDungeonCount];
+  static uint8 gen_medallion[kRandoMedallionEntranceCount];
+  static uint8 gen_boss[16];
+  for (uint32 i = 0; i < (uint32)sizeof(gen_prize); i++)
+    gen_prize[i] = (uint8)(0x10 + i);
+  for (uint32 i = 0; i < (uint32)sizeof(gen_medallion); i++)
+    gen_medallion[i] = (uint8)(0x20 + i);
+  for (uint32 i = 0; i < (uint32)sizeof(gen_boss); i++)
+    gen_boss[i] = (uint8)(0x30 + i);
+
+  // --- 1) No active slot: install junk into all the stores (as a clobber
+  // would), reinstall, and assert everything is CLEARED (the safe no-op) and
+  // the assignment trio is NULL (fail-closed, mirroring activation's
+  // !settings_valid arm).
+  g_rando_active_header_valid = false;
+  g_rando_active_door_logic = false;
+  g_rando_active_settings_valid = false;
+  Rando_BeginEntranceRegionOverrides();
+  Rando_SetEntranceRegionOverride(3, 7);
+  Rando_BeginEntranceEdgeOverrides();
+  Rando_SetEntranceEdgeOverride(4, 9);
+  static DoorShuffleLayout junk_layout;  // pointer install only; never read
+  Rando_SetDoorLogicLayout(&junk_layout, 1);
+  Rando_SetDungeonPrizeAssignment(gen_prize);
+  Rando_SetMedallionAssignment(gen_medallion);
+  Rando_SetBossAssignment(gen_boss);
+  Rando_ReinstallActiveSlotLogicOverlays();
+  uint16 mask = 0xFFFF;
+  if (Rando_GetEntranceRegionOverride(3) != 0xFFFF ||
+      Rando_GetEntranceEdgeOverride(4) != 4 ||
+      Rando_GetDoorLogicLayout(&mask) != NULL || mask != 0)
+    tsc_die("ReinstallOverlays: no-active-slot reinstall did not clear the stores");
+  if (Rando_GetDungeonPrizeAssignment() != NULL ||
+      Rando_GetMedallionAssignment() != NULL ||
+      Rando_GetBossAssignment() != NULL)
+    tsc_die("ReinstallOverlays: no-active-slot reinstall did not NULL the assignments (fail-closed)");
+
+  // --- 2a) Entrance arm: fake an active cave+dungeon-shuffle slot, install
+  // via the helper, digest the logic state, clobber exactly as a generation
+  // does, reinstall, and assert the digest round-trips.
+  RandoSlotHeader h;
+  memset(&h, 0, sizeof(h));
+  h.slot_kind = kSlotKind_Randomizer;
+  h.generator_version = (uint16)kGeneratorVersion;
+  h.entrance_axes = kEntranceAxis_ShuffleCaves | kEntranceAxis_ShuffleDungeons;
+  h.settings_ext_present = 1;
+  h.world_state = (uint8)kWorldState_Open;
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  ss.seed_u64 = 0x5EEDF00DCAFE1234ull;
+  Share_PackBinary(&ss, h.share_string);
+  g_rando_active_header = h;
+  g_rando_active_header_valid = true;
+  g_rando_active_door_logic = false;
+  Rando_ReinstallActiveSlotLogicOverlays();
+  uint64 d_pre = ReinstallCheck_FoldLogicState();
+  Entrance_ClearRegionOverrides();   // == Rando_PlaceWithEntrances' clears
+  Entrance_ClearEdgeOverrides();
+  Rando_SetDoorLogicLayout(NULL, 0); // == Rando_ClearGenerationLogicOverlays
+  if (ReinstallCheck_FoldLogicState() == d_pre)
+    tsc_die("ReinstallOverlays: cleared state digests equal (trivial test)");
+  Rando_ReinstallActiveSlotLogicOverlays();
+  if (ReinstallCheck_FoldLogicState() != d_pre)
+    tsc_die("ReinstallOverlays: entrance overrides did not round-trip");
+
+  // --- 2b) Door arm on a separate fake slot (entrance_axes = 0). Find an
+  // attempt the generator accepts (mirrors generation's retry loop), install
+  // via the helper, clobber, reinstall, and assert pointer/mask/digest match.
+  memset(&h, 0, sizeof(h));
+  h.slot_kind = kSlotKind_Randomizer;
+  h.generator_version = (uint16)kGeneratorVersion;
+  h.settings_ext_present = 1;
+  h.world_state = (uint8)kWorldState_Open;
+  Share_PackBinary(&ss, h.share_string);
+  uint32 datt = 0xFFFFFFFF;
+  for (uint32 a = 0; a < 16; a++) {
+    if (DoorShuffle_Generate(ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
+                             &s_active_door_layout)) {
+      datt = a;
+      break;
+    }
+  }
+  if (datt == 0xFFFFFFFF)
+    tsc_die("ReinstallOverlays: no door layout generated in 16 attempts (test setup)");
+  h.door_attempt = (uint8)datt;
+  g_rando_active_header = h;
+  g_rando_active_header_valid = true;
+  g_rando_active_door_logic = true;
+  Rando_ReinstallActiveSlotLogicOverlays();
+  uint16 mask_pre = 0;
+  const DoorShuffleLayout *lp = Rando_GetDoorLogicLayout(&mask_pre);
+  if (lp == NULL || mask_pre == 0)
+    tsc_die("ReinstallOverlays: door reinstall did not install a layout");
+  uint32 ddig_pre = DoorShuffle_LayoutDigest(lp);
+  Rando_SetDoorLogicLayout(NULL, 0);  // generation-style clobber
+  Rando_ReinstallActiveSlotLogicOverlays();
+  uint16 mask_post = 0;
+  lp = Rando_GetDoorLogicLayout(&mask_post);
+  if (lp == NULL || mask_post != mask_pre || DoorShuffle_LayoutDigest(lp) != ddig_pre)
+    tsc_die("ReinstallOverlays: door logic layout did not round-trip");
+
+  // --- 2c) Assignment arm: fake a valid active-settings
+  // capture with recognizable bytes, install via the helper, clobber the
+  // three logic-VM assignment stores exactly as a generation does, reinstall,
+  // and assert the ACTIVE bytes are back. Then flip settings_valid off and
+  // assert the fail-closed NULL arm.
+  g_rando_active_door_logic = false;  // keep the door arm cheap/no-op here
+  for (uint32 i = 0; i < (uint32)sizeof(g_rando_active_prize_assignment); i++)
+    g_rando_active_prize_assignment[i] = (uint8)(0x40 + i);
+  for (uint32 i = 0; i < (uint32)sizeof(g_rando_active_medallion_assignment); i++)
+    g_rando_active_medallion_assignment[i] = (uint8)(0x60 + i);
+  for (uint32 i = 0; i < (uint32)sizeof(g_rando_active_boss_assignment); i++)
+    g_rando_active_boss_assignment[i] = (uint8)(0x80 + i);
+  g_rando_active_settings_valid = true;
+  Rando_ReinstallActiveSlotLogicOverlays();
+  if (Rando_GetDungeonPrizeAssignment() == NULL ||
+      Rando_GetMedallionAssignment() == NULL ||
+      Rando_GetBossAssignment() == NULL ||
+      memcmp(Rando_GetDungeonPrizeAssignment(), g_rando_active_prize_assignment,
+             sizeof(g_rando_active_prize_assignment)) != 0 ||
+      memcmp(Rando_GetMedallionAssignment(), g_rando_active_medallion_assignment,
+             sizeof(g_rando_active_medallion_assignment)) != 0 ||
+      memcmp(Rando_GetBossAssignment(), g_rando_active_boss_assignment,
+             sizeof(g_rando_active_boss_assignment)) != 0)
+    tsc_die("ReinstallOverlays: active-settings reinstall did not install the active assignments");
+  Rando_SetDungeonPrizeAssignment(gen_prize);      // == place_assumed_fill_attempt
+  Rando_SetMedallionAssignment(gen_medallion);     // == place_assumed_fill_attempt
+  Rando_SetBossAssignment(gen_boss);               // == Place_AssumedFill
+  if (Rando_GetDungeonPrizeAssignment() == NULL ||
+      Rando_GetDungeonPrizeAssignment()[0] != 0x10 ||
+      Rando_GetMedallionAssignment() == NULL ||
+      Rando_GetMedallionAssignment()[0] != 0x20 ||
+      Rando_GetBossAssignment() == NULL ||
+      Rando_GetBossAssignment()[0] != 0x30)
+    tsc_die("ReinstallOverlays: assignment clobber did not take (trivial test)");
+  Rando_ReinstallActiveSlotLogicOverlays();
+  if (Rando_GetDungeonPrizeAssignment() == NULL ||
+      Rando_GetMedallionAssignment() == NULL ||
+      Rando_GetBossAssignment() == NULL ||
+      memcmp(Rando_GetDungeonPrizeAssignment(), g_rando_active_prize_assignment,
+             sizeof(g_rando_active_prize_assignment)) != 0 ||
+      memcmp(Rando_GetMedallionAssignment(), g_rando_active_medallion_assignment,
+             sizeof(g_rando_active_medallion_assignment)) != 0 ||
+      memcmp(Rando_GetBossAssignment(), g_rando_active_boss_assignment,
+             sizeof(g_rando_active_boss_assignment)) != 0)
+    tsc_die("ReinstallOverlays: assignments did not round-trip after a generation-style clobber");
+  // Generation never writes the ACTIVE arrays' bytes — assert the source
+  // contents survived untouched, not just the installed copy.
+  if (Rando_GetDungeonPrizeAssignment()[0] != 0x40 ||
+      Rando_GetMedallionAssignment()[0] != 0x60 ||
+      Rando_GetBossAssignment()[15] != 0x8F)
+    tsc_die("ReinstallOverlays: active assignment bytes were corrupted");
+  // Fail-closed arm: invalid settings capture must NULL all three even with a
+  // generation clobber still installed.
+  g_rando_active_settings_valid = false;
+  Rando_SetDungeonPrizeAssignment(gen_prize);
+  Rando_SetMedallionAssignment(gen_medallion);
+  Rando_SetBossAssignment(gen_boss);
+  Rando_ReinstallActiveSlotLogicOverlays();
+  if (Rando_GetDungeonPrizeAssignment() != NULL ||
+      Rando_GetMedallionAssignment() != NULL ||
+      Rando_GetBossAssignment() != NULL)
+    tsc_die("ReinstallOverlays: invalid-settings reinstall did not fail closed to NULL assignments");
+
+  // Restore the idle state (and the asset table when synthesized).
+  g_rando_active_header_valid = false;
+  g_rando_active_door_logic = false;
+  g_rando_active_settings_valid = false;
+  memset(g_rando_active_prize_assignment, 0, sizeof(g_rando_active_prize_assignment));
+  memset(g_rando_active_medallion_assignment, 0, sizeof(g_rando_active_medallion_assignment));
+  memset(g_rando_active_boss_assignment, 0, sizeof(g_rando_active_boss_assignment));
+  Entrance_ClearRegionOverrides();
+  Entrance_ClearEdgeOverrides();
+  Rando_SetDoorLogicLayout(NULL, 0);
+  Rando_SetDungeonPrizeAssignment(NULL);
+  Rando_SetMedallionAssignment(NULL);
+  Rando_SetBossAssignment(NULL);
+  if (synth) {
+    g_asset_ptrs[126] = NULL;
+    g_asset_sizes[126] = 0;
+  }
+  fprintf(stderr, "[Rando_ReinstallOverlaysSelfCheck] OK\n");
+}
+
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
   Rando_Rng_SelfCheck();
@@ -3734,12 +4978,16 @@ void Rando_RunAllSelfChecks(void) {
   BossShuffle_SelfCheck();
   DropShuffle_SelfCheck();
   EnemyShuffle_SelfCheck();  // add-rando-enemy-shuffle
+  Customizer_SelfCheck();    // add-rando-customizer-mode
+  Customizer_PlacementSelfCheck();  // customizer placement-path regression guard
   RandoSave_SelfCheck();
   RandoGenerate_SelfCheck();
   RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
   Hints_SelfCheck();
   Entrance_SelfCheck();
+  Rando_EntranceContaminationSelfCheck();  // digest vs Inverted-owned asset 126
+  Rando_ReinstallOverlaysSelfCheck();      // generate-then-reinstall round-trip
   Cosmetic_SelfCheck();
   Rando_TrackerSelfCheck();
   Rando_StartingInventorySelfCheck();

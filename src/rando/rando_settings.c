@@ -14,8 +14,8 @@
 //   offset 6   logic                       uint8 (Phase A: 0)
 //   offset 7   mode_weapons                ModeWeapons enum
 //   offset 8   accessibility               Accessibility enum
-//   offset 9   pyramid_bow_upgrade         PyramidBowUpgrade enum
-//   offset 10  region_boss_hearts_in_pool  bool (Phase A: 1)
+//   offset 9   pyramid_bow_upgrade         legacy PyramidBowUpgrade enum (0)
+//   offset 10  region_boss_hearts_in_pool  legacy bool (canonicalized to 0)
 //   offset 11  dungeon_small_keys_mode     DungeonItemMode enum
 //   offset 12  dungeon_big_keys_mode       DungeonItemMode enum
 //   offset 13  dungeon_maps_mode           DungeonItemMode enum
@@ -34,8 +34,9 @@
 //                                          bit1 shuffle_dungeons, bit2 coupled,
 //                                          bit3 cross_category, bit4 decoupled.
 //                                          0x00 for the default (no shuffle).
-//   offset 26  enemy_shuffle (bit-packed)  add-rando-enemy-shuffle — bit0
-//                                          enemy_shuffle. 0x00 for the default.
+//   offset 26  misc axes (bit-packed)      bit0 enemy_shuffle, bit1
+//                                          customizer_active, bits2-3 traps.
+//                                          0x00 for the default.
 //   offset 27  reserved                    = 0
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
@@ -58,8 +59,8 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->logic = 0;                             // Phase A pinned to NoGlitches
   s->mode_weapons = kModeWeapons_Randomized;
   s->accessibility = kAccessibility_Items;
-  s->pyramid_bow_upgrade = kPyramidBowUpgrade_Silvers;
-  s->region_boss_hearts_in_pool = 1;        // Phase A pinned to identity placement
+  s->pyramid_bow_upgrade = kPyramidBowUpgrade_Silvers;  // legacy no-op
+  s->region_boss_hearts_in_pool = 0;        // boss hearts shuffle by default
   s->dungeon_small_keys_mode = kDungeonItemMode_Vanilla;
   s->dungeon_big_keys_mode = kDungeonItemMode_Vanilla;
   s->dungeon_maps_mode = kDungeonItemMode_Vanilla;
@@ -93,6 +94,12 @@ void Settings_SetDefaults(RandoSettings *s) {
   // add-rando-door-shuffle — intra-dungeon door shuffle. Default vanilla, so
   // the packed pad byte [27] is 0x00 (corpus byte-identical).
   s->door_shuffle = kDoorShuffle_Vanilla;
+  // add-rando-customizer-mode — manual placement off by default, so [26] bit1
+  // stays 0 (corpus + default settings_hash byte-identical).
+  s->customizer_active = 0;
+  // add-rando-traps — trap frequency off by default, so [26] bits2-3 stay 0
+  // (corpus + default settings_hash byte-identical).
+  s->traps = kTrapFrequency_Off;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -135,6 +142,11 @@ static void apply_derived_rules(RandoSettings *s) {
   if (s->goal == kGoal_Completionist) {
     s->accessibility = kAccessibility_Locations;
   }
+  // These serialized slots are retained only so old share strings / CSV keys
+  // decode cleanly. The Pyramid Fairy trade-in was retired, and boss-heart
+  // drops are now always part of the shuffled location pool.
+  s->pyramid_bow_upgrade = kPyramidBowUpgrade_Silvers;
+  s->region_boss_hearts_in_pool = 0;
   // Retro forces wildKeys: normalize the small-keys mode to Wild so the
   // canonical settings hash matches the actual (Wild-placed) seed. The placer
   // reads the same override via Settings_EffectiveSmallKeysMode, so hash and
@@ -142,7 +154,7 @@ static void apply_derived_rules(RandoSettings *s) {
   // keys keep dungeon identity. See the helper's doc comment.)
   s->dungeon_small_keys_mode = Settings_EffectiveSmallKeysMode(s);
   // Phase C — entrance-axis normalization.
-  // Audit M1: entrance shuffle is only honored on Open/Standard (Inverted carries
+  // entrance shuffle is only honored on Open/Standard (Inverted carries
   // a static region override the per-seed one would clobber; Retro re-uses cave
   // host-rooms for TakeAny — see Entrance_IsActive). So an entrance axis set under
   // Inverted/Retro produces NO shuffle at runtime; normalize the axes OFF here so
@@ -182,7 +194,7 @@ static void apply_derived_rules(RandoSettings *s) {
   // Cross-category mixes the two pools, so it only does anything when BOTH cave
   // and dungeon shuffle are on (matches Entrance_IsCrossActive). With only one
   // class shuffled, runtime produces a non-cross seed — normalize the bit off so
-  // the settings_hash matches the actual seed (audit MED-1). Must run AFTER the
+  // the settings_hash matches the actual seed. Must run AFTER the
   // both-off clear above so it sees the final cave/dungeon values.
   if (!s->shuffle_cave_entrances || !s->shuffle_dungeon_entrances) {
     s->cross_category = 0;
@@ -257,10 +269,12 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
                     (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
                     (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0));
-  // add-rando-enemy-shuffle — enemy shuffle bit-packed into the formerly-zero
-  // pad byte [26]. Default off ⇒ 0x00 (corpus byte-identical; kSettingsCanonicalLen
-  // stays 28, no size-coupling cascade). Mirrors the entrance-axis pack at [25].
-  out[26] = (uint8)(s->enemy_shuffle ? kEnemyShuffleAxis_Enabled : 0);
+  // add-rando-enemy-shuffle / customizer / traps — share formerly-zero pad byte
+  // [26]. Defaults all off ⇒ 0x00 (corpus + default settings_hash byte-
+  // identical; kSettingsCanonicalLen stays 28, no size-coupling cascade).
+  out[26] = (uint8)((s->enemy_shuffle ? kEnemyShuffleAxis_Enabled : 0) |
+                    (s->customizer_active ? kCustomizerAxis_Active : 0) |
+                    ((s->traps << kTrapAxis_Shift) & kTrapAxis_Mask));
   // add-rando-door-shuffle — door_shuffle axis in the (formerly zero) pad
   // byte [27] bits 0-1. apply_derived_rules() normalized incompatible combos,
   // so the default packs to 0x00 (corpus byte-identical) and
@@ -272,14 +286,18 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
 // kSettingsCanonicalLen (28)-byte canonical blob and populates `out`. Returns 0
 // on success, -1 if the input is NULL. Body occupies [0..24] (through
-// drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle, [27] = pad.
+// drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle + customizer + traps,
+// [27] = door_shuffle.
 //
-// **Forward-compat note**: trailing pad byte in[27] is NOT inspected — a future
-// format extension may repurpose it, and rejecting on non-zero would break
-// reveal of pre-extension suppressed files. Byte [25] is the Phase C packed
-// entrance-axis byte (0x00 = no shuffle); byte [26] is the add-rando-enemy-shuffle
-// packed pad byte (bit0 = enemy_shuffle, 0x00 = no enemy shuffle, unpacked below).
-// The deserializer is permissive on [27].
+// Byte [25] is the Phase C packed entrance-axis byte (0x00 = no shuffle); byte
+// [26] packs bit0 = enemy_shuffle (add-rando-enemy-shuffle) and bit1 =
+// customizer_active (add-rando-customizer-mode), bits2-3 = traps
+// (add-rando-traps); byte [27] bits 0-1 are the add-rando-door-shuffle axis.
+// A pre-customizer/pre-traps file has those bits = 0, so older suppressed files
+// still round-trip cleanly.
+// **Forward-compat note**: undefined bits of [26]/[27] are NOT inspected — a
+// future extension may repurpose them, and rejecting on non-zero would break
+// reveal of pre-extension suppressed files. The deserializer stays permissive.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;
@@ -324,12 +342,68 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // A zero byte (the default / any pre-enemy-shuffle file) yields enemy_shuffle=0,
   // identical to a struct with no enemy shuffle.
   s.enemy_shuffle = (in[26] & kEnemyShuffleAxis_Enabled) ? 1 : 0;
+  // add-rando-customizer-mode — unpack customizer_active from [26] bit1.
+  // A zero bit (default / any pre-customizer file) yields customizer_active=0.
+  s.customizer_active = (in[26] & kCustomizerAxis_Active) ? 1 : 0;
+  // add-rando-traps — unpack the trap-frequency field from [26] bits 2-3.
+  // A zero field (default / any pre-traps file) yields traps=off.
+  s.traps = (uint8)((in[26] & kTrapAxis_Mask) >> kTrapAxis_Shift);
   // add-rando-door-shuffle — unpack the door_shuffle axis from pad byte [27]
   // bits 0-1. A zero byte (the default / any pre-door-shuffle file) yields
   // vanilla. Bits 2-7 stay uninspected (the remaining extension surface).
   s.door_shuffle = in[27] & kDoorShuffleAxis_Mask;
+  // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
+  // above is for the undefined BITS of the flag bytes [25]-[27] (already
+  // masked); the raw enum bytes [0..17] have defined ranges and a value
+  // outside them is corruption, not forward-compat. The reserved mode_weapons==2
+  // reject and the hunt-goal pieces_required<=pieces_placed cross-field rule
+  // live inside Settings_Validate, which this calls.
+  if (!Settings_Validate(&s)) return -2;
+  apply_derived_rules(&s);
   *out = s;
   return 0;
+}
+
+// FIX #5 — see rando_settings.h. One check per serialized enum/count field,
+// in canonical-byte order. Every legitimate writer funnels through
+// Settings_ParseCsv / the UI widgets (which constrain values) and then
+// Settings_CanonicalSerialize, so all blobs ever written pass; only corrupt
+// or foreign bytes are refused.
+bool Settings_Validate(const RandoSettings *s) {
+  if (s == NULL) return false;
+  if (s->world_state > kWorldState_Retro) return false;                    // [0] 0..3
+  if (s->goal > kGoal_Completionist) return false;                         // [1] 0..6
+  if (s->crystals_ganon > 7 || s->crystals_tower > 7) return false;        // [2][3]
+  // [4] tricks: full 8-bit bitmask (all 8 trick bits defined) — any byte valid.
+  if (s->item_pool_difficulty > kItemPoolDifficulty_Expert) return false;  // [5] 0..3
+  if (s->logic > 4) return false;          // [6] tier ceiling = NoLogic (4), per the CSV parser
+  // [7] 0/1/3 valid; 2 (kModeWeapons_Vanilla / "Absolute weapon mode") is
+  // reserved-until-implemented (untested placement branch) — reject so a
+  // future-version v2 share-string can't activate it.
+  if (s->mode_weapons == 2 || s->mode_weapons > kModeWeapons_Swordless) return false;
+  if (s->accessibility > kAccessibility_None) return false;                // [8] 0..2
+  if (s->pyramid_bow_upgrade != kPyramidBowUpgrade_Silvers) return false;  // [9] only 0 defined
+  if (s->region_boss_hearts_in_pool > 1) return false;                     // [10] bool
+  if (s->dungeon_small_keys_mode > kDungeonItemMode_Wild) return false;    // [11] 0..2
+  if (s->dungeon_big_keys_mode > kDungeonItemMode_Wild) return false;      // [12] 0..2
+  if (s->dungeon_maps_mode > kDungeonItemMode_Wild) return false;          // [13] 0..2
+  if (s->dungeon_compasses_mode > kDungeonItemMode_Wild) return false;     // [14] 0..2
+  if (s->prize_shuffle > 1 || s->medallion_shuffle > 1) return false;      // [15][16] bool
+  if (s->race_mode > 1) return false;                                      // [17] bool
+  // [18..21] pieces_required/pieces_placed: full uint16 range is CLI-legal,
+  // but for a hunt goal pieces_required must not exceed pieces_placed (the
+  // pool is unbuildable otherwise — BuildItemPool refuses it; CSV + native
+  // window reject it). Enforce here so a malformed v2 share-string can't
+  // smuggle it past the share-paste path.
+  if ((s->goal == kGoal_TriforceHunt || s->goal == kGoal_GanonHunt) &&
+      s->pieces_required > s->pieces_placed)
+    return false;
+  if (s->hints > 1) return false;                                          // [22] off/on
+  if (s->boss_shuffle > 1 || s->drop_shuffle > 1) return false;            // [23][24] bool
+  // [25] entrance axes / [26] enemy+customizer bits: bit-packed; deserialize
+  // masks the defined bits, undefined bits stay permissive by contract.
+  if (s->door_shuffle > kDoorShuffle_Basic) return false;                  // [27] bits 0-1: only 0/1 defined
+  return true;
 }
 
 uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s) {
@@ -399,12 +473,12 @@ void Settings_SelfCheck(void) {
 
   // Default-settings canonical bytes, layout per Settings_CanonicalSerialize:
   //   ws=0 goal=1 cg=7 ct=7 tricks=0 pool=1 logic=0 weapons=0 access=0
-  //   bow=0 bossH=1 sk=0 bk=0 mp=0 cmp=0 prize=1 med=1 race=0
+  //   bow=0 bossH=0 sk=0 bk=0 mp=0 cmp=0 prize=1 med=1 race=0
   //   pieces_req=20 (0x0014 LE) pieces_pl=30 (0x001e LE)
   //   hints=1 boss_shuffle=0 drop_shuffle=0 pad pad pad
   static const uint8 kExpectedCanonical[kSettingsCanonicalLen] = {
     0x00, 0x01, 0x07, 0x07, 0x00, 0x01, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x01, 0x00,
     0x00, 0x00, 0x00, 0x00,
   };
@@ -426,10 +500,10 @@ void Settings_SelfCheck(void) {
   Settings_ComputeHash(&s, hash);
   // SHA-256 of the kExpectedCanonical bytes (28 bytes; hints=1 default).
   static const uint8 kExpectedHash[32] = {
-    0x44, 0x0f, 0x9d, 0x6c, 0x81, 0x00, 0x05, 0x41,
-    0xc5, 0x91, 0x6f, 0xa0, 0xc2, 0x5a, 0x55, 0x6c,
-    0xdf, 0x2f, 0x3f, 0xb0, 0xff, 0xad, 0x0c, 0x1e,
-    0xdf, 0xfe, 0x6d, 0xb4, 0x8b, 0x80, 0x77, 0x8f,
+    0xa7, 0x8d, 0x1b, 0xab, 0x84, 0x8a, 0xd9, 0xed,
+    0xa1, 0xc4, 0x9b, 0xed, 0xb1, 0x2e, 0x31, 0x6f,
+    0x9c, 0xbc, 0x41, 0xc6, 0xe1, 0xba, 0x3f, 0x2e,
+    0x97, 0xb3, 0xab, 0xc1, 0x9f, 0x6d, 0xc2, 0x29,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,
@@ -451,6 +525,19 @@ void Settings_SelfCheck(void) {
     Settings_CanonicalSerialize(&s2, c2);
     if (!settings_byte_eq(canonical, c2, kSettingsCanonicalLen)) {
       fprintf(stderr, "Settings_SelfCheck: CSV-parsed defaults serialize differently\n");
+      exit(2);
+    }
+  }
+  // Retired legacy axes: old CSV/share inputs may carry the former pinned
+  // boss-heart value, but canonical settings must normalize it to shuffled.
+  {
+    RandoSettings legacy;
+    Settings_SetDefaults(&legacy);
+    legacy.region_boss_hearts_in_pool = 1;
+    uint8 c_legacy[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&legacy, c_legacy);
+    if (!settings_byte_eq(canonical, c_legacy, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: legacy boss-heart byte did not normalize\n");
       exit(2);
     }
   }
@@ -607,6 +694,100 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // add-rando-customizer-mode — customizer_active pack/unpack round-trip.
+  // Shares pad byte [26] with enemy_shuffle (bit1 vs bit0); default off keeps
+  // [26]==0 (already asserted above). No CSV key: main.c sets the flag from
+  // --customizer=<path> presence, so only the struct path is exercised.
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    RandoSettings sc;
+    Settings_SetDefaults(&sc);
+    sc.customizer_active = 1;
+    uint8 cc[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sc, cc);
+    if (cc[26] != kCustomizerAxis_Active) {
+      fprintf(stderr, "Settings_SelfCheck: customizer_active pack mismatch "
+                      "(got 0x%02x)\n", cc[26]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 26) continue;
+      if (cc[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: customizer_active changed canonical "
+                        "byte [%d] (expected only [26] to move)\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rt;
+    if (Settings_CanonicalDeserialize(cc, &rt) != 0 || rt.customizer_active != 1) {
+      fprintf(stderr, "Settings_SelfCheck: customizer_active deserialize "
+                      "round-trip mismatch\n");
+      exit(2);
+    }
+    // Both [26] bits set coexist (enemy_shuffle bit0 | customizer bit1).
+    sc.enemy_shuffle = 1;
+    Settings_CanonicalSerialize(&sc, cc);
+    if (cc[26] != (kEnemyShuffleAxis_Enabled | kCustomizerAxis_Active)) {
+      fprintf(stderr, "Settings_SelfCheck: [26] bit coexistence mismatch "
+                      "(got 0x%02x)\n", cc[26]);
+      exit(2);
+    }
+  }
+  // add-rando-traps — trap frequency pack/unpack round-trip. Shares pad byte
+  // [26] bits2-3 with enemy_shuffle/customizer bits0-1; default off keeps
+  // [26]==0 (already asserted above).
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    RandoSettings st;
+    Settings_SetDefaults(&st);
+    st.traps = kTrapFrequency_High;
+    uint8 ct[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&st, ct);
+    if (ct[26] != ((uint8)kTrapFrequency_High << kTrapAxis_Shift)) {
+      fprintf(stderr, "Settings_SelfCheck: traps pack mismatch "
+                      "(got 0x%02x)\n", ct[26]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 26) continue;
+      if (ct[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: traps changed canonical byte [%d] "
+                        "(expected only [26] to move)\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rt;
+    if (Settings_CanonicalDeserialize(ct, &rt) != 0 ||
+        rt.traps != kTrapFrequency_High) {
+      fprintf(stderr, "Settings_SelfCheck: traps deserialize round-trip mismatch\n");
+      exit(2);
+    }
+    if (Settings_ParseCsv("traps=medium", &st) != 0 ||
+        st.traps != kTrapFrequency_Medium) {
+      fprintf(stderr, "Settings_SelfCheck: traps=medium CSV parse failed\n");
+      exit(2);
+    }
+    if (Settings_ParseCsv("traps=low,trap_frequency=high", &st) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: trap aliases should duplicate-check\n");
+      exit(2);
+    }
+    st.enemy_shuffle = 1;
+    st.customizer_active = 1;
+    st.traps = kTrapFrequency_High;
+    Settings_CanonicalSerialize(&st, ct);
+    if (ct[26] != (kEnemyShuffleAxis_Enabled | kCustomizerAxis_Active |
+                   ((uint8)kTrapFrequency_High << kTrapAxis_Shift))) {
+      fprintf(stderr, "Settings_SelfCheck: [26] trap bit coexistence mismatch "
+                      "(got 0x%02x)\n", ct[26]);
+      exit(2);
+    }
+  }
   // Spec scenario "Truncation is first-16-bytes": Settings_HashShort writes
   // exactly the first 16 bytes of SHA-256(canonical), not a different hash.
   {
@@ -643,7 +824,7 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
-  // CSV parser accepts Python YAML capitalized True/False (audit-deferred fix).
+  // CSV parser accepts Python YAML capitalized True/False.
   {
     RandoSettings sp;
     Settings_SetDefaults(&sp);
@@ -666,8 +847,7 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
-  // Phase B Slice 4 — un-pinned axes. Cluster-audit LOW L2 of e9f20ad
-  // post-commit review: round-trip the new parser surface.
+  // Phase B Slice 4 — un-pinned axes. Round-trip the new parser surface.
   {
     RandoSettings sl;
     Settings_SetDefaults(&sl);
@@ -832,6 +1012,65 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  {
+    // FIX #5 — Settings_CanonicalDeserialize refuses out-of-range enum bytes
+    // (the byte paths previously copied them raw), while the undefined bits of
+    // the bit-packed flag bytes [25]-[27] stay PERMISSIVE (forward-compat
+    // contract — rejecting them would break reveal of pre-extension files).
+    RandoSettings s_def, s_chk;
+    uint8 blob[kSettingsCanonicalLen];
+    Settings_SetDefaults(&s_def);
+    Settings_CanonicalSerialize(&s_def, blob);
+    blob[0] = 9;  // world_state: only 0..3 defined; 9 would UB `1u << ws` consumers
+    if (Settings_CanonicalDeserialize(blob, &s_chk) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: out-of-range world_state must be refused\n");
+      exit(2);
+    }
+    Settings_CanonicalSerialize(&s_def, blob);
+    blob[1] = 200;  // goal: only 0..6 defined
+    if (Settings_CanonicalDeserialize(blob, &s_chk) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: out-of-range goal must be refused\n");
+      exit(2);
+    }
+    Settings_CanonicalSerialize(&s_def, blob);
+    blob[26] |= 0x80;  // undefined flag bit — must stay permissive
+    blob[27] |= 0x80;  // undefined flag bit — must stay permissive
+    if (Settings_CanonicalDeserialize(blob, &s_chk) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: undefined flag bits must stay permissive\n");
+      exit(2);
+    }
+  }
+  {
+    // FIX #17a — `tricks` grammar: hex mask, decimal mask, named list, and
+    // garbage-hex rejection (the hex form was broken from day one: parse_uint
+    // got the whole "0xNN" string and is decimal-only).
+    RandoSettings st;
+    Settings_SetDefaults(&st);
+    if (Settings_ParseCsv("tricks=0x1F", &st) != 0 || st.tricks != 0x1F) {
+      fprintf(stderr, "Settings_SelfCheck: tricks=0x1F hex parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&st);
+    if (Settings_ParseCsv("tricks=31", &st) != 0 || st.tricks != 31) {
+      fprintf(stderr, "Settings_SelfCheck: tricks=31 decimal parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&st);
+    if (Settings_ParseCsv("tricks=boots-clip+fake-flippers", &st) != 0 || st.tricks != 0x03) {
+      fprintf(stderr, "Settings_SelfCheck: tricks named-list parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&st);
+    if (Settings_ParseCsv("tricks=0xZZ", &st) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: tricks=0xZZ should be rejected\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&st);
+    if (Settings_ParseCsv("tricks=0x100", &st) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: tricks=0x100 (>0xFF) should be rejected\n");
+      exit(2);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -862,6 +1101,26 @@ static int parse_uint(const char *v, int vlen, uint32 *out) {
   for (int i = 0; i < vlen; i++) {
     if (v[i] < '0' || v[i] > '9') return -1;
     r = r * 10 + (uint32)(v[i] - '0');
+  }
+  *out = r;
+  return 0;
+}
+
+// Hex digits only — the caller strips the "0x"/"0X" prefix first. parse_uint
+// is decimal-only, so routing a prefixed string through it rejected every
+// documented `tricks=0xNN` form (FIX #17a). Mirrors parse_uint's style.
+static int parse_hex(const char *v, int vlen, uint32 *out) {
+  if (vlen <= 0) return -1;
+  uint32 r = 0;
+  for (int i = 0; i < vlen; i++) {
+    char c = v[i];
+    uint32 d;
+    if (c >= '0' && c <= '9') d = (uint32)(c - '0');
+    else if (c >= 'a' && c <= 'f') d = (uint32)(c - 'a' + 10);
+    else if (c >= 'A' && c <= 'F') d = (uint32)(c - 'A' + 10);
+    else return -1;
+    if (r > (0xFFFFFFFFu >> 4)) return -1;  // would overflow uint32
+    r = (r << 4) | d;
   }
   *out = r;
   return 0;
@@ -920,6 +1179,23 @@ static int parse_accessibility(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+static int parse_traps(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0")) {
+    *out = kTrapFrequency_Off; return 0;
+  }
+  if (csv_str_eq(v, vlen, "low") || csv_str_eq(v, vlen, "1")) {
+    *out = kTrapFrequency_Low; return 0;
+  }
+  if (csv_str_eq(v, vlen, "medium") || csv_str_eq(v, vlen, "med") ||
+      csv_str_eq(v, vlen, "2")) {
+    *out = kTrapFrequency_Medium; return 0;
+  }
+  if (csv_str_eq(v, vlen, "high") || csv_str_eq(v, vlen, "3")) {
+    *out = kTrapFrequency_High; return 0;
+  }
+  return -1;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint32 seen;
@@ -942,7 +1218,7 @@ enum {
   KEY_accessibility,
   KEY_pieces_required,
   KEY_pieces_placed,
-  // New keys per audit finding N7 — were in canonical hash but not parseable.
+  // New keys — were in canonical hash but not parseable.
   KEY_tricks,
   KEY_logic,
   KEY_pyramid_bow_upgrade,
@@ -954,8 +1230,7 @@ enum {
   KEY_boss_shuffle,
   KEY_drop_shuffle,
   // Phase C — entrance shuffle composable axes (binary on/off). Packed into
-  // canonical byte [25]; see RandoSettings header. (27 keys total — well under
-  // the 32-bit `seen` mask.)
+  // canonical byte [25]; see RandoSettings header.
   KEY_shuffle_cave_entrances,
   KEY_shuffle_dungeon_entrances,
   KEY_coupled,
@@ -967,6 +1242,9 @@ enum {
   // add-rando-door-shuffle — door_shuffle axis (vanilla|basic). Packed into
   // canonical byte [27]; see RandoSettings header.
   KEY_door_shuffle,
+  // add-rando-traps — trap frequency (off|low|medium|high). Packed into
+  // canonical byte [26] bits 2-3.
+  KEY_traps,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -1048,10 +1326,17 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // `tricks:` section. When that section grows, mirror new entries here
     // (consider codegen if the list grows past a dozen).
     MARK_SEEN(KEY_tricks);
-    if (csv_str_eq(val, vlen, "none") || csv_str_eq(val, vlen, "0")) {
+    if (csv_str_eq(val, vlen, "none")) {
       s->tricks = 0;
     } else if (vlen >= 2 && val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
-      // Hex bitmask form.
+      // Hex bitmask form — digits AFTER the prefix (FIX #17a: parse_uint is
+      // decimal-only, so the old prefixed pass-through rejected every 0xNN).
+      uint32 v;
+      if (parse_hex(val + 2, vlen - 2, &v) != 0 || v > 0xFF) goto bad_value;
+      s->tricks = (uint8)v;
+    } else if (val[0] >= '0' && val[0] <= '9') {
+      // Plain decimal bitmask (covers the documented "0" alias; trick names
+      // are kebab ids and never start with a digit, so no ambiguity).
       uint32 v;
       if (parse_uint(val, vlen, &v) != 0 || v > 0xFF) goto bad_value;
       s->tricks = (uint8)v;
@@ -1154,6 +1439,12 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // on/off. Packed into canonical pad byte [26] bit0 (see RandoSettings header).
     MARK_SEEN(KEY_enemy_shuffle);
     if (parse_bool(val, vlen, &s->enemy_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "traps") ||
+             csv_str_eq(key, klen, "trap_frequency")) {
+    // add-rando-traps — frequency for masquerade trap junk replacements.
+    // Both keys are aliases for the same canonical field and duplicate-check bit.
+    MARK_SEEN(KEY_traps);
+    if (parse_traps(val, vlen, &s->traps) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "shuffle_cave_entrances")) {
     // Phase C — entrance shuffle: cave-door class.
     MARK_SEEN(KEY_shuffle_cave_entrances);

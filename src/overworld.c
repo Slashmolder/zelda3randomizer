@@ -2046,6 +2046,19 @@ void LoadOverworldFromDungeon() {  // 82e4a3
     uint16 exit_room = (coupled_exit_room != 0) ? coupled_exit_room : dungeon_room_index;
     int k = 79;
     do k--; while (k > 0 && kExitDataRooms[k] != exit_room);
+    // The decreasing search lands on slot 0 (a WRONG but in-bounds door) when
+    // exit_room isn't in kExitDataRooms. A dungeon-decoupled / cross-decoupled
+    // redirect can key the search on a SOURCE-dungeon room (coupled_exit_room)
+    // that has no overworld-exit entry; fall back to the coupled return-to-source
+    // (dungeon_room_index, which a real exit always carries) rather than slot 0.
+    // RandomizerActive-gated + only when the table miss happened on a coupled
+    // override — vanilla (coupled_exit_room == 0 ⇒ exit_room == dungeon_room_index)
+    // never re-searches, so the vanilla door choice stays byte-identical.
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        kExitDataRooms[k] != exit_room && exit_room != dungeon_room_index) {
+      k = 79;
+      do k--; while (k > 0 && kExitDataRooms[k] != dungeon_room_index);
+    }
     BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = kExitData_ScrollY[k];
     BG1HOFS_copy2 = BG2HOFS_copy2 = BG1HOFS_copy = BG2HOFS_copy = kExitData_ScrollX[k];
     link_y_coord = kExitData_YCoord[k];

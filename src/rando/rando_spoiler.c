@@ -1,22 +1,20 @@
 // rando_spoiler.c — JSON + text spoiler writer (tasks.md §5.1, §5.2).
 //
-// Phase A0 emits a minimal-but-valid spoiler that exercises the file-write
-// path. Phase A1 fills in sphere_data, fallback_warnings, and the full
+// Emits spoiler JSON/text with sphere_data, fallback_warnings, and the full
 // placements[] body grouped by region.
 //
 // Determinism: JSON output is byte-identical for byte-identical input
 // (sorted keys; no whitespace variation; entries iterated in location_id
-// order). The file's SHA-256 is a stable identity for race-mode stamping
-// (task 5.3, Phase B).
+// order). The file's SHA-256 is a stable identity for race-mode stamping.
 
 #include "rando_spoiler.h"
 #include "rando_placement.h"
 #include "rando_settings.h"
 #include "rando.h"
 #include "rando_hints.h"
-#include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson (Phase C entrance_mapping)
+#include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson
 #include "shuffle_doors.h"     // DoorShuffleLayout (door_shuffle spoiler section)
-#include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName (Slice 7 spoiler)
+#include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName
 #include "../config.h"
 #include "../types.h"
 
@@ -232,13 +230,20 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           s->goal_completable ? "true" : "false");
   // hints_count: number of populated hint NPCs (0 when hints==Off or no
   // hints were generated). Mirrors the length of the hints[] array below;
-  // a tooling convenience so consumers can branch without parsing hints[].
+  // a tooling convenience so consumers can choose behavior without parsing hints[].
   {
     uint16 hints_count = 0;
     for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
       if (Rando_GetHintString((RandoHintNpc)npc) != NULL) hints_count++;
     }
     fprintf(f, "    \"hints_count\": %u,\n", (unsigned)hints_count);
+  }
+  // Emit a customizer_active marker ONLY when the seed was hand-placed (derived
+  // from the canonical settings, so it round-trips on race-mode reveal).
+  // Conditional emission keeps every non-customizer
+  // spoiler — and thus the regression corpus + race stamps — byte-identical.
+  if (s->settings != NULL && s->settings->customizer_active) {
+    fprintf(f, "    \"customizer_active\": true,\n");
   }
   // fallback_warnings: each non-zero counter from the placer surfaces
   // here. Plus an "unreachable_placements" rollup when the placer could
@@ -258,8 +263,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
               (unsigned)s->retry_attempts);
       first = false;
     }
-    // Slice 8 §3.5 — drop heart-floor exhausted its retry budget and fell back
-    // to the vanilla identity drop table (essentially never; surfaced so the
+    // Drop heart-floor exhausted its retry budget and fell back to the vanilla
+    // identity drop table (essentially never; surfaced so the
     // reader knows the seed's drop shuffle is a no-op).
     if (s->drop_used_fallback) {
       fprintf(f, "%s\n      {\"kind\": \"drop_heart_floor_fallback\"}",
@@ -272,9 +277,9 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
               (unsigned)s->spheres->unreachable_count);
       first = false;
     }
-    // Phase D (add-rando-major-glitch) — NoLogic seeds enforce NO reachability:
-    // the predicate VM short-circuits the reachability eval (rando_logic.c), so
-    // placement ignores progression gating and the seed may be un-completable.
+    // NoLogic seeds enforce NO reachability: the predicate VM short-circuits
+    // the reachability eval (rando_logic.c), so placement ignores progression
+    // gating and the seed may be un-completable.
     // Emitted by reading settings directly (the unverified_tricks_enabled
     // pattern below). The spec pins this entry's shape to {"code","detail"},
     // distinct from the {"kind"} shape of the placer-counter warnings above.
@@ -365,12 +370,12 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"medallion_shuffle\": %s,\n", s->settings->medallion_shuffle ? "true" : "false");
   fprintf(f, "    \"mode_weapons\": %u,\n", s->settings->mode_weapons);
   fprintf(f, "    \"accessibility\": %u,\n", s->settings->accessibility);
-  fprintf(f, "    \"pyramid_bow_upgrade\": %u,\n", s->settings->pyramid_bow_upgrade);
   fprintf(f, "    \"pieces_required\": %u,\n", s->settings->pieces_required);
   fprintf(f, "    \"pieces_placed\": %u,\n", s->settings->pieces_placed);
   fprintf(f, "    \"hints\": %u,\n", s->settings->hints);
   fprintf(f, "    \"boss_shuffle\": %u,\n", s->settings->boss_shuffle);
-  fprintf(f, "    \"drop_shuffle\": %u\n", s->settings->drop_shuffle);
+  fprintf(f, "    \"drop_shuffle\": %u,\n", s->settings->drop_shuffle);
+  fprintf(f, "    \"traps\": %u\n", s->settings->traps);
   fprintf(f, "  },\n");
 
   // -----------------------------------------------------------------------
@@ -393,20 +398,20 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "  ],\n");
 
   // -----------------------------------------------------------------------
-  // entrance_mapping (Phase C) — door interior → loaded interior, when an
-  // entrance shuffle was applied. Omitted otherwise.
+  // entrance_mapping — door interior → loaded interior when an entrance shuffle
+  // was applied. Omitted otherwise.
   // -----------------------------------------------------------------------
   Entrance_WriteSpoilerJson(f, s->entrance_assign, s->entrance_count);
   Entrance_WriteDungeonSpoilerJson(f, s->dungeon_assign, s->dungeon_count);
   Entrance_WriteCrossSpoilerJson(f, s->cross_assign, s->cross_count);
   Entrance_WriteDecoupledSpoilerJson(f, s->decoupled_assign, s->decoupled_count);
   Entrance_WriteDungeonDecoupledSpoilerJson(f, s->dun_decoupled_assign, s->dun_decoupled_count);
+  Entrance_WriteCrossDecoupledSpoilerJson(f, s->cross_decoupled_assign, s->cross_decoupled_count);
 
   // -----------------------------------------------------------------------
-  // door_shuffle (add-rando-door-shuffle) — per-dungeon door pairings +
-  // relocated key doors with worst-case thresholds. Reads the layout the
-  // generation pipeline leaves installed through spoiler emission. Omitted
-  // when door shuffle is off.
+  // door_shuffle — per-dungeon door pairings + relocated key doors with
+  // worst-case thresholds. Reads the layout the generation pipeline leaves
+  // installed through spoiler emission. Omitted when door shuffle is off.
   // -----------------------------------------------------------------------
   {
     uint16 door_mask = 0;
@@ -444,8 +449,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   }
 
   // -----------------------------------------------------------------------
-  // boss_assignments (Slice 7 §6.1) — dungeon → boss now in its boss room.
-  // Emitted only when boss_shuffle is on (boss_assignment != NULL — §6.4); the
+  // boss_assignments — dungeon → boss now in its boss room. Emitted only when
+  // boss_shuffle is on (boss_assignment != NULL); the
   // dungeon→prize binding is unchanged (EP's prize stays at EP regardless).
   // -----------------------------------------------------------------------
   if (s->boss_assignment != NULL) {
@@ -464,7 +469,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   }
 
   // -----------------------------------------------------------------------
-  // drop_tables (Slice 8 §6.2) — the 7 enemy-drop packs after the shuffle,
+  // drop_tables — the 7 enemy-drop packs after the shuffle,
   // each as 8 resolved drop item ids (kPrizeItems[drop_map[flat]]). Pack 0 is
   // the heart-floor pack (guaranteed >=1 heart, id 216 = 0xD8). Emitted only
   // when drop_shuffle is on (drop_map != NULL — §6.4).
@@ -524,7 +529,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   }
   fprintf(f, "],\n");
   // -----------------------------------------------------------------------
-  // hints[] — Phase B Slice 5 §3. Emitted by `Rando_GenerateHints`,
+  // hints[] — emitted by `Rando_GenerateHints`,
   // populated only when `settings.hints == kHintsMode_On`. Each entry
   // mirrors ALTTPR's `(npc_string_id, text)` shape from HintService
   // output; the `dialogue_id` is the runtime carve from `kRandoHint*`.
@@ -542,11 +547,28 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
       if (first) fprintf(f, "\n");
       fprintf(f, "    %s{\"npc\": \"%s\", \"dialogue_id\": %u, \"text\": \"",
               first ? "" : ",\n    ", npc_str ? npc_str : "?", (unsigned)dlg);
-      // Escape minimal JSON chars in the text (quotes + backslash).
+      // Escape JSON string chars in the text: quotes, backslash, the named
+      // control escapes (\n \r \t \b \f), and \uXXXX for any other byte < 0x20.
+      // Bytes >= 0x20 (incl. high/UTF-8 bytes >= 0x80) pass through unchanged,
+      // so output is byte-identical to the old quote+backslash-only path for
+      // every current hint string — this only kicks in if a name table ever
+      // carries a control byte. Test the UNSIGNED value so high bytes are
+      // not misread as < 0x20.
       for (const char *p = text; *p; p++) {
-        char c = *p;
-        if (c == '"' || c == '\\') fputc('\\', f);
-        fputc(c, f);
+        unsigned char uc = (unsigned char)*p;
+        switch (uc) {
+          case '"':  fputs("\\\"", f); break;
+          case '\\': fputs("\\\\", f); break;
+          case '\n': fputs("\\n", f);  break;
+          case '\r': fputs("\\r", f);  break;
+          case '\t': fputs("\\t", f);  break;
+          case '\b': fputs("\\b", f);  break;
+          case '\f': fputs("\\f", f);  break;
+          default:
+            if (uc < 0x20) fprintf(f, "\\u%04x", (unsigned)uc);
+            else           fputc((int)uc, f);
+            break;
+        }
       }
       fprintf(f, "\"}");
       first = false;
@@ -597,7 +619,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase B Slice 6 — race-mode suppressed-spoiler writer + reader.
+// Race-mode suppressed-spoiler writer + reader.
 // ---------------------------------------------------------------------------
 
 // CRC-32 IEEE 802.3, reflected, polynomial 0xEDB88320. Same algorithm as
@@ -688,9 +710,13 @@ static bool write_suppressed_file(const char *share_string,
   return wrote == sizeof(buf);
 }
 
-// Stamp computation: write the spoiler JSON to a temporary file with
-// non-deterministic fields cleared, read it back into memory, and SHA-256
-// the bytes. Returns true and fills `out_stamp` on success.
+// Stamp computation: serialize the normalized spoiler JSON and SHA-256 the
+// resulting bytes. Returns true and fills `out_stamp` on success.
+//
+// POSIX hashes an open_memstream() buffer. Windows lacks a portable in-memory
+// FILE*, so it writes `<dest_path>.stamp-tmp`, reads it back, hashes those
+// bytes, and removes it. Both paths feed SHA-256 with the bytes produced by
+// write_spoiler_json_stream() against the same normalized spoiler view.
 //
 // **Stamp normalization** — fields normalized to stable values so the
 // stamp is reproducible across runs and machines:
@@ -705,39 +731,83 @@ static bool write_suppressed_file(const char *share_string,
 // wall-clock cutoff) so the placer runs to its hard 8-attempt cap; that
 // makes attempts_used deterministic and lets us normalize to 1 in the
 // stamp without lying about what happened on a particular machine.
-static bool compute_stamp(const RandoSpoiler *s, uint8 out_stamp[32]) {
+//
+// This normalized field list (race_mode=0, generation_wall_clock_ms=0,
+// forward_fill_fallback_count=0, retry_attempts=1) MUST stay byte-for-byte in
+// sync with the independent reveal-side normalization in
+// src/rando/rando.c (Rando_RevealActiveSlotSpoiler regenerates the spoiler and
+// applies the identical four-field normalization before re-hashing). Any
+// divergence makes the regenerated bytes differ from the minted stamp and
+// false-fails EVERY race reveal as "tampered". Change both sites together.
+static bool compute_stamp(const RandoSpoiler *s, const char *dest_path,
+                          uint8 out_stamp[32]) {
   // Build the normalized spoiler view for stamping.
   RandoSettings norm_settings = *s->settings;
   norm_settings.race_mode = 0;
   RandoSpoiler norm = *s;
   norm.settings = &norm_settings;
   norm.generation_wall_clock_ms = 0;
-  // Slice 6 audit H1 — these fields depend on placer wall-clock; clear so
+  // these fields depend on placer wall-clock; clear so
   // the stamp is reproducible regardless of budget_seconds or machine speed.
   norm.forward_fill_fallback_count = 0;
   norm.retry_attempts = 1;
 
-  FILE *tmp = tmpfile();
-  if (tmp == NULL) return false;
-  if (!write_spoiler_json_stream(&norm, tmp)) {
-    fclose(tmp);
+  extern void sha256_buffer(const uint8 *data, size_t len, uint8 out[32]);
+
+#ifndef _WIN32
+  // POSIX: hash a pure in-memory buffer — no filesystem touch at all.
+  (void)dest_path;
+  char *mem = NULL;
+  size_t mem_size = 0;
+  FILE *ms = open_memstream(&mem, &mem_size);
+  if (ms == NULL) return false;
+  bool wrote = write_spoiler_json_stream(&norm, ms);
+  // Close to flush the writer's buffered bytes into `mem` / finalize mem_size.
+  if (fclose(ms) != 0) { free(mem); return false; }
+  if (!wrote || mem == NULL || mem_size == 0) { free(mem); return false; }
+  sha256_buffer((const uint8 *)mem, mem_size, out_stamp);
+  free(mem);
+  return true;
+#else
+  // Windows: no portable in-memory FILE*; use a scratch file beside the
+  // destination, then read it back and hash the same serialized bytes.
+  if (dest_path == NULL) return false;
+  char tmp_path[1280];
+  if (snprintf(tmp_path, sizeof(tmp_path), "%s.stamp-tmp", dest_path) >= (int)sizeof(tmp_path))
     return false;
+
+  // Ensure the destination directory exists (the suppressed file is about to
+  // be written there too) so the scratch fopen can succeed.
+  char dir_buf[512];
+  if (extract_dir(tmp_path, dir_buf, sizeof(dir_buf))) {
+    ensure_directory(dir_buf);
   }
-  fflush(tmp);
-  if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); return false; }
-  long len = ftell(tmp);
-  if (len <= 0) { fclose(tmp); return false; }
-  rewind(tmp);
+
+  // Serialize the normalized JSON to the scratch file.
+  FILE *tmp = fopen(tmp_path, "wb");
+  if (tmp == NULL) return false;
+  bool wrote = write_spoiler_json_stream(&norm, tmp);
+  if (fclose(tmp) != 0 || !wrote) { remove(tmp_path); return false; }
+
+  // Read it back into memory and hash. Always remove() the scratch
+  // file on every exit so it never leaks.
+  FILE *rb = fopen(tmp_path, "rb");
+  if (rb == NULL) { remove(tmp_path); return false; }
+  if (fseek(rb, 0, SEEK_END) != 0) { fclose(rb); remove(tmp_path); return false; }
+  long len = ftell(rb);
+  if (len <= 0) { fclose(rb); remove(tmp_path); return false; }
+  rewind(rb);
   uint8 *bytes = (uint8 *)malloc((size_t)len);
-  if (bytes == NULL) { fclose(tmp); return false; }
-  size_t got = fread(bytes, 1, (size_t)len, tmp);
-  fclose(tmp);
+  if (bytes == NULL) { fclose(rb); remove(tmp_path); return false; }
+  size_t got = fread(bytes, 1, (size_t)len, rb);
+  fclose(rb);
+  remove(tmp_path);
   if (got != (size_t)len) { free(bytes); return false; }
 
-  extern void sha256_buffer(const uint8 *data, size_t len, uint8 out[32]);
   sha256_buffer(bytes, (size_t)len, out_stamp);
   free(bytes);
   return true;
+#endif
 }
 
 bool Spoiler_Write(const RandoSpoiler *s,
@@ -753,8 +823,9 @@ bool Spoiler_Write(const RandoSpoiler *s,
   }
 
   // Race mode: write the suppressed binary in lieu of the full JSON.
+  // `json_path` also anchors the Windows stamp scratch file.
   uint8 stamp[32];
-  if (!compute_stamp(s, stamp)) return false;
+  if (!compute_stamp(s, json_path, stamp)) return false;
 
   // Canonicalize settings with race_mode = 0 (per spec — stamp is over
   // the placement, not the race-mode flag).
@@ -875,7 +946,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     fprintf(f, "\n");
   }
 
-  // Phase C — entrance shuffle mappings (omitted when not shuffled). Mirrors the
+  // Entrance shuffle mappings (omitted when not shuffled). Mirrors the
   // JSON entrance_mapping / dungeon_entrance_mapping sections.
   if ((s->entrance_assign != NULL && s->entrance_count > 0) ||
       (s->dungeon_assign != NULL && s->dungeon_count > 0) ||
@@ -890,7 +961,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     fprintf(f, "\n");
   }
 
-  // Slice 7 — boss assignments (omitted unless boss_shuffle is on).
+  // Boss assignments (omitted unless boss_shuffle is on).
   if (s->boss_assignment != NULL) {
     fprintf(f, "BOSS ASSIGNMENTS\n----------------\n");
     for (uint8 d = 1; d <= 12; d++) {
@@ -902,7 +973,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     fprintf(f, "\n");
   }
 
-  // Slice 8 — drop tables (omitted unless drop_shuffle is on). Each pack is the
+  // Drop tables (omitted unless drop_shuffle is on). Each pack is the
   // 8 resolved drop item ids; pack 0 is the heart-floor pack.
   if (s->drop_map != NULL) {
     fprintf(f, "DROP TABLES (item ids, pack 0 = heart floor)\n");
@@ -937,7 +1008,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
       const RandoLocationDef *d = find_location(rows[i].location_id);
       if (d != NULL) {
         rows[i].region_id = d->region_id;
-        // Audit H1 — under Inverted, a location may be assigned to a different
+        // under Inverted, a location may be assigned to a different
         // region via Rando_FindPredicateOverride. Honor that override here so the
         // grouped spoiler text matches the runtime's reachability view (e.g.,
         // Ether Tablet shows under LightWorld_DeathMountain_East, not the base
@@ -1028,7 +1099,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     }
   }
 
-  // Hints — Phase B Slice 5 §3. Mirrors the JSON `hints[]` array. The
+  // Hints — mirrors the JSON `hints[]` array. The
   // section is omitted entirely when no hints are populated (settings.hints
   // == kHintsMode_Off, or non-rando spoiler context). Runtime telepathic-
   // tile dispatch (#85) is deferred — these hints are spoiler-only today.

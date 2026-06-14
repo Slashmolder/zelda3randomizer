@@ -251,6 +251,7 @@ typedef struct RandoWindowPrefs {
   uint64 last_seed_u64;          // last UI-chosen seed
   int window_x, window_y, window_w, window_h;  // last settings-window geometry
   bool has_geometry;             // true when all four geometry keys were present
+  bool tracker_tiled_layout_on_startup;  // auto-apply tracker/game tiled layout
   bool dark_theme;               // ImGui theme (default true = dark)
 } RandoWindowPrefs;
 

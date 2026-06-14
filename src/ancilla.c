@@ -7060,6 +7060,14 @@ void Ancilla44_RandoIconReceipt(int k) {
   ancilla_aux_timer[k]--;
 
 draw:;
+  // Custom-art icons (gfx 0x80 bit): a door/area transition mid-float reloads
+  // SP1-4 and would leave the icon mis-tinted — re-apply the custom palette
+  // while we still own the shared slot. If another consumer re-painted the
+  // slot, the icon is showing that consumer's tiles anyway (the pre-existing
+  // shared-slot "last DMA wins" behavior), so leave the palette alone.
+  if ((ancilla_item_to_link[k] & 0x80) &&
+      g_recv_item_slot_owner == ancilla_item_to_link[k])
+    Rando_ApplyCustomItemGfxPalette(ancilla_item_to_link[k]);
   Point16U pt;
   Ancilla_PrepAdjustedOamCoord(k, &pt);
   OamEnt *oam = GetOamCurPtr();
@@ -7097,15 +7105,19 @@ void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
   if (k < 0)
     return;
 
-  // DMA the item's animated-sprite tile bundle into the VRAM slot drawn at
-  // chars 0x24/0x34 — exactly what AncillaAdd_ItemReceipt does for a pickup.
-  DecodeAnimatedSpriteTile_variable(gfx);
-  if (gfx == 6)
-    DecompressSwordGraphics();   // (defensive; no direct-grant item uses gfx 6)
+  // Load the item's tile bundle into the VRAM slot drawn at chars 0x24/0x34 —
+  // the same load AncillaAdd_ItemReceipt performs for a pickup, via the shared
+  // slot helper so custom-art gfx ids (0x80 bit — triforce piece / rupoor,
+  // add-rando-field-item-custom-art) get their tile + SP3-upper palette, and
+  // vanilla ids keep the sword/shield decompress side-loads.
+  Rando_EnsureRecvItemSlotGfx(gfx);
 
   ancilla_G[k] = big;
   ancilla_L[k] = oam_flags;
-  ancilla_item_to_link[k] = 0;
+  // Stash the gfx id so the draw handler can re-apply a custom-art palette if
+  // a transition reloads sprite palettes while the icon is still floating.
+  // (Vanilla code never reads this field for kAncillaType_RandoIconReceipt.)
+  ancilla_item_to_link[k] = gfx;
   ancilla_step[k] = 0;
   ancilla_arr4[k] = 0;
   ancilla_y_vel[k] = 0;

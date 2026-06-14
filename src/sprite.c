@@ -1570,7 +1570,64 @@ void Sprite_PrepAndDrawSingleLargeNoPrep(int k, PrepOamCoordsRet *info) {  // 86
 // the slot already holds it. Shared by the standing-sprite draw below and the
 // Flute Spot dig ancilla (Ancilla36_Flute), which renders the placed item the
 // same way.
+// Custom-art item palettes are loaded into sprite palette 3's upper half.
+// Both palette buffers are written so transition fades target the same colours.
+// The aux-buffer compare avoids fighting active fades, and per-draw reapply
+// covers room/area palette reloads while an item remains visible.
+void Rando_ApplyCustomItemGfxPalette(uint8 gfx) {
+  // The translucency swap exchanges SP3/SP5 upper colours. Wait until the next
+  // draw after the swap so the custom palette returns to the intended slot.
+  if (palette_swap_flag)
+    return;
+  // Attributed z3randomizer custom palette for Rupoor.
+  static const uint16 kRandoOffBlackPalette[8] = {
+    0x0000, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5,
+  };
+  // Other custom icons use the existing stable receive-item palette row.
+  const uint16 *src = (gfx == kRandoCustomGfx_Rupoor) ? kRandoOffBlackPalette
+                                                      : kPalette_MainSpr + 52;
+  if (memcmp(&aux_palette_buffer[0xB8], src, 16) != 0) {
+    memcpy(&aux_palette_buffer[0xB8], src, 16);
+    memcpy(&main_palette_buffer[0xB8], src, 16);
+    flag_update_cgram_in_nmi++;
+  }
+}
+
 void Rando_EnsureRecvItemSlotGfx(uint8 gfx) {
+  // Custom item art (add-rando-field-item-custom-art): tile + dedicated
+  // palette for the ALTTPR items with no vanilla receive bundle. The palette
+  // is re-applied per call even when the slot already holds the tiles (see
+  // Rando_ApplyCustomItemGfxPalette); the tile load runs only on owner change.
+  if (gfx & 0x80) {
+    Rando_ApplyCustomItemGfxPalette(gfx);
+    if (g_recv_item_slot_owner == gfx)
+      return;
+    if (gfx == kRandoCustomGfx_Rupoor) {
+      // ALTTPR's Rupoor IS the vanilla rupee tile — only the palette differs.
+      DecodeAnimatedSpriteTile_variable(0x24);
+    } else {
+      // kRandoCustomItemGfx entries are pre-shaped to the receive-item slot
+      // layout (0x40 bytes chars 0x24/0x25 row, 0x40 bytes chars 0x34/0x35
+      // row) — copy straight into the buffer WriteTo4BPPBuffer_at_7F4000
+      // normally fills.
+      uint32 idx = gfx & 0x7f;
+      if ((idx + 1) * 0x80 <= kRandoCustomItemGfx_SIZE) {
+        memcpy(&g_ram[0x9000 + 0x2d40], kRandoCustomItemGfx + idx * 0x80, 0x40);
+        memcpy(&g_ram[0x9000 + 0x2d40 + 0x40],
+               kRandoCustomItemGfx + idx * 0x80 + 0x40, 0x40);
+      } else {
+        // Stale zelda3_assets.dat: growing this asset does NOT change
+        // kAssets_Sig (it hashes asset NAMES), so an old blob can pass
+        // validation while missing newer entries. Draw blank tiles rather
+        // than reading out of bounds — the item is invisible but the grant
+        // still works. Re-extract assets to fix.
+        assert(!"kRandoCustomItemGfx too small — re-extract zelda3_assets.dat");
+        memset(&g_ram[0x9000 + 0x2d40], 0, 0x80);
+      }
+    }
+    g_recv_item_slot_owner = gfx;
+    return;
+  }
   if (g_recv_item_slot_owner == gfx)
     return;
   // Mirror the receive-item gfx load (misc.c AncillaAdd_ItemReceipt): shield

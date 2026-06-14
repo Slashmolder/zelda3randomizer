@@ -52,13 +52,9 @@
 # These reuse the same bundle the vanilla pickup of that item already shows, so
 # the icon is guaranteed to match without any new sprite art.
 #
-# ITEMS LEFT AUDIO-ONLY (gfx: 0) — flagged for the user's visual playtest:
-#   - HalfMagic / QuarterMagic: the magic-UPGRADE has no vanilla receive-item
-#     GFX. The only vanilla visual is the Magic Bat zap (link_magic_consumption
-#     written directly). kReceiveItemGfx has no entry; mapping one would be a
-#     guess. Left audio-only.
-#   - TriforcePiece: triforce_ctr is a Triforce-Hunt HUD counter with no
-#     receive-item GFX bundle. Left audio-only.
+# ITEMS LEFT AUDIO-ONLY (gfx: 0) — none remain. HalfMagic / QuarterMagic /
+# TriforcePiece were the last and now have custom art (see CUSTOM-ART GFX IDS
+# below). gfx: 0 stays the audio-only sentinel for any future unmapped item.
 #   - SmallKey_*: SmallKey direct-grant is a Phase B follow-on (it currently
 #     falls through to the vanilla current-dungeon path in
 #     dungeon_item_direct_grant, so it does NOT reach the skip branch today).
@@ -67,11 +63,21 @@
 #     harmless until then because the code never passes a SmallKey id to the
 #     confirmation helper.
 
+# CUSTOM-ART GFX IDS (add-rando-field-item-custom-art)
+# -----------------------------------------------------
+# gfx values with the 0x80 bit set are NOT vanilla bundle indices: they are
+# kRandoCustomGfx_* ids (src/rando/rando.h), handled by
+# Rando_EnsureRecvItemSlotGfx — the tile comes from the kRandoCustomItemGfx
+# asset (committed source: assets/rando/custom_item_gfx.png) or a re-coloured
+# vanilla bundle, plus a dedicated 8-colour palette loaded into sprite palette
+# 3's upper half. Such entries use oam_flags 0x36 (palette 3, priority 0x30).
+# Keep the ids in sync with the rando.h enum.
+
 icons:
-  # --- audio-only (no confident GFX mapping; user to playtest) ---
-  HalfMagic:     { gfx: 0, big: 0, oam_flags: 0, notes: "no receive-item GFX for magic upgrade; audio-only" }
-  QuarterMagic:  { gfx: 0, big: 0, oam_flags: 0, notes: "no receive-item GFX for magic upgrade; audio-only" }
-  TriforcePiece: { gfx: 0, big: 0, oam_flags: 0, notes: "Triforce-Hunt HUD counter; no receive-item GFX bundle; audio-only" }
+  # --- custom art (no vanilla receive bundle; see header note) ---
+  TriforcePiece: { gfx: 0x80, big: 2, oam_flags: 0x36, notes: "kRandoCustomGfx_TriforcePiece: 16x16 triforce tile (kRandoCustomItemGfx entry 0, MIT z3r art) + green_blue_guard upper-half palette via SP3" }
+  HalfMagic:     { gfx: 0x81, big: 2, oam_flags: 0x36, notes: "kRandoCustomGfx_HalfMagic: 16x16 1/2-magic decanter (kRandoCustomItemGfx entry 1, MIT z3r art) + green_blue_guard upper-half palette via SP3" }
+  QuarterMagic:  { gfx: 0x82, big: 2, oam_flags: 0x36, notes: "kRandoCustomGfx_QuarterMagic: 16x16 1/4-magic decanter (kRandoCustomItemGfx entry 2, MIT z3r art) + green_blue_guard upper-half palette via SP3" }
 
   # --- prizes: pendants (gfx 0x23, palette distinguishes color) ---
   Prize_GreenPendant: { gfx: 0x23, big: 2, oam_flags: 0x38, notes: "pendant bundle; green palette (lttp 0x37)" }
@@ -148,14 +154,18 @@ icons:
   # --- ALTTPR / Retro direct-grant items with no vanilla LttP receive bundle ---
   #     These had no LttP code, so on the field (add-rando-field-item-sprites)
   #     they fell back to the vanilla sprite and at grant they were audio-only.
-  #     Map each to the closest existing bundle:
   #       GenericKey (Retro shared key) -> small-key bundle (gfx 0x0f).
-  #       Rupoor (ALTTPR junk) -> green-rupee bundle: ALTTPR's Rupoor IS a green
-  #         rupee. Values = the green-rupee (Rupee1) receive code 0x34:
-  #         gfx kReceiveItemGfx[0x34]=0x24, big kReceiveItem_Tab1[0x34]=0,
-  #         oam_flags (kWishPond2_OamFlags[0x34]=4)*2|0x30 = 0x38.
-  #     TriforcePiece stays audio-only / vanilla field fallback: it has NO sprite
-  #     gfx bundle (Triforce-Hunt HUD counter only); a real field icon would need
-  #     new triforce sprite art (asset-pipeline work), out of scope here.
+  #       Rupoor -> custom art (add-rando-field-item-custom-art): the vanilla
+  #         rupee tile re-coloured by ALTTPR's off_black palette
+  #         (kRandoCustomGfx_Rupoor; matches z3r itemdatatables.asm $59 —
+  #         bundle $24 + PalettesCustom_off_black). Previously the plain
+  #         green-rupee bundle, which read as a normal green rupee.
   GenericKey: { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24); Retro shared key" }
-  Rupoor:     { gfx: 0x24, big: 0, oam_flags: 0x38, notes: "green-rupee bundle (lttp 0x34); ALTTPR Rupoor is a green rupee" }
+  Rupoor:     { gfx: 0x83, big: 0, oam_flags: 0x36, notes: "kRandoCustomGfx_Rupoor: vanilla rupee tile (bundle 0x24) + off_black palette via SP3" }
+
+  # --- masquerade traps ---
+  #     Runtime dispatch handles the trap effect and skips Link_ReceiveItem.
+  #     These icon entries are intentionally good-looking decoys used by both
+  #     direct-grant confirmation and field-item sprites.
+  TrapDamage: { gfx: 0x24, big: 0, oam_flags: 0x38, notes: "trap masquerading as a green rupee" }
+  TrapFreeze: { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "trap masquerading as a big key" }

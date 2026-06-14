@@ -36,14 +36,26 @@
 //       header @70. A v1 file has neither; the loader keys the blob's physical
 //       presence on this file version (RandoSave_ReadFile), and old binaries
 //       reading a v2 file would mis-size slots — but format_version gating in
-//       both directions is the contract. New writes are always v2. Needed so a
-//       reloaded slot can reproduce the seed's settings + shuffle assignments
-//       for the runtime reachability (tracker) engine.
-#define kRandoSidecar_FileFormatVersion 2
+//       both directions is the contract. Needed so a reloaded slot can
+//       reproduce the seed's settings + shuffle assignments for the runtime
+//       reachability (tracker) engine.
+//   3 — appends a fixed kRandoSidecar_SlotExtV3Size-byte per-slot EXTENSION
+//       block AFTER the settings blob (the 80-byte slot header is fully
+//       claimed since door shuffle took @76-79, so additive fields now land
+//       here). Carries entrance_digest24 (FIX #4 — the entrance-shuffle
+//       analogue of door_digest24). v1/v2 files have no block; the loader
+//       keys its presence on the file version and forces the fields to 0
+//       (= legacy warn-only behavior). New writes are always v3.
+#define kRandoSidecar_FileFormatVersion 3
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
 #define kRandoSidecar_ShareStringLength 32      // raw binary (rando_share writes 31 bytes + pad)
+
+// format_version >= 3: per-slot extension block trailing the settings blob.
+//   @0-2  entrance_digest24 (u24 LE)  (FIX #4; 0 = absent/no entrance shuffle)
+//   @3-7  reserved (zero on write)
+#define kRandoSidecar_SlotExtV3Size     8
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -210,6 +222,18 @@ typedef struct RandoSlotHeader {
   // vanilla-door slots / pre-field writers.
   uint8 door_attempt;           // @76
   uint32 door_digest24;         // @77-79 (3 bytes LE on disk)
+  // FIX #4 — entrance-shuffle analogue of door_digest24. The entrance
+  // permutation regenerates from (seed, entrance_axes, entrance_attempt) at
+  // slot load; a generator change to the algorithm/pool silently installs a
+  // DIFFERENT layout than the placement was certified against. This is the
+  // 24-bit Rando_EntranceLayoutDigest24 fold over everything
+  // Entrance_RuntimeInstall installs; Rando_ActivateSidecarSlot recomputes it
+  // and refuses the slot on mismatch (same pathway as the door gate). 0 =
+  // absent: non-entrance-shuffle slots, and v1/v2 sidecars (which physically
+  // lack the field) — those keep the legacy warn-only version-drift behavior.
+  // On disk it lives in the format_version-3 slot EXTENSION block (the 80-byte
+  // header is full), bytes @0-2 LE; the in-memory struct carries it here.
+  uint32 entrance_digest24;     // v3 ext block @0-2 (3 bytes LE on disk)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
@@ -219,7 +243,13 @@ typedef struct RandoSlotHeader {
 //   @0  magic[4]                            (= kRandoSidecar_FileMagic, LE)
 //   @4  format_version (u16 LE)             (= kRandoSidecar_FileFormatVersion)
 //   @6  slot_count (u16 LE)                 (= 3)
-//   @8  file_crc (u32 LE)                   (CRC-32 over slot data; 0 in Phase A)
+//   @8  file_crc (u32 LE)                   (FIX #13: CRC-32 — poly 0xEDB88320,
+//                                            init/xorout 0xFFFFFFFF, same
+//                                            algorithm as util.c's BPS crc32 —
+//                                            over ALL bytes after this 16-byte
+//                                            header. 0 = legacy file (written
+//                                            as 0 before the FIX): loader
+//                                            accepts without verification.)
 //   @12 reserved[4]                         (zero on write)
 typedef struct RandoSidecarFileHeader {
   uint16 format_version;
@@ -252,11 +282,12 @@ typedef struct RandoSidecarSlot {
 // ---------------------------------------------------------------------------
 
 // Compute the on-disk byte size of one slot given its placement_table_size,
-// for the CURRENT format (version 2). placement_table_size is in BYTES (= 2 ×
+// for the CURRENT format (version 3). placement_table_size is in BYTES (= 2 ×
 // location count). Total = 80 (header) + placement_table_size +
 // ((placement_table_size/2 + 7) >> 3) bitmap + kSettingsCanonicalLen (settings
-// blob). v1 files omit the trailing blob; RandoSave_ReadFile handles that older
-// layout internally based on the file's format_version.
+// blob) + kRandoSidecar_SlotExtV3Size (extension block). v1 files omit the
+// blob and the ext block, v2 files omit the ext block; RandoSave_ReadFile
+// handles those older layouts internally based on the file's format_version.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);
 
 // Sentinel item_id for "no placement / deprecated location" — written at
@@ -421,5 +452,19 @@ bool Rando_DetectVersionDrift(const RandoSlotHeader *hdr,
 bool Rando_DetectChecksumDrift(const RandoSlotHeader *hdr,
                                const uint8 *paired_sram_slot,
                                uint32 paired_sram_slot_size);
+
+// ---------------------------------------------------------------------------
+// Rando_EntranceLayoutDigest24 (FIX #4) — 24-bit digest of the FULL entrance
+// layout that hdr's (entrance_axes, world_state, share-string seed,
+// entrance_attempt) regenerate: every active permutation (cave / dungeon /
+// cross / all decoupled exit nets) plus the built door overlay. Implemented in
+// rando.c beside Entrance_RuntimeInstall — installer and digest share ONE
+// layout computation, so any algorithm/pool drift that changes what installs
+// changes the digest. Returns 0 when no entrance mode is active (or the door
+// table is unavailable); a nonzero fold of 0 is remapped to 1 so 0 stays
+// unambiguous as "absent". Generation stores the result in the slot header
+// (sidecar v3 ext block); activation recomputes and refuses on mismatch.
+// ---------------------------------------------------------------------------
+uint32 Rando_EntranceLayoutDigest24(const RandoSlotHeader *hdr);
 
 #endif  // ZELDA3_RANDO_SAVE_H_

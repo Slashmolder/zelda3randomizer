@@ -719,6 +719,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       g_rando_window_prefs.window_h = atoi(value);
       g_rwp_geom_seen |= 8;
       return true;
+    } else if (StringEqualsNoCase(key, "tracker_tiled_layout_on_startup")) {
+      return ParseBool(value, &g_rando_window_prefs.tracker_tiled_layout_on_startup);
     } else if (StringEqualsNoCase(key, "dark_theme")) {
       return ParseBool(value, &g_rando_window_prefs.dark_theme);
     }
@@ -730,7 +732,17 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
     if (StringEqualsNoCase(key, "Enabled")) {
       return ParseBool(value, &g_config.auto_tracker_enabled);
     } else if (StringEqualsNoCase(key, "Port")) {
-      g_config.auto_tracker_port = (uint16)strtoul(value, (char**)NULL, 10);
+      // Strict parse: reject non-numeric input, trailing garbage, and
+      // out-of-range values instead of letting a bare strtoul hand the server
+      // a bogus bind port (malformed -> 0, >65535 silently wraps via the
+      // uint16 cast). Returning false keeps the default set in ParseConfigFile
+      // and surfaces the parser's standard "Can't parse" warning, the same
+      // way the neighboring keys report malformed values (ParseBool).
+      char *endp;
+      unsigned long port = strtoul(value, &endp, 10);
+      if (endp == value || *endp != '\0' || port < 1 || port > 65535)
+        return false;
+      g_config.auto_tracker_port = (uint16)port;
       return true;
     } else if (StringEqualsNoCase(key, "AllowRemote")) {
       return ParseBool(value, &g_config.auto_tracker_allow_remote);
@@ -933,6 +945,8 @@ void Config_SaveRandoWindowIni(const char *path) {
     fprintf(f, "window_w = %d\n", g_rando_window_prefs.window_w);
     fprintf(f, "window_h = %d\n", g_rando_window_prefs.window_h);
   }
+  fprintf(f, "tracker_tiled_layout_on_startup = %s\n",
+          g_rando_window_prefs.tracker_tiled_layout_on_startup ? "true" : "false");
   fprintf(f, "dark_theme = %s\n", g_rando_window_prefs.dark_theme ? "true" : "false");
 
   // [RandoAssetDecisions] — flush all persisted always-allow decisions in the

@@ -2,7 +2,7 @@
 #include "types.h"
 
 enum {
-  kNumberOfAssets = 165
+  kNumberOfAssets = 166
 };
 extern const uint8 *g_asset_ptrs[kNumberOfAssets];
 extern uint32 g_asset_sizes[kNumberOfAssets];
@@ -329,4 +329,6 @@ extern MemBlk FindInAssetArray(int asset, int idx);
 #define kMap8DataToTileAttr_SIZE (g_asset_sizes[163])
 #define kSomeTileAttr ((uint8*)g_asset_ptrs[164])
 #define kSomeTileAttr_SIZE (g_asset_sizes[164])
-#define kAssets_Sig 90, 101, 108, 100, 97, 51, 95, 118, 48, 32, 32, 32, 32, 32, 10, 0, 27, 174, 233, 45, 74, 174, 252, 50, 49, 27, 153, 197, 27, 43, 216, 197, 132, 101, 173, 169, 36, 108, 15, 155, 176, 169, 57, 131, 174, 101, 51, 207
+#define kRandoCustomItemGfx ((uint8*)g_asset_ptrs[165])
+#define kRandoCustomItemGfx_SIZE (g_asset_sizes[165])
+#define kAssets_Sig 90, 101, 108, 100, 97, 51, 95, 118, 48, 32, 32, 32, 32, 32, 10, 0, 51, 197, 152, 243, 20, 162, 223, 202, 167, 212, 0, 20, 22, 79, 81, 123, 240, 112, 39, 227, 164, 47, 63, 12, 60, 71, 144, 76, 150, 38, 173, 99

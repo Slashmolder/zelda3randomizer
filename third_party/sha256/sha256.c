@@ -51,7 +51,13 @@ void sha256_transform(SHA256_CTX *ctx, const SHA256_BYTE data[])
 	SHA256_WORD a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
 
 	for (i = 0, j = 0; i < 16; ++i, j += 4)
-		m[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
+		// Cast each byte to the (unsigned) word type before shifting: a bare
+		// uint8 << 24 promotes to int and overflows the sign bit for bytes >=128
+		// (signed-shift UB, UBSan-flagged). The unsigned shift yields the IDENTICAL
+		// bit pattern, so every hash (asset hash / race stamp / share checksum /
+		// placement+sphere digests) is byte-for-byte unchanged.
+		m[i] = ((SHA256_WORD)data[j] << 24) | ((SHA256_WORD)data[j + 1] << 16)
+		     | ((SHA256_WORD)data[j + 2] << 8) | ((SHA256_WORD)data[j + 3]);
 	for ( ; i < 64; ++i)
 		m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
 

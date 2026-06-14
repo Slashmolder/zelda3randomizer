@@ -107,7 +107,7 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
         # revealed digest. This matches the steady-state corpus runner's
         # behavior and ensures a kGeneratorVersion bump regenerates the
         # ZRSR-path digest the same way it regenerates the CSV-path
-        # digest. Cluster-audit 2026-05-27 M3 — prior implementation
+        # digest. Prior implementation
         # returned ("<ZRSR>", "<ZRSR>") and the caller skipped comparison,
         # leaving stale expected_digest values in the manifest with no
         # proof the new binary's reveal-spoiler path produced the same

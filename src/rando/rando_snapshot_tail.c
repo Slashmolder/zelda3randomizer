@@ -15,11 +15,34 @@
 //     placement_table[placement_table_size]  flat uint16 LE by location_id
 //                              (0xFFFF = no placement sentinel)
 //
+// M4 appends a SECOND TLV after the RandoState one, so a COLD replay (Ctrl+F1 on
+// a fresh launch with the slot not loaded) can rebuild the per-slot process state
+// that g_ram (and thus LoadSnesState) does not carry:
+//
+//   type[4]   LE             = 2 (TAIL_RANDO_SETTINGS)
+//   length[4] LE             = payload size in bytes
+//   payload:
+//     format_version[1]      = 1
+//     prize_attempt[1]                 (accepted assumed-fill attempt; FIX #6)
+//     mushroom_held[1]                 ┐ the 4 process-static ownership bytes
+//     flute_shovel_owned[1]            │ (NOT in g_ram); read LIVE at save time
+//     boomerang_owned[1]               │ so they reflect the snapshot instant
+//     bow_owned[1]                     ┘
+//     settings_len[1]                  (= kSettingsCanonicalLen on the wire)
+//     settings_canonical[settings_len] (Settings_CanonicalSerialize output)
+//
+// It is a SEPARATE TLV (not folded into RandoState) so an older binary — which
+// requires RandoState's length to be exactly 52 + placement_table_size — skips it
+// as an unknown type and still reads the placement table. A v1/no-blob slot emits
+// no type-2 TLV (settings absent), so the cold replay degrades to placement-only.
+//
 // Multi-byte fields are emitted/consumed via explicit LE byte helpers (no
 // host-endianness reliance) — per the same discipline as rando_save.c.
 
 #include "rando_snapshot_tail.h"
 #include "rando_placement.h"
+#include "rando.h"          // Rando_SnapshotColdReplayRestore + g_rando_* ownership externs
+#include "rando_settings.h" // kSettingsCanonicalLen, Settings_CanonicalDeserialize
 #include "door_runtime.h"   // DoorRt_Installed (door-shuffle restore reconcile)
 #include "../features.h"    // enhanced_features1 / kFeatures1_DoorShuffleActive
 #include "../variables.h"   // g_ram (the features macro)
@@ -63,6 +86,13 @@ static struct {
 } g_ctx;
 static bool g_has_ctx = false;
 
+// settings sub-context for the type-2 RandoSettings TLV. Independent of the
+// type-1 context above: a v1/no-blob slot sets the type-1 context but clears this
+// one, so the type-2 TLV is suppressed.
+static uint8 g_ctx_settings_canonical[kSettingsCanonicalLen];
+static uint8 g_ctx_prize_attempt = 0;
+static bool g_has_settings_ctx = false;
+
 void Rando_SetSnapshotContext(uint16 generator_version,
                               const uint8 settings_hash[16],
                               const uint8 share_string[32]) {
@@ -77,9 +107,26 @@ void Rando_SetSnapshotContext(uint16 generator_version,
   g_has_ctx = true;
 }
 
+void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
+                                      uint8 prize_attempt) {
+  if (settings_canonical_or_null == NULL) {
+    g_has_settings_ctx = false;
+    memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
+    g_ctx_prize_attempt = 0;
+    return;
+  }
+  memcpy(g_ctx_settings_canonical, settings_canonical_or_null, kSettingsCanonicalLen);
+  g_ctx_prize_attempt = prize_attempt;
+  g_has_settings_ctx = true;
+}
+
 void Rando_ClearSnapshotContext(void) {
   g_has_ctx = false;
   memset(&g_ctx, 0, sizeof(g_ctx));
+  // clear the settings sub-context too (slot exit clears both).
+  g_has_settings_ctx = false;
+  memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
+  g_ctx_prize_attempt = 0;
 }
 
 bool Rando_HasSnapshotContext(void) {
@@ -167,7 +214,34 @@ bool RandoSnapshotTail_Save(FILE *f) {
   size_t w1 = fwrite(hdr, 1, sizeof(hdr), f);
   size_t w2 = (w1 == sizeof(hdr)) ? fwrite(payload, 1, payload_len, f) : 0;
   free(payload);
-  return (w1 == sizeof(hdr)) && (w2 == payload_len);
+  if (w1 != sizeof(hdr) || w2 != payload_len) return false;
+
+  // append the type-2 RandoSettings TLV when the active slot installed a
+  // settings sub-context (canonical blob present). It carries world_state +
+  // the prize/medallion/boss/drop/enemy derivation inputs (canonical settings +
+  // prize_attempt) plus the 4 process-static ownership bytes — read LIVE here so
+  // they reflect the snapshot instant, not slot-activation time. A v1/no-blob
+  // slot leaves g_has_settings_ctx false → no type-2 TLV, and a cold replay then
+  // degrades to placement-only (type-1).
+  if (g_has_settings_ctx) {
+    uint8 sp[7 + kSettingsCanonicalLen];  // constant size (kSettingsCanonicalLen is a #define)
+    sp[0] = 1u;                           // format_version
+    sp[1] = g_ctx_prize_attempt;
+    sp[2] = g_rando_mushroom_held;        // 4 process-static ownership bytes, LIVE
+    sp[3] = g_rando_flute_shovel_owned;
+    sp[4] = g_rando_boomerang_owned;
+    sp[5] = g_rando_bow_owned;
+    sp[6] = (uint8)kSettingsCanonicalLen;
+    memcpy(sp + 7, g_ctx_settings_canonical, kSettingsCanonicalLen);
+    uint32 sp_len = (uint32)sizeof(sp);
+    uint8 shdr[16];
+    memcpy(shdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(shdr + 8, kRandoSnapshotTail_Type_RandoSettings);
+    put_u32le_bytes(shdr + 12, sp_len);
+    if (fwrite(shdr, 1, sizeof(shdr), f) != sizeof(shdr)) return false;
+    if (fwrite(sp, 1, sp_len, f) != sp_len) return false;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +376,78 @@ int RandoSnapshotTail_Load(FILE *f) {
         fprintf(stderr, "RandoSnapshotTail: door-shuffle bit restored without an "
                         "installed layout — clearing (activate the slot first)\n");
         enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+      }
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_RandoSettings) {
+      // Payload: format_version[1] + prize_attempt[1] + ownership[4]
+      //           + settings_len[1] + settings_canonical[settings_len].
+      // Minimum length = 1 + 1 + 4 + 1 = 7.
+      if (length < 7u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) return recognized;
+        continue;
+      }
+      uint8 head2[7];
+      if (fread(head2, 1, 7, f) != 7) return recognized;
+      uint8 fmt              = head2[0];
+      uint8 prize_attempt    = head2[1];
+      uint8 own_mushroom     = head2[2];
+      uint8 own_flute_shovel = head2[3];
+      uint8 own_boomerang    = head2[4];
+      uint8 own_bow          = head2[5];
+      uint8 settings_len     = head2[6];
+      if ((uint32)length != 7u + (uint32)settings_len) {
+        // Inner-size mismatch — skip the declared remainder and continue.
+        long remaining = (long)length - 7L;
+        if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) return recognized;
+        continue;
+      }
+      // Read the canonical settings blob. Forward-compat: a NEWER snapshot may
+      // carry more axes (settings_len > this binary's kSettingsCanonicalLen) —
+      // read what fits (zero-extended), skip the rest (mirrors Share_DecodeV2).
+      uint8 blob[kSettingsCanonicalLen];
+      memset(blob, 0, sizeof(blob));
+      uint32 copy = (settings_len <= kSettingsCanonicalLen) ? settings_len
+                                                            : (uint32)kSettingsCanonicalLen;
+      if (copy > 0 && fread(blob, 1, copy, f) != copy) return recognized;
+      if (settings_len > copy &&
+          fseek(f, (long)(settings_len - copy), SEEK_CUR) != 0) {
+        return recognized;
+      }
+      // Everything below is interpreted per format_version 1. An UNKNOWN fmt is a
+      // newer writer's payload layout we can't parse — the bytes were already
+      // consumed above, so just count the TLV recognized and move on WITHOUT
+      // touching ownership/settings (head2[]/blob[] may not mean what we assume).
+      if (fmt == 1u) {
+        // Restore the 4 process-static ownership bytes — the snapshot-instant
+        // runtime grant state (which tier of bow / boomerang / flute-shovel /
+        // mushroom the player owns), NOT in g_ram, so neither LoadSnesState nor
+        // the canonical settings reconstruct them. Restored on EVERY replay (cold
+        // OR within-session) to match the g_ram the snapshot restored.
+        g_rando_mushroom_held      = own_mushroom;
+        g_rando_flute_shovel_owned = own_flute_shovel;
+        g_rando_boomerang_owned    = own_boomerang;
+        g_rando_bow_owned          = own_bow;
+        // Settings-derived reconstruction (world_state + prize/medallion/boss/drop/
+        // enemy assignments + Inverted installs) — GATED inside the restore helper
+        // to fire only on a true cold replay (no slot active). Needs the base seed,
+        // which the type-1 share_string supplies (type-1 precedes type-2 in the
+        // file, so g_ctx.share_string is already populated when g_has_ctx).
+        if (g_has_ctx) {
+          RandoSettings s;
+          if (Settings_CanonicalDeserialize(blob, &s) == 0) {
+            // Reinstall the settings sub-context so a later re-save (Shift+Fn)
+            // perpetuates the type-2 TLV — mirrors the type-1 branch's
+            // Rando_SetSnapshotContext reinstall. Without this, a
+            // cold-replayed-then-resaved snapshot would emit type-1 only and lose
+            // world_state/Inverted/shuffle reconstruction on its next cold replay.
+            // `blob` is already zero-extended to kSettingsCanonicalLen.
+            Rando_SetSnapshotSettingsContext(blob, prize_attempt);
+            Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
+          }
+        }
       }
       recognized++;
       continue;
@@ -647,6 +793,96 @@ void RandoSnapshotTail_SelfCheck(void) {
       selfcheck_die("§8.10: mixed-tail should restore generator_version through the skip");
     }
     fclose(fmix);
+  }
+
+  // -------------------------------------------------------------------------
+  // type-2 RandoSettings TLV round-trip.
+  //
+  // (A) With a settings sub-context installed, Save appends a type-2 TLV after
+  //     the type-1 RandoState TLV. On Load the 4 process-static ownership bytes
+  //     are restored UNCONDITIONALLY (cold OR within-session), and the type-2 is
+  //     recognized (the settings-derived reconstruction inside
+  //     Rando_SnapshotColdReplayRestore is gated on slot state + exercised by
+  //     playtest, so it is not asserted here — but it runs asset-free with the
+  //     Open all-zero blob below).
+  // (B) With NO settings sub-context (a v1/no-blob slot), no type-2 is emitted,
+  //     so the ownership bytes are left untouched.
+  // -------------------------------------------------------------------------
+  {
+    uint8 open_canon[kSettingsCanonicalLen];
+    memset(open_canon, 0, sizeof(open_canon));  // all-zero canonical == world_state Open + defaults
+
+    static RandoPlacement m4_entries[2];
+    static RandoPlacementTable m4_table;
+    m4_entries[0].location_id = 0; m4_entries[0].item_id = 0x0123;
+    m4_entries[1].location_id = 4; m4_entries[1].item_id = 0x0456;
+    m4_table.entries = m4_entries; m4_table.count = 2;
+
+    // (A) Round-trip with a settings sub-context.
+    Placement_Install(&m4_table);
+    Rando_SetSnapshotContext(0x0074, settings_hash, share_string);
+    Rando_SetSnapshotSettingsContext(open_canon, /*prize_attempt=*/3);
+    g_rando_mushroom_held      = 0x02;
+    g_rando_flute_shovel_owned = 0x05;
+    g_rando_boomerang_owned    = 0x03;
+    g_rando_bow_owned          = 0x02;
+
+    FILE *fm = tmpfile();
+    if (fm == NULL) selfcheck_die("tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fm)) selfcheck_die("Save returned false");
+
+    // Wipe the process-static ownership bytes — only the type-2 load restores them.
+    g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
+    g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+
+    fseek(fm, 0, SEEK_SET);
+    int nm = RandoSnapshotTail_Load(fm);
+    if (nm != 2) selfcheck_die("Load should recognize 2 TLVs (RandoState + RandoSettings)");
+    if (g_rando_mushroom_held != 0x02 || g_rando_flute_shovel_owned != 0x05 ||
+        g_rando_boomerang_owned != 0x03 || g_rando_bow_owned != 0x02) {
+      selfcheck_die("ownership bytes not restored from the type-2 TLV");
+    }
+    fclose(fm);
+
+    // the type-2 load reinstalled the settings sub-context, so a RE-SAVE
+    // must AGAIN emit a type-2 TLV (a cold-replayed snapshot is self-perpetuating,
+    // like type-1). Without that reinstall the re-save would be placement-only and
+    // a later cold replay of it would lose world_state/Inverted. (Deterministic:
+    // the reinstall is pre-gate, independent of whether the reconstruction fired.)
+    g_rando_mushroom_held = 0x09;  // new live ownership to round-trip through re-save
+    FILE *fr = tmpfile();
+    if (fr == NULL) selfcheck_die("tmpfile() (re-save) returned NULL");
+    if (!RandoSnapshotTail_Save(fr)) selfcheck_die("re-save returned false");
+    g_rando_mushroom_held = 0;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(fr, 0, SEEK_SET);
+    int nr = RandoSnapshotTail_Load(fr);
+    if (nr != 2) selfcheck_die("re-save of a cold-replayed snapshot must perpetuate the type-2 TLV");
+    if (g_rando_mushroom_held != 0x09) selfcheck_die("re-saved ownership did not round-trip");
+    fclose(fr);
+
+    // (B) Suppression: no settings sub-context → no type-2 → ownership untouched.
+    Placement_Install(&m4_table);
+    Rando_SetSnapshotContext(0x0074, settings_hash, share_string);
+    Rando_SetSnapshotSettingsContext(NULL, 0);  // v1/no-blob slot
+    FILE *fb = tmpfile();
+    if (fb == NULL) selfcheck_die("tmpfile() (B) returned NULL");
+    if (!RandoSnapshotTail_Save(fb)) selfcheck_die("Save (B) returned false");
+    g_rando_mushroom_held = 0x33;  // a (non-existent) type-2 would overwrite this
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(fb, 0, SEEK_SET);
+    int nb = RandoSnapshotTail_Load(fb);
+    if (nb != 1) selfcheck_die("suppression — Load should recognize only the type-1 TLV");
+    if (g_rando_mushroom_held != 0x33) {
+      selfcheck_die("suppression — ownership must be untouched when no type-2 was emitted");
+    }
+    fclose(fb);
+    g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
+    g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
   }
 
   // Restore prior state to leave the world unchanged.

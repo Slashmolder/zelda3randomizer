@@ -225,14 +225,14 @@ static const BossSpriteMap kBossSpriteMap[] = {
 #define kBossSpriteMapCount (sizeof(kBossSpriteMap) / sizeof(kBossSpriteMap[0]))
 
 // Reverse: pool index → sprite type. 12 entries. Both Agahnim slots
-// map to 0xFF (poisoned sentinel — cluster audit LOW-3) rather than
+// map to 0xFF (poisoned sentinel) rather than
 // the shared 0x7A. The remap function falls back to vanilla on 0xFF,
 // preserving correctness if a future edit puts Agahnim2 back in the
 // pool: instead of silently spawning the wrong Agahnim variant in a
 // random dungeon (the `is_in_dark_world` rendering discriminator inside
 // `Sprite_7A_Agahnim` can't tell which Agahnim was intended), the
 // remap returns the input vanilla type unchanged. The safer default
-// future-proofs against the exact bug §65 audit caught and removed.
+// future-proofs against the exact bug caught and removed.
 static const uint8 kBossPoolIdxToSprite[12] = {
   [kBoss_ArmosKnights]  = 0x53,
   [kBoss_Lanmolas]      = 0x54,
@@ -259,8 +259,8 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
     uint8 mapped = kBossPoolIdxToSprite[pool_idx];
     // 0 = uninitialized entry; 0xFF = poisoned (pinned Agahnim variants
     // that must not be substituted because the sprite id cannot
-    // disambiguate A1 vs A2 without world-state context — cluster
-    // audit LOW-3). Fall back to vanilla in both cases.
+    // disambiguate A1 vs A2 without world-state context). Fall back to
+    // vanilla in both cases.
     if (mapped == 0 || mapped == 0xFF) return vanilla_sprite_type;
     return mapped;
   }

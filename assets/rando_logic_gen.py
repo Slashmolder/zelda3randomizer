@@ -70,6 +70,36 @@ import chest_data  # noqa: E402  -- after sys.path mutation
 
 
 # ---------------------------------------------------------------------------
+# Atomic output write
+# ---------------------------------------------------------------------------
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` ATOMICALLY: write a sibling temp file, flush+fsync,
+    then os.replace() (an atomic rename on the same filesystem).
+
+    Why this matters: the Makefile glob-builds these codegen outputs as ordinary
+    sources, and under `make -j` a compile can read an output file. Path.write_text
+    truncates-then-writes in place, so it leaves a window where the file is empty
+    or partial — and a concurrent `gcc -c logic_data.c` (or a TU #including it)
+    that reads during that window produces a SMALLER binary with a TRUNCATED logic
+    graph (symptom: most corpus seeds fail with wrong placement digests; it is
+    timing-dependent, so it masquerades as a real regression). With the atomic
+    rename a reader sees EITHER the old complete file or the new complete file —
+    never a mid-write one — so that race is structurally impossible. (Also defends
+    against a double-codegen race: each writer renames a complete file, last wins.)
+
+    newline is left at the default (None) to byte-for-byte match the previous
+    Path.write_text(... encoding="utf-8") behavior on every platform (LF on POSIX,
+    CRLF on Windows) — so emitted bytes, and thus digests, are unchanged.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 REPO = Path(__file__).resolve().parent.parent
@@ -694,9 +724,19 @@ def fold_compares(ast, errors: list = None):
                 "CMP_GE": l >= r,
             }[op]
             return ("true",) if result else ("false",)
-        # Unbound ident on at least one side. Default to TRUE.
-        errors.append(f"unbound comparison {op} {lhs} {rhs} (returning TRUE)")
-        return ("true",)
+        # Unbound ident on at least one side — a macro-authoring error (a
+        # parameter was never grounded by the caller). Defaulting to TRUE is the
+        # DANGEROUS direction: it silently collapses both arms of a level/count
+        # comparison and grants the stricter logic (e.g. silver-arrow capability)
+        # for free, which could certify an unbeatable seed as beatable. Raise a
+        # hard error (collected into all_errors) instead of the old silent
+        # over-permissive TRUE — so --strict (CI) FAILS the build; a non-strict
+        # local build at least degrades to a WARN + FALSE arm.
+        # DORMANT today: every call site passes a literal shorthand
+        # (CanShootArrowsL1 / CanShootSilvers / HasSwordN), so this never fires.
+        raise ParseError(
+            f"unbound comparison: {op} {lhs!r} {rhs!r} "
+            "(a macro parameter was not grounded by the caller)")
     if kind in ("and", "or"):
         return (kind, [fold_compares(c, errors) for c in ast[1]])
     if kind == "not":
@@ -1075,14 +1115,21 @@ def _resolve_region(arg, regions):
         # Stable IDs assigned by sorted order of region declaration.
         idx = sorted(regions.keys()).index(name)
         return idx
-    # Unknown region name. This is almost always a translation typo (e.g.,
-    # "DesertPalace" instead of "DesertPalace_Lobby"). Print to stderr so it
-    # shows up in the codegen output (--strict promotes to fail). Fall back
-    # to a hash so the bytecode still emits cleanly during the build.
-    print(f"WARN: OP_REGION_REACHABLE references unknown region {name!r}; "
-          f"did you mean one of: {sorted(regions.keys())[:6]}{'...' if len(regions) > 6 else ''}?",
-          file=sys.stderr)
-    return _stable_hash16(name)
+    # Unknown region name — almost always a translation typo (e.g.
+    # "DesertPalace" instead of "DesertPalace_Lobby"). The old behavior emitted a
+    # _stable_hash16 fallback that is essentially never a valid region index, so
+    # the predicate's region term was PERMANENTLY FALSE at runtime — silently
+    # stranding a location/edge, surfacing only in playtest. The "--strict
+    # promotes to fail" claim was itself stale: the WARN was a bare stderr print,
+    # never collected into all_errors, so --strict did NOT catch it. Raise a hard
+    # parse error (now collected into all_errors) so --strict (CI) FAILS on a
+    # typoed region; a non-strict local build degrades to a WARN + FALSE term —
+    # still better than the old silent never-valid hash. The committed
+    # predicates all resolve, so this never fires on an unmodified tree.
+    raise ParseError(
+        f"OP_REGION_REACHABLE references unknown region {name!r}; "
+        f"did you mean one of: {sorted(regions.keys())[:6]}"
+        f"{'...' if len(regions) > 6 else ''}?")
 
 
 def _resolve_dungeon_id(name: str) -> int:
@@ -1207,8 +1254,16 @@ def emit_location_ids(locations: dict[str, LocationDef], path: Path):
     lines.append("")
     lines.append(f"#define LOC__COUNT {max_id + 1}")
     lines.append("")
+    # the reachability/sphere bitsets in rando_logic.c are sized
+    # [kReachabilityMaxLocations] (512). A registry append that pushes a location
+    # id past that must fail the BUILD, not silently OOB-index the bitset at
+    # runtime. Keep this 512 in lockstep with kReachabilityMaxLocations.
+    lines.append("_Static_assert(LOC__COUNT <= 512,")
+    lines.append('               "location id space exceeds kReachabilityMaxLocations '
+                 '(512) in rando_logic.c — grow both together");')
+    lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_LOCATION_IDS_H_")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def emit_item_ids(items: dict[str, ItemDef], path: Path):
@@ -1221,7 +1276,7 @@ def emit_item_ids(items: dict[str, ItemDef], path: Path):
     lines.append(f"#define ITEM__COUNT {max_id + 1}")
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_ITEM_IDS_H_")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def _write_empty_chest_lookup(path: Path) -> None:
@@ -1258,7 +1313,7 @@ def _write_empty_chest_lookup(path: Path) -> None:
         "",
         "#endif  // ZELDA3_RANDO_CHEST_LOOKUP_H_",
     ]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
@@ -1324,10 +1379,32 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
     # runtime falls through to vanilla for every chest).
     rows = chest_data.get_chest_lookup_rows()
     if not rows:
+        # chest_table.gen.bin is absent. In a ROM-less / CI build this is
+        # EXPECTED (the runtime falls through to vanilla for every chest). But in
+        # a PLAYABLE build — one where zelda3_assets.dat has been extracted — an
+        # empty table SILENTLY makes every chest grant its vanilla item:
+        # placement/spoiler stay correct but no chest resolves to its placed item
+        # → an unbeatable seed when progression sits in a chest. The two
+        # artifacts come from the SAME extraction, so the split state (assets
+        # present, chest bin missing — e.g. a stale incremental build) is always
+        # a bug. Fail closed in that context instead of fail-open.
+        import sys as _sys
+        # REPO (module-global, derived from __file__) is cwd-INDEPENDENT, so the
+        # guard works regardless of where the codegen is invoked from — a
+        # cwd-relative probe would fail OPEN from another cwd.
+        if (REPO / "zelda3_assets.dat").exists():
+            _sys.stderr.write(
+                "ERROR: chest_table.gen.bin is missing but zelda3_assets.dat is "
+                "present — a playable build would grant EVERY chest its vanilla "
+                "item (unbeatable when progression is in a chest). Re-run asset "
+                "extraction (python assets/restool.py --extract-from-rom) to "
+                "regenerate chest_table.gen.bin, then rebuild.\n")
+            _sys.exit(2)  # hard build failure (caller reads the return as a count)
         _write_empty_chest_lookup(path)
         print(
             "  NOTE: chest_lookup.h emitted EMPTY (chest_table.gen.bin absent; "
-            "expected in CI). Run asset extraction for a playable build."
+            "expected in a ROM-less / CI build). Run asset extraction for a "
+            "playable build."
         )
         return 0
 
@@ -1385,7 +1462,7 @@ def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
     lines.append("#define kRandoChestLookup_COUNT %d" % len(rows))
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_CHEST_LOOKUP_H_")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(lines) + "\n")
     return len(rows)
 
 
@@ -1467,7 +1544,7 @@ def emit_icon_atlas(icon_atlas_path: Path, out_header: Path) -> int:
     lines.append("#define kHashIconAtlasSize %d" % len(entries))
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_ICON_ATLAS_H_")
-    out_header.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(out_header, "\n".join(lines) + "\n")
     return len(entries)
 
 
@@ -1576,7 +1653,7 @@ def emit_direct_grant_icons(
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_DIRECT_GRANT_ICONS_H_")
 
-    out_header.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(out_header, "\n".join(lines) + "\n")
     return sum(1 for (gfx, _b, _o, _name) in entries.values() if gfx != 0)
 
 
@@ -1631,7 +1708,7 @@ def emit_logic_data(
     sorted_region_ids_for_overrides = sorted(regions.keys()) if regions else []
     rid_for_overrides = {rid: i for i, rid in enumerate(sorted_region_ids_for_overrides)}
     # Map location_id → base region index (from logic_loc_region resolution
-    # used in the base predicate emission above). Used by audit M3 to
+    # used in the base predicate emission above). Used to
     # detect when an override's region matches the base — in that case we
     # emit the 0xFFFF sentinel so the runtime takes the "no region change"
     # fast path. Avoids the 100%-overridden anti-pattern where the
@@ -1662,7 +1739,7 @@ def emit_logic_data(
                 if region_str is not None and region_str in rid_for_overrides:
                     candidate_idx = rid_for_overrides[region_str]
                     base_idx = base_region_idx_by_loc_id.get(loc_id, 0xFFFF)
-                    # Audit M3 — only record an override when it differs
+                    # only record an override when it differs
                     # from the base region. Matching cases emit 0xFFFF so
                     # the runtime sentinel path is exercised.
                     if candidate_idx != base_idx:
@@ -2017,7 +2094,7 @@ def emit_logic_data(
             out.append("};")
             out.append(f"const uint32 kRandoLocationPredOverrides_{ws_name}Count = {len(entries_sorted)};")
         else:
-            # Audit M4 — emit 0xFFFF in the region_override slot so the
+            # emit 0xFFFF in the region_override slot so the
             # placeholder matches the "no region change" sentinel rather
             # than accidentally binding loc 0 to region 0 when a future
             # entry is added without auditing the placeholder.
@@ -2071,7 +2148,7 @@ def emit_logic_data(
     out.append(f"const uint32 kRandoGlitchLevelStatusCount = {len(gl)};")
     out.append("")
 
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(out) + "\n")
 
 
 def _location_type_id(t: str) -> int:
@@ -2094,7 +2171,7 @@ def _world_state_mask(wsf: list) -> int:
     for ws in wsf:
         # Strict — typoed names like "retros" silently demoted to Open (bit 0)
         # under the prior `.get(ws, 0)` default, invalidating every Open digest
-        # at once. Raise loudly instead. (Cluster-audit 2026-05-27 M1.)
+        # at once. Raise loudly instead.
         if ws not in WORLD_STATES:
             raise ParseError(
                 f"unknown world_state {ws!r} in world_state_filter — "
@@ -2237,8 +2314,8 @@ def main(argv=None):
     #
     #    This bug pattern landed once when removing the
     #    logic_parts/45_lightworld_northeast.yaml duplicate-override
-    #    silently dropped the region binding on King Zora et al.; the
-    #    audit caught it. Warn at codegen time so the next such regression
+    #    silently dropped the region binding on King Zora et al.
+    #    Warn at codegen time so the next such regression
     #    fails the build instead of being caught by playtest.
     # Types that don't require a `region:` binding because their reachability
     # gating happens via a different mechanism:
@@ -2422,6 +2499,10 @@ def main(argv=None):
     # door-controlled location's can_reach as
     #   (NOT DOORS_ACTIVE(d) AND vanilla) OR (DOORS_ACTIVE(d) AND DOORS_LOC_REACHABLE(loc))
     # — evaluates to exactly the vanilla bytes' result while inactive.
+    # This block runs AFTER the strict gate above, so its errors get their own
+    # flush below (an unknown macro otherwise compiled a door predicate to
+    # constant FALSE silently, even under --strict).
+    n_errors_pre_door = len(all_errors)
     door_vm_preds: list[bytes] = []
     door_portal_rows: list[tuple] = []
     door_manifest_path = Path("assets/rando/door_predicates.gen.json")
@@ -2488,6 +2569,20 @@ def main(argv=None):
             enc["can_reach"] = (bytes([_OP_OR, 2, _OP_AND, 2, _OP_NOT, _OP_DA, dgn]) + v +
                                 bytes([_OP_AND, 2, _OP_DA, dgn,
                                        _OP_DLR, fid & 0xFF, (fid >> 8) & 0xFF]))
+
+    # Flush door-compile errors collected after the main strict gate (earlier
+    # errors were already printed there; only the door block's are new).
+    if len(all_errors) > n_errors_pre_door:
+        for err in all_errors[n_errors_pre_door:]:
+            print(f"ERROR: {err}", file=sys.stderr)
+        # A door predicate that fails to compile becomes a constant-FALSE edge,
+        # which silently walls off door-shuffle reachability (the silver-arrows
+        # bug class) and can certify placements against a wrong graph. That must
+        # never ship, so fail the build UNCONDITIONALLY — not only under CI
+        # --strict — because the local Make / MSBuild codegen invokes this script
+        # WITHOUT --strict. The committed door_predicates.gen.json
+        # compiles clean, so this never fires on an unmodified tree.
+        sys.exit(1)
 
     # Emit artifacts.
     out_headers = Path(args.out_headers)

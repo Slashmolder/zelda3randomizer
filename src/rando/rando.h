@@ -16,29 +16,37 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 66u  // 65->66: add-rando-door-shuffle — door_shuffle axis (canonical pad byte [27] bits 0-1) + the Arch-2 oracle: every door-controlled dungeon location's can_reach is WRAPPED with OP_DOORS_ACTIVE/OP_DOORS_LOC_REACHABLE (predicate stream changed; evaluates exactly vanilla when off — corpus placement digests BYTE-IDENTICAL for every pre-existing seed, verified 115/115 pre-bump) + two new door-shuffle corpus seeds. kSettingsCanonicalLen stays 28; default settings_hash unchanged (door_shuffle=vanilla packs [27]=0).
-                               // 64→65: add-rando-enemy-shuffle §7.4 — sprite-group SHEET reshuffle (subgroup slots 0-3, generated Enemizer-sourced constraint tables, dungeon-overlord-aware) PLUS per-(seed,type) enemy HP/contact-damage randomization. ALL are NEW LIVE RUNTIME behavior of the EXISTING enemy_shuffle axis (always-on when enemy_shuffle; NO new canonical axis) — kSettingsCanonicalLen / canonical layout / default settings_hash UNCHANGED. ORTHOGONAL to placement (no fill RNG, no logic predicate): placement_digest_hex BYTE-IDENTICAL for every seed; corpus regenerates ONLY its manifest generator_version (no corpus seed enables enemy_shuffle). Corpus MUST be regenerated (bump_rando_corpus.py --apply).
-                               // 63→64: add-rando-major-glitch F5 — NoLogic can_place short-circuit (D1-deferred, now built per owner request). At logic==NoLogic(4), Predicate_EvalCtx now returns true for the placement context (can_place) too, not just reachability — so the LOGIC-level can_place PREDICATES (the NotADungeonItem fill ban + item-locked slots like Swamp Palace Entrance's OP_ITEM_IS(SmallKey_SwampPalace)) no longer constrain placement. The structural dungeon-item MODE containment (dungeon_mode_accepts_item, a C check OUTSIDE the predicate VM) is deliberately STILL respected (Dungeon mode keeps keys in their dungeon — an explicit MODE choice + runtime-grantability safety, NOT a logic rule). Effect: NoLogic + SHUFFLED-key seeds change (verified: NoLogic+wildKeys seed 0xF5F5 c0f5e87c→8be3e395); the DEFAULT Vanilla-keys NoLogic corpus seed is BYTE-IDENTICAL (its dungeon items are pre-pinned, never subject to can_place) and every logic<4 seed is unchanged. New corpus entry b-logic-nologic-wildkeys pins the new behavior. settings_hash/canonical unchanged. Corpus MUST be regenerated.
-                               // 62→63: add-rando-major-glitch F1 follow-on (partial) — surface ALTTPR glitch disjuncts the fork dropped at the F1 sites for lack of macros (now F2-available), PHP-verified per site against ../alttp_vt_randomizer/app/Region/**. Clean (non-nested) sites only: canSuperBunny standalone (Superbunny Cave T/B, East.php:59/66) + canSuperBunny&&MagicMirror (Mire Shed L/R, Mire.php:73-74) → new bunny-state reachability; canSuperSpeed&&canSpinSpeed (Desert PastLanmolas, ToH, King's Tomb, Graveyard Ledge, DM-West-access) + canWaterWalk&&Boots (King Zora) — these are REDUNDANT vs the existing CanBootsClip() disjunct (canSuperSpeed/waterWalk ⊆ canBootsClip in reachability: both need OWG-level+Boots, the former needs MORE) so they are digest-cosmetic (graph-reads-like-PHP) and move nothing; inverted Ice Palace gains canOneFrameClipUW (melt-factor, HMG+MG) + canSuperSpeed (flipper-factor). Net effect: ONLY the two HybridMG entries move (b-logic-hmg-open + b-logic-hmg-inverted, both still goal_completable=true) — canSuperBunny opens those locations at HMG where the MG-exclusive CanPearlBypass is closed; OWG/MG were already reachable via other tech (seed-specific) so their digests are unchanged; logic=0 + every non-glitch seed BYTE-IDENTICAL (verified 111/113 unchanged). The nested/conditional/ambiguous F1-followon sites (TR/GT dungeonRevive sub-disjuncts, DM-East mirror-clip nesting, Mimic Cave conditional, inverted King's Tomb hasABottle(2) precedence, inverted King Zora cross-region) are DEFERRED — PHP-mapped, playtest-pending (these add UNVERIFIED-technique assumptions; see openspec/changes/add-rando-major-glitch/TEN_TECHNIQUES.md). settings_hash / canonical layout unchanged. Corpus MUST be regenerated (bump_rando_corpus.py --apply).
-                               // 61→62: add-rando-major-glitch F1 — per-site reclassification of the raw OP_GLITCH_LEVEL_AT_LEAST(major_glitches) threshold stand-ins to first-class technique macros (F2). PHP-verified (every site read against ../alttp_vt_randomizer/app/Region/**): ALL 30 standard predicate-line occurrences = canOneFrameClipOW (a MajorGlitches-EXCLUSIVE flag, config/logic.php:34) → CanOneFrameClipOW() = `OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches)`; the Swamp/Ice sites = canOneFrameClipUW (HMG+MG, lines 22/35) → CanOneFrameClipUW() (digest-neutral, prior commit). Effect: the raw `>=2` over-reached at HybridMG (logic==3) — canOneFrameClipOW is MG-ONLY, so it must be CLOSED at HMG. The MG-exclusive form is false at logic==3, true at logic==2. So ONLY the HMG corpus entry (b-logic-hmg-open-fast-ganon) moves (still goal_completable=true — open/fast_ganon stays beatable via the OWG-group + canOneFrameClipUW techniques that DO open at HMG); MG, OWG, NoGlitches(0), NoLogic, and every non-glitch seed are BYTE-IDENTICAL (verified: 111/112 unchanged, only HMG digest moved — confirms no gate leaked). settings_hash / kSettingsCanonicalLen / canonical layout unchanged. Corpus MUST be regenerated (bump_rando_corpus.py --apply).
-                               // 60→61: add-rando-enemy-shuffle adds the enemy (sprite-type) substitution axis as a LIVE runtime slot axis. enemy_shuffle bit-packs into the previously-zero canonical pad byte [26] bit0 (kSettingsCanonicalLen stays 28 — no size-coupling cascade). Enemy shuffle is ORTHOGONAL to item placement: it draws no fill RNG and adds no logic predicate (every CanKill<X> kill macro is a player-firepower test over bosses/mini-bosses, all EXCLUDED from the substitution pool), so placement_digest_hex is BYTE-IDENTICAL for every seed (incl. enemy_shuffle=on) and default-settings settings_hash is byte-identical (pad bit 0 by default). The bump version-locks the new LIVE runtime axis (an older binary surfaces the upgrade warning rather than silently ignoring an enemy-shuffle slot) and reflects the per-seed settings_hash change for an enemy_shuffle=on seed (its [26] byte flips to 1). Corpus regenerates ONLY its manifest generator_version; EVERY digest is byte-identical (no corpus seed enables the axis). Corpus MUST be regenerated (bump_rando_corpus.py --apply).
-                               // 59→60: Phase D (add-rando-major-glitch §5) un-collapses the OWG/MG glitch tiers by folding the ALTTPR config/logic.php technique tiers into three macros: CanBootsClip + CanFakeFlippers gain an OP_GLITCH_LEVEL_AT_LEAST(overworld_glitches) disjunct (canBootsClip/canFakeFlipper are OWG-group flags → enabled at OWG/HMG/MG); CanPearlBypass (canOWYBA) gains the MG-EXCLUSIVE form `OP_GLITCH_LEVEL_AT_LEAST(major_glitches) AND NOT OP_GLITCH_LEVEL_AT_LEAST(hybrid_major_glitches)` (canOWYBA is MG-only). CanBunnyRevival is intentionally NOT folded (canBunnyRevive is not a config/logic.php flag). Effect: logic=OverworldGlitches is no longer a placement no-op (boots-clip/fake-flipper route at tier 1), logic=MajorGlitches gains OWYBA routing, and HybridMG now DIFFERS from MajorGlitches (OWYBA opens at MG only). DEFAULT (logic=0, tricks=0) collapses both disjuncts to false → trick-only form → BYTE-IDENTICAL; every NoGlitches + b-tricks-* + NoLogic seed is unchanged. The logic 1/2/3 corpus entries MOVE (faithful — config/logic.php-cited). The ~40 raw OP_GLITCH_LEVEL_AT_LEAST(major_glitches) threshold sites (canOneFrameClipOW/UW etc.) are NOT reclassified (frontier F1) so they still over-reach at HMG. settings_hash / kSettingsCanonicalLen / canonical layout unchanged. Corpus MUST be regenerated (bump_rando_corpus.py --apply).
-                               // 58→59: Phase D (add-rando-major-glitch) opens logic tiers HybridMajorGlitches(3) + NoLogic(4) for user input (CSV + native window) — Phase A already declared the enum, this un-pins the ceiling. NoLogic(4) short-circuits the REACHABILITY predicate eval (Predicate_EvalCtx, placement_context==0 only) so goal-completability + every accessibility tier pass vacuously and --generate-seed's strict refusal does not fire; can_place confinement stays live (dungeon keys placeable) so the seed is structurally valid. A no_logic_seed fallback_warning is emitted. The bump version-locks the NoLogic placement change + the two new settings_hash-bearing logic values. EVERY pre-existing seed (logic 0/1/2, all tricks, all goals/worlds) is BYTE-IDENTICAL — the short-circuit fires only at logic==4, which no prior corpus seed used (verified: 110/110 unchanged on regen). New corpus entries: b-logic-hmg-open-fast-ganon (placement == its MG sibling: bare major_glitches gates open at both >=2 levels, the documented raw-threshold over-reach) + b-logic-nologic-open-fast-ganon (accessibility=none). settings_hash / kSettingsCanonicalLen / canonical layout unchanged. Corpus MUST be regenerated (bump_rando_corpus.py --apply).
+#define kGeneratorVersion 74u  // 73→74: fix generation-time reachability certification for retry-exhausting seeds. Place_AssumedFill's best-so-far return reinstalls the restored attempt's prize/medallion assignment, and Rando_Set*Assignment copies into owned stores. Placement digests stay byte-identical; sphere_digest moves only for seeds whose old post-placement pass read a stale later attempt's assignment. settings_hash / kSettingsCanonicalLen unchanged.
+                               // 72→73: Inverted reachability now ignores base edges that duplicate Inverted edges, so placement evaluates the Inverted graph instead of base ∪ inverted. Inverted placement/sphere digests move; Open/Standard/Retro stay byte-identical. Also emits cross_decoupled_exit JSON only for cross-decoupled seeds, affecting only those race stamps.
+                               // 71→72: decoupled entrance shuffles pin Ice Palace + Swamp Palace exits as fixed points so one-way decoupled exits cannot strand Link behind Flippers-only, water-isolated doors. Placement/sphere digests stay byte-identical; decoupled runtime permutations and race stamps are version-locked.
+                               // 70→71: retire the native boss-heart shuffle checkbox and always shuffle boss-heart drops. The legacy region_boss_hearts_in_pool byte remains parseable but canonicalizes to 0; default settings_hash and placement digests move because boss drops become fillable locations and boss-heart items enter the pool.
+                               // 69→70: fix boss-heart pool double-counting. Pinned mode no longer adds extra BossHeartContainer pool copies, and junk padding now excludes every pre-pinned slot so pool size matches fillable open slots. Also includes digest-neutral/runtime fixes for Silver Arrow door predicates, deterministic generation budgets, customizer caps, sidecar v3, and door-logic cleanup.
+                               // 68->69: add traps={off,low,medium,high} in canonical byte [26] bits2-3 plus TrapDamage/TrapFreeze item ids. traps=off keeps existing settings/placement digests byte-identical; traps-on seeds deterministically replace eligible junk and need version-locking.
+                               // 67→68: retire the two Fountain bottle slots from the registry + pool. They had no runtime grant site under the chest model, so placed items there were uncollectable. Removing two placeable locations changes placement/sphere digests; settings_hash / kSettingsCanonicalLen unchanged.
+                               // 66→67: add customizer mode. A manifest pins selected locations and assumed-fill completes the rest, gated by canonical [26] bit1 (customizer_active). Non-customizer seeds stay byte-identical; customizer settings and manual-placement generation are version-locked.
+                               // 65->66: add door_shuffle in canonical byte [27] bits 0-1. Door-controlled dungeon locations wrap reachability with OP_DOORS_ACTIVE/OP_DOORS_LOC_REACHABLE, evaluating exactly vanilla when off. kSettingsCanonicalLen and default settings_hash unchanged.
+                               // 64→65: enemy_shuffle now reshuffles sprite-group sheets and randomizes per-type HP/contact damage under the existing enemy_shuffle axis. It is orthogonal to placement and adds no canonical axis; no-corpus enemy_shuffle coverage means only generator_version changes there.
+                               // 63→64: NoLogic now short-circuits can_place predicates as well as reachability. Dungeon item containment still applies in C, so key mode safety remains. NoLogic + shuffled-key seeds can move; settings_hash/canonical unchanged.
+                               // 62→63: add additional ALTTPR glitch disjuncts for non-nested sites such as Superbunny Cave, Mire Shed, Desert Past Lanmolas, King's Tomb, and inverted Ice Palace. Only the HybridMajorGlitches coverage entries move; settings_hash / canonical layout unchanged.
+                               // 61→62: reclassify raw major-glitch thresholds to technique macros where canOneFrameClipOW is MajorGlitches-only and canOneFrameClipUW stays HybridMajorGlitches+MajorGlitches. This closes overreach at HybridMajorGlitches and moves only the affected HMG coverage entry.
+                               // 60→61: add the enemy type substitution axis as live runtime slot behavior. enemy_shuffle packs into canonical byte [26] bit0 and stays orthogonal to placement; default settings_hash and placement/sphere digests remain byte-identical.
+                               // 59→60: fold ALTTPR glitch tiers into CanBootsClip, CanFakeFlippers, and CanPearlBypass so OverworldGlitches, HybridMajorGlitches, and MajorGlitches are distinct. Logic-tier coverage entries move; settings_hash / kSettingsCanonicalLen unchanged.
+                               // 58→59: expose HybridMajorGlitches and NoLogic in CSV/native settings. NoLogic short-circuits reachability evaluation but leaves can_place confinement live, emits no_logic_seed, and version-locks the new logic values.
                                // 57→58: also pin Kholdstare (Ice Palace) + Trinexx (Turtle Rock) in the boss-shuffle pool (9→7 shuffleable bosses). Like Blind, both depend on their HOME room's ENVIRONMENT — the room "effect" byte ($00AD / header byte 4) + a BG2 ice-block / lava-floor object — which the sprite+gfx+palette redirect can't supply. Playtest: Kholdstare shuffled into Desert Palace spawned with its shell sprite present but un-encased (the room's freeze effect was DP's 0, not Ice Palace's), so the melt-to-expose fight couldn't proceed. Trinexx uses the identical room-object mechanism (Enemizer special-cases both: AddShellAndMoveObjectData + header bytes). Pinning is the clean fix; porting the room environment is enemizer-class + unvalidatable headless. Net shuffleable set = the 7 bosses that work with a pure redirect (Armos, Lanmolas, Moldorm, Helmasaur, Arrghus, Mothula, Vitreous). Changes the boss assignment for every boss_shuffle=true seed, so via OP_CAN_KILL_BOSS the boss-on placement/sphere digests move; boss_shuffle=false stays BYTE-IDENTICAL. Corpus MUST be regenerated. settings_hash / canonical layout unchanged.
                                // 56→57: pin Blind to Thieves' Town in the boss-shuffle pool (10→9 shuffleable bosses). Blind has no boss sprite in its room data — Thieves' Town spawns it via a maiden-follower sequence and the boss only materializes when dung_savegame_state_bits & 0x2000 (set by that TT-only sequence) is true — so a Blind shuffled into any other dungeon never spawns (playtest-confirmed strand). Pinning Blind (like Agahnim 1/2) is the clean fix; making it shuffleable is enemizer-class (synthetic 0xCE spawn + forcing the 0x2000 gate + suppressing the maiden both directions) and is deferred. This changes the boss assignment for every boss_shuffle=true seed (9-permutation + Blind pinned vs the old 10-permutation), so via OP_CAN_KILL_BOSS the placement_digest/sphere_digest move for the boss-on corpus entries; boss_shuffle=false (default + every non-boss entry) stays BYTE-IDENTICAL. Corpus MUST be regenerated. settings_hash / canonical layout unchanged. Runtime-render-only otherwise (the pin is a generation change; the spawn-coord alignment + redirect are runtime).
                                // 55→56: boss-shuffle runtime — boss-kill predicate override. Each dungeon's `- Boss`/`- Prize` location now gates on the new OP_CAN_KILL_BOSS(dungeon) (macro CanKillBoss) instead of the inline CanKill<VanillaBoss> macro, so the kill requirement tracks the SHUFFLED boss (a fire-gated boss shuffled into a fireless-reachable dungeon can no longer strand its prize). With boss_shuffle OFF the per-seed assignment is the vanilla identity, so OP_CAN_KILL_BOSS resolves to the dungeon's vanilla boss-kill predicate — placement is BYTE-IDENTICAL for every boss_shuffle=false seed (verified: only the 8 boss_shuffle=true corpus entries move). The bump version-locks the new op (id 19) + the boss-on placement change so a v55 boss-on slot surfaces the version warning instead of regenerating a different placement. GT's internal miniboss gauntlet + the pinned Agahnim 1/2 keep their direct CanKill<Boss> calls (never shuffled). settings_hash / kSettingsCanonicalLen unchanged (boss_shuffle was already canonical field #23). Corpus MUST be regenerated (bump_rando_corpus.py --apply). NOTE: runtime sprite substitution stays DEACTIVATED (renders garbage pending per-boss GFX + formation-spawn work); this logic is gated-off-safe until that lands.
                                // 54→55: NotADungeonItem fill-rule completeness — SmallKey_EasternPalace (id 54), SmallKey_DesertPalace (id 55) and the Retro GenericKey (id 125) are now banned from the always-reachable Link's Uncle / Secret Passage placement slots, matching ALTTPR's `!(item instanceof Key)` setFillRules. Default-settings placement is BYTE-IDENTICAL (default dungeon_small_keys=Vanilla locks each small key to its own dungeon, and GenericKey is not in the default pool), but this CAN change placement_digest/sphere_digest for the wild-keys (a1-open-fg-wild-keys) and Retro corpus entries (Retro pins genericKeys at kGenVer 54), where those keys are general-pool candidates. The bump version-locks the stricter fill rule so a v54 wild/Retro slot surfaces the version warning instead of silently regenerating a different placement. settings_hash / kSettingsCanonicalLen unchanged (no canonical-settings byte changed). Corpus MUST be regenerated (bump_rando_corpus.py --apply). The companion macros.yaml CanBootsClip/CanPearlBypass change is documentation-only (notes:, ignored by codegen) and does not affect placement.
                                // 53→54: Retro genericKeys (one shared small-key pool — any key opens any door). Completes the Retro flag set the v53 comment noted was still missing. Under world_state==Retro, BuildItemPool substitutes every per-dungeon SmallKey (ids 53-65) with the fungible GenericKey (id 125, ROM 0xAF) — same counts/slots, so pool size is unchanged — and the predicate VM collapses any per-dungeon small-key requirement onto "hold >=1 GenericKey" (a port of ALTTPR ItemCollection::has()'s ShopKey wildcard, app/Support/ItemCollection.php:271-273). Runtime: a single SRAM-persisted shared counter (link_generic_keys = link_keys_earned_per_dungeon[15] = ALTTPR $7EF38B) backs link_num_keys via enter-load/exit-save/door-consume write-through, all gated on Rando_IsGenericKeysActive(). This changes Retro placement_digest + sphere_digest for the 4 Retro corpus entries; Open/Standard/Inverted are byte-identical (every seam is world_state==Retro-gated). settings_hash / kSettingsCanonicalLen unchanged (genericKeys is computed from world_state, no new canonical byte).
-                               // 52→53: Retro wildKeys + JSON shops[]. Retro world-state now forces region.wildKeys — small keys move from their vanilla dungeon spots into the general/wild pool (Settings_EffectiveSmallKeysMode pins dungeon_small_keys_mode=Wild for Retro, applied identically in apply_derived_rules + every placer read so the canonical settings_hash and the placement agree). This changes Retro placement_digest + sphere_digest + settings_hash for all 4 Retro corpus entries; Open/Standard/Inverted are byte-identical (the override is world_state==Retro-gated). Separately, the JSON spoiler gains a Retro-only `shops[]` array (location/name/item/type + identity_placed for Capacity Upgrade), which changes the race-mode stamp for race+Retro seeds — the bump version-locks it so a v52 race+Retro seed surfaces VersionMismatch rather than a false StampMismatch at reveal. genericKeys (one shared key pool) is NOT included — keys keep dungeon identity (see docs "Retro world-state"). (Originally landed as 50→51 on the branch; re-versioned to 52→53 when merged above main's swordless bump.)
+                               // 52→53: Retro wildKeys + JSON shops[]. Retro world-state now forces region.wildKeys, moving small keys into the general/wild pool and changing Retro placement/sphere/settings digests. The Retro-only `shops[]` spoiler array also changes race-mode stamps for race+Retro seeds. genericKeys are not included here; keys keep dungeon identity.
                                // 51→52: swordless mode (mode.weapons=swordless) lands end-to-end. New predicate op OP_MODEWEAPONS_EQ (id 18) + swordless predicate branches (Ganon/Agahnim/medallion-casts/Skull-Woods/Kholdstare/Trinexx/tablets, Std+Inv) + a sword-removed item pool, plus the runtime sword-substitution patches (hammer damages Ganon, medallions cast w/o sword, tablets hammer-read, Agahnim/Skull-Woods curtains pre-opened via slot SRAM-init). ALL of it is gated on mode.weapons==swordless / Rando_IsSwordlessActive(), so EVERY existing corpus entry's placement_digest + sphere_digest is byte-identical (swordless branches evaluate false under the default randomized weapons — verified 83/83 unchanged). The bump version-locks the new op + the runtime swordless behavior so a v51 swordless slot can't load under a binary lacking the runtime patches (and the share-string version byte distinguishes the new op space). Corpus regenerated with 0 digest changes to existing entries + one new swordless seed. settings_hash / kSettingsCanonicalLen unchanged (mode_weapons was already canonical field #8; swordless=3 is a pre-declared enum value).
-                               // 50→51: ROM-version verification scaffolding (add-rando-trick-logic-and-axes §12.6). The spoiler now appends an `unverified_tricks_enabled` fallback_warnings entry whenever a seed enables a trick (settings.tricks) OR reaches a glitch level (settings.logic>=1) whose op_registry rom_version_status is untested-on-us10/jp10-only/us10-different. That changes the spoiler JSON — and thus the race-mode anti-tamper stamp (SHA-256 over the full spoiler) — for tricks-on/glitch-on RACE seeds. Without the bump a v50 tricks-on race seed (minted before the warning) would regenerate a warning-bearing spoiler at reveal → false kRandoReveal_StampMismatch ("tampered"); the bump makes the version gate fire first → honest version mismatch (mirrors the 46→47 fork-hint-NPC case). Placement/sphere digests are UNCHANGED for every existing corpus entry: nothing alters placement (the per-item rewind shipped GATED OFF at kPerItemRewindBudget=0, verified byte-identical), and tricks=0/logic=0 seeds emit no warning so their spoilers+stamps are byte-identical too. Corpus regenerated with 0 digest changes (verified, not altered) + new tricks-on / overworld-glitches / major-glitches seeds added. settings_hash / kSettingsCanonicalLen unchanged.
+                               // 50→51: ROM-version verification warnings. The spoiler now appends `unverified_tricks_enabled` when tricks or glitch levels use op_registry entries without US 1.0 verification. That changes race-mode stamps for tricks/glitches-on seeds while placement/sphere digests stay unchanged. settings_hash / kSettingsCanonicalLen unchanged.
                                // 49→50: Pyramid Fairy chest model — the two Trade slots (Pyramid Fairy - Sword 210 / Bow 211) are RETIRED from the placement pool (ALTTPR delivers this pond as two chests Left/Right, not a throw-in upgrade; the fork's runtime Sprite_WishPond3 now grants Left/Right directly on contact for BOTH ponds — no toss). Removing two placeable locations shifts every seed's open-location count / junk-pad, so placement_digest + sphere_digest change for all entries → corpus regenerated. settings_hash / kSettingsCanonicalLen are NOT affected (settings struct unchanged). The bump version-locks the smaller pool so a v49-minted slot/seed surfaces the version warning instead of regenerating a different placement.
                                // 48→49: boss + drop shuffle are now LIVE in playable slots — the per-seed assignment is installed at slot load (Rando_ActivateSidecarSlot) so the runtime sprite substitution actually fires, and the native settings window exposes both as (experimental) toggles. The drop shuffle gained a heart-drop floor (changes drop_shuffle=true output) and the spoiler now emits boss_assignments/drop_tables (changes the race-mode stamp for a shuffle-on race seed). Boss/drop shuffle is ORTHOGONAL to item placement, so default-settings AND shuffle-on placement_digest + sphere_digest are byte-identical (corpus regenerated → 0 digest changes; boss/drop determinism is pinned by BossShuffle_SelfCheck/DropShuffle_SelfCheck instead). The bump version-locks the new runtime-drop algorithm + the shuffle-on spoiler stamp so a v48-minted slot/seed surfaces the honest version warning rather than regenerating different drops/stamp.
                                // 47→48: Inverted Floating Island (loc 205) gets an Inverted logic override gating it on region access only (`TRUE()`), matching ALTTPR (Inverted East.php's initalize() never sets its requirements). Previously the codegen "last-wins" merge left the STRICT Standard predicate applied to Inverted, making the Piece of Heart harder/potentially unplaceable. This changes Inverted reachability for that location, so an Inverted seed's placement could route differently and its sphere structure changes. Corpus regenerated (only b-inverted-ganon-7-7's sphere_digest shifted; placement digests stable).
                                // 46→47: fork-extension hint NPCs (Storyteller + Kakariko/Dark-World Fortune Tellers, ids 17-19) add three entries to the spoiler `hints[]` for any hints-on seed. The race-mode anti-tamper stamp is a SHA-256 over the full spoiler JSON, so this changes the stamp bytes for race-mode + hints-on seeds. Without this bump a v46 race seed (minted before the fork NPCs) would regenerate a 3-entry-larger hints[] at reveal → false `kRandoReveal_StampMismatch` ("tampered"). The bump makes the version gate fire first → honest `kRandoReveal_VersionMismatch` ("regenerate the seed"). Placement/sphere digests are unchanged (hints are generated post-placement; generator_version is not an RNG input), so the corpus is byte-identical — verified, not regenerated.
                                // 45→46: ALTTPR three-way accessibility ("beatable only"). The per-tier acceptance gate (Accessibility_SeedAcceptable) changes the semantics of all three accessibility values — `items` now requires every progression item reachable, `locations` every location, and `none`/"beatable only" is now guaranteed beatable (no longer ships unwinnable seeds). Share strings carry the version byte so old `none` seeds don't silently reproduce under the new semantics. Corpus regenerated.
 
-// Audit L7 — the share-string binary layout packs version into 1 byte
+// The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
 // C++ uses the static_assert keyword; C11 uses _Static_assert. rando.h is
@@ -64,7 +72,7 @@ extern uint8 g_assets_hash[32];
 // Rando_OnLocationCheck — the universal grant-site dispatcher
 // (tasks.md §6.1; randomizer-placement spec).
 //
-// Called from every grant site listed in audit.md §0.3 with:
+// Called from every registered vanilla grant site with:
 //   - location_id : ALTTPR canonical numeric id (from location_registry.yaml)
 //   - vanilla_item_id : the item the vanilla game would have granted
 //
@@ -114,14 +122,20 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code);
 
+// Runtime-only message id for trap pickups. messaging.c asks the randomizer to
+// render this id before falling back to the vanilla dialogue table, so no asset
+// text row is required.
+#define kRandoTrapDialogueId 0x0220u
+bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer);
+
 // Returns the item id resolved by the most recent Rando_DispatchVanillaGrant
-// (or Rando_ChestDispatch) call. Phase B Slice 9 — used by direct-grant
+// (or Rando_ChestDispatch) call. Used by direct-grant
 // confirmation sites to feed the per-item icon lookup. Returns 0xFFFF when
 // no dispatch has run yet this slot.
 uint16 Rando_LastDispatchedItemId(void);
 
 // ---------------------------------------------------------------------------
-// Phase B Slice 6 — race-mode reveal action.
+// Race-mode reveal action.
 //
 // Rando_RevealSpoiler reads a race-mode suppressed spoiler at the given path
 // (or, if `suppressed_path == NULL`, derives the path from `share_string`
@@ -180,16 +194,20 @@ bool Rando_CanRevealActiveSlotSpoiler(void);
 // reveal survives leaving the credits screen. See rando.c.
 void Rando_NoteFrameForReveal(void);
 
+// Per-frame trap effect tick. Runs before Module_MainRouting so trap freeze can
+// neutralize movement/input before the active player handler consumes them.
+void Rando_TickTrapEffects(void);
+
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
-// Phase A1: enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit
-// items, which dispatch via direct writes inside Rando_DispatchVanillaGrant.
+// Enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit items, which
+// dispatch via direct writes inside Rando_DispatchVanillaGrant.
 static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
   return lttp_code == kRandoLttpSkip;
 }
 
 // ---------------------------------------------------------------------------
 // Rando_ShowDirectGrantConfirmation — generic visual+audio confirmation
-// for direct-grant placements (tasks.md §7.6 + Phase B Slice 9).
+// for direct-grant placements.
 //
 // When Rando_DispatchVanillaGrant returns kRandoLttpSkip the caller skips
 // Link_ReceiveItem entirely — no animation, no sound. For sites that have
@@ -218,7 +236,7 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
 // ---------------------------------------------------------------------------
 // Rando_ReceiveOrConfirm — convenience wrapper that combines the standard
-// §6 NPC pattern into a single call (tasks.md §7.6 + Phase B Slice 9).
+// NPC grant pattern into a single call.
 //
 // Replaces:
 //   if (Rando_ShouldSkipReceive(lttp_code))
@@ -244,7 +262,7 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 
 // ---------------------------------------------------------------------------
-// Field item sprites (add-rando-field-item-sprites) — draw the PLACED item's
+// Field item sprites — draw the PLACED item's
 // graphics at free-standing item locations instead of the vanilla sprite.
 //
 // The gfx come from the existing per-item receipt decompressor
@@ -281,6 +299,44 @@ bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item
 // decompress side-loads). For draw sites that render the slot themselves —
 // e.g. the Flute Spot dig ancilla. Implemented in sprite.c.
 void Rando_EnsureRecvItemSlotGfx(uint8 gfx);
+
+// ---------------------------------------------------------------------------
+// Custom item art — gfx ids with the 0x80
+// bit set are NOT vanilla DecodeAnimatedSpriteTile_variable bundle indices
+// (vanilla tops out around 0x4B); they select custom art + palette for
+// the ALTTPR items that have no vanilla receive bundle. The tile comes from
+// the kRandoCustomItemGfx asset (or a re-coloured vanilla bundle) and an
+// 8-colour palette is loaded into sprite palette 3's upper half (CGRAM words
+// 0xB8..0xBF) — byte-for-byte the slot ALTTPR's LoadItemPalette uses — so the
+// colour is stable regardless of the area's sprite palettes. Entries draw
+// with OAM palette 3 (oam_flags 0x36). Routed exclusively through
+// Rando_EnsureRecvItemSlotGfx; never pass these ids to
+// DecodeAnimatedSpriteTile_variable (it asserts).
+// ---------------------------------------------------------------------------
+// Blob-backed ids are CONTIGUOUS from 0x80 (id 0x80+N = kRandoCustomItemGfx
+// entry N — keep in lockstep with assets/rando/custom_item_gfx.png via
+// assets/scripts/gen_custom_item_gfx_png.py); ids that re-colour a vanilla
+// bundle instead of using the blob (Rupoor) come AFTER all blob entries.
+enum {
+  // kRandoCustomItemGfx entry 0 (16x16 triforce) + green_blue_guard upper-half
+  // palette (kPalette_MainSpr[52..59] — what ALTTPR's
+  // PalettesVanilla_green_blue_guard+$0E points at).
+  kRandoCustomGfx_TriforcePiece = 0x80,
+  // Entries 1/2: the 1/2 and 1/4 Magic decanters (16x16, same green_blue_guard
+  // palette — z3r SpriteProps $4E/$4F).
+  kRandoCustomGfx_HalfMagic = 0x81,
+  kRandoCustomGfx_QuarterMagic = 0x82,
+  // Vanilla green-rupee tile (bundle 0x24) + ALTTPR's off_black palette: the
+  // Rupoor has NO custom tile upstream either (z3r itemdatatables.asm $59).
+  kRandoCustomGfx_Rupoor = 0x83,
+  kRandoCustomGfx_BlobEntries = 3,  // ids 0x80..0x80+N-1 index the asset blob
+};
+
+// (Re)load the custom item's 8-colour palette into SP3's upper half if it is
+// not already there (compares the AUX buffer so it doesn't fight a palette
+// fade). Called per draw — area/room transitions reload SP1-4 over the slot
+// and a sprite that stays on screen must repaint it. Implemented in sprite.c.
+void Rando_ApplyCustomItemGfxPalette(uint8 gfx);
 
 // ---------------------------------------------------------------------------
 // Rando_ChestDispatch — universal chest grant-site hook.
@@ -338,7 +394,7 @@ uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
                          uint8 vanilla_lttp_code);
 
 // ---------------------------------------------------------------------------
-// Retro TakeAny caves (Phase B Slice 3b). See add-rando-retro-takeany/design.md.
+// Retro TakeAny caves.
 //
 // ALTTPR converts 5-of-31 ordinary overworld caves into "take-any" caves per
 // seed (an old man offers a free item; take ONE of two and the cave locks).
@@ -358,7 +414,7 @@ uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
 // Transient (per cave visit), reset on every overworld entrance.
 extern uint8 g_rando_takeany_door_id;
 
-// Phase C Stage 2 — dungeon entrance-shuffle coupling. The overworld entry hook
+// Dungeon entrance-shuffle coupling. The overworld entry hook
 // sets g_rando_entrance_exit_room (via Rando_EntranceCoupledExitRoom) when a
 // shuffled dungeon door is entered; the dungeon-exit room-keyed search uses it so
 // the player returns to the SOURCE door. 0 = no override (caves auto-couple).
@@ -377,7 +433,7 @@ extern uint8 g_rando_entrance_force_cached;
 extern uint16 g_rando_force_cached_room;
 bool Rando_EntranceForceCachedExit(uint16 lx);
 
-// Inverted spawn-select respawn redirect (add-rando-inverted-dark-chapel-spawn).
+// Inverted spawn-select respawn redirect.
 // Set by Module1B_SpawnSelect when an Inverted slot commits a respawn-menu choice
 // ("@'s House" / "Dark Chapel" / "Dark Mountain"); consumed by the next
 // LoadOverworldFromDungeon, which forces the spawn-anchor's overworld exit into
@@ -386,7 +442,7 @@ bool Rando_EntranceForceCachedExit(uint16 lx);
 // overworld, not the menu) still exit to the Light World unchanged. 0 = inactive.
 extern uint8 g_rando_inverted_spawn_redirect;
 
-// add-rando-inverted-dark-chapel-spawn: for an active Inverted slot, rename the
+// For an active Inverted slot, rename the
 // post-Agahnim spawn-select options "Sanctuary" -> "Dark Chapel" and "The Mountain
 // Cave" -> "Dark Mountain" (ALTTPR labels). Called on the FINISHED character
 // buffer (after Text_LoadCharacterBuffer's vanilla decode) for dialogue 0x184 /
@@ -445,14 +501,13 @@ uint8 Rando_TakeAnyDrawKind(uint8 door_id, uint8 pos);
 // ---------------------------------------------------------------------------
 // Rando_BumpReachabilityCounter — invalidates the tracker's memoized
 // reachability cache when a story-progress event flag is written
-// (tasks.md §0.4a). Called from every reachability-affecting write site
-// enumerated in audit.md §0.4a.
+// (tasks.md §0.4a). Called from every reachability-affecting write site.
 // ---------------------------------------------------------------------------
 void Rando_BumpReachabilityCounter(void);
 uint32 Rando_GetReachabilityCounter(void);
 
 // ---------------------------------------------------------------------------
-// Phase B Slice 1 — tracker overlay toggle state. In-memory only, not
+// Tracker overlay toggle state. In-memory only, not
 // persisted. Both default to false at process start AND on every
 // Rando_DeactivateSlot (so launching/loading defaults to hidden).
 // Keybindings: kKeys_RandoToggleItemTracker, kKeys_RandoToggleLocationTracker.
@@ -461,12 +516,11 @@ extern bool g_rando_show_item_tracker;
 extern bool g_rando_show_location_tracker;
 
 // ---------------------------------------------------------------------------
-// Phase B Slice 1 — checked-location bitmap (one bit per location_id, 0..511).
-// Set when Rando_OnLocationCheck fires for a location, OR when an audit-
-// exempt event-flag bump site updates Rando_BumpReachabilityCounter AND has
-// a corresponding LOC_*.
+// Checked-location bitmap (one bit per location_id, 0..511). Set when
+// Rando_OnLocationCheck fires for a location, OR when a reachability event-flag
+// bump site updates Rando_BumpReachabilityCounter AND has a corresponding LOC_*.
 //
-// Bitmap is heap-resident per the Phase A spec (NOT in g_ram). Loaded from
+// Bitmap is heap-resident (NOT in g_ram). Loaded from
 // RandoSidecarSlot.checked_bitmap on activate; written back on sidecar save.
 // ---------------------------------------------------------------------------
 #define kRandoCheckedBitmapBytes ((512 + 7) >> 3)  // 64 bytes = 512 bits
@@ -568,7 +622,7 @@ bool Rando_BoomerangCanToggle(void);
 // a bow), so the Y-slot can be toggled between wood and silver arrows.
 bool Rando_BowCanToggle(void);
 
-// Phase B Inverted runtime — the active slot's world_state (WorldState enum),
+// Inverted runtime — the active slot's world_state (WorldState enum),
 // captured at Rando_ActivateSidecarSlot from the slot header's additive @68
 // byte. Returns kWorldState_Open (0) when no slot is active or the slot
 // predates the world_state ext. Used by the starting-inventory grant to
@@ -646,7 +700,7 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // §6.6 boss-kill dispatch helpers. The boss-kill code path in dungeon.c
 // fires TWO grant sites per boss: the BossHeart drop (Sprite_HeartContainer)
 // and the Prize crystal/pendant (RoomTag_GetHeartForPrize). Each has its
-// own LOC_* per audit.md §0.3.5.
+// own LOC_*.
 //
 // `dungeon_id` is `cur_palace_index_x2 >> 1` — the GAME's dungeon index,
 // NOT the ALTTPR id ordering. Range 0..13:
@@ -669,23 +723,24 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id);
 // unreachable.
 //
 // Pass NULL to clear (resets to "no assignment installed" — falls back to
-// false). Pointers are borrowed; caller retains ownership.
+// false). Non-NULL inputs are copied into owned storage, so callers may pass
+// stack or temporary assignment buffers.
 // ---------------------------------------------------------------------------
 void Rando_SetDungeonPrizeAssignment(const uint8 *assignment);    // [kRandoDungeonCount]
 void Rando_SetMedallionAssignment(const uint8 *assignment);       // [kRandoMedallionEntranceCount]
 const uint8 *Rando_GetDungeonPrizeAssignment(void);
 const uint8 *Rando_GetMedallionAssignment(void);
 
-// Boss-shuffle assignment for the LOGIC VM (OP_CAN_KILL_BOSS). [kRandoDungeonCount];
+// Boss-shuffle assignment for the LOGIC VM (OP_CAN_KILL_BOSS). [16];
 // entry = boss-pool index (kBoss_* in shuffle_boss.c) for that dungeon's boss
 // room. Installed by the placer (from the base seed, matching the runtime
 // install) so reachability gates each `- Boss`/`- Prize` on the SHUFFLED boss's
 // kill predicate. This is INDEPENDENT of the sprite-substitution activation in
 // shuffle_boss.c (g_boss_assignment_active): the logic table can be installed
 // without the runtime sprite swap. NULL ⇒ OP_CAN_KILL_BOSS falls back to the
-// vanilla boss (kRandoDungeonVanillaBoss). Pointer borrowed; caller retains
-// ownership. Pass NULL to clear.
-void Rando_SetBossAssignment(const uint8 *assignment);           // [kRandoDungeonCount]
+// vanilla boss (kRandoDungeonVanillaBoss). Non-NULL inputs are copied into
+// owned storage. Pass NULL to clear.
+void Rando_SetBossAssignment(const uint8 *assignment);           // [16]
 const uint8 *Rando_GetBossAssignment(void);
 
 // Runtime medallion-open gate for the Misery Mire (entrance_index 0) and Turtle
@@ -708,6 +763,35 @@ bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index);
 bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
+
+// Regenerate the hint table for the CURRENTLY-ACTIVE slot, replaying exactly
+// the activation-time hint block — including the v1/no-blob fallbacks
+// (header-ext hints_setting/goal, default hints-on for the oldest slots),
+// which Rando_GetActiveSettings() cannot express (it returns NULL there even
+// though activation regenerated hints). Call after any out-of-band
+// Rando_GenerateHints clobber (e.g. the native window's spoiler export) to
+// restore the active seed's in-game telepathic-tile / fortune-teller hints.
+// Clears the table (vanilla text) when no slot is active.
+void Rando_RegenerateActiveSlotHints(void);
+
+// Sibling of the above — reinstall the LOGIC-side overlays
+// (entrance region/edge overrides + door logic layout) AND the logic-VM
+// shuffle-assignment stores (prize/medallion/boss — the
+// placer replaces them with per-run assignment bytes on every
+// Place_AssumedFill, and
+// they are not tracker-only: dungeon.c's falling-prize pick and ancilla.c's
+// MM/TR medallion gates read them) for the CURRENTLY-ACTIVE slot, replaying
+// the activation-time install sub-steps from the state captured at
+// activation. Call after any out-of-band generation (Rando_GenerateSlot
+// clears/replaces these global stores and never restores) so tracker/map
+// LOGIC reachability and the prize/medallion gameplay gates don't follow the
+// unloaded seed until slot reload. Gameplay-side installs (the asset-126
+// entrance overlay, DoorRt runtime redirects, decoupled nets, boss/drop/enemy
+// RENDER shuffles — generation only uses the pure *_ComputeAssignment forms)
+// are untouched by generation and by this helper. No active slot: leaves the
+// stores cleared and the assignments NULL (fail-closed, the correct idle
+// state — mirrors activation's !settings_valid arm).
+void Rando_ReinstallActiveSlotLogicOverlays(void);
 
 // True when the active slot's spoiler-grade data (placed item names, hint text)
 // must stay HIDDEN: either it is a race seed, OR the settings could not be
@@ -797,6 +881,17 @@ struct RandoSidecarSlot;
 void Rando_ActivateSidecarSlot(const struct RandoSidecarSlot *src);
 void Rando_DeactivateSlot(void);
 
+// Snapshot cold-replay restore. Reconstructs the active-slot logic-side
+// state (prize/medallion/boss/drop/enemy assignments + Inverted installs +
+// JP-glitch coupling) from a type-2 RandoSettings snapshot TLV, given the
+// recovered canonical settings, the raw 32-byte share string (→ base seed) and
+// the accepted prize_attempt. GATED: a no-op when a slot is already validly
+// active (within-session replay); fires only on a genuine cold replay (fresh
+// launch, slot never loaded). Called by RandoSnapshotTail_Load.
+void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
+                                     const uint8 *share_string_raw,
+                                     uint8 prize_attempt);
+
 // ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).
 //
@@ -806,7 +901,7 @@ void Rando_DeactivateSlot(void);
 // randomizer-ui spec. Critical: the hash input is the FULL share-string
 // binary (31 bytes: magic + version + settings_hash + seed_u64 + checksum),
 // NOT settings_hash alone — otherwise every seed with identical settings
-// would render identical icons (architectural error caught in spec round 5).
+// would render identical icons.
 //
 // Writes 5 consecutive OAM entries beginning at *oam. The widget reserves a
 // horizontal strip of 5*8 = 40 px starting at x. The OAM palette flags

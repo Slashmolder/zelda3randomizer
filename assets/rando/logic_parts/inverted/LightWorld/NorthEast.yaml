@@ -33,8 +33,9 @@
 #     Per our convention this maps to OP_HAS_PRIZE(Prize_GreenPendant).
 #
 # DROPPED locations:
-#   - Waterfall Bottle / Pyramid Bottle fountains: not in this PHP file's
-#     overrides; inherited from Fountains.php (not in scope).
+#   - Waterfall Bottle / Pyramid Bottle fountains: RETIRED from the registry
+#     entirely (ids 140/141 — see location_registry.yaml); ALTTPR never fills
+#     them and the fork's pond runtime grants only Left/Right.
 #
 # Status: translated 2026-05-27; Ganon (212) override added 2026-05-30.
 

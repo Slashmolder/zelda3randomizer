@@ -57,6 +57,7 @@ extern "C" {
 #include "../vanilla_assets_hash.h"  // kVanillaAssetsHash, kVanillaAssetsHashKnown
 #include "../../config.h"        // g_config (R2: snapshot features0 at open), g_rando_window_prefs
 #include "../auto_tracker.h"     // AutoTracker_IsRunning/SetEnabled/GetClientCount/GetBindInfo
+#include "../customizer.h"       // Customizer_LoadFile/_Install (manifest picker, Panel_General)
 }
 
 // Forward declarations (definitions appear later but are referenced from
@@ -88,6 +89,26 @@ static bool s_asset_warn_session_bypass = false;
 // it's obvious the user isn't choosing the seed. Pasting a share string clears
 // this (RenderShareRow) so the pasted seed is adopted and the field re-enables.
 static bool s_randomize_seed_each_generate = true;
+
+// Customizer manifest state (add-rando-customizer-mode §6.2). The manifest the
+// placer consults is a BORROWED pointer (Customizer_Install does not copy), so
+// the storage lives here for the whole session. SESSION-ONLY by design: the
+// path/loaded state is not persisted, and the startup settings-restore
+// (main.c) clears a persisted customizer_active bit so a stale flag can never
+// block Generate with no visible cause after a restart.
+static CustomizerManifest s_customizer_manifest;
+static char s_customizer_path[512];
+static bool s_customizer_loaded = false;
+static char s_customizer_status[320];  // post-Load summary or error
+
+// Uninstall the manifest + drop the working flag (toggle-off, window close for
+// a new slot, or a failed Load). Keeps the typed path for convenience.
+static void CustomizerUi_Clear(RandoSettings *s) {
+  Customizer_Install(nullptr);
+  s_customizer_loaded = false;
+  s_customizer_status[0] = '\0';
+  if (s != nullptr) s->customizer_active = 0;
+}
 
 // Which goal currently owns the forced accessibility=locations lock. When the
 // user leaves Completionist we restore the accessibility value they had before
@@ -205,6 +226,7 @@ static const char *const kAccessibilityLabels[] = {"items", "locations", "beatab
 // selectable here. Per add-rando-trick-logic-and-axes §3.3.
 static const char *const kLogicLabels[] = {"NoGlitches", "OverworldGlitches", "MajorGlitches",
                                            "HybridMajorGlitches", "NoLogic"};
+static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -236,32 +258,66 @@ static bool ApplyAccessibilityLock(RandoSettings *s) {
   return mutated;
 }
 
+static void ApplyDungeonKeysWildMapsPreset(RandoSettings *s) {
+  s->dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+  s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
+  s->dungeon_maps_mode = kDungeonItemMode_Wild;
+  s->dungeon_compasses_mode = kDungeonItemMode_Wild;
+}
+
+static void ApplyOpenFastGanonCorePreset(RandoSettings *s) {
+  s->world_state = kWorldState_Open;
+  s->goal = kGoal_FastGanon;
+  s->crystals_ganon = 7;
+  s->crystals_tower = 7;
+  s->item_pool_difficulty = kItemPoolDifficulty_Normal;
+  s->mode_weapons = kModeWeapons_Randomized;
+  s->accessibility = kAccessibility_Items;
+  s->logic = 0;
+  s->tricks = 0;
+  s->pieces_required = 20;
+  s->pieces_placed = 30;
+}
+
+static void ApplyRaceSafePreset(RandoSettings *s) {
+  s->race_mode = 1;
+  s->hints = 1;
+  s->item_pool_difficulty = kItemPoolDifficulty_Normal;
+  s->customizer_active = 0;  // Race mode refuses customizer manifests.
+  ApplyDungeonKeysWildMapsPreset(s);
+}
+
 // ===========================================================================
 // Panels
 // ===========================================================================
 
 // Recommended-features opt-in (C10 / spec "Recommended-features opt-in renders
-// in the native window on PC"). Mirrors the in-game kRecRowBits[]/kRecRowLabels[]
-// set (select_file.c). Edits ONLY bridge.pending_recommended_features0; the game
-// thread applies it to g_config.features0 inside the generate consumer. features0
-// is NOT part of settings_hash — toggling these does not change the hash/share.
+// in the native window on PC"). Starts from the in-game kRecRowBits[]/
+// kRecRowLabels[] set (select_file.c), with PC Seed-QoL extras that do not fit
+// the old fixed-height SNES panel. Edits ONLY bridge.pending_recommended_features0;
+// the game thread applies it to g_config.features0 inside the generate consumer.
+// features0 is NOT part of settings_hash — toggling these does not change the
+// hash/share.
 static const uint32 kRecBits[] = {
     kFeatures0_SkipIntroOnKeypress, kFeatures0_ShowMaxItemsInYellow,
     kFeatures0_TurnWhileDashing,    kFeatures0_CollectItemsWithSword,
     kFeatures0_BreakPotsWithSword,  kFeatures0_DisableLowHealthBeep,
     kFeatures0_CarryMoreRupees,     kFeatures0_MiscBugFixes,
-    kFeatures0_GameChangingBugFixes, kFeatures0_DimFlashes,
+    kFeatures0_GameChangingBugFixes, kFeatures0_RestoreJpGlitches,
+    kFeatures0_DimFlashes,
 };
 static const char *const kRecLabels[] = {
     "Skip intro on keypress",       "Show max items in yellow",
     "Turn while dashing",           "Collect items with sword",
     "Break pots with sword",        "Disable low-health beep",
     "Carry more rupees",            "Misc bug fixes",
-    "Game-changing bug fixes",      "Dim flashes",
+    "Game-changing bug fixes",      "Restore JP 1.0 glitches",
+    "Dim flashes",
 };
-// Recommended ON set (mirrors kRecRecommendedOn[]); GameChangingBugFixes + Dim
-// are off by default (Dim is an accessibility option honoring the user's pref).
-static const uint8 kRecOn[] = {1, 1, 1, 1, 1, 1, 1, 1, 0, 0};
+// Recommended ON set (mirrors kRecRecommendedOn[] for the shared rows). Gameplay
+// behavior changes, JP glitches, and Dim are off by default; glitch-logic seeds
+// still force JP glitches on at generation/slot-load time.
+static const uint8 kRecOn[] = {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0};
 static const int kRecCount = (int)(sizeof(kRecBits) / sizeof(kRecBits[0]));
 
 static void Panel_RecommendedFeatures() {
@@ -275,9 +331,24 @@ static void Panel_RecommendedFeatures() {
       "Gameplay; this panel only sets what gets stamped into this seed.)");
   ImGui::Spacing();
   for (int i = 0; i < kRecCount; i++) {
-    bool on = (*f & kRecBits[i]) != 0;
-    if (ImGui::Checkbox(kRecLabels[i], &on)) {
+    bool force_jp_glitches =
+        kRecBits[i] == kFeatures0_RestoreJpGlitches &&
+        Rando_SettingsAssumeJpGlitches(&b->pending);
+    bool on = force_jp_glitches || ((*f & kRecBits[i]) != 0);
+    if (force_jp_glitches) ImGui::BeginDisabled();
+    bool clicked = ImGui::Checkbox(kRecLabels[i], &on);
+    if (force_jp_glitches) ImGui::EndDisabled();
+    if (!force_jp_glitches && clicked) {
       if (on) *f |= kRecBits[i]; else *f &= ~kRecBits[i];
+    }
+    if (kRecBits[i] == kFeatures0_RestoreJpGlitches) {
+      if (force_jp_glitches) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(forced by glitch logic)");
+      }
+      HelpTooltip(force_jp_glitches
+          ? "Forced on because this seed's logic or tricks assume restored JP 1.0 glitches."
+          : "Per-slot opt-in for restored JP 1.0 gameplay glitches such as Fake Flippers, Itemdash, Spindash, and Superspeed. Does not enable JP 1.0 overworld music.");
     }
   }
   ImGui::Spacing();
@@ -286,7 +357,7 @@ static void Panel_RecommendedFeatures() {
       if (kRecOn[i]) *f |= kRecBits[i]; else *f &= ~kRecBits[i];
     }
   }
-  HelpTooltip("Turns on the recommended quality-of-life bits and turns off the rest.");
+  HelpTooltip("Sets every Seed QoL toggle to its recommended on/off state.");
   ImGui::TextDisabled("Does not affect settings_hash or the share string.");
 }
 
@@ -387,6 +458,22 @@ static void Panel_General() {
     }
     HelpTooltip(Settings_PresetName((SettingsPreset)i));
   }
+  ImGui::TextUnformatted("Quick:"); ImGui::SameLine();
+  if (ImGui::SmallButton("Open Fast Ganon")) {
+    ApplyOpenFastGanonCorePreset(s);
+    s_accessibility_locked = false;
+    ApplyAccessibilityLock(s);
+    changed = true;
+  }
+  HelpTooltip("Resets the core progression axes to Open / Fast Ganon defaults without touching Seed QoL, customizer, dungeon item modes, or shuffle panels.");
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Race-safe")) {
+    ApplyRaceSafePreset(s);
+    s_accessibility_locked = false;
+    ApplyAccessibilityLock(s);
+    changed = true;
+  }
+  HelpTooltip("Turns race mode on, keeps hints on, uses Normal item pool, disables Customizer mode, and applies Dungeon keys / wild maps.");
 
   // ---- Core axes ----
   ImGui::SeparatorText("World & Goal");
@@ -519,28 +606,84 @@ static void Panel_General() {
     v = s->hints != 0;
     if (ImGui::Checkbox("Hints", &v)) { s->hints = v; changed = true; }
     HelpTooltip("Telepathic-tile hints.");
-    // region_boss_hearts_in_pool is INVERTED relative to its name: 1 = boss
-    // hearts pinned to their boss slots (NOT in the general pool, the default);
-    // 0 = shuffled into the general pool. Map checked -> 0 at the UI layer so the
-    // user-facing label reads naturally and the misleading raw field name/value
-    // is never shown. Do not rename the field — the canonical byte/CSV keys keep
-    // their existing meaning for headless/share-string compat.
-    v = (s->region_boss_hearts_in_pool == 0);
-    if (ImGui::Checkbox("Shuffle boss heart containers", &v)) {
-      s->region_boss_hearts_in_pool = v ? 0 : 1;
-      changed = true;
-    }
-    HelpTooltip("Off (default): each boss drops its heart. On: hearts join the shuffled item pool.");
   }
 
-  // ---- Locked settings (informational; not yet configurable) ----
-  // Rendered as plain read-only text under a collapsed header rather than a row
-  // of disabled controls, which read as broken/confusing widgets.
-  if (ImGui::CollapsingHeader("Locked settings (fixed in this version)")) {
-    ImGui::TextDisabled("These axes aren't configurable yet - every seed uses these values:");
-    ImGui::BulletText("Pyramid bow upgrade: Silvers");
+  // ---- Customizer (add-rando-customizer-mode §6.2) ----
+  // Manifest text-entry + Load button (same shape as the spoiler save path:
+  // SDL2 has no portable native file dialog). The loaded manifest is installed
+  // for the placer; validation (RandoWindowBridge_Validate) blocks Generate
+  // while the toggle is on with nothing loaded.
+  ImGui::SeparatorText("Customizer");
+  {
+    bool cz = s->customizer_active != 0;
+    if (ImGui::Checkbox("Customizer mode (manual placements)", &cz)) {
+      if (cz) {
+        s->customizer_active = 1;
+      } else {
+        CustomizerUi_Clear(s);  // spec: disabling clears the manifest reference
+      }
+      changed = true;
+    }
+    HelpTooltip("Pin chosen locations to chosen items from a manifest file; "
+                "the normal fill places everything else.");
+    if (cz) {
+      ImGui::InputTextWithHint("##customizer_path",
+                               "path to manifest .yaml (see assets/rando/customizer.example.yaml)",
+                               s_customizer_path, sizeof s_customizer_path);
+      ImGui::SameLine();
+      if (ImGui::Button("Load manifest")) {
+        char lerr[200];
+        CustomizerManifest parsed;
+        if (Customizer_LoadFile(s_customizer_path, &parsed, lerr, sizeof lerr) != 0) {
+          CustomizerUi_Clear(nullptr);  // uninstall any prior manifest; keep the toggle on
+          snprintf(s_customizer_status, sizeof s_customizer_status, "Load failed: %s", lerr);
+        } else if (parsed.pin_count == 0 && parsed.pool_add_count == 0 &&
+                   parsed.pool_remove_count == 0) {
+          // Mirror the CLI's empty-manifest rejection.
+          CustomizerUi_Clear(nullptr);
+          snprintf(s_customizer_status, sizeof s_customizer_status,
+                   "Load failed: manifest contains no placements or pool_overrides.");
+        } else {
+          s_customizer_manifest = parsed;
+          Customizer_Install(&s_customizer_manifest);
+          s_customizer_loaded = true;
+          int n = snprintf(s_customizer_status, sizeof s_customizer_status,
+                           "Loaded: %u placement(s) pinned",
+                           (unsigned)s_customizer_manifest.pin_count);
+          if (n > 0 && (s_customizer_manifest.pool_add_count ||
+                        s_customizer_manifest.pool_remove_count)) {
+            snprintf(s_customizer_status + n, sizeof s_customizer_status - (size_t)n,
+                     ", pool +%u/-%u",
+                     (unsigned)s_customizer_manifest.pool_add_count,
+                     (unsigned)s_customizer_manifest.pool_remove_count);
+          }
+        }
+        changed = true;  // settings_hash unchanged, but revalidate the Generate row
+      }
+      if (s_customizer_status[0]) {
+        bool is_err = !s_customizer_loaded;
+        ImGui::TextColored(is_err ? ImVec4(0.95f, 0.35f, 0.35f, 1.0f)
+                                  : ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                           "%s", s_customizer_status);
+      }
+      // Per-pin preview so the user can eyeball what will be pinned (capped to
+      // keep the panel compact; the spoiler shows the full result).
+      if (s_customizer_loaded && ImGui::TreeNode("Pinned placements")) {
+        const int kPreviewCap = 24;
+        int shown = (s_customizer_manifest.pin_count < kPreviewCap)
+                        ? s_customizer_manifest.pin_count : kPreviewCap;
+        for (int i = 0; i < shown; i++) {
+          ImGui::BulletText("%s: %s",
+                            Rando_GetLocationName(s_customizer_manifest.pins[i].location_id),
+                            Rando_GetItemName(s_customizer_manifest.pins[i].item_id));
+        }
+        if (s_customizer_manifest.pin_count > shown)
+          ImGui::TextDisabled("... and %u more",
+                              (unsigned)(s_customizer_manifest.pin_count - shown));
+        ImGui::TreePop();
+      }
+    }
   }
-  HelpTooltip("pinned in Phase A");
 
   // Quality-of-Life enhancement bits live in their own top-level tab
   // (Panel_RecommendedFeatures), not here — they are opt-in and not part of the
@@ -648,21 +791,43 @@ static void Panel_Dungeons() {
   // own pick is preserved if they switch off Retro. (Retro forces only small keys;
   // big keys / maps / compasses stay user-controlled.)
   bool sk_forced_wild = (s->world_state == kWorldState_Retro);
+  bool keys_forced_dungeon = Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla;
   if (sk_forced_wild) {
     ImGui::BeginDisabled();
     uint8 sk_shown = (uint8)kDungeonItemMode_Wild;
     EnumCombo("Small keys", &sk_shown, kDungeonModeLabels, 3);
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(forced by Retro)");
     HelpTooltip("Forced to 'wild' by Retro world-state (region.wildKeys).");
+  } else if (keys_forced_dungeon) {
+    ImGui::BeginDisabled();
+    uint8 sk_shown = (uint8)kDungeonItemMode_Dungeon;
+    EnumCombo("Small keys", &sk_shown, kDungeonModeLabels, 3);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(forced by door shuffle)");
+    HelpTooltip("Door shuffle requires in-dungeon small keys; generation normalizes this value to 'dungeon'.");
   } else {
     if (EnumCombo("Small keys", &s->dungeon_small_keys_mode, kDungeonModeLabels, 3)) changed = true;
   }
-  if (EnumCombo("Big keys", &s->dungeon_big_keys_mode, kDungeonModeLabels, 3)) changed = true;
+  if (keys_forced_dungeon) {
+    ImGui::BeginDisabled();
+    uint8 bk_shown = (uint8)kDungeonItemMode_Dungeon;
+    EnumCombo("Big keys", &bk_shown, kDungeonModeLabels, 3);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(forced by door shuffle)");
+    HelpTooltip("Door shuffle requires in-dungeon big keys; generation normalizes this value to 'dungeon'.");
+  } else {
+    if (EnumCombo("Big keys", &s->dungeon_big_keys_mode, kDungeonModeLabels, 3)) changed = true;
+  }
   if (EnumCombo("Maps", &s->dungeon_maps_mode, kDungeonModeLabels, 3)) changed = true;
   if (EnumCombo("Compasses", &s->dungeon_compasses_mode, kDungeonModeLabels, 3)) changed = true;
 
   ImGui::Spacing();
-  ImGui::SeparatorText("Set all");
+  ImGui::TextUnformatted("Quick:");
+  ImGui::SameLine();
   auto set_all = [&](uint8 mode) {
     s->dungeon_small_keys_mode = mode;
     s->dungeon_big_keys_mode = mode;
@@ -670,11 +835,17 @@ static void Panel_Dungeons() {
     s->dungeon_compasses_mode = mode;
     changed = true;
   };
-  if (ImGui::Button("All vanilla")) set_all(kDungeonItemMode_Vanilla);
+  if (ImGui::SmallButton("Dungeon keys / wild maps")) {
+    ApplyDungeonKeysWildMapsPreset(s);
+    changed = true;
+  }
+  HelpTooltip("Small keys and big keys stay in their own dungeon; maps and compasses are shuffled anywhere.");
   ImGui::SameLine();
-  if (ImGui::Button("All dungeon")) set_all(kDungeonItemMode_Dungeon);
+  if (ImGui::SmallButton("All vanilla")) set_all(kDungeonItemMode_Vanilla);
   ImGui::SameLine();
-  if (ImGui::Button("All wild")) set_all(kDungeonItemMode_Wild);
+  if (ImGui::SmallButton("All dungeon")) set_all(kDungeonItemMode_Dungeon);
+  ImGui::SameLine();
+  if (ImGui::SmallButton("All wild")) set_all(kDungeonItemMode_Wild);
 
   if (changed) Pending_Changed();
 }
@@ -834,6 +1005,12 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffles each dungeon's interior door connections; key doors "
                 "move too. Hyrule Castle and Swamp Palace stay vanilla.");
 
+    if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 4)) {
+      changed = true;
+    }
+    HelpTooltip("Replaces some junk items with masquerade traps. They look like "
+                "normal pickups, but damage or briefly freeze Link.");
+
     // Not-yet-playable placeholders.
     ImGui::BeginDisabled();
     bool off = false;
@@ -852,6 +1029,17 @@ static void Panel_Trackers() {
       "update from live game state. You can also bind hotkeys "
       "(RandoItemTrackerWindow / RandoCheckTrackerWindow / RandoMapTrackerWindow) "
       "in zelda3.ini to toggle them during play.");
+  ImGui::Spacing();
+  if (ImGui::Button("Apply tiled layout")) {
+    Trackers_ApplyTiledLayout();
+  }
+  HelpTooltip("Tiles the Check Tracker on the left, the game in the center, and Map/Item trackers stacked on the right. Windowed mode only.");
+  ImGui::SameLine();
+  bool auto_tile = g_rando_window_prefs.tracker_tiled_layout_on_startup;
+  if (ImGui::Checkbox("Apply at startup", &auto_tile)) {
+    g_rando_window_prefs.tracker_tiled_layout_on_startup = auto_tile;
+  }
+  HelpTooltip("Recreates the tiled tracker layout automatically when the app starts.");
   ImGui::Spacing();
   struct { const char *label; int kind; } rows[] = {
       {"Item Tracker", kTracker_Item},
@@ -1195,31 +1383,105 @@ static void Panel_Spoiler() {
 
 static void RenderShareRow() {
   RandoWindowBridge *b = &g_rando_window_bridge;
-  static char s_paste_error[160];
+  // Sized to hold "Paste failed: " + a full RandoWindowBridge_Validate
+  // message (256) without -Wformat-truncation.
+  static char s_paste_error[320];
+  static char s_copy_status[32];
+  static int s_copy_status_frames = 0;
+  static bool s_copy_status_ok = false;
 
   if (ImGui::Button("Copy share string")) {
-    if (b->share_string[0]) SDL_SetClipboardText(b->share_string);
+    if (b->share_string[0] && SDL_SetClipboardText(b->share_string) == 0) {
+      snprintf(s_copy_status, sizeof s_copy_status, "Copied");
+      s_copy_status_ok = true;
+    } else {
+      snprintf(s_copy_status, sizeof s_copy_status, "Copy failed");
+      s_copy_status_ok = false;
+    }
+    s_copy_status_frames = 120;
   }
   ImGui::SameLine();
   if (ImGui::Button("Paste share string")) {
     s_paste_error[0] = '\0';
+    s_copy_status_frames = 0;
     char *clip = SDL_GetClipboardText();
     if (clip && clip[0]) {
       ShareString ss;
       ShareDecodeStatus st = Share_Decode(clip, &ss);
-      if (st == kShareDecodeOk) {
-        // A share string carries seed_u64 + the (one-way) settings_hash, NOT the
-        // full settings struct (settings_hash cannot be inverted). So we adopt the
-        // decoded seed and warn if the current settings' hash disagrees with the
+      if (st == kShareDecodeOk && ss.format == kShareFormatV2) {
+        // v2 carries the FULL canonical settings (add-rando-share-string-v2
+        // D2): restore every widget + the seed, gated by deserialize, the
+        // customizer manifest fence (D5), and cross-field validation (D3
+        // rule 4). Any refusal leaves all widgets untouched.
+        RandoSettings tmp;
+        char verr[256];
+        if (Settings_CanonicalDeserialize(ss.settings_canonical, &tmp) != 0) {
+          snprintf(s_paste_error, sizeof s_paste_error,
+                   "Paste failed: the share string carries invalid settings values.");
+        } else if (tmp.customizer_active) {
+          // D5 — manifest pins do not travel in settings; restoring the bit
+          // without the manifest would be a non-reproducible placement.
+          snprintf(s_paste_error, sizeof s_paste_error,
+                   "Paste failed: customizer seeds need their manifest file - "
+                   "settings can't be restored from a share string.");
+        } else if (RandoWindowBridge_Validate(&tmp, verr, sizeof verr) != 0) {
+          snprintf(s_paste_error, sizeof s_paste_error, "Paste failed: %s", verr);
+        } else {
+          b->pending = tmp;
+          b->seed_u64 = ss.seed_u64;
+          s_randomize_seed_each_generate = false;  // pasted seed is intentional; keep it
+          Pending_Changed();
+          // Arm the D6 Generate-mismatch check. pending_hash was just
+          // recomputed from the restored settings; its first 16 bytes ARE
+          // Settings_HashShort, so the check matches by construction until
+          // the user edits a widget.
+          memcpy(b->last_pasted_settings_hash16, b->pending_hash, 16);
+          b->paste_armed = true;
+          if (ss.version != (uint8)kGeneratorVersion) {
+            // D3 rule 2 — the canonical layout is append-only, so restore
+            // still happens; only the resulting placement may differ.
+            snprintf(s_paste_error, sizeof s_paste_error,
+                     "Settings and seed restored. This string is from randomizer "
+                     "version %u (this build: %u) - Generate may produce a "
+                     "different placement than the sharer's.",
+                     (unsigned)ss.version, (unsigned)kGeneratorVersion);
+          } else {
+            snprintf(s_paste_error, sizeof s_paste_error,
+                     "Settings and seed restored from share string.");
+          }
+        }
+      } else if (st == kShareDecodeOk) {
+        // v1 — carries seed_u64 + the (one-way) settings_hash, NOT the full
+        // settings struct (the hash cannot be inverted). Adopt the decoded
+        // seed and warn if the current settings' hash disagrees with the
         // pasted one — we do NOT fabricate widget values from the hash.
         b->seed_u64 = ss.seed_u64;
         s_randomize_seed_each_generate = false;  // pasted seed is intentional; keep it
         Pending_Changed();
-        if (memcmp(b->pending_hash, ss.settings_hash, 16) != 0) {
+        // Arm the D6 Generate-mismatch check with the EMBEDDED hash: since v1
+        // cannot restore settings, the modal fires at Generate whenever the
+        // local settings don't match the sharer's (the loud interim fix for
+        // the v1-paste silent-divergence incident).
+        memcpy(b->last_pasted_settings_hash16, ss.settings_hash, 16);
+        b->paste_armed = true;
+        bool hash_differs = memcmp(b->pending_hash, ss.settings_hash, 16) != 0;
+        if (ss.version != (uint8)kGeneratorVersion) {
+          // FIX #17c — Share_Decode validates magic + CRC but no caller compared
+          // the version byte (every encoder writes kGeneratorVersion): a string
+          // from a different randomizer version regenerates a DIFFERENT placement
+          // from the same seed. Warn on the same surface as the settings-hash
+          // note below; don't refuse (consistent with that precedent).
           snprintf(s_paste_error, sizeof s_paste_error,
-                   "Seed adopted. Note: current settings differ from the pasted "
-                   "string's settings (the share string cannot restore settings - "
-                   "pick them to match).");
+                   "Seed adopted. WARNING: this share string came from randomizer "
+                   "version %u but this build is version %u - the generated "
+                   "placement will differ from the original seed.%s",
+                   (unsigned)ss.version, (unsigned)kGeneratorVersion,
+                   hash_differs ? " (Settings differ from the pasted string's too.)" : "");
+        } else if (hash_differs) {
+          snprintf(s_paste_error, sizeof s_paste_error,
+                   "Seed adopted. A v1 share string cannot restore settings - "
+                   "current settings differ from the sharer's (match them by "
+                   "hand, or ask for a v2 string).");
         }
       } else {
         const char *why = "unrecognized share string";
@@ -1229,6 +1491,9 @@ static void RenderShareRow() {
           case kShareDecodeBadMagic:     why = "wrong magic / not a z3r share string"; break;
           case kShareDecodeBadChecksum:  why = "checksum mismatch"; break;
           case kShareDecodeAlttprFormat: why = "alttpr.com-format hashes are not supported"; break;
+          case kShareDecodeNewerSettings:
+            why = "made by a newer randomizer version - update this build to use it";
+            break;
           default: break;
         }
         snprintf(s_paste_error, sizeof s_paste_error, "Paste failed: %s.", why);
@@ -1238,6 +1503,13 @@ static void RenderShareRow() {
     }
     if (clip) SDL_free(clip);
   }
+  if (s_copy_status_frames > 0) {
+    ImGui::SameLine();
+    ImGui::TextColored(s_copy_status_ok ? ImVec4(0.4f, 0.85f, 0.4f, 1.0f)
+                                        : ImVec4(0.95f, 0.35f, 0.35f, 1.0f),
+                       "%s", s_copy_status);
+    s_copy_status_frames--;
+  }
   if (s_paste_error[0])
     ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.3f, 1.0f), "%s", s_paste_error);
 }
@@ -1245,15 +1517,27 @@ static void RenderShareRow() {
 // Modal IDs.
 static const char *kAssetModalId = "Asset data differs from vanilla";
 static const char *kGenModalId = "Generating seed...";
+static const char *kPasteMismatchModalId = "Settings differ from pasted share string";
 
 // Open-request flags handed to ImGui::OpenPopup at the top of the frame (must be
 // called from the same ID stack scope where BeginPopupModal lives).
 static bool s_open_asset_modal = false;
 static bool s_open_gen_modal = false;
+static bool s_open_paste_mismatch_modal = false;
 
 // Begin generation: gate on the asset hash; either open the asset modal or fire.
 static void TryBeginGenerate() {
   RandoWindowBridge *b = &g_rando_window_bridge;
+  // add-rando-share-string-v2 D6 — when settings drifted from the last pasted
+  // share string, interpose the confirmation modal. Checked BEFORE the seed
+  // reroll below so a Cancel leaves the seed untouched (spec scenario
+  // "Mismatched Generate is interrupted loudly"). The Generate-anyway button
+  // disarms and re-enters this function for the normal chain.
+  if (b->paste_armed &&
+      memcmp(b->pending_hash, b->last_pasted_settings_hash16, 16) != 0) {
+    s_open_paste_mismatch_modal = true;
+    return;
+  }
   // Fresh seed per generate (unless the user pinned one) — see
   // s_randomize_seed_each_generate. Recompute derived (hash/share string) so the
   // confirmation modal and any copy reflect the rolled seed.
@@ -1307,7 +1591,12 @@ static void RenderGenerateRow() {
   bool no_target = (b->target_slot_index < 0);
   bool disabled = (invalid != 0) || b->generate_in_progress || no_target;
   if (disabled) ImGui::BeginDisabled();
-  if (ImGui::Button("Generate & start new slot")) {
+  // Customizer mode swaps the button label (spec: "Generate from manifest"
+  // replaces the standard Generate) so the mode is visible at the action site.
+  const char *gen_label = b->pending.customizer_active
+                              ? "Generate from manifest & start new slot"
+                              : "Generate & start new slot";
+  if (ImGui::Button(gen_label)) {
     TryBeginGenerate();
   }
   if (disabled) {
@@ -1357,12 +1646,45 @@ static void RenderAssetModal() {
   }
 }
 
+// Pasted-settings mismatch modal (add-rando-share-string-v2 D6): opened by
+// TryBeginGenerate when settings drifted from the last pasted share string.
+static void RenderPasteMismatchModal() {
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  if (s_open_paste_mismatch_modal) {
+    ImGui::OpenPopup(kPasteMismatchModalId);
+    s_open_paste_mismatch_modal = false;
+  }
+  ImGui::SetNextWindowSize(ImVec2(440, 0), ImGuiCond_Appearing);
+  if (ImGui::BeginPopupModal(kPasteMismatchModalId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextWrapped(
+        "Settings no longer match the pasted share string. Generating now "
+        "makes a different seed.");
+    ImGui::Spacing();
+    if (ImGui::Button("Generate anyway")) {
+      // Disarm, then re-enter the normal Generate chain (seed reroll if
+      // enabled + the asset gate) — the D6 check no longer fires.
+      b->paste_armed = false;
+      ImGui::CloseCurrentPopup();
+      TryBeginGenerate();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+      ImGui::CloseCurrentPopup();  // no generation; stays armed for next time
+    }
+    ImGui::EndPopup();
+  }
+}
+
 // Generating-seed modal: input-blocking; polls bridge.generate_status.
 static void RenderGenerateModal() {
   RandoWindowBridge *b = &g_rando_window_bridge;
+  static char s_modal_copy_status[32];
+  static int s_modal_copy_status_frames = 0;
+  static bool s_modal_copy_status_ok = false;
   if (s_open_gen_modal) {
     ImGui::OpenPopup(kGenModalId);
     s_open_gen_modal = false;
+    s_modal_copy_status_frames = 0;
   }
   ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Appearing);
   if (ImGui::BeginPopupModal(kGenModalId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -1380,10 +1702,29 @@ static void RenderGenerateModal() {
       // moment has an affordance without digging back through the tabs.
       ImGui::Text("Seed: %016llx", (unsigned long long)b->last_generated_seed_u64);
       if (ImGui::Button("Copy share string")) {
-        if (b->last_generated_share_string[0])
-          SDL_SetClipboardText(b->last_generated_share_string);
+        // Prefer the lossless v2 exchange string (restores settings+seed on
+        // paste); fall back to the v1 identity string for customizer seeds,
+        // which have no v2 form (design D5).
+        const char *to_copy = b->last_generated_share_string_v2[0]
+                                  ? b->last_generated_share_string_v2
+                                  : b->last_generated_share_string;
+        if (to_copy[0] && SDL_SetClipboardText(to_copy) == 0) {
+          snprintf(s_modal_copy_status, sizeof s_modal_copy_status, "Copied");
+          s_modal_copy_status_ok = true;
+        } else {
+          snprintf(s_modal_copy_status, sizeof s_modal_copy_status, "Copy failed");
+          s_modal_copy_status_ok = false;
+        }
+        s_modal_copy_status_frames = 120;
       }
       HelpTooltip("Copy this seed's share string to the clipboard (to reproduce or share it later).");
+      if (s_modal_copy_status_frames > 0) {
+        ImGui::SameLine();
+        ImGui::TextColored(s_modal_copy_status_ok ? ImVec4(0.4f, 0.85f, 0.4f, 1.0f)
+                                                  : ImVec4(0.95f, 0.35f, 0.35f, 1.0f),
+                           "%s", s_modal_copy_status);
+        s_modal_copy_status_frames--;
+      }
       ImGui::Spacing();
       ImGui::TextUnformatted("Load it now?");
       ImGui::Spacing();
@@ -1615,7 +1956,10 @@ void RandoWindow_BeginFrame(void) {
   ImGui::End();
 
   // Modals are opened/polled outside the main window's Begin/End but inside the
-  // same frame so OpenPopup requests from this frame take effect.
+  // same frame so OpenPopup requests from this frame take effect. The paste-
+  // mismatch modal renders FIRST so its Generate-anyway re-entry can open the
+  // asset/generating modals in this same frame (same chaining as asset → gen).
+  RenderPasteMismatchModal();
   RenderAssetModal();
   RenderGenerateModal();
 }
