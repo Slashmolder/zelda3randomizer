@@ -404,6 +404,29 @@ uint16 Rando_LastDispatchedItemId(void) {
   return g_last_dispatched_item_id;
 }
 
+static bool rando_is_magic_upgrade_item(uint16 item_id) {
+  return item_id == ITEM_HalfMagic || item_id == ITEM_QuarterMagic;
+}
+
+static uint16 rando_direct_grant_icon_item_pre_grant(uint16 item_id) {
+  if (!rando_is_magic_upgrade_item(item_id))
+    return item_id;
+  return link_magic_consumption == 0 ? ITEM_HalfMagic : ITEM_QuarterMagic;
+}
+
+static uint16 rando_direct_grant_icon_item_post_grant(uint16 item_id) {
+  if (!rando_is_magic_upgrade_item(item_id))
+    return item_id;
+  return link_magic_consumption >= 2 ? ITEM_QuarterMagic : ITEM_HalfMagic;
+}
+
+static const DirectGrantIconEntry *rando_direct_grant_icon_entry(uint16 item_id) {
+  const size_t n = sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
+  if ((size_t)item_id >= n || kDirectGrantIcons[item_id].gfx == 0)
+    return NULL;
+  return &kDirectGrantIcons[item_id];
+}
+
 static uint8 trap_ascii_to_font(char ch) {
   if (ch >= 'A' && ch <= 'Z') return (uint8)(ch - 'A');
   if (ch >= 'a' && ch <= 'z') return (uint8)(26 + (ch - 'a'));
@@ -1246,8 +1269,10 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // Phase B Slice 9 (add-rando-confirmation-icons): extends Phase A's audio +
 // HUD-only cue with a visible icon ancilla. The granted item id is looked up
 // in kDirectGrantIcons[item_id] (codegen'd from
-// assets/rando/direct_grant_icons.yaml). When the table entry has a
-// non-zero gfx (the item's receive-animation sprite bundle),
+// assets/rando/direct_grant_icons.yaml). Magic upgrades are resolved through
+// the current progressive tier first, so either raw HalfMagic or QuarterMagic
+// shows 1/2 on the first upgrade and 1/4 on the second. When the table entry
+// has a non-zero gfx (the item's receive-animation sprite bundle),
 // AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon above Link's
 // head. Entries with gfx == 0 (the audio-only sentinel) fall back to the
 // Phase A audio + HUD behavior — never crash, never spawn a blank ancilla.
@@ -1264,9 +1289,8 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // ever reaches us. The skip-sentinel path only runs AFTER a successful
   // Rando_DispatchVanillaGrant, which populates g_last_dispatched_item_id
   // with a valid item id (< ITEM__COUNT), so the
-  // truncation is unreachable in normal flow. The bounds check at
-  // `(size_t)item_id < icon_table_len` defends the array access
-  // regardless; this assert just makes the invariant explicit so a
+  // truncation is unreachable in normal flow. The icon-entry helper defends the
+  // array access regardless; this assert just makes the invariant explicit so a
   // future change that calls this WITHOUT a prior dispatch fires loudly.
   assert(item_id != 0xFFu /* sentinel byte from 0xFFFF truncation */ ||
          Rando_LastDispatchedItemId() != 0xFFFFu);
@@ -1283,13 +1307,10 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // custom art, add-rando-field-item-custom-art), the kRandoCustomGfx_* tile
   // + palette — and draws it above Link, mirroring the vanilla pickup
   // animation.
-  const size_t icon_table_len =
-      sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
-  if ((size_t)item_id < icon_table_len) {
-    const DirectGrantIconEntry *e = &kDirectGrantIcons[item_id];
-    if (e->gfx != 0) {
-      AncillaAdd_RandoIconReceipt(e->gfx, e->big, e->oam_flags);
-    }
+  uint16 icon_item = rando_direct_grant_icon_item_post_grant(item_id);
+  const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
+  if (e != NULL) {
+    AncillaAdd_RandoIconReceipt(e->gfx, e->big, e->oam_flags);
   }
 }
 
@@ -1367,13 +1388,17 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
   // Tier 2 — items with a Slice-9 icon but no receive gfx: direct-grant items
   // (small keys, ...) and the custom-art items (TriforcePiece / HalfMagic /
   // QuarterMagic / Rupoor — gfx 0x80 bit, add-rando-field-item-custom-art;
-  // Rando_EnsureRecvItemSlotGfx loads their tile + SP3-upper palette). gfx==0
-  // entries (none currently mapped) fall back to the vanilla sprite.
-  const size_t n = sizeof(kDirectGrantIcons) / sizeof(kDirectGrantIcons[0]);
-  if ((size_t)placed < n && kDirectGrantIcons[placed].gfx != 0) {
-    *out_gfx = kDirectGrantIcons[placed].gfx;
-    *out_big = kDirectGrantIcons[placed].big;
-    *out_oam_flags = kDirectGrantIcons[placed].oam_flags;
+  // Rando_EnsureRecvItemSlotGfx loads their tile + SP3-upper palette). Magic
+  // upgrades are resolved to the NEXT progressive tier before indexing this
+  // table, so a raw QuarterMagic placement draws as 1/2 until half magic is
+  // owned. gfx==0 entries (none currently mapped) fall back to the vanilla
+  // sprite.
+  uint16 icon_item = rando_direct_grant_icon_item_pre_grant(placed);
+  const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
+  if (e != NULL) {
+    *out_gfx = e->gfx;
+    *out_big = e->big;
+    *out_oam_flags = e->oam_flags;
     return true;
   }
   return false;
@@ -4130,6 +4155,16 @@ void Rando_SelfCheck(void) {
     entries[0].item_id = ITEM_HalfMagic;  // 41
     RandoPlacementTable t = { entries, 1 };
     Placement_Install(&t);
+    const DirectGrantIconEntry *icon;
+    // Draw-side/confirmation icons follow the same progressive tier as the
+    // grant: the raw item identity is not visible to the player.
+    link_magic_consumption = 0;
+    icon = rando_direct_grant_icon_entry(
+        rando_direct_grant_icon_item_pre_grant(ITEM_QuarterMagic));
+    if (icon == NULL || icon->gfx != kRandoCustomGfx_HalfMagic) {
+      fprintf(stderr, "Rando_SelfCheck: first magic upgrade should draw 1/2 icon\n");
+      exit(2);
+    }
     // HalfMagic from full -> half.
     link_magic_consumption = 0;
     uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
@@ -4141,12 +4176,29 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: HalfMagic dispatch (from 0) should advance to 1 (half)\n");
       exit(2);
     }
+    icon = rando_direct_grant_icon_entry(
+        rando_direct_grant_icon_item_post_grant(ITEM_HalfMagic));
+    if (icon == NULL || icon->gfx != kRandoCustomGfx_HalfMagic) {
+      fprintf(stderr, "Rando_SelfCheck: first magic confirmation should show 1/2 icon\n");
+      exit(2);
+    }
     // A SECOND magic upgrade (QuarterMagic) advances half -> quarter.
     entries[0].item_id = ITEM_QuarterMagic;  // 42
     Placement_Install(&t);
+    if (rando_direct_grant_icon_item_pre_grant(ITEM_HalfMagic) != ITEM_QuarterMagic ||
+        rando_direct_grant_icon_item_pre_grant(ITEM_QuarterMagic) != ITEM_QuarterMagic) {
+      fprintf(stderr, "Rando_SelfCheck: second magic upgrade should draw 1/4 icon\n");
+      exit(2);
+    }
     Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
     if (link_magic_consumption != 2) {
       fprintf(stderr, "Rando_SelfCheck: 2nd magic upgrade should advance to 2 (quarter)\n");
+      exit(2);
+    }
+    icon = rando_direct_grant_icon_entry(
+        rando_direct_grant_icon_item_post_grant(ITEM_QuarterMagic));
+    if (icon == NULL || icon->gfx != kRandoCustomGfx_QuarterMagic) {
+      fprintf(stderr, "Rando_SelfCheck: second magic confirmation should show 1/4 icon\n");
       exit(2);
     }
     // A THIRD upgrade is capped (never exceeds quarter, never downgrades).
@@ -4158,9 +4210,21 @@ void Rando_SelfCheck(void) {
     // Progressive, order-independent: QuarterMagic collected FIRST gives half
     // (one tier), not quarter — the new behavior vs the old absolute jump-to-2.
     link_magic_consumption = 0;
+    icon = rando_direct_grant_icon_entry(
+        rando_direct_grant_icon_item_pre_grant(ITEM_QuarterMagic));
+    if (icon == NULL || icon->gfx != kRandoCustomGfx_HalfMagic) {
+      fprintf(stderr, "Rando_SelfCheck: QuarterMagic first should draw 1/2 icon\n");
+      exit(2);
+    }
     Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
     if (link_magic_consumption != 1) {
       fprintf(stderr, "Rando_SelfCheck: QuarterMagic from 0 should advance to 1 (progressive, not jump to 2)\n");
+      exit(2);
+    }
+    icon = rando_direct_grant_icon_entry(
+        rando_direct_grant_icon_item_post_grant(ITEM_QuarterMagic));
+    if (icon == NULL || icon->gfx != kRandoCustomGfx_HalfMagic) {
+      fprintf(stderr, "Rando_SelfCheck: QuarterMagic first confirmation should show 1/2 icon\n");
       exit(2);
     }
     Placement_Install(NULL);
