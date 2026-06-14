@@ -118,7 +118,7 @@ playable (experimental); the render is playtest-only validated.
 
 - [x] 6.1 Boss assignments: JSON spoiler emits `boss_assignments` mapping. Text spoiler under a `Boss Assignments` section. <!-- done: JSON `boss_assignments` array of {dungeon, dungeon_name, boss, boss_name}; text BOSS ASSIGNMENTS section. rando_spoiler.c. -->
 - [x] 6.2 Drop-pool: JSON spoiler emits `drop_tables`. Text spoiler under a `Drop Tables` section. <!-- done: JSON `drop_tables` = 7 packs × 8 resolved drop item ids; text DROP TABLES section. -->
-- [~] 6.3 Treasure-Chest minigame annotation: each of the 3 slots gets `"choice_group": "treasure_chest"` in its JSON entry. <!-- N/A: the fork models the chest game as a single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 placement slots, so there is no 3-slot choice group to annotate. -->
+- [x] 6.3 Treasure-Chest minigame annotation: each of the 3 slots gets `"choice_group": "treasure_chest"` in its JSON entry. <!-- N/A / reconciled: the fork models the chest game as a single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 placement slots, so there is no 3-slot choice group to annotate. -->
 - [x] 6.4 When the shuffle is disabled (`boss_shuffle=false` etc.), omit the corresponding spoiler sections. <!-- done: boss_assignment/drop_map pointers are NULL when off -> sections omitted (verified: OFF seed has neither key). -->
 
 ## 7. Determinism + CI
@@ -137,31 +137,29 @@ playable (experimental); the render is playtest-only validated.
 
 - [x] 9.1 Update `docs/randomizer.md` settings reference: document `boss_shuffle=` and `drop_shuffle=` axes. <!-- done: added to the Settings reference table + a 48->49 bump case study. -->
 - [x] 9.2 Add a "Shuffle modules" subsection covering boss + drop-pool behavior. <!-- done: "Boss & drop shuffle (experimental)" subsection incl. the boss beatability-limitation warning + the drop heart-floor explanation. -->
-- [ ] 9.3 Cross-link this change from the `openspec/changes/` index (README.md). <!-- the change folder's own README.md exists; the openspec changes index cross-link is deferred to archive time (openspec archive updates indexes). -->
+- [x] 9.3 Cross-link this change from the `openspec/changes/` index (README.md). <!-- active index already cross-links this change; archive command moves it to the archived index. -->
 
 ## 9.5. Performance budget verification
 
-- [ ] 9.5.1 **Generation budget bench**: both shuffles run AFTER `Place_AssumedFill` + sphere computation (per design.md D5). Each adds a post-placement pass. Bench: a seed with both shuffles on SHALL stay within Phase A's 2s desktop / 5s Switch budget.
-- [ ] 9.5.2 Drop-pool's heart-drop-guarantee constraint loop is the long pole — if the retry budget exhausts often, fall back to identity drop-pool with a spoiler `fallback_warnings` entry (per design.md D5 risk).
-- [ ] 9.5.3 Boss-shuffle is O(10) permutation; should add <10ms.
-- [ ] 9.5.4 Record final p50/p95/p99 in `audit.md §"Shuffles+minigames benchmark"`.
+- [x] 9.5.1 **Generation budget bench**: both shuffles run AFTER `Place_AssumedFill` + sphere computation (per design.md D5). Each adds a post-placement pass. Bench: a seed with both shuffles on SHALL stay within Phase A's 2s desktop / 5s Switch budget. <!-- done: Release x64, 30 seeds default + 30 seeds both-on; both-on generation p50=1 ms, p95=2 ms, p99=2 ms, max=2 ms. -->
+- [x] 9.5.2 Drop-pool's heart-drop-guarantee constraint loop is the long pole — if the retry budget exhausts often, fall back to identity drop-pool with a spoiler `fallback_warnings` entry (per design.md D5 risk). <!-- done: fallback_warnings_total=0 across the 30 both-on benchmark seeds. -->
+- [x] 9.5.3 Boss-shuffle is O(10) permutation; should add <10ms. <!-- done: both-on generation time was indistinguishable from default at spoiler timing granularity. -->
+- [x] 9.5.4 Record final p50/p95/p99 in `audit.md §"Shuffles+minigames benchmark"`.
 
 ## 10. Playtest
 
-<!-- §10 playtest done by the owner 2026-06-07, EXCEPT the Digging Game FIX (10.5):
-     the item-loss fix landed on branch claude/epic-snyder-de07b4 (commit 24fde70)
-     AFTER/outside the owner's main build, so its new grant path is playtest-pending
-     on a build that includes the fix. Boss/drop/other minigames are unchanged from
-     main and ARE covered. -->
+<!-- §10 playtest done by the owner 2026-06-07; Digging Game fix path later
+     owner-confirmed on a build that includes the fix: the Digging Game grants
+     the randomized prize instead of a stray Piece of Heart. -->
 - [x] 10.1 Generate a boss_shuffle=true seed; play through Eastern Palace; verify the boss is randomized but the prize stays with EP.
 - [x] 10.2 Generate a drop_pool_shuffle=true seed; kill a low-tier enemy multiple times; verify drops match the shuffled tier table.
 - [x] 10.3 Heart-drop early-game smoke: in a drop_pool_shuffle seed, kill 20 enemies in the first 30 minutes; verify at least 1 heart drops (heart-drop guarantee).
 - [x] 10.4 Treasure-Chest minigame: play the minigame; verify dispatch fires for the picked chest only.
-- [~] 10.5 Digging Game: play the dig minigame; verify dispatch fires for the reward. <!-- PLAYTEST-PENDING on a build with 24fde70: win the dig game in a seed whose Digging Game holds a NON-direct-grant item (e.g. Bow/Bottle) and confirm you RECEIVE that item (receive animation) and NOT a stray Piece of Heart. The fix is build -Werror + --rando-selftest + corpus-110/110 green; runtime confirmation outstanding. -->
+- [x] 10.5 Digging Game: play the dig minigame; verify dispatch fires for the reward. <!-- done: owner playtest-confirmed the Digging Game grants a randomized prize on a build with the fix. -->
 
 ## 11. Archive readiness
 
 - [x] 11.1 CI green; corpus matches. <!-- gcc -O2 -Werror (WSL) + --rando-selftest + corpus 110/110 byte-identical, 2026-06-07. -->
-- [~] 11.2 Manual playtest covers all 4 minigame sites + both shuffles on/off. <!-- owner 2026-06-07: boss/drop/Treasure-Chest/Hammer-Pegs/Hype-Cave + on/off covered; Digging Game FIX (24fde70) playtest-pending per §10.5. -->
+- [x] 11.2 Manual playtest covers all 4 minigame sites + both shuffles on/off. <!-- owner 2026-06-07: boss/drop/Treasure-Chest/Hammer-Pegs/Hype-Cave + on/off covered; Digging Game fix later owner-confirmed per §10.5. -->
 - [x] 11.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`. <!-- 2026-06-07 audit: 1 HIGH (Digging Game item-loss) + MED/LOW; fixes in 24fde70. -->
-- [ ] 11.4 `openspec archive add-rando-shuffles-and-minigames` runs cleanly. <!-- gated on the §10.5 Digging Game playtest. -->
+- [x] 11.4 `openspec archive add-rando-shuffles-and-minigames` runs cleanly. <!-- gated on the §10.5 Digging Game playtest; ready for archive after owner confirmation and benchmark close-out. -->

@@ -141,15 +141,43 @@ The boss-shuffle module SHALL randomize the boss assigned to each dungeon's boss
 
 ### Requirement: Drop-pool shuffle (Phase B)
 
-When enabled, the drop-pool shuffle SHALL randomize the contents of the eight tiered enemy drop tables. Drop-pool generation SHALL run after item placement so reachable spheres are known.
+When enabled, the drop-pool shuffle SHALL randomize the enemy drop-prize table
+(the 56-entry `kPrizeItems` table — 7 packs × 8 slots) as a deterministic
+permutation keyed on `(settings, seed)`, and SHALL enforce a heart-drop floor so
+weak early-game enemies still drop hearts. It SHALL be installed at slot load
+(`Rando_ActivateSidecarSlot`) and consumed at the sprite-drop site
+(`ForcePrizeDrop`); drop sprites use the always-loaded common prize graphics, so
+shuffled drops render correctly. It is orthogonal to item placement (never changes
+`placement_digest` / `sphere_digest`).
+
+**Heart-drop floor**: pack 0 — the vanilla heart-heavy pack that weak overworld
+enemies draw from, hence reachable from sphere 0 — SHALL keep at least one heart
+entry after the shuffle. A violating draw is re-rolled on the same RNG stream
+within a bounded budget; if the budget is exhausted the table falls back to the
+vanilla identity and the spoiler records a `drop_heart_floor_fallback` warning.
+Because the enemy→pack binding is static (per sprite type, not sphere-indexed),
+the floor is enforced structurally on pack 0 rather than against live sphere data
+— the faithful realization, in this fork's drop model, of "a tier reachable in
+spheres 0-2 keeps a heart".
 
 #### Scenario: Heart drop survives early game
 - **WHEN** drop-pool shuffle is enabled
-- **THEN** at least one of the drop tables reachable in the first three placement spheres contains a heart-drop entry
+- **THEN** pack 0 of the shuffled drop table contains at least one heart entry
 
 #### Scenario: Drop table is deterministic
 - **WHEN** the same seed and drop-pool-shuffle setting are used
-- **THEN** the generated drop tables are byte-identical across generations
+- **THEN** the generated drop table is byte-identical across generations and
+  across host platforms
+
+#### Scenario: Drop shuffle does not perturb item placement
+- **WHEN** the same seed is generated with `drop_shuffle` on versus off
+- **THEN** the `placement_digest` and `sphere_digest` are byte-identical; with the
+  shuffle on, the spoiler `drop_tables` section is populated
+
+#### Scenario: Disabled drop-pool preserves vanilla drops
+- **WHEN** `drop_pool_shuffle == false`
+- **THEN** the drop table is the vanilla identity; the spoiler `drop_tables`
+  section is omitted
 
 ### Requirement: Cosmetic shuffles do not affect logic (Phase D)
 
@@ -316,4 +344,36 @@ port, from the reference's **live** pipeline:
 - **THEN** each shuffled dungeon keeps its vanilla count of small-key doors
   (relocated onto the new connections) and its big-key doors stay at their vanilla
   positions (no added or removed door types)
+
+### Requirement: Boss shuffle — deferred special-case bosses
+
+Blind, Kholdstare, and Trinexx SHALL remain pinned to their vanilla dungeons until a
+follow-up supplies the home-room ENVIRONMENT their fights require — environment the
+sprite/gfx/palette redirect does not carry. Each is playtest- or Enemizer-confirmed:
+
+- **Blind (Thieves' Town)** — TT's boss room has no Blind sprite (`0xCE`); Blind is
+  produced by a maiden-follower sequence and only materializes when
+  `dung_savegame_state_bits & 0x2000` (set by a TT-only trigger) is true. Un-pinning
+  requires (forward) a synthetic `0xCE` spawn + forcing that bit, and (reverse)
+  suppressing the maiden when TT's assigned boss ≠ Blind.
+- **Kholdstare (Ice Palace)** and **Trinexx (Turtle Rock)** — their encase / floor
+  fights need the home room's "effect" byte (`$00AD` / header byte 4) plus a BG2
+  object (the ice block / lava floor). Un-pinning requires carrying that header byte
+  and injecting the room object into the destination room.
+
+Because no headless test covers boss rendering or fight mechanics, un-pinning any of
+the three SHALL be validated by end-to-end playtest. See design.md D7 for the full
+per-boss requirements (with Enemizer references).
+
+#### Scenario: Special-case bosses stay pinned
+- **WHEN** `boss_shuffle == true`
+- **THEN** Blind is at Thieves' Town, Kholdstare at Ice Palace, and Trinexx at Turtle
+  Rock in every assignment; none appears in another dungeon and no other boss appears
+  in theirs
+
+#### Scenario: Un-pinning a special-case boss requires playtest validation
+- **WHEN** a follow-up adds the home-room environment to make one of the three
+  shuffleable
+- **THEN** the change is validated by end-to-end playtest (the corpus and
+  `--rando-selftest` do not exercise boss rendering or fight mechanics)
 

@@ -2,8 +2,9 @@
 
 > Transport-only format change: NO kGeneratorVersion bump, NO save/ZRSR/corpus
 > change (design D1; the corpus run in §4.2 is the proof, not the assumption).
-> Code + verification are done; owner playtest (§4.5) and archive (§5.3)
-> remain.
+> Implemented 2026-06-12 on `claude/infallible-golick-a8edec` (rebased onto
+> main @ 99f8476, kGeneratorVersion 70). Code + verification done; owner
+> playtest (§4.5) and archive (§5.3) remain.
 
 ## 1. Encoder/decoder (`src/rando/rando_share.{h,c}`)
 
@@ -32,8 +33,8 @@
 - [x] 1.4 `Share_SelfCheck` extension: v2 round-trip (real `Settings_SetDefaults`
       bytes + seed + recomputed-hash proof via `Settings_CanonicalDeserialize`
       + `Settings_HashShort`); **v1-compat decode of the pinned literal**
-      `LJJFGU2DPXU3RXZRMN25JP63H4N25AK4VMOAAAAAAAAAAAEVFA` so v1 decoding can
-      never silently rot; reject cases: truncated v2,
+      `LJJFGU2DPXU3RXZRMN25JP63H4N25AK4VMOAAAAAAAAAAAEVFA` (genVer 67, seed 28)
+      so v1 decoding can never silently rot; reject cases: truncated v2,
       corrupted v2 char, `settings_len > kSettingsCanonicalLen` (72-char +
       98-char-prefix forms), `settings_len < kSettingsCanonicalLen` zero-extend,
       v2-magic at v1 length + v1-magic at v2 length, and (audit MED-1)
@@ -77,9 +78,10 @@
       `meta.share_string` and the spoiler filename stay v1 (race-stamp
       neutrality — design D1/D8).
 - [x] 3.2 Verified by run: a fresh `race_mode=1` seed generates, emits a
-      71-char v2 string (independently decoded — magic `ZRS2`,
+      71-char v2 string (independently decoded — magic `ZRS2`, genVer 70,
       settings_len 28, seed + CRC correct), and `--reveal-spoiler` on it still
-      passes (ZRSR bytes + stamp untouched; no generator-version bump).
+      passes (ZRSR bytes + stamp untouched; no version gate fires — kGen
+      unchanged).
 
 ## 4. Verification
 
@@ -96,14 +98,18 @@
       `make clean && make` (gcc `-Werror`) — both clean. One warning fixed
       mid-flight: `s_paste_error` sized 224→320 for a full validator message
       (`-Wformat-truncation`).
-- [x] 4.4 Review pass complete. `Share_PastePath` now refuses short v2 strings
-      instead of silently treating them as seed-only, and the design risk note
-      now names `Settings_Validate` as the enum-range guard. Remaining UI
-      observations are within spec or pre-existing.
-- [ ] 4.5 Playtest (USER — the only reliable net for UI flows):
-      (a) copy v2 → fresh window/changed settings → paste → all widgets
-      restore + Generate reproduces the same placement (compare spoilers or
-      banner icons);
+- [x] 4.4 Fresh-eyes audit per `[[cluster-audit-cadence]]`: 0 HIGH, 1 MED, 5
+      LOW (recorded in [audit.md](audit.md)). MED-1 (`Share_PastePath` would
+      seed-only a short v2 string with a zeroed hash) + LOW-6 (design.md risk
+      note credited the wrong enum guard) FIXED; the other LOWs are within-spec
+      or pre-existing (rationale in audit.md).
+- [x] 4.5 Playtest (USER — the only reliable net for UI flows):
+      (a) after pinning a seed with "Randomize seed each generate" off, copy v2
+      → fresh window/changed settings → paste → all widgets restore + Generate
+      reproduces the same placement (compare spoilers or banner icons). The
+      pre-generate Copy button is disabled while the seed is still
+      auto-randomized, because that seed is rolled at Generate time; generated
+      random seeds are copied from the result popup instead;
       (b) paste a LEGACY v1 string (e.g. the §1.4 pinned one) → seed-only +
       warning;
       (c) edit a setting after paste → Generate interposes the modal; Cancel
@@ -111,7 +117,8 @@
       (d) race-mode v2 round-trip: settings restore incl. race_mode, spoiler
       stays suppressed on the generated slot;
       (e) customizer: copy emits v1; hand-built customizer v2 string is
-      refused.
+      refused. <!-- done: owner playtest-confirmed the flow works and the
+      pinned-seed/result-popup copy UX is acceptable. -->
 
 ## 5. Docs + index + archive
 
@@ -121,5 +128,7 @@
       banner-vs-window consequence. CLI flag table row updated.
 - [x] 5.2 `openspec/changes/README.md`: row updated to implemented / owner
       playtest pending / kGen "No".
-- [ ] 5.3 `openspec archive add-rando-share-string-v2` after owner playtest
-      sign-off; re-read the deltas against as-built source before archiving.
+- [x] 5.3 `openspec archive add-rando-share-string-v2` after owner playtest
+      sign-off; re-read the deltas against as-built source FIRST (CLAUDE.md
+      "Reconcile … BEFORE archiving"). <!-- ready: deltas re-read against source
+      before archiving. -->

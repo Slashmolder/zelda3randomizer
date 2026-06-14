@@ -37,7 +37,14 @@
 //                                         Snapshot-safe. (The enum name keeps its
 //                                         original ...VanPos2 spelling; it is the
 //                                         base of the 4-byte per-slot shadow array.)
-//   0x666-0x66f reserved                 (10 bytes forward-compat headroom)
+//   0x666-0x669 kRam_EnemyShuffleLiveSubset (4 bytes) — rando: the resolved
+//                                         sprite GFX subgroup sheet set most
+//                                         recently committed by the enemy-shuffle
+//                                         room/area sheet resolver.
+//   0x66a-0x66b kRam_EnemyShuffleLiveKey (uint16) — room/area key for the
+//                                         resolved sheet set above.
+//   0x66c       kRam_EnemyShuffleLiveContext (1 byte) — 1 dungeon, 2 overworld.
+//   0x66d-0x66f reserved                 (3 bytes forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
@@ -53,6 +60,9 @@ enum {
   kRam_PreTemperSword = 0x660,
   kRam_RandoSwordless = 0x661,
   kRam_EnemyShuffleVanPos2 = 0x662,
+  kRam_EnemyShuffleLiveSubset = 0x666,
+  kRam_EnemyShuffleLiveKey = 0x66a,
+  kRam_EnemyShuffleLiveContext = 0x66c,
 };
 
 enum {

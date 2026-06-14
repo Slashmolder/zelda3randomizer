@@ -1,8 +1,8 @@
 # Tasks — add-jp-overworld-music
 
 As-built: behavior shipped and merged to main (commit `2dc0439`) before this
-spec; implementation tasks are `[x]` (cite the commit), playtest is `[ ]`.
-Archive-gate: owner playtest.
+spec; implementation tasks are `[x]` (cite the commit), playtest is `[x]`.
+Archive-gate cleared by owner playtest.
 
 ## 1. Flag + behavior
 
@@ -32,6 +32,7 @@ Archive-gate: owner playtest.
 
 ## 4. Playtest (archive-gate)
 
-- [ ] 4.1 In-game: with the checkbox ON, confirm the JP-1.0 track + ambient play
+- [x] 4.1 In-game: with the checkbox ON, confirm the JP-1.0 track + ambient play
   on the destination screen after (a) a mirror warp and (b) a long screen
-  transition; with it OFF, confirm US-1.0 audio is unchanged.
+  transition; with it OFF, confirm US-1.0 audio is unchanged. <!-- done: owner
+  playtest-confirmed. -->

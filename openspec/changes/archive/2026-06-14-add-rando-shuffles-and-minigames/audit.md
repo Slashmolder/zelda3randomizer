@@ -137,16 +137,23 @@ earlier "Status (2026-05-27)" block above is partly superseded:
 
 ### Shuffles+minigames benchmark (task 9.5.4)
 
-Generation wall-clock over 30 seeds each (desktop Release x64; the value is
-the spoiler's `generation_wall_clock_ms`):
+Generation wall-clock over 30 seeds each (Windows desktop Release x64,
+`bin/x64-Release/zelda3.exe`, 2026-06-13). The first table is the spoiler's
+`generation_wall_clock_ms`; the second is end-to-end process time including
+launch and spoiler I/O.
 
 | Settings | p50 | p95 | p99 | max |
 |---|---|---|---|---|
-| default (shuffles off) | 1 ms | 3 ms | 3 ms | 3 ms |
-| boss + drop both on    | 1 ms | 3 ms | 3 ms | 3 ms |
+| default (shuffles off) | 1 ms | 2 ms | 2 ms | 3 ms |
+| boss + drop both on    | 1 ms | 2 ms | 2 ms | 2 ms |
+
+| Settings | p50 | p95 | p99 | max |
+|---|---|---|---|---|
+| default (shuffles off) | 31.0 ms | 32.0 ms | 32.0 ms | 93.0 ms |
+| boss + drop both on    | 16.0 ms | 31.0 ms | 31.0 ms | 32.0 ms |
 
 Both-on is indistinguishable from default — boss shuffle is an O(10) permutation
 and drop shuffle is an O(56) permutation with a bounded (≤16) heart-floor re-roll,
 all dwarfed by placement. Far within the 2 s desktop / 5 s Switch budget (§9.5.1).
 The heart-floor retry loop (§9.5.2) never approached its budget in any sampled
-seed; the identity fallback did not fire.
+seed; `fallback_warnings_total=0`, so the identity fallback did not fire.

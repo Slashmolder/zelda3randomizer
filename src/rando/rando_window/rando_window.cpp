@@ -1390,8 +1390,11 @@ static void RenderShareRow() {
   static int s_copy_status_frames = 0;
   static bool s_copy_status_ok = false;
 
+  const char *copy_share = !s_randomize_seed_each_generate ? b->share_string : NULL;
+  bool can_copy_share = copy_share != NULL && copy_share[0] != '\0';
+  ImGui::BeginDisabled(!can_copy_share);
   if (ImGui::Button("Copy share string")) {
-    if (b->share_string[0] && SDL_SetClipboardText(b->share_string) == 0) {
+    if (can_copy_share && SDL_SetClipboardText(copy_share) == 0) {
       snprintf(s_copy_status, sizeof s_copy_status, "Copied");
       s_copy_status_ok = true;
     } else {
@@ -1399,6 +1402,12 @@ static void RenderShareRow() {
       s_copy_status_ok = false;
     }
     s_copy_status_frames = 120;
+  }
+  ImGui::EndDisabled();
+  if (!can_copy_share) {
+    HelpTooltip(s_randomize_seed_each_generate
+                    ? "Uncheck Randomize seed each generate to copy a pinned seed. After Generate, use the result popup's copy button."
+                    : "No share string is available to copy.");
   }
   ImGui::SameLine();
   if (ImGui::Button("Paste share string")) {

@@ -58,6 +58,8 @@ Trinexx's FireRod+IceRod) shuffled into a dungeon cannot strand its prize
 - **THEN** every dungeon's boss is its vanilla boss; the spoiler `boss_assignments`
   section is omitted
 
+## ADDED Requirements
+
 ### Requirement: Boss shuffle — deferred special-case bosses
 
 Blind, Kholdstare, and Trinexx SHALL remain pinned to their vanilla dungeons until a
@@ -89,6 +91,8 @@ per-boss requirements (with Enemizer references).
   shuffleable
 - **THEN** the change is validated by end-to-end playtest (the corpus and
   `--rando-selftest` do not exercise boss rendering or fight mechanics)
+
+## MODIFIED Requirements
 
 ### Requirement: Drop-pool shuffle (Phase B)
 
