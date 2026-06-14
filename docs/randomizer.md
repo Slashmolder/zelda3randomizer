@@ -97,6 +97,7 @@ axis via `item_pool`.
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
 | `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high` | `off` |
+| `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
@@ -1139,6 +1140,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 67→68 | **Retire dead Fountain placement slots** — Waterfall Bottle/Pyramid Bottle sparse slots are removed from the fillable registry/pool. | All corpus placement/sphere digests regenerated because the open-location count and junk padding changed; settings serialization is unchanged. |
 | 68→69 | **Traps** — `traps=low|medium|high` replaces eligible final junk-filled placements with `TrapDamage` / `TrapFreeze`; pickup shows the generated fool message and skips vanilla item receipt. | Default `traps=off` keeps canonical byte `[26]` bits2-3 zero, so pre-existing v68 no-traps corpus seeds stay byte-identical; traps-on seeds intentionally change placement output and settings_hash. |
 | 70→71 | **Retire boss-heart shuffle UI / always shuffle boss drops** — the legacy `region_boss_hearts_in_pool` byte canonicalizes to `0`, boss Drop slots are fillable locations, and the selected item-pool difficulty's BossHeartContainer copies always enter the pool. The obsolete Pyramid Fairy bow-upgrade setting is no longer shown in the native window. | Default settings hash changes (`[10]` 1→0) and placement/sphere digests move globally because 10 boss Drop locations join fill and BossHeartContainer items are no longer pinned to boss drops. |
+| 74→75 | **Instant flute default** — rando flute pickups grant the active bird-woken flute immediately, and `CanFly` no longer requires the separate activation route. | Inverted flute-gated placement/sphere digests can move; settings_hash and `kSettingsCanonicalLen` unchanged. |
+| 75→76 | **Instant flute seed setting** — `instant_flute` is now a canonical seed option, default `true`; byte `[26]` bit4 disables it by encoding the inverse manual-activation mode. | Default settings hash and default placement digests stay byte-identical vs v75. `instant_flute=false` seeds restore the old activation gate and can move Inverted flute-gated placement/sphere digests. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

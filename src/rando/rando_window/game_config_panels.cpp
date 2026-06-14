@@ -1065,9 +1065,12 @@ void DbgInventory_Render(void) {
           bool sel = (v == i);
           if (ImGui::Selectable(k[i], sel) && i != v) {
             Cheats_PokeByte(0xF34C, i, 0, 3);  // 0=none,1=shovel,2=flute,3=active flute
-            // Sync rando ownership to exactly the selected item: Shovel=0x01,
-            // inactive Flute=0x02, active Flute=Flute|FluteActive=0x06 — matching
-            // Rando_GrantFluteShovel(0x4a). See kRandoFluteShovel_* (rando.h).
+            // Sync rando ownership to exactly the selected debug state:
+            // Shovel=0x01, inactive Flute=0x02, active
+            // Flute=Flute|FluteActive=0x06. Normal rando grants may promote
+            // flute pickups straight to active depending on the seed's
+            // instant_flute setting; the inactive option remains here for
+            // explicit save-state/debug pokes.
             if (rando && Cheats_CanEdit())
               g_rando_flute_shovel_owned =
                   (i == 1) ? 0x01 : (i == 2) ? 0x02 : (i == 3) ? 0x06 : 0x00;

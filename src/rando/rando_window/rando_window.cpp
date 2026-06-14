@@ -322,11 +322,23 @@ static const int kRecCount = (int)(sizeof(kRecBits) / sizeof(kRecBits[0]));
 
 static void Panel_RecommendedFeatures() {
   RandoWindowBridge *b = &g_rando_window_bridge;
+  RandoSettings *s = &b->pending;
   uint32 *f = &b->pending_recommended_features0;
+  ImGui::SeparatorText("Seed rules");
+  bool instant_flute = s->instant_flute != 0;
+  if (ImGui::Checkbox("Instant flute activation", &instant_flute)) {
+    s->instant_flute = instant_flute ? 1 : 0;
+    Pending_Changed();
+  }
+  HelpTooltip("When you receive the flute, it is immediately treated as bird-woken. "
+              "Turning this off restores the old play-for-the-bird activation route. "
+              "This changes settings_hash and the share string.");
+  ImGui::Spacing();
+
+  ImGui::SeparatorText("Gameplay features");
   ImGui::TextWrapped(
-      "Quality-of-life features baked into the seed you generate here. They ride "
-      "along with the generated slot and are NOT part of the settings hash or "
-      "share string - toggling them won't change the seed's identity. "
+      "These features ride along with the generated slot and are NOT part of the "
+      "settings hash or share string - toggling them won't change the seed's identity. "
       "(The same features for normal play live under Game Settings -> "
       "Gameplay; this panel only sets what gets stamped into this seed.)");
   ImGui::Spacing();
@@ -685,9 +697,8 @@ static void Panel_General() {
     }
   }
 
-  // Quality-of-Life enhancement bits live in their own top-level tab
-  // (Panel_RecommendedFeatures), not here — they are opt-in and not part of the
-  // settings hash, so they don't belong among the core seed-defining axes.
+  // Quality-of-Life controls live in their own top-level tab
+  // (Panel_RecommendedFeatures): seed-burned QoL plus per-slot feature bits.
 
   // Window theme/scale moved to Game Settings -> Interface (it's a property of
   // this settings window, not a randomizer axis). Don't duplicate it here.

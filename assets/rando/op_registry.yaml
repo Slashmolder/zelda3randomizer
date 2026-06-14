@@ -263,6 +263,17 @@ ops:
       crystal-aware explorer the stitcher and prover use, so generator and
       logic cannot drift.
 
+  - id: 22
+    name: OP_INSTANT_FLUTE
+    phase: C
+    operands: []
+    semantics: |
+      true iff settings.instant_flute is enabled. Used by CanFly so the
+      seed-burned instant-flute QoL can make owning OcarinaInactive sufficient
+      for duck travel, while instant_flute=false restores ALTTPR's separate
+      canActivateOcarina route.
+    contexts: [can_reach, can_place]
+
 
 
 # ---------------------------------------------------------------------------

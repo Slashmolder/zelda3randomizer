@@ -32,8 +32,8 @@ edges:
   #   canFly OR (canLiftRocks AND Lamp) OR canBootsClip+Boots OR
   #   canOneFrameClipOW OR (canOWYBA AND hasABottle)
   # All glitch/OWYBA alternatives drop. Surviving:
-  #   - canFly (flute return from DW; CanFly itself encodes the
-  #     Inverted-flute-activation gate via CanActivateOcarina)
+  #   - canFly (flute return from DW; default instant_flute seeds activate on
+  #     pickup, while instant_flute=false keeps the ALTTPR activation gate)
   #   - canLiftRocks AND Lamp (rock-climb entrance)
   # Entry from LW-NE — the broader LW connectivity already requires the
   # inverted mirror entry (modeled in LightWorld/NorthEast.yaml).

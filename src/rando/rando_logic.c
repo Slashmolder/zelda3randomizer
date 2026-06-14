@@ -287,6 +287,11 @@ static bool eval_modeweapons_eq(Cursor *c, const PredicateContext *ctx) {
   return ctx->settings->mode_weapons == mw;
 }
 
+static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  return ctx->settings != NULL && ctx->settings->instant_flute != 0;
+}
+
 // Boss-shuffle runtime — "can kill the boss assigned to dungeon_id". Resolves
 // the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
 // via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
@@ -346,6 +351,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_CAN_KILL_BOSS:          return eval_can_kill_boss(c, ctx);
     case OP_DOORS_ACTIVE:           return eval_doors_active(c, ctx);
     case OP_DOORS_LOC_REACHABLE:    return eval_doors_loc_reachable(c, ctx);
+    case OP_INSTANT_FLUTE:          return eval_instant_flute(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -705,15 +711,18 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
         ? door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
                      sizeof(ctx->counts->by_item_id))
         : 0;
-    // A door VM predicate can read settings->mode_weapons (swordless) via
-    // OP_MODEWEAPONS_EQ, so the per-counts memo/flood fingerprint is NOT a pure
-    // function of the inventory counts. Fold mode_weapons in too so a
-    // future caller that evaluates the same door layout under two settings
-    // differing only in swordless can't get a stale memoized result. Memo-key
-    // only — never affects the computed value, so placement is byte-identical.
-    if (ctx->settings)
+    // A door VM predicate can read settings fields via ops such as
+    // OP_MODEWEAPONS_EQ and OP_INSTANT_FLUTE, so the per-counts memo/flood
+    // fingerprint is NOT a pure function of the inventory counts. Fold those
+    // fields in too so a future caller that evaluates the same door layout under
+    // two settings differing only there can't get a stale memoized result.
+    // Memo-key only — never affects the computed value.
+    if (ctx->settings) {
       fp = door_fnv64(fp, &ctx->settings->mode_weapons,
                       sizeof(ctx->settings->mode_weapons));
+      fp = door_fnv64(fp, &ctx->settings->instant_flute,
+                      sizeof(ctx->settings->instant_flute));
+    }
     g_door_counts_fp = fp;
     g_door_counts_fp_gen = g_door_oracle_gen;
   }
@@ -1455,6 +1464,16 @@ void Logic_SelfCheck(void) {
     uint8 bc0[] = { OP_MODEWEAPONS_EQ, 0 };  // randomized
     LSC_ASSERT(Predicate_Evaluate(bc0, sizeof(bc0), &counts, &on) == false,
                "OP_MODEWEAPONS_EQ(randomized) should be false when mode_weapons==3");
+  }
+  // OP_INSTANT_FLUTE — default on; explicit off restores manual activation.
+  {
+    uint8 bc[] = { OP_INSTANT_FLUTE };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "OP_INSTANT_FLUTE should be true under default settings");
+    RandoSettings off = settings;
+    off.instant_flute = 0;
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &off) == false,
+               "OP_INSTANT_FLUTE should be false when instant_flute=0");
   }
 
   // OP_DIFFICULTY_AT_LEAST against defaults (normal=1)

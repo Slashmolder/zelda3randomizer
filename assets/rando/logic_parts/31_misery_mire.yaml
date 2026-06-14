@@ -164,9 +164,10 @@ locations:
 macros:
   # CanReachDarkMire — flute warp + moon pearl to the Mire dark-world square.
   # Inlined verbatim from `logic_examples/04_medallion_entrances.yaml:95-105`.
-  # OcarinaInactive is the registry name for the flute item (item id 30); the
-  # post-duck "flute active" state is set by the cutscene dispatch, not by
-  # an inventory item, so OcarinaInactive is the gate at logic time.
+  # OcarinaInactive is the registry name for the flute item (item id 30).
+  # Outside Inverted, ALTTPR's activation predicate is unconditional; with the
+  # default instant_flute seed setting, runtime also promotes the pickup to the
+  # active bird-woken flute immediately.
   # Phase A vanilla routing only — Phase B+ may add entrance-shuffle variants.
   - name: CanReachDarkMire
     parameters: []

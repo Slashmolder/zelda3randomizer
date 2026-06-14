@@ -23,6 +23,7 @@
 //   HAS_PRIZE      <op:u8> <prize:u8>
 //   MEDALLION_OPENS <op:u8> <entrance:u8>
 //   ITEM_IS        <op:u8> <item_id:u16_le>
+//   INSTANT_FLUTE  <op:u8>
 //   NOT            <op:u8> <child>
 //   AND            <op:u8> <count:u8> <child>×count
 //   OR             <op:u8> <count:u8> <child>×count
@@ -76,7 +77,10 @@ typedef enum {
   // layout is installed.
   OP_DOORS_ACTIVE = 20,
   OP_DOORS_LOC_REACHABLE = 21,
-  OP__COUNT = 22,
+  // Randomizer QoL — true when the seed setting promotes OcarinaInactive
+  // pickups to the active bird-woken flute immediately.
+  OP_INSTANT_FLUTE = 22,
+  OP__COUNT = 23,
 } RandoOp;
 
 // ---------------------------------------------------------------------------

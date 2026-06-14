@@ -1071,6 +1071,9 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
                 f"OP_MODEWEAPONS_EQ: unknown mode.weapons {name!r}; "
                 f"known: {sorted(MODE_WEAPONS.keys())}")
         out.append(MODE_WEAPONS[name])
+    elif op_name == "INSTANT_FLUTE":
+        if args:
+            raise ParseError("OP_INSTANT_FLUTE takes no operands")
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 

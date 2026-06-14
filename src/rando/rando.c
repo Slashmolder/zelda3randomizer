@@ -53,6 +53,8 @@
 // ---------------------------------------------------------------------------
 uint8 g_assets_hash[32];
 
+static bool rando_instant_flute_active(void);
+
 // ---------------------------------------------------------------------------
 // Reachability state counter — bumped by Rando_BumpReachabilityCounter()
 // when a story-progress event flag changes. The tracker overlay queries this
@@ -1094,7 +1096,9 @@ void Rando_DeliverMushroom(void) {
 // item in the ownership bitfield (additive, never lost), then sets the shared
 // link_item_flute slot to the SELECTED function with NEVER-DOWNGRADE semantics:
 // the byte is the max of its current value and this item's level (shovel=1,
-// flute=2, active flute=3). So acquiring the shovel can never drop the slot
+// inactive flute=2, active flute=3). When the seed's instant_flute setting is
+// enabled, any flute pickup promotes directly to active, skipping the vanilla
+// weathervane activation trip. So acquiring the shovel can never drop the slot
 // below an owned flute (fixing "flute then shovel loses the flute"), while
 // acquiring the flute selects it. Whenever both are owned the player flips the
 // slot's function with the item-menu toggle (Hud_NormalMenu); that toggle may
@@ -1107,7 +1111,7 @@ void Rando_GrantFluteShovel(uint8 lttp_code) {
     floor = 1;
   } else {                  // 0x14 inactive flute, 0x4a active flute
     g_rando_flute_shovel_owned |= kRandoFluteShovel_Flute;
-    if (lttp_code == 0x4a) {
+    if (lttp_code == 0x4a || rando_instant_flute_active()) {
       g_rando_flute_shovel_owned |= kRandoFluteShovel_FluteActive;
       floor = 3;
     } else {
@@ -2257,6 +2261,12 @@ static bool g_rando_active_door_logic = false;
 // static (g_door_gen_layout in rando_generate.c), so a mid-session generation
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
+
+static bool rando_instant_flute_active(void) {
+  // v1/no-blob slots and self-tests have no recovered settings; treat them as
+  // default settings, where instant flute activation is ON.
+  return !g_rando_active_settings_valid || g_rando_active_settings.instant_flute != 0;
+}
 
 // Re-derive + install this slot's logic-side shuffle assignments
 // (prize/medallion + boss/drop/enemy) from (settings, BASE seed, prize_attempt)
@@ -3679,6 +3689,57 @@ void Rando_SelfCheck(void) {
   if (Rando_VanillaItemForRegistryId(0xFFFFu) != 0xFF) {
     fprintf(stderr, "Rando_SelfCheck: out-of-range vanilla dispatch should be 0xFF\n");
     exit(2);
+  }
+
+  {
+    uint8 saved_slot_active = g_rando_slot_active;
+    uint8 saved_flute_shovel_owned = g_rando_flute_shovel_owned;
+    uint8 saved_link_item_flute = link_item_flute;
+    RandoSettings saved_active_settings = g_rando_active_settings;
+    bool saved_active_settings_valid = g_rando_active_settings_valid;
+    // rando-exempt: self-test fabricates the rando flute/shovel grant state
+    // and restores it before returning; this is not a gameplay grant site.
+    g_rando_slot_active = 1;
+    Settings_SetDefaults(&g_rando_active_settings);
+    g_rando_active_settings_valid = true;
+    g_rando_flute_shovel_owned = 0;
+    link_item_flute = 0;
+    Rando_GrantFluteShovel(0x14);
+    if (link_item_flute != 3 ||
+        g_rando_flute_shovel_owned != (kRandoFluteShovel_Flute | kRandoFluteShovel_FluteActive) ||
+        Rando_FluteShovelEffectiveLevel() != 3) {
+      fprintf(stderr, "Rando_SelfCheck: inactive flute pickup should grant active flute\n");
+      exit(2);
+    }
+    Rando_GrantFluteShovel(0x13);
+    if (link_item_flute != 3 ||
+        g_rando_flute_shovel_owned != (kRandoFluteShovel_Shovel | kRandoFluteShovel_Flute |
+                                       kRandoFluteShovel_FluteActive)) {
+      fprintf(stderr, "Rando_SelfCheck: shovel pickup should not downgrade active flute\n");
+      exit(2);
+    }
+    g_rando_active_settings.instant_flute = 0;
+    g_rando_flute_shovel_owned = 0;
+    link_item_flute = 0;
+    Rando_GrantFluteShovel(0x14);
+    if (link_item_flute != 2 ||
+        g_rando_flute_shovel_owned != kRandoFluteShovel_Flute ||
+        Rando_FluteShovelEffectiveLevel() != 2) {
+      fprintf(stderr, "Rando_SelfCheck: instant_flute=false should leave 0x14 inactive\n");
+      exit(2);
+    }
+    Rando_GrantFluteShovel(0x4a);
+    if (link_item_flute != 3 ||
+        g_rando_flute_shovel_owned != (kRandoFluteShovel_Flute | kRandoFluteShovel_FluteActive) ||
+        Rando_FluteShovelEffectiveLevel() != 3) {
+      fprintf(stderr, "Rando_SelfCheck: explicit active flute grant should activate\n");
+      exit(2);
+    }
+    g_rando_slot_active = saved_slot_active;
+    g_rando_active_settings = saved_active_settings;
+    g_rando_active_settings_valid = saved_active_settings_valid;
+    g_rando_flute_shovel_owned = saved_flute_shovel_owned;
+    link_item_flute = saved_link_item_flute;
   }
 
   // Chest dispatch — verify both unmapped-fall-through and a known mapping.

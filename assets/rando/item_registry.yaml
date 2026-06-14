@@ -185,7 +185,9 @@ items:
       Vanilla item ID 0x14 sets link_item_flute = 2. Granted from the
       Haunted Grove dig (Flute Spot) before the duck cutscene. After the
       duck cutscene Ancilla38_CutsceneDuck directly writes link_item_flute=3
-      (cosmetic upgrade; not a placement-relevant item).
+      (not a separate placeable item). Under rando's default instant_flute
+      setting, Rando_GrantFluteShovel promotes this pickup to the active
+      bird-woken state immediately.
   - id: 31
     name: BugCatchingNet
     category: absolute

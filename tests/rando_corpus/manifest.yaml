@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 74  # bump_rando_corpus.py --apply
+generator_version: 76  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -335,8 +335,8 @@ entries:
   - settings: { mode.state: inverted, goal: ganon, crystals.ganon: 7, crystals.tower: 7 }
     seed: "0xDEADBEEF"
     label: "b-inverted-ganon-7-7"
-    expected_digest: "4f70b71b12fbcaa1cae3f326cb24ee5be1bf7423682e3c8db07c3522087c38fd"
-    expected_sphere_digest: "2ba35e203ff13268993bc01affb13e91c501ea306f4b44398333d891897f852b"
+    expected_digest: "fdae35fe6525144a91de43c8b461d6b3aff98aace84d51e744862f789a1625f0"
+    expected_sphere_digest: "370463759917794cac3e33a2e7fe0b8e8f093adafd82e191d08826085035bd4e"
   # Phase B Slice 6 §7.4 — race-mode round-trip entries. Each generates a
   # 138-byte ZRSR file; run_rando_corpus's reveal sub-path overwrites it
   # with full JSON and parses placement_digest_hex from the revealed meta
@@ -357,8 +357,8 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
     seed: "0xBADC0FFEE"
     label: "b-race-inverted-fast-ganon"
-    expected_digest: "393f91cedae0130e55e10b0bbc4619df890d2e704c149d261d061a27c247c59c"
-    expected_sphere_digest: "8a014fd801c6a2e789f9f5681c43f201c45f32e57673622764b4b3b2889b7cc4"
+    expected_digest: "1b28280a9713d6ae492ad6bee0bdf18be5724152f1f18b6b5445d4b1e4f0b726"
+    expected_sphere_digest: "692b3805912ed13359269441c0472bdcee9fd8cfaaef50db39aa09cdc5f26e0d"
   # Race-mode + Triforce-Hunt reveal round-trip. Triforce-Hunt is the only goal
   # that populates the Murahdahla hint (rando_hints.c id 16); the suppressed ZRSR
   # stamp covers the hints[] array, so this entry's reveal regen MUST reproduce
@@ -499,8 +499,8 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, boss_shuffle: true }
     seed: "0x5704"
     label: "b-boss-inverted-fast-ganon"
-    expected_digest: "093ac675336cfc86b3d5b41e6236e81854024b8e42a72827d0b8a017917801b0"
-    expected_sphere_digest: "5cc8bfd8c40606681ffdf1dc6a6dc273b3d2200bb80165f2967f0c3e5fd86c77"
+    expected_digest: "885ea24e83718c8616882b32c77acf90a891dcbeb01d5d555a6de6428d044f10"
+    expected_sphere_digest: "3a0f9a296ca66b5f3f1c1db31607d31b181db4fb1f10ad93116efd499576b41d"
   - settings: { mode.state: open, goal: fast_ganon, drop_shuffle: true }
     seed: "0x5711"
     label: "b-drop-open-fast-ganon"
@@ -599,7 +599,7 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, logic: hybrid_mg }
     seed: "0x1357"
     label: "b-logic-hmg-inverted-fast-ganon"
-    expected_digest: "9253ac6fd980c48beb267168aca1180d30fc0db4a056fdf2f4c4ee1a4f9bbfd8"
+    expected_digest: "6483c0550e1f036ff6f317a5118fe1a4bad31b30cc821a95c467fa4d03be3010"
   # add-rando-major-glitch F1-followon guard — the inverted MG tier. The
   # F1-followon's inverted Ice Palace change (canOneFrameClipUW on the melt-
   # factor) opens at MG too, not just HMG; this entry guards that MG-side change
@@ -609,7 +609,7 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, logic: major_glitches }
     seed: "0x1357"
     label: "b-logic-mg-inverted-fast-ganon"
-    expected_digest: "0c62a34074c86e83d7cd79b21aae65e26fc012082f770151c58f5093fa017fba"
+    expected_digest: "46dd96107f950756b2426f6cce830e3a429f0cdbc30a4157328ea33b1b9f1dc5"
   # §4 swordless — exercises the swordless logic graph + sword-removed pool. Pins
   # the swordless placement so any future change to a swordless gate fails the
   # corpus. goal_completable verified at capture. (Runtime sword-substitution is
@@ -671,38 +671,45 @@ entries:
   - settings: { mode.state: inverted, goal: dungeons }
     seed: "0xC0FFEE0000000011"
     label: "b-inverted-dungeons"
-    expected_digest: "c6ee0588eafb5c7db508f91de69bb406070ab73be59be51447255d2842cc1d3b"
-    expected_sphere_digest: "4f57f6ec4e5a67d1f1c636c9df54197bc750865da1b0aba31ae156a68224698d"
+    expected_digest: "c1953127c44f89d5120d7e72d53aa4ecbaa23951b8273280ed58c52fa389c7f6"
+    expected_sphere_digest: "0637378a13732f43bc6c4db881f50b7bf8463dd8a92e9f549a22ea33461342c5"
   - settings: { mode.state: inverted, goal: pedestal }
     seed: "0xC0FFEE0000000012"
     label: "b-inverted-pedestal"
-    expected_digest: "6485a3222b4b2da8036502f92804a21dd3f1f38e4d7ecf991099cb703d275887"
-    expected_sphere_digest: "b94e95df73186421ddb1f7c0ce5f691429f2038ae05f4dd92be3a9086ddc0cdc"
+    expected_digest: "ca38084208ee2efc9026691868d359dfd89d94faa9b90a7db5a979bbea8189a7"
+    expected_sphere_digest: "35aa1f829607d0249bd9534fb2be95a914c23a6f8f10750030e601e196a3796b"
   - settings: { mode.state: inverted, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30 }
     seed: "0xC0FFEE0000000015"
     label: "b-inverted-triforce-hunt"
-    expected_digest: "b163f4e1f5de6ea6cfc0c7d5a3d50acf931f91d39490a5127b154c75da68ecd5"
-    expected_sphere_digest: "3a82f8ad8c454459e1e8215b228a9011d46e22df2b72da1c4e66fa877d1658a9"
+    expected_digest: "2d341022262a4f6bf71bccd490298eb16d7ec283c8fb20abfce32ad35615f29e"
+    expected_sphere_digest: "7050368cfbb37f35d59d6b2e8dc1eb824e28726963c0449bc8a74e9bf2032933"
   - settings: { mode.state: inverted, goal: completionist }
     seed: "0xC0FFEE0000000014"
     label: "b-inverted-completionist"
-    expected_digest: "6004a4edafec22051f307f80c076e948229957c69ab40f3649f9e740bcf2aeea"
-    expected_sphere_digest: "816397469ffdb02d27e9089c9eff1d4fbaf28cab956ce841958c16ae8bce89d2"
+    expected_digest: "a66987eac1a0932b59157830984d2ca3aefa78ef673fbf328474ce9a0fd836f2"
+    expected_sphere_digest: "600f24f5d94da5f9a31a5f1444633d25165112d78f7b18e82e5c448fb496122e"
   - settings: { mode.state: inverted, goal: fast_ganon, accessibility: none }
     seed: "0xC0FFEE0000000015"
     label: "b-inverted-acc-beatable"
-    expected_digest: "ce5b86faed03551987c8bd0a31e4a80d16b89e97873ba26160751d674ec48747"
-    expected_sphere_digest: "6e7e583c0c8d1c93d6c445d47d3218b5627c25855463c0ff595f79bddd678f5b"
+    expected_digest: "0d2d5f5c17cd44aaddb20ef3da4ff2f0aa7d58c2a1d952b20c884fb444640e81"
+    expected_sphere_digest: "43f55962451d641dcc6cbcf39d232b8c67690a4465a62928e7d3ee24f13f511f"
+  # Randomizer QoL opt-out guard: instant_flute=false restores the separate
+  # ALTTPR activation gate, which matters most in Inverted flute routing.
+  - settings: { mode.state: inverted, goal: fast_ganon, instant_flute: false }
+    seed: "424242"
+    label: "b-inverted-instant-flute-off"
+    expected_digest: "8635cbd5058ffbebcd9178b8ece8c098e27f3a9462b4d4eb08769559de3d0e7e"
+    expected_sphere_digest: "e7a3f2f3d23bb70d74a3658d4d7461546be916f1f883525d4ac763b64fc75bd9"
   - settings: { mode.state: inverted, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
     seed: "0xC0FFEE0000000016"
     label: "b-inverted-boss-drop"
     expected_digest: "276073a1a462eb2d3a56404847f1b0be24834ea293685e658adca8fcaa3da27b"
-    expected_sphere_digest: "09425f287d65aa089172c0c7b5f96906d7131c7675e81b5cbfeabe7bb29c6595"
+    expected_sphere_digest: "47638ca9cbfcfa294ef2ca622f1bcba0afa18a61fe07fbd1ad726373230755e2"
   - settings: { mode.state: inverted, goal: fast_ganon, item_pool: expert }
     seed: "0xC0FFEE0000000017"
     label: "b-inverted-pool-expert"
-    expected_digest: "a3ef1a007e941fade69a4689c72bf747bb2d591a4cedb56db1ac17073560f7ae"
-    expected_sphere_digest: "99e56d5a77f343306caeb2768c42f459c737dc84caedb89d470005c4160820cb"
+    expected_digest: "b8cd58a785453ae3af8f85f0814307b5a1c2c7ba41eb2f06263922ac489a64b0"
+    expected_sphere_digest: "ce2053f6905bac613540d9caf284e7f8879d51c5a1f808ef0b56af43f7145c9c"
   - settings: { mode.state: retro, goal: dungeons }
     seed: "0xC0FFEE0000000021"
     label: "b-retro-dungeons"
@@ -747,8 +754,8 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000042"
     label: "b-bossheart-pool-inverted-fast-ganon"
-    expected_digest: "3b4aaf3be91120550c14a35a62681c01c9921da410c16828a865d78f785d2fc4"
-    expected_sphere_digest: "5e94f90c33c3be141f78c1afd619df61ff6b96b6b83a92c3d97eb316c398e2a0"
+    expected_digest: "5a18fc44bc1b2f61040e702334971ca9520586fa797366b2ca17626da54e7f42"
+    expected_sphere_digest: "00d9d2a86f2e75fff745f1f0fa66a7b4f9cb702116e3b11dfd88eb7a8b4aec60"
   - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000043"
     label: "b-bossheart-pool-standard-ganon-7-7"

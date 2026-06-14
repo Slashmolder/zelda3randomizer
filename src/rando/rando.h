@@ -16,7 +16,9 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 74u  // 73→74: fix generation-time reachability certification for retry-exhausting seeds. Place_AssumedFill's best-so-far return reinstalls the restored attempt's prize/medallion assignment, and Rando_Set*Assignment copies into owned stores. Placement digests stay byte-identical; sphere_digest moves only for seeds whose old post-placement pass read a stale later attempt's assignment. settings_hash / kSettingsCanonicalLen unchanged.
+#define kGeneratorVersion 76u  // 75→76: instant_flute becomes a canonical seed setting (default on, [26] bit4 disables). CanFly now branches on OP_INSTANT_FLUTE, so instant_flute=false restores the old activation route. Default settings_hash / placement digests stay byte-identical vs v75; kSettingsCanonicalLen unchanged.
+                               // 74→75: rando flute pickup now grants the active bird-woken flute immediately (link_item_flute=3 + FluteActive ownership), and CanFly no longer requires the old separate activation route. Inverted flute-gated placement/sphere digests can move; settings_hash / kSettingsCanonicalLen unchanged.
+                               // 73→74: fix generation-time reachability certification for retry-exhausting seeds. Place_AssumedFill's best-so-far return reinstalls the restored attempt's prize/medallion assignment, and Rando_Set*Assignment copies into owned stores. Placement digests stay byte-identical; sphere_digest moves only for seeds whose old post-placement pass read a stale later attempt's assignment. settings_hash / kSettingsCanonicalLen unchanged.
                                // 72→73: Inverted reachability now ignores base edges that duplicate Inverted edges, so placement evaluates the Inverted graph instead of base ∪ inverted. Inverted placement/sphere digests move; Open/Standard/Retro stay byte-identical. Also emits cross_decoupled_exit JSON only for cross-decoupled seeds, affecting only those race stamps.
                                // 71→72: decoupled entrance shuffles pin Ice Palace + Swamp Palace exits as fixed points so one-way decoupled exits cannot strand Link behind Flippers-only, water-isolated doors. Placement/sphere digests stay byte-identical; decoupled runtime permutations and race stamps are version-locked.
                                // 70→71: retire the native boss-heart shuffle checkbox and always shuffle boss-heart drops. The legacy region_boss_hearts_in_pool byte remains parseable but canonicalizes to 0; default settings_hash and placement digests move because boss drops become fillable locations and boss-heart items enter the pool.
@@ -555,15 +557,16 @@ void Rando_DeliverMushroom(void);
 // RandoSlotHeader.flute_shovel_owned.
 enum {
   kRandoFluteShovel_Shovel      = 0x01,  // shovel obtained
-  kRandoFluteShovel_Flute       = 0x02,  // flute obtained (inactive)
-  kRandoFluteShovel_FluteActive = 0x04,  // flute has been activated (selects level 3)
+  kRandoFluteShovel_Flute       = 0x02,  // flute obtained
+  kRandoFluteShovel_FluteActive = 0x04,  // flute can summon the bird (selects level 3)
 };
 extern uint8 g_rando_flute_shovel_owned;
 // Record a shovel/flute pickup: set the ownership bit and raise link_item_flute
 // (the selected function) to this item's level without ever downgrading, so the
 // shovel can't drop the slot below an owned flute. `lttp_code` is the vanilla
-// receive code (0x13 shovel, 0x14 flute, 0x4a active flute). Call only when
-// rando is active, from the receive path in misc.c.
+// receive code (0x13 shovel, 0x14 flute, 0x4a active flute). When the active
+// seed's instant_flute setting is on, 0x14 is promoted to active immediately.
+// Call only when rando is active, from the receive path in misc.c.
 void Rando_GrantFluteShovel(uint8 lttp_code);
 // True iff a rando slot is active and the player owns BOTH a flute and the
 // shovel, so the single Y-slot's function can be toggled in the item menu.

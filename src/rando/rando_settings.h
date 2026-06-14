@@ -160,16 +160,21 @@ typedef struct RandoSettings {
   // settings_hash and corpus placements byte-identical; nonzero replaces
   // eligible final junk-filled placements with trap items.
   uint8 traps;
+  // Randomizer QoL: promote OcarinaInactive pickups to the active bird-woken
+  // flute immediately. Serialized inversely in canonical byte [26] bit4
+  // (manual activation when set), so default ON keeps byte [26] at zero.
+  uint8 instant_flute;  // bool, default on
 } RandoSettings;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
 // [26]). A zero byte == no enemy shuffle (the default), preserving the
 // byte-identical corpus invariant. [26] was previously always-zero reserved pad.
-// add-rando-customizer-mode shares this byte at bit1 and add-rando-traps uses
-// bits 2-3 (zero by default likewise).
+// add-rando-customizer-mode shares this byte at bit1, add-rando-traps uses
+// bits 2-3, and instant_flute uses bit4 inversely (zero = instant activation).
 enum {
   kEnemyShuffleAxis_Enabled = 1u << 0,
   kCustomizerAxis_Active    = 1u << 1,
+  kInstantFluteAxis_ManualActivation = 1u << 4,
 };
 
 // add-rando-traps — frequency enum + packed canonical [26] bit field.
@@ -213,10 +218,11 @@ enum {
 // `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
 // Phase C bit-packs the entrance axes into pad byte [25]; add-rando-enemy-shuffle
 // bit-packs `enemy_shuffle` into pad byte [26] (bit0), add-rando-customizer-mode
-// shares it (bit1), and add-rando-traps packs `traps` into [26] bits 2-3;
+// shares it (bit1), add-rando-traps packs `traps` into [26] bits 2-3, and
+// instant_flute packs its inverse manual-activation bit into [26] bit4;
 // add-rando-door-shuffle packs its axis into [27] (bits 0-1).
 // LENGTH STAYS 28 — all reused previously-zero pad bytes, so no size-coupling
-// cascade. [26] bits 4-7 + [27] bits 2-7 are the remaining extension surface.
+// cascade. [26] bits 5-7 + [27] bits 2-7 are the remaining extension surface.
 #define kSettingsCanonicalLen 28
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal

@@ -375,7 +375,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"hints\": %u,\n", s->settings->hints);
   fprintf(f, "    \"boss_shuffle\": %u,\n", s->settings->boss_shuffle);
   fprintf(f, "    \"drop_shuffle\": %u,\n", s->settings->drop_shuffle);
-  fprintf(f, "    \"traps\": %u\n", s->settings->traps);
+  fprintf(f, "    \"traps\": %u,\n", s->settings->traps);
+  fprintf(f, "    \"instant_flute\": %s\n", s->settings->instant_flute ? "true" : "false");
   fprintf(f, "  },\n");
 
   // -----------------------------------------------------------------------

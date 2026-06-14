@@ -118,20 +118,19 @@ macros:
   # ===========================================================================
   - name: CanFly
     parameters: [world]
-    body: "HAS_ITEM(OcarinaInactive) AND CanActivateOcarina(world)"
+    body: "HAS_ITEM(OcarinaInactive) AND (OP_INSTANT_FLUTE() OR CanActivateOcarina(world))"
     source: "app/Support/ItemCollection.php:415-418"
     notes: |
       ALTTPR: `OcarinaActive OR (OcarinaInactive AND canActivateOcarina())`.
-      Our item_registry.yaml has only OcarinaInactive (id 30); the
-      "active" state is set by Ancilla38_CutsceneDuck via a direct
-      link_item_flute write (per registry note on id 30), not as a placed
-      item. So the post-duck "flute = 3" state is unreachable as an
-      inventory presence — only the pre-duck inactive form is placeable,
-      and the CanActivateOcarina gate models the cutscene prerequisite.
+      Our item_registry.yaml has only OcarinaInactive (id 30), but the rando
+      default seed setting promotes that pickup directly to the active/bird-woken
+      state (`link_item_flute = 3` + `kRandoFluteShovel_FluteActive`). If
+      instant_flute=false, the predicate falls back to ALTTPR's separate
+      canActivateOcarina route.
 
   # ===========================================================================
   # canActivateOcarina — inverted-world ocarina-cutscene gate. PRIVATE in
-  # PHP but called by canFly; emitted here so logic.yaml can express it.
+  # PHP. CanFly calls it only when the seed opts out of instant flute activation.
   # ===========================================================================
   - name: CanActivateOcarina
     parameters: [world]

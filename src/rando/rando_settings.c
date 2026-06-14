@@ -35,9 +35,11 @@
 //                                          bit3 cross_category, bit4 decoupled.
 //                                          0x00 for the default (no shuffle).
 //   offset 26  misc axes (bit-packed)      bit0 enemy_shuffle, bit1
-//                                          customizer_active, bits2-3 traps.
+//                                          customizer_active, bits2-3 traps,
+//                                          bit4 manual flute activation
+//                                          (inverse of instant_flute).
 //                                          0x00 for the default.
-//   offset 27  reserved                    = 0
+//   offset 27  door_shuffle                bits0-1
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
@@ -100,6 +102,10 @@ void Settings_SetDefaults(RandoSettings *s) {
   // add-rando-traps — trap frequency off by default, so [26] bits2-3 stay 0
   // (corpus + default settings_hash byte-identical).
   s->traps = kTrapFrequency_Off;
+  // Randomizer QoL — default ON but serialized with an inverse bit so the
+  // default canonical byte [26] stays 0. instant_flute=0 restores the old
+  // "play it for the bird" activation route.
+  s->instant_flute = 1;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -269,12 +275,13 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
                     (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
                     (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0));
-  // add-rando-enemy-shuffle / customizer / traps — share formerly-zero pad byte
-  // [26]. Defaults all off ⇒ 0x00 (corpus + default settings_hash byte-
-  // identical; kSettingsCanonicalLen stays 28, no size-coupling cascade).
+  // add-rando-enemy-shuffle / customizer / traps / instant-flute — share the
+  // formerly-zero pad byte [26]. Defaults keep every bit clear (instant-flute
+  // uses an inverse manual-activation bit), preserving default settings_hash.
   out[26] = (uint8)((s->enemy_shuffle ? kEnemyShuffleAxis_Enabled : 0) |
                     (s->customizer_active ? kCustomizerAxis_Active : 0) |
-                    ((s->traps << kTrapAxis_Shift) & kTrapAxis_Mask));
+                    ((s->traps << kTrapAxis_Shift) & kTrapAxis_Mask) |
+                    (s->instant_flute ? 0 : kInstantFluteAxis_ManualActivation));
   // add-rando-door-shuffle — door_shuffle axis in the (formerly zero) pad
   // byte [27] bits 0-1. apply_derived_rules() normalized incompatible combos,
   // so the default packs to 0x00 (corpus byte-identical) and
@@ -286,15 +293,16 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
 // kSettingsCanonicalLen (28)-byte canonical blob and populates `out`. Returns 0
 // on success, -1 if the input is NULL. Body occupies [0..24] (through
-// drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle + customizer + traps,
-// [27] = door_shuffle.
+// drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle + customizer +
+// traps + inverse instant-flute, [27] = door_shuffle.
 //
 // Byte [25] is the Phase C packed entrance-axis byte (0x00 = no shuffle); byte
 // [26] packs bit0 = enemy_shuffle (add-rando-enemy-shuffle) and bit1 =
 // customizer_active (add-rando-customizer-mode), bits2-3 = traps
-// (add-rando-traps); byte [27] bits 0-1 are the add-rando-door-shuffle axis.
-// A pre-customizer/pre-traps file has those bits = 0, so older suppressed files
-// still round-trip cleanly.
+// (add-rando-traps), bit4 = manual flute activation (inverse of instant_flute);
+// byte [27] bits 0-1 are the add-rando-door-shuffle axis.
+// Pre-extension files have those bits = 0, so older suppressed files still
+// round-trip cleanly.
 // **Forward-compat note**: undefined bits of [26]/[27] are NOT inspected — a
 // future extension may repurpose them, and rejecting on non-zero would break
 // reveal of pre-extension suppressed files. The deserializer stays permissive.
@@ -348,6 +356,8 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // add-rando-traps — unpack the trap-frequency field from [26] bits 2-3.
   // A zero field (default / any pre-traps file) yields traps=off.
   s.traps = (uint8)((in[26] & kTrapAxis_Mask) >> kTrapAxis_Shift);
+  // Randomizer QoL — inverse bit so old/default blobs activate flute instantly.
+  s.instant_flute = (in[26] & kInstantFluteAxis_ManualActivation) ? 0 : 1;
   // add-rando-door-shuffle — unpack the door_shuffle axis from pad byte [27]
   // bits 0-1. A zero byte (the default / any pre-door-shuffle file) yields
   // vanilla. Bits 2-7 stay uninspected (the remaining extension surface).
@@ -400,8 +410,9 @@ bool Settings_Validate(const RandoSettings *s) {
     return false;
   if (s->hints > 1) return false;                                          // [22] off/on
   if (s->boss_shuffle > 1 || s->drop_shuffle > 1) return false;            // [23][24] bool
-  // [25] entrance axes / [26] enemy+customizer bits: bit-packed; deserialize
+  // [25] entrance axes / [26] misc axes: bit-packed; deserialize
   // masks the defined bits, undefined bits stay permissive by contract.
+  if (s->instant_flute > 1) return false;                                  // [26] bit4 inverse bool
   if (s->door_shuffle > kDoorShuffle_Basic) return false;                  // [27] bits 0-1: only 0/1 defined
   return true;
 }
@@ -785,6 +796,60 @@ void Settings_SelfCheck(void) {
                    ((uint8)kTrapFrequency_High << kTrapAxis_Shift))) {
       fprintf(stderr, "Settings_SelfCheck: [26] trap bit coexistence mismatch "
                       "(got 0x%02x)\n", ct[26]);
+      exit(2);
+    }
+  }
+  // Randomizer QoL — instant_flute defaults on with no canonical bit set;
+  // disabling it packs the inverse manual-activation bit into [26] bit4.
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    if (sd.instant_flute != 1 || cd[26] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: instant_flute default should be on "
+                      "with byte [26]==0 (got default=%u byte=0x%02x)\n",
+              sd.instant_flute, cd[26]);
+      exit(2);
+    }
+    RandoSettings sf;
+    Settings_SetDefaults(&sf);
+    sf.instant_flute = 0;
+    uint8 cf[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sf, cf);
+    if (cf[26] != kInstantFluteAxis_ManualActivation) {
+      fprintf(stderr, "Settings_SelfCheck: instant_flute=false pack mismatch "
+                      "(got 0x%02x)\n", cf[26]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 26) continue;
+      if (cf[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: instant_flute changed canonical "
+                        "byte [%d] (expected only [26] to move)\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rt;
+    if (Settings_CanonicalDeserialize(cf, &rt) != 0 || rt.instant_flute != 0) {
+      fprintf(stderr, "Settings_SelfCheck: instant_flute deserialize round-trip mismatch\n");
+      exit(2);
+    }
+    if (Settings_ParseCsv("instant_flute=false", &sf) != 0 ||
+        sf.instant_flute != 0) {
+      fprintf(stderr, "Settings_SelfCheck: instant_flute=false CSV parse failed\n");
+      exit(2);
+    }
+    sf.enemy_shuffle = 1;
+    sf.customizer_active = 1;
+    sf.traps = kTrapFrequency_High;
+    sf.instant_flute = 0;
+    Settings_CanonicalSerialize(&sf, cf);
+    if (cf[26] != (kEnemyShuffleAxis_Enabled | kCustomizerAxis_Active |
+                   ((uint8)kTrapFrequency_High << kTrapAxis_Shift) |
+                   kInstantFluteAxis_ManualActivation)) {
+      fprintf(stderr, "Settings_SelfCheck: [26] instant-flute bit coexistence "
+                      "mismatch (got 0x%02x)\n", cf[26]);
       exit(2);
     }
   }
@@ -1198,10 +1263,10 @@ static int parse_traps(const char *v, int vlen, uint8 *out) {
 
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
-  uint32 seen;
+  uint64 seen;
 } SeenKeys;
 
-#define KEY_BIT(name) (1u << (name))
+#define KEY_BIT(name) (1ull << (name))
 enum {
   KEY_world_state = 0,
   KEY_goal,
@@ -1245,6 +1310,9 @@ enum {
   // add-rando-traps — trap frequency (off|low|medium|high). Packed into
   // canonical byte [26] bits 2-3.
   KEY_traps,
+  // Randomizer QoL — instant flute activation. Packed inversely into
+  // canonical byte [26] bit4.
+  KEY_instant_flute,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -1445,6 +1513,10 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Both keys are aliases for the same canonical field and duplicate-check bit.
     MARK_SEEN(KEY_traps);
     if (parse_traps(val, vlen, &s->traps) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "instant_flute")) {
+    // Randomizer QoL — seed-burned flute activation behavior. Default true.
+    MARK_SEEN(KEY_instant_flute);
+    if (parse_bool(val, vlen, &s->instant_flute) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "shuffle_cave_entrances")) {
     // Phase C — entrance shuffle: cave-door class.
     MARK_SEEN(KEY_shuffle_cave_entrances);
