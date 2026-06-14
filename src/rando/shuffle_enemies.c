@@ -366,6 +366,22 @@ static bool overworld_offset_palette(uint32 offset_index, uint8 *palette) {
   return true;
 }
 
+// Runtime counterpart of overworld_offset_palette: the index into the LIVE
+// overworld_sprite_palettes table ($7FD40, g_ram 0xFD40) for `area`'s sprites.
+// overworld_sprite_palettes is two regions (Sprite_LoadGraphicsProperties,
+// overworld.c): [0x00..0x3F] = light world @ the current progress stage,
+// [0x40..0x7F] = dark world (fixed, copied from kOverworldSpritePalettes+0xC0).
+// Vanilla uploads overworld_sprite_palettes[overworld_screen_index], so dark-world
+// screens (0x40..0x7F) read the dark region. Light areas index themselves; dark
+// AND special areas (overworld_area_index has the 0x40 bit, and special areas are
+// 0x80+) map into the dark region — which is exactly what the context table
+// recorded (overworld_offset_palette forces pal_stage 3 for area>=64). Using
+// (area & 63) here dropped the 0x40 bit and gated every dark/special area against
+// the LIGHT palette, which differs from the dark palette in all 64 slots.
+static uint8 overworld_area_palette_index(uint8 area) {
+  return (area < 0x40) ? area : (uint8)(0x40 | (area & 0x3f));
+}
+
 static void build_vanilla_context_table(void) {
   if (g_enemy_vanilla_context_ready)
     return;
@@ -817,7 +833,7 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
   uint64 key = ((uint64)area << 8) ^ (uint64)slot ^ 0x0000000000000700ull;
   // Keep a water-only source (ESF_WATER) in water — derive from the source type.
   bool require_water = (kEnemyTable[vanilla_type].flags & ESF_WATER) != 0;
-  uint8 overworld_palette = g_ram[0xFD40 + (area & 63)];  // overworld_sprite_palettes[area&63]
+  uint8 overworld_palette = g_ram[0xFD40 + overworld_area_palette_index(area)];
   return pick_replacement(key, vanilla_type, live,
                           /*require_killable=*/false,
                           /*require_key_capable=*/false,
@@ -990,6 +1006,27 @@ void EnemyShuffle_SelfCheck(void) {
     enemy_selfcheck_die("Bomb guard must remain overworld-eligible on its vanilla palette");
   if (candidate_allowed_in_context(0x4A, false, 0))
     enemy_selfcheck_die("Bomb guard is overworld-eligible on a non-vanilla palette");
+
+  // Dark-world palette-read regression: EnemyShuffle_PickOverworld resolves the
+  // area's sprite-palette id via overworld_area_palette_index, which MUST keep the
+  // dark-world 0x40 bit. Pre-fix it used (area & 63), reading the light-world
+  // palette region for every dark-world / special area — the dark and light
+  // regions differ in all 64 slots, so the overworld palette gate compared against
+  // the wrong reference across the entire dark world (over-suppressing valid
+  // substitutions and still admitting off-palette ones). overworld_sprite_palettes
+  // is light [0x00..0x3F] / dark [0x40..0x7F]; special areas (0x80+) map into the
+  // dark region to match the context table (overworld_offset_palette pal_stage 3).
+  if (overworld_area_palette_index(0x12) != 0x12 ||
+      overworld_area_palette_index(0x3f) != 0x3f)
+    enemy_selfcheck_die("light-world overworld palette index must be the area itself");
+  if (overworld_area_palette_index(0x40) != 0x40 ||
+      overworld_area_palette_index(0x52) != 0x52 ||
+      overworld_area_palette_index(0x7f) != 0x7f)
+    enemy_selfcheck_die("dark-world overworld palette index dropped the 0x40 bit (area&63 regression)");
+  if (overworld_area_palette_index(0x80) != 0x40 ||
+      overworld_area_palette_index(0x81) != 0x41 ||
+      overworld_area_palette_index(0x8f) != 0x4f)
+    enemy_selfcheck_die("special-area overworld palette index must map into the dark region");
 
   // 3) Table integrity: every RANDOMIZABLE entry has >=1 required sheet (a
   // sheet-less entry would match every room and could load garbage), and every

@@ -168,9 +168,11 @@ Fix landed:
 
 - The vanilla-context scan now also reads `kOverworldSpritePalettes` for each
   overworld sprite-list occurrence and records a per-type palette bitset.
-- `EnemyShuffle_PickOverworld` reads the current
-  `overworld_sprite_palettes[area&63]` value from RAM and only admits candidates
-  whose type is vanilla-observed under that palette.
+- `EnemyShuffle_PickOverworld` reads the current area's `overworld_sprite_palettes`
+  id from RAM — via `overworld_area_palette_index` (dark/special areas read the
+  `[0x40..0x7F]` dark region; a plain `area & 63` dropped the dark-world `0x40` bit
+  and gated every dark/special area against the light palette) — and only admits
+  candidates whose type is vanilla-observed under that palette.
 - `0x4A` remains randomizable and overworld-eligible where its palette matches;
   this is not a hard ban. `EnemyShuffle_SelfCheck` asserts `0x4A` allowed on
   palette `3` and rejected on palette `0`.

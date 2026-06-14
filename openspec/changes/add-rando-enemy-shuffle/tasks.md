@@ -205,7 +205,8 @@
 > overworld only under sprite palette `3`, while the captured area had palette
 > `0`. The vanilla-context scan now also records `kOverworldSpritePalettes` per
 > sprite occurrence and builds a per-type overworld palette bitset. Overworld
-> candidates must match the current area's `overworld_sprite_palettes[area&63]`
+> candidates must match the current area's `overworld_sprite_palettes` id (read
+> with a dark-world-aware index — dark/special areas use the `[0x40..0x7F]` region)
 > in addition to context, sheet coverage, and hard bans. `0x4A` stays
 > randomizable and overworld-eligible where vanilla uses that palette.
 >
