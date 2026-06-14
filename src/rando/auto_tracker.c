@@ -336,10 +336,10 @@ static const struct {
 } kAtDungeons[] = {
     {1,  0,  "Hyrule Castle"},      {4,  4,  "Castle Tower"},
     {2,  2,  "Eastern Palace"},     {3,  3,  "Desert Palace"},
-    {10, 10, "Tower of Hera"},      {5,  5,  "Palace of Darkness"},
-    {6,  6,  "Swamp Palace"},       {7,  7,  "Skull Woods"},
-    {8,  8,  "Thieves Town"},       {9,  9,  "Ice Palace"},
-    {11, 11, "Misery Mire"},        {12, 12, "Turtle Rock"},
+    {10, 10, "Tower of Hera"},      {6,  6,  "Palace of Darkness"},
+    {5,  5,  "Swamp Palace"},       {8,  8,  "Skull Woods"},
+    {11, 11, "Thieves Town"},       {9,  9,  "Ice Palace"},
+    {7,  7,  "Misery Mire"},        {12, 12, "Turtle Rock"},
     {13, 13, "Ganons Tower"},
 };
 

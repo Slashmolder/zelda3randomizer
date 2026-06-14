@@ -4721,13 +4721,13 @@ static uint8 RandoFallingPrizeIndex(uint8 didx, uint8 vanilla_idx) {
     1,    // 2  EP
     2,    // 3  DP
     0xFF, // 4  HCT (no prize)
-    5,    // 5  PoD
-    6,    // 6  SP
-    7,    // 7  SW
-    8,    // 8  TT
+    6,    // 5  SP
+    5,    // 6  PoD
+    10,   // 7  MM
+    7,    // 8  SW
     9,    // 9  IP
     3,    // 10 TH
-    10,   // 11 MM
+    8,    // 11 TT
     11,   // 12 TR
     0xFF, // 13 GT (no prize)
   };

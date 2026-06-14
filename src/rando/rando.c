@@ -233,10 +233,10 @@ static bool rando_is_progressive_item(uint16 registry_id) {
 //     internals (kDungeonPrizeLocations etc.).
 //
 //   Game-side convention — `cur_palace_index_x2 >> 1`. Derived by
-//     cross-referencing kDungeonCrystalPendantBit[13] in zelda_rtl.c
-//     against the vanilla dungeon→prize bits:
-//       [0]=HCE [1]=(unused/sub-area) [2]=EP [3]=DP [4]=HCT [5]=PoD
-//       [6]=SP  [7]=SW  [8]=TT  [9]=IP  [10]=TH  [11]=MM  [12]=TR  [13]=GT
+//     cross-referencing palace ids from the asset room headers against
+//     kDungeonCrystalPendantBit[13] in zelda_rtl.c / dungeon.c:
+//       [0]=HCE [1]=HC [2]=EP [3]=DP [4]=HCT [5]=SP [6]=PoD
+//       [7]=MM  [8]=SW [9]=IP [10]=TH [11]=TT [12]=TR [13]=GT
 //
 // Per Link_ReceiveItem's special case for codes 0x25/0x32/0x33 (misc.c):
 //     WORD(*p) |= 0x8000 >> (BYTE(cur_palace_index_x2) >> 1)
@@ -253,9 +253,9 @@ static uint16 dungeon_bit_for_map_or_compass(uint8 game_dungeon_id) {
 // in EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT order). The value is
 // the GAME-side dungeon index for that ALTTPR dungeon.
 //                                             EP  DP  TH  PoD SP  SW  TT  IP  MM  TR  GT
-static const uint8 kBigKeyGameDungeon[11]  = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
-static const uint8 kMapGameDungeon[11]     = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
-static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
+static const uint8 kBigKeyGameDungeon[11]  = {  2,  3, 10,  6,  5,  8, 11,  9,  7, 12, 13 };
+static const uint8 kMapGameDungeon[11]     = {  2,  3, 10,  6,  5,  8, 11,  9,  7, 12, 13 };
+static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  6,  5,  8, 11,  9,  7, 12, 13 };
 
 // SmallKey spans all 13 ALTTPR dungeons (registry-id offset -53: HCE, EP, DP,
 // TH, HCT, PoD, SP, SW, TT, IP, MM, TR, GT). Value = GAME-side dungeon index,
@@ -263,7 +263,7 @@ static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  5,  6,  7,  8,  9, 1
 // (link_keys_earned_per_dungeon) is indexed by. Note HCE=0 and HCT=4 are
 // present here (BigKey/Map/Compass omit them since vanilla never has those).
 //                                            HCE EP  DP  TH HCT PoD SP  SW  TT  IP  MM  TR  GT
-static const uint8 kSmallKeyGameDungeon[13] = { 0,  2,  3, 10,  4,  5,  6,  7,  8,  9, 11, 12, 13 };
+static const uint8 kSmallKeyGameDungeon[13] = { 0,  2,  3, 10,  4,  6,  5,  8, 11,  9,  7, 12, 13 };
 
 static uint8 dungeon_id_for_item_local(uint16 registry_id) {
   // SmallKey 53..65 → GAME-side dungeon index (same translation as
@@ -1442,14 +1442,14 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
 // treats the identity BossHeartContainer placement as vanilla behavior.
 //
 // Dungeon ID layout (cur_palace_index_x2 >> 1) — game-side convention.
-// Derived from kDungeonCrystalPendantBit / kBossFinishedFallingItem
-// (zelda_rtl.c, dungeon.c). NOTE: TH lives at 10, not 3 — this is not
-// the ALTTPR id ordering.
+// Derived from the asset room palace ids and kDungeonCrystalPendantBit /
+// kBossFinishedFallingItem (zelda_rtl.c, dungeon.c). NOTE: TH lives at 10,
+// not 3 — this is not the ALTTPR id ordering.
 //   0 HCE  (no boss; Sanctuary chest is the heart container slot)
 //   1 (unused sub-area, no prize)
 //   2 EP   3 DP
 //   4 HCT  (Agahnim; not a heart-drop boss — handled separately)
-//   5 PoD  6 SP   7 SW   8 TT   9 IP  10 TH  11 MM  12 TR
+//   5 SP   6 PoD  7 MM   8 SW   9 IP  10 TH  11 TT  12 TR
 //  13 GT   (Agahnim 2; same as HCT path)
 // ---------------------------------------------------------------------------
 uint16 Rando_GetBossHeartLocation(uint8 dungeon_id) {
@@ -1459,13 +1459,13 @@ uint16 Rando_GetBossHeartLocation(uint8 dungeon_id) {
     LOC_Eastern_Palace_Boss,       //  2  EP
     LOC_Desert_Palace_Boss,        //  3  DP
     0xFFFFu,                       //  4  HCT (Agahnim path)
-    LOC_Palace_of_Darkness_Boss,   //  5  PoD
-    LOC_Swamp_Palace_Boss,         //  6  SP
-    LOC_Skull_Woods_Boss,          //  7  SW
-    LOC_Thieves_Town_Boss,         //  8  TT
+    LOC_Swamp_Palace_Boss,         //  5  SP
+    LOC_Palace_of_Darkness_Boss,   //  6  PoD
+    LOC_Misery_Mire_Boss,          //  7  MM
+    LOC_Skull_Woods_Boss,          //  8  SW
     LOC_Ice_Palace_Boss,           //  9  IP
     LOC_Tower_of_Hera_Boss,        // 10  TH
-    LOC_Misery_Mire_Boss,          // 11  MM
+    LOC_Thieves_Town_Boss,         // 11  TT
     LOC_Turtle_Rock_Boss,          // 12  TR
     0xFFFFu                        // 13  GT (Agahnim 2 path)
   };
@@ -1480,13 +1480,13 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
     LOC_Eastern_Palace_Prize,      //  2  EP
     LOC_Desert_Palace_Prize,       //  3  DP
     0xFFFFu,                       //  4  HCT
-    LOC_Palace_of_Darkness_Prize,  //  5  PoD
-    LOC_Swamp_Palace_Prize,        //  6  SP
-    LOC_Skull_Woods_Prize,         //  7  SW
-    LOC_Thieves_Town_Prize,        //  8  TT
+    LOC_Swamp_Palace_Prize,        //  5  SP
+    LOC_Palace_of_Darkness_Prize,  //  6  PoD
+    LOC_Misery_Mire_Prize,         //  7  MM
+    LOC_Skull_Woods_Prize,         //  8  SW
     LOC_Ice_Palace_Prize,          //  9  IP
     LOC_Tower_of_Hera_Prize,       // 10  TH
-    LOC_Misery_Mire_Prize,         // 11  MM
+    LOC_Thieves_Town_Prize,        // 11  TT
     LOC_Turtle_Rock_Prize,         // 12  TR
     0xFFFFu                        // 13  GT
   };
@@ -3052,34 +3052,34 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
     const RandoSettings *st = &g_rando_active_settings;
     Rando_SeedVanillaDungeonItems(out, st);
 
-    // game dungeon index (0=HC,1=unused,2=EP,3=DP,4=CT,5=PoD,6=SP,7=SW,8=TT,
-    // 9=IP,10=ToH,11=MM,12=TR,13=GT) -> registry item id.
+    // game dungeon index (0=HCE,1=HC,2=EP,3=DP,4=CT,5=SP,6=PoD,7=MM,8=SW,
+    // 9=IP,10=ToH,11=TT,12=TR,13=GT) -> registry item id.
     static const uint16 kGToSmallKey[16] = {
       ITEM_SmallKey_HyruleCastleEscape, 0xFFFF, ITEM_SmallKey_EasternPalace,
       ITEM_SmallKey_DesertPalace, ITEM_SmallKey_HyruleCastleTower,
-      ITEM_SmallKey_PalaceOfDarkness, ITEM_SmallKey_SwampPalace,
-      ITEM_SmallKey_SkullWoods, ITEM_SmallKey_ThievesTown, ITEM_SmallKey_IcePalace,
-      ITEM_SmallKey_TowerOfHera, ITEM_SmallKey_MiseryMire, ITEM_SmallKey_TurtleRock,
+      ITEM_SmallKey_SwampPalace, ITEM_SmallKey_PalaceOfDarkness,
+      ITEM_SmallKey_MiseryMire, ITEM_SmallKey_SkullWoods, ITEM_SmallKey_IcePalace,
+      ITEM_SmallKey_TowerOfHera, ITEM_SmallKey_ThievesTown, ITEM_SmallKey_TurtleRock,
       ITEM_SmallKey_GanonsTower, 0xFFFF, 0xFFFF,
     };
     static const uint16 kGToBigKey[16] = {
       0xFFFF, 0xFFFF, ITEM_BigKey_EasternPalace, ITEM_BigKey_DesertPalace, 0xFFFF,
-      ITEM_BigKey_PalaceOfDarkness, ITEM_BigKey_SwampPalace, ITEM_BigKey_SkullWoods,
-      ITEM_BigKey_ThievesTown, ITEM_BigKey_IcePalace, ITEM_BigKey_TowerOfHera,
-      ITEM_BigKey_MiseryMire, ITEM_BigKey_TurtleRock, ITEM_BigKey_GanonsTower,
+      ITEM_BigKey_SwampPalace, ITEM_BigKey_PalaceOfDarkness, ITEM_BigKey_MiseryMire,
+      ITEM_BigKey_SkullWoods, ITEM_BigKey_IcePalace, ITEM_BigKey_TowerOfHera,
+      ITEM_BigKey_ThievesTown, ITEM_BigKey_TurtleRock, ITEM_BigKey_GanonsTower,
       0xFFFF, 0xFFFF,
     };
     static const uint16 kGToMap[16] = {
       0xFFFF, 0xFFFF, ITEM_Map_EasternPalace, ITEM_Map_DesertPalace, 0xFFFF,
-      ITEM_Map_PalaceOfDarkness, ITEM_Map_SwampPalace, ITEM_Map_SkullWoods,
-      ITEM_Map_ThievesTown, ITEM_Map_IcePalace, ITEM_Map_TowerOfHera,
-      ITEM_Map_MiseryMire, ITEM_Map_TurtleRock, ITEM_Map_GanonsTower, 0xFFFF, 0xFFFF,
+      ITEM_Map_SwampPalace, ITEM_Map_PalaceOfDarkness, ITEM_Map_MiseryMire,
+      ITEM_Map_SkullWoods, ITEM_Map_IcePalace, ITEM_Map_TowerOfHera,
+      ITEM_Map_ThievesTown, ITEM_Map_TurtleRock, ITEM_Map_GanonsTower, 0xFFFF, 0xFFFF,
     };
     static const uint16 kGToCompass[16] = {
       0xFFFF, 0xFFFF, ITEM_Compass_EasternPalace, ITEM_Compass_DesertPalace, 0xFFFF,
-      ITEM_Compass_PalaceOfDarkness, ITEM_Compass_SwampPalace, ITEM_Compass_SkullWoods,
-      ITEM_Compass_ThievesTown, ITEM_Compass_IcePalace, ITEM_Compass_TowerOfHera,
-      ITEM_Compass_MiseryMire, ITEM_Compass_TurtleRock, ITEM_Compass_GanonsTower,
+      ITEM_Compass_SwampPalace, ITEM_Compass_PalaceOfDarkness, ITEM_Compass_MiseryMire,
+      ITEM_Compass_SkullWoods, ITEM_Compass_IcePalace, ITEM_Compass_TowerOfHera,
+      ITEM_Compass_ThievesTown, ITEM_Compass_TurtleRock, ITEM_Compass_GanonsTower,
       0xFFFF, 0xFFFF,
     };
     for (int g = 0; g < 14; g++) {
@@ -4447,6 +4447,35 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: Map_HCE dispatch should set link_dungeon_map=0x8000\n");
       exit(2);
     }
+    // Regression coverage for the game-order dungeons that differ from the
+    // ALTTPR registry order.
+    entries[0].item_id = ITEM_BigKey_SkullWoods;  // game-side dungeon 8
+    Placement_Install(&t);
+    link_bigkey = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_bigkey != 0x0080) {
+      fprintf(stderr, "Rando_SelfCheck: BigKey_SW dispatch should set link_bigkey=0x0080 (got 0x%04x)\n",
+              (unsigned)link_bigkey);
+      exit(2);
+    }
+    entries[0].item_id = ITEM_Map_SwampPalace;  // game-side dungeon 5
+    Placement_Install(&t);
+    link_dungeon_map = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_dungeon_map != 0x0400) {
+      fprintf(stderr, "Rando_SelfCheck: Map_SP dispatch should set link_dungeon_map=0x0400 (got 0x%04x)\n",
+              (unsigned)link_dungeon_map);
+      exit(2);
+    }
+    entries[0].item_id = ITEM_Compass_PalaceOfDarkness;  // game-side dungeon 6
+    Placement_Install(&t);
+    link_compass = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_compass != 0x0200) {
+      fprintf(stderr, "Rando_SelfCheck: Compass_PoD dispatch should set link_compass=0x0200 (got 0x%04x)\n",
+              (unsigned)link_compass);
+      exit(2);
+    }
     Placement_Install(NULL);
     link_bigkey = link_compass = link_dungeon_map = 0;
   }
@@ -4464,6 +4493,9 @@ void Rando_SelfCheck(void) {
 
     uint16 saved_palace = cur_palace_index_x2;
     uint8 saved_keys = link_num_keys;
+    uint8 saved_slot7 = link_keys_earned_per_dungeon[7];
+    uint8 saved_slot8 = link_keys_earned_per_dungeon[8];
+    uint8 saved_slot10 = link_keys_earned_per_dungeon[10];
 
     // (a) ToH key collected while in the Hyrule Castle escape (raw
     // cur_palace_index_x2 = 0). The escape's live counter must be untouched;
@@ -4502,10 +4534,32 @@ void Rando_SelfCheck(void) {
       exit(2);
     }
 
+    // (c) Skull Woods key collected while standing in Skull Woods (raw
+    // cur_palace_index_x2 = 16 = game-side index 8). This guards the dark-world
+    // game-order remap: old code credited slot 7 and left the live counter at 0.
+    entries[0].item_id = ITEM_SmallKey_SkullWoods;  // 60 -> game-side dungeon 8
+    cur_palace_index_x2 = 16;
+    link_num_keys = 0;
+    link_keys_earned_per_dungeon[7] = 5;
+    link_keys_earned_per_dungeon[8] = 0;
+    Placement_Install(&t);
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_num_keys != 1 || link_keys_earned_per_dungeon[8] != 1 ||
+        link_keys_earned_per_dungeon[7] != 5) {
+      fprintf(stderr, "Rando_SelfCheck: SmallKey_SW in SW should bump live+slot8 only "
+                      "(got live=%u slot7=%u slot8=%u)\n",
+              (unsigned)link_num_keys,
+              (unsigned)link_keys_earned_per_dungeon[7],
+              (unsigned)link_keys_earned_per_dungeon[8]);
+      exit(2);
+    }
+
     Placement_Install(NULL);
     cur_palace_index_x2 = saved_palace;
     link_num_keys = saved_keys;
-    link_keys_earned_per_dungeon[10] = 0;
+    link_keys_earned_per_dungeon[7] = saved_slot7;
+    link_keys_earned_per_dungeon[8] = saved_slot8;
+    link_keys_earned_per_dungeon[10] = saved_slot10;
   }
 
   // §9.4b — 5-icon hash widget. Two share strings with identical settings

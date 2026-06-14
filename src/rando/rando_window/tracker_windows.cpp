@@ -302,10 +302,10 @@ static void DrawItemTracker(void *) {
   static const struct { int game; int kidx; int logic; const char *name; bool prize; } kDungeonRows[] = {
       {1,  0,  0,  "Hyrule Castle",    false}, {4,  4,  4,  "Castle Tower",     false},
       {2,  2,  1,  "Eastern",          true},  {3,  3,  2,  "Desert",           true},
-      {10, 10, 3,  "Tower of Hera",    true},  {5,  5,  5,  "Pal. of Darkness", true},
-      {6,  6,  6,  "Swamp",            true},  {7,  7,  7,  "Skull Woods",      true},
-      {8,  8,  8,  "Thieves'",         true},  {9,  9,  9,  "Ice",              true},
-      {11, 11, 10, "Misery Mire",      true},  {12, 12, 11, "Turtle Rock",      true},
+      {10, 10, 3,  "Tower of Hera",    true},  {6,  6,  5,  "Pal. of Darkness", true},
+      {5,  5,  6,  "Swamp",            true},  {8,  8,  7,  "Skull Woods",      true},
+      {11, 11, 8,  "Thieves'",         true},  {9,  9,  9,  "Ice",              true},
+      {7,  7,  10, "Misery Mire",      true},  {12, 12, 11, "Turtle Rock",      true},
       {13, 13, 12, "Ganon's Tower",    false},
   };
   // Prize assignment + shuffle flag drive the spoiler-safe prize column: an

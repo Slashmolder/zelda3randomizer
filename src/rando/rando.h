@@ -707,8 +707,8 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 //
 // `dungeon_id` is `cur_palace_index_x2 >> 1` — the GAME's dungeon index,
 // NOT the ALTTPR id ordering. Range 0..13:
-//   0 HCE  1 (unused)  2 EP  3 DP  4 HCT  5 PoD  6 SP  7 SW
-//   8 TT   9 IP       10 TH 11 MM 12 TR  13 GT
+//   0 HCE  1 HC        2 EP  3 DP  4 HCT  5 SP   6 PoD 7 MM
+//   8 SW   9 IP       10 TH 11 TT 12 TR  13 GT
 // Returns 0xFFFF for dungeons without a boss drop (HCE/HCT/GT — those have
 // their own dispatch paths: Sanctuary chest, Agahnim event, Agahnim 2 event).
 // ---------------------------------------------------------------------------
