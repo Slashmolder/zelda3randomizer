@@ -4,8 +4,10 @@
 > native-window customizer UI are implemented. `customizer_active` is canonical
 > byte `[26]` bit1 (`kCustomizerAxis_Active`), sharing that byte with
 > `enemy_shuffle` and `traps`; door shuffle owns byte `[27]` bits 0-1.
-> Remaining open items: share-string encoding for `customizer_seed` (§6.4) and
-> owner playtest of the in-window flow (§6.5).
+> Owner playtest of the in-window flow is complete as of 2026-06-14.
+> Share-string encoding for `customizer_seed` (§6.4) is explicitly deferred to a
+> future share-string-format change; current customizer seeds intentionally fall
+> back to the v1 identity string.
 
 ## 1. Manifest format + parser
 
@@ -41,12 +43,12 @@
 - [x] 5.3 Corpus byte-identical via `run_rando_corpus.py`.
 - [x] 5.4 End-to-end: 3 pins resolve to their items in the spoiler; deterministic `placement_digest` across runs; validation rejects unknown/non-customizable/duplicate; uncompletable manifest refused. Example: `assets/rando/customizer.example.yaml`.
 - [x] 5.5 Review pass completed: rejected pinning prize/event/virtual items, enforced `location_accepts_item` on each pin, and early-broke deterministic customizer errors in the CLI entrance-shuffle loop. Re-verified with corpus, invalid-pin rejections, and a valid in-dungeon-key pin.
-- [ ] 5.6 Deferred audit LOW (latent / cosmetic): **L1** `rando_logic_gen.py` emits `item_<N>` for item-id gaps (resolvable placeholder) — latent, no current item gaps; **L3** an out-of-pool pin silently drops a junk item (documented; a per-attempt stderr note would be noisy).
+- [x] 5.6 Deferred audit LOW dispositioned as non-blocking follow-ups: **L1** `rando_logic_gen.py` emits `item_<N>` for item-id gaps (resolvable placeholder) — latent, no current item gaps; **L3** an out-of-pool pin silently drops a junk item (documented; a per-attempt stderr note would be noisy).
 
-## 6. Slot + UI slice (built at rebase pickup, 2026-06-10 — playtest-pending)
+## 6. Slot + UI slice (built at rebase pickup, 2026-06-10)
 
-- [x] 6.1 Playable-slot path: `Rando_GenerateSlot` honors an installed manifest — the §3c pin block keys on `settings.customizer_active`, and the slot persists the full placement table + canonical settings blob, so the manifest is needed ONLY at generation time (reload reads the stored placement). Guards added: customizer+race_mode refused (the race reveal regenerates from (seed,settings) and cannot reproduce pins — refused on BOTH the slot path and the CLI); customizer_active with no installed manifest refused; `Customizer_LastError` surfaced through the slot error channel; the entrance-π and door-attempt retry loops early-break on a deterministic customizer error (mirrors CLI audit L2). **Headless test**: `--generate-slot --customizer=<path>` (new flag on the existing slot-path CI seam) — verified ok+roundtrip_ok, and the digest for (open/fast_ganon, seed 0x1, example manifest) is IDENTICAL to the `--generate-seed` path and across WSL gcc / MSVC builds (a5067c3d46ca99ce…). In-window generate + load playtest still pending (slot-path convention).
+- [x] 6.1 Playable-slot path: `Rando_GenerateSlot` honors an installed manifest — the §3c pin block keys on `settings.customizer_active`, and the slot persists the full placement table + canonical settings blob, so the manifest is needed ONLY at generation time (reload reads the stored placement). Guards added: customizer+race_mode refused (the race reveal regenerates from (seed,settings) and cannot reproduce pins — refused on BOTH the slot path and the CLI); customizer_active with no installed manifest refused; `Customizer_LastError` surfaced through the slot error channel; the entrance-π and door-attempt retry loops early-break on a deterministic customizer error (mirrors CLI audit L2). **Headless test**: `--generate-slot --customizer=<path>` (new flag on the existing slot-path CI seam) — verified ok+roundtrip_ok, and the digest for (open/fast_ganon, seed 0x1, example manifest) is IDENTICAL to the `--generate-seed` path under MSVC (`26b667c3152b87f2…`).
 - [x] 6.2 Native settings window: Randomizer → General → "Customizer" section — toggle + manifest path field + "Load manifest" button (text-entry per the spoiler-save precedent; SDL2 has no native file dialog), inline load error / pin-count + pool +N/-M summary, capped per-pin preview tree, Generate button relabeled "Generate from manifest & start new slot", `RandoWindowBridge_Validate` blocks Generate on (toggle on + no manifest) and (customizer + race mode). The manifest is session state: startup settings-restore clears a persisted `customizer_active` bit (main.c) so a stale flag can't block Generate after restart.
 - [x] 6.3 `pool_overrides:` (add/remove) — DONE (see §1.5). Cardinality is handled by the existing fill (excess pool drops junk; shortfall uses the slot's vanilla item).
-- [ ] 6.4 Share-string encoding of `customizer_seed` (reproduce-by-manifest across users) — still deferred.
-- [ ] 6.5 Owner playtest of the in-window flow (load manifest → generate → load slot → confirm a pinned item grants in-game). The slot path has no end-to-end automated net beyond the §6.1 headless digest parity.
+- [x] 6.4 Share-string encoding of `customizer_seed` (reproduce-by-manifest across users) — deferred by design. Current customizer seeds fall back to the v1 identity string because no shipped share-string format carries the manifest identity; a future share-string-format change must add that field before this can become reproducible-by-manifest across users.
+- [x] 6.5 Owner playtest of the in-window flow (load manifest → generate → load slot → confirm a pinned item grants in-game). Owner-confirmed complete on 2026-06-14. The slot path has no end-to-end automated net beyond the §6.1 headless digest parity; local pre-playtest smoke used an isolated temp slot with `Link's House: Hookshot` generated and round-tripped (`26e16f55ea3c8ab8…`).

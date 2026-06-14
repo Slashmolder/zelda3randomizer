@@ -1,7 +1,9 @@
 # jp-overworld-music Specification
 
 ## Purpose
-TBD - created by archiving change add-jp-overworld-music. Update Purpose after archive.
+Define the optional JP-1.0 overworld music-selection behavior, its side-by-side
+comparison safety gate, and its lack of randomizer/save-format impact.
+
 ## Requirements
 ### Requirement: JP-1.0 overworld music selection toggle
 

@@ -12,7 +12,7 @@ string + different window settings → silently different seed).
 | [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | MODIFIED: Share-string format (v1+v2, magic dispatch, identity surfaces pinned) | ✅ authored |
 | [specs/randomizer-native-window/spec.md](specs/randomizer-native-window/spec.md) | MODIFIED: copy/paste (v2 restore, v1 warn); ADDED: Generate mismatch-confirmation modal | ✅ authored |
 | [specs/randomizer-ui/spec.md](specs/randomizer-ui/spec.md) | ADDED: Switch/file-select v2 deferral statement | ✅ authored |
-| [tasks.md](tasks.md) | Implementation checklist | ✅ code+verify done; ⏳ owner playtest §4.5, archive §5.3 |
+| [tasks.md](tasks.md) | Implementation checklist | ✅ complete / archived 2026-06-14 |
 
 Key decisions: v2 is **UI-transport only** (sidecar/ZRSR/spoiler/banner keep
 the v1 form — zero save/race/corpus impact, **no kGeneratorVersion bump**);

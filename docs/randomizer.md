@@ -95,6 +95,7 @@ axis via `item_pool`.
 | `medallion_shuffle` | `true`, `false` | `true` |
 | `boss_shuffle` | `true`, `false` | `false` (playable, experimental; render via the Enemizer redirect model; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
+| `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high` | `off` |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -124,7 +125,7 @@ Both default OFF; default seeds are byte-identical with or without this feature
 | Axis | Values | Default |
 |---|---|---|
 | `tricks` | `none` \| comma/`+`-joined trick ids \| `0xNN` or decimal mask | `none` |
-| `logic` | `NoGlitches`, `OverworldGlitches`, `MajorGlitches` (`HybridMG`/`NoLogic` → Phase D) | `NoGlitches` |
+| `logic` | `NoGlitches`, `OverworldGlitches`, `HybridMajorGlitches`, `MajorGlitches`, `NoLogic` | `NoGlitches` |
 
 `--settings=tricks=pearl-bypass+boots-clip` enables those bits (CSV uses kebab ids;
 unknown names are a hard error). The 8 trick bits:
@@ -320,10 +321,24 @@ feedback wanted.
   > handle correctly. Exclude Kholdstare/Trinexx from the shuffle under swordless
   > (or gate them) at the same time the predicate override lands.
 
-The drop-shuffle toggle is exposed in the PC native settings window under
-"Shuffles (experimental)"; the boss-shuffle toggle is shown disabled there. The
-shuffled-drops *visuals* are verified only by playtest — the headless checks
-above cover determinism + the structural invariants.
+The boss- and drop-shuffle toggles are exposed in the PC native settings window
+under "Shuffles (experimental)". The shuffled-drops *visuals* are verified only
+by playtest — the headless checks above cover determinism + the structural
+invariants.
+
+### Enemy shuffle (experimental)
+
+`enemy_shuffle=true` (`add-rando-enemy-shuffle`) randomizes non-boss enemy sprite
+types for dungeon rooms and overworld areas, then installs the assignment at
+slot load. It is deterministic from `(settings, seed)`, default-off, and
+orthogonal to item placement: enabling it does not change `placement_digest` or
+`sphere_digest`.
+
+The picker is GFX-sheet constrained and palette-aware so replacements use the
+sheets/palettes already loaded for the current context. Under the same axis, the
+runtime also randomizes per-enemy HP/contact damage while keeping bosses exempt.
+Killable-thief, bush-object, absorbable, and randomize-on-hit expansions remain
+follow-up axes rather than archive blockers.
 
 ### Door shuffle (experimental)
 
@@ -717,7 +732,8 @@ every platform) is asserted in CI by `Cosmetic_SelfCheck` (part of
 **Out of scope** (tracked elsewhere or deferred): gimmick palette modes
 (dizzy/sick/puke/blackout — need per-frame animated transforms); heart color /
 heart-beep / menu speed / quickswap (cosmetic *setters*, not shuffles — a separate
-QoL change); enemy/enemizer shuffle (gameplay — `add-rando-shuffles-and-minigames`).
+QoL change); any fuller Enemizer-class room/object mutation beyond the shipped
+`enemy_shuffle` axis.
 
 ## Field item sprites
 
@@ -1118,6 +1134,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 48→49 | **Drop shuffle** goes live in playable slots (installed at slot load; native-window toggle) with a heart floor; the spoiler emits `boss_assignments` / `drop_tables`. (Boss shuffle is generation-only — its runtime substitution is held back; see the Boss & drop shuffle section.) | **All 69 existing placement/sphere digests byte-identical** (boss/drop shuffle is orthogonal to item placement) — corpus regenerated reported 0 digest changes; 10 shuffle-on entries added that assert the orthogonality. Boss/drop *assignment* determinism is pinned by the new self-checks, not the corpus. The bump version-locks the now-live runtime drop algorithm + the shuffle-on race stamp (a shuffle-on v48 race seed would otherwise regenerate different drops/stamp). |
 | 55→56 | **Boss-shuffle beatability logic** — each shuffleable dungeon's `- Boss`/`- Prize` gates on the new `OP_CAN_KILL_BOSS(dungeon)` op (the *shuffled* boss's kill predicate) instead of the inline vanilla `CanKill<Boss>` macro, so an item-gated boss can't strand its prize once boss shuffle is runtime-live (corrects design.md D6; boss shuffle is **no longer** placement-orthogonal). | **Only `boss_shuffle=true` entries move** — 6 of the 8 boss-on corpus entries (4 placement + 2 sphere); the other 2 boss-on + all 102 boss-off entries are **byte-identical** (with the assignment at the vanilla identity the op resolves to the vanilla boss-kill predicate). Boss assignment install added to `Place_AssumedFill` (base seed). settings_hash / canonical layout unchanged (boss_shuffle was already canonical field #23). The runtime *render* (Enemizer redirect model) landed separately as a runtime-only change — no further bump (corpus byte-identical). |
 | 56→57 | **Pin Blind to Thieves' Town** in the boss-shuffle pool (10→9 shuffleable bosses). Blind has no boss sprite in its room data (TT-only maiden spawn + a `dung_savegame_state_bits & 0x2000` gate), so a Blind shuffled elsewhere never spawned (confirmed strand); pinning is the clean fix. | Changes the boss assignment for every `boss_shuffle=true` seed (9-perm + Blind pinned), so the boss-on placement/sphere digests move (7 entries); `boss_shuffle=false` stays byte-identical. settings_hash / canonical layout unchanged. Corpus regenerated. |
+| 60→61 | **Enemy-shuffle type-substitution axis** — non-boss enemies can be substituted per seed, with `enemy_shuffle` packed into canonical byte `[26]` bit0. | Default `enemy_shuffle=false` keeps settings hash and placement/sphere digests byte-identical; shuffle-on output is runtime-only and covered by selfchecks/playtest rather than the placement corpus. |
+| 64→65 | **Enemy-shuffle sheet/stat widening** — all-slot sprite-group reshuffle machinery plus per-enemy HP/contact-damage randomization under the existing `enemy_shuffle` axis. | No new canonical field and no placement impact. The bump version-locks the runtime enemy-shuffle algorithm; default seeds remain byte-identical. |
 | 67→68 | **Retire dead Fountain placement slots** — Waterfall Bottle/Pyramid Bottle sparse slots are removed from the fillable registry/pool. | All corpus placement/sphere digests regenerated because the open-location count and junk padding changed; settings serialization is unchanged. |
 | 68→69 | **Traps** — `traps=low|medium|high` replaces eligible final junk-filled placements with `TrapDamage` / `TrapFreeze`; pickup shows the generated fool message and skips vanilla item receipt. | Default `traps=off` keeps canonical byte `[26]` bits2-3 zero, so pre-existing v68 no-traps corpus seeds stay byte-identical; traps-on seeds intentionally change placement output and settings_hash. |
 | 70→71 | **Retire boss-heart shuffle UI / always shuffle boss drops** — the legacy `region_boss_hearts_in_pool` byte canonicalizes to `0`, boss Drop slots are fillable locations, and the selected item-pool difficulty's BossHeartContainer copies always enter the pool. The obsolete Pyramid Fairy bow-upgrade setting is no longer shown in the native window. | Default settings hash changes (`[10]` 1→0) and placement/sphere digests move globally because 10 boss Drop locations join fill and BossHeartContainer items are no longer pinned to boss drops. |
@@ -1333,14 +1351,14 @@ under `openspec/changes/archive/`) and pass `openspec validate --changes`.
 |---|---|---|---|---|
 | 1 | [`add-rando-confirmation-icons`](../openspec/changes/archive/2026-06-04-add-rando-confirmation-icons/) | 9 | Visible per-item icon ancilla for §6.2 direct-grant placements | ✅ Archived 2026-06-04 |
 | 1b | [`add-rando-fairy-chest-model`](../openspec/changes/archive/2026-06-04-add-rando-fairy-chest-model/) | 9 | Great-fairy ponds → two reach-only chest-model checks; retire Pyramid Sword/Bow | ✅ Archived 2026-06-04 |
-| 2 | [`add-rando-trackers`](../openspec/changes/add-rando-trackers/) | 1 | In-game item + location tracker overlays + checked-bitmap r/w paths | Full |
+| 2 | [`add-rando-trackers`](../openspec/changes/archive/2026-06-05-add-rando-trackers/) | 1 | Native ImGui tracker windows on PC + Switch-path in-game overlays + checked-bitmap r/w paths | ✅ Archived 2026-06-05 |
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/archive/2026-06-05-add-rando-race-mode-reveal/) | 6 | Spoiler suppression + CLI `--reveal-spoiler` + `RandoRevealSpoiler` keybind + SHA-256 stamp verify (built scope; in-binary reveal-UI + settings warning carved to `add-rando-race-mode-reveal-ui`) | ✅ Archived 2026-06-05 |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
 | 4b | [`add-rando-retro-world-state`](../openspec/changes/archive/2026-06-04-add-rando-retro-world-state/) | 3 | Retro shop dispatch + rupeeBow/takeAnys/wildKeys pinned (genericKeys → #4b-i) | ✅ Archived 2026-06-04 |
 | 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/archive/2026-06-05-add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b. Placement + logic-collapse + SRAM shared-counter runtime | ✅ Archived 2026-06-05 |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
 | 6 | [`add-rando-hints`](../openspec/changes/archive/2026-06-11-add-rando-hints/) | 5 | New `randomizer-hints` capability: 15 telepathic-tile hints + Storyteller/Fortune-Teller fork NPCs + Murahdahla (spoiler-only) + dialogue-ID injection | ✅ Archived 2026-06-11 (owner playtest-confirmed) |
-| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle playable/experimental with beatability + Enemizer-redirect render) |
+| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/archive/2026-06-14-add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | ✅ Archived 2026-06-14 |
 | 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |
 
 See the [`openspec/changes/` index](../openspec/changes/README.md) for the
@@ -1370,8 +1388,8 @@ Items folded into the changes above:
 | # | Change | Scope | Status |
 |---|---|---|---|
 | D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/archive/2026-06-02-add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | ✅ Archived 2026-06-02 |
-| D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Headless generation, playable-slot generation, and PC native-window manifest UI are built; share-string transport for the manifest identity remains deferred. See [Customizer mode](#customizer-mode). |
-| D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level: `HybridMajorGlitches` + `NoLogic` un-pin + NoLogic reachability short-circuit (logic graph merged to main). **Close-out pass** (D6 couples glitch seeds to `kFeatures0_RestoreJpGlitches`; F1/F3 reclassify the raw `major_glitches` thresholds to first-class `CanOneFrameClipOW`/`CanOneFrameClipUW` macros, closing canOneFrameClipOW at HMG; F2 authors the 9 missing technique macros; F4 flips `fake-flippers` → `verified-us10`; F1-followon surfaces the dropped OWG-group disjuncts (partial); F5 short-circuits `can_place` at NoLogic). kGen 64. | Applied; close-out playtest-pending |
+| D2 | [`add-rando-customizer-mode`](../openspec/changes/archive/2026-06-14-add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | ✅ Archived 2026-06-14 (owner playtest-confirmed). Share-string transport for the manifest identity is a deferred format follow-up. See [Customizer mode](#customizer-mode). |
+| D3 | [`add-rando-major-glitch`](../openspec/changes/archive/2026-06-14-add-rando-major-glitch/) | Major-glitch logic level: `HybridMajorGlitches` + `NoLogic` un-pin + NoLogic reachability short-circuit (logic graph merged to main). **Close-out pass** (D6 couples glitch seeds to `kFeatures0_RestoreJpGlitches`; F1/F3 reclassify the raw `major_glitches` thresholds to first-class `CanOneFrameClipOW`/`CanOneFrameClipUW` macros, closing OW at HMG; F2 authors the 9 missing technique macros; F4 flips `fake-flippers` → `verified-us10`; F1-followon surfaces the dropped OWG-group disjuncts (partial); F5 short-circuits `can_place` at NoLogic). kGen 64. | ✅ Archived 2026-06-14 |
 | D4 | [`add-rando-auto-tracker`](../openspec/changes/archive/2026-06-05-add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients (NDJSON; see *Auto-tracker (external clients)* above). | ✅ Archived 2026-06-05 |
 
 Phase C/D change folders are retained as the working record for unarchived features; individual README/task files describe their current built scope and remaining archive gates.

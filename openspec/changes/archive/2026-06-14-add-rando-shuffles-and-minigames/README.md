@@ -4,7 +4,9 @@ Phase B Slice 7 + Slice 8. Activates boss shuffle (`§7.1`) + drop-pool shuffle 
 
 ## Status
 
-**Fully authored.** Authored: 2026-05-26. Promoted with design.md (boss-shuffle pool composition, drop-pool tiers, Treasure-Chest minigame slot handling, post-sphere ordering decision).
+**Archived 2026-06-14.** Boss shuffle, drop-pool shuffle, and the §6.8
+minigame dispatch sites are shipped. See `tasks.md` and the archived spec
+deltas for the final as-built scope and deferred follow-ups.
 
 ## Read these in order
 
@@ -14,13 +16,16 @@ Phase B Slice 7 + Slice 8. Activates boss shuffle (`§7.1`) + drop-pool shuffle 
 | [design.md](design.md) | Boss pool + drop-pool tier + Treasure-Chest slot grouping + post-sphere ordering | ✅ authored |
 | [specs/randomizer-shuffles/spec.md](specs/randomizer-shuffles/spec.md) | Boss + drop-pool un-defer | ✅ authored |
 | [specs/randomizer-placement/spec.md](specs/randomizer-placement/spec.md) | 4 minigame dispatch sites | ✅ authored |
-| [tasks.md](tasks.md) | Implementation checklist (11 sections, ~45 tasks) | ✅ authored |
+| [tasks.md](tasks.md) | Implementation checklist (11 sections, ~45 tasks) | ✅ complete / archived |
 
 ## Effort
 
-**2-3 weeks of focused work.** Boss-shuffle is medium; drop-pool adds another week for post-sphere ordering; minigame dispatch is per-site discovery + instrumentation work.
+Complete; historical estimate retained only in git history.
 
-## Verified findings at chunking time
+## Historical findings at chunking time
+
+These were the pre-implementation findings used to start the change; see
+`tasks.md` and the archived specs for final shipped behavior.
 
 Per grep against `src/sprite_main.c` + `src/rando/chest_lookup.h`:
 - ✅ Hype Cave **chests** (4) are already wired via §6.3 universal chest hook (`chest_lookup.h:203-206`).
@@ -41,8 +46,7 @@ Per grep against `src/sprite_main.c` + `src/rando/chest_lookup.h`:
 - **Helpful: #2 trackers** for boss-shuffle visualization. Not strict.
 - **Independent of #4a/4b world-states.**
 
-## When work starts
+## Historical apply notes
 
-1. `/openspec-apply add-rando-shuffles-and-minigames` — Section 1 (pre-flight grep) settles per-site patch points first.
-2. Author per-shuffle module independently (boss first → drop-pool); minigame dispatch sites can interleave.
-3. `/openspec-archive` when done.
+This change has already been applied and archived. The original apply plan is
+retained in git history rather than repeated here as current instruction.

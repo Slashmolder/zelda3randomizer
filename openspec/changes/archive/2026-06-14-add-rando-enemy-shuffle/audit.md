@@ -17,11 +17,13 @@ Spec/docs reconciliation completed:
   described the early slot-2/MVP model and omitted all-slot reshuffle,
   generated `kSheetNeed` / `kOverlordNeed` tables, the graveyard slot-3 pin, and
   HP/contact-damage randomization. Reconciled.
-- **Unsupported water guarantee.** The old spec said water-only rooms SHALL draw
-  only water-capable enemies, but the current picker never sets `require_water`.
-  Reconciled the spec to the as-built conservative guarantee: all dungeon
-  replacements are killable + key-capable, hard-excluded rooms pass through, and
-  water stranding remains a playtest watch item / future classifier.
+- **Water guarantee narrowed.** The old spec said water-only rooms SHALL draw
+  only water-capable enemies. The current picker now preserves water-capable
+  source sprites via `require_water`, but it still does not classify water-only
+  rooms independently. Reconciled the spec to the as-built conservative
+  guarantee: all dungeon replacements are killable + key-capable, hard-excluded
+  rooms pass through, water-tagged sources stay water-capable, and broader water
+  stranding remains a playtest watch item / future classifier.
 - **Source comments stale.** `shuffle_enemies.h`, `shuffle_enemies.c`, and
   `load_gfx.c` still had comments saying no subgroup reshuffle / no HP-damage /
   slot-2-only reshuffle. Updated comments only; runtime code unchanged.
@@ -70,8 +72,9 @@ Spec/docs reconciliation completed:
 - OAM footprint compatibility is still not modelled. The replacement type's
   `sprite_flags2` loads after substitution, which fixes init order, but
   scene-dependent OAM clobber still needs playtest.
-- Water-only room classification is not implemented. Keep water stranding on the
-  playtest checklist before archive.
+- Water-only room classification is not implemented beyond source-sprite
+  `ESF_WATER`; keep broader water stranding on the playtest checklist for the
+  follow-up widening pass.
 - Backward-load warning for older enemy-shuffle-era slots remains a useful smoke,
   though the kGen bump + existing upgrade-warning path provide the behavior by
   construction.

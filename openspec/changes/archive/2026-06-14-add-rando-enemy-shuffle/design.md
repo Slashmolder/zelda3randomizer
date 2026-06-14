@@ -47,9 +47,12 @@ Additional per-pick constraints (from Enemizer; the beatability invariants — a
 - **Shutter/kill-clear rooms are a hand-maintained room-id list** (Enemizer `NeedKillable_doors` via `Room.IsShutterRoom`), not derivable from room data — port it.
 - **Key-room detection must use the rando placement table, not the vanilla sprite list.** Enemizer's `HasAKey` scans the vanilla ROM for an adjacent key sprite (`DungeonSprite.cs:66`); under item shuffle the key may be absent or placed elsewhere, so that scan is unreliable. Define key-room safety against the placement table + `NeedKillable_doors`.
 - **Context safety**: per-enemy `never_use_dungeon` / `never_use_overworld` flags (Enemizer `NeverUseDungeon`/`NeverUseOverworld`) constrain the pool by load context, and the runtime-derived vanilla-context allowlist further requires that vanilla uses the candidate in that same loader. Overworld candidates also require a vanilla-observed sprite-palette match for the current area. Some sprites are sheet-compatible in overworld but only safe in a narrower draw/AI/palette context.
-- **Water capability is tabled but not enforced yet**: `ESF_WATER` is generated,
-  but the current picker never sets `require_water`. Treat water stranding as a
-  playtest watch item / future classifier rather than a shipped invariant.
+- **Water capability is source-sprite constrained, not room-classified**:
+  `ESF_WATER` is generated and a water-capable source sprite sets
+  `require_water`, so those sources stay water-capable after substitution.
+  There is still no independent "this room is water-only" classifier for
+  non-water-tagged source sprites; treat broader water stranding as a playtest
+  watch item / future classifier rather than a shipped room-level invariant.
 - **Per-room excludes** (anti-softlock): the immovable-sprite room list (~60 rooms, `DontUseImmovableSpritesRooms`), the flying-sprite room list, per-sprite do-not-randomize room lists, and hard excludes (Mimic Cave, Agahnim-tower bridge) — port into a per-room constraint map (`SpriteRequirement.cs:897-956` + per-sprite `AddDontRandomizeRooms`).
 
 ### D4: Sheet widening is built, but currently palette-gated off

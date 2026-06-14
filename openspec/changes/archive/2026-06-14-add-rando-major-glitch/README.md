@@ -4,22 +4,25 @@
 
 ## Status
 
-**Phase D proposal-only stub.** Authored: 2026-05-26. Phase D cannot start before Phase B #5 (`add-rando-trick-logic-and-axes`) archives.
+**Archived 2026-06-14.** HybridMajorGlitches and NoLogic are shipped, including
+runtime JP-glitch flag coupling for glitch seeds, technique-macro
+reclassification, the NoLogic `can_place` short-circuit, and the documented
+follow-up carve-outs for remaining nested OWG disjuncts.
 
 ## Read these in order
 
 | File | Purpose | Status |
 |---|---|---|
 | [proposal.md](proposal.md) | Why, what changes, capabilities, impact | ✅ authored |
-| [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | Settings axis un-pin (values 3, 4) | 🪵 minimal stub deltas |
-| [specs/randomizer-logic/spec.md](specs/randomizer-logic/spec.md) | OP_GLITCH_LEVEL_AT_LEAST extension + NoLogic short-circuit | 🪵 minimal stub deltas |
-| `tasks.md` | Implementation checklist | ⏳ deferred (Phase D apply-time) |
+| [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | Settings axis un-pin (values 3, 4) + runtime JP-glitch coupling | ✅ archived |
+| [specs/randomizer-logic/spec.md](specs/randomizer-logic/spec.md) | OP_GLITCH_LEVEL_AT_LEAST extension, technique macros, NoLogic short-circuit | ✅ archived |
+| [tasks.md](tasks.md) | Implementation checklist | ✅ complete / archived |
 
 ## Effort
 
-**2-3 weeks of focused work.** HybridMG predicate authoring is the bulk.
+Complete; see `tasks.md` for the shipped scope and deferred follow-ups.
 
 ## Dependencies
 
-- Phase A archived.
-- **Phase B #5 trick-logic-and-axes archived first** — Phase D extends Phase B's `OP_GLITCH_LEVEL_AT_LEAST` handler.
+- Phase A and Phase B #5 are archived; this change is now archived on top of
+  those baselines.

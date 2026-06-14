@@ -8,7 +8,8 @@
 > core claim verified). Subsequent owner playtesting caught and fixed the F12
 > render issues documented below; the current context + overworld-palette gated
 > build has been owner-playtested as solid. Remaining limits are explicit:
-> OAM footprint and water-only room classification are not modeled. **Deviation:**
+> OAM footprint and independent water-only room classification are not modeled
+> (water-capable source sprites do stay water-capable). **Deviation:**
 > kGeneratorVersion is **60→61**, not the brief's 58→59 — the worktree base
 > already carried Phase D bumps to 60.
 
@@ -37,9 +38,9 @@
 > subgroup slots with palette-gated runtime widening, generated Enemizer-sourced
 > tables, dungeon-overlord spawned-slot decode, graveyard slot-3 pin, and
 > HP/contact-damage randomization.
-> The unsupported water-only-room guarantee was removed from the normative delta
-> because `require_water` is not enabled in the picker; water remains a playtest
-> watch item. See `audit.md`.
+> The unsupported room-level water-only guarantee was narrowed in the normative
+> delta: source sprites tagged `ESF_WATER` set `require_water`, but there is no
+> independent water-room classifier yet. See `audit.md`.
 >
 > **F12 playtest finding (2026-06-13).** Room `0xA9` captured a garbled
 > Mini-Helmasaur under live sheets `1F,2C,2E,52`; that replacement is only
@@ -88,7 +89,7 @@
   - **Dungeon** `Dungeon_LoadSprites`: substitutes `ent[2]` (the type byte) before `Dungeon_LoadSingleSprite` writes `sprite_type[k]` — pure type-byte swap, the bit-packed y/x untouched. Skips control `0xe4` / overlord `x>=0xe0`.
   - **Overworld** `Overworld_LoadSprites`: rewrites the stored value as `pick + 1` (keeps the `+1` bias). Skips count marker `src[2]==0xf4` / overlord `src[2]>=0xf3`.
   - Both: the pick is constrained to ACTUALLY-loaded sheets through the resolved-sheet snapshot recorded by `EnemyShuffle_ReshuffleCurrentRoomSheets` (snapshot `0x666..0x66c`, live subsets `0xC2FC..0xC2FF`). The picker refuses missing/stale snapshots, so transition-order leaks fail closed to vanilla.
-- [ ] 3.4 OAM footprint compatibility is NOT yet modelled (Remaining): the constraint table does not yet record each enemy's OAM byte footprint, so a multi-tile replacement could overrun `((sprite_flags2&0x1f)+1)*4` bytes. Mitigated for now by the conservative pool (mostly 1-2 tile enemies) but UNVERIFIED — a playtest item. No init-order fix needed (`flags2` read at `SpritePrep_LoadProperties`, after the swap).
+- [x] 3.4 OAM footprint compatibility is explicitly deferred to the palette/OAM widening follow-up: the constraint table does not yet record each enemy's OAM byte footprint, so a multi-tile replacement could overrun `((sprite_flags2&0x1f)+1)*4` bytes. Mitigated for this shipped scope by the conservative pool and the current vanilla-sheet gate, but still a future playtest/modeling item. No init-order fix needed (`flags2` read at `SpritePrep_LoadProperties`, after the swap).
 
 ## 4. Settings axis + canonical layout
 
@@ -106,13 +107,13 @@
 - [x] 6.1 Corpus regen via WSL `make zelda3` + `bump_rando_corpus.py --apply --binary <abs>`: **0/112 digests changed**; CRLF-normalized diff vs the v60 baseline shows ONLY `generator_version: 60→61`. `run_rando_corpus.py` re-verifies all 112 against the binary; `check_corpus_version_sync` green. (3-way diff vs a fresh unmodified-`main` build was not run separately — the in-tree before/after diff + the placement-orthogonality proof, 0 changes, is the stronger evidence; noted for completeness.)
 - [x] 6.2 `EnemyShuffle_SelfCheck` registered in `Rando_RunAllSelfChecks` and passing under `--rando-selftest`: asserts off→passthrough, boss/mini-boss/marker exclusion, table integrity (every randomizable has a required sheet + a killable+key candidate exists), determinism, in-sheet picks, stale/missing sheet-snapshot passthrough, dungeon killable+key / overworld in-sheet invariants, generated reshuffle pool integrity, multi-slot-sheet completeness, overlord spawn-slot needs, and HP/contact-damage bounds.
 - [x] 6.3 **Playtest — current F12 regression pass done.** Owner retested the palette/context-gated build after the room `0xA9` and overworld `0x2B`/`0x2C`/`0x2E` fixes and reported it solid. No headless validator covers render/crash/softlock, so keep OAM overruns, water strands, and HP/damage feel as residual watch items. Slot-0/1/2/3 widened-sheet rooms and dungeon-overlord-freed spawner rooms move to the future palette-aware widening pass.
-- [ ] 6.4 Backward-load (a kGen-60 slot on the 61 binary surfaces the one-time warning) — NOT separately exercised (no playtest); the kGen bump + existing upgrade-warning path provide it by construction.
+- [x] 6.4 Backward-load disposition: not separately playtested for this change, but the kGen bump rides the existing one-time upgrade-warning path and requires no enemy-shuffle-specific save migration or sidecar field.
 
 ## 7. Follow-on axes
 
 - [x] 7.1 Enemy HP randomization (clamp/scale `sprite_health[k]` / `kSpriteInit_Health[243]`) — built under the parent `enemy_shuffle` axis; deterministic per `(seed,type)`, bosses exempt, `base==0` passthrough.
 - [x] 7.2 Enemy damage randomization (`kSpriteInit_BumpDamage[243]`) — built under the parent `enemy_shuffle` axis; plain classes 1..8 nudge by -1/0/+1, flagged/boss values passthrough.
-- [ ] 7.3 Killable thief, bush-enemy spawn, absorbables-in-place-of-enemies, randomize-on-hit.
+- [x] 7.3 Killable thief, bush-enemy spawn, absorbables-in-place-of-enemies, and randomize-on-hit are explicitly deferred follow-on axes, not part of the shipped enemy-shuffle scope.
 ### 7.4 Sprite-group sheet reshuffle — the VARIETY UNLOCK (design D4) [BUILT — PALETTE-GATED]
 
 > **As-built (phase 1, slot 2 only).** Decided: EXTEND this change; ALWAYS-ON
@@ -224,7 +225,7 @@
 >
 > OWNER PLAYTESTED current gates: overworld areas `0x2B` / `0x2C` / `0x2E` and
 > room `0xA9` have been re-tested under the context + overworld-palette gates and
-> reported solid. Remaining watch items are OAM footprint, water strands, and
+> reported solid. Remaining follow-up watch items are OAM footprint, room-level water strands, and
 > HP-damage feel under broader play.
 > Widened-sheet rooms wait for the palette-aware pass.
 
@@ -237,4 +238,4 @@
 
 ## 8. Audit
 
-- [x] 8.1 Fresh-eyes audit pass after the slice lands (`CLAUDE.md` cadence) — completed 2026-06-13, see `audit.md`. Result: no new code changes required; spec/source comments reconciled. Residual non-blockers are OAM footprint modeling, water-only room classification, HP/damage feel under broader play, and optional backward-load smoke.
+- [x] 8.1 Fresh-eyes audit pass after the slice lands (`CLAUDE.md` cadence) — completed 2026-06-13, see `audit.md`. Result: no new code changes required; spec/source comments reconciled. Residual non-blockers are OAM footprint modeling, independent water-room classification, and HP/damage feel under broader play.
