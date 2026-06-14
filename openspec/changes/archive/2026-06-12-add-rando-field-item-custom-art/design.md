@@ -17,9 +17,10 @@ Runtime-truth findings already gathered:
   red/blue are palettes 4/1/2. Scanning a live CGRAM dump, **no sprite palette is
   reliably grey at those indices**, and palette contents are area-dependent — so
   a plain `oam_flags` slot-swap cannot give a stable grey Rupoor.
-- ALTTPR's answer (`z3randomizer/itemdatatables.asm`): custom gfx + custom palette
-  per item. Rupoor `$59` + `PalettesCustom_off_black`; Triforce Piece `$6C` (16×16)
-  + `PalettesVanilla_green_blue_guard+$0E`. Tiles in `data/customitems.4bpp`.
+- Final asset policy: keep the attributed z3randomizer custom art for the
+  Triforce Piece and magic decanters, keep the attributed `off_black` custom
+  palette for Rupoor, and regenerate `custom_item_gfx.png` from local pixel rows
+  with an authored preview palette.
 
 ## Goals / Non-Goals
 
@@ -33,9 +34,13 @@ Runtime-truth findings already gathered:
 
 **Non-Goals:**
 - No new gameplay, logic, or placement behavior.
-- Not porting z3randomizer's whole custom-item-gfx subsystem — just the two tiles
+- Not porting z3randomizer's whole custom-item-gfx subsystem — just the tiles
   (+ palettes) these items need.
-- HalfMagic / QuarterMagic stay audio-only (separate, lower value).
+- ~~HalfMagic / QuarterMagic stay audio-only (separate, lower value).~~
+  *Superseded at apply time (user request after the first playtest): the ½/¼
+  magic decanters were added as blob entries 1/2 — they reuse the triforce's
+  palette and draw path wholesale, so the marginal cost was two PNG cells +
+  two yaml entries.*
 
 ## Decisions
 
@@ -47,20 +52,16 @@ pipeline + a loader that writes the receive-item VRAM slot (chars 0x24/0x34), so
 the existing draw path consumes it unchanged. *Alternative:* find spare room in a
 vanilla sheet → rejected (fragile, no guaranteed free tile).
 
-### D2 — Source the tiles from z3randomizer, license permitting; else author them
-`z3randomizer/data/customitems.4bpp` already contains the exact tiles ALTTPR uses
-($6C triforce, $59 rupoor). Extracting them is the fast path. **Gate:** verify the
-z3randomizer repo's license covers reusing its gfx data (the ALTTPR PHP is MIT;
-the asm repo's art assets need their own check). If not reusable, author two
-equivalent 4bpp tiles (a triforce is trivial geometry; a rupoor is a rupee
-silhouette).
+### D2 — Keep attributed custom art, with a local source of truth
+The z3randomizer license permits reusing the custom art with notice
+preservation. The committed generator stores the custom-art pixel rows locally
+and does not read source-blob offsets or ROM-derived palette data. If provenance
+becomes ambiguous, replace the affected art with newly authored local art.
 
 ### D3 — Custom palettes loaded at draw, like sword/shield
-Port `PalettesCustom_off_black` (16 colours) for Rupoor and the triforce palette,
-and load them into the draw's sprite palette slot the way `Palette_Load_Sword` /
-`Palette_Load_Shield` do (the field draw already calls those for sword/shield
-gfx). This gives a *stable* colour independent of area palettes (the reason a
-slot-swap fails).
+Load custom-art palettes at draw time so the colour is stable independent of
+area palettes (the reason a slot-swap fails). The PNG preview palette is not a
+runtime source.
 
 ### D4 — Resolve in `Rando_GetFieldItemIcon`, sync the confirmation icon
 Add explicit cases: `ITEM_TriforcePiece` → triforce tile + palette; `ITEM_Rupoor`
@@ -71,8 +72,8 @@ have no receive code; they resolve through the icon/custom path).
 
 ## Risks / Trade-offs
 
-- **License of z3randomizer art** → Mitigation: verify before copying; author
-  originals if needed (D2). Do not commit copied data until cleared.
+- **License of z3randomizer art** → Mitigation: retain only attributed MIT art;
+  author replacements if provenance becomes ambiguous.
 - **Asset-pipeline plumbing for a new gfx blob is the bulk** (extract + compile +
   reader + cache invalidation), per "asset format changes require both ends." →
   Mitigation: keep the blob to 2 tiles; mirror the existing custom-asset patterns.
@@ -87,11 +88,9 @@ Additive + reversible. Until built, Triforce Piece keeps its vanilla fallback an
 Rupoor keeps the green-rupee look (both already shipped in
 `add-rando-field-item-sprites`). No save/format/corpus migration.
 
-## Open Questions
+## Resolved Questions
 
-- z3randomizer art license — reusable, or author originals?
-- Cleanest fork home for a 2-tile custom-item gfx blob (new asset entry vs.
-  appending to an existing custom-asset section in `zelda3_assets.dat`).
-- Does the off_black palette load need a dedicated sprite slot, or can it
-  transiently reuse one (and must it restore)? Resolve in an apply-time spike,
-  same as the original field-item gfx spike.
+- z3randomizer custom art is reusable under MIT with notice.
+- The custom-item graphics live in `kRandoCustomItemGfx`, sourced from the
+  committed PNG.
+- The off-black palette path is implemented in `sprite.c`.

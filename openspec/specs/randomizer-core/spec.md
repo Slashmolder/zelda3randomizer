@@ -31,35 +31,44 @@ The implementation SHALL NOT use `htobe*`, `be*toh`, or other big-endian convers
 
 ### Requirement: Settings canonical serialization order (normative)
 
-The `RandoSettings` struct SHALL be canonically serialized field-by-field in the following order with the pinned widths. This serialization is the input to `SHA-256()` for the `settings_hash` computation and to the share-string encoder for the `seed_u64`-adjacent settings portion. The order is **normative spec**, not deferred to `audit.md`.
+The `RandoSettings` struct SHALL be canonically serialized field-by-field in the following 28-byte layout. This serialization is the input to `SHA-256()` for the `settings_hash` computation and to the v2 share-string encoder for the `seed_u64`-adjacent settings portion. The order is **normative spec**.
 
 **Enum value names align with ALTTPR's config strings** (verified against `app/Randomizer.php` and `config/alttp.php` in `alttp_vt_randomizer`). Hand-translation from ALTTPR is mechanical when names match; share-string-to-PHP-config debugging is 1-to-1. Where ALTTPR uses hyphens (e.g., `triforce-hunt`), our CLI surface preserves the exact string; the C struct field substitutes underscore for the hyphen (parser does the translation).
 
-1. `mode_state` — uint8 LE (CLI/share-string: `open=0`, `standard=1`, `inverted=2`, `retro=3`). ALTTPR key: `mode.state`.
-2. `goal` — uint8 LE (CLI: `ganon=0`, `fast_ganon=1`, `dungeons=2`, `pedestal=3`, `triforce-hunt=4` (hyphenated per ALTTPR), `ganonhunt=5`, `completionist=6`). ALTTPR key: `goal`.
-3. `crystals_ganon` — uint8 LE (0..7). ALTTPR key: `crystals.ganon`.
-4. `crystals_tower` — uint8 LE (0..7). ALTTPR key: `crystals.tower`.
-5. `tricks` — uint8 LE. **Phase B change**: width retained at uint8; the bitmask shape is preserved. Phase A pinned to `none=0`; Phase B un-pins user input. The set of trick bits SHALL be enumerated in `assets/rando/op_registry.yaml` `tricks:` table; bit positions are stable across `generator_version` bumps. Trick names follow ALTTPR convention (kebab-case: `boots-clip`, `fake-flippers`, `bunny-revival`, etc.). Note: this is **8 bits, capping trick count at 8 in Phase B**. Future widening to uint16 or uint64 is a `generator_version` bump trigger and a settings-order surgery — out of scope for this change.
-6. `item_pool` — uint8 LE (`easy=0`, `normal=1`, `hard=2`, `expert=3`). ALTTPR key: `item.pool` (also referenced as `item_pool` in `World.php:993`).
-7. `logic` — uint8 LE (`NoGlitches=0`, `OverworldGlitches=1`, `MajorGlitches=2`, `HybridMajorGlitches=3`, `NoLogic=4`; **Phase A pinned `NoGlitches`; Phase B un-pins user input to allow `OverworldGlitches` and `MajorGlitches`**). `HybridMajorGlitches` and `NoLogic` remain reserved for Phase C+. PascalCase preserved per ALTTPR convention at `Randomizer.php:122`. ALTTPR key: `logic`.
-8. `mode_weapons` — uint8 LE (`randomized=0`, `assured=1`, `vanilla=2`, `swordless=3`; **Phase A supported `randomized`/`assured`; Phase B un-pins user input to allow `swordless`**). `vanilla` remains reserved for later phases. ALTTPR key: `mode.weapons`.
-9. `accessibility` — uint8 LE (`items=0`, `locations=1`, `none=2`; **Phase A supported `items`/`locations`; Phase B un-pins user input to allow `none`**). ALTTPR key: `accessibility`.
-10. `region_pyramid_bow_upgrade` — uint8 LE (**boolean**: `0=false` granting BowAndArrows, `1=true` granting BowAndSilverArrows per `Randomizer.php:150-152`). **Phase A pinned to `1=true`; Phase B un-pins user input to allow `0=false`** (Pyramid Fairy trade-in yields Bow+Arrows). ALTTPR key: `region.pyramidBowUpgrade`.
-11. `region_boss_hearts_in_pool` — uint8 LE (boolean; Phase A pinned to `1=true` for identity placement of the 10 boss-heart slots). ALTTPR key: `region.bossHeartsInPool`.
-12. `dungeon_items_small_keys` — uint8 LE (`vanilla=0`, `dungeon=1`, `wild=2`).
-13. `dungeon_items_big_keys` — uint8 LE (same).
-14. `dungeon_items_maps` — uint8 LE (same).
-15. `dungeon_items_compasses` — uint8 LE (same).
-16. `prize_shuffle` — uint8 LE (boolean).
-17. `medallion_shuffle` — uint8 LE (boolean).
-18. `race_mode` — uint8 LE (boolean).
-19. `pieces_required` — uint16 LE (Triforce Hunt / Ganon Hunt).
-20. `pieces_placed` — uint16 LE.
-21. Trailing zero-padding to a multiple of 4 bytes (reserved).
+| Byte | Field | Encoding |
+|---:|---|---|
+| 0 | `mode_state` | uint8 (`open=0`, `standard=1`, `inverted=2`, `retro=3`). ALTTPR key: `mode.state`. |
+| 1 | `goal` | uint8 (`ganon=0`, `fast_ganon=1`, `dungeons=2`, `pedestal=3`, `triforce-hunt=4`, `ganonhunt=5`, `completionist=6`). |
+| 2 | `crystals_ganon` | uint8, 0..7. |
+| 3 | `crystals_tower` | uint8, 0..7. |
+| 4 | `tricks` | uint8 bitmask; bit positions are stable across `generator_version` bumps. |
+| 5 | `item_pool` | uint8 (`easy=0`, `normal=1`, `hard=2`, `expert=3`). |
+| 6 | `logic` | uint8 (`NoGlitches=0`, `OverworldGlitches=1`, `MajorGlitches=2`, `HybridMajorGlitches=3`, `NoLogic=4`). |
+| 7 | `mode_weapons` | uint8 (`randomized=0`, `assured=1`, `swordless=3`; byte value 2 is reserved/invalid). |
+| 8 | `accessibility` | uint8 (`items=0`, `locations=1`, `none=2`). |
+| 9 | `pyramid_bow_upgrade` | legacy uint8; accepted for compatibility and canonicalized to `0`. |
+| 10 | `region_boss_hearts_in_pool` | legacy uint8; accepted for compatibility and canonicalized to `0`. |
+| 11 | `dungeon_items_small_keys` | uint8 (`vanilla=0`, `dungeon=1`, `wild=2`), after derived rules. |
+| 12 | `dungeon_items_big_keys` | uint8 (`vanilla=0`, `dungeon=1`, `wild=2`), after derived rules. |
+| 13 | `dungeon_items_maps` | uint8 (`vanilla=0`, `dungeon=1`, `wild=2`). |
+| 14 | `dungeon_items_compasses` | uint8 (`vanilla=0`, `dungeon=1`, `wild=2`). |
+| 15 | `prize_shuffle` | uint8 boolean. |
+| 16 | `medallion_shuffle` | uint8 boolean. |
+| 17 | `race_mode` | uint8 boolean. |
+| 18 | `pieces_required` | uint16 LE low byte. |
+| 19 | `pieces_required` | uint16 LE high byte. |
+| 20 | `pieces_placed` | uint16 LE low byte. |
+| 21 | `pieces_placed` | uint16 LE high byte. |
+| 22 | `hints` | uint8 boolean (`off=0`, `on=1`; aliases `sahasrahla`/`full` resolve to `on`). |
+| 23 | `boss_shuffle` | uint8 boolean. |
+| 24 | `drop_shuffle` | uint8 boolean. |
+| 25 | entrance axes | bit-packed: bit0 `shuffle_cave_entrances`, bit1 `shuffle_dungeon_entrances`, bit2 `coupled`, bit3 `cross_category`, bit4 `decoupled`, bit5 `shuffle_ganons_tower_entrance`; bits6-7 reserved. |
+| 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, bits2-3 `traps` (`off=0`, `low=1`, `medium=2`, `high=3`); bits4-7 reserved. |
+| 27 | door axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-7 reserved. |
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
 
-**Phase B note**: This change does NOT change the order, widths, or enum value assignments. The Phase B values (`logic >= OverworldGlitches`, `mode_weapons = swordless`, `accessibility = none`, `region_pyramid_bow_upgrade = false`, and any non-zero `tricks` bit) are already part of the Phase A canonical-serialization spec — Phase A pinned the user-facing input to a subset, not the byte layout. Default-settings seeds (all Phase A pin values: `tricks=none`, `logic=NoGlitches`, etc.) SHALL produce a `settings_hash` byte-identical to Phase A's hash for the same axis values.
+Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes. Deserialization masks only the defined bits of bytes 25..27 and leaves undefined bits forward-compatible, but range-checks the scalar enum/count fields.
 
 #### Scenario: Reordering fields breaks settings_hash
 - **WHEN** the canonical serialization order changes (e.g., swap fields 4 and 5)
@@ -67,11 +76,11 @@ Changing this order — or the field widths, or the enum value assignments — i
 
 #### Scenario: Phase A defaults
 - **WHEN** the user opens the settings screen and has not changed any field
-- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `region_pyramid_bow_upgrade=true`, `region_boss_hearts_in_pool=true`, `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`. `pieces_required` and `pieces_placed` defaults are pinned in `audit.md` against ALTTPR's `item.Goal.Required` and corresponding placed-count config; earlier drafts asserted 20/30 from memory — actual ALTTPR defaults to be confirmed during Phase 0 by reading `config/alttp.php`.
+- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, and `door_shuffle=vanilla`.
 
-#### Scenario: Default settings hash preserved across Phase B un-pin
-- **WHEN** a Phase A default-settings seed is generated after this change
-- **THEN** the `settings_hash` is byte-identical to the Phase A-generated value for the same axis values — un-pinning user input does not change the canonical-serialization byte sequence for the default tuple
+#### Scenario: Retired boss-heart axis canonicalizes to shuffled
+- **WHEN** settings are built from defaults, CSV, or a v2 share string
+- **THEN** `region_boss_hearts_in_pool` canonicalizes to `0`, so the settings hash and placement both reflect shuffled boss-heart drops
 
 #### Scenario: Trick bitmask non-zero changes settings hash
 - **WHEN** a seed is generated with `settings.tricks` having any bit set
@@ -83,7 +92,7 @@ Changing this order — or the field widths, or the enum value assignments — i
 
 #### Scenario: pyramid_bow_upgrade=false — NOT shipped (obsolete under the fairy-chest model)
 - **WHEN** the `region_pyramid_bow_upgrade=false` (`arrows`) variant is considered
-- **THEN** it is left pinned to `silvers` and NOT exposed: the fairy-chest-model change deleted the Pyramid Fairy bow trade-in this axis controlled (`Sprite_WishPond3` now grants the Pyramid Fairy chests directly and nothing reads `pyramid_bow_upgrade`), so un-pinning would expose a no-op setting
+- **THEN** it is refused or normalized away: the fairy-chest-model change deleted the Pyramid Fairy bow trade-in this axis controlled (`Sprite_WishPond3` now grants the Pyramid Fairy chests directly and nothing reads `pyramid_bow_upgrade`), so exposing it would expose a no-op setting
 
 #### Scenario: accessibility=none allows un-completable seeds
 - **WHEN** a seed has `settings.accessibility == none`
@@ -137,8 +146,9 @@ The system SHALL construct the item pool from a base set that includes:
 - **Heart-related items** as distinct IDs: `PieceOfHeart` (4 = 1 heart container of effect, overworld PoH) and `BossHeartContainer` (full container drop from boss kills, +1 max HP directly). The dispatcher routes accordingly.
 - Small/big keys per dungeon, maps, compasses, multi-tier rupees (`Rupee1/5/20/100/300`).
 - **Junk pool**: `SmallMagic`, `Arrow1`, `Arrow10`, `Bombs1`, `Bombs3`, `Bombs10`. `Rupoor` is included only when `item_pool_difficulty ∈ {hard, expert}`.
+- **Traps**: when `settings.traps != off`, the placer SHALL replace eligible final junk-filled placements with `TrapDamage` / `TrapFreeze` after junk fill. This preserves placement cardinality and never replaces progression, dungeon items, prizes, Triforce pieces, pinned/event items, or fallback/identity placements.
 
-The system SHALL junk-pad the pool so that its cardinality equals the active world-state's location-pool cardinality after applying dungeon-item shuffle modes (which expand or contract the location pool per `randomizer-shuffles`).
+The system SHALL junk-pad the pool so that its cardinality equals the active world-state's **fillable** location count after applying dungeon-item shuffle modes (which expand or contract the location pool per `randomizer-shuffles`). Pre-pinned identity slots — prize/event/medallion slots, Retro shop and capacity-upgrade slots, and vanilla-mode dungeon items — never consume a pool item and SHALL be excluded from the junk-pad target; one shared pre-pin predicate drives both the pad target and the placer's pre-place pin pass so the two cannot drift (counting pinned slots oversizes the pool, and the junk-fill surplus drop then silently discards a random subset of it). TakeAny slots are likewise excluded (their rewards are role-pinned outside the pool).
 
 #### Scenario: TriforcePiece is in the pool for Triforce Hunt and Ganon Hunt
 - **WHEN** the goal is Triforce Hunt or Ganon Hunt with `pieces_placed = N`
@@ -154,11 +164,19 @@ The system SHALL junk-pad the pool so that its cardinality equals the active wor
 
 #### Scenario: After padding, pool cardinality matches location count
 - **WHEN** generation begins with any combination of valid settings
-- **THEN** after junk-padding, the item pool contains exactly as many items as there are placeable locations in the active world-state
+- **THEN** after junk-padding, the item pool contains exactly as many items as there are fillable (non-pre-pinned, non-TakeAny) locations in the active world-state
 
 #### Scenario: Triforce Hunt junk-padding
 - **WHEN** the goal is Triforce Hunt with `pieces_placed = N` and the unpadded pool is smaller than the location pool
 - **THEN** the pool is padded with junk items (small rupee, single bomb, single arrow, small heart) until cardinality matches
+
+#### Scenario: Trap frequency is count-preserving
+- **WHEN** `traps = low`, `medium`, or `high`
+- **THEN** the placement count remains equal to the active fillable location count, and exactly 4, 8, or 16 eligible junk-filled placements respectively are replaced by alternating `TrapDamage` and `TrapFreeze` items when enough eligible junk exists
+
+#### Scenario: Default traps are inert
+- **WHEN** `traps = off`
+- **THEN** the constructed pool contains no trap items and final placement output matches the pre-traps default output for the same settings and seed
 
 #### Scenario: Item-pool difficulty downgrade
 - **WHEN** the item-pool difficulty setting is "hard"
@@ -184,7 +202,7 @@ Fast Ganon and Ganon Hunt SHALL expose two independent crystal-count settings: `
 
 ### Requirement: Phase A setting axes (pinned values)
 
-The `RandoSettings` struct SHALL include the following axes with the documented Phase A value set; each appears in the canonical-serialization order documented in `audit.md`:
+The `RandoSettings` struct SHALL include the following axes with the documented Phase A value set; each appears in the canonical-serialization order documented by `randomizer-core / Settings canonical serialization order`.
 
 - `world_state`: Open / Standard / Inverted / Retro
 - `goal`: `ganon` / `fast_ganon` / `dungeons` / `pedestal` / `triforce-hunt` / `ganonhunt` / `completionist` (snake_case + hyphenated per ALTTPR convention)
@@ -195,7 +213,7 @@ The `RandoSettings` struct SHALL include the following axes with the documented 
 - `logic`: pinned to `NoGlitches` in Phase A
 - `mode.weapons`: `randomized` (default) / `assured` in Phase A; `vanilla` and `swordless` reserved for Phase B
 - `accessibility`: `items` (default) / `locations` (auto-set when goal is Completionist); `none` reserved for Phase B
-- `pyramid_bow_upgrade`: pinned to `silvers` in Phase A; `arrows` reserved for Phase B
+- `pyramid_bow_upgrade`: legacy/no-op, canonicalized to `silvers`
 - `dungeon_items.small_keys`: Vanilla / Dungeon / Wild
 - `dungeon_items.big_keys`: Vanilla / Dungeon / Wild
 - `dungeon_items.maps`: Vanilla / Dungeon / Wild
@@ -272,8 +290,8 @@ The process SHALL exit zero on success, non-zero on generation failure or (when 
 - **WHEN** `--generate-seed` is passed
 - **THEN** no SDL window is created, no game frame is run, and the process exits after writing the requested output files
 
-#### Scenario: Budget override extends the generation budget
-- **WHEN** `--budget-seconds=30` is passed and the configuration would otherwise exhaust the 5-second default budget
+#### Scenario: Budget override sets a wall-clock cutoff
+- **WHEN** `--budget-seconds=30` is passed (the default is `0` — no wall-clock cutoff, so the placer's bounded retry loop runs to its deterministic end; see the placer-determinism guard)
 - **THEN** generation completes (or fails) within 30 seconds and the actual wall-clock used is written to stderr
 
 #### Scenario: --assets-must-be-vanilla refuses non-vanilla blobs
@@ -300,8 +318,8 @@ The process SHALL exit zero on success, non-zero on generation failure or (when 
 - **WHEN** `--generate-seed` is passed
 - **THEN** no SDL window is created, no game frame is run, and the process exits after writing the requested output files
 
-#### Scenario: Budget override extends the generation budget
-- **WHEN** `--budget-seconds=30` is passed and the configuration would otherwise exhaust the 5-second default budget
+#### Scenario: Budget override sets a wall-clock cutoff
+- **WHEN** `--budget-seconds=30` is passed (the default is `0` — no wall-clock cutoff, so the placer's bounded retry loop runs to its deterministic end; see the placer-determinism guard)
 - **THEN** generation completes (or fails) within 30 seconds and the actual wall-clock used is written to stderr
 
 #### Scenario: --assets-must-be-vanilla refuses non-vanilla blobs
@@ -377,7 +395,7 @@ Per-item rewind algorithm: when the current item has no valid placement, rewind 
 - **THEN** generation fails with an error message naming the offending item and the budgets consumed; the spoiler is not written; the CLI exits non-zero
 
 #### Scenario: Forward-fill fallback after timeout
-- **WHEN** assumed fill exceeds the 5-second wall-clock budget
+- **WHEN** assumed fill exceeds an explicitly-passed positive wall-clock budget (the default budget is `0` = no cutoff)
 - **THEN** the generator falls back to forward fill (placing items into reachable locations in order) and surfaces a warning in the spoiler `fallback_warnings` array
 
 #### Scenario: Same-seed determinism across budgets
@@ -392,10 +410,11 @@ The generator SHALL emit a spoiler log in two forms: a human-readable text file 
 - 4-byte magic header `ZRSR` (Zelda Rando Spoiler Race — distinct from the full-spoiler form which is parseable JSON without magic).
 - 2-byte `generator_version` (LE).
 - 32-byte SHA-256 `spoiler_stamp` of the full-spoiler JSON the generator *would have emitted* with `race_mode` cleared in the canonical settings object (the stamp is over placement, not over the race-mode flag).
-- 4-byte length-prefix + UTF-8 `share_string` for round-trip convenience.
-- 4-byte CRC32 over the previous bytes for tamper detection.
+- 4-byte length-prefix + 64-byte zero-padded UTF-8 `share_string` for round-trip convenience.
+- 28-byte canonical settings blob (`kSettingsCanonicalLen`) with `race_mode` cleared.
+- 4-byte CRC32 over the previous 134 bytes for tamper detection.
 
-The total file size SHALL be 4 + 2 + 32 + 4 + N + 4 bytes (where N is the share-string length, ≤ 32 bytes). No `.txt` text-spoiler companion is emitted.
+The total file size SHALL be exactly 138 bytes. No `.txt` text-spoiler companion is emitted.
 
 #### Scenario: Both JSON and text spoilers are emitted (non-race seed)
 - **WHEN** a seed generates successfully with `race_mode == 0`
@@ -403,7 +422,7 @@ The total file size SHALL be 4 + 2 + 32 + 4 + N + 4 bytes (where N is the share-
 
 #### Scenario: Race-mode suppression writes only the stamp file
 - **WHEN** a seed generates successfully with `race_mode == 1`
-- **THEN** only the suppressed-spoiler file at `<spoiler_dir>/<share_string>.json` is written; no `.txt` companion is emitted; the file is exactly 134 bytes (4-byte magic `ZRSR` + 2-byte generator_version LE + 32-byte SHA-256 stamp + 4-byte share-string-length LE + 64-byte share-string zero-padded + 24-byte settings_canonical with race_mode cleared + 4-byte CRC32 LE). The settings_canonical field carries the original `RandoSettings` bytes (with `race_mode` cleared to 0 in the canonical form) because the sidecar slot does not preserve `RandoSettings` — only `settings_hash` (a truncated SHA-256, not invertible). The reveal pipeline needs the original settings to regenerate the placement deterministically.
+- **THEN** only the suppressed-spoiler file at `<spoiler_dir>/<share_string>.json` is written; no `.txt` companion is emitted; the file is exactly 138 bytes (4-byte magic `ZRSR` + 2-byte generator_version LE + 32-byte SHA-256 stamp + 4-byte share-string-length LE + 64-byte share-string zero-padded + 28-byte settings_canonical with `race_mode` cleared + 4-byte CRC32 LE). The settings_canonical field carries the original `RandoSettings` bytes (with `race_mode` cleared to 0 in the canonical form) because the sidecar slot stores only `settings_hash` in the fixed header. The reveal pipeline needs the original settings to regenerate the placement deterministically.
 
 #### Scenario: Stamp algorithm is canonical
 - **WHEN** the same `race_mode == 1` seed is generated twice on different platforms (Linux, macOS, Windows, Switch)
@@ -599,11 +618,11 @@ Three of the four flags are pinned by this change:
 
 ### Requirement: Junk-pool padding accommodates Retro shop locations
 
-`BuildItemPool` already pads junk to fill the `|locations|` count (per Phase A pool-construction). The Retro branch SHALL produce a junk-padded pool whose size matches `|Open locations| + |Retro shop locations|`. The junk-pool rotation is the same as Phase A — items are drawn from `SmallMagic / Arrow1 / Arrow10 / Bombs1 / Bombs3 / Bombs10`, with `Rupoor` added when `item_pool_difficulty ∈ {hard, expert}`.
+`BuildItemPool` already pads junk to fill the fillable-location count (per Phase A pool-construction). The Retro branch SHALL produce a junk-padded pool whose size matches the Retro **fillable** count: Retro's identity-pinned shop / capacity-upgrade slots and its role-pinned TakeAny slots add placement-table entries but consume no pool items, so they are excluded from the pad target. The junk-pool rotation is the same as Phase A — items are drawn from `SmallMagic / Arrow1 / Arrow10 / Bombs1 / Bombs3 / Bombs10`, with `Rupoor` added when `item_pool_difficulty ∈ {hard, expert}`.
 
 #### Scenario: Pool size matches expanded location count
 - **WHEN** a Retro seed is generated
-- **THEN** `|pool|` equals `|locations|` after junk-pad; no over- or under-fill; every location has exactly one placement-table entry
+- **THEN** `|pool|` equals the fillable `|locations|` after junk-pad (identity-pinned shop/upgrade and TakeAny slots excluded); no over- or under-fill; every location has exactly one placement-table entry
 
 ### Requirement: Race-mode reveal action
 
@@ -726,4 +745,67 @@ precisely to defer that cascade until the follow-on axes are real.
 - **WHEN** a follow-on change adds axes that exceed byte `[27]`
 - **THEN** `kSettingsCanonicalLen` grows, all coupled `_Static_assert` sites +
   corpus constants are updated together, and `generator_version` advances
+
+### Requirement: Traps settings axis in canonical serialization
+
+The traps axis SHALL join `RandoSettings` canonical serialization in existing
+reserved byte `[26]` **bits 2-3** as `traps ∈ {off=0, low=1, medium=2,
+high=3}`. Byte `[26]` bit0 remains `enemy_shuffle`, bit1 remains
+`customizer_active`; `kSettingsCanonicalLen` stays 28. The CSV parser SHALL
+accept `traps` and `trap_frequency` as aliases for the same axis.
+
+#### Scenario: Default traps keep settings_hash byte-identical
+- **WHEN** a default-settings seed (`traps == off`) is generated
+- **THEN** byte `[26]` bits2-3 pack to zero, `kSettingsCanonicalLen` stays 28,
+  and the default `settings_hash` is byte-identical to the pre-traps value
+
+#### Scenario: Trap frequency changes the per-seed settings_hash
+- **WHEN** a seed sets `traps != off`
+- **THEN** byte `[26]` bits2-3 carry the frequency, the `settings_hash` differs
+  from the `off` seed's, and serialize → deserialize round-trips the same
+  frequency
+
+### Requirement: Hints settings axis
+
+The settings struct SHALL include a binary `hints` axis (`uint8`, `off | on`) occupying canonical-serialization byte 22. The CSV parser SHALL accept `off | 0 | false | none` as off and `on | 1 | true | sahasrahla | full` as on; `sahasrahla` and `full` are accepted aliases for `on` and do NOT select a distinct mode. The axis SHALL participate in the settings hash. The default value SHALL be `on` unconditionally (not goal-dependent).
+
+- `off`: no hint generation; spoiler omits the `hints` section; telepathic tiles play vanilla text.
+- `on`: telepathic-tile hints are generated and surfaced in-game; the spoiler emits the `hints` array.
+
+> **As-built note**: an earlier draft specified a tri-state `off | sahasrahla | full` axis with a goal-aware default (`full` for Triforce/Ganon Hunt, `sahasrahla` otherwise). The implementation collapsed this to binary on/off (`sahasrahla`/`full` are CSV aliases) and made the default unconditionally `on`. A true tri-state is deferred. Murahdahla still emits only on Triforce/Ganon Hunt, but that is a generation-time goal check, not a settings default.
+
+#### Scenario: hints axis participates in settings_hash
+- **WHEN** the same seed is generated with `hints=off` and then with `hints=on`
+- **THEN** the resulting `settings_hash` values differ
+
+#### Scenario: hints default is on
+- **WHEN** a seed is generated without an explicit `hints=` override
+- **THEN** the resolved setting is `hints=on`; telepathic-tile hint generation runs
+
+#### Scenario: tri-state aliases collapse to on
+- **WHEN** a seed is generated with `hints=sahasrahla` or `hints=full`
+- **THEN** the resolved setting is `hints=on` (the alias selects no distinct mode)
+
+### Requirement: Hints spoiler section
+
+The JSON spoiler SHALL include a top-level `hints` array, populated only when `settings.hints == on`. Each entry SHALL be an object with the fields:
+- `npc` (string): the ALTTPR-compatible string id (e.g. `telepathic_tile_eastern_palace`, `murahdahla`); fork-extension ids are prefixed `fork_`.
+- `dialogue_id` (integer): the spoiler-label dialogue id `kRandoHintDialogueBase (0x200) + (npc_index - 1)`. This is a label only — it is NOT a runtime dialogue-table key.
+- `text` (string): the rendered hint text.
+
+The text spoiler SHALL mirror the JSON content under a `Hints:` heading with one line per entry, and SHALL be omitted entirely when no hint entry is populated. The settings block of the JSON spoiler SHALL additionally carry `"hints": <0|1>`. The spoiler's `meta` block SHALL also carry a `hints_count` integer — the number of populated hint NPCs (0 when `hints=off`) — for tooling.
+
+> **As-built note**: an earlier draft specified `source`/`kind` fields and a `goal-progress` Murahdahla shape with one entry per piece location. The implementation emits `{npc, dialogue_id, text}` and a single Murahdahla *region-summary* entry (region count, not per-piece/per-sphere). Full per-location flavor text and joke filler are deferred.
+
+#### Scenario: Hints array deterministic across runs
+- **WHEN** the same `(settings, seed)` is generated twice
+- **THEN** the spoiler's `hints` array contents are byte-identical between runs (same `npc`, `dialogue_id`, `text` values in the same order)
+
+#### Scenario: Triforce Hunt surfaces a Murahdahla summary
+- **WHEN** a seed with `goal ∈ {triforce-hunt, ganon-hunt}` is generated with `hints=on`
+- **THEN** the `hints` array contains a single entry with `npc=murahdahla` whose `text` summarizes how many Triforce pieces are placed across how many regions
+
+#### Scenario: hints off omits the section
+- **WHEN** a seed is generated with `hints=off`
+- **THEN** the JSON `hints` array is empty and the text spoiler `Hints:` section is omitted
 

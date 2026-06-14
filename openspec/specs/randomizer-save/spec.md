@@ -24,12 +24,12 @@ The sidecar SHALL contain a **16-byte file header** followed by three slot regio
 | Offset | Width | Field | Notes |
 |---:|---:|---|---|
 | 0 | 4 | `magic[4]` | distinct from slot magic |
-| 4 | 2 | `format_version` (LE) | Phase A = 1 |
+| 4 | 2 | `format_version` (LE) | Phase A = 1; current writes = 3 (version 2 added the per-slot settings blob, version 3 the slot extension block) |
 | 6 | 2 | `slot_count` (LE) | Phase A = 3 |
-| 8 | 4 | `file_crc` (LE) | CRC32 over the rest of the file |
+| 8 | 4 | `file_crc` (LE) | CRC-32 over the slot region (every byte after this 16-byte header), computed on write and verified on read; `0` = legacy file (pre-CRC writers), accepted without verification |
 | 12 | 4 | `reserved[4]` | zero-initialized; forward-compat |
 
-**Slot region** = slot header (80 bytes) + placement table + checked-location bitmap.
+**Slot region** = slot header (80 bytes) + placement table + checked-location bitmap + (`format_version` ≥ 2) a `kSettingsCanonicalLen`-byte canonical `RandoSettings` blob + (`format_version` ≥ 3) an 8-byte slot extension block (`@0-2` `entrance_digest24` LE, `@3-7` reserved zero). The loader keys each slot's body layout on the file's declared `format_version`, so v1/v2 files load with their shorter bodies.
 
 **Slot header (80 bytes total, byte-counted)**:
 
@@ -39,18 +39,31 @@ The sidecar SHALL contain a **16-byte file header** followed by three slot regio
 | 4 | 1 | `slot_kind` | Empty=0 / Vanilla=1 / Randomizer=2 |
 | 5 | 2 | `generator_version` (LE) | |
 | 7 | 16 | `settings_hash[16]` | first 16 bytes of SHA-256 of canonical settings serialization (per `randomizer-core / Settings canonical serialization order`) |
-| 23 | 32 | `share_string[32]` | raw binary form: `magic[4] \| version[2] \| settings_hash[16] \| seed_u64[8] \| checksum[2]` |
+| 23 | 32 | `share_string[32]` | stored seed identity: the 31-byte v1 raw share blob (`magic[4] \| generator_version[1] \| settings_hash[16] \| seed_u64[8] \| crc16[2]`) followed by one zero pad byte |
 | 55 | 2 | `last_vanilla_write_version` (LE) | the `generator_version` under which the paired `sram.dat` slot was last consistently written; SHALL be set to the current `generator_version` on every sidecar write |
 | 57 | 4 | `sram_slot_checksum_at_last_write` (LE) | checksum of the paired `sram.dat` slot snapshotted at the moment of sidecar write. Algorithm mirrors `src/messaging.c::SaveGameFile` for drift-detection compatibility with the vanilla writer: `t = 0x5a5a; for (i = 0; i < 0x4fe; i += 2) t -= u16le_at(slot_bytes + i); return (uint32)t;` (high 16 bits of the stored u32 are always zero). NOT CRC32 — the spec field is named for forward compatibility with a wider digest, but Phase A must match the vanilla per-slot routine. |
 | 61 | 2 | `placement_table_size` (LE) | bytes; REQUIRED for cross-version forward compatibility |
 | 63 | 1 | `flags` | bit 0 = forward-fill fallback was used; bits 1..7 reserved |
-| 64 | 16 | `reserved[16]` | zero-initialized; forward-compat |
+| 64 | 1 | `mushroom_held` | rando Mushroom possession bit; 0 for older slots |
+| 65 | 1 | `settings_ext_present` | 1 when `hints_setting`/`goal`/`world_state` are meaningful |
+| 66 | 1 | `hints_setting` | `RandoHintsMode` value |
+| 67 | 1 | `goal` | `Goal` enum value |
+| 68 | 1 | `world_state` | `WorldState` enum value |
+| 69 | 1 | `flute_shovel_owned` | bitfield: shovel/flute/flute-activated ownership |
+| 70 | 1 | `settings_present` | format_version >= 2: body carries a valid canonical settings blob |
+| 71 | 1 | `entrance_axes` | packed `kEntranceAxis_*` byte, matching canonical byte 25 |
+| 72 | 1 | `entrance_attempt` | accepted entrance-shuffle retry attempt |
+| 73 | 1 | `boomerang_owned` | bitfield: blue/red boomerang ownership |
+| 74 | 1 | `bow_owned` | bitfield: wood/silver bow ownership |
+| 75 | 1 | `prize_attempt` | accepted assumed-fill attempt for prize/medallion shuffle re-derivation |
+| 76 | 1 | `door_attempt` | accepted door-shuffle retry attempt |
+| 77 | 3 | `door_digest24` (LE) | 24-bit door-layout digest used for activation drift hard-fail |
 
-**Embedded placement table**: `placement_table_size` bytes — exact value stored per slot. The Phase A baseline location count is ~212 (Open / Standard / Inverted; counted from `app/Region/Standard/` location definitions). `Retro` world-state adds shop locations to the pool, inflating the table for those slots. The slot's `placement_table_size` field is therefore authoritative — the loader reads exactly that many bytes per slot, not a hardcoded constant. **Item-ID `0xFFFF` is reserved as the "no placement / deprecated location" sentinel** — the dispatcher treats sentinel entries as "no rando substitute" and falls back to `vanilla_item_id` (per `randomizer-placement / Dispatcher signature and fall-back behavior`).
+**Embedded placement table**: `placement_table_size` bytes — exact value stored per slot. The Phase A baseline location count is ~212 (Open / Standard / Inverted; counted from `app/Region/Standard/` location definitions). `Retro` world-state adds shop locations to the pool, inflating the table for those slots. The slot's `placement_table_size` field is therefore authoritative — the loader reads exactly that many bytes per slot, not a hardcoded constant. `placement_table_size` is always even (the table is a flat `uint16[]`); an odd value SHALL be rejected on write and treated as corruption (a failed slot parse) on load. **Item-ID `0xFFFF` is reserved as the "no placement / deprecated location" sentinel** — the dispatcher treats sentinel entries as "no rando substitute" and falls back to `vanilla_item_id` (per `randomizer-placement / Dispatcher signature and fall-back behavior`).
 
 **Checked-location bitmap**: `(placement_table_size / 2 + 7) >> 3` bytes; iterated only over `[0, placement_table_size / 2)` bits.
 
-**Forward-compat reserve (Phase C foresight)**: Phase C (entrance shuffle) WILL need to persist a per-seed entrance-map. Phase C SHALL append a TLV chain after the bitmap with the same shape as the snapshot tail TLV (`magic[8] + type[4] + length[4] + payload`). Older binaries reading a Phase C slot SHALL ignore unknown TLVs (read length, seek past). This is forward-looking; Phase A's slot body has no TLV chain.
+**Forward-compat model (as built)**: the slot body has NO TLV chain (only the snapshot tail uses that shape; the entrance-permutation requirement below records why the original TLV plan was superseded). Additive slot state lands either in single bytes of the slot header's reserved tail or in fixed-size sections appended after the bitmap and keyed on the file `format_version`: version 2 appended the canonical settings blob, version 3 the 8-byte extension block. Cross-version reads are gated on `format_version` in both directions (older binaries do not skip newer sections); new writes always use the current version.
 
 The spoiler file path SHALL NOT be stored in the slot. The runtime derives it from `[randomizer] spoiler_dir` config + the slot's share string — this is a deliberate decision so slots are invariant under config changes.
 
@@ -60,7 +73,7 @@ The spoiler file path SHALL NOT be stored in the slot. The runtime derives it fr
 
 #### Scenario: Slot header byte layout is exact
 - **WHEN** a slot header is serialized
-- **THEN** the byte offsets and widths above are observed exactly; `sizeof(RandoSlotHeader) == 80`; unused `reserved[16]` bytes are zero-initialized
+- **THEN** the byte offsets and widths above are observed exactly in the serialized 80-byte header; fields that are inactive for a slot are written as zero
 
 #### Scenario: Sentinel placement entry is recognized
 - **WHEN** the placement table contains the value `0xFFFF` at index k
@@ -74,6 +87,10 @@ The spoiler file path SHALL NOT be stored in the slot. The runtime derives it fr
 - **WHEN** the sidecar exists but a given slot has `slot_kind = Vanilla` or `Empty`
 - **THEN** the loader ignores any subsequent bytes of that slot and treats the corresponding `sram.dat` slot as a plain vanilla save
 
+#### Scenario: Corrupt file is refused
+- **WHEN** the file's `file_crc` is non-zero and does not match the CRC-32 recomputed over the slot region, or any slot declares an odd `placement_table_size`
+- **THEN** the read fails (the file is treated as corrupt) and no slot state is installed; a legacy file with `file_crc == 0` skips CRC verification and loads normally
+
 ### Requirement: Settings-hash truncation policy
 
 The `settings_hash` field stored in the sidecar slot header and in the share string SHALL be the **first 16 bytes** of `SHA-256(canonical_serialize(RandoSettings))`. Canonical serialization order is defined normatively in `randomizer-core / Settings canonical serialization order`.
@@ -86,12 +103,14 @@ The `settings_hash` field stored in the sidecar slot header and in the share str
 
 The load path SHALL use the embedded placement table directly and SHALL NOT regenerate from the share string. Loading SHALL succeed even when the binary's `generator_version` differs from the slot's, surfacing an informational warning rather than refusing.
 
+Three activation-time validation gates are carve-outs from the warn-only rule, each refusing the slot **non-destructively** (deactivate; the file is untouched): a door-shuffle slot whose regenerated layout digest mismatches `door_digest24` (see "Door-layout regeneration with a digest hard-fail"); an entrance-shuffle slot with a non-zero `entrance_digest24` (format_version ≥ 3) whose regenerated entrance layout digest mismatches (see "Entrance-permutation persistence"); and a slot whose canonical settings blob is present but fails range validation (`Settings_CanonicalDeserialize` → `Settings_Validate` rejects out-of-range enum bytes; undefined flag bits stay permissive) — a corrupt enum would otherwise flow into shift/index consumers or silently skip the digest gates.
+
 #### Scenario: Same generator version loads cleanly
 - **WHEN** the slot's `generator_version` matches the binary's
 - **THEN** the slot loads with no warning
 
 #### Scenario: Version drift loads with warning
-- **WHEN** the slot's `generator_version` differs from the binary's
+- **WHEN** the slot's `generator_version` differs from the binary's and no activation refusal gate fires (door/entrance layout digests verify or are absent; the settings blob, when present, validates)
 - **THEN** the slot loads using the embedded placement table, the loader reads exactly `placement_table_size` bytes (honoring the slot's size, not the binary's current registry count), and a one-time warning is shown
 
 #### Scenario: Location registry is append-only
@@ -173,7 +192,7 @@ The reveal action SHALL be the `Rando_RevealSpoiler(slot_index)` entry point def
 
 #### Scenario: Race-mode file contains only stamp
 - **WHEN** a race-mode slot is created
-- **THEN** the on-disk file contains the magic header `ZRSR`, the generator_version (u16 LE), the SHA-256 stamp, the length-prefixed share-string (64-byte buffer with leading length), the canonical-serialized settings (24 bytes, with `race_mode` cleared), and the CRC32 — and nothing else; the total size is exactly 134 bytes. The settings field is included because the sidecar slot does not preserve `RandoSettings` and reveal needs it to regenerate placement deterministically.
+- **THEN** the on-disk file contains the magic header `ZRSR`, the generator_version (u16 LE), the SHA-256 stamp, the length-prefixed share-string (64-byte buffer with leading length), the canonical-serialized settings (`kSettingsCanonicalLen` = 28 bytes, with `race_mode` cleared), and the CRC32 — and nothing else; the total size is exactly 138 bytes (`kRandoSuppressedSpoilerSize`). The settings field is included because the sidecar slot does not preserve `RandoSettings` and reveal needs it to regenerate placement deterministically.
 
 #### Scenario: Reveal verifies stamp
 - **WHEN** the player triggers reveal for a race-mode slot
@@ -238,11 +257,39 @@ region overrides. When `entrance_axes == 0` the bytes are zero and the slot is
 byte-identical (sans these two additive bytes, which older binaries already treat
 as reserved) to a non-entrance-shuffle slot.
 
+Regeneration drift SHALL be guarded by a digest (sidecar `format_version` 3): at
+generation the slot stores `entrance_digest24` — the low 24 bits of
+`Rando_EntranceLayoutDigest24` over everything the runtime entrance install
+regenerates from `(seed, axes, attempt)` — in the v3 slot extension block (the
+80-byte header is fully claimed). At activation, BEFORE any slot state installs,
+a slot with a non-zero `entrance_digest24` SHALL recompute the digest and on
+mismatch SHALL **refuse the slot** non-destructively (the same pathway as the
+door-shuffle gate — a drifted entrance layout can make the certified-beatable
+placement unbeatable). `entrance_digest24 == 0` — no entrance shuffle, or a
+pre-v3 slot that physically lacks the field — SHALL keep the legacy warn-only
+behavior: the slot loads, and `Entrance_RuntimeInstall` surfaces a loud
+version-drift warning when the slot's `generator_version` differs from the
+binary's (the regenerated π may not match the baked placement).
+
 #### Scenario: Entrance-shuffle slot round-trip
 - **WHEN** a coupled cave-shuffle slot is written and read back
-- **THEN** `entrance_axes` + `entrance_attempt` round-trip byte-identical, and the
-  runtime regenerates the SAME permutation π (so the same door→interior mapping
-  and region overrides are restored)
+- **THEN** `entrance_axes` + `entrance_attempt` (and the v3 `entrance_digest24`)
+  round-trip byte-identical, and the runtime regenerates the SAME permutation π
+  (so the same door→interior mapping and region overrides are restored)
+
+#### Scenario: Entrance-layout drift blocks activation (v3 slots)
+- **WHEN** a format_version-3 entrance-shuffle slot's recomputed entrance-layout
+  digest differs from the stored `entrance_digest24` (e.g. the entrance algorithm
+  or pool changed across builds)
+- **THEN** activation refuses the slot (deactivates, with a diagnostic) instead of
+  installing a permutation the placement was not certified against; the slot file
+  is left intact
+
+#### Scenario: Legacy digest-0 slot keeps the warn-only behavior
+- **WHEN** a pre-v3 entrance-shuffle slot (no extension block, so
+  `entrance_digest24` reads 0) loads under a different `generator_version`
+- **THEN** the slot loads with its embedded placement and a loud warning that the
+  regenerated entrance layout may not match — the legacy non-blocking path
 
 #### Scenario: Older binary ignores the entrance bytes
 - **WHEN** a Phase A or Phase B binary (no Phase C support) reads a Phase C
@@ -271,7 +318,7 @@ The bit SHALL persist to disk on the next sidecar write (per the existing `rando
 
 The bitmap SHALL NOT be cleared by the dispatcher under any circumstance during a session — once a location is checked, it stays checked until the slot is erased or the player explicitly invokes file-erase from the file-select screen.
 
-When the in-session bitmap differs from the on-disk bitmap and the sidecar write fires, the writer SHALL include the updated bitmap; the Phase C TLV chain (per `randomizer-save / Slot region layout`) SHALL still be appended after the bitmap regardless of whether the bitmap content changed.
+When the in-session bitmap differs from the on-disk bitmap and the sidecar write fires, the writer SHALL include the updated bitmap; the trailing slot sections (the `format_version` ≥ 2 settings blob and the `format_version` ≥ 3 extension block) SHALL still be appended after the bitmap regardless of whether the bitmap content changed.
 
 #### Scenario: Dispatcher fire sets the bit
 - **WHEN** the dispatcher fires for `LOC_HyruleCastle_BoomerangChest` and grants a substitute
@@ -289,9 +336,9 @@ When the in-session bitmap differs from the on-disk bitmap and the sidecar write
 - **WHEN** the player has 47 locations checked, saves, quits, and reloads
 - **THEN** the bitmap on reload reflects all 47 checked bits; the location-tracker (`randomizer-ui / Optional in-game location tracker (Phase B)`) shows the same `*` glyphs that were visible before the save
 
-#### Scenario: Phase C TLV reserve preserved
+#### Scenario: Trailing slot sections preserved
 - **WHEN** the writer commits the slot with updated bitmap
-- **THEN** the bitmap is at the same byte offset (slot header + placement table) and is `(placement_table_size / 2 + 7) >> 3` bytes long; any future Phase C TLV chain appended after it remains unaffected by bitmap-content changes
+- **THEN** the bitmap is at the same byte offset (slot header + placement table) and is `(placement_table_size / 2 + 7) >> 3` bytes long; the trailing settings blob and extension block follow it unaffected by bitmap-content changes
 
 #### Scenario: File-erase clears the bitmap
 - **WHEN** the player invokes file-erase on a slot from the file-select screen
@@ -312,8 +359,10 @@ fields are zero on vanilla-door slots and for pre-field writers. The settings bl
 already carries the door-shuffle axis; the share string already carries the seed —
 no other persisted state is required.
 
-Drift SHALL be **blocking** — NOT the non-blocking informational warning entrance
-shuffle uses. At activation (`Rando_ActivateSidecarSlot`), BEFORE any slot state is
+Drift SHALL be **blocking** — the model entrance shuffle has since adopted for its
+own digest (`entrance_digest24`, sidecar format_version 3; only legacy digest-0
+entrance slots still use the non-blocking informational warning). At activation
+(`Rando_ActivateSidecarSlot`), BEFORE any slot state is
 installed, a slot whose effective settings enable door shuffle SHALL regenerate the
 layout from the share-string seed + persisted `door_attempt`, recompute the 24-bit
 digest, and on generation failure or digest mismatch SHALL **refuse the slot**

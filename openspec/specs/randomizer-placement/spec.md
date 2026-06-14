@@ -88,9 +88,9 @@ Item types not in the receivable enumeration SHALL NOT be placed by the generato
 - **WHEN** the player defeats a dungeon boss (e.g., Helmasaur King in Palace of Darkness)
 - **THEN** the boss-death code path calls `Rando_OnLocationCheck(PalaceOfDarkness_BossHeart, BossHeartContainer)` AND separately `Rando_OnLocationCheck(PalaceOfDarkness_Prize, Prize_Crystal_PoD_Vanilla)`, granting whatever the placement table has at each location ID
 
-#### Scenario: Phase A boss-heart slots are identity-placed
+#### Scenario: Boss-heart slots are shuffled locations
 - **WHEN** Phase A generates a seed
-- **THEN** each of the 10 `<Dungeon>_BossHeart` slots in the placement table is hardcoded to `BossHeartContainer` (the placer does not shuffle them); the dispatcher still fires uniformly via the existing code path but every boss kill grants the heart container at that dungeon. Phase B's `bossHeartsInPool=true` setting (when added) would let these slots participate in the shuffle
+- **THEN** each of the 10 `<Dungeon>_BossHeart` slots is a normal shuffled drop location. The dispatcher still fires uniformly via the existing code path; if the placed item is `BossHeartContainer`, the boss kill behaves like vanilla, otherwise it grants the placed item.
 
 #### Scenario: Great-fairy ponds grant two reach-only checks on contact (chest model)
 - **WHEN** the player contacts a great-fairy pond — the Pyramid Fairy in the Dark World or the Waterfall of Wishing in the Light World — AND `kFeatures1_RandomizerActive` is set
@@ -246,18 +246,14 @@ Rationale: ALTTPR's `randomCollection(5)` regular-shop extras (`app/Randomizer.p
 
 ### Requirement: Boss-heart-container pool semantics and logic safety
 
-The placer SHALL interpret the `region_boss_hearts_in_pool` settings axis with
-its (inverted-relative-to-name) value semantics: a **non-zero** value (the
-default `1`) pins each of the 10 `<Dungeon> - Boss` Drop locations
-(`type == Drop`, `vanilla_item == BossHeartContainer`/`51`) to `BossHeartContainer`
-so those slots are identity-placed; a value of **`0`** leaves those slots as free
-assumed-fill targets. The 10 `BossHeartContainer` items SHALL be added to the item
-pool regardless of the axis value, so when the slots are pinned the containers end
-up at their boss slots, and when unpinned they participate in the general fill.
-
-The pin SHALL be keyed strictly on `type == Drop` together with the boss
-heart-container vanilla item, so the Sanctuary heart container (`type == Chest`,
-also a `BossHeartContainer`) is NEVER pinned by this rule.
+The legacy `region_boss_hearts_in_pool` settings axis SHALL be accepted for old
+CSV/share compatibility but canonicalized to `0` and ignored by placement. Each
+of the 10 `<Dungeon> - Boss` Drop locations (`type == Drop`,
+`vanilla_item == BossHeartContainer`/`51`) SHALL remain a free assumed-fill
+target. The current item-pool difficulty's `BossHeartContainer` count SHALL
+always enter the item pool (10 Easy/Normal, 6 Hard, 2 Expert), where they
+participate in the general fill. Players who want boss hearts pinned SHALL use
+Customizer pins.
 
 To keep assumed-fill sound when the boss slots are unpinned, every `<Dungeon> -
 Boss` Drop location's `can_reach` predicate SHALL require defeating that dungeon's
@@ -266,25 +262,17 @@ reach and open the boss room — in both the Standard and Inverted logic graphs.
 No boss Drop location's `can_reach` may be `TRUE()` or otherwise omit the
 boss-kill requirement.
 
-#### Scenario: Pinned (default) boss-heart slots are identity-placed
+#### Scenario: Boss-heart slots join the assumed-fill pool
 
-- **WHEN** `region_boss_hearts_in_pool` is non-zero (the default `1`)
-- **THEN** each of the 10 `<Dungeon> - Boss` Drop slots is hardcoded to
-  `BossHeartContainer`; the dispatcher still fires uniformly at every boss kill,
-  granting that dungeon's heart container
-
-#### Scenario: Unpinned boss-heart slots join the assumed-fill pool
-
-- **WHEN** `region_boss_hearts_in_pool` is `0`
+- **WHEN** any seed is generated
 - **THEN** the 10 boss Drop slots are free placement targets, non-heart items may
-  be placed there, and the 10 `BossHeartContainer` items are placed elsewhere by
-  assumed fill
+  be placed there, and the item-pool difficulty's `BossHeartContainer` count is
+  placed by assumed fill
 
-#### Scenario: Sanctuary heart container is not pinned by the boss rule
+#### Scenario: Legacy pinned value is ignored
 
-- **WHEN** the placer applies the boss-heart pin
-- **THEN** the Sanctuary location (a `BossHeartContainer` of `type == Chest`) is
-  excluded, because the pin keys on `type == Drop`
+- **WHEN** `region_boss_hearts_in_pool` is loaded as non-zero from an old input
+- **THEN** canonical settings and placement still behave as `0`
 
 #### Scenario: Boss Drop reachability requires the boss kill
 
@@ -463,4 +451,24 @@ byte-identical to the baseline.
 - **WHEN** `door_shuffle == vanilla`
 - **THEN** the placer never consults the door oracle or the ban, and placement is
   byte-identical to the baseline (regression corpus digests unchanged)
+
+### Requirement: Telepathic-tile hint dispatch
+
+The randomizer SHALL surface generated hints in-game by intercepting the vanilla dialogue read, NOT by carving a dynamic dialogue-ID range. `Text_LoadCharacterBuffer` (`src/messaging.c`) SHALL call `Rando_RenderHintMessage(dialogue_message_index, messaging_text_buffer)` before the vanilla dialogue decode; when the randomizer slot is active, `settings.hints == on`, and `dialogue_message_index` is one of the 15 hint-bearing vanilla US telepathic-tile message ids (`0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF, 0xC0..0xC7`; `0xB4` generic-default excluded), the function SHALL render the generated hint (font-encoded, `0x7f`-terminated) into the buffer and the engine SHALL skip the vanilla decode.
+
+The same intercept ALSO reroutes the fork-extension NPCs through `Rando_RenderHintMessage`: the Storyteller's paid-tip message ids (`0xFF, 0x101, 0x102, 0x103`) and the Fortune-Teller reading ids (`0xEA..0xF1, 0xF6..0xFD`, mapped to the Kakariko or Dark-World hint by the current world bit `(savegame_is_darkworld >> 6) & 1`) render their generated hints the same way. The Lake-Hylia Fortune Teller shares the Kakariko room with no runtime discriminator, so it surfaces the Kakariko hint.
+
+When the slot is inactive, hints are off, or the id is not a hint-tile id, `Rando_RenderHintMessage` SHALL return false and the vanilla text-engine flow SHALL proceed byte-identically.
+
+`Rando_GetHintDialogueId(npc) → uint16` (returning `0x200 + (npc-1)`, or `0xFFFF` when no hint is allocated) SHALL exist and is consumed by the **spoiler emitter** as the entry's `dialogue_id` label. It is NOT consulted by any in-game sprite handler.
+
+> **As-built note**: an earlier draft had hint NPC *sprite handlers* (Sahasrahla, storyteller, bookshelf, Murahdahla) invoking `Rando_GetHintDialogueId` to dispatch a slot-specific dialogue id from a carved dynamic range. The implementation instead intercepts the vanilla message ids in the messaging engine, and `Rando_GetHintDialogueId` survives only as a spoiler label. The Storyteller and the Kakariko/Dark-World Fortune Tellers ARE wired in-game through this same intercept (on their own message ids, above); the bookshelf was dropped and Murahdahla is spoiler-only (the fork has no Murahdahla sprite). `Rando_RemapTeleMsg` exists but is a vestigial unused stub.
+
+#### Scenario: Telepathic tile in rando mode renders the generated hint
+- **WHEN** the player reads a hint-bearing telepathic tile in an active randomizer slot with `hints=on`
+- **THEN** `Rando_RenderHintMessage` returns true and the message box shows the slot's generated hint instead of the vanilla telepathic text
+
+#### Scenario: Vanilla mode tiles unchanged
+- **WHEN** no randomizer slot is active (or `hints=off`) and the player reads a telepathic tile
+- **THEN** `Rando_RenderHintMessage` returns false and the standard vanilla text plays byte-identically
 

@@ -45,10 +45,11 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--settings=k=v,...` | Comma-separated overrides for any settings axis (table below). |
 | `--seed=0x...` | uint64 seed value. Required for single-seed mode. |
 | `--out-spoiler=<path>` | JSON spoiler path. Also writes a sibling `.txt` text spoiler. |
-| `--out-share-string=<path>` | Optional file for the raw base32 share string. |
+| `--out-share-string=<path>` | Optional file for the base32 share string (single line, no trailing newline). Writes the **v2** exchange string — the distribute-to-players form; customizer seeds fall back to v1 (see [Share-string format](#share-string-format)). |
 | `--budget-seconds=<n>` | Bounds the placement retry budget (default 0). Exhausted budget accepts the best-so-far attempt. |
 | `--assets-must-be-vanilla` | Refuses non-vanilla `zelda3_assets.dat` (compares against `kVanillaAssetsHash` in `src/rando/vanilla_assets_hash.h`). |
 | `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
+| `--customizer=<path>` | Customizer mode: load a manifest that PINS a subset of locations to chosen items; the assumed-fill placer completes the rest. See [Customizer mode](#customizer-mode). |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
 | `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, prize/medallion shuffles, boss shuffle, drop shuffle, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
 | `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 138-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
@@ -92,9 +93,10 @@ axis via `item_pool`.
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
 | `prize_shuffle` | `true`, `false` | `true` |
 | `medallion_shuffle` | `true`, `false` | `true` |
-| `boss_shuffle` | `true`, `false` | `false` (playable, experimental — kGenVer 56; render via the Enemizer redirect model; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
+| `boss_shuffle` | `true`, `false` | `false` (playable, experimental; render via the Enemizer redirect model; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
-| `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | `true` — ⚠ **value is inverted vs the key name.** `true` (the default) = boss-heart containers are **pinned** (identity-placed, NOT in the shuffle pool); `false` = hearts are shuffled **into** the pool. The native-settings UI hides this inversion behind the checkbox **"Shuffle boss heart containers"** (checked ⇒ `false`). Setting `false` changes placement. |
+| `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high` | `off` |
+| `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
 
@@ -121,7 +123,7 @@ Both default OFF; default seeds are byte-identical with or without this feature
 
 | Axis | Values | Default |
 |---|---|---|
-| `tricks` | `none` \| comma/`+`-joined trick ids \| `0xNN` mask | `none` |
+| `tricks` | `none` \| comma/`+`-joined trick ids \| `0xNN` or decimal mask | `none` |
 | `logic` | `NoGlitches`, `OverworldGlitches`, `MajorGlitches` (`HybridMG`/`NoLogic` → Phase D) | `NoGlitches` |
 
 `--settings=tricks=pearl-bypass+boots-clip` enables those bits (CSV uses kebab ids;
@@ -152,6 +154,10 @@ them; enabling one has no placement effect (and surfaces the unverified warning)
 > (`Rando_ActivateSidecarSlot`, so reloads and imported share strings are covered).
 > Only `fake-flippers` among the tricks couples (it maps 1:1 to a restored glitch);
 > a plain `logic=NoGlitches`/non-glitch-trick seed never gets the flag forced.
+> On PC, the Seed QoL tab also exposes a per-slot "Restore JP 1.0 glitches"
+> toggle for NoGlitches seeds that want the gameplay glitches as an opt-in play
+> preference. It is recommended off, does not affect the settings hash/share
+> string, and is separate from the cosmetic JP overworld music feature.
 > Note this guarantees the runtime can perform the **restored** subset (Fake
 > Flippers + Superspeed); an OWG/HMG/MG seed may still route through an
 > un-restored technique (boots-clip, mirror-clip, water-walk, one-frame-clip, …)
@@ -243,7 +249,7 @@ Two opt-in shuffle modules (`add-rando-shuffles-and-minigames`). Both default
   every non-boss corpus entry) stays byte-identical.
 
 **Status:** drop shuffle is **playable**; boss shuffle is now **playable
-(experimental)** — beatability logic (kGenVer 56) + the runtime render (the
+(experimental)** — beatability logic + the runtime render (the
 Enemizer redirect model) are both live and the UI toggle is enabled. A few bosses
 in non-home rooms have known cosmetic/spawn quirks (see the boss note); playtest
 feedback wanted.
@@ -267,11 +273,11 @@ feedback wanted.
 - **`boss_shuffle`** (playable, experimental) — randomizes which boss guards each
   of the 10 shuffleable dungeon boss rooms (EP, DP, ToH, PoD, SP, SW, TT, IP, MM,
   TR; Agahnim 1/2 + Ganon pinned) and emits the assignment in the spoiler under
-  `boss_assignments`. The dungeon->prize binding is unchanged. As of kGenVer 56
+  `boss_assignments`. The dungeon->prize binding is unchanged. Current behavior:
   the logic graph tracks the shuffled boss (beatability) AND the runtime renders
   it (the Enemizer redirect model); both are live and the UI toggle is enabled.
 
-  > ✅ **Beatability (landed, kGenVer 56).** The "second gap" the earlier note
+  > ✅ **Beatability.** The "second gap" the earlier note
   > flagged is now closed in logic. Each dungeon's `"<Dungeon> - Boss"`/`- Prize`
   > location gates on a new predicate-VM op **`OP_CAN_KILL_BOSS(dungeon)`** (macro
   > `CanKillBoss`) that resolves the dungeon's *currently assigned* boss and
@@ -292,7 +298,7 @@ feedback wanted.
   > (This replaced the earlier per-entry sprite-TYPE swap, which rendered garbage
   > and mis-spawned formation bosses.) Off / vanilla play is byte-identical (the
   > redirect returns a no-op). The render is PLAYTEST-ONLY validated — it could not
-  > be confirmed headless. KNOWN RISKS. **Blind** is now PINNED to Thieves' Town (kGenVer 57, not
+  > be confirmed headless. KNOWN RISKS. **Blind** is now PINNED to Thieves' Town, not
   > shuffled): TT has no Blind sprite — it spawns Blind via a maiden sequence + a
   > TT-only state bit (`dung_savegame_state_bits & 0x2000`), so a Blind shuffled
   > elsewhere never spawned (playtest-confirmed strand). Pinning is the fix;
@@ -303,7 +309,7 @@ feedback wanted.
   > playtest (still in the pool pending confirmation). The other shuffleable
   > bosses use the redirect + spawn-coord alignment cleanly.
   >
-  > **Swordless interaction** (swordless fresh-eyes audit, LOW): now that boss
+  > **Swordless interaction** (review note): now that boss
   > shuffle is runtime-live, a remaining caveat — the per-seed boss-kill override
   > MUST be swordless-aware — ALTTPR forbids Kholdstare/Trinexx outside their home
   > dungeons under swordless (`canPlaceBoss`, e.g. `Region.php:98-105`,
@@ -343,9 +349,11 @@ the actually-generated seed):
 The layout is **not stored in the save** — it regenerates from
 `(seed, settings, door_attempt @76)` at slot activation, and a persisted
 24-bit layout digest (@77-79) **hard-fails activation on mismatch** (a drifted
-interior layout could make the certified-beatable placement unbeatable, so
-unlike entrance shuffle's non-blocking version-drift warning, a door-shuffle
-slot refuses to load on a build that regenerates a different layout). The
+interior layout could make the certified-beatable placement unbeatable, so a
+door-shuffle slot refuses to load on a build that regenerates a different
+layout; entrance shuffle uses the same digest gate via the sidecar-v3
+`entrance_digest24` — only pre-v3 entrance slots keep the old non-blocking
+version-drift warning). The
 spoiler gains a `door_shuffle` section listing every pairing + the relocated
 key doors with their worst-case key thresholds. Logic-side, dungeon-interior
 reachability is computed by the same crystal-barrier-aware explorer the
@@ -355,6 +363,93 @@ the entrance lobbies reachable under current logic.
 `--door-selftest` runs the generation net headlessly (connectivity, prover
 acceptance, determinism, oracle/stitcher agreement for every shuffleable
 dungeon across many seeds).
+
+## Customizer mode
+
+Customizer mode hand-places specific items at specific locations. A manifest
+file PINS a subset of locations; the assumed-fill placer then fills every other
+location exactly as in a normal seed (faithful to ALTTPR's partial-manual +
+random-fill customizer). The runtime dispatcher is unchanged — a customizer
+placement is indistinguishable from an assumed-fill one.
+
+**Headless generation** (the shipped slice):
+
+```sh
+./zelda3 --generate-seed \
+  --settings=mode.state=open,goal=fast_ganon \
+  --seed=0x1 --out-spoiler=./out.json \
+  --customizer=./assets/rando/customizer.example.yaml
+```
+
+**Manifest format** — a strict line-based YAML subset:
+
+```yaml
+placements:
+  Eastern Palace - Big Chest: Hookshot
+  Link's Uncle: ProgressiveSword
+  Desert Palace - Big Chest: ProgressiveBow
+```
+
+- **Location keys** accept either the canonical symbol form (`Eastern_Palace_Boss`)
+  or the human form printed in the spoiler (`Eastern Palace - Boss`). Both resolve
+  through a normalized (lowercase, alphanumeric-only) match, so punctuation and
+  case don't matter.
+- **Item values** use the item-registry names (`Hookshot`, `TitanMitt`,
+  `ProgressiveSword`, …; see `assets/rando/item_registry.yaml` or any spoiler).
+- A sample manifest ships at `assets/rando/customizer.example.yaml`.
+
+An optional `pool_overrides:` section adjusts the item pool before fill:
+
+```yaml
+pool_overrides:
+  add: [ProgressiveSword, ProgressiveSword]
+  remove: [Rupoor]
+```
+
+- `remove` is best-effort — an item that isn't in the (settings-dependent) pool
+  is a silent no-op. `add` inserts items into the correct tier; it cannot add
+  prize/event items (no grant path). `remove` then `add` apply before pins, so a
+  pin can consume an added item. Adding more items than open locations drops the
+  excess junk at fill time; removing more than you add leaves some locations on
+  their vanilla item.
+- **Per-item grant caps** are enforced: the pool after overrides plus any
+  out-of-pool pins may not exceed what the game can actually grant — 4
+  `ProgressiveSword`, 3 `ProgressiveShield`, 2 `ProgressiveArmor`,
+  2 `ProgressiveGlove`, 2 `ProgressiveBow`, and 4 bottles **total** across all
+  bottle variants (Link has 4 bottle slots). An over-cap manifest is refused
+  with an error naming the item and the cap; remove pool copies (e.g.
+  `remove: [BottleEmpty]`) to make room for a pinned variant.
+
+**What you can pin.** Ordinary item locations (chests, NPCs, freestanding items,
+boss-heart drops, and dungeon item slots in a non-vanilla dungeon-item mode). The
+generator REFUSES a pin on a computed-item location — dungeon prizes, the Misery
+Mire / Turtle Rock medallion tablets, Retro shop / capacity-upgrade / take-any
+slots — or on a slot the current settings already vanilla-place (a vanilla-mode
+dungeon key). The error names the location and the reason.
+
+**Completability.** The pinned seed runs the same goal/accessibility refusal gate
+as a normal seed: an un-completable hand-placement is refused (the spoiler is not
+written) unless you pass `--allow-broken-seed`. Generation is deterministic — the
+same manifest + seed + settings always produce the same placement.
+
+`customizer_active` participates in `settings_hash` (canonical byte `[26]` bit1);
+`customizer_seed = sha256(manifest_bytes)[0..8]` identifies the manifest. With
+customizer mode off, every byte of generation is unchanged (the regression corpus
+is byte-identical).
+
+**Playable slots + the native window.** The PC settings window (Randomizer →
+General → "Customizer") has the same flow: enable the toggle, enter the manifest
+path, "Load manifest" (inline error, or pin-count + pool summary on success),
+then "Generate from manifest & start new slot". The slot persists the pinned
+placement, so the manifest is needed only at generation time — reloading the
+save never re-reads it. The headless slot seam mirrors the window:
+`--generate-slot --customizer=<path>` produces the identical `placement_digest`
+as `--generate-seed` for the same settings/seed/manifest.
+
+> **Race mode is refused with customizer mode** (CLI and slots): the race
+> reveal regenerates placement from seed + settings alone and cannot reproduce
+> manifest pins. Share-string encoding of `customizer_seed`
+> (reproduce-by-manifest across users) is still deferred.
 
 ## In-game item behavior
 
@@ -381,17 +476,63 @@ flute became your selected Y-item.)
 
 ## Share-string format
 
-Magic prefix: `ZRSS` (Zelda Rando Share String). Distinct from alttpr.com's
-share format; **the two are not cross-compatible in either direction** (a
-deliberate choice — different generator, different placement output for the
-same notional "seed").
+Share strings are single base32 tokens (uppercase, no padding) carrying a
+CRC-16-CCITT-FALSE checksum and a 4-byte magic prefix unique to this port.
+There are two wire formats; the decoder accepts both and dispatches on the
+magic.
 
-Encoding: base32, with a CRC-16-CCITT-FALSE checksum.
+**v1 — magic `ZRSS`, exactly 50 characters.** Payload layout:
+`magic[4] | generator_version[1] | settings_hash[16] | seed_u64[8] | crc16[2]`
+(31 raw bytes before base32).
+The settings hash is one-way, so pasting a v1 string restores **only the
+seed** — if your current settings don't match the sharer's, you get a
+settings-mismatch warning. v1 strings decode forever; strings minted by
+earlier releases are never orphaned. v1 also remains the **stored identity**
+form everywhere a share string is persisted or compared: the save-sidecar
+slot (the 31-byte raw blob plus one pad byte), the suppressed `ZRSR` race file,
+the spoiler filename and the spoiler JSON's `meta.share_string`, the 5-icon
+visual hash, and the file-select banner prefix.
 
-Payload layout: `(magic | generator_version | settings_hash[16] | seed_u64 | checksum)`.
+**v2 — magic `ZRS2`, exactly 71 characters.** Payload layout:
+`magic | generator_version | settings_len | settings_canonical | seed_u64 | checksum`.
+v2 embeds the **full canonical settings plus the seed**: pasting one restores
+every setting AND the seed, and pins the seed so Generate reproduces the
+sharer's placement instead of rolling a new one. The native settings window's
+share-string display/copy and the CLI's distribution outputs
+(`--out-share-string`, the `share_string_v2:` summary line) emit v2.
 
-`Share_SelfCheck` round-trips the encoding and exercises explicit-reject paths
-(alttpr.com format, corrupted base32, wrong-length input, wrong magic prefix).
+Version handling on paste:
+
+- A v2 string from a **different generator version** still restores settings
+  and seed, with a warning that Generate may produce a different placement
+  than the sharer's.
+- A v2 string whose settings payload is **larger** than this build
+  understands is refused outright — it was made by a newer version; update to
+  use it. (Honoring a prefix would silently generate a different seed.)
+
+**Customizer seeds have no v2 form**: their placements depend on a local
+manifest file that no share string can carry, so copy and CLI emission fall
+back to the v1 string, and pasting a v2 string with the customizer bit set is
+refused.
+
+**Generate confirmation:** after a successful paste, editing any setting and
+then pressing Generate opens a confirmation modal — settings no longer match
+the pasted share string — instead of silently generating a different seed.
+
+v2 is transport-only, which has one visible consequence: the window shows the
+71-character v2 string while the file-select banner prefix comes from the
+slot's stored v1 identity string, so the two differ. Banner-prefix matching
+between friends still works — both slots store the same v1 string for the
+same seed.
+
+Both formats are distinct from alttpr.com's share format; **the two are not
+cross-compatible in either direction** (a deliberate choice — different
+generator, different placement output for the same notional "seed"). An
+alttpr.com-style hash is rejected with an explicit format-mismatch error.
+
+`Share_SelfCheck` round-trips both encodings and exercises the explicit-reject
+paths (alttpr.com format, corrupted base32, wrong-length input, wrong magic
+prefix, newer-version v2 payload).
 
 ## Save behavior
 
@@ -400,17 +541,24 @@ file alongside the existing `saves/sram.dat`. The vanilla save file is
 **byte-untouched** by randomizer mode, so a vanilla-only binary sees those
 slots as vanilla. Sidecar layout:
 
-- 16-byte file header (magic `ZRSC`, format_version, slot_count, file_crc).
+- 16-byte file header (magic `ZRSC`, format_version, slot_count, file_crc —
+  a CRC-32 over the slot region, verified on load; `0` = legacy file, accepted
+  without verification).
 - 3 slots × {80-byte header + embedded placement table + checked-location bitmap
-  + (format_version ≥ 2) a 28-byte canonical `RandoSettings` blob}.
-- No 4th slot anywhere (per `audit.md` §0.6 and `randomizer-save` spec).
+  + (format_version ≥ 2) a 28-byte canonical `RandoSettings` blob
+  + (format_version ≥ 3) an 8-byte slot extension block}.
+- No 4th slot anywhere.
 
 Slot header records: `slot_kind`, `generator_version`, `settings_hash`,
-`share_string`, `last_vanilla_write_version`, `sram_slot_checksum_at_last_write`,
+`share_string` (the stored v1 identity blob: 31 raw bytes plus one pad byte),
+`last_vanilla_write_version`, `sram_slot_checksum_at_last_write`,
 `placement_table_size`, `flags`, `mushroom_held`, hints/`goal`/`world_state`/
 `flute_shovel_owned` ext bytes, (`@70`) `settings_present`, (`@71`/`@72`)
-entrance-shuffle axes/attempt, and (`@73`/`@74`) `boomerang_owned`/`bow_owned`
-(the progressive/swap ownership bitfields; reserved tail now `@75`–`@79`).
+entrance-shuffle axes/attempt, (`@73`/`@74`) `boomerang_owned`/`bow_owned`
+(the progressive/swap ownership bitfields), (`@75`) `prize_attempt`, and
+(`@76`-`@79`) the door-shuffle `door_attempt` + 24-bit layout digest. The
+80-byte header is fully claimed, so further additive fields land in the
+format_version ≥ 3 slot extension block.
 
 **format_version 2** (added with the rich tracker windows): each slot appends a
 `kSettingsCanonicalLen`-byte canonical `RandoSettings` blob after the checked
@@ -425,13 +573,26 @@ trackers **suppress** the reachability display rather than guess (a wrong
 to `kSettingsCanonicalLen` by a `_Static_assert`; the round-trip + a v1-compat
 case are covered by `RandoSave_SelfCheck` (`--rando-selftest`).
 
+**format_version 3**: each slot appends a fixed 8-byte extension block after
+the settings blob (the 80-byte slot header is fully claimed). It carries
+`entrance_digest24` — the entrance-shuffle analogue of the door-shuffle
+`door_digest24`: a 24-bit digest over everything the runtime entrance install
+regenerates from (seed, axes, attempt). Activation recomputes it and **refuses
+the slot on mismatch** (a drifted entrance layout can make the
+certified-beatable placement unbeatable). Older v1/v2 slots have no block,
+read digest 0, and keep the previous warn-only version-drift behavior; a
+v2-compat load case is covered by `RandoSave_SelfCheck`.
+
 Atomic-commit: write `<file>.tmp`, fflush, fsync (POSIX) / `_commit` (Windows),
 rename atomically. Save order: sidecar first, then `sram.dat`.
 
 Cross-version forward-compatibility (per `randomizer-save / Embedded placement
 table — upgrade safety`): a slot written by `generator_version = N` loads on a
 binary with version `N+1` and surfaces a one-time informational warning. The
-embedded placement table is consulted; no regeneration is required.
+embedded placement table is consulted; no regeneration is required. Exceptions:
+door-shuffle and (format_version ≥ 3) entrance-shuffle slots hard-fail
+activation when their regenerated layout digest no longer matches the stored
+one — those layouts are regenerated, not embedded.
 
 ## Race mode
 
@@ -581,18 +742,42 @@ demand (cached by `g_recv_item_slot_owner`, invalidated by any
 direct-grant icon repainting it. 8×16 items reserve their own OAM block so the
 bottom tile can't be clobbered by a busy scene.
 
+**Custom art** (`add-rando-field-item-custom-art`): the ALTTPR items with no
+vanilla receive bundle get dedicated art:
+
+- **Triforce Piece** — a 16×16 triforce tile (the MIT-licensed z3randomizer
+  custom sprite, shipped as the `kRandoCustomItemGfx` asset; committed source
+  `assets/rando/custom_item_gfx.png`).
+- **½ / ¼ Magic** — the ALTTPR magic-decanter sprites (a green jar with a white
+  ½ or ¼ fraction). These were previously audio-only: no field
+  sprite and no confirmation icon.
+- **Rupoor** — the vanilla rupee tile re-coloured by ALTTPR's `off_black`
+  palette: a flat dark-grey rupee, the recognizable "this drains you" cue
+  (previously it reused the green-rupee bundle and looked like a normal rupee).
+
+The PNG is regenerated by `assets/scripts/gen_custom_item_gfx_png.py` from local
+palette-indexed pixel rows and an authored preview palette; the preview palette
+is ignored by the asset compiler. Custom-art items load their 8-colour palette
+at draw time, so the colour is stable in every area, and they use the same art
+as their grant-confirmation icon. While one is on screen — and until the next
+room/area palette reload after it
+leaves — other sprites sharing SP3's upper half are tinted (the same trade-off
+ALTTPR makes, which doesn't restore the slot either). Adding the asset means
+**`zelda3_assets.dat` must be regenerated** when updating across this change.
+
 **Covered sites:** all standing Pieces of Heart (Zora's Ledge, Pyramid, Lake
-Hylia, Spectacle Rock, Sunken Treasure, the cave/hideout PoH, …), the Book of
+Hylia, Spectacle Rock, Sunken Treasure, the cave/hideout PoH, ...), the Book of
 Mudora, the Mushroom, the Master Sword pedestal (the placed item rises through
 the pendant ceremony), and the boss-reward Heart Container (visible under
-`bossHeartsInPool`).
+item shuffle when a non-heart item lands on a boss drop).
 
 **Out of scope / limitations:**
 - **Chests** stay closed (ALTTPR doesn't reveal chest contents).
 - **Medallion tablets** stay tablets — they render a stone slab you read, not a
   floating item; the location still grants the placed item.
-- **Items with no receive graphic** (HalfMagic / QuarterMagic / TriforcePiece) fall
-  back to the vanilla sprite.
+- ~~Items with no receive graphic fall back to the vanilla sprite~~ — every
+  placeable item now has art (Triforce Piece, ½/¼ Magic, and Rupoor were the
+  last holdouts; they have custom art — see above).
 - **One field item per screen** renders its real graphic: the receive-item VRAM
   slot holds a single item at a time, so two *different* field items sharing a
   screen would show the same (last-loaded) graphic. Standing items are effectively
@@ -633,7 +818,11 @@ desync, the headline advantage of a native port:
   settings window's **Trackers** tab or via the optional hotkeys
   `RandoItemTrackerWindow` / `RandoCheckTrackerWindow` / `RandoMapTrackerWindow`
   (default unbound; bind in `zelda3.ini`). Windows opened at seed setup persist
-  into gameplay.
+  into gameplay. The Trackers tab also has an **Apply tiled layout** button that
+  opens all three trackers and tiles them around the game window (Check left,
+  game center, Map/Item stacked right), plus an **Apply at startup** checkbox
+  persisted in `saves/rando_window.ini`. The layout preset applies in windowed
+  mode; fullscreen game windows are left untouched.
 - **Reachability bridge** (`rando.c`) — `Rando_BuildRuntimeCounts` maps the live
   `g_ram` inventory into the logical `RandoCounts` the predicate VM reads (the
   logic macros accept the progressive form, so progressive counts satisfy every
@@ -650,10 +839,10 @@ during play via `Ctrl+I` / `Ctrl+C` / `Ctrl+M` (default-bound) or from the
 settings window's **Trackers** tab.
 
 **Known limitations / follow-ups:** region pins are hand-placed (no per-location
-geographic pin coordinates yet); and per-window visibility/geometry persistence
-in `saves/rando_window.ini` is not yet implemented (windows open from the
-Trackers tab / hotkeys each session). (Keysanity reachability and the dark-world
-map background — earlier follow-ups — are now implemented.)
+geographic pin coordinates yet). Exact per-window custom geometry persistence is
+not implemented; use the tiled layout preset for a repeatable tracker setup.
+(Keysanity reachability and the dark-world map background — earlier follow-ups —
+are now implemented.)
 
 ## Auto-tracker (external clients)
 
@@ -863,7 +1052,7 @@ below).
 A change in any of the listed paths that is provably **corpus
 byte-identical under default settings** does not require a bump. The
 proof shape: run the regression corpus against the modified binary
-and confirm all 55 entries pass without manifest changes. This
+and confirm every entry passes without manifest changes. This
 exception covers:
 
 - Trick-predicate authoring that adds new disjuncts evaluating FALSE
@@ -895,7 +1084,9 @@ seconds locally) and the bumper is idempotent.
   table preserves the older slot's interpretation. Loading a v=N
   slot on a v=N+k binary surfaces a one-time informational warning
   (`Rando_DetectVersionDrift`) and uses the embedded data verbatim.
-  The slot is NOT regenerated.
+  The slot is NOT regenerated. (Exception: door-shuffle and sidecar-v3
+  entrance-shuffle slots regenerate their *layouts* at activation and
+  hard-fail on a layout-digest mismatch — see *Save behavior*.)
 - **Snapshots** (`Shift+F1..F10` save / `Ctrl+F1..F10` replay): the
   TLV-tail format carries `generator_version` in the
   `TAIL_RANDO_STATE` payload. Replay on a different version uses the
@@ -927,6 +1118,9 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 48→49 | **Drop shuffle** goes live in playable slots (installed at slot load; native-window toggle) with a heart floor; the spoiler emits `boss_assignments` / `drop_tables`. (Boss shuffle is generation-only — its runtime substitution is held back; see the Boss & drop shuffle section.) | **All 69 existing placement/sphere digests byte-identical** (boss/drop shuffle is orthogonal to item placement) — corpus regenerated reported 0 digest changes; 10 shuffle-on entries added that assert the orthogonality. Boss/drop *assignment* determinism is pinned by the new self-checks, not the corpus. The bump version-locks the now-live runtime drop algorithm + the shuffle-on race stamp (a shuffle-on v48 race seed would otherwise regenerate different drops/stamp). |
 | 55→56 | **Boss-shuffle beatability logic** — each shuffleable dungeon's `- Boss`/`- Prize` gates on the new `OP_CAN_KILL_BOSS(dungeon)` op (the *shuffled* boss's kill predicate) instead of the inline vanilla `CanKill<Boss>` macro, so an item-gated boss can't strand its prize once boss shuffle is runtime-live (corrects design.md D6; boss shuffle is **no longer** placement-orthogonal). | **Only `boss_shuffle=true` entries move** — 6 of the 8 boss-on corpus entries (4 placement + 2 sphere); the other 2 boss-on + all 102 boss-off entries are **byte-identical** (with the assignment at the vanilla identity the op resolves to the vanilla boss-kill predicate). Boss assignment install added to `Place_AssumedFill` (base seed). settings_hash / canonical layout unchanged (boss_shuffle was already canonical field #23). The runtime *render* (Enemizer redirect model) landed separately as a runtime-only change — no further bump (corpus byte-identical). |
 | 56→57 | **Pin Blind to Thieves' Town** in the boss-shuffle pool (10→9 shuffleable bosses). Blind has no boss sprite in its room data (TT-only maiden spawn + a `dung_savegame_state_bits & 0x2000` gate), so a Blind shuffled elsewhere never spawned (confirmed strand); pinning is the clean fix. | Changes the boss assignment for every `boss_shuffle=true` seed (9-perm + Blind pinned), so the boss-on placement/sphere digests move (7 entries); `boss_shuffle=false` stays byte-identical. settings_hash / canonical layout unchanged. Corpus regenerated. |
+| 67→68 | **Retire dead Fountain placement slots** — Waterfall Bottle/Pyramid Bottle sparse slots are removed from the fillable registry/pool. | All corpus placement/sphere digests regenerated because the open-location count and junk padding changed; settings serialization is unchanged. |
+| 68→69 | **Traps** — `traps=low|medium|high` replaces eligible final junk-filled placements with `TrapDamage` / `TrapFreeze`; pickup shows the generated fool message and skips vanilla item receipt. | Default `traps=off` keeps canonical byte `[26]` bits2-3 zero, so pre-existing v68 no-traps corpus seeds stay byte-identical; traps-on seeds intentionally change placement output and settings_hash. |
+| 70→71 | **Retire boss-heart shuffle UI / always shuffle boss drops** — the legacy `region_boss_hearts_in_pool` byte canonicalizes to `0`, boss Drop slots are fillable locations, and the selected item-pool difficulty's BossHeartContainer copies always enter the pool. The obsolete Pyramid Fairy bow-upgrade setting is no longer shown in the native window. | Default settings hash changes (`[10]` 1→0) and placement/sphere digests move globally because 10 boss Drop locations join fill and BossHeartContainer items are no longer pinned to boss drops. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero
@@ -969,6 +1163,9 @@ a clean US ROM (SHA-256 `66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7
 Phase B feature. When a slot was written by an older `generator_version` than
 the binary currently runs, a one-time informational warning surfaces on slot
 load. The embedded placement table is honored; gameplay is unaffected.
+(Door-shuffle and sidecar-v3 entrance-shuffle slots are stricter: their
+regenerated layout is digest-checked and activation is refused on mismatch —
+see *Save behavior*.)
 
 ### Sidecar atomicity
 
@@ -1140,10 +1337,10 @@ under `openspec/changes/archive/`) and pass `openspec validate --changes`.
 | 3 | [`add-rando-race-mode-reveal`](../openspec/changes/archive/2026-06-05-add-rando-race-mode-reveal/) | 6 | Spoiler suppression + CLI `--reveal-spoiler` + `RandoRevealSpoiler` keybind + SHA-256 stamp verify (built scope; in-binary reveal-UI + settings warning carved to `add-rando-race-mode-reveal-ui`) | ✅ Archived 2026-06-05 |
 | 4a | [`add-rando-inverted-world-state`](../openspec/changes/archive/2026-06-03-add-rando-inverted-world-state/) | 2 | Inverted region graph (2977 lines PHP) + Bug #12 starting-inventory wire | ✅ Archived 2026-06-03 |
 | 4b | [`add-rando-retro-world-state`](../openspec/changes/archive/2026-06-04-add-rando-retro-world-state/) | 3 | Retro shop dispatch + rupeeBow/takeAnys/wildKeys pinned (genericKeys → #4b-i) | ✅ Archived 2026-06-04 |
-| 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/archive/2026-06-05-add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b. Placement + logic-collapse + SRAM shared-counter runtime; kGenVer 53→54 | ✅ Archived 2026-06-05 |
+| 4b-i | [`add-rando-retro-generic-keys`](../openspec/changes/archive/2026-06-05-add-rando-retro-generic-keys/) | 3 | Retro genericKeys — one shared key pool (any key opens any door); follow-up to #4b. Placement + logic-collapse + SRAM shared-counter runtime | ✅ Archived 2026-06-05 |
 | 5 | [`add-rando-trick-logic-and-axes`](../openspec/changes/archive/2026-06-04-add-rando-trick-logic-and-axes/) | 4 + misc | Trick/glitch ops + §12.6 ROM-version scaffolding + `swordless` mode (end-to-end) + `accessibility=none` + Bug #7 per-item rewind (gated off) | ✅ Archived 2026-06-04 |
-| 6 | [`add-rando-hints`](../openspec/changes/add-rando-hints/) | 5 | New `randomizer-hints` capability: 15 telepathic-tile hints + Storyteller/Fortune-Teller fork NPCs + Murahdahla (spoiler-only) + dialogue-ID injection | In-progress (gen/spoiler/determinism/docs done; in-game NPC playtest + audit open) |
-| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle playable/experimental — kGenVer 56 beatability + Enemizer-redirect render) |
+| 6 | [`add-rando-hints`](../openspec/changes/archive/2026-06-11-add-rando-hints/) | 5 | New `randomizer-hints` capability: 15 telepathic-tile hints + Storyteller/Fortune-Teller fork NPCs + Murahdahla (spoiler-only) + dialogue-ID injection | ✅ Archived 2026-06-11 (owner playtest-confirmed) |
+| 7 | [`add-rando-shuffles-and-minigames`](../openspec/changes/add-rando-shuffles-and-minigames/) | 7 + 8 | Boss + drop-pool shuffles + §6.8 minigame dispatch (digging, hype-cave NPC, peg cave, treasure-chest minigame) | In-progress (drop-shuffle playable; boss-shuffle playable/experimental with beatability + Enemizer-redirect render) |
 | 8 | [`add-rando-switch-swkbd`](../openspec/changes/add-rando-switch-swkbd/) | §9.1c | libnx `swkbdCreate` / `swkbdShow` / `swkbdInputText` wrapper routed into `RandoTextField` | Stub |
 
 See the [`openspec/changes/` index](../openspec/changes/README.md) for the
@@ -1151,8 +1348,7 @@ per-slice scope detail (files-to-touch, ALTTPR references) and the
 change-folder breakdown.
 
 Items folded into the changes above:
-- `swordless`, `accessibility=none`, `pyramid_bow_upgrade=arrows`,
-  Phase A1 audit Bug #7 (per-item rewind) — all in **#5
+- `swordless`, `accessibility=none`, and Phase A1 audit Bug #7 (per-item rewind) — all in **#5
   `add-rando-trick-logic-and-axes`**.
 - §6.8 minigame dispatch — in **#7 `add-rando-shuffles-and-minigames`**.
 - §9.1c Switch software-keyboard — **own change #8
@@ -1167,18 +1363,18 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (a version-drift warning fires; regenerate after an update). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (full decoupled) is **built and shipped** as a live native-window preset — the cave-arrival table is baked (`src/rando/cave_arrival_baked.h`, preloaded so every door is one-way from launch); cave-decoupled is playtest-confirmed, the dungeon/cross-decoupled arms carry the usual built-but-playtest-pending caveat. Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 |
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (sidecar-v3 slots persist a 24-bit entrance-layout digest and activation refuses on mismatch; pre-v3 slots fall back to a version-drift warning). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (full decoupled) is **built and shipped** as a live native-window preset — the cave-arrival table is baked (`src/rando/cave_arrival_baked.h`, preloaded so every door is one-way from launch); cave-decoupled is playtest-confirmed, the dungeon/cross-decoupled arms carry the usual built-but-playtest-pending caveat. Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 |
 
 ### Phase D
 
 | # | Change | Scope | Status |
 |---|---|---|---|
 | D1 | [`add-rando-cosmetic-shuffles`](../openspec/changes/archive/2026-06-02-add-rando-cosmetic-shuffles/) | Palette + sprite + music shuffles. Cosmetic only; `cosmetic_seed` separate from `settings_hash`. | ✅ Archived 2026-06-02 |
-| D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Stub |
+| D2 | [`add-rando-customizer-mode`](../openspec/changes/add-rando-customizer-mode/) | Manual per-location placement + custom pool composition. Dispatcher API unchanged. | Headless generation, playable-slot generation, and PC native-window manifest UI are built; share-string transport for the manifest identity remains deferred. See [Customizer mode](#customizer-mode). |
 | D3 | [`add-rando-major-glitch`](../openspec/changes/add-rando-major-glitch/) | Major-glitch logic level: `HybridMajorGlitches` + `NoLogic` un-pin + NoLogic reachability short-circuit (logic graph merged to main). **Close-out pass** (D6 couples glitch seeds to `kFeatures0_RestoreJpGlitches`; F1/F3 reclassify the raw `major_glitches` thresholds to first-class `CanOneFrameClipOW`/`CanOneFrameClipUW` macros, closing canOneFrameClipOW at HMG; F2 authors the 9 missing technique macros; F4 flips `fake-flippers` → `verified-us10`; F1-followon surfaces the dropped OWG-group disjuncts (partial); F5 short-circuits `can_place` at NoLogic). kGen 64. | Applied; close-out playtest-pending |
 | D4 | [`add-rando-auto-tracker`](../openspec/changes/archive/2026-06-05-add-rando-auto-tracker/) | Local TCP server emitting per-event inventory + reachability state for external tracker clients (NDJSON; see *Auto-tracker (external clients)* above). | ✅ Archived 2026-06-05 |
 
-All Phase C/D changes are proposal-only stubs (proposal + 1-3 minimal spec deltas) — full design + tasks deferred to apply-time. Phase C requires Phase B #4a archived; Phase D D3 requires Phase B #5 archived.
+Phase C/D change folders are retained as the working record for unarchived features; individual README/task files describe their current built scope and remaining archive gates.
 
 See `openspec/changes/archive/2026-05-29-add-randomizer-support/tasks.md` §7 and §14 for the
 acceptance gates per phase.

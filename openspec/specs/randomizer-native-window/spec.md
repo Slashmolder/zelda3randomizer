@@ -82,10 +82,24 @@ The settings window SHALL render the settings surface **at parity with the in-ga
 #### Scenario: Live axes match the in-game screen; disabled/pinned axes are visibly non-editable
 
 - **WHEN** the user opens the settings window
-- **THEN** live-editable widgets are present for exactly the in-game screen's axis set: world_state, goal, crystals_ganon, crystals_tower, item_pool_difficulty, dungeon_small_keys_mode, dungeon_big_keys_mode, dungeon_maps_mode, dungeon_compasses_mode, pieces_required, pieces_placed, mode_weapons, accessibility, prize_shuffle, medallion_shuffle, race_mode, and hints
-- **AND** boss_shuffle, drop_shuffle, and entrance/enemy/glitches shuffle render as disabled "coming soon" placeholders (matching the in-game `kRow_*_Disabled` rows) with a tooltip — no live toggle ships, because boss/drop shuffle is runtime-inert for playable slots (`Rando_ActivateSidecarSlot` never regenerates it), so a live widget would lie
-- **AND** the Phase-A-pinned axes render disabled/read-only with an explanatory tooltip: `logic` (pinned `NoGlitches`), `tricks` (pinned none), `region_boss_hearts_in_pool` (pinned 1), `pyramid_bow_upgrade` (only `Silvers` in Phase A); for `mode_weapons` and `accessibility`, only the Phase A subset of enum values appears in the dropdown — Phase B reservations (`Vanilla`, `Swordless`, `None`) are not selectable
+- **THEN** live-editable widgets are present for exactly the in-game screen's axis set plus PC-native shuffle panels: world_state, goal, crystals_ganon, crystals_tower, item_pool_difficulty, dungeon_small_keys_mode, dungeon_big_keys_mode, dungeon_maps_mode, dungeon_compasses_mode, pieces_required, pieces_placed, mode_weapons, accessibility, prize_shuffle, medallion_shuffle, race_mode, hints, traps, entrance shuffle axes, drop_shuffle, boss_shuffle, enemy_shuffle, and door_shuffle
+- **AND** traps render as a live combo with `off`, `low`, `medium`, and `high`; glitches remain disabled/read-only until their runtime is implemented
+- **AND** retired compatibility axes such as `region_boss_hearts_in_pool` and `pyramid_bow_upgrade` are not rendered as controls; live axes render with the supported option set
 - **AND** the disabled state is not just visual: attempting to set a disabled/out-of-range field via clipboard paste of a share string SHALL produce the inline error described in `randomizer-core` and SHALL NOT mutate the field
+
+#### Scenario: Common dungeon-item preset is available
+
+- **WHEN** the user clicks the dungeon panel's "Dungeon keys / wild maps" preset
+- **THEN** `dungeon_small_keys_mode` and `dungeon_big_keys_mode` are set to `dungeon`
+- **AND** `dungeon_maps_mode` and `dungeon_compasses_mode` are set to `wild`
+- **AND** no additional serialized setting is introduced; the preset only edits the existing four dungeon-item axes
+
+#### Scenario: Forced dungeon key modes are visible
+
+- **WHEN** door shuffle is effective for the pending settings
+- **THEN** the small-key and big-key controls show `dungeon` as read-only with a "forced by door shuffle" indicator
+- **WHEN** Retro world state is effective
+- **THEN** the small-key control shows `wild` as read-only with a "forced by Retro" indicator
 
 #### Scenario: Triforce-Hunt piece fields are visible only for relevant goals
 
@@ -121,6 +135,14 @@ The settings window SHALL display the full list of presets from `SettingsPreset`
 - **WHEN** the gallery is rendered
 - **THEN** each entry's label is exactly the string returned by `Settings_PresetName(preset)` for the corresponding preset enum value
 
+#### Scenario: Quick presets edit existing axes only
+
+- **WHEN** the user clicks "Open Fast Ganon"
+- **THEN** the core progression axes reset to Open / Fast Ganon defaults without changing Seed QoL, Customizer mode, dungeon-item modes, or shuffle-panel axes
+- **WHEN** the user clicks "Race-safe"
+- **THEN** race_mode is enabled, hints remain enabled, item_pool is Normal, Customizer mode is disabled, and the Dungeon keys / wild maps dungeon-item preset is applied
+- **AND** neither quick preset introduces any new serialized setting
+
 ### Requirement: Live settings hash and share-string display
 
 The settings window SHALL display the current `settings_hash` (truncated to a hex preview) and the full encoded share string corresponding to the current widget values. Both displays SHALL update within one ImGui frame of any widget change.
@@ -139,15 +161,36 @@ The settings window SHALL display the current `settings_hash` (truncated to a he
 
 The settings window SHALL provide a "Copy share string" button that writes the current share string to the OS clipboard via `SDL_SetClipboardText`, and a "Paste share string" button (or paste-into-field) that reads via `SDL_GetClipboardText` and parses through the existing share-string decoder.
 
+Current v2 share strings carry `seed_u64` plus the full canonical settings bytes.
+Paste SHALL restore both the seed and settings widgets after canonical
+deserialize, customizer-manifest fencing, and pending-settings validation. Legacy
+v1 share strings carry only `seed_u64` plus the one-way `settings_hash`; v1 paste
+SHALL adopt the decoded seed only, because widget values cannot be fabricated
+from the hash. Paste SHALL surface a non-blocking inline warning when restored or
+current settings may generate a placement different from the pasted string
+(settings-hash mismatch, v1 settings not restorable, or foreign
+`kGeneratorVersion`).
+
 #### Scenario: Copy writes the encoded share string
 
 - **WHEN** the user clicks Copy share string
 - **THEN** the OS clipboard contains the current share-string text as returned by the existing share-string encoder
+- **AND** the UI shows a short-lived copied/failed status next to the button
 
-#### Scenario: Paste of a valid share string populates fields
+#### Scenario: Paste of a valid v2 share string restores settings
 
-- **WHEN** the user pastes a valid share string into the share-string field
-- **THEN** the settings widgets update to reflect the decoded settings, the seed input shows the decoded `seed_u64`, and the live `settings_hash` matches the pasted share string's settings half
+- **WHEN** the user pastes a valid v2 share string
+- **THEN** the seed input adopts the decoded `seed_u64` (per-generate seed randomization is switched off so the pasted seed sticks) and every settings widget is restored from the decoded canonical settings bytes
+
+#### Scenario: Paste of a valid v1 share string adopts the seed only
+
+- **WHEN** the user pastes a valid legacy v1 share string
+- **THEN** the seed input adopts the decoded `seed_u64`, settings widgets are not mutated, and an inline note says v1 strings cannot restore settings
+
+#### Scenario: Paste from another generator version warns
+
+- **WHEN** the pasted share string's version byte differs from the build's `kGeneratorVersion`
+- **THEN** the seed is still adopted and an inline WARNING names both versions and states that the generated placement will differ from the original seed
 
 #### Scenario: Paste of a malformed share string surfaces inline error
 
@@ -180,17 +223,30 @@ The settings window SHALL detect when `g_assets_hash != kVanillaAssetsHash` at t
 
 ### Requirement: Recommended-features opt-in renders in the native window on PC
 
-The recommended-features opt-in (which writes `g_config.features0` at generate time) is reachable in-game only through the settings screen, which is compile-guarded out on PC. On PC builds the settings window SHALL therefore render the recommended-features opt-in itself. The UI SHALL edit only a bridge snapshot (`pending_recommended_features0`), taken from `g_config.features0` at window-open; the game thread SHALL apply the snapshot to `g_config.features0` only inside the generate consumer. The opt-in SHALL be determinism-neutral: `features0` is not part of `settings_hash`. On Switch the in-game recommended-features panel is retained and the native window does not exist.
+The recommended-features opt-in (which writes `g_config.features0` at generate time) is reachable in-game only through the settings screen, which is compile-guarded out on PC. On PC builds the settings window SHALL therefore render the recommended-features opt-in itself. The UI SHALL edit only a bridge snapshot (`pending_recommended_features0`), taken from `g_config.features0` at window-open; the game thread SHALL apply the snapshot to `g_config.features0` only inside the generate consumer. The opt-in SHALL be determinism-neutral: `features0` is not part of `settings_hash`. On Switch the in-game recommended-features panel is retained and the native window does not exist. The PC Seed QoL tab MAY include PC-only per-slot feature bits that do not fit the fixed-height in-game panel.
 
 #### Scenario: Recommended-features opt-in is present on PC
 
 - **WHEN** the user opens the settings window on a PC build during new-slot creation
-- **THEN** a recommended-features opt-in (one toggle per recommended `features0` bit, mirroring the in-game `kRecRowBits[]`/`kRecRowLabels[]` set) is rendered, bound to `bridge.pending_recommended_features0`
+- **THEN** a recommended-features opt-in is rendered, bound to `bridge.pending_recommended_features0`, covering the in-game `kRecRowBits[]`/`kRecRowLabels[]` set plus the PC-only `kFeatures0_RestoreJpGlitches` slot toggle
 
 #### Scenario: UI never writes g_config.features0 directly
 
 - **WHEN** the user toggles a recommended-features option
 - **THEN** only `bridge.pending_recommended_features0` changes; `g_config.features0` is unchanged until the game thread applies it inside the generate consumer at Generate time
+
+#### Scenario: Recommended actions preserve optional choices unless asked to reset
+
+- **WHEN** the user clicks "Apply recommended set"
+- **THEN** every Seed QoL bit is set to its recommended on/off value
+
+#### Scenario: JP gameplay glitches are a per-slot QoL choice
+
+- **WHEN** the pending seed does not assume restored JP glitches
+- **THEN** the "Restore JP 1.0 glitches" Seed QoL toggle can be turned on or off and is recommended off
+- **AND** it controls `kFeatures0_RestoreJpGlitches` only; it does not enable `kFeatures0_JpOverworldMusic`
+- **WHEN** the pending seed assumes restored JP glitches (`logic >= OverworldGlitches` or `tricks=fake-flippers`)
+- **THEN** the toggle is shown forced-on because generation and slot activation must enable `kFeatures0_RestoreJpGlitches`
 
 #### Scenario: Recommended-features choice does not affect the hash or share string
 
@@ -205,6 +261,11 @@ A bridge module (`src/rando/rando_window_bridge.{c,h}`) SHALL own the canonical 
 
 - **WHEN** the user edits widgets in the settings window while a randomizer slot is loaded
 - **THEN** only `bridge.pending` is modified; the active slot's `g_rando.settings` is unchanged until generation completes for a NEW slot
+
+#### Scenario: Generating while another slot is active restores the active slot's runtime state
+
+- **WHEN** a randomizer slot is active and the user generates a NEW slot from the native window
+- **THEN** after the generate consumer finishes, the active slot's hints, entrance/door logic overlays, and prize/medallion/boss shuffle assignments are reinstalled (the generation pipeline transiently reuses the global hint/overlay/assignment tables), so in-game hint tiles and the trackers keep reflecting the active seed
 
 #### Scenario: Generate request crosses the bridge
 
@@ -263,6 +324,14 @@ The settings window SHALL persist the user's most recent settings to a `[rando_w
 
 - **WHEN** the user moves or resizes the settings window and exits
 - **THEN** the next launch restores the same position and size, clamped to the union of currently-attached display bounds (off-screen positions are recentered)
+
+#### Scenario: Tracker tiled layout can be applied at startup
+
+- **WHEN** the user enables the Trackers tab's "Apply at startup" tiled-layout preference and exits cleanly
+- **THEN** `saves/rando_window.ini` persists that preference under `[rando_window]`
+- **AND** the next launch opens the Check, Map, and Item tracker windows and tiles them around the game window on the current display
+- **WHEN** the user clicks "Apply tiled layout" during a session
+- **THEN** the same layout is applied immediately without changing seed settings, settings hash, or the share string
 
 ### Requirement: Read-only spoiler and placement viewer tab
 

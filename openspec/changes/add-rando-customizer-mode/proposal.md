@@ -6,7 +6,7 @@ Per Phase A `proposal.md` line 75 — *"customizer mode (uses dispatcher API unc
 
 This is a **Phase D** change. Low risk (no logic changes), medium reward (significant community feature).
 
-## What Changes (intended scope)
+## What Changes
 
 - **Customizer manifest format**: a YAML or JSON file describing per-location placements. Example:
   ```yaml
@@ -18,10 +18,10 @@ This is a **Phase D** change. Low risk (no logic changes), medium reward (signif
     add: [ProgressiveSword, ProgressiveSword]
     remove: [Rupoor]
   ```
-- **CLI entry point**: `--customizer=<path>` flag on `--generate-seed`. Reads the manifest, validates against the location registry + item registry, builds the placement table directly (skipping assumed-fill).
+- **CLI and slot entry points**: `--customizer=<path>` on `--generate-seed` and `--generate-slot`, plus the PC native settings window manifest field. The manifest is validated against the location registry + item registry, pins a subset of placements, and then assumed-fill completes the rest.
 - **Validation**: the customizer pipeline SHALL run the goal-completability predicate to confirm the manual placement is winnable. If un-completable and `--allow-broken-seed` is NOT set, generation fails.
-- **Settings struct field**: `customizer_active` boolean. `customizer_seed` is the SHA-256 of the manifest content (for share-string compatibility).
-- **Share-string compatibility**: customizer seeds use the same share-string format as standard seeds. The `share_string` encodes `(magic, generator_version, settings_hash, customizer_seed)` so another player can regenerate the same customizer placement (assuming they have the same manifest file).
+- **Settings struct field**: `customizer_active` boolean, serialized as canonical byte `[26]` bit1. `customizer_seed` is the SHA-256 of the manifest content truncated to 8 bytes.
+- **Share-string compatibility**: current share strings do not carry the manifest identity. Customizer copy/emission falls back to the v1 seed+hash identity string, and reproduce-by-manifest sharing is deferred until a `customizer_seed` share-string field is designed.
 - **NO new dispatcher work**: every Phase A dispatch site already routes the placement-table entry; customizer just writes the table differently.
 
 ## Capabilities
@@ -29,15 +29,10 @@ This is a **Phase D** change. Low risk (no logic changes), medium reward (signif
 ### Modified Capabilities
 
 - `randomizer-core`: ADDED Requirement for the customizer-mode generation pipeline (alongside the existing assumed-fill pipeline). MODIFIED Requirement on settings canonical-serialization to add `customizer_active` byte.
-- `randomizer-ui`: ADDED Requirement for the settings-screen customizer toggle + manifest file picker.
+- `randomizer-ui`: ADDED Requirement for the PC native settings-window customizer toggle + manifest field.
 
 ## Impact
 
-- **Code**: `src/rando/customizer.{c,h}` (new module), CLI parsing in `src/main.c`, file-select UI in `src/select_file.c`.
-- **Effort**: **2-3 weeks of focused work.** Customizer is a peer to assumed-fill; the validation + share-string-compat pieces are the bulk.
+- **Code**: `src/rando/customizer.{c,h}`, CLI parsing in `src/main.c`, slot generation in `src/rando/rando_generate.c`, and native-window/bridge UI wiring.
 - **Regression risk**: zero by design. Non-customizer seeds run the existing pipeline unchanged.
 - **Dependencies**: Phase A archived; benefits from #2 trackers (manual placement is much more verifiable with a tracker overlay).
-
-## Status (stub)
-
-Proposal-only Phase D stub. Detail deferred to Phase D apply-time. Phase D cannot start before Phase A archives.

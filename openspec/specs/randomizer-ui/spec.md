@@ -76,7 +76,7 @@ The file-select screen SHALL retain the existing 3-slot geometry (`kSelectFile_D
 
 ### Requirement: Settings screen
 
-On Switch builds, the in-game settings screen SHALL allow the player to select world-state, goal, item-pool difficulty, dungeon-item mode, Triforce-Hunt piece counts (when goal is Triforce Hunt), and optional shuffle modules; SHALL accept seed entry via random generation or share-string paste; and SHALL display the current settings hash live.
+On Switch builds, the in-game settings screen SHALL allow the player to select world-state, goal, item-pool difficulty, dungeon-item mode, Triforce-Hunt piece counts (when goal is Triforce Hunt), trap frequency, and optional shuffle modules; SHALL accept seed entry via random generation or share-string paste; and SHALL display the current settings hash live.
 
 On PC builds where `Z3R_NATIVE_SETTINGS_WINDOW` is defined, this requirement does NOT apply: the equivalent functionality is provided by the native settings window per `randomizer-native-window`, and the in-game settings screen module is excluded from the build. The kind-toggle call sites at `src/select_file.c:1664` and `:1891` (today invoking the file-static `SelectFile_Settings_Activate`) instead call `RandoWindow_OpenForNewSlot` under the same guard.
 
@@ -261,46 +261,19 @@ Unknown or hand-edited values in these keys SHALL NOT break INI round-trip (cons
 - **WHEN** a playable slot is generated while cosmetic keys are set
 - **THEN** the written sidecar slot and `share_string` are byte-identical to a generation with cosmetic keys unset
 
-### Requirement: Boss-heart-container shuffle toggle
+### Requirement: Boss-heart-container shuffle is not a UI axis
 
-The settings UI SHALL expose the `region_boss_hearts_in_pool` axis as a
-player-toggleable control, and SHALL NOT display the raw field name or value to
-the player, because the field value is inverted relative to its name (`1` = boss
-hearts pinned to their boss slots / NOT in the general pool; `0` = boss hearts
-shuffled into the general pool).
+The settings UI SHALL NOT expose `region_boss_hearts_in_pool`. The legacy
+canonical byte / CSV keys remain accepted for compatibility, but generation
+canonicalizes the value to `0`: boss-heart drops are always shuffled and the
+item-pool difficulty's boss-heart-container count always enters the item pool
+(10 Easy/Normal, 6 Hard, 2 Expert).
 
-The control SHALL be labeled **"Shuffle boss heart containers"** and map the
-inversion at the UI layer:
-
-- **checked** ⇒ `region_boss_hearts_in_pool = 0` (the 10 boss heart containers
-  join the general item pool; arbitrary items may land at boss kills).
-- **unchecked** ⇒ `region_boss_hearts_in_pool = 1` (each dungeon boss grants its
-  own heart container — the default).
-
-The control SHALL initialize unchecked when the field is at its default (`1`) and
-toggling it SHALL refresh the live settings hash like any other seed-defining axis.
-The field SHALL NOT be renamed and the canonical byte / CSV keys SHALL keep their
-existing meaning for headless and share-string compatibility.
-
-#### Scenario: Toggle off (default) pins boss hearts
-
-- **WHEN** the "Shuffle boss heart containers" control is unchecked (the default)
-- **THEN** `region_boss_hearts_in_pool` is `1` and every dungeon boss kill grants
-  that dungeon's boss heart container
-
-#### Scenario: Toggle on shuffles boss hearts into the pool
-
-- **WHEN** the player checks "Shuffle boss heart containers"
-- **THEN** `region_boss_hearts_in_pool` is set to `0`, the live settings hash
-  refreshes, and generation may place non-heart items at the boss slots while the
-  10 boss heart containers are placed elsewhere
-
-#### Scenario: Raw inverted field name is never shown
+#### Scenario: No boss-heart shuffle checkbox
 
 - **WHEN** the settings UI is displayed
-- **THEN** no control or text shows the literal "region boss hearts in pool"
-  field name or its raw 0/1 value; only the "Shuffle boss heart containers"
-  label is shown
+- **THEN** no control or text shows "Shuffle boss heart containers" or the raw
+  `region_boss_hearts_in_pool` field name
 
 ### Requirement: Accessibility tier selection in the native settings window
 
@@ -494,7 +467,7 @@ The randomizer SHALL optionally expose a local-only TCP server that emits per-st
 
 **Lifecycle**:
 - Disabled by default. Enabled via `[AutoTracker] enabled = true` in `zelda3.ini` or via CLI flag `--auto-tracker`.
-- TCP listener binds to `127.0.0.1:<port>` (default 17400, configurable via INI).
+- TCP listener binds to `127.0.0.1:<port>` (default 17400, configurable via INI). A malformed or out-of-range `Port` value (valid range 1..65535) SHALL be rejected with the standard config-parse warning, keeping the default.
 - Remote bind (`0.0.0.0`) SHALL require explicit opt-in via INI `[AutoTracker] allow_remote = true`. Default localhost-only.
 - Subscribe-only: external clients receive state; they CANNOT write back. No state-injection API.
 
