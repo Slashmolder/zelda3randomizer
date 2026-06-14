@@ -53,6 +53,7 @@ void AutoTracker_GetBindInfo(uint16 *port, bool *allow_remote) {
 
 #include "rando.h"            // Rando_IsActive / Rando_FillItemView / Rando_IsLocationChecked /
                              // Rando_GetReachabilityCounter / Rando_GetActiveSettings / ...
+#include "dungeon_ids.h"      // shared game/key/logic dungeon row descriptors
 #include "rando_logic.h"     // RandoReachability / Reachability_HasLocation / kRandoLocations / names
 #include "rando_placement.h" // Placement_GetActive / RandoPlacementTable
 #include "rando_settings.h"  // WorldState / Goal enums
@@ -325,24 +326,6 @@ static const char *at_goal_name(uint8 g) {
   }
 }
 
-// Per-dungeon rows mirror the in-game Item Tracker (tracker_windows.cpp). `game`
-// is the game-side dungeon id driving the big-key/map/compass bit (0x8000>>game)
-// and `kidx` indexes the small-key array — equal for every dungeon EXCEPT Hyrule
-// Castle (bit id 1, key slot 0); see RandoItemView's dungeon-array comment.
-static const struct {
-  int game;
-  int kidx;
-  const char *name;
-} kAtDungeons[] = {
-    {1,  0,  "Hyrule Castle"},      {4,  4,  "Castle Tower"},
-    {2,  2,  "Eastern Palace"},     {3,  3,  "Desert Palace"},
-    {10, 10, "Tower of Hera"},      {6,  6,  "Palace of Darkness"},
-    {5,  5,  "Swamp Palace"},       {8,  8,  "Skull Woods"},
-    {11, 11, "Thieves Town"},       {9,  9,  "Ice Palace"},
-    {7,  7,  "Misery Mire"},        {12, 12, "Turtle Rock"},
-    {13, 13, "Ganons Tower"},
-};
-
 // location_id -> type lookup (built once), used to skip medallion-config slots
 // so the catalog and the checked/reachable id-spaces match exactly.
 static uint8 s_loc_type[1024];
@@ -403,15 +386,16 @@ static void at_append_items(AtStr *s, const RandoItemView *v) {
 
 static void at_append_dungeons(AtStr *s, const RandoItemView *v) {
   at_str_puts(s, "[");
-  int count = (int)(sizeof(kAtDungeons) / sizeof(kAtDungeons[0]));
+  int count = (int)kRandoDungeonRuntimeRowCount;
   for (int i = 0; i < count; i++) {
-    int g = kAtDungeons[i].game;
-    uint16 bit = (uint16)(0x8000u >> g);
+    const RandoDungeonRuntimeRow *row = &kRandoDungeonRuntimeRows[i];
+    uint8 g = row->game_dungeon;
+    uint16 bit = Rando_DungeonBitForGameDungeon(g);
     if (i) at_str_puts(s, ",");
     at_str_puts(s, "{\"name\":");
-    at_json_str(s, kAtDungeons[i].name);
+    at_json_str(s, row->name);
     at_str_printf(s, ",\"small_keys\":%u,\"big_key\":%s,\"map\":%s,\"compass\":%s}",
-                  (unsigned)v->dungeon_small_keys[kAtDungeons[i].kidx],
+                  (unsigned)v->dungeon_small_keys[row->key_slot],
                   at_b((v->bigkey_bits & bit) != 0), at_b((v->map_bits & bit) != 0),
                   at_b((v->compass_bits & bit) != 0));
   }

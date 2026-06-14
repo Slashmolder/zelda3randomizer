@@ -25,6 +25,7 @@
 extern "C" {
 #include "../../config.h"     // g_config, g_keybind_*, Config_* helpers, kKeys_*, kGamepadBtn_*
 #include "../../features.h"   // kFeatures0_* bit constants
+#include "../dungeon_ids.h"   // shared game/key dungeon row descriptors
 // Randomizer ownership state for the shared item bytes 0xF344 (Mushroom/Powder)
 // and 0xF34C (Shovel/Flute). The Debug inventory editor keeps these in sync when
 // it edits those bytes under rando (see the Items section). Declared here rather
@@ -829,34 +830,17 @@ bool ZeldaIsEmulatorAttached(void);   // zelda_rtl.h
 // index D is 0x8000 >> D (see rando.c:200-213). For a little-endian word at
 // `base`, that bit lands in byte `base + (D<=7 ? 1 : 0)`, bit position
 // (15 - D) & 7 — so we reuse the byte-oriented Cheats_BitCheckbox.
-struct DbgDungeon { int gidx; const char *name; };
-static const DbgDungeon kDbgDungeons[] = {
-    {0,  "Hyrule Castle / Sewers"},
-    {2,  "Eastern Palace"},
-    {3,  "Desert Palace"},
-    {10, "Tower of Hera"},
-    {4,  "Hyrule Castle Tower"},
-    {6,  "Palace of Darkness"},
-    {5,  "Swamp Palace"},
-    {8,  "Skull Woods"},
-    {11, "Thieves' Town"},
-    {9,  "Ice Palace"},
-    {7,  "Misery Mire"},
-    {12, "Turtle Rock"},
-    {13, "Ganon's Tower"},
-};
-
 static void DbgDungeonBit(const char *id, uint32 wordbase, int gidx) {
   Cheats_BitCheckbox(id, wordbase + (gidx <= 7 ? 1 : 0), (15 - gidx) & 7);
 }
 
-static void DbgDungeonKeys(int gidx) {
+static void DbgDungeonKeys(int key_slot) {
   // Under Retro genericKeys the per-dungeon slots are dead — the small-key pool
   // is the single shared counter link_generic_keys (0xF38B), which SaveDungeonKeys
   // writes instead of the per-dungeon slot. Read/write that shared byte so this
   // widget's readout matches the real pool (the per-dungeon write would be a no-op).
   bool generic = Rando_IsGenericKeysActive();
-  int v = g_ram[generic ? 0xF38B : (0xF37C + gidx)];
+  int v = g_ram[generic ? 0xF38B : (0xF37C + key_slot)];
   if (v > 99) v = 99;
   ImGui::SetNextItemWidth(96);
   if (ImGui::SliderInt("##keys", &v, 0, 99)) {
@@ -865,13 +849,13 @@ static void DbgDungeonKeys(int gidx) {
       Cheats_PokeByte(0xF36F, v, 0, 99);  // live counter (HUD/doors see it now)
       return;
     }
-    Cheats_PokeByte(0xF37C + gidx, v, 0, 99);  // saved per-dungeon slot
+    Cheats_PokeByte(0xF37C + key_slot, v, 0, 99);  // saved per-dungeon slot
     // If Link is standing in this dungeon, also bump the live counter so the
     // HUD/doors see it immediately (mirrors SaveDungeonKeys; HC proper raw
     // index 2 folds into slot 0). cur_palace_index_x2 low byte = 0xff outside.
     uint8 cur = (uint8)g_ram[0x40C];
-    uint8 cur_slot = (cur == 0xff) ? 0xff : ((cur == 2) ? 0 : (cur >> 1));
-    if (cur != 0xff && cur_slot == gidx) Cheats_PokeByte(0xF36F, v, 0, 99);
+    uint8 cur_slot = Rando_KeySlotFromRawPalace(cur);
+    if (cur != 0xff && cur_slot == key_slot) Cheats_PokeByte(0xF36F, v, 0, 99);
   }
 }
 
@@ -1105,15 +1089,16 @@ void DbgInventory_Render(void) {
         ImGui::TableSetupColumn("Big Key");
         ImGui::TableSetupColumn("Keys");
         ImGui::TableHeadersRow();
-        for (int i = 0; i < (int)(sizeof kDbgDungeons / sizeof kDbgDungeons[0]); i++) {
-          int d = kDbgDungeons[i].gidx;
+        for (int i = 0; i < (int)kRandoDungeonDebugRowCount; i++) {
+          const RandoDungeonDebugRow *row = &kRandoDungeonDebugRows[i];
+          int d = row->game_dungeon;
           ImGui::TableNextRow();
           ImGui::PushID(d);
-          ImGui::TableNextColumn(); ImGui::TextUnformatted(kDbgDungeons[i].name);
+          ImGui::TableNextColumn(); ImGui::TextUnformatted(row->name);
           ImGui::TableNextColumn(); DbgDungeonBit("##map", 0xF368, d);
           ImGui::TableNextColumn(); DbgDungeonBit("##comp", 0xF364, d);
           ImGui::TableNextColumn(); DbgDungeonBit("##bk", 0xF366, d);
-          ImGui::TableNextColumn(); DbgDungeonKeys(d);
+          ImGui::TableNextColumn(); DbgDungeonKeys(row->key_slot);
           ImGui::PopID();
         }
         ImGui::EndTable();
@@ -1227,8 +1212,8 @@ void DbgInventory_Render(void) {
         Cheats_PokeByte(0xF38B, 99, 0, 99);
         Cheats_PokeByte(0xF36F, 99, 0, 99);
       } else {
-        for (int i = 0; i < (int)(sizeof kDbgDungeons / sizeof kDbgDungeons[0]); i++)
-          Cheats_PokeByte(0xF37C + kDbgDungeons[i].gidx, 99, 0, 99);
+        for (int i = 0; i < (int)kRandoDungeonDebugRowCount; i++)
+          Cheats_PokeByte(0xF37C + kRandoDungeonDebugRows[i].key_slot, 99, 0, 99);
       }
     }
     Help("Gives every item/equipment tier, all medallions, full capacities, "

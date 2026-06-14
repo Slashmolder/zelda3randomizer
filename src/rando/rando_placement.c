@@ -21,6 +21,7 @@
 #include "customizer.h"     // Customizer_GetActive (customizer-mode pins)
 #include "item_ids.h"
 #include "location_ids.h"
+#include "dungeon_ids.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -641,39 +642,6 @@ static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
   }
 }
 
-// Map dungeon-item registry id → dungeon id (0..12 per kDungeonPrizeLocations
-// order: HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9,
-// MM=10, TR=11, GT=12). Returns 0xFF if the item is not a dungeon item.
-//
-// BigKey/Map/Compass enums in item_registry.yaml skip
-// HCT (no big key/map/compass for HCT), NOT just HCE. The simple
-// arithmetic mapping (`item_id - base + 1`) was wrong for 8 of 11
-// dungeons. Use a per-class array index → dungeon-id table that
-// mirrors kBigKeys / kMaps / kCompasses ordering.
-//
-// kBigKeys order (11 entries): EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
-//                            = dungeons 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
-// kMaps order (12 entries): HCE, EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
-//                         = dungeons 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
-// kCompasses order (11 entries): EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
-//                              = dungeons 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
-static uint8 dungeon_id_for_item(uint16 item_id) {
-  // SmallKey ids 53..65 contiguous in HCE..GT order — no skip.
-  if (item_id >= 53 && item_id <= 65) return (uint8)(item_id - 53);
-  // BigKey ids 66..76 skip HCE *and* HCT.
-  static const uint8 kBigKeyDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (item_id >= 66 && item_id <= 76) return kBigKeyDungeon[item_id - 66];
-  // Map_HCE = 124.
-  if (item_id == 124) return 0;
-  // Map ids 77..87 skip HCT (HCE handled separately above).
-  static const uint8 kMapDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (item_id >= 77 && item_id <= 87) return kMapDungeon[item_id - 77];
-  // Compass ids 88..98 skip HCE *and* HCT.
-  static const uint8 kCompassDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (item_id >= 88 && item_id <= 98) return kCompassDungeon[item_id - 88];
-  return 0xFF;
-}
-
 // Determine if `loc` is inside a dungeon. Returns 0..12 (dungeon id) or 0xFF.
 // also consults Rando_FindPredicateOverride so a per-world-state
 // override that moves a location across a dungeon boundary is honored.
@@ -708,7 +676,7 @@ static uint8 dungeon_id_for_location(const RandoLocationDef *loc,
 static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
                                       uint16 candidate_item,
                                       const RandoSettings *settings) {
-  uint8 item_dungeon = dungeon_id_for_item(candidate_item);
+  uint8 item_dungeon = Rando_RandoDungeonFromDungeonItem(candidate_item);
   if (item_dungeon == 0xFF) return true;  // not a dungeon item — always OK
   // Determine the active mode for this item class.
   uint8 mode;
@@ -2573,32 +2541,32 @@ void Placement_SelfCheck(void) {
     }
   }
 
-  // dungeon_id_for_item mapping for the keys-skip-HCT enums.
+  // Rando_RandoDungeonFromDungeonItem mapping for the keys-skip-HCT enums.
   // Pins the lookup table so a future formula-based regression breaks the
   // selftest before a corpus run.
   {
     // Small keys (53..65) are contiguous HCE..GT (HCT included).
-    if (dungeon_id_for_item(53) != 0)  selfcheck_die("SmallKey_HCE → 0");
-    if (dungeon_id_for_item(57) != 4)  selfcheck_die("SmallKey_HCT → 4");
-    if (dungeon_id_for_item(58) != 5)  selfcheck_die("SmallKey_PoD → 5");
-    if (dungeon_id_for_item(65) != 12) selfcheck_die("SmallKey_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(53) != 0)  selfcheck_die("SmallKey_HCE → 0");
+    if (Rando_RandoDungeonFromDungeonItem(57) != 4)  selfcheck_die("SmallKey_HCT → 4");
+    if (Rando_RandoDungeonFromDungeonItem(58) != 5)  selfcheck_die("SmallKey_PoD → 5");
+    if (Rando_RandoDungeonFromDungeonItem(65) != 12) selfcheck_die("SmallKey_GT → 12");
     // BigKey ids 66..76 skip HCE AND HCT.
-    if (dungeon_id_for_item(66) != 1)  selfcheck_die("BigKey_EP → 1");
-    if (dungeon_id_for_item(68) != 3)  selfcheck_die("BigKey_TH → 3");
-    if (dungeon_id_for_item(69) != 5)  selfcheck_die("BigKey_PoD → 5 (HCT skip)");
-    if (dungeon_id_for_item(76) != 12) selfcheck_die("BigKey_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(66) != 1)  selfcheck_die("BigKey_EP → 1");
+    if (Rando_RandoDungeonFromDungeonItem(68) != 3)  selfcheck_die("BigKey_TH → 3");
+    if (Rando_RandoDungeonFromDungeonItem(69) != 5)  selfcheck_die("BigKey_PoD → 5 (HCT skip)");
+    if (Rando_RandoDungeonFromDungeonItem(76) != 12) selfcheck_die("BigKey_GT → 12");
     // Map_HCE = 124 → 0; Map ids 77..87 skip HCT.
-    if (dungeon_id_for_item(124) != 0) selfcheck_die("Map_HCE → 0");
-    if (dungeon_id_for_item(77) != 1)  selfcheck_die("Map_EP → 1");
-    if (dungeon_id_for_item(80) != 5)  selfcheck_die("Map_PoD → 5 (HCT skip)");
-    if (dungeon_id_for_item(87) != 12) selfcheck_die("Map_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(124) != 0) selfcheck_die("Map_HCE → 0");
+    if (Rando_RandoDungeonFromDungeonItem(77) != 1)  selfcheck_die("Map_EP → 1");
+    if (Rando_RandoDungeonFromDungeonItem(80) != 5)  selfcheck_die("Map_PoD → 5 (HCT skip)");
+    if (Rando_RandoDungeonFromDungeonItem(87) != 12) selfcheck_die("Map_GT → 12");
     // Compass ids 88..98 skip HCE AND HCT.
-    if (dungeon_id_for_item(88) != 1)  selfcheck_die("Compass_EP → 1");
-    if (dungeon_id_for_item(91) != 5)  selfcheck_die("Compass_PoD → 5 (HCT skip)");
-    if (dungeon_id_for_item(98) != 12) selfcheck_die("Compass_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(88) != 1)  selfcheck_die("Compass_EP → 1");
+    if (Rando_RandoDungeonFromDungeonItem(91) != 5)  selfcheck_die("Compass_PoD → 5 (HCT skip)");
+    if (Rando_RandoDungeonFromDungeonItem(98) != 12) selfcheck_die("Compass_GT → 12");
     // Non-dungeon items return 0xFF.
-    if (dungeon_id_for_item(0) != 0xFF)   selfcheck_die("ProgressiveSword → 0xFF");
-    if (dungeon_id_for_item(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
+    if (Rando_RandoDungeonFromDungeonItem(0) != 0xFF)   selfcheck_die("ProgressiveSword → 0xFF");
+    if (Rando_RandoDungeonFromDungeonItem(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
   }
 
   // Phase B Slice 3b — Retro TakeAny selection invariants. Pins the per-seed
