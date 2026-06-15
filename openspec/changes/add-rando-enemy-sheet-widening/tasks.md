@@ -23,7 +23,7 @@
 
 ## 4. Audit, reconcile, hand off
 
-- [~] 4.1 Fresh-eyes audit pass (independent reviewer, self-contained prompt) over the diff — palette-signature build, the gate, verify-then-commit, the boss-room signature edge — asking for NEW findings only. (Running in background.)
-- [ ] 4.2 Reconcile the spec delta against the as-built source before archiving (read every requirement/scenario against the final code).
-- [ ] 4.3 Owner end-to-end playtest: enter several dungeons (incl. a key/shutter room and a water room) with `enemy_shuffle` on; confirm widened enemies render correctly and nothing softlocks. This is the only remaining net for live render correctness.
-- [ ] 4.4 Update the `sheet-reshuffle-asbuilt` memory + any docs (`docs/randomizer.md`) to record widening as enabled, the dungeon palette model, and the offline renderer location.
+- [x] 4.1 Fresh-eyes audit pass (independent reviewer) over the committed diff — verdict: safe to ship, no HIGH/garbage/softlock paths. Findings addressed: **MED** — dungeon water rooms never widened (Walking Zora is the sole ESF_WATER enemy AND key-banned, so the verify's key-capable water demand was unsatisfiable in dungeons); fixed `widen_set_fillable` to require only that the Zora source keeps its own sheets loaded (it is never substituted away). LOW comment/doc precision (revert-loop dual exit, determinism-given-inherited-sheets wording) also applied. Re-verified: build + selftest + corpus 121/121.
+- [x] 4.2 Reconciled the spec delta + design against the as-built source (the design D4 water/determinism wording now matches the corrected `widen_set_fillable`).
+- [ ] 4.3 Owner end-to-end playtest: with `enemy_shuffle` on, enter a **key/shutter room** (fillability), a **water room / Swamp Palace** (Zora — now widens its non-Zora slots), and a **dark-world dungeon** (palette); confirm widened enemies render correctly and nothing softlocks. The runtime verify path has no automated coverage — this is the load-bearing net.
+- [x] 4.4 Updated `docs/randomizer.md` (enemy-shuffle prose + kGen 76→77 row) and the `sheet-reshuffle-asbuilt` memory to record widening as enabled via the dungeon palette model. (No pixel renderer — the palette-completeness grounding replaced it.)

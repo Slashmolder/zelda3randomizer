@@ -783,24 +783,34 @@ static uint8 room_blocked_slots(bool is_dungeon, uint16 key, bool *out_has_water
 // forced substitution can never fail into an unloaded-sheet render). Mirrors
 // pick_replacement via the shared candidate_eligible. For a dungeon the target must
 // be killable && !cannot_key, palette-compatible with `sig_id`, all sheets loaded,
-// and non-flying in a flying-exclude room; `need_water` additionally requires such
-// a water-capable target (the room/area has a water-only source). `ow_pal` is the
-// overworld area palette id (ignored for dungeons).
+// and non-flying in a flying-exclude room. `ow_pal` is the overworld area palette id
+// (ignored for dungeons).
+//
+// `need_water` (the room/area holds a Walking Zora water source): a water source is
+// never substituted to a DIFFERENT water sheet — Zora (0x56) is the sole ESF_WATER
+// enemy, and the picker keeps it vanilla (key-banned, so a dungeon has no killable+
+// key water candidate; the overworld's only water replacement is Zora itself). So the
+// water demand reduces to "Zora's own sheets (12+68) stay loaded" so vanilla Zora
+// still renders. Requiring an eligible *key-capable* water candidate (as the base
+// scan's flags do) is unsatisfiable in dungeons and would wrongly suppress ALL
+// widening in every dungeon room that holds a Zora.
 static bool widen_set_fillable(const uint8 live[4], bool is_dungeon, uint8 sig_id,
                                bool forbid_flying, bool need_water, uint8 ow_pal) {
-  bool base_ok = false, water_ok = false;
+  // A present water source must keep its own sheets loaded (it renders vanilla; it is
+  // never swapped to another water sheet). 0x56 = Walking Zora, the only ESF_WATER.
+  if (need_water && !sheets_loaded(0x56, live))
+    return false;
+  // At least one base forced-substitution target must survive in the proposed set —
+  // every non-water forced sprite can substitute to it (the picker is slot-agnostic).
   for (uint32 t = 0; t < ES_TABLE_LEN; t++) {
-    if (!candidate_eligible((uint8)t, live,
-                            /*require_killable=*/is_dungeon,
-                            /*require_key_capable=*/is_dungeon,
-                            /*require_water=*/false,
-                            forbid_flying, is_dungeon, ow_pal, sig_id))
-      continue;
-    base_ok = true;
-    if (kEnemyTable[t].flags & ESF_WATER) water_ok = true;
-    if (base_ok && (!need_water || water_ok)) return true;
+    if (candidate_eligible((uint8)t, live,
+                           /*require_killable=*/is_dungeon,
+                           /*require_key_capable=*/is_dungeon,
+                           /*require_water=*/false,
+                           forbid_flying, is_dungeon, ow_pal, sig_id))
+      return true;
   }
-  return base_ok && (!need_water || water_ok);
+  return false;
 }
 
 void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
@@ -874,9 +884,11 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   // Phase 2: verify-then-commit. Widening a slot removes the room's own sheet there
   // and FORCES its enemies to substitute; if the proposed set admits no valid
   // forced-substitution target (palette-compatible + constraint-meeting + sheets
-  // loaded), revert widened slots — highest first, deterministic — toward vanilla,
-  // which always restores fillability, until the set is safe. No-op when widening
-  // is off (no slot was widened, so the set is already vanilla).
+  // loaded), revert widened slots — highest first, deterministic — toward vanilla.
+  // Loop exits two ways, both safe: (a) the verify passes, or (b) every widened slot
+  // has been reverted (proposed == vanres, the shipped config — always safe because
+  // the picker returns the vanilla type for any source it cannot fill, and the
+  // vanilla sheets are loaded). No-op when widening is off (no slot was widened).
   if (ES_ENABLE_SHEET_WIDENING) {
     for (;;) {
       if (widen_set_fillable(proposed, is_dungeon, sig_id, forbid_flying, has_water, ow_pal))
@@ -885,7 +897,7 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
       for (int slot = ES_RESHUFFLE_SLOTS - 1; slot >= 0; slot--) {
         if (vanres[slot] != 0 && proposed[slot] != vanres[slot]) { revert = slot; break; }
       }
-      if (revert < 0) break;  // already fully vanilla — no forced substitutions remain
+      if (revert < 0) break;  // fully vanilla — nothing widened, no forced substitutions
       proposed[revert] = vanres[revert];
     }
   }

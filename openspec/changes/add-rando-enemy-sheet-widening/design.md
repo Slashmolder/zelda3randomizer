@@ -121,16 +121,26 @@ substitute, and `sheets_loaded` will reject the original type (its sheet `V` is 
 no valid substitute exists on the new live set, `pick_replacement` returns the vanilla type
 → it spawns with `V` unloaded → garbage. The dungeon picker requires
 `killable && !cannot_key` for *all* dungeon substitutions, so the new live set must carry
-at least one such enemy that is also palette-compatible and has all its sheets loaded
-(plus a water-capable one when the room has a water source — `ESF_WATER`).
+at least one such enemy that is also palette-compatible and has all its sheets loaded. A
+**water source** is handled separately: Walking Zora (`0x56`) is the sole `ESF_WATER` enemy
+and is never substituted to a *different* water sheet (it is key-banned, so a dungeon has no
+killable+key water replacement, and the overworld's only water replacement is Zora itself),
+so the demand reduces to keeping Zora's own sheets (12+68) loaded — *not* "an eligible
+key-capable water candidate exists," which would be unsatisfiable in a dungeon and wrongly
+suppress all widening in any Zora room.
 
 `EnemyShuffle_ReshuffleCurrentRoomSheets` therefore commits a widened set only after a
 verify pass over the *resulting* live 4-slot set: it confirms the room retains a valid
-forced-substitution target under the same constraints the picker will apply; if not, it
-reverts the offending slot(s) to the vanilla-resolved sheet (which always restores
-fillability, since the vanilla configuration is by definition fillable). The verify reuses
-the candidate-filter logic in `pick_replacement`. Determinism is preserved: the choice and
-the verify are pure functions of `(seed, room/area, slot)` and the shipped tables.
+forced-substitution target under the same constraints the picker will apply (and that a
+water source keeps its sheets); if not, it reverts the offending slot(s) to the
+vanilla-resolved sheet (which always restores fillability, since the vanilla configuration
+is by definition fillable). The verify reuses the candidate-filter logic in
+`pick_replacement`. Determinism: the choice and the verify are pure given `(seed, room/area,
+slot)`, the shipped tables, **and the live inherited sheet set** — exactly the same contract
+the base picker already operates under (an unowned `0`-inheritance slot reflects load
+history, so a verdict can in principle depend on the arrival path, as it can for the picker;
+in practice the generic dungeon candidates are single-sheet and the only cross-slot enemy,
+Zora, occupies owned slots).
 
 *Alternative considered:* gate only the picker (D3) and rely on the existing anti-garbage
 pools. Rejected: the pools guarantee a killable+key enemy exists on each pooled sheet, but
