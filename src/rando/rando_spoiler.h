@@ -18,6 +18,10 @@ typedef struct RandoSpoiler {
   const RandoSettings *settings;
   const RandoPlacementTable *placements;
   const RandoSpheres *spheres;       // optional; NULL omits sphere_data
+  // Actual MM/TR medallion requirements for this seed. The placement table
+  // carries legacy Medallion config rows, but those are not item checks and
+  // may be vanilla-pinned; spoiler text should use this assignment instead.
+  const uint8 *medallion_assignment;  // [kRandoMedallionEntranceCount], optional
   // Placer fallback counters — populated from Place_AssumedFill outputs.
   // Each non-zero counter produces one fallback_warnings[] entry in JSON
   // and a banner in the text spoiler.

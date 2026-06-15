@@ -292,7 +292,7 @@ static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
   return ctx->settings != NULL && ctx->settings->instant_flute != 0;
 }
 
-// Boss-shuffle runtime — "can kill the boss assigned to dungeon_id". Resolves
+// Boss-shuffle runtime — "can kill the boss assigned to a kRandoDungeon_* slot". Resolves
 // the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
 // via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
 // kill predicate (kRandoBossKillPred[boss]). The outer cursor `c` advances past
@@ -1041,9 +1041,8 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     }
 
     // Update cleared_dungeons_bitmask based on which boss locations are
-    // now reachable. Mapping per the dungeon-id table in op_registry.yaml
-    // (HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9, MM=10,
-    // TR=11, GT=12). The boss location is the canonical "dungeon cleared"
+    // now reachable. Indexing is kRandoDungeon_* order from dungeon_ids.h.
+    // The boss location is the canonical "dungeon cleared"
     // signal — when its Prize location is reachable the boss is necessarily
     // defeated to get there.
     static const uint16 kDungeonBossLocations[13] = {

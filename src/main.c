@@ -950,6 +950,14 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.cross_decoupled_count = cross_decoupled_count;
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
+  uint8 medallion_assignment_sp[kRandoMedallionEntranceCount];
+  {
+    const uint8 *assignment = Rando_GetMedallionAssignment();
+    if (assignment != NULL) {
+      memcpy(medallion_assignment_sp, assignment, sizeof(medallion_assignment_sp));
+      spoiler.medallion_assignment = medallion_assignment_sp;
+    }
+  }
   {
     clock_t gen_end = clock();
     long elapsed_ms = (long)((double)(gen_end - gen_start) * 1000.0 / CLOCKS_PER_SEC);
@@ -1338,7 +1346,9 @@ static void ConsumeRandoWindowGenerateRequest(void) {
   bool ok = Rando_GenerateSlot(&b->pending, b->seed_u64, -1, b->target_slot_index,
                                b->pending_recommended_features0, &res, err, sizeof err);
   if (ok) {
-    RandoWindowBridge_StoreGenerated(&res.placement, NULL, res.race_mode);  // bridge copies
+    RandoWindowBridge_StoreGenerated(&res.placement, NULL,
+                                     res.has_medallion_assignment ? res.medallion_assignment : NULL,
+                                     res.race_mode);  // bridge copies
     free(res.placement.entries);                                            // free our owned copy
     // Snapshot the settings/share/seed that produced this placement so the
     // Spoiler tab's "Save spoiler" writes an accurate RandoSpoiler even after

@@ -7,6 +7,7 @@
 // assignment tables regardless of host platform.
 
 #include "rando_shuffles.h"
+#include "dungeon_ids.h"
 #include "rando_rng.h"
 #include "rando_logic.h"
 #include "../types.h"
@@ -14,26 +15,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// ---------------------------------------------------------------------------
-// Dungeon-id constants (mirrors the order used in op_registry.yaml's
-// dungeon-id table and rando_logic.c::_resolve_dungeon_id).
-// ---------------------------------------------------------------------------
-enum {
-  kDungeon_HyruleCastleEscape = 0,
-  kDungeon_EasternPalace = 1,
-  kDungeon_DesertPalace = 2,
-  kDungeon_TowerOfHera = 3,
-  kDungeon_HyruleCastleTower = 4,
-  kDungeon_PalaceOfDarkness = 5,
-  kDungeon_SwampPalace = 6,
-  kDungeon_SkullWoods = 7,
-  kDungeon_ThievesTown = 8,
-  kDungeon_IcePalace = 9,
-  kDungeon_MiseryMire = 10,
-  kDungeon_TurtleRock = 11,
-  kDungeon_GanonsTower = 12,
-};
 
 // ---------------------------------------------------------------------------
 // Prize ids (mirror item_registry.yaml prize IDs offset to a small palette).
@@ -60,19 +41,19 @@ enum {
 // that are not items in the placement table).
 // ---------------------------------------------------------------------------
 static const uint8 kPendantDungeons[3] = {
-  kDungeon_EasternPalace,
-  kDungeon_DesertPalace,
-  kDungeon_TowerOfHera,
+  kRandoDungeon_EasternPalace,
+  kRandoDungeon_DesertPalace,
+  kRandoDungeon_TowerOfHera,
 };
 
 static const uint8 kCrystalDungeons[7] = {
-  kDungeon_PalaceOfDarkness,
-  kDungeon_SwampPalace,
-  kDungeon_SkullWoods,
-  kDungeon_ThievesTown,
-  kDungeon_IcePalace,
-  kDungeon_MiseryMire,
-  kDungeon_TurtleRock,
+  kRandoDungeon_PalaceOfDarkness,
+  kRandoDungeon_SwampPalace,
+  kRandoDungeon_SkullWoods,
+  kRandoDungeon_ThievesTown,
+  kRandoDungeon_IcePalace,
+  kRandoDungeon_MiseryMire,
+  kRandoDungeon_TurtleRock,
 };
 
 static const uint8 kPendantPrizes[3] = {
@@ -131,16 +112,16 @@ void PrizeShuffle_Run(const RandoSettings *settings,
 
   if (settings == NULL || settings->prize_shuffle == 0) {
     // Identity assignment — vanilla placements per ALTTPR.
-    out_assignment[kDungeon_EasternPalace] = kVanillaPrize_EP;
-    out_assignment[kDungeon_DesertPalace] = kVanillaPrize_DP;
-    out_assignment[kDungeon_TowerOfHera] = kVanillaPrize_TH;
-    out_assignment[kDungeon_PalaceOfDarkness] = kVanillaPrize_PoD;
-    out_assignment[kDungeon_SwampPalace] = kVanillaPrize_SP;
-    out_assignment[kDungeon_SkullWoods] = kVanillaPrize_SW;
-    out_assignment[kDungeon_ThievesTown] = kVanillaPrize_TT;
-    out_assignment[kDungeon_IcePalace] = kVanillaPrize_IP;
-    out_assignment[kDungeon_MiseryMire] = kVanillaPrize_MM;
-    out_assignment[kDungeon_TurtleRock] = kVanillaPrize_TR;
+    out_assignment[kRandoDungeon_EasternPalace] = kVanillaPrize_EP;
+    out_assignment[kRandoDungeon_DesertPalace] = kVanillaPrize_DP;
+    out_assignment[kRandoDungeon_TowerOfHera] = kVanillaPrize_TH;
+    out_assignment[kRandoDungeon_PalaceOfDarkness] = kVanillaPrize_PoD;
+    out_assignment[kRandoDungeon_SwampPalace] = kVanillaPrize_SP;
+    out_assignment[kRandoDungeon_SkullWoods] = kVanillaPrize_SW;
+    out_assignment[kRandoDungeon_ThievesTown] = kVanillaPrize_TT;
+    out_assignment[kRandoDungeon_IcePalace] = kVanillaPrize_IP;
+    out_assignment[kRandoDungeon_MiseryMire] = kVanillaPrize_MM;
+    out_assignment[kRandoDungeon_TurtleRock] = kVanillaPrize_TR;
     return;
   }
 
@@ -210,12 +191,12 @@ void Shuffles_SelfCheck(void) {
     Rng_SeedFromU64(&rng, 0xDEADBEEFCAFEBABEull);
     uint8 assn[kRandoDungeonCount];
     PrizeShuffle_Run(&s, &rng, assn);
-    if (assn[kDungeon_EasternPalace] != kVanillaPrize_EP) selfcheck_die("EP vanilla expected GreenPendant");
-    if (assn[kDungeon_PalaceOfDarkness] != kVanillaPrize_PoD) selfcheck_die("PoD vanilla expected Crystal1");
-    if (assn[kDungeon_TurtleRock] != kVanillaPrize_TR) selfcheck_die("TR vanilla expected Crystal7");
+    if (assn[kRandoDungeon_EasternPalace] != kVanillaPrize_EP) selfcheck_die("EP vanilla expected GreenPendant");
+    if (assn[kRandoDungeon_PalaceOfDarkness] != kVanillaPrize_PoD) selfcheck_die("PoD vanilla expected Crystal1");
+    if (assn[kRandoDungeon_TurtleRock] != kVanillaPrize_TR) selfcheck_die("TR vanilla expected Crystal7");
     // Non-prize dungeons retain 0xFF sentinel.
-    if (assn[kDungeon_HyruleCastleEscape] != 0xFF) selfcheck_die("HCE should have no prize slot");
-    if (assn[kDungeon_GanonsTower] != 0xFF) selfcheck_die("GT should have no prize slot");
+    if (assn[kRandoDungeon_HyruleCastleEscape] != 0xFF) selfcheck_die("HCE should have no prize slot");
+    if (assn[kRandoDungeon_GanonsTower] != 0xFF) selfcheck_die("GT should have no prize slot");
   }
 
   // Prize shuffle enabled with seed 0 → deterministic permutation.

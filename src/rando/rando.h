@@ -16,7 +16,8 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 77u  // 76→77: enemy-shuffle GFX-sheet widening enabled (dungeon sprite-palette gate + verify-then-commit fillability). Runtime-only — placement draws no fill RNG and adds no predicate, so placement_digest stays byte-identical; settings_hash / kSettingsCanonicalLen unchanged. The bump version-locks the now-live widening behavior.
+#define kGeneratorVersion 78u  // 77→78: enemy-shuffle GFX-sheet widening enabled (dungeon sprite-palette gate + verify-then-commit fillability), POSITION-aware sheet loaded-check (Javelin Soldier tile bug), and contact-damage class-2 exclusion (zero-damage bug). Runtime-only — placement draws no fill RNG and adds no predicate, so placement_digest stays byte-identical; settings_hash / kSettingsCanonicalLen unchanged. The bump version-locks the now-live enemy-shuffle behavior. (v77 was taken concurrently by main's medallion-config change below.)
+                               // 76→77: MM/TR medallion config slots no longer behave like item placements in spoilers, hints, accessibility, or sphere item grants. Text/JSON spoilers emit actual medallion requirements from the assignment table. Hints-on JSON/race stamps can change; seeds that previously used fake config-slot medallions for reachability may move. settings_hash unchanged.
                                // 75→76: instant_flute becomes a canonical seed setting (default on, [26] bit4 disables). CanFly now branches on OP_INSTANT_FLUTE, so instant_flute=false restores the old activation route. Default settings_hash / placement digests stay byte-identical vs v75; kSettingsCanonicalLen unchanged.
                                // 74→75: rando flute pickup now grants the active bird-woken flute immediately (link_item_flute=3 + FluteActive ownership), and CanFly no longer requires the old separate activation route. Inverted flute-gated placement/sphere digests can move; settings_hash / kSettingsCanonicalLen unchanged.
                                // 73→74: fix generation-time reachability certification for retry-exhausting seeds. Place_AssumedFill's best-so-far return reinstalls the restored attempt's prize/medallion assignment, and Rando_Set*Assignment copies into owned stores. Placement digests stay byte-identical; sphere_digest moves only for seeds whose old post-placement pass read a stale later attempt's assignment. settings_hash / kSettingsCanonicalLen unchanged.
@@ -229,11 +230,12 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 //
 // Plays the standard item-receipt sound effect and refreshes the HUD so
 // any visible inventory change (prize icons, dungeon-item bits, Triforce
-// counter) updates immediately. When `item_id` maps to a non-zero gfx bundle
-// in `kDirectGrantIcons[]` (codegen'd from
-// `assets/rando/direct_grant_icons.yaml`), additionally spawns the
-// `kAncillaType_RandoIconReceipt` ancilla so the player sees what they
-// got. Audio-only (gfx==0) entries fall back to the audio+HUD path.
+// counter) updates immediately. Trap items get a deterministic good-item
+// decoy icon based on the active seed/location/trap type; otherwise, when
+// `item_id` maps to a non-zero gfx bundle in `kDirectGrantIcons[]`
+// (codegen'd from `assets/rando/direct_grant_icons.yaml`), this additionally
+// spawns the `kAncillaType_RandoIconReceipt` ancilla so the player sees what
+// they got. Audio-only (gfx==0) entries fall back to the audio+HUD path.
 // ---------------------------------------------------------------------------
 void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
@@ -251,8 +253,8 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 //   Rando_ReceiveOrConfirm(lttp_code, item_id);
 //
 // Behavior: when `lttp_code` is the §6.2 skip-sentinel, fires the §7.6
-// confirmation cue (sound + HUD refresh + icon ancilla if `item_id` has a
-// verified entry in `kDirectGrantIcons[]`). Otherwise invokes
+// confirmation cue (sound + HUD refresh + icon ancilla when `item_id` is a
+// trap or has a verified entry in `kDirectGrantIcons[]`). Otherwise invokes
 // Link_ReceiveItem with chest_position=0 — every existing call site at the
 // NPC dispatch pattern passes 0; sites that need non-zero chest_position
 // (chest opens) continue to call Link_ReceiveItem directly with an explicit
@@ -708,8 +710,8 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 //
 // `dungeon_id` is `cur_palace_index_x2 >> 1` — the GAME's dungeon index,
 // NOT the ALTTPR id ordering. Range 0..13:
-//   0 HCE  1 (unused)  2 EP  3 DP  4 HCT  5 PoD  6 SP  7 SW
-//   8 TT   9 IP       10 TH 11 MM 12 TR  13 GT
+//   0 HCE  1 HC        2 EP  3 DP  4 HCT  5 SP   6 PoD 7 MM
+//   8 SW   9 IP       10 TH 11 TT 12 TR  13 GT
 // Returns 0xFFFF for dungeons without a boss drop (HCE/HCT/GT — those have
 // their own dispatch paths: Sanctuary chest, Agahnim event, Agahnim 2 event).
 // ---------------------------------------------------------------------------

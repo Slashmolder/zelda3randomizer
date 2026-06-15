@@ -29,6 +29,9 @@ bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_
   sp.settings = &b->last_generated_settings;
   sp.placements = &b->last_generated_placement;
   sp.spheres = NULL;
+  sp.medallion_assignment = b->last_generated_has_medallion_assignment
+                                ? b->last_generated_medallion_assignment
+                                : NULL;
   sp.goal_completable = b->last_generated_goal_completable;
   // Spoiler_Write reads the hint GLOBALS (Rando_GetHintString over rando_hints.c's
   // g_hint_table) at write time, and those are overwritten by ANY slot activation
@@ -135,12 +138,14 @@ void RandoWindowBridge_SetGenerateResult(int status, const char *err) {
 
 void RandoWindowBridge_StoreGenerated(const RandoPlacementTable *table,
                                       const RandoSpheres *spheres,
+                                      const uint8 *medallion_assignment,
                                       bool race_mode) {
   RandoWindowBridge *b = &g_rando_window_bridge;
   // Free any prior owned copy before overwriting.
   free(b->last_generated_placement.entries);
   b->last_generated_placement.entries = NULL;
   b->last_generated_placement.count = 0;
+  b->last_generated_has_medallion_assignment = false;
   b->has_last_generated = false;
 
   if (table != NULL && table->entries != NULL && table->count > 0) {
@@ -150,6 +155,11 @@ void RandoWindowBridge_StoreGenerated(const RandoPlacementTable *table,
       b->last_generated_placement.entries = copy;
       b->last_generated_placement.count = table->count;
       if (spheres != NULL) b->last_generated_spheres = *spheres;
+      if (medallion_assignment != NULL) {
+        memcpy(b->last_generated_medallion_assignment, medallion_assignment,
+               sizeof(b->last_generated_medallion_assignment));
+        b->last_generated_has_medallion_assignment = true;
+      }
       b->last_generated_race_mode = race_mode;
       b->has_last_generated = true;
     }

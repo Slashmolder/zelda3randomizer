@@ -1,7 +1,7 @@
 // rando_spoiler.c — JSON + text spoiler writer (tasks.md §5.1, §5.2).
 //
-// Emits spoiler JSON/text with sphere_data, fallback_warnings, and the full
-// placements[] body grouped by region.
+// Emits spoiler JSON/text with sphere_data, fallback_warnings, and item
+// placements grouped by region.
 //
 // Determinism: JSON output is byte-identical for byte-identical input
 // (sorted keys; no whitespace variation; entries iterated in location_id
@@ -15,6 +15,7 @@
 #include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson
 #include "shuffle_doors.h"     // DoorShuffleLayout (door_shuffle spoiler section)
 #include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName
+#include "location_ids.h"      // LOC_* medallion config slot names
 #include "../config.h"
 #include "../types.h"
 
@@ -94,6 +95,47 @@ static const RandoLocationDef *find_location(uint16 id) {
   for (uint32 j = 0; j < kRandoLocationsCount; j++)
     if (kRandoLocations[j].id == id) return &kRandoLocations[j];
   return NULL;
+}
+
+static bool spoiler_loc_is_medallion_config(uint16 id) {
+  const RandoLocationDef *d = find_location(id);
+  return d != NULL && d->type == LOCTYPE_Medallion;
+}
+
+static void write_medallion_requirements_text(FILE *f, const uint8 *assignment) {
+  static const uint16 kLocByEntrance[kRandoMedallionEntranceCount] = {
+    LOC_Misery_Mire_Medallion,
+    LOC_Turtle_Rock_Medallion,
+  };
+  if (f == NULL || assignment == NULL) return;
+
+  fprintf(f, "Medallion requirements:\n");
+  fprintf(f, "-----------------------\n");
+  for (uint8 i = 0; i < kRandoMedallionEntranceCount; i++) {
+    fprintf(f, "  %-44s -> %s\n",
+            Rando_GetLocationName(kLocByEntrance[i]),
+            Rando_GetItemName(assignment[i]));
+  }
+  fprintf(f, "\n");
+}
+
+static void write_medallion_requirements_json(FILE *f, const uint8 *assignment) {
+  static const uint16 kLocByEntrance[kRandoMedallionEntranceCount] = {
+    LOC_Misery_Mire_Medallion,
+    LOC_Turtle_Rock_Medallion,
+  };
+
+  fprintf(f, "  \"medallion_requirements\": [");
+  if (assignment != NULL) {
+    fprintf(f, "\n");
+    for (uint8 i = 0; i < kRandoMedallionEntranceCount; i++) {
+      fprintf(f, "    {\"location\": %u, \"item\": %u}%s\n",
+              (unsigned)kLocByEntrance[i], (unsigned)assignment[i],
+              (i + 1 < kRandoMedallionEntranceCount) ? "," : "");
+    }
+    fprintf(f, "  ");
+  }
+  fprintf(f, "],\n");
 }
 
 // One shop-class placement row, gathered once for both spoiler emitters (the
@@ -379,8 +421,11 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"instant_flute\": %s\n", s->settings->instant_flute ? "true" : "false");
   fprintf(f, "  },\n");
 
+  write_medallion_requirements_json(f, s->medallion_assignment);
+
   // -----------------------------------------------------------------------
-  // Placements — sorted by location_id (determinism).
+  // Item placements — sorted by location_id (determinism). Medallion config
+  // rows are reported separately as requirements, not collectable locations.
   // -----------------------------------------------------------------------
   fprintf(f, "  \"placements\": [\n");
   if (s->placements != NULL && s->placements->count > 0) {
@@ -388,12 +433,16 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     uint16 n = s->placements->count;
     if (n > 512) n = 512;
     RandoPlacement local[512];
-    memcpy(local, s->placements->entries, n * sizeof(RandoPlacement));
-    qsort(local, n, sizeof(RandoPlacement), placement_cmp);
+    uint16 row_n = 0;
     for (uint16 i = 0; i < n; i++) {
+      if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
+      local[row_n++] = s->placements->entries[i];
+    }
+    qsort(local, row_n, sizeof(RandoPlacement), placement_cmp);
+    for (uint16 i = 0; i < row_n; i++) {
       fprintf(f, "    {\"location\": %u, \"item\": %u}%s\n",
               local[i].location_id, local[i].item_id,
-              (i + 1 < n) ? "," : "");
+              (i + 1 < row_n) ? "," : "");
     }
   }
   fprintf(f, "  ],\n");
@@ -503,6 +552,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
       bool first = true;
       for (uint16 i = 0; i < s->placements->count; i++) {
         if (s->spheres->sphere_index_by_placement[i] != sp) continue;
+        if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
         if (!first) fprintf(f, ", ");
         fprintf(f, "{\"location\": %u, \"item\": %u}",
                 s->placements->entries[i].location_id,
@@ -521,6 +571,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     bool first = true;
     for (uint16 i = 0; i < s->placements->count; i++) {
       if (s->spheres->sphere_index_by_placement[i] != 0xFF) continue;
+      if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
       if (!first) fprintf(f, ", ");
       fprintf(f, "{\"location\": %u, \"item\": %u}",
               s->placements->entries[i].location_id,
@@ -990,6 +1041,8 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     fprintf(f, "\n");
   }
 
+  write_medallion_requirements_text(f, s->medallion_assignment);
+
   fprintf(f, "Placements (grouped by region):\n");
   fprintf(f, "-------------------------------\n");
   if (s->placements != NULL && s->placements->count > 0) {
@@ -1002,13 +1055,16 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
       uint16 location_id;
       uint16 item_id;
     } rows[512];
+    uint16 row_n = 0;
     for (uint16 i = 0; i < n; i++) {
-      rows[i].location_id = s->placements->entries[i].location_id;
-      rows[i].item_id = s->placements->entries[i].item_id;
-      rows[i].region_id = 0xFFFF;
-      const RandoLocationDef *d = find_location(rows[i].location_id);
+      uint16 loc_id = s->placements->entries[i].location_id;
+      if (spoiler_loc_is_medallion_config(loc_id)) continue;
+      rows[row_n].location_id = loc_id;
+      rows[row_n].item_id = s->placements->entries[i].item_id;
+      rows[row_n].region_id = 0xFFFF;
+      const RandoLocationDef *d = find_location(rows[row_n].location_id);
       if (d != NULL) {
-        rows[i].region_id = d->region_id;
+        rows[row_n].region_id = d->region_id;
         // under Inverted, a location may be assigned to a different
         // region via Rando_FindPredicateOverride. Honor that override here so the
         // grouped spoiler text matches the runtime's reachability view (e.g.,
@@ -1016,16 +1072,17 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
         // West region).
         if (s->settings != NULL) {
           const RandoLocationPredOverride *ov =
-              Rando_FindPredicateOverride(rows[i].location_id,
+              Rando_FindPredicateOverride(rows[row_n].location_id,
                                           s->settings->world_state);
           if (ov != NULL && ov->region_override != 0xFFFF) {
-            rows[i].region_id = ov->region_override;
+            rows[row_n].region_id = ov->region_override;
           }
         }
       }
+      row_n++;
     }
     // Insertion sort by (region_id, location_id) — n is small (~237).
-    for (uint16 i = 1; i < n; i++) {
+    for (uint16 i = 1; i < row_n; i++) {
       uint16 j = i;
       while (j > 0 &&
              (rows[j - 1].region_id > rows[j].region_id ||
@@ -1042,7 +1099,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     }
     uint16 cur_region = 0;
     bool first_section = true;
-    for (uint16 i = 0; i < n; i++) {
+    for (uint16 i = 0; i < row_n; i++) {
       if (first_section || rows[i].region_id != cur_region) {
         if (!first_section) fprintf(f, "\n");
         first_section = false;

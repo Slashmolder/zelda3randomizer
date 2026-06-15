@@ -28,6 +28,7 @@
 #include "rando_textfield.h"
 #include "item_ids.h"
 #include "location_ids.h"
+#include "dungeon_ids.h"
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
@@ -35,6 +36,7 @@
 #include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
 #include "inverted_maps.h"  // InvertedHoleBlocks_Install (no-art Ganon pit shadow)
 #include "shuffle_cosmetic.h"  // Cosmetic_SetSeed (cosmetic_seed=0 -> slot seed)
+#include "medallion_icons.h"  // Rando_MedallionIcons_SelfCheck
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../config.h"  // g_config.cosmetic_seed
 #include "../types.h"
@@ -54,6 +56,8 @@
 uint8 g_assets_hash[32];
 
 static bool rando_instant_flute_active(void);
+static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
+                                  DirectGrantIconEntry *out);
 
 // ---------------------------------------------------------------------------
 // Reachability state counter — bumped by Rando_BumpReachabilityCounter()
@@ -214,80 +218,21 @@ static bool rando_is_progressive_item(uint16 registry_id) {
   }
 }
 
-// §6.2 per-placed-dungeon counter helpers. The vanilla LttP dispatcher
-// Link_ReceiveItem indexes by `cur_palace_index_x2 >> 1` (the player's
-// current dungeon). For rando placements where a key/map/compass belongs to
-// a DIFFERENT dungeon than the player's current one, we have to write to
-// that specific dungeon's bit ourselves — and the bit MUST line up with
-// the bit the door-check (dungeon.c) reads back.
+// §6.2 per-placed-dungeon counter helper. The vanilla LttP dispatcher
+// Link_ReceiveItem indexes by `cur_palace_index_x2 >> 1` (the player's current
+// dungeon). For rando placements where a key/map/compass belongs to a DIFFERENT
+// dungeon than the player's current one, write the destination dungeon's RAM
+// cell ourselves. All ALTTPR-id -> game-id conversion lives in dungeon_ids.h.
 //
 // Returns 1 if the placed item is a dungeon item and was direct-written.
 // Caller treats this as "skip Link_ReceiveItem" via kRandoLttpSkip.
-//
-// Two dungeon-id conventions are in play and they DO NOT agree:
-//
-//   ALTTPR convention   — HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6,
-//                         SW=7, TT=8, IP=9, MM=10, TR=11, GT=12.
-//     Used by ALTTPR item-id ordering (so e.g. registry_id - 66 over the
-//     BigKey range gives ALTTPR dungeon - 1) and by rando_placement.c
-//     internals (kDungeonPrizeLocations etc.).
-//
-//   Game-side convention — `cur_palace_index_x2 >> 1`. Derived by
-//     cross-referencing kDungeonCrystalPendantBit[13] in zelda_rtl.c
-//     against the vanilla dungeon→prize bits:
-//       [0]=HCE [1]=(unused/sub-area) [2]=EP [3]=DP [4]=HCT [5]=PoD
-//       [6]=SP  [7]=SW  [8]=TT  [9]=IP  [10]=TH  [11]=MM  [12]=TR  [13]=GT
-//
-// Per Link_ReceiveItem's special case for codes 0x25/0x32/0x33 (misc.c):
-//     WORD(*p) |= 0x8000 >> (BYTE(cur_palace_index_x2) >> 1)
-// So the bit for dungeon D is `0x8000 >> D` where D is the GAME-side
-// index. The tables below translate ALTTPR-id → game-side index so the
-// bit we set matches the bit the game's door-check reads.
-static uint16 dungeon_bit_for_map_or_compass(uint8 game_dungeon_id) {
-  if (game_dungeon_id >= 16) return 0;
-  return (uint16)(0x8000u >> game_dungeon_id);
-}
-
-// Indexed by ALTTPR registry-id offset (66..76 → 0..10 for BigKey;
-// likewise -77 for Map, -88 for Compass over the same 11 dungeons,
-// in EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT order). The value is
-// the GAME-side dungeon index for that ALTTPR dungeon.
-//                                             EP  DP  TH  PoD SP  SW  TT  IP  MM  TR  GT
-static const uint8 kBigKeyGameDungeon[11]  = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
-static const uint8 kMapGameDungeon[11]     = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
-static const uint8 kCompassGameDungeon[11] = {  2,  3, 10,  5,  6,  7,  8,  9, 11, 12, 13 };
-
-// SmallKey spans all 13 ALTTPR dungeons (registry-id offset -53: HCE, EP, DP,
-// TH, HCT, PoD, SP, SW, TT, IP, MM, TR, GT). Value = GAME-side dungeon index,
-// matching the cur_palace_index_x2>>1 ordering the per-dungeon key array
-// (link_keys_earned_per_dungeon) is indexed by. Note HCE=0 and HCT=4 are
-// present here (BigKey/Map/Compass omit them since vanilla never has those).
-//                                            HCE EP  DP  TH HCT PoD SP  SW  TT  IP  MM  TR  GT
-static const uint8 kSmallKeyGameDungeon[13] = { 0,  2,  3, 10,  4,  5,  6,  7,  8,  9, 11, 12, 13 };
-
-static uint8 dungeon_id_for_item_local(uint16 registry_id) {
-  // SmallKey 53..65 → GAME-side dungeon index (same translation as
-  // BigKey/Map/Compass below). Consumed by dungeon_item_direct_grant's
-  // per-dungeon key-counter write into link_keys_earned_per_dungeon[].
-  if (registry_id >= 53 && registry_id <= 65) return kSmallKeyGameDungeon[registry_id - 53];
-  if (registry_id >= 66 && registry_id <= 76) return kBigKeyGameDungeon[registry_id - 66];
-  if (registry_id == 124) return 0;  // Map_HCE (game-side index 0)
-  if (registry_id >= 77 && registry_id <= 87) return kMapGameDungeon[registry_id - 77];
-  if (registry_id >= 88 && registry_id <= 98) return kCompassGameDungeon[registry_id - 88];
-  return 0xFF;
-}
-
-// Per-placed-dungeon counter direct-grant. Returns 1 on success.
-// Handles BigKey/Map/Compass (bitfields) and SmallKey (the per-dungeon counter
-// array link_keys_earned_per_dungeon[], with the live link_num_keys counter
-// kept in sync when the player is standing in the destination dungeon).
 static int dungeon_item_direct_grant(uint16 registry_id) {
-  uint8 dungeon = dungeon_id_for_item_local(registry_id);
+  uint8 dungeon = Rando_DungeonItemGameDungeon(registry_id);
   // Game-side indices range 0..13 (GT). 16 is the kUpperBitmasks size — past
-  // that, dungeon_bit_for_map_or_compass returns 0 and the OR would no-op.
+  // that, Rando_DungeonBitForGameDungeon returns 0 and the OR would no-op.
   if (dungeon == 0xFF || dungeon >= 16) return 0;
 
-  uint16 bit = dungeon_bit_for_map_or_compass(dungeon);
+  uint16 bit = Rando_DungeonBitForGameDungeon(dungeon);
   if (registry_id >= 66 && registry_id <= 76) {
     // BigKey for `dungeon`.
     link_bigkey |= bit;
@@ -315,7 +260,7 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
     // counter and were unusable once the player reached ToH). Credit the
     // DESTINATION dungeon's slot, not the live current-dungeon counter.
     uint8 cur = (uint8)cur_palace_index_x2;  // 0xff when not in a dungeon
-    uint8 cur_slot = (cur == 0xff) ? 0xff : ((cur == 2) ? 0 : (cur >> 1));
+    uint8 cur_slot = Rando_KeySlotFromRawPalace(cur);
     if (cur != 0xff && dungeon == cur_slot) {
       // Key belongs to the dungeon the player is in: bump the LIVE counter and
       // resync the saved slot (mirrors SaveDungeonKeys). Don't recompute from
@@ -418,6 +363,7 @@ static int magic_upgrade_direct_grant(uint16 registry_id) {
 // dispatcher is the immediately preceding rando call at every direct-grant
 // site, so the value is fresh by construction.
 static uint16 g_last_dispatched_item_id = 0xFFFFu;
+static uint16 g_last_dispatched_location_id = 0xFFFFu;
 
 uint16 Rando_LastDispatchedItemId(void) {
   return g_last_dispatched_item_id;
@@ -672,6 +618,7 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint8 vanilla_lttp_code) {
   uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
   g_last_dispatched_item_id = placed;
+  g_last_dispatched_location_id = location_id;
   if (placed == vanilla_registry_id) return vanilla_lttp_code;
 
   // §6.2 TriforcePiece (no vanilla LttP code). Tick the counter and
@@ -1299,15 +1246,15 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // refresh.
 //
 // Phase B Slice 9 (add-rando-confirmation-icons): extends Phase A's audio +
-// HUD-only cue with a visible icon ancilla. The granted item id is looked up
-// in kDirectGrantIcons[item_id] (codegen'd from
-// assets/rando/direct_grant_icons.yaml). Magic upgrades are resolved through
-// the current progressive tier first, so either raw HalfMagic or QuarterMagic
-// shows 1/2 on the first upgrade and 1/4 on the second. When the table entry
-// has a non-zero gfx (the item's receive-animation sprite bundle),
-// AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon above Link's
-// head. Entries with gfx == 0 (the audio-only sentinel) fall back to the
-// Phase A audio + HUD behavior — never crash, never spawn a blank ancilla.
+// HUD-only cue with a visible icon ancilla. Trap items get a deterministic
+// good-item decoy selected from the active seed/location/trap type. Other
+// direct-grant item ids are looked up in kDirectGrantIcons[item_id] (codegen'd
+// from assets/rando/direct_grant_icons.yaml). Magic upgrades are resolved
+// through the current progressive tier first, so either raw HalfMagic or
+// QuarterMagic shows 1/2 on the first upgrade and 1/4 on the second. When an
+// icon resolves, AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon
+// above Link's head. Unmapped entries fall back to Phase A audio + HUD behavior
+// — never crash, never spawn a blank ancilla.
 //
 // Deliberately NOT emitted from within `Rando_DispatchVanillaGrant` — the
 // caller knows whether its own code path already provides visual context
@@ -1331,14 +1278,16 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
-  // Slice 9 — look up the per-item icon. Entries with gfx == 0 (the audio-only
-  // fallback sentinel; no mapped item uses it anymore, it remains as the safe
-  // default for future unmapped items) fall back to audio + HUD only. gfx != 0
-  // spawns a per-item icon ancilla that loads the item's sprite bundle — or,
-  // for gfx ids with the 0x80 bit (TriforcePiece / magic decanters / Rupoor
-  // custom art, add-rando-field-item-custom-art), the kRandoCustomGfx_* tile
-  // + palette — and draws it above Link, mirroring the vanilla pickup
-  // animation.
+  // Slice 9 — look up the visual icon. Traps use the same deterministic decoy
+  // resolver as field-item sprites so the visible fake item and pickup popup
+  // agree. Other direct-grant items use kDirectGrantIcons; gfx ids with the
+  // 0x80 bit (TriforcePiece / magic decanters / Rupoor custom art,
+  // add-rando-field-item-custom-art) load the kRandoCustomGfx_* tile + palette.
+  DirectGrantIconEntry trap_decoy;
+  if (rando_trap_decoy_icon(item_id, g_last_dispatched_location_id, &trap_decoy)) {
+    AncillaAdd_RandoIconReceipt(trap_decoy.gfx, trap_decoy.big, trap_decoy.oam_flags);
+    return;
+  }
   uint16 icon_item = rando_direct_grant_icon_item_post_grant(item_id);
   const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
   if (e != NULL) {
@@ -1400,6 +1349,14 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
   if (placed == vanilla_item_id)
     return false;
 
+  DirectGrantIconEntry trap_decoy;
+  if (rando_trap_decoy_icon(placed, location_id, &trap_decoy)) {
+    *out_gfx = trap_decoy.gfx;
+    *out_big = trap_decoy.big;
+    *out_oam_flags = trap_decoy.oam_flags;
+    return true;
+  }
+
   // Tier 1 — items the normal receive animation draws (rupees, equipment,
   // boomerang, bottles, ...). Mirror Ancilla_ReceiveItem_Draw EXACTLY: gfx,
   // size, and palette are all indexed by the LttP receive code, so the field
@@ -1442,56 +1399,22 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
 // treats the identity BossHeartContainer placement as vanilla behavior.
 //
 // Dungeon ID layout (cur_palace_index_x2 >> 1) — game-side convention.
-// Derived from kDungeonCrystalPendantBit / kBossFinishedFallingItem
-// (zelda_rtl.c, dungeon.c). NOTE: TH lives at 10, not 3 — this is not
-// the ALTTPR id ordering.
+// Derived from the asset room palace ids and kDungeonCrystalPendantBit /
+// kBossFinishedFallingItem (zelda_rtl.c, dungeon.c). NOTE: TH lives at 10,
+// not 3 — this is not the ALTTPR id ordering.
 //   0 HCE  (no boss; Sanctuary chest is the heart container slot)
 //   1 (unused sub-area, no prize)
 //   2 EP   3 DP
 //   4 HCT  (Agahnim; not a heart-drop boss — handled separately)
-//   5 PoD  6 SP   7 SW   8 TT   9 IP  10 TH  11 MM  12 TR
+//   5 SP   6 PoD  7 MM   8 SW   9 IP  10 TH  11 TT  12 TR
 //  13 GT   (Agahnim 2; same as HCT path)
 // ---------------------------------------------------------------------------
 uint16 Rando_GetBossHeartLocation(uint8 dungeon_id) {
-  static const uint16 kBossHeartByDungeon[14] = {
-    0xFFFFu,                       //  0  HCE
-    0xFFFFu,                       //  1  (unused)
-    LOC_Eastern_Palace_Boss,       //  2  EP
-    LOC_Desert_Palace_Boss,        //  3  DP
-    0xFFFFu,                       //  4  HCT (Agahnim path)
-    LOC_Palace_of_Darkness_Boss,   //  5  PoD
-    LOC_Swamp_Palace_Boss,         //  6  SP
-    LOC_Skull_Woods_Boss,          //  7  SW
-    LOC_Thieves_Town_Boss,         //  8  TT
-    LOC_Ice_Palace_Boss,           //  9  IP
-    LOC_Tower_of_Hera_Boss,        // 10  TH
-    LOC_Misery_Mire_Boss,          // 11  MM
-    LOC_Turtle_Rock_Boss,          // 12  TR
-    0xFFFFu                        // 13  GT (Agahnim 2 path)
-  };
-  if (dungeon_id >= 14) return 0xFFFFu;
-  return kBossHeartByDungeon[dungeon_id];
+  return Rando_BossHeartLocationForGameDungeon(dungeon_id);
 }
 
 uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
-  static const uint16 kBossPrizeByDungeon[14] = {
-    0xFFFFu,                       //  0  HCE
-    0xFFFFu,                       //  1  (unused)
-    LOC_Eastern_Palace_Prize,      //  2  EP
-    LOC_Desert_Palace_Prize,       //  3  DP
-    0xFFFFu,                       //  4  HCT
-    LOC_Palace_of_Darkness_Prize,  //  5  PoD
-    LOC_Swamp_Palace_Prize,        //  6  SP
-    LOC_Skull_Woods_Prize,         //  7  SW
-    LOC_Thieves_Town_Prize,        //  8  TT
-    LOC_Ice_Palace_Prize,          //  9  IP
-    LOC_Tower_of_Hera_Prize,       // 10  TH
-    LOC_Misery_Mire_Prize,         // 11  MM
-    LOC_Turtle_Rock_Prize,         // 12  TR
-    0xFFFFu                        // 13  GT
-  };
-  if (dungeon_id >= 14) return 0xFFFFu;
-  return kBossPrizeByDungeon[dungeon_id];
+  return Rando_BossPrizeLocationForGameDungeon(dungeon_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -2290,6 +2213,105 @@ static bool g_rando_active_door_logic = false;
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
 
+static const uint16 kRandoTrapExtraGoodItemDecoys[] = {
+  ITEM_Map_HyruleCastleEscape,
+  ITEM_GenericKey,
+  ITEM_BluePotion,
+  ITEM_RedPotion,
+  ITEM_BeeContents,
+  ITEM_HeartRefill,
+};
+
+static uint32 rando_trap_good_item_decoy_count(void) {
+  return (uint32)(ITEM_Compass_GanonsTower + 1) +
+         (uint32)(ITEM_Prize_Crystal7 - ITEM_Prize_GreenPendant + 1) +
+         (uint32)countof(kRandoTrapExtraGoodItemDecoys);
+}
+
+static uint16 rando_trap_good_item_decoy_at(uint32 idx) {
+  if (idx <= ITEM_Compass_GanonsTower)
+    return (uint16)idx;
+  idx -= (uint32)(ITEM_Compass_GanonsTower + 1);
+  if (idx <= (uint32)(ITEM_Prize_Crystal7 - ITEM_Prize_GreenPendant))
+    return (uint16)(ITEM_Prize_GreenPendant + idx);
+  idx -= (uint32)(ITEM_Prize_Crystal7 - ITEM_Prize_GreenPendant + 1);
+  if (idx < countof(kRandoTrapExtraGoodItemDecoys))
+    return kRandoTrapExtraGoodItemDecoys[idx];
+  return 0xFFFFu;
+}
+
+static bool rando_icon_from_lttp_code(uint8 code, DirectGrantIconEntry *out) {
+  if (out == NULL || code >= 76 || kReceiveItemGfx[code] == 0xff)
+    return false;
+  uint8 a = kWishPond2_OamFlags[code];
+  if (a & 0x80)
+    a = 5;
+  out->gfx = kReceiveItemGfx[code];
+  out->big = kReceiveItem_Tab1[code];
+  out->oam_flags = (uint8)(a * 2 | 0x30);
+  return true;
+}
+
+static uint8 rando_trap_decoy_lttp_for_item(uint16 item_id) {
+  switch (item_id) {
+    case ITEM_ProgressiveSword:  return 0x00;
+    case ITEM_ProgressiveShield: return 0x04;
+    case ITEM_ProgressiveArmor:  return 0x22;
+    case ITEM_ProgressiveGlove:  return 0x1b;
+    case ITEM_ProgressiveBow:    return 0x0b;
+    case ITEM_BottleEmpty:           return 0x16;
+    case ITEM_BottleWithFairy:       return 0x2c;
+    case ITEM_BottleWithBee:         return 0x2b;
+    case ITEM_BottleWithGoodBee:     return 0x3c;
+    case ITEM_BottleWithRedPotion:   return 0x2d;
+    case ITEM_BottleWithGreenPotion: return 0x3d;
+    case ITEM_BottleWithBluePotion:  return 0x48;
+    case ITEM_SilverArrowUpgrade: return 0x3b;
+    default:
+      return Rando_VanillaItemForRegistryId(item_id);
+  }
+}
+
+static bool rando_good_item_decoy_icon(uint16 item_id, DirectGrantIconEntry *out) {
+  const DirectGrantIconEntry *direct = rando_direct_grant_icon_entry(item_id);
+  if (direct != NULL) {
+    *out = *direct;
+    return true;
+  }
+  return rando_icon_from_lttp_code(rando_trap_decoy_lttp_for_item(item_id), out);
+}
+
+static uint32 rando_trap_decoy_mix(uint64 seed, uint16 item_id, uint16 location_id) {
+  uint64 x = seed ^ ((uint64)location_id * 0x9E3779B97F4A7C15ull) ^
+             ((uint64)item_id * 0xBF58476D1CE4E5B9ull);
+  x ^= x >> 30;
+  x *= 0xBF58476D1CE4E5B9ull;
+  x ^= x >> 27;
+  x *= 0x94D049BB133111EBull;
+  x ^= x >> 31;
+  return (uint32)(x ^ (x >> 32));
+}
+
+static uint64 rando_trap_decoy_seed(void) {
+  if (g_rando_active_header_valid)
+    return SlotSeedFromShareString(g_rando_active_header.share_string);
+  return 0xD1CE5AFE7A9B3C4Dull;
+}
+
+static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
+                                  DirectGrantIconEntry *out) {
+  if (!rando_is_trap_item(item_id) || out == NULL)
+    return false;
+  uint32 count = rando_trap_good_item_decoy_count();
+  uint32 start = rando_trap_decoy_mix(rando_trap_decoy_seed(), item_id, location_id) % count;
+  for (uint32 i = 0; i < count; i++) {
+    uint16 decoy_item = rando_trap_good_item_decoy_at((start + i) % count);
+    if (rando_good_item_decoy_icon(decoy_item, out))
+      return true;
+  }
+  return false;
+}
+
 static bool rando_instant_flute_active(void) {
   // v1/no-blob slots and self-tests have no recovered settings; treat them as
   // default settings, where instant flute activation is ON.
@@ -3052,50 +3074,24 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
     const RandoSettings *st = &g_rando_active_settings;
     Rando_SeedVanillaDungeonItems(out, st);
 
-    // game dungeon index (0=HC,1=unused,2=EP,3=DP,4=CT,5=PoD,6=SP,7=SW,8=TT,
-    // 9=IP,10=ToH,11=MM,12=TR,13=GT) -> registry item id.
-    static const uint16 kGToSmallKey[16] = {
-      ITEM_SmallKey_HyruleCastleEscape, 0xFFFF, ITEM_SmallKey_EasternPalace,
-      ITEM_SmallKey_DesertPalace, ITEM_SmallKey_HyruleCastleTower,
-      ITEM_SmallKey_PalaceOfDarkness, ITEM_SmallKey_SwampPalace,
-      ITEM_SmallKey_SkullWoods, ITEM_SmallKey_ThievesTown, ITEM_SmallKey_IcePalace,
-      ITEM_SmallKey_TowerOfHera, ITEM_SmallKey_MiseryMire, ITEM_SmallKey_TurtleRock,
-      ITEM_SmallKey_GanonsTower, 0xFFFF, 0xFFFF,
-    };
-    static const uint16 kGToBigKey[16] = {
-      0xFFFF, 0xFFFF, ITEM_BigKey_EasternPalace, ITEM_BigKey_DesertPalace, 0xFFFF,
-      ITEM_BigKey_PalaceOfDarkness, ITEM_BigKey_SwampPalace, ITEM_BigKey_SkullWoods,
-      ITEM_BigKey_ThievesTown, ITEM_BigKey_IcePalace, ITEM_BigKey_TowerOfHera,
-      ITEM_BigKey_MiseryMire, ITEM_BigKey_TurtleRock, ITEM_BigKey_GanonsTower,
-      0xFFFF, 0xFFFF,
-    };
-    static const uint16 kGToMap[16] = {
-      0xFFFF, 0xFFFF, ITEM_Map_EasternPalace, ITEM_Map_DesertPalace, 0xFFFF,
-      ITEM_Map_PalaceOfDarkness, ITEM_Map_SwampPalace, ITEM_Map_SkullWoods,
-      ITEM_Map_ThievesTown, ITEM_Map_IcePalace, ITEM_Map_TowerOfHera,
-      ITEM_Map_MiseryMire, ITEM_Map_TurtleRock, ITEM_Map_GanonsTower, 0xFFFF, 0xFFFF,
-    };
-    static const uint16 kGToCompass[16] = {
-      0xFFFF, 0xFFFF, ITEM_Compass_EasternPalace, ITEM_Compass_DesertPalace, 0xFFFF,
-      ITEM_Compass_PalaceOfDarkness, ITEM_Compass_SwampPalace, ITEM_Compass_SkullWoods,
-      ITEM_Compass_ThievesTown, ITEM_Compass_IcePalace, ITEM_Compass_TowerOfHera,
-      ITEM_Compass_MiseryMire, ITEM_Compass_TurtleRock, ITEM_Compass_GanonsTower,
-      0xFFFF, 0xFFFF,
-    };
     for (int g = 0; g < 14; g++) {
-      uint16 bit = (uint16)(0x8000u >> g);
+      uint16 bit = Rando_DungeonBitForGameDungeon((uint8)g);
+      uint16 small_key = Rando_SmallKeyItemForGameDungeon((uint8)g);
+      uint16 big_key = Rando_BigKeyItemForGameDungeon((uint8)g);
+      uint16 map = Rando_MapItemForGameDungeon((uint8)g);
+      uint16 compass = Rando_CompassItemForGameDungeon((uint8)g);
       if (Settings_EffectiveSmallKeysMode(st) != kDungeonItemMode_Vanilla &&
-          kGToSmallKey[g] != 0xFFFF)
-        out->by_item_id[kGToSmallKey[g]] = link_keys_earned_per_dungeon[g];
+          small_key != 0xFFFF)
+        out->by_item_id[small_key] = link_keys_earned_per_dungeon[g];
       if (st->dungeon_big_keys_mode != kDungeonItemMode_Vanilla &&
-          kGToBigKey[g] != 0xFFFF && (link_bigkey & bit))
-        out->by_item_id[kGToBigKey[g]] = 1;
+          big_key != 0xFFFF && (link_bigkey & bit))
+        out->by_item_id[big_key] = 1;
       if (st->dungeon_maps_mode != kDungeonItemMode_Vanilla &&
-          kGToMap[g] != 0xFFFF && (link_dungeon_map & bit))
-        out->by_item_id[kGToMap[g]] = 1;
+          map != 0xFFFF && (link_dungeon_map & bit))
+        out->by_item_id[map] = 1;
       if (st->dungeon_compasses_mode != kDungeonItemMode_Vanilla &&
-          kGToCompass[g] != 0xFFFF && (link_compass & bit))
-        out->by_item_id[kGToCompass[g]] = 1;
+          compass != 0xFFFF && (link_compass & bit))
+        out->by_item_id[compass] = 1;
     }
     // Retro genericKeys — the per-dungeon SmallKey cells above are all 0 under
     // genericKeys (keys live in the shared slot). Feed the live tracker/reach
@@ -3380,6 +3376,14 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   regen.settings = &settings;
   regen.placements = &table;
   regen.spheres = &spheres;
+  uint8 regen_medallion_assignment[kRandoMedallionEntranceCount];
+  {
+    const uint8 *assignment = Rando_GetMedallionAssignment();
+    if (assignment != NULL) {
+      memcpy(regen_medallion_assignment, assignment, sizeof(regen_medallion_assignment));
+      regen.medallion_assignment = regen_medallion_assignment;
+    }
+  }
   // Match the generate-time spoiler's entrance_mapping section (the omission of
   // which caused the stamp mismatch on race-mode + entrance-shuffle seeds).
   Rando_SpoilerSetEntranceFields(&regen, &reg);
@@ -3663,6 +3667,69 @@ static int hex_eq(const uint8 *hash, const char *hex) {
   return 1;
 }
 
+static void Rando_DungeonIdSelfCheck(void) {
+  if (Rando_GameDungeonFromRandoDungeon(kRandoDungeon_PalaceOfDarkness) != kGameDungeon_PalaceOfDarkness ||
+      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_SwampPalace) != kGameDungeon_SwampPalace ||
+      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_SkullWoods) != kGameDungeon_SkullWoods ||
+      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_ThievesTown) != kGameDungeon_ThievesTown ||
+      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_MiseryMire) != kGameDungeon_MiseryMire) {
+    fprintf(stderr, "Rando_SelfCheck: rando->game dungeon mapping mismatch\n");
+    exit(2);
+  }
+  if (Rando_RandoDungeonFromGameDungeon(kGameDungeon_SwampPalace) != kRandoDungeon_SwampPalace ||
+      Rando_RandoDungeonFromGameDungeon(kGameDungeon_PalaceOfDarkness) != kRandoDungeon_PalaceOfDarkness ||
+      Rando_RandoDungeonFromGameDungeon(kGameDungeon_MiseryMire) != kRandoDungeon_MiseryMire ||
+      Rando_RandoDungeonFromGameDungeon(kGameDungeon_SkullWoods) != kRandoDungeon_SkullWoods ||
+      Rando_RandoDungeonFromGameDungeon(kGameDungeon_ThievesTown) != kRandoDungeon_ThievesTown) {
+    fprintf(stderr, "Rando_SelfCheck: game->rando dungeon mapping mismatch\n");
+    exit(2);
+  }
+  if (Rando_KeySlotFromRawPalace(2) != kGameDungeon_HyruleCastleEscape ||
+      Rando_KeySlotFromRawPalace(16) != kGameDungeon_SkullWoods ||
+      Rando_KeySlotFromRawPalace(0xff) != kGameDungeon_None) {
+    fprintf(stderr, "Rando_SelfCheck: raw-palace key-slot mapping mismatch\n");
+    exit(2);
+  }
+  if (Rando_DungeonItemGameDungeon(ITEM_SmallKey_SkullWoods) != kGameDungeon_SkullWoods ||
+      Rando_DungeonItemGameDungeon(ITEM_BigKey_SkullWoods) != kGameDungeon_SkullWoods ||
+      Rando_DungeonItemGameDungeon(ITEM_Map_SwampPalace) != kGameDungeon_SwampPalace ||
+      Rando_DungeonItemGameDungeon(ITEM_Compass_PalaceOfDarkness) != kGameDungeon_PalaceOfDarkness ||
+      Rando_DungeonItemGameDungeon(ITEM_Map_HyruleCastleEscape) != kGameDungeon_HyruleCastleEscape) {
+    fprintf(stderr, "Rando_SelfCheck: dungeon item -> game mapping mismatch\n");
+    exit(2);
+  }
+  if (Rando_RandoDungeonFromDungeonItem(ITEM_SmallKey_HyruleCastleTower) != kRandoDungeon_HyruleCastleTower ||
+      Rando_RandoDungeonFromDungeonItem(ITEM_BigKey_GanonsTower) != kRandoDungeon_GanonsTower ||
+      Rando_RandoDungeonFromDungeonItem(ITEM_Map_HyruleCastleEscape) != kRandoDungeon_HyruleCastleEscape ||
+      Rando_RandoDungeonFromDungeonItem(ITEM_Compass_MiseryMire) != kRandoDungeon_MiseryMire) {
+    fprintf(stderr, "Rando_SelfCheck: dungeon item -> rando mapping mismatch\n");
+    exit(2);
+  }
+  if (Rando_SmallKeyItemForGameDungeon(kGameDungeon_SkullWoods) != ITEM_SmallKey_SkullWoods ||
+      Rando_BigKeyItemForGameDungeon(kGameDungeon_ThievesTown) != ITEM_BigKey_ThievesTown ||
+      Rando_MapItemForGameDungeon(kGameDungeon_HyruleCastleEscape) != ITEM_Map_HyruleCastleEscape ||
+      Rando_MapItemForGameDungeon(kGameDungeon_SwampPalace) != ITEM_Map_SwampPalace ||
+      Rando_CompassItemForGameDungeon(kGameDungeon_PalaceOfDarkness) != ITEM_Compass_PalaceOfDarkness) {
+    fprintf(stderr, "Rando_SelfCheck: game dungeon -> item mapping mismatch\n");
+    exit(2);
+  }
+  if (Rando_PrizeRandoDungeonFromGameDungeon(kGameDungeon_MiseryMire) != kRandoDungeon_MiseryMire ||
+      Rando_PrizeRandoDungeonFromGameDungeon(kGameDungeon_HyruleCastleTower) != kRandoDungeon_None ||
+      Rando_BossPrizeLocationForGameDungeon(kGameDungeon_SkullWoods) != LOC_Skull_Woods_Prize ||
+      Rando_BossHeartLocationForGameDungeon(kGameDungeon_PalaceOfDarkness) != LOC_Palace_of_Darkness_Boss) {
+    fprintf(stderr, "Rando_SelfCheck: boss/prize game mapping mismatch\n");
+    exit(2);
+  }
+  if (kRandoDungeonRuntimeRows[0].key_slot != kGameDungeon_HyruleCastleEscape ||
+      kRandoDungeonRuntimeRows[0].bigkey_game_dungeon != kGameDungeon_None ||
+      kRandoDungeonRuntimeRows[0].map_game_dungeon != kGameDungeon_HyruleCastleEscape ||
+      kRandoDungeonRuntimeRows[0].compass_game_dungeon != kGameDungeon_None ||
+      kRandoDungeonRuntimeRows[0].rando_dungeon != kRandoDungeon_HyruleCastleEscape) {
+    fprintf(stderr, "Rando_SelfCheck: HCE runtime row axis mismatch\n");
+    exit(2);
+  }
+}
+
 void Rando_SelfCheck(void) {
   uint8 out[32];
   static const char kExpectedEmpty[] = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -3678,6 +3745,7 @@ void Rando_SelfCheck(void) {
     fprintf(stderr, "Rando_SelfCheck: SHA-256 of 'abc' FAILED\n");
     exit(2);
   }
+  Rando_DungeonIdSelfCheck();
 
   // Dispatch wrapper coverage (§6.1).
   // When no placement table is installed, Rando_OnLocationCheck returns
@@ -4378,6 +4446,76 @@ void Rando_SelfCheck(void) {
     link_magic_consumption = 0;
   }
 
+  // Trap masquerade icons are drawn from the full good-item decoy pool, not
+  // from the junk/resource items the placer replaced.
+  {
+    DirectGrantIconEntry first = {0, 0, 0}, icon = {0, 0, 0};
+    bool saw_variation = false;
+    for (uint32 i = 0; i < rando_trap_good_item_decoy_count(); i++) {
+      uint16 decoy_item = rando_trap_good_item_decoy_at(i);
+      if (!rando_good_item_decoy_icon(decoy_item, &icon)) {
+        fprintf(stderr, "Rando_SelfCheck: trap good-item decoy %u has no icon\n",
+                (unsigned)decoy_item);
+        exit(2);
+      }
+      if (icon.gfx == 0x24 && icon.big == 0x00 && icon.oam_flags == 0x38) {
+        fprintf(stderr, "Rando_SelfCheck: trap decoy pool includes green rupee icon\n");
+        exit(2);
+      }
+      if (i == 0) {
+        first = icon;
+      } else if (icon.gfx != first.gfx || icon.big != first.big ||
+                 icon.oam_flags != first.oam_flags) {
+        saw_variation = true;
+      }
+    }
+    if (!saw_variation) {
+      fprintf(stderr, "Rando_SelfCheck: trap decoy pool should vary icons\n");
+      exit(2);
+    }
+    if (!rando_trap_decoy_icon(ITEM_TrapDamage, 166, &first) ||
+        !rando_trap_decoy_icon(ITEM_TrapFreeze, 167, &icon)) {
+      fprintf(stderr, "Rando_SelfCheck: trap decoy resolver failed\n");
+      exit(2);
+    }
+    if (first.gfx == 0x24 && first.big == 0x00 && first.oam_flags == 0x38) {
+      fprintf(stderr, "Rando_SelfCheck: TrapDamage should not draw green rupee icon\n");
+      exit(2);
+    }
+    if (icon.gfx == 0x24 && icon.big == 0x00 && icon.oam_flags == 0x38) {
+      fprintf(stderr, "Rando_SelfCheck: TrapFreeze should not draw green rupee icon\n");
+      exit(2);
+    }
+    static RandoPlacement trap_icon_entries[1];
+    trap_icon_entries[0].location_id = 166;
+    trap_icon_entries[0].item_id = ITEM_TrapDamage;
+    RandoPlacementTable trap_icon_table = { trap_icon_entries, 1 };
+    uint32 saved_features1 = enhanced_features1;
+    bool saved_field_item_sprites = g_config.field_item_sprites;
+    uint16 saved_last_location_id = g_last_dispatched_location_id;
+    Placement_Install(&trap_icon_table);
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    g_config.field_item_sprites = true;
+    uint8 field_gfx = 0, field_big = 0, field_oam = 0;
+    if (!Rando_GetFieldItemIcon(166, ITEM_BottleEmpty,
+                                &field_gfx, &field_big, &field_oam)) {
+      fprintf(stderr, "Rando_SelfCheck: trap field icon did not resolve\n");
+      exit(2);
+    }
+    g_last_dispatched_location_id = 166;
+    if (!rando_trap_decoy_icon(ITEM_TrapDamage, g_last_dispatched_location_id,
+                               &icon) ||
+        field_gfx != icon.gfx || field_big != icon.big ||
+        field_oam != icon.oam_flags) {
+      fprintf(stderr, "Rando_SelfCheck: trap field/confirmation icons diverged\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    enhanced_features1 = saved_features1;
+    g_config.field_item_sprites = saved_field_item_sprites;
+    g_last_dispatched_location_id = saved_last_location_id;
+  }
+
   // §6.2 prize-item direct-write tests. Placement Prize_Crystal4 at Bottle
   // Merchant; dispatch should OR bit 0x40 into link_has_crystals.
   {
@@ -4447,6 +4585,35 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: Map_HCE dispatch should set link_dungeon_map=0x8000\n");
       exit(2);
     }
+    // Regression coverage for the game-order dungeons that differ from the
+    // ALTTPR registry order.
+    entries[0].item_id = ITEM_BigKey_SkullWoods;  // game-side dungeon 8
+    Placement_Install(&t);
+    link_bigkey = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_bigkey != 0x0080) {
+      fprintf(stderr, "Rando_SelfCheck: BigKey_SW dispatch should set link_bigkey=0x0080 (got 0x%04x)\n",
+              (unsigned)link_bigkey);
+      exit(2);
+    }
+    entries[0].item_id = ITEM_Map_SwampPalace;  // game-side dungeon 5
+    Placement_Install(&t);
+    link_dungeon_map = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_dungeon_map != 0x0400) {
+      fprintf(stderr, "Rando_SelfCheck: Map_SP dispatch should set link_dungeon_map=0x0400 (got 0x%04x)\n",
+              (unsigned)link_dungeon_map);
+      exit(2);
+    }
+    entries[0].item_id = ITEM_Compass_PalaceOfDarkness;  // game-side dungeon 6
+    Placement_Install(&t);
+    link_compass = 0;
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_compass != 0x0200) {
+      fprintf(stderr, "Rando_SelfCheck: Compass_PoD dispatch should set link_compass=0x0200 (got 0x%04x)\n",
+              (unsigned)link_compass);
+      exit(2);
+    }
     Placement_Install(NULL);
     link_bigkey = link_compass = link_dungeon_map = 0;
   }
@@ -4464,6 +4631,9 @@ void Rando_SelfCheck(void) {
 
     uint16 saved_palace = cur_palace_index_x2;
     uint8 saved_keys = link_num_keys;
+    uint8 saved_slot7 = link_keys_earned_per_dungeon[7];
+    uint8 saved_slot8 = link_keys_earned_per_dungeon[8];
+    uint8 saved_slot10 = link_keys_earned_per_dungeon[10];
 
     // (a) ToH key collected while in the Hyrule Castle escape (raw
     // cur_palace_index_x2 = 0). The escape's live counter must be untouched;
@@ -4502,10 +4672,32 @@ void Rando_SelfCheck(void) {
       exit(2);
     }
 
+    // (c) Skull Woods key collected while standing in Skull Woods (raw
+    // cur_palace_index_x2 = 16 = game-side index 8). This guards the dark-world
+    // game-order remap: old code credited slot 7 and left the live counter at 0.
+    entries[0].item_id = ITEM_SmallKey_SkullWoods;  // 60 -> game-side dungeon 8
+    cur_palace_index_x2 = 16;
+    link_num_keys = 0;
+    link_keys_earned_per_dungeon[7] = 5;
+    link_keys_earned_per_dungeon[8] = 0;
+    Placement_Install(&t);
+    Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_num_keys != 1 || link_keys_earned_per_dungeon[8] != 1 ||
+        link_keys_earned_per_dungeon[7] != 5) {
+      fprintf(stderr, "Rando_SelfCheck: SmallKey_SW in SW should bump live+slot8 only "
+                      "(got live=%u slot7=%u slot8=%u)\n",
+              (unsigned)link_num_keys,
+              (unsigned)link_keys_earned_per_dungeon[7],
+              (unsigned)link_keys_earned_per_dungeon[8]);
+      exit(2);
+    }
+
     Placement_Install(NULL);
     cur_palace_index_x2 = saved_palace;
     link_num_keys = saved_keys;
-    link_keys_earned_per_dungeon[10] = 0;
+    link_keys_earned_per_dungeon[7] = saved_slot7;
+    link_keys_earned_per_dungeon[8] = saved_slot8;
+    link_keys_earned_per_dungeon[10] = saved_slot10;
   }
 
   // §9.4b — 5-icon hash widget. Two share strings with identical settings
@@ -5203,5 +5395,6 @@ void Rando_RunAllSelfChecks(void) {
   Rando_TrackerSelfCheck();
   Rando_StartingInventorySelfCheck();
   Rando_ShuffleInstallSelfCheck();
+  Rando_MedallionIcons_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }

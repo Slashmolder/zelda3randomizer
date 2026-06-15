@@ -6,6 +6,7 @@
 #include "player.h"
 #include "sprite.h"
 #include "assets.h"
+#include "rando/medallion_icons.h"  // Rando_PatchMedallionEntranceBgGfx
 #include "rando/shuffle_enemies.h"  // EnemyShuffle_ReshuffleCurrentRoomSheets (sheet reshuffle)
 
 // Allow this to be overwritten
@@ -1033,7 +1034,9 @@ int Decomp_spr(uint8 *dst, int gfx) {  // 80e772
 }
 
 int Decomp_bg(uint8 *dst, int gfx) {  // 80e78f
-  return Decompress(dst, kBgGfx(gfx).ptr);
+  int len = Decompress(dst, kBgGfx(gfx).ptr);
+  Rando_PatchMedallionEntranceBgGfx(dst, gfx, len);
+  return len;
 }
 
 int Decompress(uint8 *dst, const uint8 *src) {  // 80e79e

@@ -17,6 +17,7 @@
 // the project's xoshiro256** RNG (rando_rng.h).
 
 #include "shuffle_boss.h"
+#include "dungeon_ids.h"
 #include "rando_settings.h"
 #include "rando_rng.h"
 #include "rando_logic.h"  // kRandoDungeonVanillaBoss / kRandoBossKillPredCount cross-check
@@ -31,7 +32,7 @@ enum {
   kBoss_ArmosKnights  = 0,
   kBoss_Lanmolas      = 1,
   kBoss_Moldorm       = 2,
-  kBoss_Agahnim       = 3,   // pinned at HCT (dungeon 4)
+  kBoss_Agahnim       = 3,   // pinned at HCT
   kBoss_HelmasaurKing = 4,
   kBoss_Arrghus       = 5,
   kBoss_Mothula       = 6,
@@ -39,45 +40,44 @@ enum {
   kBoss_Kholdstare    = 8,
   kBoss_Vitreous      = 9,
   kBoss_Trinexx       = 10,
-  kBoss_Agahnim2      = 11,  // pinned at GT-top (dungeon 12)
+  kBoss_Agahnim2      = 11,  // pinned at GT-top
 };
 
-// Vanilla per-dungeon boss assignment (dungeon-id → boss-pool index).
-// Indexing matches the dungeon-id table in `op_registry.yaml`:
-//   HCE=0, EP=1, DP=2, ToH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9,
-//   MM=10, TR=11, GT=12.
-// HCE (0) has no boss (escape sequence); we still occupy slot 0 with
-// 0xFF so the loop's index = dungeon_id.
+// Vanilla per-dungeon boss assignment (kRandoDungeon_* -> boss-pool index).
+// This is the rando/logic domain from dungeon_ids.h, not the engine's
+// cur_palace_index_x2 >> 1 game domain.
 static const uint8 kBossVanilla[16] = {
-  0xFF,                // 0  HCE  (no boss)
-  kBoss_ArmosKnights,  // 1  EP
-  kBoss_Lanmolas,      // 2  DP
-  kBoss_Moldorm,       // 3  ToH
-  kBoss_Agahnim,       // 4  HCT  (pinned)
-  kBoss_HelmasaurKing, // 5  PoD
-  kBoss_Arrghus,       // 6  SP
-  kBoss_Mothula,       // 7  SW
-  kBoss_Blind,         // 8  TT
-  kBoss_Kholdstare,    // 9  IP
-  kBoss_Vitreous,      // 10 MM
-  kBoss_Trinexx,       // 11 TR
-  kBoss_Agahnim2,      // 12 GT   (pinned)
-  0xFF, 0xFF, 0xFF,    // 13-15 unused
+  [kRandoDungeon_HyruleCastleEscape] = 0xFF,
+  [kRandoDungeon_EasternPalace]      = kBoss_ArmosKnights,
+  [kRandoDungeon_DesertPalace]       = kBoss_Lanmolas,
+  [kRandoDungeon_TowerOfHera]        = kBoss_Moldorm,
+  [kRandoDungeon_HyruleCastleTower]  = kBoss_Agahnim,
+  [kRandoDungeon_PalaceOfDarkness]   = kBoss_HelmasaurKing,
+  [kRandoDungeon_SwampPalace]        = kBoss_Arrghus,
+  [kRandoDungeon_SkullWoods]         = kBoss_Mothula,
+  [kRandoDungeon_ThievesTown]        = kBoss_Blind,
+  [kRandoDungeon_IcePalace]          = kBoss_Kholdstare,
+  [kRandoDungeon_MiseryMire]         = kBoss_Vitreous,
+  [kRandoDungeon_TurtleRock]         = kBoss_Trinexx,
+  [kRandoDungeon_GanonsTower]        = kBoss_Agahnim2,
+  [kRandoDungeon_Count]              = 0xFF,
+  [14]                               = 0xFF,
+  [15]                               = 0xFF,
 };
 
-// Dungeon-ids whose boss is shuffleable. Excludes HCE=0, HCT=4 (Agahnim 1),
-// GT=12 (Agahnim 2) — the Agahnims share sprite_type 0x7A (the runtime
+// RandoDungeonIds whose boss is shuffleable. Excludes HCE, HCT (Agahnim 1),
+// and GT (Agahnim 2) — the Agahnims share sprite_type 0x7A (the runtime
 // discriminates by `is_in_dark_world` inside `Sprite_7A_Agahnim`), so pinning
 // both is the only safe option without per-call-site world disambiguation.
 //
 // ALSO excludes three bosses that depend on their HOME room's ENVIRONMENT, which
 // the sprite+gfx+palette redirect can't supply (each playtest- or Enemizer-
 // confirmed); all are PINNED to their vanilla dungeon:
-//   - TT=8  Blind     — TT has no Blind sprite; it spawns via a maiden-follower
+//   - TT Blind        — TT has no Blind sprite; it spawns via a maiden-follower
 //     sequence and only materializes when `dung_savegame_state_bits & 0x2000`
 //     (set by that TT-only sequence) is true. Shuffled elsewhere it never spawns
 //     (playtest-confirmed strand).
-//   - IP=9  Kholdstare and TR=11 Trinexx — their fights need the room's "effect"
+//   - IP Kholdstare and TR Trinexx — their fights need the room's "effect"
 //     ($00AD / header byte 4) + BG2-object setup (the ice block / lava floor).
 //     The redirect carries the boss + shell SPRITES but not the room environment,
 //     so the encase/melt (Kholdstare) and floor (Trinexx) sequences don't init —
@@ -88,7 +88,13 @@ static const uint8 kBossVanilla[16] = {
 // be validated headless — deferred. Net: 7 shuffleable bosses across 7 dungeon-
 // boss rooms (the set that works with a pure sprite/gfx/palette redirect).
 static const uint8 kBossShuffleableDungeons[7] = {
-  1, 2, 3, 5, 6, 7, 10,
+  kRandoDungeon_EasternPalace,
+  kRandoDungeon_DesertPalace,
+  kRandoDungeon_TowerOfHera,
+  kRandoDungeon_PalaceOfDarkness,
+  kRandoDungeon_SwampPalace,
+  kRandoDungeon_SkullWoods,
+  kRandoDungeon_MiseryMire,
 };
 
 // Pool of shuffleable bosses (7 entries: excludes both Agahnims, Blind,
@@ -144,8 +150,8 @@ void BossShuffle_ComputeAssignment(const RandoSettings *settings,
   // Pin Agahnim 1 (HCT) and Agahnim 2 (GT-top). kBossVanilla already
   // assigns these, but write explicitly to defend against future pool
   // edits that could touch slots 4/12.
-  out_assignment[4]  = kBoss_Agahnim;
-  out_assignment[12] = kBoss_Agahnim2;
+  out_assignment[kRandoDungeon_HyruleCastleTower] = kBoss_Agahnim;
+  out_assignment[kRandoDungeon_GanonsTower] = kBoss_Agahnim2;
 }
 
 bool BossShuffle_Generate(const RandoSettings *settings,
@@ -167,28 +173,28 @@ void BossShuffle_Deactivate(void) {
   memset(g_boss_assignment, 0xFF, sizeof(g_boss_assignment));
 }
 
-uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
+uint8 BossShuffle_GetForDungeon(uint8 rando_dungeon) {
   if (!g_boss_assignment_active) return 0xFF;
-  if (dungeon_id >= 16) return 0xFF;
-  return g_boss_assignment[dungeon_id];
+  if (rando_dungeon >= 16) return 0xFF;
+  return g_boss_assignment[rando_dungeon];
 }
 
 // Vanilla boss sprite IDs (cross-referenced with the `Sprite_*` symbol
 // table in `src/sprite_main.h` and `other/names.txt`). Agahnim 1 and Agahnim 2
 // share sprite_type 0x7A; the runtime discriminates by `is_in_dark_world`
-// inside `Sprite_7A_Agahnim`. Both are PINNED at their vanilla dungeons (HCT=4
-// and GT-top=12) so the remap never has to disambiguate.
-//   0x09 Moldorm        (ToH, dungeon 3)
-//   0x53 ArmosKnights   (EP,  dungeon 1)
-//   0x54 Lanmolas       (DP,  dungeon 2)
-//   0x7A Agahnim 1/2    (HCT/GT, dungeons 4/12 — pinned, no remap entry)
-//   0x88 Mothula        (SW,  dungeon 7)
-//   0x8C Arrghus        (SP,  dungeon 6)
-//   0x92 HelmasaurKing  (PoD, dungeon 5)
-//   0xA2 Kholdstare     (IP,  dungeon 9)  -- 0xA3 is KholdstareShell, NOT the boss
-//   0xBD Vitreous       (MM,  dungeon 10)
-//   0xCB Trinexx        (TR,  dungeon 11)
-//   0xCE Blind          (TT,  dungeon 8)
+// inside `Sprite_7A_Agahnim`. Both are PINNED at their vanilla rando dungeons
+// (HCT/GT) so the remap never has to disambiguate.
+//   0x09 Moldorm        (ToH)
+//   0x53 ArmosKnights   (EP)
+//   0x54 Lanmolas       (DP)
+//   0x7A Agahnim 1/2    (HCT/GT — pinned, no remap entry)
+//   0x88 Mothula        (SW)
+//   0x8C Arrghus        (SP)
+//   0x92 HelmasaurKing  (PoD)
+//   0xA2 Kholdstare     (IP)  -- 0xA3 is KholdstareShell, NOT the boss
+//   0xBD Vitreous       (MM)
+//   0xCB Trinexx        (TR)
+//   0xCE Blind          (TT)
 //
 // 0xB6 is `Sprite_B6_Kiki`, NOT Agahnim 2 — DO NOT
 // add it to the table; remapping Kiki at GT-door would soft-lock GT entry.
@@ -206,21 +212,21 @@ uint8 BossShuffle_GetForDungeon(uint8 dungeon_id) {
 // boss until a group-aware remap lands.
 typedef struct BossSpriteMap {
   uint8 sprite_type;
-  uint8 dungeon_id;
+  uint8 rando_dungeon;
   uint8 pool_idx;
 } BossSpriteMap;
 
 static const BossSpriteMap kBossSpriteMap[] = {
-  { 0x09, 3,  kBoss_Moldorm },
-  { 0x53, 1,  kBoss_ArmosKnights },
-  { 0x54, 2,  kBoss_Lanmolas },
-  { 0x88, 7,  kBoss_Mothula },
-  { 0x8C, 6,  kBoss_Arrghus },
-  { 0x92, 5,  kBoss_HelmasaurKing },
-  { 0xA2, 9,  kBoss_Kholdstare },
-  { 0xBD, 10, kBoss_Vitreous },
-  { 0xCB, 11, kBoss_Trinexx },
-  { 0xCE, 8,  kBoss_Blind },
+  { 0x09, kRandoDungeon_TowerOfHera,       kBoss_Moldorm },
+  { 0x53, kRandoDungeon_EasternPalace,     kBoss_ArmosKnights },
+  { 0x54, kRandoDungeon_DesertPalace,      kBoss_Lanmolas },
+  { 0x88, kRandoDungeon_SkullWoods,        kBoss_Mothula },
+  { 0x8C, kRandoDungeon_SwampPalace,       kBoss_Arrghus },
+  { 0x92, kRandoDungeon_PalaceOfDarkness,  kBoss_HelmasaurKing },
+  { 0xA2, kRandoDungeon_IcePalace,         kBoss_Kholdstare },
+  { 0xBD, kRandoDungeon_MiseryMire,        kBoss_Vitreous },
+  { 0xCB, kRandoDungeon_TurtleRock,        kBoss_Trinexx },
+  { 0xCE, kRandoDungeon_ThievesTown,       kBoss_Blind },
 };
 #define kBossSpriteMapCount (sizeof(kBossSpriteMap) / sizeof(kBossSpriteMap[0]))
 
@@ -253,8 +259,8 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
 
   for (uint32 i = 0; i < kBossSpriteMapCount; i++) {
     if (kBossSpriteMap[i].sprite_type != vanilla_sprite_type) continue;
-    uint8 dungeon = kBossSpriteMap[i].dungeon_id;
-    uint8 pool_idx = g_boss_assignment[dungeon];
+    uint8 rando_dungeon = kBossSpriteMap[i].rando_dungeon;
+    uint8 pool_idx = g_boss_assignment[rando_dungeon];
     if (pool_idx == 0xFF || pool_idx >= 12) return vanilla_sprite_type;
     uint8 mapped = kBossPoolIdxToSprite[pool_idx];
     // 0 = uninitialized entry; 0xFF = poisoned (pinned Agahnim variants
@@ -273,14 +279,14 @@ uint8 BossShuffle_RemapSpriteType(uint8 vanilla_sprite_type) {
 // the vanilla primary.
 typedef struct BossSecondarySegment {
   uint8 sprite_type;
-  uint8 parent_dungeon_id;
+  uint8 parent_rando_dungeon;
   uint8 parent_pool_idx;
 } BossSecondarySegment;
 
 static const BossSecondarySegment kBossSecondaries[] = {
-  { 0xCC, 11, kBoss_Trinexx },    // Trinexx left arm  (TR)
-  { 0xCD, 11, kBoss_Trinexx },    // Trinexx right arm (TR)
-  { 0xA3, 9,  kBoss_Kholdstare }, // KholdstareShell   (IP)
+  { 0xCC, kRandoDungeon_TurtleRock, kBoss_Trinexx },    // Trinexx left arm  (TR)
+  { 0xCD, kRandoDungeon_TurtleRock, kBoss_Trinexx },    // Trinexx right arm (TR)
+  { 0xA3, kRandoDungeon_IcePalace,  kBoss_Kholdstare }, // KholdstareShell   (IP)
 };
 #define kBossSecondariesCount (sizeof(kBossSecondaries) / sizeof(kBossSecondaries[0]))
 
@@ -288,8 +294,8 @@ bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type) {
   if (!g_boss_assignment_active) return false;
   for (uint32 i = 0; i < kBossSecondariesCount; i++) {
     if (kBossSecondaries[i].sprite_type != vanilla_sprite_type) continue;
-    uint8 dungeon = kBossSecondaries[i].parent_dungeon_id;
-    uint8 assigned = g_boss_assignment[dungeon];
+    uint8 rando_dungeon = kBossSecondaries[i].parent_rando_dungeon;
+    uint8 assigned = g_boss_assignment[rando_dungeon];
     return assigned != kBossSecondaries[i].parent_pool_idx;
   }
   return false;
@@ -309,25 +315,27 @@ bool BossShuffle_ShouldSuppressSecondary(uint8 vanilla_sprite_type) {
 // right coords, its trigger overlords) drawn with the correct gfx, so the
 // substituted boss renders + plays like its vanilla self, in the new room.
 //
-// Boss-room dungeon_room_index per shuffleable dungeon (standard ALTTP room ids,
-// ROM-version-stable; cross-checked against Enemizer RoomIdConstants). Index =
-// dungeon-id (same table as kBossVanilla). 0xFFFF = no single shuffleable boss
-// room (HCE / the pinned Agahnim slots / GT).
+// Boss-room dungeon_room_index per shuffleable rando dungeon (standard ALTTP
+// room ids, ROM-version-stable; cross-checked against Enemizer
+// RoomIdConstants). Index = kRandoDungeon_*. 0xFFFF = no single shuffleable
+// boss room (HCE / the pinned Agahnim slots / GT).
 static const uint16 kBossRoom[16] = {
-  0xFFFF,  // 0  HCE  (no boss)
-  200,     // 1  EP   (0xC8) Armos Knights
-  51,      // 2  DP   (0x33) Lanmolas
-  7,       // 3  ToH  (0x07) Moldorm
-  0xFFFF,  // 4  HCT  (Agahnim 1 — pinned)
-  90,      // 5  PoD  (0x5A) Helmasaur King
-  6,       // 6  SP   (0x06) Arrghus
-  41,      // 7  SW   (0x29) Mothula
-  172,     // 8  TT   (0xAC) Blind
-  222,     // 9  IP   (0xDE) Kholdstare
-  144,     // 10 MM   (0x90) Vitreous
-  164,     // 11 TR   (0xA4) Trinexx
-  0xFFFF,  // 12 GT   (Agahnim 2 — pinned)
-  0xFFFF, 0xFFFF, 0xFFFF,
+  [kRandoDungeon_HyruleCastleEscape] = 0xFFFF,
+  [kRandoDungeon_EasternPalace]      = 200,
+  [kRandoDungeon_DesertPalace]       = 51,
+  [kRandoDungeon_TowerOfHera]        = 7,
+  [kRandoDungeon_HyruleCastleTower]  = 0xFFFF,
+  [kRandoDungeon_PalaceOfDarkness]   = 90,
+  [kRandoDungeon_SwampPalace]        = 6,
+  [kRandoDungeon_SkullWoods]         = 41,
+  [kRandoDungeon_ThievesTown]        = 172,
+  [kRandoDungeon_IcePalace]          = 222,
+  [kRandoDungeon_MiseryMire]         = 144,
+  [kRandoDungeon_TurtleRock]         = 164,
+  [kRandoDungeon_GanonsTower]        = 0xFFFF,
+  [kRandoDungeon_Count]              = 0xFFFF,
+  [14]                               = 0xFFFF,
+  [15]                               = 0xFFFF,
 };
 
 // boss-pool index → that boss's vanilla HOME boss room (the redirect target).
@@ -397,14 +405,14 @@ const char *BossShuffle_BossName(uint8 pool_index) {
   return (pool_index < 12) ? kNames[pool_index] : "?";
 }
 
-const char *BossShuffle_DungeonName(uint8 dungeon_id) {
+const char *BossShuffle_DungeonName(uint8 rando_dungeon) {
   static const char *kNames[13] = {
     "Hyrule Castle Escape", "Eastern Palace", "Desert Palace", "Tower of Hera",
     "Hyrule Castle Tower", "Palace of Darkness", "Swamp Palace", "Skull Woods",
     "Thieves' Town", "Ice Palace", "Misery Mire", "Turtle Rock",
     "Ganon's Tower",
   };
-  return (dungeon_id < 13) ? kNames[dungeon_id] : "?";
+  return (rando_dungeon < kRandoDungeon_Count) ? kNames[rando_dungeon] : "?";
 }
 
 // ---------------------------------------------------------------------------
@@ -441,18 +449,18 @@ void BossShuffle_SelfCheck(void) {
     BossShuffle_ComputeAssignment(&on, 0xDEADBEEFCAFEBABEull, b);
     if (memcmp(a, b, sizeof(a)) != 0)
       boss_selfcheck_die("same seed must produce identical boss assignment");
-    if (a[4] != kBoss_Agahnim)
-      boss_selfcheck_die("Agahnim 1 must stay pinned at HCT (dungeon 4)");
-    if (a[12] != kBoss_Agahnim2)
-      boss_selfcheck_die("Agahnim 2 must stay pinned at GT (dungeon 12)");
-    if (a[0] != 0xFF)
-      boss_selfcheck_die("HCE (dungeon 0) must have no boss");
-    if (a[8] != kBoss_Blind)
-      boss_selfcheck_die("Blind must stay pinned at Thieves' Town (dungeon 8)");
-    if (a[9] != kBoss_Kholdstare)
-      boss_selfcheck_die("Kholdstare must stay pinned at Ice Palace (dungeon 9)");
-    if (a[11] != kBoss_Trinexx)
-      boss_selfcheck_die("Trinexx must stay pinned at Turtle Rock (dungeon 11)");
+    if (a[kRandoDungeon_HyruleCastleTower] != kBoss_Agahnim)
+      boss_selfcheck_die("Agahnim 1 must stay pinned at HCT");
+    if (a[kRandoDungeon_GanonsTower] != kBoss_Agahnim2)
+      boss_selfcheck_die("Agahnim 2 must stay pinned at GT");
+    if (a[kRandoDungeon_HyruleCastleEscape] != 0xFF)
+      boss_selfcheck_die("HCE must have no boss");
+    if (a[kRandoDungeon_ThievesTown] != kBoss_Blind)
+      boss_selfcheck_die("Blind must stay pinned at Thieves' Town");
+    if (a[kRandoDungeon_IcePalace] != kBoss_Kholdstare)
+      boss_selfcheck_die("Kholdstare must stay pinned at Ice Palace");
+    if (a[kRandoDungeon_TurtleRock] != kBoss_Trinexx)
+      boss_selfcheck_die("Trinexx must stay pinned at Turtle Rock");
     // The 7 shuffleable dungeons hold a permutation of the 7-boss pool: each pool
     // boss appears exactly once; no pinned boss (Agahnim/Blind/Kholdstare/Trinexx)
     // leaks in.

@@ -42,6 +42,13 @@ static uint32 g_door_gen_digest24;
 #include <stdio.h>
 #include <stdlib.h>
 
+static bool copy_active_medallion_assignment(uint8 out[kRandoMedallionEntranceCount]) {
+  const uint8 *assignment = Rando_GetMedallionAssignment();
+  if (assignment == NULL) return false;
+  memcpy(out, assignment, kRandoMedallionEntranceCount);
+  return true;
+}
+
 // Initializes a freshly-generated rando playable slot's 0x500-byte SRAM image:
 // the vanilla "new file" defaults (RANDO name + health/magic baseline) plus the
 // world-state-specific post-escape start state. Writes ONLY into
@@ -457,6 +464,9 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     spoiler.settings = settings;
     spoiler.placements = &table;
     spoiler.spheres = &spheres;
+    uint8 medallion_assignment[kRandoMedallionEntranceCount];
+    if (copy_active_medallion_assignment(medallion_assignment))
+      spoiler.medallion_assignment = medallion_assignment;
     // Phase C — entrance_mapping sections (omitted when the respective count is 0).
     Rando_SpoilerSetEntranceFields(&spoiler, &reg);
     // Phase B Slice 7/8 — boss + drop shuffle spoiler sections. Computed with
@@ -634,6 +644,8 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     out->race_mode = (settings->race_mode != 0);
     memcpy(out->share_string, share_string, sizeof(out->share_string));
     memcpy(out->settings_hash, settings_hash_full, sizeof(out->settings_hash));
+    out->has_medallion_assignment =
+        copy_active_medallion_assignment(out->medallion_assignment);
     if (table.count > 0) {
       RandoPlacement *copy =
           (RandoPlacement *)malloc(sizeof(RandoPlacement) * table.count);

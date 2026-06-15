@@ -1257,6 +1257,22 @@ static bool SpoilerRowMatches(const char *filter, uint16 loc, uint16 item,
          SpoilerCiContains(Rando_GetRegionName(region), filter);
 }
 
+static bool SpoilerLocHidden(uint16 loc) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id == loc)
+      return kRandoLocations[i].type == LOCTYPE_Medallion;
+  }
+  return false;
+}
+
+static uint16 SpoilerVisiblePlacementCount(const RandoPlacementTable *t) {
+  if (t == nullptr) return 0;
+  uint16 n = 0;
+  for (uint16 i = 0; i < t->count; i++)
+    if (!SpoilerLocHidden(t->entries[i].location_id)) n++;
+  return n;
+}
+
 static void Panel_Spoiler() {
   const RandoWindowBridge *b = &g_rando_window_bridge;
   if (!b->has_last_generated) {
@@ -1266,10 +1282,16 @@ static void Panel_Spoiler() {
   }
 
   const RandoPlacementTable *t = &b->last_generated_placement;
-  ImGui::Text("Placements: %u (grouped by region)", (unsigned)t->count);
+  ImGui::Text("Placements: %u (grouped by region)",
+              (unsigned)SpoilerVisiblePlacementCount(t));
   ImGui::TextDisabled(
       "Region grouping uses base regions; per-world-state overrides (e.g. Inverted) "
       "are not applied here. Read-only.");
+  if (b->last_generated_has_medallion_assignment) {
+    ImGui::Text("Medallions: Mire %s, Turtle Rock %s",
+                Rando_GetItemName(b->last_generated_medallion_assignment[0]),
+                Rando_GetItemName(b->last_generated_medallion_assignment[1]));
+  }
 
   // Save-spoiler controls (§14.4 file, §14.5 clipboard).
   RenderSpoilerSaveRow();
@@ -1293,17 +1315,21 @@ static void Panel_Spoiler() {
   bool truncated = false;
   static struct Row { uint16 region_id; uint16 location_id; uint16 item_id; } rows[kSpoilerMaxRows];
   if (n > kSpoilerMaxRows) { n = kSpoilerMaxRows; truncated = true; }
+  uint16 row_n = 0;
   for (uint16 i = 0; i < n; i++) {
-    rows[i].location_id = t->entries[i].location_id;
-    rows[i].item_id = t->entries[i].item_id;
-    rows[i].region_id = 0xFFFF;
+    if (SpoilerLocHidden(t->entries[i].location_id)) continue;
+    rows[row_n].location_id = t->entries[i].location_id;
+    rows[row_n].item_id = t->entries[i].item_id;
+    rows[row_n].region_id = 0xFFFF;
     for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-      if (kRandoLocations[j].id == rows[i].location_id) {
-        rows[i].region_id = kRandoLocations[j].region_id;
+      if (kRandoLocations[j].id == rows[row_n].location_id) {
+        rows[row_n].region_id = kRandoLocations[j].region_id;
         break;
       }
     }
+    row_n++;
   }
+  n = row_n;
   for (uint16 i = 1; i < n; i++) {
     uint16 j = i;
     while (j > 0 &&
@@ -2028,7 +2054,7 @@ void RandoWindow_Shutdown(void) {
   }
   // Free the bridge's owned spoiler-viewer placement copy (passing NULL frees +
   // clears without re-storing) so it isn't leaked at process exit. (audit LOW)
-  RandoWindowBridge_StoreGenerated(NULL, NULL, false);
+  RandoWindowBridge_StoreGenerated(NULL, NULL, NULL, false);
 }
 
 // ---- Show / hide -----------------------------------------------------------

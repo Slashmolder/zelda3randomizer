@@ -85,6 +85,8 @@ typedef struct RandoGenerateResult {
   bool race_mode;
   char share_string[kShareStringBase32MaxLen];
   uint8 settings_hash[32];
+  bool has_medallion_assignment;
+  uint8 medallion_assignment[kRandoMedallionEntranceCount];
   RandoPlacementTable placement;  // OWNED malloc'd copy when requested (caller frees); {0} otherwise
 } RandoGenerateResult;
 

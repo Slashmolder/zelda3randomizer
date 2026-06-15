@@ -163,9 +163,7 @@ icons:
   GenericKey: { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24); Retro shared key" }
   Rupoor:     { gfx: 0x83, big: 0, oam_flags: 0x36, notes: "kRandoCustomGfx_Rupoor: vanilla rupee tile (bundle 0x24) + off_black palette via SP3" }
 
-  # --- masquerade traps ---
-  #     Runtime dispatch handles the trap effect and skips Link_ReceiveItem.
-  #     These icon entries are intentionally good-looking decoys used by both
-  #     direct-grant confirmation and field-item sprites.
-  TrapDamage: { gfx: 0x24, big: 0, oam_flags: 0x38, notes: "trap masquerading as a green rupee" }
-  TrapFreeze: { gfx: 0x22, big: 2, oam_flags: 0x38, notes: "trap masquerading as a big key" }
+  # TrapDamage / TrapFreeze intentionally do not have fixed entries here.
+  # Runtime dispatch handles the trap effect and skips Link_ReceiveItem; their
+  # field/direct-grant icons are selected by rando.c from the full drawable
+  # good-item decoy pool so traps do not all masquerade as one item.

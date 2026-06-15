@@ -62,7 +62,7 @@ It was disabled for two runtime hazards — both invisible to the corpus and
   "while palette-aware widening is disabled" placeholder clauses with the dungeon
   palette-signature model, the dungeon palette gate, and the verify-then-commit
   fillability guarantee for both loader contexts. The `kGeneratorVersion` bump
-  (`76→77`, re-grep live at implement time per the version-drift convention) is recorded
+  (`77→78` at merge — main concurrently took 77 for its medallion-config change, so the version-drift convention applied) is recorded
   as an inline note within this requirement, matching the existing convention
   (e.g. retro-generic-keys' `> kGeneratorVersion 53→54`) — `randomizer-core`'s
   `generator_version` *semantics* requirement is unchanged, so it is not a delta target.

@@ -81,11 +81,11 @@ const RandoPlacementTable *Placement_GetActive(void);
 // Rando_OnLocationCheck (rando.c).
 uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id);
 
-// Dungeon (0..12, HCE..GT) -> its Prize location id, or 0xFFFF if that dungeon
-// awards no pendant/crystal (HC/CT/GT). Lets UI gate prize-completion on the
+// kRandoDungeon_* slot -> its Prize location id, or 0xFFFF if that dungeon
+// awards no pendant/crystal (HCE/HCT/GT). Lets UI gate prize-completion on the
 // per-dungeon prize location being checked (correct under prize_shuffle), not
 // on global prize-type ownership.
-uint16 Rando_GetDungeonPrizeLocation(int dungeon_index);
+uint16 Rando_GetDungeonPrizeLocation(int rando_dungeon);
 
 // Self-check: digest stability under sort-order, BuildItemPool sanity. Exits 2
 // on failure (per Settings_SelfCheck pattern).

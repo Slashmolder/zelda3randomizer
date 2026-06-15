@@ -16,6 +16,7 @@
 #include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
 #include "rando/inverted_maps.h" // Overworld_ApplyInvertedTiles (#82 Inverted topology)
+#include "rando/medallion_icons.h"  // Rando_PatchMedallionEntranceMap8
 
 const uint16 kOverworld_OffsetBaseX[64] = {
   0,     0, 0x400, 0x600, 0x600, 0xa00, 0xa00, 0xe00,
@@ -2734,13 +2735,15 @@ uint16 *BufferAndBuildMap16Stripes_X(uint16 *dst) {  // 82f3b9
     dst[33] = r0 + 1;
     dst++;
     for (int j = 0; j < 16; j++) {
-      int k = *tmp++;
+      uint16 k = *tmp++;
       assert(k < 0xea8);
       const uint16 *s = map8 + k * 4;
-      dst[0] = s[0];
-      dst[33] = s[1];
-      dst[1] = s[2];
-      dst[34] = s[3];
+      uint16 map8_words[4] = {s[0], s[1], s[2], s[3]};
+      Rando_PatchMedallionEntranceMap8(k, map8_words);
+      dst[0] = map8_words[0];
+      dst[33] = map8_words[1];
+      dst[1] = map8_words[2];
+      dst[34] = map8_words[3];
       dst += 2;
     }
     dst += 33;
@@ -2765,13 +2768,15 @@ uint16 *BufferAndBuildMap16Stripes_Y(uint16 *dst) {  // 82f482
   for (int i = 0; i < 2; i++, r0 += 0x400) {
     *dst++ = r0;
     for (int j = 0; j < 16; j++) {
-      int k = *tmp++;
+      uint16 k = *tmp++;
       assert(k < 0xea8);
       const uint16 *s = map8 + k * 4;
-      dst[0] = s[0];
-      dst[32] = s[2];
-      dst[1] = s[1];
-      dst[33] = s[3];
+      uint16 map8_words[4] = {s[0], s[1], s[2], s[3]};
+      Rando_PatchMedallionEntranceMap8(k, map8_words);
+      dst[0] = map8_words[0];
+      dst[32] = map8_words[2];
+      dst[1] = map8_words[1];
+      dst[33] = map8_words[3];
       dst += 2;
     }
     dst += 32;
@@ -2914,11 +2919,14 @@ void OverworldCopyMap16ToBuffer(const uint8 *src, uint16 r20, int r14, uint16 *r
   for (int i = 0; i < 2; i++, r0 += 0x400, r14 += 0x40) {
     *r10++ = r0 | r20;
     for (int j = 0; j < 16; j++, r14 += 4) {
-      const uint16 *m = map8 + 4 * *tmp++;
-      WORD(dung_bg2_attr_table[r14]) = WORD(m[0]);
-      WORD(dung_bg2_attr_table[r14 + 64]) = WORD(m[2]);
-      WORD(dung_bg2_attr_table[r14 + 2]) = WORD(m[1]);
-      WORD(dung_bg2_attr_table[r14 + 66]) = WORD(m[3]);
+      uint16 k = *tmp++;
+      const uint16 *m = map8 + 4 * k;
+      uint16 map8_words[4] = {m[0], m[1], m[2], m[3]};
+      Rando_PatchMedallionEntranceMap8(k, map8_words);
+      WORD(dung_bg2_attr_table[r14]) = WORD(map8_words[0]);
+      WORD(dung_bg2_attr_table[r14 + 64]) = WORD(map8_words[2]);
+      WORD(dung_bg2_attr_table[r14 + 2]) = WORD(map8_words[1]);
+      WORD(dung_bg2_attr_table[r14 + 66]) = WORD(map8_words[3]);
     }
   }
 

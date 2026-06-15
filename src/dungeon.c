@@ -17,6 +17,7 @@
 #include "assets.h"
 #include "features.h"
 #include "rando/rando.h"
+#include "rando/dungeon_ids.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 #include "rando/shuffle_boss.h"  // BossShuffle_RenderHomeRoom (boss-shuffle render)
@@ -4713,9 +4714,8 @@ void Dung_TagRoutine_BlastWallStuff(int k) {  // 81c68c
 // Index spaces differ:
 //   `didx` = cur_palace_index_x2>>1 (game dungeon id; indexes kBossFinishedFallingItem).
 //   prize-assignment array = rando_logic / kDungeonPrizeLocations order.
-// kGamePrizeDidxToAssignIdx[] maps didx -> assignment index (0xFF = no prize
-// dungeon: HCE / unused / HCT / GT). Mapping verified against the authoritative
-// {game,logic} table in rando_window/tracker_windows.cpp (kDungeonRows).
+// Rando_PrizeRandoDungeonFromGameDungeon maps didx -> prize-assignment index
+// (0xFF = no prize dungeon: HCE / HC / HCT / GT).
 //
 // Placed-prize value encoding (see PrizeIcon / Goal_IsCompletable pendant ids):
 //   0=Green, 1=Red, 2=Blue, 3..9=Crystal1..7.
@@ -4732,25 +4732,7 @@ static uint8 RandoFallingPrizeIndex(uint8 didx, uint8 vanilla_idx) {
   const uint8 *assign = Rando_GetDungeonPrizeAssignment();
   if (assign == NULL)
     return vanilla_idx;
-  static const uint8 kGamePrizeDidxToAssignIdx[14] = {
-    0xFF, // 0  HCE (no prize)
-    0xFF, // 1  (unused)
-    1,    // 2  EP
-    2,    // 3  DP
-    0xFF, // 4  HCT (no prize)
-    5,    // 5  PoD
-    6,    // 6  SP
-    7,    // 7  SW
-    8,    // 8  TT
-    9,    // 9  IP
-    3,    // 10 TH
-    10,   // 11 MM
-    11,   // 12 TR
-    0xFF, // 13 GT (no prize)
-  };
-  if (didx >= 14)
-    return vanilla_idx;
-  uint8 aidx = kGamePrizeDidxToAssignIdx[didx];
+  uint8 aidx = Rando_PrizeRandoDungeonFromGameDungeon(didx);
   if (aidx == 0xFF)
     return vanilla_idx;
   uint8 prize = assign[aidx];

@@ -31,7 +31,7 @@ Excluded entries pass through unchanged.
 
 Enabling widening SHALL NOT alter item placement: it draws no fill RNG and adds no logic predicate, so `placement_digest_hex` SHALL be byte-identical for every seed and the regression corpus SHALL regenerate byte-identical. The change SHALL version-lock the now-live runtime behavior via a `kGeneratorVersion` bump.
 
-> `kGeneratorVersion` 76→77 (re-grep the live value at implement time per the version-drift convention); only the version field moves — every seed's `placement_digest_hex` is byte-identical and `kSettingsCanonicalLen` is unchanged (widening rides the existing `enemy_shuffle` axis with no new canonical setting).
+> `kGeneratorVersion` 77→78 (main concurrently took 77 for its MM/TR medallion-config change, so the version-drift convention applied at merge); only the version field moves for the widening — every seed's `placement_digest_hex` is byte-identical and `kSettingsCanonicalLen` is unchanged (widening rides the existing `enemy_shuffle` axis with no new canonical setting).
 
 #### Scenario: Replacement stays within actually-loaded graphics sheets
 - **WHEN** enemy shuffle picks a replacement for a room whose loaded sheet set (after resolving `0`-inheritance against live `sprite_gfx_subset_N`) is known

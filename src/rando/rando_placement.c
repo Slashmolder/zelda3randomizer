@@ -21,6 +21,7 @@
 #include "customizer.h"     // Customizer_GetActive (customizer-mode pins)
 #include "item_ids.h"
 #include "location_ids.h"
+#include "dungeon_ids.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -151,8 +152,8 @@ enum {
 // must match assets/rando/location_registry.yaml (id = 266 + 2*cave + slot).
 #define kTakeAnyCaveCount 31
 #define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
-// LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now live in rando_logic.h
-// (shared with the spoiler emitters so the ordinals can't drift between files).
+// LOCTYPE_Medallion / LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now
+// live in rando_logic.h (shared so the ordinals can't drift between files).
 
 // Placer-local location-type ordinals (per logic.schema.yaml's types index).
 // File-scope so BuildItemPool's junk-pad target and the pre-place pin pass in
@@ -162,11 +163,10 @@ enum {
   LOCTYPE_Prize_Crystal = 10,
   LOCTYPE_Prize_Pendant = 11,
   LOCTYPE_Prize_Event   = 12,
-  LOCTYPE_Medallion     = 13,
 };
 
-// Dungeon → Prize location id, for prize-shuffle placement. Indexed by
-// dungeon id (HCE=0..GT=12). 0xFFFF = no Prize location for that dungeon.
+// kRandoDungeon_* -> Prize location id, for prize-shuffle placement.
+// 0xFFFF = no Prize location for that dungeon.
 // File-scope so Goal_IsCompletable can consult it for prize-reachability checks.
 static const uint16 kDungeonPrizeLocations[13] = {
   0xFFFF,  // HCE
@@ -185,9 +185,9 @@ static const uint16 kDungeonPrizeLocations[13] = {
 };
 
 // Public accessor for the per-dungeon prize location (see rando_placement.h).
-uint16 Rando_GetDungeonPrizeLocation(int dungeon_index) {
-  if (dungeon_index < 0 || dungeon_index >= 13) return 0xFFFF;
-  return kDungeonPrizeLocations[dungeon_index];
+uint16 Rando_GetDungeonPrizeLocation(int rando_dungeon) {
+  if (rando_dungeon < 0 || rando_dungeon >= kRandoDungeonCount) return 0xFFFF;
+  return kDungeonPrizeLocations[rando_dungeon];
 }
 
 // Per-dungeon small-key counts (vanilla per ALTTPR config; small_keys.X).
@@ -286,6 +286,20 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
   if (vi >= 88 && vi <= 98)
     return settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla;
   return false;
+}
+
+static bool location_grants_placed_item(const RandoLocationDef *loc) {
+  return loc != NULL && loc->type != LOCTYPE_Medallion;
+}
+
+static bool placement_entry_grants_item(const RandoPlacementTable *t, uint16 entry_index) {
+  if (t == NULL || entry_index >= t->count) return false;
+  uint16 loc_id = t->entries[entry_index].location_id;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id == loc_id)
+      return location_grants_placed_item(&kRandoLocations[i]);
+  }
+  return true;
 }
 
 static uint16 trap_count_for_frequency(uint8 traps) {
@@ -641,39 +655,6 @@ static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
   }
 }
 
-// Map dungeon-item registry id → dungeon id (0..12 per kDungeonPrizeLocations
-// order: HCE=0, EP=1, DP=2, TH=3, HCT=4, PoD=5, SP=6, SW=7, TT=8, IP=9,
-// MM=10, TR=11, GT=12). Returns 0xFF if the item is not a dungeon item.
-//
-// BigKey/Map/Compass enums in item_registry.yaml skip
-// HCT (no big key/map/compass for HCT), NOT just HCE. The simple
-// arithmetic mapping (`item_id - base + 1`) was wrong for 8 of 11
-// dungeons. Use a per-class array index → dungeon-id table that
-// mirrors kBigKeys / kMaps / kCompasses ordering.
-//
-// kBigKeys order (11 entries): EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
-//                            = dungeons 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
-// kMaps order (12 entries): HCE, EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
-//                         = dungeons 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
-// kCompasses order (11 entries): EP, DP, TH, PoD, SP, SW, TT, IP, MM, TR, GT
-//                              = dungeons 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12
-static uint8 dungeon_id_for_item(uint16 item_id) {
-  // SmallKey ids 53..65 contiguous in HCE..GT order — no skip.
-  if (item_id >= 53 && item_id <= 65) return (uint8)(item_id - 53);
-  // BigKey ids 66..76 skip HCE *and* HCT.
-  static const uint8 kBigKeyDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (item_id >= 66 && item_id <= 76) return kBigKeyDungeon[item_id - 66];
-  // Map_HCE = 124.
-  if (item_id == 124) return 0;
-  // Map ids 77..87 skip HCT (HCE handled separately above).
-  static const uint8 kMapDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (item_id >= 77 && item_id <= 87) return kMapDungeon[item_id - 77];
-  // Compass ids 88..98 skip HCE *and* HCT.
-  static const uint8 kCompassDungeon[11] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 };
-  if (item_id >= 88 && item_id <= 98) return kCompassDungeon[item_id - 88];
-  return 0xFF;
-}
-
 // Determine if `loc` is inside a dungeon. Returns 0..12 (dungeon id) or 0xFF.
 // also consults Rando_FindPredicateOverride so a per-world-state
 // override that moves a location across a dungeon boundary is honored.
@@ -708,7 +689,7 @@ static uint8 dungeon_id_for_location(const RandoLocationDef *loc,
 static bool dungeon_mode_accepts_item(const RandoLocationDef *loc,
                                       uint16 candidate_item,
                                       const RandoSettings *settings) {
-  uint8 item_dungeon = dungeon_id_for_item(candidate_item);
+  uint8 item_dungeon = Rando_RandoDungeonFromDungeonItem(candidate_item);
   if (item_dungeon == 0xFF) return true;  // not a dungeon item — always OK
   // Determine the active mode for this item class.
   uint8 mode;
@@ -1607,6 +1588,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // is for the (rare) case where a non-vanilla mode pinned something.)
   for (uint16 k = 0; k < open_n; k++) {
     if (placement_at[k] == 0xFFFF) continue;
+    if (!location_grants_placed_item(&kRandoLocations[open_loc_idx[k]])) continue;
     uint16 vi = placement_at[k];
     if (vi < 256) counts.by_item_id[vi]++;
   }
@@ -1885,6 +1867,7 @@ static uint16 count_reachable_placements_of(const RandoPlacementTable *t,
   if (t == NULL || r == NULL) return 0;
   uint16 n = 0;
   for (uint16 i = 0; i < t->count; i++) {
+    if (!placement_entry_grants_item(t, i)) continue;
     if (t->entries[i].item_id != item_id) continue;
     if (Reachability_HasLocation(r, t->entries[i].location_id)) n++;
   }
@@ -1940,6 +1923,7 @@ bool Goal_IsCompletable(const RandoSettings *settings,
   apply_vanilla_dungeon_item_grants(settings, &final_inv);
   for (uint16 i = 0; i < placements->count; i++) {
     if (reachable_spheres.sphere_index_by_placement[i] == kSphereIndexUnreachable) continue;
+    if (!placement_entry_grants_item(placements, i)) continue;
     uint16 item_id = placements->entries[i].item_id;
     if (item_id < 256 && final_inv.by_item_id[item_id] < 0xFFFF) {
       final_inv.by_item_id[item_id]++;
@@ -2108,6 +2092,7 @@ static bool accessibility_reachability_ok(const RandoSettings *settings,
       // compasses / hearts may strand (see is_progression_item).
       for (uint16 i = 0; i < placements->count; i++) {
         if (!is_progression_item(placements->entries[i].item_id)) continue;
+        if (!placement_entry_grants_item(placements, i)) continue;
         if (spheres->sphere_index_by_placement[i] == kSphereIndexUnreachable) {
           return false;
         }
@@ -2217,6 +2202,7 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
     // Accumulate items from this sphere into the running inventory.
     for (uint16 i = 0; i < placements->count; i++) {
       if (out->sphere_index_by_placement[i] != sphere) continue;
+      if (!placement_entry_grants_item(placements, i)) continue;
       uint16 item = placements->entries[i].item_id;
       if (item < 256 && counts.by_item_id[item] < 0xFFFF) {
         counts.by_item_id[item]++;
@@ -2573,32 +2559,32 @@ void Placement_SelfCheck(void) {
     }
   }
 
-  // dungeon_id_for_item mapping for the keys-skip-HCT enums.
+  // Rando_RandoDungeonFromDungeonItem mapping for the keys-skip-HCT enums.
   // Pins the lookup table so a future formula-based regression breaks the
   // selftest before a corpus run.
   {
     // Small keys (53..65) are contiguous HCE..GT (HCT included).
-    if (dungeon_id_for_item(53) != 0)  selfcheck_die("SmallKey_HCE → 0");
-    if (dungeon_id_for_item(57) != 4)  selfcheck_die("SmallKey_HCT → 4");
-    if (dungeon_id_for_item(58) != 5)  selfcheck_die("SmallKey_PoD → 5");
-    if (dungeon_id_for_item(65) != 12) selfcheck_die("SmallKey_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(53) != 0)  selfcheck_die("SmallKey_HCE → 0");
+    if (Rando_RandoDungeonFromDungeonItem(57) != 4)  selfcheck_die("SmallKey_HCT → 4");
+    if (Rando_RandoDungeonFromDungeonItem(58) != 5)  selfcheck_die("SmallKey_PoD → 5");
+    if (Rando_RandoDungeonFromDungeonItem(65) != 12) selfcheck_die("SmallKey_GT → 12");
     // BigKey ids 66..76 skip HCE AND HCT.
-    if (dungeon_id_for_item(66) != 1)  selfcheck_die("BigKey_EP → 1");
-    if (dungeon_id_for_item(68) != 3)  selfcheck_die("BigKey_TH → 3");
-    if (dungeon_id_for_item(69) != 5)  selfcheck_die("BigKey_PoD → 5 (HCT skip)");
-    if (dungeon_id_for_item(76) != 12) selfcheck_die("BigKey_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(66) != 1)  selfcheck_die("BigKey_EP → 1");
+    if (Rando_RandoDungeonFromDungeonItem(68) != 3)  selfcheck_die("BigKey_TH → 3");
+    if (Rando_RandoDungeonFromDungeonItem(69) != 5)  selfcheck_die("BigKey_PoD → 5 (HCT skip)");
+    if (Rando_RandoDungeonFromDungeonItem(76) != 12) selfcheck_die("BigKey_GT → 12");
     // Map_HCE = 124 → 0; Map ids 77..87 skip HCT.
-    if (dungeon_id_for_item(124) != 0) selfcheck_die("Map_HCE → 0");
-    if (dungeon_id_for_item(77) != 1)  selfcheck_die("Map_EP → 1");
-    if (dungeon_id_for_item(80) != 5)  selfcheck_die("Map_PoD → 5 (HCT skip)");
-    if (dungeon_id_for_item(87) != 12) selfcheck_die("Map_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(124) != 0) selfcheck_die("Map_HCE → 0");
+    if (Rando_RandoDungeonFromDungeonItem(77) != 1)  selfcheck_die("Map_EP → 1");
+    if (Rando_RandoDungeonFromDungeonItem(80) != 5)  selfcheck_die("Map_PoD → 5 (HCT skip)");
+    if (Rando_RandoDungeonFromDungeonItem(87) != 12) selfcheck_die("Map_GT → 12");
     // Compass ids 88..98 skip HCE AND HCT.
-    if (dungeon_id_for_item(88) != 1)  selfcheck_die("Compass_EP → 1");
-    if (dungeon_id_for_item(91) != 5)  selfcheck_die("Compass_PoD → 5 (HCT skip)");
-    if (dungeon_id_for_item(98) != 12) selfcheck_die("Compass_GT → 12");
+    if (Rando_RandoDungeonFromDungeonItem(88) != 1)  selfcheck_die("Compass_EP → 1");
+    if (Rando_RandoDungeonFromDungeonItem(91) != 5)  selfcheck_die("Compass_PoD → 5 (HCT skip)");
+    if (Rando_RandoDungeonFromDungeonItem(98) != 12) selfcheck_die("Compass_GT → 12");
     // Non-dungeon items return 0xFF.
-    if (dungeon_id_for_item(0) != 0xFF)   selfcheck_die("ProgressiveSword → 0xFF");
-    if (dungeon_id_for_item(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
+    if (Rando_RandoDungeonFromDungeonItem(0) != 0xFF)   selfcheck_die("ProgressiveSword → 0xFF");
+    if (Rando_RandoDungeonFromDungeonItem(100) != 0xFF) selfcheck_die("Rupee20 → 0xFF");
   }
 
   // Phase B Slice 3b — Retro TakeAny selection invariants. Pins the per-seed
@@ -2696,6 +2682,31 @@ void Placement_SelfCheck(void) {
       if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
         selfcheck_die("every tier must accept a fully-reachable placement");
     }
+  }
+
+  // Medallion config slots choose the MM/TR entrance requirements; they are not
+  // collectible item checks and must not contribute Ether/Quake/Bombos to
+  // sphere-walked inventory or the accessibility=items tier.
+  {
+    RandoPlacement med_entries[2] = {
+      { LOC_Misery_Mire_Medallion, ID_Ether },
+      { LOC_Sewers_Secret_Room_Left, ID_Hookshot },
+    };
+    RandoPlacementTable med_t = { med_entries, 2 };
+    if (placement_entry_grants_item(&med_t, 0))
+      selfcheck_die("Medallion config slot must not grant an item");
+    if (!placement_entry_grants_item(&med_t, 1))
+      selfcheck_die("normal item location must grant its item");
+
+    RandoSettings med_s;
+    Settings_SetDefaults(&med_s);
+    RandoSpheres med_sp;
+    memset(&med_sp, 0, sizeof(med_sp));
+    med_sp.sphere_index_by_placement[0] = kSphereIndexUnreachable;
+    med_sp.unreachable_count = 1;
+    med_s.accessibility = kAccessibility_Items;
+    if (!accessibility_reachability_ok(&med_s, &med_t, &med_sp))
+      selfcheck_die("items accessibility must ignore stranded medallion config slots");
   }
 
   // Retro genericKeys end-to-end: generate full Retro seeds and assert the

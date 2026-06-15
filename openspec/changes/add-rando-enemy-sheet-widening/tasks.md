@@ -16,7 +16,7 @@
 
 ## 3. Enable widening
 
-- [x] 3.1 Re-grepped LIVE `kGeneratorVersion` (76, no drift) and bumped 76→77 with rationale; spec note matches.
+- [x] 3.1 Bumped `kGeneratorVersion` 76→77, then reconciled to **77→78** at merge (main concurrently took 77 for its MM/TR medallion-config change — the version-drift convention applied); spec note matches.
 - [x] 3.2 Flipped `ES_ENABLE_SHEET_WIDENING → 1` in `shuffle_enemies.c`.
 - [x] 3.3 `make clean` + WSL `make -j zelda3` (`-Werror`) clean with widening live. (MSVC build pending the owner's Windows rebuild — no `.vcxproj` edit needed; no new `.c`.)
 - [x] 3.4 Corpus regenerated via `bump_rando_corpus.py --apply`: **121/121, 0 digests changed** (placement byte-identical), manifest synced to 77. `--rando-selftest` green; version-sync / placer-determinism / embedded-data / generator-version guards all pass.
