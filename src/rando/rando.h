@@ -229,11 +229,12 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 //
 // Plays the standard item-receipt sound effect and refreshes the HUD so
 // any visible inventory change (prize icons, dungeon-item bits, Triforce
-// counter) updates immediately. When `item_id` maps to a non-zero gfx bundle
-// in `kDirectGrantIcons[]` (codegen'd from
-// `assets/rando/direct_grant_icons.yaml`), additionally spawns the
-// `kAncillaType_RandoIconReceipt` ancilla so the player sees what they
-// got. Audio-only (gfx==0) entries fall back to the audio+HUD path.
+// counter) updates immediately. Trap items get a deterministic good-item
+// decoy icon based on the active seed/location/trap type; otherwise, when
+// `item_id` maps to a non-zero gfx bundle in `kDirectGrantIcons[]`
+// (codegen'd from `assets/rando/direct_grant_icons.yaml`), this additionally
+// spawns the `kAncillaType_RandoIconReceipt` ancilla so the player sees what
+// they got. Audio-only (gfx==0) entries fall back to the audio+HUD path.
 // ---------------------------------------------------------------------------
 void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
@@ -251,8 +252,8 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 //   Rando_ReceiveOrConfirm(lttp_code, item_id);
 //
 // Behavior: when `lttp_code` is the §6.2 skip-sentinel, fires the §7.6
-// confirmation cue (sound + HUD refresh + icon ancilla if `item_id` has a
-// verified entry in `kDirectGrantIcons[]`). Otherwise invokes
+// confirmation cue (sound + HUD refresh + icon ancilla when `item_id` is a
+// trap or has a verified entry in `kDirectGrantIcons[]`). Otherwise invokes
 // Link_ReceiveItem with chest_position=0 — every existing call site at the
 // NPC dispatch pattern passes 0; sites that need non-zero chest_position
 // (chest opens) continue to call Link_ReceiveItem directly with an explicit

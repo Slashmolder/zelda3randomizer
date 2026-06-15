@@ -56,6 +56,8 @@
 uint8 g_assets_hash[32];
 
 static bool rando_instant_flute_active(void);
+static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
+                                  DirectGrantIconEntry *out);
 
 // ---------------------------------------------------------------------------
 // Reachability state counter — bumped by Rando_BumpReachabilityCounter()
@@ -361,6 +363,7 @@ static int magic_upgrade_direct_grant(uint16 registry_id) {
 // dispatcher is the immediately preceding rando call at every direct-grant
 // site, so the value is fresh by construction.
 static uint16 g_last_dispatched_item_id = 0xFFFFu;
+static uint16 g_last_dispatched_location_id = 0xFFFFu;
 
 uint16 Rando_LastDispatchedItemId(void) {
   return g_last_dispatched_item_id;
@@ -615,6 +618,7 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint8 vanilla_lttp_code) {
   uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
   g_last_dispatched_item_id = placed;
+  g_last_dispatched_location_id = location_id;
   if (placed == vanilla_registry_id) return vanilla_lttp_code;
 
   // §6.2 TriforcePiece (no vanilla LttP code). Tick the counter and
@@ -1242,15 +1246,15 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // refresh.
 //
 // Phase B Slice 9 (add-rando-confirmation-icons): extends Phase A's audio +
-// HUD-only cue with a visible icon ancilla. The granted item id is looked up
-// in kDirectGrantIcons[item_id] (codegen'd from
-// assets/rando/direct_grant_icons.yaml). Magic upgrades are resolved through
-// the current progressive tier first, so either raw HalfMagic or QuarterMagic
-// shows 1/2 on the first upgrade and 1/4 on the second. When the table entry
-// has a non-zero gfx (the item's receive-animation sprite bundle),
-// AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon above Link's
-// head. Entries with gfx == 0 (the audio-only sentinel) fall back to the
-// Phase A audio + HUD behavior — never crash, never spawn a blank ancilla.
+// HUD-only cue with a visible icon ancilla. Trap items get a deterministic
+// good-item decoy selected from the active seed/location/trap type. Other
+// direct-grant item ids are looked up in kDirectGrantIcons[item_id] (codegen'd
+// from assets/rando/direct_grant_icons.yaml). Magic upgrades are resolved
+// through the current progressive tier first, so either raw HalfMagic or
+// QuarterMagic shows 1/2 on the first upgrade and 1/4 on the second. When an
+// icon resolves, AncillaAdd_RandoIconReceipt DMAs that bundle and pops the icon
+// above Link's head. Unmapped entries fall back to Phase A audio + HUD behavior
+// — never crash, never spawn a blank ancilla.
 //
 // Deliberately NOT emitted from within `Rando_DispatchVanillaGrant` — the
 // caller knows whether its own code path already provides visual context
@@ -1274,14 +1278,16 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
-  // Slice 9 — look up the per-item icon. Entries with gfx == 0 (the audio-only
-  // fallback sentinel; no mapped item uses it anymore, it remains as the safe
-  // default for future unmapped items) fall back to audio + HUD only. gfx != 0
-  // spawns a per-item icon ancilla that loads the item's sprite bundle — or,
-  // for gfx ids with the 0x80 bit (TriforcePiece / magic decanters / Rupoor
-  // custom art, add-rando-field-item-custom-art), the kRandoCustomGfx_* tile
-  // + palette — and draws it above Link, mirroring the vanilla pickup
-  // animation.
+  // Slice 9 — look up the visual icon. Traps use the same deterministic decoy
+  // resolver as field-item sprites so the visible fake item and pickup popup
+  // agree. Other direct-grant items use kDirectGrantIcons; gfx ids with the
+  // 0x80 bit (TriforcePiece / magic decanters / Rupoor custom art,
+  // add-rando-field-item-custom-art) load the kRandoCustomGfx_* tile + palette.
+  DirectGrantIconEntry trap_decoy;
+  if (rando_trap_decoy_icon(item_id, g_last_dispatched_location_id, &trap_decoy)) {
+    AncillaAdd_RandoIconReceipt(trap_decoy.gfx, trap_decoy.big, trap_decoy.oam_flags);
+    return;
+  }
   uint16 icon_item = rando_direct_grant_icon_item_post_grant(item_id);
   const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
   if (e != NULL) {
@@ -1342,6 +1348,14 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
   uint16 placed = Placement_Lookup(location_id, vanilla_item_id);
   if (placed == vanilla_item_id)
     return false;
+
+  DirectGrantIconEntry trap_decoy;
+  if (rando_trap_decoy_icon(placed, location_id, &trap_decoy)) {
+    *out_gfx = trap_decoy.gfx;
+    *out_big = trap_decoy.big;
+    *out_oam_flags = trap_decoy.oam_flags;
+    return true;
+  }
 
   // Tier 1 — items the normal receive animation draws (rupees, equipment,
   // boomerang, bottles, ...). Mirror Ancilla_ReceiveItem_Draw EXACTLY: gfx,
@@ -2198,6 +2212,105 @@ static bool g_rando_active_door_logic = false;
 // static (g_door_gen_layout in rando_generate.c), so a mid-session generation
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
+
+static const uint16 kRandoTrapExtraGoodItemDecoys[] = {
+  ITEM_Map_HyruleCastleEscape,
+  ITEM_GenericKey,
+  ITEM_BluePotion,
+  ITEM_RedPotion,
+  ITEM_BeeContents,
+  ITEM_HeartRefill,
+};
+
+static uint32 rando_trap_good_item_decoy_count(void) {
+  return (uint32)(ITEM_Compass_GanonsTower + 1) +
+         (uint32)(ITEM_Prize_Crystal7 - ITEM_Prize_GreenPendant + 1) +
+         (uint32)countof(kRandoTrapExtraGoodItemDecoys);
+}
+
+static uint16 rando_trap_good_item_decoy_at(uint32 idx) {
+  if (idx <= ITEM_Compass_GanonsTower)
+    return (uint16)idx;
+  idx -= (uint32)(ITEM_Compass_GanonsTower + 1);
+  if (idx <= (uint32)(ITEM_Prize_Crystal7 - ITEM_Prize_GreenPendant))
+    return (uint16)(ITEM_Prize_GreenPendant + idx);
+  idx -= (uint32)(ITEM_Prize_Crystal7 - ITEM_Prize_GreenPendant + 1);
+  if (idx < countof(kRandoTrapExtraGoodItemDecoys))
+    return kRandoTrapExtraGoodItemDecoys[idx];
+  return 0xFFFFu;
+}
+
+static bool rando_icon_from_lttp_code(uint8 code, DirectGrantIconEntry *out) {
+  if (out == NULL || code >= 76 || kReceiveItemGfx[code] == 0xff)
+    return false;
+  uint8 a = kWishPond2_OamFlags[code];
+  if (a & 0x80)
+    a = 5;
+  out->gfx = kReceiveItemGfx[code];
+  out->big = kReceiveItem_Tab1[code];
+  out->oam_flags = (uint8)(a * 2 | 0x30);
+  return true;
+}
+
+static uint8 rando_trap_decoy_lttp_for_item(uint16 item_id) {
+  switch (item_id) {
+    case ITEM_ProgressiveSword:  return 0x00;
+    case ITEM_ProgressiveShield: return 0x04;
+    case ITEM_ProgressiveArmor:  return 0x22;
+    case ITEM_ProgressiveGlove:  return 0x1b;
+    case ITEM_ProgressiveBow:    return 0x0b;
+    case ITEM_BottleEmpty:           return 0x16;
+    case ITEM_BottleWithFairy:       return 0x2c;
+    case ITEM_BottleWithBee:         return 0x2b;
+    case ITEM_BottleWithGoodBee:     return 0x3c;
+    case ITEM_BottleWithRedPotion:   return 0x2d;
+    case ITEM_BottleWithGreenPotion: return 0x3d;
+    case ITEM_BottleWithBluePotion:  return 0x48;
+    case ITEM_SilverArrowUpgrade: return 0x3b;
+    default:
+      return Rando_VanillaItemForRegistryId(item_id);
+  }
+}
+
+static bool rando_good_item_decoy_icon(uint16 item_id, DirectGrantIconEntry *out) {
+  const DirectGrantIconEntry *direct = rando_direct_grant_icon_entry(item_id);
+  if (direct != NULL) {
+    *out = *direct;
+    return true;
+  }
+  return rando_icon_from_lttp_code(rando_trap_decoy_lttp_for_item(item_id), out);
+}
+
+static uint32 rando_trap_decoy_mix(uint64 seed, uint16 item_id, uint16 location_id) {
+  uint64 x = seed ^ ((uint64)location_id * 0x9E3779B97F4A7C15ull) ^
+             ((uint64)item_id * 0xBF58476D1CE4E5B9ull);
+  x ^= x >> 30;
+  x *= 0xBF58476D1CE4E5B9ull;
+  x ^= x >> 27;
+  x *= 0x94D049BB133111EBull;
+  x ^= x >> 31;
+  return (uint32)(x ^ (x >> 32));
+}
+
+static uint64 rando_trap_decoy_seed(void) {
+  if (g_rando_active_header_valid)
+    return SlotSeedFromShareString(g_rando_active_header.share_string);
+  return 0xD1CE5AFE7A9B3C4Dull;
+}
+
+static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
+                                  DirectGrantIconEntry *out) {
+  if (!rando_is_trap_item(item_id) || out == NULL)
+    return false;
+  uint32 count = rando_trap_good_item_decoy_count();
+  uint32 start = rando_trap_decoy_mix(rando_trap_decoy_seed(), item_id, location_id) % count;
+  for (uint32 i = 0; i < count; i++) {
+    uint16 decoy_item = rando_trap_good_item_decoy_at((start + i) % count);
+    if (rando_good_item_decoy_icon(decoy_item, out))
+      return true;
+  }
+  return false;
+}
 
 static bool rando_instant_flute_active(void) {
   // v1/no-blob slots and self-tests have no recovered settings; treat them as
@@ -4331,6 +4444,76 @@ void Rando_SelfCheck(void) {
     }
     Placement_Install(NULL);
     link_magic_consumption = 0;
+  }
+
+  // Trap masquerade icons are drawn from the full good-item decoy pool, not
+  // from the junk/resource items the placer replaced.
+  {
+    DirectGrantIconEntry first = {0, 0, 0}, icon = {0, 0, 0};
+    bool saw_variation = false;
+    for (uint32 i = 0; i < rando_trap_good_item_decoy_count(); i++) {
+      uint16 decoy_item = rando_trap_good_item_decoy_at(i);
+      if (!rando_good_item_decoy_icon(decoy_item, &icon)) {
+        fprintf(stderr, "Rando_SelfCheck: trap good-item decoy %u has no icon\n",
+                (unsigned)decoy_item);
+        exit(2);
+      }
+      if (icon.gfx == 0x24 && icon.big == 0x00 && icon.oam_flags == 0x38) {
+        fprintf(stderr, "Rando_SelfCheck: trap decoy pool includes green rupee icon\n");
+        exit(2);
+      }
+      if (i == 0) {
+        first = icon;
+      } else if (icon.gfx != first.gfx || icon.big != first.big ||
+                 icon.oam_flags != first.oam_flags) {
+        saw_variation = true;
+      }
+    }
+    if (!saw_variation) {
+      fprintf(stderr, "Rando_SelfCheck: trap decoy pool should vary icons\n");
+      exit(2);
+    }
+    if (!rando_trap_decoy_icon(ITEM_TrapDamage, 166, &first) ||
+        !rando_trap_decoy_icon(ITEM_TrapFreeze, 167, &icon)) {
+      fprintf(stderr, "Rando_SelfCheck: trap decoy resolver failed\n");
+      exit(2);
+    }
+    if (first.gfx == 0x24 && first.big == 0x00 && first.oam_flags == 0x38) {
+      fprintf(stderr, "Rando_SelfCheck: TrapDamage should not draw green rupee icon\n");
+      exit(2);
+    }
+    if (icon.gfx == 0x24 && icon.big == 0x00 && icon.oam_flags == 0x38) {
+      fprintf(stderr, "Rando_SelfCheck: TrapFreeze should not draw green rupee icon\n");
+      exit(2);
+    }
+    static RandoPlacement trap_icon_entries[1];
+    trap_icon_entries[0].location_id = 166;
+    trap_icon_entries[0].item_id = ITEM_TrapDamage;
+    RandoPlacementTable trap_icon_table = { trap_icon_entries, 1 };
+    uint32 saved_features1 = enhanced_features1;
+    bool saved_field_item_sprites = g_config.field_item_sprites;
+    uint16 saved_last_location_id = g_last_dispatched_location_id;
+    Placement_Install(&trap_icon_table);
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    g_config.field_item_sprites = true;
+    uint8 field_gfx = 0, field_big = 0, field_oam = 0;
+    if (!Rando_GetFieldItemIcon(166, ITEM_BottleEmpty,
+                                &field_gfx, &field_big, &field_oam)) {
+      fprintf(stderr, "Rando_SelfCheck: trap field icon did not resolve\n");
+      exit(2);
+    }
+    g_last_dispatched_location_id = 166;
+    if (!rando_trap_decoy_icon(ITEM_TrapDamage, g_last_dispatched_location_id,
+                               &icon) ||
+        field_gfx != icon.gfx || field_big != icon.big ||
+        field_oam != icon.oam_flags) {
+      fprintf(stderr, "Rando_SelfCheck: trap field/confirmation icons diverged\n");
+      exit(2);
+    }
+    Placement_Install(NULL);
+    enhanced_features1 = saved_features1;
+    g_config.field_item_sprites = saved_field_item_sprites;
+    g_last_dispatched_location_id = saved_last_location_id;
   }
 
   // §6.2 prize-item direct-write tests. Placement Prize_Crystal4 at Bottle
