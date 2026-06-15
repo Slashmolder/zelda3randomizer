@@ -269,18 +269,31 @@ for sid, name, flagexpr, sheets in rows:
     for (p, s) in req_sheets(e):
         sheet_positions.setdefault(s, set()).add(p)
 
-# Canonical subgroup slot per required sheet. The runtime loaded-check must be
-# POSITION-aware: a sheet must be present in ITS slot, not merely loaded somewhere.
-# Module05_LoadFile inits all four sprite_gfx_subset slots to sheet 70, and an area
-# that doesn't own slot 3 inherits that leftover — so a slot-0 sheet (e.g. 70) sits
-# in slot 3 and a position-unaware "loaded anywhere" test mis-admits an enemy that
-# needs 70 in slot 0 (renders garbage from slot 0's real sheet). Requires each enemy
-# sheet to map to exactly ONE slot (kSpriteTilesets has cross-slot sheets, but those
-# are not enemy required-sheets); assert it so kSheetSlot stays unambiguous.
+# Canonical subgroup slot per required sheet, from ENEMIZER's AddSubgroupN view
+# (sheet_positions). The runtime loaded-check must be POSITION-aware: a sheet must be
+# present in ITS canonical slot, not merely loaded somewhere — Module05_LoadFile inits
+# all four sprite_gfx_subset slots to sheet 70, and an area that doesn't own slot 3
+# inherits that leftover, so a slot-0 sheet (70) sits in slot 3 and a position-unaware
+# "loaded anywhere" test mis-admits an enemy that needs 70 in slot 0 (it then draws
+# slot-0 tiles from the area's real slot-0 sheet -> garbage).
+#
+# Assert each enemy sheet maps to exactly ONE Enemizer slot so kSheetSlot is
+# unambiguous. NOTE: the runtime kSpriteTilesets loader CAN place a sheet in a slot
+# other than its Enemizer slot (e.g. sheet 21 = Poe, Enemizer slot 3, is ALSO loaded
+# in slot 0 by some kSpriteTilesets rows). That is handled correctly: the position-aware
+# check rejects the enemy wherever its sheet sits in a non-canonical slot (it would
+# render wrong there). For sheet 21 the sole enemy (Poe) is key-banned and renders fine
+# via vanilla passthrough, so the rejection is harmless variety loss, not a bug.
 sheet_slot = {}
 for s, ps in sorted(sheet_positions.items()):
-    assert len(ps) == 1, f"enemy sheet {s} used in multiple slots {sorted(ps)} — kSheetSlot would be ambiguous; switch to per-enemy slot-indexed sheets"
+    assert len(ps) == 1, f"enemy sheet {s} used in multiple Enemizer slots {sorted(ps)} — kSheetSlot would be ambiguous; switch to per-enemy slot-indexed sheets"
     sheet_slot[s] = next(iter(ps))
+# Completeness: every sheet a kEnemyTable row requires must be in kSheetSlot, else the
+# runtime sheets_loaded() would index a defaulted (slot-0) entry. Trivially true (both
+# derive from req_sheets) but guards future divergence of the two emissions.
+for _sid, _name, _flag, _sheets in rows:
+    for _s in _sheets:
+        assert _s in sheet_slot, f"kEnemyTable sheet {_s} (enemy 0x{_sid:02X}) missing from kSheetSlot"
 
 # ---- per-slot pools ----
 def dpool(p):  # dungeon: whitelist sheet with a single-slot killable+key enemy

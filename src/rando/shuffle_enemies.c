@@ -1331,8 +1331,13 @@ void EnemyShuffle_SelfCheck(void) {
     if (!EnemyShuffle_IsActive())
       enemy_selfcheck_die("enemy_shuffle on must be active");
 
-    // Save + set a synthetic loaded set that loads a broad common pool:
-    // sheets 12,22,23,73 cover Octorok/Snapdragon/Moblin/soldiers.
+    // Save + set a synthetic loaded set with sheets in their CANONICAL slots, so the
+    // POSITION-aware sheets_loaded admits the synthetic-context enemies and the
+    // substitution assertions below actually execute: slot1=73 (soldiers, kSheetSlot
+    // 73->1), slot2=23 (Moblin, kSheetSlot 23->2). The dungeon picks substitute to the
+    // killable+key soldier 0x41; the overworld picks substitute to Moblin 0x12.
+    // (A slot-MISmatched set like the old {12,22,23,73} would make every pick a vanilla
+    // passthrough and silently void these invariants.)
     uint8 sav[4] = { g_ram[0xC2FC], g_ram[0xC2FD], g_ram[0xC2FE], g_ram[0xC2FF] };
     uint8 sav_snapshot[7];
     for (int i = 0; i < 7; i++)
@@ -1342,8 +1347,8 @@ void EnemyShuffle_SelfCheck(void) {
       sav_ow_pal[i] = g_ram[0xFD40 + i];
       g_ram[0xFD40 + i] = 0;
     }
-    g_ram[0xC2FC] = 12; g_ram[0xC2FD] = 22; g_ram[0xC2FE] = 23; g_ram[0xC2FF] = 73;
-    uint8 live[4] = { 12, 22, 23, 73 };
+    g_ram[0xC2FC] = 0; g_ram[0xC2FD] = 73; g_ram[0xC2FE] = 23; g_ram[0xC2FF] = 0;
+    uint8 live[4] = { 0, 73, 23, 0 };
 
     // Active but missing/mismatched sheet snapshots must fail closed to vanilla,
     // rather than consulting stale live sheets from a previous room transition.
@@ -1363,6 +1368,10 @@ void EnemyShuffle_SelfCheck(void) {
     // Every dungeon pick over a sampled room/slot/type space is randomizable,
     // killable, key-capable, in-sheet (the MVP dungeon invariant) — or the
     // vanilla passthrough (when the room is hard-excluded / no candidate).
+    // dungeon_subs guards against this test silently going VACUOUS: the synthetic
+    // live set must keep >=1 dungeon-context candidate position-eligible, or every
+    // pick is a passthrough and the invariants below never run (regression net).
+    int dungeon_subs = 0;
     for (uint16 room = 0; room < 300; room += 7) {
       bool hard = room_in_list(room, kHardExcludeRooms, kHardExcludeRoomsCount);
       write_resolved_sheet_snapshot(kEsResolvedContext_Dungeon, room);
@@ -1373,6 +1382,7 @@ void EnemyShuffle_SelfCheck(void) {
           continue;
         }
         if (r == 0x12) continue;  // passthrough (no candidate) is allowed
+        dungeon_subs++;
         const EnemyConstraint *c = &kEnemyTable[r];
         if (!(c->flags & ESF_RANDOMIZABLE))
           enemy_selfcheck_die("dungeon pick is not randomizable");
@@ -1386,13 +1396,17 @@ void EnemyShuffle_SelfCheck(void) {
           enemy_selfcheck_die("dungeon pick references an unloaded sheet (CRASH risk)");
       }
     }
+    if (dungeon_subs == 0)
+      enemy_selfcheck_die("dungeon substitution test is VACUOUS — no pick substituted (synthetic live set slot-mismatched?)");
 
     // Overworld picks must be randomizable + in-sheet (no killable constraint).
+    int ow_subs = 0;
     for (uint8 area = 0; area < 64; area += 5) {
       write_resolved_sheet_snapshot(kEsResolvedContext_Overworld, area);
       for (uint8 slot = 0; slot < 3; slot++) {
         uint8 r = EnemyShuffle_PickOverworld(area, slot, 0x08 /*Octorok*/);
         if (r == 0x08) continue;
+        ow_subs++;
         const EnemyConstraint *c = &kEnemyTable[r];
         if (!(c->flags & ESF_RANDOMIZABLE))
           enemy_selfcheck_die("overworld pick is not randomizable");
@@ -1402,6 +1416,8 @@ void EnemyShuffle_SelfCheck(void) {
           enemy_selfcheck_die("overworld pick references an unloaded sheet (CRASH risk)");
       }
     }
+    if (ow_subs == 0)
+      enemy_selfcheck_die("overworld substitution test is VACUOUS — no pick substituted");
 
     // An excluded source type is NEVER substituted even when active.
     if (EnemyShuffle_PickDungeon(0x52, 0, 0x53 /*Armos Knights boss*/) != 0x53)
