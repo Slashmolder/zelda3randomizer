@@ -3263,6 +3263,14 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   regen.settings = &settings;
   regen.placements = &table;
   regen.spheres = &spheres;
+  uint8 regen_medallion_assignment[kRandoMedallionEntranceCount];
+  {
+    const uint8 *assignment = Rando_GetMedallionAssignment();
+    if (assignment != NULL) {
+      memcpy(regen_medallion_assignment, assignment, sizeof(regen_medallion_assignment));
+      regen.medallion_assignment = regen_medallion_assignment;
+    }
+  }
   // Match the generate-time spoiler's entrance_mapping section (the omission of
   // which caused the stamp mismatch on race-mode + entrance-shuffle seeds).
   Rando_SpoilerSetEntranceFields(&regen, &reg);

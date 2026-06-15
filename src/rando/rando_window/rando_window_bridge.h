@@ -58,6 +58,8 @@ typedef struct RandoWindowBridge {
   bool last_generated_race_mode;
   RandoPlacementTable last_generated_placement;
   RandoSpheres last_generated_spheres;
+  bool last_generated_has_medallion_assignment;
+  uint8 last_generated_medallion_assignment[kRandoMedallionEntranceCount];
   // Snapshot of the settings/share/seed that produced the placement above, so the
   // Spoiler tab's "Save spoiler" can write an accurate RandoSpoiler even if the
   // user edits `pending` after generating. Written by the game thread alongside
@@ -106,6 +108,7 @@ int RandoWindowBridge_ConsumeLoadRequest(void);
 // Spoiler-viewer snapshot (game side, on success). Takes an owned copy of `table`.
 void RandoWindowBridge_StoreGenerated(const RandoPlacementTable *table,
                                       const RandoSpheres *spheres,
+                                      const uint8 *medallion_assignment,
                                       bool race_mode);
 
 // Kind-toggle target management.

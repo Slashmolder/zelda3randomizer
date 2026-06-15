@@ -152,8 +152,8 @@ enum {
 // must match assets/rando/location_registry.yaml (id = 266 + 2*cave + slot).
 #define kTakeAnyCaveCount 31
 #define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
-// LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now live in rando_logic.h
-// (shared with the spoiler emitters so the ordinals can't drift between files).
+// LOCTYPE_Medallion / LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now
+// live in rando_logic.h (shared so the ordinals can't drift between files).
 
 // Placer-local location-type ordinals (per logic.schema.yaml's types index).
 // File-scope so BuildItemPool's junk-pad target and the pre-place pin pass in
@@ -163,7 +163,6 @@ enum {
   LOCTYPE_Prize_Crystal = 10,
   LOCTYPE_Prize_Pendant = 11,
   LOCTYPE_Prize_Event   = 12,
-  LOCTYPE_Medallion     = 13,
 };
 
 // kRandoDungeon_* -> Prize location id, for prize-shuffle placement.
@@ -287,6 +286,20 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
   if (vi >= 88 && vi <= 98)
     return settings->dungeon_compasses_mode == kDungeonItemMode_Vanilla;
   return false;
+}
+
+static bool location_grants_placed_item(const RandoLocationDef *loc) {
+  return loc != NULL && loc->type != LOCTYPE_Medallion;
+}
+
+static bool placement_entry_grants_item(const RandoPlacementTable *t, uint16 entry_index) {
+  if (t == NULL || entry_index >= t->count) return false;
+  uint16 loc_id = t->entries[entry_index].location_id;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id == loc_id)
+      return location_grants_placed_item(&kRandoLocations[i]);
+  }
+  return true;
 }
 
 static uint16 trap_count_for_frequency(uint8 traps) {
@@ -1575,6 +1588,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // is for the (rare) case where a non-vanilla mode pinned something.)
   for (uint16 k = 0; k < open_n; k++) {
     if (placement_at[k] == 0xFFFF) continue;
+    if (!location_grants_placed_item(&kRandoLocations[open_loc_idx[k]])) continue;
     uint16 vi = placement_at[k];
     if (vi < 256) counts.by_item_id[vi]++;
   }
@@ -1853,6 +1867,7 @@ static uint16 count_reachable_placements_of(const RandoPlacementTable *t,
   if (t == NULL || r == NULL) return 0;
   uint16 n = 0;
   for (uint16 i = 0; i < t->count; i++) {
+    if (!placement_entry_grants_item(t, i)) continue;
     if (t->entries[i].item_id != item_id) continue;
     if (Reachability_HasLocation(r, t->entries[i].location_id)) n++;
   }
@@ -1908,6 +1923,7 @@ bool Goal_IsCompletable(const RandoSettings *settings,
   apply_vanilla_dungeon_item_grants(settings, &final_inv);
   for (uint16 i = 0; i < placements->count; i++) {
     if (reachable_spheres.sphere_index_by_placement[i] == kSphereIndexUnreachable) continue;
+    if (!placement_entry_grants_item(placements, i)) continue;
     uint16 item_id = placements->entries[i].item_id;
     if (item_id < 256 && final_inv.by_item_id[item_id] < 0xFFFF) {
       final_inv.by_item_id[item_id]++;
@@ -2076,6 +2092,7 @@ static bool accessibility_reachability_ok(const RandoSettings *settings,
       // compasses / hearts may strand (see is_progression_item).
       for (uint16 i = 0; i < placements->count; i++) {
         if (!is_progression_item(placements->entries[i].item_id)) continue;
+        if (!placement_entry_grants_item(placements, i)) continue;
         if (spheres->sphere_index_by_placement[i] == kSphereIndexUnreachable) {
           return false;
         }
@@ -2185,6 +2202,7 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
     // Accumulate items from this sphere into the running inventory.
     for (uint16 i = 0; i < placements->count; i++) {
       if (out->sphere_index_by_placement[i] != sphere) continue;
+      if (!placement_entry_grants_item(placements, i)) continue;
       uint16 item = placements->entries[i].item_id;
       if (item < 256 && counts.by_item_id[item] < 0xFFFF) {
         counts.by_item_id[item]++;
@@ -2664,6 +2682,31 @@ void Placement_SelfCheck(void) {
       if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
         selfcheck_die("every tier must accept a fully-reachable placement");
     }
+  }
+
+  // Medallion config slots choose the MM/TR entrance requirements; they are not
+  // collectible item checks and must not contribute Ether/Quake/Bombos to
+  // sphere-walked inventory or the accessibility=items tier.
+  {
+    RandoPlacement med_entries[2] = {
+      { LOC_Misery_Mire_Medallion, ID_Ether },
+      { LOC_Sewers_Secret_Room_Left, ID_Hookshot },
+    };
+    RandoPlacementTable med_t = { med_entries, 2 };
+    if (placement_entry_grants_item(&med_t, 0))
+      selfcheck_die("Medallion config slot must not grant an item");
+    if (!placement_entry_grants_item(&med_t, 1))
+      selfcheck_die("normal item location must grant its item");
+
+    RandoSettings med_s;
+    Settings_SetDefaults(&med_s);
+    RandoSpheres med_sp;
+    memset(&med_sp, 0, sizeof(med_sp));
+    med_sp.sphere_index_by_placement[0] = kSphereIndexUnreachable;
+    med_sp.unreachable_count = 1;
+    med_s.accessibility = kAccessibility_Items;
+    if (!accessibility_reachability_ok(&med_s, &med_t, &med_sp))
+      selfcheck_die("items accessibility must ignore stranded medallion config slots");
   }
 
   // Retro genericKeys end-to-end: generate full Retro seeds and assert the

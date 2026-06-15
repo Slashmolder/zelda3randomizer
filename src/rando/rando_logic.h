@@ -203,11 +203,12 @@ typedef struct RandoLocationDef {
   uint8 world_state_filter;    // bitmask: 0=all worlds, else bit per world-state
 } RandoLocationDef;
 
-// logic.schema.yaml location-type ordinals that are referenced across modules —
-// the placer (rando_placement.c) and the spoiler emitters (rando_spoiler.c).
-// Shared here so the shop-class ordinals can't drift between files. (Other type
-// ordinals stay local to rando_placement.c; they are single-site.)
+// logic.schema.yaml location-type ordinals that are referenced across modules.
+// Shared here so ordinals can't drift between the placer, spoiler emitters,
+// trackers, and hint generator. Other type ordinals stay local to
+// rando_placement.c while they are single-site.
 enum {
+  LOCTYPE_Medallion   = 13,  // MM/TR medallion config slot, not an item check
   LOCTYPE_Shop        = 14,  // Retro regular shop slot (identity-pinned inventory)
   LOCTYPE_ShopUpgrade = 15,  // Retro capacity-upgrade slot (identity-placed)
   LOCTYPE_TakeAny     = 16,  // Retro take-any cave slot

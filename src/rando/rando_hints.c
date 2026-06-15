@@ -34,6 +34,7 @@
 
 #include "rando_hints.h"
 #include "item_ids.h"     // ITEM_* symbols (codegen from item_registry.yaml)
+#include "location_ids.h" // LOC_* symbols (codegen from location_registry.yaml)
 #include "rando_logic.h"  // Rando_GetLocationName, Rando_GetItemName
 #include "rando_rng.h"
 #include "rando_settings.h"  // Settings_SetDefaults for Hints_SelfCheck
@@ -123,6 +124,14 @@ static bool item_is_junk(uint16 item_id) {
     default:
       return false;
   }
+}
+
+static bool loc_is_medallion_config(uint16 loc_id) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id == loc_id)
+      return kRandoLocations[i].type == LOCTYPE_Medallion;
+  }
+  return false;
 }
 
 // Seed the sub-RNG deterministically from the placement table. Same
@@ -230,6 +239,7 @@ bool Rando_GenerateHints(const RandoSettings *settings,
   uint16 entry_count = placements->count;
   if (entry_count > 512) entry_count = 512;
   for (uint16 i = 0; i < entry_count; i++) {
+    if (loc_is_medallion_config(placements->entries[i].location_id)) continue;
     if (item_is_junk(placements->entries[i].item_id)) continue;
     hintable_indices[hintable_count++] = i;
   }
@@ -289,6 +299,7 @@ bool Rando_GenerateHints(const RandoSettings *settings,
                               // but the type pin guards against future axis
                               // widening.
     for (uint16 i = 0; i < entry_count; i++) {
+      if (loc_is_medallion_config(placements->entries[i].location_id)) continue;
       if (placements->entries[i].item_id != ITEM_TriforcePiece) continue;
       piece_count++;
       // Look up region for this location. Skip if not found.
@@ -636,6 +647,32 @@ void Hints_SelfCheck(void) {
     if (memcmp(th_snapshot, g_hint_table, sizeof(th_snapshot)) != 0) {
       fprintf(stderr, "Hints_SelfCheck: non-deterministic Murahdahla hint output.\n");
       abort();
+    }
+  }
+
+  // Medallion config slots are generation-time requirements, not item
+  // locations. They should not be emitted as item hints even if their
+  // pre-pinned item id is otherwise hintable.
+  {
+    static RandoPlacement med_entries[2];
+    med_entries[0].location_id = LOC_Misery_Mire_Medallion;
+    med_entries[0].item_id = ITEM_Hookshot;
+    med_entries[1].location_id = LOC_Turtle_Rock_Medallion;
+    med_entries[1].item_id = ITEM_Boots;
+    RandoPlacementTable med_table;
+    med_table.entries = med_entries;
+    med_table.count = 2;
+    Rando_ClearHints();
+    settings.hints = kHintsMode_On;
+    if (!Rando_GenerateHints(&settings, &med_table, NULL)) {
+      fprintf(stderr, "Hints_SelfCheck: medallion-config GenerateHints failed.\n");
+      abort();
+    }
+    for (int i = 0; i < kRandoHintNpc__Count; i++) {
+      if (g_hint_table[i].active) {
+        fprintf(stderr, "Hints_SelfCheck: medallion config slot was hinted.\n");
+        abort();
+      }
     }
   }
 
