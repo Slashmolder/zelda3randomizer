@@ -1065,11 +1065,19 @@ uint8 EnemyShuffle_ScaleDamage(uint8 type, uint8 base) {
   if (base == 0 || base >= 0x10) return base;
   uint32 cls = base & 0x0fu;
   if (cls < 1 || cls > 8) return base;
+  // Class 2 is the vanilla "NO contact damage" class: kPlayerDamages[3*2+armor] is
+  // {0,0,0} (src/sprite.c) for every armor level. It must be excluded from scaling, or
+  // an enemy ends up dealing ZERO contact damage (playtest-caught "enemies do no
+  // damage"). A vanilla class-2 enemy is zero-contact BY DESIGN (it harms via
+  // projectiles/special attacks), so leave it untouched rather than wrongly granting it
+  // contact damage; and never nudge a damaging enemy INTO class 2 below.
+  if (cls == 2) return base;
   RandoRng rng;
   Rng_SeedFromU64(&rng, g_enemy_shuffle_seed ^ ((uint64)type << 8) ^ (kEnemyShuffleStatSalt + 1u));
   int nc = (int)cls + ((int)Rng_NextRange(&rng, 3) - 1);  // -1 / 0 / +1
   if (nc < 1) nc = 1;
   if (nc > 8) nc = 8;
+  if (nc == 2) nc = (int)cls;  // skip the zero-damage class — keep the vanilla class
   return (uint8)nc;  // base < 0x10 ⇒ no flag bits to preserve
 }
 
@@ -1626,6 +1634,13 @@ void EnemyShuffle_SelfCheck(void) {
         if (d != EnemyShuffle_ScaleDamage((uint8)t, (uint8)c))
           enemy_selfcheck_die("ScaleDamage not deterministic");
         if (d < 1 || d > 8) enemy_selfcheck_die("ScaleDamage class left [1,8]");
+        // Never scale a DAMAGING class (c != 2) into class 2, which is the vanilla
+        // zero-contact-damage class (kPlayerDamages {0,0,0}); a vanilla class-2 enemy
+        // (c == 2) correctly passes through unchanged.
+        if (c != 2 && d == 2)
+          enemy_selfcheck_die("ScaleDamage produced the ZERO-damage class 2 from a damaging class");
+        if (c == 2 && d != 2)
+          enemy_selfcheck_die("ScaleDamage must leave the vanilla zero-damage class 2 unchanged");
       }
     }
 
