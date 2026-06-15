@@ -421,6 +421,7 @@
     <ClCompile Include="src\rando\rando_asset_decisions.c" />
     <ClCompile Include="src\rando\rando_generate.c" />
     <ClCompile Include="src\rando\rando_map.c" />
+    <ClCompile Include="src\rando\medallion_icons.c" />
     <ClCompile Include="src\rando\inverted_maps.c" />
     <ClCompile Include="src\rando\inverted_maps_apply.c" />
     <ClCompile Include="src\rando\auto_tracker.c" />
@@ -886,6 +887,7 @@
     <ClInclude Include="src\variables.h" />
     <ClInclude Include="src\zelda_cpu_infra.h" />
     <ClInclude Include="src\zelda_rtl.h" />
+    <ClInclude Include="src\rando\medallion_icons.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\platform\win32\zelda3.rc" />

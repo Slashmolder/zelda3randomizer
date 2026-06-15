@@ -36,6 +36,7 @@
 #include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
 #include "inverted_maps.h"  // InvertedHoleBlocks_Install (no-art Ganon pit shadow)
 #include "shuffle_cosmetic.h"  // Cosmetic_SetSeed (cosmetic_seed=0 -> slot seed)
+#include "medallion_icons.h"  // Rando_MedallionIcons_SelfCheck
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../config.h"  // g_config.cosmetic_seed
 #include "../types.h"
@@ -5203,5 +5204,6 @@ void Rando_RunAllSelfChecks(void) {
   Rando_TrackerSelfCheck();
   Rando_StartingInventorySelfCheck();
   Rando_ShuffleInstallSelfCheck();
+  Rando_MedallionIcons_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }
