@@ -90,6 +90,16 @@ typedef struct EnemyConstraint {
 // real enemies top out well below). 256 keeps indexing trivial + bounds-safe.
 #define ES_TABLE_LEN 256
 
+// Sheet widening — rewriting owned, unpinned subgroup slots to OTHER sheets for
+// more enemy variety — is gated by this flag (defined early so the dungeon palette
+// gate in candidate_eligible can see it). When enabled, the dungeon palette gate
+// plus the verify-then-commit pass in EnemyShuffle_ReshuffleCurrentRoomSheets keep
+// widened enemies palette-correct and every forced substitution fillable. Off ⇒
+// all subgroup slots resolve to their vanilla sheets and the dungeon palette gate
+// is inert — byte-identical to the pre-widening behavior (a clean rollback valve).
+#define ES_RESHUFFLE_SLOTS 4
+#define ES_ENABLE_SHEET_WIDENING 1
+
 // Helper macros for terse, auditable initializers. Each enemy lists its
 // Enemizer subgroup sheet requirements as the union of AddSubgroupN ids. When
 // Enemizer lists MULTIPLE acceptable ids for one subgroup position (e.g.
@@ -298,6 +308,18 @@ static uint8 g_enemy_vanilla_context[ES_TABLE_LEN];
 static uint8 g_enemy_overworld_palette[ES_TABLE_LEN][32];  // 256-bit palette-id set per type
 static bool g_enemy_vanilla_context_ready = false;
 
+// Dungeon sprite-palette gate (the analog of g_enemy_overworld_palette). A dungeon
+// room's palette "signature" is its kDungPalinfos (sp0l,sp5l,sp6l) triple
+// (Dungeon_GetSpritePaletteSig). Distinct triples seen during the vanilla scan are
+// interned into stable ids (<=41 kDungPalinfos entries); g_enemy_dungeon_palette[t]
+// is the bitset of signatures enemy `t` is observed under in vanilla. Used only
+// when ES_ENABLE_SHEET_WIDENING — see candidate_eligible / the reshuffle verify.
+extern uint32 Dungeon_GetSpritePaletteSig(int room);  // src/dungeon.c (header-light)
+#define kEsMaxDungPalSigs 64  // >= 41 distinct kDungPalinfos triples; == uint64 width
+static uint32 g_dung_pal_sigs[kEsMaxDungPalSigs];
+static uint32 g_dung_pal_sig_count = 0;
+static uint64 g_enemy_dungeon_palette[ES_TABLE_LEN];  // signature-id set per type
+
 enum {
   kEsAsset_DungeonSprites = 58,
   kEsAsset_DungeonSpriteOffs = 59,
@@ -314,9 +336,35 @@ static void mark_overworld_palette_type(uint8 type, uint8 palette) {
   g_enemy_overworld_palette[type][palette >> 3] |= (uint8)(1u << (palette & 7));
 }
 
+// Intern a dungeon palette signature → stable id, appending if new (build phase).
+// Returns 0xFF for the out-of-range sentinel or when the table is full.
+static uint8 dung_pal_sig_id_intern(uint32 sig) {
+  if (sig == 0xFFFFFFFFu) return 0xFF;
+  for (uint32 i = 0; i < g_dung_pal_sig_count; i++)
+    if (g_dung_pal_sigs[i] == sig) return (uint8)i;
+  if (g_dung_pal_sig_count >= kEsMaxDungPalSigs) return 0xFF;
+  g_dung_pal_sigs[g_dung_pal_sig_count] = sig;
+  return (uint8)g_dung_pal_sig_count++;
+}
+
+// Find-only lookup (runtime): 0xFF if the signature was never seen in vanilla.
+static uint8 dung_pal_sig_id_find(uint32 sig) {
+  if (sig == 0xFFFFFFFFu) return 0xFF;
+  for (uint32 i = 0; i < g_dung_pal_sig_count; i++)
+    if (g_dung_pal_sigs[i] == sig) return (uint8)i;
+  return 0xFF;
+}
+
+static void mark_dungeon_palette_type(uint8 type, uint8 sig_id) {
+  if (sig_id < kEsMaxDungPalSigs)
+    g_enemy_dungeon_palette[type] |= (1ull << sig_id);
+}
+
 static void invalidate_vanilla_context_table(void) {
   memset(g_enemy_vanilla_context, 0, sizeof(g_enemy_vanilla_context));
   memset(g_enemy_overworld_palette, 0, sizeof(g_enemy_overworld_palette));
+  memset(g_enemy_dungeon_palette, 0, sizeof(g_enemy_dungeon_palette));
+  g_dung_pal_sig_count = 0;
   g_enemy_vanilla_context_ready = false;
 }
 
@@ -331,7 +379,7 @@ static bool vanilla_context_assets_ready(void) {
          kOverworldSpritePalettes_SIZE > 0;
 }
 
-static void scan_dungeon_context_list(const uint8 *src) {
+static void scan_dungeon_context_list(const uint8 *src, uint8 sig_id) {
   if (src == NULL) return;
   src++;  // leading sort byte
   for (int i = 0; src[0] != 0xff; src += 3, i++) {
@@ -340,6 +388,7 @@ static void scan_dungeon_context_list(const uint8 *src) {
     if (type == 0xe4) continue;  // control marker
     if (src[1] >= 0xe0) continue;  // overlord, not a normal sprite
     mark_vanilla_context_type(type, kEsResolvedContext_Dungeon);
+    mark_dungeon_palette_type(type, sig_id);  // 0xFF (unknown sig) → no-op
   }
 }
 
@@ -393,8 +442,14 @@ static void build_vanilla_context_table(void) {
     uint32 room_count = kDungeonSpriteOffs_SIZE / (uint32)sizeof(kDungeonSpriteOffs[0]);
     for (uint32 room = 0; room < room_count; room++) {
       uint16 off = kDungeonSpriteOffs[room];
-      if (off < kDungeonSprites_SIZE)
-        scan_dungeon_context_list(kDungeonSprites + off);
+      if (off < kDungeonSprites_SIZE) {
+        // The room's palette signature comes from its header (kDungPalinfos);
+        // intern it so every enemy in this room is marked seen-on that signature.
+        // Out-of-range / headers-absent (e.g. selftest synthetic assets) → 0xFF,
+        // which marks nothing (the dungeon palette gate then passes through).
+        uint8 sig_id = dung_pal_sig_id_intern(Dungeon_GetSpritePaletteSig((int)room));
+        scan_dungeon_context_list(kDungeonSprites + off, sig_id);
+      }
     }
   }
 
@@ -426,6 +481,36 @@ static bool candidate_allowed_in_context(uint8 type, bool is_dungeon, uint8 over
   return true;
 }
 
+// Full candidate eligibility for type `t` against a live sheet set and context,
+// SHARED by pick_replacement (the picker) and the reshuffle verify so the two can
+// never drift. Tests everything except the RNG choice: the constraint flags, the
+// context + overworld-palette gate (candidate_allowed_in_context), the dungeon
+// palette gate (only when widening is enabled), and sheets-loaded.
+// `dungeon_sig_id` is the room's dungeon palette signature id (0xFF = unknown /
+// not applicable, in which case the dungeon palette gate passes through).
+static bool candidate_eligible(uint8 t, const uint8 live[4],
+                               bool require_killable, bool require_key_capable,
+                               bool require_water, bool forbid_flying,
+                               bool is_dungeon, uint8 overworld_palette,
+                               uint8 dungeon_sig_id) {
+  const EnemyConstraint *c = &kEnemyTable[t];
+  if (!(c->flags & ESF_RANDOMIZABLE)) return false;
+  if (require_killable && !(c->flags & ESF_KILLABLE)) return false;
+  if (require_key_capable && (c->flags & ESF_CANNOT_KEY)) return false;
+  if (require_water && !(c->flags & ESF_WATER)) return false;
+  if (forbid_flying && (c->flags & ESF_FLYING)) return false;
+  if (!candidate_allowed_in_context(t, is_dungeon, overworld_palette)) return false;
+  // Dungeon palette gate: the candidate must be observed in vanilla under this
+  // room's sprite-palette signature, or it would render with the wrong colors.
+  // Active only with widening (off ⇒ the live set is the room's own vanilla
+  // sheets, whose enemies are palette-correct by construction — byte-identical).
+  if (ES_ENABLE_SHEET_WIDENING && is_dungeon && dungeon_sig_id != 0xFF &&
+      !(g_enemy_dungeon_palette[t] & (1ull << dungeon_sig_id)))
+    return false;
+  if (!sheets_loaded(t, live)) return false;
+  return true;
+}
+
 // Core pick. `key` keys the per-entry RNG (room/area id mixed with slot).
 // `require_killable` / `require_key_capable` / `require_water` / `forbid_flying`
 // constrain the candidate pool per the room/area context. Returns the chosen
@@ -438,20 +523,17 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
                               bool require_water,
                               bool forbid_flying,
                               bool is_dungeon_context,
-                              uint8 overworld_palette) {
+                              uint8 overworld_palette,
+                              uint8 dungeon_sig_id) {
   // Build the candidate list deterministically (table order is fixed), filtered
   // by the context constraints + in-sheet test. Cap is generous.
   uint8 cands[ES_TABLE_LEN];
   uint32 ncand = 0;
   for (uint32 t = 0; t < ES_TABLE_LEN; t++) {
-    const EnemyConstraint *c = &kEnemyTable[t];
-    if (!(c->flags & ESF_RANDOMIZABLE)) continue;
-    if (require_killable && !(c->flags & ESF_KILLABLE)) continue;
-    if (require_key_capable && (c->flags & ESF_CANNOT_KEY)) continue;
-    if (require_water && !(c->flags & ESF_WATER)) continue;
-    if (forbid_flying && (c->flags & ESF_FLYING)) continue;
-    if (!candidate_allowed_in_context((uint8)t, is_dungeon_context, overworld_palette)) continue;
-    if (!sheets_loaded((uint8)t, live)) continue;
+    if (!candidate_eligible((uint8)t, live, require_killable, require_key_capable,
+                            require_water, forbid_flying, is_dungeon_context,
+                            overworld_palette, dungeon_sig_id))
+      continue;
     cands[ncand++] = (uint8)t;
   }
   if (ncand == 0) return vanilla_type;  // no safe swap → leave vanilla
@@ -507,12 +589,6 @@ static uint8 pick_replacement(uint64 key, uint8 vanilla_type,
 
 // Distinct RNG salt for the sheet choice (independent of the pick salts above).
 #define kEnemyShuffleSheetSalt 0x5348454554ull  // "SHEET"
-
-// The widening machinery covers all four subgroup slots. Runtime widening is
-// disabled until sprite palette requirements are modeled; current builds force
-// vanilla-resolved sheets and still use the snapshot guard for type substitution.
-#define ES_RESHUFFLE_SLOTS 4
-#define ES_ENABLE_SHEET_WIDENING 0
 
 // Per-slot reshuffle pools (GENERATED by gen_enemy_shuffle_tables.py). DUNGEON
 // pools: each sheet self-contains a SINGLE-slot killable + key-capable enemy, so
@@ -653,12 +729,13 @@ static uint8 choose_slot_sheet(int slot, uint8 van, uint64 key, bool is_dungeon)
 // Dungeon list: leading sort byte, {y,x,type} until 0xff, 0xe4=control,
 // x>=0xe0=overlord. Overworld list: {b,b,type} until 0xff, 0xf4=count,
 // type>=0xf3=overlord.
-static uint8 room_blocked_slots(bool is_dungeon, uint16 key) {
+static uint8 room_blocked_slots(bool is_dungeon, uint16 key, bool *out_has_water) {
   const uint8 ALL = (uint8)((1u << ES_RESHUFFLE_SLOTS) - 1u);  // 0x0F
   const uint8 *src;
   if (is_dungeon) { src = Dungeon_GetRoomSpritePtr(key); src++; }
   else            { src = GetOverworldSpritePtr((int)key); }
   uint8 blocked = 0;
+  if (out_has_water) *out_has_water = false;  // set if a water-only source is present
   // NON-SPRITE sheet consumers are invisible to the sprite-list walk below: the
   // pushable-grave ancilla (Ancilla24_Gravestone) draws OBJ page-1 chars
   // 0xC8/0xD8 = subgroup SLOT 3, so the graveyard screen (the only area with
@@ -690,12 +767,40 @@ static uint8 room_blocked_slots(bool is_dungeon, uint16 key) {
       if (type == 0xf4) continue;     // sprite-count marker
       if (type >= 0xf3) return ALL;   // overlord (overworld decode is a future micro-opt)
     }
-    if (table_is_randomizable(type)) continue;          // substituted by the picker
+    if (table_is_randomizable(type)) {                  // substituted by the picker
+      if (out_has_water && (kEnemyTable[type].flags & ESF_WATER)) *out_has_water = true;
+      continue;
+    }
     if (type_is_boss(type) || !type_is_known(type)) return ALL;
     blocked |= (uint8)(kSheetNeed[type] & ALL);         // pin the slots it needs
     if (blocked == ALL) return ALL;
   }
   return blocked;
+}
+
+// Verify the proposed live 4-slot set still admits >=1 valid forced-substitution
+// target for this room/area, under the SAME constraints the picker applies (so a
+// forced substitution can never fail into an unloaded-sheet render). Mirrors
+// pick_replacement via the shared candidate_eligible. For a dungeon the target must
+// be killable && !cannot_key, palette-compatible with `sig_id`, all sheets loaded,
+// and non-flying in a flying-exclude room; `need_water` additionally requires such
+// a water-capable target (the room/area has a water-only source). `ow_pal` is the
+// overworld area palette id (ignored for dungeons).
+static bool widen_set_fillable(const uint8 live[4], bool is_dungeon, uint8 sig_id,
+                               bool forbid_flying, bool need_water, uint8 ow_pal) {
+  bool base_ok = false, water_ok = false;
+  for (uint32 t = 0; t < ES_TABLE_LEN; t++) {
+    if (!candidate_eligible((uint8)t, live,
+                            /*require_killable=*/is_dungeon,
+                            /*require_key_capable=*/is_dungeon,
+                            /*require_water=*/false,
+                            forbid_flying, is_dungeon, ow_pal, sig_id))
+      continue;
+    base_ok = true;
+    if (kEnemyTable[t].flags & ESF_WATER) water_ok = true;
+    if (base_ok && (!need_water || water_ok)) return true;
+  }
+  return base_ok && (!need_water || water_ok);
 }
 
 void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
@@ -721,33 +826,75 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   uint16 key16 = is_dungeon
       ? (uint16)(g_ram[0xA0] | (g_ram[0xA1] << 8))    // dungeon_room_index
       : (uint16)(g_ram[0x40A] | (g_ram[0x40B] << 8)); // overworld_area_index
-  // F12 playtest found that widening to a non-vanilla sheet can load correct
-  // tiles with the wrong room sprite palette. Until sheet reshuffle also models
-  // palette requirements, force every slot through the vanilla-resolved sheet.
+  // Resolve which slots may widen. Default: pin everything (no widening). With
+  // widening on, walk the room/area's sprite list for pins + a water-source flag,
+  // and resolve the room's palette signature for the verify/gate. An unknown
+  // dungeon signature (out of range / headers absent) means we cannot verify
+  // palette safety → don't widen.
   uint8 blocked = (uint8)((1u << ES_RESHUFFLE_SLOTS) - 1u);
-  if (ES_ENABLE_SHEET_WIDENING)
-    blocked = room_blocked_slots(is_dungeon, key16);
+  bool has_water = false;
+  uint8 sig_id = 0xFF;
+  bool forbid_flying = false;
+  uint8 ow_pal = 0;
+  if (ES_ENABLE_SHEET_WIDENING) {
+    build_vanilla_context_table();
+    blocked = room_blocked_slots(is_dungeon, key16, &has_water);
+    if (is_dungeon) {
+      sig_id = dung_pal_sig_id_find(Dungeon_GetSpritePaletteSig(key16));
+      forbid_flying = room_in_list(key16, kFlyingExcludeRooms, kFlyingExcludeRoomsCount);
+      if (sig_id == 0xFF)
+        blocked = (uint8)((1u << ES_RESHUFFLE_SLOTS) - 1u);
+    } else {
+      ow_pal = g_ram[0xFD40 + overworld_area_palette_index((uint8)key16)];
+    }
+  }
 
+  // Phase 1: resolve the vanilla sheet + a proposed (possibly widened) sheet per
+  // slot. `proposed[]` is the live set we will commit; `vanres[]` is the always-safe
+  // fallback. A slot the room does not yet own (van == 0) keeps its inherited
+  // loaded sheet, which `proposed` mirrors so the verify sees the true live set.
+  uint8 proposed[ES_RESHUFFLE_SLOTS];
+  uint8 vanres[ES_RESHUFFLE_SLOTS];
   for (int slot = 0; slot < ES_RESHUFFLE_SLOTS; slot++) {
-    // True vanilla-resolved sheet for this slot: the row's own sheet if it loads
-    // one (a fixed per-room value), else the inherited shadow. 0 = not yet
-    // established → leave the loaded sheet untouched.
     bool owns = (tileset_row[slot] != 0);
     uint8 van = owns ? tileset_row[slot] : g_ram[kRam_EnemyShuffleVanSubset + slot];
-    if (van == 0) continue;
-    g_ram[kRam_EnemyShuffleVanSubset + slot] = van;
-
-    // Only reshuffle a slot this room OWNS and that no present sprite pins — keeps
-    // the choice deterministic per (seed, room, slot) and never leaks/garbages.
-    // Inheriting / pinned slots are restored to the vanilla shadow.
-    bool reshuffle = owns && !(blocked & (1u << slot));
-    uint8 chosen = van;
+    vanres[slot] = van;
+    if (van != 0)
+      g_ram[kRam_EnemyShuffleVanSubset + slot] = van;  // update the inheritance shadow
+    uint8 chosen = (van != 0) ? van : g_ram[0xC2FC + slot];
+    bool reshuffle = (van != 0) && owns && !(blocked & (1u << slot));
     if (reshuffle) {
       uint64 k = g_enemy_shuffle_seed ^ ((uint64)key16 << (slot * 8)) ^
                  (kEnemyShuffleSheetSalt + (uint64)slot * 0x1000003ull);
       chosen = choose_slot_sheet(slot, van, k, is_dungeon);
     }
-    g_ram[0xC2FC + slot] = chosen;  // sprite_gfx_subset_{slot} — picker + decompress
+    proposed[slot] = chosen;
+  }
+
+  // Phase 2: verify-then-commit. Widening a slot removes the room's own sheet there
+  // and FORCES its enemies to substitute; if the proposed set admits no valid
+  // forced-substitution target (palette-compatible + constraint-meeting + sheets
+  // loaded), revert widened slots — highest first, deterministic — toward vanilla,
+  // which always restores fillability, until the set is safe. No-op when widening
+  // is off (no slot was widened, so the set is already vanilla).
+  if (ES_ENABLE_SHEET_WIDENING) {
+    for (;;) {
+      if (widen_set_fillable(proposed, is_dungeon, sig_id, forbid_flying, has_water, ow_pal))
+        break;
+      int revert = -1;
+      for (int slot = ES_RESHUFFLE_SLOTS - 1; slot >= 0; slot--) {
+        if (vanres[slot] != 0 && proposed[slot] != vanres[slot]) { revert = slot; break; }
+      }
+      if (revert < 0) break;  // already fully vanilla — no forced substitutions remain
+      proposed[revert] = vanres[revert];
+    }
+  }
+
+  // Commit the resolved set. Slots the room does not yet own (van == 0) keep their
+  // inherited loaded sheet untouched (matching the prior behavior).
+  for (int slot = 0; slot < ES_RESHUFFLE_SLOTS; slot++) {
+    if (vanres[slot] == 0) continue;
+    g_ram[0xC2FC + slot] = proposed[slot];  // sprite_gfx_subset_{slot} — picker + decompress
   }
   write_resolved_sheet_snapshot(context, key16);
 }
@@ -810,13 +957,18 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type) {
   // A water-only source (ESF_WATER, e.g. Walking Zora) must be replaced by a
   // water-capable enemy, not a land one — drive the constraint from the source.
   bool require_water = (kEnemyTable[vanilla_type].flags & ESF_WATER) != 0;
+  // Resolve this room's dungeon palette signature id for the palette gate. Build
+  // the context/signature tables first (idempotent) so the find is populated.
+  build_vanilla_context_table();
+  uint8 dungeon_sig_id = dung_pal_sig_id_find(Dungeon_GetSpritePaletteSig(room));
   return pick_replacement(key, vanilla_type, live,
                           /*require_killable=*/true,
                           /*require_key_capable=*/true,
                           require_water,
                           /*forbid_flying=*/forbid_flying,
                           /*is_dungeon_context=*/true,
-                          /*overworld_palette=*/0);
+                          /*overworld_palette=*/0,
+                          dungeon_sig_id);
 }
 
 uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
@@ -840,7 +992,8 @@ uint8 EnemyShuffle_PickOverworld(uint8 area, uint8 slot, uint8 vanilla_type) {
                           require_water,
                           /*forbid_flying=*/false,
                           /*is_dungeon_context=*/false,
-                          overworld_palette);
+                          overworld_palette,
+                          /*dungeon_sig_id=*/0xFF);
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,6 +1214,68 @@ void EnemyShuffle_SelfCheck(void) {
     if (!any_overworld) enemy_selfcheck_die("no overworld-context candidate exists");
   }
 
+  // 3b) Dungeon palette signature interning (pure): stable + deduped + sentinel.
+  // Uses the real globals as scratch, then clears them (a later build repopulates).
+  {
+    g_dung_pal_sig_count = 0;
+    memset(g_dung_pal_sigs, 0, sizeof(g_dung_pal_sigs));
+    uint8 a = dung_pal_sig_id_intern(0x010203u);
+    uint8 b = dung_pal_sig_id_intern(0x040506u);
+    uint8 a2 = dung_pal_sig_id_intern(0x010203u);
+    if (a != 0 || b != 1 || a2 != 0)
+      enemy_selfcheck_die("dungeon palette signature interning must be stable + deduped");
+    if (dung_pal_sig_id_find(0x040506u) != 1 || dung_pal_sig_id_find(0x778899u) != 0xFF)
+      enemy_selfcheck_die("dungeon palette signature find inconsistent with intern");
+    if (dung_pal_sig_id_intern(0xFFFFFFFFu) != 0xFF || dung_pal_sig_id_find(0xFFFFFFFFu) != 0xFF)
+      enemy_selfcheck_die("out-of-range dungeon palette signature must resolve to 0xFF");
+    // Restore a consistent context/signature table (the scratch test desynced the
+    // signature count from g_enemy_dungeon_palette).
+    invalidate_vanilla_context_table();
+    build_vanilla_context_table();
+  }
+
+  // 3c) Fillability machinery (widen_set_fillable): with sig_id=0xFF the palette
+  // gate is inert, so this exercises the killable/key + sheets-loaded + water logic
+  // in both flag states. Synthetic dungeon context has Rat (0x6D, sheet 28) and a
+  // sword soldier (0x41, sheet 73), both killable + key-capable, neither water.
+  {
+    build_vanilla_context_table();  // ensure the synthetic context is populated
+    const uint8 live_have[4]  = { 0, 73, 28, 0 };  // Rat + soldier loaded
+    const uint8 live_empty[4] = { 0, 0, 0, 0 };
+    if (!widen_set_fillable(live_have, true, 0xFF, false, false, 0))
+      enemy_selfcheck_die("widen verify: a killable+key candidate set must be fillable");
+    if (widen_set_fillable(live_empty, true, 0xFF, false, false, 0))
+      enemy_selfcheck_die("widen verify: an empty loaded set must NOT be fillable");
+    if (widen_set_fillable(live_have, true, 0xFF, false, /*need_water=*/true, 0))
+      enemy_selfcheck_die("widen verify: must fail water demand when no water candidate is loaded");
+  }
+
+  // 3d) Dungeon scan marking: scan_dungeon_context_list must mark each of a room's
+  // enemies on that room's palette signature id, and mark nothing for the unknown
+  // (0xFF) signature. Drives the scan directly with a synthetic {sort, y,x,type...}
+  // list so it is independent of the asset/header path.
+  {
+    g_enemy_dungeon_palette[0x6D] = 0;  // Rat
+    g_enemy_dungeon_palette[0x41] = 0;  // sword soldier
+    static const uint8 scan_list[] = {
+      0x00,              // leading sort byte
+      0x00, 0x00, 0x6D,  // Rat
+      0x00, 0x00, 0x41,  // sword soldier
+      0xff
+    };
+    scan_dungeon_context_list(scan_list, /*sig_id=*/7);
+    if (!(g_enemy_dungeon_palette[0x6D] & (1ull << 7)) ||
+        !(g_enemy_dungeon_palette[0x41] & (1ull << 7)))
+      enemy_selfcheck_die("dungeon scan must mark each room enemy on its palette signature");
+    g_enemy_dungeon_palette[0x6D] = 0;
+    scan_dungeon_context_list(scan_list, 0xFF);
+    if (g_enemy_dungeon_palette[0x6D] != 0)
+      enemy_selfcheck_die("dungeon scan must not mark on an unknown (0xFF) signature");
+    // Restore a consistent table (we zeroed entries above).
+    invalidate_vanilla_context_table();
+    build_vanilla_context_table();
+  }
+
   // 4) On → determinism + in-sheet + killable/key invariants over a synthetic
   // loaded-sheet set. We install a shuffle and drive the pick with a fabricated
   // live-sheet set by temporarily writing g_ram[0xC2FC..0xC2FF].
@@ -1148,6 +1363,28 @@ void EnemyShuffle_SelfCheck(void) {
       enemy_selfcheck_die("excluded source type (boss) was substituted");
     if (EnemyShuffle_PickDungeon(0x52, 0, 0xe4 /*control marker*/) != 0xe4)
       enemy_selfcheck_die("control marker was substituted");
+
+    // Dungeon palette gate (meaningful only when widening is enabled): fabricate a
+    // 1-signature allowlist and assert candidate_eligible filters by it. Rat (0x6D,
+    // sheet 28) is marked seen-on signature 0; sword soldier (0x41, sheet 73) is
+    // not. Both are dungeon-context + killable + key-capable, so only the palette
+    // gate distinguishes them; an unknown signature (0xFF) passes through. Restore
+    // the table afterward.
+    if (ES_ENABLE_SHEET_WIDENING) {
+      uint64 sav_6d = g_enemy_dungeon_palette[0x6D];
+      uint64 sav_41 = g_enemy_dungeon_palette[0x41];
+      g_enemy_dungeon_palette[0x6D] = 1ull << 0;
+      g_enemy_dungeon_palette[0x41] = 0;
+      const uint8 dlive[4] = { 0, 73, 28, 0 };
+      if (!candidate_eligible(0x6D, dlive, true, true, false, false, true, 0, /*sig=*/0))
+        enemy_selfcheck_die("dungeon palette gate rejected a same-signature candidate");
+      if (candidate_eligible(0x41, dlive, true, true, false, false, true, 0, /*sig=*/0))
+        enemy_selfcheck_die("dungeon palette gate admitted an off-signature candidate");
+      if (!candidate_eligible(0x41, dlive, true, true, false, false, true, 0, /*sig=*/0xFF))
+        enemy_selfcheck_die("dungeon palette gate must pass through on an unknown signature");
+      g_enemy_dungeon_palette[0x6D] = sav_6d;
+      g_enemy_dungeon_palette[0x41] = sav_41;
+    }
 
     // Restore g_ram + deactivate.
     g_ram[0xC2FC] = sav[0]; g_ram[0xC2FD] = sav[1];

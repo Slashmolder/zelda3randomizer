@@ -81,6 +81,7 @@ void Object_Draw_DoorLeft_3x4(uint16 src, int door);
 void Object_Draw_DoorRight_3x4(uint16 src, int door);
 void Dungeon_OpeningLockedDoor_Combined(bool skip_anim);
 const DungPalInfo *GetDungPalInfo(int idx);
+uint32 Dungeon_GetSpritePaletteSig(int room);
 uint16 Dungeon_GetTeleMsg(int room);
 bool Dungeon_IsPitThatHurtsPlayer();
 void Dungeon_PrepareNextRoomQuadrantUpload();

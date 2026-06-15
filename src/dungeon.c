@@ -2401,6 +2401,23 @@ const DungPalInfo *GetDungPalInfo(int idx) {
   return &kDungPalinfos[idx];
 }
 
+// Sprite-palette signature for a dungeon room: the (sp0l, sp5l, sp6l) triple
+// packed as pal1<<16 | pal2<<8 | pal3, resolved from the room header's palinfo
+// index (`hdr[1]` → kDungPalinfos). Returns 0xFFFFFFFF when the room or palinfo
+// index is out of range. Used by enemy shuffle's dungeon palette gate so it can
+// stay free of the dungeon headers (forward-declared there). Pure.
+uint32 Dungeon_GetSpritePaletteSig(int room) {
+  uint32 nrooms = kDungeonRoomHeadersOffs_SIZE / (uint32)sizeof(kDungeonRoomHeadersOffs[0]);
+  if (room < 0 || (uint32)room >= nrooms)
+    return 0xFFFFFFFFu;
+  const uint8 *hdr = GetRoomHeaderPtr(room);
+  uint8 idx = hdr[1];
+  if (idx >= 41)  // kDungPalinfos has 41 entries
+    return 0xFFFFFFFFu;
+  const DungPalInfo *dpi = &kDungPalinfos[idx];
+  return ((uint32)dpi->pal1 << 16) | ((uint32)dpi->pal2 << 8) | (uint32)dpi->pal3;
+}
+
 uint16 Dungeon_GetTeleMsg(int room) {
   return kDungeonRoomTeleMsg[room];
 }

@@ -336,7 +336,15 @@ orthogonal to item placement: enabling it does not change `placement_digest` or
 `sphere_digest`.
 
 The picker is GFX-sheet constrained and palette-aware so replacements use the
-sheets/palettes already loaded for the current context. Under the same axis, the
+sheets/palettes already loaded for the current context. **Sheet widening** is
+enabled (`add-rando-enemy-sheet-widening`): the runtime may reload a room/area's
+owned, unpinned subgroup slots with other sheets to broaden the substitution pool.
+Widening is kept safe by two guards — a dungeon sprite-palette signature
+(`kDungPalinfos` `(sp0l,sp5l,sp6l)`), so a widened enemy only appears where it
+renders with the right colors, and a verify-then-commit pass that reverts any
+widened slot which would leave a forced substitution with no valid (killable,
+key-capable, palette-compatible, sheets-loaded) candidate — so widening can never
+garbage-render or make a key/shutter room unclearable. Under the same axis, the
 runtime also randomizes per-enemy HP/contact damage while keeping bosses exempt.
 Killable-thief, bush-object, absorbable, and randomize-on-hit expansions remain
 follow-up axes rather than archive blockers.
@@ -1142,6 +1150,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 70→71 | **Retire boss-heart shuffle UI / always shuffle boss drops** — the legacy `region_boss_hearts_in_pool` byte canonicalizes to `0`, boss Drop slots are fillable locations, and the selected item-pool difficulty's BossHeartContainer copies always enter the pool. The obsolete Pyramid Fairy bow-upgrade setting is no longer shown in the native window. | Default settings hash changes (`[10]` 1→0) and placement/sphere digests move globally because 10 boss Drop locations join fill and BossHeartContainer items are no longer pinned to boss drops. |
 | 74→75 | **Instant flute default** — rando flute pickups grant the active bird-woken flute immediately, and `CanFly` no longer requires the separate activation route. | Inverted flute-gated placement/sphere digests can move; settings_hash and `kSettingsCanonicalLen` unchanged. |
 | 75→76 | **Instant flute seed setting** — `instant_flute` is now a canonical seed option, default `true`; byte `[26]` bit4 disables it by encoding the inverse manual-activation mode. | Default settings hash and default placement digests stay byte-identical vs v75. `instant_flute=false` seeds restore the old activation gate and can move Inverted flute-gated placement/sphere digests. |
+| 76→77 | **Enemy-shuffle sheet widening enabled** (`add-rando-enemy-sheet-widening`) — the all-slot reshuffle machinery is now live, gated by a dungeon sprite-palette signature (widened enemies render correctly) and a verify-then-commit pass (a widened slot never strands a forced substitution into a garbage render or key-room softlock). | Runtime-only; no canonical field. Placement/sphere digests byte-identical (corpus regenerated with 0 digest changes); the bump version-locks the live widening behavior. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero
