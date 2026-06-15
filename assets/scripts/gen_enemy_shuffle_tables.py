@@ -269,6 +269,19 @@ for sid, name, flagexpr, sheets in rows:
     for (p, s) in req_sheets(e):
         sheet_positions.setdefault(s, set()).add(p)
 
+# Canonical subgroup slot per required sheet. The runtime loaded-check must be
+# POSITION-aware: a sheet must be present in ITS slot, not merely loaded somewhere.
+# Module05_LoadFile inits all four sprite_gfx_subset slots to sheet 70, and an area
+# that doesn't own slot 3 inherits that leftover — so a slot-0 sheet (e.g. 70) sits
+# in slot 3 and a position-unaware "loaded anywhere" test mis-admits an enemy that
+# needs 70 in slot 0 (renders garbage from slot 0's real sheet). Requires each enemy
+# sheet to map to exactly ONE slot (kSpriteTilesets has cross-slot sheets, but those
+# are not enemy required-sheets); assert it so kSheetSlot stays unambiguous.
+sheet_slot = {}
+for s, ps in sorted(sheet_positions.items()):
+    assert len(ps) == 1, f"enemy sheet {s} used in multiple slots {sorted(ps)} — kSheetSlot would be ambiguous; switch to per-enemy slot-indexed sheets"
+    sheet_slot[s] = next(iter(ps))
+
 # ---- per-slot pools ----
 def dpool(p):  # dungeon: whitelist sheet with a single-slot killable+key enemy
     return [s for s in WHITELIST[p] if s in enemy_sheets_by_slot[p]]
@@ -306,6 +319,17 @@ print("static const uint8 kSheetNeed[256] = {")
 items = [f"[0x{sid:02X}]=0x{need[sid]:02X}" for sid in range(0xF3) if need[sid]]
 for i in range(0, len(items), 8):
     print("  " + ", ".join(items[i:i+8]) + ",")
+print("};")
+print()
+print("// --- kSheetSlot[256]: canonical subgroup slot (0..3) for each required sheet,")
+print("// so sheets_loaded() is POSITION-aware (a sheet must be in ITS slot, not just")
+print("// loaded somewhere — Module05_LoadFile leaves sheet 70 in every slot at init).")
+print("// Indexed by sheet id; only enemy required-sheets are set (others default 0 and")
+print("// are never indexed by a required sheet). ---")
+print("static const uint8 kSheetSlot[256] = {")
+sitems = [f"[{s}]={sheet_slot[s]}" for s in sorted(sheet_slot)]
+for i in range(0, len(sitems), 10):
+    print("  " + ", ".join(sitems[i:i+10]) + ",")
 print("};")
 print()
 print("static const uint8 kEsBossTypes[] = {\n  " + fmt_ids(boss_ids) + "\n};")
