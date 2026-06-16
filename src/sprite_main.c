@@ -7454,9 +7454,10 @@ void Sprite_BonkKey(int k) {  // 85fc04
       uint8 lttp_code = Rando_DispatchVanillaGrant(loc, 0xffffu, 0x24);
       Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());
     } else {
+      // rando-exempt: vanilla-only — active randomizer slots dispatch above;
+      // under Retro genericKeys link_num_keys is backed by the shared pool slot,
+      // so persist the dropped key immediately.
       link_num_keys++;
-      // rando-exempt: drop-pool — under Retro genericKeys link_num_keys is
-      // backed by the shared pool slot; persist the dropped key immediately.
       if (Rando_IsGenericKeysActive()) link_generic_keys = link_num_keys;
       SpriteSfx_QueueSfx3WithPan(k, 0x2f);
     }

@@ -62,13 +62,14 @@ RANDO_GENERATE_C = REPO / "src" / "rando" / "rando_generate.c"
 # The CANARY: a seed that EXHAUSTS the retry loop (never fully completes → runs
 # the full attempt cap and forward-fills), so it is exactly the budget-sensitive
 # path the corpus can't reach. Triforce-hunt with 30 placed pieces at the
-# beatable tier is reliably hard; 0x4f267 is a known-hard seed. If a future
+# beatable tier is reliably hard; expert item pool seed 0x1 is a known-hard
+# seed. If a future
 # placer change makes this complete early (no forward_fill_fallback warning), the
 # runtime check FAILS LOUDLY so the canary gets re-chosen rather than silently
 # guarding nothing.
-CANARY_SETTINGS = ("mode.state=retro,goal=triforce-hunt,item_pool=normal,"
+CANARY_SETTINGS = ("mode.state=retro,goal=triforce-hunt,item_pool=expert,"
                    "pieces_required=20,pieces_placed=30,accessibility=none")
-CANARY_SEED = "0x4f267"
+CANARY_SEED = "0x1"
 RUNS = 3
 
 # `int budget_seconds = 0;` — the CLI default in MaybeRunGenerateSeedAndExit.

@@ -4945,8 +4945,8 @@ static void Rando_StartingInventorySelfCheck(void) {
   fprintf(stderr, "[StartingInventory_SelfCheck] OK\n");
 }
 
-// End-to-end install check for the DROP shuffle runtime wiring + a guard that
-// BOSS shuffle stays runtime-disabled. The per-module self-checks
+// End-to-end install check for the DROP shuffle runtime wiring + BOSS shuffle
+// render/logic assignment install. The per-module self-checks
 // (BossShuffle/DropShuffle_SelfCheck) cover the ALGORITHM; the corpus is blind
 // to boss/drop (orthogonal to placement). NOTHING else proves the slot-
 // activation INSTALL path (Rando_ActivateSidecarSlot) regenerates + installs
@@ -4962,10 +4962,9 @@ static void Rando_ShuffleInstallSelfCheck(void) {
 
   // (1) Drop shuffle ON: the install must (a) actually shuffle and (b) byte-
   // match DropShuffle_ComputeAssignment for the slot's (settings, seed).
-  // Boss shuffle ON in the SAME slot must NOT install at runtime — boss
-  // substitution is held back until per-boss GFX loading lands (a pure
-  // sprite-type swap renders garbage; proven by playtest F12 of the EP boss
-  // room — see Rando_ActivateSidecarSlot). This case guards both at once.
+  // Boss shuffle ON in the SAME slot must install the render + logic assignment
+  // matching BossShuffle_ComputeAssignment. This case guards both shuffles at
+  // once.
   Settings_SetDefaults(&s);
   s.boss_shuffle = 1;
   s.drop_shuffle = 1;
@@ -5021,8 +5020,8 @@ static void Rando_ShuffleInstallSelfCheck(void) {
   if (BossShuffle_RenderHomeRoom(200) != 0xFFFF)
     tsc_die("ShuffleInstall: boss render redirect not a passthrough after teardown");
 
-  // (2) Reactivation with a DIFFERENT seed must OVERWRITE the drop table (no
-  // stale leak); boss stays uninstalled.
+  // (2) Reactivation with a DIFFERENT seed must OVERWRITE the drop table and
+  // boss assignment (no stale leak).
   const uint64 seedB = 0xB0552244C0FFEE99ull;
   rando_selfcheck_build_slot(&slot, &s, seedB);
   Rando_ActivateSidecarSlot(&slot);

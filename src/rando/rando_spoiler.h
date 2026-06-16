@@ -134,6 +134,7 @@ bool Spoiler_Write(const RandoSpoiler *s,
 #define kRandoSuppressedSpoilerShareStringMax 64
 #define kRandoSuppressedSpoilerSettingsLen 28  // = kSettingsCanonicalLen (last changed at kGenVer 14 §66; stable through current)
 #define kRandoSuppressedSpoilerSize 138  // on-disk byte length (last changed at kGenVer 14: 134→138; stable through current)
+#define kRandoSuppressedSpoilerCrcOffset (kRandoSuppressedSpoilerSize - 4)
 
 // Compile-time guard — when kSettingsCanonicalLen bumps, this assert
 // forces a coupled update to kRandoSuppressedSpoilerSettingsLen +
@@ -144,16 +145,12 @@ bool Spoiler_Write(const RandoSpoiler *s,
 _Static_assert(kRandoSuppressedSpoilerSettingsLen == kSettingsCanonicalLen,
                "ZRSR settings_canonical span must match kSettingsCanonicalLen; "
                "bump kRandoSuppressedSpoilerSettingsLen AND kRandoSuppressedSpoilerSize "
-               "AND the CRC32 offsets in rando_spoiler.c serialize/read AND the "
+               "AND the "
                "126/130/134/138 constants in assets/scripts/{bump,run}_rando_corpus.py.");
 
-// TODO(durability sweep 2026-05-27): the 3 hard-coded `134` literals in
-// rando_spoiler.c (serialize/write/read at lines ~348/376/484) should
-// become `#define kRandoSuppressedSpoilerCrcOffset (kRandoSuppressedSpoilerSize - 4)`
-// + an additional `_Static_assert` that the offset equals the expected
-// position. Cheap defensive follow-up — would catch 3 more coupled sites
-// at compile time instead of the current "find via corpus regression"
-// path. See memory `canonical_size_coupling.md` for the lesson.
+_Static_assert(kRandoSuppressedSpoilerCrcOffset == 134,
+               "ZRSR CRC offset drifted; update the on-disk layout comments "
+               "and corpus runner constants with kRandoSuppressedSpoilerSize.");
 
 typedef struct RandoSuppressedSpoiler {
   uint8 magic[4];                // 'ZRSR'

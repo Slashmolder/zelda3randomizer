@@ -8,6 +8,9 @@
 #include "../features.h"
 #include "../variables.h"
 
+// embedded-data-guard: allow sparse MIT-attributed medallion plaque art deltas;
+// source stays beside the runtime patcher and Rando_MedallionIcons_SelfCheck.
+
 enum {
   kMedallionBgGfxSize = 0x600,
   kMedallionEntranceOpenBit = 0x20,

@@ -4,7 +4,8 @@
 Per ``randomizer-core / Determinism constraints`` layer 2: source-level grep
 (``check_determinism.py``) catches direct references, but an indirect call via
 a helper, macro splice, or inline function can slip through. This script runs
-``nm`` against every compiled ``src/rando/*.o`` and asserts no undefined
+``nm`` against compiled Unix ``src/rando/*.o`` objects, or ``dumpbin`` against
+MSVC ``.obj`` objects, and asserts no undefined
 references to:
 
   - rand, random, arc4random  (non-deterministic RNG)
@@ -22,6 +23,7 @@ a moved object directory) fails loudly instead of silently scanning nothing.
 Usage:
   python assets/scripts/check_link_symbols.py
   python assets/scripts/check_link_symbols.py --object-dir=build/
+  python assets/scripts/check_link_symbols.py --object-dir=obj/x64-Release/
   python assets/scripts/check_link_symbols.py --require-objects   # CI, post-build
 """
 from __future__ import annotations
@@ -44,11 +46,24 @@ FORBIDDEN_SYMBOLS = {
 }
 
 
+def _rando_source_stems() -> set[str]:
+    """Object basenames owned by src/rando, for flat MSBuild obj directories."""
+    root = Path("src") / "rando"
+    if not root.exists():
+        return set()
+    return {p.stem for p in root.rglob("*") if p.suffix.lower() in {".c", ".cpp", ".cc"}}
+
+
 def find_rando_objects(object_dir: Path) -> list[Path]:
-    """Locate ``src/rando/*.o`` (or wherever they ended up after compile)."""
+    """Locate rando-owned objects after Unix or MSVC builds."""
     candidates: list[Path] = []
     for pattern in ("src/rando/*.o", "**/rando_*.o", "**/rando.o"):
         candidates.extend(object_dir.glob(pattern))
+    stems = _rando_source_stems()
+    if stems:
+        for obj in object_dir.rglob("*.obj"):
+            if obj.stem in stems:
+                candidates.append(obj)
     return sorted(set(candidates))
 
 
@@ -72,6 +87,37 @@ def nm_undefined(obj: Path) -> list[str]:
     return syms
 
 
+def _normalize_symbol(sym: str) -> str:
+    sym = sym.strip()
+    if sym.startswith("__imp_"):
+        sym = sym[6:]
+    return sym.lstrip("_")
+
+
+def dumpbin_undefined(obj: Path) -> list[str]:
+    """Return forbidden undefined symbols in an MSVC COFF object."""
+    dumpbin = shutil.which("dumpbin")
+    if dumpbin is None:
+        print(f"warning: dumpbin not available, cannot scan {obj}", file=sys.stderr)
+        return []
+    out = subprocess.run([dumpbin, "/SYMBOLS", str(obj)],
+                         capture_output=True, text=True, check=False)
+    syms: list[str] = []
+    for line in out.stdout.splitlines():
+        if " UNDEF " not in line or "|" not in line:
+            continue
+        sym = _normalize_symbol(line.split("|", 1)[1].strip().split()[0])
+        if sym in FORBIDDEN_SYMBOLS:
+            syms.append(sym)
+    return syms
+
+
+def undefined_for_object(obj: Path) -> list[str]:
+    if obj.suffix.lower() == ".obj":
+        return dumpbin_undefined(obj)
+    return nm_undefined(obj)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--object-dir", type=Path, default=Path("."))
@@ -87,7 +133,7 @@ def main(argv: list[str]) -> int:
     if not objects:
         if args.require_objects:
             print(
-                "check_link_symbols: no src/rando/*.o objects found under "
+                "check_link_symbols: no rando-owned .o/.obj objects found under "
                 f"{args.object_dir.resolve()} but --require-objects was passed. "
                 "This invocation runs post-build, so zero objects means the build "
                 "didn't run or the object layout moved — refusing the fail-open "
@@ -96,20 +142,26 @@ def main(argv: list[str]) -> int:
             return 1
         if not args.quiet:
             print(
-                "check_link_symbols: no src/rando/*.o objects found — nothing to "
+                "check_link_symbols: no rando-owned .o/.obj objects found — nothing to "
                 "scan (build first, or pass --object-dir; CI uses --require-objects)."
             )
         return 0
 
-    if args.require_objects and shutil.which("nm") is None:
-        print("check_link_symbols: nm not available but --require-objects was "
-              "passed — every scan would silently return clean. Failing closed.",
+    need_nm = any(obj.suffix.lower() != ".obj" for obj in objects)
+    need_dumpbin = any(obj.suffix.lower() == ".obj" for obj in objects)
+    if args.require_objects and need_nm and shutil.which("nm") is None:
+        print("check_link_symbols: nm not available but Unix objects were found "
+              "and --require-objects was passed. Failing closed.", file=sys.stderr)
+        return 1
+    if args.require_objects and need_dumpbin and shutil.which("dumpbin") is None:
+        print("check_link_symbols: dumpbin not available but MSVC .obj files were "
+              "found and --require-objects was passed. Failing closed.",
               file=sys.stderr)
         return 1
 
     total_violations = 0
     for obj in objects:
-        bad = nm_undefined(obj)
+        bad = undefined_for_object(obj)
         if bad:
             total_violations += len(bad)
             if not args.quiet:

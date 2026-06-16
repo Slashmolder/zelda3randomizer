@@ -1225,12 +1225,6 @@ static void RenderSpoilerSaveRow() {
     ImGui::TextColored(ImVec4(0.8f, 0.9f, 0.8f, 1.0f), "%s", s_save_status);
 }
 
-// Spoiler region grouping caveat: the bridge stores only the placement table,
-// not the generated world_state, so we group by the BASE region_id from
-// kRandoLocations (no per-world-state region override). For Inverted seeds a few
-// locations (e.g. Ether Tablet) would group under their Standard region here; the
-// runtime/file spoiler honors the override. Threading world_state through the
-// bridge is deferred — see TODO. Read-only either way.
 // Case-insensitive substring test (empty needle matches everything).
 static bool SpoilerCiContains(const char *hay, const char *needle) {
   if (!needle[0]) return true;
@@ -1246,6 +1240,24 @@ static bool SpoilerCiContains(const char *hay, const char *needle) {
     if (!*n) return true;
   }
   return false;
+}
+
+// Resolve the same static world-state region override used by reachability and
+// file spoilers. Per-seed entrance-shuffle cave overrides are still generation
+// overlays, not stored in this viewer snapshot.
+static uint16 SpoilerEffectiveRegion(uint16 loc, uint8 world_state) {
+  uint16 region = 0xFFFF;
+  for (uint32 j = 0; j < kRandoLocationsCount; j++) {
+    if (kRandoLocations[j].id == loc) {
+      region = kRandoLocations[j].region_id;
+      break;
+    }
+  }
+  const RandoLocationPredOverride *ov =
+      Rando_FindPredicateOverride(loc, world_state);
+  if (ov != nullptr && ov->region_override != 0xFFFF)
+    region = ov->region_override;
+  return region;
 }
 
 // True if a spoiler row matches the search text (location, item, or region).
@@ -1282,11 +1294,8 @@ static void Panel_Spoiler() {
   }
 
   const RandoPlacementTable *t = &b->last_generated_placement;
-  ImGui::Text("Placements: %u (grouped by region)",
+  ImGui::Text("Placements: %u (grouped by generated region)",
               (unsigned)SpoilerVisiblePlacementCount(t));
-  ImGui::TextDisabled(
-      "Region grouping uses base regions; per-world-state overrides (e.g. Inverted) "
-      "are not applied here. Read-only.");
   if (b->last_generated_has_medallion_assignment) {
     ImGui::Text("Medallions: Mire %s, Turtle Rock %s",
                 Rando_GetItemName(b->last_generated_medallion_assignment[0]),
@@ -1299,7 +1308,7 @@ static void Panel_Spoiler() {
   // Search/filter the placement list (case-insensitive substring).
   static char s_spoiler_filter[64] = "";
   ImGui::SetNextItemWidth(-1.0f);
-  ImGui::InputTextWithHint("##spoiler_filter", "Search locations / items...",
+  ImGui::InputTextWithHint("##spoiler_filter", "Search locations / items / regions...",
                            s_spoiler_filter, sizeof s_spoiler_filter);
   ImGui::Separator();
 
@@ -1320,13 +1329,8 @@ static void Panel_Spoiler() {
     if (SpoilerLocHidden(t->entries[i].location_id)) continue;
     rows[row_n].location_id = t->entries[i].location_id;
     rows[row_n].item_id = t->entries[i].item_id;
-    rows[row_n].region_id = 0xFFFF;
-    for (uint32 j = 0; j < kRandoLocationsCount; j++) {
-      if (kRandoLocations[j].id == rows[row_n].location_id) {
-        rows[row_n].region_id = kRandoLocations[j].region_id;
-        break;
-      }
-    }
+    rows[row_n].region_id = SpoilerEffectiveRegion(
+        rows[row_n].location_id, b->last_generated_settings.world_state);
     row_n++;
   }
   n = row_n;
