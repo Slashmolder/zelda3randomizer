@@ -1454,15 +1454,16 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
   }
 }
 
-// add-rando-field-item-sprites: a shuffled freestanding small-key location draws
-// the PLACED item (like every other field item) instead of a vanilla key. The
-// only such "Standing" location is the Tower of Hera Basement Cage key — type
-// 0xE4 in room 0x87 — mirroring the grant special-case in
-// Sprite_HandleAbsorptionByPlayer. Returns false (→ caller draws the vanilla
-// gem/key) for everything else: the rupees that share the draw_key label, enemy
-// key drops, a vanilla key placement, or the feature/rando being off.
+// add-rando-field-item-sprites: the Tower of Hera Basement Cage is a shuffled
+// "Standing" location whose reward is a freestanding small key (type 0xE4 in
+// room 0x87). Draw the PLACED item there instead of a vanilla key, gated to
+// MIRROR the grant (Sprite_HandleAbsorptionByPlayer case 12): room 0x87 while the
+// cage is unchecked. Returns false — caller draws the vanilla gem/key — for
+// everything else: the rupees (0xd9-0xdb) that also reach the draw_key label, any
+// 0xE4 once the cage is checked, a vanilla-key placement, or rando/feature off.
 static bool Rando_TryDrawAbsorbableKeyField(int k) {
-  if (sprite_type[k] != 0xE4 || dungeon_room_index != 0x87)
+  if (sprite_type[k] != 0xE4 || dungeon_room_index != 0x87 ||
+      Rando_IsLocationChecked(LOC_Tower_of_Hera_Basement_Cage))
     return false;
   return Rando_TryDrawFieldItemSprite(k, LOC_Tower_of_Hera_Basement_Cage,
                                       ITEM_SmallKey_TowerOfHera);
