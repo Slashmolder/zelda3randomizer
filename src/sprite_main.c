@@ -7205,7 +7205,9 @@ void Sprite_E9_PotionShop(int k) {  // 85f633
 }
 
 void Sprite_BagOfPowder(int k) {  // 85f644
-  MagicPowderItem_Draw(k);
+  // add-rando-field-item-sprites: draw the placed item; vanilla powder otherwise.
+  if (!Rando_TryDrawFieldItemSprite(k, LOC_Potion_Shop, ITEM_MagicPowder))
+    MagicPowderItem_Draw(k);
   if (Sprite_ReturnIfInactive(k))
     return;
   Sprite_BehaveAsBarrier(k);

@@ -1454,6 +1454,20 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
   }
 }
 
+// add-rando-field-item-sprites: a shuffled freestanding small-key location draws
+// the PLACED item (like every other field item) instead of a vanilla key. The
+// only such "Standing" location is the Tower of Hera Basement Cage key — type
+// 0xE4 in room 0x87 — mirroring the grant special-case in
+// Sprite_HandleAbsorptionByPlayer. Returns false (→ caller draws the vanilla
+// gem/key) for everything else: the rupees that share the draw_key label, enemy
+// key drops, a vanilla key placement, or the feature/rando being off.
+static bool Rando_TryDrawAbsorbableKeyField(int k) {
+  if (sprite_type[k] != 0xE4 || dungeon_room_index != 0x87)
+    return false;
+  return Rando_TryDrawFieldItemSprite(k, LOC_Tower_of_Hera_Basement_Cage,
+                                      ITEM_SmallKey_TowerOfHera);
+}
+
 bool SpriteDraw_AbsorbableTransient(int k, bool transient) {  // 86d22f
   if (transient && Sprite_ReturnIfPhasingOut(k))
     return false;
@@ -1493,6 +1507,8 @@ bool SpriteDraw_AbsorbableTransient(int k, bool transient) {  // 86d22f
     return false;
   }
 draw_key:
+  if (Rando_TryDrawAbsorbableKeyField(k))
+    return false;
   Sprite_DrawThinAndTall(k);
   return false;
 }
