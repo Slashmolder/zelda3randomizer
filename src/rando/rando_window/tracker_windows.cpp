@@ -22,6 +22,7 @@ extern "C" {
 #include "../rando_placement.h"// Placement_GetActive, RandoPlacementTable
 #include "../rando_map.h"      // RandoMap_Decode (overworld map background)
 #include "../../hud.h"         // Hud_RandoBuildIconAtlas, kRandoIcon_* (item icons)
+#include "../../config.h"      // g_rando_window_prefs (persisted Check Tracker filters)
 }
 
 // ---- Minimal GL texture upload (resolve the few entry points via SDL, like
@@ -424,9 +425,12 @@ static void DrawCheckTracker(void *) {
   // slot's settings are unknown (snapshot replay / v1 slot) — see the helper.
   bool race = Rando_ActiveSlotHidesSpoiler();
 
-  // Persistent UI state.
-  static bool s_hide_checked = false;
-  static bool s_only_reachable = false;
+  // Persistent UI state. "Hide checked" / "Only available" persist across
+  // restarts via the rando_window.ini sidecar (g_rando_window_prefs); bind
+  // directly so toggling a checkbox writes the persisted pref. The spoiler
+  // ("Show items") + search filter stay session-only.
+  bool &s_hide_checked = g_rando_window_prefs.check_tracker_hide_checked;
+  bool &s_only_reachable = g_rando_window_prefs.check_tracker_only_available;
   static bool s_show_items = false;
   static char s_search[64] = "";
   if (race) s_show_items = false;
@@ -525,7 +529,11 @@ static void DrawCheckTracker(void *) {
       int status = checked ? kCheck_Checked : (reachable ? kCheck_Reachable : kCheck_Unreachable);
 
       if (s_hide_checked && checked) continue;
-      if (s_only_reachable && status == kCheck_Unreachable) continue;
+      // Guard on have_reach: the "Only available" checkbox is hidden when
+      // reachability is unavailable, so a persisted-true value must not silently
+      // hide every (uniformly "unreachable") unchecked location with no way to
+      // toggle it back off.
+      if (have_reach && s_only_reachable && status == kCheck_Unreachable) continue;
 
       const char *lname = Rando_GetLocationName(loc);
       if (s_search[0]) {

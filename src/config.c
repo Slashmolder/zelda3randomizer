@@ -723,6 +723,10 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_rando_window_prefs.tracker_tiled_layout_on_startup);
     } else if (StringEqualsNoCase(key, "dark_theme")) {
       return ParseBool(value, &g_rando_window_prefs.dark_theme);
+    } else if (StringEqualsNoCase(key, "check_tracker_hide_checked")) {
+      return ParseBool(value, &g_rando_window_prefs.check_tracker_hide_checked);
+    } else if (StringEqualsNoCase(key, "check_tracker_only_available")) {
+      return ParseBool(value, &g_rando_window_prefs.check_tracker_only_available);
     }
     return false;
   } else if (section == 9) {
@@ -948,6 +952,10 @@ void Config_SaveRandoWindowIni(const char *path) {
   fprintf(f, "tracker_tiled_layout_on_startup = %s\n",
           g_rando_window_prefs.tracker_tiled_layout_on_startup ? "true" : "false");
   fprintf(f, "dark_theme = %s\n", g_rando_window_prefs.dark_theme ? "true" : "false");
+  fprintf(f, "check_tracker_hide_checked = %s\n",
+          g_rando_window_prefs.check_tracker_hide_checked ? "true" : "false");
+  fprintf(f, "check_tracker_only_available = %s\n",
+          g_rando_window_prefs.check_tracker_only_available ? "true" : "false");
 
   // [RandoAssetDecisions] — flush all persisted always-allow decisions in the
   // same hash=allow line format config.c's section-7 parser reads back.

@@ -253,6 +253,8 @@ typedef struct RandoWindowPrefs {
   bool has_geometry;             // true when all four geometry keys were present
   bool tracker_tiled_layout_on_startup;  // auto-apply tracker/game tiled layout
   bool dark_theme;               // ImGui theme (default true = dark)
+  bool check_tracker_hide_checked;    // Check Tracker "Hide checked" filter (default false)
+  bool check_tracker_only_available;  // Check Tracker "Only available" filter (default false)
 } RandoWindowPrefs;
 
 extern RandoWindowPrefs g_rando_window_prefs;
