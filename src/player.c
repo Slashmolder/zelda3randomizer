@@ -614,6 +614,17 @@ void EtherTablet_StartCutscene() {  // 87855a
   flag_block_link_menu = 1;
 }
 
+static void Link_EndTabletDirectGrantCutscene(void) {
+  flag_custom_spell_anim_active = 0;
+  link_force_hold_sword_up = 0;
+  link_player_handler_state = kPlayerState_Ground;
+  link_disable_sprite_damage = 0;
+  flag_is_link_immobilized = 0;
+  flag_block_link_menu = 0;
+  button_b_frames = 0;
+  link_delay_timer_spin_attack = 0;
+}
+
 void LinkState_ReceivingEther() {  // 878570
   link_auxiliary_state = 0;
   link_incapacitated_timer = 0;
@@ -649,21 +660,22 @@ void LinkState_ReceivingEther() {  // 878570
     // Vanilla re-reads are idempotent (Ether is fixed), so leave vanilla alone.
     if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
         Rando_IsLocationChecked(LOC_Ether_Tablet)) {
-      flag_is_link_immobilized = 1;
-      flag_block_link_menu = 0;
+      Link_EndTabletDirectGrantCutscene();
       return;
     }
     uint8 lttp_code = 0x10;  // vanilla Ether
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Ether_Tablet, ITEM_Ether, lttp_code);
     }
-    if (Rando_ShouldSkipReceive(lttp_code))
+    if (Rando_ShouldSkipReceive(lttp_code)) {
       // §7.6 + Slice 9 — Ether tablet direct-grant cue with placed-item icon.
       Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-    else
+      Link_EndTabletDirectGrantCutscene();
+    } else {
       AncillaAdd_FallingPrizeRando(0x29, lttp_code, 0, 4);
-    flag_is_link_immobilized = 1;
-    flag_block_link_menu = 0;
+      flag_is_link_immobilized = 1;
+      flag_block_link_menu = 0;
+    }
   }
 }
 
@@ -700,19 +712,21 @@ void LinkState_ReceivingBombos() {  // 8785fb
     // inert once LOC_Bombos_Tablet is checked; guard the grant directly too.
     if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
         Rando_IsLocationChecked(LOC_Bombos_Tablet)) {
-      flag_is_link_immobilized = 1;
+      Link_EndTabletDirectGrantCutscene();
       return;
     }
     uint8 lttp_code = 0x0f;  // vanilla Bombos
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
       lttp_code = Rando_DispatchVanillaGrant(LOC_Bombos_Tablet, ITEM_Bombos, lttp_code);
     }
-    if (Rando_ShouldSkipReceive(lttp_code))
+    if (Rando_ShouldSkipReceive(lttp_code)) {
       // §7.6 + Slice 9 — Bombos tablet direct-grant cue with placed-item icon.
       Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-    else
+      Link_EndTabletDirectGrantCutscene();
+    } else {
       AncillaAdd_FallingPrizeRando(0x29, lttp_code, 5, 4);
-    flag_is_link_immobilized = 1;
+      flag_is_link_immobilized = 1;
+    }
   }
 }
 
