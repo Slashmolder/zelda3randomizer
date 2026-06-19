@@ -557,7 +557,7 @@ uint16 Rando_PickTrapEffectId(uint64 seed, uint16 location_id, uint8 categories,
   return ids[(uint32)((x >> 32) % nids)];
 }
 
-// add-rando-trap-catalog (slice 3) — Darkness uses the dungeon fixed-color path;
+// Darkness uses the dungeon fixed-color path;
 // forward-declared here to avoid pulling dungeon.h into rando.c (cf. the
 // kWishPond2_OamFlags pattern below). rando_trap_effect_teardown is forward-
 // declared so rando_clear_trap_effect can restore an interrupted effect's
@@ -575,7 +575,7 @@ static uint8 g_rando_trap_owns_forced_move;
 // tick (apply). Separates collection-time arming from in-gameplay onset so
 // spawn/warp/PPU effects never run mid-transition (they wait for submodule 0).
 static uint8 g_rando_trap_onset_pending;
-// add-rando-trap-catalog (slice 3) — Darkness snapshots the room's fixed-color
+// Darkness snapshots the room's fixed-color
 // intensity here so teardown can restore the exact pre-trap brightness; a
 // g_ram-backed PPU write must never outlive the file-static timer.
 static uint8 g_rando_trap_saved_coldata;
@@ -742,7 +742,7 @@ static bool rando_trap_effect_context_ok(uint8 effect) {
       // Standard mode before Zelda's rescue (sram_progress_indicator == 0) does NOT
       // reposition Link at the start point (Dungeon_LoadEntrance gates that on
       // progress != 0), and clearing the follower would desync the escort -> a
-      // possible OOB spawn / quest desync (audit MED-2). Fall back (Freeze) until the
+      // possible OOB spawn / quest desync. Fall back (Freeze) until the
       // rescue completes. Open / Inverted / Retro and post-rescue Standard are >= 1.
       return sram_progress_indicator != 0;
     default:
@@ -752,7 +752,7 @@ static bool rando_trap_effect_context_ok(uint8 effect) {
   }
 }
 
-// add-rando-trap-catalog (slice 2) — directional input remap shared by Reverse
+// Directional input remap shared by Reverse
 // (constant 180°) and Scramble (a slowly-rotating "drunk" wander). A PURE
 // per-frame transform of the freshly-NMI-sampled joypad bytes — no Link state is
 // persisted, so these effects need no teardown (the tick simply stops remapping
@@ -865,7 +865,7 @@ static void rando_trap_effect_onset(uint8 effect) {
         // No safe enemy loadable here — become the Damage hazard. Set the effect
         // AND the timer to Damage's own duration (not just call its onset) so the
         // sustain/teardown and shove length match even if the durations are ever
-        // retuned independently (audit LOW-3).
+        // retuned independently.
         g_rando_trap_effect = kRandoTrapEffect_Damage;
         g_rando_trap_stun_timer = rando_trap_def_for_effect(kRandoTrapEffect_Damage)->duration;
         rando_trap_effect_onset(kRandoTrapEffect_Damage);
@@ -997,8 +997,8 @@ static void rando_trap_effect_teardown(uint8 effect) {
       // Restore the room's pre-trap fixed-color target. ONLY indoors — the dungeon
       // fixed-color register is meaningless on the overworld, so restoring there
       // would pop a dim special screen's brightness if Darkness was collected
-      // indoors and the timer expired after exiting (audit LOW-1). The snapshot is
-      // the exact pre-darkness value (audit LOW-2: now read). A room change during
+      // indoors and the timer expired after exiting. The snapshot is
+      // the exact pre-darkness value (now read). A room change during
       // the brief blackout self-heals on the next room load's fixed-color re-derive.
       if (player_is_indoors) {
         overworld_fixed_color_plusminus = g_rando_trap_saved_coldata;
@@ -1080,7 +1080,7 @@ static void rando_trigger_trap(uint16 item_id) {
   // owned forced-move shove (g_rando_trap_owns_forced_move / force_move_any_
   // direction). A second trap collected mid-Damage-shove whose effect does NOT
   // neutralize (any drain/reverse/disarm/scare/spawn) would otherwise leave Link
-  // force-moved indefinitely (audit MED-1). rando_clear_trap_effect() releases
+  // force-moved indefinitely. rando_clear_trap_effect() releases
   // the forced move and zeroes the timers we re-arm just below.
   rando_clear_trap_effect();
   // Arm only — the reveal dialogue shows now; the effect's onset runs in the
@@ -1760,7 +1760,7 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
   Hud_RefreshIcon();
 
-  // Slice 9 — look up the visual icon. Traps use the same deterministic decoy
+  // Look up the visual icon. Traps use the same deterministic decoy
   // resolver as field-item sprites so the visible fake item and pickup popup
   // agree. Other direct-grant items use kDirectGrantIcons; gfx ids with the
   // 0x80 bit (TriforcePiece / magic decanters / Rupoor custom art,
@@ -4747,7 +4747,7 @@ void Rando_SelfCheck(void) {
       exit(2);
     }
 
-    // add-rando-trap-catalog (slice 2) — drive the cheap effects through the tick
+    // Drive the cheap effects through the tick
     // and assert their onsets, especially the proxy-byte guards (the dominant
     // rando bug class): MagicDrain must NOT touch the magic upgrade tier, AmmoDrain
     // must NOT touch the per-frame fill counters.
@@ -4816,7 +4816,7 @@ void Rando_SelfCheck(void) {
       // = 31); a pre-empting trap (rando_clear_trap_effect) runs the teardown, which
       // restores it. Dungeon-only: set player_is_indoors so context_ok keeps it
       // Darkness instead of falling back to Shake. (Local save/restore — no scaffold
-      // change.) Covers the audit's "persistent restore has no automated net" gap.
+      // change.)
       {
         uint8 s_indoors = player_is_indoors, s_cd = overworld_fixed_color_plusminus;
         player_is_indoors = 1;
