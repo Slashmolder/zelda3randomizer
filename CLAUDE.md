@@ -8,6 +8,36 @@ This is a fork of [snesrev/zelda3](https://github.com/snesrev/zelda3) — a reve
 
 The original US ROM (`zelda3.sfc`, SHA256 `66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb`) is required only for one-time asset extraction; after that the game runs from `zelda3_assets.dat`.
 
+## Feature development workflow
+
+Feature-sized work — a new capability or a cross-cutting change, the kind
+`openspec/changes/` tracks — follows a spec-driven, branch-isolated loop. Small
+self-contained fixes (a one-liner, a typo, a localized bug) skip the spec and go
+straight to a branch.
+
+1. **Branch off `main`** (`claude/<feature>`). All iteration lives here; `main`
+   only ever receives finished, reviewed work.
+2. **Write the spec first.** Author an OpenSpec change under
+   `openspec/changes/<feature>/` (`proposal.md`, `design.md`, `tasks.md`, and the
+   capability `specs/` deltas) BEFORE the code — it's the contract for what ships
+   and why. Write it against current source, not memory (see the claim-grounding
+   discipline below).
+3. **Iterate on the branch until done.** Build, playtest, and run a fresh-eyes
+   audit (see "Fresh-eyes audit cadence"); reconcile the spec's deltas and tasks
+   against as-built source as the code evolves (deltas rot — a checked `tasks.md`
+   box is not a spec update). "Done" = builds clean (MSVC + gcc `-Werror`), corpus
+   green at the current `kGeneratorVersion`, CI guards pass, and the runtime paths
+   the corpus can't reach have been playtested.
+4. **Archive the spec ON the branch, before merging.** `openspec archive
+   <feature> --yes` as the last commit — it applies the deltas to the canonical
+   `openspec/specs/` and moves the change to
+   `openspec/changes/archive/<date>-<feature>/`. Doing it here (not after the
+   merge) means the spec update travels with the code in the same merge: no
+   stale-specs window on `main`, no separate post-merge step.
+5. **Squash-merge to `main`.** `git merge --squash` so the whole feature — code,
+   docs, and the archived spec — lands as ONE coherent, bisectable commit. The
+   blow-by-blow iteration history stays on the (now-deletable) branch.
+
 ## Build & asset workflow
 
 Two things must exist before the game runs: the `zelda3` executable and `zelda3_assets.dat` next to it.
