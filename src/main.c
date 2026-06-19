@@ -44,6 +44,8 @@
 #include "rando/shuffle_boss.h"  // BossShuffle_Generate
 #include "rando/shuffle_drops.h"  // DropShuffle_Generate
 #include "rando/rando_hints.h"  // Rando_GenerateHints
+#include "rando/rando_generate.h"  // Rando_PlaceWithEntrances / spoiler entrance fields
+#include "rando/seed_shape.h"  // generator-side seed-shape filters
 #include "rando/auto_tracker.h"  // AutoTracker_* (opt-in local tracker server)
 #include "third_party/sha256/sha256.h"  // sha256_buffer for the asset hash
 
@@ -442,6 +444,9 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
   const char *settings_csv = NULL;
   const char *seed_u64_str = NULL;
   const char *customizer_path = NULL;  // slot-path customizer parity
+  const char *shape_filter_text = NULL;
+  int shape_search_limit = 1;
+  bool shape_search_limit_set = false;
   int slot_index = 0;
   for (int i = 0; i < argc; ++i) {
     const char *a = argv[i];
@@ -449,11 +454,17 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
     else if (strncmp(a, "--seed=", 7) == 0) seed_u64_str = a + 7;
     else if (strncmp(a, "--slot=", 7) == 0) slot_index = atoi(a + 7);
     else if (strncmp(a, "--customizer=", 13) == 0) customizer_path = a + 13;
+    else if (strncmp(a, "--shape-filter=", 15) == 0) shape_filter_text = a + 15;
+    else if (strncmp(a, "--shape-search-limit=", 21) == 0) {
+      shape_search_limit = atoi(a + 21);
+      shape_search_limit_set = true;
+    }
   }
   if (seed_u64_str == NULL) {
     fprintf(stderr,
       "Usage: --generate-slot --settings=<k=v,...> --seed=<u64> [--slot=<0..2>]\n"
-      "                       [--customizer=<manifest.yaml>]\n");
+      "                       [--customizer=<manifest.yaml>]\n"
+      "                       [--shape-filter=<tokens>] [--shape-search-limit=<n>]\n");
     exit(64);
   }
 
@@ -469,6 +480,19 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
     }
   }
   uint64 seed_u64 = ParseSeedU64OrExit(seed_u64_str);
+
+  SeedShapeFilter shape_filter;
+  char shape_err[160];
+  if (SeedShape_Parse(shape_filter_text, &shape_filter, shape_err, sizeof shape_err) != 0) {
+    fprintf(stderr, "--generate-slot: --shape-filter: %s\n", shape_err);
+    exit(64);
+  }
+  if (shape_filter.enabled && !shape_search_limit_set)
+    shape_search_limit = 100;
+  if (shape_search_limit < 1) {
+    fprintf(stderr, "--generate-slot: --shape-search-limit value must be >= 1\n");
+    exit(64);
+  }
 
   // Install the manifest exactly like the native window does before its
   // generate request, so this CLI path exercises the same slot path
@@ -505,8 +529,18 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
   err[0] = '\0';
   // budget = 0: run the placer to its deterministic attempt cap (no wall-clock
   // cutoff) so the digest is machine-independent (matches the corpus path).
-  bool ok = Rando_GenerateSlot(&settings, seed_u64, /*budget=*/0, slot_index,
-                               g_config.features0, &result, err, sizeof(err));
+  RandoGenerateShapeOptions shape_options;
+  const RandoGenerateShapeOptions *shape_options_ptr = NULL;
+  memset(&shape_options, 0, sizeof shape_options);
+  if (shape_filter.enabled) {
+    shape_options.filter = &shape_filter;
+    shape_options.search_limit = shape_search_limit;
+    shape_options_ptr = &shape_options;
+  }
+  bool ok = Rando_GenerateSlotWithShapeFilter(&settings, seed_u64, /*budget=*/0,
+                                              slot_index, g_config.features0,
+                                              shape_options_ptr, &result,
+                                              err, sizeof(err));
 
   uint8 digest[32];
   memset(digest, 0, sizeof(digest));
@@ -541,9 +575,13 @@ static void MaybeRunGenerateSlotAndExit(int argc, char **argv, const char *confi
   for (int i = 0; i < 32; i++) printf("%02x", digest[i]);
   printf("\", \"settings_hash_hex\": \"");
   for (int i = 0; i < 32; i++) printf("%02x", ok ? result.settings_hash[i] : 0);
-  printf("\", \"share_string\": \"%s\", \"world_state\": %d, \"slot_kind\": %d, "
+  printf("\", \"share_string\": \"%s\", \"accepted_seed_u64\": %llu, "
+         "\"shape_attempts\": %u, \"world_state\": %d, \"slot_kind\": %d, "
          "\"roundtrip_ok\": %s, \"error\": \"%s\"}\n",
-         ok ? result.share_string : "", world_state, slot_kind,
+         ok ? result.share_string : "",
+         (unsigned long long)(ok ? result.seed_u64 : seed_u64),
+         (unsigned)(ok ? result.shape_attempts_used : 0),
+         world_state, slot_kind,
          roundtrip_ok ? "true" : "false", ok ? "" : err);
 
   if (result.placement.entries != NULL) free(result.placement.entries);
@@ -573,6 +611,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   const char *manifest_path = NULL;
   const char *customizer_path = NULL;
   const char *out_dir = NULL;
+  const char *shape_filter_text = NULL;
   // Default 0 = deterministic: run the placer to its fixed attempt cap
   // (kAssumedFillMaxAttempts) with NO wall-clock cutoff. A positive
   // --budget-seconds reintroduces a CPU-time cutoff on the retry loop, which
@@ -588,8 +627,11 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // hardest seeds — the loop returns the instant an attempt fully completes).
   // The flag stays for batch/debug callers that knowingly want a time bound.
   int budget_seconds = 0;
+  int shape_search_limit = 1;
+  bool shape_search_limit_set = false;
   bool assets_must_be_vanilla = false;
   bool race_mode = false;
+  bool allow_broken_seed = false;
 
   for (int i = 0; i < argc; ++i) {
     const char *a = argv[i];
@@ -601,8 +643,14 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     else if (strncmp(a, "--customizer=", 13) == 0) customizer_path = a + 13;
     else if (strncmp(a, "--out-dir=", 10) == 0) out_dir = a + 10;
     else if (strncmp(a, "--budget-seconds=", 17) == 0) budget_seconds = atoi(a + 17);
+    else if (strncmp(a, "--shape-filter=", 15) == 0) shape_filter_text = a + 15;
+    else if (strncmp(a, "--shape-search-limit=", 21) == 0) {
+      shape_search_limit = atoi(a + 21);
+      shape_search_limit_set = true;
+    }
     else if (strcmp(a, "--assets-must-be-vanilla") == 0) assets_must_be_vanilla = true;
     else if (strcmp(a, "--race-mode") == 0) race_mode = true;
+    else if (strcmp(a, "--allow-broken-seed") == 0) allow_broken_seed = true;
   }
 
   // Validate flag combinations.
@@ -614,6 +662,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       "  Single seed: --generate-seed --settings=<k=v,...> --seed=<u64> --out-spoiler=<path>\n"
       "               [--out-share-string=<path>] [--budget-seconds=<n>] [--assets-must-be-vanilla]\n"
       "               [--customizer=<manifest.yaml>] [--allow-broken-seed]\n"
+      "               [--shape-filter=<tokens>] [--shape-search-limit=<n>]\n"
       "  Batch:       --generate-seed --manifest=<yaml> [--budget-seconds=<n>] [--out-dir=<path>]\n");
     exit(64);
   }
@@ -744,6 +793,19 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     }
   }
 
+  SeedShapeFilter shape_filter;
+  char shape_err[160];
+  if (SeedShape_Parse(shape_filter_text, &shape_filter, shape_err, sizeof shape_err) != 0) {
+    fprintf(stderr, "--shape-filter: %s\n", shape_err);
+    exit(64);
+  }
+  if (shape_filter.enabled && !shape_search_limit_set)
+    shape_search_limit = 100;
+  if (shape_search_limit < 1) {
+    fprintf(stderr, "--shape-search-limit: value must be >= 1\n");
+    exit(64);
+  }
+
   // Allocate placement table sized to the location count.
   extern const uint32 kRandoLocationsCount;
   RandoPlacement *entries = (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
@@ -758,110 +820,104 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // and goal-completability. Excludes spoiler I/O.
   clock_t gen_start = clock();
 
-  // Run placement (assumed fill with bounded retry + wall-clock budget).
-  // Race-mode generation always uses budget_seconds=0 so the placer runs to its
-  // deterministic kAssumedFillMaxAttempts cap (matches Rando_RevealSpoiler's budget).
-  // Stamp is then reproducible across machines.
+  // Run placement. Race-mode generation always uses budget_seconds=0 so the
+  // placer runs to its deterministic kAssumedFillMaxAttempts cap (matching
+  // reveal). Shape filters are a search layer over deterministic candidate
+  // seeds; the accepted candidate replaces seed_u64 before share/spoiler output.
   int effective_budget = (settings.race_mode != 0) ? 0 : budget_seconds;
-  // Entrance shuffle: same reject-and-retry as the playable-slot path
-  // (rando_generate.c). Draw a cave permutation π, install its region overrides
-  // so the placer/goal-check see the shuffled reachability, accept the first π
-  // under which the goal is completable. Default-off ⇒ byte-identical placement.
   bool ok = false;
-  uint8 cave_assign[kEntranceMaxInteriors]; int cave_count = 0;
-  uint8 dun_assign[kEntranceMaxInteriors]; int dun_count = 0;
-  uint8 cross_assign[kEntranceMaxInteriors]; int cross_count = 0;
-  uint8 decoupled_assign[kEntranceMaxInteriors]; int decoupled_count = 0;
-  uint8 dun_decoupled_assign[kEntranceMaxInteriors]; int dun_decoupled_count = 0;
-  uint8 cross_decoupled_assign[kEntranceMaxInteriors]; int cross_decoupled_count = 0;
-  bool cross_on = Entrance_IsCrossActive(&settings);
-  bool cave_on = !cross_on && Entrance_IsActive(&settings);
-  bool dun_on = !cross_on && Entrance_IsDungeonActive(&settings);
-  bool decoupled_on = Entrance_IsDecoupledActive(&settings);  // Stage 4: cave decoupled
-  bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(&settings);  // dungeon decoupled
-  bool cross_decoupled_on = Entrance_IsCrossDecoupledActive(&settings);  // cross decoupled
-  Entrance_ClearRegionOverrides();
-  Entrance_ClearEdgeOverrides();
-  if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
-    for (int att = 0; att < 64; att++) {
-      // Reset edge overrides every attempt so ApplyDecoupledExitEdges begins
-      // fresh in the cave-only case instead of
-      // appending onto the prior attempt's leftover edges (see rando_generate.c).
-      Entrance_ClearEdgeOverrides();
-      if (cross_on) {
-        cross_count = Entrance_ComputeCrossPermutation(&settings, seed_u64, (uint8)att, cross_assign);
-        Entrance_ApplyCrossOverrides(cross_assign, cross_count);
-      } else {
-        if (cave_on) {
-          cave_count = Entrance_ComputePermutation(&settings, seed_u64, (uint8)att, cave_assign);
-          Entrance_ApplyRegionOverrides(cave_assign, cave_count);
-        }
-        if (dun_on) {
-          dun_count = Entrance_ComputeDungeonPermutation(&settings, seed_u64, (uint8)att, dun_assign);
-          Entrance_ApplyEdgeOverrides(dun_assign, dun_count);
-        }
-      }
-      if (decoupled_on) {
-        decoupled_count = Entrance_ComputeDecoupledExit(&settings, seed_u64, (uint8)att, decoupled_assign);
-        Entrance_ApplyDecoupledExitEdges(decoupled_assign, decoupled_count);
-      }
-      // Dungeon decoupled: NO logic edges (coupled-equivalent reachability is correct
-      // + conservative; see rando_generate.c). net' is for the runtime + spoiler only.
-      if (dun_decoupled_on) {
-        dun_decoupled_count = Entrance_ComputeDungeonDecoupledExit(&settings, seed_u64, (uint8)att, dun_decoupled_assign);
-      }
-      // Cross + decoupled: NO logic edges (coupled-equivalent; entry logic is the
-      // cross overrides). net computed for the runtime redirect + spoiler only.
-      if (cross_decoupled_on) {
-        cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(&settings, seed_u64, (uint8)att, cross_decoupled_assign);
-      }
-      table.count = 0;
-      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table)) {
-        // Accept this entrance permutation only if it meets the active
-        // accessibility tier (always beatable, plus per-tier reachability) —
-        // this rejects any π that strands placements beyond the tier's bar
-        // (e.g. a gated door leading to the dungeon that grants the gating
-        // item). See rando_generate.c.
-        if (Accessibility_SeedAcceptable(&settings, &table)) {
-          ok = true;
-          break;
-        }
-      } else if (Customizer_LastError()[0] != '\0') {
-        // A customizer pin error is deterministic — no entrance permutation
-        // will fix it, so stop retrying immediately.
-        break;
-      }
-    }
-    // Leave overrides active through sphere + spoiler emission below.
-  } else if (Settings_EffectiveDoorShuffle(&settings) != kDoorShuffle_Vanilla) {
-    // Door-shuffle path, mirroring Rando_PlaceWithEntrances. The headless
-    // pipeline is hand-rolled; both paths must stay in step or corpus seeds
-    // diverge from in-game slots. Mutually exclusive with entrance shuffle per
-    // apply_derived_rules.
-    static DoorShuffleLayout headless_door_layout;
-    for (uint32 datt = 0; datt < 16; datt++) {
-      if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
-                                &headless_door_layout))
-        continue;
-      Rando_SetDoorLogicLayout(&headless_door_layout, headless_door_layout.shuffled_mask);
-      table.count = 0;
-      if (Place_AssumedFill(&settings, seed_u64, effective_budget, &table) &&
-          Accessibility_SeedAcceptable(&settings, &table)) {
-        ok = true;
-        break;
-      }
-      Rando_SetDoorLogicLayout(NULL, 0);
-    }
-    // Layout stays installed through sphere + spoiler emission below.
-  } else {
-    ok = Place_AssumedFill(&settings, seed_u64, effective_budget, &table);
+  RandoEntranceRegen reg;
+  memset(&reg, 0, sizeof reg);
+  RandoSpheres spheres;
+  memset(&spheres, 0, sizeof spheres);
+  bool spheres_ok = false;
+  SeedShapeMetrics shape_metrics;
+  memset(&shape_metrics, 0, sizeof shape_metrics);
+  char last_shape_reject[160];
+  last_shape_reject[0] = '\0';
+  uint32 shape_attempts_used = 0;
+  uint64 accepted_seed_u64 = seed_u64;
+  int candidate_limit = shape_filter.enabled ? shape_search_limit : 1;
+  bool allow_broken_plain =
+      allow_broken_seed &&
+      !Entrance_IsCrossActive(&settings) &&
+      !Entrance_IsActive(&settings) &&
+      !Entrance_IsDungeonActive(&settings) &&
+      !Entrance_IsDecoupledActive(&settings) &&
+      !Entrance_IsDungeonDecoupledActive(&settings) &&
+      !Entrance_IsCrossDecoupledActive(&settings) &&
+      Settings_EffectiveDoorShuffle(&settings) == kDoorShuffle_Vanilla;
+
+  if (shape_filter.enabled) {
+    char shape_desc[256];
+    SeedShape_Describe(&shape_filter, shape_desc, sizeof shape_desc);
+    fprintf(stderr, "--generate-seed: shape filter %s; searching up to %d candidate seed(s)\n",
+            shape_desc, candidate_limit);
   }
+
+  for (int shape_attempt = 0; shape_attempt < candidate_limit; shape_attempt++) {
+    uint64 candidate_seed = seed_u64 + (uint64)shape_attempt;
+    table.count = 0;
+    Rando_ClearGenerationLogicOverlays();
+    RandoEntranceRegen candidate_reg;
+    memset(&candidate_reg, 0, sizeof candidate_reg);
+    bool placed = allow_broken_plain
+        ? Place_AssumedFill(&settings, candidate_seed, effective_budget, &table)
+        : Rando_PlaceWithEntrances(&settings, candidate_seed, effective_budget,
+                                   &table, &candidate_reg);
+    if (!placed) {
+      const char *cerr = Customizer_LastError();
+      snprintf(last_shape_reject, sizeof last_shape_reject, "%s",
+               cerr[0] != '\0' ? cerr : "placement failed");
+      Rando_ClearGenerationLogicOverlays();
+      if (cerr[0] != '\0')
+        break;
+      continue;
+    }
+
+    spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
+    if (!spheres_ok) {
+      snprintf(last_shape_reject, sizeof last_shape_reject,
+               "%u unreachable placement(s)",
+               (unsigned)spheres.unreachable_count);
+    }
+
+    char shape_reject[160];
+    if (!SeedShape_Evaluate(&shape_filter, &settings, &table, &spheres,
+                            Placement_GetLastStats(), &shape_metrics,
+                            shape_reject, sizeof shape_reject)) {
+      snprintf(last_shape_reject, sizeof last_shape_reject, "%s", shape_reject);
+      Rando_ClearGenerationLogicOverlays();
+      continue;
+    }
+
+    ok = true;
+    reg = candidate_reg;
+    accepted_seed_u64 = candidate_seed;
+    shape_attempts_used = (uint32)(shape_attempt + 1);
+    break;
+  }
+  if (ok)
+    seed_u64 = accepted_seed_u64;
   if (!ok) {
     const char *cerr = Customizer_LastError();
     if (cerr[0] != '\0')
       fprintf(stderr, "--generate-seed: customizer placement failed: %s\n", cerr);
+    else if (shape_filter.enabled) {
+      char shape_desc[256];
+      SeedShape_Describe(&shape_filter, shape_desc, sizeof shape_desc);
+      fprintf(stderr,
+              "--generate-seed: shape filter search failed after %d candidate seed(s)\n"
+              "  filter: %s\n"
+              "  last_rejection: %s\n"
+              "  hint: try a higher search limit or loosen the filter"
+              " (for numeric tokens, lower min_sphere or raise max_sphere).\n",
+              candidate_limit, shape_desc,
+              last_shape_reject[0] != '\0' ? last_shape_reject : "no matching candidate");
+    }
     else
       fprintf(stderr, "--generate-seed: placement failed\n");
+    Rando_ClearGenerationLogicOverlays();
     free(entries);
     exit(1);
   }
@@ -887,6 +943,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   int share_len = Share_Encode(&ss, share_string, sizeof(share_string));
   if (share_len <= 0) {
     fprintf(stderr, "--generate-seed: share string encoding failed\n");
+    Rando_ClearGenerationLogicOverlays();
     free(entries);
     exit(1);
   }
@@ -909,14 +966,13 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     Settings_CanonicalSerialize(&settings, ss2.settings_canonical);
     if (Share_EncodeV2(&ss2, share_string_v2, sizeof(share_string_v2)) <= 0) {
       fprintf(stderr, "--generate-seed: v2 share string encoding failed\n");
+      Rando_ClearGenerationLogicOverlays();
       free(entries);
       exit(1);
     }
   }
 
-  // Compute spheres for sphere_data emission.
-  RandoSpheres spheres;
-  bool spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
+  // Spheres were computed for the accepted candidate during placement search.
   if (!spheres_ok) {
     fprintf(stderr, "--generate-seed: %u placements unreachable across %u spheres\n",
             (unsigned)spheres.unreachable_count, (unsigned)(spheres.max_sphere + 1));
@@ -935,19 +991,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   spoiler.seed_u64 = seed_u64;
   spoiler.generator_version = kGeneratorVersion;
   spoiler.settings = &settings;
-  // entrance_mapping sections (omitted when the respective count is 0).
-  spoiler.entrance_assign = (cave_count > 0) ? cave_assign : NULL;
-  spoiler.entrance_count = cave_count;
-  spoiler.dungeon_assign = (dun_count > 0) ? dun_assign : NULL;
-  spoiler.dungeon_count = dun_count;
-  spoiler.cross_assign = (cross_count > 0) ? cross_assign : NULL;
-  spoiler.cross_count = cross_count;
-  spoiler.decoupled_assign = (decoupled_count > 0) ? decoupled_assign : NULL;
-  spoiler.decoupled_count = decoupled_count;
-  spoiler.dun_decoupled_assign = (dun_decoupled_count > 0) ? dun_decoupled_assign : NULL;
-  spoiler.dun_decoupled_count = dun_decoupled_count;
-  spoiler.cross_decoupled_assign = (cross_decoupled_count > 0) ? cross_decoupled_assign : NULL;
-  spoiler.cross_decoupled_count = cross_decoupled_count;
+  Rando_SpoilerSetEntranceFields(&spoiler, &reg);
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
   uint8 medallion_assignment_sp[kRandoMedallionEntranceCount];
@@ -979,10 +1023,6 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // to write the spoiler when the goal predicate fails. CI corpus + race-mode
   // workflows can't tolerate broken seeds. Set --allow-broken-seed to
   // override (debug / diagnostic use only).
-  bool allow_broken_seed = false;
-  for (int i = 0; i < argc; ++i) {
-    if (strcmp(argv[i], "--allow-broken-seed") == 0) { allow_broken_seed = true; break; }
-  }
   if (Goal_ShouldRefuse(&settings, &table) && !allow_broken_seed) {
     fprintf(stderr,
       "--generate-seed: this seed does not meet the accessibility requirement\n"
@@ -991,6 +1031,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       "  location reachable and `items` every progression item reachable.\n"
       "  (Use --allow-broken-seed to write a diagnostic spoiler anyway.)\n",
       (unsigned)settings.goal, (unsigned)settings.accessibility);
+    Rando_ClearGenerationLogicOverlays();
     free(entries);
     exit(1);
   }
@@ -1034,15 +1075,14 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   if (!Spoiler_Write(&spoiler, out_spoiler, txt_path)) {
     fprintf(stderr, "--generate-seed: failed writing spoiler to %s\n", out_spoiler);
     if (txt_path != NULL) free(txt_path);
+    Rando_ClearGenerationLogicOverlays();
     free(entries);
     exit(1);
   }
   if (txt_path != NULL) free(txt_path);
-  // The accepted door layout stayed installed through the sphere/goal/spoiler
-  // work above. This process exits below, but clear it anyway for symmetry with
-  // Rando_GenerateSlot (which must clear, or the next same-process generation
-  // places against stale door reachability).
-  Rando_SetDoorLogicLayout(NULL, 0);
+  // The accepted generation overlays stayed installed through sphere/goal/spoiler
+  // work above. Clear them for symmetry with Rando_GenerateSlot.
+  Rando_ClearGenerationLogicOverlays();
 
   // Optionally write the share string to its own file. This is the
   // distribute-to-players artifact, so it gets the v2 exchange string
@@ -1069,6 +1109,17 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   // repeating the v1 string here would be misleading.
   if (share_string_v2[0] != '\0')
     fprintf(stderr, "  share_string_v2: %s\n", share_string_v2);
+  if (shape_filter.enabled) {
+    char shape_desc[256];
+    char shape_metrics_text[128];
+    SeedShape_Describe(&shape_filter, shape_desc, sizeof shape_desc);
+    SeedShape_FormatMetrics(&shape_metrics, shape_metrics_text, sizeof shape_metrics_text);
+    fprintf(stderr,
+      "  shape_filter: %s\n"
+      "  shape_attempts: %u/%d\n"
+      "  shape_metrics: %s\n",
+      shape_desc, (unsigned)shape_attempts_used, candidate_limit, shape_metrics_text);
+  }
   fprintf(stderr,
     "  placements: %u\n"
     "  placement_digest: %02x%02x%02x%02x%02x%02x%02x%02x...\n"
@@ -1343,9 +1394,20 @@ static void ConsumeRandoWindowGenerateRequest(void) {
     return;
   RandoGenerateResult res; char err[256] = {0};
   RandoWindowBridge *b = &g_rando_window_bridge;
-  bool ok = Rando_GenerateSlot(&b->pending, b->seed_u64, -1, b->target_slot_index,
-                               b->pending_recommended_features0, &res, err, sizeof err);
+  RandoGenerateShapeOptions shape_options;
+  const RandoGenerateShapeOptions *shape_options_ptr = NULL;
+  memset(&shape_options, 0, sizeof shape_options);
+  if (b->shape_filter_enabled && b->shape_filter_valid && b->shape_filter.enabled) {
+    shape_options.filter = &b->shape_filter;
+    shape_options.search_limit = b->shape_search_limit;
+    shape_options_ptr = &shape_options;
+  }
+  bool ok = Rando_GenerateSlotWithShapeFilter(
+      &b->pending, b->seed_u64, -1, b->target_slot_index,
+      b->pending_recommended_features0, shape_options_ptr, &res, err, sizeof err);
   if (ok) {
+    b->seed_u64 = res.seed_u64;
+    RandoWindowBridge_RecomputeDerived();
     RandoWindowBridge_StoreGenerated(&res.placement, NULL,
                                      res.has_medallion_assignment ? res.medallion_assignment : NULL,
                                      res.race_mode);  // bridge copies
@@ -1354,8 +1416,18 @@ static void ConsumeRandoWindowGenerateRequest(void) {
     // Spoiler tab's "Save spoiler" writes an accurate RandoSpoiler even after
     // the user edits `pending`. (game thread owns last_generated_*.)
     b->last_generated_settings = b->pending;
-    b->last_generated_seed_u64 = b->seed_u64;
+    b->last_generated_seed_u64 = res.seed_u64;
     b->last_generated_goal_completable = res.goal_completable;
+    b->last_generated_shape_filter_used = res.shape_filter_used;
+    b->last_generated_shape_attempts_used = res.shape_attempts_used;
+    b->last_generated_shape_search_limit = res.shape_search_limit;
+    b->last_generated_shape_metrics = res.shape_metrics;
+    if (res.shape_filter_used)
+      strncpy(b->last_generated_shape_desc, b->shape_filter_desc,
+              sizeof b->last_generated_shape_desc - 1);
+    else
+      b->last_generated_shape_desc[0] = '\0';
+    b->last_generated_shape_desc[sizeof b->last_generated_shape_desc - 1] = '\0';
     strncpy(b->last_generated_share_string, res.share_string,
             sizeof b->last_generated_share_string - 1);
     b->last_generated_share_string[sizeof b->last_generated_share_string - 1] = '\0';

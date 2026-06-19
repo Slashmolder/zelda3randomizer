@@ -16,6 +16,7 @@
 #include "rando_settings.h"
 #include "rando_share.h"     // kShareStringBase32MaxLen
 #include "rando_placement.h"  // RandoPlacementTable
+#include "seed_shape.h"       // SeedShapeFilter / metrics
 #include "shuffle_entrance.h"  // kEntranceMaxInteriors
 
 struct RandoSpoiler;  // fwd (full def in rando_spoiler.h)
@@ -78,15 +79,25 @@ void Rando_GetDoorGeneration(uint8 *attempt_out, uint32 *digest24_out);
 // installs its own regenerated copies after this runs.
 void Rando_ClearGenerationLogicOverlays(void);
 
+typedef struct RandoGenerateShapeOptions {
+  const SeedShapeFilter *filter;  // NULL or disabled => no shape search
+  int search_limit;               // candidate seeds to try when filter is enabled
+} RandoGenerateShapeOptions;
+
 typedef struct RandoGenerateResult {
   bool ok;
   bool used_forward_fill;
   bool goal_completable;
   bool race_mode;
+  uint64 seed_u64;  // accepted seed; may differ from input when shape search is used
   char share_string[kShareStringBase32MaxLen];
   uint8 settings_hash[32];
   bool has_medallion_assignment;
   uint8 medallion_assignment[kRandoMedallionEntranceCount];
+  bool shape_filter_used;
+  uint32 shape_attempts_used;
+  int shape_search_limit;
+  SeedShapeMetrics shape_metrics;
   RandoPlacementTable placement;  // OWNED malloc'd copy when requested (caller frees); {0} otherwise
 } RandoGenerateResult;
 
@@ -102,6 +113,17 @@ typedef struct RandoGenerateResult {
 bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budget,
                         int slot_index, uint32 recommended_features0,
                         RandoGenerateResult *out, char *err, size_t err_cap);
+
+// Same slot generation path with an optional generator-side shape search. Shape
+// filters are NOT settings and do not affect the settings hash/share format; on
+// success the accepted candidate seed is stored in RandoGenerateResult.seed_u64
+// and in the slot/share artifacts.
+bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 seed_u64,
+                                       int budget, int slot_index,
+                                       uint32 recommended_features0,
+                                       const RandoGenerateShapeOptions *shape,
+                                       RandoGenerateResult *out,
+                                       char *err, size_t err_cap);
 
 // Initializes a freshly-generated rando slot's 0x500-byte SRAM image (vanilla
 // new-file defaults + world-state post-escape start state). Writes only into

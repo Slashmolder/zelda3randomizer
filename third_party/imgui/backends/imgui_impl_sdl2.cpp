@@ -663,8 +663,11 @@ void ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode mode, struct _SDL_
     ImGui_ImplSDL2_CloseGamepads();
     if (mode == ImGui_ImplSDL2_GamepadMode_Manual)
     {
-        IM_ASSERT(manual_gamepads_array != nullptr && manual_gamepads_count > 0);
-        for (int n = 0; n < manual_gamepads_count; n++)
+        // Local integration uses manual mode with an empty list for helper
+        // ImGui contexts that must not poll or open SDL game controllers.
+        IM_ASSERT((manual_gamepads_array != nullptr && manual_gamepads_count > 0) ||
+                  manual_gamepads_count == 0);
+        for (int n = 0; manual_gamepads_array != nullptr && n < manual_gamepads_count; n++)
             bd->Gamepads.push_back(manual_gamepads_array[n]);
     }
     else

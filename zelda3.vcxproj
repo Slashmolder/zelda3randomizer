@@ -401,6 +401,7 @@
     <ClCompile Include="src\rando\rando_settings.c" />
     <ClCompile Include="src\rando\rando_logic.c" />
     <ClCompile Include="src\rando\rando_placement.c" />
+    <ClCompile Include="src\rando\seed_shape.c" />
     <ClCompile Include="src\rando\rando_spoiler.c" />
     <ClCompile Include="src\rando\rando_hints.c" />
     <ClCompile Include="src\rando\door_runtime.c" />
@@ -888,6 +889,7 @@
     <ClInclude Include="src\zelda_cpu_infra.h" />
     <ClInclude Include="src\zelda_rtl.h" />
     <ClInclude Include="src\rando\medallion_icons.h" />
+    <ClInclude Include="src\rando\seed_shape.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\platform\win32\zelda3.rc" />

@@ -47,6 +47,8 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--out-spoiler=<path>` | JSON spoiler path. Also writes a sibling `.txt` text spoiler. |
 | `--out-share-string=<path>` | Optional file for the base32 share string (single line, no trailing newline). Writes the **v2** exchange string — the distribute-to-players form; customizer seeds fall back to v1 (see [Share-string format](#share-string-format)). |
 | `--budget-seconds=<n>` | Bounds the placement retry budget (default 0). Exhausted budget accepts the best-so-far attempt. |
+| `--shape-filter=<tokens>` | Generator-side seed-shape search. Tries deterministic candidate seeds starting at `--seed` until spoiler/sphere metrics match comma-separated tokens. |
+| `--shape-search-limit=<n>` | Maximum candidates to try for `--shape-filter` (default 100 when a filter is present). |
 | `--assets-must-be-vanilla` | Refuses non-vanilla `zelda3_assets.dat` (compares against `kVanillaAssetsHash` in `src/rando/vanilla_assets_hash.h`). |
 | `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
 | `--customizer=<path>` | Customizer mode: load a manifest that PINS a subset of locations to chosen items; the assumed-fill placer completes the rest. See [Customizer mode](#customizer-mode). |
@@ -69,7 +71,36 @@ Examples:
   --seed=0x1234567890ABCDEF \
   --budget-seconds=30 \
   --out-spoiler=./spoilers/comp-hard.json
+
+# Search for a seed with Boots in sphere 2 or earlier
+./zelda3 --generate-seed \
+  --settings=mode.state=open,goal=fast_ganon \
+  --seed=0x1234 \
+  --shape-filter=early_boots \
+  --shape-search-limit=50 \
+  --out-spoiler=./spoilers/early-boots.json
 ```
+
+Shape filters are search-only constraints, not canonical randomizer settings.
+They do not enter the settings hash or share string. The accepted candidate seed
+is written into the spoiler/share string, so players can reproduce the seed
+without the original filter text.
+
+Supported shape tokens:
+
+| Token | Meaning |
+|---|---|
+| `short` | Accept seeds with `max_sphere<=4`. |
+| `long` | Accept seeds with `max_sphere>=6`. |
+| `no_unreachable` | Reject any seed with unreachable placements in the computed spheres. |
+| `no_forward_fill` | Reject seeds that used forward-fill fallback placements. |
+| `early_boots`, `early_flute`, `early_mirror`, `early_hookshot`, `early_lamp` | Require that item to appear in sphere 2 or earlier. |
+| `max_sphere=N`, `min_sphere=N` | Bound the maximum spoiler sphere. |
+| `item:<ItemName><=N`, `item:<ItemName>>=N` | Bound the earliest sphere containing a named item. Item matching ignores spaces, punctuation, underscores, and case. |
+
+`short` and `long` are calibrated aliases for this fork's current sphere metric.
+Use explicit `max_sphere=N` / `min_sphere=N` tokens for stricter or
+settings-specific searches.
 
 ## Settings reference
 
@@ -462,7 +493,7 @@ customizer mode off, every byte of generation is unchanged (the regression corpu
 is byte-identical).
 
 **Playable slots + the native window.** The PC settings window (Randomizer →
-General → "Customizer") has the same flow: enable the toggle, enter the manifest
+Seed Tools → "Customizer") has the same flow: enable the toggle, enter the manifest
 path, "Load manifest" (inline error, or pin-count + pool summary on success),
 then "Generate from manifest & start new slot". The slot persists the pinned
 placement, so the manifest is needed only at generation time — reloading the

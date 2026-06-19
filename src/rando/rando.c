@@ -24,6 +24,7 @@
 #include "customizer.h"  // Customizer_SelfCheck (add-rando-customizer-mode)
 #include "rando_save.h"
 #include "rando_generate.h"  // RandoGenerate_SelfCheck (slot SRAM-init self-test)
+#include "seed_shape.h"  // SeedShape_SelfCheck
 #include "rando_snapshot_tail.h"
 #include "rando_textfield.h"
 #include "item_ids.h"
@@ -5376,6 +5377,7 @@ void Rando_RunAllSelfChecks(void) {
   Settings_SelfCheck();
   Logic_SelfCheck();
   Placement_SelfCheck();
+  SeedShape_SelfCheck();
   Shuffles_SelfCheck();
   BossShuffle_SelfCheck();
   DropShuffle_SelfCheck();

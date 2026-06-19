@@ -58,7 +58,7 @@ extern "C" {
 #include "../vanilla_assets_hash.h"  // kVanillaAssetsHash, kVanillaAssetsHashKnown
 #include "../../config.h"        // g_config (R2: snapshot features0 at open), g_rando_window_prefs
 #include "../auto_tracker.h"     // AutoTracker_IsRunning/SetEnabled/GetClientCount/GetBindInfo
-#include "../customizer.h"       // Customizer_LoadFile/_Install (manifest picker, Panel_General)
+#include "../customizer.h"       // Customizer_LoadFile/_Install (Seed Tools manifest picker)
 }
 
 // Forward declarations (definitions appear later but are referenced from
@@ -102,6 +102,21 @@ static char s_customizer_path[512];
 static bool s_customizer_loaded = false;
 static char s_customizer_status[320];  // post-Load summary or error
 
+// Seed-shape filter UI state. Session-only and noncanonical: it chooses which
+// candidate seed is accepted, but the accepted seed/settings still reproduce
+// through the normal share string.
+static bool s_shape_enabled = false;
+static int s_shape_search_limit = 100;
+static int s_shape_length_mode = 0;  // 0 any, 1 short, 2 long
+static bool s_shape_no_unreachable = false;
+static bool s_shape_no_forward_fill = false;
+static bool s_shape_early_boots = false;
+static bool s_shape_early_flute = false;
+static bool s_shape_early_mirror = false;
+static bool s_shape_early_hookshot = false;
+static bool s_shape_early_lamp = false;
+static char s_shape_custom_tokens[256];
+
 // Uninstall the manifest + drop the working flag (toggle-off, window close for
 // a new slot, or a failed Load). Keeps the typed path for convenience.
 static void CustomizerUi_Clear(RandoSettings *s) {
@@ -109,6 +124,89 @@ static void CustomizerUi_Clear(RandoSettings *s) {
   s_customizer_loaded = false;
   s_customizer_status[0] = '\0';
   if (s != nullptr) s->customizer_active = 0;
+}
+
+static void ShapeUi_AppendToken(char *out, size_t out_cap, const char *token) {
+  if (out == nullptr || out_cap == 0 || token == nullptr || token[0] == '\0') return;
+  size_t used = strlen(out);
+  if (used + 1 >= out_cap) return;
+  if (used > 0) {
+    snprintf(out + used, out_cap - used, ",");
+    used = strlen(out);
+  }
+  if (used + 1 < out_cap)
+    snprintf(out + used, out_cap - used, "%s", token);
+}
+
+static void ShapeUi_ClearFilter(void) {
+  s_shape_enabled = false;
+  s_shape_search_limit = 100;
+  s_shape_length_mode = 0;
+  s_shape_no_unreachable = false;
+  s_shape_no_forward_fill = false;
+  s_shape_early_boots = false;
+  s_shape_early_flute = false;
+  s_shape_early_mirror = false;
+  s_shape_early_hookshot = false;
+  s_shape_early_lamp = false;
+  s_shape_custom_tokens[0] = '\0';
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  b->shape_filter_enabled = false;
+  b->shape_filter_valid = true;
+  b->shape_search_limit = 100;
+  b->shape_filter_desc[0] = '\0';
+  b->shape_filter_error[0] = '\0';
+  memset(&b->shape_filter, 0, sizeof b->shape_filter);
+}
+
+static void ShapeUi_RebuildBridge(void) {
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  if (s_shape_search_limit < 1) s_shape_search_limit = 1;
+  if (s_shape_search_limit > 500) s_shape_search_limit = 500;
+  b->shape_filter_enabled = s_shape_enabled;
+  b->shape_search_limit = s_shape_search_limit;
+  b->shape_filter_desc[0] = '\0';
+  b->shape_filter_error[0] = '\0';
+  memset(&b->shape_filter, 0, sizeof b->shape_filter);
+  if (!s_shape_enabled) {
+    b->shape_filter_valid = true;
+    return;
+  }
+
+  char tokens[512];
+  tokens[0] = '\0';
+  if (s_shape_length_mode == 1) ShapeUi_AppendToken(tokens, sizeof tokens, "short");
+  else if (s_shape_length_mode == 2) ShapeUi_AppendToken(tokens, sizeof tokens, "long");
+  if (s_shape_no_unreachable) ShapeUi_AppendToken(tokens, sizeof tokens, "no_unreachable");
+  if (s_shape_no_forward_fill) ShapeUi_AppendToken(tokens, sizeof tokens, "no_forward_fill");
+  if (s_shape_early_boots) ShapeUi_AppendToken(tokens, sizeof tokens, "early_boots");
+  if (s_shape_early_flute) ShapeUi_AppendToken(tokens, sizeof tokens, "early_flute");
+  if (s_shape_early_mirror) ShapeUi_AppendToken(tokens, sizeof tokens, "early_mirror");
+  if (s_shape_early_hookshot) ShapeUi_AppendToken(tokens, sizeof tokens, "early_hookshot");
+  if (s_shape_early_lamp) ShapeUi_AppendToken(tokens, sizeof tokens, "early_lamp");
+  ShapeUi_AppendToken(tokens, sizeof tokens, s_shape_custom_tokens);
+
+  if (tokens[0] == '\0') {
+    b->shape_filter_valid = false;
+    snprintf(b->shape_filter_error, sizeof b->shape_filter_error,
+             "Pick at least one seed-shape criterion or turn the filter off.");
+    return;
+  }
+  char err[160];
+  if (SeedShape_Parse(tokens, &b->shape_filter, err, sizeof err) != 0) {
+    b->shape_filter_valid = false;
+    snprintf(b->shape_filter_error, sizeof b->shape_filter_error, "%s", err);
+    return;
+  }
+  if (!b->shape_filter.enabled) {
+    b->shape_filter_valid = false;
+    snprintf(b->shape_filter_error, sizeof b->shape_filter_error,
+             "Pick at least one seed-shape criterion or turn the filter off.");
+    return;
+  }
+  b->shape_filter_valid = true;
+  SeedShape_Describe(&b->shape_filter, b->shape_filter_desc,
+                     sizeof b->shape_filter_desc);
 }
 
 // Which goal currently owns the forced accessibility=locations lock. When the
@@ -374,6 +472,102 @@ static void Panel_RecommendedFeatures() {
   ImGui::TextDisabled("Does not affect settings_hash or the share string.");
 }
 
+static bool Panel_CustomizerSection(RandoSettings *s) {
+  bool changed = false;
+
+  // ---- Customizer (add-rando-customizer-mode §6.2) ----
+  // Manifest text-entry + Load button (same shape as the spoiler save path:
+  // SDL2 has no portable native file dialog). The loaded manifest is installed
+  // for the placer; validation (RandoWindowBridge_Validate) blocks Generate
+  // while the toggle is on with nothing loaded.
+  ImGui::SeparatorText("Customizer");
+  bool cz = s->customizer_active != 0;
+  if (ImGui::Checkbox("Customizer mode (manual placements)", &cz)) {
+    if (cz) {
+      s->customizer_active = 1;
+    } else {
+      CustomizerUi_Clear(s);  // spec: disabling clears the manifest reference
+    }
+    changed = true;
+  }
+  HelpTooltip("Pin chosen locations to chosen items from a manifest file; "
+              "the normal fill places everything else.");
+  if (cz) {
+    ImGui::InputTextWithHint("##customizer_path",
+                             "path to manifest .yaml (see assets/rando/customizer.example.yaml)",
+                             s_customizer_path, sizeof s_customizer_path);
+    // Browse... opens the OS-native file picker; on a successful pick it fills
+    // the path field and auto-loads (one-click convenience). The text field
+    // remains a fallback when no native dialog backend is available.
+    bool do_load = false;
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+      char picked[sizeof s_customizer_path];
+      if (FileDialog::OpenFile("Select customizer manifest", s_customizer_path,
+                               "YAML manifest", "*.yaml *.yml",
+                               picked, sizeof picked)) {
+        snprintf(s_customizer_path, sizeof s_customizer_path, "%s", picked);
+        do_load = true;
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load manifest")) do_load = true;
+    if (do_load) {
+      char lerr[200];
+      CustomizerManifest parsed;
+      if (Customizer_LoadFile(s_customizer_path, &parsed, lerr, sizeof lerr) != 0) {
+        CustomizerUi_Clear(nullptr);  // uninstall any prior manifest; keep the toggle on
+        snprintf(s_customizer_status, sizeof s_customizer_status, "Load failed: %s", lerr);
+      } else if (parsed.pin_count == 0 && parsed.pool_add_count == 0 &&
+                 parsed.pool_remove_count == 0) {
+        // Mirror the CLI's empty-manifest rejection.
+        CustomizerUi_Clear(nullptr);
+        snprintf(s_customizer_status, sizeof s_customizer_status,
+                 "Load failed: manifest contains no placements or pool_overrides.");
+      } else {
+        s_customizer_manifest = parsed;
+        Customizer_Install(&s_customizer_manifest);
+        s_customizer_loaded = true;
+        int n = snprintf(s_customizer_status, sizeof s_customizer_status,
+                         "Loaded: %u placement(s) pinned",
+                         (unsigned)s_customizer_manifest.pin_count);
+        if (n > 0 && (s_customizer_manifest.pool_add_count ||
+                      s_customizer_manifest.pool_remove_count)) {
+          snprintf(s_customizer_status + n, sizeof s_customizer_status - (size_t)n,
+                   ", pool +%u/-%u",
+                   (unsigned)s_customizer_manifest.pool_add_count,
+                   (unsigned)s_customizer_manifest.pool_remove_count);
+        }
+      }
+      changed = true;  // settings_hash unchanged, but revalidate the Generate row
+    }
+    if (s_customizer_status[0]) {
+      bool is_err = !s_customizer_loaded;
+      ImGui::TextColored(is_err ? ImVec4(0.95f, 0.35f, 0.35f, 1.0f)
+                                : ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                         "%s", s_customizer_status);
+    }
+    // Per-pin preview so the user can eyeball what will be pinned (capped to
+    // keep the panel compact; the spoiler shows the full result).
+    if (s_customizer_loaded && ImGui::TreeNode("Pinned placements")) {
+      const int kPreviewCap = 24;
+      int shown = (s_customizer_manifest.pin_count < kPreviewCap)
+                      ? s_customizer_manifest.pin_count : kPreviewCap;
+      for (int i = 0; i < shown; i++) {
+        ImGui::BulletText("%s: %s",
+                          Rando_GetLocationName(s_customizer_manifest.pins[i].location_id),
+                          Rando_GetItemName(s_customizer_manifest.pins[i].item_id));
+      }
+      if (s_customizer_manifest.pin_count > shown)
+        ImGui::TextDisabled("... and %u more",
+                            (unsigned)(s_customizer_manifest.pin_count - shown));
+      ImGui::TreePop();
+    }
+  }
+
+  return changed;
+}
+
 static void Panel_General() {
   RandoWindowBridge *b = &g_rando_window_bridge;
   RandoSettings *s = &b->pending;
@@ -450,8 +644,8 @@ static void Panel_General() {
     ImGui::Spacing();
   }
 
-  // ---- Preset gallery ----
-  ImGui::SeparatorText("Presets");
+  // ---- Full seed presets ----
+  ImGui::SeparatorText("Seed presets");
   for (int i = 0; i < kPreset__Count; i++) {
     if (i > 0) ImGui::SameLine();
     if (ImGui::Button(Settings_PresetName((SettingsPreset)i))) {
@@ -471,7 +665,7 @@ static void Panel_General() {
     }
     HelpTooltip(Settings_PresetName((SettingsPreset)i));
   }
-  ImGui::TextUnformatted("Quick:"); ImGui::SameLine();
+  ImGui::TextUnformatted("Utility presets");
   if (ImGui::SmallButton("Open Fast Ganon")) {
     ApplyOpenFastGanonCorePreset(s);
     s_accessibility_locked = false;
@@ -621,98 +815,6 @@ static void Panel_General() {
     HelpTooltip("Telepathic-tile hints.");
   }
 
-  // ---- Customizer (add-rando-customizer-mode §6.2) ----
-  // Manifest text-entry + Load button (same shape as the spoiler save path:
-  // SDL2 has no portable native file dialog). The loaded manifest is installed
-  // for the placer; validation (RandoWindowBridge_Validate) blocks Generate
-  // while the toggle is on with nothing loaded.
-  ImGui::SeparatorText("Customizer");
-  {
-    bool cz = s->customizer_active != 0;
-    if (ImGui::Checkbox("Customizer mode (manual placements)", &cz)) {
-      if (cz) {
-        s->customizer_active = 1;
-      } else {
-        CustomizerUi_Clear(s);  // spec: disabling clears the manifest reference
-      }
-      changed = true;
-    }
-    HelpTooltip("Pin chosen locations to chosen items from a manifest file; "
-                "the normal fill places everything else.");
-    if (cz) {
-      ImGui::InputTextWithHint("##customizer_path",
-                               "path to manifest .yaml (see assets/rando/customizer.example.yaml)",
-                               s_customizer_path, sizeof s_customizer_path);
-      // Browse... opens the OS-native file picker; on a successful pick it fills
-      // the path field and auto-loads (one-click convenience). The text field
-      // remains a fallback when no native dialog backend is available.
-      bool do_load = false;
-      ImGui::SameLine();
-      if (ImGui::Button("Browse...")) {
-        char picked[sizeof s_customizer_path];
-        if (FileDialog::OpenFile("Select customizer manifest", s_customizer_path,
-                                 "YAML manifest", "*.yaml *.yml",
-                                 picked, sizeof picked)) {
-          snprintf(s_customizer_path, sizeof s_customizer_path, "%s", picked);
-          do_load = true;
-        }
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Load manifest")) do_load = true;
-      if (do_load) {
-        char lerr[200];
-        CustomizerManifest parsed;
-        if (Customizer_LoadFile(s_customizer_path, &parsed, lerr, sizeof lerr) != 0) {
-          CustomizerUi_Clear(nullptr);  // uninstall any prior manifest; keep the toggle on
-          snprintf(s_customizer_status, sizeof s_customizer_status, "Load failed: %s", lerr);
-        } else if (parsed.pin_count == 0 && parsed.pool_add_count == 0 &&
-                   parsed.pool_remove_count == 0) {
-          // Mirror the CLI's empty-manifest rejection.
-          CustomizerUi_Clear(nullptr);
-          snprintf(s_customizer_status, sizeof s_customizer_status,
-                   "Load failed: manifest contains no placements or pool_overrides.");
-        } else {
-          s_customizer_manifest = parsed;
-          Customizer_Install(&s_customizer_manifest);
-          s_customizer_loaded = true;
-          int n = snprintf(s_customizer_status, sizeof s_customizer_status,
-                           "Loaded: %u placement(s) pinned",
-                           (unsigned)s_customizer_manifest.pin_count);
-          if (n > 0 && (s_customizer_manifest.pool_add_count ||
-                        s_customizer_manifest.pool_remove_count)) {
-            snprintf(s_customizer_status + n, sizeof s_customizer_status - (size_t)n,
-                     ", pool +%u/-%u",
-                     (unsigned)s_customizer_manifest.pool_add_count,
-                     (unsigned)s_customizer_manifest.pool_remove_count);
-          }
-        }
-        changed = true;  // settings_hash unchanged, but revalidate the Generate row
-      }
-      if (s_customizer_status[0]) {
-        bool is_err = !s_customizer_loaded;
-        ImGui::TextColored(is_err ? ImVec4(0.95f, 0.35f, 0.35f, 1.0f)
-                                  : ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
-                           "%s", s_customizer_status);
-      }
-      // Per-pin preview so the user can eyeball what will be pinned (capped to
-      // keep the panel compact; the spoiler shows the full result).
-      if (s_customizer_loaded && ImGui::TreeNode("Pinned placements")) {
-        const int kPreviewCap = 24;
-        int shown = (s_customizer_manifest.pin_count < kPreviewCap)
-                        ? s_customizer_manifest.pin_count : kPreviewCap;
-        for (int i = 0; i < shown; i++) {
-          ImGui::BulletText("%s: %s",
-                            Rando_GetLocationName(s_customizer_manifest.pins[i].location_id),
-                            Rando_GetItemName(s_customizer_manifest.pins[i].item_id));
-        }
-        if (s_customizer_manifest.pin_count > shown)
-          ImGui::TextDisabled("... and %u more",
-                              (unsigned)(s_customizer_manifest.pin_count - shown));
-        ImGui::TreePop();
-      }
-    }
-  }
-
   // Quality-of-Life controls live in their own top-level tab
   // (Panel_RecommendedFeatures): seed-burned QoL plus per-slot feature bits.
 
@@ -787,7 +889,9 @@ static void Panel_General() {
     // The share string encodes the seed; while auto-randomize is on the seed
     // isn't chosen until Generate, so the cached share string would be stale —
     // show a placeholder rather than a value the player can't actually use yet.
-    if (s_randomize_seed_each_generate)
+    if (b->shape_filter_enabled)
+      ImGui::TextWrapped("share string: (chosen after Seed Shape search)");
+    else if (s_randomize_seed_each_generate)
       ImGui::TextWrapped("share string: (rolled at Generate - seed not chosen yet)");
     else
       ImGui::TextWrapped("share string: %s", b->share_string[0] ? b->share_string : "(none)");
@@ -802,6 +906,75 @@ static void Panel_General() {
     if (s->pieces_placed > 99) s->pieces_placed = 99;
     if (s->pieces_required < 1) s->pieces_required = 1;
     Pending_Changed();
+  }
+}
+
+static void Panel_SeedTools() {
+  RandoWindowBridge *b = &g_rando_window_bridge;
+  RandoSettings *s = &b->pending;
+
+  if (Panel_CustomizerSection(s))
+    Pending_Changed();
+
+  ImGui::Spacing();
+  ImGui::SeparatorText("Seed shape");
+  if (ImGui::Checkbox("Use seed shape filter", &s_shape_enabled)) {
+    if (s_shape_enabled && s_shape_search_limit < 1) s_shape_search_limit = 100;
+  }
+  HelpTooltip("Searches candidate seeds until one matches these spoiler/sphere constraints. "
+              "The accepted seed is still the only seed stored in the share string.");
+
+  ImGui::BeginDisabled(!s_shape_enabled);
+  ImGui::SliderInt("Search limit", &s_shape_search_limit, 1, 500);
+  HelpTooltip("Maximum candidate seeds to try. Generation is synchronous, so keep this bounded.");
+
+  ImGui::Spacing();
+  ImGui::TextUnformatted("Length");
+  ImGui::SameLine();
+  ImGui::RadioButton("Any", &s_shape_length_mode, 0);
+  ImGui::SameLine();
+  ImGui::RadioButton("Short", &s_shape_length_mode, 1);
+  HelpTooltip("Accepts max_sphere <= 4.");
+  ImGui::SameLine();
+  ImGui::RadioButton("Long", &s_shape_length_mode, 2);
+  HelpTooltip("Accepts max_sphere >= 6.");
+
+  ImGui::Spacing();
+  ImGui::Checkbox("No unreachable placements", &s_shape_no_unreachable);
+  ImGui::SameLine();
+  ImGui::Checkbox("No forward-fill fallback", &s_shape_no_forward_fill);
+
+  ImGui::Spacing();
+  ImGui::TextUnformatted("Early items");
+  ImGui::Checkbox("Boots", &s_shape_early_boots);
+  ImGui::SameLine();
+  ImGui::Checkbox("Flute", &s_shape_early_flute);
+  ImGui::SameLine();
+  ImGui::Checkbox("Mirror", &s_shape_early_mirror);
+  ImGui::SameLine();
+  ImGui::Checkbox("Hookshot", &s_shape_early_hookshot);
+  ImGui::SameLine();
+  ImGui::Checkbox("Lamp", &s_shape_early_lamp);
+  HelpTooltip("Checked items must appear in sphere 2 or earlier.");
+
+  ImGui::Spacing();
+  ImGui::InputTextWithHint("Advanced tokens", "min_sphere=7,item:Hookshot<=3",
+                           s_shape_custom_tokens, sizeof s_shape_custom_tokens);
+  HelpTooltip("Comma-separated CLI tokens. Use max_sphere=N, min_sphere=N, "
+              "item:<ItemName><=N, or item:<ItemName>>=N.");
+  ImGui::SameLine();
+  if (ImGui::Button("Clear")) ShapeUi_ClearFilter();
+  ImGui::EndDisabled();
+
+  ShapeUi_RebuildBridge();
+  if (!s_shape_enabled) {
+    ImGui::TextDisabled("off");
+  } else if (!b->shape_filter_valid) {
+    ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s",
+                       b->shape_filter_error);
+  } else {
+    ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "Active: %s",
+                       b->shape_filter_desc);
   }
 }
 
@@ -853,8 +1026,7 @@ static void Panel_Dungeons() {
   if (EnumCombo("Compasses", &s->dungeon_compasses_mode, kDungeonModeLabels, 3)) changed = true;
 
   ImGui::Spacing();
-  ImGui::TextUnformatted("Quick:");
-  ImGui::SameLine();
+  ImGui::TextUnformatted("Dungeon presets");
   auto set_all = [&](uint8 mode) {
     s->dungeon_small_keys_mode = mode;
     s->dungeon_big_keys_mode = mode;
@@ -892,10 +1064,10 @@ static void Panel_Shuffles() {
                   s->world_state == kWorldState_Standard);
     ImGui::BeginDisabled(!ws_ok);
 
-    // Quick presets — one-click bundles over the three groups below (Shuffle /
+    // Entrance presets — one-click bundles over the three groups below (Shuffle /
     // Exits / Cross). The live controls always reflect the resulting state, so a
     // preset followed by a tweak is fully transparent.
-    ImGui::TextUnformatted("Quick:"); ImGui::SameLine();
+    ImGui::TextUnformatted("Entrance presets");
     if (ImGui::SmallButton("Off")) {
       s->shuffle_cave_entrances = 0; s->shuffle_dungeon_entrances = 0;
       s->shuffle_ganons_tower_entrance = 0;
@@ -1447,7 +1619,8 @@ static void RenderShareRow() {
   static int s_copy_status_frames = 0;
   static bool s_copy_status_ok = false;
 
-  const char *copy_share = !s_randomize_seed_each_generate ? b->share_string : NULL;
+  const char *copy_share =
+      (!s_randomize_seed_each_generate && !b->shape_filter_enabled) ? b->share_string : NULL;
   bool can_copy_share = copy_share != NULL && copy_share[0] != '\0';
   ImGui::BeginDisabled(!can_copy_share);
   if (ImGui::Button("Copy share string")) {
@@ -1462,9 +1635,11 @@ static void RenderShareRow() {
   }
   ImGui::EndDisabled();
   if (!can_copy_share) {
-    HelpTooltip(s_randomize_seed_each_generate
-                    ? "Uncheck Randomize seed each generate to copy a pinned seed. After Generate, use the result popup's copy button."
-                    : "No share string is available to copy.");
+    HelpTooltip(b->shape_filter_enabled
+                    ? "Seed Shape search chooses the final seed at Generate. Use the result popup's copy button."
+                    : (s_randomize_seed_each_generate
+                           ? "Uncheck Randomize seed each generate to copy a pinned seed. After Generate, use the result popup's copy button."
+                           : "No share string is available to copy."));
   }
   ImGui::SameLine();
   if (ImGui::Button("Paste share string")) {
@@ -1496,6 +1671,7 @@ static void RenderShareRow() {
           b->pending = tmp;
           b->seed_u64 = ss.seed_u64;
           s_randomize_seed_each_generate = false;  // pasted seed is intentional; keep it
+          ShapeUi_ClearFilter();  // pasted seeds are literal; do not search away from them
           Pending_Changed();
           // Arm the D6 Generate-mismatch check. pending_hash was just
           // recomputed from the restored settings; its first 16 bytes ARE
@@ -1523,6 +1699,7 @@ static void RenderShareRow() {
         // pasted one — we do NOT fabricate widget values from the hash.
         b->seed_u64 = ss.seed_u64;
         s_randomize_seed_each_generate = false;  // pasted seed is intentional; keep it
+        ShapeUi_ClearFilter();  // pasted seeds are literal; do not search away from them
         Pending_Changed();
         // Arm the D6 Generate-mismatch check with the EMBEDDED hash: since v1
         // cannot restore settings, the modal fires at Generate whenever the
@@ -1646,12 +1823,20 @@ static void RenderGenerateRow() {
   // Cross-field validation (red error + disabled button when invalid).
   char err[256];
   int invalid = RandoWindowBridge_Validate(&b->pending, err, sizeof err);
+  if (!invalid && b->shape_filter_enabled && !b->shape_filter_valid) {
+    snprintf(err, sizeof err, "Seed Shape: %s",
+             b->shape_filter_error[0] ? b->shape_filter_error : "invalid filter");
+    invalid = 1;
+  }
 
   ImGui::Separator();
   RenderShareRow();
 
   if (invalid) {
     ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "%s", err);
+  } else if (b->shape_filter_enabled && b->shape_filter.enabled) {
+    ImGui::TextDisabled("Seed Shape: %s (up to %d candidate seed(s))",
+                        b->shape_filter_desc, b->shape_search_limit);
   }
 
   bool no_target = (b->target_slot_index < 0);
@@ -1767,6 +1952,16 @@ static void RenderGenerateModal() {
       // share string right here so the "I got a good seed, how do I keep it?"
       // moment has an affordance without digging back through the tabs.
       ImGui::Text("Seed: %016llx", (unsigned long long)b->last_generated_seed_u64);
+      if (b->last_generated_shape_filter_used) {
+        ImGui::TextWrapped("Seed Shape: %s", b->last_generated_shape_desc);
+        ImGui::Text("Shape attempts: %u/%d",
+                    (unsigned)b->last_generated_shape_attempts_used,
+                    b->last_generated_shape_search_limit);
+        ImGui::TextDisabled("max_sphere=%u, unreachable=%u, forward_fill=%u",
+                            (unsigned)b->last_generated_shape_metrics.max_sphere,
+                            (unsigned)b->last_generated_shape_metrics.unreachable_count,
+                            (unsigned)b->last_generated_shape_metrics.forward_fill_fallback_count);
+      }
       if (ImGui::Button("Copy share string")) {
         // Prefer the lossless v2 exchange string (restores settings+seed on
         // paste); fall back to the v1 identity string for customizer seeds,
@@ -1868,6 +2063,7 @@ void RandoWindow_Init(SDL_Window *window, SDL_GLContext gl_context) {
 // The gate keys off what was LAST GENERATED, never pending.race_mode (§14.1).
 // Returns the count; fills `out_tabs` (capacity `cap`) with stable string ptrs.
 static const char *const kTab_General         = "General";
+static const char *const kTab_SeedTools       = "Seed Tools";
 static const char *const kTab_Dungeons        = "Dungeons";
 static const char *const kTab_Shuffles        = "Shuffles";
 static const char *const kTab_QualityOfLife   = "Seed QoL";
@@ -1878,7 +2074,7 @@ static const char *const kTab_Spoiler         = "Spoiler";
 static int RandoWindow_BuildTabList(bool last_generated_race_mode,
                                     const char **out_tabs, int cap) {
   int n = 0;
-  const char *base[] = { kTab_General, kTab_Dungeons, kTab_Shuffles,
+  const char *base[] = { kTab_General, kTab_SeedTools, kTab_Dungeons, kTab_Shuffles,
                          kTab_QualityOfLife, kTab_Trackers, kTab_AssetHash };
   for (size_t i = 0; i < sizeof base / sizeof base[0]; i++)
     if (n < cap) out_tabs[n++] = base[i];
@@ -1897,15 +2093,15 @@ static bool TabListContains(const char **tabs, int n, const char *name) {
   return false;
 }
 static void RandoWindow_TabSelfCheck(void) {
-  const char *tabs[8];
-  int n = RandoWindow_BuildTabList(/*race_mode=*/true, tabs, 8);
+  const char *tabs[10];
+  int n = RandoWindow_BuildTabList(/*race_mode=*/true, tabs, 10);
   if (TabListContains(tabs, n, kTab_Spoiler)) {
     fprintf(stderr,
             "[rando_window] SELF-CHECK FAILED: Spoiler tab present under "
             "race-mode (must be omitted).\n");
     exit(2);
   }
-  n = RandoWindow_BuildTabList(/*race_mode=*/false, tabs, 8);
+  n = RandoWindow_BuildTabList(/*race_mode=*/false, tabs, 10);
   if (!TabListContains(tabs, n, kTab_Spoiler)) {
     fprintf(stderr,
             "[rando_window] SELF-CHECK FAILED: Spoiler tab missing for a "
@@ -1964,8 +2160,8 @@ void RandoWindow_BeginFrame(void) {
     const RandoWindowBridge *b = &g_rando_window_bridge;
     // The visible tab set comes from the single-source-of-truth builder so the
     // race-mode Spoiler gate (§21.3) can be self-checked independently of render.
-    const char *tabs[8];
-    int ntabs = RandoWindow_BuildTabList(b->last_generated_race_mode, tabs, 8);
+    const char *tabs[10];
+    int ntabs = RandoWindow_BuildTabList(b->last_generated_race_mode, tabs, 10);
     // Two top-level tabs: "Game Settings" (the native game-config panels) and
     // "Randomizer" (all the rando panels nested under one tab, so the top level
     // stays clean and symmetric). Game Settings is first so the config-mode open
@@ -1987,6 +2183,7 @@ void RandoWindow_BeginFrame(void) {
                 (s_select_general_once && tabs[i] == kTab_General) ? ImGuiTabItemFlags_SetSelected : 0;
             if (ImGui::BeginTabItem(tabs[i], nullptr, tflags)) {
               if (tabs[i] == kTab_General)            Panel_General();
+              else if (tabs[i] == kTab_SeedTools)     Panel_SeedTools();
               else if (tabs[i] == kTab_Dungeons)      Panel_Dungeons();
               else if (tabs[i] == kTab_Shuffles)      Panel_Shuffles();
               else if (tabs[i] == kTab_QualityOfLife) Panel_RecommendedFeatures();
