@@ -60,6 +60,12 @@ void EnemyShuffle_Deactivate(void);
 // The sprite load paths gate on this before doing any work.
 bool EnemyShuffle_IsActive(void);
 
+// add-rando-trap-catalog — true iff every required GFX sheet of `type` is loaded
+// in its canonical subgroup slot for the current room/area. Used by the Ambush
+// trap to spawn only enemies that will render correctly (independent of whether
+// enemy_shuffle is active).
+bool EnemyShuffle_SheetsLoadedFor(uint8 type);
+
 // === Sprite-load substitution hooks (consumed in src/sprite.c) ===
 //
 // DUNGEON: given the room-data type byte for a single sprite entry in

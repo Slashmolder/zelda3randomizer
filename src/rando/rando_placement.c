@@ -145,7 +145,34 @@ enum {
   ID_BluePotion = 126,  // unbottled BluePotion (ROM 0x30); Phase B Slice 3b TakeAny reward
   ID_TrapDamage = 132,
   ID_TrapFreeze = 133,
+  // add-rando-trap-catalog — contiguous trap effect ids (mirror item_registry.yaml).
+  ID_TrapBomb = 134, ID_TrapAmbush = 135, ID_TrapCucco = 136,
+  ID_TrapReverse = 137, ID_TrapScramble = 138, ID_TrapDisarm = 139,
+  ID_TrapRupeeDrain = 140, ID_TrapMagicDrain = 141, ID_TrapAmmoDrain = 142,
+  ID_TrapShake = 143, ID_TrapDarkness = 144, ID_TrapFakeWarp = 145,
+  ID_TrapFakeLowHp = 146, ID_TrapTeleport = 147,
 };
+
+// add-rando-trap-catalog — the hand-mirrored ID_* enum above MUST track the
+// codegen'd ITEM_* ids (item_ids.h, included above). Assert the whole trap block
+// so a registry renumber can't silently desync placement-side ids from the
+// runtime-side dispatch/selector.
+_Static_assert(ID_TrapDamage == ITEM_TrapDamage, "trap id drift: Damage");
+_Static_assert(ID_TrapFreeze == ITEM_TrapFreeze, "trap id drift: Freeze");
+_Static_assert(ID_TrapBomb == ITEM_TrapBomb, "trap id drift: Bomb");
+_Static_assert(ID_TrapAmbush == ITEM_TrapAmbush, "trap id drift: Ambush");
+_Static_assert(ID_TrapCucco == ITEM_TrapCucco, "trap id drift: Cucco");
+_Static_assert(ID_TrapReverse == ITEM_TrapReverse, "trap id drift: Reverse");
+_Static_assert(ID_TrapScramble == ITEM_TrapScramble, "trap id drift: Scramble");
+_Static_assert(ID_TrapDisarm == ITEM_TrapDisarm, "trap id drift: Disarm");
+_Static_assert(ID_TrapRupeeDrain == ITEM_TrapRupeeDrain, "trap id drift: RupeeDrain");
+_Static_assert(ID_TrapMagicDrain == ITEM_TrapMagicDrain, "trap id drift: MagicDrain");
+_Static_assert(ID_TrapAmmoDrain == ITEM_TrapAmmoDrain, "trap id drift: AmmoDrain");
+_Static_assert(ID_TrapShake == ITEM_TrapShake, "trap id drift: Shake");
+_Static_assert(ID_TrapDarkness == ITEM_TrapDarkness, "trap id drift: Darkness");
+_Static_assert(ID_TrapFakeWarp == ITEM_TrapFakeWarp, "trap id drift: FakeWarp");
+_Static_assert(ID_TrapFakeLowHp == ITEM_TrapFakeLowHp, "trap id drift: FakeLowHp");
+_Static_assert(ID_TrapTeleport == ITEM_TrapTeleport, "trap id drift: Teleport");
 
 // Phase B Slice 3b — Retro TakeAny constants (used by BuildItemPool's junk-pad
 // target loop and the placer's selection/pin logic). Cave count + LOC id base
@@ -159,6 +186,13 @@ enum {
 // File-scope so BuildItemPool's junk-pad target and the pre-place pin pass in
 // place_assumed_fill_attempt share one definition (see location_is_prepinned).
 enum {
+  // Overworld free-standing types (add-rando-trap-catalog: a Cucco trap may only
+  // land on these, where player_is_indoors is always 0). Contiguous ordinals 3..6
+  // per assets/rando_logic_gen.py's `types` index.
+  LOCTYPE_Standing      = 3,
+  LOCTYPE_Pedestal      = 4,
+  LOCTYPE_Dash          = 5,
+  LOCTYPE_Dig           = 6,
   LOCTYPE_Drop          = 7,
   LOCTYPE_Prize_Crystal = 10,
   LOCTYPE_Prize_Pendant = 11,
@@ -303,11 +337,12 @@ static bool placement_entry_grants_item(const RandoPlacementTable *t, uint16 ent
 }
 
 static uint16 trap_count_for_frequency(uint8 traps) {
-  switch (traps & 3) {
-    case kTrapFrequency_Low:    return 4;
-    case kTrapFrequency_Medium: return 8;
-    case kTrapFrequency_High:   return 16;
-    default:                    return 0;
+  switch (traps) {
+    case kTrapFrequency_Low:      return 4;
+    case kTrapFrequency_Medium:   return 8;
+    case kTrapFrequency_High:     return 16;
+    case kTrapFrequency_Insanity: return 0xFFFF;  // all eligible junk (capped at eligible_n)
+    default:                      return 0;
   }
 }
 
@@ -333,8 +368,10 @@ static bool trap_replacement_candidate(uint16 item_id) {
 
 static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
                                                 const uint8 *junk_filled,
+                                                const uint16 *open_loc_idx,
                                                 uint16 n,
                                                 const RandoSettings *settings,
+                                                uint64 seed_u64,
                                                 RandoRng *rng) {
   uint16 wanted = trap_count_for_frequency(settings ? settings->traps : 0);
   if (wanted == 0) return 0;
@@ -359,7 +396,23 @@ static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
   // shuffled into dropped junk.
   while (injected < wanted && injected < eligible_n) {
     uint16 idx = eligible[injected];
-    placement_at[idx] = (injected & 1) ? ID_TrapFreeze : ID_TrapDamage;
+    // add-rando-trap-catalog — the per-slot effect TYPE is chosen deterministically
+    // from (seed, location_id), filtered to the enabled category mask AND the
+    // location's indoor/outdoor compatibility, so it is independent of the
+    // eligible-slot shuffle order. The slot SELECTION above stays rng-driven; only
+    // the type moved here off the old positional (injected & 1) alternation.
+    const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[idx]];
+    // Committed-data-only location flags so the placed effect always fires where the
+    // spoiler shows it (Cucco never indoors, Darkness only in dungeons). Region
+    // dungeon_id and the overworld free-standing types are deterministic + CI-safe.
+    uint8 loc_flags = 0;
+    if (loc->region_id != 0xFFFF && loc->region_id < kRandoRegionsCount &&
+        kRandoRegions[loc->region_id].dungeon_id != 0xFF)
+      loc_flags |= kTrapLoc_IsDungeon;
+    if (loc->type >= LOCTYPE_Standing && loc->type <= LOCTYPE_Dig)
+      loc_flags |= kTrapLoc_IsOutdoor;
+    placement_at[idx] = Rando_PickTrapEffectId(
+        seed_u64, loc->id, settings ? settings->trap_categories : 0, loc_flags);
     injected++;
   }
   return injected;
@@ -1740,7 +1793,8 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       placement_at[k] = fb;
     }
   }
-  (void)inject_traps_into_junk_placements(placement_at, junk_filled, open_n, settings, &rng);
+  (void)inject_traps_into_junk_placements(placement_at, junk_filled, open_loc_idx,
+                                          open_n, settings, seed_u64, &rng);
 
   // ----- 7. Emit placement table -----
   for (uint16 k = 0; k < open_n; k++) {
@@ -2507,15 +2561,16 @@ void Placement_SelfCheck(void) {
       RandoPlacementTable tt = { trap_entries, 0 };
       if (!Place_AssumedFill(&s, (uint64)(0x54524150u + c), 0, &tt))
         selfcheck_die("trap placement selfcheck could not generate a placement");
-      uint16 damage = 0, freeze = 0;
+      // add-rando-trap-catalog — type is now (seed,location)-selected across the
+      // whole catalog (no Damage/Freeze even split). Assert the trap COUNT honors
+      // the frequency and every placed trap id is in the contiguous block.
+      uint16 traps = 0;
       for (uint16 i = 0; i < tt.count; i++) {
-        if (tt.entries[i].item_id == ID_TrapDamage) damage++;
-        else if (tt.entries[i].item_id == ID_TrapFreeze) freeze++;
+        uint16 id = tt.entries[i].item_id;
+        if (id >= ID_TrapDamage && id <= ID_TrapTeleport) traps++;
       }
-      if (damage + freeze != kTrapCases[c].count)
+      if (traps != kTrapCases[c].count)
         selfcheck_die("trap frequency placed wrong number of traps");
-      if (damage != freeze)
-        selfcheck_die("trap frequency should alternate damage/freeze evenly");
     }
   }
 

@@ -16,7 +16,10 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 78u  // 77→78: enemy-shuffle GFX-sheet widening enabled (dungeon sprite-palette gate + verify-then-commit fillability), POSITION-aware sheet loaded-check (Javelin Soldier tile bug), and contact-damage class-2 exclusion (zero-damage bug). Runtime-only — placement draws no fill RNG and adds no predicate, so placement_digest stays byte-identical; settings_hash / kSettingsCanonicalLen unchanged. The bump version-locks the now-live enemy-shuffle behavior. (v77 was taken concurrently by main's medallion-config change below.)
+#define kGeneratorVersion 81u  // 80→81: add-rando-trap-catalog — new `insanity` trap frequency (every eligible junk pickup becomes a trap). The `traps` field widens to 3 bits, non-contiguously: low 2 bits stay in canonical [26] bits 2-3 (so off/low/medium/high are byte-identical and instant_flute at bit4 is untouched), the 3rd bit (Insanity=4) goes in the free [26] bit5. Default (traps off) byte-identical; only `insanity` seeds are new.
+                               // 79→80: add-rando-trap-catalog — context-locked traps (Cucco/Darkness) are now placement-filtered to compatible locations (Cucco only at overworld free-standing types, Darkness only in dungeon regions) via Rando_PickTrapEffectId's loc_flags, so the placed effect always matches the spoiler instead of silently falling back at runtime. Moves traps-on placement digests; default (traps off) stays byte-identical.
+                               // 78→79: add-rando-trap-catalog — the trap TYPE at each junk-replaced slot is now selected deterministically per (seed, location_id) across a 16-effect catalog filtered by the trap_categories mask, replacing the positional Damage/Freeze alternation. Only traps-on seeds move placement_digest (traps-off byte-identical); trap_categories packs into canonical [27] bits 2-6 (default 0 ⇒ byte-identical), kSettingsCanonicalLen unchanged.
+                               // 77→78: enemy-shuffle GFX-sheet widening enabled (dungeon sprite-palette gate + verify-then-commit fillability), POSITION-aware sheet loaded-check (Javelin Soldier tile bug), and contact-damage class-2 exclusion (zero-damage bug). Runtime-only — placement draws no fill RNG and adds no predicate, so placement_digest stays byte-identical; settings_hash / kSettingsCanonicalLen unchanged. The bump version-locks the now-live enemy-shuffle behavior. (v77 was taken concurrently by main's medallion-config change below.)
                                // 76→77: MM/TR medallion config slots no longer behave like item placements in spoilers, hints, accessibility, or sphere item grants. Text/JSON spoilers emit actual medallion requirements from the assignment table. Hints-on JSON/race stamps can change; seeds that previously used fake config-slot medallions for reachability may move. settings_hash unchanged.
                                // 75→76: instant_flute becomes a canonical seed setting (default on, [26] bit4 disables). CanFly now branches on OP_INSTANT_FLUTE, so instant_flute=false restores the old activation route. Default settings_hash / placement digests stay byte-identical vs v75; kSettingsCanonicalLen unchanged.
                                // 74→75: rando flute pickup now grants the active bird-woken flute immediately (link_item_flute=3 + FluteActive ownership), and CanFly no longer requires the old separate activation route. Inverted flute-gated placement/sphere digests can move; settings_hash / kSettingsCanonicalLen unchanged.
@@ -201,6 +204,19 @@ void Rando_NoteFrameForReveal(void);
 // Per-frame trap effect tick. Runs before Module_MainRouting so trap freeze can
 // neutralize movement/input before the active player handler consumes them.
 void Rando_TickTrapEffects(void);
+// add-rando-trap-catalog — placement-time location-compatibility flags passed to
+// Rando_PickTrapEffectId so context-locked effects (Cucco needs the overworld,
+// Darkness needs a dungeon) are only ever placed where they will actually fire.
+// Derived from committed location data (region dungeon_id + location type).
+enum {
+  kTrapLoc_IsDungeon = 1u << 0,  // the location's region is a dungeon
+  kTrapLoc_IsOutdoor = 1u << 1,  // the location is an overworld free-standing type
+};
+// Placement-time trap effect selector (defined in rando.c, called from
+// rando_placement.c). Deterministic in (seed, location_id) and the enabled-category
+// mask; returns an ITEM_Trap* id compatible with loc_flags.
+uint16 Rando_PickTrapEffectId(uint64 seed, uint16 location_id, uint8 categories,
+                              uint8 loc_flags);
 
 // Returns true if `lttp_code` is the §6.2 "skip Link_ReceiveItem" sentinel.
 // Enabled for HalfMagic/QuarterMagic/TriforcePiece/prize-bit items, which
@@ -299,6 +315,19 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
 // draw); false when the vanilla sprite should be drawn instead.
 bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id);
 
+// As above, but draw the icon at a fixed screen offset (dx,dy) from sprite `k` —
+// for an NPC whose vanilla pose holds an item out (the Hobo's bottle). The caller
+// still draws the NPC's body; this only adds the held icon.
+bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id,
+                                 int dx, int dy);
+
+// Draw a trap-cucco (sprite 0x0B with the trap signal byte set) as a single 16x16
+// large OAM entry from the shared recv-item slot with the custom cucco tile +
+// palette, so the flock renders in ANY area. Mirrors the vanilla large draw
+// (Sprite_PrepAndDrawSingleLargeNoPrep) but with a fixed charnum/palette. Vanilla
+// and home-area cuccos keep the sheet-3 draw. Implemented in sprite.c.
+void Rando_DrawTrapCucco(int k);
+
 // Load `gfx` into the shared receive-item VRAM slot (chars 0x24/0x34) unless it
 // already holds it (g_recv_item_slot_owner cache; handles the sword/shield
 // decompress side-loads). For draw sites that render the slot themselves —
@@ -334,7 +363,13 @@ enum {
   // Vanilla green-rupee tile (bundle 0x24) + ALTTPR's off_black palette: the
   // Rupoor has NO custom tile upstream either (z3r itemdatatables.asm $59).
   kRandoCustomGfx_Rupoor = 0x83,
-  kRandoCustomGfx_BlobEntries = 3,  // ids 0x80..0x80+N-1 index the asset blob
+  // Cucco trap avenger (add-rando-trap-catalog): a dispatch id, NOT a blob cell —
+  // the real cucco tile + palette load at runtime from VANILLA sheet 80 (the cucco
+  // ALSO uses there) in the cucco branches of Rando_EnsureRecvItemSlotGfx /
+  // Rando_ApplyCustomItemGfxPalette, drawn by Rando_DrawTrapCucco. So the flock
+  // renders in EVERY area, not just the two that load that sheet into sprite slot 3.
+  kRandoCustomGfx_Cucco = 0x84,
+  kRandoCustomGfx_BlobEntries = 3,  // kRandoCustomItemGfx cell count (idx 0..2)
 };
 
 // (Re)load the custom item's 8-colour palette into SP3's upper half if it is

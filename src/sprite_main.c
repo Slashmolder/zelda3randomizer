@@ -1732,6 +1732,25 @@ void Hobo_Draw(int k) {  // 84ea60
     { 3,   3, 0x0088, 2},
     {-5,   3, 0x00a6, 2},
   };
+  // add-rando-field-item-sprites: in his give pose (sprite_graphics==2) the Hobo
+  // holds out a bottle (table entries 8 & 10). When his location holds a different
+  // shuffled item, draw the Hobo's BODY (entries 9 & 11, the left-hand tiles) plus
+  // THAT item's icon where the bottle was — resolved/drawn exactly like the free-
+  // standing field items (Rando_GetFieldItemIcon gates on the active slot + the
+  // field_item_sprites toggle and returns the trap decoy for traps). Vanilla /
+  // bottle placements and every other pose fall through to the normal draw.
+  if (sprite_graphics[k] == 2) {
+    uint8 g, b, f;
+    if (Rando_GetFieldItemIcon(LOC_Hobo, ITEM_BottleEmpty, &g, &b, &f)) {
+      static const DrawMultipleData kHobo_BodyFrame2[2] = {
+        {-5, 3, 0x00ab, 0},   // = kHobo_Dmd[9]  (body, not bottle)
+        {-5, 3, 0x00a6, 2},   // = kHobo_Dmd[11]
+      };
+      Sprite_DrawMultiplePlayerDeferred(k, kHobo_BodyFrame2, 2, NULL);
+      Rando_TryDrawHeldItemSprite(k, LOC_Hobo, ITEM_BottleEmpty, 5, -11);
+      return;
+    }
+  }
   Sprite_DrawMultiplePlayerDeferred(k, &kHobo_Dmd[sprite_graphics[k] * 4], 4, NULL);
 }
 
@@ -9895,7 +9914,14 @@ void Sprite_0B_Cucco(int k) {  // 86a5c2
   if (sprite_x_vel[k] != 0)
     sprite_oam_flags[k] = sprite_oam_flags[k] & ~0x40 | (sign8(sprite_x_vel[k]) ? 0 : 0x40);
 
-  SpriteDraw_SingleLarge(k);
+  // add-rando-trap-catalog — a trap-cucco (signal byte sprite_A==1, set at spawn)
+  // renders from a custom tile + palette so the Cucco trap's flock appears in ANY
+  // area, not just the two that load the cucco sheet into sprite slot 3. Vanilla
+  // cuccos (sprite_A==0) and home-area flocks keep the original sheet-3 draw.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) && sprite_A[k])
+    Rando_DrawTrapCucco(k);
+  else
+    SpriteDraw_SingleLarge(k);
   if (sprite_head_dir[k] != 0) {
     sprite_type[k] = 0x3d;
     SpritePrep_LoadProperties(k);

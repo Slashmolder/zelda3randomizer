@@ -103,6 +103,9 @@ static HintEntry g_hint_table[kRandoHintNpc__Count];
 // the hint output. The list is conservative — when in doubt, the item
 // stays hintable.
 static bool item_is_junk(uint16 item_id) {
+  // add-rando-trap-catalog — every trap effect id in the contiguous block is junk
+  // for hinting (traps are never hinted/pointed-to).
+  if (item_id >= ITEM_TrapDamage && item_id <= ITEM_TrapTeleport) return true;
   switch (item_id) {
     case ITEM_PieceOfHeart:
     case ITEM_BossHeartContainer:
@@ -118,8 +121,6 @@ static bool item_is_junk(uint16 item_id) {
     case ITEM_Bombs3:
     case ITEM_Bombs10:
     case ITEM_Rupoor:
-    case ITEM_TrapDamage:
-    case ITEM_TrapFreeze:
       return true;
     default:
       return false;

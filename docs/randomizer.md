@@ -127,7 +127,8 @@ axis via `item_pool`.
 | `boss_shuffle` | `true`, `false` | `false` (playable, experimental; render via the Enemizer redirect model; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
 | `drop_shuffle` | `true`, `false` | `false` (experimental, playable) |
 | `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
-| `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high` | `off` |
+| `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
+| `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -418,6 +419,36 @@ the entrance lobbies reachable under current logic.
 `--door-selftest` runs the generation net headlessly (connectivity, prover
 acceptance, determinism, oracle/stitcher agreement for every shuffleable
 dungeon across many seeds).
+
+### Traps
+
+When `traps` is `low` / `medium` / `high`, the generator replaces 4 / 8 / 16
+eligible **junk** pickups (rupees, magic, arrows, bombs, rupoor) with masquerade
+traps. A trap looks exactly like a normal item — its on-screen sprite and pickup
+popup are a deterministic good-item decoy — but on collection it shows the fool
+message and springs an effect instead of granting an item. Traps only ever occupy
+junk locations, so they never gate logic or affect sphere order.
+
+The per-slot effect is chosen deterministically from `(seed, location_id)`, so the
+same share string always produces the same traps. There are **16 effects across 5
+categories**, and `trap_categories` selects which categories can appear (default
+`all`):
+
+| Category | Effects |
+|---|---|
+| **Hazard** | Damage (1 heart, non-lethal), Bomb (a live bomb at your feet), Ambush (a ring of enemies — overworld or any room whose sheets allow it; else a Damage hit), Cucco swarm (overworld only) |
+| **Impair** | Freeze, Reversed controls, Scrambled ("drunk") controls, Disarmed (no attack/item for a few seconds) |
+| **Drain** | Rupee drain, Magic drain (the upgrade tier is never lost), Ammo drain (arrows emptied, bombs halved) |
+| **Scare** (harmless) | Screen shake, Darkness (dungeon blackout, restores), Fake teleport (a warp flash with no displacement), Fake low-health alarm |
+| **Displace** | Teleport (warps you to a safe start point — the Dark Chapel in Inverted) |
+
+The native settings window exposes the frequency plus a checkbox per category.
+Leaving every box checked (or every box unchecked) means "all categories"; to turn
+traps off entirely, set `traps` to `off`. The two context-locked effects are placed
+only where they can fire — Cucco only at overworld free-standing locations, Darkness
+only in dungeon regions — so a trap always springs the effect the spoiler shows (a
+runtime fallback to Bomb / Screen-shake remains as a belt-and-suspenders safety net
+but is not normally reached).
 
 ## Customizer mode
 
@@ -1182,6 +1213,9 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 74→75 | **Instant flute default** — rando flute pickups grant the active bird-woken flute immediately, and `CanFly` no longer requires the separate activation route. | Inverted flute-gated placement/sphere digests can move; settings_hash and `kSettingsCanonicalLen` unchanged. |
 | 75→76 | **Instant flute seed setting** — `instant_flute` is now a canonical seed option, default `true`; byte `[26]` bit4 disables it by encoding the inverse manual-activation mode. | Default settings hash and default placement digests stay byte-identical vs v75. `instant_flute=false` seeds restore the old activation gate and can move Inverted flute-gated placement/sphere digests. |
 | 76→77 | **MM/TR medallion config slots stop behaving like item placements** — spoilers, hints, accessibility, and sphere item grants use the actual medallion requirements from the assignment table instead of fake config-slot placements. | Hints-on JSON / race stamps can change; seeds that used fake config-slot medallions for reachability may move; `settings_hash` unchanged. |
+| 79→80 | **Trap context-aware placement** (`add-rando-trap-catalog`) — the two context-locked effects are now filtered at placement time to compatible locations (Cucco only at overworld free-standing types `Standing`/`Pedestal`/`Dash`/`Dig`; Darkness only in dungeon regions), via `Rando_PickTrapEffectId`'s `loc_flags`, so the placed effect always matches the spoiler instead of silently falling back at runtime. Signal is committed-data-only (region `dungeon_id` + location `type`) for CI determinism. | Default `traps=off` byte-identical; the 3 traps-on corpus seeds move their placement digests (a context-locked effect that previously landed on an incompatible junk slot now resolves differently). |
+| 80→81 | **Trap `insanity` frequency** (`add-rando-trap-catalog`) — a 5th `traps` tier that turns **every** eligible junk pickup into a masquerade trap (the lower tiers cap at 4/8/16). The `traps` canonical field widens 2→3 bits non-contiguously: the low 2 bits stay at `[26]` bits 2-3 (so `off`/`low`/`medium`/`high` — and `instant_flute` at bit4 — are byte-identical) and the 3rd bit (`insanity`=4) uses the previously-free `[26]` bit5. | Default `traps=off` byte-identical; existing `low`/`medium`/`high` seeds unchanged (same bits, same placement). Corpus placement digests **0-changed** — only the manifest `generator_version` bumps. Only new `insanity` seeds set bit5. |
+| 78→79 | **Trap catalog** (`add-rando-trap-catalog`) — the masquerade-trap system expands from 2 effects to a 16-effect catalog across 5 categories (HAZARD / IMPAIR / DRAIN / SCARE / DISPLACE), and the per-slot effect TYPE is now selected deterministically per `(seed, location_id)` filtered by the new `trap_categories` mask (canonical `[27]` bits 2-6), replacing the positional `TrapDamage`/`TrapFreeze` alternation. | Default `traps=off` (mask `0`) keeps the canonical bytes byte-identical, so no-traps corpus seeds are unchanged; the 3 traps-on corpus seeds intentionally move their placement digests (sphere digests unchanged — traps gate nothing). `kSettingsCanonicalLen` unchanged (no size cascade). |
 | 77→78 | **Enemy-shuffle sheet widening enabled + sheet-slot / damage fixes** (`add-rando-enemy-sheet-widening`) — the all-slot reshuffle machinery is now live (dungeon sprite-palette signature + verify-then-commit fillability); plus a POSITION-aware sheet loaded-check (fixes the Red Javelin Soldier tile bug, where a slot-0 sheet left in slot 3 by `Module05_LoadFile` mis-admitted a substitution) and contact-damage class-2 exclusion (fixes enemies dealing zero contact damage, since `kPlayerDamages` class 2 is `{0,0,0}`). | Runtime-only; no canonical field. Placement/sphere digests byte-identical (corpus regenerated with 0 digest changes); the bump version-locks the live enemy-shuffle behavior. |
 
 The pattern: predicate changes that affect only one region (12→13's

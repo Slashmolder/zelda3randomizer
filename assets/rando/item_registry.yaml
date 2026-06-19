@@ -818,3 +818,93 @@ items:
       confirmation paths, but on pickup shows the trap message, briefly
       freezes/stuns Link, and skips Link_ReceiveItem. Inserted only when
       settings.traps is nonzero.
+
+  # add-rando-trap-catalog — ids 134..147 extend the contiguous trap block
+  # (rando_is_trap_item is an id-range check, so every entry here auto-inherits
+  # the decoy masquerade + trap dispatch). category: trap keeps them out of the
+  # item pool; the runtime effect is selected by the catalog in src/rando/rando.c.
+  - id: 134
+    name: TrapBomb
+    category: trap
+    dispatch: direct_trap_bomb
+    notes: |
+      HAZARD trap. Spawns a live bomb at Link's feet (fair fuse). Inserted only
+      when settings.traps is nonzero.
+  - id: 135
+    name: TrapAmbush
+    category: trap
+    dispatch: direct_trap_ambush
+    notes: |
+      HAZARD trap. Spawns a small ring of hostile enemies around Link.
+  - id: 136
+    name: TrapCucco
+    category: trap
+    dispatch: direct_trap_cucco
+    notes: |
+      HAZARD trap. Summons angry cuccos (overworld-only; falls back indoors).
+  - id: 137
+    name: TrapReverse
+    category: trap
+    dispatch: direct_trap_reverse
+    notes: |
+      IMPAIR trap. Reverses directional input for a few seconds.
+  - id: 138
+    name: TrapScramble
+    category: trap
+    dispatch: direct_trap_scramble
+    notes: |
+      IMPAIR trap. Drops/scrambles directional input ("drunk" controls).
+  - id: 139
+    name: TrapDisarm
+    category: trap
+    dispatch: direct_trap_disarm
+    notes: |
+      IMPAIR trap. Disables attack/item buttons briefly (movement intact).
+  - id: 140
+    name: TrapRupeeDrain
+    category: trap
+    dispatch: direct_trap_rupee_drain
+    notes: |
+      DRAIN trap. Drains a chunk of the wallet (reuses the Rupoor ticker).
+  - id: 141
+    name: TrapMagicDrain
+    category: trap
+    dispatch: direct_trap_magic_drain
+    notes: |
+      DRAIN trap. Empties the magic meter (never touches the upgrade tier).
+  - id: 142
+    name: TrapAmmoDrain
+    category: trap
+    dispatch: direct_trap_ammo_drain
+    notes: |
+      DRAIN trap. Zeroes arrows / halves bombs (never the filler counters).
+  - id: 143
+    name: TrapShake
+    category: trap
+    dispatch: direct_trap_shake
+    notes: |
+      SCARE trap. Self-expiring screen shake (AncillaAdd_DashTremor).
+  - id: 144
+    name: TrapDarkness
+    category: trap
+    dispatch: direct_trap_darkness
+    notes: |
+      SCARE trap. Forces lamp-off room darkness (dungeon-only; restores).
+  - id: 145
+    name: TrapFakeWarp
+    category: trap
+    dispatch: direct_trap_fake_warp
+    notes: |
+      SCARE trap. Mirror/warp flash with ZERO displacement (safe fakeout).
+  - id: 146
+    name: TrapFakeLowHp
+    category: trap
+    dispatch: direct_trap_fake_low_hp
+    notes: |
+      SCARE trap. Low-health alarm + heart blink; HP is untouched.
+  - id: 147
+    name: TrapTeleport
+    category: trap
+    dispatch: direct_trap_teleport
+    notes: |
+      DISPLACE trap. Warps Link to a provably-safe start point.

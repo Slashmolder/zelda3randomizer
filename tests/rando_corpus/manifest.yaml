@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 78  # bump_rando_corpus.py --apply
+generator_version: 81  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -33,17 +33,17 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, traps: low }
     seed: "0x0000000000000068"
     label: "traps-low-open-fast-ganon"
-    expected_digest: "1a9c4f10404f1484de04aa0c4724c4948b84c43b2ae344433159dbdde789aedd"
+    expected_digest: "931800cf9ae685942c17b492ef6fd76446d74df074a96203d98c6ab4b4832916"
     expected_sphere_digest: "206df691d21023459664e8388d25a7c3503a2299346ed961607c2e8f6ae063a8"
   - settings: { mode.state: open, goal: fast_ganon, traps: medium }
     seed: "0x0000000000000069"
     label: "traps-medium-open-fast-ganon"
-    expected_digest: "b032a90f42444b2cb84364dd05ae9881e8a138aa6832a6d7e8976b538b67d8af"
+    expected_digest: "b2ed9e0139a945f098be57fd91bff1153755ce36fe3d23973aef7471847d0575"
     expected_sphere_digest: "c90b02b1857eb8eaa11d877d2546b88de0544e26d565b0182abf330fc5769843"
   - settings: { mode.state: open, goal: fast_ganon, traps: high }
     seed: "0x000000000000006A"
     label: "traps-high-open-fast-ganon"
-    expected_digest: "bc86719bb90cf8f0e7dbe29ad72c2e1960fb6bac5e16024c9738859206d76015"
+    expected_digest: "b1600b674760e441d2336994beeb611fc3c89915b415f91e26a14ac096d7295b"
     expected_sphere_digest: "77685d107c9b3ea8f85e67c63191bbb516b0aacfddb74457e22e9a6a4b0c8d19"
   # 7-goal × 4-world-state × dungeon-mode matrix — captured against
   # kGeneratorVersion=4 with the vanilla-mode pre-grant fix landed.

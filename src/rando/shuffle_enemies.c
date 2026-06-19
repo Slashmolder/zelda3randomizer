@@ -266,6 +266,16 @@ static bool room_in_list(uint16 room, const uint16 *list, uint32 n) {
   return false;
 }
 
+// add-rando-trap-catalog — public: are ALL of `type`'s required GFX sheets loaded
+// (in their canonical slots) for the room/area currently on screen? The Ambush
+// trap uses this to only spawn enemies that render correctly (else it falls back),
+// reusing the position-aware sheet logic above instead of guessing slots.
+bool EnemyShuffle_SheetsLoadedFor(uint8 type) {
+  const uint8 *subset = (const uint8 *)(g_ram + 0xC2FC);  // sprite_gfx_subset_0..3
+  uint8 live[4] = { subset[0], subset[1], subset[2], subset[3] };
+  return sheets_loaded(type, live);
+}
+
 enum {
   kEsResolvedContext_None = 0,
   kEsResolvedContext_Dungeon = 1,

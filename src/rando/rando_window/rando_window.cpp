@@ -325,7 +325,7 @@ static const char *const kAccessibilityLabels[] = {"items", "locations", "beatab
 // selectable here. Per add-rando-trick-logic-and-axes §3.3.
 static const char *const kLogicLabels[] = {"NoGlitches", "OverworldGlitches", "MajorGlitches",
                                            "HybridMajorGlitches", "NoLogic"};
-static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high"};
+static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high", "insanity"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -1204,11 +1204,44 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffles each dungeon's interior door connections; key doors "
                 "move too. Hyrule Castle and Swamp Palace stay vanilla.");
 
-    if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 4)) {
+    if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {
       changed = true;
     }
-    HelpTooltip("Replaces some junk items with masquerade traps. They look like "
-                "normal pickups, but damage or briefly freeze Link.");
+    HelpTooltip("Replaces junk items with masquerade traps (low/medium/high = "
+                "4/8/16; insanity = every eligible junk pickup). They look like "
+                "normal pickups, but spring a surprise effect when collected.");
+
+    // add-rando-trap-catalog — per-category enable checkboxes (disabled when
+    // Traps is off). The stored mask is the set of CHECKED categories; "all
+    // checked" normalizes to 0, the canonical all-categories sentinel, so default
+    // seeds stay byte-identical and "all on" has a single canonical encoding.
+    {
+      ImGui::BeginDisabled(s->traps == kTrapFrequency_Off);
+      uint8 active = s->trap_categories ? s->trap_categories : (uint8)kTrapCategory_All;
+      struct { const char *label; uint8 bit; const char *tip; } cats[] = {
+        { "Hazard traps",   kTrapCategory_Hazard,   "Bombs, ambushes, angry cuccos. Can hurt Link." },
+        { "Impair traps",   kTrapCategory_Impair,   "Freeze, reversed/scrambled, or disabled controls." },
+        { "Drain traps",    kTrapCategory_Drain,    "Drains rupees, magic, or ammo." },
+        { "Scare traps",    kTrapCategory_Scare,    "Harmless screen shake, darkness, and fakeouts." },
+        { "Displace traps", kTrapCategory_Displace, "Warps Link to a safe start point." },
+      };
+      uint8 newmask = 0;
+      bool toggled = false;
+      for (int i = 0; i < 5; i++) {
+        bool on = (active & cats[i].bit) != 0;
+        if (ImGui::Checkbox(cats[i].label, &on)) toggled = true;
+        if (on) newmask |= cats[i].bit;
+        HelpTooltip(cats[i].tip);
+      }
+      if (toggled) {
+        // All-checked (and the incoherent all-unchecked) both collapse to the
+        // 0 = "all categories" sentinel — Traps=off is how you disable them.
+        if (newmask == (uint8)kTrapCategory_All) newmask = 0;
+        s->trap_categories = newmask;
+        changed = true;
+      }
+      ImGui::EndDisabled();
+    }
 
     // Not-yet-playable placeholders.
     ImGui::BeginDisabled();

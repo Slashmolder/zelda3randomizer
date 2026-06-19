@@ -164,6 +164,12 @@ typedef struct RandoSettings {
   // flute immediately. Serialized inversely in canonical byte [26] bit4
   // (manual activation when set), so default ON keeps byte [26] at zero.
   uint8 instant_flute;  // bool, default on
+  // add-rando-trap-catalog — per-category trap enable mask (HAZARD/IMPAIR/DRAIN/
+  // SCARE/DISPLACE = bits 0-4). Serialized in canonical byte [27] bits 2-6. A
+  // ZERO mask while traps>0 means "all categories enabled" (the zero-sentinel),
+  // so the default (traps off, mask 0) keeps byte [27] at zero and the corpus
+  // byte-identical. Meaningful only when traps != off.
+  uint8 trap_categories;
 } RandoSettings;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
@@ -183,8 +189,29 @@ enum {
   kTrapFrequency_Low = 1,
   kTrapFrequency_Medium = 2,
   kTrapFrequency_High = 3,
+  kTrapFrequency_Insanity = 4,  // every eligible junk pickup becomes a trap
   kTrapAxis_Shift = 2,
-  kTrapAxis_Mask = 3u << kTrapAxis_Shift,
+  kTrapAxis_Mask = 3u << kTrapAxis_Shift,   // canonical [26] bits 2-3 (low 2 bits of `traps`)
+  // 3rd bit of `traps` (for Insanity=4) lives in the free canonical [26] bit5, so
+  // the off/low/medium/high (0..3) encoding stays byte-identical and instant_flute
+  // (bit4) is untouched. The field is non-contiguous by design — see
+  // Settings_Canonical{Serialize,Deserialize}.
+  kTrapAxis_HighBit = 1u << 5,
+};
+
+// add-rando-trap-catalog — per-category enable mask bits
+// (RandoSettings.trap_categories) and the canonical byte [27] packing (bits 2-6).
+// kTrapCategory_All is both the full 5-bit set AND the meaning of a zero mask
+// while traps are enabled (the zero-sentinel keeps default byte [27] = 0).
+enum {
+  kTrapCategory_Hazard   = 1u << 0,
+  kTrapCategory_Impair   = 1u << 1,
+  kTrapCategory_Drain    = 1u << 2,
+  kTrapCategory_Scare    = 1u << 3,
+  kTrapCategory_Displace = 1u << 4,
+  kTrapCategory_All      = 0x1Fu,
+  kTrapCategoriesAxis_Shift = 2,
+  kTrapCategoriesAxis_Mask  = 0x1Fu << kTrapCategoriesAxis_Shift,  // canonical [27] bits 2-6
 };
 
 // add-rando-door-shuffle — door_shuffle axis values (canonical [27] bits 0-1).

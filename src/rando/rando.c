@@ -424,15 +424,146 @@ bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer) {
   return true;
 }
 
+// add-rando-trap-catalog — membership is an id-RANGE check over the contiguous
+// trap block (item_registry.yaml 132..147). Every effect id in the block thus
+// auto-inherits the decoy masquerade (rando_trap_decoy_icon) and the trap
+// dispatch (Rando_DispatchVanillaGrant) with no per-id edits.
 static bool rando_is_trap_item(uint16 item_id) {
-  return item_id == ITEM_TrapDamage || item_id == ITEM_TrapFreeze;
+  return item_id >= ITEM_TrapDamage && item_id <= ITEM_TrapTeleport;
 }
 
 enum {
   kRandoTrapEffect_None = 0,
-  kRandoTrapEffect_Damage = 1,
-  kRandoTrapEffect_Freeze = 2,
+  kRandoTrapEffect_Damage,
+  kRandoTrapEffect_Freeze,
+  kRandoTrapEffect_Bomb,
+  kRandoTrapEffect_Ambush,
+  kRandoTrapEffect_Cucco,
+  kRandoTrapEffect_Reverse,
+  kRandoTrapEffect_Scramble,
+  kRandoTrapEffect_Disarm,
+  kRandoTrapEffect_RupeeDrain,
+  kRandoTrapEffect_MagicDrain,
+  kRandoTrapEffect_AmmoDrain,
+  kRandoTrapEffect_Shake,
+  kRandoTrapEffect_Darkness,
+  kRandoTrapEffect_FakeWarp,
+  kRandoTrapEffect_FakeLowHp,
+  kRandoTrapEffect_Teleport,
+  kRandoTrapEffect_Count,
 };
+
+// Per-effect static catalog — the SINGLE source of truth shared by the
+// placement-time selector (Rando_PickTrapEffectId) and the runtime dispatch.
+//   flags bit0 (kTrapFlag_Quiescent): the onset spawns sprites / warps / writes
+//   PPU registers, so it must wait for submodule_index == 0 (a quiescent frame,
+//   not mid-scroll/transition).
+//   fallback: the effect to substitute if the runtime context guard fails
+//   (e.g. Darkness collected outdoors -> Shake); 0 means "no special fallback".
+enum { kTrapFlag_Quiescent = 1u << 0 };
+// add-rando-trap-catalog — placement-time location compatibility for the two
+// context-locked effects, so the placed effect ALWAYS fires where the spoiler
+// shows it (no silent fallback). Derived from committed location data only
+// (region dungeon_id + location type) so it is deterministic + CI-safe; the
+// runtime context_ok stays as belt-and-suspenders. The selector simply won't
+// place a Cucco indoors or a Darkness outdoors — caves/houses get neither.
+enum {
+  kTrapLocReq_Any = 0,      // works anywhere
+  kTrapLocReq_Outdoor = 1,  // Cucco — placed only at overworld free-standing locations
+  kTrapLocReq_Dungeon = 2,  // Darkness — placed only in dungeon regions
+};
+typedef struct {
+  uint8 effect;     // kRandoTrapEffect_*
+  uint8 id;         // ITEM_Trap* (== ID_Trap*); fits uint8 (ids <= 147)
+  uint8 category;   // kTrapCategory_* bit
+  uint8 duration;   // stun_timer frames
+  uint8 flags;      // kTrapFlag_*
+  uint8 fallback;   // kRandoTrapEffect_* used if context guard fails (or None)
+  uint8 loc_req;    // kTrapLocReq_* — placement-time location compatibility
+} RandoTrapDef;
+
+static const RandoTrapDef kRandoTrapCatalog[] = {
+  { kRandoTrapEffect_Damage,     ITEM_TrapDamage,     kTrapCategory_Hazard,    40, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Freeze,     ITEM_TrapFreeze,     kTrapCategory_Impair,    96, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Bomb,       ITEM_TrapBomb,       kTrapCategory_Hazard,    40, kTrapFlag_Quiescent, kRandoTrapEffect_Damage, kTrapLocReq_Any },
+  { kRandoTrapEffect_Ambush,     ITEM_TrapAmbush,     kTrapCategory_Hazard,    40, kTrapFlag_Quiescent, kRandoTrapEffect_Damage, kTrapLocReq_Any },
+  { kRandoTrapEffect_Cucco,      ITEM_TrapCucco,      kTrapCategory_Hazard,    60, kTrapFlag_Quiescent, kRandoTrapEffect_Bomb,   kTrapLocReq_Outdoor },
+  { kRandoTrapEffect_Reverse,    ITEM_TrapReverse,    kTrapCategory_Impair,   240, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Scramble,   ITEM_TrapScramble,   kTrapCategory_Impair,   240, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Disarm,     ITEM_TrapDisarm,     kTrapCategory_Impair,   150, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_RupeeDrain, ITEM_TrapRupeeDrain, kTrapCategory_Drain,     12, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_MagicDrain, ITEM_TrapMagicDrain, kTrapCategory_Drain,     12, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_AmmoDrain,  ITEM_TrapAmmoDrain,  kTrapCategory_Drain,     12, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Shake,      ITEM_TrapShake,      kTrapCategory_Scare,     48, kTrapFlag_Quiescent, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Darkness,   ITEM_TrapDarkness,   kTrapCategory_Scare,    180, kTrapFlag_Quiescent, kRandoTrapEffect_Shake, kTrapLocReq_Dungeon },
+  { kRandoTrapEffect_FakeWarp,   ITEM_TrapFakeWarp,   kTrapCategory_Scare,     48, kTrapFlag_Quiescent, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_FakeLowHp,  ITEM_TrapFakeLowHp,  kTrapCategory_Scare,     90, 0, 0, kTrapLocReq_Any },
+  { kRandoTrapEffect_Teleport,   ITEM_TrapTeleport,   kTrapCategory_Displace,  12, kTrapFlag_Quiescent, 0, kTrapLocReq_Any },
+};
+
+static const RandoTrapDef *rando_trap_def_for_effect(uint8 effect) {
+  for (uint32 i = 0; i < countof(kRandoTrapCatalog); i++)
+    if (kRandoTrapCatalog[i].effect == effect) return &kRandoTrapCatalog[i];
+  return &kRandoTrapCatalog[0];  // defensive (Damage)
+}
+
+static uint8 rando_trap_effect_for_id(uint16 item_id) {
+  for (uint32 i = 0; i < countof(kRandoTrapCatalog); i++)
+    if (kRandoTrapCatalog[i].id == item_id) return kRandoTrapCatalog[i].effect;
+  return kRandoTrapEffect_Freeze;  // defensive — a benign, universally-safe effect
+}
+
+// Placement-time type selector (called from rando_placement.c). Deterministic in
+// (seed, location_id) and the enabled-category mask, independent of fill order;
+// domain-separated from rando_trap_decoy_mix. A zero mask while traps are on means
+// "all categories" (the canonical zero-sentinel). Picks a category uniformly, then
+// an effect within it uniformly — but skips effects whose kTrapLocReq_* is not
+// satisfied by loc_flags, so a context-locked effect (Cucco/Darkness) is never
+// placed where it would fall back. loc_flags: kTrapLoc_IsDungeon | kTrapLoc_IsOutdoor.
+uint16 Rando_PickTrapEffectId(uint64 seed, uint16 location_id, uint8 categories,
+                              uint8 loc_flags) {
+  uint8 mask = (uint8)(categories & kTrapCategory_All);
+  if (mask == 0) mask = kTrapCategory_All;  // zero-sentinel => all categories
+
+  uint8 cat_bits[5];
+  uint32 ncats = 0;
+  for (uint32 b = 0; b < 5; b++) {
+    uint8 bit = (uint8)(1u << b);
+    if (!(mask & bit)) continue;
+    for (uint32 i = 0; i < countof(kRandoTrapCatalog); i++)
+      if (kRandoTrapCatalog[i].category == bit) { cat_bits[ncats++] = bit; break; }
+  }
+  if (ncats == 0) return ITEM_TrapFreeze;  // unreachable; defensive
+
+  uint64 x = seed ^ ((uint64)location_id * 0x9E3779B97F4A7C15ull)
+                  ^ 0x54524150DA7A7BADull;  // "TRAP" + domain salt (!= decoy mix)
+  x ^= x >> 30; x *= 0xBF58476D1CE4E5B9ull;
+  x ^= x >> 27; x *= 0x94D049BB133111EBull;
+  x ^= x >> 31;
+
+  uint8 cat = cat_bits[(uint32)(x % ncats)];
+  uint16 ids[8];
+  uint32 nids = 0;
+  for (uint32 i = 0; i < countof(kRandoTrapCatalog); i++) {
+    if (kRandoTrapCatalog[i].category != cat) continue;
+    uint8 req = kRandoTrapCatalog[i].loc_req;
+    if (req == kTrapLocReq_Outdoor && !(loc_flags & kTrapLoc_IsOutdoor)) continue;
+    if (req == kTrapLocReq_Dungeon && !(loc_flags & kTrapLoc_IsDungeon)) continue;
+    ids[nids++] = kRandoTrapCatalog[i].id;
+  }
+  // Every category keeps >=1 location-agnostic effect, so nids>=1 in practice;
+  // the fallback keeps the function total if a future catalog edit breaks that.
+  if (nids == 0) return ITEM_TrapFreeze;
+  return ids[(uint32)((x >> 32) % nids)];
+}
+
+// add-rando-trap-catalog (slice 3) — Darkness uses the dungeon fixed-color path;
+// forward-declared here to avoid pulling dungeon.h into rando.c (cf. the
+// kWishPond2_OamFlags pattern below). rando_trap_effect_teardown is forward-
+// declared so rando_clear_trap_effect can restore an interrupted effect's
+// g_ram-backed PPU state (e.g. a Darkness blackout) when a new trap pre-empts it.
+void Dungeon_ApproachFixedColor_variable(uint8 a);
+static void rando_trap_effect_teardown(uint8 effect);
 
 static uint8 g_rando_trap_stun_timer;
 static uint8 g_rando_trap_effect;
@@ -440,8 +571,22 @@ static uint8 g_rando_trap_bad_sfx_timer;
 static uint8 g_rando_trap_shove_timer;
 static uint8 g_rando_trap_shove_dir;
 static uint8 g_rando_trap_owns_forced_move;
+// add-rando-trap-catalog — set by the trigger (arm), consumed by the first gated
+// tick (apply). Separates collection-time arming from in-gameplay onset so
+// spawn/warp/PPU effects never run mid-transition (they wait for submodule 0).
+static uint8 g_rando_trap_onset_pending;
+// add-rando-trap-catalog (slice 3) — Darkness snapshots the room's fixed-color
+// intensity here so teardown can restore the exact pre-trap brightness; a
+// g_ram-backed PPU write must never outlive the file-static timer.
+static uint8 g_rando_trap_saved_coldata;
 
 static void rando_clear_trap_effect(void) {
+  // Restore any g_ram-backed PPU state the active effect applied (e.g. Darkness's
+  // fixed-color blackout) before discarding it, so a pre-empting trap or an early
+  // exit can't strand it. Only when the onset actually ran (nothing applied while
+  // still pending).
+  if (g_rando_trap_effect != kRandoTrapEffect_None && !g_rando_trap_onset_pending)
+    rando_trap_effect_teardown(g_rando_trap_effect);
   if (g_rando_trap_owns_forced_move) {
     force_move_any_direction = 0;
     g_rando_trap_owns_forced_move = 0;
@@ -451,6 +596,8 @@ static void rando_clear_trap_effect(void) {
   g_rando_trap_bad_sfx_timer = 0;
   g_rando_trap_shove_timer = 0;
   g_rando_trap_shove_dir = 0;
+  g_rando_trap_onset_pending = 0;
+  g_rando_trap_saved_coldata = 0;
 }
 
 static bool rando_trap_stun_can_tick(void) {
@@ -564,24 +711,362 @@ static void rando_apply_freeze_trap_pulse(void) {
     countdown_for_blink = 10;
 }
 
+// add-rando-trap-catalog — per-effect dispatch. The trigger only ARMS (sets
+// effect + duration + onset_pending + reveal); the tick APPLIES, so spawn/warp/
+// PPU effects can wait for a quiescent frame even though the trigger fires from
+// many grant paths in any module/submodule.
+
+static bool rando_trap_effect_needs_quiescent(uint8 effect) {
+  return (rando_trap_def_for_effect(effect)->flags & kTrapFlag_Quiescent) != 0;
+}
+
+static uint8 rando_trap_effect_fallback(uint8 effect) {
+  uint8 fb = rando_trap_def_for_effect(effect)->fallback;
+  return fb ? fb : kRandoTrapEffect_Freeze;
+}
+
+// Returns false when the stored effect can't run in the current context (e.g. a
+// dungeon-only effect collected outdoors); the tick substitutes the effect's
+// fallback. Later slices add per-effect guards here; until then every effect is
+// context-OK everywhere.
+static bool rando_trap_effect_context_ok(uint8 effect) {
+  switch (effect) {
+    case kRandoTrapEffect_Cucco:
+      // Angry cuccos are an overworld mechanic (the vanilla summoner early-returns
+      // indoors). Indoors -> fallback (Bomb).
+      return player_is_indoors == 0;
+    case kRandoTrapEffect_Darkness:
+      // The fixed-color blackout is a dungeon mechanism. Outdoors -> fallback (Shake).
+      return player_is_indoors != 0;
+    case kRandoTrapEffect_Teleport:
+      // Standard mode before Zelda's rescue (sram_progress_indicator == 0) does NOT
+      // reposition Link at the start point (Dungeon_LoadEntrance gates that on
+      // progress != 0), and clearing the follower would desync the escort -> a
+      // possible OOB spawn / quest desync (audit MED-2). Fall back (Freeze) until the
+      // rescue completes. Open / Inverted / Retro and post-rescue Standard are >= 1.
+      return sram_progress_indicator != 0;
+    default:
+      // Ambush relies on its in-onset sheet check (falls back to Damage when no
+      // safe enemy is loadable); every other effect is universal.
+      return true;
+  }
+}
+
+// add-rando-trap-catalog (slice 2) — directional input remap shared by Reverse
+// (constant 180°) and Scramble (a slowly-rotating "drunk" wander). A PURE
+// per-frame transform of the freshly-NMI-sampled joypad bytes — no Link state is
+// persisted, so these effects need no teardown (the tick simply stops remapping
+// when the stun expires). The button bits (B/Y/Select/Start) are preserved.
+static uint8 rando_rotate_dir_nibble(uint8 b, uint8 k) {
+  static const uint8 order[4] = {
+    kJoypadH_Up, kJoypadH_Right, kJoypadH_Down, kJoypadH_Left
+  };
+  uint8 d = (uint8)(b & 0x0f);
+  uint8 out = (uint8)(b & 0xf0);
+  for (int i = 0; i < 4; i++)
+    if (d & order[i]) out |= order[(i + k) & 3];
+  return out;
+}
+static void rando_trap_remap_dir(uint8 k) {
+  // The tick runs before Module_MainRouting consumes input this frame, so the
+  // remap is what Link reads. Both held (joypad1H_last) and edge (filtered) bytes.
+  joypad1H_last     = rando_rotate_dir_nibble(joypad1H_last, k);
+  filtered_joypad_H = rando_rotate_dir_nibble(filtered_joypad_H, k);
+}
+
+// One-shot work performed once, on the first gated (and, for quiescent effects,
+// submodule-0) tick after the reveal dialogue.
+static void rando_trap_effect_onset(uint8 effect) {
+  switch (effect) {
+    case kRandoTrapEffect_Damage: {
+      const uint8 damage = 8;  // one heart, clamped non-lethal
+      if (link_health_current != 0) {
+        link_health_current = (link_health_current > damage)
+            ? (uint8)(link_health_current - damage)
+            : 1;
+      }
+      // link_hearts_filler=0 is REQUIRED, not incidental: it's the heart-refill
+      // queue the HUD ticks into link_health_current, so leaving it would heal the
+      // trap damage straight back (MagicDrain zeroes link_magic_filler for the same
+      // reason).
+      link_hearts_filler = 0;
+      countdown_for_blink = 64;
+      g_rando_trap_shove_timer = 12;
+      g_rando_trap_shove_dir = rando_trap_recoil_dir();
+      break;
+    }
+    case kRandoTrapEffect_Freeze:
+      countdown_for_blink = 32;
+      break;
+    case kRandoTrapEffect_RupeeDrain:
+      // Drain a chunk; the HUD ticker animates link_rupees_actual down to goal
+      // (same path as Rupoor). goal < actual is the safe direction (never races up).
+      link_rupees_goal = (link_rupees_goal >= 100) ? (uint16)(link_rupees_goal - 100) : 0;
+      break;
+    case kRandoTrapEffect_MagicDrain:
+      // Empty the meter. NEVER link_magic_consumption (the Half/Quarter upgrade
+      // tier; writing it would permanently downgrade the upgrade). Zeroing
+      // link_magic_filler is DELIBERATE and symmetric with the Damage trap's
+      // link_hearts_filler=0: the *_filler is a queued refill the HUD ticks INTO the
+      // live value, so leaving it would let a just-collected magic jar fill the bar
+      // straight back and undo the drain. The HUD repaints from link_magic_power on
+      // its own — no Hud_RefreshIcon (unsafe in the headless tick).
+      link_magic_power = 0;
+      link_magic_filler = 0;
+      break;
+    case kRandoTrapEffect_AmmoDrain:
+      // Zero arrows; HALVE bombs (a bomb-wall room can need bombs to exit — never
+      // zero them). Never touch the *_filler per-frame fill counters. The HUD
+      // repaints the counts on its own — no Hud_RefreshIcon (unsafe in the tick).
+      link_num_arrows = 0;
+      link_item_bombs = (uint8)(link_item_bombs >> 1);
+      break;
+    case kRandoTrapEffect_Shake:
+      // Self-expiring screen shake; the player keeps control (no neutralize).
+      AncillaAdd_DashTremor(29, 1);
+      break;
+    case kRandoTrapEffect_FakeWarp:
+      // Mirror-warp whoosh + sparkle with ZERO displacement (all scare); the
+      // brief freeze in sustain sells the "something's happening" beat.
+      sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x2d);
+      AncillaAdd_SwordSwingSparkle(0x26, 4);
+      break;
+    case kRandoTrapEffect_FakeLowHp:
+      // Low-health alarm beep only — HP untouched (pure troll, no gameplay effect).
+      // Do NOT set countdown_for_blink: that's Link's damage-invulnerability timer
+      // (sprite.c gates contact damage out while it's nonzero), so it would hand the
+      // player ~96 frames of free i-frames — the opposite of a scare.
+      sound_effect_1 = (uint8)(Link_CalculateSfxPan() | 43);
+      break;
+    case kRandoTrapEffect_Bomb: {
+      // Spawn a live bomb at Link. AncillaAdd_Bomb no-ops at 0 bombs and decrements
+      // on spawn (and may Hud_RefreshIcon) — save the real count, force >=1 so it
+      // spawns, then RESTORE the exact original (it reads link_item_bombs only at
+      // entry, so the bomb's lifetime is unaffected). Never steals or grants a bomb,
+      // even when the ancilla table was full and nothing spawned. Quiescent-gated.
+      uint8 saved_bombs = link_item_bombs;
+      if (link_item_bombs == 0) link_item_bombs = 1;
+      AncillaAdd_Bomb(7, 1);
+      link_item_bombs = saved_bombs;
+      break;
+    }
+    case kRandoTrapEffect_Ambush: {
+      // Spawn a small ring of hostile enemies around Link — but ONLY enemies whose
+      // required GFX sheets are loaded in the current room (else garbage render);
+      // if none qualify, degrade to the Damage hazard. Each candidate is a
+      // standalone pure-AI, killable land/air enemy (no overlord).
+      static const uint8 kAmbushPool[] = { 0x08, 0x12, 0x18, 0x6F };  // Octorok/Moblin/MiniMoldorm/Keese
+      uint8 ok_types[4];
+      uint8 n_ok = 0;
+      for (uint32 i = 0; i < countof(kAmbushPool); i++)
+        if (EnemyShuffle_SheetsLoadedFor(kAmbushPool[i]))
+          ok_types[n_ok++] = kAmbushPool[i];
+      if (n_ok == 0) {
+        // No safe enemy loadable here — become the Damage hazard. Set the effect
+        // AND the timer to Damage's own duration (not just call its onset) so the
+        // sustain/teardown and shove length match even if the durations are ever
+        // retuned independently (audit LOW-3).
+        g_rando_trap_effect = kRandoTrapEffect_Damage;
+        g_rando_trap_stun_timer = rando_trap_def_for_effect(kRandoTrapEffect_Damage)->duration;
+        rando_trap_effect_onset(kRandoTrapEffect_Damage);
+        break;
+      }
+      static const int8 kRingDX[4] = { -32, 32, -32, 32 };
+      static const int8 kRingDY[4] = { -32, -32, 32, 32 };
+      uint8 want = (uint8)(2 + (frame_counter & 1));  // 2 or 3
+      for (uint8 m = 0; m < want; m++) {
+        SpriteSpawnInfo info;
+        int j = Sprite_SpawnDynamically(0, ok_types[m % n_ok], &info);
+        if (j < 0) break;  // sprite table full
+        sprite_floor[j] = link_is_on_lower_level;
+        Sprite_SetX(j, (uint16)(link_x_coord + kRingDX[m & 3]));
+        Sprite_SetY(j, (uint16)(link_y_coord + kRingDY[m & 3]));
+        sprite_D[j] = 0;
+        Sprite_ApplySpeedTowardsLink(j, 16);
+      }
+      break;
+    }
+    case kRandoTrapEffect_Cucco: {
+      // Replicate Cucco_SummonAvenger: spawn id 0x0B at the screen edge (BG offsets)
+      // with sprite_C=1 (aggressive avenger) homing toward Link. sprite_A=1 is the
+      // trap-cucco signal: Sprite_0B_Cucco draws those from a custom tile + palette
+      // (Rando_DrawTrapCucco) instead of sprite slot 3, so the flock renders in ANY
+      // area — no longer limited to the two screens that load the cucco sheet.
+      // Overworld-only: context_ok blocks indoors (matches the vanilla guard) and
+      // falls back to Bomb there, and the spawn uses overworld BG scroll offsets.
+      uint8 want = (uint8)(3 + (frame_counter & 3));  // 3..6
+      for (uint8 m = 0; m < want; m++) {
+        SpriteSpawnInfo info;
+        int j = Sprite_SpawnDynamically(0, 0x0B, &info);
+        if (j < 0) break;
+        sprite_floor[j] = link_is_on_lower_level;
+        sprite_C[j] = 1;  // aggressive avenger flag
+        sprite_A[j] = 1;  // trap-cucco signal -> custom draw (renders in any area)
+        uint16 x = (uint16)(BG2HOFS_copy2 + ((m * 53u) & 0xFF));
+        uint16 y = (uint16)(BG2VOFS_copy2 + ((m & 1) ? 0xA0 : 0x10));
+        Sprite_SetX(j, x);
+        Sprite_SetY(j, y);
+        Sprite_ApplySpeedTowardsLink(j, 32);
+      }
+      break;
+    }
+    case kRandoTrapEffect_Darkness:
+      // Force the dungeon room black by driving the fixed-color RAMP TARGET to the
+      // darkest value (kLitTorchesColorPlus[0] == 31 == no-torches), then snapping
+      // COLDATA there immediately. Dungeon-only (context_ok blocks outdoors ->
+      // Shake). teardown restores the room's natural brightness.
+      g_rando_trap_saved_coldata = overworld_fixed_color_plusminus;
+      overworld_fixed_color_plusminus = 31;
+      Dungeon_ApproachFixedColor_variable(31);
+      break;
+    case kRandoTrapEffect_Teleport:
+      // DISPLACE: hand off to the game's own dungeon loader (module 6) targeting the
+      // Sanctuary spawn-select start point via the START-POINT branch of
+      // Dungeon_LoadEntrance. The loader itself diverts an INVERTED slot's
+      // start-point-1 to the Dark Chapel (verified: the inv_dark_chapel branch keyed
+      // on Rando_GetActiveWorldState()==2 sets which_entrance=0x5A), so this is
+      // world-correct with no extra conditional. Reimplements dbg_warp.cpp's
+      // DoWarpStartPoint(1); the trap's quiescent gate (module 7/9/11, submodule 0)
+      // already enforces "normal gameplay only", so no Cheats_CanWarp() is needed.
+      which_starting_point = 1;   // Sanctuary (Inverted -> Dark Chapel via the loader)
+      WORD(death_var5) = 0;       // normal save-exit snapshot
+      WORD(death_var4) = 1;       // force the start-point branch
+      follower_indicator = 0;     // drop any stale tagalong
+      player_is_indoors = 1;      // loader sets it too; explicit
+      subsubmodule_index = 0;
+      submodule_index = 0;
+      main_module_index = 6;      // Module_PreDungeon runs next frame
+      // Teleport completes synchronously (the loader takes over next frame).
+      // g_rando_trap_effect/stun_timer stay set but are benign: rando_trap_stun_can_
+      // tick is false during the module-6 load and Teleport has no sustain/teardown
+      // body, so the leftover timer expires harmlessly on arrival. (If Teleport ever
+      // gains a sustain/teardown, clear the effect here instead.)
+      break;
+    default:
+      // Effects added in later slices fill in their onset here.
+      break;
+  }
+}
+
+// Per-frame work while the stun timer runs.
+static void rando_trap_effect_sustain(uint8 effect) {
+  switch (effect) {
+    case kRandoTrapEffect_Damage:
+      rando_neutralize_trap_motion();
+      rando_apply_damage_trap_shove();
+      break;
+    case kRandoTrapEffect_Freeze:
+      rando_neutralize_trap_motion();
+      rando_apply_freeze_trap_pulse();
+      break;
+    case kRandoTrapEffect_Reverse:
+      rando_trap_remap_dir(2);  // 180°: up<->down, left<->right
+      break;
+    case kRandoTrapEffect_Scramble:
+      rando_trap_remap_dir((uint8)((frame_counter >> 5) & 3));  // slow drunken rotation
+      break;
+    case kRandoTrapEffect_Disarm:
+      // Disable sword (B) and item (Y); movement + A (lift/dash) stay intact.
+      joypad1H_last     = (uint8)(joypad1H_last     & ~(kJoypadH_B | kJoypadH_Y));
+      filtered_joypad_H = (uint8)(filtered_joypad_H & ~(kJoypadH_B | kJoypadH_Y));
+      break;
+    case kRandoTrapEffect_FakeWarp:
+      rando_neutralize_trap_motion();  // brief freeze during the fake "warp"
+      break;
+    case kRandoTrapEffect_FakeLowHp:
+      // Keep the hearts flashing and re-beep periodically; HP untouched.
+      if (countdown_for_blink < 6) countdown_for_blink = 32;
+      if ((g_rando_trap_stun_timer & 31) == 0)
+        sound_effect_1 = (uint8)(Link_CalculateSfxPan() | 43);
+      break;
+    case kRandoTrapEffect_Darkness:
+      // Hold the ramp target black so the per-frame fixed-color ramp can't creep
+      // the room back toward lit while the blackout runs.
+      overworld_fixed_color_plusminus = 31;
+      break;
+    default:
+      break;
+  }
+}
+
+// Restore any g_ram-backed state the effect mutated (PPU registers, forced
+// motion) so nothing outlives the file-static timer.
+static void rando_trap_effect_teardown(uint8 effect) {
+  switch (effect) {
+    case kRandoTrapEffect_Darkness:
+      // Restore the room's pre-trap fixed-color target. ONLY indoors — the dungeon
+      // fixed-color register is meaningless on the overworld, so restoring there
+      // would pop a dim special screen's brightness if Darkness was collected
+      // indoors and the timer expired after exiting (audit LOW-1). The snapshot is
+      // the exact pre-darkness value (audit LOW-2: now read). A room change during
+      // the brief blackout self-heals on the next room load's fixed-color re-derive.
+      if (player_is_indoors) {
+        overworld_fixed_color_plusminus = g_rando_trap_saved_coldata;
+        Dungeon_ApproachFixedColor_variable(g_rando_trap_saved_coldata);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+// True while the masquerade's decoy confirmation icon (Ancilla44_RandoIconReceipt,
+// ancilla_type 0x44) is live in any of the 10 ancilla slots. The Cucco onset waits
+// on this so the swarm's recv-item-slot use can't bleed into the decoy icon.
+static bool rando_decoy_icon_active(void) {
+  for (uint8 i = 0; i < 10; i++)
+    if (ancilla_type[i] == 0x44)  // kAncillaType_RandoIconReceipt
+      return true;
+  return false;
+}
+
 void Rando_TickTrapEffects(void) {
   rando_clear_bad_trap_wall_spark_residue();
 
   if (g_rando_trap_stun_timer == 0) return;
 
-  // Let the player dismiss the trap dialogue; the actual freeze begins once
-  // control returns to normal overworld/dungeon gameplay. The bad reveal cue is
-  // delayed too, otherwise the VWF letter blip can overwrite it in the same
-  // frame.
+  // Let the player dismiss the trap dialogue; the effect begins once control
+  // returns to normal overworld/dungeon gameplay. The bad reveal cue is delayed
+  // too, otherwise the VWF letter blip can overwrite it in the same frame.
   if (main_module_index == 14 && dialogue_message_index == kRandoTrapDialogueId)
     return;
 
   if (!rando_trap_stun_can_tick()) return;
+
+  // Quiescent-only effects (spawn/warp/PPU) defer their onset until the frame is
+  // settled (submodule_index == 0) — never dropped, just delayed.
+  if (g_rando_trap_onset_pending &&
+      rando_trap_effect_needs_quiescent(g_rando_trap_effect) &&
+      submodule_index != 0)
+    return;
+
+  // The Cucco swarm draws from the shared recv-item slot (chars 0x24/0x34). While
+  // the masquerade's decoy confirmation icon (Ancilla44_RandoIconReceipt) is still
+  // on screen it draws that SAME slot, so spawning the flock now bleeds the cucco
+  // tile into the decoy icon (a wrong-palette cucco over Link's head). Defer the
+  // onset until the icon clears — also a cleaner reveal: "got <decoy>" lands, THEN
+  // the flock springs.
+  if (g_rando_trap_onset_pending && g_rando_trap_effect == kRandoTrapEffect_Cucco &&
+      rando_decoy_icon_active())
+    return;
+
   rando_tick_trap_reveal_feedback();
-  rando_neutralize_trap_motion();
-  rando_apply_damage_trap_shove();
-  rando_apply_freeze_trap_pulse();
+
+  if (g_rando_trap_onset_pending) {
+    if (!rando_trap_effect_context_ok(g_rando_trap_effect)) {
+      g_rando_trap_effect = rando_trap_effect_fallback(g_rando_trap_effect);
+      // Retune the stun timer to the fallback's own duration so sustain/teardown
+      // match (same fix the in-onset Ambush fallback got — durations may differ).
+      g_rando_trap_stun_timer = rando_trap_def_for_effect(g_rando_trap_effect)->duration;
+    }
+    rando_trap_effect_onset(g_rando_trap_effect);
+    g_rando_trap_onset_pending = 0;
+  }
+
+  rando_trap_effect_sustain(g_rando_trap_effect);
+
   if (--g_rando_trap_stun_timer == 0) {
+    rando_trap_effect_teardown(g_rando_trap_effect);
     g_rando_trap_effect = kRandoTrapEffect_None;
     g_rando_trap_shove_timer = 0;
     g_rando_trap_shove_dir = 0;
@@ -589,29 +1074,25 @@ void Rando_TickTrapEffects(void) {
 }
 
 static void rando_trigger_trap(uint16 item_id) {
+  uint8 effect = rando_trap_effect_for_id(item_id);
+  const RandoTrapDef *def = rando_trap_def_for_effect(effect);
+  // Clear any prior trap's leftover state FIRST — critically, release a still-
+  // owned forced-move shove (g_rando_trap_owns_forced_move / force_move_any_
+  // direction). A second trap collected mid-Damage-shove whose effect does NOT
+  // neutralize (any drain/reverse/disarm/scare/spawn) would otherwise leave Link
+  // force-moved indefinitely (audit MED-1). rando_clear_trap_effect() releases
+  // the forced move and zeroes the timers we re-arm just below.
+  rando_clear_trap_effect();
+  // Arm only — the reveal dialogue shows now; the effect's onset runs in the
+  // gated tick once gameplay resumes (and the frame is quiescent for spawn/warp/
+  // PPU effects). This is why the trigger must touch no spawn/warp/PPU state.
   Sprite_ShowMessageUnconditional(kRandoTrapDialogueId);
   g_rando_trap_bad_sfx_timer = 8;
-
-  if (item_id == ITEM_TrapDamage) {
-    const uint8 damage = 8;  // one heart, clamped non-lethal
-    if (link_health_current != 0) {
-      link_health_current = (link_health_current > damage)
-          ? (uint8)(link_health_current - damage)
-          : 1;
-    }
-    link_hearts_filler = 0;
-    countdown_for_blink = 64;
-    g_rando_trap_effect = kRandoTrapEffect_Damage;
-    g_rando_trap_stun_timer = 40;
-    g_rando_trap_shove_timer = 12;
-    g_rando_trap_shove_dir = rando_trap_recoil_dir();
-  } else {
-    countdown_for_blink = 32;
-    g_rando_trap_effect = kRandoTrapEffect_Freeze;
-    g_rando_trap_stun_timer = 96;
-    g_rando_trap_shove_timer = 0;
-    g_rando_trap_shove_dir = 0;
-  }
+  g_rando_trap_effect = effect;
+  g_rando_trap_stun_timer = def->duration;
+  g_rando_trap_onset_pending = 1;
+  g_rando_trap_shove_timer = 0;
+  g_rando_trap_shove_dir = 0;
 }
 
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
@@ -4130,14 +4611,18 @@ void Rando_SelfCheck(void) {
     link_direction_facing = 0;
     rando_clear_trap_effect();
     uint8 lttp = Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
-    if (lttp != kRandoLttpSkip || link_health_current != 1 ||
+    // add-rando-trap-catalog — the trigger now ARMS only (no immediate damage or
+    // shove); the onset applies them in the first gated tick. Assert the arm state:
+    // health is still 4 (untouched), shove is unset, and onset is pending.
+    if (lttp != kRandoLttpSkip || link_health_current != 4 ||
         g_rando_trap_stun_timer != 40 ||
         g_rando_trap_effect != kRandoTrapEffect_Damage ||
+        g_rando_trap_onset_pending != 1 ||
         g_rando_trap_bad_sfx_timer != 8 ||
-        g_rando_trap_shove_timer != 12 || g_rando_trap_shove_dir != 4 ||
+        g_rando_trap_shove_timer != 0 || g_rando_trap_shove_dir != 0 ||
         link_incapacitated_timer != 0 || link_auxiliary_state != 0 ||
         dialogue_message_index != kRandoTrapDialogueId) {
-      fprintf(stderr, "Rando_SelfCheck: TrapDamage dispatch/effect mismatch\n");
+      fprintf(stderr, "Rando_SelfCheck: TrapDamage arm/dispatch mismatch\n");
       exit(2);
     }
     joypad1H_last = 0x0f;
@@ -4170,7 +4655,10 @@ void Rando_SelfCheck(void) {
     swimcoll_var7[0] = 0x180;
     link_swim_hard_stroke = 0xc0;
     Rando_TickTrapEffects();
-    if (g_rando_trap_stun_timer != 39 || g_rando_trap_shove_timer != 11 ||
+    // The onset ran during this first gated tick — Damage now applied (4 -> 1),
+    // and the sustain neutralized motion + advanced the shove.
+    if (link_health_current != 1 ||
+        g_rando_trap_stun_timer != 39 || g_rando_trap_shove_timer != 11 ||
         g_rando_trap_bad_sfx_timer != 0 ||
         (sound_effect_2 & 0x3f) != 0x26 || sound_effect_1 == 0 ||
         joypad1H_last != 0 ||
@@ -4258,6 +4746,136 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: stale trap gravestone residue not cleared\n");
       exit(2);
     }
+
+    // add-rando-trap-catalog (slice 2) — drive the cheap effects through the tick
+    // and assert their onsets, especially the proxy-byte guards (the dominant
+    // rando bug class): MagicDrain must NOT touch the magic upgrade tier, AmmoDrain
+    // must NOT touch the per-frame fill counters.
+    {
+      uint8 s_mp = link_magic_power, s_mf = link_magic_filler, s_mc = link_magic_consumption;
+      uint8 s_na = link_num_arrows, s_ib = link_item_bombs;
+      uint8 s_af = link_arrow_filler, s_bf = link_bomb_filler;
+      uint16 s_rg = link_rupees_goal;
+      dialogue_message_index = 0;
+      main_module_index = 9;
+      submodule_index = 0;
+      g_rando_trap_bad_sfx_timer = 0;
+
+      link_magic_power = 0x40; link_magic_filler = 5; link_magic_consumption = 2;
+      g_rando_trap_effect = kRandoTrapEffect_MagicDrain;
+      g_rando_trap_onset_pending = 1; g_rando_trap_stun_timer = 12;
+      Rando_TickTrapEffects();
+      if (link_magic_power != 0 || link_magic_filler != 0 || link_magic_consumption != 2) {
+        fprintf(stderr, "Rando_SelfCheck: MagicDrain must empty meter, keep upgrade tier\n");
+        exit(2);
+      }
+
+      link_num_arrows = 30; link_item_bombs = 10;
+      link_arrow_filler = 7; link_bomb_filler = 9;
+      g_rando_trap_effect = kRandoTrapEffect_AmmoDrain;
+      g_rando_trap_onset_pending = 1; g_rando_trap_stun_timer = 12;
+      Rando_TickTrapEffects();
+      if (link_num_arrows != 0 || link_item_bombs != 5 ||
+          link_arrow_filler != 7 || link_bomb_filler != 9) {
+        fprintf(stderr, "Rando_SelfCheck: AmmoDrain must zero arrows/halve bombs, keep fillers\n");
+        exit(2);
+      }
+
+      link_rupees_goal = 300;
+      g_rando_trap_effect = kRandoTrapEffect_RupeeDrain;
+      g_rando_trap_onset_pending = 1; g_rando_trap_stun_timer = 12;
+      Rando_TickTrapEffects();
+      if (link_rupees_goal != 200) {
+        fprintf(stderr, "Rando_SelfCheck: RupeeDrain wrong amount\n");
+        exit(2);
+      }
+
+      g_rando_trap_effect = kRandoTrapEffect_Reverse;
+      g_rando_trap_onset_pending = 1; g_rando_trap_stun_timer = 240;
+      joypad1H_last = kJoypadH_Up | kJoypadH_B;
+      filtered_joypad_H = kJoypadH_Left;
+      Rando_TickTrapEffects();
+      if (joypad1H_last != (uint8)(kJoypadH_Down | kJoypadH_B) ||
+          filtered_joypad_H != kJoypadH_Right) {
+        fprintf(stderr, "Rando_SelfCheck: Reverse must flip direction, keep buttons\n");
+        exit(2);
+      }
+
+      g_rando_trap_effect = kRandoTrapEffect_Disarm;
+      g_rando_trap_onset_pending = 1; g_rando_trap_stun_timer = 150;
+      joypad1H_last = kJoypadH_B | kJoypadH_Up;
+      filtered_joypad_H = kJoypadH_Y | kJoypadH_Right;
+      Rando_TickTrapEffects();
+      if (joypad1H_last != kJoypadH_Up || filtered_joypad_H != kJoypadH_Right) {
+        fprintf(stderr, "Rando_SelfCheck: Disarm must mask B/Y, keep movement\n");
+        exit(2);
+      }
+
+      // Darkness — the one persistent g_ram PPU mutation with a teardown. Onset
+      // saves the lit baseline then blacks the room (overworld_fixed_color_plusminus
+      // = 31); a pre-empting trap (rando_clear_trap_effect) runs the teardown, which
+      // restores it. Dungeon-only: set player_is_indoors so context_ok keeps it
+      // Darkness instead of falling back to Shake. (Local save/restore — no scaffold
+      // change.) Covers the audit's "persistent restore has no automated net" gap.
+      {
+        uint8 s_indoors = player_is_indoors, s_cd = overworld_fixed_color_plusminus;
+        player_is_indoors = 1;
+        overworld_fixed_color_plusminus = 8;  // a "lit" baseline to restore to
+        g_rando_trap_effect = kRandoTrapEffect_Darkness;
+        g_rando_trap_onset_pending = 1; g_rando_trap_stun_timer = 180;
+        Rando_TickTrapEffects();
+        if (overworld_fixed_color_plusminus != 31) {
+          fprintf(stderr, "Rando_SelfCheck: Darkness onset must black the room (got %u)\n",
+                  (unsigned)overworld_fixed_color_plusminus);
+          exit(2);
+        }
+        rando_clear_trap_effect();  // pre-empt -> teardown restores brightness
+        if (overworld_fixed_color_plusminus != 8) {
+          fprintf(stderr, "Rando_SelfCheck: Darkness teardown must restore brightness (got %u)\n",
+                  (unsigned)overworld_fixed_color_plusminus);
+          exit(2);
+        }
+        player_is_indoors = s_indoors; overworld_fixed_color_plusminus = s_cd;
+      }
+
+      // Selector honors the category mask AND the location-compatibility flags:
+      // hazard/drain masks never leak another category, Cucco is only placed at an
+      // outdoor location, and Darkness only in a dungeon.
+      uint8 all_loc = (uint8)(kTrapLoc_IsDungeon | kTrapLoc_IsOutdoor);
+      for (uint16 loc = 0; loc < 64; loc++) {
+        uint16 hz = Rando_PickTrapEffectId(0x12345678u, loc, kTrapCategory_Hazard, all_loc);
+        if (hz != ITEM_TrapDamage && hz != ITEM_TrapBomb &&
+            hz != ITEM_TrapAmbush && hz != ITEM_TrapCucco) {
+          fprintf(stderr, "Rando_SelfCheck: hazard-only mask leaked non-hazard id %u\n",
+                  (unsigned)hz);
+          exit(2);
+        }
+        uint16 dr = Rando_PickTrapEffectId(0x12345678u, loc, kTrapCategory_Drain, all_loc);
+        if (dr != ITEM_TrapRupeeDrain && dr != ITEM_TrapMagicDrain &&
+            dr != ITEM_TrapAmmoDrain) {
+          fprintf(stderr, "Rando_SelfCheck: drain-only mask leaked non-drain id %u\n",
+                  (unsigned)dr);
+          exit(2);
+        }
+        // An indoor, non-dungeon location (flags 0): Cucco (needs outdoor) and
+        // Darkness (needs dungeon) must NEVER be selected.
+        if (Rando_PickTrapEffectId(0x12345678u, loc, kTrapCategory_Hazard, 0) == ITEM_TrapCucco) {
+          fprintf(stderr, "Rando_SelfCheck: Cucco selected at a non-outdoor location\n");
+          exit(2);
+        }
+        if (Rando_PickTrapEffectId(0x12345678u, loc, kTrapCategory_Scare, 0) == ITEM_TrapDarkness) {
+          fprintf(stderr, "Rando_SelfCheck: Darkness selected at a non-dungeon location\n");
+          exit(2);
+        }
+      }
+
+      rando_clear_trap_effect();
+      link_magic_power = s_mp; link_magic_filler = s_mf; link_magic_consumption = s_mc;
+      link_num_arrows = s_na; link_item_bombs = s_ib;
+      link_arrow_filler = s_af; link_bomb_filler = s_bf;
+      link_rupees_goal = s_rg;
+    }
+
     Placement_Install(NULL);
 
     main_module_index = saved_main;

@@ -1600,6 +1600,23 @@ void Rando_ApplyCustomItemGfxPalette(uint8 gfx) {
   // draw after the swap so the custom palette returns to the intended slot.
   if (palette_swap_flag)
     return;
+  // add-rando-trap-catalog — the REAL cucco draws with common sprite palette 4
+  // (CGRAM 0xC0..0xCF; verified from an in-game OAM dump), which Palette_Load_
+  // SpriteMain loads in every overworld area and keys by light/dark world. Mirror
+  // its colours 1..7 into palette-3 colours 9..15 so the +8-shifted cucco tile
+  // shows the cucco's true colours — no committed ROM data, no per-area index, and
+  // automatically world-correct because we read the live palette.
+  if (gfx == kRandoCustomGfx_Cucco) {
+    if (aux_palette_buffer[0xB9] != main_palette_buffer[0xC1] ||
+        aux_palette_buffer[0xB8] != 0) {
+      aux_palette_buffer[0xB8] = main_palette_buffer[0xB8] = 0;
+      for (int i = 0; i < 7; i++)
+        aux_palette_buffer[0xB9 + i] = main_palette_buffer[0xB9 + i] =
+            main_palette_buffer[0xC1 + i];
+      flag_update_cgram_in_nmi++;
+    }
+    return;
+  }
   // Attributed z3randomizer custom palette for Rupoor.
   static const uint16 kRandoOffBlackPalette[8] = {
     0x0000, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5,
@@ -1626,6 +1643,18 @@ void Rando_EnsureRecvItemSlotGfx(uint8 gfx) {
     if (gfx == kRandoCustomGfx_Rupoor) {
       // ALTTPR's Rupoor IS the vanilla rupee tile — only the palette differs.
       DecodeAnimatedSpriteTile_variable(0x24);
+    } else if (gfx == kRandoCustomGfx_Cucco) {
+      // Real vanilla cucco tile (NOT custom art): decompress sheet 80 — the cucco
+      // sheet, sprite subset 3 in every LW/DW gfx set that shows cuccos — and expand
+      // its frame-0 tiles 0x2A/0x2B (top row -> chars 0x24/0x25) + 0x3A/0x3B (bottom
+      // -> 0x34/0x35) into the slot exactly as WriteTo4BPPBuffer_at_7F4000 does.
+      // Expand3To4High's 4th-plane OR lifts the 3bpp values into palette-3 colours
+      // 9..15 (+8), matching the live palette-4 mirror in Rando_ApplyCustomItemGfx-
+      // Palette. Sheet-80 tile N byte offset = (N>>4)*0x180 + (N&15)*24; 0x2A=0x3F0.
+      Decomp_spr(&g_ram[0x14000], 80);
+      const uint8 *csrc = &g_ram[0x14000] + 0x3F0;        // sheet-80 tile 0x2A
+      Expand3To4High(&g_ram[0x9000 + 0x2d40],        csrc,         g_ram, 2);
+      Expand3To4High(&g_ram[0x9000 + 0x2d40 + 0x40], csrc + 0x180, g_ram, 2);
     } else {
       // kRandoCustomItemGfx entries are pre-shaped to the receive-item slot
       // layout (0x40 bytes chars 0x24/0x25 row, 0x40 bytes chars 0x34/0x35
@@ -1665,23 +1694,21 @@ void Rando_EnsureRecvItemSlotGfx(uint8 gfx) {
   g_recv_item_slot_owner = gfx;  // we own the slot now
 }
 
-bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id) {
-  uint8 gfx, big, oam_flags;
-  if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
-    return false;  // vanilla placement / no gfx — caller draws the vanilla sprite
-  PrepOamCoordsRet info;
-  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
-    return true;   // off-screen: handled (don't draw the vanilla sprite either)
+// Shared draw for a resolved placed-item icon: load it into the recv-item slot and
+// emit its 1-or-2 OAM tiles at (info->x+dx, info->y+dy). Used by the free-standing
+// field-item sprites (dx=dy=0) and by NPCs that hold an item OUT (the Hobo, dx/dy
+// = the held-tile offset). Reserve our own OAM block before drawing: a standing
+// item sprite reserves only ((sprite_flags2&0x1f)+1)*4 BYTES = one 4-byte OAM entry
+// (e.g. the mushroom), enough for its vanilla single-tile draw. An 8x16 item
+// (big==0) needs TWO entries; without a fresh reservation the second tile (oam+1)
+// overflows into the next sprite's block and gets clobbered wherever the scene is
+// busy (proven by an F12 OAM dump: outdoors a rupee lost its bottom half to an
+// adjacent sprite; indoors, with no following sprite, it survived). Reserve from
+// the same region the sprite system uses for this sprite so layering is unchanged.
+// (4 bytes per entry: 8 = two entries, 4 = one.)
+static void Rando_DrawRecvItemSlotAt(int k, uint8 gfx, uint8 big, uint8 oam_flags,
+                                     const PrepOamCoordsRet *info, int dx, int dy) {
   Rando_EnsureRecvItemSlotGfx(gfx);
-  // Reserve our own OAM block before drawing. A standing item sprite reserves
-  // only ((sprite_flags2&0x1f)+1)*4 BYTES = one 4-byte OAM entry (e.g. the
-  // mushroom), enough for its vanilla single-tile draw. An 8x16 item (big==0)
-  // needs TWO entries; without a fresh reservation the second tile (oam+1)
-  // overflows into the next sprite's block and gets clobbered wherever the
-  // scene is busy (proven by an F12 OAM dump: outdoors a rupee lost its bottom
-  // half to an adjacent sprite; indoors, with no following sprite, it survived).
-  // Reserve from the same region the sprite system uses for this sprite so
-  // layering is unchanged. (4 bytes per entry: 8 = two entries, 4 = one.)
   uint8 nbytes = (big == 0) ? 8 : 4;
   if (sort_sprites_setting) {
     if (sprite_floor[k])
@@ -1694,10 +1721,68 @@ bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item
   // Draw from the slot exactly as Ancilla44_RandoIconReceipt does:
   // char 0x24 (top), 0x34 (bottom) when 8x16.
   OamEnt *oam = GetOamCurPtr();
-  SetOamHelper0(oam, info.x, info.y, 0x24, oam_flags, big);
+  SetOamHelper0(oam, info->x + dx, info->y + dy, 0x24, oam_flags, big);
   if (big == 0)
-    SetOamHelper0(oam + 1, info.x, info.y + 8, 0x34, oam_flags, 0);
+    SetOamHelper0(oam + 1, info->x + dx, info->y + dy + 8, 0x34, oam_flags, 0);
+}
+
+bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id) {
+  uint8 gfx, big, oam_flags;
+  if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
+    return false;  // vanilla placement / no gfx — caller draws the vanilla sprite
+  PrepOamCoordsRet info;
+  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
+    return true;   // off-screen: handled (don't draw the vanilla sprite either)
+  Rando_DrawRecvItemSlotAt(k, gfx, big, oam_flags, &info, 0, 0);
   return true;
+}
+
+// NPC-held variant: same resolver/slot/OAM discipline as the free-standing draw,
+// but the icon is placed at a fixed screen offset (dx,dy) from the sprite — for an
+// NPC whose vanilla pose holds an item out (the Hobo's bottle). The caller still
+// draws the NPC's body; this only adds the held icon. Returns false when the
+// location holds its vanilla item (or field-item sprites are off) so the caller
+// draws the vanilla pose.
+bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id,
+                                 int dx, int dy) {
+  uint8 gfx, big, oam_flags;
+  if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
+    return false;
+  PrepOamCoordsRet info;
+  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
+    return true;   // off-screen
+  Rando_DrawRecvItemSlotAt(k, gfx, big, oam_flags, &info, dx, dy);
+  return true;
+}
+
+// add-rando-trap-catalog — draw a trap-cucco as a single 16x16 large OAM entry
+// from the shared recv-item slot (custom cucco tile + palette), so the Cucco
+// trap's flock renders in ANY area instead of only the two that load the cucco
+// sheet into sprite slot 3. Mirrors Sprite_PrepAndDrawSingleLargeNoPrep exactly
+// (one large entry + optional shadow, same per-sprite OAM budget) but with a
+// fixed charnum (0x24) and palette 3; the sprite's own priority + H-flip (from
+// info.flags, set by the x_vel facing code in Sprite_0B_Cucco) are preserved.
+void Rando_DrawTrapCucco(int k) {
+  PrepOamCoordsRet info;
+  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
+    return;
+  Rando_EnsureRecvItemSlotGfx(kRandoCustomGfx_Cucco);  // load tile + palette 3 on demand
+  OamEnt *oam = GetOamCurPtr();
+  oam->x = info.x;
+  if ((uint16)(info.y + 0x10) < 0x100) {
+    oam->y = info.y;
+    oam->charnum = 0x24;
+    // Force palette 3 AND name-table 1: clear attr bits 0-3 then set palette 3.
+    // Bit 0 is the OAM tile high bit (ppu.c: oam1&0x100 -> objTileAdr2); the cucco's
+    // own flags have it SET (its slot-3 sheet lives in table 2), but the recv-item
+    // slot is DMA'd to objTileAdr1 (VRAM 0x4240 = char 0x24), so it must be 0 — the
+    // field-item draw relies on exactly this (its oam_flags bit0==0). Priority/flip
+    // (bits 4-7) are preserved.
+    oam->flags = (uint8)((info.flags & ~0x0F) | 0x06);
+  }
+  bytewise_extended_oam[oam - oam_buf] = 2 | ((info.x >= 256) ? 1 : 0);  // 2 = large (16x16)
+  if (sprite_flags3[k] & 0x10)
+    SpriteDraw_Shadow(k, &info);
 }
 
 void SpriteDraw_Shadow_custom(int k, PrepOamCoordsRet *info, uint8 a) {  // 86dc5c

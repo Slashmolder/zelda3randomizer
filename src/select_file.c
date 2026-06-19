@@ -2799,11 +2799,12 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       return s->hints ? "ON" : "OFF";
     case kRow_Traps:
       switch (s->traps) {
-        case kTrapFrequency_Off:    return "OFF";
-        case kTrapFrequency_Low:    return "LOW";
-        case kTrapFrequency_Medium: return "MED";
-        case kTrapFrequency_High:   return "HIGH";
-        default:                    return "ERR";
+        case kTrapFrequency_Off:      return "OFF";
+        case kTrapFrequency_Low:      return "LOW";
+        case kTrapFrequency_Medium:   return "MED";
+        case kTrapFrequency_High:     return "HIGH";
+        case kTrapFrequency_Insanity: return "MAX";
+        default:                      return "ERR";
       }
     case kRow_EntranceShuffle_Disabled:
     case kRow_EnemyShuffle_Disabled:
@@ -2998,8 +2999,8 @@ static void CycleRow(int row, int delta) {
     case kRow_Hints: s->hints ^= 1; break;
     case kRow_Traps: {
       int n = (int)s->traps + delta;
-      if (n < kTrapFrequency_Off) n = kTrapFrequency_High;
-      if (n > kTrapFrequency_High) n = kTrapFrequency_Off;
+      if (n < kTrapFrequency_Off) n = kTrapFrequency_Insanity;
+      if (n > kTrapFrequency_Insanity) n = kTrapFrequency_Off;
       s->traps = (uint8)n;
       break;
     }

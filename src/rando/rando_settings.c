@@ -106,6 +106,9 @@ void Settings_SetDefaults(RandoSettings *s) {
   // default canonical byte [26] stays 0. instant_flute=0 restores the old
   // "play it for the bird" activation route.
   s->instant_flute = 1;
+  // add-rando-trap-catalog — zero mask = "all categories" when traps are on, so the
+  // default canonical byte [27] stays 0 (corpus + default settings_hash byte-identical).
+  s->trap_categories = 0;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -281,12 +284,17 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   out[26] = (uint8)((s->enemy_shuffle ? kEnemyShuffleAxis_Enabled : 0) |
                     (s->customizer_active ? kCustomizerAxis_Active : 0) |
                     ((s->traps << kTrapAxis_Shift) & kTrapAxis_Mask) |
+                    ((s->traps & 4u) ? kTrapAxis_HighBit : 0) |  // Insanity(4) -> bit5
                     (s->instant_flute ? 0 : kInstantFluteAxis_ManualActivation));
   // add-rando-door-shuffle — door_shuffle axis in the (formerly zero) pad
   // byte [27] bits 0-1. apply_derived_rules() normalized incompatible combos,
   // so the default packs to 0x00 (corpus byte-identical) and
   // kSettingsCanonicalLen stays 28.
-  out[27] = (uint8)(s->door_shuffle & kDoorShuffleAxis_Mask);
+  // add-rando-trap-catalog — door_shuffle (bits 0-1) shares [27] with the
+  // per-category trap mask (bits 2-6). Default trap_categories=0 keeps [27] at the
+  // door_shuffle value (0x00 for the default), so the corpus stays byte-identical.
+  out[27] = (uint8)((s->door_shuffle & kDoorShuffleAxis_Mask) |
+                    ((s->trap_categories << kTrapCategoriesAxis_Shift) & kTrapCategoriesAxis_Mask));
   return kSettingsCanonicalLen;
 }
 
@@ -355,13 +363,20 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.customizer_active = (in[26] & kCustomizerAxis_Active) ? 1 : 0;
   // add-rando-traps — unpack the trap-frequency field from [26] bits 2-3.
   // A zero field (default / any pre-traps file) yields traps=off.
-  s.traps = (uint8)((in[26] & kTrapAxis_Mask) >> kTrapAxis_Shift);
+  // Reassemble the non-contiguous 3-bit traps value: low 2 bits from [26] bits 2-3,
+  // high bit (Insanity) from [26] bit5.
+  s.traps = (uint8)(((in[26] & kTrapAxis_Mask) >> kTrapAxis_Shift) |
+                    ((in[26] & kTrapAxis_HighBit) ? 4u : 0u));
   // Randomizer QoL — inverse bit so old/default blobs activate flute instantly.
   s.instant_flute = (in[26] & kInstantFluteAxis_ManualActivation) ? 0 : 1;
   // add-rando-door-shuffle — unpack the door_shuffle axis from pad byte [27]
   // bits 0-1. A zero byte (the default / any pre-door-shuffle file) yields
   // vanilla. Bits 2-7 stay uninspected (the remaining extension surface).
   s.door_shuffle = in[27] & kDoorShuffleAxis_Mask;
+  // add-rando-trap-catalog — unpack the per-category trap mask from [27] bits 2-6.
+  // Zero (default / any pre-catalog file) is the "all categories" sentinel applied
+  // at selection time when traps are enabled.
+  s.trap_categories = (uint8)((in[27] & kTrapCategoriesAxis_Mask) >> kTrapCategoriesAxis_Shift);
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -414,6 +429,8 @@ bool Settings_Validate(const RandoSettings *s) {
   // masks the defined bits, undefined bits stay permissive by contract.
   if (s->instant_flute > 1) return false;                                  // [26] bit4 inverse bool
   if (s->door_shuffle > kDoorShuffle_Basic) return false;                  // [27] bits 0-1: only 0/1 defined
+  if (s->trap_categories > kTrapCategory_All) return false;               // [27] bits 2-6: 5-bit category mask
+  if (s->traps > kTrapFrequency_Insanity) return false;                   // [26] bits 2-3 + bit5: 0..4
   return true;
 }
 
@@ -549,6 +566,74 @@ void Settings_SelfCheck(void) {
     Settings_CanonicalSerialize(&legacy, c_legacy);
     if (!settings_byte_eq(canonical, c_legacy, kSettingsCanonicalLen)) {
       fprintf(stderr, "Settings_SelfCheck: legacy boss-heart byte did not normalize\n");
+      exit(2);
+    }
+  }
+  // add-rando-trap-catalog — Insanity (traps=4) round-trips via the non-contiguous
+  // 3-bit field (canonical [26] bits 2-3 + bit5), and `high` stays bits-2-3-only so
+  // existing off/low/medium/high seeds are byte-stable.
+  {
+    RandoSettings si;
+    Settings_SetDefaults(&si);
+    si.traps = kTrapFrequency_Insanity;
+    uint8 ci[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&si, ci);
+    if (!(ci[26] & kTrapAxis_HighBit) || (ci[26] & kTrapAxis_Mask)) {
+      fprintf(stderr, "Settings_SelfCheck: Insanity must set [26] bit5 only (got 0x%02x)\n", ci[26]);
+      exit(2);
+    }
+    RandoSettings ri;
+    if (Settings_CanonicalDeserialize(ci, &ri) != 0 || ri.traps != kTrapFrequency_Insanity) {
+      fprintf(stderr, "Settings_SelfCheck: Insanity traps round-trip mismatch\n");
+      exit(2);
+    }
+    RandoSettings sh;
+    Settings_SetDefaults(&sh);
+    sh.traps = kTrapFrequency_High;
+    uint8 chh[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sh, chh);
+    if ((chh[26] & kTrapAxis_HighBit) ||
+        ((chh[26] & kTrapAxis_Mask) >> kTrapAxis_Shift) != kTrapFrequency_High) {
+      fprintf(stderr, "Settings_SelfCheck: high traps must encode in bits 2-3 only (got 0x%02x)\n",
+              chh[26]);
+      exit(2);
+    }
+  }
+  // add-rando-trap-catalog — trap_categories pack/unpack round-trip (canonical
+  // [27] bits 2-6). The corpus only exercises the default mask 0, so assert here
+  // that a partial mask round-trips losslessly and that the "all" forms collapse
+  // to the 0 sentinel (one canonical encoding of "all categories").
+  {
+    RandoSettings st;
+    Settings_SetDefaults(&st);
+    st.traps = kTrapFrequency_High;
+    st.trap_categories = (uint8)(kTrapCategory_Hazard | kTrapCategory_Drain);  // 0x05
+    uint8 ct[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&st, ct);
+    if ((uint8)((ct[27] & kTrapCategoriesAxis_Mask) >> kTrapCategoriesAxis_Shift) !=
+        (uint8)(kTrapCategory_Hazard | kTrapCategory_Drain)) {
+      fprintf(stderr, "Settings_SelfCheck: trap_categories pack mismatch ([27]=0x%02x)\n",
+              ct[27]);
+      exit(2);
+    }
+    RandoSettings rtc;
+    if (Settings_CanonicalDeserialize(ct, &rtc) != 0 ||
+        rtc.trap_categories != (uint8)(kTrapCategory_Hazard | kTrapCategory_Drain)) {
+      fprintf(stderr, "Settings_SelfCheck: trap_categories deserialize round-trip mismatch\n");
+      exit(2);
+    }
+    RandoSettings sa;
+    Settings_SetDefaults(&sa);
+    if (Settings_ParseCsv("traps=high,trap_categories=hazard+impair+drain+scare+displace", &sa) != 0 ||
+        sa.trap_categories != 0) {
+      fprintf(stderr, "Settings_SelfCheck: trap_categories all-checked must collapse to 0\n");
+      exit(2);
+    }
+    RandoSettings sp;
+    Settings_SetDefaults(&sp);
+    if (Settings_ParseCsv("traps=high,trap_categories=hazard+drain", &sp) != 0 ||
+        sp.trap_categories != (uint8)(kTrapCategory_Hazard | kTrapCategory_Drain)) {
+      fprintf(stderr, "Settings_SelfCheck: trap_categories CSV parse mismatch\n");
       exit(2);
     }
   }
@@ -1258,7 +1343,40 @@ static int parse_traps(const char *v, int vlen, uint8 *out) {
   if (csv_str_eq(v, vlen, "high") || csv_str_eq(v, vlen, "3")) {
     *out = kTrapFrequency_High; return 0;
   }
+  if (csv_str_eq(v, vlen, "insanity") || csv_str_eq(v, vlen, "max") ||
+      csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "4")) {
+    *out = kTrapFrequency_Insanity; return 0;
+  }
   return -1;
+}
+
+// add-rando-trap-catalog — parse the per-category enable mask. Accepts "all"/
+// "none"/"0" (the all-categories sentinel) or a '+'-joined list of category names
+// (hazard|impair|drain|scare|displace). "all checked" collapses to 0, matching the
+// canonical zero-sentinel + the UI normalization (one stored encoding of "all").
+static int parse_trap_categories(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "none") ||
+      csv_str_eq(v, vlen, "0")) {
+    *out = 0; return 0;
+  }
+  uint8 mask = 0;
+  int i = 0;
+  while (i < vlen) {
+    int start = i;
+    while (i < vlen && v[i] != '+') i++;
+    int tlen = i - start;
+    const char *t = v + start;
+    if (csv_str_eq(t, tlen, "hazard"))        mask |= kTrapCategory_Hazard;
+    else if (csv_str_eq(t, tlen, "impair"))   mask |= kTrapCategory_Impair;
+    else if (csv_str_eq(t, tlen, "drain"))    mask |= kTrapCategory_Drain;
+    else if (csv_str_eq(t, tlen, "scare"))    mask |= kTrapCategory_Scare;
+    else if (csv_str_eq(t, tlen, "displace")) mask |= kTrapCategory_Displace;
+    else return -1;
+    if (i < vlen && v[i] == '+') i++;  // skip separator
+  }
+  if (mask == kTrapCategory_All) mask = 0;  // canonical "all" sentinel
+  *out = mask;
+  return 0;
 }
 
 // Bitmap of keys seen — used to reject duplicate keys per spec.
@@ -1313,6 +1431,9 @@ enum {
   // Randomizer QoL — instant flute activation. Packed inversely into
   // canonical byte [26] bit4.
   KEY_instant_flute,
+  // add-rando-trap-catalog — per-category trap enable mask. Packed into canonical
+  // byte [27] bits 2-6.
+  KEY_trap_categories,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -1513,6 +1634,11 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Both keys are aliases for the same canonical field and duplicate-check bit.
     MARK_SEEN(KEY_traps);
     if (parse_traps(val, vlen, &s->traps) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "trap_categories")) {
+    // add-rando-trap-catalog — per-category enable mask (canonical [27] bits 2-6).
+    // "all"/"none"/0 = the all-categories sentinel; or a '+'-joined name list.
+    MARK_SEEN(KEY_trap_categories);
+    if (parse_trap_categories(val, vlen, &s->trap_categories) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);

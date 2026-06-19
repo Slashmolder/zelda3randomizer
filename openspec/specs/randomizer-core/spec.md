@@ -63,8 +63,8 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 | 23 | `boss_shuffle` | uint8 boolean. |
 | 24 | `drop_shuffle` | uint8 boolean. |
 | 25 | entrance axes | bit-packed: bit0 `shuffle_cave_entrances`, bit1 `shuffle_dungeon_entrances`, bit2 `coupled`, bit3 `cross_category`, bit4 `decoupled`, bit5 `shuffle_ganons_tower_entrance`; bits6-7 reserved. |
-| 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, bits2-3 `traps` (`off=0`, `low=1`, `medium=2`, `high=3`); bits4-7 reserved. |
-| 27 | door axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-7 reserved. |
+| 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, `traps` is a **non-contiguous 3-bit field** — low 2 bits at bits2-3 + high bit at **bit5** (`off=0`, `low=1`, `medium=2`, `high=3`, `insanity=4`); the split keeps `off`/`low`/`medium`/`high` byte-identical and bit4 untouched, bit4 `instant_flute` (inverse: `1` = manual activation; default on ⇒ `0`); bits6-7 reserved. |
+| 27 | door + trap-category axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-6 `trap_categories` enable mask (bit2 HAZARD, bit3 IMPAIR, bit4 DRAIN, bit5 SCARE, bit6 DISPLACE; the mask is meaningful only when `traps > 0`, and a `0` mask while `traps > 0` means all categories enabled, so the default serializes all-zero); bit7 reserved. |
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
 
@@ -76,7 +76,7 @@ Serialization applies derived rules before writing bytes: Completionist forces `
 
 #### Scenario: Phase A defaults
 - **WHEN** the user opens the settings screen and has not changed any field
-- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, and `door_shuffle=vanilla`.
+- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, `instant_flute=on`, `door_shuffle=vanilla`, and `trap_categories=0` (all categories — meaningful only when traps are enabled)
 
 #### Scenario: Retired boss-heart axis canonicalizes to shuffled
 - **WHEN** settings are built from defaults, CSV, or a v2 share string
@@ -178,7 +178,7 @@ The system SHALL construct the item pool from a base set that includes:
 - **Heart-related items** as distinct IDs: `PieceOfHeart` (4 = 1 heart container of effect, overworld PoH) and `BossHeartContainer` (full container drop from boss kills, +1 max HP directly). The dispatcher routes accordingly.
 - Small/big keys per dungeon, maps, compasses, multi-tier rupees (`Rupee1/5/20/100/300`).
 - **Junk pool**: `SmallMagic`, `Arrow1`, `Arrow10`, `Bombs1`, `Bombs3`, `Bombs10`. `Rupoor` is included only when `item_pool_difficulty ∈ {hard, expert}`.
-- **Traps**: when `settings.traps != off`, the placer SHALL replace eligible final junk-filled placements with `TrapDamage` / `TrapFreeze` after junk fill. This preserves placement cardinality and never replaces progression, dungeon items, prizes, Triforce pieces, pinned/event items, or fallback/identity placements.
+- **Traps**: when `settings.traps != off`, the placer SHALL replace eligible final junk-filled placements with masquerade trap items after junk fill. The per-slot effect is selected **deterministically per `(seed, location_id)`** from the 16-effect catalog and filtered by the `trap_categories` mask (see the `randomizer-traps` capability for the catalog, selector, dispatch, and per-effect location requirements). This preserves placement cardinality and never replaces progression, dungeon items, prizes, Triforce pieces, pinned/event items, or fallback/identity placements.
 
 The system SHALL junk-pad the pool so that its cardinality equals the active world-state's **fillable** location count after applying dungeon-item shuffle modes (which expand or contract the location pool per `randomizer-shuffles`). Pre-pinned identity slots — prize/event/medallion slots, Retro shop and capacity-upgrade slots, and vanilla-mode dungeon items — never consume a pool item and SHALL be excluded from the junk-pad target; one shared pre-pin predicate drives both the pad target and the placer's pre-place pin pass so the two cannot drift (counting pinned slots oversizes the pool, and the junk-fill surplus drop then silently discards a random subset of it). TakeAny slots are likewise excluded (their rewards are role-pinned outside the pool).
 
@@ -203,8 +203,8 @@ The system SHALL junk-pad the pool so that its cardinality equals the active wor
 - **THEN** the pool is padded with junk items (small rupee, single bomb, single arrow, small heart) until cardinality matches
 
 #### Scenario: Trap frequency is count-preserving
-- **WHEN** `traps = low`, `medium`, or `high`
-- **THEN** the placement count remains equal to the active fillable location count, and exactly 4, 8, or 16 eligible junk-filled placements respectively are replaced by alternating `TrapDamage` and `TrapFreeze` items when enough eligible junk exists
+- **WHEN** `traps = low`, `medium`, `high`, or `insanity`
+- **THEN** the placement count remains equal to the active fillable location count, and exactly 4, 8, 16, or (at `insanity`) **every** eligible junk-filled placement respectively is replaced by a deterministically-selected trap item (per `(seed, location_id)` over the enabled categories) when enough eligible junk exists
 
 #### Scenario: Default traps are inert
 - **WHEN** `traps = off`
@@ -780,22 +780,15 @@ precisely to defer that cascade until the follow-on axes are real.
 
 ### Requirement: Traps settings axis in canonical serialization
 
-The traps axis SHALL join `RandoSettings` canonical serialization in existing
-reserved byte `[26]` **bits 2-3** as `traps ∈ {off=0, low=1, medium=2,
-high=3}`. Byte `[26]` bit0 remains `enemy_shuffle`, bit1 remains
-`customizer_active`; `kSettingsCanonicalLen` stays 28. The CSV parser SHALL
-accept `traps` and `trap_frequency` as aliases for the same axis.
+The traps axis SHALL join `RandoSettings` canonical serialization in reserved byte `[26]` as a **non-contiguous 3-bit field**: the low 2 bits at **bits 2-3** and the high bit at **bit 5**, encoding `traps ∈ {off=0, low=1, medium=2, high=3, insanity=4}`. The split keeps `off`/`low`/`medium`/`high` byte-identical to the original 2-bit layout and leaves byte `[26]` bit4 (`instant_flute`) untouched. Byte `[26]` bit0 remains `enemy_shuffle`, bit1 remains `customizer_active`; `kSettingsCanonicalLen` stays 28. The CSV parser SHALL accept `traps` and `trap_frequency` as aliases for the axis, and `insanity` (aliases `max`/`all`) for the maximum tier.
 
 #### Scenario: Default traps keep settings_hash byte-identical
 - **WHEN** a default-settings seed (`traps == off`) is generated
-- **THEN** byte `[26]` bits2-3 pack to zero, `kSettingsCanonicalLen` stays 28,
-  and the default `settings_hash` is byte-identical to the pre-traps value
+- **THEN** byte `[26]` bits 2-3 and bit 5 pack to zero, `kSettingsCanonicalLen` stays 28, and the default `settings_hash` is byte-identical to the pre-traps value
 
 #### Scenario: Trap frequency changes the per-seed settings_hash
-- **WHEN** a seed sets `traps != off`
-- **THEN** byte `[26]` bits2-3 carry the frequency, the `settings_hash` differs
-  from the `off` seed's, and serialize → deserialize round-trips the same
-  frequency
+- **WHEN** a seed sets `traps != off` (including `insanity`)
+- **THEN** byte `[26]` carries the frequency across bits 2-3 (and bit 5 for `insanity`), the `settings_hash` differs from the `off` seed's, and serialize → deserialize round-trips the same frequency
 
 ### Requirement: Hints settings axis
 
