@@ -97,10 +97,16 @@ regression corpus drives). It needs the extracted `zelda3_assets.dat`:
 | `--out-spoiler=<path>` | JSON spoiler output path (also writes a sibling `.txt`). |
 | `--out-share-string=<path>` | Optional file for the base32 share string. |
 | `--budget-seconds=<n>` | Bound the placement retry budget (default 0). |
+| `--shape-filter=<tokens>` | Search forward from `--seed` until the spoiler/sphere shape matches comma-separated tokens such as `short`, `long`, `early_boots`, `max_sphere=4`, or `item:Hookshot<=3`. |
+| `--shape-search-limit=<n>` | Maximum candidate seeds to try for `--shape-filter` (default 100 when a filter is present). |
 | `--assets-must-be-vanilla` | Refuse a non-vanilla `zelda3_assets.dat`. |
 | `--allow-broken-seed` | Skip the goal-completability refusal (diagnostic). |
 | `--race-mode` | Suppress the on-disk spoiler at generate time. |
 | `--reveal-spoiler=<path>` | Reveal a previously-suppressed race spoiler (regenerate, verify SHA-256 stamp, write full JSON). |
+
+Shape filters are generator-side search constraints, not settings. The accepted
+candidate seed is written into the share string/spoiler, so the result remains
+reproducible without the original filter text.
 
 Determinism self-tests (no ROM/assets required — they run before asset load):
 
@@ -124,7 +130,11 @@ hand-editing `zelda3.ini`:
 
 - **Game Settings** — rebind keyboard/controller, window scale, fullscreen,
   renderer, widescreen, audio device/MSU, and the `[Features]` gameplay toggles.
-- **Randomizer** — configure and generate a playable seed slot.
+- **Randomizer** — configure and generate a playable seed slot. The `Seed Tools`
+  tab groups generation-time tools such as Customizer manifests and the same
+  generator-side search filters as `--shape-filter`; while a shape filter is
+  active, the share string is shown after generation because the accepted seed
+  may differ from the starting seed.
 
 Click **Apply** to save. Bindings and gameplay toggles take effect immediately;
 options marked *(restart)* are written to the INI and apply on next launch.

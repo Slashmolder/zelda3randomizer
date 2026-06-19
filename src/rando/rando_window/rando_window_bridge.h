@@ -5,8 +5,9 @@
 // THREADING / OWNERSHIP: both the UI (ImGui) frame and the game frame run on the SDL
 // main thread, so NO mutex is needed. The ownership split is a discipline, not a lock:
 //   UI side mutates:   pending, pending_recommended_features0, seed_u64,
-//                      target_slot_index, generate_requested, load_requested,
-//                      load_slot_index, paste_armed, last_pasted_settings_hash16.
+//                      shape_filter*, target_slot_index, generate_requested,
+//                      load_requested, load_slot_index, paste_armed,
+//                      last_pasted_settings_hash16.
 //   Game side mutates: generate_in_progress, generate_status, generate_error,
 //                      last_generated_* (the spoiler-viewer snapshot).
 // No field is written by both sides.
@@ -30,6 +31,7 @@ extern "C" {
 #include "../rando_settings.h"   // RandoSettings, Settings_*
 #include "../rando_share.h"      // kShareStringBase32MaxLen, ShareString, Share_Encode
 #include "../rando_placement.h"  // RandoPlacementTable, RandoSpheres
+#include "../seed_shape.h"       // SeedShapeFilter / metrics
 
 typedef struct RandoWindowBridge {
   RandoSettings pending;                 // settings the UI is editing
@@ -43,6 +45,16 @@ typedef struct RandoWindowBridge {
   // only by the Generate-anyway confirm. UI side owns both.
   bool paste_armed;
   uint8 last_pasted_settings_hash16[16];
+
+  // Noncanonical generation search constraints. These do not enter
+  // RandoSettings, settings_hash, or share strings; they only choose which
+  // candidate seed is accepted for the next native-window Generate.
+  bool shape_filter_enabled;
+  bool shape_filter_valid;
+  SeedShapeFilter shape_filter;
+  int shape_search_limit;
+  char shape_filter_desc[256];
+  char shape_filter_error[160];
 
   bool generate_requested;               // UI sets true; game consumes at frame start
   bool load_requested;                   // UI "Load it now" sets true; game consumes at frame start
@@ -74,6 +86,11 @@ typedef struct RandoWindowBridge {
   char last_generated_share_string_v2[kShareStringBase32MaxLen];
   uint64 last_generated_seed_u64;
   bool last_generated_goal_completable;
+  bool last_generated_shape_filter_used;
+  uint32 last_generated_shape_attempts_used;
+  int last_generated_shape_search_limit;
+  SeedShapeMetrics last_generated_shape_metrics;
+  char last_generated_shape_desc[256];
 } RandoWindowBridge;
 
 extern RandoWindowBridge g_rando_window_bridge;

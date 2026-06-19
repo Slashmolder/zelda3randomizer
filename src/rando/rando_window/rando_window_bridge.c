@@ -89,6 +89,8 @@ void RandoWindowBridge_Init(void) {
   b->target_slot_index = -1;
   b->load_slot_index = -1;
   b->generate_status = 0;
+  b->shape_filter_valid = true;
+  b->shape_search_limit = 100;
   Settings_SetDefaults(&b->pending);
   RandoWindowBridge_RecomputeDerived();
 }

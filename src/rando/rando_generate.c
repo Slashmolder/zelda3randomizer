@@ -49,6 +49,14 @@ static bool copy_active_medallion_assignment(uint8 out[kRandoMedallionEntranceCo
   return true;
 }
 
+bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budget,
+                        int slot_index, uint32 recommended_features0,
+                        RandoGenerateResult *out, char *err, size_t err_cap) {
+  return Rando_GenerateSlotWithShapeFilter(settings, seed_u64, budget, slot_index,
+                                           recommended_features0, NULL,
+                                           out, err, err_cap);
+}
+
 // Initializes a freshly-generated rando playable slot's 0x500-byte SRAM image:
 // the vanilla "new file" defaults (RANDO name + health/magic baseline) plus the
 // world-state-specific post-escape start state. Writes ONLY into
@@ -168,6 +176,59 @@ void RandoGenerate_SelfCheck(void) {
       sram[0x357] != 0x01 || sram[0x353] != 0x00 || sram[0x3C8] != 0x00) {
     fprintf(stderr, "RandoGenerate_SelfCheck: Inverted DW start-state SRAM wrong\n");
     exit(2);
+  }
+
+  // Regression for the named `long` shape alias. It used to require
+  // max_sphere >= 14, which is outside this generator's current sphere scale
+  // and made the UI fail even at a 500-candidate search limit. Keep this
+  // in-memory so the self-check remains free of slot/spoiler writes.
+  {
+    RandoSettings settings;
+    Settings_SetDefaults(&settings);  // Open / Fast Ganon default
+    SeedShapeFilter filter;
+    char err[160];
+    if (SeedShape_Parse("long", &filter, err, sizeof err) != 0) {
+      fprintf(stderr, "RandoGenerate_SelfCheck: long shape parse failed: %s\n", err);
+      exit(2);
+    }
+    RandoPlacement entries[512];
+    RandoPlacementTable table = { entries, 0 };
+    bool accepted = false;
+    uint32 attempts = 0;
+    SeedShapeMetrics metrics;
+    memset(&metrics, 0, sizeof metrics);
+    for (int i = 0; i < 20; i++) {
+      table.count = 0;
+      Rando_ClearGenerationLogicOverlays();
+      RandoEntranceRegen reg;
+      memset(&reg, 0, sizeof reg);
+      if (!Rando_PlaceWithEntrances(&settings, 0x1234ull + (uint64)i,
+                                    /*budget_seconds=*/0, &table, &reg)) {
+        Rando_ClearGenerationLogicOverlays();
+        continue;
+      }
+      RandoSpheres spheres;
+      memset(&spheres, 0, sizeof spheres);
+      (void)Logic_ComputeSpheres(&settings, &table, &spheres);
+      char reject[160];
+      if (SeedShape_Evaluate(&filter, &settings, &table, &spheres,
+                             Placement_GetLastStats(), &metrics,
+                             reject, sizeof reject)) {
+        accepted = true;
+        attempts = (uint32)(i + 1);
+        break;
+      }
+      Rando_ClearGenerationLogicOverlays();
+    }
+    Rando_ClearGenerationLogicOverlays();
+    if (!accepted) {
+      fprintf(stderr, "RandoGenerate_SelfCheck: long shape did not match within 20 candidates\n");
+      exit(2);
+    }
+    if (attempts == 0 || metrics.max_sphere < kSeedShapePresetLongMinSphere) {
+      fprintf(stderr, "RandoGenerate_SelfCheck: long shape accepted invalid metrics\n");
+      exit(2);
+    }
   }
   fprintf(stderr, "[RandoGenerate_SelfCheck] OK\n");
 }
@@ -312,9 +373,12 @@ void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
   spoiler->cross_decoupled_count = reg->cross_decoupled_count;
 }
 
-bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budget,
-                        int slot_index, uint32 recommended_features0,
-                        RandoGenerateResult *out, char *err, size_t err_cap) {
+bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 seed_u64,
+                                       int budget, int slot_index,
+                                       uint32 recommended_features0,
+                                       const RandoGenerateShapeOptions *shape,
+                                       RandoGenerateResult *out,
+                                       char *err, size_t err_cap) {
   if (err != NULL && err_cap > 0) err[0] = '\0';
 
   // Refuse an out-of-range slot BEFORE any SRAM/sidecar write. The SRAM init
@@ -368,14 +432,19 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // hard seeds. Race-mode reveal also passes 0; explicit positive budgets
   // from the caller are still honored (diagnostic use).
   int effective_budget = (budget < 0) ? 0 : budget;
+  const SeedShapeFilter *shape_filter =
+      (shape != NULL && shape->filter != NULL && shape->filter->enabled)
+          ? shape->filter : NULL;
+  int shape_search_limit = (shape_filter != NULL) ? shape->search_limit : 1;
+  if (shape_search_limit < 1) shape_search_limit = 1;
+  SeedShapeMetrics shape_metrics;
+  memset(&shape_metrics, 0, sizeof shape_metrics);
+  uint32 shape_attempts_used = 0;
+  char last_shape_reject[160];
+  last_shape_reject[0] = '\0';
+  RandoSpheres spheres;
+  bool spheres_computed = false;
 
-  // Phase C — entrance shuffle: draw a cave permutation π, install its per-seed
-  // region overrides so the placer/goal-check see the shuffled reachability, run
-  // placement, and accept the first π under which the goal is completable
-  // (reject-and-retry; coupled caves are ≈always solvable so attempt 0 normally
-  // wins). The accepted attempt index is stored in the slot header (with the
-  // packed axis byte) so slot-load regenerates the same π for the door overlay.
-  // Default-off ⇒ this whole block is skipped and placement is byte-identical.
   // Phase C — entrance shuffle: draw a cave permutation π, install its per-seed
   // region overrides so the placer/goal-check see the shuffled reachability, run
   // placement, accept the first π under which the active accessibility tier is
@@ -384,7 +453,48 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
   // runs at race-mode reveal so the regenerated spoiler is byte-identical.
   // Default-off ⇒ a single accessibility-gated Place_AssumedFill (byte-identical).
   RandoEntranceRegen reg;
-  bool placed = Rando_PlaceWithEntrances(settings, seed_u64, effective_budget, &table, &reg);
+  memset(&reg, 0, sizeof reg);
+  bool placed = false;
+  for (int shape_attempt = 0; shape_attempt < shape_search_limit; shape_attempt++) {
+    uint64 candidate_seed = seed_u64 + (uint64)shape_attempt;
+    table.count = 0;
+    Rando_ClearGenerationLogicOverlays();
+    RandoEntranceRegen candidate_reg;
+    memset(&candidate_reg, 0, sizeof candidate_reg);
+    bool candidate_placed = Rando_PlaceWithEntrances(settings, candidate_seed,
+                                                     effective_budget, &table,
+                                                     &candidate_reg);
+    if (!candidate_placed) {
+      const char *cerr = Customizer_LastError();
+      snprintf(last_shape_reject, sizeof last_shape_reject, "%s",
+               cerr[0] != '\0' ? cerr : "placement failed");
+      Rando_ClearGenerationLogicOverlays();
+      if (cerr[0] != '\0')
+        break;
+      continue;
+    }
+
+    if (shape_filter != NULL) {
+      bool spheres_ok = Logic_ComputeSpheres(settings, &table, &spheres);
+      (void)spheres_ok;
+      spheres_computed = true;
+      char shape_reject[160];
+      if (!SeedShape_Evaluate(shape_filter, settings, &table, &spheres,
+                              Placement_GetLastStats(), &shape_metrics,
+                              shape_reject, sizeof shape_reject)) {
+        snprintf(last_shape_reject, sizeof last_shape_reject, "%s", shape_reject);
+        Rando_ClearGenerationLogicOverlays();
+        spheres_computed = false;
+        continue;
+      }
+    }
+
+    placed = true;
+    reg = candidate_reg;
+    seed_u64 = candidate_seed;
+    shape_attempts_used = (uint32)(shape_attempt + 1);
+    break;
+  }
   if (!placed) {
     // clear the logic overlays on the failure path too (the
     // success path clears after the spoiler block; a failed generation would
@@ -395,6 +505,15 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
       // of the generic accessibility advice (mirrors the CLI failure path).
       if (Customizer_LastError()[0] != '\0')
         snprintf(err, err_cap, "customizer: %s", Customizer_LastError());
+      else if (shape_filter != NULL) {
+        char shape_desc[256];
+        SeedShape_Describe(shape_filter, shape_desc, sizeof shape_desc);
+        snprintf(err, err_cap,
+                 "shape filter search failed after %d candidate seed(s): %s. "
+                 "Try a higher search limit or loosen the filter.",
+                 shape_search_limit,
+                 last_shape_reject[0] != '\0' ? last_shape_reject : shape_desc);
+      }
       else if (settings->accessibility == kAccessibility_Locations)
         snprintf(err, err_cap,
                  "no 100%%-locations placement found; try 'items' or 'beatable only'");
@@ -446,9 +565,11 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
                               sizeof(spoiler_txt_path));
   bool goal_completable = false;
   if (n > 0 && m > 0) {
-    RandoSpheres spheres;
-    bool spheres_ok = Logic_ComputeSpheres(settings, &table, &spheres);
-    (void)spheres_ok;
+    if (!spheres_computed) {
+      bool spheres_ok = Logic_ComputeSpheres(settings, &table, &spheres);
+      (void)spheres_ok;
+      spheres_computed = true;
+    }
     // Phase B Slice 5 §3 (ported from main's in-game generate fix) — populate
     // per-NPC hint texts into g_hint_table so the spoiler's hints[] array is
     // non-empty when hints=on. The CLI --generate-seed path does this before its
@@ -642,10 +763,15 @@ bool Rando_GenerateSlot(const RandoSettings *settings, uint64 seed_u64, int budg
     out->used_forward_fill = used_forward_fill;
     out->goal_completable = goal_completable;
     out->race_mode = (settings->race_mode != 0);
+    out->seed_u64 = seed_u64;
     memcpy(out->share_string, share_string, sizeof(out->share_string));
     memcpy(out->settings_hash, settings_hash_full, sizeof(out->settings_hash));
     out->has_medallion_assignment =
         copy_active_medallion_assignment(out->medallion_assignment);
+    out->shape_filter_used = (shape_filter != NULL);
+    out->shape_attempts_used = shape_attempts_used;
+    out->shape_search_limit = shape_search_limit;
+    out->shape_metrics = shape_metrics;
     if (table.count > 0) {
       RandoPlacement *copy =
           (RandoPlacement *)malloc(sizeof(RandoPlacement) * table.count);
