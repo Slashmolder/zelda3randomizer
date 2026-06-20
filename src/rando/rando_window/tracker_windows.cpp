@@ -510,14 +510,13 @@ static void DrawCheckTracker(void *) {
     uint16 region_id = (ri < kRandoRegionsCount) ? kRandoRegions[ri].id : 0xFFFF;
 
     // Tally this region's locations from the placement table.
-    int r_total = 0, r_checked = 0, r_avail = 0, r_pots = 0;
+    int r_total = 0, r_checked = 0, r_avail = 0;
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
-      if (LocIsPot(loc)) r_pots++;  // pots counted in the header, rows gated below
       if (Rando_IsLocationChecked(loc)) r_checked++;
       else if (have_reach && Reachability_HasLocation(reach, loc)) r_avail++;
     }
@@ -535,12 +534,12 @@ static void DrawCheckTracker(void *) {
     if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
 
     ImGui::Indent();
+    int r_pots_hidden = 0;  // pots that pass every filter but are hidden by !s_show_pots
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
-      if (!s_show_pots && LocIsPot(loc)) continue;  // pot rows gated by the toggle
 
       bool checked = Rando_IsLocationChecked(loc);
       bool reachable = have_reach && Reachability_HasLocation(reach, loc);
@@ -572,6 +571,12 @@ static void DrawCheckTracker(void *) {
         if (!match) continue;
       }
 
+      // add-rando-pot-sanity — a pot that passes every active filter (hide
+      // checked / only available / search) but is hidden by the "Show pots"
+      // toggle is tallied for the per-region summary below, so that count
+      // reflects those filters instead of the raw pot total.
+      if (!s_show_pots && LocIsPot(loc)) { r_pots_hidden++; continue; }
+
       ImVec4 c = checked ? col_checked : (reachable ? col_reach : col_unreach);
       const char *mark = checked ? "[x]" : (reachable ? "[ ]" : " - ");
       ImGui::PushStyleColor(ImGuiCol_Text, c);
@@ -583,10 +588,11 @@ static void DrawCheckTracker(void *) {
       }
       ImGui::PopStyleColor();
     }
-    // add-rando-pot-sanity — when pot rows are hidden, note how many this region
-    // holds so the header's pot-inclusive count doesn't read as a missing-rows bug.
-    if (!s_show_pots && r_pots > 0)
-      ImGui::TextDisabled("  +%d pots in this region (enable \"Show pots\")", r_pots);
+    // add-rando-pot-sanity — when pot rows are hidden, note how many WOULD show
+    // under the current filters (hide checked / only available / search), so the
+    // count tracks availability instead of implying every pot here is available.
+    if (!s_show_pots && r_pots_hidden > 0)
+      ImGui::TextDisabled("  +%d pots in this region (enable \"Show pots\")", r_pots_hidden);
     ImGui::Unindent();
   }
 
