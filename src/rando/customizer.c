@@ -22,7 +22,10 @@
 // append-only and currently tops out well under this; Rando_GetLocationName
 // returns "(unknown)" for ids that aren't in the registry, so an over-estimate
 // is harmless (just skipped).
-#define kCustomizerLocIdProbeMax 1024
+// Probe the whole location id space (sized by the module-wide ceiling in
+// rando_logic.h). Ids past the registry return a sentinel name and are skipped
+// (is_sentinel_name), so the wider range costs only cheap sentinel checks.
+#define kCustomizerLocIdProbeMax kRandoLocationCapacity
 #define kCustomizerItemIdProbeMax 256
 
 // ---------------------------------------------------------------------------

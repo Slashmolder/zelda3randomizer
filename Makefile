@@ -76,7 +76,7 @@ OBJS:=$(sort $(SRCS:%.c=%.o))
 # by rando_logic_gen.py, so list it explicitly or editing it ships a stale
 # logic_data.c on an incremental build. (door_portals.yaml is caught by the find.)
 RANDO_GEN_SRCS:=$(shell find assets/rando -name '*.yaml') assets/rando/door_predicates.gen.json assets/rando_logic_gen.py assets/chest_data.py
-RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
+RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/pot_lookup.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
 
 ifeq (${OS},Windows_NT)
     WINDRES:=windres

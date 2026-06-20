@@ -376,17 +376,17 @@ static void DrawItemTracker(void *) {
 }
 
 // location_id -> region_id index, built once from the static logic table.
-static uint16 s_loc_region[1024];
+static uint16 s_loc_region[kRandoLocationCapacity];
 // location_id -> location-type index (parallel to s_loc_region). Lets the check
 // tracker exclude non-check slots. Values mirror
 // assets/rando_logic_gen.py::_location_type_id (APPEND-ONLY list).
-static uint8 s_loc_type[1024];
+static uint8 s_loc_type[kRandoLocationCapacity];
 static bool s_loc_region_built = false;
 static void BuildLocRegionIndex() {
-  for (int i = 0; i < 1024; i++) { s_loc_region[i] = 0xFFFF; s_loc_type[i] = 0xFF; }
+  for (int i = 0; i < kRandoLocationCapacity; i++) { s_loc_region[i] = 0xFFFF; s_loc_type[i] = 0xFF; }
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     uint16 id = kRandoLocations[i].id;
-    if (id < 1024) {
+    if (id < kRandoLocationCapacity) {
       s_loc_region[id] = kRandoLocations[i].region_id;
       s_loc_type[id]   = kRandoLocations[i].type;
     }
@@ -401,7 +401,7 @@ static void BuildLocRegionIndex() {
 // setting, NOT an item check. Exclude both everywhere the check tracker
 // enumerates placement entries.
 static inline bool LocHiddenFromChecks(uint16 loc) {
-  return loc < 1024 && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
+  return loc < kRandoLocationCapacity && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
 }
 
 // Check status: 0 unreachable, 1 reachable-unchecked, 2 checked.
@@ -498,7 +498,7 @@ static void DrawCheckTracker(void *) {
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;
-      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
       if (Rando_IsLocationChecked(loc)) r_checked++;
@@ -521,7 +521,7 @@ static void DrawCheckTracker(void *) {
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;
-      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
 
       bool checked = Rando_IsLocationChecked(loc);
@@ -581,7 +581,7 @@ static void RegionTally(const RandoPlacementTable *pt, const RandoReachability *
   for (int i = 0; i < n; i++) {
     uint16 loc = pt->entries[i].location_id;
     if (LocHiddenFromChecks(loc)) continue;
-    uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+    uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
     if (lr != region_id) continue;
     t++;
     if (Rando_IsLocationChecked(loc)) c++;
@@ -786,7 +786,7 @@ static void DrawMapTracker(void *) {
     int n = pt ? (int)pt->count : 0;
     for (int i = 0; i < n; i++) {
       uint16 loc = pt->entries[i].location_id;
-      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != (uint16)hover_region) continue;
       bool checked = Rando_IsLocationChecked(loc);
       bool reachable = have_reach && Reachability_HasLocation(reach, loc);

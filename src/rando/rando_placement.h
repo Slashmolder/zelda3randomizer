@@ -78,8 +78,15 @@ const RandoPlacementTable *Placement_GetActive(void);
 
 // Looks up location_id in the active table. Returns vanilla_item_id when no
 // table is installed or the location_id is missing. Called from
-// Rando_OnLocationCheck (rando.c).
+// Rando_OnLocationCheck (rando.c). add-rando-pot-sanity D10: binary search over
+// the location-id-sorted table (linear fallback if a producer ever installs an
+// unsorted one — Placement_ActiveIsSorted reports which path is live).
 uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id);
+
+// add-rando-pot-sanity D10 — true iff the active placement table is sorted by
+// location_id (so Placement_Lookup binary-searches). Exposed for the
+// --rando-selftest sortedness assertion.
+bool Placement_ActiveIsSorted(void);
 
 // kRandoDungeon_* slot -> its Prize location id, or 0xFFFF if that dungeon
 // awards no pendant/crystal (HCE/HCT/GT). Lets UI gate prize-completion on the
@@ -152,7 +159,7 @@ bool Goal_ShouldRefuse(const RandoSettings *settings,
 typedef struct RandoSpheres {
   // For each entry index in the placement table: which sphere it belongs to.
   // Indexed by placement-table index (0..placements->count-1).
-  uint8 sphere_index_by_placement[512];
+  uint8 sphere_index_by_placement[kRandoLocationCapacity];
   uint8 max_sphere;                  // highest sphere reached (inclusive); 0 if no progress
   uint16 unreachable_count;          // count of placements with sphere_index_by_placement == 0xFF
 } RandoSpheres;

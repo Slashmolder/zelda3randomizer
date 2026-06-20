@@ -15,6 +15,9 @@
 # Generated chest-table artifact (extract_resources.dump_chest_table);
 # consumed by the rando chest_lookup codegen. See assets/chest_data.py.
 /assets/rando/chest_table.gen.bin
+# Pot ground-truth dump (zelda3 --dump-pot-table); regeneratable input to
+# gen_pot_tables.py. See openspec add-rando-pot-sanity.
+/assets/rando/pot_dump.gen.txt
 /zelda3.sfc
 /zelda3.smc
 /saves/*.sav
@@ -36,6 +39,7 @@ __pycache__
 /src/rando/location_ids.h
 /src/rando/item_ids.h
 /src/rando/chest_lookup.h
+/src/rando/pot_lookup.h
 /src/rando/icon_atlas.h
 /src/rando/direct_grant_icons.h
 # CLI test outputs from --generate-seed runs.

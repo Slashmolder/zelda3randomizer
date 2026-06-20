@@ -2708,6 +2708,37 @@ void Dungeon_LoadRoom() {  // 81873a
   dung_load_ptr_offs = 0x120;
 }
 
+// Headless pot enumeration for the --dump-pot-table dev/codegen tool (feeds
+// assets/scripts/gen_pot_tables.py). Replicates ONLY Dungeon_LoadRoom's floor +
+// four object-draw passes (the 2656-2678 block) — deliberately NOT the torch /
+// pushable-block tails, which walk asset/g_ram tables not set up in a bare
+// headless loop (they crash) and aren't needed for pot geometry. After this
+// returns, dung_replacement_tile_state[i] == 0x1111 marks a pot whose runtime
+// identity is dung_object_tilemap_pos[i] — the exact pos4 RevealPotItem matches.
+// Zeroes the dungeon room-build scratch (0x400..0x600: every dung object-index
+// counter + the 16-entry replacement/tilemap arrays) first, so per-object index
+// counters don't accumulate across rooms and OOB-write their parallel arrays.
+void Dungeon_DrawRoomObjectsHeadless(uint16 room) {
+  memset(&g_ram[0x400], 0, 0x200);
+  dungeon_room_index = room;
+  const uint8 *cur_p0 = GetDungeonRoomLayout(room);
+  dung_load_ptr_offs = 0;
+  RoomDraw_DrawFloors(cur_p0);
+  uint16 old_offs = dung_load_ptr_offs;
+  dung_layout_and_starting_quadrant = cur_p0[dung_load_ptr_offs];
+  const uint8 *cur_p1 = GetDefaultRoomLayout(dung_layout_and_starting_quadrant >> 2);
+  dung_load_ptr_offs = 0;
+  RoomDraw_DrawAllObjects(cur_p1);
+  dung_load_ptr_offs = old_offs + 1;
+  RoomDraw_DrawAllObjects(cur_p0);
+  dung_load_ptr_offs += 2;
+  memcpy(&dung_line_ptrs_row0, kDungeon_DrawObjectOffsets_BG2, 33);
+  RoomDraw_DrawAllObjects(cur_p0);
+  dung_load_ptr_offs += 2;
+  memcpy(&dung_line_ptrs_row0, kDungeon_DrawObjectOffsets_BG1, 33);
+  RoomDraw_DrawAllObjects(cur_p0);
+}
+
 void RoomDraw_DrawAllObjects(const uint8 *level_data) {  // 8188e4
   for (;;) {
     dung_draw_width_indicator = dung_draw_height_indicator = 0;

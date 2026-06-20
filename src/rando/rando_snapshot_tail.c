@@ -169,16 +169,15 @@ bool RandoSnapshotTail_Save(FILE *f) {
 
   // Translate sparse placements[] back into a flat uint16-by-location_id
   // array. Same convention as rando_save.c: max(location_id)+1 entries,
-  // sentinel-fill any unset entry. Cap at 512 to match RandoSidecarSlot's
-  // static `placements[512]` size — the spec's location_count fits well
-  // under this (Phase A baseline is ~237).
+  // sentinel-fill any unset entry. Cap at kRandoLocationCapacity to match
+  // RandoSidecarSlot's `placements[kRandoLocationCapacity]` size.
   uint16 max_loc = 0;
   for (uint16 i = 0; i < t->count; i++) {
     if (t->entries[i].location_id >= max_loc) {
       max_loc = (uint16)(t->entries[i].location_id + 1);
     }
   }
-  if (max_loc > 512) return false;  // refuse to emit truncated payload
+  if (max_loc > kRandoLocationCapacity) return false;  // refuse to emit truncated payload
   uint16 location_count = max_loc;
   uint32 placement_table_bytes = (uint32)location_count * 2u;
 
@@ -256,7 +255,7 @@ bool RandoSnapshotTail_Save(FILE *f) {
 //
 // Returns the number of recognized TLVs consumed.
 // ---------------------------------------------------------------------------
-static RandoPlacement g_tail_entries[512];
+static RandoPlacement g_tail_entries[kRandoLocationCapacity];
 static RandoPlacementTable g_tail_table;
 
 int RandoSnapshotTail_Load(FILE *f) {
@@ -281,8 +280,9 @@ int RandoSnapshotTail_Load(FILE *f) {
     // fseek below: on LLP64 (Windows x64) `long` is 32-bit, so a length >=
     // 0x80000000 casts to a NEGATIVE seek and the loop could rewind and re-read
     // the same header forever (hang on a corrupt-but-parseable snapshot). The
-    // largest legal payload is the RandoState body (52 + 512*2 = 1076); cap well
-    // above that and bail on anything larger — a real tail never exceeds it.
+    // largest legal payload is the RandoState body (52 + kRandoLocationCapacity
+    // * 2); cap well above that and bail on anything larger — a real tail never
+    // exceeds it.
     if (length > kRandoSnapshotTail_MaxPayloadBytes) return recognized;
 
     if (type == kRandoSnapshotTail_Type_RandoState) {
@@ -312,7 +312,7 @@ int RandoSnapshotTail_Load(FILE *f) {
       }
       // Read the placement table.
       uint16 location_count = (uint16)(placement_table_bytes / 2u);
-      if (location_count > 512) {
+      if (location_count > kRandoLocationCapacity) {
         // Reject — exceeds our static buffer; skip body, continue.
         if (placement_table_bytes > 0 && fseek(f, (long)placement_table_bytes, SEEK_CUR) != 0) {
           return recognized;
@@ -320,22 +320,22 @@ int RandoSnapshotTail_Load(FILE *f) {
         continue;
       }
       // Reject an ODD or oversized placement_table_bytes BEFORE the fread.
-      // The `location_count > 512` check above bounds location_count (=
-      // placement_table_bytes/2, integer-truncated), but the fread below uses
-      // the raw placement_table_bytes: an odd value like 1025 truncates to
-      // location_count==512 (passes the >512 reject) yet would fread 1025
-      // bytes into `raw[1024]` — a 1-byte stack overflow. Require an exact
-      // even round-trip and a hard ≤1024 cap. Skip the body + continue,
-      // mirroring the location_count>512 reject branch.
+      // The `location_count > kRandoLocationCapacity` check above bounds
+      // location_count (= placement_table_bytes/2, integer-truncated), but the
+      // fread below uses the raw placement_table_bytes: an odd value (e.g.
+      // capacity*2 + 1) truncates to location_count==capacity (passes the reject)
+      // yet would fread one byte past `raw[]` — a 1-byte stack overflow. Require
+      // an exact even round-trip and a hard ≤ capacity*2 cap. Skip the body +
+      // continue, mirroring the location_count reject branch.
       if (placement_table_bytes != (uint16)(location_count * 2u) ||
-          placement_table_bytes > 1024) {
+          placement_table_bytes > (uint32)kRandoLocationCapacity * 2u) {
         if (placement_table_bytes > 0 && fseek(f, (long)placement_table_bytes, SEEK_CUR) != 0) {
           return recognized;
         }
         continue;
       }
       if (placement_table_bytes > 0) {
-        uint8 raw[1024];  // max 512 locations × 2 bytes
+        uint8 raw[kRandoLocationCapacity * 2];  // max kRandoLocationCapacity locations × 2 bytes
         if (fread(raw, 1, placement_table_bytes, f) != placement_table_bytes) {
           return recognized;
         }

@@ -270,9 +270,16 @@ typedef struct RandoSidecarFileHeader {
 // this prefix).
 typedef struct RandoSidecarSlot {
   RandoSlotHeader header;
-  RandoPlacement placements[512];  // sized for ~237 + headroom
+  // In-memory only — sized by the module-wide ceiling (rando_logic.h). The
+  // ON-DISK format is sized per slot by header.placement_table_size, so growing
+  // these buffers does NOT change the wire format. The slot-load bounds check in
+  // rando_save.c (location_count > sizeof(placements)/sizeof(placements[0]))
+  // refuses a slot too large for the buffer — which makes compatibility
+  // one-directional for free: a pot-capable binary accepts ≤ capacity, while an
+  // older (512-buffer) binary refuses a pot-expanded slot non-destructively.
+  RandoPlacement placements[kRandoLocationCapacity];
   uint16 placement_count;          // valid entries in placements[]
-  uint8 checked_bitmap[(512 + 7) >> 3];
+  uint8 checked_bitmap[(kRandoLocationCapacity + 7) >> 3];
   // Canonical RandoSettings blob (format_version >= 2). Valid only when
   // header.settings_present == 1. On disk it trails the checked bitmap; v1
   // files have no such bytes (the loader keys presence on the file version).

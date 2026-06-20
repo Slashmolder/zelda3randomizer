@@ -191,7 +191,7 @@ void RandoGenerate_SelfCheck(void) {
       fprintf(stderr, "RandoGenerate_SelfCheck: long shape parse failed: %s\n", err);
       exit(2);
     }
-    RandoPlacement entries[512];
+    RandoPlacement entries[kRandoLocationCapacity];
     RandoPlacementTable table = { entries, 0 };
     bool accepted = false;
     uint32 attempts = 0;

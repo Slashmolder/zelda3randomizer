@@ -48,9 +48,10 @@
 #define kRandoSnapshotTail_Type_RandoSettings 2u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
-// payload is the RandoState body (52 + 512*2 = 1076 bytes); the loader rejects
-// any TLV claiming more than this before seeking, so an untrusted/corrupt
-// length can't drive a negative (LLP64) or wild fseek. Generous headroom.
+// payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the
+// loader rejects any TLV claiming more than this before seeking, so an
+// untrusted/corrupt length can't drive a negative (LLP64) or wild fseek. The
+// 0x10000 ceiling stays generous headroom over the 2048-location maximum.
 #define kRandoSnapshotTail_MaxPayloadBytes 0x10000u
 
 // ---------------------------------------------------------------------------

@@ -1169,6 +1169,16 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
     return kRandoLttpSkip;
   }
 
+  // add-rando-pot-sanity — ITEM_Nothing ("Literally Nothing") is the filler the
+  // placer pins onto empty pots under pot_shuffle=All. It has NO vanilla LttP
+  // code; without this branch it would fall through to the vanilla-LttP fallback
+  // below and grant the pot's vanilla content (the secret-table item), defeating
+  // the whole point of an empty pot. Skip the receive entirely (the runtime hook,
+  // Phase 4, shows the "nothing" cue keyed on g_last_dispatched_item_id).
+  if (placed == ITEM_Nothing) {
+    return kRandoLttpSkip;
+  }
+
   uint8 lttp = Rando_VanillaItemForRegistryId(placed);
   if (lttp != 0xFF) {
     // Boomerang is strictly PROGRESSIVE under rando: the 1st collected is always
@@ -1495,6 +1505,13 @@ uint32 Rando_GetReachabilityCounter(void) {
 bool g_rando_show_item_tracker = false;
 bool g_rando_show_location_tracker = false;
 uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
+// Name-tie: the static location registry must never exceed the capacity that
+// sizes every location-id-keyed array/bitmap/loop bound across the module. This
+// fires here (rando.c sees both LOC__COUNT from location_ids.h and
+// kRandoLocationCapacity from rando_logic.h) the instant a registry append
+// outgrows capacity — a build break, not a silent fail-open. See rando_logic.h.
+_Static_assert(LOC__COUNT <= kRandoLocationCapacity,
+               "location registry exceeds kRandoLocationCapacity — raise it");
 uint8 g_rando_mushroom_held = 0;
 uint8 g_rando_flute_shovel_owned = 0;
 uint8 g_rando_boomerang_owned = 0;
@@ -1687,7 +1704,7 @@ bool Rando_BowCanToggle(void) {
 
 void Rando_MarkLocationChecked(uint16 location_id) {
   if (!g_rando_slot_active) return;
-  if (location_id >= 512) return;
+  if (location_id >= kRandoLocationCapacity) return;
   uint32 byte_idx = location_id >> 3;
   uint8 bit_mask = (uint8)(1u << (location_id & 7));
   g_rando_checked_bitmap[byte_idx] |= bit_mask;
@@ -1698,14 +1715,14 @@ void Rando_MarkLocationChecked(uint16 location_id) {
 
 bool Rando_IsLocationChecked(uint16 location_id) {
   if (!g_rando_slot_active) return false;
-  if (location_id >= 512) return false;
+  if (location_id >= kRandoLocationCapacity) return false;
   return (g_rando_checked_bitmap[location_id >> 3] & (1u << (location_id & 7))) != 0;
 }
 
 void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   if (out_slot == NULL || !g_rando_slot_active) return;
   // sizeof(out_slot->checked_bitmap) == kRandoCheckedBitmapBytes by
-  // construction (both derived from the same 512-bit cap).
+  // construction (both derived from kRandoLocationCapacity).
   memcpy(out_slot->checked_bitmap, g_rando_checked_bitmap, kRandoCheckedBitmapBytes);
   // Persist Mushroom possession alongside the checked bitmap so an undelivered
   // Mushroom survives save/reload (otherwise a reload could re-lock the
@@ -1982,7 +1999,7 @@ bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index) {
 // its placements[] into this static buffer before installing — that way the
 // pointer Placement_Install holds stays valid for the duration of gameplay.
 // ---------------------------------------------------------------------------
-#define kRando_SessionPlacementCapacity 512
+#define kRando_SessionPlacementCapacity kRandoLocationCapacity
 static RandoPlacement g_session_placements[kRando_SessionPlacementCapacity];
 static RandoPlacementTable g_session_placement_table;
 
@@ -3830,7 +3847,7 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   // deterministic at reveal regardless of machine speed; combined with the
   // stamp's H1 normalization of attempts_used/forward_fill_fallback_count,
   // the stamp is reproducible across machines.
-  static RandoPlacement scratch_entries[512];
+  static RandoPlacement scratch_entries[kRandoLocationCapacity];
   RandoPlacementTable table;
   table.entries = scratch_entries;
   table.count = 0;
@@ -5426,7 +5443,7 @@ void Rando_TrackerSelfCheck(void) {
   Settings_SetDefaults(&s);
   uint64 seed = 0x0123456789abcdefull;
 
-  static RandoPlacement entries[512];
+  static RandoPlacement entries[kRandoLocationCapacity];
   RandoPlacementTable table;
   table.entries = entries;
   table.count = 0;
@@ -5438,7 +5455,7 @@ void Rando_TrackerSelfCheck(void) {
   slot.header.slot_kind = kSlotKind_Randomizer;
   slot.header.generator_version = (uint16)kGeneratorVersion;
   uint16 maxloc = 0;
-  for (uint16 i = 0; i < table.count && i < 512; i++) {
+  for (uint16 i = 0; i < table.count && i < kRandoLocationCapacity; i++) {
     slot.placements[i] = table.entries[i];
     if (table.entries[i].location_id > maxloc) maxloc = table.entries[i].location_id;
   }
@@ -5507,7 +5524,7 @@ void Rando_TrackerSelfCheck(void) {
 // Rando_TrackerSelfCheck. The static placement scratch is safe to reuse because
 // Rando_ActivateSidecarSlot copies the placements via Placement_Install.
 static void rando_selfcheck_build_slot(RandoSidecarSlot *slot, RandoSettings *s, uint64 seed) {
-  static RandoPlacement entries[512];
+  static RandoPlacement entries[kRandoLocationCapacity];
   RandoPlacementTable table = { entries, 0 };
   if (!Place_AssumedFill(s, seed, 0, &table) && table.count == 0)
     tsc_die("StartingInventory_SelfCheck: placement failed");
@@ -5515,7 +5532,7 @@ static void rando_selfcheck_build_slot(RandoSidecarSlot *slot, RandoSettings *s,
   slot->header.slot_kind = kSlotKind_Randomizer;
   slot->header.generator_version = (uint16)kGeneratorVersion;
   uint16 maxloc = 0;
-  for (uint16 i = 0; i < table.count && i < 512; i++) {
+  for (uint16 i = 0; i < table.count && i < kRandoLocationCapacity; i++) {
     slot->placements[i] = table.entries[i];
     if (table.entries[i].location_id > maxloc) maxloc = table.entries[i].location_id;
   }

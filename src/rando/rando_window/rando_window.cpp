@@ -1526,11 +1526,11 @@ static void Panel_Spoiler() {
   // so a stable per-region grouping falls out, mirroring rando_spoiler.c's text
   // writer. The per-region tables below get their OWN interactive sort.
   uint16 n = t->count;
-  // Display cap, comfortably above any plausible location count
-  // (kRandoLocationsCount == 266 today; placements can't exceed it). If a
-  // future location-set growth ever exceeds this, we surface a visible note
+  // Display cap = the module-wide location ceiling (rando_logic.h), so the
+  // spoiler view can list every placed entry without dropping pot rows ≥ 1024.
+  // If a future location-set growth ever exceeds this, we surface a visible note
   // below rather than silently dropping rows.
-  enum { kSpoilerMaxRows = 1024 };
+  enum { kSpoilerMaxRows = kRandoLocationCapacity };
   bool truncated = false;
   static struct Row { uint16 region_id; uint16 location_id; uint16 item_id; } rows[kSpoilerMaxRows];
   if (n > kSpoilerMaxRows) { n = kSpoilerMaxRows; truncated = true; }

@@ -40,13 +40,37 @@
 // (effectively rando-inactive).
 // ---------------------------------------------------------------------------
 static const RandoPlacementTable *g_active_placement = NULL;
+// add-rando-pot-sanity D10 — Placement_Lookup binary-searches the active table
+// by location_id, which requires the table sorted ascending. Every producer
+// emits in that order (assumed-fill's step-7 loop walks open_loc_idx, a subset
+// of the id-sorted kRandoLocations; the sidecar/snapshot install memcpys that
+// order through). We still VERIFY sortedness once per install (O(N)) and fall
+// back to a linear scan if a future producer breaks it — correctness never
+// depends on the invariant, only speed does. The --rando-selftest sortedness
+// assert guards the assumed-fill path so the fast path is the one exercised.
+static bool g_active_placement_sorted = false;
 
 void Placement_Install(const RandoPlacementTable *t) {
   g_active_placement = t;
+  g_active_placement_sorted = true;
+  if (t != NULL) {
+    for (uint16 i = 1; i < t->count; i++) {
+      if (t->entries[i].location_id < t->entries[i - 1].location_id) {
+        g_active_placement_sorted = false;
+        break;
+      }
+    }
+  }
 }
 
 const RandoPlacementTable *Placement_GetActive(void) {
   return g_active_placement;
+}
+
+// Is the active placement table sorted by location_id (so Placement_Lookup
+// binary-searches)? Exposed for the --rando-selftest sortedness assert.
+bool Placement_ActiveIsSorted(void) {
+  return g_active_placement_sorted;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,10 +83,26 @@ const RandoPlacementTable *Placement_GetActive(void) {
 //   - location_id is not in the table (e.g., a slot from a future binary).
 // ---------------------------------------------------------------------------
 uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
-  if (g_active_placement == NULL) return vanilla_item_id;
-  for (uint16 i = 0; i < g_active_placement->count; i++) {
-    if (g_active_placement->entries[i].location_id == location_id) {
-      return g_active_placement->entries[i].item_id;
+  const RandoPlacementTable *t = g_active_placement;
+  if (t == NULL) return vanilla_item_id;
+  // add-rando-pot-sanity D10 — binary search the sorted-by-location_id table.
+  // At ~1163 active locations (All tier) a per-location-check linear scan would
+  // be too slow for the Phase-4 per-pot-break dispatch; O(log N) keeps it cheap.
+  if (g_active_placement_sorted) {
+    uint16 lo = 0, hi = t->count;
+    while (lo < hi) {
+      uint16 mid = (uint16)(lo + (hi - lo) / 2u);
+      uint16 mloc = t->entries[mid].location_id;
+      if (mloc == location_id) return t->entries[mid].item_id;
+      if (mloc < location_id) lo = (uint16)(mid + 1u);
+      else hi = mid;
+    }
+    return vanilla_item_id;
+  }
+  // Fallback for an (unexpected) unsorted table: linear scan stays CORRECT.
+  for (uint16 i = 0; i < t->count; i++) {
+    if (t->entries[i].location_id == location_id) {
+      return t->entries[i].item_id;
     }
   }
   return vanilla_item_id;
@@ -285,6 +325,41 @@ static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_i
   return used;
 }
 
+// add-rando-pot-sanity — small-key item-id test. Contiguous per
+// item_registry.yaml: SmallKey_HyruleCastleEscape(53) .. SmallKey_GanonsTower(65).
+static bool is_small_key_item(uint16 item_id) {
+  return item_id >= 53 && item_id <= 65;
+}
+
+// add-rando-pot-sanity — is this pot an ACTIVE randomizer check under `s`
+// (design D1/D9)? This ONE predicate gates all three placement sites that must
+// agree — the open-location collection loop, BuildItemPool's junk-pad target,
+// and Placement_SelfCheck's expected-count loop — so the pool size and the open
+// slot count can never drift (the regression that fired in Phase 2e).
+//
+// A pot's KIND is derived from its vanilla_item_id (no extra table): empty pots
+// carry ITEM_Nothing (rando_logic_gen.load_pots maps kind==empty → Nothing), key
+// pots carry a SmallKey (53..65), everything else is loot. Tiers nest
+// keys ⊆ contents ⊆ all.
+//
+// Under door shuffle EVERY pot is inactive: the door key-prover doesn't model
+// pot locations, so letting a dungeon key reach one risks an unprovable softlock
+// (v1 restriction — design D7, owner-flagged). apply_derived_rules normalizes
+// pot_shuffle off under door shuffle too, keyed on this same
+// Settings_EffectiveDoorShuffle, so the settings_hash and the placement agree.
+static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s) {
+  if (loc == NULL || s == NULL || loc->type != LOCTYPE_Pot) return false;
+  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla) return false;
+  bool is_empty = (loc->vanilla_item_id == ITEM_Nothing);
+  switch (s->pot_shuffle) {
+    case kPotShuffle_Off:      return false;
+    case kPotShuffle_Keys:     return is_small_key_item(loc->vanilla_item_id);
+    case kPotShuffle_Contents: return !is_empty;            // loot + keys
+    case kPotShuffle_All:      return true;                 // + empty pots
+    default:                   return false;                // reserved Subset(4)
+  }
+}
+
 // shared pre-pin predicate. Returns true when the placer's
 // pre-place pass (place_assumed_fill_attempt §3b) pins `loc` to a fixed item:
 // vanilla identity (event / medallion slots, Retro shop + capacity-upgrade
@@ -309,6 +384,15 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
       loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal)
     return true;
   uint16 vi = loc->vanilla_item_id;
+  // add-rando-pot-sanity — an ACTIVE empty pot (vanilla_item_id == ITEM_Nothing,
+  // present only under tier All; both callers filter INACTIVE pots before
+  // reaching here) is pinned to its ITEM_Nothing filler by the §3b pre-pass, so
+  // it consumes no pool item and the junk-pad target excludes it (no real item
+  // can land on an empty pot, no Nothing on a real slot). Key-pots (vi 53..65)
+  // fall through to the dungeon small-key rule below: pinned in vanilla key mode,
+  // an open fillable slot when keys are shuffled.
+  if (loc->type == LOCTYPE_Pot && vi == ITEM_Nothing)
+    return true;
   // Vanilla-mode dungeon items are identity-placed (and never added to the
   // pool by BuildItemPool — the two are flip sides of the same mode check).
   if (vi >= 53 && vi <= 65)
@@ -376,7 +460,7 @@ static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
   uint16 wanted = trap_count_for_frequency(settings ? settings->traps : 0);
   if (wanted == 0) return 0;
 
-  uint16 eligible[512];
+  uint16 eligible[kRandoLocationCapacity];
   uint16 eligible_n = 0;
   for (uint16 idx = 0; idx < n && eligible_n < (uint16)(sizeof eligible / sizeof eligible[0]); idx++) {
     if (!junk_filled[idx]) continue;
@@ -635,6 +719,14 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       // (non-pinned) slot count, so existing non-TakeAny Retro placements stay
       // decision-stable when TakeAny lands. See design.md §"Pool/pad".
       if (loc->type == LOCTYPE_TakeAny) continue;
+      // add-rando-pot-sanity: an INACTIVE pot is out of the placement pool (its
+      // tier isn't selected, or door shuffle is on). pot_active() is the SAME
+      // predicate the open-location loop + Placement_SelfCheck use, so the pool
+      // size and the open-slot count can't drift; with pot_shuffle off every pot
+      // is inactive and the placement stays byte-identical (design D9). An ACTIVE
+      // empty pot is prepinned (below) to ITEM_Nothing, so it too is excluded
+      // here; only active loot/key pots count toward the junk-pad target.
+      if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
       // pre-pinned slots (prizes, events, medallions, shops,
       // vanilla-mode dungeon items) are identity-placed by
       // the §3b pin pass and never consume a pool item. Counting them here
@@ -945,7 +1037,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   uint16 best_unreachable = 0xFFFF;
   uint16 best_fallback = 0xFFFF;
   uint16 best_score_cached = 0xFFFF;  // includes the no-core-weapon penalty
-  static RandoPlacement best_entries[512];
+  static RandoPlacement best_entries[kRandoLocationCapacity];
   uint16 best_count = 0;
   bool best_complete = false;
   // FIX #6 — track which attempt produced the best-scored placement. The
@@ -1300,8 +1392,8 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   if (out_fallback_count) *out_fallback_count = 0;
 
   // ----- 1. Build pool + shuffle-assignment tables -----
-  uint16 pool[512];
-  uint16 pool_n = BuildItemPool(settings, pool, 512);
+  uint16 pool[kRandoLocationCapacity];
+  uint16 pool_n = BuildItemPool(settings, pool, kRandoLocationCapacity);
   if (pool_n == 0) return false;
 
   // Run prize + medallion shuffles. Their outputs are installed into owned
@@ -1345,7 +1437,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // fill in-dungeon slots first, often leaving keys with only circular slots
   // remaining and triggering forward-fill fallback.
   static uint16 progression[256];
-  static uint16 junk[512];
+  static uint16 junk[kRandoLocationCapacity];
   uint16 prog_n = 0, junk_n = 0;
   uint16 dungeon_prog_n = 0;  // first dungeon_prog_n entries of progression[] are dungeon items
   for (uint16 i = 0; i < pool_n; i++) {
@@ -1373,7 +1465,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
 
   // ----- 3. Collect open locations (world-state-filtered, sorted by id) -----
   // open_loc_idx[k] = index into kRandoLocations of the k-th open location.
-  static uint16 open_loc_idx[512];
+  static uint16 open_loc_idx[kRandoLocationCapacity];
   uint16 open_n = 0;
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     const RandoLocationDef *loc = &kRandoLocations[i];
@@ -1384,11 +1476,18 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     // entry, per the spec "the placement table contains only the active slots".
     if (loc->type == LOCTYPE_TakeAny &&
         takeany_reward(settings, takeany_roles, loc->id) == 0xFFFF) continue;
+    // add-rando-pot-sanity: only pots ACTIVE under the selected tier enter the
+    // open-location set (pot_active — the shared predicate; door shuffle forces
+    // all pots inactive). Inactive pots draw no fill RNG, so pot-shuffle off is
+    // placement-byte-identical (design D9). Active loot/key pots become open
+    // slots; an active empty pot enters here too but is pinned to ITEM_Nothing
+    // by the §3b pre-pass (location_is_prepinned) before assumed-fill/junk run.
+    if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
     open_loc_idx[open_n++] = (uint16)i;
   }
 
   // placement_at[k] = item placed at open_loc_idx[k], or 0xFFFF if empty.
-  static uint16 placement_at[512];
+  static uint16 placement_at[kRandoLocationCapacity];
   for (uint16 k = 0; k < open_n; k++) placement_at[k] = 0xFFFF;
 
   // ----- 3b. Pre-place vanilla-mode dungeon items + event-prize pins -----
@@ -1552,6 +1651,25 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
         Customizer__SetError(msg);
         return false;
       }
+      // add-rando-pot-sanity — empty pots are non-customizable by VALUE (not
+      // type): a NON-empty pot IS customizable (like a chest), but an empty pot
+      // carries the ITEM_Nothing filler and pinning a real item there defeats the
+      // design (the §3b pre-pass already pinned it to Nothing, so the generic
+      // already-placed guard below would also catch it — this is the clear
+      // message). ITEM_Nothing is likewise never a pinnable item; it exists only
+      // as the empty-pot filler.
+      if (loc->type == LOCTYPE_Pot && loc->vanilla_item_id == ITEM_Nothing) {
+        char msg[160];
+        snprintf(msg, sizeof msg,
+                 "pinned location '%s' is an empty pot (non-customizable)",
+                 Rando_GetLocationName(loc_id));
+        Customizer__SetError(msg);
+        return false;
+      }
+      if (item_id == ITEM_Nothing) {
+        Customizer__SetError("ITEM_Nothing cannot be pinned (empty-pot filler only)");
+        return false;
+      }
       // Reject a slot the settings already vanilla-place (vanilla-mode dungeon
       // item). Overriding it would silently drop an item that is NOT in the
       // pool, which can make the seed unbeatable in a way the user did not
@@ -1664,7 +1782,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   static uint16 prog_slot[256];
   for (uint16 t = 0; t < prog_n; t++) prog_slot[t] = 0xFFFF;
   uint16 rewind_budget = kPerItemRewindBudget;  // per-attempt event budget
-  static uint16 candidates[512];
+  static uint16 candidates[kRandoLocationCapacity];
   uint16 i = 0;
   while (i < prog_n) {
     uint16 item = progression[i];
@@ -1760,8 +1878,8 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // forcing a specific item) get silently violated if junk lands at the slot
   // because the progression item was placed elsewhere first.
   shuffle_u16(junk, junk_n, &rng);
-  uint8 junk_consumed[512] = {0};
-  uint8 junk_filled[512] = {0};
+  uint8 junk_consumed[kRandoLocationCapacity] = {0};
+  uint8 junk_filled[kRandoLocationCapacity] = {0};
   for (uint16 k = 0; k < open_n; k++) {
     if (placement_at[k] != 0xFFFF) continue;
     const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
@@ -1834,19 +1952,17 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
   }
   // Copy entries into a local buffer and sort by location_id.
   //
-  // Phase B Retro is up to 265 entries (266 catalog minus 1 Inverted-only
-  // entry per the world_state filter); Phase A peaked at ~250. Sized at
-  // 512 to match kRando_SessionPlacementCapacity in rando.c and leave
-  // room for Phase C+. Silent truncation at the old 256 cap dropped the
-  // missing 9 Retro Light-World shop / capacity-upgrade slots out of
-  // placement_digest_hex when sorted by location_id; corpus coverage was
-  // silently degraded.
-  // Must be >= kRando_SessionPlacementCapacity (currently 512).
-  // The two constants are decoupled by translation unit; the assert below
-  // catches the coupling at build time.
-  enum { kDigestLocalCap = 512 };
-  _Static_assert(kDigestLocalCap >= 512,
-                 "kDigestLocalCap must keep pace with kRando_SessionPlacementCapacity");
+  // Sized by the module-wide location ceiling (rando_logic.h) so the digest
+  // covers EVERY placed entry. Silent truncation here is the corpus's blind
+  // spot: a too-small cap drops high-location_id entries (e.g. the 9 Retro
+  // Light-World shop / capacity-upgrade slots once dropped at the old 256 cap)
+  // out of placement_digest_hex when sorted by location_id, degrading corpus
+  // coverage with no visible failure. The assert ties the cap to the registry
+  // (LOC__COUNT) directly so a registry that outgrows it is a build break.
+  enum { kDigestLocalCap = kRandoLocationCapacity };
+  _Static_assert(kDigestLocalCap >= LOC__COUNT,
+                 "kDigestLocalCap must cover the whole location registry — "
+                 "a smaller cap silently truncates placement_digest");
   RandoPlacement local[kDigestLocalCap];
   uint16 n = t->count;
   if (n > kDigestLocalCap) n = kDigestLocalCap;
@@ -2517,8 +2633,8 @@ void Placement_SelfCheck(void) {
   {
     RandoSettings defaults;
     Settings_SetDefaults(&defaults);
-    uint16 pool[512];
-    uint16 n = BuildItemPool(&defaults, pool, 512);
+    uint16 pool[kRandoLocationCapacity];
+    uint16 n = BuildItemPool(&defaults, pool, kRandoLocationCapacity);
     // Expected = count of Open-active locations that are neither TakeAny nor
     // pre-pinned under default settings (mirrors the junk-pad target loop).
     uint16 expected = 0;
@@ -2527,6 +2643,10 @@ void Placement_SelfCheck(void) {
       uint8 wsf = loc->world_state_filter;
       if (!(wsf == 0 || (wsf & (1u << kWorldState_Open)))) continue;
       if (loc->type == LOCTYPE_TakeAny) continue;
+      // Same tier-aware predicate as the open-loc + junk-pad loops. Under default
+      // settings pot_shuffle is Off, so pot_active is false and every pot is
+      // excluded here (the expected count is unchanged from pre-pot-sanity).
+      if (loc->type == LOCTYPE_Pot && !pot_active(loc, &defaults)) continue;
       if (location_is_prepinned(loc, &defaults)) continue;
       expected++;
     }
@@ -2540,7 +2660,7 @@ void Placement_SelfCheck(void) {
       if (pool[i] == ID_TrapDamage || pool[i] == ID_TrapFreeze) default_traps++;
     if (default_traps != 0) selfcheck_die("default BuildItemPool must not contain traps");
     // NULL settings → 0 (safe rejection, not crash).
-    uint16 n_null = BuildItemPool(NULL, pool, 512);
+    uint16 n_null = BuildItemPool(NULL, pool, kRandoLocationCapacity);
     if (n_null != 0) selfcheck_die("BuildItemPool(NULL) should return 0");
   }
 
@@ -2557,7 +2677,7 @@ void Placement_SelfCheck(void) {
     for (uint8 c = 0; c < (uint8)(sizeof(kTrapCases) / sizeof(kTrapCases[0])); c++) {
       Settings_SetDefaults(&s);
       s.traps = kTrapCases[c].freq;
-      static RandoPlacement trap_entries[512];
+      static RandoPlacement trap_entries[kRandoLocationCapacity];
       RandoPlacementTable tt = { trap_entries, 0 };
       if (!Place_AssumedFill(&s, (uint64)(0x54524150u + c), 0, &tt))
         selfcheck_die("trap placement selfcheck could not generate a placement");
@@ -2574,6 +2694,72 @@ void Placement_SelfCheck(void) {
     }
   }
 
+  // add-rando-pot-sanity — placement-side selfchecks (design D9/D10/D11; tasks §6.1).
+  {
+    // (a) Pot type round-trips through codegen (a silent type→0 mapping would
+    //     leave zero LOCTYPE_Pot locations), empty pots carry ITEM_Nothing, and
+    //     ITEM_Nothing is a logic no-op (never progression).
+    uint32 pot_locs = 0, empty_pots = 0, key_pots = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      if (kRandoLocations[i].type != LOCTYPE_Pot) continue;
+      pot_locs++;
+      if (kRandoLocations[i].vanilla_item_id == ITEM_Nothing) empty_pots++;
+      else if (is_small_key_item(kRandoLocations[i].vanilla_item_id)) key_pots++;
+    }
+    if (pot_locs == 0) selfcheck_die("Pot type did not round-trip codegen (0 pot locations)");
+    if (empty_pots == 0) selfcheck_die("no empty pots found (ITEM_Nothing mapping broken)");
+    if (is_progression_item(ITEM_Nothing))
+      selfcheck_die("ITEM_Nothing must be a logic no-op (non-progression)");
+
+    // (b) Tier nesting keys ⊆ contents ⊆ all, computed from the SAME pot_active
+    //     predicate the placer uses; Off activates zero pots (the D9 invariant).
+    RandoSettings so, sk, sc, sa;
+    Settings_SetDefaults(&so); so.pot_shuffle = kPotShuffle_Off;
+    Settings_SetDefaults(&sk); sk.pot_shuffle = kPotShuffle_Keys;
+    Settings_SetDefaults(&sc); sc.pot_shuffle = kPotShuffle_Contents;
+    Settings_SetDefaults(&sa); sa.pot_shuffle = kPotShuffle_All;
+    uint32 n_off = 0, n_keys = 0, n_cont = 0, n_all = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type != LOCTYPE_Pot) continue;
+      n_off  += pot_active(loc, &so) ? 1 : 0;
+      n_keys += pot_active(loc, &sk) ? 1 : 0;
+      n_cont += pot_active(loc, &sc) ? 1 : 0;
+      n_all  += pot_active(loc, &sa) ? 1 : 0;
+    }
+    if (n_off != 0) selfcheck_die("pot_shuffle Off must activate zero pots (D9 byte-identical)");
+    if (!(n_keys <= n_cont && n_cont <= n_all)) selfcheck_die("pot tiers must nest keys<=contents<=all");
+    if (n_keys != key_pots) selfcheck_die("Keys tier must activate exactly the key pots");
+    if (n_all != pot_locs) selfcheck_die("All tier must activate every pot");
+
+    // (c) door shuffle forces every pot inactive (v1 — the prover doesn't model
+    //     pots). Settings_EffectiveDoorShuffle needs Open/Standard + NoGlitches.
+    RandoSettings sd;
+    Settings_SetDefaults(&sd); sd.pot_shuffle = kPotShuffle_All; sd.door_shuffle = kDoorShuffle_Basic;
+    uint32 n_door = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++)
+      if (kRandoLocations[i].type == LOCTYPE_Pot && pot_active(&kRandoLocations[i], &sd)) n_door++;
+    if (n_door != 0) selfcheck_die("door shuffle must force every pot inactive (D7 v1)");
+
+    // (d) Placement_Lookup binary search: the All-tier assumed-fill output is
+    //     sorted by location_id, and binary search agrees with the table on every
+    //     entry plus a miss.
+    static RandoPlacement pot_entries[kRandoLocationCapacity];
+    RandoPlacementTable pt = { pot_entries, 0 };
+    if (!Place_AssumedFill(&sa, 0x504F5453ull /*"POTS"*/, 0, &pt))
+      selfcheck_die("All-tier pot placement could not be generated");
+    Placement_Install(&pt);
+    if (!Placement_ActiveIsSorted())
+      selfcheck_die("assumed-fill placement table is not location-id sorted (binary search invalid)");
+    for (uint16 i = 0; i < pt.count; i++) {
+      if (Placement_Lookup(pt.entries[i].location_id, 0xFFFF) != pt.entries[i].item_id)
+        selfcheck_die("Placement_Lookup binary search disagrees with the table entry");
+    }
+    if (Placement_Lookup(0xFFFE, 0x1234) != 0x1234)
+      selfcheck_die("Placement_Lookup must return the vanilla fallback for a missing location");
+    Placement_Install(NULL);
+  }
+
   // BuildItemPool refuses pieces_required > pieces_placed for
   // Triforce/Ganon-Hunt goals.
   {
@@ -2582,17 +2768,17 @@ void Placement_SelfCheck(void) {
     s.goal = kGoal_TriforceHunt;
     s.pieces_required = 30;
     s.pieces_placed = 20;
-    uint16 pool[512];
-    uint16 n = BuildItemPool(&s, pool, 512);
+    uint16 pool[kRandoLocationCapacity];
+    uint16 n = BuildItemPool(&s, pool, kRandoLocationCapacity);
     if (n != 0) selfcheck_die("BuildItemPool should reject pieces_required > pieces_placed");
     // GanonHunt should validate the same way.
     s.goal = kGoal_GanonHunt;
-    n = BuildItemPool(&s, pool, 512);
+    n = BuildItemPool(&s, pool, kRandoLocationCapacity);
     if (n != 0) selfcheck_die("BuildItemPool should reject GanonHunt pieces_required > pieces_placed");
     // Equal counts is allowed.
     s.pieces_required = 20;
     s.pieces_placed = 20;
-    n = BuildItemPool(&s, pool, 512);
+    n = BuildItemPool(&s, pool, kRandoLocationCapacity);
     if (n == 0) selfcheck_die("BuildItemPool should allow pieces_required == pieces_placed");
   }
 
@@ -2772,7 +2958,7 @@ void Placement_SelfCheck(void) {
   // generic). This is the headless guard for task 3.3; the in-game playtest
   // remains the real acceptance gate for key-strand beatability.
   {
-    static RandoPlacement gk_entries[512];
+    static RandoPlacement gk_entries[kRandoLocationCapacity];
     static const uint64 kGkSeeds[3] = {
       0x00000000000000AFull,  // the hard-pool corpus seed's mnemonic
       0x0000000000003039ull,  // 12345
@@ -2816,7 +3002,7 @@ void Placement_SelfCheck(void) {
   // (else the test trivially passes against vanilla). Sprite substitution stays
   // runtime-off; this validates the LOGIC half (the half that can strand).
   {
-    static RandoPlacement bs_entries[512];
+    static RandoPlacement bs_entries[kRandoLocationCapacity];
     struct { uint8 ws; uint8 goal; uint64 seed; } kBsCases[] = {
       { kWorldState_Open,     kGoal_Dungeons,  0x00000000B0550001ull },
       { kWorldState_Standard, kGoal_Ganon,     0x00000000B0550002ull },

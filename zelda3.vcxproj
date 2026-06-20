@@ -1006,7 +1006,7 @@
   </ItemGroup>
   <Target Name="RandoCodegen" BeforeTargets="ClCompile"
           Inputs="@(RandoCodegenInput)"
-          Outputs="src\rando\logic_data.c;src\rando\location_ids.h;src\rando\item_ids.h;src\rando\chest_lookup.h;src\rando\icon_atlas.h;src\rando\direct_grant_icons.h">
+          Outputs="src\rando\logic_data.c;src\rando\location_ids.h;src\rando\item_ids.h;src\rando\chest_lookup.h;src\rando\pot_lookup.h;src\rando\icon_atlas.h;src\rando\direct_grant_icons.h">
     <Exec Command="python assets\rando_logic_gen.py" />
   </Target>
   <Target Name="EnsureVendoredSdl2" BeforeTargets="PrepareForBuild">

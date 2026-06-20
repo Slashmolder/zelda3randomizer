@@ -328,18 +328,18 @@ static const char *at_goal_name(uint8 g) {
 
 // location_id -> type lookup (built once), used to skip medallion-config slots
 // so the catalog and the checked/reachable id-spaces match exactly.
-static uint8 s_loc_type[1024];
+static uint8 s_loc_type[kRandoLocationCapacity];
 static bool s_loc_type_built = false;
 static void at_build_loc_type(void) {
-  for (int i = 0; i < 1024; i++) s_loc_type[i] = 0xFF;
+  for (int i = 0; i < kRandoLocationCapacity; i++) s_loc_type[i] = 0xFF;
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     uint16 id = kRandoLocations[i].id;
-    if (id < 1024) s_loc_type[id] = kRandoLocations[i].type;
+    if (id < kRandoLocationCapacity) s_loc_type[id] = kRandoLocations[i].type;
   }
   s_loc_type_built = true;
 }
 static bool at_loc_hidden(uint16 loc) {
-  return loc < 1024 && s_loc_type[loc] == kAtLocTypeMedallion;
+  return loc < kRandoLocationCapacity && s_loc_type[loc] == kAtLocTypeMedallion;
 }
 
 // ---------------------------------------------------------------------------

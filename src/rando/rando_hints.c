@@ -106,6 +106,11 @@ static bool item_is_junk(uint16 item_id) {
   // add-rando-trap-catalog — every trap effect id in the contiguous block is junk
   // for hinting (traps are never hinted/pointed-to).
   if (item_id >= ITEM_TrapDamage && item_id <= ITEM_TrapTeleport) return true;
+  // add-rando-pot-sanity — ITEM_Nothing fills empty pots; an empty pot must never
+  // be a hint source ("Nothing is in <pot>" is noise). Junk-holding pots (rupees/
+  // bombs/...) are already excluded by the cases below, and progression-holding
+  // pots (a key/medallion under a pot) stay hint-eligible — exactly D12's rule.
+  if (item_id == ITEM_Nothing) return true;
   switch (item_id) {
     case ITEM_PieceOfHeart:
     case ITEM_BossHeartContainer:
@@ -228,17 +233,15 @@ bool Rando_GenerateHints(const RandoSettings *settings,
   // Build the hintable-placement pool. Walk `placements->entries`,
   // skip junk items. The resulting indices are into `placements->entries`.
   //
-  // The 512 cap mirrors `kRando_SessionPlacementCapacity` (the placer's
-  // entry pool ceiling — see rando.c session table allocation). Slice 3a
-  // raised the placement-table digest cap 256→512 for the same reason;
-  // adding new locations beyond 512 would silently drop them from the
-  // hintable pool, so the static_assert below trips at compile time
-  // (rather than at runtime) when the registry grows past 512.
-  uint16 hintable_indices[512];
-  _Static_assert(512 >= 256, "hintable pool must not silently truncate");
+  // Sized by the module-wide location ceiling (kRandoLocationCapacity,
+  // rando_logic.h): the hintable pool must hold every placement, and the
+  // placement table is capacity-bounded. A smaller cap would silently drop
+  // high-location_id placements from hint sourcing. The registry-vs-capacity
+  // tie is the LOC__COUNT <= kRandoLocationCapacity assert in rando.c.
+  uint16 hintable_indices[kRandoLocationCapacity];
   uint16 hintable_count = 0;
   uint16 entry_count = placements->count;
-  if (entry_count > 512) entry_count = 512;
+  if (entry_count > kRandoLocationCapacity) entry_count = kRandoLocationCapacity;
   for (uint16 i = 0; i < entry_count; i++) {
     if (loc_is_medallion_config(placements->entries[i].location_id)) continue;
     if (item_is_junk(placements->entries[i].item_id)) continue;

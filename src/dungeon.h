@@ -91,6 +91,7 @@ void OrientLampLightCone();
 void PrepareDungeonExitFromBossFight();
 void SavePalaceDeaths();
 void Dungeon_LoadRoom();
+void Dungeon_DrawRoomObjectsHeadless(uint16 room);  // --dump-pot-table (gen_pot_tables.py)
 void RoomDraw_DrawAllObjects(const uint8 *level_data);
 void RoomData_DrawObject_Door(uint16 a);
 void RoomData_DrawObject(uint16 r0, const uint8 *level_data);

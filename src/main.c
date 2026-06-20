@@ -1614,6 +1614,90 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Dev/codegen: enumerate every liftable dungeon pot as GROUND TRUTH from the
+  // engine itself. We run the real room object-draw (Dungeon_LoadRoom) for each
+  // dungeon_room_index and read the engine's own dung_object_tilemap_pos[] for
+  // every 0x1111 pot replacement-state entry — the SAME (room, pos4) identity
+  // RevealPotItem matches at runtime — then join each pot to its kDungeonSecrets
+  // content byte using RevealPotItem's exact scan. This is the source for
+  // assets/scripts/gen_pot_tables.py: we extract from the authoritative engine
+  // rather than re-deriving the multi-pass object stream in Python (which would
+  // be a lossy reimplementation of the BG-half/layer logic). Emits a text table
+  // ('P room pos4 content', content -1 = empty/no-secret) plus per-room door
+  // connectivity ('D room neighbor...') so gen_pot_tables.py can flood-fill each
+  // pot room's logic region from the chest/boss anchors through REAL doors
+  // (vanilla doors only link rooms within one dungeon, so the flood can't leak
+  // across dungeon boundaries). A stderr content histogram cross-validates the
+  // per-tier counts. Then exits.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-pot-table") == 0) {
+      extern void Dungeon_DrawRoomObjectsHeadless(uint16 room);
+      const char *path = (i + 1 < argc) ? argv[i + 1] : "pot_dump.txt";
+      LoadAssets();
+      FILE *f = fopen(path, "wb");
+      if (!f) { fprintf(stderr, "--dump-pot-table: cannot open %s\n", path); return 1; }
+      fprintf(f, "# zelda3 pot dump v2: 'P room_hex pos4_hex content_dec' (content -1=empty) "
+                 "| 'D room_hex neighbor_hex...' (door-connected rooms)\n");
+      const uint8 *secrets = kDungeonSecrets;
+      uint32 room_count = kDungeonRoomOffs_SIZE / 2;  // asset 4 = uint16 offset per room
+      int total = 0, with_content = 0, over_cap = 0, hist[260];
+      memset(hist, 0, sizeof hist);
+      for (uint16 room = 0; room < room_count; room++) {
+        // Draw only the room's floor + object passes (no torch/pushable tails,
+        // which crash headless). Sets dungeon_room_index + zeroes the scratch
+        // (incl. dung_cur_door_idx); the object draw also walks the door list.
+        Dungeon_DrawRoomObjectsHeadless(room);
+        // The engine's object arrays hold at most 16 entries (4-bit attr index);
+        // dung_misc_objs_index>>1 counts all misc objects (pots/pegs/stairs).
+        uint16 count = dung_misc_objs_index >> 1;
+        if (count > 16) { over_cap++; count = 16; }
+        for (uint16 k = 0; k < count; k++) {
+          if (dung_replacement_tile_state[k] != 0x1111) continue;  // 0x1111 = pot
+          uint16 pos4 = dung_object_tilemap_pos[k];
+          int content = -1;  // no secret record => empty pot
+          const uint8 *p = secrets + WORD(secrets[room * 2]);
+          for (;;) {
+            uint16 test = *(const uint16 *)p;
+            if (test == 0xffff) break;
+            if (test == pos4) { content = p[2]; break; }
+            p += 3;
+          }
+          fprintf(f, "P %04x %04x %d\n", room, pos4, content);
+          total++;
+          if (content >= 0) { with_content++; if (content < 260) hist[content]++; }
+        }
+        // Door connectivity: each door's direction -> the grid-adjacent room it
+        // links (N:-0x10 S:+0x10 W:-1 E:+1, per RoomData_DrawObject_Door). Dedup
+        // and keep only in-range dungeon rooms.
+        uint16 ndoors = dung_cur_door_idx >> 1;
+        uint16 nb[16]; uint16 nb_n = 0;
+        for (uint16 s = 0; s < ndoors && s < 16; s++) {
+          int cand = -1; uint16 dir = dung_door_direction[s], col = room & 0xF;
+          if (dir == 0) cand = room - 0x10;                  // North
+          else if (dir == 1) cand = room + 0x10;             // South
+          else if (dir == 2) { if (col > 0) cand = room - 1; }    // West
+          else if (dir == 3) { if (col < 0xF) cand = room + 1; }  // East
+          if (cand < 0 || (uint32)cand >= room_count) continue;
+          bool dup = false;
+          for (uint16 t = 0; t < nb_n; t++) if (nb[t] == cand) dup = true;
+          if (!dup) nb[nb_n++] = (uint16)cand;
+        }
+        if (nb_n) {
+          fprintf(f, "D %04x", room);
+          for (uint16 t = 0; t < nb_n; t++) fprintf(f, " %04x", nb[t]);
+          fprintf(f, "\n");
+        }
+      }
+      fclose(f);
+      fprintf(stderr, "--dump-pot-table: %d pots (%d with content) -> %s\n", total, with_content, path);
+      if (over_cap) fprintf(stderr, "  WARNING: %d rooms had >16 misc objects (capped at 16)\n", over_cap);
+      fprintf(stderr, "  content histogram (content:count):");
+      for (int c = 0; c < 260; c++) if (hist[c]) fprintf(stderr, " %d:%d", c, hist[c]);
+      fprintf(stderr, "\n");
+      return 0;
+    }
+  }
+
 
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,

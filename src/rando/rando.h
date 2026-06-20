@@ -16,7 +16,8 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 81u  // 80→81: add-rando-trap-catalog — new `insanity` trap frequency (every eligible junk pickup becomes a trap). The `traps` field widens to 3 bits, non-contiguously: low 2 bits stay in canonical [26] bits 2-3 (so off/low/medium/high are byte-identical and instant_flute at bit4 is untouched), the 3rd bit (Insanity=4) goes in the free [26] bit5. Default (traps off) byte-identical; only `insanity` seeds are new.
+#define kGeneratorVersion 82u  // 81→82: add-rando-pot-sanity Phase 3 — the `pot_shuffle` axis (Off/Keys/Contents/All; canonical [26] bits 6-7 + [27] bit 7, the LAST free bits at length 28) turns LOCTYPE_Pot rows into live placement locations per tier. pot_shuffle=Off keeps the default settings_hash AND every existing placement/sphere digest byte-identical (the shared pot_active() predicate skips every pot in the open-loc + junk-pad + selfcheck loops — corpus verified 121/121 at v81 before the bump). Non-off tiers are new: loot/key pots become fillable open slots (key pots follow dungeon_small_keys_mode via location_is_prepinned — pinned vanilla, open when shuffled), and empty pots are pinned to the new ITEM_Nothing filler (id 148) in a dedicated §3b pre-pass (never a pool item, never a hint/customizer target). Door shuffle forces every pot inactive (v1 — the key-prover doesn't model pot locations; apply_derived_rules normalizes pot_shuffle off, keyed on Settings_EffectiveDoorShuffle so hash and placement agree). Placement_Lookup now binary-searches the location-id-sorted table. Corpus MUST be regenerated (bump_rando_corpus.py --apply): all existing entries stay byte-identical, new Keys/Contents/All/door×Keys/Retro×All entries added.
+                               // 80→81: add-rando-trap-catalog — new `insanity` trap frequency (every eligible junk pickup becomes a trap). The `traps` field widens to 3 bits, non-contiguously: low 2 bits stay in canonical [26] bits 2-3 (so off/low/medium/high are byte-identical and instant_flute at bit4 is untouched), the 3rd bit (Insanity=4) goes in the free [26] bit5. Default (traps off) byte-identical; only `insanity` seeds are new.
                                // 79→80: add-rando-trap-catalog — context-locked traps (Cucco/Darkness) are now placement-filtered to compatible locations (Cucco only at overworld free-standing types, Darkness only in dungeon regions) via Rando_PickTrapEffectId's loc_flags, so the placed effect always matches the spoiler instead of silently falling back at runtime. Moves traps-on placement digests; default (traps off) stays byte-identical.
                                // 78→79: add-rando-trap-catalog — the trap TYPE at each junk-replaced slot is now selected deterministically per (seed, location_id) across a 16-effect catalog filtered by the trap_categories mask, replacing the positional Damage/Freeze alternation. Only traps-on seeds move placement_digest (traps-off byte-identical); trap_categories packs into canonical [27] bits 2-6 (default 0 ⇒ byte-identical), kSettingsCanonicalLen unchanged.
                                // 77→78: enemy-shuffle GFX-sheet widening enabled (dungeon sprite-palette gate + verify-then-commit fillability), POSITION-aware sheet loaded-check (Javelin Soldier tile bug), and contact-damage class-2 exclusion (zero-damage bug). Runtime-only — placement draws no fill RNG and adds no predicate, so placement_digest stays byte-identical; settings_hash / kSettingsCanonicalLen unchanged. The bump version-locks the now-live enemy-shuffle behavior. (v77 was taken concurrently by main's medallion-config change below.)
@@ -556,17 +557,20 @@ extern bool g_rando_show_item_tracker;
 extern bool g_rando_show_location_tracker;
 
 // ---------------------------------------------------------------------------
-// Checked-location bitmap (one bit per location_id, 0..511). Set when
-// Rando_OnLocationCheck fires for a location, OR when a reachability event-flag
-// bump site updates Rando_BumpReachabilityCounter AND has a corresponding LOC_*.
+// Checked-location bitmap (one bit per location_id, 0..kRandoLocationCapacity-1).
+// Set when Rando_OnLocationCheck fires for a location, OR when a reachability
+// event-flag bump site updates Rando_BumpReachabilityCounter AND has a
+// corresponding LOC_*.
 //
 // Bitmap is heap-resident (NOT in g_ram). Loaded from
 // RandoSidecarSlot.checked_bitmap on activate; written back on sidecar save.
+// Sized by kRandoLocationCapacity (rando_logic.h) so it tracks the registry.
 // ---------------------------------------------------------------------------
-#define kRandoCheckedBitmapBytes ((512 + 7) >> 3)  // 64 bytes = 512 bits
+#define kRandoCheckedBitmapBytes ((kRandoLocationCapacity + 7) >> 3)
 extern uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 
-// Set the bit for `location_id`. No-op if loc_id >= 512 or rando not active.
+// Set the bit for `location_id`. No-op if loc_id >= kRandoLocationCapacity or
+// rando not active.
 void Rando_MarkLocationChecked(uint16 location_id);
 // Test the bit for `location_id`. Returns false for OOB or no slot active.
 bool Rando_IsLocationChecked(uint16 location_id);

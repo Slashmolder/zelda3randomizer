@@ -28,14 +28,14 @@ extern "C" {
 // location_id -> region_id index, built once from the static logic table.
 // Identical construction to tracker_windows.cpp::BuildLocRegionIndex so the two
 // views group checks the same way.
-static uint16 s_loc_region[1024];
-static uint8 s_loc_type[1024];
+static uint16 s_loc_region[kRandoLocationCapacity];
+static uint8 s_loc_type[kRandoLocationCapacity];
 static bool s_loc_region_built = false;
 static void BuildLocRegionIndex() {
-  for (int i = 0; i < 1024; i++) { s_loc_region[i] = 0xFFFF; s_loc_type[i] = 0xFF; }
+  for (int i = 0; i < kRandoLocationCapacity; i++) { s_loc_region[i] = 0xFFFF; s_loc_type[i] = 0xFF; }
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     uint16 id = kRandoLocations[i].id;
-    if (id < 1024) {
+    if (id < kRandoLocationCapacity) {
       s_loc_region[id] = kRandoLocations[i].region_id;
       s_loc_type[id]   = kRandoLocations[i].type;
     }
@@ -49,7 +49,7 @@ static void BuildLocRegionIndex() {
 // (which medallion opens the dungeon) — a generation-time setting, not an item
 // check. Mirror the Check Tracker's LocHiddenFromChecks so the two views agree.
 static inline bool LocHiddenFromChecks(uint16 loc) {
-  return loc < 1024 && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
+  return loc < kRandoLocationCapacity && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
 }
 
 extern "C" void RandoReach_Render(void) {
@@ -114,7 +114,7 @@ extern "C" void RandoReach_Render(void) {
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
-      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
       if (Rando_IsLocationChecked(loc)) r_reach++;
@@ -144,7 +144,7 @@ extern "C" void RandoReach_Render(void) {
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
-      uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
+      uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
 
       bool checked = Rando_IsLocationChecked(loc);

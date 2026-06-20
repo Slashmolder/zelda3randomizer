@@ -1,0 +1,50 @@
+# Reviewed pot-room region (+ optional gate) overrides — design D8.
+#
+# gen_pot_tables.py auto-resolves the region for pot rooms that flood cleanly from
+# a chest/boss anchor through reciprocal doors (147/164, cross-validated against
+# chest logic regions). The rooms here are the ones it CAN'T auto-resolve:
+# stair-only / one-way-drop dungeon rooms, dungeon-boundary conflicts, non-uniform
+# chest rooms (chests differ in gate), and overworld caves/houses. Each was
+# determined from EVIDENCE (door + vertical-stair connectivity, entrance names,
+# the chest predicates, ALTTP geography) — not memory — and is noted below.
+#
+# `room_can_reach` is the pot's reachability predicate (all pots in a room share
+# it). For a non-uniform chest room the pot inherits the ROOM-ENTRY (most
+# permissive chest) predicate — always >= the true room-entry, so it over-gates at
+# worst (safe; under-gating is the softlock risk). Omitted = TRUE() (freely
+# reachable once the region is).
+#
+# Authored 2026-06-19 (Phase 2c). VERIFY in the owner playtest (esp. 0x096).
+
+room_region:
+  # --- dungeon rooms (resolved by door / vertical-stair connectivity) ---
+  "017": TowerOfHera_Lobby     # vstair: up 007 (boss) + down 027 (chest) both ToH — tower column
+  "041": HyruleCastleEscape    # N neighbor 031 = HCE (Hyrule Castle sewers)
+  "04b": GanonsTower_Lobby     # between 04c/04d = GT lobby block
+  "054": ThievesTown           # N neighbor 044 = TT
+  "053": HyruleCastleEscape    # W neighbor 052 = HCE (castle row 5); 3-way exit-door conflict, castle geography
+  "05b": PalaceOfDarkness      # 2 of 3 door-neighbors PoD (06b/05a); the E one (05c) is GT
+  "064": DesertPalace_Lobby    # 2 of 3 neighbors DP (074/063); the E one (065) is TT
+  "096": TowerOfHera_Lobby     # one-way drop from 097 (097 doors -> 087 = ToH). LOWER CONFIDENCE — playtest 8 pots
+  "0b4": TurtleRock_Lobby      # 2 of 3 grid neighbors TR (0c4 dn, 0b5 E); W 0b3 = MM. boundary — playtest
+  # --- non-uniform chest rooms (chests agree on region, differ on gate) ---
+  "01a": PalaceOfDarkness      # PoD Big Chest room (Big/Compass/Hellway chests)
+  "02a": PalaceOfDarkness      # PoD Arena (Ledge/Bridge chests)
+  "058": SkullWoods            # SW "Skull Woods 3 (Drop In)" — Map Chest is TRUE() -> freely enterable
+  "08c": GanonsTower_Lobby     # GT Hope Room — TRUE() chests -> freely enterable
+  # --- overworld caves/houses (bind to the overworld region of the entrance) ---
+  "0e4": LightWorld_DeathMountain_West   # DM Elder's (Old Man) Cave, lower — Old Man region = DM_West
+  "0e5": LightWorld_DeathMountain_West   # DM Elder's Cave, upper
+  "0eb": LightWorld_DeathMountain_East   # DM Cape Heart-Piece Cave — east cape (Paradox/Spiral = DM_East)
+  "0f1": LightWorld_DeathMountain_West   # DM Express, upper — west ascent
+  "101": LightWorld_NorthWest            # Snitch House (Kakariko)
+  "107": LightWorld_NorthWest            # Kakariko Storage Shed
+  "119": DarkWorld_NorthWest             # Blind's Old Hideout — DW Village of Outcasts (DW-gated)
+  "11f": DarkWorld_NorthWest             # Village House — DW Village of Outcasts (DW-gated)
+  "125": LightWorld_NorthWest            # Refill Cave 3 (Kakariko area)
+
+room_can_reach:
+  # Non-uniform chest rooms whose room-entry is NOT free — the most-permissive
+  # (room-entry) chest predicate, copied verbatim from the chest logic:
+  "01a": "HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"   # PoD Compass Chest (same room)
+  "02a": "CanShootArrowsL1()"                          # PoD Arena Ledge

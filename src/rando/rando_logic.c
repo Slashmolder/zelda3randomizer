@@ -807,7 +807,10 @@ static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx) {
 // ---------------------------------------------------------------------------
 
 #define kReachabilityMaxRegions 256
-#define kReachabilityMaxLocations 512
+// Sized by the module-wide location ceiling (rando_logic.h) so the location
+// bitset always spans the full registry. A registry past capacity is caught by
+// the LOC__COUNT <= kRandoLocationCapacity name-tie in rando.c.
+#define kReachabilityMaxLocations kRandoLocationCapacity
 
 struct RandoReachability {
   uint8 region_bitset[(kReachabilityMaxRegions + 7) >> 3];
@@ -981,9 +984,10 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
       // Bound loc->id before indexing the [kReachabilityMaxLocations]-sized
-      // bitset. Every shipping id is < 512 (a codegen _Static_assert
-      // enforces it), so this never fires today; it fails CLOSED (the location
-      // is simply treated unreachable) if a future registry append overflows,
+      // bitset. Every shipping id is < kRandoLocationCapacity (a codegen
+      // _Static_assert enforces it), so this never fires today; it fails CLOSED
+      // (the location is simply treated unreachable) if a future registry
+      // append overflows,
       // mirroring the bounded cleared-dungeons boss loop instead of corrupting
       // adjacent memory.
       if (loc->id >= kReachabilityMaxLocations) continue;

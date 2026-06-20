@@ -212,9 +212,9 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   {
     extern void sha256_buffer(const uint8 *data, size_t len, uint8 out[32]);
     if (s->spheres != NULL && s->placements != NULL && s->placements->count > 0) {
-      static struct { uint16 loc; uint8 sph; } rows[512];
+      static struct { uint16 loc; uint8 sph; } rows[kRandoLocationCapacity];
       uint16 n = s->placements->count;
-      if (n > 512) n = 512;
+      if (n > kRandoLocationCapacity) n = kRandoLocationCapacity;
       for (uint16 i = 0; i < n; i++) {
         rows[i].loc = s->placements->entries[i].location_id;
         rows[i].sph = s->spheres->sphere_index_by_placement[i];
@@ -229,7 +229,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           j--;
         }
       }
-      static uint8 buf[512 * 3];
+      static uint8 buf[kRandoLocationCapacity * 3];
       for (uint16 i = 0; i < n; i++) {
         buf[i * 3 + 0] = (uint8)(rows[i].loc & 0xff);
         buf[i * 3 + 1] = (uint8)(rows[i].loc >> 8);
@@ -431,8 +431,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   if (s->placements != NULL && s->placements->count > 0) {
     // Sort a copy by location_id.
     uint16 n = s->placements->count;
-    if (n > 512) n = 512;
-    RandoPlacement local[512];
+    if (n > kRandoLocationCapacity) n = kRandoLocationCapacity;
+    RandoPlacement local[kRandoLocationCapacity];
     uint16 row_n = 0;
     for (uint16 i = 0; i < n; i++) {
       if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
@@ -1047,14 +1047,14 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "-------------------------------\n");
   if (s->placements != NULL && s->placements->count > 0) {
     uint16 n = s->placements->count;
-    if (n > 512) n = 512;
+    if (n > kRandoLocationCapacity) n = kRandoLocationCapacity;
     // Look up region_id for each placement via kRandoLocations.
     // Then sort by (region_id, location_id) and emit grouped sections.
     static struct {
       uint16 region_id;
       uint16 location_id;
       uint16 item_id;
-    } rows[512];
+    } rows[kRandoLocationCapacity];
     uint16 row_n = 0;
     for (uint16 i = 0; i < n; i++) {
       uint16 loc_id = s->placements->entries[i].location_id;

@@ -908,3 +908,24 @@ items:
     dispatch: direct_trap_teleport
     notes: |
       DISPLACE trap. Warps Link to a provably-safe start point.
+
+  # ===========================================================================
+  # add-rando-pot-sanity — the empty-pot filler (ID 148)
+  # ===========================================================================
+  - id: 148
+    name: Nothing
+    category: filler
+    dispatch: direct_nothing
+    notes: |
+      "Literally Nothing" — the no-op item that fills empty pots under
+      pot_shuffle=All. Deliberately ID 148, the FIRST id past the trap block
+      (132..147), so rando_is_trap_item's range check never classifies it as a
+      trap. It is NOT in the item pool and never in kJunkRotation: the placer
+      fills empty-pot LOCs with it in a dedicated pre-pass (it is the empty
+      pot's vanilla_item_id, mapped from kind==empty in rando_logic_gen.load_pots),
+      so no real item lands on an empty pot and Nothing never lands on a real
+      location. Logic no-op (never progression — is_progression_item excludes
+      it; never satisfies a predicate). Rando_DispatchVanillaGrant returns
+      kRandoLttpSkip for it (no vanilla-content fallback). The empty pot is still
+      counted in the tracker completion denominator but excluded from the
+      "100% inventory" accessibility tier.

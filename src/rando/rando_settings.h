@@ -170,7 +170,30 @@ typedef struct RandoSettings {
   // so the default (traps off, mask 0) keeps byte [27] at zero and the corpus
   // byte-identical. Meaningful only when traps != off.
   uint8 trap_categories;
+  // add-rando-pot-sanity — tiered pot-shuffle axis (PotShuffle below):
+  // Off / Keys / Contents / All (value 4 = Subset reserved for Phase 7). Serialized
+  // as a 3-bit field packed NON-contiguously into the last free canonical bits:
+  // low 2 bits in [26] bits 6-7, high bit in [27] bit 7 (see kPotShuffleAxis_*).
+  // Default Off=0 keeps both bytes at their pre-pot values, so the default
+  // settings_hash + corpus stay byte-identical and kSettingsCanonicalLen stays 28.
+  // Normalized to Off under door shuffle (apply_derived_rules) — pots don't
+  // compose with the door key-prover in v1.
+  uint8 pot_shuffle;
 } RandoSettings;
+
+// add-rando-pot-sanity — pot_shuffle tiers. Values are part of the determinism
+// contract (additions go at the end). keys ⊆ contents ⊆ all. Value 4 (Subset)
+// is reserved: the field is already 3 bits wide so Phase 7 adds it with no
+// canonical re-pack and no second kGeneratorVersion bump — Settings_Validate
+// rejects 4 until then (the reserved-until-implemented pattern, like
+// kModeWeapons_Vanilla).
+typedef enum {
+  kPotShuffle_Off = 0,       // pots are pure vanilla (default; byte-identical)
+  kPotShuffle_Keys = 1,      // only small-key pots are checks
+  kPotShuffle_Contents = 2,  // every pot with vanilla content (loot + keys)
+  kPotShuffle_All = 3,       // also the empty pots (ITEM_Nothing filler)
+  // kPotShuffle_Subset = 4,  // RESERVED (Phase 7) — mid-size tier
+} PotShuffle;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
 // [26]). A zero byte == no enemy shuffle (the default), preserving the
@@ -221,6 +244,19 @@ enum {
   kDoorShuffleAxis_Mask = 3,
 };
 
+// add-rando-pot-sanity — pot_shuffle is a 3-bit field (5 values incl. the
+// reserved Subset). The last 3 free canonical bits are non-contiguous, so the
+// field is split like `traps`: low 2 bits in canonical [26] bits 6-7, high bit
+// in canonical [27] bit 7. Default Off=0 leaves every one of those bits clear,
+// preserving the byte-identical default settings_hash + corpus. These were the
+// final free bits at kSettingsCanonicalLen 28; a future axis grows the length
+// (see memory canonical_size_coupling).
+enum {
+  kPotShuffleAxis_LowShift = 6,        // canonical [26] bits 6-7 (low 2 bits)
+  kPotShuffleAxis_LowMask  = 3u << 6,  // 0xC0
+  kPotShuffleAxis_HighBit  = 1u << 7,  // canonical [27] bit 7 (high bit)
+};
+
 // Phase C — bit positions for the packed entrance-axis byte (canonical [25]).
 // Used by Settings_CanonicalSerialize/Deserialize. A zero byte == no entrance
 // shuffle (the default), preserving the byte-identical corpus invariant.
@@ -249,7 +285,11 @@ enum {
 // instant_flute packs its inverse manual-activation bit into [26] bit4;
 // add-rando-door-shuffle packs its axis into [27] (bits 0-1).
 // LENGTH STAYS 28 — all reused previously-zero pad bytes, so no size-coupling
-// cascade. [26] bits 5-7 + [27] bits 2-7 are the remaining extension surface.
+// cascade. add-rando-pot-sanity took the LAST free bits of [26] (6-7) and [27]
+// (bit 7) for pot_shuffle, so [26] and [27] are now fully allocated. The only
+// remaining extension surface at length 28 is [25] bits 6-7 (entrance axes use
+// 0-5); the next axis past that grows the length (see memory
+// canonical_size_coupling).
 #define kSettingsCanonicalLen 28
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal

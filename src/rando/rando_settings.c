@@ -109,6 +109,10 @@ void Settings_SetDefaults(RandoSettings *s) {
   // add-rando-trap-catalog — zero mask = "all categories" when traps are on, so the
   // default canonical byte [27] stays 0 (corpus + default settings_hash byte-identical).
   s->trap_categories = 0;
+  // add-rando-pot-sanity — pot shuffle off by default, so the packed bits in
+  // canonical [26] (6-7) and [27] (bit 7) stay 0 (corpus + default settings_hash
+  // byte-identical).
+  s->pot_shuffle = kPotShuffle_Off;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -231,6 +235,18 @@ static void apply_derived_rules(RandoSettings *s) {
     s->dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
     s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
   }
+
+  // add-rando-pot-sanity — pots do NOT compose with door shuffle in v1: the
+  // door key-prover doesn't model pot locations, so allowing a dungeon key to
+  // land at (or a key-pot to be excluded behind) an unmodeled pot risks a
+  // softlock the prover can't see. With door shuffle active the placer treats
+  // every pot as inactive (pot_active checks Settings_EffectiveDoorShuffle too),
+  // so normalize pot_shuffle off here to keep the settings_hash equal to the
+  // actually-generated (pot-less) seed — the entrance-axis normalization
+  // precedent. Both key off door_shuffle, so hash and placement can't desync.
+  if (s->door_shuffle != kDoorShuffle_Vanilla) {
+    s->pot_shuffle = kPotShuffle_Off;
+  }
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
@@ -285,7 +301,9 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->customizer_active ? kCustomizerAxis_Active : 0) |
                     ((s->traps << kTrapAxis_Shift) & kTrapAxis_Mask) |
                     ((s->traps & 4u) ? kTrapAxis_HighBit : 0) |  // Insanity(4) -> bit5
-                    (s->instant_flute ? 0 : kInstantFluteAxis_ManualActivation));
+                    (s->instant_flute ? 0 : kInstantFluteAxis_ManualActivation) |
+                    // add-rando-pot-sanity — pot_shuffle low 2 bits in [26] 6-7.
+                    ((s->pot_shuffle << kPotShuffleAxis_LowShift) & kPotShuffleAxis_LowMask));
   // add-rando-door-shuffle — door_shuffle axis in the (formerly zero) pad
   // byte [27] bits 0-1. apply_derived_rules() normalized incompatible combos,
   // so the default packs to 0x00 (corpus byte-identical) and
@@ -294,7 +312,9 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // per-category trap mask (bits 2-6). Default trap_categories=0 keeps [27] at the
   // door_shuffle value (0x00 for the default), so the corpus stays byte-identical.
   out[27] = (uint8)((s->door_shuffle & kDoorShuffleAxis_Mask) |
-                    ((s->trap_categories << kTrapCategoriesAxis_Shift) & kTrapCategoriesAxis_Mask));
+                    ((s->trap_categories << kTrapCategoriesAxis_Shift) & kTrapCategoriesAxis_Mask) |
+                    // add-rando-pot-sanity — pot_shuffle high bit in [27] bit 7.
+                    ((s->pot_shuffle & 4u) ? kPotShuffleAxis_HighBit : 0));
   return kSettingsCanonicalLen;
 }
 
@@ -311,9 +331,14 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // byte [27] bits 0-1 are the add-rando-door-shuffle axis.
 // Pre-extension files have those bits = 0, so older suppressed files still
 // round-trip cleanly.
-// **Forward-compat note**: undefined bits of [26]/[27] are NOT inspected — a
-// future extension may repurpose them, and rejecting on non-zero would break
-// reveal of pre-extension suppressed files. The deserializer stays permissive.
+// **Forward-compat note**: undefined bits of the packed flag bytes are NOT
+// inspected — a future extension may repurpose them, and rejecting on non-zero
+// would break reveal of pre-extension suppressed files. The deserializer stays
+// permissive. NOTE: add-rando-pot-sanity consumed the last bits of [26] (6-7)
+// and [27] (bit 7) for pot_shuffle, so those bytes are now fully defined and an
+// out-of-range pot_shuffle VALUE there is refused (the enum-rejection rule, not
+// the undefined-bit rule). Real pre-pot files have those bits = 0 (Off), so they
+// still reveal cleanly; [25] bits 6-7 remain the genuinely-undefined surface.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;
@@ -377,6 +402,11 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // Zero (default / any pre-catalog file) is the "all categories" sentinel applied
   // at selection time when traps are enabled.
   s.trap_categories = (uint8)((in[27] & kTrapCategoriesAxis_Mask) >> kTrapCategoriesAxis_Shift);
+  // add-rando-pot-sanity — reassemble the non-contiguous 3-bit pot_shuffle: low
+  // 2 bits from [26] bits 6-7, high bit from [27] bit 7. Zero (default / any
+  // pre-pot file) yields Off, identical to a struct with no pot shuffle.
+  s.pot_shuffle = (uint8)(((in[26] & kPotShuffleAxis_LowMask) >> kPotShuffleAxis_LowShift) |
+                          ((in[27] & kPotShuffleAxis_HighBit) ? 4u : 0u));
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -431,6 +461,12 @@ bool Settings_Validate(const RandoSettings *s) {
   if (s->door_shuffle > kDoorShuffle_Basic) return false;                  // [27] bits 0-1: only 0/1 defined
   if (s->trap_categories > kTrapCategory_All) return false;               // [27] bits 2-6: 5-bit category mask
   if (s->traps > kTrapFrequency_Insanity) return false;                   // [26] bits 2-3 + bit5: 0..4
+  // [26] bits 6-7 + [27] bit 7: pot_shuffle 0..3 defined. 4 (Subset) is the
+  // reserved-until-implemented value (Phase 7) — reject so a future-version
+  // share-string can't activate the not-yet-built tier (the kModeWeapons==2
+  // precedent). The 3-bit field is already wide enough for it; only the value
+  // is gated.
+  if (s->pot_shuffle > kPotShuffle_All) return false;
   return true;
 }
 
@@ -938,6 +974,96 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // add-rando-pot-sanity — pot_shuffle pack/unpack round-trip. Splits across
+  // canonical [26] bits 6-7 (low 2) + [27] bit 7 (high). Default Off keeps both
+  // bytes' pot bits clear (the corpus byte-identical invariant — the default
+  // [26]==0 / [27]==0 selfchecks above depend on it).
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    if ((cd[26] & kPotShuffleAxis_LowMask) || (cd[27] & kPotShuffleAxis_HighBit)) {
+      fprintf(stderr, "Settings_SelfCheck: default pot_shuffle must leave [26] 6-7 "
+                      "and [27] bit7 clear (got [26]=0x%02x [27]=0x%02x)\n", cd[26], cd[27]);
+      exit(2);
+    }
+    // All=3 sets the low 2 bits (0xC0 in [26]); the high bit stays clear (only
+    // the reserved Subset=4 uses it). Round-trips losslessly.
+    RandoSettings sa;
+    Settings_SetDefaults(&sa);
+    sa.pot_shuffle = kPotShuffle_All;
+    uint8 ca[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sa, ca);
+    if ((ca[26] & kPotShuffleAxis_LowMask) != kPotShuffleAxis_LowMask ||
+        (ca[27] & kPotShuffleAxis_HighBit) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: pot_shuffle=All pack mismatch "
+                      "([26]=0x%02x [27]=0x%02x)\n", ca[26], ca[27]);
+      exit(2);
+    }
+    RandoSettings ra;
+    if (Settings_CanonicalDeserialize(ca, &ra) != 0 || ra.pot_shuffle != kPotShuffle_All) {
+      fprintf(stderr, "Settings_SelfCheck: pot_shuffle=All deserialize round-trip mismatch\n");
+      exit(2);
+    }
+    // Keys=1 round-trips (low bit only).
+    RandoSettings sk;
+    Settings_SetDefaults(&sk);
+    sk.pot_shuffle = kPotShuffle_Keys;
+    uint8 ck[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sk, ck);
+    RandoSettings rk;
+    if (Settings_CanonicalDeserialize(ck, &rk) != 0 || rk.pot_shuffle != kPotShuffle_Keys) {
+      fprintf(stderr, "Settings_SelfCheck: pot_shuffle=Keys round-trip mismatch\n");
+      exit(2);
+    }
+    // The reserved Subset value (4) sets the high bit ([27] bit 7) when
+    // serialized — verifying the 3-bit field is wide enough for Phase 7 with no
+    // re-pack. (Deserialize rejects it via Settings_Validate until then, so this
+    // only exercises the encode side.)
+    RandoSettings ssub;
+    Settings_SetDefaults(&ssub);
+    ssub.pot_shuffle = 4;
+    uint8 csub[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&ssub, csub);
+    if (!(csub[27] & kPotShuffleAxis_HighBit)) {
+      fprintf(stderr, "Settings_SelfCheck: reserved pot_shuffle=4 must set [27] bit7 "
+                      "(got [27]=0x%02x)\n", csub[27]);
+      exit(2);
+    }
+    // Settings_Validate rejects the not-yet-implemented Subset value.
+    if (Settings_Validate(&ssub)) {
+      fprintf(stderr, "Settings_SelfCheck: reserved pot_shuffle=4 must fail Settings_Validate\n");
+      exit(2);
+    }
+    // CSV parse round-trips through the canonical bytes.
+    RandoSettings sv;
+    Settings_SetDefaults(&sv);
+    if (Settings_ParseCsv("pot_shuffle=all", &sv) != 0 || sv.pot_shuffle != kPotShuffle_All) {
+      fprintf(stderr, "Settings_SelfCheck: pot_shuffle=all CSV parse failed\n");
+      exit(2);
+    }
+    uint8 cv[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sv, cv);
+    if (!settings_byte_eq(cv, ca, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: CSV-parsed pot_shuffle serializes differently "
+                      "from the struct path\n");
+      exit(2);
+    }
+    // Door shuffle normalizes pot_shuffle off (v1 — pots don't compose with the
+    // door key-prover), so door+pots hashes identically to door-without-pots.
+    RandoSettings sdoor;
+    Settings_SetDefaults(&sdoor);
+    sdoor.door_shuffle = kDoorShuffle_Basic;
+    sdoor.pot_shuffle = kPotShuffle_All;
+    uint8 cdoor[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sdoor, cdoor);
+    if ((cdoor[26] & kPotShuffleAxis_LowMask) || (cdoor[27] & kPotShuffleAxis_HighBit)) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must normalize pot_shuffle off "
+                      "([26]=0x%02x [27]=0x%02x)\n", cdoor[26], cdoor[27]);
+      exit(2);
+    }
+  }
   // Spec scenario "Truncation is first-16-bytes": Settings_HashShort writes
   // exactly the first 16 bytes of SHA-256(canonical), not a different hash.
   {
@@ -1183,8 +1309,13 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
     Settings_CanonicalSerialize(&s_def, blob);
-    blob[26] |= 0x80;  // undefined flag bit — must stay permissive
-    blob[27] |= 0x80;  // undefined flag bit — must stay permissive
+    // add-rando-pot-sanity consumed the last bits of [26] (6-7) and [27] (bit 7)
+    // for pot_shuffle, so those are no longer undefined: setting them now encodes
+    // a pot_shuffle VALUE that Settings_Validate may reject (e.g. [27] bit7 alone
+    // = Subset=4, reserved). The remaining extension surface for the permissive
+    // forward-compat contract is [25] bits 6-7 (entrance axes use only 0-5); a
+    // pre-extension or foreign file with one of those set must still reveal.
+    blob[25] |= 0x80;  // genuinely-undefined bit — must stay permissive
     if (Settings_CanonicalDeserialize(blob, &s_chk) != 0) {
       fprintf(stderr, "Settings_SelfCheck: undefined flag bits must stay permissive\n");
       exit(2);
@@ -1379,6 +1510,16 @@ static int parse_trap_categories(const char *v, int vlen, uint8 *out) {
   return 0;
 }
 
+// add-rando-pot-sanity — parse the pot_shuffle tier. The reserved Subset value
+// (4) has no CSV spelling yet (Phase 7); off/keys/contents/all map 0..3.
+static int parse_pot_shuffle(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))      { *out = kPotShuffle_Off;      return 0; }
+  if (csv_str_eq(v, vlen, "keys") || csv_str_eq(v, vlen, "1"))     { *out = kPotShuffle_Keys;     return 0; }
+  if (csv_str_eq(v, vlen, "contents") || csv_str_eq(v, vlen, "2")) { *out = kPotShuffle_Contents; return 0; }
+  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "3"))      { *out = kPotShuffle_All;       return 0; }
+  return -1;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint64 seen;
@@ -1434,6 +1575,9 @@ enum {
   // add-rando-trap-catalog — per-category trap enable mask. Packed into canonical
   // byte [27] bits 2-6.
   KEY_trap_categories,
+  // add-rando-pot-sanity — pot_shuffle tier (off|keys|contents|all). Packed into
+  // canonical [26] bits 6-7 + [27] bit 7.
+  KEY_pot_shuffle,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -1639,6 +1783,11 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // "all"/"none"/0 = the all-categories sentinel; or a '+'-joined name list.
     MARK_SEEN(KEY_trap_categories);
     if (parse_trap_categories(val, vlen, &s->trap_categories) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "pot_shuffle")) {
+    // add-rando-pot-sanity — tiered pot shuffle (off|keys|contents|all). Packed
+    // into canonical [26] bits 6-7 + [27] bit 7 (see RandoSettings header).
+    MARK_SEEN(KEY_pot_shuffle);
+    if (parse_pot_shuffle(val, vlen, &s->pot_shuffle) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);

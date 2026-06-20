@@ -227,6 +227,43 @@ def load_locations(path: Path) -> dict[str, LocationDef]:
     return out
 
 
+def load_pots(path: Path):
+    """Load assets/rando/pots.gen.yaml (committed registry from gen_pot_tables.py).
+
+    Returns (name -> LocationDef, [(room, pos4, loc_id)]). Each pot LocationDef
+    carries id/name/region/type=Pot/vanilla_item AND can_reach (D8 inheritance),
+    so it feeds BOTH the location registry (location_ids.h / kRandoLocations) and
+    the logic binding (region_id + can_reach) — it is merged into both `locations`
+    and `logic_loc_preds` in main(). pots.gen.yaml is committed, so its absence is
+    a broken checkout (warn loudly, emit no pots = behaves like pot_shuffle off)."""
+    if not path.exists():
+        print(f"WARNING: {path} not found — emitting NO pot locations (broken "
+              f"checkout? regenerate with gen_pot_tables.py)", file=sys.stderr)
+        return {}, []
+    doc = load_yaml(path)
+    out, rows = {}, []
+    for p in doc.get("pots", []) or []:
+        # add-rando-pot-sanity: empty pots carry the ITEM_Nothing filler as their
+        # vanilla item. The committed pots.gen.yaml records empties as
+        # `kind: empty` + `vanilla_item: null`; map that to "Nothing" here so the
+        # generated kRandoLocations row has vanilla_item_id == ITEM_Nothing (148).
+        # That id is the unambiguous empty-pot signal the placer keys on
+        # (`pot_active`, the §3b ITEM_Nothing pre-pass) — id 0 is ProgressiveSword,
+        # so a null→0 mapping would be indistinguishable from a real item.
+        vanilla_item = p.get("vanilla_item") or ""
+        if (p.get("kind") == "empty") or not vanilla_item:
+            vanilla_item = "Nothing"
+        loc = LocationDef(
+            id=p["id"], name=p["name"], region=p.get("region", ""), type="Pot",
+            vanilla_item=vanilla_item,
+            can_reach=p.get("can_reach") or "TRUE()",
+            can_place="TRUE()", always_allow="FALSE()", source="gen_pot_tables.py",
+        )
+        out[loc.name] = loc
+        rows.append((int(p["room"]), int(p["pos4"]), int(p["id"])))
+    return out, rows
+
+
 def load_macros(path: Path | None) -> dict[str, MacroDef]:
     if path is None or not path.exists():
         return {}
@@ -1257,13 +1294,15 @@ def emit_location_ids(locations: dict[str, LocationDef], path: Path):
     lines.append("")
     lines.append(f"#define LOC__COUNT {max_id + 1}")
     lines.append("")
-    # the reachability/sphere bitsets in rando_logic.c are sized
-    # [kReachabilityMaxLocations] (512). A registry append that pushes a location
-    # id past that must fail the BUILD, not silently OOB-index the bitset at
-    # runtime. Keep this 512 in lockstep with kReachabilityMaxLocations.
-    lines.append("_Static_assert(LOC__COUNT <= 512,")
-    lines.append('               "location id space exceeds kReachabilityMaxLocations '
-                 '(512) in rando_logic.c — grow both together");')
+    # Every location-id-keyed array/bitmap across the randomizer module is sized
+    # by kRandoLocationCapacity (rando_logic.h), and the reachability/sphere
+    # bitsets in rando_logic.c follow it. A registry append that pushes a
+    # location id past that ceiling must fail the BUILD, not silently OOB-index a
+    # bitset / truncate the digest / drop a tracker row at runtime. Keep this
+    # 2048 in lockstep with kRandoLocationCapacity in src/rando/rando_logic.h.
+    lines.append("_Static_assert(LOC__COUNT <= 2048,")
+    lines.append('               "location id space exceeds kRandoLocationCapacity '
+                 '(2048) in rando_logic.h — grow both together");')
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_LOCATION_IDS_H_")
     atomic_write_text(path, "\n".join(lines) + "\n")
@@ -1317,6 +1356,49 @@ def _write_empty_chest_lookup(path: Path) -> None:
         "#endif  // ZELDA3_RANDO_CHEST_LOOKUP_H_",
     ]
     atomic_write_text(path, "\n".join(lines) + "\n")
+
+
+def emit_pot_lookup(rows, path: Path) -> int:
+    """Emit src/rando/pot_lookup.h — sorted (dungeon_room, tile_position) -> LOC.
+
+    The runtime pot dispatch (Dungeon_GetPotLocation) binary-searches this for the
+    pot's stable (room, pos4) identity. Mirrors chest_lookup.h. `rows` come from
+    load_pots() (pots.gen.yaml); sorted by (room, pos4) so the search is correct."""
+    rows = sorted(rows, key=lambda r: (r[0], r[1]))
+    lines = [
+        HEADER_BANNER, "",
+        "// pot_lookup.h — sorted (dungeon_room_index, tile_position) -> LOC_* for",
+        "// the runtime pot dispatch (Dungeon_GetPotLocation). Generated from",
+        "// assets/rando/pots.gen.yaml (committed) via assets/scripts/gen_pot_tables.py.",
+        "",
+        "#ifndef ZELDA3_RANDO_POT_LOOKUP_H_",
+        "#define ZELDA3_RANDO_POT_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "",
+        "typedef struct RandoPotLookupEntry {",
+        "  uint16 room;    // 0..319 dungeon room index",
+        "  uint16 pos4;    // tile_position (dsto*2 | 0x2000 BG-half), == RevealPotItem's match key",
+        "  uint16 loc_id;  // LOC_*",
+        "} RandoPotLookupEntry;",
+        "",
+    ]
+    if rows:
+        lines.append("static const RandoPotLookupEntry kRandoPotLookup[] = {")
+        for (room, pos4, locid) in rows:
+            lines.append(f"  {{ 0x{room:04x}, 0x{pos4:04x}, {locid} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: pots.gen.yaml absent. Dungeon_GetPotLocation -> 0xFFFF (pot-shuffle off).")
+        lines.append("static const RandoPotLookupEntry kRandoPotLookup[1] = { { 0, 0, 0 } };")
+    lines += [
+        "",
+        f"#define kRandoPotLookup_COUNT {len(rows)}",
+        "",
+        "#endif  // ZELDA3_RANDO_POT_LOOKUP_H_",
+    ]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+    return len(rows)
 
 
 def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
@@ -2161,7 +2243,8 @@ def _location_type_id(t: str) -> int:
              "Fountain", "Trade", "Prize_Crystal", "Prize_Pendant", "Prize_Event", "Medallion",
              "Shop",        # 14 — Phase B Slice 3a Retro shop purchase slot
              "ShopUpgrade", # 15 — Phase B Slice 3a Capacity Upgrade (identity-placed)
-             "TakeAny"]     # 16 — Phase B Slice 3b Retro take-any cave slot (per-seed active subset)
+             "TakeAny",     # 16 — Phase B Slice 3b Retro take-any cave slot (per-seed active subset)
+             "Pot"]         # 17 — add-rando-pot-sanity dungeon pot (per-tier active subset)
     if t not in types:
         return 0
     return types.index(t)
@@ -2228,6 +2311,16 @@ def main(argv=None):
     macros = load_macros(macros_path)
     (logic_regions, logic_edges, logic_loc_preds, logic_macros,
      world_state_overrides, world_state_edges) = load_logic(logic_path)
+
+    # add-rando-pot-sanity: merge the committed pot registry into BOTH the
+    # location set (ids / kRandoLocations rows) and the logic binding (region_id +
+    # can_reach), then emit pot_lookup.h. Pot LOCs grow kRandoLocationsCount but
+    # stay OUT of placement until a tier selects them — rando_placement.c skips
+    # LOCTYPE_Pot in the open-location + junk-pad loops (mirroring inactive
+    # Take-Any), so pot-shuffle off is placement-byte-identical (design D9).
+    pot_locs, pot_lookup_rows = load_pots(Path("assets/rando/pots.gen.yaml"))
+    locations.update(pot_locs)
+    logic_loc_preds.update(pot_locs)
 
     # Merge macros from macros.yaml and logic.yaml (logic.yaml takes precedence).
     all_macros = {**macros, **logic_macros}
@@ -2605,6 +2698,7 @@ def main(argv=None):
                     door_vm_preds=door_vm_preds,
                     door_portal_rows=door_portal_rows)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
+    pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
     icon_atlas_count = emit_icon_atlas(
         Path("assets/rando/icon_atlas.yaml"),
         out_headers / "icon_atlas.h",
@@ -2619,6 +2713,7 @@ def main(argv=None):
     print(f"generated item_ids.h ({len(items)} items)")
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
+    print(f"generated pot_lookup.h ({pot_lookup_count} pot entries)")
     print(f"generated icon_atlas.h ({icon_atlas_count} icon entries)")
     print(f"generated direct_grant_icons.h ({direct_grant_icon_count} mapped icons)")
     print(f"warnings: {len(all_errors)}, macro errors: {len(macro_errors)}")

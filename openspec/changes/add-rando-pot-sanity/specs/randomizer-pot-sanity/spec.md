@@ -1,0 +1,268 @@
+## ADDED Requirements
+
+### Requirement: Pot-shuffle tiered scope over a fixed location ID space
+
+The randomizer SHALL provide a `pot_shuffle` setting with four values — `Off` (0),
+`Keys` (1), `Contents` (2), `All` (3) — defaulting to `Off`. The setting SHALL
+turn dungeon pots into randomizer check locations according to the tier:
+
+- `Off`: no pot is a check; vanilla behavior is unchanged.
+- `Keys`: only pots whose vanilla content is a small key (~19) are checks.
+- `Contents`: every pot with any vanilla item content (~613, the small-key pots
+  included) is a check.
+- `All`: every liftable dungeon pot (~835), including the ~222 with no vanilla
+  content, is a check.
+
+Every liftable dungeon pot SHALL be assigned a stable, append-only location ID in
+`location_registry.yaml` **independently of the tier** — the full ~835-pot set
+exists in the ID space at all times. The tier SHALL act as a generation-time
+filter selecting which pot locations enter the placement pool; pots not selected
+for a seed are **absent from the placement table (or carry the `0xFFFF` sentinel when
+present below a higher placed id)** and behave exactly as vanilla at runtime (vanilla
+content revealed, not recolored). The following SHALL NOT be assigned location IDs and
+are never checks: `Fairy Pot` objects (16); **structural-secret pots** (whose vanilla
+secret is a Hole / Warp / Staircase / Bombable / Switch — lifting them triggers a room
+function, not a pickup); **creature-spawn pots** (whose vanilla content spawns an
+enemy/NPC — Cucco, RockCrab, Bee, soldiers, etc. — not loot, per the D2 content
+policy); and pots in **excluded rooms** (the Chris-Houlihan room, boss arenas, the
+pinned-boss environment rooms, and cutscene/triggered rooms — see design D1). The generator
+SHALL maintain this exclusion list and assert no excluded pot emits a LOC. Overworld
+bushes/rocks are out of scope. The exact per-tier counts SHALL be produced and
+asserted by the generator (cross-referencing secret records against pot positions),
+NOT hardcoded. The tier supersets SHALL be nested: `keys ⊆ contents ⊆ all`.
+
+#### Scenario: Off changes nothing
+- **WHEN** `pot_shuffle = Off`
+- **THEN** no pot location is placed, no pot is recolored, and every pot reveals
+  its vanilla content exactly as in the unmodified game
+
+#### Scenario: Keys tier selects only key-pots
+- **WHEN** `pot_shuffle = Keys`
+- **THEN** exactly the pots whose vanilla content is a small key are in the
+  placement pool and are checks; all other pots stay vanilla and un-recolored
+
+#### Scenario: ID space is tier-invariant
+- **WHEN** the same seed is generated at `Contents` and at `All`
+- **THEN** every pot location's numeric ID is identical between the two; only the
+  set of pots that are placed (in-pool) differs
+
+#### Scenario: Fairy pots are never checks
+- **WHEN** any tier is active and the player breaks a Fairy Pot
+- **THEN** it summons a fairy as in vanilla and grants no placed item
+
+### Requirement: Build-time pot enumeration with stable identity
+
+A committed generator (`assets/scripts/gen_pot_tables.py`) SHALL enumerate every
+liftable dungeon pot from `zelda3_assets.dat` (room object data + the
+`kDungeonSecrets` table) and emit deterministically: the append-only
+`location_registry.yaml` pot rows; a sorted `(dungeon_room_index, tile_position)
+→ location_id` runtime lookup (`pot_table.gen.bin` → `src/rando/pot_lookup.h`,
+the pot analog of `chest_table.gen.bin`/`chest_lookup.h`); per-pot tier membership
+and vanilla-content classification; and region-bound logic entries. The generator
+SHALL assert its own invariants and fail on violation: every pot has a `region:`;
+`(room, tile_position)` is unique across all pots; the tier sets are nested; and
+content classification (item vs structural vs empty) is exhaustive. A pot's
+identity SHALL be `(dungeon_room_index, tile_position)` — fixed room geometry that
+is stable across save/reload.
+
+#### Scenario: Generator is the source of truth, not a transcription
+- **WHEN** the pot tables are built
+- **THEN** they are produced by `gen_pot_tables.py` parsing the shipped asset
+  data, not hand-transcribed, and the build fails if any invariant assertion
+  (unique identity, region present, nested tiers, exhaustive classification) is
+  violated
+
+#### Scenario: Identity is save-stable
+- **WHEN** a pot is checked, the game is saved, and the slot is reloaded
+- **THEN** the same `(room, tile_position)` resolves to the same location ID and
+  the pot is still recognized as checked
+
+#### Scenario: Pot location IDs are append-only
+- **WHEN** the pot tables are regenerated after a registry change elsewhere
+- **THEN** existing pot location IDs are unchanged; new IDs (if any) are appended,
+  consistent with `randomizer-logic / Location and region model with stable IDs`
+
+### Requirement: Single-point runtime pot dispatch with exactly-once grant
+
+Pot item grants SHALL be dispatched at a single point: the **top of `RevealPotItem`
+(`src/dungeon.c:5850`), before its secret-table scan**. `RevealPotItem` has THREE
+callers — the lift path (`Dungeon_LiftAndReplaceLiftable`, fed by both
+`Link_PerformThrow` and the lift-timer branch), the sword-break path
+(`HandleItemTileAction_Dungeon`, which OR's `dung_secrets_unk1 |= 0x80` and spawns
+smashed-terrain *after* the call), and `ThievesAttic_DrawLightenedHole` (a `0x2020`
+lightened-hole, NOT a pot). The hook SHALL NOT be placed after the secret scan or in
+`Sprite_SpawnSecret`: a pot with no secret record returns from the scan early, but
+the `All`-tier empty pots require the hook.
+
+The hook SHALL, in order: (1) **reset its one-lift "granted" flag** (fresh per call);
+(2) compute `(dungeon_room_index, tile_position)` and resolve the pot LOC via
+`pot_lookup.h` — for the `ThievesAttic_DrawLightenedHole` caller (and any non-pot
+tile) the lookup finds no LOC and the hook is **inert by construction**; (3) if the
+randomizer is active, the LOC is in the active tier, and `Rando_IsLocationChecked(loc)`
+is false, grant via the existing chain in exactly this sequence —
+`uint8 lttp = Rando_DispatchVanillaGrant(loc, pot_vanilla_registry_id, pot_vanilla_lttp_code)`,
+which internally calls `Rando_OnLocationCheck` (MARKING the location checked **before**
+the placement lookup) and returns the placed item (direct-grant classes return
+`kRandoLttpSkip`), then `Rando_ReceiveOrConfirm(lttp, placed_item_id)` to deliver it
+(direct-grant confirmation cue; `Link_ReceiveItem` otherwise; the brief "nothing" cue
+for `ITEM_Nothing`); (4) set the "granted" flag, zero `dung_secrets_unk1`, and RETURN
+— never fall through to a vanilla-secret spawn. The spec SHALL NOT describe this as a
+loose "grant then mark checked": marking is internal to `Rando_DispatchVanillaGrant`
+and happens before the lookup, so the dispatch SHALL NOT additionally call
+`Rando_MarkLocationChecked`.
+
+The persistent gate SHALL be the rando checked-location bit, NOT the transient
+per-room `pots_revealed_in_room` mask. Suppression SHALL cover every break path: the
+one-lift "granted" flag (reset at the top of every `RevealPotItem` call, consumed
+only by the matching sword-break block) SHALL prevent the sword-break path's post-call
+`0x80` smash/spawn. For `All`-tier empty pots (no `kDungeonSecrets` entry) the
+`(room, tile_position) → loc` lookup SHALL be the sole grant trigger, so the hook
+SHALL run for every lifted pot tile, not only secret-bearing ones.
+
+#### Scenario: A placed pot grants exactly once
+- **WHEN** an in-scope, un-checked pot is broken
+- **THEN** its placed item is granted once via the dispatch chain, the location is
+  marked checked, and the vanilla secret is suppressed
+
+#### Scenario: Re-entering the room does not re-grant
+- **WHEN** the player breaks an in-scope pot, leaves and re-enters the room (which
+  resets `pots_revealed_in_room` and respawns vanilla pots), and breaks the same
+  pot again
+- **THEN** no placed item is granted the second time; the checked LOC bit gates it
+  and the pot follows the vanilla path
+
+#### Scenario: Empty pot is a check via the lookup, not the secret table
+- **WHEN** `pot_shuffle = All` and the player breaks a pot that had no vanilla
+  content
+- **THEN** the `(room, tile_position) → loc` lookup triggers the grant of its
+  placed item (which may be Literally Nothing), marking it checked
+
+#### Scenario: Non-direct-grant placed item is never dropped
+- **WHEN** an in-scope pot's placed item is a non-direct-grant class (e.g. a
+  bottle, bow, equipment)
+- **THEN** it is delivered via `Link_ReceiveItem`; the dispatch never marks the
+  location checked and then spawns a vanilla consolation instead (which would lose
+  the placed item and make an assumed-fill-certified seed unbeatable)
+
+### Requirement: Checked pot reverts to vanilla appearance and behavior
+
+Once a pot location is checked, the pot SHALL draw in its vanilla color, and its
+on-break behavior SHALL branch on the pot's known vanilla content:
+- **Item-pot** (heart/rupee/magic/etc.): the vanilla drop is re-droppable on each
+  break, exactly like vanilla — the user's "vanilla item under it after checked."
+- **Key-pot, or any one-shot content: the hook SHALL EXPLICITLY suppress the vanilla
+  spawn (reveal nothing).** This SHALL NOT rely on vanilla behavior — vanilla has no
+  persistent per-pot "key taken" flag and content byte `8` bypasses the
+  `pots_revealed_in_room` mask, so a naive vanilla fall-back would DUPLICATE the key
+  on every room re-entry. The runtime reads the vanilla content from the pot table and
+  suppresses accordingly.
+
+Out-of-scope pots (tier excludes them, or `pot_shuffle = Off`) SHALL follow the pure
+vanilla path, byte-identical to the unmodified game.
+
+#### Scenario: Checked item-pot re-drops vanilla content
+- **WHEN** a pot whose vanilla content is a Heart is checked, then broken again
+- **THEN** it drops a Heart (the vanilla content), repeatable as in vanilla, and
+  draws in the vanilla color
+
+#### Scenario: Checked key-pot is suppressed to empty (no key dup)
+- **WHEN** a pot whose vanilla content is a small key is checked (its placed item
+  granted), the player leaves and re-enters the room, and breaks the pot again
+- **THEN** the hook explicitly suppresses the vanilla key spawn so the pot is empty,
+  and does NOT re-spawn the vanilla key — preventing the key duplication a naive
+  vanilla fall-back would cause (vanilla has no persistent per-pot key-taken flag)
+
+### Requirement: Un-checked in-scope pots are recolored
+
+The runtime SHALL draw an in-scope, un-checked pot under an alternate CGRAM
+sub-palette (a palette-nibble swap in the four tilemap words emitted by
+`RoomDraw_SinglePot`) so it is visually distinct from a vanilla pot. The recolor SHALL be gated on the randomizer being
+active, the pot being in the active tier's pool, and `Rando_IsLocationChecked`
+being false; checked and out-of-scope pots SHALL draw the vanilla words. The
+recolor SHALL be code-only (no new graphics) and SHALL NOT alter non-randomizer
+RAM-compare behavior. The alternate sub-palette SHALL be one that is loaded across
+dungeon themes and visibly distinct, verified by offline render against
+`zelda3_assets.dat` rather than assumed.
+
+#### Scenario: Un-checked check-pot looks different
+- **WHEN** `pot_shuffle` is on and a pot in the active pool has not been checked
+- **THEN** it is drawn under the alternate sub-palette, signalling it holds a
+  placed item
+
+#### Scenario: Recolor reverts on check and on re-entry
+- **WHEN** an in-scope pot is checked and the room is later reloaded
+- **THEN** the pot draws under the vanilla sub-palette
+
+#### Scenario: Non-rando draw path is unchanged
+- **WHEN** the randomizer is not active
+- **THEN** `RoomDraw_SinglePot` emits the vanilla tilemap words with no palette
+  change, preserving RAM-compare
+
+### Requirement: Literally Nothing filler for empty pots
+
+The item pool SHALL pad the `All` tier's ~222 empty pots (pots with no vanilla
+content that become checks) with a **Literally Nothing** filler item
+(`ITEM_Nothing`) — a no-op grant that shows a brief "nothing" cue and marks the
+location checked — so the pool is not flooded with real resources. `ITEM_Nothing`
+SHALL be a logic no-op (never progression), SHALL be excluded from the
+"100% inventory" accessibility count, and once checked the pot SHALL behave as a
+vanilla-empty pot. The placer SHALL fill empty-pot locations with `ITEM_Nothing` in a
+**dedicated pre-pass** (removed from the open set before assumed-fill and junk padding
+— like vanilla-dungeon-item pre-placement), NOT as a `kJunkRotation` entry, so
+`ITEM_Nothing` can never land on a chest or non-empty pot and no real item can land on
+an empty pot. Its cross-cutting behavior SHALL be: a sphere-0 / always-reachable
+placement for sphere math; **trap shuffle never replaces it and never targets
+empty-pot slots**; **customizer cannot pin `ITEM_Nothing` nor pin any item onto an
+empty-pot slot** (empty pots are a non-customizable location class, like prize/shop);
+**hints never source an `ITEM_Nothing` pot**; the spoiler emits it only as a grouped
+or omitted line (`randomizer-ui`); and it is **counted in the tracker completion
+denominator** (so an `All` seed can reach 100%) even though it is excluded from the
+`items` accessibility tier. The `Keys` and `Contents` tiers SHALL NOT require this
+filler (every check has a real vanilla item to fall back to).
+
+#### Scenario: Empty pot grants Literally Nothing
+- **WHEN** `pot_shuffle = All` and an empty pot is placed with `ITEM_Nothing`
+- **THEN** breaking it shows the "nothing" cue, marks the location checked, and
+  thereafter the pot is a vanilla-empty pot
+
+#### Scenario: Literally Nothing never satisfies logic
+- **WHEN** the placer evaluates accessibility and `ITEM_Nothing` is placed
+- **THEN** it contributes nothing to reachability and is not counted toward a
+  "100% inventory" (`items`) accessibility tier
+
+#### Scenario: Literally Nothing counts for tracker completion but not accessibility
+- **WHEN** an `All` seed is fully cleared, including every empty pot
+- **THEN** the tracker shows 100% (empty pots count in the completion denominator)
+  even though `ITEM_Nothing` was excluded from the `items` accessibility tier
+
+#### Scenario: Customizer and trap shuffle leave empty pots alone
+- **WHEN** a customizer manifest or trap shuffle is active with `pot_shuffle = All`
+- **THEN** neither can pin an item onto an empty-pot slot, pin `ITEM_Nothing`
+  elsewhere, nor convert an empty pot into a trap
+
+### Requirement: Pot-shuffle Off is placement-byte-identical
+
+Pot locations SHALL draw no fill RNG and SHALL NOT contribute to
+`placement_digest` when `pot_shuffle = Off` (and likewise for the out-of-scope
+pots of any tier). Adding the pot location IDs to the registry SHALL NOT change
+any existing seed's `placement_digest` or `settings_hash`. The implementation
+SHALL achieve this by **skipping out-of-scope pot locations in the open-location
+collection loop and the junk-pad target loop** (mirroring the existing
+inactive-Take-Any skip), NOT by post-hoc digest filtering (the digest already
+covers only placed entries). Without the loop skip, registry growth alone makes
+every pot an open location that receives a placement entry and enters the digest,
+changing every existing seed. This SHALL be verified by a corpus regen with a
+3-way diff against unmodified `main`, not by a code-review claim of digest-neutrality.
+
+#### Scenario: Existing seeds unchanged with pot-shuffle off
+- **WHEN** the regression corpus is regenerated at the new `kGeneratorVersion`
+  with `pot_shuffle = Off` (the default for all existing entries)
+- **THEN** every existing seed's `placement_digest_hex` is byte-identical to its
+  value on `main`
+
+#### Scenario: Out-of-scope pots are skipped in the placement loops
+- **WHEN** a seed is generated with `pot_shuffle = Off`
+- **THEN** the open-location collection loop and the junk-pad target loop skip
+  every pot location (the same way inactive Take-Any locations are skipped), so no
+  pot receives a placement entry, draws fill RNG, or enters the digest — registry
+  growth alone does not change the placement table
