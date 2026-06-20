@@ -48,3 +48,15 @@ room_can_reach:
   # (room-entry) chest predicate, copied verbatim from the chest logic:
   "01a": "HAS_AMOUNT(SmallKey_PalaceOfDarkness, 3)"   # PoD Compass Chest (same room)
   "02a": "CanShootArrowsL1()"                          # PoD Arena Ledge
+  # --- HCE sewers (gate-only: these rooms flood to HyruleCastleEscape fine, but
+  # are chest-LESS so they defaulted to TRUE; the dark-flag Lamp gate alone misses
+  # CanKillEscapeThings (the escape guards) and the SmallKey-locked sewer door).
+  # Grounded in the door graph + base predicates (logic.yaml): the locked doors sit
+  # at the key-room entrances (Secret Rooms 011, Sanctuary 012); the Dark Cross
+  # (032) is the no-key floor `CanKill AND Lamp`. 002 is a dead-end reached only
+  # THROUGH the key-locked Sanctuary -> needs the key; 021 (dark) + 031 sit on the
+  # Dark-Cross side, before the locked door -> CanKill+Lamp (021 was already
+  # Lamp-gated by the dark flag but missing CanKill). ---
+  "002": "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
+  "021": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
+  "031": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"

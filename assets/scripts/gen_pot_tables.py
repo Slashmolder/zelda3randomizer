@@ -250,6 +250,19 @@ def derive_regions(pot_rooms, out_edges, overrides, override_gates):
         region_of[room] = (reg, override_gates.get(str(room_hex)), "override")
         conflicts.pop(room, None)
 
+    # A room_can_reach override WITHOUT a matching room_region applies its gate to
+    # the room's already-flooded region — for gating a chest-LESS sub-area the flood
+    # resolved correctly (e.g. a dark / key-locked dungeon interior) without a
+    # redundant region re-bind. The room MUST have a resolved region.
+    for room_hex, gate in (override_gates or {}).items():
+        if room_hex in (overrides or {}):
+            continue  # already applied above with its explicit region
+        room = int(str(room_hex), 16)
+        if room not in region_of:
+            die(f"room_can_reach override for 0x{room:03x} has no resolved region "
+                f"— add a room_region override too")
+        region_of[room] = (region_of[room][0], gate, "override_gate")
+
     # cross-validate: every uniform chest room's region must match the flood
     bad = [(hex(r), region_of.get(r, (None,))[0], next(iter(s))[0])
            for r, s in room2.items()
