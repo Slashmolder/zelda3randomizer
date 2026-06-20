@@ -129,6 +129,7 @@ axis via `item_pool`.
 | `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
+| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under door shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -419,6 +420,35 @@ the entrance lobbies reachable under current logic.
 `--door-selftest` runs the generation net headlessly (connectivity, prover
 acceptance, determinism, oracle/stitcher agreement for every shuffleable
 dungeon across many seeds).
+
+### Pot shuffle (experimental)
+
+`pot_shuffle` (`add-rando-pot-sanity`) turns the items hidden under dungeon
+**pots** into randomizer checks, in nested tiers:
+
+- `off` — pots are vanilla (default; byte-identical output).
+- `keys` — only the pots that vanilla hides a small key under become checks.
+- `contents` — every pot with vanilla contents (loot **and** keys).
+- `all` — also the empty pots, each filled with a "nothing" item so the seed can
+  still reach 100% (an empty pot is a real check that grants nothing).
+
+Key pots follow `dungeon_items.small_keys`: pinned to their vanilla key in
+`vanilla` mode, shuffled into the open pool otherwise. Lifting or sword-breaking
+an in-scope pot grants its placed item; un-checked in-scope pots are **recolored**
+as a visual tell. The non-`off` tiers add fillable locations and so change
+placement output; `off` is byte-identical.
+
+**Forced `off` under door shuffle** (normalized automatically — the settings hash
+always matches the generated seed): door shuffle's key-door prover doesn't model
+pot locations yet, so the two can't be combined in this version. The native
+settings window greys out the pot selector while door shuffle is on.
+
+Because `all` adds ~800 locations, the PC trackers gate pots behind a **"Show
+pots"** toggle (the SNES HUD location grid hides them outright), but every
+completion count still includes pots so the progress bar reflects the true total.
+The spoiler lists loot/key pots under their region and omits the empty ones; the
+[auto-tracker](#auto-tracker-external-clients) tags pot slots `"pot": true` so
+external clients can filter them.
 
 ### Traps
 
