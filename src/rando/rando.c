@@ -1782,6 +1782,12 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // so the player sees that sprite). Pushing the confirmation to the call
 // site lets each integration choose whether to add the cue.
 // ---------------------------------------------------------------------------
+// Tier-1 receive-gfx icon resolver (defined below, after rando_item_display_lttp).
+// Shared by the direct-grant confirmation cue and the field-item-sprite resolver
+// so a draw/grant drift can't reappear.
+static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_big,
+                                    uint8 *out_oam_flags);
+
 void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // every caller passes `(uint8)Rando_LastDispatched
   // ItemId()`; the cast loses precision if the sentinel value 0xFFFF
@@ -1812,7 +1818,15 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
   if (e != NULL) {
     AncillaAdd_RandoIconReceipt(e->gfx, e->big, e->oam_flags);
+    return;
   }
+  // Non-direct-grant items (rupees, equipment, bottles, boomerang, ...) have no
+  // kDirectGrantIcons entry; without this they'd pop NO icon, so a streamlined pot
+  // pickup reads as empty. Resolve the held-aloft receive gfx the vanilla pickup
+  // draws (shared resolver — see rando_receive_item_icon).
+  uint8 gfx, big, oam;
+  if (rando_receive_item_icon(item_id, &gfx, &big, &oam))
+    AncillaAdd_RandoIconReceipt(gfx, big, oam);
 }
 
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
@@ -1885,6 +1899,27 @@ static uint8 rando_item_display_lttp(uint16 placed) {
     return lttp;
   }
   return progressive_to_lttp(placed);  // progressive items (sword/bow/...) or 0xFF
+}
+
+// add-rando-pot-sanity — Tier-1 receive-gfx icon for an item (rupees, equipment,
+// bottles, boomerang, ...). Mirrors Ancilla_ReceiveItem_Draw EXACTLY (gfx, size,
+// palette indexed by the LttP receive code) so a floating cue looks like the
+// vanilla held-aloft pickup. Returns false for items with no receive gfx (keys /
+// custom art resolve via rando_direct_grant_icon_entry instead). Shared by
+// Rando_ShowDirectGrantConfirmation and Rando_GetFieldItemIcon so a draw/grant
+// drift (the rupee/boomerang-as-vanilla-sprite bug class) can't reappear.
+static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_big,
+                                    uint8 *out_oam_flags) {
+  uint8 code = rando_item_display_lttp(item_id);
+  if (code >= 76 || kReceiveItemGfx[code] == 0xff)
+    return false;
+  *out_gfx = kReceiveItemGfx[code];
+  *out_big = kReceiveItem_Tab1[code];
+  uint8 a = kWishPond2_OamFlags[code];
+  if (a & 0x80)               // sign8 fallback, matching Ancilla_ReceiveItem_Draw
+    a = 5;
+  *out_oam_flags = (uint8)(a * 2 | 0x30);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1991,21 +2026,12 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
   }
 
   // Tier 1 — items the normal receive animation draws (rupees, equipment,
-  // boomerang, bottles, ...). Mirror Ancilla_ReceiveItem_Draw EXACTLY: gfx,
-  // size, and palette are all indexed by the LttP receive code, so the field
-  // sprite looks like the held-aloft pickup. NOTE: kDirectGrantIcons does NOT
-  // cover these — it only holds the Slice-9 direct-grant items, which is why a
-  // placed red rupee (code 0x36) / boomerang previously fell back to vanilla.
-  uint8 code = rando_item_display_lttp(placed);
-  if (code < 76 && kReceiveItemGfx[code] != 0xff) {
-    *out_gfx = kReceiveItemGfx[code];
-    *out_big = kReceiveItem_Tab1[code];
-    uint8 a = kWishPond2_OamFlags[code];
-    if (a & 0x80)               // sign8 fallback, matching Ancilla_ReceiveItem_Draw
-      a = 5;
-    *out_oam_flags = (uint8)(a * 2 | 0x30);
+  // boomerang, bottles, ...). Shared resolver (rando_receive_item_icon) so this
+  // and the direct-grant confirmation cue can't drift. NOTE: kDirectGrantIcons
+  // does NOT cover these — it only holds the Slice-9 direct-grant items, which is
+  // why a placed red rupee (code 0x36) / boomerang previously fell back to vanilla.
+  if (rando_receive_item_icon(placed, out_gfx, out_big, out_oam_flags))
     return true;
-  }
 
   // Tier 2 — items with a Slice-9 icon but no receive gfx: direct-grant items
   // (small keys, ...) and the custom-art items (TriforcePiece / HalfMagic /
