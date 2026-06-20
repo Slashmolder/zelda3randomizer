@@ -586,7 +586,7 @@ static void DrawCheckTracker(void *) {
     // add-rando-pot-sanity — when pot rows are hidden, note how many this region
     // holds so the header's pot-inclusive count doesn't read as a missing-rows bug.
     if (!s_show_pots && r_pots > 0)
-      ImGui::TextDisabled("  +%d pots hidden (enable \"Show pots\")", r_pots);
+      ImGui::TextDisabled("  +%d pots in this region (enable \"Show pots\")", r_pots);
     ImGui::Unindent();
   }
 
@@ -806,10 +806,15 @@ static void DrawMapTracker(void *) {
     ImGui::TextUnformatted(Rando_GetRegionName((uint16)hover_region));
     ImGui::Separator();
     int n = pt ? (int)pt->count : 0;
+    int tip_pots = 0;
     for (int i = 0; i < n; i++) {
       uint16 loc = pt->entries[i].location_id;
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != (uint16)hover_region) continue;
+      // add-rando-pot-sanity — a pot_shuffle=All region can hold 50-76 pots;
+      // listing them all overflows this (unscrollable) tooltip. Summarize them
+      // as a "+N pots" line instead, like the rest of the trackers.
+      if (LocIsPot(loc)) { tip_pots++; continue; }
       bool checked = Rando_IsLocationChecked(loc);
       bool reachable = have_reach && Reachability_HasLocation(reach, loc);
       ImVec4 cc = checked ? ImVec4(0.45f, 0.75f, 0.45f, 1)
@@ -818,6 +823,8 @@ static void DrawMapTracker(void *) {
       ImGui::TextColored(cc, "%s %s", checked ? "[x]" : (reachable ? "[ ]" : " - "),
                          Rando_GetLocationName(loc));
     }
+    if (tip_pots > 0)
+      ImGui::TextDisabled("+%d pots", tip_pots);
     ImGui::EndTooltip();
   }
 

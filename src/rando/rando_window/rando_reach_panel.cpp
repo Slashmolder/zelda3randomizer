@@ -197,7 +197,7 @@ extern "C" void RandoReach_Render(void) {
     // add-rando-pot-sanity — note hidden pot rows so the pot-inclusive header
     // count doesn't read as missing rows.
     if (!s_show_pots && r_pots > 0)
-      ImGui::TextDisabled("+%d pots hidden (enable \"Show pots\")", r_pots);
+      ImGui::TextDisabled("+%d pots in this region (enable \"Show pots\")", r_pots);
   }
 }
 
