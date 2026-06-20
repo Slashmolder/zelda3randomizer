@@ -81,7 +81,9 @@ typedef enum {
 //   @57 sram_slot_checksum_at_last_write (u32 LE)
 //   @61 placement_table_size (u16 LE)       (**bytes**; placement_table_size / 2 = location count)
 //   @63 flags (u8)                          (bit 0 = forward-fill fallback was used)
-//   @64 mushroom_held (u8)                   (rando Mushroom-possession; bit 0 = held, not yet delivered)
+//   @64 mushroom_held (u8)                   (rando Mushroom/Powder bitfield:
+//                                             bit 0 = undelivered Mushroom,
+//                                             bit 1 = Powder obtained)
 //   @65 settings_ext_present (u8)            (Phase B hints; 1 = @66/@67 meaningful, 0 = unset)
 //   @66 hints_setting (u8)                   (Phase B hints; RandoHintsMode: 0=off 1=on)
 //   @67 goal (u8)                            (Phase B hints; Goal enum, rando_settings.h)
@@ -147,12 +149,12 @@ typedef struct RandoSlotHeader {
   uint32 sram_slot_checksum_at_last_write;
   uint16 placement_table_size;  // **bytes**; placement_table_size / 2 = #locations stored
   uint8 flags;                  // bit 0 = forward-fill fallback was used
-  // Rando Mushroom-possession flag, stored at on-disk offset @64 (the first
+  // Rando Mushroom/Powder ownership bitfield, stored at on-disk offset @64 (the first
   // byte of the former reserved[16] block; older binaries wrote it as zero).
-  // Set while the player holds the Mushroom item but has not yet handed it to
-  // the Witch. Tracked here rather than via link_item_mushroom — which
-  // doubles as the Powder slot — so obtaining Powder first cannot lock out
-  // the Potion Shop check. See Rando_MushroomHeld / Witch_AcceptShroom.
+  // Bit 0 is set while the player holds the Mushroom item but has not yet handed
+  // it to the Witch. Bit 1 records Magic Powder ownership even when the shared
+  // link_item_mushroom byte currently shows Mushroom. See Rando_MushroomHeld /
+  // Rando_PowderOwned / Witch_AcceptShroom.
   uint8 mushroom_held;
   // Phase B hints settings extension (serialized into reserved bytes @65-67;
   // see the layout note above). settings_ext_present == 0 means "not written"

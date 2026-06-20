@@ -30,7 +30,7 @@ extern "C" {
 // and 0xF34C (Shovel/Flute). The Debug inventory editor keeps these in sync when
 // it edits those bytes under rando (see the Items section). Declared here rather
 // than including rando.h to keep this UI TU's dependency surface small.
-extern uint8 g_rando_mushroom_held;       // 1 = true Mushroom possession (rando)
+extern uint8 g_rando_mushroom_held;       // bit 0 = Mushroom held, bit 1 = Powder owned
 extern uint8 g_rando_flute_shovel_owned;  // kRandoFluteShovel_* bits: Shovel=0x01, Flute=0x02
 extern uint8 g_rando_boomerang_owned;     // kRandoBoomerang_* bits: Blue=0x01, Red=0x02
 extern uint8 g_rando_bow_owned;           // kRandoBow_* bits: Wood=0x01, Silver=0x02

@@ -44,7 +44,7 @@ The sidecar SHALL contain a **16-byte file header** followed by three slot regio
 | 57 | 4 | `sram_slot_checksum_at_last_write` (LE) | checksum of the paired `sram.dat` slot snapshotted at the moment of sidecar write. Algorithm mirrors `src/messaging.c::SaveGameFile` for drift-detection compatibility with the vanilla writer: `t = 0x5a5a; for (i = 0; i < 0x4fe; i += 2) t -= u16le_at(slot_bytes + i); return (uint32)t;` (high 16 bits of the stored u32 are always zero). NOT CRC32 — the spec field is named for forward compatibility with a wider digest, but Phase A must match the vanilla per-slot routine. |
 | 61 | 2 | `placement_table_size` (LE) | bytes; REQUIRED for cross-version forward compatibility |
 | 63 | 1 | `flags` | bit 0 = forward-fill fallback was used; bits 1..7 reserved |
-| 64 | 1 | `mushroom_held` | rando Mushroom possession bit; 0 for older slots |
+| 64 | 1 | `mushroom_held` | rando Mushroom/Powder ownership bitfield: bit 0 = undelivered Mushroom, bit 1 = Powder obtained; 0 for older slots |
 | 65 | 1 | `settings_ext_present` | 1 when `hints_setting`/`goal`/`world_state` are meaningful |
 | 66 | 1 | `hints_setting` | `RandoHintsMode` value |
 | 67 | 1 | `goal` | `Goal` enum value |

@@ -95,15 +95,15 @@ All Debug-tab writes SHALL be gated by a predicate that permits editing only whe
 - **THEN** the write helper clamps the value to the valid range (and re-clamps `health_current` to `health_capacity` on capacity edits) before touching `g_ram`
 
 ### Requirement: Debug editor respects shared-byte and randomizer-owned state
-For inventory values backed by a shared byte or tracked separately by the randomizer, the Debug tab SHALL avoid the "vanilla state reused as a progress proxy" desync class. Mushroom/Powder (shared byte `0xF344`) SHALL be a single 3-way selector ({none, mushroom, powder}) rather than two independent toggles. The Mushroom/Powder and Flute/Shovel selectors SHALL be disabled while `kFeatures1_RandomizerActive` is set, because the randomizer tracks that ownership state separately (e.g. `g_rando_mushroom_held`, `g_rando_flute_shovel_owned`) and a raw byte write would desync it. Tiered items whose byte is not a linear index SHALL expose only valid options (bow as {none, wood, silver}; boomerang as {none, blue, red}; sword read handles the `0xFF` in-repair sentinel; bottles expose only the values `kHudItemBottles[]` actually indexes).
+For inventory values backed by a shared byte or tracked separately by the randomizer, the Debug tab SHALL avoid the "vanilla state reused as a progress proxy" desync class. Mushroom/Powder (shared byte `0xF344`) SHALL be a single 3-way selector ({none, mushroom, powder}) rather than two independent toggles. When `kFeatures1_RandomizerActive` is set, editing Mushroom/Powder and Flute/Shovel SHALL also update the randomizer-owned bitfields (`g_rando_mushroom_held`, `g_rando_flute_shovel_owned`) so the shared byte and true ownership state do not desync. Tiered items whose byte is not a linear index SHALL expose only valid options (bow as {none, wood, silver}; boomerang as {none, blue, red}; sword read handles the `0xFF` in-repair sentinel; bottles expose only the values `kHudItemBottles[]` actually indexes).
 
 #### Scenario: Mushroom/Powder never leaves both set
 - **WHEN** the player switches the Mushroom/Powder selector in a non-randomizer game
 - **THEN** the shared byte `0xF344` holds exactly one of {0 none, 1 mushroom, 2 powder} and the Witch/Potion-shop check remains reachable
 
-#### Scenario: Randomizer-owned selectors are disabled under an active slot
+#### Scenario: Randomizer-owned selectors stay synchronized under an active slot
 - **WHEN** `kFeatures1_RandomizerActive` is set
-- **THEN** the Mushroom/Powder and Flute/Shovel selectors are disabled with a "managed by randomizer" tooltip, so the randomizer's separate ownership tracking is not desynced
+- **THEN** the Mushroom/Powder and Flute/Shovel selectors write both the shared item byte and the matching randomizer ownership bitfield, so the randomizer's separate ownership tracking is not desynced
 
 ### Requirement: JP-1.0 glitch toggle in the gameplay-feature panel
 

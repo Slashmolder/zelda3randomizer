@@ -169,7 +169,7 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   put_u16le(buf + 61, h->placement_table_size);
   // @63 flags
   buf[63] = h->flags;
-  // @64 mushroom_held (rando Mushroom-possession).
+  // @64 mushroom_held (rando Mushroom/Powder ownership bitfield).
   buf[64] = h->mushroom_held;
   // @65-67 Phase B hints settings extension (additive; previously zero). The
   // generator only reads `hints` and `goal` from RandoSettings, so those two
