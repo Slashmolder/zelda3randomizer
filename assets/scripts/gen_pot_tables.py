@@ -338,6 +338,18 @@ def main():
             die(f"pot room 0x{room:03x} bound to region {region!r} which is NOT a "
                 f"defined logic region — rando_logic_gen would encode 0xFFFF "
                 f"(silent sphere-0). Fix the {region_of[room][2]} source.")
+        # add-rando-pot-sanity — a Dark World OVERWORLD pot needs the "not a bunny"
+        # gate: without the Moon Pearl you are a bunny in the DW and cannot LIFT
+        # anything. The region is reachable as a bunny (you walk in through a
+        # portal), but lifting the pot is not — exactly like every base DW location,
+        # which all require Moon Pearl. Chest-bearing DW rooms already inherit this
+        # from their chest's predicate; only the chest-less DW caves/houses fell
+        # back to TRUE() (the too-early bug). Apply the standard ALTTPR pattern.
+        # (Open/Standard. Inverted's DW is the bunny-free home world, so this
+        # slightly OVER-restricts inverted pots — a known follow-up; inverted +
+        # pot_shuffle is currently untested.)
+        if region.startswith("DarkWorld") and (not can_reach or can_reach.strip() == "TRUE()"):
+            can_reach = "(HAS_ITEM(MoonPearl) OR CanPearlBypass())"
         if kind == "key":
             dungeon = region_to_dungeon(region)
             if dungeon is None:
