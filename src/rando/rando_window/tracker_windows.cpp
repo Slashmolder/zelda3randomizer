@@ -404,6 +404,15 @@ static inline bool LocHiddenFromChecks(uint16 loc) {
   return loc < kRandoLocationCapacity && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
 }
 
+// add-rando-pot-sanity — pot_shuffle can add ~800 pot checks. The Check Tracker
+// gates pot ROWS behind a "Show pots" toggle (default off) so the per-region
+// lists stay usable; every COUNT (global summary + per-region headers) still
+// includes pots, so a pot_shuffle=All seed can read 100% complete (empty pots
+// are real checks). LOCTYPE_Pot (17) comes from rando_logic.h.
+static inline bool LocIsPot(uint16 loc) {
+  return loc < kRandoLocationCapacity && s_loc_type[loc] == LOCTYPE_Pot;
+}
+
 // Check status: 0 unreachable, 1 reachable-unchecked, 2 checked.
 enum { kCheck_Unreachable = 0, kCheck_Reachable = 1, kCheck_Checked = 2 };
 
@@ -432,17 +441,19 @@ static void DrawCheckTracker(void *) {
   bool &s_hide_checked = g_rando_window_prefs.check_tracker_hide_checked;
   bool &s_only_reachable = g_rando_window_prefs.check_tracker_only_available;
   static bool s_show_items = false;
+  static bool s_show_pots = false;  // add-rando-pot-sanity — gate the ~800 pot rows
   static char s_search[64] = "";
   if (race) s_show_items = false;
 
   // Compute summary counts. n_total stays the placement-table loop bound;
   // n_visible is the displayed total with non-check slots removed.
   int n_total = pt ? (int)pt->count : 0;
-  int n_visible = 0, n_checked = 0, n_reachable = 0;
+  int n_visible = 0, n_checked = 0, n_reachable = 0, n_pots = 0;
   for (int i = 0; i < n_total; i++) {
     uint16 loc = pt->entries[i].location_id;
     if (LocHiddenFromChecks(loc)) continue;
     n_visible++;
+    if (LocIsPot(loc)) n_pots++;  // counted in n_visible; rows gated by s_show_pots
     if (Rando_IsLocationChecked(loc)) n_checked++;
     else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
   }
@@ -479,6 +490,11 @@ static void DrawCheckTracker(void *) {
     ImGui::SameLine();
     ImGui::TextDisabled("(spoiler hidden: race seed)");
   }
+  // add-rando-pot-sanity — only surface the pot toggle when the seed has pots.
+  if (n_pots > 0) {
+    ImGui::SameLine();
+    ImGui::Checkbox("Show pots", &s_show_pots);
+  }
 
   ImGui::Separator();
   ImGui::BeginChild("##checklist", ImVec2(0, 0), false);
@@ -494,13 +510,14 @@ static void DrawCheckTracker(void *) {
     uint16 region_id = (ri < kRandoRegionsCount) ? kRandoRegions[ri].id : 0xFFFF;
 
     // Tally this region's locations from the placement table.
-    int r_total = 0, r_checked = 0, r_avail = 0;
+    int r_total = 0, r_checked = 0, r_avail = 0, r_pots = 0;
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
+      if (LocIsPot(loc)) r_pots++;  // pots counted in the header, rows gated below
       if (Rando_IsLocationChecked(loc)) r_checked++;
       else if (have_reach && Reachability_HasLocation(reach, loc)) r_avail++;
     }
@@ -523,6 +540,7 @@ static void DrawCheckTracker(void *) {
       if (LocHiddenFromChecks(loc)) continue;
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
+      if (!s_show_pots && LocIsPot(loc)) continue;  // pot rows gated by the toggle
 
       bool checked = Rando_IsLocationChecked(loc);
       bool reachable = have_reach && Reachability_HasLocation(reach, loc);
@@ -565,6 +583,10 @@ static void DrawCheckTracker(void *) {
       }
       ImGui::PopStyleColor();
     }
+    // add-rando-pot-sanity — when pot rows are hidden, note how many this region
+    // holds so the header's pot-inclusive count doesn't read as a missing-rows bug.
+    if (!s_show_pots && r_pots > 0)
+      ImGui::TextDisabled("  +%d pots hidden (enable \"Show pots\")", r_pots);
     ImGui::Unindent();
   }
 

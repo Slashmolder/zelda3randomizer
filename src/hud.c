@@ -1893,11 +1893,23 @@ static void Hud_RandoDrawLocationTrackerInner(int *slot) {
   for (int i = 0; i < t->count && *slot >= 0; i++) {
     uint16 loc = t->entries[i].location_id;
 
-    // Resolve the location's region for grouping.
+    // Resolve the location's region for grouping (and its type, to hide pots).
     uint16 region = 0xFFFF;
+    uint8 ltype = 0xFF;
     for (uint32 k = 0; k < kRandoLocationsCount; k++) {
-      if (kRandoLocations[k].id == loc) { region = kRandoLocations[k].region_id; break; }
+      if (kRandoLocations[k].id == loc) {
+        region = kRandoLocations[k].region_id;
+        ltype = kRandoLocations[k].type;
+        break;
+      }
     }
+
+    // add-rando-pot-sanity — pot_shuffle=All adds ~800 pot locations, which swamp
+    // this 8px quick-glance grid and push the real checks off-screen. Hide pots
+    // here (they live in the native check tracker instead). Skip BEFORE the
+    // region/row/column bookkeeping so pots are fully invisible to the layout.
+    if (ltype == LOCTYPE_Pot)
+      continue;
 
     // Start a new row when the region changes (groups locations visually).
     if (region != prev_region) {

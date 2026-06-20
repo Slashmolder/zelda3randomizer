@@ -55,6 +55,7 @@ extern "C" {
                                  // _Static_assert is C++-guarded — cf. tracker_windows.cpp.)
 #include "../rando_asset_decisions.h"  // AssetDecision_FindAllow / _Persist
 #include "../rando_logic.h"      // Rando_GetRegionName/LocationName/ItemName, kRandoLocations
+#include "../item_ids.h"         // ITEM_Nothing (empty-pot filler omitted from the spoiler list)
 #include "../vanilla_assets_hash.h"  // kVanillaAssetsHash, kVanillaAssetsHashKnown
 #include "../../config.h"        // g_config (R2: snapshot features0 at open), g_rando_window_prefs
 #include "../auto_tracker.h"     // AutoTracker_IsRunning/SetEnabled/GetClientCount/GetBindInfo
@@ -326,6 +327,10 @@ static const char *const kAccessibilityLabels[] = {"items", "locations", "beatab
 static const char *const kLogicLabels[] = {"NoGlitches", "OverworldGlitches", "MajorGlitches",
                                            "HybridMajorGlitches", "NoLogic"};
 static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high", "insanity"};
+// add-rando-pot-sanity — pot_shuffle tiers (index == enum value, matches the
+// parse_pot_shuffle CLI grammar off|keys|contents|all). The reserved Subset
+// value (4) is Phase 7 and not offered here.
+static const char *const kPotShuffleLabels[] = {"off", "keys", "contents", "all"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -1204,6 +1209,21 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffles each dungeon's interior door connections; key doors "
                 "move too. Hyrule Castle and Swamp Palace stay vanilla.");
 
+    // add-rando-pot-sanity — pot shuffle tier. Disabled while door shuffle is
+    // effective: the two aren't jointly modeled yet, and generation normalizes
+    // pot_shuffle to Off whenever Settings_EffectiveDoorShuffle != Vanilla, so
+    // the grey-out keeps the UI honest about what will actually generate.
+    {
+      bool door_on = Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla;
+      ImGui::BeginDisabled(door_on);
+      if (EnumCombo("Pot shuffle", &s->pot_shuffle, kPotShuffleLabels, 4)) changed = true;
+      HelpTooltip("Turns dungeon pots into randomizer checks. Keys = key pots "
+                  "only; Contents adds loot pots; All adds the empty pots too.");
+      ImGui::EndDisabled();
+      if (door_on)
+        ImGui::TextDisabled("Pot shuffle is unavailable while Door shuffle is on.");
+    }
+
     if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {
       changed = true;
     }
@@ -1490,8 +1510,13 @@ static bool SpoilerLocHidden(uint16 loc) {
 static uint16 SpoilerVisiblePlacementCount(const RandoPlacementTable *t) {
   if (t == nullptr) return 0;
   uint16 n = 0;
-  for (uint16 i = 0; i < t->count; i++)
-    if (!SpoilerLocHidden(t->entries[i].location_id)) n++;
+  for (uint16 i = 0; i < t->count; i++) {
+    if (SpoilerLocHidden(t->entries[i].location_id)) continue;
+    // add-rando-pot-sanity — empty pots (ITEM_Nothing) are omitted from the
+    // listed rows below, so exclude them here too and the header count matches.
+    if (t->entries[i].item_id == ITEM_Nothing) continue;
+    n++;
+  }
   return n;
 }
 
@@ -1537,6 +1562,9 @@ static void Panel_Spoiler() {
   uint16 row_n = 0;
   for (uint16 i = 0; i < n; i++) {
     if (SpoilerLocHidden(t->entries[i].location_id)) continue;
+    // add-rando-pot-sanity — omit empty pots (no placed item); loot/key pots,
+    // which carry a real item, stay listed under their region.
+    if (t->entries[i].item_id == ITEM_Nothing) continue;
     rows[row_n].location_id = t->entries[i].location_id;
     rows[row_n].item_id = t->entries[i].item_id;
     rows[row_n].region_id = SpoilerEffectiveRegion(

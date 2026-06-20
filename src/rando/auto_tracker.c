@@ -88,6 +88,7 @@ void AutoTracker_GetBindInfo(uint16 *port, bool *allow_remote) {
 
 static const uint16 kAtDefaultPort = 17400;
 static const uint8  kAtLocTypeMedallion = 13;  // logic.schema.yaml: MM/TR medallion-config
+static const uint8  kAtLocTypePot       = 17;  // add-rando-pot-sanity dungeon pot (tagged in the catalog)
                                                // pseudo-locations (not real checks) — excluded.
 
 static bool at_last_would_block(void) {
@@ -480,6 +481,10 @@ static void at_build_catalog(AtStr *s) {
       at_str_puts(s, ",\"region\":");
       at_json_str(s, Rando_GetRegionName(region));
     }
+    // add-rando-pot-sanity — tag pot slots so a connected tracker can filter
+    // the ~800 dungeon-pot checks (a pot_shuffle=All seed) into their own view.
+    if (kRandoLocations[i].type == kAtLocTypePot)
+      at_str_puts(s, ",\"pot\":true");
     at_str_puts(s, "}");
     first = 0;
   }

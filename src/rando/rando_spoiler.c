@@ -16,6 +16,7 @@
 #include "shuffle_doors.h"     // DoorShuffleLayout (door_shuffle spoiler section)
 #include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName
 #include "location_ids.h"      // LOC_* medallion config slot names
+#include "item_ids.h"          // ITEM_Nothing (empty-pot filler omitted from listings)
 #include "../config.h"
 #include "../types.h"
 
@@ -100,6 +101,16 @@ static const RandoLocationDef *find_location(uint16 id) {
 static bool spoiler_loc_is_medallion_config(uint16 id) {
   const RandoLocationDef *d = find_location(id);
   return d != NULL && d->type == LOCTYPE_Medallion;
+}
+
+// add-rando-pot-sanity — empty pots (pot_shuffle=All) are pinned to the
+// ITEM_Nothing filler. They are real checks (counted in the digests), but an
+// "= Nothing" row is pure noise in a human/JSON listing, so the listing
+// sections omit them. Loot/key pots carry a real item and stay listed. The
+// digest sections (placement_digest, sphere_digest) enumerate ALL placements
+// and must NOT use this filter.
+static bool spoiler_item_is_empty_pot(uint16 item_id) {
+  return item_id == ITEM_Nothing;
 }
 
 static void write_medallion_requirements_text(FILE *f, const uint8 *assignment) {
@@ -436,6 +447,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     uint16 row_n = 0;
     for (uint16 i = 0; i < n; i++) {
       if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
+      if (spoiler_item_is_empty_pot(s->placements->entries[i].item_id)) continue;
       local[row_n++] = s->placements->entries[i];
     }
     qsort(local, row_n, sizeof(RandoPlacement), placement_cmp);
@@ -553,6 +565,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
       for (uint16 i = 0; i < s->placements->count; i++) {
         if (s->spheres->sphere_index_by_placement[i] != sp) continue;
         if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
+        if (spoiler_item_is_empty_pot(s->placements->entries[i].item_id)) continue;
         if (!first) fprintf(f, ", ");
         fprintf(f, "{\"location\": %u, \"item\": %u}",
                 s->placements->entries[i].location_id,
@@ -572,6 +585,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
     for (uint16 i = 0; i < s->placements->count; i++) {
       if (s->spheres->sphere_index_by_placement[i] != 0xFF) continue;
       if (spoiler_loc_is_medallion_config(s->placements->entries[i].location_id)) continue;
+      if (spoiler_item_is_empty_pot(s->placements->entries[i].item_id)) continue;
       if (!first) fprintf(f, ", ");
       fprintf(f, "{\"location\": %u, \"item\": %u}",
               s->placements->entries[i].location_id,
@@ -1059,6 +1073,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     for (uint16 i = 0; i < n; i++) {
       uint16 loc_id = s->placements->entries[i].location_id;
       if (spoiler_loc_is_medallion_config(loc_id)) continue;
+      if (spoiler_item_is_empty_pot(s->placements->entries[i].item_id)) continue;
       rows[row_n].location_id = loc_id;
       rows[row_n].item_id = s->placements->entries[i].item_id;
       rows[row_n].region_id = 0xFFFF;
