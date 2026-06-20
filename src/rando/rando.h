@@ -571,15 +571,39 @@ void Rando_MarkLocationChecked(uint16 location_id);
 // Test the bit for `location_id`. Returns false for OOB or no slot active.
 bool Rando_IsLocationChecked(uint16 location_id);
 
-// Rando Mushroom-possession state. True between obtaining the Mushroom item
-// and handing it to the Witch — tracked independently of link_item_mushroom
-// (which doubles as the Powder slot) so Powder-first pickups can't lock out
-// the Potion Shop check. Persisted via RandoSlotHeader.mushroom_held.
+// Rando Mushroom/Powder decouple. The two share link_item_mushroom (0xF344):
+// 1=mushroom, 2=powder. Vanilla never holds both (the Witch trade consumes the
+// Mushroom to make Powder), but rando shuffles them as INDEPENDENT items, so we
+// track the decoupled ownership here:
+//   * bit 0 (Held)        — an undelivered Mushroom is in inventory. The Witch
+//     trade keys off THIS, not the byte, so a Powder-first pickup can't lock out
+//     the Potion Shop check (the byte may show Powder=2 the whole time).
+//   * bit 1 (PowderOwned) — Magic Powder has been obtained. Lets the item-menu
+//     swap show the Mushroom icon (byte=1) without logic/tracking reading the
+//     player as having lost Powder.
+// Persisted via RandoSlotHeader.mushroom_held.
+enum {
+  kRandoMushroom_Held        = 0x01,  // undelivered Mushroom in inventory
+  kRandoMushroom_PowderOwned = 0x02,  // Magic Powder obtained
+};
 extern uint8 g_rando_mushroom_held;
 // True iff a rando slot is active and the player holds an undelivered Mushroom.
 bool Rando_MushroomHeld(void);
-// Clear the possession flag — call when the Witch accepts the Mushroom.
+// Clear the Held bit — call when the Witch accepts the Mushroom. Leaves the
+// PowderOwned bit intact (delivering the Mushroom doesn't surrender Powder).
 void Rando_DeliverMushroom(void);
+// True iff the player has Magic Powder regardless of which icon the shared slot
+// currently shows: Powder in the byte (==2) counts in vanilla and rando; under
+// an active rando slot the PowderOwned bit also counts, so a player who swapped
+// the slot to the Mushroom icon still reads as Powder-capable. Single source of
+// truth for "owns Powder"; mirrors Rando_MushroomHeld for the other tier. In
+// vanilla this is exactly `link_item_mushroom == 2`.
+bool Rando_PowderOwned(void);
+// True iff a rando slot is active and the player owns BOTH an undelivered
+// Mushroom and Powder, so the shared Y-slot icon can be toggled in the item
+// menu. Cosmetic: the Witch trade and Powder use both already work off the
+// decoupled state regardless of which icon is currently selected.
+bool Rando_MushroomPowderCanToggle(void);
 
 // Flute/shovel decouple (old-style single inventory slot).
 //

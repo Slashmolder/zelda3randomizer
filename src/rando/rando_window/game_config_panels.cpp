@@ -1026,8 +1026,10 @@ void DbgInventory_Render(void) {
           bool sel = (v == i);
           if (ImGui::Selectable(k[i], sel) && i != v) {
             Cheats_PokeByte(0xF344, i, 0, 2);
-            // Sync true-Mushroom possession: only "Mushroom" counts as held.
-            if (rando && Cheats_CanEdit()) g_rando_mushroom_held = (i == 1) ? 1 : 0;
+            // Sync rando ownership to the chosen slot value: Mushroom -> Held
+            // (0x01), Magic Powder -> PowderOwned (0x02), None -> neither.
+            if (rando && Cheats_CanEdit())
+              g_rando_mushroom_held = (i == 1) ? 0x01 : (i == 2) ? 0x02 : 0x00;
           }
           if (sel) ImGui::SetItemDefaultFocus();
         }
@@ -1191,7 +1193,7 @@ void DbgInventory_Render(void) {
       Cheats_PokeByte(0xF344, 2, 0, 2);  // Mushroom/Powder -> Magic Powder
       Cheats_PokeByte(0xF34C, 3, 0, 3);  // Shovel/Flute -> Flute (active - bird woken)
       if (rando && Cheats_CanEdit()) {
-        g_rando_mushroom_held = 0;       // Powder, not the raw Mushroom
+        g_rando_mushroom_held = 0x03;    // own Mushroom + Powder (so the menu swap works)
         g_rando_flute_shovel_owned = 0x06;  // Flute (active - bird woken: Flute|FluteActive)
         g_rando_boomerang_owned = 0x03;  // own Blue + Red (so the menu swap works)
         g_rando_bow_owned = 0x03;        // own Wood + Silver (so the menu swap works)

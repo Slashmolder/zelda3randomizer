@@ -97,7 +97,12 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   // flag instead — see Rando_MushroomHeld / Witch_AcceptShroom. Guarded on
   // an active slot so a vanilla Mushroom pickup never sets it.
   if (placed == ITEM_Mushroom && g_rando_slot_active)
-    g_rando_mushroom_held = 1;
+    g_rando_mushroom_held |= kRandoMushroom_Held;
+  // Powder ownership is tracked the same way, so the item-menu swap can show the
+  // Mushroom icon (byte=1) without logic/tracking reading Powder as lost — the
+  // shared byte can't represent "have both." See Rando_MushroomPowderCanToggle.
+  if (placed == ITEM_MagicPowder && g_rando_slot_active)
+    g_rando_mushroom_held |= kRandoMushroom_PowderOwned;
 
   return placed;
 }
@@ -1540,11 +1545,26 @@ bool Rando_SuppressHyruleCastleEscape(void) {
 }
 
 bool Rando_MushroomHeld(void) {
-  return g_rando_slot_active && g_rando_mushroom_held != 0;
+  return g_rando_slot_active && (g_rando_mushroom_held & kRandoMushroom_Held) != 0;
 }
 
 void Rando_DeliverMushroom(void) {
-  g_rando_mushroom_held = 0;
+  g_rando_mushroom_held &= (uint8)~kRandoMushroom_Held;  // keep PowderOwned bit
+}
+
+bool Rando_PowderOwned(void) {
+  // Powder occupying the byte counts in vanilla and rando. The byte==2 check
+  // first also covers pre-feature saves, where ownership wasn't recorded but
+  // byte==2 still means the player has Powder.
+  if (link_item_mushroom == 2) return true;
+  return g_rando_slot_active &&
+         (g_rando_mushroom_held & kRandoMushroom_PowderOwned) != 0;
+}
+
+bool Rando_MushroomPowderCanToggle(void) {
+  if (!g_rando_slot_active) return false;
+  bool has_mushroom = (g_rando_mushroom_held & kRandoMushroom_Held) != 0;
+  return has_mushroom && Rando_PowderOwned();
 }
 
 // Flute/shovel decouple — see rando.h. Called from the receive-item path
@@ -3507,11 +3527,12 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   if ((g_rando_boomerang_owned & kRandoBoomerang_Red) || link_item_boomerang == 2)
     out->by_item_id[ITEM_RedBoomerang] = 1;
 
-  // Mushroom / Powder share byte 0xF344 (1=mushroom, 2=powder); true mushroom
-  // possession is tracked separately in rando state so Powder-first can't lock
-  // out the mushroom logic.
+  // Mushroom / Powder share byte 0xF344 (1=mushroom, 2=powder); true ownership
+  // of EACH is tracked separately in rando state (g_rando_mushroom_held bits) so
+  // neither a Powder-first pickup nor an item-menu swap to the other icon reads
+  // as having lost one of them.
   if (Rando_MushroomHeld() || link_item_mushroom == 1) out->by_item_id[ITEM_Mushroom] = 1;
-  if (link_item_mushroom == 2) out->by_item_id[ITEM_MagicPowder] = 1;
+  if (Rando_PowderOwned()) out->by_item_id[ITEM_MagicPowder] = 1;
 
   // Flute / shovel decouple — true ownership in rando state (the vanilla
   // link_item_flute byte is one slot that can't hold both).
@@ -3667,7 +3688,7 @@ void Rando_FillItemView(RandoItemView *out) {
   // bytes for the informational view.
   if (g_rando_slot_active) {
     out->mushroom = Rando_MushroomHeld() || link_item_mushroom == 1;
-    out->powder = link_item_mushroom == 2;
+    out->powder = Rando_PowderOwned();
     uint8 fs = g_rando_flute_shovel_owned;
     out->flute = (fs & kRandoFluteShovel_Flute) != 0;
     out->shovel = (fs & kRandoFluteShovel_Shovel) != 0;

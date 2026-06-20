@@ -705,6 +705,16 @@ void Hud_NormalMenu() {  // 8ddf15
       // 3/4 <-> wood 1/2. See Rando_GrantBow (rando.c).
       link_item_bow = (link_item_bow >= 3) ? (link_item_bow - 2)
                                            : (link_item_bow + 2);
+    } else if (cur_slot == kHudItem_Mushroom && Rando_MushroomPowderCanToggle()) {
+      // Toggling AWAY from Powder (byte 2) stops the byte showing Powder, so
+      // record ownership first — logic/tracking read kRandoMushroom_PowderOwned,
+      // not the byte, so Powder stays "owned" while the Mushroom icon is up.
+      if (link_item_mushroom == 2)
+        g_rando_mushroom_held |= kRandoMushroom_PowderOwned;
+      // rando-exempt: player toggle of the shared Mushroom/Powder icon
+      // (SELECTED), not an item grant — possession stays in g_rando_mushroom_held
+      // and is unchanged. Gated on owning both. See Rando_MushroomPowderCanToggle.
+      link_item_mushroom = (link_item_mushroom == 2) ? 1 : 2;  // mushroom <-> powder
     } else {
       swapped = false;
     }

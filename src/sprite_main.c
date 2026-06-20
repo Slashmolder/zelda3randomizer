@@ -6079,13 +6079,21 @@ void Witch_AcceptShroom(int k) {  // 85e4cf
   // later at the Magic Powder dispatch (LOC_Potion_Shop).
   if (rando)
     Rando_DeliverMushroom();
-  // rando-exempt: state-shuffle — the mushroom is CONSUMED (given to the
-  // witch) here, not granted. Under rando, only clear the slot when it
-  // actually holds the Mushroom (=1); if it holds Powder (=2) the possession
-  // flag already recorded the trade and clearing would erase the player's
-  // Powder. Without this exemption the cluster-audit guard flags the
-  // consumption as an un-dispatched write.
-  if (!rando || link_item_mushroom == 1) link_item_mushroom = 0;
+  // state-shuffle — the Mushroom is CONSUMED (given to the witch) here, not
+  // granted. Vanilla empties the shared byte. Under rando the player may own
+  // Powder too (the byte can't show both), so emptying unconditionally would
+  // erase it: if the byte shows Powder (=2) leave it; if it shows the Mushroom
+  // (=1, the item-menu swap can select the Mushroom icon while Powder is owned)
+  // restore Powder when owned, else empty the slot. The guard needs an
+  // exemption on each write since neither is an Rando_OnLocationCheck dispatch.
+  if (!rando) {
+    link_item_mushroom = 0;  // rando-exempt: vanilla empties the shared slot on trade
+  } else if (link_item_mushroom == 1) {
+    // rando-exempt: re-shows the player's already-owned Powder (or empties the
+    // slot if no Powder) after consuming the Mushroom — not an item grant.
+    link_item_mushroom = (g_rando_mushroom_held & kRandoMushroom_PowderOwned) ? 2 : 0;
+  }
+  // else byte==2 (Powder shown): leave it — the possession flag recorded the trade.
   save_dung_info[0x109] |= 0x80;
   sound_effect_1 = 0;
   Hud_RefreshIcon();
@@ -13678,7 +13686,10 @@ void FortuneTeller_PerformPseudoScience(int k) {  // 8dc849
     goto done;
   if (!link_item_book_of_mudora) ADD_MSG(2);
   if (!(link_which_pendants & 2)) ADD_MSG(1);
-  if (link_item_mushroom < 2) ADD_MSG(3);
+  // Rando decouples Powder ownership from the shared byte (the item-menu swap
+  // can show the Mushroom icon while Powder is owned), so consult ownership —
+  // else a swapped player is wrongly told to seek Powder. Vanilla: byte != 2.
+  if (!Rando_PowderOwned()) ADD_MSG(3);
   if (!link_item_flippers) ADD_MSG(4);
   if (!link_item_moon_pearl) ADD_MSG(5);
   if (sram_progress_indicator < 3) ADD_MSG(6);
