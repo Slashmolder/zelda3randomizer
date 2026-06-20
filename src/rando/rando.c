@@ -1823,6 +1823,34 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
   }
 }
 
+// add-rando-pot-sanity — streamlined grant for a pot pickup. The vanilla
+// Link_ReceiveItem plays the full hold-over-head receipt: it zeroes
+// link_item_in_hand (so a CARRIED pot is dropped mid-lift — "the pot goes
+// flying"), poses Link, and freezes him for the whole animation. Far too heavy
+// to fire on every pot. Instead we run ONLY the item WRITE — AncillaAdd_ItemReceipt
+// performs it in its add handler, keyed on link_receiveitem_index — then undo the
+// immobilize it set, drop the (unwanted) visual receipt ancilla (type 0x22), and
+// show the same lightweight floating-icon + chime cue direct-grant items use. We
+// deliberately do NOT call Link_ReceiveItem, so Link's lift/carry/throw of the pot
+// is left untouched. Correct for every item class (the write is the same one the
+// receipt performs); cutscene-bearing receive codes are already neutralized for
+// rando by Rando_DispatchVanillaGrant, and at a pot we want no cutscene anyway.
+void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
+  if (Rando_ShouldSkipReceive(lttp_code)) {
+    // Direct-grant classes were already written by Rando_DispatchVanillaGrant.
+    Rando_ShowDirectGrantConfirmation(item_id);
+    return;
+  }
+  item_receipt_method = 0;             // normal write path
+  link_receiveitem_index = lttp_code;  // the item AncillaAdd_ItemReceipt will write
+  AncillaAdd_ItemReceipt(0x22, 4, 0);  // does the grant write in its add handler
+  flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)
+  for (int i = 0; i < 10; i++)         // remove the visual receipt — no animation
+    if (ancilla_type[i] == 0x22)
+      ancilla_type[i] = 0;
+  Rando_ShowDirectGrantConfirmation(item_id);  // lightweight icon + chime
+}
+
 // ---------------------------------------------------------------------------
 // Field item sprites (add-rando-field-item-sprites) — resolver half. The draw
 // half (gfx DMA + OAM) lives in sprite.c. See rando.h for the contract.
@@ -1929,7 +1957,7 @@ uint8 Rando_PotBreakHook(uint16 room, uint16 pos4) {
   uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, 0);
   uint16 item = Rando_LastDispatchedItemId();
   if (item != ITEM_Nothing)
-    Rando_ReceiveOrConfirm(lttp, (uint8)item);
+    Rando_PotQuietReceive(lttp, (uint8)item);  // streamlined: no receive animation, no lift-yank
   // ITEM_Nothing (empty pot): the dispatch already marked it checked; no receive
   // cue — the recolor reverting to vanilla on re-entry is the feedback.
   return kRandoPot_Suppress;
