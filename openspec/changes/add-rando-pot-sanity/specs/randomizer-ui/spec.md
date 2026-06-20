@@ -9,12 +9,14 @@ items hidden in pots; un-checked pots are recolored"). On PC this is an ImGui
 panel control (the in-game SNES settings screen is compiled out on PC per the
 project layout; the Switch path uses the in-game screen). The un-checked-pot
 recolor (`randomizer-pot-sanity / Un-checked in-scope pots are recolored`) is a
-client-side cosmetic that does not affect placement; it SHALL default on when
-`pot_shuffle` is enabled. The recolor MAY be a 2-state tint (real item vs
-empty/junk) or carry a "recolor non-empty pots only" sub-toggle so it stays a useful
-signal at the `All` tier (where recoloring every pot would otherwise read as noise).
+client-side cosmetic that does not affect placement; as built it is **always on**
+for un-checked in-scope pots (a single alternate sub-palette applied in
+`RoomDraw_SinglePot` — there is no per-seed toggle). A 2-state tint (real item vs
+empty/junk) or a "recolor non-empty pots only" sub-toggle MAY be added later so it
+stays a useful signal at the `All` tier (where recoloring every pot would otherwise
+read as noise), but is not required for this change.
 
-Because pot shuffle can add up to ~835 locations, **every location-listing surface**
+Because pot shuffle can add up to ~799 locations, **every location-listing surface**
 SHALL present pots so non-pot checks stay legible: the native location tracker AND
 reach panel group pots by room and/or gate them behind a "show pots" toggle; the
 **SNES HUD location tracker (`src/hud.c`), which loops over all locations, SHALL
@@ -34,7 +36,7 @@ silently dropped from the view.
 #### Scenario: Tracker stays legible with pots enabled
 - **WHEN** `pot_shuffle = All` and the location tracker is shown
 - **THEN** pots are grouped (by room) or gated behind a show-pots toggle so the
-  ~328 non-pot checks remain readable, not buried under 835 pot rows
+  ~328 non-pot checks remain readable, not buried under ~799 pot rows
 
 #### Scenario: SNES HUD location tracker handles pots
 - **WHEN** `pot_shuffle = All` and the in-game SNES HUD location tracker

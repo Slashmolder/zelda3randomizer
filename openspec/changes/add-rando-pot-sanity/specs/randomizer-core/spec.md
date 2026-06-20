@@ -5,15 +5,16 @@
 The `RandoSettings` struct SHALL gain an enum axis `pot_shuffle` with values
 `Off` (0), `Keys` (1), `Contents` (2), `All` (3), defaulting to `Off`. In the
 canonical serialization (the input to `SHA-256()` for `settings_hash` and to the
-v2 share-string encoder) it SHALL be packed as **2 bits** in a currently-free
-region of the existing canonical bytes — byte `[27]` bits 2-3 (door shuffle owns
-`[27]` bits 0-1; the exact free bits are reconciled against the live canonical
-packing at merge per the version-drift convention). `kSettingsCanonicalLen` SHALL
-stay **28**; no existing field's offset, width, or value changes and no
-size-coupling cascade is triggered (`canonical-size-coupling`).
+v2 share-string encoder) it SHALL be packed as a **3-bit field split
+non-contiguously** — canonical byte `[26]` bits 6-7 (the low 2 bits) plus `[27]`
+bit 7 (the high bit), the LAST free bits at length 28. (Three bits, not two,
+because a 4th tier `Subset` (4) is reserved for a later phase; `[27]` bits 2-3 are
+NOT free — `trap_categories` owns them.) `kSettingsCanonicalLen` SHALL stay
+**28**; no existing field's offset, width, or value changes and no size-coupling
+cascade is triggered (`canonical-size-coupling`).
 
-Because `pot_shuffle` defaults to `Off` (both bits 0) and the off path draws no
-fill RNG and adds no active locations:
+Because `pot_shuffle` defaults to `Off` (all three bits 0) and the off path draws
+no fill RNG and adds no active locations:
 - **Default-settings seeds keep a byte-identical `settings_hash`** (the canonical
   bytes are unchanged for the default tuple), and
 - **all existing seeds keep a byte-identical `placement_digest_hex`** (pot

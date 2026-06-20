@@ -23,8 +23,8 @@ fill RNG and do not enter the placement table or digest; at runtime they resolve
 vanilla via the dispatcher's no-placement fall-back — **absent from the table, or the
 `0xFFFF` sentinel only when present below a higher placed id** (`Dispatcher signature
 and fall-back behavior`). **Every** location-id-keyed capacity across the randomizer
-module SHALL be raised to a single 2048 ceiling (`328 + 835 = 1163`) by a **typed
-audit, NOT a `512` grep** — `1163` exceeds BOTH the 512 caps (placer working arrays
+module SHALL be raised to a single 2048 ceiling (`328 + 799 = 1127`) by a **typed
+audit, NOT a `512` grep** — `1127` exceeds BOTH the 512 caps (placer working arrays
 + session buffer + in-memory checked-bitmap; the placement-digest cap `kDigestLocalCap`
 + its buffer, which otherwise silently TRUNCATES the digest at 512; the reachability
 OOB guards) AND the 1024 caps (the auto-tracker / native-tracker / reach-panel
@@ -34,13 +34,17 @@ silently DROPPED). Each raised capacity SHALL carry a `_Static_assert` tying it 
 `LOC__COUNT` (≥) so a future overflow / truncation / drop is a build break, not a
 silent fail-open.
 
-Under door shuffle (`door_shuffle != vanilla`, which forces Dungeon key mode so the
-full vanilla key count enters the shuffled pool), key-pots SHALL be excluded from the
-active pot checks AND pinned as fixed vanilla keys, AND the shuffled key-pool count for
-each affected dungeon SHALL be **reduced by the pinned pot-key count** — keeping the
-pot's vanilla key alone would duplicate it (once pinned, once pooled). Non-key pots
-still shuffle. (The door key prover runs over its own namespace; integrating pot-key
-locations into it is the long-term fix and is deferred.) The runtime pot grant SHALL dispatch through a single point keyed on
+Under door shuffle (`door_shuffle != vanilla`) `pot_shuffle` SHALL normalize entirely
+to `Off`: `Settings_apply_derived_rules` sets `pot_shuffle = Off` whenever
+`Settings_EffectiveDoorShuffle != Vanilla`, and `pot_active()` returns false for
+EVERY pot (key and non-key) in that case, so all pots are inactive and resolve to
+vanilla — a door+pots seed is byte-identical to the same seed without pots, keeping
+the door-key prover (which does not model pot locations) provably correct. (An earlier
+"pin key-pots as fixed vanilla keys and reduce the shuffled pool count" design was NOT
+adopted: the prover's key count and the pool's key count are independently driven, so
+a pinned key-pot — equally invisible to the prover — still risks an unprovable
+softlock. Full door×pot integration, modeling pot-key locations inside the prover, is
+a deferred follow-on phase.) The runtime pot grant SHALL dispatch through a single point keyed on
 `(dungeon_room, tile_position) → location_id` (`randomizer-pot-sanity / Single-point
 runtime pot dispatch …`), subject to the existing `Trigger-based location re-collect
 safety` invariant: a checked pot is never re-granted. `Placement_Lookup` SHALL use a
@@ -69,7 +73,7 @@ check and a sort-on-install fallback.
 #### Scenario: Dispatch stays cheap at scale
 - **WHEN** a pot is broken and the runtime resolves its placed item
 - **THEN** `Placement_Lookup` resolves via binary search (not an O(N) linear scan),
-  so frequent pot-breaks do not degrade frame timing at ~1163 locations
+  so frequent pot-breaks do not degrade frame timing at ~1127 locations
 
 #### Scenario: ITEM_Nothing is pre-placed, never on a real location
 - **WHEN** `pot_shuffle = All` and the placer runs
@@ -77,12 +81,12 @@ check and a sort-on-install fallback.
   pre-pass and removed from the open set, so assumed-fill and junk padding never place
   `ITEM_Nothing` on a chest/non-empty pot nor a real item on an empty pot
 
-#### Scenario: Key-pots are inert under door shuffle without duplicating keys (v1)
-- **WHEN** a seed has `door_shuffle != vanilla` and a key-pot tier is selected
-- **THEN** key-pots are pinned as fixed vanilla keys, the shuffled key-pool count is
-  reduced by the pinned count (the dungeon's total key count is unchanged — no
-  duplication), non-key pots still shuffle, and no unbeatable key-before-door placement
-  results
+#### Scenario: Pots are inert under door shuffle (v1)
+- **WHEN** a seed has `door_shuffle != vanilla` and any `pot_shuffle` tier was requested
+- **THEN** `pot_shuffle` normalizes to `Off`, every pot (key and non-key) is inactive
+  and resolves to vanilla, and the seed's placement is byte-identical to the same seed
+  generated without pot shuffle — so the door-key prover, which does not model pots,
+  cannot strand
 
 #### Scenario: Placement table is sorted at every install boundary
 - **WHEN** a placement table is installed (assumed-fill, sidecar load, snapshot-tail,

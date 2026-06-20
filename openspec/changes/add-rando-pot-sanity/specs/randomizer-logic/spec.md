@@ -23,12 +23,12 @@ so gate derivation SHALL distinguish:
 This makes a falsely-`TRUE()` pot impossible to ship without review. Pot locations
 SHALL be included in the active location set **only when the `pot_shuffle` tier
 selects them** — realized as a skip in the open-location / junk-pad / reachability
-loops. `kRandoLocationsCount` (the static registry size) GROWS to ~1163; with
+loops. `kRandoLocationsCount` (the static registry size) GROWS to ~1127; with
 `pot_shuffle = Off` the active/open-location SET (and thus reachability and
 placement) is byte-identical to the baseline because pots are skipped in iteration,
 NOT because the count stays small. The location-id ceiling and reachability bitset SHALL be raised
-from 512 to 2048 (`328 + 835 = 1163` locations at the maximal tier), including the
-`LOC__COUNT <= 512` build-time assertion, kept in lockstep with the placement
+from 512 to 2048 (`328 + 799 = 1127` locations at the maximal tier), including a
+`LOC__COUNT <= 2048` build-time assertion, kept in lockstep with the placement
 working-array capacity (`randomizer-placement`).
 
 #### Scenario: Pot is reachable iff its region is reachable
@@ -54,7 +54,7 @@ working-array capacity (`randomizer-placement`).
   inherit a possibly-wrong predicate
 
 #### Scenario: Active set unchanged with pot-shuffle off (count grows, iteration skips)
-- **WHEN** `pot_shuffle = Off` (note `kRandoLocationsCount` has grown to ~1163)
+- **WHEN** `pot_shuffle = Off` (note `kRandoLocationsCount` has grown to ~1127)
 - **THEN** no pot enters the active/open-location set — every pot is skipped in the
   collection / junk-pad / reachability loops — so reachability and placement are
   byte-identical to the pre-change build despite the larger registry
@@ -68,7 +68,7 @@ The engine SHALL provide `Logic_ComputeReachability(inventory, settings) ->
 ~216-328 locations — the 216 logic baseline up to the 328 current maximal pool) it
 SHALL complete one invocation in under 5 ms on reference desktop hardware and under
 20 ms on Switch. The active location graph grows with the `pot_shuffle` tier (up to
-~1163 locations at `All`); for the pot-expanded graph one invocation SHALL complete
+~1127 locations at `All`); for the pot-expanded graph one invocation SHALL complete
 in under **30 ms on reference desktop and 120 ms on Switch** (provisional, ≈3.5× the
 baseline since the added pot nodes are cheap `can_reach: TRUE()` predicates; to be
 confirmed by measurement), and the placer SHALL keep `budget_seconds = 0` for
@@ -86,7 +86,7 @@ headless generation so placement stays machine-speed-independent.
 
 #### Scenario: Pot-expanded graph stays within budget
 - **WHEN** `pot_shuffle = All` and `Logic_ComputeReachability` runs against the
-  ~1163-location graph on reference hardware
+  ~1127-location graph on reference hardware
 - **THEN** a single invocation completes in under 30 ms on reference desktop (120
   ms on Switch) — cheap `TRUE()` pot nodes — and generation determinism is preserved
   with `budget_seconds = 0`

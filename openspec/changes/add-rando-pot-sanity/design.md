@@ -85,7 +85,11 @@ emits, deterministically:
 1. **Registry rows** for all in-scope pots (append-only IDs 328…), names
    `<Dungeon> <Room> Pot <n>`, a new `Pot` location type (D11 migration).
 2. **`pot_table.gen.bin` → `src/rando/pot_lookup.h`**: a **sorted** `(dungeon_room,
-   tile_position) → LOC` table for binary search.
+   tile_position) → LOC` table for binary search. *(As-built: the planned gitignored
+   `pot_table.gen.bin` was replaced by a COMMITTED `assets/rando/pots.gen.yaml`
+   registry — consumed by `rando_logic_gen.py` to emit `pot_lookup.h` — so there is
+   no chest-style gitignored fail-open hole; an absent yaml emits an empty lookup,
+   pots inert.)*
 3. **Per-pot classification**: tier membership + vanilla content.
 4. **Logic entries** (D8).
 
@@ -147,6 +151,14 @@ the **top of every `RevealPotItem` call** and the flag SHALL be consumed only by
 matching sword-break block (`:5836-5838`, which OR's `dung_secrets_unk1 |= 0x80` and
 spawns smashed-terrain AFTER `RevealPotItem` returns). Zeroing `dung_secrets_unk1`
 alone is insufficient on the sword path.
+
+> **As-built correction:** the one-lift "granted" flag proved UNNECESSARY and was
+> NOT implemented. `RevealPotItem` zeroes `dung_secrets_unk1` *then* runs the hook;
+> returning `kRandoPot_Suppress` makes it return early with `dung_secrets_unk1 == 0`,
+> so the sword path's later `|= 0x80` yields `sprite_graphics = 0x80 & 0x7f = 0` → no
+> spawn. So zeroing `dung_secrets_unk1` IS sufficient. The ThievesAttic hole caller is
+> kept inert by an `is_pot = false` argument (its `pos4` can alias a real pot's), not
+> by a lookup miss.
 
 **Checked-pot behavior (R3 — corrected):** a checked pot is NOT a naive "fall back to
 vanilla." Branch on the pot's known vanilla content:

@@ -7,15 +7,18 @@ The randomizer SHALL provide a `pot_shuffle` setting with four values — `Off` 
 turn dungeon pots into randomizer check locations according to the tier:
 
 - `Off`: no pot is a check; vanilla behavior is unchanged.
-- `Keys`: only pots whose vanilla content is a small key (~19) are checks.
-- `Contents`: every pot with any vanilla item content (~613, the small-key pots
+- `Keys`: only pots whose vanilla content is a small key (17 in the shipped
+  registry) are checks.
+- `Contents`: every pot with any vanilla item content (603, the small-key pots
   included) is a check.
-- `All`: every liftable dungeon pot (~835), including the ~222 with no vanilla
-  content, is a check.
+- `All`: every liftable dungeon pot (799), including the 196 with no vanilla
+  content, is a check. (These counts are the generator's current `tier_counts`
+  output, asserted at build time — not hardcoded constants.)
 
 Every liftable dungeon pot SHALL be assigned a stable, append-only location ID in
-`location_registry.yaml` **independently of the tier** — the full ~835-pot set
-exists in the ID space at all times. The tier SHALL act as a generation-time
+the committed `assets/rando/pots.gen.yaml` registry (ids from 328)
+**independently of the tier** — the full 799-pot set exists in the ID space at all
+times. The tier SHALL act as a generation-time
 filter selecting which pot locations enter the placement pool; pots not selected
 for a seed are **absent from the placement table (or carry the `0xFFFF` sentinel when
 present below a higher placed id)** and behave exactly as vanilla at runtime (vanilla
@@ -54,14 +57,21 @@ NOT hardcoded. The tier supersets SHALL be nested: `keys ⊆ contents ⊆ all`.
 
 A committed generator (`assets/scripts/gen_pot_tables.py`) SHALL enumerate every
 liftable dungeon pot from `zelda3_assets.dat` (room object data + the
-`kDungeonSecrets` table) and emit deterministically: the append-only
-`location_registry.yaml` pot rows; a sorted `(dungeon_room_index, tile_position)
-→ location_id` runtime lookup (`pot_table.gen.bin` → `src/rando/pot_lookup.h`,
-the pot analog of `chest_table.gen.bin`/`chest_lookup.h`); per-pot tier membership
-and vanilla-content classification; and region-bound logic entries. The generator
-SHALL assert its own invariants and fail on violation: every pot has a `region:`;
-`(room, tile_position)` is unique across all pots; the tier sets are nested; and
-content classification (item vs structural vs empty) is exhaustive. A pot's
+`kDungeonSecrets` table) and emit, deterministically, a single **committed**
+registry `assets/rando/pots.gen.yaml` — append-only pot rows carrying
+`{id (from 328), name, room, pos4, region, tier, vanilla_item, …}` plus an
+asserted `tier_counts` header. The build-time codegen (`assets/rando_logic_gen.py`)
+SHALL consume `pots.gen.yaml` to emit the pot `LOC_*` ids into
+`location_ids.h`/`logic_data.c`, the region-bound logic entries, and a sorted
+`(dungeon_room_index, tile_position) → location_id` runtime lookup
+`src/rando/pot_lookup.h`. Because `pots.gen.yaml` is **committed** (unlike the
+gitignored `chest_table.gen.bin`), it does NOT reproduce `chest_lookup.h`'s silent
+fail-open hole: if it were ever absent the codegen emits an EMPTY `pot_lookup.h`
+and every pot resolves to `0xFFFF` (pot-shuffle inert at runtime), never a silent
+grant of wrong content. The generator SHALL assert its own invariants and fail on
+violation: every pot has a `region:`; `(room, tile_position)` is unique across all
+pots; the tier sets are nested; and content classification (item vs structural vs
+empty) is exhaustive. A pot's
 identity SHALL be `(dungeon_room_index, tile_position)` — fixed room geometry that
 is stable across save/reload.
 
@@ -85,39 +95,53 @@ is stable across save/reload.
 ### Requirement: Single-point runtime pot dispatch with exactly-once grant
 
 Pot item grants SHALL be dispatched at a single point: the **top of `RevealPotItem`
-(`src/dungeon.c:5850`), before its secret-table scan**. `RevealPotItem` has THREE
-callers — the lift path (`Dungeon_LiftAndReplaceLiftable`, fed by both
-`Link_PerformThrow` and the lift-timer branch), the sword-break path
-(`HandleItemTileAction_Dungeon`, which OR's `dung_secrets_unk1 |= 0x80` and spawns
-smashed-terrain *after* the call), and `ThievesAttic_DrawLightenedHole` (a `0x2020`
-lightened-hole, NOT a pot). The hook SHALL NOT be placed after the secret scan or in
-`Sprite_SpawnSecret`: a pot with no secret record returns from the scan early, but
-the `All`-tier empty pots require the hook.
+(`src/dungeon.c`), immediately after it zeroes `dung_secrets_unk1` and before its
+secret-table scan**. `RevealPotItem` has THREE callers — the lift path
+(`Dungeon_LiftAndReplaceLiftable`, fed by both `Link_PerformThrow` and the lift-timer
+branch), the sword-break path (`HandleItemTileAction_Dungeon`, which OR's
+`dung_secrets_unk1 |= 0x80` and spawns smashed-terrain *after* the call), and
+`ThievesAttic_DrawLightenedHole` (a `0x2020` lightened-hole, NOT a pot). The hook
+SHALL NOT be placed after the secret scan or in `Sprite_SpawnSecret`: a pot with no
+secret record returns from the scan early, but the `All`-tier empty pots require the
+hook.
 
-The hook SHALL, in order: (1) **reset its one-lift "granted" flag** (fresh per call);
-(2) compute `(dungeon_room_index, tile_position)` and resolve the pot LOC via
-`pot_lookup.h` — for the `ThievesAttic_DrawLightenedHole` caller (and any non-pot
-tile) the lookup finds no LOC and the hook is **inert by construction**; (3) if the
-randomizer is active, the LOC is in the active tier, and `Rando_IsLocationChecked(loc)`
-is false, grant via the existing chain in exactly this sequence —
-`uint8 lttp = Rando_DispatchVanillaGrant(loc, pot_vanilla_registry_id, pot_vanilla_lttp_code)`,
-which internally calls `Rando_OnLocationCheck` (MARKING the location checked **before**
-the placement lookup) and returns the placed item (direct-grant classes return
-`kRandoLttpSkip`), then `Rando_ReceiveOrConfirm(lttp, placed_item_id)` to deliver it
-(direct-grant confirmation cue; `Link_ReceiveItem` otherwise; the brief "nothing" cue
-for `ITEM_Nothing`); (4) set the "granted" flag, zero `dung_secrets_unk1`, and RETURN
-— never fall through to a vanilla-secret spawn. The spec SHALL NOT describe this as a
-loose "grant then mark checked": marking is internal to `Rando_DispatchVanillaGrant`
-and happens before the lookup, so the dispatch SHALL NOT additionally call
-`Rando_MarkLocationChecked`.
+`RevealPotItem` SHALL take an `is_pot` flag: only the two genuine-pot callers (lift +
+sword-break, both gated to the `0x1010` liftable-pot tile class) pass `true`; the
+`ThievesAttic_DrawLightenedHole` caller passes `false` so the hook never runs for it.
+The hole shares the `dung_object_tilemap_pos[]` array with pots, so its `pos4` CAN
+collide with a registered pot's (Thieves Town attic room `0x65` has pots at
+`0x1c64`/`0x1c68`) — the `is_pot` flag, NOT a lookup miss, is what makes it inert
+(relying on the lookup alone would let falling through that floor silently grant+check
+a colliding pot).
+
+When `is_pot` is true the hook (`Rando_PotBreakHook(room, pos4)`) SHALL, in order:
+(1) return `kRandoPot_Vanilla` (run the vanilla path) if the randomizer is inactive,
+the `(room, tile_position) → loc` lookup finds no LOC, or the LOC is not in the active
+tier; (2) for a **checked** LOC, return `kRandoPot_Suppress` for a one-shot pot (small
+key or `ITEM_Nothing`) and `kRandoPot_Vanilla` for an item-pot (per *Checked pot
+reverts to vanilla appearance and behavior*); (3) for an **active, un-checked** LOC,
+grant in exactly this sequence —
+`uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFF, 0)` (the `0xFFFF`
+vanilla-registry-id sentinel forces "always dispatch the placed item"), which
+internally calls `Rando_OnLocationCheck` (MARKING the location checked **before** the
+placement lookup) and resolves the placed item's class (direct-grant / `ITEM_Nothing`
+→ `kRandoLttpSkip`; else its LttP receive code), then
+`Rando_ReceiveOrConfirm(lttp, placed_item_id)` to deliver it (direct-grant
+confirmation cue; `Link_ReceiveItem` otherwise; NO cue for `ITEM_Nothing` — the
+recolor reverting on re-entry is the feedback), and return `kRandoPot_Suppress`. The
+caller returns early on `kRandoPot_Suppress`, never falling through to a vanilla-secret
+spawn. Marking is internal to `Rando_DispatchVanillaGrant` and happens before the
+lookup, so the dispatch SHALL NOT additionally call `Rando_MarkLocationChecked`.
 
 The persistent gate SHALL be the rando checked-location bit, NOT the transient
-per-room `pots_revealed_in_room` mask. Suppression SHALL cover every break path: the
-one-lift "granted" flag (reset at the top of every `RevealPotItem` call, consumed
-only by the matching sword-break block) SHALL prevent the sword-break path's post-call
-`0x80` smash/spawn. For `All`-tier empty pots (no `kDungeonSecrets` entry) the
-`(room, tile_position) → loc` lookup SHALL be the sole grant trigger, so the hook
-SHALL run for every lifted pot tile, not only secret-bearing ones.
+per-room `pots_revealed_in_room` mask. Suppression SHALL cover every break path
+WITHOUT a dedicated "granted" flag: `RevealPotItem` zeroes `dung_secrets_unk1`, then
+runs the hook; returning `kRandoPot_Suppress` makes `RevealPotItem` return early with
+`dung_secrets_unk1 == 0`, so the sword-break path's post-call `dung_secrets_unk1 |=
+0x80` yields `sprite_graphics = 0x80 & 0x7f = 0` and spawns no smashed-terrain content.
+For `All`-tier empty pots (no `kDungeonSecrets` entry) the `(room, tile_position) →
+loc` lookup SHALL be the sole grant trigger, so the hook SHALL run for every lifted
+pot tile, not only secret-bearing ones.
 
 #### Scenario: A placed pot grants exactly once
 - **WHEN** an in-scope, un-checked pot is broken
@@ -181,8 +205,11 @@ active, the pot being in the active tier's pool, and `Rando_IsLocationChecked`
 being false; checked and out-of-scope pots SHALL draw the vanilla words. The
 recolor SHALL be code-only (no new graphics) and SHALL NOT alter non-randomizer
 RAM-compare behavior. The alternate sub-palette SHALL be one that is loaded across
-dungeon themes and visibly distinct, verified by offline render against
-`zelda3_assets.dat` rather than assumed.
+dungeon themes and visibly distinct. The shipped value is `kRandoPotAltPalette`;
+its cross-theme loading is confirmed in source (the row is among those
+`Palette_Load_DungeonSet` loads for every dungeon), and its visible distinctness is
+confirmed at playtest (an offline render against `zelda3_assets.dat` was the planned
+check, but the build worktree carried no asset blob).
 
 #### Scenario: Un-checked check-pot looks different
 - **WHEN** `pot_shuffle` is on and a pot in the active pool has not been checked
@@ -200,7 +227,7 @@ dungeon themes and visibly distinct, verified by offline render against
 
 ### Requirement: Literally Nothing filler for empty pots
 
-The item pool SHALL pad the `All` tier's ~222 empty pots (pots with no vanilla
+The item pool SHALL pad the `All` tier's 196 empty pots (pots with no vanilla
 content that become checks) with a **Literally Nothing** filler item
 (`ITEM_Nothing`) — a no-op grant that shows a brief "nothing" cue and marks the
 location checked — so the pool is not flooded with real resources. `ITEM_Nothing`
