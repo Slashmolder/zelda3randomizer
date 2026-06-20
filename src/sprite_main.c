@@ -6802,17 +6802,31 @@ static uint16 StandingPoH_Location(int k) {
   }
 }
 
+static uint16 StandingPoH_LatchedLocation(int k) {
+  uint16 encoded = (uint16)(sprite_A[k] | sprite_B[k] << 8);
+  return encoded ? (uint16)(encoded - 1) : 0xFFFFu;
+}
+
 void Sprite_HeartPiece(int k) {  // 85f020
   static const uint16 kHeartPieceMsg[4] = {0x158, 0x155, 0x156, 0x157};
-  // add-rando-field-item-sprites: resolve the placed-item location once so the
-  // draw swap and the collect dispatch agree on the same key.
-  uint16 rando_loc = (enhanced_features1 & kFeatures1_RandomizerActive)
-                         ? StandingPoH_Location(k) : 0xFFFFu;
+  uint16 rando_loc = 0xFFFFu;
   if (!sprite_ai_state[k]) {
     sprite_ai_state[k]++;
+    // Resolve once while the sprite is still in its source room/screen. During
+    // pit-fall transitions, the old sprite can draw after the global room index
+    // starts changing; recomputing here would briefly fall back to the vanilla
+    // PoH icon even though the pickup is randomized.
+    if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      rando_loc = StandingPoH_Location(k);
+      uint16 encoded = (uint16)(rando_loc + 1);
+      sprite_A[k] = (uint8)encoded;
+      sprite_B[k] = (uint8)(encoded >> 8);
+    }
     HeartUpgrade_CheckIfAlreadyObtained(k);
     if (!sprite_state[k])
       return;
+  } else if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    rando_loc = StandingPoH_LatchedLocation(k);
   }
   // Draw the placed item's sprite under rando (the helper loads its gfx on
   // demand). Falls back to the vanilla PoH sprite when the placement is a PoH,
