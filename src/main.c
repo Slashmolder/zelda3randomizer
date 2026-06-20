@@ -1632,12 +1632,14 @@ int main(int argc, char** argv) {
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--dump-pot-table") == 0) {
       extern void Dungeon_DrawRoomObjectsHeadless(uint16 room);
+      extern const uint8 *GetRoomHeaderPtr(int room);
       const char *path = (i + 1 < argc) ? argv[i + 1] : "pot_dump.txt";
       LoadAssets();
       FILE *f = fopen(path, "wb");
       if (!f) { fprintf(stderr, "--dump-pot-table: cannot open %s\n", path); return 1; }
-      fprintf(f, "# zelda3 pot dump v2: 'P room_hex pos4_hex content_dec' (content -1=empty) "
-                 "| 'D room_hex neighbor_hex...' (door-connected rooms)\n");
+      fprintf(f, "# zelda3 pot dump v3: 'P room_hex pos4_hex content_dec' (content -1=empty) "
+                 "| 'D room_hex neighbor_hex...' (door-connected rooms) "
+                 "| 'K room_hex' (dark room: hdr[0]&1 -> pots need Lamp)\n");
       const uint8 *secrets = kDungeonSecrets;
       uint32 room_count = kDungeonRoomOffs_SIZE / 2;  // asset 4 = uint16 offset per room
       int total = 0, with_content = 0, over_cap = 0, hist[260];
@@ -1687,6 +1689,12 @@ int main(int argc, char** argv) {
           for (uint16 t = 0; t < nb_n; t++) fprintf(f, " %04x", nb[t]);
           fprintf(f, "\n");
         }
+        // Dark-room flag (hdr[0]&1, the dung_want_lights_out source): a dark room
+        // is unreachable without light, so gen_pot_tables.py gates its pots on
+        // (HAS_ITEM(Lamp) OR CanDarkRoomNav()). GetRoomHeaderPtr reads asset data
+        // only — safe in this headless loop (LoadAssets ran above).
+        if (GetRoomHeaderPtr(room)[0] & 1)
+          fprintf(f, "K %04x\n", room);
       }
       fclose(f);
       fprintf(stderr, "--dump-pot-table: %d pots (%d with content) -> %s\n", total, with_content, path);

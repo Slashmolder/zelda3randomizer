@@ -109,6 +109,7 @@ def load_dump(path: Path, binary: str | None):
         subprocess.run([binary, "--dump-pot-table", str(path)], check=True, cwd=REPO)
     pots = []          # (room, pos4, content)
     out_edges = collections.defaultdict(set)
+    dark_rooms = set()  # 'K' lines: hdr[0]&1 -> pots need (Lamp OR CanDarkRoomNav)
     for line in path.read_text().splitlines():
         if line.startswith("#") or not line.strip():
             continue
@@ -119,7 +120,9 @@ def load_dump(path: Path, binary: str | None):
             r = int(t[1], 16)
             for nb in t[2:]:
                 out_edges[r].add(int(nb, 16))
-    return pots, out_edges
+        elif t[0] == "K":
+            dark_rooms.add(int(t[1], 16))
+    return pots, out_edges, dark_rooms
 
 
 def valid_regions():
@@ -279,7 +282,7 @@ def main():
     ap.add_argument("--report", action="store_true", help="print residual rooms + exit, don't emit")
     args = ap.parse_args()
 
-    pots, out_edges = load_dump(Path(args.dump), args.binary)
+    pots, out_edges, dark_rooms = load_dump(Path(args.dump), args.binary)
     overrides, override_gates = {}, {}
     ovp = Path(args.overrides)
     if ovp.is_file():
@@ -353,6 +356,16 @@ def main():
         # pot_shuffle is currently untested.)
         if region.startswith("DarkWorld") and (not can_reach or can_reach.strip() == "TRUE()"):
             can_reach = "(HAS_ITEM(MoonPearl) OR CanPearlBypass())"
+        # add-rando-pot-sanity — a DARK room (engine hdr[0]&1, dump 'K' line) is
+        # unreachable without light: AND the Lamp gate onto whatever reach predicate
+        # the room already has. Chest-less dark rooms default to TRUE() -> just the
+        # Lamp gate (fixes the HCE-sewer / EP-interior sphere-0 leak); a DW dark room
+        # keeps its Moon Pearl gate too. Skip when the predicate already requires the
+        # Lamp (a chest-BEARING dark room inherits it from its chest's predicate).
+        if room in dark_rooms and "Lamp" not in (can_reach or ""):
+            dark_pred = "(HAS_ITEM(Lamp) OR CanDarkRoomNav())"
+            can_reach = dark_pred if (not can_reach or can_reach.strip() == "TRUE()") \
+                else f"({can_reach}) AND {dark_pred}"
         if kind == "key":
             dungeon = region_to_dungeon(region)
             if dungeon is None:
