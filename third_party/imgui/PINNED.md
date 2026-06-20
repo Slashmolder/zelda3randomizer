@@ -18,3 +18,7 @@ Backends (third_party/imgui/backends/): imgui_impl_sdl2.{cpp,h}, imgui_impl_open
 - OpenGL3 backend uses its OWN embedded loader (imgui_impl_opengl3_loader.h). MUST NOT include
   third_party/gl_core in any ImGui TU; the game's gl_core loader lives only in src/opengl.c. TU isolation
   keeps the two GL loaders from colliding (embedded loader uses static fn pointers; gl_core exports ptrc_gl*).
+
+## Local patches
+- `backends/imgui_impl_sdl2.cpp`: manual gamepad mode accepts an empty list so
+  helper ImGui contexts can opt out of SDL game-controller polling/opening.

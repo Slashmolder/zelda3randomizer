@@ -100,6 +100,55 @@ Upstream repository: <https://github.com/KatDevsGames/z3randomizer>.
 
 ---
 
+## Enemizer — enemy-shuffle constraint provenance
+
+The enemy-shuffle constraint generator in `assets/scripts/gen_enemy_shuffle_tables.py`
+parses Enemizer's `SpriteRequirement.cs` and `SpriteConstants.cs` to emit the
+sheet, slot, room-safety, boss, and overlord facts embedded in
+`src/rando/shuffle_enemies.c`. The generated tables are structural facts used to
+keep enemy substitutions render-safe and beatable; they are not ROM-extracted
+graphics or level data.
+
+Enemizer is distributed under the MIT License:
+
+```
+MIT License
+
+Copyright (c) 2023 Zarby89
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Upstream repository: <https://github.com/Zarby89/Enemizer>.
+
+---
+
+## portable-file-dialogs — native manifest picker
+
+The PC native randomizer window vendors `portable-file-dialogs.h` under
+`third_party/portable-file-dialogs/` for the customizer manifest file picker.
+The header carries its own upstream copyright and WTFPL v2 license notice.
+
+Upstream repository: <https://github.com/samhocevar/portable-file-dialogs>.
+
+---
+
 ## (Other upstream notices already covered in LICENSE.txt)
 
 - snesrev / elzo_d — zelda3 reimplementation (MIT, see `LICENSE.txt`).

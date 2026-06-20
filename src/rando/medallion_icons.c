@@ -51,6 +51,7 @@ typedef struct MedallionTileRemap {
 // port copies the patched source tiles into unused chars, then rewrites only the
 // medallion plaque's map8 words. That preserves the upstream art while avoiding
 // broad Turtle Rock terrain changes from patching shared chars 0x11e/0x11f.
+// See assets/rando/MEDALLION_GFX_DERIVATION.md.
 static const MedallionGfxPatchByte kMireBombosPatch[] = {
   {0x42b, 0x80}, {0x42d, 0x60}, {0x42f, 0x38},
   {0x435, 0x7f}, {0x436, 0x9f}, {0x437, 0xc7},
