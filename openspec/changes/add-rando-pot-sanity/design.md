@@ -225,16 +225,27 @@ keys, NEVER an extra:
   fixed key count is placed across all its key-eligible locations incl. pots — no
   extra key created.
 - **Under door shuffle** (`door_shuffle != vanilla`, which forces Dungeon key mode →
-  the full vanilla key count enters the shuffled pool): key-pots are EXCLUDED from the
-  active pot checks AND pinned as fixed vanilla keys, AND the shuffled key-pool count
-  for that dungeon is **REDUCED by the pinned pot-key count**. Saying only "the pot
-  keeps its vanilla key" is INSUFFICIENT — without the subtraction the key exists
-  twice (once pinned, once in the pool). Integrating pot-key locations into the door
-  prover (`door_keylogic.c`) is the correct long-term fix and is **deferred**.
+  the full vanilla key count enters the shuffled pool): **AS-BUILT (owner-decided
+  2026-06-19) — the door×pot combination is DISABLED: every pot is inactive while
+  door shuffle is on.** The earlier "pin key-pots + subtract from the pool" plan was
+  rejected as unsafe: the key-door prover (`door_keylogic.c`) does not model pot
+  locations, so a dungeon key reaching ANY pot — including a *pinned* key-pot, whose
+  key is equally invisible to the prover — risks a key behind the very door it opens
+  (unprovable softlock); and the pool key count (`kVanillaSmallKeyCounts`) and the
+  prover's count (`kDoorTblDungeons.chest_small_keys + drop_cnt`) are driven
+  independently, so a naive subtraction desyncs them. Excluding all pots makes
+  door+pots **provably equal to door-without-pots** (verified byte-identical).
+  Realized by `apply_derived_rules` normalizing `pot_shuffle → Off` whenever
+  `Settings_EffectiveDoorShuffle(s) != vanilla`, with `pot_active()` re-checking the
+  same effective door value so the settings_hash and the placement can never desync.
 
-The mode-dependent pinning + the door-shuffle subtraction are enforced in
-`apply_derived_rules` / the key pre-seed path and surfaced in the UI. (Owner may
-override this scoping — see the summary.)
+**The FULL integration is the real target and a deferred FOLLOW-ON PHASE** (not the
+abandoned half-measure): teach the door prover to model pot-key LOCs as in-dungeon
+key sources it counts + places against, so door shuffle and pot shuffle compose with
+correct logic when both are on. Until that phase lands the combination stays disabled
+as above; the settings UI (Phase 5) SHALL surface it (e.g. grey out `pot_shuffle`
+under door shuffle). The vanilla / shuffled (non-door) key economy in the bullets
+above is automatic via `location_is_prepinned` and is unaffected.
 
 ## D8 — Logic auto-binding: uniform-room inheritance + reviewed gates (R10)
 
