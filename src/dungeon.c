@@ -3685,25 +3685,29 @@ void RoomDraw_SinglePot(const uint16 *src, uint16 *dst, uint16 dsto) {  // 81b39
   dung_replacement_tile_state[i] = 0x1111;
   dung_object_pos_in_objdata[i] = dung_load_ptr_offs;
   dung_object_tilemap_pos[i] = (dsto * 2) | (dung_line_ptrs_row0 != 0x4000 ? 0 : 0x2000);
+  // replacement_tilemap_* is the floor tile RESTORED at this spot when the pot is
+  // lifted — i.e. the ground UNDER the pot. It must stay vanilla; recoloring it
+  // (the original Phase 4 bug) tinted the ground under the pot instead of the pot.
   replacement_tilemap_UL[i] = 0x0d0e;
   replacement_tilemap_LL[i] = 0x0d1e;
   replacement_tilemap_UR[i] = 0x4d0e;
   replacement_tilemap_LR[i] = 0x4d1e;
-  // add-rando-pot-sanity Phase 4 — recolor an in-scope, un-checked pot (design
-  // D4): clear the vanilla palette (bits 10-12 = row 3) of the four 2x2 tiles and
-  // set the alt sub-palette row, so players can tell which pots are checks.
-  // dung_object_tilemap_pos[i] (just set above) is the (dsto*2 | BG-half) pos4 the
-  // lookup keys on. Checked / inactive / non-rando pots keep the vanilla palette
-  // (byte-identical off-rando — the gate returns false).
-  if (Rando_PotShouldRecolor(dungeon_room_index, dung_object_tilemap_pos[i])) {
-    replacement_tilemap_UL[i] = (replacement_tilemap_UL[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-    replacement_tilemap_LL[i] = (replacement_tilemap_LL[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-    replacement_tilemap_UR[i] = (replacement_tilemap_UR[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-    replacement_tilemap_LR[i] = (replacement_tilemap_LR[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-  }
   if (savegame_is_darkworld)
     src = SrcPtr(0xe92);
   RoomDraw_Rightwards2x2(src, dst);
+  // add-rando-pot-sanity Phase 4 — recolor an in-scope, un-checked pot (design D4)
+  // so players can tell which pots are checks. The POT is the src->dst 2x2 just
+  // drawn into the tilemap; recolor THOSE four words (NOT replacement_tilemap_*,
+  // which is the under-pot floor). Clear the vanilla palette (bits 10-12) and set
+  // the alt sub-palette row. dung_object_tilemap_pos[i] (set above) is the
+  // (dsto*2 | BG-half) pos4 the lookup keys on. Checked / inactive / non-rando pots
+  // keep the vanilla palette (byte-identical off-rando — the gate returns false).
+  if (Rando_PotShouldRecolor(dungeon_room_index, dung_object_tilemap_pos[i])) {
+    dst[XY(0, 0)] = (dst[XY(0, 0)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+    dst[XY(0, 1)] = (dst[XY(0, 1)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+    dst[XY(1, 0)] = (dst[XY(1, 0)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+    dst[XY(1, 1)] = (dst[XY(1, 1)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+  }
 }
 
 void RoomDraw_BombableFloor(const uint16 *src, uint16 *dst, uint16 dsto) {  // 81b3e1
