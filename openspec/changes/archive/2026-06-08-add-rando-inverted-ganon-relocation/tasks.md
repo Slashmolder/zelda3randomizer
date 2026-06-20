@@ -1,5 +1,5 @@
 > **AS-BUILT PIVOT — HOLE-ONLY RELOCATION SHIPPED (2026-06-07, branch
-> `claude/inverted-ganon-holeonly`).** The faithful-facade approach below stayed
+> the hole-only implementation branch).** The faithful-facade approach below stayed
 > paused (it needs unlicensed custom art — see the spike note). Instead a **no-art
 > hole-only** relocation shipped: render ONLY a Ganon pit at screen 0x1B (a 2-tone
 > dark diamond from solid castle tile 0x037, via a `kMap16ToMap8`/asset-70 runtime

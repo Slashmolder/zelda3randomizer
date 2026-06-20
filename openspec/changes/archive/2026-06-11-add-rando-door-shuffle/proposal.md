@@ -1,6 +1,6 @@
 ## Why
 
-Door shuffle is the most ambitious randomizer axis on the roadmap: it randomizes the **internal door-to-door connections inside dungeons**, not just which overworld door reaches which dungeon (that is the already-shipped entrance shuffle). After a door shuffle, Eastern Palace's lobby might open onto Swamp's flooded hub; a small-key door that vanilla puts three rooms deep might gate the first room. It is the headline feature of the upstream **ALttPDoorRandomizer** project (`C:\src\ALttPDoorRandomizer`, the reference for this change).
+Door shuffle is the most ambitious randomizer axis on the roadmap: it randomizes the **internal door-to-door connections inside dungeons**, not just which overworld door reaches which dungeon (that is the already-shipped entrance shuffle). After a door shuffle, Eastern Palace's lobby might open onto Swamp's flooded hub; a small-key door that vanilla puts three rooms deep might gate the first room. It is the headline feature of the upstream **ALttPDoorRandomizer** project, the reference for this change.
 
 This change exists because door shuffle is *architecturally novel for this fork*, and the plan must be gotten right before code lands. Four research findings frame everything:
 
@@ -47,7 +47,7 @@ Because the runtime risk and the generation risk are independent and both large,
 - **Effort / bottleneck:** Large — comparable to the original randomizer-support change. The real bottleneck is **not** token volume but the **playtest loop**: the slot path has no automated net (corpus + `--rando-selftest` cover only generation, never the runtime door redirect or the key prover's end-to-end correctness), so every milestone is gated on hand-playtesting redirected dungeons. Milestone A's identity test is the one piece with an automatable check (corpus byte-identical).
 - **Regression risk:** `kGeneratorVersion` bumps; corpus regenerates. `doorShuffle == vanilla` MUST stay byte-identical (Milestone A enforces it before any shuffle exists).
 - **Out of scope (follow-on changes, designed but not built here):** intensity 2/3 (open-edges, straight-stairs, ladders, lobby/portal shuffle — couples with entrance shuffle); `door_type_mode` big/all/chaos + trap-door shuffle/removal; decouple (one-way) doors; **crossed/partitioned** modes (the polarity/sector-distribution engine + cross-dungeon environment porting — the single hardest runtime+gen surface); wild/universal key modes × door shuffle; pottery/key-drop pools.
-- **ALTTPR provenance:** door rando is a **separate codebase** from the ALTTPR PHP this fork otherwise mirrors — none of the placement/logic PHP applies. The reference is `C:\src\ALttPDoorRandomizer` (MIT, verify `LICENSE`). Claim-grounding discipline applies: read the actual Python, not memory.
+- **ALTTPR provenance:** door rando is a **separate codebase** from the ALTTPR PHP this fork otherwise mirrors — none of the placement/logic PHP applies. The reference is an `ALttPDoorRandomizer` checkout (MIT, verify `LICENSE`). Claim-grounding discipline applies: read the actual Python, not memory.
 
 ## Status
 

@@ -255,7 +255,7 @@ Shared seams (sequence at merge, don't author blind):
 
 ## 8. ALTTPR provenance note
 
-The real entrance-shuffle *runtime* is in the asm repo `C:/src/z3randomizer`
+The real entrance-shuffle *runtime* is in the `z3randomizer` asm checkout
 (`entrances.asm`, `tables.asm` StartingAreaExitTable / ExtraHole tables,
 `doorframefixes.asm`), NOT the PHP (`EntranceRandomizer.php` shells out to Python;
 its "mt_rand" docstring is stale). Translation discipline per `audit.md §0.10`:
@@ -378,7 +378,7 @@ Where those come from per destination class:
 **DECISION (user, 2026-05-30): build FULL support — the new cave-arrival asset.**
 
 ### Research resolution (2026-05-30): the engine ALWAYS uses static seed tables
-A research pass over both this codebase and the ALTTPR asm (`C:/src/z3randomizer`
+A research pass over both this codebase and the ALTTPR asm (`z3randomizer`
 @ dcb0a2b) resolved the open question of "store explicit state vs recompute from
 (area, pos)":
 

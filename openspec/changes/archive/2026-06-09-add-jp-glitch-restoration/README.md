@@ -4,7 +4,7 @@ A single "Restore JP 1.0 glitches" gameplay checkbox that re-introduces glitches
 
 ## Status
 
-**Implementation in progress** on branch `claude/jp-glitch-restoration`. The JP-vs-US disassembly spike (2026-06-08) ground-truthed all six glitches. **3 IMPLEMENTED faithful** (Fake Flippers, Death Hole, Itemdash — each an exact gated JP↔US delta; WSL `-Werror` build green; owner playtest-pending). **3 NEEDS-MORE-WORK** (Superspeed/Spindash/Mirror Block Erase — no JP↔US code delta; not shipped). **Fake Flippers ROM truth**: JP omits *only* the per-frame recheck in `PlayerHandler_04_Swimming` (`:1721`); the entry ejects are byte-identical JP↔US, so the faithful fix gates that one site (the over-gated free-swim approximation was rejected on playtest). No 8-frame grace counter exists.
+**Implementation in progress** on the JP-glitch restoration branch. The JP-vs-US disassembly spike (2026-06-08) ground-truthed all six glitches. **3 IMPLEMENTED faithful** (Fake Flippers, Death Hole, Itemdash — each an exact gated JP↔US delta; WSL `-Werror` build green; owner playtest-pending). **3 NEEDS-MORE-WORK** (Superspeed/Spindash/Mirror Block Erase — no JP↔US code delta; not shipped). **Fake Flippers ROM truth**: JP omits *only* the per-frame recheck in `PlayerHandler_04_Swimming` (`:1721`); the entry ejects are byte-identical JP↔US, so the faithful fix gates that one site (the over-gated free-swim approximation was rejected on playtest). No 8-frame grace counter exists.
 
 ## Read these in order
 

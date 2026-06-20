@@ -6,9 +6,9 @@ the sibling checkout, never from memory.
 
 ## Inverted macro provenance
 
-- **Upstream checkout**: `C:\src\alttp_vt_randomizer`
+- **Upstream checkout**: `alttp_vt_randomizer`
 - **Pinned commit**: `219fcafd029dab597b8db400efafd8f56f8b4edb`
-  (`git -C C:\src\alttp_vt_randomizer rev-parse HEAD`, captured 2026-05-29).
+  (`git rev-parse HEAD`, captured 2026-05-29).
 - **License**: MIT (per `CLAUDE.md` claim-grounding section; `LICENSE` + `composer.json`).
 
 All line ranges below are relative to this pinned commit.

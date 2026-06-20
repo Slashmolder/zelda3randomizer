@@ -3,9 +3,9 @@
 **Status**: PLAN (authored 2026-05-28). Supersedes the parent change's `add-rando-retro-world-state/design.md` §5b scoping pass. Scope locked to **Full subsystem** (generator + runtime in one branch) per user decision 2026-05-28.
 
 All mechanism claims below are grounded in a 2026-05-28 source dossier against three checkouts:
-- ALTTPR PHP (placement/ROM-patch): `C:\src\alttp_vt_randomizer\` (MIT).
-- z3randomizer ASM (the actual *runtime* take-any behaviour, patched into the ROM): `C:\src\z3randomizer\`.
-- this fork: `C:\src\zelda3randomizer\`.
+- ALTTPR PHP (placement/ROM-patch): `alttp_vt_randomizer` (MIT).
+- z3randomizer ASM (the actual *runtime* take-any behaviour, patched into the ROM): `z3randomizer`.
+- this fork.
 
 > **Claim-grounding note**: per CLAUDE.md, every ROM/asm/PHP fact in this doc carries a file:line. The single largest prior failure mode on this project is memory-based assertions about ROM mechanics. Two facts in the stub spec are already known-stale and corrected here: (1) the spec says **22** TakeAny shops; the PHP declares **31**; (2) the spec's `randomCollection(5)` regular-shop-extras requirement was *superseded* by Slice 3a's identity-placement simplification — see §6.
 

@@ -202,4 +202,3 @@ remain byte-identical.
 - **WHEN** the corpus is regenerated at the new generator version after this change
 - **THEN** exactly the traps-on entries change their `placement_digest`, and all other entries
   (and all `sphere_digest` values) are byte-identical
-

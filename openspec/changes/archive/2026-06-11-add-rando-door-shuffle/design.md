@@ -1,7 +1,7 @@
 # Design — door shuffle
 
 Authored 2026-06-09 from four parallel research agents over the reference
-(`C:\src\ALttPDoorRandomizer`), the zelda3 dungeon runtime (`src/dungeon.c`), and the
+(`ALttPDoorRandomizer`), the zelda3 dungeon runtime (`src/dungeon.c`), and the
 fork's rando infrastructure; **revised the same day after a three-agent fresh-eyes pass
 that found a logic-half showstopper and a cluster of runtime control-flow corrections**
 (see §12 for the review changelog). The proposal carries the *why* and scope; this

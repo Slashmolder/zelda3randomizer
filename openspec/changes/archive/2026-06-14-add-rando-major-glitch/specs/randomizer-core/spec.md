@@ -8,7 +8,7 @@ The byte layout, enum value assignments, and field widths SHALL remain unchanged
 
 Default-settings seeds (`logic = NoGlitches`) SHALL remain byte-identical in `placement_digest_hex` to Phase A and Phase B baselines.
 
-This requirement is **ADDED** (not MODIFIED) to avoid a multi-change archive-sequencing conflict on the Phase A `Settings canonical serialization order (normative)` requirement (per memory `[[openspec-authoring-patterns]]`). Multiple changes can ADD their own per-axis extensions without colliding on the baseline.
+This requirement is **ADDED** (not MODIFIED) to avoid a multi-change archive-sequencing conflict on the Phase A `Settings canonical serialization order (normative)` requirement. Multiple changes can ADD their own per-axis extensions without colliding on the baseline.
 
 #### Scenario: HybridMG value participates in settings_hash
 - **WHEN** a seed is generated with `logic=hybrid_major_glitches`

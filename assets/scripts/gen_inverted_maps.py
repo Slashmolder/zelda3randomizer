@@ -28,14 +28,14 @@ interpreter dispatches. See OWW_CUSTOM_* below.
 """
 import re, sys, os
 
-ASM = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', '..',
-                   'z3randomizer', 'invertedmaps.asm')
-# Fallback to the known sibling checkout location.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+ASM = os.path.join(os.path.dirname(REPO_ROOT), 'z3randomizer', 'invertedmaps.asm')
+env_dir = os.environ.get('Z3RANDOMIZER_DIR')
 CANDIDATES = [
     ASM,
-    r'C:/src/z3randomizer/invertedmaps.asm',
-    '/c/src/z3randomizer/invertedmaps.asm',
 ]
+if env_dir:
+    CANDIDATES.append(os.path.join(env_dir, 'invertedmaps.asm'))
 
 # Command opcodes (high byte | id), mirroring invertedmaps.asm .command_vectors.
 OWW_END        = 0xFFFF

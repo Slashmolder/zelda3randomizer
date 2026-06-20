@@ -4,7 +4,7 @@
 
 ## 0. Summary of upstream model
 
-Per `C:\src\alttp_vt_randomizer\app\World\Retro.php:18-23`, Retro forces 4 flags on top of Open: `rom.rupeeBow`, `rom.genericKeys`, `region.takeAnys`, `region.wildKeys`.
+Per `alttp_vt_randomizer/app/World/Retro.php:18-23`, Retro forces 4 flags on top of Open: `rom.rupeeBow`, `rom.genericKeys`, `region.takeAnys`, `region.wildKeys`.
 
 Per `app/World.php:520`, shop "locations" enter the placement pool via `$this->shops->getLocations()` (merged into `getCollectableLocations()`).
 

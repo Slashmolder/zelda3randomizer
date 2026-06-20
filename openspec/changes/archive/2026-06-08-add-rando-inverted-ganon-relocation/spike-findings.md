@@ -25,7 +25,7 @@ is dead without it, so the whole change is paused.
 
 ## LIVE CONFIRMATION (playtest, 2026-06-07)
 
-A throwaway probe branch (`claude/inverted-ganon-spike-probe`, off `main`: just
+An exploratory probe branch (off `main`: just
 comments out the `if (scr == 0x1B) return;` suppression) was built and played in an
 Inverted seed. Reaching LW Hyrule Castle (warp to entrance `0x04` → walk out → screen
 `0x1B`) and F12-dumping confirmed the verdict **on real hardware-path rendering**:

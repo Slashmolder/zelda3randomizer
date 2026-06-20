@@ -20,8 +20,8 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
 
 ## A. Deliberate divergences (intentional — not bugs)
 
-- **A1 — Ganon relocated to Hyrule Castle via a NO-ART pit (hole-only; SHIPPED on
-  branch `claude/inverted-ganon-holeonly`, alpha, playtest-confirmed).** ALTTPR
+- **A1 — Ganon relocated to Hyrule Castle via a NO-ART pit (hole-only;
+  alpha-shipped, playtest-confirmed).** ALTTPR
   moves Ganon under the LW Hyrule Castle; this fork now does too, via a hole-only
   approach (see below). The history:
   - **Spike (2026-06-06): the FAITHFUL facade is paused.** An offline renderer

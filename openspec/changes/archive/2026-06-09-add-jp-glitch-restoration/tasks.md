@@ -1,7 +1,7 @@
 # Tasks — add-jp-glitch-restoration
 
 > **RESUME NOTE 2026-06-08 (updated after the §5.3 deeper spike).**
-> Branch `claude/jp-glitch-restoration` (worktree `C:\src\zelda3-jp-glitch`), merged with main (enemy-shuffle base + reconciled specs). Default-off feature; **no rando/corpus/kGeneratorVersion impact.** WSL `make -j zelda3` (-Werror) green (UI included; no new .c → no vcxproj change). The stale "8-frame grace" framing is gone (merge pulled in the reconciled specs).
+> Implementation branch merged with main (enemy-shuffle base + reconciled specs). Default-off feature; **no rando/corpus/kGeneratorVersion impact.** WSL `make -j zelda3` (-Werror) green (UI included; no new .c -> no vcxproj change). The stale "8-frame grace" framing is gone (merge pulled in the reconciled specs).
 > **DONE:** flag `kFeatures0_RestoreJpGlitches` (bit 18) + INI key `RestoreJpGlitches` + UI checkbox; helper `JpGlitchEnabled()` = `(enhanced_features0 & flag) && !ZeldaIsEmulatorAttached()`.
 > **ALL 6 cataloged JP-1.0 glitches now restored** behind the one flag: **Fake Flippers** (§3.3, confirmed), **Death Hole** (§5.1), **Itemdash** + **Spindash** + **Superspeed** (§5.2/§5.5 — the SAME single StartDash guard gates the whole item+sword block; Spindash/Superspeed playtest-CONFIRMED), **Mirror Block Erase** (§5.4, found by the §5.3 spike). **ALL SIX playtest-CONFIRMED** (Fake Flippers, Death Hole, Itemdash, Spindash, Superspeed, Mirror Block Erase). Feature-complete.
 > **DECISION PENDING (owner):** squash-merge to main (default-off; like the enemy-shuffle MVP) — optionally after a Death Hole playtest. The §5.3 deeper spike is complete and the glitch set is feature-complete.

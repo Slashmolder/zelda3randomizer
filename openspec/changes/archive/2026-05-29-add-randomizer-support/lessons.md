@@ -485,7 +485,7 @@ keys — held Enter prevented the OK-overlay countdown from completing
 
 Two recurring failure modes when merging worktree-agent branches
 back to master:
-1. **Stale bash cwd**: a `cd .claude/worktrees/agent-xxx` in one
+1. **Stale shell cwd**: a `cd` into an agent worktree in one
    Bash tool call persists across subsequent calls. Build commands
    silently target the agent's worktree instead of main, or merges
    fail with "branch already used by another worktree." Always
@@ -544,4 +544,3 @@ Established this sprint and worth preserving:
 When briefing the next cluster's agent, copy the prior audit's
 HIGH findings into the brief verbatim as "CRITICAL lessons to
 honor." This is the single highest-leverage step in the workflow.
-

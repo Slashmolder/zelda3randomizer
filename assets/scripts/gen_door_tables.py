@@ -28,7 +28,7 @@ hand-curated overrides file exists; if a future reference update introduces an
 unparseable rule, it ships as IMPASSABLE until curated.)
 
 Usage:
-  python assets/scripts/gen_door_tables.py --ref C:/src/ALttPDoorRandomizer [--dump-stats]
+  python assets/scripts/gen_door_tables.py --ref path/to/ALttPDoorRandomizer [--dump-stats]
 """
 
 import argparse

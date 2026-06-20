@@ -17,7 +17,7 @@ follow-on changes.
 > that baseline requirement rather than leave the stale RegionRemap mechanism in canon.
 > (Owner chose to keep this active on 2026-06-02.)
 
-> Provenance discipline: runtime facts from the asm repo `C:/src/z3randomizer`
+> Provenance discipline: runtime facts from a pinned `z3randomizer` asm checkout
 > (`entrances.asm`, `tables.asm`, `doorframefixes.asm`), placement/logic facts from
 > `../alttp_vt_randomizer`. Read source, not comments (per `design.md §8`).
 

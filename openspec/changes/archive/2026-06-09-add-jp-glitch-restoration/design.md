@@ -92,7 +92,7 @@ Confirmed sound by the audit: flag-bit arithmetic (`262144` = bit 18, free), "no
 
 ## Post-implementation reconciliation (2026-06-08)
 
-Folded back from the implementation branch `claude/jp-glitch-restoration` (build-verified, not playtested):
+Folded back from the JP-glitch restoration implementation branch (build-verified, not playtested):
 
 - **Function name.** The deep-water swim guard cited at `src/player.c:3192-3213` lives in `LinkState_CrossingWorlds` (def `:3172`), not a distinct "walk-in" handler — the line numbers and the eject set are correct; only the colloquial name was loose. The shipped code names the real function. References above corrected.
 - **WSL build covers the UI.** The WSL `make` build defines `Z3R_NATIVE_SETTINGS_WINDOW`, so the ImGui checkbox compiles under it — there is no MSBuild-only gap for this change (contrary to D6's caution).

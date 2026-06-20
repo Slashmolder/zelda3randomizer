@@ -2025,7 +2025,7 @@ static const uint8 *g_entrance_overlay_orig = NULL;
 
 // ---------------------------------------------------------------------------
 // Decoupled (Insanity) runtime — D.4. Productionizes the validated arrival
-// capture-and-replay (spike branch claude/insanity-arrival-spike): each cave
+// capture-and-replay (insanity-arrival spike): each cave
 // interior's overworld-arrival block (g_ram[0xC140..0xC172) + the two world
 // flags) is captured the first time its door is entered; on a decoupled cave
 // EXIT the player emerges at net[entered_interior]'s door by replaying THAT

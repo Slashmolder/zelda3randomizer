@@ -15,15 +15,15 @@ Feature-sized work — a new capability or a cross-cutting change, the kind
 self-contained fixes (a one-liner, a typo, a localized bug) skip the spec and go
 straight to a branch.
 
-1. **Branch off `main`** (`claude/<feature>`). All iteration lives here; `main`
+1. **Branch off `main`** (`feature/<feature>`). All iteration lives here; `main`
    only ever receives finished, reviewed work.
 2. **Write the spec first.** Author an OpenSpec change under
    `openspec/changes/<feature>/` (`proposal.md`, `design.md`, `tasks.md`, and the
    capability `specs/` deltas) BEFORE the code — it's the contract for what ships
    and why. Write it against current source, not memory (see the claim-grounding
    discipline below).
-3. **Iterate on the branch until done.** Build, playtest, and run a fresh-eyes
-   audit (see "Fresh-eyes audit cadence"); reconcile the spec's deltas and tasks
+3. **Iterate on the branch until done.** Build, playtest, and run an independent
+   review (see "Independent review cadence"); reconcile the spec's deltas and tasks
    against as-built source as the code evolves (deltas rot — a checked `tasks.md`
    box is not a spec update). "Done" = builds clean (MSVC + gcc `-Werror`), corpus
    green at the current `kGeneratorVersion`, CI guards pass, and the runtime paths
@@ -170,9 +170,9 @@ Same discipline for this codebase:
 - **Dungeon-sprite room-data y/x bytes are bit-packed** (`Dungeon_LoadSingleSprite`, `src/sprite.c`): bits 0-4 = the 16px-granular intra-quadrant POSITION, y bits 5-6 + x bits 5-7 = the sprite SUBTYPE, y bit 7 = the FLOOR flag (`x >= 0xe0` is the overlord marker; `type == 0xe4` is a control entry). Any code that MUTATES these coords (e.g. shifting a redirected boss formation) must mask to the position field (`& 0x1f`) and preserve bits 5-7 — a whole-byte add corrupts floor/subtype and can push x into the `0xe0` overlord range.
 - **Dungeon transitions are equality-latched tableaux — reposition by TRANSLATION, never re-derivation** (door shuffle's costliest lesson — five playtest-found bugs in one class; applies to any future room/door/warp redirect). The transition machinery's scroll terminators and per-frame camera stops are masked within-512 EQUALITY tests (`DungeonTransition_ScrollRoom`, `Dungeon_HandleCamera` vs `room_bounds_*` — a value past its stop scrolls UNBOUNDED), quadrant toggles couple to ±0x100 `a0/a1` shifts, and the spiral walk-out terminates on position anchors captured at entry (`tiledetect_which_y_pos[0/1]` — miss the anchor and Link stays permanently invisible). Vanilla's own redirects (`Dungeon_AdjustForTeleportDoors`, `Dungeon_AdjustAfterSpiralStairs`) therefore translate the WHOLE coupled tableau (Link + `BG2*OFS_copy2` + all four `room_bounds` fields per axis + any choreography anchors) by whole supertiles — 512px is also the PPU tilemap period, so whole-supertile deltas are render-invisible, while sub-512 deltas expose stale VRAM until the destination's chunked upload lands (defer them and pan in during the scroll). Two data traps for room-load-time code: the attr table (`dung_bg2_attr_table`) is rebuilt LAZILY by the chunked loader (`overworld_map_state`) — at load time read the synchronous sources instead (`dung_bg2` tilemap, `dung_inter_starcases` + the cumulative stair-category counters, whose stored `0x1000` bit is the plane half); and reference-derived door-table fields can be reference-internal encodings, not engine values (spiral `doorIndex` ≠ the engine's attr2 slot; spiral `layer` = the HTH/HTL/LTH/LTL signature, not a plane) — see `door_runtime.c`'s correspondence comments.
 
-### Fresh-eyes audit cadence
+### Independent review cadence
 
-After landing any substantial code surface change on this project (a sprint's worth of work — new subsystem, large refactor, sweep of audit fixes), spawn a parallel review agent with a self-contained prompt before declaring the work done. Don't review your own work as the final pass.
+After landing any substantial code surface change on this project (a sprint's worth of work — new subsystem, large refactor, broad bug-fix sweep), run an independent review with a self-contained prompt before declaring the work done. Don't review your own work as the final pass.
 
 Each audit pass in this project's history has found 5-10 NEW bugs the previous reviewer missed, including HIGH-severity issues that the familiar author would never have noticed (off-by-one in formula-encoded list mappings, spec/impl enum disagreements, full-inventory-vs-sphere-walked goal-check inconsistencies). The pattern is reliable enough to treat as workflow, not optional polish.
 
