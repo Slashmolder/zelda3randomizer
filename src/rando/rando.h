@@ -300,10 +300,13 @@ enum {
   kRandoPot_Suppress = 1,  // hook handled it; RevealPotItem must spawn no secret
 };
 // Alternate CGRAM sub-palette row (0..7) for un-checked in-scope pots. Vanilla
-// pots use row 3; this row must be loaded across dungeon themes AND visibly
-// distinct — verified by the offline render against zelda3_assets.dat (Phase 4.5),
-// NOT guessed. Tunable here so the verify can adjust it without touching the draw.
-#define kRandoPotAltPalette 5u
+// pots use row 3. INTERIM / theme-fragile: BG sub-palette rows are loaded with
+// per-room object colors, so no single row is "distinct but sane" in every
+// dungeon — row 5 rendered a bright-green pot in a LightWorld_NW cave (F12 dump
+// 2026-06-20). Row 2 is the current best-effort (muted browns, no saturated
+// accent in that dump). The robust fix is a palette-independent overlay marker
+// (planned), which supersedes this. Tunable here without touching the draw.
+#define kRandoPotAltPalette 2u
 // NOTE: the first param is named `room` (not `dungeon_room_index`) — the latter
 // is a variables.h g_ram-accessor MACRO and can't be a parameter name. Callers
 // pass the global `dungeon_room_index` value as the argument.
