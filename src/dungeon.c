@@ -5831,7 +5831,7 @@ uint8 Dungeon_LiftAndReplaceLiftable(Point16U *pt) {  // 81d9ec
 
   if ((rt & 0xf0f0) == 0x1010) {
     dung_misc_objs_index = attr * 2;
-    RevealPotItem(xy, dung_object_tilemap_pos[attr]);
+    RevealPotItem(xy, dung_object_tilemap_pos[attr], true);  // genuine pot (0x1010-gated lift)
     RoomDraw_16x16Single(dung_misc_objs_index);
     ManipBlock_Something(pt);
     return kDungeon_QueryIfTileLiftable_rv[rt & 0xf];
@@ -5845,7 +5845,7 @@ uint8 Dungeon_LiftAndReplaceLiftable(Point16U *pt) {  // 81d9ec
 
 uint8 ThievesAttic_DrawLightenedHole(uint16 pos6, uint16 a, Point16U *pt) {  // 81da71
   dung_misc_objs_index = a;
-  RevealPotItem(pos6, dung_object_tilemap_pos[a >> 1]);
+  RevealPotItem(pos6, dung_object_tilemap_pos[a >> 1], false);  // 0x2020 hole, NOT a pot — never fire the grant hook
   RoomDraw_16x16Single(a);
   RoomDraw_16x16Single(a + 2);
   RoomDraw_16x16Single(a + 4);
@@ -5872,7 +5872,7 @@ uint8 HandleItemTileAction_Dungeon(uint16 x, uint16 y) {  // 81dabb
       sound_effect_1 = 0x11;
     } else if ((tile2 & 0xf0f0) == 0x1010) {  // Pot
       dung_misc_objs_index = (tile & 0xf) * 2;
-      RevealPotItem(pos, dung_object_tilemap_pos[tile & 0xf]);
+      RevealPotItem(pos, dung_object_tilemap_pos[tile & 0xf], true);  // genuine pot (0x1010-gated sword-break)
       RoomDraw_16x16Single(dung_misc_objs_index);
       Point16U pt;
       ManipBlock_Something(&pt);
@@ -5890,16 +5890,21 @@ void ManipBlock_Something(Point16U *pt) {  // 81db41
   pt->y = (link_y_coord & 0xfe00) | ((pos & 0x1f80) >> 4);
 }
 
-void RevealPotItem(uint16 pos6, uint16 pos4) {  // 81e6b2
+void RevealPotItem(uint16 pos6, uint16 pos4, bool is_pot) {  // 81e6b2
   BYTE(dung_secrets_unk1) = 0;
 
-  // add-rando-pot-sanity Phase 4 — runtime grant hook (design D3). Runs for all
-  // three callers (lift / ThievesAttic-hole-inert-by-lookup / sword-break). On an
-  // active + un-checked pot it grants the placed item here; on a checked key/empty
-  // pot it suppresses the vanilla re-drop (dup-key risk). Suppress = return now
-  // with dung_secrets_unk1 == 0 — which also neutralizes the sword-break caller's
-  // later `dung_secrets_unk1 |= 0x80` (0x80 & 0x7f == 0, so no item spawns).
-  if (Rando_PotBreakHook(dungeon_room_index, pos4) == kRandoPot_Suppress)
+  // add-rando-pot-sanity Phase 4 — runtime grant hook (design D3). Fires ONLY for
+  // the two genuine-pot callers (lift + sword-break, both gated to 0x1010 pot
+  // tiles); the ThievesAttic 0x2020 lightenable-hole caller passes is_pot=false.
+  // The hole shares dung_object_tilemap_pos[] with pots, so its pos4 CAN alias a
+  // registered pot's (Thieves Town attic room 0x65 has pots at 0x1c64/0x1c68) —
+  // relying on the lookup alone would let falling through the floor silently
+  // grant+check that pot. On an active+un-checked pot the hook grants the placed
+  // item; on a checked key/empty pot it suppresses the vanilla re-drop (dup-key
+  // risk). Suppress = return now with dung_secrets_unk1 == 0 — which also
+  // neutralizes the sword-break caller's later `dung_secrets_unk1 |= 0x80`
+  // (0x80 & 0x7f == 0, so no item spawns).
+  if (is_pot && Rando_PotBreakHook(dungeon_room_index, pos4) == kRandoPot_Suppress)
     return;
 
   const uint8 *src_ptr = kDungeonSecrets + WORD(kDungeonSecrets[dungeon_room_index * 2]);

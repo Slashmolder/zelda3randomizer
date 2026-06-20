@@ -247,7 +247,7 @@ uint8 Dungeon_LiftAndReplaceLiftable(Point16U *pt);
 uint8 ThievesAttic_DrawLightenedHole(uint16 pos6, uint16 a, Point16U *pt);
 uint8 HandleItemTileAction_Dungeon(uint16 x, uint16 y);
 void ManipBlock_Something(Point16U *pt);
-void RevealPotItem(uint16 pos6, uint16 pos4);
+void RevealPotItem(uint16 pos6, uint16 pos4, bool is_pot);
 void Dungeon_UpdateTileMapWithCommonTile(int x, int y, uint8 v);
 void Dungeon_PrepSpriteInducedDma(int x, int y, uint8 v);
 void Dungeon_DeleteRupeeTile(uint16 x, uint16 y);
