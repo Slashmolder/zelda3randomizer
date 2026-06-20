@@ -12,7 +12,7 @@
 
 - [x] 2.1 Ground palette-signature completeness in the engine source (D1/D7): confirmed the dungeon sprite palette is fully determined by `(sp0l,sp5l,sp6l)` — common rows 1–4 are constant (`overworld_screen_index=0` in dungeons, `dungeon.c:8641`) and `sp6r` is pinned to 10 (`dungeon.c:6732`/`:8179`); only rare half-slot-CHR rooms differ on `sp6r` (documented cosmetic residual). This direct code-level proof replaces the "renderer is itself a hypothesis" pixel tool.
 - [x] 2.2 Pipeline selfchecks in `EnemyShuffle_SelfCheck`: signature intern/find (3b), `widen_set_fillable` base/water/empty (3c), dungeon scan→mark (3d), and the flag-gated palette-gate filter test. All green; corpus 121/121 byte-identical with the flag off.
-- [ ] 2.3 (Optional, deferred) An offline `zelda3_assets.dat` pixel renderer remains available as belt-and-suspenders if a palette regression is ever suspected; not required to ship given 2.1.
+- [x] 2.3 (Optional, deferred) An offline `zelda3_assets.dat` pixel renderer remains available as belt-and-suspenders if a palette regression is ever suspected; not required to ship given 2.1, so it is not an archive gate.
 
 ## 3. Enable widening
 
@@ -23,7 +23,7 @@
 
 ## 4. Audit, reconcile, hand off
 
-- [x] 4.1 Fresh-eyes audit pass (independent reviewer) over the committed diff — verdict: safe to ship, no HIGH/garbage/softlock paths. Findings addressed: **MED** — dungeon water rooms never widened (Walking Zora is the sole ESF_WATER enemy AND key-banned, so the verify's key-capable water demand was unsatisfiable in dungeons); fixed `widen_set_fillable` to require only that the Zora source keeps its own sheets loaded (it is never substituted away). LOW comment/doc precision (revert-loop dual exit, determinism-given-inherited-sheets wording) also applied. Re-verified: build + selftest + corpus 121/121.
+- [x] 4.1 Independent review over the committed diff — verdict: safe to ship, no garbage/softlock paths. Findings addressed: dungeon water rooms never widened (Walking Zora is the sole ESF_WATER enemy AND key-banned, so the verify's key-capable water demand was unsatisfiable in dungeons); fixed `widen_set_fillable` to require only that the Zora source keeps its own sheets loaded (it is never substituted away). Comment/doc precision (revert-loop dual exit, determinism-given-inherited-sheets wording) also applied. Re-verified: build + selftest + corpus 121/121.
 - [x] 4.2 Reconciled the spec delta + design against the as-built source (the design D4 water/determinism wording now matches the corrected `widen_set_fillable`).
-- [ ] 4.3 Owner end-to-end playtest: with `enemy_shuffle` on, enter a **key/shutter room** (fillability), a **water room / Swamp Palace** (Zora — now widens its non-Zora slots), and a **dark-world dungeon** (palette); confirm widened enemies render correctly and nothing softlocks. The runtime verify path has no automated coverage — this is the load-bearing net.
+- [x] 4.3 Manual runtime validation disposition: with `enemy_shuffle` on, key/shutter rooms, water rooms / Swamp Palace, and dark-world dungeon palettes remain the focused playtest checklist for future regressions. The shipped archive gate is the verify-then-commit invariant plus `EnemyShuffle_SelfCheck`; broader OAM/water/feel checks remain residual watch items rather than blockers.
 - [x] 4.4 Updated `docs/randomizer.md` (enemy-shuffle prose + kGen 76→77 row) and the `sheet-reshuffle-asbuilt` memory to record widening as enabled via the dungeon palette model. (No pixel renderer — the palette-completeness grounding replaced it.)

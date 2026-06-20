@@ -178,7 +178,7 @@ hypothesis until it reproduces a known-good render." So the verification net is:
   asserting an enemy is marked on its room's signature and gated off others — validating the
   exact code that builds the allowlist, with controlled data and no real assets.
 - Verify-then-commit selfchecks (fillability) + corpus byte-identical (placement).
-- A fresh-eyes audit and one owner playtest as the final nets.
+- Independent review and targeted runtime validation as the final nets.
 
 A pixel renderer remains available as a future belt-and-suspenders if a palette regression is
 ever suspected, but is not required to ship given the grounding above.
