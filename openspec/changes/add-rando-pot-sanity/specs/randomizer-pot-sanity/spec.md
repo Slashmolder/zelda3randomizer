@@ -27,8 +27,10 @@ are never checks: `Fairy Pot` objects (16); **structural-secret pots** (whose va
 secret is a Hole / Warp / Staircase / Bombable / Switch — lifting them triggers a room
 function, not a pickup); **creature-spawn pots** (whose vanilla content spawns an
 enemy/NPC — Cucco, RockCrab, Bee, soldiers, etc. — not loot, per the D2 content
-policy); and pots in **excluded rooms** (the Chris-Houlihan room, boss arenas, the
-pinned-boss environment rooms, and cutscene/triggered rooms — see design D1). The generator
+policy); and pots in **excluded rooms** (boss arenas, the pinned-boss environment
+rooms, and cutscene/triggered rooms — see design D1; room 0x104 / Link's House, which
+doubles as the glitch-only Chris-Houlihan "Top Secret Room", is INCLUDED per owner
+decision — its heart pots are sphere-0 reachable from the start). The generator
 SHALL maintain this exclusion list and assert no excluded pot emits a LOC. Overworld
 bushes/rocks are out of scope. The exact per-tier counts SHALL be produced and
 asserted by the generator (cross-referencing secret records against pot positions),

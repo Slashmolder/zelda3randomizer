@@ -72,11 +72,15 @@ Tier counts (provisional, generator-authoritative): `Keys` ~19, `Contents` ~613,
 `Contents` and `All` is documented future work.
 
 **Exclusions (generator maintains + asserts the list):** Fairy Pots;
-structural-secret pots (Hole/Warp/Staircase/Bombable/Switch); the **Chris-Houlihan
-room**; **boss arenas** and the pinned-boss environment rooms (Blind/Kholdstare/
-Trinexx) and the Agahnim/Ganon arenas; other cutscene/triggered rooms whose pots are
-decoupled from normal reachability. The generator hard-asserts no excluded room
-emits a LOC.
+structural-secret pots (Hole/Warp/Staircase/Bombable/Switch); **boss arenas** and
+the pinned-boss environment rooms (Blind/Kholdstare/Trinexx) and the Agahnim/Ganon
+arenas; other cutscene/triggered rooms whose pots are decoupled from normal
+reachability. The generator hard-asserts no excluded room emits a LOC. *(As-built
+2026-06-20: room 0x104 — Link's House, which doubles as the glitch-only
+Chris-Houlihan "Top Secret Room" via entrance 130 — was UN-excluded by owner
+decision. Its 3 HeartRefill pots are sphere-0 reachable from the start, so
+logic-safe; the secret-room context shows the same room + pots. kGen 84, corpus
+regenerated — only Contents/All move, Keys/Off byte-identical.)*
 
 ## D2 — Build-time enumeration: `gen_pot_tables.py` (R11)
 

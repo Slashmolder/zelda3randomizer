@@ -58,13 +58,16 @@ RANDOM_CONTENT = 4              # nondeterministic at spawn — exclude
 # content >= 0x80 -> structural (hole/warp/staircase/bombable/switch) — exclude.
 
 # boss arenas (kBossRoom, shuffle_boss.c) + pinned-boss env rooms coincide with
-# IP/TR/TT boss rooms; Agahnim/Ganon arenas; Chris-Houlihan / Link's House 0x104.
+# IP/TR/TT boss rooms; Agahnim/Ganon arenas.
 BOSS_ROOMS = {200, 51, 7, 90, 6, 41, 172, 222, 144, 164}
 EXCLUDED_ROOMS = BOSS_ROOMS | {
     0x00,   # Ganon arena
     0x0d,   # Agahnim 2 arena
     0x20,   # Agahnim 1 arena (Hyrule Castle Tower top)
-    0x104,  # Chris-Houlihan room / Link's House (design D1 exclusion)
+    # Room 0x104 (Link's House, shared with the glitch-only Chris-Houlihan "Top
+    # Secret Room" via entrance 130) is INCLUDED by owner request — its 3
+    # HeartRefill pots are sphere-0 reachable via the start; the secret-room
+    # context shows the same room + pots. Previously a D1 exclusion.
 }
 
 # boss room -> region (region-known flood anchors even though arenas have no pot)

@@ -5,9 +5,13 @@ stay byte-identical until the feature is wired; the load-bearing net is the owne
 playtest in §6 (the runtime grant hook + gated-room logic are invisible to the
 corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 
-> **As-built reconciliation (2026-06-19):** phases 1–5 are built + verified (kGen 82,
-> corpus 127/127); checked boxes mark goals MET. Some task TEXT describes the original
-> plan the implementation refined — notably **3.1** (`pot_shuffle` packs canonical
+> **As-built reconciliation (2026-06-20):** phases 1–5 are built + verified (kGen 84 —
+> bumped 82→83 for the DW-pot Moon Pearl gate, then 83→84 to UN-exclude room 0x104 /
+> Link's House per owner decision; corpus 127/127). Checked boxes mark goals MET. Some
+> task TEXT describes the original plan the implementation refined — notably **2.1**
+> (room 0x104, sharing the glitch-only Chris-Houlihan room, is now INCLUDED — its 3
+> heart pots are Contents-tier checks, sphere-0 reachable from the start), **3.1**
+> (`pot_shuffle` packs canonical
 > `[26]` 6-7 + `[27]` 7, NOT `[27]` 2-3 which `trap_categories` took), **2.2**
 > (committed `pots.gen.yaml`, not a gitignored `pot_table.gen.bin`), **3.5/3.2 door×pot**
 > (pots normalize fully Off under door shuffle — the "pin key-pots + reduce pool"
