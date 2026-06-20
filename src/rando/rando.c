@@ -3134,7 +3134,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
 
   // Phase B Slice 1 — copy the slot's checked-location bitmap into the
   // session state. Bitmap size matches between slot and session
-  // (both kRandoCheckedBitmapBytes = 64).
+  // (both kRandoCheckedBitmapBytes, derived from kRandoLocationCapacity).
   memcpy(g_rando_checked_bitmap, src->checked_bitmap, kRandoCheckedBitmapBytes);
   g_rando_mushroom_held = src->header.mushroom_held;
   g_rando_flute_shovel_owned = src->header.flute_shovel_owned;
