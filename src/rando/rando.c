@@ -31,6 +31,7 @@
 #include "location_ids.h"
 #include "dungeon_ids.h"
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
+#include "pot_lookup.h"    // (room, pos4) -> LOC_*; add-rando-pot-sanity runtime
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
@@ -1856,6 +1857,91 @@ static uint8 rando_item_display_lttp(uint16 placed) {
     return lttp;
   }
   return progressive_to_lttp(placed);  // progressive items (sword/bow/...) or 0xFF
+}
+
+// ---------------------------------------------------------------------------
+// add-rando-pot-sanity Phase 4 — runtime pot grant hook + recolor gate.
+// ---------------------------------------------------------------------------
+
+// Binary search the (room,pos4)-sorted pot lookup for a registered pot's LOC_*,
+// or 0xFFFF when (room,pos4) is not a registered pot — the ThievesAttic 0x2020
+// lightenable hole, or any excluded/structural pot, so the hook is inert by
+// construction for those (lookup-gated, design D3). RoomDraw_SinglePot computes
+// the SAME pos4 = (dsto*2) | (0x2000 BG-half) that gen_pot_tables emitted.
+uint16 Rando_GetPotLocation(uint16 room, uint16 pos4) {
+  uint32 key = ((uint32)room << 16) | pos4;
+  int lo = 0, hi = (int)kRandoPotLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    uint32 mk = ((uint32)kRandoPotLookup[mid].room << 16) | kRandoPotLookup[mid].pos4;
+    if (mk == key) return kRandoPotLookup[mid].loc_id;
+    if (mk < key) lo = mid + 1; else hi = mid;
+  }
+  return 0xFFFF;
+}
+
+// A location's vanilla item id from the generated registry (kRandoLocations is
+// sorted ascending by id), or 0xFFFF if not found. Used to classify a pot's
+// vanilla content (key 53..65 / empty ITEM_Nothing / loot) for checked-pot reuse.
+static uint16 rando_location_vanilla_item(uint16 loc_id) {
+  int lo = 0, hi = (int)kRandoLocationsCount;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    uint16 mid_id = kRandoLocations[mid].id;
+    if (mid_id == loc_id) return kRandoLocations[mid].vanilla_item_id;
+    if (mid_id < loc_id) lo = mid + 1; else hi = mid;
+  }
+  return 0xFFFF;
+}
+
+// Is this pot ACTIVE this seed? A pot whose tier selected it has a placement
+// table entry (inactive pots are skipped in the open-loc loop, so absent). Empty
+// pots are pinned to ITEM_Nothing, so they too are present when active.
+static bool rando_pot_is_active(uint16 loc) {
+  return Placement_Lookup(loc, 0xFFFFu) != 0xFFFFu;
+}
+
+uint8 Rando_PotBreakHook(uint16 room, uint16 pos4) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return kRandoPot_Vanilla;
+  uint16 loc = Rando_GetPotLocation(room, pos4);
+  if (loc == 0xFFFF)
+    return kRandoPot_Vanilla;       // not a registered pot (e.g. ThievesAttic hole)
+  if (!rando_pot_is_active(loc))
+    return kRandoPot_Vanilla;       // inactive (tier off / door shuffle) -> vanilla
+
+  uint16 vanilla = rando_location_vanilla_item(loc);
+  bool one_shot = (vanilla >= 53 && vanilla <= 65) || vanilla == ITEM_Nothing;
+
+  if (Rando_IsLocationChecked(loc)) {
+    // Checked: a one-shot pot (key / empty) is SUPPRESSED — vanilla has no
+    // per-pot key-taken flag, and content 8 (small key) bypasses the room mask,
+    // so re-dropping would duplicate the key (design D3/R3). An item-pot re-drops
+    // its vanilla content (repeatable, exactly like vanilla — the user's "vanilla
+    // item under it after checked").
+    return one_shot ? kRandoPot_Suppress : kRandoPot_Vanilla;
+  }
+
+  // Active + unchecked: grant the placed item. vanilla_registry_id = 0xFFFF means
+  // "always dispatch the placed item" (it can't equal `placed`). The dispatch
+  // marks the LOC checked internally and resolves the placed item's class
+  // (direct-grant / ITEM_Nothing -> kRandoLttpSkip; else its LttP receive code).
+  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, 0);
+  uint16 item = Rando_LastDispatchedItemId();
+  if (item != ITEM_Nothing)
+    Rando_ReceiveOrConfirm(lttp, (uint8)item);
+  // ITEM_Nothing (empty pot): the dispatch already marked it checked; no receive
+  // cue — the recolor reverting to vanilla on re-entry is the feedback.
+  return kRandoPot_Suppress;
+}
+
+bool Rando_PotShouldRecolor(uint16 room, uint16 pos4) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return false;
+  uint16 loc = Rando_GetPotLocation(room, pos4);
+  if (loc == 0xFFFF || !rando_pot_is_active(loc))
+    return false;
+  return !Rando_IsLocationChecked(loc);  // un-checked active pots draw recolored
 }
 
 bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
@@ -4266,6 +4352,34 @@ void Rando_SelfCheck(void) {
     exit(2);
   }
   Rando_DungeonIdSelfCheck();
+
+  // add-rando-pot-sanity Phase 4 — Rando_GetPotLocation (room,pos4)->LOC binary
+  // search: the table must be strictly sorted by (room<<16|pos4) and every entry
+  // must round-trip, or the runtime grant hook resolves the wrong pot.
+  {
+    uint32 prev = 0;
+    bool first = true;
+    for (uint32 i = 0; i < kRandoPotLookup_COUNT; i++) {
+      uint32 k = ((uint32)kRandoPotLookup[i].room << 16) | kRandoPotLookup[i].pos4;
+      if (!first && k <= prev) {
+        fprintf(stderr, "Rando_SelfCheck: pot lookup not strictly sorted at %u\n", i);
+        exit(2);
+      }
+      first = false;
+      prev = k;
+      if (Rando_GetPotLocation(kRandoPotLookup[i].room, kRandoPotLookup[i].pos4) !=
+          kRandoPotLookup[i].loc_id) {
+        fprintf(stderr, "Rando_SelfCheck: pot lookup round-trip failed at %u\n", i);
+        exit(2);
+      }
+    }
+    // A (room,pos4) absent from the table resolves to 0xFFFF (the hook then stays
+    // pure vanilla). Room 0x3FF is out of the 0..319 dungeon-room range.
+    if (Rando_GetPotLocation(0x3FF, 0x0010) != 0xFFFF) {
+      fprintf(stderr, "Rando_SelfCheck: pot lookup of a non-pot must be 0xFFFF\n");
+      exit(2);
+    }
+  }
 
   // Dispatch wrapper coverage (§6.1).
   // When no placement table is installed, Rando_OnLocationCheck returns

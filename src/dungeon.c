@@ -3689,6 +3689,18 @@ void RoomDraw_SinglePot(const uint16 *src, uint16 *dst, uint16 dsto) {  // 81b39
   replacement_tilemap_LL[i] = 0x0d1e;
   replacement_tilemap_UR[i] = 0x4d0e;
   replacement_tilemap_LR[i] = 0x4d1e;
+  // add-rando-pot-sanity Phase 4 — recolor an in-scope, un-checked pot (design
+  // D4): clear the vanilla palette (bits 10-12 = row 3) of the four 2x2 tiles and
+  // set the alt sub-palette row, so players can tell which pots are checks.
+  // dung_object_tilemap_pos[i] (just set above) is the (dsto*2 | BG-half) pos4 the
+  // lookup keys on. Checked / inactive / non-rando pots keep the vanilla palette
+  // (byte-identical off-rando — the gate returns false).
+  if (Rando_PotShouldRecolor(dungeon_room_index, dung_object_tilemap_pos[i])) {
+    replacement_tilemap_UL[i] = (replacement_tilemap_UL[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+    replacement_tilemap_LL[i] = (replacement_tilemap_LL[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+    replacement_tilemap_UR[i] = (replacement_tilemap_UR[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+    replacement_tilemap_LR[i] = (replacement_tilemap_LR[i] & ~0x1c00u) | (kRandoPotAltPalette << 10);
+  }
   if (savegame_is_darkworld)
     src = SrcPtr(0xe92);
   RoomDraw_Rightwards2x2(src, dst);
@@ -5880,6 +5892,15 @@ void ManipBlock_Something(Point16U *pt) {  // 81db41
 
 void RevealPotItem(uint16 pos6, uint16 pos4) {  // 81e6b2
   BYTE(dung_secrets_unk1) = 0;
+
+  // add-rando-pot-sanity Phase 4 — runtime grant hook (design D3). Runs for all
+  // three callers (lift / ThievesAttic-hole-inert-by-lookup / sword-break). On an
+  // active + un-checked pot it grants the placed item here; on a checked key/empty
+  // pot it suppresses the vanilla re-drop (dup-key risk). Suppress = return now
+  // with dung_secrets_unk1 == 0 — which also neutralizes the sword-break caller's
+  // later `dung_secrets_unk1 |= 0x80` (0x80 & 0x7f == 0, so no item spawns).
+  if (Rando_PotBreakHook(dungeon_room_index, pos4) == kRandoPot_Suppress)
+    return;
 
   const uint8 *src_ptr = kDungeonSecrets + WORD(kDungeonSecrets[dungeon_room_index * 2]);
 

@@ -284,6 +284,35 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 
 // ---------------------------------------------------------------------------
+// add-rando-pot-sanity Phase 4 — runtime pot grant hook + recolor (design D3/D4).
+//
+// Rando_PotBreakHook runs at the TOP of RevealPotItem (dungeon.c) for all three
+// callers (lift / ThievesAttic-hole / sword-break). On an active + un-checked pot
+// it grants the placed item here (+ fires the receive/confirm cue); on a CHECKED
+// key/empty pot it signals suppression (no duplicate-key re-drop). The return
+// tells RevealPotItem whether to suppress its vanilla secret. Rando_PotShouldRecolor
+// gates the un-checked-pot palette swap in RoomDraw_SinglePot. Both are inert
+// (Vanilla / false) when rando is off or (room,pos4) is not a registered,
+// tier-active pot — so the non-rando draw/grant path stays byte-identical.
+// ---------------------------------------------------------------------------
+enum {
+  kRandoPot_Vanilla = 0,   // let RevealPotItem run its normal vanilla path
+  kRandoPot_Suppress = 1,  // hook handled it; RevealPotItem must spawn no secret
+};
+// Alternate CGRAM sub-palette row (0..7) for un-checked in-scope pots. Vanilla
+// pots use row 3; this row must be loaded across dungeon themes AND visibly
+// distinct — verified by the offline render against zelda3_assets.dat (Phase 4.5),
+// NOT guessed. Tunable here so the verify can adjust it without touching the draw.
+#define kRandoPotAltPalette 5u
+// NOTE: the first param is named `room` (not `dungeon_room_index`) — the latter
+// is a variables.h g_ram-accessor MACRO and can't be a parameter name. Callers
+// pass the global `dungeon_room_index` value as the argument.
+uint8 Rando_PotBreakHook(uint16 room, uint16 pos4);
+bool Rando_PotShouldRecolor(uint16 room, uint16 pos4);
+// Exposed for the --rando-selftest (room,pos4) -> LOC round-trip assertion.
+uint16 Rando_GetPotLocation(uint16 room, uint16 pos4);
+
+// ---------------------------------------------------------------------------
 // Field item sprites — draw the PLACED item's
 // graphics at free-standing item locations instead of the vanilla sprite.
 //
