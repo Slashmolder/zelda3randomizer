@@ -1,6 +1,6 @@
 # add-rando-enemy-shuffle
 
-A randomizer **enemy shuffle** axis: randomize **which enemy spawns** in each dungeon room and overworld area, GFX-sheet-constrained so nothing crashes, as a per-seed deterministic **slot axis** (reproducible for races). Reference: `C:\src\Enemizer` (C#/asm, MIT) — mined for constraints, not copied.
+A randomizer **enemy shuffle** axis: randomize **which enemy spawns** in each dungeon room and overworld area, GFX-sheet-constrained so nothing crashes, as a per-seed deterministic **slot axis** (reproducible for races). Reference: the MIT-licensed Enemizer source checkout — mined for constraints, not copied.
 
 ## Status
 
@@ -23,7 +23,6 @@ not yet modeled.** Remaining deferred axes: killable-thief/bush/absorbables
 | [specs/randomizer-shuffles/spec.md](specs/randomizer-shuffles/spec.md) | ADDED — enemy-shuffle behavior, palette-gated GFX-sheet resolver, conservative beatability invariants, HP/contact-damage randomization |
 | [specs/randomizer-core/spec.md](specs/randomizer-core/spec.md) | ADDED — `enemy_shuffle` canonical axis (pad-bit-packed, length stays 28, kGen +1 = 60→61 as-built, placement byte-identical) |
 | [specs/randomizer-native-window/spec.md](specs/randomizer-native-window/spec.md) | ADDED — enemy-shuffle live checkbox (was a "coming soon" placeholder) |
-| [audit.md](audit.md) | Fresh-eyes audit after the all-slot reshuffle machinery + stat-randomization widening, including F12 stale-sheet and palette follow-ups |
 | [tasks.md](tasks.md) | Implementation checklist (constraint table → logic sweep → module → axis → UI → validation) |
 
 ## Key facts

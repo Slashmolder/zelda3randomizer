@@ -27,7 +27,7 @@ the follow-up), then §11. The change archives as "drops + minigames + boss
 generation"; the boss-runtime-rendering requirement is satisfied by the
 follow-up.
 
-UPDATE (2026-06-07, boss-shuffle runtime work — branch claude/boss-shuffle-runtime):
+UPDATE (2026-06-07, boss-shuffle runtime work):
 All three boss-runtime prerequisites LANDED (2026-06-07). Boss shuffle is now
 playable (experimental); the render is playtest-only validated.
   * BEATABILITY LOGIC — LANDED (kGenVer 56). The boss-kill predicate override
@@ -69,7 +69,7 @@ playable (experimental); the render is playtest-only validated.
   <!-- done: all 4 located + WIRED on main. Digging player.c:6891; Chest Game dungeon.c:6072; Hammer Pegs overworld.c:3033 (HandlePegPuzzles screen 98); Hype Cave NPC sprite_main.c:25930 (NiceThiefWithGift room 0x11E). -->
 - [x] 1.2 Verify Peg Cave location id is in `assets/rando/location_registry.yaml`. If missing, add append-only. <!-- done: id 218 "Hammer Pegs" present (location_registry.yaml:337). -->
 - [x] 1.3 Verify Treasure-Chest minigame's 3 candidate-chest location ids are in the registry. If missing OR if only 1 exists, add the other 2 as append-only. <!-- done: fork models the chest game as the single LOC_Chest_Game rare-prize dispatch (dungeon.c:6072), not 3 slots — the runtime is a "rare prize fires once" gate, not a literal 3-chest placement. The D3 3-slot model is N/A to this reimplementation. -->
-- [x] 1.4 Grep `../alttp_vt_randomizer/app/Boss.php` + `app/EnemyDrop.php` line counts + record source-line ranges in `audit.md §"Boss-shuffle provenance"` and `§"Drop-pool provenance"`. <!-- done: created audit.md with both sections. Boss.php (185 lines): 12 bosses in BossCollection @ Boss.php:68-128, each with file:line + shuffle role (10 shufflable + Agahnim/Agahnim2 pinned + Ganon out-of-pool = matches design D1). --> <!-- CORRECTION: app/EnemyDrop.php DOES NOT EXIST. Drop pool lives in app/Drops/PrizePack.php (61) + PrizePackSlot.php (60) + the roster in app/World.php:76-87 (11 packs, 63 slots) + sprite table app/Sprite.php (229 entries). Corrected source map recorded in audit.md §"Drop-pool provenance"; update design.md to match. Default-fill + ROM-writer location flagged as open follow-up. -->
+- [x] 1.4 Grep `../alttp_vt_randomizer/app/Boss.php` + `app/Drops/PrizePack.php` / `PrizePackSlot.php` line counts and record source-line ranges in the design/tasks. <!-- Boss.php (185 lines): 12 bosses in BossCollection @ Boss.php:68-128, each with file:line + shuffle role (10 shufflable + Agahnim/Agahnim2 pinned + Ganon out-of-pool = matches design D1). Drop pool lives in app/Drops/PrizePack.php (61) + PrizePackSlot.php (60) + the roster in app/World.php:76-87 (11 packs, 63 slots) + sprite table app/Sprite.php (229 entries). Default-fill + ROM-writer location flagged as open follow-up. -->
 
 ## 2. Boss-shuffle module
 
@@ -144,7 +144,7 @@ playable (experimental); the render is playtest-only validated.
 - [x] 9.5.1 **Generation budget bench**: both shuffles run AFTER `Place_AssumedFill` + sphere computation (per design.md D5). Each adds a post-placement pass. Bench: a seed with both shuffles on SHALL stay within Phase A's 2s desktop / 5s Switch budget. <!-- done: Release x64, 30 seeds default + 30 seeds both-on; both-on generation p50=1 ms, p95=2 ms, p99=2 ms, max=2 ms. -->
 - [x] 9.5.2 Drop-pool's heart-drop-guarantee constraint loop is the long pole — if the retry budget exhausts often, fall back to identity drop-pool with a spoiler `fallback_warnings` entry (per design.md D5 risk). <!-- done: fallback_warnings_total=0 across the 30 both-on benchmark seeds. -->
 - [x] 9.5.3 Boss-shuffle is O(10) permutation; should add <10ms. <!-- done: both-on generation time was indistinguishable from default at spoiler timing granularity. -->
-- [x] 9.5.4 Record final p50/p95/p99 in `audit.md §"Shuffles+minigames benchmark"`.
+- [x] 9.5.4 Record final p50/p95/p99 benchmark values in the task/design notes.
 
 ## 10. Playtest
 
@@ -161,5 +161,5 @@ playable (experimental); the render is playtest-only validated.
 
 - [x] 11.1 CI green; corpus matches. <!-- gcc -O2 -Werror (WSL) + --rando-selftest + corpus 110/110 byte-identical, 2026-06-07. -->
 - [x] 11.2 Manual playtest covers all 4 minigame sites + both shuffles on/off. <!-- owner 2026-06-07: boss/drop/Treasure-Chest/Hammer-Pegs/Hype-Cave + on/off covered; Digging Game fix later owner-confirmed per §10.5. -->
-- [x] 11.3 Fresh-eyes audit per `[[cluster-audit-cadence]]`. <!-- 2026-06-07 audit: 1 HIGH (Digging Game item-loss) + MED/LOW; fixes in 24fde70. -->
+- [x] 11.3 Independent review. <!-- 2026-06-07 review: Digging Game item-loss plus lower-severity issues; fixes in 24fde70. -->
 - [x] 11.4 `openspec archive add-rando-shuffles-and-minigames` runs cleanly. <!-- gated on the §10.5 Digging Game playtest; ready for archive after owner confirmation and benchmark close-out. -->

@@ -72,7 +72,7 @@ ALTTPR's `app/Boss.php` defines the boss pool. Per Phase A spec scenario "Requir
 
 ### D2: Drop-pool tiers
 
-ALTTPR's drop pool is **not** in an `app/EnemyDrop.php` (that file does not exist — see `audit.md §"Drop-pool provenance"` for the correction). It is modelled by `app/Drops/PrizePack.php` (61) + `app/Drops/PrizePackSlot.php` (60), with the pack **roster** declared in `app/World.php:76-87`: **11 prize packs / 63 slots** — 7 numbered enemy-drop packs `'0'..'6'` (8 slots each) plus the special packs `'pull'` (3), `'crab'` (2), `'stun'` (1), `'fish'` (1). The droppable sprite ids live in `app/Sprite.php` (229 `new Sprite(...)` entries). The shuffle randomizes which prize sprites fill each pack's slots.
+ALTTPR's drop pool is **not** in an `app/EnemyDrop.php` (that file does not exist). It is modelled by `app/Drops/PrizePack.php` (61) + `app/Drops/PrizePackSlot.php` (60), with the pack **roster** declared in `app/World.php:76-87`: **11 prize packs / 63 slots** — 7 numbered enemy-drop packs `'0'..'6'` (8 slots each) plus the special packs `'pull'` (3), `'crab'` (2), `'stun'` (1), `'fish'` (1). The droppable sprite ids live in `app/Sprite.php` (229 `new Sprite(...)` entries). The shuffle randomizes which prize sprites fill each pack's slots.
 
 **Decision**: per-tier drop-table permutation. Heart-drop guarantee per Phase A spec: at least one tier reachable in spheres 0-2 contains a heart entry. Apply-time prototype settles the algorithm — likely a constraint-based generation that retries the permutation if the heart-drop constraint fails.
 

@@ -33,14 +33,14 @@
 > modeling. Remaining deferred axes are killable-thief / bush enemies /
 > absorbables / randomize-on-hit (§7.3).
 >
-> **Spec reconciliation + fresh-eyes audit (2026-06-13).** The stale
+> **Spec reconciliation (2026-06-13).** The stale
 > `randomizer-shuffles` delta now matches the as-built v5 scope: all four
 > subgroup slots with palette-gated runtime widening, generated Enemizer-sourced
 > tables, dungeon-overlord spawned-slot decode, graveyard slot-3 pin, and
 > HP/contact-damage randomization.
 > The unsupported room-level water-only guarantee was narrowed in the normative
 > delta: source sprites tagged `ESF_WATER` set `require_water`, but there is no
-> independent water-room classifier yet. See `audit.md`.
+> independent water-room classifier yet; see `design.md`.
 >
 > **F12 playtest finding (2026-06-13).** Room `0xA9` captured a garbled
 > Mini-Helmasaur under live sheets `1F,2C,2E,52`; that replacement is only
@@ -231,11 +231,11 @@
 
 - [x] **Why / true-random.** The generated reshuffle tables and deterministic slot RNG remain built, but runtime sheet widening is currently palette-gated off: every subgroup slot resolves to the room's vanilla sheet so the picker draws only from the palette-safe, actually-loaded set. The vanilla-resolved sheet for each slot remains the forced outcome until palette requirements are modeled.
 - [x] **Where (zelda3).** Reordered `Gfx_LoadSpritesInner` to resolve all 4 ids then hook then decompress (behavior-identical); `InitializeTilesets` hook inserted after its 4-id resolve. The hook may rewrite `sprite_gfx_subset_0..3` BEFORE decompress so VRAM + picker agree; cached-redecompress paths (mirror warp etc.) reproduce it for free. Room/area sprite TYPE list walked at load time via new `Dungeon_GetRoomSpritePtr` / existing `GetOverworldSpritePtr` (asset blob — list available before parse; key on `dungeon_room_index` / `overworld_area_index`).
-- [x] **Enemizer port (`C:\src\Enemizer`).** Position whitelists from `SpriteGroupCollection` `PotentialSubsetN` (DISJOINT — a sheet id ⇒ one slot, so the picker's "sheet loaded" test stays sound with no position-aware change). Generated tables now cover all slots: `kEnemyTable`, `kSheetNeed`, per-slot pools, bosses, and `kOverlordNeed`. NOTE: the Walking Zora hybrid bug taught the invariant: every multi-slot enemy MUST list all required subgroup slots.
+- [x] **Enemizer port.** Position whitelists from `SpriteGroupCollection` `PotentialSubsetN` (DISJOINT — a sheet id ⇒ one slot, so the picker's "sheet loaded" test stays sound with no position-aware change). Generated tables now cover all slots: `kEnemyTable`, `kSheetNeed`, per-slot pools, bosses, and `kOverlordNeed`. NOTE: the Walking Zora hybrid bug taught the invariant: every multi-slot enemy MUST list all required subgroup slots.
 - [x] **Crash/softlock model (design D3).** (a) ELIGIBILITY: each subgroup slot originally reshuffled only when FREE — every present sprite is randomizable (substituted) or a known non-randomizable type that does not need that slot; this logic remains available but the palette guard currently pins all slots to vanilla. (b) ANTI-GARBAGE pool: each dungeon slot pool self-contains a killable+key enemy ⇒ the picker always finds a valid substitution and key/shutter rooms stay fillable when widening is re-enabled. (c) INHERITANCE leak: a snapshot-safe 4-byte shadow (`kRam_EnemyShuffleVanPos2` @ 0x662..0x665) restores vanilla-resolved sheets in inherited/pinned slots. (d) STALE-SHEET guard: the resolved sheet snapshot (`0x666..0x66c`) must match the current room/area key and live subsets, else the pick passes through vanilla. (e) Palette requirements and OAM footprint are still unmodelled (§3.4 / D4) — playtest watch-items, mitigated by forcing vanilla sheets plus the curated pool.
 - [x] **Determinism + install.** Per-(seed, room/area, slot) RNG (`kEnemyShuffleSheetSalt`, distinct from the pick salts) remains in place for future palette-aware widening. Current runtime forces vanilla-resolved sheets, so it is race-deterministic and not visit-order-dependent. Rides the existing `EnemyShuffle_Generate` activation (shadow reset to 0 = "not established" there). No new canonical axis.
 - [x] **Validation — current F12 regression pass done.** `EnemyShuffle_SelfCheck` covers the structural invariants, stale-sheet passthrough, overworld-palette gating, and stat bounds — green. Owner playtest reports the caught room/area cases solid; broader OAM/water/feel checks remain residual watch items.
 
 ## 8. Audit
 
-- [x] 8.1 Fresh-eyes audit pass after the slice lands (`CLAUDE.md` cadence) — completed 2026-06-13, see `audit.md`. Result: no new code changes required; spec/source comments reconciled. Residual non-blockers are OAM footprint modeling, independent water-room classification, and HP/damage feel under broader play.
+- [x] 8.1 Independent review pass after the slice lands — completed 2026-06-13. Result: spec/source comments reconciled. Residual non-blockers are OAM footprint modeling, independent water-room classification, and HP/damage feel under broader play.

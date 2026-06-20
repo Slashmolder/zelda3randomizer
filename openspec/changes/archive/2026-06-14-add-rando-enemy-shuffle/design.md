@@ -115,7 +115,7 @@ The per-sprite OAM reservation is `((sprite_flags2[k] & 0x1f) + 1) * 4` **bytes*
 
 ### D7: Logic — does the placer need to know? (verify, don't assume)
 
-A pure enemy-type shuffle is **logic-free for our purposes** — the fresh-eyes sweep confirmed no predicate is gated on which *shuffled* enemy spawns. The graph's kill predicates are: `CanKillBoss(<dungeon>)` (→ `OP_CAN_KILL_BOSS`); the **11 per-boss `CanKill<Boss>` macros** (`CanKillLanmolas`/`CanKillMoldorm`/`CanKillArmosKnights`/… — used *directly* for the **GT mini-boss gauntlet** and the pinned Agahnim, e.g. `assets/rando/logic_parts/.../33_ganons_tower.yaml`); and the firepower macros `CanKillMostThings`/`CanKillEscapeThings` (`macros.yaml:318,337`). Every one is a **player-firepower** test (does the inventory let Link kill a thing of that class), NOT an "is this specific enemy present" test — and the only enemies they reference are **bosses / mini-bosses, which are excluded from the substitution pool**. So enemy shuffle adds no predicate and no `OP_*`, and `placement_digest_hex` is byte-identical. (Round-1's enumeration omitted the per-boss macros; the *conclusion* held but the list was wrong — audit round 2.)
+A pure enemy-type shuffle is **logic-free for our purposes** — no predicate is gated on which *shuffled* enemy spawns. The graph's kill predicates are: `CanKillBoss(<dungeon>)` (→ `OP_CAN_KILL_BOSS`); the **11 per-boss `CanKill<Boss>` macros** (`CanKillLanmolas`/`CanKillMoldorm`/`CanKillArmosKnights`/… — used *directly* for the **GT mini-boss gauntlet** and the pinned Agahnim, e.g. `assets/rando/logic_parts/.../33_ganons_tower.yaml`); and the firepower macros `CanKillMostThings`/`CanKillEscapeThings` (`macros.yaml:318,337`). Every one is a **player-firepower** test (does the inventory let Link kill a thing of that class), NOT an "is this specific enemy present" test — and the only enemies they reference are **bosses / mini-bosses, which are excluded from the substitution pool**. So enemy shuffle adds no predicate and no `OP_*`, and `placement_digest_hex` is byte-identical. (An earlier enumeration omitted the per-boss macros; the conclusion held but the list was wrong.)
 
 **Exclusion must cover GT mini-bosses, not just boss rooms (audit HIGH).** The GT mini-boss gauntlet gates *non-boss chest* locations on `CanKill<Boss>`. So the excluded set is "all boss + mini-boss sprites," not "boss-room sprites": the GT mini-boss sprite ids (Armos/Lanmolas/Moldorm as GT mini-bosses — `0x09`/`0x53`/`0x54`, cf. `shuffle_boss.c:214-216`) MUST be flagged `is_boss` / do-not-randomize so substitution never replaces the enemy a `CanKill<Boss>` predicate assumes the player faces (and never breaks the boss fight itself).
 
@@ -151,7 +151,7 @@ playtest-caught room `0xA9` Helmasaur render glitch.
 2. Overworld substitution granularity — the *mechanism* is now known (rewrite `sprite_where_in_overworld = pick + 1`, exclude `>=0xf3`/`0xf4`; audit H3); the open part is whether to permute per area or per `sprite_where_in_overworld` block. Confirm against `Overworld_LoadProximaSpriteIfAlive` at apply-time.
 3. Should the axis be a bool (on/off) or an enum (off / dungeon-only / overworld-only / both) for the MVP? Bool is simplest; an enum is append-compatible later (it would consume more than one pad bit — still within the pad bytes, no length growth).
 
-## Audit notes (fresh-eyes pass, 2026-06-08)
+## Review notes (2026-06-08)
 
 Corrections folded in from an adversarial review (each re-verified against source):
 
@@ -169,7 +169,7 @@ Confirmed sound by the audit: the boss-shuffle install precedent, `Sprite_HEX_*`
 
 ## Post-implementation reconciliation (2026-06-08)
 
-Folded back from the implementation branch `claude/rando-enemy-shuffle` (build-verified + `--rando-selftest` green; not playtested):
+Folded back from the implementation branch (build-verified + `--rando-selftest` green; not playtested):
 
 - **kGen drift.** `main` advanced 58→60 (Phase D `add-rando-major-glitch`) while this proposal was open, so the as-built bump is **60→61**, not the 58→59 originally drafted. The branch + corpus regen used the correct v60 baseline and reported **0/112 digests changed**, proving the placement-byte-identical claim. The absolute pair tracks `main`'s value at merge.
 - **GFX `0`-inheritance handled in code.** Picks read live `sprite_gfx_subset_0..3` directly rather than the static `kSpriteTilesets` row, so no `load_gfx.c` change was needed (D3's concern resolved at the read site).
@@ -177,7 +177,7 @@ Folded back from the implementation branch `claude/rando-enemy-shuffle` (build-v
 
 ## Fresh-Eyes Audit Notes (2026-06-13)
 
-See `audit.md` for the post-v3 audit. The audit reconciled the spec delta to the
+The post-v3 review reconciled the spec delta to the
 all-slot reshuffle machinery + HP/contact-damage as-built behavior, removed the
 unsupported water-room guarantee from the normative delta, and left
 palette/OAM/render/softlock/water feel as playtest-only archive gates.

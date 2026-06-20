@@ -14,7 +14,7 @@ This change bundles boss + drop shuffles + the minigame dispatch because all thr
 
 - **New module**: `src/rando/shuffle_boss.c` + `src/rando/shuffle_boss.h`.
 - **Randomize boss-room assignments** from a configurable pool. Dungeon → reward binding stays stable (EP's boss-prize stays with EP regardless of which boss is in the room). Goal-required bosses (Agahnim 1, Agahnim 2, Ganon) stay at their canonical slots.
-- ALTTPR provenance: `../alttp_vt_randomizer/app/Boss.php`. PHP source-line range to be recorded in `audit.md` §"Boss-shuffle provenance" at apply-time.
+- ALTTPR provenance: `../alttp_vt_randomizer/app/Boss.php`. PHP source-line range recorded in the design/tasks at apply-time.
 - **Settings axis**: `boss_shuffle` (boolean, default false). When false, boss assignments are vanilla; the dispatcher still fires for uniformity.
 
 ### §7.2 Drop-pool shuffle
@@ -23,7 +23,7 @@ This change bundles boss + drop shuffles + the minigame dispatch because all thr
 - **Randomize sprite-death drop tables** (which drops fall from which enemies).
 - **Heart-drop guarantee**: low-HP zones still drop at least some hearts; the shuffle preserves a minimum heart-drop rate so the player doesn't get HP-starved at the start.
 - **Post-sphere ordering**: drop-pool runs AFTER item placement so sphere data is available; uses sphere data to gate aggressive shuffles (e.g., don't dry up hearts in the player's sphere 0 location set).
-- ALTTPR provenance: drop pool is `app/Drops/PrizePack.php` + `PrizePackSlot.php` + the 11-pack/63-slot roster at `app/World.php:76-87` + sprite table `app/Sprite.php` (NOT `app/EnemyDrop.php`, which does not exist). Recorded in `audit.md §"Drop-pool provenance"`.
+- ALTTPR provenance: drop pool is `app/Drops/PrizePack.php` + `PrizePackSlot.php` + the 11-pack/63-slot roster at `app/World.php:76-87` + sprite table `app/Sprite.php` (NOT `app/EnemyDrop.php`, which does not exist). Recorded in the design/tasks.
 - **Settings axis**: `drop_pool_shuffle` (boolean, default false).
 
 ### §6.8 Minigame dispatch

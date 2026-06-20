@@ -2,7 +2,7 @@
 
 > Transport-only format change: NO kGeneratorVersion bump, NO save/ZRSR/corpus
 > change (design D1; the corpus run in §4.2 is the proof, not the assumption).
-> Implemented 2026-06-12 on `claude/infallible-golick-a8edec` (rebased onto
+> Implemented 2026-06-12 on a feature branch (rebased onto
 > main @ 99f8476, kGeneratorVersion 70). Code + verification done; owner
 > playtest (§4.5) and archive (§5.3) remain.
 
@@ -99,10 +99,10 @@
       mid-flight: `s_paste_error` sized 224→320 for a full validator message
       (`-Wformat-truncation`).
 - [x] 4.4 Fresh-eyes audit per `[[cluster-audit-cadence]]`: 0 HIGH, 1 MED, 5
-      LOW (recorded in [audit.md](audit.md)). MED-1 (`Share_PastePath` would
+      LOW. MED-1 (`Share_PastePath` would
       seed-only a short v2 string with a zeroed hash) + LOW-6 (design.md risk
       note credited the wrong enum guard) FIXED; the other LOWs are within-spec
-      or pre-existing (rationale in audit.md).
+      or pre-existing (rationale recorded in the task discussion).
 - [x] 4.5 Playtest (USER — the only reliable net for UI flows):
       (a) after pinning a seed with "Randomize seed each generate" off, copy v2
       → fresh window/changed settings → paste → all widgets restore + Generate
