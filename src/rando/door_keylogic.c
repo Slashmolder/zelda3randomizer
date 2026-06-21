@@ -928,12 +928,14 @@ int DoorKeys_DumpKeyDepth(const char *path) {
     return 1;
   }
   fprintf(out,
-          "# zelda3 key-depth dump v1 - pot-sanity task #25 (depth -1 = unreachable)\n"
+          "# zelda3 key-depth dump v2 - pot-sanity task #25 (depth -1 = unreachable)\n"
+          "# depth=   WORST-CASE keys to guarantee reaching (wild requirement).\n"
+          "# mindepth= SHORTEST-PATH keys to reach (in-context dungeon-keys req).\n"
           "# DUNGEON d chest=.. drop=.. pairs=.. name=..\n"
-          "# REGION d region depth=.. name=..\n"
-          "# LOC d loc=forkid region=.. depth=.. name=..\n"
-          "# DROP d region=.. depth=.. name=..   (vanilla pot/drop key spot)\n"
-          "# ROOM room=0xNN region=.. depth=.. dungeon=d\n");
+          "# REGION d region depth=.. mindepth=.. name=..\n"
+          "# LOC d loc=forkid region=.. depth=.. mindepth=.. name=..\n"
+          "# DROP d region=.. depth=.. mindepth=.. name=..   (vanilla pot/drop key spot)\n"
+          "# ROOM room=0xNN region=.. depth=.. mindepth=.. dungeon=d\n");
 
   // Vanilla layout: pool stubs must redirect through their VANILLA partner, or
   // DoorExplore_Core (which only applies the pool redirect when spec->layout is
@@ -949,6 +951,13 @@ int DoorKeys_DumpKeyDepth(const char *path) {
                              : 0xFFFF;
 
   static uint8 depth[kDoorTbl_RegionCount];
+  // SHORTEST-PATH (min) key depth, alongside the worst-case `depth`. mindepth(R)
+  // = the fewest key doors that must be open on SOME order to reach R = the min
+  // popcount over every frontier-reachable open_mask that floods R. This is the
+  // in-context DUNGEON-keys requirement (you collect keys en route, so the
+  // shortest chain is necessary + sufficient for a known layout), as opposed to
+  // the worst-case `depth` the WILD requirement uses.
+  static uint8 mindepth[kDoorTbl_RegionCount];
   for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
     // Vanilla key-door pairs: each VanillaSmallKey-flagged door paired with its
     // vanilla partner (spiral stairs are single-direction). Dedup both sides.
@@ -997,8 +1006,10 @@ int DoorKeys_DumpKeyDepth(const char *path) {
     // Big-key doors are treated open (a location needing the big key carries a
     // separate HAS_ITEM(BigKey_*)); we only price the small-key worst case.
     uint8 total_keys = (uint8)(kDoorTblDungeons[d].chest_small_keys + g_door_idx.drop_cnt[d]);
-    for (int r = 0; r < kDoorTbl_RegionCount; r++)
+    for (int r = 0; r < kDoorTbl_RegionCount; r++) {
       depth[r] = 0xFF;
+      mindepth[r] = 0xFF;
+    }
     if (np > 14) {
       fprintf(out, "# ERROR dungeon %d np=%d exceeds BFS cap\n", d, np);
     } else {
@@ -1039,6 +1050,8 @@ int DoorKeys_DumpKeyDepth(const char *path) {
             ever[r] = 1;
             if (mask == 0)
               reached0[r] = 1;
+            if ((uint8)pc < mindepth[r])
+              mindepth[r] = (uint8)pc;  // shortest open-mask that floods R
           } else if ((uint8)pc > worst[r]) {
             worst[r] = (uint8)pc;
           }
@@ -1122,25 +1135,28 @@ int DoorKeys_DumpKeyDepth(const char *path) {
     for (int r = 0; r < kDoorTbl_RegionCount; r++) {
       if (kDoorTblRegions[r].dungeon != d)
         continue;
-      fprintf(out, "REGION %d %d depth=%d name=\"%s\"\n", d, r,
+      fprintf(out, "REGION %d %d depth=%d mindepth=%d name=\"%s\"\n", d, r,
               depth[r] == 0xFF ? -1 : depth[r],
+              mindepth[r] == 0xFF ? -1 : mindepth[r],
               DoorIdx_Name(kDoorTblRegions[r].name_off));
     }
     for (int i = 0; i < kDoorTbl_LocationCount; i++) {
       const DoorTblLocation *l = &kDoorTblLocations[i];
       if (kDoorTblRegions[l->region].dungeon != d)
         continue;
-      fprintf(out, "LOC %d loc=%d region=%d depth=%d name=\"%s\"\n", d,
+      fprintf(out, "LOC %d loc=%d region=%d depth=%d mindepth=%d name=\"%s\"\n", d,
               l->fork_loc_id, l->region,
               depth[l->region] == 0xFF ? -1 : depth[l->region],
+              mindepth[l->region] == 0xFF ? -1 : mindepth[l->region],
               Rando_GetLocationName(l->fork_loc_id));
     }
     for (int i = 0; i < kDoorTbl_DropKeyCount; i++) {
       const DoorTblDropKey *dk = &kDoorTblDropKeys[i];
       if (dk->dungeon != d)
         continue;
-      fprintf(out, "DROP %d region=%d depth=%d name=\"%s\"\n", d, dk->region,
-              depth[dk->region] == 0xFF ? -1 : depth[dk->region],
+      fprintf(out, "DROP %d region=%d depth=%d mindepth=%d name=\"%s\"\n", d,
+              dk->region, depth[dk->region] == 0xFF ? -1 : depth[dk->region],
+              mindepth[dk->region] == 0xFF ? -1 : mindepth[dk->region],
               DoorIdx_Name(kDoorTblRegions[dk->region].name_off));
     }
     // Deduped room -> region(+depth) for joining pots by room.
@@ -1157,8 +1173,9 @@ int DoorKeys_DumpKeyDepth(const char *path) {
         }
       if (dup)
         continue;
-      fprintf(out, "ROOM room=0x%02x region=%d depth=%d dungeon=%d\n", dd->room,
-              dd->region, depth[dd->region] == 0xFF ? -1 : depth[dd->region], d);
+      fprintf(out, "ROOM room=0x%02x region=%d depth=%d mindepth=%d dungeon=%d\n",
+              dd->room, dd->region, depth[dd->region] == 0xFF ? -1 : depth[dd->region],
+              mindepth[dd->region] == 0xFF ? -1 : mindepth[dd->region], d);
     }
   }
   fclose(out);

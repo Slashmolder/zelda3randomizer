@@ -316,6 +316,20 @@ static bool eval_pot_keys_wild(Cursor *c, const PredicateContext *ctx) {
          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Wild;
 }
 
+static bool eval_pot_keys_dungeon(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  // POT_KEYS_ON AND small keys are DUNGEON (per-dungeon, in-context). The pot-
+  // bearing dungeons' deep locations/pots gate their SHORTEST-PATH key-door count
+  // on this; the keys are collected en route so the graduated min-depth is the
+  // exact requirement (a flat worst-case would be circular). The nonpot drops are
+  // free-granted into the assumed inventory by rando_placement.c so the gates stay
+  // satisfiable. Wild keys and pots-off both leave this false (byte-identical).
+  const RandoSettings *s = ctx->settings;
+  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
+         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon;
+}
+
 // Boss-shuffle runtime — "can kill the boss assigned to a kRandoDungeon_* slot". Resolves
 // the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
 // via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
@@ -378,6 +392,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_INSTANT_FLUTE:          return eval_instant_flute(c, ctx);
     case OP_POT_KEYS_ON:            return eval_pot_keys_on(c, ctx);
     case OP_POT_KEYS_WILD:          return eval_pot_keys_wild(c, ctx);
+    case OP_POT_KEYS_DUNGEON:       return eval_pot_keys_dungeon(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;

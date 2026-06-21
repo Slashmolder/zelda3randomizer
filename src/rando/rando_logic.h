@@ -93,7 +93,14 @@ typedef enum {
   // is both correct and achievable. Dungeon-keys (in-context collection) is a
   // separate follow-on and stays on the vanilla branch here.
   OP_POT_KEYS_WILD = 24,
-  OP__COUNT = 25,
+  // Pot sanity (task #25) — POT_KEYS_ON AND small keys are DUNGEON (per-dungeon,
+  // the in-context case). The pot-bearing dungeons' deep locations/pots gate their
+  // SHORTEST-PATH (min-depth) small-key requirement on this: keys are collected en
+  // route so the graduated min-depth is necessary+sufficient (a flat worst-case is
+  // circular). Wild keys (worst-case) and pots-off both leave this false, so the
+  // wrapped term collapses out and their placement is byte-identical.
+  OP_POT_KEYS_DUNGEON = 25,
+  OP__COUNT = 26,
 } RandoOp;
 
 // ---------------------------------------------------------------------------

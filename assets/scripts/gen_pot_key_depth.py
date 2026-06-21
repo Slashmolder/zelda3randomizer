@@ -1,28 +1,43 @@
 #!/usr/bin/env python3
-"""Generate assets/rando/pot_key_depth.gen.yaml — the per-location WILD-keys
-worst-case small-key requirement for the pot-bearing dungeons
-(add-rando-pot-sanity task #25).
+"""Generate assets/rando/pot_key_depth.gen.yaml — the per-location / per-room /
+per-key-pot small-key requirements that pot_shuffle adds when a dungeon's pot
+keys become first-class checks (add-rando-pot-sanity task #25).
 
 Source of truth: run `./zelda3 --dump-key-depth key_depth.txt` first. That prover
-tool walks DoorExplore_Core (the real reachability engine) over the vanilla door
-graph and emits, per location, the WORST-CASE number of small-key doors that
-must be open to guarantee reaching it (`LOC ... depth=`). Once pot_shuffle turns
-a dungeon's pot keys into first-class items, a deep location can require more
-keys than the vanilla `cur` value (which counted only the placed keys, drops
-free). Under WILD keys those keys live anywhere in the world, so you must HOLD
-the worst case before reaching — a static requirement that is correct (no
-strand) and achievable (collect externally, enter loaded; capped at the
-dungeon's real key count).
+walks DoorExplore_Core over the VANILLA door graph and emits, per region /
+location / room / key-drop:
+  * `depth=`    WORST-CASE small-key doors to GUARANTEE reaching it, and
+  * `mindepth=` SHORTEST-PATH small-key doors to reach it.
 
-This script joins the dump with the current logic YAMLs and emits exactly the
-locations whose worst-case `full` exceeds their vanilla `cur`. rando_logic_gen.py
-wraps each one:
+Two key modes need two different values once the pot keys are items:
 
-    <vanilla predicate> AND (NOT POT_KEYS_WILD OR HAS_AMOUNT(SmallKey_X, full))
+  WILD keys — the keys live anywhere in the WORLD, so you must HOLD the worst
+    case before reaching (collect externally, enter loaded). Use `depth` (worst),
+    CAPPED at the pooled key count (chest + pot_keys); the nonpot enemy/guard
+    drops stay free in-dungeon so they never raise the external hold-N. Emitted
+    as `full`.
 
-so pots-off / dungeon-keys keep the vanilla branch (byte-identical) and only
-wild + pots-on tightens. Regenerate whenever the door tables or pots change
-(the depths are structural facts derived from committed data, not hand-authored).
+  DUNGEON keys — the keys are collected IN-CONTEXT en route, so the requirement
+    is the graduated `mindepth` (shortest path = exactly the keys needed for a
+    known layout). Uncapped: a deep location can need more than chest+pot_keys,
+    and the nonpot drops are FREE-GRANTED into the assumed inventory by
+    rando_placement.c (replicating pots-off "drops free") so HAS_AMOUNT stays
+    satisfiable. Emitted as `dungeon`.
+
+rando_logic_gen.py wraps each affected location / pot:
+  <vanilla cur> AND (NOT POT_KEYS_WILD     OR HAS_AMOUNT(X, full))
+               AND (NOT POT_KEYS_DUNGEON OR HAS_AMOUNT(X, dungeon))
+so pots-off (both ops false) stays byte-identical and each key mode tightens its
+own term.
+
+Pots resolve only to a ROOM, but a room can span door-table regions of differing
+depth (8 of the key-pot rooms do). The DUNGEON value therefore splits:
+  * KEY pots get their EXACT region mindepth (`pot_keys`) — over-gating a key pot
+    is circular (you need the key it holds to reach it) → spurious refuse; under-
+    gating strands. Joined to the prover DROP line by the key's door region.
+  * LOOT / EMPTY pots get the room-MAX mindepth (`pot_rooms.dungeon`) — they hold
+    no key so over-gating is harmless (it only delays the check), and room-max is
+    >= every pot's true depth so it never strands.
 """
 import re
 import sys
@@ -31,6 +46,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]  # assets/scripts/ -> repo root
 DUMP = ROOT / "key_depth.txt"
 OUT = ROOT / "assets" / "rando" / "pot_key_depth.gen.yaml"
+POTS = ROOT / "assets" / "rando" / "pots.gen.yaml"
 
 # door-table dungeon index -> SmallKey item suffix
 SK = {
@@ -39,45 +55,118 @@ SK = {
     6: "SwampPalace", 7: "SkullWoods", 8: "ThievesTown", 9: "IcePalace",
     10: "MiseryMire", 11: "TurtleRock", 12: "GanonsTower",
 }
-# Dungeons that actually have key pots (HC EP DP SP TT IP MM GT). The others
-# (ToH, Agahnim, PoD, Skull Woods, Turtle Rock) carry no pot keys, so pot_shuffle
-# never raises their requirement — leave them untouched.
-POT_DUNGEONS = {0, 1, 2, 6, 8, 9, 10, 12}
+SUF2D = {v: k for k, v in SK.items()}
+
+# Cross-check table — the EXACT per-key-pot dungeon mindepth, verified by hand
+# from the prover DROP regions + the door-rando key_drop_data 'Pot' rooms
+# (PotShuffle.py). Keyed (door-table dungeon, engine room). The auto-join below
+# MUST reproduce these; a mismatch fails the build (catches a dump change or a
+# pots.gen.yaml rebind drifting the join).
+KEYPOT_MINDEPTH = {
+    (2, 0x63): 0, (2, 0x53): 1, (2, 0x43): 2,            # Desert: Tiles1/Beamos/Tiles2
+    (1, 0xba): 0,                                          # EP Dark Square
+    (6, 0x35): 3, (6, 0x36): 3, (6, 0x37): 2,             # Swamp Trench2/Hookshot/Trench1
+    (6, 0x38): 1, (6, 0x56): 4,                            # Swamp PotRow / Waterway(0x16+floor)
+    (8, 0xab): 2, (8, 0xbc): 1,                            # Thieves SpikeSwitch/Hallway
+    (9, 0x9f): 2,                                          # Ice Many Pots
+    (10, 0xa1): 0, (10, 0xb3): 0,                          # Mire Fishbone/Spikes
+    (12, 0x7b): 1, (12, 0x8b): 0, (12, 0x9b): 0,          # GT StarPits/Cross/DoubleSwitch
+}
+# The two key pots whose door region is NOT in their engine room's ROOM-line set
+# (floor-bit alias / door-rando room-number split), so the DROP-region-in-room
+# auto-join can't reach them. Verified values; the assert vs KEYPOT_MINDEPTH guards.
+KEYPOT_OVERRIDE = {(6, 0x56): 4, (12, 0x9b): 0}
+# ORPHAN key pots: engine room is a floor-bit alias absent from the door-table
+# ROOM set for their dungeon, so NO pot_rooms entry covers them — carry the WILD
+# `full` here too (room-max wild can't reach them). Only Swamp Waterway: engine
+# room 0x56 == door-rando 0x16; DROP 'Swamp Waterway' worst=5, min=4, cap[SP]=6.
+KEYPOT_ORPHAN_FULL = {(6, 0x56): 5}
 
 
-def main() -> int:
-    if not DUMP.exists():
-        sys.exit(f"missing {DUMP}; run `./zelda3 --dump-key-depth key_depth.txt` first")
-
-    # full[name] = (worst_case_depth, dungeon_index); chest[d] from DUNGEON rows.
-    full = {}
-    chest = {}
+def parse_dump():
+    """Returns (chest, drop, loc, room_regions, drops_ordered).
+    loc[name]   = (worst, mindepth, dungeon)
+    room_regions[(dungeon, room)] = [(region, worst, mindepth)]
+    drops_ordered[dungeon] = [(region, worst, mindepth, name)]  (kDoorTblDropKeys order)
+    """
+    chest, drop = {}, {}
+    loc = {}
+    room_regions = {}
+    drops_ordered = {}
     for ln in DUMP.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"DUNGEON (\d+) chest=(\d+) ", ln)
+        m = re.match(r"DUNGEON (\d+) chest=(\d+) drop=(\d+) ", ln)
         if m:
-            chest[int(m.group(1))] = int(m.group(2))
-            continue
-        m = re.match(r'LOC (\d+) loc=\d+ region=\d+ depth=(-?\d+) name="([^"]*)"', ln)
+            chest[int(m[1])] = int(m[2]); drop[int(m[1])] = int(m[3]); continue
+        m = re.match(r'LOC (\d+) loc=\d+ region=\d+ depth=(-?\d+) mindepth=(-?\d+) name="([^"]*)"', ln)
         if m:
-            full[m.group(3)] = (int(m.group(2)), int(m.group(1)))
+            loc[m[4]] = (int(m[2]), int(m[3]), int(m[1])); continue
+        m = re.match(r"ROOM room=0x([0-9a-f]+) region=(\d+) depth=(-?\d+) mindepth=(-?\d+) dungeon=(\d+)", ln)
+        if m:
+            room_regions.setdefault((int(m[5]), int(m[1], 16)), []).append(
+                (int(m[2]), int(m[3]), int(m[4]))); continue
+        m = re.match(r'DROP (\d+) region=(\d+) depth=(-?\d+) mindepth=(-?\d+) name="([^"]*)"', ln)
+        if m:
+            drops_ordered.setdefault(int(m[1]), []).append(
+                (int(m[2]), int(m[3]), int(m[4]), m[5])); continue
+    return chest, drop, loc, room_regions, drops_ordered
 
-    # pot_keys[d] = number of key pots in dungeon d (pots.gen.yaml vanilla_item).
-    # The WILD requirement is CAPPED at the pooled key count (chest + pot_keys):
-    # that is the number of keys the player must HOLD externally, since the
-    # nonpot drop keys (drop - pot_keys) stay free in-dungeon and auto-collect in
-    # context. Capping keeps HAS_AMOUNT satisfiable by the pool alone (no nonpot
-    # free-grant) and is safe — chest+pot_keys >= the true external requirement.
-    suffix2d = {v: k for k, v in SK.items()}
-    pot_keys = {d: 0 for d in SK}
-    pots_txt = (ROOT / "assets" / "rando" / "pots.gen.yaml").read_text(encoding="utf-8")
-    for suf in re.findall(r"vanilla_item:\s*SmallKey_(\w+)", pots_txt):
-        if suf in suffix2d:
-            pot_keys[suffix2d[suf]] += 1
-    cap = {d: chest.get(d, 0) + pot_keys.get(d, 0) for d in SK}
 
-    # cur[name] = current placed-key requirement from the STANDARD logic (the
-    # vanilla wildKeys value the fork already ships). Inverted variants share the
-    # internal door depth, so the same `full` applies to them by name.
+def parse_pots():
+    """fork pots: list of dicts {id, room, vanilla_item, is_key, dungeon}."""
+    pots = []
+    cur = None
+    for ln in POTS.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"- id: (\d+)\s*$", ln)
+        if m:
+            if cur:
+                pots.append(cur)
+            cur = {"id": int(m[1])}
+        elif cur is not None:
+            mm = re.match(r"  room: (\d+)", ln)
+            if mm:
+                cur["room"] = int(mm[1])
+            mm = re.match(r"  vanilla_item: (\S+)", ln)
+            if mm:
+                cur["vi"] = mm[1]
+    if cur:
+        pots.append(cur)
+    out = []
+    for p in pots:
+        vi = p.get("vi", "")
+        m = re.match(r"SmallKey_(\w+)", vi)
+        if m and m[1] in SUF2D:
+            out.append({"id": p["id"], "room": p["room"],
+                        "item": vi, "dungeon": SUF2D[m[1]]})
+    return out
+
+
+def keypot_dungeon_depth(kp, room_regions, drops_ordered):
+    """Exact dungeon mindepth for one key pot via its door region.
+
+    Join: the prover DROP line whose region lives in this pot's engine room is
+    the key's region; take its mindepth. For the two floor-bit-aliased rooms the
+    region is not in the room set, so use the reviewed override."""
+    d, room = kp["dungeon"], kp["room"]
+    if (d, room) in KEYPOT_OVERRIDE:
+        return KEYPOT_OVERRIDE[(d, room)]
+    region_set = {r for (r, _w, _m) in room_regions.get((d, room), [])}
+    hits = [(reg, md) for (reg, _w, md, _n) in drops_ordered.get(d, [])
+            if reg in region_set and md >= 0]
+    if len(hits) == 1:
+        return hits[0][1]
+    if len(hits) > 1:
+        sys.exit(f"key pot d={d} room=0x{room:02x}: {len(hits)} DROP regions in room "
+                 f"{[h for h in hits]} — ambiguous join")
+    # No DROP region in the room (single-depth room with no separate drop entry):
+    # the room is unambiguous, so any region's mindepth is the answer.
+    mds = {md for (_r, _w, md) in room_regions.get((d, room), []) if md >= 0}
+    if len(mds) == 1:
+        return next(iter(mds))
+    sys.exit(f"key pot d={d} room=0x{room:02x}: no DROP join and ambiguous room "
+             f"mindepths {sorted(mds)} — needs a KEYPOT_OVERRIDE")
+
+
+def parse_cur():
     cur = {}
     am = re.compile(r"HAS_AMOUNT\(SmallKey_(\w+),\s*(\d+)\)")
     hi = re.compile(r"HAS_ITEM\(SmallKey_(\w+)\)")
@@ -88,8 +177,7 @@ def main() -> int:
         for ln in f.read_text(encoding="utf-8").splitlines():
             m = re.match(r'\s*-?\s*id:\s*"([^"]*)"', ln)
             if m:
-                curloc = m.group(1)
-                continue
+                curloc = m[1]; continue
             if curloc and "can_reach:" in ln:
                 n = 0
                 for _, v in am.findall(ln):
@@ -97,61 +185,125 @@ def main() -> int:
                 for _ in hi.findall(ln):
                     n = max(n, 1)
                 cur[curloc] = n
+    return cur
 
-    rows = []
-    for name in sorted(full):
-        depth, d = full[name]
-        if d not in POT_DUNGEONS or depth < 0:
+
+def main() -> int:
+    if not DUMP.exists():
+        sys.exit(f"missing {DUMP}; run `./zelda3 --dump-key-depth key_depth.txt` first")
+    chest, drop, loc, room_regions, drops_ordered = parse_dump()
+    keypots = parse_pots()
+    cur = parse_cur()
+
+    # pot_keys[d] = number of fork key pots in dungeon d (post-rebind).
+    pot_keys = {d: 0 for d in SK}
+    for kp in keypots:
+        pot_keys[kp["dungeon"]] += 1
+    # Dungeons whose deep locations gain a key requirement once pots are items.
+    POT_KEY_DUNGEONS = {d for d in SK if pot_keys[d] > 0}
+    cap = {d: chest.get(d, 0) + pot_keys.get(d, 0) for d in SK}  # wild hold-N cap
+
+    # Per-key-pot EXACT dungeon mindepth (+ cross-check vs the verified table).
+    pk_rows = []
+    for kp in sorted(keypots, key=lambda x: x["id"]):
+        dep = keypot_dungeon_depth(kp, room_regions, drops_ordered)
+        want = KEYPOT_MINDEPTH.get((kp["dungeon"], kp["room"]))
+        if want is None:
+            sys.exit(f"key pot id={kp['id']} d={kp['dungeon']} room=0x{kp['room']:02x} "
+                     f"missing from KEYPOT_MINDEPTH cross-check table")
+        if dep != want:
+            sys.exit(f"key pot id={kp['id']} d={kp['dungeon']} room=0x{kp['room']:02x}: "
+                     f"auto-join {dep} != verified {want}")
+        orphan_full = KEYPOT_ORPHAN_FULL.get((kp["dungeon"], kp["room"]))
+        pk_rows.append((kp["id"], kp["item"], dep, orphan_full))
+    if len(pk_rows) != len(KEYPOT_MINDEPTH):
+        sys.exit(f"found {len(pk_rows)} key pots but cross-check table has "
+                 f"{len(KEYPOT_MINDEPTH)} — stale table after a rebind?")
+
+    # Locations: full (wild, capped) and/or dungeon (min) where each tightens cur.
+    loc_rows = []
+    for name in sorted(loc):
+        worst, mindepth, d = loc[name]
+        if d not in POT_KEY_DUNGEONS or worst < 0:
             continue
-        depth = min(depth, cap[d])  # external (held) requirement under wild keys
-        if depth <= cur.get(name, 0):
-            continue  # pots do not raise this location's requirement
-        rows.append((name, f"SmallKey_{SK[d]}", depth))
+        c = cur.get(name, 0)
+        full = min(worst, cap[d])
+        item = f"SmallKey_{SK[d]}"
+        fields = {}
+        if full > c:
+            fields["full"] = full
+        if mindepth > c:
+            fields["dungeon"] = mindepth
+        if fields:
+            loc_rows.append((name, item, fields))
 
-    if not rows:
-        sys.exit("no affected locations found — is key_depth.txt stale?")
+    # pot_rooms: full = wild room worst (capped); dungeon = room-MAX mindepth.
+    # Wild covers EVERY dungeon with active pots (incl. no-key dungeons whose loot
+    # pots sit behind key doors); the dungeon term only the pot-key dungeons.
+    room_rows = []
+    POT_DUNGEONS = set(SK) - {3, 4, 5, 7, 11}  # has any pots (HC/EP/DP/SP/TT/IP/MM/GT)
+    for (d, room) in sorted(room_regions):
+        if d not in POT_DUNGEONS:
+            continue
+        worst = max((w for (_r, w, _m) in room_regions[(d, room)] if w >= 0), default=-1)
+        roommax_min = max((m for (_r, _w, m) in room_regions[(d, room)] if m >= 0), default=-1)
+        item = f"SmallKey_{SK[d]}"
+        fields = {}
+        if worst >= 0:
+            full = min(worst, cap[d])
+            if full > 0:
+                fields["full"] = full
+        if d in POT_KEY_DUNGEONS and roommax_min > 0:
+            fields["dungeon"] = roommax_min
+        if fields:
+            room_rows.append((room, item, fields))
 
-    # Pot rooms: the MAX worst-case depth per room (a pot's exact sub-region is
-    # not known, so max never under-gates), capped at the pooled key count. A pot
-    # behind key doors must require those keys under wild too, or a progression
-    # item placed there strands at runtime — and --generate-seed cannot catch it
-    # (placer + verifier share the loose predicate). rando_logic_gen.load_pots
-    # appends `AND (NOT POT_KEYS_WILD OR HAS_AMOUNT(item, full))` to each pot
-    # whose room is listed.
-    room_depth = {}  # (dungeon, room) -> max worst-case depth
-    for ln in DUMP.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"ROOM room=0x([0-9a-f]+) region=\d+ depth=(-?\d+) dungeon=(\d+)", ln)
-        if m:
-            d, room, dep = int(m.group(3)), int(m.group(1), 16), int(m.group(2))
-            if d in POT_DUNGEONS and dep >= 0:
-                room_depth[(d, room)] = max(room_depth.get((d, room), 0), dep)
-    pot_rooms = []
-    for (d, room), dep in sorted(room_depth.items()):
-        capped = min(dep, cap[d])
-        if capped > 0:
-            pot_rooms.append((room, f"SmallKey_{SK[d]}", capped))
+    # Free-grant of NONPOT drops per pot-key dungeon (= drop_cnt - pot_keys),
+    # consumed by rando_placement.c (hardcoded there + selfchecked). Printed here
+    # for cross-verification of the C table.
+    free = {d: drop.get(d, 0) - pot_keys[d] for d in POT_KEY_DUNGEONS}
 
     out = [
         "# GENERATED by assets/scripts/gen_pot_key_depth.py — do not edit by hand.",
-        "# Source: ./zelda3 --dump-key-depth (prover worst-case under vanilla doors).",
-        "# Per-location WILD-keys small-key requirement for pot-bearing dungeons",
-        "# (add-rando-pot-sanity task #25). rando_logic_gen.py wraps each location:",
-        "#   <vanilla predicate> AND (NOT POT_KEYS_WILD OR HAS_AMOUNT(item, full))",
-        "format_version: 1",
+        "# Source: ./zelda3 --dump-key-depth (prover worst-case + min-depth, vanilla doors).",
+        "# add-rando-pot-sanity task #25 — small-key requirements pot_shuffle adds.",
+        "#   full    = WILD hold-N worst case (capped at chest+pot_keys).",
+        "#   dungeon = in-context MIN-depth (per-key-pot exact in pot_keys; room-max for loot).",
+        "format_version: 2",
         "locations:",
     ]
-    for name, item, full_n in rows:
+    for name, item, fields in loc_rows:
         out.append(f'  - name: "{name}"')
         out.append(f"    item: {item}")
-        out.append(f"    full: {full_n}")
-    out.append("# Per-ROOM pot requirement (load_pots wraps each pot in the room).")
+        if "full" in fields:
+            out.append(f"    full: {fields['full']}")
+        if "dungeon" in fields:
+            out.append(f"    dungeon: {fields['dungeon']}")
+    out.append("# Per-ROOM pot requirement (load_pots wraps every pot in the room).")
+    out.append("# full -> all pots (wild); dungeon -> loot/empty pots (key pots use pot_keys).")
     out.append("pot_rooms:")
-    for room, item, full_n in pot_rooms:
+    for room, item, fields in room_rows:
         out.append(f"  - room: 0x{room:02x}")
         out.append(f"    item: {item}")
-        out.append(f"    full: {full_n}")
+        if "full" in fields:
+            out.append(f"    full: {fields['full']}")
+        if "dungeon" in fields:
+            out.append(f"    dungeon: {fields['dungeon']}")
+    out.append("# Per-KEY-POT exact dungeon mindepth (overrides pot_rooms.dungeon for the key pot).")
+    out.append("# `full` appears only for ORPHAN pots whose room has no pot_rooms wild entry.")
+    out.append("pot_keys:")
+    for pid, item, dep, orphan_full in pk_rows:
+        out.append(f"  - id: {pid}")
+        out.append(f"    item: {item}")
+        if orphan_full is not None:
+            out.append(f"    full: {orphan_full}")
+        out.append(f"    dungeon: {dep}")
     OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
-    print(f"wrote {OUT} ({len(rows)} locations, {len(pot_rooms)} pot rooms)")
+    print(f"wrote {OUT}: {len(loc_rows)} locations, {len(room_rows)} pot rooms, "
+          f"{len(pk_rows)} key pots")
+    print("pot_keys per dungeon:", {SK[d]: pot_keys[d] for d in POT_KEY_DUNGEONS})
+    print("NONPOT free-grant (drop-pot_keys) for rando_placement.c:",
+          {SK[d]: free[d] for d in sorted(free) if free[d] > 0})
     return 0
 
 

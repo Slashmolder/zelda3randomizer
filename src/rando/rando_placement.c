@@ -294,6 +294,46 @@ static const uint16 kCompasses[] = {
   ID_Compass_SW, ID_Compass_TT, ID_Compass_IP, ID_Compass_MM, ID_Compass_TR, ID_Compass_GT,
 };
 
+// add-rando-pot-sanity task #25 — NONPOT small-key drops per dungeon: the enemy /
+// guard / under-block keys that pot_shuffle does NOT itemize (only POTS shuffle).
+// Under DUNGEON keys + pots-on a dungeon's pot keys become pooled items, so its
+// deep locations gate on the prover SHORTEST-PATH (min-depth) over ALL key doors.
+// The nonpot drops are still collected in-context (exactly as in pots-off), so we
+// pre-grant them into the assumed inventory to keep those gates satisfiable. Count
+// = (door-rando small-key drop total) - (fork pot-key count); only the four
+// dungeons whose drops exceed their pot keys are non-zero. Derived from
+// `--dump-key-depth` DUNGEON `drop=` minus the pots.gen.yaml key-pot count (see
+// gen_pot_key_depth.py's printed "NONPOT free-grant"); Placement_SelfCheck
+// re-derives the pot-key count and asserts this table stays consistent.
+static const struct { uint16 item_id; uint8 count; } kPotNonpotDropCounts[] = {
+  { ID_SmallKey_EP, 1 },  // EP: drop 2 - pot 1
+  { ID_SmallKey_IP, 3 },  // IP: drop 4 - pot 1
+  { ID_SmallKey_MM, 1 },  // MM: drop 3 - pot 2
+  { ID_SmallKey_GT, 1 },  // GT: drop 4 - pot 3
+};
+
+// True when pot_shuffle itemizes a dungeon's pot keys under DUNGEON keys — the
+// exact condition OP_POT_KEYS_DUNGEON gates on (pot_shuffle>=Keys, door off,
+// small keys == Dungeon). Wild caps its own requirement at the pooled key count
+// so it needs no nonpot free-grant; vanilla/pots-off leave the keys free.
+static bool pot_keys_dungeon_active(const RandoSettings *s) {
+  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
+         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon;
+}
+
+// Pre-grant the nonpot small-key drops (kPotNonpotDropCounts) into `counts` when
+// pot_keys_dungeon_active. Shared by the placer's assumed-fill seeding AND the
+// goal/sphere verifier so reachability agrees. At runtime Rando_BuildRuntimeCounts
+// OVERWRITES each per-dungeon small-key count with the live SRAM counter (which
+// already includes these drops), so this is placer-effective only — no double
+// count.
+static void seed_pot_nonpot_drops(RandoCounts *counts, const RandoSettings *s) {
+  if (counts == NULL || !pot_keys_dungeon_active(s)) return;
+  for (uint8 i = 0; i < (uint8)(sizeof(kPotNonpotDropCounts) / sizeof(kPotNonpotDropCounts[0])); i++)
+    counts->by_item_id[kPotNonpotDropCounts[i].item_id] += kPotNonpotDropCounts[i].count;
+}
+
 // Seed the vanilla-mode dungeon items into a RandoCounts inventory. For each
 // dungeon-item class in Vanilla mode the items are NOT shuffled into the world
 // pool — the player collects them in-place — so logic treats them as always
@@ -317,6 +357,7 @@ void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *set
     for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++)
       counts->by_item_id[kCompasses[i]] = 1;
   }
+  seed_pot_nonpot_drops(counts, settings);
 }
 
 // Add `n` copies of `item_id` to the pool, respecting capacity.
@@ -398,17 +439,14 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
   if (vi >= 53 && vi <= 65) {
     uint8 km = Settings_EffectiveSmallKeysMode(settings);
     if (km == kDungeonItemMode_Vanilla) return true;
-    // add-rando-pot-sanity task #25: under DUNGEON keys the dungeon's CHEST keys
-    // still shuffle in-dungeon, but a POT key stays VANILLA — pinned to its pot,
-    // dropped in place exactly like pots-off (the runtime falls through to the
-    // vanilla pot drop because Placement_Lookup misses an unfilled slot, and a
-    // pinned slot is excluded from the junk-pad). An open UNpooled key pot would
-    // strand the dungeon (pot keys are not in BuildItemPool's chest count), and
-    // the within-dungeon pot-key shuffle (in-context key logic) is a follow-on.
-    // Under WILD keys pot keys ARE shuffled into the general pool (BuildItemPool)
-    // so they must NOT be pinned. Chest key locations (not LOCTYPE_Pot) shuffle
-    // under both Dungeon and Wild — only the pot subset pins.
-    if (loc->type == LOCTYPE_Pot && km == kDungeonItemMode_Dungeon) return true;
+    // add-rando-pot-sanity task #25: under both DUNGEON and WILD keys the dungeon's
+    // small keys — chests AND active key pots — shuffle and enter BuildItemPool, so
+    // none are pinned. Under DUNGEON keys a key pot stays in its own dungeon (the
+    // assumed-fill confines it via the per-pot min-depth gates: OP_POT_KEYS_DUNGEON
+    // + the free-granted nonpot drops); under WILD it joins the world pool. An
+    // INACTIVE pot (door shuffle / pot_shuffle off) never reaches here — both
+    // callers filter it — so it falls through to the vanilla pot drop. Only the
+    // vanilla key mode pins.
     return false;
   }
   if (vi >= 66 && vi <= 76)
@@ -678,19 +716,20 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     }
   }
 
-  // ----- Pot keys (add-rando-pot-sanity task #25, WILD keys only) -----
+  // ----- Pot keys (add-rando-pot-sanity task #25) -----
   // kVanillaSmallKeyCounts above is the placed/chest key count; a dungeon's POT
   // keys are NOT in it. When pot_shuffle turns the key pots into live checks
-  // their small key must ALSO enter the pool, or it vanishes — the wild/pot
-  // strand. Under WILD keys the keys live in the general pool, so each active
-  // key pot contributes its vanilla SmallKey (or the shared GenericKey under
-  // Retro, exactly as the chest keys above). This is slot-balanced: every active
-  // key pot is itself a fillable open slot counted by the junk-pad target, so
-  // pool and slot grow together (a placed key that happens to sit under a pot
-  // double-counts to a harmless surplus key — still slot-balanced). Dungeon-keys
-  // in-context pooling is the follow-on; pots-off / vanilla / dungeon all leave
-  // this untouched (the pool stays byte-identical).
-  if (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Wild) {
+  // their small key must ALSO enter the pool, or it vanishes. Under WILD keys the
+  // keys live in the general world pool; under DUNGEON keys they shuffle within
+  // their own dungeon (the assumed-fill confines them via the per-pot min-depth
+  // gates, and the nonpot drops are free-granted by seed_pot_nonpot_drops). Either
+  // way each active key pot contributes its vanilla SmallKey (or the shared
+  // GenericKey under Retro, exactly as the chest keys above). Slot-balanced: every
+  // active key pot is itself a fillable open slot counted by the junk-pad target,
+  // so pool and slot grow together (a placed key that happens to sit under a pot
+  // double-counts to a harmless surplus key). pots-off / vanilla leave this
+  // untouched (the pool stays byte-identical).
+  if (Settings_EffectiveSmallKeysMode(settings) != kDungeonItemMode_Vanilla) {
     bool generic = Settings_GenericKeysActive(settings);
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
@@ -2056,6 +2095,7 @@ static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCount
       out->by_item_id[kCompasses[i]] = 1;
     }
   }
+  seed_pot_nonpot_drops(out, s);
 }
 
 // Lookup a location_id in the placement table; returns the placed item or
@@ -2769,6 +2809,31 @@ void Placement_SelfCheck(void) {
     if (!(n_keys <= n_cont && n_cont <= n_all)) selfcheck_die("pot tiers must nest keys<=contents<=all");
     if (n_keys != key_pots) selfcheck_die("Keys tier must activate exactly the key pots");
     if (n_all != pot_locs) selfcheck_die("All tier must activate every pot");
+
+    // (b') task #25 — the nonpot small-key free-grant (kPotNonpotDropCounts) must
+    //      equal (door-rando drop total) - (fork pot keys) for every dungeon that
+    //      HAS pot keys, or it drifts when the pot set changes (a pots.gen.yaml
+    //      rebind / new key pot). Drop totals = prover `--dump-key-depth` DUNGEON
+    //      drop= values; pot keys re-counted from kRandoLocations here.
+    {
+      static const uint8 kDoorDropTotal[13] =
+          { 3, 2, 3, 0, 2, 0, 5, 2, 2, 4, 3, 2, 4 };  // HCE,EP,DP,TH,HCT,PoD,SP,SW,TT,IP,MM,TR,GT
+      for (uint8 d = 0; d < 13; d++) {
+        uint16 key = kVanillaSmallKeyCounts[d].item_id;
+        uint8 npots = 0;
+        for (uint32 i = 0; i < kRandoLocationsCount; i++)
+          if (kRandoLocations[i].type == LOCTYPE_Pot &&
+              kRandoLocations[i].vanilla_item_id == key) npots++;
+        if (npots == 0) continue;  // no pot keys -> no min-depth gate -> no free-grant
+        if (npots > kDoorDropTotal[d])
+          selfcheck_die("pot keys exceed door-rando drop total (pots.gen.yaml drift)");
+        uint8 want = (uint8)(kDoorDropTotal[d] - npots), have = 0;
+        for (uint8 j = 0; j < (uint8)(sizeof(kPotNonpotDropCounts) / sizeof(kPotNonpotDropCounts[0])); j++)
+          if (kPotNonpotDropCounts[j].item_id == key) have = kPotNonpotDropCounts[j].count;
+        if (have != want)
+          selfcheck_die("kPotNonpotDropCounts drift (must = door drop total - pot keys)");
+      }
+    }
 
     // (c) door shuffle forces every pot inactive (v1 — the prover doesn't model
     //     pots). Settings_EffectiveDoorShuffle needs Open/Standard + NoGlitches.

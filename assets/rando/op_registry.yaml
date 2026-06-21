@@ -309,6 +309,27 @@ ops:
       collapses to the vanilla term and their placement is byte-identical.
     contexts: [can_reach, can_place]
 
+  - id: 25
+    name: OP_POT_KEYS_DUNGEON
+    phase: C
+    operands: []
+    semantics: |
+      OP_POT_KEYS_ON AND Settings_EffectiveSmallKeysMode == Dungeon (per-dungeon
+      small keys, the in-context case). Added for add-rando-pot-sanity (task #25):
+      a pot-bearing dungeon's deep locations / pots wrap their small-key term as
+      `<vanilla predicate> AND (NOT POT_KEYS_DUNGEON OR HAS_AMOUNT(SmallKey_X,
+      mindepth))`, where `mindepth` is the prover SHORTEST-PATH key-door count —
+      the keys are collected EN ROUTE so the graduated min-depth is necessary +
+      sufficient for a known layout (a flat worst-case would be circular: the keys
+      sit behind the doors they open). Key pots use their EXACT region min-depth;
+      loot/empty pots and chest/boss/prize use the location/room min-depth. The
+      nonpot enemy/guard drops are free-granted into the assumed inventory
+      (rando_placement.c) so HAS_AMOUNT stays satisfiable, exactly mirroring
+      pots-off "drops free". Wild keys (worst-case held externally) and pots-off
+      both leave this false, so the term collapses out and their placement is
+      byte-identical.
+    contexts: [can_reach, can_place]
+
 
 
 # ---------------------------------------------------------------------------

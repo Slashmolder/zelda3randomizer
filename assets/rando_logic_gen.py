@@ -227,6 +227,33 @@ def load_locations(path: Path) -> dict[str, LocationDef]:
     return out
 
 
+def _pot_key_terms(room, pot_id, pot_room_wrap, pot_key_wrap):
+    """Build the trailing pot-key gate ' AND (...wild...) AND (...dungeon...)' for
+    one pot (add-rando-pot-sanity task #25). A KEY pot uses its EXACT per-pot
+    dungeon depth (and its own wild `full` when the room has no entry — the
+    floor-bit Waterway orphan); a loot/empty pot uses the room's wild `full` and
+    room-max dungeon. Each op is false under pots-off so the term collapses out;
+    a 0 requirement is omitted (HAS_AMOUNT(X,0) is vacuously true)."""
+    room_w = pot_room_wrap.get(room)
+    key_w = pot_key_wrap.get(pot_id)
+    item = (room_w[0] if room_w else None) or (key_w[0] if key_w else None)
+    if item is None:
+        return ""
+    # WILD: room-max `full` for every pot; the key pot's own `full` only backfills
+    # when the room has no wild entry (keeps clean rooms byte-identical under wild).
+    full = room_w[1] if room_w else None
+    if full is None and key_w is not None:
+        full = key_w[1]
+    # DUNGEON: key pot -> exact per-pot depth; loot/empty -> room-max.
+    dungeon = key_w[2] if key_w is not None else (room_w[2] if room_w else None)
+    t = ""
+    if full is not None and full > 0:
+        t += f" AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT({item}, {full}))"
+    if dungeon is not None and dungeon > 0:
+        t += f" AND (NOT POT_KEYS_DUNGEON() OR HAS_AMOUNT({item}, {dungeon}))"
+    return t
+
+
 def load_pots(path: Path):
     """Load assets/rando/pots.gen.yaml (committed registry from gen_pot_tables.py).
 
@@ -241,15 +268,31 @@ def load_pots(path: Path):
               f"checkout? regenerate with gen_pot_tables.py)", file=sys.stderr)
         return {}, []
     doc = load_yaml(path)
-    # add-rando-pot-sanity task #25: per-room WILD-keys pot requirement. A pot
-    # behind key doors must require those keys under wild + pot_shuffle, or a
-    # progression item placed there strands. pots-off / dungeon-keys keep the
-    # vanilla branch (POT_KEYS_WILD false), so default placement is unchanged.
-    pot_room_wrap = {}  # room (int) -> (item, full)
+    # add-rando-pot-sanity task #25: small-key requirements pot_shuffle adds once a
+    # dungeon's pot keys are first-class checks. A pot behind key doors must require
+    # those keys or a progression item placed there strands. pots-off keeps both
+    # POT_KEYS_WILD and POT_KEYS_DUNGEON false, so the wrap collapses to the vanilla
+    # predicate (byte-identical). pot_rooms gives every pot in the room a WILD `full`
+    # term and loot/empty pots a DUNGEON room-max term; a KEY pot uses its EXACT
+    # per-pot dungeon depth (pot_keys), plus its own `full` when the room has no wild
+    # entry (the floor-bit Waterway orphan). See gen_pot_key_depth.py.
+    pot_room_wrap = {}  # room (int) -> (item, full|None, dungeon|None)
+    pot_key_wrap = {}   # pot id (int) -> (item, full|None, dungeon)
     depth_tbl = RANDO_ASSETS / "pot_key_depth.gen.yaml"
     if depth_tbl.exists():
-        for r in load_yaml(depth_tbl).get("pot_rooms", []) or []:
-            pot_room_wrap[int(r["room"])] = (r["item"], int(r["full"]))
+        dt = load_yaml(depth_tbl)
+        for r in dt.get("pot_rooms", []) or []:
+            pot_room_wrap[int(r["room"])] = (
+                r["item"],
+                int(r["full"]) if "full" in r else None,
+                int(r["dungeon"]) if "dungeon" in r else None,
+            )
+        for r in dt.get("pot_keys", []) or []:
+            pot_key_wrap[int(r["id"])] = (
+                r["item"],
+                int(r["full"]) if "full" in r else None,
+                int(r["dungeon"]),
+            )
     out, rows = {}, []
     for p in doc.get("pots", []) or []:
         # add-rando-pot-sanity: empty pots carry the ITEM_Nothing filler as their
@@ -263,10 +306,9 @@ def load_pots(path: Path):
         if (p.get("kind") == "empty") or not vanilla_item:
             vanilla_item = "Nothing"
         can_reach = p.get("can_reach") or "TRUE()"
-        wrap = pot_room_wrap.get(int(p["room"]))
-        if wrap is not None:
-            can_reach = (f"({can_reach}) AND (NOT POT_KEYS_WILD() OR "
-                         f"HAS_AMOUNT({wrap[0]}, {wrap[1]}))")
+        terms = _pot_key_terms(int(p["room"]), int(p["id"]), pot_room_wrap, pot_key_wrap)
+        if terms:
+            can_reach = f"({can_reach}){terms}"
         loc = LocationDef(
             id=p["id"], name=p["name"], region=p.get("region", ""), type="Pot",
             vanilla_item=vanilla_item,
@@ -441,16 +483,18 @@ def load_logic(path: Path | None):
                 world_state_edges=world_state_edges,
             )
 
-    _apply_pot_key_wild_wrap(loc_preds, world_state_overrides)
+    _apply_pot_key_terms(loc_preds, world_state_overrides)
     return regions, edges, loc_preds, macros, world_state_overrides, world_state_edges
 
 
-def _apply_pot_key_wild_wrap(loc_preds, world_state_overrides):
+def _apply_pot_key_terms(loc_preds, world_state_overrides):
     """add-rando-pot-sanity task #25: wrap each pot-bearing dungeon location's
-    can_reach so that under WILD keys + pot_shuffle the deep locations require
-    the prover WORST-CASE key count (the pot keys are first-class items then).
-    pots-off / dungeon-keys / default all leave POT_KEYS_WILD false, so the wrap
-    collapses to the vanilla predicate and their placement is byte-identical.
+    can_reach with the small-key requirements pot_shuffle adds — the WILD
+    worst-case (`full`, held externally) and the in-context DUNGEON min-depth
+    (`dungeon`). The dungeon term matters because the vanilla `cur` assumes the
+    pot keys drop FREE; once they are items the requirement RISES to min-depth.
+    pots-off leaves both POT_KEYS_WILD and POT_KEYS_DUNGEON false, so the wrap
+    collapses to the vanilla predicate (byte-identical).
 
     Driven by the generated assets/rando/pot_key_depth.gen.yaml (from
     `./zelda3 --dump-key-depth`); applies to the base Standard/Open/Retro
@@ -468,8 +512,14 @@ def _apply_pot_key_wild_wrap(loc_preds, world_state_overrides):
         return
     doc = load_yaml(table_path)
     for row in doc.get("locations", []):
-        name, item, full = row["name"], row["item"], int(row["full"])
-        tail = f" AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT({item}, {full}))"
+        name, item = row["name"], row["item"]
+        tail = ""
+        if "full" in row and int(row["full"]) > 0:
+            tail += f" AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT({item}, {int(row['full'])}))"
+        if "dungeon" in row and int(row["dungeon"]) > 0:
+            tail += f" AND (NOT POT_KEYS_DUNGEON() OR HAS_AMOUNT({item}, {int(row['dungeon'])}))"
+        if not tail:
+            continue
         applied = False
         if name in loc_preds:
             loc_preds[name].can_reach = f"({loc_preds[name].can_reach}){tail}"
@@ -1169,6 +1219,9 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "POT_KEYS_WILD":
         if args:
             raise ParseError("OP_POT_KEYS_WILD takes no operands")
+    elif op_name == "POT_KEYS_DUNGEON":
+        if args:
+            raise ParseError("OP_POT_KEYS_DUNGEON takes no operands")
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 
