@@ -80,7 +80,13 @@ typedef enum {
   // Randomizer QoL — true when the seed setting promotes OcarinaInactive
   // pickups to the active bird-woken flute immediately.
   OP_INSTANT_FLUTE = 22,
-  OP__COUNT = 23,
+  // Pot sanity (add-rando-pot-sanity task #25) — true iff dungeon pot keys are
+  // first-class shuffled checks (pot_shuffle >= Keys AND door shuffle off). A
+  // pot-bearing dungeon's deep locations wrap their small-key term so pots-off
+  // keeps the vanilla worst-case (byte-identical) and pots-on requires the
+  // prover worst-case that counts the now-itemized pot keys.
+  OP_POT_KEYS_ON = 23,
+  OP__COUNT = 24,
 } RandoOp;
 
 // ---------------------------------------------------------------------------

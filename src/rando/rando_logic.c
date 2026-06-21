@@ -292,6 +292,17 @@ static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
   return ctx->settings != NULL && ctx->settings->instant_flute != 0;
 }
 
+static bool eval_pot_keys_on(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  // Mirrors pot_active() (rando_placement.c): dungeon pot keys are live checks
+  // only when pot_shuffle >= Keys AND door shuffle is off (door shuffle forces
+  // every pot inactive). When false, the wrapped small-key term collapses to
+  // its vanilla worst-case, so default + pots-off placement is byte-identical.
+  const RandoSettings *s = ctx->settings;
+  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
+         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla;
+}
+
 // Boss-shuffle runtime — "can kill the boss assigned to a kRandoDungeon_* slot". Resolves
 // the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
 // via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
@@ -352,6 +363,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_DOORS_ACTIVE:           return eval_doors_active(c, ctx);
     case OP_DOORS_LOC_REACHABLE:    return eval_doors_loc_reachable(c, ctx);
     case OP_INSTANT_FLUTE:          return eval_instant_flute(c, ctx);
+    case OP_POT_KEYS_ON:            return eval_pot_keys_on(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;

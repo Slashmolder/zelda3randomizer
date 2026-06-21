@@ -31,6 +31,11 @@
 #include <stdio.h>
 #include <string.h>
 
+// Location-name accessor (rando_logic.h) — used only by the --dump-key-depth
+// dev tool below; forward-declared to avoid pulling the logic header into the
+// prover translation unit.
+extern const char *Rando_GetLocationName(uint16 location_id);
+
 // RoomData.DoorKind codes (ROM door-list kind bytes; values mirrored from the
 // reference RoomData enum — structural ROM facts).
 enum {
@@ -891,4 +896,271 @@ accepted:
   for (int i = 0; i < kc.np; i++)
     layout->key_doors[dungeon][i] = kc.pairs[i].a;
   return AnalyzeDungeon(&kc);
+}
+
+// ---------------------------------------------------------------------------
+// Dev dump (--dump-key-depth): the AUTHORITATIVE per-region / per-location
+// minimum small-key DEPTH under VANILLA doors, for pot-sanity task #25 (model
+// pot keys in the logic).
+//
+// depth(region) = min over every key-door open-mask M that REACHES the region
+// of popcount(M) — the fewest vanilla small-key doors that must be unlocked to
+// stand there (items lenient, big-key doors treated open, every dungeon portal
+// an origin). This is the true key-door depth counting ALL keys: the door
+// table's chest_small_keys is the ALTTPR placed-key count and kDoorTblDropKeys
+// carries the vanilla pot/drop keys, so the prover graph already prices both.
+// It is the number a location must require as HAS_AMOUNT(SmallKey_X, depth)
+// once pot keys become first-class shuffled items.
+//
+// A naive 0-1 BFS over kDoorTblEdges is WRONG (it ignores edge rules + crystal
+// switch state, so free/logical edges bypass key doors and severely under-count
+// — GT came out depth 2 vs ~6, MM/IP all-0). This enumerates through
+// DoorExplore_Core, the same reachability engine the placer/prover use.
+//
+// Pots are not in kDoorTblLocations (door x pot is deferred), so we also emit a
+// deduped room->region(+depth) map; the Python join resolves each pot's room.
+// ---------------------------------------------------------------------------
+int DoorKeys_DumpKeyDepth(const char *path) {
+  DoorIdx_Init();
+  FILE *out = fopen(path, "wb");
+  if (!out) {
+    fprintf(stderr, "--dump-key-depth: cannot open %s\n", path);
+    return 1;
+  }
+  fprintf(out,
+          "# zelda3 key-depth dump v1 - pot-sanity task #25 (depth -1 = unreachable)\n"
+          "# DUNGEON d chest=.. drop=.. pairs=.. name=..\n"
+          "# REGION d region depth=.. name=..\n"
+          "# LOC d loc=forkid region=.. depth=.. name=..\n"
+          "# DROP d region=.. depth=.. name=..   (vanilla pot/drop key spot)\n"
+          "# ROOM room=0xNN region=.. depth=.. dungeon=d\n");
+
+  // Vanilla layout: pool stubs must redirect through their VANILLA partner, or
+  // DoorExplore_Core (which only applies the pool redirect when spec->layout is
+  // set — shuffle_doors.c:526) leaves pool edges pointing at their placeholder
+  // stub region and the dungeon's real key-door chokepoints stop isolating
+  // anything (PoD then read as all-depth-0). The real prover always passes a
+  // layout; the vanilla depth needs the identity one.
+  static DoorShuffleLayout vanilla;
+  memset(&vanilla, 0, sizeof(vanilla));
+  for (int i = 0; i < kDoorTbl_DoorCount; i++)
+    vanilla.pairing[i] = (kDoorTblDoors[i].flags & kDoorTblFlag_InPool)
+                             ? kDoorTblDoors[i].vanilla_partner
+                             : 0xFFFF;
+
+  static uint8 depth[kDoorTbl_RegionCount];
+  for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
+    // Vanilla key-door pairs: each VanillaSmallKey-flagged door paired with its
+    // vanilla partner (spiral stairs are single-direction). Dedup both sides.
+    DoorKeyPair pairs[24];
+    int np = 0;
+    static uint8 emitted[kDoorTbl_DoorCount / 8 + 1];
+    memset(emitted, 0, sizeof(emitted));
+    for (int door = 0; door < kDoorTbl_DoorCount; door++) {
+      const DoorTblDoor *dd = &kDoorTblDoors[door];
+      if (dd->dungeon != d || !(dd->flags & kDoorTblFlag_VanillaSmallKey))
+        continue;
+      if ((emitted[door >> 3] >> (door & 7)) & 1)
+        continue;
+      if (np >= (int)(sizeof(pairs) / sizeof(pairs[0]))) {
+        fprintf(out, "# ERROR dungeon %d: more key doors than pairs[]\n", d);
+        break;
+      }
+      uint16 a = (uint16)door;
+      uint16 b = (dd->type == kDoorTblType_SpiralStairs) ? 0xFFFF : dd->vanilla_partner;
+      pairs[np].a = a;
+      pairs[np].b = b;
+      emitted[door >> 3] |= 1 << (door & 7);
+      if (b != 0xFFFF && b < kDoorTbl_DoorCount)
+        emitted[b >> 3] |= 1 << (b & 7);
+      np++;
+    }
+    // Origins: walk-in lobby portals only (is_drop=0). DROP arrivals (hole/
+    // pit landings) must NOT be free origins — you reach them by FALLING from a
+    // floor that is itself behind key doors, so the prover should price them via
+    // the in-dungeon falldown edge, not let them short-circuit deep regions to
+    // depth ~0 (that bug made PoD's boss read depth 1 instead of 6).
+    static uint16 origins[kDoorTbl_PortalCount];
+    int norig = 0;
+    for (int p = 0; p < kDoorTbl_PortalCount; p++)
+      if (kDoorTblPortals[p].dungeon == d && !kDoorTblPortals[p].is_drop)
+        origins[norig++] = kDoorTblPortals[p].region;
+
+    // Per-region WORST-CASE small-key depth via the counter BFS — the validated
+    // ALTTPR / door-rando model. depth(R) = the fewest keys that GUARANTEE
+    // reaching R regardless of door-opening order = 1 + (the most keys an
+    // adversary can spend on an openable counter-state that still does NOT reach
+    // R), capped at the dungeon's real key count; 0 if reachable with no keys.
+    //
+    // MIN-depth is WRONG: PoD's boss has a 1-key lucky path, but you can waste 5
+    // keys without reaching it, so it needs 6 — matching ALTTPR `has(KeyD1, 6)`.
+    // Big-key doors are treated open (a location needing the big key carries a
+    // separate HAS_ITEM(BigKey_*)); we only price the small-key worst case.
+    uint8 total_keys = (uint8)(kDoorTblDungeons[d].chest_small_keys + g_door_idx.drop_cnt[d]);
+    for (int r = 0; r < kDoorTbl_RegionCount; r++)
+      depth[r] = 0xFF;
+    if (np > 14) {
+      fprintf(out, "# ERROR dungeon %d np=%d exceeds BFS cap\n", d, np);
+    } else {
+      static uint8 reached0[kDoorTbl_RegionCount];
+      static uint8 ever[kDoorTbl_RegionCount];
+      static uint8 worst[kDoorTbl_RegionCount];
+      static uint8 regval[kDoorTbl_RegionCount];  // 1 = location or drop region
+      memset(reached0, 0, sizeof(reached0));
+      memset(ever, 0, sizeof(ever));
+      memset(worst, 0, sizeof(worst));
+      memset(regval, 0, sizeof(regval));
+      for (int i = 0; i < kDoorTbl_LocationCount; i++)
+        regval[kDoorTblLocations[i].region] = 1;
+      for (int i = 0; i < kDoorTbl_DropKeyCount; i++)
+        if (kDoorTblDropKeys[i].dungeon == d)
+          regval[kDoorTblDropKeys[i].region] = 1;
+      static uint8 seen[1 << 14];
+      static uint16 queue[1 << 14];
+      static uint8 qval[1 << 14];  // "value" (#location+drop regions reached) per state
+      memset(seen, 0, (size_t)1 << np);
+      int qh = 0, qt = 0;
+      queue[qt++] = 0;
+      qval[0] = 0;
+      seen[0] = 1;
+      while (qh < qt) {
+        uint16 mask = queue[qh];
+        uint8 parent_val = qval[qh];
+        qh++;
+        int pc = 0;
+        for (uint16 m = mask; m; m &= m - 1)
+          pc++;
+        DoorExploreSpec spec;
+        DoorExploreResult res;
+        memset(&spec, 0, sizeof(spec));
+        spec.layout = &vanilla;  // pool stubs -> vanilla partners (see above)
+        spec.dungeon = d;
+        spec.origins = origins;
+        spec.origin_count = norig;
+        spec.pairs = pairs;
+        spec.pair_count = np;
+        spec.open_mask = mask;
+        spec.bk_mode = kDoorBkMode_Open;
+        DoorExplore_Core(&spec, &res);
+        for (int r = 0; r < kDoorTbl_RegionCount; r++) {
+          if (kDoorTblRegions[r].dungeon != d)
+            continue;
+          bool reach = DoorExplore_Reached(&res, (uint16)r);
+          if (reach) {
+            ever[r] = 1;
+            if (mask == 0)
+              reached0[r] = 1;
+          } else if ((uint8)pc > worst[r]) {
+            worst[r] = (uint8)pc;
+          }
+        }
+        // Expand: open a frontier-reachable closed key door ONLY when it unlocks
+        // NEW value — a location or drop-key region not already reached. This is
+        // the create_key_counters / RelativeEmpty calibration (AnalyzeDungeon):
+        // wasting keys down a dead-end branch with no check/key does NOT count
+        // toward a deeper location's worst case, so a sprawling dungeon's early
+        // chests don't read as "needs every key". Bounded by the real key count.
+        if (pc < total_keys) {
+          for (int i = 0; i < np; i++) {
+            if ((mask >> i) & 1)
+              continue;
+            bool frontier = false;
+            uint16 dd2[2] = { pairs[i].a, pairs[i].b };
+            for (int k = 0; k < 2 && !frontier; k++) {
+              if (dd2[k] == 0xFFFF)
+                continue;
+              for (int j = 0; j < 2; j++) {
+                uint16 e = g_door_idx.door_edge[dd2[k]][j];
+                if (e != 0xFFFF && Door_EdgePassableFrom(&res, e)) {
+                  frontier = true;
+                  break;
+                }
+              }
+            }
+            if (!frontier)
+              continue;
+            uint16 m2 = (uint16)(mask | (1u << i));
+            if (seen[m2])
+              continue;
+            // Value of the child state: count reached location/drop regions.
+            DoorExploreSpec cs = spec;
+            DoorExploreResult cr;
+            cs.open_mask = m2;
+            DoorExplore_Core(&cs, &cr);
+            uint8 child_val = 0;
+            for (int r = 0; r < kDoorTbl_RegionCount; r++)
+              if (regval[r] && kDoorTblRegions[r].dungeon == d &&
+                  DoorExplore_Reached(&cr, (uint16)r))
+                child_val++;
+            if (child_val <= parent_val)
+              continue;  // wasteful opening — prune (no new check/key)
+            seen[m2] = 1;
+            qval[qt] = child_val;
+            queue[qt] = m2;
+            qt++;
+          }
+        }
+      }
+      for (int r = 0; r < kDoorTbl_RegionCount; r++) {
+        if (kDoorTblRegions[r].dungeon != d)
+          continue;
+        if (!ever[r])
+          depth[r] = 0xFF;  // unreachable even with every key
+        else if (reached0[r])
+          depth[r] = 0;
+        else {
+          uint8 v = (uint8)(worst[r] + 1);
+          depth[r] = v > total_keys ? total_keys : v;
+        }
+      }
+    }
+
+    fprintf(out, "DUNGEON %d chest=%d drop=%d pairs=%d name=\"%s\"\n", d,
+            kDoorTblDungeons[d].chest_small_keys, g_door_idx.drop_cnt[d], np,
+            DoorIdx_Name(kDoorTblDungeons[d].name_off));
+    for (int r = 0; r < kDoorTbl_RegionCount; r++) {
+      if (kDoorTblRegions[r].dungeon != d)
+        continue;
+      fprintf(out, "REGION %d %d depth=%d name=\"%s\"\n", d, r,
+              depth[r] == 0xFF ? -1 : depth[r],
+              DoorIdx_Name(kDoorTblRegions[r].name_off));
+    }
+    for (int i = 0; i < kDoorTbl_LocationCount; i++) {
+      const DoorTblLocation *l = &kDoorTblLocations[i];
+      if (kDoorTblRegions[l->region].dungeon != d)
+        continue;
+      fprintf(out, "LOC %d loc=%d region=%d depth=%d name=\"%s\"\n", d,
+              l->fork_loc_id, l->region,
+              depth[l->region] == 0xFF ? -1 : depth[l->region],
+              Rando_GetLocationName(l->fork_loc_id));
+    }
+    for (int i = 0; i < kDoorTbl_DropKeyCount; i++) {
+      const DoorTblDropKey *dk = &kDoorTblDropKeys[i];
+      if (dk->dungeon != d)
+        continue;
+      fprintf(out, "DROP %d region=%d depth=%d name=\"%s\"\n", d, dk->region,
+              depth[dk->region] == 0xFF ? -1 : depth[dk->region],
+              DoorIdx_Name(kDoorTblRegions[dk->region].name_off));
+    }
+    // Deduped room -> region(+depth) for joining pots by room.
+    for (int door = 0; door < kDoorTbl_DoorCount; door++) {
+      const DoorTblDoor *dd = &kDoorTblDoors[door];
+      if (dd->dungeon != d)
+        continue;
+      bool dup = false;
+      for (int e = 0; e < door; e++)
+        if (kDoorTblDoors[e].dungeon == d && kDoorTblDoors[e].room == dd->room &&
+            kDoorTblDoors[e].region == dd->region) {
+          dup = true;
+          break;
+        }
+      if (dup)
+        continue;
+      fprintf(out, "ROOM room=0x%02x region=%d depth=%d dungeon=%d\n", dd->room,
+              dd->region, depth[dd->region] == 0xFF ? -1 : depth[dd->region], d);
+    }
+  }
+  fclose(out);
+  fprintf(stderr, "--dump-key-depth: wrote %s\n", path);
+  return 0;
 }

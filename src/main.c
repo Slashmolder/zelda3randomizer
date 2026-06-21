@@ -1550,6 +1550,13 @@ int main(int argc, char** argv) {
       // oracle==stitcher cross-checks.
       return DoorShuffle_SelfTest();
     }
+    if (strcmp(argv[i], "--dump-key-depth") == 0) {
+      // Dev/codegen: the authoritative per-location small-key DEPTH under
+      // vanilla doors (pot-sanity task #25). No assets/SDL needed — the door
+      // tables and location registry are compiled in.
+      const char *path = (i + 1 < argc) ? argv[i + 1] : "key_depth.txt";
+      return DoorKeys_DumpKeyDepth(path);
+    }
   }
 
   // Check for --rando-bench-logic BEFORE any SDL_Init. Runs the

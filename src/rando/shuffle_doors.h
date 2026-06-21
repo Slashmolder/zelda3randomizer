@@ -138,3 +138,12 @@ void DoorExplore_RelevantVmMask(uint8 dungeon, uint64 out_mask[2]);
 // (regenerate -> identical digest), and full-inventory oracle==stitcher
 // agreement. Returns 0 on success, nonzero on failure (messages to stderr).
 int DoorShuffle_SelfTest(void);
+
+// Dev dump (wired to --dump-key-depth): the AUTHORITATIVE per-region /
+// per-location minimum small-key DEPTH under VANILLA doors — the number a
+// location must require as HAS_AMOUNT(SmallKey_X, depth) once pot keys become
+// first-class shuffled items (pot-sanity task #25). Computed by enumerating
+// every key-door open-mask through DoorExplore_Core (the real reachability
+// engine), NOT a naive edge BFS. Writes a parseable text table to `path`;
+// returns 0 on success, 1 on file error.
+int DoorKeys_DumpKeyDepth(const char *path);

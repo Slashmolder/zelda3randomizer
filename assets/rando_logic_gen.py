@@ -1111,6 +1111,9 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "INSTANT_FLUTE":
         if args:
             raise ParseError("OP_INSTANT_FLUTE takes no operands")
+    elif op_name == "POT_KEYS_ON":
+        if args:
+            raise ParseError("OP_POT_KEYS_ON takes no operands")
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 
