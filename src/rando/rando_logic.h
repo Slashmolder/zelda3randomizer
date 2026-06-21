@@ -208,11 +208,16 @@ typedef struct RandoLocationDef {
 // trackers, and hint generator. Other type ordinals stay local to
 // rando_placement.c while they are single-site.
 enum {
+  LOCTYPE_Prize_Event = 12,  // virtual event trigger, not an item check
   LOCTYPE_Medallion   = 13,  // MM/TR medallion config slot, not an item check
   LOCTYPE_Shop        = 14,  // Retro regular shop slot (identity-pinned inventory)
   LOCTYPE_ShopUpgrade = 15,  // Retro capacity-upgrade slot (identity-placed)
   LOCTYPE_TakeAny     = 16,  // Retro take-any cave slot
 };
+
+static inline bool Rando_LocationTypeCountsAsCheck(uint8 type) {
+  return type != LOCTYPE_Prize_Event && type != LOCTYPE_Medallion;
+}
 
 typedef struct RandoRegionDef {
   uint16 id;

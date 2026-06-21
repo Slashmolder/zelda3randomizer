@@ -394,14 +394,14 @@ static void BuildLocRegionIndex() {
   s_loc_region_built = true;
 }
 
-// Medallion-type (13) locations are the Misery Mire / Turtle Rock medallion
-// CONFIG slots (which medallion opens the dungeon) — a generation-time setting,
-// NOT an item check. They carry a default-TRUE predicate + 0xFFFF region, so
-// they would otherwise render as permanently "available". Exclude them
-// everywhere the check tracker enumerates placement entries.
-static const uint8 kLocType_Medallion = 13;
+// Prize_Event (12) locations are virtual logic events (Zelda rescue, Agahnim,
+// Ganon, etc.) pinned into the placement table so reachability can grant their
+// event item. Medallion-type (13) locations are the Misery Mire / Turtle Rock
+// medallion CONFIG slots (which medallion opens the dungeon) — a generation-time
+// setting, NOT an item check. Exclude both everywhere the check tracker
+// enumerates placement entries.
 static inline bool LocHiddenFromChecks(uint16 loc) {
-  return loc < 1024 && s_loc_type[loc] == kLocType_Medallion;
+  return loc < 1024 && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
 }
 
 // Check status: 0 unreachable, 1 reachable-unchecked, 2 checked.
@@ -436,7 +436,7 @@ static void DrawCheckTracker(void *) {
   if (race) s_show_items = false;
 
   // Compute summary counts. n_total stays the placement-table loop bound;
-  // n_visible is the displayed total with hidden (medallion-config) slots removed.
+  // n_visible is the displayed total with non-check slots removed.
   int n_total = pt ? (int)pt->count : 0;
   int n_visible = 0, n_checked = 0, n_reachable = 0;
   for (int i = 0; i < n_total; i++) {

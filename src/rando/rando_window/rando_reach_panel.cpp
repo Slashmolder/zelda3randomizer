@@ -43,14 +43,13 @@ static void BuildLocRegionIndex() {
   s_loc_region_built = true;
 }
 
-// Medallion-type (13) locations are the MM/TR medallion CONFIG slots (which
-// medallion opens the dungeon) — a generation-time setting, not an item check.
-// They carry a default-TRUE predicate + 0xFFFF region, so they'd otherwise show
-// as permanently "reachable" under "(unbound)" and inflate the totals. Mirror
-// the Check Tracker's LocHiddenFromChecks so the two views agree. (audit T2)
-static const uint8 kLocType_Medallion = 13;
+// Prize_Event (12) locations are virtual logic events (Zelda rescue, Agahnim,
+// Ganon, etc.) pinned into the placement table so reachability can grant their
+// event item. Medallion-type (13) locations are the MM/TR medallion CONFIG slots
+// (which medallion opens the dungeon) — a generation-time setting, not an item
+// check. Mirror the Check Tracker's LocHiddenFromChecks so the two views agree.
 static inline bool LocHiddenFromChecks(uint16 loc) {
-  return loc < 1024 && s_loc_type[loc] == kLocType_Medallion;
+  return loc < 1024 && !Rando_LocationTypeCountsAsCheck(s_loc_type[loc]);
 }
 
 extern "C" void RandoReach_Render(void) {
@@ -75,7 +74,7 @@ extern "C" void RandoReach_Render(void) {
   int n_reachable = 0, n_visible = 0;
   for (int i = 0; i < n_total; i++) {
     uint16 loc = pt->entries[i].location_id;
-    if (LocHiddenFromChecks(loc)) continue;  // exclude medallion-config slots (audit T2)
+    if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
     n_visible++;
     if (Rando_IsLocationChecked(loc)) n_reachable++;
     else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
@@ -114,7 +113,7 @@ extern "C" void RandoReach_Render(void) {
     int r_total = 0, r_reach = 0;
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
-      if (LocHiddenFromChecks(loc)) continue;  // exclude medallion-config slots (audit T2)
+      if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
       uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       r_total++;
@@ -144,7 +143,7 @@ extern "C" void RandoReach_Render(void) {
 
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
-      if (LocHiddenFromChecks(loc)) continue;  // exclude medallion-config slots (audit T2)
+      if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
       uint16 lr = (loc < 1024) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
 

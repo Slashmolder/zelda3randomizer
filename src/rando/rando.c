@@ -5398,6 +5398,21 @@ static void tsc_die(const char *msg) {
   exit(2);
 }
 
+static void tsc_expect_check_visibility(uint16 loc_id, bool expected) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id != loc_id) continue;
+    bool actual = Rando_LocationTypeCountsAsCheck(kRandoLocations[i].type);
+    if (actual != expected) {
+      char msg[128];
+      snprintf(msg, sizeof(msg), "check visibility mismatch for %s",
+               Rando_GetLocationName(loc_id));
+      tsc_die(msg);
+    }
+    return;
+  }
+  tsc_die("check visibility test location not found");
+}
+
 // End-to-end check of the slot-recovery + live-reachability path (Phase 1a/1b),
 // which the corpus / other selftests do NOT cover (the playable-slot path is
 // otherwise test-free per CLAUDE.md). Generates a default placement, round-trips
@@ -5448,6 +5463,13 @@ void Rando_TrackerSelfCheck(void) {
     tsc_die("recovered settings mismatch");
   if (Rando_GetDungeonPrizeAssignment() == NULL || Rando_GetMedallionAssignment() == NULL)
     tsc_die("shuffle assignments not installed at activate");
+
+  tsc_expect_check_visibility(LOC_Zelda, false);
+  tsc_expect_check_visibility(LOC_Agahnim, false);
+  tsc_expect_check_visibility(LOC_Agahnim_2, false);
+  tsc_expect_check_visibility(LOC_Ganon, false);
+  tsc_expect_check_visibility(LOC_Bomb_Merchant, false);
+  tsc_expect_check_visibility(LOC_Hyrule_Castle_Zelda_s_Cell, true);
 
   RandoCounts counts;
   Rando_BuildRuntimeCounts(&counts);

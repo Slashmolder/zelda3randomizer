@@ -179,8 +179,9 @@ _Static_assert(ID_TrapTeleport == ITEM_TrapTeleport, "trap id drift: Teleport");
 // must match assets/rando/location_registry.yaml (id = 266 + 2*cave + slot).
 #define kTakeAnyCaveCount 31
 #define kTakeAnyLocBase   266   // registry id of cave 0 slot 0
-// LOCTYPE_Medallion / LOCTYPE_Shop / LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now
-// live in rando_logic.h (shared so the ordinals can't drift between files).
+// LOCTYPE_Prize_Event / LOCTYPE_Medallion / LOCTYPE_Shop /
+// LOCTYPE_ShopUpgrade / LOCTYPE_TakeAny now live in rando_logic.h (shared so
+// the ordinals can't drift between files).
 
 // Placer-local location-type ordinals (per logic.schema.yaml's types index).
 // File-scope so BuildItemPool's junk-pad target and the pre-place pin pass in
@@ -196,7 +197,6 @@ enum {
   LOCTYPE_Drop          = 7,
   LOCTYPE_Prize_Crystal = 10,
   LOCTYPE_Prize_Pendant = 11,
-  LOCTYPE_Prize_Event   = 12,
 };
 
 // kRandoDungeon_* -> Prize location id, for prize-shuffle placement.
