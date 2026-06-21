@@ -241,6 +241,15 @@ def load_pots(path: Path):
               f"checkout? regenerate with gen_pot_tables.py)", file=sys.stderr)
         return {}, []
     doc = load_yaml(path)
+    # add-rando-pot-sanity task #25: per-room WILD-keys pot requirement. A pot
+    # behind key doors must require those keys under wild + pot_shuffle, or a
+    # progression item placed there strands. pots-off / dungeon-keys keep the
+    # vanilla branch (POT_KEYS_WILD false), so default placement is unchanged.
+    pot_room_wrap = {}  # room (int) -> (item, full)
+    depth_tbl = RANDO_ASSETS / "pot_key_depth.gen.yaml"
+    if depth_tbl.exists():
+        for r in load_yaml(depth_tbl).get("pot_rooms", []) or []:
+            pot_room_wrap[int(r["room"])] = (r["item"], int(r["full"]))
     out, rows = {}, []
     for p in doc.get("pots", []) or []:
         # add-rando-pot-sanity: empty pots carry the ITEM_Nothing filler as their
@@ -253,10 +262,15 @@ def load_pots(path: Path):
         vanilla_item = p.get("vanilla_item") or ""
         if (p.get("kind") == "empty") or not vanilla_item:
             vanilla_item = "Nothing"
+        can_reach = p.get("can_reach") or "TRUE()"
+        wrap = pot_room_wrap.get(int(p["room"]))
+        if wrap is not None:
+            can_reach = (f"({can_reach}) AND (NOT POT_KEYS_WILD() OR "
+                         f"HAS_AMOUNT({wrap[0]}, {wrap[1]}))")
         loc = LocationDef(
             id=p["id"], name=p["name"], region=p.get("region", ""), type="Pot",
             vanilla_item=vanilla_item,
-            can_reach=p.get("can_reach") or "TRUE()",
+            can_reach=can_reach,
             can_place="TRUE()", always_allow="FALSE()", source="gen_pot_tables.py",
         )
         out[loc.name] = loc
@@ -427,7 +441,45 @@ def load_logic(path: Path | None):
                 world_state_edges=world_state_edges,
             )
 
+    _apply_pot_key_wild_wrap(loc_preds, world_state_overrides)
     return regions, edges, loc_preds, macros, world_state_overrides, world_state_edges
+
+
+def _apply_pot_key_wild_wrap(loc_preds, world_state_overrides):
+    """add-rando-pot-sanity task #25: wrap each pot-bearing dungeon location's
+    can_reach so that under WILD keys + pot_shuffle the deep locations require
+    the prover WORST-CASE key count (the pot keys are first-class items then).
+    pots-off / dungeon-keys / default all leave POT_KEYS_WILD false, so the wrap
+    collapses to the vanilla predicate and their placement is byte-identical.
+
+    Driven by the generated assets/rando/pot_key_depth.gen.yaml (from
+    `./zelda3 --dump-key-depth`); applies to the base Standard/Open/Retro
+    predicate AND every world-state (Inverted) override of the same location id
+    (the internal door depth is world-state-independent)."""
+    table_path = RANDO_ASSETS / "pot_key_depth.gen.yaml"
+    if not table_path.exists():
+        # The table is COMMITTED; absence means a broken checkout. Fail LOUD —
+        # silently skipping the wrap restores the wild/pot key strand with no
+        # signal (the kGen-88 chest_table.gen.bin fail-open trap). Regenerate:
+        # ./zelda3 --dump-key-depth key_depth.txt && gen_pot_key_depth.py.
+        print(f"WARNING: {table_path} MISSING — pot-key WILD wrap NOT applied; "
+              f"wild+pot_shuffle seeds may strand. Regenerate with "
+              f"gen_pot_key_depth.py.", file=sys.stderr)
+        return
+    doc = load_yaml(table_path)
+    for row in doc.get("locations", []):
+        name, item, full = row["name"], row["item"], int(row["full"])
+        tail = f" AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT({item}, {full}))"
+        applied = False
+        if name in loc_preds:
+            loc_preds[name].can_reach = f"({loc_preds[name].can_reach}){tail}"
+            applied = True
+        for ld in world_state_overrides.get(name, {}).values():
+            ld.can_reach = f"({ld.can_reach}){tail}"
+            applied = True
+        if not applied:
+            print(f"WARNING: pot_key_depth location {name!r} matches no logic "
+                  f"location — stale table or renamed location?")
 
 
 # ---------------------------------------------------------------------------
@@ -1114,6 +1166,9 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "POT_KEYS_ON":
         if args:
             raise ParseError("OP_POT_KEYS_ON takes no operands")
+    elif op_name == "POT_KEYS_WILD":
+        if args:
+            raise ParseError("OP_POT_KEYS_WILD takes no operands")
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 

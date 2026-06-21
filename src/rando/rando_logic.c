@@ -303,6 +303,19 @@ static bool eval_pot_keys_on(Cursor *c, const PredicateContext *ctx) {
          Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla;
 }
 
+static bool eval_pot_keys_wild(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  // POT_KEYS_ON AND small keys are WILD (keysanity / Retro). The wild
+  // worst-case key gate on a pot-bearing dungeon's deep locations applies only
+  // here; dungeon/vanilla keys keep the vanilla branch (the in-context dungeon
+  // case is a follow-on). false whenever pots are off, so default + pots-off +
+  // dungeon-keys placement is byte-identical.
+  const RandoSettings *s = ctx->settings;
+  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
+         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Wild;
+}
+
 // Boss-shuffle runtime — "can kill the boss assigned to a kRandoDungeon_* slot". Resolves
 // the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
 // via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
@@ -364,6 +377,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_DOORS_LOC_REACHABLE:    return eval_doors_loc_reachable(c, ctx);
     case OP_INSTANT_FLUTE:          return eval_instant_flute(c, ctx);
     case OP_POT_KEYS_ON:            return eval_pot_keys_on(c, ctx);
+    case OP_POT_KEYS_WILD:          return eval_pot_keys_wild(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;

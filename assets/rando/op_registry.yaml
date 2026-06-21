@@ -291,6 +291,24 @@ ops:
       placement stays byte-identical.
     contexts: [can_reach, can_place]
 
+  - id: 24
+    name: OP_POT_KEYS_WILD
+    phase: C
+    operands: []
+    semantics: |
+      OP_POT_KEYS_ON AND Settings_EffectiveSmallKeysMode == Wild (keysanity,
+      incl. Retro which forces wild). Added for add-rando-pot-sanity (task #25):
+      a pot-bearing dungeon's deep locations wrap their small-key term as
+      `<vanilla predicate> AND (NOT POT_KEYS_WILD OR HAS_AMOUNT(SmallKey_X,
+      full))`, where `full` is the prover WORST-CASE key-door depth once the pot
+      keys are first-class items. Under wild keys the keys live anywhere in the
+      world, so you must HOLD `full` of them before reaching — the static
+      worst-case is both correct (no strand) and achievable (collect externally,
+      enter loaded; capped at the dungeon's real key count). Dungeon-keys
+      (in-context collection) and pots-off both leave this false, so the wrap
+      collapses to the vanilla term and their placement is byte-identical.
+    contexts: [can_reach, can_place]
+
 
 
 # ---------------------------------------------------------------------------

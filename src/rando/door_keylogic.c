@@ -1005,28 +1005,17 @@ int DoorKeys_DumpKeyDepth(const char *path) {
       static uint8 reached0[kDoorTbl_RegionCount];
       static uint8 ever[kDoorTbl_RegionCount];
       static uint8 worst[kDoorTbl_RegionCount];
-      static uint8 regval[kDoorTbl_RegionCount];  // 1 = location or drop region
       memset(reached0, 0, sizeof(reached0));
       memset(ever, 0, sizeof(ever));
       memset(worst, 0, sizeof(worst));
-      memset(regval, 0, sizeof(regval));
-      for (int i = 0; i < kDoorTbl_LocationCount; i++)
-        regval[kDoorTblLocations[i].region] = 1;
-      for (int i = 0; i < kDoorTbl_DropKeyCount; i++)
-        if (kDoorTblDropKeys[i].dungeon == d)
-          regval[kDoorTblDropKeys[i].region] = 1;
       static uint8 seen[1 << 14];
       static uint16 queue[1 << 14];
-      static uint8 qval[1 << 14];  // "value" (#location+drop regions reached) per state
       memset(seen, 0, (size_t)1 << np);
       int qh = 0, qt = 0;
       queue[qt++] = 0;
-      qval[0] = 0;
       seen[0] = 1;
       while (qh < qt) {
-        uint16 mask = queue[qh];
-        uint8 parent_val = qval[qh];
-        qh++;
+        uint16 mask = queue[qh++];
         int pc = 0;
         for (uint16 m = mask; m; m &= m - 1)
           pc++;
@@ -1054,12 +1043,11 @@ int DoorKeys_DumpKeyDepth(const char *path) {
             worst[r] = (uint8)pc;
           }
         }
-        // Expand: open a frontier-reachable closed key door ONLY when it unlocks
-        // NEW value — a location or drop-key region not already reached. This is
-        // the create_key_counters / RelativeEmpty calibration (AnalyzeDungeon):
-        // wasting keys down a dead-end branch with no check/key does NOT count
-        // toward a deeper location's worst case, so a sprawling dungeon's early
-        // chests don't read as "needs every key". Bounded by the real key count.
+        // Expand: open any frontier-reachable closed key door. UNPRUNED — for
+        // the WILD-keys requirement we must never under-gate (under-gate =
+        // strand), so the worst case counts every openable order including
+        // wasteful ones; the value over-gates harmlessly (a wild player holds
+        // the keys externally before entering). Bounded by the real key count.
         if (pc < total_keys) {
           for (int i = 0; i < np; i++) {
             if ((mask >> i) & 1)
@@ -1080,24 +1068,10 @@ int DoorKeys_DumpKeyDepth(const char *path) {
             if (!frontier)
               continue;
             uint16 m2 = (uint16)(mask | (1u << i));
-            if (seen[m2])
-              continue;
-            // Value of the child state: count reached location/drop regions.
-            DoorExploreSpec cs = spec;
-            DoorExploreResult cr;
-            cs.open_mask = m2;
-            DoorExplore_Core(&cs, &cr);
-            uint8 child_val = 0;
-            for (int r = 0; r < kDoorTbl_RegionCount; r++)
-              if (regval[r] && kDoorTblRegions[r].dungeon == d &&
-                  DoorExplore_Reached(&cr, (uint16)r))
-                child_val++;
-            if (child_val <= parent_val)
-              continue;  // wasteful opening — prune (no new check/key)
-            seen[m2] = 1;
-            qval[qt] = child_val;
-            queue[qt] = m2;
-            qt++;
+            if (!seen[m2]) {
+              seen[m2] = 1;
+              queue[qt++] = m2;
+            }
           }
         }
       }

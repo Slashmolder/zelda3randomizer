@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 88  # bump_rando_corpus.py --apply
+generator_version: 89  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -824,8 +824,25 @@ entries:
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
-    expected_digest: "3d3d9e9372832eb13dc858120721ce091f9e6f22525f224340694da156cedcbe"
-    expected_sphere_digest: "630c090ea98d335f0e994b85bdba7d3a1816644b5cb522d250d91ef237645cc3"
+    expected_digest: "85b2742a491b3227c3a73e6d6d661fbb33cdf1986463f05f6f155dffeee17243"
+    expected_sphere_digest: "86e67b1c688582ccb61b8e3ad54eab99a1ebc1779e5c493c74754eb35f023953"
+
+  # add-rando-pot-sanity task #25 — WILD keys + pot_shuffle (the strand class the
+  # owner hit). These exercise OP_POT_KEYS_WILD end to end: the pot keys enter
+  # the pool, and the deep locations + pots gate the prover worst-case key count.
+  # accessibility=items means the seed only generates if EVERY location is
+  # reachable — so the entry both pins the placement digest AND proves no key
+  # strands. (Dungeon-keys + pots stays on the vanilla branch — a follow-on.)
+  - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, dungeon_items.small_keys: wild, accessibility: items }
+    seed: "0x504F540000000007"
+    label: "pot-keys-wild-items"
+    expected_digest: "aeea6c07dcf3edc31f9544b04cb0bb89ebbaa93226c94ecf224d0818bab92a35"
+    expected_sphere_digest: "e72affbb2df277a8f2ec1417fa45672e111f7858961a4b8269aee35c22bfbfe6"
+  - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: wild, accessibility: items }
+    seed: "0x504F540000000008"
+    label: "pot-all-wild-items"
+    expected_digest: "ad50c051cade641e4079fd0d6dd1e2cfc135818f30d9bab5349ecf7502c9f640"
+    expected_sphere_digest: "230859f8389cafc408d069d0d94e403c67bfa169e26dd1c1632921b46f6d09e7"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

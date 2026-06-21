@@ -664,6 +664,30 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     }
   }
 
+  // ----- Pot keys (add-rando-pot-sanity task #25, WILD keys only) -----
+  // kVanillaSmallKeyCounts above is the placed/chest key count; a dungeon's POT
+  // keys are NOT in it. When pot_shuffle turns the key pots into live checks
+  // their small key must ALSO enter the pool, or it vanishes — the wild/pot
+  // strand. Under WILD keys the keys live in the general pool, so each active
+  // key pot contributes its vanilla SmallKey (or the shared GenericKey under
+  // Retro, exactly as the chest keys above). This is slot-balanced: every active
+  // key pot is itself a fillable open slot counted by the junk-pad target, so
+  // pool and slot grow together (a placed key that happens to sit under a pot
+  // double-counts to a harmless surplus key — still slot-balanced). Dungeon-keys
+  // in-context pooling is the follow-on; pots-off / vanilla / dungeon all leave
+  // this untouched (the pool stays byte-identical).
+  if (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Wild) {
+    bool generic = Settings_GenericKeysActive(settings);
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_Pot && pot_active(loc, settings) &&
+          is_small_key_item(loc->vanilla_item_id)) {
+        uint16 key_id = generic ? (uint16)ID_GenericKey : loc->vanilla_item_id;
+        n = pool_add(out_items, n, capacity, key_id, 1);
+      }
+    }
+  }
+
   // ----- Rupees -----
   // ALTTPR vanilla pool: 4× Rupee300, 5× Rupee100, 28× Rupee20, 7× Rupee5,
   // 2× Rupee1. Numbers approximate per `config/alttp.php item.junk`.

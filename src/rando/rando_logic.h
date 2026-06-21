@@ -86,7 +86,14 @@ typedef enum {
   // keeps the vanilla worst-case (byte-identical) and pots-on requires the
   // prover worst-case that counts the now-itemized pot keys.
   OP_POT_KEYS_ON = 23,
-  OP__COUNT = 24,
+  // Pot sanity (task #25) — POT_KEYS_ON AND small keys are WILD (keysanity,
+  // incl. Retro). The pot-bearing dungeons' deep locations gate their wild
+  // worst-case key requirement on this: under wild keys you must HOLD the keys
+  // before reaching (they live anywhere in the world), so the static worst-case
+  // is both correct and achievable. Dungeon-keys (in-context collection) is a
+  // separate follow-on and stays on the vanilla branch here.
+  OP_POT_KEYS_WILD = 24,
+  OP__COUNT = 25,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
