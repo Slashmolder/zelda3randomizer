@@ -1115,6 +1115,33 @@ int DoorKeys_DumpKeyDepth(const char *path) {
       }
     }
 
+    // Per-door WORST-CASE thresholds via AnalyzeDungeon — the calibrated
+    // door-rando counter analysis (find_best_counter / RelativeEmpty), the SAME
+    // values the door-shuffle oracle gates on. Dumped for the upcoming pot-key
+    // oracle; drops are still free here (cur-equivalent) — the
+    // pot-drops-as-inventory variant is the next step. Validates that even
+    // sprawling GT yields GRADUATED per-door thresholds, not a flat over-count.
+    if (np >= 1 && np <= kDoorShuffle_MaxKeyDoors) {
+      KeyCtx kc;
+      memset(&kc, 0, sizeof(kc));
+      kc.dungeon = d;
+      kc.layout = &vanilla;
+      kc.origins = origins;
+      kc.norigins = norig;
+      kc.max_chests = kDoorTblDungeons[d].chest_small_keys;
+      kc.np = np;
+      for (int i = 0; i < np; i++)
+        kc.pairs[i] = pairs[i];
+      vanilla.bk_restricted_count = 0;  // don't accumulate across dungeons
+      if (AnalyzeDungeon(&kc)) {
+        for (int i = 0; i < np; i++)
+          fprintf(out, "THRESH %d door=%d a=%d b=%d wc=%d\n", d, i, pairs[i].a,
+                  pairs[i].b, vanilla.key_worst_case[d][i]);
+      } else {
+        fprintf(out, "# THRESH dungeon %d AnalyzeDungeon failed\n", d);
+      }
+    }
+
     fprintf(out, "DUNGEON %d chest=%d drop=%d pairs=%d name=\"%s\"\n", d,
             kDoorTblDungeons[d].chest_small_keys, g_door_idx.drop_cnt[d], np,
             DoorIdx_Name(kDoorTblDungeons[d].name_off));
