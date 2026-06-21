@@ -395,8 +395,22 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
     return true;
   // Vanilla-mode dungeon items are identity-placed (and never added to the
   // pool by BuildItemPool — the two are flip sides of the same mode check).
-  if (vi >= 53 && vi <= 65)
-    return Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla;
+  if (vi >= 53 && vi <= 65) {
+    uint8 km = Settings_EffectiveSmallKeysMode(settings);
+    if (km == kDungeonItemMode_Vanilla) return true;
+    // add-rando-pot-sanity task #25: under DUNGEON keys the dungeon's CHEST keys
+    // still shuffle in-dungeon, but a POT key stays VANILLA — pinned to its pot,
+    // dropped in place exactly like pots-off (the runtime falls through to the
+    // vanilla pot drop because Placement_Lookup misses an unfilled slot, and a
+    // pinned slot is excluded from the junk-pad). An open UNpooled key pot would
+    // strand the dungeon (pot keys are not in BuildItemPool's chest count), and
+    // the within-dungeon pot-key shuffle (in-context key logic) is a follow-on.
+    // Under WILD keys pot keys ARE shuffled into the general pool (BuildItemPool)
+    // so they must NOT be pinned. Chest key locations (not LOCTYPE_Pot) shuffle
+    // under both Dungeon and Wild — only the pot subset pins.
+    if (loc->type == LOCTYPE_Pot && km == kDungeonItemMode_Dungeon) return true;
+    return false;
+  }
   if (vi >= 66 && vi <= 76)
     return Settings_EffectiveBigKeysMode(settings) == kDungeonItemMode_Vanilla;
   if ((vi >= 77 && vi <= 87) || vi == 124)

@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 89  # bump_rando_corpus.py --apply
+generator_version: 90  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -814,8 +814,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
-    expected_digest: "65629df6e67c325610fdb55f4ae2dbb463ab0ff43ae8b66bb05dd7ec5c08bc3d"
-    expected_sphere_digest: "77740782eb646b466b300875fd383d43431c0c9e88b6d3f596d0f93278fdf886"
+    expected_digest: "698dacb7474eba2779959d71f1d785332aca05df743951e541c7e65d0623ccc2"
+    expected_sphere_digest: "14edb1bf0e217110476a003333ee46dd6d2591608ff512af8e0e0e2a0e97d606"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
@@ -843,6 +843,15 @@ entries:
     label: "pot-all-wild-items"
     expected_digest: "ad50c051cade641e4079fd0d6dd1e2cfc135818f30d9bab5349ecf7502c9f640"
     expected_sphere_digest: "230859f8389cafc408d069d0d94e403c67bfa169e26dd1c1632921b46f6d09e7"
+  # DUNGEON keys + pot_shuffle (task #25 dungeon half): key pots stay vanilla
+  # (pinned in place, like pots-off) while chest keys shuffle in-dungeon.
+  # accessibility=items proves the dungeon is fully reachable — the pot keys no
+  # longer vanish.
+  - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon, accessibility: items }
+    seed: "0x504F540000000009"
+    label: "pot-all-dungeon-items"
+    expected_digest: "2c7b548de383645bb858bb647d415f1c148f1d580223476d5a89541b9d09a1e5"
+    expected_sphere_digest: "caf05c79e0e2c2bd774dc7f253166d4160f3b5ac436617587425c15c94da508f"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
