@@ -1787,6 +1787,8 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // so a draw/grant drift can't reappear.
 static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_big,
                                     uint8 *out_oam_flags);
+static bool rando_receive_icon_for_code(uint8 code, uint8 *out_gfx, uint8 *out_big,
+                                        uint8 *out_oam_flags);
 
 void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // every caller passes `(uint8)Rando_LastDispatched
@@ -1857,12 +1859,36 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
   }
   item_receipt_method = 0;             // normal write path
   link_receiveitem_index = lttp_code;  // the item AncillaAdd_ItemReceipt will write
-  AncillaAdd_ItemReceipt(0x22, 4, 0);  // does the grant write in its add handler
+  AncillaAdd_ItemReceipt(0x22, 4, 0);  // does the grant write in its add handler...
+  // ...but AncillaAdd_ItemReceipt RETURNS before the write if no ancilla slot is
+  // free (Ancilla_AllocInit -> -1 when all 5 low slots hold non-disposable types).
+  // The pot is ALREADY marked checked + the vanilla drop suppressed, so a skipped
+  // write loses the placed item forever — turning an assumed-fill-certified seed
+  // unbeatable. Detect the miss (the quiet grant clears every type-0x22 receipt
+  // each call, so a live one means OUR write landed) and retry after freeing a
+  // slot: sacrificing one transient effect sprite beats losing the placed item.
+  bool granted = false;
+  for (int i = 0; i < 5; i++)
+    if (ancilla_type[i] == 0x22) { granted = true; break; }
+  if (!granted) {
+    ancilla_type[4] = 0;                 // free a low slot for the receipt
+    AncillaAdd_ItemReceipt(0x22, 4, 0);  // retry — the write now lands
+  }
   flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)
   for (int i = 0; i < 10; i++)         // remove the visual receipt — no animation
     if (ancilla_type[i] == 0x22)
       ancilla_type[i] = 0;
   Rando_ShowDirectGrantConfirmation(item_id);  // lightweight icon + chime
+  // The boomerang colour lives in g_rando_boomerang_owned, which the write above
+  // just flipped — so the confirmation re-derived the NEXT colour and popped the
+  // wrong icon (red after a blue grant). Re-pop from the PRE-grant code we were
+  // handed; AncillaAdd_RandoIconReceipt retires the just-added wrong-colour icon
+  // (it permits only one floating receive icon), so the right colour wins, no flash.
+  if (item_id == ITEM_BlueBoomerang || item_id == ITEM_RedBoomerang) {
+    uint8 ig, ib, io;
+    if (rando_receive_icon_for_code(lttp_code, &ig, &ib, &io))
+      AncillaAdd_RandoIconReceipt(ig, ib, io);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1908,9 +1934,8 @@ static uint8 rando_item_display_lttp(uint16 placed) {
 // custom art resolve via rando_direct_grant_icon_entry instead). Shared by
 // Rando_ShowDirectGrantConfirmation and Rando_GetFieldItemIcon so a draw/grant
 // drift (the rupee/boomerang-as-vanilla-sprite bug class) can't reappear.
-static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_big,
-                                    uint8 *out_oam_flags) {
-  uint8 code = rando_item_display_lttp(item_id);
+static bool rando_receive_icon_for_code(uint8 code, uint8 *out_gfx, uint8 *out_big,
+                                        uint8 *out_oam_flags) {
   if (code >= 76 || kReceiveItemGfx[code] == 0xff)
     return false;
   *out_gfx = kReceiveItemGfx[code];
@@ -1920,6 +1945,15 @@ static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_b
     a = 5;
   *out_oam_flags = (uint8)(a * 2 | 0x30);
   return true;
+}
+// Resolve from the item's POST-grant display code. A caller that needs the
+// PRE-grant code (the boomerang colour flips in g_rando_boomerang_owned on grant,
+// so a post-grant recompute pops the NEXT colour) calls rando_receive_icon_for_code
+// directly with the code it was handed (see Rando_PotQuietReceive).
+static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_big,
+                                    uint8 *out_oam_flags) {
+  return rando_receive_icon_for_code(rando_item_display_lttp(item_id),
+                                     out_gfx, out_big, out_oam_flags);
 }
 
 // ---------------------------------------------------------------------------
