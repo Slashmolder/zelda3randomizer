@@ -33,6 +33,7 @@
 #include "imgui.h"
 #include "game_cheats.h"
 #include "game_panels.h"
+#include <stdlib.h>   // strtol (parse the hex room field)
 
 extern "C" {
 extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
@@ -163,25 +164,23 @@ extern "C" void DbgWarp_Render(void) {
     // Warp by ROOM index. Entrance ids and room indices are different namespaces
     // -- a cave/house pot room like 0x114 is reached via its entrance, not by
     // typing 0x114 into the entrance field above. We reverse-look-up the entrance
-    // that lands in the room and take the entrance path.
+    // that lands in the room and take the entrance path. Blank by default; the
+    // button stays disabled until the field holds a room an entrance can reach
+    // (dungeon interiors have none).
     ImGui::Spacing();
-    static int s_room = 0x114;
+    static char s_room[8] = "";
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputScalar("Room (hex)", ImGuiDataType_S32, &s_room, NULL, NULL, "%03X",
-                       ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
-    if (s_room < 0)     s_room = 0;
-    if (s_room > 0x14F) s_room = 0x14F;
-    int room_ent = EntranceForRoom(s_room);
+    ImGui::InputText("Room (hex)", s_room, sizeof(s_room),
+                     ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+    int room_ent = -1;
+    if (s_room[0]) {
+      long room = strtol(s_room, NULL, 16);
+      if (room >= 0 && room <= 0x14F) room_ent = EntranceForRoom((int)room);
+    }
     ImGui::SameLine();
     ImGui::BeginDisabled(room_ent < 0);
     if (ImGui::Button("Warp to room")) DoWarpEntrance((uint8)room_ent);
     ImGui::EndDisabled();
-    if (room_ent >= 0)
-      ImGui::TextDisabled("Room 0x%03X via entrance 0x%02X.", s_room, room_ent);
-    else
-      ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                         "No entrance lands in room 0x%03X -- dungeon interior; "
-                         "warp to the dungeon's entrance and walk.", s_room);
   }
 
   ImGui::EndDisabled();
