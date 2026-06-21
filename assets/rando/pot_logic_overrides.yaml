@@ -60,3 +60,15 @@ room_can_reach:
   "002": "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
   "021": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
   "031": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
+  # --- ToH (gate-less region overrides above): room 0x017 is the stair floor
+  # between the Big-Key-gated Big Chest (0x027) and boss (0x007); 0x096 is the
+  # one-way drop onto that same Big-Key side. Both were region-bound but un-gated
+  # (TRUE) -> 12 + 8 falsely-sphere-0 pots. Gate = the Big Chest's predicate. ---
+  "017": "HAS_ITEM(BigKey_TowerOfHera)"
+  "096": "HAS_ITEM(BigKey_TowerOfHera)"
+  # --- Swamp interior (gate-only; flood to SwampPalace fine): water-locked, the
+  # Map/West/Waterfall side needs the small key (+ Hammer to drain). 0x056 (incl. a
+  # key pot) + 0x026 flooded as TRUE. (0x038 is reached from the FREE Entrance
+  # 0x028 per the door graph, so it is genuinely free — NOT gated.) ---
+  "056": "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+  "026": "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"

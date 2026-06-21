@@ -400,6 +400,42 @@ def main():
             **({"can_reach": can_reach} if can_reach else {}),
         })
 
+    # add-rando-pot-sanity — per-room reachability GUARD (backstop for the chest-
+    # less-room sphere-0 leak class: a pot room that flooded into a dungeon region
+    # but, being chest-LESS, defaulted to TRUE(), while it is actually reachable
+    # only past an in-dungeon gate — the placer treats it as sphere-0 and can
+    # strand progression there). A room with NO gate whose reciprocal-door /
+    # vertical-stair neighbors that hold a base CHEST are ALL gated is such a leak;
+    # surface it with the neighbors' predicates (the weakest is the override to
+    # author). Overworld regions have no in-dungeon gates and are skipped.
+    _chest = {r: next(iter(s)) for r, s in chest_room_anchors().items() if len(s) == 1}
+    def _is_gated(cr):  # a None/TRUE() chest is a FREE entrance, not a gate
+        return cr is not None and str(cr).strip() != "TRUE()"
+    _radj = collections.defaultdict(set)
+    for _r, _ns in out_edges.items():
+        for _n in _ns:
+            if _r in out_edges.get(_n, ()):
+                _radj[_r].add(_n); _radj[_n].add(_r)
+    _guard = {}
+    for _row in rows:
+        if "can_reach" in _row or region_to_dungeon(_row["region"]) is None:
+            continue
+        _room = _row["room"]
+        if _room in _guard:
+            continue
+        _nbrs = _radj[_room] | {_room - 0x10, _room + 0x10}
+        # IN-REGION base-chest neighbors only (a cross-region grid-adjacency edge is
+        # not a real in-dungeon path); a leak = EVERY such neighbor is gated.
+        _cn = [n for n in _nbrs if n in _chest and _chest[n][0] == _row["region"]]
+        if _cn and all(_is_gated(_chest[n][1]) for n in _cn):
+            _guard[_room] = (_row["region"], {f"0x{n:03x}": _chest[n][1] for n in _cn})
+    if _guard:
+        print(f"=== POT GUARD: {len(_guard)} chest-less TRUE() pot room(s) reachable "
+              f"ONLY via gated chests — sphere-0 LEAK, add room_can_reach: ===", file=sys.stderr)
+        for _room in sorted(_guard):
+            _reg, _ev = _guard[_room]
+            print(f"  0x{_room:03x} ({_reg}) <- {_ev}", file=sys.stderr)
+
     # tier nesting assertion: keys subset contents subset all (by membership rule)
     keys_n = sum(1 for r in rows if r["kind"] == "key")
     contents_n = sum(1 for r in rows if r["tier"] in ("keys", "contents"))
