@@ -1919,12 +1919,17 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
     if (ancilla_type[i] == 0x22)
       ancilla_type[i] = 0;
   Rando_ShowDirectGrantConfirmation(item_id);  // lightweight icon + chime
-  // The boomerang colour lives in g_rando_boomerang_owned, which the write above
-  // just flipped — so the confirmation re-derived the NEXT colour and popped the
-  // wrong icon (red after a blue grant). Re-pop from the PRE-grant code we were
-  // handed; AncillaAdd_RandoIconReceipt retires the just-added wrong-colour icon
-  // (it permits only one floating receive icon), so the right colour wins, no flash.
-  if (item_id == ITEM_BlueBoomerang || item_id == ITEM_RedBoomerang) {
+  // The confirmation re-derives the icon from item_id POST-grant — but the byte
+  // AncillaAdd_ItemReceipt just wrote has already advanced the tier, so for ANY
+  // progressive item (boomerang, bow, gloves, shield, mail, sword, magic) the
+  // re-derivation returns the NEXT tier and pops the wrong icon (gold gloves after
+  // the Power Glove, silver arrows after the wood bow, mirror after the red shield,
+  // red after blue boomerang). Re-pop from the PRE-grant lttp_code we were handed —
+  // the tier ACTUALLY granted — for EVERY non-direct item; AncillaAdd_RandoIconReceipt
+  // retires the prior icon (only one floating receive icon), so the right tier wins
+  // with no flash. Non-progressive items resolve to the same gfx, so this is
+  // uniformly safe (we already returned early above for the direct-grant classes).
+  {
     uint8 ig, ib, io;
     if (rando_receive_icon_for_code(lttp_code, &ig, &ib, &io))
       AncillaAdd_RandoIconReceipt(ig, ib, io);
