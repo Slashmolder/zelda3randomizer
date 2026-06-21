@@ -4,15 +4,14 @@
 
 When the `pot_shuffle` tier selects them, pot locations SHALL enter the assumed-fill
 location pool like any other location; the remaining pot slots are filled by the
-existing junk padder. **Pot-key locations are dungeon small-key locations and follow
-the dungeon's `dungeon_small_keys_mode` exactly like vanilla key locations** — the
-dungeon's vanilla small-key COUNT is fixed and a pot-key is one of those existing keys,
-never an extra: in **vanilla key mode** (the default) the pot-key location is
-identity-pinned to the pot (the existing vanilla key pre-seed/pin path SHALL be
-extended to include pot-key locations, since it currently knows only vanilla *chest*
-key locations); in **shuffled key modes** the pot-key location is open and the fixed
-count is distributed across the dungeon's key-eligible locations incl. pots
-(`Assumed-fill awareness of per-seed dungeon key-door logic`). **Empty-pot locations
+existing junk padder. **Pot-key locations are dungeon small-key locations that follow
+the dungeon's `dungeon_small_keys_mode`** — identity-pinned to the pot in vanilla key
+mode, an open shuffled slot otherwise — but a pot key is an ADDITIONAL key the pool
+must carry, NOT one of the fixed vanilla *chest* keys (`kVanillaSmallKeyCounts` counts
+chests only). Its full economy (separate pooling, the in-dungeon vs world distribution,
+and the non-pot-drop free-grant) and the in-context key-door logic gating are specified
+in `Pot-key small-key economy` (this capability) and `randomizer-logic / Pot-key
+small-key logic gating`. **Empty-pot locations
 SHALL be filled with `ITEM_Nothing` in a dedicated pre-pass** — removed from the open
 set before assumed-fill and junk padding (like vanilla-dungeon-item pre-placement) —
 so `ITEM_Nothing` can never land on a real location and no real item lands on an
@@ -53,11 +52,13 @@ boundary (assumed-fill output, sidecar deserialization, snapshot-tail reinstall,
 customizer, race/spoiler reveal, tests), enforced by a `--rando-selftest` sortedness
 check and a sort-on-install fallback.
 
-#### Scenario: Pot key follows the dungeon key mode (count-preserving)
+#### Scenario: Pot key follows the dungeon key mode
 - **WHEN** `pot_shuffle` includes a small-key pot
-- **THEN** in vanilla key mode the pot-key is identity-pinned to the pot (not pooled);
-  in shuffled key modes it is placed logic-aware across the dungeon's key locations —
-  in both cases the dungeon's vanilla key count is preserved, never an extra key
+- **THEN** in vanilla key mode the pot-key is identity-pinned to the pot (not pooled,
+  drops its own key in place); in a shuffled key mode it is an open slot whose vanilla
+  small key enters the item pool and is placed logic-aware (`Pot-key small-key
+  economy`) — under wild keys into the world pool, under dungeon keys confined to its
+  own dungeon
 
 #### Scenario: Capacity covers the maximal pool
 - **WHEN** `pot_shuffle = All` in a Retro seed (the largest combined pool)
@@ -94,3 +95,57 @@ check and a sort-on-install fallback.
 - **THEN** its entries are sorted by location_id (sorted-on-install where a producer
   can't guarantee it), and `--rando-selftest` asserts sortedness so the binary-search
   `Placement_Lookup` is always correct
+
+### Requirement: Pot-key small-key economy
+
+A dungeon's POT keys SHALL be economy-correct when `pot_shuffle` turns them into
+checks. `kVanillaSmallKeyCounts` counts only a dungeon's vanilla *chest* keys, so a pot
+key is NOT in it; the economy SHALL treat an active key pot's vanilla small key as an
+ADDITIONAL pooled item, never relying on the chest count to cover it. Specifically:
+
+- **Vanilla key mode:** the key pot is identity-pinned (`location_is_prepinned`) and
+  drops its own key in place — no pool entry, exactly like a vanilla key location.
+- **Shuffled key modes** (`Settings_EffectiveSmallKeysMode != Vanilla`): `BuildItemPool`
+  SHALL pool each active key pot's vanilla `SmallKey_X` (or the shared `GenericKey`
+  under Retro). This is slot-balanced — every active key pot is itself a fillable open
+  slot counted by the junk-pad target, so pool and slots grow together. Under **wild**
+  keys the key joins the general world pool; under **dungeon** keys it shuffles within
+  its own dungeon (the assumed-fill confines per-dungeon small keys to that dungeon),
+  graduated by the per-pot key-door depth gates of `randomizer-logic / Pot-key
+  small-key logic gating`.
+- **Non-pot free-grant (dungeon keys only):** under dungeon keys + pots a dungeon's
+  deep locations gate on the prover MIN-depth over ALL its key doors, but only the
+  chest + pot keys are pooled — the dungeon's NON-pot small-key drops (enemy / guard /
+  under-block keys, which `pot_shuffle` never itemizes) are still collected in-context,
+  exactly as in pots-off. The placer SHALL pre-grant those non-pot drops into the
+  assumed inventory (`seed_pot_nonpot_drops`, count = door-rando drop total − fork pot
+  keys, per dungeon) so the min-depth gates stay satisfiable. This pre-grant SHALL be
+  shared by the assumed-fill seeding and the goal/sphere verifier; at runtime the live
+  per-dungeon SRAM key counter (which already includes those drops) OVERWRITES it, so
+  it is placer-effective only and never double-counts. Wild keys cap their own
+  requirement at the pooled key count and need no free-grant.
+
+A `Placement_SelfCheck` prong SHALL re-derive each dungeon's pot-key count from the
+registry and assert the free-grant table equals (door-rando drop total − pot keys), so
+a future pot-set change cannot silently desync the economy.
+
+#### Scenario: A shuffled key pot adds its key to the pool (not the chest count)
+- **WHEN** `pot_shuffle >= Keys` and `dungeon_small_keys_mode` is wild or dungeon
+- **THEN** each active key pot's vanilla small key enters `BuildItemPool` as an extra
+  pooled item and the pot is a fillable open slot — the dungeon's chest-key count is
+  unchanged and the key never vanishes (the pre-task-#25 strand)
+
+#### Scenario: Dungeon-keys pot keys stay in their dungeon, non-pot drops free-granted
+- **WHEN** a seed has dungeon keys + `pot_shuffle` and is generated at
+  `accessibility = items`
+- **THEN** each dungeon's pot keys are placed within that dungeon, the deep locations
+  require the prover min-depth, the non-pot drops are pre-granted into the assumed
+  inventory so the gates are satisfiable, and every location is reachable (no refuse,
+  no strand at generation time)
+
+#### Scenario: Free-grant is placer-only (no runtime double count)
+- **WHEN** the live reachability bridge builds counts during play under dungeon keys +
+  pots
+- **THEN** the per-dungeon small-key count is taken from the live SRAM counter (which
+  already counts the collected non-pot drops), overwriting the seeding pre-grant, so
+  the player's key count is correct and never doubled

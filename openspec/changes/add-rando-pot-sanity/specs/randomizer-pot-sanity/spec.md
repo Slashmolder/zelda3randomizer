@@ -295,3 +295,42 @@ changing every existing seed. This SHALL be verified by a corpus regen with a
   every pot location (the same way inactive Take-Any locations are skipped), so no
   pot receives a placement entry, draws fill RNG, or enters the digest — registry
   growth alone does not change the placement table
+
+### Requirement: Pot keys are first-class shuffled checks under shuffled key modes
+
+A dungeon's POT keys SHALL be genuine randomizer checks — a key pot can hold any placed
+item and its small key can live elsewhere, NOT pinned to their own key — whenever
+`pot_shuffle >= Keys` and small keys are shuffled (wild or dungeon) with door shuffle
+off. This requires the key not to vanish from the pool (`randomizer-placement /
+Pot-key small-key economy`) AND the dungeon's deep locations + pots to gate on the
+key-door requirement the now-itemized keys add (`randomizer-logic / Pot-key small-key
+logic gating`). The requirement is key-mode-dependent: under **wild** keys it is the
+worst-case "hold N before entering"; under **dungeon** keys it is the in-context
+shortest-path (min-depth) collected en route. In **vanilla** key mode the key pots stay
+pinned, and under **door shuffle** every pot is inactive (the door×pot full integration
+is a deferred follow-on) — both unchanged.
+
+Because the key economy and the per-pot key-door gate both key off a pot's DUNGEON, the
+generator's region binding for each key pot SHALL be the pot's physically-correct
+dungeon. (Two pre-existing mislabels were corrected: Desert Palace rooms `0x53` Beamos
+Hall and `0x43` Desert Tiles 2 — and their non-key room-mates — were bound to Hyrule
+Castle Escape / Thieves' Town; rebinding them to Desert Palace gives Desert Palace its
+full pot-key count and corrects the wild economy as well.)
+
+#### Scenario: A key pot holds a shuffled item, the key is elsewhere
+- **WHEN** a seed has dungeon keys + `pot_shuffle = All` and is generated
+- **THEN** a dungeon's small keys are distributed across its chests and key pots — a
+  key pot commonly holds a non-key item while its key sits in another in-dungeon
+  location — and the seed is 100% reachable at `accessibility = items`
+
+#### Scenario: Vanilla keys still pin the key pots
+- **WHEN** small keys are vanilla and `pot_shuffle >= Keys`
+- **THEN** every key pot is identity-pinned and drops its own key in place, exactly
+  like pots-off — placement is byte-identical to the same seed without the key pots
+  participating
+
+#### Scenario: Key-pot region binding is the physically-correct dungeon
+- **WHEN** the pot registry is generated
+- **THEN** every key pot's region/dungeon is its real in-game dungeon (Desert Palace's
+  three pot keys are all bound to Desert Palace), so the key economy pools and gates
+  the correct dungeon's `SmallKey_X` and no dungeon is left short or given a phantom key

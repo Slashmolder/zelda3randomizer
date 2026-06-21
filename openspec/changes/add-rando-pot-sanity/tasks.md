@@ -92,12 +92,15 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   install boundary (assumed-fill, sidecar deser, snapshot-tail, customizer, reveal,
   tests); `--rando-selftest` sortedness check + sort-on-install fallback.
 - [x] 3.5 **Key economy (D7):** pot-key locations follow `dungeon_small_keys_mode` —
-  extend the vanilla key pre-seed/pin path (`rando_placement.c:228/280/501`, today
-  chest-only) to pin pot-keys in vanilla mode; pool them in shuffled modes (count
-  preserved, never an extra key). Under `door_shuffle != vanilla`: in
-  `apply_derived_rules`, pin key-pots as fixed vanilla keys AND **reduce the shuffled
-  key-pool count per dungeon by the pinned count** (no duplication); non-key pots
-  unaffected. Surface in UI.
+  pin pot-keys in vanilla mode; pool them in shuffled modes. Under
+  `door_shuffle != vanilla`, normalize `pot_shuffle → Off` (door×pot disabled in v1).
+  Surface in UI.
+  - **AS-BUILT NOTE (superseded by §7, task #25):** the "count preserved, never an
+    extra key" framing here was WRONG — `kVanillaSmallKeyCounts` is chest-only, so a
+    pot key is an ADDITIONAL pooled item; under shuffled keys it vanished (a strand)
+    until §7 made it first-class. The door×pot "reduce the shuffled key-pool count"
+    half-measure was REJECTED (the prover doesn't model pots) in favour of normalizing
+    to Off. See §7 for the as-built wild + dungeon economy + logic gating.
 - [x] 3.6 Bump `kGeneratorVersion`. `make clean` + build + `--rando-selftest`.
   **Corpus regen + 3-way diff vs unmodified `main`** (`rm src/rando/logic_data.c` to
   force codegen): every existing seed byte-identical with `pot_shuffle = Off`. Add
@@ -153,6 +156,42 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   `All` (capacity); a gated-room pot (Swamp flood / dark room — beatable, not
   falsely-in-logic). Confirm the loaded slot matches the share string before
   debugging any anomaly.
-- [x] 6.4 Reconcile spec deltas + design vs as-built; update `docs/randomizer.md` and a
-  `pot-sanity-asbuilt` memory; sync corpus manifest (restore CRLF); run version-sync /
-  placer-determinism / embedded-data guards.
+  - [ ] **task #25 (§7) addendum:** a **dungeon-keys + `pot_shuffle = all`** seed — beat
+    a couple of dungeons; key pots grant SHUFFLED items, the dungeon's keys can sit in
+    other in-dungeon locations, and nothing strands (the dungeon under-gate is invisible
+    to `--generate-seed`). Plus a **wild-keys + pot** seed.
+- [x] 6.4 Reconcile spec deltas + design vs as-built (Phases 1-5); update
+  `docs/randomizer.md` and a `pot-sanity-asbuilt` memory; sync corpus manifest (restore
+  CRLF); run version-sync / placer-determinism / embedded-data guards.
+
+## 7. Pot-key shuffle — wild + dungeon + binding fix (task #25)
+
+Make a dungeon's POT keys first-class shuffled checks under shuffled key modes
+(superseding the §3.5 "count-preserving / pinned" model). Gated by the prover key-door
+depth; pots-off / vanilla / door byte-identical.
+
+- [x] 7.1 **`--dump-key-depth` prover dump** (`door_keylogic.c`): per region/location/
+  room/key-drop, emit the WORST-CASE `depth=` AND the SHORTEST-PATH `mindepth=` over
+  the vanilla door graph (DoorExplore_Core; frontier-pruned min-popcount).
+- [x] 7.2 **`gen_pot_key_depth.py` → `pot_key_depth.gen.yaml` (format_version 2):**
+  per-location `full`(wild, capped chest+pot_keys) + `dungeon`(min); per-room `pot_rooms`
+  full + room-MAX dungeon; per-key-pot `pot_keys` EXACT min-depth (door-rando
+  `key_drop_data` DROP-region join, floor-bit reconciled) + the orphan Waterway `full`.
+  Cross-check vs a reviewed 17-entry table (fails build on join drift).
+- [x] 7.3 **Logic ops + wrap:** `OP_POT_KEYS_ON/WILD/DUNGEON` (op_registry.yaml id 23/24/
+  25 + rando_logic.h/.c eval+dispatch + DSL parser); `rando_logic_gen.py` `_pot_key_terms`
+  / `_apply_pot_key_terms` two-term wrap (key pot EXACT, loot/empty room-MAX, location
+  LOC depth).
+- [x] 7.4 **Economy** (`rando_placement.c`): pool pot keys under `!= Vanilla`;
+  `seed_pot_nonpot_drops` free-grants the non-pot drops (EP+1/IP+3/MM+1/GT+1) into the
+  assumed inventory under dungeon+pots (both seed paths; runtime SRAM overwrites — no
+  double count); revert the dungeon-pin; `Placement_SelfCheck` drift guard.
+- [x] 7.5 **Binding fix:** rebind the 12 mislabeled Desert Palace pots (rooms 0x53/0x43)
+  in `pots.gen.yaml` (region + key `vanilla_item` + `can_reach`).
+- [x] 7.6 `kGeneratorVersion` → 91; `make clean` + build (`-Werror`) + selftests; corpus
+  regen (130/130, only the 8 pots-on non-door seeds move; door+pots and non-pot
+  byte-identical); 0-refuse matrix at `accessibility=items` across keys/all × goals ×
+  worlds; all CI guards green.
+- [x] 7.7 Fresh-eyes independent review (0 findings, end-to-end re-validated).
+- [ ] 7.8 **Owner playtest** a dungeon+pot seed — see 6.3 addendum (the only correctness
+  gate the generator cannot cover).

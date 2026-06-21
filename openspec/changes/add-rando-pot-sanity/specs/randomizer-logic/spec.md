@@ -20,7 +20,11 @@ so gate derivation SHALL distinguish:
   per-subregion gate in a committed `pot_logic_overrides.yaml` and SHALL FAIL THE
   BUILD until one is supplied — no silent inheritance.
 
-This makes a falsely-`TRUE()` pot impossible to ship without review. Pot locations
+This makes a falsely-`TRUE()` pot impossible to ship without review. Additionally, a
+pot in a dungeon whose pot keys are shuffled SHALL carry the small-key gate of
+`Pot-key small-key logic gating` — a per-pot key-door-depth term layered onto its
+region/inheritance predicate (so the `can_reach: TRUE()` default is the *base*, not the
+final predicate, once `pot_shuffle` + a shuffled key mode are active). Pot locations
 SHALL be included in the active location set **only when the `pot_shuffle` tier
 selects them** — realized as a skip in the open-location / junk-pad / reachability
 loops. `kRandoLocationsCount` (the static registry size) GROWS to ~1127; with
@@ -58,6 +62,64 @@ working-array capacity (`randomizer-placement`).
 - **THEN** no pot enters the active/open-location set — every pot is skipped in the
   collection / junk-pad / reachability loops — so reachability and placement are
   byte-identical to the pre-change build despite the larger registry
+
+### Requirement: Pot-key small-key logic gating
+
+A pot-bearing dungeon's deep locations and pots SHALL gate on the small-key
+requirement that pot_shuffle adds once that dungeon's pot keys become shuffled items.
+Three predicate-VM ops drive this, all false (so the wrap is inert and placement is
+byte-identical) when pots are off:
+
+- `OP_POT_KEYS_ON` — `pot_shuffle >= Keys` AND door shuffle is off (door shuffle forces
+  every pot inactive, mirroring `pot_active`).
+- `OP_POT_KEYS_WILD` — `OP_POT_KEYS_ON` AND small keys are wild (keysanity / Retro).
+- `OP_POT_KEYS_DUNGEON` — `OP_POT_KEYS_ON` AND small keys are dungeon (per-dungeon).
+
+A pot-bearing dungeon's affected `can_reach` (its chest/boss/prize locations and its
+in-dungeon pots) SHALL be wrapped:
+
+`<vanilla predicate> AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT(SmallKey_X, full)) AND (NOT POT_KEYS_DUNGEON() OR HAS_AMOUNT(SmallKey_X, dungeon))`
+
+- `full` is the prover WORST-CASE key-door count, CAPPED at the pooled key count
+  (chest + pot keys): under wild keys the keys live anywhere in the world, so you must
+  HOLD that many before reaching; the non-pot drops auto-collect in-context so the cap
+  is the true external requirement.
+- `dungeon` is the prover SHORTEST-PATH (MIN-depth) key-door count: under dungeon keys
+  the keys are collected en route, so the graduated min-depth is necessary + sufficient
+  for a known layout — a flat worst-case would be circular (a key sits behind the very
+  door it opens). The dungeon term is REQUIRED, not redundant: the vanilla `cur` value
+  assumes the pot keys drop FREE, so a location whose keys are now items is UNDER-gated
+  until this term raises it to min-depth.
+- KEY pots SHALL use their EXACT region min-depth (over-gating a key pot is circular →
+  spurious refuse; under-gating strands); loot / empty pots SHALL use the room-MAX
+  min-depth (they hold no key, so over-gating only delays the check and never strands);
+  chest/boss/prize SHALL use their own location min-depth.
+
+The depths SHALL be generated, not hand-authored: `assets/scripts/gen_pot_key_depth.py`
+runs the door key-door prover (`--dump-key-depth`, which emits both worst-case `depth`
+and shortest-path `mindepth`) and emits the committed `assets/rando/pot_key_depth.gen.yaml`,
+cross-checking the per-key-pot depths against a reviewed table so a join drift fails the
+build. `rando_logic_gen.py` applies the wrap from that table.
+
+#### Scenario: Wild keys gate the held worst case
+- **WHEN** a seed has wild keys + `pot_shuffle` and the player must reach a deep
+  location whose pot keys are now world items
+- **THEN** its `can_reach` requires `HAS_AMOUNT(SmallKey_X, full)` (worst case capped
+  at chest+pot keys), so the placer never strands a progression item behind keys the
+  player cannot yet hold
+
+#### Scenario: Dungeon keys gate the in-context min-depth
+- **WHEN** a seed has dungeon keys + `pot_shuffle`
+- **THEN** each affected location requires `HAS_AMOUNT(SmallKey_X, dungeon)` (the
+  shortest-path key-door count); a key pot uses its exact region depth and a loot/empty
+  pot the room max, so the keys collected en route always suffice and a key is never
+  placed behind its own door
+
+#### Scenario: Pots off leaves the gating inert
+- **WHEN** `pot_shuffle = Off` (or vanilla keys, or door shuffle on)
+- **THEN** `POT_KEYS_WILD` and `POT_KEYS_DUNGEON` both evaluate false, the wrapped
+  terms collapse to the vanilla predicate, and reachability + placement are
+  byte-identical to the pre-feature build
 
 ## MODIFIED Requirements
 
