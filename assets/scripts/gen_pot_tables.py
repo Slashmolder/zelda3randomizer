@@ -298,12 +298,17 @@ def main():
     args = ap.parse_args()
 
     pots, out_edges, dark_rooms = load_dump(Path(args.dump), args.binary)
-    overrides, override_gates = {}, {}
+    overrides, override_gates, room_free = {}, {}, {}
     ovp = Path(args.overrides)
     if ovp.is_file():
         doc = yaml.safe_load(ovp.read_text()) or {}
         overrides = doc.get("room_region", {}) or {}        # room_hex -> region
         override_gates = {str(k): v for k, v in (doc.get("room_can_reach", {}) or {}).items()}
+        # Reviewed-FREE rooms the leak GUARD would otherwise flag — reachable via a
+        # hole / portal / real door off a TRUE() chest that the grid-adjacency dump
+        # can't see (room_hex -> one-line reason). The guard skips these and HARD-
+        # FAILS on any un-listed, un-gated leak, so a NEW flag = a real regression.
+        room_free = {str(k): v for k, v in (doc.get("room_free", {}) or {}).items()}
 
     # group pots by room; drop excluded rooms + out-of-scope content
     pot_rooms = sorted({r for (r, _p, _c) in pots})
@@ -425,7 +430,7 @@ def main():
         if "can_reach" in _row or region_to_dungeon(_row["region"]) is None:
             continue
         _room = _row["room"]
-        if _room in _guard:
+        if _room in _guard or f"{_room:03x}" in room_free:
             continue
         _nbrs = _radj[_room] | {_room - 0x10, _room + 0x10}
         # IN-REGION base-chest neighbors only (a cross-region grid-adjacency edge is
@@ -435,10 +440,15 @@ def main():
             _guard[_room] = (_row["region"], {f"0x{n:03x}": _chest[n][1] for n in _cn})
     if _guard:
         print(f"=== POT GUARD: {len(_guard)} chest-less TRUE() pot room(s) reachable "
-              f"ONLY via gated chests — sphere-0 LEAK, add room_can_reach: ===", file=sys.stderr)
+              f"ONLY via gated chests — sphere-0 LEAK ===", file=sys.stderr)
         for _room in sorted(_guard):
             _reg, _ev = _guard[_room]
             print(f"  0x{_room:03x} ({_reg}) <- {_ev}", file=sys.stderr)
+        die(f"{len(_guard)} un-triaged pot-room leak(s) — for each, add a "
+            f"room_can_reach: gate (the weakest neighbor predicate, +1 key if the "
+            f"connecting door is a vanilla key door) OR, if it is genuinely reachable "
+            f"via a hole/portal the grid-adjacency dump can't see, add it to "
+            f"room_free: with a reason. See {args.overrides}.")
 
     # tier nesting assertion: keys subset contents subset all (by membership rule)
     keys_n = sum(1 for r in rows if r["kind"] == "key")

@@ -72,3 +72,109 @@ room_can_reach:
   # 0x028 per the door graph, so it is genuinely free — NOT gated.) ---
   "056": "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
   "026": "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+
+  # ===========================================================================
+  # Phase 3 — the 21 chest-less TRUE() rooms the POT GUARD surfaced (sphere-0
+  # LEAK class: a pot room that flooded into a dungeon region but, being
+  # chest-LESS, defaulted to TRUE while actually reachable only past an
+  # in-dungeon gate). Each ENTER gate was traced from the door-shuffle compiled
+  # door tables (src/rando/door_tables.gen.c — REAL per-door SmallKey/BigKey
+  # flags + region graph, authoritative over the grid-adjacency pot_dump, whose
+  # listed edges are not always real doors) and cross-checked vs the ALTTPR PHP
+  # chest predicates. Of the 21, 11 are GENUINELY FREE (entrance/lobby rooms,
+  # free-fall-reachable IP descent rooms, or rooms one real door off a TRUE()
+  # chest the guard's direct-neighbor check missed) and are OMITTED below with a
+  # note. The 10 real gates follow the never-under-gate rule. Authored 2026-06-20.
+  #
+  # OMITTED (genuinely FREE — do NOT add an override; left at TRUE):
+  #   04a  PoD entrance/lobby room (room 0x4a = "Palace of Darkness" entrance);
+  #        you stand in it on entry. Big Key Chest neighbor (0x3a, 5 keys) is a
+  #        CHEST gate, not the room floor.
+  #   083  DP "Desert West Lobby" — a standalone overworld walk-in portal
+  #        (door_portals.yaml: DesertPalace_Lobby, NO predicate). Free on entry.
+  #   08c  GT Hope Room/Big Chest room — the Hope Room chests are TRUE() (already
+  #        region-bound, un-gated above). Room floor is free; only Big Chest/Bob's
+  #        need keys (chest gates).
+  #   09c  GT Invisible Catwalk — one real door (flag 0x300, no key) off the free
+  #        Hope/Big-Chest room 0x8c; the pot_dump's 0x9c<->0x9b/0x9d edges are
+  #        walls, not doors (door_tables.gen.c). Free on entry.
+  #   0b1  MM — reciprocally door-connected (real doors) to the TRUE() Bridge
+  #        Chest free zone via 0xa1; the guard only saw the gated Compass (0xc1)
+  #        exit and missed the free side. Free.
+  #   0c6  TR central Hub (0xd6/Compass area); the first small-key door is LEAVING
+  #        the hub toward Chain Chomps, so the hub itself is pre-key. Somaria is
+  #        already a TR-entry requirement (the lobby edge), so no extra gate.
+  #   0c7  TR Torches room — free from the Hub (door_tables.gen.c); the Roller
+  #        chests (0xb7, FireRod+Somaria) are one real door DEEPER, not here.
+  #   04f/05e/08e/09f  IP descent rooms — IP descends via one-way floor HOLES
+  #        that are FREE (no key to fall). The placer's IP logic proves the whole
+  #        bottom is key-free: Iced T Room (0xae) = TRUE() and Big Chest (0x9e) =
+  #        BigKey-only; the only small-key consumers are the boss (2 keys) and the
+  #        Spike/Map CHESTS. So these chest-less descent rooms are sphere-0 within
+  #        IP — INCLUDING 09f's small-key pot (reachable by the free fall, hence
+  #        no deadlock). Over-gating them would contradict Iced T = TRUE(). The
+  #        guard fired because each room's one chest NEIGHBOR is gated, but the
+  #        free-fall arrival (a hole, not a door) isn't in the pot_dump.
+  #        (door-shuffle ON re-models holes as 2-key stairs; irrelevant here.)
+  #
+  # --- TR interior route (Somaria already required to ENTER the TR lobby).
+  # 0x015 = Pipe Pit and 0x023 = Lazy Eyes both sit 3 small-key doors deep on the
+  # interior route (Hub NW -> Pokey1 NW -> Chain Chomps Down Stairs;
+  # door_tables.gen.c). 0x023 ("Mountainface 1") is interior-route-ONLY
+  # (door_portals.yaml: fork_region null — the ledge door never seeds entry). ---
+  "015": "HAS_AMOUNT(SmallKey_TurtleRock, 3)"   # TR Pipe Pit — 3 key-doors deep on interior route
+  "023": "HAS_AMOUNT(SmallKey_TurtleRock, 3)"   # TR Lazy Eyes — interior-route-only, 3 key-doors deep
+  # --- PoD: room 0x01b's ONLY in-PoD entry is through the Map Chest room (0x2b,
+  # CanShootArrows — the eyeball-switch wing); it dead-ends to the dark 0x0b. ---
+  "01b": "CanShootArrowsL1()"                   # PoD: reached only via the arrow-gated Map Chest wing
+  # --- SW: from the "Skull Woods Boss Lair" drop (room 0x59), one small-key door
+  # ("Skull 3 Lobby NW", door_tables.gen.c) gates the 0x49 pocket; the FireRod
+  # fire-curtain is DEEPER (Vines->boss), so standing in 0x49 = 1 key, no FireRod.
+  # MoonPearl is auto-added by the DW-region rule. LOW CONFIDENCE (SW drop-in
+  # topology; 0x49 holds only empty/magic/heart pots, so a no-key over-estimate is
+  # harmless). ---
+  "049": "HAS_ITEM(SmallKey_SkullWoods)"        # SW: 1 key-door from the boss-lair drop. LOW CONFIDENCE
+  # --- TT: room 0x54 is on the upper interior floor, which is entirely behind the
+  # Big-Key door (BK Corner NE, door_tables.gen.c); its only chest neighbors
+  # (Blind's Cell 0x45 = BigKey, Attic 0x64 = BigKey+1key) confirm. The room has
+  # no door record of its own -> safe-over = the BigKey floor threshold. The
+  # door-trace adds 1 small key; omitted from the gate as the conservative
+  # floor-threshold choice (0x54 has rupee+heart pots, no key). MEDIUM-LOW. ---
+  "054": "HAS_ITEM(BigKey_ThievesTown)"         # TT: BigKey-gated upper floor. MEDIUM-LOW CONFIDENCE
+  # --- DP back entrance: room 0x63 = "Desert Back Lobby", a standalone overworld
+  # walk-in portal gated by lifting a rock from the West-exit ledge
+  # (door_portals.yaml: predicate CanLiftRocks()). Its small-key POT sits on this
+  # FREE entrance floor, BEFORE the only locked door (Tiles 1 Up Stairs, which
+  # leads UP/out to 0x53) — so the key pot is reachable WITHOUT a DP key (no
+  # deadlock); the gate is just the back-door rock-lift. ---
+  "063": "CanLiftRocks()"                       # DP Back Lobby — overworld back-door rock-lift; key pot is pre-key-door
+  # --- GT Gauntlet hallways (chest-less transit 0x5d/0x6c/0x6d). Reached
+  # Lobby -> 0x6b -> Mimics (need a bow to kill them, CanShootArrows) -> one
+  # small-key door (door_tables.gen.c) into the gauntlet; all interior gauntlet
+  # doors are then free. These hold loot pots (no key). ---
+  "05d": "CanShootArrowsL1() AND HAS_AMOUNT(SmallKey_GanonsTower, 1)"   # GT Gauntlet: Bow (Mimics) + 1 key-door
+  "06c": "CanShootArrowsL1() AND HAS_AMOUNT(SmallKey_GanonsTower, 1)"   # GT Gauntlet: Bow (Mimics) + 1 key-door
+  "06d": "CanShootArrowsL1() AND HAS_AMOUNT(SmallKey_GanonsTower, 1)"   # GT Gauntlet: Bow (Mimics) + 1 key-door
+  # --- GT room 0x9b holds a small-key POT and sits in the Hookshot/Hammer wing
+  # behind a small-key door (Double Switch EN, door_tables.gen.c); its only chest
+  # neighbor (Map Chest 0x8b = Hammer+Hookshot+4keys) corroborates the wing +
+  # key. Trace minimum to STAND here = Hammer+Hookshot+1 key (the 4-key chest gate
+  # is deeper). The key pot is non-blocking: GT has 4 keys and the wing yields
+  # earlier keys, so the assumed-fill never needs THIS pot's key to reach it. ---
+  "09b": "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 1)"   # GT Hookshot wing key-pot room
+
+# Reviewed-FREE rooms the leak guard would otherwise flag (full rationale in the
+# OMITTED block above the room_can_reach gates). Listed here so the guard skips
+# them and HARD-FAILS only on a NEW, un-triaged leak. room_hex -> one-line reason.
+room_free:
+  "04a": "PoD entrance/lobby floor (you stand in it on entry)"
+  "083": "DP West walk-in overworld portal (door_portals: no predicate)"
+  "08c": "GT Hope/Big-Chest room — floor free; only the chests are key-gated"
+  "09c": "GT Invisible Catwalk — one real free door off the free 0x8c"
+  "0b1": "MM — reciprocal doors to the TRUE() Bridge-Chest free zone via 0xa1"
+  "0c6": "TR central Hub — pre-key; Somaria already a TR-entry requirement"
+  "0c7": "TR Torches room — free from the Hub; Roller chests are one door deeper"
+  "04f": "IP descent room — reached by the free one-way floor holes"
+  "05e": "IP descent room — reached by the free one-way floor holes"
+  "08e": "IP descent room — reached by the free one-way floor holes"
+  "09f": "IP descent room w/ small-key pot — free fall, key-free (Iced T = TRUE)"

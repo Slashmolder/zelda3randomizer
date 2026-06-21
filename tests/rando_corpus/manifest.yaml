@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 87  # bump_rando_corpus.py --apply
+generator_version: 88  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -800,22 +800,22 @@ entries:
     seed: "0x504F540000000001"
     label: "pot-keys-open-fast-ganon"
     expected_digest: "15cece1d88238f69b7ed7ed62c31d680745cd507b2fe704c46598e34f146285c"
-    expected_sphere_digest: "dec736b4a66c0cecb93b0a838bd23085c9cf420569b2e6df7e8df7a2a604ff4a"
+    expected_sphere_digest: "8cbbe4a17d9494c78a7682273c9d693efc554bb4fdc0d83dcf9fcf17631b386b"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: contents }
     seed: "0x504F540000000002"
     label: "pot-contents-open-fast-ganon"
-    expected_digest: "48934283dbea4efd0e72c22922c0d137660dea8aa1d4467680f029b55a8daf6c"
-    expected_sphere_digest: "c3cc77b4146e84e6bd0481206366bd79dfda31d91e8bbf4382fccb90ee74f8be"
+    expected_digest: "9d05e2dab02693f5720503e8f6642f96b152ae0d309255258824a237a8f71467"
+    expected_sphere_digest: "6afb5e8ece27c16098f9bebfbae63ae7e3d649c0b58669992af1e92d82f71395"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all }
     seed: "0x504F540000000003"
     label: "pot-all-open-fast-ganon"
-    expected_digest: "30e99828d45b637d078e0ba5d01529e57bd98e1fe3d432da9c8ee463b19ed2a9"
-    expected_sphere_digest: "fad470a684d508cee3cad1abea4a51cbddb9a793b560d008a92545789a62001a"
+    expected_digest: "cded1289de0a7299e5525919c96127826ea065a0c76dbc5d3684d86fd03ee052"
+    expected_sphere_digest: "cdeef44837eafe8b8ce05a5acadfe121fd207fdfacdd41299c2d280bbe8171d2"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
-    expected_digest: "32a9fec8284b330fd3b98523d75a6ee404505d08bb3b8d32af36f92af3c6afbe"
-    expected_sphere_digest: "a1d636bd992d14231a9725ac55a7cc2bf9ddb3c915f42635020027663afec7e0"
+    expected_digest: "65629df6e67c325610fdb55f4ae2dbb463ab0ff43ae8b66bb05dd7ec5c08bc3d"
+    expected_sphere_digest: "77740782eb646b466b300875fd383d43431c0c9e88b6d3f596d0f93278fdf886"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
@@ -824,8 +824,8 @@ entries:
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
-    expected_digest: "1beb08831f8f6123725c3ec6baff4c6290898c031c4be9a762a854877786d806"
-    expected_sphere_digest: "7ac4b89b3b461bd6f9d9b7642fc678c98e21e99d10f4794ce981c962bf1cb5ec"
+    expected_digest: "3d3d9e9372832eb13dc858120721ce091f9e6f22525f224340694da156cedcbe"
+    expected_sphere_digest: "630c090ea98d335f0e994b85bdba7d3a1816644b5cb522d250d91ef237645cc3"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
