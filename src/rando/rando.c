@@ -1874,6 +1874,31 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
     ancilla_type[4] = 0;                 // free a low slot for the receipt
     AncillaAdd_ItemReceipt(0x22, 4, 0);  // retry — the write now lands
   }
+  // AncillaAdd_ItemReceipt does only the TABLE-WRITE grants (kValueToGiveItemTo).
+  // The DEFERRED grants — heart-container capacity (+8) and heart/magic refills —
+  // are applied by the ancilla UPDATE (Ancilla22_ItemReceipt's completion branch,
+  // ancilla.c), which the visual-kill below preempts. Replicate that exact switch
+  // here (rando-only) so a heart-container / heart / magic pot still grants; without
+  // it a placed BossHeartContainer (code 0x26) showed the receipt but never raised
+  // max health. (Armor 0x22/0x23 only refreshes a palette there — the byte is
+  // table-written — so it is left to the next palette load.)
+  switch (lttp_code) {
+    case 0x26: case 0x3f:
+      if (link_health_capacity != 0xa0) {
+        link_health_capacity += 8;
+        link_hearts_filler += link_health_capacity - link_health_current;
+      }
+      break;
+    case 0x3e:
+      if (link_health_capacity != 0xa0) {
+        link_health_capacity += 8;
+        link_hearts_filler += 8;
+      }
+      break;
+    case 0x42: link_hearts_filler += 8; break;
+    case 0x45: link_magic_filler += 16; break;
+    default: break;
+  }
   flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)
   for (int i = 0; i < 10; i++)         // remove the visual receipt — no animation
     if (ancilla_type[i] == 0x22)

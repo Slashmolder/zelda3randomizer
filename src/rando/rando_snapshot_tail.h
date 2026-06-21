@@ -46,6 +46,14 @@
 // length to be exactly 52 + placement_table_bytes — skip it as an unknown type
 // and still read the placement table, per the format's append-a-new-type rule.
 #define kRandoSnapshotTail_Type_RandoSettings 2u
+// The rando checked-location bitmap (g_rando_checked_bitmap, kRandoCheckedBitmapBytes).
+// It is a C global, NOT part of the SNES g_ram dump LoadSnesState restores, so a
+// snapshot would otherwise not carry which locations are collected. This matters
+// most for POTS — a broken pot has no persistent vanilla SNES flag (unlike a chest),
+// so the bitmap is its only record; without this TLV a snapshot load shows a checked
+// pot as un-checked (recolored, re-grantable on a cold replay). A SEPARATE TLV so
+// older binaries skip it as an unknown type. add-rando-pot-sanity.
+#define kRandoSnapshotTail_Type_CheckedBitmap 3u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the

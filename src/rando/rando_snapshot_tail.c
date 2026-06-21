@@ -215,6 +215,20 @@ bool RandoSnapshotTail_Save(FILE *f) {
   free(payload);
   if (w1 != sizeof(hdr) || w2 != payload_len) return false;
 
+  // Checked-location bitmap TLV (type 3) — g_rando_checked_bitmap lives outside
+  // the SNES g_ram dump LoadSnesState restores, so without it a snapshot loses
+  // which locations are collected. A flat kRandoCheckedBitmapBytes copy.
+  {
+    uint8 chdr[16];
+    memcpy(chdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(chdr + 8, kRandoSnapshotTail_Type_CheckedBitmap);
+    put_u32le_bytes(chdr + 12, (uint32)kRandoCheckedBitmapBytes);
+    if (fwrite(chdr, 1, sizeof(chdr), f) != sizeof(chdr)) return false;
+    if (fwrite(g_rando_checked_bitmap, 1, kRandoCheckedBitmapBytes, f) !=
+        (size_t)kRandoCheckedBitmapBytes)
+      return false;
+  }
+
   // append the type-2 RandoSettings TLV when the active slot installed a
   // settings sub-context (canonical blob present). It carries world_state +
   // the prize/medallion/boss/drop/enemy derivation inputs (canonical settings +
@@ -453,6 +467,21 @@ int RandoSnapshotTail_Load(FILE *f) {
       continue;
     }
 
+    if (type == kRandoSnapshotTail_Type_CheckedBitmap) {
+      // Restore the checked-location bitmap (a C global outside the g_ram dump).
+      // Read min(length, kRandoCheckedBitmapBytes): a SMALLER payload (older /
+      // lower-capacity snapshot) zero-extends, a LARGER one (newer binary) is
+      // truncated to our static bound and the remainder skipped. memset first so
+      // a short payload leaves the high locations un-checked (0), not stale.
+      uint32 copy = (length <= (uint32)kRandoCheckedBitmapBytes)
+                        ? length : (uint32)kRandoCheckedBitmapBytes;
+      memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+      if (copy > 0 && fread(g_rando_checked_bitmap, 1, copy, f) != copy) return recognized;
+      if (length > copy && fseek(f, (long)(length - copy), SEEK_CUR) != 0) return recognized;
+      recognized++;
+      continue;
+    }
+
     // Unknown type — seek past payload and continue.
     if (length > 0) {
       if (fseek(f, (long)length, SEEK_CUR) != 0) return recognized;
@@ -491,18 +520,27 @@ void RandoSnapshotTail_SelfCheck(void) {
   for (int i = 0; i < 32; i++) share_string[i] = (uint8)(0x10 + i);
   Rando_SetSnapshotContext(0xCAFE, settings_hash, share_string);
 
+  // Seed a couple of checked-bitmap bits so the type-3 round-trip is exercised
+  // (the selfcheck runs at startup before any real pickup, so the bitmap is 0).
+  g_rando_checked_bitmap[0] = 0x05;
+  g_rando_checked_bitmap[10] = 0x80;
+
   // Round-trip via tmpfile.
   FILE *f = tmpfile();
   if (f == NULL) selfcheck_die("tmpfile() returned NULL");
   if (!RandoSnapshotTail_Save(f)) selfcheck_die("Save returned false");
 
-  // Clear state so the reader is what reinstalls it.
+  // Clear state so the reader is what reinstalls it (incl. the checked bitmap).
   Placement_Install(NULL);
   Rando_ClearSnapshotContext();
+  memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
 
   fseek(f, 0, SEEK_SET);
   int n = RandoSnapshotTail_Load(f);
-  if (n != 1) selfcheck_die("Load consumed != 1 recognized TLV");
+  if (n != 2) selfcheck_die("Load consumed != 2 recognized TLVs (RandoState + CheckedBitmap)");
+  if (g_rando_checked_bitmap[0] != 0x05 || g_rando_checked_bitmap[10] != 0x80)
+    selfcheck_die("checked bitmap not restored from type-3 TLV");
+  memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);  // restore startup state
   if (!Rando_HasSnapshotContext()) selfcheck_die("context not restored");
   if (Rando_GetSnapshotGeneratorVersion() != 0xCAFE) selfcheck_die("gen_version mismatch");
   if (memcmp(Rando_GetSnapshotSettingsHash(), settings_hash, 16) != 0) {
@@ -549,7 +587,7 @@ void RandoSnapshotTail_SelfCheck(void) {
 
   fseek(f2, 0, SEEK_SET);
   int n2 = RandoSnapshotTail_Load(f2);
-  if (n2 != 1) selfcheck_die("Load (unknown-TLV test) didn't recognize 1 TLV");
+  if (n2 != 2) selfcheck_die("Load (unknown-TLV test) didn't recognize 2 TLVs (state + bitmap)");
   if (!Rando_HasSnapshotContext()) selfcheck_die("context not restored (unknown-TLV test)");
   fclose(f2);
 
@@ -604,7 +642,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     // "Replay-mode reload" — TLV consumer reinstalls placement + context.
     fseek(fsnap, 0, SEEK_SET);
     int recognized = RandoSnapshotTail_Load(fsnap);
-    if (recognized != 1) selfcheck_die("§8.9: replay reload should recognize 1 TLV");
+    if (recognized != 2) selfcheck_die("§8.9: replay reload should recognize 2 TLVs (state + bitmap)");
     if (!Rando_HasSnapshotContext()) {
       selfcheck_die("§8.9: replay reload should restore snapshot context");
     }
@@ -788,7 +826,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fmix, 0, SEEK_SET);
     int n_mix = RandoSnapshotTail_Load(fmix);
-    if (n_mix != 1) selfcheck_die("§8.10: mixed-tail should recognize exactly 1 known TLV");
+    if (n_mix != 2) selfcheck_die("§8.10: mixed-tail should recognize 2 known TLVs (state + bitmap)");
     if (Rando_GetSnapshotGeneratorVersion() != 0x0042) {
       selfcheck_die("§8.10: mixed-tail should restore generator_version through the skip");
     }
@@ -839,7 +877,7 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fm, 0, SEEK_SET);
     int nm = RandoSnapshotTail_Load(fm);
-    if (nm != 2) selfcheck_die("Load should recognize 2 TLVs (RandoState + RandoSettings)");
+    if (nm != 3) selfcheck_die("Load should recognize 3 TLVs (RandoState + RandoSettings + CheckedBitmap)");
     if (g_rando_mushroom_held != 0x02 || g_rando_flute_shovel_owned != 0x05 ||
         g_rando_boomerang_owned != 0x03 || g_rando_bow_owned != 0x02) {
       selfcheck_die("ownership bytes not restored from the type-2 TLV");
@@ -860,7 +898,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fr, 0, SEEK_SET);
     int nr = RandoSnapshotTail_Load(fr);
-    if (nr != 2) selfcheck_die("re-save of a cold-replayed snapshot must perpetuate the type-2 TLV");
+    if (nr != 3) selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-2 + type-3 TLVs");
     if (g_rando_mushroom_held != 0x09) selfcheck_die("re-saved ownership did not round-trip");
     fclose(fr);
 
@@ -876,7 +914,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fb, 0, SEEK_SET);
     int nb = RandoSnapshotTail_Load(fb);
-    if (nb != 1) selfcheck_die("suppression — Load should recognize only the type-1 TLV");
+    if (nb != 2) selfcheck_die("suppression — Load should recognize the type-1 + type-3 TLVs (no type-2)");
     if (g_rando_mushroom_held != 0x33) {
       selfcheck_die("suppression — ownership must be untouched when no type-2 was emitted");
     }
