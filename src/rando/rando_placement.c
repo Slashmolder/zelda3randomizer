@@ -383,14 +383,15 @@ static bool is_small_key_item(uint16 item_id) {
 // pots carry a SmallKey (53..65), everything else is loot. Tiers nest
 // keys ⊆ contents ⊆ all.
 //
-// Under door shuffle EVERY pot is inactive: the door key-prover doesn't model
-// pot locations, so letting a dungeon key reach one risks an unprovable softlock
-// (v1 restriction — design D7, owner-flagged). apply_derived_rules normalizes
-// pot_shuffle off under door shuffle too, keyed on this same
-// Settings_EffectiveDoorShuffle, so the settings_hash and the placement agree.
+// Under door shuffle OR cave-entrance shuffle EVERY pot is inactive
+// (Settings_PotShuffleForcedOff): the door key-prover doesn't model pot locations,
+// and cave/house pot IDs miss the entrance region-override so they'd evaluate from
+// the vanilla overworld region (v1 restriction — design D7, owner-flagged).
+// apply_derived_rules normalizes pot_shuffle off under the SAME predicate, so the
+// settings_hash, placement, runtime, and spoiler all agree.
 static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s) {
   if (loc == NULL || s == NULL || loc->type != LOCTYPE_Pot) return false;
-  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla) return false;
+  if (Settings_PotShuffleForcedOff(s)) return false;  // door OR cave-entrance shuffle
   bool is_empty = (loc->vanilla_item_id == ITEM_Nothing);
   switch (s->pot_shuffle) {
     case kPotShuffle_Off:      return false;

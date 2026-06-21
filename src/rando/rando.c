@@ -1875,28 +1875,43 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
     AncillaAdd_ItemReceipt(0x22, 4, 0);  // retry — the write now lands
   }
   // AncillaAdd_ItemReceipt does only the TABLE-WRITE grants (kValueToGiveItemTo).
-  // The DEFERRED grants — heart-container capacity (+8) and heart/magic refills —
-  // are applied by the ancilla UPDATE (Ancilla22_ItemReceipt's completion branch,
-  // ancilla.c), which the visual-kill below preempts. Replicate that exact switch
-  // here (rando-only) so a heart-container / heart / magic pot still grants; without
-  // it a placed BossHeartContainer (code 0x26) showed the receipt but never raised
-  // max health. (Armor 0x22/0x23 only refreshes a palette there — the byte is
-  // table-written — so it is left to the next palette load.)
+  // Several grants are DEFERRED to the ancilla UPDATE — rupees (Ancilla_AddRupees),
+  // the 4th-Piece-of-Heart rollover, heart containers, and heart/magic refills
+  // (Ancilla22_ItemReceipt's completion branch, ancilla.c) — which the visual-kill
+  // below preempts. Replicate that COMPLETE set here (rando-only — not a RAM-compare
+  // path) keyed on the receipt code, or a placed Rupee / BossHeartContainer / heart /
+  // magic / 4th-PoH pot marks itself checked while granting nothing. KEEP IN SYNC
+  // with Ancilla22_ItemReceipt + Ancilla_AddRupees. (The PoH COUNT already
+  // incremented in AncillaAdd_ItemReceipt's j==0x17 case; only the rollover-to-
+  // container is deferred. Armor 0x22/0x23 only refreshes a palette there — the byte
+  // is table-written — so it is left to the next palette load.)
   switch (lttp_code) {
-    case 0x26: case 0x3f:
+    case 0x26: case 0x3f:                // BossHeartContainer
       if (link_health_capacity != 0xa0) {
         link_health_capacity += 8;
         link_hearts_filler += link_health_capacity - link_health_current;
       }
       break;
-    case 0x3e:
+    case 0x3e:                           // BossHeartContainer (boss-drop code)
       if (link_health_capacity != 0xa0) {
         link_health_capacity += 8;
         link_hearts_filler += 8;
       }
       break;
-    case 0x42: link_hearts_filler += 8; break;
-    case 0x45: link_magic_filler += 16; break;
+    case 0x17:                           // PieceOfHeart — the 4th rolls over (count==0)
+      if (link_heart_pieces == 0 && link_health_capacity != 0xa0) {
+        link_health_capacity += 8;
+        link_hearts_filler += link_health_capacity - link_health_current;
+      }
+      break;
+    case 0x42: link_hearts_filler += 8;  break;   // heart refill
+    case 0x45: link_magic_filler  += 16; break;   // magic refill
+    case 0x34: link_rupees_goal += 1;    break;   // rupees (Ancilla_AddRupees)
+    case 0x35: link_rupees_goal += 5;    break;
+    case 0x36: case 0x47: link_rupees_goal += 20; break;
+    case 0x40: link_rupees_goal += 100;  break;
+    case 0x41: link_rupees_goal += 50;   break;
+    case 0x46: link_rupees_goal += 300;  break;
     default: break;
   }
   flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)

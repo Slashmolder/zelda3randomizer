@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 91  # bump_rando_corpus.py --apply
+generator_version: 92  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -391,6 +391,15 @@ entries:
     label: "c-entrance-caves-open-fast-ganon"
     expected_digest: "6ef8d0c0cd8c0b675de82d5641d33723dec5e11894216419c84f4c4aa27ac192"
     expected_sphere_digest: "4e45a148c356627675caf8fbbc0bbb12b2527db088a160dab49d132c85f25a85"
+  # add-rando-pot-sanity audit fix (kGen 92): cave-entrance shuffle FORCES pot_shuffle
+  # off (cave/house pots miss the entrance region-override → false certification).
+  # This locks that: pot_shuffle=all here generates a pot-LESS seed; a regression that
+  # let the pots through would move this digest.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, pot_shuffle: all }
+    seed: "0x00000000C0FFEE0A"
+    label: "c-entrance-caves-pot-forced-off"
+    expected_digest: "7306727bbfce97bc2bbdd34375ba85f54ee61481e39f50e846bda17b9aa6f19f"
+    expected_sphere_digest: "66944e8440530c5333f6cea8a51fba92eab181de2514acb06b492bc9b45c869c"
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"

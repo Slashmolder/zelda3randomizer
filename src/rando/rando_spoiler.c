@@ -429,7 +429,11 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"boss_shuffle\": %u,\n", s->settings->boss_shuffle);
   fprintf(f, "    \"drop_shuffle\": %u,\n", s->settings->drop_shuffle);
   fprintf(f, "    \"traps\": %u,\n", s->settings->traps);
-  fprintf(f, "    \"pot_shuffle\": %u,\n", s->settings->pot_shuffle);
+  // Report the EFFECTIVE pot_shuffle: door / cave-entrance shuffle force it off at
+  // generation (Settings_PotShuffleForcedOff), so a raw value would claim a
+  // pot-less seed shuffled pots. Matches the canonical/share normalization.
+  fprintf(f, "    \"pot_shuffle\": %u,\n",
+          Settings_PotShuffleForcedOff(s->settings) ? 0u : s->settings->pot_shuffle);
   fprintf(f, "    \"instant_flute\": %s\n", s->settings->instant_flute ? "true" : "false");
   fprintf(f, "  },\n");
 

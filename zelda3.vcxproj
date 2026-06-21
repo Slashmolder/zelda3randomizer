@@ -1001,6 +1001,7 @@
     <RandoCodegenInput Include="assets\rando\door_predicates.gen.json" />
     <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
     <RandoCodegenInput Include="assets\rando\pots.gen.yaml" />
+    <RandoCodegenInput Include="assets\rando\pot_key_depth.gen.yaml" />
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
     <RandoCodegenInput Include="assets\rando_logic_gen.py" />
     <RandoCodegenInput Include="assets\chest_data.py" />

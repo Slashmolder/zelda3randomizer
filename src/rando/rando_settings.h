@@ -327,6 +327,17 @@ uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s);
 // glitched logic, or entrance shuffle — the MVP pins).
 uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s);
 
+// add-rando-pot-sanity — true when a shuffle axis FORCES pot_shuffle off because
+// the pots can't be safely placed under it: door shuffle (the door key-prover
+// doesn't model pot locations) OR cave-entrance shuffle (cave/house pot location
+// IDs sit above the per-location entrance region-override range, so they would
+// evaluate from the vanilla overworld region instead of the shuffled entrance's —
+// see Entrance_ApplyRegionOverrides). apply_derived_rules normalizes pot_shuffle
+// off under these, and pot_active / the spoiler consult the same predicate, so the
+// settings_hash, placement, runtime, and spoiler can't disagree. (Dungeon-entrance
+// shuffle is edge-based and does NOT mis-bind dungeon pots, so it is not included.)
+bool Settings_PotShuffleForcedOff(const RandoSettings *s);
+
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like
 // `Settings_EffectiveSmallKeysMode` this is *computed* from world_state, not a

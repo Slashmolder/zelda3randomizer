@@ -236,17 +236,24 @@ static void apply_derived_rules(RandoSettings *s) {
     s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
   }
 
-  // add-rando-pot-sanity — pots do NOT compose with door shuffle in v1: the
-  // door key-prover doesn't model pot locations, so allowing a dungeon key to
-  // land at (or a key-pot to be excluded behind) an unmodeled pot risks a
-  // softlock the prover can't see. With door shuffle active the placer treats
-  // every pot as inactive (pot_active checks Settings_EffectiveDoorShuffle too),
-  // so normalize pot_shuffle off here to keep the settings_hash equal to the
-  // actually-generated (pot-less) seed — the entrance-axis normalization
-  // precedent. Both key off door_shuffle, so hash and placement can't desync.
-  if (s->door_shuffle != kDoorShuffle_Vanilla) {
+  // add-rando-pot-sanity — pots do NOT compose with door shuffle OR cave-entrance
+  // shuffle in v1. Door: the door key-prover doesn't model pot locations. Cave
+  // entrance: cave/house pot location IDs are above the per-location entrance
+  // region-override range (Entrance_ApplyRegionOverrides only remaps the caves'
+  // <512 chest IDs), so a cave/house pot would evaluate from its VANILLA overworld
+  // region while the runtime reaches the interior through the shuffled entrance —
+  // certifying progression in a pot the layout doesn't make reachable. Normalize
+  // pot_shuffle off here so the settings_hash equals the actually-generated
+  // (pot-less) seed; pot_active + the spoiler consult the SAME predicate
+  // (Settings_PotShuffleForcedOff), so hash, placement, runtime, and spoiler agree.
+  if (Settings_PotShuffleForcedOff(s)) {
     s->pot_shuffle = kPotShuffle_Off;
   }
+}
+
+bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
+  return s != NULL && (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla ||
+                       s->shuffle_cave_entrances != 0);
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
