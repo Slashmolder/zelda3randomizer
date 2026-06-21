@@ -16,7 +16,7 @@
 //   Module_PreDungeon then advances main_module_index to 7 (Module07_Dungeon)
 //   itself (dungeon.c:6572), so there is no risk of re-running the loader.
 //
-// We expose two flavors:
+// We expose three flavors:
 //   * Named "safe" destinations -> START-POINT path. which_starting_point 0/1/6
 //     (Link's House / Sanctuary / Mountain Cave) are exactly the spawn-select
 //     menu locations; misc.c:603-604 documents these as "the only safe spawn
@@ -24,13 +24,20 @@
 //     battle-tested entry the game has.
 //   * Raw entrance id -> ENTRANCE path. Experimental; out-of-range / special ids
 //     may softlock.
+//   * Room index -> reverse-looks-up the entrance that lands in that room, then
+//     takes the ENTRANCE path. Entrance ids (0..0x84) and room indices are
+//     DIFFERENT namespaces; this lets you reach cave/house pot rooms (>= 0x100)
+//     by room number. Most dungeon-interior rooms have no direct entrance (the
+//     button greys out) -- warp to the dungeon's entrance and walk instead.
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 #include "imgui.h"
 #include "game_cheats.h"
 #include "game_panels.h"
 
 extern "C" {
-extern uint8 g_ram[0x20000];  // game-state RAM (zelda_rtl.c)
+extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
+extern const uint8 *g_asset_ptrs[];   // asset 11 = kEntranceData_rooms (entrance->room map)
+extern uint32 g_asset_sizes[];        // bytes; /2 = entry count (uint16 rooms)
 }
 
 // --- g_ram cells this panel touches (all verified against src/variables.h) ---
@@ -100,6 +107,19 @@ static void DoWarpEntrance(uint8 entrance) {
   HandOffToLoader();
 }
 
+// Reverse-lookup the entrance whose destination is `room`, or -1 if none lands
+// there directly. The entrance->room map is asset 11 (kEntranceData_rooms); the
+// loader consumes it at dungeon.c:8771 and rando.c:2875 scans it identically.
+// Cave/house interiors (rooms >= 0x100) each have an entrance, so this resolves
+// them; most dungeon-interior rooms have no direct entrance (returns -1).
+static int EntranceForRoom(int room) {
+  const uint16 *rooms = (const uint16*)g_asset_ptrs[11];
+  uint32 count = g_asset_sizes[11] / 2u;
+  for (uint32 i = 0; i < count; i++)
+    if (rooms[i] == (uint16)room) return (int)i;
+  return -1;
+}
+
 extern "C" void DbgWarp_Render(void) {
   const bool can = Cheats_CanWarp();
 
@@ -139,6 +159,29 @@ extern "C" void DbgWarp_Render(void) {
     ImGui::SameLine();
     if (ImGui::Button("Warp to entrance")) DoWarpEntrance((uint8)s_entrance);
     ImGui::TextDisabled("Range clamped to 0..0x84; verify each id by playtest.");
+
+    // Warp by ROOM index. Entrance ids and room indices are different namespaces
+    // -- a cave/house pot room like 0x114 is reached via its entrance, not by
+    // typing 0x114 into the entrance field above. We reverse-look-up the entrance
+    // that lands in the room and take the entrance path.
+    ImGui::Spacing();
+    static int s_room = 0x114;
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputScalar("Room (hex)", ImGuiDataType_S32, &s_room, NULL, NULL, "%03X",
+                       ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+    if (s_room < 0)     s_room = 0;
+    if (s_room > 0x14F) s_room = 0x14F;
+    int room_ent = EntranceForRoom(s_room);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(room_ent < 0);
+    if (ImGui::Button("Warp to room")) DoWarpEntrance((uint8)room_ent);
+    ImGui::EndDisabled();
+    if (room_ent >= 0)
+      ImGui::TextDisabled("Room 0x%03X via entrance 0x%02X.", s_room, room_ent);
+    else
+      ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                         "No entrance lands in room 0x%03X -- dungeon interior; "
+                         "warp to the dungeon's entrance and walk.", s_room);
   }
 
   ImGui::EndDisabled();
