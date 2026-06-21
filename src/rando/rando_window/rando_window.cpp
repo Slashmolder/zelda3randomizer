@@ -1209,19 +1209,21 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffles each dungeon's interior door connections; key doors "
                 "move too. Hyrule Castle and Swamp Palace stay vanilla.");
 
-    // add-rando-pot-sanity — pot shuffle tier. Disabled while door shuffle is
-    // effective: the two aren't jointly modeled yet, and generation normalizes
-    // pot_shuffle to Off whenever Settings_EffectiveDoorShuffle != Vanilla, so
-    // the grey-out keeps the UI honest about what will actually generate.
+    // add-rando-pot-sanity — pot shuffle tier. Disabled whenever generation
+    // forces pots off (Settings_PotShuffleForcedOff: door shuffle OR cave-entrance
+    // shuffle): the prover doesn't jointly model pots with either yet, so
+    // generation normalizes pot_shuffle to Off. The grey-out uses the SAME
+    // predicate so the UI is honest about what will actually generate.
     {
-      bool door_on = Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla;
-      ImGui::BeginDisabled(door_on);
+      bool pot_off = Settings_PotShuffleForcedOff(s);
+      ImGui::BeginDisabled(pot_off);
       if (EnumCombo("Pot shuffle", &s->pot_shuffle, kPotShuffleLabels, 4)) changed = true;
       HelpTooltip("Turns dungeon pots into randomizer checks. Keys = key pots "
                   "only; Contents adds loot pots; All adds the empty pots too.");
       ImGui::EndDisabled();
-      if (door_on)
-        ImGui::TextDisabled("Pot shuffle is unavailable while Door shuffle is on.");
+      if (pot_off)
+        ImGui::TextDisabled("Pot shuffle is unavailable while Door shuffle or "
+                            "Cave entrance shuffle is on.");
     }
 
     if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {

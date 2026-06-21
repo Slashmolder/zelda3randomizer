@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 92  # bump_rando_corpus.py --apply
+generator_version: 93  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -400,6 +400,22 @@ entries:
     label: "c-entrance-caves-pot-forced-off"
     expected_digest: "7306727bbfce97bc2bbdd34375ba85f54ee61481e39f50e846bda17b9aa6f19f"
     expected_sphere_digest: "66944e8440530c5333f6cea8a51fba92eab181de2514acb06b492bc9b45c869c"
+  # add-rando-pot-sanity audit fix (kGen 93): cave-entrance shuffle must force pots
+  # off for NON-default key modes too. Pre-fix the door-only pot-key predicates
+  # (eval_pot_keys_wild/dungeon, pot_keys_dungeon_active) fired under cave shuffle
+  # and gated deep locations on never-pooled pot keys → these two were wrongly
+  # REFUSED. They must now GENERATE a pots-off-equivalent seed (pot_shuffle resolves
+  # to 0, fully reachable); a regression re-leaking the predicate would refuse them.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, dungeon_items.small_keys: dungeon, pot_shuffle: all }
+    seed: "0x00000000C0FFEE0B"
+    label: "c-entrance-caves-pot-forced-off-dungeon-keys"
+    expected_digest: "208156e648a986247dda92197b0c3b8b4ac184d4f4a6d89a27c14d9a310aa44d"
+    expected_sphere_digest: "8af2fe4a633100daba152923c0f707beec1d2247d2b5be2e2b88375530bac426"
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, dungeon_items.small_keys: wild, pot_shuffle: all }
+    seed: "0x00000000C0FFEE0C"
+    label: "c-entrance-caves-pot-forced-off-wild-keys"
+    expected_digest: "38d0d8f5647db5333f090e8d9ae67a4c6e4a83d96c61dab5d75eadc40107b026"
+    expected_sphere_digest: "0125ff9df97677869fd6212f471e6abdaab002b65a6a8f65116431450b534d31"
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"

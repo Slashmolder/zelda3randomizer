@@ -295,12 +295,11 @@ static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
 static bool eval_pot_keys_on(Cursor *c, const PredicateContext *ctx) {
   (void)c;
   // Mirrors pot_active() (rando_placement.c): dungeon pot keys are live checks
-  // only when pot_shuffle >= Keys AND door shuffle is off (door shuffle forces
-  // every pot inactive). When false, the wrapped small-key term collapses to
-  // its vanilla worst-case, so default + pots-off placement is byte-identical.
-  const RandoSettings *s = ctx->settings;
-  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
-         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla;
+  // only when pot_shuffle itemizes them — Settings_PotKeysActive: pot_shuffle >=
+  // Keys AND pots are not forced off (door OR CAVE-ENTRANCE shuffle, the same
+  // predicate pot_active uses). When false, the wrapped small-key term collapses
+  // to its vanilla worst-case, so default + pots-off placement is byte-identical.
+  return Settings_PotKeysActive(ctx->settings);
 }
 
 static bool eval_pot_keys_wild(Cursor *c, const PredicateContext *ctx) {
@@ -308,11 +307,10 @@ static bool eval_pot_keys_wild(Cursor *c, const PredicateContext *ctx) {
   // POT_KEYS_ON AND small keys are WILD (keysanity / Retro). The wild
   // worst-case key gate on a pot-bearing dungeon's deep locations applies only
   // here; dungeon/vanilla keys keep the vanilla branch (the in-context dungeon
-  // case is a follow-on). false whenever pots are off, so default + pots-off +
-  // dungeon-keys placement is byte-identical.
+  // case is a follow-on). false whenever pots are off OR forced off (door/cave
+  // shuffle), so default + pots-off + dungeon-keys placement is byte-identical.
   const RandoSettings *s = ctx->settings;
-  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
-         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+  return Settings_PotKeysActive(s) &&
          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Wild;
 }
 
@@ -323,10 +321,9 @@ static bool eval_pot_keys_dungeon(Cursor *c, const PredicateContext *ctx) {
   // on this; the keys are collected en route so the graduated min-depth is the
   // exact requirement (a flat worst-case would be circular). The nonpot drops are
   // free-granted into the assumed inventory by rando_placement.c so the gates stay
-  // satisfiable. Wild keys and pots-off both leave this false (byte-identical).
+  // satisfiable. Wild keys and pots-off/forced-off all leave this false (byte-id).
   const RandoSettings *s = ctx->settings;
-  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
-         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+  return Settings_PotKeysActive(s) &&
          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon;
 }
 

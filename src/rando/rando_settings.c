@@ -256,6 +256,19 @@ bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
                        s->shuffle_cave_entrances != 0);
 }
 
+// True when pot_shuffle itemizes small-key pots as live checks: pot_shuffle >=
+// Keys AND pots are not forced off (door OR cave-entrance shuffle). The placer
+// consumes RAW (non-normalized) settings — Settings_CanonicalSerialize runs
+// apply_derived_rules only on a private copy — so every pot-key predicate MUST
+// re-derive "forced off" itself rather than trust a normalized pot_shuffle. This
+// is the single source of truth shared by the logic VM (eval_pot_keys_*) and the
+// placer (pot_keys_dungeon_active) so the two can't drift; the WILD/DUNGEON
+// variants additionally test Settings_EffectiveSmallKeysMode.
+bool Settings_PotKeysActive(const RandoSettings *s) {
+  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
+         !Settings_PotShuffleForcedOff(s);
+}
+
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
                                 uint8 out[kSettingsCanonicalLen]) {
   // Layout per `randomizer-core / Settings canonical serialization order`.

@@ -338,6 +338,13 @@ uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s);
 // shuffle is edge-based and does NOT mis-bind dungeon pots, so it is not included.)
 bool Settings_PotShuffleForcedOff(const RandoSettings *s);
 
+// True when pot_shuffle itemizes small-key pots as live checks: pot_shuffle >=
+// Keys AND pots are not forced off (Settings_PotShuffleForcedOff: door OR
+// cave-entrance shuffle). Shared by the logic VM (eval_pot_keys_*) and the placer
+// (pot_keys_dungeon_active) so the pot-key gates can't drift from pot_active; the
+// WILD/DUNGEON ops additionally test Settings_EffectiveSmallKeysMode.
+bool Settings_PotKeysActive(const RandoSettings *s);
+
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like
 // `Settings_EffectiveSmallKeysMode` this is *computed* from world_state, not a

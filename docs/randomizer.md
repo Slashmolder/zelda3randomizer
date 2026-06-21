@@ -438,10 +438,12 @@ an in-scope pot grants its placed item; un-checked in-scope pots are **recolored
 as a visual tell. The non-`off` tiers add fillable locations and so change
 placement output; `off` is byte-identical.
 
-**Forced `off` under door shuffle** (normalized automatically — the settings hash
-always matches the generated seed): door shuffle's key-door prover doesn't model
-pot locations yet, so the two can't be combined in this version. The native
-settings window greys out the pot selector while door shuffle is on.
+**Forced `off` under door shuffle or cave-entrance shuffle** (normalized
+automatically — the settings hash always matches the generated seed): door
+shuffle's key-door prover doesn't model pot locations yet, and cave-entrance
+shuffle relocates cave/house pots out of the region their logic was certified
+against, so neither can be combined with pots in this version. The native
+settings window greys out the pot selector while either is on.
 
 Because `all` adds ~800 locations, the PC trackers gate pots behind a **"Show
 pots"** toggle (the SNES HUD location grid hides them outright), but every

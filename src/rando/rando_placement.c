@@ -313,12 +313,13 @@ static const struct { uint16 item_id; uint8 count; } kPotNonpotDropCounts[] = {
 };
 
 // True when pot_shuffle itemizes a dungeon's pot keys under DUNGEON keys — the
-// exact condition OP_POT_KEYS_DUNGEON gates on (pot_shuffle>=Keys, door off,
-// small keys == Dungeon). Wild caps its own requirement at the pooled key count
-// so it needs no nonpot free-grant; vanilla/pots-off leave the keys free.
+// exact condition OP_POT_KEYS_DUNGEON gates on (Settings_PotKeysActive: pot_shuffle
+// >= Keys AND pots not forced off by door OR CAVE-entrance shuffle) AND small keys
+// == Dungeon. Routes through the SAME helper as the logic VM so the free-grant and
+// the gates can't drift. Wild caps its own requirement at the pooled key count so
+// it needs no nonpot free-grant; vanilla/pots-off/forced-off leave the keys free.
 static bool pot_keys_dungeon_active(const RandoSettings *s) {
-  return s != NULL && s->pot_shuffle >= kPotShuffle_Keys &&
-         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+  return Settings_PotKeysActive(s) &&
          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon;
 }
 
