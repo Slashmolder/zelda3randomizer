@@ -20,7 +20,9 @@ Per-pot work:
     through RECIPROCAL doors from chest/boss anchors (vanilla doors stay within
     one dungeon); residual/ambiguous rooms REQUIRE a reviewed entry in
     pot_logic_overrides.yaml or the build fails;
-  * assign a stable append-only location id (sorted by (room, pos4)).
+  * assign a deterministic location id = rank in the (room, pos4) sort, from
+    POT_BASE_ID. NOT append-only: inserting/removing a pot renumbers every
+    higher-sorted pot, so any pot-set change is a kGeneratorVersion bump.
 
 Invariants asserted (fail the build, not ship wrong data): unique (room,pos4)
 across all pots; nested tiers keys<=contents<=all; every in-scope pot has a
@@ -36,7 +38,7 @@ sys.path.insert(0, str(REPO / "assets"))
 import yaml  # noqa: E402
 import chest_data  # noqa: E402
 
-POT_BASE_ID = 328  # first pot location id (append-only after the 0..327 registry)
+POT_BASE_ID = 328  # first pot id after the 0..327 registry; id = (room,pos4) sort rank (not append-only)
 
 # --- content byte -> classification (D2 per-content-byte policy) ----------------
 # loot content -> (kind, vanilla_item). 'rupee/bomb/arrow/heart/magic' are the
@@ -340,7 +342,9 @@ def main():
             die(f"{len(residual)} pot rooms unresolved — add them to {args.overrides} "
                 f"(room_region:) per design D8, or they would silently sphere-0.")
 
-    # assign stable append-only ids sorted by (room, pos4); emit rows
+    # assign ids = rank in the (room, pos4) sort from POT_BASE_ID; emit rows.
+    # NOT append-only: inserting/removing a pot renumbers higher ids, so a
+    # pot-set change must bump kGeneratorVersion (enforced by the corpus regen).
     inscope.sort(key=lambda x: (x[0], x[1]))
     # uniqueness of identity
     seen = set()
