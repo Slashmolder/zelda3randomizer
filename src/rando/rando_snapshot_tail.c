@@ -371,6 +371,18 @@ int RandoSnapshotTail_Load(FILE *f) {
         Placement_Install(&g_tail_table);
       }
 
+      // Older-snapshot clean-restore contract (randomizer-save spec scenario
+      // "Older snapshot without the TLV restores cleanly"): clear the checked
+      // bitmap when a valid type-1 RandoState is accepted. g_rando_checked_bitmap
+      // is C-global state OUTSIDE the g_ram dump LoadSnesState restored, so
+      // without this an older snapshot — written before the type-3 CheckedBitmap
+      // TLV existed — would INHERIT whatever checked bits were live from the
+      // current slot/session, suppressing or re-granting unrelated pots/checks.
+      // A current-binary snapshot's type-3 TLV (emitted right after type-1)
+      // re-memsets and restores the real bitmap below, so this clear is
+      // load-bearing ONLY for the type-3-absent case.
+      memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
       Rando_SetSnapshotContext(gen_version, settings_hash, share_string);
@@ -921,6 +933,53 @@ void RandoSnapshotTail_SelfCheck(void) {
     fclose(fb);
     g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
     g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // Absent-type-3 (older-snapshot) bitmap clean-restore.
+  // randomizer-save spec scenario "Older snapshot without the TLV restores
+  // cleanly": a snapshot written before the type-3 CheckedBitmap TLV existed
+  // (type-1 only, NO type-3) MUST restore an all-clear bitmap, NOT inherit
+  // stale checked bits from the live session. Save() always emits type-3, so
+  // we hand-write a lone type-1 RandoState TLV to exercise the absent path.
+  // -------------------------------------------------------------------------
+  {
+    FILE *fold = tmpfile();
+    if (fold == NULL) selfcheck_die("absent-type-3: tmpfile() returned NULL");
+    // A real older snapshot carries a NON-empty placement table, so use one here
+    // (ids 0 and 5 in a 6-location table) — this exercises the non-empty install
+    // branch followed by the type-1 clear, not just the empty-table branch.
+    const uint16 tbl_locs = 6;
+    const uint16 tbl_bytes = (uint16)(tbl_locs * 2u);   // 12
+    uint8 t1[16 + 52 + 12];
+    memcpy(t1, kRandoSnapshotTail_Magic, 8);
+    put_u32le_bytes(t1 + 8, kRandoSnapshotTail_Type_RandoState);
+    put_u32le_bytes(t1 + 12, 52u + (uint32)tbl_bytes);  // payload = 52 + table
+    uint8 *pp = t1 + 16;
+    put_u16le_bytes(pp, 0x0011); pp += 2;               // gen_version
+    memset(pp, 0xAB, 16); pp += 16;                     // settings_hash
+    memset(pp, 0xCD, 32); pp += 32;                     // share_string
+    put_u16le_bytes(pp, tbl_bytes); pp += 2;            // placement_table_size = 12
+    for (uint16 i = 0; i < tbl_locs; i++) { pp[i * 2] = 0xFF; pp[i * 2 + 1] = 0xFF; }
+    put_u16le_bytes(pp + 0 * 2, 0x0101);               // loc 0 -> item 0x0101
+    put_u16le_bytes(pp + 5 * 2, 0x0202);               // loc 5 -> item 0x0202
+    if (fwrite(t1, 1, sizeof(t1), fold) != sizeof(t1)) selfcheck_die("absent-type-3: short write");
+    // Pre-seed the live bitmap with stale bits the load MUST clear.
+    memset(g_rando_checked_bitmap, 0xFF, kRandoCheckedBitmapBytes);
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(fold, 0, SEEK_SET);
+    int nold = RandoSnapshotTail_Load(fold);
+    if (nold != 1) selfcheck_die("absent-type-3: should recognize the lone type-1 TLV");
+    for (int i = 0; i < kRandoCheckedBitmapBytes; i++) {
+      if (g_rando_checked_bitmap[i] != 0)
+        selfcheck_die("absent-type-3: type-1 accept must clear the checked bitmap (no stale bits)");
+    }
+    const RandoPlacementTable *ro = Placement_GetActive();
+    if (ro == NULL || ro->count != 2)
+      selfcheck_die("absent-type-3: non-empty type-1 table should install (2 entries)");
+    fclose(fold);
+    memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);  // leave clean
   }
 
   // Restore prior state to leave the world unchanged.

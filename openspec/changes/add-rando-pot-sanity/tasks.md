@@ -243,3 +243,26 @@ corpus-validated; pots-off / non-pot seeds byte-identical, only pot-ACTIVE seeds
   pot seeds move. The 5 false positives (0x031/0x054/0x056/0x05b/0x064) were re-verified CORRECT
   and left as-is (e.g. engine 0x031 = door-rano 0x71 = HC sewers = genuinely HCE, not ToH — this
   also corrected an earlier static trace that had wrongly "corroborated" 0x031→ToH).
+- [x] 8.8 **Snapshot bitmap clean-restore on older snapshots** (`randomizer-save`, no kGen — save/load
+  correctness): the type-1 `RandoState` branch of `RandoSnapshotTail_Load` installed placement but
+  never cleared `g_rando_checked_bitmap` (a C global OUTSIDE the `g_ram` dump); only the type-3
+  `CheckedBitmap` branch cleared it. So an older snapshot (type-1 [+type-2], no type-3 — written
+  before pot-sanity added type-3) restored placement and KEPT whatever checked bits were live from
+  the current slot/session — contradicting the spec scenario "Older snapshot without the TLV restores
+  cleanly" (all-clear, no stale state) and suppressing/re-granting unrelated pots/checks. FIX: clear
+  the bitmap when a valid type-1 is accepted (after `Placement_Install`, before context reinstall);
+  a current-binary snapshot's type-3 TLV (emitted right after type-1) re-memsets+restores the real
+  bitmap, so the clear is load-bearing only for the type-3-absent case. Added an `absent-type-3`
+  selfcheck (hand-writes a lone non-empty type-1 TLV, pre-seeds the bitmap to 0xFF, asserts all-clear
+  + the placement still installs). 3-skeptic adversarial verify (one compiled a standalone repro
+  proving the selfcheck fails pre-fix / passes post-fix): 0 issues. The spec already described the
+  correct behavior — code-to-spec fix, no delta change.
+- [x] 8.9 **Debug warp-to-room picks the pot side of shared interiors** (debug-UI only, no kGen):
+  `dbg_warp.cpp`'s `EntranceForRoom` returned the FIRST entrance whose dest room matched, but shared
+  interiors have multiple entrances and only one side holds the pots — Pond of Wishing room 0x114 is
+  reached by both 0x5C (LW fairy side, pot-LESS) and 0x62 (DW-mire pot side), and refill cave 0x11b
+  is split (entrances 0x51/0x52). Warping to "the first match" could land on the pot-less/wrong half
+  → false playtest evidence for exactly the pot rooms this branch validates. FIX: `EntrancesForRoom`
+  collects ALL matches (asset 11 decoded: max 3 per room); the UI renders one "via 0xNN" button per
+  entrance when >1, a single "Warp to room" when ==1, disabled when 0. Adversarial verify decoded
+  asset 11 directly and confirmed 0x114→{0x5C,0x62} and 0x11b→{0x51,0x52}: 0 issues.

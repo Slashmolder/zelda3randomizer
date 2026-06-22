@@ -34,6 +34,7 @@
 #include "game_cheats.h"
 #include "game_panels.h"
 #include <stdlib.h>   // strtol (parse the hex room field)
+#include <stdio.h>    // snprintf (per-entrance button labels)
 
 extern "C" {
 extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
@@ -108,17 +109,30 @@ static void DoWarpEntrance(uint8 entrance) {
   HandOffToLoader();
 }
 
-// Reverse-lookup the entrance whose destination is `room`, or -1 if none lands
-// there directly. The entrance->room map is asset 11 (kEntranceData_rooms); the
-// loader consumes it at dungeon.c:8771 and rando.c:2875 scans it identically.
+// Collect EVERY entrance whose destination is `room` (into out[0..cap)), and
+// return how many exist. The entrance->room map is asset 11 (kEntranceData_rooms);
+// the loader consumes it at dungeon.c:8771 and rando.c:2875 scans it identically.
 // Cave/house interiors (rooms >= 0x100) each have an entrance, so this resolves
-// them; most dungeon-interior rooms have no direct entrance (returns -1).
-static int EntranceForRoom(int room) {
+// them; most dungeon-interior rooms have no direct entrance (returns 0).
+//
+// MORE THAN ONE entrance can land in the SAME room for shared/split interiors —
+// Pond of Wishing 0x114 is reached by both the LW-waterfall fairy side (pot-LESS)
+// and the DW-mire side (the pot side), and refill cave 0x11b is split into two
+// pot clusters with different access. Returning only the first match could warp
+// to the pot-less / wrong-cluster half and give false playtest evidence for
+// exactly the pot rooms this branch validates, so we expose every match and let
+// the tester pick the side.
+static int EntrancesForRoom(int room, int *out, int cap) {
   const uint16 *rooms = (const uint16*)g_asset_ptrs[11];
   uint32 count = g_asset_sizes[11] / 2u;
-  for (uint32 i = 0; i < count; i++)
-    if (rooms[i] == (uint16)room) return (int)i;
-  return -1;
+  int n = 0;
+  for (uint32 i = 0; i < count; i++) {
+    if (rooms[i] == (uint16)room) {
+      if (n < cap) out[n] = (int)i;
+      n++;
+    }
+  }
+  return n;
 }
 
 extern "C" void DbgWarp_Render(void) {
@@ -172,15 +186,37 @@ extern "C" void DbgWarp_Render(void) {
     ImGui::SetNextItemWidth(120.0f);
     ImGui::InputText("Room (hex)", s_room, sizeof(s_room),
                      ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
-    int room_ent = -1;
+    int ents[8];
+    int n_ents = 0;
     if (s_room[0]) {
       long room = strtol(s_room, NULL, 16);
-      if (room >= 0 && room <= 0x14F) room_ent = EntranceForRoom((int)room);
+      if (room >= 0 && room <= 0x14F) n_ents = EntrancesForRoom((int)room, ents, 8);
     }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(room_ent < 0);
-    if (ImGui::Button("Warp to room")) DoWarpEntrance((uint8)room_ent);
-    ImGui::EndDisabled();
+    if (n_ents <= 0) {
+      // No direct entrance (dungeon interiors), or empty field: keep the disabled
+      // button so the layout doesn't jump.
+      ImGui::SameLine();
+      ImGui::BeginDisabled(true);
+      ImGui::Button("Warp to room");
+      ImGui::EndDisabled();
+      if (s_room[0])
+        ImGui::TextDisabled("No direct entrance lands in that room (dungeon interiors have none).");
+    } else if (n_ents == 1) {
+      ImGui::SameLine();
+      if (ImGui::Button("Warp to room")) DoWarpEntrance((uint8)ents[0]);
+    } else {
+      // Shared / split interior: more than one entrance reaches this room and
+      // only one side holds the pots. Expose each so the tester picks the side
+      // (warping to "the first match" can land on the pot-less / wrong half).
+      ImGui::TextDisabled("Shared interior: %d entrances reach this room - pick a side:", n_ents);
+      int shown = n_ents < 8 ? n_ents : 8;
+      for (int k = 0; k < shown; k++) {
+        char lbl[24];
+        snprintf(lbl, sizeof(lbl), "via 0x%02X##rm%d", ents[k], k);
+        if (ImGui::Button(lbl)) DoWarpEntrance((uint8)ents[k]);
+        if (k + 1 < shown) ImGui::SameLine();
+      }
+    }
   }
 
   ImGui::EndDisabled();
