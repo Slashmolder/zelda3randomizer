@@ -1726,10 +1726,19 @@ static void Rando_DrawRecvItemSlotAt(int k, uint8 gfx, uint8 big, uint8 oam_flag
     SetOamHelper0(oam + 1, info->x + dx, info->y + dy + 8, 0x34, oam_flags, 0);
 }
 
+static bool Rando_CanDrawRecvItemSlot(void) {
+  // Mirror/whirlpool/transition NMI loads temporarily suppress the core sprite
+  // tile upload that carries the shared receive-item slot to VRAM. Defer the
+  // sprite for a frame instead of decoding new slot graphics mid-load.
+  return !nmi_disable_core_updates;
+}
+
 bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id) {
   uint8 gfx, big, oam_flags;
   if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
     return false;  // vanilla placement / no gfx — caller draws the vanilla sprite
+  if (!Rando_CanDrawRecvItemSlot())
+    return true;   // transition load in progress: suppress vanilla fallback too
   PrepOamCoordsRet info;
   if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
     return true;   // off-screen: handled (don't draw the vanilla sprite either)
@@ -1748,6 +1757,8 @@ bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_
   uint8 gfx, big, oam_flags;
   if (!Rando_GetFieldItemIcon(location_id, vanilla_item_id, &gfx, &big, &oam_flags))
     return false;
+  if (!Rando_CanDrawRecvItemSlot())
+    return true;
   PrepOamCoordsRet info;
   if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
     return true;   // off-screen
@@ -1763,6 +1774,8 @@ bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_
 // fixed charnum (0x24) and palette 3; the sprite's own priority + H-flip (from
 // info.flags, set by the x_vel facing code in Sprite_0B_Cucco) are preserved.
 void Rando_DrawTrapCucco(int k) {
+  if (!Rando_CanDrawRecvItemSlot())
+    return;
   PrepOamCoordsRet info;
   if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
     return;
