@@ -25,3 +25,19 @@ The pot-sanity expansion (location registry growing to ~1127 IDs) rides this exi
 #### Scenario: Old binary refuses a pot-expanded slot (one-directional compat)
 - **WHEN** a pre-pot-shuffle (512-era) binary loads a sidecar whose slot has a `placement_table_size` implying ~1127 locations
 - **THEN** the slot fails size/bounds validation and is refused non-destructively (the file is untouched and the paired `sram.dat` slot is treated as plain vanilla); the old binary does NOT read pot IDs beyond its registry
+
+## ADDED Requirements
+
+### Requirement: Snapshot persists the rando checked-location bitmap
+
+The F-key developer snapshot (`StateRecorder`, which does a full `g_ram` dump-restore — NOT input replay) SHALL also persist and restore `g_rando_checked_bitmap`, a C global that lives OUTSIDE `g_ram` and is therefore invisible to the snapshot's RAM dump. Without it, saving and reloading a snapshot loses which locations are checked. Pots uniquely require this: a checked chest/NPC sets a persistent vanilla SNES flag (captured by the `g_ram` dump), but a checked **pot** has NO vanilla flag — its only record is the rando bitmap, so a snapshot reload would un-check every broken pot (re-granting it / dropping its recolor-as-checked).
+
+This SHALL be a new TLV in the snapshot tail (`rando_snapshot_tail.{c,h}`, type 3 `CheckedBitmap`): a flat `kRandoCheckedBitmapBytes` copy written after the existing TLVs and restored by `memset`-then-`fread min(length, kRandoCheckedBitmapBytes)` — backward-compatible (an older snapshot without the TLV restores an all-clear bitmap; a larger payload is truncated). `--rando-selftest` SHALL round-trip the bitmap through the tail.
+
+#### Scenario: A broken pot stays checked across a snapshot reload
+- **WHEN** the player breaks an in-scope pot, takes an F-key snapshot, then replays it
+- **THEN** the pot is still marked checked — the type-3 CheckedBitmap TLV round-trips `g_rando_checked_bitmap` — so the pot does not re-grant and stays recolored as checked
+
+#### Scenario: Older snapshot without the TLV restores cleanly
+- **WHEN** a snapshot written before the CheckedBitmap TLV existed is replayed
+- **THEN** the loader recognizes the absent TLV and restores an all-clear bitmap (no crash, no stale check state)

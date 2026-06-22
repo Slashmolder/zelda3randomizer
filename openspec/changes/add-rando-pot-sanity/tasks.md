@@ -195,3 +195,39 @@ depth; pots-off / vanilla / door byte-identical.
 - [x] 7.7 Fresh-eyes independent review (0 findings, end-to-end re-validated).
 - [ ] 7.8 **Owner playtest** a dungeon+pot seed — see 6.3 addendum (the only correctness
   gate the generator cannot cover).
+
+## 8. Post-ship audit fixes (owner playtest + sibling-class sweeps; kGen 92→95)
+
+Surfaced after Phases 1-7 shipped, by owner playtest + self-spawned audit workflows. All
+corpus-validated; pots-off / non-pot seeds byte-identical, only pot-ACTIVE seeds move.
+
+- [x] 8.1 **Cave-entrance × pot forced-off** (kGen 92): cave/house pot loc-ids sit above
+  the entrance region-override range, so cave+pot certified progression against the
+  vanilla overworld region. `Settings_PotShuffleForcedOff` = door OR cave-entrance shuffle
+  (used by apply_derived_rules + pot_active + spoiler). Guard seed added.
+- [x] 8.2 **Raw-vs-normalized settings → Effective accessors** (kGen 93-94): the placer
+  consumes RAW settings (canonical-serialize normalizes only a private copy for the hash).
+  Routed the pot-key gates (`Settings_PotKeysActive`), the accessibility acceptance gate +
+  spoiler (`Settings_EffectiveAccessibility`, Completionist→Locations — fixed an
+  accept-bad-seed via `goal=completionist,accessibility=none`), and the cave-forced-off
+  check (`Settings_EffectiveShuffleCaveEntrances`, inert under Inverted/Retro) through
+  derived accessors. `Placement_SelfCheck` Case 4 guards the completionist case.
+- [x] 8.3 **Runtime pot-grant completeness**: the quiet-grant path (`Rando_PotQuietReceive`
+  kills the receipt ancilla to skip the animation) lost the DEFERRED grants — heart
+  container +8 capacity, rupees, PoH rollover, heart/magic fillers — now replicated
+  rando-gated; the progressive-item icon re-pops from the PRE-grant code (was showing the
+  next tier).
+- [x] 8.4 **Snapshot pot-checked TLV** (`randomizer-save`): the F-key snapshot persists
+  `g_rando_checked_bitmap` (outside `g_ram`) via a type-3 CheckedBitmap tail TLV.
+- [x] 8.5 **Tracker toggle persistence** (`randomizer-ui`): Show pots / Show items persist
+  via `rando_window.ini` (Show items still race-force-off on load).
+- [x] 8.6 **Cave/house pot-room region MISLABELS** (kGen 95): the grid-adjacency region
+  flood mis-bound standalone cave/house interiors (>= 0x100) to a neighbor's region,
+  making them falsely sphere-0. Owner-F12 + fork-location-grounded overrides — 0x114 pond→
+  DarkWorld_Mire, 0x11a storyteller→DarkWorld_NorthEast, 0x119 Blind's Hideout + 0x11f
+  Lumberjack's House→LightWorld_NorthWest, 0x10c Mimic Cave + mirror-from-TR gate, 0x11b
+  refill cave SPLIT per entrance (new `pot_room_split`). ALSO made the task-#25 Desert
+  Palace fix (0x43/0x53) generator-reproducible (it had been a hand-edit a regen reverted).
+- [ ] 8.7 **Dungeon-room region audit** (FOLLOW-ON): an audit workflow found a residual
+  in-dungeon region-mislabel class (same as the 0x53 bug — e.g. 0x031 HCE→ToH); a
+  floor-bit-aware re-verification + apply is in progress.

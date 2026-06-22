@@ -48,3 +48,22 @@ silently dropped from the view.
 - **WHEN** the recolor cosmetic is toggled
 - **THEN** the seed's `placement_digest` and `settings_hash` are unaffected (the
   recolor is client-side, like other cosmetic axes)
+
+#### Scenario: Pot selector disabled when generation forces pots off
+- **WHEN** the native settings window has door shuffle OR cave-entrance shuffle enabled
+- **THEN** the `pot_shuffle` selector is greyed out with a one-line note, using the SAME
+  `Settings_PotShuffleForcedOff` predicate generation uses to normalize `pot_shuffle` to
+  Off — so the UI is honest about what will actually generate
+
+#### Scenario: Tracker filter toggles persist across restarts
+- **WHEN** the player toggles the Check Tracker's "Hide checked", "Only available",
+  "Show pots", or "Show items (spoiler)" filters and restarts
+- **THEN** all four are restored from `saves/rando_window.ini` (`g_rando_window_prefs`),
+  EXCEPT "Show items (spoiler)" is force-off on load for a race seed so a replay cannot
+  leak item names
+
+#### Scenario: Spoiler reports the effective pot_shuffle
+- **WHEN** a seed forces pots off (door or cave-entrance shuffle) but `pot_shuffle` was
+  requested
+- **THEN** the spoiler emits the EFFECTIVE value (0/Off via `Settings_PotShuffleForcedOff`),
+  matching the canonical hash and the actually-generated pot-less seed, not the raw request

@@ -70,8 +70,12 @@ requirement that pot_shuffle adds once that dungeon's pot keys become shuffled i
 Three predicate-VM ops drive this, all false (so the wrap is inert and placement is
 byte-identical) when pots are off:
 
-- `OP_POT_KEYS_ON` — `pot_shuffle >= Keys` AND door shuffle is off (door shuffle forces
-  every pot inactive, mirroring `pot_active`).
+- `OP_POT_KEYS_ON` — `Settings_PotKeysActive`: `pot_shuffle >= Keys` AND pots are not
+  forced off (door OR cave-entrance shuffle, `Settings_PotShuffleForcedOff`) — the SAME
+  shared accessor `pot_active` / `BuildItemPool` use, so the gate can never drift from
+  which pots are actually pooled. The placer/logic VM consume RAW settings, so this MUST
+  read the accessor, never the raw `pot_shuffle`/door fields (the audit-fixed bug class:
+  door-only pot-key gates wrongly REFUSED cave-entrance + pot + wild/dungeon-keys seeds).
 - `OP_POT_KEYS_WILD` — `OP_POT_KEYS_ON` AND small keys are wild (keysanity / Retro).
 - `OP_POT_KEYS_DUNGEON` — `OP_POT_KEYS_ON` AND small keys are dungeon (per-dungeon).
 
@@ -116,7 +120,7 @@ build. `rando_logic_gen.py` applies the wrap from that table.
   placed behind its own door
 
 #### Scenario: Pots off leaves the gating inert
-- **WHEN** `pot_shuffle = Off` (or vanilla keys, or door shuffle on)
+- **WHEN** `pot_shuffle = Off` (or vanilla keys, or door OR cave-entrance shuffle on)
 - **THEN** `POT_KEYS_WILD` and `POT_KEYS_DUNGEON` both evaluate false, the wrapped
   terms collapse to the vanilla predicate, and reachability + placement are
   byte-identical to the pre-feature build

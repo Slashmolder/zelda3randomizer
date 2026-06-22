@@ -33,12 +33,24 @@ silently DROPPED). Each raised capacity SHALL carry a `_Static_assert` tying it 
 `LOC__COUNT` (≥) so a future overflow / truncation / drop is a build break, not a
 silent fail-open.
 
-Under door shuffle (`door_shuffle != vanilla`) `pot_shuffle` SHALL normalize entirely
-to `Off`: `Settings_apply_derived_rules` sets `pot_shuffle = Off` whenever
-`Settings_EffectiveDoorShuffle != Vanilla`, and `pot_active()` returns false for
-EVERY pot (key and non-key) in that case, so all pots are inactive and resolve to
-vanilla — a door+pots seed is byte-identical to the same seed without pots, keeping
-the door-key prover (which does not model pot locations) provably correct. (An earlier
+Under door shuffle OR cave-entrance shuffle `pot_shuffle` SHALL normalize entirely
+to `Off`: `apply_derived_rules` sets `pot_shuffle = Off` whenever
+`Settings_PotShuffleForcedOff` (= `Settings_EffectiveDoorShuffle != Vanilla` OR
+`Settings_EffectiveShuffleCaveEntrances`, the latter honored only on Open/Standard), and
+`pot_active()` returns false for EVERY pot (key and non-key) in that case, so all pots are
+inactive and resolve to vanilla — a door+pots or cave-entrance+pots seed is byte-identical
+to the same seed without pots, keeping the door-key prover (which does not model pot
+locations) provably correct and preventing a cave/house pot from being certified against
+its vanilla overworld region while the runtime reaches the interior through the shuffled
+entrance. **The placer and logic consume RAW (non-normalized) settings** —
+`Settings_CanonicalSerialize` runs `apply_derived_rules` only on a private copy for the
+settings hash — so EVERY pot/accessibility predicate that branches on a normalized field
+SHALL read it through the matching accessor (`Settings_PotShuffleForcedOff`,
+`Settings_PotKeysActive`, `Settings_EffectiveShuffleCaveEntrances`,
+`Settings_EffectiveAccessibility`), never the raw struct field, so the placer cannot
+diverge from the canonical hash / spoiler / runtime (the audit-fixed raw-vs-normalized
+bug class — door-only pot-key gates wrongly refusing cave+pot+wild/dungeon-keys seeds;
+`goal=completionist,accessibility=none` skipping the 100%-locations walk). (An earlier
 "pin key-pots as fixed vanilla keys and reduce the shuffled pool count" design was NOT
 adopted: the prover's key count and the pool's key count are independently driven, so
 a pinned key-pot — equally invisible to the prover — still risks an unprovable
@@ -82,12 +94,21 @@ check and a sort-on-install fallback.
   pre-pass and removed from the open set, so assumed-fill and junk padding never place
   `ITEM_Nothing` on a chest/non-empty pot nor a real item on an empty pot
 
-#### Scenario: Pots are inert under door shuffle (v1)
-- **WHEN** a seed has `door_shuffle != vanilla` and any `pot_shuffle` tier was requested
-- **THEN** `pot_shuffle` normalizes to `Off`, every pot (key and non-key) is inactive
-  and resolves to vanilla, and the seed's placement is byte-identical to the same seed
-  generated without pot shuffle — so the door-key prover, which does not model pots,
-  cannot strand
+#### Scenario: Pots are inert under door OR cave-entrance shuffle (v1)
+- **WHEN** a seed has `door_shuffle != vanilla` OR cave-entrance shuffle (on Open/Standard)
+  and any `pot_shuffle` tier was requested
+- **THEN** `pot_shuffle` normalizes to `Off` (`Settings_PotShuffleForcedOff`), every pot
+  (key and non-key) is inactive and resolves to vanilla, and the seed's placement is
+  byte-identical to the same seed generated without pot shuffle — so the door-key prover
+  cannot strand and no cave/house pot is certified against a region the shuffled entrance
+  moved it out of
+
+#### Scenario: Inverted/Retro cave bit does not force pots off
+- **WHEN** a seed is Inverted or Retro with a retained cave-entrance bit and any
+  `pot_shuffle` tier
+- **THEN** because cave-entrance shuffle is inert off Open/Standard
+  (`Settings_EffectiveShuffleCaveEntrances`), `pot_shuffle` is NOT forced off and the
+  seed generates WITH pots — matching the canonical hash, which zeroes the inert axis
 
 #### Scenario: Placement table is sorted at every install boundary
 - **WHEN** a placement table is installed (assumed-fill, sidecar load, snapshot-tail,

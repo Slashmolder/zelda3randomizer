@@ -386,3 +386,37 @@ forward-compatibility for old binaries without an added compat layer (out of sco
 9. **Sorted-table invariant** (D10) — every install boundary; selfcheck.
 10. **Recolor palette + signal** (D4/D12) — offline-render verify; wallpaper at `All`.
 11. **Generation time** (D10) — ~3.5× locations; measure; keep `budget=0`.
+
+## As-built audit addendum (kGen 92→95)
+
+Decisions made fixing bugs surfaced AFTER Phases 1-7 shipped (owner playtest + audit
+workflows); recorded so the reconciled spec deltas have their rationale.
+
+- **D14 — Effective-accessor idiom, not struct mutation.** The placer/logic VM consume
+  RAW `RandoSettings`; `Settings_CanonicalSerialize` runs `apply_derived_rules` only on a
+  private copy for the hash. A predicate that branches on a normalized field MUST read a
+  DERIVED accessor, never the raw field, or it diverges from the canonical hash / spoiler
+  / runtime. We did NOT normalize the live struct — the UI relies on raw fields to retain
+  a user's selections across toggles. New accessors: `Settings_PotShuffleForcedOff` (door
+  OR cave-entrance), `Settings_PotKeysActive`, `Settings_EffectiveAccessibility`
+  (Completionist→Locations), `Settings_EffectiveShuffleCaveEntrances` (cave inert off
+  Open/Standard). Fixed: cave+pot+wild/dungeon-keys wrongly refused; an accept-bad-seed
+  under `goal=completionist,accessibility=none`; Inverted/Retro+cave wrongly forcing pots
+  off.
+- **D15 — Pot-room region binding is per-room reviewed, never grid-flooded for caves.**
+  The reciprocal-door region flood is valid only INSIDE a multi-room dungeon. For
+  standalone cave/house interiors (>= 0x100) and dungeon-boundary rooms, room-NUMBER
+  adjacency (room ±0x10 / ±1) is NOT a real door — that flood mis-bound the Pond of
+  Wishing, the storyteller cave, Blind's Hideout, the Lumberjack's House, and Mimic Cave
+  to a neighbor's region (false sphere-0). Each is now a reviewed
+  `pot_logic_overrides.yaml` entry grounded in the door tables / the fork's own location /
+  the overworld entrance world — NOT the grid-adjacency `D` edges (often walls). A shared
+  interior reached by two entrances with different logic (refill cave 0x11b) uses a new
+  `pot_room_split` (per-pos4 region + can_reach; hard-fails on an uncovered pot). Owner
+  F12 is the ground truth — static traces were wrong twice (a phantom Mire-Shed adjacency;
+  a floor-bit-aliased door-table lookup).
+- **D16 — Generated files must not hide hand-edits.** The task-#25 Desert Palace fix
+  (rooms 0x43/0x53) lived only as a hand-edit in the committed (generated) `pots.gen.yaml`,
+  which any `gen_pot_tables.py` regen silently REVERTED — breaking the DP key economy
+  (`kPotNonpotDropCounts` drift + dungeon-keys refusal). A fix to a generated file MUST go
+  in the generator's INPUTS (the override), never the output.

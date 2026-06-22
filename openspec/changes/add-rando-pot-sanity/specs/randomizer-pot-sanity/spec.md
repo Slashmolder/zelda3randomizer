@@ -307,15 +307,31 @@ key-door requirement the now-itemized keys add (`randomizer-logic / Pot-key smal
 logic gating`). The requirement is key-mode-dependent: under **wild** keys it is the
 worst-case "hold N before entering"; under **dungeon** keys it is the in-context
 shortest-path (min-depth) collected en route. In **vanilla** key mode the key pots stay
-pinned, and under **door shuffle** every pot is inactive (the door×pot full integration
-is a deferred follow-on) — both unchanged.
+pinned, and under **door shuffle OR cave-entrance shuffle** every pot is forced inactive
+(`Settings_PotShuffleForcedOff` — the door key-prover doesn't model pot locations, and a
+cave/house pot's location id sits above the entrance region-override range so it would
+evaluate from its vanilla overworld region; both full integrations are deferred follow-
+ons). Cave-entrance shuffle is honored only on Open/Standard (`Settings_Effective-
+ShuffleCaveEntrances`), so an inert cave bit retained under Inverted/Retro does NOT force
+pots off — those seeds correctly generate WITH pots.
 
-Because the key economy and the per-pot key-door gate both key off a pot's DUNGEON, the
-generator's region binding for each key pot SHALL be the pot's physically-correct
-dungeon. (Two pre-existing mislabels were corrected: Desert Palace rooms `0x53` Beamos
-Hall and `0x43` Desert Tiles 2 — and their non-key room-mates — were bound to Hyrule
-Castle Escape / Thieves' Town; rebinding them to Desert Palace gives Desert Palace its
-full pot-key count and corrects the wild economy as well.)
+Because the key economy and the per-pot key-door gate both key off a pot's DUNGEON — and
+because the same logic-region binding governs every loot/empty pot's reachability — the
+generator's region binding for each pot room SHALL be the room's physically-correct
+region, NEVER a neighbor's inherited via room-NUMBER grid-adjacency. The region flood
+across reciprocal doors is valid only inside a multi-room dungeon; standalone cave/house
+interiors (>= 0x100) and dungeon-boundary rooms require a reviewed
+`pot_logic_overrides.yaml` entry grounded in the door tables, the fork's own location
+predicate, or the overworld entrance world — not the grid-adjacency `D` edges (often
+walls). Corrected mislabels: the Desert Palace key rooms `0x53`/`0x43` (had been bound to
+Hyrule Castle Escape / Thieves' Town — and that fix had survived only as a hand-edit in
+the generated `pots.gen.yaml`, which a regen silently reverted, so it is now in the
+override store); and the overworld cave/house pot rooms `0x114` Pond-of-Wishing (→
+DarkWorld_Mire), `0x11a` storyteller cave (→ DarkWorld_NorthEast), `0x119` Blind's Hideout
++ `0x11f` Lumberjack's House (→ LightWorld_NorthWest, were wrongly Dark World), `0x10c`
+Mimic Cave (gains its Mirror-from-Turtle-Rock gate), and the shared `0x11b` refill cave
+(SPLIT per entrance — a Graveyard-Ledge cluster + a Cave-45 cluster — via a new
+`pot_room_split` mechanism that carries two reachability classes for one interior).
 
 #### Scenario: A key pot holds a shuffled item, the key is elsewhere
 - **WHEN** a seed has dungeon keys + `pot_shuffle = All` and is generated
