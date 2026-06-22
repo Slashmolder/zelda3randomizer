@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 95  # bump_rando_corpus.py --apply
+generator_version: 96  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -424,13 +424,13 @@ entries:
   - settings: { mode.state: inverted, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0D"
     label: "c-entrance-caves-inverted-pot-inert-cave"
-    expected_digest: "5a45bb49b42813c87aa3e67a0ab19fec7a032e048cde28f5c58b73b93eee56f2"
-    expected_sphere_digest: "ee9f7cb938805914dd1d7927c3954f31a7b16a83b63ed4d99def328477f82209"
+    expected_digest: "ee35fbdd652013689a4786dfe61a37be3e46b85010f318263fb6c3361c032b9e"
+    expected_sphere_digest: "548a4d6d82babca3daa07db353f2c489cf2d9118761ec7da42c88a8bfafa372d"
   - settings: { mode.state: retro, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0E"
     label: "c-entrance-caves-retro-pot-inert-cave"
-    expected_digest: "867de4187d8907921363bff7851fdd2500927fd9382bcde12b412b89c8e8a8a0"
-    expected_sphere_digest: "150063ff5229436a657f820e91cc8e450248250c339b4a51f4113e573035e519"
+    expected_digest: "81e1d2d2fb7f89deca83f932aed6e9885375f2519c854ec5d1d16ac72a58c839"
+    expected_sphere_digest: "4c84cfc35db5bf4169f9f3c8bdb67695fb6d37fa8deb43f66f7ecd2cf5b703fd"
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"
@@ -844,18 +844,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: contents }
     seed: "0x504F540000000002"
     label: "pot-contents-open-fast-ganon"
-    expected_digest: "255bf462325bb7f2b80dcb85517c4804d32a46d642630e9914c8727a7610bb09"
-    expected_sphere_digest: "5336e367eca8048735bcd300438a4674b304439221a38c883cd2ce0f9b246fdf"
+    expected_digest: "45978217331af36d58015c428ae5235426f44acf9ff4ba33940be420e0993d38"
+    expected_sphere_digest: "e1fd3dd4ae16260f3576048b3da85070fe0b4cab1f5fecaf81f75d06ebe19bbb"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all }
     seed: "0x504F540000000003"
     label: "pot-all-open-fast-ganon"
-    expected_digest: "2838bf9b1659fe5f705990ca7f683709497db54dc007c62466c0b70b419ff95d"
-    expected_sphere_digest: "9f8e1ae6ec41ef66eb6b2e95e328f70700971eafb8876d5f139b95cf32799ddc"
+    expected_digest: "c82bf26fc8f52a6662278d0377b189075db32965b2af46a0cdca8ba2b6f6f328"
+    expected_sphere_digest: "f133d0ca337cb8ccb4243ce806e95633a96a77ff2b73cc425cacc45e24157e1f"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
-    expected_digest: "ca00d8fb65a78209dc596bcfa44fcea78192d2945a222241fa207dfeb903299b"
-    expected_sphere_digest: "3addace754aa7b78d44452038e322e455da3cf065197ea97a8d9f7de6b680539"
+    expected_digest: "9780f3444341c61b8f12ee0cb7d6d94623f9b7ff4c74dbf58635ee279d573bd6"
+    expected_sphere_digest: "943eb09beb5cc6accc26cf4c584b3a641a4061053f1fe9ac1158e814e94ffc75"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
@@ -864,8 +864,8 @@ entries:
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
-    expected_digest: "65a6b530715e11050bb2c09777f592e62e698d33ea20a899f215177d0f2e33bc"
-    expected_sphere_digest: "ddee09f4212440d2878475410b8822720af882681442ae123b39ff7befa29a2b"
+    expected_digest: "292dd1ffde58ba8ee9850fabe9de105edfa6667e4f2a3d32e5f58b1533753730"
+    expected_sphere_digest: "373e4a24898e6717c76a22041f4e284a047a20388010ce009ab82c858c04beed"
 
   # add-rando-pot-sanity task #25 — WILD keys + pot_shuffle (the strand class the
   # owner hit). These exercise OP_POT_KEYS_WILD end to end: the pot keys enter
@@ -881,8 +881,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: wild, accessibility: items }
     seed: "0x504F540000000008"
     label: "pot-all-wild-items"
-    expected_digest: "02f86fd7967a22d1b1a1dfec75b5c3c5768059b55a822d780e75402adc0b1e64"
-    expected_sphere_digest: "e2ebb98f809f9c96cbdfd7c3e979ce0459cc33a28dd3d57fbf3db9a1fed7c18d"
+    expected_digest: "d43d67793e6cf278e08f9b7bdc2a7348d9c2dd862d59ab1210a93f95ea50e4fc"
+    expected_sphere_digest: "ef7a73abccfd7c8febc7b4df527bb9ca49a2255710dad9aa59493a1fbfa998a9"
   # DUNGEON keys + pot_shuffle (task #25 dungeon half): key pots stay vanilla
   # (pinned in place, like pots-off) while chest keys shuffle in-dungeon.
   # accessibility=items proves the dungeon is fully reachable — the pot keys no
@@ -890,8 +890,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon, accessibility: items }
     seed: "0x504F540000000009"
     label: "pot-all-dungeon-items"
-    expected_digest: "3c050468fb2288a5cefc71575804a2afe47fa47325f263fa21354cb3263a480e"
-    expected_sphere_digest: "88fde08c3263fed2ec7d021ad8599bc7f2b3e60969e8cba38a898c1417eee51e"
+    expected_digest: "3972aecaf8c4eecb75e46455ee97f8bae1da9d1f2bc2c6ebc6a8245a45f5283a"
+    expected_sphere_digest: "d841b3e952a62db427413b404ee31f27578dd4cd9f16790510ca18385c318405"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

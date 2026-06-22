@@ -228,6 +228,18 @@ corpus-validated; pots-off / non-pot seeds byte-identical, only pot-ACTIVE seeds
   Lumberjack's House→LightWorld_NorthWest, 0x10c Mimic Cave + mirror-from-TR gate, 0x11b
   refill cave SPLIT per entrance (new `pot_room_split`). ALSO made the task-#25 Desert
   Palace fix (0x43/0x53) generator-reproducible (it had been a hand-edit a regen reverted).
-- [ ] 8.7 **Dungeon-room region audit** (FOLLOW-ON): an audit workflow found a residual
-  in-dungeon region-mislabel class (same as the 0x53 bug — e.g. 0x031 HCE→ToH); a
-  floor-bit-aware re-verification + apply is in progress.
+- [x] 8.7 **Dungeon-room region audit** (kGen 96): an audit workflow found a residual
+  in-dungeon region-mislabel class (same root as the 0x53 bug — the grid-adjacency flood
+  leaking across a dungeon boundary, or following a supertile drop that is NOT a real door).
+  A floor-bit-aware re-verification (door_tables is DOOR-RANO-indexed; engine room ±0x40 for
+  multi-floor rooms — naive `door_tables[engine_index]` confounds it, and key-pot data is
+  authoritative for dungeon membership) confirmed exactly **2** real mislabels and cleared
+  **5** false positives. Applied via `pot_logic_overrides.yaml`: **0x04b** (2 PoD Jelly-Hall/
+  Mimics LOOT pots) GanonsTower→**PalaceOfDarkness**, gated `(CanBombThings() OR HAS_ITEM(Boots))`
+  (key-free warp route, door_tables dungeon=5); **0x096** (8 GT Staredown/Torch-Cross LOOT/EMPTY
+  pots) TowerOfHera→**GanonsTower_Lobby**, gate `BigKey_TowerOfHera`→`BigKey_GanonsTower` (behind
+  the GT big-key door; small-key economy stays on the separate POT_KEYS wrap). Both rooms hold no
+  key pots, so the key economy + Keys-tier/Off/non-pot seeds are byte-identical; only Contents/All
+  pot seeds move. The 5 false positives (0x031/0x054/0x056/0x05b/0x064) were re-verified CORRECT
+  and left as-is (e.g. engine 0x031 = door-rano 0x71 = HC sewers = genuinely HCE, not ToH — this
+  also corrected an earlier static trace that had wrongly "corroborated" 0x031→ToH).

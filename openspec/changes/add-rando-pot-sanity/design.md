@@ -414,7 +414,18 @@ workflows); recorded so the reconciled spec deltas have their rationale.
   interior reached by two entrances with different logic (refill cave 0x11b) uses a new
   `pot_room_split` (per-pos4 region + can_reach; hard-fails on an uncovered pot). Owner
   F12 is the ground truth — static traces were wrong twice (a phantom Mire-Shed adjacency;
-  a floor-bit-aliased door-table lookup).
+  a floor-bit-aliased door-table lookup). The SAME flood also leaks across DUNGEON
+  boundaries and follows supertile drops that are not real doors: the audit found 0x04b
+  (PoD loot pots labeled GanonsTower across the 0x4b|0x4c engine-room boundary) and 0x096
+  (GT pots labeled TowerOfHera via the 0x097→0x087 grid drop). Verifying these is
+  floor-bit-aware: `door_tables.gen.c` is DOOR-RANO-indexed, so for multi-floor rooms the
+  engine `dungeon_room_index` differs from the door-rando index by the 0x40 bit (engine
+  0x031 = door-rano 0x71 = HC sewers) — a naive `door_tables[engine_index]` lookup
+  confounds the check and produced 5 false positives in the first pass; KEY-POT data is
+  authoritative (a room holding `SmallKey_<Dungeon>` pots IS that dungeon). The two real
+  fixes are loot/empty-only (no key economy impact); their gates come from the door graph
+  (key-FREE warp route → bomb/boots; behind the GT big-key door → big key), never
+  under-gated.
 - **D16 — Generated files must not hide hand-edits.** The task-#25 Desert Palace fix
   (rooms 0x43/0x53) lived only as a hand-edit in the committed (generated) `pots.gen.yaml`,
   which any `gen_pot_tables.py` regen silently REVERTED — breaking the DP key economy

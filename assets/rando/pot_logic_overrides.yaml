@@ -20,7 +20,11 @@ room_region:
   # --- dungeon rooms (resolved by door / vertical-stair connectivity) ---
   "017": TowerOfHera_Lobby     # vstair: up 007 (boss) + down 027 (chest) both ToH — tower column
   "041": HyruleCastleEscape    # N neighbor 031 = HCE (Hyrule Castle sewers)
-  "04b": GanonsTower_Lobby     # between 04c/04d = GT lobby block
+  "04b": PalaceOfDarkness      # PoD Jelly-Hall/Mimics loot pots (Arrow10 + HeartRefill).
+                               # audit 2026-06-21: was wrongly GT (grid-flood across the
+                               # PoD/GT engine-room boundary at 0x4b|0x4c). door_tables
+                               # dungeon=5 (PoD), reached lobby->warp-room->warp-hint
+                               # key-FREE. Gate below is the in-dungeon predicate.
   "054": ThievesTown           # N neighbor 044 = TT
   # audit 2026-06-21: rooms 0x43 + 0x53 are DESERT PALACE, not TT/HCE. The task #25
   # mislabel fix (door-rando key_drop_data: key ids 519/567 + 10 room-mates) lived
@@ -32,7 +36,11 @@ room_region:
   "053": DesertPalace_Lobby    # Beamos Hall — was mislabeled HyruleCastleEscape (old override)
   "05b": PalaceOfDarkness      # 2 of 3 door-neighbors PoD (06b/05a); the E one (05c) is GT
   "064": DesertPalace_Lobby    # 2 of 3 neighbors DP (074/063); the E one (065) is TT
-  "096": TowerOfHera_Lobby     # one-way drop from 097 (097 doors -> 087 = ToH). LOWER CONFIDENCE — playtest 8 pots
+  "096": GanonsTower_Lobby     # GT Staredown / Torch Cross (8 loot/empty pots).
+                               # audit 2026-06-21: was wrongly ToH (the 097->087 drop is
+                               # supertile-grid adjacency, NOT dungeon membership).
+                               # door_tables dungeon=12 (GT), regions 559/561. Behind the
+                               # GT big-key door (proven unreachable without it). Gate below.
   "0b4": TurtleRock_Lobby      # 2 of 3 grid neighbors TR (0c4 dn, 0b5 E); W 0b3 = MM. boundary — playtest
   # --- non-uniform chest rooms (chests agree on region, differ on gate) ---
   "01a": PalaceOfDarkness      # PoD Big Chest room (Big/Compass/Hellway chests)
@@ -71,12 +79,20 @@ room_can_reach:
   "002": "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
   "021": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
   "031": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
-  # --- ToH (gate-less region overrides above): room 0x017 is the stair floor
-  # between the Big-Key-gated Big Chest (0x027) and boss (0x007); 0x096 is the
-  # one-way drop onto that same Big-Key side. Both were region-bound but un-gated
-  # (TRUE) -> 12 + 8 falsely-sphere-0 pots. Gate = the Big Chest's predicate. ---
+  # --- ToH (gate-less region override above): room 0x017 is the stair floor
+  # between the Big-Key-gated Big Chest (0x027) and boss (0x007). Region-bound but
+  # un-gated (TRUE) -> 12 falsely-sphere-0 pots. Gate = the Big Chest's predicate. ---
   "017": "HAS_ITEM(BigKey_TowerOfHera)"
-  "096": "HAS_ITEM(BigKey_TowerOfHera)"
+  # --- GT (region overrides above): room 0x096 is GT Staredown/Torch Cross, behind
+  # the GT big-key door (door-graph proven unreachable without it). The small-key
+  # economy is layered SEPARATELY by the POT_KEYS wrap (pot_key_depth.gen.yaml has
+  # the door-rando GT depths for room 0x96), so this base gate is the big key only.
+  # Was wrongly bound to ToH (region + gate) -> 8 pots gated on the wrong dungeon. ---
+  "096": "HAS_ITEM(BigKey_GanonsTower)"
+  # --- PoD (region override above): room 0x04b loot pots (Arrow10 + HeartRefill)
+  # sit in the Jelly-Hall/Mimics area past the bomb/boots wall; reached lobby ->
+  # warp-room -> warp-hint by the KEY-FREE route, so no key door gates room entry. ---
+  "04b": "(CanBombThings() OR HAS_ITEM(Boots))"
   # --- Swamp interior (gate-only; flood to SwampPalace fine): water-locked, the
   # Map/West/Waterfall side needs the small key (+ Hammer to drain). 0x056 (incl. a
   # key pot) + 0x026 flooded as TRUE. (0x038 is reached from the FREE Entrance
