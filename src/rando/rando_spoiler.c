@@ -422,7 +422,9 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"prize_shuffle\": %s,\n", s->settings->prize_shuffle ? "true" : "false");
   fprintf(f, "    \"medallion_shuffle\": %s,\n", s->settings->medallion_shuffle ? "true" : "false");
   fprintf(f, "    \"mode_weapons\": %u,\n", s->settings->mode_weapons);
-  fprintf(f, "    \"accessibility\": %u,\n", s->settings->accessibility);
+  // EFFECTIVE accessibility (Completionist forces Locations) so the spoiler can't
+  // contradict the canonical hash / share string it is emitted alongside.
+  fprintf(f, "    \"accessibility\": %u,\n", Settings_EffectiveAccessibility(s->settings));
   fprintf(f, "    \"pieces_required\": %u,\n", s->settings->pieces_required);
   fprintf(f, "    \"pieces_placed\": %u,\n", s->settings->pieces_placed);
   fprintf(f, "    \"hints\": %u,\n", s->settings->hints);

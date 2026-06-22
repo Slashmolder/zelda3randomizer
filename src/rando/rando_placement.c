@@ -2331,7 +2331,7 @@ bool Goal_IsCompletable(const RandoSettings *settings,
 static bool accessibility_reachability_ok(const RandoSettings *settings,
                                           const RandoPlacementTable *placements,
                                           const RandoSpheres *spheres) {
-  switch (settings->accessibility) {
+  switch (Settings_EffectiveAccessibility(settings)) {
     case kAccessibility_None:
       return true;  // "beatable only" — no extra reachability demand.
     case kAccessibility_Locations:
@@ -2381,7 +2381,9 @@ bool Accessibility_SeedAcceptable(const RandoSettings *settings,
   // Beatability is required for every tier.
   if (!Goal_IsCompletable(settings, placements)) return false;
   // "beatable only" needs nothing more — skip the sphere walk entirely.
-  if (settings->accessibility == kAccessibility_None) return true;
+  // EFFECTIVE tier: Completionist forces Locations, so a raw accessibility=none
+  // can't sneak past the sphere walk the canonical hash already promises.
+  if (Settings_EffectiveAccessibility(settings) == kAccessibility_None) return true;
   // locations / items inspect per-placement reachability. Logic_ComputeSpheres
   // fully populates the per-placement index even when it returns false (i.e.
   // when something is unreachable), so we always read the indices afterward.
@@ -3028,6 +3030,20 @@ void Placement_SelfCheck(void) {
       if (!accessibility_reachability_ok(&acc_s, &acc_t, &sp))
         selfcheck_die("every tier must accept a fully-reachable placement");
     }
+
+    // Case 4 — audit sibling (accept-bad-seed): goal==Completionist forces
+    // EFFECTIVE Locations even when the raw accessibility is none, so a stranded
+    // location is REJECTED. Guards the bug where the placer read raw accessibility
+    // and `goal=completionist,accessibility=none` skipped the sphere walk the
+    // canonical hash promises. The corpus is structurally blind to this (the
+    // placement digest is identical for any ACCEPTING seed), so it lives here.
+    acc_s.goal = kGoal_Completionist;
+    acc_s.accessibility = kAccessibility_None;  // raw "beatable only" — must be overridden
+    memset(&sp, 0, sizeof(sp));
+    sp.sphere_index_by_placement[1] = kSphereIndexUnreachable;  // strand a (junk) location
+    sp.unreachable_count = 1;
+    if (accessibility_reachability_ok(&acc_s, &acc_t, &sp))
+      selfcheck_die("Completionist must enforce Locations even with raw accessibility=none");
   }
 
   // Medallion config slots choose the MM/TR entrance requirements; they are not

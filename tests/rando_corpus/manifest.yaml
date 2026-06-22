@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 93  # bump_rando_corpus.py --apply
+generator_version: 94  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -416,6 +416,21 @@ entries:
     label: "c-entrance-caves-pot-forced-off-wild-keys"
     expected_digest: "38d0d8f5647db5333f090e8d9ae67a4c6e4a83d96c61dab5d75eadc40107b026"
     expected_sphere_digest: "0125ff9df97677869fd6212f471e6abdaab002b65a6a8f65116431450b534d31"
+  # add-rando-pot-sanity (audit fix kGen 94): under Inverted/Retro the cave-entrance
+  # axis is INERT (apply_derived_rules zeroes it), so a retained cave bit must NOT
+  # force pots off — Settings_EffectiveShuffleCaveEntrances. These lock that
+  # inverted/retro + cave + pots generate WITH pots (pot_shuffle stays active); a
+  # regression reading the raw cave flag would force pots off and move the digest.
+  - settings: { mode.state: inverted, shuffle_cave_entrances: true, pot_shuffle: all }
+    seed: "0x00000000C0FFEE0D"
+    label: "c-entrance-caves-inverted-pot-inert-cave"
+    expected_digest: "16fb7fba538499224979fa7e602395c91ab4edddd86713f4103b317ee6019f0e"
+    expected_sphere_digest: "9ff524642f5236261e9824da91e97dc56694d0149577a5467d188dde84420e16"
+  - settings: { mode.state: retro, shuffle_cave_entrances: true, pot_shuffle: all }
+    seed: "0x00000000C0FFEE0E"
+    label: "c-entrance-caves-retro-pot-inert-cave"
+    expected_digest: "4e04744133d628662f4d3ac1db8324a95276b8a1d3e44ead27c5f6a93f675cd9"
+    expected_sphere_digest: "3718c88052eb487dd8d3cad72086259a98567f13b5085e842b8247a10101163c"
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"

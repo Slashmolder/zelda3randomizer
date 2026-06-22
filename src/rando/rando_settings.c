@@ -251,9 +251,28 @@ static void apply_derived_rules(RandoSettings *s) {
   }
 }
 
+bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s) {
+  // Mirrors apply_derived_rules: the entrance axes are zeroed under any
+  // world_state other than Open/Standard (Inverted carries a static region
+  // override, Retro re-uses cave host-rooms — Entrance_IsActive), so a raw cave
+  // bit set there is inert. Read this, never the raw flag, in generation logic.
+  return s != NULL && s->shuffle_cave_entrances != 0 &&
+         (s->world_state == kWorldState_Open ||
+          s->world_state == kWorldState_Standard);
+}
+
 bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
   return s != NULL && (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla ||
-                       s->shuffle_cave_entrances != 0);
+                       Settings_EffectiveShuffleCaveEntrances(s));
+}
+
+// goal == Completionist forces 100%-Locations (apply_derived_rules:155-157).
+// Every placement/spoiler consumer reads this so it can't diverge from the
+// canonical hash, which normalizes the same way on its private copy.
+uint8 Settings_EffectiveAccessibility(const RandoSettings *s) {
+  if (s == NULL) return kAccessibility_Items;
+  if (s->goal == kGoal_Completionist) return kAccessibility_Locations;
+  return s->accessibility;
 }
 
 // True when pot_shuffle itemizes small-key pots as live checks: pot_shuffle >=

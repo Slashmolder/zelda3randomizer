@@ -514,10 +514,10 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
                  shape_search_limit,
                  last_shape_reject[0] != '\0' ? last_shape_reject : shape_desc);
       }
-      else if (settings->accessibility == kAccessibility_Locations)
+      else if (Settings_EffectiveAccessibility(settings) == kAccessibility_Locations)
         snprintf(err, err_cap,
                  "no 100%%-locations placement found; try 'items' or 'beatable only'");
-      else if (settings->accessibility == kAccessibility_Items)
+      else if (Settings_EffectiveAccessibility(settings) == kAccessibility_Items)
         snprintf(err, err_cap,
                  "no 100%%-inventory placement found; try 'beatable only'");
       else

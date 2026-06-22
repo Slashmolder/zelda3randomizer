@@ -327,6 +327,21 @@ uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s);
 // glitched logic, or entrance shuffle — the MVP pins).
 uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s);
 
+// add-rando-pot-sanity (audit) — the EFFECTIVE accessibility tier. goal ==
+// Completionist forces 100%-Locations (apply_derived_rules), so the placer's
+// acceptance gate, the spoiler, and the settings_hash must all read THIS, not the
+// raw field — a raw `accessibility=none` under Completionist would otherwise let
+// the acceptance gate skip the 100%-locations sphere walk the hash already promises.
+uint8 Settings_EffectiveAccessibility(const RandoSettings *s);
+
+// add-rando-pot-sanity (audit) — cave-entrance shuffle is honored ONLY on
+// Open/Standard (apply_derived_rules zeroes the entrance axes under Inverted/Retro
+// — Entrance_IsActive). Consumers that branch on "is cave shuffle on" must read
+// THIS, not the raw flag, or an inert cave bit (retained from a prior Open
+// selection) wrongly forces pots off under Inverted/Retro — where the canonical
+// hash, having zeroed the bit first, keeps pots ON.
+bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s);
+
 // add-rando-pot-sanity — true when a shuffle axis FORCES pot_shuffle off because
 // the pots can't be safely placed under it: door shuffle (the door key-prover
 // doesn't model pot locations) OR cave-entrance shuffle (cave/house pot location
