@@ -22,7 +22,14 @@ room_region:
   "041": HyruleCastleEscape    # N neighbor 031 = HCE (Hyrule Castle sewers)
   "04b": GanonsTower_Lobby     # between 04c/04d = GT lobby block
   "054": ThievesTown           # N neighbor 044 = TT
-  "053": HyruleCastleEscape    # W neighbor 052 = HCE (castle row 5); 3-way exit-door conflict, castle geography
+  # audit 2026-06-21: rooms 0x43 + 0x53 are DESERT PALACE, not TT/HCE. The task #25
+  # mislabel fix (door-rando key_drop_data: key ids 519/567 + 10 room-mates) lived
+  # ONLY as a hand-edit in the committed pots.gen.yaml, which a regen REVERTS — the
+  # grid-flood binds 0x43->ThievesTown and the old override bound 0x53->HCE. Moved
+  # here so the generator reproduces the fix (DP regains its 3 pot keys; the wild +
+  # dungeon key economy stays correct, matching the shipped corpus).
+  "043": DesertPalace_Lobby    # Desert Tiles 2 — was mislabeled ThievesTown (grid-flood)
+  "053": DesertPalace_Lobby    # Beamos Hall — was mislabeled HyruleCastleEscape (old override)
   "05b": PalaceOfDarkness      # 2 of 3 door-neighbors PoD (06b/05a); the E one (05c) is GT
   "064": DesertPalace_Lobby    # 2 of 3 neighbors DP (074/063); the E one (065) is TT
   "096": TowerOfHera_Lobby     # one-way drop from 097 (097 doors -> 087 = ToH). LOWER CONFIDENCE — playtest 8 pots
@@ -39,8 +46,12 @@ room_region:
   "0f1": LightWorld_DeathMountain_West   # DM Express, upper — west ascent
   "101": LightWorld_NorthWest            # Snitch House (Kakariko)
   "107": LightWorld_NorthWest            # Kakariko Storage Shed
-  "119": DarkWorld_NorthWest             # Blind's Old Hideout — DW Village of Outcasts (DW-gated)
-  "11f": DarkWorld_NorthWest             # Village House — DW Village of Outcasts (DW-gated)
+  # --- audit 2026-06-21 (owner F12 + fork-location cross-check; corrects flood/old-override mislabels) ---
+  "10c": LightWorld_DeathMountain_East   # Mimic Cave — gate below; reached by Mirror from inside Turtle Rock (flood got the region right but left it TRUE = under-gated)
+  "114": DarkWorld_Mire                  # Pond of Wishing, DW-mire side (entrance 0x62, DW screen 0x30) — pots reached via the DW mire, = Mire-Shed access. Owner F12-confirmed. (LW waterfall door 0x5C is the pot-LESS fairy side; flood had wrongly said LinksHouse.)
+  "119": LightWorld_NorthWest            # Blind's Hideout (LIGHT Kakariko, entrance 0x61 screen 0x18) — CORRECTED from a wrong DarkWorld_NorthWest override; back room 0x11D owner-F12-confirmed Light World, matching the fork's Blind's Hideout chests (LW_NW / TRUE)
+  "11a": DarkWorld_NorthEast             # storyteller_cave_4 (entrance 0x68, DW screen 0x1E) — same region/requirements as the Palace of Darkness entrance (fork enters PoD from DarkWorld_NorthEast). Owner F12-confirmed. (flood had wrongly said LightWorld_South.)
+  "11f": LightWorld_NorthWest            # Lumberjack's House (entrance 0x6B, by the Sanctuary) — 2 pots; LIGHT, sphere-0 in Open / RescuedZelda in Standard (= the LW_NW access edge). Owner F12-confirmed. The 0x46 Kakariko-shop side of this shared interior has no liftable pots. Corrected from DarkWorld_NorthWest.
   "125": LightWorld_NorthWest            # Refill Cave 3 (Kakariko area)
 
 room_can_reach:
@@ -148,6 +159,11 @@ room_can_reach:
   # leads UP/out to 0x53) — so the key pot is reachable WITHOUT a DP key (no
   # deadlock); the gate is just the back-door rock-lift. ---
   "063": "CanLiftRocks()"                       # DP Back Lobby — overworld back-door rock-lift; key pot is pre-key-door
+  # Rooms 0x43/0x53 (Desert Palace, rebound to DesertPalace_Lobby above) are reached
+  # off the DP back/west rock-lift floor, same as 0x63 — CanLiftRocks(). Reproduces
+  # the committed task #25 values (region + key + this gate) so a regen is faithful.
+  "043": "CanLiftRocks()"
+  "053": "CanLiftRocks()"
   # --- GT Gauntlet hallways (chest-less transit 0x5d/0x6c/0x6d). Reached
   # Lobby -> 0x6b -> Mimics (need a bow to kill them, CanShootArrows) -> one
   # small-key door (door_tables.gen.c) into the gauntlet; all interior gauntlet
@@ -162,6 +178,11 @@ room_can_reach:
   # is deeper). The key pot is non-blocking: GT has 4 keys and the wing yields
   # earlier keys, so the assumed-fill never needs THIS pot's key to reach it. ---
   "09b": "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 1)"   # GT Hookshot wing key-pot room
+  # --- Mimic Cave (room 0x10c): reached by Mirror from INSIDE Turtle Rock (Hammer +
+  # Mirror + 2 TR small keys, or an OW clip). Verbatim from the fork's "Mimic Cave"
+  # location (42_lightworld_deathmountain.yaml). The flood gave the right region
+  # (LW_DM_East) but left it TRUE() — falsely sphere-0. Audit 2026-06-21. ---
+  "10c": "HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) AND ((HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)) OR CanOneFrameClipOW())"
 
 # Reviewed-FREE rooms the leak guard would otherwise flag (full rationale in the
 # OMITTED block above the room_can_reach gates). Listed here so the guard skips
@@ -178,3 +199,23 @@ room_free:
   "05e": "IP descent room — reached by the free one-way floor holes"
   "08e": "IP descent room — reached by the free one-way floor holes"
   "09f": "IP descent room w/ small-key pot — free fall, key-free (Iced T = TRUE)"
+
+# add-rando-pot-sanity (audit 2026-06-21) — per-cluster region/gate for SHARED cave
+# interiors reached by DIFFERENT overworld entrances with DIFFERENT logic. The
+# room-level room_region can't carry two reachability classes; each cluster lists
+# its pos4 set + region + can_reach (verbatim from the fork's own location). The
+# generator HARD-FAILS if any pot in a listed room isn't covered by a cluster.
+pot_room_split:
+  # refill_cave_1 (room 0x11b) — one shared interior split by entrance (owner F12'd
+  # the graveyard-ledge side: 8 pots). The two halves are physically separate:
+  #   * 8 pots (0x16-0x19 plane) reached from the GRAVEYARD-LEDGE mirror spot
+  #     (screen 0x14). Gate = the fork's "Graveyard Ledge" (40_lightworld_northwest).
+  #   * 6 pots (0x35-0x38 plane) reached from CAVE 45 / the DW-south mirror spot
+  #     (screen 0x32). Gate = the fork's "Cave 45" (41_lightworld_south).
+  "11b":
+    - region: LightWorld_NorthWest
+      can_reach: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())"
+      pos4: [0x165c, 0x1660, 0x175c, 0x1760, 0x185c, 0x1860, 0x195c, 0x1960]
+    - region: LightWorld_South
+      can_reach: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()"
+      pos4: [0x3518, 0x3618, 0x3718, 0x381c, 0x3620, 0x3628]

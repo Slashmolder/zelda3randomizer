@@ -299,6 +299,7 @@ def main():
 
     pots, out_edges, dark_rooms = load_dump(Path(args.dump), args.binary)
     overrides, override_gates, room_free = {}, {}, {}
+    pot_split, split_rooms = {}, set()  # (room,pos4) -> (region, can_reach); shared-cave per-cluster split
     ovp = Path(args.overrides)
     if ovp.is_file():
         doc = yaml.safe_load(ovp.read_text()) or {}
@@ -309,6 +310,18 @@ def main():
         # can't see (room_hex -> one-line reason). The guard skips these and HARD-
         # FAILS on any un-listed, un-gated leak, so a NEW flag = a real regression.
         room_free = {str(k): v for k, v in (doc.get("room_free", {}) or {}).items()}
+        # add-rando-pot-sanity (audit) — per-cluster region/gate for SHARED cave
+        # interiors whose pots reach via DIFFERENT overworld entrances, each with its
+        # own logic (e.g. room 0x11b = refill_cave_1: 8 pots via the Graveyard-Ledge
+        # mirror spot, 6 via the Cave-45 / DW-south mirror spot). The room-level
+        # room_region can't carry two reachability classes, so each cluster lists its
+        # pos4 set + region + can_reach. room_hex -> [{region, can_reach, pos4:[...]}].
+        for room_hex, clusters in (doc.get("pot_room_split", {}) or {}).items():
+            rint = int(str(room_hex), 16)
+            split_rooms.add(rint)
+            for cl in (clusters or []):
+                for p in cl["pos4"]:
+                    pot_split[(rint, int(p))] = (cl["region"], cl.get("can_reach"))
 
     # group pots by room; drop excluded rooms + out-of-scope content
     pot_rooms = sorted({r for (r, _p, _c) in pots})
@@ -361,7 +374,13 @@ def main():
         if (room, pos4) in seen:
             die(f"duplicate pot identity (room 0x{room:03x}, pos4 0x{pos4:04x})")
         seen.add((room, pos4))
-        region, can_reach, _src = region_of[room]
+        if (room, pos4) in pot_split:
+            region, can_reach = pot_split[(room, pos4)]
+        elif room in split_rooms:
+            die(f"pot (room 0x{room:03x}, pos4 0x{pos4:04x}) is in a pot_room_split room "
+                f"but no cluster lists its pos4 — every split-room pot must be covered")
+        else:
+            region, can_reach, _src = region_of[room]
         if region not in valid:
             die(f"pot room 0x{room:03x} bound to region {region!r} which is NOT a "
                 f"defined logic region — rando_logic_gen would encode 0xFFFF "
