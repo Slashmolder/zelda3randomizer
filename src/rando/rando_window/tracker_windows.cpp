@@ -434,14 +434,15 @@ static void DrawCheckTracker(void *) {
   // slot's settings are unknown (snapshot replay / v1 slot) — see the helper.
   bool race = Rando_ActiveSlotHidesSpoiler();
 
-  // Persistent UI state. "Hide checked" / "Only available" persist across
-  // restarts via the rando_window.ini sidecar (g_rando_window_prefs); bind
-  // directly so toggling a checkbox writes the persisted pref. The spoiler
-  // ("Show items") + search filter stay session-only.
+  // Persistent UI state. All four filter toggles persist across restarts via the
+  // rando_window.ini sidecar (g_rando_window_prefs); bind directly so toggling a
+  // checkbox writes the persisted pref. "Show items (spoiler)" is still force-off
+  // for race seeds on every open (below), so persisting it can't leak a spoiler
+  // into a race slot. Only the search filter stays session-only.
   bool &s_hide_checked = g_rando_window_prefs.check_tracker_hide_checked;
   bool &s_only_reachable = g_rando_window_prefs.check_tracker_only_available;
-  static bool s_show_items = false;
-  static bool s_show_pots = false;  // add-rando-pot-sanity — gate the ~800 pot rows
+  bool &s_show_items = g_rando_window_prefs.check_tracker_show_items;
+  bool &s_show_pots = g_rando_window_prefs.check_tracker_show_pots;  // add-rando-pot-sanity — gate the ~800 pot rows
   static char s_search[64] = "";
   if (race) s_show_items = false;
 

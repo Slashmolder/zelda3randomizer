@@ -732,6 +732,10 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_rando_window_prefs.check_tracker_hide_checked);
     } else if (StringEqualsNoCase(key, "check_tracker_only_available")) {
       return ParseBool(value, &g_rando_window_prefs.check_tracker_only_available);
+    } else if (StringEqualsNoCase(key, "check_tracker_show_pots")) {
+      return ParseBool(value, &g_rando_window_prefs.check_tracker_show_pots);
+    } else if (StringEqualsNoCase(key, "check_tracker_show_items")) {
+      return ParseBool(value, &g_rando_window_prefs.check_tracker_show_items);
     }
     return false;
   } else if (section == 9) {
@@ -963,6 +967,10 @@ void Config_SaveRandoWindowIni(const char *path) {
           g_rando_window_prefs.check_tracker_hide_checked ? "true" : "false");
   fprintf(f, "check_tracker_only_available = %s\n",
           g_rando_window_prefs.check_tracker_only_available ? "true" : "false");
+  fprintf(f, "check_tracker_show_pots = %s\n",
+          g_rando_window_prefs.check_tracker_show_pots ? "true" : "false");
+  fprintf(f, "check_tracker_show_items = %s\n",
+          g_rando_window_prefs.check_tracker_show_items ? "true" : "false");
 
   // [RandoAssetDecisions] — flush all persisted always-allow decisions in the
   // same hash=allow line format config.c's section-7 parser reads back.

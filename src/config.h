@@ -256,6 +256,8 @@ typedef struct RandoWindowPrefs {
   bool dark_theme;               // ImGui theme (default true = dark)
   bool check_tracker_hide_checked;    // Check Tracker "Hide checked" filter (default false)
   bool check_tracker_only_available;  // Check Tracker "Only available" filter (default false)
+  bool check_tracker_show_pots;       // Check Tracker "Show pots" toggle (default false)
+  bool check_tracker_show_items;      // Check Tracker "Show items (spoiler)" toggle (default false; forced off for race seeds on load)
 } RandoWindowPrefs;
 
 extern RandoWindowPrefs g_rando_window_prefs;
