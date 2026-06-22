@@ -47,6 +47,10 @@ void Trackers_GetGeometry(int kind, int *x, int *y, int *w, int *h);
 // center, and Map/Item Tracker stacked on the right.
 void Trackers_ApplyTiledLayout(void);
 
+// Restack already-visible tracker windows with the game window after the game
+// regains focus. Does not show, hide, resize, or move any tracker.
+void Trackers_RestackShownWithGame(void);
+
 void Trackers_Shutdown(void);
 
 #ifdef __cplusplus

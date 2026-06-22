@@ -47,6 +47,11 @@ void Z3RHost_Hide(Z3RWindow *win);
 void Z3RHost_ToggleShown(Z3RWindow *win);
 bool Z3RHost_IsShown(Z3RWindow *win);
 
+// Restack visible host windows with the active game window without changing
+// visibility, geometry, or focus. On Win32 this places host windows directly
+// behind `anchor`; other platforms leave the stack unchanged.
+void Z3RHost_RestackShownBehind(SDL_Window *anchor);
+
 // Route one SDL event. Returns true iff the event targeted a host window (the
 // caller should then `continue` and NOT pass it to the game input path). The
 // window's own close button hides the window (does not quit the app).

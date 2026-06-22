@@ -923,6 +923,11 @@ void Trackers_ApplyTiledLayout(void) {
   SDL_RaiseWindow(s_game_window);
 }
 
+void Trackers_RestackShownWithGame(void) {
+  if (!s_game_window) return;
+  Z3RHost_RestackShownBehind(s_game_window);
+}
+
 void Trackers_Shutdown(void) {
   // Tear down every host-owned window (the 3 trackers). The settings window is
   // NOT a host window — it is shut down separately by RandoWindow_Shutdown, which

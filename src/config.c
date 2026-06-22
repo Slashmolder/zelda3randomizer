@@ -35,9 +35,12 @@ enum {
 Config g_config;
 
 // Native-settings-window persistence. Zero-initialized: no
-// settings/geometry until the sidecar is parsed; dark_theme defaults to true
-// (set here so a missing sidecar still gives the dark theme).
-RandoWindowPrefs g_rando_window_prefs = { .dark_theme = true };
+// settings/geometry until the sidecar is parsed. Some window behavior defaults
+// are set here so a missing sidecar still gets the intended UI defaults.
+RandoWindowPrefs g_rando_window_prefs = {
+  .tracker_follow_game_focus = true,
+  .dark_theme = true,
+};
 
 #define REMAP_SDL_KEYCODE(key) ((key) & SDLK_SCANCODE_MASK ? kKeyMod_ScanCode : 0) | (key) & (kKeyMod_ScanCode - 1)
 #define _(x) REMAP_SDL_KEYCODE(x)
@@ -721,6 +724,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "tracker_tiled_layout_on_startup")) {
       return ParseBool(value, &g_rando_window_prefs.tracker_tiled_layout_on_startup);
+    } else if (StringEqualsNoCase(key, "tracker_follow_game_focus")) {
+      return ParseBool(value, &g_rando_window_prefs.tracker_follow_game_focus);
     } else if (StringEqualsNoCase(key, "dark_theme")) {
       return ParseBool(value, &g_rando_window_prefs.dark_theme);
     } else if (StringEqualsNoCase(key, "check_tracker_hide_checked")) {
@@ -951,6 +956,8 @@ void Config_SaveRandoWindowIni(const char *path) {
   }
   fprintf(f, "tracker_tiled_layout_on_startup = %s\n",
           g_rando_window_prefs.tracker_tiled_layout_on_startup ? "true" : "false");
+  fprintf(f, "tracker_follow_game_focus = %s\n",
+          g_rando_window_prefs.tracker_follow_game_focus ? "true" : "false");
   fprintf(f, "dark_theme = %s\n", g_rando_window_prefs.dark_theme ? "true" : "false");
   fprintf(f, "check_tracker_hide_checked = %s\n",
           g_rando_window_prefs.check_tracker_hide_checked ? "true" : "false");

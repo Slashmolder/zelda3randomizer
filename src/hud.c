@@ -71,6 +71,10 @@ static const ItemBoxGfx kHudItemBow[5] = {
   {{0x28ba, 0x28e9, 0x28e8, 0x28cb}},
   {{0x28ba, 0x28bb, 0x24ca, 0x28cb}},
 };
+// Rando visual fix: keep the regular arrow shaft alignment while using the
+// silver-arrow palette for the bottom-left quadrant.
+static const ItemBoxGfx kHudItemBowRandoSilverArrows =
+  {{0x28ba, 0x28bb, 0x2449, 0x28cb}};
 static const ItemBoxGfx kHudItemBoomerang[3] = {
   {{0x20f5, 0x20f5, 0x20f5, 0x20f5}},
   {{0x2cb8, 0x2cb9, 0x2cf5, 0x2cc9}},
@@ -991,6 +995,8 @@ static const ItemBoxGfx *Hud_GetIconForItem(int i) {
     item_val = (item_val != 0);
   else if (i == kHudItem_BottleOld && !kNewStyleInventory)
     item_val = link_item_bottle_index ? link_bottle_info[link_item_bottle_index - 1] : 0;
+  else if (i == kHudItem_Bow && item_val == 4 && g_rando_slot_active)
+    return &kHudItemBowRandoSilverArrows;
   return &kHudItemBoxGfxPtrs[i - 1][item_val];
 }
 

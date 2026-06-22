@@ -9,6 +9,16 @@
 
 #include <SDL.h>
 #include <SDL_opengl.h>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <SDL_syswm.h>
+#endif
 
 #include "imgui_host.h"
 
@@ -152,6 +162,36 @@ void Z3RHost_ToggleShown(Z3RWindow *win) {
 
 bool Z3RHost_IsShown(Z3RWindow *win) {
   return win && win->in_use && win->shown;
+}
+
+#if defined(_WIN32)
+static HWND Win32HandleForWindow(SDL_Window *win) {
+  if (!win) return NULL;
+  SDL_SysWMinfo info;
+  SDL_VERSION(&info.version);
+  if (!SDL_GetWindowWMInfo(win, &info)) return NULL;
+  if (info.subsystem != SDL_SYSWM_WINDOWS) return NULL;
+  return info.info.win.window;
+}
+#endif
+
+void Z3RHost_RestackShownBehind(SDL_Window *anchor) {
+#if defined(_WIN32)
+  HWND insert_after = Win32HandleForWindow(anchor);
+  if (!insert_after) return;
+  for (int i = 0; i < kZ3RHostMaxWindows; i++) {
+    Z3RWindow *w = &s_windows[i];
+    if (!w->in_use || !w->shown) continue;
+    if (SDL_GetWindowFlags(w->win) & SDL_WINDOW_MINIMIZED) continue;
+    HWND hwnd = Win32HandleForWindow(w->win);
+    if (!hwnd) continue;
+    SetWindowPos(hwnd, insert_after, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    insert_after = hwnd;
+  }
+#else
+  (void)anchor;
+#endif
 }
 
 // Extract the target window id from a window-targeted event (mirrors main.c's

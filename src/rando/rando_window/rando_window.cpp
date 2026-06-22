@@ -1272,6 +1272,11 @@ static void Panel_Trackers() {
     g_rando_window_prefs.tracker_tiled_layout_on_startup = auto_tile;
   }
   HelpTooltip("Recreates the tiled tracker layout automatically when the app starts.");
+  bool follow_focus = g_rando_window_prefs.tracker_follow_game_focus;
+  if (ImGui::Checkbox("Bring trackers with game focus", &follow_focus)) {
+    g_rando_window_prefs.tracker_follow_game_focus = follow_focus;
+  }
+  HelpTooltip("When the game regains focus, restacks already-open tracker windows with it without moving or reopening them.");
   ImGui::Spacing();
   struct { const char *label; int kind; } rows[] = {
       {"Item Tracker", kTracker_Item},

@@ -2141,6 +2141,10 @@ int main(int argc, char** argv) {
           g_turbo = 0;
         }
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
+        else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+          if (g_rando_window_prefs.tracker_follow_game_focus)
+            Trackers_RestackShownWithGame();
+        }
         // With a second window open, SDL may not emit SDL_QUIT when the game
         // window's close button is pressed, so handle the game-window close
         // explicitly → app shutdown.
