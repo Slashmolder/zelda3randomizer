@@ -205,11 +205,17 @@ untouched, gold theme-independent. As-built path:
   `Garnish_SparkleCommon` sparkle tiles (`{0x80,0x83,0xb7,0xc7}`, drawn as sparkles
   in this same module → reliably present), cycled + bobbed for an animated twinkle.
   A pot lifted/checked mid-room is re-tested each frame and stops drawing.
-- **Palette (`nmi.c`):** a warm-gold ramp written straight into a sprite sub-palette
-  (`kRandoPotOverlayPalette`) of the **PPU CGRAM copy** each frame a glint is
-  on-screen — `g_ram` is never touched, so RAM-compare is preserved exactly like
-  the cosmetic palette modes, and the gold animates even on frames the engine
-  didn't re-upload CGRAM.
+- **Palette (`nmi.c` → `Rando_PotOverlayApplyCgram`):** a warm-gold ramp written
+  straight into a sprite sub-palette of the **PPU CGRAM copy** — `g_ram` is never
+  touched, so RAM-compare is preserved exactly like the cosmetic palette modes, and
+  the gold animates even on frames the engine didn't re-upload CGRAM. **Which row:
+  all 8 sprite sub-palette rows are allocated in a dungeon** (enemies SP1-4, Link's
+  armor/sword/shield SP7, environment/aux SP0/5/6), so the draw loop picks, PER
+  FRAME, a row that no on-screen sprite uses (scanning the OAM `Sprite_Main` just
+  built; unused slots are `y=0xf0` from `ClearOamBuffer`) and NEVER Link's row 7;
+  NMI golds that row and restores the previous frame's row from `main_palette_buffer`
+  first, so the gold collides with nothing and never outlives the glint. (A first
+  cut used a fixed row 7 and painted Link gold — F12-confirmed.)
 
 Gated on rando + tier + `!IsLocationChecked`; no new graphics assets; non-rando
 path byte-identical (the capture gate returns false). Verification is by playtest
