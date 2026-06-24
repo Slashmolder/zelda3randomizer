@@ -106,7 +106,7 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   force codegen): every existing seed byte-identical with `pot_shuffle = Off`. Add
   corpus entries for `Keys`/`Contents`/`All`. Checkpoint.
 
-## 4. Runtime grant hook + recolor — D3, D4
+## 4. Runtime grant hook + check glint — D3, D4
 
 - [x] 4.1 `Dungeon_GetPotLocation(room, pos4) → LOC` (binary search over `pot_lookup.h`).
 - [x] 4.2 Hook at the **TOP of `RevealPotItem`** (before the secret scan; covers all
@@ -121,12 +121,17 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 - [x] 4.3 **Checked-pot behavior:** item-pots re-drop vanilla content; **key-pots (and
   any one-shot content) are EXPLICITLY suppressed to empty** (vanilla has no per-pot
   key-taken flag → dup risk). Verify the vanilla-content branch from the pot table.
-- [x] 4.4 Recolor in `RoomDraw_SinglePot`: **mask out palette bits 10-12 of the four
-  tilemap words and set** the alt sub-palette row (clear-then-set, NOT OR) for in-scope
-  un-checked pots; vanilla otherwise; gated rando + tier + `!checked`; non-rando
-  byte-identical.
-- [ ] 4.5 Offline-render verify the alt sub-palette across dungeon themes (re-render a
-  known room from `zelda3_assets.dat`; cross-check vs a known-good screen).
+- [x] 4.4 Check glint (animated gold sprite overlay; supersedes the interim BG
+  palette swap, now removed): `RoomDraw_SinglePot` registers in-scope un-checked pots
+  into a per-room list (reset at room load in `Dungeon_LoadRoom`); `Module07_Dungeon`
+  draws an animated glint after `Sprite_Main` (`RandoPot_DrawGoldOverlay`, world→screen
+  via the `ManipBlock_Something` idiom, `Garnish_SparkleCommon` glyphs); `nmi.c` injects
+  the gold ramp into a sprite sub-palette of the PPU CGRAM copy. Gated rando + tier +
+  `!checked`; OAM + PPU-CGRAM only (no `g_ram`) → non-rando byte-identical.
+- [ ] 4.5 Playtest the glint across dungeons (sprite-palette-row collision + on-screen
+  feel — `kRandoPotOverlayPalette` / `RandoPot_DrawGoldOverlay` tunables). The interim
+  approach's cross-theme BG-palette offline render is obsolete — the glint's gold is
+  injected and theme-independent.
 
 ## 5. UI / trackers — D11, D12, D13
 
@@ -137,8 +142,8 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   loops over locations and breaks with 800+ rows) — NOT just the native window.
 - [x] 5.3 Native/auto tracker + reach panel: group pots by room / "show pots" toggle;
   completion denominator counts `ITEM_Nothing`; spoiler groups pots + omits
-  `ITEM_Nothing`; define auto-tracker export pot metadata. Recolor cosmetic (2-state
-  tint / non-empty-only sub-toggle), placement-neutral.
+  `ITEM_Nothing`; define auto-tracker export pot metadata. Check glint cosmetic
+  (optional 2-state variant / non-empty-only sub-toggle), placement-neutral.
 
 ## 6. Verification, audit, hand-off
 
@@ -151,7 +156,8 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 - [ ] 6.3 **Owner end-to-end playtest (load-bearing):** each tier — key-pot (key
   shuffles; **re-enter room + re-break → NO duplicate key** regression); item-pot
   re-break (vanilla drop, no re-grant); empty-pot (`All`, Literally Nothing);
-  recolor + revert-on-check; a non-direct-grant pot item (bottle) delivered not
+  gold glint + clears-on-check (and the sprite-palette-row collision check); a
+  non-direct-grant pot item (bottle) delivered not
   dropped; **door-shuffle + pot-shuffle** seed (key-pot restriction holds); Retro +
   `All` (capacity); a gated-room pot (Swamp flood / dark room — beatable, not
   falsely-in-logic). Confirm the loaded slot matches the share string before

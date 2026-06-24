@@ -1,9 +1,9 @@
 ## Why
 
 "Pot Sanity" turns the game's pots into randomizer checks: an un-checked pot is
-recolored to signal it holds a placed item, breaking/lifting it grants that item
-once, and thereafter the pot reverts to its vanilla color and vanilla behavior
-(its vanilla drop, or empty for a pot that hid a small key). This is the single
+marked with an animated gold glint to signal it holds a placed item, breaking/lifting
+it grants that item once, and thereafter the glint clears and the pot reverts to its
+vanilla behavior (its vanilla drop, or empty for a pot that hid a small key). This is the single
 largest expansion of the location pool the randomizer has taken on — the engine
 has **835 liftable pots across 164 dungeon rooms** (counted directly from
 `zelda3_assets.dat`: 835 single `Pot` objects; the 16 `Fairy Pot` objects are a
@@ -68,9 +68,11 @@ Nothing" filler, and appearance-matches-contents).
   path. Out-of-scope / Off pots are pure vanilla; a *checked* pot re-drops vanilla for
   item-pots but is **explicitly suppressed (empty) for key/one-shot pots** to avoid
   key duplication.
-- **Un-checked pot recolor** (code-only palette swap in `RoomDraw_SinglePot`): an
-  in-scope, un-checked pot draws under an alternate CGRAM sub-palette; checked /
-  out-of-scope pots draw vanilla. Cosmetic-only, gated behind the rando flag.
+- **Un-checked pot check glint** (sprite-layer overlay): an in-scope, un-checked pot
+  draws an animated gold glint over it (registered in `RoomDraw_SinglePot`, drawn in
+  `Module07_Dungeon`, gold injected into the PPU CGRAM copy in NMI); checked /
+  out-of-scope pots draw none, and the pot's BG tile / floor are not recolored.
+  Cosmetic-only (OAM + PPU-CGRAM, no `g_ram`), gated behind the rando flag.
 - **Capacity raise to 2048** via a typed audit of EVERY location-id-keyed array /
   constant — `1163` exceeds BOTH the 512 caps (checked-bitmap, placer arrays, the
   placement-digest cap) AND the 1024 caps (tracker / customizer / spoiler / snapshot
@@ -90,7 +92,7 @@ Nothing" filler, and appearance-matches-contents).
 
 - `randomizer-pot-sanity`: pot enumeration & stable identity, the tiered scope
   model, the single-point runtime grant hook with re-collect safety, the
-  un-checked recolor, the "Literally Nothing" filler, fairy-pot exclusion, and the
+  un-checked check glint, the "Literally Nothing" filler, fairy-pot exclusion, and the
   committed `gen_pot_tables.py` generator.
 
 ### Modified Capabilities
@@ -107,7 +109,7 @@ Nothing" filler, and appearance-matches-contents).
   `ITEM_Nothing` pre-pass; the typed capacity audit (512 + 1024 sites); a sorted
   placement table + binary-search `Placement_Lookup`.
 - `randomizer-ui`: ADD the `pot_shuffle` tier selector to the native settings
-  window, the recolor as a cosmetic axis, and pot handling in the location tracker
+  window, the check glint as a cosmetic axis, and pot handling in the location tracker
   (room-grouping / show-pots toggle) so 835 entries stay usable.
 - `randomizer-save`: the per-slot checked-bitmap / placement-table sizing already
   accommodates ~1163 locations (on-disk format unchanged; in-memory caps grow);
@@ -117,7 +119,8 @@ Nothing" filler, and appearance-matches-contents).
 ## Impact
 
 - **Code**: `src/dungeon.c` (`RevealPotItem`/`Dungeon_LiftAndReplaceLiftable` hook,
-  `RoomDraw_SinglePot` recolor, a `(room,pos)→LOC` accessor), `src/rando/rando.{c,h}`
+  `RoomDraw_SinglePot` glint-capture + `RandoPot_DrawGoldOverlay`, a `(room,pos)→LOC`
+  accessor), `src/nmi.c` (gold-ramp CGRAM injection), `src/rando/rando.{c,h}`
   (`Rando_PotDispatch`, cap raise, `kGeneratorVersion`), `src/rando/rando_placement.*`
   (`[512]→[2048]`, binary-search lookup, pot pool inclusion),
   `src/rando/rando_logic.{c,h}` (`kReachabilityMaxLocations`, bitset),
@@ -133,6 +136,6 @@ Nothing" filler, and appearance-matches-contents).
   each tier.
 - **Verification**: `--rando-selftest` pot-lookup/identity invariants, corpus regen,
   and a **load-bearing owner playtest** of each tier (key-pot, item-pot re-break,
-  empty-pot, recolor, room re-entry, a door-shuffle + pot-shuffle seed).
+  empty-pot, check glint, room re-entry, a door-shuffle + pot-shuffle seed).
 - **`make clean`** required after the `kGeneratorVersion` / `RandoSettings` /
   cap-constant header edits (Makefile has no header-dep tracking).

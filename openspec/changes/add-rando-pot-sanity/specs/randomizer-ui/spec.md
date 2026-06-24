@@ -4,17 +4,19 @@
 
 The native settings window (`src/rando/rando_window/`) SHALL expose `pot_shuffle`
 as a four-value selector — `Off` / `Keys` / `Contents` / `All` — defaulting to
-`Off`, with a tooltip stating the durable player-facing fact (e.g. "Randomize the
-items hidden in pots; un-checked pots are recolored"). On PC this is an ImGui
+`Off`, with a tooltip stating the durable player-facing fact (as shipped:
+"Turns dungeon pots into randomizer checks. Keys = key pots only; Contents adds
+loot pots; All adds the empty pots too."). On PC this is an ImGui
 panel control (the in-game SNES settings screen is compiled out on PC per the
-project layout; the Switch path uses the in-game screen). The un-checked-pot
-recolor (`randomizer-pot-sanity / Un-checked in-scope pots are recolored`) is a
-client-side cosmetic that does not affect placement; as built it is **always on**
-for un-checked in-scope pots (a single alternate sub-palette applied in
-`RoomDraw_SinglePot` — there is no per-seed toggle). A 2-state tint (real item vs
-empty/junk) or a "recolor non-empty pots only" sub-toggle MAY be added later so it
-stays a useful signal at the `All` tier (where recoloring every pot would otherwise
-read as noise), but is not required for this change.
+project layout; the Switch path uses the in-game screen). The un-checked-pot check
+marker (`randomizer-pot-sanity / Un-checked in-scope pots are marked with a gold
+check glint`) is a client-side cosmetic that does not affect placement; as built it
+draws an **animated gold glint** (a sprite-layer overlay, always on) over
+un-checked in-scope pots — there is no per-seed toggle, and the pot's background
+tile / floor are not recolored. A 2-state variant (real item vs empty/junk) or a
+"mark non-empty pots only" sub-toggle MAY be added later so it stays a useful
+signal at the `All` tier (where marking every pot would otherwise read as noise),
+but is not required for this change.
 
 Because pot shuffle can add up to ~799 locations, **every location-listing surface**
 SHALL present pots so non-pot checks stay legible: the native location tracker AND
@@ -44,10 +46,10 @@ silently dropped from the view.
 - **THEN** pots are hidden/paged/summarized (not enumerated as 800+ flat rows), and
   no location with id ≥ 1024 is dropped by an un-raised tracker table
 
-#### Scenario: Recolor is cosmetic and placement-neutral
-- **WHEN** the recolor cosmetic is toggled
+#### Scenario: Pot check marker is cosmetic and placement-neutral
+- **WHEN** the gold check glint is drawn over un-checked in-scope pots
 - **THEN** the seed's `placement_digest` and `settings_hash` are unaffected (the
-  recolor is client-side, like other cosmetic axes)
+  marker is client-side OAM + PPU-CGRAM only, like other cosmetic axes)
 
 #### Scenario: Pot selector disabled when generation forces pots off
 - **WHEN** the native settings window has door shuffle OR cave-entrance shuffle enabled

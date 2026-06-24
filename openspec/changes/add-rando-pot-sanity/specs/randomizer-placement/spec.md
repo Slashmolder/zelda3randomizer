@@ -81,7 +81,7 @@ check and a sort-on-install fallback.
 #### Scenario: Out-of-scope pot falls back to vanilla
 - **WHEN** a pot is not selected by the active tier and the player breaks it
 - **THEN** it has no placement entry (or a `0xFFFF` sentinel) and the dispatcher
-  reveals the vanilla content, with no recolor and no check
+  reveals the vanilla content, with no glint and no check
 
 #### Scenario: Dispatch stays cheap at scale
 - **WHEN** a pot is broken and the runtime resolves its placed item

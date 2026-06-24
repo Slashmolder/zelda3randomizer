@@ -22,7 +22,7 @@ times. The tier SHALL act as a generation-time
 filter selecting which pot locations enter the placement pool; pots not selected
 for a seed are **absent from the placement table (or carry the `0xFFFF` sentinel when
 present below a higher placed id)** and behave exactly as vanilla at runtime (vanilla
-content revealed, not recolored). The following SHALL NOT be assigned location IDs and
+content revealed, no glint). The following SHALL NOT be assigned location IDs and
 are never checks: `Fairy Pot` objects (16); **structural-secret pots** (whose vanilla
 secret is a Hole / Warp / Staircase / Bombable / Switch — lifting them triggers a room
 function, not a pickup); **creature-spawn pots** (whose vanilla content spawns an
@@ -38,13 +38,13 @@ NOT hardcoded. The tier supersets SHALL be nested: `keys ⊆ contents ⊆ all`.
 
 #### Scenario: Off changes nothing
 - **WHEN** `pot_shuffle = Off`
-- **THEN** no pot location is placed, no pot is recolored, and every pot reveals
-  its vanilla content exactly as in the unmodified game
+- **THEN** no pot location is placed, no pot is marked with a glint, and every pot
+  reveals its vanilla content exactly as in the unmodified game
 
 #### Scenario: Keys tier selects only key-pots
 - **WHEN** `pot_shuffle = Keys`
 - **THEN** exactly the pots whose vanilla content is a small key are in the
-  placement pool and are checks; all other pots stay vanilla and un-recolored
+  placement pool and are checks; all other pots stay vanilla and unmarked
 
 #### Scenario: ID space is tier-invariant
 - **WHEN** the same seed is generated at `Contents` and at `All`
@@ -130,7 +130,7 @@ placement lookup) and resolves the placed item's class (direct-grant / `ITEM_Not
 → `kRandoLttpSkip`; else its LttP receive code), then
 `Rando_ReceiveOrConfirm(lttp, placed_item_id)` to deliver it (direct-grant
 confirmation cue; `Link_ReceiveItem` otherwise; NO cue for `ITEM_Nothing` — the
-recolor reverting on re-entry is the feedback), and return `kRandoPot_Suppress`. The
+glint clearing on re-entry is the feedback), and return `kRandoPot_Suppress`. The
 caller returns early on `kRandoPot_Suppress`, never falling through to a vanilla-secret
 spawn. Marking is internal to `Rando_DispatchVanillaGrant` and happens before the
 lookup, so the dispatch SHALL NOT additionally call `Rando_MarkLocationChecked`.
@@ -198,34 +198,53 @@ vanilla path, byte-identical to the unmodified game.
   and does NOT re-spawn the vanilla key — preventing the key duplication a naive
   vanilla fall-back would cause (vanilla has no persistent per-pot key-taken flag)
 
-### Requirement: Un-checked in-scope pots are recolored
+### Requirement: Un-checked in-scope pots are marked with a gold check glint
 
-The runtime SHALL draw an in-scope, un-checked pot under an alternate CGRAM
-sub-palette (a palette-nibble swap in the four tilemap words emitted by
-`RoomDraw_SinglePot`) so it is visually distinct from a vanilla pot. The recolor SHALL be gated on the randomizer being
-active, the pot being in the active tier's pool, and `Rando_IsLocationChecked`
-being false; checked and out-of-scope pots SHALL draw the vanilla words. The
-recolor SHALL be code-only (no new graphics) and SHALL NOT alter non-randomizer
-RAM-compare behavior. The alternate sub-palette SHALL be one that is loaded across
-dungeon themes and visibly distinct. The shipped value is `kRandoPotAltPalette`;
-its cross-theme loading is confirmed in source (the row is among those
-`Palette_Load_DungeonSet` loads for every dungeon), and its visible distinctness is
-confirmed at playtest (an offline render against `zelda3_assets.dat` was the planned
-check, but the build worktree carried no asset blob).
+The runtime SHALL draw an animated gold "check" glint as a sprite-layer overlay
+over each in-scope, un-checked pot, so the pot is visually distinct from a vanilla
+pot **without recoloring its background tile or the surrounding floor**. The marker
+SHALL be gated on the randomizer being active, the pot being in the active tier's
+pool, and `Rando_IsLocationChecked` being false; checked and out-of-scope pots
+SHALL draw no glint. The marker SHALL add no new graphics assets and SHALL NOT
+alter non-randomizer RAM-compare behavior: it is built entirely from the engine's
+existing sprite glyphs (`Garnish_SparkleCommon`'s sparkle tiles) plus a gold ramp
+written into a sprite sub-palette of the **PPU CGRAM copy** each frame a glint is
+on-screen — `g_ram` is never touched (the same discipline as the cosmetic palette
+modes).
 
-#### Scenario: Un-checked check-pot looks different
+A pure background-palette recolor (the interim implementation, now removed) is NOT
+used because it cannot be both theme-independent AND scoped to specific pots: a
+dungeon's BG CGRAM has no free sub-palette row (rows 0-1 are the HUD, 2-7 are the
+dungeon set `Palette_Load_DungeonSet` loads) and the CGRAM is shared across BG
+layers, so forcing a row to a fixed gold would also recolor other room tiles; and
+the pot's 16x16 tile carries floor pixels in its corners under the pot's own
+palette row, so recoloring that row tints the floor too. The sprite overlay
+sidesteps both: its gold is its own injected sub-palette (theme-independent) and it
+draws only over the pot (floor untouched).
+
+The capture/draw path SHALL be: `RoomDraw_SinglePot` registers each in-scope
+un-checked pot's tilemap position into a per-room list (reset at room load in
+`Dungeon_LoadRoom`, capped at the 16-misc-objects-per-room engine limit);
+`Module07_Dungeon` draws the glints after `Sprite_Main` (while the BG2 scroll
+copies still hold the frame's render scroll), converting each pot's tilemap
+position to screen coordinates the same way the engine's own sprites do; the NMI
+handler injects the gold ramp. A pot lifted/checked mid-room SHALL be re-tested each
+frame and stop drawing its glint.
+
+#### Scenario: Un-checked check-pot is marked
 - **WHEN** `pot_shuffle` is on and a pot in the active pool has not been checked
-- **THEN** it is drawn under the alternate sub-palette, signalling it holds a
-  placed item
+- **THEN** an animated gold glint is drawn over it, signalling it holds a placed
+  item, while the pot tile and surrounding floor render exactly as vanilla
 
-#### Scenario: Recolor reverts on check and on re-entry
-- **WHEN** an in-scope pot is checked and the room is later reloaded
-- **THEN** the pot draws under the vanilla sub-palette
+#### Scenario: Glint clears on check and on re-entry
+- **WHEN** an in-scope pot is checked, whether during the same room visit or after
+  the room is later reloaded
+- **THEN** no glint is drawn over it
 
 #### Scenario: Non-rando draw path is unchanged
 - **WHEN** the randomizer is not active
-- **THEN** `RoomDraw_SinglePot` emits the vanilla tilemap words with no palette
-  change, preserving RAM-compare
+- **THEN** `RoomDraw_SinglePot` registers no pot and emits the vanilla tilemap
+  words, no glint is drawn, and `g_ram` / RAM-compare is preserved
 
 ### Requirement: Literally Nothing filler for empty pots
 

@@ -174,16 +174,49 @@ vanilla." Branch on the pot's known vanilla content:
   on room re-entry. A regression playtest (collect a randomized pot-key, leave,
   re-enter, re-break) is mandatory (§6).
 
-## D4 — Un-checked pot recolor (palette swap, code-only)
+## D4 — Un-checked pot check marker (animated gold glint, sprite overlay)
 
-While a pot is in-scope and un-checked, `RoomDraw_SinglePot` **masks out the palette
-bits (10-12) of the four tilemap words and sets** the selected alternate CGRAM
-sub-palette row (vanilla uses row 3 — a plain OR would corrupt it, so it is
-clear-then-set, not OR); checked/out-of-scope pots draw vanilla. Gated on rando + tier + `!IsLocationChecked`; code-only; non-rando
-path byte-identical. The alternate row must be loaded across dungeon themes and
-visibly distinct, **verified by offline render against `zelda3_assets.dat`**, not
-guessed. At `All` the recolor risks becoming wallpaper (D12 offers a 2-state tint /
-non-empty-only sub-toggle).
+**AS-BUILT (2026-06-23): a sprite-layer gold glint, NOT a BG palette swap.** The
+interim implementation reassigned the pot's four tilemap words to an alternate BG
+CGRAM sub-palette row (`kRandoPotAltPalette`) in `RoomDraw_SinglePot`. It shipped
+but was theme-fragile and recolored the wrong thing — it is now **removed**. The
+fundamental limit: a pure-BG gold can't be both theme-independent AND scoped to
+specific pots. A dungeon's BG CGRAM has **no free sub-palette row** (rows 0-1 = the
+HUD, 2-7 = the dungeon set `Palette_Load_DungeonSet` loads) and the CGRAM is shared
+across BG layers, so forcing any row to a fixed gold also recolors every other room
+tile on that row; and the pot's 16x16 tile carries floor pixels in its corners
+under the pot's own palette row, so a whole-row recolor tints the floor too. (This
+is exactly the "palette-independent overlay marker" the original D4 flagged as the
+planned robust fix.)
+
+The marker is therefore a **sprite overlay**, drawn only over the pot — floor
+untouched, gold theme-independent. As-built path:
+- **Capture (`rando.c`):** a per-room list (≤16, the misc-objects-per-room engine
+  cap) of in-scope un-checked pot tilemap positions, reset at room load in
+  `Dungeon_LoadRoom` and populated from `RoomDraw_SinglePot` via the existing
+  in-scope/un-checked gate (`Rando_PotShouldRecolor`). It is a C static
+  (re-derived on every room load → no snapshot/replay serialization).
+- **Draw (`dungeon.c`, `RandoPot_DrawGoldOverlay`):** runs after `Sprite_Main` in
+  `Module07_Dungeon` while `BG2*OFS_copy2` still hold the frame's adjusted BG2
+  render scroll, so each pot's world coordinates (from the tilemap pos via the
+  `ManipBlock_Something` idiom — a dungeon room is one 512-aligned supertile, so
+  `link & 0xfe00` is the shared room origin) convert to screen coordinates the same
+  way the engine's sprites do. The glyph reuses the engine's own
+  `Garnish_SparkleCommon` sparkle tiles (`{0x80,0x83,0xb7,0xc7}`, drawn as sparkles
+  in this same module → reliably present), cycled + bobbed for an animated twinkle.
+  A pot lifted/checked mid-room is re-tested each frame and stops drawing.
+- **Palette (`nmi.c`):** a warm-gold ramp written straight into a sprite sub-palette
+  (`kRandoPotOverlayPalette`) of the **PPU CGRAM copy** each frame a glint is
+  on-screen — `g_ram` is never touched, so RAM-compare is preserved exactly like
+  the cosmetic palette modes, and the gold animates even on frames the engine
+  didn't re-upload CGRAM.
+
+Gated on rando + tier + `!IsLocationChecked`; no new graphics assets; non-rando
+path byte-identical (the capture gate returns false). Verification is by playtest
+(sprite-palette-row collision + on-screen feel are the only playtest-only unknowns);
+the cross-theme BG-palette offline render the interim approach needed is obsolete
+(the glint's gold is injected, theme-independent). At `All` the marker risks
+becoming noise (D12 notes an optional 2-state / non-empty-only variant).
 
 ## D5 — Capacity: typed audit of ALL location-id arrays/constants (R6)
 
@@ -341,7 +374,7 @@ reach panel type tables; spoiler grouping; customizer non-customizable-type reje
 and hint-source eligibility. A `--rando-selftest` assertion confirms the `Pot` type
 round-trips through codegen (not silently mapped to 0).
 
-## D12 — Tracker, spoiler, hints, recolor (R13)
+## D12 — Tracker, spoiler, hints, check marker (R13)
 
 - **Capacity first:** raise the spoiler/tracker/reach/auto-tracker 1024 caps (D5) or
   pots ≥1024 silently vanish from those views.
@@ -355,9 +388,9 @@ round-trips through codegen (not silently mapped to 0).
 - **Hints**: junk/empty pots excluded as sources; a pot holding a progression item
   (key/major) is hint-eligible. No `randomizer-hints` spec change (pots are simply
   added or not to the existing candidate set).
-- **Recolor cosmetic**: 2-state tint (real item vs empty/junk) OR a "recolor
-  non-empty only" sub-toggle; client-side, placement-neutral, default on with
-  pot-shuffle.
+- **Check marker** (D4): the animated gold glint sprite overlay, default on with
+  pot-shuffle; client-side, placement-neutral. An optional 2-state variant (real
+  item vs empty/junk) OR a "mark non-empty pots only" sub-toggle MAY follow.
 
 ## D13 — Save compatibility is one-directional (R2 — corrected)
 
@@ -384,7 +417,8 @@ forward-compatibility for old binaries without an added compat layer (out of sco
 7. **ITEM_Nothing placement** (D6) — dedicated pre-fill phase, class-constrained.
 8. **Pot type migration** (D11) — the unknown-type→0 codegen trap; selfcheck.
 9. **Sorted-table invariant** (D10) — every install boundary; selfcheck.
-10. **Recolor palette + signal** (D4/D12) — offline-render verify; wallpaper at `All`.
+10. **Pot check glint** (D4/D12) — sprite-palette-row collision + on-screen feel are
+    playtest-only; the glint replaced the theme-fragile BG recolor (no free BG row).
 11. **Generation time** (D10) — ~3.5× locations; measure; keep `budget=0`.
 
 ## As-built audit addendum (kGen 92→95)

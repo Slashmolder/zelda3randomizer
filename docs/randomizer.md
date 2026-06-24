@@ -434,8 +434,8 @@ dungeon across many seeds).
 
 Key pots follow `dungeon_items.small_keys`: pinned to their vanilla key in
 `vanilla` mode, shuffled into the open pool otherwise. Lifting or sword-breaking
-an in-scope pot grants its placed item; un-checked in-scope pots are **recolored**
-as a visual tell. The non-`off` tiers add fillable locations and so change
+an in-scope pot grants its placed item; un-checked in-scope pots show an **animated
+gold glint** as a visual tell (the pot and surrounding floor are not recolored). The non-`off` tiers add fillable locations and so change
 placement output; `off` is byte-identical.
 
 **Forced `off` under door shuffle or cave-entrance shuffle** (normalized
