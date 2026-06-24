@@ -217,12 +217,12 @@ void NMI_DoUpdates() {  // 8089e0
     Cosmetic_ApplyPaletteCgram(g_zenv.ppu->cgram, 0x100);
   }
 
-  // add-rando-pot-sanity — paint the gold "check"-pot glint sub-palette straight
-  // into the PPU CGRAM copy (g_ram untouched, like the cosmetic palette modes),
-  // every frame a glint is on-screen so the gold animates even on NMIs where the
-  // engine did not re-upload CGRAM above.
-  if (g_rando_pot_overlay_drawn)
-    Rando_PotOverlayInjectCgram(g_zenv.ppu->cgram);
+  // add-rando-pot-sanity — gold "check"-pot glint sub-palette, straight into the
+  // PPU CGRAM copy (g_ram untouched, like the cosmetic palette modes). Runs every
+  // NMI: it restores the previous frame's goldened row and (if a glint is
+  // on-screen) golds this frame's reserved row, so the gold animates and never
+  // outlives the glint.
+  Rando_PotOverlayApplyCgram(g_zenv.ppu->cgram);
 
   flag_update_hud_in_nmi = 0;
   flag_update_cgram_in_nmi = 0;

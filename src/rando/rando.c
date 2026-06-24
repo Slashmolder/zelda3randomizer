@@ -2117,14 +2117,29 @@ uint16 Rando_PotOverlayPos(uint8 i) {
   return i < s_pot_overlay_count ? s_pot_overlay_pos[i] : 0;
 }
 
-void Rando_PotOverlayInjectCgram(uint16 *cgram) {
+uint8 g_rando_pot_overlay_palette_row = 0xFF;
+
+void Rando_PotOverlayApplyCgram(uint16 *cgram) {
+  static uint8 s_prev_row = 0xFF;  // the row we goldened last frame (to restore)
   if (!cgram)
     return;
-  // Overlay sprite sub-palette = CGRAM words 0x80 + 16*row .. +15. Word 0 of the
-  // row is sprite transparency — leave it. We fill the rest with a warm-gold
-  // ramp (dark at low indices, bright at high) so the glint reads as gold
-  // whichever palette index its tile samples.
-  int base = 0x80 + 16 * (int)kRandoPotOverlayPalette;
+  // Revert last frame's goldened row to its real colors, so a sprite that now
+  // claims that row — or the glint simply leaving — renders correctly. The 8
+  // sprite rows are all allocated, so we never own a row for more than the frame
+  // its glint is visible. main_palette_buffer is the un-transformed CGRAM image.
+  if (s_prev_row != 0xFF) {
+    int pb = 0x80 + 16 * (int)s_prev_row;
+    for (int i = 1; i < 16; i++)
+      cgram[pb + i] = main_palette_buffer[pb + i];
+    s_prev_row = 0xFF;
+  }
+  if (!g_rando_pot_overlay_drawn || g_rando_pot_overlay_palette_row >= 8)
+    return;
+  // Gold the row the draw loop reserved this frame (no on-screen sprite uses it).
+  // Word 0 of the row is sprite transparency — leave it. Fill 1..15 with a warm
+  // gold ramp (dark at low indices, bright at high) so the glint reads gold
+  // whichever index its tile samples.
+  int base = 0x80 + 16 * (int)g_rando_pot_overlay_palette_row;
   // Soft brightness pulse: a 0..7..0 triangle over 64 frames so the gold
   // shimmers instead of strobing.
   int ph = (frame_counter >> 1) & 0x3f;            // 0..63
@@ -2138,6 +2153,7 @@ void Rando_PotOverlayInjectCgram(uint16 *cgram) {
     int b = lvl >> 2;         // a touch of blue keeps it off lime-green
     cgram[base + i] = (uint16)((b << 10) | (g << 5) | r);
   }
+  s_prev_row = g_rando_pot_overlay_palette_row;
 }
 
 bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,

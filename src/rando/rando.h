@@ -330,21 +330,30 @@ uint16 Rando_GetPotLocation(uint16 room, uint16 pos4);
 //
 // Lifecycle: Dungeon_LoadRoom resets the list; RoomDraw_SinglePot captures each
 // in-scope un-checked pot's tilemap pos; Module07_Dungeon draws the glints right
-// after Sprite_Main; NMI injects the gold ramp into the overlay sub-palette.
+// after Sprite_Main; NMI golds the chosen sprite sub-palette row.
+//
+// Palette collision avoidance: ALL 8 sprite sub-palette rows are allocated in a
+// dungeon (enemies = SP1-4, Link/armor/sword/shield = SP7, environment/aux =
+// SP0/5/6), so no row is permanently free. The draw loop therefore picks, PER
+// FRAME, a row that no on-screen sprite is using (and never Link's row 7) and
+// golds only that one; NMI also restores the PREVIOUS frame's row from the
+// vanilla buffer, so the instant a glint leaves or a sprite claims the row it
+// reverts — no persistence, and Link/enemies are never tinted. (An earlier fixed
+// row 7 clobbered Link's palette — F12-confirmed.)
 void Rando_PotOverlayReset(void);
 void Rando_PotOverlayCapture(uint16 room, uint16 pos4);
 uint8 Rando_PotOverlayCount(void);
 uint16 Rando_PotOverlayPos(uint8 i);
-// The sprite sub-palette row (0..7) the glints draw with; its colors are
-// overwritten by Rando_PotOverlayInjectCgram each frame a glint is on-screen.
-#define kRandoPotOverlayPalette 7u
-// Set true by the dungeon draw loop when >=1 glint was emitted this frame; read
-// by NMI to gate the cgram gold injection (so the overlay sub-palette is only
-// repurposed while a glint is actually visible). Cleared by the draw loop.
+// Set true by the dungeon draw loop when >=1 glint was emitted this frame; gates
+// the NMI gold injection. Cleared by the draw loop.
 extern bool g_rando_pot_overlay_drawn;
-// Inject the animated gold ramp into the overlay sprite sub-palette of `cgram`
-// (the PPU CGRAM copy; g_ram stays vanilla, like the cosmetic palette modes).
-void Rando_PotOverlayInjectCgram(uint16 *cgram);
+// The sprite sub-palette row (0..7) the draw loop reserved for the glints this
+// frame (no on-screen sprite uses it; never 7). 0xFF = no free row → glint skipped.
+extern uint8 g_rando_pot_overlay_palette_row;
+// In NMI: restore last frame's goldened row from main_palette_buffer, then (if a
+// glint is on-screen) write the animated gold ramp into this frame's reserved
+// row. PPU CGRAM copy only — g_ram stays vanilla (cosmetic-palette-mode style).
+void Rando_PotOverlayApplyCgram(uint16 *cgram);
 
 // ---------------------------------------------------------------------------
 // Field item sprites — draw the PLACED item's

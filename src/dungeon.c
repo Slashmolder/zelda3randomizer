@@ -6848,17 +6848,36 @@ void LoadOWMusicIfNeeded() {  // 82854c
 // gold) — no g_ram divergence; inert off-rando / when no pots are registered.
 static void RandoPot_DrawGoldOverlay(void) {
   g_rando_pot_overlay_drawn = false;
+  g_rando_pot_overlay_palette_row = 0xFF;
   if (!(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
   uint8 n = Rando_PotOverlayCount();
   if (n == 0)
     return;
+  // Reserve a sprite sub-palette row no on-screen sprite uses this frame (NMI
+  // golds it). All 8 rows are allocated in a dungeon, so we pick dynamically and
+  // NEVER take Link's row 7 (Link draws after us; an earlier fixed row 7 painted
+  // Link gold — F12-confirmed). OAM for this frame is built (we run after
+  // Sprite_Main); ClearOamBuffer set unused slots to y=0xf0, so y<0xf0 == a
+  // sprite drawn this frame. If every row is busy, skip the glint (rare).
+  uint8 used = 1u << 7;  // reserve Link's row
+  for (int i = 0; i < 128; i++) {
+    if (oam_buf[i].y < 0xf0)
+      used |= 1u << ((oam_buf[i].flags >> 1) & 7);
+  }
+  int prow = -1;
+  for (int r = 0; r < 8; r++) {
+    if (!(used & (1u << r))) { prow = r; break; }
+  }
+  if (prow < 0)
+    return;
+  g_rando_pot_overlay_palette_row = (uint8)prow;
   // Twinkle: cycle the glint glyph and bob it a couple of pixels.
   static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
   uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
   int bob = (frame_counter >> 3) & 3;   // 0..3 px upward
-  // palette = overlay sub-palette row; 0x20 = OBJ priority 2 (normal sprite).
-  uint8 flags = (uint8)((kRandoPotOverlayPalette << 1) | 0x20);
+  // palette = the reserved row; 0x20 = OBJ priority 2 (normal sprite).
+  uint8 flags = (uint8)((prow << 1) | 0x20);
   for (uint8 k = 0; k < n; k++) {
     uint16 pos = Rando_PotOverlayPos(k);
     // Skip if the pot was lifted/checked mid-room (the BG pot is already floor).
