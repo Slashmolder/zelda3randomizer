@@ -7,6 +7,7 @@
 #include "assets.h"
 #include "audio.h"
 #include "rando/shuffle_cosmetic.h"
+#include "rando/rando.h"  // Rando_PotOverlayInjectCgram (gold pot "check" glint)
 
 static const uint8 kNmiVramAddrs[] = {
   0, 0, 4, 8, 12, 8, 12, 0, 4, 0, 8, 4, 12, 4, 12, 0,
@@ -215,6 +216,13 @@ void NMI_DoUpdates() {  // 8089e0
     // main_palette_buffer (game RAM) vanilla. No-op unless a palette mode is set.
     Cosmetic_ApplyPaletteCgram(g_zenv.ppu->cgram, 0x100);
   }
+
+  // add-rando-pot-sanity — paint the gold "check"-pot glint sub-palette straight
+  // into the PPU CGRAM copy (g_ram untouched, like the cosmetic palette modes),
+  // every frame a glint is on-screen so the gold animates even on NMIs where the
+  // engine did not re-upload CGRAM above.
+  if (g_rando_pot_overlay_drawn)
+    Rando_PotOverlayInjectCgram(g_zenv.ppu->cgram);
 
   flag_update_hud_in_nmi = 0;
   flag_update_cgram_in_nmi = 0;

@@ -2086,6 +2086,60 @@ bool Rando_PotShouldRecolor(uint16 room, uint16 pos4) {
   return !Rando_IsLocationChecked(loc);  // un-checked active pots draw recolored
 }
 
+// ---- Gold "check" pot overlay (rando.h) -----------------------------------
+// Per-room list of in-scope un-checked pots, captured once at room load (from
+// RoomDraw_SinglePot) and drawn every dungeon frame. A room packs at most 16
+// misc objects (dung_bg2_attr_table stores a 4-bit slot index), so 16 is the
+// hard cap. The list is a C static (cosmetic + re-derived on every room
+// (re)load), so it needs no snapshot/replay serialization.
+#define kRandoPotOverlayMax 16
+static uint16 s_pot_overlay_pos[kRandoPotOverlayMax];
+static uint8  s_pot_overlay_count;
+bool g_rando_pot_overlay_drawn;
+
+void Rando_PotOverlayReset(void) {
+  s_pot_overlay_count = 0;
+}
+
+void Rando_PotOverlayCapture(uint16 room, uint16 pos4) {
+  if (s_pot_overlay_count >= kRandoPotOverlayMax)
+    return;
+  if (!Rando_PotShouldRecolor(room, pos4))   // rando + active-tier + un-checked
+    return;
+  s_pot_overlay_pos[s_pot_overlay_count++] = pos4;
+}
+
+uint8 Rando_PotOverlayCount(void) {
+  return s_pot_overlay_count;
+}
+
+uint16 Rando_PotOverlayPos(uint8 i) {
+  return i < s_pot_overlay_count ? s_pot_overlay_pos[i] : 0;
+}
+
+void Rando_PotOverlayInjectCgram(uint16 *cgram) {
+  if (!cgram)
+    return;
+  // Overlay sprite sub-palette = CGRAM words 0x80 + 16*row .. +15. Word 0 of the
+  // row is sprite transparency — leave it. We fill the rest with a warm-gold
+  // ramp (dark at low indices, bright at high) so the glint reads as gold
+  // whichever palette index its tile samples.
+  int base = 0x80 + 16 * (int)kRandoPotOverlayPalette;
+  // Soft brightness pulse: a 0..7..0 triangle over 64 frames so the gold
+  // shimmers instead of strobing.
+  int ph = (frame_counter >> 1) & 0x3f;            // 0..63
+  int pulse = (ph < 0x20 ? ph : 0x3f - ph) >> 2;   // 0..7
+  for (int i = 1; i < 16; i++) {
+    int lvl = i + pulse;
+    if (lvl > 31)
+      lvl = 31;
+    int r = lvl;              // full red channel
+    int g = (lvl * 13) >> 4;  // ~0.81 of red -> gold (warmer than pure yellow)
+    int b = lvl >> 2;         // a touch of blue keeps it off lime-green
+    cgram[base + i] = (uint16)((b << 10) | (g << 5) | r);
+  }
+}
+
 bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
                             uint8 *out_gfx, uint8 *out_big, uint8 *out_oam_flags) {
   if (!Rando_FieldItemSpritesActive())

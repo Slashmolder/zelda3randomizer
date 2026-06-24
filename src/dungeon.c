@@ -2637,6 +2637,7 @@ void Dungeon_LoadRoom() {  // 81873a
   dung_door_switch_triggered = 0;
   dung_num_star_shaped_switches = 0;
   dung_misc_objs_index = 0;
+  Rando_PotOverlayReset();  // fresh per-room gold "check"-pot overlay capture list
   dung_index_of_torches = 0;
   dung_num_chests_x2 = 0;
   dung_num_bigkey_locks_x2 = 0;
@@ -3695,19 +3696,14 @@ void RoomDraw_SinglePot(const uint16 *src, uint16 *dst, uint16 dsto) {  // 81b39
   if (savegame_is_darkworld)
     src = SrcPtr(0xe92);
   RoomDraw_Rightwards2x2(src, dst);
-  // add-rando-pot-sanity Phase 4 — recolor an in-scope, un-checked pot (design D4)
-  // so players can tell which pots are checks. The POT is the src->dst 2x2 just
-  // drawn into the tilemap; recolor THOSE four words (NOT replacement_tilemap_*,
-  // which is the under-pot floor). Clear the vanilla palette (bits 10-12) and set
-  // the alt sub-palette row. dung_object_tilemap_pos[i] (set above) is the
-  // (dsto*2 | BG-half) pos4 the lookup keys on. Checked / inactive / non-rando pots
-  // keep the vanilla palette (byte-identical off-rando — the gate returns false).
-  if (Rando_PotShouldRecolor(dungeon_room_index, dung_object_tilemap_pos[i])) {
-    dst[XY(0, 0)] = (dst[XY(0, 0)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-    dst[XY(0, 1)] = (dst[XY(0, 1)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-    dst[XY(1, 0)] = (dst[XY(1, 0)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-    dst[XY(1, 1)] = (dst[XY(1, 1)] & ~0x1c00u) | (kRandoPotAltPalette << 10);
-  }
+  // add-rando-pot-sanity — register an in-scope, un-checked pot for the gold
+  // "check" overlay (Module07_Dungeon draws an animated gold glint over it; see
+  // Rando_PotOverlay* in rando.h). dung_object_tilemap_pos[i] (set above) is the
+  // (dsto*2 | BG-half) pos4 the pot lookup keys on. This supersedes the interim
+  // BG palette swap, which recolored the whole pot tile (including the floor
+  // pixels in its corners) with a theme-dependent row. Inert off-rando / for
+  // checked / out-of-scope pots, so the non-rando draw path is byte-identical.
+  Rando_PotOverlayCapture(dungeon_room_index, dung_object_tilemap_pos[i]);
 }
 
 void RoomDraw_BombableFloor(const uint16 *src, uint16 *dst, uint16 dsto) {  // 81b3e1
@@ -6844,6 +6840,50 @@ void LoadOWMusicIfNeeded() {  // 82854c
   LoadOverworldSongs();
 }
 
+// add-rando-pot-sanity — draw the animated gold "check" glint over each in-scope
+// un-checked pot captured for this room (Rando_PotOverlay* in rando.h). Called
+// right after Sprite_Main (while BG2*OFS_copy2 still hold the adjusted BG2 render
+// scroll the room's sprites used, before they are restored just below), so the
+// glint tracks the pots pixel-for-pixel. Pure OAM + PPU-cgram (NMI injects the
+// gold) — no g_ram divergence; inert off-rando / when no pots are registered.
+static void RandoPot_DrawGoldOverlay(void) {
+  g_rando_pot_overlay_drawn = false;
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return;
+  uint8 n = Rando_PotOverlayCount();
+  if (n == 0)
+    return;
+  // Twinkle: cycle the glint glyph and bob it a couple of pixels.
+  static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
+  uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
+  int bob = (frame_counter >> 3) & 3;   // 0..3 px upward
+  // palette = overlay sub-palette row; 0x20 = OBJ priority 2 (normal sprite).
+  uint8 flags = (uint8)((kRandoPotOverlayPalette << 1) | 0x20);
+  for (uint8 k = 0; k < n; k++) {
+    uint16 pos = Rando_PotOverlayPos(k);
+    // Skip if the pot was lifted/checked mid-room (the BG pot is already floor).
+    if (!Rando_PotShouldRecolor(dungeon_room_index, pos))
+      continue;
+    // World coords from the tilemap pos (ManipBlock_Something idiom; a dungeon
+    // room is one 512-aligned supertile, so link's high bits are the shared room
+    // origin for every pot in the room).
+    uint16 wx = (link_x_coord & 0xfe00) | ((pos & 0x007e) << 2);
+    uint16 wy = (link_y_coord & 0xfe00) | ((pos & 0x1f80) >> 4);
+    // Screen coords: same world-minus-camera convention Sprite_PrepOamCoord used.
+    int sx = (uint16)(wx - BG2HOFS_copy2);
+    int sy = (uint16)(wy - BG2VOFS_copy2);
+    // Center the 8x8 glint on the 16x16 pot, less the bob. Cull fully-off-screen
+    // (and skip the left/top fringe to avoid an OAM coordinate wrap).
+    int gx = sx + 4;
+    int gy = sy + 2 - bob;
+    if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
+      continue;
+    Oam_AllocateFromRegionA(4);
+    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
+    g_rando_pot_overlay_drawn = true;
+  }
+}
+
 void Module07_Dungeon() {  // 8287a2
   Dungeon_HandleLayerEffect();
   kDungeonSubmodules[submodule_index]();
@@ -6886,6 +6926,7 @@ skip:
 
   Sprite_Dungeon_DrawAllPushBlocks();
   Sprite_Main();
+  RandoPot_DrawGoldOverlay();  // gold "check" glints over in-scope un-checked pots
 
   BG2HOFS_copy2 = bg2x;
   BG2VOFS_copy2 = bg2y;
