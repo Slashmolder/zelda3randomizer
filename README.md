@@ -121,6 +121,17 @@ For contributors: the regression corpus, the logic-VM benchmark
 [`docs/randomizer.md`](docs/randomizer.md) ("Source-level CI guards") for the
 full list and the generator-version bump policy.
 
+Local pre-merge checks can exercise artifact-dependent guards that public CI
+cannot, including a fresh `--dump-pot-table` followed by
+`gen_pot_tables.py --check`:
+
+```sh
+python assets/scripts/run_rando_local_checks.py --binary=./bin/x64-Release/zelda3.exe
+```
+
+On Linux/macOS with a normal `make` build, `make rando-local-checks` runs the
+same script after building the game and extracting assets.
+
 ### Native game-settings window (PC)
 
 On Windows/Linux/macOS, press `` ` `` (backquote) — or whatever you bind

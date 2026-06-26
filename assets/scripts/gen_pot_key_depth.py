@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate assets/rando/pot_key_depth.gen.yaml — the per-location / per-room /
+"""Generate assets/rando/pot_key_depth.gen.yaml - the per-location / per-room /
 per-key-pot small-key requirements that pot_shuffle adds when a dungeon's pot
 keys become first-class checks (add-rando-pot-sanity task #25).
 
@@ -11,13 +11,13 @@ location / room / key-drop:
 
 Two key modes need two different values once the pot keys are items:
 
-  WILD keys — the keys live anywhere in the WORLD, so you must HOLD the worst
+  WILD keys - the keys live anywhere in the WORLD, so you must HOLD the worst
     case before reaching (collect externally, enter loaded). Use `depth` (worst),
     CAPPED at the pooled key count (chest + pot_keys); the nonpot enemy/guard
     drops stay free in-dungeon so they never raise the external hold-N. Emitted
     as `full`.
 
-  DUNGEON keys — the keys are collected IN-CONTEXT en route, so the requirement
+  DUNGEON keys - the keys are collected IN-CONTEXT en route, so the requirement
     is the graduated `mindepth` (shortest path = exactly the keys needed for a
     known layout). Uncapped: a deep location can need more than chest+pot_keys,
     and the nonpot drops are FREE-GRANTED into the assumed inventory by
@@ -32,13 +32,15 @@ own term.
 
 Pots resolve only to a ROOM, but a room can span door-table regions of differing
 depth (8 of the key-pot rooms do). The DUNGEON value therefore splits:
-  * KEY pots get their EXACT region mindepth (`pot_keys`) — over-gating a key pot
-    is circular (you need the key it holds to reach it) → spurious refuse; under-
+  * KEY pots get their EXACT region mindepth (`pot_keys`) - over-gating a key pot
+    is circular (you need the key it holds to reach it) -> spurious refuse; under-
     gating strands. Joined to the prover DROP line by the key's door region.
-  * LOOT / EMPTY pots get the room-MAX mindepth (`pot_rooms.dungeon`) — they hold
+  * LOOT / EMPTY pots get the room-MAX mindepth (`pot_rooms.dungeon`) - they hold
     no key so over-gating is harmless (it only delays the check), and room-max is
     >= every pot's true depth so it never strands.
 """
+import argparse
+import difflib
 import re
 import sys
 from pathlib import Path
@@ -57,7 +59,7 @@ SK = {
 }
 SUF2D = {v: k for k, v in SK.items()}
 
-# Cross-check table — the EXACT per-key-pot dungeon mindepth, verified by hand
+# Cross-check table - the EXACT per-key-pot dungeon mindepth, verified by hand
 # from the prover DROP regions + the door-rando key_drop_data 'Pot' rooms
 # (PotShuffle.py). Keyed (door-table dungeon, engine room). The auto-join below
 # MUST reproduce these; a mismatch fails the build (catches a dump change or a
@@ -77,10 +79,40 @@ KEYPOT_MINDEPTH = {
 # auto-join can't reach them. Verified values; the assert vs KEYPOT_MINDEPTH guards.
 KEYPOT_OVERRIDE = {(6, 0x56): 4, (12, 0x9b): 0}
 # ORPHAN key pots: engine room is a floor-bit alias absent from the door-table
-# ROOM set for their dungeon, so NO pot_rooms entry covers them — carry the WILD
+# ROOM set for their dungeon, so NO pot_rooms entry covers them - carry the WILD
 # `full` here too (room-max wild can't reach them). Only Swamp Waterway: engine
 # room 0x56 == door-rando 0x16; DROP 'Swamp Waterway' worst=5, min=4, cap[SP]=6.
 KEYPOT_ORPHAN_FULL = {(6, 0x56): 5}
+
+
+def write_lf(path: Path, text: str):
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def check_fresh(path: Path, expected: str) -> int:
+    want = expected.encode("utf-8")
+    have = path.read_bytes() if path.exists() else b""
+    if have == want:
+        print(f"gen_pot_key_depth: OK {path} is fresh")
+        return 0
+
+    print(f"gen_pot_key_depth: ERROR: {path} is stale; run "
+          f"`python assets/scripts/gen_pot_key_depth.py` and commit the result.",
+          file=sys.stderr)
+    if have.replace(b"\r\n", b"\n") == want:
+        print("gen_pot_key_depth: drift is line-ending-only (expected LF).",
+              file=sys.stderr)
+    else:
+        have_text = have.decode("utf-8", "replace")
+        for line in difflib.unified_diff(
+                have_text.splitlines(),
+                expected.splitlines(),
+                fromfile=str(path),
+                tofile=f"{path} (regenerated)",
+                lineterm=""):
+            print(line, file=sys.stderr)
+    return 1
 
 
 def parse_dump():
@@ -156,14 +188,14 @@ def keypot_dungeon_depth(kp, room_regions, drops_ordered):
         return hits[0][1]
     if len(hits) > 1:
         sys.exit(f"key pot d={d} room=0x{room:02x}: {len(hits)} DROP regions in room "
-                 f"{[h for h in hits]} — ambiguous join")
+                 f"{[h for h in hits]} - ambiguous join")
     # No DROP region in the room (single-depth room with no separate drop entry):
     # the room is unambiguous, so any region's mindepth is the answer.
     mds = {md for (_r, _w, md) in room_regions.get((d, room), []) if md >= 0}
     if len(mds) == 1:
         return next(iter(mds))
     sys.exit(f"key pot d={d} room=0x{room:02x}: no DROP join and ambiguous room "
-             f"mindepths {sorted(mds)} — needs a KEYPOT_OVERRIDE")
+             f"mindepths {sorted(mds)} - needs a KEYPOT_OVERRIDE")
 
 
 def parse_cur():
@@ -188,7 +220,22 @@ def parse_cur():
     return cur
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    global DUMP, OUT, POTS
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--dump", default=str(DUMP),
+                    help="key-depth dump from `zelda3 --dump-key-depth`")
+    ap.add_argument("--out", default=str(OUT),
+                    help="generated pot key-depth YAML path")
+    ap.add_argument("--pots", default=str(POTS),
+                    help="pot table YAML path")
+    ap.add_argument("--check", action="store_true",
+                    help="verify pot_key_depth.gen.yaml is byte-identical to regenerated output")
+    args = ap.parse_args(argv)
+    DUMP = Path(args.dump)
+    OUT = Path(args.out)
+    POTS = Path(args.pots)
+
     if not DUMP.exists():
         sys.exit(f"missing {DUMP}; run `./zelda3 --dump-key-depth key_depth.txt` first")
     chest, drop, loc, room_regions, drops_ordered = parse_dump()
@@ -218,7 +265,7 @@ def main() -> int:
         pk_rows.append((kp["id"], kp["item"], dep, orphan_full))
     if len(pk_rows) != len(KEYPOT_MINDEPTH):
         sys.exit(f"found {len(pk_rows)} key pots but cross-check table has "
-                 f"{len(KEYPOT_MINDEPTH)} — stale table after a rebind?")
+                 f"{len(KEYPOT_MINDEPTH)} - stale table after a rebind?")
 
     # Locations: full (wild, capped) and/or dungeon (min) where each tightens cur.
     loc_rows = []
@@ -264,9 +311,9 @@ def main() -> int:
     free = {d: drop.get(d, 0) - pot_keys[d] for d in POT_KEY_DUNGEONS}
 
     out = [
-        "# GENERATED by assets/scripts/gen_pot_key_depth.py — do not edit by hand.",
+        "# GENERATED by assets/scripts/gen_pot_key_depth.py - do not edit by hand.",
         "# Source: ./zelda3 --dump-key-depth (prover worst-case + min-depth, vanilla doors).",
-        "# add-rando-pot-sanity task #25 — small-key requirements pot_shuffle adds.",
+        "# add-rando-pot-sanity task #25 - small-key requirements pot_shuffle adds.",
         "#   full    = WILD hold-N worst case (capped at chest+pot_keys).",
         "#   dungeon = in-context MIN-depth (per-key-pot exact in pot_keys; room-max for loot).",
         "format_version: 2",
@@ -298,7 +345,11 @@ def main() -> int:
         if orphan_full is not None:
             out.append(f"    full: {orphan_full}")
         out.append(f"    dungeon: {dep}")
-    OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
+    out_text = "\n".join(out) + "\n"
+    if args.check:
+        return check_fresh(OUT, out_text)
+
+    write_lf(OUT, out_text)
     print(f"wrote {OUT}: {len(loc_rows)} locations, {len(room_rows)} pot rooms, "
           f"{len(pk_rows)} key pots")
     print("pot_keys per dungeon:", {SK[d]: pot_keys[d] for d in POT_KEY_DUNGEONS})
@@ -308,4 +359,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

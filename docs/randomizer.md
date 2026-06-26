@@ -1122,6 +1122,19 @@ regression while authoring logic or bumping the generator:
 `check_link_symbols`, the corpus with `--binary`, and the benchmark gate) run in
 the separate build/determinism jobs.
 
+Some guards need ROM-derived local artifacts and therefore cannot run in public
+CI. Before merging pot-table or asset-generation work, run:
+
+```sh
+python assets/scripts/run_rando_local_checks.py --binary=./bin/x64-Release/zelda3.exe
+```
+
+That local runner refreshes the gitignored `assets/rando/pot_dump.gen.txt` via
+`--dump-pot-table`, then runs the full `gen_pot_tables.py --check` freshness
+test against committed `pots.gen.yaml`. It also runs the pot-key-depth freshness
+check, `--rando-selftest`, and the regression corpus. Linux/macOS contributors
+can use `make rando-local-checks` for the same flow.
+
 ## Generator version (`kGeneratorVersion`) bump policy
 
 Per tasks.md §13.6, bump `kGeneratorVersion` (defined in `src/rando/rando.h`)

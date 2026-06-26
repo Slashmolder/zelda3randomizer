@@ -222,6 +222,16 @@ room_free:
 # its pos4 set + region + can_reach (verbatim from the fork's own location). The
 # generator HARD-FAILS if any pot in a listed room isn't covered by a cluster.
 pot_room_split:
+  # Swamp Palace room 0x036 - the top-right pair is reachable before the Hookshot
+  # gap; the other six pots share the Flooded Room / Waterfall Hookshot gate.
+  "036":
+    - region: SwampPalace
+      can_reach: "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+      pos4: [0x046c, 0x0470]
+    - region: SwampPalace
+      can_reach: "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+      pos4: [0x05bc, 0x05c0, 0x0f9a, 0x0fde, 0x100a, 0x1072]
+
   # refill_cave_1 (room 0x11b) — one shared interior split by entrance (owner F12'd
   # the graveyard-ledge side: 8 pots). The two halves are physically separate:
   #   * 8 pots (0x16-0x19 plane) reached from the GRAVEYARD-LEDGE mirror spot

@@ -86,7 +86,7 @@ else
     SDLFLAGS:=$(shell sdl2-config --libs) -lm
 endif
 
-.PHONY: all clean clean_obj clean_gen rando-codegen
+.PHONY: all clean clean_obj clean_gen rando-codegen rando-local-checks
 
 all: $(TARGET_EXEC) zelda3_assets.dat
 # Link through $(CXX) to pull in libstdc++ for the vendored ImGui C++ objects.
@@ -110,10 +110,14 @@ $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 RANDO_GEN_HEADERS:=$(filter-out src/rando/logic_data.c,$(RANDO_GEN_OUTPUTS))
 $(RANDO_GEN_HEADERS): src/rando/logic_data.c ;
 src/rando/logic_data.c: $(RANDO_GEN_SRCS)
-	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, icon_atlas.h, direct_grant_icons.h}"
+	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, pot_lookup.h, icon_atlas.h, direct_grant_icons.h}"
 	$(PYTHON) assets/rando_logic_gen.py
 
 rando-codegen: $(RANDO_GEN_OUTPUTS)
+
+RANDO_LOCAL_CHECK_BINARY?=./$(TARGET_EXEC)
+rando-local-checks: all
+	$(PYTHON) assets/scripts/run_rando_local_checks.py --binary=$(RANDO_LOCAL_CHECK_BINARY)
 
 # Make every object wait on the codegen outputs and the asset-hash header
 # before it compiles. Order-only (the `|`): they gate presence, not timestamps,

@@ -64,6 +64,11 @@ def version_line(version: int, note: str = "") -> str:
     return f"generator_version: {version}  # {comment}"
 
 
+def write_lf(path: Path, text: str) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as fp:
+        fp.write(text)
+
+
 # Matches the whole generator_version line (incl. any trailing comment) so the
 # comment is rewritten, not preserved. The capture-free [^\n]* consumes the
 # stale comment that the old `^generator_version:\s*(?:\d+|null)`-only sub left behind.
@@ -174,7 +179,7 @@ def main(argv: list[str]) -> int:
         if args.apply:
             new_text = VERSION_LINE_RE.sub(
                 lambda m: version_line(current, args.note), text, count=1)
-            args.manifest.write_text(new_text, encoding="utf-8")
+            write_lf(args.manifest, new_text)
             print(f"\nWrote generator_version: {current} to {args.manifest}")
         else:
             print(f"\n[dry-run] Would write generator_version: {current}")
@@ -237,7 +242,7 @@ def main(argv: list[str]) -> int:
             if count == 0:
                 print(f"  WARNING: could not find expected_sphere_digest {old_s[:8]}... in manifest text",
                       file=sys.stderr)
-        args.manifest.write_text(new_text, encoding="utf-8")
+        write_lf(args.manifest, new_text)
         print(f"\nWrote updated manifest to {args.manifest}")
         print(f"  generator_version: {in_manifest} -> {current}")
         print(f"  {len(changed)} digest(s) updated")

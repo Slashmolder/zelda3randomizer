@@ -45,12 +45,13 @@ SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/
 # Rando codegen pre-step (tasks.md §3.5/§3.6/§6.3/§9.4b;
 # direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
 # Regenerates src/rando/logic_data.c, src/rando/location_ids.h, src/rando/item_ids.h,
-# src/rando/chest_lookup.h, src/rando/icon_atlas.h, src/rando/direct_grant_icons.h
+# src/rando/chest_lookup.h, src/rando/pot_lookup.h, src/rando/icon_atlas.h,
+# src/rando/direct_grant_icons.h
 # from assets/rando/*.yaml + assets/chest_data.py. Run BEFORE the wildcard
 # below so logic_data.c is picked up by CFILES. The Switch build is a manual
 # gate (tasks.md §12.3b); contributors invoke
 # `cd src/platform/switch && python ../../../assets/rando_logic_gen.py && make`.
-RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
+RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/pot_lookup.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
 
 # Recurse into assets/rando/ so logic_parts/**/*.yaml (incl. inverted/**) are
 # prerequisites — a non-recursive *.yaml glob misses the subtree and would ship

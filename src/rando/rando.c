@@ -49,6 +49,7 @@
 #include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
 #include "../player.h"     // §7.6 Link_ReceiveItem
+#include "../load_gfx.h"   // Palette_Load_LinkArmorAndGloves
 #include "third_party/sha256/sha256.h"
 
 // ---------------------------------------------------------------------------
@@ -1883,8 +1884,8 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
   // magic / 4th-PoH pot marks itself checked while granting nothing. KEEP IN SYNC
   // with Ancilla22_ItemReceipt + Ancilla_AddRupees. (The PoH COUNT already
   // incremented in AncillaAdd_ItemReceipt's j==0x17 case; only the rollover-to-
-  // container is deferred. Armor 0x22/0x23 only refreshes a palette there — the byte
-  // is table-written — so it is left to the next palette load.)
+  // container is deferred. Armor 0x22/0x23 writes the byte immediately, but its
+  // palette refresh is deferred to the receipt update that this quiet path kills.)
   switch (lttp_code) {
     case 0x26: case 0x3f:                // BossHeartContainer
       if (link_health_capacity != 0xa0) {
@@ -1912,6 +1913,9 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
     case 0x40: link_rupees_goal += 100;  break;
     case 0x41: link_rupees_goal += 50;   break;
     case 0x46: link_rupees_goal += 300;  break;
+    case 0x22: case 0x23:                // Blue/Red Mail palette refresh
+      Palette_Load_LinkArmorAndGloves();
+      break;
     default: break;
   }
   flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)

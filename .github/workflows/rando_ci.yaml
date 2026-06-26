@@ -44,6 +44,14 @@ jobs:
     - name: check_door_tables
       run: python assets/scripts/check_door_tables.py
 
+    # Pot-sanity explicit-override freshness. Full table regeneration needs
+    # ROM-derived artifacts absent on CI; this ROM-free guard catches stale
+    # pot_logic_overrides.yaml -> pots.gen.yaml drift. The full local guard is
+    # assets/scripts/run_rando_local_checks.py, which refreshes pot_dump.gen.txt
+    # from a built binary and then runs gen_pot_tables.py --check.
+    - name: gen_pot_tables --check-overrides
+      run: python assets/scripts/gen_pot_tables.py --check-overrides
+
     # Task 1.0c — Byte-order pin grep on src/rando/*.[ch]
     - name: check_byte_order (1.0c)
       run: python assets/scripts/check_byte_order.py
@@ -212,6 +220,13 @@ jobs:
     # self-test without any asset blob present.
     - name: Build (just the binary)
       run: make -j2 zelda3
+
+    # Pot-key depth freshness — this dump is asset-independent, so CI can
+    # regenerate it from the built binary and verify the committed wrapper table.
+    - name: gen_pot_key_depth --check
+      run: |
+        ./zelda3 --dump-key-depth key_depth.txt
+        python assets/scripts/gen_pot_key_depth.py --check
 
     # Task 1.0f — Link-time symbol blocklist. An ARTIFACT check: scans the
     # just-built src/rando/*.o via `nm -u` for forbidden non-deterministic

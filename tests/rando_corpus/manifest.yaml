@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 96  # bump_rando_corpus.py --apply
+generator_version: 97  # bump_rando_corpus.py --apply - Swamp 0x036 pot split
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -424,13 +424,13 @@ entries:
   - settings: { mode.state: inverted, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0D"
     label: "c-entrance-caves-inverted-pot-inert-cave"
-    expected_digest: "ee35fbdd652013689a4786dfe61a37be3e46b85010f318263fb6c3361c032b9e"
-    expected_sphere_digest: "548a4d6d82babca3daa07db353f2c489cf2d9118761ec7da42c88a8bfafa372d"
+    expected_digest: "040f4f5f5d88ad29b10c5d55307ebe33d847379f67b72404ac3f7aedc9acff3c"
+    expected_sphere_digest: "4fd64af5c20e9414aef9ade15e99a1992726908ab575eef3122928e718c7a2e0"
   - settings: { mode.state: retro, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0E"
     label: "c-entrance-caves-retro-pot-inert-cave"
-    expected_digest: "81e1d2d2fb7f89deca83f932aed6e9885375f2519c854ec5d1d16ac72a58c839"
-    expected_sphere_digest: "4c84cfc35db5bf4169f9f3c8bdb67695fb6d37fa8deb43f66f7ecd2cf5b703fd"
+    expected_digest: "bec5c388514c3cd1aa54e3f5332da3c804bfeb2296140c72c5d9b76edea5c289"
+    expected_sphere_digest: "76884adce5ded1e70fdfb6ecd0f9b8229277d0c1c2032c996255c797c5b7dace"
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"

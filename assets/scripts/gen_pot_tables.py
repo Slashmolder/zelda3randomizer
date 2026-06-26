@@ -30,7 +30,7 @@ region; exhaustive content classification; no excluded room emits a pot;
 every chest room's flooded region equals its chest region (cross-validation).
 """
 from __future__ import annotations
-import argparse, collections, os, re, subprocess, sys
+import argparse, collections, difflib, os, re, subprocess, sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -92,6 +92,153 @@ DUNGEON_NAMES = (
 def die(msg: str):
     print(f"gen_pot_tables: ERROR: {msg}", file=sys.stderr)
     sys.exit(2)
+
+
+def write_lf(path: Path, text: str):
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def check_fresh(path: Path, expected: str) -> int:
+    want = expected.encode("utf-8")
+    have = path.read_bytes() if path.exists() else b""
+    if have == want:
+        print(f"gen_pot_tables: OK {path} is fresh", file=sys.stderr)
+        return 0
+
+    print(f"gen_pot_tables: ERROR: {path} is stale; run "
+          f"`python assets/scripts/gen_pot_tables.py` and commit the result.",
+          file=sys.stderr)
+    if have.replace(b"\r\n", b"\n") == want:
+        print("gen_pot_tables: drift is line-ending-only (expected LF).",
+              file=sys.stderr)
+    else:
+        have_text = have.decode("utf-8", "replace")
+        for line in difflib.unified_diff(
+                have_text.splitlines(),
+                expected.splitlines(),
+                fromfile=str(path),
+                tofile=f"{path} (regenerated)",
+                lineterm=""):
+            print(line, file=sys.stderr)
+    return 1
+
+
+def _room_hex_to_int(room_hex):
+    return int(str(room_hex), 16)
+
+
+def _check_row_field(row, field, expected, label) -> bool:
+    got = row.get(field)
+    if got == expected:
+        return True
+    print(f"gen_pot_tables: ERROR: {label} {field} = {got!r}, expected {expected!r}",
+          file=sys.stderr)
+    return False
+
+
+def check_override_sync(out_path: Path, overrides_path: Path) -> int:
+    """ROM-free freshness guard for explicit pot_logic_overrides.yaml entries.
+
+    Full pots.gen.yaml regeneration needs ROM-derived artifacts for chest anchors
+    and pot geometry. CI does not have those, but it can still prove the
+    committed table reflects explicit overrides, including pot_room_split. That
+    is the class that caused room 0x036 to drift.
+    """
+    if not out_path.is_file():
+        print(f"gen_pot_tables: ERROR: missing {out_path}", file=sys.stderr)
+        return 1
+    if not overrides_path.is_file():
+        print(f"gen_pot_tables: ERROR: missing {overrides_path}", file=sys.stderr)
+        return 1
+    pots_doc = yaml.safe_load(out_path.read_text(encoding="utf-8")) or {}
+    rows = list(pots_doc.get("pots", []) or [])
+    by_room = collections.defaultdict(list)
+    by_ident = {}
+    ok = True
+    for row in rows:
+        room, pos4 = int(row["room"]), int(row["pos4"])
+        by_room[room].append(row)
+        by_ident[(room, pos4)] = row
+
+    ov = yaml.safe_load(overrides_path.read_text(encoding="utf-8")) or {}
+    room_region = ov.get("room_region", {}) or {}
+    room_can_reach = {str(k): v for k, v in (ov.get("room_can_reach", {}) or {}).items()}
+    split_rooms = set()
+    checked = 0
+
+    for room_hex, clusters in (ov.get("pot_room_split", {}) or {}).items():
+        room = _room_hex_to_int(room_hex)
+        split_rooms.add(room)
+        expected_pos = set()
+        if room not in by_room:
+            print(f"gen_pot_tables: ERROR: pot_room_split room 0x{room:03x} has no "
+                  f"committed pot rows", file=sys.stderr)
+            ok = False
+            continue
+        for cl in clusters or []:
+            region = cl["region"]
+            can_reach = cl.get("can_reach")
+            for p in cl["pos4"]:
+                pos4 = int(p)
+                expected_pos.add(pos4)
+                row = by_ident.get((room, pos4))
+                label = f"pot_room_split room 0x{room:03x} pos 0x{pos4:04x}"
+                if row is None:
+                    print(f"gen_pot_tables: ERROR: {label} is missing from {out_path}",
+                          file=sys.stderr)
+                    ok = False
+                    continue
+                ok &= _check_row_field(row, "region", region, label)
+                ok &= _check_row_field(row, "can_reach", can_reach, label)
+                checked += 1
+        actual_pos = {int(r["pos4"]) for r in by_room[room]}
+        if actual_pos != expected_pos:
+            print(f"gen_pot_tables: ERROR: pot_room_split room 0x{room:03x} covers "
+                  f"{sorted(expected_pos)}, but committed rows are {sorted(actual_pos)}",
+                  file=sys.stderr)
+            ok = False
+
+    for room_hex, gate in room_can_reach.items():
+        room = _room_hex_to_int(room_hex)
+        if room in split_rooms:
+            continue
+        expected = gate
+        room_rows = by_room.get(room, [])
+        if not room_rows:
+            print(f"gen_pot_tables: ERROR: room_can_reach 0x{room:03x} has no "
+                  f"committed pot rows", file=sys.stderr)
+            ok = False
+            continue
+        for row in room_rows:
+            label = f"room_can_reach 0x{room:03x} pos 0x{int(row['pos4']):04x}"
+            ok &= _check_row_field(row, "can_reach", expected, label)
+            checked += 1
+
+    for room_hex, region in room_region.items():
+        room = _room_hex_to_int(room_hex)
+        if room in split_rooms:
+            continue
+        room_rows = by_room.get(room, [])
+        if not room_rows:
+            print(f"gen_pot_tables: ERROR: room_region 0x{room:03x} has no "
+                  f"committed pot rows", file=sys.stderr)
+            ok = False
+            continue
+        for row in room_rows:
+            label = f"room_region 0x{room:03x} pos 0x{int(row['pos4']):04x}"
+            ok &= _check_row_field(row, "region", region, label)
+            if row.get("kind") == "key":
+                dungeon = region_to_dungeon(region)
+                if dungeon is not None:
+                    ok &= _check_row_field(row, "vanilla_item", f"SmallKey_{dungeon}", label)
+            checked += 1
+
+    if ok:
+        print(f"gen_pot_tables: OK explicit pot overrides match {out_path} "
+              f"({checked} row checks)", file=sys.stderr)
+        return 0
+    return 1
 
 
 def region_to_dungeon(region):
@@ -295,7 +442,14 @@ def main():
     ap.add_argument("--out", default=str(REPO / "assets/rando/pots.gen.yaml"))
     ap.add_argument("--binary", default=None, help="zelda3 path to (re)generate the dump")
     ap.add_argument("--report", action="store_true", help="print residual rooms + exit, don't emit")
+    ap.add_argument("--check", action="store_true",
+                    help="verify --out is byte-identical to regenerated output")
+    ap.add_argument("--check-overrides", action="store_true",
+                    help="verify explicit pot_logic_overrides.yaml entries match --out")
     args = ap.parse_args()
+
+    if args.check_overrides:
+        return check_override_sync(Path(args.out), Path(args.overrides))
 
     pots, out_edges, dark_rooms = load_dump(Path(args.dump), args.binary)
     overrides, override_gates, room_free = {}, {}, {}
@@ -480,11 +634,16 @@ def main():
         "tier_counts": {"keys": keys_n, "contents": contents_n, "all": all_n},
         "pots": rows,
     }
-    Path(args.out).write_text(
-        yaml.safe_dump(out, sort_keys=False, width=200, default_flow_style=False))
+    out_text = yaml.safe_dump(out, sort_keys=False, width=200, default_flow_style=False)
+    out_path = Path(args.out)
+    if args.check:
+        return check_fresh(out_path, out_text)
+
+    write_lf(out_path, out_text)
     print(f"gen_pot_tables: {all_n} pots (keys {keys_n} / contents {contents_n} / "
           f"all {all_n}) -> {args.out}", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
