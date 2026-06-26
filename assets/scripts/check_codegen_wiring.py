@@ -31,7 +31,7 @@ from pathlib import Path
 #   - src/rando/location_ids.h      (from assets/rando/location_registry.yaml — task 3.1)
 #   - src/rando/item_ids.h          (from assets/rando/item_registry.yaml — task 3.2)
 #   - src/rando/chest_lookup.h      (from assets/chest_data.py + location_registry.yaml — task 6.3)
-#   - src/rando/pot_lookup.h        (from assets/rando/pots.gen.yaml — pot room/pos lookup)
+#   - src/rando/pot_lookup.h        (from local assets/rando/pots.gen.yaml — pot room/pos lookup)
 #   - src/rando/icon_atlas.h        (from assets/rando/icon_atlas.yaml — task 9.4b)
 #   - src/rando/direct_grant_icons.h (from assets/rando/direct_grant_icons.yaml — task 9.x)
 #

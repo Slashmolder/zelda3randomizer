@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """gen_pot_tables.py — enumerate every liftable dungeon pot from the engine
-ground-truth dump and emit the committed pot-location source the rando codegen
+ground-truth dump and emit the local pot-location source the rando codegen
 consumes (assets/rando/pots.gen.yaml).
 
 This is the pot analog of chest_data.py, but the geometry is extracted from the
@@ -9,7 +9,7 @@ object stream in Python — see openspec add-rando-pot-sanity design D2. Pipelin
 
   zelda3 --dump-pot-table  ->  assets/rando/pot_dump.gen.txt   (gitignored)
             (P room pos4 content  |  D room neighbor...)
-  gen_pot_tables.py        ->  assets/rando/pots.gen.yaml      (COMMITTED)
+  gen_pot_tables.py        ->  assets/rando/pots.gen.yaml      (gitignored)
   rando_logic_gen.py reads pots.gen.yaml -> location_ids.h / logic_data.c /
             pot_lookup.h  (room,pos -> loc)  at build time (no dump needed).
 
@@ -107,7 +107,7 @@ def check_fresh(path: Path, expected: str) -> int:
         return 0
 
     print(f"gen_pot_tables: ERROR: {path} is stale; run "
-          f"`python assets/scripts/gen_pot_tables.py` and commit the result.",
+          f"`python assets/scripts/gen_pot_tables.py` to refresh the local artifact.",
           file=sys.stderr)
     if have.replace(b"\r\n", b"\n") == want:
         print("gen_pot_tables: drift is line-ending-only (expected LF).",
@@ -142,7 +142,7 @@ def check_override_sync(out_path: Path, overrides_path: Path) -> int:
 
     Full pots.gen.yaml regeneration needs ROM-derived artifacts for chest anchors
     and pot geometry. CI does not have those, but it can still prove the
-    committed table reflects explicit overrides, including pot_room_split. That
+    local table reflects explicit overrides, including pot_room_split. That
     is the class that caused room 0x036 to drift.
     """
     if not out_path.is_file():
@@ -173,7 +173,7 @@ def check_override_sync(out_path: Path, overrides_path: Path) -> int:
         expected_pos = set()
         if room not in by_room:
             print(f"gen_pot_tables: ERROR: pot_room_split room 0x{room:03x} has no "
-                  f"committed pot rows", file=sys.stderr)
+                  f"generated pot rows", file=sys.stderr)
             ok = False
             continue
         for cl in clusters or []:
@@ -207,7 +207,7 @@ def check_override_sync(out_path: Path, overrides_path: Path) -> int:
         room_rows = by_room.get(room, [])
         if not room_rows:
             print(f"gen_pot_tables: ERROR: room_can_reach 0x{room:03x} has no "
-                  f"committed pot rows", file=sys.stderr)
+                  f"generated pot rows", file=sys.stderr)
             ok = False
             continue
         for row in room_rows:
@@ -222,7 +222,7 @@ def check_override_sync(out_path: Path, overrides_path: Path) -> int:
         room_rows = by_room.get(room, [])
         if not room_rows:
             print(f"gen_pot_tables: ERROR: room_region 0x{room:03x} has no "
-                  f"committed pot rows", file=sys.stderr)
+                  f"generated pot rows", file=sys.stderr)
             ok = False
             continue
         for row in room_rows:

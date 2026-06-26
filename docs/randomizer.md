@@ -129,7 +129,7 @@ axis via `item_pool`.
 | `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
-| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under door shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
+| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under door shuffle or cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -1130,10 +1130,13 @@ python assets/scripts/run_rando_local_checks.py --binary=./bin/x64-Release/zelda
 ```
 
 That local runner refreshes the gitignored `assets/rando/pot_dump.gen.txt` via
-`--dump-pot-table`, then runs the full `gen_pot_tables.py --check` freshness
-test against committed `pots.gen.yaml`. It also runs the pot-key-depth freshness
-check, `--rando-selftest`, and the regression corpus. Linux/macOS contributors
-can use `make rando-local-checks` for the same flow.
+`--dump-pot-table`, regenerates the gitignored local pot registries
+`assets/rando/pots.gen.yaml` and `assets/rando/pot_key_depth.gen.yaml`, runs the
+freshness checks against those local artifacts, regenerates rando codegen, then
+runs `--rando-selftest` and the full regression corpus. Public CI builds without
+those ROM-derived pot registries and skips corpus entries that request
+`pot_shuffle`; Linux/macOS contributors can use `make rando-local-checks` for a
+two-pass build/prepare/rebuild/check flow.
 
 ## Generator version (`kGeneratorVersion`) bump policy
 

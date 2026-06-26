@@ -15,8 +15,8 @@ turn dungeon pots into randomizer check locations according to the tier:
   content, is a check. (These counts are the generator's current `tier_counts`
   output, asserted at build time — not hardcoded constants.)
 
-Every liftable dungeon pot SHALL be assigned a stable, append-only location ID in
-the committed `assets/rando/pots.gen.yaml` registry (ids from 328)
+Every liftable dungeon pot SHALL be assigned a stable location ID in the local
+generated `assets/rando/pots.gen.yaml` registry (ids from 328)
 **independently of the tier** — the full 799-pot set exists in the ID space at all
 times. The tier SHALL act as a generation-time
 filter selecting which pot locations enter the placement pool; pots not selected
@@ -59,19 +59,20 @@ NOT hardcoded. The tier supersets SHALL be nested: `keys ⊆ contents ⊆ all`.
 
 A committed generator (`assets/scripts/gen_pot_tables.py`) SHALL enumerate every
 liftable dungeon pot from `zelda3_assets.dat` (room object data + the
-`kDungeonSecrets` table) and emit, deterministically, a single **committed**
-registry `assets/rando/pots.gen.yaml` — append-only pot rows carrying
+`kDungeonSecrets` table) and emit, deterministically, a single **gitignored local**
+registry `assets/rando/pots.gen.yaml` — pot rows carrying
 `{id (from 328), name, room, pos4, region, tier, vanilla_item, …}` plus an
 asserted `tier_counts` header. The build-time codegen (`assets/rando_logic_gen.py`)
 SHALL consume `pots.gen.yaml` to emit the pot `LOC_*` ids into
 `location_ids.h`/`logic_data.c`, the region-bound logic entries, and a sorted
 `(dungeon_room_index, tile_position) → location_id` runtime lookup
-`src/rando/pot_lookup.h`. Because `pots.gen.yaml` is **committed** (unlike the
-gitignored `chest_table.gen.bin`), it does NOT reproduce `chest_lookup.h`'s silent
-fail-open hole: if it were ever absent the codegen emits an EMPTY `pot_lookup.h`
-and every pot resolves to `0xFFFF` (pot-shuffle inert at runtime), never a silent
-grant of wrong content. The generator SHALL assert its own invariants and fail on
-violation: every pot has a `region:`; `(room, tile_position)` is unique across all
+`src/rando/pot_lookup.h`. Because `pots.gen.yaml` is gitignored ROM-derived local
+data, public/assetless builds MAY emit an empty `pot_lookup.h`; generation MUST
+fail closed if a seed requests an active pot tier in such a build. Local asset-backed
+checks SHALL refresh `pot_dump.gen.txt`, regenerate `pots.gen.yaml`, regenerate
+pot key-depth data, rebuild rando codegen, and run the full pot corpus. The
+generator SHALL assert its own invariants and fail on violation: every pot has a
+`region:`; `(room, tile_position)` is unique across all
 pots; the tier sets are nested; and content classification (item vs structural vs
 empty) is exhaustive. A pot's
 identity SHALL be `(dungeon_room_index, tile_position)` — fixed room geometry that

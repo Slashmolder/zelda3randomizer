@@ -98,7 +98,7 @@ def check_fresh(path: Path, expected: str) -> int:
         return 0
 
     print(f"gen_pot_key_depth: ERROR: {path} is stale; run "
-          f"`python assets/scripts/gen_pot_key_depth.py` and commit the result.",
+          f"`python assets/scripts/gen_pot_key_depth.py` to refresh the local artifact.",
           file=sys.stderr)
     if have.replace(b"\r\n", b"\n") == want:
         print("gen_pot_key_depth: drift is line-ending-only (expected LF).",

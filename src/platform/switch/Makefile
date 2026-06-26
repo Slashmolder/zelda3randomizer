@@ -58,7 +58,8 @@ RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location
 # a stale logic_data.c when only a logic_parts file changed. The find covers
 # only *.yaml, so also list the committed door-shuffle manifest
 # assets/rando/door_predicates.gen.json (read by rando_logic_gen.py; emitted by
-# gen_door_tables.py from a reference checkout, not by this build).
+# gen_door_tables.py from a reference checkout, not by this build). Local
+# gitignored pot registries are included by the find when present.
 $(RANDO_CODEGEN_OUTPUTS): $(shell find $(SRC_DIR)/../assets/rando -name '*.yaml') $(SRC_DIR)/../assets/rando/door_predicates.gen.json $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
 	@echo "Regenerating rando codegen for Switch build"
 	python $(SRC_DIR)/../assets/rando_logic_gen.py

@@ -403,6 +403,17 @@ static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s) {
   }
 }
 
+static bool pot_registry_available(void) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (kRandoLocations[i].type == LOCTYPE_Pot) return true;
+  return false;
+}
+
+static bool settings_need_pot_registry(const RandoSettings *s) {
+  return s != NULL && s->pot_shuffle != kPotShuffle_Off &&
+         !Settings_PotShuffleForcedOff(s);
+}
+
 // shared pre-pin predicate. Returns true when the placer's
 // pre-place pass (place_assumed_fill_attempt §3b) pins `loc` to a fixed item:
 // vanilla identity (event / medallion slots, Retro shop + capacity-upgrade
@@ -568,6 +579,14 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       "BuildItemPool: pieces_required (%u) > pieces_placed (%u) — refusing\n"
       "  to build a pool that can never satisfy the goal.\n",
       (unsigned)settings->pieces_required, (unsigned)settings->pieces_placed);
+    return 0;
+  }
+
+  if (settings_need_pot_registry(settings) && !pot_registry_available()) {
+    fprintf(stderr,
+      "BuildItemPool: pot_shuffle requested, but this binary was built without\n"
+      "  assets/rando/pots.gen.yaml. Run the local pot codegen with ROM assets\n"
+      "  and rebuild before generating pot-shuffle seeds.\n");
     return 0;
   }
 
@@ -2788,8 +2807,9 @@ void Placement_SelfCheck(void) {
       if (kRandoLocations[i].vanilla_item_id == ITEM_Nothing) empty_pots++;
       else if (is_small_key_item(kRandoLocations[i].vanilla_item_id)) key_pots++;
     }
-    if (pot_locs == 0) selfcheck_die("Pot type did not round-trip codegen (0 pot locations)");
-    if (empty_pots == 0) selfcheck_die("no empty pots found (ITEM_Nothing mapping broken)");
+    bool has_pot_registry = pot_locs != 0;
+    if (has_pot_registry && empty_pots == 0)
+      selfcheck_die("no empty pots found (ITEM_Nothing mapping broken)");
     if (is_progression_item(ITEM_Nothing))
       selfcheck_die("ITEM_Nothing must be a logic no-op (non-progression)");
 
@@ -2848,19 +2868,26 @@ void Placement_SelfCheck(void) {
       if (kRandoLocations[i].type == LOCTYPE_Pot && pot_active(&kRandoLocations[i], &sd)) n_door++;
     if (n_door != 0) selfcheck_die("door shuffle must force every pot inactive (D7 v1)");
 
-    // (d) Placement_Lookup binary search: the All-tier assumed-fill output is
-    //     sorted by location_id, and binary search agrees with the table on every
-    //     entry plus a miss.
-    static RandoPlacement pot_entries[kRandoLocationCapacity];
-    RandoPlacementTable pt = { pot_entries, 0 };
-    if (!Place_AssumedFill(&sa, 0x504F5453ull /*"POTS"*/, 0, &pt))
-      selfcheck_die("All-tier pot placement could not be generated");
-    Placement_Install(&pt);
-    if (!Placement_ActiveIsSorted())
-      selfcheck_die("assumed-fill placement table is not location-id sorted (binary search invalid)");
-    for (uint16 i = 0; i < pt.count; i++) {
-      if (Placement_Lookup(pt.entries[i].location_id, 0xFFFF) != pt.entries[i].item_id)
-        selfcheck_die("Placement_Lookup binary search disagrees with the table entry");
+    if (!has_pot_registry) {
+      uint16 missing_pool[kRandoLocationCapacity];
+      uint16 n_missing = BuildItemPool(&sa, missing_pool, kRandoLocationCapacity);
+      if (n_missing != 0)
+        selfcheck_die("pot_shuffle must fail closed when the pot registry is absent");
+    } else {
+      // (d) Placement_Lookup binary search: the All-tier assumed-fill output is
+      //     sorted by location_id, and binary search agrees with the table on every
+      //     entry plus a miss.
+      static RandoPlacement pot_entries[kRandoLocationCapacity];
+      RandoPlacementTable pt = { pot_entries, 0 };
+      if (!Place_AssumedFill(&sa, 0x504F5453ull /*"POTS"*/, 0, &pt))
+        selfcheck_die("All-tier pot placement could not be generated");
+      Placement_Install(&pt);
+      if (!Placement_ActiveIsSorted())
+        selfcheck_die("assumed-fill placement table is not location-id sorted (binary search invalid)");
+      for (uint16 i = 0; i < pt.count; i++) {
+        if (Placement_Lookup(pt.entries[i].location_id, 0xFFFF) != pt.entries[i].item_id)
+          selfcheck_die("Placement_Lookup binary search disagrees with the table entry");
+      }
     }
     if (Placement_Lookup(0xFFFE, 0x1234) != 0x1234)
       selfcheck_die("Placement_Lookup must return the vanilla fallback for a missing location");

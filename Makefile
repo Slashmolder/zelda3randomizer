@@ -75,6 +75,9 @@ OBJS:=$(sort $(SRCS:%.c=%.o))
 # gen_door_tables.py from a reference checkout, not by this build) is also read
 # by rando_logic_gen.py, so list it explicitly or editing it ships a stale
 # logic_data.c on an incremental build. (door_portals.yaml is caught by the find.)
+# Local pot registries (assets/rando/pots.gen.yaml and pot_key_depth.gen.yaml)
+# are gitignored ROM-derived artifacts. The recursive find includes them when a
+# local pot-codegen run has produced them; public CI builds without them.
 RANDO_GEN_SRCS:=$(shell find assets/rando -name '*.yaml') assets/rando/door_predicates.gen.json assets/rando_logic_gen.py assets/chest_data.py
 RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/pot_lookup.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
 
@@ -86,7 +89,7 @@ else
     SDLFLAGS:=$(shell sdl2-config --libs) -lm
 endif
 
-.PHONY: all clean clean_obj clean_gen rando-codegen rando-local-checks
+.PHONY: all clean clean_obj clean_gen rando-codegen rando-local-prepare rando-local-checks
 
 all: $(TARGET_EXEC) zelda3_assets.dat
 # Link through $(CXX) to pull in libstdc++ for the vendored ImGui C++ objects.
@@ -116,8 +119,13 @@ src/rando/logic_data.c: $(RANDO_GEN_SRCS)
 rando-codegen: $(RANDO_GEN_OUTPUTS)
 
 RANDO_LOCAL_CHECK_BINARY?=./$(TARGET_EXEC)
-rando-local-checks: all
-	$(PYTHON) assets/scripts/run_rando_local_checks.py --binary=$(RANDO_LOCAL_CHECK_BINARY)
+rando-local-prepare: all
+	$(PYTHON) assets/scripts/run_rando_local_checks.py --binary=$(RANDO_LOCAL_CHECK_BINARY) --prepare-only
+
+rando-local-checks: rando-local-prepare
+	$(MAKE) clean_obj
+	$(MAKE) $(TARGET_EXEC)
+	$(PYTHON) assets/scripts/run_rando_local_checks.py --binary=$(RANDO_LOCAL_CHECK_BINARY) --skip-prepare
 
 # Make every object wait on the codegen outputs and the asset-hash header
 # before it compiles. Order-only (the `|`): they gate presence, not timestamps,

@@ -21,6 +21,7 @@ Usage (A0):
 
 Usage (activated):
   python assets/scripts/run_rando_corpus.py --binary=./zelda3
+  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
 """
 from __future__ import annotations
 
@@ -70,7 +71,15 @@ def validate_entry(entry: dict, idx: int) -> list[str]:
     return errors
 
 
-def run_activated(binary: Path, manifest: dict) -> int:
+def entry_uses_pot_shuffle(entry: dict) -> bool:
+    settings = entry.get("settings", {}) or {}
+    v = settings.get("pot_shuffle", "off")
+    if isinstance(v, str):
+        return v.lower() not in ("", "0", "off", "false", "none")
+    return bool(v)
+
+
+def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) -> int:
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
     # "zelda3" (pathlib strips the leading "./"), so subprocess would PATH-search
     # for it and fail on Linux/macOS (cwd isn't on PATH). An absolute path runs
@@ -82,12 +91,18 @@ def run_activated(binary: Path, manifest: dict) -> int:
     import tempfile
 
     failures = 0
+    skipped = 0
     for idx, entry in enumerate(manifest["entries"]):
         settings = entry.get("settings", {})
         seed = str(entry.get("seed", entry.get("seed_u64", "")))
         expected = entry.get("expected_digest", "")
         expected_sphere = entry.get("expected_sphere_digest", "")
         label = entry.get("label", f"entry-{idx}")
+        if skip_pot_shuffle and entry_uses_pot_shuffle(entry):
+            print(f"  SKIP [{idx}] {label}: pot_shuffle entry "
+                  f"(local pot registry required)")
+            skipped += 1
+            continue
         settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
 
         with tempfile.TemporaryDirectory() as td:
@@ -189,9 +204,14 @@ def run_activated(binary: Path, manifest: dict) -> int:
             print(f"  OK   [{idx}] {label}: {got[:16]}...")
 
     if failures:
-        print(f"\nrun_rando_corpus: {failures} of {len(manifest['entries'])} entries FAILED.")
+        print(f"\nrun_rando_corpus: {failures} of {len(manifest['entries']) - skipped} "
+              f"run entries FAILED ({skipped} skipped).")
         return 1
-    print(f"\nrun_rando_corpus: all {len(manifest['entries'])} entries OK.")
+    if skipped:
+        print(f"\nrun_rando_corpus: all {len(manifest['entries']) - skipped} run entries OK "
+              f"({skipped} pot_shuffle entries skipped).")
+    else:
+        print(f"\nrun_rando_corpus: all {len(manifest['entries'])} entries OK.")
     return 0
 
 
@@ -224,6 +244,10 @@ def main(argv: list[str]) -> int:
                              "launching the binary. Used by the no-build "
                              "source-guards CI job; the determinism job runs the "
                              "full corpus with --binary.")
+    parser.add_argument("--skip-pot-shuffle", action="store_true",
+                        help="skip entries that request pot_shuffle. Public CI "
+                             "uses this when the local ROM-derived pot registry "
+                             "is absent; local checks run the full corpus.")
     args = parser.parse_args(argv)
 
     data = load_manifest(args.manifest)
@@ -257,7 +281,7 @@ def main(argv: list[str]) -> int:
             print("run_rando_corpus: empty manifest — A0 scaffold pass.")
         return 0
 
-    return run_activated(args.binary, data)
+    return run_activated(args.binary, data, args.skip_pot_shuffle)
 
 
 if __name__ == "__main__":

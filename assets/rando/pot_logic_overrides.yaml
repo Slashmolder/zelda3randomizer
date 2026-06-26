@@ -28,7 +28,7 @@ room_region:
   "054": ThievesTown           # N neighbor 044 = TT
   # audit 2026-06-21: rooms 0x43 + 0x53 are DESERT PALACE, not TT/HCE. The task #25
   # mislabel fix (door-rando key_drop_data: key ids 519/567 + 10 room-mates) lived
-  # ONLY as a hand-edit in the committed pots.gen.yaml, which a regen REVERTS — the
+  # ONLY as a hand-edit in generated pots.gen.yaml, which a regen REVERTS — the
   # grid-flood binds 0x43->ThievesTown and the old override bound 0x53->HCE. Moved
   # here so the generator reproduces the fix (DP regains its 3 pot keys; the wild +
   # dungeon key economy stays correct, matching the shipped corpus).

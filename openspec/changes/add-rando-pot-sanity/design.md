@@ -85,15 +85,14 @@ regenerated — only Contents/All move, Keys/Off byte-identical.)*
 ## D2 — Build-time enumeration: `gen_pot_tables.py` (R11)
 
 A committed generator (mirroring `gen_enemy_shuffle_tables.py`/`chest_table.gen.bin`)
-emits, deterministically:
+emits gitignored local ROM-derived artifacts deterministically:
 1. **Registry rows** for all in-scope pots (append-only IDs 328…), names
    `<Dungeon> <Room> Pot <n>`, a new `Pot` location type (D11 migration).
-2. **`pot_table.gen.bin` → `src/rando/pot_lookup.h`**: a **sorted** `(dungeon_room,
-   tile_position) → LOC` table for binary search. *(As-built: the planned gitignored
-   `pot_table.gen.bin` was replaced by a COMMITTED `assets/rando/pots.gen.yaml`
-   registry — consumed by `rando_logic_gen.py` to emit `pot_lookup.h` — so there is
-   no chest-style gitignored fail-open hole; an absent yaml emits an empty lookup,
-   pots inert.)*
+2. **`assets/rando/pots.gen.yaml` → `src/rando/pot_lookup.h`**: a **sorted**
+   `(dungeon_room, tile_position) → LOC` table for binary search. *(As-built
+   update: `pots.gen.yaml` is gitignored local ROM-derived data, consumed by
+   `rando_logic_gen.py` when present. An absent yaml emits an empty lookup for
+   assetless CI, and active pot-shuffle generation fails closed.)*
 3. **Per-pot classification**: tier membership + vanilla content.
 4. **Logic entries** (D8).
 
@@ -467,7 +466,7 @@ workflows); recorded so the reconciled spec deltas have their rationale.
   (key-FREE warp route → bomb/boots; behind the GT big-key door → big key), never
   under-gated.
 - **D16 — Generated files must not hide hand-edits.** The task-#25 Desert Palace fix
-  (rooms 0x43/0x53) lived only as a hand-edit in the committed (generated) `pots.gen.yaml`,
+  (rooms 0x43/0x53) lived only as a hand-edit in generated `pots.gen.yaml`,
   which any `gen_pot_tables.py` regen silently REVERTED — breaking the DP key economy
   (`kPotNonpotDropCounts` drift + dungeon-keys refusal). A fix to a generated file MUST go
   in the generator's INPUTS (the override), never the output.

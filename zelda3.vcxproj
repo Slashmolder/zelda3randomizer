@@ -975,10 +975,14 @@
        itself is read from the gitignored assets\rando\chest_table.gen.bin) +
        the committed door-shuffle manifest assets\rando\door_predicates.gen.json
        (emitted by gen_door_tables.py from a reference checkout, NOT by this
-       build) and its companion assets\rando\door_portals.yaml. -->
+       build) and its companion assets\rando\door_portals.yaml. Optional local
+       pot registries are gitignored ROM-derived artifacts and are consumed when
+       present. -->
   <!-- RandoCodegenInput = EXACTLY the files rando_logic_gen.py reads — no more, no less.
-       Two deliberate exceptions: assets\rando\chest_table.gen.bin (gitignored — absent in
-       a fresh worktree, and an absent Input makes the Target always-run, see below) and
+       Three deliberate exceptions: assets\rando\chest_table.gen.bin (gitignored — absent in
+       a fresh worktree, and an absent Input makes the Target always-run, see below),
+       assets\rando\pots.gen.yaml / pot_key_depth.gen.yaml (gitignored local pot
+       registries, conditionally included only when present), and
        assets\rando\logic.schema.yaml (existence-checked only, contents never parsed, so
        it cannot affect the outputs).
        Too few → an incremental build skips codegen on a stale-output check and ships a
@@ -1000,8 +1004,8 @@
     <RandoCodegenInput Include="assets\rando\macros.yaml" />
     <RandoCodegenInput Include="assets\rando\door_predicates.gen.json" />
     <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
-    <RandoCodegenInput Include="assets\rando\pots.gen.yaml" />
-    <RandoCodegenInput Include="assets\rando\pot_key_depth.gen.yaml" />
+    <RandoCodegenInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
+    <RandoCodegenInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
     <RandoCodegenInput Include="assets\rando_logic_gen.py" />
     <RandoCodegenInput Include="assets\chest_data.py" />

@@ -255,17 +255,19 @@ def _pot_key_terms(room, pot_id, pot_room_wrap, pot_key_wrap):
 
 
 def load_pots(path: Path):
-    """Load assets/rando/pots.gen.yaml (committed registry from gen_pot_tables.py).
+    """Load assets/rando/pots.gen.yaml (local registry from gen_pot_tables.py).
 
     Returns (name -> LocationDef, [(room, pos4, loc_id)]). Each pot LocationDef
     carries id/name/region/type=Pot/vanilla_item AND can_reach (D8 inheritance),
     so it feeds BOTH the location registry (location_ids.h / kRandoLocations) and
-    the logic binding (region_id + can_reach) — it is merged into both `locations`
-    and `logic_loc_preds` in main(). pots.gen.yaml is committed, so its absence is
-    a broken checkout (warn loudly, emit no pots = behaves like pot_shuffle off)."""
+    the logic binding (region_id + can_reach) - it is merged into both `locations`
+    and `logic_loc_preds` in main(). pots.gen.yaml is a gitignored local artifact,
+    so public/assetless builds emit no pot locations; generation fails closed if
+    a user enables a pot tier without rebuilding from local pot codegen."""
     if not path.exists():
-        print(f"WARNING: {path} not found — emitting NO pot locations (broken "
-              f"checkout? regenerate with gen_pot_tables.py)", file=sys.stderr)
+        print(f"WARNING: {path} not found - emitting NO pot locations. "
+              f"Run assets/scripts/run_rando_local_checks.py with ROM assets "
+              f"to enable pot shuffle in this build.", file=sys.stderr)
         return {}, []
     doc = load_yaml(path)
     # add-rando-pot-sanity task #25: small-key requirements pot_shuffle adds once a
@@ -296,7 +298,7 @@ def load_pots(path: Path):
     out, rows = {}, []
     for p in doc.get("pots", []) or []:
         # add-rando-pot-sanity: empty pots carry the ITEM_Nothing filler as their
-        # vanilla item. The committed pots.gen.yaml records empties as
+        # vanilla item. The generated pots.gen.yaml records empties as
         # `kind: empty` + `vanilla_item: null`; map that to "Nothing" here so the
         # generated kRandoLocations row has vanilla_item_id == ITEM_Nothing (148).
         # That id is the unambiguous empty-pot signal the placer keys on
@@ -1480,7 +1482,7 @@ def emit_pot_lookup(rows, path: Path) -> int:
         HEADER_BANNER, "",
         "// pot_lookup.h — sorted (dungeon_room_index, tile_position) -> LOC_* for",
         "// the runtime pot dispatch (Dungeon_GetPotLocation). Generated from",
-        "// assets/rando/pots.gen.yaml (committed) via assets/scripts/gen_pot_tables.py.",
+        "// local assets/rando/pots.gen.yaml via assets/scripts/gen_pot_tables.py.",
         "",
         "#ifndef ZELDA3_RANDO_POT_LOOKUP_H_",
         "#define ZELDA3_RANDO_POT_LOOKUP_H_",
@@ -1500,7 +1502,7 @@ def emit_pot_lookup(rows, path: Path) -> int:
             lines.append(f"  {{ 0x{room:04x}, 0x{pos4:04x}, {locid} }},")
         lines.append("};")
     else:
-        lines.append("// EMPTY: pots.gen.yaml absent. Dungeon_GetPotLocation -> 0xFFFF (pot-shuffle off).")
+        lines.append("// EMPTY: pots.gen.yaml absent. Active pot-shuffle generation fails closed.")
         lines.append("static const RandoPotLookupEntry kRandoPotLookup[1] = { { 0, 0, 0 } };")
     lines += [
         "",
@@ -2423,7 +2425,7 @@ def main(argv=None):
     (logic_regions, logic_edges, logic_loc_preds, logic_macros,
      world_state_overrides, world_state_edges) = load_logic(logic_path)
 
-    # add-rando-pot-sanity: merge the committed pot registry into BOTH the
+    # add-rando-pot-sanity: merge the generated local pot registry into BOTH the
     # location set (ids / kRandoLocations rows) and the logic binding (region_id +
     # can_reach), then emit pot_lookup.h. Pot LOCs grow kRandoLocationsCount but
     # stay OUT of placement until a tier selects them — rando_placement.c skips

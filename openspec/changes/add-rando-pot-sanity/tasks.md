@@ -13,7 +13,8 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 > heart pots are Contents-tier checks, sphere-0 reachable from the start), **3.1**
 > (`pot_shuffle` packs canonical
 > `[26]` 6-7 + `[27]` 7, NOT `[27]` 2-3 which `trap_categories` took), **2.2**
-> (committed `pots.gen.yaml`, not a gitignored `pot_table.gen.bin`), **3.5/3.2 door×pot**
+> (`pots.gen.yaml`, not `pot_table.gen.bin`; now gitignored local ROM-derived data),
+> **3.5/3.2 door×pot**
 > (pots normalize fully Off under door shuffle — the "pin key-pots + reduce pool"
 > design was dropped; full integration deferred), and **4.2** (no "granted" flag —
 > suppression is `dung_secrets_unk1==0` early-return + an `is_pot` arg). The reconciled
@@ -193,7 +194,8 @@ depth; pots-off / vanilla / door byte-identical.
   assumed inventory under dungeon+pots (both seed paths; runtime SRAM overwrites — no
   double count); revert the dungeon-pin; `Placement_SelfCheck` drift guard.
 - [x] 7.5 **Binding fix:** rebind the 12 mislabeled Desert Palace pots (rooms 0x53/0x43)
-  in `pots.gen.yaml` (region + key `vanilla_item` + `can_reach`).
+  through `pot_logic_overrides.yaml` so regenerated `pots.gen.yaml` carries the
+  correct region + key `vanilla_item` + `can_reach`.
 - [x] 7.6 `kGeneratorVersion` → 91; `make clean` + build (`-Werror`) + selftests; corpus
   regen (130/130, only the 8 pots-on non-door seeds move; door+pots and non-pot
   byte-identical); 0-refuse matrix at `accessibility=items` across keys/all × goals ×

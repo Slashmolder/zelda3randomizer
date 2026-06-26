@@ -18,6 +18,11 @@
 # Pot ground-truth dump (zelda3 --dump-pot-table); generated from ROM assets and
 # consumed by gen_pot_tables.py. Keep it local/untracked.
 /assets/rando/pot_dump.gen.txt
+# Generated pot registries. They are derived from local ROM/extracted assets and
+# are consumed by rando codegen when present; public CI builds without them.
+/assets/rando/pots.gen.yaml
+/assets/rando/pot_key_depth.gen.yaml
+/key_depth.txt
 /zelda3.sfc
 /zelda3.smc
 /saves/*.sav
