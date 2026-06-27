@@ -1523,8 +1523,9 @@ static void Hud_Update_Inventory() {  // 8dfc09
 
   if (link_item_bow) {
     if (link_item_bow >= 3) {
-      hud_tile_indices_buffer[HUDXY(15, 0)] = 0x2486;
-      hud_tile_indices_buffer[HUDXY(16, 0)] = 0x2487;
+      int arrow_header_x = 16 - inv_offs;
+      hud_tile_indices_buffer[HUDXY(arrow_header_x, 0)] = 0x2486;
+      hud_tile_indices_buffer[HUDXY(arrow_header_x + 1, 0)] = 0x2487;
       // rando-exempt: state-shuffle — bow tier swap on arrow-count change
       // (4=silvers-with-arrows, 3=silvers-no-arrows, 2=bow-with-arrows,
       // 1=bow-no-arrows). The bow item was already granted via dispatch;
