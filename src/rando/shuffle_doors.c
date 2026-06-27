@@ -1291,6 +1291,12 @@ int DoorShuffle_SelfTest(void) {
   int total_fail = 0, total_pairs = 0;
   bool hard_fail = false;
 
+  if (DoorRt_GeometrySelfCheck() != 0) {
+    hard_fail = true;
+  } else {
+    printf("door-selftest: runtime geometry decode ok\n");
+  }
+
   for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
     const char *name = DoorIdx_Name(kDoorTblDungeons[d].name_off);
     // (f) vanilla sanity: layout=NULL, all portals, lenient, full coverage.

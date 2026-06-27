@@ -107,6 +107,11 @@ bool DoorRt_InstallKindOverlay(const DoorShuffleLayout *l);
 // Returns 0 on success, the number of violations otherwise (stderr details).
 int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l);
 
+// Selftest: every shuffle-pool positional door must decode to the cataloged
+// outer slot used by the runtime exit resolver and arrival alignment, and no
+// normal door pair may share one runtime candidate.
+int DoorRt_GeometrySelfCheck(void);
+
 // dungeon.c seam: the single door-list-word override. All three door-list
 // consumers (RoomDraw_DrawAllObjects's post-0xfff0 door loop,
 // Dungeon_LoadHeader's raw-word copy into dung_door_tilemap_address[], and
