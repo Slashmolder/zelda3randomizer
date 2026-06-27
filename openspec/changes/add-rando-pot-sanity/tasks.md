@@ -18,8 +18,9 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 > (pots normalize fully Off under door shuffle — the "pin key-pots + reduce pool"
 > design was dropped; full integration deferred), and **4.2** (no "granted" flag —
 > suppression is `dung_secrets_unk1==0` early-return + an `is_pot` arg). The reconciled
-> `specs/` deltas and the design "As-built" notes are authoritative. Still open:
-> **4.5** (offline render — playtest substitutes) and **6.3** (owner playtest).
+> `specs/` deltas and the design "As-built" notes are authoritative. Owner playtest
+> has now covered an Open full-clear with all shuffles wild and confirmed the gold
+> glint looks good; Retro/Inverted and a dungeon-keys-specific pot seed remain tabled.
 
 ## 1. Capacity foundation — typed audit (feature OFF, byte-identical) — D5
 
@@ -129,10 +130,10 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   via the `ManipBlock_Something` idiom, `Garnish_SparkleCommon` glyphs); `nmi.c` injects
   the gold ramp into a sprite sub-palette of the PPU CGRAM copy. Gated rando + tier +
   `!checked`; OAM + PPU-CGRAM only (no `g_ram`) → non-rando byte-identical.
-- [ ] 4.5 Playtest the glint across dungeons (sprite-palette-row collision + on-screen
+- [x] 4.5 Playtest the glint across dungeons (sprite-palette-row collision + on-screen
   feel — `kRandoPotOverlayPalette` / `RandoPot_DrawGoldOverlay` tunables). The interim
   approach's cross-theme BG-palette offline render is obsolete — the glint's gold is
-  injected and theme-independent.
+  injected and theme-independent. Owner playtest says the glint looks good.
 
 ## 5. UI / trackers — D11, D12, D13
 
@@ -163,6 +164,10 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   `All` (capacity); a gated-room pot (Swamp flood / dark room — beatable, not
   falsely-in-logic). Confirm the loaded slot matches the share string before
   debugging any anomaly.
+  - **Partial owner coverage recorded 2026-06-27:** Open seed cleared 100% with all
+    shuffles wild; no key-pot duplicate was observed, and the gold glint looked good.
+    Retro/Inverted pot seeds and a dungeon-keys-specific pot seed are intentionally
+    tabled for later playtest.
   - [ ] **task #25 (§7) addendum:** a **dungeon-keys + `pot_shuffle = all`** seed — beat
     a couple of dungeons; key pots grant SHUFFLED items, the dungeon's keys can sit in
     other in-dungeon locations, and nothing strands (the dungeon under-gate is invisible
