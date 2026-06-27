@@ -8658,6 +8658,7 @@ void SubtileTransitionCalculateLanding() {  // 82c12c
     BYTE(link_x_coord) = v;
   else
     BYTE(link_y_coord) = v;
+  Rando_DoorLandingPageFix();
   link_visibility_status = 0;
 }
 
@@ -9336,4 +9337,3 @@ void CrystalCutscene_SpawnMaiden() {  // 9ecd48
   dung_floor_y_offs = 0x30 - (uint8)BG1VOFS_copy2;
   dung_hdr_collision_2_mirror = 1;
 }
-

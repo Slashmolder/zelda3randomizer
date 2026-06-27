@@ -53,6 +53,12 @@ void Rando_DoorStaircaseContext(bool entering);
 // remainder. No-op unless DoorRt_Arrive armed it.
 void Rando_DoorScrollFinePan(bool scroll_done);
 
+// dungeon.c hook (SubtileTransitionCalculateLanding): after vanilla rewrites
+// the landing coordinate's low byte, re-page that coordinate to the final
+// camera page for redirected edge-door arrivals. No-op unless DoorRt_Arrive
+// armed it.
+void Rando_DoorLandingPageFix(void);
+
 // dungeon.c hook: spiral staircases. Returns the destination room byte
 // (vanilla_byte when unshuffled/off). `attr` is the staircase tile attribute
 // (0x5e/0x5f circular spirals only — straight/fat stair attrs 0x38/0x39/0x26
