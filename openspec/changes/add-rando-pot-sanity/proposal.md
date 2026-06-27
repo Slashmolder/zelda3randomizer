@@ -127,9 +127,9 @@ Nothing" filler, and appearance-matches-contents).
   `src/rando/rando_settings.*` (canonical axis), `src/rando/rando_save.*`
   (in-memory struct sizes), `src/rando/rando_window/` (tier selector + tracker),
   `src/rando/auto_tracker.c` (pot grouping).
-- **Generated data**: NEW `assets/scripts/gen_pot_tables.py` → `location_registry.yaml`
-  pot rows, `assets/rando/pot_table.gen.bin` (+ `src/rando/pot_lookup.h`),
-  pot logic entries (`assets/rando/logic_parts/` or a generated include), all
+- **Generated data**: NEW `assets/scripts/gen_pot_tables.py` → local gitignored
+  `assets/rando/pots.gen.yaml`, generated `src/rando/pot_lookup.h`, and pot
+  logic entries (`assets/rando/logic_parts/` or a generated include), all
   gitignored-artifact-friendly per the embedded-data guard.
 - **Determinism / corpus**: pot-shuffle `Off` byte-identical for every existing
   seed; corpus regenerates at the new `kGeneratorVersion`. New corpus entries cover

@@ -247,7 +247,7 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 
 // ---------------------------------------------------------------------------
-// add-rando-pot-sanity Phase 4 — runtime pot grant hook + recolor (design D3/D4).
+// Runtime pot grant hook and per-pot marker.
 //
 // Rando_PotBreakHook runs at the TOP of RevealPotItem (dungeon.c) for all three
 // callers (lift / ThievesAttic-hole / sword-break). On an active + un-checked pot
@@ -271,15 +271,14 @@ bool Rando_PotShouldRecolor(uint16 room, uint16 pos4);
 uint16 Rando_GetPotLocation(uint16 room, uint16 pos4);
 
 // ---------------------------------------------------------------------------
-// add-rando-pot-sanity — animated gold "check" overlay for in-scope un-checked
-// pots (supersedes the interim BG palette swap; design D4/D12).
+// Animated gold "check" overlay for in-scope un-checked pots.
 //
 // Why a sprite overlay and not a BG recolor: a pure-BG gold can't be BOTH
 // consistent AND scoped to specific pots. Dungeon CGRAM has no free BG
 // sub-palette row (rows 0-1 = HUD, 2-7 = the dungeon set) and the cgram is
 // shared across BG layers, so forcing a row to a fixed gold would also recolor
 // every other room tile on that row, while the pot's own 16x16 tile carries
-// floor pixels in its corners (the interim swap tinted those too). So we draw a
+// floor pixels in its corners (the palette-row swap tinted those too). So we draw a
 // sprite-layer gold glint over each pot instead: its own injected gold palette
 // (theme-independent), the floor is untouched, and it animates. Every entry
 // point is inert off-rando / outside the dungeon module — the non-rando draw
@@ -822,7 +821,7 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id);
 //
 // Pass NULL to clear (resets to "no assignment installed" — falls back to
 // false). Non-NULL inputs are copied into owned storage, so callers may pass
-// stack or temporary assignment buffers.
+// stack or caller-owned assignment buffers.
 // ---------------------------------------------------------------------------
 void Rando_SetDungeonPrizeAssignment(const uint8 *assignment);    // [kRandoDungeonCount]
 void Rando_SetMedallionAssignment(const uint8 *assignment);       // [kRandoMedallionEntranceCount]

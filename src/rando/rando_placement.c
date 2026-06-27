@@ -40,8 +40,8 @@
 // (effectively rando-inactive).
 // ---------------------------------------------------------------------------
 static const RandoPlacementTable *g_active_placement = NULL;
-// add-rando-pot-sanity D10 — Placement_Lookup binary-searches the active table
-// by location_id, which requires the table sorted ascending. Every producer
+// Placement_Lookup binary-searches the active table by location_id, which
+// requires the table sorted ascending. Every producer
 // emits in that order (assumed-fill's step-7 loop walks open_loc_idx, a subset
 // of the id-sorted kRandoLocations; the sidecar/snapshot install memcpys that
 // order through). We still VERIFY sortedness once per install (O(N)) and fall
@@ -85,9 +85,9 @@ bool Placement_ActiveIsSorted(void) {
 uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
   const RandoPlacementTable *t = g_active_placement;
   if (t == NULL) return vanilla_item_id;
-  // add-rando-pot-sanity D10 — binary search the sorted-by-location_id table.
+  // Binary search the sorted-by-location_id table.
   // At ~1163 active locations (All tier) a per-location-check linear scan would
-  // be too slow for the Phase-4 per-pot-break dispatch; O(log N) keeps it cheap.
+  // be too slow for per-pot break dispatch; O(log N) keeps it cheap.
   if (g_active_placement_sorted) {
     uint16 lo = 0, hi = t->count;
     while (lo < hi) {
@@ -294,8 +294,8 @@ static const uint16 kCompasses[] = {
   ID_Compass_SW, ID_Compass_TT, ID_Compass_IP, ID_Compass_MM, ID_Compass_TR, ID_Compass_GT,
 };
 
-// add-rando-pot-sanity task #25 — NONPOT small-key drops per dungeon: the enemy /
-// guard / under-block keys that pot_shuffle does NOT itemize (only POTS shuffle).
+// NONPOT small-key drops per dungeon: the enemy / guard / under-block keys that
+// pot_shuffle does NOT itemize (only POTS shuffle).
 // Under DUNGEON keys + pots-on a dungeon's pot keys become pooled items, so its
 // deep locations gate on the prover SHORTEST-PATH (min-depth) over ALL key doors.
 // The nonpot drops are still collected in-context (exactly as in pots-off), so we
@@ -367,17 +367,17 @@ static uint16 pool_add(uint16 *pool, uint16 used, uint16 capacity, uint16 item_i
   return used;
 }
 
-// add-rando-pot-sanity — small-key item-id test. Contiguous per
-// item_registry.yaml: SmallKey_HyruleCastleEscape(53) .. SmallKey_GanonsTower(65).
+// Small-key item-id test. Contiguous per item_registry.yaml:
+// SmallKey_HyruleCastleEscape(53) .. SmallKey_GanonsTower(65).
 static bool is_small_key_item(uint16 item_id) {
   return item_id >= 53 && item_id <= 65;
 }
 
-// add-rando-pot-sanity — is this pot an ACTIVE randomizer check under `s`
-// (design D1/D9)? This ONE predicate gates all three placement sites that must
+// Is this pot an ACTIVE randomizer check under `s`? This ONE predicate gates all
+// three placement sites that must
 // agree — the open-location collection loop, BuildItemPool's junk-pad target,
 // and Placement_SelfCheck's expected-count loop — so the pool size and the open
-// slot count can never drift (the regression that fired in Phase 2e).
+// slot count can never drift.
 //
 // A pot's KIND is derived from its vanilla_item_id (no extra table): empty pots
 // carry ITEM_Nothing (rando_logic_gen.load_pots maps kind==empty → Nothing), key
@@ -438,9 +438,9 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
       loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal)
     return true;
   uint16 vi = loc->vanilla_item_id;
-  // add-rando-pot-sanity — an ACTIVE empty pot (vanilla_item_id == ITEM_Nothing,
-  // present only under tier All; both callers filter INACTIVE pots before
-  // reaching here) is pinned to its ITEM_Nothing filler by the §3b pre-pass, so
+  // An ACTIVE empty pot (vanilla_item_id == ITEM_Nothing, present only under
+  // tier All; both callers filter INACTIVE pots before reaching here) is pinned
+  // to its ITEM_Nothing filler by the pre-pass, so
   // it consumes no pool item and the junk-pad target excludes it (no real item
   // can land on an empty pot, no Nothing on a real slot). Key-pots (vi 53..65)
   // fall through to the dungeon small-key rule below: pinned in vanilla key mode,
@@ -452,8 +452,8 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
   if (vi >= 53 && vi <= 65) {
     uint8 km = Settings_EffectiveSmallKeysMode(settings);
     if (km == kDungeonItemMode_Vanilla) return true;
-    // add-rando-pot-sanity task #25: under both DUNGEON and WILD keys the dungeon's
-    // small keys — chests AND active key pots — shuffle and enter BuildItemPool, so
+    // Under both DUNGEON and WILD keys the dungeon's small keys — chests AND
+    // active key pots — shuffle and enter BuildItemPool, so
     // none are pinned. Under DUNGEON keys a key pot stays in its own dungeon (the
     // assumed-fill confines it via the per-pot min-depth gates: OP_POT_KEYS_DUNGEON
     // + the free-granted nonpot drops); under WILD it joins the world pool. An
@@ -737,7 +737,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     }
   }
 
-  // ----- Pot keys (add-rando-pot-sanity task #25) -----
+  // ----- Pot keys -----
   // kVanillaSmallKeyCounts above is the placed/chest key count; a dungeon's POT
   // keys are NOT in it. When pot_shuffle turns the key pots into live checks
   // their small key must ALSO enter the pool, or it vanishes. Under WILD keys the
@@ -817,11 +817,11 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       // (non-pinned) slot count, so existing non-TakeAny Retro placements stay
       // decision-stable when TakeAny lands. See design.md §"Pool/pad".
       if (loc->type == LOCTYPE_TakeAny) continue;
-      // add-rando-pot-sanity: an INACTIVE pot is out of the placement pool (its
-      // tier isn't selected, or door shuffle is on). pot_active() is the SAME
+      // An INACTIVE pot is out of the placement pool (its tier isn't selected,
+      // or door shuffle is on). pot_active() is the SAME
       // predicate the open-location loop + Placement_SelfCheck use, so the pool
       // size and the open-slot count can't drift; with pot_shuffle off every pot
-      // is inactive and the placement stays byte-identical (design D9). An ACTIVE
+      // is inactive and the placement stays byte-identical. An ACTIVE
       // empty pot is prepinned (below) to ITEM_Nothing, so it too is excluded
       // here; only active loot/key pots count toward the junk-pad target.
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
@@ -1574,12 +1574,12 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     // entry, per the spec "the placement table contains only the active slots".
     if (loc->type == LOCTYPE_TakeAny &&
         takeany_reward(settings, takeany_roles, loc->id) == 0xFFFF) continue;
-    // add-rando-pot-sanity: only pots ACTIVE under the selected tier enter the
-    // open-location set (pot_active — the shared predicate; door shuffle forces
+    // Only pots ACTIVE under the selected tier enter the open-location set
+    // (pot_active — the shared predicate; door shuffle forces
     // all pots inactive). Inactive pots draw no fill RNG, so pot-shuffle off is
-    // placement-byte-identical (design D9). Active loot/key pots become open
+    // placement-byte-identical. Active loot/key pots become open
     // slots; an active empty pot enters here too but is pinned to ITEM_Nothing
-    // by the §3b pre-pass (location_is_prepinned) before assumed-fill/junk run.
+    // by the pre-pass (location_is_prepinned) before assumed-fill/junk run.
     if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
     open_loc_idx[open_n++] = (uint16)i;
   }
@@ -1749,10 +1749,10 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
         Customizer__SetError(msg);
         return false;
       }
-      // add-rando-pot-sanity — empty pots are non-customizable by VALUE (not
-      // type): a NON-empty pot IS customizable (like a chest), but an empty pot
+      // Empty pots are non-customizable by VALUE (not type): a NON-empty pot IS
+      // customizable (like a chest), but an empty pot
       // carries the ITEM_Nothing filler and pinning a real item there defeats the
-      // design (the §3b pre-pass already pinned it to Nothing, so the generic
+      // design (the pre-pass already pinned it to Nothing, so the generic
       // already-placed guard below would also catch it — this is the clear
       // message). ITEM_Nothing is likewise never a pinnable item; it exists only
       // as the empty-pot filler.
@@ -2795,7 +2795,7 @@ void Placement_SelfCheck(void) {
     }
   }
 
-  // add-rando-pot-sanity — placement-side selfchecks (design D9/D10/D11; tasks §6.1).
+  // Placement-side selfchecks for pot activation and lookup invariants.
   {
     // (a) Pot type round-trips through codegen (a silent type→0 mapping would
     //     leave zero LOCTYPE_Pot locations), empty pots carry ITEM_Nothing, and
@@ -2834,8 +2834,8 @@ void Placement_SelfCheck(void) {
     if (n_keys != key_pots) selfcheck_die("Keys tier must activate exactly the key pots");
     if (n_all != pot_locs) selfcheck_die("All tier must activate every pot");
 
-    // (b') task #25 — the nonpot small-key free-grant (kPotNonpotDropCounts) must
-    //      equal (door-rando drop total) - (fork pot keys) for every dungeon that
+    // (b') The nonpot small-key free-grant (kPotNonpotDropCounts) must equal
+    //      (door-rando drop total) - (fork pot keys) for every dungeon that
     //      HAS pot keys, or it drifts when the pot set changes (a pots.gen.yaml
     //      rebind / new key pot). Drop totals = prover `--dump-key-depth` DUNGEON
     //      drop= values; pot keys re-counted from kRandoLocations here.

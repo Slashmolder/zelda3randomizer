@@ -58,9 +58,9 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   item drops → registry id; EXCLUDE creature-spawn pots (Cucco / RockCrab / Bee /
   soldiers) and structural / Random; ASSERT any content byte not classifiable as
   loot/empty never appears in an in-scope pot (else fail the build).
-- [x] 2.2 Emit append-only registry rows + `pot_table.gen.bin` → `src/rando/pot_lookup.h`
-  (**sorted** `(room,pos)→LOC` for binary search). Wire into the build like
-  `chest_table.gen.bin`.
+- [x] 2.2 Emit local gitignored registry rows in `pots.gen.yaml` →
+  `src/rando/pot_lookup.h` (**sorted** `(room,pos)→LOC` for binary search).
+  Wire the generated lookup into the build like `chest_lookup.h`.
 - [x] 2.3 **Pot location type migration (D11)** — update ALL: schema enum
   (`logic.schema.yaml`), codegen type map (`rando_logic_gen.py` — currently maps
   unknown→0, a silent trap), shared C enum (`rando_logic.h`), placement type checks,

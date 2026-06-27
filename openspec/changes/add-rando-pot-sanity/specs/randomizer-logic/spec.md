@@ -101,9 +101,10 @@ in-dungeon pots) SHALL be wrapped:
 
 The depths SHALL be generated, not hand-authored: `assets/scripts/gen_pot_key_depth.py`
 runs the door key-door prover (`--dump-key-depth`, which emits both worst-case `depth`
-and shortest-path `mindepth`) and emits the committed `assets/rando/pot_key_depth.gen.yaml`,
-cross-checking the per-key-pot depths against a reviewed table so a join drift fails the
-build. `rando_logic_gen.py` applies the wrap from that table.
+and shortest-path `mindepth`) and emits local gitignored
+`assets/rando/pot_key_depth.gen.yaml`, cross-checking the per-key-pot depths against a
+reviewed table so a join drift fails the build. `rando_logic_gen.py` applies the wrap
+from that table.
 
 #### Scenario: Wild keys gate the held worst case
 - **WHEN** a seed has wild keys + `pot_shuffle` and the player must reach a deep

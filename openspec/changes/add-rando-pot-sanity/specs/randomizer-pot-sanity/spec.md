@@ -213,7 +213,7 @@ written into a sprite sub-palette of the **PPU CGRAM copy** each frame a glint i
 on-screen — `g_ram` is never touched (the same discipline as the cosmetic palette
 modes).
 
-A pure background-palette recolor (the interim implementation, now removed) is NOT
+A pure background-palette recolor is NOT
 used because it cannot be both theme-independent AND scoped to specific pots: a
 dungeon's BG CGRAM has no free sub-palette row (rows 0-1 are the HUD, 2-7 are the
 dungeon set `Palette_Load_DungeonSet` loads) and the CGRAM is shared across BG
