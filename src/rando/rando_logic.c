@@ -296,7 +296,7 @@ static bool eval_pot_keys_on(Cursor *c, const PredicateContext *ctx) {
   (void)c;
   // Mirrors pot_active() (rando_placement.c): dungeon pot keys are live checks
   // only when pot_shuffle itemizes them — Settings_PotKeysActive: pot_shuffle >=
-  // Keys AND pots are not forced off (door OR CAVE-ENTRANCE shuffle, the same
+  // Keys AND pots are not forced off (CAVE-ENTRANCE shuffle, the same
   // predicate pot_active uses). When false, the wrapped small-key term collapses
   // to its vanilla worst-case, so default + pots-off placement is byte-identical.
   return Settings_PotKeysActive(ctx->settings);
@@ -307,7 +307,7 @@ static bool eval_pot_keys_wild(Cursor *c, const PredicateContext *ctx) {
   // POT_KEYS_ON AND small keys are WILD (keysanity / Retro). The wild
   // worst-case key gate on a pot-bearing dungeon's deep locations applies only
   // here; dungeon/vanilla keys keep the vanilla branch (the in-context dungeon
-  // case is a follow-on). false whenever pots are off OR forced off (door/cave
+  // case is a follow-on). false whenever pots are off OR forced off (cave
   // shuffle), so default + pots-off + dungeon-keys placement is byte-identical.
   const RandoSettings *s = ctx->settings;
   return Settings_PotKeysActive(s) &&
@@ -702,6 +702,14 @@ static bool door_vm_pred_cb(void *ud, uint16 vm_index) {
   return v;
 }
 
+static bool door_pot_pred_cb(void *ud, const RandoDoorPotLocation *pot) {
+  const PredicateContext *ctx = (const PredicateContext *)ud;
+  if (pot == NULL || pot->pred_len == 0)
+    return true;
+  return Predicate_EvalCtx(kRandoPredicateStream + pot->pred_off,
+                           pot->pred_len, ctx);
+}
+
 static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateContext *ctx,
                                                 DoorExploreGates *gates_out) {
   // The gates are rebuilt every call (cheap); the flood itself is cached.
@@ -812,15 +820,41 @@ static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx) {
     if (kDoorTblLocations[mid].fork_loc_id < loc_id) lo = mid + 1;
     else hi = mid - 1;
   }
+  if (found >= 0) {
+    const DoorTblLocation *dl = &kDoorTblLocations[found];
+    uint8 dungeon = kDoorTblRegions[dl->region].dungeon;
+    DoorExploreGates gates;
+    const DoorExploreResult *r = door_oracle_get(dungeon, ctx, &gates);
+    if (!DoorExplore_Reached(r, dl->region))
+      return false;
+    return DoorExplore_EvalRule(dl->rule, r, &gates);
+  }
+
+  // Generated pot bridge rows are sorted by loc_id.
+  lo = 0;
+  hi = (int)kRandoDoorPotLocationsCount - 1;
+  found = -1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kRandoDoorPotLocations[mid].loc_id == loc_id) { found = mid; break; }
+    if (kRandoDoorPotLocations[mid].loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
   if (found < 0)
     return false;
-  const DoorTblLocation *dl = &kDoorTblLocations[found];
-  uint8 dungeon = kDoorTblRegions[dl->region].dungeon;
-  DoorExploreGates gates;
-  const DoorExploreResult *r = door_oracle_get(dungeon, ctx, &gates);
-  if (!DoorExplore_Reached(r, dl->region))
+  const RandoDoorPotLocation *p = &kRandoDoorPotLocations[found];
+  if (!Rando_DoorPotActive(p, g_door_logic_layout->pot_tier))
     return false;
-  return DoorExplore_EvalRule(dl->rule, r, &gates);
+  if (!((g_door_logic_mask >> p->dungeon) & 1))
+    return false;
+  DoorExploreGates gates;
+  const DoorExploreResult *r = door_oracle_get(p->dungeon, ctx, &gates);
+  for (uint8 i = 0; i < p->region_count; i++) {
+    uint16 region = kRandoDoorPotRegions[p->region_first + i];
+    if (!DoorExplore_Reached(r, region))
+      return false;
+  }
+  return door_pot_pred_cb((void *)ctx, p);
 }
 
 // ---------------------------------------------------------------------------

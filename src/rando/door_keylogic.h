@@ -4,6 +4,7 @@
 #pragma once
 #include "../types.h"
 #include "door_tables.gen.h"
+#include "rando_logic.h"
 #include "shuffle_doors.h"
 #include "rando_rng.h"
 
@@ -107,6 +108,7 @@ typedef struct DoorExploreSpec {
   const uint8 *held_keys;       // Held mode: chest keys held per dungeon
   const uint8 *big_key_held;    // Held mode (NULL = held)
   const DoorShuffleLayout *thresholds;  // Held mode: key_worst_case source
+  uint8 pot_tier;               // active pot tier for drop/key-source accounting
 } DoorExploreSpec;
 
 void DoorExplore_Core(const DoorExploreSpec *spec, DoorExploreResult *out);
@@ -120,8 +122,13 @@ static inline bool DoorExplore_ColorAt(const DoorExploreResult *r, uint16 region
 // minus Thieves' Boss while Blind is unavailable (maiden/attic regions not
 // reached), optionally minus big chests (count_locations_exclude_big_chest).
 int Door_CountFreeLocs(uint8 dungeon, const DoorExploreResult *res, bool exclude_big_chest);
-// Reached drop-key rows of `dungeon` (key_only_locations).
-int Door_CountDropKeys(uint8 dungeon, const DoorExploreResult *res);
+// Reached drop-key rows of `dungeon` (key_only_locations), excluding active
+// pot-key rows whose keys are first-class pot locations under `pot_tier`.
+int Door_CountDropKeys(uint8 dungeon, const DoorExploreResult *res, uint8 pot_tier);
+bool Door_DropExcludedByActivePot(uint8 dungeon, uint16 drop_index, uint8 pot_tier);
+int Door_CountActivePotKeySources(uint8 dungeon, const DoorExploreResult *res,
+                                  uint8 pot_tier);
+int Door_CountActiveKeyPots(uint8 dungeon, uint8 pot_tier);
 // True iff door `d` is gated on the big key (VanillaBigKey kind or one of
 // get_special_big_key_doors).
 bool Door_IsBkGated(uint16 door);

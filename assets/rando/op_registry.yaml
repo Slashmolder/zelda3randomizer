@@ -280,15 +280,13 @@ ops:
     operands: []
     semantics: |
       true iff dungeon POT keys are first-class shuffled checks this seed —
-      pot_shuffle >= Keys AND door shuffle is off (door shuffle forces every pot
-      inactive, exactly like pot_active() in rando_placement.c). Added for
+      pot_shuffle >= Keys AND pots are not forced off by cave-entrance shuffle,
+      exactly like pot_active() in rando_placement.c. Added for
       add-rando-pot-sanity (task #25): a pot-bearing dungeon's deep locations are
-      wrapped as `HAS_AMOUNT(SmallKey_X, cur) AND (NOT POT_KEYS_ON OR
-      HAS_AMOUNT(SmallKey_X, full))`, where `cur` is the ALTTPR placed-key
-      worst-case (drops free) and `full` is the prover worst-case once the pot
-      keys are items. With pots off this is false, so the wrap collapses to the
-      vanilla `HAS_AMOUNT(SmallKey_X, cur)` term — default + every pots-off
-      placement stays byte-identical.
+      wrapped with POT_KEYS_WILD / POT_KEYS_DUNGEON terms. With pots off this is
+      false, so the wrap collapses to the vanilla term — default + every pots-off
+      placement stays byte-identical. Door shuffle composes through the generated
+      door x pot bridge.
     contexts: [can_reach, can_place]
 
   - id: 24

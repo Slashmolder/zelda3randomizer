@@ -176,8 +176,8 @@ typedef struct RandoSettings {
   // low 2 bits in [26] bits 6-7, high bit in [27] bit 7 (see kPotShuffleAxis_*).
   // Default Off=0 keeps both bytes at their pre-pot values, so the default
   // settings_hash + corpus stay byte-identical and kSettingsCanonicalLen stays 28.
-  // Normalized to Off under door shuffle (apply_derived_rules) — pots don't
-  // compose with the door key-prover in v1.
+  // Normalized to Off under cave-entrance shuffle (apply_derived_rules). Door
+  // shuffle composes through the generated door x pot bridge.
   uint8 pot_shuffle;
 } RandoSettings;
 
@@ -343,19 +343,19 @@ uint8 Settings_EffectiveAccessibility(const RandoSettings *s);
 bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s);
 
 // add-rando-pot-sanity — true when a shuffle axis FORCES pot_shuffle off because
-// the pots can't be safely placed under it: door shuffle (the door key-prover
-// doesn't model pot locations) OR cave-entrance shuffle (cave/house pot location
-// IDs sit above the per-location entrance region-override range, so they would
-// evaluate from the vanilla overworld region instead of the shuffled entrance's —
-// see Entrance_ApplyRegionOverrides). apply_derived_rules normalizes pot_shuffle
-// off under these, and pot_active / the spoiler consult the same predicate, so the
-// settings_hash, placement, runtime, and spoiler can't disagree. (Dungeon-entrance
-// shuffle is edge-based and does NOT mis-bind dungeon pots, so it is not included.)
+// the pots can't be safely placed under it: cave-entrance shuffle (cave/house pot
+// location IDs sit above the per-location entrance region-override range, so they
+// would evaluate from the vanilla overworld region instead of the shuffled
+// entrance's — see Entrance_ApplyRegionOverrides). apply_derived_rules normalizes
+// pot_shuffle off under this, and pot_active / the spoiler consult the same
+// predicate, so the settings_hash, placement, runtime, and spoiler can't
+// disagree. Door shuffle is modeled by the generated door x pot bridge; dungeon-
+// entrance shuffle is edge-based and does NOT mis-bind dungeon pots.
 bool Settings_PotShuffleForcedOff(const RandoSettings *s);
 
 // True when pot_shuffle itemizes small-key pots as live checks: pot_shuffle >=
-// Keys AND pots are not forced off (Settings_PotShuffleForcedOff: door OR
-// cave-entrance shuffle). Shared by the logic VM (eval_pot_keys_*) and the placer
+// Keys AND pots are not forced off (Settings_PotShuffleForcedOff: cave-entrance
+// shuffle). Shared by the logic VM (eval_pot_keys_*) and the placer
 // (pot_keys_dungeon_active) so the pot-key gates can't drift from pot_active; the
 // WILD/DUNGEON ops additionally test Settings_EffectiveSmallKeysMode.
 bool Settings_PotKeysActive(const RandoSettings *s);

@@ -314,7 +314,7 @@ static const struct { uint16 item_id; uint8 count; } kPotNonpotDropCounts[] = {
 
 // True when pot_shuffle itemizes a dungeon's pot keys under DUNGEON keys — the
 // exact condition OP_POT_KEYS_DUNGEON gates on (Settings_PotKeysActive: pot_shuffle
-// >= Keys AND pots not forced off by door OR CAVE-entrance shuffle) AND small keys
+// >= Keys AND pots not forced off by CAVE-entrance shuffle) AND small keys
 // == Dungeon. Routes through the SAME helper as the logic VM so the free-grant and
 // the gates can't drift. Wild caps its own requirement at the pooled key count so
 // it needs no nonpot free-grant; vanilla/pots-off/forced-off leave the keys free.
@@ -384,15 +384,14 @@ static bool is_small_key_item(uint16 item_id) {
 // pots carry a SmallKey (53..65), everything else is loot. Tiers nest
 // keys ⊆ contents ⊆ all.
 //
-// Under door shuffle OR cave-entrance shuffle EVERY pot is inactive
-// (Settings_PotShuffleForcedOff): the door key-prover doesn't model pot locations,
-// and cave/house pot IDs miss the entrance region-override so they'd evaluate from
-// the vanilla overworld region (v1 restriction — design D7, owner-flagged).
+// Under cave-entrance shuffle EVERY pot is inactive
+// (Settings_PotShuffleForcedOff): cave/house pot IDs miss the entrance
+// region-override so they'd evaluate from the vanilla overworld region.
 // apply_derived_rules normalizes pot_shuffle off under the SAME predicate, so the
 // settings_hash, placement, runtime, and spoiler all agree.
 static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s) {
   if (loc == NULL || s == NULL || loc->type != LOCTYPE_Pot) return false;
-  if (Settings_PotShuffleForcedOff(s)) return false;  // door OR cave-entrance shuffle
+  if (Settings_PotShuffleForcedOff(s)) return false;  // cave-entrance shuffle
   bool is_empty = (loc->vanilla_item_id == ITEM_Nothing);
   switch (s->pot_shuffle) {
     case kPotShuffle_Off:      return false;
@@ -457,7 +456,7 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
     // none are pinned. Under DUNGEON keys a key pot stays in its own dungeon (the
     // assumed-fill confines it via the per-pot min-depth gates: OP_POT_KEYS_DUNGEON
     // + the free-granted nonpot drops); under WILD it joins the world pool. An
-    // INACTIVE pot (door shuffle / pot_shuffle off) never reaches here — both
+    // INACTIVE pot (pot_shuffle off / cave forced-off) never reaches here — both
     // callers filter it — so it falls through to the vanilla pot drop. Only the
     // vanilla key mode pins.
     return false;
@@ -818,7 +817,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       // decision-stable when TakeAny lands. See design.md §"Pool/pad".
       if (loc->type == LOCTYPE_TakeAny) continue;
       // An INACTIVE pot is out of the placement pool (its tier isn't selected,
-      // or door shuffle is on). pot_active() is the SAME
+      // or cave entrance shuffle is on). pot_active() is the SAME
       // predicate the open-location loop + Placement_SelfCheck use, so the pool
       // size and the open-slot count can't drift; with pot_shuffle off every pot
       // is inactive and the placement stays byte-identical. An ACTIVE
@@ -974,6 +973,8 @@ static bool location_accepts_item(const RandoLocationDef *loc,
   // door layout is installed.
   if (candidate_item >= 66 && candidate_item <= 76) {  // BigKey_* ids
     const struct DoorShuffleLayout *dl = Rando_GetDoorLogicLayout(NULL);
+    if (dl != NULL && loc->type == LOCTYPE_Pot && pot_active(loc, settings))
+      return false;
     if (dl != NULL && DoorShuffle_BkRestricted(dl, loc->id))
       return false;
   }
@@ -1575,7 +1576,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (loc->type == LOCTYPE_TakeAny &&
         takeany_reward(settings, takeany_roles, loc->id) == 0xFFFF) continue;
     // Only pots ACTIVE under the selected tier enter the open-location set
-    // (pot_active — the shared predicate; door shuffle forces
+    // (pot_active — the shared predicate; cave entrance shuffle forces
     // all pots inactive). Inactive pots draw no fill RNG, so pot-shuffle off is
     // placement-byte-identical. Active loot/key pots become open
     // slots; an active empty pot enters here too but is pinned to ITEM_Nothing
@@ -2859,14 +2860,21 @@ void Placement_SelfCheck(void) {
       }
     }
 
-    // (c) door shuffle forces every pot inactive (v1 — the prover doesn't model
-    //     pots). Settings_EffectiveDoorShuffle needs Open/Standard + NoGlitches.
+    // (c) door shuffle composes with pot shuffle; cave entrance shuffle still
+    //     forces every pot inactive because cave/house pot region overrides are
+    //     not modeled.
     RandoSettings sd;
     Settings_SetDefaults(&sd); sd.pot_shuffle = kPotShuffle_All; sd.door_shuffle = kDoorShuffle_Basic;
     uint32 n_door = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++)
       if (kRandoLocations[i].type == LOCTYPE_Pot && pot_active(&kRandoLocations[i], &sd)) n_door++;
-    if (n_door != 0) selfcheck_die("door shuffle must force every pot inactive (D7 v1)");
+    if (n_door != n_all) selfcheck_die("door shuffle must preserve active pots");
+    RandoSettings sce;
+    Settings_SetDefaults(&sce); sce.pot_shuffle = kPotShuffle_All; sce.shuffle_cave_entrances = 1;
+    uint32 n_cave = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++)
+      if (kRandoLocations[i].type == LOCTYPE_Pot && pot_active(&kRandoLocations[i], &sce)) n_cave++;
+    if (n_cave != 0) selfcheck_die("cave entrance shuffle must force every pot inactive");
 
     if (!has_pot_registry) {
       uint16 missing_pool[kRandoLocationCapacity];

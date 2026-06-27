@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 97  # bump_rando_corpus.py --apply - Swamp 0x036 pot split
+generator_version: 98  # door and pot shuffle integration
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -854,13 +854,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
-    expected_digest: "9780f3444341c61b8f12ee0cb7d6d94623f9b7ff4c74dbf58635ee279d573bd6"
-    expected_sphere_digest: "943eb09beb5cc6accc26cf4c584b3a641a4061053f1fe9ac1158e814e94ffc75"
+    expected_digest: "086ecaca109273eef908e3cca03a04a15b68225b4a9b902cbe507b249ed09d44"
+    expected_sphere_digest: "cf380fcdde9e620146338b28c73f3b08748265d3246c27ec7caa21b52f51e2a1"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
-    expected_digest: "35a95d38df12495acdc039bd1ffd36451c13353e446f978346a37ecbfc3d7ad7"
-    expected_sphere_digest: "48f06d04ec6f19498cbac270cf0eccdbd1032ac93e19fa8d81f7cdd4a734b27c"
+    expected_digest: "c6e62dea8d4a766d4c6d753f2585dd8645d346a9e6de34253b6f16b27e847c82"
+    expected_sphere_digest: "733114b9fc1d8786da47ba5d8e3762aa7464750d2344537efc51fd5a9d24c174"
+  - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, door_shuffle: basic }
+    seed: "0x504F54000000000A"
+    label: "pot-all-door-basic-open"
+    expected_digest: "f7da9355d6d3db6a18ec296768bdc4c72d04c777345e24812beeb7dfb75e98c9"
+    expected_sphere_digest: "253e51620d4a5b7ce20baf3d264fdbb62af396d726231e33a7de1a71d1ccf2d5"
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
@@ -876,13 +881,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, dungeon_items.small_keys: wild, accessibility: items }
     seed: "0x504F540000000007"
     label: "pot-keys-wild-items"
-    expected_digest: "8c3f1ae292094bcd1ee4ec8523cfee29c7c84df7611a168ab0be578aefef6d30"
-    expected_sphere_digest: "a210787091904378a7424b850f70989177d90de4256cef16c7b9ef4adb955473"
+    expected_digest: "62c0b3a287bd2b42056f25b981b1be59a625cf3e2af55561cdb963f47cec8870"
+    expected_sphere_digest: "f25ce680d47eaa61cc1d8c5b4d2bfff08927d41e194e3a4da9dd932a8ce5e7fd"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: wild, accessibility: items }
     seed: "0x504F540000000008"
     label: "pot-all-wild-items"
-    expected_digest: "d43d67793e6cf278e08f9b7bdc2a7348d9c2dd862d59ab1210a93f95ea50e4fc"
-    expected_sphere_digest: "ef7a73abccfd7c8febc7b4df527bb9ca49a2255710dad9aa59493a1fbfa998a9"
+    expected_digest: "eb81377a2c25f35395a6c714d96d2ed34fdf39d8780bb693aeabb08a169da33c"
+    expected_sphere_digest: "a04a7cf7284154db0594a8b87d1ab039c772b23cd82fa5d1a2ec7bbaf151a74d"
   # DUNGEON keys + pot_shuffle (task #25 dungeon half): key pots stay vanilla
   # (pinned in place, like pots-off) while chest keys shuffle in-dungeon.
   # accessibility=items proves the dungeon is fully reachable — the pot keys no
@@ -890,8 +895,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon, accessibility: items }
     seed: "0x504F540000000009"
     label: "pot-all-dungeon-items"
-    expected_digest: "3972aecaf8c4eecb75e46455ee97f8bae1da9d1f2bc2c6ebc6a8245a45f5283a"
-    expected_sphere_digest: "d841b3e952a62db427413b404ee31f27578dd4cd9f16790510ca18385c318405"
+    expected_digest: "a7d99dcd5c9700602dedce5f78ec65209b4cb2daee2a2da32cf614a5073e7a53"
+    expected_sphere_digest: "f5110f7b22cd2656dc9cc131b764ed66a27d0a590d6558e523a688f8164a41b4"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

@@ -49,6 +49,7 @@ ROOT = Path(__file__).resolve().parents[2]  # assets/scripts/ -> repo root
 DUMP = ROOT / "key_depth.txt"
 OUT = ROOT / "assets" / "rando" / "pot_key_depth.gen.yaml"
 POTS = ROOT / "assets" / "rando" / "pots.gen.yaml"
+DOOR_TABLES_C = ROOT / "src" / "rando" / "door_tables.gen.c"
 
 # door-table dungeon index -> SmallKey item suffix
 SK = {
@@ -74,10 +75,15 @@ KEYPOT_MINDEPTH = {
     (10, 0xa1): 0, (10, 0xb3): 0,                          # Mire Fishbone/Spikes
     (12, 0x7b): 1, (12, 0x8b): 0, (12, 0x9b): 0,          # GT StarPits/Cross/DoubleSwitch
 }
-# The two key pots whose door region is NOT in their engine room's ROOM-line set
+# Key pots whose door region is NOT in their engine room's ROOM-line set
 # (floor-bit alias / door-rando room-number split), so the DROP-region-in-room
-# auto-join can't reach them. Verified values; the assert vs KEYPOT_MINDEPTH guards.
-KEYPOT_OVERRIDE = {(6, 0x56): 4, (12, 0x9b): 0}
+# auto-join can't reach them. Verified region+mindepth; the assert vs
+# KEYPOT_MINDEPTH guards the depth. Region ids are from kDoorTblDropKeys.
+KEYPOT_OVERRIDE = {
+    (6, 0x36): (222, 3),   # Swamp Hookshot Pot Key
+    (6, 0x56): (245, 4),   # Swamp Waterway Pot Key
+    (12, 0x9b): (514, 0),  # GT Double Switch Pot Key
+}
 # ORPHAN key pots: engine room is a floor-bit alias absent from the door-table
 # ROOM set for their dungeon, so NO pot_rooms entry covers them - carry the WILD
 # `full` here too (room-max wild can't reach them). Only Swamp Waterway: engine
@@ -115,12 +121,44 @@ def check_fresh(path: Path, expected: str) -> int:
     return 1
 
 
+def parse_door_drop_indices():
+    """Returns {(dungeon, region): kDoorTblDropKeys index}.
+
+    The key-depth dump is grouped by dungeon for human readability, while
+    kDoorTblDropKeys has a different global order. The bridge stores the table
+    index because runtime drop exclusion compares against the real C array index.
+    """
+    out = {}
+    in_table = False
+    index = 0
+    for ln in DOOR_TABLES_C.read_text(encoding="utf-8").splitlines():
+        if "const DoorTblDropKey kDoorTblDropKeys" in ln:
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if ln.strip().startswith("};"):
+            break
+        m = re.match(r"\s*\{(\d+),(\d+),0x[0-9a-fA-F]+\},\s*//", ln)
+        if not m:
+            continue
+        key = (int(m[1]), int(m[2]))
+        if key in out:
+            sys.exit(f"{DOOR_TABLES_C}: duplicate DROP key for dungeon/region {key}")
+        out[key] = index
+        index += 1
+    if not out:
+        sys.exit(f"{DOOR_TABLES_C}: could not parse kDoorTblDropKeys")
+    return out
+
+
 def parse_dump():
     """Returns (chest, drop, loc, room_regions, drops_ordered).
     loc[name]   = (worst, mindepth, dungeon)
     room_regions[(dungeon, room)] = [(region, worst, mindepth)]
-    drops_ordered[dungeon] = [(region, worst, mindepth, name)]  (kDoorTblDropKeys order)
+    drops_ordered[dungeon] = [(global_drop_index, region, worst, mindepth, name)]
     """
+    drop_index_by_region = parse_door_drop_indices()
     chest, drop = {}, {}
     loc = {}
     room_regions = {}
@@ -136,10 +174,27 @@ def parse_dump():
         if m:
             room_regions.setdefault((int(m[5]), int(m[1], 16)), []).append(
                 (int(m[2]), int(m[3]), int(m[4]))); continue
+        m = re.match(r'DROP (\d+) index=(\d+) region=(\d+) depth=(-?\d+) mindepth=(-?\d+) name="([^"]*)"', ln)
+        if m:
+            d, idx, reg = int(m[1]), int(m[2]), int(m[3])
+            want_idx = drop_index_by_region.get((d, reg))
+            if want_idx is None:
+                sys.exit(f"DROP dungeon={d} region={reg}: no kDoorTblDropKeys row")
+            if idx != want_idx:
+                sys.exit(f"DROP dungeon={d} region={reg}: dump index {idx} != "
+                         f"kDoorTblDropKeys index {want_idx}")
+            drops_ordered.setdefault(int(m[1]), []).append(
+                (idx, reg, int(m[4]), int(m[5]), m[6]))
+            continue
         m = re.match(r'DROP (\d+) region=(\d+) depth=(-?\d+) mindepth=(-?\d+) name="([^"]*)"', ln)
         if m:
-            drops_ordered.setdefault(int(m[1]), []).append(
-                (int(m[2]), int(m[3]), int(m[4]), m[5])); continue
+            d, reg = int(m[1]), int(m[2])
+            idx = drop_index_by_region.get((d, reg))
+            if idx is None:
+                sys.exit(f"DROP dungeon={d} region={reg}: no kDoorTblDropKeys row")
+            drops_ordered.setdefault(d, []).append(
+                (idx, reg, int(m[3]), int(m[4]), m[5]))
+            continue
     return chest, drop, loc, room_regions, drops_ordered
 
 
@@ -172,30 +227,38 @@ def parse_pots():
     return out
 
 
-def keypot_dungeon_depth(kp, room_regions, drops_ordered):
+def keypot_door_join(kp, room_regions, drops_ordered):
     """Exact dungeon mindepth for one key pot via its door region.
 
     Join: the prover DROP line whose region lives in this pot's engine room is
     the key's region; take its mindepth. For the two floor-bit-aliased rooms the
-    region is not in the room set, so use the reviewed override."""
+    region is not in the room set, so use the reviewed override.
+
+    Returns (mindepth, door_region, global_drop_index)."""
     d, room = kp["dungeon"], kp["room"]
     if (d, room) in KEYPOT_OVERRIDE:
-        return KEYPOT_OVERRIDE[(d, room)]
+        want_region, want_depth = KEYPOT_OVERRIDE[(d, room)]
+        hits = [(idx, reg, md) for (idx, reg, _w, md, _n) in drops_ordered.get(d, [])
+                if reg == want_region and md >= 0]
+        if len(hits) != 1:
+            sys.exit(f"key pot d={d} room=0x{room:02x}: override region "
+                     f"{want_region} matched DROP rows {hits}")
+        idx, reg, md = hits[0]
+        if md != want_depth:
+            sys.exit(f"key pot d={d} room=0x{room:02x}: override region "
+                     f"{want_region} depth {md} != verified {want_depth}")
+        return md, reg, idx
     region_set = {r for (r, _w, _m) in room_regions.get((d, room), [])}
-    hits = [(reg, md) for (reg, _w, md, _n) in drops_ordered.get(d, [])
+    hits = [(idx, reg, md) for (idx, reg, _w, md, _n) in drops_ordered.get(d, [])
             if reg in region_set and md >= 0]
     if len(hits) == 1:
-        return hits[0][1]
+        idx, reg, md = hits[0]
+        return md, reg, idx
     if len(hits) > 1:
         sys.exit(f"key pot d={d} room=0x{room:02x}: {len(hits)} DROP regions in room "
                  f"{[h for h in hits]} - ambiguous join")
-    # No DROP region in the room (single-depth room with no separate drop entry):
-    # the room is unambiguous, so any region's mindepth is the answer.
-    mds = {md for (_r, _w, md) in room_regions.get((d, room), []) if md >= 0}
-    if len(mds) == 1:
-        return next(iter(mds))
-    sys.exit(f"key pot d={d} room=0x{room:02x}: no DROP join and ambiguous room "
-             f"mindepths {sorted(mds)} - needs a KEYPOT_OVERRIDE")
+    sys.exit(f"key pot d={d} room=0x{room:02x}: no DROP join - needs a "
+             f"KEYPOT_OVERRIDE with exact door region")
 
 
 def parse_cur():
@@ -253,7 +316,7 @@ def main(argv=None) -> int:
     # Per-key-pot EXACT dungeon mindepth (+ cross-check vs the verified table).
     pk_rows = []
     for kp in sorted(keypots, key=lambda x: x["id"]):
-        dep = keypot_dungeon_depth(kp, room_regions, drops_ordered)
+        dep, door_region, drop_index = keypot_door_join(kp, room_regions, drops_ordered)
         want = KEYPOT_MINDEPTH.get((kp["dungeon"], kp["room"]))
         if want is None:
             sys.exit(f"key pot id={kp['id']} d={kp['dungeon']} room=0x{kp['room']:02x} "
@@ -262,7 +325,8 @@ def main(argv=None) -> int:
             sys.exit(f"key pot id={kp['id']} d={kp['dungeon']} room=0x{kp['room']:02x}: "
                      f"auto-join {dep} != verified {want}")
         orphan_full = KEYPOT_ORPHAN_FULL.get((kp["dungeon"], kp["room"]))
-        pk_rows.append((kp["id"], kp["item"], dep, orphan_full))
+        pk_rows.append((kp["id"], kp["dungeon"], kp["item"], dep, orphan_full,
+                        door_region, drop_index))
     if len(pk_rows) != len(KEYPOT_MINDEPTH):
         sys.exit(f"found {len(pk_rows)} key pots but cross-check table has "
                  f"{len(KEYPOT_MINDEPTH)} - stale table after a rebind?")
@@ -287,11 +351,22 @@ def main(argv=None) -> int:
     # pot_rooms: full = wild room worst (capped); dungeon = room-MAX mindepth.
     # Wild covers EVERY dungeon with active pots (incl. no-key dungeons whose loot
     # pots sit behind key doors); the dungeon term only the pot-key dungeons.
+    #
+    # door_pot_rooms is separate and intentionally includes rooms even when they
+    # add no key-depth terms. Door shuffle still needs the room->door-region
+    # binding for active pot locations whose vanilla small-key requirement is 0.
     room_rows = []
-    POT_DUNGEONS = set(SK) - {3, 4, 5, 7, 11}  # has any pots (HC/EP/DP/SP/TT/IP/MM/GT)
+    door_room_rows = []
+    # Emit room bindings for every door-table dungeon. The generated file may
+    # contain rooms that have no shuffled pots; load_pots filters by
+    # pots.gen.yaml. This avoids hardcoded "pot dungeon" drift as the pot table
+    # grows.
+    POT_DUNGEONS = set(SK)
     for (d, room) in sorted(room_regions):
         if d not in POT_DUNGEONS:
             continue
+        regions = sorted({r for (r, _w, _m) in room_regions[(d, room)]})
+        door_room_rows.append((d, room, regions))
         worst = max((w for (_r, w, _m) in room_regions[(d, room)] if w >= 0), default=-1)
         roommax_min = max((m for (_r, _w, m) in room_regions[(d, room)] if m >= 0), default=-1)
         item = f"SmallKey_{SK[d]}"
@@ -303,7 +378,7 @@ def main(argv=None) -> int:
         if d in POT_KEY_DUNGEONS and roommax_min > 0:
             fields["dungeon"] = roommax_min
         if fields:
-            room_rows.append((room, item, fields))
+            room_rows.append((room, item, fields, regions))
 
     # Free-grant of NONPOT drops per pot-key dungeon (= drop_cnt - pot_keys),
     # consumed by rando_placement.c (hardcoded there + selfchecked). Printed here
@@ -316,7 +391,7 @@ def main(argv=None) -> int:
         "# add-rando-pot-sanity task #25 - small-key requirements pot_shuffle adds.",
         "#   full    = WILD hold-N worst case (capped at chest+pot_keys).",
         "#   dungeon = in-context MIN-depth (per-key-pot exact in pot_keys; room-max for loot).",
-        "format_version: 2",
+        "format_version: 3",
         "locations:",
     ]
     for name, item, fields in loc_rows:
@@ -329,9 +404,10 @@ def main(argv=None) -> int:
     out.append("# Per-ROOM pot requirement (load_pots wraps every pot in the room).")
     out.append("# full -> all pots (wild); dungeon -> loot/empty pots (key pots use pot_keys).")
     out.append("pot_rooms:")
-    for room, item, fields in room_rows:
+    for room, item, fields, regions in room_rows:
         out.append(f"  - room: 0x{room:02x}")
         out.append(f"    item: {item}")
+        out.append("    regions: [" + ", ".join(str(r) for r in regions) + "]")
         if "full" in fields:
             out.append(f"    full: {fields['full']}")
         if "dungeon" in fields:
@@ -339,12 +415,21 @@ def main(argv=None) -> int:
     out.append("# Per-KEY-POT exact dungeon mindepth (overrides pot_rooms.dungeon for the key pot).")
     out.append("# `full` appears only for ORPHAN pots whose room has no pot_rooms wild entry.")
     out.append("pot_keys:")
-    for pid, item, dep, orphan_full in pk_rows:
+    for pid, dungeon, item, dep, orphan_full, door_region, drop_index in pk_rows:
         out.append(f"  - id: {pid}")
+        out.append(f"    dungeon: {dungeon}")
         out.append(f"    item: {item}")
+        out.append(f"    door_region: {door_region}")
+        out.append(f"    drop_index: {drop_index}")
         if orphan_full is not None:
             out.append(f"    full: {orphan_full}")
-        out.append(f"    dungeon: {dep}")
+        out.append(f"    depth: {dep}")
+    out.append("# Door-shuffle bridge room bindings. Includes rooms with no key-depth term.")
+    out.append("door_pot_rooms:")
+    for d, room, regions in door_room_rows:
+        out.append(f"  - dungeon: {d}")
+        out.append(f"    room: 0x{room:02x}")
+        out.append("    regions: [" + ", ".join(str(r) for r in regions) + "]")
     out_text = "\n".join(out) + "\n"
     if args.check:
         return check_fresh(OUT, out_text)

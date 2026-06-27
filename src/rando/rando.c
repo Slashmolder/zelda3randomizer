@@ -3044,6 +3044,14 @@ static bool g_rando_active_door_logic = false;
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
 
+static uint8 rando_door_pot_tier_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla ||
+      Settings_PotShuffleForcedOff(settings))
+    return kPotShuffle_Off;
+  return settings->pot_shuffle;
+}
+
 static const uint16 kRandoTrapExtraGoodItemDecoys[] = {
   ITEM_Map_HyruleCastleEscape,
   ITEM_GenericKey,
@@ -3262,7 +3270,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
         Settings_EffectiveDoorShuffle(&ds) != kDoorShuffle_Vanilla) {
       uint64 slot_seed = SlotSeedFromShareString(src->header.share_string);
       bool ok = DoorShuffle_Generate(slot_seed, src->header.door_attempt,
-                                     kDoorShuffle_MvpDungeonMask, &s_active_door_layout);
+                                     kDoorShuffle_MvpDungeonMask,
+                                     rando_door_pot_tier_for_settings(&ds),
+                                     &s_active_door_layout);
       uint32 digest = ok ? (DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFF) : 0;
       if (!ok || digest != src->header.door_digest24) {
         fprintf(stderr,
@@ -3642,7 +3652,10 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
   if (g_rando_active_door_logic) {
     uint64 slot_seed = SlotSeedFromShareString(g_rando_active_header.share_string);
     if (DoorShuffle_Generate(slot_seed, g_rando_active_header.door_attempt,
-                             kDoorShuffle_MvpDungeonMask, &s_active_door_layout)) {
+                             kDoorShuffle_MvpDungeonMask,
+                             rando_door_pot_tier_for_settings(
+                                 g_rando_active_settings_valid ? &g_rando_active_settings : NULL),
+                             &s_active_door_layout)) {
       Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
     } else {
       // Unreachable for a validly-activated slot (the same deterministic
@@ -6363,6 +6376,7 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   uint32 datt = 0xFFFFFFFF;
   for (uint32 a = 0; a < 16; a++) {
     if (DoorShuffle_Generate(ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
+                             kPotShuffle_Off,
                              &s_active_door_layout)) {
       datt = a;
       break;

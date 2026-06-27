@@ -129,7 +129,7 @@ axis via `item_pool`.
 | `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
-| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under door shuffle or cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
+| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -438,12 +438,12 @@ an in-scope pot grants its placed item; un-checked in-scope pots show an **anima
 gold glint** as a visual tell (the pot and surrounding floor are not recolored). The non-`off` tiers add fillable locations and so change
 placement output; `off` is byte-identical.
 
-**Forced `off` under door shuffle or cave-entrance shuffle** (normalized
-automatically — the settings hash always matches the generated seed): door
-shuffle's key-door prover doesn't model pot locations yet, and cave-entrance
-shuffle relocates cave/house pots out of the region their logic was certified
-against, so neither can be combined with pots in this version. The native
-settings window greys out the pot selector while either is on.
+Door shuffle composes with pot shuffle: the door key-door prover and logic
+oracle model active dungeon pots through the generated door-region bridge. Cave
+entrance shuffle still forces pots `off` automatically because cave/house pots
+would otherwise evaluate from the region their vanilla logic was certified
+against. The native settings window only greys out the pot selector while cave
+entrance shuffle is on.
 
 Because `all` adds ~800 locations, the PC trackers gate pots behind a **"Show
 pots"** toggle (the SNES HUD location grid hides them outright), but every

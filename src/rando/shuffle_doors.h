@@ -54,6 +54,10 @@ typedef struct DoorShuffleLayout {
   uint8 bk_restricted_count;
   // Which dungeons were actually shuffled (bit = kDoorTblDungeons index).
   uint16 shuffled_mask;
+  // Effective pot shuffle tier this door layout was generated/proven against.
+  // 0 means pot shuffle inactive for door logic.
+  uint8 pot_tier;
+  uint32 pot_bridge_digest;
 } DoorShuffleLayout;
 
 // Generate the full per-seed layout: for each dungeon whose bit is set in
@@ -62,6 +66,7 @@ typedef struct DoorShuffleLayout {
 // Returns false when any dungeon exhausts its iteration caps (caller bumps
 // door_attempt and retries).
 bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
+                          uint8 pot_tier,
                           DoorShuffleLayout *out);
 
 // Stable digest over the layout (pairings + key doors + thresholds +

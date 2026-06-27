@@ -81,7 +81,7 @@ typedef enum {
   // pickups to the active bird-woken flute immediately.
   OP_INSTANT_FLUTE = 22,
   // True iff dungeon pot keys are first-class shuffled checks
-  // (pot_shuffle >= Keys AND door shuffle off). A
+  // (pot_shuffle >= Keys AND not cave-entrance forced-off). A
   // pot-bearing dungeon's deep locations wrap their small-key term so pots-off
   // keeps the vanilla worst-case (byte-identical) and pots-on requires the
   // prover worst-case that counts the now-itemized pot keys.
@@ -477,6 +477,36 @@ typedef struct RandoDoorPortalGate {
 } RandoDoorPortalGate;
 extern const RandoDoorPortalGate kDoorPortalGates[];
 extern const uint32 kDoorPortalGatesCount;
+
+// Door x pot-shuffle bridge (generated from local pot artifacts). Pots are not
+// in kDoorTblLocations, so the door oracle/prover need this table to bind an
+// active pot check to one or more door-table regions and to the pot's base
+// (pre-pot-key-depth) predicate.
+enum {
+  kDoorPot_KeySource = 0x01,  // non-empty pot; can host shuffled small keys
+  kDoorPot_KeyPot    = 0x02,  // vanilla item is a dungeon small key
+  kDoorPot_Empty     = 0x04,  // ITEM_Nothing filler; active only at All tier
+};
+
+typedef struct RandoDoorPotLocation {
+  uint16 loc_id;
+  uint16 region_first;
+  uint32 pred_off;
+  uint16 pred_len;
+  uint16 drop_index;    // kDoorTblDropKeys index, or 0xFFFF for non-key pots
+  uint8 dungeon;        // kDoorTblDungeons index
+  uint8 min_tier;       // PotShuffle tier where this row first becomes active
+  uint8 flags;          // kDoorPot_* bits
+  uint8 region_count;
+} RandoDoorPotLocation;
+extern const RandoDoorPotLocation kRandoDoorPotLocations[];
+extern const uint16 kRandoDoorPotRegions[];
+extern const uint32 kRandoDoorPotLocationsCount;
+extern const uint32 kRandoDoorPotBridgeDigest;
+
+static inline bool Rando_DoorPotActive(const RandoDoorPotLocation *p, uint8 pot_tier) {
+  return p != NULL && pot_tier >= p->min_tier && pot_tier <= kPotShuffle_All;
+}
 
 // Install/clear the per-seed door layout for logic evaluation (generation
 // installs before Place_AssumedFill; slot activation installs the regenerated

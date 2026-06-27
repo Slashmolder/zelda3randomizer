@@ -86,7 +86,7 @@ typedef struct KeyState {
   uint8 bk;
   // counts (KeyCounter): free locations (blind-gated Thieves boss applied),
   // with/without big chests; reached drop keys.
-  uint8 free_excl_bc, free_all, key_only;
+  uint8 free_excl_bc, free_all, key_only, pot_free;
   uint16 child_mask;  // closed-but-reachable key pairs
   uint8 bk_child;     // some closed big-key door is reachable-adjacent
   // location sets for counter diffs / bk restrictions
@@ -101,7 +101,8 @@ typedef struct KeyCtx {
   DoorShuffleLayout *layout;
   const uint16 *origins;
   int norigins;
-  int max_chests;  // calc_max_chests (basic) = chest_small_keys
+  int max_small_sources;  // chest_small_keys + active key pots
+  uint8 pot_tier;
   DoorKeyPair pairs[kDoorShuffle_MaxKeyDoors];
   int np;
 } KeyCtx;
@@ -141,6 +142,7 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
   spec.open_mask = mask;
   spec.bk_mode = kDoorBkMode_State;
   spec.bk_open = bk;
+  spec.pot_tier = kc->pot_tier;
   DoorExplore_Core(&spec, &res);
 
   KeyState *st = &g_states[g_nstates];
@@ -169,11 +171,14 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
   }
   for (int i = 0; i < kDoorTbl_DropKeyCount; i++) {
     if (kDoorTblDropKeys[i].dungeon == kc->dungeon &&
+        !Door_DropExcludedByActivePot(kc->dungeon, (uint16)i, kc->pot_tier) &&
         DoorExplore_Reached(&res, kDoorTblDropKeys[i].region)) {
       st->drop_bits |= 1u << i;
       st->key_only++;
     }
   }
+  st->pot_free = (uint8)Door_CountActivePotKeySources(kc->dungeon, &res,
+                                                       kc->pot_tier);
   for (int i = 0; i < kDoorTbl_EventCount; i++) {
     const DoorTblEvent *ev = &kDoorTblEvents[i];
     if (ev->region != 0xFFFF && kDoorTblRegions[ev->region].dungeon == kc->dungeon &&
@@ -224,10 +229,10 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
 // cnt_avail_small_locations_by_ctr / cnt_avail_big_locations_by_ctr.
 static int AvailSmall(const KeyCtx *kc, const KeyState *st) {
   int used = PopCount16(st->mask);
-  int ttl = st->bk ? st->free_all : st->free_excl_bc;
+  int ttl = (st->bk ? st->free_all : st->free_excl_bc) + st->pot_free;
   int chest = ttl - (st->bk ? 1 : 0);
-  if (chest > kc->max_chests)
-    chest = kc->max_chests;
+  if (chest > kc->max_small_sources)
+    chest = kc->max_small_sources;
   int v = chest + st->key_only - used;
   return v > 0 ? v : 0;
 }
@@ -684,7 +689,8 @@ static int CountLocations(const KeyState *st) {
   int other = BitsetPop(st->loc_other, kKeyLocBytes) + PopCount16(st->ev_locs);
   int important = BitsetPop(st->loc_other, kKeyLocBytes) +
                   PopCount16(st->ev_locs & kImportantEvMask);
-  return BitsetPop(st->loc_free, kKeyLocBytes) + st->key_only + other + important;
+  return BitsetPop(st->loc_free, kKeyLocBytes) + st->key_only + st->pot_free +
+         other + important;
 }
 
 // find_best_counter: scan counters in creation order; max used_keys, ties by
@@ -858,7 +864,9 @@ bool DoorKeys_ShuffleDungeon(uint8 dungeon, RandoRng *rng,
   kc.layout = layout;
   kc.origins = origins;
   kc.norigins = origin_count;
-  kc.max_chests = kDoorTblDungeons[dungeon].chest_small_keys;
+  kc.pot_tier = layout ? layout->pot_tier : kPotShuffle_Off;
+  kc.max_small_sources = kDoorTblDungeons[dungeon].chest_small_keys +
+                         Door_CountActiveKeyPots(dungeon, kc.pot_tier);
 
   static DoorKeyPair candidates[kDoorKey_MaxCandidates];
   int ncand = FindCandidates(&kc, candidates);
@@ -1115,7 +1123,8 @@ int DoorKeys_DumpKeyDepth(const char *path) {
       kc.layout = &vanilla;
       kc.origins = origins;
       kc.norigins = norig;
-      kc.max_chests = kDoorTblDungeons[d].chest_small_keys;
+      kc.pot_tier = kPotShuffle_Off;
+      kc.max_small_sources = kDoorTblDungeons[d].chest_small_keys;
       kc.np = np;
       for (int i = 0; i < np; i++)
         kc.pairs[i] = pairs[i];
@@ -1154,7 +1163,7 @@ int DoorKeys_DumpKeyDepth(const char *path) {
       const DoorTblDropKey *dk = &kDoorTblDropKeys[i];
       if (dk->dungeon != d)
         continue;
-      fprintf(out, "DROP %d region=%d depth=%d mindepth=%d name=\"%s\"\n", d,
+      fprintf(out, "DROP %d index=%d region=%d depth=%d mindepth=%d name=\"%s\"\n", d, i,
               dk->region, depth[dk->region] == 0xFF ? -1 : depth[dk->region],
               mindepth[dk->region] == 0xFF ? -1 : mindepth[dk->region],
               DoorIdx_Name(kDoorTblRegions[dk->region].name_off));
