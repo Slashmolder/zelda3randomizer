@@ -273,6 +273,7 @@ static RandoPlacement g_tail_entries[kRandoLocationCapacity];
 static RandoPlacementTable g_tail_table;
 
 int RandoSnapshotTail_Load(FILE *f) {
+  Rando_ClearDeferredPotConfirmation();
   if (f == NULL) return 0;
   int recognized = 0;
 

@@ -572,6 +572,7 @@ uint16 Rando_PickTrapEffectId(uint64 seed, uint16 location_id, uint8 categories,
 // g_ram-backed PPU state (e.g. a Darkness blackout) when a new trap pre-empts it.
 void Dungeon_ApproachFixedColor_variable(uint8 a);
 static void rando_trap_effect_teardown(uint8 effect);
+static void rando_tick_deferred_pot_confirmation(void);
 
 static uint8 g_rando_trap_stun_timer;
 static uint8 g_rando_trap_effect;
@@ -1030,6 +1031,7 @@ static bool rando_decoy_icon_active(void) {
 
 void Rando_TickTrapEffects(void) {
   rando_clear_bad_trap_wall_spark_residue();
+  rando_tick_deferred_pot_confirmation();
 
   if (g_rando_trap_stun_timer == 0) return;
 
@@ -1810,7 +1812,12 @@ static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_b
 static bool rando_receive_icon_for_code(uint8 code, uint8 *out_gfx, uint8 *out_big,
                                         uint8 *out_oam_flags);
 
-void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
+static void rando_direct_grant_chime_and_hud(void) {
+  sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
+  Hud_RefreshIcon();
+}
+
+static void rando_show_direct_grant_icon_only(uint8 item_id) {
   // every caller passes `(uint8)Rando_LastDispatched
   // ItemId()`; the cast loses precision if the sentinel value 0xFFFF
   // ever reaches us. The skip-sentinel path only runs AFTER a successful
@@ -1821,10 +1828,6 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // future change that calls this WITHOUT a prior dispatch fires loudly.
   assert(item_id != 0xFFu /* sentinel byte from 0xFFFF truncation */ ||
          Rando_LastDispatchedItemId() != 0xFFFFu);
-  // Traps deliberately start with the normal direct-grant chime; the trap-owned
-  // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
-  sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
-  Hud_RefreshIcon();
 
   // Look up the visual icon. Traps use the same deterministic decoy
   // resolver as field-item sprites so the visible fake item and pickup popup
@@ -1851,6 +1854,13 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
     AncillaAdd_RandoIconReceipt(gfx, big, oam);
 }
 
+void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
+  // Traps deliberately start with the normal direct-grant chime; the trap-owned
+  // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
+  rando_direct_grant_chime_and_hud();
+  rando_show_direct_grant_icon_only(item_id);
+}
+
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
   if (Rando_ShouldSkipReceive(lttp_code)) {
     Rando_ShowDirectGrantConfirmation(item_id);
@@ -1859,42 +1869,196 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
   }
 }
 
+typedef struct RandoPotCarrySnapshot {
+  uint8 flag_immobilized;
+  uint8 flag_sprite_pickup;
+  uint8 flag_ancilla_pickup;
+  uint8 flag_sprite_pickup_cached;
+  uint8 pickup_handshake;
+  uint8 player_handler;
+  uint8 item_in_hand;
+  uint8 state_bits;
+  uint8 picking_throw_state;
+  uint8 anim_timer_steps;
+  uint8 anim_timer;
+  uint8 button_mask;
+  uint8 a_button;
+  uint8 button_frames;
+  uint8 speed;
+  uint8 cant_change_dir;
+  uint8 player_handler_state;
+  uint8 pose_for_item;
+  uint8 position_mode;
+  uint8 disable_sprite_damage;
+} RandoPotCarrySnapshot;
+
+static RandoPotCarrySnapshot rando_pot_capture_carry_state(void) {
+  RandoPotCarrySnapshot s;
+  s.flag_immobilized = flag_is_link_immobilized;
+  s.flag_sprite_pickup = flag_is_sprite_to_pick_up;
+  s.flag_ancilla_pickup = flag_is_ancilla_to_pick_up;
+  s.flag_sprite_pickup_cached = flag_is_sprite_to_pick_up_cached;
+  s.pickup_handshake = byte_7E0FB2;
+  s.player_handler = player_handler_timer;
+  s.item_in_hand = link_item_in_hand;
+  s.state_bits = link_state_bits;
+  s.picking_throw_state = link_picking_throw_state;
+  s.anim_timer_steps = some_animation_timer_steps;
+  s.anim_timer = some_animation_timer;
+  s.button_mask = button_mask_b_y;
+  s.a_button = bitfield_for_a_button;
+  s.button_frames = button_b_frames;
+  s.speed = link_speed_setting;
+  s.cant_change_dir = link_cant_change_direction;
+  s.player_handler_state = link_player_handler_state;
+  s.pose_for_item = link_pose_for_item;
+  s.position_mode = link_position_mode;
+  s.disable_sprite_damage = link_disable_sprite_damage;
+  return s;
+}
+
+static void rando_pot_restore_carry_state(const RandoPotCarrySnapshot *s) {
+  flag_is_link_immobilized = s->flag_immobilized;
+  flag_is_sprite_to_pick_up = s->flag_sprite_pickup;
+  flag_is_ancilla_to_pick_up = s->flag_ancilla_pickup;
+  flag_is_sprite_to_pick_up_cached = s->flag_sprite_pickup_cached;
+  byte_7E0FB2 = s->pickup_handshake;
+  player_handler_timer = s->player_handler;
+  link_item_in_hand = s->item_in_hand;
+  link_state_bits = s->state_bits;
+  link_picking_throw_state = s->picking_throw_state;
+  some_animation_timer_steps = s->anim_timer_steps;
+  some_animation_timer = s->anim_timer;
+  button_mask_b_y = s->button_mask;
+  bitfield_for_a_button = s->a_button;
+  button_b_frames = s->button_frames;
+  link_speed_setting = s->speed;
+  link_cant_change_direction = s->cant_change_dir;
+  link_player_handler_state = s->player_handler_state;
+  link_pose_for_item = s->pose_for_item;
+  link_position_mode = s->position_mode;
+  link_disable_sprite_damage = s->disable_sprite_damage;
+}
+
+static bool rando_pot_carry_visual_active(const RandoPotCarrySnapshot *s) {
+  return (s->state_bits & 0x80) != 0 ||
+         s->picking_throw_state != 0 ||
+         s->player_handler != 0 ||
+         s->flag_sprite_pickup != 0 ||
+         s->flag_ancilla_pickup != 0 ||
+         s->flag_sprite_pickup_cached != 0 ||
+         s->pickup_handshake != 0 ||
+         s->item_in_hand != 0;
+}
+
+static bool g_rando_pot_confirmation_pending;
+static DirectGrantIconEntry g_rando_pot_confirmation_icon;
+
+static bool rando_pot_throwable_terrain_active(void) {
+  for (int k = 0; k < 16; k++)
+    if (sprite_state[k] != 0 && sprite_type[k] == 0xec)
+      return true;
+  return false;
+}
+
+static bool rando_pot_confirmation_safe_to_emit(void) {
+  if (!rando_trap_stun_can_tick() || submodule_index != 0)
+    return false;
+  RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
+  return !rando_pot_carry_visual_active(&carry) &&
+         !rando_pot_throwable_terrain_active();
+}
+
+static bool rando_resolve_pot_confirmation_icon(uint16 item_id, uint8 lttp_code,
+                                                DirectGrantIconEntry *out) {
+  if (out == NULL)
+    return false;
+
+  // Non-direct items resolve from the pre-grant LttP receive code so progressive
+  // tiers show the item actually collected, not the next tier after the grant.
+  if (!Rando_ShouldSkipReceive(lttp_code)) {
+    uint8 ig, ib, io;
+    if (rando_receive_icon_for_code(lttp_code, &ig, &ib, &io)) {
+      out->gfx = ig;
+      out->big = ib;
+      out->oam_flags = io;
+      return true;
+    }
+  }
+
+  if (rando_trap_decoy_icon(item_id, g_last_dispatched_location_id, out))
+    return true;
+
+  const DirectGrantIconEntry *e =
+      rando_direct_grant_icon_entry(rando_direct_grant_icon_item_post_grant(item_id));
+  if (e != NULL) {
+    *out = *e;
+    return true;
+  }
+
+  uint8 gfx, big, oam;
+  if (rando_receive_item_icon(item_id, &gfx, &big, &oam)) {
+    out->gfx = gfx;
+    out->big = big;
+    out->oam_flags = oam;
+    return true;
+  }
+  return false;
+}
+
+void Rando_ClearDeferredPotConfirmation(void) {
+  g_rando_pot_confirmation_pending = false;
+}
+
+static void rando_queue_pot_confirmation(uint16 item_id, uint8 lttp_code) {
+  g_rando_pot_confirmation_pending =
+      rando_resolve_pot_confirmation_icon(item_id, lttp_code,
+                                          &g_rando_pot_confirmation_icon);
+  rando_direct_grant_chime_and_hud();
+}
+
+static void rando_tick_deferred_pot_confirmation(void) {
+  if (!g_rando_pot_confirmation_pending)
+    return;
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive)) {
+    g_rando_pot_confirmation_pending = false;
+    return;
+  }
+  if (!rando_pot_confirmation_safe_to_emit())
+    return;
+
+  DirectGrantIconEntry icon = g_rando_pot_confirmation_icon;
+  g_rando_pot_confirmation_pending = false;
+  AncillaAdd_RandoIconReceipt(icon.gfx, icon.big, icon.oam_flags);
+}
+
 // add-rando-pot-sanity — streamlined grant for a pot pickup. The vanilla
 // Link_ReceiveItem plays the full hold-over-head receipt: it zeroes
 // link_item_in_hand (so a CARRIED pot is dropped mid-lift — "the pot goes
 // flying"), poses Link, and freezes him for the whole animation. Far too heavy
-// to fire on every pot. Instead we run ONLY the item WRITE — AncillaAdd_ItemReceipt
-// performs it in its add handler, keyed on link_receiveitem_index — then undo the
-// immobilize it set, drop the (unwanted) visual receipt ancilla (type 0x22), and
-// show the same lightweight floating-icon + chime cue direct-grant items use. We
-// deliberately do NOT call Link_ReceiveItem, so Link's lift/carry/throw of the pot
-// is left untouched. Correct for every item class (the write is the same one the
-// receipt performs); cutscene-bearing receive codes are already neutralized for
-// rando by Rando_DispatchVanillaGrant, and at a pot we want no cutscene anyway.
-void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
+// to fire on every pot. Instead we run ONLY the inventory write extracted from
+// AncillaAdd_ItemReceipt, then fill in the receipt-update grants this quiet path
+// intentionally skips. We deliberately do NOT call Link_ReceiveItem or allocate a
+// receipt ancilla, so Link's lift/carry/throw of the pot is left untouched. Pot
+// grants play sound + HUD immediately, then defer the visible icon until the
+// throwable terrain sprite is gone; the hook can run before that sprite exists on
+// the immediate-lift path, so the shared receive-item graphics slot is kept out
+// of the whole pot lifetime.
+static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool show_confirmation) {
+  RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
   if (Rando_ShouldSkipReceive(lttp_code)) {
     // Direct-grant classes were already written by Rando_DispatchVanillaGrant.
-    Rando_ShowDirectGrantConfirmation(item_id);
+    if (show_confirmation)
+      rando_queue_pot_confirmation(item_id, lttp_code);
     return;
   }
+
   item_receipt_method = 0;             // normal write path
-  link_receiveitem_index = lttp_code;  // the item AncillaAdd_ItemReceipt will write
-  AncillaAdd_ItemReceipt(0x22, 4, 0);  // does the grant write in its add handler...
-  // ...but AncillaAdd_ItemReceipt RETURNS before the write if no ancilla slot is
-  // free (Ancilla_AllocInit -> -1 when all 5 low slots hold non-disposable types).
-  // The pot is ALREADY marked checked + the vanilla drop suppressed, so a skipped
-  // write loses the placed item forever — turning an assumed-fill-certified seed
-  // unbeatable. Detect the miss (the quiet grant clears every type-0x22 receipt
-  // each call, so a live one means OUR write landed) and retry after freeing a
-  // slot: sacrificing one transient effect sprite beats losing the placed item.
-  bool granted = false;
-  for (int i = 0; i < 5; i++)
-    if (ancilla_type[i] == 0x22) { granted = true; break; }
-  if (!granted) {
-    ancilla_type[4] = 0;                 // free a low slot for the receipt
-    AncillaAdd_ItemReceipt(0x22, 4, 0);  // retry — the write now lands
-  }
-  // AncillaAdd_ItemReceipt does only the TABLE-WRITE grants (kValueToGiveItemTo).
+  link_receiveitem_index = lttp_code;  // keep global state aligned with vanilla receipt code
+  if (!ItemReceipt_GrantInventory(lttp_code))
+    return;
+
+  // ItemReceipt_GrantInventory does only the TABLE-WRITE grants (kValueToGiveItemTo).
   // Several grants are DEFERRED to the ancilla UPDATE — rupees (Ancilla_AddRupees),
   // the 4th-Piece-of-Heart rollover, heart containers, and heart/magic refills
   // (Ancilla22_ItemReceipt's completion branch, ancilla.c) — which the visual-kill
@@ -1937,26 +2101,14 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
       break;
     default: break;
   }
-  flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)
-  for (int i = 0; i < 10; i++)         // remove the visual receipt — no animation
-    if (ancilla_type[i] == 0x22)
-      ancilla_type[i] = 0;
-  Rando_ShowDirectGrantConfirmation(item_id);  // lightweight icon + chime
-  // The confirmation re-derives the icon from item_id POST-grant — but the byte
-  // AncillaAdd_ItemReceipt just wrote has already advanced the tier, so for ANY
-  // progressive item (boomerang, bow, gloves, shield, mail, sword, magic) the
-  // re-derivation returns the NEXT tier and pops the wrong icon (gold gloves after
-  // the Power Glove, silver arrows after the wood bow, mirror after the red shield,
-  // red after blue boomerang). Re-pop from the PRE-grant lttp_code we were handed —
-  // the tier ACTUALLY granted — for EVERY non-direct item; AncillaAdd_RandoIconReceipt
-  // retires the prior icon (only one floating receive icon), so the right tier wins
-  // with no flash. Non-progressive items resolve to the same gfx, so this is
-  // uniformly safe (we already returned early above for the direct-grant classes).
-  {
-    uint8 ig, ib, io;
-    if (rando_receive_icon_for_code(lttp_code, &ig, &ib, &io))
-      AncillaAdd_RandoIconReceipt(ig, ib, io);
-  }
+  rando_pot_restore_carry_state(&carry);  // undo receipt-side lift/carry mutations
+  if (show_confirmation)
+    rando_queue_pot_confirmation(item_id, lttp_code);
+  rando_pot_restore_carry_state(&carry);
+}
+
+void Rando_PotQuietReceive(uint8 lttp_code, uint16 item_id) {
+  rando_pot_quiet_receive_impl(lttp_code, item_id, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -2094,7 +2246,7 @@ uint8 Rando_PotBreakHook(uint16 room, uint16 pos4) {
   uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, 0);
   uint16 item = Rando_LastDispatchedItemId();
   if (item != ITEM_Nothing)
-    Rando_PotQuietReceive(lttp, (uint8)item);  // streamlined: no receive animation, no lift-yank
+    Rando_PotQuietReceive(lttp, item);  // streamlined: no receive animation, no lift-yank
   // ITEM_Nothing (empty pot): the dispatch already marked it checked; no receive
   // cue — the recolor reverting to vanilla on re-entry is the feedback.
   return kRandoPot_Suppress;
@@ -3210,6 +3362,7 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   // Protect a GENUINE active slot (don't disturb its installs), but allow a new
   // cold replay to supersede a PRIOR cold replay's restore.
   if (g_rando_active_settings_valid && !g_rando_settings_from_cold_replay) return;
+  Rando_ClearDeferredPotConfirmation();
 
   g_rando_active_settings = *s;
   g_rando_active_world_state = s->world_state;
@@ -3239,6 +3392,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     return;
   }
   rando_clear_trap_effect();
+  Rando_ClearDeferredPotConfirmation();
   // FIX #5 — refuse a slot whose canonical settings blob fails range
   // validation (Settings_CanonicalDeserialize now rejects out-of-range enum
   // bytes via Settings_Validate; undefined FLAG bits stay permissive). The
@@ -3700,6 +3854,7 @@ void Rando_DeactivateSlot(void) {
   g_session_placement_table.count = 0;
   g_rando_slot_active = 0;
   rando_clear_trap_effect();
+  Rando_ClearDeferredPotConfirmation();
   g_wanted_zelda_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   enhanced_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   // Pair with the SetSnapshotContext in Activate — leaving stale metadata
@@ -4632,6 +4787,87 @@ void Rando_SelfCheck(void) {
   if (Rando_DispatchVanillaGrant(8, 5, 0x00) != 0x00) {
     fprintf(stderr, "Rando_SelfCheck: pass-through DispatchVanillaGrant failed\n");
     exit(2);
+  }
+
+  // add-rando-pot-sanity — quiet pot grants use the receipt inventory helper
+  // without allocating receipt visuals, but some item codes still touch Link's
+  // action state. Exercise the transactional carry guard directly.
+  {
+    RandoPotCarrySnapshot saved_carry = rando_pot_capture_carry_state();
+
+    flag_is_link_immobilized = 0;
+    flag_is_sprite_to_pick_up = 2;
+    flag_is_ancilla_to_pick_up = 0;
+    flag_is_sprite_to_pick_up_cached = 2;
+    byte_7E0FB2 = 2;
+    player_handler_timer = 6;
+    link_item_in_hand = 0;
+    link_state_bits = 0x80;
+    link_picking_throw_state = 1;
+    some_animation_timer_steps = 5;
+    some_animation_timer = 0x48;
+    button_mask_b_y = 0x80;
+    bitfield_for_a_button = 0x80;
+    button_b_frames = 7;
+    link_speed_setting = 12;
+    link_cant_change_direction = 1;
+    link_player_handler_state = 24;
+    link_pose_for_item = 0;
+    link_position_mode = 0;
+    link_disable_sprite_damage = 0;
+
+    RandoPotCarrySnapshot pot_carry = rando_pot_capture_carry_state();
+    if (!rando_pot_carry_visual_active(&pot_carry)) {
+      fprintf(stderr, "Rando_SelfCheck: quiet pot carry cue should suppress icon\n");
+      exit(2);
+    }
+    flag_is_link_immobilized = 1;
+    flag_is_sprite_to_pick_up = 0;
+    flag_is_ancilla_to_pick_up = 1;
+    flag_is_sprite_to_pick_up_cached = 0;
+    byte_7E0FB2 = 0;
+    player_handler_timer = 0;
+    link_item_in_hand = 0x40;
+    link_state_bits = 0;
+    link_picking_throw_state = 2;
+    some_animation_timer_steps = 0;
+    some_animation_timer = 0;
+    button_mask_b_y = 0;
+    bitfield_for_a_button = 0;
+    button_b_frames = 0;
+    link_speed_setting = 0;
+    link_cant_change_direction = 0;
+    link_player_handler_state = 15;
+    link_pose_for_item = 1;
+    link_position_mode = 8;
+    link_disable_sprite_damage = 1;
+    rando_pot_restore_carry_state(&pot_carry);
+
+    if (flag_is_link_immobilized != 0 ||
+        flag_is_sprite_to_pick_up != 2 ||
+        flag_is_ancilla_to_pick_up != 0 ||
+        flag_is_sprite_to_pick_up_cached != 2 ||
+        byte_7E0FB2 != 2 ||
+        player_handler_timer != 6 ||
+        link_item_in_hand != 0 ||
+        link_state_bits != 0x80 ||
+        link_picking_throw_state != 1 ||
+        some_animation_timer_steps != 5 ||
+        some_animation_timer != 0x48 ||
+        button_mask_b_y != 0x80 ||
+        bitfield_for_a_button != 0x80 ||
+        button_b_frames != 7 ||
+        link_speed_setting != 12 ||
+        link_cant_change_direction != 1 ||
+        link_player_handler_state != 24 ||
+        link_pose_for_item != 0 ||
+        link_position_mode != 0 ||
+        link_disable_sprite_damage != 0) {
+      fprintf(stderr, "Rando_SelfCheck: quiet pot grant clobbered carry state\n");
+      exit(2);
+    }
+
+    rando_pot_restore_carry_state(&saved_carry);
   }
 
   // Build a synthetic placement table and verify dispatch routes to the

@@ -983,6 +983,7 @@ void Rando_FillItemView(RandoItemView *out);
 struct RandoSidecarSlot;
 void Rando_ActivateSidecarSlot(const struct RandoSidecarSlot *src);
 void Rando_DeactivateSlot(void);
+void Rando_ClearDeferredPotConfirmation(void);
 
 // Snapshot cold-replay restore. Reconstructs the active-slot logic-side
 // state (prize/medallion/boss/drop/enemy assignments + Inverted installs +
