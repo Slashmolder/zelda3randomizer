@@ -234,17 +234,23 @@ static void DrawItemTracker(void *) {
   char ov[12];
 
   ImGui::SeparatorText("Items");
-  // Equipment (level/tier overlays).
-  snprintf(ov, sizeof ov, "%d", v.sword);  IconChip(kRandoIcon_Sword, v.sword > 0, v.sword > 0 ? ov : nullptr);
-  snprintf(ov, sizeof ov, "%d", v.shield); IconChip(kRandoIcon_Shield, v.shield > 0, v.shield > 0 ? ov : nullptr);
-  // Tunic / gloves / boomerang: pick the coloured-variant atlas slot so the
-  // sprite matches the held tier (blue/red mail, Titan's Mitt, magic boomerang).
+  int sword_slot = v.sword == 4 ? kRandoIcon_SwordGold
+                 : v.sword == 3 ? kRandoIcon_SwordTempered
+                 : v.sword == 2 ? kRandoIcon_SwordMaster
+                 : kRandoIcon_Sword;
+  int shield_slot = v.shield == 3 ? kRandoIcon_ShieldMirror
+                  : v.shield == 2 ? kRandoIcon_ShieldRed
+                  : kRandoIcon_Shield;
+  IconChip(sword_slot, v.sword > 0, nullptr);
+  IconChip(shield_slot, v.shield > 0, nullptr);
+  // Pick coloured/tiered atlas slots so the sprite matches the held tier.
   int mail_slot = v.mail == 2 ? kRandoIcon_ArmorRed
                 : v.mail == 1 ? kRandoIcon_ArmorBlue : kRandoIcon_Armor;
   IconChip(mail_slot, true, nullptr);
   int glove_slot = v.gloves == 2 ? kRandoIcon_GlovesTitan : kRandoIcon_Gloves;
   IconChip(glove_slot, v.gloves > 0, nullptr);
-  IconChip(kRandoIcon_Bow, v.bow > 0, v.bow == 2 ? "S" : v.bow == 1 ? "W" : nullptr);
+  int bow_slot = v.bow == 2 ? kRandoIcon_BowSilver : kRandoIcon_Bow;
+  IconChip(bow_slot, v.bow > 0, nullptr);
   int boom_slot = v.boomerang == 2 ? kRandoIcon_BoomerangRed : kRandoIcon_Boomerang;
   IconChip(boom_slot, v.boomerang > 0, nullptr);
   IconChip(kRandoIcon_Hookshot, v.hookshot, nullptr);

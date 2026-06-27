@@ -2122,6 +2122,12 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_GlovesTitan,  &kHudItemGloves[2]);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ArmorBlue,    &kHudItemArmor[1]);
   DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ArmorRed,     &kHudItemArmor[2]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_SwordMaster,  &kHudItemSword[2]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_SwordTempered, &kHudItemSword[3]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_SwordGold,    &kHudItemSword[4]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ShieldRed,    &kHudItemShield[2]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_ShieldMirror, &kHudItemShield[3]);
+  DecodeIconQuad(out, stride, scratch, sw, pal, kRandoIcon_BowSilver,    &kHudItemBowRandoSilverArrows);
   DecodeIconTile2x(out, stride, scratch, sw, pal, kRandoIcon_Heart, kRandoFullHeartTile);
   // Pendant icons: reuse the SAME static HUD artwork the in-game progress screen
   // draws (Hud_DrawProgressIcons_Pendants): one template gem (chars 0x12b-0x12e

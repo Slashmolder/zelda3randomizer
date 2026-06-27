@@ -88,7 +88,7 @@ void Hud_RandoDrawLocationTracker(void);
 // live VRAM), so it can run any time after assets load. Atlas is a horizontal
 // strip kRandoIconCount*kRandoIconSize wide, kRandoIconSize tall.
 // ---------------------------------------------------------------------------
-#define kRandoIconCount 42
+#define kRandoIconCount 48
 #define kRandoIconSize 16
 // Slot indices into the atlas == kHudItemBoxGfxPtrs order.
 enum {
@@ -118,6 +118,12 @@ enum {
   kRandoIcon_GlovesTitan  = 39,  // kHudItemGloves[2]   (Titan's Mitt)
   kRandoIcon_ArmorBlue    = 40,  // kHudItemArmor[1]    (blue mail)
   kRandoIcon_ArmorRed     = 41,  // kHudItemArmor[2]    (red mail)
+  kRandoIcon_SwordMaster  = 42,  // kHudItemSword[2]    (master sword)
+  kRandoIcon_SwordTempered = 43,  // kHudItemSword[3]    (tempered sword)
+  kRandoIcon_SwordGold    = 44,  // kHudItemSword[4]    (gold sword)
+  kRandoIcon_ShieldRed    = 45,  // kHudItemShield[2]   (red shield)
+  kRandoIcon_ShieldMirror = 46,  // kHudItemShield[3]   (mirror shield)
+  kRandoIcon_BowSilver    = 47,  // kHudItemBowRandoSilverArrows
 };
 // Build the atlas into `out` (kRandoIconCount*kRandoIconSize*kRandoIconSize
 // uint32 RGBA8888). Transparent pixels have alpha 0. Returns the icon count.
