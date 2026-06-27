@@ -46,6 +46,7 @@
 #include "../assets.h"     // Phase C entrance overlay: g_asset_ptrs[126] / kOverworld_Entrance_Id
 #include "../features.h"   // g_rando_triforce_piece_count
 #include "../overworld.h"  // ForceNonbunnyStatus
+#include "../dungeon.h"    // RandoPot_OverlayOamSelfCheck
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
 #include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
@@ -6722,6 +6723,10 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
 
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
+  if (RandoPot_OverlayOamSelfCheck()) {
+    fprintf(stderr, "Rando_SelfCheck: pot overlay OAM allocation can clobber sorted sprites\n");
+    exit(2);
+  }
   Rando_Rng_SelfCheck();
   Share_SelfCheck();
   Settings_SelfCheck();

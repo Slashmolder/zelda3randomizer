@@ -6840,6 +6840,8 @@ void LoadOWMusicIfNeeded() {  // 82854c
   LoadOverworldSongs();
 }
 
+static bool RandoPot_AllocateGoldOverlayOam(void);
+
 // add-rando-pot-sanity — draw the animated gold "check" glint over each in-scope
 // un-checked pot captured for this room (Rando_PotOverlay* in rando.h). Called
 // right after Sprite_Main (while BG2*OFS_copy2 still hold the adjusted BG2 render
@@ -6897,10 +6899,62 @@ static void RandoPot_DrawGoldOverlay(void) {
     int gy = sy + 2 - bob;
     if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
       continue;
-    Oam_AllocateFromRegionA(4);
+    if (!RandoPot_AllocateGoldOverlayOam())
+      continue;
     SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
     g_rando_pot_overlay_drawn = true;
   }
+}
+
+static bool RandoPot_AllocateGoldOverlayOam(void) {
+  if (sort_sprites_setting) {
+    if (oam_region_base[3] + 4 >= 0xc1)
+      return false;
+    Oam_AllocateFromRegionD(4);
+  } else {
+    if (oam_region_base[0] + 4 >= 0x171)
+      return false;
+    Oam_AllocateFromRegionA(4);
+  }
+  return true;
+}
+
+int RandoPot_OverlayOamSelfCheck(void) {
+  uint8 saved_sort = sort_sprites_setting;
+  uint16 saved_oam_cur = oam_cur_ptr;
+  uint16 saved_oam_ext = oam_ext_cur_ptr;
+  uint16 saved_regions[6];
+  for (int i = 0; i < 6; i++)
+    saved_regions[i] = oam_region_base[i];
+
+  int fail = 0;
+  sort_sprites_setting = 1;
+  Oam_ResetRegionBases();
+  Oam_AllocateFromRegionD(8);
+  uint16 occupied = oam_cur_ptr;
+  if (!RandoPot_AllocateGoldOverlayOam() ||
+      oam_cur_ptr == occupied || oam_cur_ptr != 0x0838)
+    fail = 1;
+  oam_cur_ptr = 0xdead;
+  oam_region_base[3] = 0xc0;
+  if (RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0xdead)
+    fail = 1;
+
+  sort_sprites_setting = 0;
+  Oam_ResetRegionBases();
+  if (!RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0x0830)
+    fail = 1;
+  oam_cur_ptr = 0xbeef;
+  oam_region_base[0] = 0x170;
+  if (RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0xbeef)
+    fail = 1;
+
+  sort_sprites_setting = saved_sort;
+  oam_cur_ptr = saved_oam_cur;
+  oam_ext_cur_ptr = saved_oam_ext;
+  for (int i = 0; i < 6; i++)
+    oam_region_base[i] = saved_regions[i];
+  return fail;
 }
 
 void Module07_Dungeon() {  // 8287a2
