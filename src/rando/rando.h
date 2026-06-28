@@ -727,6 +727,12 @@ bool Rando_BowCanToggle(void);
 // is unavailable.
 uint8 Rando_GetActiveWorldState(void);
 
+// ALTTPR parity: in non-Inverted randomizer modes, a mirrorless save/load in the
+// away world must recover to the Light World instead of preserving a one-way Dark
+// World trap after Agahnim or portal access. Returns true when it changed the
+// saved world flag.
+bool Rando_NormalizeMirrorlessAwayWorld(void);
+
 // True iff a rando slot is active AND its world-state is Retro. This is the
 // canonical RUNTIME gate for the four Retro gameplay flags (rupeeBow /
 // genericKeys / takeAnys / wildKeys). Per design.md §8 Risk 8 the flags are
@@ -1023,4 +1029,3 @@ void Rando_SelfCheck(void);            // SHA-256 NIST vectors
 void Rando_RunAllSelfChecks(void);     // SHA-256 + RNG (+ future subsystems)
 
 #endif  // ZELDA3_RANDO_H_
-

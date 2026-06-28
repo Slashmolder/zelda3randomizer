@@ -853,8 +853,10 @@ void Death_Func15(bool count_as_death) {  // 89f50f
     }
 
     if (sram_progress_indicator) {
-      if (subsubmodule_index == 0)
+      if (subsubmodule_index == 0) {
+        (void)Rando_NormalizeMirrorlessAwayWorld();
         SaveGameFile();
+      }
       main_module_index = 5;
       submodule_index = 0;
       nmi_load_bg_from_vram = 0;
@@ -866,8 +868,10 @@ void Death_Func15(bool count_as_death) {  // 89f50f
       CopySaveToWRAM();
     }
   } else {
-    if (sram_progress_indicator)
+    if (sram_progress_indicator) {
+      (void)Rando_NormalizeMirrorlessAwayWorld();
       SaveGameFile();
+    }
     TM_copy = 16;
     player_is_indoors = 0;
     Death_Func31();

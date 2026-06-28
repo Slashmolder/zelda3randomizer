@@ -589,6 +589,7 @@ void Module05_LoadFile() {  // 828136
   // Moon-Pearl/Mirror branch is inert here until world_state is persisted
   // through slot reload.
   (void)Rando_TryGrantStartingInventory(NULL);
+  (void)Rando_NormalizeMirrorlessAwayWorld();
 
   // Phase B post-escape S&Q respawn fix. A non-Standard rando slot starts
   // post-escape (sram_progress_indicator == 2): the Hyrule Castle escape never
@@ -1186,4 +1187,3 @@ uint8 HandleItemTileAction_Overworld(uint16 x, uint16 y) {  // 9bbd7a
   else
     return Overworld_ToolAndTileInteraction(x, y);
 }
-

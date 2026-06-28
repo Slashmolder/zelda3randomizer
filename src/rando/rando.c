@@ -45,6 +45,7 @@
 #include "../variables.h"  // §6.2 progressive-dispatch reads link_sword_type etc.
 #include "../assets.h"     // Phase C entrance overlay: g_asset_ptrs[126] / kOverworld_Entrance_Id
 #include "../features.h"   // g_rando_triforce_piece_count
+#include "../overworld.h"  // ForceNonbunnyStatus
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
 #include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
@@ -1531,6 +1532,24 @@ static uint8 g_rando_active_world_state = kWorldState_Open;
 
 uint8 Rando_GetActiveWorldState(void) {
   return g_rando_slot_active ? g_rando_active_world_state : (uint8)kWorldState_Open;
+}
+
+bool Rando_NormalizeMirrorlessAwayWorld(void) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive) || !g_rando_slot_active)
+    return false;
+  if (g_rando_active_world_state == (uint8)kWorldState_Inverted)
+    return false;
+  if (!savegame_is_darkworld || link_item_mirror == 2)
+    return false;
+
+  // ALTTPR's Bugfix_MirrorlessSQToLW clears CurrentWorld for mirrorless
+  // non-Inverted saves so Aga/portal DW access remains logical without trapping
+  // the player there after S&Q. Keep the local bunny state consistent with the
+  // recovered Light World load path.
+  savegame_is_darkworld = 0;
+  if (!link_item_moon_pearl)
+    ForceNonbunnyStatus();
+  return true;
 }
 
 bool Rando_IsRetroActive(void) {
@@ -5945,6 +5964,88 @@ static void Rando_StartingInventorySelfCheck(void) {
   fprintf(stderr, "[StartingInventory_SelfCheck] OK\n");
 }
 
+static void Rando_MirrorlessAwayWorldSelfCheck(void) {
+  Rando_DeactivateSlot();
+  savegame_is_darkworld = 0x40;
+  link_item_mirror = 0;
+  link_item_moon_pearl = 0;
+  link_is_bunny = 1;
+  link_is_bunny_mirror = 1;
+  link_player_handler_state = kPlayerState_PermaBunny;
+  if (Rando_NormalizeMirrorlessAwayWorld())
+    tsc_die("MirrorlessAwayWorld: inactive slot must not normalize");
+  if (savegame_is_darkworld != 0x40)
+    tsc_die("MirrorlessAwayWorld: inactive slot changed world");
+
+  RandoSettings s;
+  RandoSidecarSlot slot;
+
+  Settings_SetDefaults(&s);
+  s.world_state = kWorldState_Open;
+  rando_selfcheck_build_slot(&slot, &s, 0x82ull);
+  Rando_ActivateSidecarSlot(&slot);
+  if (!Rando_NormalizeMirrorlessAwayWorld())
+    tsc_die("MirrorlessAwayWorld(open): mirrorless DW save must normalize");
+  if (savegame_is_darkworld != 0)
+    tsc_die("MirrorlessAwayWorld(open): world flag not cleared");
+  if (link_is_bunny || link_is_bunny_mirror ||
+      link_player_handler_state == kPlayerState_PermaBunny)
+    tsc_die("MirrorlessAwayWorld(open): bunny state not cleared");
+
+  savegame_is_darkworld = 0x40;
+  link_item_mirror = 2;
+  if (Rando_NormalizeMirrorlessAwayWorld())
+    tsc_die("MirrorlessAwayWorld(open): Magic Mirror owner must stay in DW");
+  if (savegame_is_darkworld != 0x40)
+    tsc_die("MirrorlessAwayWorld(open): Mirror owner world changed");
+  Rando_DeactivateSlot();
+
+  Settings_SetDefaults(&s);
+  s.world_state = kWorldState_Standard;
+  rando_selfcheck_build_slot(&slot, &s, 0x83ull);
+  Rando_ActivateSidecarSlot(&slot);
+  savegame_is_darkworld = 0x40;
+  link_item_mirror = 0;
+  link_item_moon_pearl = 1;
+  if (!Rando_NormalizeMirrorlessAwayWorld())
+    tsc_die("MirrorlessAwayWorld(standard): mirrorless DW save must normalize");
+  if (savegame_is_darkworld != 0)
+    tsc_die("MirrorlessAwayWorld(standard): world flag not cleared");
+  Rando_DeactivateSlot();
+
+  Settings_SetDefaults(&s);
+  s.world_state = kWorldState_Retro;
+  rando_selfcheck_build_slot(&slot, &s, 0x84ull);
+  Rando_ActivateSidecarSlot(&slot);
+  savegame_is_darkworld = 0x40;
+  link_item_mirror = 0;
+  if (!Rando_NormalizeMirrorlessAwayWorld())
+    tsc_die("MirrorlessAwayWorld(retro): mirrorless DW save must normalize");
+  if (savegame_is_darkworld != 0)
+    tsc_die("MirrorlessAwayWorld(retro): world flag not cleared");
+  Rando_DeactivateSlot();
+
+  Settings_SetDefaults(&s);
+  s.world_state = kWorldState_Inverted;
+  rando_selfcheck_build_slot(&slot, &s, 0x85ull);
+  Rando_ActivateSidecarSlot(&slot);
+  savegame_is_darkworld = 0x40;
+  link_item_mirror = 0;
+  if (Rando_NormalizeMirrorlessAwayWorld())
+    tsc_die("MirrorlessAwayWorld(inverted): Inverted must keep DW home");
+  if (savegame_is_darkworld != 0x40)
+    tsc_die("MirrorlessAwayWorld(inverted): world changed");
+  Rando_DeactivateSlot();
+
+  savegame_is_darkworld = 0;
+  link_item_mirror = 0;
+  link_item_moon_pearl = 0;
+  link_is_bunny = 0;
+  link_is_bunny_mirror = 0;
+  link_player_handler_state = kPlayerState_Ground;
+  fprintf(stderr, "[MirrorlessAwayWorld_SelfCheck] OK\n");
+}
+
 // End-to-end install check for the DROP shuffle runtime wiring + BOSS shuffle
 // render/logic assignment install. The per-module self-checks
 // (BossShuffle/DropShuffle_SelfCheck) cover the ALGORITHM; the corpus is blind
@@ -6394,6 +6495,7 @@ void Rando_RunAllSelfChecks(void) {
   Cosmetic_SelfCheck();
   Rando_TrackerSelfCheck();
   Rando_StartingInventorySelfCheck();
+  Rando_MirrorlessAwayWorldSelfCheck();
   Rando_ShuffleInstallSelfCheck();
   Rando_MedallionIcons_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
