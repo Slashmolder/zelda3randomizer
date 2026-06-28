@@ -79,7 +79,7 @@ OBJS:=$(sort $(SRCS:%.c=%.o))
 # are gitignored ROM-derived artifacts. The recursive find includes them when a
 # local pot-codegen run has produced them; public CI builds without them.
 RANDO_GEN_SRCS:=$(shell find assets/rando -name '*.yaml') assets/rando/door_predicates.gen.json assets/rando_logic_gen.py assets/chest_data.py
-RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/pot_lookup.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
+RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/pot_lookup.h src/rando/pot_nonpot_drop_counts.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
 
 ifeq (${OS},Windows_NT)
     WINDRES:=windres
@@ -89,7 +89,7 @@ else
     SDLFLAGS:=$(shell sdl2-config --libs) -lm
 endif
 
-.PHONY: all clean clean_obj clean_gen rando-codegen rando-local-prepare rando-local-checks
+.PHONY: all clean clean_obj clean_gen rando-codegen rando-codegen-force rando-local-prepare rando-local-checks
 
 all: $(TARGET_EXEC) zelda3_assets.dat
 # Link through $(CXX) to pull in libstdc++ for the vendored ImGui C++ objects.
@@ -100,9 +100,9 @@ $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 %.o : %.cpp
 	$(CXX) -c $(CXXFLAGS) $< -o $@
 
-# Rando codegen rule. Touch any input → ONE invocation regenerates all outputs.
+# Rando codegen rule. ONE invocation regenerates all outputs.
 #
-# All six outputs come from a single run of the script. Apple's /usr/bin/make is
+# All generated outputs come from a single run of the script. Apple's /usr/bin/make is
 # GNU Make 3.81, which has no grouped-target `&:` syntax — so `$(OUTPUTS): deps`
 # would run the recipe once PER output, and under -j those invocations race,
 # writing the same files concurrently. Express the single-invocation contract
@@ -110,11 +110,18 @@ $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 # the headers depend on it with an empty recipe (the `;`), since that one python
 # run emits them as a side effect. Building any header forces logic_data.c
 # first, so the script runs exactly once.
+#
+# This intentionally runs every build: the local pot YAMLs are gitignored and may
+# be deleted, which cannot be modeled by a normal prerequisite list because the
+# missing file disappears from `find`. rando_logic_gen.py skips replacing outputs
+# whose contents are unchanged, so the common no-op path does not churn mtimes.
 RANDO_GEN_HEADERS:=$(filter-out src/rando/logic_data.c,$(RANDO_GEN_OUTPUTS))
 $(RANDO_GEN_HEADERS): src/rando/logic_data.c ;
-src/rando/logic_data.c: $(RANDO_GEN_SRCS)
-	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, pot_lookup.h, icon_atlas.h, direct_grant_icons.h}"
+src/rando/logic_data.c: rando-codegen-force $(RANDO_GEN_SRCS)
+	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, pot_lookup.h, pot_nonpot_drop_counts.h, icon_atlas.h, direct_grant_icons.h}"
 	$(PYTHON) assets/rando_logic_gen.py
+
+rando-codegen-force:
 
 rando-codegen: $(RANDO_GEN_OUTPUTS)
 

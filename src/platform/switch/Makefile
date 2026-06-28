@@ -45,13 +45,14 @@ SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/
 # Rando codegen pre-step (tasks.md §3.5/§3.6/§6.3/§9.4b;
 # direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
 # Regenerates src/rando/logic_data.c, src/rando/location_ids.h, src/rando/item_ids.h,
-# src/rando/chest_lookup.h, src/rando/pot_lookup.h, src/rando/icon_atlas.h,
+# src/rando/chest_lookup.h, src/rando/pot_lookup.h,
+# src/rando/pot_nonpot_drop_counts.h, src/rando/icon_atlas.h,
 # src/rando/direct_grant_icons.h
 # from assets/rando/*.yaml + assets/chest_data.py. Run BEFORE the wildcard
 # below so logic_data.c is picked up by CFILES. The Switch build is a manual
 # gate (tasks.md §12.3b); contributors invoke
 # `cd src/platform/switch && python ../../../assets/rando_logic_gen.py && make`.
-RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/pot_lookup.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
+RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/pot_lookup.h $(SRC_DIR)/rando/pot_nonpot_drop_counts.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
 
 # Recurse into assets/rando/ so logic_parts/**/*.yaml (incl. inverted/**) are
 # prerequisites — a non-recursive *.yaml glob misses the subtree and would ship
@@ -59,10 +60,16 @@ RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location
 # only *.yaml, so also list the committed door-shuffle manifest
 # assets/rando/door_predicates.gen.json (read by rando_logic_gen.py; emitted by
 # gen_door_tables.py from a reference checkout, not by this build). Local
-# gitignored pot registries are included by the find when present.
-$(RANDO_CODEGEN_OUTPUTS): $(shell find $(SRC_DIR)/../assets/rando -name '*.yaml') $(SRC_DIR)/../assets/rando/door_predicates.gen.json $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
+# gitignored pot registries are included by the find when present. The force
+# prerequisite covers the opposite transition: if a local pot YAML is deleted,
+# the missing file disappears from the find output, so only an unconditional
+# codegen run can emit the assetless empty tables.
+.PHONY: rando-codegen-force
+$(RANDO_CODEGEN_OUTPUTS): rando-codegen-force $(shell find $(SRC_DIR)/../assets/rando -name '*.yaml') $(SRC_DIR)/../assets/rando/door_predicates.gen.json $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
 	@echo "Regenerating rando codegen for Switch build"
 	python $(SRC_DIR)/../assets/rando_logic_gen.py
+
+rando-codegen-force:
 
 CFILES := $(wildcard $(SRC_DIR)/*.c $(SRC_DIR)/rando/*.c $(SRC_DIR)/snes/*.c) $(SRC_DIR)/third_party/gl_core/gl_core_3_1.c $(SRC_DIR)/third_party/opus-1.3.1-stripped/opus_decoder_amalgam.c $(SRC_DIR)/third_party/sha256/sha256.c
 

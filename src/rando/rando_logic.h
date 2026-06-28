@@ -81,7 +81,7 @@ typedef enum {
   // pickups to the active bird-woken flute immediately.
   OP_INSTANT_FLUTE = 22,
   // True iff dungeon pot keys are first-class shuffled checks
-  // (pot_shuffle >= Keys AND door shuffle off). A
+  // (pot_shuffle >= Keys AND door shuffle / cave-entrance shuffle off). A
   // pot-bearing dungeon's deep locations wrap their small-key term so pots-off
   // keeps the vanilla worst-case (byte-identical) and pots-on requires the
   // prover worst-case that counts the now-itemized pot keys.

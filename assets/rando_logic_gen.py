@@ -91,6 +91,12 @@ def atomic_write_text(path: Path, text: str) -> None:
     Path.write_text(... encoding="utf-8") behavior on every platform (LF on POSIX,
     CRLF on Windows) — so emitted bytes, and thus digests, are unchanged.
     """
+    if path.exists():
+        try:
+            if path.read_text(encoding="utf-8") == text:
+                return
+        except UnicodeDecodeError:
+            pass
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
@@ -227,18 +233,18 @@ def load_locations(path: Path) -> dict[str, LocationDef]:
     return out
 
 
-def _pot_key_terms(room, pot_id, pot_room_wrap, pot_key_wrap):
-    """Build the trailing pot-key gate ' AND (...wild...) AND (...dungeon...)' for
-    one pot (add-rando-pot-sanity task #25). A KEY pot uses its EXACT per-pot
-    dungeon depth (and its own wild `full` when the room has no entry — the
-    floor-bit Waterway orphan); a loot/empty pot uses the room's wild `full` and
-    room-max dungeon. Each op is false under pots-off so the term collapses out;
-    a 0 requirement is omitted (HAS_AMOUNT(X,0) is vacuously true)."""
+def _pot_key_info(room, pot_id, pot_room_wrap, pot_key_wrap):
+    """Return (item, full, dungeon) pot-key requirements for one pot.
+
+    A KEY pot uses its EXACT per-pot dungeon depth (and its own wild `full` when
+    the room has no entry); a loot/empty pot uses the room's wild `full` and
+    room-max dungeon.
+    """
     room_w = pot_room_wrap.get(room)
     key_w = pot_key_wrap.get(pot_id)
     item = (room_w[0] if room_w else None) or (key_w[0] if key_w else None)
     if item is None:
-        return ""
+        return None, None, None
     # WILD: room-max `full` for every pot; the key pot's own `full` only backfills
     # when the room has no wild entry (keeps clean rooms byte-identical under wild).
     full = room_w[1] if room_w else None
@@ -246,6 +252,33 @@ def _pot_key_terms(room, pot_id, pot_room_wrap, pot_key_wrap):
         full = key_w[1]
     # DUNGEON: key pot -> exact per-pot depth; loot/empty -> room-max.
     dungeon = key_w[2] if key_w is not None else (room_w[2] if room_w else None)
+    return item, full, dungeon
+
+
+def _suppress_base_key_terms_under_dungeon(expr, item, dungeon):
+    """Let generated DUNGEON pot-key depth replace inherited same-key gates.
+
+    Some pot rows inherit a coarse room predicate such as HAS_AMOUNT(SmallKey_GT,
+    4), but the pot-key-depth table knows the exact in-context requirement for
+    this pot/room. Wrap same-dungeon small-key predicates so they are preserved
+    outside DUNGEON pot-key mode and suppressed inside it; the generated
+    POT_KEYS_DUNGEON tail then supplies the exact requirement, including zero.
+    """
+    if item is None or dungeon is None:
+        return expr
+
+    item_pat = re.escape(item)
+
+    def repl(match):
+        return f"(POT_KEYS_DUNGEON() OR {match.group(0)})"
+
+    expr = re.sub(rf"HAS_AMOUNT\(\s*{item_pat}\s*,\s*\d+\s*\)", repl, expr)
+    expr = re.sub(rf"HAS_ITEM\(\s*{item_pat}\s*\)", repl, expr)
+    return expr
+
+
+def _pot_key_terms_for(item, full, dungeon):
+    """Build the trailing pot-key gate for one generated key-depth row."""
     t = ""
     if full is not None and full > 0:
         t += f" AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT({item}, {full}))"
@@ -269,6 +302,15 @@ def load_pots(path: Path):
               f"Run assets/scripts/run_rando_local_checks.py with ROM assets "
               f"to enable pot shuffle in this build.", file=sys.stderr)
         return {}, []
+    depth_tbl = RANDO_ASSETS / "pot_key_depth.gen.yaml"
+    if not depth_tbl.exists():
+        raise RuntimeError(
+            f"{path} exists but {depth_tbl} is missing. This partial local pot "
+            f"artifact set would emit pot locations without POT_KEYS_WILD/"
+            f"POT_KEYS_DUNGEON key-depth wraps. Run "
+            f"assets/scripts/run_rando_local_checks.py --prepare-only with a "
+            f"fresh binary, or remove {path} for an assetless build."
+        )
     doc = load_yaml(path)
     # add-rando-pot-sanity task #25: small-key requirements pot_shuffle adds once a
     # dungeon's pot keys are first-class checks. A pot behind key doors must require
@@ -280,7 +322,6 @@ def load_pots(path: Path):
     # entry (the floor-bit Waterway orphan). See gen_pot_key_depth.py.
     pot_room_wrap = {}  # room (int) -> (item, full|None, dungeon|None)
     pot_key_wrap = {}   # pot id (int) -> (item, full|None, dungeon)
-    depth_tbl = RANDO_ASSETS / "pot_key_depth.gen.yaml"
     if depth_tbl.exists():
         dt = load_yaml(depth_tbl)
         for r in dt.get("pot_rooms", []) or []:
@@ -308,7 +349,10 @@ def load_pots(path: Path):
         if (p.get("kind") == "empty") or not vanilla_item:
             vanilla_item = "Nothing"
         can_reach = p.get("can_reach") or "TRUE()"
-        terms = _pot_key_terms(int(p["room"]), int(p["id"]), pot_room_wrap, pot_key_wrap)
+        item, full, dungeon = _pot_key_info(
+            int(p["room"]), int(p["id"]), pot_room_wrap, pot_key_wrap)
+        can_reach = _suppress_base_key_terms_under_dungeon(can_reach, item, dungeon)
+        terms = _pot_key_terms_for(item, full, dungeon) if item is not None else ""
         if terms:
             can_reach = f"({can_reach}){terms}"
         loc = LocationDef(
@@ -504,30 +548,35 @@ def _apply_pot_key_terms(loc_preds, world_state_overrides):
     (the internal door depth is world-state-independent)."""
     table_path = RANDO_ASSETS / "pot_key_depth.gen.yaml"
     if not table_path.exists():
-        # The table is COMMITTED; absence means a broken checkout. Fail LOUD —
-        # silently skipping the wrap restores the wild/pot key strand with no
-        # signal (the kGen-88 chest_table.gen.bin fail-open trap). Regenerate:
-        # ./zelda3 --dump-key-depth key_depth.txt && gen_pot_key_depth.py.
-        print(f"WARNING: {table_path} MISSING — pot-key WILD wrap NOT applied; "
-              f"wild+pot_shuffle seeds may strand. Regenerate with "
+        # This gitignored local artifact is absent in public/assetless builds,
+        # which also omit pots.gen.yaml and skip pot-shuffle corpus rows. A
+        # partial local build with pots.gen.yaml present fails closed in
+        # load_pots() below so pot-shuffle binaries cannot silently miss these
+        # wraps.
+        print(f"WARNING: {table_path} MISSING — pot-key depth wraps NOT applied; "
+              f"pot_shuffle key-mode seeds may strand. Regenerate with "
               f"gen_pot_key_depth.py.", file=sys.stderr)
         return
     doc = load_yaml(table_path)
     for row in doc.get("locations", []):
         name, item = row["name"], row["item"]
-        tail = ""
-        if "full" in row and int(row["full"]) > 0:
-            tail += f" AND (NOT POT_KEYS_WILD() OR HAS_AMOUNT({item}, {int(row['full'])}))"
-        if "dungeon" in row and int(row["dungeon"]) > 0:
-            tail += f" AND (NOT POT_KEYS_DUNGEON() OR HAS_AMOUNT({item}, {int(row['dungeon'])}))"
-        if not tail:
+        full = int(row["full"]) if "full" in row else None
+        dungeon = int(row["dungeon"]) if "dungeon" in row else None
+        tail = _pot_key_terms_for(item, full, dungeon)
+        if not tail and dungeon is None:
             continue
         applied = False
         if name in loc_preds:
-            loc_preds[name].can_reach = f"({loc_preds[name].can_reach}){tail}"
+            loc_preds[name].can_reach = _suppress_base_key_terms_under_dungeon(
+                loc_preds[name].can_reach, item, dungeon)
+            if tail:
+                loc_preds[name].can_reach = f"({loc_preds[name].can_reach}){tail}"
             applied = True
         for ld in world_state_overrides.get(name, {}).values():
-            ld.can_reach = f"({ld.can_reach}){tail}"
+            ld.can_reach = _suppress_base_key_terms_under_dungeon(
+                ld.can_reach, item, dungeon)
+            if tail:
+                ld.can_reach = f"({ld.can_reach}){tail}"
             applied = True
         if not applied:
             print(f"WARNING: pot_key_depth location {name!r} matches no logic "
@@ -1514,6 +1563,85 @@ def emit_pot_lookup(rows, path: Path) -> int:
     return len(rows)
 
 
+def load_pot_nonpot_drop_counts(path: Path) -> list[tuple[str, int]]:
+    """Load the generated non-pot small-key free-grant rows.
+
+    Missing path is the public/assetless build: no pot registry, no pot shuffle,
+    and an empty table is correct. If a local key-depth artifact exists but lacks
+    the generated section, fail closed rather than silently omitting the
+    DUNGEON-key free-grants.
+    """
+    if not path.exists():
+        return []
+    doc = load_yaml(path)
+    rows = doc.get("nonpot_drops")
+    if rows is None:
+        raise RuntimeError(
+            f"{path} is missing nonpot_drops. Regenerate it with "
+            f"assets/scripts/gen_pot_key_depth.py so pot_nonpot_drop_counts.h "
+            f"can be derived from the same key-depth artifact."
+        )
+    out = []
+    seen = set()
+    for raw in rows or []:
+        item = raw["item"]
+        count = int(raw["count"])
+        if count <= 0:
+            raise RuntimeError(f"{path}: nonpot_drops entry {item!r} has non-positive count {count}")
+        if item in seen:
+            raise RuntimeError(f"{path}: duplicate nonpot_drops item {item!r}")
+        seen.add(item)
+        out.append((item, count))
+    return out
+
+
+def emit_pot_nonpot_drop_counts(rows, items: dict[str, ItemDef], path: Path) -> int:
+    """Emit src/rando/pot_nonpot_drop_counts.h.
+
+    This keeps the C placer's free-grant table derived from the same local
+    key-depth artifact that generates POT_KEYS_DUNGEON/POT_KEYS_WILD gates.
+    """
+    rows = sorted(rows, key=lambda r: items[r[0]].id if r[0] in items else 0xFFFF)
+    lines = [
+        HEADER_BANNER, "",
+        "// pot_nonpot_drop_counts.h — non-pot small-key drops that remain free",
+        "// under DUNGEON keys + active pot shuffle. Generated from",
+        "// assets/rando/pot_key_depth.gen.yaml via gen_pot_key_depth.py.",
+        "",
+        "#ifndef ZELDA3_RANDO_POT_NONPOT_DROP_COUNTS_H_",
+        "#define ZELDA3_RANDO_POT_NONPOT_DROP_COUNTS_H_",
+        "",
+        "#include \"../types.h\"",
+        "#include \"item_ids.h\"",
+        "",
+        "typedef struct RandoPotNonpotDropCount {",
+        "  uint16 item_id;",
+        "  uint8 count;",
+        "} RandoPotNonpotDropCount;",
+        "",
+    ]
+    if rows:
+        lines.append("static const RandoPotNonpotDropCount kPotNonpotDropCounts[] = {")
+        for item, count in rows:
+            if item not in items:
+                raise RuntimeError(f"pot_nonpot_drop_counts: unknown item {item!r}")
+            if count > 0xFF:
+                raise RuntimeError(f"pot_nonpot_drop_counts: count for {item!r} exceeds uint8")
+            lines.append(f"  {{ ITEM_{item}, {count} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: pot_key_depth.gen.yaml absent or no non-pot drops need free-granting.")
+        lines.append("static const RandoPotNonpotDropCount kPotNonpotDropCounts[1] = { { 0, 0 } };")
+    lines += [
+        "",
+        f"#define kPotNonpotDropCounts_COUNT {len(rows)}",
+        "",
+        "#endif  // ZELDA3_RANDO_POT_NONPOT_DROP_COUNTS_H_",
+    ]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+    return len(rows)
+
+
 def emit_chest_lookup(locations: dict[str, LocationDef], path: Path) -> int:
     """Emit src/rando/chest_lookup.h — (dungeon_room, chest_ordinal) -> LOC_*.
 
@@ -2393,7 +2521,7 @@ def _dungeon_id_or_ff(name) -> int:
 # Main driver
 # ---------------------------------------------------------------------------
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Generate src/rando/{logic_data.c, location_ids.h, item_ids.h}")
+    p = argparse.ArgumentParser(description="Generate rando C data and headers")
     p.add_argument("--strict", action="store_true", help="Fail on any well-formedness warning")
     p.add_argument("--out-headers", default=str(RANDO_SRC), help="Destination for emitted headers (default: src/rando/)")
     p.add_argument("--out-data", default=str(RANDO_SRC), help="Destination for emitted logic_data.c (default: src/rando/)")
@@ -2812,6 +2940,11 @@ def main(argv=None):
                     door_portal_rows=door_portal_rows)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
+    pot_nonpot_drop_count = emit_pot_nonpot_drop_counts(
+        load_pot_nonpot_drop_counts(RANDO_ASSETS / "pot_key_depth.gen.yaml"),
+        items,
+        out_headers / "pot_nonpot_drop_counts.h",
+    )
     icon_atlas_count = emit_icon_atlas(
         Path("assets/rando/icon_atlas.yaml"),
         out_headers / "icon_atlas.h",
@@ -2827,6 +2960,7 @@ def main(argv=None):
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
     print(f"generated pot_lookup.h ({pot_lookup_count} pot entries)")
+    print(f"generated pot_nonpot_drop_counts.h ({pot_nonpot_drop_count} free-grant entries)")
     print(f"generated icon_atlas.h ({icon_atlas_count} icon entries)")
     print(f"generated direct_grant_icons.h ({direct_grant_icon_count} mapped icons)")
     print(f"warnings: {len(all_errors)}, macro errors: {len(macro_errors)}")

@@ -430,6 +430,7 @@
          direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
          Pre-build event below regenerates src\rando\logic_data.c,
          src\rando\location_ids.h, src\rando\item_ids.h, src\rando\chest_lookup.h,
+         src\rando\pot_lookup.h, src\rando\pot_nonpot_drop_counts.h,
          src\rando\icon_atlas.h, src\rando\direct_grant_icons.h from YAML inputs
          + assets\chest_data.py. -->
     <ClCompile Include="src\rando\logic_data.c" />
@@ -969,7 +970,8 @@
   <!-- Rando codegen pre-build event (tasks.md §3.5/§3.6/§6.3/§9.4b;
        direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
        Regenerates src\rando\logic_data.c, src\rando\location_ids.h,
-       src\rando\item_ids.h, src\rando\chest_lookup.h, src\rando\icon_atlas.h,
+       src\rando\item_ids.h, src\rando\chest_lookup.h, src\rando\pot_lookup.h,
+       src\rando\pot_nonpot_drop_counts.h, src\rando\icon_atlas.h,
        src\rando\direct_grant_icons.h from assets\rando\*.yaml +
        assets\chest_data.py (ALTTPR chest-name catalog; the vanilla chest table
        itself is read from the gitignored assets\rando\chest_table.gen.bin) +
@@ -1009,10 +1011,20 @@
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
     <RandoCodegenInput Include="assets\rando_logic_gen.py" />
     <RandoCodegenInput Include="assets\chest_data.py" />
+    <RandoCodegenOutput Include="src\rando\logic_data.c" />
+    <RandoCodegenOutput Include="src\rando\location_ids.h" />
+    <RandoCodegenOutput Include="src\rando\item_ids.h" />
+    <RandoCodegenOutput Include="src\rando\chest_lookup.h" />
+    <RandoCodegenOutput Include="src\rando\pot_lookup.h" />
+    <RandoCodegenOutput Include="src\rando\pot_nonpot_drop_counts.h" />
+    <RandoCodegenOutput Include="src\rando\icon_atlas.h" />
+    <RandoCodegenOutput Include="src\rando\direct_grant_icons.h" />
   </ItemGroup>
-  <Target Name="RandoCodegen" BeforeTargets="ClCompile"
-          Inputs="@(RandoCodegenInput)"
-          Outputs="src\rando\logic_data.c;src\rando\location_ids.h;src\rando\item_ids.h;src\rando\chest_lookup.h;src\rando\pot_lookup.h;src\rando\icon_atlas.h;src\rando\direct_grant_icons.h">
+  <!-- Always run codegen: the local pot YAMLs are gitignored, and deletion of
+       a previously-present optional input cannot be represented by MSBuild's
+       normal Inputs/Outputs up-to-date check. rando_logic_gen.py avoids
+       rewriting unchanged outputs, so this does not churn compile inputs. -->
+  <Target Name="RandoCodegen" BeforeTargets="ClCompile">
     <Exec Command="python assets\rando_logic_gen.py" />
   </Target>
   <Target Name="EnsureVendoredSdl2" BeforeTargets="PrepareForBuild">

@@ -10,6 +10,7 @@ informational warning.
 Bump-trigger paths (per tasks.md §13.6 — extend as new modules land):
   - src/rando/*.c, src/rando/*.h
   - assets/rando/**.yaml          (logic.yaml, location_registry.yaml, etc.)
+  - assets/rando_logic_gen.py and pot local-artifact generators
   - any generated file: src/rando/logic_data.c, src/rando/location_ids.h, etc.
 
 **A0 status (scaffold)**: ``kGeneratorVersion`` doesn't exist yet (lands in
@@ -42,6 +43,9 @@ BUMP_TRIGGER_GLOBS = [
     "src/rando/**/*.c",
     "src/rando/**/*.h",
     "assets/rando/**/*.yaml",
+    "assets/rando_logic_gen.py",
+    "assets/scripts/gen_pot_tables.py",
+    "assets/scripts/gen_pot_key_depth.py",
 ]
 
 
@@ -124,6 +128,9 @@ assert matches_glob("src/rando/rando_placement.c", "src/rando/**/*.c")
 assert matches_glob("src/rando/rando.h", "src/rando/**/*.h")
 assert matches_glob("assets/rando/logic.yaml", "assets/rando/**/*.yaml")
 assert matches_glob("assets/rando/logic_parts/01_eastern_palace.yaml", "assets/rando/**/*.yaml")
+assert matches_glob("assets/rando_logic_gen.py", "assets/rando_logic_gen.py")
+assert matches_glob("assets/scripts/gen_pot_tables.py", "assets/scripts/gen_pot_tables.py")
+assert matches_glob("assets/scripts/gen_pot_key_depth.py", "assets/scripts/gen_pot_key_depth.py")
 assert matches_glob("src/rando/rando_window/rando_window.h", "src/rando/**/*.h")
 assert not matches_glob("src/rando/rando.c", "src/rando/**/*.h")
 assert not matches_glob("src/main.c", "src/rando/**/*.c")

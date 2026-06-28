@@ -32,6 +32,7 @@ from pathlib import Path
 #   - src/rando/item_ids.h          (from assets/rando/item_registry.yaml — task 3.2)
 #   - src/rando/chest_lookup.h      (from assets/chest_data.py + location_registry.yaml — task 6.3)
 #   - src/rando/pot_lookup.h        (from local assets/rando/pots.gen.yaml — pot room/pos lookup)
+#   - src/rando/pot_nonpot_drop_counts.h (from local pot_key_depth.gen.yaml — nonpot key free-grants)
 #   - src/rando/icon_atlas.h        (from assets/rando/icon_atlas.yaml — task 9.4b)
 #   - src/rando/direct_grant_icons.h (from assets/rando/direct_grant_icons.yaml — task 9.x)
 #
@@ -44,6 +45,7 @@ EXPECTED_GENERATED = [
     "src/rando/item_ids.h",
     "src/rando/chest_lookup.h",
     "src/rando/pot_lookup.h",
+    "src/rando/pot_nonpot_drop_counts.h",
     "src/rando/icon_atlas.h",
     "src/rando/direct_grant_icons.h",
 ]
@@ -144,9 +146,41 @@ def main(argv: list[str]) -> int:
             )
             return 1
 
+    # --- Local artifact deletion guard ---------------------------------------
+    # Gitignored pot artifacts are optional inputs. If codegen runs with them
+    # present, then they are later deleted, a purely dependency-driven incremental
+    # build can consider stale pot-enabled outputs up to date because the missing
+    # files disappear from the input set. Guard the build-system contract that
+    # codegen is invoked every build; rando_logic_gen.py itself avoids rewriting
+    # unchanged outputs, so this does not churn mtimes in the no-op case.
+    missing_force = []
+    for bs in [Path("Makefile"), Path("src/platform/switch/Makefile")]:
+        if not bs.exists():
+            continue
+        text = strip_comments(bs, bs.read_text(encoding="utf-8", errors="replace"))
+        if "rando-codegen-force" not in text:
+            missing_force.append(bs)
+    vcx = Path("zelda3.vcxproj")
+    if vcx.exists():
+        text = strip_comments(vcx, vcx.read_text(encoding="utf-8", errors="replace"))
+        m = re.search(r'<Target\s+Name="RandoCodegen"[^>]*>.*?</Target>', text, flags=re.S)
+        if not m or re.search(r'\b(Inputs|Outputs)=', m.group(0)):
+            missing_force.append(vcx)
+    if missing_force:
+        for bs in missing_force:
+            print(f"check_codegen_wiring: {bs} can skip codegen when local pot "
+                  f"artifact presence changes.")
+        print(
+            "\nThe gitignored pot YAMLs may be added or deleted outside git. Build\n"
+            "systems must invoke rando_logic_gen.py every build so stale pot-enabled\n"
+            "generated outputs are replaced by assetless empty tables when those\n"
+            "local artifacts disappear."
+        )
+        return 1
+
     if not args.quiet:
         print(f"check_codegen_wiring: {len(EXPECTED_GENERATED)} generated file(s) wired "
-              f"across all build systems (+ logic_parts recursion).")
+              f"across all build systems (+ logic_parts recursion, pot artifact deletion guard).")
     return 0
 
 

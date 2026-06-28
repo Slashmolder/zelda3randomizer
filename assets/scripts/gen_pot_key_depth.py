@@ -68,21 +68,18 @@ KEYPOT_MINDEPTH = {
     (2, 0x63): 0, (2, 0x53): 1, (2, 0x43): 2,            # Desert: Tiles1/Beamos/Tiles2
     (1, 0xba): 0,                                          # EP Dark Square
     (6, 0x35): 3, (6, 0x36): 3, (6, 0x37): 2,             # Swamp Trench2/Hookshot/Trench1
-    (6, 0x38): 1, (6, 0x56): 4,                            # Swamp PotRow / Waterway(0x16+floor)
+    (6, 0x38): 1,                                          # Swamp PotRow
+    (7, 0x56): 0,                                          # Skull 2 West Lobby
     (8, 0xab): 2, (8, 0xbc): 1,                            # Thieves SpikeSwitch/Hallway
     (9, 0x9f): 2,                                          # Ice Many Pots
     (10, 0xa1): 0, (10, 0xb3): 0,                          # Mire Fishbone/Spikes
     (12, 0x7b): 1, (12, 0x8b): 0, (12, 0x9b): 0,          # GT StarPits/Cross/DoubleSwitch
 }
-# The two key pots whose door region is NOT in their engine room's ROOM-line set
-# (floor-bit alias / door-rando room-number split), so the DROP-region-in-room
-# auto-join can't reach them. Verified values; the assert vs KEYPOT_MINDEPTH guards.
-KEYPOT_OVERRIDE = {(6, 0x56): 4, (12, 0x9b): 0}
-# ORPHAN key pots: engine room is a floor-bit alias absent from the door-table
-# ROOM set for their dungeon, so NO pot_rooms entry covers them - carry the WILD
-# `full` here too (room-max wild can't reach them). Only Swamp Waterway: engine
-# room 0x56 == door-rando 0x16; DROP 'Swamp Waterway' worst=5, min=4, cap[SP]=6.
-KEYPOT_ORPHAN_FULL = {(6, 0x56): 5}
+# Key pots whose door region is NOT in their engine room's ROOM-line set, so the
+# DROP-region-in-room auto-join can't reach them. Verified values; the assert vs
+# KEYPOT_MINDEPTH guards.
+KEYPOT_OVERRIDE = {(12, 0x9b): 0}
+KEYPOT_ORPHAN_FULL = {}
 
 
 def write_lf(path: Path, text: str):
@@ -176,8 +173,8 @@ def keypot_dungeon_depth(kp, room_regions, drops_ordered):
     """Exact dungeon mindepth for one key pot via its door region.
 
     Join: the prover DROP line whose region lives in this pot's engine room is
-    the key's region; take its mindepth. For the two floor-bit-aliased rooms the
-    region is not in the room set, so use the reviewed override."""
+    the key's region; take its mindepth. If the region is not in the room set,
+    use the reviewed override."""
     d, room = kp["dungeon"], kp["room"]
     if (d, room) in KEYPOT_OVERRIDE:
         return KEYPOT_OVERRIDE[(d, room)]
@@ -288,7 +285,10 @@ def main(argv=None) -> int:
     # Wild covers EVERY dungeon with active pots (incl. no-key dungeons whose loot
     # pots sit behind key doors); the dungeon term only the pot-key dungeons.
     room_rows = []
-    POT_DUNGEONS = set(SK) - {3, 4, 5, 7, 11}  # has any pots (HC/EP/DP/SP/TT/IP/MM/GT)
+    # Dungeons whose pot rooms need key-depth wraps. Keep every pot-key dungeon
+    # included by construction; excluding one lets loot/empty pots in that dungeon
+    # miss their WILD/DUNGEON key-depth terms after a room rebind.
+    POT_DUNGEONS = (set(SK) - {3, 4, 5, 11}) | POT_KEY_DUNGEONS
     for (d, room) in sorted(room_regions):
         if d not in POT_DUNGEONS:
             continue
@@ -306,8 +306,7 @@ def main(argv=None) -> int:
             room_rows.append((room, item, fields))
 
     # Free-grant of NONPOT drops per pot-key dungeon (= drop_cnt - pot_keys),
-    # consumed by rando_placement.c (hardcoded there + selfchecked). Printed here
-    # for cross-verification of the C table.
+    # consumed by rando_placement.c via generated pot_nonpot_drop_counts.h.
     free = {d: drop.get(d, 0) - pot_keys[d] for d in POT_KEY_DUNGEONS}
 
     out = [
@@ -345,6 +344,14 @@ def main(argv=None) -> int:
         if orphan_full is not None:
             out.append(f"    full: {orphan_full}")
         out.append(f"    dungeon: {dep}")
+    out.append("# Non-pot small-key drops that stay free in DUNGEON key mode.")
+    out.append("# Count = door-rando drop total - fork key-pot count.")
+    out.append("nonpot_drops:")
+    for d in sorted(free):
+        if free[d] <= 0:
+            continue
+        out.append(f"  - item: SmallKey_{SK[d]}")
+        out.append(f"    count: {free[d]}")
     out_text = "\n".join(out) + "\n"
     if args.check:
         return check_fresh(OUT, out_text)

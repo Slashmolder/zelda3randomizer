@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 97u
+#define kGeneratorVersion 99u
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.

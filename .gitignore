@@ -45,6 +45,7 @@ __pycache__
 /src/rando/item_ids.h
 /src/rando/chest_lookup.h
 /src/rando/pot_lookup.h
+/src/rando/pot_nonpot_drop_counts.h
 /src/rando/icon_atlas.h
 /src/rando/direct_grant_icons.h
 # CLI test outputs from --generate-seed runs.

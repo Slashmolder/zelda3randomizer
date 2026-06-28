@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+import yaml
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -27,12 +30,15 @@ CHEST_TABLE = REPO / "assets" / "rando" / "chest_table.gen.bin"
 DEFAULT_TMP = REPO / "tmp" / "local-rando-checks"
 POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
 POT_KEY_DEPTH = REPO / "assets" / "rando" / "pot_key_depth.gen.yaml"
+ITEM_REGISTRY = REPO / "assets" / "rando" / "item_registry.yaml"
+POT_NONPOT_DROP_COUNTS = REPO / "src" / "rando" / "pot_nonpot_drop_counts.h"
 CODEGEN_OUTPUTS = [
     REPO / "src" / "rando" / "logic_data.c",
     REPO / "src" / "rando" / "location_ids.h",
     REPO / "src" / "rando" / "item_ids.h",
     REPO / "src" / "rando" / "chest_lookup.h",
     REPO / "src" / "rando" / "pot_lookup.h",
+    POT_NONPOT_DROP_COUNTS,
     REPO / "src" / "rando" / "icon_atlas.h",
     REPO / "src" / "rando" / "direct_grant_icons.h",
 ]
@@ -125,6 +131,58 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
     return 0
 
 
+def check_pot_nonpot_drop_counts() -> int:
+    """Verify generated C free-grant rows match pot_key_depth.gen.yaml.
+
+    This is intentionally local-only: both inputs are gitignored products of the
+    ROM-backed pot workflow. It avoids a second hand-maintained truth table while
+    still catching stale or partially regenerated codegen outputs.
+    """
+    for path, how in [
+        (POT_KEY_DEPTH, "Run local pot prepare to regenerate pot_key_depth.gen.yaml."),
+        (POT_NONPOT_DROP_COUNTS, "Run assets/rando_logic_gen.py after pot key-depth generation."),
+        (ITEM_REGISTRY, "assets/rando/item_registry.yaml is required for item-id ordering."),
+    ]:
+        rc = require_file(path, how)
+        if rc:
+            return rc
+
+    items_doc = yaml.safe_load(ITEM_REGISTRY.read_text(encoding="utf-8"))
+    item_ids = {raw["name"]: int(raw["id"]) for raw in items_doc.get("items", [])}
+
+    depth_doc = yaml.safe_load(POT_KEY_DEPTH.read_text(encoding="utf-8"))
+    rows = depth_doc.get("nonpot_drops")
+    if rows is None:
+        print("run_rando_local_checks: pot_key_depth.gen.yaml is missing nonpot_drops.")
+        print("Run assets/scripts/gen_pot_key_depth.py, then assets/rando_logic_gen.py.")
+        return 2
+
+    try:
+        expected = sorted(
+            [(raw["item"], int(raw["count"])) for raw in rows],
+            key=lambda row: item_ids[row[0]],
+        )
+    except KeyError as e:
+        print(f"run_rando_local_checks: unknown nonpot_drops item {e!s}.")
+        return 2
+
+    text = POT_NONPOT_DROP_COUNTS.read_text(encoding="utf-8", errors="replace")
+    actual = []
+    for m in re.finditer(r"\{\s*ITEM_([A-Za-z0-9_]+)\s*,\s*(\d+)\s*\}", text):
+        actual.append((m.group(1), int(m.group(2))))
+
+    if actual != expected:
+        print("run_rando_local_checks: pot_nonpot_drop_counts.h does not match pot_key_depth.gen.yaml.")
+        print(f"  expected: {expected}")
+        print(f"  actual:   {actual}")
+        print("Regenerate with assets/rando_logic_gen.py after gen_pot_key_depth.py.")
+        return 1
+
+    print("\n==> pot nonpot drop-count codegen guard", flush=True)
+    print(f"matched {len(actual)} generated free-grant row(s)", flush=True)
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -158,6 +216,9 @@ def main(argv: list[str]) -> int:
         rc = refresh_pot_codegen(binary, tmp)
         if rc:
             return rc
+        rc = check_pot_nonpot_drop_counts()
+        if rc:
+            return rc
         if args.prepare_only:
             print("\nrun_rando_local_checks: pot codegen prepared", flush=True)
             return 0
@@ -170,6 +231,10 @@ def main(argv: list[str]) -> int:
                 flush=True,
             )
             return 3
+    else:
+        rc = check_pot_nonpot_drop_counts()
+        if rc:
+            return rc
 
     checks = []
 

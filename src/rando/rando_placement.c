@@ -22,6 +22,7 @@
 #include "item_ids.h"
 #include "location_ids.h"
 #include "dungeon_ids.h"
+#include "pot_nonpot_drop_counts.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -300,17 +301,10 @@ static const uint16 kCompasses[] = {
 // deep locations gate on the prover SHORTEST-PATH (min-depth) over ALL key doors.
 // The nonpot drops are still collected in-context (exactly as in pots-off), so we
 // pre-grant them into the assumed inventory to keep those gates satisfiable. Count
-// = (door-rando small-key drop total) - (fork pot-key count); only the four
-// dungeons whose drops exceed their pot keys are non-zero. Derived from
-// `--dump-key-depth` DUNGEON `drop=` minus the pots.gen.yaml key-pot count (see
-// gen_pot_key_depth.py's printed "NONPOT free-grant"); Placement_SelfCheck
-// re-derives the pot-key count and asserts this table stays consistent.
-static const struct { uint16 item_id; uint8 count; } kPotNonpotDropCounts[] = {
-  { ID_SmallKey_EP, 1 },  // EP: drop 2 - pot 1
-  { ID_SmallKey_IP, 3 },  // IP: drop 4 - pot 1
-  { ID_SmallKey_MM, 1 },  // MM: drop 3 - pot 2
-  { ID_SmallKey_GT, 1 },  // GT: drop 4 - pot 3
-};
+// = (door-rando small-key drop total) - (fork pot-key count); only dungeons
+// whose drops exceed their pot keys are non-zero. Generated in
+// pot_nonpot_drop_counts.h from the same pot_key_depth.gen.yaml artifact that
+// drives the POT_KEYS_WILD/POT_KEYS_DUNGEON logic gates.
 
 // True when pot_shuffle itemizes a dungeon's pot keys under DUNGEON keys — the
 // exact condition OP_POT_KEYS_DUNGEON gates on (Settings_PotKeysActive: pot_shuffle
@@ -331,7 +325,7 @@ static bool pot_keys_dungeon_active(const RandoSettings *s) {
 // count.
 static void seed_pot_nonpot_drops(RandoCounts *counts, const RandoSettings *s) {
   if (counts == NULL || !pot_keys_dungeon_active(s)) return;
-  for (uint8 i = 0; i < (uint8)(sizeof(kPotNonpotDropCounts) / sizeof(kPotNonpotDropCounts[0])); i++)
+  for (uint8 i = 0; i < (uint8)kPotNonpotDropCounts_COUNT; i++)
     counts->by_item_id[kPotNonpotDropCounts[i].item_id] += kPotNonpotDropCounts[i].count;
 }
 
@@ -2852,7 +2846,7 @@ void Placement_SelfCheck(void) {
         if (npots > kDoorDropTotal[d])
           selfcheck_die("pot keys exceed door-rando drop total (pots.gen.yaml drift)");
         uint8 want = (uint8)(kDoorDropTotal[d] - npots), have = 0;
-        for (uint8 j = 0; j < (uint8)(sizeof(kPotNonpotDropCounts) / sizeof(kPotNonpotDropCounts[0])); j++)
+        for (uint8 j = 0; j < (uint8)kPotNonpotDropCounts_COUNT; j++)
           if (kPotNonpotDropCounts[j].item_id == key) have = kPotNonpotDropCounts[j].count;
         if (have != want)
           selfcheck_die("kPotNonpotDropCounts drift (must = door drop total - pot keys)");
