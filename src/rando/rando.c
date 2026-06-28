@@ -3632,6 +3632,22 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     EnemyShuffle_Deactivate();
   }
 
+  // Seed QoL gameplay features are per-slot play preferences, not canonical
+  // randomizer settings. format_version-3 slots written by builds that know this
+  // field carry the snapshot the user generated with; older slots leave the
+  // user's current live config untouched. Apply after the remaining refusal
+  // paths above so a rejected slot cannot mutate live preferences.
+  if (src->header.recommended_features0_present) {
+    uint32 slot_features =
+        src->header.recommended_features0 & kFeatures0_RandoSeedQolMask;
+    g_config.features0 =
+        (g_config.features0 & ~kFeatures0_RandoSeedQolMask) | slot_features;
+    g_wanted_zelda_features =
+        (g_wanted_zelda_features & ~kFeatures0_RandoSeedQolMask) | slot_features;
+    enhanced_features0 =
+        (enhanced_features0 & ~kFeatures0_RandoSeedQolMask) | slot_features;
+  }
+
   // add-rando-major-glitch D6 — couple a glitch-logic slot to the JP-1.0
   // glitch runtime flag. AUTHORITATIVE runtime guarantee: runs on EVERY slot
   // activation (generate->play AND reload->play, incl. imported share strings),
@@ -6005,6 +6021,9 @@ void Rando_TrackerSelfCheck(void) {
   RandoSettings s;
   Settings_SetDefaults(&s);
   uint64 seed = 0x0123456789abcdefull;
+  uint32 saved_config_features0 = g_config.features0;
+  uint32 saved_wanted_features0 = g_wanted_zelda_features;
+  uint32 saved_enhanced_features0 = enhanced_features0;
 
   static RandoPlacement entries[kRandoLocationCapacity];
   RandoPlacementTable table;
@@ -6034,8 +6053,32 @@ void Rando_TrackerSelfCheck(void) {
   ss.version = (uint8)kGeneratorVersion;
   ss.seed_u64 = seed;
   Share_PackBinary(&ss, slot.header.share_string);
+  slot.header.recommended_features0_present = 1;
+  slot.header.recommended_features0 =
+      kFeatures0_RestoreJpGlitches | kFeatures0_WidescreenVisualFixes;
+  g_config.features0 =
+      (saved_config_features0 | kFeatures0_ExtendScreen64) &
+      ~kFeatures0_WidescreenVisualFixes;
+  g_wanted_zelda_features =
+      (saved_wanted_features0 | kFeatures0_ExtendScreen64) &
+      ~kFeatures0_WidescreenVisualFixes;
+  enhanced_features0 =
+      (saved_enhanced_features0 | kFeatures0_ExtendScreen64) &
+      ~kFeatures0_WidescreenVisualFixes;
 
   Rando_ActivateSidecarSlot(&slot);
+  if (!(g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+      !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("recommended_features0 not applied at activate");
+  if (!(g_config.features0 & kFeatures0_ExtendScreen64) ||
+      !(g_wanted_zelda_features & kFeatures0_ExtendScreen64) ||
+      !(enhanced_features0 & kFeatures0_ExtendScreen64))
+    tsc_die("recommended_features0 must preserve non-slot live features");
+  if ((g_config.features0 & kFeatures0_WidescreenVisualFixes) ||
+      (g_wanted_zelda_features & kFeatures0_WidescreenVisualFixes) ||
+      (enhanced_features0 & kFeatures0_WidescreenVisualFixes))
+    tsc_die("recommended_features0 must ignore non-slot snapshot features");
   if (!Rando_HasActiveSettings()) tsc_die("settings not recovered after activate");
   const RandoSettings *rec = Rando_GetActiveSettings();
   if (rec == NULL || rec->world_state != s.world_state || rec->goal != s.goal ||
@@ -6079,6 +6122,9 @@ void Rando_TrackerSelfCheck(void) {
   if (n1 <= n0) tsc_die("reachability did not expand when a full item kit was added");
 
   Rando_DeactivateSlot();
+  g_config.features0 = saved_config_features0;
+  g_wanted_zelda_features = saved_wanted_features0;
+  enhanced_features0 = saved_enhanced_features0;
   fprintf(stderr, "[Tracker_SelfCheck] OK (%d -> %d reachable)\n", n0, n1);
 }
 

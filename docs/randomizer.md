@@ -692,13 +692,16 @@ to `kSettingsCanonicalLen` by a `_Static_assert`; the round-trip + a v1-compat
 case are covered by `RandoSave_SelfCheck` (`--rando-selftest`).
 
 **format_version 3**: each slot appends a fixed 8-byte extension block after
-the settings blob (the 80-byte slot header is fully claimed). It carries
+the settings blob (the 80-byte slot header is fully claimed). Bytes 0-2 carry
 `entrance_digest24` — the entrance-shuffle analogue of the door-shuffle
 `door_digest24`: a 24-bit digest over everything the runtime entrance install
 regenerates from (seed, axes, attempt). Activation recomputes it and **refuses
 the slot on mismatch** (a drifted entrance layout can make the
-certified-beatable placement unbeatable). Older v1/v2 slots have no block,
-read digest 0, and keep the previous warn-only version-drift behavior; a
+certified-beatable placement unbeatable). Bytes 3-6 carry the masked Seed QoL
+`recommended_features0` snapshot (`kFeatures0_RandoSeedQolMask` only; not
+geometry/restart/local config), and byte 7 marks whether that snapshot is
+present. Older v1/v2 slots have no block, read digest 0 / no feature snapshot,
+and keep the previous warn-only version-drift and live-feature behavior; a
 v2-compat load case is covered by `RandoSave_SelfCheck`.
 
 Atomic-commit: write `<file>.tmp`, fflush, fsync (POSIX) / `_commit` (Windows),

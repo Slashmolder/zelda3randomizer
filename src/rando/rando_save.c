@@ -323,11 +323,17 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
   memcpy(p, slot->settings_canonical, kSettingsCanonicalLen);
   p += kSettingsCanonicalLen;
   // format_version 3: slot extension block trails the blob (the 80-byte header
-  // is full — see rando_save.h). @0-2 entrance_digest24 LE, @3-7 reserved zero.
+  // is full — see rando_save.h). @0-2 entrance_digest24 LE, @3-6 per-slot
+  // recommended_features0 LE, @7 recommended_features0_present.
   p[0] = (uint8)(slot->header.entrance_digest24 & 0xff);
   p[1] = (uint8)((slot->header.entrance_digest24 >> 8) & 0xff);
   p[2] = (uint8)((slot->header.entrance_digest24 >> 16) & 0xff);
-  p[3] = p[4] = p[5] = p[6] = p[7] = 0;
+  if (slot->header.recommended_features0_present) {
+    put_u32le(p + 3, slot->header.recommended_features0);
+    p[7] = 1;
+  } else {
+    p[3] = p[4] = p[5] = p[6] = p[7] = 0;
+  }
   return size;
 }
 
@@ -390,14 +396,18 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
     out->header.settings_present = 0;
   }
   if (with_ext) {
-    // format_version 3: extension block (@0-2 entrance_digest24 LE; @3-7
-    // reserved, ignored for forward-compat).
+    // format_version 3: extension block (@0-2 entrance_digest24 LE; @3-6
+    // recommended_features0 LE; @7 presence).
     out->header.entrance_digest24 =
         (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16);
+    out->header.recommended_features0 = get_u32le(p + 3);
+    out->header.recommended_features0_present = p[7] != 0;
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
     out->header.entrance_digest24 = 0;
+    out->header.recommended_features0 = 0;
+    out->header.recommended_features0_present = 0;
   }
   return total;
 }
@@ -786,6 +796,10 @@ void RandoSave_SelfCheck(void) {
   // FIX #4 entrance-layout digest round-trip coverage (format_version 3
   // extension block, @0-2 after the settings blob).
   src.header.entrance_digest24 = 0xABCDEF;
+  // Per-slot gameplay feature snapshot round-trip coverage (v3 extension
+  // block, @3-7 after the settings blob).
+  src.header.recommended_features0 = 0xA5A55A5Au;
+  src.header.recommended_features0_present = 1;
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -829,8 +843,10 @@ void RandoSave_SelfCheck(void) {
     uint32 ext = blob + kSettingsCanonicalLen;
     if (buf[ext] != 0xEF || buf[ext + 1] != 0xCD || buf[ext + 2] != 0xAB)
       selfcheck_die("entrance_digest24 not at expected v3 ext offset (LE)");
-    for (uint32 r = 3; r < kRandoSidecar_SlotExtV3Size; r++)
-      if (buf[ext + r] != 0) selfcheck_die("v3 ext reserved bytes must be zero");
+    if (buf[ext + 3] != 0x5A || buf[ext + 4] != 0x5A ||
+        buf[ext + 5] != 0xA5 || buf[ext + 6] != 0xA5 ||
+        buf[ext + 7] != 1)
+      selfcheck_die("recommended_features0 not at expected v3 ext offset");
   }
   // Phase C entrance shuffle: entrance_axes @71, entrance_attempt @72.
   if (buf[71] != 0x05) selfcheck_die("entrance_axes at @71 wrong");
@@ -872,6 +888,8 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.bow_owned != src.header.bow_owned) selfcheck_die("bow_owned round-trip");
   if (dst.header.prize_attempt != src.header.prize_attempt) selfcheck_die("prize_attempt round-trip");
   if (dst.header.entrance_digest24 != src.header.entrance_digest24) selfcheck_die("entrance_digest24 round-trip");
+  if (dst.header.recommended_features0 != src.header.recommended_features0) selfcheck_die("recommended_features0 round-trip");
+  if (dst.header.recommended_features0_present != src.header.recommended_features0_present) selfcheck_die("recommended_features0_present round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
@@ -1022,6 +1040,8 @@ void RandoSave_SelfCheck(void) {
     if (v1_used != v1_total) selfcheck_die("v1 compat: used != base total (blob must be absent)");
     if (v1dst.header.settings_present != 0) selfcheck_die("v1 compat: settings_present must be forced 0");
     if (v1dst.header.entrance_digest24 != 0) selfcheck_die("v1 compat: entrance_digest24 must be forced 0");
+    if (v1dst.header.recommended_features0_present != 0)
+      selfcheck_die("v1 compat: recommended_features0_present must be forced 0");
     if (v1dst.placement_count != 1 || v1dst.placements[0].location_id != 5 ||
         v1dst.placements[0].item_id != 50) selfcheck_die("v1 compat: placement round-trip");
     if (v1dst.checked_bitmap[0] != 0x05) selfcheck_die("v1 compat: bitmap round-trip");
@@ -1053,12 +1073,47 @@ void RandoSave_SelfCheck(void) {
     uint32 v2_used = deserialize_slot_versioned(v2buf, v2_total, &v2dst, 2);
     if (v2_used != v2_total) selfcheck_die("v2 compat: used != v2 total (ext must be absent)");
     if (v2dst.header.entrance_digest24 != 0) selfcheck_die("v2 compat: entrance_digest24 must be forced 0");
+    if (v2dst.header.recommended_features0_present != 0)
+      selfcheck_die("v2 compat: recommended_features0_present must be forced 0");
     if (v2dst.header.settings_present != 1) selfcheck_die("v2 compat: settings_present round-trip");
     if (memcmp(v2dst.settings_canonical, src.settings_canonical, kSettingsCanonicalLen) != 0)
       selfcheck_die("v2 compat: settings blob round-trip");
     if (v2dst.placement_count != 1 || v2dst.placements[0].location_id != 5 ||
         v2dst.placements[0].item_id != 50) selfcheck_die("v2 compat: placement round-trip");
     if (v2dst.checked_bitmap[0] != 0x05) selfcheck_die("v2 compat: bitmap round-trip");
+  }
+
+  // -------------------------------------------------------------------------
+  // format_version 3 backward-compat: slots written before
+  // recommended_features0 existed have the v3 extension block but zero reserved
+  // bytes. They must NOT apply a zero feature snapshot on activation.
+  // -------------------------------------------------------------------------
+  {
+    uint8 v3buf[256];
+    memset(v3buf, 0, sizeof(v3buf));
+    serialize_slot_header(&src.header, v3buf);
+    uint32 loc_count = (uint32)src.header.placement_table_size / 2;
+    uint8 *p = v3buf + kRandoSidecar_SlotHeaderSize;
+    for (uint32 i = 0; i < loc_count; i++) put_u16le(p + i * 2, kRandoSidecar_NoPlacementSentinel);
+    put_u16le(p + 5 * 2, 50);
+    p += loc_count * 2;
+    uint32 v3_bitmap = (loc_count + 7) >> 3;
+    p[0] = 0x05;
+    p += v3_bitmap;
+    memcpy(p, src.settings_canonical, kSettingsCanonicalLen);
+    p += kSettingsCanonicalLen;
+    p[0] = 0xEF; p[1] = 0xCD; p[2] = 0xAB;
+    p[3] = p[4] = p[5] = p[6] = p[7] = 0;
+    uint32 v3_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v3_bitmap +
+                      kSettingsCanonicalLen + kRandoSidecar_SlotExtV3Size;
+
+    RandoSidecarSlot v3dst;
+    uint32 v3_used = deserialize_slot_versioned(v3buf, v3_total, &v3dst, 3);
+    if (v3_used != v3_total) selfcheck_die("v3 compat: used != v3 total");
+    if (v3dst.header.entrance_digest24 != 0xABCDEF)
+      selfcheck_die("v3 compat: entrance_digest24 round-trip");
+    if (v3dst.header.recommended_features0_present != 0)
+      selfcheck_die("v3 compat: zero extension must not imply recommended_features0");
   }
 
   // -------------------------------------------------------------------------
