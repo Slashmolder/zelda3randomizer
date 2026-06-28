@@ -1941,8 +1941,19 @@ static void rando_pot_restore_carry_state(const RandoPotCarrySnapshot *s) {
   link_disable_sprite_damage = s->disable_sprite_damage;
 }
 
-static bool rando_pot_carry_visual_active(const RandoPotCarrySnapshot *s) {
-  return (s->state_bits & 0x80) != 0 ||
+static bool rando_pot_stable_carried_terrain_active(void) {
+  for (int k = 0; k < 16; k++) {
+    if (sprite_type[k] == 0xec && sprite_state[k] == 10 &&
+        sprite_unk3[k] == 3 &&
+        sprite_delay_main[k] == 0)
+      return true;
+  }
+  return false;
+}
+
+static bool rando_pot_carry_transition_active(const RandoPotCarrySnapshot *s) {
+  return ((s->state_bits & 0x80) != 0 &&
+          !rando_pot_stable_carried_terrain_active()) ||
          s->picking_throw_state != 0 ||
          s->player_handler != 0 ||
          s->flag_sprite_pickup != 0 ||
@@ -1955,10 +1966,15 @@ static bool rando_pot_carry_visual_active(const RandoPotCarrySnapshot *s) {
 static bool g_rando_pot_confirmation_pending;
 static DirectGrantIconEntry g_rando_pot_confirmation_icon;
 
-static bool rando_pot_throwable_terrain_active(void) {
-  for (int k = 0; k < 16; k++)
-    if (sprite_state[k] != 0 && sprite_type[k] == 0xec)
-      return true;
+static bool rando_pot_throwable_terrain_blocks_confirmation(void) {
+  for (int k = 0; k < 16; k++) {
+    if (sprite_state[k] == 0 || sprite_type[k] != 0xec)
+      continue;
+    if (sprite_state[k] == 10 && sprite_unk3[k] == 3 &&
+        sprite_delay_main[k] == 0)
+      continue;
+    return true;
+  }
   return false;
 }
 
@@ -1966,8 +1982,8 @@ static bool rando_pot_confirmation_safe_to_emit(void) {
   if (!rando_trap_stun_can_tick() || submodule_index != 0)
     return false;
   RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
-  return !rando_pot_carry_visual_active(&carry) &&
-         !rando_pot_throwable_terrain_active();
+  return !rando_pot_carry_transition_active(&carry) &&
+         !rando_pot_throwable_terrain_blocks_confirmation();
 }
 
 static bool rando_resolve_pot_confirmation_icon(uint16 item_id, uint8 lttp_code,
@@ -2042,9 +2058,9 @@ static void rando_tick_deferred_pot_confirmation(void) {
 // intentionally skips. We deliberately do NOT call Link_ReceiveItem or allocate a
 // receipt ancilla, so Link's lift/carry/throw of the pot is left untouched. Pot
 // grants play sound + HUD immediately, then defer the visible icon until the
-// throwable terrain sprite is gone; the hook can run before that sprite exists on
-// the immediate-lift path, so the shared receive-item graphics slot is kept out
-// of the whole pot lifetime.
+// lift/throwable-terrain handoff settles. Once the pot is stably carried, the
+// cue is allowed to show while Link is still holding it so pickup identity is
+// not hidden until throw.
 static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool show_confirmation) {
   RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
   if (Rando_ShouldSkipReceive(lttp_code)) {
@@ -4818,8 +4834,8 @@ void Rando_SelfCheck(void) {
     link_disable_sprite_damage = 0;
 
     RandoPotCarrySnapshot pot_carry = rando_pot_capture_carry_state();
-    if (!rando_pot_carry_visual_active(&pot_carry)) {
-      fprintf(stderr, "Rando_SelfCheck: quiet pot carry cue should suppress icon\n");
+    if (!rando_pot_carry_transition_active(&pot_carry)) {
+      fprintf(stderr, "Rando_SelfCheck: quiet pot lift cue should suppress icon\n");
       exit(2);
     }
     flag_is_link_immobilized = 1;
@@ -4866,6 +4882,51 @@ void Rando_SelfCheck(void) {
         link_disable_sprite_damage != 0) {
       fprintf(stderr, "Rando_SelfCheck: quiet pot grant clobbered carry state\n");
       exit(2);
+    }
+
+    uint8 saved_sprite_state[16];
+    uint8 saved_sprite_type[16];
+    uint8 saved_sprite_unk3[16];
+    uint8 saved_sprite_delay[16];
+    for (int i = 0; i < 16; i++) {
+      saved_sprite_state[i] = sprite_state[i];
+      saved_sprite_type[i] = sprite_type[i];
+      saved_sprite_unk3[i] = sprite_unk3[i];
+      saved_sprite_delay[i] = sprite_delay_main[i];
+      sprite_state[i] = 0;
+      sprite_type[i] = 0;
+      sprite_unk3[i] = 0;
+      sprite_delay_main[i] = 0;
+    }
+    flag_is_link_immobilized = 0;
+    flag_is_sprite_to_pick_up = 0;
+    flag_is_ancilla_to_pick_up = 0;
+    flag_is_sprite_to_pick_up_cached = 0;
+    byte_7E0FB2 = 0;
+    player_handler_timer = 0;
+    link_item_in_hand = 0;
+    link_state_bits = 0x80;
+    link_picking_throw_state = 0;
+    sprite_state[0] = 10;
+    sprite_type[0] = 0xec;
+    sprite_unk3[0] = 3;
+    sprite_delay_main[0] = 0;
+    RandoPotCarrySnapshot stable_pot_carry = rando_pot_capture_carry_state();
+    if (rando_pot_carry_transition_active(&stable_pot_carry) ||
+        rando_pot_throwable_terrain_blocks_confirmation()) {
+      fprintf(stderr, "Rando_SelfCheck: stable carried pot should allow icon\n");
+      exit(2);
+    }
+    sprite_delay_main[0] = 1;
+    if (!rando_pot_throwable_terrain_blocks_confirmation()) {
+      fprintf(stderr, "Rando_SelfCheck: lifting pot should defer icon\n");
+      exit(2);
+    }
+    for (int i = 0; i < 16; i++) {
+      sprite_state[i] = saved_sprite_state[i];
+      sprite_type[i] = saved_sprite_type[i];
+      sprite_unk3[i] = saved_sprite_unk3[i];
+      sprite_delay_main[i] = saved_sprite_delay[i];
     }
 
     rando_pot_restore_carry_state(&saved_carry);
