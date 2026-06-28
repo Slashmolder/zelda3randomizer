@@ -110,8 +110,11 @@ GOALS = [
 ]
 ITEM_POOLS = ["normal", "hard"]
 
-# A small spread of seeds; index [:seeds_per_cell] is taken per cell.
-SEED_POOL = [1, 12345, 0xABCDEF, 999999, 7]
+# A small spread of known-accepted smoke seeds; index [:seeds_per_cell] is taken
+# per cell. This is not a random refusal/fuzz test: every seed here should
+# generate across the default strict-accessibility matrix. Explicit
+# reject/accept coverage lives in check_rando_slot_path.py.
+SEED_POOL = [1, 7, 0xABCDEF, 31337, 85]
 
 # fallback_warnings kinds that are genuine generation failures (vs. benign
 # metadata). See module docstring for the full rationale.
@@ -360,6 +363,7 @@ def main(argv: list[str]) -> int:
         print(f"check_rando_invariants: binary {args.binary} not found. "
               f"Build first or pass --binary.")
         return 2
+    args.binary = args.binary.resolve()
 
     if not args.quiet:
         print(f"check_rando_invariants: binary {args.binary}")

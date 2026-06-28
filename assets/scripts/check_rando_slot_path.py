@@ -22,10 +22,11 @@ slot back, and prints a one-line JSON result) and asserts:
      CLI path's (`--generate-seed`) digest for the same (settings, seed), so the
      UI path provably did not diverge from the corpus-tested path.
 
-It deliberately includes the standard triforce-hunt (30 pieces) case, which the
-placer cannot make 100%-inventory: it must REJECT under `accessibility=items`
-and ACCEPT under `accessibility=none` ("beatable only"). That single cell
-exercises the three-way accessibility gate end-to-end through the real UI path.
+It deliberately includes a hard-pool standard Ganonhunt seed that the placer can
+make goal-completable, but not 100%-inventory: it must REJECT under
+`accessibility=items` and ACCEPT under `accessibility=none` ("beatable only").
+That pair exercises the three-way accessibility gate end-to-end through the real
+UI path.
 
 `Rando_GenerateSlot` writes `saves/sram.dat` + the sidecar + a spoiler relative
 to the CWD, so every cell runs in its own scratch temp directory (with `saves/`
@@ -65,10 +66,10 @@ MATRIX = [
     ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2),
     ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0),
     # The three-way accessibility gate, end-to-end through the slot path:
-    # 30-piece standard triforce-hunt strands progression -> 100%-inventory is
-    # impossible, but the seed is still beatable.
-    ("std-th30-items-REJECT",  "mode.state=standard,goal=triforce-hunt,pieces_required=20,pieces_placed=30,accessibility=items", "0x12", False, False, None),
-    ("std-th30-beatable-OK",   "mode.state=standard,goal=triforce-hunt,pieces_required=20,pieces_placed=30,accessibility=none",  "0x12", True,  False, 1),
+    # this hard-pool Ganonhunt seed has unreachable placements under strict
+    # inventory, but the goal is still completable in beatable-only mode.
+    ("std-ganonhunt-hard-items-REJECT", "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "12345", False, False, None),
+    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "12345", True,  True,  1),
 ]
 
 
@@ -118,6 +119,7 @@ def main(argv: list[str]) -> int:
         # so a docs-only / ROM-less checkout doesn't break.
         print(f"check_rando_slot_path: binary {args.binary} not found - skipping.")
         return 0
+    args.binary = args.binary.resolve()
 
     print(f"check_rando_slot_path: binary {args.binary}")
     failures = 0

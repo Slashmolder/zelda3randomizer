@@ -15,8 +15,9 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 > `[26]` 6-7 + `[27]` 7, NOT `[27]` 2-3 which `trap_categories` took), **2.2**
 > (`pots.gen.yaml`, not `pot_table.gen.bin`; now gitignored local ROM-derived data),
 > **3.5/3.2 door×pot**
-> (pots normalize fully Off under door shuffle — the "pin key-pots + reduce pool"
-> design was dropped; full integration deferred), and **4.2** (no "granted" flag —
+> (the original door-forced-Off checkpoint was superseded by the archived
+> `add-rando-door-pot-integration` baseline; cave-entrance shuffle remains the
+> forced-Off case), and **4.2** (no "granted" flag —
 > suppression is `dung_secrets_unk1==0` early-return + an `is_pot` arg). The reconciled
 > `specs/` deltas and the design "As-built" notes are authoritative. Owner playtest
 > has now covered an Open full-clear with all shuffles wild and confirmed the gold
@@ -94,15 +95,17 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   install boundary (assumed-fill, sidecar deser, snapshot-tail, customizer, reveal,
   tests); `--rando-selftest` sortedness check + sort-on-install fallback.
 - [x] 3.5 **Key economy (D7):** pot-key locations follow `dungeon_small_keys_mode` —
-  pin pot-keys in vanilla mode; pool them in shuffled modes. Under
-  `door_shuffle != vanilla`, normalize `pot_shuffle → Off` (door×pot disabled in v1).
-  Surface in UI.
+  pin pot-keys in vanilla mode; pool them in shuffled modes. The original phase-3
+  checkpoint normalized `pot_shuffle → Off` under `door_shuffle != vanilla`; the later
+  archived `add-rando-door-pot-integration` baseline supersedes that with active
+  door+pot support. Surface the effective behavior in UI.
   - **AS-BUILT NOTE (superseded by §7, task #25):** the "count preserved, never an
     extra key" framing here was WRONG — `kVanillaSmallKeyCounts` is chest-only, so a
     pot key is an ADDITIONAL pooled item; under shuffled keys it vanished (a strand)
     until §7 made it first-class. The door×pot "reduce the shuffled key-pool count"
-    half-measure was REJECTED (the prover doesn't model pots) in favour of normalizing
-    to Off. See §7 for the as-built wild + dungeon economy + logic gating.
+    half-measure was REJECTED; the later door-pot integration models active pot checks
+    through the baseline door oracle instead of normalizing to Off. See §7 for the
+    as-built wild + dungeon economy + logic gating.
 - [x] 3.6 Bump `kGeneratorVersion`. `make clean` + build + `--rando-selftest`.
   **Corpus regen + 3-way diff vs unmodified `main`** (`rm src/rando/logic_data.c` to
   force codegen): every existing seed byte-identical with `pot_shuffle = Off`. Add
@@ -138,8 +141,8 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 ## 5. UI / trackers — D11, D12, D13
 
 - [x] 5.1 `pot_shuffle` four-value selector in the native settings window + 1-2 line
-  tooltip; wire through the slot generator. Surface the door-shuffle key-pot
-  restriction (D7).
+  tooltip; wire through the slot generator. Surface the effective pot behavior (D7):
+  door shuffle keeps selected pots active, while cave-entrance shuffle forces Off.
 - [x] 5.2 **SNES HUD location tracker (`hud.c:1863`)**: hide/page/summarize pots (it
   loops over locations and breaks with 800+ rows) — NOT just the native window.
 - [x] 5.3 Native/auto tracker + reach panel: group pots by room / "show pots" toggle;
@@ -160,7 +163,7 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
   re-break (vanilla drop, no re-grant); empty-pot (`All`, Literally Nothing);
   gold glint + clears-on-check (and the sprite-palette-row collision check); a
   non-direct-grant pot item (bottle) delivered not
-  dropped; **door-shuffle + pot-shuffle** seed (key-pot restriction holds); Retro +
+  dropped; **door-shuffle + pot-shuffle** seed (active door-pot path holds); Retro +
   `All` (capacity); a gated-room pot (Swamp flood / dark room — beatable, not
   falsely-in-logic). Confirm the loaded slot matches the share string before
   debugging any anomaly.
@@ -180,7 +183,8 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 
 Make a dungeon's POT keys first-class shuffled checks under shuffled key modes
 (superseding the §3.5 "count-preserving / pinned" model). Gated by the prover key-door
-depth; pots-off / vanilla / door byte-identical.
+depth; pots-off / vanilla byte-identical. The original door-forced-Off byte-identical
+path was superseded by the archived door-pot integration baseline.
 
 - [x] 7.1 **`--dump-key-depth` prover dump** (`door_keylogic.c`): per region/location/
   room/key-drop, emit the WORST-CASE `depth=` AND the SHORTEST-PATH `mindepth=` over
@@ -202,9 +206,10 @@ depth; pots-off / vanilla / door byte-identical.
   through `pot_logic_overrides.yaml` so regenerated `pots.gen.yaml` carries the
   correct region + key `vanilla_item` + `can_reach`.
 - [x] 7.6 `kGeneratorVersion` → 91; `make clean` + build (`-Werror`) + selftests; corpus
-  regen (130/130, only the 8 pots-on non-door seeds move; door+pots and non-pot
-  byte-identical); 0-refuse matrix at `accessibility=items` across keys/all × goals ×
-  worlds; all CI guards green.
+  regen (130/130, only the 8 pots-on non-door seeds moved at this checkpoint; the
+  then-door-forced-Off path stayed byte-identical until the later door-pot integration);
+  0-refuse matrix at `accessibility=items` across keys/all × goals × worlds; all CI
+  guards green.
 - [x] 7.7 Fresh-eyes independent review (0 findings, end-to-end re-validated).
 - [ ] 7.8 **Owner playtest** a dungeon+pot seed — see 6.3 addendum (the only correctness
   gate the generator cannot cover).
@@ -216,8 +221,10 @@ corpus-validated; pots-off / non-pot seeds byte-identical, only pot-ACTIVE seeds
 
 - [x] 8.1 **Cave-entrance × pot forced-off** (kGen 92): cave/house pot loc-ids sit above
   the entrance region-override range, so cave+pot certified progression against the
-  vanilla overworld region. `Settings_PotShuffleForcedOff` = door OR cave-entrance shuffle
-  (used by apply_derived_rules + pot_active + spoiler). Guard seed added.
+  vanilla overworld region. After the door-pot integration superseded the original
+  door-forced-Off checkpoint, `Settings_PotShuffleForcedOff` is the cave-entrance
+  forced-Off accessor used by apply_derived_rules + pot_active + spoiler. Guard seed
+  added.
 - [x] 8.2 **Raw-vs-normalized settings → Effective accessors** (kGen 93-94): the placer
   consumes RAW settings (canonical-serialize normalizes only a private copy for the hash).
   Routed the pot-key gates (`Settings_PotKeysActive`), the accessibility acceptance gate +

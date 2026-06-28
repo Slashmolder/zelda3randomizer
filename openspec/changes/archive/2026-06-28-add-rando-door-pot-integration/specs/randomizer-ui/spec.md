@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Pot-shuffle tier selector and pot tracker presentation
 

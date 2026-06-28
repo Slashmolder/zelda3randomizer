@@ -33,29 +33,30 @@ silently DROPPED). Each raised capacity SHALL carry a `_Static_assert` tying it 
 `LOC__COUNT` (≥) so a future overflow / truncation / drop is a build break, not a
 silent fail-open.
 
-Under door shuffle OR cave-entrance shuffle `pot_shuffle` SHALL normalize entirely
-to `Off`: `apply_derived_rules` sets `pot_shuffle = Off` whenever
-`Settings_PotShuffleForcedOff` (= `Settings_EffectiveDoorShuffle != Vanilla` OR
-`Settings_EffectiveShuffleCaveEntrances`, the latter honored only on Open/Standard), and
-`pot_active()` returns false for EVERY pot (key and non-key) in that case, so all pots are
-inactive and resolve to vanilla — a door+pots or cave-entrance+pots seed is byte-identical
-to the same seed without pots, keeping the door-key prover (which does not model pot
-locations) provably correct and preventing a cave/house pot from being certified against
-its vanilla overworld region while the runtime reaches the interior through the shuffled
-entrance. **The placer and logic consume RAW (non-normalized) settings** —
+Cave-entrance shuffle SHALL normalize `pot_shuffle` entirely to `Off` through
+`Settings_PotShuffleForcedOff` (= `Settings_EffectiveShuffleCaveEntrances`, honored only
+on Open/Standard): `apply_derived_rules` sets the canonical copy to Off, and
+`pot_active()` returns false for EVERY pot (key and non-key) in that case. A
+cave-entrance+pots seed is byte-identical to the same seed without pots, preventing a
+cave/house pot from being certified against its vanilla overworld region while the
+runtime reaches the interior through the shuffled entrance.
+
+Door shuffle SHALL NOT be part of `Settings_PotShuffleForcedOff`: door-shuffled pot
+locations remain active when selected, and their key economy/reachability is governed by
+the baseline requirements `randomizer-pot-sanity / Pot keys are first-class shuffled
+checks under shuffled key modes`, `randomizer-placement / Door-shuffle placement model
+with active pot checks`, and `randomizer-logic / Door-shuffle reachability via static
+oracle ops`. **The placer and logic consume RAW (non-normalized) settings** —
 `Settings_CanonicalSerialize` runs `apply_derived_rules` only on a private copy for the
-settings hash — so EVERY pot/accessibility predicate that branches on a normalized field
-SHALL read it through the matching accessor (`Settings_PotShuffleForcedOff`,
-`Settings_PotKeysActive`, `Settings_EffectiveShuffleCaveEntrances`,
-`Settings_EffectiveAccessibility`), never the raw struct field, so the placer cannot
-diverge from the canonical hash / spoiler / runtime (the audit-fixed raw-vs-normalized
-bug class — door-only pot-key gates wrongly refusing cave+pot+wild/dungeon-keys seeds;
-`goal=completionist,accessibility=none` skipping the 100%-locations walk). (An earlier
-"pin key-pots as fixed vanilla keys and reduce the shuffled pool count" design was NOT
-adopted: the prover's key count and the pool's key count are independently driven, so
-a pinned key-pot — equally invisible to the prover — still risks an unprovable
-softlock. Full door×pot integration, modeling pot-key locations inside the prover, is
-a deferred follow-on phase.) The runtime pot grant SHALL dispatch through a single point keyed on
+settings hash — so EVERY pot/accessibility/door predicate that branches on an effective
+field SHALL read it through the matching accessor (`Settings_PotShuffleForcedOff`,
+`Settings_PotKeysActive`, `Settings_EffectiveDoorShuffle`,
+`Settings_EffectiveShuffleCaveEntrances`, `Settings_EffectiveAccessibility`), never the
+raw struct field, so the placer cannot diverge from the canonical hash / spoiler /
+runtime (the audit-fixed raw-vs-normalized bug class — cave-forced-off pot-key gates,
+`goal=completionist,accessibility=none` skipping the 100%-locations walk, and
+Inverted/Retro retaining a cave bit but wrongly forcing pots off). The runtime pot grant
+SHALL dispatch through a single point keyed on
 `(dungeon_room, tile_position) → location_id` (`randomizer-pot-sanity / Single-point
 runtime pot dispatch …`), subject to the existing `Trigger-based location re-collect
 safety` invariant: a checked pot is never re-granted. `Placement_Lookup` SHALL use a
@@ -94,14 +95,19 @@ check and a sort-on-install fallback.
   pre-pass and removed from the open set, so assumed-fill and junk padding never place
   `ITEM_Nothing` on a chest/non-empty pot nor a real item on an empty pot
 
-#### Scenario: Pots are inert under door OR cave-entrance shuffle (v1)
-- **WHEN** a seed has `door_shuffle != vanilla` OR cave-entrance shuffle (on Open/Standard)
-  and any `pot_shuffle` tier was requested
+#### Scenario: Cave-entrance shuffle keeps pots inert
+- **WHEN** a seed has effective cave-entrance shuffle (on Open/Standard) and any
+  `pot_shuffle` tier was requested
 - **THEN** `pot_shuffle` normalizes to `Off` (`Settings_PotShuffleForcedOff`), every pot
   (key and non-key) is inactive and resolves to vanilla, and the seed's placement is
-  byte-identical to the same seed generated without pot shuffle — so the door-key prover
-  cannot strand and no cave/house pot is certified against a region the shuffled entrance
-  moved it out of
+  byte-identical to the same seed generated without pot shuffle, so no cave/house pot is
+  certified against a region the shuffled entrance moved it out of
+
+#### Scenario: Door shuffle keeps selected pots active
+- **WHEN** a seed has `door_shuffle != vanilla` and any `pot_shuffle` tier was requested
+- **THEN** `Settings_PotShuffleForcedOff` remains false for the door shuffle alone, the
+  selected pot tier enters placement/reachability through the door-pot baseline, and the
+  seed is NOT treated as byte-identical to pots-off solely because door shuffle is active
 
 #### Scenario: Inverted/Retro cave bit does not force pots off
 - **WHEN** a seed is Inverted or Retro with a retained cave-entrance bit and any

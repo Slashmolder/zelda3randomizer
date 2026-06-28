@@ -51,11 +51,17 @@ silently dropped from the view.
 - **THEN** the seed's `placement_digest` and `settings_hash` are unaffected (the
   marker is client-side OAM + PPU-CGRAM only, like other cosmetic axes)
 
-#### Scenario: Pot selector disabled when generation forces pots off
-- **WHEN** the native settings window has door shuffle OR cave-entrance shuffle enabled
+#### Scenario: Pot selector remains editable under door shuffle
+- **WHEN** the native settings window has door shuffle enabled and cave-entrance shuffle
+  is not effectively forcing pots off
+- **THEN** the `pot_shuffle` selector remains editable and does not show a door-shuffle
+  forced-Off note, because door+pot integration is part of the baseline behavior
+
+#### Scenario: Pot selector disabled when cave-entrance shuffle forces pots off
+- **WHEN** the native settings window has effective cave-entrance shuffle enabled
 - **THEN** the `pot_shuffle` selector is greyed out with a one-line note, using the SAME
   `Settings_PotShuffleForcedOff` predicate generation uses to normalize `pot_shuffle` to
-  Off — so the UI is honest about what will actually generate
+  Off, so the UI is honest about what will actually generate
 
 #### Scenario: Tracker filter toggles persist across restarts
 - **WHEN** the player toggles the Check Tracker's "Hide checked", "Only available",
@@ -64,8 +70,13 @@ silently dropped from the view.
   EXCEPT "Show items (spoiler)" is force-off on load for a race seed so a replay cannot
   leak item names
 
-#### Scenario: Spoiler reports the effective pot_shuffle
-- **WHEN** a seed forces pots off (door or cave-entrance shuffle) but `pot_shuffle` was
-  requested
+#### Scenario: Spoiler reports cave-forced Off
+- **WHEN** effective cave-entrance shuffle forces pots off but `pot_shuffle` was requested
 - **THEN** the spoiler emits the EFFECTIVE value (0/Off via `Settings_PotShuffleForcedOff`),
   matching the canonical hash and the actually-generated pot-less seed, not the raw request
+
+#### Scenario: Spoiler keeps requested pot tier under door shuffle
+- **WHEN** door shuffle is enabled, cave-entrance shuffle is not effectively forcing pots
+  off, and `pot_shuffle` was requested
+- **THEN** the spoiler emits the effective requested tier rather than Off, matching the
+  canonical hash and the door+pot placement that actually generated

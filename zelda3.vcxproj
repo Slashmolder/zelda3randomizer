@@ -1027,6 +1027,10 @@
   <Target Name="RandoCodegen" BeforeTargets="ClCompile">
     <Exec Command="python assets\rando_logic_gen.py" />
   </Target>
+  <Target Name="RandoAssetsHash" BeforeTargets="ClCompile">
+    <Exec Condition="Exists('zelda3_assets.dat')" Command="python assets\scripts\dump_vanilla_assets_hash.py" />
+    <Exec Condition="!Exists('zelda3_assets.dat') And !Exists('src\rando\vanilla_assets_hash.h')" Command="python assets\scripts\dump_vanilla_assets_hash.py --placeholder" />
+  </Target>
   <Target Name="EnsureVendoredSdl2" BeforeTargets="PrepareForBuild">
     <Error Condition="!Exists('$(Sdl2LibDir)SDL2.lib')" Text="Vendored SDL2 missing at $(Sdl2LibDir). Re-extract third_party/SDL2-2.32.10/ from libsdl.org's SDL2-devel-2.32.10-VC.zip." />
   </Target>

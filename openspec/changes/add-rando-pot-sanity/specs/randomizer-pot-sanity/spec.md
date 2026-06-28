@@ -320,20 +320,21 @@ changing every existing seed. This SHALL be verified by a corpus regen with a
 
 A dungeon's POT keys SHALL be genuine randomizer checks — a key pot can hold any placed
 item and its small key can live elsewhere, NOT pinned to their own key — whenever
-`pot_shuffle >= Keys` and small keys are shuffled (wild or dungeon) with door shuffle
-off. This requires the key not to vanish from the pool (`randomizer-placement /
+`pot_shuffle >= Keys` and small keys are shuffled (wild or dungeon), including the
+effective dungeon-key mode used by door shuffle. This requires the key not to vanish from
+the pool (`randomizer-placement /
 Pot-key small-key economy`) AND the dungeon's deep locations + pots to gate on the
 key-door requirement the now-itemized keys add (`randomizer-logic / Pot-key small-key
 logic gating`). The requirement is key-mode-dependent: under **wild** keys it is the
 worst-case "hold N before entering"; under **dungeon** keys it is the in-context
 shortest-path (min-depth) collected en route. In **vanilla** key mode the key pots stay
-pinned, and under **door shuffle OR cave-entrance shuffle** every pot is forced inactive
-(`Settings_PotShuffleForcedOff` — the door key-prover doesn't model pot locations, and a
-cave/house pot's location id sits above the entrance region-override range so it would
-evaluate from its vanilla overworld region; both full integrations are deferred follow-
-ons). Cave-entrance shuffle is honored only on Open/Standard (`Settings_Effective-
-ShuffleCaveEntrances`), so an inert cave bit retained under Inverted/Retro does NOT force
-pots off — those seeds correctly generate WITH pots.
+pinned, and under effective **cave-entrance shuffle** every pot is forced inactive
+(`Settings_PotShuffleForcedOff` — a cave/house pot's location id sits above the entrance
+region-override range so it would evaluate from its vanilla overworld region).
+Cave-entrance shuffle is honored only on Open/Standard
+(`Settings_EffectiveShuffleCaveEntrances`), so an inert cave bit retained under
+Inverted/Retro does NOT force pots off — those seeds correctly generate WITH pots. Door
+shuffle keeps selected pots active and is governed by the baseline door-pot requirements.
 
 Because the key economy and the per-pot key-door gate both key off a pot's DUNGEON — and
 because the same logic-region binding governs every loot/empty pot's reachability — the
@@ -364,6 +365,13 @@ Mimic Cave (gains its Mirror-from-Turtle-Rock gate), and the shared `0x11b` refi
 - **THEN** every key pot is identity-pinned and drops its own key in place, exactly
   like pots-off — placement is byte-identical to the same seed without the key pots
   participating
+
+#### Scenario: Door shuffle keeps key pots first-class
+- **WHEN** `door_shuffle != vanilla`, `pot_shuffle >= Keys`, and effective cave-entrance
+  shuffle is off
+- **THEN** selected key pots remain shuffled checks under the effective shuffled key mode,
+  and their reachability follows the baseline door-pot model rather than a forced-Off
+  normalization
 
 #### Scenario: Key-pot region binding is the physically-correct dungeon
 - **WHEN** the pot registry is generated

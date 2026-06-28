@@ -1,5 +1,11 @@
-## MODIFIED Requirements
+# randomizer-pot-sanity Specification
 
+## Purpose
+Define pot-shuffle behavior for randomizer seeds, including active pot checks,
+pot-key accounting, forced-off interactions, and composition with shuffled dungeon
+key modes.
+
+## Requirements
 ### Requirement: Pot keys are first-class shuffled checks under shuffled key modes
 
 Pot-key locations SHALL remain first-class shuffled checks when effective door

@@ -240,6 +240,12 @@ def main(argv: list[str]) -> int:
 
     if not args.skip_selftest:
         checks.append(("rando self-test", [str(binary), "--rando-selftest"]))
+    checks.append(("slot-path generation guard",
+                   [sys.executable, "assets/scripts/check_rando_slot_path.py",
+                    "--binary", str(binary)]))
+    checks.append(("rando invariant sweep",
+                   [sys.executable, "assets/scripts/check_rando_invariants.py",
+                    "--binary", str(binary)]))
     if not args.skip_corpus:
         checks.append(("regression corpus",
                        [sys.executable, "assets/scripts/run_rando_corpus.py",

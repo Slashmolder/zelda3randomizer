@@ -1131,8 +1131,9 @@ regression while authoring logic or bumping the generator:
 
 `rando_logic_gen.py --strict` also runs here (well-formedness, including the
 `region: 0xFFFF` binding warning). Build-dependent guards (`check_init_order`,
-`check_link_symbols`, the corpus with `--binary`, and the benchmark gate) run in
-the separate build/determinism jobs.
+`check_link_symbols`, the corpus with `--binary`, the slot-path generation guard,
+the invariant sweep, and the benchmark gate) run in the separate
+build/determinism jobs.
 
 Some guards need ROM-derived local artifacts and therefore cannot run in public
 CI. Before merging pot-table or asset-generation work, run:
@@ -1147,8 +1148,9 @@ That local runner refreshes the gitignored `assets/rando/pot_dump.gen.txt` via
 freshness checks against those local artifacts, regenerates rando codegen, then
 runs `--rando-selftest` and the full regression corpus. Public CI builds without
 those ROM-derived pot registries and skips corpus entries that request
-`pot_shuffle`; Linux/macOS contributors can use `make rando-local-checks` for a
-two-pass build/prepare/rebuild/check flow.
+`pot_shuffle`, but it does run the ROM-free binary guard suite on
+Linux/macOS/Windows. Linux/macOS contributors can use `make rando-local-checks`
+for a two-pass build/prepare/rebuild/check flow.
 
 ## Generator version (`kGeneratorVersion`) bump policy
 

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-unix:
+  build:
     name: on ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -19,11 +19,15 @@ jobs:
           os: ubuntu-latest
         - name: Mac
           os: macos-latest
+        - name: Windows
+          os: windows-latest
     steps:
     - uses: actions/checkout@v5
     - uses: actions/setup-python@v6
       with:
         python-version: '3.10'
+    - name: Install Python deps
+      run: pip install -r requirements.txt
     - name: Install dependencies for Linux
       if: ${{ matrix.name == 'Linux' }}
       run: |
@@ -33,13 +37,34 @@ jobs:
       if: ${{ matrix.name == 'Mac' }}
       run: |
         brew install sdl2 coreutils
-    # The Makefile runs the rando codegen (needs PyYAML) and asset tooling
-    # (needs Pillow) as part of the build. It prefers `uv` when present, which
-    # provisions those deps from requirements.txt in an isolated env — so CI
-    # gets them without a manual `pip install`. Mirrors the macOS/Linux dev flow.
+    - name: Install dependencies for Windows
+      if: ${{ matrix.name == 'Windows' }}
+      shell: pwsh
+      run: |
+        $version = "2.32.10"
+        $zip = Join-Path $env:RUNNER_TEMP "SDL2-devel-$version-VC.zip"
+        Invoke-WebRequest `
+          -Uri "https://github.com/libsdl-org/SDL/releases/download/release-$version/SDL2-devel-$version-VC.zip" `
+          -OutFile $zip
+        Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
+        New-Item -ItemType Directory -Force third_party | Out-Null
+        Copy-Item -Recurse -Force `
+          (Join-Path $env:RUNNER_TEMP "SDL2-$version") `
+          (Join-Path "third_party" "SDL2-$version")
+    - uses: microsoft/setup-msbuild@v2
+      if: ${{ matrix.name == 'Windows' }}
+    # Unix builds still install uv to mirror the local Makefile path: the
+    # Makefile prefers `uv run` when available and otherwise falls back to
+    # system python. Windows MSBuild invokes `python` directly, so the explicit
+    # pip install above covers its pre-build codegen scripts.
     - name: Install uv
+      if: ${{ matrix.name != 'Windows' }}
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-    - name: Build
-      run: make -j$(nproc) zelda3
+    - name: Build (Unix)
+      if: ${{ matrix.name != 'Windows' }}
+      run: make -j2 zelda3
+    - name: Build (Windows)
+      if: ${{ matrix.name == 'Windows' }}
+      run: msbuild Zelda3.sln /m /p:Configuration=Release /p:Platform=x64

@@ -99,13 +99,10 @@ entries:
     label: "a1-standard-pedestal"
     expected_digest: "11ac67ee5b4eaf3f6d59bb1738f1657f62c9a37271b82e79ef59892d57e30243"
     expected_sphere_digest: "0ece45fd2c85df4784eec8c1e630fb1c1c8cc93ae73862f93f78e3bb07dbe7f9"
-  # Standard triforce-hunt with 30 placed pieces can't meet 100%-inventory
-  # (`items`) — the placer's best-effort strands many pieces — so this entry
-  # uses `accessibility: none` ("beatable only"). It is the key beatable-tier
-  # regression: the same placement that `items`/`locations` would REJECT is
-  # accepted here because the goal is still completable. (accessibility does not
-  # affect Place_AssumedFill output, so the digests are unchanged from when this
-  # was an implicit-`items` entry under the old goal-only gate.)
+  # Standard triforce-hunt beatable-only coverage. The accessibility gate itself
+  # is covered by the slot-path/invariant guards; this corpus row pins the
+  # canonical settings encoding and placement digest for a standard hunt seed
+  # under ALTTPR's "not guaranteed" tier.
   - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, accessibility: none }
     seed: "0x0000000000000014"
     label: "a1-standard-triforce-hunt-beatable"

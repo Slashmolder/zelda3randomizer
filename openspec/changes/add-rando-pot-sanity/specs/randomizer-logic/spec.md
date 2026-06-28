@@ -71,11 +71,12 @@ Three predicate-VM ops drive this, all false (so the wrap is inert and placement
 byte-identical) when pots are off:
 
 - `OP_POT_KEYS_ON` — `Settings_PotKeysActive`: `pot_shuffle >= Keys` AND pots are not
-  forced off (door OR cave-entrance shuffle, `Settings_PotShuffleForcedOff`) — the SAME
-  shared accessor `pot_active` / `BuildItemPool` use, so the gate can never drift from
-  which pots are actually pooled. The placer/logic VM consume RAW settings, so this MUST
-  read the accessor, never the raw `pot_shuffle`/door fields (the audit-fixed bug class:
-  door-only pot-key gates wrongly REFUSED cave-entrance + pot + wild/dungeon-keys seeds).
+  forced off by effective cave-entrance shuffle (`Settings_PotShuffleForcedOff`) — the
+  SAME shared accessor `pot_active` / `BuildItemPool` use, so the gate can never drift
+  from which pots are actually pooled. Door shuffle does not force this op false; door
+  reachability is handled by the baseline `randomizer-logic / Door-shuffle reachability
+  via static oracle ops`. The placer/logic VM consume RAW settings, so this MUST read the
+  accessor, never raw `pot_shuffle` or cave fields.
 - `OP_POT_KEYS_WILD` — `OP_POT_KEYS_ON` AND small keys are wild (keysanity / Retro).
 - `OP_POT_KEYS_DUNGEON` — `OP_POT_KEYS_ON` AND small keys are dungeon (per-dungeon).
 
@@ -121,10 +122,18 @@ from that table.
   placed behind its own door
 
 #### Scenario: Pots off leaves the gating inert
-- **WHEN** `pot_shuffle = Off` (or vanilla keys, or door OR cave-entrance shuffle on)
+- **WHEN** `pot_shuffle = Off` (or vanilla keys, or effective cave-entrance shuffle
+  forces pots off)
 - **THEN** `POT_KEYS_WILD` and `POT_KEYS_DUNGEON` both evaluate false, the wrapped
   terms collapse to the vanilla predicate, and reachability + placement are
   byte-identical to the pre-feature build
+
+#### Scenario: Door shuffle keeps pot-key gates active
+- **WHEN** `door_shuffle != vanilla`, `pot_shuffle >= Keys`, small keys are shuffled,
+  and effective cave-entrance shuffle is off
+- **THEN** `POT_KEYS_WILD` or `POT_KEYS_DUNGEON` evaluates according to the effective
+  key mode, so door-shuffled active pots are gated by the door-pot baseline rather than
+  being collapsed to pots-off
 
 ## MODIFIED Requirements
 

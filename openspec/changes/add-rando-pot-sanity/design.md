@@ -264,7 +264,7 @@ locations ARE customizable (the user may pin an item there, like a chest) and
 out-of-tier / inactive pot locations are rejected by the customizer (not in the
 pool); hints never source an `ITEM_Nothing` pot.
 
-## D7 — Key-pots, key economy, and door shuffle (R4 — decided: restrict in v1)
+## D7 — Key-pots, key economy, and door shuffle (R4 — integrated for door, cave forced off)
 
 Pot-key locations are **dungeon small-key locations** that follow the dungeon's
 `dungeon_small_keys_mode`. **AS-BUILT (task #25, kGen 89 wild + kGen 91 dungeon):** a
@@ -294,27 +294,21 @@ shuffled keys they VANISHED (the strand the owner hit). The corrected economy:
   min-depth gates stay satisfiable, mirroring pots-off "drops free"; the runtime SRAM
   key counter overwrites the pre-grant so it is placer-only (no double count). A
   `Placement_SelfCheck` prong guards the free-grant table against pot-set drift.
-- **Under door shuffle** (`door_shuffle != vanilla`, which forces Dungeon key mode →
-  the full vanilla key count enters the shuffled pool): **AS-BUILT (owner-decided
-  2026-06-19) — the door×pot combination is DISABLED: every pot is inactive while
-  door shuffle is on.** The earlier "pin key-pots + subtract from the pool" plan was
-  rejected as unsafe: the key-door prover (`door_keylogic.c`) does not model pot
-  locations, so a dungeon key reaching ANY pot — including a *pinned* key-pot, whose
-  key is equally invisible to the prover — risks a key behind the very door it opens
-  (unprovable softlock); and the pool key count (`kVanillaSmallKeyCounts`) and the
-  prover's count (`kDoorTblDungeons.chest_small_keys + drop_cnt`) are driven
-  independently, so a naive subtraction desyncs them. Excluding all pots makes
-  door+pots **provably equal to door-without-pots** (verified byte-identical).
-  Realized by `apply_derived_rules` normalizing `pot_shuffle → Off` whenever
-  `Settings_EffectiveDoorShuffle(s) != vanilla`, with `pot_active()` re-checking the
-  same effective door value so the settings_hash and the placement can never desync.
+- **Under door shuffle** (`door_shuffle != vanilla`, which forces effective Dungeon key
+  mode): **AS-BUILT (archived `add-rando-door-pot-integration`, 2026-06-28) — selected
+  pots remain active.** Door shuffle uses the baseline door-pot bridge: the placer keeps
+  active pot checks in the pool, the logic VM consults the static door oracle ops, and
+  `Settings_EffectiveDoorShuffle` gates the door-specific paths. The earlier
+  "pin key-pots + subtract from the pool" half-measure was rejected as unsafe because it
+  desynchronized the pool key count from the prover key count; the temporary
+  owner-decided 2026-06-19 forced-Off checkpoint kept door+pots byte-identical only until
+  the full bridge landed. Door shuffle is NOT part of `Settings_PotShuffleForcedOff`.
 
-**The FULL integration is the real target and a deferred FOLLOW-ON PHASE** (not the
-abandoned half-measure): teach the door prover to model pot-key LOCs as in-dungeon
-key sources it counts + places against, so door shuffle and pot shuffle compose with
-correct logic when both are on. Until that phase lands the combination stays disabled
-as above; the settings UI (Phase 5) SHALL surface it (e.g. grey out `pot_shuffle`
-under door shuffle).
+The FULL integration is now the baseline (not the abandoned half-measure): the door
+oracle models pot-key LOCs as in-dungeon key sources it counts + places against, so door
+shuffle and pot shuffle compose with correct logic when both are on. The settings UI
+(Phase 5) SHALL surface the current split: door shuffle keeps `pot_shuffle` editable;
+effective cave-entrance shuffle forces it Off.
 
 A correctness prerequisite surfaced during task #25: two Desert Palace pots (rooms
 `0x53` Beamos Hall, `0x43` Desert Tiles 2) plus their non-key room-mates were
@@ -418,7 +412,8 @@ forward-compatibility for old binaries without an added compat layer (out of sco
    `_Static_assert`.
 4. **Falsely-in-logic pots** (D8) — non-uniform rooms force reviewed gates.
 5. **Excluded-room completeness** (D1) — allowlist + assertion.
-6. **Door shuffle × key-pots** (D7) — v1 restricts; integration deferred.
+6. **Door shuffle × key-pots** (D7) — integrated in baseline; keep door-active and
+   cave-forced-Off semantics from drifting.
 7. **ITEM_Nothing placement** (D6) — dedicated pre-fill phase, class-constrained.
 8. **Pot type migration** (D11) — the unknown-type→0 codegen trap; selfcheck.
 9. **Sorted-table invariant** (D10) — every install boundary; selfcheck.
@@ -436,8 +431,8 @@ workflows); recorded so the reconciled spec deltas have their rationale.
   private copy for the hash. A predicate that branches on a normalized field MUST read a
   DERIVED accessor, never the raw field, or it diverges from the canonical hash / spoiler
   / runtime. We did NOT normalize the live struct — the UI relies on raw fields to retain
-  a user's selections across toggles. New accessors: `Settings_PotShuffleForcedOff` (door
-  OR cave-entrance), `Settings_PotKeysActive`, `Settings_EffectiveAccessibility`
+  a user's selections across toggles. New accessors: `Settings_PotShuffleForcedOff`
+  (effective cave-entrance), `Settings_PotKeysActive`, `Settings_EffectiveAccessibility`
   (Completionist→Locations), `Settings_EffectiveShuffleCaveEntrances` (cave inert off
   Open/Standard). Fixed: cave+pot+wild/dungeon-keys wrongly refused; an accept-bad-seed
   under `goal=completionist,accessibility=none`; Inverted/Retro+cave wrongly forcing pots

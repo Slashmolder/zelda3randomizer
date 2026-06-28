@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Mirror local, gitignored runtime/build inputs into the current git worktree.
 
-The project's ROM (`zelda3.smc` / `zelda3.sfc`) and the extracted asset blob
-(`zelda3_assets.dat`) are gitignored, so freshly-created git worktrees lack
-them. Asset-loading CLI paths need those files before they can run.
+The project's ROM (`zelda3.smc` / `zelda3.sfc`), extracted asset blob
+(`zelda3_assets.dat`), and ROM-derived randomizer metadata are gitignored, so
+freshly-created git worktrees lack them. Asset-loading CLI paths need those
+files before they can run.
 
 On Windows/MSBuild, SDL2 is also gitignored under `third_party/SDL2-2.32.10/`.
 Mirror that directory from the main worktree so a fresh worktree can build
@@ -16,8 +17,10 @@ the main checkout root — polluting it and risking save collisions. A local ini
 keeps dumps/saves inside the worktree. Missing-source-ini is non-fatal: the exe
 still runs via the parent-dir fallback.
 
-Run this script after creating a new worktree to mirror the ROM + assets +
-Windows SDL2 (+ ini) from the main worktree.
+Run this script after creating a new worktree to mirror the ROM, assets, chest
+table, Windows SDL2, and optional ini from the main worktree. If assets are
+present but `src/rando/vanilla_assets_hash.h` is missing, the script generates
+the header from the local `zelda3_assets.dat`.
 The script is idempotent: if files already exist locally it does nothing.
 
 Usage:
@@ -54,6 +57,7 @@ INI_NAME = "zelda3.ini"  # optional, best-effort (keeps dumps/saves in the workt
 # confusing playtest failure (placement is correct, but no chest resolves to its
 # placed item). Mirror it so worktree builds dispatch chests correctly.
 CHEST_TABLE_REL = os.path.join("assets", "rando", "chest_table.gen.bin")
+VANILLA_ASSETS_HASH_REL = os.path.join("src", "rando", "vanilla_assets_hash.h")
 SDL2_REL = os.path.join("third_party", "SDL2-2.32.10")
 SDL2_REQUIRED_RELS = (
     os.path.join(SDL2_REL, "include", "SDL.h"),
@@ -116,6 +120,25 @@ def print_missing_sdl2(prefix: str, d: Path) -> None:
         print(f"  missing: {rel}", file=sys.stderr)
 
 
+def ensure_vanilla_assets_hash(d: Path) -> int:
+    """Generate the gitignored vanilla asset hash header from zelda3_assets.dat."""
+    if not (d / ASSETS_NAME).is_file():
+        print(f"setup_worktree: cannot generate {VANILLA_ASSETS_HASH_REL}: "
+              f"{ASSETS_NAME} is missing.", file=sys.stderr)
+        return 1
+    print(f"setup_worktree: generate {VANILLA_ASSETS_HASH_REL} from {ASSETS_NAME}")
+    try:
+        subprocess.check_call(
+            [sys.executable, "assets/scripts/dump_vanilla_assets_hash.py"],
+            cwd=d,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        print(f"setup_worktree: vanilla asset hash generation failed: {exc}",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from", dest="source", default=None,
@@ -130,29 +153,34 @@ def main() -> int:
     have_assets = (cwd / ASSETS_NAME).is_file()
     have_ini = (cwd / INI_NAME).is_file()
     have_chest = (cwd / CHEST_TABLE_REL).is_file()
+    have_hash = (cwd / VANILLA_ASSETS_HASH_REL).is_file()
     have_sdl2 = has_vendored_sdl2(cwd)
     need_sdl2 = SDL2_REQUIRED_ON_THIS_PLATFORM
 
     if args.verify:
-        if have_rom and have_assets and (have_sdl2 or not need_sdl2):
+        if have_rom and have_assets and have_chest and have_hash and (have_sdl2 or not need_sdl2):
             if need_sdl2:
-                print("setup_worktree: OK (rom + assets + SDL2 present)")
+                print("setup_worktree: OK (rom + assets + chest table + hash + SDL2 present)")
             else:
-                print("setup_worktree: OK (rom + assets present)")
+                print("setup_worktree: OK (rom + assets + chest table + hash present)")
             return 0
         if not have_rom:
             print(f"setup_worktree: MISSING {ROM_NAMES} in {cwd}")
         if not have_assets:
             print(f"setup_worktree: MISSING {ASSETS_NAME} in {cwd}")
+        if not have_chest:
+            print(f"setup_worktree: MISSING {CHEST_TABLE_REL} in {cwd}")
+        if not have_hash:
+            print(f"setup_worktree: MISSING {VANILLA_ASSETS_HASH_REL} in {cwd}")
         if need_sdl2 and not have_sdl2:
             print_missing_sdl2("setup_worktree:", cwd)
         return 1
 
-    if have_rom and have_assets and have_ini and have_chest and (have_sdl2 or not need_sdl2):
+    if have_rom and have_assets and have_ini and have_chest and have_hash and (have_sdl2 or not need_sdl2):
         if need_sdl2:
-            print("setup_worktree: nothing to do (rom + assets + ini + chest table + SDL2 already present)")
+            print("setup_worktree: nothing to do (rom + assets + hash + ini + chest table + SDL2 already present)")
         else:
-            print("setup_worktree: nothing to do (rom + assets + ini + chest table already present)")
+            print("setup_worktree: nothing to do (rom + assets + hash + ini + chest table already present)")
         return 0
 
     # Resolve the source.
@@ -167,6 +195,10 @@ def main() -> int:
     if source is None:
         # The ini is optional; only a missing ROM/assets is fatal.
         if have_rom and have_assets and (have_sdl2 or not need_sdl2):
+            if not have_hash:
+                rc = ensure_vanilla_assets_hash(cwd)
+                if rc:
+                    return rc
             print("setup_worktree: rom + assets present; could not locate main "
                   "worktree to mirror optional zelda3.ini (skipping -- the exe "
                   "falls back to a parent-dir ini).", file=sys.stderr)
@@ -270,6 +302,11 @@ def main() -> int:
                   f"their vanilla item. Run `python assets/restool.py --extract-from-rom` "
                   f"in {source} to generate it, then re-run this script + rebuild.",
                   file=sys.stderr)
+
+    if not (cwd / VANILLA_ASSETS_HASH_REL).is_file():
+        rc = ensure_vanilla_assets_hash(cwd)
+        if rc:
+            return rc
 
     print("setup_worktree: done.")
     return 0

@@ -1,9 +1,8 @@
 name: Randomizer CI
 
-# Phase A0 CI scaffolding (tasks.md §1.0a-h, §1.6b).
-# Each guard is documented as either "runnable in A0" or "scaffold; activates
-# when X lands". Scaffolds intentionally exit zero today; they become live the
-# moment their dependency arrives.
+# Randomizer-specific guards. The source job is ROM-free; the determinism job
+# builds real binaries on every desktop runner before invoking binary-dependent
+# checks.
 
 on:
   push:
@@ -119,66 +118,9 @@ jobs:
       run: python assets/rando_logic_gen.py --strict
 
   # --------------------------------------------------------------------------
-  # Build-dependent guards. Need a compiled binary / object files. Run on the
-  # full OS matrix once src/rando/ has compilable content.
-  # --------------------------------------------------------------------------
-  rando-build-guards:
-    name: Rando build guards (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-        - name: Linux
-          os: ubuntu-latest
-        - name: Mac
-          os: macos-latest
-        - name: Windows
-          os: windows-latest
-    steps:
-    - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.10'
-    - name: Install Python deps
-      run: pip install pyyaml pillow
-
-    # Linux build deps
-    - name: Install SDL2 (Linux)
-      if: matrix.name == 'Linux'
-      run: |
-        sudo apt update
-        sudo apt install -y libsdl2-dev
-    # macOS build deps
-    - name: Install SDL2 (Mac)
-      if: matrix.name == 'Mac'
-      run: brew install sdl2 coreutils
-    # Windows build deps: SDL2 is vendored under third_party/SDL2-* per README;
-    # the build path is via Zelda3.sln (MSBuild). For A0 we don't build on
-    # Windows yet — the rando-build-guards on Windows are scaffold-only and
-    # depend on a future MSBuild wiring task.
-
-    # Task 1.0d — Init-order replay (scaffold; activates with task 1.1)
-    - name: check_init_order (1.0d)
-      shell: bash
-      run: python assets/scripts/check_init_order.py
-
-    # Task 1.0f (check_link_symbols) does NOT run here: it scans compiled
-    # src/rando/*.o objects, and this job never builds — invoking it pre-build
-    # was a guaranteed no-op "clean pass". It runs post-build in the
-    # rando-determinism job below (with --require-objects so it can never
-    # silently scan nothing again).
-
-    # Task 1.0h — Benchmark gates (scaffold; activates with task 3.8)
-    - name: run_rando_benchmarks (1.0h)
-      shell: bash
-      run: python assets/scripts/run_rando_benchmarks.py
-
-  # --------------------------------------------------------------------------
   # Cross-platform determinism property tests (tasks.md §2.2). Builds the
-  # binary on Linux/macOS, runs `--rando-selftest` which validates SHA-256
-  # NIST vectors + xoshiro256** 10k-sample digest. Any byte-mismatch fails CI.
-  # Windows would need MSBuild wiring (out of scope for A0).
+  # binary on Linux/macOS/Windows and runs the binary-dependent rando guard
+  # suite. Any digest or self-test mismatch fails CI.
   # --------------------------------------------------------------------------
   rando-determinism:
     name: Rando determinism self-tests (${{ matrix.name }})
@@ -189,8 +131,16 @@ jobs:
         include:
         - name: Linux
           os: ubuntu-latest
+          binary: ./zelda3
+          object_dir: .
         - name: Mac
           os: macos-latest
+          binary: ./zelda3
+          object_dir: .
+        - name: Windows
+          os: windows-latest
+          binary: .\bin\x64-Release\zelda3.exe
+          object_dir: obj\x64-Release
     steps:
     - uses: actions/checkout@v5
     - uses: actions/setup-python@v6
@@ -209,14 +159,50 @@ jobs:
       if: matrix.name == 'Mac'
       run: brew install sdl2 coreutils
 
+    - name: Install SDL2 (Windows)
+      if: matrix.name == 'Windows'
+      shell: pwsh
+      run: |
+        $version = "2.32.10"
+        $zip = Join-Path $env:RUNNER_TEMP "SDL2-devel-$version-VC.zip"
+        Invoke-WebRequest `
+          -Uri "https://github.com/libsdl-org/SDL/releases/download/release-$version/SDL2-devel-$version-VC.zip" `
+          -OutFile $zip
+        Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
+        New-Item -ItemType Directory -Force third_party | Out-Null
+        Copy-Item -Recurse -Force `
+          (Join-Path $env:RUNNER_TEMP "SDL2-$version") `
+          (Join-Path "third_party" "SDL2-$version")
+
+    - uses: microsoft/setup-msbuild@v2
+      if: matrix.name == 'Windows'
+
+    - name: Add MSVC tools to PATH (Windows)
+      if: matrix.name == 'Windows'
+      shell: pwsh
+      run: |
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $install = & $vswhere -latest -products * `
+          -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+          -property installationPath
+        $toolDir = Get-ChildItem "$install\VC\Tools\MSVC\*\bin\Hostx64\x64" -Directory |
+          Sort-Object FullName -Descending |
+          Select-Object -First 1
+        Add-Content -Path $env:GITHUB_PATH -Value $toolDir.FullName
+
     # The binary needs zelda3_assets.dat to start. Asset extraction needs the
     # original ROM, which CI doesn't have. For the self-tests we bypass asset
     # loading by passing --rando-selftest BEFORE LoadAssets runs — see main.c
     # ordering: argv parse -> self-test exit, all before SwitchDirectory /
     # ParseConfigFile / LoadAssets. So we can build the binary and run the
     # self-test without any asset blob present.
-    - name: Build (just the binary)
+    - name: Build (Unix)
+      if: matrix.name != 'Windows'
       run: make -j2 zelda3
+
+    - name: Build (Windows)
+      if: matrix.name == 'Windows'
+      run: msbuild Zelda3.sln /m /p:Configuration=Release /p:Platform=x64
 
     # Task 1.0f — Link-time symbol blocklist. An ARTIFACT check: scans the
     # just-built src/rando/*.o via `nm -u` for forbidden non-deterministic
@@ -224,12 +210,12 @@ jobs:
     # --require-objects: zero objects here means the guard is broken, not
     # clean — fail instead of the local-ergonomics pass.
     - name: check_link_symbols (1.0f, post-build)
-      run: python assets/scripts/check_link_symbols.py --require-objects
+      run: python assets/scripts/check_link_symbols.py --object-dir="${{ matrix.object_dir }}" --require-objects
 
     - name: Run --rando-selftest
       env:
         DISPLAY: ''  # confirm headless: no display server required
-      run: ./zelda3 --rando-selftest
+      run: ${{ matrix.binary }} --rando-selftest
 
     # Door-shuffle generation net (add-rando-door-shuffle): stitches + proves
     # every shuffleable dungeon across N seeds (connectivity / prover /
@@ -239,7 +225,7 @@ jobs:
     - name: Run --door-selftest
       env:
         DISPLAY: ''
-      run: ./zelda3 --door-selftest
+      run: ${{ matrix.binary }} --door-selftest
 
     # Task 1.2 / 11.2 init-order replay guard (D7). Replays each
     # saves/ref/Chapter*.sav via the binary's --vanilla-ram-check CLI mode
@@ -247,14 +233,20 @@ jobs:
     # kRam_* offset retained its init-zero value. Proves that no existing
     # vanilla game code writes to the addresses claimed for randomizer state.
     - name: Run init-order replay guard (1.2 / 11.2)
-      run: python assets/scripts/check_init_order.py --binary=./zelda3 --strict
+      run: python assets/scripts/check_init_order.py --binary="${{ matrix.binary }}" --strict
 
     # Cross-platform digest determinism: the corpus manifest digests were
-    # captured against a Windows build. The Linux/macOS digests MUST match
+    # captured against a Windows build. Every runner must reproduce them
     # byte-for-byte per `randomizer-core / Deterministic cross-platform
     # placement`. Any digest diff here surfaces a non-determinism bug.
     - name: Run regression corpus (cross-platform digest check)
-      run: python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
+      run: python assets/scripts/run_rando_corpus.py --binary="${{ matrix.binary }}" --skip-pot-shuffle
+
+    - name: Run slot-path generation guard
+      run: python assets/scripts/check_rando_slot_path.py --binary="${{ matrix.binary }}"
+
+    - name: Run rando invariant sweep
+      run: python assets/scripts/check_rando_invariants.py --binary="${{ matrix.binary }}"
 
     # Placer determinism (runtime prong) — the corpus only exercises seeds that
     # complete on the first attempt, so it never guards the retry loop where
@@ -263,9 +255,9 @@ jobs:
     # placement + sphere digests, catching any run-to-run non-determinism the
     # all-easy corpus seeds miss.
     - name: Run placer determinism canary (runtime)
-      run: python assets/scripts/check_placer_determinism.py --binary=./zelda3
+      run: python assets/scripts/check_placer_determinism.py --binary="${{ matrix.binary }}"
 
     # Benchmark gate (tasks.md §3.11 / spec: "Default-settings benchmark < 2s").
     # Runs the binary 10 times at default settings; asserts median <= 2000ms.
     - name: Run benchmark (default-settings < 2s)
-      run: python assets/scripts/run_rando_benchmarks.py --binary=./zelda3 --samples=10
+      run: python assets/scripts/run_rando_benchmarks.py --binary="${{ matrix.binary }}" --samples=10

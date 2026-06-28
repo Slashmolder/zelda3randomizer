@@ -75,8 +75,8 @@ Capabilities that have landed include:
 - **Race mode**: on-disk spoiler suppression at generate time, with a verified
   `--reveal-spoiler` flow that regenerates placement and checks a SHA-256 stamp.
 - **Deterministic, reproducible placement** with a share-string format, a
-  sidecar save format, and a cross-platform (Linux/macOS) regression corpus
-  wired into CI.
+  sidecar save format, and a cross-platform (Linux/macOS/Windows) regression
+  corpus wired into CI.
 
 ### Generating a seed from the command line
 
@@ -220,8 +220,10 @@ root, then:
 - **Windows**: double-click `extract_assets.bat`
 - **Any platform**: `python assets/restool.py --extract-from-rom`
 
-This creates `zelda3_assets.dat`. Both the `zelda3` executable and
-`zelda3_assets.dat` must sit next to each other for the game to run.
+This creates `zelda3_assets.dat` and regenerates the gitignored randomizer asset
+metadata (`src/rando/vanilla_assets_hash.h` and the chest-table artifact). Both
+the `zelda3` executable and `zelda3_assets.dat` must sit next to each other for
+the game to run.
 
 ## Installing Python & libraries on Windows (required for asset extraction)
 1. Download [Python](https://www.python.org/ftp/python/3.11.1/python-3.11.1-amd64.exe) and install with "Add to PATH" checked.
@@ -234,7 +236,7 @@ This creates `zelda3_assets.dat`. Both the `zelda3` executable and
 2. Place the USA ROM named `zelda3.sfc` in the root directory.
 3. Double-click `extract_assets.bat` to create `zelda3_assets.dat`.
 4. Download [TCC](https://github.com/FitzRoyX/tinycc/releases/download/tcc_20221020/tcc_20221020.zip) and extract to `third_party/`.
-5. Download [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.26.3/SDL2-devel-2.26.3-VC.zip) and extract to `third_party/`.
+5. Download [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip) and extract to `third_party/`.
 6. Double-click `run_with_tcc.bat` to create `zelda3.exe`.
 7. Configure via `zelda3.ini` in the main dir.
 
