@@ -388,6 +388,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
                                        const RandoGenerateShapeOptions *shape,
                                        RandoGenerateResult *out,
                                        char *err, size_t err_cap) {
+  uint32 user_recommended_features0 = recommended_features0;
   if (err != NULL && err_cap > 0) err[0] = '\0';
 
   // Refuse an out-of-range slot BEFORE any SRAM/sidecar write. The SRAM init
@@ -756,10 +757,10 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
 
   // Apply recommended-features panel choices (if user toggled). Per spec
   // the user must opt in explicitly; we honor whatever state the panel
-  // reflects (recommended_features0 vs g_config.features0). The user
-  // changed bits — that's the explicit opt-in.
-  if (recommended_features0 != g_config.features0) {
-    g_config.features0 = recommended_features0;
+  // reflected before logic-required runtime overlays were added to the slot
+  // sidecar. The user changed bits — that's the explicit opt-in.
+  if (user_recommended_features0 != g_config.features0) {
+    g_config.features0 = user_recommended_features0;
   }
 
   // If the caller wants the placement, hand it an independently malloc'd copy

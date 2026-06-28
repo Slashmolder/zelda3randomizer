@@ -867,6 +867,16 @@ bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
 
+// Active seed runtime feature overrides. These are NOT global user preferences:
+// they are requirements implied by the currently active/cold-replayed seed.
+// Today this is JP-1.0 glitches for logic/tricks that assume restored JP
+// behavior. UI/config code should render these as effective forced-on bits and
+// preserve them after applying live config changes.
+uint32 Rando_ActiveForcedFeatures0(void);
+void Rando_ApplyActiveForcedFeatures0(void);
+void Rando_ApplySeedQolFeatures0(uint32 features0);
+void Rando_ClearSnapshotColdReplayRestore(void);
+
 // Regenerate the hint table for the CURRENTLY-ACTIVE slot, replaying exactly
 // the activation-time hint block — including the v1/no-blob fallbacks
 // (header-ext hints_setting/goal, default hints-on for the oldest slots),

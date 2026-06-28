@@ -38,6 +38,8 @@ extern uint8 g_rando_bow_owned;           // kRandoBow_* bits: Wood=0x01, Silver
 // link_generic_keys (0xF38B); the per-dungeon slots (0xF37C+gidx) are dead. The
 // dungeon-keys widgets read/write the shared slot instead under this mode.
 bool Rando_IsGenericKeysActive(void);
+uint32 Rando_ActiveForcedFeatures0(void);
+void Rando_ApplyActiveForcedFeatures0(void);
 }
 
 // ---------------------------------------------------------------------------
@@ -277,8 +279,18 @@ extern "C" void GameConfig_ApplyPending(void) {
   memcpy(g_keybind_pad, s_pad, sizeof g_keybind_pad);
   Config_RebuildKeymap();
 
+  // Active randomizer seeds may force specific runtime feature bits. Keep those
+  // out of g_config (and therefore the INI), but include them in the effective
+  // live-apply inputs so the UI cannot commit them off mid-seed.
+  uint32 forced_features0 = Rando_ActiveForcedFeatures0();
+  Config effective_prev = prev;
+  Config effective_now = g_config;
+  effective_prev.features0 |= forced_features0;
+  effective_now.features0 |= forced_features0;
+
   // Live-apply the safe subset; collect restart-needed categories.
-  s_restart_mask = Config_ApplyLive(&prev, &g_config);
+  s_restart_mask = Config_ApplyLive(&effective_prev, &effective_now);
+  Rando_ApplyActiveForcedFeatures0();
 
   // Persist (in-place, comment-preserving) to the loaded INI.
   Config_WriteIniFile(Config_GetLoadedIniPath());
@@ -323,6 +335,23 @@ static bool FeatureCheckbox(const char *label, uint32 mask, const char *help) {
   }
   if (help) Help(help);
   return true;
+}
+
+static bool ForcedFeatureCheckbox(const char *label, uint32 mask,
+                                  const char *forced_reason,
+                                  const char *help, const char *forced_help) {
+  bool forced = (Rando_ActiveForcedFeatures0() & mask) != 0;
+  if (forced) {
+    bool v = true;
+    ImGui::BeginDisabled();
+    ImGui::Checkbox(label, &v);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", forced_reason);
+    Help(forced_help ? forced_help : help);
+    return true;
+  }
+  return FeatureCheckbox(label, mask, help);
 }
 
 // One bindings row: label, current binding, [Rebind], [Clear].
@@ -735,8 +764,13 @@ static void Panel_Gameplay(void) {
   FeatureCheckbox("Game-changing bug fixes", kFeatures0_GameChangingBugFixes, "Advanced fixes that alter game behavior.");
 
   ImGui::SeparatorText("Glitches");
-  FeatureCheckbox("Restore JP 1.0 glitches", kFeatures0_RestoreJpGlitches,
-                  "Re-enables glitches removed in the US 1.0 release.");
+  ForcedFeatureCheckbox(
+      "Restore JP 1.0 glitches", kFeatures0_RestoreJpGlitches,
+      "(forced by active seed)",
+      "Re-enables glitches removed in the US 1.0 release.",
+      "Forced on because the active randomizer seed's logic or tricks assume "
+      "restored JP 1.0 glitches. Original-ROM compare mode still suppresses "
+      "these glitches at point of use.");
   // Honest in-window status for the active glitch set. Update as more glitches
   // land. (Faithful per the JP-vs-US ROM diff.)
   ImGui::TextDisabled("Currently: Fake Flippers, Death Hole, Itemdash, Spindash, Superspeed, Mirror Block Erase (JP-faithful).");

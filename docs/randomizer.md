@@ -192,7 +192,11 @@ them; enabling one has no placement effect (and surfaces the unverified warning)
 > On PC, the Seed QoL tab also exposes a per-slot "Restore JP 1.0 glitches"
 > toggle for NoGlitches seeds that want the gameplay glitches as an opt-in play
 > preference. It is recommended off, does not affect the settings hash/share
-> string, and is separate from the cosmetic JP overworld music feature.
+> string, and is separate from the cosmetic JP overworld music feature. When an
+> active seed forces the bit, the normal Game Settings checkbox is shown checked
+> and disabled as an active-seed override, so applying config changes cannot
+> turn the required runtime support off mid-seed or silently save the forced bit
+> as the user's global preference.
 > Note this guarantees the runtime can perform the **restored** subset (Fake
 > Flippers + Superspeed); an OWG/HMG/MG seed may still route through an
 > un-restored technique (boots-clip, mirror-clip, water-walk, one-frame-clip, …)
@@ -1229,7 +1233,11 @@ seconds locally) and the bumper is idempotent.
   TLV-tail format carries `generator_version` in the
   `TAIL_RANDO_STATE` payload. Replay on a different version uses the
   embedded settings + placement; the runtime treats them as
-  authoritative.
+  authoritative. Additional TLVs carry process state outside the SNES RAM
+  dump, including checked-location bitmap state, recovered seed settings for
+  cold replay, and the masked Seed QoL `recommended_features0` snapshot so
+  manual per-slot gameplay-feature opt-ins survive snapshot replay as well as
+  normal sidecar slot loads.
 - **Suppressed race-mode files** (`<spoiler>.json` ZRSR format):
   `Rando_RevealSpoiler` enforces version match — a v=N file
   produced against the runtime's current v=N+k binary returns

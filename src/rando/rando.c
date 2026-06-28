@@ -3357,11 +3357,24 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   g_rando_settings_from_cold_replay = true;  // mark the source.
   // JP-glitch coupling (mirror activation D6): a glitch-logic seed forces the
   // JP-glitch runtime flag so the replayed frames reproduce the assumed glitches.
-  if (Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
-    g_config.features0      |= kFeatures0_RestoreJpGlitches;
-    g_wanted_zelda_features |= kFeatures0_RestoreJpGlitches;
-    enhanced_features0      |= kFeatures0_RestoreJpGlitches;
-  }
+  Rando_ApplyActiveForcedFeatures0();
+}
+
+void Rando_ClearSnapshotColdReplayRestore(void) {
+  if (!g_rando_settings_from_cold_replay) return;
+  g_rando_active_settings_valid = false;
+  g_rando_settings_from_cold_replay = false;
+  g_rando_active_world_state = kWorldState_Open;
+  Rando_SetDungeonPrizeAssignment(NULL);
+  Rando_SetMedallionAssignment(NULL);
+  BossShuffle_Deactivate();
+  Rando_SetBossAssignment(NULL);
+  DropShuffle_Deactivate();
+  EnemyShuffle_Deactivate();
+  InvertedEntrances_Teardown();
+  InvertedSecrets_Teardown();
+  InvertedHoleBlocks_Teardown();
+  Rando_ApplyActiveForcedFeatures0();
 }
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
@@ -3499,6 +3512,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   Rando_SetSnapshotSettingsContext(
       src->header.settings_present ? src->settings_canonical : NULL,
       src->header.prize_attempt);
+  Rando_SetSnapshotRecommendedFeaturesContext(
+      src->header.recommended_features0,
+      src->header.recommended_features0_present != 0);
 
   // Phase B Slice 1 — copy the slot's checked-location bitmap into the
   // session state. Bitmap size matches between slot and session
@@ -3638,35 +3654,22 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // user's current live config untouched. Apply after the remaining refusal
   // paths above so a rejected slot cannot mutate live preferences.
   if (src->header.recommended_features0_present) {
-    uint32 slot_features =
-        src->header.recommended_features0 & kFeatures0_RandoSeedQolMask;
-    g_config.features0 =
-        (g_config.features0 & ~kFeatures0_RandoSeedQolMask) | slot_features;
-    g_wanted_zelda_features =
-        (g_wanted_zelda_features & ~kFeatures0_RandoSeedQolMask) | slot_features;
-    enhanced_features0 =
-        (enhanced_features0 & ~kFeatures0_RandoSeedQolMask) | slot_features;
+    Rando_ApplySeedQolFeatures0(src->header.recommended_features0);
   }
 
   // add-rando-major-glitch D6 — couple a glitch-logic slot to the JP-1.0
   // glitch runtime flag. AUTHORITATIVE runtime guarantee: runs on EVERY slot
   // activation (generate->play AND reload->play, incl. imported share strings),
-  // unlike the generate-time recommend path. When the recovered settings show
-  // the placement assumed a restored glitch (logic>=OverworldGlitches or the
-  // fake-flippers trick), force the flag on live: g_config (persist),
-  // g_wanted_zelda_features (survives the per-frame mirror + a mid-session
-  // Config_ApplyLive), and enhanced_features0 (this frame). Only force ON,
-  // never off — a non-glitch slot leaves the user's own setting untouched, so a
-  // plain logic=0 / no-glitch-trick seed never gets the flag forced. The
-  // point-of-use gate JpGlitchEnabled() still self-suppresses under side-by-side
-  // (!ZeldaIsEmulatorAttached()), so this stays RAM-compare-safe. features0 is
-  // config state, NOT canonical settings → placement/corpus byte-identical.
-  if (g_rando_active_settings_valid &&
-      Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
-    g_config.features0      |= kFeatures0_RestoreJpGlitches;
-    g_wanted_zelda_features |= kFeatures0_RestoreJpGlitches;
-    enhanced_features0      |= kFeatures0_RestoreJpGlitches;
-  }
+  // unlike the generate-time recommend path. When recovered settings show the
+  // placement assumed a restored glitch (logic>=OverworldGlitches or the
+  // fake-flippers trick), apply it as a runtime-only overlay in
+  // g_wanted_zelda_features (survives the per-frame mirror + mid-session
+  // Config_ApplyLive) and enhanced_features0 (this frame). g_config remains the
+  // user's preference; the point-of-use gate JpGlitchEnabled() still
+  // self-suppresses under side-by-side (!ZeldaIsEmulatorAttached()), so this
+  // stays RAM-compare-safe. features0 is not canonical settings, so
+  // placement/corpus remain byte-identical.
+  Rando_ApplyActiveForcedFeatures0();
 
   // Persist the swordless flag in g_ram so a StateRecorder snapshot captures it
   // (g_ram is restored verbatim by LoadSnesState on replay/Ctrl+F1 restore, but
@@ -3889,6 +3892,7 @@ void Rando_DeactivateSlot(void) {
   // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
   g_rando_active_settings_valid = false;
   g_rando_settings_from_cold_replay = false;  // reset the source flag.
+  Rando_ApplyActiveForcedFeatures0();
   Rando_SetDungeonPrizeAssignment(NULL);
   Rando_SetMedallionAssignment(NULL);
 
@@ -3926,6 +3930,44 @@ bool Rando_HasActiveSettings(void) { return g_rando_active_settings_valid; }
 // reachability bridge (Rando_GetLiveReachability).
 const RandoSettings *Rando_GetActiveSettings(void) {
   return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
+}
+
+uint32 Rando_ActiveForcedFeatures0(void) {
+  uint32 forced = 0;
+  if (g_rando_active_settings_valid &&
+      Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
+    forced |= kFeatures0_RestoreJpGlitches;
+  }
+  return forced;
+}
+
+void Rando_ApplyActiveForcedFeatures0(void) {
+  uint32 forced = Rando_ActiveForcedFeatures0();
+  uint32 forceable = kFeatures0_RestoreJpGlitches;
+  uint32 effective = (g_config.features0 & forceable) | forced;
+  g_wanted_zelda_features =
+      (g_wanted_zelda_features & ~forceable) | effective;
+  enhanced_features0 =
+      (enhanced_features0 & ~forceable) | effective;
+}
+
+void Rando_ApplySeedQolFeatures0(uint32 features0) {
+  uint32 forced = Rando_ActiveForcedFeatures0();
+  uint32 slot_features = features0 & kFeatures0_RandoSeedQolMask;
+  uint32 configurable_slot_mask = kFeatures0_RandoSeedQolMask & ~forced;
+  uint32 effective_mask = kFeatures0_RandoSeedQolMask | forced;
+  uint32 effective_features = slot_features | forced;
+
+  // Active seed requirements are runtime overlays, not global user
+  // preferences. Preserve g_config's value for any currently forced bits so
+  // applying Game Settings cannot write a seed-required bit into the INI.
+  g_config.features0 =
+      (g_config.features0 & ~configurable_slot_mask) |
+      (slot_features & configurable_slot_mask);
+  g_wanted_zelda_features =
+      (g_wanted_zelda_features & ~effective_mask) | effective_features;
+  enhanced_features0 =
+      (enhanced_features0 & ~effective_mask) | effective_features;
 }
 
 bool Rando_ActiveSlotHidesSpoiler(void) {
@@ -6024,6 +6066,9 @@ void Rando_TrackerSelfCheck(void) {
   uint32 saved_config_features0 = g_config.features0;
   uint32 saved_wanted_features0 = g_wanted_zelda_features;
   uint32 saved_enhanced_features0 = enhanced_features0;
+  RandoSettings saved_active_settings = g_rando_active_settings;
+  bool saved_active_settings_valid = g_rando_active_settings_valid;
+  bool saved_settings_from_cold_replay = g_rando_settings_from_cold_replay;
 
   static RandoPlacement entries[kRandoLocationCapacity];
   RandoPlacementTable table;
@@ -6122,6 +6167,35 @@ void Rando_TrackerSelfCheck(void) {
   if (n1 <= n0) tsc_die("reachability did not expand when a full item kit was added");
 
   Rando_DeactivateSlot();
+  Settings_SetDefaults(&g_rando_active_settings);
+  g_rando_active_settings.logic = 1;  // OverworldGlitches forces JP glitches.
+  g_rando_active_settings_valid = true;
+  g_rando_settings_from_cold_replay = true;
+  g_config.features0 &= ~kFeatures0_RestoreJpGlitches;
+  g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
+  enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
+  if (!(Rando_ActiveForcedFeatures0() & kFeatures0_RestoreJpGlitches))
+    tsc_die("active forced features missing RestoreJpGlitches");
+  Rando_ApplyActiveForcedFeatures0();
+  if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+      !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("active forced features not applied as runtime-only overlay");
+  g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
+  enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
+  Rando_ApplySeedQolFeatures0(kFeatures0_RestoreJpGlitches);
+  if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+      !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("seed QoL forced feature leaked into global config");
+  g_rando_active_settings_valid = false;
+  Rando_ApplyActiveForcedFeatures0();
+  if ((g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      (enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("active forced feature overlay not cleared after settings invalidation");
+  g_rando_active_settings = saved_active_settings;
+  g_rando_active_settings_valid = saved_active_settings_valid;
+  g_rando_settings_from_cold_replay = saved_settings_from_cold_replay;
   g_config.features0 = saved_config_features0;
   g_wanted_zelda_features = saved_wanted_features0;
   enhanced_features0 = saved_enhanced_features0;

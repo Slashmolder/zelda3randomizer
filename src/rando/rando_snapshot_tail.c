@@ -15,9 +15,9 @@
 //     placement_table[placement_table_size]  flat uint16 LE by location_id
 //                              (0xFFFF = no placement sentinel)
 //
-// M4 appends a SECOND TLV after the RandoState one, so a COLD replay (Ctrl+F1 on
-// a fresh launch with the slot not loaded) can rebuild the per-slot process state
-// that g_ram (and thus LoadSnesState) does not carry:
+// M4 can append a RandoSettings TLV after the RandoState one, so a COLD replay
+// (Ctrl+F1 on a fresh launch with the slot not loaded) can rebuild the per-slot
+// process state that g_ram (and thus LoadSnesState) does not carry:
 //
 //   type[4]   LE             = 2 (TAIL_RANDO_SETTINGS)
 //   length[4] LE             = payload size in bytes
@@ -31,20 +31,30 @@
 //     settings_len[1]                  (= kSettingsCanonicalLen on the wire)
 //     settings_canonical[settings_len] (Settings_CanonicalSerialize output)
 //
-// It is a SEPARATE TLV (not folded into RandoState) so an older binary — which
-// requires RandoState's length to be exactly 52 + placement_table_size — skips it
-// as an unknown type and still reads the placement table. A v1/no-blob slot emits
-// no type-2 TLV (settings absent), so the cold replay degrades to placement-only.
+// Another optional TLV carries per-slot Seed QoL features for snapshot replay:
+//
+//   type[4]   LE             = 4 (TAIL_RECOMMENDED_FEATURES)
+//   length[4] LE             = 5
+//   payload:
+//     format_version[1]      = 1
+//     recommended_features0[4] LE      (masked to kFeatures0_RandoSeedQolMask)
+//
+// Optional records are SEPARATE TLVs (not folded into RandoState) so an older
+// binary — which requires RandoState's length to be exactly 52 +
+// placement_table_size — skips them as unknown types and still reads the
+// placement table. A v1/no-blob slot emits no type-2 TLV (settings absent), so
+// the cold replay degrades to placement-only.
 //
 // Multi-byte fields are emitted/consumed via explicit LE byte helpers (no
 // host-endianness reliance) — per the same discipline as rando_save.c.
 
 #include "rando_snapshot_tail.h"
 #include "rando_placement.h"
-#include "rando.h"          // Rando_SnapshotColdReplayRestore + g_rando_* ownership externs
+#include "rando.h"          // snapshot cold-replay helpers + ownership externs
 #include "rando_settings.h" // kSettingsCanonicalLen, Settings_CanonicalDeserialize
 #include "door_runtime.h"   // DoorRt_Installed (door-shuffle restore reconcile)
 #include "../features.h"    // enhanced_features1 / kFeatures1_DoorShuffleActive
+#include "../config.h"      // g_config (self-checks feature restore)
 #include "../variables.h"   // g_ram (the features macro)
 
 #include <stdio.h>
@@ -92,6 +102,16 @@ static bool g_has_ctx = false;
 static uint8 g_ctx_settings_canonical[kSettingsCanonicalLen];
 static uint8 g_ctx_prize_attempt = 0;
 static bool g_has_settings_ctx = false;
+static uint32 g_ctx_recommended_features0 = 0;
+static bool g_has_recommended_features_ctx = false;
+
+static void Rando_ClearSnapshotOptionalContexts(void) {
+  g_has_settings_ctx = false;
+  memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
+  g_ctx_prize_attempt = 0;
+  g_ctx_recommended_features0 = 0;
+  g_has_recommended_features_ctx = false;
+}
 
 void Rando_SetSnapshotContext(uint16 generator_version,
                               const uint8 settings_hash[16],
@@ -120,13 +140,20 @@ void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
   g_has_settings_ctx = true;
 }
 
+void Rando_SetSnapshotRecommendedFeaturesContext(uint32 features0, bool present) {
+  if (!present) {
+    g_ctx_recommended_features0 = 0;
+    g_has_recommended_features_ctx = false;
+    return;
+  }
+  g_ctx_recommended_features0 = features0 & kFeatures0_RandoSeedQolMask;
+  g_has_recommended_features_ctx = true;
+}
+
 void Rando_ClearSnapshotContext(void) {
   g_has_ctx = false;
   memset(&g_ctx, 0, sizeof(g_ctx));
-  // clear the settings sub-context too (slot exit clears both).
-  g_has_settings_ctx = false;
-  memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
-  g_ctx_prize_attempt = 0;
+  Rando_ClearSnapshotOptionalContexts();
 }
 
 bool Rando_HasSnapshotContext(void) {
@@ -253,6 +280,17 @@ bool RandoSnapshotTail_Save(FILE *f) {
     put_u32le_bytes(shdr + 12, sp_len);
     if (fwrite(shdr, 1, sizeof(shdr), f) != sizeof(shdr)) return false;
     if (fwrite(sp, 1, sp_len, f) != sp_len) return false;
+  }
+  if (g_has_recommended_features_ctx) {
+    uint8 fp[5];
+    fp[0] = 1u;  // format_version
+    put_u32le_bytes(fp + 1, g_ctx_recommended_features0);
+    uint8 fhdr[16];
+    memcpy(fhdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(fhdr + 8, kRandoSnapshotTail_Type_RecommendedFeatures);
+    put_u32le_bytes(fhdr + 12, (uint32)sizeof(fp));
+    if (fwrite(fhdr, 1, sizeof(fhdr), f) != sizeof(fhdr)) return false;
+    if (fwrite(fp, 1, sizeof(fp), f) != sizeof(fp)) return false;
   }
   return true;
 }
@@ -384,6 +422,13 @@ int RandoSnapshotTail_Load(FILE *f) {
       // load-bearing ONLY for the type-3-absent case.
       memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
 
+      // Optional TLV contexts are scoped to this accepted RandoState. A current
+      // snapshot's later type-2/type-4 TLVs repopulate them; an older snapshot
+      // that lacks those TLVs must not inherit stale context from a previous
+      // replay and then re-save it under this new base identity.
+      Rando_ClearSnapshotOptionalContexts();
+      Rando_ClearSnapshotColdReplayRestore();
+
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
       Rando_SetSnapshotContext(gen_version, settings_hash, share_string);
@@ -475,6 +520,25 @@ int RandoSnapshotTail_Load(FILE *f) {
             Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
           }
         }
+      }
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_RecommendedFeatures) {
+      // Payload: format_version[1] + recommended_features0[4].
+      if (length < 5u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) return recognized;
+        continue;
+      }
+      uint8 fp[5];
+      if (fread(fp, 1, sizeof(fp), f) != sizeof(fp)) return recognized;
+      if (length > sizeof(fp) && fseek(f, (long)(length - sizeof(fp)), SEEK_CUR) != 0)
+        return recognized;
+      if (fp[0] == 1u) {
+        uint32 features0 = get_u32le_bytes(fp + 1);
+        Rando_SetSnapshotRecommendedFeaturesContext(features0, true);
+        Rando_ApplySeedQolFeatures0(features0);
       }
       recognized++;
       continue;
@@ -932,8 +996,157 @@ void RandoSnapshotTail_SelfCheck(void) {
       selfcheck_die("suppression — ownership must be untouched when no type-2 was emitted");
     }
     fclose(fb);
+
+    // (C) A prior cold replay can install settings-derived process state and a
+    // forced JP overlay. Replaying a no-type-2 snapshot must clear that cold
+    // replay state instead of inheriting it.
+    {
+      uint32 saved_config_features0 = g_config.features0;
+      uint32 saved_wanted_features0 = g_wanted_zelda_features;
+      uint32 saved_enhanced_features0 = enhanced_features0;
+      RandoSettings glitch_settings;
+      Settings_SetDefaults(&glitch_settings);
+      glitch_settings.logic = 1;  // OverworldGlitches forces JP glitches.
+      g_config.features0 &= ~kFeatures0_RestoreJpGlitches;
+      g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
+      enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
+      Placement_Install(&m4_table);
+      Rando_SnapshotColdReplayRestore(&glitch_settings, share_string, 0);
+      if (!(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+          !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+        selfcheck_die("suppression — cold replay did not force JP glitches");
+
+      Placement_Install(&m4_table);
+      Rando_ClearSnapshotContext();
+      Rando_SetSnapshotContext(0x0075, settings_hash, share_string);
+      Rando_SetSnapshotSettingsContext(NULL, 0);
+      FILE *fc = tmpfile();
+      if (fc == NULL) selfcheck_die("tmpfile() (C) returned NULL");
+      if (!RandoSnapshotTail_Save(fc)) selfcheck_die("Save (C) returned false");
+      Placement_Install(NULL);
+      Rando_ClearSnapshotContext();
+      fseek(fc, 0, SEEK_SET);
+      int nc = RandoSnapshotTail_Load(fc);
+      if (nc != 2)
+        selfcheck_die("suppression — cold replay clear should recognize type-1 + type-3 only");
+      if ((g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+          (enhanced_features0 & kFeatures0_RestoreJpGlitches))
+        selfcheck_die("suppression — no-type-2 replay inherited forced JP overlay");
+      fclose(fc);
+
+      g_config.features0 = saved_config_features0;
+      g_wanted_zelda_features = saved_wanted_features0;
+      enhanced_features0 = saved_enhanced_features0;
+      Rando_ClearSnapshotColdReplayRestore();
+    }
+
     g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
     g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // type-4 RecommendedFeatures TLV round-trip.
+  //
+  // This carries the per-slot Seed QoL features0 snapshot for replay. It
+  // must mask out non-Seed-QoL bits, preserve live non-slot bits, and reinstall
+  // its context so a replayed snapshot re-save perpetuates the TLV.
+  // -------------------------------------------------------------------------
+  {
+    uint32 saved_config_features0 = g_config.features0;
+    uint32 saved_wanted_features0 = g_wanted_zelda_features;
+    uint32 saved_enhanced_features0 = enhanced_features0;
+
+    static RandoPlacement f4_entries[2];
+    static RandoPlacementTable f4_table;
+    f4_entries[0].location_id = 2; f4_entries[0].item_id = 0x0A0A;
+    f4_entries[1].location_id = 6; f4_entries[1].item_id = 0x0B0B;
+    f4_table.entries = f4_entries; f4_table.count = 2;
+
+    Placement_Install(&f4_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00F5, settings_hash, share_string);
+    FILE *fold4 = tmpfile();
+    if (fold4 == NULL) selfcheck_die("type-4: no-feature tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fold4))
+      selfcheck_die("type-4: no-feature Save returned false");
+
+    Placement_Install(&f4_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00F4, settings_hash, share_string);
+    Rando_SetSnapshotRecommendedFeaturesContext(
+        kFeatures0_RestoreJpGlitches | kFeatures0_WidescreenVisualFixes,
+        true);
+
+    FILE *ff = tmpfile();
+    if (ff == NULL) selfcheck_die("type-4: tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(ff)) selfcheck_die("type-4: Save returned false");
+
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+
+    fseek(ff, 0, SEEK_SET);
+    int nf = RandoSnapshotTail_Load(ff);
+    if (nf != 3) selfcheck_die("type-4: expected RandoState + CheckedBitmap + RecommendedFeatures");
+    if (!(g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+        !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+        !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+      selfcheck_die("type-4: RestoreJpGlitches not restored");
+    if (!(g_config.features0 & kFeatures0_ExtendScreen64) ||
+        !(g_wanted_zelda_features & kFeatures0_ExtendScreen64) ||
+        !(enhanced_features0 & kFeatures0_ExtendScreen64))
+      selfcheck_die("type-4: non-slot live feature not preserved");
+    if ((g_config.features0 & kFeatures0_WidescreenVisualFixes) ||
+        (g_wanted_zelda_features & kFeatures0_WidescreenVisualFixes) ||
+        (enhanced_features0 & kFeatures0_WidescreenVisualFixes))
+      selfcheck_die("type-4: non-Seed-QoL snapshot bit was applied");
+    fclose(ff);
+
+    FILE *frf = tmpfile();
+    if (frf == NULL) selfcheck_die("type-4: re-save tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(frf)) selfcheck_die("type-4: re-save returned false");
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(frf, 0, SEEK_SET);
+    int nfr = RandoSnapshotTail_Load(frf);
+    if (nfr != 3) selfcheck_die("type-4: re-save must perpetuate RecommendedFeatures");
+    if (!(g_config.features0 & kFeatures0_RestoreJpGlitches))
+      selfcheck_die("type-4: re-saved features did not round-trip");
+    fclose(frf);
+
+    fseek(fold4, 0, SEEK_SET);
+    int nof = RandoSnapshotTail_Load(fold4);
+    if (nof != 2)
+      selfcheck_die("type-4: no-feature snapshot should recognize type-1 + type-3 only");
+    FILE *fleak = tmpfile();
+    if (fleak == NULL) selfcheck_die("type-4: stale-context tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fleak))
+      selfcheck_die("type-4: stale-context re-save returned false");
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(fleak, 0, SEEK_SET);
+    int nleak = RandoSnapshotTail_Load(fleak);
+    if (nleak != 2)
+      selfcheck_die("type-4: no-feature snapshot re-save inherited stale TLV");
+    if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+        (g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+        (enhanced_features0 & kFeatures0_RestoreJpGlitches))
+      selfcheck_die("type-4: stale recommended features applied after no-feature replay");
+    fclose(fleak);
+    fclose(fold4);
+
+    g_config.features0 = saved_config_features0;
+    g_wanted_zelda_features = saved_wanted_features0;
+    enhanced_features0 = saved_enhanced_features0;
+    Rando_ClearSnapshotContext();
   }
 
   // -------------------------------------------------------------------------
