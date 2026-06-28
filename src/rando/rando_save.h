@@ -43,9 +43,10 @@
 //       block AFTER the settings blob (the 80-byte slot header is fully
 //       claimed since door shuffle took @76-79, so additive fields now land
 //       here). Carries entrance_digest24 (FIX #4 — the entrance-shuffle
-//       analogue of door_digest24). v1/v2 files have no block; the loader
-//       keys its presence on the file version and forces the fields to 0
-//       (= legacy warn-only behavior). New writes are always v3.
+//       analogue of door_digest24) plus a Seed QoL recommended_features0
+//       snapshot/presence byte. v1/v2 files have no block; the loader keys its
+//       presence on the file version and forces the fields to 0 (= legacy
+//       warn-only/no-feature-snapshot behavior). New writes are always v3.
 #define kRandoSidecar_FileFormatVersion 3
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
@@ -54,7 +55,8 @@
 
 // format_version >= 3: per-slot extension block trailing the settings blob.
 //   @0-2  entrance_digest24 (u24 LE)  (FIX #4; 0 = absent/no entrance shuffle)
-//   @3-7  reserved (zero on write)
+//   @3-6  recommended_features0 (u32 LE; Seed QoL feature snapshot)
+//   @7    recommended_features0_present (u8; 1 = apply @3-6)
 #define kRandoSidecar_SlotExtV3Size     8
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
@@ -236,6 +238,13 @@ typedef struct RandoSlotHeader {
   // On disk it lives in the format_version-3 slot EXTENSION block (the 80-byte
   // header is full), bytes @0-2 LE; the in-memory struct carries it here.
   uint32 entrance_digest24;     // v3 ext block @0-2 (3 bytes LE on disk)
+  // Per-slot gameplay feature snapshot from the Seed QoL panel. This is NOT
+  // canonical randomizer settings and does not affect settings_hash/share; it is
+  // an opt-in play preference that must come back when the generated slot is
+  // loaded. On disk it lives in the format_version-3 extension block:
+  // @3-6 recommended_features0 LE, @7 recommended_features0_present.
+  uint32 recommended_features0;  // v3 ext block @3-6
+  uint8 recommended_features0_present;  // v3 ext block @7
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

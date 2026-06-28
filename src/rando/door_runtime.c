@@ -7,10 +7,11 @@
 //     edge, 128px apart: North/South door columns start at x = {112,240,368}
 //     (3 tiles wide, centers {124,252,380}); West/East door rows start at
 //     y = {120,248,376} (4 tiles tall, centers {136,264,392}).
-//   * The door-list position byte's upper nibble identifies the slot:
-//     North/West outer slots are nibbles 0..2; South/East outer slots are
-//     nibbles 6..8. Higher nibbles are interior-wall variants, which never
-//     produce an inter-room transition.
+//   * The door-list position byte's upper nibble identifies the edge slot:
+//     North/West outer slots are nibbles 0..5 (slot = nibble % 3);
+//     South/East outer slots are nibbles 6..11 (slot = (nibble - 6) % 3).
+//     The second triplet covers alternate edge offsets used by ledge/layer
+//     variants; shuffle-pool positional doors still transition through them.
 #include "door_runtime.h"
 #include "rando.h"
 #include "door_keylogic.h"  // Door_PartnerOf (chosen-pair partner resolution)
@@ -76,6 +77,12 @@ static bool g_door_fine_active;
 static bool g_door_fine_axis_y;
 static int g_door_fine_link;            // remaining Link fine delta, px
 static uint16 g_door_fine_cam_target;
+// SubtileTransitionCalculateLanding rewrites only the landing coordinate's low
+// byte. Redirected edge transitions can leave the high byte from the source
+// camera page, which strands full-coordinate users (lifted terrain, collision)
+// one 256px page away from the visible camera.
+static bool g_door_landing_page_active;
+static bool g_door_landing_page_axis_y;
 
 // Per-room catalog index: doors sorted by room; g_room_first[room] = first
 // slot in g_door_by_room, -1 = no doors. Built once (the catalog is const).
@@ -128,6 +135,8 @@ void DoorRt_Reset(void) {
   g_door_spiral_dst_layer = 0;
   g_door_spiral_dst_layer_valid = false;
   g_door_fine_active = false;
+  g_door_landing_page_active = false;
+  g_door_landing_page_axis_y = false;
   DoorRt_KindOverlayClear();
 }
 
@@ -178,16 +187,16 @@ bool DoorRt_Installed(void) {
 // ---------------------------------------------------------------------------
 
 // Outer-edge slot index from the door-list position byte, or -1 when the
-// entry is an interior-wall variant / wrong edge for `dir`.
+// entry is on the wrong edge for `dir`.
 static int DoorRt_OuterSlot(uint8 dir, uint8 pos_byte) {
   int nib = pos_byte >> 4;
   switch (dir) {
   case kDoorTblDir_North:
   case kDoorTblDir_West:
-    return (nib <= 2) ? nib : -1;
+    return (nib <= 5) ? nib % 3 : -1;
   case kDoorTblDir_South:
   case kDoorTblDir_East:
-    return (nib >= 6 && nib <= 8) ? nib - 6 : -1;
+    return (nib >= 6 && nib <= 11) ? (nib - 6) % 3 : -1;
   }
   return -1;
 }
@@ -317,6 +326,8 @@ static void DoorRt_Arrive(const DoorTblDoor *dst) {
   // (within-512 Link-phase trigger lines that track the camera 1:1; their
   // vanilla seeds are camera_rest_phase + 127 for X / + 120 for Y).
   bool horizontal = (dst->direction == kDoorTblDir_West || dst->direction == kDoorTblDir_East);
+  g_door_landing_page_active = true;
+  g_door_landing_page_axis_y = !horizontal;
   if (horizontal) {
     int target_in_room = 128 + slot * 128;  // door rows 120..152; Link y anchor
     uint8 new_q = (target_in_room >= 256) ? 2 : 0;
@@ -396,6 +407,8 @@ bool Rando_DoorTransOverride(uint8 dir) {
   // which consumes it, but clear unconditionally at every transition start so
   // no abort path can carry one across).
   g_door_fine_active = false;
+  g_door_landing_page_active = false;
+  g_door_landing_page_axis_y = false;
   if (!DoorRt_Active() || g_door_staircase_ctx)
     return false;
   int exit_id = DoorRt_ResolveExit(dir);
@@ -455,6 +468,31 @@ void Rando_DoorScrollFinePan(bool scroll_done) {
   }
   if (scroll_done)
     g_door_fine_active = false;
+}
+
+static uint16 DoorRt_RepageCoordToCamera(uint16 coord, uint16 camera) {
+  uint16 out = (camera & 0xFF00u) | (coord & 0x00FFu);
+  if ((uint16)(out - camera) >= 0x100)
+    out += 0x100;
+  return out;
+}
+
+void Rando_DoorLandingPageFix(void) {
+  if (!g_door_landing_page_active)
+    return;
+  if (g_door_landing_page_axis_y)
+    link_y_coord = DoorRt_RepageCoordToCamera(link_y_coord, BG2VOFS_copy2);
+  else
+    link_x_coord = DoorRt_RepageCoordToCamera(link_x_coord, BG2HOFS_copy2);
+  link_y_coord_safe_return_hi = link_y_coord >> 8;
+  link_x_coord_safe_return_hi = link_x_coord >> 8;
+  for (int i = 0; i < 20; i++) {
+    if (g_door_landing_page_axis_y)
+      tagalong_y_hi[i] = link_y_coord >> 8;
+    else
+      tagalong_x_hi[i] = link_x_coord >> 8;
+  }
+  g_door_landing_page_active = false;
 }
 
 // --- Spiral stair list / record correspondence ------------------------------
@@ -759,6 +797,8 @@ void DoorRt_ClearSpiralPending(void) {
   // Abort any in-flight arrival fine-pan too (this is the snapshot-restore /
   // teardown "cancel transition fixups" hook).
   g_door_fine_active = false;
+  g_door_landing_page_active = false;
+  g_door_landing_page_axis_y = false;
 }
 
 void Rando_DoorSpiralLayerFix(void) {
@@ -1197,6 +1237,71 @@ bool Rando_DoorKeySlotAlreadyOpen(int slot) {
   if (!e || !(e->flags & kDoorRtKindF_SmallKey))
     return false;
   return (dung_door_opened & (0x8000 >> slot)) != 0;
+}
+
+int DoorRt_GeometrySelfCheck(void) {
+  int fails = 0;
+  struct {
+    uint16 coord, camera, want;
+  } repage_cases[] = {
+    { 0x0032, 0x00F8, 0x0132 },
+    { 0x0132, 0x00F8, 0x0132 },
+    { 0x00F0, 0x0000, 0x00F0 },
+    { 0x00F0, 0x0100, 0x01F0 },
+    { 0x0532, 0x05F8, 0x0632 },
+  };
+  for (int i = 0; i < (int)(sizeof(repage_cases) / sizeof(repage_cases[0])); i++) {
+    uint16 got = DoorRt_RepageCoordToCamera(repage_cases[i].coord, repage_cases[i].camera);
+    if (got != repage_cases[i].want) {
+      fprintf(stderr,
+              "door-geometry-selfcheck: landing re-page case %d got %04x "
+              "expected %04x\n",
+              i, got, repage_cases[i].want);
+      fails++;
+    }
+  }
+  int16 seen[256][4][2][3];
+  memset(seen, 0xFF, sizeof(seen));
+  for (int door = 0; door < kDoorTbl_DoorCount; door++) {
+    const DoorTblDoor *d = &kDoorTblDoors[door];
+    if (d->type != kDoorTblType_Normal)
+      continue;
+    if (d->flags & kDoorTblFlag_VanillaTeleport)
+      continue;  // teleport doors do not use the edge-transition resolver
+    int slot = DoorRt_OuterSlot(d->direction, d->pos_byte);
+    if (slot < 0) {
+      if (!(d->flags & kDoorTblFlag_InPool))
+        continue;
+      fprintf(stderr,
+              "door-geometry-selfcheck: pool door %d '%s' pos byte %02x "
+              "does not resolve to an outer slot\n",
+              door, &kDoorTblNames[d->name_off], d->pos_byte);
+      fails++;
+      continue;
+    }
+    uint8 layer = d->layer & 1;
+    int16 *prev = &seen[d->room][d->direction][layer][slot];
+    if (*prev >= 0) {
+      const DoorTblDoor *pd = &kDoorTblDoors[*prev];
+      fprintf(stderr,
+              "door-geometry-selfcheck: doors %d '%s' and %d '%s' share "
+              "runtime candidate room %02x dir %d layer %d slot %d\n",
+              *prev, &kDoorTblNames[pd->name_off],
+              door, &kDoorTblNames[d->name_off],
+              d->room, d->direction, layer, slot);
+      fails++;
+    } else {
+      *prev = (int16)door;
+    }
+    if ((d->flags & kDoorTblFlag_InPool) && slot != d->door_index) {
+      fprintf(stderr,
+              "door-geometry-selfcheck: pool door %d '%s' pos byte %02x "
+              "resolves slot %d, catalog door_index %d\n",
+              door, &kDoorTblNames[d->name_off], d->pos_byte, slot, d->door_index);
+      fails++;
+    }
+  }
+  return fails;
 }
 
 // ---------------------------------------------------------------------------

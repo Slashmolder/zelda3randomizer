@@ -867,6 +867,16 @@ bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
 
+// Active seed runtime feature overrides. These are NOT global user preferences:
+// they are requirements implied by the currently active/cold-replayed seed.
+// Today this is JP-1.0 glitches for logic/tricks that assume restored JP
+// behavior. UI/config code should render these as effective forced-on bits and
+// preserve them after applying live config changes.
+uint32 Rando_ActiveForcedFeatures0(void);
+void Rando_ApplyActiveForcedFeatures0(void);
+void Rando_ApplySeedQolFeatures0(uint32 features0);
+void Rando_ClearSnapshotColdReplayRestore(void);
+
 // Regenerate the hint table for the CURRENTLY-ACTIVE slot, replaying exactly
 // the activation-time hint block — including the v1/no-blob fallbacks
 // (header-ext hints_setting/goal, default hints-on for the oldest slots),
@@ -983,6 +993,7 @@ void Rando_FillItemView(RandoItemView *out);
 struct RandoSidecarSlot;
 void Rando_ActivateSidecarSlot(const struct RandoSidecarSlot *src);
 void Rando_DeactivateSlot(void);
+void Rando_ClearDeferredPotConfirmation(void);
 
 // Snapshot cold-replay restore. Reconstructs the active-slot logic-side
 // state (prize/medallion/boss/drop/enemy assignments + Inverted installs +
@@ -994,6 +1005,11 @@ void Rando_DeactivateSlot(void);
 void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
                                      uint8 prize_attempt);
+void Rando_ClearSnapshotDoorReplayRestore(void);
+bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
+                                     const uint8 *share_string_raw,
+                                     uint8 door_attempt,
+                                     uint32 door_digest24);
 
 // ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).

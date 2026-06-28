@@ -236,9 +236,8 @@ static void apply_derived_rules(RandoSettings *s) {
     s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
   }
 
-  // add-rando-pot-sanity — pots do NOT compose with door shuffle OR cave-entrance
-  // shuffle in v1. Door: the door key-prover doesn't model pot locations. Cave
-  // entrance: cave/house pot location IDs are above the per-location entrance
+  // add-rando-pot-sanity — pots do NOT compose with cave-entrance shuffle in v1.
+  // Cave/house pot location IDs are above the per-location entrance
   // region-override range (Entrance_ApplyRegionOverrides only remaps the caves'
   // <512 chest IDs), so a cave/house pot would evaluate from its VANILLA overworld
   // region while the runtime reaches the interior through the shuffled entrance —
@@ -262,8 +261,7 @@ bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s) {
 }
 
 bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
-  return s != NULL && (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla ||
-                       Settings_EffectiveShuffleCaveEntrances(s));
+  return s != NULL && Settings_EffectiveShuffleCaveEntrances(s);
 }
 
 // goal == Completionist forces 100%-Locations (apply_derived_rules:155-157).
@@ -276,7 +274,7 @@ uint8 Settings_EffectiveAccessibility(const RandoSettings *s) {
 }
 
 // True when pot_shuffle itemizes small-key pots as live checks: pot_shuffle >=
-// Keys AND pots are not forced off (door OR cave-entrance shuffle). The placer
+// Keys AND pots are not forced off (cave-entrance shuffle). The placer
 // consumes RAW (non-normalized) settings — Settings_CanonicalSerialize runs
 // apply_derived_rules only on a private copy — so every pot-key predicate MUST
 // re-derive "forced off" itself rather than trust a normalized pot_shuffle. This
@@ -1089,17 +1087,30 @@ void Settings_SelfCheck(void) {
                       "from the struct path\n");
       exit(2);
     }
-    // Door shuffle normalizes pot_shuffle off (v1 — pots don't compose with the
-    // door key-prover), so door+pots hashes identically to door-without-pots.
+    // Door shuffle now composes with pot_shuffle; only cave entrance shuffle
+    // normalizes pots off.
     RandoSettings sdoor;
     Settings_SetDefaults(&sdoor);
     sdoor.door_shuffle = kDoorShuffle_Basic;
     sdoor.pot_shuffle = kPotShuffle_All;
     uint8 cdoor[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(&sdoor, cdoor);
-    if ((cdoor[26] & kPotShuffleAxis_LowMask) || (cdoor[27] & kPotShuffleAxis_HighBit)) {
-      fprintf(stderr, "Settings_SelfCheck: door shuffle must normalize pot_shuffle off "
+    if ((cdoor[26] & kPotShuffleAxis_LowMask) != kPotShuffleAxis_LowMask ||
+        (cdoor[27] & kPotShuffleAxis_HighBit) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must preserve pot_shuffle=all "
                       "([26]=0x%02x [27]=0x%02x)\n", cdoor[26], cdoor[27]);
+      exit(2);
+    }
+    RandoSettings scave;
+    Settings_SetDefaults(&scave);
+    scave.shuffle_cave_entrances = 1;
+    scave.pot_shuffle = kPotShuffle_All;
+    uint8 ccave[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&scave, ccave);
+    if ((ccave[26] & kPotShuffleAxis_LowMask) || (ccave[27] & kPotShuffleAxis_HighBit)) {
+      fprintf(stderr, "Settings_SelfCheck: cave entrance shuffle must normalize "
+                      "pot_shuffle off ([26]=0x%02x [27]=0x%02x)\n",
+              ccave[26], ccave[27]);
       exit(2);
     }
   }

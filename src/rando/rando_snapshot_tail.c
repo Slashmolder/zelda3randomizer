@@ -15,9 +15,9 @@
 //     placement_table[placement_table_size]  flat uint16 LE by location_id
 //                              (0xFFFF = no placement sentinel)
 //
-// M4 appends a SECOND TLV after the RandoState one, so a COLD replay (Ctrl+F1 on
-// a fresh launch with the slot not loaded) can rebuild the per-slot process state
-// that g_ram (and thus LoadSnesState) does not carry:
+// M4 can append a RandoSettings TLV after the RandoState one, so a COLD replay
+// (Ctrl+F1 on a fresh launch with the slot not loaded) can rebuild the per-slot
+// process state that g_ram (and thus LoadSnesState) does not carry:
 //
 //   type[4]   LE             = 2 (TAIL_RANDO_SETTINGS)
 //   length[4] LE             = payload size in bytes
@@ -31,20 +31,41 @@
 //     settings_len[1]                  (= kSettingsCanonicalLen on the wire)
 //     settings_canonical[settings_len] (Settings_CanonicalSerialize output)
 //
-// It is a SEPARATE TLV (not folded into RandoState) so an older binary — which
-// requires RandoState's length to be exactly 52 + placement_table_size — skips it
-// as an unknown type and still reads the placement table. A v1/no-blob slot emits
-// no type-2 TLV (settings absent), so the cold replay degrades to placement-only.
+// Door-shuffle snapshots append a separate layout-identity TLV:
+//
+//   type[4]   LE             = 5 (TAIL_DOOR_LAYOUT)
+//   length[4] LE             = 5
+//   payload:
+//     format_version[1]      = 1
+//     door_attempt[1]
+//     door_digest24[3] LE
+//
+// Another optional TLV carries per-slot Seed QoL features for snapshot replay:
+//
+//   type[4]   LE             = 4 (TAIL_RECOMMENDED_FEATURES)
+//   length[4] LE             = 5
+//   payload:
+//     format_version[1]      = 1
+//     recommended_features0[4] LE      (masked to kFeatures0_RandoSeedQolMask)
+//
+// Optional records are SEPARATE TLVs (not folded into RandoState) so an older
+// binary — which requires RandoState's length to be exactly 52 +
+// placement_table_size — skips them as unknown types and still reads the
+// placement table. A v1/no-blob slot emits no type-2 TLV (settings absent), so
+// the cold replay degrades to placement-only.
 //
 // Multi-byte fields are emitted/consumed via explicit LE byte helpers (no
 // host-endianness reliance) — per the same discipline as rando_save.c.
 
 #include "rando_snapshot_tail.h"
 #include "rando_placement.h"
-#include "rando.h"          // Rando_SnapshotColdReplayRestore + g_rando_* ownership externs
+#include "rando.h"          // snapshot cold-replay helpers + ownership externs
 #include "rando_settings.h" // kSettingsCanonicalLen, Settings_CanonicalDeserialize
-#include "door_runtime.h"   // DoorRt_Installed (door-shuffle restore reconcile)
+#include "rando_share.h"    // Share_PackBinary (self-check valid raw share string)
+#include "shuffle_doors.h"  // DoorShuffle_Generate/Digest (self-check)
+#include "door_runtime.h"   // DoorRt_Installed (self-check)
 #include "../features.h"    // enhanced_features1 / kFeatures1_DoorShuffleActive
+#include "../config.h"      // g_config (self-checks feature restore)
 #include "../variables.h"   // g_ram (the features macro)
 
 #include <stdio.h>
@@ -92,6 +113,22 @@ static bool g_has_ctx = false;
 static uint8 g_ctx_settings_canonical[kSettingsCanonicalLen];
 static uint8 g_ctx_prize_attempt = 0;
 static bool g_has_settings_ctx = false;
+static uint8 g_ctx_door_attempt = 0;
+static uint32 g_ctx_door_digest24 = 0;
+static bool g_has_door_ctx = false;
+static uint32 g_ctx_recommended_features0 = 0;
+static bool g_has_recommended_features_ctx = false;
+
+static void Rando_ClearSnapshotOptionalContexts(void) {
+  g_has_settings_ctx = false;
+  memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
+  g_ctx_prize_attempt = 0;
+  g_ctx_door_attempt = 0;
+  g_ctx_door_digest24 = 0;
+  g_has_door_ctx = false;
+  g_ctx_recommended_features0 = 0;
+  g_has_recommended_features_ctx = false;
+}
 
 void Rando_SetSnapshotContext(uint16 generator_version,
                               const uint8 settings_hash[16],
@@ -120,13 +157,33 @@ void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
   g_has_settings_ctx = true;
 }
 
+void Rando_SetSnapshotDoorContext(uint8 door_attempt, uint32 door_digest24,
+                                  bool present) {
+  if (!present) {
+    g_ctx_door_attempt = 0;
+    g_ctx_door_digest24 = 0;
+    g_has_door_ctx = false;
+    return;
+  }
+  g_ctx_door_attempt = door_attempt;
+  g_ctx_door_digest24 = door_digest24 & 0xFFFFFFu;
+  g_has_door_ctx = true;
+}
+
+void Rando_SetSnapshotRecommendedFeaturesContext(uint32 features0, bool present) {
+  if (!present) {
+    g_ctx_recommended_features0 = 0;
+    g_has_recommended_features_ctx = false;
+    return;
+  }
+  g_ctx_recommended_features0 = features0 & kFeatures0_RandoSeedQolMask;
+  g_has_recommended_features_ctx = true;
+}
+
 void Rando_ClearSnapshotContext(void) {
   g_has_ctx = false;
   memset(&g_ctx, 0, sizeof(g_ctx));
-  // clear the settings sub-context too (slot exit clears both).
-  g_has_settings_ctx = false;
-  memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
-  g_ctx_prize_attempt = 0;
+  Rando_ClearSnapshotOptionalContexts();
 }
 
 bool Rando_HasSnapshotContext(void) {
@@ -254,6 +311,31 @@ bool RandoSnapshotTail_Save(FILE *f) {
     if (fwrite(shdr, 1, sizeof(shdr), f) != sizeof(shdr)) return false;
     if (fwrite(sp, 1, sp_len, f) != sp_len) return false;
   }
+  if (g_has_door_ctx) {
+    uint8 dp[5];
+    dp[0] = 1u;  // format_version
+    dp[1] = g_ctx_door_attempt;
+    dp[2] = (uint8)(g_ctx_door_digest24 & 0xff);
+    dp[3] = (uint8)((g_ctx_door_digest24 >> 8) & 0xff);
+    dp[4] = (uint8)((g_ctx_door_digest24 >> 16) & 0xff);
+    uint8 dhdr[16];
+    memcpy(dhdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(dhdr + 8, kRandoSnapshotTail_Type_DoorLayout);
+    put_u32le_bytes(dhdr + 12, (uint32)sizeof(dp));
+    if (fwrite(dhdr, 1, sizeof(dhdr), f) != sizeof(dhdr)) return false;
+    if (fwrite(dp, 1, sizeof(dp), f) != sizeof(dp)) return false;
+  }
+  if (g_has_recommended_features_ctx) {
+    uint8 fp[5];
+    fp[0] = 1u;  // format_version
+    put_u32le_bytes(fp + 1, g_ctx_recommended_features0);
+    uint8 fhdr[16];
+    memcpy(fhdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(fhdr + 8, kRandoSnapshotTail_Type_RecommendedFeatures);
+    put_u32le_bytes(fhdr + 12, (uint32)sizeof(fp));
+    if (fwrite(fhdr, 1, sizeof(fhdr), f) != sizeof(fhdr)) return false;
+    if (fwrite(fp, 1, sizeof(fp), f) != sizeof(fp)) return false;
+  }
   return true;
 }
 
@@ -273,20 +355,33 @@ static RandoPlacement g_tail_entries[kRandoLocationCapacity];
 static RandoPlacementTable g_tail_table;
 
 int RandoSnapshotTail_Load(FILE *f) {
+  Rando_ClearDeferredPotConfirmation();
   if (f == NULL) return 0;
   int recognized = 0;
+  bool pending_door_layout = false;
+
+#define FINISH_LOAD() do { \
+    if (pending_door_layout) { \
+      fprintf(stderr, \
+              "RandoSnapshotTail: door-shuffle snapshot missing a valid " \
+              "DoorLayout TLV — deactivating randomizer state\n"); \
+      Rando_DeactivateSlot(); \
+      pending_door_layout = false; \
+    } \
+    return recognized; \
+  } while (0)
 
   for (;;) {
     uint8 magic[kRandoSnapshotTail_MagicLen];
     size_t mr = fread(magic, 1, kRandoSnapshotTail_MagicLen, f);
-    if (mr != kRandoSnapshotTail_MagicLen) return recognized;  // EOF / short read
+    if (mr != kRandoSnapshotTail_MagicLen) FINISH_LOAD();  // EOF / short read
     if (memcmp(magic, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen) != 0) {
       // Unknown / non-matching magic — terminate cleanly.
-      return recognized;
+      FINISH_LOAD();
     }
 
     uint8 hdr[8];  // type[4] + length[4]
-    if (fread(hdr, 1, 8, f) != 8) return recognized;
+    if (fread(hdr, 1, 8, f) != 8) FINISH_LOAD();
     uint32 type = get_u32le_bytes(hdr + 0);
     uint32 length = get_u32le_bytes(hdr + 4);
 
@@ -297,7 +392,7 @@ int RandoSnapshotTail_Load(FILE *f) {
     // largest legal payload is the RandoState body (52 + kRandoLocationCapacity
     // * 2); cap well above that and bail on anything larger — a real tail never
     // exceeds it.
-    if (length > kRandoSnapshotTail_MaxPayloadBytes) return recognized;
+    if (length > kRandoSnapshotTail_MaxPayloadBytes) FINISH_LOAD();
 
     if (type == kRandoSnapshotTail_Type_RandoState) {
       // Payload schema: gen_version[2] + settings_hash[16] + share_string[32]
@@ -305,12 +400,12 @@ int RandoSnapshotTail_Load(FILE *f) {
       // Minimum length = 2 + 16 + 32 + 2 = 52 (empty table is legal).
       if (length < 52u) {
         // Malformed — seek past whatever payload claims and continue.
-        if (fseek(f, (long)length, SEEK_CUR) != 0) return recognized;
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
       // Read fixed-size prefix.
       uint8 head[52];
-      if (fread(head, 1, 52, f) != 52) return recognized;
+      if (fread(head, 1, 52, f) != 52) FINISH_LOAD();
       uint16 gen_version = get_u16le_bytes(head + 0);
       const uint8 *settings_hash = head + 2;     // 16 bytes
       const uint8 *share_string  = head + 18;    // 32 bytes
@@ -321,7 +416,7 @@ int RandoSnapshotTail_Load(FILE *f) {
       if (length != expected_total) {
         // Inner-size mismatch — skip the rest and continue.
         long remaining = (long)length - 52L;
-        if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) return recognized;
+        if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
       // Read the placement table.
@@ -329,7 +424,7 @@ int RandoSnapshotTail_Load(FILE *f) {
       if (location_count > kRandoLocationCapacity) {
         // Reject — exceeds our static buffer; skip body, continue.
         if (placement_table_bytes > 0 && fseek(f, (long)placement_table_bytes, SEEK_CUR) != 0) {
-          return recognized;
+          FINISH_LOAD();
         }
         continue;
       }
@@ -344,14 +439,14 @@ int RandoSnapshotTail_Load(FILE *f) {
       if (placement_table_bytes != (uint16)(location_count * 2u) ||
           placement_table_bytes > (uint32)kRandoLocationCapacity * 2u) {
         if (placement_table_bytes > 0 && fseek(f, (long)placement_table_bytes, SEEK_CUR) != 0) {
-          return recognized;
+          FINISH_LOAD();
         }
         continue;
       }
       if (placement_table_bytes > 0) {
         uint8 raw[kRandoLocationCapacity * 2];  // max kRandoLocationCapacity locations × 2 bytes
         if (fread(raw, 1, placement_table_bytes, f) != placement_table_bytes) {
-          return recognized;
+          FINISH_LOAD();
         }
         uint16 sparse_count = 0;
         for (uint16 i = 0; i < location_count; i++) {
@@ -383,26 +478,26 @@ int RandoSnapshotTail_Load(FILE *f) {
       // load-bearing ONLY for the type-3-absent case.
       memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
 
+      // Optional TLV contexts are scoped to this accepted RandoState. A current
+      // snapshot's later type-2/type-4 TLVs repopulate them; an older snapshot
+      // that lacks those TLVs must not inherit stale context from a previous
+      // replay and then re-save it under this new base identity.
+      Rando_ClearSnapshotOptionalContexts();
+      Rando_ClearSnapshotColdReplayRestore();
+
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
       Rando_SetSnapshotContext(gen_version, settings_hash, share_string);
       // Any restore drops an armed mid-staircase spiral redirect (process
       // state; it must not fire on a later unrelated room load).
       DoorRt_ClearSpiralPending();
-      // add-rando-door-shuffle — the door redirect / kind-overlay tables are
-      // PROCESS state installed by slot activation, not snapshot state. If
-      // the restored RAM claims door shuffle but no layout is installed this
-      // session (snapshot replayed on a fresh launch / different slot), clear
-      // the bit and warn: silently-vanilla doors on a save whose placement
-      // assumed the shuffled graph is the worse failure. (A snapshot from a
-      // DIFFERENT door-shuffle slot than the activated one keeps the
-      // activated layout — same process-state tolerance as the entrance
-      // overlay / boss shuffle.)
-      if ((enhanced_features1 & kFeatures1_DoorShuffleActive) && !DoorRt_Installed()) {
-        fprintf(stderr, "RandoSnapshotTail: door-shuffle bit restored without an "
-                        "installed layout — clearing (activate the slot first)\n");
-        enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
-      }
+      pending_door_layout = (enhanced_features1 & kFeatures1_DoorShuffleActive) != 0;
+      // Door shuffle is process state, not part of the raw g_ram dump. Clear
+      // any currently-installed door graph for every accepted rando snapshot;
+      // a current snapshot's type-5 DoorLayout TLV will reinstall the exact
+      // graph after digest validation. Older/no-type-5 snapshots fail closed
+      // instead of inheriting a door layout from a different active slot.
+      Rando_ClearSnapshotDoorReplayRestore();
       recognized++;
       continue;
     }
@@ -412,11 +507,11 @@ int RandoSnapshotTail_Load(FILE *f) {
       //           + settings_len[1] + settings_canonical[settings_len].
       // Minimum length = 1 + 1 + 4 + 1 = 7.
       if (length < 7u) {
-        if (fseek(f, (long)length, SEEK_CUR) != 0) return recognized;
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
       uint8 head2[7];
-      if (fread(head2, 1, 7, f) != 7) return recognized;
+      if (fread(head2, 1, 7, f) != 7) FINISH_LOAD();
       uint8 fmt              = head2[0];
       uint8 prize_attempt    = head2[1];
       uint8 own_mushroom     = head2[2];
@@ -427,7 +522,7 @@ int RandoSnapshotTail_Load(FILE *f) {
       if ((uint32)length != 7u + (uint32)settings_len) {
         // Inner-size mismatch — skip the declared remainder and continue.
         long remaining = (long)length - 7L;
-        if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) return recognized;
+        if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
       // Read the canonical settings blob. Forward-compat: a NEWER snapshot may
@@ -437,10 +532,10 @@ int RandoSnapshotTail_Load(FILE *f) {
       memset(blob, 0, sizeof(blob));
       uint32 copy = (settings_len <= kSettingsCanonicalLen) ? settings_len
                                                             : (uint32)kSettingsCanonicalLen;
-      if (copy > 0 && fread(blob, 1, copy, f) != copy) return recognized;
+      if (copy > 0 && fread(blob, 1, copy, f) != copy) FINISH_LOAD();
       if (settings_len > copy &&
           fseek(f, (long)(settings_len - copy), SEEK_CUR) != 0) {
-        return recognized;
+        FINISH_LOAD();
       }
       // Everything below is interpreted per format_version 1. An UNKNOWN fmt is a
       // newer writer's payload layout we can't parse — the bytes were already
@@ -479,6 +574,54 @@ int RandoSnapshotTail_Load(FILE *f) {
       continue;
     }
 
+    if (type == kRandoSnapshotTail_Type_DoorLayout) {
+      // Payload: format_version[1] + door_attempt[1] + door_digest24[3].
+      if (length < 5u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      uint8 dp[5];
+      if (fread(dp, 1, sizeof(dp), f) != sizeof(dp)) FINISH_LOAD();
+      if (length > sizeof(dp) && fseek(f, (long)(length - sizeof(dp)), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (dp[0] == 1u) {
+        uint8 door_attempt = dp[1];
+        uint32 door_digest24 =
+            (uint32)dp[2] | ((uint32)dp[3] << 8) | ((uint32)dp[4] << 16);
+        Rando_SetSnapshotDoorContext(door_attempt, door_digest24, true);
+        if (g_has_ctx && g_has_settings_ctx) {
+          RandoSettings s;
+          if (Settings_CanonicalDeserialize(g_ctx_settings_canonical, &s) == 0) {
+            if (Rando_SnapshotDoorReplayRestore(&s, g_ctx.share_string,
+                                                door_attempt, door_digest24)) {
+              pending_door_layout = false;
+            }
+          }
+        }
+      }
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_RecommendedFeatures) {
+      // Payload: format_version[1] + recommended_features0[4].
+      if (length < 5u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      uint8 fp[5];
+      if (fread(fp, 1, sizeof(fp), f) != sizeof(fp)) FINISH_LOAD();
+      if (length > sizeof(fp) && fseek(f, (long)(length - sizeof(fp)), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (fp[0] == 1u) {
+        uint32 features0 = get_u32le_bytes(fp + 1);
+        Rando_SetSnapshotRecommendedFeaturesContext(features0, true);
+        Rando_ApplySeedQolFeatures0(features0);
+      }
+      recognized++;
+      continue;
+    }
+
     if (type == kRandoSnapshotTail_Type_CheckedBitmap) {
       // Restore the checked-location bitmap (a C global outside the g_ram dump).
       // Read min(length, kRandoCheckedBitmapBytes): a SMALLER payload (older /
@@ -488,17 +631,18 @@ int RandoSnapshotTail_Load(FILE *f) {
       uint32 copy = (length <= (uint32)kRandoCheckedBitmapBytes)
                         ? length : (uint32)kRandoCheckedBitmapBytes;
       memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
-      if (copy > 0 && fread(g_rando_checked_bitmap, 1, copy, f) != copy) return recognized;
-      if (length > copy && fseek(f, (long)(length - copy), SEEK_CUR) != 0) return recognized;
+      if (copy > 0 && fread(g_rando_checked_bitmap, 1, copy, f) != copy) FINISH_LOAD();
+      if (length > copy && fseek(f, (long)(length - copy), SEEK_CUR) != 0) FINISH_LOAD();
       recognized++;
       continue;
     }
 
     // Unknown type — seek past payload and continue.
     if (length > 0) {
-      if (fseek(f, (long)length, SEEK_CUR) != 0) return recognized;
+      if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
     }
   }
+#undef FINISH_LOAD
 }
 
 // ---------------------------------------------------------------------------
@@ -931,8 +1075,298 @@ void RandoSnapshotTail_SelfCheck(void) {
       selfcheck_die("suppression — ownership must be untouched when no type-2 was emitted");
     }
     fclose(fb);
+
+    // (C) A prior cold replay can install settings-derived process state and a
+    // forced JP overlay. Replaying a no-type-2 snapshot must clear that cold
+    // replay state instead of inheriting it.
+    {
+      uint32 saved_config_features0 = g_config.features0;
+      uint32 saved_wanted_features0 = g_wanted_zelda_features;
+      uint32 saved_enhanced_features0 = enhanced_features0;
+      RandoSettings glitch_settings;
+      Settings_SetDefaults(&glitch_settings);
+      glitch_settings.logic = 1;  // OverworldGlitches forces JP glitches.
+      g_config.features0 &= ~kFeatures0_RestoreJpGlitches;
+      g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
+      enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
+      Placement_Install(&m4_table);
+      Rando_SnapshotColdReplayRestore(&glitch_settings, share_string, 0);
+      if (!(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+          !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+        selfcheck_die("suppression — cold replay did not force JP glitches");
+
+      Placement_Install(&m4_table);
+      Rando_ClearSnapshotContext();
+      Rando_SetSnapshotContext(0x0075, settings_hash, share_string);
+      Rando_SetSnapshotSettingsContext(NULL, 0);
+      FILE *fc = tmpfile();
+      if (fc == NULL) selfcheck_die("tmpfile() (C) returned NULL");
+      if (!RandoSnapshotTail_Save(fc)) selfcheck_die("Save (C) returned false");
+      Placement_Install(NULL);
+      Rando_ClearSnapshotContext();
+      fseek(fc, 0, SEEK_SET);
+      int nc = RandoSnapshotTail_Load(fc);
+      if (nc != 2)
+        selfcheck_die("suppression — cold replay clear should recognize type-1 + type-3 only");
+      if ((g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+          (enhanced_features0 & kFeatures0_RestoreJpGlitches))
+        selfcheck_die("suppression — no-type-2 replay inherited forced JP overlay");
+      fclose(fc);
+
+      g_config.features0 = saved_config_features0;
+      g_wanted_zelda_features = saved_wanted_features0;
+      enhanced_features0 = saved_enhanced_features0;
+      Rando_ClearSnapshotColdReplayRestore();
+    }
+
     g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
     g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // type-5 DoorLayout TLV round-trip.
+  //
+  // Door shuffle runtime redirects are process state. A snapshot must not
+  // inherit whatever door graph happens to be active; it must clear stale doors
+  // on type-1 and reinstall only the graph regenerated from its own
+  // (settings, seed, door_attempt) after matching the saved digest.
+  // -------------------------------------------------------------------------
+  {
+    uint8 saved_slot_active = g_rando_slot_active;
+    uint32 saved_wanted_features1 = g_wanted_zelda_features1;
+    uint32 saved_enhanced_features1 = enhanced_features1;
+
+    RandoSettings door_settings;
+    Settings_SetDefaults(&door_settings);
+    door_settings.door_shuffle = kDoorShuffle_Basic;
+    door_settings.pot_shuffle = kPotShuffle_Keys;
+    uint8 door_canon[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&door_settings, door_canon);
+
+    ShareString door_ss;
+    memset(&door_ss, 0, sizeof(door_ss));
+    door_ss.version = (uint8)kGeneratorVersion;
+    for (int i = 0; i < 16; i++) door_ss.settings_hash[i] = (uint8)(0xD0 + i);
+    door_ss.seed_u64 = 0xD00D5007C0FFEE11ull;
+    uint8 door_share[32];
+    memset(door_share, 0, sizeof(door_share));
+    Share_PackBinary(&door_ss, door_share);
+
+    static DoorShuffleLayout layout;
+    uint8 door_attempt = 0;
+    uint32 door_digest24 = 0;
+    bool got_layout = false;
+    for (uint32 a = 0; a < 32; a++) {
+      if (DoorShuffle_Generate(door_ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
+                               door_settings.pot_shuffle, &layout)) {
+        door_attempt = (uint8)a;
+        door_digest24 = DoorShuffle_LayoutDigest(&layout) & 0xFFFFFFu;
+        got_layout = true;
+        break;
+      }
+    }
+    if (!got_layout) selfcheck_die("type-5: could not generate a door layout");
+
+    static RandoPlacement door_entries[2];
+    static RandoPlacementTable door_table;
+    door_entries[0].location_id = 11; door_entries[0].item_id = 0x0D01;
+    door_entries[1].location_id = 12; door_entries[1].item_id = 0x0D02;
+    door_table.entries = door_entries; door_table.count = 2;
+
+    Placement_Install(&door_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00D5, door_ss.settings_hash, door_share);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotDoorContext(door_attempt, door_digest24, true);
+
+    FILE *fd = tmpfile();
+    if (fd == NULL) selfcheck_die("type-5: tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fd)) selfcheck_die("type-5: Save returned false");
+    Rando_ClearSnapshotDoorReplayRestore();
+    if (DoorRt_Installed())
+      selfcheck_die("type-5: clear should remove installed door graph");
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    enhanced_features1 |= kFeatures1_DoorShuffleActive;  // restored g_ram claims door shuffle
+
+    fseek(fd, 0, SEEK_SET);
+    int nd = RandoSnapshotTail_Load(fd);
+    if (nd != 4)
+      selfcheck_die("type-5: expected RandoState + CheckedBitmap + RandoSettings + DoorLayout");
+    if (!DoorRt_Installed())
+      selfcheck_die("type-5: door graph was not restored");
+    if (!(enhanced_features1 & kFeatures1_DoorShuffleActive))
+      selfcheck_die("type-5: door feature bit was not restored");
+    fclose(fd);
+
+    FILE *frd = tmpfile();
+    if (frd == NULL) selfcheck_die("type-5: re-save tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(frd)) selfcheck_die("type-5: re-save returned false");
+    Rando_ClearSnapshotDoorReplayRestore();
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    enhanced_features1 |= kFeatures1_DoorShuffleActive;  // restored g_ram claims door shuffle
+    fseek(frd, 0, SEEK_SET);
+    int nrd = RandoSnapshotTail_Load(frd);
+    if (nrd != 4)
+      selfcheck_die("type-5: replayed snapshot re-save must perpetuate DoorLayout");
+    if (!DoorRt_Installed())
+      selfcheck_die("type-5: re-saved door graph was not restored");
+    fclose(frd);
+
+    // Missing type-5: a door-shuffle RAM snapshot with placement/settings but
+    // no DoorLayout TLV must deactivate instead of running under vanilla doors.
+    Placement_Install(&door_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00D7, door_ss.settings_hash, door_share);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    FILE *fmissing = tmpfile();
+    if (fmissing == NULL) selfcheck_die("type-5: missing tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fmissing)) selfcheck_die("type-5: missing Save returned false");
+    Rando_ClearSnapshotDoorReplayRestore();
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    g_rando_slot_active = 1;
+    enhanced_features1 |= kFeatures1_DoorShuffleActive;
+    fseek(fmissing, 0, SEEK_SET);
+    int nmissing = RandoSnapshotTail_Load(fmissing);
+    if (nmissing != 3)
+      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + RandoSettings");
+    if (g_rando_slot_active || Placement_GetActive() != NULL || DoorRt_Installed())
+      selfcheck_die("type-5: missing DoorLayout should deactivate rando state");
+    fclose(fmissing);
+
+    // Drift fail-closed: a corrupted saved digest must not leave the previously
+    // installed graph active or keep the rando slot marked active.
+    Placement_Install(&door_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00D6, door_ss.settings_hash, door_share);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotDoorContext(door_attempt, door_digest24 ^ 1u, true);
+    FILE *fbad = tmpfile();
+    if (fbad == NULL) selfcheck_die("type-5: bad-digest tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-5: bad-digest Save returned false");
+    fseek(fbad, 0, SEEK_SET);
+    int nbad = RandoSnapshotTail_Load(fbad);
+    if (nbad != 4)
+      selfcheck_die("type-5: bad-digest snapshot should still parse all known TLVs");
+    if (DoorRt_Installed())
+      selfcheck_die("type-5: bad digest inherited or installed a door graph");
+    if (g_rando_slot_active)
+      selfcheck_die("type-5: bad digest should deactivate the rando slot");
+    fclose(fbad);
+
+    Rando_ClearSnapshotDoorReplayRestore();
+    Rando_ClearSnapshotColdReplayRestore();
+    Rando_ClearSnapshotContext();
+    g_rando_slot_active = saved_slot_active;
+    g_wanted_zelda_features1 = saved_wanted_features1;
+    enhanced_features1 = saved_enhanced_features1;
+  }
+
+  // -------------------------------------------------------------------------
+  // type-4 RecommendedFeatures TLV round-trip.
+  //
+  // This carries the per-slot Seed QoL features0 snapshot for replay. It
+  // must mask out non-Seed-QoL bits, preserve live non-slot bits, and reinstall
+  // its context so a replayed snapshot re-save perpetuates the TLV.
+  // -------------------------------------------------------------------------
+  {
+    uint32 saved_config_features0 = g_config.features0;
+    uint32 saved_wanted_features0 = g_wanted_zelda_features;
+    uint32 saved_enhanced_features0 = enhanced_features0;
+
+    static RandoPlacement f4_entries[2];
+    static RandoPlacementTable f4_table;
+    f4_entries[0].location_id = 2; f4_entries[0].item_id = 0x0A0A;
+    f4_entries[1].location_id = 6; f4_entries[1].item_id = 0x0B0B;
+    f4_table.entries = f4_entries; f4_table.count = 2;
+
+    Placement_Install(&f4_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00F5, settings_hash, share_string);
+    FILE *fold4 = tmpfile();
+    if (fold4 == NULL) selfcheck_die("type-4: no-feature tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fold4))
+      selfcheck_die("type-4: no-feature Save returned false");
+
+    Placement_Install(&f4_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00F4, settings_hash, share_string);
+    Rando_SetSnapshotRecommendedFeaturesContext(
+        kFeatures0_RestoreJpGlitches | kFeatures0_WidescreenVisualFixes,
+        true);
+
+    FILE *ff = tmpfile();
+    if (ff == NULL) selfcheck_die("type-4: tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(ff)) selfcheck_die("type-4: Save returned false");
+
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+
+    fseek(ff, 0, SEEK_SET);
+    int nf = RandoSnapshotTail_Load(ff);
+    if (nf != 3) selfcheck_die("type-4: expected RandoState + CheckedBitmap + RecommendedFeatures");
+    if (!(g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+        !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+        !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+      selfcheck_die("type-4: RestoreJpGlitches not restored");
+    if (!(g_config.features0 & kFeatures0_ExtendScreen64) ||
+        !(g_wanted_zelda_features & kFeatures0_ExtendScreen64) ||
+        !(enhanced_features0 & kFeatures0_ExtendScreen64))
+      selfcheck_die("type-4: non-slot live feature not preserved");
+    if ((g_config.features0 & kFeatures0_WidescreenVisualFixes) ||
+        (g_wanted_zelda_features & kFeatures0_WidescreenVisualFixes) ||
+        (enhanced_features0 & kFeatures0_WidescreenVisualFixes))
+      selfcheck_die("type-4: non-Seed-QoL snapshot bit was applied");
+    fclose(ff);
+
+    FILE *frf = tmpfile();
+    if (frf == NULL) selfcheck_die("type-4: re-save tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(frf)) selfcheck_die("type-4: re-save returned false");
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(frf, 0, SEEK_SET);
+    int nfr = RandoSnapshotTail_Load(frf);
+    if (nfr != 3) selfcheck_die("type-4: re-save must perpetuate RecommendedFeatures");
+    if (!(g_config.features0 & kFeatures0_RestoreJpGlitches))
+      selfcheck_die("type-4: re-saved features did not round-trip");
+    fclose(frf);
+
+    fseek(fold4, 0, SEEK_SET);
+    int nof = RandoSnapshotTail_Load(fold4);
+    if (nof != 2)
+      selfcheck_die("type-4: no-feature snapshot should recognize type-1 + type-3 only");
+    FILE *fleak = tmpfile();
+    if (fleak == NULL) selfcheck_die("type-4: stale-context tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fleak))
+      selfcheck_die("type-4: stale-context re-save returned false");
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(fleak, 0, SEEK_SET);
+    int nleak = RandoSnapshotTail_Load(fleak);
+    if (nleak != 2)
+      selfcheck_die("type-4: no-feature snapshot re-save inherited stale TLV");
+    if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+        (g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+        (enhanced_features0 & kFeatures0_RestoreJpGlitches))
+      selfcheck_die("type-4: stale recommended features applied after no-feature replay");
+    fclose(fleak);
+    fclose(fold4);
+
+    g_config.features0 = saved_config_features0;
+    g_wanted_zelda_features = saved_wanted_features0;
+    enhanced_features0 = saved_enhanced_features0;
+    Rando_ClearSnapshotContext();
   }
 
   // -------------------------------------------------------------------------

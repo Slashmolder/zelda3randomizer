@@ -129,7 +129,7 @@ axis via `item_pool`.
 | `enemy_shuffle` | `true`, `false` | `false` (experimental; deterministic non-boss enemy type + stat shuffle; see [Enemy shuffle](#enemy-shuffle-experimental)) |
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
-| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under door shuffle or cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
+| `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -192,7 +192,11 @@ them; enabling one has no placement effect (and surfaces the unverified warning)
 > On PC, the Seed QoL tab also exposes a per-slot "Restore JP 1.0 glitches"
 > toggle for NoGlitches seeds that want the gameplay glitches as an opt-in play
 > preference. It is recommended off, does not affect the settings hash/share
-> string, and is separate from the cosmetic JP overworld music feature.
+> string, and is separate from the cosmetic JP overworld music feature. When an
+> active seed forces the bit, the normal Game Settings checkbox is shown checked
+> and disabled as an active-seed override, so applying config changes cannot
+> turn the required runtime support off mid-seed or silently save the forced bit
+> as the user's global preference.
 > Note this guarantees the runtime can perform the **restored** subset (Fake
 > Flippers + Superspeed); an OWG/HMG/MG seed may still route through an
 > un-restored technique (boots-clip, mirror-clip, water-walk, one-frame-clip, …)
@@ -403,14 +407,19 @@ the actually-generated seed):
 - The dungeon map still shows room *positions*; with shuffled doors its implied
   adjacency no longer matches the connections.
 
-The layout is **not stored in the save** — it regenerates from
+The full layout is **not stored in the save** — it regenerates from
 `(seed, settings, door_attempt @76)` at slot activation, and a persisted
 24-bit layout digest (@77-79) **hard-fails activation on mismatch** (a drifted
 interior layout could make the certified-beatable placement unbeatable, so a
 door-shuffle slot refuses to load on a build that regenerates a different
 layout; entrance shuffle uses the same digest gate via the sidecar-v3
 `entrance_digest24` — only pre-v3 entrance slots keep the old non-blocking
-version-drift warning). The
+version-drift warning). State snapshots carry the same door attempt + digest in
+a separate TLV and replay through the same digest gate; snapshot replay first
+clears currently installed door layout state, and a door-layout TLV tears down
+any entrance-shuffle layout before installing the digest-checked door graph.
+Older snapshots with no door-layout TLV fail closed instead of inheriting a
+different slot's door layout. The
 spoiler gains a `door_shuffle` section listing every pairing + the relocated
 key doors with their worst-case key thresholds. Logic-side, dungeon-interior
 reachability is computed by the same crystal-barrier-aware explorer the
@@ -438,12 +447,12 @@ an in-scope pot grants its placed item; un-checked in-scope pots show an **anima
 gold glint** as a visual tell (the pot and surrounding floor are not recolored). The non-`off` tiers add fillable locations and so change
 placement output; `off` is byte-identical.
 
-**Forced `off` under door shuffle or cave-entrance shuffle** (normalized
-automatically — the settings hash always matches the generated seed): door
-shuffle's key-door prover doesn't model pot locations yet, and cave-entrance
-shuffle relocates cave/house pots out of the region their logic was certified
-against, so neither can be combined with pots in this version. The native
-settings window greys out the pot selector while either is on.
+Door shuffle composes with pot shuffle: the door key-door prover and logic
+oracle model active dungeon pots through the generated door-region bridge. Cave
+entrance shuffle still forces pots `off` automatically because cave/house pots
+would otherwise evaluate from the region their vanilla logic was certified
+against. The native settings window only greys out the pot selector while cave
+entrance shuffle is on.
 
 Because `all` adds ~800 locations, the PC trackers gate pots behind a **"Show
 pots"** toggle (the SNES HUD location grid hides them outright), but every
@@ -692,13 +701,16 @@ to `kSettingsCanonicalLen` by a `_Static_assert`; the round-trip + a v1-compat
 case are covered by `RandoSave_SelfCheck` (`--rando-selftest`).
 
 **format_version 3**: each slot appends a fixed 8-byte extension block after
-the settings blob (the 80-byte slot header is fully claimed). It carries
+the settings blob (the 80-byte slot header is fully claimed). Bytes 0-2 carry
 `entrance_digest24` — the entrance-shuffle analogue of the door-shuffle
 `door_digest24`: a 24-bit digest over everything the runtime entrance install
 regenerates from (seed, axes, attempt). Activation recomputes it and **refuses
 the slot on mismatch** (a drifted entrance layout can make the
-certified-beatable placement unbeatable). Older v1/v2 slots have no block,
-read digest 0, and keep the previous warn-only version-drift behavior; a
+certified-beatable placement unbeatable). Bytes 3-6 carry the masked Seed QoL
+`recommended_features0` snapshot (`kFeatures0_RandoSeedQolMask` only; not
+geometry/restart/local config), and byte 7 marks whether that snapshot is
+present. Older v1/v2 slots have no block, read digest 0 / no feature snapshot,
+and keep the previous warn-only version-drift and live-feature behavior; a
 v2-compat load case is covered by `RandoSave_SelfCheck`.
 
 Atomic-commit: write `<file>.tmp`, fflush, fsync (POSIX) / `_commit` (Windows),
@@ -1226,7 +1238,12 @@ seconds locally) and the bumper is idempotent.
   TLV-tail format carries `generator_version` in the
   `TAIL_RANDO_STATE` payload. Replay on a different version uses the
   embedded settings + placement; the runtime treats them as
-  authoritative.
+  authoritative. Additional TLVs carry process state outside the SNES RAM
+  dump, including checked-location bitmap state, recovered seed settings for
+  replay, door-shuffle layout identity (`door_attempt` + `door_digest24`) for
+  digest-gated door-graph reconstruction after clearing stale door state, and the masked Seed QoL
+  `recommended_features0` snapshot so manual per-slot gameplay-feature opt-ins
+  survive snapshot replay as well as normal sidecar slot loads.
 - **Suppressed race-mode files** (`<spoiler>.json` ZRSR format):
   `Rando_RevealSpoiler` enforces version match — a v=N file
   produced against the runtime's current v=N+k binary returns

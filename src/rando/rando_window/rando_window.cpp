@@ -1210,10 +1210,8 @@ static void Panel_Shuffles() {
                 "move too. Hyrule Castle and Swamp Palace stay vanilla.");
 
     // add-rando-pot-sanity — pot shuffle tier. Disabled whenever generation
-    // forces pots off (Settings_PotShuffleForcedOff: door shuffle OR cave-entrance
-    // shuffle): the prover doesn't jointly model pots with either yet, so
-    // generation normalizes pot_shuffle to Off. The grey-out uses the SAME
-    // predicate so the UI is honest about what will actually generate.
+    // forces pots off (Settings_PotShuffleForcedOff: cave-entrance shuffle).
+    // Door shuffle composes through the generated door x pot bridge.
     {
       bool pot_off = Settings_PotShuffleForcedOff(s);
       ImGui::BeginDisabled(pot_off);
@@ -1222,8 +1220,7 @@ static void Panel_Shuffles() {
                   "only; Contents adds loot pots; All adds the empty pots too.");
       ImGui::EndDisabled();
       if (pot_off)
-        ImGui::TextDisabled("Pot shuffle is unavailable while Door shuffle or "
-                            "Cave entrance shuffle is on.");
+        ImGui::TextDisabled("Pot shuffle is unavailable while Cave entrance shuffle is on.");
     }
 
     if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {

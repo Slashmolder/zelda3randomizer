@@ -444,10 +444,62 @@ int Door_CountFreeLocs(uint8 dungeon, const DoorExploreResult *res, bool exclude
   return n;
 }
 
-int Door_CountDropKeys(uint8 dungeon, const DoorExploreResult *res) {
+bool Door_DropExcludedByActivePot(uint8 dungeon, uint16 drop_index, uint8 pot_tier) {
+  if (pot_tier == kPotShuffle_Off || drop_index == 0xFFFF)
+    return false;
+  for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
+    const RandoDoorPotLocation *p = &kRandoDoorPotLocations[i];
+    if (p->dungeon == dungeon && p->drop_index == drop_index &&
+        (p->flags & kDoorPot_KeyPot) && Rando_DoorPotActive(p, pot_tier))
+      return true;
+  }
+  return false;
+}
+
+static bool DoorPotRegionsReached(const RandoDoorPotLocation *p, const DoorExploreResult *res) {
+  for (uint8 i = 0; i < p->region_count; i++) {
+    uint16 region = kRandoDoorPotRegions[p->region_first + i];
+    if (!DoorExplore_Reached(res, region))
+      return false;
+  }
+  return p->region_count != 0;
+}
+
+int Door_CountActivePotKeySources(uint8 dungeon, const DoorExploreResult *res,
+                                  uint8 pot_tier) {
+  if (pot_tier == kPotShuffle_Off)
+    return 0;
+  int n = 0;
+  for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
+    const RandoDoorPotLocation *p = &kRandoDoorPotLocations[i];
+    if (p->dungeon != dungeon || !(p->flags & kDoorPot_KeySource) ||
+        !Rando_DoorPotActive(p, pot_tier))
+      continue;
+    if (!DoorPotRegionsReached(p, res))
+      continue;
+    n++;
+  }
+  return n;
+}
+
+int Door_CountActiveKeyPots(uint8 dungeon, uint8 pot_tier) {
+  if (pot_tier == kPotShuffle_Off)
+    return 0;
+  int n = 0;
+  for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
+    const RandoDoorPotLocation *p = &kRandoDoorPotLocations[i];
+    if (p->dungeon == dungeon && (p->flags & kDoorPot_KeyPot) &&
+        Rando_DoorPotActive(p, pot_tier))
+      n++;
+  }
+  return n;
+}
+
+int Door_CountDropKeys(uint8 dungeon, const DoorExploreResult *res, uint8 pot_tier) {
   int n = 0;
   for (int i = 0; i < kDoorTbl_DropKeyCount; i++)
     if (kDoorTblDropKeys[i].dungeon == dungeon &&
+        !Door_DropExcludedByActivePot(dungeon, (uint16)i, pot_tier) &&
         DoorExplore_Reached(res, kDoorTblDropKeys[i].region))
       n++;
   return n;
@@ -486,7 +538,8 @@ void DoorExplore_Core(const DoorExploreSpec *spec, DoorExploreResult *out) {
     // Threshold-mode key budget: chest keys held + reachable drop keys.
     int key_budget = 0;
     if (spec->bk_mode == kDoorBkMode_Held && spec->held_keys)
-      key_budget = spec->held_keys[spec->dungeon] + Door_CountDropKeys(spec->dungeon, out);
+      key_budget = spec->held_keys[spec->dungeon] +
+                   Door_CountDropKeys(spec->dungeon, out, spec->pot_tier);
 
     for (int r = dg->region_first; r < dg->region_first + dg->region_count; r++) {
       uint8 src = colors[r];
@@ -607,6 +660,7 @@ void DoorExplore_Run(const DoorShuffleLayout *layout, uint8 dungeon,
       spec.thresholds = t;
       spec.held_keys = gates->held_keys;
       spec.big_key_held = gates->big_key_held;
+      spec.pot_tier = t->pot_tier;
       spec.bk_mode = kDoorBkMode_Held;
     } else if (gates->big_key_held) {
       spec.big_key_held = gates->big_key_held;
@@ -1058,6 +1112,7 @@ static uint64 DoorSeedSalt(uint64 seed, uint32 attempt, uint8 dungeon) {
 static uint8 g_door_fail_stage;  // selftest diagnostics: 0 ok, 1 stitch, 2 keys
 
 bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
+                          uint8 pot_tier,
                           DoorShuffleLayout *out) {
   DoorIdx_Init();
   memset(out->pairing, 0xFF, sizeof(out->pairing));
@@ -1066,6 +1121,8 @@ bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
   memset(out->key_worst_case, 0, sizeof(out->key_worst_case));
   out->bk_restricted_count = 0;
   out->shuffled_mask = 0;
+  out->pot_tier = pot_tier;
+  out->pot_bridge_digest = pot_tier ? kRandoDoorPotBridgeDigest : 0;
   g_door_fail_stage = 0;
   for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
     if (!((dungeon_mask >> d) & 1))
@@ -1091,7 +1148,10 @@ uint32 DoorShuffle_LayoutDigest(const DoorShuffleLayout *l) {
   uint64 h = 0xcbf29ce484222325ull;
 #define DIG8(b) (h = (h ^ (uint8)(b)) * 0x100000001b3ull)
 #define DIG16(w) (DIG8((w) & 0xFF), DIG8((w) >> 8))
+#define DIG32(w) (DIG16((w) & 0xFFFF), DIG16((w) >> 16))
   DIG16(l->shuffled_mask);
+  DIG8(l->pot_tier);
+  DIG32(l->pot_bridge_digest);
   for (int i = 0; i < kDoorTbl_DoorCount; i++) {
     if (l->pairing[i] != 0xFFFF) {
       DIG16((uint16)i);
@@ -1110,6 +1170,7 @@ uint32 DoorShuffle_LayoutDigest(const DoorShuffleLayout *l) {
     DIG16(l->bk_restricted[i]);
 #undef DIG8
 #undef DIG16
+#undef DIG32
   return (uint32)(h ^ (h >> 32));
 }
 
@@ -1132,7 +1193,8 @@ static bool SelfTest_GreedyComplete(const DoorShuffleLayout *l, uint8 dungeon,
     pairs[i].b = (kDoorTblDoors[a].type == kDoorTblType_SpiralStairs)
                      ? 0xFFFF : Door_PartnerOf(a, l);
   }
-  int max_chests = kDoorTblDungeons[dungeon].chest_small_keys;
+  int max_small_sources = kDoorTblDungeons[dungeon].chest_small_keys +
+                          Door_CountActiveKeyPots(dungeon, l->pot_tier);
   uint32 mask = 0;
   bool bk = false;
   int used_locations = 0;
@@ -1149,6 +1211,7 @@ static bool SelfTest_GreedyComplete(const DoorShuffleLayout *l, uint8 dungeon,
     spec.open_mask = mask;
     spec.bk_mode = kDoorBkMode_State;
     spec.bk_open = bk;
+    spec.pot_tier = l->pot_tier;
     DoorExplore_Core(&spec, &res);
     // closed-but-reachable children
     uint32 child = 0;
@@ -1195,10 +1258,12 @@ static bool SelfTest_GreedyComplete(const DoorShuffleLayout *l, uint8 dungeon,
     for (int i = 0; i < np; i++)
       used += (mask >> i) & 1;
     int ttl = Door_CountFreeLocs(dungeon, &res, !bk);
-    int key_only = Door_CountDropKeys(dungeon, &res);
+    int key_only = Door_CountDropKeys(dungeon, &res, l->pot_tier);
+    int pot_free = Door_CountActivePotKeySources(dungeon, &res, l->pot_tier);
     int chest = ttl - (bk ? 1 : 0);
-    if (chest > max_chests)
-      chest = max_chests;
+    chest += pot_free;
+    if (chest > max_small_sources)
+      chest = max_small_sources;
     int avail_small = chest + key_only - used;
     int avail_big = bk ? 0 : ttl - used_locations;
     if (child && avail_small > 0) {
@@ -1225,6 +1290,12 @@ int DoorShuffle_SelfTest(void) {
   enum { kSeeds = 20, kMaxAttempts = 16 };
   int total_fail = 0, total_pairs = 0;
   bool hard_fail = false;
+
+  if (DoorRt_GeometrySelfCheck() != 0) {
+    hard_fail = true;
+  } else {
+    printf("door-selftest: runtime geometry decode ok\n");
+  }
 
   for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
     const char *name = DoorIdx_Name(kDoorTblDungeons[d].name_off);
@@ -1253,7 +1324,7 @@ int DoorShuffle_SelfTest(void) {
       bool got = false;
       uint32 att = 0;
       for (; att < kMaxAttempts; att++) {
-        if (DoorShuffle_Generate(s, att, (uint16)(1u << d), &layout)) {
+        if (DoorShuffle_Generate(s, att, (uint16)(1u << d), kPotShuffle_Off, &layout)) {
           got = true;
           break;
         }
@@ -1280,7 +1351,7 @@ int DoorShuffle_SelfTest(void) {
         hard_fail = true;
       }
       // (d) determinism: regenerate at the same (seed, attempt).
-      if (!DoorShuffle_Generate(s, att, (uint16)(1u << d), &layout2) ||
+      if (!DoorShuffle_Generate(s, att, (uint16)(1u << d), kPotShuffle_Off, &layout2) ||
           DoorShuffle_LayoutDigest(&layout) != DoorShuffle_LayoutDigest(&layout2)) {
         fprintf(stderr, "door-selftest: %s seed %d: regeneration digest mismatch\n", name, seed);
         hard_fail = true;
@@ -1314,7 +1385,7 @@ int DoorShuffle_SelfTest(void) {
       uint32 att = 0;
       bool got = false;
       for (; att < kMaxAttempts; att++) {
-        if (DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, &full)) {
+        if (DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, kPotShuffle_Off, &full)) {
           got = true;
           break;
         }
@@ -1324,7 +1395,7 @@ int DoorShuffle_SelfTest(void) {
         hard_fail = true;
         continue;
       }
-      if (!DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, &full2) ||
+      if (!DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, kPotShuffle_Off, &full2) ||
           DoorShuffle_LayoutDigest(&full) != DoorShuffle_LayoutDigest(&full2)) {
         fprintf(stderr, "door-selftest: full-mask seed %d digest mismatch\n", seed);
         hard_fail = true;

@@ -841,35 +841,14 @@ void TriforceRoom_LinkApproachTriforce() {  // 87f49c
   }
 }
 
-void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
-  int ancilla = Ancilla_AddAncilla(ain, yin);
-  if (ancilla < 0)
-    return;
-
-  // A vanilla pickup repaints the shared receive-item VRAM slot (chars
-  // 0x24/0x34) via DecodeAnimatedSpriteTile_variable further down. Under rando,
-  // a direct-grant confirmation icon (kAncillaType_RandoIconReceipt) may still
-  // be floating from a recent silent grant; it draws from that same slot and
-  // would abruptly render this pickup's tiles. Retire it so it never shows the
-  // wrong item. Type 0x44 never exists outside rando, so this is a no-op in the
-  // vanilla side-by-side path.
-  if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    for (int i = 0; i < 5; i++) {
-      if (ancilla_type[i] == kAncillaType_RandoIconReceipt)
-        ancilla_type[i] = 0;
-    }
-  }
-
-  flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
+bool ItemReceipt_GrantInventory(uint8 j) {
   uint8 t;
-
-  int j = link_receiveitem_index;
   // Defensive bound guard: every array below (kValueToGiveItemTo,
   // kMemoryLocationToGiveItemTo, …) is sized 76 (0x4C) and indexed by j. The
   // currently-defined receive codes are all < 0x4C, so this is a no-op today; it
   // exists so a future receive code >= 0x4C can't read past these tables.
   if (j >= 76)
-    return;
+    return false;
   if (j == 0) {
     // Vanilla "GiveSwordAndShield": receiving the L1 (Fighter) sword also grants
     // the Fighter shield. In vanilla this fires once (from Uncle), but under rando
@@ -1000,6 +979,36 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   } else {
     ItemReceipt_GiveBottledItem(j);
   }
+  return true;
+}
+
+void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
+  int j = link_receiveitem_index;
+  if (j >= 76)
+    return;
+
+  int ancilla = Ancilla_AddAncilla(ain, yin);
+  if (ancilla < 0)
+    return;
+
+  // A vanilla pickup repaints the shared receive-item VRAM slot (chars
+  // 0x24/0x34) via DecodeAnimatedSpriteTile_variable further down. Under rando,
+  // a direct-grant confirmation icon (kAncillaType_RandoIconReceipt) may still
+  // be floating from a recent silent grant; it draws from that same slot and
+  // would abruptly render this pickup's tiles. Retire it so it never shows the
+  // wrong item. Type 0x44 never exists outside rando, so this is a no-op in the
+  // vanilla side-by-side path.
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    for (int i = 0; i < 5; i++) {
+      if (ancilla_type[i] == kAncillaType_RandoIconReceipt)
+        ancilla_type[i] = 0;
+    }
+  }
+
+  flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
+
+  if (!ItemReceipt_GrantInventory((uint8)j))
+    return;
 
   uint8 gfx = kReceiveItemGfx[j];
   if (gfx == 0xff) {

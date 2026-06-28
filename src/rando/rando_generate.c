@@ -17,7 +17,7 @@
 
 #include "../zelda_rtl.h"     // g_zenv, ZeldaWriteSram
 #include "../config.h"        // g_config (.features0)
-#include "../features.h"      // kFeatures0_RestoreJpGlitches (D6 glitch coupling)
+#include "../features.h"      // Seed QoL feature mask + JP-glitch coupling
 #include "../load_gfx.h"      // kSrmOffs_Name, kSrmOffs_DiedCounter
 #include "../select_file.h"   // Intro_FixCksum
 #include "rando.h"            // kGeneratorVersion
@@ -41,6 +41,14 @@ static uint32 g_door_gen_digest24;
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+static uint8 door_pot_tier_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla ||
+      Settings_PotShuffleForcedOff(settings))
+    return kPotShuffle_Off;
+  return settings->pot_shuffle;
+}
 
 static bool copy_active_medallion_assignment(uint8 out[kRandoMedallionEntranceCount]) {
   const uint8 *assignment = Rando_GetMedallionAssignment();
@@ -311,6 +319,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // are persisted (@76-79) so activation can regenerate + drift-check.
     for (uint32 datt = 0; datt < 16; datt++) {
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
+                                door_pot_tier_for_settings(settings),
                                 &g_door_gen_layout))
         continue;
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
@@ -379,6 +388,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
                                        const RandoGenerateShapeOptions *shape,
                                        RandoGenerateResult *out,
                                        char *err, size_t err_cap) {
+  uint32 user_recommended_features0 = recommended_features0;
   if (err != NULL && err_cap > 0) err[0] = '\0';
 
   // Refuse an out-of-range slot BEFORE any SRAM/sidecar write. The SRAM init
@@ -687,6 +697,18 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   if (Settings_EffectiveDoorShuffle(settings) != kDoorShuffle_Vanilla) {
     Rando_GetDoorGeneration(&slot.header.door_attempt, &slot.header.door_digest24);
   }
+  // add-rando-major-glitch D6 — couple a glitch-logic seed to the JP-1.0
+  // glitch runtime flag. The placer ASSUMED restored glitches are performable
+  // for logic>=OverworldGlitches / fake-flippers seeds; the runtime MUST
+  // provide them or this assumed-fill-certified seed is an unreachable-item
+  // soft-softlock. Force the bit into the slot's recommended features before
+  // serializing the sidecar so reloads preserve the guarantee.
+  if (Rando_SettingsAssumeJpGlitches(settings)) {
+    recommended_features0 |= kFeatures0_RestoreJpGlitches;
+  }
+  slot.header.recommended_features0 =
+      recommended_features0 & kFeatures0_RandoSeedQolMask;
+  slot.header.recommended_features0_present = 1;
   // Copy placements + compute placement_table_size (BYTES = 2 * max_loc_id + 2).
   if (table.count > (uint16)(sizeof(slot.placements) / sizeof(slot.placements[0]))) {
     if (err != NULL)
@@ -733,25 +755,12 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   // Commit the vanilla SRAM image too (sidecar first by spec; then sram.dat).
   ZeldaWriteSram();
 
-  // add-rando-major-glitch D6 — couple a glitch-logic seed to the JP-1.0
-  // glitch runtime flag. The placer ASSUMED restored glitches are performable
-  // for logic>=OverworldGlitches / fake-flippers seeds; the runtime MUST
-  // provide them or this assumed-fill-certified seed is an unreachable-item
-  // soft-softlock. Force the bit into the slot's recommended features so the
-  // apply below turns it on. features0 is config state (NOT canonical
-  // settings) → placement is byte-identical; the corpus never moves.
-  // The slot-LOAD path (Rando_ActivateSidecarSlot) re-forces this live on
-  // every reload, so the guarantee holds even for imported share strings.
-  if (Rando_SettingsAssumeJpGlitches(settings)) {
-    recommended_features0 |= kFeatures0_RestoreJpGlitches;
-  }
-
   // Apply recommended-features panel choices (if user toggled). Per spec
   // the user must opt in explicitly; we honor whatever state the panel
-  // reflects (recommended_features0 vs g_config.features0). The user
-  // changed bits — that's the explicit opt-in.
-  if (recommended_features0 != g_config.features0) {
-    g_config.features0 = recommended_features0;
+  // reflected before logic-required runtime overlays were added to the slot
+  // sidecar. The user changed bits — that's the explicit opt-in.
+  if (user_recommended_features0 != g_config.features0) {
+    g_config.features0 = user_recommended_features0;
   }
 
   // If the caller wants the placement, hand it an independently malloc'd copy

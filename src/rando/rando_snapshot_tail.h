@@ -6,7 +6,7 @@
 //
 //   TLV entry = magic[8] + type[4] LE + length[4] LE + payload[length]
 //
-// Phase A emits a single TLV of type TAIL_RANDO_STATE with payload:
+// The base TLV is TAIL_RANDO_STATE with payload:
 //
 //   generator_version[2] LE
 //   settings_hash[16]
@@ -22,10 +22,10 @@
 // binaries reading older snapshots terminate the TLV loop on EOF or
 // non-matching magic — both are valid steady states.
 //
-// Across generator versions the embedded `generator_version` is the payload-
-// schema discriminator (spec scenario "Newer binary reads older rando
-// snapshot (cross-version TLV)"). Phase A has one schema; future schema
-// changes dispatch on this field.
+// Additional state is carried by separate TLVs so older readers can skip
+// unknown types. Across generator versions the embedded `generator_version` in
+// TAIL_RANDO_STATE remains the placement/schema discriminator (spec scenario
+// "Newer binary reads older rando snapshot (cross-version TLV)").
 
 #ifndef ZELDA3_RANDO_SNAPSHOT_TAIL_H_
 #define ZELDA3_RANDO_SNAPSHOT_TAIL_H_
@@ -54,6 +54,14 @@
 // pot as un-checked (recolored, re-grantable on a cold replay). A SEPARATE TLV so
 // older binaries skip it as an unknown type. add-rando-pot-sanity.
 #define kRandoSnapshotTail_Type_CheckedBitmap 3u
+// Masked per-slot Seed QoL features0 snapshot. This is separate from type 2 so
+// older TLV-aware readers that only know RandoSettings keep reading type 2 and
+// simply skip this newer payload.
+#define kRandoSnapshotTail_Type_RecommendedFeatures 4u
+// Accepted door-shuffle layout identity (attempt + digest). The layout itself
+// is regenerated from (share_string seed, canonical settings, attempt) on replay
+// and must match the digest before runtime redirects are installed.
+#define kRandoSnapshotTail_Type_DoorLayout 5u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the
@@ -87,6 +95,15 @@ const uint8 *Rando_GetSnapshotShareString(void);   // [32]
 // — Rando_ClearSnapshotContext clears both.
 void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
                                       uint8 prize_attempt);
+
+// Optional door-shuffle layout identity for snapshot replay.
+void Rando_SetSnapshotDoorContext(uint8 door_attempt, uint32 door_digest24,
+                                  bool present);
+
+// Optional per-slot Seed QoL feature snapshot for snapshot replay.
+// `present=false` suppresses the type-4 TLV; `present=true` stores features0
+// masked to kFeatures0_RandoSeedQolMask.
+void Rando_SetSnapshotRecommendedFeaturesContext(uint32 features0, bool present);
 
 // ---------------------------------------------------------------------------
 // Save: append the TLV chain to `f` (already at end of the 4-chunk write).

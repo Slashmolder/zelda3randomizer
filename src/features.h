@@ -136,6 +136,25 @@ enum {
   kFeatures0_JpOverworldMusic = 524288,  // bit 19
 };
 
+// Per-randomizer-slot Seed QoL features. These are gameplay/accessibility
+// preferences exposed by the randomizer Seed QoL panels (rando_window.cpp
+// kRecBits) and safe to replay when loading that slot. Deliberately excludes
+// geometry/restart-gated/local config bits such as ExtendScreen64,
+// WidescreenVisualFixes, MoreActiveBombs, MirrorToDarkworld, CancelBirdTravel,
+// EasyMinigames, and JpOverworldMusic.
+#define kFeatures0_RandoSeedQolMask ( \
+    kFeatures0_SkipIntroOnKeypress | \
+    kFeatures0_ShowMaxItemsInYellow | \
+    kFeatures0_TurnWhileDashing | \
+    kFeatures0_CollectItemsWithSword | \
+    kFeatures0_BreakPotsWithSword | \
+    kFeatures0_DisableLowHealthBeep | \
+    kFeatures0_CarryMoreRupees | \
+    kFeatures0_MiscBugFixes | \
+    kFeatures0_GameChangingBugFixes | \
+    kFeatures0_RestoreJpGlitches | \
+    kFeatures0_DimFlashes)
+
 // Enum values for kRam_Features1 (randomizer feature flags).
 // Bits land here as Phase A features are implemented. The enum exists from
 // A0 so the CI guards have something to scan; the values are populated

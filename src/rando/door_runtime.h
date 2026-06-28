@@ -53,6 +53,12 @@ void Rando_DoorStaircaseContext(bool entering);
 // remainder. No-op unless DoorRt_Arrive armed it.
 void Rando_DoorScrollFinePan(bool scroll_done);
 
+// dungeon.c hook (SubtileTransitionCalculateLanding): after vanilla rewrites
+// the landing coordinate's low byte, re-page that coordinate to the final
+// camera page for redirected edge-door arrivals. No-op unless DoorRt_Arrive
+// armed it.
+void Rando_DoorLandingPageFix(void);
+
 // dungeon.c hook: spiral staircases. Returns the destination room byte
 // (vanilla_byte when unshuffled/off). `attr` is the staircase tile attribute
 // (0x5e/0x5f circular spirals only — straight/fat stair attrs 0x38/0x39/0x26
@@ -106,6 +112,11 @@ bool DoorRt_InstallKindOverlay(const DoorShuffleLayout *l);
 // abandoned vanilla key doors un-keyed, blocked/pinned doors untouched).
 // Returns 0 on success, the number of violations otherwise (stderr details).
 int DoorRt_KindOverlaySelfCheck(const DoorShuffleLayout *l);
+
+// Selftest: every shuffle-pool positional door must decode to the cataloged
+// outer slot used by the runtime exit resolver and arrival alignment, and no
+// normal door pair may share one runtime candidate.
+int DoorRt_GeometrySelfCheck(void);
 
 // dungeon.c seam: the single door-list-word override. All three door-list
 // consumers (RoomDraw_DrawAllObjects's post-0xfff0 door loop,

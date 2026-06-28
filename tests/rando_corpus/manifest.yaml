@@ -859,8 +859,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
-    expected_digest: "35a95d38df12495acdc039bd1ffd36451c13353e446f978346a37ecbfc3d7ad7"
-    expected_sphere_digest: "48f06d04ec6f19498cbac270cf0eccdbd1032ac93e19fa8d81f7cdd4a734b27c"
+    expected_digest: "5058bdfb6bf35940c2b22bcf0fd145487b96a7b7bbc30a2d17a9170a854a7c9d"
+    expected_sphere_digest: "7b2bba7db8d6dad106255b798e73dc207192722795b4407226e7adc8bd9e023e"
+  - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, door_shuffle: basic }
+    seed: "0x504F54000000000A"
+    label: "pot-all-door-basic-open"
+    expected_digest: "7b6a2ed1de804f39afff00513c5cf68c21039f59dfc3b90225bd3070f894a9e5"
+    expected_sphere_digest: "aadc37909fab69f27a19dce5c8cf4d84b8d1bc7bbd76f9da4073c409ef0ea1d4"
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"

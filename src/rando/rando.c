@@ -46,6 +46,7 @@
 #include "../assets.h"     // Phase C entrance overlay: g_asset_ptrs[126] / kOverworld_Entrance_Id
 #include "../features.h"   // g_rando_triforce_piece_count
 #include "../overworld.h"  // ForceNonbunnyStatus
+#include "../dungeon.h"    // RandoPot_OverlayOamSelfCheck
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
 #include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
@@ -572,6 +573,7 @@ uint16 Rando_PickTrapEffectId(uint64 seed, uint16 location_id, uint8 categories,
 // g_ram-backed PPU state (e.g. a Darkness blackout) when a new trap pre-empts it.
 void Dungeon_ApproachFixedColor_variable(uint8 a);
 static void rando_trap_effect_teardown(uint8 effect);
+static void rando_tick_deferred_pot_confirmation(void);
 
 static uint8 g_rando_trap_stun_timer;
 static uint8 g_rando_trap_effect;
@@ -1030,6 +1032,7 @@ static bool rando_decoy_icon_active(void) {
 
 void Rando_TickTrapEffects(void) {
   rando_clear_bad_trap_wall_spark_residue();
+  rando_tick_deferred_pot_confirmation();
 
   if (g_rando_trap_stun_timer == 0) return;
 
@@ -1810,7 +1813,12 @@ static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_b
 static bool rando_receive_icon_for_code(uint8 code, uint8 *out_gfx, uint8 *out_big,
                                         uint8 *out_oam_flags);
 
-void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
+static void rando_direct_grant_chime_and_hud(void) {
+  sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
+  Hud_RefreshIcon();
+}
+
+static void rando_show_direct_grant_icon_only(uint8 item_id) {
   // every caller passes `(uint8)Rando_LastDispatched
   // ItemId()`; the cast loses precision if the sentinel value 0xFFFF
   // ever reaches us. The skip-sentinel path only runs AFTER a successful
@@ -1821,10 +1829,6 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // future change that calls this WITHOUT a prior dispatch fires loudly.
   assert(item_id != 0xFFu /* sentinel byte from 0xFFFF truncation */ ||
          Rando_LastDispatchedItemId() != 0xFFFFu);
-  // Traps deliberately start with the normal direct-grant chime; the trap-owned
-  // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
-  sound_effect_2 = (uint8)(Link_CalculateSfxPan() | 0x0f);
-  Hud_RefreshIcon();
 
   // Look up the visual icon. Traps use the same deterministic decoy
   // resolver as field-item sprites so the visible fake item and pickup popup
@@ -1851,6 +1855,13 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
     AncillaAdd_RandoIconReceipt(gfx, big, oam);
 }
 
+void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
+  // Traps deliberately start with the normal direct-grant chime; the trap-owned
+  // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
+  rando_direct_grant_chime_and_hud();
+  rando_show_direct_grant_icon_only(item_id);
+}
+
 void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
   if (Rando_ShouldSkipReceive(lttp_code)) {
     Rando_ShowDirectGrantConfirmation(item_id);
@@ -1859,42 +1870,173 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
   }
 }
 
+typedef struct RandoPotCarrySnapshot {
+  uint8 flag_immobilized;
+  uint8 flag_sprite_pickup;
+  uint8 flag_ancilla_pickup;
+  uint8 flag_sprite_pickup_cached;
+  uint8 pickup_handshake;
+  uint8 player_handler;
+  uint8 item_in_hand;
+  uint8 state_bits;
+  uint8 picking_throw_state;
+  uint8 anim_timer_steps;
+  uint8 anim_timer;
+  uint8 button_mask;
+  uint8 a_button;
+  uint8 button_frames;
+  uint8 speed;
+  uint8 cant_change_dir;
+  uint8 player_handler_state;
+  uint8 pose_for_item;
+  uint8 position_mode;
+  uint8 disable_sprite_damage;
+} RandoPotCarrySnapshot;
+
+static RandoPotCarrySnapshot rando_pot_capture_carry_state(void) {
+  RandoPotCarrySnapshot s;
+  s.flag_immobilized = flag_is_link_immobilized;
+  s.flag_sprite_pickup = flag_is_sprite_to_pick_up;
+  s.flag_ancilla_pickup = flag_is_ancilla_to_pick_up;
+  s.flag_sprite_pickup_cached = flag_is_sprite_to_pick_up_cached;
+  s.pickup_handshake = byte_7E0FB2;
+  s.player_handler = player_handler_timer;
+  s.item_in_hand = link_item_in_hand;
+  s.state_bits = link_state_bits;
+  s.picking_throw_state = link_picking_throw_state;
+  s.anim_timer_steps = some_animation_timer_steps;
+  s.anim_timer = some_animation_timer;
+  s.button_mask = button_mask_b_y;
+  s.a_button = bitfield_for_a_button;
+  s.button_frames = button_b_frames;
+  s.speed = link_speed_setting;
+  s.cant_change_dir = link_cant_change_direction;
+  s.player_handler_state = link_player_handler_state;
+  s.pose_for_item = link_pose_for_item;
+  s.position_mode = link_position_mode;
+  s.disable_sprite_damage = link_disable_sprite_damage;
+  return s;
+}
+
+static void rando_pot_restore_carry_state(const RandoPotCarrySnapshot *s) {
+  flag_is_link_immobilized = s->flag_immobilized;
+  flag_is_sprite_to_pick_up = s->flag_sprite_pickup;
+  flag_is_ancilla_to_pick_up = s->flag_ancilla_pickup;
+  flag_is_sprite_to_pick_up_cached = s->flag_sprite_pickup_cached;
+  byte_7E0FB2 = s->pickup_handshake;
+  player_handler_timer = s->player_handler;
+  link_item_in_hand = s->item_in_hand;
+  link_state_bits = s->state_bits;
+  link_picking_throw_state = s->picking_throw_state;
+  some_animation_timer_steps = s->anim_timer_steps;
+  some_animation_timer = s->anim_timer;
+  button_mask_b_y = s->button_mask;
+  bitfield_for_a_button = s->a_button;
+  button_b_frames = s->button_frames;
+  link_speed_setting = s->speed;
+  link_cant_change_direction = s->cant_change_dir;
+  link_player_handler_state = s->player_handler_state;
+  link_pose_for_item = s->pose_for_item;
+  link_position_mode = s->position_mode;
+  link_disable_sprite_damage = s->disable_sprite_damage;
+}
+
+static bool g_rando_pot_confirmation_pending;
+static DirectGrantIconEntry g_rando_pot_confirmation_icon;
+
+static bool rando_pot_confirmation_safe_to_emit(void) {
+  return rando_trap_stun_can_tick() && submodule_index == 0;
+}
+
+static bool rando_resolve_pot_confirmation_icon(uint16 item_id, uint8 lttp_code,
+                                                DirectGrantIconEntry *out) {
+  if (out == NULL)
+    return false;
+
+  // Non-direct items resolve from the pre-grant LttP receive code so progressive
+  // tiers show the item actually collected, not the next tier after the grant.
+  if (!Rando_ShouldSkipReceive(lttp_code)) {
+    uint8 ig, ib, io;
+    if (rando_receive_icon_for_code(lttp_code, &ig, &ib, &io)) {
+      out->gfx = ig;
+      out->big = ib;
+      out->oam_flags = io;
+      return true;
+    }
+  }
+
+  if (rando_trap_decoy_icon(item_id, g_last_dispatched_location_id, out))
+    return true;
+
+  const DirectGrantIconEntry *e =
+      rando_direct_grant_icon_entry(rando_direct_grant_icon_item_post_grant(item_id));
+  if (e != NULL) {
+    *out = *e;
+    return true;
+  }
+
+  uint8 gfx, big, oam;
+  if (rando_receive_item_icon(item_id, &gfx, &big, &oam)) {
+    out->gfx = gfx;
+    out->big = big;
+    out->oam_flags = oam;
+    return true;
+  }
+  return false;
+}
+
+void Rando_ClearDeferredPotConfirmation(void) {
+  g_rando_pot_confirmation_pending = false;
+}
+
+static void rando_queue_pot_confirmation(uint16 item_id, uint8 lttp_code) {
+  g_rando_pot_confirmation_pending =
+      rando_resolve_pot_confirmation_icon(item_id, lttp_code,
+                                          &g_rando_pot_confirmation_icon);
+  rando_direct_grant_chime_and_hud();
+}
+
+static void rando_tick_deferred_pot_confirmation(void) {
+  if (!g_rando_pot_confirmation_pending)
+    return;
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive)) {
+    g_rando_pot_confirmation_pending = false;
+    return;
+  }
+  if (!rando_pot_confirmation_safe_to_emit())
+    return;
+
+  DirectGrantIconEntry icon = g_rando_pot_confirmation_icon;
+  g_rando_pot_confirmation_pending = false;
+  AncillaAdd_RandoIconReceipt(icon.gfx, icon.big, icon.oam_flags);
+}
+
 // add-rando-pot-sanity — streamlined grant for a pot pickup. The vanilla
 // Link_ReceiveItem plays the full hold-over-head receipt: it zeroes
 // link_item_in_hand (so a CARRIED pot is dropped mid-lift — "the pot goes
 // flying"), poses Link, and freezes him for the whole animation. Far too heavy
-// to fire on every pot. Instead we run ONLY the item WRITE — AncillaAdd_ItemReceipt
-// performs it in its add handler, keyed on link_receiveitem_index — then undo the
-// immobilize it set, drop the (unwanted) visual receipt ancilla (type 0x22), and
-// show the same lightweight floating-icon + chime cue direct-grant items use. We
-// deliberately do NOT call Link_ReceiveItem, so Link's lift/carry/throw of the pot
-// is left untouched. Correct for every item class (the write is the same one the
-// receipt performs); cutscene-bearing receive codes are already neutralized for
-// rando by Rando_DispatchVanillaGrant, and at a pot we want no cutscene anyway.
-void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
+// to fire on every pot. Instead we run ONLY the inventory write extracted from
+// AncillaAdd_ItemReceipt, then fill in the receipt-update grants this quiet path
+// intentionally skips. We deliberately do NOT call Link_ReceiveItem or allocate a
+// receipt ancilla, so Link's lift/carry/throw of the pot is left untouched. Pot
+// grants play sound + HUD immediately, then shows the lightweight confirmation
+// icon on the next safe tick. The icon path is visual-only, so it does not touch
+// Link's lift/carry state the way Link_ReceiveItem does.
+static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool show_confirmation) {
+  RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
   if (Rando_ShouldSkipReceive(lttp_code)) {
     // Direct-grant classes were already written by Rando_DispatchVanillaGrant.
-    Rando_ShowDirectGrantConfirmation(item_id);
+    if (show_confirmation)
+      rando_queue_pot_confirmation(item_id, lttp_code);
     return;
   }
+
   item_receipt_method = 0;             // normal write path
-  link_receiveitem_index = lttp_code;  // the item AncillaAdd_ItemReceipt will write
-  AncillaAdd_ItemReceipt(0x22, 4, 0);  // does the grant write in its add handler...
-  // ...but AncillaAdd_ItemReceipt RETURNS before the write if no ancilla slot is
-  // free (Ancilla_AllocInit -> -1 when all 5 low slots hold non-disposable types).
-  // The pot is ALREADY marked checked + the vanilla drop suppressed, so a skipped
-  // write loses the placed item forever — turning an assumed-fill-certified seed
-  // unbeatable. Detect the miss (the quiet grant clears every type-0x22 receipt
-  // each call, so a live one means OUR write landed) and retry after freeing a
-  // slot: sacrificing one transient effect sprite beats losing the placed item.
-  bool granted = false;
-  for (int i = 0; i < 5; i++)
-    if (ancilla_type[i] == 0x22) { granted = true; break; }
-  if (!granted) {
-    ancilla_type[4] = 0;                 // free a low slot for the receipt
-    AncillaAdd_ItemReceipt(0x22, 4, 0);  // retry — the write now lands
-  }
-  // AncillaAdd_ItemReceipt does only the TABLE-WRITE grants (kValueToGiveItemTo).
+  link_receiveitem_index = lttp_code;  // keep global state aligned with vanilla receipt code
+  if (!ItemReceipt_GrantInventory(lttp_code))
+    return;
+
+  // ItemReceipt_GrantInventory does only the TABLE-WRITE grants (kValueToGiveItemTo).
   // Several grants are DEFERRED to the ancilla UPDATE — rupees (Ancilla_AddRupees),
   // the 4th-Piece-of-Heart rollover, heart containers, and heart/magic refills
   // (Ancilla22_ItemReceipt's completion branch, ancilla.c) — which the visual-kill
@@ -1937,26 +2079,14 @@ void Rando_PotQuietReceive(uint8 lttp_code, uint8 item_id) {
       break;
     default: break;
   }
-  flag_is_link_immobilized = 0;        // un-freeze (the add handler set it)
-  for (int i = 0; i < 10; i++)         // remove the visual receipt — no animation
-    if (ancilla_type[i] == 0x22)
-      ancilla_type[i] = 0;
-  Rando_ShowDirectGrantConfirmation(item_id);  // lightweight icon + chime
-  // The confirmation re-derives the icon from item_id POST-grant — but the byte
-  // AncillaAdd_ItemReceipt just wrote has already advanced the tier, so for ANY
-  // progressive item (boomerang, bow, gloves, shield, mail, sword, magic) the
-  // re-derivation returns the NEXT tier and pops the wrong icon (gold gloves after
-  // the Power Glove, silver arrows after the wood bow, mirror after the red shield,
-  // red after blue boomerang). Re-pop from the PRE-grant lttp_code we were handed —
-  // the tier ACTUALLY granted — for EVERY non-direct item; AncillaAdd_RandoIconReceipt
-  // retires the prior icon (only one floating receive icon), so the right tier wins
-  // with no flash. Non-progressive items resolve to the same gfx, so this is
-  // uniformly safe (we already returned early above for the direct-grant classes).
-  {
-    uint8 ig, ib, io;
-    if (rando_receive_icon_for_code(lttp_code, &ig, &ib, &io))
-      AncillaAdd_RandoIconReceipt(ig, ib, io);
-  }
+  rando_pot_restore_carry_state(&carry);  // undo receipt-side lift/carry mutations
+  if (show_confirmation)
+    rando_queue_pot_confirmation(item_id, lttp_code);
+  rando_pot_restore_carry_state(&carry);
+}
+
+void Rando_PotQuietReceive(uint8 lttp_code, uint16 item_id) {
+  rando_pot_quiet_receive_impl(lttp_code, item_id, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -2094,7 +2224,7 @@ uint8 Rando_PotBreakHook(uint16 room, uint16 pos4) {
   uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, 0);
   uint16 item = Rando_LastDispatchedItemId();
   if (item != ITEM_Nothing)
-    Rando_PotQuietReceive(lttp, (uint8)item);  // streamlined: no receive animation, no lift-yank
+    Rando_PotQuietReceive(lttp, item);  // streamlined: no receive animation, no lift-yank
   // ITEM_Nothing (empty pot): the dispatch already marked it checked; no receive
   // cue — the recolor reverting to vanilla on re-entry is the feedback.
   return kRandoPot_Suppress;
@@ -3044,6 +3174,79 @@ static bool g_rando_active_door_logic = false;
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
 
+static uint8 rando_door_pot_tier_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla ||
+      Settings_PotShuffleForcedOff(settings))
+    return kPotShuffle_Off;
+  return settings->pot_shuffle;
+}
+
+static uint32 rando_door_layout_digest24(const DoorShuffleLayout *layout) {
+  return DoorShuffle_LayoutDigest(layout) & 0xFFFFFFu;
+}
+
+static void rando_clear_door_layout_runtime(void) {
+  DoorRt_Reset();
+  Rando_SetDoorLogicLayout(NULL, 0);
+  g_wanted_zelda_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+  enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+}
+
+static bool rando_prepare_door_layout(const RandoSettings *settings,
+                                      const uint8 share_string_raw[32],
+                                      uint8 door_attempt,
+                                      uint32 expected_digest24,
+                                      const char *context) {
+  if (settings == NULL || share_string_raw == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla) {
+    fprintf(stderr,
+            "Rando: %s door-shuffle restore missing required layout identity "
+            "— refusing door graph\n",
+            context);
+    return false;
+  }
+  uint64 slot_seed = SlotSeedFromShareString(share_string_raw);
+  bool ok = DoorShuffle_Generate(slot_seed, door_attempt,
+                                 kDoorShuffle_MvpDungeonMask,
+                                 rando_door_pot_tier_for_settings(settings),
+                                 &s_active_door_layout);
+  uint32 digest = ok ? rando_door_layout_digest24(&s_active_door_layout) : 0;
+  if (!ok || digest != (expected_digest24 & 0xFFFFFFu)) {
+    fprintf(stderr,
+            "Rando: %s door-shuffle layout drift (regen digest %06x != saved %06x) "
+            "— refusing door graph\n",
+            context, (unsigned)digest, (unsigned)(expected_digest24 & 0xFFFFFFu));
+    return false;
+  }
+  if (DoorRt_KindOverlaySelfCheck(&s_active_door_layout) != 0) {
+    fprintf(stderr,
+            "Rando: %s door-shuffle kind overlay rejected this layout "
+            "— refusing door graph\n",
+            context);
+    return false;
+  }
+  return true;
+}
+
+static bool rando_install_prepared_door_layout(const char *context) {
+  Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
+  DoorRt_Reset();
+  for (int i = 0; i < kDoorTbl_DoorCount; i++) {
+    if (s_active_door_layout.pairing[i] != 0xFFFF)
+      DoorRt_SetLink((uint16)i, s_active_door_layout.pairing[i]);
+  }
+  if (!DoorRt_InstallKindOverlay(&s_active_door_layout)) {
+    fprintf(stderr, "Rando: %s door-shuffle kind overlay install failed\n", context);
+    rando_clear_door_layout_runtime();
+    return false;
+  }
+  DoorRt_Activate();
+  g_wanted_zelda_features1 |= kFeatures1_DoorShuffleActive;
+  enhanced_features1 |= kFeatures1_DoorShuffleActive;
+  return true;
+}
+
 static const uint16 kRandoTrapExtraGoodItemDecoys[] = {
   ITEM_Map_HyruleCastleEscape,
   ITEM_GenericKey,
@@ -3179,34 +3382,44 @@ static void install_active_shuffles(const RandoSettings *s, uint64 base_seed,
   (void)EnemyShuffle_Generate(s, base_seed);
 }
 
-// snapshot cold-replay restore. Called by RandoSnapshotTail_Load when a
-// type-2 RandoSettings TLV is read, to reconstruct the slot's logic-side state
-// (prize/medallion/boss/drop/enemy assignments + Inverted installs + the JP-glitch
-// coupling) from the snapshot-carried (canonical settings, share string→seed,
-// prize_attempt). Mirrors the corresponding arm of Rando_ActivateSidecarSlot via
-// the shared install_active_shuffles helper, so the two can't drift.
+// snapshot replay restore. Called by RandoSnapshotTail_Load when a type-2
+// RandoSettings TLV is read, to reconstruct the slot's logic-side state
+// (prize/medallion/boss/drop/enemy assignments + Inverted installs + the
+// JP-glitch coupling) from the snapshot-carried (canonical settings, share
+// string→seed, prize_attempt). Mirrors the corresponding arm of
+// Rando_ActivateSidecarSlot via the shared install_active_shuffles helper, so
+// the two can't drift.
 //
-// GATED on "no slot validly active": fires ONLY on a genuine cold replay — a
-// fresh launch where the player pressed Ctrl+F1 on a rando snapshot WITHOUT first
-// loading the slot, so nothing ran activation (g_rando_active_settings_valid is
-// false). A within-session replay (the slot IS active) is left UNTOUCHED so the
-// activation installs (the LIFO g_asset_ptrs[126] overlay stack, door redirects,
-// etc.) aren't disturbed and can't double-install. (A v1/no-blob slot emits no
-// type-2 TLV, so this never fires under it.) The caller restores the 4
-// process-static ownership bytes unconditionally — that is separate, time-varying
-// snapshot state this function does not touch.
+// GATED only for the same genuinely-active seed: a normal same-slot replay keeps
+// the activation installs. A cold replay, a prior cold-replayed snapshot, or a
+// snapshot from a different active seed must supersede the process state, or the
+// restored placement table can be evaluated with stale assignments/layout replay
+// inputs from another seed. (A v1/no-blob slot emits no type-2 TLV, so this never
+// fires under it.) The caller restores the 4 process-static ownership bytes
+// unconditionally — that is separate, time-varying snapshot state this function
+// does not touch.
 void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
                                      uint8 prize_attempt) {
   if (s == NULL || share_string_raw == NULL) return;
-  // Protect a GENUINE active slot (don't disturb its installs), but allow a new
-  // cold replay to supersede a PRIOR cold replay's restore.
-  if (g_rando_active_settings_valid && !g_rando_settings_from_cold_replay) return;
+  // Protect a GENUINE active slot only when the replayed snapshot belongs to
+  // that same seed. A different snapshot seed must replace the process state.
+  if (g_rando_active_settings_valid && !g_rando_settings_from_cold_replay &&
+      g_rando_active_header_valid &&
+      memcmp(g_rando_active_header.share_string, share_string_raw, 32) == 0) {
+    return;
+  }
+  Rando_ClearDeferredPotConfirmation();
 
+  g_rando_active_header_valid = false;
+  g_rando_active_door_logic = false;
   g_rando_active_settings = *s;
   g_rando_active_world_state = s->world_state;
   uint64 seed = SlotSeedFromShareString(share_string_raw);
   install_active_shuffles(&g_rando_active_settings, seed, prize_attempt);
+  g_rando_active_share_string[0] = '\0';
+  (void)Share_EncodeRaw(share_string_raw, g_rando_active_share_string,
+                        (int)sizeof(g_rando_active_share_string));
   // Inverted runtime installs (mirror Rando_ActivateSidecarSlot). Each is a
   // no-op unless world_state == Inverted; InvertedEntrances_Install self-tears-
   // down its prior overlay (leading Teardown), and on a true cold replay nothing
@@ -3218,11 +3431,55 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   g_rando_settings_from_cold_replay = true;  // mark the source.
   // JP-glitch coupling (mirror activation D6): a glitch-logic seed forces the
   // JP-glitch runtime flag so the replayed frames reproduce the assumed glitches.
-  if (Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
-    g_config.features0      |= kFeatures0_RestoreJpGlitches;
-    g_wanted_zelda_features |= kFeatures0_RestoreJpGlitches;
-    enhanced_features0      |= kFeatures0_RestoreJpGlitches;
+  Rando_ApplyActiveForcedFeatures0();
+}
+
+void Rando_ClearSnapshotDoorReplayRestore(void) {
+  rando_clear_door_layout_runtime();
+  g_rando_active_door_logic = false;
+}
+
+bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
+                                     const uint8 *share_string_raw,
+                                     uint8 door_attempt,
+                                     uint32 door_digest24) {
+  Rando_ClearDeferredPotConfirmation();
+  Entrance_RuntimeTeardown();
+  if (!rando_prepare_door_layout(s, share_string_raw, door_attempt, door_digest24,
+                                 "snapshot replay")) {
+    Rando_DeactivateSlot();
+    return false;
   }
+  if (!rando_install_prepared_door_layout("snapshot replay")) {
+    Rando_DeactivateSlot();
+    return false;
+  }
+
+  memset(&g_rando_active_header, 0, sizeof(g_rando_active_header));
+  memcpy(g_rando_active_header.share_string, share_string_raw, 32);
+  g_rando_active_header.door_attempt = door_attempt;
+  g_rando_active_header.door_digest24 = door_digest24 & 0xFFFFFFu;
+  g_rando_active_header_valid = true;
+  g_rando_active_door_logic = true;
+  g_reachability_state_counter++;
+  return true;
+}
+
+void Rando_ClearSnapshotColdReplayRestore(void) {
+  if (!g_rando_settings_from_cold_replay) return;
+  g_rando_active_settings_valid = false;
+  g_rando_settings_from_cold_replay = false;
+  g_rando_active_world_state = kWorldState_Open;
+  Rando_SetDungeonPrizeAssignment(NULL);
+  Rando_SetMedallionAssignment(NULL);
+  BossShuffle_Deactivate();
+  Rando_SetBossAssignment(NULL);
+  DropShuffle_Deactivate();
+  EnemyShuffle_Deactivate();
+  InvertedEntrances_Teardown();
+  InvertedSecrets_Teardown();
+  InvertedHoleBlocks_Teardown();
+  Rando_ApplyActiveForcedFeatures0();
 }
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
@@ -3231,6 +3488,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     return;
   }
   rando_clear_trap_effect();
+  Rando_ClearDeferredPotConfirmation();
   // FIX #5 — refuse a slot whose canonical settings blob fails range
   // validation (Settings_CanonicalDeserialize now rejects out-of-range enum
   // bytes via Settings_Validate; undefined FLAG bits stay permissive). The
@@ -3260,26 +3518,10 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     RandoSettings ds;
     if (Settings_CanonicalDeserialize(src->settings_canonical, &ds) == 0 &&
         Settings_EffectiveDoorShuffle(&ds) != kDoorShuffle_Vanilla) {
-      uint64 slot_seed = SlotSeedFromShareString(src->header.share_string);
-      bool ok = DoorShuffle_Generate(slot_seed, src->header.door_attempt,
-                                     kDoorShuffle_MvpDungeonMask, &s_active_door_layout);
-      uint32 digest = ok ? (DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFF) : 0;
-      if (!ok || digest != src->header.door_digest24) {
-        fprintf(stderr,
-                "Rando: door-shuffle layout drift (regen digest %06x != slot %06x) "
-                "— refusing to activate this slot on this build\n",
-                (unsigned)digest, (unsigned)src->header.door_digest24);
-        Rando_DeactivateSlot();
-        return;
-      }
-      // Stage-1b — validate the kind overlay (relocated key doors) BEFORE any
-      // slot state installs, on the same refusal pathway as digest drift: a
-      // chosen key door the overlay can't render makes the certified-beatable
-      // placement unbeatable, so refuse rather than load.
-      if (DoorRt_KindOverlaySelfCheck(&s_active_door_layout) != 0) {
-        fprintf(stderr,
-                "Rando: door-shuffle kind overlay rejected this layout "
-                "— refusing to activate this slot on this build\n");
+      if (!rando_prepare_door_layout(&ds, src->header.share_string,
+                                     src->header.door_attempt,
+                                     src->header.door_digest24,
+                                     "slot activation")) {
         Rando_DeactivateSlot();
         return;
       }
@@ -3357,6 +3599,12 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   Rando_SetSnapshotSettingsContext(
       src->header.settings_present ? src->settings_canonical : NULL,
       src->header.prize_attempt);
+  Rando_SetSnapshotDoorContext(src->header.door_attempt,
+                               src->header.door_digest24,
+                               door_active);
+  Rando_SetSnapshotRecommendedFeaturesContext(
+      src->header.recommended_features0,
+      src->header.recommended_features0_present != 0);
 
   // Phase B Slice 1 — copy the slot's checked-location bitmap into the
   // session state. Bitmap size matches between slot and session
@@ -3393,30 +3641,14 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // entrance shuffle per apply_derived_rules, so the two installs never
   // contend.) The Stage-1b door-KIND overlay installs here too once built.
   if (door_active) {
-    Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
-    g_rando_active_door_logic = true;  // replay-input capture
-    DoorRt_Reset();
-    for (int i = 0; i < kDoorTbl_DoorCount; i++) {
-      if (s_active_door_layout.pairing[i] != 0xFFFF)
-        DoorRt_SetLink((uint16)i, s_active_door_layout.pairing[i]);
-    }
-    // Stage-1b kind overlay (relocated/un-keyed key-door KINDS). Cannot fail
-    // here — DoorRt_KindOverlaySelfCheck validated this exact layout in the
-    // gate above — but stay on the refusal pathway if it ever does.
-    if (!DoorRt_InstallKindOverlay(&s_active_door_layout)) {
-      fprintf(stderr, "Rando: door-shuffle kind overlay install failed — deactivating slot\n");
+    if (!rando_install_prepared_door_layout("slot activation")) {
       Rando_DeactivateSlot();
       return;
     }
-    DoorRt_Activate();
-    g_wanted_zelda_features1 |= kFeatures1_DoorShuffleActive;
-    enhanced_features1 |= kFeatures1_DoorShuffleActive;
+    g_rando_active_door_logic = true;  // replay-input capture
   } else {
-    DoorRt_Reset();
-    Rando_SetDoorLogicLayout(NULL, 0);
+    rando_clear_door_layout_runtime();
     g_rando_active_door_logic = false;  // replay-input capture
-    g_wanted_zelda_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
-    enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
   }
 
   // #82 Inverted world-state — repoint the static Inverted entrance/exit
@@ -3490,25 +3722,28 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     EnemyShuffle_Deactivate();
   }
 
+  // Seed QoL gameplay features are per-slot play preferences, not canonical
+  // randomizer settings. format_version-3 slots written by builds that know this
+  // field carry the snapshot the user generated with; older slots leave the
+  // user's current live config untouched. Apply after the remaining refusal
+  // paths above so a rejected slot cannot mutate live preferences.
+  if (src->header.recommended_features0_present) {
+    Rando_ApplySeedQolFeatures0(src->header.recommended_features0);
+  }
+
   // add-rando-major-glitch D6 — couple a glitch-logic slot to the JP-1.0
   // glitch runtime flag. AUTHORITATIVE runtime guarantee: runs on EVERY slot
   // activation (generate->play AND reload->play, incl. imported share strings),
-  // unlike the generate-time recommend path. When the recovered settings show
-  // the placement assumed a restored glitch (logic>=OverworldGlitches or the
-  // fake-flippers trick), force the flag on live: g_config (persist),
-  // g_wanted_zelda_features (survives the per-frame mirror + a mid-session
-  // Config_ApplyLive), and enhanced_features0 (this frame). Only force ON,
-  // never off — a non-glitch slot leaves the user's own setting untouched, so a
-  // plain logic=0 / no-glitch-trick seed never gets the flag forced. The
-  // point-of-use gate JpGlitchEnabled() still self-suppresses under side-by-side
-  // (!ZeldaIsEmulatorAttached()), so this stays RAM-compare-safe. features0 is
-  // config state, NOT canonical settings → placement/corpus byte-identical.
-  if (g_rando_active_settings_valid &&
-      Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
-    g_config.features0      |= kFeatures0_RestoreJpGlitches;
-    g_wanted_zelda_features |= kFeatures0_RestoreJpGlitches;
-    enhanced_features0      |= kFeatures0_RestoreJpGlitches;
-  }
+  // unlike the generate-time recommend path. When recovered settings show the
+  // placement assumed a restored glitch (logic>=OverworldGlitches or the
+  // fake-flippers trick), apply it as a runtime-only overlay in
+  // g_wanted_zelda_features (survives the per-frame mirror + mid-session
+  // Config_ApplyLive) and enhanced_features0 (this frame). g_config remains the
+  // user's preference; the point-of-use gate JpGlitchEnabled() still
+  // self-suppresses under side-by-side (!ZeldaIsEmulatorAttached()), so this
+  // stays RAM-compare-safe. features0 is not canonical settings, so
+  // placement/corpus remain byte-identical.
+  Rando_ApplyActiveForcedFeatures0();
 
   // Persist the swordless flag in g_ram so a StateRecorder snapshot captures it
   // (g_ram is restored verbatim by LoadSnesState on replay/Ctrl+F1 restore, but
@@ -3642,7 +3877,10 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
   if (g_rando_active_door_logic) {
     uint64 slot_seed = SlotSeedFromShareString(g_rando_active_header.share_string);
     if (DoorShuffle_Generate(slot_seed, g_rando_active_header.door_attempt,
-                             kDoorShuffle_MvpDungeonMask, &s_active_door_layout)) {
+                             kDoorShuffle_MvpDungeonMask,
+                             rando_door_pot_tier_for_settings(
+                                 g_rando_active_settings_valid ? &g_rando_active_settings : NULL),
+                             &s_active_door_layout)) {
       Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
     } else {
       // Unreachable for a validly-activated slot (the same deterministic
@@ -3666,10 +3904,7 @@ void Rando_DeactivateSlot(void) {
   Entrance_RuntimeTeardown();
   // add-rando-door-shuffle — clear the per-seed door redirect + logic layout
   // (mirror of DoorShuffle_RuntimeInstall in Activate).
-  DoorRt_Reset();
-  Rando_SetDoorLogicLayout(NULL, 0);
-  g_wanted_zelda_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
-  enhanced_features1 &= ~(uint32)kFeatures1_DoorShuffleActive;
+  rando_clear_door_layout_runtime();
   // #82 Inverted override teardown — reverse of the Activate install order.
   // Restores g_asset_ptrs[126/130/131] to their saved vanilla originals.
   InvertedEntrances_Teardown();
@@ -3687,6 +3922,7 @@ void Rando_DeactivateSlot(void) {
   g_session_placement_table.count = 0;
   g_rando_slot_active = 0;
   rando_clear_trap_effect();
+  Rando_ClearDeferredPotConfirmation();
   g_wanted_zelda_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   enhanced_features1 &= ~(uint32)kFeatures1_RandomizerActive;
   // Pair with the SetSnapshotContext in Activate — leaving stale metadata
@@ -3727,6 +3963,7 @@ void Rando_DeactivateSlot(void) {
   // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
   g_rando_active_settings_valid = false;
   g_rando_settings_from_cold_replay = false;  // reset the source flag.
+  Rando_ApplyActiveForcedFeatures0();
   Rando_SetDungeonPrizeAssignment(NULL);
   Rando_SetMedallionAssignment(NULL);
 
@@ -3764,6 +4001,44 @@ bool Rando_HasActiveSettings(void) { return g_rando_active_settings_valid; }
 // reachability bridge (Rando_GetLiveReachability).
 const RandoSettings *Rando_GetActiveSettings(void) {
   return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
+}
+
+uint32 Rando_ActiveForcedFeatures0(void) {
+  uint32 forced = 0;
+  if (g_rando_active_settings_valid &&
+      Rando_SettingsAssumeJpGlitches(&g_rando_active_settings)) {
+    forced |= kFeatures0_RestoreJpGlitches;
+  }
+  return forced;
+}
+
+void Rando_ApplyActiveForcedFeatures0(void) {
+  uint32 forced = Rando_ActiveForcedFeatures0();
+  uint32 forceable = kFeatures0_RestoreJpGlitches;
+  uint32 effective = (g_config.features0 & forceable) | forced;
+  g_wanted_zelda_features =
+      (g_wanted_zelda_features & ~forceable) | effective;
+  enhanced_features0 =
+      (enhanced_features0 & ~forceable) | effective;
+}
+
+void Rando_ApplySeedQolFeatures0(uint32 features0) {
+  uint32 forced = Rando_ActiveForcedFeatures0();
+  uint32 slot_features = features0 & kFeatures0_RandoSeedQolMask;
+  uint32 configurable_slot_mask = kFeatures0_RandoSeedQolMask & ~forced;
+  uint32 effective_mask = kFeatures0_RandoSeedQolMask | forced;
+  uint32 effective_features = slot_features | forced;
+
+  // Active seed requirements are runtime overlays, not global user
+  // preferences. Preserve g_config's value for any currently forced bits so
+  // applying Game Settings cannot write a seed-required bit into the INI.
+  g_config.features0 =
+      (g_config.features0 & ~configurable_slot_mask) |
+      (slot_features & configurable_slot_mask);
+  g_wanted_zelda_features =
+      (g_wanted_zelda_features & ~effective_mask) | effective_features;
+  enhanced_features0 =
+      (enhanced_features0 & ~effective_mask) | effective_features;
 }
 
 bool Rando_ActiveSlotHidesSpoiler(void) {
@@ -4619,6 +4894,83 @@ void Rando_SelfCheck(void) {
   if (Rando_DispatchVanillaGrant(8, 5, 0x00) != 0x00) {
     fprintf(stderr, "Rando_SelfCheck: pass-through DispatchVanillaGrant failed\n");
     exit(2);
+  }
+
+  // add-rando-pot-sanity — quiet pot grants use the receipt inventory helper
+  // without allocating receipt visuals, but some item codes still touch Link's
+  // action state. Exercise the transactional carry guard directly.
+  {
+    RandoPotCarrySnapshot saved_carry = rando_pot_capture_carry_state();
+
+    flag_is_link_immobilized = 0;
+    flag_is_sprite_to_pick_up = 2;
+    flag_is_ancilla_to_pick_up = 0;
+    flag_is_sprite_to_pick_up_cached = 2;
+    byte_7E0FB2 = 2;
+    player_handler_timer = 6;
+    link_item_in_hand = 0;
+    link_state_bits = 0x80;
+    link_picking_throw_state = 1;
+    some_animation_timer_steps = 5;
+    some_animation_timer = 0x48;
+    button_mask_b_y = 0x80;
+    bitfield_for_a_button = 0x80;
+    button_b_frames = 7;
+    link_speed_setting = 12;
+    link_cant_change_direction = 1;
+    link_player_handler_state = 24;
+    link_pose_for_item = 0;
+    link_position_mode = 0;
+    link_disable_sprite_damage = 0;
+
+    RandoPotCarrySnapshot pot_carry = rando_pot_capture_carry_state();
+    flag_is_link_immobilized = 1;
+    flag_is_sprite_to_pick_up = 0;
+    flag_is_ancilla_to_pick_up = 1;
+    flag_is_sprite_to_pick_up_cached = 0;
+    byte_7E0FB2 = 0;
+    player_handler_timer = 0;
+    link_item_in_hand = 0x40;
+    link_state_bits = 0;
+    link_picking_throw_state = 2;
+    some_animation_timer_steps = 0;
+    some_animation_timer = 0;
+    button_mask_b_y = 0;
+    bitfield_for_a_button = 0;
+    button_b_frames = 0;
+    link_speed_setting = 0;
+    link_cant_change_direction = 0;
+    link_player_handler_state = 15;
+    link_pose_for_item = 1;
+    link_position_mode = 8;
+    link_disable_sprite_damage = 1;
+    rando_pot_restore_carry_state(&pot_carry);
+
+    if (flag_is_link_immobilized != 0 ||
+        flag_is_sprite_to_pick_up != 2 ||
+        flag_is_ancilla_to_pick_up != 0 ||
+        flag_is_sprite_to_pick_up_cached != 2 ||
+        byte_7E0FB2 != 2 ||
+        player_handler_timer != 6 ||
+        link_item_in_hand != 0 ||
+        link_state_bits != 0x80 ||
+        link_picking_throw_state != 1 ||
+        some_animation_timer_steps != 5 ||
+        some_animation_timer != 0x48 ||
+        button_mask_b_y != 0x80 ||
+        bitfield_for_a_button != 0x80 ||
+        button_b_frames != 7 ||
+        link_speed_setting != 12 ||
+        link_cant_change_direction != 1 ||
+        link_player_handler_state != 24 ||
+        link_pose_for_item != 0 ||
+        link_position_mode != 0 ||
+        link_disable_sprite_damage != 0) {
+      fprintf(stderr, "Rando_SelfCheck: quiet pot grant clobbered carry state\n");
+      exit(2);
+    }
+
+    rando_pot_restore_carry_state(&saved_carry);
   }
 
   // Build a synthetic placement table and verify dispatch routes to the
@@ -5782,6 +6134,12 @@ void Rando_TrackerSelfCheck(void) {
   RandoSettings s;
   Settings_SetDefaults(&s);
   uint64 seed = 0x0123456789abcdefull;
+  uint32 saved_config_features0 = g_config.features0;
+  uint32 saved_wanted_features0 = g_wanted_zelda_features;
+  uint32 saved_enhanced_features0 = enhanced_features0;
+  RandoSettings saved_active_settings = g_rando_active_settings;
+  bool saved_active_settings_valid = g_rando_active_settings_valid;
+  bool saved_settings_from_cold_replay = g_rando_settings_from_cold_replay;
 
   static RandoPlacement entries[kRandoLocationCapacity];
   RandoPlacementTable table;
@@ -5811,8 +6169,32 @@ void Rando_TrackerSelfCheck(void) {
   ss.version = (uint8)kGeneratorVersion;
   ss.seed_u64 = seed;
   Share_PackBinary(&ss, slot.header.share_string);
+  slot.header.recommended_features0_present = 1;
+  slot.header.recommended_features0 =
+      kFeatures0_RestoreJpGlitches | kFeatures0_WidescreenVisualFixes;
+  g_config.features0 =
+      (saved_config_features0 | kFeatures0_ExtendScreen64) &
+      ~kFeatures0_WidescreenVisualFixes;
+  g_wanted_zelda_features =
+      (saved_wanted_features0 | kFeatures0_ExtendScreen64) &
+      ~kFeatures0_WidescreenVisualFixes;
+  enhanced_features0 =
+      (saved_enhanced_features0 | kFeatures0_ExtendScreen64) &
+      ~kFeatures0_WidescreenVisualFixes;
 
   Rando_ActivateSidecarSlot(&slot);
+  if (!(g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+      !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("recommended_features0 not applied at activate");
+  if (!(g_config.features0 & kFeatures0_ExtendScreen64) ||
+      !(g_wanted_zelda_features & kFeatures0_ExtendScreen64) ||
+      !(enhanced_features0 & kFeatures0_ExtendScreen64))
+    tsc_die("recommended_features0 must preserve non-slot live features");
+  if ((g_config.features0 & kFeatures0_WidescreenVisualFixes) ||
+      (g_wanted_zelda_features & kFeatures0_WidescreenVisualFixes) ||
+      (enhanced_features0 & kFeatures0_WidescreenVisualFixes))
+    tsc_die("recommended_features0 must ignore non-slot snapshot features");
   if (!Rando_HasActiveSettings()) tsc_die("settings not recovered after activate");
   const RandoSettings *rec = Rando_GetActiveSettings();
   if (rec == NULL || rec->world_state != s.world_state || rec->goal != s.goal ||
@@ -5856,6 +6238,38 @@ void Rando_TrackerSelfCheck(void) {
   if (n1 <= n0) tsc_die("reachability did not expand when a full item kit was added");
 
   Rando_DeactivateSlot();
+  Settings_SetDefaults(&g_rando_active_settings);
+  g_rando_active_settings.logic = 1;  // OverworldGlitches forces JP glitches.
+  g_rando_active_settings_valid = true;
+  g_rando_settings_from_cold_replay = true;
+  g_config.features0 &= ~kFeatures0_RestoreJpGlitches;
+  g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
+  enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
+  if (!(Rando_ActiveForcedFeatures0() & kFeatures0_RestoreJpGlitches))
+    tsc_die("active forced features missing RestoreJpGlitches");
+  Rando_ApplyActiveForcedFeatures0();
+  if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+      !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("active forced features not applied as runtime-only overlay");
+  g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
+  enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
+  Rando_ApplySeedQolFeatures0(kFeatures0_RestoreJpGlitches);
+  if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
+      !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("seed QoL forced feature leaked into global config");
+  g_rando_active_settings_valid = false;
+  Rando_ApplyActiveForcedFeatures0();
+  if ((g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
+      (enhanced_features0 & kFeatures0_RestoreJpGlitches))
+    tsc_die("active forced feature overlay not cleared after settings invalidation");
+  g_rando_active_settings = saved_active_settings;
+  g_rando_active_settings_valid = saved_active_settings_valid;
+  g_rando_settings_from_cold_replay = saved_settings_from_cold_replay;
+  g_config.features0 = saved_config_features0;
+  g_wanted_zelda_features = saved_wanted_features0;
+  enhanced_features0 = saved_enhanced_features0;
   fprintf(stderr, "[Tracker_SelfCheck] OK (%d -> %d reachable)\n", n0, n1);
 }
 
@@ -6363,6 +6777,7 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   uint32 datt = 0xFFFFFFFF;
   for (uint32 a = 0; a < 16; a++) {
     if (DoorShuffle_Generate(ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
+                             kPotShuffle_Off,
                              &s_active_door_layout)) {
       datt = a;
       break;
@@ -6472,6 +6887,10 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
 
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheck();
+  if (RandoPot_OverlayOamSelfCheck()) {
+    fprintf(stderr, "Rando_SelfCheck: pot overlay OAM allocation can clobber sorted sprites\n");
+    exit(2);
+  }
   Rando_Rng_SelfCheck();
   Share_SelfCheck();
   Settings_SelfCheck();

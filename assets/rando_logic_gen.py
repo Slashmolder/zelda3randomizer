@@ -242,16 +242,16 @@ def _pot_key_info(room, pot_id, pot_room_wrap, pot_key_wrap):
     """
     room_w = pot_room_wrap.get(room)
     key_w = pot_key_wrap.get(pot_id)
-    item = (room_w[0] if room_w else None) or (key_w[0] if key_w else None)
+    item = (room_w[0] if room_w else None) or (key_w[1] if key_w else None)
     if item is None:
         return None, None, None
     # WILD: room-max `full` for every pot; the key pot's own `full` only backfills
     # when the room has no wild entry (keeps clean rooms byte-identical under wild).
     full = room_w[1] if room_w else None
     if full is None and key_w is not None:
-        full = key_w[1]
+        full = key_w[2]
     # DUNGEON: key pot -> exact per-pot depth; loot/empty -> room-max.
-    dungeon = key_w[2] if key_w is not None else (room_w[2] if room_w else None)
+    dungeon = key_w[3] if key_w is not None else (room_w[2] if room_w else None)
     return item, full, dungeon
 
 
@@ -287,27 +287,68 @@ def _pot_key_terms_for(item, full, dungeon):
     return t
 
 
-def load_pots(path: Path):
+def _pot_min_tier(kind: str | None, vanilla_item: str) -> int:
+    if kind == "empty" or vanilla_item == "Nothing":
+        return 3  # All
+    if vanilla_item.startswith("SmallKey_"):
+        return 1  # Keys
+    return 2      # Contents
+
+
+def _fnv32_u8(h: int, b: int) -> int:
+    h ^= b & 0xFF
+    return (h * 0x01000193) & 0xFFFFFFFF
+
+
+def _fnv32_u16(h: int, v: int) -> int:
+    h = _fnv32_u8(h, v)
+    return _fnv32_u8(h, v >> 8)
+
+
+def _fnv32_u32(h: int, v: int) -> int:
+    h = _fnv32_u16(h, v)
+    return _fnv32_u16(h, v >> 16)
+
+
+def _door_pot_bridge_digest(rows: list[dict]) -> int:
+    h = 0x811C9DC5
+    for r in rows:
+        h = _fnv32_u16(h, r["loc_id"])
+        h = _fnv32_u8(h, r["dungeon"])
+        h = _fnv32_u8(h, r["min_tier"])
+        h = _fnv32_u8(h, r["flags"])
+        h = _fnv32_u16(h, r["drop_index"])
+        h = _fnv32_u8(h, len(r["regions"]))
+        for region in r["regions"]:
+            h = _fnv32_u16(h, region)
+        h = _fnv32_u32(h, len(r["pred"]))
+        for b in r["pred"]:
+            h = _fnv32_u8(h, b)
+    return h
+
+
+def load_pots(path: Path, logic_regions: dict[str, RegionDef] | None = None):
     """Load assets/rando/pots.gen.yaml (local registry from gen_pot_tables.py).
 
-    Returns (name -> LocationDef, [(room, pos4, loc_id)]). Each pot LocationDef
-    carries id/name/region/type=Pot/vanilla_item AND can_reach (D8 inheritance),
-    so it feeds BOTH the location registry (location_ids.h / kRandoLocations) and
-    the logic binding (region_id + can_reach) - it is merged into both `locations`
-    and `logic_loc_preds` in main(). pots.gen.yaml is a gitignored local artifact,
-    so public/assetless builds emit no pot locations; generation fails closed if
-    a user enables a pot tier without rebuilding from local pot codegen."""
+    Returns (name -> LocationDef, [(room, pos4, loc_id)], bridge_source_rows).
+    Each pot LocationDef carries id/name/region/type=Pot/vanilla_item AND
+    can_reach (D8 inheritance), so it feeds BOTH the location registry
+    (location_ids.h / kRandoLocations) and the logic binding (region_id +
+    can_reach) - it is merged into both `locations` and `logic_loc_preds` in
+    main(). pots.gen.yaml is a gitignored local artifact, so public/assetless
+    builds emit no pot locations; generation fails closed if a user enables a
+    pot tier without rebuilding from local pot codegen."""
     if not path.exists():
         print(f"WARNING: {path} not found - emitting NO pot locations. "
               f"Run assets/scripts/run_rando_local_checks.py with ROM assets "
               f"to enable pot shuffle in this build.", file=sys.stderr)
-        return {}, []
+        return {}, [], []
     depth_tbl = RANDO_ASSETS / "pot_key_depth.gen.yaml"
     if not depth_tbl.exists():
         raise RuntimeError(
             f"{path} exists but {depth_tbl} is missing. This partial local pot "
             f"artifact set would emit pot locations without POT_KEYS_WILD/"
-            f"POT_KEYS_DUNGEON key-depth wraps. Run "
+            f"POT_KEYS_DUNGEON key-depth wraps or door+pot bridge rows. Run "
             f"assets/scripts/run_rando_local_checks.py --prepare-only with a "
             f"fresh binary, or remove {path} for an assetless build."
         )
@@ -320,23 +361,44 @@ def load_pots(path: Path):
     # term and loot/empty pots a DUNGEON room-max term; a KEY pot uses its EXACT
     # per-pot dungeon depth (pot_keys), plus its own `full` when the room has no wild
     # entry (the floor-bit Waterway orphan). See gen_pot_key_depth.py.
-    pot_room_wrap = {}  # room (int) -> (item, full|None, dungeon|None)
-    pot_key_wrap = {}   # pot id (int) -> (item, full|None, dungeon)
-    if depth_tbl.exists():
-        dt = load_yaml(depth_tbl)
-        for r in dt.get("pot_rooms", []) or []:
-            pot_room_wrap[int(r["room"])] = (
-                r["item"],
-                int(r["full"]) if "full" in r else None,
-                int(r["dungeon"]) if "dungeon" in r else None,
-            )
-        for r in dt.get("pot_keys", []) or []:
-            pot_key_wrap[int(r["id"])] = (
-                r["item"],
-                int(r["full"]) if "full" in r else None,
-                int(r["dungeon"]),
-            )
-    out, rows = {}, []
+    pot_room_wrap = {}     # room (int) -> (item, full|None, dungeon_depth|None)
+    pot_key_wrap = {}      # pot id (int) -> (dungeon, item, full|None, dungeon_depth, door_region, drop_index)
+    door_room_wrap = {}    # room (int) -> (dungeon, [door_region ids])
+    dt = load_yaml(depth_tbl)
+    if int(dt.get("format_version", 0) or 0) < 3:
+        sys.exit(f"{depth_tbl}: stale format_version; regenerate with "
+                 "assets/scripts/gen_pot_key_depth.py so door+pot bridge rows "
+                 "and drop-key indices are available.")
+    door_pot_room_rows = dt.get("door_pot_rooms")
+    if not door_pot_room_rows:
+        sys.exit(f"{depth_tbl}: missing door_pot_rooms bridge rows; regenerate "
+                 "with assets/scripts/gen_pot_key_depth.py after "
+                 "--dump-key-depth.")
+    for r in dt.get("pot_rooms", []) or []:
+        pot_room_wrap[int(r["room"])] = (
+            r["item"],
+            int(r["full"]) if "full" in r else None,
+            int(r["dungeon"]) if "dungeon" in r else None,
+        )
+    for r in dt.get("pot_keys", []) or []:
+        if "door_region" in r and "depth" not in r:
+            sys.exit(f"{depth_tbl}: stale pot_keys row id={r.get('id')} uses "
+                     "`dungeon` as a depth; regenerate with "
+                     "assets/scripts/gen_pot_key_depth.py")
+        pot_key_wrap[int(r["id"])] = (
+            int(r["dungeon"]),
+            r["item"],
+            int(r["full"]) if "full" in r else None,
+            int(r["depth"]) if "depth" in r else int(r["dungeon"]),
+            int(r["door_region"]),
+            int(r["drop_index"]),
+        )
+    for r in door_pot_room_rows or []:
+        door_room_wrap[int(r["room"])] = (
+            int(r["dungeon"]),
+            [int(x) for x in r.get("regions", []) or []],
+        )
+    out, rows, bridge_rows = {}, [], []
     for p in doc.get("pots", []) or []:
         # add-rando-pot-sanity: empty pots carry the ITEM_Nothing filler as their
         # vanilla item. The generated pots.gen.yaml records empties as
@@ -348,7 +410,8 @@ def load_pots(path: Path):
         vanilla_item = p.get("vanilla_item") or ""
         if (p.get("kind") == "empty") or not vanilla_item:
             vanilla_item = "Nothing"
-        can_reach = p.get("can_reach") or "TRUE()"
+        base_can_reach = p.get("can_reach") or "TRUE()"
+        can_reach = base_can_reach
         item, full, dungeon = _pot_key_info(
             int(p["room"]), int(p["id"]), pot_room_wrap, pot_key_wrap)
         can_reach = _suppress_base_key_terms_under_dungeon(can_reach, item, dungeon)
@@ -363,7 +426,52 @@ def load_pots(path: Path):
         )
         out[loc.name] = loc
         rows.append((int(p["room"]), int(p["pos4"]), int(p["id"])))
-    return out, rows
+        min_tier = _pot_min_tier(p.get("kind"), vanilla_item)
+        flags = 0
+        if vanilla_item != "Nothing":
+            flags |= 0x01  # kDoorPot_KeySource
+        if vanilla_item.startswith("SmallKey_"):
+            flags |= 0x02  # kDoorPot_KeyPot
+        if vanilla_item == "Nothing":
+            flags |= 0x04  # kDoorPot_Empty
+
+        dungeon = 0xFF
+        regions = []
+        drop_index = 0xFFFF
+        if flags & 0x02:
+            kw = pot_key_wrap.get(int(p["id"]))
+            if kw is None and depth_tbl.exists():
+                sys.exit(f"pot bridge: key pot id={p['id']} has no pot_keys row in {depth_tbl}")
+            if kw is not None:
+                dungeon, _item, _full, _depth, door_region, drop_index = kw
+                regions = [door_region]
+        else:
+            rw = door_room_wrap.get(int(p["room"]))
+            if rw is not None:
+                dungeon, regions = rw
+        if regions and dungeon != 0xFF:
+            bridge_rows.append({
+                "loc_id": int(p["id"]),
+                "name": p["name"],
+                "dungeon": dungeon,
+                "regions": sorted(set(regions)),
+                "base_can_reach": base_can_reach,
+                "min_tier": min_tier,
+                "flags": flags,
+                "drop_index": drop_index,
+            })
+    return out, rows, bridge_rows
+
+
+def build_door_pot_bridge(bridge_sources: list[dict], compile_src) -> tuple[list[dict], int]:
+    rows: list[dict] = []
+    for src in sorted(bridge_sources, key=lambda r: r["loc_id"]):
+        pred = compile_src(src["base_can_reach"],
+                           f"pot bridge {src['loc_id']} {src['name']}")
+        row = dict(src)
+        row["pred"] = pred
+        rows.append(row)
+    return rows, _door_pot_bridge_digest(rows) if rows else 0
 
 
 def load_macros(path: Path | None) -> dict[str, MacroDef]:
@@ -2000,6 +2108,8 @@ def emit_logic_data(
     dungeon_vanilla_boss: list[int] | None = None,
     door_vm_preds: list[bytes] | None = None,
     door_portal_rows: list[tuple] | None = None,
+    door_pot_rows: list[dict] | None = None,
+    door_pot_bridge_digest: int = 0,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -2115,6 +2225,18 @@ def emit_logic_data(
         off, length = (len(stream), len(enc)) if enc else (0, 0)
         stream += enc
         door_portal_offsets.append((dgn, is_drop, door_region, fork_region, off, length, pname))
+    door_pot_offsets: list[dict] = []
+    door_pot_regions: list[int] = []
+    for row in (door_pot_rows or []):
+        enc = row.get("pred", b"")
+        off, length = (len(stream), len(enc)) if enc else (0, 0)
+        stream += enc
+        out_row = dict(row)
+        out_row["region_first"] = len(door_pot_regions)
+        out_row["pred_off"] = off
+        out_row["pred_len"] = length
+        door_pot_regions.extend(row.get("regions", []))
+        door_pot_offsets.append(out_row)
 
     # Emit the stream as a uint8 array.
     out.append("// Predicate bytecode stream — concatenated per the encoding documented in")
@@ -2168,6 +2290,29 @@ def emit_logic_data(
     else:
         out.append("const RandoDoorPortalGate kDoorPortalGates[1] = { { 0, 0, 0, 0xFFFF, 0, 0 } };")
         out.append("const uint32 kDoorPortalGatesCount = 0;")
+    out.append("")
+    out.append("// Door x pot-shuffle bridge rows (generated from local pot artifacts).")
+    if door_pot_offsets:
+        out.append(f"const RandoDoorPotLocation kRandoDoorPotLocations[{len(door_pot_offsets)}] = {{")
+        for r in door_pot_offsets:
+            out.append(
+                "  { %d, %d, %du, %d, 0x%04x, %d, %d, 0x%02x, %d },  // %s"
+                % (r["loc_id"], r["region_first"], r["pred_off"], r["pred_len"],
+                   r["drop_index"], r["dungeon"], r["min_tier"], r["flags"],
+                   len(r.get("regions", [])), r["name"])
+            )
+        out.append("};")
+        out.append(f"const uint16 kRandoDoorPotRegions[{len(door_pot_regions)}] = {{")
+        for i in range(0, len(door_pot_regions), 12):
+            chunk = door_pot_regions[i:i + 12]
+            out.append("  " + ", ".join(str(r) for r in chunk) + ",")
+        out.append("};")
+        out.append(f"const uint32 kRandoDoorPotLocationsCount = {len(door_pot_offsets)};")
+    else:
+        out.append("const RandoDoorPotLocation kRandoDoorPotLocations[1] = { { 0, 0, 0, 0, 0xFFFF, 0, 0, 0, 0 } };")
+        out.append("const uint16 kRandoDoorPotRegions[1] = { 0xFFFF };")
+        out.append("const uint32 kRandoDoorPotLocationsCount = 0;")
+    out.append(f"const uint32 kRandoDoorPotBridgeDigest = 0x{door_pot_bridge_digest & 0xFFFFFFFF:08x}u;")
     out.append("")
     out.append("// dungeon-id (HCE=0..GT=12) -> vanilla boss-pool index (0xFF = no boss).")
     out.append("// Mirrors src/rando/shuffle_boss.c kBossVanilla; OP_CAN_KILL_BOSS fallback")
@@ -2559,7 +2704,8 @@ def main(argv=None):
     # stay OUT of placement until a tier selects them — rando_placement.c skips
     # LOCTYPE_Pot in the open-location + junk-pad loops (mirroring inactive
     # Take-Any), so pot-shuffle off is placement-byte-identical (design D9).
-    pot_locs, pot_lookup_rows = load_pots(Path("assets/rando/pots.gen.yaml"))
+    pot_locs, pot_lookup_rows, door_pot_sources = load_pots(
+        Path("assets/rando/pots.gen.yaml"), logic_regions)
     locations.update(pot_locs)
     logic_loc_preds.update(pot_locs)
 
@@ -2842,6 +2988,8 @@ def main(argv=None):
     n_errors_pre_door = len(all_errors)
     door_vm_preds: list[bytes] = []
     door_portal_rows: list[tuple] = []
+    door_pot_rows: list[dict] = []
+    door_pot_bridge_digest = 0
     door_manifest_path = Path("assets/rando/door_predicates.gen.json")
     door_portals_path = Path("assets/rando/door_portals.yaml")
     if door_manifest_path.exists():
@@ -2889,23 +3037,36 @@ def main(argv=None):
         else:
             all_errors.append("door_portals.yaml missing (door tables present)")
 
+        if door_pot_sources:
+            door_pot_rows, door_pot_bridge_digest = build_door_pot_bridge(
+                door_pot_sources, compile_door_src)
+
         _OP_AND, _OP_OR, _OP_NOT, _OP_DA, _OP_DLR = 12, 13, 14, 20, 21
         _loc_by_id = {l.id: (name, l) for name, l in locations.items()}
-        for entry in door_man.get("locations", []):
-            fid, dgn = entry["fork_id"], entry["dungeon"]
+        _door_wrapped_ids = set()
+
+        def wrap_door_location(fid: int, dgn: int, label: str) -> None:
             pair = _loc_by_id.get(fid)
             if pair is None:
                 all_errors.append(f"door location id {fid}: not in location registry")
-                continue
+                return
             loc_key, _loc = pair
             enc = location_predicates.get(loc_key)
             if enc is None:
                 all_errors.append(f"door location {loc_key!r}: no compiled predicates")
-                continue
+                return
+            if fid in _door_wrapped_ids:
+                return
+            _door_wrapped_ids.add(fid)
             v = enc["can_reach"]
             enc["can_reach"] = (bytes([_OP_OR, 2, _OP_AND, 2, _OP_NOT, _OP_DA, dgn]) + v +
                                 bytes([_OP_AND, 2, _OP_DA, dgn,
                                        _OP_DLR, fid & 0xFF, (fid >> 8) & 0xFF]))
+
+        for entry in door_man.get("locations", []):
+            wrap_door_location(entry["fork_id"], entry["dungeon"], "door")
+        for row in door_pot_rows:
+            wrap_door_location(row["loc_id"], row["dungeon"], "door pot")
 
     # Flush door-compile errors collected after the main strict gate (earlier
     # errors were already printed there; only the door block's are new).
@@ -2937,7 +3098,9 @@ def main(argv=None):
                     boss_kill_predicates=boss_kill_predicates,
                     dungeon_vanilla_boss=DUNGEON_VANILLA_BOSS,
                     door_vm_preds=door_vm_preds,
-                    door_portal_rows=door_portal_rows)
+                    door_portal_rows=door_portal_rows,
+                    door_pot_rows=door_pot_rows,
+                    door_pot_bridge_digest=door_pot_bridge_digest)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
     pot_nonpot_drop_count = emit_pot_nonpot_drop_counts(
