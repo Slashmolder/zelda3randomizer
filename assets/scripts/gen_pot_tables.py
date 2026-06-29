@@ -493,7 +493,10 @@ def main():
     # residual = in-scope pot rooms with no confident region (unassigned OR a
     # flagged conflict). These MUST get a reviewed pot_logic_overrides.yaml entry.
     inscope_rooms = {r for (r, _p, _c, _t, _k, _i) in inscope}
-    residual = sorted(r for r in inscope_rooms if r not in region_of or r in conflicts)
+    residual = sorted(
+        r for r in inscope_rooms
+        if r not in split_rooms and (r not in region_of or r in conflicts)
+    )
     if args.report or residual:
         room_pots = collections.Counter(r for (r, _p, _c, _t, _k, _i) in inscope)
         ent = (REPO / "assets/tables.py").read_text()

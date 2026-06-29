@@ -19,7 +19,8 @@
 room_region:
   # --- dungeon rooms (resolved by door / vertical-stair connectivity) ---
   "017": TowerOfHera_Lobby     # vstair: up 007 (boss) + down 027 (chest) both ToH — tower column
-  "041": HyruleCastleEscape    # N neighbor 031 = HCE (Hyrule Castle sewers)
+  "031": TowerOfHera_Lobby     # room-id alias: the only liftable pots at 0x031 are Hera, not HCE sewers
+  "041": HyruleCastleEscape    # Hyrule Dungeon side; 0x031's liftable-pot alias is handled above.
   "04b": PalaceOfDarkness      # PoD Jelly-Hall/Mimics loot pots (Arrow10 + HeartRefill).
                                # Corrects grid-flood across the PoD/GT engine-room
                                # boundary at 0x4b|0x4c. door_tables dungeon=5 (PoD),
@@ -60,12 +61,11 @@ room_region:
   "107": LightWorld_NorthWest            # Kakariko Storage Shed
   # --- shared or special cave interiors that need explicit regions instead of flood output ---
   "10c": LightWorld_DeathMountain_East   # Fairy Cave 2 pot side of the shared Mimic/Fairy interior; the Mimic chest gate does not apply to this pot.
-  "114": DarkWorld_Mire                  # Pond of Wishing, DW-mire side (entrance 0x62, DW screen 0x30) — pots reached via the DW mire, = Mire-Shed access. (LW waterfall door 0x5C is the pot-LESS fairy side; flood had wrongly said LinksHouse.)
+  "114": DarkWorld_Mire                  # Pond of Wishing, DW-mire side (entrance 0x62, F12: room 0x114, cached exit screen 0x70): pots reached from DW Mire behind the north bomb wall. (F12 on LW waterfall door 0x5C: room 0x114, cached exit screen 0x0F, pot-LESS fairy side; flood had wrongly said LinksHouse.)
   "119": LightWorld_NorthWest            # Blind's Hideout (LIGHT Kakariko, entrance 0x61 screen 0x18) — corrected from a wrong DarkWorld_NorthWest override; back room 0x11D matches the fork's Blind's Hideout chests (LW_NW / TRUE)
   "11a": DarkWorld_NorthEast             # storyteller_cave_4 (entrance 0x68, DW screen 0x1E) — same region/requirements as the Palace of Darkness entrance (fork enters PoD from DarkWorld_NorthEast). (flood had wrongly said LightWorld_South.)
   "11f": LightWorld_NorthWest            # Lumberjack's House (entrance 0x6B, by the Sanctuary) — 2 pots; LIGHT, sphere-0 in Open / RescuedZelda in Standard (= the LW_NW access edge). The 0x46 Kakariko-shop side of this shared interior has no liftable pots. Corrected from DarkWorld_NorthWest.
-  "124": LightWorld_NorthWest            # Thief Hideout 2 pot side; the Pegasus Rocks/Boots chest gate is on the other side of the shared interior.
-  "125": LightWorld_NorthWest            # Refill Cave 3 (Kakariko area)
+  "127": DarkWorld_NorthWest             # Hammer Pegs cave / Heart Piece Cave 3 (entrance 0x83). F12/playtest: DW_NW hammer-pegs cave; pots share the Hammer Pegs heart-piece access.
 
 room_can_reach:
   # Non-uniform chest rooms whose room-entry is NOT free — the most-permissive
@@ -78,12 +78,12 @@ room_can_reach:
   # Grounded in the door graph + base predicates (logic.yaml): the locked doors sit
   # at the key-room entrances (Secret Rooms 011, Sanctuary 012); the Dark Cross
   # (032) is the no-key floor `CanKill AND Lamp`. 002 is a dead-end reached only
-  # THROUGH the key-locked Sanctuary -> needs the key; 021 (dark) + 031 sit on the
-  # Dark-Cross side, before the locked door -> CanKill+Lamp (021 was already
-  # Lamp-gated by the dark flag but missing CanKill). ---
+  # THROUGH the key-locked Sanctuary -> needs the key; 021 sits on the Dark-Cross
+  # side, before the locked door -> CanKill+Lamp (021 was already Lamp-gated by
+  # the dark flag but missing CanKill). Room 031's liftable pots are ToH, not HCE.
+  # ---
   "002": "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
   "021": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
-  "031": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
   # --- ToH (gate-less region override above): room 0x017 is the stair floor
   # between the Big-Key-gated Big Chest (0x027) and boss (0x007). Region-bound but
   # un-gated (TRUE) -> 12 falsely-sphere-0 pots. Gate = the Big Chest's predicate. ---
@@ -103,6 +103,13 @@ room_can_reach:
   # flooded as TRUE. (0x038 is reached from the FREE Entrance 0x028 per the door
   # graph, so it is genuinely free — NOT gated.) ---
   "026": "HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"
+  # --- Hammer Pegs cave (region override above): the pots are inside the same
+  # room as the Hammer Pegs freestanding heart piece, behind the peg field. ---
+  "127": "HAS_ITEM(Hammer) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftDarkRocks() OR ((CanFakeFlippers() OR HAS_ITEM(Flippers)) AND (CanOneFrameClipOW() OR CanBootsClip())))"
+  # --- Pond of Wishing / Storyteller Cave 3 (region override above): the DW
+  # front room is walk-in once DarkWorld_Mire is reachable, but the six pots are
+  # behind the north bomb wall. The LW Waterfall Fairy side is pot-less. ---
+  "114": "CanBombThings() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())"
 
   # ===========================================================================
   # Phase 3 — the 21 chest-less TRUE() rooms the POT GUARD surfaced (sphere-0
@@ -250,8 +257,9 @@ pot_room_split:
 
   # refill_cave_1 (room 0x11b) — one shared interior split by entrance. The two
   # halves are physically separate:
-  #   * 8 pots (0x16-0x19 plane) reached from the GRAVEYARD-LEDGE mirror spot
-  #     (screen 0x14). Gate = the fork's "Graveyard Ledge" (40_lightworld_northwest).
+  #   * 8 front pots (0x16-0x19 plane) reached from the GRAVEYARD-LEDGE mirror
+  #     spot (screen 0x14). They use the Graveyard Ledge cave-entry route; only
+  #     the freestanding item behind the bomb wall needs CanBombThings().
   #   * 6 pots (0x35-0x38 plane) reached from CAVE 45 / the DW-south mirror spot
   #     (screen 0x32). Gate = the fork's "Cave 45" (41_lightworld_south).
   "11b":
@@ -261,3 +269,24 @@ pot_room_split:
     - region: LightWorld_South
       can_reach: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()"
       pos4: [0x3518, 0x3618, 0x3718, 0x381c, 0x3620, 0x3628]
+
+  # Room 0x124 is shared by the LightWorld_NorthWest Pegasus Rocks chest side
+  # and the south/desert path Heart Piece Cave 1 pot side. The liftable pots are
+  # on the south side, entered through entrance 0x6d after pulling the rock.
+  "124":
+    - region: LightWorld_South
+      can_reach: "CanLiftRocks()"
+      pos4: [0x1414, 0x1428, 0x1514, 0x1528, 0x1614, 0x1628, 0x1818, 0x181c, 0x1820, 0x1824]
+
+  # Room 0x125 is shared by LightWorld_South and DarkWorld_South rock caves at
+  # the same map location. F12 evidence: entrance 0x6f exits to LW screen 0x37;
+  # entrance 0x70 exits to DW screen 0x77. Both sides need the Power Glove rock.
+  # The light-side room has the four rupee pots; the dark-side room has the four
+  # heart-refill pots.
+  "125":
+    - region: LightWorld_South
+      can_reach: "CanLiftRocks()"
+      pos4: [0x1918, 0x191c, 0x1920, 0x1924]
+    - region: DarkWorld_South
+      can_reach: "CanLiftRocks() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())"
+      pos4: [0x1658, 0x1664, 0x1c58, 0x1c64]

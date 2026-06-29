@@ -278,6 +278,16 @@ extern const RandoRegionDef kRandoRegions[];
 extern const uint32 kRandoRegionsCount;
 extern const RandoEdgeDef kRandoEdges[];
 extern const uint32 kRandoEdgesCount;
+
+// Cave entrance-shuffle source predicates. Index-matched to
+// shuffle_entrance.c::kCaveInteriors; len 0 means the source region alone is
+// sufficient to enter the cave slot.
+typedef struct RandoCaveSourcePred {
+  uint32 off;
+  uint16 len;
+} RandoCaveSourcePred;
+extern const RandoCaveSourcePred kRandoCaveSourcePreds[];
+extern const uint32 kRandoCaveSourcePredsCount;
 extern const uint8 kRandoPredicateStream[];
 extern const uint32 kRandoPredicateStreamSize;
 
@@ -438,7 +448,7 @@ bool Rando_EntranceEdgeOverridesActive(void);
 // Phase C entrance shuffle (Stage 3 / cross-category) primitives.
 // SetEntranceRegionOverridePred: like the region override, but ALSO AND a
 // predicate (pred_off/pred_len into kRandoPredicateStream; len 0 = none) into the
-// cave-location's reachability — for a cave behind a gated dungeon door so it
+// cave-location's reachability — for a cave behind a gated source door so it
 // inherits the door's requirement. Reset by Rando_BeginEntranceRegionOverrides.
 void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
                                          uint32 pred_off, uint16 pred_len);

@@ -68,8 +68,8 @@ MATRIX = [
     # The three-way accessibility gate, end-to-end through the slot path:
     # this hard-pool Ganonhunt seed has unreachable placements under strict
     # inventory, but the goal is still completable in beatable-only mode.
-    ("std-ganonhunt-hard-items-REJECT", "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "12345", False, False, None),
-    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "12345", True,  True,  1),
+    ("std-ganonhunt-hard-items-REJECT", "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "3", False, False, None),
+    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "3", True,  True,  1),
 ]
 
 

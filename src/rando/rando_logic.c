@@ -571,15 +571,15 @@ uint16 Rando_GetEntranceEdgeOverride(uint16 to_region) {
 // caves↔dungeons mixing. ALL dungeon doors are item-gated (Moon Pearl, Flippers,
 // Book, crystals, …), so a clean cross-shuffle needs both halves below.
 //
-// 3a. PREDICATE-CARRYING cave override: when a CAVE lands behind a DUNGEON door,
-//     the cave's locations must inherit that door's predicate (else the placer
-//     could strand the gating item inside — a softlock the reachability gate
-//     can't see). Parallels the plain region override with an optional extra
-//     predicate AND-ed into the cave's can_reach.
+// 3a. PREDICATE-CARRYING cave override: when a CAVE lands behind a gated source
+//     door (dungeon or cave), the cave's locations must inherit that door's
+//     predicate (else the placer could strand the gating item inside — a softlock
+//     the reachability gate can't see). Parallels the plain region override with
+//     an optional extra predicate AND-ed into the cave's can_reach.
 // 3b. ADDED edges: when a DUNGEON lands behind a CAVE door, there is no existing
 //     edge to remap (caves aren't regions), so we ADD an edge
-//     overworld-region → dungeon-entry. Cave doors have no access gate beyond
-//     being in the region, so added edges are UNCONDITIONAL (pred_len 0 = true).
+//     overworld-region → dungeon-entry. Gated cave source slots pass their
+//     predicate through this added edge; pred_len 0 means no extra source gate.
 //
 // Both share the g_entrance_override_active flag (set by Begin) and are inert by
 // default ⇒ byte-identical reachability. (State declared above with the region /

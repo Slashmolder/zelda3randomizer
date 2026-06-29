@@ -169,15 +169,16 @@ locations:
 
   # `Graveyard Ledge` (php:132-139):
   #   (canBootsClip && Boots) || (canSuperSpeed && spin) ||
-  #   canOneFrameClipOW || (MagicMirror && DW NW && (MoonPearl || OWYBA+bottle
-  #                                                  || canBunnyRevive))
+  #   (canOneFrameClipOW || (MagicMirror && DW NW && (MoonPearl || OWYBA+bottle
+  #                                                   || canBunnyRevive)))
+  #   AND canBombThings for the back-room bomb wall.
   # Phase A retained the MagicMirror cross-region path. Phase B Slice 4 §7
   # surfaces boots-clip + OWG + the pearl-bypass disjunct on the
   # MagicMirror inner conjunction. canSuperSpeed + canBunnyRevive lack
   # macros so those disjuncts drop.
   - id: "Graveyard Ledge"
     region: LightWorld_NorthWest
-    can_reach: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())"
+    can_reach: "((HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())) AND CanBombThings()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:132-139"
 
   # `Mushroom` (php:53) — no setRequirements; default TRUE.

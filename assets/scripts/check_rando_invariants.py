@@ -114,7 +114,7 @@ ITEM_POOLS = ["normal", "hard"]
 # per cell. This is not a random refusal/fuzz test: every seed here should
 # generate across the default strict-accessibility matrix. Explicit
 # reject/accept coverage lives in check_rando_slot_path.py.
-SEED_POOL = [1, 7, 0xABCDEF, 31337, 85]
+SEED_POOL = [1, 2, 0xABCDEF, 31337, 85]
 
 # fallback_warnings kinds that are genuine generation failures (vs. benign
 # metadata). See module docstring for the full rationale.

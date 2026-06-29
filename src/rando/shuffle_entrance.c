@@ -79,7 +79,7 @@ static const uint16 kEnt_locs_3[1] = { 153 };
 static const uint16 kEnt_locs_4[3] = { 142, 143, 144 };
 static const uint16 kEnt_locs_6[1] = { 154 };
 static const uint16 kEnt_locs_7[1] = { 147 };
-static const uint16 kEnt_locs_8[1] = { 215 };
+static const uint16 kEnt_locs_8[2] = { 215, 217 };
 static const uint16 kEnt_locs_9[1] = { 216 };
 static const uint16 kEnt_locs_10[1] = { 175 };
 static const uint16 kEnt_locs_11[1] = { 173 };
@@ -91,6 +91,9 @@ static const uint16 kEnt_locs_16[2] = { 206, 207 };
 static const uint16 kEnt_locs_17[5] = { 222, 223, 224, 225, 227 };
 static const uint16 kEnt_locs_18[1] = { 152 };
 static const uint16 kEnt_locs_19[1] = { 165 };
+static const uint16 kEnt_locs_24[2] = { 149, 150 };
+static const uint16 kEnt_locs_28[5] = { 160, 161, 162, 163, 164 };
+static const uint16 kEnt_locs_37[1] = { 218 };
 
 #define kEntranceCaveInteriorCount 38
 static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
@@ -102,7 +105,7 @@ static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
   { /* 5*/ "kakariko_library", 0x107, "LightWorld_South", kEnt_ids_5, 2, 0, 0 },
   { /* 6*/ "chicken_house", 0x108, "LightWorld_NorthWest", kEnt_ids_6, 1, kEnt_locs_6, 1 },
   { /* 7*/ "potion_shop", 0x109, "LightWorld_NorthEast", kEnt_ids_7, 1, kEnt_locs_7, 1 },
-  { /* 8*/ "village_chest_game", 0x106, "DarkWorld_NorthWest", kEnt_ids_8, 2, kEnt_locs_8, 1 },
+  { /* 8*/ "village_chest_game", 0x106, "DarkWorld_NorthWest", kEnt_ids_8, 2, kEnt_locs_8, 2 },
   { /* 9*/ "bomb_shop", 0x11C, "DarkWorld_NorthWest", kEnt_ids_9, 2, kEnt_locs_9, 1 },
   { /*10*/ "aginah_cave", 0x10A, "LightWorld_South", kEnt_ids_10, 1, kEnt_locs_10, 1 },
   { /*11*/ "watergate", 0x10B, "LightWorld_South", kEnt_ids_11, 1, kEnt_locs_11, 1 },
@@ -118,22 +121,31 @@ static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
   { /*21*/ "general_store_2", 0x112, "LightWorld_NorthWest", kEnt_ids_21, 2, 0, 0 },
   { /*22*/ "archery_game", 0x111, "DarkWorld_South", kEnt_ids_22, 1, 0, 0 },
   { /*23*/ "general_store_3", 0x10F, "DarkWorld_NorthWest", kEnt_ids_23, 1, 0, 0 },
-  { /*24*/ "pond_of_wishing", 0x114, "LightWorld_NorthEast", kEnt_ids_24, 2, 0, 0 },
+  { /*24*/ "pond_of_wishing", 0x114, "LightWorld_NorthEast", kEnt_ids_24, 2, kEnt_locs_24, 2 },
   { /*25*/ "pond_of_happiness", 0x115, "LightWorld_South", kEnt_ids_25, 2, 0, 0 },
   { /*26*/ "warped_pond_of_wishing", 0x116, "DarkWorld_NorthWest", kEnt_ids_26, 1, 0, 0 },
   { /*27*/ "chest_shell_game", 0x118, "LightWorld_NorthWest", kEnt_ids_27, 1, 0, 0 },
-  { /*28*/ "blinds_old_hideout", 0x119, "DarkWorld_NorthWest", kEnt_ids_28, 1, 0, 0 },
+  { /*28*/ "blinds_old_hideout", 0x119, "LightWorld_NorthWest", kEnt_ids_28, 1, kEnt_locs_28, 5 },
   { /*29*/ "storyteller_cave_4", 0x11A, "DarkWorld_NorthEast", kEnt_ids_29, 1, 0, 0 },
-  { /*30*/ "refill_cave_1", 0x11B, "LightWorld_NorthEast", kEnt_ids_30, 2, 0, 0 },
+  { /*30*/ "refill_cave_1", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 2, 0, 0 },
   { /*31*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_31, 2, 0, 0 },
   { /*32*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_32, 1, 0, 0 },
   { /*33*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_33, 2, 0, 0 },
   { /*34*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_34, 2, 0, 0 },
-  { /*35*/ "thief_hideout_3", 0x125, "LightWorld_NorthWest", kEnt_ids_35, 2, 0, 0 },
-  { /*36*/ "fairy_cave_5", 0x126, "LightWorld_NorthWest", kEnt_ids_36, 2, 0, 0 },
-  { /*37*/ "heart_piece_cave_3", 0x127, "LightWorld_DeathMountain_West", kEnt_ids_37, 1, 0, 0 },
+  { /*35*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_35, 2, 0, 0 },
+  { /*36*/ "fairy_cave_5", 0x126, "LightWorld_South", kEnt_ids_36, 2, 0, 0 },
+  { /*37*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_37, 1, kEnt_locs_37, 1 },
 };
 // === end generated block ===
+
+static void cave_source_pred(int interior, uint32 *pred_off, uint16 *pred_len) {
+  if (pred_off) *pred_off = 0;
+  if (pred_len) *pred_len = 0;
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return;
+  if ((uint32)interior >= kRandoCaveSourcePredsCount) return;
+  if (pred_off) *pred_off = kRandoCaveSourcePreds[interior].off;
+  if (pred_len) *pred_len = kRandoCaveSourcePreds[interior].len;
+}
 
 // ---------------------------------------------------------------------------
 // Dungeon table (Stage 2) — the 6 cleanly single-overworld-entrance dungeons.
@@ -280,20 +292,23 @@ void Entrance_ApplyRegionOverrides(const uint8 *assign, int n) {
   // point; the `assign[ix]` value is already range-checked below, but the `ix`
   // index into kCaveInteriors[] must be bounded too).
   if (n > kEntranceCaveInteriorCount) n = kEntranceCaveInteriorCount;
-  // For each interior ix (door fixed in vanilla region R[ix]), the interior now
-  // reached through ix's door is J = assign[ix]; J's locations become reachable
-  // via R[ix]. So override every location of interior J with interior ix's
-  // region. assign is a bijection ⇒ each interior's locations are set once.
+  // For each interior ix (door fixed in vanilla region R[ix], with optional
+  // source predicate P[ix]), the interior now reached through ix's door is
+  // J = assign[ix]. J's locations become reachable via R[ix] AND P[ix].
+  // assign is a bijection ⇒ each interior's locations are set once.
   for (int ix = 0; ix < n; ix++) {
     const RandoCaveInterior *src = &kCaveInteriors[ix];
     if (src->region_name == NULL) continue;
     uint16 region_id = Rando_FindRegionByName(src->region_name);
     if (region_id == 0xFFFF) continue;  // unknown region name — skip (no-op)
+    uint32 pred_off = 0; uint16 pred_len = 0;
+    cave_source_pred(ix, &pred_off, &pred_len);
     int j = assign[ix];
     if (j < 0 || j >= kEntranceCaveInteriorCount) continue;
     const RandoCaveInterior *dst = &kCaveInteriors[j];
     for (int k = 0; k < dst->location_count; k++) {
-      Rando_SetEntranceRegionOverride(dst->location_ids[k], region_id);
+      Rando_SetEntranceRegionOverridePred(dst->location_ids[k], region_id,
+                                          pred_off, pred_len);
     }
   }
 }
@@ -516,21 +531,19 @@ void Entrance_ApplyCrossOverrides(const uint8 *assign, int n) {
     uint16 R_e = 0xFFFF, G_e = 0xFFFF; uint32 Pe_off = 0; uint16 Pe_len = 0;
     if (e_cave) {
       R_e = Rando_FindRegionByName(kCaveInteriors[e].region_name);
+      cave_source_pred(e, &Pe_off, &Pe_len);
     } else {
       const RandoDungeon *de = &kDungeons[didx[e - ncave]];
       G_e = Rando_FindRegionByName(dungeon_override_key(de));
       dungeon_door_edge(G_e, &R_e, &Pe_off, &Pe_len);
     }
     if (y_cave) {
-      // Target is a cave: override its locations to e's door region. If e is a
-      // gated dungeon door, the cave inherits e's predicate (P_e).
+      // Target is a cave: override its locations to e's door region and source
+      // predicate. For cave sources, P_e comes from entrance_registry.yaml
+      // can_enter; for dungeon sources, it is the dungeon door edge predicate.
       const RandoCaveInterior *yc = &kCaveInteriors[y];
       for (int k = 0; k < yc->location_count; k++) {
-        if (e_cave) {
-          Rando_SetEntranceRegionOverride(yc->location_ids[k], R_e);
-        } else {
-          Rando_SetEntranceRegionOverridePred(yc->location_ids[k], R_e, Pe_off, Pe_len);
-        }
+        Rando_SetEntranceRegionOverridePred(yc->location_ids[k], R_e, Pe_off, Pe_len);
       }
       // If e is a dungeon, its original door-edge must be REMOVED (a cave is
       // behind it now) — redirect e's edge to the void sink.
@@ -541,8 +554,9 @@ void Entrance_ApplyCrossOverrides(const uint8 *assign, int n) {
       uint16 G_y = Rando_FindRegionByName(dungeon_override_key(dy));
       if (G_y == 0xFFFF) continue;
       if (e_cave) {
-        // Dungeon behind a cave door: ADD an unconditional edge cave-region → G_y.
-        Rando_AddEntranceEdge(R_e, G_y, 0, 0);
+        // Dungeon behind a cave door: ADD an edge cave-region → G_y that keeps
+        // the cave source gate with the door slot.
+        Rando_AddEntranceEdge(R_e, G_y, Pe_off, Pe_len);
       } else {
         // Dungeon behind a dungeon door: remap e's edge to G_y (keeps P_e).
         if (G_e != 0xFFFF) Rando_SetEntranceEdgeOverride(G_e, G_y);
@@ -781,9 +795,9 @@ void Entrance_ApplyDecoupledExitEdges(const uint8 *exit_assign, int n) {
     uint16 from_r = Rando_FindRegionByName(kCaveInteriors[i].region_name);
     uint16 to_r   = Rando_FindRegionByName(kCaveInteriors[j].region_name);
     if (from_r == 0xFFFF || to_r == 0xFFFF || from_r == to_r) continue;
-    // Unconditional: a cave has no access gate beyond reaching its hole, and you
-    // can always walk back out. pred_len 0 ⇒ walked unconditionally.
-    Rando_AddEntranceEdge(from_r, to_r, 0, 0);
+    uint32 pred_off = 0; uint16 pred_len = 0;
+    cave_source_pred(i, &pred_off, &pred_len);
+    Rando_AddEntranceEdge(from_r, to_r, pred_off, pred_len);
   }
 }
 
@@ -1057,6 +1071,11 @@ void Entrance_SelfCheck(void) {
       }
     }
   }
+  if (kRandoCaveSourcePredsCount != kEntranceCaveInteriorCount) {
+    fprintf(stderr, "Entrance_SelfCheck: cave source predicate count %u != %d\n",
+            (unsigned)kRandoCaveSourcePredsCount, kEntranceCaveInteriorCount);
+    exit(2);
+  }
 
   // (2) Registry↔logic cross-validation: every cave-location's registry region
   //     must equal its region_id in the generated logic table. This catches
@@ -1144,7 +1163,7 @@ void Entrance_SelfCheck(void) {
   // (6) Region-override closed form, asserted via the getter: a forced 2-swap of
   //     two interiors with locations and DIFFERENT regions exchanges their
   //     location regions. interior 10 aginah_cave (LightWorld_South, loc 175)
-  //     <-> interior 8 village_chest_game (DarkWorld_NorthWest, loc 215).
+  //     <-> interior 8 village_chest_game (DarkWorld_NorthWest, locs 215/217).
   {
     uint16 lws = Rando_FindRegionByName("LightWorld_South");
     uint16 dwnw = Rando_FindRegionByName("DarkWorld_NorthWest");

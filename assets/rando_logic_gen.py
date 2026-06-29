@@ -463,6 +463,20 @@ def load_pots(path: Path, logic_regions: dict[str, RegionDef] | None = None):
     return out, rows, bridge_rows
 
 
+def load_cave_source_predicates(path: Path) -> list[tuple[str, str]]:
+    """Return entrance-shuffle cave source predicates in registry order."""
+    if not path.exists():
+        return []
+    doc = load_yaml(path) or {}
+    rows = []
+    for interior in doc.get("interiors", []) or []:
+        rows.append((
+            str(interior.get("interior_id", "")),
+            str(interior.get("can_enter") or "TRUE()"),
+        ))
+    return rows
+
+
 def build_door_pot_bridge(bridge_sources: list[dict], compile_src) -> tuple[list[dict], int]:
     rows: list[dict] = []
     for src in sorted(bridge_sources, key=lambda r: r["loc_id"]):
@@ -2106,6 +2120,7 @@ def emit_logic_data(
     glitch_status_rows: list[dict] | None = None,
     boss_kill_predicates: list[bytes] | None = None,
     dungeon_vanilla_boss: list[int] | None = None,
+    cave_source_predicates: list[bytes] | None = None,
     door_vm_preds: list[bytes] | None = None,
     door_portal_rows: list[tuple] | None = None,
     door_pot_rows: list[dict] | None = None,
@@ -2238,6 +2253,15 @@ def emit_logic_data(
         door_pot_regions.extend(row.get("regions", []))
         door_pot_offsets.append(out_row)
 
+    # Cave entrance-shuffle source gates (entrance_registry.yaml order). These
+    # are AND-ed into any cave/dungeon target reached through the source cave
+    # slot. len 0 means the source region alone is enough.
+    cave_source_offsets: list[tuple[int, int]] = []
+    for enc in (cave_source_predicates or []):
+        off, length = (len(stream), len(enc)) if enc else (0, 0)
+        stream += enc
+        cave_source_offsets.append((off, length))
+
     # Emit the stream as a uint8 array.
     out.append("// Predicate bytecode stream — concatenated per the encoding documented in")
     out.append("// assets/rando_logic_gen.py. Locations and edges reference (offset, length).")
@@ -2266,6 +2290,19 @@ def emit_logic_data(
     else:
         out.append("const RandoBossKillPred kRandoBossKillPred[1] = { { 0, 0 } };")
         out.append("const uint32 kRandoBossKillPredCount = 0;")
+    out.append("")
+
+    # Cave entrance-shuffle source predicates (entrance_registry.yaml order).
+    out.append("// Cave entrance-shuffle source gates (entrance_registry.yaml interiors order).")
+    if cave_source_offsets:
+        out.append(f"const RandoCaveSourcePred kRandoCaveSourcePreds[{len(cave_source_offsets)}] = {{")
+        for idx, (off, length) in enumerate(cave_source_offsets):
+            out.append(f"  {{ {off}, {length} }},  // cave interior {idx}")
+        out.append("};")
+        out.append(f"const uint32 kRandoCaveSourcePredsCount = {len(cave_source_offsets)};")
+    else:
+        out.append("const RandoCaveSourcePred kRandoCaveSourcePreds[1] = { { 0, 0 } };")
+        out.append("const uint32 kRandoCaveSourcePredsCount = 0;")
     out.append("")
 
     # Door shuffle — Vm-pred + portal-gate tables (rando_logic.h types).
@@ -2971,6 +3008,28 @@ def main(argv=None):
             all_errors.append(f"boss_kill[{bi}] ({body}): parse error: {e}")
             boss_kill_predicates.append(b"\x0d\x00")  # safe default: FALSE
 
+    # Cave entrance-shuffle source gates from entrance_registry.yaml. Omitted or
+    # TRUE() rows encode as len 0, meaning the source region alone gates the slot.
+    cave_source_predicates: list[bytes] = []
+    for idx, (interior_id, src) in enumerate(
+            load_cave_source_predicates(RANDO_ASSETS / "entrance_registry.yaml")):
+        if src.strip() == "TRUE()":
+            cave_source_predicates.append(b"")
+            continue
+        try:
+            ast = parse_predicate(src)
+            ast = resolve_calls(ast, ops, all_macros)
+            ast = expand_macros(ast, all_macros, parsed_macro_bodies, ops)
+            errs = well_formedness(ast, ops, items, logic_regions, locations,
+                                   f"cave_source[{idx}]")
+            if errs:
+                for e in errs:
+                    all_errors.append(f"cave_source[{idx}] {interior_id}: {e}")
+            cave_source_predicates.append(encode_predicate(ast, ops, items, logic_regions, locations))
+        except ParseError as e:
+            all_errors.append(f"cave_source[{idx}] {interior_id}: parse error: {e}")
+            cave_source_predicates.append(b"\x0d\x00")  # safe default: FALSE
+
     if all_errors:
         for err in all_errors:
             print(f"WARN: {err}", file=sys.stderr)
@@ -3097,6 +3156,7 @@ def main(argv=None):
                     glitch_status_rows=glitch_status_rows,
                     boss_kill_predicates=boss_kill_predicates,
                     dungeon_vanilla_boss=DUNGEON_VANILLA_BOSS,
+                    cave_source_predicates=cave_source_predicates,
                     door_vm_preds=door_vm_preds,
                     door_portal_rows=door_portal_rows,
                     door_pot_rows=door_pot_rows,
