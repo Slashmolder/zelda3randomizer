@@ -2506,7 +2506,7 @@ enum {
   kRow_RaceMode,
   kRow_Hints,              // Slice 5 — telepathic-tile hints (on/off)
   kRow_Traps,              // add-rando-traps — off/low/medium/high
-  kRow_EnemyDropChecks,    // add-rando-enemy-drop-sanity — off/keys/all
+  kRow_EnemyDropChecks,    // add-rando-enemy-drop-sanity — off/keys/dungeon
   // Phase-B disabled rows (label-only; cursor skips over input but A
   // refuses with a tooltip-style refusal sound).
   kRow_EntranceShuffle_Disabled,
@@ -2810,9 +2810,9 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       }
     case kRow_EnemyDropChecks:
       switch (Settings_EffectiveEnemyDropChecks(s)) {
-        case kEnemyDropChecks_All:  return "ALL";
-        case kEnemyDropChecks_Keys: return "KEYS";
-        default:                    return "OFF";
+        case kEnemyDropChecks_Dungeon: return "DUNG";
+        case kEnemyDropChecks_Keys:    return "KEYS";
+        default:                       return "OFF";
       }
     case kRow_EntranceShuffle_Disabled:
     case kRow_EnemyShuffle_Disabled:
@@ -3027,7 +3027,7 @@ static void CycleRow(int row, int delta) {
         uint8 max_tier =
             Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
             !s->enemy_shuffle
-                ? kEnemyDropChecks_All
+                ? kEnemyDropChecks_Dungeon
                 : kEnemyDropChecks_Keys;
         uint8 n = (uint8)(Settings_EffectiveEnemyDropChecks(s) + 1);
         if (n > max_tier) n = kEnemyDropChecks_Off;

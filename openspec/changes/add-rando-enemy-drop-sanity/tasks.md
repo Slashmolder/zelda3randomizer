@@ -1,7 +1,7 @@
 # Enemy Drop Sanity - tasks
 
-Ordered so the forced-key tier can land independently, with the all-eligible-enemy
-tier supplied by `add-rando-all-enemy-checks`.
+Ordered so the forced-key tier can land independently, with the dungeon-enemy
+tier supplied by `add-rando-dungeon-enemy-checks`.
 
 - [x] 0.1 Audit current enemy-drop status: `drop_shuffle` is prize-pack only; forced
   small-key/big-key drops bypass it through `sprite_die_action`; pot-sanity patterns
@@ -12,14 +12,14 @@ tier supplied by `add-rando-all-enemy-checks`.
 ## 1. Settings and effective rules
 
 - [x] 1.1 Add `enemy_drop_checks` to `RandoSettings` with numeric values
-  `Off=0`, `Keys=1`, `All=2`.
+  `Off=0`, `Keys=1`, `Dungeon=2`.
 - [x] 1.2 Append one canonical settings byte, bump `kSettingsCanonicalLen`,
   `kGeneratorVersion`, expected canonical/hash selfchecks, share-string settings
   length/CRC handling, sidecar settings replay, snapshot settings TLV replay,
   suppressed-spoiler fixed settings length, UI persistence, and corpus manifest.
 - [x] 1.3 Implement effective accessors and derived normalization:
   vanilla keys normalize to `Off`, Dungeon keys including door shuffle are active,
-  `All` is active only for vanilla-door supported key modes, and `enemy_shuffle`
+  `Dungeon` is active only for vanilla-door supported key modes, and `enemy_shuffle`
   composes by source slot.
 - [x] 1.4 Add tests that old share strings/canonical blobs decode as `Off` and that
   default/off seeds are placement-byte-identical.
@@ -85,7 +85,7 @@ tier supplied by `add-rando-all-enemy-checks`.
 - [x] 5.2 Add VM/accessor support for active enemy-drop key gates under Wild and
   Retro key modes plus Dungeon min-depth gates.
 - [x] 5.3 Expose the settings UI as a selector with `Off` and `Enemy key drops`;
-  the follow-up all-enemy change expands it to include `All`.
+  the follow-up dungeon-enemy change expands it to include `Dungeon`.
 - [x] 5.4 Disable or normalize the selector when small keys are vanilla, but allow
   door shuffle and `enemy_shuffle` composition.
 - [x] 5.5 Group tracker, reach-panel, auto-tracker, and spoiler entries by
@@ -129,9 +129,9 @@ tier supplied by `add-rando-all-enemy-checks`.
 - [ ] 7b.1 If modeled later, add the missing castle big-key item, direct-grant icon,
   placement containment/fill bans, logic predicates, and door/prover joins.
 
-## 8. All-eligible-enemy tier
+## 8. Dungeon-enemy tier
 
-- [x] 8.1 Create a separate follow-up OpenSpec change for `All`.
+- [x] 8.1 Create a separate follow-up OpenSpec change for `Dungeon`.
 - [x] 8.2 Generate a static dungeon spawn registry and exclude bosses,
   NPCs, objects, overlords, spawners, transient child sprites, dynamic spawns, and
   non-killable sources.

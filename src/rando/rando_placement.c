@@ -89,7 +89,8 @@ uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
   const RandoPlacementTable *t = g_active_placement;
   if (t == NULL) return vanilla_item_id;
   // Binary search the sorted-by-location_id table.
-  // At ~1163 active locations (All tier) a per-location-check linear scan would
+  // At ~1163 active locations (pot/enemy location-expansion tiers) a
+  // per-location-check linear scan would
   // be too slow for per-pot break dispatch; O(log N) keeps it cheap.
   if (g_active_placement_sorted) {
     uint16 lo = 0, hi = t->count;
@@ -412,7 +413,7 @@ static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *
 
 static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s) {
   return loc != NULL && s != NULL && loc->type == LOCTYPE_Enemy &&
-         Settings_EnemyChecksAllActive(s);
+         Settings_EnemyChecksDungeonActive(s);
 }
 
 static bool pot_registry_available(void) {
@@ -439,7 +440,7 @@ static bool settings_need_enemy_drop_registry(const RandoSettings *s) {
 }
 
 static bool settings_need_enemy_check_registry(const RandoSettings *s) {
-  return Settings_EnemyChecksAllActive(s);
+  return Settings_EnemyChecksDungeonActive(s);
 }
 
 static bool dungeon_key_depth_active(const RandoSettings *s) {
@@ -665,10 +666,10 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   }
   if (settings_need_enemy_check_registry(settings) && !enemy_check_registry_available()) {
     fprintf(stderr,
-      "BuildItemPool: enemy_drop_checks=all requested, but this binary was\n"
+      "BuildItemPool: enemy_drop_checks=dungeon requested, but this binary was\n"
       "  built without assets/rando/enemy_checks.gen.yaml. Run\n"
       "  assets/scripts/gen_enemy_check_tables.py with ROM assets and rebuild\n"
-      "  before generating all-enemy-check seeds.\n");
+      "  before generating dungeon enemy-check seeds.\n");
     return 0;
   }
 
@@ -3017,7 +3018,7 @@ void Placement_SelfCheck(void) {
     Placement_Install(NULL);
   }
 
-  // Placement-side selfchecks for enemy-drop key activation and all-enemy rows.
+  // Placement-side selfchecks for enemy-drop key activation and dungeon enemy rows.
   {
     uint32 enemy_locs = 0, enemy_key_locs = 0, enemy_bigkey_one_shots = 0;
     uint32 enemy_check_locs = 0;
@@ -3094,45 +3095,45 @@ void Placement_SelfCheck(void) {
     if (n_door != enemy_locs)
       selfcheck_die("enemy_drop_checks must compose with door shuffle Dungeon keys");
 
-    RandoSettings sall = sk;
-    sall.enemy_drop_checks = kEnemyDropChecks_All;
-    uint32 n_all_forced = 0, n_all_ordinary = 0;
+    RandoSettings sdungeon = sk;
+    sdungeon.enemy_drop_checks = kEnemyDropChecks_Dungeon;
+    uint32 n_dungeon_forced = 0, n_dungeon_ordinary = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
-      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sall))
-        n_all_forced++;
-      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sall))
-        n_all_ordinary++;
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sdungeon))
+        n_dungeon_forced++;
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sdungeon))
+        n_dungeon_ordinary++;
     }
-    if (n_all_forced != enemy_locs)
-      selfcheck_die("enemy_drop_checks All must keep forced key-drop rows active");
-    if (n_all_ordinary != enemy_check_locs)
-      selfcheck_die("enemy_drop_checks All must activate exactly ordinary enemy rows");
-    RandoSettings salldoor = sall;
-    salldoor.door_shuffle = kDoorShuffle_Basic;
-    uint32 n_all_door_ordinary = 0;
+    if (n_dungeon_forced != enemy_locs)
+      selfcheck_die("enemy_drop_checks Dungeon must keep forced key-drop rows active");
+    if (n_dungeon_ordinary != enemy_check_locs)
+      selfcheck_die("enemy_drop_checks Dungeon must activate exactly ordinary enemy rows");
+    RandoSettings sdungeondoor = sdungeon;
+    sdungeondoor.door_shuffle = kDoorShuffle_Basic;
+    uint32 n_dungeon_door_ordinary = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
-      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &salldoor))
-        n_all_door_ordinary++;
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sdungeondoor))
+        n_dungeon_door_ordinary++;
     }
-    if (n_all_door_ordinary != 0 ||
-        Settings_EffectiveEnemyDropChecks(&salldoor) != kEnemyDropChecks_Keys)
-      selfcheck_die("door shuffle must degrade All ordinary enemy checks to Keys");
-    RandoSettings sallenemy = sall;
-    sallenemy.enemy_shuffle = 1;
-    uint32 n_all_enemy_shuffle_forced = 0, n_all_enemy_shuffle_ordinary = 0;
+    if (n_dungeon_door_ordinary != 0 ||
+        Settings_EffectiveEnemyDropChecks(&sdungeondoor) != kEnemyDropChecks_Keys)
+      selfcheck_die("door shuffle must degrade Dungeon ordinary enemy checks to Keys");
+    RandoSettings sdungeonenemy = sdungeon;
+    sdungeonenemy.enemy_shuffle = 1;
+    uint32 n_dungeon_enemy_shuffle_forced = 0, n_dungeon_enemy_shuffle_ordinary = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
-      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sallenemy))
-        n_all_enemy_shuffle_forced++;
-      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sallenemy))
-        n_all_enemy_shuffle_ordinary++;
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sdungeonenemy))
+        n_dungeon_enemy_shuffle_forced++;
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sdungeonenemy))
+        n_dungeon_enemy_shuffle_ordinary++;
     }
-    if (n_all_enemy_shuffle_forced != enemy_locs ||
-        n_all_enemy_shuffle_ordinary != 0 ||
-        Settings_EffectiveEnemyDropChecks(&sallenemy) != kEnemyDropChecks_Keys)
-      selfcheck_die("enemy shuffle must degrade All ordinary enemy checks to Keys");
+    if (n_dungeon_enemy_shuffle_forced != enemy_locs ||
+        n_dungeon_enemy_shuffle_ordinary != 0 ||
+        Settings_EffectiveEnemyDropChecks(&sdungeonenemy) != kEnemyDropChecks_Keys)
+      selfcheck_die("enemy shuffle must degrade Dungeon ordinary enemy checks to Keys");
 
     if (has_enemy_drop_registry) {
       RandoCounts seeded;
@@ -3198,26 +3199,26 @@ void Placement_SelfCheck(void) {
     uint16 n_pool_dun_keys = BuildItemPool(&sdun, dun_key_pool, kRandoLocationCapacity);
     if (has_enemy_drop_registry && n_pool_dun_keys != (uint16)(n_pool_dun_off + enemy_locs))
       selfcheck_die("enemy_drop_checks Dungeon pool/slot count drift");
-    uint16 all_pool[kRandoLocationCapacity];
-    uint16 n_pool_all = BuildItemPool(&sall, all_pool, kRandoLocationCapacity);
+    uint16 dungeon_pool[kRandoLocationCapacity];
+    uint16 n_pool_dungeon = BuildItemPool(&sdungeon, dungeon_pool, kRandoLocationCapacity);
     if (!has_enemy_check_registry) {
-      if (n_pool_all != 0)
-        selfcheck_die("enemy_drop_checks All must fail closed when the ordinary enemy registry is absent");
-    } else if (n_pool_all != (uint16)(n_pool_keys + enemy_check_locs)) {
+      if (n_pool_dungeon != 0)
+        selfcheck_die("enemy_drop_checks Dungeon must fail closed when the ordinary enemy registry is absent");
+    } else if (n_pool_dungeon != (uint16)(n_pool_keys + enemy_check_locs)) {
       fprintf(stderr,
-              "[Placement_SelfCheck] enemy all pool keys=%u all=%u ordinary=%u\n",
-              (unsigned)n_pool_keys, (unsigned)n_pool_all,
+              "[Placement_SelfCheck] enemy dungeon pool keys=%u dungeon=%u ordinary=%u\n",
+              (unsigned)n_pool_keys, (unsigned)n_pool_dungeon,
               (unsigned)enemy_check_locs);
-      selfcheck_die("enemy_drop_checks All pool/slot count drift");
+      selfcheck_die("enemy_drop_checks Dungeon pool/slot count drift");
     }
-    uint16 all_door_pool[kRandoLocationCapacity];
-    uint16 n_pool_all_door = BuildItemPool(&salldoor, all_door_pool, kRandoLocationCapacity);
-    RandoSettings sdoor_keys = salldoor;
+    uint16 dungeon_door_pool[kRandoLocationCapacity];
+    uint16 n_pool_dungeon_door = BuildItemPool(&sdungeondoor, dungeon_door_pool, kRandoLocationCapacity);
+    RandoSettings sdoor_keys = sdungeondoor;
     sdoor_keys.enemy_drop_checks = kEnemyDropChecks_Keys;
     uint16 door_key_pool[kRandoLocationCapacity];
     uint16 n_pool_door_keys = BuildItemPool(&sdoor_keys, door_key_pool, kRandoLocationCapacity);
-    if (has_enemy_drop_registry && n_pool_all_door != n_pool_door_keys)
-      selfcheck_die("door-shuffle All degradation must match Keys pool size");
+    if (has_enemy_drop_registry && n_pool_dungeon_door != n_pool_door_keys)
+      selfcheck_die("door-shuffle Dungeon degradation must match Keys pool size");
   }
 
   // BuildItemPool refuses pieces_required > pieces_placed for

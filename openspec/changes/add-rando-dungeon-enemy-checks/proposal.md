@@ -1,8 +1,8 @@
 ## Why
 
 `enemy_drop_checks=keys` has made the forced enemy key drops into first-class
-checks. The next requested tier is the more extreme option: every safe static
-enemy can become a check.
+checks. The next requested tier is the more extreme dungeon option: every safe
+static dungeon enemy can become a check.
 
 That still cannot be a blind enum unlock. Unlike forced key drops, ordinary
 enemies do not all share pickup-time semantics, many enemies are spawned or
@@ -21,11 +21,11 @@ overworld source identity.
 
 ## What Changes
 
-- Expose `enemy_drop_checks=all` as value 2 in CSV, share/settings decoding,
+- Expose `enemy_drop_checks=dungeon` as value 2 in CSV, share/settings decoding,
   file select, and the native window.
-- Keep `all` active only when effective small keys are Wild/Retro or Dungeon.
+- Keep `dungeon` active only when effective small keys are Wild/Retro or Dungeon.
   Vanilla small keys normalize to `off`; door shuffle and enemy shuffle degrade
-  requested `all` to effective `keys`.
+  requested `dungeon` to effective `keys`.
 - Add a generated local audit, `assets/rando/enemy_check_candidates.audit.yaml`,
   produced by `assets/scripts/audit_enemy_check_candidates.py`.
 - Add `assets/scripts/gen_enemy_check_tables.py`, which scans local dungeon
@@ -42,16 +42,16 @@ overworld source identity.
 - Reuse the `[Graphics] EnemyDropMarker` preference for ordinary enemy carriers,
   with `item` and `generic` marker modes; item mode falls back to generic when
   multiple active room markers need different item icons.
-- Add corpus rows for all-enemy Wild keys, all-enemy Dungeon keys, and the
+- Add corpus rows for dungeon-enemy Wild keys, dungeon-enemy Dungeon keys, and the
   door-shuffle degradation path.
 
 ## Non-Goals
 
 - Do not include overworld enemies in the emitted registry until runtime carries
   source stage/list-slot identity or an equivalent stable lookup key.
-- Do not enable ordinary all-enemy checks under door shuffle until non-key enemy
+- Do not enable ordinary dungeon-enemy checks under door shuffle until non-key enemy
   checks have a reviewed door-region bridge.
-- Do not enable ordinary all-enemy checks under enemy shuffle until placement can
+- Do not enable ordinary dungeon-enemy checks under enemy shuffle until placement can
   consume the actual shuffled enemy type and HP scaling for each source slot.
 - Do not raise `kRandoLocationCapacity`; the dungeon-only registry fits the
   current capacity with existing pot-sanity and enemy-drop rows.

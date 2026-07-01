@@ -1,8 +1,8 @@
-# All Enemy Checks - tasks
+# Dungeon Enemy Checks - tasks
 
 ## 1. Proof and generated audit
 
-- [x] 1.1 Create a separate OpenSpec follow-up for the all-enemy tier.
+- [x] 1.1 Create a separate OpenSpec follow-up for the dungeon-enemy tier.
 - [x] 1.2 Add `assets/scripts/audit_enemy_check_candidates.py` to scan local
   sprite assets and emit gitignored `assets/rando/enemy_check_candidates.audit.yaml`.
 - [x] 1.3 Review the audit output and start with dungeon-only emission; overworld
@@ -36,14 +36,14 @@
   predicates and key-depth metadata.
 - [x] 4.2 Add placement pool/junk/trap/customizer policy for ordinary `Enemy`
   checks.
-- [x] 4.3 Expose `enemy_drop_checks=all` in CSV, file select, and the native UI,
-  with door shuffle and enemy shuffle degrading requested `all` to effective
+- [x] 4.3 Expose `enemy_drop_checks=dungeon` in CSV, file select, and the native UI,
+  with door shuffle and enemy shuffle degrading requested `dungeon` to effective
   `keys`.
 - [x] 4.4 Group spoiler/tracker/autotracker output through the normal dungeon room
   location model rather than a separate flat runtime-only list.
 - [x] 4.5 Add per-source kill predicates for ordinary enemy checks, including
   counted thrown-pot alternatives from engine damage tables and room pot counts.
-- [x] 4.6 Degrade requested `all` to effective `keys` under enemy shuffle until
+- [x] 4.6 Degrade requested `dungeon` to effective `keys` under enemy shuffle until
   placement can model shuffled type/HP for ordinary enemy checks.
 
 ## 5. Verification
@@ -51,7 +51,7 @@
 - [ ] 5.1 OpenSpec strict validation.
 - [ ] 5.2 Candidate/registry freshness checks.
 - [ ] 5.3 Release build and `--rando-selftest`.
-- [ ] 5.4 Corpus rows for keys, all-Wild, all-Dungeon, enemy shuffle degradation,
+- [ ] 5.4 Corpus rows for keys, dungeon-Wild, dungeon-Dungeon, enemy shuffle degradation,
   pot shuffle, door shuffle, and pot+enemy+door interactions.
 - [ ] 5.5 Fresh-eyes review.
 - [ ] 5.6 Runtime playtest: death direct grant, leave/re-enter, save/reload,

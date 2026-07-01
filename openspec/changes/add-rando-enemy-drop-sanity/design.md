@@ -3,9 +3,9 @@
 This design was revised through three fresh-eyes review rounds against the current
 runtime, placement, and OpenSpec surfaces. The key outcome is a bounded first
 implementation: forced enemy key drops become checks when effective small keys are
-Wild/Retro or Dungeon, including door shuffle's forced Dungeon mode. All-eligible
-enemies are implemented separately by the dungeon-only
-`add-rando-all-enemy-checks` follow-up; overworld ordinary enemies remain deferred.
+Wild/Retro or Dungeon, including door shuffle's forced Dungeon mode. Dungeon enemy
+checks are implemented separately by the dungeon-only
+`add-rando-dungeon-enemy-checks` follow-up; overworld ordinary enemies remain deferred.
 
 ## Context and grounded facts
 
@@ -40,8 +40,8 @@ Add `enemy_drop_checks` as a separate setting:
 - `Keys` (1): eligible forced enemy key drops are checks when the effective
   small-key mode is Wild/Retro or Dungeon (`Retro` maps to Wild and pools
   `GenericKey` for small-key rows; door shuffle forces Dungeon).
-- `All` (2): includes `Keys` and the generated ordinary dungeon enemy checks
-  supplied by the all-enemy follow-up.
+- `Dungeon` (2): includes `Keys` and the generated ordinary dungeon enemy checks
+  supplied by the dungeon-enemy follow-up.
 
 The implementation appends one canonical settings byte after the existing canonical
 layout. It bumps `kSettingsCanonicalLen`, `kGeneratorVersion`, expected hashes, share
@@ -52,7 +52,7 @@ Old canonical blobs decode as `Off`.
 `apply_derived_rules` normalizes `enemy_drop_checks` to `Off` when effective small
 keys are vanilla. Dungeon keys are supported through generated DROP-region
 min-depth, combined free-drop accounting, and a door-oracle bridge when door
-shuffle is active. A raw `All` request degrades to `Keys` under door shuffle until
+shuffle is active. A raw `Dungeon` request degrades to `Keys` under door shuffle until
 ordinary enemy rows have their own door-region bridge, and under enemy shuffle
 until placement can consume substituted enemy type and HP data. `enemy_shuffle`
 still composes with the forced-key tier because location identity is keyed by
@@ -201,7 +201,7 @@ phantom checks.
   drops only. Active enemy-drop checks bypass the prize-pack table.
 - `enemy_shuffle`: composes with forced-key enemy-drop checks because runtime
   lookup uses the preserved vanilla room/source slot, not the substituted enemy
-  type. Requested all-enemy checks degrade to `Keys` while enemy shuffle is
+  type. Requested dungeon-enemy checks degrade to `Keys` while enemy shuffle is
   active because ordinary enemy logic cannot yet consume substituted type/HP.
 - `pot_shuffle`: composes in Wild/Retro mode through the existing pot behavior and
   generated enemy-drop predicates; it also composes in Dungeon mode through
@@ -210,9 +210,9 @@ phantom checks.
   door x enemy-drop bridge and door-layout bridge digest.
 - vanilla small keys: normalizes enemy-drop checks to `Off`.
 
-## D8 - All-eligible-enemy track
+## D8 - Dungeon-enemy track
 
-The all-enemy follow-up enables a conservative dungeon-only `All` tier. It proves:
+The dungeon-enemy follow-up enables a conservative dungeon-only `Dungeon` tier. It proves:
 
 - static dungeon spawn extraction with stable `(room, source_slot)` identity;
 - exclusion of bosses, NPCs, objects, overlords, spawners, transient child sprites,

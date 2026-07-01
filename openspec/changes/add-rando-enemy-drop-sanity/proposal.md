@@ -25,8 +25,8 @@ item, while the vanilla current-dungeon big-key grant is still preserved exactly
 once. Generic prize-pack drops, Pikit/item-steal behavior, spawned enemies,
 bosses, and arbitrary enemy drops stay out of Phase 1.
 
-The more extreme "every enemy is a check" option is implemented by the follow-up
-`add-rando-all-enemy-checks` change as a conservative dungeon-only tier. It emits
+The more extreme dungeon-enemy option is implemented by the follow-up
+`add-rando-dungeon-enemy-checks` change as a conservative dungeon-only tier. It emits
 ordinary enemy checks only for reviewed dungeon sources that fit capacity and have
 reachability metadata; overworld enemies remain excluded until runtime has stable
 source identity for them.
@@ -40,8 +40,8 @@ source identity for them.
     are Wild/Retro or Dungeon. Retro maps to Wild and uses `GenericKey` for
     small-key rows; door shuffle forces Dungeon and uses the door x enemy-drop
     bridge.
-  - `All` (2): includes `Keys` and the generated ordinary dungeon enemy checks
-    supplied by the follow-up all-enemy registry.
+  - `Dungeon` (2): includes `Keys` and the generated ordinary dungeon enemy
+    checks supplied by the follow-up dungeon-enemy registry.
 - Append one canonical settings byte for `enemy_drop_checks` instead of trying to
   consume remaining packed bits. Existing 28-byte settings blobs and old share
   strings decode with `enemy_drop_checks = Off`.
@@ -74,7 +74,7 @@ source identity for them.
 
 - `randomizer-enemy-drop-sanity`: generated forced-key enemy-drop registry,
   stable source identity, runtime checked-state dispatch, visual indication, and
-  the all-enemy follow-up hook.
+  the dungeon-enemy follow-up hook.
 
 ### Modified Capabilities
 
@@ -96,7 +96,7 @@ source identity for them.
 ## Non-Goals
 
 - Do not randomize generic prize-pack drops as locations in Phase 1.
-- Do not raise the location ceiling for all-enemy checks in Phase 1.
+- Do not raise the location ceiling for dungeon-enemy checks in Phase 1.
 - Do not include overworld ordinary enemy checks until stable overworld source
   identity exists.
 

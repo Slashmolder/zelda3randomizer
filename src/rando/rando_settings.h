@@ -183,8 +183,9 @@ typedef struct RandoSettings {
   // add-rando-enemy-drop-sanity — itemize forced enemy drop checks. Serialized as
   // append-only canonical byte [28]; old 28-byte v2 share strings zero-extend this
   // to Off. Keys is active when effective small keys are Wild/Retro or Dungeon.
-  // All also enables ordinary dungeon enemies for vanilla-door, non-enemy-shuffle
-  // layouts; door shuffle and enemy shuffle degrade All to Keys.
+  // Dungeon also enables ordinary dungeon enemies for vanilla-door,
+  // non-enemy-shuffle layouts; door shuffle and enemy shuffle degrade Dungeon to
+  // Keys.
   uint8 enemy_drop_checks;
 } RandoSettings;
 
@@ -203,13 +204,13 @@ typedef enum {
 } PotShuffle;
 
 // add-rando-enemy-drop-sanity — enemy-drop check tiers. Keys itemizes vanilla
-// forced enemy key drops. All also itemizes ordinary eligible dungeon enemies
+// forced enemy key drops. Dungeon also itemizes ordinary eligible dungeon enemies
 // as checks when vanilla-door logic is active; door shuffle degrades it to Keys
 // until a non-key door bridge exists.
 typedef enum {
   kEnemyDropChecks_Off = 0,
   kEnemyDropChecks_Keys = 1,
-  kEnemyDropChecks_All = 2,
+  kEnemyDropChecks_Dungeon = 2,
 } EnemyDropChecks;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
@@ -383,12 +384,12 @@ bool Settings_PotKeysActive(const RandoSettings *s);
 
 // add-rando-enemy-drop-sanity — normalized enemy-drop check tier. Keys is
 // honored when effective small keys are Wild (including Retro's computed mode)
-// or Dungeon. All is honored only for vanilla-door, non-enemy-shuffle layouts;
-// door shuffle and enemy shuffle keep the forced key-drop subset active by
-// degrading All to Keys.
+// or Dungeon. Dungeon is honored only for vanilla-door, non-enemy-shuffle
+// layouts; door shuffle and enemy shuffle keep the forced key-drop subset active
+// by degrading Dungeon to Keys.
 uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s);
 bool Settings_EnemyDropKeysActive(const RandoSettings *s);
-bool Settings_EnemyChecksAllActive(const RandoSettings *s);
+bool Settings_EnemyChecksDungeonActive(const RandoSettings *s);
 
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like

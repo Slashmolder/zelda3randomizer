@@ -770,12 +770,12 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
 
     Ordinary enemy checks are separate from forced EnemyDrop key rows. Missing
     local artifacts emit no Enemy locations plus an empty runtime lookup; an
-    active enemy_drop_checks=all seed fails closed in the placer.
+    active enemy_drop_checks=dungeon seed fails closed in the placer.
     """
     if not path.exists():
         print(f"WARNING: {path} not found - emitting NO ordinary enemy-check "
               f"locations. Run assets/scripts/gen_enemy_check_tables.py with "
-              f"ROM assets to enable enemy_drop_checks=all in this build.",
+              f"ROM assets to enable enemy_drop_checks=dungeon in this build.",
               file=sys.stderr)
         return {}, []
     if logic_regions is None:
@@ -2177,7 +2177,7 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
             lines.append(f"  {{ 0x{int(r['room']):04x}, {int(r['source_slot'])}, {int(r['loc_id'])} }},")
         lines.append("};")
     else:
-        lines.append("// EMPTY: enemy_checks.gen.yaml absent. Active all-enemy-check generation fails closed.")
+        lines.append("// EMPTY: enemy_checks.gen.yaml absent. Active dungeon enemy-check generation fails closed.")
         lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[1] = { { 0, 0, 0 } };")
     lines += [
         "",
@@ -3200,7 +3200,7 @@ def _location_type_id(t: str) -> int:
              "TakeAny",     # 16 — Phase B Slice 3b Retro take-any cave slot (per-seed active subset)
              "Pot",         # 17 — add-rando-pot-sanity dungeon pot (per-tier active subset)
              "EnemyDrop",    # 18 — add-rando-enemy-drop-sanity forced enemy key drop
-             "Enemy"]        # 19 — add-rando-all-enemy-checks ordinary enemy check
+             "Enemy"]        # 19 — add-rando-dungeon-enemy-checks ordinary dungeon enemy check
     if t not in types:
         return 0
     return types.index(t)
@@ -3296,7 +3296,7 @@ def main(argv=None):
         _enemy_source_counts(load_yaml(enemy_drops_path)) if enemy_drops_path.exists() else {}
     )
 
-    # add-rando-all-enemy-checks: merge ordinary dungeon enemy checks as a
+    # add-rando-dungeon-enemy-checks: merge ordinary dungeon enemy checks as a
     # distinct Enemy type. These are not vanilla key sources, so they do not
     # participate in enemy-drop source accounting; they only use the same
     # key-depth terms to avoid certifying enemies behind uncollected keys.

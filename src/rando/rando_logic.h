@@ -246,7 +246,7 @@ enum {
   LOCTYPE_TakeAny     = 16,  // Retro take-any cave slot
   LOCTYPE_Pot         = 17,  // Dungeon pot check (per-tier active subset)
   LOCTYPE_EnemyDrop   = 18,  // Forced enemy key-drop check (setting-active subset)
-  LOCTYPE_Enemy       = 19,  // Ordinary enemy check (all-enemy tier)
+  LOCTYPE_Enemy       = 19,  // Ordinary dungeon enemy check.
 };
 
 static inline bool Rando_LocationTypeCountsAsCheck(uint8 type) {

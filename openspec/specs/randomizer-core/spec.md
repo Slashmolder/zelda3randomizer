@@ -69,7 +69,7 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
 
-Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=all` degrades to `keys` under active door shuffle or enemy shuffle and normalizes to `off` when small keys are vanilla. Deserialization masks only the defined bits of bytes 25..27 and leaves undefined bits forward-compatible, but range-checks the scalar enum/count fields including byte 28.
+Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=dungeon` degrades to `keys` under active door shuffle or enemy shuffle and normalizes to `off` when small keys are vanilla. Deserialization masks only the defined bits of bytes 25..27 and leaves undefined bits forward-compatible, but range-checks the scalar enum/count fields including byte 28.
 
 #### Scenario: Reordering fields breaks settings_hash
 - **WHEN** the canonical serialization order changes (e.g., swap fields 4 and 5)

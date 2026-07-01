@@ -3,12 +3,12 @@
 ### Requirement: Enemy-drop check tiered scope
 
 The randomizer SHALL provide an `enemy_drop_checks` axis with values `Off` (0),
-`Keys` (1), and `All` (2). The `Keys` tier SHALL cover vanilla dungeon enemy
+`Keys` (1), and `Dungeon` (2). The `Keys` tier SHALL cover vanilla dungeon enemy
 forced small-key drops plus the single Hyrule Castle one-shot forced big-key check
 when the effective small-key mode is Wild/Retro or Dungeon. Retro computes to Wild
 for this purpose; door shuffle forces effective Dungeon keys and SHALL compose
-through the generated door x enemy-drop bridge. The `All` tier is supplied by the
-follow-up all-enemy change and includes ordinary generated dungeon enemy checks
+through the generated door x enemy-drop bridge. The `Dungeon` tier is supplied by the
+follow-up dungeon-enemy change and includes ordinary generated dungeon enemy checks
 when its additional gates pass.
 
 The existing `drop_shuffle` axis SHALL retain its current meaning: a deterministic
@@ -30,10 +30,10 @@ location-expansion axis, not a reinterpretation of prize-pack shuffle.
 - **THEN** the effective enemy-drop tier is `Keys` because door shuffle forces
   effective Dungeon small keys and installs the door x enemy-drop bridge
 
-#### Scenario: All tier downgrades under door shuffle
-- **WHEN** a settings source requests `All` while door shuffle is active
+#### Scenario: Dungeon tier downgrades under door shuffle
+- **WHEN** a settings source requests `Dungeon` while door shuffle is active
 - **THEN** effective settings downgrade the tier to `Keys`, so forced enemy-key
-  checks stay active and ordinary all-enemy checks stay inactive
+  checks stay active and ordinary dungeon-enemy checks stay inactive
 
 ### Requirement: Generated forced-key enemy-drop registry
 
@@ -156,14 +156,14 @@ excluded forced drops SHALL draw no marker.
 - **WHEN** the location is checked and the room is still active or later reloaded
 - **THEN** the marker no longer renders for that source
 
-### Requirement: All-eligible enemy tier is owned by the follow-up registry
+### Requirement: Dungeon enemy tier is owned by the follow-up registry
 
-The `All` value SHALL be valid only through the generated ordinary enemy-check
-registry supplied by `add-rando-all-enemy-checks`. Builds without that registry
-SHALL fail closed for active `All` seeds.
+The `Dungeon` value SHALL be valid only through the generated ordinary enemy-check
+registry supplied by `add-rando-dungeon-enemy-checks`. Builds without that
+registry SHALL fail closed for active `Dungeon` seeds.
 
-#### Scenario: All tier requires generated ordinary enemy data
-- **WHEN** a settings source requests `All` and the generated ordinary enemy-check
+#### Scenario: Dungeon tier requires generated ordinary enemy data
+- **WHEN** a settings source requests `Dungeon` and the generated ordinary enemy-check
   registry is unavailable
-- **THEN** placement rejects the seed instead of generating with missing all-enemy
+- **THEN** placement rejects the seed instead of generating with missing dungeon-enemy
   locations

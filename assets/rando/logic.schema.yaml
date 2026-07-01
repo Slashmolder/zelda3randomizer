@@ -132,7 +132,7 @@ location_record:
         - TakeAny       # Phase B Slice 3b — Retro take-any cave slots (per-seed active subset)
         - Pot           # add-rando-pot-sanity — dungeon pot (per-tier active subset)
         - EnemyDrop     # add-rando-enemy-drop-sanity — forced enemy key drop
-        - Enemy         # add-rando-all-enemy-checks — ordinary enemy check
+        - Enemy         # add-rando-dungeon-enemy-checks — ordinary dungeon enemy check
       description: |
         Location archetype. Mirrors ALTTPR's Location\* subclasses. Drives
         §6 dispatch routing (chest path vs. NPC handler vs. synthesized hook).

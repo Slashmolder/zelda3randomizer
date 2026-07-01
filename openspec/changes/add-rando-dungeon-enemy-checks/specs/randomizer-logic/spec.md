@@ -1,8 +1,8 @@
 ## ADDED Requirements
 
-### Requirement: All-enemy locations require sound reach predicates
+### Requirement: Dungeon-enemy locations require sound reach predicates
 
-An all-enemy source SHALL NOT be emitted into logic unless it has a conservative
+An ordinary dungeon enemy source SHALL NOT be emitted into logic unless it has a conservative
 reach predicate for the room or overworld screen that contains it and a
 source-type kill route.
 

@@ -524,11 +524,11 @@ static bool Rando_EnemyDropKeysActiveRuntime(void) {
   return Settings_EnemyDropKeysActive(s);
 }
 
-static bool Rando_EnemyChecksAllActiveRuntime(void) {
+static bool Rando_EnemyChecksDungeonActiveRuntime(void) {
   if (!(enhanced_features1 & kFeatures1_RandomizerActive))
     return false;
   const RandoSettings *s = Rando_GetActiveSettings();
-  return Settings_EnemyChecksAllActive(s);
+  return Settings_EnemyChecksDungeonActive(s);
 }
 
 static const RandoEnemyDropLookupEntry *Rando_FindEnemyDrop(uint16 room,
@@ -561,7 +561,7 @@ static const RandoEnemyCheckLookupEntry *Rando_FindEnemyCheck(uint16 room,
 }
 
 static bool Rando_TryGrantEnemyCheck(int k) {
-  if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors ||
+  if (!Rando_EnemyChecksDungeonActiveRuntime() || !player_is_indoors ||
       k < 0 || k >= 16 || sign8(sprite_N[k]))
     return false;
   const RandoEnemyCheckLookupEntry *check =
@@ -1937,7 +1937,7 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
       return true;
     }
   }
-  if (Rando_EnemyChecksAllActiveRuntime() && player_is_indoors &&
+  if (Rando_EnemyChecksDungeonActiveRuntime() && player_is_indoors &&
       !sign8(sprite_N[k])) {
     const RandoEnemyCheckLookupEntry *check =
         Rando_FindEnemyCheck(dungeon_room_index, sprite_N[k]);
@@ -4271,7 +4271,7 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
     Dungeon_LoadSingleOverlord(src);
     return k - 1;
   }
-  if (Rando_EnemyChecksAllActiveRuntime()) {
+  if (Rando_EnemyChecksDungeonActiveRuntime()) {
     const RandoEnemyCheckLookupEntry *check =
         Rando_FindEnemyCheck(dungeon_room_index2, (uint8)k);
     if (check != NULL && Rando_IsLocationChecked(check->loc_id)) {

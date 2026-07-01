@@ -1,8 +1,8 @@
-# All Enemy Checks - design
+# Dungeon Enemy Checks - design
 
 ## D1 - Eligibility and emitted registry
 
-The all-enemy tier is built from generated static source registries backed by
+The dungeon-enemy tier is built from generated static source registries backed by
 local ROM assets:
 
 - audit source: `zelda3_assets.dat`;
@@ -53,7 +53,7 @@ autotracker bounds remain compatible.
 
 ## D4 - Logic model
 
-All-enemy locations require conservative reach predicates. Dungeon enemies use
+Dungeon-enemy locations require conservative reach predicates. Dungeon enemies use
 reviewed room predicates plus key-depth terms. Underworld sources without
 dungeon key-depth coverage are outside this dungeon-only tier rather than treated
 as free checks.
@@ -67,12 +67,12 @@ the number of pot hits required. That branch is emitted only when the room has a
 least that many reachable liftable pots in `pots.gen.yaml`, so a two-pot kill
 does not become logical with only one pot.
 
-Door shuffle currently degrades requested `enemy_drop_checks=all` to effective
+Door shuffle currently degrades requested `enemy_drop_checks=dungeon` to effective
 `keys`. The generated door x enemy-drop bridge only models forced key sources,
 not arbitrary ordinary enemies, so ordinary `Enemy` rows stay disabled under door
 shuffle until a non-key door-region bridge is designed and validated.
 
-Enemy shuffle also degrades requested `enemy_drop_checks=all` to effective
+Enemy shuffle also degrades requested `enemy_drop_checks=dungeon` to effective
 `keys`. Source-slot identity remains stable enough for forced-key checks, but the
 placement graph cannot currently see the per-seed substituted enemy type or
 enemy-shuffle HP scaling for ordinary rows.
@@ -83,12 +83,12 @@ The setting is a three-value selector:
 
 - `off`
 - `keys`
-- `all`
+- `dungeon`
 
 The effective value may be lower than the requested value after derived settings
 are applied. Vanilla small-key mode becomes `off`; door shuffle turns requested
-`all` into effective `keys`; enemy shuffle also turns requested `all` into
-effective `keys`.
+`dungeon` into effective `keys`; enemy shuffle also turns requested `dungeon`
+into effective `keys`.
 
 Enemy check markers reuse `[Graphics] EnemyDropMarker`. `item` draws the placed
 item over unchecked carriers only when every active marker in the room resolves

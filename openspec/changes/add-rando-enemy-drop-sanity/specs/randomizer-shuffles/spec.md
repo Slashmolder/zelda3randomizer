@@ -12,8 +12,8 @@ substitute the real sprite type, but it SHALL NOT reorder the dungeon sprite-lis
 entry, shuffle the forced-key marker, or change the runtime source slot used by
 the generated enemy-drop lookup. Active forced-key enemy-drop checks SHALL continue
 to resolve by `(room, source_slot, drop_kind)`, not by substituted enemy type.
-Ordinary all-enemy checks SHALL be disabled by downgrading requested
-`enemy_drop_checks = All` to effective `Keys` while enemy shuffle is active,
+Ordinary dungeon-enemy checks SHALL be disabled by downgrading requested
+`enemy_drop_checks = Dungeon` to effective `Keys` while enemy shuffle is active,
 because placement does not currently know the shuffled enemy type or HP scaling.
 
 Pot shuffle MAY compose with enemy-drop checks in Wild/Retro mode through the

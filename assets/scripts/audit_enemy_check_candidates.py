@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Audit static enemies for a future all-enemy-check tier.
+"""Audit static enemies for the dungeon enemy-check tier.
 
-This is intentionally an audit generator, not the final all-enemy registry.
+This is intentionally an audit generator, not the final dungeon enemy registry.
 It scans local ROM-derived sprite assets, reuses the curated enemy-shuffle
 constraint table as the first-pass safety oracle, and reports whether the
 candidate set has stable runtime identity and location-capacity headroom.

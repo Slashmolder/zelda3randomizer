@@ -332,7 +332,7 @@ static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high
 // value (4) is Phase 7 and not offered here.
 static const char *const kPotShuffleLabels[] = {"off", "keys", "contents", "all"};
 // add-rando-enemy-drop-sanity — enemy_drop_checks tiers.
-static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "all"};
+static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "dungeon"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -1203,9 +1203,8 @@ static void Panel_Shuffles() {
     }
     HelpTooltip("Randomizes which enemies appear in each room.");
 
-    // add-rando-enemy-drop-sanity — forced enemy key drops / all eligible
-    // dungeon enemies as checks. Disabled when generation would normalize the
-    // setting off.
+    // add-rando-enemy-drop-sanity — forced enemy key drops / dungeon enemies as
+    // checks. Disabled when generation would normalize the setting off.
     {
       uint8 enemy_drop_key_mode = Settings_EffectiveSmallKeysMode(s);
       bool enemy_drops_off =
@@ -1225,7 +1224,7 @@ static void Panel_Shuffles() {
         s->enemy_drop_checks = shown;
         changed = true;
       }
-      HelpTooltip("Keys turns forced enemy key drops into checks. All also turns eligible dungeon enemies into checks; under door shuffle or enemy shuffle All currently behaves as Keys.");
+      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks; under door shuffle or enemy shuffle Dungeon currently behaves as Keys.");
       ImGui::EndDisabled();
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");

@@ -1,34 +1,34 @@
 ## MODIFIED Requirements
 
-### Requirement: Enemy drop check setting has an all-enemy tier
+### Requirement: Enemy drop check setting has a dungeon-enemy tier
 
 The `enemy_drop_checks` setting SHALL support values `Off` (0), `Keys` (1), and
-`All` (2). `All` SHALL be accepted by settings validation, CSV parsing, share
+`Dungeon` (2). `Dungeon` SHALL be accepted by settings validation, CSV parsing, share
 strings, file select, and the native window.
 
-#### Scenario: All is requested with supported small keys
-- **WHEN** `enemy_drop_checks=All` and effective small keys are Wild/Retro or
+#### Scenario: Dungeon is requested with supported small keys
+- **WHEN** `enemy_drop_checks=Dungeon` and effective small keys are Wild/Retro or
   Dungeon
-- **THEN** derived settings keep `enemy_drop_checks=All` when neither door shuffle
+- **THEN** derived settings keep `enemy_drop_checks=Dungeon` when neither door shuffle
   nor enemy shuffle is active
 
-#### Scenario: All is requested with vanilla small keys
-- **WHEN** `enemy_drop_checks=All` but effective small keys are vanilla
+#### Scenario: Dungeon is requested with vanilla small keys
+- **WHEN** `enemy_drop_checks=Dungeon` but effective small keys are vanilla
 - **THEN** derived settings normalize `enemy_drop_checks` to `Off`
 
-#### Scenario: All is requested with door shuffle
-- **WHEN** `enemy_drop_checks=All` and door shuffle is active
+#### Scenario: Dungeon is requested with door shuffle
+- **WHEN** `enemy_drop_checks=Dungeon` and door shuffle is active
 - **THEN** derived settings normalize `enemy_drop_checks` to `Keys`
 
-#### Scenario: All is requested with enemy shuffle
-- **WHEN** `enemy_drop_checks=All` and enemy shuffle is active
+#### Scenario: Dungeon is requested with enemy shuffle
+- **WHEN** `enemy_drop_checks=Dungeon` and enemy shuffle is active
 - **THEN** derived settings normalize `enemy_drop_checks` to `Keys`
 
 ## ADDED Requirements
 
-### Requirement: All-enemy emission must fit existing location capacity
+### Requirement: Dungeon-enemy emission must fit existing location capacity
 
-The implementation SHALL prove that ordinary all-enemy checks fit
+The implementation SHALL prove that ordinary dungeon-enemy checks fit
 `kRandoLocationCapacity` together with every other generated location type before
 those checks are emitted as locations.
 

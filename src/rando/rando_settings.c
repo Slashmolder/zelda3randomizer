@@ -304,12 +304,12 @@ uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s) {
   uint8 small_keys = Settings_EffectiveSmallKeysMode(s);
   if (small_keys != kDungeonItemMode_Wild && small_keys != kDungeonItemMode_Dungeon)
     return kEnemyDropChecks_Off;
-  if (s->enemy_drop_checks == kEnemyDropChecks_All) {
+  if (s->enemy_drop_checks == kEnemyDropChecks_Dungeon) {
     if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
       return kEnemyDropChecks_Keys;
     if (s->enemy_shuffle)
       return kEnemyDropChecks_Keys;
-    return kEnemyDropChecks_All;
+    return kEnemyDropChecks_Dungeon;
   }
   return kEnemyDropChecks_Keys;
 }
@@ -318,8 +318,8 @@ bool Settings_EnemyDropKeysActive(const RandoSettings *s) {
   return Settings_EffectiveEnemyDropChecks(s) >= kEnemyDropChecks_Keys;
 }
 
-bool Settings_EnemyChecksAllActive(const RandoSettings *s) {
-  return Settings_EffectiveEnemyDropChecks(s) == kEnemyDropChecks_All;
+bool Settings_EnemyChecksDungeonActive(const RandoSettings *s) {
+  return Settings_EffectiveEnemyDropChecks(s) == kEnemyDropChecks_Dungeon;
 }
 
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
@@ -542,8 +542,8 @@ bool Settings_Validate(const RandoSettings *s) {
   // precedent). The 3-bit field is already wide enough for it; only the value
   // is gated.
   if (s->pot_shuffle > kPotShuffle_All) return false;
-  // [28] enemy_drop_checks: 0=off, 1=forced key drops, 2=all eligible enemies.
-  if (s->enemy_drop_checks > kEnemyDropChecks_All) return false;
+  // [28] enemy_drop_checks: 0=off, 1=forced key drops, 2=dungeon enemies.
+  if (s->enemy_drop_checks > kEnemyDropChecks_Dungeon) return false;
   return true;
 }
 
@@ -1155,10 +1155,11 @@ void Settings_SelfCheck(void) {
     }
   }
   // add-rando-enemy-drop-sanity — enemy_drop_checks is append-only byte [28].
-  // Keys activates with Wild/Dungeon effective small keys. All activates the
-  // ordinary enemy checks only for vanilla-door, non-enemy-shuffle layouts; door
-  // shuffle and enemy shuffle degrade All to Keys so forced enemy key drops stay
-  // active without enabling ordinary enemy rows whose logic cannot be proven.
+  // Keys activates with Wild/Dungeon effective small keys. Dungeon activates the
+  // ordinary dungeon enemy checks only for vanilla-door, non-enemy-shuffle
+  // layouts; door shuffle and enemy shuffle degrade Dungeon to Keys so forced
+  // enemy key drops stay active without enabling ordinary enemy rows whose logic
+  // cannot be proven.
   {
     RandoSettings sd;
     Settings_SetDefaults(&sd);
@@ -1241,43 +1242,43 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Keys should be effective with enemy_shuffle\n");
       exit(2);
     }
-    RandoSettings sall;
-    Settings_SetDefaults(&sall);
-    sall.dungeon_small_keys_mode = kDungeonItemMode_Wild;
-    sall.enemy_drop_checks = kEnemyDropChecks_All;
+    RandoSettings sdungeon;
+    Settings_SetDefaults(&sdungeon);
+    sdungeon.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    sdungeon.enemy_drop_checks = kEnemyDropChecks_Dungeon;
     uint8 call[kSettingsCanonicalLen];
-    Settings_CanonicalSerialize(&sall, call);
-    if (call[28] != kEnemyDropChecks_All ||
-        !Settings_EnemyDropKeysActive(&sall) ||
-        !Settings_EnemyChecksAllActive(&sall)) {
-      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=All should be active with Wild keys\n");
+    Settings_CanonicalSerialize(&sdungeon, call);
+    if (call[28] != kEnemyDropChecks_Dungeon ||
+        !Settings_EnemyDropKeysActive(&sdungeon) ||
+        !Settings_EnemyChecksDungeonActive(&sdungeon)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Dungeon should be active with Wild keys\n");
       exit(2);
     }
-    RandoSettings rall;
-    if (Settings_CanonicalDeserialize(call, &rall) != 0 ||
-        rall.enemy_drop_checks != kEnemyDropChecks_All ||
-        !Settings_EnemyChecksAllActive(&rall)) {
-      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=All round-trip mismatch\n");
+    RandoSettings rdungeon;
+    if (Settings_CanonicalDeserialize(call, &rdungeon) != 0 ||
+        rdungeon.enemy_drop_checks != kEnemyDropChecks_Dungeon ||
+        !Settings_EnemyChecksDungeonActive(&rdungeon)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Dungeon round-trip mismatch\n");
       exit(2);
     }
-    RandoSettings salldoor = sall;
-    salldoor.door_shuffle = kDoorShuffle_Basic;
+    RandoSettings sdungeondoor = sdungeon;
+    sdungeondoor.door_shuffle = kDoorShuffle_Basic;
     uint8 calldoor[kSettingsCanonicalLen];
-    Settings_CanonicalSerialize(&salldoor, calldoor);
+    Settings_CanonicalSerialize(&sdungeondoor, calldoor);
     if (calldoor[28] != kEnemyDropChecks_Keys ||
-        !Settings_EnemyDropKeysActive(&salldoor) ||
-        Settings_EnemyChecksAllActive(&salldoor)) {
-      fprintf(stderr, "Settings_SelfCheck: door shuffle must degrade enemy_drop_checks=All to Keys\n");
+        !Settings_EnemyDropKeysActive(&sdungeondoor) ||
+        Settings_EnemyChecksDungeonActive(&sdungeondoor)) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must degrade enemy_drop_checks=Dungeon to Keys\n");
       exit(2);
     }
-    RandoSettings sallenemy = sall;
-    sallenemy.enemy_shuffle = 1;
+    RandoSettings sdungeonenemy = sdungeon;
+    sdungeonenemy.enemy_shuffle = 1;
     uint8 callenemy[kSettingsCanonicalLen];
-    Settings_CanonicalSerialize(&sallenemy, callenemy);
+    Settings_CanonicalSerialize(&sdungeonenemy, callenemy);
     if (callenemy[28] != kEnemyDropChecks_Keys ||
-        !Settings_EnemyDropKeysActive(&sallenemy) ||
-        Settings_EnemyChecksAllActive(&sallenemy)) {
-      fprintf(stderr, "Settings_SelfCheck: enemy shuffle must degrade enemy_drop_checks=All to Keys\n");
+        !Settings_EnemyDropKeysActive(&sdungeonenemy) ||
+        Settings_EnemyChecksDungeonActive(&sdungeonenemy)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy shuffle must degrade enemy_drop_checks=Dungeon to Keys\n");
       exit(2);
     }
     RandoSettings sr;
@@ -1288,10 +1289,10 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
     Settings_SetDefaults(&sr);
-    if (Settings_ParseCsv("dungeon_items.small_keys=wild,enemy_drop_checks=all", &sr) != 0 ||
-        sr.enemy_drop_checks != kEnemyDropChecks_All ||
-        !Settings_EnemyChecksAllActive(&sr)) {
-      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=all CSV parse failed\n");
+    if (Settings_ParseCsv("dungeon_items.small_keys=wild,enemy_drop_checks=dungeon", &sr) != 0 ||
+        sr.enemy_drop_checks != kEnemyDropChecks_Dungeon ||
+        !Settings_EnemyChecksDungeonActive(&sr)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=dungeon CSV parse failed\n");
       exit(2);
     }
   }
@@ -1753,9 +1754,15 @@ static int parse_pot_shuffle(const char *v, int vlen, uint8 *out) {
 
 // add-rando-enemy-drop-sanity — parse the enemy_drop_checks tier.
 static int parse_enemy_drop_checks(const char *v, int vlen, uint8 *out) {
-  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))  { *out = kEnemyDropChecks_Off;  return 0; }
-  if (csv_str_eq(v, vlen, "keys") || csv_str_eq(v, vlen, "1")) { *out = kEnemyDropChecks_Keys; return 0; }
-  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "2"))  { *out = kEnemyDropChecks_All;  return 0; }
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))  { *out = kEnemyDropChecks_Off;      return 0; }
+  if (csv_str_eq(v, vlen, "keys") || csv_str_eq(v, vlen, "1")) { *out = kEnemyDropChecks_Keys;     return 0; }
+  if (csv_str_eq(v, vlen, "dungeon") || csv_str_eq(v, vlen, "2")) {
+    *out = kEnemyDropChecks_Dungeon;
+    return 0;
+  }
+  // Hidden compatibility alias for branch-local CSV artifacts created before
+  // the tier was renamed from "all" to "dungeon".
+  if (csv_str_eq(v, vlen, "all")) { *out = kEnemyDropChecks_Dungeon; return 0; }
   return -1;
 }
 

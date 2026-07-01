@@ -1,8 +1,8 @@
 ## ADDED Requirements
 
-### Requirement: All-enemy tier emits ordinary dungeon enemy checks
+### Requirement: Dungeon-enemy tier emits ordinary dungeon enemy checks
 
-The randomizer SHALL provide `enemy_drop_checks=all` as a higher tier than
+The randomizer SHALL provide `enemy_drop_checks=dungeon` as a higher tier than
 `keys`. When active, it SHALL include every active forced-key `EnemyDrop` check
 and the generated ordinary dungeon `Enemy` checks whose sources have reviewed
 eligibility and reachability metadata.
@@ -20,7 +20,7 @@ eligibility and reachability metadata.
   lobby-reachable ordinary `Enemy` location
 
 #### Scenario: Existing key-drop checks are not duplicated
-- **WHEN** the all-enemy generator scans dungeon forced-key carriers that are
+- **WHEN** the dungeon-enemy generator scans dungeon forced-key carriers that are
   already modeled by `enemy_drop_checks=keys`
 - **THEN** those sources are excluded from the ordinary `Enemy` registry
 
@@ -30,10 +30,10 @@ eligibility and reachability metadata.
   of emitting it as a freely reachable ordinary `Enemy` location
 
 #### Scenario: Missing local registry fails closed
-- **WHEN** `enemy_drop_checks=all` is active but no generated ordinary enemy
+- **WHEN** `enemy_drop_checks=dungeon` is active but no generated ordinary enemy
   registry is present in the build
 - **THEN** placement SHALL reject the seed instead of silently generating with an
-  empty all-enemy table
+  empty dungeon-enemy table
 
 ### Requirement: Ordinary enemy checks grant and persist at death time
 
@@ -56,7 +56,7 @@ death flag is set.
 - **THEN** existing forced-key `EnemyDrop` rows keep their pickup-time carrier/drop
   path and ordinary `Enemy` rows remain inactive
 
-### Requirement: All-enemy marker mode is configurable
+### Requirement: Dungeon-enemy marker mode is configurable
 
 Unchecked enemy-drop and ordinary enemy-check carriers SHALL support a local
 marker preference that either reveals the placed item when the shared tile slot
@@ -73,25 +73,25 @@ can represent all active room markers unambiguously or uses a generic marker.
 - **THEN** unchecked active enemy carriers draw the generic marker without
   revealing the placed item
 
-### Requirement: Door shuffle disables ordinary all-enemy rows
+### Requirement: Door shuffle disables ordinary dungeon-enemy rows
 
-Requested `enemy_drop_checks=all` SHALL degrade to effective `keys` when door
+Requested `enemy_drop_checks=dungeon` SHALL degrade to effective `keys` when door
 shuffle is active, because the door bridge currently models forced key-drop
 sources only.
 
-#### Scenario: Door shuffle requests all
-- **WHEN** settings request `enemy_drop_checks=all` and `door_shuffle=basic`
+#### Scenario: Door shuffle requests dungeon
+- **WHEN** settings request `enemy_drop_checks=dungeon` and `door_shuffle=basic`
 - **THEN** derived settings use effective `enemy_drop_checks=keys` and ordinary
   `Enemy` rows are inactive
 
-### Requirement: Enemy shuffle disables ordinary all-enemy rows
+### Requirement: Enemy shuffle disables ordinary dungeon-enemy rows
 
-Requested `enemy_drop_checks=all` SHALL degrade to effective `keys` when enemy
+Requested `enemy_drop_checks=dungeon` SHALL degrade to effective `keys` when enemy
 shuffle is active, because placement does not currently know the actual shuffled
 enemy type or enemy-shuffle HP scaling for each ordinary source slot.
 
-#### Scenario: Enemy shuffle requests all
-- **WHEN** settings request `enemy_drop_checks=all` and `enemy_shuffle=true`
+#### Scenario: Enemy shuffle requests dungeon
+- **WHEN** settings request `enemy_drop_checks=dungeon` and `enemy_shuffle=true`
 - **THEN** derived settings use effective `enemy_drop_checks=keys` and ordinary
   `Enemy` rows are inactive
 
