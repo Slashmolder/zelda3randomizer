@@ -386,7 +386,7 @@ When the `enemy_shuffle` axis is enabled for a slot, the system SHALL randomize 
 
 The substitution SHALL be a self-contained module (`src/rando/shuffle_enemies.{c,h}`) that, like boss shuffle and drop-pool shuffle, is generated deterministically from `(settings, seed_u64)` (a dedicated RNG stream forked off the seed per `randomizer-core / RNG family`), installed at slot activation (`Rando_ActivateSidecarSlot`) **only on the settings-valid path** (mirroring boss/drop shuffle, which `*_Deactivate()` on the invalid / snapshot-restore / v1-slot path so a stale substitution is never leaked — `rando.c:1904-1960`), and torn down at deactivation. When `enemy_shuffle` is off, the load path SHALL take the vanilla branch and behavior SHALL be byte-identical to a non-shuffled slot.
 
-Enemy shuffle SHALL NOT touch item placement: it draws no fill RNG and adds no logic predicate, so `placement_digest_hex` SHALL be byte-identical for every seed regardless of `enemy_shuffle`. (The `generator_version` bump it triggers version-locks the live axis and reflects the per-seed pad-bit `settings_hash` change; the canonical length stays 28 — see `randomizer-core`.)
+Enemy shuffle SHALL NOT touch item placement: it draws no fill RNG and adds no logic predicate, so `placement_digest_hex` SHALL be byte-identical for every seed regardless of `enemy_shuffle`. (The `generator_version` bump it triggers version-locks the live axis and reflects the per-seed pad-bit `settings_hash` change; this axis itself did not grow the canonical settings layout — see `randomizer-core`.)
 
 #### Scenario: Enemy shuffle off is vanilla-identical
 - **WHEN** `enemy_shuffle` is off for a slot
@@ -575,4 +575,3 @@ pot-door metadata.
 - **AND** replay reinstalls a door graph only after regenerating it from the snapshot
   settings and seed and matching the saved digest
 - **AND** installing that door graph tears down any currently installed entrance graph
-

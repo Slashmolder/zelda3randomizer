@@ -24,12 +24,12 @@ The sidecar SHALL contain a **16-byte file header** followed by three slot regio
 | Offset | Width | Field | Notes |
 |---:|---:|---|---|
 | 0 | 4 | `magic[4]` | distinct from slot magic |
-| 4 | 2 | `format_version` (LE) | Phase A = 1; current writes = 3 (version 2 added the per-slot settings blob, version 3 the slot extension block) |
+| 4 | 2 | `format_version` (LE) | Phase A = 1; current writes = 4 (version 2 added the per-slot settings blob, version 3 the slot extension block, version 4 grows the settings blob to 29 bytes) |
 | 6 | 2 | `slot_count` (LE) | Phase A = 3 |
 | 8 | 4 | `file_crc` (LE) | CRC-32 over the slot region (every byte after this 16-byte header), computed on write and verified on read; `0` = legacy file (pre-CRC writers), accepted without verification |
 | 12 | 4 | `reserved[4]` | zero-initialized; forward-compat |
 
-**Slot region** = slot header (80 bytes) + placement table + checked-location bitmap + (`format_version` ≥ 2) a `kSettingsCanonicalLen`-byte canonical `RandoSettings` blob + (`format_version` ≥ 3) an 8-byte slot extension block (`@0-2` `entrance_digest24` LE, `@3-7` reserved zero). The loader keys each slot's body layout on the file's declared `format_version`, so v1/v2 files load with their shorter bodies.
+**Slot region** = slot header (80 bytes) + placement table + checked-location bitmap + a versioned canonical `RandoSettings` blob (absent for `format_version` 1, a legacy 28-byte prefix for versions 2-3, current `kSettingsCanonicalLen` for version 4+) + (`format_version` ≥ 3) an 8-byte slot extension block (`@0-2` `entrance_digest24` LE, `@3-7` reserved zero). The loader keys each slot's body layout on the file's declared `format_version`, so v1/v2/v3 files load with their shorter bodies and legacy 28-byte settings are zero-extended before validation.
 
 **Slot header (80 bytes total, byte-counted)**:
 
@@ -63,7 +63,7 @@ The sidecar SHALL contain a **16-byte file header** followed by three slot regio
 
 **Checked-location bitmap**: `(placement_table_size / 2 + 7) >> 3` bytes; iterated only over `[0, placement_table_size / 2)` bits.
 
-**Forward-compat model (as built)**: the slot body has NO TLV chain (only the snapshot tail uses that shape; the entrance-permutation requirement below records why the original TLV plan was superseded). Additive slot state lands either in single bytes of the slot header's reserved tail or in fixed-size sections appended after the bitmap and keyed on the file `format_version`: version 2 appended the canonical settings blob, version 3 the 8-byte extension block. Cross-version reads are gated on `format_version` in both directions (older binaries do not skip newer sections); new writes always use the current version.
+**Forward-compat model (as built)**: the slot body has NO TLV chain (only the snapshot tail uses that shape; the entrance-permutation requirement below records why the original TLV plan was superseded). Additive slot state lands either in single bytes of the slot header's reserved tail or in fixed-size sections appended after the bitmap and keyed on the file `format_version`: version 2 appended the 28-byte canonical settings prefix, version 3 appended the 8-byte extension block, and version 4 widened the settings blob to the current `kSettingsCanonicalLen`. Cross-version reads are gated on `format_version` in both directions (older binaries do not skip newer sections); new writes always use the current version.
 
 The spoiler file path SHALL NOT be stored in the slot. The runtime derives it from `[randomizer] spoiler_dir` config + the slot's share string — this is a deliberate decision so slots are invariant under config changes.
 
@@ -192,7 +192,7 @@ The reveal action SHALL be the `Rando_RevealSpoiler(slot_index)` entry point def
 
 #### Scenario: Race-mode file contains only stamp
 - **WHEN** a race-mode slot is created
-- **THEN** the on-disk file contains the magic header `ZRSR`, the generator_version (u16 LE), the SHA-256 stamp, the length-prefixed share-string (64-byte buffer with leading length), the canonical-serialized settings (`kSettingsCanonicalLen` = 28 bytes, with `race_mode` cleared), and the CRC32 — and nothing else; the total size is exactly 138 bytes (`kRandoSuppressedSpoilerSize`). The settings field is included because the sidecar slot does not preserve `RandoSettings` and reveal needs it to regenerate placement deterministically.
+- **THEN** the on-disk file contains the magic header `ZRSR`, the generator_version (u16 LE), the SHA-256 stamp, the length-prefixed share-string (64-byte buffer with leading length), the canonical-serialized settings (`kSettingsCanonicalLen` = 29 bytes, with `race_mode` cleared), and the CRC32 — and nothing else; the total size is exactly 139 bytes (`kRandoSuppressedSpoilerSize`). The settings field is included because the sidecar slot does not preserve `RandoSettings` and reveal needs it to regenerate placement deterministically.
 
 #### Scenario: Reveal verifies stamp
 - **WHEN** the player triggers reveal for a race-mode slot
@@ -394,4 +394,3 @@ loadable by the build that wrote it.
 - **THEN** activation refuses the slot (deactivates, with a diagnostic) instead of
   silently loading a layout the placement was not certified against, and the slot
   file is left intact
-

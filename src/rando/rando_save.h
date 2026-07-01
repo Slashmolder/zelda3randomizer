@@ -31,8 +31,8 @@
 //
 // format_version history:
 //   1 — original layout (header + flat placement table + checked bitmap).
-//   2 — appends a per-slot canonical RandoSettings blob (kSettingsCanonicalLen
-//       bytes) AFTER the checked bitmap, and a `settings_present` byte at slot
+//   2 — appends a per-slot canonical RandoSettings blob (28 bytes in v2/v3)
+//       AFTER the checked bitmap, and a `settings_present` byte at slot
 //       header @70. A v1 file has neither; the loader keys the blob's physical
 //       presence on this file version (RandoSave_ReadFile), and old binaries
 //       reading a v2 file would mis-size slots — but format_version gating in
@@ -47,9 +47,12 @@
 //       snapshot/presence byte. v1/v2 files have no block; the loader keys its
 //       presence on the file version and forces the fields to 0 (= legacy
 //       warn-only/no-feature-snapshot behavior).
-//   4 — extends the per-slot extension block to carry the local pot registry
-//       digest/count used for pot-shuffle activation drift refusal. v3 files
-//       read these fields as absent. New writes are always v4.
+//   4 — widens the physical settings blob from 28 bytes to the current
+//       kSettingsCanonicalLen and extends the per-slot extension block to carry
+//       the local pot registry digest/count used for pot-shuffle activation
+//       drift refusal. v2/v3 files still carry 28 bytes; the loader zero-extends
+//       the appended byte to Off. v3 files read the pot registry fields as
+//       absent. New writes are always v4.
 #define kRandoSidecar_FileFormatVersion 4
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
@@ -307,9 +310,10 @@ typedef struct RandoSidecarSlot {
   RandoPlacement placements[kRandoLocationCapacity];
   uint16 placement_count;          // valid entries in placements[]
   uint8 checked_bitmap[(kRandoLocationCapacity + 7) >> 3];
-  // Canonical RandoSettings blob (format_version >= 2). Valid only when
-  // header.settings_present == 1. On disk it trails the checked bitmap; v1
-  // files have no such bytes (the loader keys presence on the file version).
+  // Canonical RandoSettings blob. Valid only when header.settings_present == 1.
+  // On disk it trails the checked bitmap; v1 files have no such bytes. v2/v3
+  // files carry the legacy 28-byte prefix, and v4+ files carry the current
+  // kSettingsCanonicalLen bytes; the loader zero-extends shorter blobs.
   uint8 settings_canonical[kSettingsCanonicalLen];
 } RandoSidecarSlot;
 
@@ -322,9 +326,11 @@ typedef struct RandoSidecarSlot {
 // location count). Total = 80 (header) + placement_table_size +
 // ((placement_table_size/2 + 7) >> 3) bitmap + kSettingsCanonicalLen (settings
 // blob) + kRandoSidecar_SlotExtCurrentSize (extension block). v1 files omit the
-// blob and the ext block, v2 files omit the ext block, v3 files use the smaller
-// v3 extension; RandoSave_ReadFile handles those older layouts internally based
-// on the file's format_version.
+// blob) + kRandoSidecar_SlotExtCurrentSize (extension block). v1 files omit the
+// blob and the ext block, v2 files omit the ext block, and v2/v3 files carry a
+// legacy 28-byte settings blob; v3 files also use the smaller v3 extension.
+// RandoSave_ReadFile handles those older layouts internally based on the file's
+// format_version.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);
 
 // Sentinel item_id for "no placement / deprecated location" — written at

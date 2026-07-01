@@ -100,7 +100,15 @@ typedef enum {
   // circular). Wild keys (worst-case) and pots-off both leave this false, so the
   // wrapped term collapses out and their placement is byte-identical.
   OP_POT_KEYS_DUNGEON = 25,
-  OP__COUNT = 26,
+  // ENEMY_DROP_KEYS_DUNGEON is true when forced enemy-drop checks are active
+  // under vanilla-door Dungeon small keys. Generated enemy-drop rows use this to
+  // replace inherited same-key gates with exact DROP-region min-depth.
+  OP_ENEMY_DROP_KEYS_DUNGEON = 26,
+  // ENEMY_DROP_KEYS_WILD is true when forced enemy-drop checks are active under
+  // Wild small keys, including Retro's generic-key mode. Generated wraps use it
+  // for the held-before-entry worst-case key-depth.
+  OP_ENEMY_DROP_KEYS_WILD = 27,
+  OP__COUNT = 28,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -237,6 +245,8 @@ enum {
   LOCTYPE_ShopUpgrade = 15,  // Retro capacity-upgrade slot (identity-placed)
   LOCTYPE_TakeAny     = 16,  // Retro take-any cave slot
   LOCTYPE_Pot         = 17,  // Dungeon pot check (per-tier active subset)
+  LOCTYPE_EnemyDrop   = 18,  // Forced enemy key-drop check (setting-active subset)
+  LOCTYPE_Enemy       = 19,  // Ordinary enemy check (all-enemy tier)
 };
 
 static inline bool Rando_LocationTypeCountsAsCheck(uint8 type) {
@@ -520,6 +530,21 @@ extern const uint32 kRandoDoorPotBridgeDigest;
 static inline bool Rando_DoorPotActive(const RandoDoorPotLocation *p, uint8 pot_tier) {
   return p != NULL && pot_tier >= p->min_tier && pot_tier <= kPotShuffle_All;
 }
+
+// Door x enemy-drop bridge. Enemy forced-key checks are also not
+// kDoorTblLocations, so the door oracle/prover need the generated door region
+// and original DROP index for each active small-key enemy-drop check.
+typedef struct RandoDoorEnemyDropLocation {
+  uint16 loc_id;
+  uint16 region;
+  uint32 pred_off;
+  uint16 pred_len;
+  uint16 drop_index;
+  uint8 dungeon;
+} RandoDoorEnemyDropLocation;
+extern const RandoDoorEnemyDropLocation kRandoDoorEnemyDropLocations[];
+extern const uint32 kRandoDoorEnemyDropLocationsCount;
+extern const uint32 kRandoDoorEnemyDropBridgeDigest;
 
 // Install/clear the per-seed door layout for logic evaluation (generation
 // installs before Place_AssumedFill; slot activation installs the regenerated

@@ -85,7 +85,7 @@ typedef struct KeyState {
   uint16 mask;
   uint8 bk;
   // counts (KeyCounter): free locations (blind-gated Thieves boss applied),
-  // with/without big chests; reached drop keys.
+  // with/without big chests; reached drop keys; itemized free key sources.
   uint8 free_excl_bc, free_all, key_only, pot_free;
   uint16 child_mask;  // closed-but-reachable key pairs
   uint8 bk_child;     // some closed big-key door is reachable-adjacent
@@ -101,8 +101,9 @@ typedef struct KeyCtx {
   DoorShuffleLayout *layout;
   const uint16 *origins;
   int norigins;
-  int max_small_sources;  // chest_small_keys + active key pots
+  int max_small_sources;  // chest_small_keys + active itemized key sources
   uint8 pot_tier;
+  uint8 enemy_drop_keys;
   DoorKeyPair pairs[kDoorShuffle_MaxKeyDoors];
   int np;
 } KeyCtx;
@@ -143,6 +144,7 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
   spec.bk_mode = kDoorBkMode_State;
   spec.bk_open = bk;
   spec.pot_tier = kc->pot_tier;
+  spec.enemy_drop_keys = kc->enemy_drop_keys;
   DoorExplore_Core(&spec, &res);
 
   KeyState *st = &g_states[g_nstates];
@@ -172,6 +174,8 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
   for (int i = 0; i < kDoorTbl_DropKeyCount; i++) {
     if (kDoorTblDropKeys[i].dungeon == kc->dungeon &&
         !Door_DropExcludedByActivePot(kc->dungeon, (uint16)i, kc->pot_tier) &&
+        !Door_DropExcludedByActiveEnemyDrop(kc->dungeon, (uint16)i,
+                                            kc->enemy_drop_keys) &&
         DoorExplore_Reached(&res, kDoorTblDropKeys[i].region)) {
       st->drop_bits |= 1u << i;
       st->key_only++;
@@ -179,6 +183,8 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
   }
   st->pot_free = (uint8)Door_CountActivePotKeySources(kc->dungeon, &res,
                                                        kc->pot_tier);
+  st->pot_free += (uint8)Door_CountActiveEnemyDropKeySources(kc->dungeon, &res,
+                                                             kc->enemy_drop_keys);
   for (int i = 0; i < kDoorTbl_EventCount; i++) {
     const DoorTblEvent *ev = &kDoorTblEvents[i];
     if (ev->region != 0xFFFF && kDoorTblRegions[ev->region].dungeon == kc->dungeon &&
@@ -875,8 +881,10 @@ bool DoorKeys_ShuffleDungeon(uint8 dungeon, RandoRng *rng,
   kc.origins = origins;
   kc.norigins = origin_count;
   kc.pot_tier = layout ? layout->pot_tier : kPotShuffle_Off;
+  kc.enemy_drop_keys = layout ? layout->enemy_drop_keys : 0;
   kc.max_small_sources = kDoorTblDungeons[dungeon].chest_small_keys +
-                         Door_CountActiveKeyPots(dungeon, kc.pot_tier);
+                         Door_CountActiveKeyPots(dungeon, kc.pot_tier) +
+                         Door_CountActiveEnemyDropKeys(dungeon, kc.enemy_drop_keys);
 
   static DoorKeyPair candidates[kDoorKey_MaxCandidates];
   int ncand = FindCandidates(&kc, candidates);

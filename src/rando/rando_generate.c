@@ -42,6 +42,13 @@ static uint32 g_door_gen_digest24;
 #include <stdio.h>
 #include <stdlib.h>
 
+static uint8 door_enemy_drop_keys_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla)
+    return 0;
+  return Settings_EnemyDropKeysActive(settings) ? 1 : 0;
+}
+
 static bool copy_active_medallion_assignment(uint8 out[kRandoMedallionEntranceCount]) {
   const uint8 *assignment = Rando_GetMedallionAssignment();
   if (assignment == NULL) return false;
@@ -312,6 +319,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     for (uint32 datt = 0; datt < 16; datt++) {
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
                                 Settings_DoorPotTier(settings),
+                                door_enemy_drop_keys_for_settings(settings),
                                 &g_door_gen_layout))
         continue;
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);

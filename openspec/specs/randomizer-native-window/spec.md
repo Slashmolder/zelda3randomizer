@@ -302,7 +302,7 @@ When the UI requests generation, the settings window SHALL display an input-bloc
 
 ### Requirement: Persistence of last settings to a sidecar INI
 
-The settings window SHALL persist the user's most recent settings to a `[rando_window]` section in a **sidecar `saves/rando_window.ini`** (it SHALL NOT rewrite the user's hand-edited `zelda3.ini`). Persistence SHALL use the canonical-serialized `kSettingsCanonicalLen` bytes (28; the same bytes that feed `Settings_ComputeHash`), **hex**-encoded as `last_settings_canonical_hex` (56 hex chars). The sidecar SHALL be loaded at startup via a whitelisting loader that parses only `[rando_window]` and `[RandoAssetDecisions]`. On startup, the window SHALL preselect to those settings if present and valid; on parse failure or absence, the window SHALL preselect to `Settings_SetDefaults`.
+The settings window SHALL persist the user's most recent settings to a `[rando_window]` section in a **sidecar `saves/rando_window.ini`** (it SHALL NOT rewrite the user's hand-edited `zelda3.ini`). Persistence SHALL use the canonical-serialized `kSettingsCanonicalLen` bytes (29; the same bytes that feed `Settings_ComputeHash`), **hex**-encoded as `last_settings_canonical_hex` (58 hex chars). The sidecar SHALL be loaded at startup via a whitelisting loader that parses only `[rando_window]` and `[RandoAssetDecisions]`. On startup, the window SHALL preselect to those settings if present and valid; on parse failure or absence, the window SHALL preselect to `Settings_SetDefaults`. Legacy 28-byte values SHALL zero-extend the appended byte and load as `enemy_drop_checks=Off`.
 
 #### Scenario: Settings round-trip across sessions
 
@@ -311,7 +311,7 @@ The settings window SHALL persist the user's most recent settings to a `[rando_w
 
 #### Scenario: Corrupt persistence falls back to defaults
 
-- **WHEN** `last_settings_canonical_hex` is malformed, decodes to a length other than `kSettingsCanonicalLen` (28) bytes, or fails the canonical-serialize round-trip
+- **WHEN** `last_settings_canonical_hex` is malformed, decodes to a length other than `kSettingsCanonicalLen` (29) bytes or the legacy 28-byte prefix, or fails the canonical-serialize round-trip
 - **THEN** the window preselects to `Settings_SetDefaults` and logs a one-line warning; the application does not crash or refuse to start
 
 #### Scenario: User's zelda3.ini is never rewritten
@@ -464,4 +464,3 @@ The native settings window SHALL render `enemy_shuffle` as a **live checkbox** i
 #### Scenario: Tooltip is a durable player-fact
 - **WHEN** the user hovers the enemy-shuffle checkbox
 - **THEN** the tooltip states a concise durable fact (e.g. "Randomizes which enemies appear in each room") with no status, caveat, or implementation detail
-

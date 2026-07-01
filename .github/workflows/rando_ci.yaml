@@ -238,11 +238,12 @@ jobs:
       run: python assets/scripts/check_init_order.py --binary="${{ matrix.binary }}" --strict
 
     # Cross-platform digest determinism: the corpus manifest digests were
-    # captured against a Windows build. Every runner must reproduce them
-    # byte-for-byte per `randomizer-core / Deterministic cross-platform
-    # placement`. Any digest diff here surfaces a non-determinism bug.
+    # captured against a Windows build. Every runner must reproduce public,
+    # assetless rows byte-for-byte per `randomizer-core / Deterministic
+    # cross-platform placement`. Local ROM-derived pot/enemy registry rows are
+    # exercised by run_rando_local_checks.py instead.
     - name: Run regression corpus (cross-platform digest check)
-      run: python assets/scripts/run_rando_corpus.py --binary="${{ matrix.binary }}" --skip-pot-shuffle
+      run: python assets/scripts/run_rando_corpus.py --binary="${{ matrix.binary }}" --skip-pot-shuffle --skip-enemy-drop-checks
 
     - name: Run slot-path generation guard
       run: python assets/scripts/check_rando_slot_path.py --binary="${{ matrix.binary }}"

@@ -4,7 +4,7 @@
 // The canonical layout is pinned below. Reordering, widening, or renumbering
 // any field is a kGeneratorVersion bump trigger (tasks.md §13.6).
 //
-// Layout (kSettingsCanonicalLen = 28 bytes):
+// Layout (kSettingsCanonicalLen = 29 bytes):
 //   offset 0   world_state                 WorldState enum
 //   offset 1   goal                        Goal enum
 //   offset 2   crystals_ganon              0..7
@@ -40,6 +40,7 @@
 //                                          (inverse of instant_flute).
 //                                          0x00 for the default.
 //   offset 27  door_shuffle                bits0-1
+//   offset 28  enemy_drop_checks           EnemyDropChecks enum
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
@@ -111,8 +112,10 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->trap_categories = 0;
   // add-rando-pot-sanity — pot shuffle off by default, so the packed bits in
   // canonical [26] (6-7) and [27] (bit 7) stay 0 (corpus + default settings_hash
-  // byte-identical).
+  // byte-identical until the next append-only canonical growth).
   s->pot_shuffle = kPotShuffle_Off;
+  // add-rando-enemy-drop-sanity — enemy drops are not locations by default.
+  s->enemy_drop_checks = kEnemyDropChecks_Off;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -248,6 +251,7 @@ static void apply_derived_rules(RandoSettings *s) {
   if (Settings_PotShuffleForcedOff(s)) {
     s->pot_shuffle = kPotShuffle_Off;
   }
+  s->enemy_drop_checks = Settings_EffectiveEnemyDropChecks(s);
 }
 
 bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s) {
@@ -294,10 +298,34 @@ bool Settings_PotKeysActive(const RandoSettings *s) {
          !Settings_PotShuffleForcedOff(s);
 }
 
+uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s) {
+  if (s == NULL || s->enemy_drop_checks == kEnemyDropChecks_Off)
+    return kEnemyDropChecks_Off;
+  uint8 small_keys = Settings_EffectiveSmallKeysMode(s);
+  if (small_keys != kDungeonItemMode_Wild && small_keys != kDungeonItemMode_Dungeon)
+    return kEnemyDropChecks_Off;
+  if (s->enemy_drop_checks == kEnemyDropChecks_All) {
+    if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
+      return kEnemyDropChecks_Keys;
+    if (s->enemy_shuffle)
+      return kEnemyDropChecks_Keys;
+    return kEnemyDropChecks_All;
+  }
+  return kEnemyDropChecks_Keys;
+}
+
+bool Settings_EnemyDropKeysActive(const RandoSettings *s) {
+  return Settings_EffectiveEnemyDropChecks(s) >= kEnemyDropChecks_Keys;
+}
+
+bool Settings_EnemyChecksAllActive(const RandoSettings *s) {
+  return Settings_EffectiveEnemyDropChecks(s) == kEnemyDropChecks_All;
+}
+
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
                                 uint8 out[kSettingsCanonicalLen]) {
   // Layout per `randomizer-core / Settings canonical serialization order`.
-  // 21 single-byte fields + 2×u16 LE + 3 pad bytes = 28 bytes
+  // 21 single-byte fields + 2×u16 LE + 3 pad bytes + 1 appended axis = 29 bytes
   // (kGenVer 14 §66 grew 18→21 single-byte fields by absorbing hints +
   // boss_shuffle + drop_shuffle at offsets [22..24]).
   RandoSettings sn = *s_in;
@@ -332,7 +360,7 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // Phase C — entrance-shuffle axes bit-packed into the (formerly zero) pad
   // byte [25]. apply_derived_rules() has normalized coupled/cross/decoupled,
   // so this is 0x00 for the default settings (corpus byte-identical) and
-  // kSettingsCanonicalLen stays 28 (no size-coupling cascade).
+  // kSettingsCanonicalLen stayed 28 until the append-only [28] axis.
   out[25] = (uint8)((s->shuffle_cave_entrances    ? kEntranceAxis_ShuffleCaves    : 0) |
                     (s->shuffle_dungeon_entrances ? kEntranceAxis_ShuffleDungeons : 0) |
                     (s->coupled                   ? kEntranceAxis_Coupled         : 0) |
@@ -352,7 +380,7 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // add-rando-door-shuffle — door_shuffle axis in the (formerly zero) pad
   // byte [27] bits 0-1. apply_derived_rules() normalized incompatible combos,
   // so the default packs to 0x00 (corpus byte-identical) and
-  // kSettingsCanonicalLen stays 28.
+  // kSettingsCanonicalLen stayed 28 until the append-only [28] axis.
   // add-rando-trap-catalog — door_shuffle (bits 0-1) shares [27] with the
   // per-category trap mask (bits 2-6). Default trap_categories=0 keeps [27] at the
   // door_shuffle value (0x00 for the default), so the corpus stays byte-identical.
@@ -360,14 +388,15 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     ((s->trap_categories << kTrapCategoriesAxis_Shift) & kTrapCategoriesAxis_Mask) |
                     // add-rando-pot-sanity — pot_shuffle high bit in [27] bit 7.
                     ((s->pot_shuffle & 4u) ? kPotShuffleAxis_HighBit : 0));
+  out[28] = s->enemy_drop_checks;
   return kSettingsCanonicalLen;
 }
 
 // Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
-// kSettingsCanonicalLen (28)-byte canonical blob and populates `out`. Returns 0
+// kSettingsCanonicalLen (29)-byte canonical blob and populates `out`. Returns 0
 // on success, -1 if the input is NULL. Body occupies [0..24] (through
 // drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle + customizer +
-// traps + inverse instant-flute, [27] = door_shuffle.
+// traps + inverse instant-flute, [27] = door_shuffle, [28] = enemy_drop_checks.
 //
 // Byte [25] is the Phase C packed entrance-axis byte (0x00 = no shuffle); byte
 // [26] packs bit0 = enemy_shuffle (add-rando-enemy-shuffle) and bit1 =
@@ -452,6 +481,7 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // pre-pot file) yields Off, identical to a struct with no pot shuffle.
   s.pot_shuffle = (uint8)(((in[26] & kPotShuffleAxis_LowMask) >> kPotShuffleAxis_LowShift) |
                           ((in[27] & kPotShuffleAxis_HighBit) ? 4u : 0u));
+  s.enemy_drop_checks = in[28];
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -512,6 +542,8 @@ bool Settings_Validate(const RandoSettings *s) {
   // precedent). The 3-bit field is already wide enough for it; only the value
   // is gated.
   if (s->pot_shuffle > kPotShuffle_All) return false;
+  // [28] enemy_drop_checks: 0=off, 1=forced key drops, 2=all eligible enemies.
+  if (s->enemy_drop_checks > kEnemyDropChecks_All) return false;
   return true;
 }
 
@@ -584,12 +616,12 @@ void Settings_SelfCheck(void) {
   //   ws=0 goal=1 cg=7 ct=7 tricks=0 pool=1 logic=0 weapons=0 access=0
   //   bow=0 bossH=0 sk=0 bk=0 mp=0 cmp=0 prize=1 med=1 race=0
   //   pieces_req=20 (0x0014 LE) pieces_pl=30 (0x001e LE)
-  //   hints=1 boss_shuffle=0 drop_shuffle=0 pad pad pad
+  //   hints=1 boss_shuffle=0 drop_shuffle=0 pad pad pad enemy_drop_checks=0
   static const uint8 kExpectedCanonical[kSettingsCanonicalLen] = {
     0x00, 0x01, 0x07, 0x07, 0x00, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x01, 0x00,
-    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
   };
   if (!settings_byte_eq(canonical, kExpectedCanonical, kSettingsCanonicalLen)) {
     fprintf(stderr,
@@ -607,12 +639,12 @@ void Settings_SelfCheck(void) {
 
   uint8 hash[32];
   Settings_ComputeHash(&s, hash);
-  // SHA-256 of the kExpectedCanonical bytes (28 bytes; hints=1 default).
+  // SHA-256 of the kExpectedCanonical bytes (29 bytes; hints=1 default).
   static const uint8 kExpectedHash[32] = {
-    0xa7, 0x8d, 0x1b, 0xab, 0x84, 0x8a, 0xd9, 0xed,
-    0xa1, 0xc4, 0x9b, 0xed, 0xb1, 0x2e, 0x31, 0x6f,
-    0x9c, 0xbc, 0x41, 0xc6, 0xe1, 0xba, 0x3f, 0x2e,
-    0x97, 0xb3, 0xab, 0xc1, 0x9f, 0x6d, 0xc2, 0x29,
+    0x66, 0x42, 0x0f, 0x26, 0x0d, 0x13, 0xb6, 0x7d,
+    0x1b, 0x0b, 0x40, 0x12, 0x62, 0x48, 0xe3, 0x98,
+    0x42, 0x88, 0x0f, 0xc1, 0xec, 0x09, 0xca, 0xd5,
+    0xf9, 0xff, 0xfe, 0x2b, 0x44, 0xa2, 0x2e, 0xb3,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,
@@ -1122,6 +1154,147 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // add-rando-enemy-drop-sanity — enemy_drop_checks is append-only byte [28].
+  // Keys activates with Wild/Dungeon effective small keys. All activates the
+  // ordinary enemy checks only for vanilla-door, non-enemy-shuffle layouts; door
+  // shuffle and enemy shuffle degrade All to Keys so forced enemy key drops stay
+  // active without enabling ordinary enemy rows whose logic cannot be proven.
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    if (cd[28] != kEnemyDropChecks_Off) {
+      fprintf(stderr, "Settings_SelfCheck: default enemy_drop_checks must be Off ([28]=0x%02x)\n",
+              cd[28]);
+      exit(2);
+    }
+    RandoSettings sk;
+    Settings_SetDefaults(&sk);
+    sk.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    sk.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint8 ck[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sk, ck);
+    if (ck[28] != kEnemyDropChecks_Keys) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Keys pack mismatch ([28]=0x%02x)\n",
+              ck[28]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 11 || i == 28) continue;  // small-key mode + enemy-drop axis
+      if (ck[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks changed canonical byte [%d]\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rk;
+    if (Settings_CanonicalDeserialize(ck, &rk) != 0 ||
+        rk.enemy_drop_checks != kEnemyDropChecks_Keys) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Keys round-trip mismatch\n");
+      exit(2);
+    }
+    if (!Settings_EnemyDropKeysActive(&rk)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Keys should be effective with Wild keys\n");
+      exit(2);
+    }
+    RandoSettings sdun;
+    Settings_SetDefaults(&sdun);
+    sdun.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+    sdun.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint8 cdun[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sdun, cdun);
+    if (cdun[28] != kEnemyDropChecks_Keys || !Settings_EnemyDropKeysActive(&sdun)) {
+      fprintf(stderr, "Settings_SelfCheck: vanilla-door dungeon small keys should keep enemy_drop_checks active\n");
+      exit(2);
+    }
+    RandoSettings sdoor = sdun;
+    sdoor.door_shuffle = kDoorShuffle_Basic;
+    uint8 cdoor[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sdoor, cdoor);
+    if (cdoor[28] != kEnemyDropChecks_Keys ||
+        Settings_EffectiveSmallKeysMode(&sdoor) != kDungeonItemMode_Dungeon ||
+        !Settings_EnemyDropKeysActive(&sdoor)) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must keep Dungeon enemy_drop_checks active\n");
+      exit(2);
+    }
+    RandoSettings sv;
+    Settings_SetDefaults(&sv);
+    sv.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint8 cv[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sv, cv);
+    if (cv[28] != kEnemyDropChecks_Off) {
+      fprintf(stderr, "Settings_SelfCheck: vanilla small keys must normalize enemy_drop_checks off\n");
+      exit(2);
+    }
+    RandoSettings se;
+    Settings_SetDefaults(&se);
+    se.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    se.enemy_shuffle = 1;
+    se.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint8 ce[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&se, ce);
+    if (ce[28] != kEnemyDropChecks_Keys) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_shuffle must compose with enemy_drop_checks=Keys\n");
+      exit(2);
+    }
+    if (!Settings_EnemyDropKeysActive(&se)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=Keys should be effective with enemy_shuffle\n");
+      exit(2);
+    }
+    RandoSettings sall;
+    Settings_SetDefaults(&sall);
+    sall.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    sall.enemy_drop_checks = kEnemyDropChecks_All;
+    uint8 call[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sall, call);
+    if (call[28] != kEnemyDropChecks_All ||
+        !Settings_EnemyDropKeysActive(&sall) ||
+        !Settings_EnemyChecksAllActive(&sall)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=All should be active with Wild keys\n");
+      exit(2);
+    }
+    RandoSettings rall;
+    if (Settings_CanonicalDeserialize(call, &rall) != 0 ||
+        rall.enemy_drop_checks != kEnemyDropChecks_All ||
+        !Settings_EnemyChecksAllActive(&rall)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=All round-trip mismatch\n");
+      exit(2);
+    }
+    RandoSettings salldoor = sall;
+    salldoor.door_shuffle = kDoorShuffle_Basic;
+    uint8 calldoor[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&salldoor, calldoor);
+    if (calldoor[28] != kEnemyDropChecks_Keys ||
+        !Settings_EnemyDropKeysActive(&salldoor) ||
+        Settings_EnemyChecksAllActive(&salldoor)) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must degrade enemy_drop_checks=All to Keys\n");
+      exit(2);
+    }
+    RandoSettings sallenemy = sall;
+    sallenemy.enemy_shuffle = 1;
+    uint8 callenemy[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sallenemy, callenemy);
+    if (callenemy[28] != kEnemyDropChecks_Keys ||
+        !Settings_EnemyDropKeysActive(&sallenemy) ||
+        Settings_EnemyChecksAllActive(&sallenemy)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy shuffle must degrade enemy_drop_checks=All to Keys\n");
+      exit(2);
+    }
+    RandoSettings sr;
+    Settings_SetDefaults(&sr);
+    if (Settings_ParseCsv("dungeon_items.small_keys=wild,enemy_drop_checks=keys", &sr) != 0 ||
+        sr.enemy_drop_checks != kEnemyDropChecks_Keys) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=keys CSV parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sr);
+    if (Settings_ParseCsv("dungeon_items.small_keys=wild,enemy_drop_checks=all", &sr) != 0 ||
+        sr.enemy_drop_checks != kEnemyDropChecks_All ||
+        !Settings_EnemyChecksAllActive(&sr)) {
+      fprintf(stderr, "Settings_SelfCheck: enemy_drop_checks=all CSV parse failed\n");
+      exit(2);
+    }
+  }
   // Spec scenario "Truncation is first-16-bytes": Settings_HashShort writes
   // exactly the first 16 bytes of SHA-256(canonical), not a different hash.
   {
@@ -1578,6 +1751,14 @@ static int parse_pot_shuffle(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+// add-rando-enemy-drop-sanity — parse the enemy_drop_checks tier.
+static int parse_enemy_drop_checks(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))  { *out = kEnemyDropChecks_Off;  return 0; }
+  if (csv_str_eq(v, vlen, "keys") || csv_str_eq(v, vlen, "1")) { *out = kEnemyDropChecks_Keys; return 0; }
+  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "2"))  { *out = kEnemyDropChecks_All;  return 0; }
+  return -1;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint64 seen;
@@ -1636,6 +1817,8 @@ enum {
   // add-rando-pot-sanity — pot_shuffle tier (off|keys|contents|all). Packed into
   // canonical [26] bits 6-7 + [27] bit 7.
   KEY_pot_shuffle,
+  // add-rando-enemy-drop-sanity — forced enemy small-key drops as checks.
+  KEY_enemy_drop_checks,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -1846,6 +2029,11 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // into canonical [26] bits 6-7 + [27] bit 7 (see RandoSettings header).
     MARK_SEEN(KEY_pot_shuffle);
     if (parse_pot_shuffle(val, vlen, &s->pot_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "enemy_drop_checks")) {
+    // add-rando-enemy-drop-sanity — forced enemy small-key drops as checks.
+    // Serialized as append-only canonical byte [28].
+    MARK_SEEN(KEY_enemy_drop_checks);
+    if (parse_enemy_drop_checks(val, vlen, &s->enemy_drop_checks) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);

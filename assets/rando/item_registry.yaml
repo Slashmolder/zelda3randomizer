@@ -929,3 +929,16 @@ items:
       kRandoLttpSkip for it (no vanilla-content fallback). The empty pot is still
       counted in the tracker completion denominator but excluded from the
       "100% inventory" accessibility tier.
+
+  - id: 149
+    name: HyruleCastleBigKey
+    category: virtual
+    dispatch: virtual
+    notes: |
+      Logic-only mirror of the vanilla big-key bit granted by the Hyrule Castle
+      Ball-n-chain guard. Enemy-drop sanity models that one-shot guard as an
+      EnemyDrop check with ITEM_Nothing in the pool; reachability derives this
+      virtual item when that check is reachable, and runtime counts derive it
+      from the live Hyrule Castle big-key bit. It is not shuffled, not dispatched
+      as an item, and exists only so Zelda's Cell and the Zelda rescue event can
+      depend on the big-key side effect when enemy drops are checks.

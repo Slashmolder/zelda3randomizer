@@ -110,15 +110,15 @@ bool Spoiler_Write(const RandoSpoiler *s,
 //   +38       4      share_string_len (u32 LE) — actual length without NUL
 //   +42       64     share_string[64] — base32 textual share string,
 //                    zero-padded
-//   +106      28     settings_canonical[28] = Settings_CanonicalSerialize
+//   +106      29     settings_canonical[29] = Settings_CanonicalSerialize
 //                    output (= kSettingsCanonicalLen) with race_mode cleared to
 //                    0 (race-mode flag itself is recorded in the file's
 //                    existence, not in the serialized settings). Needed at
 //                    reveal time to regenerate the placement deterministically.
-//   +134      4      crc32 (u32 LE) — IEEE 802.3 over offsets 0..133
+//   +135      4      crc32 (u32 LE) — IEEE 802.3 over offsets 0..134
 //
-// Total: 138 bytes (see kRandoSuppressedSpoilerSize; grew 134->138 at kGenVer
-// 14 §66 when settings_canonical went 24->28). The struct below is for
+// Total: 139 bytes (see kRandoSuppressedSpoilerSize; grew 138->139 when
+// enemy_drop_checks appended canonical byte [28]). The struct below is for
 // in-memory parsing; the on-disk
 // layout is the byte sequence above (we serialize explicitly to avoid
 // platform-dependent padding).
@@ -132,8 +132,8 @@ bool Spoiler_Write(const RandoSpoiler *s,
 // ---------------------------------------------------------------------------
 #define kRandoSuppressedSpoilerMagic "ZRSR"
 #define kRandoSuppressedSpoilerShareStringMax 64
-#define kRandoSuppressedSpoilerSettingsLen 28  // = kSettingsCanonicalLen (last changed at kGenVer 14 §66; stable through current)
-#define kRandoSuppressedSpoilerSize 138  // on-disk byte length (last changed at kGenVer 14: 134→138; stable through current)
+#define kRandoSuppressedSpoilerSettingsLen 29  // = kSettingsCanonicalLen
+#define kRandoSuppressedSpoilerSize 139  // on-disk byte length
 #define kRandoSuppressedSpoilerCrcOffset (kRandoSuppressedSpoilerSize - 4)
 
 // Compile-time guard — when kSettingsCanonicalLen bumps, this assert
@@ -146,9 +146,9 @@ _Static_assert(kRandoSuppressedSpoilerSettingsLen == kSettingsCanonicalLen,
                "ZRSR settings_canonical span must match kSettingsCanonicalLen; "
                "bump kRandoSuppressedSpoilerSettingsLen AND kRandoSuppressedSpoilerSize "
                "AND the "
-               "126/130/134/138 constants in assets/scripts/{bump,run}_rando_corpus.py.");
+               "ZRSR constants in assets/scripts/{bump,run}_rando_corpus.py.");
 
-_Static_assert(kRandoSuppressedSpoilerCrcOffset == 134,
+_Static_assert(kRandoSuppressedSpoilerCrcOffset == 135,
                "ZRSR CRC offset drifted; update the on-disk layout comments "
                "and corpus runner constants with kRandoSuppressedSpoilerSize.");
 

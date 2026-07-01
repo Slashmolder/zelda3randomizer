@@ -92,10 +92,15 @@ static const char *ltrim(const char *s) {
 
 enum { SEC_NONE = 0, SEC_PLACEMENTS, SEC_POOL };
 
+bool Customizer_IsNonGrantableItem(uint16 item_id) {
+  return (item_id >= ITEM_Prize_GreenPendant && item_id <= ITEM_DefeatAgahnim) ||
+         item_id == ITEM_HyruleCastleBigKey;
+}
+
 // Parse a pool_overrides list value: "[A, B, C]" or a bare "A". Resolves each
 // item name and appends its id to out[*count] (capped at cap). Rejects unknown
-// items; when reject_non_grantable is set, also rejects prize/event items
-// (ids 111..123) that have no pool/grant path. Returns 0 on success.
+// items; when reject_non_grantable is set, also rejects prize/event/virtual
+// items that have no pool/grant path. Returns 0 on success.
 static int parse_pool_list(const char *value, int line, const char *which,
                            uint16 *out, uint16 *count, uint16 cap,
                            bool reject_non_grantable, char *err, size_t errlen) {
@@ -124,8 +129,8 @@ static int parse_pool_list(const char *value, int line, const char *which,
       snprintf(err, errlen, "line %d: unknown item '%s' in %s list", line, t, which);
       return 1;
     }
-    if (reject_non_grantable && id >= ITEM_Prize_GreenPendant && id <= ITEM_DefeatAgahnim) {
-      snprintf(err, errlen, "line %d: item '%s' is a prize/event item and cannot be added to the pool",
+    if (reject_non_grantable && Customizer_IsNonGrantableItem(id)) {
+      snprintf(err, errlen, "line %d: item '%s' is not grantable and cannot be added to the pool",
                line, t);
       return 1;
     }
@@ -410,6 +415,17 @@ void Customizer_SelfCheck(void) {
     if (Customizer_Parse(bad_text, strlen(bad_text), &m, err, sizeof err) == 0)
       customizer_selfcheck_die("an unknown location must be rejected");
   }
+  {
+    const char *bad_pool_text =
+        "placements:\n"
+        "  Eastern_Palace_Boss: Hookshot\n"
+        "pool_overrides:\n"
+        "  add: [HyruleCastleBigKey]\n";
+    CustomizerManifest m;
+    char err[160];
+    if (Customizer_Parse(bad_pool_text, strlen(bad_pool_text), &m, err, sizeof err) == 0)
+      customizer_selfcheck_die("a virtual non-grantable pool add must be rejected");
+  }
 
   fprintf(stderr, "[Customizer_SelfCheck] OK\n");
 }
@@ -483,6 +499,27 @@ void Customizer_PlacementSelfCheck(void) {
   free(e1); free(e2);
   if (memcmp(d1, d2, 32) != 0)
     customizer_selfcheck_die("placement selfcheck: non-deterministic digest for a fixed (manifest, seed)");
+
+  {
+    CustomizerManifest bad;
+    memset(&bad, 0, sizeof bad);
+    bad.pins[0].location_id = Customizer_ResolveLocation("Eastern_Palace_Boss");
+    bad.pins[0].item_id = Customizer_ResolveItem("HyruleCastleBigKey");
+    bad.pin_count = 1;
+    if (bad.pins[0].location_id == 0xFFFF || bad.pins[0].item_id == 0xFFFF)
+      customizer_selfcheck_die("placement selfcheck: virtual item names failed to resolve");
+    RandoPlacement *bad_entries =
+        (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+    if (bad_entries == NULL)
+      customizer_selfcheck_die("placement selfcheck: out of memory for bad pin");
+    RandoPlacementTable bad_table = { bad_entries, 0 };
+    Customizer_Install(&bad);
+    bool bad_ok = Place_AssumedFill(&s, 0x00C0FFEEull, 0, &bad_table);
+    Customizer_Install(NULL);
+    free(bad_entries);
+    if (bad_ok || strstr(Customizer_LastError(), "not grantable") == NULL)
+      customizer_selfcheck_die("placement selfcheck: virtual non-grantable pin must be rejected");
+  }
 
   fprintf(stderr, "[Customizer_PlacementSelfCheck] OK\n");
 }

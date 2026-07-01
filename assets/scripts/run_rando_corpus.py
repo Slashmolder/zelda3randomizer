@@ -22,6 +22,7 @@ Usage (A0):
 Usage (activated):
   python assets/scripts/run_rando_corpus.py --binary=./zelda3
   python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
+  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks
 """
 from __future__ import annotations
 
@@ -95,7 +96,16 @@ def entry_needs_local_pot_registry(entry: dict) -> bool:
     return True
 
 
-def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) -> int:
+def entry_uses_enemy_drop_checks(entry: dict) -> bool:
+    settings = entry.get("settings", {}) or {}
+    v = settings.get("enemy_drop_checks", "off")
+    if isinstance(v, str):
+        return v.lower() not in ("", "0", "off", "false", "none")
+    return bool(v)
+
+
+def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
+                  skip_enemy_drop_checks: bool = False) -> int:
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
     # "zelda3" (pathlib strips the leading "./"), so subprocess would PATH-search
     # for it and fail on Linux/macOS (cwd isn't on PATH). An absolute path runs
@@ -114,9 +124,14 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) 
         expected = entry.get("expected_digest", "")
         expected_sphere = entry.get("expected_sphere_digest", "")
         label = entry.get("label", f"entry-{idx}")
+        skip_reasons = []
         if skip_pot_shuffle and entry_needs_local_pot_registry(entry):
-            print(f"  SKIP [{idx}] {label}: pot_shuffle entry "
-                  f"(local pot registry required)")
+            skip_reasons.append("pot_shuffle")
+        if skip_enemy_drop_checks and entry_uses_enemy_drop_checks(entry):
+            skip_reasons.append("enemy_drop_checks")
+        if skip_reasons:
+            print(f"  SKIP [{idx}] {label}: {'+'.join(skip_reasons)} entry "
+                  f"(local ROM-derived registry required)")
             skipped += 1
             continue
         settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
@@ -139,7 +154,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) 
                 print(f"  FAIL [{idx}] {label}: spoiler not written")
                 failures += 1
                 continue
-            # Phase B Slice 6 §7.4 — race-mode entries emit a 138-byte
+            # Phase B Slice 6 §7.4 — race-mode entries emit a fixed-size
             # suppressed binary (magic ZRSR). Verify by reading the file,
             # checking the magic + CRC32, then invoking --reveal-spoiler
             # on a sibling copy to confirm the stamp matches the
@@ -147,16 +162,15 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) 
             head = out_json.read_bytes()[:4]
             if head == b"ZRSR":
                 buf = out_json.read_bytes()
-                if len(buf) != 138:
-                    print(f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 138")
+                if len(buf) != 139:
+                    print(f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 139")
                     failures += 1
                     continue
-                # Validate CRC32 (LE u32 at offset 134 over bytes 0..133).
-                # (kGenVer 14 §66 grew the file 134→138 to absorb the wider
-                # canonical settings layout.)
+                # Validate CRC32 (LE u32 at offset 135 over bytes 0..134).
+                # Keep this in lockstep with rando_spoiler.h constants.
                 import zlib
-                disk_crc = int.from_bytes(buf[134:138], "little")
-                calc_crc = zlib.crc32(buf[:134]) & 0xffffffff
+                disk_crc = int.from_bytes(buf[135:139], "little")
+                calc_crc = zlib.crc32(buf[:135]) & 0xffffffff
                 if disk_crc != calc_crc:
                     print(f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "
                           f"(disk {disk_crc:#x} != calc {calc_crc:#x})")
@@ -225,7 +239,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) 
         return 1
     if skipped:
         print(f"\nrun_rando_corpus: all {len(manifest['entries']) - skipped} run entries OK "
-              f"({skipped} pot_shuffle entries skipped).")
+              f"({skipped} local-registry entries skipped).")
     else:
         print(f"\nrun_rando_corpus: all {len(manifest['entries'])} entries OK.")
     return 0
@@ -264,6 +278,11 @@ def main(argv: list[str]) -> int:
                         help="skip entries that request pot_shuffle. Public CI "
                              "uses this when the local ROM-derived pot registry "
                              "is absent; local checks run the full corpus.")
+    parser.add_argument("--skip-enemy-drop-checks", action="store_true",
+                        help="skip entries that request enemy_drop_checks. Public "
+                             "CI uses this when the local ROM-derived enemy "
+                             "registries are absent; local checks run the full "
+                             "corpus.")
     args = parser.parse_args(argv)
 
     data = load_manifest(args.manifest)
@@ -297,7 +316,8 @@ def main(argv: list[str]) -> int:
             print("run_rando_corpus: empty manifest — A0 scaffold pass.")
         return 0
 
-    return run_activated(args.binary, data, args.skip_pot_shuffle)
+    return run_activated(args.binary, data, args.skip_pot_shuffle,
+                         args.skip_enemy_drop_checks)
 
 
 if __name__ == "__main__":

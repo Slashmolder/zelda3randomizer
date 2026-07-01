@@ -2506,6 +2506,7 @@ enum {
   kRow_RaceMode,
   kRow_Hints,              // Slice 5 — telepathic-tile hints (on/off)
   kRow_Traps,              // add-rando-traps — off/low/medium/high
+  kRow_EnemyDropChecks,    // add-rando-enemy-drop-sanity — off/keys/all
   // Phase-B disabled rows (label-only; cursor skips over input but A
   // refuses with a tooltip-style refusal sound).
   kRow_EntranceShuffle_Disabled,
@@ -2714,6 +2715,7 @@ static const char *RowLabel(int row) {
     case kRow_RaceMode:                  return "RACE";
     case kRow_Hints:                     return "HINTS";
     case kRow_Traps:                     return "TRAPS";
+    case kRow_EnemyDropChecks:           return "EDROP";
     case kRow_EntranceShuffle_Disabled:  return "ENT B";
     case kRow_EnemyShuffle_Disabled:     return "ENEMY B";
     case kRow_BossShuffle_Disabled:      return "BOSS B";
@@ -2805,6 +2807,12 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
         case kTrapFrequency_High:     return "HIGH";
         case kTrapFrequency_Insanity: return "MAX";
         default:                      return "ERR";
+      }
+    case kRow_EnemyDropChecks:
+      switch (Settings_EffectiveEnemyDropChecks(s)) {
+        case kEnemyDropChecks_All:  return "ALL";
+        case kEnemyDropChecks_Keys: return "KEYS";
+        default:                    return "OFF";
       }
     case kRow_EntranceShuffle_Disabled:
     case kRow_EnemyShuffle_Disabled:
@@ -3004,6 +3012,28 @@ static void CycleRow(int row, int delta) {
       s->traps = (uint8)n;
       break;
     }
+    case kRow_EnemyDropChecks:
+      {
+        uint8 key_mode = Settings_EffectiveSmallKeysMode(s);
+        bool allowed = key_mode == kDungeonItemMode_Wild ||
+                       key_mode == kDungeonItemMode_Dungeon;
+        if (!allowed) {
+          mutated = false;
+          sound_effect_1 = 0x3c;
+          break;
+        }
+      }
+      {
+        uint8 max_tier =
+            Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+            !s->enemy_shuffle
+                ? kEnemyDropChecks_All
+                : kEnemyDropChecks_Keys;
+        uint8 n = (uint8)(Settings_EffectiveEnemyDropChecks(s) + 1);
+        if (n > max_tier) n = kEnemyDropChecks_Off;
+        s->enemy_drop_checks = n;
+      }
+      break;
     default:
       mutated = false;
       break;
@@ -3424,6 +3454,7 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_ModeWeapons:
       case kRow_Accessibility:
       case kRow_Traps:
+      case kRow_EnemyDropChecks:
         CycleRow(row, +1);  // A = forward cycle, same as Right
         break;
       case kRow_PrizeShuffle:
@@ -3632,4 +3663,3 @@ static void SelectFile_Settings_Deactivate(void) {
   }
 #endif  // !Z3R_NATIVE_SETTINGS_WINDOW
 }
-

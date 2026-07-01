@@ -175,10 +175,17 @@ typedef struct RandoSettings {
   // as a 3-bit field packed NON-contiguously into the last free canonical bits:
   // low 2 bits in [26] bits 6-7, high bit in [27] bit 7 (see kPotShuffleAxis_*).
   // Default Off=0 keeps both bytes at their pre-pot values, so the default
-  // settings_hash + corpus stay byte-identical and kSettingsCanonicalLen stays 28.
+  // settings_hash + corpus stayed byte-identical until the next append-only
+  // canonical growth.
   // Normalized to Off under cave-entrance shuffle (apply_derived_rules). Door
   // shuffle composes through the generated door x pot bridge.
   uint8 pot_shuffle;
+  // add-rando-enemy-drop-sanity — itemize forced enemy drop checks. Serialized as
+  // append-only canonical byte [28]; old 28-byte v2 share strings zero-extend this
+  // to Off. Keys is active when effective small keys are Wild/Retro or Dungeon.
+  // All also enables ordinary dungeon enemies for vanilla-door, non-enemy-shuffle
+  // layouts; door shuffle and enemy shuffle degrade All to Keys.
+  uint8 enemy_drop_checks;
 } RandoSettings;
 
 // add-rando-pot-sanity — pot_shuffle tiers. Values are part of the determinism
@@ -194,6 +201,16 @@ typedef enum {
   kPotShuffle_All = 3,       // also the empty pots (ITEM_Nothing filler)
   // kPotShuffle_Subset = 4,  // RESERVED (Phase 7) — mid-size tier
 } PotShuffle;
+
+// add-rando-enemy-drop-sanity — enemy-drop check tiers. Keys itemizes vanilla
+// forced enemy key drops. All also itemizes ordinary eligible dungeon enemies
+// as checks when vanilla-door logic is active; door shuffle degrades it to Keys
+// until a non-key door bridge exists.
+typedef enum {
+  kEnemyDropChecks_Off = 0,
+  kEnemyDropChecks_Keys = 1,
+  kEnemyDropChecks_All = 2,
+} EnemyDropChecks;
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
 // [26]). A zero byte == no enemy shuffle (the default), preserving the
@@ -249,8 +266,8 @@ enum {
 // field is split like `traps`: low 2 bits in canonical [26] bits 6-7, high bit
 // in canonical [27] bit 7. Default Off=0 leaves every one of those bits clear,
 // preserving the byte-identical default settings_hash + corpus. These were the
-// final free bits at kSettingsCanonicalLen 28; a future axis grows the length
-// (see memory canonical_size_coupling).
+// final free bits at kSettingsCanonicalLen 28; enemy_drop_checks is the first
+// append-only axis after that.
 enum {
   kPotShuffleAxis_LowShift = 6,        // canonical [26] bits 6-7 (low 2 bits)
   kPotShuffleAxis_LowMask  = 3u << 6,  // 0xC0
@@ -274,8 +291,8 @@ enum {
 // exactly this many bytes. Adding a field requires bumping this constant
 // AND kGeneratorVersion (tasks.md §13.6).
 // ===========================================================================
-// Canonical serialization is 25 bytes of content (21 single-byte fields +
-// 2×u16 LE = 25) padded to 28 (the next multiple of 4 = 3 pad bytes).
+// Canonical serialization is 29 bytes: 28 historical bytes plus append-only
+// byte [28] for enemy_drop_checks.
 // Layout per spec — see Settings_CanonicalSerialize.
 // Phase B Slice 7+8 §66: bumped from 24→28 to absorb `hints`, `boss_shuffle`,
 // `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
@@ -284,13 +301,12 @@ enum {
 // shares it (bit1), add-rando-traps packs `traps` into [26] bits 2-3, and
 // instant_flute packs its inverse manual-activation bit into [26] bit4;
 // add-rando-door-shuffle packs its axis into [27] (bits 0-1).
-// LENGTH STAYS 28 — all reused previously-zero pad bytes, so no size-coupling
-// cascade. add-rando-pot-sanity took the LAST free bits of [26] (6-7) and [27]
+// LENGTH STAYED 28 through those axes because all reused previously-zero pad
+// bytes. add-rando-pot-sanity took the LAST free bits of [26] (6-7) and [27]
 // (bit 7) for pot_shuffle, so [26] and [27] are now fully allocated. The only
 // remaining extension surface at length 28 is [25] bits 6-7 (entrance axes use
-// 0-5); the next axis past that grows the length (see memory
-// canonical_size_coupling).
-#define kSettingsCanonicalLen 28
+// 0-5). add-rando-enemy-drop-sanity grows the length to 29 by appending [28].
+#define kSettingsCanonicalLen 29
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
 // pool / 7 crystals each / dungeon items Vanilla / prize+medallion shuffle
@@ -364,6 +380,15 @@ uint8 Settings_DoorPotTier(const RandoSettings *s);
 // (pot_keys_dungeon_active) so the pot-key gates can't drift from pot_active; the
 // WILD/DUNGEON ops additionally test Settings_EffectiveSmallKeysMode.
 bool Settings_PotKeysActive(const RandoSettings *s);
+
+// add-rando-enemy-drop-sanity — normalized enemy-drop check tier. Keys is
+// honored when effective small keys are Wild (including Retro's computed mode)
+// or Dungeon. All is honored only for vanilla-door, non-enemy-shuffle layouts;
+// door shuffle and enemy shuffle keep the forced key-drop subset active by
+// degrading All to Keys.
+uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s);
+bool Settings_EnemyDropKeysActive(const RandoSettings *s);
+bool Settings_EnemyChecksAllActive(const RandoSettings *s);
 
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like

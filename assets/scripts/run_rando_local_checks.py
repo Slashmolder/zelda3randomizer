@@ -30,6 +30,8 @@ CHEST_TABLE = REPO / "assets" / "rando" / "chest_table.gen.bin"
 DEFAULT_TMP = REPO / "tmp" / "local-rando-checks"
 POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
 POT_KEY_DEPTH = REPO / "assets" / "rando" / "pot_key_depth.gen.yaml"
+ENEMY_DROP_REGISTRY = REPO / "assets" / "rando" / "enemy_drops.gen.yaml"
+ENEMY_CHECK_REGISTRY = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
 ITEM_REGISTRY = REPO / "assets" / "rando" / "item_registry.yaml"
 POT_NONPOT_DROP_COUNTS = REPO / "src" / "rando" / "pot_nonpot_drop_counts.h"
 CODEGEN_OUTPUTS = [
@@ -38,6 +40,8 @@ CODEGEN_OUTPUTS = [
     REPO / "src" / "rando" / "item_ids.h",
     REPO / "src" / "rando" / "chest_lookup.h",
     REPO / "src" / "rando" / "pot_lookup.h",
+    REPO / "src" / "rando" / "enemy_drop_lookup.h",
+    REPO / "src" / "rando" / "enemy_check_lookup.h",
     POT_NONPOT_DROP_COUNTS,
     REPO / "src" / "rando" / "icon_atlas.h",
     REPO / "src" / "rando" / "direct_grant_icons.h",
@@ -120,8 +124,26 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
         ("gen_pot_key_depth --check",
          [sys.executable, "assets/scripts/gen_pot_key_depth.py",
           "--dump", str(key_depth), "--check"]),
+        ("gen_enemy_drop_tables",
+         [sys.executable, "assets/scripts/gen_enemy_drop_tables.py",
+          "--key-depth", str(key_depth)]),
+        ("gen_enemy_drop_tables --check",
+         [sys.executable, "assets/scripts/gen_enemy_drop_tables.py",
+          "--key-depth", str(key_depth), "--check"]),
+        ("gen_enemy_check_tables",
+         [sys.executable, "assets/scripts/gen_enemy_check_tables.py",
+          "--key-depth", str(key_depth)]),
+        ("gen_enemy_check_tables --check",
+         [sys.executable, "assets/scripts/gen_enemy_check_tables.py",
+          "--key-depth", str(key_depth), "--check"]),
         ("rando_logic_gen --strict",
          [sys.executable, "assets/rando_logic_gen.py", "--strict"]),
+        ("audit_enemy_check_candidates",
+         [sys.executable, "assets/scripts/audit_enemy_check_candidates.py",
+          "--include-rows"]),
+        ("audit_enemy_check_candidates --check",
+         [sys.executable, "assets/scripts/audit_enemy_check_candidates.py",
+          "--include-rows", "--check"]),
     ]
 
     for label, cmd in checks:
@@ -210,7 +232,12 @@ def main(argv: list[str]) -> int:
               f"Build first or pass --binary.")
         return 2
 
-    tracked_codegen = [POT_REGISTRY, POT_KEY_DEPTH] + CODEGEN_OUTPUTS
+    tracked_codegen = [
+        POT_REGISTRY,
+        POT_KEY_DEPTH,
+        ENEMY_DROP_REGISTRY,
+        ENEMY_CHECK_REGISTRY,
+    ] + CODEGEN_OUTPUTS
     if not args.skip_prepare:
         before = snapshot(tracked_codegen)
         rc = refresh_pot_codegen(binary, tmp)
@@ -220,14 +247,14 @@ def main(argv: list[str]) -> int:
         if rc:
             return rc
         if args.prepare_only:
-            print("\nrun_rando_local_checks: pot codegen prepared", flush=True)
+            print("\nrun_rando_local_checks: local rando codegen prepared", flush=True)
             return 0
         after = snapshot(tracked_codegen)
         if before != after:
             print(
-                "\nrun_rando_local_checks: local pot codegen changed. Rebuild the "
-                "binary and rerun this script with --skip-prepare, or use "
-                "`make rando-local-checks` on a Make build.",
+                "\nrun_rando_local_checks: local rando registries/codegen changed. "
+                "Rebuild the binary and rerun this script with --skip-prepare, "
+                "or use `make rando-local-checks` on a Make build.",
                 flush=True,
             )
             return 3

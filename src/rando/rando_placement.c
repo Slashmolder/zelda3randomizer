@@ -22,6 +22,8 @@
 #include "item_ids.h"
 #include "location_ids.h"
 #include "dungeon_ids.h"
+#include "enemy_drop_lookup.h"
+#include "enemy_check_lookup.h"
 #include "pot_nonpot_drop_counts.h"
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
@@ -282,6 +284,9 @@ static const struct { uint16 item_id; uint8 count; } kVanillaSmallKeyCounts[] = 
   { ID_SmallKey_GT,  4 },
 };
 
+static const uint8 kDoorDropTotal[13] =
+    { 3, 2, 3, 0, 2, 0, 5, 2, 2, 4, 3, 2, 4 };  // HCE,EP,DP,TH,HCT,PoD,SP,SW,TT,IP,MM,TR,GT
+
 static const uint16 kBigKeys[] = {
   ID_BigKey_EP, ID_BigKey_DP, ID_BigKey_TH, ID_BigKey_PoD, ID_BigKey_SP,
   ID_BigKey_SW, ID_BigKey_TT, ID_BigKey_IP, ID_BigKey_MM, ID_BigKey_TR, ID_BigKey_GT,
@@ -294,6 +299,11 @@ static const uint16 kCompasses[] = {
   ID_Compass_EP, ID_Compass_DP, ID_Compass_TH, ID_Compass_PoD, ID_Compass_SP,
   ID_Compass_SW, ID_Compass_TT, ID_Compass_IP, ID_Compass_MM, ID_Compass_TR, ID_Compass_GT,
 };
+
+static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s);
+static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *s);
+static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s);
+static void seed_dungeon_free_key_drops(RandoCounts *counts, const RandoSettings *s);
 
 // NONPOT small-key drops per dungeon: the enemy / guard / under-block keys that
 // pot_shuffle does NOT itemize (only POTS shuffle).
@@ -351,6 +361,7 @@ void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *set
     for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++)
       counts->by_item_id[kCompasses[i]] = 1;
   }
+  seed_dungeon_free_key_drops(counts, settings);
 }
 
 // Add `n` copies of `item_id` to the pool, respecting capacity.
@@ -394,15 +405,79 @@ static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s) {
   }
 }
 
+static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *s) {
+  return loc != NULL && s != NULL && loc->type == LOCTYPE_EnemyDrop &&
+         Settings_EnemyDropKeysActive(s);
+}
+
+static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s) {
+  return loc != NULL && s != NULL && loc->type == LOCTYPE_Enemy &&
+         Settings_EnemyChecksAllActive(s);
+}
+
 static bool pot_registry_available(void) {
   for (uint32 i = 0; i < kRandoLocationsCount; i++)
     if (kRandoLocations[i].type == LOCTYPE_Pot) return true;
   return false;
 }
 
+static bool enemy_drop_registry_available(void) {
+  return kRandoEnemyDropLookup_COUNT != 0;
+}
+
+static bool enemy_check_registry_available(void) {
+  return kRandoEnemyCheckLookup_COUNT != 0;
+}
+
 static bool settings_need_pot_registry(const RandoSettings *s) {
   return s != NULL && s->pot_shuffle != kPotShuffle_Off &&
          !Settings_PotShuffleForcedOff(s);
+}
+
+static bool settings_need_enemy_drop_registry(const RandoSettings *s) {
+  return Settings_EnemyDropKeysActive(s);
+}
+
+static bool settings_need_enemy_check_registry(const RandoSettings *s) {
+  return Settings_EnemyChecksAllActive(s);
+}
+
+static bool dungeon_key_depth_active(const RandoSettings *s) {
+  return s != NULL &&
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon &&
+         (Settings_PotKeysActive(s) || Settings_EnemyDropKeysActive(s));
+}
+
+// Under DUNGEON keys, generated min-depth gates count every small-key door along
+// the path. Drops that remain vanilla/free must therefore be present in the
+// assumed inventory, while drops turned into checks must not be pre-granted.
+// Count = door-rando DROP total - active key pots - active enemy small-key drops.
+static void seed_dungeon_free_key_drops(RandoCounts *counts, const RandoSettings *s) {
+  if (counts == NULL || !dungeon_key_depth_active(s)) return;
+  bool pots = Settings_PotKeysActive(s);
+  bool enemies = Settings_EnemyDropKeysActive(s);
+  for (uint8 d = 0; d < 13; d++) {
+    uint16 key_id = kVanillaSmallKeyCounts[d].item_id;
+    uint16 itemized = 0;
+    if (pots) {
+      for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+        const RandoLocationDef *loc = &kRandoLocations[i];
+        if (loc->type == LOCTYPE_Pot && pot_active(loc, s) &&
+            loc->vanilla_item_id == key_id)
+          itemized++;
+      }
+    }
+    if (enemies) {
+      for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+        const RandoLocationDef *loc = &kRandoLocations[i];
+        if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, s) &&
+            loc->vanilla_item_id == key_id)
+          itemized++;
+      }
+    }
+    if (itemized == 0 || itemized >= kDoorDropTotal[d]) continue;
+    counts->by_item_id[key_id] += (uint16)(kDoorDropTotal[d] - itemized);
+  }
 }
 
 // shared pre-pin predicate. Returns true when the placer's
@@ -580,6 +655,22 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       "  and rebuild before generating pot-shuffle seeds.\n");
     return 0;
   }
+  if (settings_need_enemy_drop_registry(settings) && !enemy_drop_registry_available()) {
+    fprintf(stderr,
+      "BuildItemPool: enemy_drop_checks=keys requested, but this binary was\n"
+      "  built without assets/rando/enemy_drops.gen.yaml. Run\n"
+      "  assets/scripts/gen_enemy_drop_tables.py with ROM assets and rebuild\n"
+      "  before generating enemy-drop-check seeds.\n");
+    return 0;
+  }
+  if (settings_need_enemy_check_registry(settings) && !enemy_check_registry_available()) {
+    fprintf(stderr,
+      "BuildItemPool: enemy_drop_checks=all requested, but this binary was\n"
+      "  built without assets/rando/enemy_checks.gen.yaml. Run\n"
+      "  assets/scripts/gen_enemy_check_tables.py with ROM assets and rebuild\n"
+      "  before generating all-enemy-check seeds.\n");
+    return 0;
+  }
 
   uint16 n = 0;
 
@@ -734,7 +825,8 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   // their small key must ALSO enter the pool, or it vanishes. Under WILD keys the
   // keys live in the general world pool; under DUNGEON keys they shuffle within
   // their own dungeon (the assumed-fill confines them via the per-pot min-depth
-  // gates, and the nonpot drops are free-granted by seed_pot_nonpot_drops). Either
+  // gates, and the still-vanilla drops are free-granted by
+  // seed_dungeon_free_key_drops). Either
   // way each active key pot contributes its vanilla SmallKey (or the shared
   // GenericKey under Retro, exactly as the chest keys above). Slot-balanced: every
   // active key pot is itself a fillable open slot counted by the junk-pad target,
@@ -749,6 +841,29 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
           is_small_key_item(loc->vanilla_item_id)) {
         uint16 key_id = generic ? (uint16)ID_GenericKey : loc->vanilla_item_id;
         n = pool_add(out_items, n, capacity, key_id, 1);
+      }
+    }
+  }
+
+  // ----- Enemy-drop checks -----
+  // Forced enemy small-key drops are outside kVanillaSmallKeyCounts, same as
+  // key pots. When the tier is active, each generated enemy-drop location
+  // becomes a fillable check and contributes its vanilla key to the pool (or the
+  // shared GenericKey under Retro). Under Dungeon keys, exact min-depth gates and
+  // seed_dungeon_free_key_drops keep formerly-free drops in sync. The castle
+  // big-key marker is a one-shot check with no modeled registry item; it still
+  // needs a pool filler so the spawned check never falls back to ITEM_Nothing.
+  if (Settings_EnemyDropKeysActive(settings)) {
+    bool generic = Settings_GenericKeysActive(settings);
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type != LOCTYPE_EnemyDrop || !enemy_drop_active(loc, settings))
+        continue;
+      if (is_small_key_item(loc->vanilla_item_id)) {
+        uint16 key_id = generic ? (uint16)ID_GenericKey : loc->vanilla_item_id;
+        n = pool_add(out_items, n, capacity, key_id, 1);
+      } else if (loc->vanilla_item_id == ITEM_Nothing) {
+        n = pool_add(out_items, n, capacity, ID_Rupee20, 1);
       }
     }
   }
@@ -816,6 +931,8 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       // empty pot is prepinned (below) to ITEM_Nothing, so it too is excluded
       // here; only active loot/key pots count toward the junk-pad target.
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
+      if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
+      if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
       // pre-pinned slots (prizes, events, medallions, shops,
       // vanilla-mode dungeon items) are identity-placed by
       // the §3b pin pass and never consume a pool item. Counting them here
@@ -1574,6 +1691,8 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     // slots; an active empty pot enters here too but is pinned to ITEM_Nothing
     // by the pre-pass (location_is_prepinned) before assumed-fill/junk run.
     if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
+    if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
+    if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
     open_loc_idx[open_n++] = (uint16)i;
   }
 
@@ -1774,15 +1893,14 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
         Customizer__SetError(msg);
         return false;
       }
-      // Reject non-grantable ITEMS: prizes (ids 111..120, placed by the prize
-      // shuffle, not the pool) and virtual event items (StartingHeart 121,
-      // RescuedZelda 122, DefeatAgahnim 123). These have no pool entry and no
-      // grant path — pinning one would emit a non-grantable item the runtime
+      // Reject non-grantable ITEMS: prizes (placed by the prize shuffle, not
+      // the pool) and virtual logic/event items. These have no pool entry and
+      // no item grant path — pinning one would emit a placement the runtime
       // dispatcher can't honor.
-      if (item_id >= ITEM_Prize_GreenPendant && item_id <= ITEM_DefeatAgahnim) {
+      if (Customizer_IsNonGrantableItem(item_id)) {
         char msg[160];
         snprintf(msg, sizeof msg,
-                 "pinned item '%s' is a prize/event item that cannot be hand-placed",
+                 "pinned item '%s' is not grantable and cannot be hand-placed",
                  Rando_GetItemName(item_id));
         Customizer__SetError(msg);
         return false;
@@ -2110,7 +2228,7 @@ static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCount
       out->by_item_id[kCompasses[i]] = 1;
     }
   }
-  seed_pot_nonpot_drops(out, s);
+  seed_dungeon_free_key_drops(out, s);
 }
 
 // Lookup a location_id in the placement table; returns the placed item or
@@ -2742,6 +2860,8 @@ void Placement_SelfCheck(void) {
       // settings pot_shuffle is Off, so pot_active is false and every pot is
       // excluded here (the expected count is unchanged from pre-pot-sanity).
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, &defaults)) continue;
+      if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, &defaults)) continue;
+      if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, &defaults)) continue;
       if (location_is_prepinned(loc, &defaults)) continue;
       expected++;
     }
@@ -2828,14 +2948,18 @@ void Placement_SelfCheck(void) {
     if (n_keys != key_pots) selfcheck_die("Keys tier must activate exactly the key pots");
     if (n_all != pot_locs) selfcheck_die("All tier must activate every pot");
 
-    // (b') The nonpot small-key free-grant (kPotNonpotDropCounts) must equal
-    //      (door-rando drop total) - (fork pot keys) for every dungeon that
-    //      HAS pot keys, or it drifts when the pot set changes (a pots.gen.yaml
-    //      rebind / new key pot). Drop totals = prover `--dump-key-depth` DUNGEON
-    //      drop= values; pot keys re-counted from kRandoLocations here.
+    // (b') Pot-only DUNGEON free grants must equal door-rando DROP total minus
+    //      active key pots for every dungeon with key pots. This pins the dynamic
+    //      seed_dungeon_free_key_drops path to the same invariant the old static
+    //      kPotNonpotDropCounts table represented.
     {
-      static const uint8 kDoorDropTotal[13] =
-          { 3, 2, 3, 0, 2, 0, 5, 2, 2, 4, 3, 2, 4 };  // HCE,EP,DP,TH,HCT,PoD,SP,SW,TT,IP,MM,TR,GT
+      RandoSettings spd;
+      Settings_SetDefaults(&spd);
+      spd.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+      spd.pot_shuffle = kPotShuffle_Keys;
+      RandoCounts seeded;
+      memset(&seeded, 0, sizeof(seeded));
+      seed_dungeon_free_key_drops(&seeded, &spd);
       for (uint8 d = 0; d < 13; d++) {
         uint16 key = kVanillaSmallKeyCounts[d].item_id;
         uint8 npots = 0;
@@ -2845,11 +2969,9 @@ void Placement_SelfCheck(void) {
         if (npots == 0) continue;  // no pot keys -> no min-depth gate -> no free-grant
         if (npots > kDoorDropTotal[d])
           selfcheck_die("pot keys exceed door-rando drop total (pots.gen.yaml drift)");
-        uint8 want = (uint8)(kDoorDropTotal[d] - npots), have = 0;
-        for (uint8 j = 0; j < (uint8)kPotNonpotDropCounts_COUNT; j++)
-          if (kPotNonpotDropCounts[j].item_id == key) have = kPotNonpotDropCounts[j].count;
-        if (have != want)
-          selfcheck_die("kPotNonpotDropCounts drift (must = door drop total - pot keys)");
+        uint16 want = (uint16)(kDoorDropTotal[d] - npots);
+        if (seeded.by_item_id[key] != want)
+          selfcheck_die("Dungeon free-drop seeding drifted for pot-only keys");
       }
     }
 
@@ -2893,6 +3015,209 @@ void Placement_SelfCheck(void) {
     if (Placement_Lookup(0xFFFE, 0x1234) != 0x1234)
       selfcheck_die("Placement_Lookup must return the vanilla fallback for a missing location");
     Placement_Install(NULL);
+  }
+
+  // Placement-side selfchecks for enemy-drop key activation and all-enemy rows.
+  {
+    uint32 enemy_locs = 0, enemy_key_locs = 0, enemy_bigkey_one_shots = 0;
+    uint32 enemy_check_locs = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      if (kRandoLocations[i].type == LOCTYPE_EnemyDrop) {
+        enemy_locs++;
+        if (is_small_key_item(kRandoLocations[i].vanilla_item_id)) enemy_key_locs++;
+        else if (kRandoLocations[i].vanilla_item_id == ITEM_Nothing) enemy_bigkey_one_shots++;
+      } else if (kRandoLocations[i].type == LOCTYPE_Enemy) {
+        enemy_check_locs++;
+        if (kRandoLocations[i].vanilla_item_id != ITEM_Nothing)
+          selfcheck_die("ordinary enemy checks must use ITEM_Nothing as vanilla filler");
+      }
+    }
+    bool has_enemy_drop_registry = kRandoEnemyDropLookup_COUNT != 0;
+    bool has_enemy_check_registry = kRandoEnemyCheckLookup_COUNT != 0;
+    if (has_enemy_drop_registry != (enemy_locs != 0))
+      selfcheck_die("enemy_drop_lookup/count drifted from LOCTYPE_EnemyDrop locations");
+    if (has_enemy_check_registry != (enemy_check_locs != 0) ||
+        kRandoEnemyCheckLookup_COUNT != enemy_check_locs)
+      selfcheck_die("enemy_check_lookup/count drifted from LOCTYPE_Enemy locations");
+    if (enemy_locs != enemy_key_locs + enemy_bigkey_one_shots)
+      selfcheck_die("enemy-drop rows must be small keys or the one-shot big-key check");
+    if (has_enemy_drop_registry && enemy_bigkey_one_shots != 1)
+      selfcheck_die("expected exactly one one-shot enemy big-key check");
+
+    RandoSettings so, sk;
+    Settings_SetDefaults(&so);
+    Settings_SetDefaults(&sk);
+    so.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    sk.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    sk.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint32 n_off = 0, n_keys = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type != LOCTYPE_EnemyDrop) continue;
+      n_off += enemy_drop_active(loc, &so) ? 1 : 0;
+      n_keys += enemy_drop_active(loc, &sk) ? 1 : 0;
+    }
+    if (n_off != 0)
+      selfcheck_die("enemy_drop_checks Off must activate zero enemy-drop rows");
+    if (n_keys != enemy_locs)
+      selfcheck_die("enemy_drop_checks Keys must activate exactly generated rows");
+    RandoSettings seshuf = sk;
+    seshuf.enemy_shuffle = 1;
+    uint32 n_enemy_shuffle = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &seshuf))
+        n_enemy_shuffle++;
+    }
+    if (n_enemy_shuffle != enemy_locs)
+      selfcheck_die("enemy_drop_checks=Keys must compose with enemy_shuffle");
+    RandoSettings sdun;
+    Settings_SetDefaults(&sdun);
+    sdun.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+    sdun.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint32 n_dun = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sdun))
+        n_dun++;
+    }
+    if (n_dun != enemy_locs)
+      selfcheck_die("enemy_drop_checks must activate for vanilla-door Dungeon small keys");
+    RandoSettings sdoor = sdun;
+    sdoor.door_shuffle = kDoorShuffle_Basic;
+    uint32 n_door = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sdoor))
+        n_door++;
+    }
+    if (n_door != enemy_locs)
+      selfcheck_die("enemy_drop_checks must compose with door shuffle Dungeon keys");
+
+    RandoSettings sall = sk;
+    sall.enemy_drop_checks = kEnemyDropChecks_All;
+    uint32 n_all_forced = 0, n_all_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sall))
+        n_all_forced++;
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sall))
+        n_all_ordinary++;
+    }
+    if (n_all_forced != enemy_locs)
+      selfcheck_die("enemy_drop_checks All must keep forced key-drop rows active");
+    if (n_all_ordinary != enemy_check_locs)
+      selfcheck_die("enemy_drop_checks All must activate exactly ordinary enemy rows");
+    RandoSettings salldoor = sall;
+    salldoor.door_shuffle = kDoorShuffle_Basic;
+    uint32 n_all_door_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &salldoor))
+        n_all_door_ordinary++;
+    }
+    if (n_all_door_ordinary != 0 ||
+        Settings_EffectiveEnemyDropChecks(&salldoor) != kEnemyDropChecks_Keys)
+      selfcheck_die("door shuffle must degrade All ordinary enemy checks to Keys");
+    RandoSettings sallenemy = sall;
+    sallenemy.enemy_shuffle = 1;
+    uint32 n_all_enemy_shuffle_forced = 0, n_all_enemy_shuffle_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sallenemy))
+        n_all_enemy_shuffle_forced++;
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sallenemy))
+        n_all_enemy_shuffle_ordinary++;
+    }
+    if (n_all_enemy_shuffle_forced != enemy_locs ||
+        n_all_enemy_shuffle_ordinary != 0 ||
+        Settings_EffectiveEnemyDropChecks(&sallenemy) != kEnemyDropChecks_Keys)
+      selfcheck_die("enemy shuffle must degrade All ordinary enemy checks to Keys");
+
+    if (has_enemy_drop_registry) {
+      RandoCounts seeded;
+      memset(&seeded, 0, sizeof(seeded));
+      seed_dungeon_free_key_drops(&seeded, &sdun);
+      for (uint8 d = 0; d < 13; d++) {
+        uint16 key = kVanillaSmallKeyCounts[d].item_id;
+        uint16 enemies = 0;
+        for (uint32 i = 0; i < kRandoLocationsCount; i++)
+          if (kRandoLocations[i].type == LOCTYPE_EnemyDrop &&
+              kRandoLocations[i].vanilla_item_id == key) enemies++;
+        if (enemies > kDoorDropTotal[d])
+          selfcheck_die("enemy-drop key sources exceed door-rando drop total");
+        uint16 want = enemies == 0 ? 0 : (uint16)(kDoorDropTotal[d] - enemies);
+        if (seeded.by_item_id[key] != want)
+          selfcheck_die("Dungeon free-drop seeding drifted for enemy-only keys");
+      }
+      RandoSettings sboth = sdun;
+      sboth.pot_shuffle = kPotShuffle_Keys;
+      memset(&seeded, 0, sizeof(seeded));
+      seed_dungeon_free_key_drops(&seeded, &sboth);
+      for (uint8 d = 0; d < 13; d++) {
+        uint16 key = kVanillaSmallKeyCounts[d].item_id;
+        uint16 itemized = 0;
+        for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+          const RandoLocationDef *loc = &kRandoLocations[i];
+          if ((loc->type == LOCTYPE_Pot || loc->type == LOCTYPE_EnemyDrop) &&
+              loc->vanilla_item_id == key)
+            itemized++;
+        }
+        if (itemized == 0) continue;
+        if (itemized > kDoorDropTotal[d])
+          selfcheck_die("combined key sources exceed door-rando drop total");
+        uint16 want = (uint16)(kDoorDropTotal[d] - itemized);
+        if (seeded.by_item_id[key] != want)
+          selfcheck_die("Dungeon free-drop seeding drifted for pot+enemy keys");
+      }
+    }
+
+    uint16 off_pool[kRandoLocationCapacity];
+    uint16 n_pool_off = BuildItemPool(&so, off_pool, kRandoLocationCapacity);
+    if (n_pool_off == 0)
+      selfcheck_die("enemy-drop Off pool unexpectedly failed");
+    uint16 key_pool[kRandoLocationCapacity];
+    uint16 n_pool_keys = BuildItemPool(&sk, key_pool, kRandoLocationCapacity);
+    if (!has_enemy_drop_registry) {
+      if (n_pool_keys != 0)
+        selfcheck_die("enemy_drop_checks must fail closed when the registry is absent");
+    } else if (n_pool_keys != (uint16)(n_pool_off + enemy_locs)) {
+      fprintf(stderr,
+              "[Placement_SelfCheck] enemy-drop pool off=%u keys=%u locs=%u "
+              "small=%u one_shot=%u\n",
+              (unsigned)n_pool_off, (unsigned)n_pool_keys,
+              (unsigned)enemy_locs, (unsigned)enemy_key_locs,
+              (unsigned)enemy_bigkey_one_shots);
+      selfcheck_die("enemy_drop_checks pool/slot count drift");
+    }
+    RandoSettings sdun_off = sdun;
+    sdun_off.enemy_drop_checks = kEnemyDropChecks_Off;
+    uint16 dun_off_pool[kRandoLocationCapacity];
+    uint16 n_pool_dun_off = BuildItemPool(&sdun_off, dun_off_pool, kRandoLocationCapacity);
+    uint16 dun_key_pool[kRandoLocationCapacity];
+    uint16 n_pool_dun_keys = BuildItemPool(&sdun, dun_key_pool, kRandoLocationCapacity);
+    if (has_enemy_drop_registry && n_pool_dun_keys != (uint16)(n_pool_dun_off + enemy_locs))
+      selfcheck_die("enemy_drop_checks Dungeon pool/slot count drift");
+    uint16 all_pool[kRandoLocationCapacity];
+    uint16 n_pool_all = BuildItemPool(&sall, all_pool, kRandoLocationCapacity);
+    if (!has_enemy_check_registry) {
+      if (n_pool_all != 0)
+        selfcheck_die("enemy_drop_checks All must fail closed when the ordinary enemy registry is absent");
+    } else if (n_pool_all != (uint16)(n_pool_keys + enemy_check_locs)) {
+      fprintf(stderr,
+              "[Placement_SelfCheck] enemy all pool keys=%u all=%u ordinary=%u\n",
+              (unsigned)n_pool_keys, (unsigned)n_pool_all,
+              (unsigned)enemy_check_locs);
+      selfcheck_die("enemy_drop_checks All pool/slot count drift");
+    }
+    uint16 all_door_pool[kRandoLocationCapacity];
+    uint16 n_pool_all_door = BuildItemPool(&salldoor, all_door_pool, kRandoLocationCapacity);
+    RandoSettings sdoor_keys = salldoor;
+    sdoor_keys.enemy_drop_checks = kEnemyDropChecks_Keys;
+    uint16 door_key_pool[kRandoLocationCapacity];
+    uint16 n_pool_door_keys = BuildItemPool(&sdoor_keys, door_key_pool, kRandoLocationCapacity);
+    if (has_enemy_drop_registry && n_pool_all_door != n_pool_door_keys)
+      selfcheck_die("door-shuffle All degradation must match Keys pool size");
   }
 
   // BuildItemPool refuses pieces_required > pieces_placed for

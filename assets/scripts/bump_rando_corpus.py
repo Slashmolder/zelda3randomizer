@@ -106,7 +106,7 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
             return None, None
         if not out_json.exists():
             return None, None
-        # Phase B Slice 6 — race-mode entries emit a 138-byte ZRSR binary
+        # Phase B Slice 6 — race-mode entries emit a suppressed ZRSR binary
         # instead of JSON. Invoke --reveal-spoiler on the suppressed file
         # (it overwrites the file in place with full JSON) and parse the
         # revealed digest. This matches the steady-state corpus runner's

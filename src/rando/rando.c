@@ -2127,8 +2127,12 @@ static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool s
   link_receiveitem_index = 0;
 }
 
-void Rando_PotQuietReceive(uint8 lttp_code, uint16 item_id) {
+void Rando_QuietReceiveOrConfirm(uint8 lttp_code, uint16 item_id) {
   rando_pot_quiet_receive_impl(lttp_code, item_id, true);
+}
+
+void Rando_PotQuietReceive(uint8 lttp_code, uint16 item_id) {
+  Rando_QuietReceiveOrConfirm(lttp_code, item_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -3222,6 +3226,13 @@ static bool g_rando_active_door_logic = false;
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
 
+static uint8 rando_door_enemy_drop_keys_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla)
+    return 0;
+  return Settings_EnemyDropKeysActive(settings) ? 1 : 0;
+}
+
 static uint32 rando_door_layout_digest24(const DoorShuffleLayout *layout) {
   return DoorShuffle_LayoutDigest(layout) & 0xFFFFFFu;
 }
@@ -3250,6 +3261,7 @@ static bool rando_prepare_door_layout(const RandoSettings *settings,
   bool ok = DoorShuffle_Generate(slot_seed, door_attempt,
                                  kDoorShuffle_MvpDungeonMask,
                                  Settings_DoorPotTier(settings),
+                                 rando_door_enemy_drop_keys_for_settings(settings),
                                  &s_active_door_layout);
   uint32 digest = ok ? rando_door_layout_digest24(&s_active_door_layout) : 0;
   if (!ok || digest != (expected_digest24 & 0xFFFFFFu)) {
@@ -3942,6 +3954,7 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
     if (DoorShuffle_Generate(slot_seed, g_rando_active_header.door_attempt,
                              kDoorShuffle_MvpDungeonMask,
                              Settings_DoorPotTier(&g_rando_active_settings),
+                             rando_door_enemy_drop_keys_for_settings(&g_rando_active_settings),
                              &s_active_door_layout)) {
       uint32 digest24 = DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFFu;
       if (g_rando_active_header.door_digest24 != digest24) {
@@ -4306,6 +4319,15 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
     // keys. Matches the gen-time assumed inventory (by_item_id[ITEM_GenericKey]).
     if (Settings_GenericKeysActive(st))
       out->by_item_id[ITEM_GenericKey] = link_generic_keys;
+
+    // Hyrule Castle Ball-n-chain grants a vanilla big-key bit even though HCE
+    // has no shuffled BigKey_* item. Enemy-drop sanity models that one-shot as
+    // an EnemyDrop check plus this virtual logic item.
+    uint16 hce_bigkey_bits =
+        Rando_DungeonBitForGameDungeon(kGameDungeon_HyruleCastle) |
+        Rando_DungeonBitForGameDungeon(kGameDungeon_HyruleCastleEscape);
+    if (link_bigkey & hce_bigkey_bits)
+      out->by_item_id[ITEM_HyruleCastleBigKey] = 1;
   }
 }
 
@@ -6897,7 +6919,7 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   uint32 datt = 0xFFFFFFFF;
   for (uint32 a = 0; a < 16; a++) {
     if (DoorShuffle_Generate(ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
-                             kPotShuffle_Off,
+                             kPotShuffle_Off, 0,
                              &s_active_door_layout)) {
       datt = a;
       break;

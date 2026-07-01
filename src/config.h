@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "rando/rando_settings.h"  // kSettingsCanonicalLen
 #include <SDL_keycode.h>
 
 enum {
@@ -134,7 +135,18 @@ typedef struct Config {
   // ON (ALTTPR-style); set FieldItemSprites = 0 in [Graphics] to see vanilla
   // sprites. Inert in non-rando play regardless.
   bool field_item_sprites;       // default true
+
+  // Enemy-drop check carrier marker. Client-local visual preference for active
+  // unchecked enemy-drop checks: placed item icon where the shared tile slot can
+  // represent it unambiguously, or a generic key-style marker. Never serialized
+  // into randomizer settings or seed material.
+  uint8 enemy_drop_marker;       // kEnemyDropMarker_*; default item
 } Config;
+
+enum {
+  kEnemyDropMarker_Item = 0,
+  kEnemyDropMarker_Generic = 1,
+};
 
 enum {
   kMsuEnabled_Msu = 1,
@@ -239,15 +251,15 @@ bool Config_PadBindingName(PadBinding b, char *out, size_t cap);
 // pointer-into-buffer values), so Config_LoadAuxIniFile can free its temp
 // buffer immediately after the parse pass.
 //
-// settings_canonical holds kSettingsCanonicalLen (=28) bytes of
-// Settings_CanonicalSerialize output, encoded as 56 hex chars in the INI
+// settings_canonical holds kSettingsCanonicalLen bytes of
+// Settings_CanonicalSerialize output, encoded as hex in the INI
 // (key last_settings_canonical_hex). The window's startup-load round-trips it
 // through Settings_CanonicalDeserialize and falls back to Settings_SetDefaults
 // if the hex is corrupt or fails the round-trip check.
 // ---------------------------------------------------------------------------
 typedef struct RandoWindowPrefs {
   bool has_settings;             // true when last_settings_canonical_hex parsed OK
-  uint8 settings_canonical[28];  // kSettingsCanonicalLen; canonical-serialized RandoSettings
+  uint8 settings_canonical[kSettingsCanonicalLen];  // canonical-serialized RandoSettings
   uint64 last_seed_u64;          // last UI-chosen seed
   int window_x, window_y, window_w, window_h;  // last settings-window geometry
   bool has_geometry;             // true when all four geometry keys were present

@@ -1213,7 +1213,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     bool got_layout = false;
     for (uint32 a = 0; a < 32; a++) {
       if (DoorShuffle_Generate(door_ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
-                               door_settings.pot_shuffle, &layout)) {
+                               door_settings.pot_shuffle, 0, &layout)) {
         door_attempt = (uint8)a;
         door_digest24 = DoorShuffle_LayoutDigest(&layout) & 0xFFFFFFu;
         got_layout = true;

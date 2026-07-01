@@ -54,7 +54,7 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--customizer=<path>` | Customizer mode: load a manifest that PINS a subset of locations to chosen items; the assumed-fill placer completes the rest. See [Customizer mode](#customizer-mode). |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
 | `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, prize/medallion shuffles, boss shuffle, drop shuffle, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
-| `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 138-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
+| `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 139-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
 | `--reveal-spoiler=<path>` | Read a suppressed `ZRSR` file at `<path>`, validate magic + CRC + version + stamp, regenerate the placement, and overwrite the file in place with the full JSON. Writes a sibling `.txt` text spoiler. Exits 0 on success; non-zero with a numeric `kRandoReveal_*` code on any failure (CrcMismatch, VersionMismatch, StampMismatch, ParseError, FileNotFound). Idempotent: a second invocation on an already-revealed file is a no-op success. |
 
 Examples:
@@ -130,6 +130,7 @@ axis via `item_pool`.
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
 | `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
+| `enemy_drop_checks` | `off`, `keys`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, while `all` also turns eligible ordinary dungeon enemies into checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; door shuffle and enemy shuffle degrade `all` to `keys`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -461,6 +462,71 @@ The spoiler lists loot/key pots under their region and omits the empty ones; the
 [auto-tracker](#auto-tracker-external-clients) tags pot slots `"pot": true` so
 external clients can filter them.
 
+### Enemy drop checks (experimental)
+
+`enemy_drop_checks` (`add-rando-enemy-drop-sanity` and
+`add-rando-all-enemy-checks`) is a separate location-expansion setting, not the
+same as `drop_shuffle`, which still only permutes the normal prize-pack drop
+table.
+
+The `keys` tier turns vanilla dungeon enemies that carry forced key drops into
+randomizer checks. It is effective when small keys are Wild, including Retro's
+computed `GenericKey` mode, and when Dungeon small keys are active. Door shuffle
+forces Dungeon keys and composes with this tier through a generated door-oracle
+bridge. Vanilla small-key mode normalizes enemy-drop checks to `off`.
+`enemy_shuffle=true` composes with the forced-key `keys` tier because the runtime
+lookup keys by vanilla room/source slot, not by the shuffled enemy type.
+
+The `all` tier includes the `keys` tier and adds eligible ordinary dungeon
+enemies as first-class checks. The local ROM-derived registry currently scans 464
+eligible underworld sprite-table sources, emits the 270 dungeon candidates with a
+conservative room predicate, keeps 158 key-depth-only candidates audit-only, and
+leaves 36 no-key-depth underworld sources outside the dungeon-only scope.
+Overworld enemies remain out of scope until the runtime has stable source identity
+for overworld sprite spawns. Door shuffle currently degrades requested `all` to
+effective `keys`; ordinary all-enemy rows are disabled there until a non-key
+door-region bridge exists. Enemy shuffle also degrades requested `all` to
+effective `keys` because the placement logic does not know the per-seed shuffled
+enemy type or HP scaling for ordinary enemy rows.
+
+The forced-key generator scans vanilla dungeon sprite assets for forced-key
+markers, emits 13 active small-key enemy-drop locations, and emits the one
+vanilla forced Hyrule Castle big-key marker as a pure one-shot check. The
+one-shot check still silently preserves the vanilla current-dungeon big-key grant
+because this fork does not model Hyrule Castle / Castle Tower big keys as
+item-registry entries. Logic derives a virtual `HyruleCastleBigKey` after the
+Ball-n-chain check is reachable, so Zelda's Cell and the Zelda rescue event can
+require that side effect. For Wild/Retro and Dungeon small keys, the generator
+also wraps ordinary dungeon locations whose vanilla logic assumed forced enemy
+keys were free. In Hyrule Castle this means Boomerang Chest/Boomerang Guard
+require the Map Guard key path, Ball-n-chain requires the second HCE key,
+Zelda's Cell requires the derived big key, and Zelda rescue requires the sewer
+key as well.
+
+Ordinary all-enemy checks use a separate `Enemy` location type and grant at
+enemy death time. The checked bitmap suppresses already-collected ordinary
+enemies on room reload while preserving source-slot identity for the rest of the
+room. Their generated reachability is a reviewed room predicate plus an
+enemy-specific kill predicate. Thrown pots count as a valid kill route when the
+engine damage table shows the enemy takes normal pot damage and the room has at
+least the required number of reachable liftable pots. Active unchecked carriers
+draw a field marker. The local `[Graphics]
+EnemyDropMarker` option controls the marker: `item` (default) shows the placed
+item when that can be represented unambiguously, while `generic` shows the same
+key-style marker for every carrier without revealing the placement. Item mode
+falls back to the generic marker when multiple active carriers in the room would
+need different item icons or when local field-item sprites are disabled. This is
+a client-local visual preference and does not enter the share string, settings
+hash, generator version, or corpus.
+
+For door shuffle, codegen emits door x enemy-drop bridge rows carrying the door
+DROP index, door region, and source predicate; the door layout digest includes
+that bridge so saved/replayed layouts drift-fail if local generated enemy data
+changes. Placement seeds only the still-vanilla free drops as assumed inventory,
+using `door_drop_total - active key pots - active enemy key drops` per dungeon.
+If local generated enemy-check assets are missing, active `enemy_drop_checks=all`
+seeds fail closed instead of silently generating with an empty enemy registry.
+
 ### Traps
 
 When `traps` is `low` / `medium` / `high`, the generator replaces 4 / 8 / 16
@@ -620,7 +686,7 @@ slot (the 31-byte raw blob plus one pad byte), the suppressed `ZRSR` race file,
 the spoiler filename and the spoiler JSON's `meta.share_string`, the 5-icon
 visual hash, and the file-select banner prefix.
 
-**v2 — magic `ZRS2`, exactly 71 characters.** Payload layout:
+**v2 — magic `ZRS2`, exactly 72 characters.** Payload layout:
 `magic | generator_version | settings_len | settings_canonical | seed_u64 | checksum`.
 v2 embeds the **full canonical settings plus the seed**: pasting one restores
 every setting AND the seed, and pins the seed so Generate reproduces the
@@ -647,7 +713,7 @@ then pressing Generate opens a confirmation modal — settings no longer match
 the pasted share string — instead of silently generating a different seed.
 
 v2 is transport-only, which has one visible consequence: the window shows the
-71-character v2 string while the file-select banner prefix comes from the
+72-character v2 string while the file-select banner prefix comes from the
 slot's stored v1 identity string, so the two differ. Banner-prefix matching
 between friends still works — both slots store the same v1 string for the
 same seed.
@@ -672,7 +738,8 @@ slots as vanilla. Sidecar layout:
   a CRC-32 over the slot region, verified on load; `0` = legacy file, accepted
   without verification).
 - 3 slots × {80-byte header + embedded placement table + checked-location bitmap
-  + (format_version ≥ 2) a 28-byte canonical `RandoSettings` blob
+  + a versioned canonical `RandoSettings` blob (absent for v1, 28-byte legacy
+  prefix for v2/v3, current `kSettingsCanonicalLen` for v4+)
   + (format_version ≥ 3) an 8-byte slot extension block}.
 - No 4th slot anywhere.
 
@@ -688,8 +755,10 @@ entrance-shuffle axes/attempt, (`@73`/`@74`) `boomerang_owned`/`bow_owned`
 format_version ≥ 3 slot extension block.
 
 **format_version 2** (added with the rich tracker windows): each slot appends a
-`kSettingsCanonicalLen`-byte canonical `RandoSettings` blob after the checked
-bitmap. This lets a reloaded slot reproduce the seed's full settings *and*
+28-byte legacy canonical `RandoSettings` prefix after the checked bitmap. Version
+4 widened that physical blob to the current `kSettingsCanonicalLen` (29 bytes);
+v2/v3 loads zero-extend the legacy tail, so `enemy_drop_checks` defaults to
+`off`. This lets a reloaded slot reproduce the seed's full settings *and*
 recompute the prize/medallion shuffle assignments (from the share string's seed,
 in the exact placer order) — both of which the runtime reachability engine
 needs. Older v1 slots have no blob and load unchanged via the version-aware
@@ -697,8 +766,9 @@ deserializer (`RandoSave_ReadFile` keys body layout on the file
 `format_version`); on such slots `settings_present` is forced off and the
 trackers **suppress** the reachability display rather than guess (a wrong
 `prize_shuffle` flag would mis-seed the shuffle stream). The blob size is coupled
-to `kSettingsCanonicalLen` by a `_Static_assert`; the round-trip + a v1-compat
-case are covered by `RandoSave_SelfCheck` (`--rando-selftest`).
+to the declared sidecar `format_version`; current writes are statically coupled
+to `kSettingsCanonicalLen`. The round-trip plus v1/v2/v3 compat cases are covered
+by `RandoSave_SelfCheck` (`--rando-selftest`).
 
 **format_version 3**: each slot appends a fixed 8-byte extension block after
 the settings blob (the 80-byte slot header is fully claimed). Bytes 0-2 carry
@@ -732,7 +802,7 @@ later via `--reveal-spoiler` (the binary regenerates and overwrites the file
 in place with the full JSON).
 
 **Generation**: pass `--race-mode` (or set `race_mode=true` via `--settings`).
-The spoiler path receives a 138-byte binary file with magic `ZRSR` instead
+The spoiler path receives a 139-byte binary file with magic `ZRSR` instead
 of the usual JSON + .txt pair. File layout (all multi-byte fields LE):
 
 ```
@@ -742,11 +812,11 @@ of the usual JSON + .txt pair. File layout (all multi-byte fields LE):
                 (with race_mode and wall-clock fields normalized to 0)
 +38   4 bytes   share_string_len (u32 LE)
 +42   64 bytes  share_string (zero-padded)
-+106  28 bytes  settings_canonical (= kSettingsCanonicalLen)
-+134  4 bytes   crc32 (IEEE 802.3 over bytes 0..133, LE on disk)
++106  29 bytes  settings_canonical (= kSettingsCanonicalLen)
++135  4 bytes   crc32 (IEEE 802.3 over bytes 0..134, LE on disk)
 ```
 
-Total: 138 bytes. The settings are public on race sheets, so including the
+Total: 139 bytes. The settings are public on race sheets, so including the
 canonical bytes does not leak the placement — they're needed at reveal time
 to regenerate.
 
@@ -1264,6 +1334,14 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 |---|---|---|
 | 12→13 | Slice 2 Standard EP YAML promoted from inverted-only | 11 placement_digests + 13 sphere_digests changed (EP-region-only); 28 unchanged. See `27b52dd` |
 | 13→14 | Slice 7+8 §66 — settings canonical layout 24→28 bytes (`hints`, `boss_shuffle`, `drop_shuffle` added) | 52/52 corpus entries unchanged — canonical layout grew but defaults are all 0, so placement digest doesn't move. Only seeds with non-default new settings would diverge. Sidecar `kRandoSuppressedSpoilerSettingsLen` static-asserts the coupling |
+| 111→112 | **Enemy drop checks** (`add-rando-enemy-drop-sanity`) — `enemy_drop_checks` appends canonical byte `[28]`, grows v2 share strings to 72 chars and ZRSR files to 139 bytes, and adds generated Wild/Retro forced enemy small-key checks. | Default `enemy_drop_checks=off` keeps placement behavior inactive, but the default settings hash changes because the canonical blob grew. Active Wild/Retro seeds add fillable locations and move placement/sphere digests. |
+| 112→113 | **Enemy-drop one-shot big-key check** — the single Hyrule Castle Ball-n-chain forced big-key marker becomes an active one-shot check while the vanilla current-dungeon big key is preserved as a silent runtime grant. | Active enemy-drop seeds gain one fillable check and move placement/sphere digests; normalized-off rows stay unchanged. |
+| 113→114 | **Enemy-drop checks compose with enemy shuffle** — source-slot lookup was proven independent of shuffled enemy type, so `enemy_shuffle=true` no longer normalizes `enemy_drop_checks` off. | Only the explicit enemy-shuffle + enemy-drop corpus row changes; default/off and other active rows stay unchanged. |
+| 114→115 | **Enemy-drop checks support vanilla-door Dungeon small keys** — generated enemy rows now include exact key-depth DROP metadata, the logic VM gets an enemy-drop Dungeon min-depth gate, and placement computes combined free-drop grants for active pot + enemy key sources. | Only active Dungeon enemy-drop rows move; door-shuffle support follows in 116. |
+| 115→116 | **Enemy-drop checks compose with door shuffle** — codegen emits a door x enemy-drop bridge, `DoorShuffleLayout` digests the active enemy bridge, and the door prover removes active enemy drops from vanilla free-drop accounting while adding them as itemized key sources. | Only the explicit door-shuffle + enemy-drop corpus row changes; a new combined pot+enemy+door row pins the bridge interaction. |
+| 116→117 | **Enemy-drop key-depth applies to ordinary locations and HCE big-key side effects** — generated enemy metadata now includes ordinary location key-depth rows, an `ENEMY_DROP_KEYS_WILD` VM op, and a virtual `HyruleCastleBigKey` derived from the Ball-n-chain one-shot check. | Active enemy-drop key seeds move where ordinary locations were previously under-gated, especially Hyrule Castle. Default/off rows stay inactive. |
+| 117→118 | **All enemy checks** — `enemy_drop_checks=all` is exposed for vanilla-door Wild/Retro and Dungeon small-key seeds, adds ordinary dungeon `Enemy` locations from the local ROM-derived registry, and degrades to `keys` under door shuffle. | Existing `off`/`keys` rows stay unchanged. Three new all-enemy corpus rows pin Wild, Dungeon, and door-shuffle degradation behavior. |
+| 118→119 | **Enemy-check kill logic** — ordinary all-enemy checks now add per-source enemy kill predicates plus thrown-pot alternatives derived from the engine damage tables and reachable room pot counts; key-depth-only candidates remain audit-only until room reach can be modeled; requested `all` also degrades to `keys` under enemy shuffle because placement cannot see shuffled type/HP. | All-enemy corpus rows move; forced-key-only rows stay effective under enemy shuffle. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
@@ -1397,8 +1475,8 @@ entrance-shuffle work; see `archive/2026-06-05-add-rando-entrance-shuffle/design
 Retro **extends Open** (same region graph, same Open starting state) and turns
 on ALTTPR's "retro" ruleset. Per `app/World/Retro.php` it forces four flags.
 The fork does **not** store these as settings bytes — they are *computed* from
-`world_state == Retro` at the point of use (no new serialized fields, canonical
-length stays 28, default Open/Standard/Inverted placement digests unchanged).
+`world_state == Retro` at the point of use (no new serialized fields for Retro;
+default Open/Standard/Inverted placement digests unchanged).
 The canonical runtime gate is `Rando_IsRetroActive()` (rando.c): true iff a
 rando slot is active and its world-state is Retro; when false the vanilla code
 path runs byte-identically.

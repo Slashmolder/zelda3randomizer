@@ -43,8 +43,8 @@ The effective trap categories SHALL be controlled by a `trap_categories` enable 
 canonical byte [27] bits 2-6 (HAZARD=2, IMPAIR=3, DRAIN=4, SCARE=5, DISPLACE=6). When
 `traps > 0` and `trap_categories == 0`, **all categories SHALL be enabled** (the zero-sentinel),
 so that the default settings (traps off, mask zero) serialize byte-identically and "traps on,
-untouched" enables every category. The mask SHALL NOT enlarge the canonical blob:
-`kSettingsCanonicalLen` SHALL remain 28.
+untouched" enables every category. The trap-category mask SHALL NOT enlarge the canonical
+blob by itself.
 
 A trap SHALL only ever be an effect whose category is enabled for the seed. There SHALL be no
 representable state of "traps on with zero categories" — that condition is expressed as
@@ -53,7 +53,7 @@ representable state of "traps on with zero categories" — that condition is exp
 #### Scenario: Default settings unchanged by the new field
 
 - **WHEN** a seed is generated with default settings (traps off)
-- **THEN** `trap_categories` serializes as zero, the canonical 28-byte blob and the default
+- **THEN** `trap_categories` serializes as zero, the canonical blob prefix and the default
   `settings_hash` are byte-identical to the pre-change binary, and the corpus default entries are
   byte-identical
 

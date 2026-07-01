@@ -31,7 +31,7 @@ The implementation SHALL NOT use `htobe*`, `be*toh`, or other big-endian convers
 
 ### Requirement: Settings canonical serialization order (normative)
 
-The `RandoSettings` struct SHALL be canonically serialized field-by-field in the following 28-byte layout. This serialization is the input to `SHA-256()` for the `settings_hash` computation and to the v2 share-string encoder for the `seed_u64`-adjacent settings portion. The order is **normative spec**.
+The `RandoSettings` struct SHALL be canonically serialized field-by-field in the following 29-byte layout. This serialization is the input to `SHA-256()` for the `settings_hash` computation and to the v2 share-string encoder for the `seed_u64`-adjacent settings portion. The order is **normative spec**.
 
 **Enum value names align with ALTTPR's config strings** (verified against `app/Randomizer.php` and `config/alttp.php` in `alttp_vt_randomizer`). Hand-translation from ALTTPR is mechanical when names match; share-string-to-PHP-config debugging is 1-to-1. Where ALTTPR uses hyphens (e.g., `triforce-hunt`), our CLI surface preserves the exact string; the C struct field substitutes underscore for the hyphen (parser does the translation).
 
@@ -63,12 +63,13 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 | 23 | `boss_shuffle` | uint8 boolean. |
 | 24 | `drop_shuffle` | uint8 boolean. |
 | 25 | entrance axes | bit-packed: bit0 `shuffle_cave_entrances`, bit1 `shuffle_dungeon_entrances`, bit2 `coupled`, bit3 `cross_category`, bit4 `decoupled`, bit5 `shuffle_ganons_tower_entrance`; bits6-7 reserved. |
-| 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, `traps` is a **non-contiguous 3-bit field** — low 2 bits at bits2-3 + high bit at **bit5** (`off=0`, `low=1`, `medium=2`, `high=3`, `insanity=4`); the split keeps `off`/`low`/`medium`/`high` byte-identical and bit4 untouched, bit4 `instant_flute` (inverse: `1` = manual activation; default on ⇒ `0`); bits6-7 reserved. |
-| 27 | door + trap-category axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-6 `trap_categories` enable mask (bit2 HAZARD, bit3 IMPAIR, bit4 DRAIN, bit5 SCARE, bit6 DISPLACE; the mask is meaningful only when `traps > 0`, and a `0` mask while `traps > 0` means all categories enabled, so the default serializes all-zero); bit7 reserved. |
+| 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, `traps` is a **non-contiguous 3-bit field** — low 2 bits at bits2-3 + high bit at **bit5** (`off=0`, `low=1`, `medium=2`, `high=3`, `insanity=4`); bit4 `instant_flute` (inverse: `1` = manual activation; default on ⇒ `0`); bits6-7 carry the low 2 bits of `pot_shuffle`. |
+| 27 | door + trap-category axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-6 `trap_categories` enable mask (bit2 HAZARD, bit3 IMPAIR, bit4 DRAIN, bit5 SCARE, bit6 DISPLACE; the mask is meaningful only when `traps > 0`, and a `0` mask while `traps > 0` means all categories enabled, so the default serializes all-zero); bit7 carries the high bit of `pot_shuffle`. |
+| 28 | `enemy_drop_checks` | uint8 (`off=0`, `keys=1`, `all=2`), after derived rules. |
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
 
-Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes. Deserialization masks only the defined bits of bytes 25..27 and leaves undefined bits forward-compatible, but range-checks the scalar enum/count fields.
+Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=all` degrades to `keys` under active door shuffle or enemy shuffle and normalizes to `off` when small keys are vanilla. Deserialization masks only the defined bits of bytes 25..27 and leaves undefined bits forward-compatible, but range-checks the scalar enum/count fields including byte 28.
 
 #### Scenario: Reordering fields breaks settings_hash
 - **WHEN** the canonical serialization order changes (e.g., swap fields 4 and 5)
@@ -76,7 +77,7 @@ Serialization applies derived rules before writing bytes: Completionist forces `
 
 #### Scenario: Phase A defaults
 - **WHEN** the user opens the settings screen and has not changed any field
-- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, `instant_flute=on`, `door_shuffle=vanilla`, and `trap_categories=0` (all categories — meaningful only when traps are enabled)
+- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, `instant_flute=on`, `door_shuffle=vanilla`, `trap_categories=0` (all categories — meaningful only when traps are enabled), and `enemy_drop_checks=off`
 
 #### Scenario: Retired boss-heart axis canonicalizes to shuffled
 - **WHEN** settings are built from defaults, CSV, or a v2 share string
@@ -126,7 +127,7 @@ The system SHALL accept and emit share strings as single base32 tokens (RFC 4648
 `magic "ZRSS"[4] | generator_version[1] | settings_hash[16] | seed_u64[8] (LE) | crc16[2] (LE)` = 31 bytes → exactly 50 base32 chars. The CRC is CRC-16-CCITT-FALSE over bytes [0..28]. `settings_hash` is one-way; a v1 string can restore only the seed.
 
 **v2 (the exchange format — emitted by all copy/distribution surfaces):**
-`magic "ZRS2"[4] | generator_version[1] | settings_len[1] | settings_canonical[settings_len] | seed_u64[8] (LE) | crc16[2] (LE)`, where `settings_len = kSettingsCanonicalLen` (28) at encode time and `settings_canonical` is the verbatim `Settings_CanonicalSerialize` output. Total `16 + settings_len` bytes → `ceil((16 + settings_len) * 8 / 5)` base32 chars = exactly **71** for the current 28-byte canonical layout. The CRC is CRC-16-CCITT-FALSE over all bytes before it. `settings_hash` is NOT embedded — decoders recompute it from the canonical bytes. A v2 string SHALL fully restore `(settings, seed)`.
+`magic "ZRS2"[4] | generator_version[1] | settings_len[1] | settings_canonical[settings_len] | seed_u64[8] (LE) | crc16[2] (LE)`, where `settings_len = kSettingsCanonicalLen` (29) at encode time and `settings_canonical` is the verbatim `Settings_CanonicalSerialize` output. Total `16 + settings_len` bytes -> `ceil((16 + settings_len) * 8 / 5)` base32 chars = exactly **72** for the current 29-byte canonical layout. The CRC is CRC-16-CCITT-FALSE over all bytes before it. `settings_hash` is NOT embedded — decoders recompute it from the canonical bytes. A v2 string SHALL fully restore `(settings, seed)`.
 
 Decode rules: after base32 decode, magic `ZRSS` SHALL require exactly 31 bytes and parse as v1; magic `ZRS2` SHALL require exactly `16 + settings_len` bytes and parse as v2. A v2 string whose `settings_len` exceeds the binary's `kSettingsCanonicalLen` SHALL be refused with a distinct "newer version" decode status (no partial application). A v2 string whose `settings_len` is smaller (an older binary's string after a future canonical growth) SHALL zero-extend the canonical tail (zero is the append-only default for later-added axes). Explicit rejects (alttpr.com format, corrupted base32, wrong length, wrong magic, checksum mismatch) SHALL apply to both formats.
 
@@ -142,9 +143,9 @@ The headless CLI SHALL emit the v2 string as the distribution artifact: `--out-s
 - **WHEN** a 50-char v1 share string (including one minted by an earlier release) is pasted
 - **THEN** it decodes as v1 (seed + settings_hash); the seed is adopted and the settings-mismatch warning path applies — v1 decoding is never removed
 
-#### Scenario: v2 length is exactly 71 chars for the 28-byte canonical layout
-- **WHEN** a v2 share string is encoded while `kSettingsCanonicalLen == 28`
-- **THEN** the encoded token is exactly 71 base32 chars (44 bytes = 352 bits → 71 chars), and the encoder buffer constant (`kShareStringBase32MaxLen`) accommodates it with a compile-time assert coupling it to `kSettingsCanonicalLen`
+#### Scenario: v2 length is exactly 72 chars for the 29-byte canonical layout
+- **WHEN** a v2 share string is encoded while `kSettingsCanonicalLen == 29`
+- **THEN** the encoded token is exactly 72 base32 chars (45 bytes = 360 bits → 72 chars), and the encoder buffer constant (`kShareStringBase32MaxLen`) accommodates it with a compile-time assert coupling it to `kSettingsCanonicalLen`
 
 #### Scenario: Magic-based dispatch, not length-based
 - **WHEN** a token base32-decodes to bytes whose magic is `ZRSS` but whose length is not 31, or whose magic is `ZRS2` but whose length is not `16 + settings_len`
@@ -443,10 +444,10 @@ The generator SHALL emit a spoiler log in two forms: a human-readable text file 
 - 2-byte `generator_version` (LE).
 - 32-byte SHA-256 `spoiler_stamp` of the full-spoiler JSON the generator *would have emitted* with `race_mode` cleared in the canonical settings object (the stamp is over placement, not over the race-mode flag).
 - 4-byte length-prefix + 64-byte zero-padded UTF-8 `share_string` for round-trip convenience.
-- 28-byte canonical settings blob (`kSettingsCanonicalLen`) with `race_mode` cleared.
-- 4-byte CRC32 over the previous 134 bytes for tamper detection.
+- 29-byte canonical settings blob (`kSettingsCanonicalLen`) with `race_mode` cleared.
+- 4-byte CRC32 over the previous 135 bytes for tamper detection.
 
-The total file size SHALL be exactly 138 bytes. No `.txt` text-spoiler companion is emitted.
+The total file size SHALL be exactly 139 bytes. No `.txt` text-spoiler companion is emitted.
 
 #### Scenario: Both JSON and text spoilers are emitted (non-race seed)
 - **WHEN** a seed generates successfully with `race_mode == 0`
@@ -454,7 +455,7 @@ The total file size SHALL be exactly 138 bytes. No `.txt` text-spoiler companion
 
 #### Scenario: Race-mode suppression writes only the stamp file
 - **WHEN** a seed generates successfully with `race_mode == 1`
-- **THEN** only the suppressed-spoiler file at `<spoiler_dir>/<share_string>.json` is written; no `.txt` companion is emitted; the file is exactly 138 bytes (4-byte magic `ZRSR` + 2-byte generator_version LE + 32-byte SHA-256 stamp + 4-byte share-string-length LE + 64-byte share-string zero-padded + 28-byte settings_canonical with `race_mode` cleared + 4-byte CRC32 LE). The settings_canonical field carries the original `RandoSettings` bytes (with `race_mode` cleared to 0 in the canonical form) because the sidecar slot stores only `settings_hash` in the fixed header. The reveal pipeline needs the original settings to regenerate the placement deterministically.
+- **THEN** only the suppressed-spoiler file at `<spoiler_dir>/<share_string>.json` is written; no `.txt` companion is emitted; the file is exactly 139 bytes (4-byte magic `ZRSR` + 2-byte generator_version LE + 32-byte SHA-256 stamp + 4-byte share-string-length LE + 64-byte share-string zero-padded + 29-byte settings_canonical with `race_mode` cleared + 4-byte CRC32 LE). The settings_canonical field carries the original `RandoSettings` bytes (with `race_mode` cleared to 0 in the canonical form) because the sidecar slot stores only `settings_hash` in the fixed header. The reveal pipeline needs the original settings to regenerate the placement deterministically.
 
 #### Scenario: Stamp algorithm is canonical
 - **WHEN** the same `race_mode == 1` seed is generated twice on different platforms (Linux, macOS, Windows, Switch)
@@ -734,10 +735,12 @@ This change supersedes the deferral recorded in `add-rando-retro-world-state`'s
 ### Requirement: Door-shuffle settings axis in canonical serialization
 
 The door-shuffle axis SHALL join the `RandoSettings` canonical serialization in the
-existing reserved zero-pad byte: `door_shuffle ∈ {vanilla, basic}` packs into byte
-`[27]` **bits 0-1** (`kDoorShuffleAxis_Mask`; `intensity` is pinned to 1 and not
-serialized), so `kSettingsCanonicalLen` stays 28, no size-coupling cascade fires,
-and a default-settings (`door_shuffle == vanilla`) `settings_hash` stays
+reserved zero-pad byte that existed when the axis was introduced:
+`door_shuffle ∈ {vanilla, basic}` packs into byte `[27]` **bits 0-1**
+(`kDoorShuffleAxis_Mask`; `intensity` is pinned to 1 and not serialized), so the
+door-shuffle change itself did not grow `kSettingsCanonicalLen`, no
+size-coupling cascade fired for that change, and a default-settings
+(`door_shuffle == vanilla`) `settings_hash` stayed
 byte-identical to the pre-change value (the entrance-axes `[25]` / enemy-shuffle
 `[26]` precedent). The CSV settings key is `door_shuffle` (`vanilla|basic`), and
 the deserializer unpacks the axis from `[27]`. `Settings_EffectiveDoorShuffle`
@@ -762,8 +765,8 @@ precisely to defer that cascade until the follow-on axes are real.
 
 - **WHEN** a default-settings seed (`door_shuffle == vanilla`) is generated after
   this change
-- **THEN** byte `[27]` packs to zero, `kSettingsCanonicalLen` stays 28, and the
-  `settings_hash` is byte-identical to the pre-change value for the same axis tuple
+- **THEN** byte `[27]` packs to zero and the `settings_hash` is byte-identical to
+  the pre-change value for the same axis tuple
 
 #### Scenario: Basic door shuffle changes the per-seed settings_hash
 
@@ -780,11 +783,11 @@ precisely to defer that cascade until the follow-on axes are real.
 
 ### Requirement: Traps settings axis in canonical serialization
 
-The traps axis SHALL join `RandoSettings` canonical serialization in reserved byte `[26]` as a **non-contiguous 3-bit field**: the low 2 bits at **bits 2-3** and the high bit at **bit 5**, encoding `traps ∈ {off=0, low=1, medium=2, high=3, insanity=4}`. The split keeps `off`/`low`/`medium`/`high` byte-identical to the original 2-bit layout and leaves byte `[26]` bit4 (`instant_flute`) untouched. Byte `[26]` bit0 remains `enemy_shuffle`, bit1 remains `customizer_active`; `kSettingsCanonicalLen` stays 28. The CSV parser SHALL accept `traps` and `trap_frequency` as aliases for the axis, and `insanity` (aliases `max`/`all`) for the maximum tier.
+The traps axis SHALL join `RandoSettings` canonical serialization in byte `[26]` as a **non-contiguous 3-bit field**: the low 2 bits at **bits 2-3** and the high bit at **bit 5**, encoding `traps ∈ {off=0, low=1, medium=2, high=3, insanity=4}`. The split keeps `off`/`low`/`medium`/`high` byte-identical to the original 2-bit layout and leaves byte `[26]` bit4 (`instant_flute`) untouched. Byte `[26]` bit0 remains `enemy_shuffle`, bit1 remains `customizer_active`; the traps change itself did not grow `kSettingsCanonicalLen`. The CSV parser SHALL accept `traps` and `trap_frequency` as aliases for the axis, and `insanity` (aliases `max`/`all`) for the maximum tier.
 
 #### Scenario: Default traps keep settings_hash byte-identical
 - **WHEN** a default-settings seed (`traps == off`) is generated
-- **THEN** byte `[26]` bits 2-3 and bit 5 pack to zero, `kSettingsCanonicalLen` stays 28, and the default `settings_hash` is byte-identical to the pre-traps value
+- **THEN** byte `[26]` bits 2-3 and bit 5 pack to zero, and the default `settings_hash` is byte-identical to the pre-traps value
 
 #### Scenario: Trap frequency changes the per-seed settings_hash
 - **WHEN** a seed sets `traps != off` (including `insanity`)
@@ -862,7 +865,7 @@ This requirement is **ADDED** (not MODIFIED) to avoid a multi-change archive-seq
 
 ### Requirement: Enemy-shuffle canonical settings axis
 
-The `RandoSettings` struct SHALL gain a boolean axis `enemy_shuffle`. In the canonical serialization (the input to `SHA-256()` for `settings_hash` and to the v2 share-string encoder) it SHALL be packed as canonical byte `[26]` bit0. Byte `[26]` also carries `customizer_active` at bit1 and `traps` in bits2-3; door shuffle owns byte `[27]` bits0-1. `kSettingsCanonicalLen` SHALL stay **28**. No existing field's offset, width, or value changes; no `kSettingsCanonicalLen` size-coupling cascade is triggered.
+The `RandoSettings` struct SHALL gain a boolean axis `enemy_shuffle`. In the canonical serialization (the input to `SHA-256()` for `settings_hash` and to the v2 share-string encoder) it SHALL be packed as canonical byte `[26]` bit0. Byte `[26]` also carries `customizer_active` at bit1 and `traps` in bits2-3; door shuffle owns byte `[27]` bits0-1. The enemy-shuffle change itself did not grow `kSettingsCanonicalLen`. No existing field's offset, width, or value changes; no `kSettingsCanonicalLen` size-coupling cascade is triggered by this axis.
 
 Because `enemy_shuffle` defaults off (the bit is 0) and draws no fill RNG / adds no predicate:
 - **Default-settings seeds keep a byte-identical `settings_hash`** (the canonical bytes are unchanged for the default tuple), and
@@ -872,7 +875,7 @@ Adding the axis SHALL still advance `kGeneratorVersion`: it version-locks a new 
 
 #### Scenario: Pad-bit packing keeps default hash and all placement identical
 - **WHEN** `enemy_shuffle` is added and a default-settings seed is generated on the new binary
-- **THEN** the seed's `settings_hash` AND `placement_digest_hex` are byte-identical to the pre-change baseline (the canonical length stays 28 and the default pad bit is 0); the corpus regenerates only its manifest version
+- **THEN** the seed's `settings_hash` AND `placement_digest_hex` are byte-identical to the pre-change baseline (the default pad bit is 0); the corpus regenerates only its manifest version
 
 #### Scenario: kGeneratorVersion bump + backward load
 - **WHEN** the axis is added
@@ -921,7 +924,7 @@ Customizer mode SHALL be mutually exclusive with race mode: the race reveal rege
 
 ### Requirement: Settings canonical serialization order — customizer extension
 
-`settings.customizer_active` SHALL serialize as canonical byte `[26]` bit1 (`kCustomizerAxis_Active`, sharing the pad byte with `enemy_shuffle`'s bit0; `door_shuffle` owns `[27]` bits 0-1). Default false keeps the default `settings_hash` and the regression corpus byte-identical; `kSettingsCanonicalLen` stays 28.
+`settings.customizer_active` SHALL serialize as canonical byte `[26]` bit1 (`kCustomizerAxis_Active`, sharing the pad byte with `enemy_shuffle`'s bit0; `door_shuffle` owns `[27]` bits 0-1). Default false keeps the default `settings_hash` and the regression corpus byte-identical; the customizer-active axis itself did not grow `kSettingsCanonicalLen`.
 
 `customizer_seed` (uint64 LE) SHALL be the SHA-256 of the manifest contents truncated to 8 bytes, computed at parse time. This makes share-strings reproducible across users who have the same manifest once the deferred share-string encoding lands (`tasks.md §6.4`).
 
@@ -932,4 +935,3 @@ Customizer mode SHALL be mutually exclusive with race mode: the race reveal rege
 #### Scenario: Identical manifests produce identical customizer_seed
 - **WHEN** two users run customizer mode with the same manifest file
 - **THEN** the computed `customizer_seed = SHA-256(manifest_bytes)[0..8]` is byte-identical
-

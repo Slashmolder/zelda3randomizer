@@ -300,6 +300,46 @@ def _strip_door_vanilla_key_terms(expr: str, dungeon: int | None) -> str:
     return expr
 
 
+def _suppress_base_key_terms_under_enemy_dungeon(expr, item, dungeon):
+    """Let generated enemy-drop DUNGEON depth replace inherited same-key gates."""
+    if item is None or dungeon is None:
+        return expr
+
+    item_pat = re.escape(item)
+
+    def repl(match):
+        return f"(ENEMY_DROP_KEYS_DUNGEON() OR {match.group(0)})"
+
+    expr = re.sub(rf"HAS_AMOUNT\(\s*{item_pat}\s*,\s*\d+\s*\)", repl, expr)
+    expr = re.sub(rf"HAS_ITEM\(\s*{item_pat}\s*\)", repl, expr)
+    return expr
+
+
+def _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild=None):
+    if item is None:
+        return ""
+    t = ""
+    if wild is not None and wild > 0:
+        t += f" AND (NOT ENEMY_DROP_KEYS_WILD() OR HAS_AMOUNT({item}, {wild}))"
+    if combined_wild is not None and combined_wild > (wild or 0):
+        t += (
+            f" AND (NOT (ENEMY_DROP_KEYS_WILD() AND POT_KEYS_WILD()) "
+            f"OR HAS_AMOUNT({item}, {combined_wild}))"
+        )
+    if dungeon is not None and dungeon > 0:
+        t += f" AND (NOT ENEMY_DROP_KEYS_DUNGEON() OR HAS_AMOUNT({item}, {dungeon}))"
+    return t
+
+
+def _enemy_drop_big_key_terms_for(item):
+    if item is None:
+        return ""
+    return (
+        f" AND (NOT ENEMY_DROP_KEYS_WILD() OR HAS_ITEM({item}))"
+        f" AND (NOT ENEMY_DROP_KEYS_DUNGEON() OR HAS_ITEM({item}))"
+    )
+
+
 def _pot_key_terms_for(item, full, dungeon):
     """Build the trailing pot-key gate for one generated key-depth row."""
     t = ""
@@ -358,6 +398,19 @@ def _pot_registry_digest(rows: list[tuple[int, int, int]]) -> int:
         h = _fnv32_u16(h, room)
         h = _fnv32_u16(h, pos4)
         h = _fnv32_u16(h, locid)
+    return h
+
+
+def _door_enemy_drop_bridge_digest(rows: list[dict]) -> int:
+    h = 0x811C9DC5
+    for r in rows:
+        h = _fnv32_u16(h, r["loc_id"])
+        h = _fnv32_u8(h, r["dungeon"])
+        h = _fnv32_u16(h, r["region"])
+        h = _fnv32_u16(h, r["drop_index"])
+        h = _fnv32_u32(h, len(r["pred"]))
+        for b in r["pred"]:
+            h = _fnv32_u8(h, b)
     return h
 
 
@@ -498,6 +551,284 @@ def load_pots(path: Path, logic_regions: dict[str, RegionDef] | None = None):
     return out, rows, bridge_rows
 
 
+def _load_pot_key_counts_by_item() -> dict[str, int]:
+    """Return item -> active key-pot count from the local pot key-depth table."""
+    table_path = RANDO_ASSETS / "pot_key_depth.gen.yaml"
+    if not table_path.exists():
+        return {}
+    doc = load_yaml(table_path)
+    counts: dict[str, int] = {}
+    for row in doc.get("pot_keys", []) or []:
+        item = row.get("item")
+        if item:
+            counts[item] = counts.get(item, 0) + 1
+    return counts
+
+
+def _enemy_source_counts(doc: dict) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    for row in doc.get("small_key_source_counts", []) or []:
+        item = row["item"]
+        out[item] = {
+            "chest": int(row.get("chest_count", 0) or 0),
+            "drop": int(row.get("drop_count", 0) or 0),
+            "enemy": int(row.get("enemy_drop_count", 0) or 0),
+        }
+    if out:
+        return out
+    # Back-compat for stale local artifacts during development; strict format
+    # checks below normally force regeneration before this path matters.
+    for row in doc.get("enemy_drops", []) or []:
+        if row.get("drop") != "small_key":
+            continue
+        item = row.get("vanilla_item")
+        if item:
+            cur = out.setdefault(item, {"chest": 0, "drop": 0, "enemy": 0})
+            cur["enemy"] += 1
+    return out
+
+
+def _enemy_depth_terms(row: dict, item: str, source_counts: dict[str, dict[str, int]],
+                       pot_key_counts: dict[str, int]) -> tuple[int | None, int | None, int | None]:
+    raw_wild = int(row["key_depth"]) if "key_depth" in row else 0
+    raw_dungeon = int(row["key_mindepth"]) if "key_mindepth" in row else 0
+    counts = source_counts.get(item, {})
+    enemy_cap = int(counts.get("chest", 0)) + int(counts.get("enemy", 0))
+    if enemy_cap > 0:
+        wild = min(raw_wild, enemy_cap)
+    else:
+        wild = raw_wild
+    combined_cap = enemy_cap + int(pot_key_counts.get(item, 0))
+    combined_wild = min(raw_wild, combined_cap) if combined_cap > 0 else wild
+    if combined_wild <= wild:
+        combined_wild = None
+    return wild, raw_dungeon, combined_wild
+
+
+def _apply_enemy_drop_key_terms(loc_preds, world_state_overrides, key_rows, hce_big_key_locations):
+    """Wrap ordinary locations whose vanilla logic assumed forced enemy drops were free."""
+    for row in key_rows or []:
+        name, item = row["name"], row["item"]
+        wild = row.get("wild")
+        dungeon = row.get("dungeon")
+        combined_wild = row.get("combined_wild")
+        tail = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
+        applied = False
+        if name in loc_preds:
+            if tail:
+                loc_preds[name].can_reach = f"({loc_preds[name].can_reach}){tail}"
+            applied = True
+        for ld in world_state_overrides.get(name, {}).values():
+            if tail:
+                ld.can_reach = f"({ld.can_reach}){tail}"
+            applied = True
+        if not applied:
+            print(f"WARNING: enemy key-depth location {name!r} matches no logic "
+                  f"location — stale table or renamed location?")
+
+    big_key_tail = _enemy_drop_big_key_terms_for("HyruleCastleBigKey")
+    for name in hce_big_key_locations or []:
+        applied = False
+        if name in loc_preds:
+            loc_preds[name].can_reach = f"({loc_preds[name].can_reach}){big_key_tail}"
+            applied = True
+        for ld in world_state_overrides.get(name, {}).values():
+            ld.can_reach = f"({ld.can_reach}){big_key_tail}"
+            applied = True
+        if not applied:
+            print(f"WARNING: HCE big-key location {name!r} matches no logic location")
+
+
+def load_enemy_drops(path: Path, logic_regions: dict[str, RegionDef] | None = None):
+    """Load assets/rando/enemy_drops.gen.yaml.
+
+    The file is local/ROM-derived and optional, like pots.gen.yaml. When absent
+    public builds emit no EnemyDrop locations plus an empty runtime lookup; an
+    active enemy_drop_checks seed fails closed in the placer.
+    """
+    if not path.exists():
+        print(f"WARNING: {path} not found - emitting NO enemy-drop locations. "
+              f"Run assets/scripts/gen_enemy_drop_tables.py with ROM assets "
+              f"to enable enemy-drop checks in this build.", file=sys.stderr)
+        return {}, [], [], [], []
+    doc = load_yaml(path)
+    if int(doc.get("format_version", 0) or 0) != 3:
+        raise RuntimeError(f"{path}: unsupported format_version {doc.get('format_version')!r}")
+    source_counts = _enemy_source_counts(doc)
+    pot_key_counts = _load_pot_key_counts_by_item()
+    out, rows, door_bridge_rows = {}, [], []
+    seen = set()
+    seen_rooms = set()
+    big_key_rows = 0
+    for raw in doc.get("enemy_drops", []) or []:
+        drop_kind_raw = raw.get("drop")
+        if drop_kind_raw not in ("small_key", "big_key"):
+            raise RuntimeError(f"{path}: unsupported enemy_drop kind {drop_kind_raw!r}")
+        if drop_kind_raw == "big_key":
+            big_key_rows += 1
+            if raw.get("big_key_policy") != "one_shot_preserve_vanilla_big_key":
+                raise RuntimeError(f"{path}: big_key enemy_drop lacks the reviewed one-shot policy")
+            if raw.get("vanilla_item") != "Nothing":
+                raise RuntimeError(f"{path}: one-shot big_key enemy_drop must use vanilla_item Nothing")
+            for field in ("small_key_item", "key_depth", "key_mindepth"):
+                if field not in raw:
+                    raise RuntimeError(f"{path}: big_key enemy_drop lacks {field}; regenerate with gen_enemy_drop_tables.py")
+        else:
+            for field in ("door_drop_index", "key_depth", "key_mindepth"):
+                if field not in raw:
+                    raise RuntimeError(f"{path}: small_key enemy_drop lacks {field}; regenerate with gen_enemy_drop_tables.py")
+                if int(raw[field]) < 0:
+                    raise RuntimeError(f"{path}: small_key enemy_drop has negative {field}")
+        room = int(raw["room"])
+        source_slot = int(raw["source_slot"])
+        key = (room, source_slot)
+        if key in seen:
+            raise RuntimeError(f"{path}: duplicate enemy-drop source room=0x{room:03x} slot={source_slot}")
+        seen.add(key)
+        if room in seen_rooms:
+            raise RuntimeError(f"{path}: multiple active enemy-drop keys in room 0x{room:03x}")
+        seen_rooms.add(room)
+        door_dungeon = int(raw["door_dungeon"])
+        door_region = int(raw["door_region"])
+        if door_dungeon < 0 or door_region < 0:
+            raise RuntimeError(f"{path}: negative door identity for enemy-drop room 0x{room:03x}")
+        base_can_reach = raw.get("can_reach") or "CanKillMostThings(world, 5)"
+        can_reach = base_can_reach
+        if drop_kind_raw == "small_key":
+            wild, dungeon, combined_wild = _enemy_depth_terms(
+                raw, raw["vanilla_item"], source_counts, pot_key_counts)
+            can_reach = _suppress_base_key_terms_under_enemy_dungeon(
+                can_reach, raw["vanilla_item"], dungeon)
+            terms = _enemy_drop_key_terms_for(
+                raw["vanilla_item"], wild, dungeon, combined_wild)
+            if terms:
+                can_reach = f"({can_reach}){terms}"
+            door_pred = _suppress_base_key_terms_under_enemy_dungeon(
+                base_can_reach, raw["vanilla_item"], dungeon)
+            door_bridge_rows.append({
+                "loc_id": int(raw["id"]),
+                "name": raw["name"],
+                "dungeon": door_dungeon,
+                "region": door_region,
+                "drop_index": int(raw["door_drop_index"]),
+                "base_can_reach": door_pred,
+            })
+        elif drop_kind_raw == "big_key":
+            small_key_item = raw["small_key_item"]
+            wild, dungeon, combined_wild = _enemy_depth_terms(
+                raw, small_key_item, source_counts, pot_key_counts)
+            can_reach = _suppress_base_key_terms_under_enemy_dungeon(
+                can_reach, small_key_item, dungeon)
+            terms = _enemy_drop_key_terms_for(
+                small_key_item, wild, dungeon, combined_wild)
+            if terms:
+                can_reach = f"({can_reach}){terms}"
+        loc = LocationDef(
+            id=int(raw["id"]),
+            name=raw["name"],
+            region=raw["region"],
+            type="EnemyDrop",
+            vanilla_item=raw["vanilla_item"],
+            can_reach=can_reach,
+            can_place=raw.get("can_place") or "TRUE()",
+            always_allow=raw.get("always_allow") or "FALSE()",
+            source="gen_enemy_drop_tables.py",
+        )
+        if logic_regions is not None and loc.region not in logic_regions:
+            raise RuntimeError(f"{path}: enemy-drop location {loc.name!r} uses unknown region {loc.region!r}")
+        out[loc.name] = loc
+        rows.append({
+            "room": room,
+            "source_slot": source_slot,
+            "loc_id": loc.id,
+            "vanilla_item": loc.vanilla_item,
+            "drop_kind": drop_kind_raw,
+            "door_dungeon": door_dungeon,
+            "door_region": door_region,
+        })
+    if not (doc.get("big_key_candidates") or []):
+        raise RuntimeError(f"{path}: missing recorded big_key_candidates")
+    if big_key_rows != 1:
+        raise RuntimeError(f"{path}: expected exactly one one-shot big_key enemy_drop row")
+    key_depth_rows = []
+    for raw in doc.get("key_depth_locations", []) or []:
+        item = raw["item"]
+        wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
+        key_depth_rows.append({
+            "name": raw["name"],
+            "item": item,
+            "wild": wild,
+            "dungeon": dungeon,
+            "combined_wild": combined_wild,
+        })
+    return out, rows, door_bridge_rows, key_depth_rows, (doc.get("hce_big_key_locations") or [])
+
+
+def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = None,
+                      enemy_drop_source_counts: dict[str, dict[str, int]] | None = None):
+    """Load assets/rando/enemy_checks.gen.yaml.
+
+    Ordinary enemy checks are separate from forced EnemyDrop key rows. Missing
+    local artifacts emit no Enemy locations plus an empty runtime lookup; an
+    active enemy_drop_checks=all seed fails closed in the placer.
+    """
+    if not path.exists():
+        print(f"WARNING: {path} not found - emitting NO ordinary enemy-check "
+              f"locations. Run assets/scripts/gen_enemy_check_tables.py with "
+              f"ROM assets to enable enemy_drop_checks=all in this build.",
+              file=sys.stderr)
+        return {}, []
+    if logic_regions is None:
+        raise RuntimeError(f"{path}: logic_regions are required for enemy-check region resolution")
+    doc = load_yaml(path)
+    if int(doc.get("format_version", 0) or 0) != 1:
+        raise RuntimeError(f"{path}: unsupported format_version {doc.get('format_version')!r}")
+    pot_key_counts = _load_pot_key_counts_by_item()
+    source_counts = enemy_drop_source_counts or {}
+    out, rows = {}, []
+    seen = set()
+    for raw in doc.get("enemy_checks", []) or []:
+        if raw.get("type") != "Enemy":
+            raise RuntimeError(f"{path}: ordinary enemy row {raw.get('name')!r} must use type Enemy")
+        room = int(raw["room"])
+        source_slot = int(raw["source_slot"])
+        key = (room, source_slot)
+        if key in seen:
+            raise RuntimeError(f"{path}: duplicate enemy-check source room=0x{room:03x} slot={source_slot}")
+        seen.add(key)
+        region_name = raw.get("region")
+        if not region_name or region_name not in logic_regions:
+            raise RuntimeError(f"{path}: enemy-check row {raw['name']!r} uses unknown region {region_name!r}")
+        item = raw["small_key_item"]
+        base_can_reach = raw.get("can_reach") or "TRUE()"
+        wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
+        can_reach = _suppress_base_key_terms_under_enemy_dungeon(
+            base_can_reach, item, dungeon)
+        terms = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
+        if terms:
+            can_reach = f"({can_reach}){terms}"
+        loc = LocationDef(
+            id=int(raw["id"]),
+            name=raw["name"],
+            region=region_name,
+            type="Enemy",
+            vanilla_item=raw.get("vanilla_item") or "Nothing",
+            can_reach=can_reach,
+            can_place=raw.get("can_place") or "TRUE()",
+            always_allow=raw.get("always_allow") or "FALSE()",
+            source="gen_enemy_check_tables.py",
+        )
+        if loc.vanilla_item != "Nothing":
+            raise RuntimeError(f"{path}: ordinary enemy-check row {loc.name!r} must use vanilla_item Nothing")
+        out[loc.name] = loc
+        rows.append({
+            "room": room,
+            "source_slot": source_slot,
+            "loc_id": loc.id,
+        })
+    return out, rows
+
+
 def load_cave_source_predicates(path: Path) -> list[tuple[str, str]]:
     """Return entrance-shuffle cave source predicates in registry order."""
     if not path.exists():
@@ -521,6 +852,17 @@ def build_door_pot_bridge(bridge_sources: list[dict], compile_src) -> tuple[list
         row["pred"] = pred
         rows.append(row)
     return rows, _door_pot_bridge_digest(rows) if rows else 0
+
+
+def build_door_enemy_drop_bridge(bridge_sources: list[dict], compile_src) -> tuple[list[dict], int]:
+    rows: list[dict] = []
+    for src in sorted(bridge_sources, key=lambda r: r["loc_id"]):
+        pred = compile_src(src["base_can_reach"],
+                           f"enemy drop bridge {src['loc_id']} {src['name']}")
+        row = dict(src)
+        row["pred"] = pred
+        rows.append(row)
+    return rows, _door_enemy_drop_bridge_digest(rows) if rows else 0
 
 
 def load_macros(path: Path | None) -> dict[str, MacroDef]:
@@ -1439,6 +1781,12 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "POT_KEYS_DUNGEON":
         if args:
             raise ParseError("OP_POT_KEYS_DUNGEON takes no operands")
+    elif op_name == "ENEMY_DROP_KEYS_WILD":
+        if args:
+            raise ParseError("OP_ENEMY_DROP_KEYS_WILD takes no operands")
+    elif op_name == "ENEMY_DROP_KEYS_DUNGEON":
+        if args:
+            raise ParseError("OP_ENEMY_DROP_KEYS_DUNGEON takes no operands")
     else:
         raise ParseError(f"no operand-emit rule for op {op_name!r}")
 
@@ -1727,6 +2075,115 @@ def emit_pot_lookup(rows, path: Path) -> int:
         f"#define kRandoPotRegistryDigest 0x{digest:08x}u",
         "",
         "#endif  // ZELDA3_RANDO_POT_LOOKUP_H_",
+    ]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+    return len(rows)
+
+
+def emit_enemy_drop_lookup(rows, items: dict[str, ItemDef], path: Path) -> int:
+    """Emit src/rando/enemy_drop_lookup.h for forced enemy-key checks."""
+    rows = sorted(rows, key=lambda r: (r["room"], r["source_slot"], r["drop_kind"]))
+    hce_big_key_loc = 0xFFFF
+    for r in rows:
+        if r["drop_kind"] == "big_key":
+            if hce_big_key_loc != 0xFFFF:
+                raise RuntimeError("enemy_drop_lookup: multiple one-shot big-key rows")
+            hce_big_key_loc = int(r["loc_id"])
+    lines = [
+        HEADER_BANNER, "",
+        "// enemy_drop_lookup.h — sorted (dungeon_room_index, source_slot, drop_kind)",
+        "// -> LOC_* for forced enemy key-drop checks. Generated from local",
+        "// assets/rando/enemy_drops.gen.yaml via assets/scripts/gen_enemy_drop_tables.py.",
+        "",
+        "#ifndef ZELDA3_RANDO_ENEMY_DROP_LOOKUP_H_",
+        "#define ZELDA3_RANDO_ENEMY_DROP_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "#include \"item_ids.h\"",
+        "",
+        "enum {",
+        "  kRandoEnemyDropKind_SmallKey = 1,",
+        "  kRandoEnemyDropKind_BigKey = 2,",
+        "};",
+        "",
+        "typedef struct RandoEnemyDropLookupEntry {",
+        "  uint16 room;             // 0..319 dungeon room index",
+        "  uint8  source_slot;      // runtime sprite slot of the carrier source",
+        "  uint8  drop_kind;        // kRandoEnemyDropKind_*",
+        "  uint16 loc_id;           // LOC_* value",
+        "  uint16 vanilla_item_id;  // ITEM_SmallKey_* for Phase 1 rows",
+        "} RandoEnemyDropLookupEntry;",
+        "",
+    ]
+    if rows:
+        lines.append("static const RandoEnemyDropLookupEntry kRandoEnemyDropLookup[] = {")
+        for r in rows:
+            item = r["vanilla_item"]
+            if item not in items:
+                raise RuntimeError(f"enemy_drop_lookup: unknown item {item!r}")
+            if r["drop_kind"] == "small_key":
+                drop_kind = "kRandoEnemyDropKind_SmallKey"
+            elif r["drop_kind"] == "big_key":
+                drop_kind = "kRandoEnemyDropKind_BigKey"
+            else:
+                raise RuntimeError(f"enemy_drop_lookup: unsupported drop kind {r['drop_kind']!r}")
+            lines.append(f"  {{ 0x{int(r['room']):04x}, {int(r['source_slot'])}, "
+                         f"{drop_kind}, {int(r['loc_id'])}, ITEM_{item} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: enemy_drops.gen.yaml absent. Active enemy-drop-check generation fails closed.")
+        lines.append("static const RandoEnemyDropLookupEntry kRandoEnemyDropLookup[1] = { { 0, 0, 0, 0, 0 } };")
+    lines += [
+        "",
+        f"#define kRandoEnemyDropLookup_COUNT {len(rows)}",
+        f"#define kRandoEnemyDropHceBigKeyLocId 0x{hce_big_key_loc:04x}",
+        "",
+        "#endif  // ZELDA3_RANDO_ENEMY_DROP_LOOKUP_H_",
+    ]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+    return len(rows)
+
+
+def emit_enemy_check_lookup(rows, path: Path) -> int:
+    """Emit src/rando/enemy_check_lookup.h for ordinary enemy checks."""
+    rows = sorted(rows, key=lambda r: (r["room"], r["source_slot"]))
+    seen = set()
+    for r in rows:
+        key = (int(r["room"]), int(r["source_slot"]))
+        if key in seen:
+            raise RuntimeError(f"enemy_check_lookup: duplicate row room=0x{key[0]:03x} slot={key[1]}")
+        seen.add(key)
+    lines = [
+        HEADER_BANNER, "",
+        "// enemy_check_lookup.h — sorted (dungeon_room_index, source_slot)",
+        "// -> LOC_* for ordinary dungeon enemy checks. Generated from local",
+        "// assets/rando/enemy_checks.gen.yaml via assets/scripts/gen_enemy_check_tables.py.",
+        "",
+        "#ifndef ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
+        "#define ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "",
+        "typedef struct RandoEnemyCheckLookupEntry {",
+        "  uint16 room;        // 0..319 dungeon room index",
+        "  uint8  source_slot; // runtime sprite slot of the source enemy",
+        "  uint16 loc_id;      // LOC_* value",
+        "} RandoEnemyCheckLookupEntry;",
+        "",
+    ]
+    if rows:
+        lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[] = {")
+        for r in rows:
+            lines.append(f"  {{ 0x{int(r['room']):04x}, {int(r['source_slot'])}, {int(r['loc_id'])} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: enemy_checks.gen.yaml absent. Active all-enemy-check generation fails closed.")
+        lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[1] = { { 0, 0, 0 } };")
+    lines += [
+        "",
+        f"#define kRandoEnemyCheckLookup_COUNT {len(rows)}",
+        "",
+        "#endif  // ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
     ]
     atomic_write_text(path, "\n".join(lines) + "\n")
     return len(rows)
@@ -2172,6 +2629,8 @@ def emit_logic_data(
     door_portal_rows: list[tuple] | None = None,
     door_pot_rows: list[dict] | None = None,
     door_pot_bridge_digest: int = 0,
+    door_enemy_drop_rows: list[dict] | None = None,
+    door_enemy_drop_bridge_digest: int = 0,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -2299,6 +2758,15 @@ def emit_logic_data(
         out_row["pred_len"] = length
         door_pot_regions.extend(row.get("regions", []))
         door_pot_offsets.append(out_row)
+    door_enemy_drop_offsets: list[dict] = []
+    for row in (door_enemy_drop_rows or []):
+        enc = row.get("pred", b"")
+        off, length = (len(stream), len(enc)) if enc else (0, 0)
+        stream += enc
+        out_row = dict(row)
+        out_row["pred_off"] = off
+        out_row["pred_len"] = length
+        door_enemy_drop_offsets.append(out_row)
 
     # Cave entrance-shuffle source gates (entrance_registry.yaml order). These
     # are AND-ed into any cave/dungeon target reached through the source cave
@@ -2397,6 +2865,22 @@ def emit_logic_data(
         out.append("const uint16 kRandoDoorPotRegions[1] = { 0xFFFF };")
         out.append("const uint32 kRandoDoorPotLocationsCount = 0;")
     out.append(f"const uint32 kRandoDoorPotBridgeDigest = 0x{door_pot_bridge_digest & 0xFFFFFFFF:08x}u;")
+    out.append("")
+    out.append("// Door x enemy-drop bridge rows (generated from local enemy-drop artifacts).")
+    if door_enemy_drop_offsets:
+        out.append(f"const RandoDoorEnemyDropLocation kRandoDoorEnemyDropLocations[{len(door_enemy_drop_offsets)}] = {{")
+        for r in door_enemy_drop_offsets:
+            out.append(
+                "  { %d, 0x%04x, %du, %d, 0x%04x, %d },  // %s"
+                % (r["loc_id"], r["region"], r["pred_off"], r["pred_len"],
+                   r["drop_index"], r["dungeon"], r["name"])
+            )
+        out.append("};")
+        out.append(f"const uint32 kRandoDoorEnemyDropLocationsCount = {len(door_enemy_drop_offsets)};")
+    else:
+        out.append("const RandoDoorEnemyDropLocation kRandoDoorEnemyDropLocations[1] = { { 0, 0xFFFF, 0, 0, 0xFFFF, 0 } };")
+        out.append("const uint32 kRandoDoorEnemyDropLocationsCount = 0;")
+    out.append(f"const uint32 kRandoDoorEnemyDropBridgeDigest = 0x{door_enemy_drop_bridge_digest & 0xFFFFFFFF:08x}u;")
     out.append("")
     out.append("// dungeon-id (HCE=0..GT=12) -> vanilla boss-pool index (0xFF = no boss).")
     out.append("// Mirrors src/rando/shuffle_boss.c kBossVanilla; OP_CAN_KILL_BOSS fallback")
@@ -2714,7 +3198,9 @@ def _location_type_id(t: str) -> int:
              "Shop",        # 14 — Phase B Slice 3a Retro shop purchase slot
              "ShopUpgrade", # 15 — Phase B Slice 3a Capacity Upgrade (identity-placed)
              "TakeAny",     # 16 — Phase B Slice 3b Retro take-any cave slot (per-seed active subset)
-             "Pot"]         # 17 — add-rando-pot-sanity dungeon pot (per-tier active subset)
+             "Pot",         # 17 — add-rando-pot-sanity dungeon pot (per-tier active subset)
+             "EnemyDrop",    # 18 — add-rando-enemy-drop-sanity forced enemy key drop
+             "Enemy"]        # 19 — add-rando-all-enemy-checks ordinary enemy check
     if t not in types:
         return 0
     return types.index(t)
@@ -2792,6 +3278,35 @@ def main(argv=None):
         Path("assets/rando/pots.gen.yaml"), logic_regions)
     locations.update(pot_locs)
     logic_loc_preds.update(pot_locs)
+
+    # add-rando-enemy-drop-sanity: merge the local forced enemy-key registry
+    # into the location set when present. Assetless builds emit no EnemyDrop
+    # locations and an empty lookup; rando_placement.c fails closed if the
+    # effective setting asks for active enemy-drop checks without this registry.
+    enemy_drops_path = Path("assets/rando/enemy_drops.gen.yaml")
+    (enemy_drop_locs, enemy_drop_lookup_rows, door_enemy_drop_sources,
+     enemy_key_depth_rows, enemy_hce_big_key_locations) = load_enemy_drops(
+        enemy_drops_path, logic_regions)
+    locations.update(enemy_drop_locs)
+    logic_loc_preds.update(enemy_drop_locs)
+    _apply_enemy_drop_key_terms(
+        logic_loc_preds, world_state_overrides,
+        enemy_key_depth_rows, enemy_hce_big_key_locations)
+    enemy_drop_source_counts = (
+        _enemy_source_counts(load_yaml(enemy_drops_path)) if enemy_drops_path.exists() else {}
+    )
+
+    # add-rando-all-enemy-checks: merge ordinary dungeon enemy checks as a
+    # distinct Enemy type. These are not vanilla key sources, so they do not
+    # participate in enemy-drop source accounting; they only use the same
+    # key-depth terms to avoid certifying enemies behind uncollected keys.
+    enemy_check_locs, enemy_check_lookup_rows = load_enemy_checks(
+        Path("assets/rando/enemy_checks.gen.yaml"),
+        logic_regions,
+        enemy_drop_source_counts,
+    )
+    locations.update(enemy_check_locs)
+    logic_loc_preds.update(enemy_check_locs)
 
     # Merge macros from macros.yaml and logic.yaml (logic.yaml takes precedence).
     all_macros = {**macros, **logic_macros}
@@ -3106,6 +3621,8 @@ def main(argv=None):
     door_portal_rows: list[tuple] = []
     door_pot_rows: list[dict] = []
     door_pot_bridge_digest = 0
+    door_enemy_drop_rows: list[dict] = []
+    door_enemy_drop_bridge_digest = 0
     door_manifest_path = Path("assets/rando/door_predicates.gen.json")
     door_portals_path = Path("assets/rando/door_portals.yaml")
     if door_manifest_path.exists():
@@ -3156,6 +3673,9 @@ def main(argv=None):
         if door_pot_sources:
             door_pot_rows, door_pot_bridge_digest = build_door_pot_bridge(
                 door_pot_sources, compile_door_src)
+        if door_enemy_drop_sources:
+            door_enemy_drop_rows, door_enemy_drop_bridge_digest = build_door_enemy_drop_bridge(
+                door_enemy_drop_sources, compile_door_src)
 
         _OP_AND, _OP_OR, _OP_NOT, _OP_DA, _OP_DLR = 12, 13, 14, 20, 21
         _loc_by_id = {l.id: (name, l) for name, l in locations.items()}
@@ -3183,6 +3703,8 @@ def main(argv=None):
             wrap_door_location(entry["fork_id"], entry["dungeon"], "door")
         for row in door_pot_rows:
             wrap_door_location(row["loc_id"], row["dungeon"], "door pot")
+        for row in door_enemy_drop_rows:
+            wrap_door_location(row["loc_id"], row["dungeon"], "door enemy drop")
 
     # Flush door-compile errors collected after the main strict gate (earlier
     # errors were already printed there; only the door block's are new).
@@ -3217,9 +3739,20 @@ def main(argv=None):
                     door_vm_preds=door_vm_preds,
                     door_portal_rows=door_portal_rows,
                     door_pot_rows=door_pot_rows,
-                    door_pot_bridge_digest=door_pot_bridge_digest)
+                    door_pot_bridge_digest=door_pot_bridge_digest,
+                    door_enemy_drop_rows=door_enemy_drop_rows,
+                    door_enemy_drop_bridge_digest=door_enemy_drop_bridge_digest)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
+    enemy_drop_lookup_count = emit_enemy_drop_lookup(
+        enemy_drop_lookup_rows,
+        items,
+        out_headers / "enemy_drop_lookup.h",
+    )
+    enemy_check_lookup_count = emit_enemy_check_lookup(
+        enemy_check_lookup_rows,
+        out_headers / "enemy_check_lookup.h",
+    )
     pot_nonpot_drop_count = emit_pot_nonpot_drop_counts(
         load_pot_nonpot_drop_counts(RANDO_ASSETS / "pot_key_depth.gen.yaml"),
         items,
@@ -3240,6 +3773,8 @@ def main(argv=None):
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
     print(f"generated pot_lookup.h ({pot_lookup_count} pot entries)")
+    print(f"generated enemy_drop_lookup.h ({enemy_drop_lookup_count} forced enemy-drop entries)")
+    print(f"generated enemy_check_lookup.h ({enemy_check_lookup_count} ordinary enemy-check entries)")
     print(f"generated pot_nonpot_drop_counts.h ({pot_nonpot_drop_count} free-grant entries)")
     print(f"generated icon_atlas.h ({icon_atlas_count} icon entries)")
     print(f"generated direct_grant_icons.h ({direct_grant_icon_count} mapped icons)")

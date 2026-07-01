@@ -58,6 +58,10 @@ typedef struct DoorShuffleLayout {
   // 0 means pot shuffle inactive for door logic.
   uint8 pot_tier;
   uint32 pot_bridge_digest;
+  // Effective enemy-drop key checks this door layout was generated/proven
+  // against. 0 means forced enemy drops remain vanilla/free for door logic.
+  uint8 enemy_drop_keys;
+  uint32 enemy_drop_bridge_digest;
 } DoorShuffleLayout;
 
 // Generate the full per-seed layout: for each dungeon whose bit is set in
@@ -66,7 +70,7 @@ typedef struct DoorShuffleLayout {
 // Returns false when any dungeon exhausts its iteration caps (caller bumps
 // door_attempt and retries).
 bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
-                          uint8 pot_tier,
+                          uint8 pot_tier, uint8 enemy_drop_keys,
                           DoorShuffleLayout *out);
 
 // Stable digest over the layout (pairings + key doors + thresholds +

@@ -406,9 +406,9 @@ static bool ParseHashHex(const char *s, uint8 out[32]) {
 }
 
 // Generic hex codec over an arbitrary byte length (do NOT reuse
-// ParseHashHex's fixed-32 loop). Used for the 28-byte canonical settings blob
-// in the rando-window sidecar. Decode requires EXACTLY `nbytes*2` hex digits
-// (no trailing chars). Encode writes `nbytes*2` lowercase hex chars plus a NUL
+// ParseHashHex's fixed-32 loop). Used for the canonical settings blob in the
+// rando-window sidecar. Decode requires EXACTLY `nbytes*2` hex digits (no
+// trailing chars). Encode writes `nbytes*2` lowercase hex chars plus a NUL
 // (out must hold at least nbytes*2+1).
 static bool HexDecode(const char *s, uint8 *out, int nbytes) {
   for (int i = 0; i < nbytes; ++i) {
@@ -463,6 +463,26 @@ static bool ParseBoolBit(const char *value, uint32 *data, uint32 mask) {
     return false;
   *data = *data & ~mask | (tmp ? mask : 0);
   return true;
+}
+
+static bool ParseEnemyDropMarker(const char *value, uint8 *out) {
+  if (StringEqualsNoCase(value, "item") ||
+      StringEqualsNoCase(value, "items") ||
+      StringEqualsNoCase(value, "placed") ||
+      StringEqualsNoCase(value, "placed_item") ||
+      StringEqualsNoCase(value, "0")) {
+    *out = kEnemyDropMarker_Item;
+    return true;
+  }
+  if (StringEqualsNoCase(value, "generic") ||
+      StringEqualsNoCase(value, "key") ||
+      StringEqualsNoCase(value, "keys") ||
+      StringEqualsNoCase(value, "icon") ||
+      StringEqualsNoCase(value, "1")) {
+    *out = kEnemyDropMarker_Generic;
+    return true;
+  }
+  return false;
 }
 
 static bool HandleIniConfig(int section, const char *key, char *value) {
@@ -541,6 +561,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "FieldItemSprites")) {
       return ParseBool(value, &g_config.field_item_sprites);
+    } else if (StringEqualsNoCase(key, "EnemyDropMarker")) {
+      return ParseEnemyDropMarker(value, &g_config.enemy_drop_marker);
     }
   } else if (section == 2) {
     if (StringEqualsNoCase(key, "EnableAudio")) {
@@ -700,7 +722,20 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
         g_rando_window_prefs.has_settings = true;
         return true;
       }
-      fprintf(stderr, "[rando_window] bad last_settings_canonical_hex (need 56 hex chars)\n");
+      // Compatibility with the immediately previous canonical layout: the new
+      // enemy_drop_checks byte is append-only and zero means Off, so a 28-byte
+      // rando_window.ini value can be promoted by zero-extending the tail.
+      enum { kLegacySettingsCanonicalLen28 = 28 };
+      if (kSettingsCanonicalLen == 29 &&
+          HexDecode(value, buf, kLegacySettingsCanonicalLen28)) {
+        memset(buf + kLegacySettingsCanonicalLen28, 0,
+               kSettingsCanonicalLen - kLegacySettingsCanonicalLen28);
+        memcpy(g_rando_window_prefs.settings_canonical, buf, kSettingsCanonicalLen);
+        g_rando_window_prefs.has_settings = true;
+        return true;
+      }
+      fprintf(stderr, "[rando_window] bad last_settings_canonical_hex (need %d hex chars)\n",
+              kSettingsCanonicalLen * 2);
       g_rando_window_prefs.has_settings = false;
       return false;
     } else if (StringEqualsNoCase(key, "last_seed_u64")) {
@@ -826,6 +861,7 @@ void ParseConfigFile(const char *filename) {
   g_config.rando_race_mode_default = false;
   g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
   g_config.field_item_sprites = true;        // add-rando-field-item-sprites: ON by default
+  g_config.enemy_drop_marker = kEnemyDropMarker_Item;
 
   // [AutoTracker] defaults — opt-in, observation-only, localhost-only.
   g_config.auto_tracker_enabled = false;
@@ -1221,6 +1257,7 @@ static const char *const kGfxKeys[] = {
   "IgnoreAspectRatio", "NoSpriteLimits", "LinearFiltering", "OutputMethod",
   "Shader", "LinkGraphics", "DimFlashes",
   "PaletteShuffle", "SpriteShuffle", "CosmeticSeed",  // cosmetic shuffles (local)
+  "EnemyDropMarker",
 };
 static const char *const kSndKeys[] = {
   "EnableAudio", "AudioFreq", "AudioChannels", "AudioSamples", "EnableMSU",
@@ -1315,6 +1352,8 @@ static bool RenderManagedValue(int section, const char *key, char *out, size_t c
     }
     else if (StringEqualsNoCase(key, "SpriteShuffle")) snprintf(out, cap, "%s", g_config.cosmetic_sprite_dir ? g_config.cosmetic_sprite_dir : "off");
     else if (StringEqualsNoCase(key, "CosmeticSeed")) snprintf(out, cap, "%llu", (unsigned long long)g_config.cosmetic_seed);
+    else if (StringEqualsNoCase(key, "EnemyDropMarker"))
+      snprintf(out, cap, "%s", g_config.enemy_drop_marker == kEnemyDropMarker_Generic ? "generic" : "item");
     else return false;
     return true;
   }

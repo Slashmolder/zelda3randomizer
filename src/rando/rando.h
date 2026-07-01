@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 112u
+#define kGeneratorVersion 119u
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -109,6 +109,12 @@ bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer);
 // confirmation sites to feed the per-item icon lookup. Returns 0xFFFF when
 // no dispatch has run yet this slot.
 uint16 Rando_LastDispatchedItemId(void);
+
+// Streamlined direct grant for checks that resolve at a world interaction
+// point where the vanilla receive animation would be intrusive or unsafe
+// (pot breaks, ordinary enemy deaths). `item_id` should be the registry item
+// returned by Rando_LastDispatchedItemId after Rando_DispatchVanillaGrant.
+void Rando_QuietReceiveOrConfirm(uint8 lttp_code, uint16 item_id);
 
 // ---------------------------------------------------------------------------
 // Race-mode reveal action.

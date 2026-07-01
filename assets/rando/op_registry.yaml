@@ -328,6 +328,32 @@ ops:
       byte-identical.
     contexts: [can_reach, can_place]
 
+  - id: 26
+    name: OP_ENEMY_DROP_KEYS_DUNGEON
+    phase: C
+    operands: []
+    semantics: |
+      enemy_drop_checks=Keys AND Settings_EffectiveSmallKeysMode == Dungeon.
+      Added for add-rando-enemy-drop-sanity Phase 5: generated forced enemy
+      small-key drop rows suppress inherited same-key predicates and replace them
+      with the prover DROP-region min-depth. Door shuffle uses the generated
+      door x enemy-drop bridge instead of the vanilla-door min-depth numbers.
+    contexts: [can_reach, can_place]
+
+  - id: 27
+    name: OP_ENEMY_DROP_KEYS_WILD
+    phase: C
+    operands: []
+    semantics: |
+      enemy_drop_checks=Keys AND Settings_EffectiveSmallKeysMode == Wild
+      (keysanity, incl. Retro which forces wild). Added for
+      add-rando-enemy-drop-sanity Phase 6: once forced enemy small-key drops are
+      first-class checks, generated enemy-drop rows and ordinary dungeon
+      locations gate their prover worst-case key-depth on this op. Under Wild
+      keys those keys must already be held externally before entering the gated
+      branch, unlike Dungeon keys where keys can be collected en route.
+    contexts: [can_reach, can_place]
+
 
 
 # ---------------------------------------------------------------------------

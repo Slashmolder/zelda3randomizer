@@ -430,6 +430,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"hints\": %u,\n", s->settings->hints);
   fprintf(f, "    \"boss_shuffle\": %u,\n", s->settings->boss_shuffle);
   fprintf(f, "    \"drop_shuffle\": %u,\n", s->settings->drop_shuffle);
+  fprintf(f, "    \"enemy_drop_checks\": %u,\n",
+          Settings_EffectiveEnemyDropChecks(s->settings));
   fprintf(f, "    \"traps\": %u,\n", s->settings->traps);
   // Report the EFFECTIVE pot_shuffle: door / cave-entrance shuffle force it off at
   // generation (Settings_PotShuffleForcedOff), so a raw value would claim a
@@ -922,11 +924,18 @@ int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
   uint8 buf[kRandoSuppressedSpoilerSize];
   size_t got = fread(buf, 1, sizeof(buf), f);
   fclose(f);
-  if (got != sizeof(buf)) return -2;
+  enum {
+    kLegacyZrsrSize138 = 138,
+    kLegacyZrsrSettingsLen28 = 28,
+    kLegacyZrsrCrcOffset134 = 134,
+  };
+  bool legacy138 = (got == kLegacyZrsrSize138);
+  if (got != sizeof(buf) && !legacy138) return -2;
   if (memcmp(buf, kRandoSuppressedSpoilerMagic, 4) != 0) return -2;
 
-  uint32 disk_crc = read_u32_le(buf + kRandoSuppressedSpoilerCrcOffset);
-  uint32 calc_crc = crc32_ieee(buf, kRandoSuppressedSpoilerCrcOffset);
+  uint32 crc_offset = legacy138 ? kLegacyZrsrCrcOffset134 : kRandoSuppressedSpoilerCrcOffset;
+  uint32 disk_crc = read_u32_le(buf + crc_offset);
+  uint32 calc_crc = crc32_ieee(buf, crc_offset);
   if (disk_crc != calc_crc) return -3;
 
   memcpy(out->magic, buf + 0, 4);
@@ -935,7 +944,13 @@ int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
   out->share_string_len = read_u32_le(buf + 38);
   if (out->share_string_len > kRandoSuppressedSpoilerShareStringMax) return -2;
   memcpy(out->share_string, buf + 42, kRandoSuppressedSpoilerShareStringMax);
-  memcpy(out->settings_canonical, buf + 106, kRandoSuppressedSpoilerSettingsLen);
+  if (legacy138) {
+    memcpy(out->settings_canonical, buf + 106, kLegacyZrsrSettingsLen28);
+    memset(out->settings_canonical + kLegacyZrsrSettingsLen28, 0,
+           kRandoSuppressedSpoilerSettingsLen - kLegacyZrsrSettingsLen28);
+  } else {
+    memcpy(out->settings_canonical, buf + 106, kRandoSuppressedSpoilerSettingsLen);
+  }
   out->crc32 = disk_crc;
   return 0;
 }

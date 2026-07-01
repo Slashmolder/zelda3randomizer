@@ -13,10 +13,13 @@
 #include "tile_detect.h"
 #include "sprite_main.h"
 #include "assets.h"
+#include "config.h"
 #include "rando/shuffle_boss.h"
 #include "rando/shuffle_drops.h"
 #include "rando/shuffle_enemies.h"  // add-rando-enemy-shuffle (sprite-type substitution)
 #include "rando/rando.h"  // Rando_IsSwordlessActive (swordless Ganon damage)
+#include "rando/enemy_drop_lookup.h"  // forced enemy key-drop lookup
+#include "rando/enemy_check_lookup.h"  // ordinary enemy check lookup
 #include "rando/location_ids.h"  // LOC_Tower_of_Hera_Basement_Cage (cage-key dispatch)
 #include "rando/item_ids.h"      // ITEM_SmallKey_TowerOfHera (cage-key dispatch)
 static const uint16 kOamGetBufferPos_Tab0[6] = {0x171, 0x201, 0x31, 0xc1, 0x141, 0x1d1};
@@ -513,6 +516,75 @@ static const uint8 kRupeesAbsorption[3] = {1, 5, 20};
 const uint8 kAbsorptionSfx[15] = {0xb, 0xa, 0xa, 0xa, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0x2f, 0x2f, 0xb};
 static const uint8 kBombsAbsorption[3] = {1, 4, 8};
 const uint8 kAbsorbBigKey[2] = {0x40, 0x20};
+
+static bool Rando_EnemyDropKeysActiveRuntime(void) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return false;
+  const RandoSettings *s = Rando_GetActiveSettings();
+  return Settings_EnemyDropKeysActive(s);
+}
+
+static bool Rando_EnemyChecksAllActiveRuntime(void) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return false;
+  const RandoSettings *s = Rando_GetActiveSettings();
+  return Settings_EnemyChecksAllActive(s);
+}
+
+static const RandoEnemyDropLookupEntry *Rando_FindEnemyDrop(uint16 room,
+                                                            uint8 source_slot,
+                                                            uint8 drop_kind) {
+  uint32 want = ((uint32)room << 16) | ((uint32)source_slot << 8) | drop_kind;
+  int lo = 0, hi = (int)kRandoEnemyDropLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    const RandoEnemyDropLookupEntry *e = &kRandoEnemyDropLookup[mid];
+    uint32 got = ((uint32)e->room << 16) | ((uint32)e->source_slot << 8) | e->drop_kind;
+    if (got == want) return e;
+    if (got < want) lo = mid + 1; else hi = mid;
+  }
+  return NULL;
+}
+
+static const RandoEnemyCheckLookupEntry *Rando_FindEnemyCheck(uint16 room,
+                                                              uint8 source_slot) {
+  uint32 want = ((uint32)room << 8) | source_slot;
+  int lo = 0, hi = (int)kRandoEnemyCheckLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    const RandoEnemyCheckLookupEntry *e = &kRandoEnemyCheckLookup[mid];
+    uint32 got = ((uint32)e->room << 8) | e->source_slot;
+    if (got == want) return e;
+    if (got < want) lo = mid + 1; else hi = mid;
+  }
+  return NULL;
+}
+
+static bool Rando_TryGrantEnemyCheck(int k) {
+  if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors ||
+      k < 0 || k >= 16 || sign8(sprite_N[k]))
+    return false;
+  const RandoEnemyCheckLookupEntry *check =
+      Rando_FindEnemyCheck(dungeon_room_index2, sprite_N[k]);
+  if (check == NULL || Rando_IsLocationChecked(check->loc_id))
+    return false;
+  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, 0);
+  uint16 item = Rando_LastDispatchedItemId();
+  Rando_QuietReceiveOrConfirm(lttp, item);
+  return true;
+}
+
+static void Rando_GrantCurrentDungeonBigKeySilently(void) {
+  uint8 game_dungeon = (uint8)cur_palace_index_x2 >> 1;
+  if (game_dungeon < 16)
+    // rando-exempt: one-shot enemy-drop check preserves the vanilla current
+    // dungeon big-key side effect; the placed item dispatch happens separately.
+    link_bigkey |= (uint16)(0x8000u >> game_dungeon);
+}
+
+static bool Rando_TryDrawEnemyDropGenericMarker(int k, int dx, int dy);
+static bool Rando_TryDrawEnemyDropCarrierField(int k);
+static bool Rando_EnemyDropRoomItemMarkersSafe(void);
 static int AllocOverlord();
 static int Overworld_AllocSprite(uint8 type);
 uint16 Sprite_GetX(int k) {
@@ -923,6 +995,7 @@ void Sprite_DrawMultiple(int k, const DrawMultipleData *src, int n, PrepOamCoord
     SetOamHelper0(oam, src->x + info->x, src->y + info->y, d, d >> 8, src->ext);
 
   } while (src++, oam++, --n);
+  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 void Sprite_DrawMultiplePlayerDeferred(int k, const DrawMultipleData *src, int n, PrepOamCoordsRet *info) {  // 85df75
@@ -1405,6 +1478,26 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     link_hearts_filler += 56;
     break;
   case 12:
+    // add-rando-enemy-drop-sanity — forced enemy small-key drops become real
+    // checks when the generated row is active. The absorbable key sprite keeps
+    // its carrier's original runtime source slot in sprite_subtype[k] (set in
+    // Sprite_DoTheDeath before PrepareEnemyDrop), so no extra pending state is
+    // needed for save-state/snapshot safety.
+    if (Rando_EnemyDropKeysActiveRuntime()) {
+      const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+          dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
+      if (drop != NULL && Rando_IsLocationChecked(drop->loc_id)) {
+        goto after_getkey;
+      }
+      if (drop != NULL) {
+        uint8 drop_lttp = Rando_DispatchVanillaGrant(
+            drop->loc_id, 0xFFFFu, 0x24);
+        if (Rando_ShouldSkipReceive(drop_lttp))
+          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
+        else { item_receipt_method = 0; Link_ReceiveItem(drop_lttp, 0); }
+        goto after_getkey;
+      }
+    }
     // Rando: the Tower of Hera basement freestanding key (room 0x87) is the
     // ALTTPR "Tower of Hera - Basement Cage" Standing location. Grant the PLACED
     // item and mark the location checked instead of the vanilla small key (else
@@ -1438,6 +1531,21 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     if (enhanced_features1 & kFeatures1_RandomizerActive) SaveDungeonKeys();
     goto after_getkey;
   case 13:
+    if (Rando_EnemyDropKeysActiveRuntime()) {
+      const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+          dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_BigKey);
+      if (drop != NULL && Rando_IsLocationChecked(drop->loc_id)) {
+        goto after_getkey;
+      }
+      if (drop != NULL) {
+        uint8 drop_lttp = Rando_DispatchVanillaGrant(
+            drop->loc_id, 0xFFFFu, 0x32);
+        item_receipt_method = 0;
+        Rando_ReceiveOrConfirm(drop_lttp, (uint8)Rando_LastDispatchedItemId());
+        Rando_GrantCurrentDungeonBigKeySilently();
+        goto after_getkey;
+      }
+    }
     item_receipt_method = 0;
     // rando-exempt: drop-pool (Phase B) — big key from killed-sprite drop.
     // Same rationale as the SmallKey drop case above; ALTTPR's drop pool
@@ -1466,11 +1574,38 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
 // everything else: the rupees (0xd9-0xdb) that also reach the draw_key label, any
 // 0xE4 once the cage is checked, a vanilla-key placement, or rando/feature off.
 static bool Rando_TryDrawAbsorbableKeyField(int k) {
+  if (sprite_type[k] == 0xE4 && Rando_EnemyDropKeysActiveRuntime()) {
+    const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+      dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
+    if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
+      if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
+        return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
+      if (Rando_EnemyDropRoomItemMarkersSafe() &&
+          Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
+        return true;
+      return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
+    }
+  }
   if (sprite_type[k] != 0xE4 || dungeon_room_index != 0x87 ||
       Rando_IsLocationChecked(LOC_Tower_of_Hera_Basement_Cage))
     return false;
   return Rando_TryDrawFieldItemSprite(k, LOC_Tower_of_Hera_Basement_Cage,
                                       ITEM_SmallKey_TowerOfHera);
+}
+
+static bool Rando_TryDrawAbsorbableBigKeyField(int k) {
+  if (sprite_type[k] != 0xE5 || !Rando_EnemyDropKeysActiveRuntime())
+    return false;
+  const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+      dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_BigKey);
+  if (drop == NULL || Rando_IsLocationChecked(drop->loc_id))
+    return false;
+  if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
+    return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
+  if (Rando_EnemyDropRoomItemMarkersSafe() &&
+      Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
+    return true;
+  return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
 }
 
 bool SpriteDraw_AbsorbableTransient(int k, bool transient) {  // 86d22f
@@ -1559,6 +1694,8 @@ void SpriteDraw_SingleLarge(int k) {  // 86dc10
   PrepOamCoordsRet info;
   if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
     return;
+  if (Rando_TryDrawAbsorbableBigKeyField(k))
+    return;
   Sprite_PrepAndDrawSingleLargeNoPrep(k, &info);
 }
 
@@ -1573,6 +1710,7 @@ void Sprite_PrepAndDrawSingleLargeNoPrep(int k, PrepOamCoordsRet *info) {  // 86
   bytewise_extended_oam[oam - oam_buf] = 2 | ((info->x >= 256) ? 1: 0);
   if (sprite_flags3[k] & 0x10)
     SpriteDraw_Shadow(k, info);
+  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 // add-rando-field-item-sprites (draw half) — draw the placed item's gfx for a
@@ -1766,6 +1904,108 @@ bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_
   return true;
 }
 
+typedef struct RandoEnemyDropMarkerInfo {
+  uint16 loc_id;
+} RandoEnemyDropMarkerInfo;
+
+static bool Rando_TryDrawEnemyDropGenericMarker(int k, int dx, int dy) {
+  if (!Rando_CanDrawRecvItemSlot())
+    return true;
+  PrepOamCoordsRet info;
+  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
+    return true;   // off-screen
+  // Generic marker mode deliberately does not reveal the placed item. It must
+  // stay one shared icon: every marker in a frame uses the same receive-item
+  // tile slot, so varying the generic art per carrier would make multi-check
+  // rooms show whichever tile was loaded last.
+  uint8 gfx = 0x0f, big = 0, oam_flags = 0x34;  // small-key bundle
+  Rando_DrawRecvItemSlotAt(k, gfx, big, oam_flags, &info, dx, dy);
+  return true;
+}
+
+static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
+  if (k < 0 || k >= 16 || sprite_state[k] != 9)
+    return false;
+  uint8 drop_kind = (sprite_die_action[k] == 1) ? kRandoEnemyDropKind_SmallKey :
+                    (sprite_die_action[k] == 2) ? kRandoEnemyDropKind_BigKey : 0;
+  if (drop_kind != 0 && Rando_EnemyDropKeysActiveRuntime() &&
+      player_is_indoors && !sign8(sprite_N[k])) {
+    const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+        dungeon_room_index, sprite_N[k], drop_kind);
+    if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
+      if (out != NULL) out->loc_id = drop->loc_id;
+      return true;
+    }
+  }
+  if (Rando_EnemyChecksAllActiveRuntime() && player_is_indoors &&
+      !sign8(sprite_N[k])) {
+    const RandoEnemyCheckLookupEntry *check =
+        Rando_FindEnemyCheck(dungeon_room_index, sprite_N[k]);
+    if (check != NULL && !Rando_IsLocationChecked(check->loc_id)) {
+      if (out != NULL) out->loc_id = check->loc_id;
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool Rando_GetEnemyDropPickupMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
+  if (k < 0 || k >= 16 || sprite_state[k] == 0 ||
+      !Rando_EnemyDropKeysActiveRuntime() || !player_is_indoors)
+    return false;
+  uint8 drop_kind = sprite_type[k] == 0xE4 ? kRandoEnemyDropKind_SmallKey :
+                    sprite_type[k] == 0xE5 ? kRandoEnemyDropKind_BigKey : 0;
+  if (drop_kind == 0)
+    return false;
+  const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+      dungeon_room_index, sprite_subtype[k], drop_kind);
+  if (drop == NULL || Rando_IsLocationChecked(drop->loc_id))
+    return false;
+  if (out != NULL) out->loc_id = drop->loc_id;
+  return true;
+}
+
+static bool Rando_GetEnemyDropAnyMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
+  return Rando_GetEnemyDropCarrierMarkerInfo(k, out) ||
+         Rando_GetEnemyDropPickupMarkerInfo(k, out);
+}
+
+static bool Rando_EnemyDropRoomItemMarkersSafe(void) {
+  bool have = false;
+  uint8 first_gfx = 0, first_big = 0, first_oam_flags = 0;
+  for (int j = 0; j < 16; j++) {
+    RandoEnemyDropMarkerInfo marker;
+    if (!Rando_GetEnemyDropAnyMarkerInfo(j, &marker))
+      continue;
+    uint8 gfx, big, oam_flags;
+    if (!Rando_GetFieldItemIcon(marker.loc_id, 0xFFFFu, &gfx, &big, &oam_flags))
+      return false;
+    if (!have) {
+      first_gfx = gfx;
+      first_big = big;
+      first_oam_flags = oam_flags;
+      have = true;
+    } else if (gfx != first_gfx || big != first_big || oam_flags != first_oam_flags) {
+      return false;
+    }
+  }
+  return have;
+}
+
+static bool Rando_TryDrawEnemyDropCarrierField(int k) {
+  RandoEnemyDropMarkerInfo marker;
+  if (!Rando_GetEnemyDropCarrierMarkerInfo(k, &marker))
+    return false;
+  if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic &&
+      Rando_EnemyDropRoomItemMarkersSafe()) {
+    // Use the same forced-placement sentinel as pickup dispatch so identity
+    // key placements still draw as active checks on the live carrier.
+    if (Rando_TryDrawHeldItemSprite(k, marker.loc_id, 0xFFFFu, 0, -16))
+      return true;
+  }
+  return Rando_TryDrawEnemyDropGenericMarker(k, 0, -16);
+}
+
 // add-rando-trap-catalog — draw a trap-cucco as a single 16x16 large OAM entry
 // from the shared recv-item slot (custom cucco tile + palette), so the Cucco
 // trap's flock renders in ANY area instead of only the two that load the cucco
@@ -1833,6 +2073,7 @@ void SpriteDraw_SingleSmall(int k) {  // 86dcef
   bytewise_extended_oam[oam - oam_buf] = 0 | (info.x >= 256);
   if (sprite_flags3[k] & 0x10)
     SpriteDraw_Shadow_custom(k, &info, 2);
+  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 void Sprite_DrawThinAndTall(int k) {  // 86dd40
@@ -3225,6 +3466,7 @@ void SpriteModule_Die(int k) {  // 86f8a2
 
 void Sprite_DoTheDeath(int k) {  // 86f923
   uint8 type = sprite_type[k];
+  Rando_TryGrantEnemyCheck(k);
   // This is how Vitreous knows whether to come out of his slime pool
   if (type == 0xBE)
     sprite_G[0]--;
@@ -4006,6 +4248,7 @@ void Dungeon_LoadSprites() {  // 89c290
 void Sprite_ManuallySetDeathFlagUW(int k) {  // 89c2f5
   if (!player_is_indoors || sprite_defl_bits[k] & 1 || sign8(sprite_N[k]))
     return;
+  Rando_TryGrantEnemyCheck(k);
   sprite_where_in_room[dungeon_room_index2] |= 1 << sprite_N[k];
 }
 
@@ -4013,12 +4256,32 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
   uint8 y = src[0], x = src[1], type = src[2];
   if (type == 0xe4) {
     if (y == 0xfe || y == 0xfd) {
+      if (k > 0 && Rando_EnemyDropKeysActiveRuntime()) {
+        uint8 drop_kind = (y == 0xfe) ? kRandoEnemyDropKind_SmallKey :
+                                        kRandoEnemyDropKind_BigKey;
+        const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+            dungeon_room_index2, (uint8)(k - 1), drop_kind);
+        if (drop != NULL && Rando_IsLocationChecked(drop->loc_id))
+          return k - 1;  // checked enemy-drop check: no forced key respawn
+      }
       sprite_die_action[k - 1] = (y == 0xfe) ? 1 : 2;
       return k - 1;
     }
   } else if (x >= 0xe0) {
     Dungeon_LoadSingleOverlord(src);
     return k - 1;
+  }
+  if (Rando_EnemyChecksAllActiveRuntime()) {
+    const RandoEnemyCheckLookupEntry *check =
+        Rando_FindEnemyCheck(dungeon_room_index2, (uint8)k);
+    if (check != NULL && Rando_IsLocationChecked(check->loc_id)) {
+      sprite_state[k] = 0;
+      sprite_type[k] = type;
+      sprite_N[k] = k;
+      sprite_die_action[k] = 0;
+      sprite_where_in_room[dungeon_room_index2] |= 1 << k;
+      return k;
+    }
   }
   // Boss-shuffle render note: the old per-entry BossShuffle_ShouldSuppressSecondary
   // / BossShuffle_RemapSpriteType hooks were removed here — the live model
@@ -4716,4 +4979,3 @@ void Sprite_DrawRippleIfInWater(int k) {  // 9eff8d
   Sprite_Get16BitCoords(k);
   Oam_AllocateFromRegionA(((sprite_flags2[k] & 0x1f) + 1) * 4);
 }
-

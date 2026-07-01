@@ -102,15 +102,24 @@ static uint32 slot_on_disk_size_base(uint16 placement_table_size) {
   return kRandoSidecar_SlotHeaderSize + placements_bytes + bitmap_bytes;
 }
 
+enum { kRandoSidecar_LegacySettingsCanonicalLen28 = 28 };
+
+static uint32 settings_blob_len_versioned(uint16 format_version) {
+  if (format_version < 2) return 0;
+  if (format_version < 4) return kRandoSidecar_LegacySettingsCanonicalLen28;
+  return kSettingsCanonicalLen;
+}
+
 // Format-version-aware slot size: v1 = base, v2 adds the settings blob,
-// v3 adds the 8-byte extension block, v4 adds the current 16-byte extension
-// block. Any future version >= 4 is sized as v4 by the caller's contract
+// v3 adds the 8-byte extension after the legacy settings blob. v4 widens the
+// settings blob to current and widens the extension to the current 16 bytes.
+// Any future version >= 4 is sized as current by the caller's contract
 // (RandoSave_ReadFile refuses files it can't slot-walk — a larger future layout
 // fails the next slot's magic check).
 static uint32 slot_on_disk_size_versioned(uint16 placement_table_size,
                                           uint16 format_version) {
   uint32 total = slot_on_disk_size_base(placement_table_size);
-  if (format_version >= 2) total += kSettingsCanonicalLen;
+  total += settings_blob_len_versioned(format_version);
   if (format_version >= 4) total += kRandoSidecar_SlotExtV4Size;
   else if (format_version >= 3) total += kRandoSidecar_SlotExtV3Size;
   return total;
@@ -320,7 +329,7 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     p[bitmap_bytes - 1] &= (uint8)((1u << (location_count & 7)) - 1);
   }
   p += bitmap_bytes;
-  // format_version 2: canonical settings blob trails the bitmap. Always written
+  // Current format: canonical settings blob trails the bitmap. Always written
   // (zeroed when settings_present == 0); RandoSave_SlotOnDiskSize accounts for it.
   memcpy(p, slot->settings_canonical, kSettingsCanonicalLen);
   p += kSettingsCanonicalLen;
@@ -344,13 +353,15 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
 }
 
 // Version-aware slot deserialize. `format_version` is the FILE's declared
-// version: v1 has no trailing settings blob, v2 adds the blob, v3 adds the
-// 8-byte extension block after it, and v4 adds the current 16-byte extension.
-// RandoSave_ReadFile passes the file's value.
+// version: v1 has no trailing settings blob, v2 adds the legacy 28-byte blob,
+// v3 adds the 8-byte extension block after that legacy blob, and v4 widens both
+// the blob and extension to their current sizes. RandoSave_ReadFile passes the
+// file's value.
 static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
                                          RandoSidecarSlot *out, uint16 format_version) {
   if (buf == NULL || out == NULL) return 0;
-  bool with_settings = (format_version >= 2);
+  uint32 settings_blob_len = settings_blob_len_versioned(format_version);
+  bool with_settings = (settings_blob_len != 0);
   bool with_ext = (format_version >= 3);
   memset(out, 0, sizeof(*out));
   uint32 hdr_used = deserialize_slot_header(buf, buf_size, &out->header);
@@ -395,8 +406,13 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
   memcpy(out->checked_bitmap, p, bitmap_bytes);
   p += bitmap_bytes;
   if (with_settings) {
-    memcpy(out->settings_canonical, p, kSettingsCanonicalLen);
-    p += kSettingsCanonicalLen;
+    if (settings_blob_len > kSettingsCanonicalLen) return 0;
+    memcpy(out->settings_canonical, p, settings_blob_len);
+    if (settings_blob_len < kSettingsCanonicalLen) {
+      memset(out->settings_canonical + settings_blob_len, 0,
+             kSettingsCanonicalLen - settings_blob_len);
+    }
+    p += settings_blob_len;
   } else {
     // A v1 file physically has no blob — force settings_present off so a stray
     // @70 byte can't be mistaken for a (nonexistent) valid blob.
@@ -615,7 +631,8 @@ bool RandoSave_ReadFile(const char *path,
 
   // Key the body layout on the file's declared format_version so older
   // sidecars still load correctly: v1 slots lack the settings blob, v2 slots
-  // lack an extension block, and v3 slots use the old 8-byte extension.
+  // lack an extension block, v2/v3 slots carry the legacy 28-byte settings
+  // prefix, and v3 slots use the old 8-byte extension.
   uint32 off = hdr_used;
   for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
     uint32 used = deserialize_slot_versioned(buf + off, (uint32)fsize - off,
@@ -801,7 +818,7 @@ void RandoSave_SelfCheck(void) {
   src.header.goal = 4;            // kGoal_TriforceHunt
   src.header.world_state = 2;     // kWorldState_Inverted
   src.header.flute_shovel_owned = 0x05;  // shovel + flute-active (distinct from mushroom 0x01)
-  // format_version 2: canonical settings blob round-trip coverage.
+  // Current-format canonical settings blob round-trip coverage.
   src.header.settings_present = 1;
   for (int i = 0; i < kSettingsCanonicalLen; i++) src.settings_canonical[i] = (uint8)(0xC0 + i);
   // Phase C entrance shuffle round-trip coverage (@71/@72).
@@ -1085,10 +1102,11 @@ void RandoSave_SelfCheck(void) {
   }
 
   // -------------------------------------------------------------------------
-  // format_version 2 backward-compat: a v2 slot has the settings blob but NO
-  // v3 extension block. Deserialize with format_version=2 (the path
-  // RandoSave_ReadFile takes for a v2 file) and confirm the blob loads while
-  // entrance_digest24 is forced 0 (= legacy warn-only entrance behavior).
+  // format_version 2 backward-compat: a v2 slot has the legacy 28-byte settings
+  // blob but NO v3 extension block. Deserialize with format_version=2 (the path
+  // RandoSave_ReadFile takes for a v2 file) and confirm the blob prefix loads,
+  // the new appended settings byte is zero-extended, and entrance_digest24 is
+  // forced 0 (= legacy warn-only entrance behavior).
   // -------------------------------------------------------------------------
   {
     uint8 v2buf[256];
@@ -1102,9 +1120,9 @@ void RandoSave_SelfCheck(void) {
     uint32 v2_bitmap = (loc_count + 7) >> 3;
     p[0] = 0x05;
     p += v2_bitmap;
-    memcpy(p, src.settings_canonical, kSettingsCanonicalLen);
+    memcpy(p, src.settings_canonical, kRandoSidecar_LegacySettingsCanonicalLen28);
     uint32 v2_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v2_bitmap +
-                      kSettingsCanonicalLen;  // NO ext block
+                      kRandoSidecar_LegacySettingsCanonicalLen28;  // NO ext block
 
     RandoSidecarSlot v2dst;
     uint32 v2_used = deserialize_slot_versioned(v2buf, v2_total, &v2dst, 2);
@@ -1116,17 +1134,22 @@ void RandoSave_SelfCheck(void) {
         v2dst.header.pot_registry_count != 0)
       selfcheck_die("v2 compat: pot registry fields must be forced 0");
     if (v2dst.header.settings_present != 1) selfcheck_die("v2 compat: settings_present round-trip");
-    if (memcmp(v2dst.settings_canonical, src.settings_canonical, kSettingsCanonicalLen) != 0)
-      selfcheck_die("v2 compat: settings blob round-trip");
+    if (memcmp(v2dst.settings_canonical, src.settings_canonical,
+               kRandoSidecar_LegacySettingsCanonicalLen28) != 0)
+      selfcheck_die("v2 compat: settings blob prefix round-trip");
+    if (v2dst.settings_canonical[kRandoSidecar_LegacySettingsCanonicalLen28] != 0)
+      selfcheck_die("v2 compat: appended settings byte must zero-extend");
     if (v2dst.placement_count != 1 || v2dst.placements[0].location_id != 5 ||
         v2dst.placements[0].item_id != 50) selfcheck_die("v2 compat: placement round-trip");
     if (v2dst.checked_bitmap[0] != 0x05) selfcheck_die("v2 compat: bitmap round-trip");
   }
 
   // -------------------------------------------------------------------------
-  // format_version 3 backward-compat: slots written before
-  // recommended_features0 existed have the v3 extension block but zero reserved
-  // bytes. They must NOT apply a zero feature snapshot on activation.
+  // format_version 3 backward-compat: v3 slots carry the legacy 28-byte
+  // settings blob plus the extension block. Slots written before
+  // recommended_features0 existed have zero reserved extension bytes. They must
+  // zero-extend enemy_drop_checks and must NOT apply a zero feature snapshot on
+  // activation.
   // -------------------------------------------------------------------------
   {
     uint8 v3buf[256];
@@ -1140,18 +1163,24 @@ void RandoSave_SelfCheck(void) {
     uint32 v3_bitmap = (loc_count + 7) >> 3;
     p[0] = 0x05;
     p += v3_bitmap;
-    memcpy(p, src.settings_canonical, kSettingsCanonicalLen);
-    p += kSettingsCanonicalLen;
+    memcpy(p, src.settings_canonical, kRandoSidecar_LegacySettingsCanonicalLen28);
+    p += kRandoSidecar_LegacySettingsCanonicalLen28;
     p[0] = 0xEF; p[1] = 0xCD; p[2] = 0xAB;
     p[3] = p[4] = p[5] = p[6] = p[7] = 0;
     uint32 v3_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v3_bitmap +
-                      kSettingsCanonicalLen + kRandoSidecar_SlotExtV3Size;
+                      kRandoSidecar_LegacySettingsCanonicalLen28 +
+                      kRandoSidecar_SlotExtV3Size;
 
     RandoSidecarSlot v3dst;
     uint32 v3_used = deserialize_slot_versioned(v3buf, v3_total, &v3dst, 3);
     if (v3_used != v3_total) selfcheck_die("v3 compat: used != v3 total");
     if (v3dst.header.entrance_digest24 != 0xABCDEF)
       selfcheck_die("v3 compat: entrance_digest24 round-trip");
+    if (memcmp(v3dst.settings_canonical, src.settings_canonical,
+               kRandoSidecar_LegacySettingsCanonicalLen28) != 0)
+      selfcheck_die("v3 compat: settings blob prefix round-trip");
+    if (v3dst.settings_canonical[kRandoSidecar_LegacySettingsCanonicalLen28] != 0)
+      selfcheck_die("v3 compat: appended settings byte must zero-extend");
     if (v3dst.header.recommended_features0_present != 0)
       selfcheck_die("v3 compat: zero extension must not imply recommended_features0");
     if (v3dst.header.pot_registry_present != 0 || v3dst.header.pot_registry_digest != 0 ||

@@ -8,11 +8,13 @@
 // inline-complexity check (~6 ops per macro after expansion).
 
 #include "rando_logic.h"
+#include "enemy_drop_lookup.h"
 #include "rando.h"
 #include "rando_placement.h"
 #include "dungeon_ids.h"
 #include "item_ids.h"  // ITEM_GenericKey / ITEM_SmallKey_* (genericKeys collapse)
 #include "pot_nonpot_drop_counts.h"
+#include "location_ids.h"
 #include "shuffle_doors.h"  // door-shuffle oracle (OP_DOORS_LOC_REACHABLE)
 
 #include <assert.h>
@@ -330,6 +332,20 @@ static bool eval_pot_keys_dungeon(Cursor *c, const PredicateContext *ctx) {
          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon;
 }
 
+static bool eval_enemy_drop_keys_dungeon(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  const RandoSettings *s = ctx->settings;
+  return Settings_EnemyDropKeysActive(s) &&
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Dungeon;
+}
+
+static bool eval_enemy_drop_keys_wild(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  const RandoSettings *s = ctx->settings;
+  return Settings_EnemyDropKeysActive(s) &&
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Wild;
+}
+
 // Boss-shuffle runtime — "can kill the boss assigned to a kRandoDungeon_* slot". Resolves
 // the per-seed boss assignment (ctx->boss_assignment; NULL ⇒ the vanilla boss
 // via kRandoDungeonVanillaBoss), then RE-ENTERS the evaluator on that boss's
@@ -393,6 +409,8 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_POT_KEYS_ON:            return eval_pot_keys_on(c, ctx);
     case OP_POT_KEYS_WILD:          return eval_pot_keys_wild(c, ctx);
     case OP_POT_KEYS_DUNGEON:       return eval_pot_keys_dungeon(c, ctx);
+    case OP_ENEMY_DROP_KEYS_DUNGEON:return eval_enemy_drop_keys_dungeon(c, ctx);
+    case OP_ENEMY_DROP_KEYS_WILD:   return eval_enemy_drop_keys_wild(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -730,6 +748,14 @@ static uint8 door_checked_active_key_pots(uint8 dungeon, uint16 small_key_item,
   return n;
 }
 
+static bool door_enemy_drop_pred_cb(void *ud, const RandoDoorEnemyDropLocation *drop) {
+  const PredicateContext *ctx = (const PredicateContext *)ud;
+  if (drop == NULL || drop->pred_len == 0)
+    return true;
+  return Predicate_EvalCtx(kRandoPredicateStream + drop->pred_off,
+                           drop->pred_len, ctx);
+}
+
 static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateContext *ctx,
                                                 DoorExploreGates *gates_out) {
   // The gates are rebuilt every call (cheap); the flood itself is cached.
@@ -888,21 +914,44 @@ static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx) {
     if (kRandoDoorPotLocations[mid].loc_id < loc_id) lo = mid + 1;
     else hi = mid - 1;
   }
+  if (found >= 0) {
+    const RandoDoorPotLocation *p = &kRandoDoorPotLocations[found];
+    if (!Rando_DoorPotActive(p, g_door_logic_layout->pot_tier))
+      return false;
+    if (!((g_door_logic_mask >> p->dungeon) & 1))
+      return false;
+    DoorExploreGates gates;
+    const DoorExploreResult *r = door_oracle_get(p->dungeon, ctx, &gates);
+    for (uint8 i = 0; i < p->region_count; i++) {
+      uint16 region = kRandoDoorPotRegions[p->region_first + i];
+      if (!DoorExplore_Reached(r, region))
+        return false;
+    }
+    return door_pot_pred_cb((void *)ctx, p);
+  }
+
+  // Generated enemy-drop bridge rows are sorted by loc_id.
+  lo = 0;
+  hi = (int)kRandoDoorEnemyDropLocationsCount - 1;
+  found = -1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kRandoDoorEnemyDropLocations[mid].loc_id == loc_id) { found = mid; break; }
+    if (kRandoDoorEnemyDropLocations[mid].loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
   if (found < 0)
     return false;
-  const RandoDoorPotLocation *p = &kRandoDoorPotLocations[found];
-  if (!Rando_DoorPotActive(p, g_door_logic_layout->pot_tier))
+  const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[found];
+  if (!g_door_logic_layout->enemy_drop_keys)
     return false;
-  if (!((g_door_logic_mask >> p->dungeon) & 1))
+  if (!((g_door_logic_mask >> e->dungeon) & 1))
     return false;
   DoorExploreGates gates;
-  const DoorExploreResult *r = door_oracle_get(p->dungeon, ctx, &gates);
-  for (uint8 i = 0; i < p->region_count; i++) {
-    uint16 region = kRandoDoorPotRegions[p->region_first + i];
-    if (!DoorExplore_Reached(r, region))
-      return false;
-  }
-  return door_pot_pred_cb((void *)ctx, p);
+  const DoorExploreResult *r = door_oracle_get(e->dungeon, ctx, &gates);
+  if (!DoorExplore_Reached(r, e->region))
+    return false;
+  return door_enemy_drop_pred_cb((void *)ctx, e);
 }
 
 // ---------------------------------------------------------------------------
@@ -947,6 +996,19 @@ static inline void bitset_set(uint8 *bs, uint16 idx) {
 
 static inline bool bitset_has(const uint8 *bs, uint16 idx) {
   return (bs[idx >> 3] >> (idx & 7)) & 1;
+}
+
+static bool derive_hce_big_key_from_reachability(RandoCounts *counts,
+                                                 const RandoSettings *settings) {
+  if (counts == NULL) return false;
+  if (!Settings_EnemyDropKeysActive(settings)) return false;
+  if (kRandoEnemyDropHceBigKeyLocId == 0xFFFF) return false;
+  if (kRandoEnemyDropHceBigKeyLocId >= kReachabilityMaxLocations) return false;
+  if (counts->by_item_id[ITEM_HyruleCastleBigKey] != 0) return false;
+  if (!bitset_has(g_reachability.location_bitset, kRandoEnemyDropHceBigKeyLocId))
+    return false;
+  counts->by_item_id[ITEM_HyruleCastleBigKey] = 1;
+  return true;
 }
 
 // under Inverted the placer should evaluate the INVERTED graph, not
@@ -1002,8 +1064,9 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   }
 
   PredicateContext ctx;
+  RandoCounts effective_counts = *counts;
   memset(&ctx, 0, sizeof(ctx));
-  ctx.counts = counts;
+  ctx.counts = &effective_counts;
   ctx.settings = settings;
   ctx.reachable_regions_bitset = g_reachability.region_bitset;
   ctx.reachable_regions_count = kReachabilityMaxRegions;
@@ -1162,6 +1225,10 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         bitset_set(g_reachability.location_bitset, loc->id);
         changed = true;
       }
+    }
+
+    if (derive_hce_big_key_from_reachability(&effective_counts, settings)) {
+      changed = true;
     }
 
     // Update cleared_dungeons_bitmask based on which boss locations are
@@ -1599,6 +1666,33 @@ void Logic_SelfCheck(void) {
                "OP_INSTANT_FLUTE should be false when instant_flute=0");
   }
 
+  // Enemy-drop key-depth mode ops: Wild and Dungeon are distinct because Wild
+  // keys must be held before entry, while Dungeon keys can be collected en route.
+  {
+    uint8 wild_bc[] = { OP_ENEMY_DROP_KEYS_WILD };
+    uint8 dungeon_bc[] = { OP_ENEMY_DROP_KEYS_DUNGEON };
+    RandoSettings ed = settings;
+    ed.enemy_drop_checks = kEnemyDropChecks_Keys;
+
+    ed.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    LSC_ASSERT(Predicate_Evaluate(wild_bc, sizeof(wild_bc), &counts, &ed) == true,
+               "OP_ENEMY_DROP_KEYS_WILD should be true under enemy-drop Wild keys");
+    LSC_ASSERT(Predicate_Evaluate(dungeon_bc, sizeof(dungeon_bc), &counts, &ed) == false,
+               "OP_ENEMY_DROP_KEYS_DUNGEON should be false under enemy-drop Wild keys");
+
+    ed.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+    LSC_ASSERT(Predicate_Evaluate(wild_bc, sizeof(wild_bc), &counts, &ed) == false,
+               "OP_ENEMY_DROP_KEYS_WILD should be false under enemy-drop Dungeon keys");
+    LSC_ASSERT(Predicate_Evaluate(dungeon_bc, sizeof(dungeon_bc), &counts, &ed) == true,
+               "OP_ENEMY_DROP_KEYS_DUNGEON should be true under enemy-drop Dungeon keys");
+
+    ed.dungeon_small_keys_mode = kDungeonItemMode_Vanilla;
+    LSC_ASSERT(Predicate_Evaluate(wild_bc, sizeof(wild_bc), &counts, &ed) == false,
+               "OP_ENEMY_DROP_KEYS_WILD should be false under Vanilla small keys");
+    LSC_ASSERT(Predicate_Evaluate(dungeon_bc, sizeof(dungeon_bc), &counts, &ed) == false,
+               "OP_ENEMY_DROP_KEYS_DUNGEON should be false under Vanilla small keys");
+  }
+
   // OP_DIFFICULTY_AT_LEAST against defaults (normal=1)
   {
     uint8 bc[] = { OP_DIFFICULTY_AT_LEAST, 1 };
@@ -1709,6 +1803,57 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Predicate_Evaluate(pod5, sizeof(pod5), &gk, &open) == false,
                "non-Retro: a generic key must NOT collapse small-key doors");
     #undef LSC_U16
+  }
+
+  // Enemy-drop HCE chain regression: Boomerang side requires the Map Guard key,
+  // Ball-n-chain requires a second HCE key, Zelda's Cell requires that big-key
+  // side effect, and the Zelda rescue event requires the sewer key as well.
+  if (kRandoEnemyDropHceBigKeyLocId != 0xFFFF) {
+    RandoSettings hce;
+    Settings_SetDefaults(&hce);
+    hce.world_state = kWorldState_Standard;
+    hce.enemy_drop_checks = kEnemyDropChecks_Keys;
+    hce.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+
+    RandoCounts hc;
+    memset(&hc, 0, sizeof(hc));
+    hc.by_item_id[ITEM_StartingHeart] = 3;
+    hc.by_item_id[ITEM_ProgressiveSword] = 1;
+    hc.by_item_id[ITEM_Lamp] = 1;
+
+    const RandoReachability *hr = Logic_ComputeReachability(&hc, &hce);
+    LSC_ASSERT(hr != NULL, "HCE enemy-drop chain reachability returned NULL");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Boomerang_Chest),
+               "HCE enemy-drop: Boomerang Chest must require the first HCE key");
+    LSC_ASSERT(!Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
+               "HCE enemy-drop: Ball-n-chain must require the second HCE key");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "HCE enemy-drop: Zelda's Cell must not be reachable with zero HCE keys");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
+               "HCE enemy-drop: Zelda rescue must not be reachable with zero HCE keys");
+
+    hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 1;
+    hr = Logic_ComputeReachability(&hc, &hce);
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Boomerang_Chest),
+               "HCE enemy-drop: first HCE key should open Boomerang Chest");
+    LSC_ASSERT(!Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
+               "HCE enemy-drop: one HCE key must not reach Ball-n-chain");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "HCE enemy-drop: one HCE key must not reach Zelda's Cell");
+
+    hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 2;
+    hr = Logic_ComputeReachability(&hc, &hce);
+    LSC_ASSERT(Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
+               "HCE enemy-drop: two HCE keys should reach Ball-n-chain");
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "HCE enemy-drop: Ball-n-chain side effect should open Zelda's Cell");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
+               "HCE enemy-drop: Zelda rescue must require the sewer key");
+
+    hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 3;
+    hr = Logic_ComputeReachability(&hc, &hce);
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
+               "HCE enemy-drop: third HCE key should allow Zelda rescue");
   }
 
   fprintf(stderr, "[Logic_SelfCheck] OK\n");

@@ -42,7 +42,7 @@
 //     remove: [Rupoor]
 //
 // `remove` is best-effort (an item not in the settings-dependent pool is a
-// no-op); `add` cannot add prize/event items (ids 111..123, no grant path).
+// no-op); `add` cannot add non-grantable prize/event/virtual items.
 // add/remove apply remove-then-add, before pins.
 //
 // Per-item grant caps are enforced at generation time: the pool
@@ -87,6 +87,9 @@ typedef struct CustomizerManifest {
 // the same. Returns 0xFFFF when the name resolves to nothing.
 uint16 Customizer_ResolveLocation(const char *name);
 uint16 Customizer_ResolveItem(const char *name);
+// True for registry ids that exist for logic/prize bookkeeping but cannot be
+// granted by the runtime dispatcher and therefore cannot be hand-placed/added.
+bool Customizer_IsNonGrantableItem(uint16 item_id);
 
 // Parse a manifest from an in-memory text buffer (len bytes). Returns 0 on
 // success; on failure returns non-zero and writes a one-line human reason

@@ -26,7 +26,7 @@
 //   6+len   8             seed_u64 (little-endian)
 //   14+len  2             checksum (CRC-16-CCITT-FALSE over all prior bytes, LE)
 //   = 16+settings_len bytes -> ceil((16+settings_len)*8/5) base32 chars
-//   (44 bytes -> exactly 71 chars at the current kSettingsCanonicalLen 28).
+//   (45 bytes -> exactly 72 chars at the current kSettingsCanonicalLen 29).
 //   settings_hash is NOT embedded — decoders that need it recompute it from
 //   the canonical bytes (Settings_CanonicalDeserialize + Settings_HashShort).
 //   A v2 string restores settings AND seed.
@@ -59,7 +59,7 @@
 
 #define kShareBinaryLen 31     /* v1: magic+ver+hash+seed+ck */
 #define kShareBase32Len 50     /* ceil(31*8 / 5) */
-#define kShareV2Base32Len ((kShareStringV2BinaryLen * 8 + 4) / 5)  /* 71 today */
+#define kShareV2Base32Len ((kShareStringV2BinaryLen * 8 + 4) / 5)  /* 72 today */
 
 /* Largest binary blob a kShareStringBase32MaxLen-char string can carry —
  * floor(96*5/8) = 60 bytes, i.e. v2 settings_len up to 44. */
@@ -411,7 +411,7 @@ ShareDecodeStatus Share_PastePath(const char *share_string_input,
     return st;
   }
   // This is the v1-only textfield surface (Switch / in-game alphabet picker,
-  // design D7). The TYPICAL v2 string (settings_len 28 -> 71 chars) can't fit
+  // design D7). The TYPICAL v2 string (settings_len 29 -> 72 chars) can't fit
   // kRandoTextFieldMaxLen (64), but a SHORT v2 string (settings_len <= 24 ->
   // <= 64 chars; settings_len 15 is exactly 50) physically fits and would
   // decode here with a ZEROED settings_hash (v2 carries no hash) and its
@@ -545,7 +545,7 @@ void Share_SelfCheck(void) {
   Settings_CanonicalSerialize(&defaults, v2in.settings_canonical);
   char enc2[kShareStringBase32MaxLen];
   int n2 = Share_EncodeV2(&v2in, enc2, sizeof enc2);
-  share_assert(n2 == kShareV2Base32Len, "v2 encode length (71 today)");
+  share_assert(n2 == kShareV2Base32Len, "v2 encode length (72 today)");
   ShareString v2out;
   st = Share_Decode(enc2, &v2out);
   share_assert(st == kShareDecodeOk, "v2 round-trip decode");
@@ -587,7 +587,7 @@ void Share_SelfCheck(void) {
   share_assert(st != kShareDecodeOk, "v2 corrupted char must not decode Ok");
 
   /* Reject: settings_len = kSettingsCanonicalLen + 1 with a VALID CRC at its
-   * correct length (45 bytes -> 72 chars) — "made by a newer version" (spec
+   * correct length (46 bytes -> 74 chars) — "made by a newer version" (spec
    * scenario "Newer-version v2 string is refused, not truncated"). */
   uint8 fake_settings[64];
   for (int i = 0; i < (int)sizeof fake_settings; ++i)
@@ -598,7 +598,7 @@ void Share_SelfCheck(void) {
                             99, blob);
   int chars = base32_encode(blob, t, enc_big);
   enc_big[chars] = '\0';
-  share_assert(chars == (t * 8 + 4) / 5, "settings_len+1 encode length (72)");
+  share_assert(chars == (t * 8 + 4) / 5, "settings_len+1 encode length (74)");
   st = Share_Decode(enc_big, &v2out);
   share_assert(st == kShareDecodeNewerSettings,
                "v2 settings_len+1 -> NewerSettings");
@@ -608,7 +608,7 @@ void Share_SelfCheck(void) {
   t = selfcheck_pack_v2(0x42, kSettingsCanonicalLen - 1,
                         v2in.settings_canonical, 0x1122334455667788ull, blob);
   chars = base32_encode(blob, t, enc_big);
-  enc_big[chars] = '\0';  /* 43 bytes -> 69 chars */
+  enc_big[chars] = '\0';  /* 44 bytes -> 71 chars */
   st = Share_Decode(enc_big, &v2out);
   share_assert(st == kShareDecodeOk, "v2 settings_len-1 decodes");
   share_assert(v2out.settings_len == kSettingsCanonicalLen - 1,
@@ -622,7 +622,7 @@ void Share_SelfCheck(void) {
                "v2 settings_len-1 seed");
 
   /* Cross-format reject: a 31-byte v1-LAYOUT blob with the v2 magic — its
-   * embedded settings_len (28) demands 71 chars; presented at 50 chars it
+   * embedded settings_len (29) demands 72 chars; presented at 50 chars it
    * must reject on length (magic-based dispatch, never length-based). */
   pack_binary(&original, bin);
   bin[3] = kShareMagicV2_3;        /* ZRSS -> ZRS2 */
@@ -637,16 +637,16 @@ void Share_SelfCheck(void) {
   share_assert(st == kShareDecodeBadLength,
                "ZRS2 magic at 50 chars -> BadLength");
 
-  /* Cross-format reject: a 44-byte blob with the v1 magic presented at 71
+  /* Cross-format reject: a 45-byte blob with the v1 magic presented at 72
    * chars — the v1 arm requires exactly 50 chars. */
-  uint8 blob44[kShareStringV2BinaryLen];
-  pack_binary_v2(&v2in, blob44);
-  blob44[3] = kShareMagic3;  /* ZRS2 -> ZRSS; length rejects before CRC */
-  chars = base32_encode(blob44, kShareStringV2BinaryLen, enc_big);
+  uint8 blob_v2[kShareStringV2BinaryLen];
+  pack_binary_v2(&v2in, blob_v2);
+  blob_v2[3] = kShareMagic3;  /* ZRS2 -> ZRSS; length rejects before CRC */
+  chars = base32_encode(blob_v2, kShareStringV2BinaryLen, enc_big);
   enc_big[chars] = '\0';
   st = Share_Decode(enc_big, &decoded);
   share_assert(st == kShareDecodeBadLength,
-               "ZRSS magic at 71 chars -> BadLength");
+               "ZRSS magic at 72 chars -> BadLength");
 
   /* Reject: settings_len = 45 (61 bytes -> 98 chars) — longer than any v2
    * token this binary can represent; classified as NewerSettings via the

@@ -331,6 +331,8 @@ static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high
 // parse_pot_shuffle CLI grammar off|keys|contents|all). The reserved Subset
 // value (4) is Phase 7 and not offered here.
 static const char *const kPotShuffleLabels[] = {"off", "keys", "contents", "all"};
+// add-rando-enemy-drop-sanity — enemy_drop_checks tiers.
+static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "all"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -1200,6 +1202,35 @@ static void Panel_Shuffles() {
       changed = true;
     }
     HelpTooltip("Randomizes which enemies appear in each room.");
+
+    // add-rando-enemy-drop-sanity — forced enemy key drops / all eligible
+    // dungeon enemies as checks. Disabled when generation would normalize the
+    // setting off.
+    {
+      uint8 enemy_drop_key_mode = Settings_EffectiveSmallKeysMode(s);
+      bool enemy_drops_off =
+          enemy_drop_key_mode != kDungeonItemMode_Wild &&
+          enemy_drop_key_mode != kDungeonItemMode_Dungeon;
+      uint8 shown = Settings_EffectiveEnemyDropChecks(s);
+      uint8 label_count =
+          (!enemy_drops_off &&
+           Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+           !s->enemy_shuffle) ? 3 : 2;
+      if (s->enemy_drop_checks != shown) {
+        s->enemy_drop_checks = shown;
+        changed = true;
+      }
+      ImGui::BeginDisabled(enemy_drops_off);
+      if (EnumCombo("Enemy drop checks", &shown, kEnemyDropCheckLabels, label_count)) {
+        s->enemy_drop_checks = shown;
+        changed = true;
+      }
+      HelpTooltip("Keys turns forced enemy key drops into checks. All also turns eligible dungeon enemies into checks; under door shuffle or enemy shuffle All currently behaves as Keys.");
+      ImGui::EndDisabled();
+      if (enemy_drops_off) {
+        ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");
+      }
+    }
 
     bool drs = s->door_shuffle != 0;
     if (ImGui::Checkbox("Door shuffle", &drs)) {

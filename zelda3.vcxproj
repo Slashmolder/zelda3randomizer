@@ -430,7 +430,9 @@
          direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
          Pre-build event below regenerates src\rando\logic_data.c,
          src\rando\location_ids.h, src\rando\item_ids.h, src\rando\chest_lookup.h,
-         src\rando\pot_lookup.h, src\rando\pot_nonpot_drop_counts.h,
+         src\rando\pot_lookup.h, src\rando\enemy_drop_lookup.h,
+         src\rando\enemy_check_lookup.h,
+         src\rando\pot_nonpot_drop_counts.h,
          src\rando\icon_atlas.h, src\rando\direct_grant_icons.h from YAML inputs
          + assets\chest_data.py. -->
     <ClCompile Include="src\rando\logic_data.c" />
@@ -971,6 +973,8 @@
        direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
        Regenerates src\rando\logic_data.c, src\rando\location_ids.h,
        src\rando\item_ids.h, src\rando\chest_lookup.h, src\rando\pot_lookup.h,
+       src\rando\enemy_drop_lookup.h,
+       src\rando\enemy_check_lookup.h,
        src\rando\pot_nonpot_drop_counts.h, src\rando\icon_atlas.h,
        src\rando\direct_grant_icons.h from assets\rando\*.yaml +
        assets\chest_data.py (ALTTPR chest-name catalog; the vanilla chest table
@@ -983,8 +987,9 @@
   <!-- RandoCodegenInput = EXACTLY the files rando_logic_gen.py reads — no more, no less.
        Three deliberate exceptions: assets\rando\chest_table.gen.bin (gitignored — absent in
        a fresh worktree, and an absent Input makes the Target always-run, see below),
-       assets\rando\pots.gen.yaml / pot_key_depth.gen.yaml (gitignored local pot
-       registries, conditionally included only when present), and
+       assets\rando\pots.gen.yaml / pot_key_depth.gen.yaml /
+       enemy_drops.gen.yaml / enemy_checks.gen.yaml (gitignored local registries,
+       conditionally included only when present), and
        assets\rando\logic.schema.yaml (existence-checked only, contents never parsed, so
        it cannot affect the outputs).
        Too few → an incremental build skips codegen on a stale-output check and ships a
@@ -1008,6 +1013,8 @@
     <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
     <RandoCodegenInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
+    <RandoCodegenInput Include="assets\rando\enemy_drops.gen.yaml" Condition="Exists('assets\rando\enemy_drops.gen.yaml')" />
+    <RandoCodegenInput Include="assets\rando\enemy_checks.gen.yaml" Condition="Exists('assets\rando\enemy_checks.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
     <RandoCodegenInput Include="assets\rando_logic_gen.py" />
     <RandoCodegenInput Include="assets\chest_data.py" />
@@ -1016,6 +1023,8 @@
     <RandoCodegenOutput Include="src\rando\item_ids.h" />
     <RandoCodegenOutput Include="src\rando\chest_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_lookup.h" />
+    <RandoCodegenOutput Include="src\rando\enemy_drop_lookup.h" />
+    <RandoCodegenOutput Include="src\rando\enemy_check_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_nonpot_drop_counts.h" />
     <RandoCodegenOutput Include="src\rando\icon_atlas.h" />
     <RandoCodegenOutput Include="src\rando\direct_grant_icons.h" />

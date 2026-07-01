@@ -79,7 +79,7 @@ OBJS:=$(sort $(SRCS:%.c=%.o))
 # are gitignored ROM-derived artifacts. The recursive find includes them when a
 # local pot-codegen run has produced them; public CI builds without them.
 RANDO_GEN_SRCS:=$(shell find assets/rando -name '*.yaml') assets/rando/door_predicates.gen.json assets/rando_logic_gen.py assets/chest_data.py
-RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/pot_lookup.h src/rando/pot_nonpot_drop_counts.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
+RANDO_GEN_OUTPUTS:=src/rando/logic_data.c src/rando/location_ids.h src/rando/item_ids.h src/rando/chest_lookup.h src/rando/pot_lookup.h src/rando/enemy_drop_lookup.h src/rando/enemy_check_lookup.h src/rando/pot_nonpot_drop_counts.h src/rando/icon_atlas.h src/rando/direct_grant_icons.h
 
 ifeq (${OS},Windows_NT)
     WINDRES:=windres
@@ -118,7 +118,7 @@ $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 RANDO_GEN_HEADERS:=$(filter-out src/rando/logic_data.c,$(RANDO_GEN_OUTPUTS))
 $(RANDO_GEN_HEADERS): src/rando/logic_data.c ;
 src/rando/logic_data.c: rando-codegen-force $(RANDO_GEN_SRCS)
-	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, pot_lookup.h, pot_nonpot_drop_counts.h, icon_atlas.h, direct_grant_icons.h}"
+	@echo "Regenerating rando codegen: src/rando/{logic_data.c, location_ids.h, item_ids.h, chest_lookup.h, pot_lookup.h, enemy_drop_lookup.h, enemy_check_lookup.h, pot_nonpot_drop_counts.h, icon_atlas.h, direct_grant_icons.h}"
 	$(PYTHON) assets/rando_logic_gen.py
 
 rando-codegen-force:
