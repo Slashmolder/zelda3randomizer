@@ -712,7 +712,7 @@ static void Panel_Cosmetics(void) {
     s_cfg.enemy_drop_marker = (uint8)edm;
     s_dirty = true;
   }
-  Help("Controls the marker above active unchecked enemy-drop checks. Applies live.");
+  Help("Controls the marker above active unchecked enemy-drop carriers. Spawned drops still try to show the real placed item. Applies live.");
 
   // Hex u64 seed input + a "New random seed" button (matches the rando window's
   // seed field). 0 = derive the look from the loaded slot's seed.

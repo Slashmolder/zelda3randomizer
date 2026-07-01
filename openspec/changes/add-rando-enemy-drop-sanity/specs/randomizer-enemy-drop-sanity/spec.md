@@ -137,10 +137,13 @@ Phase 1 MAY mark the spawned forced-key drop rather than the live carrier; a liv
 carrier marker requires separate OAM-budget and playtest work. The marker SHALL be
 configurable through a client-local `[Graphics] EnemyDropMarker` preference with
 at least `item` (placed item when the shared tile slot can represent all active
-room markers unambiguously, default) and `generic` (non-placement key-style
-marker) modes. The marker SHALL be gated by the effective setting, generated
-location identity, and `Rando_IsLocationChecked`. Checked, inactive, vanilla, and
-excluded forced drops SHALL draw no marker.
+markers in the same class unambiguously, default) and `generic` (non-placement
+key-style marker for live carriers) modes. Spawned forced-key and big-key drops
+SHALL try to render the real placed item and suppress other enemy-drop markers
+while visible so the shared tile slot is not overwritten. The marker SHALL be
+gated by the effective setting, generated location identity, and
+`Rando_IsLocationChecked`. Checked, inactive, vanilla, and excluded forced drops
+SHALL draw no marker.
 
 #### Scenario: Unchecked forced-key check is marked
 - **WHEN** an active enemy-drop check has not been collected
@@ -151,6 +154,12 @@ excluded forced drops SHALL draw no marker.
 - **WHEN** an active unchecked enemy-drop check holds a non-key placed item and
   `EnemyDropMarker=generic`
 - **THEN** the marker uses the generic key-style icon instead of the placed item icon
+
+#### Scenario: Spawned drop shows placed item
+- **WHEN** an enemy-drop carrier dies and its unchecked forced drop is active
+- **THEN** the spawned drop renders the placed item when the shared item slot can
+  represent active spawned drops unambiguously
+- **AND** remaining live carrier markers do not overwrite that spawned-drop icon
 
 #### Scenario: Marker clears after check
 - **WHEN** the location is checked and the room is still active or later reloaded

@@ -8880,6 +8880,7 @@ void SpritePrep_KeySetItemDrop(int k) {  // 869267
 void SpriteActive_Main(int k) {  // 869271
   uint8 type = sprite_type[k];
   kSpriteActiveRoutines[type](k);
+  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 void Sprite_09_GiantMoldorm(int k) {  // 869469
@@ -27004,4 +27005,3 @@ void Faerie_HandleMovement(int k) {  // 9efd1c
     sprite_z_vel[k] = -5;
   }
 }
-

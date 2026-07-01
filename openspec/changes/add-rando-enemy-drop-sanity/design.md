@@ -181,14 +181,16 @@ effect is not derived.
 
 Phase 1 requires an unchecked indicator for the forced-key check state. Active
 unchecked live carriers and spawned forced-key drops draw a configured marker:
-`[Graphics] EnemyDropMarker=item` (default) draws the placed item marker only
-when every active marker in the room resolves to the same icon; otherwise it
-falls back to the generic marker because the renderer has one shared receive-item
-tile slot. `generic` always draws the key-style marker without placement leakage.
-This is a client-local visual preference; it does not affect canonical settings,
-share strings, hashes, generator version, or corpus. The marker clears when the
-location is checked and does not render for inactive, checked, or vanilla
-forced-key drops.
+`[Graphics] EnemyDropMarker=item` (default) draws the placed item marker on live
+carriers only when every active carrier in the room resolves to the same icon;
+otherwise it falls back to the generic marker because the renderer has one
+shared receive-item tile slot. `generic` draws the key-style marker on live
+carriers without placement leakage. Spawned forced-key/big-key drops are
+prioritized over live carrier markers and try to draw the real placed item while
+visible. This is a client-local visual preference; it does not affect canonical
+settings, share strings, hashes, generator version, or corpus. The marker clears
+when the location is checked and does not render for inactive, checked, or
+vanilla forced-key drops.
 
 Spoilers, native trackers, auto-tracker output, and reach panels group enemy-drop
 checks by dungeon and room. They must expose the effective setting, not the raw

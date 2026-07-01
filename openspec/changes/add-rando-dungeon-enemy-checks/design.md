@@ -91,12 +91,14 @@ are applied. Vanilla small-key mode becomes `off`; door shuffle turns requested
 into effective `keys`.
 
 Enemy check markers reuse `[Graphics] EnemyDropMarker`. `item` draws the placed
-item over unchecked carriers only when every active marker in the room resolves
-to the same icon; otherwise it falls back to the generic key-style marker because
-the renderer has one shared receive-item tile slot. `generic` always draws the
-generic marker without revealing the placement. This marker preference is
-client-local and does not enter canonical settings, the share string, generator
-version, or corpus.
+item over unchecked carriers only when every active carrier marker in the room
+resolves to the same icon; otherwise it falls back to the generic key-style
+marker because the renderer has one shared receive-item tile slot. `generic`
+draws the generic marker on live carriers without revealing the placement.
+Spawned forced enemy-drop pickups try to render the real placed item and suppress
+live carrier markers while visible. This marker preference is client-local and
+does not enter canonical settings, the share string, generator version, or
+corpus.
 
 Spoiler, tracker, reachability, and autotracker output use normal generated
 dungeon location rows with the `Enemy` type. They do not expose a separate

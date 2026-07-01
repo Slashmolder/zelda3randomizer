@@ -583,8 +583,8 @@ static void Rando_GrantCurrentDungeonBigKeySilently(void) {
 }
 
 static bool Rando_TryDrawEnemyDropGenericMarker(int k, int dx, int dy);
-static bool Rando_TryDrawEnemyDropCarrierField(int k);
-static bool Rando_EnemyDropRoomItemMarkersSafe(void);
+static bool Rando_EnemyDropPickupItemMarkersSafe(void);
+bool Rando_TryDrawEnemyDropCarrierField(int k);
 static int AllocOverlord();
 static int Overworld_AllocSprite(uint8 type);
 uint16 Sprite_GetX(int k) {
@@ -995,7 +995,6 @@ void Sprite_DrawMultiple(int k, const DrawMultipleData *src, int n, PrepOamCoord
     SetOamHelper0(oam, src->x + info->x, src->y + info->y, d, d >> 8, src->ext);
 
   } while (src++, oam++, --n);
-  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 void Sprite_DrawMultiplePlayerDeferred(int k, const DrawMultipleData *src, int n, PrepOamCoordsRet *info) {  // 85df75
@@ -1578,9 +1577,7 @@ static bool Rando_TryDrawAbsorbableKeyField(int k) {
     const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
       dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
     if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
-      if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
-        return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
-      if (Rando_EnemyDropRoomItemMarkersSafe() &&
+      if (Rando_EnemyDropPickupItemMarkersSafe() &&
           Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
         return true;
       return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
@@ -1600,9 +1597,7 @@ static bool Rando_TryDrawAbsorbableBigKeyField(int k) {
       dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_BigKey);
   if (drop == NULL || Rando_IsLocationChecked(drop->loc_id))
     return false;
-  if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
-    return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
-  if (Rando_EnemyDropRoomItemMarkersSafe() &&
+  if (Rando_EnemyDropPickupItemMarkersSafe() &&
       Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
     return true;
   return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
@@ -1710,7 +1705,6 @@ void Sprite_PrepAndDrawSingleLargeNoPrep(int k, PrepOamCoordsRet *info) {  // 86
   bytewise_extended_oam[oam - oam_buf] = 2 | ((info->x >= 256) ? 1: 0);
   if (sprite_flags3[k] & 0x10)
     SpriteDraw_Shadow(k, info);
-  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 // add-rando-field-item-sprites (draw half) — draw the placed item's gfx for a
@@ -1965,17 +1959,26 @@ static bool Rando_GetEnemyDropPickupMarkerInfo(int k, RandoEnemyDropMarkerInfo *
   return true;
 }
 
-static bool Rando_GetEnemyDropAnyMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
-  return Rando_GetEnemyDropCarrierMarkerInfo(k, out) ||
-         Rando_GetEnemyDropPickupMarkerInfo(k, out);
+static bool Rando_EnemyDropAnyPickupMarkerActive(void) {
+  for (int j = 0; j < 16; j++) {
+    if (Rando_GetEnemyDropPickupMarkerInfo(j, NULL))
+      return true;
+  }
+  return false;
 }
 
-static bool Rando_EnemyDropRoomItemMarkersSafe(void) {
+static bool Rando_EnemyDropMarkerSetItemIconsSafe(bool include_carriers,
+                                                  bool include_pickups) {
   bool have = false;
   uint8 first_gfx = 0, first_big = 0, first_oam_flags = 0;
   for (int j = 0; j < 16; j++) {
     RandoEnemyDropMarkerInfo marker;
-    if (!Rando_GetEnemyDropAnyMarkerInfo(j, &marker))
+    bool found = false;
+    if (include_carriers)
+      found = Rando_GetEnemyDropCarrierMarkerInfo(j, &marker);
+    if (!found && include_pickups)
+      found = Rando_GetEnemyDropPickupMarkerInfo(j, &marker);
+    if (!found)
       continue;
     uint8 gfx, big, oam_flags;
     if (!Rando_GetFieldItemIcon(marker.loc_id, 0xFFFFu, &gfx, &big, &oam_flags))
@@ -1992,12 +1995,22 @@ static bool Rando_EnemyDropRoomItemMarkersSafe(void) {
   return have;
 }
 
-static bool Rando_TryDrawEnemyDropCarrierField(int k) {
+static bool Rando_EnemyDropCarrierItemMarkersSafe(void) {
+  return Rando_EnemyDropMarkerSetItemIconsSafe(true, false);
+}
+
+static bool Rando_EnemyDropPickupItemMarkersSafe(void) {
+  return Rando_EnemyDropMarkerSetItemIconsSafe(false, true);
+}
+
+bool Rando_TryDrawEnemyDropCarrierField(int k) {
   RandoEnemyDropMarkerInfo marker;
   if (!Rando_GetEnemyDropCarrierMarkerInfo(k, &marker))
     return false;
+  if (Rando_EnemyDropAnyPickupMarkerActive())
+    return false;  // spawned drops own the shared item-icon slot while visible
   if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic &&
-      Rando_EnemyDropRoomItemMarkersSafe()) {
+      Rando_EnemyDropCarrierItemMarkersSafe()) {
     // Use the same forced-placement sentinel as pickup dispatch so identity
     // key placements still draw as active checks on the live carrier.
     if (Rando_TryDrawHeldItemSprite(k, marker.loc_id, 0xFFFFu, 0, -16))
@@ -2073,7 +2086,6 @@ void SpriteDraw_SingleSmall(int k) {  // 86dcef
   bytewise_extended_oam[oam - oam_buf] = 0 | (info.x >= 256);
   if (sprite_flags3[k] & 0x10)
     SpriteDraw_Shadow_custom(k, &info, 2);
-  Rando_TryDrawEnemyDropCarrierField(k);
 }
 
 void Sprite_DrawThinAndTall(int k) {  // 86dd40

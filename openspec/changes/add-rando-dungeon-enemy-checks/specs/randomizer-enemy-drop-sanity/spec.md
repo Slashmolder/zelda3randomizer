@@ -60,18 +60,23 @@ death flag is set.
 
 Unchecked enemy-drop and ordinary enemy-check carriers SHALL support a local
 marker preference that either reveals the placed item when the shared tile slot
-can represent all active room markers unambiguously or uses a generic marker.
+can represent all active carrier markers unambiguously or uses a generic marker.
 
 #### Scenario: Item marker mode
 - **WHEN** `[Graphics] EnemyDropMarker=item`
 - **THEN** unchecked active enemy carriers draw the placed item marker when all
-  active room markers resolve to the same icon, and fall back to the generic
+  active carrier markers resolve to the same icon, and fall back to the generic
   marker otherwise
 
 #### Scenario: Generic marker mode
 - **WHEN** `[Graphics] EnemyDropMarker=generic`
 - **THEN** unchecked active enemy carriers draw the generic marker without
   revealing the placed item
+
+#### Scenario: Spawned enemy-drop item wins the shared icon slot
+- **WHEN** an unchecked forced enemy-drop pickup is active after its carrier dies
+- **THEN** the pickup attempts to render the real placed item
+- **AND** live carrier markers do not overwrite the pickup icon while it is active
 
 ### Requirement: Door shuffle disables ordinary dungeon-enemy rows
 
