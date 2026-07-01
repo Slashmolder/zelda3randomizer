@@ -287,4 +287,5 @@ void Sprite_CreateDeflectedArrow(int k);
 // Rando_DispatchVanillaGrant. This ancilla is visual confirmation only.
 // No-op when called with gfx==0 (the audio-only fallback sentinel).
 bool AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags);
+#define kAncillaType_ItemReceipt 0x22
 #define kAncillaType_RandoIconReceipt 0x44

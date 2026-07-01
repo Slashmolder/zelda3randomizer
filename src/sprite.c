@@ -1862,7 +1862,20 @@ static bool Rando_CanDrawRecvItemSlot(void) {
   // Mirror/whirlpool/transition NMI loads temporarily suppress the core sprite
   // tile upload that carries the shared receive-item slot to VRAM. Defer the
   // sprite for a frame instead of decoding new slot graphics mid-load.
-  return !nmi_disable_core_updates;
+  if (nmi_disable_core_updates)
+    return false;
+  // Field markers share chars 0x24/0x34 with Link's receive-item icon and the
+  // rando direct-grant confirmation icon. Do not repaint that slot while either
+  // receipt is alive; otherwise a nearby enemy marker can make a chest pickup
+  // grant/text one item while showing another.
+  if (item_receipt_method != 0)
+    return false;
+  for (int i = 0; i < 5; i++) {
+    if (ancilla_type[i] == kAncillaType_ItemReceipt ||
+        ancilla_type[i] == kAncillaType_RandoIconReceipt)
+      return false;
+  }
+  return true;
 }
 
 bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id) {
