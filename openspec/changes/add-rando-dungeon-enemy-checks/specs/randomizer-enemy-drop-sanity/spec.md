@@ -60,17 +60,19 @@ death flag is set.
 
 Unchecked enemy-drop and ordinary enemy-check carriers SHALL support a local
 marker preference that either reveals the placed item when the shared tile slot
-can represent all active carrier markers unambiguously or uses a generic marker.
+can represent all active carrier markers unambiguously or intentionally uses the
+neutral gold check glint.
 
 #### Scenario: Item marker mode
 - **WHEN** `[Graphics] EnemyDropMarker=item`
 - **THEN** unchecked active enemy carriers draw the placed item marker when all
-  active carrier markers resolve to the same icon, and fall back to the generic
-  marker otherwise
+  active carrier markers resolve to the same icon
+- **AND** they fall back to the neutral gold check glint when the placed item
+  marker cannot be shown unambiguously
 
 #### Scenario: Generic marker mode
 - **WHEN** `[Graphics] EnemyDropMarker=generic`
-- **THEN** unchecked active enemy carriers draw the generic marker without
+- **THEN** unchecked active enemy carriers draw the neutral gold check glint without
   revealing the placed item
 
 #### Scenario: Spawned enemy-drop item wins the shared icon slot

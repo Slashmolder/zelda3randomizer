@@ -61,7 +61,7 @@ source identity for them.
   source slot carried by the absorbable key sprite. This source-slot identity also
   lets enemy-drop checks compose with `enemy_shuffle`.
 - Mark unchecked enemy-key checks visually on live carriers and spawned forced-key
-  drops, with a client-local choice between placed-item and generic key-style
+  drops, with a client-local choice between placed-item and generic gold-glint
   markers. Placed-item mode falls back to generic when simultaneous markers need
   different item icons.
 - Keep `drop_shuffle` as the prize-pack shuffle for non-check enemy drops. Active

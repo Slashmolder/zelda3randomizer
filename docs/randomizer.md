@@ -513,12 +513,15 @@ least the required number of reachable liftable pots. Active unchecked carriers
 draw a field marker. The local `[Graphics]
 EnemyDropMarker` option controls the marker: `item` (default) shows the placed
 item when that can be represented unambiguously, while `generic` shows the same
-key-style marker for every carrier without revealing the placement. Item mode
-falls back to the generic marker when multiple active live carriers in the room
-would need different item icons or when local field-item sprites are disabled.
-After a forced key or big-key carrier dies, the spawned drop tries to draw the
-real placed item and suppresses remaining live carrier markers while it is
-visible so the shared icon slot is not overwritten. This is a client-local visual
+gold check glint used by pot-sanity for every carrier without revealing the
+placement. Item mode falls back to that glint when multiple active live carriers
+in the room would need different item icons or when local field-item sprites are
+disabled, so the player still sees an unchecked check without mistaking the
+marker for the placed item. After a forced key or big-key carrier dies, the
+spawned drop tries to draw the real placed item and suppresses remaining live
+carrier markers while it is visible so the shared icon slot is not overwritten;
+if the spawned drop cannot render the real item safely, it uses the glint instead
+of a key-looking stand-in. This is a client-local visual
 preference and does not enter the share string, settings hash, generator version,
 or corpus.
 

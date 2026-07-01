@@ -582,7 +582,6 @@ static void Rando_GrantCurrentDungeonBigKeySilently(void) {
     link_bigkey |= (uint16)(0x8000u >> game_dungeon);
 }
 
-static bool Rando_TryDrawEnemyDropGenericMarker(int k, int dx, int dy);
 static bool Rando_EnemyDropPickupItemMarkersSafe(void);
 bool Rando_TryDrawEnemyDropCarrierField(int k);
 static int AllocOverlord();
@@ -1577,10 +1576,9 @@ static bool Rando_TryDrawAbsorbableKeyField(int k) {
     const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
       dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
     if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
-      if (Rando_EnemyDropPickupItemMarkersSafe() &&
-          Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
-        return true;
-      return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
+      if (Rando_EnemyDropPickupItemMarkersSafe())
+        Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu);
+      return true;
     }
   }
   if (sprite_type[k] != 0xE4 || dungeon_room_index != 0x87 ||
@@ -1600,7 +1598,7 @@ static bool Rando_TryDrawAbsorbableBigKeyField(int k) {
   if (Rando_EnemyDropPickupItemMarkersSafe() &&
       Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
     return true;
-  return Rando_TryDrawEnemyDropGenericMarker(k, 0, 0);
+  return true;
 }
 
 bool SpriteDraw_AbsorbableTransient(int k, bool transient) {  // 86d22f
@@ -1915,21 +1913,6 @@ typedef struct RandoEnemyDropMarkerInfo {
   uint16 loc_id;
 } RandoEnemyDropMarkerInfo;
 
-static bool Rando_TryDrawEnemyDropGenericMarker(int k, int dx, int dy) {
-  if (!Rando_CanDrawRecvItemSlot())
-    return true;
-  PrepOamCoordsRet info;
-  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
-    return true;   // off-screen
-  // Generic marker mode deliberately does not reveal the placed item. It must
-  // stay one shared icon: every marker in a frame uses the same receive-item
-  // tile slot, so varying the generic art per carrier would make multi-check
-  // rooms show whichever tile was loaded last.
-  uint8 gfx = 0x0f, big = 0, oam_flags = 0x34;  // small-key bundle
-  Rando_DrawRecvItemSlotAt(k, gfx, big, oam_flags, &info, dx, dy);
-  return true;
-}
-
 static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
   if (k < 0 || k >= 16 || sprite_state[k] != 9)
     return false;
@@ -2016,6 +1999,26 @@ static bool Rando_EnemyDropPickupItemMarkersSafe(void) {
   return Rando_EnemyDropMarkerSetItemIconsSafe(false, true);
 }
 
+bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy) {
+  if (Rando_GetEnemyDropPickupMarkerInfo(k, NULL)) {
+    if (Rando_EnemyDropPickupItemMarkersSafe())
+      return false;
+    if (out_dy != NULL) *out_dy = 2;
+    return true;
+  }
+
+  if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
+    return false;
+  if (Rando_EnemyDropAnyPickupMarkerActive())
+    return false;  // spawned drops own the check marker while visible
+  if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic ||
+      !Rando_EnemyDropCarrierItemMarkersSafe()) {
+    if (out_dy != NULL) *out_dy = -10;
+    return true;
+  }
+  return false;
+}
+
 bool Rando_TryDrawEnemyDropCarrierField(int k) {
   RandoEnemyDropMarkerInfo marker;
   if (!Rando_GetEnemyDropCarrierMarkerInfo(k, &marker))
@@ -2029,7 +2032,7 @@ bool Rando_TryDrawEnemyDropCarrierField(int k) {
     if (Rando_TryDrawHeldItemSprite(k, marker.loc_id, 0xFFFFu, 0, -16))
       return true;
   }
-  return Rando_TryDrawEnemyDropGenericMarker(k, 0, -16);
+  return false;  // generic/conflict fallback is the shared post-sprite gold glint
 }
 
 // add-rando-trap-catalog — draw a trap-cucco as a single 16x16 large OAM entry

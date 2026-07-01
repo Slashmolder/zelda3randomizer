@@ -138,7 +138,7 @@ typedef struct Config {
 
   // Enemy-drop check carrier marker. Client-local visual preference for active
   // unchecked enemy-drop checks: placed item icon where the shared tile slot can
-  // represent it unambiguously, or a generic key-style marker. Never serialized
+  // represent it unambiguously, or the neutral gold check glint. Never serialized
   // into randomizer settings or seed material.
   uint8 enemy_drop_marker;       // kEnemyDropMarker_*; default item
 } Config;

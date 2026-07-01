@@ -137,10 +137,13 @@ Phase 1 MAY mark the spawned forced-key drop rather than the live carrier; a liv
 carrier marker requires separate OAM-budget and playtest work. The marker SHALL be
 configurable through a client-local `[Graphics] EnemyDropMarker` preference with
 at least `item` (placed item when the shared tile slot can represent all active
-markers in the same class unambiguously, default) and `generic` (non-placement
-key-style marker for live carriers) modes. Spawned forced-key and big-key drops
+markers in the same class unambiguously, default; otherwise the neutral gold
+check glint) and `generic` (non-placement gold check glint for live carriers)
+modes. Spawned forced-key and big-key drops
 SHALL try to render the real placed item and suppress other enemy-drop markers
-while visible so the shared tile slot is not overwritten. The marker SHALL be
+while visible so the shared tile slot is not overwritten; when the real item
+cannot be rendered safely, the spawned drop SHALL use the neutral gold check
+glint instead of an item stand-in. The marker SHALL be
 gated by the effective setting, generated location identity, and
 `Rando_IsLocationChecked`. Checked, inactive, vanilla, and excluded forced drops
 SHALL draw no marker.
@@ -153,7 +156,7 @@ SHALL draw no marker.
 #### Scenario: Generic marker does not reveal placement
 - **WHEN** an active unchecked enemy-drop check holds a non-key placed item and
   `EnemyDropMarker=generic`
-- **THEN** the marker uses the generic key-style icon instead of the placed item icon
+- **THEN** the marker uses the neutral gold check glint instead of the placed item icon
 
 #### Scenario: Spawned drop shows placed item
 - **WHEN** an enemy-drop carrier dies and its unchecked forced drop is active

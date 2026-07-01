@@ -92,13 +92,14 @@ into effective `keys`.
 
 Enemy check markers reuse `[Graphics] EnemyDropMarker`. `item` draws the placed
 item over unchecked carriers only when every active carrier marker in the room
-resolves to the same icon; otherwise it falls back to the generic key-style
-marker because the renderer has one shared receive-item tile slot. `generic`
-draws the generic marker on live carriers without revealing the placement.
-Spawned forced enemy-drop pickups try to render the real placed item and suppress
-live carrier markers while visible. This marker preference is client-local and
-does not enter canonical settings, the share string, generator version, or
-corpus.
+resolves to the same icon; otherwise it falls back to the pot-style gold check
+glint because the renderer has one shared receive-item tile slot and item mode
+must not show a misleading item stand-in. `generic` draws that same glint on live
+carriers without revealing the placement. Spawned forced enemy-drop pickups try
+to render the real placed item and suppress live carrier markers while visible;
+if the pickup cannot render the real item safely, it uses the glint instead of an
+item stand-in. This marker preference is client-local and does not enter
+canonical settings, the share string, generator version, or corpus.
 
 Spoiler, tracker, reachability, and autotracker output use normal generated
 dungeon location rows with the `Enemy` type. They do not expose a separate
