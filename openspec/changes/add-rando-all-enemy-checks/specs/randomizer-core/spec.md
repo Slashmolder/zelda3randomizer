@@ -14,7 +14,9 @@ silently mean dungeon-only.
 `All` is effective only when the `Keys` and `Dungeon` tiers plus every generated
 compatible all-tier source can remain active for the selected settings. The current
 generated all-tier source set is ordinary dungeon enemies plus static ordinary
-overworld enemies with stable `(stage, area, source slot, block)` identity.
+overworld enemies with stable `(stage, area, source slot, block)` identity, plus
+reviewed underworld cave/interior exceptions with stable room/source-slot identity
+and direct access predicates.
 Boss/miniboss sources, finite scripted-spawn groups, unbounded/farmable spawns, and
 sources without stable death-time identity remain explicit future scope. The
 normalized effective value, not an incompatible raw request, SHALL feed the settings
@@ -58,7 +60,8 @@ Derived rules SHALL apply this compatibility table:
 #### Scenario: Existing tiers remain distinct
 - **WHEN** a settings source requests `enemy_drop_checks=dungeon`
 - **THEN** only the dungeon-tier enemy checks are requested
-- **AND** static overworld, boss, and scripted all-tier rows remain inactive
+- **AND** static overworld, reviewed-underworld, boss, and scripted all-tier rows
+  remain inactive
 
 #### Scenario: Vanilla key mode normalizes all off
 - **WHEN** `enemy_drop_checks=All` but effective small keys are vanilla

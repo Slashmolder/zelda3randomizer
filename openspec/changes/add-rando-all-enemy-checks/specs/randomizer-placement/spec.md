@@ -6,9 +6,10 @@ When `enemy_drop_checks=all` is effective, every generated all-tier location SHA
 available to placement as a normal one-shot location. Only generated forced-key and
 reviewed one-shot big-key rows from the `Keys` tier SHALL use `EnemyDrop` and
 pickup-time dispatch. Ordinary generated all-tier sources, including static
-overworld rows, SHALL use `Enemy` and death-time direct grant unless a later spec
-defines a separate persistent-pickup collection model. Placement SHALL use the same
-effective activation predicate as logic, runtime, spoiler, and tracker iteration.
+overworld rows and reviewed underworld exceptions, SHALL use `Enemy` and
+death-time direct grant unless a later spec defines a separate persistent-pickup
+collection model. Placement SHALL use the same effective activation predicate as
+logic, runtime, spoiler, and tracker iteration.
 
 If the generated all-tier registry is missing, stale, has duplicate identities, or
 exceeds location capacity, placement SHALL reject active `all` generation instead

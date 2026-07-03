@@ -11,6 +11,9 @@
   `all` would require missing generated all-tier registry data.
 - [x] Static-overworld phase: emit, place, grant, suppress, and expose generated
   ordinary overworld enemies under `enemy_drop_checks=all`.
+- [x] Reviewed-underworld exception phase: emit room `0x107` rat checks as
+  all-tier-only indoor rows, with direct bomb access and counted in-room pot kill
+  routing.
 - [ ] Future source domains: boss/miniboss, finite scripted-spawn, and farmable
   dynamic-spawn gameplay registry/runtime/logic remains pending below.
 
@@ -43,12 +46,13 @@
 ## 3. Logic and placement
 
 - [x] 3.1 Emit all-tier locations and grouping metadata for every included static
-  dungeon/overworld source.
+  dungeon/overworld source and reviewed underworld exception.
 - [x] 3.2 Add per-source reachability predicates for static overworld sources.
 - [x] 3.3 Add per-source kill-route predicates for dungeon rows and conservative
   overworld combat predicates for static overworld rows.
 - [ ] 3.4 Add counted thrown-object routes only when enough reachable pots, rocks, or
-  equivalent throwables exist.
+  equivalent throwables exist. The room `0x107` rat exception uses this for its
+  in-room pot route; broader non-pot throwable domains remain pending.
 - [ ] 3.5 Add thrown-object branch metadata that proves consumed throwable sources do
   not double-count required pot-sanity item checks.
 - [x] 3.6 Normalize requested `all` under enemy shuffle to the highest lower tier
@@ -95,9 +99,9 @@
 - [x] 6.2 Run source-audit/codegen freshness checks.
 - [x] 6.3 Run Release build and `--rando-selftest`.
 - [x] 6.4 Run corpus rows for `all` and every supported/degraded interaction.
-- [ ] 6.5 Runtime-test shipped dungeon and static overworld checks through death,
-  reload, save/load, snapshot, and transition cases. Boss/miniboss and finite
-  scripted-spawn checks remain future source-domain work.
+- [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, and static overworld
+  checks through death, reload, save/load, snapshot, and transition cases.
+  Boss/miniboss and finite scripted-spawn checks remain future source-domain work.
 - [ ] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts,
   plus pot-sanity ordering cases where a required pot item cannot also be a weapon.
 - [ ] 6.7 Test door-shuffle bridge digest drift, enemy-shuffle normalization, and

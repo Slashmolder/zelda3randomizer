@@ -3,14 +3,19 @@
 ### Requirement: All-enemy logic includes reachability and kill routes
 
 Every emitted `enemy_drop_checks=all` location SHALL require both source reachability
-and a reviewed kill route. Reachability SHALL use the correct dungeon room,
-overworld area/screen, boss arena, or scripted-spawn parent predicate. Kill routes
-SHALL use the effective enemy type and HP for the source.
+and a reviewed kill route. Reachability SHALL use the correct dungeon room, reviewed
+underworld cave/interior predicate, overworld area/screen, boss arena, or
+scripted-spawn parent predicate. Kill routes SHALL use the effective enemy type and
+HP for the source.
 
 Static overworld source reachability SHALL include the generated logic region, the
 active overworld sprite-list stage, and a conservative kill route. Post-Agahnim
 stage-2 rows SHALL remain gated on `DefeatAgahnim`; placement SHALL separately
 prevent Agahnim-prerequisite item classes from landing there.
+
+Reviewed underworld exceptions SHALL include a direct access predicate and SHALL
+not inherit dungeon small-key depth terms unless the row also carries reviewed
+key-depth metadata.
 
 Thrown-object routes SHALL be allowed when engine damage data shows that the thrown
 object can damage the source and the reachable area contains enough usable throwables

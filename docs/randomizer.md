@@ -130,7 +130,7 @@ axis via `item_pool`.
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
 | `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
-| `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible static overworld enemies; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; door shuffle and enemy shuffle degrade `dungeon`/`all` to `keys`; boss or entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
+| `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible static overworld enemies plus reviewed all-tier underworld exceptions; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; door shuffle and enemy shuffle degrade `dungeon`/`all` to `keys`; boss or entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -491,11 +491,13 @@ ordinary enemy rows.
 The `all` value is a distinct canonical setting above `dungeon`; it no longer
 aliases to the dungeon-only tier. In current builds it adds 634 generated static
 ordinary overworld enemy checks whose authored `(stage, area, source slot, block)`
-identity can be recovered at runtime. A requested `all` lowers to `keys` under
-door or enemy shuffle, lowers to `dungeon` under boss or entrance shuffle, and
-normalizes to `off` with vanilla small keys. Boss/miniboss sources, finite scripted
-spawn groups, unbounded/farmable dynamic spawns, and any source without stable
-death-time identity remain explicit future scope rather than quiet inclusions.
+identity can be recovered at runtime, plus 2 reviewed underworld cave/interior
+checks in room `0x107` whose access and pot-kill route are directly modeled. A
+requested `all` lowers to `keys` under door or enemy shuffle, lowers to `dungeon`
+under boss or entrance shuffle, and normalizes to `off` with vanilla small keys.
+Boss/miniboss sources, finite scripted spawn groups, unbounded/farmable dynamic
+spawns, and any source without stable death-time identity remain explicit future
+scope rather than quiet inclusions.
 The native window and file-select UI expose `all` only as a separate tier; they do
 not label the dungeon-only tier as all.
 
@@ -1374,6 +1376,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 118→119 | **Enemy-check kill logic** — ordinary dungeon-enemy checks now add per-source enemy kill predicates plus thrown-pot alternatives derived from the engine damage tables and reachable room pot counts; key-depth-only candidates remain audit-only until room reach can be modeled; requested `dungeon` also degrades to `keys` under enemy shuffle because placement cannot see shuffled type/HP. | Dungeon-enemy corpus rows move; forced-key-only rows stay effective under enemy shuffle. |
 | 119→120 | **Enemy-drop `all` tier reserved honestly** — `enemy_drop_checks=all` becomes a distinct canonical value (`all=3`) instead of an alias for dungeon-only checks. Pure effective `all` generation fails closed until the complete all-enemy registry/runtime/logic contract exists; incompatible shuffles lower to the highest supported tier. Enemy marker item mode also moves to bounded exact-item rendering with glint fallback, but that visual change is client-local. | Default/off and lower-tier rows should stay behaviorally unchanged after manifest restamp; pure effective `all` is intentionally rejected rather than added to the corpus until the full registry ships. |
 | 120→121 | **Static overworld enemy checks for `all`** — pure effective `enemy_drop_checks=all` now adds generated static ordinary overworld enemy rows above the dungeon tier, with stage/area/source-slot/block runtime identity, region+stage reachability, post-Agahnim prerequisite placement protection, death-time direct grants, checked-source suppression, snapshot-restore lookup fallback, and exact item markers in overworld item-marker mode. Bosses, minibosses, finite scripted spawns, farmable spawns, and unsupported identity domains stay future scope. | New `all` corpus rows pin active Wild/Dungeon behavior plus door/enemy/boss/entrance downgrades; lower tiers are restamped at the new generator version. |
+| 121→122 | **Reviewed underworld exceptions for `all`** — the all-tier enemy registry can now add audited underworld cave/interior rows when access can be modeled directly; the Kakariko Storage Shed room `0x107` rats are included as all-only checks gated by LightWorld NorthWest access plus bombs, with the existing thrown-pot kill proof requiring one of eight room pots. Indoor lookup rows carry an `all_tier_only` bit so these checks do not activate in the `dungeon` tier. | Active pure `all` rows move by two new locations; lower tiers remain excluded from these cave/interior checks. Corpus regenerated at v122. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |

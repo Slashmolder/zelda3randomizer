@@ -1,15 +1,18 @@
 ## ADDED Requirements
 
-### Requirement: All tier covers generated static overworld enemy sources
+### Requirement: All tier covers generated static overworld enemy sources and reviewed underworld exceptions
 
 `enemy_drop_checks=all` SHALL include the `keys` and `dungeon` tiers plus every
 compatible generated static overworld ordinary enemy source in the shipped
-all-tier registry. The shipped registry scope is dungeon ordinary enemies plus
-static authored overworld ordinary enemies with stable source identity,
-reachability, death dispatch, and checked-state suppression.
+all-tier registry. It MAY also include audited underworld cave/interior ordinary
+enemy sources when their room access can be modeled directly without dungeon
+key-depth metadata. The shipped registry scope is dungeon ordinary enemies, static
+authored overworld ordinary enemies, and reviewed underworld exceptions with stable
+source identity, reachability, death dispatch, and checked-state suppression.
 
 The all-enemy audit SHALL classify every scanned source in the supported static
-dungeon/overworld domains as included or excluded with a stable reason.
+dungeon/overworld domains, plus every reviewed underworld exception candidate, as
+included or excluded with a stable reason.
 Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
 projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT
 be emitted as checks unless a future change converts them into finite one-shot
@@ -27,6 +30,15 @@ logic are modeled.
   identity, reachability, kill logic, and checked-state suppression
 - **THEN** it emits one `Enemy` location for that source under
   `enemy_drop_checks=all`
+
+#### Scenario: Reviewed underworld exception is emitted
+- **WHEN** the all-enemy audit finds a finite underworld enemy source with stable
+  room/source-slot identity and a reviewed direct access predicate
+- **AND** its kill route is modeled through inventory or counted throwable objects
+- **THEN** it emits one `Enemy` location for that source under
+  `enemy_drop_checks=all`
+- **AND** the emitted row is marked all-tier-only so it does not activate under
+  `enemy_drop_checks=dungeon`
 
 #### Scenario: Thief-like source is excluded
 - **WHEN** the audit finds a non-killable thief or NPC-like actor
@@ -55,10 +67,12 @@ logic are modeled.
 ### Requirement: All-enemy source identity is stable across domains
 
 Every emitted all-enemy location SHALL be keyed by an authored source identity, not
-by enemy type alone. Dungeon rows MAY use the existing room/source-slot identity.
-Overworld rows SHALL carry an equivalent stable source tuple. Future
-boss/miniboss and finite scripted-spawn rows SHALL carry stable parent identity
-plus any required child index before those domains can join the effective all tier.
+by enemy type alone. Dungeon rows and reviewed underworld exceptions MAY use the
+existing room/source-slot identity; underworld exceptions SHALL carry an all-tier
+activation bit in the runtime lookup. Overworld rows SHALL carry an equivalent
+stable source tuple. Future boss/miniboss and finite scripted-spawn rows SHALL
+carry stable parent identity plus any required child index before those domains can
+join the effective all tier.
 
 Enemy shuffle SHALL NOT change the location identity. In the first all-enemy
 implementation, requested `all` SHALL normalize to the highest lower tier allowed by

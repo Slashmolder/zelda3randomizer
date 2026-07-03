@@ -411,7 +411,16 @@ static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *
          Settings_EnemyDropKeysActive(s);
 }
 
+static bool enemy_check_indoor_all_tier_only(uint16 loc_id) {
+  for (uint32 i = 0; i < kRandoEnemyCheckLookup_COUNT; i++)
+    if (kRandoEnemyCheckLookup[i].loc_id == loc_id)
+      return kRandoEnemyCheckLookup[i].all_tier_only != 0;
+  return false;
+}
+
 static bool enemy_check_all_tier_only(uint16 loc_id) {
+  if (enemy_check_indoor_all_tier_only(loc_id))
+    return true;
   for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
     if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id) return true;
   return false;
@@ -510,7 +519,7 @@ bool Placement_PreflightSettings(const RandoSettings *settings,
   if (settings_need_all_enemy_registry(settings) && !all_enemy_registry_available()) {
     placement_set_error(
         err, err_cap,
-        "enemy_drop_checks=all requires the generated all-tier overworld enemy "
+        "enemy_drop_checks=all requires the generated all-tier enemy "
         "registry; rebuild local enemy-check assets or use enemy_drop_checks=dungeon");
     return false;
   }
@@ -3111,6 +3120,7 @@ void Placement_SelfCheck(void) {
   {
     uint32 enemy_locs = 0, enemy_key_locs = 0, enemy_bigkey_one_shots = 0;
     uint32 enemy_check_locs = 0, enemy_check_dungeon_locs = 0, enemy_check_all_only_locs = 0;
+    uint32 enemy_check_indoor_all_only_locs = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       if (kRandoLocations[i].type == LOCTYPE_EnemyDrop) {
         enemy_locs++;
@@ -3118,26 +3128,40 @@ void Placement_SelfCheck(void) {
         else if (kRandoLocations[i].vanilla_item_id == ITEM_Nothing) enemy_bigkey_one_shots++;
       } else if (kRandoLocations[i].type == LOCTYPE_Enemy) {
         enemy_check_locs++;
-        if (enemy_check_all_tier_only(kRandoLocations[i].id))
+        if (enemy_check_all_tier_only(kRandoLocations[i].id)) {
           enemy_check_all_only_locs++;
-        else
+          if (enemy_check_indoor_all_tier_only(kRandoLocations[i].id))
+            enemy_check_indoor_all_only_locs++;
+        } else {
           enemy_check_dungeon_locs++;
+        }
         if (kRandoLocations[i].vanilla_item_id != ITEM_Nothing)
           selfcheck_die("ordinary enemy checks must use ITEM_Nothing as vanilla filler");
       }
     }
+    uint32 enemy_check_lookup_dungeon_locs = 0, enemy_check_lookup_all_only_locs = 0;
+    for (uint32 i = 0; i < kRandoEnemyCheckLookup_COUNT; i++) {
+      if (kRandoEnemyCheckLookup[i].all_tier_only)
+        enemy_check_lookup_all_only_locs++;
+      else
+        enemy_check_lookup_dungeon_locs++;
+    }
     bool has_enemy_drop_registry = kRandoEnemyDropLookup_COUNT != 0;
     bool has_enemy_check_registry = kRandoEnemyCheckLookup_COUNT != 0;
-    bool has_all_enemy_registry = kRandoOverworldEnemyCheckLookup_COUNT != 0;
+    bool has_all_enemy_registry =
+        (enemy_check_lookup_all_only_locs + kRandoOverworldEnemyCheckLookup_COUNT) != 0;
     if (has_enemy_drop_registry != (enemy_locs != 0))
       selfcheck_die("enemy_drop_lookup/count drifted from LOCTYPE_EnemyDrop locations");
-    if (has_enemy_check_registry != (enemy_check_dungeon_locs != 0) ||
-        kRandoEnemyCheckLookup_COUNT != enemy_check_dungeon_locs)
-      selfcheck_die("enemy_check_lookup/count drifted from dungeon LOCTYPE_Enemy locations");
+    if (has_enemy_check_registry !=
+            (enemy_check_dungeon_locs + enemy_check_indoor_all_only_locs != 0) ||
+        enemy_check_lookup_dungeon_locs != enemy_check_dungeon_locs ||
+        enemy_check_lookup_all_only_locs != enemy_check_indoor_all_only_locs)
+      selfcheck_die("enemy_check_lookup/count drifted from indoor LOCTYPE_Enemy locations");
     if (has_all_enemy_registry != (enemy_check_all_only_locs != 0) ||
-        kRandoOverworldEnemyCheckLookup_COUNT != enemy_check_all_only_locs ||
+        enemy_check_lookup_all_only_locs + kRandoOverworldEnemyCheckLookup_COUNT !=
+            enemy_check_all_only_locs ||
         enemy_check_locs != enemy_check_dungeon_locs + enemy_check_all_only_locs)
-      selfcheck_die("overworld enemy_check_lookup/count drifted from all-tier Enemy locations");
+      selfcheck_die("all-tier enemy_check_lookup/count drifted from Enemy locations");
     if (enemy_locs != enemy_key_locs + enemy_bigkey_one_shots)
       selfcheck_die("enemy-drop rows must be small keys or the one-shot big-key check");
     if (has_enemy_drop_registry && enemy_bigkey_one_shots != 1)

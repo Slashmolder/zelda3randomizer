@@ -568,6 +568,11 @@ static const RandoEnemyCheckLookupEntry *Rando_FindEnemyCheck(uint16 room,
   return NULL;
 }
 
+static bool Rando_EnemyCheckEntryActive(const RandoEnemyCheckLookupEntry *check) {
+  return check != NULL &&
+         (!check->all_tier_only || Rando_EnemyChecksAllActiveRuntime());
+}
+
 static const RandoOverworldEnemyCheckLookupEntry *Rando_FindOverworldEnemyCheck(
     uint8 area, uint8 stage, uint8 source_slot) {
   uint32 want = ((uint32)area << 16) | ((uint32)stage << 8) | source_slot;
@@ -656,7 +661,8 @@ static bool Rando_TryGrantEnemyCheck(int k) {
     return false;
   const RandoEnemyCheckLookupEntry *check =
       Rando_FindEnemyCheck(dungeon_room_index2, sprite_N[k]);
-  if (check == NULL || Rando_IsLocationChecked(check->loc_id))
+  if (!Rando_EnemyCheckEntryActive(check) ||
+      Rando_IsLocationChecked(check->loc_id))
     return false;
   uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, 0);
   uint16 item = Rando_LastDispatchedItemId();
@@ -2050,7 +2056,8 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
       !sign8(sprite_N[k])) {
     const RandoEnemyCheckLookupEntry *check =
         Rando_FindEnemyCheck(dungeon_room_index, sprite_N[k]);
-    if (check != NULL && !Rando_IsLocationChecked(check->loc_id)) {
+    if (Rando_EnemyCheckEntryActive(check) &&
+        !Rando_IsLocationChecked(check->loc_id)) {
       if (out != NULL) {
         out->loc_id = check->loc_id;
         out->source_slot = sprite_N[k];
@@ -4742,7 +4749,8 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
   if (Rando_EnemyChecksDungeonActiveRuntime()) {
     const RandoEnemyCheckLookupEntry *check =
         Rando_FindEnemyCheck(dungeon_room_index2, (uint8)k);
-    if (check != NULL && Rando_IsLocationChecked(check->loc_id)) {
+    if (Rando_EnemyCheckEntryActive(check) &&
+        Rando_IsLocationChecked(check->loc_id)) {
       sprite_state[k] = 0;
       sprite_type[k] = type;
       sprite_N[k] = k;

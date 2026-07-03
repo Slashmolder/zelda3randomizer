@@ -9,7 +9,8 @@ The dungeon tier remains conservative: rooms without a key-depth ROOM row are
 not emitted, even if they live in the dungeon sprite table, because those are
 typically cave/interior sprite lists that do not have dungeon door-region logic.
 The all tier appends static authored overworld enemies whose runtime identity is
-stable under the vanilla sprite-list stage.
+stable under the vanilla sprite-list stage, plus reviewed underworld exceptions
+whose cave/interior access can be modeled directly.
 """
 from __future__ import annotations
 
@@ -72,6 +73,22 @@ DUNGEON_REGIONS = {
     10: "MiseryMire_Lobby",
     11: "TurtleRock_Lobby",
     12: "GanonsTower_Lobby",
+}
+
+ALL_TIER_UNDERWORLD_BINDINGS = {
+    # Kakariko Storage Shed / Library room. These two rats are behind a bombable
+    # wall and have eight liftable pots in-room, so the kill route is modeled by
+    # the same thrown-pot damage table used for dungeon enemy checks.
+    (0x107, 1): {
+        "region": "LightWorld_NorthWest",
+        "base_can_reach": "OP_REGION_REACHABLE(LightWorld_NorthWest) AND CanBombThings()",
+        "predicate_source": "all_tier_underworld_reviewed_bomb_room",
+    },
+    (0x107, 2): {
+        "region": "LightWorld_NorthWest",
+        "base_can_reach": "OP_REGION_REACHABLE(LightWorld_NorthWest) AND CanBombThings()",
+        "predicate_source": "all_tier_underworld_reviewed_bomb_room",
+    },
 }
 
 # Coarse overworld screen -> logic-region binding for static all-tier enemies.
@@ -456,15 +473,10 @@ def base_can_reach(room: int, dungeon: int, pot_predicates: dict[int, list[dict]
     return None, "key_depth_room_audit_only"
 
 
-def enemy_can_reach(candidate: dict, dungeon: int, pot_predicates: dict[int, list[dict]],
-                    region_only_pot_rooms: dict[int, str], entry_room_predicates: dict[int, dict],
-                    pot_rows: dict[int, list[dict]],
-                    pot_requirements: dict[int, dict]) -> dict | None:
+def enemy_can_reach_from_base(candidate: dict, dungeon: int, base_pred: str,
+                              source: str, pot_rows: dict[int, list[dict]],
+                              pot_requirements: dict[int, dict]) -> dict:
     room = int(candidate["room"])
-    base_pred, source = base_can_reach(
-        room, dungeon, pot_predicates, region_only_pot_rooms, entry_room_predicates)
-    if not base_pred:
-        return None
     base_access = strip_throwable_combat_terms(base_pred)
     source_type = int(candidate["source_type"])
     inventory_pred, inventory_source = enemy_inventory_kill_predicate(source_type, dungeon)
@@ -498,6 +510,19 @@ def enemy_can_reach(candidate: dict, dungeon: int, pot_predicates: dict[int, lis
     }
 
 
+def enemy_can_reach(candidate: dict, dungeon: int, pot_predicates: dict[int, list[dict]],
+                    region_only_pot_rooms: dict[int, str], entry_room_predicates: dict[int, dict],
+                    pot_rows: dict[int, list[dict]],
+                    pot_requirements: dict[int, dict]) -> dict | None:
+    room = int(candidate["room"])
+    base_pred, source = base_can_reach(
+        room, dungeon, pot_predicates, region_only_pot_rooms, entry_room_predicates)
+    if not base_pred:
+        return None
+    return enemy_can_reach_from_base(
+        candidate, dungeon, base_pred, source, pot_rows, pot_requirements)
+
+
 def enemy_check_name(row: dict, ordinal: int) -> str:
     return (
         f"Enemy Check - Room 0x{int(row['room']):03X} "
@@ -525,14 +550,20 @@ def make_doc(assets_path: Path, key_depth_path: Path,
     doc_excluded_counts = Counter(excluded_counts)
     out_of_scope_no_key_depth = []
     audit_only_no_room_predicate = []
+    all_tier_underworld_candidates: dict[tuple[int, int], dict] = {}
     emitted_by_room: Counter[int] = Counter()
     no_key_depth_by_room: Counter[int] = Counter()
     audit_only_by_room: Counter[int] = Counter()
 
     for candidate in sorted(dungeon_rows, key=lambda r: (int(r["room"]), int(r["source_slot"]))):
         room = int(candidate["room"])
+        source_slot = int(candidate["source_slot"])
+        all_tier_binding = ALL_TIER_UNDERWORLD_BINDINGS.get((room, source_slot))
         room_rows = by_room.get(room, [])
         if not room_rows:
+            if all_tier_binding is not None:
+                all_tier_underworld_candidates[(room, source_slot)] = candidate
+                continue
             no_key_depth_by_room[room] += 1
             doc_excluded_counts["no_key_depth_room"] += 1
             out_of_scope_no_key_depth.append(candidate)
@@ -633,7 +664,51 @@ def make_doc(assets_path: Path, key_depth_path: Path,
         })
         overworld_emitted += 1
 
-    dungeon_emitted = len(rows) - overworld_emitted
+    underworld_all_tier_emitted = 0
+    for key in sorted(ALL_TIER_UNDERWORLD_BINDINGS):
+        candidate = all_tier_underworld_candidates.get(key)
+        if candidate is None:
+            room, source_slot = key
+            die(
+                "reviewed all-tier underworld enemy candidate "
+                f"room=0x{room:03x} slot={source_slot} was not found")
+        binding = ALL_TIER_UNDERWORLD_BINDINGS[key]
+        reach = enemy_can_reach_from_base(
+            candidate, 0, str(binding["base_can_reach"]),
+            str(binding["predicate_source"]), pot_rows, pot_requirements)
+        room = int(candidate["room"])
+        emitted_by_room[room] += 1
+        rows.append({
+            "id": ENEMY_CHECK_BASE_ID + len(rows),
+            "name": enemy_check_name(candidate, emitted_by_room[room]),
+            "domain": "dungeon",
+            "type": "Enemy",
+            "room": room,
+            "source_slot": int(candidate["source_slot"]),
+            "source_type": int(candidate["source_type"]),
+            "source_name": candidate["source_name"],
+            "source_y": int(candidate["source_y"]),
+            "source_x": int(candidate["source_x"]),
+            "region": str(binding["region"]),
+            "vanilla_item": "Nothing",
+            "can_reach": reach["can_reach"],
+            "base_can_reach": reach["base_can_reach"],
+            "predicate_source": reach["base_predicate_source"],
+            "kill_predicate": reach["kill_predicate"],
+            "inventory_kill_predicate": reach["inventory_kill_predicate"],
+            "inventory_kill_source": reach["inventory_kill_source"],
+            "throwable_pots_required": reach["throwable_pots_required"],
+            "throwable_pots_in_room": reach["throwable_pots_in_room"],
+            "throwable_pots_can_reach": reach["throwable_pots_can_reach"],
+            "throwable_pot_damage": reach["throwable_pot_damage"],
+            "throwable_pot_damage_subclass": reach["throwable_pot_damage_subclass"],
+            "enemy_health": reach["enemy_health"],
+            "all_tier_only": True,
+        })
+        underworld_all_tier_emitted += 1
+
+    dungeon_emitted = sum(
+        1 for r in rows if r.get("domain") == "dungeon" and not r.get("all_tier_only"))
     source_types = {int(r["source_type"]) for r in rows}
     return {
         "format_version": 1,
@@ -654,7 +729,7 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "thrown_pot_damage": SPRITE_C.relative_to(REPO).as_posix() + ":ThrownSprite_CheckDamageToSingleSprite damage preset 3",
         },
         "policy": {
-            "scope": "dungeon_plus_all-tier_static_overworld",
+            "scope": "dungeon_plus_all-tier_static_overworld_and_reviewed_underworld",
             "eligible_source_type": ["ESF_RANDOMIZABLE", "ESF_KILLABLE"],
             "excluded_source_type_flags": {
                 "dungeon": ["ESF_CANNOT_KEY", "ESF_FLYING"],
@@ -663,18 +738,20 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "excluded_sources": [
                 "existing forced-key enemy-drop checks",
                 "overlords/control markers",
-                "underworld sprite-table rooms with no key-depth ROOM row (outside dungeon-only scope)",
+                "underworld sprite-table rooms with no key-depth ROOM row and no reviewed all-tier binding",
                 "overworld sprite-table rows with no stable active-list runtime identity",
                 "boss/miniboss and finite scripted-spawn groups until separate source identity and reward coexistence are implemented",
             ],
             "runtime_identity": {
                 "dungeon": "(dungeon_room_index, sprite_N source slot)",
+                "underworld_all_tier": "(dungeon_room_index, sprite_N source slot)",
                 "overworld": "(active overworld sprite-list stage, overworld_area_index, source_slot, sprite_N_word block)",
             },
             "kill_logic": [
                 "dungeon: per-source inventory predicate",
                 "dungeon: OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
                 "dungeon: thrown-pot route requires at least the generated pots_needed count in the room",
+                "underworld all-tier: reviewed room access plus the same per-source inventory/thrown-pot kill route",
                 "overworld: region-reachable plus generic overworld combat predicate",
             ],
             "base_room_predicates": [
@@ -690,6 +767,7 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "candidate_count": len(dungeon_rows) + len(overworld_rows),
             "emitted_count": len(rows),
             "emitted_dungeon_count": dungeon_emitted,
+            "emitted_underworld_all_tier_count": underworld_all_tier_emitted,
             "emitted_overworld_count": overworld_emitted,
             "excluded_count": sum(doc_excluded_counts.values()) + sum(overworld_excluded_counts.values()),
             "out_of_scope_no_key_depth_count": len(out_of_scope_no_key_depth),
@@ -825,6 +903,7 @@ def main(argv: list[str]) -> int:
     print(
         "gen_enemy_check_tables: "
         f"{summary['emitted_dungeon_count']} dungeon + "
+        f"{summary['emitted_underworld_all_tier_count']} reviewed underworld + "
         f"{summary['emitted_overworld_count']} overworld ordinary enemy checks "
         f"emitted from {summary['candidate_count']} eligible sources; "
         f"{summary['audit_only_no_room_predicate_count']} audit-only without "

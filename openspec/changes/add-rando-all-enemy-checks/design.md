@@ -4,14 +4,20 @@
 
 As built in the first shipped `all` phase, the `all` tier means every generated
 compatible ordinary enemy source in the local static registry: the `keys` tier,
-the `dungeon` tier, and static overworld ordinary enemies whose runtime identity is
-stable. The longer-term definition remains every finite, authored, killable enemy
-source that can be assigned a stable one-shot location identity. It includes:
+the `dungeon` tier, static overworld ordinary enemies whose runtime identity is
+stable, and reviewed underworld cave/interior exceptions whose access can be
+modeled directly. The longer-term definition remains every finite, authored,
+killable enemy source that can be assigned a stable one-shot location identity. It
+includes:
 
 - forced enemy-drop checks from the `keys` tier;
 - ordinary dungeon enemies from the `dungeon` tier;
 - static overworld enemy sources with stable authored `(stage, area, source slot,
   block)` identity;
+- reviewed underworld cave/interior enemy sources with stable
+  `(dungeon_room_index, sprite_N source slot)` identity and direct access
+  predicates, such as the Kakariko Storage Shed room `0x107` rats gated by bombs
+  plus an in-room thrown-pot kill route;
 - future ordinary dungeon audit-only sources once their room reachability is
   modeled;
 - future miniboss and boss combat sources when their death event and existing
@@ -30,11 +36,12 @@ The tier excludes actors that are not valid one-shot kill checks:
   duplicate grants or source-slot drift.
 
 The generated `all` registry is complete for the currently shipped static
-dungeon+overworld domains only if every emitted source has stable identity, logic,
-death dispatch, and checked-source suppression. Bosses, minibosses, finite scripted
-spawns, and unbounded/farmable spawns are not quiet exclusions from a completed
-future full-all domain; they remain explicit future domains until their audits can
-classify each source as included or excluded with a stable reason.
+dungeon+overworld domains plus the reviewed underworld exception list only if every
+emitted source has stable identity, logic, death dispatch, and checked-source
+suppression. Bosses, minibosses, finite scripted spawns, and unbounded/farmable
+spawns are not quiet exclusions from a completed future full-all domain; they
+remain explicit future domains until their audits can classify each source as
+included or excluded with a stable reason.
 
 ## D2 - Setting semantics
 
@@ -44,7 +51,8 @@ Add `enemy_drop_checks=all` as a tier above `dungeon`:
 - `keys`: forced enemy key-drop checks plus the one-shot forced big-key source;
 - `dungeon`: `keys` plus reviewed ordinary dungeon enemy checks;
 - `all`: `dungeon` plus every compatible generated static overworld ordinary enemy
-  source in the current modeled domains.
+  source and every reviewed all-tier underworld exception in the current modeled
+  domains.
 
 The enum values are pinned: `Off` (0), `Keys` (1), `Dungeon` (2), and `All` (3).
 `All` is accepted by settings validation, CSV parsing, share strings, file-select,
@@ -87,8 +95,9 @@ It must never silently treat `all` as `dungeon`.
 ## D3 - Source audit and identity
 
 The all-enemy generator builds one source audit from local ROM assets and curated
-runtime tables. The current shipped generator emits ordinary dungeon and static
-overworld rows. Each emitted source row records at minimum:
+runtime tables. The current shipped generator emits ordinary dungeon, reviewed
+all-tier underworld, and static overworld rows. Each emitted source row records at
+minimum:
 
 - domain (`dungeon`, `overworld`, `boss`, `scripted_spawn`);
 - stable source identity fields for that domain;
@@ -100,8 +109,10 @@ overworld rows. Each emitted source row records at minimum:
 - visual-marker lookup data, or an explicit marker-suppressed policy for domains
   that cannot render in-world markers safely.
 
-Dungeon identity continues to use `(dungeon_room_index, sprite_N source slot)`.
-Overworld identity uses the authored active sprite-list tuple
+Dungeon identity and reviewed underworld exception identity continue to use
+`(dungeon_room_index, sprite_N source slot)`. Reviewed underworld rows carry an
+`all_tier_only` activation bit so the runtime and placement can keep them out of
+the `dungeon` tier. Overworld identity uses the authored active sprite-list tuple
 `(stage, area, source_slot, block)` plus the runtime `sprite_N_word` block. A lazy
 block lookup fallback re-resolves `(current area, current stage, block)` so snapshot
 restore does not depend on the process-static load-time map being rebuilt first.
@@ -249,7 +260,7 @@ Required validation includes:
 - corpus rows for `all` under Wild/Retro/Dungeon keys, pot shuffle, enemy shuffle
   normalization, door shuffle normalization, boss shuffle normalization, cave
   entrance interaction, and dense marker rooms;
-- runtime tests for shipped dungeon and static overworld death grants, with
+- runtime tests for shipped dungeon, reviewed underworld, and static overworld death grants, with
   boss/miniboss and finite scripted-spawn death-grant tests reserved for the
   future source-domain work;
 - leave/re-enter, save/reload, snapshot before death, snapshot after death, mirror or

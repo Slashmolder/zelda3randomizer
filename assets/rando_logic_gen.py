@@ -810,14 +810,19 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
             raise RuntimeError(f"{path}: enemy-check row {raw['name']!r} uses unknown region {region_name!r}")
         base_can_reach = raw.get("can_reach") or "TRUE()"
         can_reach = base_can_reach
+        all_tier_only = bool(raw.get("all_tier_only", False))
         if domain == "dungeon":
-            item = raw["small_key_item"]
-            wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
-            can_reach = _suppress_base_key_terms_under_enemy_dungeon(
-                base_can_reach, item, dungeon)
-            terms = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
-            if terms:
-                can_reach = f"({can_reach}){terms}"
+            if "small_key_item" in raw:
+                item = raw["small_key_item"]
+                wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
+                can_reach = _suppress_base_key_terms_under_enemy_dungeon(
+                    base_can_reach, item, dungeon)
+                terms = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
+                if terms:
+                    can_reach = f"({can_reach}){terms}"
+            elif not all_tier_only:
+                raise RuntimeError(
+                    f"{path}: dungeon enemy-check row {raw['name']!r} lacks small_key_item")
         loc = LocationDef(
             id=int(raw["id"]),
             name=raw["name"],
@@ -838,6 +843,7 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 "room": room,
                 "source_slot": source_slot,
                 "loc_id": loc.id,
+                "all_tier_only": all_tier_only,
             })
         else:
             rows.append({
@@ -847,6 +853,7 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 "source_slot": source_slot,
                 "block": block,
                 "loc_id": loc.id,
+                "all_tier_only": all_tier_only,
             })
     return out, rows
 
@@ -2205,6 +2212,7 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
         "  uint16 room;        // 0..319 dungeon room index",
         "  uint8  source_slot; // runtime sprite slot of the source enemy",
         "  uint16 loc_id;      // LOC_* value",
+        "  uint8  all_tier_only; // active only when effective enemy_drop_checks=all",
         "} RandoEnemyCheckLookupEntry;",
         "",
         "typedef struct RandoOverworldEnemyCheckLookupEntry {",
@@ -2219,11 +2227,14 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
     if dungeon_rows:
         lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[] = {")
         for r in dungeon_rows:
-            lines.append(f"  {{ 0x{int(r['room']):04x}, {int(r['source_slot'])}, {int(r['loc_id'])} }},")
+            all_tier_only = 1 if r.get("all_tier_only") else 0
+            lines.append(
+                f"  {{ 0x{int(r['room']):04x}, {int(r['source_slot'])}, "
+                f"{int(r['loc_id'])}, {all_tier_only} }},")
         lines.append("};")
     else:
         lines.append("// EMPTY: enemy_checks.gen.yaml absent. Active dungeon enemy-check generation fails closed.")
-        lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[1] = { { 0, 0, 0 } };")
+        lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[1] = { { 0, 0, 0, 0 } };")
     lines.append("")
     if overworld_rows:
         lines.append("static const RandoOverworldEnemyCheckLookupEntry kRandoOverworldEnemyCheckLookup[] = {")
