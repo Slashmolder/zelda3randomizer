@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 119  # bump_rando_corpus.py --apply - Enemy-check kill logic
+generator_version: 120  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -946,13 +946,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: dungeon, accessibility: items }
     seed: "0x45414C4C00000001"
     label: "enemy-drop-dungeon-wild-items"
-    expected_digest: "bceb7517202103922197914a31076b41629e7ce4de8cb4b4deacc6f320063184"
-    expected_sphere_digest: "871fac10aba8a9856d476df0473a20ba6fa8927389896a2bdbad985e23edf322"
+    expected_digest: "0e09f536c3d64718720e2e9a85b76d7dcbf756ee56157d37578894c0fe302367"
+    expected_sphere_digest: "5203f744f9ddd1feb24bf68132802fa9893261bf8171f25a4de03b316f3a8fda"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: dungeon, accessibility: items }
     seed: "0x45414C4C00000002"
     label: "enemy-drop-dungeon-dungeon-items"
-    expected_digest: "391147fe0016d34728dda430f52188e81ee3d819f067cbdd16dbdef143e37eca"
-    expected_sphere_digest: "f3cd2eb8e100ce9504184dd54e4016351a45cfac181bdc50f1b53a5e5ae7491f"
+    expected_digest: "4f00a56da1a97ce597069388149f48bfbbd11a083962c6f83f02cedbcec97393"
+    expected_sphere_digest: "25acb56aac332e82df06a3aadac2d83f54270a28942bc0c0e4f8ad0b6a54dd1e"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000003"
     label: "enemy-drop-dungeon-door-basic-degrades-to-keys"

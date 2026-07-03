@@ -36,6 +36,7 @@ LOCATION_IDS_H = REPO / "src" / "rando" / "location_ids.h"
 RANDO_LOGIC_H = REPO / "src" / "rando" / "rando_logic.h"
 POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
 ENEMY_CHECK_REGISTRY = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
+ENTRANCE_REGISTRY = REPO / "assets" / "rando" / "entrance_registry.yaml"
 
 
 def die(msg: str) -> None:
@@ -267,6 +268,44 @@ def load_pot_room_predicates(path: Path) -> dict[int, list[dict]]:
     return dict(out)
 
 
+def load_region_only_pot_rooms(path: Path) -> dict[int, str]:
+    """Rooms whose pot rows prove region membership with no extra local gate."""
+    if not path.exists():
+        return {}
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    by_room: dict[int, list[dict]] = defaultdict(list)
+    for raw in doc.get("pots", []) or []:
+        if "room" not in raw or "region" not in raw:
+            continue
+        by_room[int(raw["room"])].append(raw)
+
+    out = {}
+    for room, rows in by_room.items():
+        if not rows or any("can_reach" in r for r in rows):
+            continue
+        regions = {str(r["region"]) for r in rows if r.get("region")}
+        if len(regions) == 1:
+            out[room] = next(iter(regions))
+    return out
+
+
+def load_entry_room_predicates(path: Path) -> dict[int, dict]:
+    if not path.exists():
+        return {}
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    out = {}
+    for raw in doc.get("dungeons", []) or []:
+        entry_region = raw.get("entry_region")
+        if not entry_region:
+            continue
+        for room in raw.get("rooms", []) or []:
+            out[int(room)] = {
+                "entry_region": str(entry_region),
+                "dungeon_id": raw.get("dungeon_id"),
+            }
+    return out
+
+
 def load_enemy_check_registry_summary(path: Path) -> dict:
     if not path.exists():
         return {
@@ -294,19 +333,39 @@ def load_enemy_check_registry_summary(path: Path) -> dict:
 
 
 def dungeon_predicate_coverage(dungeon_rows: list[dict],
-                               pot_predicates: dict[int, list[dict]]) -> dict:
+                               pot_predicates: dict[int, list[dict]],
+                               region_only_pot_rooms: dict[int, str],
+                               entry_room_predicates: dict[int, dict]) -> dict:
     rooms = sorted({int(r["room"]) for r in dungeon_rows})
-    covered = [room for room in rooms if room in pot_predicates]
-    uncovered = [room for room in rooms if room not in pot_predicates]
+    pot_covered = [room for room in rooms if room in pot_predicates]
+    pot_region_covered = [room for room in rooms if room in region_only_pot_rooms]
+    entry_covered = [room for room in rooms if room in entry_room_predicates]
+    covered = sorted(set(pot_covered) | set(pot_region_covered) | set(entry_covered))
+    uncovered = [room for room in rooms if room not in set(covered)]
+    pot_covered_set = set(pot_covered)
+    pot_region_covered_set = set(pot_region_covered)
+    entry_covered_set = set(entry_covered)
     covered_set = set(covered)
     return {
-        "source": POT_REGISTRY.relative_to(REPO).as_posix(),
-        "source_available": POT_REGISTRY.exists(),
+        "pot_predicate_source": POT_REGISTRY.relative_to(REPO).as_posix(),
+        "pot_predicate_source_available": POT_REGISTRY.exists(),
+        "entry_room_source": ENTRANCE_REGISTRY.relative_to(REPO).as_posix(),
+        "entry_room_source_available": ENTRANCE_REGISTRY.exists(),
         "candidate_rooms": len(rooms),
-        "rooms_with_pot_predicate": len(covered),
-        "rooms_without_pot_predicate": len(uncovered),
-        "candidates_with_pot_predicate": sum(1 for r in dungeon_rows if int(r["room"]) in covered_set),
-        "candidates_without_pot_predicate": sum(1 for r in dungeon_rows if int(r["room"]) not in covered_set),
+        "rooms_with_pot_predicate": len(pot_covered),
+        "rooms_with_region_only_pot_predicate": len(pot_region_covered),
+        "rooms_with_entry_room_predicate": len(entry_covered),
+        "rooms_with_any_conservative_predicate": len(covered),
+        "rooms_without_any_conservative_predicate": len(uncovered),
+        "candidates_with_pot_predicate": sum(1 for r in dungeon_rows if int(r["room"]) in pot_covered_set),
+        "candidates_with_region_only_pot_predicate": sum(
+            1 for r in dungeon_rows if int(r["room"]) in pot_region_covered_set),
+        "candidates_with_entry_room_predicate": sum(
+            1 for r in dungeon_rows if int(r["room"]) in entry_covered_set),
+        "candidates_with_any_conservative_predicate": sum(
+            1 for r in dungeon_rows if int(r["room"]) in covered_set),
+        "candidates_without_any_conservative_predicate": sum(
+            1 for r in dungeon_rows if int(r["room"]) not in covered_set),
         "sample_uncovered_rooms": [f"0x{room:03X}" for room in uncovered[:32]],
     }
 
@@ -333,7 +392,10 @@ def build_doc(args) -> dict:
     loc_count = parse_define(LOCATION_IDS_H, "LOC__COUNT")
     capacity = parse_define(RANDO_LOGIC_H, "kRandoLocationCapacity")
     pot_predicates = load_pot_room_predicates(POT_REGISTRY)
-    predicate_coverage = dungeon_predicate_coverage(dungeon_rows, pot_predicates)
+    region_only_pot_rooms = load_region_only_pot_rooms(POT_REGISTRY)
+    entry_room_predicates = load_entry_room_predicates(ENTRANCE_REGISTRY)
+    predicate_coverage = dungeon_predicate_coverage(
+        dungeon_rows, pot_predicates, region_only_pot_rooms, entry_room_predicates)
     emitted_registry = load_enemy_check_registry_summary(ENEMY_CHECK_REGISTRY)
     emitted_dungeon_count = emitted_registry["emitted_count"] or len(dungeon_rows)
     mvp_projected = max(loc_count, emitted_registry["max_loc_plus_one"])

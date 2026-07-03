@@ -421,6 +421,10 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     }
   }
 
+  if (!Placement_PreflightSettings(settings, err, err_cap)) {
+    return false;
+  }
+
   // Compute settings_hash (already cached as short).
   uint8 settings_hash_full[32];
   Settings_ComputeHash(settings, settings_hash_full);

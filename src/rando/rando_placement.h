@@ -13,6 +13,8 @@
 #ifndef ZELDA3_RANDO_PLACEMENT_H_
 #define ZELDA3_RANDO_PLACEMENT_H_
 
+#include <stddef.h>
+
 #include "../types.h"
 #include "rando_logic.h"
 
@@ -30,6 +32,14 @@ typedef struct RandoPlacementTable {
 // |out_items| must be sized to hold the maximum possible pool (~216 entries
 // at Phase A worst case).
 uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 capacity);
+
+// Fail-fast validation for settings combinations that the placement pipeline
+// cannot honestly build. BuildItemPool keeps equivalent guards for low-level
+// callers and selftests; generation paths call this first to avoid retry-loop
+// spam and to surface the real reason to users.
+bool Placement_PreflightSettings(const RandoSettings *settings,
+                                 char *err,
+                                 size_t err_cap);
 
 // Assumed fill. Returns true on success; false if the budget was exhausted
 // without producing a complete placement and the caller fell back to

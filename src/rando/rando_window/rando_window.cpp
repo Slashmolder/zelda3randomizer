@@ -261,10 +261,12 @@ static void Pending_Changed() { RandoWindowBridge_RecomputeDerived(); }
 // Enum combo whose options + canonical labels match the in-game screen. Returns
 // true when the user picked a new value (caller refreshes derived state).
 static bool EnumCombo(const char *label, uint8 *value,
-                      const char *const *labels, int count) {
+                      const char *const *labels, int count,
+                      const char *preview_override = nullptr) {
   bool changed = false;
   int cur = (int)*value;
-  const char *preview = (cur >= 0 && cur < count) ? labels[cur] : "?";
+  const char *preview = preview_override != nullptr ? preview_override :
+                        ((cur >= 0 && cur < count) ? labels[cur] : "?");
   if (ImGui::BeginCombo(label, preview)) {
     for (int i = 0; i < count; i++) {
       bool selected = (cur == i);
@@ -332,7 +334,7 @@ static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high
 // value (4) is Phase 7 and not offered here.
 static const char *const kPotShuffleLabels[] = {"off", "keys", "contents", "all"};
 // add-rando-enemy-drop-sanity — enemy_drop_checks tiers.
-static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "dungeon"};
+static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "dungeon", "all"};
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -1211,20 +1213,32 @@ static void Panel_Shuffles() {
           enemy_drop_key_mode != kDungeonItemMode_Wild &&
           enemy_drop_key_mode != kDungeonItemMode_Dungeon;
       uint8 shown = Settings_EffectiveEnemyDropChecks(s);
-      uint8 label_count =
-          (!enemy_drops_off &&
-           Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
-           !s->enemy_shuffle) ? 3 : 2;
-      if (s->enemy_drop_checks != shown) {
-        s->enemy_drop_checks = shown;
-        changed = true;
+      bool dungeon_tier_available =
+          !enemy_drops_off &&
+          Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+          !s->enemy_shuffle;
+      // The canonical parser accepts all=3, but this build intentionally
+      // fail-closes pure All until a complete all-enemy registry exists.
+      bool all_tier_available = false;
+      uint8 label_count = all_tier_available ? 4 : (dungeon_tier_available ? 3 : 2);
+      uint8 effective = shown;
+      if (shown >= label_count) shown = (uint8)(label_count - 1);
+      uint8 combo_value = shown;
+      const char *preview_override = nullptr;
+      if (s->enemy_drop_checks <= kEnemyDropChecks_All &&
+          s->enemy_drop_checks >= label_count) {
+        combo_value = s->enemy_drop_checks;
+        uint8 preview_value =
+            (effective < s->enemy_drop_checks) ? shown : s->enemy_drop_checks;
+        preview_override = kEnemyDropCheckLabels[preview_value];
       }
       ImGui::BeginDisabled(enemy_drops_off);
-      if (EnumCombo("Enemy drop checks", &shown, kEnemyDropCheckLabels, label_count)) {
-        s->enemy_drop_checks = shown;
+      if (EnumCombo("Enemy drop checks", &combo_value, kEnemyDropCheckLabels,
+                    label_count, preview_override)) {
+        s->enemy_drop_checks = combo_value;
         changed = true;
       }
-      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks; under door shuffle or enemy shuffle Dungeon currently behaves as Keys.");
+      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All is a reserved complete all-enemy tier; current builds reject it unless the full all-enemy registry is available. Door shuffle or enemy shuffle lowers Dungeon/All to Keys; boss or entrance shuffle lowers All to Dungeon.");
       ImGui::EndDisabled();
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");

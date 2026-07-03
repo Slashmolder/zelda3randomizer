@@ -430,6 +430,10 @@ static bool enemy_check_registry_available(void) {
   return kRandoEnemyCheckLookup_COUNT != 0;
 }
 
+static bool all_enemy_registry_available(void) {
+  return false;
+}
+
 static bool settings_need_pot_registry(const RandoSettings *s) {
   return s != NULL && s->pot_shuffle != kPotShuffle_Off &&
          !Settings_PotShuffleForcedOff(s);
@@ -441,6 +445,37 @@ static bool settings_need_enemy_drop_registry(const RandoSettings *s) {
 
 static bool settings_need_enemy_check_registry(const RandoSettings *s) {
   return Settings_EnemyChecksDungeonActive(s);
+}
+
+static bool settings_need_all_enemy_registry(const RandoSettings *s) {
+  return Settings_EnemyChecksAllActive(s);
+}
+
+static void placement_set_error(char *err, size_t err_cap, const char *msg) {
+  if (err != NULL && err_cap > 0) {
+    snprintf(err, err_cap, "%s", msg);
+  }
+}
+
+bool Placement_PreflightSettings(const RandoSettings *settings,
+                                 char *err,
+                                 size_t err_cap) {
+  if (err != NULL && err_cap > 0) err[0] = '\0';
+  if (settings == NULL) {
+    placement_set_error(err, err_cap, "settings are missing");
+    return false;
+  }
+  if (settings_need_all_enemy_registry(settings) && !all_enemy_registry_available()) {
+    placement_set_error(
+        err, err_cap,
+        "enemy_drop_checks=all requires a complete all-enemy registry; this "
+        "binary only has the dungeon enemy registry, so use "
+        "enemy_drop_checks=dungeon until overworld, boss, scripted-spawn, "
+        "identity, persistence, and kill logic coverage is generated and "
+        "verified");
+    return false;
+  }
+  return true;
 }
 
 static bool dungeon_key_depth_active(const RandoSettings *s) {
@@ -662,6 +697,14 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       "  built without assets/rando/enemy_drops.gen.yaml. Run\n"
       "  assets/scripts/gen_enemy_drop_tables.py with ROM assets and rebuild\n"
       "  before generating enemy-drop-check seeds.\n");
+    return 0;
+  }
+  if (settings_need_all_enemy_registry(settings) && !all_enemy_registry_available()) {
+    fprintf(stderr,
+      "BuildItemPool: enemy_drop_checks=all requested, but this binary does not\n"
+      "  contain a complete all-enemy registry. Use enemy_drop_checks=dungeon\n"
+      "  until overworld, boss, scripted-spawn, identity, persistence, and kill\n"
+      "  logic coverage is generated and verified.\n");
     return 0;
   }
   if (settings_need_enemy_check_registry(settings) && !enemy_check_registry_available()) {
@@ -3109,6 +3152,23 @@ void Placement_SelfCheck(void) {
       selfcheck_die("enemy_drop_checks Dungeon must keep forced key-drop rows active");
     if (n_dungeon_ordinary != enemy_check_locs)
       selfcheck_die("enemy_drop_checks Dungeon must activate exactly ordinary enemy rows");
+    RandoSettings sall = sdungeon;
+    sall.enemy_drop_checks = kEnemyDropChecks_All;
+    uint32 n_all_forced = 0, n_all_dungeon_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sall))
+        n_all_forced++;
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sall))
+        n_all_dungeon_ordinary++;
+    }
+    if (n_all_forced != enemy_locs || n_all_dungeon_ordinary != enemy_check_locs)
+      selfcheck_die("enemy_drop_checks All must include lower-tier enemy rows");
+    if (!settings_need_all_enemy_registry(&sall) || all_enemy_registry_available())
+      selfcheck_die("enemy_drop_checks All must require a complete all-enemy registry");
+    uint16 all_pool_probe[1];
+    if (BuildItemPool(&sall, all_pool_probe, 1) != 0)
+      selfcheck_die("enemy_drop_checks All must fail closed without a complete all-enemy registry");
     RandoSettings sdungeondoor = sdungeon;
     sdungeondoor.door_shuffle = kDoorShuffle_Basic;
     uint32 n_dungeon_door_ordinary = 0;

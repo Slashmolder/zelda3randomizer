@@ -806,6 +806,15 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     exit(64);
   }
 
+  char placement_preflight_err[256];
+  if (!Placement_PreflightSettings(&settings, placement_preflight_err,
+                                   sizeof placement_preflight_err)) {
+    fprintf(stderr, "--generate-seed: %s\n",
+            placement_preflight_err[0] != '\0' ? placement_preflight_err
+                                               : "settings cannot be placed");
+    exit(1);
+  }
+
   // Allocate placement table sized to the location count.
   extern const uint32 kRandoLocationsCount;
   RandoPlacement *entries = (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));

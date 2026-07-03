@@ -22,6 +22,7 @@
 #include "rando/enemy_check_lookup.h"  // ordinary enemy check lookup
 #include "rando/location_ids.h"  // LOC_Tower_of_Hera_Basement_Cage (cage-key dispatch)
 #include "rando/item_ids.h"      // ITEM_SmallKey_TowerOfHera (cage-key dispatch)
+#include "zelda_rtl.h"
 static const uint16 kOamGetBufferPos_Tab0[6] = {0x171, 0x201, 0x31, 0xc1, 0x141, 0x1d1};
 static const uint16 kOamGetBufferPos_Tab1[48] = {
    0x30,  0x50,  0x80,  0xb0,  0xe0, 0x110, 0x140, 0x170, 0x1d0, 0x1d4, 0x1dc, 0x1e0, 0x1e4, 0x1ec, 0x1f0, 0x1f8,
@@ -582,7 +583,6 @@ static void Rando_GrantCurrentDungeonBigKeySilently(void) {
     link_bigkey |= (uint16)(0x8000u >> game_dungeon);
 }
 
-static bool Rando_EnemyDropPickupItemMarkersSafe(void);
 bool Rando_TryDrawEnemyDropCarrierField(int k);
 static int AllocOverlord();
 static int Overworld_AllocSprite(uint8 type);
@@ -1571,13 +1571,14 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
 // cage is unchecked. Returns false — caller draws the vanilla gem/key — for
 // everything else: the rupees (0xd9-0xdb) that also reach the draw_key label, any
 // 0xE4 once the cage is checked, a vanilla-key placement, or rando/feature off.
+static bool Rando_TryDrawEnemyDropPickupField(int k);
+
 static bool Rando_TryDrawAbsorbableKeyField(int k) {
   if (sprite_type[k] == 0xE4 && Rando_EnemyDropKeysActiveRuntime()) {
     const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
       dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
     if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
-      if (Rando_EnemyDropPickupItemMarkersSafe())
-        Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu);
+      Rando_TryDrawEnemyDropPickupField(k);
       return true;
     }
   }
@@ -1595,9 +1596,7 @@ static bool Rando_TryDrawAbsorbableBigKeyField(int k) {
       dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_BigKey);
   if (drop == NULL || Rando_IsLocationChecked(drop->loc_id))
     return false;
-  if (Rando_EnemyDropPickupItemMarkersSafe() &&
-      Rando_TryDrawFieldItemSprite(k, drop->loc_id, 0xFFFFu))
-    return true;
+  Rando_TryDrawEnemyDropPickupField(k);
   return true;
 }
 
@@ -1911,7 +1910,35 @@ bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_
 
 typedef struct RandoEnemyDropMarkerInfo {
   uint16 loc_id;
+  uint8 source_slot;
 } RandoEnemyDropMarkerInfo;
+
+typedef struct RandoEnemyMarkerIconKey {
+  uint8 gfx;
+  uint8 big;
+  uint8 oam_flags;
+  uint8 palette_class;
+} RandoEnemyMarkerIconKey;
+
+typedef struct RandoEnemyMarkerCandidate {
+  uint16 loc_id;
+  uint8 source_slot;
+  uint8 sprite_index;
+  uint8 kind;
+  uint8 slot;
+  bool has_icon;
+  RandoEnemyMarkerIconKey key;
+} RandoEnemyMarkerCandidate;
+
+enum {
+  kRandoEnemyMarkerKind_Pickup = 1,
+  kRandoEnemyMarkerKind_Carrier = 2,
+  kRandoEnemyMarkerNoSlot = 0xff,
+  kRandoEnemyMarkerIconSlots = 1,
+  kRandoEnemyMarkerMaxCandidates = 32,
+};
+
+static const uint8 kRandoEnemyMarkerSlotBase[kRandoEnemyMarkerIconSlots] = {0x24};
 
 static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
   if (k < 0 || k >= 16 || sprite_state[k] != 9)
@@ -1923,7 +1950,10 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
     const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
         dungeon_room_index, sprite_N[k], drop_kind);
     if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
-      if (out != NULL) out->loc_id = drop->loc_id;
+      if (out != NULL) {
+        out->loc_id = drop->loc_id;
+        out->source_slot = sprite_N[k];
+      }
       return true;
     }
   }
@@ -1932,7 +1962,10 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
     const RandoEnemyCheckLookupEntry *check =
         Rando_FindEnemyCheck(dungeon_room_index, sprite_N[k]);
     if (check != NULL && !Rando_IsLocationChecked(check->loc_id)) {
-      if (out != NULL) out->loc_id = check->loc_id;
+      if (out != NULL) {
+        out->loc_id = check->loc_id;
+        out->source_slot = sprite_N[k];
+      }
       return true;
     }
   }
@@ -1951,57 +1984,276 @@ static bool Rando_GetEnemyDropPickupMarkerInfo(int k, RandoEnemyDropMarkerInfo *
       dungeon_room_index, sprite_subtype[k], drop_kind);
   if (drop == NULL || Rando_IsLocationChecked(drop->loc_id))
     return false;
-  if (out != NULL) out->loc_id = drop->loc_id;
+  if (out != NULL) {
+    out->loc_id = drop->loc_id;
+    out->source_slot = sprite_subtype[k];
+  }
   return true;
 }
 
-static bool Rando_EnemyDropAnyPickupMarkerActive(void) {
-  for (int j = 0; j < 16; j++) {
-    if (Rando_GetEnemyDropPickupMarkerInfo(j, NULL))
-      return true;
+static uint8 Rando_EnemyMarkerPaletteClass(uint8 gfx) {
+  if (!(gfx & 0x80))
+    return 0;
+  if (gfx == kRandoCustomGfx_Rupoor)
+    return 2;
+  if (gfx == kRandoCustomGfx_Cucco)
+    return 3;
+  return 1;
+}
+
+static bool Rando_EnemyMarkerIconKeyEq(const RandoEnemyMarkerIconKey *a,
+                                       const RandoEnemyMarkerIconKey *b) {
+  return a->gfx == b->gfx && a->big == b->big &&
+         a->oam_flags == b->oam_flags && a->palette_class == b->palette_class;
+}
+
+static bool Rando_EnemyMarkerIconSupported(const RandoEnemyMarkerIconKey *key) {
+  // Current safe exact-item rendering borrows the existing receive-item slot
+  // only after the final OAM buffer proves that slot is not already visible.
+  // There are no additional marker-owned OBJ cells yet. Palette 3 custom art is
+  // still shared with field items, receipts, trap cuccos, and live sprite rows,
+  // so custom marker icons fall back to the neutral glint until a marker-owned
+  // palette row exists.
+  return key != NULL && key->palette_class == 0;
+}
+
+static bool Rando_EnemyMarkerLess(const RandoEnemyMarkerCandidate *a,
+                                  const RandoEnemyMarkerCandidate *b) {
+  uint8 ap = (a->kind == kRandoEnemyMarkerKind_Pickup) ? 0 : 1;
+  uint8 bp = (b->kind == kRandoEnemyMarkerKind_Pickup) ? 0 : 1;
+  if (ap != bp) return ap < bp;
+  if (a->loc_id != b->loc_id) return a->loc_id < b->loc_id;
+  if (a->source_slot != b->source_slot) return a->source_slot < b->source_slot;
+  if (a->sprite_index != b->sprite_index) return a->sprite_index < b->sprite_index;
+  return a->kind < b->kind;
+}
+
+static void Rando_EnemyMarkerSortCandidates(RandoEnemyMarkerCandidate *c, uint8 n) {
+  for (uint8 i = 1; i < n; i++) {
+    RandoEnemyMarkerCandidate v = c[i];
+    uint8 j = i;
+    while (j > 0 && Rando_EnemyMarkerLess(&v, &c[j - 1])) {
+      c[j] = c[j - 1];
+      j--;
+    }
+    c[j] = v;
+  }
+}
+
+static bool Rando_LoadEnemyMarkerIconSlot(uint8 slot,
+                                          const RandoEnemyMarkerIconKey *key) {
+  if (slot >= kRandoEnemyMarkerIconSlots || key == NULL)
+    return false;
+  Rando_EnsureRecvItemSlotGfx(key->gfx);
+  return true;
+}
+
+static void Rando_EnemyMarkerAllocateCandidates(RandoEnemyMarkerCandidate *c,
+                                                uint8 n,
+                                                bool resources_available,
+                                                bool load_tiles) {
+  RandoEnemyMarkerIconKey slot_keys[kRandoEnemyMarkerIconSlots];
+  uint8 slot_count = 0;
+  for (uint8 i = 0; i < n; i++)
+    c[i].slot = kRandoEnemyMarkerNoSlot;
+  if (!resources_available)
+    return;
+
+  for (uint8 i = 0; i < n; i++) {
+    if (!c[i].has_icon || !Rando_EnemyMarkerIconSupported(&c[i].key))
+      continue;
+    for (uint8 s = 0; s < slot_count; s++) {
+      if (Rando_EnemyMarkerIconKeyEq(&c[i].key, &slot_keys[s])) {
+        c[i].slot = s;
+        goto assigned;
+      }
+    }
+    if (slot_count >= kRandoEnemyMarkerIconSlots)
+      continue;
+    if (load_tiles && !Rando_LoadEnemyMarkerIconSlot(slot_count, &c[i].key))
+      continue;
+    slot_keys[slot_count] = c[i].key;
+    c[i].slot = slot_count++;
+assigned:
+    ;
+  }
+}
+
+static void Rando_EnemyMarkerAddCandidate(RandoEnemyMarkerCandidate *c,
+                                          uint8 *n,
+                                          uint8 sprite_index,
+                                          uint8 kind,
+                                          const RandoEnemyDropMarkerInfo *info) {
+  if (*n >= kRandoEnemyMarkerMaxCandidates || info == NULL)
+    return;
+  RandoEnemyMarkerCandidate *dst = &c[(*n)++];
+  memset(dst, 0, sizeof(*dst));
+  dst->loc_id = info->loc_id;
+  dst->source_slot = info->source_slot;
+  dst->sprite_index = sprite_index;
+  dst->kind = kind;
+  dst->slot = kRandoEnemyMarkerNoSlot;
+  uint8 gfx, big, oam_flags;
+  if (Rando_GetFieldItemIcon(info->loc_id, 0xFFFFu, &gfx, &big, &oam_flags)) {
+    dst->has_icon = true;
+    dst->key.gfx = gfx;
+    dst->key.big = big;
+    dst->key.oam_flags = (uint8)(oam_flags & ~1u);
+    dst->key.palette_class = Rando_EnemyMarkerPaletteClass(gfx);
+  }
+}
+
+static uint8 Rando_EnemyMarkerCollectCandidates(RandoEnemyMarkerCandidate *c) {
+  uint8 n = 0;
+  for (int k = 0; k < 16; k++) {
+    RandoEnemyDropMarkerInfo info;
+    if (Rando_GetEnemyDropPickupMarkerInfo(k, &info))
+      Rando_EnemyMarkerAddCandidate(c, &n, (uint8)k, kRandoEnemyMarkerKind_Pickup, &info);
+  }
+  if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic) {
+    for (int k = 0; k < 16; k++) {
+      RandoEnemyDropMarkerInfo info;
+      if (Rando_GetEnemyDropCarrierMarkerInfo(k, &info))
+        Rando_EnemyMarkerAddCandidate(c, &n, (uint8)k, kRandoEnemyMarkerKind_Carrier, &info);
+    }
+  }
+  Rando_EnemyMarkerSortCandidates(c, n);
+  return n;
+}
+
+static bool Rando_EnemyMarkerRecvSlotVisible(void) {
+  for (int i = 0; i < 128; i++) {
+    const OamEnt *o = &oam_buf[i];
+    if (o->y >= 0xf0 || (o->flags & 1) != 0)
+      continue;
+    switch (o->charnum) {
+      case 0x24: case 0x25:
+      case 0x34: case 0x35:
+        return true;
+      default:
+        break;
+    }
   }
   return false;
 }
 
-static bool Rando_EnemyDropMarkerSetItemIconsSafe(bool include_carriers,
-                                                  bool include_pickups) {
-  bool have = false;
-  uint8 first_gfx = 0, first_big = 0, first_oam_flags = 0;
-  for (int j = 0; j < 16; j++) {
-    RandoEnemyDropMarkerInfo marker;
-    bool found = false;
-    if (include_carriers)
-      found = Rando_GetEnemyDropCarrierMarkerInfo(j, &marker);
-    if (!found && include_pickups)
-      found = Rando_GetEnemyDropPickupMarkerInfo(j, &marker);
-    if (!found)
-      continue;
-    uint8 gfx, big, oam_flags;
-    if (!Rando_GetFieldItemIcon(marker.loc_id, 0xFFFFu, &gfx, &big, &oam_flags))
-      return false;
-    if (!have) {
-      first_gfx = gfx;
-      first_big = big;
-      first_oam_flags = oam_flags;
-      have = true;
-    } else if (gfx != first_gfx || big != first_big || oam_flags != first_oam_flags) {
-      return false;
-    }
+static uint32 Rando_EnemyMarkerSignature(const RandoEnemyMarkerCandidate *c,
+                                         uint8 n,
+                                         bool resources_available) {
+  uint32 h = resources_available ? 2166136261u : 2166136260u;
+  for (uint8 i = 0; i < n; i++) {
+    h = (h ^ c[i].loc_id) * 16777619u;
+    h = (h ^ c[i].source_slot) * 16777619u;
+    h = (h ^ c[i].sprite_index) * 16777619u;
+    h = (h ^ c[i].kind) * 16777619u;
+    h = (h ^ (c[i].has_icon ? 1u : 0u)) * 16777619u;
+    h = (h ^ c[i].key.gfx) * 16777619u;
+    h = (h ^ c[i].key.big) * 16777619u;
+    h = (h ^ c[i].key.oam_flags) * 16777619u;
+    h = (h ^ c[i].key.palette_class) * 16777619u;
   }
-  return have;
+  return h ^ n;
 }
 
-static bool Rando_EnemyDropCarrierItemMarkersSafe(void) {
-  return Rando_EnemyDropMarkerSetItemIconsSafe(true, false);
+static RandoEnemyMarkerCandidate s_enemy_marker_candidates[kRandoEnemyMarkerMaxCandidates];
+static uint8 s_enemy_marker_candidate_count;
+static uint8 s_enemy_marker_frame;
+static uint32 s_enemy_marker_signature;
+static bool s_enemy_marker_cache_valid;
+static uint8 s_enemy_marker_draw_failed_frame;
+static uint16 s_enemy_marker_draw_failed_mask;
+
+static void Rando_EnemyMarkerMarkDrawFailed(int k) {
+  if (k < 0 || k >= 16)
+    return;
+  if (s_enemy_marker_draw_failed_frame != frame_counter) {
+    s_enemy_marker_draw_failed_frame = frame_counter;
+    s_enemy_marker_draw_failed_mask = 0;
+  }
+  s_enemy_marker_draw_failed_mask |= (uint16)(1u << k);
 }
 
-static bool Rando_EnemyDropPickupItemMarkersSafe(void) {
-  return Rando_EnemyDropMarkerSetItemIconsSafe(false, true);
+static bool Rando_EnemyMarkerDrawFailedThisFrame(int k) {
+  if (k < 0 || k >= 16 || s_enemy_marker_draw_failed_frame != frame_counter)
+    return false;
+  return (s_enemy_marker_draw_failed_mask & (uint16)(1u << k)) != 0;
+}
+
+static void Rando_EnemyMarkerEnsureCache(void) {
+  RandoEnemyMarkerCandidate c[kRandoEnemyMarkerMaxCandidates];
+  uint8 n = Rando_EnemyMarkerCollectCandidates(c);
+  bool resources_available = Rando_CanDrawRecvItemSlot() &&
+                             !Rando_EnemyMarkerRecvSlotVisible();
+  uint32 sig = Rando_EnemyMarkerSignature(c, n, resources_available);
+  if (s_enemy_marker_cache_valid && s_enemy_marker_frame == frame_counter)
+    return;
+  memcpy(s_enemy_marker_candidates, c, sizeof(c));
+  s_enemy_marker_candidate_count = n;
+  s_enemy_marker_frame = frame_counter;
+  s_enemy_marker_signature = sig;
+  s_enemy_marker_cache_valid = true;
+  Rando_EnemyMarkerAllocateCandidates(s_enemy_marker_candidates,
+                                      s_enemy_marker_candidate_count,
+                                      resources_available,
+                                      true);
+}
+
+static const RandoEnemyMarkerCandidate *Rando_EnemyMarkerFindAllocated(int k,
+                                                                       uint8 kind) {
+  Rando_EnemyMarkerEnsureCache();
+  for (uint8 i = 0; i < s_enemy_marker_candidate_count; i++) {
+    const RandoEnemyMarkerCandidate *c = &s_enemy_marker_candidates[i];
+    if (c->sprite_index == (uint8)k && c->kind == kind &&
+        c->slot != kRandoEnemyMarkerNoSlot)
+      return c;
+  }
+  return NULL;
+}
+
+static bool Rando_EnemyMarkerCanAllocateOam(int k, uint8 nbytes) {
+  uint8 region = 0;
+  if (sort_sprites_setting)
+    region = sprite_floor[k] ? 5 : 3;
+  return oam_region_base[region] + nbytes < kOamGetBufferPos_Tab0[region];
+}
+
+static void Rando_EnemyMarkerAllocateOam(int k, uint8 nbytes) {
+  if (sort_sprites_setting) {
+    if (sprite_floor[k])
+      Oam_AllocateFromRegionF(nbytes);
+    else
+      Oam_AllocateFromRegionD(nbytes);
+  } else {
+    Oam_AllocateFromRegionA(nbytes);
+  }
+}
+
+static bool Rando_DrawEnemyMarkerIconAt(int k,
+                                        const RandoEnemyMarkerCandidate *c,
+                                        int dx,
+                                        int dy) {
+  if (c == NULL || c->slot >= kRandoEnemyMarkerIconSlots)
+    return false;
+  PrepOamCoordsRet info;
+  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
+    return true;
+  uint8 nbytes = (c->key.big == 0) ? 8 : 4;
+  if (!Rando_EnemyMarkerCanAllocateOam(k, nbytes))
+    return false;
+  Rando_EnemyMarkerAllocateOam(k, nbytes);
+  uint8 base = kRandoEnemyMarkerSlotBase[c->slot];
+  uint8 flags = (uint8)(c->key.oam_flags & ~1u);
+  OamEnt *oam = GetOamCurPtr();
+  SetOamHelper0(oam, info.x + dx, info.y + dy, base, flags, c->key.big);
+  if (c->key.big == 0)
+    SetOamHelper0(oam + 1, info.x + dx, info.y + dy + 8, base + 0x10, flags, 0);
+  return true;
 }
 
 bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy) {
   if (Rando_GetEnemyDropPickupMarkerInfo(k, NULL)) {
-    if (Rando_EnemyDropPickupItemMarkersSafe())
+    if (Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Pickup) != NULL &&
+        !Rando_EnemyMarkerDrawFailedThisFrame(k))
       return false;
     if (out_dy != NULL) *out_dy = 2;
     return true;
@@ -2009,30 +2261,109 @@ bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy) {
 
   if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
     return false;
-  if (Rando_EnemyDropAnyPickupMarkerActive())
-    return false;  // spawned drops own the check marker while visible
-  if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic ||
-      !Rando_EnemyDropCarrierItemMarkersSafe()) {
+  if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic) {
     if (out_dy != NULL) *out_dy = -10;
     return true;
   }
-  return false;
+  if (Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier) != NULL &&
+      !Rando_EnemyMarkerDrawFailedThisFrame(k))
+    return false;
+  if (out_dy != NULL) *out_dy = -10;
+  return true;
+}
+
+static bool Rando_TryDrawEnemyDropPickupField(int k) {
+  return Rando_GetEnemyDropPickupMarkerInfo(k, NULL);
 }
 
 bool Rando_TryDrawEnemyDropCarrierField(int k) {
-  RandoEnemyDropMarkerInfo marker;
-  if (!Rando_GetEnemyDropCarrierMarkerInfo(k, &marker))
-    return false;
-  if (Rando_EnemyDropAnyPickupMarkerActive())
-    return false;  // spawned drops own the shared item-icon slot while visible
-  if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic &&
-      Rando_EnemyDropCarrierItemMarkersSafe()) {
-    // Use the same forced-placement sentinel as pickup dispatch so identity
-    // key placements still draw as active checks on the live carrier.
-    if (Rando_TryDrawHeldItemSprite(k, marker.loc_id, 0xFFFFu, 0, -16))
+  (void)k;
+  return false;  // exact markers draw in the post-sprite overlay pass.
+}
+
+bool Rando_EnemyDropMarkerNeedsOverlay(int k) {
+  return Rando_GetEnemyDropPickupMarkerInfo(k, NULL) ||
+         Rando_GetEnemyDropCarrierMarkerInfo(k, NULL);
+}
+
+bool Rando_TryDrawEnemyDropMarkerOverlay(int k) {
+  if (Rando_GetEnemyDropPickupMarkerInfo(k, NULL)) {
+    const RandoEnemyMarkerCandidate *c =
+        Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Pickup);
+    if (Rando_DrawEnemyMarkerIconAt(k, c, 0, 0))
       return true;
+    if (c != NULL)
+      Rando_EnemyMarkerMarkDrawFailed(k);
+    return false;
   }
-  return false;  // generic/conflict fallback is the shared post-sprite gold glint
+
+  if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL) ||
+      g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
+    return false;
+  const RandoEnemyMarkerCandidate *c =
+      Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier);
+  if (Rando_DrawEnemyMarkerIconAt(k, c, 0, -16))
+    return true;
+  if (c != NULL)
+    Rando_EnemyMarkerMarkDrawFailed(k);
+  return false;
+}
+
+int Rando_EnemyMarkerAllocatorSelfCheck(void) {
+  RandoEnemyMarkerCandidate c[4];
+  memset(c, 0, sizeof(c));
+  c[0].kind = kRandoEnemyMarkerKind_Carrier; c[0].loc_id = 20; c[0].source_slot = 1;
+  c[1].kind = kRandoEnemyMarkerKind_Pickup;  c[1].loc_id = 30; c[1].source_slot = 2;
+  c[0].has_icon = c[1].has_icon = true;
+  c[0].key = (RandoEnemyMarkerIconKey){0x24, 0, 0x30, 0};
+  c[1].key = (RandoEnemyMarkerIconKey){0x25, 0, 0x30, 0};
+  Rando_EnemyMarkerSortCandidates(c, 2);
+  if (c[0].kind != kRandoEnemyMarkerKind_Pickup)
+    return 1;
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  if (c[0].slot != 0 || c[1].slot != kRandoEnemyMarkerNoSlot)
+    return 2;
+
+  memset(c, 0, sizeof(c));
+  for (int i = 0; i < 3; i++) {
+    c[i].kind = kRandoEnemyMarkerKind_Carrier;
+    c[i].loc_id = (uint16)(10 + i);
+    c[i].has_icon = true;
+    c[i].key = (RandoEnemyMarkerIconKey){(uint8)(0x20 + i), 0, 0x30, 0};
+  }
+  Rando_EnemyMarkerAllocateCandidates(c, 3, true, false);
+  if (c[0].slot != 0 || c[1].slot != kRandoEnemyMarkerNoSlot ||
+      c[2].slot != kRandoEnemyMarkerNoSlot)
+    return 3;
+
+  c[1].key = c[0].key;
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  if (c[0].slot != 0 || c[1].slot != 0)
+    return 4;
+
+  c[0].key.palette_class = 1;
+  c[1].key.palette_class = 0;
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  if (c[0].slot != kRandoEnemyMarkerNoSlot || c[1].slot != 0)
+    return 5;
+
+  Rando_EnemyMarkerAllocateCandidates(c, 2, false, false);
+  if (c[0].slot != kRandoEnemyMarkerNoSlot || c[1].slot != kRandoEnemyMarkerNoSlot)
+    return 6;
+  {
+    uint8 saved_fail_frame = s_enemy_marker_draw_failed_frame;
+    uint16 saved_fail_mask = s_enemy_marker_draw_failed_mask;
+    Rando_EnemyMarkerMarkDrawFailed(3);
+    if (!Rando_EnemyMarkerDrawFailedThisFrame(3) ||
+        Rando_EnemyMarkerDrawFailedThisFrame(4))
+      return 7;
+    s_enemy_marker_draw_failed_frame = (uint8)(frame_counter - 1);
+    if (Rando_EnemyMarkerDrawFailedThisFrame(3))
+      return 8;
+    s_enemy_marker_draw_failed_frame = saved_fail_frame;
+    s_enemy_marker_draw_failed_mask = saved_fail_mask;
+  }
+  return 0;
 }
 
 // add-rando-trap-catalog — draw a trap-cucco as a single 16x16 large OAM entry

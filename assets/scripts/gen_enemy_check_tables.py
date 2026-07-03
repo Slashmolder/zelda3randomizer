@@ -32,7 +32,9 @@ from audit_enemy_check_candidates import (  # noqa: E402
     SHUFFLE_ENEMIES_C,
     collect_dungeon_candidates,
     forced_drop_source_set,
+    load_entry_room_predicates,
     load_pot_room_predicates,
+    load_region_only_pot_rooms,
     parse_enemy_constraints,
 )
 from gen_enemy_drop_tables import (  # noqa: E402
@@ -47,6 +49,7 @@ from gen_enemy_drop_tables import (  # noqa: E402
 
 DEFAULT_OUT = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
 POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
+ENTRANCE_REGISTRY = REPO / "assets" / "rando" / "entrance_registry.yaml"
 SPRITE_C = REPO / "src" / "sprite.c"
 SPRITE_MAIN_C = REPO / "src" / "sprite_main.c"
 ENEMY_CHECK_BASE_ID = 1400
@@ -312,7 +315,9 @@ def display_path(path: Path) -> str:
         return str(path)
 
 
-def base_can_reach(room: int, dungeon: int, pot_predicates: dict[int, list[dict]]) -> tuple[str | None, str]:
+def base_can_reach(room: int, dungeon: int, pot_predicates: dict[int, list[dict]],
+                   region_only_pot_rooms: dict[int, str],
+                   entry_room_predicates: dict[int, dict]) -> tuple[str | None, str]:
     binding = reviewed_room_binding(room)
     if binding is not None and binding.get("can_reach"):
         return str(binding["can_reach"]), "forced_key_room_binding"
@@ -320,6 +325,13 @@ def base_can_reach(room: int, dungeon: int, pot_predicates: dict[int, list[dict]
     pot_pred = room_pot_predicate(room, pot_predicates)
     if pot_pred is not None:
         return pot_pred, "pot_room"
+
+    entry = entry_room_predicates.get(room)
+    if entry is not None and entry.get("entry_region") == DUNGEON_REGIONS.get(dungeon):
+        return "TRUE()", "dungeon_entry_room"
+
+    if region_only_pot_rooms.get(room) == DUNGEON_REGIONS.get(dungeon):
+        return "TRUE()", "pot_room_region_only"
 
     # Key-depth ROOM rows prove only small-key door depth. They do not carry the
     # non-key room route predicate (Big Key, Hookshot, Hammer, dark navigation,
@@ -330,9 +342,12 @@ def base_can_reach(room: int, dungeon: int, pot_predicates: dict[int, list[dict]
 
 
 def enemy_can_reach(candidate: dict, dungeon: int, pot_predicates: dict[int, list[dict]],
-                    pot_rows: dict[int, list[dict]], pot_requirements: dict[int, dict]) -> dict | None:
+                    region_only_pot_rooms: dict[int, str], entry_room_predicates: dict[int, dict],
+                    pot_rows: dict[int, list[dict]],
+                    pot_requirements: dict[int, dict]) -> dict | None:
     room = int(candidate["room"])
-    base_pred, source = base_can_reach(room, dungeon, pot_predicates)
+    base_pred, source = base_can_reach(
+        room, dungeon, pot_predicates, region_only_pot_rooms, entry_room_predicates)
     if not base_pred:
         return None
     base_access = strip_throwable_combat_terms(base_pred)
@@ -378,7 +393,9 @@ def enemy_check_name(row: dict, ordinal: int) -> str:
 def make_doc(assets_path: Path, key_depth_path: Path,
              dungeon_rows: list[dict], excluded_counts: Counter,
              key_depth: dict[str, dict], pot_predicates: dict[int, list[dict]],
-             pot_rows: dict[int, list[dict]], pot_requirements: dict[int, dict]) -> dict:
+             region_only_pot_rooms: dict[int, str], entry_room_predicates: dict[int, dict],
+             pot_rows: dict[int, list[dict]],
+             pot_requirements: dict[int, dict]) -> dict:
     by_room = room_key_depth_rows(key_depth)
     rows = []
     doc_excluded_counts = Counter(excluded_counts)
@@ -403,7 +420,9 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             doc_excluded_counts["unsupported_dungeon"] += 1
             out_of_scope_no_key_depth.append(candidate)
             continue
-        reach = enemy_can_reach(candidate, dungeon, pot_predicates, pot_rows, pot_requirements)
+        reach = enemy_can_reach(
+            candidate, dungeon, pot_predicates, region_only_pot_rooms,
+            entry_room_predicates, pot_rows, pot_requirements)
         if reach is None:
             audit_only_by_room[room] += 1
             doc_excluded_counts["no_conservative_room_predicate"] += 1
@@ -457,6 +476,7 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "key_depth": key_depth_path.name,
             "constraint_table": SHUFFLE_ENEMIES_C.relative_to(REPO).as_posix(),
             "pot_predicates": POT_REGISTRY.relative_to(REPO).as_posix(),
+            "entry_room_predicates": ENTRANCE_REGISTRY.relative_to(REPO).as_posix(),
             "enemy_health": SPRITE_C.relative_to(REPO).as_posix() + ":kSpriteInit_Health",
             "enemy_prep_health": SPRITE_MAIN_C.relative_to(REPO).as_posix() + ":source-specific prep health max",
             "enemy_damage": assets_path.name + ":kEnemyDamageData",
@@ -476,6 +496,12 @@ def make_doc(assets_path: Path, key_depth_path: Path,
                 "per-source inventory predicate",
                 "OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
                 "thrown-pot route requires at least the generated pots_needed count in the room",
+            ],
+            "base_room_predicates": [
+                "reviewed forced-key room binding",
+                "reviewed pot-room predicate",
+                "dungeon entry room with matching entrance_registry entry_region",
+                "single-region pot room with no local can_reach gate",
             ],
         },
         "summary": {
@@ -538,6 +564,8 @@ def build_doc(args) -> dict:
     )
     key_depth = parse_key_depth(key_depth_path)
     pot_predicates = load_pot_room_predicates(POT_REGISTRY)
+    region_only_pot_rooms = load_region_only_pot_rooms(POT_REGISTRY)
+    entry_room_predicates = load_entry_room_predicates(ENTRANCE_REGISTRY)
     pot_rows = room_pot_rows(POT_REGISTRY)
     pot_requirements = thrown_pot_requirements(
         assets, {int(row["source_type"]) for row in dungeon_rows})
@@ -548,6 +576,8 @@ def build_doc(args) -> dict:
         excluded_counts,
         key_depth,
         pot_predicates,
+        region_only_pot_rooms,
+        entry_room_predicates,
         pot_rows,
         pot_requirements,
     )

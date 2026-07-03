@@ -6857,10 +6857,24 @@ static void RandoPot_DrawGoldOverlay(void) {
   uint8 n = Rando_PotOverlayCount();
   uint16 enemy_mask = 0;
   for (int k = 0; k < 16; k++) {
-    if (Rando_EnemyDropMarkerWantsGlint(k, NULL))
+    if (Rando_EnemyDropMarkerNeedsOverlay(k))
       enemy_mask |= (uint16)(1u << k);
   }
   if (n == 0 && enemy_mask == 0)
+    return;
+  // Exact enemy item markers must win both OAM and palette priority over the
+  // neutral gold glint fallback. Draw them before choosing the glint palette so
+  // the palette scan below sees their final OAM rows and avoids recoloring them.
+  uint16 enemy_glint_mask = 0;
+  for (int k = 0; k < 16; k++) {
+    if (!(enemy_mask & (uint16)(1u << k)))
+      continue;
+    if (Rando_TryDrawEnemyDropMarkerOverlay(k))
+      continue;
+    if (Rando_EnemyDropMarkerWantsGlint(k, NULL))
+      enemy_glint_mask |= (uint16)(1u << k);
+  }
+  if (n == 0 && enemy_glint_mask == 0)
     return;
   // Reserve a sprite sub-palette row no on-screen sprite uses this frame (NMI
   // golds it). All 8 rows are allocated in a dungeon, so we pick dynamically and
@@ -6909,7 +6923,7 @@ static void RandoPot_DrawGoldOverlay(void) {
     RandoPot_DrawGoldGlintAt(gx, gy, tile, flags);
   }
   for (int k = 0; k < 16; k++) {
-    if (!(enemy_mask & (uint16)(1u << k)))
+    if (!(enemy_glint_mask & (uint16)(1u << k)))
       continue;
     int dy = 0;
     if (!Rando_EnemyDropMarkerWantsGlint(k, &dy))

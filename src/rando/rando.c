@@ -7037,6 +7037,10 @@ void Rando_RunAllSelfChecks(void) {
     fprintf(stderr, "Rando_SelfCheck: pot overlay OAM allocation can clobber sorted sprites\n");
     exit(2);
   }
+  if (Rando_EnemyMarkerAllocatorSelfCheck()) {
+    fprintf(stderr, "Rando_SelfCheck: enemy marker allocator failed\n");
+    exit(2);
+  }
   Rando_Rng_SelfCheck();
   Share_SelfCheck();
   Settings_SelfCheck();
