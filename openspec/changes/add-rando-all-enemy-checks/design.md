@@ -2,17 +2,22 @@
 
 ## D1 - Definition of "all"
 
-The `all` tier means every finite, authored, killable enemy source that can be
-assigned a stable one-shot location identity. It includes:
+As built in the first shipped `all` phase, the `all` tier means every generated
+compatible ordinary enemy source in the local static registry: the `keys` tier,
+the `dungeon` tier, and static overworld ordinary enemies whose runtime identity is
+stable. The longer-term definition remains every finite, authored, killable enemy
+source that can be assigned a stable one-shot location identity. It includes:
 
 - forced enemy-drop checks from the `keys` tier;
-- ordinary dungeon enemies from the `dungeon` tier, including audit-only dungeon
-  sources once their room reachability is modeled;
-- overworld enemy sources with stable authored source identity;
-- miniboss and boss combat sources when their death event and existing prize/heart
-  behavior can coexist with a separate enemy check;
-- finite scripted spawn groups when each emitted child can be assigned a stable
-  bounded source identity.
+- ordinary dungeon enemies from the `dungeon` tier;
+- static overworld enemy sources with stable authored `(stage, area, source slot,
+  block)` identity;
+- future ordinary dungeon audit-only sources once their room reachability is
+  modeled;
+- future miniboss and boss combat sources when their death event and existing
+  prize/heart behavior can coexist with a separate enemy check;
+- future finite scripted spawn groups when each emitted child can be assigned a
+  stable bounded source identity.
 
 The tier excludes actors that are not valid one-shot kill checks:
 
@@ -24,14 +29,12 @@ The tier excludes actors that are not valid one-shot kill checks:
 - sources whose death cannot be detected, dispatched, and suppressed without
   duplicate grants or source-slot drift.
 
-An emitted `all` registry is complete only if every source in the audit has one of
-these statuses: `included`, `excluded_non_killable`, `excluded_non_enemy`,
-`excluded_unbounded`, `excluded_duplicate_existing_check`, or
-`excluded_incompatible_setting`. A finite authored killable source that is unsupported
-by runtime identity, death dispatch, persistence, or logic is not a quiet exclusion:
-it either prevents `all` from shipping for that domain or forces a visible effective
-downgrade/rejection for the affected setting combination. Any finite killable source
-left unclassified is a hard generation/codegen failure.
+The generated `all` registry is complete for the currently shipped static
+dungeon+overworld domains only if every emitted source has stable identity, logic,
+death dispatch, and checked-source suppression. Bosses, minibosses, finite scripted
+spawns, and unbounded/farmable spawns are not quiet exclusions from a completed
+future full-all domain; they remain explicit future domains until their audits can
+classify each source as included or excluded with a stable reason.
 
 ## D2 - Setting semantics
 
@@ -40,18 +43,18 @@ Add `enemy_drop_checks=all` as a tier above `dungeon`:
 - `off`: no enemy checks;
 - `keys`: forced enemy key-drop checks plus the one-shot forced big-key source;
 - `dungeon`: `keys` plus reviewed ordinary dungeon enemy checks;
-- `all`: `dungeon` plus every compatible emitted finite killable enemy source in all
-  modeled domains.
+- `all`: `dungeon` plus every compatible generated static overworld ordinary enemy
+  source in the current modeled domains.
 
 The enum values are pinned: `Off` (0), `Keys` (1), `Dungeon` (2), and `All` (3).
-`All` is accepted by settings validation, CSV parsing, and share strings as a
-distinct requested value. File-select and native-window selectors may reserve,
-hide, or disable `All` until the complete all-enemy registry exists, but they must
-not show `all` as an alias for the dungeon-only tier. The current parser alias that
-treats text `all` as `Dungeon` must be removed or made legacy-version-scoped so new
-settings cannot make `all` mean dungeon-only. Adding the new value changes
-generation semantics and therefore requires the normal generator-version, hash,
-fixed-settings, corpus, share decode, UI persistence, and selfcheck updates.
+`All` is accepted by settings validation, CSV parsing, share strings, file-select,
+and the native settings window as a distinct requested value. Selectors may hide or
+disable `All` when derived rules immediately lower it, but they must not show `all`
+as an alias for the dungeon-only tier. The current parser alias that treats text
+`all` as `Dungeon` must be removed or made legacy-version-scoped so new settings
+cannot make `all` mean dungeon-only. Adding the new value changes generation
+semantics and therefore requires the normal generator-version, hash, fixed-settings,
+corpus, share decode, UI persistence, and selfcheck updates.
 
 The effective value must be honest. Derived rules normalize requested `All` through
 the same effective-setting path used by lower tiers, and the normalized effective
@@ -60,9 +63,9 @@ runtime. UI/spoiler output may also show the raw request with a downgrade reason
 The initial compatibility table is:
 
 - vanilla effective small keys: normalize requested `All` to `Off`;
-- Wild/Retro/Dungeon small keys with no incompatible shuffles and a fresh complete
+- Wild/Retro/Dungeon small keys with no incompatible shuffles and a fresh all-tier
   registry: keep `All`;
-- missing, stale, partial, or capacity-overflowing all-enemy registry: reject;
+- missing, stale, or capacity-overflowing all-tier registry: reject;
 - door shuffle without non-key all-enemy door bridges and digest/replay support:
   normalize requested `All` to `Keys`;
 - enemy shuffle: normalize requested `All` to the highest lower tier allowed by
@@ -72,7 +75,8 @@ The initial compatibility table is:
 - boss shuffle: normalize requested `All` to `Dungeon` until boss/miniboss all-enemy
   identity is defined against assigned boss rooms and existing boss rewards, unless
   another rule lowers the effective tier further;
-- pot shuffle: compose when throwable-route metadata proves ordering sound;
+- pot shuffle: compose; generated thrown-pot routes must continue proving ordering
+  sound;
 - entrance shuffle, including cave entrance shuffle: normalize requested `All` to
   `Dungeon` until all-enemy overworld/domain reachability is modeled against the
   entrance graph, unless another rule lowers the effective tier further; existing
@@ -82,8 +86,9 @@ It must never silently treat `all` as `dungeon`.
 
 ## D3 - Source audit and identity
 
-The all-enemy generator builds one complete source audit from local ROM assets and
-curated runtime tables. Each source row records at minimum:
+The all-enemy generator builds one source audit from local ROM assets and curated
+runtime tables. The current shipped generator emits ordinary dungeon and static
+overworld rows. Each emitted source row records at minimum:
 
 - domain (`dungeon`, `overworld`, `boss`, `scripted_spawn`);
 - stable source identity fields for that domain;
@@ -96,11 +101,12 @@ curated runtime tables. Each source row records at minimum:
   that cannot render in-world markers safely.
 
 Dungeon identity continues to use `(dungeon_room_index, sprite_N source slot)`.
-Overworld identity needs an equivalent authored tuple, such as
-`(world, area, screen_or_subarea, source_list, source_slot, vanilla_type, x, y)`,
-plus whatever runtime source-stage/list metadata is required to recover that tuple
-after spawn. Boss and scripted-spawn rows need explicit parent identity and child
-indexing; unbounded children are excluded.
+Overworld identity uses the authored active sprite-list tuple
+`(stage, area, source_slot, block)` plus the runtime `sprite_N_word` block. A lazy
+block lookup fallback re-resolves `(current area, current stage, block)` so snapshot
+restore does not depend on the process-static load-time map being rebuilt first.
+Boss and scripted-spawn rows need explicit parent identity and child indexing in a
+future source registry; unbounded children are excluded.
 
 Enemy shuffle must not change location identity. The first all-enemy implementation
 normalizes requested `All` to the highest lower tier allowed by existing derived
@@ -138,6 +144,14 @@ their check; they direct-grant at death to avoid stranding checked state.
 Every emitted all-enemy location requires both reachability and a kill route.
 Reachability uses the appropriate dungeon room, overworld area, boss arena, or
 scripted-spawn parent predicate.
+
+Static overworld rows include the generated logic region, the active overworld
+sprite-list stage gate, and a conservative kill route. Stage-2 overworld rows are
+post-Agahnim sources; they remain real checks, but placement rejects item classes
+that can be required to reach or clear Agahnim's Tower. This prevents the
+progressive-copy cycle where every sword/key/combat alternative lands behind the
+post-Aga sprite-stage gate while still allowing other progression on all-tier
+checks.
 
 Kill routes are source-specific:
 
@@ -203,11 +217,11 @@ rule lowers the effective tier further.
 
 All-enemy checks reuse the existing enemy marker preference:
 
-- `EnemyDropMarker=generic` draws the neutral gold glint for unchecked live carriers;
-- `EnemyDropMarker=item` draws the placed item when the renderer can show it safely,
-  using the future multi-icon marker pool where available;
-- if the exact placed item cannot be shown, the marker uses the neutral glint rather
-  than an item stand-in.
+Dungeon all-tier rows use the existing enemy marker path. Static overworld
+all-tier rows currently support exact placed-item markers in item mode when the
+renderer can show them safely. Generic overworld glints and exact-item fallback
+glints remain future post-sprite-overlay work; until then, the runtime suppresses
+unsupported overworld markers cleanly rather than drawing an item stand-in.
 
 Because `all` can place markers on dense screens, the renderer may prioritize visible
 markers and fall back or suppress under OAM pressure, but tracker/spoiler state must
@@ -235,8 +249,9 @@ Required validation includes:
 - corpus rows for `all` under Wild/Retro/Dungeon keys, pot shuffle, enemy shuffle
   normalization, door shuffle normalization, boss shuffle normalization, cave
   entrance interaction, and dense marker rooms;
-- runtime tests for dungeon, overworld, boss/miniboss, and finite scripted-spawn
-  death grants;
+- runtime tests for shipped dungeon and static overworld death grants, with
+  boss/miniboss and finite scripted-spawn death-grant tests reserved for the
+  future source-domain work;
 - leave/re-enter, save/reload, snapshot before death, snapshot after death, mirror or
   world transition, and checked-source suppression;
 - targeted thrown-pot tests where one pot is insufficient and two pots are logical;

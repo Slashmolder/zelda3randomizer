@@ -532,6 +532,13 @@ static bool Rando_EnemyChecksDungeonActiveRuntime(void) {
   return Settings_EnemyChecksDungeonActive(s);
 }
 
+static bool Rando_EnemyChecksAllActiveRuntime(void) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return false;
+  const RandoSettings *s = Rando_GetActiveSettings();
+  return Settings_EnemyChecksAllActive(s);
+}
+
 static const RandoEnemyDropLookupEntry *Rando_FindEnemyDrop(uint16 room,
                                                             uint8 source_slot,
                                                             uint8 drop_kind) {
@@ -561,9 +568,91 @@ static const RandoEnemyCheckLookupEntry *Rando_FindEnemyCheck(uint16 room,
   return NULL;
 }
 
+static const RandoOverworldEnemyCheckLookupEntry *Rando_FindOverworldEnemyCheck(
+    uint8 area, uint8 stage, uint8 source_slot) {
+  uint32 want = ((uint32)area << 16) | ((uint32)stage << 8) | source_slot;
+  int lo = 0, hi = (int)kRandoOverworldEnemyCheckLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    const RandoOverworldEnemyCheckLookupEntry *e =
+        &kRandoOverworldEnemyCheckLookup[mid];
+    uint32 got = ((uint32)e->area << 16) | ((uint32)e->stage << 8) | e->source_slot;
+    if (got == want) return e;
+    if (got < want) lo = mid + 1; else hi = mid;
+  }
+  return NULL;
+}
+
+static const RandoOverworldEnemyCheckLookupEntry *Rando_FindOverworldEnemyCheckByBlock(
+    uint8 area, uint8 stage, uint16 block) {
+  uint32 want = ((uint32)area << 8) | stage;
+  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++) {
+    const RandoOverworldEnemyCheckLookupEntry *e =
+        &kRandoOverworldEnemyCheckLookup[i];
+    uint32 got = ((uint32)e->area << 8) | e->stage;
+    if (got < want)
+      continue;
+    if (got > want)
+      break;
+    if (e->block == block)
+      return e;
+  }
+  return NULL;
+}
+
+enum { kRandoOverworldEnemyBlockCount = 0x1000 };
+static uint16 s_rando_overworld_enemy_loc_by_block[kRandoOverworldEnemyBlockCount];
+
+static uint8 Rando_CurrentOverworldEnemyStage(void) {
+  return (sram_progress_indicator == 3) ? 2 :
+         (sram_progress_indicator == 2) ? 1 : 0;
+}
+
+static void Rando_ClearOverworldEnemyCheckMap(void) {
+  for (uint16 i = 0; i < kRandoOverworldEnemyBlockCount; i++)
+    s_rando_overworld_enemy_loc_by_block[i] = 0;
+}
+
+static uint16 Rando_OverworldEnemyCheckLocForBlock(uint16 block) {
+  if (!Rando_EnemyChecksAllActiveRuntime() || player_is_indoors ||
+      block >= kRandoOverworldEnemyBlockCount)
+    return 0;
+  uint16 loc = s_rando_overworld_enemy_loc_by_block[block];
+  if (loc != 0)
+    return loc;
+  const RandoOverworldEnemyCheckLookupEntry *check =
+      Rando_FindOverworldEnemyCheckByBlock((uint8)overworld_area_index,
+                                           Rando_CurrentOverworldEnemyStage(),
+                                           block);
+  if (check == NULL)
+    return 0;
+  s_rando_overworld_enemy_loc_by_block[block] = check->loc_id;
+  return check->loc_id;
+}
+
+static bool Rando_TryGrantOverworldEnemyCheck(int k) {
+  if (!Rando_EnemyChecksAllActiveRuntime() || player_is_indoors ||
+      k < 0 || k >= 16)
+    return false;
+  uint16 block = sprite_N_word[k];
+  uint16 loc_id = Rando_OverworldEnemyCheckLocForBlock(block);
+  if (loc_id == 0 || Rando_IsLocationChecked(loc_id))
+    return false;
+  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, 0);
+  uint16 item = Rando_LastDispatchedItemId();
+  Rando_QuietReceiveOrConfirm(lttp, item);
+  if (block < kRandoOverworldEnemyBlockCount) {
+    s_rando_overworld_enemy_loc_by_block[block] = 0;
+    sprite_where_in_overworld[block] = 0;
+  }
+  return true;
+}
+
 static bool Rando_TryGrantEnemyCheck(int k) {
-  if (!Rando_EnemyChecksDungeonActiveRuntime() || !player_is_indoors ||
-      k < 0 || k >= 16 || sign8(sprite_N[k]))
+  if (!player_is_indoors)
+    return Rando_TryGrantOverworldEnemyCheck(k);
+  if (!Rando_EnemyChecksDungeonActiveRuntime() || k < 0 || k >= 16 ||
+      sign8(sprite_N[k]))
     return false;
   const RandoEnemyCheckLookupEntry *check =
       Rando_FindEnemyCheck(dungeon_room_index2, sprite_N[k]);
@@ -1969,6 +2058,17 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
       return true;
     }
   }
+  if (Rando_EnemyChecksAllActiveRuntime() && !player_is_indoors) {
+    uint16 block = sprite_N_word[k];
+    uint16 loc_id = Rando_OverworldEnemyCheckLocForBlock(block);
+    if (loc_id != 0 && !Rando_IsLocationChecked(loc_id)) {
+      if (out != NULL) {
+        out->loc_id = loc_id;
+        out->source_slot = (uint8)block;
+      }
+      return true;
+    }
+  }
   return false;
 }
 
@@ -2277,8 +2377,17 @@ static bool Rando_TryDrawEnemyDropPickupField(int k) {
 }
 
 bool Rando_TryDrawEnemyDropCarrierField(int k) {
-  (void)k;
-  return false;  // exact markers draw in the post-sprite overlay pass.
+  if (player_is_indoors || g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
+    return false;  // dungeon exact markers draw in the post-sprite overlay pass.
+  if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
+    return false;
+  const RandoEnemyMarkerCandidate *c =
+      Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier);
+  if (Rando_DrawEnemyMarkerIconAt(k, c, 0, -16))
+    return true;
+  if (c != NULL)
+    Rando_EnemyMarkerMarkDrawFailed(k);
+  return false;
 }
 
 bool Rando_EnemyDropMarkerNeedsOverlay(int k) {
@@ -4726,6 +4835,9 @@ void Overworld_LoadSprites() {  // 89c4ac
   const uint8 *src = GetOverworldSpritePtr(overworld_area_index);
   uint8 b;
 
+  Rando_ClearOverworldEnemyCheckMap();
+  uint8 rando_ow_stage = Rando_CurrentOverworldEnemyStage();
+  bool rando_ow_checks = Rando_EnemyChecksAllActiveRuntime();
   uint8 es_slot = 0;  // add-rando-enemy-shuffle — stable per-entry list position
   for (; (b = src[0]) != 0xff; src += 3, es_slot++) {
     if (src[2] == 0xf4) {
@@ -4735,6 +4847,19 @@ void Overworld_LoadSprites() {  // 89c4ac
     uint8 r2 = (src[0] >> 4) << 2;
     uint8 r6 = (src[1] >> 4) + r2;
     uint8 r5 = src[1] & 0xf | src[0] << 4;
+    uint16 block = r5 | r6 << 8;
+    if (rando_ow_checks && src[2] < 0xf3 && block < kRandoOverworldEnemyBlockCount) {
+      const RandoOverworldEnemyCheckLookupEntry *check =
+          Rando_FindOverworldEnemyCheck((uint8)overworld_area_index,
+                                        rando_ow_stage, es_slot);
+      if (check != NULL && check->block == block) {
+        if (Rando_IsLocationChecked(check->loc_id)) {
+          sprite_where_in_overworld[block] = 0;
+          continue;
+        }
+        s_rando_overworld_enemy_loc_by_block[block] = check->loc_id;
+      }
+    }
     // add-rando-enemy-shuffle — substitute the overworld sprite TYPE, then keep
     // the +1 bias (the stored map value is type+1; overlords are stored as
     // >= 0xf4 here, i.e. type >= 0xf3). Skip overlord types (>= 0xf3) so we never
@@ -4744,7 +4869,7 @@ void Overworld_LoadSprites() {  // 89c4ac
     if (es_type < 0xf3) {
       es_type = EnemyShuffle_PickOverworld((uint8)overworld_area_index, es_slot, es_type);
     }
-    sprite_where_in_overworld[r5 | r6 << 8] = es_type + 1;
+    sprite_where_in_overworld[block] = es_type + 1;
   }
 }
 

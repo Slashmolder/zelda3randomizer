@@ -1,21 +1,26 @@
 ## ADDED Requirements
 
-### Requirement: All tier covers every finite killable enemy source
+### Requirement: All tier covers generated static overworld enemy sources
 
 `enemy_drop_checks=all` SHALL include the `keys` and `dungeon` tiers plus every
-compatible emitted finite, authored, killable enemy source across modeled dungeon,
-overworld, boss/miniboss, and finite scripted-spawn domains.
+compatible generated static overworld ordinary enemy source in the shipped
+all-tier registry. The shipped registry scope is dungeon ordinary enemies plus
+static authored overworld ordinary enemies with stable source identity,
+reachability, death dispatch, and checked-state suppression.
 
-The all-enemy audit SHALL classify every source as included or excluded with a stable
-reason. Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
-projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT be
-emitted as checks unless they are converted into finite one-shot sources with stable
-identity and persistence.
+The all-enemy audit SHALL classify every scanned source in the supported static
+dungeon/overworld domains as included or excluded with a stable reason.
+Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
+projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT
+be emitted as checks unless a future change converts them into finite one-shot
+sources with stable identity and persistence.
 
-Finite authored killable sources that lack runtime identity, death dispatch,
-persistence, or conservative logic SHALL NOT be silently excluded from an effective
-`all` tier. They SHALL either block `all` from shipping for that domain or force a
-visible effective downgrade/rejection for the affected setting combination.
+Boss/miniboss sources, finite scripted-spawn groups, unbounded/farmable spawns,
+and shuffled enemy substitutions are future source domains for this change. They
+SHALL NOT be silently counted as covered by the shipped `all` tier; affected
+setting combinations either normalize visibly to a lower supported tier or remain
+documented as future scope until source identity, death dispatch, persistence, and
+logic are modeled.
 
 #### Scenario: Killable overworld source is emitted
 - **WHEN** the all-enemy audit finds a finite overworld enemy source with stable
@@ -34,24 +39,26 @@ visible effective downgrade/rejection for the affected setting combination.
 - **THEN** the audit records an excluded unbounded reason and emits no location
   for that spawn
 
-#### Scenario: Unclassified killable source fails closed
-- **WHEN** a finite killable enemy source is present in local assets but the audit
-  neither emits it nor records an exclusion reason
-- **THEN** codegen fails instead of producing an incomplete `all` registry
+#### Scenario: Unclassified static source fails closed
+- **WHEN** a scanned static dungeon or overworld source is present in local assets
+  but the audit neither emits it nor records an exclusion reason
+- **THEN** codegen fails instead of producing an incomplete shipped all-tier
+  registry
 
-#### Scenario: Unsupported killable source blocks honest all
-- **WHEN** a finite authored killable source exists but runtime identity or logic is
-  not yet supported for its domain
-- **THEN** effective `enemy_drop_checks=all` is not allowed for that domain; the
-  request visibly downgrades or generation rejects with a diagnostic
+#### Scenario: Unsupported source domain is not silently covered
+- **WHEN** a boss/miniboss, finite scripted-spawn, farmable, or enemy-shuffle
+  substituted source exists but runtime identity or logic is not yet supported for
+  its domain
+- **THEN** the shipped static all-tier registry does not claim that source as
+  covered, and affected settings visibly downgrade or remain future scope
 
 ### Requirement: All-enemy source identity is stable across domains
 
 Every emitted all-enemy location SHALL be keyed by an authored source identity, not
 by enemy type alone. Dungeon rows MAY use the existing room/source-slot identity.
-Overworld rows SHALL carry an equivalent stable source tuple. Boss/miniboss and
-finite scripted-spawn rows SHALL carry stable parent identity plus any required child
-index.
+Overworld rows SHALL carry an equivalent stable source tuple. Future
+boss/miniboss and finite scripted-spawn rows SHALL carry stable parent identity
+plus any required child index before those domains can join the effective all tier.
 
 Enemy shuffle SHALL NOT change the location identity. In the first all-enemy
 implementation, requested `all` SHALL normalize to the highest lower tier allowed by
@@ -90,11 +97,11 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
 - **THEN** the runtime dispatches the placed item, marks the location checked, and
   prevents that source from granting again after reload or transition
 
-#### Scenario: Boss enemy check coexists with boss reward
-- **WHEN** an emitted boss/miniboss enemy check dies
+#### Scenario: Future boss enemy check coexists with boss reward
+- **WHEN** a future change emits a boss/miniboss enemy check and that enemy dies
 - **THEN** the all-enemy check grants exactly once
-- **AND** existing boss prize, heart-container, dungeon-prize, or scripted-progression
-  behavior remains intact
+- **AND** existing boss prize, heart-container, dungeon-prize, or
+  scripted-progression behavior remains intact
 
 #### Scenario: Save reload after checked enemy
 - **WHEN** the player checks an all-tier enemy source, saves, and reloads
@@ -103,11 +110,12 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
 
 ### Requirement: All-enemy visuals use existing marker policy
 
-All-enemy checks SHALL use the existing enemy marker preference. Generic mode SHALL
-draw the neutral gold glint for unchecked live carriers. Item mode SHALL draw the
-real placed item only when the marker renderer can show it safely; otherwise it SHALL
-draw the neutral gold glint or suppress cleanly. Item mode SHALL NOT draw a stand-in
-item for a different placed item.
+All-enemy checks SHALL use the existing enemy marker preference where domain
+metadata and OAM pressure make markers safe. Dungeon all-tier rows use the
+existing marker path. Static overworld all-tier rows MAY draw exact placed-item
+markers in item mode; generic overworld glints and exact-item fallback glints
+remain future post-sprite-overlay work. Marker code SHALL suppress cleanly rather
+than draw a stand-in item for a different placed item.
 
 For every emitted all-tier source that can have an in-world marker, generated marker
 data SHALL define domain-specific stable authored identity, screen-coordinate
@@ -118,8 +126,8 @@ include every emitted location.
 
 #### Scenario: Dense all-enemy screen
 - **WHEN** many all-tier enemy checks are visible on one screen
-- **THEN** every marker that renders is either the correct placed item or the neutral
-  gold glint
+- **THEN** every marker that renders is either the correct placed item or a
+  domain-supported neutral glint
 - **AND** OAM pressure does not produce corrupt, stale, or partial item graphics
 
 #### Scenario: Tracker still lists suppressed visual markers

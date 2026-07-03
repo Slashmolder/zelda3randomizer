@@ -335,6 +335,18 @@ static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high
 static const char *const kPotShuffleLabels[] = {"off", "keys", "contents", "all"};
 // add-rando-enemy-drop-sanity — enemy_drop_checks tiers.
 static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "dungeon", "all"};
+
+static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
+  bool entrance_shuffle =
+      s != nullptr &&
+      (s->world_state == kWorldState_Open || s->world_state == kWorldState_Standard) &&
+      (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
+  return s != nullptr &&
+         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+         !s->enemy_shuffle &&
+         !s->boss_shuffle &&
+         !entrance_shuffle;
+}
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
 // three `false`-wired bits (bomb-jump/hookshot-clip/lobotomy) are fork-invented
@@ -1217,9 +1229,7 @@ static void Panel_Shuffles() {
           !enemy_drops_off &&
           Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
           !s->enemy_shuffle;
-      // The canonical parser accepts all=3, but this build intentionally
-      // fail-closes pure All until a complete all-enemy registry exists.
-      bool all_tier_available = false;
+      bool all_tier_available = !enemy_drops_off && EnemyDropAllTierSelectable(s);
       uint8 label_count = all_tier_available ? 4 : (dungeon_tier_available ? 3 : 2);
       uint8 effective = shown;
       if (shown >= label_count) shown = (uint8)(label_count - 1);
@@ -1238,7 +1248,7 @@ static void Panel_Shuffles() {
         s->enemy_drop_checks = combo_value;
         changed = true;
       }
-      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All is a reserved complete all-enemy tier; current builds reject it unless the full all-enemy registry is available. Door shuffle or enemy shuffle lowers Dungeon/All to Keys; boss or entrance shuffle lowers All to Dungeon.");
+      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All also turns eligible static overworld enemies into checks. Door shuffle or enemy shuffle lowers Dungeon/All to Keys; boss or entrance shuffle lowers All to Dungeon.");
       ImGui::EndDisabled();
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");

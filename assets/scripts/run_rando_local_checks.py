@@ -140,10 +140,10 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
          [sys.executable, "assets/rando_logic_gen.py", "--strict"]),
         ("audit_enemy_check_candidates",
          [sys.executable, "assets/scripts/audit_enemy_check_candidates.py",
-          "--include-rows"]),
+          "--include-rows", "--allow-cannot-key", "--allow-flying"]),
         ("audit_enemy_check_candidates --check",
          [sys.executable, "assets/scripts/audit_enemy_check_candidates.py",
-          "--include-rows", "--check"]),
+          "--include-rows", "--allow-cannot-key", "--allow-flying", "--check"]),
     ]
 
     for label, cmd in checks:

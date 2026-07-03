@@ -2810,6 +2810,7 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       }
     case kRow_EnemyDropChecks:
       switch (Settings_EffectiveEnemyDropChecks(s)) {
+        case kEnemyDropChecks_All:     return "ALL";
         case kEnemyDropChecks_Dungeon: return "DUNG";
         case kEnemyDropChecks_Keys:    return "KEYS";
         default:                       return "OFF";
@@ -2852,6 +2853,18 @@ static void SettingsValidatePieces(void) {
   if (s->pieces_placed > 99) s->pieces_placed = 99;
   if (s->pieces_required < 1) s->pieces_required = 1;
   if (s->pieces_required > s->pieces_placed) s->pieces_required = s->pieces_placed;
+}
+
+static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
+  bool entrance_shuffle =
+      s != NULL &&
+      (s->world_state == kWorldState_Open || s->world_state == kWorldState_Standard) &&
+      (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
+  return s != NULL &&
+         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
+         !s->enemy_shuffle &&
+         !s->boss_shuffle &&
+         !entrance_shuffle;
 }
 
 // Cycle a row's value forward (delta=+1) or backward (delta=-1). Bool rows
@@ -3024,11 +3037,13 @@ static void CycleRow(int row, int delta) {
         }
       }
       {
-        uint8 max_tier =
+        bool dungeon_tier =
             Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
-            !s->enemy_shuffle
-                ? kEnemyDropChecks_Dungeon
-                : kEnemyDropChecks_Keys;
+            !s->enemy_shuffle;
+        uint8 max_tier = EnemyDropAllTierSelectable(s)
+                             ? kEnemyDropChecks_All
+                             : (dungeon_tier ? kEnemyDropChecks_Dungeon
+                                             : kEnemyDropChecks_Keys);
         uint8 n = (uint8)(Settings_EffectiveEnemyDropChecks(s) + 1);
         if (n > max_tier) n = kEnemyDropChecks_Off;
         s->enemy_drop_checks = n;

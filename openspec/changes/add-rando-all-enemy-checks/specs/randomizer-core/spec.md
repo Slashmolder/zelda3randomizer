@@ -4,17 +4,22 @@
 
 The `enemy_drop_checks` setting SHALL support values `Off` (0), `Keys` (1),
 `Dungeon` (2), and `All` (3). `All` SHALL be accepted by settings validation, CSV
-parsing, and share strings as a distinct requested value. Interactive selectors MAY
-hide or disable `All` while the complete all-enemy registry is unavailable, but
-they SHALL NOT label the dungeon-only tier as "all". New settings parsing SHALL NOT
-alias text `all` to `Dungeon`; any legacy compatibility for that spelling must be
-version-scoped so an `All` request cannot silently mean dungeon-only.
+parsing, share strings, native UI, and file-select UI as a distinct requested value.
+Interactive selectors MAY hide or disable `All` for setting combinations where
+derived rules immediately lower it, but they SHALL NOT label the dungeon-only tier
+as "all". New settings parsing SHALL NOT alias text `all` to `Dungeon`; any legacy
+compatibility for that spelling must be version-scoped so an `All` request cannot
+silently mean dungeon-only.
 
-`All` is effective only when the `Keys` and `Dungeon` tiers plus every compatible
-emitted all-enemy source can remain active for the selected settings. The normalized
-effective value, not an incompatible raw request, SHALL feed the settings hash,
-share strings, placement, logic, UI, spoiler, and runtime. UI/spoiler output MAY
-also show the raw request with a downgrade or rejection reason.
+`All` is effective only when the `Keys` and `Dungeon` tiers plus every generated
+compatible all-tier source can remain active for the selected settings. The current
+generated all-tier source set is ordinary dungeon enemies plus static ordinary
+overworld enemies with stable `(stage, area, source slot, block)` identity.
+Boss/miniboss sources, finite scripted-spawn groups, unbounded/farmable spawns, and
+sources without stable death-time identity remain explicit future scope. The
+normalized effective value, not an incompatible raw request, SHALL feed the settings
+hash, share strings, placement, logic, UI, spoiler, and runtime. UI/spoiler output
+MAY also show the raw request with a downgrade or rejection reason.
 
 Adding the `all` value SHALL update generator-versioned semantics, fixed-settings
 selfchecks, share/settings decode, settings hash expectations, UI persistence, and
@@ -23,9 +28,9 @@ corpus manifests as required for a new generation-affecting setting value.
 Derived rules SHALL apply this compatibility table:
 
 - effective vanilla small keys: requested `All` normalizes to `Off`;
-- Wild/Retro/Dungeon small keys, no incompatible shuffles, fresh complete registry,
+- Wild/Retro/Dungeon small keys, no incompatible shuffles, fresh all-tier registry,
   and sufficient capacity: requested `All` remains `All`;
-- missing, stale, partial, duplicate, or capacity-overflowing all-enemy registry:
+- missing, stale, duplicate, or capacity-overflowing generated all-tier registry:
   generation rejects active `All`;
 - door shuffle without non-key all-enemy door bridges and digest/replay support:
   requested `All` normalizes to `Keys`;
@@ -36,16 +41,16 @@ Derived rules SHALL apply this compatibility table:
 - boss shuffle: requested `All` normalizes to `Dungeon` until boss/miniboss
   all-enemy identity is modeled for assigned boss rooms and existing boss rewards,
   unless another rule lowers the effective tier further;
-- pot shuffle composes with `All` only when throwable-route metadata proves ordering
-  sound;
+- pot shuffle composes with `All`; generated thrown-pot kill routes must continue
+  proving their required reachable pot count and ordering soundness;
 - entrance shuffle, including cave entrance shuffle: requested `All` normalizes to
-  `Dungeon` until all-enemy overworld/domain reachability is modeled against the
+  `Dungeon` until all-tier overworld/domain reachability is modeled against the
   entrance graph, unless another rule lowers the effective tier further; existing
   cave-entrance pot/key derived rules still apply before this normalization.
 
 #### Scenario: All does not silently mean dungeon
 - **WHEN** a settings source requests `enemy_drop_checks=all`
-- **THEN** the effective setting is `all` only if every compatible emitted all-enemy
+- **THEN** the effective setting is `all` only if every compatible generated all-tier
   source is active
 - **AND** otherwise the UI/spoiler reports a lower effective tier or generation fails
   with a specific incompatibility diagnostic
@@ -53,7 +58,7 @@ Derived rules SHALL apply this compatibility table:
 #### Scenario: Existing tiers remain distinct
 - **WHEN** a settings source requests `enemy_drop_checks=dungeon`
 - **THEN** only the dungeon-tier enemy checks are requested
-- **AND** overworld, boss, and scripted all-enemy rows remain inactive
+- **AND** static overworld, boss, and scripted all-tier rows remain inactive
 
 #### Scenario: Vanilla key mode normalizes all off
 - **WHEN** `enemy_drop_checks=All` but effective small keys are vanilla
@@ -80,8 +85,8 @@ Derived rules SHALL apply this compatibility table:
 - **THEN** derived settings serialize with `enemy_drop_checks=Dungeon`
 
 #### Scenario: Incomplete all registry rejects
-- **WHEN** requested `All` would otherwise be effective but generated all-enemy data
-  is missing, stale, partial, duplicated, or over capacity
+- **WHEN** requested `All` would otherwise be effective but generated all-tier data
+  is missing, stale, duplicated, or over capacity
 - **THEN** generation rejects the seed with a specific diagnostic
 
 ### Requirement: Settings canonical serialization order (normative)
@@ -94,8 +99,8 @@ corpus manifests, and range checks SHALL use this four-value mapping.
 
 Derived rules for byte 28 SHALL apply before canonical serialization and settings
 hash computation. `Dungeon` keeps the existing dungeon-tier behavior. `All` keeps
-`all=3` only when every compatible emitted all-enemy source is active for the
-selected settings and the generated all-enemy registry is fresh and within capacity.
+`all=3` only when every compatible generated all-tier source is active for the
+selected settings and the generated all-tier registry is fresh and within capacity.
 Otherwise it normalizes according to the compatibility matrix in
 `Enemy-drop check setting has an honest all tier` or generation rejects.
 

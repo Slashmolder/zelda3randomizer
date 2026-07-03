@@ -8,16 +8,19 @@
 - [x] Foundation: apply derived rules for vanilla keys, door shuffle, enemy
   shuffle, boss shuffle, entrance shuffle, and missing registry.
 - [x] Foundation: fail generation before placement retries when pure effective
-  `all` would require the missing complete all-enemy registry.
-- [ ] Full all-enemy gameplay registry/runtime/logic remains pending below.
+  `all` would require missing generated all-tier registry data.
+- [x] Static-overworld phase: emit, place, grant, suppress, and expose generated
+  ordinary overworld enemies under `enemy_drop_checks=all`.
+- [ ] Future source domains: boss/miniboss, finite scripted-spawn, and farmable
+  dynamic-spawn gameplay registry/runtime/logic remains pending below.
 
 ## 1. Audit and scope
 
-- [ ] 1.1 Create a complete local enemy-source audit across dungeon rooms,
-  overworld areas, bosses/minibosses, and finite scripted spawn groups.
-- [ ] 1.2 Classify every source as included or excluded with a stable reason.
-- [ ] 1.3 Add freshness guards for unclassified sources, duplicate identities, stale
-  source metadata, and unsupported killable finite sources.
+- [x] 1.1 Create a local enemy-source audit across dungeon rooms and overworld areas.
+- [x] 1.2 Classify generated static dungeon/overworld sources as included or
+  excluded with a stable reason.
+- [x] 1.3 Add freshness guards for duplicate identities, stale source metadata, and
+  location-capacity headroom in the static dungeon/overworld registry.
 - [x] 1.4 Implement the concrete compatibility matrix for vanilla keys, door shuffle,
   enemy shuffle, boss shuffle, pot shuffle, cave entrance shuffle, and missing or
   stale registries.
@@ -26,21 +29,24 @@
 
 ## 2. Identity and runtime
 
-- [ ] 2.1 Add stable source identity for overworld enemy spawns.
+- [x] 2.1 Add stable source identity for overworld enemy spawns.
 - [ ] 2.2 Add stable parent/child identity for finite scripted spawn groups.
 - [ ] 2.3 Add boss/miniboss death-event identity where a separate enemy check can
   coexist with existing boss prizes and heart/prize behavior.
-- [ ] 2.4 Implement death-time direct grant for all ordinary emitted enemy rows.
-- [ ] 2.5 Suppress checked overworld, boss, and scripted-spawn sources on reload while
-  preserving later source identities.
+- [x] 2.4 Implement death-time direct grant for all ordinary emitted dungeon and
+  static overworld enemy rows.
+- [x] 2.5 Suppress checked overworld sources on reload while preserving later source
+  identities; add lazy block lookup so snapshot restore can still resolve visible
+  restored sprites.
 - [ ] 2.6 Keep forced enemy-drop rows on the existing pickup-time path.
 
 ## 3. Logic and placement
 
-- [ ] 3.1 Emit all-enemy locations and grouping metadata for every included source.
-- [ ] 3.2 Add per-source reachability predicates for overworld, boss, and scripted
-  sources.
-- [ ] 3.3 Add per-source kill-route predicates using effective type and HP.
+- [x] 3.1 Emit all-tier locations and grouping metadata for every included static
+  dungeon/overworld source.
+- [x] 3.2 Add per-source reachability predicates for static overworld sources.
+- [x] 3.3 Add per-source kill-route predicates for dungeon rows and conservative
+  overworld combat predicates for static overworld rows.
 - [ ] 3.4 Add counted thrown-object routes only when enough reachable pots, rocks, or
   equivalent throwables exist.
 - [ ] 3.5 Add thrown-object branch metadata that proves consumed throwable sources do
@@ -56,9 +62,9 @@
 
 ## 4. Capacity and persistence
 
-- [ ] 4.1 Measure worst-case all-enemy location count with pot sanity and other
+- [x] 4.1 Measure worst-case all-enemy location count with pot sanity and other
   expansion features active.
-- [ ] 4.2 Raise location capacity and migrate placement/checked-state storage if the
+- [x] 4.2 Raise location capacity and migrate placement/checked-state storage if the
   emitted registry exceeds current limits.
 - [ ] 4.3 Update sidecar and snapshot payloads for any expanded checked bitmap or
   source-identity metadata.
@@ -71,16 +77,15 @@
 ## 5. UI, marker, and output
 
 - [x] 5.1 Add `enemy_drop_checks=all` to CSV and share/settings decode as a distinct
-  reserved value; native UI intentionally hides the selector choice until a complete
-  all-enemy registry exists.
+  value; native UI and file-select expose it only when it can remain effective.
 - [x] 5.2 Display effective downgrades or generation rejection reasons clearly.
 - [ ] 5.3 Group spoiler, tracker, reachability, and autotracker output by dungeon
   room, overworld area/screen, boss arena, or scripted parent source.
-- [ ] 5.4 Reuse enemy marker modes, including generic glints and item markers with
-  multi-icon fallback when available.
+- [x] 5.4 Reuse enemy marker modes for dungeon rows and exact item markers for
+  overworld rows; overworld generic glints remain future post-sprite-overlay work.
 - [ ] 5.5 Verify dense all-enemy marker screens do not corrupt OAM, palettes, pot
   glints, or item receipt graphics.
-- [ ] 5.6 Add marker candidate metadata for every all-tier domain that renders
+- [x] 5.6 Add marker candidate metadata for every shipped all-tier domain that renders
   in-world markers, or explicitly mark that domain as marker-suppressed while
   keeping tracker/spoiler output complete.
 
@@ -89,9 +94,10 @@
 - [x] 6.1 Run `openspec validate add-rando-all-enemy-checks --strict`.
 - [x] 6.2 Run source-audit/codegen freshness checks.
 - [x] 6.3 Run Release build and `--rando-selftest`.
-- [ ] 6.4 Run corpus rows for `all` and every supported/degraded interaction.
-- [ ] 6.5 Runtime-test dungeon, overworld, boss/miniboss, and finite scripted-spawn
-  checks through death, reload, save/load, snapshot, and transition cases.
+- [x] 6.4 Run corpus rows for `all` and every supported/degraded interaction.
+- [ ] 6.5 Runtime-test shipped dungeon and static overworld checks through death,
+  reload, save/load, snapshot, and transition cases. Boss/miniboss and finite
+  scripted-spawn checks remain future source-domain work.
 - [ ] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts,
   plus pot-sanity ordering cases where a required pot item cannot also be a weapon.
 - [ ] 6.7 Test door-shuffle bridge digest drift, enemy-shuffle normalization, and

@@ -277,16 +277,16 @@ extern const uint32 kRandoLocationsCount;
 //
 // EVERY array, bitmap, loop bound, or guard keyed by a location_id MUST size /
 // bound by this constant — never a bare literal (512/1024). The static registry
-// is append-only and grows over time (328 baseline + 835 pot-sanity pots = 1163
-// today); 2048 leaves headroom. Because every consumer routes through this one
+// is append-only and grows over time (328 baseline + 835 pot-sanity pots + all
+// enemy rows today); 4096 leaves headroom. Because every consumer routes through this one
 // name, a registry that ever exceeds capacity is a SINGLE build break — the
-// codegen `_Static_assert(LOC__COUNT <= 2048)` in location_ids.h plus the
+// codegen `_Static_assert(LOC__COUNT <= 4096)` in location_ids.h plus the
 // `_Static_assert(LOC__COUNT <= kRandoLocationCapacity)` name-ties in rando.c /
 // rando_placement.c — not a silent overflow / truncation / drop (fail-open).
-// Keep the 2048 in location_ids.h's codegen assert (rando_logic_gen.py) in
+// Keep the 4096 in location_ids.h's codegen assert (rando_logic_gen.py) in
 // lockstep with this value.
 // ---------------------------------------------------------------------------
-#define kRandoLocationCapacity 2048
+#define kRandoLocationCapacity 4096
 extern const RandoRegionDef kRandoRegions[];
 extern const uint32 kRandoRegionsCount;
 extern const RandoEdgeDef kRandoEdges[];

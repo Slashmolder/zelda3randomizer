@@ -2,24 +2,25 @@
 
 ### Requirement: All enemy tier is exposed distinctly from dungeon
 
-The user-facing settings surfaces SHALL reserve `enemy_drop_checks=all` as a
-distinct tier above `dungeon`. Labels, docs, spoilers, trackers, and native UI text
-SHALL NOT use "all" for the dungeon-only tier. Interactive selectors MAY hide or
-disable `all` until generation can honestly include every compatible emitted
-killable enemy source.
+The user-facing settings surfaces SHALL expose `enemy_drop_checks=all` as a
+distinct tier above `dungeon` when it can remain effective for the current setting
+combination. Labels, docs, spoilers, trackers, and native UI text SHALL NOT use
+"all" for the dungeon-only tier. Interactive selectors MAY hide or disable `all`
+when derived rules would immediately lower it to `dungeon`, `keys`, or `off`.
 
 When a requested `all` value is downgraded or rejected because a setting combination
-cannot honestly support all emitted killable enemy sources, the UI and generated
-spoiler SHALL show the effective value or the specific rejection reason.
+cannot honestly support all generated all-tier sources, the UI and generated spoiler
+SHALL show the effective value or the specific rejection reason.
 
 #### Scenario: Selector distinguishes dungeon from all
 - **WHEN** the enemy-drop-check selector shows the all-enemy tier
 - **THEN** `dungeon` and `all` are separate choices with separate effective behavior
 
-#### Scenario: Selector does not over-promise incomplete all
-- **WHEN** the complete all-enemy registry is unavailable
+#### Scenario: Selector does not over-promise downgraded all
+- **WHEN** boss shuffle, entrance shuffle, door shuffle, enemy shuffle, or vanilla
+  small-key mode would downgrade `all`
 - **THEN** the enemy-drop-check selector does not present a selectable `all` tier
-  that would only activate dungeon enemy checks
+  that would immediately display as a lower effective tier
 
 #### Scenario: Effective downgrade is visible
 - **WHEN** a requested `all` setting downgrades to `dungeon`, `keys`, or `off`
@@ -29,10 +30,11 @@ spoiler SHALL show the effective value or the specific rejection reason.
 ### Requirement: All-enemy output groups locations by source domain
 
 Spoilers, trackers, reachability panels, and autotracker output SHALL include every
-emitted all-enemy location and group it by a stable player-usable source domain:
-dungeon room, overworld area/screen, boss arena, or scripted parent source. Location
-names SHALL distinguish duplicate enemy types in the same group by coordinates,
-source slot, or another stable disambiguator.
+generated all-tier location and group it by a stable player-usable source domain:
+dungeon room or overworld area/screen in the current implementation, with boss arena
+and scripted parent domains reserved for future source registries. Location names
+SHALL distinguish duplicate enemy types in the same group by coordinates, source
+slot, or another stable disambiguator.
 
 #### Scenario: Duplicate enemy type in one area
 - **WHEN** two emitted all-enemy locations use the same enemy type in the same

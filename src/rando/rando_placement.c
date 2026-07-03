@@ -411,9 +411,50 @@ static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *
          Settings_EnemyDropKeysActive(s);
 }
 
+static bool enemy_check_all_tier_only(uint16 loc_id) {
+  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
+    if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id) return true;
+  return false;
+}
+
+static bool enemy_check_post_agahnim_only(uint16 loc_id) {
+  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
+    if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id)
+      return kRandoOverworldEnemyCheckLookup[i].stage == 2;
+  return false;
+}
+
+static bool item_is_agahnim_prerequisite(uint16 item_id) {
+  switch (item_id) {
+    case ID_ProgressiveSword:
+    case ID_ProgressiveBow:
+    case ID_L1Sword:
+    case ID_L2Sword:
+    case ID_L3Sword:
+    case ID_L4Sword:
+    case ID_FireRod:
+    case ID_Hammer:
+    case ID_Bow:
+    case ID_Lamp:
+    case ID_BugCatchingNet:
+    case ID_CaneOfSomaria:
+    case ID_CaneOfByrna:
+    case ID_Cape:
+    case ID_SmallKey_HCT:
+    case ID_HalfMagic:
+    case ID_QuarterMagic:
+    case ID_GenericKey:
+      return true;
+    default:
+      return false;
+  }
+}
+
 static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s) {
-  return loc != NULL && s != NULL && loc->type == LOCTYPE_Enemy &&
-         Settings_EnemyChecksDungeonActive(s);
+  if (loc == NULL || s == NULL || loc->type != LOCTYPE_Enemy) return false;
+  if (Settings_EnemyChecksAllActive(s)) return true;
+  return Settings_EnemyChecksDungeonActive(s) &&
+         !enemy_check_all_tier_only(loc->id);
 }
 
 static bool pot_registry_available(void) {
@@ -431,7 +472,8 @@ static bool enemy_check_registry_available(void) {
 }
 
 static bool all_enemy_registry_available(void) {
-  return false;
+  return enemy_check_registry_available() &&
+         kRandoOverworldEnemyCheckLookup_COUNT != 0;
 }
 
 static bool settings_need_pot_registry(const RandoSettings *s) {
@@ -468,11 +510,8 @@ bool Placement_PreflightSettings(const RandoSettings *settings,
   if (settings_need_all_enemy_registry(settings) && !all_enemy_registry_available()) {
     placement_set_error(
         err, err_cap,
-        "enemy_drop_checks=all requires a complete all-enemy registry; this "
-        "binary only has the dungeon enemy registry, so use "
-        "enemy_drop_checks=dungeon until overworld, boss, scripted-spawn, "
-        "identity, persistence, and kill logic coverage is generated and "
-        "verified");
+        "enemy_drop_checks=all requires the generated all-tier overworld enemy "
+        "registry; rebuild local enemy-check assets or use enemy_drop_checks=dungeon");
     return false;
   }
   return true;
@@ -701,10 +740,10 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
   }
   if (settings_need_all_enemy_registry(settings) && !all_enemy_registry_available()) {
     fprintf(stderr,
-      "BuildItemPool: enemy_drop_checks=all requested, but this binary does not\n"
-      "  contain a complete all-enemy registry. Use enemy_drop_checks=dungeon\n"
-      "  until overworld, boss, scripted-spawn, identity, persistence, and kill\n"
-      "  logic coverage is generated and verified.\n");
+      "BuildItemPool: enemy_drop_checks=all requested, but this binary was\n"
+      "  built without all-tier overworld enemy-check rows. Run\n"
+      "  assets/scripts/gen_enemy_check_tables.py with ROM assets and rebuild\n"
+      "  before generating all enemy-check seeds.\n");
     return 0;
   }
   if (settings_need_enemy_check_registry(settings) && !enemy_check_registry_available()) {
@@ -1113,6 +1152,13 @@ static bool location_accepts_item(const RandoLocationDef *loc,
                                   uint16 candidate_item,
                                   const RandoCounts *counts,
                                   const RandoSettings *settings) {
+  if (settings != NULL && loc->type == LOCTYPE_Enemy &&
+      Settings_EnemyChecksAllActive(settings) &&
+      enemy_check_post_agahnim_only(loc->id) &&
+      item_is_agahnim_prerequisite(candidate_item)) {
+    return false;
+  }
+
   // Dungeon-containment check (spec: "Dungeon-mode small key stays in its
   // dungeon" + same for big keys / maps / compasses). Runs before the
   // predicate VM so the can_place YAML doesn't need to enumerate every
@@ -3064,7 +3110,7 @@ void Placement_SelfCheck(void) {
   // Placement-side selfchecks for enemy-drop key activation and dungeon enemy rows.
   {
     uint32 enemy_locs = 0, enemy_key_locs = 0, enemy_bigkey_one_shots = 0;
-    uint32 enemy_check_locs = 0;
+    uint32 enemy_check_locs = 0, enemy_check_dungeon_locs = 0, enemy_check_all_only_locs = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       if (kRandoLocations[i].type == LOCTYPE_EnemyDrop) {
         enemy_locs++;
@@ -3072,17 +3118,26 @@ void Placement_SelfCheck(void) {
         else if (kRandoLocations[i].vanilla_item_id == ITEM_Nothing) enemy_bigkey_one_shots++;
       } else if (kRandoLocations[i].type == LOCTYPE_Enemy) {
         enemy_check_locs++;
+        if (enemy_check_all_tier_only(kRandoLocations[i].id))
+          enemy_check_all_only_locs++;
+        else
+          enemy_check_dungeon_locs++;
         if (kRandoLocations[i].vanilla_item_id != ITEM_Nothing)
           selfcheck_die("ordinary enemy checks must use ITEM_Nothing as vanilla filler");
       }
     }
     bool has_enemy_drop_registry = kRandoEnemyDropLookup_COUNT != 0;
     bool has_enemy_check_registry = kRandoEnemyCheckLookup_COUNT != 0;
+    bool has_all_enemy_registry = kRandoOverworldEnemyCheckLookup_COUNT != 0;
     if (has_enemy_drop_registry != (enemy_locs != 0))
       selfcheck_die("enemy_drop_lookup/count drifted from LOCTYPE_EnemyDrop locations");
-    if (has_enemy_check_registry != (enemy_check_locs != 0) ||
-        kRandoEnemyCheckLookup_COUNT != enemy_check_locs)
-      selfcheck_die("enemy_check_lookup/count drifted from LOCTYPE_Enemy locations");
+    if (has_enemy_check_registry != (enemy_check_dungeon_locs != 0) ||
+        kRandoEnemyCheckLookup_COUNT != enemy_check_dungeon_locs)
+      selfcheck_die("enemy_check_lookup/count drifted from dungeon LOCTYPE_Enemy locations");
+    if (has_all_enemy_registry != (enemy_check_all_only_locs != 0) ||
+        kRandoOverworldEnemyCheckLookup_COUNT != enemy_check_all_only_locs ||
+        enemy_check_locs != enemy_check_dungeon_locs + enemy_check_all_only_locs)
+      selfcheck_die("overworld enemy_check_lookup/count drifted from all-tier Enemy locations");
     if (enemy_locs != enemy_key_locs + enemy_bigkey_one_shots)
       selfcheck_die("enemy-drop rows must be small keys or the one-shot big-key check");
     if (has_enemy_drop_registry && enemy_bigkey_one_shots != 1)
@@ -3150,25 +3205,24 @@ void Placement_SelfCheck(void) {
     }
     if (n_dungeon_forced != enemy_locs)
       selfcheck_die("enemy_drop_checks Dungeon must keep forced key-drop rows active");
-    if (n_dungeon_ordinary != enemy_check_locs)
-      selfcheck_die("enemy_drop_checks Dungeon must activate exactly ordinary enemy rows");
+    if (n_dungeon_ordinary != enemy_check_dungeon_locs)
+      selfcheck_die("enemy_drop_checks Dungeon must activate exactly dungeon ordinary enemy rows");
     RandoSettings sall = sdungeon;
     sall.enemy_drop_checks = kEnemyDropChecks_All;
-    uint32 n_all_forced = 0, n_all_dungeon_ordinary = 0;
+    uint32 n_all_forced = 0, n_all_ordinary = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
       if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, &sall))
         n_all_forced++;
       if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sall))
-        n_all_dungeon_ordinary++;
+        n_all_ordinary++;
     }
-    if (n_all_forced != enemy_locs || n_all_dungeon_ordinary != enemy_check_locs)
+    if (n_all_forced != enemy_locs || n_all_ordinary != enemy_check_locs)
       selfcheck_die("enemy_drop_checks All must include lower-tier enemy rows");
-    if (!settings_need_all_enemy_registry(&sall) || all_enemy_registry_available())
-      selfcheck_die("enemy_drop_checks All must require a complete all-enemy registry");
-    uint16 all_pool_probe[1];
-    if (BuildItemPool(&sall, all_pool_probe, 1) != 0)
-      selfcheck_die("enemy_drop_checks All must fail closed without a complete all-enemy registry");
+    if (!settings_need_all_enemy_registry(&sall))
+      selfcheck_die("enemy_drop_checks All must require the all-enemy registry");
+    if (has_all_enemy_registry != all_enemy_registry_available())
+      selfcheck_die("all enemy registry availability drifted from generated rows");
     RandoSettings sdungeondoor = sdungeon;
     sdungeondoor.door_shuffle = kDoorShuffle_Basic;
     uint32 n_dungeon_door_ordinary = 0;
@@ -3264,12 +3318,26 @@ void Placement_SelfCheck(void) {
     if (!has_enemy_check_registry) {
       if (n_pool_dungeon != 0)
         selfcheck_die("enemy_drop_checks Dungeon must fail closed when the ordinary enemy registry is absent");
-    } else if (n_pool_dungeon != (uint16)(n_pool_keys + enemy_check_locs)) {
+    } else if (n_pool_dungeon != (uint16)(n_pool_keys + enemy_check_dungeon_locs)) {
       fprintf(stderr,
               "[Placement_SelfCheck] enemy dungeon pool keys=%u dungeon=%u ordinary=%u\n",
               (unsigned)n_pool_keys, (unsigned)n_pool_dungeon,
-              (unsigned)enemy_check_locs);
+              (unsigned)enemy_check_dungeon_locs);
       selfcheck_die("enemy_drop_checks Dungeon pool/slot count drift");
+    }
+    uint16 all_pool[kRandoLocationCapacity];
+    uint16 n_pool_all = BuildItemPool(&sall, all_pool, kRandoLocationCapacity);
+    if (!has_all_enemy_registry) {
+      if (n_pool_all != 0)
+        selfcheck_die("enemy_drop_checks All must fail closed when the all-tier registry is absent");
+    } else if (n_pool_all != (uint16)(n_pool_keys + enemy_check_locs)) {
+      fprintf(stderr,
+              "[Placement_SelfCheck] enemy all pool keys=%u all=%u ordinary=%u "
+              "dungeon=%u all_only=%u\n",
+              (unsigned)n_pool_keys, (unsigned)n_pool_all,
+              (unsigned)enemy_check_locs, (unsigned)enemy_check_dungeon_locs,
+              (unsigned)enemy_check_all_only_locs);
+      selfcheck_die("enemy_drop_checks All pool/slot count drift");
     }
     uint16 dungeon_door_pool[kRandoLocationCapacity];
     uint16 n_pool_dungeon_door = BuildItemPool(&sdungeondoor, dungeon_door_pool, kRandoLocationCapacity);

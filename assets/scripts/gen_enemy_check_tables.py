@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Generate the local ordinary dungeon enemy-check registry.
+"""Generate the local ordinary enemy-check registry.
 
-Reads the packed dungeon sprite assets from zelda3_assets.dat, reuses the
-enemy-shuffle constraint table as the first-pass "safe enemy" oracle, and
-writes assets/rando/enemy_checks.gen.yaml for rando_logic_gen.py.
+Reads the packed dungeon and overworld sprite assets from zelda3_assets.dat,
+reuses the enemy-shuffle constraint table as the first-pass "safe enemy" oracle,
+and writes assets/rando/enemy_checks.gen.yaml for rando_logic_gen.py.
 
-This is intentionally dungeon-only. Rooms without a key-depth ROOM row are
+The dungeon tier remains conservative: rooms without a key-depth ROOM row are
 not emitted, even if they live in the dungeon sprite table, because those are
-typically cave/interior sprite lists that do not have dungeon door-region
-logic.
+typically cave/interior sprite lists that do not have dungeon door-region logic.
+The all tier appends static authored overworld enemies whose runtime identity is
+stable under the vanilla sprite-list stage.
 """
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from audit_enemy_check_candidates import (  # noqa: E402
     SHUFFLE_ENEMIES_C,
     collect_dungeon_candidates,
+    collect_overworld_candidates,
     forced_drop_source_set,
     load_entry_room_predicates,
     load_pot_room_predicates,
@@ -70,6 +72,102 @@ DUNGEON_REGIONS = {
     10: "MiseryMire_Lobby",
     11: "TurtleRock_Lobby",
     12: "GanonsTower_Lobby",
+}
+
+# Coarse overworld screen -> logic-region binding for static all-tier enemies.
+# This map intentionally covers only screens that currently emit eligible rows;
+# if a future asset/table change produces a new eligible screen, generation
+# fails closed until its source-region binding is reviewed.
+OVERWORLD_REGIONS = {
+    # Light World north west: Lost Woods, Kakariko, graveyard, smithy side.
+    0: "LightWorld_NorthWest",
+    2: "LightWorld_NorthWest",
+    16: "LightWorld_NorthWest",
+    17: "LightWorld_NorthWest",
+    18: "LightWorld_NorthWest",
+    19: "LightWorld_NorthWest",
+    20: "LightWorld_NorthWest",
+    24: "LightWorld_NorthWest",
+    26: "LightWorld_NorthWest",
+    34: "LightWorld_NorthWest",
+    40: "LightWorld_NorthWest",
+    41: "LightWorld_NorthWest",
+
+    # Light World north east: Hyrule Castle/Eastern/Zora-side overworld.
+    15: "LightWorld_NorthEast",
+    22: "LightWorld_NorthEast",
+    23: "LightWorld_NorthEast",
+    30: "LightWorld_NorthEast",
+    37: "LightWorld_NorthEast",
+    45: "LightWorld_NorthEast",
+    46: "LightWorld_NorthEast",
+    47: "LightWorld_NorthEast",
+    129: "LightWorld_NorthEast",
+
+    # Hyrule Castle exterior guards use the escape region so Standard-mode
+    # pre-rescue guards are not gated behind the post-rescue overworld edge.
+    27: "HyruleCastleEscape",
+    29: "HyruleCastleEscape",
+
+    # Light World south: Link's House, desert, swamp, and Lake Hylia side.
+    21: "LightWorld_South",
+    43: "LightWorld_South",
+    44: "LightWorld_South",
+    48: "LightWorld_South",
+    50: "LightWorld_South",
+    51: "LightWorld_South",
+    52: "LightWorld_South",
+    53: "LightWorld_South",
+    55: "LightWorld_South",
+    58: "LightWorld_South",
+    59: "LightWorld_South",
+    60: "LightWorld_South",
+    63: "LightWorld_South",
+
+    # Light World death mountain.
+    3: "LightWorld_DeathMountain_West",
+    5: "LightWorld_DeathMountain_West",
+    10: "LightWorld_DeathMountain_West",
+
+    # Dark World north west: Skull Woods / Village of Outcasts side.
+    64: "DarkWorld_NorthWest",
+    66: "DarkWorld_NorthWest",
+    80: "DarkWorld_NorthWest",
+    81: "DarkWorld_NorthWest",
+    82: "DarkWorld_NorthWest",
+    83: "DarkWorld_NorthWest",
+    84: "DarkWorld_NorthWest",
+    88: "DarkWorld_NorthWest",
+    90: "DarkWorld_NorthWest",
+
+    # Dark World north east: pyramid, dark palace maze, and Zora-side dark world.
+    79: "DarkWorld_NorthEast",
+    86: "DarkWorld_NorthEast",
+    87: "DarkWorld_NorthEast",
+    91: "DarkWorld_NorthEast",
+    93: "DarkWorld_NorthEast",
+    94: "DarkWorld_NorthEast",
+    101: "DarkWorld_NorthEast",
+    109: "DarkWorld_NorthEast",
+    110: "DarkWorld_NorthEast",
+    111: "DarkWorld_NorthEast",
+
+    # Dark World south and Mire.
+    85: "DarkWorld_South",
+    107: "DarkWorld_South",
+    108: "DarkWorld_South",
+    114: "DarkWorld_South",
+    115: "DarkWorld_South",
+    116: "DarkWorld_South",
+    117: "DarkWorld_South",
+    119: "DarkWorld_South",
+    123: "DarkWorld_South",
+    124: "DarkWorld_South",
+    127: "DarkWorld_South",
+    122: "DarkWorld_Mire",
+
+    # Dark World death mountain west.
+    74: "DarkWorld_DeathMountain_West",
 }
 
 # The enemy-shuffle table establishes which source types are safe ordinary enemy
@@ -120,6 +218,23 @@ def kill_predicate_for_dungeon(dungeon: int) -> str:
     if dungeon == 4:
         return "CanKillMostThings(world, 8)"
     return "CanKillMostThings(world, 5)"
+
+
+def kill_predicate_for_overworld(region: str) -> str:
+    if region == "HyruleCastleEscape":
+        return "CanKillEscapeThings(world)"
+    return "CanKillMostThings(world, 5)"
+
+
+def overworld_stage_gate(stage: int) -> str:
+    # Runtime selects stage 0 while sram_progress_indicator < 2, stage 1 at
+    # post-escape progress 2, and stage 2 at post-Agahnim progress 3.
+    # Open/Retro start post-escape and pregrant RescuedZelda, matching stage 1.
+    if stage == 0:
+        return "TRUE()"
+    if stage == 1:
+        return "HAS_ITEM(RescuedZelda)"
+    return "HAS_ITEM(DefeatAgahnim)"
 
 
 def parse_c_uint8_array(path: Path, name: str) -> list[int]:
@@ -390,8 +505,17 @@ def enemy_check_name(row: dict, ordinal: int) -> str:
     )
 
 
+def overworld_enemy_check_name(row: dict) -> str:
+    return (
+        f"Enemy Check - Overworld 0x{int(row['area']):02X} "
+        f"Stage {int(row['stage'])} Slot {int(row['source_slot']):02d} - "
+        f"{row['source_name']}"
+    )
+
+
 def make_doc(assets_path: Path, key_depth_path: Path,
              dungeon_rows: list[dict], excluded_counts: Counter,
+             overworld_rows: list[dict], overworld_excluded_counts: Counter,
              key_depth: dict[str, dict], pot_predicates: dict[int, list[dict]],
              region_only_pot_rooms: dict[int, str], entry_room_predicates: dict[int, dict],
              pot_rows: dict[int, list[dict]],
@@ -464,6 +588,53 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "key_mindepth": int(best["key_mindepth"]),
         })
 
+    overworld_emitted = 0
+    for candidate in sorted(
+            overworld_rows,
+            key=lambda r: (int(r["stage"]), int(r["area"]), int(r["source_slot"]))):
+        area = int(candidate["area"])
+        region = OVERWORLD_REGIONS.get(area)
+        if region is None:
+            die(f"overworld enemy candidate area 0x{area:02x} has no reviewed region binding")
+        stage = int(candidate["stage"])
+        kill_pred = kill_predicate_for_overworld(region)
+        stage_gate = overworld_stage_gate(stage)
+        region_gate = f"OP_REGION_REACHABLE({region})"
+        base_access = and_predicate([region_gate, stage_gate])
+        can_reach = and_predicate([base_access, kill_pred])
+        rows.append({
+            "id": ENEMY_CHECK_BASE_ID + len(rows),
+            "name": overworld_enemy_check_name(candidate),
+            "domain": "overworld",
+            "type": "Enemy",
+            "area": area,
+            "stage": stage,
+            "source_slot": int(candidate["source_slot"]),
+            "block": int(candidate["block"]),
+            "source_type": int(candidate["source_type"]),
+            "source_name": candidate["source_name"],
+            "source_y": int(candidate["source_y"]),
+            "source_x": int(candidate["source_x"]),
+            "region": region,
+            "vanilla_item": "Nothing",
+            "can_reach": can_reach,
+            "base_can_reach": base_access,
+            "predicate_source": "overworld_region_stage",
+            "kill_predicate": kill_pred,
+            "inventory_kill_predicate": kill_pred,
+            "inventory_kill_source": "overworld_generic",
+            "throwable_pots_required": None,
+            "throwable_pots_in_room": 0,
+            "throwable_pots_can_reach": None,
+            "throwable_pot_damage": None,
+            "throwable_pot_damage_subclass": None,
+            "enemy_health": None,
+            "all_tier_only": True,
+        })
+        overworld_emitted += 1
+
+    dungeon_emitted = len(rows) - overworld_emitted
+    source_types = {int(r["source_type"]) for r in rows}
     return {
         "format_version": 1,
         "_generated_by": "assets/scripts/gen_enemy_check_tables.py (do not hand-edit)",
@@ -483,19 +654,28 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "thrown_pot_damage": SPRITE_C.relative_to(REPO).as_posix() + ":ThrownSprite_CheckDamageToSingleSprite damage preset 3",
         },
         "policy": {
-            "scope": "dungeon_only",
+            "scope": "dungeon_plus_all-tier_static_overworld",
             "eligible_source_type": ["ESF_RANDOMIZABLE", "ESF_KILLABLE"],
-            "excluded_source_type_flags": ["ESF_CANNOT_KEY", "ESF_FLYING"],
+            "excluded_source_type_flags": {
+                "dungeon": ["ESF_CANNOT_KEY", "ESF_FLYING"],
+                "overworld_all_tier": [],
+            },
             "excluded_sources": [
                 "existing forced-key enemy-drop checks",
                 "overlords/control markers",
                 "underworld sprite-table rooms with no key-depth ROOM row (outside dungeon-only scope)",
+                "overworld sprite-table rows with no stable active-list runtime identity",
+                "boss/miniboss and finite scripted-spawn groups until separate source identity and reward coexistence are implemented",
             ],
-            "runtime_identity": "(dungeon_room_index, sprite_N source slot)",
+            "runtime_identity": {
+                "dungeon": "(dungeon_room_index, sprite_N source slot)",
+                "overworld": "(active overworld sprite-list stage, overworld_area_index, source_slot, sprite_N_word block)",
+            },
             "kill_logic": [
-                "per-source inventory predicate",
-                "OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
-                "thrown-pot route requires at least the generated pots_needed count in the room",
+                "dungeon: per-source inventory predicate",
+                "dungeon: OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
+                "dungeon: thrown-pot route requires at least the generated pots_needed count in the room",
+                "overworld: region-reachable plus generic overworld combat predicate",
             ],
             "base_room_predicates": [
                 "reviewed forced-key room binding",
@@ -506,20 +686,26 @@ def make_doc(assets_path: Path, key_depth_path: Path,
         },
         "summary": {
             "scanned_underworld_source_count": len(dungeon_rows),
-            "candidate_count": len(dungeon_rows),
+            "scanned_overworld_source_count": len(overworld_rows),
+            "candidate_count": len(dungeon_rows) + len(overworld_rows),
             "emitted_count": len(rows),
-            "excluded_count": sum(doc_excluded_counts.values()),
+            "emitted_dungeon_count": dungeon_emitted,
+            "emitted_overworld_count": overworld_emitted,
+            "excluded_count": sum(doc_excluded_counts.values()) + sum(overworld_excluded_counts.values()),
             "out_of_scope_no_key_depth_count": len(out_of_scope_no_key_depth),
             "audit_only_no_room_predicate_count": len(audit_only_no_room_predicate),
             "emitted_rooms": len(emitted_by_room),
             "out_of_scope_no_key_depth_rooms": len(no_key_depth_by_room),
             "audit_only_no_room_predicate_rooms": len(audit_only_by_room),
-            "source_types": len({int(r["source_type"]) for r in rows}),
+            "source_types": len(source_types),
             "rows_with_throwable_pot_route": sum(1 for r in rows if r.get("throwable_pots_can_reach")),
             "rows_pot_killable_by_damage_table": sum(1 for r in rows if r.get("throwable_pots_required") is not None),
             "rows_with_special_inventory_kill": sum(1 for r in rows if r.get("inventory_kill_source") == "source_type_special"),
         },
-        "excluded_counts": dict(sorted(doc_excluded_counts.items())),
+        "excluded_counts": {
+            "dungeon": dict(sorted(doc_excluded_counts.items())),
+            "overworld": dict(sorted(overworld_excluded_counts.items())),
+        },
         "enemy_checks": rows,
         "out_of_scope_no_key_depth": [
             {
@@ -562,6 +748,12 @@ def build_doc(args) -> dict:
         allow_cannot_key=False,
         allow_flying=False,
     )
+    overworld_rows, _overworld_collisions, overworld_excluded_counts = collect_overworld_candidates(
+        assets,
+        constraints,
+        allow_cannot_key=True,
+        allow_flying=True,
+    )
     key_depth = parse_key_depth(key_depth_path)
     pot_predicates = load_pot_room_predicates(POT_REGISTRY)
     region_only_pot_rooms = load_region_only_pot_rooms(POT_REGISTRY)
@@ -574,6 +766,8 @@ def build_doc(args) -> dict:
         key_depth_path,
         dungeon_rows,
         excluded_counts,
+        overworld_rows,
+        overworld_excluded_counts,
         key_depth,
         pot_predicates,
         region_only_pot_rooms,
@@ -630,8 +824,9 @@ def main(argv: list[str]) -> int:
     summary = doc["summary"]
     print(
         "gen_enemy_check_tables: "
-        f"{summary['emitted_count']} ordinary dungeon enemy checks emitted "
-        f"from {summary['candidate_count']} eligible dungeon sources; "
+        f"{summary['emitted_dungeon_count']} dungeon + "
+        f"{summary['emitted_overworld_count']} overworld ordinary enemy checks "
+        f"emitted from {summary['candidate_count']} eligible sources; "
         f"{summary['audit_only_no_room_predicate_count']} audit-only without "
         "conservative room predicates; "
         f"{summary['out_of_scope_no_key_depth_count']} underworld sources outside "

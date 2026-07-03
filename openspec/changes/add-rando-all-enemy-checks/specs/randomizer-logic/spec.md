@@ -7,6 +7,11 @@ and a reviewed kill route. Reachability SHALL use the correct dungeon room,
 overworld area/screen, boss arena, or scripted-spawn parent predicate. Kill routes
 SHALL use the effective enemy type and HP for the source.
 
+Static overworld source reachability SHALL include the generated logic region, the
+active overworld sprite-list stage, and a conservative kill route. Post-Agahnim
+stage-2 rows SHALL remain gated on `DefeatAgahnim`; placement SHALL separately
+prevent Agahnim-prerequisite item classes from landing there.
+
 Thrown-object routes SHALL be allowed when engine damage data shows that the thrown
 object can damage the source and the reachable area contains enough usable throwables
 to deal lethal damage. If a source requires N thrown-pot hits, the route SHALL require

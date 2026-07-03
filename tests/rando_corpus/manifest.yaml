@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 120  # bump_rando_corpus.py --apply
+generator_version: 121  # bump_rando_corpus.py --apply - Enemy drop ALL static overworld
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -963,6 +963,44 @@ entries:
     label: "enemy-drop-dungeon-enemy-shuffle-degrades-to-keys"
     expected_digest: "7e3b826747d1da4b0630a70e39d26c017588936971da23e2c2c664c34ce4eb95"
     expected_sphere_digest: "10d381e68b9ebba0630baaed7ed84327619a35ad133873c0ffbe0b03cac17031"
+  # add-rando-all-enemy-checks — ALL extends Dungeon with generated static
+  # overworld ordinary enemies. Door/enemy shuffle degrade All to Keys; boss and
+  # entrance shuffle degrade All to Dungeon until those domains are modeled.
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: all, accessibility: items }
+    seed: "0x45414C4C00000005"
+    label: "enemy-drop-all-wild-items"
+    expected_digest: "2842fc348c6ddde896ed14f31a2027ad90f358968da146371ceb8e1710001281"
+    expected_sphere_digest: "b45509e2dde86305bf4182adaf4fd310ae4923037a36fc1484eae7f8de0864ff"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: all, accessibility: items }
+    seed: "0x45414C4C00000006"
+    label: "enemy-drop-all-dungeon-items"
+    expected_digest: "886ea592dc5821858a084ab5288995f10c11f48b5efeb0b3620ae7459cc4e401"
+    expected_sphere_digest: "7812ad733d5af841b8bb13cd7a52829168df1dae56586236305361db09e4c847"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: all, accessibility: items }
+    seed: "0x45414C4C00000007"
+    label: "enemy-drop-all-pot-keys-wild-items"
+    expected_digest: "5306740872def7badc8c47ffca715a2cab208a4bff5b0df0de4fdc7f98a12fc0"
+    expected_sphere_digest: "b59089156aab53ac4e9934d9042f083316ef171aaae78600f4aca17bb7753643"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
+    seed: "0x45414C4C00000008"
+    label: "enemy-drop-all-door-basic-degrades-to-keys"
+    expected_digest: "66354271bf87fa0948d90286fc08efdfb0c12a758eafa8fc45490797622130d3"
+    expected_sphere_digest: "6fcb9683c0964e65d6fb3cd60eea87f20324f20e09f5379aeb5bba358ae480aa"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: all }
+    seed: "0x45414C4C00000009"
+    label: "enemy-drop-all-enemy-shuffle-degrades-to-keys"
+    expected_digest: "71ffd04a16b33fd303e286a6cc817695dd163b2adb7b44ea05aefac1afeb92cc"
+    expected_sphere_digest: "54d5bcb331403ab31766d8da2d3495bfd3cd0c80a1013248375219550592dd96"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, boss_shuffle: true, enemy_drop_checks: all }
+    seed: "0x45414C4C0000000A"
+    label: "enemy-drop-all-boss-shuffle-degrades-to-dungeon"
+    expected_digest: "3f25567c72bc005ad003054a3f021b51c2559365d5eced42fb9514fb30bde92e"
+    expected_sphere_digest: "05b86ca42325f6e88af35fdbd1eccef29c9b419a479a69177459c5105b0e3b60"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, shuffle_cave_entrances: true, enemy_drop_checks: all }
+    seed: "0x45414C4C0000000B"
+    label: "enemy-drop-all-cave-entrance-degrades-to-dungeon"
+    expected_digest: "435b533a329819a5186a84657d78c6e248a555c6e324597dd2f5e900cb4085ef"
+    expected_sphere_digest: "75aa1b958a549f36bc41b229afa77beadded3043971dff02f1b61f2ca48de215"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

@@ -184,8 +184,9 @@ typedef struct RandoSettings {
   // append-only canonical byte [28]; old 28-byte v2 share strings zero-extend this
   // to Off. Keys is active when effective small keys are Wild/Retro or Dungeon.
   // Dungeon also enables ordinary dungeon enemies for vanilla-door layouts.
-  // All is reserved for a complete all-enemy registry and must never silently
-  // mean dungeon-only; unsupported layouts degrade or reject explicitly.
+  // All additionally enables generated static overworld enemy checks for
+  // vanilla-door/no-enemy-shuffle layouts; unsupported layouts degrade
+  // explicitly and must never make all mean dungeon-only.
   uint8 enemy_drop_checks;
 } RandoSettings;
 
@@ -206,9 +207,9 @@ typedef enum {
 // add-rando-enemy-drop-sanity — enemy-drop check tiers. Keys itemizes vanilla
 // forced enemy key drops. Dungeon also itemizes ordinary eligible dungeon enemies
 // as checks when vanilla-door logic is active; door shuffle degrades it to Keys
-// until a non-key door bridge exists. All is a distinct future tier above
-// Dungeon; generation fails closed unless a complete all-enemy registry is
-// available for the effective setting.
+// until a non-key door bridge exists. All adds generated static overworld enemy
+// rows for the supported no-door/no-enemy-shuffle setting set and remains a
+// distinct tier above Dungeon.
 typedef enum {
   kEnemyDropChecks_Off = 0,
   kEnemyDropChecks_Keys = 1,
@@ -389,7 +390,7 @@ bool Settings_PotKeysActive(const RandoSettings *s);
 // honored when effective small keys are Wild (including Retro's computed mode)
 // or Dungeon. Dungeon is honored for vanilla-door layouts. All is distinct and
 // only remains effective when no current incompatibility forces a lower tier;
-// placement still fail-closes if the complete all-enemy registry is unavailable.
+// placement still fail-closes if the generated all-tier registry is unavailable.
 uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s);
 bool Settings_EnemyDropKeysActive(const RandoSettings *s);
 bool Settings_EnemyChecksDungeonActive(const RandoSettings *s);

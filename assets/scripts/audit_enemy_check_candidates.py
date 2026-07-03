@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Audit static enemies for the dungeon enemy-check tier.
+"""Audit static enemies for enemy-check tiers.
 
-This is intentionally an audit generator, not the final dungeon enemy registry.
-It scans local ROM-derived sprite assets, reuses the curated enemy-shuffle
-constraint table as the first-pass safety oracle, and reports whether the
-candidate set has stable runtime identity and location-capacity headroom.
+This is intentionally an audit generator, not the final registry. It scans local
+ROM-derived sprite assets, reuses the curated enemy-shuffle constraint table as
+the first-pass safety oracle, and reports whether candidate sets have stable
+runtime identity and location-capacity headroom.
 """
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ RANDO_LOGIC_H = REPO / "src" / "rando" / "rando_logic.h"
 POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
 ENEMY_CHECK_REGISTRY = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
 ENTRANCE_REGISTRY = REPO / "assets" / "rando" / "entrance_registry.yaml"
+ENEMY_CHECK_BASE_ID = 1400
 
 
 def die(msg: str) -> None:
@@ -197,30 +198,30 @@ def collect_overworld_candidates(assets: dict[str, bytes], constraints: dict[int
             "source_name": source_name(info, typ),
             "source_y": y,
             "source_x": x,
-            "runtime_identity": f"overworld:0x{area:02X}:0x{block:04X}",
+            "runtime_identity": f"overworld:{stage}:0x{area:02X}:{slot}:0x{block:04X}",
         })
 
-    by_runtime_key: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    by_runtime_key: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
     for row in raw_rows:
-        by_runtime_key[(int(row["area"]), int(row["block"]))].append(row)
+        by_runtime_key[(int(row["stage"]), int(row["area"]), int(row["block"]))].append(row)
 
     collision_groups = []
     blocked_keys = set()
     for key, hits in sorted(by_runtime_key.items()):
         distinct_sources = {
-            (int(r["stage"]), int(r["source_slot"]), int(r["source_type"]))
+            (int(r["source_slot"]), int(r["source_type"]))
             for r in hits
         }
         if len(distinct_sources) <= 1:
             continue
         blocked_keys.add(key)
         collision_groups.append({
-            "area": key[0],
-            "block": key[1],
+            "stage": key[0],
+            "area": key[1],
+            "block": key[2],
             "count": len(hits),
             "sources": [
                 {
-                    "stage": int(r["stage"]),
                     "source_slot": int(r["source_slot"]),
                     "source_type": int(r["source_type"]),
                     "source_name": r["source_name"],
@@ -231,7 +232,7 @@ def collect_overworld_candidates(assets: dict[str, bytes], constraints: dict[int
 
     rows = [
         r for r in raw_rows
-        if (int(r["area"]), int(r["block"])) not in blocked_keys
+        if (int(r["stage"]), int(r["area"]), int(r["block"])) not in blocked_keys
     ]
     excluded["overworld_runtime_identity_collision"] += len(raw_rows) - len(rows)
     return rows, collision_groups, excluded
@@ -312,6 +313,8 @@ def load_enemy_check_registry_summary(path: Path) -> dict:
             "source_available": False,
             "candidate_count": 0,
             "emitted_count": 0,
+            "emitted_dungeon_count": 0,
+            "emitted_overworld_count": 0,
             "out_of_scope_no_key_depth_count": 0,
             "max_loc_plus_one": 0,
         }
@@ -323,10 +326,15 @@ def load_enemy_check_registry_summary(path: Path) -> dict:
         if "id" not in raw:
             continue
         max_loc_plus_one = max(max_loc_plus_one, int(raw["id"]) + 1)
+    emitted_count = int(summary.get("emitted_count", len(rows)))
+    emitted_dungeon_count = int(summary.get("emitted_dungeon_count", emitted_count))
+    emitted_overworld_count = int(summary.get("emitted_overworld_count", 0))
     return {
         "source_available": True,
         "candidate_count": int(summary.get("candidate_count", len(rows))),
-        "emitted_count": int(summary.get("emitted_count", len(rows))),
+        "emitted_count": emitted_count,
+        "emitted_dungeon_count": emitted_dungeon_count,
+        "emitted_overworld_count": emitted_overworld_count,
         "out_of_scope_no_key_depth_count": int(summary.get("out_of_scope_no_key_depth_count", 0)),
         "max_loc_plus_one": max_loc_plus_one,
     }
@@ -397,11 +405,18 @@ def build_doc(args) -> dict:
     predicate_coverage = dungeon_predicate_coverage(
         dungeon_rows, pot_predicates, region_only_pot_rooms, entry_room_predicates)
     emitted_registry = load_enemy_check_registry_summary(ENEMY_CHECK_REGISTRY)
-    emitted_dungeon_count = emitted_registry["emitted_count"] or len(dungeon_rows)
-    mvp_projected = max(loc_count, emitted_registry["max_loc_plus_one"])
+    emitted_dungeon_count = emitted_registry["emitted_dungeon_count"] or len(dungeon_rows)
+    emitted_count = emitted_registry["emitted_count"]
+    base_without_enemy_registry = loc_count
+    if emitted_registry["source_available"] and emitted_count <= loc_count:
+        base_without_enemy_registry = loc_count - emitted_count
+    enemy_base = max(base_without_enemy_registry, ENEMY_CHECK_BASE_ID)
+    mvp_projected = enemy_base + emitted_dungeon_count
     eligible_total = emitted_dungeon_count + len(overworld_rows)
     raw_overworld_total = len(overworld_rows) + overworld_excluded["overworld_runtime_identity_collision"]
-    projected = mvp_projected + len(overworld_rows)
+    projected = enemy_base + eligible_total
+    if emitted_registry["source_available"]:
+        projected = max(projected, emitted_registry["max_loc_plus_one"])
 
     doc = {
         "format_version": 1,
@@ -425,11 +440,11 @@ def build_doc(args) -> dict:
             "excluded_sources": [
                 "existing forced-key enemy-drop checks",
                 "overlords/control markers",
-                "overworld candidates whose runtime (area, block) identity collides across stages or list slots",
+                "overworld candidates whose runtime (stage, area, block) identity collides within one active sprite list",
             ],
             "runtime_identity": {
                 "dungeon": "(dungeon_room_index, sprite_N source slot)",
-                "overworld": "(overworld_area_index, sprite_N_word block) until runtime carries source stage/list slot",
+                "overworld": "(sram_progress_indicator-derived active stage, overworld_area_index, source slot, sprite_N_word block)",
             },
         },
         "summary": {

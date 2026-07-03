@@ -769,8 +769,8 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
     """Load assets/rando/enemy_checks.gen.yaml.
 
     Ordinary enemy checks are separate from forced EnemyDrop key rows. Missing
-    local artifacts emit no Enemy locations plus an empty runtime lookup; an
-    active enemy_drop_checks=dungeon seed fails closed in the placer.
+    local artifacts emit no Enemy locations plus empty runtime lookups; active
+    enemy_drop_checks=dungeon/all seeds fail closed in the placer.
     """
     if not path.exists():
         print(f"WARNING: {path} not found - emitting NO ordinary enemy-check "
@@ -790,23 +790,34 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
     for raw in doc.get("enemy_checks", []) or []:
         if raw.get("type") != "Enemy":
             raise RuntimeError(f"{path}: ordinary enemy row {raw.get('name')!r} must use type Enemy")
-        room = int(raw["room"])
+        domain = raw.get("domain") or "dungeon"
         source_slot = int(raw["source_slot"])
-        key = (room, source_slot)
+        if domain == "dungeon":
+            room = int(raw["room"])
+            key = (domain, room, source_slot)
+        elif domain == "overworld":
+            area = int(raw["area"])
+            stage = int(raw["stage"])
+            block = int(raw["block"])
+            key = (domain, area, stage, source_slot, block)
+        else:
+            raise RuntimeError(f"{path}: enemy-check row {raw['name']!r} uses unsupported domain {domain!r}")
         if key in seen:
-            raise RuntimeError(f"{path}: duplicate enemy-check source room=0x{room:03x} slot={source_slot}")
+            raise RuntimeError(f"{path}: duplicate enemy-check source key={key!r}")
         seen.add(key)
         region_name = raw.get("region")
         if not region_name or region_name not in logic_regions:
             raise RuntimeError(f"{path}: enemy-check row {raw['name']!r} uses unknown region {region_name!r}")
-        item = raw["small_key_item"]
         base_can_reach = raw.get("can_reach") or "TRUE()"
-        wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
-        can_reach = _suppress_base_key_terms_under_enemy_dungeon(
-            base_can_reach, item, dungeon)
-        terms = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
-        if terms:
-            can_reach = f"({can_reach}){terms}"
+        can_reach = base_can_reach
+        if domain == "dungeon":
+            item = raw["small_key_item"]
+            wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
+            can_reach = _suppress_base_key_terms_under_enemy_dungeon(
+                base_can_reach, item, dungeon)
+            terms = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
+            if terms:
+                can_reach = f"({can_reach}){terms}"
         loc = LocationDef(
             id=int(raw["id"]),
             name=raw["name"],
@@ -821,11 +832,22 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
         if loc.vanilla_item != "Nothing":
             raise RuntimeError(f"{path}: ordinary enemy-check row {loc.name!r} must use vanilla_item Nothing")
         out[loc.name] = loc
-        rows.append({
-            "room": room,
-            "source_slot": source_slot,
-            "loc_id": loc.id,
-        })
+        if domain == "dungeon":
+            rows.append({
+                "domain": "dungeon",
+                "room": room,
+                "source_slot": source_slot,
+                "loc_id": loc.id,
+            })
+        else:
+            rows.append({
+                "domain": "overworld",
+                "area": area,
+                "stage": stage,
+                "source_slot": source_slot,
+                "block": block,
+                "loc_id": loc.id,
+            })
     return out, rows
 
 
@@ -1975,10 +1997,10 @@ def emit_location_ids(locations: dict[str, LocationDef], path: Path):
     # bitsets in rando_logic.c follow it. A registry append that pushes a
     # location id past that ceiling must fail the BUILD, not silently OOB-index a
     # bitset / truncate the digest / drop a tracker row at runtime. Keep this
-    # 2048 in lockstep with kRandoLocationCapacity in src/rando/rando_logic.h.
-    lines.append("_Static_assert(LOC__COUNT <= 2048,")
+    # 4096 in lockstep with kRandoLocationCapacity in src/rando/rando_logic.h.
+    lines.append("_Static_assert(LOC__COUNT <= 4096,")
     lines.append('               "location id space exceeds kRandoLocationCapacity '
-                 '(2048) in rando_logic.h — grow both together");')
+                 '(4096) in rando_logic.h — grow both together");')
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_LOCATION_IDS_H_")
     atomic_write_text(path, "\n".join(lines) + "\n")
@@ -2146,17 +2168,32 @@ def emit_enemy_drop_lookup(rows, items: dict[str, ItemDef], path: Path) -> int:
 
 def emit_enemy_check_lookup(rows, path: Path) -> int:
     """Emit src/rando/enemy_check_lookup.h for ordinary enemy checks."""
-    rows = sorted(rows, key=lambda r: (r["room"], r["source_slot"]))
+    dungeon_rows = sorted(
+        [r for r in rows if r.get("domain") == "dungeon"],
+        key=lambda r: (r["room"], r["source_slot"]))
+    overworld_rows = sorted(
+        [r for r in rows if r.get("domain") == "overworld"],
+        key=lambda r: (r["area"], r["stage"], r["source_slot"]))
     seen = set()
-    for r in rows:
+    for r in dungeon_rows:
         key = (int(r["room"]), int(r["source_slot"]))
         if key in seen:
             raise RuntimeError(f"enemy_check_lookup: duplicate row room=0x{key[0]:03x} slot={key[1]}")
         seen.add(key)
+    seen.clear()
+    for r in overworld_rows:
+        key = (int(r["area"]), int(r["stage"]), int(r["source_slot"]))
+        if key in seen:
+            raise RuntimeError(
+                "enemy_check_lookup: duplicate overworld row "
+                f"area=0x{key[0]:02x} stage={key[1]} slot={key[2]}")
+        seen.add(key)
     lines = [
         HEADER_BANNER, "",
-        "// enemy_check_lookup.h — sorted (dungeon_room_index, source_slot)",
-        "// -> LOC_* for ordinary dungeon enemy checks. Generated from local",
+        "// enemy_check_lookup.h — runtime lookup tables for ordinary Enemy checks.",
+        "// Dungeon rows are sorted (dungeon_room_index, source_slot).",
+        "// Overworld rows are sorted (overworld_area_index, active_stage, source_slot).",
+        "// Generated from local",
         "// assets/rando/enemy_checks.gen.yaml via assets/scripts/gen_enemy_check_tables.py.",
         "",
         "#ifndef ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
@@ -2170,18 +2207,38 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
         "  uint16 loc_id;      // LOC_* value",
         "} RandoEnemyCheckLookupEntry;",
         "",
+        "typedef struct RandoOverworldEnemyCheckLookupEntry {",
+        "  uint8  area;        // overworld_area_index",
+        "  uint8  stage;       // active kOverworldSpriteOffs stage",
+        "  uint8  source_slot; // authored source list slot",
+        "  uint16 block;       // sprite_N_word proximity block",
+        "  uint16 loc_id;      // LOC_* value",
+        "} RandoOverworldEnemyCheckLookupEntry;",
+        "",
     ]
-    if rows:
+    if dungeon_rows:
         lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[] = {")
-        for r in rows:
+        for r in dungeon_rows:
             lines.append(f"  {{ 0x{int(r['room']):04x}, {int(r['source_slot'])}, {int(r['loc_id'])} }},")
         lines.append("};")
     else:
         lines.append("// EMPTY: enemy_checks.gen.yaml absent. Active dungeon enemy-check generation fails closed.")
         lines.append("static const RandoEnemyCheckLookupEntry kRandoEnemyCheckLookup[1] = { { 0, 0, 0 } };")
+    lines.append("")
+    if overworld_rows:
+        lines.append("static const RandoOverworldEnemyCheckLookupEntry kRandoOverworldEnemyCheckLookup[] = {")
+        for r in overworld_rows:
+            lines.append(
+                f"  {{ 0x{int(r['area']):02x}, {int(r['stage'])}, "
+                f"{int(r['source_slot'])}, 0x{int(r['block']):04x}, {int(r['loc_id'])} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: no all-tier overworld enemy-check rows.")
+        lines.append("static const RandoOverworldEnemyCheckLookupEntry kRandoOverworldEnemyCheckLookup[1] = { { 0, 0, 0, 0, 0 } };")
     lines += [
         "",
-        f"#define kRandoEnemyCheckLookup_COUNT {len(rows)}",
+        f"#define kRandoEnemyCheckLookup_COUNT {len(dungeon_rows)}",
+        f"#define kRandoOverworldEnemyCheckLookup_COUNT {len(overworld_rows)}",
         "",
         "#endif  // ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
     ]

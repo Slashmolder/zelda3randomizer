@@ -86,6 +86,40 @@ def manifest_version(manifest_text: str) -> int | None:
     return int(match.group(1))
 
 
+def replace_entry_field(text: str, label: str, field: str, new_value: str) -> tuple[str, bool]:
+    """Replace one scalar string field inside the manifest entry with `label`.
+
+    Digest placeholders are often repeated during branch work. Updating by
+    global old-digest search can therefore mutate the wrong entry after an
+    earlier generator failure skipped its row. Anchor on the entry label and
+    replace the field inside that entry block only.
+    """
+    label_re = re.compile(
+        r"^\s+label:\s*([\"'])" + re.escape(label) + r"\1\s*$",
+        re.MULTILINE,
+    )
+    m = label_re.search(text)
+    if not m:
+        return text, False
+
+    block_start = text.rfind("\n  - ", 0, m.start())
+    block_start = 0 if block_start < 0 else block_start + 1
+    block_end = text.find("\n  - ", m.end())
+    if block_end < 0:
+        block_end = len(text)
+
+    block = text[block_start:block_end]
+    field_re = re.compile(r"(\b" + re.escape(field) + r":\s*['\"])([^'\"]*)(['\"])")
+    new_block, count = field_re.subn(
+        lambda fm: f"{fm.group(1)}{new_value}{fm.group(3)}",
+        block,
+        count=1,
+    )
+    if count == 0:
+        return text, False
+    return text[:block_start] + new_block + text[block_end:], True
+
+
 def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | None, str | None]:
     """Run --generate-seed for one entry, return (placement_digest, sphere_digest)."""
     if not binary.exists():
@@ -221,26 +255,21 @@ def main(argv: list[str]) -> int:
         new_text = VERSION_LINE_RE.sub(
             lambda m: version_line(current, args.note), text, count=1)
         # In-place digest update preserves the manifest's comments + layout.
-        # We match each entry by its label and replace its expected_digest.
+        # Match each entry by label and replace only within that entry block,
+        # so repeated placeholder digests cannot update the wrong row.
         for (idx, label, old_d, new_d) in changed:
             if not old_d or old_d == "<absent>":
                 continue
-            # Replace exactly: expected_digest: "<old>" → "<new>"
-            pattern = (r'(\bexpected_digest:\s*[\'"])' + re.escape(old_d) + r'([\'"])')
-            new_text, count = re.subn(pattern,
-                                       lambda m, n=new_d: f"{m.group(1)}{n}{m.group(2)}",
-                                       new_text, count=1)
-            if count == 0:
-                print(f"  WARNING: could not find expected_digest {old_d[:8]}... in manifest text",
+            new_text, replaced = replace_entry_field(new_text, label, "expected_digest", new_d)
+            if not replaced:
+                print(f"  WARNING: could not update expected_digest for {label}",
                       file=sys.stderr)
         # Same in-place update for sphere digests.
         for (idx, old_s, new_s) in sphere_changes:
-            pattern = (r'(\bexpected_sphere_digest:\s*[\'"])' + re.escape(old_s) + r'([\'"])')
-            new_text, count = re.subn(pattern,
-                                       lambda m, n=new_s: f"{m.group(1)}{n}{m.group(2)}",
-                                       new_text, count=1)
-            if count == 0:
-                print(f"  WARNING: could not find expected_sphere_digest {old_s[:8]}... in manifest text",
+            label = entries[idx].get("label", "?") if idx < len(entries) else "?"
+            new_text, replaced = replace_entry_field(new_text, label, "expected_sphere_digest", new_s)
+            if not replaced:
+                print(f"  WARNING: could not update expected_sphere_digest for {label}",
                       file=sys.stderr)
         write_lf(args.manifest, new_text)
         print(f"\nWrote updated manifest to {args.manifest}")
