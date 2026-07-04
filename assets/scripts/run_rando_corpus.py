@@ -71,12 +71,28 @@ def validate_entry(entry: dict, idx: int) -> list[str]:
     return errors
 
 
-def entry_uses_pot_shuffle(entry: dict) -> bool:
-    settings = entry.get("settings", {}) or {}
-    v = settings.get("pot_shuffle", "off")
+def _setting_truthy(v) -> bool:
     if isinstance(v, str):
-        return v.lower() not in ("", "0", "off", "false", "none")
+        return v.lower() not in ("", "0", "off", "false", "none", "vanilla")
     return bool(v)
+
+
+def entry_needs_local_pot_registry(entry: dict) -> bool:
+    """True when this corpus row can activate pot locations at generation time.
+
+    Public CI runs without the ROM-derived local pot registry, so it must skip
+    real pot-shuffle rows. Rows whose settings normalize pot_shuffle off should
+    still run there; the cave-forced-off corpus entries exist specifically to
+    lock that normalization.
+    """
+    settings = entry.get("settings", {}) or {}
+    if not _setting_truthy(settings.get("pot_shuffle", "off")):
+        return False
+    state = str(settings.get("mode.state", "open")).lower()
+    cave_shuffle = _setting_truthy(settings.get("shuffle_cave_entrances", False))
+    if cave_shuffle and state in ("open", "standard"):
+        return False
+    return True
 
 
 def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) -> int:
@@ -98,7 +114,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False) 
         expected = entry.get("expected_digest", "")
         expected_sphere = entry.get("expected_sphere_digest", "")
         label = entry.get("label", f"entry-{idx}")
-        if skip_pot_shuffle and entry_uses_pot_shuffle(entry):
+        if skip_pot_shuffle and entry_needs_local_pot_registry(entry):
             print(f"  SKIP [{idx}] {label}: pot_shuffle entry "
                   f"(local pot registry required)")
             skipped += 1

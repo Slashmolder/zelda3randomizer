@@ -337,14 +337,23 @@ interiors:
     locations: []
     notes: "Empty. Palace of Darkness Hint take-any host (dest 0x60) in Retro."
 
-  - interior_id: refill_cave_1
-    name: "Refill Cave 0001/0002"
+  - interior_id: refill_cave_1_graveyard
+    name: "Refill Cave 0001 (Graveyard Ledge side)"
     rooms: [0x11B]
-    entrance_ids: [0x51, 0x52]
+    entrance_ids: [0x51]
     region: LightWorld_NorthWest
-    can_enter: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed()) OR (OP_REGION_REACHABLE(LightWorld_South) AND ((HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()))"
-    locations: []
-    notes: "Split room. Two entrance-ids -> 0x11B; one side is Graveyard Ledge and one side is Cave 45. F12 in Graveyard Ledge: runtime room low byte 0x1B, cached exit screen 0x14, light world; front 2x4 pots are before the bomb wall, while the randomized standing item id 171 is behind it. F12 in Cave 45: room 0x11B, cached exit screen 0x32. Source access is the union of both mirror-side gates. Graveyard Ledge (171) and Cave 45 (183) are already randomized as standing locations; do not bind them to this combined row unless the entrance-shuffle model also separates vanilla source access from in-cave item gates."
+    can_enter: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())"
+    locations: [171]
+    notes: "Split room. Entrance 0x51 loads the Graveyard Ledge side (F12: room low byte 0x1B, cached exit screen 0x14, light world). The standing item is behind this side's bomb wall; its base location predicate keeps CanBombThings()."
+
+  - interior_id: refill_cave_1_cave_45
+    name: "Refill Cave 0002 (Cave 45 side)"
+    rooms: [0x11B]
+    entrance_ids: [0x52]
+    region: LightWorld_South
+    can_enter: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()"
+    locations: [183]
+    notes: "Split room. Entrance 0x52 loads the Cave 45 side (F12: room 0x11B, cached exit screen 0x32). Split from Graveyard Ledge so entrance shuffle can bind the standing location to the correct physical side."
 
   - interior_id: kakariko_lame_shop
     name: "Kakariko's Lame Shop / Village House 1"
@@ -388,14 +397,23 @@ interiors:
     locations: []
     notes: "Empty. F12 evidence: entrance 0x6F is Light World South under a Power Glove rock; entrance 0x70 is the same map location in Dark World South."
 
-  - interior_id: fairy_cave_5
-    name: "Fairy Cave 5 / Heart Piece Cave 2"
+  - interior_id: fairy_cave_5_link_house
+    name: "Fairy Cave 5 (Link's House side)"
     rooms: [0x126]
-    entrance_ids: [0x71, 0x72]
+    entrance_ids: [0x71]
     region: LightWorld_South
-    can_enter: "HAS_ITEM(Boots) OR (CanLiftRocks() AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire))"
+    can_enter: "HAS_ITEM(Boots)"
     locations: []
-    notes: "Split room. Entrance 0x71 is the Link's House-area fairy side behind a Pegasus Boots dash rock (F12: room 0x126, cached exit screen 0x2B, light world); entrance 0x72 is the Checkerboard Cave side on screen 0x30, reached by mirroring down from DarkWorld_Mire after lifting the rock. Checkerboard Cave is already randomized as standing location id 184; do not bind it to this combined row unless the entrance-shuffle table is split per entrance-id."
+    notes: "Split room. Entrance 0x71 is the Link's House-area fairy side behind a Pegasus Boots dash rock (F12: room 0x126, cached exit screen 0x2B, light world). No randomized location is on this side."
+
+  - interior_id: fairy_cave_5_checkerboard
+    name: "Fairy Cave 5 (Checkerboard Cave side)"
+    rooms: [0x126]
+    entrance_ids: [0x72]
+    region: LightWorld_South
+    can_enter: "CanLiftRocks() AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire)"
+    locations: [184]
+    notes: "Split room. Entrance 0x72 is the Checkerboard Cave side on screen 0x30, reached by mirroring down from DarkWorld_Mire after lifting the rock. Split from the Link's House fairy side so entrance shuffle binds Checkerboard Cave to the correct physical side."
 
   - interior_id: heart_piece_cave_3
     name: "Heart Piece Cave 3 / Hammer Pegs Cave"
@@ -426,8 +444,6 @@ overworld_surface_not_caves:
   - { id: 166, name: "Bottle Merchant",   region: LightWorld_NorthWest,          note: "Overworld NPC" }
   - { id: 167, name: "Magic Bat",         region: LightWorld_NorthWest,          note: "Powder-thrown grant in a sub-room reached via Magic Bat cave; ALTTPR ties to overworld access, no cave entrance-id of its own" }
   - { id: 169, name: "Lost Woods Hideout", region: LightWorld_NorthWest,         note: "Overworld standing item (stump)" }
-  - { id: 183, name: "Cave 45",           region: LightWorld_South,              note: "Standing item in room 0x11B's Cave 45 side; randomized by the standing-PoH handler" }
-  - { id: 184, name: "Checkerboard Cave", region: LightWorld_South,              note: "Standing item in the 0x126 split room's entrance-0x72 side; randomized by the standing-PoH handler" }
   - { id: 186, name: "Library",          region: LightWorld_South,              note: "Book pulled from under the Library building on the overworld via Pegasus Boots; the building interior (room 0x107) is empty" }
   - { id: 193, name: "Spectacle Rock Cave", region: LightWorld_DeathMountain_West, note: "DM heart-piece cave (entrance 0x16/0x17 family, OUTSIDE 0x3C-0x72 cave-id range) — not in this registry's shuffle set" }
   - { id: 195, name: "Spectacle Rock",    region: LightWorld_DeathMountain_West, note: "Overworld standing item" }

@@ -40,6 +40,12 @@ import chest_data  # noqa: E402
 
 POT_BASE_ID = 328  # first pot id after the 0..327 registry; id = (room,pos4) sort rank (not append-only)
 
+# Engine room 0x016 is an alias: the chest registry's room-0x16 rows are
+# Pyramid Fairy, while the liftable pot/key in the pot dump belongs to Swamp
+# Palace Waterway. Do not let chest anchors bind this pot room to an overworld
+# cave; pot_logic_overrides.yaml carries the reviewed Swamp binding.
+CHEST_ROOM_ALIAS_EXCLUSIONS = {0x16}
+
 # --- content byte -> classification (D2 per-content-byte policy) ----------------
 # loot content -> (kind, vanilla_item). 'rupee/bomb/arrow/heart/magic' are the
 # Contents/All-tier checks; SmallKey is the Keys tier (item is dungeon-specific,
@@ -135,6 +141,101 @@ def _check_row_field(row, field, expected, label) -> bool:
     print(f"gen_pot_tables: ERROR: {label} {field} = {got!r}, expected {expected!r}",
           file=sys.stderr)
     return False
+
+
+def check_override_static(overrides_path: Path) -> int:
+    """Source-only validation for committed pot_logic_overrides.yaml.
+
+    Public CI does not have the ROM-derived pots.gen.yaml, so it cannot run the
+    full row freshness check. This catches the committed-file failures that do
+    not require the local registry: malformed room ids, unknown regions,
+    duplicate split positions, and contradictory override sections.
+    """
+    if not overrides_path.is_file():
+        print(f"gen_pot_tables: ERROR: missing {overrides_path}", file=sys.stderr)
+        return 1
+    doc = yaml.safe_load(overrides_path.read_text(encoding="utf-8")) or {}
+    valid = valid_regions()
+    ok = True
+    room_sections = collections.defaultdict(list)
+
+    def parse_room(section: str, key) -> int | None:
+        nonlocal ok
+        try:
+            room = _room_hex_to_int(key)
+        except Exception as e:
+            print(f"gen_pot_tables: ERROR: {section} room {key!r} is not hex: {e}",
+                  file=sys.stderr)
+            ok = False
+            return None
+        room_sections[room].append(section)
+        return room
+
+    for room_hex, region in (doc.get("room_region", {}) or {}).items():
+        parse_room("room_region", room_hex)
+        if region not in valid:
+            print(f"gen_pot_tables: ERROR: room_region {room_hex!r} uses unknown "
+                  f"region {region!r}", file=sys.stderr)
+            ok = False
+
+    for room_hex in (doc.get("room_can_reach", {}) or {}):
+        parse_room("room_can_reach", room_hex)
+
+    for room_hex, reason in (doc.get("room_free", {}) or {}).items():
+        parse_room("room_free", room_hex)
+        if not str(reason or "").strip():
+            print(f"gen_pot_tables: ERROR: room_free {room_hex!r} needs a reason",
+                  file=sys.stderr)
+            ok = False
+
+    for room_hex, clusters in (doc.get("pot_room_split", {}) or {}).items():
+        room = parse_room("pot_room_split", room_hex)
+        seen_pos = set()
+        if not clusters:
+            print(f"gen_pot_tables: ERROR: pot_room_split {room_hex!r} has no clusters",
+                  file=sys.stderr)
+            ok = False
+            continue
+        for idx, cl in enumerate(clusters):
+            region = cl.get("region")
+            if region not in valid:
+                print(f"gen_pot_tables: ERROR: pot_room_split {room_hex!r}[{idx}] "
+                      f"uses unknown region {region!r}", file=sys.stderr)
+                ok = False
+            pos = cl.get("pos4") or []
+            if not pos:
+                print(f"gen_pot_tables: ERROR: pot_room_split {room_hex!r}[{idx}] "
+                      f"has no pos4 list", file=sys.stderr)
+                ok = False
+            for p in pos:
+                try:
+                    pi = int(p)
+                except Exception as e:
+                    print(f"gen_pot_tables: ERROR: pot_room_split {room_hex!r}[{idx}] "
+                          f"pos4 {p!r} is not an integer: {e}", file=sys.stderr)
+                    ok = False
+                    continue
+                if pi in seen_pos:
+                    print(f"gen_pot_tables: ERROR: pot_room_split {room_hex!r} "
+                          f"duplicates pos4 0x{pi:04x}", file=sys.stderr)
+                    ok = False
+                seen_pos.add(pi)
+        if room is not None and "room_region" in room_sections[room]:
+            print(f"gen_pot_tables: ERROR: room 0x{room:03x} cannot use both "
+                  f"room_region and pot_room_split", file=sys.stderr)
+            ok = False
+
+    for room, sections in sorted(room_sections.items()):
+        if "room_free" in sections and "room_can_reach" in sections:
+            print(f"gen_pot_tables: ERROR: room 0x{room:03x} cannot be both "
+                  f"room_free and room_can_reach", file=sys.stderr)
+            ok = False
+
+    if ok:
+        print(f"gen_pot_tables: OK explicit pot overrides are source-valid",
+              file=sys.stderr)
+        return 0
+    return 1
 
 
 def check_override_sync(out_path: Path, overrides_path: Path) -> int:
@@ -241,6 +342,21 @@ def check_override_sync(out_path: Path, overrides_path: Path) -> int:
     return 1
 
 
+def check_registry_id_budget(registry_path: Path):
+    """The generated pot ids start at POT_BASE_ID; the base registry must stay below it."""
+    doc = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    max_id = -1
+    max_name = ""
+    for row in doc.get("locations", []) or []:
+        if int(row.get("id", -1)) > max_id:
+            max_id = int(row.get("id", -1))
+            max_name = str(row.get("name", ""))
+    if max_id >= POT_BASE_ID:
+        die(f"{registry_path} uses id {max_id} ({max_name!r}), but pot ids start "
+            f"at {POT_BASE_ID}. Move POT_BASE_ID above the base registry or "
+            f"renumber before generating pots.")
+
+
 def region_to_dungeon(region):
     """'GanonsTower_Lobby' -> 'GanonsTower'; None if not a dungeon region."""
     for d in DUNGEON_NAMES:
@@ -317,6 +433,8 @@ def chest_room_anchors():
     name2 = logic_loc_region_canreach()
     room2 = collections.defaultdict(set)
     for (room, _ord, name, *_rest) in chest_data.get_chest_lookup_rows():
+        if room in CHEST_ROOM_ALIAS_EXCLUSIONS:
+            continue
         if name in name2:
             room2[room].add(name2[name])   # (region, can_reach)
     return room2
@@ -446,10 +564,17 @@ def main():
                     help="verify --out is byte-identical to regenerated output")
     ap.add_argument("--check-overrides", action="store_true",
                     help="verify explicit pot_logic_overrides.yaml entries match --out")
+    ap.add_argument("--check-overrides-static", action="store_true",
+                    help="source-only validation for pot_logic_overrides.yaml")
     args = ap.parse_args()
+
+    if args.check_overrides_static:
+        return check_override_static(Path(args.overrides))
 
     if args.check_overrides:
         return check_override_sync(Path(args.out), Path(args.overrides))
+
+    check_registry_id_budget(REPO / "assets/rando/location_registry.yaml")
 
     pots, out_edges, dark_rooms = load_dump(Path(args.dump), args.binary)
     overrides, override_gates, room_free = {}, {}, {}
@@ -560,7 +685,10 @@ def main():
         # Lamp gate (fixes the HCE-sewer / EP-interior sphere-0 leak); a DW dark room
         # keeps its Moon Pearl gate too. Skip when the predicate already requires the
         # Lamp (a chest-BEARING dark room inherits it from its chest's predicate).
-        if room in dark_rooms and "Lamp" not in (can_reach or ""):
+        # Link's House carries the engine dark bit for the opening sequence, but
+        # the room is lit for normal randomizer play; do not push its heart pots
+        # behind Lamp.
+        if room != 0x104 and room in dark_rooms and "Lamp" not in (can_reach or ""):
             dark_pred = "(HAS_ITEM(Lamp) OR CanDarkRoomNav())"
             can_reach = dark_pred if (not can_reach or can_reach.strip() == "TRUE()") \
                 else f"({can_reach}) AND {dark_pred}"
@@ -625,6 +753,25 @@ def main():
             f"connecting door is a vanilla key door) OR, if it is genuinely reachable "
             f"via a hole/portal the grid-adjacency dump can't see, add it to "
             f"room_free: with a reason. See {args.overrides}.")
+
+    # 0x100+ cave/house rooms are especially prone to false confidence: many
+    # share engine rooms, cached exits, or one-way arrivals that the reciprocal
+    # flood cannot model. Require each in-scope cave/house pot room to be
+    # explicitly reviewed in pot_logic_overrides.yaml, or split by pos4.
+    _explicit_rooms = {_room_hex_to_int(k) for k in overrides}
+    _unreviewed_1xx = sorted({
+        int(_row["room"]) for _row in rows
+        if int(_row["room"]) >= 0x100 and
+           int(_row["room"]) not in _explicit_rooms and
+           int(_row["room"]) not in split_rooms
+    })
+    if _unreviewed_1xx:
+        for _room in _unreviewed_1xx:
+            print(f"gen_pot_tables: ERROR: 0x{_room:03x} is a cave/house pot room "
+                  f"without an explicit room_region or pot_room_split review",
+                  file=sys.stderr)
+        die(f"{len(_unreviewed_1xx)} cave/house pot room(s) rely on cross-room "
+            f"flood; bind them in {args.overrides}.")
 
     # tier nesting assertion: keys subset contents subset all (by membership rule)
     keys_n = sum(1 for r in rows if r["kind"] == "key")

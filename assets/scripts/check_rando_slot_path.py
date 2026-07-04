@@ -51,25 +51,30 @@ DEFAULT_BINARY = REPO / "zelda3"
 GEN_TIMEOUT_S = 120
 
 
-# (label, settings_csv, seed, expect_ok, check_parity, expect_world_state)
+# (label, settings_csv, seed, expect_ok, check_parity, expect_world_state,
+#  allow_missing_pot_registry)
 # - expect_ok:        slot generation should succeed (True) or be refused (False)
 # - check_parity:     also run --generate-seed and require an identical digest
 #                     (only meaningful for accepted, attempt-0-success cells)
 # - expect_world_state: persisted slot header world_state (0=open,1=standard,
 #                     2=inverted,3=retro per WorldState enum); None to skip
+# - allow_missing_pot_registry: public CI has no local ROM-derived pot registry;
+#                     such cells are SKIPPED only for that explicit refusal.
 MATRIX = [
-    ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0),
-    ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0),
-    ("open-fg-beatable",    "mode.state=open,goal=fast_ganon,accessibility=none",      "0x77", True,  True,  0),
-    ("open-fg-beatable-alias", "mode.state=open,goal=fast_ganon,accessibility=beatable","0x77", True, True,  0),
-    ("standard-fg",         "mode.state=standard,goal=fast_ganon",                     "0x3",  True,  True,  1),
-    ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2),
-    ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0),
+    ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0, False),
+    ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0, False),
+    ("open-fg-beatable",    "mode.state=open,goal=fast_ganon,accessibility=none",      "0x77", True,  True,  0, False),
+    ("open-fg-beatable-alias", "mode.state=open,goal=fast_ganon,accessibility=beatable","0x77", True, True,  0, False),
+    ("standard-fg",         "mode.state=standard,goal=fast_ganon",                     "0x3",  True,  True,  1, False),
+    ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2, False),
+    ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0, False),
+    ("door-pot-keys-open",  "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=keys", "0x504f54", True, True, 0, True),
+    ("door-pot-all-items-open", "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=all,accessibility=items", "0x504f55", True, True, 0, True),
     # The three-way accessibility gate, end-to-end through the slot path:
     # this hard-pool Ganonhunt seed has unreachable placements under strict
     # inventory, but the goal is still completable in beatable-only mode.
-    ("std-ganonhunt-hard-items-REJECT", "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "3", False, False, None),
-    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "3", True,  True,  1),
+    ("std-ganonhunt-hard-items-REJECT", "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "3", False, False, None, False),
+    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "3", True,  True,  1, False),
 ]
 
 
@@ -123,7 +128,8 @@ def main(argv: list[str]) -> int:
 
     print(f"check_rando_slot_path: binary {args.binary}")
     failures = 0
-    for label, settings, seed, expect_ok, check_parity, expect_ws in MATRIX:
+    skipped = 0
+    for label, settings, seed, expect_ok, check_parity, expect_ws, allow_missing_pots in MATRIX:
         res = run_slot(args.binary, settings, seed)
         if res is None:
             print(f"  FAIL [{label}]: no result")
@@ -131,6 +137,11 @@ def main(argv: list[str]) -> int:
             continue
 
         ok = bool(res.get("ok"))
+        if (not ok and expect_ok and allow_missing_pots and
+                "pot_shuffle requested" in str(res.get("error", ""))):
+            print(f"  SKIP [{label}]: local pot registry absent")
+            skipped += 1
+            continue
         if ok != expect_ok:
             print(f"  FAIL [{label}]: ok={ok}, expected {expect_ok} "
                   f"(error={res.get('error','')!r})")
@@ -177,9 +188,14 @@ def main(argv: list[str]) -> int:
 
     n = len(MATRIX)
     if failures:
-        print(f"\ncheck_rando_slot_path: {failures} of {n} cells FAILED.")
+        print(f"\ncheck_rando_slot_path: {failures} of {n - skipped} run cells FAILED "
+              f"({skipped} skipped).")
         return 1
-    print(f"\ncheck_rando_slot_path: all {n} cells OK.")
+    if skipped:
+        print(f"\ncheck_rando_slot_path: all {n - skipped} run cells OK "
+              f"({skipped} pot-registry cells skipped).")
+    else:
+        print(f"\ncheck_rando_slot_path: all {n} cells OK.")
     return 0
 
 

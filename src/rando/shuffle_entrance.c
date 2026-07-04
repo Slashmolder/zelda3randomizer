@@ -65,14 +65,16 @@ static const uint8 kEnt_ids_26[1] = { 0x63 };
 static const uint8 kEnt_ids_27[1] = { 0x67 };
 static const uint8 kEnt_ids_28[1] = { 0x61 };
 static const uint8 kEnt_ids_29[1] = { 0x68 };
-static const uint8 kEnt_ids_30[2] = { 0x51, 0x52 };
-static const uint8 kEnt_ids_31[2] = { 0x46, 0x6B };
-static const uint8 kEnt_ids_32[1] = { 0x64 };
-static const uint8 kEnt_ids_33[2] = { 0x65, 0x66 };
-static const uint8 kEnt_ids_34[2] = { 0x69, 0x6A };
-static const uint8 kEnt_ids_35[2] = { 0x6F, 0x70 };
-static const uint8 kEnt_ids_36[2] = { 0x71, 0x72 };
-static const uint8 kEnt_ids_37[1] = { 0x83 };
+static const uint8 kEnt_ids_30[1] = { 0x51 };
+static const uint8 kEnt_ids_31[1] = { 0x52 };
+static const uint8 kEnt_ids_32[2] = { 0x46, 0x6B };
+static const uint8 kEnt_ids_33[1] = { 0x64 };
+static const uint8 kEnt_ids_34[2] = { 0x65, 0x66 };
+static const uint8 kEnt_ids_35[2] = { 0x69, 0x6A };
+static const uint8 kEnt_ids_36[2] = { 0x6F, 0x70 };
+static const uint8 kEnt_ids_37[1] = { 0x71 };
+static const uint8 kEnt_ids_38[1] = { 0x72 };
+static const uint8 kEnt_ids_39[1] = { 0x83 };
 
 static const uint16 kEnt_locs_2[1] = { 168 };
 static const uint16 kEnt_locs_3[1] = { 153 };
@@ -93,9 +95,12 @@ static const uint16 kEnt_locs_18[1] = { 152 };
 static const uint16 kEnt_locs_19[1] = { 165 };
 static const uint16 kEnt_locs_24[2] = { 149, 150 };
 static const uint16 kEnt_locs_28[5] = { 160, 161, 162, 163, 164 };
-static const uint16 kEnt_locs_37[1] = { 218 };
+static const uint16 kEnt_locs_30[1] = { 171 };
+static const uint16 kEnt_locs_31[1] = { 183 };
+static const uint16 kEnt_locs_38[1] = { 184 };
+static const uint16 kEnt_locs_39[1] = { 218 };
 
-#define kEntranceCaveInteriorCount 38
+#define kEntranceCaveInteriorCount 40
 static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
   { /* 0*/ "treasure_shell_game", 0x100, "LightWorld_NorthWest", kEnt_ids_0, 1, 0, 0 },
   { /* 1*/ "snitch_house", 0x101, "LightWorld_NorthWest", kEnt_ids_1, 2, 0, 0 },
@@ -127,14 +132,16 @@ static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
   { /*27*/ "chest_shell_game", 0x118, "LightWorld_NorthWest", kEnt_ids_27, 1, 0, 0 },
   { /*28*/ "blinds_old_hideout", 0x119, "LightWorld_NorthWest", kEnt_ids_28, 1, kEnt_locs_28, 5 },
   { /*29*/ "storyteller_cave_4", 0x11A, "DarkWorld_NorthEast", kEnt_ids_29, 1, 0, 0 },
-  { /*30*/ "refill_cave_1", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 2, 0, 0 },
-  { /*31*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_31, 2, 0, 0 },
-  { /*32*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_32, 1, 0, 0 },
-  { /*33*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_33, 2, 0, 0 },
-  { /*34*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_34, 2, 0, 0 },
-  { /*35*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_35, 2, 0, 0 },
-  { /*36*/ "fairy_cave_5", 0x126, "LightWorld_South", kEnt_ids_36, 2, 0, 0 },
-  { /*37*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_37, 1, kEnt_locs_37, 1 },
+  { /*30*/ "refill_cave_1_graveyard", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 1, kEnt_locs_30, 1 },
+  { /*31*/ "refill_cave_1_cave_45", 0x11B, "LightWorld_South", kEnt_ids_31, 1, kEnt_locs_31, 1 },
+  { /*32*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_32, 2, 0, 0 },
+  { /*33*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_33, 1, 0, 0 },
+  { /*34*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_34, 2, 0, 0 },
+  { /*35*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_35, 2, 0, 0 },
+  { /*36*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_36, 2, 0, 0 },
+  { /*37*/ "fairy_cave_5_link_house", 0x126, "LightWorld_South", kEnt_ids_37, 1, 0, 0 },
+  { /*38*/ "fairy_cave_5_checkerboard", 0x126, "LightWorld_South", kEnt_ids_38, 1, kEnt_locs_38, 1 },
+  { /*39*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_39, 1, kEnt_locs_39, 1 },
 };
 // === end generated block ===
 

@@ -318,13 +318,12 @@ static bool pot_keys_dungeon_active(const RandoSettings *s) {
 }
 
 // Pre-grant the nonpot small-key drops (kPotNonpotDropCounts) into `counts` when
-// pot_keys_dungeon_active. Shared by the placer's assumed-fill seeding AND the
-// goal/sphere verifier so reachability agrees. At runtime Rando_BuildRuntimeCounts
-// OVERWRITES each per-dungeon small-key count with the live SRAM counter (which
-// already includes these drops), so this is placer-effective only — no double
-// count.
+// pot_keys_dungeon_active. Used only by the placer's assumed-fill seeding and the
+// goal/sphere verifier. Runtime live counts must remain unmarked/unseeded because
+// they already reflect the player's actual key counters.
 static void seed_pot_nonpot_drops(RandoCounts *counts, const RandoSettings *s) {
   if (counts == NULL || !pot_keys_dungeon_active(s)) return;
+  counts->pot_nonpot_drops_seeded = 1;
   for (uint8 i = 0; i < (uint8)kPotNonpotDropCounts_COUNT; i++)
     counts->by_item_id[kPotNonpotDropCounts[i].item_id] += kPotNonpotDropCounts[i].count;
 }
@@ -352,7 +351,6 @@ void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *set
     for (uint8 i = 0; i < (uint8)(sizeof(kCompasses) / sizeof(kCompasses[0])); i++)
       counts->by_item_id[kCompasses[i]] = 1;
   }
-  seed_pot_nonpot_drops(counts, settings);
 }
 
 // Add `n` copies of `item_id` to the pool, respecting capacity.
@@ -1843,6 +1841,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   // unreachable, breaking vanilla-mode seeds.) Shared with the runtime
   // reachability bridge so both agree.
   Rando_SeedVanillaDungeonItems(&counts, settings);
+  seed_pot_nonpot_drops(&counts, settings);
   for (uint16 i = 0; i < prog_n; i++) {
     counts.by_item_id[progression[i]]++;
   }

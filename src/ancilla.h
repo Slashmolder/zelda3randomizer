@@ -286,5 +286,5 @@ void Sprite_CreateDeflectedArrow(int k);
 // Does NOT grant the item — the direct write happened upstream inside
 // Rando_DispatchVanillaGrant. This ancilla is visual confirmation only.
 // No-op when called with gfx==0 (the audio-only fallback sentinel).
-void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags);
+bool AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags);
 #define kAncillaType_RandoIconReceipt 0x44

@@ -60,6 +60,25 @@
 // ---------------------------------------------------------------------------
 uint8 g_assets_hash[32];
 
+uint32 Rando_CurrentPotRegistryDigest(void) {
+  return kRandoPotRegistryDigest;
+}
+
+uint16 Rando_CurrentPotRegistryCount(void) {
+  return (uint16)kRandoPotRegistryCount;
+}
+
+bool Rando_SettingsNeedPotRegistry(const RandoSettings *settings) {
+  return settings != NULL &&
+         settings->pot_shuffle != kPotShuffle_Off &&
+         !Settings_PotShuffleForcedOff(settings);
+}
+
+bool Rando_PotRegistryMatches(uint32 digest, uint16 count) {
+  return digest == kRandoPotRegistryDigest &&
+         count == (uint16)kRandoPotRegistryCount;
+}
+
 static bool rando_instant_flute_active(void);
 static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
                                   DirectGrantIconEntry *out);
@@ -1020,14 +1039,18 @@ static void rando_trap_effect_teardown(uint8 effect) {
   }
 }
 
-// True while the masquerade's decoy confirmation icon (Ancilla44_RandoIconReceipt,
-// ancilla_type 0x44) is live in any of the 10 ancilla slots. The Cucco onset waits
-// on this so the swarm's recv-item-slot use can't bleed into the decoy icon.
-static bool rando_decoy_icon_active(void) {
+static bool rando_receive_icon_active(void) {
   for (uint8 i = 0; i < 10; i++)
-    if (ancilla_type[i] == 0x44)  // kAncillaType_RandoIconReceipt
+    if (ancilla_type[i] == kAncillaType_RandoIconReceipt)
       return true;
   return false;
+}
+
+// True while the masquerade's decoy confirmation icon (Ancilla44_RandoIconReceipt)
+// is live. The Cucco onset waits on this so the swarm's recv-item-slot use can't
+// bleed into the decoy icon.
+static bool rando_decoy_icon_active(void) {
+  return rando_receive_icon_active();
 }
 
 void Rando_TickTrapEffects(void) {
@@ -1941,8 +1964,9 @@ static void rando_pot_restore_carry_state(const RandoPotCarrySnapshot *s) {
   link_disable_sprite_damage = s->disable_sprite_damage;
 }
 
-static bool g_rando_pot_confirmation_pending;
-static DirectGrantIconEntry g_rando_pot_confirmation_icon;
+enum { kRandoPotConfirmationQueueMax = 8 };
+static uint8 g_rando_pot_confirmation_count;
+static DirectGrantIconEntry g_rando_pot_confirmation_icons[kRandoPotConfirmationQueueMax];
 
 static bool rando_pot_confirmation_safe_to_emit(void) {
   return rando_trap_stun_can_tick() && submodule_index == 0;
@@ -1986,29 +2010,43 @@ static bool rando_resolve_pot_confirmation_icon(uint16 item_id, uint8 lttp_code,
 }
 
 void Rando_ClearDeferredPotConfirmation(void) {
-  g_rando_pot_confirmation_pending = false;
+  g_rando_pot_confirmation_count = 0;
 }
 
 static void rando_queue_pot_confirmation(uint16 item_id, uint8 lttp_code) {
-  g_rando_pot_confirmation_pending =
-      rando_resolve_pot_confirmation_icon(item_id, lttp_code,
-                                          &g_rando_pot_confirmation_icon);
+  DirectGrantIconEntry icon;
+  if (rando_resolve_pot_confirmation_icon(item_id, lttp_code, &icon)) {
+    if (g_rando_pot_confirmation_count < kRandoPotConfirmationQueueMax) {
+      g_rando_pot_confirmation_icons[g_rando_pot_confirmation_count++] = icon;
+    } else {
+      // Preserve ordering for the queue we can show; coalesce overflow into the
+      // newest tail instead of losing every subsequent pickup until it drains.
+      g_rando_pot_confirmation_icons[kRandoPotConfirmationQueueMax - 1] = icon;
+    }
+  }
   rando_direct_grant_chime_and_hud();
 }
 
 static void rando_tick_deferred_pot_confirmation(void) {
-  if (!g_rando_pot_confirmation_pending)
+  if (g_rando_pot_confirmation_count == 0)
     return;
   if (!(enhanced_features1 & kFeatures1_RandomizerActive)) {
-    g_rando_pot_confirmation_pending = false;
+    g_rando_pot_confirmation_count = 0;
     return;
   }
   if (!rando_pot_confirmation_safe_to_emit())
     return;
+  if (rando_receive_icon_active())
+    return;
 
-  DirectGrantIconEntry icon = g_rando_pot_confirmation_icon;
-  g_rando_pot_confirmation_pending = false;
-  AncillaAdd_RandoIconReceipt(icon.gfx, icon.big, icon.oam_flags);
+  DirectGrantIconEntry icon = g_rando_pot_confirmation_icons[0];
+  if (AncillaAdd_RandoIconReceipt(icon.gfx, icon.big, icon.oam_flags)) {
+    if (--g_rando_pot_confirmation_count != 0) {
+      memmove(&g_rando_pot_confirmation_icons[0],
+              &g_rando_pot_confirmation_icons[1],
+              g_rando_pot_confirmation_count * sizeof(g_rando_pot_confirmation_icons[0]));
+    }
+  }
 }
 
 // add-rando-pot-sanity — streamlined grant for a pot pickup. The vanilla
@@ -2028,13 +2066,17 @@ static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool s
     // Direct-grant classes were already written by Rando_DispatchVanillaGrant.
     if (show_confirmation)
       rando_queue_pot_confirmation(item_id, lttp_code);
+    link_receiveitem_index = 0;
     return;
   }
 
   item_receipt_method = 0;             // normal write path
   link_receiveitem_index = lttp_code;  // keep global state aligned with vanilla receipt code
-  if (!ItemReceipt_GrantInventory(lttp_code))
+  if (!ItemReceipt_GrantInventory(lttp_code)) {
+    rando_pot_restore_carry_state(&carry);
+    link_receiveitem_index = 0;
     return;
+  }
 
   // ItemReceipt_GrantInventory does only the TABLE-WRITE grants (kValueToGiveItemTo).
   // Several grants are DEFERRED to the ancilla UPDATE — rupees (Ancilla_AddRupees),
@@ -2082,7 +2124,7 @@ static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool s
   rando_pot_restore_carry_state(&carry);  // undo receipt-side lift/carry mutations
   if (show_confirmation)
     rando_queue_pot_confirmation(item_id, lttp_code);
-  rando_pot_restore_carry_state(&carry);
+  link_receiveitem_index = 0;
 }
 
 void Rando_PotQuietReceive(uint8 lttp_code, uint16 item_id) {
@@ -2221,7 +2263,7 @@ uint8 Rando_PotBreakHook(uint16 room, uint16 pos4) {
   // "always dispatch the placed item" (it can't equal `placed`). The dispatch
   // marks the LOC checked internally and resolves the placed item's class
   // (direct-grant / ITEM_Nothing -> kRandoLttpSkip; else its LttP receive code).
-  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, 0);
+  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, kRandoLttpSkip);
   uint16 item = Rando_LastDispatchedItemId();
   if (item != ITEM_Nothing)
     Rando_PotQuietReceive(lttp, item);  // streamlined: no receive animation, no lift-yank
@@ -3174,14 +3216,6 @@ static bool g_rando_active_door_logic = false;
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
 
-static uint8 rando_door_pot_tier_for_settings(const RandoSettings *settings) {
-  if (settings == NULL ||
-      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla ||
-      Settings_PotShuffleForcedOff(settings))
-    return kPotShuffle_Off;
-  return settings->pot_shuffle;
-}
-
 static uint32 rando_door_layout_digest24(const DoorShuffleLayout *layout) {
   return DoorShuffle_LayoutDigest(layout) & 0xFFFFFFu;
 }
@@ -3209,7 +3243,7 @@ static bool rando_prepare_door_layout(const RandoSettings *settings,
   uint64 slot_seed = SlotSeedFromShareString(share_string_raw);
   bool ok = DoorShuffle_Generate(slot_seed, door_attempt,
                                  kDoorShuffle_MvpDungeonMask,
-                                 rando_door_pot_tier_for_settings(settings),
+                                 Settings_DoorPotTier(settings),
                                  &s_active_door_layout);
   uint32 digest = ok ? rando_door_layout_digest24(&s_active_door_layout) : 0;
   if (!ok || digest != (expected_digest24 & 0xFFFFFFu)) {
@@ -3496,12 +3530,30 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // tracker reachability below — a corrupt enum there would either flow into
   // `1u << world_state`-style consumers or silently skip the door drift gate.
   // Same refusal pathway as the digest-drift checks: deactivate, don't guess.
+  RandoSettings slot_settings;
+  bool slot_settings_valid = false;
   if (src->header.settings_present) {
-    RandoSettings vs;
-    if (Settings_CanonicalDeserialize(src->settings_canonical, &vs) != 0) {
+    if (Settings_CanonicalDeserialize(src->settings_canonical, &slot_settings) != 0) {
       fprintf(stderr,
               "Rando: slot settings blob failed range validation (corrupt sidecar?) "
               "— refusing to activate this slot\n");
+      Rando_DeactivateSlot();
+      return;
+    }
+    slot_settings_valid = true;
+  }
+  if (slot_settings_valid && Rando_SettingsNeedPotRegistry(&slot_settings)) {
+    if (!src->header.pot_registry_present ||
+        !Rando_PotRegistryMatches(src->header.pot_registry_digest,
+                                  src->header.pot_registry_count)) {
+      fprintf(stderr,
+              "Rando: pot-shuffle registry drift or missing registry identity "
+              "(slot count=%u digest=%08x, build count=%u digest=%08x) "
+              "— refusing to activate this slot on this build\n",
+              (unsigned)src->header.pot_registry_count,
+              (unsigned)src->header.pot_registry_digest,
+              (unsigned)Rando_CurrentPotRegistryCount(),
+              (unsigned)Rando_CurrentPotRegistryDigest());
       Rando_DeactivateSlot();
       return;
     }
@@ -3514,19 +3566,16 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // as no-rando) rather than silently loaded — unlike entrance shuffle's
   // non-blocking version-drift warning. Vanilla-door slots skip all of this.
   bool door_active = false;
-  if (src->header.settings_present) {
-    RandoSettings ds;
-    if (Settings_CanonicalDeserialize(src->settings_canonical, &ds) == 0 &&
-        Settings_EffectiveDoorShuffle(&ds) != kDoorShuffle_Vanilla) {
-      if (!rando_prepare_door_layout(&ds, src->header.share_string,
-                                     src->header.door_attempt,
-                                     src->header.door_digest24,
-                                     "slot activation")) {
-        Rando_DeactivateSlot();
-        return;
-      }
-      door_active = true;
+  if (slot_settings_valid &&
+      Settings_EffectiveDoorShuffle(&slot_settings) != kDoorShuffle_Vanilla) {
+    if (!rando_prepare_door_layout(&slot_settings, src->header.share_string,
+                                   src->header.door_attempt,
+                                   src->header.door_digest24,
+                                   "slot activation")) {
+      Rando_DeactivateSlot();
+      return;
     }
+    door_active = true;
   }
   // FIX #4 — entrance-layout drift gate, mirroring the door-shuffle digest
   // gate above. The entrance permutation is REGENERATED from (seed, axes,
@@ -3875,12 +3924,30 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
     Entrance_ClearEdgeOverrides();
   }
   if (g_rando_active_door_logic) {
+    if (!g_rando_active_settings_valid) {
+      fprintf(stderr,
+              "Rando: active door layout reinstall missing settings — door logic cleared\n");
+      Rando_SetDoorLogicLayout(NULL, 0);
+      g_rando_active_door_logic = false;
+      g_reachability_state_counter++;
+      return;
+    }
     uint64 slot_seed = SlotSeedFromShareString(g_rando_active_header.share_string);
     if (DoorShuffle_Generate(slot_seed, g_rando_active_header.door_attempt,
                              kDoorShuffle_MvpDungeonMask,
-                             rando_door_pot_tier_for_settings(
-                                 g_rando_active_settings_valid ? &g_rando_active_settings : NULL),
+                             Settings_DoorPotTier(&g_rando_active_settings),
                              &s_active_door_layout)) {
+      uint32 digest24 = DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFFu;
+      if (g_rando_active_header.door_digest24 != digest24) {
+        fprintf(stderr,
+                "Rando: active door layout reinstall digest mismatch "
+                "(regen %06x != slot %06x) — door logic cleared\n",
+                (unsigned)digest24, (unsigned)g_rando_active_header.door_digest24);
+        Rando_SetDoorLogicLayout(NULL, 0);
+        g_rando_active_door_logic = false;
+        g_reachability_state_counter++;
+        return;
+      }
       Rando_SetDoorLogicLayout(&s_active_door_layout, s_active_door_layout.shuffled_mask);
     } else {
       // Unreachable for a validly-activated slot (the same deterministic
@@ -3889,6 +3956,7 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
       fprintf(stderr,
               "Rando: door layout reinstall regeneration failed — door logic cleared\n");
       Rando_SetDoorLogicLayout(NULL, 0);
+      g_rando_active_door_logic = false;
     }
   } else {
     Rando_SetDoorLogicLayout(NULL, 0);
@@ -6172,6 +6240,9 @@ void Rando_TrackerSelfCheck(void) {
   slot.header.recommended_features0_present = 1;
   slot.header.recommended_features0 =
       kFeatures0_RestoreJpGlitches | kFeatures0_WidescreenVisualFixes;
+  slot.header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
+  slot.header.pot_registry_count = Rando_CurrentPotRegistryCount();
+  slot.header.pot_registry_present = 1;
   g_config.features0 =
       (saved_config_features0 | kFeatures0_ExtendScreen64) &
       ~kFeatures0_WidescreenVisualFixes;
@@ -6302,6 +6373,9 @@ static void rando_selfcheck_build_slot(RandoSidecarSlot *slot, RandoSettings *s,
   ss.version = (uint8)kGeneratorVersion;
   ss.seed_u64 = seed;
   Share_PackBinary(&ss, slot->header.share_string);
+  slot->header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
+  slot->header.pot_registry_count = Rando_CurrentPotRegistryCount();
+  slot->header.pot_registry_present = 1;
 }
 
 // Runtime starting-inventory injection wiring (Rando_TryGrantStartingInventory).
@@ -6786,9 +6860,13 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   if (datt == 0xFFFFFFFF)
     tsc_die("ReinstallOverlays: no door layout generated in 16 attempts (test setup)");
   h.door_attempt = (uint8)datt;
+  h.door_digest24 = DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFFu;
   g_rando_active_header = h;
   g_rando_active_header_valid = true;
   g_rando_active_door_logic = true;
+  Settings_SetDefaults(&g_rando_active_settings);
+  g_rando_active_settings.door_shuffle = kDoorShuffle_Basic;
+  g_rando_active_settings_valid = true;
   Rando_ReinstallActiveSlotLogicOverlays();
   uint16 mask_pre = 0;
   const DoorShuffleLayout *lp = Rando_GetDoorLogicLayout(&mask_pre);

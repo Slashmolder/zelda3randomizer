@@ -1416,6 +1416,72 @@ int DoorShuffle_SelfTest(void) {
            DoorShuffle_LayoutDigest(&full));
   }
 
+  // Door x pot-shuffle composition: same full-mask path, but with active pot
+  // tiers so the prover sees pot key sources, excluded pot drops, empty-pot
+  // tiering, and the bridge digest. This is intentionally compact; the
+  // per-dungeon kPotShuffle_Off loop above already carries the broad seed sweep.
+  {
+    static const uint8 kPotSelftestTiers[] = {
+      kPotShuffle_Keys, kPotShuffle_Contents, kPotShuffle_All,
+    };
+    static DoorShuffleLayout full, full2;
+    for (uint32 ti = 0; ti < sizeof(kPotSelftestTiers); ti++) {
+      uint8 tier = kPotSelftestTiers[ti];
+      int ok_count = 0;
+      for (int seed = 0; seed < 3; seed++) {
+        uint64 s = 0x504F54444F4F5200ull + ((uint64)tier << 8) + (uint64)seed * 8191;
+        uint32 att = 0;
+        bool got = false;
+        for (; att < kMaxAttempts; att++) {
+          if (DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, tier, &full)) {
+            got = true;
+            break;
+          }
+        }
+        if (!got) {
+          fprintf(stderr, "door-selftest: door+pot tier %u seed %d cap-exhausted\n",
+                  (unsigned)tier, seed);
+          hard_fail = true;
+          continue;
+        }
+        if (full.pot_tier != tier ||
+            full.pot_bridge_digest != kRandoDoorPotBridgeDigest) {
+          fprintf(stderr, "door-selftest: door+pot tier %u bridge identity mismatch\n",
+                  (unsigned)tier);
+          hard_fail = true;
+        }
+        if (!DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, tier, &full2) ||
+            DoorShuffle_LayoutDigest(&full) != DoorShuffle_LayoutDigest(&full2)) {
+          fprintf(stderr, "door-selftest: door+pot tier %u seed %d digest mismatch\n",
+                  (unsigned)tier, seed);
+          hard_fail = true;
+        }
+        if (DoorRt_KindOverlaySelfCheck(&full) != 0) {
+          fprintf(stderr, "door-selftest: door+pot tier %u seed %d kind-overlay failed\n",
+                  (unsigned)tier, seed);
+          hard_fail = true;
+        }
+        for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
+          if (!((full.shuffled_mask >> d) & 1)) continue;
+          uint16 origins[kDoorGen_MaxOrigins];
+          int norigins = Door_InitialOrigins(d, origins);
+          DoorExploreResult staged;
+          Door_ExploreStaged(&full, d, origins, &norigins, &staged);
+          if (!Door_CheckValid(&full, d, &staged)) {
+            fprintf(stderr, "door-selftest: door+pot tier %u seed %d dungeon %s "
+                    "accepted layout fails recheck\n",
+                    (unsigned)tier, seed, DoorIdx_Name(kDoorTblDungeons[d].name_off));
+            hard_fail = true;
+          }
+        }
+        ok_count++;
+      }
+      printf("door-selftest: door+pot tier %u full-mask ok %d/3, digest %08x bridge %08x\n",
+             (unsigned)tier, ok_count, DoorShuffle_LayoutDigest(&full),
+             full.pot_bridge_digest);
+    }
+  }
+
   // Cross-generation door-layout leak regression:
   // Rando_PlaceWithEntrances leaves the accepted door layout installed for the
   // caller's sphere/goal/spoiler work; Rando_GenerateSlot's overlay clear MUST

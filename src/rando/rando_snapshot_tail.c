@@ -54,6 +54,10 @@
 // placement table. A v1/no-blob slot emits no type-2 TLV (settings absent), so
 // the cold replay degrades to placement-only.
 //
+// Pot-shuffle snapshots append a registry-identity TLV before settings:
+//   type=6, length=7, payload format[1]=1 + digest[4] LE + count[2] LE.
+// Cold replay validates this before applying settings-derived pot state.
+//
 // Multi-byte fields are emitted/consumed via explicit LE byte helpers (no
 // host-endianness reliance) — per the same discipline as rando_save.c.
 
@@ -286,6 +290,19 @@ bool RandoSnapshotTail_Save(FILE *f) {
       return false;
   }
 
+  if (g_has_settings_ctx) {
+    uint8 pp[7];
+    pp[0] = 1u;  // format_version
+    put_u32le_bytes(pp + 1, Rando_CurrentPotRegistryDigest());
+    put_u16le_bytes(pp + 5, Rando_CurrentPotRegistryCount());
+    uint8 phdr[16];
+    memcpy(phdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(phdr + 8, kRandoSnapshotTail_Type_PotRegistry);
+    put_u32le_bytes(phdr + 12, (uint32)sizeof(pp));
+    if (fwrite(phdr, 1, sizeof(phdr), f) != sizeof(phdr)) return false;
+    if (fwrite(pp, 1, sizeof(pp), f) != sizeof(pp)) return false;
+  }
+
   // append the type-2 RandoSettings TLV when the active slot installed a
   // settings sub-context (canonical blob present). It carries world_state +
   // the prize/medallion/boss/drop/enemy derivation inputs (canonical settings +
@@ -359,6 +376,9 @@ int RandoSnapshotTail_Load(FILE *f) {
   if (f == NULL) return 0;
   int recognized = 0;
   bool pending_door_layout = false;
+  bool has_pot_registry_ctx = false;
+  uint32 pot_registry_digest = 0;
+  uint16 pot_registry_count = 0;
 
 #define FINISH_LOAD() do { \
     if (pending_door_layout) { \
@@ -484,6 +504,9 @@ int RandoSnapshotTail_Load(FILE *f) {
       // replay and then re-save it under this new base identity.
       Rando_ClearSnapshotOptionalContexts();
       Rando_ClearSnapshotColdReplayRestore();
+      has_pot_registry_ctx = false;
+      pot_registry_digest = 0;
+      pot_registry_count = 0;
 
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
@@ -498,6 +521,25 @@ int RandoSnapshotTail_Load(FILE *f) {
       // graph after digest validation. Older/no-type-5 snapshots fail closed
       // instead of inheriting a door layout from a different active slot.
       Rando_ClearSnapshotDoorReplayRestore();
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_PotRegistry) {
+      // Payload: format_version[1] + registry_digest[4] + registry_count[2].
+      if (length < 7u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      uint8 pp[7];
+      if (fread(pp, 1, sizeof(pp), f) != sizeof(pp)) FINISH_LOAD();
+      if (length > sizeof(pp) && fseek(f, (long)(length - sizeof(pp)), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (pp[0] == 1u) {
+        pot_registry_digest = get_u32le_bytes(pp + 1);
+        pot_registry_count = get_u16le_bytes(pp + 5);
+        has_pot_registry_ctx = true;
+      }
       recognized++;
       continue;
     }
@@ -559,14 +601,24 @@ int RandoSnapshotTail_Load(FILE *f) {
         if (g_has_ctx) {
           RandoSettings s;
           if (Settings_CanonicalDeserialize(blob, &s) == 0) {
-            // Reinstall the settings sub-context so a later re-save (Shift+Fn)
-            // perpetuates the type-2 TLV — mirrors the type-1 branch's
-            // Rando_SetSnapshotContext reinstall. Without this, a
-            // cold-replayed-then-resaved snapshot would emit type-1 only and lose
-            // world_state/Inverted/shuffle reconstruction on its next cold replay.
-            // `blob` is already zero-extended to kSettingsCanonicalLen.
-            Rando_SetSnapshotSettingsContext(blob, prize_attempt);
-            Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
+            if (Rando_SettingsNeedPotRegistry(&s) &&
+                (!has_pot_registry_ctx ||
+                 !Rando_PotRegistryMatches(pot_registry_digest, pot_registry_count))) {
+              fprintf(stderr,
+                      "RandoSnapshotTail: pot-shuffle registry drift or missing "
+                      "registry identity — deactivating randomizer state\n");
+              Rando_DeactivateSlot();
+              pending_door_layout = false;
+            } else {
+              // Reinstall the settings sub-context so a later re-save (Shift+Fn)
+              // perpetuates the type-2 TLV — mirrors the type-1 branch's
+              // Rando_SetSnapshotContext reinstall. Without this, a
+              // cold-replayed-then-resaved snapshot would emit type-1 only and lose
+              // world_state/Inverted/shuffle reconstruction on its next cold replay.
+              // `blob` is already zero-extended to kSettingsCanonicalLen.
+              Rando_SetSnapshotSettingsContext(blob, prize_attempt);
+              Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
+            }
           }
         }
       }
@@ -1033,7 +1085,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fm, 0, SEEK_SET);
     int nm = RandoSnapshotTail_Load(fm);
-    if (nm != 3) selfcheck_die("Load should recognize 3 TLVs (RandoState + RandoSettings + CheckedBitmap)");
+    if (nm != 4)
+      selfcheck_die("Load should recognize 4 TLVs (RandoState + PotRegistry + RandoSettings + CheckedBitmap)");
     if (g_rando_mushroom_held != 0x02 || g_rando_flute_shovel_owned != 0x05 ||
         g_rando_boomerang_owned != 0x03 || g_rando_bow_owned != 0x02) {
       selfcheck_die("ownership bytes not restored from the type-2 TLV");
@@ -1054,7 +1107,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fr, 0, SEEK_SET);
     int nr = RandoSnapshotTail_Load(fr);
-    if (nr != 3) selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-2 + type-3 TLVs");
+    if (nr != 4)
+      selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-6 + type-2 + type-3 TLVs");
     if (g_rando_mushroom_held != 0x09) selfcheck_die("re-saved ownership did not round-trip");
     fclose(fr);
 
@@ -1191,8 +1245,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fd, 0, SEEK_SET);
     int nd = RandoSnapshotTail_Load(fd);
-    if (nd != 4)
-      selfcheck_die("type-5: expected RandoState + CheckedBitmap + RandoSettings + DoorLayout");
+    if (nd != 5)
+      selfcheck_die("type-5: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + DoorLayout");
     if (!DoorRt_Installed())
       selfcheck_die("type-5: door graph was not restored");
     if (!(enhanced_features1 & kFeatures1_DoorShuffleActive))
@@ -1208,7 +1262,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_DoorShuffleActive;  // restored g_ram claims door shuffle
     fseek(frd, 0, SEEK_SET);
     int nrd = RandoSnapshotTail_Load(frd);
-    if (nrd != 4)
+    if (nrd != 5)
       selfcheck_die("type-5: replayed snapshot re-save must perpetuate DoorLayout");
     if (!DoorRt_Installed())
       selfcheck_die("type-5: re-saved door graph was not restored");
@@ -1230,8 +1284,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_DoorShuffleActive;
     fseek(fmissing, 0, SEEK_SET);
     int nmissing = RandoSnapshotTail_Load(fmissing);
-    if (nmissing != 3)
-      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + RandoSettings");
+    if (nmissing != 4)
+      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings");
     if (g_rando_slot_active || Placement_GetActive() != NULL || DoorRt_Installed())
       selfcheck_die("type-5: missing DoorLayout should deactivate rando state");
     fclose(fmissing);
@@ -1248,7 +1302,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-5: bad-digest Save returned false");
     fseek(fbad, 0, SEEK_SET);
     int nbad = RandoSnapshotTail_Load(fbad);
-    if (nbad != 4)
+    if (nbad != 5)
       selfcheck_die("type-5: bad-digest snapshot should still parse all known TLVs");
     if (DoorRt_Installed())
       selfcheck_die("type-5: bad digest inherited or installed a door graph");

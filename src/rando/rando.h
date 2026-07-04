@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 111u
+#define kGeneratorVersion 112u
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -58,6 +58,11 @@ extern uint8 g_assets_hash[32];
 //   }
 // ---------------------------------------------------------------------------
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id);
+
+uint32 Rando_CurrentPotRegistryDigest(void);
+uint16 Rando_CurrentPotRegistryCount(void);
+bool Rando_SettingsNeedPotRegistry(const RandoSettings *settings);
+bool Rando_PotRegistryMatches(uint32 digest, uint16 count);
 
 // ---------------------------------------------------------------------------
 // Rando_DispatchVanillaGrant — convenience for §6 grant-site wrappers that

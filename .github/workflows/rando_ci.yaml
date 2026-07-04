@@ -47,6 +47,8 @@ jobs:
     # pot_key_depth.gen.yaml are gitignored ROM-derived artifacts. Run
     # assets/scripts/run_rando_local_checks.py with local assets before merging
     # pot-table work.
+    - name: check_pot_overrides_static
+      run: python assets/scripts/gen_pot_tables.py --check-overrides-static
 
     # Task 1.0c — Byte-order pin grep on src/rando/*.[ch]
     - name: check_byte_order (1.0c)

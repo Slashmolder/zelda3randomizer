@@ -353,6 +353,11 @@ bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s);
 // entrance shuffle is edge-based and does NOT mis-bind dungeon pots.
 bool Settings_PotShuffleForcedOff(const RandoSettings *s);
 
+// Door shuffle forces in-dungeon keys and has a generated door x pot bridge.
+// This is the effective pot tier the door prover/runtime should see; keeping it
+// here prevents generation and active-slot reinstall from drifting.
+uint8 Settings_DoorPotTier(const RandoSettings *s);
+
 // True when pot_shuffle itemizes small-key pots as live checks: pot_shuffle >=
 // Keys AND pots are not forced off (Settings_PotShuffleForcedOff: cave-entrance
 // shuffle). Shared by the logic VM (eval_pot_keys_*) and the placer

@@ -7073,9 +7073,9 @@ draw:;
 // palette/priority byte ((kWishPond2_OamFlags*2)|0x30). Callers gate on
 // gfx != 0 (the audio-only fallback sentinel) before calling; guard here too
 // to keep the no-op contract local.
-void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
+bool AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
   if (gfx == 0)
-    return;
+    return false;
 
   // Only one receive-item icon may own the shared VRAM slot (chars 0x24/0x34,
   // repainted by the DecodeAnimatedSpriteTile_variable call below) at a time.
@@ -7092,7 +7092,7 @@ void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
 
   int k = Ancilla_AddAncilla(kAncillaType_RandoIconReceipt, 4);
   if (k < 0)
-    return;
+    return false;
 
   // Load the item's tile bundle into the VRAM slot drawn at chars 0x24/0x34 —
   // the same load AncillaAdd_ItemReceipt performs for a pickup, via the shared
@@ -7117,6 +7117,7 @@ void AncillaAdd_RandoIconReceipt(uint8 gfx, uint8 big, uint8 oam_flags) {
   // Position above Link's head, matching the receive-item ancilla's default
   // (item_receipt_method == 0): x += 6, y -= 14.
   Ancilla_SetXY(k, link_x_coord + 6, link_y_coord - 14);
+  return true;
 }
 
 int Ancilla_AddAncilla(uint8 a, uint8 y) {  // 899ce2
@@ -7487,4 +7488,3 @@ void Sprite_CreateDeflectedArrow(int k) {  // 9d8040
     Sprite_PlaceWeaponTink(j);
   }
 }
-

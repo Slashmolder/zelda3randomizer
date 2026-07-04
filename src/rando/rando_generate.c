@@ -42,14 +42,6 @@ static uint32 g_door_gen_digest24;
 #include <stdio.h>
 #include <stdlib.h>
 
-static uint8 door_pot_tier_for_settings(const RandoSettings *settings) {
-  if (settings == NULL ||
-      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla ||
-      Settings_PotShuffleForcedOff(settings))
-    return kPotShuffle_Off;
-  return settings->pot_shuffle;
-}
-
 static bool copy_active_medallion_assignment(uint8 out[kRandoMedallionEntranceCount]) {
   const uint8 *assignment = Rando_GetMedallionAssignment();
   if (assignment == NULL) return false;
@@ -319,7 +311,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // are persisted (@76-79) so activation can regenerate + drift-check.
     for (uint32 datt = 0; datt < 16; datt++) {
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
-                                door_pot_tier_for_settings(settings),
+                                Settings_DoorPotTier(settings),
                                 &g_door_gen_layout))
         continue;
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
@@ -697,6 +689,9 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   if (Settings_EffectiveDoorShuffle(settings) != kDoorShuffle_Vanilla) {
     Rando_GetDoorGeneration(&slot.header.door_attempt, &slot.header.door_digest24);
   }
+  slot.header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
+  slot.header.pot_registry_count = Rando_CurrentPotRegistryCount();
+  slot.header.pot_registry_present = 1;
   // add-rando-major-glitch D6 — couple a glitch-logic seed to the JP-1.0
   // glitch runtime flag. The placer ASSUMED restored glitches are performable
   // for logic>=OverworldGlitches / fake-flippers seeds; the runtime MUST

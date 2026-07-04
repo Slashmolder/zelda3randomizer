@@ -111,6 +111,11 @@ def atomic_write_text(path: Path, text: str) -> None:
 REPO = Path(__file__).resolve().parent.parent
 RANDO_ASSETS = REPO / "assets" / "rando"
 RANDO_SRC = REPO / "src" / "rando"
+DUNGEON_SUFFIXES = [
+    "HyruleCastleEscape", "EasternPalace", "DesertPalace", "TowerOfHera",
+    "HyruleCastleTower", "PalaceOfDarkness", "SwampPalace", "SkullWoods",
+    "ThievesTown", "IcePalace", "MiseryMire", "TurtleRock", "GanonsTower",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +282,24 @@ def _suppress_base_key_terms_under_dungeon(expr, item, dungeon):
     return expr
 
 
+def _strip_door_vanilla_key_terms(expr: str, dungeon: int | None) -> str:
+    """Door-pot bridge predicates must not inherit vanilla same-dungeon key locks.
+
+    The bridge asks the door oracle whether the door-shuffled region containing
+    the pot is reachable. Any vanilla SmallKey/BigKey terms from the pot room's
+    original predicate would double-count or contradict that oracle, so strip
+    only terms for this same dungeon before compiling the bridge predicate.
+    """
+    if dungeon is None or dungeon < 0 or dungeon >= len(DUNGEON_SUFFIXES):
+        return expr
+    suffix = DUNGEON_SUFFIXES[dungeon]
+    for item in (f"SmallKey_{suffix}", f"BigKey_{suffix}"):
+        item_pat = re.escape(item)
+        expr = re.sub(rf"HAS_AMOUNT\(\s*{item_pat}\s*,\s*\d+\s*\)", "TRUE()", expr)
+        expr = re.sub(rf"HAS_ITEM\(\s*{item_pat}\s*\)", "TRUE()", expr)
+    return expr
+
+
 def _pot_key_terms_for(item, full, dungeon):
     """Build the trailing pot-key gate for one generated key-depth row."""
     t = ""
@@ -324,6 +347,17 @@ def _door_pot_bridge_digest(rows: list[dict]) -> int:
         h = _fnv32_u32(h, len(r["pred"]))
         for b in r["pred"]:
             h = _fnv32_u8(h, b)
+    return h
+
+
+def _pot_registry_digest(rows: list[tuple[int, int, int]]) -> int:
+    if not rows:
+        return 0
+    h = 0x811C9DC5
+    for room, pos4, locid in sorted(rows, key=lambda r: (r[0], r[1], r[2])):
+        h = _fnv32_u16(h, room)
+        h = _fnv32_u16(h, pos4)
+        h = _fnv32_u16(h, locid)
     return h
 
 
@@ -450,12 +484,13 @@ def load_pots(path: Path, logic_regions: dict[str, RegionDef] | None = None):
             if rw is not None:
                 dungeon, regions = rw
         if regions and dungeon != 0xFF:
+            bridge_can_reach = _strip_door_vanilla_key_terms(base_can_reach, dungeon)
             bridge_rows.append({
                 "loc_id": int(p["id"]),
                 "name": p["name"],
                 "dungeon": dungeon,
                 "regions": sorted(set(regions)),
-                "base_can_reach": base_can_reach,
+                "base_can_reach": bridge_can_reach,
                 "min_tier": min_tier,
                 "flags": flags,
                 "drop_index": drop_index,
@@ -658,9 +693,10 @@ def load_logic(path: Path | None):
 def _apply_pot_key_terms(loc_preds, world_state_overrides):
     """add-rando-pot-sanity task #25: wrap each pot-bearing dungeon location's
     can_reach with the small-key requirements pot_shuffle adds — the WILD
-    worst-case (`full`, held externally) and the in-context DUNGEON min-depth
+    worst-case (`full`, held externally) and the in-context DUNGEON worst-case
     (`dungeon`). The dungeon term matters because the vanilla `cur` assumes the
-    pot keys drop FREE; once they are items the requirement RISES to min-depth.
+    pot keys drop FREE; once they are items the requirement RISES to the
+    conservative all-orders depth.
     pots-off leaves both POT_KEYS_WILD and POT_KEYS_DUNGEON false, so the wrap
     collapses to the vanilla predicate (byte-identical).
 
@@ -1649,6 +1685,7 @@ def emit_pot_lookup(rows, path: Path) -> int:
     pot's stable (room, pos4) identity. Mirrors chest_lookup.h. `rows` come from
     load_pots() (pots.gen.yaml); sorted by (room, pos4) so the search is correct."""
     rows = sorted(rows, key=lambda r: (r[0], r[1]))
+    digest = _pot_registry_digest(rows)
     lines = [
         HEADER_BANNER, "",
         "// pot_lookup.h — sorted (dungeon_room_index, tile_position) -> LOC_* for",
@@ -1678,6 +1715,8 @@ def emit_pot_lookup(rows, path: Path) -> int:
     lines += [
         "",
         f"#define kRandoPotLookup_COUNT {len(rows)}",
+        f"#define kRandoPotRegistryCount {len(rows)}",
+        f"#define kRandoPotRegistryDigest 0x{digest:08x}u",
         "",
         "#endif  // ZELDA3_RANDO_POT_LOOKUP_H_",
     ]
@@ -2768,6 +2807,16 @@ def main(argv=None):
 
     # ----- Well-formedness checks (task 3.10) -----
     all_errors = []
+
+    ids_to_names: dict[int, list[str]] = {}
+    for loc in locations.values():
+        ids_to_names.setdefault(loc.id, []).append(loc.name)
+    for loc_id, names in sorted(ids_to_names.items()):
+        if len(names) > 1:
+            all_errors.append(
+                f"location id {loc_id} is assigned to multiple locations: "
+                f"{', '.join(repr(n) for n in names)}"
+            )
 
     # 1. Detect logic.yaml location overrides that don't match any registry entry —
     #    these would be silently dropped without this check, masking translation

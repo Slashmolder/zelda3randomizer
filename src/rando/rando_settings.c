@@ -264,6 +264,14 @@ bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
   return s != NULL && Settings_EffectiveShuffleCaveEntrances(s);
 }
 
+uint8 Settings_DoorPotTier(const RandoSettings *s) {
+  if (s == NULL ||
+      Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla ||
+      Settings_PotShuffleForcedOff(s))
+    return kPotShuffle_Off;
+  return s->pot_shuffle;
+}
+
 // goal == Completionist forces 100%-Locations (apply_derived_rules:155-157).
 // Every placement/spoiler consumer reads this so it can't diverge from the
 // canonical hash, which normalizes the same way on its private copy.

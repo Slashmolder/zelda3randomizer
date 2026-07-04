@@ -110,6 +110,9 @@ typedef enum {
 // ---------------------------------------------------------------------------
 typedef struct RandoCounts {
   uint16 by_item_id[256];
+  // Set only by assumed-fill/prover inventories that include synthetic nonpot
+  // door-rando drops for pot-key dungeon mode. Runtime live counts leave this 0.
+  uint8 pot_nonpot_drops_seeded;
 } RandoCounts;
 
 // ---------------------------------------------------------------------------

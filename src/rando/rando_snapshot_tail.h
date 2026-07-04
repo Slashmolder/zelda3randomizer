@@ -62,6 +62,11 @@
 // is regenerated from (share_string seed, canonical settings, attempt) on replay
 // and must match the digest before runtime redirects are installed.
 #define kRandoSnapshotTail_Type_DoorLayout 5u
+// Pot registry identity for pot-shuffle snapshots. The pot lookup table is
+// generated from local ROM-derived artifacts, so pot-enabled cold replay must
+// reject missing/mismatched registries instead of restoring under a different
+// location set.
+#define kRandoSnapshotTail_Type_PotRegistry 6u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the

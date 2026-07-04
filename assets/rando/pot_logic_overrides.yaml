@@ -18,6 +18,7 @@
 
 room_region:
   # --- dungeon rooms (resolved by door / vertical-stair connectivity) ---
+  "016": SwampPalace           # Swamp Waterway. Engine-room alias: chest room 0x16 is Pyramid Fairy, but this pot room/drop is Swamp Palace.
   "017": TowerOfHera_Lobby     # vstair: up 007 (boss) + down 027 (chest) both ToH — tower column
   "031": TowerOfHera_Lobby     # room-id alias: the only liftable pots at 0x031 are Hera, not HCE sewers
   "041": HyruleCastleEscape    # Hyrule Dungeon side; 0x031's liftable-pot alias is handled above.
@@ -58,12 +59,19 @@ room_region:
   "0eb": LightWorld_DeathMountain_East   # DM Cape Heart-Piece Cave — east cape (Paradox/Spiral = DM_East)
   "0f1": LightWorld_DeathMountain_West   # DM Express, upper — west ascent
   "101": LightWorld_NorthWest            # Snitch House (Kakariko)
+  "102": LightWorld_NorthWest            # Sick Kid's House; explicit 0x1xx cave binding so it never depends on cross-room flood.
+  "103": LightWorld_NorthWest            # Kakariko Tavern / Pub / Inn
+  "104": LinksHouse                      # Link's House; room-keyed special case, not a shuffled cave entrance
+  "105": LightWorld_NorthEast            # Sahasrahla's Hut
+  "106": DarkWorld_NorthWest             # Village of Outcasts Chest Game / Orphanage
   "107": LightWorld_NorthWest            # Kakariko Storage Shed
   # --- shared or special cave interiors that need explicit regions instead of flood output ---
   "10c": LightWorld_DeathMountain_East   # Fairy Cave 2 pot side of the shared Mimic/Fairy interior; the Mimic chest gate does not apply to this pot.
   "114": DarkWorld_Mire                  # Pond of Wishing, DW-mire side (entrance 0x62, F12: room 0x114, cached exit screen 0x70): pots reached from DW Mire behind the north bomb wall. (F12 on LW waterfall door 0x5C: room 0x114, cached exit screen 0x0F, pot-LESS fairy side; flood had wrongly said LinksHouse.)
+  "117": DarkWorld_DeathMountain_West    # Byrna Gauntlet / Spike Cave
   "119": LightWorld_NorthWest            # Blind's Hideout (LIGHT Kakariko, entrance 0x61 screen 0x18) — corrected from a wrong DarkWorld_NorthWest override; back room 0x11D matches the fork's Blind's Hideout chests (LW_NW / TRUE)
   "11a": DarkWorld_NorthEast             # storyteller_cave_4 (entrance 0x68, DW screen 0x1E) — same region/requirements as the Palace of Darkness entrance (fork enters PoD from DarkWorld_NorthEast). (flood had wrongly said LightWorld_South.)
+  "11d": LightWorld_NorthWest            # Blind's Hideout back room; explicit partner of 0x119.
   "11f": LightWorld_NorthWest            # Lumberjack's House (entrance 0x6B, by the Sanctuary) — 2 pots; LIGHT, sphere-0 in Open / RescuedZelda in Standard (= the LW_NW access edge). The 0x46 Kakariko-shop side of this shared interior has no liftable pots. Corrected from DarkWorld_NorthWest.
   "127": DarkWorld_NorthWest             # Hammer Pegs cave / Heart Piece Cave 3 (entrance 0x83). F12/playtest: DW_NW hammer-pegs cave; pots share the Hammer Pegs heart-piece access.
 
@@ -161,6 +169,7 @@ room_can_reach:
   # door_tables.gen.c). 0x023 ("Mountainface 1") is interior-route-ONLY
   # (door_portals.yaml: fork_region null — the ledge door never seeds entry). ---
   "015": "HAS_AMOUNT(SmallKey_TurtleRock, 3)"   # TR Pipe Pit — 3 key-doors deep on interior route
+  "016": "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) AND HAS_ITEM(Hammer)"   # Swamp Waterway engine-room alias
   "023": "HAS_AMOUNT(SmallKey_TurtleRock, 3)"   # TR Lazy Eyes — interior-route-only, 3 key-doors deep
   # --- PoD: room 0x01b's ONLY in-PoD entry is through the Map Chest room (0x2b,
   # CanShootArrows — the eyeball-switch wing); it dead-ends to the dark 0x0b. ---

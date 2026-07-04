@@ -46,8 +46,11 @@
 //       analogue of door_digest24) plus a Seed QoL recommended_features0
 //       snapshot/presence byte. v1/v2 files have no block; the loader keys its
 //       presence on the file version and forces the fields to 0 (= legacy
-//       warn-only/no-feature-snapshot behavior). New writes are always v3.
-#define kRandoSidecar_FileFormatVersion 3
+//       warn-only/no-feature-snapshot behavior).
+//   4 — extends the per-slot extension block to carry the local pot registry
+//       digest/count used for pot-shuffle activation drift refusal. v3 files
+//       read these fields as absent. New writes are always v4.
+#define kRandoSidecar_FileFormatVersion 4
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -58,6 +61,13 @@
 //   @3-6  recommended_features0 (u32 LE; Seed QoL feature snapshot)
 //   @7    recommended_features0_present (u8; 1 = apply @3-6)
 #define kRandoSidecar_SlotExtV3Size     8
+// format_version >= 4:
+//   @8-11  pot_registry_digest (u32 LE)
+//   @12-13 pot_registry_count (u16 LE)
+//   @14    pot_registry_present (u8; 1 = refuse pot-enabled drift mismatch)
+//   @15    reserved
+#define kRandoSidecar_SlotExtV4Size     16
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV4Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -245,6 +255,14 @@ typedef struct RandoSlotHeader {
   // @3-6 recommended_features0 LE, @7 recommended_features0_present.
   uint32 recommended_features0;  // v3 ext block @3-6
   uint8 recommended_features0_present;  // v3 ext block @7
+  // add-rando-pot-sanity — local pot registry identity. Pot locations are
+  // generated from ROM-derived local artifacts and are intentionally absent in
+  // public/assetless builds. A pot-enabled slot must therefore prove the current
+  // binary has the same registry before activation or snapshot cold replay.
+  // On disk these live in the format_version-4 extension block.
+  uint32 pot_registry_digest;    // v4 ext block @8-11
+  uint16 pot_registry_count;     // v4 ext block @12-13
+  uint8 pot_registry_present;    // v4 ext block @14
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
@@ -300,12 +318,13 @@ typedef struct RandoSidecarSlot {
 // ---------------------------------------------------------------------------
 
 // Compute the on-disk byte size of one slot given its placement_table_size,
-// for the CURRENT format (version 3). placement_table_size is in BYTES (= 2 ×
+// for the CURRENT format (version 4). placement_table_size is in BYTES (= 2 ×
 // location count). Total = 80 (header) + placement_table_size +
 // ((placement_table_size/2 + 7) >> 3) bitmap + kSettingsCanonicalLen (settings
-// blob) + kRandoSidecar_SlotExtV3Size (extension block). v1 files omit the
-// blob and the ext block, v2 files omit the ext block; RandoSave_ReadFile
-// handles those older layouts internally based on the file's format_version.
+// blob) + kRandoSidecar_SlotExtCurrentSize (extension block). v1 files omit the
+// blob and the ext block, v2 files omit the ext block, v3 files use the smaller
+// v3 extension; RandoSave_ReadFile handles those older layouts internally based
+// on the file's format_version.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);
 
 // Sentinel item_id for "no placement / deprecated location" — written at

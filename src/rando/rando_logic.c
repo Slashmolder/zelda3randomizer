@@ -9,7 +9,9 @@
 
 #include "rando_logic.h"
 #include "rando.h"
+#include "dungeon_ids.h"
 #include "item_ids.h"  // ITEM_GenericKey / ITEM_SmallKey_* (genericKeys collapse)
+#include "pot_nonpot_drop_counts.h"
 #include "shuffle_doors.h"  // door-shuffle oracle (OP_DOORS_LOC_REACHABLE)
 
 #include <assert.h>
@@ -722,6 +724,18 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
     big_key_held[i] = (bk == 0xFFFF) ? 1
                       : ((ctx->counts && ctx->counts->by_item_id[bk]) ? 1 : 0);
   }
+  if (ctx->counts != NULL &&
+      ctx->counts->pot_nonpot_drops_seeded &&
+      g_door_logic_layout != NULL &&
+      g_door_logic_layout->pot_tier != kPotShuffle_Off) {
+    for (uint32 i = 0; i < kPotNonpotDropCounts_COUNT; i++) {
+      const RandoPotNonpotDropCount *row = &kPotNonpotDropCounts[i];
+      uint8 d = Rando_RandoDungeonFromDungeonItem(row->item_id);
+      if (d >= kDoorTbl_DungeonCount)
+        continue;
+      held_keys[d] = (held_keys[d] > row->count) ? (uint8)(held_keys[d] - row->count) : 0;
+    }
+  }
   gates_out->vm_pred = door_vm_pred_cb;
   gates_out->ud = (void *)ctx;
   gates_out->held_keys = held_keys;
@@ -757,6 +771,10 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
         ? door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
                      sizeof(ctx->counts->by_item_id))
         : 0;
+    if (ctx->counts) {
+      fp = door_fnv64(fp, &ctx->counts->pot_nonpot_drops_seeded,
+                      sizeof(ctx->counts->pot_nonpot_drops_seeded));
+    }
     // A door VM predicate can read settings fields via ops such as
     // OP_MODEWEAPONS_EQ and OP_INSTANT_FLUTE, so the per-counts memo/flood
     // fingerprint is NOT a pure function of the inventory counts. Fold those
