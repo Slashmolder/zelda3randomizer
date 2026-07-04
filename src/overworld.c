@@ -739,6 +739,7 @@ void Module09_Overworld() {  // 82a475
   BG1VOFS_copy2 = BG1VOFS_copy = bg1y + bg1_y_offset;
 
   Sprite_Main();
+  Rando_DrawOverworldEnemyMarkerGlints();
 
   BG2HOFS_copy2 = bg2x;
   BG2VOFS_copy2 = bg2y;
@@ -4634,4 +4635,3 @@ void OverworldEntrance_AdvanceAndBoom() {  // 9bd00e
   sound_effect_1 = 12;
   sound_effect_2 = 7;
 }
-

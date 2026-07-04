@@ -134,9 +134,10 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
 All-enemy checks SHALL use the existing enemy marker preference where domain
 metadata and OAM pressure make markers safe. Dungeon all-tier rows use the
 existing marker path. Static overworld all-tier rows MAY draw exact placed-item
-markers in item mode; generic overworld glints and exact-item fallback glints
-remain future post-sprite-overlay work. Marker code SHALL suppress cleanly rather
-than draw a stand-in item for a different placed item.
+markers in item mode; overworld markers that cannot draw an exact item SHALL draw
+the neutral gold glint when a safe post-sprite overlay row and OAM slot are
+available. Marker code SHALL suppress cleanly rather than draw a stand-in item for
+a different placed item.
 
 For every emitted all-tier source that can have an in-world marker, generated marker
 data SHALL define domain-specific stable authored identity, screen-coordinate

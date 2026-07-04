@@ -543,11 +543,11 @@ users. More than one distinct visible marker item, unsupported custom palette
 state, active receipts, receive-slot conflicts, or OAM pressure fall back to the
 glint, so the player still sees an unchecked dungeon check without mistaking the
 marker for a stand-in item. Static overworld `all` carriers attempt the same exact
-placed-item marker inline in `item` mode; generic gold glints for overworld
-carriers remain future work because the safe palette-row choice requires a
-post-sprite overworld overlay pass like the dungeon pot/glint renderer. Spawned
-forced key or big-key drops get marker priority over live carriers and try to draw
-the real placed item after the carrier dies. This is a client-local visual
+placed-item marker inline in `item` mode; overworld carriers that cannot draw the
+exact placed-item marker, including additional distinct markers beyond the current
+shared icon slot, fall back to the same gold glint in a post-sprite overworld
+overlay pass. Spawned forced key or big-key drops get marker priority over live
+carriers and try to draw the real placed item after the carrier dies. This is a client-local visual
 preference and does not enter the share string, settings hash, generator version,
 or corpus.
 

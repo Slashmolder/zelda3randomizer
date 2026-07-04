@@ -2397,6 +2397,73 @@ bool Rando_TryDrawEnemyDropCarrierField(int k) {
   return false;
 }
 
+static bool Rando_EnemyMarkerAllocateGlintOam(void) {
+  if (sort_sprites_setting) {
+    if (oam_region_base[3] + 4 >= kOamGetBufferPos_Tab0[3])
+      return false;
+    Oam_AllocateFromRegionD(4);
+  } else {
+    if (oam_region_base[0] + 4 >= kOamGetBufferPos_Tab0[0])
+      return false;
+    Oam_AllocateFromRegionA(4);
+  }
+  return true;
+}
+
+void Rando_DrawOverworldEnemyMarkerGlints(void) {
+  g_rando_pot_overlay_drawn = false;
+  g_rando_pot_overlay_palette_row = 0xFF;
+  if (player_is_indoors || !(enhanced_features1 & kFeatures1_RandomizerActive))
+    return;
+
+  uint16 enemy_glint_mask = 0;
+  for (int k = 0; k < 16; k++) {
+    if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
+      continue;
+    if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic &&
+        Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier) != NULL &&
+        !Rando_EnemyMarkerDrawFailedThisFrame(k))
+      continue;
+    enemy_glint_mask |= (uint16)(1u << k);
+  }
+  if (enemy_glint_mask == 0)
+    return;
+
+  uint8 used = 1u << 7;
+  for (int i = 0; i < 128; i++) {
+    if (oam_buf[i].y < 0xf0)
+      used |= 1u << ((oam_buf[i].flags >> 1) & 7);
+  }
+  int prow = -1;
+  for (int r = 0; r < 8; r++) {
+    if (!(used & (1u << r))) { prow = r; break; }
+  }
+  if (prow < 0)
+    return;
+
+  g_rando_pot_overlay_palette_row = (uint8)prow;
+  static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
+  uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
+  int bob = (frame_counter >> 3) & 3;
+  uint8 flags = (uint8)((prow << 1) | 0x20);
+  for (int k = 0; k < 16; k++) {
+    if (!(enemy_glint_mask & (uint16)(1u << k)))
+      continue;
+    int sx = (uint16)(Sprite_GetX(k) - BG2HOFS_copy2);
+    int sy = (uint16)(Sprite_GetY(k) - BG2VOFS_copy2) - sprite_z[k];
+    int gx = sx + 4;
+    int gy = sy - 10 - bob;
+    if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
+      continue;
+    if (!Rando_EnemyMarkerAllocateGlintOam())
+      continue;
+    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
+    g_rando_pot_overlay_drawn = true;
+  }
+  if (!g_rando_pot_overlay_drawn)
+    g_rando_pot_overlay_palette_row = 0xFF;
+}
+
 bool Rando_EnemyDropMarkerNeedsOverlay(int k) {
   return Rando_GetEnemyDropPickupMarkerInfo(k, NULL) ||
          Rando_GetEnemyDropCarrierMarkerInfo(k, NULL);

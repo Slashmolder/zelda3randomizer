@@ -89,7 +89,8 @@
 - [ ] 5.3 Group spoiler, tracker, reachability, and autotracker output by dungeon
   room, overworld area/screen, boss arena, or scripted parent source.
 - [x] 5.4 Reuse enemy marker modes for dungeon rows and exact item markers for
-  overworld rows; overworld generic glints remain future post-sprite-overlay work.
+  overworld rows; overworld carriers that cannot draw exact markers use the same
+  post-sprite gold-glint fallback as dungeon carriers.
 - [ ] 5.5 Verify dense all-enemy marker screens do not corrupt OAM, palettes, pot
   glints, or item receipt graphics.
 - [x] 5.6 Add marker candidate metadata for every shipped all-tier domain that renders

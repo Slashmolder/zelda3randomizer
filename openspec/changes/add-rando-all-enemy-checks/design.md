@@ -234,9 +234,9 @@ All-enemy checks reuse the existing enemy marker preference:
 
 Dungeon all-tier rows use the existing enemy marker path. Static overworld
 all-tier rows currently support exact placed-item markers in item mode when the
-renderer can show them safely. Generic overworld glints and exact-item fallback
-glints remain future post-sprite-overlay work; until then, the runtime suppresses
-unsupported overworld markers cleanly rather than drawing an item stand-in.
+renderer can show them safely. Overworld carriers that cannot draw an exact item
+marker use a post-sprite gold-glint fallback so dense screens still show every
+unchecked check without drawing an item stand-in.
 
 Because `all` can place markers on dense screens, the renderer may prioritize visible
 markers and fall back or suppress under OAM pressure, but tracker/spoiler state must

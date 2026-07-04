@@ -104,6 +104,7 @@ bool Sprite_TrackBodyToHead(int k);
 void Sprite_DrawMultiple(int k, const DrawMultipleData *src, int n, PrepOamCoordsRet *info);
 void Sprite_DrawMultiplePlayerDeferred(int k, const DrawMultipleData *src, int n, PrepOamCoordsRet *info);
 bool Rando_TryDrawEnemyDropCarrierField(int k);
+void Rando_DrawOverworldEnemyMarkerGlints(void);
 bool Rando_EnemyDropMarkerNeedsOverlay(int k);
 bool Rando_TryDrawEnemyDropMarkerOverlay(int k);
 bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy);
