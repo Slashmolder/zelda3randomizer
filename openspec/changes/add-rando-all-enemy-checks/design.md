@@ -75,18 +75,17 @@ runtime. UI/spoiler output may also show the raw request with a downgrade reason
 The initial compatibility table is:
 
 - vanilla effective small keys: normalize requested `All` to `Off`;
-- Wild/Retro/Dungeon small keys with no incompatible shuffles and a fresh all-tier
-  registry: keep `All`;
+- Wild/Retro/Dungeon small keys with a fresh all-tier registry: keep `All`;
 - missing, stale, or capacity-overflowing all-tier registry: reject;
-- door shuffle without non-key all-enemy door bridges and digest/replay support:
-  normalize requested `All` to `Keys`;
+- door shuffle: keep `All`; generated door x ordinary enemy-check bridge rows,
+  source predicates, and bridge digest/replay support make the checks provable;
 - enemy shuffle: normalize requested `All` to the highest lower tier allowed by
   existing derived rules, normally `Keys` but `Off` when the keys tier is unsupported,
   until a future change makes enemy shuffle placement-affecting for all-enemy logic
   and updates its digest/corpus contract;
-- boss shuffle: normalize requested `All` to `Dungeon` until boss/miniboss all-enemy
-  identity is defined against assigned boss rooms and existing boss rewards, unless
-  another rule lowers the effective tier further;
+- boss shuffle: keep `All`; boss/miniboss checks bind to the destination event and
+  coexist with existing boss rewards, unless another rule lowers the effective tier
+  further;
 - pot shuffle: compose; generated thrown-pot routes must continue proving ordering
   sound;
 - entrance shuffle, including cave entrance shuffle: normalize requested `All` to
@@ -100,8 +99,8 @@ It must never silently treat `all` as `dungeon`.
 
 The all-enemy generator builds one source audit from local ROM assets and curated
 runtime tables. The current shipped generator emits ordinary dungeon, reviewed
-all-tier underworld, and static overworld rows. Each emitted source row records at
-minimum:
+all-tier underworld, static overworld, boss/miniboss event, and finite
+scripted-spawn rows. Each emitted source row records at minimum:
 
 - domain (`dungeon`, `overworld`, `boss`, `scripted_spawn`);
 - stable source identity fields for that domain;
@@ -120,8 +119,10 @@ the `dungeon` tier. Overworld identity uses the authored active sprite-list tupl
 `(stage, area, source_slot, block)` plus the runtime `sprite_N_word` block. A lazy
 block lookup fallback re-resolves `(current area, current stage, block)` so snapshot
 restore does not depend on the process-static load-time map being rebuilt first.
-Boss and scripted-spawn rows need explicit parent identity and child indexing in a
-future source registry; unbounded children are excluded.
+Boss/miniboss identity uses the destination dungeon event plus room for GT
+minibosses. Scripted-spawn identity uses the authored parent
+`(room, source slot, overlord type)` plus child index and child type. Unbounded
+children are excluded.
 
 Enemy shuffle must not change location identity. The first all-enemy implementation
 normalizes requested `All` to the highest lower tier allowed by existing derived
@@ -204,13 +205,11 @@ Save and snapshot compatibility must be explicit:
 
 ## D7 - Door shuffle, pot shuffle, enemy shuffle, and entrance shuffle
 
-Door shuffle can support `all` only after non-key enemy rows have door-region
-bridges or equivalent shuffled-door reachability predicates. Until that bridge
-exists, a requested `all` under door shuffle normalizes to `Keys`. When the bridge
-exists, its rows, effective all-enemy tier, and digest must be included in
-`DoorShuffleLayout` generation, the accepted door layout digest, sidecar activation,
-and snapshot type-5 replay validation so bridge drift fails closed like pot and
-forced enemy-drop bridge drift.
+Door shuffle supports `all` through generated door x ordinary enemy-check bridge
+rows and source predicates. The bridge rows, effective all-enemy tier, and digest
+are included in `DoorShuffleLayout` generation, the accepted door layout digest,
+sidecar activation, and snapshot type-5 replay validation so bridge drift fails
+closed like pot and forced enemy-drop bridge drift.
 
 Pot shuffle composes with `all` through shared logic predicates and thrown-pot kill
 routes. Pot routes may use only reachable pots that remain available before the
@@ -221,12 +220,11 @@ weapon unless the room state makes that ordering sound.
 Enemy shuffle composes with forced-key `Keys` only in the first all-enemy change.
 Requested `All` normalizes to the highest lower tier allowed by existing derived
 rules while enemy shuffle is active, normally `Keys` but `Off` when the keys tier is
-unsupported. Boss shuffle normalizes requested `All` to `Dungeon` until boss/miniboss
-identity is defined by assigned boss room, pool, secondary sprites, pinned bosses,
-prizes, and heart-container behavior, unless another rule lowers the effective tier
-further. Entrance shuffle normalizes requested `All` to `Dungeon` until all-enemy
-overworld/domain reachability is modeled against the entrance graph, unless another
-rule lowers the effective tier further.
+unsupported. Boss shuffle composes with `All` because boss/miniboss checks bind to
+the destination event and preserve the existing reward behavior, unless another rule
+lowers the effective tier further. Entrance shuffle normalizes requested `All` to
+`Dungeon` until all-enemy overworld/domain reachability is modeled against the
+entrance graph, unless another rule lowers the effective tier further.
 
 ## D8 - Visuals, tracker, and spoiler output
 

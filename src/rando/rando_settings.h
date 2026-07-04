@@ -206,10 +206,10 @@ typedef enum {
 
 // add-rando-enemy-drop-sanity — enemy-drop check tiers. Keys itemizes vanilla
 // forced enemy key drops. Dungeon also itemizes ordinary eligible dungeon enemies
-// as checks when vanilla-door logic is active; door shuffle degrades it to Keys
-// until a non-key door bridge exists. All adds generated static overworld enemy
-// rows for the supported no-door/no-enemy-shuffle setting set and remains a
-// distinct tier above Dungeon.
+// as checks. Door shuffle composes with dungeon/all ordinary enemy checks through
+// generated bridge rows. All adds generated static overworld, reviewed
+// underworld, boss/miniboss, and finite scripted-spawn checks where runtime
+// identity and logic are modeled; it remains a distinct tier above Dungeon.
 typedef enum {
   kEnemyDropChecks_Off = 0,
   kEnemyDropChecks_Keys = 1,
@@ -388,9 +388,9 @@ bool Settings_PotKeysActive(const RandoSettings *s);
 
 // add-rando-enemy-drop-sanity — normalized enemy-drop check tier. Keys is
 // honored when effective small keys are Wild (including Retro's computed mode)
-// or Dungeon. Dungeon is honored for vanilla-door layouts. All is distinct and
-// only remains effective when no current incompatibility forces a lower tier;
-// placement still fail-closes if the generated all-tier registry is unavailable.
+// or Dungeon. Dungeon and All compose with door shuffle; enemy shuffle lowers
+// them to Keys, entrance shuffle lowers All to Dungeon, and placement still
+// fail-closes if the generated all-tier registry is unavailable.
 uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s);
 bool Settings_EnemyDropKeysActive(const RandoSettings *s);
 bool Settings_EnemyChecksDungeonActive(const RandoSettings *s);

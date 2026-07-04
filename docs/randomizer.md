@@ -130,7 +130,7 @@ axis via `item_pool`.
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
 | `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
-| `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible static overworld enemies plus reviewed all-tier underworld exceptions; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; door shuffle and enemy shuffle degrade `dungeon`/`all` to `keys`; boss or entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
+| `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, boss/miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -478,27 +478,26 @@ bridge. Vanilla small-key mode normalizes enemy-drop checks to `off`.
 lookup keys by vanilla room/source slot, not by the shuffled enemy type.
 
 The `dungeon` tier includes the `keys` tier and adds eligible ordinary dungeon
-enemies as first-class checks. The local ROM-derived registry currently scans 464
-eligible underworld sprite-table sources, emits the 350 dungeon candidates with a
+enemies as first-class checks. The local ROM-derived registry currently scans
+eligible underworld sprite-table sources, emits dungeon candidates with a
 conservative room predicate, keeps 78 key-depth-only candidates audit-only, and
 leaves 24 no-key-depth underworld sources outside the dungeon-only scope. Door
-shuffle currently degrades requested `dungeon` to effective `keys`; ordinary
-dungeon-enemy rows are disabled there until a non-key door-region bridge exists.
+shuffle composes with dungeon ordinary enemies through generated door x
+enemy-check bridge rows and layout digest coverage.
 Enemy shuffle also degrades requested `dungeon` to effective `keys` because the
 placement logic does not know the per-seed shuffled enemy type or HP scaling for
 ordinary enemy rows.
 
 The `all` value is a distinct canonical setting above `dungeon`; it no longer
-aliases to the dungeon-only tier. In current builds it adds 634 generated static
+aliases to the dungeon-only tier. In current builds it adds generated static
 ordinary overworld enemy checks whose authored `(stage, area, source slot, block)`
-identity can be recovered at runtime, plus 12 reviewed underworld cave/interior
-checks in rooms `0x03C`, `0x107`, `0x10C`, and `0x123` whose access and kill
-routes are directly modeled. A
-requested `all` lowers to `keys` under door or enemy shuffle, lowers to `dungeon`
-under boss or entrance shuffle, and normalizes to `off` with vanilla small keys.
-Boss/miniboss sources, finite scripted spawn groups, unbounded/farmable dynamic
-spawns, and any source without stable death-time identity remain explicit future
-scope rather than quiet inclusions.
+identity can be recovered at runtime, reviewed underworld cave/interior checks in
+rooms `0x03C`, `0x107`, `0x10C`, and `0x123`, reviewed boss/miniboss event checks,
+and finite authored scripted-spawn groups whose parent/child identity is stable at
+runtime. A requested `all` lowers to `keys` under enemy shuffle, lowers to
+`dungeon` under entrance shuffle, and normalizes to `off` with vanilla small keys.
+Unbounded/farmable dynamic spawns and sources without stable death-time identity
+remain explicit future scope rather than quiet inclusions.
 The native window and file-select UI expose `all` only as a separate tier; they do
 not label the dungeon-only tier as all.
 
@@ -552,10 +551,14 @@ preference and does not enter the share string, settings hash, generator version
 or corpus.
 
 For door shuffle, codegen emits door x enemy-drop bridge rows carrying the door
-DROP index, door region, and source predicate; the door layout digest includes
-that bridge so saved/replayed layouts drift-fail if local generated enemy data
-changes. Placement seeds only the still-vanilla free drops as assumed inventory,
-using `door_drop_total - active key pots - active enemy key drops` per dungeon.
+DROP index, door region, and source predicate, plus door x ordinary enemy-check
+bridge rows carrying door regions, active tier, and source predicates. The door
+layout digest includes those bridges so saved/replayed layouts drift-fail if
+local generated enemy data changes. Placement seeds only the still-vanilla free
+drops as assumed inventory, using `door_drop_total - active key pots - active
+enemy key drops` per dungeon; the door oracle counts active pot, forced enemy,
+and ordinary enemy check key sources only when their door regions and generated
+source predicates are satisfied.
 If local generated enemy-check assets are missing, active `enemy_drop_checks=dungeon`
 or pure effective `enemy_drop_checks=all` seeds fail closed instead of silently
 generating with an empty enemy registry.
@@ -1373,12 +1376,13 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 114→115 | **Enemy-drop checks support vanilla-door Dungeon small keys** — generated enemy rows now include exact key-depth DROP metadata, the logic VM gets an enemy-drop Dungeon min-depth gate, and placement computes combined free-drop grants for active pot + enemy key sources. | Only active Dungeon enemy-drop rows move; door-shuffle support follows in 116. |
 | 115→116 | **Enemy-drop checks compose with door shuffle** — codegen emits a door x enemy-drop bridge, `DoorShuffleLayout` digests the active enemy bridge, and the door prover removes active enemy drops from vanilla free-drop accounting while adding them as itemized key sources. | Only the explicit door-shuffle + enemy-drop corpus row changes; a new combined pot+enemy+door row pins the bridge interaction. |
 | 116→117 | **Enemy-drop key-depth applies to ordinary locations and HCE big-key side effects** — generated enemy metadata now includes ordinary location key-depth rows, an `ENEMY_DROP_KEYS_WILD` VM op, and a virtual `HyruleCastleBigKey` derived from the Ball-n-chain one-shot check. | Active enemy-drop key seeds move where ordinary locations were previously under-gated, especially Hyrule Castle. Default/off rows stay inactive. |
-| 117→118 | **Dungeon enemy checks** — `enemy_drop_checks=dungeon` is exposed for vanilla-door Wild/Retro and Dungeon small-key seeds, adds ordinary dungeon `Enemy` locations from the local ROM-derived registry, and degrades to `keys` under door shuffle. | Existing `off`/`keys` rows stay unchanged. Three new dungeon-enemy corpus rows pin Wild, Dungeon, and door-shuffle degradation behavior. |
+| 117→118 | **Dungeon enemy checks** — `enemy_drop_checks=dungeon` is exposed for Wild/Retro and Dungeon small-key seeds and adds ordinary dungeon `Enemy` locations from the local ROM-derived registry. | Existing `off`/`keys` rows stay unchanged. Three new dungeon-enemy corpus rows pin Wild, Dungeon, and door-shuffle behavior. |
 | 118→119 | **Enemy-check kill logic** — ordinary dungeon-enemy checks now add per-source enemy kill predicates plus thrown-pot alternatives derived from the engine damage tables and reachable room pot counts; key-depth-only candidates remain audit-only until room reach can be modeled; requested `dungeon` also degrades to `keys` under enemy shuffle because placement cannot see shuffled type/HP. | Dungeon-enemy corpus rows move; forced-key-only rows stay effective under enemy shuffle. |
 | 119→120 | **Enemy-drop `all` tier reserved honestly** — `enemy_drop_checks=all` becomes a distinct canonical value (`all=3`) instead of an alias for dungeon-only checks. Pure effective `all` generation fails closed until the complete all-enemy registry/runtime/logic contract exists; incompatible shuffles lower to the highest supported tier. Enemy marker item mode also moves to bounded exact-item rendering with glint fallback, but that visual change is client-local. | Default/off and lower-tier rows should stay behaviorally unchanged after manifest restamp; pure effective `all` is intentionally rejected rather than added to the corpus until the full registry ships. |
 | 120→121 | **Static overworld enemy checks for `all`** — pure effective `enemy_drop_checks=all` now adds generated static ordinary overworld enemy rows above the dungeon tier, with stage/area/source-slot/block runtime identity, region+stage reachability, post-Agahnim prerequisite placement protection, death-time direct grants, checked-source suppression, snapshot-restore lookup fallback, and exact item markers in overworld item-marker mode. Bosses, minibosses, finite scripted spawns, farmable spawns, and unsupported identity domains stay future scope. | New `all` corpus rows pin active Wild/Dungeon behavior plus door/enemy/boss/entrance downgrades; lower tiers are restamped at the new generator version. |
 | 121→122 | **Reviewed underworld exceptions for `all`** — the all-tier enemy registry can now add audited underworld cave/interior rows when access can be modeled directly; the Kakariko Storage Shed room `0x107` rats are included as all-only checks gated by LightWorld NorthWest access plus bombs, with the existing thrown-pot kill proof requiring one of eight room pots. Indoor lookup rows carry an `all_tier_only` bit so these checks do not activate in the `dungeon` tier. | Active pure `all` rows move by two new locations; lower tiers remain excluded from these cave/interior checks. Corpus regenerated at v122. |
 | 122→123 | **Reviewed cave/interior expansion for `all`** — audited all-only underworld checks now include Hookshot Cave-side Blue Bari (`0x03C`), Mimic Cave Goriya/Mimic sources (`0x10C`), and Mini Moldorm Cave Mini-Moldorms (`0x123`) in addition to the Kakariko Storage Shed rats. The reviewed bindings carry world-state-specific cave access where Standard/Open/Retro and Inverted differ, and disable the shared Fairy Cave pot for Mimic Cave so those enemies require the normal inventory combat route. | Active pure `all` rows move by ten new locations. Corpus regenerated at v123. |
+| 123→124 | **Boss, scripted-spawn, and door-bridge enemy checks** — `enemy_drop_checks=all` now adds reviewed boss/miniboss event checks plus finite authored scripted-spawn enemy checks, while ordinary dungeon/all enemy checks compose with door shuffle through generated enemy-check bridge rows, source predicates, and door-layout digest coverage. Door and boss shuffle no longer lower `all`; enemy shuffle still lowers ordinary enemy checks to `keys`, and entrance shuffle still lowers `all` to `dungeon`. | Active `all` rows gain 38 checks and door-shuffle enemy-check rows become fillable/reachable instead of downgrading. Corpus regenerated at v124. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |

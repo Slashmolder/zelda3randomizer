@@ -49,6 +49,14 @@ static uint8 door_enemy_drop_keys_for_settings(const RandoSettings *settings) {
   return Settings_EnemyDropKeysActive(settings) ? 1 : 0;
 }
 
+static uint8 door_enemy_check_tier_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla)
+    return kEnemyDropChecks_Off;
+  uint8 tier = Settings_EffectiveEnemyDropChecks(settings);
+  return tier >= kEnemyDropChecks_Dungeon ? tier : kEnemyDropChecks_Off;
+}
+
 static bool copy_active_medallion_assignment(uint8 out[kRandoMedallionEntranceCount]) {
   const uint8 *assignment = Rando_GetMedallionAssignment();
   if (assignment == NULL) return false;
@@ -320,6 +328,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
                                 Settings_DoorPotTier(settings),
                                 door_enemy_drop_keys_for_settings(settings),
+                                door_enemy_check_tier_for_settings(settings),
                                 &g_door_gen_layout))
         continue;
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);

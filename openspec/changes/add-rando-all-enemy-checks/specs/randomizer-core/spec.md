@@ -16,12 +16,13 @@ compatible all-tier source can remain active for the selected settings. The curr
 generated all-tier source set is ordinary dungeon enemies plus static ordinary
 overworld enemies with stable `(stage, area, source slot, block)` identity, plus
 reviewed underworld cave/interior exceptions with stable room/source-slot identity
-and direct access predicates.
-Boss/miniboss sources, finite scripted-spawn groups, unbounded/farmable spawns, and
-sources without stable death-time identity remain explicit future scope. The
-normalized effective value, not an incompatible raw request, SHALL feed the settings
-hash, share strings, placement, logic, UI, spoiler, and runtime. UI/spoiler output
-MAY also show the raw request with a downgrade or rejection reason.
+and direct access predicates, reviewed boss/miniboss event checks, and reviewed
+finite scripted-spawn checks with stable parent/child identity. Unbounded/farmable
+spawns and sources without stable death-time identity remain explicit future
+scope. The normalized effective value, not an incompatible raw request, SHALL feed
+the settings hash, share strings, placement, logic, UI, spoiler, and runtime.
+UI/spoiler output MAY also show the raw request with a downgrade or rejection
+reason.
 
 Adding the `all` value SHALL update generator-versioned semantics, fixed-settings
 selfchecks, share/settings decode, settings hash expectations, UI persistence, and
@@ -34,15 +35,14 @@ Derived rules SHALL apply this compatibility table:
   and sufficient capacity: requested `All` remains `All`;
 - missing, stale, duplicate, or capacity-overflowing generated all-tier registry:
   generation rejects active `All`;
-- door shuffle without non-key all-enemy door bridges and digest/replay support:
-  requested `All` normalizes to `Keys`;
+- door shuffle: requested `All` remains `All` through generated door x ordinary
+  enemy-check bridge rows, source predicates, and digest/replay support;
 - enemy shuffle: requested `All` normalizes to the highest lower tier allowed by
   existing derived rules, normally `Keys` but `Off` when the keys tier is unsupported,
   until a future change makes enemy shuffle placement-affecting for all-enemy logic
   and updates digest/corpus expectations;
-- boss shuffle: requested `All` normalizes to `Dungeon` until boss/miniboss
-  all-enemy identity is modeled for assigned boss rooms and existing boss rewards,
-  unless another rule lowers the effective tier further;
+- boss shuffle: requested `All` remains `All`; boss/miniboss checks bind to the
+  destination event and coexist with the existing boss reward path;
 - pot shuffle composes with `All`; generated thrown-pot kill routes must continue
   proving their required reachable pot count and ordering soundness;
 - entrance shuffle, including cave entrance shuffle: requested `All` normalizes to
@@ -67,20 +67,20 @@ Derived rules SHALL apply this compatibility table:
 - **WHEN** `enemy_drop_checks=All` but effective small keys are vanilla
 - **THEN** derived settings serialize with `enemy_drop_checks=Off`
 
-#### Scenario: Door shuffle normalizes all to keys
-- **WHEN** `enemy_drop_checks=All` and door shuffle is active without non-key
-  all-enemy door bridge support
-- **THEN** derived settings serialize with `enemy_drop_checks=Keys`
+#### Scenario: Door shuffle preserves all through the generated bridge
+- **WHEN** `enemy_drop_checks=All` and door shuffle is active
+- **THEN** derived settings serialize with `enemy_drop_checks=All`
+- **AND** the door layout digest includes the generated enemy-check bridge digest
 
 #### Scenario: Enemy shuffle normalizes all to supported lower tier
 - **WHEN** `enemy_drop_checks=All` and enemy shuffle is active
 - **THEN** derived settings serialize with the highest lower tier allowed by existing
   derived rules, normally `Keys` but `Off` when the keys tier is unsupported
 
-#### Scenario: Boss shuffle alone normalizes all to dungeon
+#### Scenario: Boss shuffle preserves all
 - **WHEN** `enemy_drop_checks=All` and boss shuffle is active, with no enemy shuffle,
   door shuffle, vanilla-key mode, or missing registry
-- **THEN** derived settings serialize with `enemy_drop_checks=Dungeon`
+- **THEN** derived settings serialize with `enemy_drop_checks=All`
 
 #### Scenario: Entrance shuffle normalizes all to dungeon
 - **WHEN** `enemy_drop_checks=All` and entrance shuffle is active before all-enemy

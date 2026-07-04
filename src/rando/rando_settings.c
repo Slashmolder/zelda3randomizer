@@ -312,17 +312,13 @@ uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s) {
   if (small_keys != kDungeonItemMode_Wild && small_keys != kDungeonItemMode_Dungeon)
     return kEnemyDropChecks_Off;
   if (s->enemy_drop_checks >= kEnemyDropChecks_All) {
-    if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
-      return kEnemyDropChecks_Keys;
     if (s->enemy_shuffle)
       return kEnemyDropChecks_Keys;
-    if (s->boss_shuffle || Settings_EffectiveAnyEntranceShuffle(s))
+    if (Settings_EffectiveAnyEntranceShuffle(s))
       return kEnemyDropChecks_Dungeon;
     return kEnemyDropChecks_All;
   }
   if (s->enemy_drop_checks == kEnemyDropChecks_Dungeon) {
-    if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
-      return kEnemyDropChecks_Keys;
     if (s->enemy_shuffle)
       return kEnemyDropChecks_Keys;
     return kEnemyDropChecks_Dungeon;
@@ -1177,10 +1173,10 @@ void Settings_SelfCheck(void) {
   }
   // add-rando-enemy-drop-sanity — enemy_drop_checks is append-only byte [28].
   // Keys activates with Wild/Dungeon effective small keys. Dungeon activates the
-  // ordinary dungeon enemy checks only for vanilla-door, non-enemy-shuffle
-  // layouts; door shuffle and enemy shuffle degrade Dungeon to Keys so forced
-  // enemy key drops stay active without enabling ordinary enemy rows whose logic
-  // cannot be proven.
+  // ordinary dungeon enemy checks when generated logic can prove them, including
+  // door shuffle through the generated door bridge. Enemy shuffle still degrades
+  // Dungeon/All to Keys so forced enemy key drops stay active without enabling
+  // ordinary enemy rows whose shuffled type/HP cannot be proven.
   {
     RandoSettings sd;
     Settings_SetDefaults(&sd);
@@ -1304,10 +1300,10 @@ void Settings_SelfCheck(void) {
     sdungeondoor.door_shuffle = kDoorShuffle_Basic;
     uint8 calldoor[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(&sdungeondoor, calldoor);
-    if (calldoor[28] != kEnemyDropChecks_Keys ||
-        !Settings_EnemyDropKeysActive(&sdungeondoor) ||
-        Settings_EffectiveEnemyDropChecks(&sdungeondoor) != kEnemyDropChecks_Keys) {
-      fprintf(stderr, "Settings_SelfCheck: door shuffle must degrade enemy_drop_checks=Dungeon to Keys\n");
+    if (calldoor[28] != kEnemyDropChecks_Dungeon ||
+        !Settings_EnemyChecksDungeonActive(&sdungeondoor) ||
+        Settings_EffectiveEnemyDropChecks(&sdungeondoor) != kEnemyDropChecks_Dungeon) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must preserve enemy_drop_checks=Dungeon\n");
       exit(2);
     }
     RandoSettings sdungeonenemy = sdungeon;
@@ -1324,9 +1320,9 @@ void Settings_SelfCheck(void) {
     salldoor.door_shuffle = kDoorShuffle_Basic;
     uint8 calldoor2[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(&salldoor, calldoor2);
-    if (calldoor2[28] != kEnemyDropChecks_Keys ||
-        Settings_EnemyChecksAllActive(&salldoor)) {
-      fprintf(stderr, "Settings_SelfCheck: door shuffle must degrade enemy_drop_checks=All to Keys\n");
+    if (calldoor2[28] != kEnemyDropChecks_All ||
+        !Settings_EnemyChecksAllActive(&salldoor)) {
+      fprintf(stderr, "Settings_SelfCheck: door shuffle must preserve enemy_drop_checks=All\n");
       exit(2);
     }
     RandoSettings sallenemy = sall;
@@ -1342,10 +1338,9 @@ void Settings_SelfCheck(void) {
     sallboss.boss_shuffle = 1;
     uint8 callboss[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(&sallboss, callboss);
-    if (callboss[28] != kEnemyDropChecks_Dungeon ||
-        Settings_EnemyChecksAllActive(&sallboss) ||
-        !Settings_EnemyChecksDungeonActive(&sallboss)) {
-      fprintf(stderr, "Settings_SelfCheck: boss shuffle must degrade enemy_drop_checks=All to Dungeon\n");
+    if (callboss[28] != kEnemyDropChecks_All ||
+        !Settings_EnemyChecksAllActive(&sallboss)) {
+      fprintf(stderr, "Settings_SelfCheck: boss shuffle must preserve enemy_drop_checks=All\n");
       exit(2);
     }
     RandoSettings sallentrance = sall;

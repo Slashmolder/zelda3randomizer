@@ -1,29 +1,33 @@
 ## ADDED Requirements
 
-### Requirement: All tier covers generated static overworld enemy sources and reviewed underworld exceptions
+### Requirement: All tier covers every supported stable enemy source domain
 
 `enemy_drop_checks=all` SHALL include the `keys` and `dungeon` tiers plus every
 compatible generated static overworld ordinary enemy source in the shipped
 all-tier registry. It MAY also include audited underworld cave/interior ordinary
 enemy sources when their room access can be modeled directly without dungeon
-key-depth metadata. The shipped registry scope is dungeon ordinary enemies, static
-authored overworld ordinary enemies, and reviewed underworld exceptions with stable
-source identity, reachability, death dispatch, and checked-state suppression.
+key-depth metadata. It SHALL include reviewed boss/miniboss event checks and
+finite authored scripted-spawn enemy checks when their runtime identity,
+reachability, death dispatch, persistence, and reward coexistence are modeled.
+The shipped registry scope is dungeon ordinary enemies, static authored overworld
+ordinary enemies, reviewed underworld exceptions, reviewed boss/miniboss events,
+and reviewed finite scripted-spawn enemies with stable source identity,
+reachability, death dispatch, and checked-state suppression.
 
 The all-enemy audit SHALL classify every scanned source in the supported static
-dungeon/overworld domains, plus every reviewed underworld exception candidate, as
-included or excluded with a stable reason.
+dungeon/overworld domains, every reviewed underworld exception candidate, every
+reviewed boss/miniboss event, and every reviewed finite scripted-spawn candidate
+as included or excluded with a stable reason.
 Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
 projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT
 be emitted as checks unless a future change converts them into finite one-shot
 sources with stable identity and persistence.
 
-Boss/miniboss sources, finite scripted-spawn groups, unbounded/farmable spawns,
-and shuffled enemy substitutions are future source domains for this change. They
-SHALL NOT be silently counted as covered by the shipped `all` tier; affected
-setting combinations either normalize visibly to a lower supported tier or remain
-documented as future scope until source identity, death dispatch, persistence, and
-logic are modeled.
+Unbounded/farmable spawns and shuffled enemy substitutions remain unsupported
+domains for this change. They SHALL NOT be silently counted as covered by the
+shipped `all` tier; affected setting combinations either normalize visibly to a
+lower supported tier or remain documented as future scope until source identity,
+death dispatch, persistence, and logic are modeled.
 
 #### Scenario: Killable overworld source is emitted
 - **WHEN** the all-enemy audit finds a finite overworld enemy source with stable
@@ -64,22 +68,37 @@ logic are modeled.
 - **THEN** codegen fails instead of producing an incomplete shipped all-tier
   registry
 
+#### Scenario: Boss or miniboss event is emitted
+- **WHEN** the all-enemy audit finds a reviewed boss or miniboss event with stable
+  dungeon/room identity and modeled kill logic
+- **THEN** it emits one all-tier `Enemy` location for that event
+- **AND** the runtime grants it exactly once without suppressing the existing boss
+  prize, heart container, dungeon prize, or scripted progression behavior
+
+#### Scenario: Finite scripted-spawn source is emitted
+- **WHEN** the all-enemy audit finds a reviewed finite scripted-spawn child with
+  stable parent room/source-slot/type identity and child ordinal
+- **AND** its child kill route is modeled through inventory or counted throwable
+  objects
+- **THEN** it emits one all-tier `Enemy` location for that child
+- **AND** already-checked children are suppressed without shifting later child
+  identities from the same authored parent
+
 #### Scenario: Unsupported source domain is not silently covered
-- **WHEN** a boss/miniboss, finite scripted-spawn, farmable, or enemy-shuffle
-  substituted source exists but runtime identity or logic is not yet supported for
-  its domain
+- **WHEN** a farmable, unbounded, projectile, or enemy-shuffle substituted source
+  exists but runtime identity or logic is not supported for its domain
 - **THEN** the shipped static all-tier registry does not claim that source as
   covered, and affected settings visibly downgrade or remain future scope
 
 ### Requirement: All-enemy source identity is stable across domains
 
-Every emitted all-enemy location SHALL be keyed by an authored source identity, not
-by enemy type alone. Dungeon rows and reviewed underworld exceptions MAY use the
-existing room/source-slot identity; underworld exceptions SHALL carry an all-tier
-activation bit in the runtime lookup. Overworld rows SHALL carry an equivalent
-stable source tuple. Future boss/miniboss and finite scripted-spawn rows SHALL
-carry stable parent identity plus any required child index before those domains can
-join the effective all tier.
+Every emitted all-enemy location SHALL be keyed by an authored source identity,
+not by enemy type alone. Dungeon rows and reviewed underworld exceptions MAY use
+the existing room/source-slot identity; underworld exceptions SHALL carry an
+all-tier activation bit in the runtime lookup. Overworld rows SHALL carry an
+equivalent stable source tuple. Boss/miniboss rows SHALL carry stable event
+dungeon/room identity. Finite scripted-spawn rows SHALL carry stable parent
+room/source-slot/type identity plus child index and child type.
 
 Enemy shuffle SHALL NOT change the location identity. In the first all-enemy
 implementation, requested `all` SHALL normalize to the highest lower tier allowed by
@@ -118,8 +137,8 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
 - **THEN** the runtime dispatches the placed item, marks the location checked, and
   prevents that source from granting again after reload or transition
 
-#### Scenario: Future boss enemy check coexists with boss reward
-- **WHEN** a future change emits a boss/miniboss enemy check and that enemy dies
+#### Scenario: Boss enemy check coexists with boss reward
+- **WHEN** an emitted boss/miniboss enemy check dies
 - **THEN** the all-enemy check grants exactly once
 - **AND** existing boss prize, heart-container, dungeon-prize, or
   scripted-progression behavior remains intact

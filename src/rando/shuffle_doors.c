@@ -478,7 +478,9 @@ static bool DoorPotRegionsReached(const RandoDoorPotLocation *p, const DoorExplo
 }
 
 int Door_CountActivePotKeySources(uint8 dungeon, const DoorExploreResult *res,
-                                  uint8 pot_tier) {
+                                  uint8 pot_tier,
+                                  bool (*pred)(void *ud, const RandoDoorPotLocation *pot),
+                                  void *ud) {
   if (pot_tier == kPotShuffle_Off)
     return 0;
   int n = 0;
@@ -489,19 +491,25 @@ int Door_CountActivePotKeySources(uint8 dungeon, const DoorExploreResult *res,
       continue;
     if (!DoorPotRegionsReached(p, res))
       continue;
+    if (pred != NULL && !pred(ud, p))
+      continue;
     n++;
   }
   return n;
 }
 
 int Door_CountActiveEnemyDropKeySources(uint8 dungeon, const DoorExploreResult *res,
-                                        uint8 enemy_drop_keys) {
+                                        uint8 enemy_drop_keys,
+                                        bool (*pred)(void *ud,
+                                                     const RandoDoorEnemyDropLocation *drop),
+                                        void *ud) {
   if (!enemy_drop_keys)
     return 0;
   int n = 0;
   for (uint32 i = 0; i < kRandoDoorEnemyDropLocationsCount; i++) {
     const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[i];
-    if (e->dungeon == dungeon && DoorExplore_Reached(res, e->region))
+    if (e->dungeon == dungeon && DoorExplore_Reached(res, e->region) &&
+        (pred == NULL || pred(ud, e)))
       n++;
   }
   return n;
@@ -514,6 +522,49 @@ int Door_CountActiveEnemyDropKeys(uint8 dungeon, uint8 enemy_drop_keys) {
   for (uint32 i = 0; i < kRandoDoorEnemyDropLocationsCount; i++) {
     const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[i];
     if (e->dungeon == dungeon)
+      n++;
+  }
+  return n;
+}
+
+static bool DoorEnemyCheckRegionsReached(const RandoDoorEnemyCheckLocation *e,
+                                         const DoorExploreResult *res) {
+  for (uint8 i = 0; i < e->region_count; i++) {
+    uint16 region = kRandoDoorEnemyCheckRegions[e->region_first + i];
+    if (!DoorExplore_Reached(res, region))
+      return false;
+  }
+  return e->region_count != 0;
+}
+
+int Door_CountActiveEnemyCheckKeySources(uint8 dungeon, const DoorExploreResult *res,
+                                         uint8 enemy_check_tier,
+                                         bool (*pred)(void *ud,
+                                                      const RandoDoorEnemyCheckLocation *check),
+                                         void *ud) {
+  if (enemy_check_tier < kEnemyDropChecks_Dungeon)
+    return 0;
+  int n = 0;
+  for (uint32 i = 0; i < kRandoDoorEnemyCheckLocationsCount; i++) {
+    const RandoDoorEnemyCheckLocation *e = &kRandoDoorEnemyCheckLocations[i];
+    if (e->dungeon != dungeon || !Rando_DoorEnemyCheckActive(e, enemy_check_tier))
+      continue;
+    if (!DoorEnemyCheckRegionsReached(e, res))
+      continue;
+    if (pred != NULL && !pred(ud, e))
+      continue;
+    n++;
+  }
+  return n;
+}
+
+int Door_CountActiveEnemyChecks(uint8 dungeon, uint8 enemy_check_tier) {
+  if (enemy_check_tier < kEnemyDropChecks_Dungeon)
+    return 0;
+  int n = 0;
+  for (uint32 i = 0; i < kRandoDoorEnemyCheckLocationsCount; i++) {
+    const RandoDoorEnemyCheckLocation *e = &kRandoDoorEnemyCheckLocations[i];
+    if (e->dungeon == dungeon && Rando_DoorEnemyCheckActive(e, enemy_check_tier))
       n++;
   }
   return n;
@@ -579,7 +630,18 @@ void DoorExplore_Core(const DoorExploreSpec *spec, DoorExploreResult *out) {
     if (spec->bk_mode == kDoorBkMode_Held && spec->held_keys)
       key_budget = spec->held_keys[spec->dungeon] +
                    Door_CountDropKeys(spec->dungeon, out, spec->pot_tier,
-                                      spec->enemy_drop_keys);
+                                      spec->enemy_drop_keys) +
+                   Door_CountActivePotKeySources(spec->dungeon, out,
+                                                 spec->pot_tier,
+                                                 spec->pot_pred, spec->ud) +
+                   Door_CountActiveEnemyDropKeySources(spec->dungeon, out,
+                                                       spec->enemy_drop_keys,
+                                                       spec->enemy_drop_pred,
+                                                       spec->ud) +
+                   Door_CountActiveEnemyCheckKeySources(spec->dungeon, out,
+                                                        spec->enemy_check_tier,
+                                                        spec->enemy_check_pred,
+                                                        spec->ud);
 
     for (int r = dg->region_first; r < dg->region_first + dg->region_count; r++) {
       uint8 src = colors[r];
@@ -685,6 +747,9 @@ void DoorExplore_Run(const DoorShuffleLayout *layout, uint8 dungeon,
   DoorKeyPair pairs[kDoorShuffle_MaxKeyDoors];
   if (gates) {
     spec.vm_pred = gates->vm_pred;
+    spec.pot_pred = gates->pot_pred;
+    spec.enemy_drop_pred = gates->enemy_drop_pred;
+    spec.enemy_check_pred = gates->enemy_check_pred;
     spec.ud = gates->ud;
     if (gates->key_thresholds) {
       const DoorShuffleLayout *t = gates->key_thresholds;
@@ -702,6 +767,7 @@ void DoorExplore_Run(const DoorShuffleLayout *layout, uint8 dungeon,
       spec.big_key_held = gates->big_key_held;
       spec.pot_tier = t->pot_tier;
       spec.enemy_drop_keys = t->enemy_drop_keys;
+      spec.enemy_check_tier = t->enemy_check_tier;
       spec.bk_mode = kDoorBkMode_Held;
     } else if (gates->big_key_held) {
       spec.big_key_held = gates->big_key_held;
@@ -1154,7 +1220,7 @@ static uint8 g_door_fail_stage;  // selftest diagnostics: 0 ok, 1 stitch, 2 keys
 
 bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
                           uint8 pot_tier, uint8 enemy_drop_keys,
-                          DoorShuffleLayout *out) {
+                          uint8 enemy_check_tier, DoorShuffleLayout *out) {
   DoorIdx_Init();
   memset(out->pairing, 0xFF, sizeof(out->pairing));
   memset(out->key_door_count, 0, sizeof(out->key_door_count));
@@ -1166,6 +1232,9 @@ bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
   out->pot_bridge_digest = pot_tier ? kRandoDoorPotBridgeDigest : 0;
   out->enemy_drop_keys = enemy_drop_keys ? 1 : 0;
   out->enemy_drop_bridge_digest = out->enemy_drop_keys ? kRandoDoorEnemyDropBridgeDigest : 0;
+  out->enemy_check_tier = enemy_check_tier;
+  out->enemy_check_bridge_digest =
+      enemy_check_tier >= kEnemyDropChecks_Dungeon ? kRandoDoorEnemyCheckBridgeDigest : 0;
   g_door_fail_stage = 0;
   for (uint8 d = 0; d < kDoorTbl_DungeonCount; d++) {
     if (!((dungeon_mask >> d) & 1))
@@ -1197,6 +1266,8 @@ uint32 DoorShuffle_LayoutDigest(const DoorShuffleLayout *l) {
   DIG32(l->pot_bridge_digest);
   DIG8(l->enemy_drop_keys);
   DIG32(l->enemy_drop_bridge_digest);
+  DIG8(l->enemy_check_tier);
+  DIG32(l->enemy_check_bridge_digest);
   for (int i = 0; i < kDoorTbl_DoorCount; i++) {
     if (l->pairing[i] != 0xFFFF) {
       DIG16((uint16)i);
@@ -1240,7 +1311,8 @@ static bool SelfTest_GreedyComplete(const DoorShuffleLayout *l, uint8 dungeon,
   }
   int max_small_sources = kDoorTblDungeons[dungeon].chest_small_keys +
                           Door_CountActiveKeyPots(dungeon, l->pot_tier) +
-                          Door_CountActiveEnemyDropKeys(dungeon, l->enemy_drop_keys);
+                          Door_CountActiveEnemyDropKeys(dungeon, l->enemy_drop_keys) +
+                          Door_CountActiveEnemyChecks(dungeon, l->enemy_check_tier);
   uint32 mask = 0;
   bool bk = false;
   int used_locations = 0;
@@ -1259,6 +1331,7 @@ static bool SelfTest_GreedyComplete(const DoorShuffleLayout *l, uint8 dungeon,
     spec.bk_open = bk;
     spec.pot_tier = l->pot_tier;
     spec.enemy_drop_keys = l->enemy_drop_keys;
+    spec.enemy_check_tier = l->enemy_check_tier;
     DoorExplore_Core(&spec, &res);
     // closed-but-reachable children
     uint32 child = 0;
@@ -1306,11 +1379,15 @@ static bool SelfTest_GreedyComplete(const DoorShuffleLayout *l, uint8 dungeon,
       used += (mask >> i) & 1;
     int ttl = Door_CountFreeLocs(dungeon, &res, !bk);
     int key_only = Door_CountDropKeys(dungeon, &res, l->pot_tier, l->enemy_drop_keys);
-    int pot_free = Door_CountActivePotKeySources(dungeon, &res, l->pot_tier);
+    int pot_free = Door_CountActivePotKeySources(dungeon, &res, l->pot_tier,
+                                                 NULL, NULL);
     int enemy_drop_free = Door_CountActiveEnemyDropKeySources(dungeon, &res,
-                                                              l->enemy_drop_keys);
+                                                              l->enemy_drop_keys,
+                                                              NULL, NULL);
+    int enemy_check_free = Door_CountActiveEnemyCheckKeySources(
+        dungeon, &res, l->enemy_check_tier, NULL, NULL);
     int chest = ttl - (bk ? 1 : 0);
-    chest += pot_free + enemy_drop_free;
+    chest += pot_free + enemy_drop_free + enemy_check_free;
     if (chest > max_small_sources)
       chest = max_small_sources;
     int avail_small = chest + key_only - used;
@@ -1374,6 +1451,7 @@ int DoorShuffle_SelfTest(void) {
       uint32 att = 0;
       for (; att < kMaxAttempts; att++) {
         if (DoorShuffle_Generate(s, att, (uint16)(1u << d), kPotShuffle_Off, 0,
+                                 kEnemyDropChecks_Off,
                                  &layout)) {
           got = true;
           break;
@@ -1402,6 +1480,7 @@ int DoorShuffle_SelfTest(void) {
       }
       // (d) determinism: regenerate at the same (seed, attempt).
       if (!DoorShuffle_Generate(s, att, (uint16)(1u << d), kPotShuffle_Off, 0,
+                                kEnemyDropChecks_Off,
                                 &layout2) ||
           DoorShuffle_LayoutDigest(&layout) != DoorShuffle_LayoutDigest(&layout2)) {
         fprintf(stderr, "door-selftest: %s seed %d: regeneration digest mismatch\n", name, seed);
@@ -1437,7 +1516,7 @@ int DoorShuffle_SelfTest(void) {
       bool got = false;
       for (; att < kMaxAttempts; att++) {
         if (DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, kPotShuffle_Off,
-                                 0, &full)) {
+                                 0, kEnemyDropChecks_Off, &full)) {
           got = true;
           break;
         }
@@ -1448,7 +1527,7 @@ int DoorShuffle_SelfTest(void) {
         continue;
       }
       if (!DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, kPotShuffle_Off,
-                                0, &full2) ||
+                                0, kEnemyDropChecks_Off, &full2) ||
           DoorShuffle_LayoutDigest(&full) != DoorShuffle_LayoutDigest(&full2)) {
         fprintf(stderr, "door-selftest: full-mask seed %d digest mismatch\n", seed);
         hard_fail = true;

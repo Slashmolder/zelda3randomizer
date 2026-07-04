@@ -14,6 +14,7 @@
 #pragma once
 #include "../types.h"
 #include "door_tables.gen.h"
+#include "rando_logic.h"
 
 // Per-dungeon caps (worst case GT: 8 chest keys + drops; pool stubs ~60).
 #define kDoorShuffle_MaxKeyDoors 10
@@ -62,6 +63,10 @@ typedef struct DoorShuffleLayout {
   // against. 0 means forced enemy drops remain vanilla/free for door logic.
   uint8 enemy_drop_keys;
   uint32 enemy_drop_bridge_digest;
+  // Effective ordinary enemy-check tier this door layout was generated/proven
+  // against. 0 means ordinary enemy checks are inactive for door logic.
+  uint8 enemy_check_tier;
+  uint32 enemy_check_bridge_digest;
 } DoorShuffleLayout;
 
 // Generate the full per-seed layout: for each dungeon whose bit is set in
@@ -71,7 +76,7 @@ typedef struct DoorShuffleLayout {
 // door_attempt and retries).
 bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
                           uint8 pot_tier, uint8 enemy_drop_keys,
-                          DoorShuffleLayout *out);
+                          uint8 enemy_check_tier, DoorShuffleLayout *out);
 
 // Stable digest over the layout (pairings + key doors + thresholds +
 // bk_restricted), used for the sidecar drift hard-fail. Door ids are frozen
@@ -97,6 +102,9 @@ typedef struct DoorExploreGates {
   // Evaluate door-table rule-blob Vm leaves (kDoorRuleOp_Vm index). NULL =
   // lenient (every Vm leaf true).
   bool (*vm_pred)(void *ud, uint16 vm_index);
+  bool (*pot_pred)(void *ud, const RandoDoorPotLocation *pot);
+  bool (*enemy_drop_pred)(void *ud, const RandoDoorEnemyDropLocation *drop);
+  bool (*enemy_check_pred)(void *ud, const RandoDoorEnemyCheckLocation *check);
   void *ud;
   // Small keys HELD (chest keys) per dungeon; the explorer adds reachable
   // drop-key rooms internally. Ignored when key_thresholds is NULL.

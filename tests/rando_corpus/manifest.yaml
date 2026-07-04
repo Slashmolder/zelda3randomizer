@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 123  # bump_rando_corpus.py --apply - Reviewed cave enemy checks
+generator_version: 124  # bump_rando_corpus.py --apply - Boss/scripted enemy checks and door enemy-check bridge
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -856,13 +856,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
-    expected_digest: "01810ff632f0bcf6fe7b53230ee6e378aff0f30eb80741440fa4b72fe3c6ab92"
-    expected_sphere_digest: "aa1c1ba2ceae8846c910e47772bb60f82aa8f8089855fcbf5587ef15606381f9"
+    expected_digest: "79ee7e89cf4c44b87d4aadbd20e1fadde10e7f4f68d8131b5aec175f4718b4ad"
+    expected_sphere_digest: "ad7ba408aee7c5b7276dd536fb6cba8b6d6e3c2c7fe13263da3d3a5e98c7857d"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, door_shuffle: basic }
     seed: "0x504F54000000000A"
     label: "pot-all-door-basic-open"
-    expected_digest: "7145bddaef3fd6997cc3c76a1ca24c8310ea81a6c4e840bd68716859c1f5fb4f"
-    expected_sphere_digest: "89e977aee07770be2c72e347d176749307b38f15a1658a546a87a9a3b0c4188f"
+    expected_digest: "17097c589d861d3d5f78c14d274a31cc375ee175a51b0eb024551b9c21027d88"
+    expected_sphere_digest: "e51b457d54f2c398999d3896c407a7a981d6be859dc1df1b86bb8e327093c9b8"
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
@@ -917,8 +917,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: keys }
     seed: "0x4544524F50000004"
     label: "enemy-drop-keys-door-basic-active"
-    expected_digest: "7c62a1ba439f3f8e26fe1dd2d0fb8f9c61917214730403c0209c269bfa9f6068"
-    expected_sphere_digest: "db755863c47b31c9740293a7958ee45671730712ff3d93d2615453f0f2c62009"
+    expected_digest: "6e8264a80b2e64c4d23e16d3dc9a5121df4b86ee53b3f0446a46d56471755b2c"
+    expected_sphere_digest: "5a2ed3d06d35d729ce165a4be3956fa50db79aebe44ef93d618c8b5a50320256"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: keys }
     seed: "0x4544524F50000005"
     label: "enemy-drop-keys-enemy-shuffle-active"
@@ -937,12 +937,12 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, door_shuffle: basic, enemy_drop_checks: keys }
     seed: "0x4544524F5000000D"
     label: "enemy-drop-keys-pot-keys-door-basic-active"
-    expected_digest: "f050dad5734c1fa8ff058aae647aa5ca4e0e53377bd259681cdae5d8c4401559"
-    expected_sphere_digest: "3540c733139fa0e46879219e1e812a32a11b726d54d969b3060d3b670a660b66"
+    expected_digest: "082bde2c865818077333921f560403c6b04c0067d8e3cbd693846fafbb6f29aa"
+    expected_sphere_digest: "ccfff0ca1b072062f0c595837c5108fa2fd04dc0491186d9bfae81a666976908"
   # add-rando-dungeon-enemy-checks — ordinary eligible dungeon enemies become
-  # first-class checks only under enemy_drop_checks=dungeon. Door/enemy shuffle
-  # degrade Dungeon to Keys, so the degradation rows guard that no ordinary enemy
-  # rows leak into unsupported layouts.
+  # first-class checks under enemy_drop_checks=dungeon. Door shuffle composes
+  # with them through the generated enemy-check bridge; enemy shuffle still
+  # degrades Dungeon to Keys because shuffled enemy identity/HP are not modeled.
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: dungeon, accessibility: items }
     seed: "0x45414C4C00000001"
     label: "enemy-drop-dungeon-wild-items"
@@ -955,37 +955,40 @@ entries:
     expected_sphere_digest: "25acb56aac332e82df06a3aadac2d83f54270a28942bc0c0e4f8ad0b6a54dd1e"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000003"
-    label: "enemy-drop-dungeon-door-basic-degrades-to-keys"
-    expected_digest: "e3dac99cfbb7f21232c6e85caa6de428d6a29422b89eecb0421bc28e2992226e"
-    expected_sphere_digest: "ab7c97939f7001050dfe6775e5d72e929c96844d91193c411c7bea9cd951a062"
+    label: "enemy-drop-dungeon-door-basic-active"
+    expected_digest: "9b65a3fdcd885f7ab82d4c9202d5973ede130180e7fc160fec061118de13c1a8"
+    expected_sphere_digest: "71c845e64eda3ec73c0ea9b96b3abe22c6b1487a6d6b457178c02d4c22f9c6d0"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000004"
     label: "enemy-drop-dungeon-enemy-shuffle-degrades-to-keys"
     expected_digest: "7e3b826747d1da4b0630a70e39d26c017588936971da23e2c2c664c34ce4eb95"
     expected_sphere_digest: "10d381e68b9ebba0630baaed7ed84327619a35ad133873c0ffbe0b03cac17031"
   # add-rando-all-enemy-checks — ALL extends Dungeon with generated static
-  # overworld ordinary enemies. Door/enemy shuffle degrade All to Keys; boss and
-  # entrance shuffle degrade All to Dungeon until those domains are modeled.
+  # overworld ordinary enemies, reviewed underworld exceptions, boss/miniboss
+  # events, and finite scripted-spawn enemies. Door shuffle composes with the
+  # generated door bridge; boss shuffle stays active because the check binds to
+  # the destination event; enemy shuffle degrades All to Keys and entrance
+  # shuffle degrades All to Dungeon.
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000005"
     label: "enemy-drop-all-wild-items"
-    expected_digest: "0b7b9320b2b96e4ff34fe9329f34b8eb8b13bd70caaff3fc8a537bf616eac6ed"
-    expected_sphere_digest: "8f14fc1dc1d215024af21cc863f2099fe311d25252f651598c20bcb33d5bedf7"
+    expected_digest: "1fd23c1c45a546a49bbdde2f5f9911ec675b01bdf2c692c3213bfd0162a196d2"
+    expected_sphere_digest: "975333621c9371b5c579c6c2d1ee74718ba421f5f06d768f1c43ac57fe92980f"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000012"
     label: "enemy-drop-all-dungeon-items"
-    expected_digest: "c54f19747b22e4aeaa8d9d56ab28dde41eb9de523cf58bf640e904ddcd7bfb2a"
-    expected_sphere_digest: "6ddcc5b7529aed34912a61e8fc48f017815af7b8b7d4717115dd1aa0439108d3"
+    expected_digest: "390e8719df5b4c6b51a75c49bb952afbf80f5c50853db6e508dda92e68e0c18d"
+    expected_sphere_digest: "0b2145fc1e9ccfb115831bd0ac58ca015def1fa7e9dd0d904b03a9d7670154b2"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000007"
     label: "enemy-drop-all-pot-keys-wild-items"
-    expected_digest: "9e2f162d5f557d31a9b7ee851cb3627ea3a7cb111276f5fc3a725b8e9fa82328"
-    expected_sphere_digest: "1f128e1c349f7fd2ed2ccf75b4d3220593c3f195d0f111c4b7672a5690a111cf"
+    expected_digest: "f3b561b4c2ed781ab9dca794555ed6980f82826fb62e4d239ce27162dd43a3bc"
+    expected_sphere_digest: "4d3af8c443ba4824b489b0452f11424cf0ccd292afcfd7346924a6e3c220fe35"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
     seed: "0x45414C4C00000008"
-    label: "enemy-drop-all-door-basic-degrades-to-keys"
-    expected_digest: "66354271bf87fa0948d90286fc08efdfb0c12a758eafa8fc45490797622130d3"
-    expected_sphere_digest: "6fcb9683c0964e65d6fb3cd60eea87f20324f20e09f5379aeb5bba358ae480aa"
+    label: "enemy-drop-all-door-basic-active"
+    expected_digest: "36365782647abc0c15fae5572f7e5d75919038cb61573c3597484a147de1381a"
+    expected_sphere_digest: "ccaf21cc8f49ca218ab7cfb3251e1ddbe02b3f7c1d1c5dbf0cdd4392f9aad464"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C00000009"
     label: "enemy-drop-all-enemy-shuffle-degrades-to-keys"
@@ -993,9 +996,9 @@ entries:
     expected_sphere_digest: "54d5bcb331403ab31766d8da2d3495bfd3cd0c80a1013248375219550592dd96"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, boss_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000A"
-    label: "enemy-drop-all-boss-shuffle-degrades-to-dungeon"
-    expected_digest: "3f25567c72bc005ad003054a3f021b51c2559365d5eced42fb9514fb30bde92e"
-    expected_sphere_digest: "05b86ca42325f6e88af35fdbd1eccef29c9b419a479a69177459c5105b0e3b60"
+    label: "enemy-drop-all-boss-shuffle-active"
+    expected_digest: "bc9a59a6813208f943d6b5cbc687b9f3377d065f5ecb711c3824e300c5a4fe30"
+    expected_sphere_digest: "b8f49fa35fc1d8bf0d15195b2c91a4d60b4d51e301e1737fbaffd1c200e07486"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, shuffle_cave_entrances: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000B"
     label: "enemy-drop-all-cave-entrance-degrades-to-dungeon"

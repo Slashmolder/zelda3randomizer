@@ -273,8 +273,11 @@ void Sprite_DisableAll();
 void Dungeon_LoadSprites();
 const uint8 *Dungeon_GetRoomSpritePtr(uint16 room);
 void Sprite_ManuallySetDeathFlagUW(int k);
-int Dungeon_LoadSingleSprite(int k, const uint8 *src);
-void Dungeon_LoadSingleOverlord(const uint8 *src);
+int Dungeon_LoadSingleSprite(int k, const uint8 *src, uint8 source_slot);
+void Dungeon_LoadSingleOverlord(const uint8 *src, uint8 source_slot);
+bool Rando_AssignScriptedEnemyCheck(int child_slot, int parent_slot,
+                                    uint8 child_index, uint8 child_type);
+void Rando_TryGrantBossEnemyCheckForCurrentEvent(void);
 void Sprite_ResetAll();
 void Sprite_ResetAll_noDisable();
 void Sprite_ReloadAll_Overworld();

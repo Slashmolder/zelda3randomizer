@@ -3233,6 +3233,14 @@ static uint8 rando_door_enemy_drop_keys_for_settings(const RandoSettings *settin
   return Settings_EnemyDropKeysActive(settings) ? 1 : 0;
 }
 
+static uint8 rando_door_enemy_check_tier_for_settings(const RandoSettings *settings) {
+  if (settings == NULL ||
+      Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla)
+    return kEnemyDropChecks_Off;
+  uint8 tier = Settings_EffectiveEnemyDropChecks(settings);
+  return tier >= kEnemyDropChecks_Dungeon ? tier : kEnemyDropChecks_Off;
+}
+
 static uint32 rando_door_layout_digest24(const DoorShuffleLayout *layout) {
   return DoorShuffle_LayoutDigest(layout) & 0xFFFFFFu;
 }
@@ -3262,6 +3270,7 @@ static bool rando_prepare_door_layout(const RandoSettings *settings,
                                  kDoorShuffle_MvpDungeonMask,
                                  Settings_DoorPotTier(settings),
                                  rando_door_enemy_drop_keys_for_settings(settings),
+                                 rando_door_enemy_check_tier_for_settings(settings),
                                  &s_active_door_layout);
   uint32 digest = ok ? rando_door_layout_digest24(&s_active_door_layout) : 0;
   if (!ok || digest != (expected_digest24 & 0xFFFFFFu)) {
@@ -3955,6 +3964,7 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
                              kDoorShuffle_MvpDungeonMask,
                              Settings_DoorPotTier(&g_rando_active_settings),
                              rando_door_enemy_drop_keys_for_settings(&g_rando_active_settings),
+                             rando_door_enemy_check_tier_for_settings(&g_rando_active_settings),
                              &s_active_door_layout)) {
       uint32 digest24 = DoorShuffle_LayoutDigest(&s_active_door_layout) & 0xFFFFFFu;
       if (g_rando_active_header.door_digest24 != digest24) {
@@ -6919,7 +6929,7 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   uint32 datt = 0xFFFFFFFF;
   for (uint32 a = 0; a < 16; a++) {
     if (DoorShuffle_Generate(ss.seed_u64, a, kDoorShuffle_MvpDungeonMask,
-                             kPotShuffle_Off, 0,
+                             kPotShuffle_Off, 0, kEnemyDropChecks_Off,
                              &s_active_door_layout)) {
       datt = a;
       break;

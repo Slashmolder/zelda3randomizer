@@ -605,8 +605,52 @@ static const RandoOverworldEnemyCheckLookupEntry *Rando_FindOverworldEnemyCheckB
   return NULL;
 }
 
+static const RandoBossEnemyCheckLookupEntry *Rando_FindBossEnemyCheck(
+    uint8 game_dungeon, uint16 room, uint8 kind) {
+  uint32 want = ((uint32)game_dungeon << 24) | ((uint32)room << 8) | kind;
+  int lo = 0, hi = (int)kRandoBossEnemyCheckLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    const RandoBossEnemyCheckLookupEntry *e = &kRandoBossEnemyCheckLookup[mid];
+    uint32 got = ((uint32)e->game_dungeon << 24) | ((uint32)e->room << 8) | e->kind;
+    if (got == want) return e;
+    if (got < want) lo = mid + 1; else hi = mid;
+  }
+  return NULL;
+}
+
+static const RandoScriptedEnemyCheckLookupEntry *Rando_FindScriptedEnemyCheck(
+    uint16 room, uint8 parent_source_slot, uint8 overlord_type_id,
+    uint8 child_index, uint8 child_type) {
+  uint64 want = ((uint64)room << 32) | ((uint32)parent_source_slot << 24) |
+                ((uint32)overlord_type_id << 16) | ((uint32)child_index << 8) |
+                child_type;
+  int lo = 0, hi = (int)kRandoScriptedEnemyCheckLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    const RandoScriptedEnemyCheckLookupEntry *e =
+        &kRandoScriptedEnemyCheckLookup[mid];
+    uint64 got = ((uint64)e->room << 32) |
+                 ((uint32)e->parent_source_slot << 24) |
+                 ((uint32)e->parent_type << 16) |
+                 ((uint32)e->child_index << 8) | e->child_type;
+    if (got == want) return e;
+    if (got < want) lo = mid + 1; else hi = mid;
+  }
+  return NULL;
+}
+
 enum { kRandoOverworldEnemyBlockCount = 0x1000 };
 static uint16 s_rando_overworld_enemy_loc_by_block[kRandoOverworldEnemyBlockCount];
+static uint16 s_rando_dynamic_enemy_check_loc[16];
+static uint8 s_rando_overlord_source_slot[8];
+static uint8 s_rando_overlord_type_id[8];
+
+enum {
+  kRandoBossEnemyCheckKind_DungeonBoss = 1,
+  kRandoBossEnemyCheckKind_GtMiniboss = 2,
+  kRandoNoOverlordSourceSlot = 0xff,
+};
 
 static uint8 Rando_CurrentOverworldEnemyStage(void) {
   return (sram_progress_indicator == 3) ? 2 :
@@ -616,6 +660,14 @@ static uint8 Rando_CurrentOverworldEnemyStage(void) {
 static void Rando_ClearOverworldEnemyCheckMap(void) {
   for (uint16 i = 0; i < kRandoOverworldEnemyBlockCount; i++)
     s_rando_overworld_enemy_loc_by_block[i] = 0;
+}
+
+static void Rando_ClearDynamicEnemyCheckMaps(void) {
+  memset(s_rando_dynamic_enemy_check_loc, 0,
+         sizeof(s_rando_dynamic_enemy_check_loc));
+  memset(s_rando_overlord_source_slot, kRandoNoOverlordSourceSlot,
+         sizeof(s_rando_overlord_source_slot));
+  memset(s_rando_overlord_type_id, 0, sizeof(s_rando_overlord_type_id));
 }
 
 static uint16 Rando_OverworldEnemyCheckLocForBlock(uint16 block) {
@@ -653,9 +705,28 @@ static bool Rando_TryGrantOverworldEnemyCheck(int k) {
   return true;
 }
 
+static bool Rando_TryGrantDynamicEnemyCheck(int k) {
+  if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors ||
+      k < 0 || k >= 16)
+    return false;
+  uint16 loc_id = s_rando_dynamic_enemy_check_loc[k];
+  if (loc_id == 0 || Rando_IsLocationChecked(loc_id)) {
+    if (loc_id != 0)
+      s_rando_dynamic_enemy_check_loc[k] = 0;
+    return false;
+  }
+  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, 0);
+  uint16 item = Rando_LastDispatchedItemId();
+  Rando_QuietReceiveOrConfirm(lttp, item);
+  s_rando_dynamic_enemy_check_loc[k] = 0;
+  return true;
+}
+
 static bool Rando_TryGrantEnemyCheck(int k) {
   if (!player_is_indoors)
     return Rando_TryGrantOverworldEnemyCheck(k);
+  if (Rando_TryGrantDynamicEnemyCheck(k))
+    return true;
   if (!Rando_EnemyChecksDungeonActiveRuntime() || k < 0 || k >= 16 ||
       sign8(sprite_N[k]))
     return false;
@@ -667,6 +738,61 @@ static bool Rando_TryGrantEnemyCheck(int k) {
   uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, 0);
   uint16 item = Rando_LastDispatchedItemId();
   Rando_QuietReceiveOrConfirm(lttp, item);
+  return true;
+}
+
+void Rando_TryGrantBossEnemyCheckForCurrentEvent(void) {
+  if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors)
+    return;
+  uint8 game_dungeon = (uint8)(cur_palace_index_x2 >> 1);
+  uint16 room_a = dungeon_room_index2;
+  uint16 room_b = dungeon_room_index;
+  const RandoBossEnemyCheckLookupEntry *check = NULL;
+  if (game_dungeon < 16) {
+    check = Rando_FindBossEnemyCheck(
+        game_dungeon, room_a, kRandoBossEnemyCheckKind_DungeonBoss);
+    if (check == NULL && room_b != room_a) {
+      check = Rando_FindBossEnemyCheck(
+          game_dungeon, room_b, kRandoBossEnemyCheckKind_DungeonBoss);
+    }
+    if (check == NULL) {
+      check = Rando_FindBossEnemyCheck(
+          game_dungeon, room_a, kRandoBossEnemyCheckKind_GtMiniboss);
+    }
+    if (check == NULL && room_b != room_a) {
+      check = Rando_FindBossEnemyCheck(
+          game_dungeon, room_b, kRandoBossEnemyCheckKind_GtMiniboss);
+    }
+  }
+  if (check == NULL || Rando_IsLocationChecked(check->loc_id))
+    return;
+  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, 0);
+  uint16 item = Rando_LastDispatchedItemId();
+  Rando_QuietReceiveOrConfirm(lttp, item);
+}
+
+bool Rando_AssignScriptedEnemyCheck(int child_slot, int parent_slot,
+                                    uint8 child_index, uint8 child_type) {
+  if (child_slot < 0 || child_slot >= 16)
+    return false;
+  s_rando_dynamic_enemy_check_loc[child_slot] = 0;
+  if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors)
+    return true;
+  if (parent_slot < 0 || parent_slot >= 8)
+    return true;
+  uint8 parent_source_slot = s_rando_overlord_source_slot[parent_slot];
+  if (parent_source_slot == kRandoNoOverlordSourceSlot)
+    return true;
+  uint8 parent_type = s_rando_overlord_type_id[parent_slot];
+  const RandoScriptedEnemyCheckLookupEntry *check = Rando_FindScriptedEnemyCheck(
+      dungeon_room_index2, parent_source_slot, parent_type, child_index, child_type);
+  if (check == NULL)
+    return true;
+  if (Rando_IsLocationChecked(check->loc_id)) {
+    sprite_state[child_slot] = 0;
+    return false;
+  }
+  s_rando_dynamic_enemy_check_loc[child_slot] = check->loc_id;
   return true;
 }
 
@@ -2061,6 +2187,16 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
       if (out != NULL) {
         out->loc_id = check->loc_id;
         out->source_slot = sprite_N[k];
+      }
+      return true;
+    }
+  }
+  if (Rando_EnemyChecksAllActiveRuntime() && player_is_indoors) {
+    uint16 loc_id = s_rando_dynamic_enemy_check_loc[k];
+    if (loc_id != 0 && !Rando_IsLocationChecked(loc_id)) {
+      if (out != NULL) {
+        out->loc_id = loc_id;
+        out->source_slot = (uint8)k;
       }
       return true;
     }
@@ -4103,8 +4239,10 @@ void PrepareEnemyDrop(int k, uint8 item) {  // 86f9d1
 }
 
 void SpriteDeath_Func4(int k) {  // 86fa25
-  if (sprite_type[k] == 0xa2 && Sprite_CheckIfScreenIsClear())
+  if (sprite_type[k] == 0xa2 && Sprite_CheckIfScreenIsClear()) {
+    Rando_TryGrantBossEnemyCheckForCurrentEvent();
     Ancilla_SpawnFallingPrize(4);
+  }
   Sprite_ManuallySetDeathFlagUW(k);
   num_sprites_killed++;
   if (sprite_type[k] == 0x40) {
@@ -4783,19 +4921,24 @@ void Dungeon_LoadSprites() {  // 89c290
     if (ent[1] < 0xe0 && ent[2] != 0xe4) {
       ent[2] = EnemyShuffle_PickDungeon(dungeon_room_index2, es_slot, ent[2]);
     }
-    k = Dungeon_LoadSingleSprite(k, ent) + 1;
+    k = Dungeon_LoadSingleSprite(k, ent, es_slot) + 1;
   }
 }
 
 void Sprite_ManuallySetDeathFlagUW(int k) {  // 89c2f5
-  if (!player_is_indoors || sprite_defl_bits[k] & 1 || sign8(sprite_N[k]))
+  if (!player_is_indoors || sprite_defl_bits[k] & 1)
     return;
+  // Dynamic scripted enemy checks have no authored sprite_N slot.
   Rando_TryGrantEnemyCheck(k);
+  if (sign8(sprite_N[k]))
+    return;
   sprite_where_in_room[dungeon_room_index2] |= 1 << sprite_N[k];
 }
 
-int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
+int Dungeon_LoadSingleSprite(int k, const uint8 *src, uint8 source_slot) {  // 89c327
   uint8 y = src[0], x = src[1], type = src[2];
+  if (k >= 0 && k < 16)
+    s_rando_dynamic_enemy_check_loc[k] = 0;
   if (type == 0xe4) {
     if (y == 0xfe || y == 0xfd) {
       if (k > 0 && Rando_EnemyDropKeysActiveRuntime()) {
@@ -4810,7 +4953,7 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
       return k - 1;
     }
   } else if (x >= 0xe0) {
-    Dungeon_LoadSingleOverlord(src);
+    Dungeon_LoadSingleOverlord(src, source_slot);
     return k - 1;
   }
   if (Rando_EnemyChecksDungeonActiveRuntime()) {
@@ -4847,11 +4990,13 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src) {  // 89c327
   return k;
 }
 
-void Dungeon_LoadSingleOverlord(const uint8 *src) {  // 89c3e8
+void Dungeon_LoadSingleOverlord(const uint8 *src, uint8 source_slot) {  // 89c3e8
   int k = AllocOverlord();
   if (k < 0)
     return;
   uint8 y = src[0], x = src[1], type = src[2];
+  s_rando_overlord_source_slot[k] = source_slot;
+  s_rando_overlord_type_id[k] = type;
   overlord_type[k] = type;
   overlord_floor[k] = (y >> 7);
   int t = ((y << 4) & 0x1ff) + (byte_7E0FB1 << 8);
@@ -4887,6 +5032,7 @@ void Sprite_ResetAll_noDisable() {  // 89c452
   sort_sprites_setting = 0;
   if (follower_indicator != 13)
     super_bomb_indicator_unk2 = 0xfe;
+  Rando_ClearDynamicEnemyCheckMaps();
   memset(sprite_where_in_room, 0, 0x1000);
   memset(overworld_sprite_was_loaded, 0, 0x200);
   memset(dungeon_room_history, 0xff, 8);
@@ -5057,6 +5203,7 @@ void Overworld_LoadProximaSpriteIfAlive(uint16 blk) {  // 89c739
 }
 
 void SpriteExplode_SpawnEA(int k) {  // 89ee4c
+  Rando_TryGrantBossEnemyCheckForCurrentEvent();
   tmp_counter = sprite_type[k];
   SpriteSpawnInfo info;
   int j = Sprite_SpawnDynamicallyEx(k, 0xea, &info, 14);
@@ -5457,6 +5604,7 @@ int Sprite_SpawnDynamically(int k, uint8 what, SpriteSpawnInfo *info) {  // 9df6
 int Sprite_SpawnDynamicallyEx(int k, uint8 what, SpriteSpawnInfo *info, int j) {  // 9df65f
   do {
     if (sprite_state[j] == 0) {
+      s_rando_dynamic_enemy_check_loc[j] = 0;
       sprite_type[j] = what;
       sprite_state[j] = 9;
       info->r0_x = Sprite_GetX(k);

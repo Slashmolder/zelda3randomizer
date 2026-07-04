@@ -421,6 +421,10 @@ static bool enemy_check_indoor_all_tier_only(uint16 loc_id) {
 static bool enemy_check_all_tier_only(uint16 loc_id) {
   if (enemy_check_indoor_all_tier_only(loc_id))
     return true;
+  for (uint32 i = 0; i < kRandoBossEnemyCheckLookup_COUNT; i++)
+    if (kRandoBossEnemyCheckLookup[i].loc_id == loc_id) return true;
+  for (uint32 i = 0; i < kRandoScriptedEnemyCheckLookup_COUNT; i++)
+    if (kRandoScriptedEnemyCheckLookup[i].loc_id == loc_id) return true;
   for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
     if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id) return true;
   return false;
@@ -482,7 +486,9 @@ static bool enemy_check_registry_available(void) {
 
 static bool all_enemy_registry_available(void) {
   return enemy_check_registry_available() &&
-         kRandoOverworldEnemyCheckLookup_COUNT != 0;
+         kRandoOverworldEnemyCheckLookup_COUNT != 0 &&
+         kRandoBossEnemyCheckLookup_COUNT != 0 &&
+         kRandoScriptedEnemyCheckLookup_COUNT != 0;
 }
 
 static bool settings_need_pot_registry(const RandoSettings *s) {
@@ -3148,8 +3154,13 @@ void Placement_SelfCheck(void) {
     }
     bool has_enemy_drop_registry = kRandoEnemyDropLookup_COUNT != 0;
     bool has_enemy_check_registry = kRandoEnemyCheckLookup_COUNT != 0;
+    uint32 enemy_check_lookup_boss_locs = kRandoBossEnemyCheckLookup_COUNT;
+    uint32 enemy_check_lookup_scripted_locs = kRandoScriptedEnemyCheckLookup_COUNT;
+    uint32 enemy_check_lookup_all_total =
+        enemy_check_lookup_all_only_locs + kRandoOverworldEnemyCheckLookup_COUNT +
+        enemy_check_lookup_boss_locs + enemy_check_lookup_scripted_locs;
     bool has_all_enemy_registry =
-        (enemy_check_lookup_all_only_locs + kRandoOverworldEnemyCheckLookup_COUNT) != 0;
+        enemy_check_lookup_all_total != 0;
     if (has_enemy_drop_registry != (enemy_locs != 0))
       selfcheck_die("enemy_drop_lookup/count drifted from LOCTYPE_EnemyDrop locations");
     if (has_enemy_check_registry !=
@@ -3158,8 +3169,7 @@ void Placement_SelfCheck(void) {
         enemy_check_lookup_all_only_locs != enemy_check_indoor_all_only_locs)
       selfcheck_die("enemy_check_lookup/count drifted from indoor LOCTYPE_Enemy locations");
     if (has_all_enemy_registry != (enemy_check_all_only_locs != 0) ||
-        enemy_check_lookup_all_only_locs + kRandoOverworldEnemyCheckLookup_COUNT !=
-            enemy_check_all_only_locs ||
+        enemy_check_lookup_all_total != enemy_check_all_only_locs ||
         enemy_check_locs != enemy_check_dungeon_locs + enemy_check_all_only_locs)
       selfcheck_die("all-tier enemy_check_lookup/count drifted from Enemy locations");
     if (enemy_locs != enemy_key_locs + enemy_bigkey_one_shots)
@@ -3255,9 +3265,31 @@ void Placement_SelfCheck(void) {
       if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sdungeondoor))
         n_dungeon_door_ordinary++;
     }
-    if (n_dungeon_door_ordinary != 0 ||
-        Settings_EffectiveEnemyDropChecks(&sdungeondoor) != kEnemyDropChecks_Keys)
-      selfcheck_die("door shuffle must degrade Dungeon ordinary enemy checks to Keys");
+    if (n_dungeon_door_ordinary != enemy_check_dungeon_locs ||
+        Settings_EffectiveEnemyDropChecks(&sdungeondoor) != kEnemyDropChecks_Dungeon)
+      selfcheck_die("door shuffle must preserve Dungeon ordinary enemy checks");
+    RandoSettings salldoor = sall;
+    salldoor.door_shuffle = kDoorShuffle_Basic;
+    uint32 n_all_door_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &salldoor))
+        n_all_door_ordinary++;
+    }
+    if (n_all_door_ordinary != enemy_check_locs ||
+        Settings_EffectiveEnemyDropChecks(&salldoor) != kEnemyDropChecks_All)
+      selfcheck_die("door shuffle must preserve All ordinary enemy checks");
+    RandoSettings sallboss = sall;
+    sallboss.boss_shuffle = 1;
+    uint32 n_all_boss_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sallboss))
+        n_all_boss_ordinary++;
+    }
+    if (n_all_boss_ordinary != enemy_check_locs ||
+        Settings_EffectiveEnemyDropChecks(&sallboss) != kEnemyDropChecks_All)
+      selfcheck_die("boss shuffle must preserve All ordinary enemy checks");
     RandoSettings sdungeonenemy = sdungeon;
     sdungeonenemy.enemy_shuffle = 1;
     uint32 n_dungeon_enemy_shuffle_forced = 0, n_dungeon_enemy_shuffle_ordinary = 0;
@@ -3369,8 +3401,18 @@ void Placement_SelfCheck(void) {
     sdoor_keys.enemy_drop_checks = kEnemyDropChecks_Keys;
     uint16 door_key_pool[kRandoLocationCapacity];
     uint16 n_pool_door_keys = BuildItemPool(&sdoor_keys, door_key_pool, kRandoLocationCapacity);
-    if (has_enemy_drop_registry && n_pool_dungeon_door != n_pool_door_keys)
-      selfcheck_die("door-shuffle Dungeon degradation must match Keys pool size");
+    if (has_enemy_drop_registry &&
+        n_pool_dungeon_door != (uint16)(n_pool_door_keys + enemy_check_dungeon_locs))
+      selfcheck_die("door-shuffle Dungeon pool must include ordinary enemy checks");
+    uint16 all_door_pool[kRandoLocationCapacity];
+    uint16 n_pool_all_door = BuildItemPool(&salldoor, all_door_pool, kRandoLocationCapacity);
+    if (has_all_enemy_registry &&
+        n_pool_all_door != (uint16)(n_pool_door_keys + enemy_check_locs))
+      selfcheck_die("door-shuffle All pool must include ordinary enemy checks");
+    uint16 all_boss_pool[kRandoLocationCapacity];
+    uint16 n_pool_all_boss = BuildItemPool(&sallboss, all_boss_pool, kRandoLocationCapacity);
+    if (has_all_enemy_registry && n_pool_all_boss != n_pool_all)
+      selfcheck_die("boss-shuffle All pool must preserve ordinary enemy checks");
   }
 
   // BuildItemPool refuses pieces_required > pieces_placed for

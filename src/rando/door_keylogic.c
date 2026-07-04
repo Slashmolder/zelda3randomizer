@@ -104,6 +104,7 @@ typedef struct KeyCtx {
   int max_small_sources;  // chest_small_keys + active itemized key sources
   uint8 pot_tier;
   uint8 enemy_drop_keys;
+  uint8 enemy_check_tier;
   DoorKeyPair pairs[kDoorShuffle_MaxKeyDoors];
   int np;
 } KeyCtx;
@@ -145,6 +146,7 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
   spec.bk_open = bk;
   spec.pot_tier = kc->pot_tier;
   spec.enemy_drop_keys = kc->enemy_drop_keys;
+  spec.enemy_check_tier = kc->enemy_check_tier;
   DoorExplore_Core(&spec, &res);
 
   KeyState *st = &g_states[g_nstates];
@@ -182,9 +184,12 @@ static const KeyState *GetState(KeyCtx *kc, uint16 mask, bool bk) {
     }
   }
   st->pot_free = (uint8)Door_CountActivePotKeySources(kc->dungeon, &res,
-                                                       kc->pot_tier);
+                                                       kc->pot_tier, NULL, NULL);
   st->pot_free += (uint8)Door_CountActiveEnemyDropKeySources(kc->dungeon, &res,
-                                                             kc->enemy_drop_keys);
+                                                             kc->enemy_drop_keys,
+                                                             NULL, NULL);
+  st->pot_free += (uint8)Door_CountActiveEnemyCheckKeySources(
+      kc->dungeon, &res, kc->enemy_check_tier, NULL, NULL);
   for (int i = 0; i < kDoorTbl_EventCount; i++) {
     const DoorTblEvent *ev = &kDoorTblEvents[i];
     if (ev->region != 0xFFFF && kDoorTblRegions[ev->region].dungeon == kc->dungeon &&
@@ -882,9 +887,11 @@ bool DoorKeys_ShuffleDungeon(uint8 dungeon, RandoRng *rng,
   kc.norigins = origin_count;
   kc.pot_tier = layout ? layout->pot_tier : kPotShuffle_Off;
   kc.enemy_drop_keys = layout ? layout->enemy_drop_keys : 0;
+  kc.enemy_check_tier = layout ? layout->enemy_check_tier : kEnemyDropChecks_Off;
   kc.max_small_sources = kDoorTblDungeons[dungeon].chest_small_keys +
                          Door_CountActiveKeyPots(dungeon, kc.pot_tier) +
-                         Door_CountActiveEnemyDropKeys(dungeon, kc.enemy_drop_keys);
+                         Door_CountActiveEnemyDropKeys(dungeon, kc.enemy_drop_keys) +
+                         Door_CountActiveEnemyChecks(dungeon, kc.enemy_check_tier);
 
   static DoorKeyPair candidates[kDoorKey_MaxCandidates];
   int ncand = FindCandidates(&kc, candidates);

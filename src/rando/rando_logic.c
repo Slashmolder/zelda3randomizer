@@ -756,6 +756,14 @@ static bool door_enemy_drop_pred_cb(void *ud, const RandoDoorEnemyDropLocation *
                            drop->pred_len, ctx);
 }
 
+static bool door_enemy_check_pred_cb(void *ud, const RandoDoorEnemyCheckLocation *check) {
+  const PredicateContext *ctx = (const PredicateContext *)ud;
+  if (check == NULL || check->pred_len == 0)
+    return true;
+  return Predicate_EvalCtx(kRandoPredicateStream + check->pred_off,
+                           check->pred_len, ctx);
+}
+
 static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateContext *ctx,
                                                 DoorExploreGates *gates_out) {
   // The gates are rebuilt every call (cheap); the flood itself is cached.
@@ -793,6 +801,9 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
     }
   }
   gates_out->vm_pred = door_vm_pred_cb;
+  gates_out->pot_pred = door_pot_pred_cb;
+  gates_out->enemy_drop_pred = door_enemy_drop_pred_cb;
+  gates_out->enemy_check_pred = door_enemy_check_pred_cb;
   gates_out->ud = (void *)ctx;
   gates_out->held_keys = held_keys;
   gates_out->big_key_held = big_key_held;
@@ -861,6 +872,32 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
   fp = door_fnv64(fp, portals, (size_t)n * sizeof(portals[0]));
   fp = door_fnv64(fp, &held_keys[dungeon], 1);
   fp = door_fnv64(fp, &big_key_held[dungeon], 1);
+  for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
+    const RandoDoorPotLocation *p = &kRandoDoorPotLocations[i];
+    if (p->dungeon != dungeon || !(p->flags & kDoorPot_KeySource) ||
+        !Rando_DoorPotActive(p, g_door_logic_layout->pot_tier))
+      continue;
+    uint8 v = door_pot_pred_cb((void *)ctx, p) ? 1 : 0;
+    fp = door_fnv64(fp, &p->loc_id, sizeof(p->loc_id));
+    fp = door_fnv64(fp, &v, sizeof(v));
+  }
+  for (uint32 i = 0; i < kRandoDoorEnemyDropLocationsCount; i++) {
+    const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[i];
+    if (e->dungeon != dungeon || !g_door_logic_layout->enemy_drop_keys)
+      continue;
+    uint8 v = door_enemy_drop_pred_cb((void *)ctx, e) ? 1 : 0;
+    fp = door_fnv64(fp, &e->loc_id, sizeof(e->loc_id));
+    fp = door_fnv64(fp, &v, sizeof(v));
+  }
+  for (uint32 i = 0; i < kRandoDoorEnemyCheckLocationsCount; i++) {
+    const RandoDoorEnemyCheckLocation *e = &kRandoDoorEnemyCheckLocations[i];
+    if (e->dungeon != dungeon ||
+        !Rando_DoorEnemyCheckActive(e, g_door_logic_layout->enemy_check_tier))
+      continue;
+    uint8 v = door_enemy_check_pred_cb((void *)ctx, e) ? 1 : 0;
+    fp = door_fnv64(fp, &e->loc_id, sizeof(e->loc_id));
+    fp = door_fnv64(fp, &v, sizeof(v));
+  }
   if (fp == g_door_oracle_cache_fp[dungeon] && g_door_oracle_cache_gen[dungeon] != 0) {
     g_door_oracle_cache_gen[dungeon] = g_door_oracle_gen;
     return &g_door_oracle_cache[dungeon];
@@ -940,18 +977,44 @@ static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx) {
     if (kRandoDoorEnemyDropLocations[mid].loc_id < loc_id) lo = mid + 1;
     else hi = mid - 1;
   }
+  if (found >= 0) {
+    const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[found];
+    if (!g_door_logic_layout->enemy_drop_keys)
+      return false;
+    if (!((g_door_logic_mask >> e->dungeon) & 1))
+      return false;
+    DoorExploreGates gates;
+    const DoorExploreResult *r = door_oracle_get(e->dungeon, ctx, &gates);
+    if (!DoorExplore_Reached(r, e->region))
+      return false;
+    return door_enemy_drop_pred_cb((void *)ctx, e);
+  }
+
+  // Generated ordinary enemy-check bridge rows are sorted by loc_id.
+  lo = 0;
+  hi = (int)kRandoDoorEnemyCheckLocationsCount - 1;
+  found = -1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kRandoDoorEnemyCheckLocations[mid].loc_id == loc_id) { found = mid; break; }
+    if (kRandoDoorEnemyCheckLocations[mid].loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
   if (found < 0)
     return false;
-  const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[found];
-  if (!g_door_logic_layout->enemy_drop_keys)
+  const RandoDoorEnemyCheckLocation *ec = &kRandoDoorEnemyCheckLocations[found];
+  if (!Rando_DoorEnemyCheckActive(ec, g_door_logic_layout->enemy_check_tier))
     return false;
-  if (!((g_door_logic_mask >> e->dungeon) & 1))
+  if (!((g_door_logic_mask >> ec->dungeon) & 1))
     return false;
   DoorExploreGates gates;
-  const DoorExploreResult *r = door_oracle_get(e->dungeon, ctx, &gates);
-  if (!DoorExplore_Reached(r, e->region))
-    return false;
-  return door_enemy_drop_pred_cb((void *)ctx, e);
+  const DoorExploreResult *r = door_oracle_get(ec->dungeon, ctx, &gates);
+  for (uint8 i = 0; i < ec->region_count; i++) {
+    uint16 region = kRandoDoorEnemyCheckRegions[ec->region_first + i];
+    if (!DoorExplore_Reached(r, region))
+      return false;
+  }
+  return door_enemy_check_pred_cb((void *)ctx, ec);
 }
 
 // ---------------------------------------------------------------------------

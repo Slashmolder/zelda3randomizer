@@ -3479,6 +3479,7 @@ void Sprite_53_ArmosKnight(int k) {  // 85a036
     }
     sprite_state[k] = 0;
     if (Sprite_CheckIfScreenIsClear()) {
+      Rando_TryGrantBossEnemyCheckForCurrentEvent();
       SpriteSpawnInfo info;
       int j = Sprite_SpawnDynamically(k, 0xea, &info);
       assert(j >= 0);
@@ -3677,6 +3678,7 @@ lbl_a:
     if (!sprite_delay_main[k]) {
       sprite_state[k] = 0;
       if (Sprite_CheckIfScreenIsClear()) {
+        Rando_TryGrantBossEnemyCheckForCurrentEvent();
         SpriteSpawnInfo info;
         int j = Sprite_SpawnDynamically(k, 0xEA, &info);
         assert(j >= 0);

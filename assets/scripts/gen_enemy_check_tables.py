@@ -47,7 +47,9 @@ from gen_enemy_drop_tables import (  # noqa: E402
     SMALL_KEY_BINDINGS,
     SMALL_KEY_ITEMS,
     parse_key_depth,
+    parse_u16le_array,
     read_assets,
+    sprite_entries,
 )
 
 DEFAULT_OUT = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
@@ -315,6 +317,246 @@ SPECIAL_INVENTORY_KILL_PREDICATES = {}
 PREP_HEALTH_ARRAYS = {
     0x6D: (SPRITE_MAIN_C, "kSpriteRat_Health"),
     0x6E: (SPRITE_MAIN_C, "kSpriteRope_Health"),
+}
+
+
+def world_state_predicate(standard: str, inverted: str | None = None) -> str:
+    if inverted is None or inverted == standard:
+        return standard
+    return (
+        f"((OP_WORLDSTATE_EQ(inverted) AND ({inverted})) OR "
+        f"((NOT OP_WORLDSTATE_EQ(inverted)) AND ({standard})))"
+    )
+
+
+BOSS_EVENT_CHECKS = [
+    {
+        "name": "Enemy Check - Eastern Palace Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 2,
+        "rando_dungeon": 1,
+        "room": 0x0C8,
+        "door_dungeon": 1,
+        "door_region": 38,
+        "region": "EasternPalace_Lobby",
+        "source_name": "Eastern Palace Boss",
+        "can_reach": world_state_predicate(
+            "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
+            "AND HAS_ITEM(BigKey_EasternPalace) AND CanKillBoss(EasternPalace)",
+            "CanShootArrowsL1() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) "
+            "AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace) "
+            "AND CanKillBoss(EasternPalace)",
+        ),
+    },
+    {
+        "name": "Enemy Check - Desert Palace Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 3,
+        "rando_dungeon": 2,
+        "room": 0x033,
+        "door_dungeon": 2,
+        "door_region": 73,
+        "region": "DesertPalace_Lobby",
+        "source_name": "Desert Palace Boss",
+        "can_reach": world_state_predicate(
+            "CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) "
+            "AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)",
+            "HAS_ITEM(MoonPearl) AND CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) "
+            "AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)",
+        ),
+    },
+    {
+        "name": "Enemy Check - Tower of Hera Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 10,
+        "rando_dungeon": 3,
+        "room": 0x007,
+        "door_dungeon": 3,
+        "door_region": 107,
+        "region": "TowerOfHera_Lobby",
+        "source_name": "Tower of Hera Boss",
+        "can_reach": "CanKillBoss(TowerOfHera) AND HAS_ITEM(BigKey_TowerOfHera)",
+    },
+    {
+        "name": "Enemy Check - Palace of Darkness Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 6,
+        "rando_dungeon": 5,
+        "room": 0x05A,
+        "door_dungeon": 5,
+        "door_region": 158,
+        "region": "PalaceOfDarkness",
+        "source_name": "Palace of Darkness Boss",
+        "can_reach": "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
+                     "AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) "
+                     "AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillBoss(PalaceOfDarkness)",
+    },
+    {
+        "name": "Enemy Check - Swamp Palace Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 5,
+        "rando_dungeon": 6,
+        "room": 0x006,
+        "door_dungeon": 6,
+        "door_region": 204,
+        "region": "SwampPalace",
+        "source_name": "Swamp Palace Boss",
+        "can_reach": "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) "
+                     "AND HAS_ITEM(Hammer) AND CanKillBoss(SwampPalace)",
+    },
+    {
+        "name": "Enemy Check - Skull Woods Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 8,
+        "rando_dungeon": 7,
+        "room": 0x029,
+        "door_dungeon": 7,
+        "door_region": 261,
+        "region": "SkullWoods",
+        "source_name": "Skull Woods Boss",
+        "can_reach": world_state_predicate(
+            "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND "
+            "(OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND "
+            "HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillBoss(SkullWoods)",
+            "HAS_ITEM(FireRod) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) "
+            "AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillBoss(SkullWoods)",
+        ),
+    },
+    {
+        "name": "Enemy Check - Thieves' Town Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 11,
+        "rando_dungeon": 8,
+        "room": 0x0AC,
+        "door_dungeon": 8,
+        "door_region": 291,
+        "region": "ThievesTown",
+        "source_name": "Thieves' Town Boss",
+        "can_reach": "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) "
+                     "AND CanKillBoss(ThievesTown)",
+    },
+    {
+        "name": "Enemy Check - Ice Palace Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 9,
+        "rando_dungeon": 9,
+        "room": 0x0DE,
+        "door_dungeon": 9,
+        "door_region": 323,
+        "region": "IcePalace_Lobby",
+        "source_name": "Ice Palace Boss",
+        "can_reach": "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillBoss(IcePalace) "
+                     "AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)",
+    },
+    {
+        "name": "Enemy Check - Misery Mire Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 7,
+        "rando_dungeon": 10,
+        "room": 0x090,
+        "door_dungeon": 10,
+        "door_region": 371,
+        "region": "MiseryMire_Lobby",
+        "source_name": "Misery Mire Boss",
+        "can_reach": "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
+                     "AND HAS_ITEM(BigKey_MiseryMire) AND CanKillBoss(MiseryMire)",
+    },
+    {
+        "name": "Enemy Check - Turtle Rock Boss Enemy",
+        "boss_kind": "dungeon_boss",
+        "game_dungeon": 12,
+        "rando_dungeon": 11,
+        "room": 0x0A4,
+        "door_dungeon": 11,
+        "door_region": 427,
+        "region": "TurtleRock_Lobby",
+        "source_name": "Turtle Rock Boss",
+        "can_reach": "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
+                     "AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) "
+                     "AND CanKillBoss(TurtleRock)",
+    },
+    {
+        "name": "Enemy Check - Ganon's Tower Ice Armos Enemy",
+        "boss_kind": "gt_miniboss",
+        "game_dungeon": 13,
+        "rando_dungeon": 12,
+        "room": 0x064,
+        "door_dungeon": 12,
+        "door_region": 537,
+        "region": "GanonsTower_Lobby",
+        "source_name": "GT Ice Armos",
+        "can_reach": world_state_predicate(
+            "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR "
+            "(HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND "
+            "HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights()",
+            "((HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot)) OR "
+            "(HAS_ITEM(FireRod) AND HAS_ITEM(CaneOfSomaria))) AND "
+            "HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillArmosKnights() "
+            "AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())",
+        ),
+    },
+    {
+        "name": "Enemy Check - Ganon's Tower Lanmolas 2 Enemy",
+        "boss_kind": "gt_miniboss",
+        "game_dungeon": 13,
+        "rando_dungeon": 12,
+        "room": 0x067,
+        "door_dungeon": 12,
+        "door_region": 540,
+        "region": "GanonsTower_Lobby",
+        "source_name": "GT Lanmolas 2",
+        "can_reach": world_state_predicate(
+            "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) "
+            "AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world)",
+            "CanShootArrowsL1() AND CanLightTorches() AND HAS_ITEM(BigKey_GanonsTower) "
+            "AND HAS_AMOUNT(SmallKey_GanonsTower, 3) AND CanKillLanmolas(world) "
+            "AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())",
+        ),
+    },
+    {
+        "name": "Enemy Check - Ganon's Tower Moldorm Enemy",
+        "boss_kind": "gt_miniboss",
+        "game_dungeon": 13,
+        "rando_dungeon": 12,
+        "room": 0x06A,
+        "door_dungeon": 12,
+        "door_region": 547,
+        "region": "GanonsTower_Lobby",
+        "source_name": "GT Moldorm",
+        "can_reach": world_state_predicate(
+            "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() "
+            "AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) "
+            "AND CanKillLanmolas(world) AND CanKillMoldorm()",
+            "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() "
+            "AND HAS_ITEM(BigKey_GanonsTower) AND HAS_AMOUNT(SmallKey_GanonsTower, 4) "
+            "AND CanKillLanmolas(world) AND CanKillMoldorm() "
+            "AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass())",
+        ),
+    },
+]
+
+SCRIPTED_SPAWN_SPECS = {
+    0x18: {
+        "source_name": "Invisible Stalfos",
+        "child_type": 0xA7,
+        "child_name": "Red Stalfos",
+        "child_count": 4,
+        "trigger": "player proximity",
+    },
+    0x05: {
+        "source_name": "Falling Stalfos Trap",
+        "child_type": 0x85,
+        "child_name": "Falling Stalfos",
+        "child_count": 1,
+        "trigger": "room trap activation",
+    },
+    0x06: {
+        "source_name": "Bad Switch Rope Trap",
+        "child_type": 0x6E,
+        "child_name": "Rope",
+        "child_count": 1,
+        "trigger": "bad switch activation",
+    },
 }
 
 
@@ -669,7 +911,55 @@ def overworld_enemy_check_name(row: dict) -> str:
     )
 
 
-def make_doc(assets_path: Path, key_depth_path: Path,
+def scripted_enemy_check_name(row: dict) -> str:
+    return (
+        f"Enemy Check - Room 0x{int(row['room']):03X} "
+        f"Script {int(row['parent_source_slot']):02d} Child {int(row['child_index'])} - "
+        f"{row['child_name']}"
+    )
+
+
+def collect_scripted_spawn_candidates(assets: dict[str, bytes]) -> tuple[list[dict], Counter]:
+    try:
+        sprites = assets["kDungeonSprites"]
+        offsets = parse_u16le_array(assets["kDungeonSpriteOffs"])
+    except KeyError as e:
+        die(f"missing asset {e.args[0]} in zelda3_assets.dat")
+
+    rows: list[dict] = []
+    excluded: Counter = Counter()
+    for room in range(len(offsets)):
+        for list_index, y, x, typ in sprite_entries(sprites, offsets, room):
+            if x < 0xE0:
+                continue
+            spec = SCRIPTED_SPAWN_SPECS.get(typ)
+            if spec is None:
+                if typ == 0x1A:
+                    excluded["bomb_trap_not_enemy"] += 1
+                else:
+                    excluded["unsupported_scripted_spawner"] += 1
+                continue
+            for child_index in range(int(spec["child_count"])):
+                rows.append({
+                    "domain": "scripted_spawn",
+                    "room": room,
+                    "parent_source_slot": int(list_index),
+                    "overlord_type": typ,
+                    "parent_source_name": spec["source_name"],
+                    "parent_y": y,
+                    "parent_x": x,
+                    "child_index": child_index,
+                    "child_type": int(spec["child_type"]),
+                    "child_name": spec["child_name"],
+                    "trigger": spec["trigger"],
+                    "runtime_identity": (
+                        f"scripted:0x{room:03X}:{list_index}:0x{typ:02X}:{child_index}"
+                    ),
+                })
+    return rows, excluded
+
+
+def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
              dungeon_rows: list[dict], excluded_counts: Counter,
              overworld_rows: list[dict], overworld_excluded_counts: Counter,
              key_depth: dict[str, dict], pot_predicates: dict[int, list[dict]],
@@ -749,6 +1039,95 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "key_depth": int(best["key_depth"]),
             "key_mindepth": int(best["key_mindepth"]),
         })
+
+    boss_emitted = 0
+    for boss in BOSS_EVENT_CHECKS:
+        rows.append({
+            "id": ENEMY_CHECK_BASE_ID + len(rows),
+            "name": boss["name"],
+            "domain": "boss",
+            "type": "Enemy",
+            "boss_kind": boss["boss_kind"],
+            "game_dungeon": int(boss["game_dungeon"]),
+            "rando_dungeon": int(boss["rando_dungeon"]),
+            "room": int(boss["room"]),
+            "door_dungeon": int(boss["door_dungeon"]),
+            "door_region": int(boss["door_region"]),
+            "region": boss["region"],
+            "source_name": boss["source_name"],
+            "vanilla_item": "Nothing",
+            "can_reach": boss["can_reach"],
+            "base_can_reach": boss["can_reach"],
+            "predicate_source": "boss_event",
+            "kill_predicate": "boss_event_predicate",
+            "all_tier_only": True,
+            "marker_policy": "suppressed",
+        })
+        boss_emitted += 1
+
+    scripted_rows, scripted_excluded_counts = collect_scripted_spawn_candidates(assets)
+    scripted_emitted = 0
+    for candidate in sorted(
+            scripted_rows,
+            key=lambda r: (int(r["room"]), int(r["parent_source_slot"]), int(r["child_index"]))):
+        room = int(candidate["room"])
+        room_rows = by_room.get(room, [])
+        if not room_rows:
+            doc_excluded_counts["scripted_no_key_depth_room"] += 1
+            continue
+        best = best_room_key_depth(room_rows)
+        dungeon = int(best["dungeon"])
+        if dungeon not in SMALL_KEY_ITEMS or dungeon not in DUNGEON_REGIONS:
+            doc_excluded_counts["scripted_unsupported_dungeon"] += 1
+            continue
+        pseudo = {
+            "room": room,
+            "source_type": int(candidate["child_type"]),
+        }
+        reach = enemy_can_reach(
+            pseudo, dungeon, pot_predicates, region_only_pot_rooms,
+            entry_room_predicates, pot_rows, pot_requirements)
+        if reach is None:
+            doc_excluded_counts["scripted_no_conservative_room_predicate"] += 1
+            continue
+        rows.append({
+            "id": ENEMY_CHECK_BASE_ID + len(rows),
+            "name": scripted_enemy_check_name(candidate),
+            "domain": "scripted_spawn",
+            "type": "Enemy",
+            "room": room,
+            "parent_source_slot": int(candidate["parent_source_slot"]),
+            "overlord_type": int(candidate["overlord_type"]),
+            "parent_source_name": candidate["parent_source_name"],
+            "parent_y": int(candidate["parent_y"]),
+            "parent_x": int(candidate["parent_x"]),
+            "child_index": int(candidate["child_index"]),
+            "child_type": int(candidate["child_type"]),
+            "child_name": candidate["child_name"],
+            "trigger": candidate["trigger"],
+            "door_dungeon": dungeon,
+            "door_region": int(best["region"]),
+            "door_regions": [int(r["region"]) for r in sorted(room_rows, key=lambda r: int(r["region"]))],
+            "region": DUNGEON_REGIONS[dungeon],
+            "vanilla_item": "Nothing",
+            "can_reach": reach["can_reach"],
+            "base_can_reach": reach["base_can_reach"],
+            "predicate_source": reach["base_predicate_source"],
+            "kill_predicate": reach["kill_predicate"],
+            "inventory_kill_predicate": reach["inventory_kill_predicate"],
+            "inventory_kill_source": reach["inventory_kill_source"],
+            "throwable_pots_required": reach["throwable_pots_required"],
+            "throwable_pots_in_room": reach["throwable_pots_in_room"],
+            "throwable_pots_can_reach": reach["throwable_pots_can_reach"],
+            "throwable_pot_damage": reach["throwable_pot_damage"],
+            "throwable_pot_damage_subclass": reach["throwable_pot_damage_subclass"],
+            "enemy_health": reach["enemy_health"],
+            "key_depth": int(best["key_depth"]),
+            "key_mindepth": int(best["key_mindepth"]),
+            "all_tier_only": True,
+            "marker_policy": "child_carrier",
+        })
+        scripted_emitted += 1
 
     overworld_emitted = 0
     for candidate in sorted(
@@ -844,7 +1223,11 @@ def make_doc(assets_path: Path, key_depth_path: Path,
 
     dungeon_emitted = sum(
         1 for r in rows if r.get("domain") == "dungeon" and not r.get("all_tier_only"))
-    source_types = {int(r["source_type"]) for r in rows}
+    source_types = {
+        int(r.get("source_type", r.get("child_type", 0)))
+        for r in rows
+        if "source_type" in r or "child_type" in r
+    }
     return {
         "format_version": 1,
         "_generated_by": "assets/scripts/gen_enemy_check_tables.py (do not hand-edit)",
@@ -864,7 +1247,7 @@ def make_doc(assets_path: Path, key_depth_path: Path,
             "thrown_pot_damage": SPRITE_C.relative_to(REPO).as_posix() + ":ThrownSprite_CheckDamageToSingleSprite damage preset 3",
         },
         "policy": {
-            "scope": "dungeon_plus_all-tier_static_overworld_and_reviewed_underworld",
+            "scope": "dungeon_plus_all-tier_static_overworld_reviewed_underworld_boss_and_finite_scripted",
             "eligible_source_type": ["ESF_RANDOMIZABLE", "ESF_KILLABLE"],
             "excluded_source_type_flags": {
                 "dungeon": ["ESF_CANNOT_KEY", "ESF_FLYING"],
@@ -875,12 +1258,14 @@ def make_doc(assets_path: Path, key_depth_path: Path,
                 "overlords/control markers",
                 "underworld sprite-table rooms with no key-depth ROOM row and no reviewed all-tier binding",
                 "overworld sprite-table rows with no stable active-list runtime identity",
-                "boss/miniboss and finite scripted-spawn groups until separate source identity and reward coexistence are implemented",
+                "farmable, unbounded, projectile, bomb-trap, and non-killable dynamic spawns",
             ],
             "runtime_identity": {
                 "dungeon": "(dungeon_room_index, sprite_N source slot)",
                 "underworld_all_tier": "(dungeon_room_index, sprite_N source slot)",
                 "overworld": "(active overworld sprite-list stage, overworld_area_index, source_slot, sprite_N_word block)",
+                "boss": "(current destination game dungeon or GT miniboss room event)",
+                "scripted_spawn": "(dungeon_room_index, parent overlord source-list slot, overlord type, child index)",
             },
             "kill_logic": [
                 "dungeon: per-source inventory predicate",
@@ -888,6 +1273,8 @@ def make_doc(assets_path: Path, key_depth_path: Path,
                 "dungeon: thrown-pot route requires at least the generated pots_needed count in the room",
                 "underworld all-tier: reviewed room access plus per-source or binding-specific inventory/thrown-pot kill route",
                 "overworld: region-reachable plus generic overworld combat predicate",
+                "boss: existing boss and GT miniboss kill predicates",
+                "scripted_spawn: parent room reachability plus child enemy kill route",
             ],
             "base_room_predicates": [
                 "reviewed forced-key room binding",
@@ -899,12 +1286,17 @@ def make_doc(assets_path: Path, key_depth_path: Path,
         "summary": {
             "scanned_underworld_source_count": len(dungeon_rows),
             "scanned_overworld_source_count": len(overworld_rows),
-            "candidate_count": len(dungeon_rows) + len(overworld_rows),
+            "candidate_count": len(dungeon_rows) + len(overworld_rows) + len(scripted_rows) + len(BOSS_EVENT_CHECKS),
             "emitted_count": len(rows),
             "emitted_dungeon_count": dungeon_emitted,
             "emitted_underworld_all_tier_count": underworld_all_tier_emitted,
             "emitted_overworld_count": overworld_emitted,
-            "excluded_count": sum(doc_excluded_counts.values()) + sum(overworld_excluded_counts.values()),
+            "emitted_boss_count": boss_emitted,
+            "emitted_scripted_spawn_count": scripted_emitted,
+            "excluded_count": (
+                sum(doc_excluded_counts.values()) + sum(overworld_excluded_counts.values()) +
+                sum(scripted_excluded_counts.values())
+            ),
             "out_of_scope_no_key_depth_count": len(out_of_scope_no_key_depth),
             "audit_only_no_room_predicate_count": len(audit_only_no_room_predicate),
             "emitted_rooms": len(emitted_by_room),
@@ -918,6 +1310,7 @@ def make_doc(assets_path: Path, key_depth_path: Path,
         "excluded_counts": {
             "dungeon": dict(sorted(doc_excluded_counts.items())),
             "overworld": dict(sorted(overworld_excluded_counts.items())),
+            "scripted_spawn": dict(sorted(scripted_excluded_counts.items())),
         },
         "enemy_checks": rows,
         "out_of_scope_no_key_depth": [
@@ -975,6 +1368,7 @@ def build_doc(args) -> dict:
     pot_requirements = thrown_pot_requirements(
         assets, {int(row["source_type"]) for row in dungeon_rows})
     return make_doc(
+        assets,
         assets_path,
         key_depth_path,
         dungeon_rows,
@@ -1039,7 +1433,9 @@ def main(argv: list[str]) -> int:
         "gen_enemy_check_tables: "
         f"{summary['emitted_dungeon_count']} dungeon + "
         f"{summary['emitted_underworld_all_tier_count']} reviewed underworld + "
-        f"{summary['emitted_overworld_count']} overworld ordinary enemy checks "
+        f"{summary['emitted_overworld_count']} overworld + "
+        f"{summary['emitted_boss_count']} boss/miniboss + "
+        f"{summary['emitted_scripted_spawn_count']} scripted ordinary enemy checks "
         f"emitted from {summary['candidate_count']} eligible sources; "
         f"{summary['audit_only_no_room_predicate_count']} audit-only without "
         "conservative room predicates; "

@@ -61,34 +61,32 @@ a required pot-sanity item check and a future thrown weapon before the enemy che
 
 Door shuffle, pot shuffle, enemy shuffle, boss shuffle, and entrance shuffle SHALL
 interact with `all` only through explicit generated predicates or explicit visible
-normalization/rejection. Door shuffle requires non-key enemy door-region bridges or
-equivalent shuffled-door reachability before `all` can stay active. Enemy shuffle
-normalizes requested `All` to the highest lower tier allowed by existing derived
-rules, normally `Keys` but `Off` when the keys tier is unsupported, until a future
-change explicitly makes enemy shuffle placement-affecting for all-enemy kill logic
-and updates digest/corpus expectations. Boss shuffle normalizes requested `All` to
-`Dungeon` until boss/miniboss identity is modeled against assigned boss rooms and
-rewards, unless another rule lowers the effective tier further. Entrance shuffle
-normalizes requested `All` to `Dungeon` until all-enemy overworld/domain reachability
-is modeled against the entrance graph, unless another rule lowers the effective tier
-further.
+normalization/rejection. Door shuffle composes through generated door x ordinary
+enemy-check bridge rows and source predicates. Enemy shuffle normalizes requested
+`All` to the highest lower tier allowed by existing derived rules, normally `Keys`
+but `Off` when the keys tier is unsupported, until a future change explicitly makes
+enemy shuffle placement-affecting for all-enemy kill logic and updates digest/corpus
+expectations. Boss shuffle composes with `All` because boss/miniboss checks bind to
+the destination event and preserve existing boss reward behavior, unless another
+rule lowers the effective tier further. Entrance shuffle normalizes requested `All`
+to `Dungeon` until all-enemy overworld/domain reachability is modeled against the
+entrance graph, unless another rule lowers the effective tier further.
 
-#### Scenario: Door shuffle lacks all-enemy bridge
-- **WHEN** `enemy_drop_checks=all` is requested with door shuffle but no non-key
-  all-enemy door bridge exists
-- **THEN** derived settings normalize to `Keys` instead of treating all-enemy
-  locations as vanilla-door reachable
+#### Scenario: Door shuffle uses all-enemy bridge
+- **WHEN** `enemy_drop_checks=all` is requested with door shuffle
+- **THEN** derived settings keep `All`
+- **AND** door reachability uses generated enemy-check bridge rows and source
+  predicates instead of treating all-enemy locations as vanilla-door reachable
 
 #### Scenario: Enemy shuffle normalizes all
 - **WHEN** `enemy_drop_checks=all` is requested with enemy shuffle
 - **THEN** derived settings normalize to the highest lower tier allowed by existing
   derived rules instead of using vanilla kill predicates for shuffled enemies
 
-#### Scenario: Boss shuffle normalizes boss-domain all
-- **WHEN** `enemy_drop_checks=all` is requested with boss shuffle before boss-domain
-  all-enemy identity is modeled
-- **THEN** derived settings normalize to `Dungeon` unless another rule lowers the
-  effective tier further
+#### Scenario: Boss shuffle preserves boss-domain all
+- **WHEN** `enemy_drop_checks=all` is requested with boss shuffle
+- **THEN** derived settings keep `All` unless another rule lowers the effective tier
+  further
 
 #### Scenario: Entrance shuffle normalizes all
 - **WHEN** `enemy_drop_checks=all` is requested with entrance shuffle before

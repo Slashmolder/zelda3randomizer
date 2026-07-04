@@ -99,6 +99,9 @@ typedef struct DoorExploreSpec {
   const uint16 *origins;
   int origin_count;
   bool (*vm_pred)(void *ud, uint16 vm_index);  // NULL = lenient (true)
+  bool (*pot_pred)(void *ud, const RandoDoorPotLocation *pot);
+  bool (*enemy_drop_pred)(void *ud, const RandoDoorEnemyDropLocation *drop);
+  bool (*enemy_check_pred)(void *ud, const RandoDoorEnemyCheckLocation *check);
   void *ud;
   const DoorKeyPair *pairs;  // NULL = key doors open
   int pair_count;
@@ -110,6 +113,7 @@ typedef struct DoorExploreSpec {
   const DoorShuffleLayout *thresholds;  // Held mode: key_worst_case source
   uint8 pot_tier;               // active pot tier for drop/key-source accounting
   uint8 enemy_drop_keys;         // active enemy key checks for drop accounting
+  uint8 enemy_check_tier;        // active ordinary enemy checks for key-source accounting
 } DoorExploreSpec;
 
 void DoorExplore_Core(const DoorExploreSpec *spec, DoorExploreResult *out);
@@ -131,11 +135,22 @@ bool Door_DropExcludedByActivePot(uint8 dungeon, uint16 drop_index, uint8 pot_ti
 bool Door_DropExcludedByActiveEnemyDrop(uint8 dungeon, uint16 drop_index,
                                         uint8 enemy_drop_keys);
 int Door_CountActivePotKeySources(uint8 dungeon, const DoorExploreResult *res,
-                                  uint8 pot_tier);
+                                  uint8 pot_tier,
+                                  bool (*pred)(void *ud, const RandoDoorPotLocation *pot),
+                                  void *ud);
 int Door_CountActiveKeyPots(uint8 dungeon, uint8 pot_tier);
 int Door_CountActiveEnemyDropKeySources(uint8 dungeon, const DoorExploreResult *res,
-                                        uint8 enemy_drop_keys);
+                                        uint8 enemy_drop_keys,
+                                        bool (*pred)(void *ud,
+                                                     const RandoDoorEnemyDropLocation *drop),
+                                        void *ud);
 int Door_CountActiveEnemyDropKeys(uint8 dungeon, uint8 enemy_drop_keys);
+int Door_CountActiveEnemyCheckKeySources(uint8 dungeon, const DoorExploreResult *res,
+                                         uint8 enemy_check_tier,
+                                         bool (*pred)(void *ud,
+                                                      const RandoDoorEnemyCheckLocation *check),
+                                         void *ud);
+int Door_CountActiveEnemyChecks(uint8 dungeon, uint8 enemy_check_tier);
 // True iff door `d` is gated on the big key (VanillaBigKey kind or one of
 // get_special_big_key_doors).
 bool Door_IsBkGated(uint16 door);

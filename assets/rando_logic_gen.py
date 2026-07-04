@@ -414,6 +414,21 @@ def _door_enemy_drop_bridge_digest(rows: list[dict]) -> int:
     return h
 
 
+def _door_enemy_check_bridge_digest(rows: list[dict]) -> int:
+    h = 0x811C9DC5
+    for r in rows:
+        h = _fnv32_u16(h, r["loc_id"])
+        h = _fnv32_u8(h, r["dungeon"])
+        h = _fnv32_u8(h, r["min_tier"])
+        h = _fnv32_u8(h, len(r["regions"]))
+        for region in r["regions"]:
+            h = _fnv32_u16(h, region)
+        h = _fnv32_u32(h, len(r["pred"]))
+        for b in r["pred"]:
+            h = _fnv32_u8(h, b)
+    return h
+
+
 def load_pots(path: Path, logic_regions: dict[str, RegionDef] | None = None):
     """Load assets/rando/pots.gen.yaml (local registry from gen_pot_tables.py).
 
@@ -777,7 +792,7 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
               f"locations. Run assets/scripts/gen_enemy_check_tables.py with "
               f"ROM assets to enable enemy_drop_checks=dungeon in this build.",
               file=sys.stderr)
-        return {}, []
+        return {}, [], []
     if logic_regions is None:
         raise RuntimeError(f"{path}: logic_regions are required for enemy-check region resolution")
     doc = load_yaml(path)
@@ -785,21 +800,40 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
         raise RuntimeError(f"{path}: unsupported format_version {doc.get('format_version')!r}")
     pot_key_counts = _load_pot_key_counts_by_item()
     source_counts = enemy_drop_source_counts or {}
-    out, rows = {}, []
+    out, rows, door_bridge_rows = {}, [], []
     seen = set()
     for raw in doc.get("enemy_checks", []) or []:
         if raw.get("type") != "Enemy":
             raise RuntimeError(f"{path}: ordinary enemy row {raw.get('name')!r} must use type Enemy")
         domain = raw.get("domain") or "dungeon"
-        source_slot = int(raw["source_slot"])
         if domain == "dungeon":
+            source_slot = int(raw["source_slot"])
             room = int(raw["room"])
             key = (domain, room, source_slot)
         elif domain == "overworld":
+            source_slot = int(raw["source_slot"])
             area = int(raw["area"])
             stage = int(raw["stage"])
             block = int(raw["block"])
             key = (domain, area, stage, source_slot, block)
+        elif domain == "boss":
+            room = int(raw["room"])
+            key = (
+                domain,
+                raw.get("boss_kind", ""),
+                int(raw.get("game_dungeon", 0xFF)),
+                room,
+            )
+        elif domain == "scripted_spawn":
+            room = int(raw["room"])
+            key = (
+                domain,
+                room,
+                int(raw["parent_source_slot"]),
+                int(raw["overlord_type"]),
+                int(raw["child_index"]),
+                int(raw["child_type"]),
+            )
         else:
             raise RuntimeError(f"{path}: enemy-check row {raw['name']!r} uses unsupported domain {domain!r}")
         if key in seen:
@@ -811,7 +845,7 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
         base_can_reach = raw.get("can_reach") or "TRUE()"
         can_reach = base_can_reach
         all_tier_only = bool(raw.get("all_tier_only", False))
-        if domain == "dungeon":
+        if domain in ("dungeon", "scripted_spawn"):
             if "small_key_item" in raw:
                 item = raw["small_key_item"]
                 wild, dungeon, combined_wild = _enemy_depth_terms(raw, item, source_counts, pot_key_counts)
@@ -820,7 +854,7 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 terms = _enemy_drop_key_terms_for(item, wild, dungeon, combined_wild)
                 if terms:
                     can_reach = f"({can_reach}){terms}"
-            elif not all_tier_only:
+            elif domain == "dungeon" and not all_tier_only:
                 raise RuntimeError(
                     f"{path}: dungeon enemy-check row {raw['name']!r} lacks small_key_item")
         loc = LocationDef(
@@ -845,6 +879,67 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 "loc_id": loc.id,
                 "all_tier_only": all_tier_only,
             })
+            if "door_dungeon" in raw and "door_region" in raw:
+                door_regions = [int(x) for x in raw.get("door_regions", []) or []]
+                if not door_regions:
+                    door_regions = [int(raw["door_region"])]
+                item = raw.get("small_key_item")
+                door_pred = raw.get("base_can_reach") or base_can_reach
+                if item:
+                    door_pred = _suppress_base_key_terms_under_enemy_dungeon(
+                        door_pred, item, 0)
+                door_bridge_rows.append({
+                    "loc_id": loc.id,
+                    "name": raw["name"],
+                    "dungeon": int(raw["door_dungeon"]),
+                    "regions": sorted(set(door_regions)),
+                    "base_can_reach": door_pred,
+                    "min_tier": 3 if all_tier_only else 2,
+                })
+        elif domain == "boss":
+            rows.append({
+                "domain": "boss",
+                "boss_kind": raw.get("boss_kind", ""),
+                "game_dungeon": int(raw["game_dungeon"]),
+                "room": room,
+                "loc_id": loc.id,
+            })
+            if "door_dungeon" in raw and "door_region" in raw:
+                door_bridge_rows.append({
+                    "loc_id": loc.id,
+                    "name": raw["name"],
+                    "dungeon": int(raw["door_dungeon"]),
+                    "regions": [int(raw["door_region"])],
+                    "base_can_reach": raw.get("base_can_reach") or base_can_reach,
+                    "min_tier": 3,
+                })
+        elif domain == "scripted_spawn":
+            rows.append({
+                "domain": "scripted_spawn",
+                "room": room,
+                "parent_source_slot": int(raw["parent_source_slot"]),
+                "overlord_type": int(raw["overlord_type"]),
+                "child_index": int(raw["child_index"]),
+                "child_type": int(raw["child_type"]),
+                "loc_id": loc.id,
+            })
+            if "door_dungeon" in raw and "door_region" in raw:
+                door_regions = [int(x) for x in raw.get("door_regions", []) or []]
+                if not door_regions:
+                    door_regions = [int(raw["door_region"])]
+                item = raw.get("small_key_item")
+                door_pred = raw.get("base_can_reach") or base_can_reach
+                if item:
+                    door_pred = _suppress_base_key_terms_under_enemy_dungeon(
+                        door_pred, item, 0)
+                door_bridge_rows.append({
+                    "loc_id": loc.id,
+                    "name": raw["name"],
+                    "dungeon": int(raw["door_dungeon"]),
+                    "regions": sorted(set(door_regions)),
+                    "base_can_reach": door_pred,
+                    "min_tier": 3,
+                })
         else:
             rows.append({
                 "domain": "overworld",
@@ -855,7 +950,7 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 "loc_id": loc.id,
                 "all_tier_only": all_tier_only,
             })
-    return out, rows
+    return out, rows, door_bridge_rows
 
 
 def load_cave_source_predicates(path: Path) -> list[tuple[str, str]]:
@@ -892,6 +987,17 @@ def build_door_enemy_drop_bridge(bridge_sources: list[dict], compile_src) -> tup
         row["pred"] = pred
         rows.append(row)
     return rows, _door_enemy_drop_bridge_digest(rows) if rows else 0
+
+
+def build_door_enemy_check_bridge(bridge_sources: list[dict], compile_src) -> tuple[list[dict], int]:
+    rows: list[dict] = []
+    for src in sorted(bridge_sources, key=lambda r: r["loc_id"]):
+        pred = compile_src(src["base_can_reach"],
+                           f"enemy check bridge {src['loc_id']} {src['name']}")
+        row = dict(src)
+        row["pred"] = pred
+        rows.append(row)
+    return rows, _door_enemy_check_bridge_digest(rows) if rows else 0
 
 
 def load_macros(path: Path | None) -> dict[str, MacroDef]:
@@ -2181,6 +2287,14 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
     overworld_rows = sorted(
         [r for r in rows if r.get("domain") == "overworld"],
         key=lambda r: (r["area"], r["stage"], r["source_slot"]))
+    boss_rows = sorted(
+        [r for r in rows if r.get("domain") == "boss"],
+        key=lambda r: (r["game_dungeon"], r["room"], r["boss_kind"], r["loc_id"]))
+    scripted_rows = sorted(
+        [r for r in rows if r.get("domain") == "scripted_spawn"],
+        key=lambda r: (
+            r["room"], r["parent_source_slot"], r["overlord_type"],
+            r["child_index"], r["child_type"]))
     seen = set()
     for r in dungeon_rows:
         key = (int(r["room"]), int(r["source_slot"]))
@@ -2195,11 +2309,31 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
                 "enemy_check_lookup: duplicate overworld row "
                 f"area=0x{key[0]:02x} stage={key[1]} slot={key[2]}")
         seen.add(key)
+    seen.clear()
+    for r in boss_rows:
+        key = (int(r["game_dungeon"]), int(r["room"]), r["boss_kind"])
+        if key in seen:
+            raise RuntimeError(
+                "enemy_check_lookup: duplicate boss row "
+                f"game_dungeon={key[0]} room=0x{key[1]:03x} kind={key[2]!r}")
+        seen.add(key)
+    seen.clear()
+    for r in scripted_rows:
+        key = (
+            int(r["room"]), int(r["parent_source_slot"]), int(r["overlord_type"]),
+            int(r["child_index"]), int(r["child_type"]))
+        if key in seen:
+            raise RuntimeError(
+                "enemy_check_lookup: duplicate scripted row "
+                f"room=0x{key[0]:03x} parent={key[1]} type=0x{key[2]:02x} child={key[3]}")
+        seen.add(key)
     lines = [
         HEADER_BANNER, "",
         "// enemy_check_lookup.h — runtime lookup tables for ordinary Enemy checks.",
         "// Dungeon rows are sorted (dungeon_room_index, source_slot).",
         "// Overworld rows are sorted (overworld_area_index, active_stage, source_slot).",
+        "// Boss rows are sorted (game_dungeon, room, boss_kind).",
+        "// Scripted rows are sorted (room, parent source-list slot, overlord type, child index).",
         "// Generated from local",
         "// assets/rando/enemy_checks.gen.yaml via assets/scripts/gen_enemy_check_tables.py.",
         "",
@@ -2222,6 +2356,22 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
         "  uint16 block;       // sprite_N_word proximity block",
         "  uint16 loc_id;      // LOC_* value",
         "} RandoOverworldEnemyCheckLookupEntry;",
+        "",
+        "typedef struct RandoBossEnemyCheckLookupEntry {",
+        "  uint8  game_dungeon; // cur_palace_index_x2 >> 1 destination dungeon",
+        "  uint16 room;         // dungeon_room_index; used for GT miniboss events",
+        "  uint8  kind;         // 1=dungeon boss, 2=GT miniboss",
+        "  uint16 loc_id;       // LOC_* value",
+        "} RandoBossEnemyCheckLookupEntry;",
+        "",
+        "typedef struct RandoScriptedEnemyCheckLookupEntry {",
+        "  uint16 room;               // 0..319 dungeon room index",
+        "  uint8  parent_source_slot; // authored room-list index of overlord marker",
+        "  uint8  parent_type;        // parent overlord type",
+        "  uint8  child_index;        // finite child ordinal from that parent",
+        "  uint8  child_type;         // spawned sprite type",
+        "  uint16 loc_id;             // LOC_* value",
+        "} RandoScriptedEnemyCheckLookupEntry;",
         "",
     ]
     if dungeon_rows:
@@ -2246,10 +2396,36 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
     else:
         lines.append("// EMPTY: no all-tier overworld enemy-check rows.")
         lines.append("static const RandoOverworldEnemyCheckLookupEntry kRandoOverworldEnemyCheckLookup[1] = { { 0, 0, 0, 0, 0 } };")
+    lines.append("")
+    if boss_rows:
+        lines.append("static const RandoBossEnemyCheckLookupEntry kRandoBossEnemyCheckLookup[] = {")
+        for r in boss_rows:
+            kind = 2 if r.get("boss_kind") == "gt_miniboss" else 1
+            lines.append(
+                f"  {{ {int(r['game_dungeon'])}, 0x{int(r['room']):04x}, "
+                f"{kind}, {int(r['loc_id'])} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: no all-tier boss/miniboss enemy-check rows.")
+        lines.append("static const RandoBossEnemyCheckLookupEntry kRandoBossEnemyCheckLookup[1] = { { 0, 0, 0, 0 } };")
+    lines.append("")
+    if scripted_rows:
+        lines.append("static const RandoScriptedEnemyCheckLookupEntry kRandoScriptedEnemyCheckLookup[] = {")
+        for r in scripted_rows:
+            lines.append(
+                f"  {{ 0x{int(r['room']):04x}, {int(r['parent_source_slot'])}, "
+                f"0x{int(r['overlord_type']):02x}, {int(r['child_index'])}, "
+                f"0x{int(r['child_type']):02x}, {int(r['loc_id'])} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: no all-tier scripted-spawn enemy-check rows.")
+        lines.append("static const RandoScriptedEnemyCheckLookupEntry kRandoScriptedEnemyCheckLookup[1] = { { 0, 0, 0, 0, 0, 0 } };")
     lines += [
         "",
         f"#define kRandoEnemyCheckLookup_COUNT {len(dungeon_rows)}",
         f"#define kRandoOverworldEnemyCheckLookup_COUNT {len(overworld_rows)}",
+        f"#define kRandoBossEnemyCheckLookup_COUNT {len(boss_rows)}",
+        f"#define kRandoScriptedEnemyCheckLookup_COUNT {len(scripted_rows)}",
         "",
         "#endif  // ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
     ]
@@ -2699,6 +2875,8 @@ def emit_logic_data(
     door_pot_bridge_digest: int = 0,
     door_enemy_drop_rows: list[dict] | None = None,
     door_enemy_drop_bridge_digest: int = 0,
+    door_enemy_check_rows: list[dict] | None = None,
+    door_enemy_check_bridge_digest: int = 0,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -2835,6 +3013,18 @@ def emit_logic_data(
         out_row["pred_off"] = off
         out_row["pred_len"] = length
         door_enemy_drop_offsets.append(out_row)
+    door_enemy_check_offsets: list[dict] = []
+    door_enemy_check_regions: list[int] = []
+    for row in (door_enemy_check_rows or []):
+        enc = row.get("pred", b"")
+        off, length = (len(stream), len(enc)) if enc else (0, 0)
+        stream += enc
+        out_row = dict(row)
+        out_row["region_first"] = len(door_enemy_check_regions)
+        out_row["pred_off"] = off
+        out_row["pred_len"] = length
+        door_enemy_check_regions.extend(row.get("regions", []))
+        door_enemy_check_offsets.append(out_row)
 
     # Cave entrance-shuffle source gates (entrance_registry.yaml order). These
     # are AND-ed into any cave/dungeon target reached through the source cave
@@ -2949,6 +3139,28 @@ def emit_logic_data(
         out.append("const RandoDoorEnemyDropLocation kRandoDoorEnemyDropLocations[1] = { { 0, 0xFFFF, 0, 0, 0xFFFF, 0 } };")
         out.append("const uint32 kRandoDoorEnemyDropLocationsCount = 0;")
     out.append(f"const uint32 kRandoDoorEnemyDropBridgeDigest = 0x{door_enemy_drop_bridge_digest & 0xFFFFFFFF:08x}u;")
+    out.append("")
+    out.append("// Door x ordinary enemy-check bridge rows (generated from local enemy-check artifacts).")
+    if door_enemy_check_offsets:
+        out.append(f"const RandoDoorEnemyCheckLocation kRandoDoorEnemyCheckLocations[{len(door_enemy_check_offsets)}] = {{")
+        for r in door_enemy_check_offsets:
+            out.append(
+                "  { %d, %d, %du, %d, %d, %d, %d },  // %s"
+                % (r["loc_id"], r["region_first"], r["pred_off"], r["pred_len"],
+                   r["dungeon"], r["min_tier"], len(r.get("regions", [])), r["name"])
+            )
+        out.append("};")
+        out.append(f"const uint16 kRandoDoorEnemyCheckRegions[{len(door_enemy_check_regions)}] = {{")
+        for i in range(0, len(door_enemy_check_regions), 12):
+            chunk = door_enemy_check_regions[i:i + 12]
+            out.append("  " + ", ".join(str(r) for r in chunk) + ",")
+        out.append("};")
+        out.append(f"const uint32 kRandoDoorEnemyCheckLocationsCount = {len(door_enemy_check_offsets)};")
+    else:
+        out.append("const RandoDoorEnemyCheckLocation kRandoDoorEnemyCheckLocations[1] = { { 0, 0, 0, 0, 0, 0, 0 } };")
+        out.append("const uint16 kRandoDoorEnemyCheckRegions[1] = { 0xFFFF };")
+        out.append("const uint32 kRandoDoorEnemyCheckLocationsCount = 0;")
+    out.append(f"const uint32 kRandoDoorEnemyCheckBridgeDigest = 0x{door_enemy_check_bridge_digest & 0xFFFFFFFF:08x}u;")
     out.append("")
     out.append("// dungeon-id (HCE=0..GT=12) -> vanilla boss-pool index (0xFF = no boss).")
     out.append("// Mirrors src/rando/shuffle_boss.c kBossVanilla; OP_CAN_KILL_BOSS fallback")
@@ -3368,7 +3580,7 @@ def main(argv=None):
     # distinct Enemy type. These are not vanilla key sources, so they do not
     # participate in enemy-drop source accounting; they only use the same
     # key-depth terms to avoid certifying enemies behind uncollected keys.
-    enemy_check_locs, enemy_check_lookup_rows = load_enemy_checks(
+    enemy_check_locs, enemy_check_lookup_rows, door_enemy_check_sources = load_enemy_checks(
         Path("assets/rando/enemy_checks.gen.yaml"),
         logic_regions,
         enemy_drop_source_counts,
@@ -3691,6 +3903,8 @@ def main(argv=None):
     door_pot_bridge_digest = 0
     door_enemy_drop_rows: list[dict] = []
     door_enemy_drop_bridge_digest = 0
+    door_enemy_check_rows: list[dict] = []
+    door_enemy_check_bridge_digest = 0
     door_manifest_path = Path("assets/rando/door_predicates.gen.json")
     door_portals_path = Path("assets/rando/door_portals.yaml")
     if door_manifest_path.exists():
@@ -3744,6 +3958,9 @@ def main(argv=None):
         if door_enemy_drop_sources:
             door_enemy_drop_rows, door_enemy_drop_bridge_digest = build_door_enemy_drop_bridge(
                 door_enemy_drop_sources, compile_door_src)
+        if door_enemy_check_sources:
+            door_enemy_check_rows, door_enemy_check_bridge_digest = build_door_enemy_check_bridge(
+                door_enemy_check_sources, compile_door_src)
 
         _OP_AND, _OP_OR, _OP_NOT, _OP_DA, _OP_DLR = 12, 13, 14, 20, 21
         _loc_by_id = {l.id: (name, l) for name, l in locations.items()}
@@ -3773,6 +3990,8 @@ def main(argv=None):
             wrap_door_location(row["loc_id"], row["dungeon"], "door pot")
         for row in door_enemy_drop_rows:
             wrap_door_location(row["loc_id"], row["dungeon"], "door enemy drop")
+        for row in door_enemy_check_rows:
+            wrap_door_location(row["loc_id"], row["dungeon"], "door enemy check")
 
     # Flush door-compile errors collected after the main strict gate (earlier
     # errors were already printed there; only the door block's are new).
@@ -3809,7 +4028,9 @@ def main(argv=None):
                     door_pot_rows=door_pot_rows,
                     door_pot_bridge_digest=door_pot_bridge_digest,
                     door_enemy_drop_rows=door_enemy_drop_rows,
-                    door_enemy_drop_bridge_digest=door_enemy_drop_bridge_digest)
+                    door_enemy_drop_bridge_digest=door_enemy_drop_bridge_digest,
+                    door_enemy_check_rows=door_enemy_check_rows,
+                    door_enemy_check_bridge_digest=door_enemy_check_bridge_digest)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
     enemy_drop_lookup_count = emit_enemy_drop_lookup(

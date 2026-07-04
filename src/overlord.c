@@ -190,6 +190,7 @@ void Overlord18_InvisibleStalfos(int k) {  // 89b7f5
     sprite_E[j] = 1;
     sprite_flags2[j] = 3;
     sprite_D[j] = 2;
+    (void)Rando_AssignScriptedEnemyCheck(j, k, (uint8)(3 - tmp_counter), 0xa7);
   } while (!sign8(--tmp_counter));
 }
 
@@ -487,6 +488,8 @@ void Overlord05_FallingStalfos(int k) {  // 89be0f
     sprite_z[j] = 224;
     sprite_floor[j] = overlord_floor[k];
     sprite_D[j] = 0; // zelda bug: unitialized
+    if (!Rando_AssignScriptedEnemyCheck(j, k, 0, 0x85))
+      return;
     Sprite_Overlord_PlayFallingSfx(j);
   }
 }
@@ -515,16 +518,18 @@ void Overlord06_BadSwitchSnake(int k) {  // 89be75
   sprite_z[j] = 192;
   sprite_E[j] = 192;
 
-  sprite_flags3[j] |= 0x10;
-  sprite_floor[j] = overlord_floor[k];
-  SpriteSfx_QueueSfx2WithPan(j, 0x20);
   uint8 type = overlord_type[k];
   overlord_type[k] = 0;
+  sprite_flags3[j] |= 0x10;
+  sprite_floor[j] = overlord_floor[k];
   if (type == 26) {
     sprite_type[j] = 74;
     Sprite_TransmuteToBomb(j);
     sprite_delay_aux1[j] = 112;
+  } else if (!Rando_AssignScriptedEnemyCheck(j, k, 0, 0x6e)) {
+    return;
   }
+  SpriteSfx_QueueSfx2WithPan(j, 0x20);
 }
 
 void Overlord02_FullRoomCannons(int k) {  // 89bf09
@@ -650,4 +655,3 @@ void ArmosCoordinator_DisableCoercion(int k) {  // 9dedcb
   for (int j = 5; j >= 0; j--)
     sprite_ai_state[j] = 0;
 }
-

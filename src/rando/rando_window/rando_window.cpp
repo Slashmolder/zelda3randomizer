@@ -342,9 +342,7 @@ static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
       (s->world_state == kWorldState_Open || s->world_state == kWorldState_Standard) &&
       (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
   return s != nullptr &&
-         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
          !s->enemy_shuffle &&
-         !s->boss_shuffle &&
          !entrance_shuffle;
 }
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
@@ -1226,9 +1224,7 @@ static void Panel_Shuffles() {
           enemy_drop_key_mode != kDungeonItemMode_Dungeon;
       uint8 shown = Settings_EffectiveEnemyDropChecks(s);
       bool dungeon_tier_available =
-          !enemy_drops_off &&
-          Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
-          !s->enemy_shuffle;
+          !enemy_drops_off && !s->enemy_shuffle;
       bool all_tier_available = !enemy_drops_off && EnemyDropAllTierSelectable(s);
       uint8 label_count = all_tier_available ? 4 : (dungeon_tier_available ? 3 : 2);
       uint8 effective = shown;
@@ -1248,7 +1244,7 @@ static void Panel_Shuffles() {
         s->enemy_drop_checks = combo_value;
         changed = true;
       }
-      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All also turns eligible static overworld enemies into checks. Door shuffle or enemy shuffle lowers Dungeon/All to Keys; boss or entrance shuffle lowers All to Dungeon.");
+      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All adds eligible overworld, boss, and reviewed scripted or underworld enemies. Enemy shuffle lowers Dungeon/All to Keys; entrance shuffle lowers All to Dungeon.");
       ImGui::EndDisabled();
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");

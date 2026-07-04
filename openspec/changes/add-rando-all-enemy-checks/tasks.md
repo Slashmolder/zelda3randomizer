@@ -103,11 +103,11 @@
 - [x] 6.2 Run source-audit/codegen freshness checks.
 - [x] 6.3 Run Release build and `--rando-selftest`.
 - [x] 6.4 Run corpus rows for `all` and every supported/degraded interaction.
-- [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, and static overworld
-  checks through death, reload, save/load, snapshot, and transition cases.
-  Boss/miniboss and finite scripted-spawn checks remain future source-domain work.
+- [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, static overworld,
+  boss/miniboss, and finite scripted-spawn checks through death, reload, save/load,
+  snapshot, and transition cases.
 - [ ] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts,
   plus pot-sanity ordering cases where a required pot item cannot also be a weapon.
 - [ ] 6.7 Test door-shuffle bridge digest drift, enemy-shuffle normalization, and
-  boss-shuffle normalization.
+  boss-shuffle composition.
 - [ ] 6.8 Playtest dense screens with generic markers and item markers.

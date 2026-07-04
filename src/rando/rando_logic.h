@@ -546,6 +546,29 @@ extern const RandoDoorEnemyDropLocation kRandoDoorEnemyDropLocations[];
 extern const uint32 kRandoDoorEnemyDropLocationsCount;
 extern const uint32 kRandoDoorEnemyDropBridgeDigest;
 
+// Door x ordinary enemy-check bridge. Ordinary dungeon/all-tier enemy checks
+// are separate locations, so the door oracle/prover need generated door
+// regions and original base predicates for each active check.
+typedef struct RandoDoorEnemyCheckLocation {
+  uint16 loc_id;
+  uint16 region_first;
+  uint32 pred_off;
+  uint16 pred_len;
+  uint8 dungeon;
+  uint8 min_tier;
+  uint8 region_count;
+} RandoDoorEnemyCheckLocation;
+extern const RandoDoorEnemyCheckLocation kRandoDoorEnemyCheckLocations[];
+extern const uint16 kRandoDoorEnemyCheckRegions[];
+extern const uint32 kRandoDoorEnemyCheckLocationsCount;
+extern const uint32 kRandoDoorEnemyCheckBridgeDigest;
+
+static inline bool Rando_DoorEnemyCheckActive(const RandoDoorEnemyCheckLocation *e,
+                                              uint8 enemy_check_tier) {
+  return e != NULL && enemy_check_tier >= e->min_tier &&
+         enemy_check_tier <= kEnemyDropChecks_All;
+}
+
 // Install/clear the per-seed door layout for logic evaluation (generation
 // installs before Place_AssumedFill; slot activation installs the regenerated
 // layout; teardown clears). `layout` must outlive the install. active_mask
