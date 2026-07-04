@@ -40,6 +40,13 @@ logic are modeled.
 - **AND** the emitted row is marked all-tier-only so it does not activate under
   `enemy_drop_checks=dungeon`
 
+#### Scenario: Shared-room throwable source is not on the reviewed enemy side
+- **WHEN** an audited underworld exception shares a physical room with pots or
+  other throwables from a different entrance side
+- **AND** the reviewed enemy access predicate does not reach those throwables
+- **THEN** the enemy's kill route SHALL NOT count those throwables as reachable
+- **AND** the emitted logic SHALL require an inventory kill route instead
+
 #### Scenario: Thief-like source is excluded
 - **WHEN** the audit finds a non-killable thief or NPC-like actor
 - **THEN** the audit records an excluded non-killable reason and emits no location

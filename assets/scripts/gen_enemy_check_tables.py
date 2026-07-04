@@ -75,19 +75,137 @@ DUNGEON_REGIONS = {
     12: "GanonsTower_Lobby",
 }
 
+UNDERWORLD_GENERIC_KILL_PREDICATE = "CanKillMostThings(world, 5)"
+
+ALL_TIER_BOMB_ROOM_ACCESS = (
+    "OP_REGION_REACHABLE(LightWorld_NorthWest) AND CanBombThings()"
+)
+
+ALL_TIER_HOOKSHOT_CAVE_ACCESS = (
+    "OP_REGION_REACHABLE(DarkWorld_DeathMountain_East) AND HAS_ITEM(Hookshot) AND "
+    "(((NOT OP_WORLDSTATE_EQ(inverted)) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) "
+    "AND (CanLiftRocks() OR CanBootsClip() OR CanOneFrameClipOW())) OR "
+    "(OP_WORLDSTATE_EQ(inverted) AND (CanLiftRocks() OR (HAS_ITEM(MagicMirror) "
+    "AND CanBombThings() AND OP_REGION_REACHABLE(LightWorld_DeathMountain_East)) "
+    "OR CanBootsClip() OR CanOneFrameClipOW())))"
+)
+
+ALL_TIER_MIMIC_CAVE_ACCESS = (
+    "OP_REGION_REACHABLE(LightWorld_DeathMountain_East) AND "
+    "(((NOT OP_WORLDSTATE_EQ(inverted)) AND HAS_ITEM(Hammer) AND HAS_ITEM(MagicMirror) "
+    "AND ((HAS_AMOUNT(SmallKey_TurtleRock, 2) AND OP_REGION_REACHABLE(TurtleRock_Lobby)) "
+    "OR CanOneFrameClipOW())) OR "
+    "(OP_WORLDSTATE_EQ(inverted) AND HAS_ITEM(Hammer) AND HAS_ITEM(MoonPearl)))"
+)
+
+ALL_TIER_MINI_MOLDORM_CAVE_ACCESS = (
+    "OP_REGION_REACHABLE(LightWorld_South) AND CanBombThings() AND "
+    "((NOT OP_WORLDSTATE_EQ(inverted)) OR HAS_ITEM(MoonPearl))"
+)
+
 ALL_TIER_UNDERWORLD_BINDINGS = {
     # Kakariko Storage Shed / Library room. These two rats are behind a bombable
     # wall and have eight liftable pots in-room, so the kill route is modeled by
     # the same thrown-pot damage table used for dungeon enemy checks.
     (0x107, 1): {
         "region": "LightWorld_NorthWest",
-        "base_can_reach": "OP_REGION_REACHABLE(LightWorld_NorthWest) AND CanBombThings()",
+        "base_can_reach": ALL_TIER_BOMB_ROOM_ACCESS,
         "predicate_source": "all_tier_underworld_reviewed_bomb_room",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "throwable_pots_can_reach": "TRUE()",
     },
     (0x107, 2): {
         "region": "LightWorld_NorthWest",
-        "base_can_reach": "OP_REGION_REACHABLE(LightWorld_NorthWest) AND CanBombThings()",
+        "base_can_reach": ALL_TIER_BOMB_ROOM_ACCESS,
         "predicate_source": "all_tier_underworld_reviewed_bomb_room",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "throwable_pots_can_reach": "TRUE()",
+    },
+    # Hookshot Cave-side room. These Blue Bari are in a cave room with no
+    # dungeon key-depth row; reuse the matching Hookshot Cave chest access for
+    # Standard/Open/Retro and Inverted, then apply ordinary cave combat logic.
+    (0x03C, 1): {
+        "region": "DarkWorld_DeathMountain_East",
+        "base_can_reach": ALL_TIER_HOOKSHOT_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_hookshot_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "throwable_pots_can_reach": "TRUE()",
+    },
+    (0x03C, 2): {
+        "region": "DarkWorld_DeathMountain_East",
+        "base_can_reach": ALL_TIER_HOOKSHOT_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_hookshot_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "throwable_pots_can_reach": "TRUE()",
+    },
+    # Mimic Cave. The static source type names these as Green Eyegores, while
+    # SpritePrep_Eyegore switches room 0x10C into Goriya/Mimic behavior.
+    (0x10C, 4): {
+        "region": "LightWorld_DeathMountain_East",
+        "base_can_reach": ALL_TIER_MIMIC_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mimic_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "allow_throwable_pots": False,
+    },
+    (0x10C, 5): {
+        "region": "LightWorld_DeathMountain_East",
+        "base_can_reach": ALL_TIER_MIMIC_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mimic_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "allow_throwable_pots": False,
+    },
+    (0x10C, 6): {
+        "region": "LightWorld_DeathMountain_East",
+        "base_can_reach": ALL_TIER_MIMIC_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mimic_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "allow_throwable_pots": False,
+    },
+    (0x10C, 7): {
+        "region": "LightWorld_DeathMountain_East",
+        "base_can_reach": ALL_TIER_MIMIC_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mimic_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "allow_throwable_pots": False,
+    },
+    # Mini Moldorm Cave. The four Mini-Moldorms share the same cave access as
+    # the four chests/NPC in that room, minus the combat term which is added
+    # per enemy check below.
+    (0x123, 0): {
+        "region": "LightWorld_South",
+        "base_can_reach": ALL_TIER_MINI_MOLDORM_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mini_moldorm_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+    },
+    (0x123, 1): {
+        "region": "LightWorld_South",
+        "base_can_reach": ALL_TIER_MINI_MOLDORM_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mini_moldorm_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+    },
+    (0x123, 2): {
+        "region": "LightWorld_South",
+        "base_can_reach": ALL_TIER_MINI_MOLDORM_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mini_moldorm_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+    },
+    (0x123, 3): {
+        "region": "LightWorld_South",
+        "base_can_reach": ALL_TIER_MINI_MOLDORM_CAVE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_mini_moldorm_cave",
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
     },
 }
 
@@ -475,19 +593,32 @@ def base_can_reach(room: int, dungeon: int, pot_predicates: dict[int, list[dict]
 
 def enemy_can_reach_from_base(candidate: dict, dungeon: int, base_pred: str,
                               source: str, pot_rows: dict[int, list[dict]],
-                              pot_requirements: dict[int, dict]) -> dict:
+                              pot_requirements: dict[int, dict],
+                              inventory_predicate: str | None = None,
+                              inventory_source: str | None = None,
+                              allow_throwable_pots: bool = True,
+                              throwable_pots_predicate: str | None = None) -> dict:
     room = int(candidate["room"])
     base_access = strip_throwable_combat_terms(base_pred)
     source_type = int(candidate["source_type"])
-    inventory_pred, inventory_source = enemy_inventory_kill_predicate(source_type, dungeon)
+    if inventory_predicate is None:
+        inventory_pred, inventory_source = enemy_inventory_kill_predicate(source_type, dungeon)
+    else:
+        inventory_pred = inventory_predicate
+        inventory_source = inventory_source or "reviewed_underworld"
     kill_branches = [inventory_pred]
 
     pot_meta = dict(pot_requirements.get(source_type) or {})
     pot_need = pot_meta.get("pots_needed")
     pot_pred = None
     pot_count = 0
-    if pot_need is not None:
-        pot_pred, pot_count = throwable_pot_predicate(room, int(pot_need), pot_rows)
+    if pot_need is not None and allow_throwable_pots:
+        if throwable_pots_predicate is None:
+            pot_pred, pot_count = throwable_pot_predicate(room, int(pot_need), pot_rows)
+        else:
+            pot_count = len(pot_rows.get(room, []))
+            if pot_count >= int(pot_need):
+                pot_pred = throwable_pots_predicate
         if pot_pred:
             kill_branches.append(pot_pred)
     else:
@@ -675,7 +806,11 @@ def make_doc(assets_path: Path, key_depth_path: Path,
         binding = ALL_TIER_UNDERWORLD_BINDINGS[key]
         reach = enemy_can_reach_from_base(
             candidate, 0, str(binding["base_can_reach"]),
-            str(binding["predicate_source"]), pot_rows, pot_requirements)
+            str(binding["predicate_source"]), pot_rows, pot_requirements,
+            inventory_predicate=binding.get("inventory_kill_predicate"),
+            inventory_source=binding.get("inventory_kill_source"),
+            allow_throwable_pots=bool(binding.get("allow_throwable_pots", True)),
+            throwable_pots_predicate=binding.get("throwable_pots_can_reach"))
         room = int(candidate["room"])
         emitted_by_room[room] += 1
         rows.append({
@@ -751,7 +886,7 @@ def make_doc(assets_path: Path, key_depth_path: Path,
                 "dungeon: per-source inventory predicate",
                 "dungeon: OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
                 "dungeon: thrown-pot route requires at least the generated pots_needed count in the room",
-                "underworld all-tier: reviewed room access plus the same per-source inventory/thrown-pot kill route",
+                "underworld all-tier: reviewed room access plus per-source or binding-specific inventory/thrown-pot kill route",
                 "overworld: region-reachable plus generic overworld combat predicate",
             ],
             "base_room_predicates": [

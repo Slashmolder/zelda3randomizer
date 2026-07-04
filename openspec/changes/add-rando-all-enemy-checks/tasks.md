@@ -11,9 +11,10 @@
   `all` would require missing generated all-tier registry data.
 - [x] Static-overworld phase: emit, place, grant, suppress, and expose generated
   ordinary overworld enemies under `enemy_drop_checks=all`.
-- [x] Reviewed-underworld exception phase: emit room `0x107` rat checks as
-  all-tier-only indoor rows, with direct bomb access and counted in-room pot kill
-  routing.
+- [x] Reviewed-underworld exception phase: emit audited rooms `0x03C`, `0x107`,
+  `0x10C`, and `0x123` as all-tier-only indoor rows, with direct cave/interior
+  access predicates, counted same-side pot kill routing where valid, and normal
+  inventory combat where same-side throwables are not available.
 - [ ] Future source domains: boss/miniboss, finite scripted-spawn, and farmable
   dynamic-spawn gameplay registry/runtime/logic remains pending below.
 
@@ -51,8 +52,10 @@
 - [x] 3.3 Add per-source kill-route predicates for dungeon rows and conservative
   overworld combat predicates for static overworld rows.
 - [ ] 3.4 Add counted thrown-object routes only when enough reachable pots, rocks, or
-  equivalent throwables exist. The room `0x107` rat exception uses this for its
-  in-room pot route; broader non-pot throwable domains remain pending.
+  equivalent throwables exist. The room `0x107` rats and room `0x03C` Blue Bari
+  exceptions use this for same-side in-room pot routes; room `0x10C` disables the
+  shared Fairy Cave pot because it is not on the reviewed Mimic Cave side. Broader
+  non-pot throwable domains remain pending.
 - [ ] 3.5 Add thrown-object branch metadata that proves consumed throwable sources do
   not double-count required pot-sanity item checks.
 - [x] 3.6 Normalize requested `all` under enemy shuffle to the highest lower tier

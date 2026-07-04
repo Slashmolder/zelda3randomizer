@@ -16,8 +16,12 @@ includes:
   block)` identity;
 - reviewed underworld cave/interior enemy sources with stable
   `(dungeon_room_index, sprite_N source slot)` identity and direct access
-  predicates, such as the Kakariko Storage Shed room `0x107` rats gated by bombs
-  plus an in-room thrown-pot kill route;
+  predicates, such as the Kakariko Storage Shed room `0x107` rats gated by bombs,
+  Hookshot Cave-side room `0x03C` Blue Bari, Mimic Cave room `0x10C`
+  Goriya/Mimic sources, and Mini Moldorm Cave room `0x123` Mini-Moldorms. Same-side
+  in-room pot routes are used only when the reviewed access side actually reaches
+  enough pots; the shared Fairy Cave pot in room `0x10C` is not counted for Mimic
+  Cave enemies;
 - future ordinary dungeon audit-only sources once their room reachability is
   modeled;
 - future miniboss and boss combat sources when their death event and existing

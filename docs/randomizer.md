@@ -481,7 +481,7 @@ The `dungeon` tier includes the `keys` tier and adds eligible ordinary dungeon
 enemies as first-class checks. The local ROM-derived registry currently scans 464
 eligible underworld sprite-table sources, emits the 350 dungeon candidates with a
 conservative room predicate, keeps 78 key-depth-only candidates audit-only, and
-leaves 36 no-key-depth underworld sources outside the dungeon-only scope. Door
+leaves 24 no-key-depth underworld sources outside the dungeon-only scope. Door
 shuffle currently degrades requested `dungeon` to effective `keys`; ordinary
 dungeon-enemy rows are disabled there until a non-key door-region bridge exists.
 Enemy shuffle also degrades requested `dungeon` to effective `keys` because the
@@ -491,8 +491,9 @@ ordinary enemy rows.
 The `all` value is a distinct canonical setting above `dungeon`; it no longer
 aliases to the dungeon-only tier. In current builds it adds 634 generated static
 ordinary overworld enemy checks whose authored `(stage, area, source slot, block)`
-identity can be recovered at runtime, plus 2 reviewed underworld cave/interior
-checks in room `0x107` whose access and pot-kill route are directly modeled. A
+identity can be recovered at runtime, plus 12 reviewed underworld cave/interior
+checks in rooms `0x03C`, `0x107`, `0x10C`, and `0x123` whose access and kill
+routes are directly modeled. A
 requested `all` lowers to `keys` under door or enemy shuffle, lowers to `dungeon`
 under boss or entrance shuffle, and normalizes to `off` with vanilla small keys.
 Boss/miniboss sources, finite scripted spawn groups, unbounded/farmable dynamic
@@ -1377,6 +1378,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 119→120 | **Enemy-drop `all` tier reserved honestly** — `enemy_drop_checks=all` becomes a distinct canonical value (`all=3`) instead of an alias for dungeon-only checks. Pure effective `all` generation fails closed until the complete all-enemy registry/runtime/logic contract exists; incompatible shuffles lower to the highest supported tier. Enemy marker item mode also moves to bounded exact-item rendering with glint fallback, but that visual change is client-local. | Default/off and lower-tier rows should stay behaviorally unchanged after manifest restamp; pure effective `all` is intentionally rejected rather than added to the corpus until the full registry ships. |
 | 120→121 | **Static overworld enemy checks for `all`** — pure effective `enemy_drop_checks=all` now adds generated static ordinary overworld enemy rows above the dungeon tier, with stage/area/source-slot/block runtime identity, region+stage reachability, post-Agahnim prerequisite placement protection, death-time direct grants, checked-source suppression, snapshot-restore lookup fallback, and exact item markers in overworld item-marker mode. Bosses, minibosses, finite scripted spawns, farmable spawns, and unsupported identity domains stay future scope. | New `all` corpus rows pin active Wild/Dungeon behavior plus door/enemy/boss/entrance downgrades; lower tiers are restamped at the new generator version. |
 | 121→122 | **Reviewed underworld exceptions for `all`** — the all-tier enemy registry can now add audited underworld cave/interior rows when access can be modeled directly; the Kakariko Storage Shed room `0x107` rats are included as all-only checks gated by LightWorld NorthWest access plus bombs, with the existing thrown-pot kill proof requiring one of eight room pots. Indoor lookup rows carry an `all_tier_only` bit so these checks do not activate in the `dungeon` tier. | Active pure `all` rows move by two new locations; lower tiers remain excluded from these cave/interior checks. Corpus regenerated at v122. |
+| 122→123 | **Reviewed cave/interior expansion for `all`** — audited all-only underworld checks now include Hookshot Cave-side Blue Bari (`0x03C`), Mimic Cave Goriya/Mimic sources (`0x10C`), and Mini Moldorm Cave Mini-Moldorms (`0x123`) in addition to the Kakariko Storage Shed rats. The reviewed bindings carry world-state-specific cave access where Standard/Open/Retro and Inverted differ, and disable the shared Fairy Cave pot for Mimic Cave so those enemies require the normal inventory combat route. | Active pure `all` rows move by ten new locations. Corpus regenerated at v123. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
