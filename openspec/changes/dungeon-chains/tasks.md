@@ -77,7 +77,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       so chains-only settings route through `Rando_PlaceWithEntrances`.
 - [x] 4.4 Spoiler: chains section (JSON + text) in `rando_spoiler.c` after the
       entrance sections.
-- [ ] 4.5 Corpus: add chains entries (chains-open-ganon, chains-standard,
+- [x] 4.5 Corpus: add chains entries (chains-open-ganon, chains-standard,
       chains + prize_shuffle, chains + wild dungeon keys — locks the
       chain-order key-placement scenario — and a hunt-goal entry with
       accessibility=none) via
