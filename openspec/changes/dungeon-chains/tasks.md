@@ -157,9 +157,16 @@ immediately before any bump/commit (concurrent-drift discipline).
       selfcheck covers v5 layout bytes, round-trip, and v1-v4 compatibility.
       git diff --check, openspec validate dungeon-chains --strict, Release
       build, and --rando-selftest green. -->
-- [ ] 5.8 One-shot re-trigger audit: sweep every boss-room tag / prize grant /
+- [x] 5.8 One-shot re-trigger audit: sweep every boss-room tag / prize grant /
       heart grant a chain re-traversal can re-reach (CLAUDE.md re-enabled
       one-shot corollary); gate any find on `Rando_IsLocationChecked`.
+      <!-- done 2026-07-05: audited RoomTag_PrizeTriggerDoorDoor and
+      RoomTag_GetHeartForPrize, both already gate on Rando_IsLocationChecked
+      for the boss-prize location. Sprite_HeartContainer was the unguarded
+      boss-heart grant site, so it now suppresses already-checked boss-heart
+      locations before draw/grant and sets the boss-done bit defensively.
+      git diff --check, openspec validate dungeon-chains --strict, Release
+      build, and --rando-selftest green. -->
 
 ## 6. UI
 

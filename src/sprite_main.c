@@ -6686,6 +6686,14 @@ void Sprite_HeartContainer(int k) {  // 85ef47
   uint16 boss_loc = 0xFFFFu;
   if (player_is_indoors && (enhanced_features1 & kFeatures1_RandomizerActive))
     boss_loc = Rando_GetBossHeartLocation(BYTE(cur_palace_index_x2) >> 1);
+  // dungeon-chains: a cleared terminal boss room can be reached again through
+  // its chain door. Rando_OnLocationCheck is not idempotent, so suppress the
+  // boss-heart sprite before draw/grant if this boss location is already done.
+  if (boss_loc != 0xFFFFu && Rando_IsLocationChecked(boss_loc)) {
+    sprite_state[k] = 0;
+    dung_savegame_state_bits |= 0x8000;
+    return;
+  }
 
   if (BYTE(dungeon_room_index2) == 6 && !sprite_z[k])
     SpriteDraw_WaterRipple_WithOamAdjust(k);
