@@ -253,7 +253,10 @@ immediately before any bump/commit (concurrent-drift discipline).
       link_has_crystals=0x7F, but source review confirmed vanilla grants pendant/
       crystal bits on falling-prize receipt. Fixed rando boss prizes to dispatch at
       falling-prize receipt instead of spawn, so falling before pickup leaves the
-      prize unchecked and preserves the ToH retry loop. -->
+      prize unchecked and preserves the ToH retry loop. Owner retest on the same
+      seed confirmed the fix: falling after the boss-heart replacement but before
+      touching the pendant now takes Link down a floor and leaves the pendant
+      retry intact. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
