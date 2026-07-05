@@ -177,12 +177,15 @@ object).
 - **Boss terminals**: `which_entrance` = a **synthetic entrance record**, ids
   133+, one per pool boss room, appended to the `kEntranceData_*` tables by
   `assets/compile_resources.py` (fork-asset precedent: custom item art). Fields
-  (spawn at the room's vanilla entry point, camera/scroll/quadrants, blockset,
-  **palace = the boss's home dungeon**, music = home dungeon theme) are emitted by
-  a committed generator script that derives them from room/entrance assets — never
-  hand-transcribed. **Palace = home dungeon is load-bearing**: it makes the prize
-  dispatch (`RoomTag_GetHeartForPrize` → `Rando_GetBossPrizeLocation(didx)`) and
-  Kholdstare's room-header environment resolve identically to vanilla.
+  (spawn/camera/scroll/quadrants, blockset, **palace = the boss's home dungeon**,
+  music = home dungeon theme) are emitted by a committed generator script that
+  derives them from room/entrance assets — never hand-transcribed. Door-based
+  boss terminals land inside the room, clear of the south shutter-door collision,
+  because synthetic `kEntranceData` loads bypass the inter-room transition landing
+  that vanilla door seams use. **Palace = home dungeon is load-bearing**: it
+  makes the prize dispatch (`RoomTag_GetHeartForPrize` →
+  `Rando_GetBossPrizeLocation(didx)`) and Kholdstare's room-header environment
+  resolve identically to vanilla.
 - **Hop loads MUST skip the `*_exit` re-cache.** `Dungeon_LoadEntrance` caches the
   overworld-return block from live variables; mid-chain those are dungeon
   coordinates. A dedicated `g_chains_hop_pending`-style flag (consumed-at-top, per

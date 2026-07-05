@@ -14,14 +14,14 @@ entries:
   - 272
   player_xy:
   - 376
-  - 472
+  - 424
   camera_xy:
   - 383
   - 391
   blockset: 5
   music: Palace
   palace: East
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:
@@ -43,14 +43,14 @@ entries:
   - 272
   player_xy:
   - 120
-  - 472
+  - 424
   camera_xy:
   - 127
   - 391
   blockset: 18
   music: Palace
   palace: Desert
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:
@@ -101,14 +101,14 @@ entries:
   - 272
   player_xy:
   - 376
-  - 472
+  - 424
   camera_xy:
   - 383
   - 391
   blockset: 7
   music: Dungeon
   palace: Dark
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:
@@ -130,14 +130,14 @@ entries:
   - 272
   player_xy:
   - 120
-  - 472
+  - 424
   camera_xy:
   - 127
   - 391
   blockset: 8
   music: Dungeon
   palace: Water
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:
@@ -159,14 +159,14 @@ entries:
   - 272
   player_xy:
   - 376
-  - 472
+  - 424
   camera_xy:
   - 383
   - 391
   blockset: 10
   music: Dungeon
   palace: Town
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:
@@ -217,14 +217,14 @@ entries:
   - 272
   player_xy:
   - 120
-  - 472
+  - 424
   camera_xy:
   - 127
   - 391
   blockset: 12
   music: Dungeon
   palace: Mud
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:
@@ -246,14 +246,14 @@ entries:
   - 272
   player_xy:
   - 120
-  - 472
+  - 424
   camera_xy:
   - 127
   - 391
   blockset: 13
   music: Dungeon
   palace: Mountain
-  doorway_orientation: 1
+  doorway_orientation: 0
   plane: 0
   ladder_level: 0
   quadrants:

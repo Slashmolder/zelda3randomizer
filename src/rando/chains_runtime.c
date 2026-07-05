@@ -471,6 +471,45 @@ bool Chains_ConsumeHopPending(void) {
   return true;
 }
 
+bool Chains_TryApplyBossEntranceLanding(void) {
+  if (!g_chains_runtime_active)
+    return false;
+
+  const ChainBossEntranceCheck *boss_row = NULL;
+  for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
+    if (kChainBossEntranceChecks[i].entrance_id == which_entrance) {
+      boss_row = &kChainBossEntranceChecks[i];
+      break;
+    }
+  }
+  if (boss_row == NULL)
+    return false;
+
+  const ChainSeamRow *outbound = NULL;
+  for (uint8 i = 0; i < kChainBossOutboundSeamCount; i++) {
+    const ChainSeamRow *row = &kChainBossOutboundSeams[i];
+    if (row->kind == kChainSeamKind_Door &&
+        row->rando_dungeon == boss_row->rando_dungeon &&
+        row->source_room == boss_row->room) {
+      outbound = row;
+      break;
+    }
+  }
+  if (outbound == NULL)
+    return false;
+
+  uint16 room_base_x = (uint16)((boss_row->room & 0x00Fu) << 9);
+  uint16 room_base_y = (uint16)((boss_row->room & 0x1F0u) << 5);
+  link_x_coord = room_base_x + 120 + outbound->slot * 128;
+  link_y_coord = room_base_y + 424;
+  link_direction_facing = 0;
+  is_standing_in_doorway = 0;
+  room_transitioning_flags = 0;
+  dung_cur_door_pos = 0;
+  door_animation_step_indicator = 0;
+  return true;
+}
+
 static void Chains_RuntimeSelfCheckDie(const char *msg) {
   Chains_RuntimeTeardown();
   fprintf(stderr, "Chains_RuntimeSelfCheck: %s\n", msg);
@@ -632,6 +671,9 @@ void Chains_RuntimeSelfCheck(void) {
   uint8 saved_subsubmodule_index_for_hop = subsubmodule_index;
   uint8 saved_room_transitioning_flags_for_hop = room_transitioning_flags;
   uint8 saved_is_standing_in_doorway_for_hop = is_standing_in_doorway;
+  uint16 saved_link_x_coord_for_hop = link_x_coord;
+  uint16 saved_link_y_coord_for_hop = link_y_coord;
+  uint8 saved_link_direction_facing_for_hop = link_direction_facing;
   uint16 saved_death_var4_word = WORD(death_var4);
   uint16 saved_dung_cur_door_pos = dung_cur_door_pos;
   uint16 saved_door_animation_step_indicator = door_animation_step_indicator;
@@ -669,6 +711,28 @@ void Chains_RuntimeSelfCheck(void) {
     Chains_RuntimeSelfCheckDie("boss successor hop did not arm terminal state");
   if (!Chains_ConsumeHopPending() || Chains_ConsumeHopPending())
     Chains_RuntimeSelfCheckDie("boss successor hop pending flag mismatch");
+  dungeon_room_index = 0x090;
+  link_x_coord = (0x090 & 0x00F) << 9 | 120;
+  link_y_coord = ((0x090 & 0x1F0) << 5) + 472;
+  link_direction_facing = 2;
+  is_standing_in_doorway = 1;
+  room_transitioning_flags = 0xFF;
+  dung_cur_door_pos = 22;
+  door_animation_step_indicator = 4;
+  which_entrance = Chains_BossEntranceForRandoDungeon(kRandoDungeon_MiseryMire);
+  if (!Chains_TryApplyBossEntranceLanding())
+    Chains_RuntimeSelfCheckDie("synthetic boss landing was not applied");
+  if (link_x_coord != 120 ||
+      link_y_coord != (uint16)(((0x090 & 0x1F0) << 5) + 424) ||
+      link_direction_facing != 0 ||
+      is_standing_in_doorway != 0 ||
+      room_transitioning_flags != 0 ||
+      dung_cur_door_pos != 0 ||
+      door_animation_step_indicator != 0)
+    Chains_RuntimeSelfCheckDie("synthetic boss landing left door-stuck state");
+  which_entrance = Chains_BossEntranceForRandoDungeon(kRandoDungeon_IcePalace);
+  if (Chains_TryApplyBossEntranceLanding())
+    Chains_RuntimeSelfCheckDie("non-door boss entrance landing should stay asset-driven");
 
   layout.chain_successor[ep_pool_idx] = Chains_BossElement(ep);
   if (!Chains_RuntimeInstallLayout(&layout))
@@ -694,6 +758,9 @@ void Chains_RuntimeSelfCheck(void) {
   subsubmodule_index = saved_subsubmodule_index_for_hop;
   room_transitioning_flags = saved_room_transitioning_flags_for_hop;
   is_standing_in_doorway = saved_is_standing_in_doorway_for_hop;
+  link_x_coord = saved_link_x_coord_for_hop;
+  link_y_coord = saved_link_y_coord_for_hop;
+  link_direction_facing = saved_link_direction_facing_for_hop;
   WORD(death_var4) = saved_death_var4_word;
   dung_cur_door_pos = saved_dung_cur_door_pos;
   door_animation_step_indicator = saved_door_animation_step_indicator;

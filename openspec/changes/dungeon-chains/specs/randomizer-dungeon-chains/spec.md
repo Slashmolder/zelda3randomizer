@@ -61,8 +61,10 @@ reinitializes palettes, tilesets, music, sprites, room bounds, and the palace
 index; a raw door-transition redirect SHALL NOT be used across chain elements.
 Boss terminals SHALL load via fork-added synthetic entrance records
 whose palace index, music, and environment are the boss's home dungeon's, so the
-boss fights in its vanilla home room. A pinned adjacency's boss seam SHALL take
-the unmodified vanilla transition. Hop loads SHALL preserve the overworld-return
+boss fights in its vanilla home room. Door-based synthetic boss entrances SHALL
+land inside the room, clear of the south shutter-door collision tile, rather
+than at the raw doorway threshold. A pinned adjacency's boss seam SHALL take the
+unmodified vanilla transition. Hop loads SHALL preserve the overworld-return
 state captured at the chain's origin door (no re-capture from in-dungeon state).
 
 #### Scenario: Chain-start door leads to first element
@@ -82,7 +84,8 @@ state captured at the chain's origin door (no re-capture from in-dungeon state).
 
 - **WHEN** a chain terminal is reached (from a door or a boss seam)
 - **THEN** the terminal boss's vanilla home room loads with home-dungeon palace
-  index and environment, and the boss fight triggers as in vanilla
+  index and environment, the player lands inside the room rather than embedded in
+  the south shutter door, and the boss fight triggers as in vanilla
 
 #### Scenario: Pinned seam is vanilla
 

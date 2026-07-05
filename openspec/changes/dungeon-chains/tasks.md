@@ -221,6 +221,13 @@ immediately before any bump/commit (concurrent-drift discipline).
       death-continue mid-chain; S&Q + reload; mirror inside a hop; post-boss
       warp from a Mire-home terminal; cleared-terminal re-entry; SW
       fully-vanilla spot-check; sram_rando.dat diff on the slot path.
+      <!-- owner playtest 2026-07-05 found Eastern chain-start -> Mire terminal
+      boss spawned Link on the south shutter-door collision tile. F12 RAM showed
+      synthetic entrance 140 at room 0x090, x=0x0078, y=0x13D8, with the live
+      attr tile at relative y=472 equal to 0xF0. Fixed by making door-based
+      synthetic boss entrances land at relative y=424 with doorway state cleared,
+      plus a runtime override so existing local asset blobs are safe. Retest
+      remains part of this gate. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,

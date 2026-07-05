@@ -9105,6 +9105,7 @@ void Dungeon_LoadEntrance() {  // 82d8b3
     link_is_on_lower_level_mirror = 0;
     is_standing_in_doorway = 0;  // altar tile is not a doorway
   }
+  Chains_TryApplyBossEntranceLanding();
   player_oam_x_offset = player_oam_y_offset = 0x80;
   link_direction_mask_a = link_direction_mask_b = 0xf;
   BYTE(link_z_coord) = link_actual_vel_z = 0xff;

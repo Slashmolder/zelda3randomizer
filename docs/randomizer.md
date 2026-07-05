@@ -439,8 +439,10 @@ dungeons (EP, DP, ToH, PoD, SP, TT, IP, MM, TR) into ordered dungeon chains.
 Each chain contains zero or more pool dungeons and ends in one pool boss; every
 pool dungeon and every pool boss appears exactly once across the seed. Bosses
 always fight in their vanilla home rooms through full entrance-style loads, not
-through sprite swaps. Thieves' Town -> Blind and Tower of Hera -> Moldorm are
-pinned as vanilla-identity endings.
+through sprite swaps. Door-based boss terminal loads land inside the boss room
+rather than on the south shutter doorway, so a chain can start directly at a
+terminal boss without embedding Link in the door. Thieves' Town -> Blind and
+Tower of Hera -> Moldorm are pinned as vanilla-identity endings.
 
 Excluded content stays vanilla: Hyrule Castle, Castle Tower, Ganon's Tower,
 Ganon, Skull Woods/Mothula, and auxiliary overworld doors such as Desert Palace

@@ -62,6 +62,11 @@ bool Chains_TryTerminalOutboundSeam(uint8 kind,
 // chain-owned and must not recache the overworld *_exit state.
 bool Chains_ConsumeHopPending(void);
 
+// Synthetic boss entrances are kEntranceData rows, not real inter-room
+// transitions, so fix up door-based arrivals after Dungeon_LoadEntrance has read
+// the asset row. Returns true only when it adjusted the active entrance.
+bool Chains_TryApplyBossEntranceLanding(void);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

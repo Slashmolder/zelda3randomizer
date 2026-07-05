@@ -142,7 +142,10 @@ def camera_record(room_data: dict, player_x: int, player_y: int) -> tuple[list[i
 def door_spawn(slot: int) -> tuple[int, int]:
     if slot not in (0, 1, 2):
         raise ValueError(f"bad boss door slot {slot}")
-    return 120 + slot * 128, 472
+    # Synthetic boss entrances bypass the normal inter-room transition landing
+    # and enter through kEntranceData directly. Land inside the boss room instead
+    # of on the south shutter-door collision tile.
+    return 120 + slot * 128, 424
 
 
 def hera_stair_spawn(room_data: dict) -> tuple[int, int]:
@@ -176,7 +179,7 @@ def build_entries() -> list[dict]:
         home = load_entrance(spec.home_entrance)
         if spec.entry_kind == "door":
             player_x, player_y = door_spawn(slots[spec.rando_id])
-            doorway_orientation = 1
+            doorway_orientation = 0
         elif spec.entry_kind == "stair":
             player_x, player_y = hera_stair_spawn(room_data)
             doorway_orientation = 0
