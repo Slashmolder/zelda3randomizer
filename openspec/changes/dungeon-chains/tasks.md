@@ -47,7 +47,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       main built fresh in the same environment: require byte-identical digests
       for ALL existing entries (spec scenario "Off is placement-identical"). Any
       movement blocks this task, not a version bump.
-- [ ] 2.3 Extend `Logic_SelfCheck` to assert the factoring invariants (each
+- [x] 2.3 Extend `Logic_SelfCheck` to assert the factoring invariants (each
       `<D>_BossRoom` has exactly one inbound edge; Boss/Prize homed there).
 
 ## 3. Settings and normalization

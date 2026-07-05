@@ -1409,6 +1409,20 @@ static void selfcheck_die(const char *msg) {
 
 #define LSC_ASSERT(cond, msg) do { if (!(cond)) selfcheck_die(msg); } while (0)
 
+static const RandoLocationDef *logic_selfcheck_find_location(uint16 loc_id) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id == loc_id) return &kRandoLocations[i];
+  }
+  return NULL;
+}
+
+static const RandoRegionDef *logic_selfcheck_find_region(uint16 region_id) {
+  for (uint32 i = 0; i < kRandoRegionsCount; i++) {
+    if (kRandoRegions[i].id == region_id) return &kRandoRegions[i];
+  }
+  return NULL;
+}
+
 void Logic_SelfCheck(void) {
   RandoCounts counts;
   memset(&counts, 0, sizeof(counts));
@@ -1665,6 +1679,58 @@ void Logic_SelfCheck(void) {
     ctx.boss_assignment = NULL;
     LSC_ASSERT(Predicate_EvalCtx(bc0, sizeof(bc0), &ctx) == false,
                "CAN_KILL_BOSS(HCE=no boss) should be false");
+  }
+
+  // Dungeon-chains: generated BossRoom factoring invariants. These regions are
+  // intentionally inert while chains are off: one edge carries the approach
+  // predicate, and the Boss/Prize locations are homed in the derived room.
+  {
+    typedef struct ChainBossRoomCheck {
+      const char *region_name;
+      uint16 boss_loc;
+      uint16 prize_loc;
+    } ChainBossRoomCheck;
+    static const ChainBossRoomCheck kChainBossRooms[] = {
+      { "EasternPalace_BossRoom", LOC_Eastern_Palace_Boss, LOC_Eastern_Palace_Prize },
+      { "DesertPalace_BossRoom", LOC_Desert_Palace_Boss, LOC_Desert_Palace_Prize },
+      { "TowerOfHera_BossRoom", LOC_Tower_of_Hera_Boss, LOC_Tower_of_Hera_Prize },
+      { "PalaceOfDarkness_BossRoom", LOC_Palace_of_Darkness_Boss, LOC_Palace_of_Darkness_Prize },
+      { "SwampPalace_BossRoom", LOC_Swamp_Palace_Boss, LOC_Swamp_Palace_Prize },
+      { "ThievesTown_BossRoom", LOC_Thieves_Town_Boss, LOC_Thieves_Town_Prize },
+      { "IcePalace_BossRoom", LOC_Ice_Palace_Boss, LOC_Ice_Palace_Prize },
+      { "MiseryMire_BossRoom", LOC_Misery_Mire_Boss, LOC_Misery_Mire_Prize },
+      { "TurtleRock_BossRoom", LOC_Turtle_Rock_Boss, LOC_Turtle_Rock_Prize },
+    };
+
+    for (uint32 i = 0; i < sizeof(kChainBossRooms) / sizeof(kChainBossRooms[0]); i++) {
+      const ChainBossRoomCheck *row = &kChainBossRooms[i];
+      uint16 boss_region = Rando_FindRegionByName(row->region_name);
+      LSC_ASSERT(boss_region != 0xFFFF,
+                 "dungeon-chain BossRoom region missing");
+      const RandoRegionDef *region = logic_selfcheck_find_region(boss_region);
+      LSC_ASSERT(region != NULL,
+                 "dungeon-chain BossRoom region id not present in kRandoRegions");
+
+      uint32 inbound = 0;
+      uint16 inbound_from = 0xFFFF;
+      for (uint32 e = 0; e < kRandoEdgesCount; e++) {
+        if (kRandoEdges[e].to_region == boss_region) {
+          inbound++;
+          inbound_from = kRandoEdges[e].from_region;
+        }
+      }
+      LSC_ASSERT(inbound == 1,
+                 "dungeon-chain BossRoom must have exactly one inbound edge");
+      LSC_ASSERT(region->parent_id == inbound_from,
+                 "dungeon-chain BossRoom inbound edge must come from parent region");
+
+      const RandoLocationDef *boss = logic_selfcheck_find_location(row->boss_loc);
+      const RandoLocationDef *prize = logic_selfcheck_find_location(row->prize_loc);
+      LSC_ASSERT(boss != NULL && prize != NULL,
+                 "dungeon-chain Boss/Prize location missing");
+      LSC_ASSERT(boss->region_id == boss_region && prize->region_id == boss_region,
+                 "dungeon-chain Boss/Prize locations must be homed in BossRoom");
+    }
   }
 
   // OP_TRICK / OP_GLITCH_LEVEL_AT_LEAST are wired (Slice 4) but resolve to their
