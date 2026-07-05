@@ -13,6 +13,7 @@
 #include "assets.h"
 #include "features.h"   // enhanced_features1 / kFeatures1_RandomizerActive
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
+#include "rando/chains_runtime.h"
 #include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
 #include "rando/inverted_maps.h" // Overworld_ApplyInvertedTiles (#82 Inverted topology)
@@ -2061,6 +2062,14 @@ void LoadOverworldFromDungeon() {  // 82e4a3
       k = 79;
       do k--; while (k > 0 && kExitDataRooms[k] != dungeon_room_index);
     }
+    uint16 chain_origin_room = 0;
+    if (enhanced_features1 & kFeatures1_RandomizerActive)
+      chain_origin_room = Chains_RuntimeConsumeMainExitOrigin(kExitDataRooms[k]);
+    if (chain_origin_room != 0 && chain_origin_room != exit_room) {
+      exit_room = chain_origin_room;
+      k = 79;
+      do k--; while (k > 0 && kExitDataRooms[k] != exit_room);
+    }
     BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = kExitData_ScrollY[k];
     BG1HOFS_copy2 = BG2HOFS_copy2 = BG1HOFS_copy = BG2HOFS_copy = kExitData_ScrollX[k];
     link_y_coord = kExitData_YCoord[k];
@@ -3751,6 +3760,7 @@ after:
     g_rando_entrance_exit_room = 0;
     g_rando_entrance_force_cached = 0;
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      Chains_RuntimeRecordDoorEntry((uint16)lx);
       g_rando_entrance_exit_room = Rando_EntranceCoupledExitRoom((uint16)lx);
       // Dungeon decoupled (Insanity): a one-way dungeon exit overrides the coupled
       // (return-to-source) room with the π_out target dungeon's room, so Link emerges

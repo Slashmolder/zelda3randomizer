@@ -21,6 +21,7 @@
 #include "shuffle_enemies.h"  // EnemyShuffle_Generate/_Deactivate/_SelfCheck (enemy shuffle)
 #include "shuffle_doors.h"   // DoorShuffle_Generate/LayoutDigest (door shuffle)
 #include "shuffle_chains.h"  // Chains_Compute/_SelfCheck (dungeon chains)
+#include "chains_runtime.h"  // Chains_RuntimeSelfCheck
 #include "door_runtime.h"    // DoorRt_* (door-shuffle runtime redirect)
 #include "customizer.h"  // Customizer_SelfCheck (add-rando-customizer-mode)
 #include "rando_save.h"
@@ -7295,6 +7296,7 @@ void Rando_RunAllSelfChecks(void) {
   DropShuffle_SelfCheck();
   EnemyShuffle_SelfCheck();  // add-rando-enemy-shuffle
   Chains_SelfCheck();        // dungeon-chains layout construction
+  Chains_RuntimeSelfCheck(); // dungeon-chains runtime overlay/origin coupling
   Customizer_SelfCheck();    // add-rando-customizer-mode
   Customizer_PlacementSelfCheck();  // customizer placement-path regression guard
   RandoSave_SelfCheck();

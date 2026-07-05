@@ -119,14 +119,21 @@ immediately before any bump/commit (concurrent-drift discipline).
       through the normal module-15 -> module-8 overworld loader using chains-owned
       origin_exit_room. Release build + --rando-selftest green; end-to-end
       cleared-terminal owner playtest remains tracked in 7.3. -->
-- [ ] 5.5 Chain-start doors + origin coupling: extend the
+- [x] 5.5 Chain-start doors + origin coupling: extend the
       `kOverworld_Entrance_Id` overlay install for the 9 main doors; add the
       chains-owned origin session state (armed at chain entry — NOT the
       one-shot `g_rando_entrance_exit_room` global, which any aux exit would
       consume) and the main-door-keyed substitution applied after the
       room-keyed exit search resolves a door; confirm the post-boss warp and
       mid-chain main-door walkouts resolve to origin while DP/TR aux exits
-      stay vanilla (task 1.5 trace).
+      stay vanilla (task 1.5 trace). <!-- done 2026-07-05: chain overlay builder
+      remaps only the 9 generated main-door source ids, Overworld_UseEntrance
+      arms chains-owned origin state, and LoadOverworldFromDungeon consumes that
+      origin only after the resolved exit room is a chain main exit. Generated
+      main_exit_room metadata keeps the code table-driven. Chains_RuntimeSelfCheck
+      covers overlay install/restore, origin arming, non-main preservation,
+      main-exit consumption, and direct terminal-boss arming. Release build +
+      --rando-selftest green; DP/TR owner playtest remains tracked in 7.3. -->
 - [ ] 5.6 `Chains_RuntimeInstall` / teardown wired into
       `Rando_ActivateSidecarSlot` / `Rando_DeactivateSlot`: regenerate from
       (seed, attempt), hard-fail on digest mismatch, fail closed if synthetic

@@ -24,6 +24,9 @@ static const char *ChainsReasonName(uint8 reason) {
   case kChainsRtReason_BadSuccessor: return "bad successor";
   case kChainsRtReason_TerminalExit: return "terminal exit";
   case kChainsRtReason_MissingOrigin: return "missing origin";
+  case kChainsRtReason_OriginArmed: return "origin armed";
+  case kChainsRtReason_OriginExit: return "origin exit";
+  case kChainsRtReason_MissingChainOverlay: return "missing chain overlay";
   default: return "none";
   }
 }

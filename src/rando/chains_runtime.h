@@ -24,6 +24,9 @@ enum {
   kChainsRtReason_BadSuccessor,
   kChainsRtReason_TerminalExit,
   kChainsRtReason_MissingOrigin,
+  kChainsRtReason_OriginArmed,
+  kChainsRtReason_OriginExit,
+  kChainsRtReason_MissingChainOverlay,
 };
 
 typedef struct ChainsRuntimeDebug {
@@ -59,10 +62,17 @@ bool Chains_SyntheticEntrancesAvailable(void);
 
 // Runtime layout state. Task 5.6 wires these into slot activation/teardown; the
 // seam hooks below are dormant until a layout is installed.
-void Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout);
+bool Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout);
 void Chains_RuntimeTeardown(void);
 void Chains_RuntimeArmOrigin(uint16 origin_exit_room);
 void Chains_RuntimeClearOrigin(void);
+
+// Chain-start door hooks. The entry hook arms the origin-door session state when
+// an installed chain overlay owns `lx`; the exit hook consumes it only when the
+// resolved dungeon-exit room is one of the chain pool's main doors.
+bool Chains_RuntimeRecordDoorEntry(uint16 lx);
+uint16 Chains_RuntimeConsumeMainExitOrigin(uint16 resolved_exit_room);
+void Chains_RuntimeSelfCheck(void);
 
 // One-shot debug seam hook for task 5.1. Returns true when it consumed the
 // transition and handed off to Module_PreDungeon.

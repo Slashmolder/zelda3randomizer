@@ -60,13 +60,16 @@ def load_room(room: int) -> dict:
 def load_vanilla_entrances() -> dict[int, dict]:
     out = {}
     for path in (REPO / "assets" / "dungeon").glob("dungeon-*.yaml"):
+        source_room = int(path.stem.split("-")[1])
         with path.open("r", encoding="utf-8") as fp:
             data = yaml.safe_load(fp)
         for entrance in data.get("Entrances", []):
             idx = entrance["entrance_index"]
             if idx in out:
                 raise ValueError(f"duplicate vanilla entrance {idx}")
-            out[idx] = entrance
+            row = dict(entrance)
+            row["_source_room"] = source_room
+            out[idx] = row
     return out
 
 
@@ -190,6 +193,7 @@ def build_entries() -> list[dict]:
             "rando_dungeon": spec.rando_id,
             "rando_dungeon_enum": spec.enum_name,
             "home_entrance": spec.home_entrance,
+            "main_exit_room": home["_source_room"],
             "room": spec.boss_room,
             "scroll_xy": scroll_xy,
             "player_xy": [player_x, player_y],
@@ -225,10 +229,11 @@ def emit_header(entries: list[dict]) -> str:
         if name.startswith(prefix):
             name = name[len(prefix):]
         rows.append(
-            "  {%d, %s, %d, 0x%03X, %d, %d}, // %s" % (
+            "  {%d, %s, %d, 0x%03X, 0x%03X, %d, %d}, // %s" % (
                 entry["entrance_index"],
                 entry["rando_dungeon_enum"],
                 entry["home_entrance"],
+                entry["main_exit_room"],
                 entry["room"],
                 palace_raw(entry["palace"]),
                 music_id(entry["music"]),
@@ -250,6 +255,7 @@ def emit_header(entries: list[dict]) -> str:
         "  uint8 entrance_id;",
         "  uint8 rando_dungeon;",
         "  uint8 main_entrance_id;",
+        "  uint16 main_exit_room;",
         "  uint16 room;",
         "  int8 palace;",
         "  uint8 music;",
@@ -284,6 +290,8 @@ def validate(entries: list[dict]) -> None:
             raise ValueError(f"{entry['name']}: player_xy out of room bounds")
         if entry["house_exit_door"] != ["none"]:
             raise ValueError(f"{entry['name']}: synthetic entrances must not cache an exit door")
+        if not (0 <= entry["main_exit_room"] < 0x100):
+            raise ValueError(f"{entry['name']}: main_exit_room must be a dungeon exit-search room")
 
 
 def main() -> int:

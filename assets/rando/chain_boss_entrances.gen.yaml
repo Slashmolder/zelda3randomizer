@@ -7,6 +7,7 @@ entries:
   rando_dungeon: 1
   rando_dungeon_enum: kRandoDungeon_EasternPalace
   home_entrance: 8
+  main_exit_room: 201
   room: 200
   scroll_xy:
   - 256
@@ -35,6 +36,7 @@ entries:
   rando_dungeon: 2
   rando_dungeon_enum: kRandoDungeon_DesertPalace
   home_entrance: 9
+  main_exit_room: 132
   room: 51
   scroll_xy:
   - 0
@@ -63,6 +65,7 @@ entries:
   rando_dungeon: 3
   rando_dungeon_enum: kRandoDungeon_TowerOfHera
   home_entrance: 51
+  main_exit_room: 119
   room: 7
   scroll_xy:
   - 256
@@ -91,6 +94,7 @@ entries:
   rando_dungeon: 5
   rando_dungeon_enum: kRandoDungeon_PalaceOfDarkness
   home_entrance: 38
+  main_exit_room: 74
   room: 90
   scroll_xy:
   - 256
@@ -119,6 +123,7 @@ entries:
   rando_dungeon: 6
   rando_dungeon_enum: kRandoDungeon_SwampPalace
   home_entrance: 37
+  main_exit_room: 40
   room: 6
   scroll_xy:
   - 0
@@ -147,6 +152,7 @@ entries:
   rando_dungeon: 8
   rando_dungeon_enum: kRandoDungeon_ThievesTown
   home_entrance: 52
+  main_exit_room: 219
   room: 172
   scroll_xy:
   - 256
@@ -175,6 +181,7 @@ entries:
   rando_dungeon: 9
   rando_dungeon_enum: kRandoDungeon_IcePalace
   home_entrance: 45
+  main_exit_room: 14
   room: 222
   scroll_xy:
   - 256
@@ -203,6 +210,7 @@ entries:
   rando_dungeon: 10
   rando_dungeon_enum: kRandoDungeon_MiseryMire
   home_entrance: 39
+  main_exit_room: 152
   room: 144
   scroll_xy:
   - 0
@@ -231,6 +239,7 @@ entries:
   rando_dungeon: 11
   rando_dungeon_enum: kRandoDungeon_TurtleRock
   home_entrance: 53
+  main_exit_room: 214
   room: 164
   scroll_xy:
   - 0
