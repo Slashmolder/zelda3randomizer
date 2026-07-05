@@ -331,4 +331,4 @@ extern MemBlk FindInAssetArray(int asset, int idx);
 #define kSomeTileAttr_SIZE (g_asset_sizes[164])
 #define kRandoCustomItemGfx ((uint8*)g_asset_ptrs[165])
 #define kRandoCustomItemGfx_SIZE (g_asset_sizes[165])
-#define kAssets_Sig 90, 101, 108, 100, 97, 51, 95, 118, 48, 32, 32, 32, 32, 32, 10, 0, 51, 197, 152, 243, 20, 162, 223, 202, 167, 212, 0, 20, 22, 79, 81, 123, 240, 112, 39, 227, 164, 47, 63, 12, 60, 71, 144, 76, 150, 38, 173, 99
+#define kAssets_Sig 90, 101, 108, 100, 97, 51, 95, 118, 49, 32, 32, 32, 32, 32, 10, 0, 51, 197, 152, 243, 20, 162, 223, 202, 167, 212, 0, 20, 22, 79, 81, 123, 240, 112, 39, 227, 164, 47, 63, 12, 60, 71, 144, 76, 150, 38, 173, 99

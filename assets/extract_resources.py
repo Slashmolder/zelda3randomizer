@@ -8,6 +8,7 @@ import yaml
 import extract_music
 import os
 import sprite_sheets
+import copy
 
 def print_map32_to_map16(f):
   for i in range(2218):
@@ -374,11 +375,36 @@ def _get_entrance_info_one(i, set):
   return room, y 
 
 @cache
+def get_chain_boss_entrances():
+  path = os.path.join('rando', 'chain_boss_entrances.gen.yaml')
+  if not os.path.exists(path):
+    raise Exception('%s not found; run assets/scripts/gen_chain_boss_entrances.py' % path)
+  data = yaml.safe_load(open(path, 'r', encoding='utf-8'))
+  if data.get('base_index') != 133:
+    raise Exception('%s has unexpected base_index %r' % (path, data.get('base_index')))
+  entries = data.get('entries') or []
+  if data.get('count') != len(entries):
+    raise Exception('%s count does not match entries' % path)
+  out = {}
+  for i, entry in enumerate(entries):
+    want = data['base_index'] + i
+    if entry.get('entrance_index') != want:
+      raise Exception('%s has non-contiguous entrance_index %r at %d' %
+                      (path, entry.get('entrance_index'), want))
+    row = copy.deepcopy(entry)
+    room = row.pop('room')
+    out.setdefault(room, []).append(row)
+  return out
+
+@cache
 def get_entrance_info(set):
   r = {}
   for i in range(133 if set == 0 else 7):
     room, y = _get_entrance_info_one(i, set)
     r.setdefault(room, []).append(y)
+  if set == 0:
+    for room, entries in get_chain_boss_entrances().items():
+      r.setdefault(room, []).extend(copy.deepcopy(entries))
   return r
 
 @cache 
@@ -550,4 +576,3 @@ def main():
 if __name__ == "__main__":
   util.load_rom(sys.argv[1] if len(sys.argv) >= 2 else None)
   main()
-

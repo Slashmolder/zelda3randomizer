@@ -2,8 +2,10 @@
 
 #include "chains_runtime.h"
 
+#include "chain_boss_entrances.gen.h"
 #include "door_tables.gen.h"
 
+#include "../assets.h"
 #include "../hud.h"
 #include "../variables.h"
 
@@ -19,6 +21,11 @@ static bool g_chains_hop_pending;
 static bool g_chains_ep_spike_armed;
 static ChainsRuntimeDebug g_chains_debug;
 
+_Static_assert(kChainBossEntranceBase == 133,
+               "synthetic chain boss entrances must append after vanilla rows");
+_Static_assert(kChainBossEntranceCount == 9,
+               "dungeon-chain boss entrance count drift");
+
 static void Chains_DebugSetReason(uint8 reason) {
   g_chains_debug.last_reason = reason;
   g_chains_debug.spike_armed = g_chains_ep_spike_armed ? 1 : 0;
@@ -29,6 +36,54 @@ const ChainsRuntimeDebug *Chains_DebugState(void) {
   g_chains_debug.spike_armed = g_chains_ep_spike_armed ? 1 : 0;
   g_chains_debug.hop_pending = g_chains_hop_pending ? 1 : 0;
   return &g_chains_debug;
+}
+
+uint8 Chains_BossEntranceForRandoDungeon(uint8 rando_dungeon) {
+  for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
+    if (kChainBossEntranceChecks[i].rando_dungeon == rando_dungeon)
+      return kChainBossEntranceChecks[i].entrance_id;
+  }
+  return 0xFF;
+}
+
+static bool Chains_EntranceAssetCountOk(uint32 size, uint32 bytes_per_entry) {
+  return size >= (uint32)kChainBossEntranceLimit * bytes_per_entry;
+}
+
+bool Chains_SyntheticEntrancesAvailable(void) {
+  if (kEntranceData_rooms == NULL || kEntranceData_palace == NULL ||
+      kEntranceData_musicTrack == NULL) {
+    return false;
+  }
+  if (!Chains_EntranceAssetCountOk(kEntranceData_rooms_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_relativeCoords_SIZE, 8) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_scrollX_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_scrollY_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_playerX_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_playerY_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_cameraX_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_cameraY_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_blockset_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_floor_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_palace_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_doorwayOrientation_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_startingBg_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_quadrant1_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_quadrant2_SIZE, 1) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_doorSettings_SIZE, 2) ||
+      !Chains_EntranceAssetCountOk(kEntranceData_musicTrack_SIZE, 1)) {
+    return false;
+  }
+  for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
+    const ChainBossEntranceCheck *row = &kChainBossEntranceChecks[i];
+    uint8 entrance = row->entrance_id;
+    if (kEntranceData_rooms[entrance] != row->room ||
+        kEntranceData_palace[entrance] != row->palace ||
+        kEntranceData_musicTrack[entrance] != row->music) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void Chains_DebugArmEpBossToDesert(void) {
@@ -68,9 +123,21 @@ static void Chains_ClearFollowerForHop(void) {
   }
 }
 
-static void Chains_RequestEntranceHop(uint8 entrance,
+static bool Chains_RequestEntranceHop(uint8 entrance,
                                       uint16 source_room,
                                       uint16 destination_room) {
+  if (entrance >= kChainBossEntranceBase && entrance < kChainBossEntranceLimit &&
+      !Chains_SyntheticEntrancesAvailable()) {
+    g_chains_debug.last_source_room = source_room;
+    g_chains_debug.last_destination_room = destination_room;
+    g_chains_debug.last_entrance = entrance;
+    Chains_DebugSetReason(kChainsRtReason_MissingSyntheticEntrances);
+    fprintf(stderr,
+            "dungeon-chains: synthetic entrance %02x unavailable; regenerate zelda3_assets.dat\n",
+            entrance);
+    return false;
+  }
+
   g_chains_hop_pending = true;
   g_chains_debug.request_count++;
   g_chains_debug.last_source_room = source_room;
@@ -97,6 +164,7 @@ static void Chains_RequestEntranceHop(uint8 entrance,
   fprintf(stderr,
           "dungeon-chains spike: request entrance hop src=%04x dst=%04x entrance=%02x\n",
           source_room, destination_room, entrance);
+  return true;
 }
 
 bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
@@ -119,9 +187,8 @@ bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
   }
 
   g_chains_ep_spike_armed = false;
-  Chains_RequestEntranceHop(kChainsDebugEntrance_DesertMain,
-                            source_room, vanilla_destination_room);
-  return true;
+  return Chains_RequestEntranceHop(kChainsDebugEntrance_DesertMain,
+                                   source_room, vanilla_destination_room);
 }
 
 bool Chains_ConsumeHopPending(void) {

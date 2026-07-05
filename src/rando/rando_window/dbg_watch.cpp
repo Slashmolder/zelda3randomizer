@@ -19,6 +19,7 @@ static const char *ChainsReasonName(uint8 reason) {
   case kChainsRtReason_WrongSeam: return "wrong seam";
   case kChainsRtReason_HopRequested: return "hop requested";
   case kChainsRtReason_HopConsumed: return "hop consumed";
+  case kChainsRtReason_MissingSyntheticEntrances: return "missing synthetic entrances";
   default: return "none";
   }
 }

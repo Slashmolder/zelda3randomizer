@@ -10,6 +10,7 @@ from util import cache
 import sprite_sheets
 import argparse
 import os
+import copy
 
 def flatten(xss):
     return [x for xs in xss for x in xs]
@@ -18,6 +19,38 @@ def invert_dict(xs):
   return {s:i for i,s in xs.items()}
 
 assets = {}
+
+@cache
+def load_chain_boss_entrances():
+  path = os.path.join('rando', 'chain_boss_entrances.gen.yaml')
+  if not os.path.exists(path):
+    raise Exception('%s not found; run assets/scripts/gen_chain_boss_entrances.py' % path)
+  data = yaml.safe_load(open(path, 'r', encoding='utf-8'))
+  if data.get('base_index') != 133:
+    raise Exception('%s has unexpected base_index %r' % (path, data.get('base_index')))
+  entries = data.get('entries') or []
+  if data.get('count') != len(entries):
+    raise Exception('%s count does not match entries' % path)
+  for i, entry in enumerate(entries):
+    want = data['base_index'] + i
+    if entry.get('entrance_index') != want:
+      raise Exception('%s has non-contiguous entrance_index %r at %d' %
+                      (path, entry.get('entrance_index'), want))
+  return data['base_index'], entries
+
+def append_chain_boss_entrances(entrances):
+  base, entries = load_chain_boss_entrances()
+  limit = base + len(entries)
+  if len(entrances) < limit:
+    entrances.extend([None] * (limit - len(entrances)))
+  for entry in entries:
+    idx = entry['entrance_index']
+    row = copy.deepcopy(entry)
+    if entrances[idx] is None:
+      entrances[idx] = row
+    elif entrances[idx] != row:
+      raise Exception('Synthetic chain boss entrance %d differs from %s' %
+                      (idx, 'rando/chain_boss_entrances.gen.yaml'))
 
 def add_asset_uint8(name, data):
   assert name not in assets
@@ -608,6 +641,8 @@ def print_dungeon_rooms():
     for e in y['Entrances']:
       a = e['entrance_index']
       e['room'] = i
+      if a >= len(entrances):
+        entrances.extend([None] * (a + 1 - len(entrances)))
       assert entrances[a] == None
       entrances[a] = e
     if 'StartingPoints' in y:
@@ -617,6 +652,10 @@ def print_dungeon_rooms():
         assert starting_points[a] == None
         starting_points[a] = e
   for i in range(133):
+    if entrances[i] == None:
+      raise Exception('Entrance %d not defined' % i)
+  append_chain_boss_entrances(entrances)
+  for i in range(len(entrances)):
     if entrances[i] == None:
       raise Exception('Entrance %d not defined' % i)
   for i in range(7):
@@ -826,7 +865,7 @@ extern MemBlk FindInAssetArray(int asset, int idx);
     key_sig += k.encode('utf8') + b'\0'
     all_data.append(data)
 
-  assets_sig = b'Zelda3_v0     \n\0' + hashlib.sha256(key_sig).digest()
+  assets_sig = b'Zelda3_v1     \n\0' + hashlib.sha256(key_sig).digest()
 
   if print_header:
     print('#define kAssets_Sig %s' % ", ".join((str(a) for a in assets_sig)))
@@ -857,4 +896,3 @@ if __name__ == "__main__":
   main(DefaultArgs())
 else:
   ROM = util.ROM
-
