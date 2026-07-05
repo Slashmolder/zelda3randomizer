@@ -435,6 +435,10 @@ bool Chains_TryBossSeamHop(uint8 kind,
                            uint8 slot) {
   if (!g_chains_runtime_active)
     return false;
+  // Without an armed chain session, boss seams stay vanilla: hopping here would
+  // route to a successor whose exit cannot resolve back to an origin door.
+  if (!g_chains_origin_active)
+    return false;
 
   const ChainSeamRow *seam = Chains_FindBossSeam(kind, direction, source_room,
                                                  vanilla_destination_room, slot);
@@ -684,6 +688,13 @@ void Chains_RuntimeSelfCheck(void) {
   layout.chain_successor[ep_pool_idx] = Chains_DungeonElement(kRandoDungeon_DesertPalace);
   if (!Chains_RuntimeInstallLayout(&layout))
     Chains_RuntimeSelfCheckDie("lobby successor layout install failed");
+  Chains_RuntimeClearOrigin();
+  if (Chains_TryBossSeamHop(ep_boss_seam->kind, ep_boss_seam->direction,
+                            ep_boss_seam->source_room, ep_boss_seam->dest_room,
+                            ep_boss_seam->slot))
+    Chains_RuntimeSelfCheckDie("unarmed boss seam should stay vanilla");
+  if (Chains_ConsumeHopPending())
+    Chains_RuntimeSelfCheckDie("unarmed boss seam left pending hop");
   Chains_RuntimeArmOrigin(Chains_MainExitRoomForRandoDungeon(ep));
   if (!Chains_TryBossSeamHop(ep_boss_seam->kind, ep_boss_seam->direction,
                              ep_boss_seam->source_room, ep_boss_seam->dest_room,
