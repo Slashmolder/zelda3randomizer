@@ -86,12 +86,15 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 5. Runtime
 
-- [ ] 5.1 SPIKE FIRST (highest risk): mid-dungeon entrance-style hop load — new
+- [x] 5.1 SPIKE FIRST (highest risk): mid-dungeon entrance-style hop load — new
       consumed-at-top hop flag that suppresses the `*_exit` re-cache in
       `Dungeon_LoadEntrance` (dedicated flag; NOT death_var4/5), module
       transition into `Module_PreDungeon` from inside module 7 with fade.
       Playtest ONE hop (EP boss seam → another lobby) with the whole decision
-      chain instrumented before building anything else on it.
+      chain instrumented before building anything else on it. <!-- owner
+      playtest 2026-07-04: Debug > Watch EP->DP seam arm landed in Desert main
+      with the hop flag consumed; tracker big-key false-positive was a separate
+      live-count bug fixed in 5b3c7e8f. -->
 - [ ] 5.2 Synthetic boss-room entrance records: extend
       `assets/compile_resources.py` (+ extractor parity) to append the 9
       records (spawn/camera/quadrants derived; palace = home dungeon; music =
