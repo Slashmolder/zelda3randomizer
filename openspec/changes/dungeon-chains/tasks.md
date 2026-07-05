@@ -228,7 +228,14 @@ immediately before any bump/commit (concurrent-drift discipline).
       synthetic boss entrances land at relative y=424 with doorway state cleared,
       plus a runtime override so existing local asset blobs are safe. Owner
       retest confirmed Link can fight Vitreous and death mid-fight respawns in
-      a safe place instead of the shutter doorway. -->
+      a safe place instead of the shutter doorway.
+
+      Owner playtest 2026-07-05 found ToH/Moldorm terminal falling after the boss
+      item but before the visible pendant left Link invisible but movable. F12 RAM
+      showed room 0x077, link_visibility_status=0x0C, link_item_flippers=1, so the
+      terminal redirect reached the origin room with pit-fall visibility state still
+      armed. Fixed by clearing pit-fall state in Chains_RequestTerminalExit, with
+      runtime selfcheck coverage. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,

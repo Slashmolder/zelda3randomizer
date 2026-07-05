@@ -395,6 +395,14 @@ static bool Chains_RequestTerminalExit(uint16 source_room,
   dungeon_room_index = origin_exit_room;
   room_transitioning_flags = 0;
   is_standing_in_doorway = 0;
+  link_visibility_status = 0;
+  link_this_controls_sprite_oam = 0;
+  player_near_pit_state = 0;
+  fallhole_var1 = 0;
+  fallhole_var2 = 0;
+  link_speed_modifier = 0;
+  link_speed_setting = 0;
+  link_disable_sprite_damage = 0;
   saved_module_for_menu = 8;
   main_module_index = 15;
   submodule_index = 0;
@@ -835,6 +843,14 @@ void Chains_RuntimeSelfCheck(void) {
   uint8 saved_main_module_index = main_module_index;
   uint8 saved_submodule_index = submodule_index;
   uint8 saved_subsubmodule_index = subsubmodule_index;
+  uint8 saved_link_visibility_status_for_terminal = link_visibility_status;
+  uint8 saved_link_this_controls_sprite_oam_for_terminal = link_this_controls_sprite_oam;
+  uint8 saved_player_near_pit_state_for_terminal = player_near_pit_state;
+  uint8 saved_fallhole_var1 = fallhole_var1;
+  uint8 saved_fallhole_var2 = fallhole_var2;
+  uint8 saved_link_speed_modifier = link_speed_modifier;
+  uint8 saved_link_speed_setting = link_speed_setting;
+  uint8 saved_link_disable_sprite_damage = link_disable_sprite_damage;
 
   g_rando_slot_active = 1;
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
@@ -847,6 +863,14 @@ void Chains_RuntimeSelfCheck(void) {
   uint16 dp_prize_loc = Rando_BossPrizeLocationForGameDungeon(
       Rando_GameDungeonFromRandoDungeon(kRandoDungeon_DesertPalace));
   Rando_MarkLocationChecked(dp_prize_loc);
+  link_visibility_status = 12;
+  link_this_controls_sprite_oam = 6;
+  player_near_pit_state = 3;
+  fallhole_var1 = 1;
+  fallhole_var2 = 31;
+  link_speed_modifier = 16;
+  link_speed_setting = 6;
+  link_disable_sprite_damage = 2;
   if (!Chains_TryTerminalOutboundSeam(dp_outbound->kind, dp_outbound->direction,
                                       dp_outbound->source_room, dp_outbound->dest_room,
                                       dp_outbound->slot))
@@ -855,6 +879,12 @@ void Chains_RuntimeSelfCheck(void) {
     Chains_RuntimeSelfCheckDie("terminal outbound did not target origin exit room");
   if (g_chains_origin_active || g_chains_terminal_active)
     Chains_RuntimeSelfCheckDie("terminal outbound did not consume session");
+  if (link_visibility_status != 0 || link_this_controls_sprite_oam != 0 ||
+      player_near_pit_state != 0 || fallhole_var1 != 0 || fallhole_var2 != 0 ||
+      link_speed_modifier != 0 || link_speed_setting != 0 ||
+      link_disable_sprite_damage != 0) {
+    Chains_RuntimeSelfCheckDie("terminal outbound left pit-fall state armed");
+  }
 
   g_rando_slot_active = saved_slot_active;
   memcpy(g_rando_checked_bitmap, saved_checked_bitmap, sizeof(saved_checked_bitmap));
@@ -865,6 +895,14 @@ void Chains_RuntimeSelfCheck(void) {
   main_module_index = saved_main_module_index;
   submodule_index = saved_submodule_index;
   subsubmodule_index = saved_subsubmodule_index;
+  link_visibility_status = saved_link_visibility_status_for_terminal;
+  link_this_controls_sprite_oam = saved_link_this_controls_sprite_oam_for_terminal;
+  player_near_pit_state = saved_player_near_pit_state_for_terminal;
+  fallhole_var1 = saved_fallhole_var1;
+  fallhole_var2 = saved_fallhole_var2;
+  link_speed_modifier = saved_link_speed_modifier;
+  link_speed_setting = saved_link_speed_setting;
+  link_disable_sprite_damage = saved_link_disable_sprite_damage;
 
   Chains_RuntimeTeardown();
   if ((const uint8 *)kOverworld_Entrance_Id != vanilla)
