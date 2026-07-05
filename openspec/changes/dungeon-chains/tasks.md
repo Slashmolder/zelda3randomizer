@@ -226,8 +226,9 @@ immediately before any bump/commit (concurrent-drift discipline).
       synthetic entrance 140 at room 0x090, x=0x0078, y=0x13D8, with the live
       attr tile at relative y=472 equal to 0xF0. Fixed by making door-based
       synthetic boss entrances land at relative y=424 with doorway state cleared,
-      plus a runtime override so existing local asset blobs are safe. Retest
-      remains part of this gate. -->
+      plus a runtime override so existing local asset blobs are safe. Owner
+      retest confirmed Link can fight Vitreous and death mid-fight respawns in
+      a safe place instead of the shutter doorway. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
