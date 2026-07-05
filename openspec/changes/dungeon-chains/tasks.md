@@ -8,7 +8,7 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 1. Grounding and verification spikes
 
-- [ ] 1.1 Write `assets/scripts/gen_chain_seam_tables.py`: derive, from
+- [x] 1.1 Write `assets/scripts/gen_chain_seam_tables.py`: derive, from
       `zelda3_assets.dat` room headers + `door_registry.yaml` + entrance data,
       the per-pool-dungeon boss-seam table (every transition — door/stair/hole —
       whose destination is one of the 9 pool `kBossRoom[]` ids, with source room

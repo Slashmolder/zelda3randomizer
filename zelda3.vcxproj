@@ -406,6 +406,7 @@
     <ClCompile Include="src\rando\rando_hints.c" />
     <ClCompile Include="src\rando\door_runtime.c" />
     <ClCompile Include="src\rando\door_tables.gen.c" />
+    <ClCompile Include="src\rando\chain_seams.gen.c" />
     <ClCompile Include="src\rando\door_keylogic.c" />
     <ClCompile Include="src\rando\shuffle_doors.c" />
     <ClCompile Include="src\rando\shuffle_boss.c" />
