@@ -192,9 +192,18 @@ immediately before any bump/commit (concurrent-drift discipline).
       check_no_embedded_data, check_placer_determinism --source-only,
       check_placer_determinism --binary=bin\x64-Release-dcverify\zelda3.exe,
       and check_corpus_version_sync. -->
-- [ ] 7.2 Corpus regen final confirmation at shipped `kGeneratorVersion`; 3-way
+- [x] 7.2 Corpus regen final confirmation at shipped `kGeneratorVersion`; 3-way
       diff vs fresh main: only chains entries new, all pre-existing digests
       byte-identical.
+      <!-- done 2026-07-05: full corpus green at kGeneratorVersion 113
+      (`python assets\scripts\run_rando_corpus.py
+      --binary=bin\x64-Release-dcverify\zelda3.exe`, 141/141 entries OK).
+      Refreshed origin/main, compared against local main integration baseline:
+      main generator_version 112 with 136 entries; branch generator_version 113
+      with 141 entries; added labels are exactly chains-open-ganon,
+      chains-standard-fast-ganon, chains-prize-open-fast-ganon,
+      chains-wild-keys-items, and chains-hunt-none; removed labels 0; existing
+      settings/seed changes 0; existing placement/sphere digest changes 0. -->
 - [ ] 7.3 Playtest matrix (merge gate; corpus is blind to both seams): chain-0
       boss door (pendant boss AND crystal boss); 3+ hop chain; DP as a chain
       element (side-door exit → ledge → back-door boss approach, then the aux
