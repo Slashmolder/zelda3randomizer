@@ -265,7 +265,12 @@ immediately before any bump/commit (concurrent-drift discipline).
       restores PoD, and killing Armos exits to the Swamp entrance. PoD main-door
       exit reached overworld as expected for chain-origin exit behavior.
 
-      Owner playtest also confirmed chain-0 boss-door behavior works. -->
+      Owner playtest also confirmed chain-0 boss-door behavior works. Re-entering
+      the same cleared PoD direct-terminal door immediately returned to overworld;
+      F12 during the kick-out showed player_is_indoors=0, dungeon_room=0x004A
+      (PoD main exit room), which_entrance=0x88 (PoD/Helmasaur synthetic
+      entrance), and the rando slot active. This matches the cleared-terminal
+      escape added to avoid trapping Link in an already-cleared boss room. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
