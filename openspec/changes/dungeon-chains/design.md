@@ -204,7 +204,11 @@ Two redirect rules, both table-driven off the 9 pool boss-room ids:
 2. **Out of a terminal boss room**: any outbound transition from a boss room
    reached as a chain terminal diverts to the chain exit (return to origin door).
    This seals the walk-backward leak into the boss's home dungeon, and makes a
-   revisited cleared terminal non-sealing regardless of shutter state.
+   revisited cleared terminal non-sealing regardless of shutter state. Owner
+   playtest (2026-07-04 local): after killing a vanilla boss, before taking the
+   reward/warp, the entry door remained locked; rule 2 therefore is not expected
+   to fire pre-warp through the entry shutter, but still covers any real outbound
+   transition from a terminal boss room.
 
 Overworld chain-start doors need no new hook: reuse the entrance-shuffle door
 overlay (`kOverworld_Entrance_Id`, asset 126) to map the 9 main doors to their
@@ -391,10 +395,11 @@ grounded during this design so phase 2 starts from facts, not re-derivation:
 - **[Hole/stair seam divert (IP)]** — diverting a fall mid-animation
   may need the divert at resolution time, before the fall submodule commits. →
   Seam-table generator classifies every seam; playtest IP's drop specifically.
-- **[Boss shutters may not reopen post-kill]** (**UNVERIFIED** — code reading
-  found no reopen write; vanilla behavior suggests otherwise). → D4 rule 2 makes
-  the question non-fatal either way; F12-verify during playtest anyway
-  (ram-bit-meaning-needs-runtime-truth).
+- **[Boss shutters do not reopen post-kill before reward/warp]** — owner F12
+  playtest (2026-07-04 local) killed a vanilla boss, skipped the reward, and the
+  entry door remained locked. → D4 rule 2 is still required for cleared terminal
+  re-entry / real outbound transitions, but should not be relied on as a
+  pre-warp entry-shutter escape path.
 - **[`*_exit` poisoning by hop re-cache]** → dedicated skip flag (D3); assert via
   g_ram diagnostic counters during bring-up, revert counters before merge.
 - **[Followers carried across hops]** (maiden outside TT, rescued smith, etc.) —

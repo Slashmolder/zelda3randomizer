@@ -19,7 +19,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       (multi-inbound entry regions) in `shuffle_entrance.c` and record the
       mechanism chains will reuse for chain-start door edges (design.md D6
       UNVERIFIED item).
-- [ ] 1.3 F12-verify boss-shutter behavior after a boss kill in vanilla (does the
+- [x] 1.3 F12-verify boss-shutter behavior after a boss kill in vanilla (does the
       entry shutter reopen before the warp?) and record it in design.md — it
       determines whether D4 rule 2 ever fires pre-warp (ram-bit truth rule).
 - [ ] 1.4 Audit follower handling across entrance loads (`follower_indicator`
