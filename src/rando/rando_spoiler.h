@@ -11,6 +11,8 @@
 #include "rando_placement.h"
 #include "rando_settings.h"  // kSettingsCanonicalLen for the _Static_assert below
 
+typedef struct DungeonChainsLayout DungeonChainsLayout;
+
 typedef struct RandoSpoiler {
   const char *share_string;
   uint64 seed_u64;                   // per spec — emitted in meta block
@@ -54,6 +56,9 @@ typedef struct RandoSpoiler {
   // cross pool (interior → emerge door). NULL/0 omits the section.
   const uint8 *cross_decoupled_assign;
   int cross_decoupled_count;
+  // Dungeon chains — accepted per-seed chain layout. NULL omits the section.
+  const DungeonChainsLayout *chains_layout;
+  uint8 chains_attempt;
   // Phase B Slice 7 — boss shuffle. `boss_assignment[16]` is the dungeon-id →
   // boss-pool-index table (BossShuffle_ComputeAssignment). NULL omits the
   // `boss_assignments` section (set NULL when boss_shuffle is off — §6.4).

@@ -17,13 +17,15 @@
 #include "rando_share.h"     // kShareStringBase32MaxLen
 #include "rando_placement.h"  // RandoPlacementTable
 #include "seed_shape.h"       // SeedShapeFilter / metrics
+#include "shuffle_chains.h"   // DungeonChainsLayout
 #include "shuffle_entrance.h"  // kEntranceMaxInteriors
 
 struct RandoSpoiler;  // fwd (full def in rando_spoiler.h)
 
-// The accepted entrance-shuffle permutation for one generation: the packed axis
-// byte + accepted attempt index (both stored in the slot header) plus every
-// per-category assignment array and its count. Filled by Rando_PlaceWithEntrances.
+// The accepted entrance/chain generation shape for one generation: entrance
+// axis metadata plus every per-category assignment array, and the accepted
+// dungeon-chain layout when that axis is active. Filled by
+// Rando_PlaceWithEntrances.
 typedef struct RandoEntranceRegen {
   uint8 entrance_axes;
   uint8 entrance_attempt;
@@ -33,6 +35,9 @@ typedef struct RandoEntranceRegen {
   uint8 decoupled_assign[kEntranceMaxInteriors];       int decoupled_count;
   uint8 dun_decoupled_assign[kEntranceMaxInteriors];   int dun_decoupled_count;
   uint8 cross_decoupled_assign[kEntranceMaxInteriors]; int cross_decoupled_count;
+  bool chains_active;
+  uint8 chains_attempt;
+  DungeonChainsLayout chains_layout;
 } RandoEntranceRegen;
 
 // Shared placement + entrance regeneration, used by BOTH Rando_GenerateSlot and
@@ -59,9 +64,10 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
                               int budget_seconds, RandoPlacementTable *table,
                               RandoEntranceRegen *reg);
 
-// Point a RandoSpoiler's entrance_mapping fields at `reg`'s arrays (NULL when the
-// matching count is 0, per the serializer's omit-empty contract). Shared so the
-// generate and reveal call sites can never drift in which sections they emit.
+// Point a RandoSpoiler's entrance_mapping/dungeon_chains fields at `reg`
+// (NULL when a section is inactive, per the serializer's omit-empty contract).
+// Shared so the generate and reveal call sites can never drift in which
+// sections they emit.
 void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
                                     const RandoEntranceRegen *reg);
 

@@ -392,6 +392,9 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
           Accessibility_SeedAcceptable(settings, table)) {
         placed = true;
+        reg->chains_active = true;
+        reg->chains_attempt = (uint8)catt;
+        reg->chains_layout = chains_layout;
         break;
       }
       if (Customizer_LastError()[0] != '\0')
@@ -443,6 +446,8 @@ void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
   spoiler->dun_decoupled_count = reg->dun_decoupled_count;
   spoiler->cross_decoupled_assign = (reg->cross_decoupled_count > 0) ? reg->cross_decoupled_assign : NULL;
   spoiler->cross_decoupled_count = reg->cross_decoupled_count;
+  spoiler->chains_layout = reg->chains_active ? &reg->chains_layout : NULL;
+  spoiler->chains_attempt = reg->chains_active ? reg->chains_attempt : 0;
 }
 
 bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 seed_u64,

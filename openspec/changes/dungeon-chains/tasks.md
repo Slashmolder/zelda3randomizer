@@ -75,7 +75,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       attempt top — the accumulation bug class), full-reachability acceptance
       gate; update the `main.c` / `rando_generate.c` path-selection conditions
       so chains-only settings route through `Rando_PlaceWithEntrances`.
-- [ ] 4.4 Spoiler: chains section (JSON + text) in `rando_spoiler.c` after the
+- [x] 4.4 Spoiler: chains section (JSON + text) in `rando_spoiler.c` after the
       entrance sections.
 - [ ] 4.5 Corpus: add chains entries (chains-open-ganon, chains-standard,
       chains + prize_shuffle, chains + wild dungeon keys — locks the

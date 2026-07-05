@@ -15,6 +15,7 @@
 #include "shuffle_entrance.h"  // Entrance_WriteSpoilerJson
 #include "shuffle_doors.h"     // DoorShuffleLayout (door_shuffle spoiler section)
 #include "shuffle_boss.h"      // BossShuffle_BossName / _DungeonName
+#include "shuffle_chains.h"    // DungeonChainsLayout
 #include "location_ids.h"      // LOC_* medallion config slot names
 #include "item_ids.h"          // ITEM_Nothing (empty-pot filler omitted from listings)
 #include "../config.h"
@@ -88,6 +89,104 @@ static int placement_cmp(const void *a, const void *b) {
   if (pa->location_id < pb->location_id) return -1;
   if (pa->location_id > pb->location_id) return 1;
   return 0;
+}
+
+static const char *spoiler_chain_dungeon_name(uint8 rando_dungeon) {
+  return BossShuffle_DungeonName(rando_dungeon);
+}
+
+static const char *spoiler_chain_boss_name(uint8 rando_dungeon) {
+  if (rando_dungeon >= kRandoDungeonCount)
+    return "?";
+  return BossShuffle_BossName(kRandoDungeonVanillaBoss[rando_dungeon]);
+}
+
+static void spoiler_write_chain_dungeon_list_json(FILE *f,
+                                                  const DungeonChainsLayout *layout,
+                                                  uint8 chain_idx) {
+  fprintf(f, "[");
+  uint8 elem = layout->chain_door_first[chain_idx];
+  bool first = true;
+  for (uint8 step = 0; step <= kChainsPoolCount; step++) {
+    if (elem == kChainsElement_None || Chains_ElementIsBoss(elem))
+      break;
+    uint8 dungeon = Chains_ElementDungeon(elem);
+    fprintf(f, "%s\"%s\"", first ? "" : ", ",
+            spoiler_chain_dungeon_name(dungeon));
+    first = false;
+    int pidx = Chains_PoolIndexForDungeon(dungeon);
+    if (pidx < 0)
+      break;
+    elem = layout->chain_successor[pidx];
+  }
+  fprintf(f, "]");
+}
+
+static void spoiler_write_chains_json(FILE *f, const RandoSpoiler *s) {
+  const DungeonChainsLayout *layout = s->chains_layout;
+  if (layout == NULL)
+    return;
+
+  fprintf(f, "  \"dungeon_chains\": {\n");
+  fprintf(f, "    \"attempt\": %u,\n", (unsigned)s->chains_attempt);
+  fprintf(f, "    \"digest24\": \"0x%06x\",\n", (unsigned)(layout->digest24 & 0xFFFFFFu));
+  fprintf(f, "    \"chains\": [\n");
+  for (uint8 c = 0; c < kChainsPoolCount; c++) {
+    uint8 door_dungeon = Chains_PoolDungeonAt(c);
+    uint8 boss_dungeon = layout->terminal_boss[c];
+    fprintf(f, "      {\"start_door\": \"%s\", \"dungeons\": ",
+            spoiler_chain_dungeon_name(door_dungeon));
+    spoiler_write_chain_dungeon_list_json(f, layout, c);
+    fprintf(f, ", \"terminal_boss\": \"%s\", \"terminal_boss_dungeon\": \"%s\"}%s\n",
+            spoiler_chain_boss_name(boss_dungeon),
+            spoiler_chain_dungeon_name(boss_dungeon),
+            (c + 1 < kChainsPoolCount) ? "," : "");
+  }
+  fprintf(f, "    ]\n");
+  fprintf(f, "  },\n");
+}
+
+static void spoiler_write_chain_dungeon_list_text(FILE *f,
+                                                  const DungeonChainsLayout *layout,
+                                                  uint8 chain_idx) {
+  uint8 elem = layout->chain_door_first[chain_idx];
+  bool first = true;
+  for (uint8 step = 0; step <= kChainsPoolCount; step++) {
+    if (elem == kChainsElement_None || Chains_ElementIsBoss(elem))
+      break;
+    uint8 dungeon = Chains_ElementDungeon(elem);
+    fprintf(f, "%s%s", first ? "" : " -> ",
+            spoiler_chain_dungeon_name(dungeon));
+    first = false;
+    int pidx = Chains_PoolIndexForDungeon(dungeon);
+    if (pidx < 0)
+      break;
+    elem = layout->chain_successor[pidx];
+  }
+  if (first)
+    fprintf(f, "(none)");
+}
+
+static void spoiler_write_chains_text(FILE *f, const RandoSpoiler *s) {
+  const DungeonChainsLayout *layout = s->chains_layout;
+  if (layout == NULL)
+    return;
+
+  fprintf(f, "DUNGEON CHAINS\n");
+  fprintf(f, "--------------\n");
+  fprintf(f, "Attempt: %u, digest24: 0x%06x\n",
+          (unsigned)s->chains_attempt,
+          (unsigned)(layout->digest24 & 0xFFFFFFu));
+  for (uint8 c = 0; c < kChainsPoolCount; c++) {
+    uint8 door_dungeon = Chains_PoolDungeonAt(c);
+    uint8 boss_dungeon = layout->terminal_boss[c];
+    fprintf(f, "  %-20s door : ", spoiler_chain_dungeon_name(door_dungeon));
+    spoiler_write_chain_dungeon_list_text(f, layout, c);
+    fprintf(f, " -> %s (%s)\n",
+            spoiler_chain_boss_name(boss_dungeon),
+            spoiler_chain_dungeon_name(boss_dungeon));
+  }
+  fprintf(f, "\n");
 }
 
 // Look up a location def by id (replaces hand-inlined kRandoLocations scans).
@@ -478,6 +577,7 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   Entrance_WriteDecoupledSpoilerJson(f, s->decoupled_assign, s->decoupled_count);
   Entrance_WriteDungeonDecoupledSpoilerJson(f, s->dun_decoupled_assign, s->dun_decoupled_count);
   Entrance_WriteCrossDecoupledSpoilerJson(f, s->cross_decoupled_assign, s->cross_decoupled_count);
+  spoiler_write_chains_json(f, s);
 
   // -----------------------------------------------------------------------
   // door_shuffle — per-dungeon door pairings + relocated key doors with
@@ -1048,6 +1148,7 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     Entrance_WriteCrossDecoupledSpoilerText(f, s->cross_decoupled_assign, s->cross_decoupled_count);
     fprintf(f, "\n");
   }
+  spoiler_write_chains_text(f, s);
 
   // Boss assignments (omitted unless boss_shuffle is on).
   if (s->boss_assignment != NULL) {
