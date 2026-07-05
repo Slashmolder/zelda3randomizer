@@ -3393,6 +3393,7 @@ static bool g_rando_active_hint_settings_valid = false;
 static RandoSlotHeader g_rando_active_header;
 static bool g_rando_active_header_valid = false;
 static bool g_rando_active_door_logic = false;
+static bool g_rando_active_chains_logic = false;
 // The ACTIVE slot's regenerated door layout. Persistent storage is required —
 // Rando_SetDoorLogicLayout stores the POINTER — and file scope (rather than the
 // former function-local static in Rando_ActivateSidecarSlot) lets the replay
@@ -3400,6 +3401,9 @@ static bool g_rando_active_door_logic = false;
 // static (g_door_gen_layout in rando_generate.c), so a mid-session generation
 // never clobbers these bytes — only the installed pointer.
 static DoorShuffleLayout s_active_door_layout;
+// Same lifetime requirement for dungeon chains: both logic-edge overrides and
+// runtime seams are regenerated from the persisted attempt/digest identity.
+static DungeonChainsLayout s_active_chains_layout;
 
 static uint8 rando_door_enemy_drop_keys_for_settings(const RandoSettings *settings) {
   if (settings == NULL ||
@@ -3480,6 +3484,57 @@ static bool rando_install_prepared_door_layout(const char *context) {
   DoorRt_Activate();
   g_wanted_zelda_features1 |= kFeatures1_DoorShuffleActive;
   enhanced_features1 |= kFeatures1_DoorShuffleActive;
+  return true;
+}
+
+static uint32 rando_chains_layout_digest24(const DungeonChainsLayout *layout) {
+  return Chains_LayoutDigest(layout) & 0xFFFFFFu;
+}
+
+static void rando_clear_chains_layout_runtime(void) {
+  if (g_rando_active_chains_logic)
+    Entrance_ClearEdgeOverrides();
+  Chains_RuntimeTeardown();
+  g_rando_active_chains_logic = false;
+}
+
+static bool rando_prepare_chains_layout(const RandoSettings *settings,
+                                        const uint8 share_string_raw[32],
+                                        uint8 chains_attempt,
+                                        uint32 expected_digest24,
+                                        const char *context) {
+  if (settings == NULL || share_string_raw == NULL ||
+      !Settings_EffectiveDungeonChains(settings)) {
+    fprintf(stderr,
+            "Rando: %s dungeon-chain restore missing required layout identity "
+            "- refusing chain graph\n",
+            context);
+    return false;
+  }
+  uint64 slot_seed = SlotSeedFromShareString(share_string_raw);
+  bool ok = Chains_Compute(slot_seed, chains_attempt, &s_active_chains_layout);
+  uint32 digest = ok ? rando_chains_layout_digest24(&s_active_chains_layout) : 0;
+  if (!ok || digest != (expected_digest24 & 0xFFFFFFu)) {
+    fprintf(stderr,
+            "Rando: %s dungeon-chain layout drift (regen digest %06x != saved %06x) "
+            "- refusing chain graph\n",
+            context, (unsigned)digest, (unsigned)(expected_digest24 & 0xFFFFFFu));
+    return false;
+  }
+  return true;
+}
+
+static bool rando_install_prepared_chains_layout(const char *context) {
+  if (!Chains_RuntimeInstallLayout(&s_active_chains_layout)) {
+    fprintf(stderr,
+            "Rando: %s dungeon-chain runtime install failed - refusing chain graph\n",
+            context);
+    Entrance_ClearEdgeOverrides();
+    Chains_RuntimeTeardown();
+    return false;
+  }
+  Chains_ApplyEdgeOverrides(&s_active_chains_layout);
+  g_rando_active_chains_logic = true;
   return true;
 }
 
@@ -3652,6 +3707,7 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   if (!preserve_active_header) {
     g_rando_active_header_valid = false;
     g_rando_active_door_logic = false;
+    rando_clear_chains_layout_runtime();
   }
   g_rando_active_settings = *s;
   g_rando_active_world_state = s->world_state;
@@ -3682,7 +3738,12 @@ void Rando_ClearSnapshotDoorReplayRestore(void) {
 void Rando_ClearSnapshotReplayHeader(void) {
   g_rando_active_header_valid = false;
   g_rando_active_door_logic = false;
+  rando_clear_chains_layout_runtime();
   g_rando_active_share_string[0] = '\0';
+}
+
+void Rando_ClearSnapshotChainsReplayRestore(void) {
+  rando_clear_chains_layout_runtime();
 }
 
 bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
@@ -3711,6 +3772,35 @@ bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
   return true;
 }
 
+bool Rando_SnapshotChainsReplayRestore(const RandoSettings *s,
+                                       const uint8 *share_string_raw,
+                                       uint8 chains_attempt,
+                                       uint32 chains_digest24) {
+  Rando_ClearDeferredPotConfirmation();
+  Entrance_RuntimeTeardown();
+  rando_clear_door_layout_runtime();
+  g_rando_active_door_logic = false;
+  rando_clear_chains_layout_runtime();
+  if (!rando_prepare_chains_layout(s, share_string_raw, chains_attempt,
+                                   chains_digest24, "snapshot replay")) {
+    Rando_DeactivateSlot();
+    return false;
+  }
+  if (!rando_install_prepared_chains_layout("snapshot replay")) {
+    Rando_DeactivateSlot();
+    return false;
+  }
+
+  memset(&g_rando_active_header, 0, sizeof(g_rando_active_header));
+  memcpy(g_rando_active_header.share_string, share_string_raw, 32);
+  g_rando_active_header.chains_present = 1;
+  g_rando_active_header.chains_attempt = chains_attempt;
+  g_rando_active_header.chains_digest24 = chains_digest24 & 0xFFFFFFu;
+  g_rando_active_header_valid = true;
+  g_reachability_state_counter++;
+  return true;
+}
+
 static void rando_clear_snapshot_settings_replay_restore(void) {
   Rando_ClearDeferredPotConfirmation();
   g_rando_active_settings_valid = false;
@@ -3727,6 +3817,7 @@ static void rando_clear_snapshot_settings_replay_restore(void) {
   InvertedEntrances_Teardown();
   InvertedSecrets_Teardown();
   InvertedHoleBlocks_Teardown();
+  rando_clear_chains_layout_runtime();
   Rando_ApplyActiveForcedFeatures0();
   g_reachability_state_counter++;
 }
@@ -3822,6 +3913,24 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     }
     door_active = true;
   }
+  bool chains_active = false;
+  if (slot_settings_valid && Settings_EffectiveDungeonChains(&slot_settings)) {
+    if (!src->header.chains_present) {
+      fprintf(stderr,
+              "Rando: dungeon-chain slot missing layout identity "
+              "- refusing to activate this slot on this build\n");
+      Rando_DeactivateSlot();
+      return;
+    }
+    if (!rando_prepare_chains_layout(&slot_settings, src->header.share_string,
+                                     src->header.chains_attempt,
+                                     src->header.chains_digest24,
+                                     "slot activation")) {
+      Rando_DeactivateSlot();
+      return;
+    }
+    chains_active = true;
+  }
   // FIX #4 — entrance-layout drift gate, mirroring the door-shuffle digest
   // gate above. The entrance permutation is REGENERATED from (seed, axes,
   // attempt) at install; if a kGeneratorVersion bump changed the entrance
@@ -3896,6 +4005,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   Rando_SetSnapshotDoorContext(src->header.door_attempt,
                                src->header.door_digest24,
                                door_active);
+  Rando_SetSnapshotChainsContext(src->header.chains_attempt,
+                                 src->header.chains_digest24,
+                                 chains_active);
   Rando_SetSnapshotRecommendedFeaturesContext(
       src->header.recommended_features0,
       src->header.recommended_features0_present != 0);
@@ -3924,6 +4036,10 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // digest gate above is contamination-proof independently via
   // Entrance_PristineVanillaIds.
   InvertedEntrances_Teardown();
+  // dungeon-chains also owns asset 126. Clear a prior chain slot before the
+  // normal entrance path self-tears down and before this slot installs its
+  // regenerated chain overlay.
+  rando_clear_chains_layout_runtime();
   // Phase C — install the entrance-shuffle door overlay + region overrides for
   // this slot (no-op when the slot carries no cave shuffle). Done before the
   // hint regeneration below so hints see the shuffled reachability, and before
@@ -3943,6 +4059,14 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   } else {
     rando_clear_door_layout_runtime();
     g_rando_active_door_logic = false;  // replay-input capture
+  }
+  if (chains_active) {
+    if (!rando_install_prepared_chains_layout("slot activation")) {
+      Rando_DeactivateSlot();
+      return;
+    }
+  } else {
+    g_rando_active_chains_logic = false;
   }
 
   // #82 Inverted world-state — repoint the static Inverted entrance/exit
@@ -4108,9 +4232,9 @@ void Rando_RegenerateActiveSlotHints(void) {
 
 // reinstall the ACTIVE slot's LOGIC-side overlays after an
 // out-of-band generation cleared them. Rando_GenerateSlot unconditionally
-// clears the entrance region/edge override stores (Rando_PlaceWithEntrances'
+// clears the entrance/chain region+edge override stores (Rando_PlaceWithEntrances'
 // leading clears) and the door logic layout (Rando_ClearGenerationLogicOverlays
-// → Rando_SetDoorLogicLayout(NULL, 0)) — the same global stores
+// -> Rando_SetDoorLogicLayout(NULL, 0)) - the same global stores
 // Rando_ActivateSidecarSlot populated for the active slot — and never
 // reinstalls, so generating a seed mid-session WITHOUT loading it reverted
 // tracker/map LOGIC reachability to the vanilla graph until slot reload.
@@ -4128,8 +4252,12 @@ void Rando_RegenerateActiveSlotHints(void) {
 //     this exact regenerated layout against the slot's door_digest24 (drift
 //     hard-fails there), and DoorShuffle_Generate is deterministic, so the
 //     layout regenerated here is byte-identical to the validated one.
+//   - chains: Chains_Compute from (seed, chains_attempt), revalidated against
+//     chains_digest24, then re-applied to the shared entrance edge override
+//     store. Gameplay runtime redirects stay installed unless validation fails.
 // Gameplay-side installs (the asset-126 entrance overlay, decoupled runtime
-// nets, DoorRt redirects, and the boss/drop/enemy RENDER shuffles — generation
+// nets, DoorRt redirects, chain seam redirects, and the boss/drop/enemy RENDER
+// shuffles - generation
 // calls only the pure BossShuffle_/DropShuffle_ComputeAssignment forms and
 // never EnemyShuffle_*) are NOT touched by generation, so this helper leaves
 // them alone — it is logic-side only. No active slot: leave the stores CLEARED
@@ -4158,6 +4286,7 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
     Entrance_ClearRegionOverrides();
     Entrance_ClearEdgeOverrides();
     Rando_SetDoorLogicLayout(NULL, 0);
+    rando_clear_chains_layout_runtime();
     return;
   }
   EntranceRuntimeLayout *lay = &s_entrance_layout_scratch;
@@ -4208,12 +4337,38 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
   } else {
     Rando_SetDoorLogicLayout(NULL, 0);
   }
+  if (g_rando_active_chains_logic) {
+    if (!g_rando_active_settings_valid ||
+        !Settings_EffectiveDungeonChains(&g_rando_active_settings) ||
+        !g_rando_active_header.chains_present) {
+      fprintf(stderr,
+              "Rando: active dungeon-chain layout reinstall missing identity "
+              "or settings - chain logic cleared\n");
+      rando_clear_chains_layout_runtime();
+      g_reachability_state_counter++;
+      return;
+    }
+    if (!rando_prepare_chains_layout(&g_rando_active_settings,
+                                     g_rando_active_header.share_string,
+                                     g_rando_active_header.chains_attempt,
+                                     g_rando_active_header.chains_digest24,
+                                     "active layout reinstall")) {
+      rando_clear_chains_layout_runtime();
+      g_reachability_state_counter++;
+      return;
+    }
+    Chains_ApplyEdgeOverrides(&s_active_chains_layout);
+  }
   // Force a tracker recompute (mirrors activation): the stores round-tripped
   // through a cleared state, so don't trust any cached reachability.
   g_reachability_state_counter++;
 }
 
 void Rando_DeactivateSlot(void) {
+  // dungeon-chains owns the same overworld entrance-id asset as entrance
+  // shuffle, so drop it before the generic entrance teardown clears the shared
+  // logic override stores.
+  rando_clear_chains_layout_runtime();
   // Phase C — restore the vanilla door table + clear entrance region overrides
   // before anything else (mirror of Entrance_RuntimeInstall in Activate).
   Entrance_RuntimeTeardown();
@@ -4288,6 +4443,7 @@ void Rando_DeactivateSlot(void) {
   // stores instead of replaying a stale slot.
   g_rando_active_header_valid = false;
   g_rando_active_door_logic = false;
+  g_rando_active_chains_logic = false;
 
   // Reset the starting-inventory gate so an in-session slot-switch (slot A
   // already received its grant, then user backs out and loads slot B) lets

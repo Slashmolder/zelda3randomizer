@@ -1027,6 +1027,11 @@ bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
                                      uint8 door_attempt,
                                      uint32 door_digest24);
+void Rando_ClearSnapshotChainsReplayRestore(void);
+bool Rando_SnapshotChainsReplayRestore(const RandoSettings *s,
+                                       const uint8 *share_string_raw,
+                                       uint8 chains_attempt,
+                                       uint32 chains_digest24);
 
 // ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).

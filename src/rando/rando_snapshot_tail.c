@@ -40,6 +40,15 @@
 //     door_attempt[1]
 //     door_digest24[3] LE
 //
+// Dungeon-chain snapshots append a separate layout-identity TLV:
+//
+//   type[4]   LE             = 7 (TAIL_CHAIN_LAYOUT)
+//   length[4] LE             = 5
+//   payload:
+//     format_version[1]      = 1
+//     chains_attempt[1]
+//     chains_digest24[3] LE
+//
 // Another optional TLV carries per-slot Seed QoL features for snapshot replay:
 //
 //   type[4]   LE             = 4 (TAIL_RECOMMENDED_FEATURES)
@@ -68,8 +77,12 @@
 #include "rando_settings.h" // kSettingsCanonicalLen, Settings_CanonicalDeserialize
 #include "rando_share.h"    // Share_PackBinary (self-check valid raw share string)
 #include "shuffle_doors.h"  // DoorShuffle_Generate/Digest (self-check)
+#include "shuffle_chains.h" // Chains_Compute/Digest (self-check)
 #include "door_runtime.h"   // DoorRt_Installed (self-check)
+#include "chains_runtime.h" // Chains_RuntimeRecordDoorEntry (self-check)
+#include "chain_boss_entrances.gen.h" // kChainBossEntranceChecks (self-check)
 #include "../features.h"    // enhanced_features1 / kFeatures1_DoorShuffleActive
+#include "../assets.h"      // kOverworld_Entrance_Id (chain self-check)
 #include "../config.h"      // g_config (self-checks feature restore)
 #include "../variables.h"   // g_ram (the features macro)
 #include "../assets.h"      // g_asset_ptrs/g_asset_sizes (self-check synth entrance ids)
@@ -122,6 +135,9 @@ static bool g_has_settings_ctx = false;
 static uint8 g_ctx_door_attempt = 0;
 static uint32 g_ctx_door_digest24 = 0;
 static bool g_has_door_ctx = false;
+static uint8 g_ctx_chains_attempt = 0;
+static uint32 g_ctx_chains_digest24 = 0;
+static bool g_has_chains_ctx = false;
 static uint32 g_ctx_recommended_features0 = 0;
 static bool g_has_recommended_features_ctx = false;
 
@@ -132,6 +148,9 @@ static void Rando_ClearSnapshotOptionalContexts(void) {
   g_ctx_door_attempt = 0;
   g_ctx_door_digest24 = 0;
   g_has_door_ctx = false;
+  g_ctx_chains_attempt = 0;
+  g_ctx_chains_digest24 = 0;
+  g_has_chains_ctx = false;
   g_ctx_recommended_features0 = 0;
   g_has_recommended_features_ctx = false;
 }
@@ -174,6 +193,19 @@ void Rando_SetSnapshotDoorContext(uint8 door_attempt, uint32 door_digest24,
   g_ctx_door_attempt = door_attempt;
   g_ctx_door_digest24 = door_digest24 & 0xFFFFFFu;
   g_has_door_ctx = true;
+}
+
+void Rando_SetSnapshotChainsContext(uint8 chains_attempt, uint32 chains_digest24,
+                                    bool present) {
+  if (!present) {
+    g_ctx_chains_attempt = 0;
+    g_ctx_chains_digest24 = 0;
+    g_has_chains_ctx = false;
+    return;
+  }
+  g_ctx_chains_attempt = chains_attempt;
+  g_ctx_chains_digest24 = chains_digest24 & 0xFFFFFFu;
+  g_has_chains_ctx = true;
 }
 
 void Rando_SetSnapshotRecommendedFeaturesContext(uint32 features0, bool present) {
@@ -370,6 +402,20 @@ bool RandoSnapshotTail_Save(FILE *f) {
     if (fwrite(dhdr, 1, sizeof(dhdr), f) != sizeof(dhdr)) return false;
     if (fwrite(dp, 1, sizeof(dp), f) != sizeof(dp)) return false;
   }
+  if (g_has_chains_ctx) {
+    uint8 cp[5];
+    cp[0] = 1u;  // format_version
+    cp[1] = g_ctx_chains_attempt;
+    cp[2] = (uint8)(g_ctx_chains_digest24 & 0xff);
+    cp[3] = (uint8)((g_ctx_chains_digest24 >> 8) & 0xff);
+    cp[4] = (uint8)((g_ctx_chains_digest24 >> 16) & 0xff);
+    uint8 chdr[16];
+    memcpy(chdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(chdr + 8, kRandoSnapshotTail_Type_ChainLayout);
+    put_u32le_bytes(chdr + 12, (uint32)sizeof(cp));
+    if (fwrite(chdr, 1, sizeof(chdr), f) != sizeof(chdr)) return false;
+    if (fwrite(cp, 1, sizeof(cp), f) != sizeof(cp)) return false;
+  }
   if (g_has_recommended_features_ctx) {
     uint8 fp[5];
     fp[0] = 1u;  // format_version
@@ -404,6 +450,7 @@ int RandoSnapshotTail_Load(FILE *f) {
   if (f == NULL) return 0;
   int recognized = 0;
   bool pending_door_layout = false;
+  bool pending_chain_layout = false;
   bool has_pot_registry_ctx = false;
   uint32 pot_registry_digest = 0;
   uint16 pot_registry_count = 0;
@@ -421,6 +468,13 @@ int RandoSnapshotTail_Load(FILE *f) {
               "DoorLayout TLV — deactivating randomizer state\n"); \
       Rando_DeactivateSlot(); \
       pending_door_layout = false; \
+    } \
+    if (pending_chain_layout) { \
+      fprintf(stderr, \
+              "RandoSnapshotTail: dungeon-chain snapshot missing a valid " \
+              "ChainLayout TLV - deactivating randomizer state\n"); \
+      Rando_DeactivateSlot(); \
+      pending_chain_layout = false; \
     } \
     return recognized; \
   } while (0)
@@ -543,6 +597,7 @@ int RandoSnapshotTail_Load(FILE *f) {
       pot_registry_digest = 0;
       pot_registry_count = 0;
       pending_settings_header_clear = true;
+      pending_chain_layout = false;
 
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
@@ -558,6 +613,7 @@ int RandoSnapshotTail_Load(FILE *f) {
       // graph after digest validation. Older/no-type-5 snapshots fail closed
       // instead of inheriting a door layout from a different active slot.
       Rando_ClearSnapshotDoorReplayRestore();
+      Rando_ClearSnapshotChainsReplayRestore();
       recognized++;
       continue;
     }
@@ -633,11 +689,15 @@ int RandoSnapshotTail_Load(FILE *f) {
                     "RandoSnapshotTail: snapshot settings blob failed range "
                     "validation - deactivating randomizer state\n");
             Rando_DeactivateSlot();
+            pending_door_layout = false;
+            pending_chain_layout = false;
             recognized++;
             FINISH_LOAD();
           }
           if (!Rando_SnapshotSettingsAllowedForReplay(&s)) {
             Rando_DeactivateSlot();
+            pending_door_layout = false;
+            pending_chain_layout = false;
             recognized++;
             FINISH_LOAD();
           }
@@ -649,6 +709,7 @@ int RandoSnapshotTail_Load(FILE *f) {
                     "registry identity — deactivating randomizer state\n");
             Rando_DeactivateSlot();
             pending_door_layout = false;
+            pending_chain_layout = false;
             recognized++;
             FINISH_LOAD();
           }
@@ -670,6 +731,7 @@ int RandoSnapshotTail_Load(FILE *f) {
           Rando_SetSnapshotSettingsContext(blob, prize_attempt);
           Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
           pending_settings_header_clear = false;
+          pending_chain_layout = Settings_EffectiveDungeonChains(&s);
         }
       }
       recognized++;
@@ -697,6 +759,35 @@ int RandoSnapshotTail_Load(FILE *f) {
             if (Rando_SnapshotDoorReplayRestore(&s, g_ctx.share_string,
                                                 door_attempt, door_digest24)) {
               pending_door_layout = false;
+            }
+          }
+        }
+      }
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_ChainLayout) {
+      // Payload: format_version[1] + chains_attempt[1] + chains_digest24[3].
+      if (length < 5u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      uint8 cp[5];
+      if (fread(cp, 1, sizeof(cp), f) != sizeof(cp)) FINISH_LOAD();
+      if (length > sizeof(cp) && fseek(f, (long)(length - sizeof(cp)), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (cp[0] == 1u && accepted_rando_state) {
+        uint8 chains_attempt = cp[1];
+        uint32 chains_digest24 =
+            (uint32)cp[2] | ((uint32)cp[3] << 8) | ((uint32)cp[4] << 16);
+        Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24, true);
+        if (g_has_ctx && g_has_settings_ctx) {
+          RandoSettings s;
+          if (Settings_CanonicalDeserialize(g_ctx_settings_canonical, &s) == 0) {
+            if (Rando_SnapshotChainsReplayRestore(&s, g_ctx.share_string,
+                                                  chains_attempt, chains_digest24)) {
+              pending_chain_layout = false;
             }
           }
         }
@@ -1698,6 +1789,234 @@ void RandoSnapshotTail_SelfCheck(void) {
     g_rando_slot_active = saved_slot_active;
     g_wanted_zelda_features1 = saved_wanted_features1;
     enhanced_features1 = saved_enhanced_features1;
+  }
+
+  // -------------------------------------------------------------------------
+  // type-7 ChainLayout TLV round-trip.
+  //
+  // Dungeon-chain runtime redirects are process state, like door shuffle, but
+  // they are gated by canonical settings rather than a dedicated RAM feature
+  // bit. A chain snapshot must therefore fail closed if type-2 says chains are
+  // active and type-7 is missing or fails the saved digest.
+  // -------------------------------------------------------------------------
+  {
+    static uint8 synth_door_ids[256];
+    static uint16 synth_u16[kChainBossEntranceLimit];
+    static uint16 synth_rooms[kChainBossEntranceLimit];
+    static uint8 synth_u8[kChainBossEntranceLimit];
+    static uint8 synth_relative[kChainBossEntranceLimit * 8];
+    static int8 synth_i8[kChainBossEntranceLimit];
+    static int8 synth_palace[kChainBossEntranceLimit];
+    static uint8 synth_music[kChainBossEntranceLimit];
+    static const uint8 kSynthAssetIds[] = {
+      11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 126,
+    };
+    const uint8 *saved_ptrs[sizeof(kSynthAssetIds)];
+    uint32 saved_sizes[sizeof(kSynthAssetIds)];
+    bool synth_assets = kOverworld_Entrance_Id == NULL ||
+                        kOverworld_Entrance_Id_SIZE == 0 ||
+                        !Chains_SyntheticEntrancesAvailable();
+    uint8 saved_slot_active = g_rando_slot_active;
+    uint32 saved_wanted_features1 = g_wanted_zelda_features1;
+    uint32 saved_enhanced_features1 = enhanced_features1;
+    if (synth_assets) {
+      for (uint32 i = 0; i < (uint32)sizeof(kSynthAssetIds); i++) {
+        uint8 id = kSynthAssetIds[i];
+        saved_ptrs[i] = g_asset_ptrs[id];
+        saved_sizes[i] = g_asset_sizes[id];
+      }
+      memset(synth_door_ids, 0, sizeof(synth_door_ids));
+      memset(synth_u16, 0, sizeof(synth_u16));
+      memset(synth_rooms, 0, sizeof(synth_rooms));
+      memset(synth_u8, 0, sizeof(synth_u8));
+      memset(synth_relative, 0, sizeof(synth_relative));
+      memset(synth_i8, 0, sizeof(synth_i8));
+      memset(synth_palace, 0, sizeof(synth_palace));
+      memset(synth_music, 0, sizeof(synth_music));
+      for (uint8 i = 0; i < kChainsPoolCount; i++) {
+        const ChainBossEntranceCheck *row = &kChainBossEntranceChecks[i];
+        synth_door_ids[16 + i] = row->main_entrance_id;
+      }
+      for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
+        const ChainBossEntranceCheck *row = &kChainBossEntranceChecks[i];
+        synth_rooms[row->entrance_id] = row->room;
+        synth_palace[row->entrance_id] = row->palace;
+        synth_music[row->entrance_id] = row->music;
+      }
+      g_asset_ptrs[11] = (const uint8 *)synth_rooms;
+      g_asset_sizes[11] = sizeof(synth_rooms);
+      g_asset_ptrs[12] = synth_relative;
+      g_asset_sizes[12] = sizeof(synth_relative);
+      g_asset_ptrs[13] = (const uint8 *)synth_u16;
+      g_asset_sizes[13] = sizeof(synth_u16);
+      g_asset_ptrs[14] = (const uint8 *)synth_u16;
+      g_asset_sizes[14] = sizeof(synth_u16);
+      g_asset_ptrs[15] = (const uint8 *)synth_u16;
+      g_asset_sizes[15] = sizeof(synth_u16);
+      g_asset_ptrs[16] = (const uint8 *)synth_u16;
+      g_asset_sizes[16] = sizeof(synth_u16);
+      g_asset_ptrs[17] = (const uint8 *)synth_u16;
+      g_asset_sizes[17] = sizeof(synth_u16);
+      g_asset_ptrs[18] = (const uint8 *)synth_u16;
+      g_asset_sizes[18] = sizeof(synth_u16);
+      g_asset_ptrs[19] = synth_u8;
+      g_asset_sizes[19] = sizeof(synth_u8);
+      g_asset_ptrs[20] = (const uint8 *)synth_i8;
+      g_asset_sizes[20] = sizeof(synth_i8);
+      g_asset_ptrs[21] = (const uint8 *)synth_palace;
+      g_asset_sizes[21] = sizeof(synth_palace);
+      g_asset_ptrs[22] = synth_u8;
+      g_asset_sizes[22] = sizeof(synth_u8);
+      g_asset_ptrs[23] = synth_u8;
+      g_asset_sizes[23] = sizeof(synth_u8);
+      g_asset_ptrs[24] = synth_u8;
+      g_asset_sizes[24] = sizeof(synth_u8);
+      g_asset_ptrs[25] = synth_u8;
+      g_asset_sizes[25] = sizeof(synth_u8);
+      g_asset_ptrs[26] = (const uint8 *)synth_u16;
+      g_asset_sizes[26] = sizeof(synth_u16);
+      g_asset_ptrs[27] = synth_music;
+      g_asset_sizes[27] = sizeof(synth_music);
+      g_asset_ptrs[126] = synth_door_ids;
+      g_asset_sizes[126] = sizeof(synth_door_ids);
+    }
+    if (kOverworld_Entrance_Id == NULL || kOverworld_Entrance_Id_SIZE == 0 ||
+        !Chains_SyntheticEntrancesAvailable())
+      selfcheck_die("type-7: asset fixture unavailable");
+
+    RandoSettings chain_settings;
+    Settings_SetDefaults(&chain_settings);
+    chain_settings.dungeon_chains = 1;
+    uint8 chain_canon[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&chain_settings, chain_canon);
+
+    ShareString chain_ss;
+    memset(&chain_ss, 0, sizeof(chain_ss));
+    chain_ss.version = (uint8)kGeneratorVersion;
+    for (int i = 0; i < 16; i++) chain_ss.settings_hash[i] = (uint8)(0xC0 + i);
+    chain_ss.seed_u64 = 0xC0A1C0A1D00D5007ull;
+    uint8 chain_share[32];
+    memset(chain_share, 0, sizeof(chain_share));
+    Share_PackBinary(&chain_ss, chain_share);
+
+    DungeonChainsLayout chain_layout;
+    uint8 chains_attempt = 3;
+    if (!Chains_Compute(chain_ss.seed_u64, chains_attempt, &chain_layout))
+      selfcheck_die("type-7: could not generate a chain layout");
+    uint32 chains_digest24 = Chains_LayoutDigest(&chain_layout) & 0xFFFFFFu;
+
+    uint16 chain_lx = 0xFFFFu;
+    uint8 source_entrance = kChainBossEntranceChecks[0].main_entrance_id;
+    for (uint32 lx = 0; lx < kOverworld_Entrance_Id_SIZE; lx++) {
+      if (((const uint8 *)kOverworld_Entrance_Id)[lx] == source_entrance) {
+        chain_lx = (uint16)lx;
+        break;
+      }
+    }
+    if (chain_lx == 0xFFFFu)
+      selfcheck_die("type-7: source chain door missing from vanilla table");
+
+    static RandoPlacement chain_entries[2];
+    static RandoPlacementTable chain_table;
+    chain_entries[0].location_id = 21; chain_entries[0].item_id = 0x0C01;
+    chain_entries[1].location_id = 22; chain_entries[1].item_id = 0x0C02;
+    chain_table.entries = chain_entries; chain_table.count = 2;
+
+    Placement_Install(&chain_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00C7, chain_ss.settings_hash, chain_share);
+    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24, true);
+
+    FILE *fc = tmpfile();
+    if (fc == NULL) selfcheck_die("type-7: tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fc)) selfcheck_die("type-7: Save returned false");
+    Rando_ClearSnapshotChainsReplayRestore();
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    g_rando_slot_active = 1;
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+
+    fseek(fc, 0, SEEK_SET);
+    int nc = RandoSnapshotTail_Load(fc);
+    if (nc != 5)
+      selfcheck_die("type-7: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + ChainLayout");
+    if (!Chains_RuntimeRecordDoorEntry(chain_lx))
+      selfcheck_die("type-7: chain runtime was not restored");
+    if (Chains_RuntimeConsumeMainExitOrigin(kChainBossEntranceChecks[0].main_exit_room) !=
+        kChainBossEntranceChecks[0].main_exit_room)
+      selfcheck_die("type-7: restored chain origin did not consume");
+    fclose(fc);
+
+    FILE *frc = tmpfile();
+    if (frc == NULL) selfcheck_die("type-7: re-save tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(frc)) selfcheck_die("type-7: re-save returned false");
+    Rando_ClearSnapshotChainsReplayRestore();
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    g_rando_slot_active = 1;
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    fseek(frc, 0, SEEK_SET);
+    int nrc = RandoSnapshotTail_Load(frc);
+    if (nrc != 5)
+      selfcheck_die("type-7: replayed snapshot re-save must perpetuate ChainLayout");
+    if (!Chains_RuntimeRecordDoorEntry(chain_lx))
+      selfcheck_die("type-7: re-saved chain runtime was not restored");
+    (void)Chains_RuntimeConsumeMainExitOrigin(kChainBossEntranceChecks[0].main_exit_room);
+    fclose(frc);
+
+    Placement_Install(&chain_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00C8, chain_ss.settings_hash, chain_share);
+    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
+    FILE *fmissing = tmpfile();
+    if (fmissing == NULL) selfcheck_die("type-7: missing tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fmissing)) selfcheck_die("type-7: missing Save returned false");
+    Rando_ClearSnapshotChainsReplayRestore();
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    g_rando_slot_active = 1;
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    fseek(fmissing, 0, SEEK_SET);
+    int nmissing = RandoSnapshotTail_Load(fmissing);
+    if (nmissing != 4)
+      selfcheck_die("type-7: missing ChainLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings");
+    if (g_rando_slot_active || Placement_GetActive() != NULL ||
+        Chains_RuntimeRecordDoorEntry(chain_lx))
+      selfcheck_die("type-7: missing ChainLayout should deactivate rando state");
+    fclose(fmissing);
+
+    Placement_Install(&chain_table);
+    Rando_ClearSnapshotContext();
+    Rando_SetSnapshotContext(0x00C9, chain_ss.settings_hash, chain_share);
+    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24 ^ 1u, true);
+    FILE *fbad = tmpfile();
+    if (fbad == NULL) selfcheck_die("type-7: bad-digest tmpfile() returned NULL");
+    if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-7: bad-digest Save returned false");
+    fseek(fbad, 0, SEEK_SET);
+    int nbad = RandoSnapshotTail_Load(fbad);
+    if (nbad != 5)
+      selfcheck_die("type-7: bad-digest snapshot should still parse all known TLVs");
+    if (Chains_RuntimeRecordDoorEntry(chain_lx))
+      selfcheck_die("type-7: bad digest inherited or installed a chain graph");
+    if (g_rando_slot_active)
+      selfcheck_die("type-7: bad digest should deactivate the rando slot");
+    fclose(fbad);
+
+    Rando_ClearSnapshotChainsReplayRestore();
+    Rando_ClearSnapshotColdReplayRestore();
+    Rando_ClearSnapshotContext();
+    g_rando_slot_active = saved_slot_active;
+    g_wanted_zelda_features1 = saved_wanted_features1;
+    enhanced_features1 = saved_enhanced_features1;
+    if (synth_assets) {
+      for (uint32 i = 0; i < (uint32)sizeof(kSynthAssetIds); i++) {
+        uint8 id = kSynthAssetIds[i];
+        g_asset_ptrs[id] = saved_ptrs[i];
+        g_asset_sizes[id] = saved_sizes[i];
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

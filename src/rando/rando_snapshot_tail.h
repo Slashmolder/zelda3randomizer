@@ -67,6 +67,10 @@
 // reject missing/mismatched registries instead of restoring under a different
 // location set.
 #define kRandoSnapshotTail_Type_PotRegistry 6u
+// Accepted dungeon-chain layout identity (attempt + digest). The graph itself
+// is regenerated from (share_string seed, canonical settings, attempt) on replay
+// and must match the digest before runtime redirects are installed.
+#define kRandoSnapshotTail_Type_ChainLayout 7u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the
@@ -104,6 +108,10 @@ void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
 // Optional door-shuffle layout identity for snapshot replay.
 void Rando_SetSnapshotDoorContext(uint8 door_attempt, uint32 door_digest24,
                                   bool present);
+
+// Optional dungeon-chain layout identity for snapshot replay.
+void Rando_SetSnapshotChainsContext(uint8 chains_attempt, uint32 chains_digest24,
+                                    bool present);
 
 // Optional per-slot Seed QoL feature snapshot for snapshot replay.
 // `present=false` suppresses the type-4 TLV; `present=true` stores features0

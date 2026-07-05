@@ -134,10 +134,20 @@ immediately before any bump/commit (concurrent-drift discipline).
       covers overlay install/restore, origin arming, non-main preservation,
       main-exit consumption, and direct terminal-boss arming. Release build +
       --rando-selftest green; DP/TR owner playtest remains tracked in 7.3. -->
-- [ ] 5.6 `Chains_RuntimeInstall` / teardown wired into
+- [x] 5.6 `Chains_RuntimeInstall` / teardown wired into
       `Rando_ActivateSidecarSlot` / `Rando_DeactivateSlot`: regenerate from
       (seed, attempt), hard-fail on digest mismatch, fail closed if synthetic
       entrance records are absent; M4 cold-replay rebuild path included.
+      <!-- done 2026-07-05: activation regenerates from the saved
+      chains_attempt/digest24 identity, refuses missing/drifted identities, and
+      installs the chain runtime overlay only after synthetic entrance records
+      validate. Deactivation and snapshot replay clear the chain asset-126 owner,
+      logic-overlay replay restores chain edge overrides from the same digest
+      gate, and snapshot type-7 carries chain attempt/digest for cold replay.
+      RandoSnapshotTail_SelfCheck covers restore, re-save perpetuation, missing
+      ChainLayout fail-closed, and bad digest fail-closed with a synthetic asset
+      fixture. git diff --check, openspec validate dungeon-chains --strict,
+      Release build, and --rando-selftest green. -->
 - [x] 5.7 Sidecar persistence: new additive extension block {present, attempt,
       digest24}, `kRandoSidecar_FileFormatVersion` bump, old-file
       compatibility, `RandoSave_SelfCheck` update. <!-- done 2026-07-05:
