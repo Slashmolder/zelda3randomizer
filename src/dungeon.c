@@ -7037,6 +7037,9 @@ int RandoPot_OverlayOamSelfCheck(void) {
 }
 
 void Module07_Dungeon() {  // 8287a2
+  if (Chains_TryClearedTerminalReentryExit())
+    return;
+
   Dungeon_HandleLayerEffect();
   kDungeonSubmodules[submodule_index]();
 

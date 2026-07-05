@@ -61,6 +61,11 @@ bool Chains_TryTerminalOutboundSeam(uint8 kind,
                                     uint16 vanilla_destination_room,
                                     uint8 slot);
 
+// One-shot escape for entering an already-cleared terminal boss room whose
+// post-kill shutters would otherwise seal Link inside before any transition can
+// reach Chains_TryTerminalOutboundSeam.
+bool Chains_TryClearedTerminalReentryExit(void);
+
 // Consumed at the top of Dungeon_LoadEntrance. True means this entrance load is
 // chain-owned and must not recache the overworld *_exit state.
 bool Chains_ConsumeHopPending(void);

@@ -235,7 +235,16 @@ immediately before any bump/commit (concurrent-drift discipline).
       showed room 0x077, link_visibility_status=0x0C, link_item_flippers=1, so the
       terminal redirect reached the origin room with pit-fall visibility state still
       armed. Fixed by clearing pit-fall state in Chains_RequestTerminalExit, with
-      runtime selfcheck coverage. -->
+      runtime selfcheck coverage.
+
+      Owner playtest 2026-07-05 found re-entering a cleared terminal boss room could
+      seal Link inside with no boss/reward left. F12 RAM showed Mire boss room 0x090
+      via synthetic entrance 0x8C with normal Link visibility/control state, so the
+      issue was post-kill shutter containment rather than another player-state leak.
+      Fixed by arming a one-shot cleared-terminal escape when the synthetic boss
+      entrance loads an already-checked terminal, then consuming it at the top of the
+      dungeon loop before shutters can trap the player. Runtime selfcheck now covers
+      unchecked vs checked terminal re-entry. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,

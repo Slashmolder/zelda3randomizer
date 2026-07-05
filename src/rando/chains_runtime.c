@@ -23,6 +23,7 @@ static bool g_chains_hop_pending;
 static bool g_chains_runtime_active;
 static bool g_chains_origin_active;
 static bool g_chains_terminal_active;
+static bool g_chains_cleared_terminal_exit_pending;
 static uint16 g_chains_origin_exit_room;
 static uint8 g_chains_terminal_dungeon = kRandoDungeon_None;
 static DungeonChainsLayout g_chains_runtime_layout;
@@ -153,6 +154,7 @@ void Chains_RuntimeTeardown(void) {
   g_chains_runtime_active = false;
   g_chains_origin_active = false;
   g_chains_terminal_active = false;
+  g_chains_cleared_terminal_exit_pending = false;
   g_chains_origin_exit_room = 0;
   g_chains_terminal_dungeon = kRandoDungeon_None;
   g_chains_hop_pending = false;
@@ -179,12 +181,14 @@ void Chains_RuntimeArmOrigin(uint16 origin_exit_room) {
   g_chains_origin_active = origin_exit_room != 0;
   g_chains_origin_exit_room = origin_exit_room;
   g_chains_terminal_active = false;
+  g_chains_cleared_terminal_exit_pending = false;
   g_chains_terminal_dungeon = kRandoDungeon_None;
 }
 
 void Chains_RuntimeClearOrigin(void) {
   g_chains_origin_active = false;
   g_chains_terminal_active = false;
+  g_chains_cleared_terminal_exit_pending = false;
   g_chains_origin_exit_room = 0;
   g_chains_terminal_dungeon = kRandoDungeon_None;
 }
@@ -231,6 +235,7 @@ bool Chains_RuntimeRestoreSession(const ChainsRuntimeSession *session) {
   g_chains_origin_active = true;
   g_chains_origin_exit_room = session->origin_exit_room;
   g_chains_terminal_active = session->terminal_active;
+  g_chains_cleared_terminal_exit_pending = false;
   g_chains_terminal_dungeon = session->terminal_active
                                   ? session->terminal_dungeon
                                   : (uint8)kRandoDungeon_None;
@@ -319,6 +324,7 @@ static bool Chains_RequestEntranceHop(uint8 entrance,
 
   g_chains_hop_pending = true;
   g_chains_terminal_active = terminal;
+  g_chains_cleared_terminal_exit_pending = false;
   g_chains_terminal_dungeon = terminal ? terminal_dungeon : (uint8)kRandoDungeon_None;
 
   Chains_ClearFollowerForHop();
@@ -390,6 +396,7 @@ static bool Chains_RequestTerminalExit(uint16 source_room,
     return false;
 
   uint16 origin_exit_room = g_chains_origin_exit_room;
+  g_chains_cleared_terminal_exit_pending = false;
   SaveDungeonKeys();
   SaveQuadrantsToSram();
   dungeon_room_index = origin_exit_room;
@@ -411,6 +418,7 @@ static bool Chains_RequestTerminalExit(uint16 source_room,
 
   g_chains_origin_active = false;
   g_chains_terminal_active = false;
+  g_chains_cleared_terminal_exit_pending = false;
   g_chains_origin_exit_room = 0;
   g_chains_terminal_dungeon = kRandoDungeon_None;
   return true;
@@ -438,6 +446,22 @@ bool Chains_TryTerminalOutboundSeam(uint8 kind,
     return false;
 
   return Chains_RequestTerminalExit(source_room, vanilla_destination_room);
+}
+
+bool Chains_TryClearedTerminalReentryExit(void) {
+  if (!g_chains_cleared_terminal_exit_pending)
+    return false;
+  g_chains_cleared_terminal_exit_pending = false;
+  if (!g_chains_runtime_active || !g_chains_terminal_active)
+    return false;
+
+  const ChainBossEntranceCheck *row = Chains_CheckForRandoDungeon(g_chains_terminal_dungeon);
+  if (row == NULL || row->room != dungeon_room_index)
+    return false;
+  if (!Chains_TerminalRewardChecked(g_chains_terminal_dungeon))
+    return false;
+
+  return Chains_RequestTerminalExit(dungeon_room_index, dungeon_room_index);
 }
 
 bool Chains_TryBossSeamHop(uint8 kind,
@@ -500,6 +524,11 @@ bool Chains_TryApplyBossEntranceLanding(void) {
   }
   if (boss_row == NULL)
     return false;
+  if (g_chains_terminal_active &&
+      g_chains_terminal_dungeon == boss_row->rando_dungeon &&
+      Chains_TerminalRewardChecked(boss_row->rando_dungeon)) {
+    g_chains_cleared_terminal_exit_pending = true;
+  }
 
   const ChainSeamRow *outbound = NULL;
   for (uint8 i = 0; i < kChainBossOutboundSeamCount; i++) {
@@ -843,6 +872,11 @@ void Chains_RuntimeSelfCheck(void) {
   uint8 saved_main_module_index = main_module_index;
   uint8 saved_submodule_index = submodule_index;
   uint8 saved_subsubmodule_index = subsubmodule_index;
+  uint8 saved_which_entrance_for_terminal = which_entrance;
+  uint16 saved_dungeon_room_index2 = dungeon_room_index2;
+  uint16 saved_link_x_coord_for_terminal = link_x_coord;
+  uint16 saved_link_y_coord_for_terminal = link_y_coord;
+  uint8 saved_link_direction_facing_for_terminal = link_direction_facing;
   uint8 saved_link_visibility_status_for_terminal = link_visibility_status;
   uint8 saved_link_this_controls_sprite_oam_for_terminal = link_this_controls_sprite_oam;
   uint8 saved_player_near_pit_state_for_terminal = player_near_pit_state;
@@ -854,14 +888,38 @@ void Chains_RuntimeSelfCheck(void) {
 
   g_rando_slot_active = 1;
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+  uint16 dp_prize_loc = Rando_BossPrizeLocationForGameDungeon(
+      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_DesertPalace));
+  which_entrance = Chains_BossEntranceForRandoDungeon(kRandoDungeon_DesertPalace);
+  dungeon_room_index = dungeon_room_index2 = 0x033;
+  if (!Chains_TryApplyBossEntranceLanding())
+    Chains_RuntimeSelfCheckDie("unchecked terminal reentry landing was not applied");
+  if (Chains_TryClearedTerminalReentryExit())
+    Chains_RuntimeSelfCheckDie("unchecked terminal reentry escape fired");
+  if (!g_chains_origin_active || !g_chains_terminal_active)
+    Chains_RuntimeSelfCheckDie("unchecked terminal reentry consumed session");
+  Rando_MarkLocationChecked(dp_prize_loc);
+  which_entrance = Chains_BossEntranceForRandoDungeon(kRandoDungeon_DesertPalace);
+  dungeon_room_index = dungeon_room_index2 = 0x033;
+  if (!Chains_TryApplyBossEntranceLanding())
+    Chains_RuntimeSelfCheckDie("cleared terminal reentry landing was not applied");
+  if (!Chains_TryClearedTerminalReentryExit())
+    Chains_RuntimeSelfCheckDie("cleared terminal reentry escape did not fire");
+  if (dungeon_room_index != Chains_MainExitRoomForRandoDungeon(ep))
+    Chains_RuntimeSelfCheckDie("cleared terminal reentry did not target origin exit room");
+  if (g_chains_origin_active || g_chains_terminal_active)
+    Chains_RuntimeSelfCheckDie("cleared terminal reentry did not consume session");
+  if (Chains_TryClearedTerminalReentryExit())
+    Chains_RuntimeSelfCheckDie("cleared terminal reentry escape repeated");
+  if (!Chains_RuntimeRestoreSession(&terminal_session))
+    Chains_RuntimeSelfCheckDie("terminal session restore after reentry failed");
+  memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
   if (Chains_TryTerminalOutboundSeam(dp_outbound->kind, dp_outbound->direction,
                                      dp_outbound->source_room, dp_outbound->dest_room,
                                      dp_outbound->slot))
     Chains_RuntimeSelfCheckDie("pre-reward terminal outbound seam fired");
   if (!g_chains_origin_active || !g_chains_terminal_active)
     Chains_RuntimeSelfCheckDie("pre-reward terminal outbound consumed session");
-  uint16 dp_prize_loc = Rando_BossPrizeLocationForGameDungeon(
-      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_DesertPalace));
   Rando_MarkLocationChecked(dp_prize_loc);
   link_visibility_status = 12;
   link_this_controls_sprite_oam = 6;
@@ -895,6 +953,11 @@ void Chains_RuntimeSelfCheck(void) {
   main_module_index = saved_main_module_index;
   submodule_index = saved_submodule_index;
   subsubmodule_index = saved_subsubmodule_index;
+  which_entrance = saved_which_entrance_for_terminal;
+  dungeon_room_index2 = saved_dungeon_room_index2;
+  link_x_coord = saved_link_x_coord_for_terminal;
+  link_y_coord = saved_link_y_coord_for_terminal;
+  link_direction_facing = saved_link_direction_facing_for_terminal;
   link_visibility_status = saved_link_visibility_status_for_terminal;
   link_this_controls_sprite_oam = saved_link_this_controls_sprite_oam_for_terminal;
   player_near_pit_state = saved_player_near_pit_state_for_terminal;
