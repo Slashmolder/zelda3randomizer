@@ -42,7 +42,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       (strip exactly one `CanKillBoss(D)` conjunct from the Boss predicate;
       hard-fail codegen on zero or multiple occurrences), and re-home Boss/Prize
       locations to the new regions with `CanKillBoss(D)` predicates.
-- [ ] 2.2 Regenerate the corpus (fresh WSL build, `rm src/rando/logic_data.c`
+- [x] 2.2 Regenerate the corpus (fresh WSL build, `rm src/rando/logic_data.c`
       first, `make clean` after header edits) and 3-way diff against unmodified
       main built fresh in the same environment: require byte-identical digests
       for ALL existing entries (spec scenario "Off is placement-identical"). Any

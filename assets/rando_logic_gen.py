@@ -130,6 +130,22 @@ CHAIN_BOSS_ROOM_FACTORS = [
     ("MiseryMire", "Misery Mire - Boss", "Misery Mire - Prize"),
     ("TurtleRock", "Turtle Rock - Boss", "Turtle Rock - Prize"),
 ]
+_CHAIN_BOSS_ROOM_REGION_IDS = [f"{dungeon}_BossRoom"
+                               for dungeon, _boss, _prize in CHAIN_BOSS_ROOM_FACTORS]
+_CHAIN_BOSS_ROOM_REGION_ID_SET = set(_CHAIN_BOSS_ROOM_REGION_IDS)
+
+
+def _region_ids_for_codegen(regions: dict[str, "RegionDef"]) -> list[str]:
+    """Return stable region IDs, preserving pre-chain numeric IDs.
+
+    The historical table sorted region names alphabetically. Dungeon-chain boss
+    rooms intentionally append after that baseline so dormant chains do not
+    renumber existing entrance/door graph regions.
+    """
+    base = sorted(rid for rid in regions.keys()
+                  if rid not in _CHAIN_BOSS_ROOM_REGION_ID_SET)
+    generated = [rid for rid in _CHAIN_BOSS_ROOM_REGION_IDS if rid in regions]
+    return base + generated
 
 
 # ---------------------------------------------------------------------------
@@ -1381,6 +1397,18 @@ def _world_state_switch_predicate(default_predicate: str,
     return " OR ".join(cases)
 
 
+def _door_inert_edge_predicate(dungeon: str, approach_predicate: str) -> str:
+    """Preserve door-shuffle identity for factored boss-room edges.
+
+    Door-controlled locations are wrapped later so active door shuffle consults
+    the door oracle instead of the vanilla location predicate. Boss-room region
+    edges must mirror that split: vanilla approach while doors are inactive,
+    open edge while that dungeon's door layout is active.
+    """
+    door_active = f"OP_DOORS_ACTIVE({dungeon})"
+    return f"(NOT {door_active} AND ({approach_predicate})) OR {door_active}"
+
+
 def _apply_chain_boss_room_factoring(regions, edges, loc_preds, world_state_overrides):
     """Add inert boss-room regions for dungeon-chains and factor Boss predicates.
 
@@ -1440,7 +1468,10 @@ def _apply_chain_boss_room_factoring(regions, edges, loc_preds, world_state_over
         edges.append(EdgeDef(
             from_=parent_region,
             to=boss_region,
-            predicate=_world_state_switch_predicate(base_approach, ws_approaches),
+            predicate=_door_inert_edge_predicate(
+                dungeon,
+                _world_state_switch_predicate(base_approach, ws_approaches),
+            ),
             source="dungeon-chains generated boss-room factor",
         ))
 
@@ -2100,6 +2131,12 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
         # operand = dungeon id (HCE=0..GT=12); the runtime resolves the boss
         # currently assigned to that dungeon and evaluates its kill predicate.
         out.append(_resolve_dungeon_id(_resolve_ident(args[0])))
+    elif op_name == "DOORS_ACTIVE":
+        # operand = kDoorTblDungeons index. Its order mirrors dungeon_ids.h for
+        # the dungeons used here (HCE/HC=0, EP=1, ..., GT=12).
+        out.append(_resolve_dungeon_id(_resolve_ident(args[0])))
+    elif op_name == "DOORS_LOC_REACHABLE":
+        _emit_u16le(out, _resolve_int(args[0]))
     elif op_name == "ITEM_IS":
         out += struct.pack("<H", _resolve_item(args[0], items))
     elif op_name == "TRICK":
@@ -2191,9 +2228,8 @@ def _resolve_ident(arg):
 def _resolve_region(arg, regions):
     name = _resolve_ident(arg)
     if name in regions:
-        # Stable IDs assigned by sorted order of region declaration.
-        idx = sorted(regions.keys()).index(name)
-        return idx
+        # Stable IDs assigned by the codegen region order.
+        return _region_ids_for_codegen(regions).index(name)
     # Unknown region name — almost always a translation typo (e.g.
     # "DesertPalace" instead of "DesertPalace_Lobby"). The old behavior emitted a
     # _stable_hash16 fallback that is essentially never a valid region index, so
@@ -3107,6 +3143,8 @@ def emit_logic_data(
     door_enemy_check_bridge_digest: int = 0,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
+    region_ids = _region_ids_for_codegen(regions) if regions else []
+    region_index = {rid: i for i, rid in enumerate(region_ids)}
     # Predicate stream — concatenated; LocationDef references offset+length.
     stream = bytearray()
     location_offsets = {}
@@ -3136,8 +3174,7 @@ def emit_logic_data(
     # Ether Tablet East↔West in Inverted).
     # world_state_id → list[ (loc_id, region_override_id, cr_off, cp_off, aa_off) ]
     override_offsets: dict[int, list[tuple[int, int, tuple[int, int], tuple[int, int], tuple[int, int]]]] = {}
-    sorted_region_ids_for_overrides = sorted(regions.keys()) if regions else []
-    rid_for_overrides = {rid: i for i, rid in enumerate(sorted_region_ids_for_overrides)}
+    rid_for_overrides = region_index
     # Map location_id → base region index (from logic_loc_region resolution
     # used in the base predicate emission above). Used to
     # detect when an override's region matches the base — in that case we
@@ -3190,14 +3227,12 @@ def emit_logic_data(
     # world_state_id → list[ (from_region_idx, to_region_idx, one_way, (off, len)) ]
     ws_edge_offsets: dict[int, list[tuple[int, int, int, tuple[int, int]]]] = {}
     if compiled_world_state_edges:
-        sorted_region_ids = sorted(regions.keys()) if regions else []
-        rid_index = {rid: i for i, rid in enumerate(sorted_region_ids)}
         for ws_id, entries in compiled_world_state_edges.items():
             for edge_def, encoded_pred in entries:
                 ep_offset = (len(stream), len(encoded_pred))
                 stream += encoded_pred
-                from_idx = rid_index.get(edge_def.from_, 0xFFFF)
-                to_idx = rid_index.get(edge_def.to, 0xFFFF)
+                from_idx = region_index.get(edge_def.from_, 0xFFFF)
+                to_idx = region_index.get(edge_def.to, 0xFFFF)
                 ws_edge_offsets.setdefault(ws_id, []).append(
                     (from_idx, to_idx, 1 if edge_def.one_way else 0, ep_offset)
                 )
@@ -3406,7 +3441,6 @@ def emit_logic_data(
     if not locations:
         out.append("  {0, 0, 0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0xff},  // placeholder for zero-length array compatibility")
     else:
-        sorted_region_ids = sorted(regions.keys()) if regions else []
         # logic.yaml's location entries carry an optional `region:` field.
         # The location_registry.yaml's `region:` field is descriptive only
         # (free-form string, not necessarily a logic.yaml region id) — we
@@ -3432,8 +3466,8 @@ def emit_logic_data(
             # types that hit the 0xFFFF branch — that's the silent-bypass
             # guard preventing the King Zora region-binding regression.
             region_name = logic_loc_region.get(loc.name)
-            if region_name and region_name in sorted_region_ids:
-                region_id = sorted_region_ids.index(region_name)
+            if region_name and region_name in region_index:
+                region_id = region_index[region_name]
             else:
                 region_id = 0xFFFF
             out.append(f"  {{ {loc.id}, {vanilla_id}, 0x{region_id:04x}, 0, {cr_off}u, {cr_len}, {cp_off}u, {cp_len}, {aa_off}u, {aa_len}, {type_id}, 0x{ws_mask:02x} }},  // {loc.name} (vanilla: {loc.vanilla_item}, region: {region_name or '-'})")
@@ -3443,12 +3477,12 @@ def emit_logic_data(
     # RegionDef table — typedef lives in rando_logic.h.
     out.append("// Region table — one row per logic.yaml `regions:` entry. Phase A may emit empty.")
     out.append("// Type definition: rando_logic.h::RandoRegionDef.")
-    region_list = sorted(regions.values(), key=lambda r: r.id)
+    region_list = [regions[rid] for rid in region_ids]
     if region_list:
         out.append(f"const RandoRegionDef kRandoRegions[{len(region_list)}] = {{")
         for r in region_list:
-            rid = sorted(regions.keys()).index(r.id)
-            pid = sorted(regions.keys()).index(r.parent) if r.parent and r.parent in regions else 0xFFFF
+            rid = region_index[r.id]
+            pid = region_index[r.parent] if r.parent and r.parent in region_index else 0xFFFF
             did = _dungeon_id_or_ff(r.dungeon)
             ws = _world_state_mask(r.world_state_filter)
             out.append(f"  {{ {rid}, 0x{pid:04x}, 0x{did:02x}, 0x{ws:02x} }},  // {r.id}")
@@ -3463,8 +3497,8 @@ def emit_logic_data(
     if edges:
         out.append(f"const RandoEdgeDef kRandoEdges[{len(edges)}] = {{")
         for i, e in enumerate(edges):
-            from_idx = sorted(regions.keys()).index(e.from_) if e.from_ in regions else 0xFFFF
-            to_idx = sorted(regions.keys()).index(e.to) if e.to in regions else 0xFFFF
+            from_idx = region_index.get(e.from_, 0xFFFF)
+            to_idx = region_index.get(e.to, 0xFFFF)
             poff, plen = edge_offsets[i]
             out.append(f"  {{ 0x{from_idx:04x}, 0x{to_idx:04x}, {poff}u, {plen}, {1 if e.one_way else 0}, 0 }},  // {e.from_} -> {e.to}")
         out.append("};")
@@ -3476,7 +3510,6 @@ def emit_logic_data(
     # ----- Start region per world-state -----
     out.append("// Start region per world_state. Indexed by WorldState enum:")
     out.append("// Open=0, Standard=1, Inverted=2, Retro=3.")
-    sorted_region_ids = sorted(regions.keys()) if regions else []
     # Pinned mapping (Phase A): Open/Standard/Retro start in LinksHouse;
     # Inverted starts in LinksHouse_Inverted. Falls back to 0xFFFF if not
     # declared in logic.yaml — caller treats as "empty graph".
@@ -3496,8 +3529,8 @@ def emit_logic_data(
     starts = []
     for ws in [0, 1, 2, 3]:
         nm = start_region_names[ws]
-        if nm in sorted_region_ids:
-            starts.append(sorted_region_ids.index(nm))
+        if nm in region_index:
+            starts.append(region_index[nm])
         else:
             starts.append(0xFFFF)
     start_csv = ", ".join(f"0x{s:04x}" for s in starts)
@@ -3512,13 +3545,13 @@ def emit_logic_data(
     out.append("  uint16 id;")
     out.append("} RandoRegionNameEntry;")
     out.append("")
-    if sorted_region_ids:
-        out.append(f"static const RandoRegionNameEntry kRandoRegionNames[{len(sorted_region_ids)}] = {{")
-        for rid in sorted_region_ids:
-            idx = sorted_region_ids.index(rid)
+    if region_ids:
+        out.append(f"static const RandoRegionNameEntry kRandoRegionNames[{len(region_ids)}] = {{")
+        for rid in region_ids:
+            idx = region_index[rid]
             out.append(f"  {{ \"{rid}\", {idx} }},")
         out.append("};")
-        out.append(f"static const uint32 kRandoRegionNamesCount = {len(sorted_region_ids)};")
+        out.append(f"static const uint32 kRandoRegionNamesCount = {len(region_ids)};")
     else:
         out.append("static const RandoRegionNameEntry kRandoRegionNames[1] = { {\"\", 0} };")
         out.append("static const uint32 kRandoRegionNamesCount = 0;")
@@ -4033,7 +4066,7 @@ def main(argv=None):
                     encoded[label] = b"\x0d\x00"  # safe default: FALSE
             # Capture the override's region if it differs from the empty
             # default. Codegen at emit time resolves the region name to
-            # an index into sorted_region_ids; if the name doesn't match
+            # an index into the stable region-id order; if the name doesn't match
             # any region OR equals the base region, region_override is set
             # to 0xFFFF.
             region_str = override_def.region if override_def.region else None
@@ -4159,7 +4192,7 @@ def main(argv=None):
         if door_portals_path.exists():
             door_portals_doc = yaml.safe_load(door_portals_path.read_text())
             gates_by_name = {p["name"]: p for p in door_portals_doc.get("portals", [])}
-            _sorted_rids = sorted(logic_regions.keys()) if logic_regions else []
+            _sorted_rids = _region_ids_for_codegen(logic_regions) if logic_regions else []
             _rid_index = {r: i for i, r in enumerate(_sorted_rids)}
             for p in door_man.get("portals", []):
                 g = gates_by_name.get(p["name"])
