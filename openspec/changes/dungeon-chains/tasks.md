@@ -22,7 +22,7 @@ immediately before any bump/commit (concurrent-drift discipline).
 - [x] 1.3 F12-verify boss-shutter behavior after a boss kill in vanilla (does the
       entry shutter reopen before the warp?) and record it in design.md — it
       determines whether D4 rule 2 ever fires pre-warp (ram-bit truth rule).
-- [ ] 1.4 Audit follower handling across entrance loads (`follower_indicator`
+- [x] 1.4 Audit follower handling across entrance loads (`follower_indicator`
       consumers) and decide the hop-boundary follower policy (design open
       question 3); record the decision in design.md.
 - [ ] 1.5 Trace the pendant (module 19) vs crystal (module 22) post-boss

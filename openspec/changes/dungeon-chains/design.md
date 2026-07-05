@@ -187,6 +187,23 @@ object).
   it must be a NEW flag, not `death_var4/5` (the Inverted Dark Chapel stale-flag
   lesson). The origin-door capture from the chain's first entrance thus survives
   the whole chain.
+- **No tagalong/follower crosses a chain boundary.** Source audit:
+  `CanEnterWithTagalong` is a vanilla overworld-door gate and admits only a small
+  follower subset by entrance id; a chain-start redirect keeps that gate, but a
+  mid-chain boss-seam hop bypasses it entirely. `Module_PreDungeon` then calls
+  `Dungeon_LoadEntrance` and `Follower_Initialize`, clearing only the super-bomb
+  follower (`follower_indicator == 13`) because normal entry already passed the
+  overworld gate. Meanwhile `Follower_HandleTrigger` is hard-coded to specific
+  dungeon rooms / overworld screens, and follower 6 is the TT maiden that spawns
+  Blind only in room 0xAC (`Follower_BasicMover` / `Blind_SpawnFromMaiden`).
+  Policy: before every chain-start redirect and every mid-chain hop load, a chains
+  helper clears active tagalong state (`follower_indicator`, `follower_dropped`,
+  `tagalong_var5`, transient tagalong event/message state; if clearing the super
+  bomb, also clear its HUD/state as `Module_PreDungeon` does), then lets the
+  destination entrance load reinitialize the ring at Link's new coordinates.
+  Vanilla-internal followers may still be acquired and resolved wholly inside
+  their owning dungeon. TT's maiden is preserved because TT→Blind is a pinned
+  identity seam and therefore never takes a chains hop.
 
 ### D4. Seam interception
 
@@ -402,10 +419,12 @@ grounded during this design so phase 2 starts from facts, not re-derivation:
   pre-warp entry-shutter escape path.
 - **[`*_exit` poisoning by hop re-cache]** → dedicated skip flag (D3); assert via
   g_ram diagnostic counters during bring-up, revert counters before merge.
-- **[Followers carried across hops]** (maiden outside TT, rescued smith, etc.) —
-  follower semantics across entrance loads **UNVERIFIED**. → Audit
-  `follower_indicator` handling at hop loads; MVP likely drops non-quest
-  followers at hop boundaries; playtest task.
+- **[Follower/tagalong state leaking across chains]** — resolved policy in D3:
+  chain boundaries clear tagalongs instead of carrying them. This avoids
+  room/screen-specific follower triggers firing in foreign dungeons; TT's maiden
+  remains vanilla because the TT→Blind seam is pinned identity and never hops.
+  Runtime implementation still needs a small clear helper and a playtest that a
+  follower cannot leak through a chain-start door.
 - **[Prize/cutscene one-shot re-triggers]** — re-traversing a chain re-crosses
   seams and re-enters cleared boss rooms; prize grants are already gated on
   `Rando_IsLocationChecked` (prize-shuffle fixes), but the re-enabled-one-shot
