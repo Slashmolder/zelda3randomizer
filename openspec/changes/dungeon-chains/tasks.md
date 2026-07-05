@@ -270,7 +270,12 @@ immediately before any bump/commit (concurrent-drift discipline).
       F12 during the kick-out showed player_is_indoors=0, dungeon_room=0x004A
       (PoD main exit room), which_entrance=0x88 (PoD/Helmasaur synthetic
       entrance), and the rando slot active. This matches the cleared-terminal
-      escape added to avoid trapping Link in an already-cleared boss room. -->
+      escape added to avoid trapping Link in an already-cleared boss room.
+
+      Owner playtest also covered DP entrance -> Swamp -> DP, with DP's outside
+      entrances resolving to their expected locations and the DP boss door tested.
+      This exercises the DP auxiliary/outside routing and boss-approach
+      requirements while DP is a chain element. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
