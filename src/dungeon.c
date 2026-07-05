@@ -22,6 +22,7 @@
 #include "rando/location_ids.h"
 #include "rando/shuffle_boss.h"  // BossShuffle_RenderHomeRoom (boss-shuffle render)
 #include "rando/door_runtime.h"  // door-shuffle redirect hooks (add-rando-door-shuffle)
+#include "rando/chains_runtime.h"
 
 // todo: move to config
 static const uint16 kBossRooms[] = {
@@ -2133,8 +2134,14 @@ void Dungeon_StartInterRoomTrans_Up() {
       Dungeon_AdjustAfterSpiralStairs();
     }
     // door shuffle redirect (no-op when off / identity / staircase context).
-    if (!Rando_DoorTransOverride(kDoorTblDir_North))
+    if (!Rando_DoorTransOverride(kDoorTblDir_North)) {
+      uint16 source_room = dungeon_room_index;
+      uint16 destination_room = (uint8)(dungeon_room_index - 0x10);
+      if (Chains_TryDebugEpBossToDesertHop(kDoorTblDir_North,
+                                           source_room, destination_room))
+        return;
       BYTE(dungeon_room_index) -= 0x10;
+    }
     submodule_index = 2;
     if (!Rando_DoorTransConsumedToggles()) {
       if (room_transitioning_flags & 1) {
@@ -8821,9 +8828,10 @@ void Dungeon_LoadAndDrawRoom() {  // 82c57b
 void Dungeon_LoadEntrance() {  // 82d8b3
   player_is_indoors = 1;
 
+  bool chains_skip_exit_cache = Chains_ConsumeHopPending();
   if (death_var5) {
     death_var5 = 0;
-  } else {
+  } else if (!chains_skip_exit_cache) {
     overworld_area_index_exit = overworld_area_index;
     TM_copy_exit = WORD(TM_copy);
     BG2VOFS_copy2_exit = BG2VOFS_copy2;

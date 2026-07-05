@@ -404,6 +404,7 @@
     <ClCompile Include="src\rando\seed_shape.c" />
     <ClCompile Include="src\rando\rando_spoiler.c" />
     <ClCompile Include="src\rando\rando_hints.c" />
+    <ClCompile Include="src\rando\chains_runtime.c" />
     <ClCompile Include="src\rando\door_runtime.c" />
     <ClCompile Include="src\rando\door_tables.gen.c" />
     <ClCompile Include="src\rando\chain_seams.gen.c" />
@@ -895,6 +896,7 @@
     <ClInclude Include="src\zelda_rtl.h" />
     <ClInclude Include="src\rando\medallion_icons.h" />
     <ClInclude Include="src\rando\seed_shape.h" />
+    <ClInclude Include="src\rando\chains_runtime.h" />
     <ClInclude Include="src\rando\shuffle_chains.h" />
   </ItemGroup>
   <ItemGroup>
