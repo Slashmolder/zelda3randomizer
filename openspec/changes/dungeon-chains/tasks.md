@@ -182,10 +182,16 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 7. Verification and close-out
 
-- [ ] 7.1 Build matrix green: MSVC (worktree recipe with explicit
+- [x] 7.1 Build matrix green: MSVC (worktree recipe with explicit
       /p:SolutionDir) + WSL gcc `-Werror` (`make clean` first); CI guard
       scripts pass (`check_no_embedded_data`, `check_placer_determinism`,
       corpus version sync).
+      <!-- done 2026-07-05: MSVC Release build green with explicit
+      /p:SolutionDir and OutDir=bin\x64-Release-dcverify\; WSL
+      `make clean && make zelda3` green with default -O2 -Werror; guards green:
+      check_no_embedded_data, check_placer_determinism --source-only,
+      check_placer_determinism --binary=bin\x64-Release-dcverify\zelda3.exe,
+      and check_corpus_version_sync. -->
 - [ ] 7.2 Corpus regen final confirmation at shipped `kGeneratorVersion`; 3-way
       diff vs fresh main: only chains entries new, all pre-existing digests
       byte-identical.
