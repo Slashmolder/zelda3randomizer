@@ -1,4 +1,4 @@
-// chains_runtime.c - dungeon-chain runtime bring-up hooks.
+// chains_runtime.c - dungeon-chain runtime hooks.
 
 #include "chains_runtime.h"
 
@@ -15,23 +15,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum {
-  kChainsDebugEntrance_DesertMain = 0x09,
-  kChainsDebugRoom_EasternDuoEyegores = 0x00D8,
-  kChainsDebugRoom_EasternBoss = 0x00C8,
-};
-
 #define kChainsEntranceOverlayMax 4096
 
 static bool g_chains_hop_pending;
-static bool g_chains_ep_spike_armed;
 static bool g_chains_runtime_active;
 static bool g_chains_origin_active;
 static bool g_chains_terminal_active;
 static uint16 g_chains_origin_exit_room;
 static uint8 g_chains_terminal_dungeon = kRandoDungeon_None;
 static DungeonChainsLayout g_chains_runtime_layout;
-static ChainsRuntimeDebug g_chains_debug;
 static uint8 g_chains_entrance_overlay[kChainsEntranceOverlayMax];
 static const uint8 *g_chains_entrance_overlay_orig;
 
@@ -39,23 +31,6 @@ _Static_assert(kChainBossEntranceBase == 133,
                "synthetic chain boss entrances must append after vanilla rows");
 _Static_assert(kChainBossEntranceCount == 9,
                "dungeon-chain boss entrance count drift");
-
-static void Chains_DebugSetReason(uint8 reason) {
-  g_chains_debug.last_reason = reason;
-  g_chains_debug.spike_armed = g_chains_ep_spike_armed ? 1 : 0;
-  g_chains_debug.hop_pending = g_chains_hop_pending ? 1 : 0;
-  g_chains_debug.origin_active = g_chains_origin_active ? 1 : 0;
-  g_chains_debug.terminal_active = g_chains_terminal_active ? 1 : 0;
-}
-
-const ChainsRuntimeDebug *Chains_DebugState(void) {
-  g_chains_debug.spike_armed = g_chains_ep_spike_armed ? 1 : 0;
-  g_chains_debug.hop_pending = g_chains_hop_pending ? 1 : 0;
-  g_chains_debug.origin_active = g_chains_origin_active ? 1 : 0;
-  g_chains_debug.terminal_active = g_chains_terminal_active ? 1 : 0;
-  g_chains_debug.origin_exit_room = g_chains_origin_exit_room;
-  return &g_chains_debug;
-}
 
 uint8 Chains_BossEntranceForRandoDungeon(uint8 rando_dungeon) {
   for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
@@ -180,7 +155,6 @@ void Chains_RuntimeTeardown(void) {
   g_chains_terminal_dungeon = kRandoDungeon_None;
   g_chains_hop_pending = false;
   memset(&g_chains_runtime_layout, 0xFF, sizeof(g_chains_runtime_layout));
-  Chains_DebugSetReason(kChainsRtReason_None);
 }
 
 bool Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout) {
@@ -190,17 +164,12 @@ bool Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout) {
   }
   DungeonChainsLayout copy = *layout;
   Chains_RuntimeTeardown();
-  if (!Chains_SyntheticEntrancesAvailable()) {
-    Chains_DebugSetReason(kChainsRtReason_MissingSyntheticEntrances);
+  if (!Chains_SyntheticEntrancesAvailable())
     return false;
-  }
-  if (!Chains_InstallEntranceOverlay(&copy)) {
-    Chains_DebugSetReason(kChainsRtReason_MissingChainOverlay);
+  if (!Chains_InstallEntranceOverlay(&copy))
     return false;
-  }
   g_chains_runtime_layout = copy;
   g_chains_runtime_active = true;
-  Chains_DebugSetReason(kChainsRtReason_None);
   return true;
 }
 
@@ -209,7 +178,6 @@ void Chains_RuntimeArmOrigin(uint16 origin_exit_room) {
   g_chains_origin_exit_room = origin_exit_room;
   g_chains_terminal_active = false;
   g_chains_terminal_dungeon = kRandoDungeon_None;
-  Chains_DebugSetReason(kChainsRtReason_None);
 }
 
 void Chains_RuntimeClearOrigin(void) {
@@ -217,7 +185,6 @@ void Chains_RuntimeClearOrigin(void) {
   g_chains_terminal_active = false;
   g_chains_origin_exit_room = 0;
   g_chains_terminal_dungeon = kRandoDungeon_None;
-  Chains_DebugSetReason(kChainsRtReason_None);
 }
 
 static bool Chains_IsMainExitRoom(uint16 room) {
@@ -248,10 +215,6 @@ bool Chains_RuntimeRecordDoorEntry(uint16 lx) {
       g_chains_terminal_active = true;
       g_chains_terminal_dungeon = Chains_ElementDungeon(first);
     }
-    g_chains_debug.last_source_room = row->main_exit_room;
-    g_chains_debug.last_destination_room = 0;
-    g_chains_debug.last_entrance = kOverworld_Entrance_Id[lx];
-    Chains_DebugSetReason(kChainsRtReason_OriginArmed);
     return true;
   }
   return false;
@@ -264,29 +227,11 @@ uint16 Chains_RuntimeConsumeMainExitOrigin(uint16 resolved_exit_room) {
   }
 
   uint16 origin = g_chains_origin_exit_room;
-  g_chains_debug.last_source_room = resolved_exit_room;
-  g_chains_debug.last_destination_room = origin;
   g_chains_origin_active = false;
   g_chains_terminal_active = false;
   g_chains_origin_exit_room = 0;
   g_chains_terminal_dungeon = kRandoDungeon_None;
-  Chains_DebugSetReason(kChainsRtReason_OriginExit);
-  fprintf(stderr,
-          "dungeon-chains: main exit room=%04x origin_room=%04x\n",
-          resolved_exit_room, origin);
   return origin;
-}
-
-void Chains_DebugArmEpBossToDesert(void) {
-  g_chains_ep_spike_armed = true;
-  Chains_DebugSetReason(kChainsRtReason_Armed);
-  fprintf(stderr, "dungeon-chains spike: armed EP boss seam -> Desert main entrance\n");
-}
-
-void Chains_DebugClearEpBossToDesert(void) {
-  g_chains_ep_spike_armed = false;
-  Chains_DebugSetReason(kChainsRtReason_None);
-  fprintf(stderr, "dungeon-chains spike: disarmed\n");
 }
 
 static void Chains_ClearFollowerForHop(void) {
@@ -319,29 +264,16 @@ static bool Chains_RequestEntranceHop(uint8 entrance,
                                       uint16 destination_room,
                                       bool terminal,
                                       uint8 terminal_dungeon) {
+  (void)source_room;
+  (void)destination_room;
   if (entrance >= kChainBossEntranceBase && entrance < kChainBossEntranceLimit &&
       !Chains_SyntheticEntrancesAvailable()) {
-    g_chains_debug.last_source_room = source_room;
-    g_chains_debug.last_destination_room = destination_room;
-    g_chains_debug.last_entrance = entrance;
-    Chains_DebugSetReason(kChainsRtReason_MissingSyntheticEntrances);
-    fprintf(stderr,
-            "dungeon-chains: synthetic entrance %02x unavailable; regenerate zelda3_assets.dat\n",
-            entrance);
     return false;
   }
 
   g_chains_hop_pending = true;
   g_chains_terminal_active = terminal;
   g_chains_terminal_dungeon = terminal ? terminal_dungeon : (uint8)kRandoDungeon_None;
-  g_chains_debug.request_count++;
-  g_chains_debug.last_source_room = source_room;
-  g_chains_debug.last_destination_room = destination_room;
-  g_chains_debug.last_entrance = entrance;
-  g_chains_debug.last_main_module = main_module_index;
-  g_chains_debug.last_submodule = submodule_index;
-  g_chains_debug.last_subsubmodule = subsubmodule_index;
-  Chains_DebugSetReason(kChainsRtReason_HopRequested);
 
   Chains_ClearFollowerForHop();
   WORD(death_var4) = 0;
@@ -359,9 +291,6 @@ static bool Chains_RequestEntranceHop(uint8 entrance,
   submodule_index = 0;
   main_module_index = 6;  // Module_PreDungeon runs next frame.
 
-  fprintf(stderr,
-          "dungeon-chains spike: request entrance hop src=%04x dst=%04x entrance=%02x\n",
-          source_room, destination_room, entrance);
   return true;
 }
 
@@ -409,14 +338,11 @@ static const ChainSeamRow *Chains_FindOutboundSeam(uint8 kind,
 
 static bool Chains_RequestTerminalExit(uint16 source_room,
                                        uint16 destination_room) {
-  g_chains_debug.last_source_room = source_room;
-  g_chains_debug.last_destination_room = destination_room;
-  if (!g_chains_origin_active || g_chains_origin_exit_room == 0) {
-    Chains_DebugSetReason(kChainsRtReason_MissingOrigin);
+  (void)source_room;
+  (void)destination_room;
+  if (!g_chains_origin_active || g_chains_origin_exit_room == 0)
     return false;
-  }
 
-  g_chains_debug.request_count++;
   uint16 origin_exit_room = g_chains_origin_exit_room;
   SaveDungeonKeys();
   SaveQuadrantsToSram();
@@ -433,10 +359,6 @@ static bool Chains_RequestTerminalExit(uint16 source_room,
   g_chains_terminal_active = false;
   g_chains_origin_exit_room = 0;
   g_chains_terminal_dungeon = kRandoDungeon_None;
-  Chains_DebugSetReason(kChainsRtReason_TerminalExit);
-  fprintf(stderr,
-          "dungeon-chains: terminal exit src=%04x dst=%04x origin_room=%04x\n",
-          source_room, destination_room, origin_exit_room);
   return true;
 }
 
@@ -453,8 +375,6 @@ bool Chains_TryTerminalOutboundSeam(uint8 kind,
   if (seam == NULL || seam->rando_dungeon != g_chains_terminal_dungeon)
     return false;
 
-  g_chains_debug.seam_checks++;
-  g_chains_debug.last_dir = direction;
   return Chains_RequestTerminalExit(source_room, vanilla_destination_room);
 }
 
@@ -471,11 +391,6 @@ bool Chains_TryBossSeamHop(uint8 kind,
   if (seam == NULL)
     return false;
 
-  g_chains_debug.seam_checks++;
-  g_chains_debug.last_dir = direction;
-  g_chains_debug.last_source_room = source_room;
-  g_chains_debug.last_destination_room = vanilla_destination_room;
-
   int pool_idx = Chains_PoolIndexForDungeon(seam->rando_dungeon);
   if (pool_idx < 0)
     return false;
@@ -486,15 +401,12 @@ bool Chains_TryBossSeamHop(uint8 kind,
       g_chains_terminal_active = true;
       g_chains_terminal_dungeon = seam->rando_dungeon;
     }
-    Chains_DebugSetReason(kChainsRtReason_PinnedIdentity);
     return false;
   }
 
   uint8 entrance = Chains_EntranceForElement(successor);
-  if (entrance == 0xFF) {
-    Chains_DebugSetReason(kChainsRtReason_BadSuccessor);
+  if (entrance == 0xFF)
     return false;
-  }
 
   uint8 terminal_dungeon = Chains_ElementDungeon(successor);
   return Chains_RequestEntranceHop(entrance, source_room, vanilla_destination_room,
@@ -502,38 +414,10 @@ bool Chains_TryBossSeamHop(uint8 kind,
                                    terminal_dungeon);
 }
 
-bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
-                                      uint16 source_room,
-                                      uint16 vanilla_destination_room) {
-  if (!g_chains_ep_spike_armed)
-    return false;
-
-  g_chains_debug.seam_checks++;
-  g_chains_debug.last_dir = dir;
-  g_chains_debug.last_source_room = source_room;
-  g_chains_debug.last_destination_room = vanilla_destination_room;
-
-  bool match = dir == kDoorTblDir_North &&
-               source_room == kChainsDebugRoom_EasternDuoEyegores &&
-               vanilla_destination_room == kChainsDebugRoom_EasternBoss;
-  if (!match) {
-    Chains_DebugSetReason(kChainsRtReason_WrongSeam);
-    return false;
-  }
-
-  g_chains_ep_spike_armed = false;
-  return Chains_RequestEntranceHop(kChainsDebugEntrance_DesertMain,
-                                   source_room, vanilla_destination_room,
-                                   false, (uint8)kRandoDungeon_None);
-}
-
 bool Chains_ConsumeHopPending(void) {
   if (!g_chains_hop_pending)
     return false;
   g_chains_hop_pending = false;
-  g_chains_debug.consume_count++;
-  Chains_DebugSetReason(kChainsRtReason_HopConsumed);
-  fprintf(stderr, "dungeon-chains spike: consumed entrance-hop pending flag\n");
   return true;
 }
 
@@ -670,17 +554,16 @@ void Chains_RuntimeSelfCheck(void) {
       vanilla, len, Chains_MainEntranceForRandoDungeon(ep));
   if (ep_lx == 0xFFFF || !Chains_RuntimeRecordDoorEntry(ep_lx))
     Chains_RuntimeSelfCheckDie("origin entry arm failed");
-  const ChainsRuntimeDebug *dbg = Chains_DebugState();
-  if (!dbg->origin_active ||
-      dbg->origin_exit_room != Chains_MainExitRoomForRandoDungeon(ep))
+  if (!g_chains_origin_active ||
+      g_chains_origin_exit_room != Chains_MainExitRoomForRandoDungeon(ep))
     Chains_RuntimeSelfCheckDie("origin room was not armed");
   if (Chains_RuntimeConsumeMainExitOrigin(0x0123) != 0 ||
-      !Chains_DebugState()->origin_active)
+      !g_chains_origin_active)
     Chains_RuntimeSelfCheckDie("non-main exit consumed chain origin");
   if (Chains_RuntimeConsumeMainExitOrigin(Chains_MainExitRoomForRandoDungeon(ep)) !=
       Chains_MainExitRoomForRandoDungeon(ep))
     Chains_RuntimeSelfCheckDie("main exit did not consume origin");
-  if (Chains_DebugState()->origin_active)
+  if (g_chains_origin_active)
     Chains_RuntimeSelfCheckDie("origin remained armed after main exit");
 
   layout.chain_door_first[0] = Chains_BossElement(kRandoDungeon_DesertPalace);
@@ -692,8 +575,8 @@ void Chains_RuntimeSelfCheck(void) {
       kOverworld_Entrance_Id[ep_lx] != Chains_BossEntranceForRandoDungeon(kRandoDungeon_DesertPalace))
     Chains_RuntimeSelfCheckDie("terminal boss overlay target mismatch");
   if (!Chains_RuntimeRecordDoorEntry(ep_lx) ||
-      !Chains_DebugState()->origin_active ||
-      !Chains_DebugState()->terminal_active)
+      !g_chains_origin_active ||
+      !g_chains_terminal_active)
     Chains_RuntimeSelfCheckDie("terminal entry did not arm origin and terminal state");
 
   Chains_RuntimeTeardown();

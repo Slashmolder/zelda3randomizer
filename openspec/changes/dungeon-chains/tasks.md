@@ -213,7 +213,13 @@ immediately before any bump/commit (concurrent-drift discipline).
       death-continue mid-chain; S&Q + reload; mirror inside a hop; post-boss
       warp from a Mire-home terminal; cleared-terminal re-entry; SW
       fully-vanilla spot-check; sram_rando.dat diff on the slot path.
-- [ ] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
+- [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
+      <!-- done 2026-07-05: removed the EP->DP spike hook, public
+      ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
+      runtime debug counters/reasons, and normal-hop stderr traces. Kept the
+      production seam hooks and selfcheck coverage. git diff --check, openspec
+      validate dungeon-chains --strict, targeted debug-symbol rg, MSVC Release
+      build, WSL make zelda3, and --rando-selftest green. -->
 - [ ] 7.5 Independent fresh-eyes review with a self-contained prompt (new
       findings only, response capped); fix and re-verify.
 - [ ] 7.6 Reconcile design.md + spec deltas against as-built source; update

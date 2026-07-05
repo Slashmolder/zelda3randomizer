@@ -6,29 +6,10 @@
 #include <SDL.h>
 #include "game_cheats.h"
 #include "game_panels.h"
-#include "../chains_runtime.h"
 
 extern "C" {
 extern uint8 g_ram[0x20000];     // game-state RAM (zelda_rtl.c)
 void ZeldaDumpDebugState(void);  // F12 dev diagnostic: dump g_ram/VRAM + state line (zelda_rtl.h)
-}
-
-static const char *ChainsReasonName(uint8 reason) {
-  switch (reason) {
-  case kChainsRtReason_Armed: return "armed";
-  case kChainsRtReason_WrongSeam: return "wrong seam";
-  case kChainsRtReason_HopRequested: return "hop requested";
-  case kChainsRtReason_HopConsumed: return "hop consumed";
-  case kChainsRtReason_MissingSyntheticEntrances: return "missing synthetic entrances";
-  case kChainsRtReason_PinnedIdentity: return "pinned identity";
-  case kChainsRtReason_BadSuccessor: return "bad successor";
-  case kChainsRtReason_TerminalExit: return "terminal exit";
-  case kChainsRtReason_MissingOrigin: return "missing origin";
-  case kChainsRtReason_OriginArmed: return "origin armed";
-  case kChainsRtReason_OriginExit: return "origin exit";
-  case kChainsRtReason_MissingChainOverlay: return "missing chain overlay";
-  default: return "none";
-  }
 }
 
 // Little helpers for reading the shared RAM buffer at the verified addresses in
@@ -78,30 +59,6 @@ extern "C" void DbgWatch_Render(void) {
   ImGui::Text("Dark world:   %s", RamByte(0xF3CA) ? "yes" : "no");        // savegame_is_darkworld
   ImGui::Text("OW screen:    0x%04X", RamWord(0x8A));                     // overworld_screen_index (uint16)
   ImGui::Text("Dungeon room: 0x%04X", RamWord(0xA0));                     // dungeon_room_index
-
-  // --- Dungeon-chain spike -------------------------------------------------
-  ImGui::SeparatorText("Dungeon-chain spike");
-  const ChainsRuntimeDebug *chains = Chains_DebugState();
-  ImGui::Text("EP->DP armed: %s", chains->spike_armed ? "yes" : "no");
-  ImGui::Text("Hop pending:  %s", chains->hop_pending ? "yes" : "no");
-  ImGui::Text("Origin armed: %s  room 0x%04X",
-              chains->origin_active ? "yes" : "no", chains->origin_exit_room);
-  ImGui::Text("Terminal:     %s", chains->terminal_active ? "yes" : "no");
-  ImGui::Text("Seam checks:  %u", chains->seam_checks);
-  ImGui::Text("Hop req/use:  %u / %u", chains->request_count, chains->consume_count);
-  ImGui::Text("Last seam:    0x%04X -> 0x%04X dir %u",
-              chains->last_source_room, chains->last_destination_room, chains->last_dir);
-  ImGui::Text("Last entry:   0x%02X (%s)", chains->last_entrance,
-              ChainsReasonName(chains->last_reason));
-  ImGui::BeginDisabled(!Cheats_CanWarp());
-  if (ImGui::Button("Arm EP->DP seam")) {
-    Chains_DebugArmEpBossToDesert();
-  }
-  ImGui::SameLine();
-  if (ImGui::Button("Clear arm")) {
-    Chains_DebugClearEpBossToDesert();
-  }
-  ImGui::EndDisabled();
 
   // --- Diagnostics ---------------------------------------------------------
   // Moved out of the inventory panel: the same dump the F12 hotkey triggers.

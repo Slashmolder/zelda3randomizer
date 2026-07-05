@@ -2153,9 +2153,6 @@ void Dungeon_StartInterRoomTrans_Up() {
       if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_North,
                                 source_room, destination_room, 0xFF))
         return;
-      if (Chains_TryDebugEpBossToDesertHop(kDoorTblDir_North,
-                                           source_room, destination_room))
-        return;
       BYTE(dungeon_room_index) -= 0x10;
     }
     submodule_index = 2;
