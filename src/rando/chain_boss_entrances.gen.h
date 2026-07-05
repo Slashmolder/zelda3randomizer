@@ -11,19 +11,20 @@
 typedef struct ChainBossEntranceCheck {
   uint8 entrance_id;
   uint8 rando_dungeon;
+  uint8 main_entrance_id;
   uint16 room;
   int8 palace;
   uint8 music;
 } ChainBossEntranceCheck;
 
 static const ChainBossEntranceCheck kChainBossEntranceChecks[kChainBossEntranceCount] = {
-  {133, kRandoDungeon_EasternPalace, 0x0C8, 4, 17}, // Eastern Palace
-  {134, kRandoDungeon_DesertPalace, 0x033, 6, 17}, // Desert Palace
-  {135, kRandoDungeon_TowerOfHera, 0x007, 20, 17}, // Tower of Hera
-  {136, kRandoDungeon_PalaceOfDarkness, 0x05A, 12, 22}, // Palace of Darkness
-  {137, kRandoDungeon_SwampPalace, 0x006, 10, 22}, // Swamp Palace
-  {138, kRandoDungeon_ThievesTown, 0x0AC, 22, 22}, // Thieves Town
-  {139, kRandoDungeon_IcePalace, 0x0DE, 18, 22}, // Ice Palace
-  {140, kRandoDungeon_MiseryMire, 0x090, 14, 22}, // Misery Mire
-  {141, kRandoDungeon_TurtleRock, 0x0A4, 24, 22}, // Turtle Rock
+  {133, kRandoDungeon_EasternPalace, 8, 0x0C8, 4, 17}, // Eastern Palace
+  {134, kRandoDungeon_DesertPalace, 9, 0x033, 6, 17}, // Desert Palace
+  {135, kRandoDungeon_TowerOfHera, 51, 0x007, 20, 17}, // Tower of Hera
+  {136, kRandoDungeon_PalaceOfDarkness, 38, 0x05A, 12, 22}, // Palace of Darkness
+  {137, kRandoDungeon_SwampPalace, 37, 0x006, 10, 22}, // Swamp Palace
+  {138, kRandoDungeon_ThievesTown, 52, 0x0AC, 22, 22}, // Thieves Town
+  {139, kRandoDungeon_IcePalace, 45, 0x0DE, 18, 22}, // Ice Palace
+  {140, kRandoDungeon_MiseryMire, 39, 0x090, 14, 22}, // Misery Mire
+  {141, kRandoDungeon_TurtleRock, 53, 0x0A4, 24, 22}, // Turtle Rock
 };

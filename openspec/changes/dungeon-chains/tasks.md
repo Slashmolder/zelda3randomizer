@@ -104,10 +104,14 @@ immediately before any bump/commit (concurrent-drift discipline).
       done 2026-07-04: gen_chain_boss_entrances.py emits ids 133..141; asset
       signature bumped to Zelda3_v1; local blob has 142 entrance rows; runtime
       rejects synthetic hops unless rows, palace, and music match. -->
-- [ ] 5.3 Seam interception INTO boss rooms: hook door/stair/hole destination
+- [x] 5.3 Seam interception INTO boss rooms: hook door/stair/hole destination
       resolution (door site adjacent to `Rando_DoorTransOverride`; stair/hole
       sites from task 1.1's table); pinned adjacencies take the vanilla path
-      untouched; divert triggers the 5.1 hop load of `chain_successor[D]`.
+      untouched; divert triggers the 5.1 hop load of `chain_successor[D]`. <!--
+      done 2026-07-04: door/stair/hole hooks call table-driven
+      Chains_TryBossSeamHop; generated main_entrance_id maps dungeon successors;
+      identity successors fall through vanilla; hooks stay dormant until 5.6
+      installs a runtime layout. Release build + --rando-selftest green. -->
 - [ ] 5.4 Terminal containment: outbound transitions from a terminal boss room
       divert to the chain exit (origin door); verify cleared-terminal re-entry
       is exitable.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "types.h"
+
 typedef struct RoomBounds RoomBounds;
 
 enum {
@@ -171,7 +173,7 @@ void ChangeDoorToSwitch();
 void Dungeon_FlipCrystalPegAttribute();
 void Dungeon_HandleRoomTags();
 void Dung_TagRoutine_0x00(int k);
-void Dungeon_DetectStaircase();
+bool Dungeon_DetectStaircase();
 void RoomTag_NorthWestTrigger(int k);
 void Dung_TagRoutine_0x2A(int k);
 void Dung_TagRoutine_0x2B(int k);

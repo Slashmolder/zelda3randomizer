@@ -1,13 +1,13 @@
 // chains_runtime.h - dungeon-chain runtime bring-up hooks.
 //
-// This module is intentionally small while task 5.1 is still a spike. The
-// debug arm is removed before merge; the entrance-hop primitive remains the
-// shape the real chain seam hooks will consume.
+// The debug arm is removed before merge; the entrance-hop primitive remains the
+// shape the real chain seam hooks consume.
 
 #ifndef ZELDA3_RANDO_CHAINS_RUNTIME_H_
 #define ZELDA3_RANDO_CHAINS_RUNTIME_H_
 
 #include "../types.h"
+#include "shuffle_chains.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +20,8 @@ enum {
   kChainsRtReason_HopRequested,
   kChainsRtReason_HopConsumed,
   kChainsRtReason_MissingSyntheticEntrances,
+  kChainsRtReason_PinnedIdentity,
+  kChainsRtReason_BadSuccessor,
 };
 
 typedef struct ChainsRuntimeDebug {
@@ -50,11 +52,24 @@ uint8 Chains_BossEntranceForRandoDungeon(uint8 rando_dungeon);
 // entrance rows with the expected room/palace/music metadata.
 bool Chains_SyntheticEntrancesAvailable(void);
 
+// Runtime layout state. Task 5.6 wires these into slot activation/teardown; the
+// seam hooks below are dormant until a layout is installed.
+void Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout);
+void Chains_RuntimeTeardown(void);
+
 // One-shot debug seam hook for task 5.1. Returns true when it consumed the
 // transition and handed off to Module_PreDungeon.
 bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
                                       uint16 source_room,
                                       uint16 vanilla_destination_room);
+
+// Generic inbound boss-seam hook. `kind` is kChainSeamKind_* and `slot` is the
+// generated seam slot, or 0xFF when the caller has no slot identity.
+bool Chains_TryBossSeamHop(uint8 kind,
+                           uint8 direction,
+                           uint16 source_room,
+                           uint16 vanilla_destination_room,
+                           uint8 slot);
 
 // Consumed at the top of Dungeon_LoadEntrance. True means this entrance load is
 // chain-owned and must not recache the overworld *_exit state.

@@ -20,6 +20,8 @@ static const char *ChainsReasonName(uint8 reason) {
   case kChainsRtReason_HopRequested: return "hop requested";
   case kChainsRtReason_HopConsumed: return "hop consumed";
   case kChainsRtReason_MissingSyntheticEntrances: return "missing synthetic entrances";
+  case kChainsRtReason_PinnedIdentity: return "pinned identity";
+  case kChainsRtReason_BadSuccessor: return "bad successor";
   default: return "none";
   }
 }

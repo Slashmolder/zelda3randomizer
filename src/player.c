@@ -14,6 +14,8 @@
 #include "sprite_main.h"
 #include "features.h"
 #include "rando/rando.h"
+#include "rando/chain_seams.gen.h"
+#include "rando/chains_runtime.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 
@@ -273,6 +275,7 @@ void HandleLink_From1D() {  // 878130
     LinkState_Recoil();
   }
 }
+
 
 void PlayerHandler_00_Ground_3() {  // 8781a0
   g_ApplyLinksMovementToCamera_called = false;
@@ -1667,7 +1670,13 @@ endif_1:
       }
     }
     BYTE(dungeon_room_index_prev) = dungeon_room_index;
-    BYTE(dungeon_room_index) = dung_hdr_travel_destinations[0];
+    uint16 source_room = dungeon_room_index;
+    uint16 destination_room = dung_hdr_travel_destinations[0];
+    if (player_is_indoors &&
+        Chains_TryBossSeamHop(kChainSeamKind_Hole, kChainSeamDir_None,
+                              source_room, destination_room, 0))
+      return;
+    BYTE(dungeon_room_index) = destination_room;
     tiledetect_which_y_pos[0] = link_y_coord;
     link_y_coord = link_y_coord - y - 0x10;
     if (player_is_indoors) {
@@ -7087,4 +7096,3 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
     SpriteSfx_QueueSfx3WithPan(j, 0x30);
   }
 }
-

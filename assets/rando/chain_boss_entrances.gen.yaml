@@ -6,6 +6,7 @@ entries:
   name: Chain Boss Entrance - Eastern Palace
   rando_dungeon: 1
   rando_dungeon_enum: kRandoDungeon_EasternPalace
+  home_entrance: 8
   room: 200
   scroll_xy:
   - 256
@@ -33,6 +34,7 @@ entries:
   name: Chain Boss Entrance - Desert Palace
   rando_dungeon: 2
   rando_dungeon_enum: kRandoDungeon_DesertPalace
+  home_entrance: 9
   room: 51
   scroll_xy:
   - 0
@@ -60,6 +62,7 @@ entries:
   name: Chain Boss Entrance - Tower of Hera
   rando_dungeon: 3
   rando_dungeon_enum: kRandoDungeon_TowerOfHera
+  home_entrance: 51
   room: 7
   scroll_xy:
   - 256
@@ -87,6 +90,7 @@ entries:
   name: Chain Boss Entrance - Palace of Darkness
   rando_dungeon: 5
   rando_dungeon_enum: kRandoDungeon_PalaceOfDarkness
+  home_entrance: 38
   room: 90
   scroll_xy:
   - 256
@@ -114,6 +118,7 @@ entries:
   name: Chain Boss Entrance - Swamp Palace
   rando_dungeon: 6
   rando_dungeon_enum: kRandoDungeon_SwampPalace
+  home_entrance: 37
   room: 6
   scroll_xy:
   - 0
@@ -141,6 +146,7 @@ entries:
   name: Chain Boss Entrance - Thieves Town
   rando_dungeon: 8
   rando_dungeon_enum: kRandoDungeon_ThievesTown
+  home_entrance: 52
   room: 172
   scroll_xy:
   - 256
@@ -168,6 +174,7 @@ entries:
   name: Chain Boss Entrance - Ice Palace
   rando_dungeon: 9
   rando_dungeon_enum: kRandoDungeon_IcePalace
+  home_entrance: 45
   room: 222
   scroll_xy:
   - 256
@@ -195,6 +202,7 @@ entries:
   name: Chain Boss Entrance - Misery Mire
   rando_dungeon: 10
   rando_dungeon_enum: kRandoDungeon_MiseryMire
+  home_entrance: 39
   room: 144
   scroll_xy:
   - 0
@@ -222,6 +230,7 @@ entries:
   name: Chain Boss Entrance - Turtle Rock
   rando_dungeon: 11
   rando_dungeon_enum: kRandoDungeon_TurtleRock
+  home_entrance: 53
   room: 164
   scroll_xy:
   - 0

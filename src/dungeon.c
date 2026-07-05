@@ -22,6 +22,7 @@
 #include "rando/location_ids.h"
 #include "rando/shuffle_boss.h"  // BossShuffle_RenderHomeRoom (boss-shuffle render)
 #include "rando/door_runtime.h"  // door-shuffle redirect hooks (add-rando-door-shuffle)
+#include "rando/chain_seams.gen.h"
 #include "rando/chains_runtime.h"
 
 // todo: move to config
@@ -2081,8 +2082,14 @@ void Dungeon_StartInterRoomTrans_Left() {
       }
       // door shuffle: the redirect is consulted exactly where the positional
       // room-index change happens; identity/off takes the vanilla line.
-      if (!Rando_DoorTransOverride(kDoorTblDir_West))
+      if (!Rando_DoorTransOverride(kDoorTblDir_West)) {
+        uint16 source_room = dungeon_room_index;
+        uint16 destination_room = (uint8)(dungeon_room_index - 1);
+        if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_West,
+                                  source_room, destination_room, 0xFF))
+          return;
         dungeon_room_index--;
+      }
     }
     submodule_index = 2;
     if (!Rando_DoorTransConsumedToggles()) {
@@ -2137,6 +2144,9 @@ void Dungeon_StartInterRoomTrans_Up() {
     if (!Rando_DoorTransOverride(kDoorTblDir_North)) {
       uint16 source_room = dungeon_room_index;
       uint16 destination_room = (uint8)(dungeon_room_index - 0x10);
+      if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_North,
+                                source_room, destination_room, 0xFF))
+        return;
       if (Chains_TryDebugEpBossToDesertHop(kDoorTblDir_North,
                                            source_room, destination_room))
         return;
@@ -2179,8 +2189,14 @@ void Dungeon_StartInterRoomTrans_Down() {
       Dungeon_AdjustAfterSpiralStairs();
     }
     // door shuffle redirect (no-op when off / identity / staircase context).
-    if (!Rando_DoorTransOverride(kDoorTblDir_South))
+    if (!Rando_DoorTransOverride(kDoorTblDir_South)) {
+      uint16 source_room = dungeon_room_index;
+      uint16 destination_room = (uint8)(dungeon_room_index + 0x10);
+      if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_South,
+                                source_room, destination_room, 0xFF))
+        return;
       BYTE(dungeon_room_index) += 16;
+    }
     submodule_index = 2;
     if (!Rando_DoorTransConsumedToggles()) {
       if (room_transitioning_flags & 1) {
@@ -4430,7 +4446,8 @@ void Dungeon_FlipCrystalPegAttribute() {  // 81c22a
 
 void Dungeon_HandleRoomTags() {  // 81c2fd
   if (!flag_skip_call_tag_routines) {
-    Dungeon_DetectStaircase();
+    if (Dungeon_DetectStaircase())
+      return;
 
     // Dungeon_DetectStaircase might change the submodule, so avoid
     // calling the tag routines cause they could also change the submodule,
@@ -4450,10 +4467,10 @@ void Dungeon_HandleRoomTags() {  // 81c2fd
 void Dung_TagRoutine_0x00(int k) {  // 81c328
 }
 
-void Dungeon_DetectStaircase() {  // 81c329
+bool Dungeon_DetectStaircase() {  // 81c329
   int k = link_direction & 12;
   if (!k)
-    return;
+    return false;
 
   static const int8 kBuggyLookup[] = { 7, 24, 8, 8, 0, 0, -1, 17 };
   int pos = ((link_y_coord + kBuggyLookup[k >> 1]) & 0x1f8) << 3;
@@ -4462,15 +4479,15 @@ void Dungeon_DetectStaircase() {  // 81c329
 
   uint8 at = dung_bg2_attr_table[pos + (k == 4 ? 0x80 : 0)];
   if (!(at == 0x26 || at == 0x38 || at == 0x39 || at == 0x5e || at == 0x5f))
-    return;
+    return false;
 
   uint8 attr2 = dung_bg2_attr_table[pos + XY(0, 1)];
   if ((attr2 & 0xf8) != 0x30)
-    return;
+    return false;
 
   if (link_state_bits & 0x80) {
     link_y_coord = link_y_coord_prev;
-    return;
+    return false;
   }
 
   which_staircase_index = attr2;
@@ -4493,8 +4510,13 @@ void Dungeon_DetectStaircase() {  // 81c329
   int j = (which_staircase_index & 3);
   // door shuffle: spiral destination override, keyed (room, slot, attr) at
   // the read site (the destination's own header reload is untouched).
-  BYTE(dungeon_room_index) = Rando_DoorSpiralDest(
+  uint8 destination_room = Rando_DoorSpiralDest(
       dungeon_room_index_prev, j, at, dung_hdr_travel_destinations[j + 1]);
+  if (Chains_TryBossSeamHop(kChainSeamKind_Stair, kChainSeamDir_None,
+                            dungeon_room_index_prev, destination_room,
+                            (uint8)(j + 1)))
+    return true;
+  BYTE(dungeon_room_index) = destination_room;
   // door shuffle: the header plane describes the VANILLA destination; a
   // redirected spiral substitutes the shuffled destination's plane class.
   cur_staircase_plane = Rando_DoorSpiralPlane(dung_hdr_staircase_plane[j]);
@@ -4515,6 +4537,7 @@ void Dungeon_DetectStaircase() {  // 81c329
     UsedForStraightInterRoomStaircase();
     submodule_index = 14;
   }
+  return false;
 }
 
 void RoomTag_NorthWestTrigger(int k) {  // 81c432
@@ -8513,8 +8536,14 @@ void Dungeon_StartInterRoomTrans_Right() {  // 82b63a
         Dungeon_AdjustAfterSpiralStairs();
       }
       // door shuffle redirect (no-op when off / identity / staircase context).
-      if (!Rando_DoorTransOverride(kDoorTblDir_East))
+      if (!Rando_DoorTransOverride(kDoorTblDir_East)) {
+        uint16 source_room = dungeon_room_index;
+        uint16 destination_room = (uint8)(dungeon_room_index + 1);
+        if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_East,
+                                  source_room, destination_room, 0xFF))
+          return;
         dungeon_room_index += 1;
+      }
     }
     submodule_index = 2;
     if (!Rando_DoorTransConsumedToggles()) {

@@ -189,6 +189,7 @@ def build_entries() -> list[dict]:
             "name": f"Chain Boss Entrance - {spec.name}",
             "rando_dungeon": spec.rando_id,
             "rando_dungeon_enum": spec.enum_name,
+            "home_entrance": spec.home_entrance,
             "room": spec.boss_room,
             "scroll_xy": scroll_xy,
             "player_xy": [player_x, player_y],
@@ -224,9 +225,10 @@ def emit_header(entries: list[dict]) -> str:
         if name.startswith(prefix):
             name = name[len(prefix):]
         rows.append(
-            "  {%d, %s, 0x%03X, %d, %d}, // %s" % (
+            "  {%d, %s, %d, 0x%03X, %d, %d}, // %s" % (
                 entry["entrance_index"],
                 entry["rando_dungeon_enum"],
+                entry["home_entrance"],
                 entry["room"],
                 palace_raw(entry["palace"]),
                 music_id(entry["music"]),
@@ -247,6 +249,7 @@ def emit_header(entries: list[dict]) -> str:
         "typedef struct ChainBossEntranceCheck {",
         "  uint8 entrance_id;",
         "  uint8 rando_dungeon;",
+        "  uint8 main_entrance_id;",
         "  uint16 room;",
         "  int8 palace;",
         "  uint8 music;",

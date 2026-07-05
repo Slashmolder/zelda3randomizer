@@ -3,6 +3,7 @@
 #include "chains_runtime.h"
 
 #include "chain_boss_entrances.gen.h"
+#include "chain_seams.gen.h"
 #include "door_tables.gen.h"
 
 #include "../assets.h"
@@ -10,6 +11,7 @@
 #include "../variables.h"
 
 #include <stdio.h>
+#include <string.h>
 
 enum {
   kChainsDebugEntrance_DesertMain = 0x09,
@@ -19,6 +21,8 @@ enum {
 
 static bool g_chains_hop_pending;
 static bool g_chains_ep_spike_armed;
+static bool g_chains_runtime_active;
+static DungeonChainsLayout g_chains_runtime_layout;
 static ChainsRuntimeDebug g_chains_debug;
 
 _Static_assert(kChainBossEntranceBase == 133,
@@ -44,6 +48,23 @@ uint8 Chains_BossEntranceForRandoDungeon(uint8 rando_dungeon) {
       return kChainBossEntranceChecks[i].entrance_id;
   }
   return 0xFF;
+}
+
+static uint8 Chains_MainEntranceForRandoDungeon(uint8 rando_dungeon) {
+  for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
+    if (kChainBossEntranceChecks[i].rando_dungeon == rando_dungeon)
+      return kChainBossEntranceChecks[i].main_entrance_id;
+  }
+  return 0xFF;
+}
+
+static uint8 Chains_EntranceForElement(uint8 elem) {
+  uint8 rando_dungeon = Chains_ElementDungeon(elem);
+  if (elem == kChainsElement_None || Chains_PoolIndexForDungeon(rando_dungeon) < 0)
+    return 0xFF;
+  return Chains_ElementIsBoss(elem)
+             ? Chains_BossEntranceForRandoDungeon(rando_dungeon)
+             : Chains_MainEntranceForRandoDungeon(rando_dungeon);
 }
 
 static bool Chains_EntranceAssetCountOk(uint32 size, uint32 bytes_per_entry) {
@@ -84,6 +105,20 @@ bool Chains_SyntheticEntrancesAvailable(void) {
     }
   }
   return true;
+}
+
+void Chains_RuntimeTeardown(void) {
+  g_chains_runtime_active = false;
+  memset(&g_chains_runtime_layout, 0xFF, sizeof(g_chains_runtime_layout));
+}
+
+void Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout) {
+  if (layout == NULL) {
+    Chains_RuntimeTeardown();
+    return;
+  }
+  g_chains_runtime_layout = *layout;
+  g_chains_runtime_active = true;
 }
 
 void Chains_DebugArmEpBossToDesert(void) {
@@ -152,6 +187,9 @@ static bool Chains_RequestEntranceHop(uint8 entrance,
   WORD(death_var4) = 0;
   WORD(death_var5) = 0;
   room_transitioning_flags = 0;
+  link_this_controls_sprite_oam = 0;
+  player_near_pit_state = 0;
+  link_visibility_status = 0;
   is_standing_in_doorway = 0;
   WORD(dung_cur_door_pos) = 0;
   WORD(door_animation_step_indicator) = 0;
@@ -165,6 +203,64 @@ static bool Chains_RequestEntranceHop(uint8 entrance,
           "dungeon-chains spike: request entrance hop src=%04x dst=%04x entrance=%02x\n",
           source_room, destination_room, entrance);
   return true;
+}
+
+static const ChainSeamRow *Chains_FindBossSeam(uint8 kind,
+                                               uint8 direction,
+                                               uint16 source_room,
+                                               uint16 destination_room,
+                                               uint8 slot) {
+  for (uint8 i = 0; i < kChainBossSeamCount; i++) {
+    const ChainSeamRow *row = &kChainBossSeams[i];
+    if (row->kind != kind ||
+        row->source_room != source_room ||
+        row->dest_room != destination_room) {
+      continue;
+    }
+    if (direction != kChainSeamDir_None && row->direction != direction)
+      continue;
+    if (slot != 0xFF && row->slot != slot)
+      continue;
+    return row;
+  }
+  return NULL;
+}
+
+bool Chains_TryBossSeamHop(uint8 kind,
+                           uint8 direction,
+                           uint16 source_room,
+                           uint16 vanilla_destination_room,
+                           uint8 slot) {
+  if (!g_chains_runtime_active)
+    return false;
+
+  const ChainSeamRow *seam = Chains_FindBossSeam(kind, direction, source_room,
+                                                 vanilla_destination_room, slot);
+  if (seam == NULL)
+    return false;
+
+  g_chains_debug.seam_checks++;
+  g_chains_debug.last_dir = direction;
+  g_chains_debug.last_source_room = source_room;
+  g_chains_debug.last_destination_room = vanilla_destination_room;
+
+  int pool_idx = Chains_PoolIndexForDungeon(seam->rando_dungeon);
+  if (pool_idx < 0)
+    return false;
+
+  uint8 successor = g_chains_runtime_layout.chain_successor[pool_idx];
+  if (successor == Chains_BossElement(seam->rando_dungeon)) {
+    Chains_DebugSetReason(kChainsRtReason_PinnedIdentity);
+    return false;
+  }
+
+  uint8 entrance = Chains_EntranceForElement(successor);
+  if (entrance == 0xFF) {
+    Chains_DebugSetReason(kChainsRtReason_BadSuccessor);
+    return false;
+  }
+
+  return Chains_RequestEntranceHop(entrance, source_room, vanilla_destination_room);
 }
 
 bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
