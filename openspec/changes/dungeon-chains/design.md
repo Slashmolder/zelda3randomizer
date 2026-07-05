@@ -132,10 +132,13 @@ predicate); a blanket "every exit returns to origin" rule would teleport those
 side-door exits away and make Lanmolas' seam permanently unreachable, refusing
 every permutation containing DP. With aux-door exits vanilla (D5), the ledge
 walk works mid-chain and DP's back-section boss seam feeds its successor
-normally. **UNVERIFIED geometry note**: whether DP's W/E side doors are also
-reachable from overworld ground level (making chained-DP's front partially
-open-world) or ledge-only (making it chain-pure) affects flavor only, not
-soundness — grounding task.
+normally. Source grounding: DP is not a sealed, chain-pure pocket. Its overworld
+screen carries four exterior entrance ids (9 main, 10 east, 11 west, 12
+back/boss), while the door-shuffle oracle treats main as the only initial
+origin, east as a destination-only vanilla portal, and west/back as a staged
+walk-inaccessible ledge pair enabled only after the player reaches either from
+inside. Therefore chained DP may expose vanilla exterior side pockets, but those
+pockets are not chain starts, stay vanilla-coupled, and do not affect soundness.
 
 ### D2. Chain construction (generation side)
 
@@ -253,9 +256,16 @@ Rationale: a blanket every-exit rule severs vanilla-required aux-exit routes —
 DP's boss approach transits the outer ledge via its side doors, and TR's
 balcony doors are the route to Mimic Cave. Aux-door exits therefore resolve
 vanilla; they are strand-safe because the aux doors are unshuffled and
-re-enterable (re-entry loads the same interior the player just left). The
-stranding case motivating the coupling — IP's island, only escapable with
-swim/mirror — is a main-door emergence and stays covered.
+re-enterable (re-entry loads the same interior the player just left). DP's
+west/back ledge pair is explicitly staged as walk-inaccessible outside terrain
+in the door oracle and enabled by reaching either member from inside; DP east is
+the vanilla destination-only side portal. TR's balcony/mountainface portals
+(`TR Eye Bridge`, `TR Big Chest Entrance`, `TR Lazy Eyes`) have
+`fork_region: null` in `door_portals.yaml`, so the logic model never treats them
+as independently enterable from overworld terrain; the door oracle only enables
+the TR chest/lazy ledge after the interior route reaches it. The stranding case
+motivating the coupling — IP's island, only escapable with swim/mirror — is a
+main-door emergence and stays covered.
 
 Covered exits:
 

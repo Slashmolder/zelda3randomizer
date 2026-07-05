@@ -30,7 +30,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       `LoadOverworldFromDungeon` and confirm both reach the exit-door
       resolution the origin substitution keys on; note any path that bypasses
       it.
-- [ ] 1.6 Ground DP/TR aux geometry: whether DP's W/E side doors are reachable
+- [x] 1.6 Ground DP/TR aux geometry: whether DP's W/E side doors are reachable
       from overworld ground level (chain-pure vs partially open-world — flavor
       only) and that TR's balcony ledges are re-enterable pockets; record the
       answers in design.md D1/D5.
