@@ -769,6 +769,13 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   if (Settings_EffectiveDoorShuffle(settings) != kDoorShuffle_Vanilla) {
     Rando_GetDoorGeneration(&slot.header.door_attempt, &slot.header.door_digest24);
   }
+  // dungeon-chains: persist the accepted layout identity so slot activation can
+  // regenerate the same chain graph and hard-fail on drift.
+  if (reg.chains_active) {
+    slot.header.chains_present = 1;
+    slot.header.chains_attempt = reg.chains_attempt;
+    slot.header.chains_digest24 = reg.chains_layout.digest24 & 0xFFFFFFu;
+  }
   slot.header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
   slot.header.pot_registry_count = Rando_CurrentPotRegistryCount();
   slot.header.pot_registry_present = 1;

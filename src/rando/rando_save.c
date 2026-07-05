@@ -111,6 +111,7 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 5) return kRandoSidecar_SlotExtV5Size;
   if (format_version >= 4) return kRandoSidecar_SlotExtV4Size;
   if (format_version >= 3) return kRandoSidecar_SlotExtV3Size;
   return 0;
@@ -132,12 +133,12 @@ static uint32 slot_on_disk_size_versioned_ext(uint16 placement_table_size,
   return total;
 }
 
-// Format-version-aware slot size: v1 = base, v2 adds the settings blob,
+// Format-version-aware slot size: v1 = base, v2 adds the legacy settings blob,
 // v3 adds the 8-byte extension after the legacy settings blob. v4 widens the
-// settings blob to current and widens the extension to the current 16 bytes.
-// Any future version >= 4 is sized as current by the caller's contract
-// (RandoSave_ReadFile refuses files it can't slot-walk — a larger future layout
-// fails the next slot's magic check).
+// settings blob to current and widens the extension to 16 bytes. v5 widens the
+// extension to 24 bytes. Any future version >= 5 is sized as current by the
+// caller's contract (RandoSave_ReadFile refuses files it can't slot-walk — a
+// larger future layout fails the next slot's magic check).
 static uint32 slot_on_disk_size_versioned(uint16 placement_table_size,
                                           uint16 format_version) {
   uint32 total = slot_on_disk_size_versioned_ext(
@@ -174,7 +175,7 @@ static uint32 try_deserialize_zero_empty_slot(const uint8 *buf, uint32 remaining
   return 0;
 }
 
-// Public size is the CURRENT format (version 4): base + settings blob + ext.
+// Public size is the CURRENT format (version 5): base + settings blob + ext.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size) {
   return slot_on_disk_size_versioned(placement_table_size,
                                      kRandoSidecar_FileFormatVersion);
@@ -382,9 +383,9 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
   // (zeroed when settings_present == 0); RandoSave_SlotOnDiskSize accounts for it.
   memcpy(p, slot->settings_canonical, kSettingsCanonicalLen);
   p += kSettingsCanonicalLen;
-  // format_version 4: slot extension block trails the blob (the 80-byte header
-  // is full — see rando_save.h). v3 bytes stay in place; v4 appends the pot
-  // registry identity.
+  // format_version 5: slot extension block trails the blob (the 80-byte header
+  // is full — see rando_save.h). v3/v4 bytes stay in place; v5 appends the
+  // dungeon-chain layout identity.
   memset(p, 0, kRandoSidecar_SlotExtCurrentSize);
   p[0] = (uint8)(slot->header.entrance_digest24 & 0xff);
   p[1] = (uint8)((slot->header.entrance_digest24 >> 8) & 0xff);
@@ -398,14 +399,21 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     put_u16le(p + 12, slot->header.pot_registry_count);
     p[14] = 1;
   }
+  if (slot->header.chains_present) {
+    p[16] = 1;
+    p[17] = slot->header.chains_attempt;
+    p[18] = (uint8)(slot->header.chains_digest24 & 0xff);
+    p[19] = (uint8)((slot->header.chains_digest24 >> 8) & 0xff);
+    p[20] = (uint8)((slot->header.chains_digest24 >> 16) & 0xff);
+  }
   return size;
 }
 
 // Version-aware slot deserialize. `format_version` is the FILE's declared
 // version: v1 has no trailing settings blob, v2 adds the legacy 28-byte blob,
-// v3 adds the 8-byte extension block after that legacy blob, and v4 widens both
-// the blob and extension to their current sizes. RandoSave_ReadFile passes the
-// file's value.
+// v3 adds the 8-byte extension block after that legacy blob, v4 widens the blob
+// to current and the extension to 16 bytes, and v5 adds the current 24-byte
+// extension. RandoSave_ReadFile passes the file's value.
 static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
                                              RandoSidecarSlot *out,
                                              uint16 format_version,
@@ -471,8 +479,9 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
   }
   if (with_ext) {
     if (ext_len < kRandoSidecar_SlotExtV3Size) return 0;
-    // format_version 3/4: extension block (@0-2 entrance_digest24 LE; @3-6
-    // recommended_features0 LE; @7 presence). Full v4 adds pot registry identity.
+    // format_version 3+: extension block (@0-2 entrance_digest24 LE; @3-6
+    // recommended_features0 LE; @7 presence). v4 adds pot registry identity;
+    // v5 adds dungeon-chain identity.
     out->header.entrance_digest24 =
         (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16);
     out->header.recommended_features0 = get_u32le(p + 3);
@@ -486,6 +495,16 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.pot_registry_count = 0;
       out->header.pot_registry_present = 0;
     }
+    if (format_version >= 5 && ext_len >= kRandoSidecar_SlotExtV5Size) {
+      out->header.chains_present = p[16] != 0;
+      out->header.chains_attempt = p[17];
+      out->header.chains_digest24 =
+          (uint32)p[18] | ((uint32)p[19] << 8) | ((uint32)p[20] << 16);
+    } else {
+      out->header.chains_present = 0;
+      out->header.chains_attempt = 0;
+      out->header.chains_digest24 = 0;
+    }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
@@ -495,6 +514,9 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.pot_registry_digest = 0;
     out->header.pot_registry_count = 0;
     out->header.pot_registry_present = 0;
+    out->header.chains_present = 0;
+    out->header.chains_attempt = 0;
+    out->header.chains_digest24 = 0;
   }
   return total;
 }
@@ -506,7 +528,7 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
 }
 
 uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecarSlot *out) {
-  // Public entry assumes the current (version-4) layout. RandoSave_ReadFile
+  // Public entry assumes the current (version-5) layout. RandoSave_ReadFile
   // uses the version-aware static directly for older files.
   return deserialize_slot_versioned(buf, buf_size, out, kRandoSidecar_FileFormatVersion);
 }
@@ -678,9 +700,10 @@ static bool deserialize_file_buffer(const uint8 *buf, uint32 fsize,
   // Key the body layout on the file's declared format_version so older
   // sidecars still load correctly: v1 slots lack the settings blob, v2 slots
   // lack an extension block, v2/v3 slots carry the legacy 28-byte settings
-  // prefix, and v3 slots use the old 8-byte extension. Early v4 development
-  // files declared format 4 but still used that 8-byte extension, so try the
-  // current v4 size first and then the legacy physical v4 size.
+  // prefix, v3 slots use the old 8-byte extension, v4 slots use the 16-byte
+  // extension, and v5 slots use the current 24-byte extension. Early v4
+  // development files declared format 4 but still used that 8-byte extension,
+  // so try the canonical size first and then the legacy physical v4 size.
   uint32 ext_candidates[2] = {
     slot_ext_len_versioned(fh.format_version),
     legacy_slot_ext_len_versioned(fh.format_version),
@@ -931,6 +954,10 @@ void RandoSave_SelfCheck(void) {
   src.header.pot_registry_digest = 0x12345678u;
   src.header.pot_registry_count = 0x0456u;
   src.header.pot_registry_present = 1;
+  // dungeon-chains layout identity round-trip coverage (v5 extension block).
+  src.header.chains_present = 1;
+  src.header.chains_attempt = 0x09;
+  src.header.chains_digest24 = 0x654321u;
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -963,8 +990,8 @@ void RandoSave_SelfCheck(void) {
   if (buf[69] != 0x05) selfcheck_die("flute_shovel_owned at @69 wrong");
   // format_version 2: settings_present @70, and the canonical blob trails the
   // bitmap at offset (base size = header + placements + bitmap). format_version
-  // 4: the extension block (entrance_digest24 LE @0-2, pot registry @8-14)
-  // trails the blob.
+  // 5: the extension block (entrance_digest24 LE @0-2, pot registry @8-14,
+  // dungeon chains @16-20) trails the blob.
   if (buf[70] != 1) selfcheck_die("settings_present at @70 wrong");
   {
     uint32 blob = RandoSave_SlotOnDiskSize(src.header.placement_table_size)
@@ -985,6 +1012,12 @@ void RandoSave_SelfCheck(void) {
       selfcheck_die("pot registry identity not at expected v4 ext offset");
     if (buf[ext + 15] != 0)
       selfcheck_die("v4 ext reserved byte not zero");
+    if (buf[ext + 16] != 1 || buf[ext + 17] != 0x09 ||
+        buf[ext + 18] != 0x21 || buf[ext + 19] != 0x43 ||
+        buf[ext + 20] != 0x65)
+      selfcheck_die("dungeon chains identity not at expected v5 ext offset");
+    if (buf[ext + 21] != 0 || buf[ext + 22] != 0 || buf[ext + 23] != 0)
+      selfcheck_die("v5 ext reserved bytes not zero");
   }
   // Phase C entrance shuffle: entrance_axes @71, entrance_attempt @72.
   if (buf[71] != 0x05) selfcheck_die("entrance_axes at @71 wrong");
@@ -1031,6 +1064,9 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.pot_registry_digest != src.header.pot_registry_digest) selfcheck_die("pot_registry_digest round-trip");
   if (dst.header.pot_registry_count != src.header.pot_registry_count) selfcheck_die("pot_registry_count round-trip");
   if (dst.header.pot_registry_present != src.header.pot_registry_present) selfcheck_die("pot_registry_present round-trip");
+  if (dst.header.chains_present != src.header.chains_present) selfcheck_die("chains_present round-trip");
+  if (dst.header.chains_attempt != src.header.chains_attempt) selfcheck_die("chains_attempt round-trip");
+  if (dst.header.chains_digest24 != src.header.chains_digest24) selfcheck_die("chains_digest24 round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
@@ -1186,6 +1222,9 @@ void RandoSave_SelfCheck(void) {
     if (v1dst.header.pot_registry_present != 0 || v1dst.header.pot_registry_digest != 0 ||
         v1dst.header.pot_registry_count != 0)
       selfcheck_die("v1 compat: pot registry fields must be forced 0");
+    if (v1dst.header.chains_present != 0 || v1dst.header.chains_attempt != 0 ||
+        v1dst.header.chains_digest24 != 0)
+      selfcheck_die("v1 compat: dungeon-chain fields must be forced 0");
     if (v1dst.placement_count != 1 || v1dst.placements[0].location_id != 5 ||
         v1dst.placements[0].item_id != 50) selfcheck_die("v1 compat: placement round-trip");
     if (v1dst.checked_bitmap[0] != 0x05) selfcheck_die("v1 compat: bitmap round-trip");
@@ -1223,6 +1262,9 @@ void RandoSave_SelfCheck(void) {
     if (v2dst.header.pot_registry_present != 0 || v2dst.header.pot_registry_digest != 0 ||
         v2dst.header.pot_registry_count != 0)
       selfcheck_die("v2 compat: pot registry fields must be forced 0");
+    if (v2dst.header.chains_present != 0 || v2dst.header.chains_attempt != 0 ||
+        v2dst.header.chains_digest24 != 0)
+      selfcheck_die("v2 compat: dungeon-chain fields must be forced 0");
     if (v2dst.header.settings_present != 1) selfcheck_die("v2 compat: settings_present round-trip");
     if (memcmp(v2dst.settings_canonical, src.settings_canonical,
                kRandoSidecar_LegacySettingsCanonicalLen28) != 0)
@@ -1276,6 +1318,46 @@ void RandoSave_SelfCheck(void) {
     if (v3dst.header.pot_registry_present != 0 || v3dst.header.pot_registry_digest != 0 ||
         v3dst.header.pot_registry_count != 0)
       selfcheck_die("v3 compat: pot registry fields must be forced 0");
+    if (v3dst.header.chains_present != 0 || v3dst.header.chains_attempt != 0 ||
+        v3dst.header.chains_digest24 != 0)
+      selfcheck_die("v3 compat: dungeon-chain fields must be forced 0");
+  }
+
+  // -------------------------------------------------------------------------
+  // format_version 4 backward-compat: slots written before dungeon chains
+  // persisted their layout identity have the pot registry block but no v5 tail.
+  // -------------------------------------------------------------------------
+  {
+    uint8 v4buf[256];
+    memset(v4buf, 0, sizeof(v4buf));
+    serialize_slot_header(&src.header, v4buf);
+    uint32 loc_count = (uint32)src.header.placement_table_size / 2;
+    uint8 *p = v4buf + kRandoSidecar_SlotHeaderSize;
+    for (uint32 i = 0; i < loc_count; i++) put_u16le(p + i * 2, kRandoSidecar_NoPlacementSentinel);
+    put_u16le(p + 5 * 2, 50);
+    p += loc_count * 2;
+    uint32 v4_bitmap = (loc_count + 7) >> 3;
+    p[0] = 0x05;
+    p += v4_bitmap;
+    memcpy(p, src.settings_canonical, kSettingsCanonicalLen);
+    p += kSettingsCanonicalLen;
+    p[0] = 0xEF; p[1] = 0xCD; p[2] = 0xAB;
+    put_u32le(p + 8, 0x12345678u);
+    put_u16le(p + 12, 0x0456u);
+    p[14] = 1;
+    uint32 v4_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v4_bitmap +
+                      kSettingsCanonicalLen + kRandoSidecar_SlotExtV4Size;
+
+    RandoSidecarSlot v4dst;
+    uint32 v4_used = deserialize_slot_versioned(v4buf, v4_total, &v4dst, 4);
+    if (v4_used != v4_total) selfcheck_die("v4 compat: used != v4 total");
+    if (v4dst.header.pot_registry_digest != 0x12345678u ||
+        v4dst.header.pot_registry_count != 0x0456u ||
+        v4dst.header.pot_registry_present != 1)
+      selfcheck_die("v4 compat: pot registry round-trip");
+    if (v4dst.header.chains_present != 0 || v4dst.header.chains_attempt != 0 ||
+        v4dst.header.chains_digest24 != 0)
+      selfcheck_die("v4 compat: dungeon-chain fields must be forced 0");
   }
 
   // -------------------------------------------------------------------------
@@ -1575,25 +1657,26 @@ void RandoSave_SelfCheck(void) {
     // block. A later generate must read and upgrade that file instead of
     // quarantining it.
     {
-      uint32 legacy_ext = legacy_slot_ext_len_versioned(kRandoSidecar_FileFormatVersion);
+      enum { kLegacyV4CompatFormatVersion = 4 };
+      uint32 legacy_ext = legacy_slot_ext_len_versioned(kLegacyV4CompatFormatVersion);
       if (legacy_ext != kRandoSidecar_SlotExtV3Size)
         selfcheck_die("§8.7: expected legacy v4 extension size");
       uint32 compat_total = kRandoSidecar_FileHeaderSize;
       for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
         compat_total += slot_on_disk_size_versioned_ext(
-            mixed[i].header.placement_table_size, kRandoSidecar_FileFormatVersion,
+            mixed[i].header.placement_table_size, kLegacyV4CompatFormatVersion,
             legacy_ext);
       }
       uint8 *compat = (uint8 *)calloc(1, compat_total);
       if (compat == NULL) selfcheck_die("§8.7: calloc legacy-v4 compat buffer");
       RandoSidecarFileHeader fh_compat = {
-        kRandoSidecar_FileFormatVersion, kRandoSidecar_SlotCount, 0
+        kLegacyV4CompatFormatVersion, kRandoSidecar_SlotCount, 0
       };
       uint32 compat_off = RandoSave_SerializeFileHeader(&fh_compat, compat, compat_total);
       for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
         uint32 current_size = RandoSave_SlotOnDiskSize(mixed[i].header.placement_table_size);
         uint32 legacy_size = slot_on_disk_size_versioned_ext(
-            mixed[i].header.placement_table_size, kRandoSidecar_FileFormatVersion,
+            mixed[i].header.placement_table_size, kLegacyV4CompatFormatVersion,
             legacy_ext);
         uint8 *slotbuf = (uint8 *)malloc(current_size);
         if (slotbuf == NULL) {

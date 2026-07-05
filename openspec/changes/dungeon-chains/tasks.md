@@ -138,9 +138,15 @@ immediately before any bump/commit (concurrent-drift discipline).
       `Rando_ActivateSidecarSlot` / `Rando_DeactivateSlot`: regenerate from
       (seed, attempt), hard-fail on digest mismatch, fail closed if synthetic
       entrance records are absent; M4 cold-replay rebuild path included.
-- [ ] 5.7 Sidecar persistence: new additive extension block {present, attempt,
+- [x] 5.7 Sidecar persistence: new additive extension block {present, attempt,
       digest24}, `kRandoSidecar_FileFormatVersion` bump, old-file
-      compatibility, `RandoSave_SelfCheck` update.
+      compatibility, `RandoSave_SelfCheck` update. <!-- done 2026-07-05:
+      format v5 adds a 24-byte extension tail carrying dungeon chain
+      present/attempt/digest24, generation persists the accepted chain layout
+      identity, and deserialization forces v1-v4 chain fields absent. The save
+      selfcheck covers v5 layout bytes, round-trip, and v1-v4 compatibility.
+      git diff --check, openspec validate dungeon-chains --strict, Release
+      build, and --rando-selftest green. -->
 - [ ] 5.8 One-shot re-trigger audit: sweep every boss-room tag / prize grant /
       heart grant a chain re-traversal can re-reach (CLAUDE.md re-enabled
       one-shot corollary); gate any find on `Rando_IsLocationChecked`.

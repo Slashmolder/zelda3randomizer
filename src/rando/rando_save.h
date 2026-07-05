@@ -52,8 +52,11 @@
 //       the local pot registry digest/count used for pot-shuffle activation
 //       drift refusal. v2/v3 files still carry 28 bytes; the loader zero-extends
 //       the appended byte to Off. v3 files read the pot registry fields as
-//       absent. New writes are always v4.
-#define kRandoSidecar_FileFormatVersion 4
+//       absent.
+//   5 — extends the per-slot extension block to carry the dungeon-chain layout
+//       identity {present, attempt, digest24}. v1-v4 files read these fields as
+//       absent. New writes are always v5.
+#define kRandoSidecar_FileFormatVersion 5
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -70,7 +73,13 @@
 //   @14    pot_registry_present (u8; 1 = refuse pot-enabled drift mismatch)
 //   @15    reserved
 #define kRandoSidecar_SlotExtV4Size     16
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV4Size
+// format_version >= 5:
+//   @16     dungeon_chains_present (u8)
+//   @17     dungeon_chains_attempt (u8)
+//   @18-20  dungeon_chains_digest24 (u24 LE)
+//   @21-23  reserved
+#define kRandoSidecar_SlotExtV5Size     24
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV5Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -266,6 +275,13 @@ typedef struct RandoSlotHeader {
   uint32 pot_registry_digest;    // v4 ext block @8-11
   uint16 pot_registry_count;     // v4 ext block @12-13
   uint8 pot_registry_present;    // v4 ext block @14
+  // dungeon-chains: regenerated runtime/logic layout identity. On disk these
+  // live in the format_version-5 extension block. present=0 means no chain
+  // layout identity is available; activation must fail closed for chain-enabled
+  // settings rather than guessing attempt 0.
+  uint8 chains_present;          // v5 ext block @16
+  uint8 chains_attempt;          // v5 ext block @17
+  uint32 chains_digest24;        // v5 ext block @18-20 (3 bytes LE)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
@@ -322,13 +338,12 @@ typedef struct RandoSidecarSlot {
 // ---------------------------------------------------------------------------
 
 // Compute the on-disk byte size of one slot given its placement_table_size,
-// for the CURRENT format (version 4). placement_table_size is in BYTES (= 2 ×
+// for the CURRENT format (version 5). placement_table_size is in BYTES (= 2 ×
 // location count). Total = 80 (header) + placement_table_size +
 // ((placement_table_size/2 + 7) >> 3) bitmap + kSettingsCanonicalLen (settings
 // blob) + kRandoSidecar_SlotExtCurrentSize (extension block). v1 files omit the
-// blob) + kRandoSidecar_SlotExtCurrentSize (extension block). v1 files omit the
 // blob and the ext block, v2 files omit the ext block, and v2/v3 files carry a
-// legacy 28-byte settings blob; v3 files also use the smaller v3 extension.
+// legacy 28-byte settings blob; v3/v4 files also use smaller extensions.
 // RandoSave_ReadFile handles those older layouts internally based on the file's
 // format_version.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);
