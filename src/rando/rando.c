@@ -2599,6 +2599,15 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
   return Rando_BossPrizeLocationForGameDungeon(dungeon_id);
 }
 
+uint8 Rando_DispatchBossPrizeReceipt(uint8 dungeon_id, uint8 vanilla_lttp_code) {
+  if (!Rando_IsActive())
+    return vanilla_lttp_code;
+  uint16 prize_loc = Rando_GetBossPrizeLocation(dungeon_id);
+  if (prize_loc == 0xFFFFu || Rando_IsLocationChecked(prize_loc))
+    return vanilla_lttp_code;
+  return Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, vanilla_lttp_code);
+}
+
 // ---------------------------------------------------------------------------
 // Per-seed shuffle-assignment globals consumed by Logic_ComputeReachability.
 // ---------------------------------------------------------------------------
@@ -6392,6 +6401,35 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: GreenPendant dispatch should OR 0x04 into link_which_pendants\n");
       exit(2);
     }
+    // Boss-prize receipts must mark/grant only at falling-prize pickup time.
+    // Before this helper runs, falling or leaving the boss room should still
+    // leave the prize uncollected so it can respawn.
+    uint8 saved_slot_active = g_rando_slot_active;
+    uint8 saved_checked_bitmap[kRandoCheckedBitmapBytes];
+    memcpy(saved_checked_bitmap, g_rando_checked_bitmap, sizeof(saved_checked_bitmap));
+    entries[0].location_id = LOC_Skull_Woods_Prize;
+    entries[0].item_id = ITEM_Prize_Crystal4;
+    Placement_Install(&t);
+    g_rando_slot_active = 1;
+    memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+    link_has_crystals = 0;
+    if (Rando_IsLocationChecked(LOC_Skull_Woods_Prize)) {
+      fprintf(stderr, "Rando_SelfCheck: boss prize should start unchecked\n");
+      exit(2);
+    }
+    lttp = Rando_DispatchBossPrizeReceipt(kGameDungeon_SkullWoods, 0x20);
+    if (lttp != kRandoLttpSkip ||
+        !Rando_IsLocationChecked(LOC_Skull_Woods_Prize) ||
+        (link_has_crystals & 0x40) == 0) {
+      fprintf(stderr, "Rando_SelfCheck: boss prize receipt dispatch failed\n");
+      exit(2);
+    }
+    if (Rando_DispatchBossPrizeReceipt(kGameDungeon_SkullWoods, 0x20) != 0x20) {
+      fprintf(stderr, "Rando_SelfCheck: checked boss prize should fall back to vanilla receipt\n");
+      exit(2);
+    }
+    g_rando_slot_active = saved_slot_active;
+    memcpy(g_rando_checked_bitmap, saved_checked_bitmap, sizeof(saved_checked_bitmap));
     Placement_Install(NULL);
     link_has_crystals = 0;
     link_which_pendants = 0;

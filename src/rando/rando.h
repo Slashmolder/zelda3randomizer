@@ -829,6 +829,10 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // ---------------------------------------------------------------------------
 uint16 Rando_GetBossHeartLocation(uint8 dungeon_id);
 uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id);
+// Dispatches the current dungeon's boss-prize location when the falling
+// pendant/crystal is actually received. This preserves vanilla Moldorm-style
+// retry behavior: falling before pickup leaves the prize uncollected.
+uint8 Rando_DispatchBossPrizeReceipt(uint8 dungeon_id, uint8 vanilla_lttp_code);
 
 // ---------------------------------------------------------------------------
 // Active per-seed shuffle assignments. The predicate VM's OP_HAS_PRIZE and

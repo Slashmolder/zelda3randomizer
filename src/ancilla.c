@@ -3868,12 +3868,19 @@ void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
         link_player_handler_state = 0;
       }
       item_receipt_method = 3;
-      // rando-exempt: ancilla-receive consumption — the LttP code for this
-      // ancilla was determined upstream at the spawn site (e.g.,
-      // Catfish_RegurgitateMedallion sets sprite_A which becomes
-      // ancilla_item_to_link). The dispatch happens at spawn; this is the
-      // receive-animation completion hand-off.
-      Link_ReceiveItem(ancilla_item_to_link[k], 0);
+      uint8 receive_item = ancilla_item_to_link[k];
+      if (player_is_indoors &&
+          (receive_item == 0x20 || receive_item == 0x37 ||
+           receive_item == 0x38 || receive_item == 0x39)) {
+        uint8 dispatched = Rando_DispatchBossPrizeReceipt(
+            BYTE(cur_palace_index_x2) >> 1, receive_item);
+        if (!Rando_ShouldSkipReceive(dispatched))
+          receive_item = dispatched;
+      }
+      // Most falling-prize ancillas determine their LttP code upstream at the
+      // spawn site. Boss prizes are the exception under rando: dispatch at
+      // receipt time so falling before pickup leaves the prize uncollected.
+      Link_ReceiveItem(receive_item, 0);
       return;
     }
 
@@ -3930,11 +3937,12 @@ void Ancilla_RisingCrystal(int k) {  // 88cbf2
   if (y < 0x49) {
     Ancilla_SetY(k, 0x49 + BG2VOFS_copy);
     if (!submodule_index) {
-      // §6.6 dispatch (RoomTag_GetHeartForPrize → Rando_DispatchVanillaGrant
-      // → prize_item_direct_grant) already grants the PLACED prize's bit
-      // when rando is active. Leaving this line unguarded would double-OR
-      // the current dungeon's vanilla crystal on top of the placed bit
-      // when prize_shuffle (Phase A default) puts a different prize here.
+      // §6.6 dispatch (falling boss-prize receipt →
+      // Rando_DispatchVanillaGrant → prize_item_direct_grant) already grants
+      // the PLACED prize's bit when rando is active. Leaving this line
+      // unguarded would double-OR the current dungeon's vanilla crystal on top
+      // of the placed bit when prize_shuffle (Phase A default) puts a
+      // different prize here.
       // Suppress under rando-active; the dispatch path owns the bit.
       if (!(enhanced_features1 & kFeatures1_RandomizerActive))
         // rando-exempt: vanilla-only fall-through; dispatch path above owns the bit when rando is active.

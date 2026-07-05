@@ -4791,8 +4791,8 @@ void Dung_TagRoutine_BlastWallStuff(int k) {  // 81c68c
 // Maps a dungeon's boss-prize FALLING-SPRITE index to the PLACED prize's color
 // when prize_shuffle reassigned it. Returns `vanilla_idx` (the dungeon's vanilla
 // kBossFinishedFallingItem value) unless rando is active AND the placed prize is
-// a known pendant/crystal. Used ONLY to recolor the falling sprite — the grant
-// already happened via Rando_DispatchVanillaGrant.
+// a known pendant/crystal. Used ONLY to recolor the falling sprite; the rando
+// boss-prize grant happens later when Link receives that sprite.
 //
 // Index spaces differ:
 //   `didx` = cur_palace_index_x2>>1 (game dungeon id; indexes kBossFinishedFallingItem).
@@ -4803,7 +4803,7 @@ void Dung_TagRoutine_BlastWallStuff(int k) {  // 81c68c
 // Placed-prize value encoding (see PrizeIcon / Goal_IsCompletable pendant ids):
 //   0=Green, 1=Red, 2=Blue, 3..9=Crystal1..7.
 // kFallingItem_Type[7] = {0x10,0x37,0x39,0x38,0x26,0xf,0x20} (ancilla.c) maps
-// the falling INDEX to a receive-item color code: idx1=0x37 green, idx2=0x39
+// the falling INDEX to a receive-item color code used at pickup: idx1=0x37 green, idx2=0x39
 // red, idx3=0x38 blue, idx6=0x20 crystal (the code every vanilla crystal
 // dungeon's boss uses; idx4=0x26 is NOT a boss-prize sprite). So:
 //   Green(0)->1  Red(1)->2  Blue(2)->3  Crystal(3..9)->6.
@@ -4855,57 +4855,10 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
   }
   if (prize_uncollected) {
     byte_7E04C2 = 128;
-    // §6.6 prize dispatch: fire Rando_OnLocationCheck for the boss-prize
-    // slot. Phase A's prize_shuffle identity-places crystals/pendants at
-    // their vanilla dungeons by default — the dispatch is a no-op for the
-    // identity case. When prize-shuffle reassigns, the OR-into-bit happens
-    // inside Rando_DispatchVanillaGrant's prize_item_direct_grant() path
-    // (which sets the prize's bit, not the dungeon's bit).
-    //
-    // The visual FallingPrize sprite below is recolored to the placed prize
-    // via RandoFallingPrizeIndex() (rando color fix), so the player sees the
-    // prize they actually received. The bit set matches the placed prize per
-    // the direct-grant.
-    if (enhanced_features1 & kFeatures1_RandomizerActive) {
-      uint16 prize_loc = Rando_GetBossPrizeLocation(BYTE(cur_palace_index_x2) >> 1);
-      if (prize_loc != 0xFFFFu) {
-        // The vanilla_registry_id depends on the dungeon. Phase A1: pass
-        // 0xFFFF (unknown vanilla) and let the dispatch find the placed
-        // prize via Placement_Lookup; the placement table's vanilla-pin
-        // pre-pass installs the vanilla prize per dungeon if no shuffle
-        // override applies.
-        uint8 placed_lttp = Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, 0);
-        // rando: correct falling prize color under prize_shuffle — PLAYTEST
-        // REQUIRED. [duplicate-icon suppression — independently revertible]
-        // The falling-prize sprite below now spawns with the PLACED prize's
-        // color (see RandoFallingPrizeIndex), so the extra direct-grant
-        // confirmation icon would be a SECOND, redundant prize visual (the
-        // "two pendants" bug). Suppress it here for the boss-prize case only.
-        // Rando_ShowDirectGrantConfirmation is purely visual/audio (sfx + HUD
-        // icon refresh + icon ancilla); the actual grant already happened in
-        // Rando_DispatchVanillaGrant above, so dropping this call has no grant
-        // side effect. To revert just this hunk (restore the second icon),
-        // replace the branch below with `(void)placed_lttp;` and uncomment the
-        // original block.
-        //
-        // Defensive: boss-prize slots are pre-pinned to prizes, so the dispatch
-        // ALWAYS direct-grants and returns kRandoLttpSkip — the branch below is a
-        // no-op today. But if a future placement ever puts a NON-prize item here,
-        // the dispatch returns a real lttp code and the item would otherwise be
-        // silently dropped (dispatch already marked the location checked). Route
-        // it through Link_ReceiveItem so the placed item is actually granted (the
-        // falling-prize recolor below still applies to the visual).
-        if (!Rando_ShouldSkipReceive(placed_lttp))
-          Link_ReceiveItem(placed_lttp, 0);
-        // if (Rando_ShouldSkipReceive(placed_lttp)) {
-        //   Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-        // }
-      }
-    }
-    // rando: correct falling prize color under prize_shuffle — PLAYTEST REQUIRED.
-    // Recolor the SAME falling-prize sprite to the placed prize (vanilla idx
-    // when not rando / identity / unknown). Only the item-index argument
-    // changes; the cutscene still awaits the same spawned ancilla.
+    // Rando boss-prize dispatch happens when the falling prize is received, not
+    // when it spawns. That preserves vanilla retry behavior: falling before
+    // pickup leaves the prize uncollected and lets it respawn on re-entry.
+    // Recolor only the spawned falling-prize sprite to the placed prize.
     {
       uint8 fdidx = BYTE(cur_palace_index_x2) >> 1;
       uint8 fidx = RandoFallingPrizeIndex(fdidx, kBossFinishedFallingItem[fdidx]);

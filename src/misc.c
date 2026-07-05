@@ -923,14 +923,13 @@ bool ItemReceipt_GrantInventory(uint8 j) {
     // chain, which sets link_receiveitem_index to the VANILLA dungeon's
     // pendant code (0x37/0x38/0x39 per kFallingItem_Type /
     // kBossFinishedFallingItem). Under rando with non-identity prize_shuffle,
-    // the rando dispatch in `RoomTag_GetHeartForPrize` has ALREADY OR'd the
-    // placed prize's bit (via
-    // prize_item_direct_grant). Letting `*p |= t` run here would double-OR
-    // the vanilla pendant on top — silently corrupting state when a pendant
-    // dungeon (EP/DP/TH) was shuffled to hold a crystal. Suppress the OR
-    // under rando-active; the dispatch path owns the bit. Map-indicator and
-    // overworld-map state are kept regardless — the (*p & 7) == 7 check
-    // still works because the rando dispatch has set the correct bits.
+    // the falling-prize collision path dispatches the placed prize before this
+    // receipt grant. Letting `*p |= t` run here would double-OR the vanilla
+    // pendant on top — silently corrupting state when a pendant dungeon
+    // (EP/DP/TH) was shuffled to hold a crystal. Suppress the OR under
+    // rando-active; the dispatch path owns the bit. Map-indicator and
+    // overworld-map state are kept regardless — the (*p & 7) == 7 check still
+    // works because the rando dispatch has set the correct bits.
     if (!(enhanced_features1 & kFeatures1_RandomizerActive))
       // rando-exempt: vanilla-only fall-through; dispatch path above owns the bit when rando is active.
       *p |= t;

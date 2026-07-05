@@ -244,7 +244,16 @@ immediately before any bump/commit (concurrent-drift discipline).
       Fixed by arming a one-shot cleared-terminal escape when the synthetic boss
       entrance loads an already-checked terminal, then consuming it at the top of the
       dungeon loop before shutters can trap the player. Runtime selfcheck now covers
-      unchecked vs checked terminal re-entry. -->
+      unchecked vs checked terminal re-entry.
+
+      Owner playtest 2026-07-05 found ToH/Moldorm terminal falling after collecting
+      the boss-heart replacement but before visibly receiving the pendant immediately
+      exited and granted the pendant. A vanilla comparison F12 was not a clean prize
+      reference because the cheat state already had link_which_pendants=0x07 and
+      link_has_crystals=0x7F, but source review confirmed vanilla grants pendant/
+      crystal bits on falling-prize receipt. Fixed rando boss prizes to dispatch at
+      falling-prize receipt instead of spawn, so falling before pickup leaves the
+      prize unchecked and preserves the ToH retry loop. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
