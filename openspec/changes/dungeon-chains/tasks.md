@@ -64,11 +64,11 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 4. Chain construction + generation
 
-- [ ] 4.1 `src/rando/shuffle_chains.{c,h}`: `Chains_Compute(seed, attempt)`
+- [x] 4.1 `src/rando/shuffle_chains.{c,h}`: `Chains_Compute(seed, attempt)`
       (Fisher-Yates + uniform composition + pinned TT→Blind / ToH→Moldorm
       adjacencies, dedicated RNG salt), the three output tables, and the 24-bit
       digest. Register both files in `zelda3.vcxproj` (MSBuild does not glob).
-- [ ] 4.2 `Chains_SelfCheck` (partition validity, pins, recompute stability) and
+- [x] 4.2 `Chains_SelfCheck` (partition validity, pins, recompute stability) and
       wire it into `--rando-selftest`; digest must match MSVC ↔ gcc.
 - [ ] 4.3 Integrate into `Rando_PlaceWithEntrances`: per-attempt
       `Chains_Compute` + edge-override install (clear ALL override state at
