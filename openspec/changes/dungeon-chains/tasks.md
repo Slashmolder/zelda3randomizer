@@ -170,9 +170,15 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 6. UI
 
-- [ ] 6.1 `rando_window.cpp`: `dungeon_chains` checkbox in the world-structure
+- [x] 6.1 `rando_window.cpp`: `dungeon_chains` checkbox in the world-structure
       panel, normalization-grayed under conflicts; tooltip with 1–2 durable
       player-facts only.
+      <!-- done 2026-07-05: added the checkbox beside structural shuffle
+      controls, using Settings_EffectiveDungeonChains through a probe copy so
+      the UI disables and normalizes the pending bit under the same conflicts as
+      generation. Tooltip limited to chain-door and boss-pool player facts. git
+      diff --check, openspec validate dungeon-chains --strict, Release build,
+      and --rando-selftest green. -->
 
 ## 7. Verification and close-out
 

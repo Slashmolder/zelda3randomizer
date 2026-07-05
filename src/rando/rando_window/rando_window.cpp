@@ -1259,6 +1259,26 @@ static void Panel_Shuffles() {
     HelpTooltip("Shuffles each dungeon's interior door connections; key doors "
                 "move too. Hyrule Castle and Swamp Palace stay vanilla.");
 
+    {
+      RandoSettings chains_probe = *s;
+      chains_probe.dungeon_chains = 1;
+      bool chains_forced_off = !Settings_EffectiveDungeonChains(&chains_probe);
+      if (chains_forced_off && s->dungeon_chains) {
+        s->dungeon_chains = 0;
+        changed = true;
+      }
+
+      bool chains = s->dungeon_chains != 0;
+      ImGui::BeginDisabled(chains_forced_off);
+      if (ImGui::Checkbox("Dungeon chains", &chains)) {
+        s->dungeon_chains = chains ? 1 : 0;
+        changed = true;
+      }
+      ImGui::EndDisabled();
+      HelpTooltip("Each main dungeon door starts a chain ending in a boss. "
+                  "Every pool boss appears once.");
+    }
+
     // add-rando-pot-sanity — pot shuffle tier. Disabled whenever generation
     // forces pots off (Settings_PotShuffleForcedOff: cave-entrance shuffle).
     // Door shuffle composes through the generated door x pot bridge.
