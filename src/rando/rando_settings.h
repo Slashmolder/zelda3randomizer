@@ -114,7 +114,7 @@ typedef struct RandoSettings {
   uint8 drop_shuffle;
   // Phase C — entrance shuffle composable axes (binary on/off). All default
   // off EXCEPT `coupled` (defaults on, the ALTTPR baseline: enter A ⇒ exit A).
-  // Canonical serialization bit-PACKS all five into the previously-zero pad
+  // Canonical serialization bit-PACKS them into the previously-zero pad
   // byte [25] (see kEntranceAxis_* below), so the default settings still
   // serialize to a zero byte and kSettingsCanonicalLen stays 28 — no
   // canonical-size-coupling cascade. `coupled`/`cross_category`/`decoupled`
@@ -134,6 +134,11 @@ typedef struct RandoSettings {
   // so a seed that can't be made reachable simply fails to generate — lower
   // crystals.tower (0 always works) or reroll. Requires shuffle_dungeon_entrances.
   uint8 shuffle_ganons_tower_entrance;  // bool (advanced)
+  // dungeon-chains — opt-in dungeon boss-chain topology. Serialized into
+  // canonical byte [25] bit6 alongside the entrance/topology axes. Default off
+  // keeps default settings_hash + corpus byte-identical. Derived rules normalize
+  // incompatible combinations off before hashing/generation.
+  uint8 dungeon_chains;  // bool
   // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis. Binary
   // on/off, default off. Like boss/drop shuffle this is ORTHOGONAL to item
   // placement (draws no fill RNG, adds no logic predicate), so it does NOT grow
@@ -289,6 +294,7 @@ enum {
   kEntranceAxis_CrossCategory   = 1u << 3,
   kEntranceAxis_Decoupled       = 1u << 4,
   kEntranceAxis_ShuffleGanonsTower = 1u << 5,
+  kEntranceAxis_DungeonChains   = 1u << 6,
 };
 
 // ===========================================================================
@@ -309,8 +315,9 @@ enum {
 // LENGTH STAYED 28 through those axes because all reused previously-zero pad
 // bytes. add-rando-pot-sanity took the LAST free bits of [26] (6-7) and [27]
 // (bit 7) for pot_shuffle, so [26] and [27] are now fully allocated. The only
-// remaining extension surface at length 28 is [25] bits 6-7 (entrance axes use
-// 0-5). add-rando-enemy-drop-sanity grows the length to 29 by appending [28].
+// remaining extension surface at historical length 28 is [25] bit 7
+// (entrance/chains axes use 0-6). add-rando-enemy-drop-sanity grows the length
+// to 29 by appending [28].
 #define kSettingsCanonicalLen 29
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
@@ -347,6 +354,12 @@ uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s);
 // install, and settings_hash always agree (vanilla under Inverted/Retro,
 // glitched logic, or entrance shuffle — the MVP pins).
 uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s);
+
+// dungeon-chains — the normalized topology opt-in. Chains are one-directional:
+// they turn themselves off under incompatible modes rather than forcing those
+// modes off. Honored only on Open/Standard NoGlitches seeds, with boss shuffle
+// off, door shuffle vanilla, and no entrance shuffle axes.
+bool Settings_EffectiveDungeonChains(const RandoSettings *s);
 
 // add-rando-pot-sanity (audit) — the EFFECTIVE accessibility tier. goal ==
 // Completionist forces 100%-Locations (apply_derived_rules), so the placer's

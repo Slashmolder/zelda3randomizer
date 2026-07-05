@@ -32,7 +32,8 @@
 //   offset 24  drop_shuffle                bool          (§66)
 //   offset 25  entrance_axes (bit-packed)  Phase C — bit0 shuffle_caves,
 //                                          bit1 shuffle_dungeons, bit2 coupled,
-//                                          bit3 cross_category, bit4 decoupled.
+//                                          bit3 cross_category, bit4 decoupled,
+//                                          bit5 shuffle_gt, bit6 dungeon_chains.
 //                                          0x00 for the default (no shuffle).
 //   offset 26  misc axes (bit-packed)      bit0 enemy_shuffle, bit1
 //                                          customizer_active, bits2-3 traps,
@@ -91,6 +92,9 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->cross_category = 0;
   s->decoupled = 0;
   s->shuffle_ganons_tower_entrance = 0;  // advanced opt-in (off by default)
+  // dungeon-chains — boss-chain topology off by default, so canonical [25] bit6
+  // stays 0 (corpus + default settings_hash byte-identical).
+  s->dungeon_chains = 0;
   // add-rando-enemy-shuffle — enemy (sprite-type) substitution. Default OFF, so
   // the packed pad byte [26] is 0x00 (corpus byte-identical).
   s->enemy_shuffle = 0;
@@ -239,6 +243,10 @@ static void apply_derived_rules(RandoSettings *s) {
     s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
   }
 
+  // dungeon-chains — one-directional compatibility: the chain opt-in yields to
+  // existing topology/runtime modes, it never forces those modes off.
+  s->dungeon_chains = Settings_EffectiveDungeonChains(s);
+
   // add-rando-pot-sanity — pots do NOT compose with cave-entrance shuffle in v1.
   // Cave/house pot location IDs are above the per-location entrance
   // region-override range (Entrance_ApplyRegionOverrides only remaps the caves'
@@ -382,7 +390,8 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->coupled                   ? kEntranceAxis_Coupled         : 0) |
                     (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
                     (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
-                    (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0));
+                    (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0) |
+                    (s->dungeon_chains            ? kEntranceAxis_DungeonChains   : 0));
   // add-rando-enemy-shuffle / customizer / traps / instant-flute — share the
   // formerly-zero pad byte [26]. Defaults keep every bit clear (instant-flute
   // uses an inverse manual-activation bit), preserving default settings_hash.
@@ -428,7 +437,7 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // and [27] (bit 7) for pot_shuffle, so those bytes are now fully defined and an
 // out-of-range pot_shuffle VALUE there is refused (the enum-rejection rule, not
 // the undefined-bit rule). Real pre-pot files have those bits = 0 (Off), so they
-// still reveal cleanly; [25] bits 6-7 remain the genuinely-undefined surface.
+// still reveal cleanly; [25] bit 7 remains the genuinely-undefined surface.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;
@@ -469,6 +478,7 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.cross_category             = (in[25] & kEntranceAxis_CrossCategory)   ? 1 : 0;
   s.decoupled                  = (in[25] & kEntranceAxis_Decoupled)       ? 1 : 0;
   s.shuffle_ganons_tower_entrance = (in[25] & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
+  s.dungeon_chains             = (in[25] & kEntranceAxis_DungeonChains)   ? 1 : 0;
   // add-rando-enemy-shuffle — unpack the enemy-shuffle bit from pad byte [26].
   // A zero byte (the default / any pre-enemy-shuffle file) yields enemy_shuffle=0,
   // identical to a struct with no enemy shuffle.
@@ -546,8 +556,12 @@ bool Settings_Validate(const RandoSettings *s) {
     return false;
   if (s->hints > 1) return false;                                          // [22] off/on
   if (s->boss_shuffle > 1 || s->drop_shuffle > 1) return false;            // [23][24] bool
-  // [25] entrance axes / [26] misc axes: bit-packed; deserialize
+  // [25] entrance/chains axes / [26] misc axes: bit-packed; deserialize
   // masks the defined bits, undefined bits stay permissive by contract.
+  if (s->shuffle_cave_entrances > 1 || s->shuffle_dungeon_entrances > 1 ||
+      s->coupled > 1 || s->cross_category > 1 || s->decoupled > 1 ||
+      s->shuffle_ganons_tower_entrance > 1 || s->dungeon_chains > 1)
+    return false;
   if (s->instant_flute > 1) return false;                                  // [26] bit4 inverse bool
   if (s->door_shuffle > kDoorShuffle_Basic) return false;                  // [27] bits 0-1: only 0/1 defined
   if (s->trap_categories > kTrapCategory_All) return false;               // [27] bits 2-6: 5-bit category mask
@@ -580,6 +594,20 @@ uint8 Settings_EffectiveDoorShuffle(const RandoSettings *s) {
       s->shuffle_cave_entrances || s->shuffle_dungeon_entrances)
     return kDoorShuffle_Vanilla;
   return (uint8)(s->door_shuffle & kDoorShuffleAxis_Mask);
+}
+
+bool Settings_EffectiveDungeonChains(const RandoSettings *s) {
+  if (s == NULL || !s->dungeon_chains)
+    return false;
+  if (s->world_state != kWorldState_Open && s->world_state != kWorldState_Standard)
+    return false;
+  if (s->logic != 0 /* NoGlitches */ || s->boss_shuffle)
+    return false;
+  if (s->door_shuffle != kDoorShuffle_Vanilla)
+    return false;
+  if (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances)
+    return false;
+  return true;
 }
 
 void Settings_ComputeHash(const RandoSettings *s, uint8 out_hash[32]) {
@@ -667,6 +695,24 @@ void Settings_SelfCheck(void) {
     fprintf(stderr,
             "Settings_SelfCheck: default settings_hash mismatch (SHA-256 broken?).\n");
     exit(2);
+  }
+
+  // A pre-dungeon-chains/default canonical blob has [25] bit6 clear and must
+  // round-trip unchanged.
+  {
+    RandoSettings pre_axis;
+    if (Settings_CanonicalDeserialize(kExpectedCanonical, &pre_axis) != 0 ||
+        pre_axis.dungeon_chains != 0) {
+      fprintf(stderr, "Settings_SelfCheck: pre-chain canonical blob should "
+                      "deserialize with dungeon_chains off\n");
+      exit(2);
+    }
+    uint8 pre_axis_round[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&pre_axis, pre_axis_round);
+    if (!settings_byte_eq(pre_axis_round, kExpectedCanonical, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: pre-chain canonical blob round-trip drifted\n");
+      exit(2);
+    }
   }
 
   // CSV parser round-trip: defaults → CSV → defaults.
@@ -837,6 +883,81 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: GT opt-in without dungeon shuffle must "
                       "normalize byte [25] to 0 (got 0x%02x)\n", cgn[25]);
       exit(2);
+    }
+    // Dungeon chains own bit 6 and normalize one-directionally under conflicts.
+    RandoSettings sch;
+    Settings_SetDefaults(&sch);
+    sch.dungeon_chains = 1;
+    uint8 cch[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sch, cch);
+    if (cch[25] != kEntranceAxis_DungeonChains) {
+      fprintf(stderr, "Settings_SelfCheck: dungeon_chains pack mismatch "
+                      "(got 0x%02x)\n", cch[25]);
+      exit(2);
+    }
+    RandoSettings rch;
+    if (Settings_CanonicalDeserialize(cch, &rch) != 0 || rch.dungeon_chains != 1) {
+      fprintf(stderr, "Settings_SelfCheck: dungeon_chains deserialize round-trip "
+                      "mismatch\n");
+      exit(2);
+    }
+    RandoSettings svch;
+    Settings_SetDefaults(&svch);
+    if (Settings_ParseCsv("dungeon_chains=true", &svch) != 0 ||
+        svch.dungeon_chains != 1) {
+      fprintf(stderr, "Settings_SelfCheck: CSV parse of dungeon_chains failed\n");
+      exit(2);
+    }
+    uint8 cvch[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&svch, cvch);
+    if (!settings_byte_eq(cvch, cch, kSettingsCanonicalLen)) {
+      fprintf(stderr, "Settings_SelfCheck: CSV-parsed dungeon_chains serializes "
+                      "differently from the struct path\n");
+      exit(2);
+    }
+    typedef struct {
+      const char *name;
+      uint8 world_state;
+      uint8 logic;
+      uint8 boss_shuffle;
+      uint8 door_shuffle;
+      uint8 shuffle_cave_entrances;
+      uint8 shuffle_dungeon_entrances;
+      uint8 expect_active;
+    } ChainNormCase;
+    static const ChainNormCase kChainNormCases[] = {
+      { "open",             kWorldState_Open,     0, 0, kDoorShuffle_Vanilla, 0, 0, 1 },
+      { "standard",         kWorldState_Standard, 0, 0, kDoorShuffle_Vanilla, 0, 0, 1 },
+      { "inverted",         kWorldState_Inverted, 0, 0, kDoorShuffle_Vanilla, 0, 0, 0 },
+      { "retro",            kWorldState_Retro,    0, 0, kDoorShuffle_Vanilla, 0, 0, 0 },
+      { "glitched-logic",   kWorldState_Open,     1, 0, kDoorShuffle_Vanilla, 0, 0, 0 },
+      { "boss-shuffle",     kWorldState_Open,     0, 1, kDoorShuffle_Vanilla, 0, 0, 0 },
+      { "door-shuffle",     kWorldState_Open,     0, 0, kDoorShuffle_Basic,   0, 0, 0 },
+      { "cave-entrance",    kWorldState_Open,     0, 0, kDoorShuffle_Vanilla, 1, 0, 0 },
+      { "dungeon-entrance", kWorldState_Open,     0, 0, kDoorShuffle_Vanilla, 0, 1, 0 },
+    };
+    for (size_t i = 0; i < sizeof(kChainNormCases) / sizeof(kChainNormCases[0]); i++) {
+      const ChainNormCase *tc = &kChainNormCases[i];
+      RandoSettings sx;
+      Settings_SetDefaults(&sx);
+      sx.dungeon_chains = 1;
+      sx.world_state = tc->world_state;
+      sx.logic = tc->logic;
+      sx.boss_shuffle = tc->boss_shuffle;
+      sx.door_shuffle = tc->door_shuffle;
+      sx.shuffle_cave_entrances = tc->shuffle_cave_entrances;
+      sx.shuffle_dungeon_entrances = tc->shuffle_dungeon_entrances;
+      uint8 cx[kSettingsCanonicalLen];
+      Settings_CanonicalSerialize(&sx, cx);
+      const uint8 active = (cx[25] & kEntranceAxis_DungeonChains) ? 1 : 0;
+      if (active != tc->expect_active ||
+          (uint8)Settings_EffectiveDungeonChains(&sx) != tc->expect_active) {
+        fprintf(stderr, "Settings_SelfCheck: dungeon_chains normalization case "
+                        "'%s' expected %u got canonical=%u effective=%u\n",
+                tc->name, tc->expect_active, active,
+                (uint8)Settings_EffectiveDungeonChains(&sx));
+        exit(2);
+      }
     }
     // decoupled implies !coupled in the serialized form.
     RandoSettings se2;
@@ -1887,6 +2008,9 @@ enum {
   KEY_cross_category,
   KEY_decoupled,
   KEY_shuffle_ganons_tower_entrance,
+  // dungeon-chains — boss-chain topology axis (binary). Packed into canonical
+  // byte [25] bit6.
+  KEY_dungeon_chains,
   // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis (binary).
   KEY_enemy_shuffle,
   // add-rando-door-shuffle — door_shuffle axis (vanilla|basic). Packed into
@@ -2149,6 +2273,10 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Phase C — advanced opt-in: include Ganon's Tower in the dungeon pool.
     MARK_SEEN(KEY_shuffle_ganons_tower_entrance);
     if (parse_bool(val, vlen, &s->shuffle_ganons_tower_entrance) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "dungeon_chains")) {
+    // dungeon-chains — boss-chain topology axis.
+    MARK_SEEN(KEY_dungeon_chains);
+    if (parse_bool(val, vlen, &s->dungeon_chains) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "hints")) {
     // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
     // `spoil.Hints` semantics (`HintService.php:54` tests `=== 'on'`).

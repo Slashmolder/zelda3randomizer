@@ -52,14 +52,14 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 3. Settings and normalization
 
-- [ ] 3.1 Add `dungeon_chains` to `RandoSettings` + canonical byte `out[25]` bit
+- [x] 3.1 Add `dungeon_chains` to `RandoSettings` + canonical byte `out[25]` bit
       6 (`rando_settings.{c,h}`); parser key `dungeon_chains=` for
       `--settings=`.
-- [ ] 3.2 Implement the one-directional normalization in `apply_derived_rules`
+- [x] 3.2 Implement the one-directional normalization in `apply_derived_rules`
       (chains off unless: no entrance axes, door vanilla, boss off, world_state
       ∈ {Open, Standard}, NoGlitches); keep it a pure computation (no recursion
       via derived rules — door-shuffle lesson).
-- [ ] 3.3 Settings self-check: default packs to 0x00; hash stability vs a
+- [x] 3.3 Settings self-check: default packs to 0x00; hash stability vs a
       pre-axis canonical blob; normalization truth table.
 
 ## 4. Chain construction + generation
