@@ -9,6 +9,7 @@
 
 #include "../assets.h"
 #include "../dungeon.h"
+#include "../features.h"
 #include "../hud.h"
 #include "../variables.h"
 
@@ -615,6 +616,89 @@ void Chains_RuntimeSelfCheck(void) {
   if (g_chains_origin_active)
     Chains_RuntimeSelfCheckDie("origin remained armed after main exit");
 
+  const ChainSeamRow *ep_boss_seam = Chains_FindBossSeam(
+      kChainSeamKind_Door, kDoorTblDir_North, 0x0D8, 0x0C8, 2);
+  if (ep_boss_seam == NULL || ep_boss_seam->rando_dungeon != ep)
+    Chains_RuntimeSelfCheckDie("EP boss seam fixture missing");
+
+  uint8 saved_which_entrance = which_entrance;
+  uint8 saved_player_is_indoors = player_is_indoors;
+  uint8 saved_link_this_controls_sprite_oam = link_this_controls_sprite_oam;
+  uint8 saved_player_near_pit_state = player_near_pit_state;
+  uint8 saved_link_visibility_status = link_visibility_status;
+  uint16 saved_death_var5_word = WORD(death_var5);
+  uint8 saved_main_module_index_for_hop = main_module_index;
+  uint8 saved_submodule_index_for_hop = submodule_index;
+  uint8 saved_subsubmodule_index_for_hop = subsubmodule_index;
+  uint8 saved_room_transitioning_flags_for_hop = room_transitioning_flags;
+  uint8 saved_is_standing_in_doorway_for_hop = is_standing_in_doorway;
+  uint16 saved_death_var4_word = WORD(death_var4);
+  uint16 saved_dung_cur_door_pos = dung_cur_door_pos;
+  uint16 saved_door_animation_step_indicator = door_animation_step_indicator;
+
+  int ep_pool_idx = Chains_PoolIndexForDungeon(ep);
+  if (ep_pool_idx < 0)
+    Chains_RuntimeSelfCheckDie("EP pool index missing");
+  layout.chain_successor[ep_pool_idx] = Chains_DungeonElement(kRandoDungeon_DesertPalace);
+  if (!Chains_RuntimeInstallLayout(&layout))
+    Chains_RuntimeSelfCheckDie("lobby successor layout install failed");
+  Chains_RuntimeArmOrigin(Chains_MainExitRoomForRandoDungeon(ep));
+  if (!Chains_TryBossSeamHop(ep_boss_seam->kind, ep_boss_seam->direction,
+                             ep_boss_seam->source_room, ep_boss_seam->dest_room,
+                             ep_boss_seam->slot))
+    Chains_RuntimeSelfCheckDie("lobby successor boss seam did not hop");
+  if (which_entrance != Chains_MainEntranceForRandoDungeon(kRandoDungeon_DesertPalace))
+    Chains_RuntimeSelfCheckDie("lobby successor hop picked wrong entrance");
+  if (g_chains_terminal_active || g_chains_terminal_dungeon != kRandoDungeon_None)
+    Chains_RuntimeSelfCheckDie("lobby successor hop armed terminal state");
+  if (!Chains_ConsumeHopPending() || Chains_ConsumeHopPending())
+    Chains_RuntimeSelfCheckDie("lobby successor hop pending flag mismatch");
+
+  layout.chain_successor[ep_pool_idx] = Chains_BossElement(kRandoDungeon_DesertPalace);
+  if (!Chains_RuntimeInstallLayout(&layout))
+    Chains_RuntimeSelfCheckDie("boss successor layout install failed");
+  Chains_RuntimeArmOrigin(Chains_MainExitRoomForRandoDungeon(ep));
+  if (!Chains_TryBossSeamHop(ep_boss_seam->kind, ep_boss_seam->direction,
+                             ep_boss_seam->source_room, ep_boss_seam->dest_room,
+                             ep_boss_seam->slot))
+    Chains_RuntimeSelfCheckDie("boss successor seam did not hop");
+  if (which_entrance != Chains_BossEntranceForRandoDungeon(kRandoDungeon_DesertPalace))
+    Chains_RuntimeSelfCheckDie("boss successor hop picked wrong synthetic entrance");
+  if (!g_chains_terminal_active ||
+      g_chains_terminal_dungeon != kRandoDungeon_DesertPalace)
+    Chains_RuntimeSelfCheckDie("boss successor hop did not arm terminal state");
+  if (!Chains_ConsumeHopPending() || Chains_ConsumeHopPending())
+    Chains_RuntimeSelfCheckDie("boss successor hop pending flag mismatch");
+
+  layout.chain_successor[ep_pool_idx] = Chains_BossElement(ep);
+  if (!Chains_RuntimeInstallLayout(&layout))
+    Chains_RuntimeSelfCheckDie("identity successor layout install failed");
+  Chains_RuntimeArmOrigin(Chains_MainExitRoomForRandoDungeon(ep));
+  if (Chains_TryBossSeamHop(ep_boss_seam->kind, ep_boss_seam->direction,
+                            ep_boss_seam->source_room, ep_boss_seam->dest_room,
+                            ep_boss_seam->slot))
+    Chains_RuntimeSelfCheckDie("identity successor seam should stay vanilla");
+  if (!g_chains_terminal_active || g_chains_terminal_dungeon != ep)
+    Chains_RuntimeSelfCheckDie("identity successor did not arm terminal state");
+  if (Chains_ConsumeHopPending())
+    Chains_RuntimeSelfCheckDie("identity successor left pending hop");
+
+  which_entrance = saved_which_entrance;
+  player_is_indoors = saved_player_is_indoors;
+  link_this_controls_sprite_oam = saved_link_this_controls_sprite_oam;
+  player_near_pit_state = saved_player_near_pit_state;
+  link_visibility_status = saved_link_visibility_status;
+  WORD(death_var5) = saved_death_var5_word;
+  main_module_index = saved_main_module_index_for_hop;
+  submodule_index = saved_submodule_index_for_hop;
+  subsubmodule_index = saved_subsubmodule_index_for_hop;
+  room_transitioning_flags = saved_room_transitioning_flags_for_hop;
+  is_standing_in_doorway = saved_is_standing_in_doorway_for_hop;
+  WORD(death_var4) = saved_death_var4_word;
+  dung_cur_door_pos = saved_dung_cur_door_pos;
+  door_animation_step_indicator = saved_door_animation_step_indicator;
+
+  layout.chain_successor[ep_pool_idx] = Chains_BossElement(ep);
   layout.chain_door_first[0] = Chains_BossElement(kRandoDungeon_DesertPalace);
   if (!Chains_RuntimeInstallLayout(&layout))
     Chains_RuntimeSelfCheckDie("terminal layout install failed");
@@ -627,6 +711,78 @@ void Chains_RuntimeSelfCheck(void) {
       !g_chains_origin_active ||
       !g_chains_terminal_active)
     Chains_RuntimeSelfCheckDie("terminal entry did not arm origin and terminal state");
+
+  ChainsRuntimeSession invalid_session;
+  memset(&invalid_session, 0, sizeof(invalid_session));
+  invalid_session.origin_active = false;
+  invalid_session.terminal_active = true;
+  if (Chains_RuntimeRestoreSession(&invalid_session))
+    Chains_RuntimeSelfCheckDie("inactive session accepted terminal state");
+  invalid_session.origin_active = true;
+  invalid_session.terminal_active = false;
+  invalid_session.origin_exit_room = 0x0123;
+  if (Chains_RuntimeRestoreSession(&invalid_session))
+    Chains_RuntimeSelfCheckDie("session accepted non-main origin room");
+  invalid_session.origin_exit_room = Chains_MainExitRoomForRandoDungeon(ep);
+  invalid_session.terminal_active = true;
+  invalid_session.terminal_dungeon = kRandoDungeon_None;
+  if (Chains_RuntimeRestoreSession(&invalid_session))
+    Chains_RuntimeSelfCheckDie("session accepted invalid terminal dungeon");
+
+  ChainsRuntimeSession terminal_session;
+  memset(&terminal_session, 0, sizeof(terminal_session));
+  terminal_session.origin_active = true;
+  terminal_session.terminal_active = true;
+  terminal_session.origin_exit_room = Chains_MainExitRoomForRandoDungeon(ep);
+  terminal_session.terminal_dungeon = kRandoDungeon_DesertPalace;
+  if (!Chains_RuntimeRestoreSession(&terminal_session))
+    Chains_RuntimeSelfCheckDie("terminal session restore failed");
+
+  const ChainSeamRow *dp_outbound = Chains_FindOutboundSeam(
+      kChainSeamKind_Door, kDoorTblDir_South, 0x033, 0x043, 0);
+  if (dp_outbound == NULL || dp_outbound->rando_dungeon != kRandoDungeon_DesertPalace)
+    Chains_RuntimeSelfCheckDie("DP outbound seam fixture missing");
+
+  uint8 saved_slot_active = g_rando_slot_active;
+  uint8 saved_checked_bitmap[kRandoCheckedBitmapBytes];
+  memcpy(saved_checked_bitmap, g_rando_checked_bitmap, sizeof(saved_checked_bitmap));
+  uint16 saved_dungeon_room_index = dungeon_room_index;
+  uint8 saved_room_transitioning_flags = room_transitioning_flags;
+  uint8 saved_is_standing_in_doorway = is_standing_in_doorway;
+  uint8 saved_saved_module_for_menu = saved_module_for_menu;
+  uint8 saved_main_module_index = main_module_index;
+  uint8 saved_submodule_index = submodule_index;
+  uint8 saved_subsubmodule_index = subsubmodule_index;
+
+  g_rando_slot_active = 1;
+  memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+  if (Chains_TryTerminalOutboundSeam(dp_outbound->kind, dp_outbound->direction,
+                                     dp_outbound->source_room, dp_outbound->dest_room,
+                                     dp_outbound->slot))
+    Chains_RuntimeSelfCheckDie("pre-reward terminal outbound seam fired");
+  if (!g_chains_origin_active || !g_chains_terminal_active)
+    Chains_RuntimeSelfCheckDie("pre-reward terminal outbound consumed session");
+  uint16 dp_prize_loc = Rando_BossPrizeLocationForGameDungeon(
+      Rando_GameDungeonFromRandoDungeon(kRandoDungeon_DesertPalace));
+  Rando_MarkLocationChecked(dp_prize_loc);
+  if (!Chains_TryTerminalOutboundSeam(dp_outbound->kind, dp_outbound->direction,
+                                      dp_outbound->source_room, dp_outbound->dest_room,
+                                      dp_outbound->slot))
+    Chains_RuntimeSelfCheckDie("checked terminal outbound seam did not fire");
+  if (dungeon_room_index != Chains_MainExitRoomForRandoDungeon(ep))
+    Chains_RuntimeSelfCheckDie("terminal outbound did not target origin exit room");
+  if (g_chains_origin_active || g_chains_terminal_active)
+    Chains_RuntimeSelfCheckDie("terminal outbound did not consume session");
+
+  g_rando_slot_active = saved_slot_active;
+  memcpy(g_rando_checked_bitmap, saved_checked_bitmap, sizeof(saved_checked_bitmap));
+  dungeon_room_index = saved_dungeon_room_index;
+  room_transitioning_flags = saved_room_transitioning_flags;
+  is_standing_in_doorway = saved_is_standing_in_doorway;
+  saved_module_for_menu = saved_saved_module_for_menu;
+  main_module_index = saved_main_module_index;
+  submodule_index = saved_submodule_index;
+  subsubmodule_index = saved_subsubmodule_index;
 
   Chains_RuntimeTeardown();
   if ((const uint8 *)kOverworld_Entrance_Id != vanilla)

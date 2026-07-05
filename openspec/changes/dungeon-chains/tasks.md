@@ -111,7 +111,9 @@ immediately before any bump/commit (concurrent-drift discipline).
       done 2026-07-04: door/stair/hole hooks call table-driven
       Chains_TryBossSeamHop; generated main_entrance_id maps dungeon successors;
       identity successors fall through vanilla; hooks stay dormant until 5.6
-      installs a runtime layout. Release build + --rando-selftest green. -->
+      installs a runtime layout. Release build + --rando-selftest green.
+      Follow-up headless coverage asserts boss-seam hook behavior for dungeon
+      successor hops, synthetic boss successor hops, and identity successors. -->
 - [x] 5.4 Terminal containment: outbound transitions from a terminal boss room
       divert to the chain exit (origin door); verify cleared-terminal re-entry
       is exitable. <!-- done 2026-07-05: door/stair/hole outbound seams match
@@ -119,8 +121,10 @@ immediately before any bump/commit (concurrent-drift discipline).
       location is checked; pre-reward transitions stay vanilla so Moldorm fall-out
       keeps the retry loop. Terminal exits route through the normal module-15 ->
       module-8 overworld loader using chains-owned origin_exit_room. Release
-      build + --rando-selftest green; end-to-end cleared-terminal owner playtest
-      remains tracked in 7.3. -->
+      build + --rando-selftest green. Follow-up headless coverage asserts
+      pre-reward terminal outbound seams do not fire, stay armed, and then
+      consume origin only after the terminal prize location is checked; end-to-end
+      cleared-terminal owner playtest remains tracked in 7.3. -->
 - [x] 5.5 Chain-start doors + origin coupling: extend the
       `kOverworld_Entrance_Id` overlay install for the 9 main doors; add the
       chains-owned origin session state (armed at chain entry — NOT the
@@ -149,6 +153,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       session state for cold replay. RandoSnapshotTail_SelfCheck covers restore,
       in-flight session restore, re-save perpetuation, missing ChainLayout
       fail-closed, and bad digest fail-closed with a synthetic asset fixture.
+      Chains_RuntimeSelfCheck rejects malformed restored origin/terminal sessions.
       git diff --check, openspec validate dungeon-chains --strict, Release build,
       and --rando-selftest green. -->
 - [x] 5.7 Sidecar persistence: new additive extension block {present, attempt,
