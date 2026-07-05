@@ -263,7 +263,9 @@ immediately before any bump/commit (concurrent-drift discipline).
       mirror and S&Q from Armos both restore Armos, S&Q reaches the expected
       select screen, mirror in PoD restores PoD, death + save/continue in PoD
       restores PoD, and killing Armos exits to the Swamp entrance. PoD main-door
-      exit reached overworld as expected for chain-origin exit behavior. -->
+      exit reached overworld as expected for chain-origin exit behavior.
+
+      Owner playtest also confirmed chain-0 boss-door behavior works. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
