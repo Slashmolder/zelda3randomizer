@@ -6858,11 +6858,12 @@ static void RandoPot_DrawGoldOverlay(void) {
     return;
   // Reserve a sprite sub-palette row no on-screen sprite uses this frame (NMI
   // golds it). All 8 rows are allocated in a dungeon, so we pick dynamically and
-  // NEVER take Link's row 7 (Link draws after us; an earlier fixed row 7 painted
-  // Link gold — F12-confirmed). OAM for this frame is built (we run after
+  // NEVER take Link's equipment rows 3/5/7 (Link draws after us; an earlier
+  // fixed row 7 painted Link gold, and sword/shield can land on rows 3/5).
+  // OAM for this frame is built (we run after
   // Sprite_Main); ClearOamBuffer set unused slots to y=0xf0, so y<0xf0 == a
   // sprite drawn this frame. If every row is busy, skip the glint (rare).
-  uint8 used = 1u << 7;  // reserve Link's row
+  uint8 used = (1u << 3) | (1u << 5) | (1u << 7);
   for (int i = 0; i < 128; i++) {
     if (oam_buf[i].y < 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);

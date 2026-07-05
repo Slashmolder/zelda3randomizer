@@ -248,6 +248,17 @@ static int AvailBigCtr(const KeyCtx *kc, const KeyState *st) {
   return v > 0 ? v : 0;
 }
 
+static int KeyWorstCaseCap(const KeyCtx *kc) {
+  int nonpot_drops = 0;
+  for (int i = 0; i < kDoorTbl_DropKeyCount; i++) {
+    if (kDoorTblDropKeys[i].dungeon == kc->dungeon &&
+        !Door_DropExcludedByActivePot(kc->dungeon, (uint16)i, kc->pot_tier)) {
+      nonpot_drops++;
+    }
+  }
+  return kc->max_small_sources + nonpot_drops;
+}
+
 // ---------------------------------------------------------------------------
 // validate_key_layout (the proposal acceptance criterion)
 // ---------------------------------------------------------------------------
@@ -762,9 +773,9 @@ static bool AnalyzeDungeon(KeyCtx *kc) {
 
   // --- worst-case rules (analyze_dungeon queue, small-entered before big) --
   uint8 d = kc->dungeon;
+  int wc_cap = KeyWorstCaseCap(kc);
   for (int i = 0; i < kc->np; i++)  // conservative default if never reached
-    kc->layout->key_worst_case[d][i] =
-        (uint8)(kDoorTblDungeons[d].chest_small_keys + g_door_idx.drop_cnt[d]);
+    kc->layout->key_worst_case[d][i] = (uint8)wc_cap;
   uint32 smallq[kMaxKeyStates], bigq[kMaxKeyStates];
   int sh = 0, stl = 0, bh = 0, btl = 0;
   uint8 visited[1 << (kDoorShuffle_MaxKeyDoors + 1)];
@@ -790,8 +801,7 @@ static bool AnalyzeDungeon(KeyCtx *kc) {
         ComputeOdd(&odd, next, st);
         int best = FindBestCounter(kc, i, &odd, OddEmpty(&odd));
         int wc = best + 1;  // create_worst_case_rule: used_keys + 1
-        int cap = kDoorTblDungeons[d].chest_small_keys + g_door_idx.drop_cnt[d];
-        kc->layout->key_worst_case[d][i] = (uint8)(wc > cap ? cap : wc);
+        kc->layout->key_worst_case[d][i] = (uint8)(wc > wc_cap ? wc_cap : wc);
         completed |= 1 << i;
       }
       uint32 k2 = (mask | (1 << i)) | ((uint32)bk << kDoorShuffle_MaxKeyDoors);

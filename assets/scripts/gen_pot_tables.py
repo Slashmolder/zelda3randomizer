@@ -148,9 +148,11 @@ def check_override_static(overrides_path: Path) -> int:
 
     Public CI does not have the ROM-derived pots.gen.yaml, so it cannot run the
     full row freshness check. This catches the committed-file failures that do
-    not require the local registry: malformed room ids, unknown regions,
-    duplicate split positions, and contradictory override sections.
+    not require the local pot dump: base-registry id collisions, malformed room
+    ids, unknown regions, duplicate split positions, and contradictory override
+    sections.
     """
+    check_registry_id_budget(REPO / "assets/rando/location_registry.yaml")
     if not overrides_path.is_file():
         print(f"gen_pot_tables: ERROR: missing {overrides_path}", file=sys.stderr)
         return 1

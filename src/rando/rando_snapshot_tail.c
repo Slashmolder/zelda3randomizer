@@ -668,7 +668,8 @@ int RandoSnapshotTail_Load(FILE *f) {
       if (fp[0] == 1u) {
         uint32 features0 = get_u32le_bytes(fp + 1);
         Rando_SetSnapshotRecommendedFeaturesContext(features0, true);
-        Rando_ApplySeedQolFeatures0(features0);
+        if (Rando_IsActive())
+          Rando_ApplySeedQolFeatures0(features0);
       }
       recognized++;
       continue;
@@ -1329,6 +1330,9 @@ void RandoSnapshotTail_SelfCheck(void) {
     uint32 saved_config_features0 = g_config.features0;
     uint32 saved_wanted_features0 = g_wanted_zelda_features;
     uint32 saved_enhanced_features0 = enhanced_features0;
+    uint32 saved_wanted_features1 = g_wanted_zelda_features1;
+    uint32 saved_enhanced_features1 = enhanced_features1;
+    uint8 saved_slot_active = g_rando_slot_active;
 
     static RandoPlacement f4_entries[2];
     static RandoPlacementTable f4_table;
@@ -1358,6 +1362,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     g_config.features0 = kFeatures0_ExtendScreen64;
     g_wanted_zelda_features = kFeatures0_ExtendScreen64;
     enhanced_features0 = kFeatures0_ExtendScreen64;
+    g_rando_slot_active = 1;
     Placement_Install(NULL);
     Rando_ClearSnapshotContext();
 
@@ -1376,6 +1381,21 @@ void RandoSnapshotTail_SelfCheck(void) {
         (g_wanted_zelda_features & kFeatures0_WidescreenVisualFixes) ||
         (enhanced_features0 & kFeatures0_WidescreenVisualFixes))
       selfcheck_die("type-4: non-Seed-QoL snapshot bit was applied");
+
+    g_config.features0 = kFeatures0_ExtendScreen64;
+    g_wanted_zelda_features = kFeatures0_ExtendScreen64;
+    enhanced_features0 = kFeatures0_ExtendScreen64;
+    g_rando_slot_active = 0;
+    Placement_Install(NULL);
+    Rando_ClearSnapshotContext();
+    fseek(ff, 0, SEEK_SET);
+    int ninactive = RandoSnapshotTail_Load(ff);
+    if (ninactive != 3)
+      selfcheck_die("type-4: inactive replay should still parse RecommendedFeatures");
+    if ((g_config.features0 & kFeatures0_RandoSeedQolMask) ||
+        (g_wanted_zelda_features & kFeatures0_RandoSeedQolMask) ||
+        (enhanced_features0 & kFeatures0_RandoSeedQolMask))
+      selfcheck_die("type-4: inactive replay applied RecommendedFeatures");
     fclose(ff);
 
     FILE *frf = tmpfile();
@@ -1384,6 +1404,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     g_config.features0 = kFeatures0_ExtendScreen64;
     g_wanted_zelda_features = kFeatures0_ExtendScreen64;
     enhanced_features0 = kFeatures0_ExtendScreen64;
+    g_rando_slot_active = 1;
     Placement_Install(NULL);
     Rando_ClearSnapshotContext();
     fseek(frf, 0, SEEK_SET);
@@ -1417,9 +1438,13 @@ void RandoSnapshotTail_SelfCheck(void) {
     fclose(fleak);
     fclose(fold4);
 
+    Rando_DeactivateSlot();
     g_config.features0 = saved_config_features0;
     g_wanted_zelda_features = saved_wanted_features0;
     enhanced_features0 = saved_enhanced_features0;
+    g_wanted_zelda_features1 = saved_wanted_features1;
+    enhanced_features1 = saved_enhanced_features1;
+    g_rando_slot_active = saved_slot_active;
     Rando_ClearSnapshotContext();
   }
 

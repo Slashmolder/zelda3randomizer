@@ -3177,6 +3177,12 @@ static bool g_rando_active_settings_valid = false;
 // supersede a PRIOR one — else a 2nd Ctrl+F1 of a different seed (slot still not
 // loaded) would early-return and keep the 1st seed's world_state/Inverted/shuffles.
 static bool g_rando_settings_from_cold_replay = false;
+static bool g_rando_seed_qol_features0_saved = false;
+static uint32 g_rando_seed_qol_config_features0 = 0;
+static uint32 g_rando_seed_qol_wanted_features0 = 0;
+static uint32 g_rando_seed_qol_enhanced_features0 = 0;
+static void rando_snapshot_seed_qol_features0(void);
+static void rando_restore_seed_qol_features0(void);
 // Active-slot assignment replay sources. Rando_Set*Assignment copies these into
 // the VM-owned assignment stores; keeping the active seed's bytes here lets
 // Rando_ReinstallActiveSlotLogicOverlays restore them after an out-of-band
@@ -4031,6 +4037,7 @@ void Rando_DeactivateSlot(void) {
   // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
   g_rando_active_settings_valid = false;
   g_rando_settings_from_cold_replay = false;  // reset the source flag.
+  rando_restore_seed_qol_features0();
   Rando_ApplyActiveForcedFeatures0();
   Rando_SetDungeonPrizeAssignment(NULL);
   Rando_SetMedallionAssignment(NULL);
@@ -4080,6 +4087,28 @@ uint32 Rando_ActiveForcedFeatures0(void) {
   return forced;
 }
 
+static void rando_snapshot_seed_qol_features0(void) {
+  if (g_rando_seed_qol_features0_saved)
+    return;
+  g_rando_seed_qol_config_features0 = g_config.features0;
+  g_rando_seed_qol_wanted_features0 = g_wanted_zelda_features;
+  g_rando_seed_qol_enhanced_features0 = enhanced_features0;
+  g_rando_seed_qol_features0_saved = true;
+}
+
+static void rando_restore_seed_qol_features0(void) {
+  if (!g_rando_seed_qol_features0_saved)
+    return;
+  uint32 mask = kFeatures0_RandoSeedQolMask;
+  g_config.features0 =
+      (g_config.features0 & ~mask) | (g_rando_seed_qol_config_features0 & mask);
+  g_wanted_zelda_features =
+      (g_wanted_zelda_features & ~mask) | (g_rando_seed_qol_wanted_features0 & mask);
+  enhanced_features0 =
+      (enhanced_features0 & ~mask) | (g_rando_seed_qol_enhanced_features0 & mask);
+  g_rando_seed_qol_features0_saved = false;
+}
+
 void Rando_ApplyActiveForcedFeatures0(void) {
   uint32 forced = Rando_ActiveForcedFeatures0();
   uint32 forceable = kFeatures0_RestoreJpGlitches;
@@ -4091,6 +4120,8 @@ void Rando_ApplyActiveForcedFeatures0(void) {
 }
 
 void Rando_ApplySeedQolFeatures0(uint32 features0) {
+  if (g_rando_slot_active)
+    rando_snapshot_seed_qol_features0();
   uint32 forced = Rando_ActiveForcedFeatures0();
   uint32 slot_features = features0 & kFeatures0_RandoSeedQolMask;
   uint32 configurable_slot_mask = kFeatures0_RandoSeedQolMask & ~forced;
@@ -6252,6 +6283,9 @@ void Rando_TrackerSelfCheck(void) {
   enhanced_features0 =
       (saved_enhanced_features0 | kFeatures0_ExtendScreen64) &
       ~kFeatures0_WidescreenVisualFixes;
+  uint32 pre_slot_config_features0 = g_config.features0;
+  uint32 pre_slot_wanted_features0 = g_wanted_zelda_features;
+  uint32 pre_slot_enhanced_features0 = enhanced_features0;
 
   Rando_ActivateSidecarSlot(&slot);
   if (!(g_config.features0 & kFeatures0_RestoreJpGlitches) ||
@@ -6309,6 +6343,18 @@ void Rando_TrackerSelfCheck(void) {
   if (n1 <= n0) tsc_die("reachability did not expand when a full item kit was added");
 
   Rando_DeactivateSlot();
+  uint32 forceable = kFeatures0_RestoreJpGlitches;
+  uint32 expect_wanted =
+      (pre_slot_wanted_features0 & ~forceable) | (pre_slot_config_features0 & forceable);
+  uint32 expect_enhanced =
+      (pre_slot_enhanced_features0 & ~forceable) | (pre_slot_config_features0 & forceable);
+  if ((g_config.features0 & kFeatures0_RandoSeedQolMask) !=
+      (pre_slot_config_features0 & kFeatures0_RandoSeedQolMask) ||
+      (g_wanted_zelda_features & kFeatures0_RandoSeedQolMask) !=
+      (expect_wanted & kFeatures0_RandoSeedQolMask) ||
+      (enhanced_features0 & kFeatures0_RandoSeedQolMask) !=
+      (expect_enhanced & kFeatures0_RandoSeedQolMask))
+    tsc_die("seed QoL features leaked after deactivation");
   Settings_SetDefaults(&g_rando_active_settings);
   g_rando_active_settings.logic = 1;  // OverworldGlitches forces JP glitches.
   g_rando_active_settings_valid = true;

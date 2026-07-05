@@ -471,6 +471,8 @@ void Rando_DoorScrollFinePan(bool scroll_done) {
 }
 
 static uint16 DoorRt_RepageCoordToCamera(uint16 coord, uint16 camera) {
+  // camera is the top-left scroll coordinate; keep Link in the forward 256px
+  // page that starts at camera, not on the nearest mathematical page.
   uint16 out = (camera & 0xFF00u) | (coord & 0x00FFu);
   if ((uint16)(out - camera) >= 0x100)
     out += 0x100;

@@ -716,6 +716,7 @@ def _apply_pot_key_terms(loc_preds, world_state_overrides):
               f"gen_pot_key_depth.py.", file=sys.stderr)
         return
     doc = load_yaml(table_path)
+    missing = []
     for row in doc.get("locations", []):
         name, item = row["name"], row["item"]
         full = int(row["full"]) if "full" in row else None
@@ -737,8 +738,15 @@ def _apply_pot_key_terms(loc_preds, world_state_overrides):
                 ld.can_reach = f"({ld.can_reach}){tail}"
             applied = True
         if not applied:
-            print(f"WARNING: pot_key_depth location {name!r} matches no logic "
-                  f"location — stale table or renamed location?")
+            missing.append(name)
+    if missing:
+        sample = ", ".join(repr(n) for n in missing[:8])
+        if len(missing) > 8:
+            sample += f", ... (+{len(missing) - 8} more)"
+        raise RuntimeError(
+            f"{table_path}: pot_key_depth location(s) match no logic location: "
+            f"{sample}. Regenerate or fix the stale table before codegen."
+        )
 
 
 # ---------------------------------------------------------------------------

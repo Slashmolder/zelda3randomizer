@@ -9,6 +9,7 @@
 
 #include "rando_logic.h"
 #include "rando.h"
+#include "rando_placement.h"
 #include "dungeon_ids.h"
 #include "item_ids.h"  // ITEM_GenericKey / ITEM_SmallKey_* (genericKeys collapse)
 #include "pot_nonpot_drop_counts.h"
@@ -712,11 +713,29 @@ static bool door_pot_pred_cb(void *ud, const RandoDoorPotLocation *pot) {
                            pot->pred_len, ctx);
 }
 
+static uint8 door_checked_active_key_pots(uint8 dungeon, uint16 small_key_item,
+                                          uint8 pot_tier) {
+  if (pot_tier == kPotShuffle_Off || small_key_item == 0xFFFFu)
+    return 0;
+  uint8 n = 0;
+  for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
+    const RandoDoorPotLocation *p = &kRandoDoorPotLocations[i];
+    if (p->dungeon != dungeon || !(p->flags & kDoorPot_KeyPot) ||
+        !Rando_DoorPotActive(p, pot_tier) || !Rando_IsLocationChecked(p->loc_id)) {
+      continue;
+    }
+    if (Placement_Lookup(p->loc_id, 0xFFFFu) == small_key_item && n != 0xFFu)
+      n++;
+  }
+  return n;
+}
+
 static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateContext *ctx,
                                                 DoorExploreGates *gates_out) {
   // The gates are rebuilt every call (cheap); the flood itself is cached.
   static uint8 held_keys[kDoorTbl_DungeonCount];
   static uint8 big_key_held[kDoorTbl_DungeonCount];
+  uint8 pot_tier = g_door_logic_layout ? g_door_logic_layout->pot_tier : kPotShuffle_Off;
   for (int i = 0; i < kDoorTbl_DungeonCount; i++) {
     uint16 sk = kDoorTblDungeons[i].small_key_item;
     uint16 bk = kDoorTblDungeons[i].big_key_item;
@@ -734,6 +753,17 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
       if (d >= kDoorTbl_DungeonCount)
         continue;
       held_keys[d] = (held_keys[d] > row->count) ? (uint8)(held_keys[d] - row->count) : 0;
+    }
+  }
+  if (Rando_IsActive() && ctx->counts != NULL && pot_tier != kPotShuffle_Off) {
+    // DoorExplore_Core adds reachable drop-key rows internally. Active key pots
+    // are itemized checks, so remove checked key-pot grants from the held-key
+    // input here; otherwise a checked pot key can also satisfy the pot/drop side
+    // of the door+pot key economy.
+    for (int i = 0; i < kDoorTbl_DungeonCount; i++) {
+      uint16 sk = kDoorTblDungeons[i].small_key_item;
+      uint8 pot_keys = door_checked_active_key_pots((uint8)i, sk, pot_tier);
+      held_keys[i] = (held_keys[i] > pot_keys) ? (uint8)(held_keys[i] - pot_keys) : 0;
     }
   }
   gates_out->vm_pred = door_vm_pred_cb;

@@ -325,7 +325,19 @@ def main(argv=None) -> int:
         if dep != want:
             sys.exit(f"key pot id={kp['id']} d={kp['dungeon']} room=0x{kp['room']:02x}: "
                      f"auto-join {dep} != verified {want}")
+        room_key = (kp["dungeon"], kp["room"])
+        room_worst = max(
+            (w for (_r, w, _m) in room_regions.get(room_key, []) if w >= 0),
+            default=-1,
+        )
+        # Floor-bit/alias rooms can have an exact key-pot DROP join but no ROOM
+        # row. In that case there is no pot_rooms.full entry for WILD keys, so
+        # carry the capped full requirement directly on the key-pot row.
         orphan_full = None
+        if room_worst < 0:
+            full = min(dep, cap[kp["dungeon"]])
+            if full > 0:
+                orphan_full = full
         pk_rows.append((kp["id"], kp["dungeon"], kp["item"], dep, orphan_full,
                         door_region, drop_index))
     if len(pk_rows) != len(KEYPOT_DEPTH):
