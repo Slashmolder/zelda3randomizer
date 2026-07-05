@@ -262,10 +262,19 @@ Covered exits:
 - walking out a chained dungeon's main door (room-keyed search branch —
   consumed-at-top override, already audited);
 - the post-boss warp: `PrepareDungeonExitFromBossFight` rewrites
-  `dungeon_room_index` to the home lobby and exits through the same machinery —
-  the substitution resolves it to the origin door. This is a correctness fix (a
-  vanilla warp-out at e.g. Vitreous would strand a flute-less player on the Mire
-  pad).
+  `dungeon_room_index` through `kDungeonExit_From[]` / `kDungeonExit_To[]` to
+  the boss's home lobby, sets `saved_module_for_menu = 8`, then routes pendant
+  bosses (`j < 3`) to module 19 and crystal bosses (`j >= 3`) to module 22.
+  Module 19 runs the shared `kModule_BossVictory[]` spotlight close/open path;
+  `IrisSpotlight_ConfigureTable` resets `submodule_index` and assigns
+  `main_module_index = saved_module_for_menu`. Module 22's
+  `Module16_04_FadeAndEnd` does the same assignment directly. In both normal
+  prize paths the next module-8 load reaches `PreOverworld_LoadProperties`,
+  which calls `LoadOverworldFromDungeon`, so the origin substitution can resolve
+  the warp to the origin door. This is a correctness fix (a vanilla warp-out at
+  e.g. Vitreous would strand a flute-less player on the Mire pad). The Aga1
+  (`main_module_index = 21`) and GT (`main_module_index = 24`) branches bypass
+  this normal prize route and remain out of scope for v1.
 - Mirror-in-dungeon warps to the current hop's entrance (vanilla per-entrance
   behavior) and stays inside the chain. **UNVERIFIED**: exact mirror-portal
   interaction with synthetic entrance ids — verification task.

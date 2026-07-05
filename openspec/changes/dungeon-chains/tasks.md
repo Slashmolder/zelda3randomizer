@@ -25,7 +25,7 @@ immediately before any bump/commit (concurrent-drift discipline).
 - [x] 1.4 Audit follower handling across entrance loads (`follower_indicator`
       consumers) and decide the hop-boundary follower policy (design open
       question 3); record the decision in design.md.
-- [ ] 1.5 Trace the pendant (module 19) vs crystal (module 22) post-boss
+- [x] 1.5 Trace the pendant (module 19) vs crystal (module 22) post-boss
       choreography from `PrepareDungeonExitFromBossFight` to
       `LoadOverworldFromDungeon` and confirm both reach the exit-door
       resolution the origin substitution keys on; note any path that bypasses
