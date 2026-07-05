@@ -855,6 +855,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       !Entrance_IsDecoupledActive(&settings) &&
       !Entrance_IsDungeonDecoupledActive(&settings) &&
       !Entrance_IsCrossDecoupledActive(&settings) &&
+      !Settings_EffectiveDungeonChains(&settings) &&
       Settings_EffectiveDoorShuffle(&settings) == kDoorShuffle_Vanilla;
 
   if (shape_filter.enabled) {

@@ -70,7 +70,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       digest. Register both files in `zelda3.vcxproj` (MSBuild does not glob).
 - [x] 4.2 `Chains_SelfCheck` (partition validity, pins, recompute stability) and
       wire it into `--rando-selftest`; digest must match MSVC ↔ gcc.
-- [ ] 4.3 Integrate into `Rando_PlaceWithEntrances`: per-attempt
+- [x] 4.3 Integrate into `Rando_PlaceWithEntrances`: per-attempt
       `Chains_Compute` + edge-override install (clear ALL override state at
       attempt top — the accumulation bug class), full-reachability acceptance
       gate; update the `main.c` / `rando_generate.c` path-selection conditions

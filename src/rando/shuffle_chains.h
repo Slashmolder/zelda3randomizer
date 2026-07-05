@@ -55,6 +55,11 @@ bool Chains_Compute(uint64 seed_u64, uint32 attempt, DungeonChainsLayout *out);
 // digest across compilers and platforms.
 uint32 Chains_LayoutDigest(const DungeonChainsLayout *layout);
 
+// Install this layout's logic edge overrides. This uses the same override store
+// as entrance shuffle; callers must clear it between attempts and after
+// generation via Rando_ClearGenerationLogicOverlays.
+void Chains_ApplyEdgeOverrides(const DungeonChainsLayout *layout);
+
 // Invoked from --rando-selftest. Exits(2) on invariant failure.
 void Chains_SelfCheck(void);
 

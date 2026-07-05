@@ -3,6 +3,7 @@
 #include "shuffle_chains.h"
 
 #include "dungeon_ids.h"
+#include "rando_logic.h"
 #include "rando_rng.h"
 
 #include <stdio.h>
@@ -48,6 +49,24 @@ static const uint8 kChainsFreeBosses[7] = {
   kRandoDungeon_TurtleRock,
 };
 
+typedef struct ChainRegionNames {
+  uint8 dungeon;
+  const char *entry_region;
+  const char *boss_region;
+} ChainRegionNames;
+
+static const ChainRegionNames kChainRegionNames[kChainsPoolCount] = {
+  { kRandoDungeon_EasternPalace,     "EasternPalace_Lobby",    "EasternPalace_BossRoom" },
+  { kRandoDungeon_DesertPalace,      "DesertPalace_Lobby",     "DesertPalace_BossRoom" },
+  { kRandoDungeon_TowerOfHera,       "TowerOfHera_Lobby",      "TowerOfHera_BossRoom" },
+  { kRandoDungeon_PalaceOfDarkness,  "PalaceOfDarkness",       "PalaceOfDarkness_BossRoom" },
+  { kRandoDungeon_SwampPalace,       "SwampPalace",            "SwampPalace_BossRoom" },
+  { kRandoDungeon_ThievesTown,       "ThievesTown",            "ThievesTown_BossRoom" },
+  { kRandoDungeon_IcePalace,         "IcePalace_Lobby",        "IcePalace_BossRoom" },
+  { kRandoDungeon_MiseryMire,        "MiseryMire_Lobby",       "MiseryMire_BossRoom" },
+  { kRandoDungeon_TurtleRock,        "TurtleRock_Lobby",       "TurtleRock_BossRoom" },
+};
+
 int Chains_PoolIndexForDungeon(uint8 rando_dungeon) {
   for (int i = 0; i < kChainsPoolCount; i++)
     if (kChainsPoolDungeons[i] == rando_dungeon)
@@ -58,6 +77,21 @@ int Chains_PoolIndexForDungeon(uint8 rando_dungeon) {
 uint8 Chains_PoolDungeonAt(uint8 pool_index) {
   return pool_index < kChainsPoolCount ? kChainsPoolDungeons[pool_index]
                                        : (uint8)kRandoDungeon_None;
+}
+
+static const ChainRegionNames *chains_region_row(uint8 rando_dungeon) {
+  int idx = Chains_PoolIndexForDungeon(rando_dungeon);
+  if (idx < 0)
+    return NULL;
+  return &kChainRegionNames[idx];
+}
+
+static uint16 chains_element_region(uint8 elem) {
+  const ChainRegionNames *row = chains_region_row(Chains_ElementDungeon(elem));
+  if (row == NULL)
+    return 0xFFFF;
+  return Rando_FindRegionByName(Chains_ElementIsBoss(elem) ? row->boss_region
+                                                           : row->entry_region);
 }
 
 static void chains_shuffle_u8(RandoRng *rng, uint8 *arr, uint32 n) {
@@ -139,10 +173,10 @@ uint32 Chains_LayoutDigest(const DungeonChainsLayout *layout) {
 bool Chains_Compute(uint64 seed_u64, uint32 attempt, DungeonChainsLayout *out) {
   if (out == NULL)
     return false;
+  memset(out, 0, sizeof(*out));
   memset(out->chain_door_first, kChainsElement_None, sizeof(out->chain_door_first));
   memset(out->chain_successor, kChainsElement_None, sizeof(out->chain_successor));
   memset(out->terminal_boss, kRandoDungeon_None, sizeof(out->terminal_boss));
-  out->digest24 = 0;
 
   RandoRng rng;
   Rng_SeedFromU64(&rng, chains_seed(seed_u64, attempt));
@@ -206,6 +240,28 @@ bool Chains_Compute(uint64 seed_u64, uint32 attempt, DungeonChainsLayout *out) {
     return false;
   out->digest24 = Chains_LayoutDigest(out);
   return true;
+}
+
+void Chains_ApplyEdgeOverrides(const DungeonChainsLayout *layout) {
+  Rando_BeginEntranceEdgeOverrides();
+  if (layout == NULL)
+    return;
+
+  for (uint8 c = 0; c < kChainsPoolCount; c++) {
+    const ChainRegionNames *row = &kChainRegionNames[c];
+    uint16 from_key = Rando_FindRegionByName(row->entry_region);
+    uint16 to_region = chains_element_region(layout->chain_door_first[c]);
+    if (from_key != 0xFFFF && to_region != 0xFFFF)
+      Rando_SetEntranceEdgeOverride(from_key, to_region);
+  }
+
+  for (uint8 i = 0; i < kChainsPoolCount; i++) {
+    const ChainRegionNames *row = &kChainRegionNames[i];
+    uint16 from_key = Rando_FindRegionByName(row->boss_region);
+    uint16 to_region = chains_element_region(layout->chain_successor[i]);
+    if (from_key != 0xFFFF && to_region != 0xFFFF)
+      Rando_SetEntranceEdgeOverride(from_key, to_region);
+  }
 }
 
 static void chains_selfcheck_die(const char *msg) {
@@ -290,6 +346,27 @@ static void chains_assert_layout(const DungeonChainsLayout *layout) {
     chains_selfcheck_die("ToH->Moldorm pinned adjacency not respected");
 }
 
+static void chains_assert_overrides(const DungeonChainsLayout *layout) {
+  Chains_ApplyEdgeOverrides(layout);
+  for (uint8 c = 0; c < kChainsPoolCount; c++) {
+    const ChainRegionNames *row = &kChainRegionNames[c];
+    uint16 from_key = Rando_FindRegionByName(row->entry_region);
+    uint16 to_region = chains_element_region(layout->chain_door_first[c]);
+    if (from_key == 0xFFFF || to_region == 0xFFFF ||
+        Rando_GetEntranceEdgeOverride(from_key) != to_region)
+      chains_selfcheck_die("chain-start edge override missing");
+  }
+  for (uint8 i = 0; i < kChainsPoolCount; i++) {
+    const ChainRegionNames *row = &kChainRegionNames[i];
+    uint16 from_key = Rando_FindRegionByName(row->boss_region);
+    uint16 to_region = chains_element_region(layout->chain_successor[i]);
+    if (from_key == 0xFFFF || to_region == 0xFFFF ||
+        Rando_GetEntranceEdgeOverride(from_key) != to_region)
+      chains_selfcheck_die("boss-seam edge override missing");
+  }
+  Rando_ClearEntranceEdgeOverrides();
+}
+
 void Chains_SelfCheck(void) {
   DungeonChainsLayout a, b;
   if (!Chains_Compute(0xDEADBEEFCAFEBABEull, 3, &a) ||
@@ -298,6 +375,7 @@ void Chains_SelfCheck(void) {
   if (memcmp(&a, &b, sizeof(a)) != 0)
     chains_selfcheck_die("same seed/attempt produced different layouts");
   chains_assert_layout(&a);
+  chains_assert_overrides(&a);
 
   // Cross-platform digest sentinel for the construction algorithm.
   if (a.digest24 != 0xB31390u)

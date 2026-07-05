@@ -25,6 +25,7 @@
 #include "rando_spoiler.h"    // RandoSpoiler, Spoiler_ResolvePath, Spoiler_Write
 #include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
 #include "shuffle_doors.h"    // door-shuffle generation (add-rando-door-shuffle)
+#include "shuffle_chains.h"   // dungeon-chain layout generation
 
 // add-rando-door-shuffle — generation-side layout + accepted-attempt state.
 // The layout must outlive Rando_PlaceWithEntrances: the installed logic
@@ -245,6 +246,37 @@ void RandoGenerate_SelfCheck(void) {
       exit(2);
     }
   }
+
+  // Dungeon chains route through Rando_PlaceWithEntrances because they install
+  // per-attempt edge overrides. Exercise that path under the strictest
+  // accessibility tier so a regression cannot certify a chain layout with a
+  // stranded location.
+  {
+    RandoSettings chains;
+    Settings_SetDefaults(&chains);
+    chains.dungeon_chains = 1;
+    chains.accessibility = kAccessibility_Locations;
+    RandoPlacement entries[kRandoLocationCapacity];
+    RandoPlacementTable table = { entries, 0 };
+    RandoEntranceRegen reg;
+    memset(&reg, 0, sizeof reg);
+    Rando_ClearGenerationLogicOverlays();
+    if (!Rando_PlaceWithEntrances(&chains, 0xC4A1175EEDull,
+                                  /*budget_seconds=*/0, &table, &reg)) {
+      Rando_ClearGenerationLogicOverlays();
+      fprintf(stderr, "RandoGenerate_SelfCheck: dungeon_chains placement failed\n");
+      exit(2);
+    }
+    RandoSpheres spheres;
+    memset(&spheres, 0, sizeof spheres);
+    if (!Logic_ComputeSpheres(&chains, &table, &spheres) ||
+        spheres.unreachable_count != 0) {
+      Rando_ClearGenerationLogicOverlays();
+      fprintf(stderr, "RandoGenerate_SelfCheck: dungeon_chains full-reachability gate failed\n");
+      exit(2);
+    }
+    Rando_ClearGenerationLogicOverlays();
+  }
   fprintf(stderr, "[RandoGenerate_SelfCheck] OK\n");
 }
 
@@ -258,6 +290,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
   bool decoupled_on = Entrance_IsDecoupledActive(settings);
   bool dun_decoupled_on = Entrance_IsDungeonDecoupledActive(settings);
   bool cross_decoupled_on = Entrance_IsCrossDecoupledActive(settings);  // one-way over mixed pool
+  bool chains_on = Settings_EffectiveDungeonChains(settings);
   bool placed = false;
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
   Entrance_ClearEdgeOverrides();
@@ -347,6 +380,27 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // NB: the accepted layout stays INSTALLED — the caller's sphere/goal
     // computation must see the shuffled reachability (slot activation later
     // re-installs its own regenerated copy).
+  } else if (chains_on) {
+    const int kChainsMaxRetry = 64;
+    DungeonChainsLayout chains_layout;
+    for (uint32 catt = 0; catt < kChainsMaxRetry; catt++) {
+      Entrance_ClearEdgeOverrides();
+      if (!Chains_Compute(seed_u64, catt, &chains_layout))
+        continue;
+      Chains_ApplyEdgeOverrides(&chains_layout);
+      table->count = 0;
+      if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
+          Accessibility_SeedAcceptable(settings, table)) {
+        placed = true;
+        break;
+      }
+      if (Customizer_LastError()[0] != '\0')
+        break;  // deterministic customizer pin error — no layout will fix it
+    }
+    // NB: leave the accepted chain edge overrides ACTIVE — the caller's
+    // sphere/goal computation must see the chain reachability.
+    if (!placed)
+      Entrance_ClearEdgeOverrides();
   } else {
     placed = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
     if (placed && !Accessibility_SeedAcceptable(settings, table)) {
