@@ -4509,16 +4509,15 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
   if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
 
-  // Dungeon items. Vanilla-mode classes are logically available in-place, so
-  // pre-grant them exactly as the placer does (shared helper). For shuffled
-  // (Dungeon/Wild) classes, read what the player has ACTUALLY collected from the
-  // live vanilla per-dungeon cells and map game-dungeon index -> registry id.
-  // Symbolic ITEM_ ids (not arithmetic) avoid the game-order vs registry-order
-  // mismatch (e.g. ToH/Castle-Tower swap). 0xFFFF = no such item for that
-  // dungeon (HC/Castle-Tower have no big key/map/compass).
+  // Dungeon items. The placer assumes vanilla-mode keys/maps/compasses are
+  // logically in-place, but the live tracker must answer "what can the player
+  // get right now" from RAM. Read the actual per-dungeon counters/bitfields for
+  // every mode, then map game-dungeon index -> registry id. Symbolic ITEM_ ids
+  // (not arithmetic) avoid the game-order vs registry-order mismatch
+  // (e.g. ToH/Castle-Tower swap). 0xFFFF = no such item for that dungeon
+  // (HC/Castle-Tower have no big key/map/compass).
   if (g_rando_active_settings_valid) {
     const RandoSettings *st = &g_rando_active_settings;
-    Rando_SeedVanillaDungeonItems(out, st);
 
     for (int g = 0; g < 14; g++) {
       uint16 bit = Rando_DungeonBitForGameDungeon((uint8)g);
@@ -4526,17 +4525,13 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
       uint16 big_key = Rando_BigKeyItemForGameDungeon((uint8)g);
       uint16 map = Rando_MapItemForGameDungeon((uint8)g);
       uint16 compass = Rando_CompassItemForGameDungeon((uint8)g);
-      if (Settings_EffectiveSmallKeysMode(st) != kDungeonItemMode_Vanilla &&
-          small_key != 0xFFFF)
+      if (small_key != 0xFFFF)
         out->by_item_id[small_key] = link_keys_earned_per_dungeon[g];
-      if (st->dungeon_big_keys_mode != kDungeonItemMode_Vanilla &&
-          big_key != 0xFFFF && (link_bigkey & bit))
+      if (big_key != 0xFFFF && (link_bigkey & bit))
         out->by_item_id[big_key] = 1;
-      if (st->dungeon_maps_mode != kDungeonItemMode_Vanilla &&
-          map != 0xFFFF && (link_dungeon_map & bit))
+      if (map != 0xFFFF && (link_dungeon_map & bit))
         out->by_item_id[map] = 1;
-      if (st->dungeon_compasses_mode != kDungeonItemMode_Vanilla &&
-          compass != 0xFFFF && (link_compass & bit))
+      if (compass != 0xFFFF && (link_compass & bit))
         out->by_item_id[compass] = 1;
     }
     // Retro genericKeys — the per-dungeon SmallKey cells above are all 0 under
@@ -6488,6 +6483,7 @@ void Rando_TrackerSelfCheck(void) {
   RandoSettings saved_active_settings = g_rando_active_settings;
   bool saved_active_settings_valid = g_rando_active_settings_valid;
   bool saved_settings_from_cold_replay = g_rando_settings_from_cold_replay;
+  uint16 saved_link_bigkey = link_bigkey;
 
   static RandoPlacement entries[kRandoLocationCapacity];
   RandoPlacementTable table;
@@ -6565,12 +6561,27 @@ void Rando_TrackerSelfCheck(void) {
   tsc_expect_check_visibility(LOC_Hyrule_Castle_Zelda_s_Cell, true);
 
   RandoCounts counts;
+  link_bigkey = 0;
   Rando_BuildRuntimeCounts(&counts);
+  if (counts.by_item_id[ITEM_BigKey_EasternPalace] != 0)
+    tsc_die("runtime counts pre-granted vanilla Eastern big key");
   const RandoReachability *r0 = Logic_ComputeReachability(&counts, rec);
+  if (Reachability_HasLocation(r0, LOC_Eastern_Palace_Big_Chest))
+    tsc_die("Eastern big chest reachable without live Eastern big key");
   int n0 = 0;
   for (uint32 i = 0; i < kRandoLocationsCount; i++)
     if (Reachability_HasLocation(r0, kRandoLocations[i].id)) n0++;
   if (n0 == 0) tsc_die("no locations reachable from the starting inventory");
+
+  link_bigkey = Rando_DungeonBitForGameDungeon(kGameDungeon_EasternPalace);
+  RandoCounts bigkey_counts;
+  Rando_BuildRuntimeCounts(&bigkey_counts);
+  if (bigkey_counts.by_item_id[ITEM_BigKey_EasternPalace] != 1)
+    tsc_die("runtime counts missed live Eastern big key");
+  const RandoReachability *rbk = Logic_ComputeReachability(&bigkey_counts, rec);
+  if (!Reachability_HasLocation(rbk, LOC_Eastern_Palace_Big_Chest))
+    tsc_die("Eastern big chest not reachable with live Eastern big key");
+  link_bigkey = 0;
 
   // A broad progression kit must strictly expand reachability (monotonic logic).
   counts.by_item_id[ITEM_ProgressiveSword] = 4;
@@ -6633,6 +6644,7 @@ void Rando_TrackerSelfCheck(void) {
   g_rando_active_settings = saved_active_settings;
   g_rando_active_settings_valid = saved_active_settings_valid;
   g_rando_settings_from_cold_replay = saved_settings_from_cold_replay;
+  link_bigkey = saved_link_bigkey;
   g_config.features0 = saved_config_features0;
   g_wanted_zelda_features = saved_wanted_features0;
   enhanced_features0 = saved_enhanced_features0;

@@ -342,8 +342,8 @@ static void seed_pot_nonpot_drops(RandoCounts *counts, const RandoSettings *s) {
 // Seed the vanilla-mode dungeon items into a RandoCounts inventory. For each
 // dungeon-item class in Vanilla mode the items are NOT shuffled into the world
 // pool — the player collects them in-place — so logic treats them as always
-// available. Shared by the placer's assumed-fill seeding and the runtime
-// reachability bridge (Rando_BuildRuntimeCounts), so both agree exactly.
+// available during placement's assumed-fill pass. Runtime live counts must read
+// the actual RAM counters/bitfields instead.
 void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *settings) {
   if (counts == NULL || settings == NULL) return;
   if (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla) {
