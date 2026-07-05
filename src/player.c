@@ -1673,6 +1673,10 @@ endif_1:
     uint16 source_room = dungeon_room_index;
     uint16 destination_room = dung_hdr_travel_destinations[0];
     if (player_is_indoors &&
+        Chains_TryTerminalOutboundSeam(kChainSeamKind_Hole, kChainSeamDir_None,
+                                       source_room, destination_room, 0))
+      return;
+    if (player_is_indoors &&
         Chains_TryBossSeamHop(kChainSeamKind_Hole, kChainSeamDir_None,
                               source_room, destination_room, 0))
       return;

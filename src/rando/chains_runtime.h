@@ -22,14 +22,19 @@ enum {
   kChainsRtReason_MissingSyntheticEntrances,
   kChainsRtReason_PinnedIdentity,
   kChainsRtReason_BadSuccessor,
+  kChainsRtReason_TerminalExit,
+  kChainsRtReason_MissingOrigin,
 };
 
 typedef struct ChainsRuntimeDebug {
   uint8 spike_armed;
   uint8 hop_pending;
+  uint8 origin_active;
+  uint8 terminal_active;
   uint16 seam_checks;
   uint16 request_count;
   uint16 consume_count;
+  uint16 origin_exit_room;
   uint16 last_source_room;
   uint16 last_destination_room;
   uint8 last_dir;
@@ -56,6 +61,8 @@ bool Chains_SyntheticEntrancesAvailable(void);
 // seam hooks below are dormant until a layout is installed.
 void Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout);
 void Chains_RuntimeTeardown(void);
+void Chains_RuntimeArmOrigin(uint16 origin_exit_room);
+void Chains_RuntimeClearOrigin(void);
 
 // One-shot debug seam hook for task 5.1. Returns true when it consumed the
 // transition and handed off to Module_PreDungeon.
@@ -70,6 +77,12 @@ bool Chains_TryBossSeamHop(uint8 kind,
                            uint16 source_room,
                            uint16 vanilla_destination_room,
                            uint8 slot);
+
+bool Chains_TryTerminalOutboundSeam(uint8 kind,
+                                    uint8 direction,
+                                    uint16 source_room,
+                                    uint16 vanilla_destination_room,
+                                    uint8 slot);
 
 // Consumed at the top of Dungeon_LoadEntrance. True means this entrance load is
 // chain-owned and must not recache the overworld *_exit state.

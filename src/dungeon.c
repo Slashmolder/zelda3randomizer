@@ -2085,6 +2085,9 @@ void Dungeon_StartInterRoomTrans_Left() {
       if (!Rando_DoorTransOverride(kDoorTblDir_West)) {
         uint16 source_room = dungeon_room_index;
         uint16 destination_room = (uint8)(dungeon_room_index - 1);
+        if (Chains_TryTerminalOutboundSeam(kChainSeamKind_Door, kDoorTblDir_West,
+                                           source_room, destination_room, 0xFF))
+          return;
         if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_West,
                                   source_room, destination_room, 0xFF))
           return;
@@ -2144,6 +2147,9 @@ void Dungeon_StartInterRoomTrans_Up() {
     if (!Rando_DoorTransOverride(kDoorTblDir_North)) {
       uint16 source_room = dungeon_room_index;
       uint16 destination_room = (uint8)(dungeon_room_index - 0x10);
+      if (Chains_TryTerminalOutboundSeam(kChainSeamKind_Door, kDoorTblDir_North,
+                                         source_room, destination_room, 0xFF))
+        return;
       if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_North,
                                 source_room, destination_room, 0xFF))
         return;
@@ -2192,6 +2198,9 @@ void Dungeon_StartInterRoomTrans_Down() {
     if (!Rando_DoorTransOverride(kDoorTblDir_South)) {
       uint16 source_room = dungeon_room_index;
       uint16 destination_room = (uint8)(dungeon_room_index + 0x10);
+      if (Chains_TryTerminalOutboundSeam(kChainSeamKind_Door, kDoorTblDir_South,
+                                         source_room, destination_room, 0xFF))
+        return;
       if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_South,
                                 source_room, destination_room, 0xFF))
         return;
@@ -4512,6 +4521,10 @@ bool Dungeon_DetectStaircase() {  // 81c329
   // the read site (the destination's own header reload is untouched).
   uint8 destination_room = Rando_DoorSpiralDest(
       dungeon_room_index_prev, j, at, dung_hdr_travel_destinations[j + 1]);
+  if (Chains_TryTerminalOutboundSeam(kChainSeamKind_Stair, kChainSeamDir_None,
+                                     dungeon_room_index_prev, destination_room,
+                                     (uint8)(j + 1)))
+    return true;
   if (Chains_TryBossSeamHop(kChainSeamKind_Stair, kChainSeamDir_None,
                             dungeon_room_index_prev, destination_room,
                             (uint8)(j + 1)))
@@ -8539,6 +8552,9 @@ void Dungeon_StartInterRoomTrans_Right() {  // 82b63a
       if (!Rando_DoorTransOverride(kDoorTblDir_East)) {
         uint16 source_room = dungeon_room_index;
         uint16 destination_room = (uint8)(dungeon_room_index + 1);
+        if (Chains_TryTerminalOutboundSeam(kChainSeamKind_Door, kDoorTblDir_East,
+                                           source_room, destination_room, 0xFF))
+          return;
         if (Chains_TryBossSeamHop(kChainSeamKind_Door, kDoorTblDir_East,
                                   source_room, destination_room, 0xFF))
           return;

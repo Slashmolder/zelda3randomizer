@@ -112,9 +112,13 @@ immediately before any bump/commit (concurrent-drift discipline).
       Chains_TryBossSeamHop; generated main_entrance_id maps dungeon successors;
       identity successors fall through vanilla; hooks stay dormant until 5.6
       installs a runtime layout. Release build + --rando-selftest green. -->
-- [ ] 5.4 Terminal containment: outbound transitions from a terminal boss room
+- [x] 5.4 Terminal containment: outbound transitions from a terminal boss room
       divert to the chain exit (origin door); verify cleared-terminal re-entry
-      is exitable.
+      is exitable. <!-- done 2026-07-05: door/stair/hole outbound seams match
+      kChainBossOutboundSeams while terminal state is armed; terminal exits route
+      through the normal module-15 -> module-8 overworld loader using chains-owned
+      origin_exit_room. Release build + --rando-selftest green; end-to-end
+      cleared-terminal owner playtest remains tracked in 7.3. -->
 - [ ] 5.5 Chain-start doors + origin coupling: extend the
       `kOverworld_Entrance_Id` overlay install for the 9 main doors; add the
       chains-owned origin session state (armed at chain entry — NOT the

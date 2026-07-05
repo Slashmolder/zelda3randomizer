@@ -7,6 +7,7 @@
 #include "door_tables.gen.h"
 
 #include "../assets.h"
+#include "../dungeon.h"
 #include "../hud.h"
 #include "../variables.h"
 
@@ -22,6 +23,10 @@ enum {
 static bool g_chains_hop_pending;
 static bool g_chains_ep_spike_armed;
 static bool g_chains_runtime_active;
+static bool g_chains_origin_active;
+static bool g_chains_terminal_active;
+static uint16 g_chains_origin_exit_room;
+static uint8 g_chains_terminal_dungeon = kRandoDungeon_None;
 static DungeonChainsLayout g_chains_runtime_layout;
 static ChainsRuntimeDebug g_chains_debug;
 
@@ -34,11 +39,16 @@ static void Chains_DebugSetReason(uint8 reason) {
   g_chains_debug.last_reason = reason;
   g_chains_debug.spike_armed = g_chains_ep_spike_armed ? 1 : 0;
   g_chains_debug.hop_pending = g_chains_hop_pending ? 1 : 0;
+  g_chains_debug.origin_active = g_chains_origin_active ? 1 : 0;
+  g_chains_debug.terminal_active = g_chains_terminal_active ? 1 : 0;
 }
 
 const ChainsRuntimeDebug *Chains_DebugState(void) {
   g_chains_debug.spike_armed = g_chains_ep_spike_armed ? 1 : 0;
   g_chains_debug.hop_pending = g_chains_hop_pending ? 1 : 0;
+  g_chains_debug.origin_active = g_chains_origin_active ? 1 : 0;
+  g_chains_debug.terminal_active = g_chains_terminal_active ? 1 : 0;
+  g_chains_debug.origin_exit_room = g_chains_origin_exit_room;
   return &g_chains_debug;
 }
 
@@ -109,7 +119,13 @@ bool Chains_SyntheticEntrancesAvailable(void) {
 
 void Chains_RuntimeTeardown(void) {
   g_chains_runtime_active = false;
+  g_chains_origin_active = false;
+  g_chains_terminal_active = false;
+  g_chains_origin_exit_room = 0;
+  g_chains_terminal_dungeon = kRandoDungeon_None;
+  g_chains_hop_pending = false;
   memset(&g_chains_runtime_layout, 0xFF, sizeof(g_chains_runtime_layout));
+  Chains_DebugSetReason(kChainsRtReason_None);
 }
 
 void Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout) {
@@ -119,6 +135,22 @@ void Chains_RuntimeInstallLayout(const DungeonChainsLayout *layout) {
   }
   g_chains_runtime_layout = *layout;
   g_chains_runtime_active = true;
+}
+
+void Chains_RuntimeArmOrigin(uint16 origin_exit_room) {
+  g_chains_origin_active = origin_exit_room != 0;
+  g_chains_origin_exit_room = origin_exit_room;
+  g_chains_terminal_active = false;
+  g_chains_terminal_dungeon = kRandoDungeon_None;
+  Chains_DebugSetReason(kChainsRtReason_None);
+}
+
+void Chains_RuntimeClearOrigin(void) {
+  g_chains_origin_active = false;
+  g_chains_terminal_active = false;
+  g_chains_origin_exit_room = 0;
+  g_chains_terminal_dungeon = kRandoDungeon_None;
+  Chains_DebugSetReason(kChainsRtReason_None);
 }
 
 void Chains_DebugArmEpBossToDesert(void) {
@@ -160,7 +192,9 @@ static void Chains_ClearFollowerForHop(void) {
 
 static bool Chains_RequestEntranceHop(uint8 entrance,
                                       uint16 source_room,
-                                      uint16 destination_room) {
+                                      uint16 destination_room,
+                                      bool terminal,
+                                      uint8 terminal_dungeon) {
   if (entrance >= kChainBossEntranceBase && entrance < kChainBossEntranceLimit &&
       !Chains_SyntheticEntrancesAvailable()) {
     g_chains_debug.last_source_room = source_room;
@@ -174,6 +208,8 @@ static bool Chains_RequestEntranceHop(uint8 entrance,
   }
 
   g_chains_hop_pending = true;
+  g_chains_terminal_active = terminal;
+  g_chains_terminal_dungeon = terminal ? terminal_dungeon : (uint8)kRandoDungeon_None;
   g_chains_debug.request_count++;
   g_chains_debug.last_source_room = source_room;
   g_chains_debug.last_destination_room = destination_room;
@@ -226,6 +262,78 @@ static const ChainSeamRow *Chains_FindBossSeam(uint8 kind,
   return NULL;
 }
 
+static const ChainSeamRow *Chains_FindOutboundSeam(uint8 kind,
+                                                   uint8 direction,
+                                                   uint16 source_room,
+                                                   uint16 destination_room,
+                                                   uint8 slot) {
+  for (uint8 i = 0; i < kChainBossOutboundSeamCount; i++) {
+    const ChainSeamRow *row = &kChainBossOutboundSeams[i];
+    if (row->kind != kind ||
+        row->source_room != source_room ||
+        row->dest_room != destination_room) {
+      continue;
+    }
+    if (direction != kChainSeamDir_None && row->direction != direction)
+      continue;
+    if (slot != 0xFF && row->slot != slot)
+      continue;
+    return row;
+  }
+  return NULL;
+}
+
+static bool Chains_RequestTerminalExit(uint16 source_room,
+                                       uint16 destination_room) {
+  g_chains_debug.last_source_room = source_room;
+  g_chains_debug.last_destination_room = destination_room;
+  if (!g_chains_origin_active || g_chains_origin_exit_room == 0) {
+    Chains_DebugSetReason(kChainsRtReason_MissingOrigin);
+    return false;
+  }
+
+  g_chains_debug.request_count++;
+  uint16 origin_exit_room = g_chains_origin_exit_room;
+  SaveDungeonKeys();
+  SaveQuadrantsToSram();
+  dungeon_room_index = origin_exit_room;
+  room_transitioning_flags = 0;
+  is_standing_in_doorway = 0;
+  saved_module_for_menu = 8;
+  main_module_index = 15;
+  submodule_index = 0;
+  subsubmodule_index = 0;
+  Dungeon_ResetTorchBackgroundAndPlayerInner();
+
+  g_chains_origin_active = false;
+  g_chains_terminal_active = false;
+  g_chains_origin_exit_room = 0;
+  g_chains_terminal_dungeon = kRandoDungeon_None;
+  Chains_DebugSetReason(kChainsRtReason_TerminalExit);
+  fprintf(stderr,
+          "dungeon-chains: terminal exit src=%04x dst=%04x origin_room=%04x\n",
+          source_room, destination_room, origin_exit_room);
+  return true;
+}
+
+bool Chains_TryTerminalOutboundSeam(uint8 kind,
+                                    uint8 direction,
+                                    uint16 source_room,
+                                    uint16 vanilla_destination_room,
+                                    uint8 slot) {
+  if (!g_chains_runtime_active || !g_chains_terminal_active)
+    return false;
+
+  const ChainSeamRow *seam = Chains_FindOutboundSeam(kind, direction, source_room,
+                                                     vanilla_destination_room, slot);
+  if (seam == NULL || seam->rando_dungeon != g_chains_terminal_dungeon)
+    return false;
+
+  g_chains_debug.seam_checks++;
+  g_chains_debug.last_dir = direction;
+  return Chains_RequestTerminalExit(source_room, vanilla_destination_room);
+}
+
 bool Chains_TryBossSeamHop(uint8 kind,
                            uint8 direction,
                            uint16 source_room,
@@ -250,6 +358,10 @@ bool Chains_TryBossSeamHop(uint8 kind,
 
   uint8 successor = g_chains_runtime_layout.chain_successor[pool_idx];
   if (successor == Chains_BossElement(seam->rando_dungeon)) {
+    if (g_chains_origin_active) {
+      g_chains_terminal_active = true;
+      g_chains_terminal_dungeon = seam->rando_dungeon;
+    }
     Chains_DebugSetReason(kChainsRtReason_PinnedIdentity);
     return false;
   }
@@ -260,7 +372,10 @@ bool Chains_TryBossSeamHop(uint8 kind,
     return false;
   }
 
-  return Chains_RequestEntranceHop(entrance, source_room, vanilla_destination_room);
+  uint8 terminal_dungeon = Chains_ElementDungeon(successor);
+  return Chains_RequestEntranceHop(entrance, source_room, vanilla_destination_room,
+                                   Chains_ElementIsBoss(successor),
+                                   terminal_dungeon);
 }
 
 bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
@@ -284,7 +399,8 @@ bool Chains_TryDebugEpBossToDesertHop(uint8 dir,
 
   g_chains_ep_spike_armed = false;
   return Chains_RequestEntranceHop(kChainsDebugEntrance_DesertMain,
-                                   source_room, vanilla_destination_room);
+                                   source_room, vanilla_destination_room,
+                                   false, (uint8)kRandoDungeon_None);
 }
 
 bool Chains_ConsumeHopPending(void) {

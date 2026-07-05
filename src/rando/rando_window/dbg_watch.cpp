@@ -22,6 +22,8 @@ static const char *ChainsReasonName(uint8 reason) {
   case kChainsRtReason_MissingSyntheticEntrances: return "missing synthetic entrances";
   case kChainsRtReason_PinnedIdentity: return "pinned identity";
   case kChainsRtReason_BadSuccessor: return "bad successor";
+  case kChainsRtReason_TerminalExit: return "terminal exit";
+  case kChainsRtReason_MissingOrigin: return "missing origin";
   default: return "none";
   }
 }
@@ -79,6 +81,9 @@ extern "C" void DbgWatch_Render(void) {
   const ChainsRuntimeDebug *chains = Chains_DebugState();
   ImGui::Text("EP->DP armed: %s", chains->spike_armed ? "yes" : "no");
   ImGui::Text("Hop pending:  %s", chains->hop_pending ? "yes" : "no");
+  ImGui::Text("Origin armed: %s  room 0x%04X",
+              chains->origin_active ? "yes" : "no", chains->origin_exit_room);
+  ImGui::Text("Terminal:     %s", chains->terminal_active ? "yes" : "no");
   ImGui::Text("Seam checks:  %u", chains->seam_checks);
   ImGui::Text("Hop req/use:  %u / %u", chains->request_count, chains->consume_count);
   ImGui::Text("Last seam:    0x%04X -> 0x%04X dir %u",
