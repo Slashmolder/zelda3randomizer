@@ -25,6 +25,18 @@ void Chains_RuntimeTeardown(void);
 void Chains_RuntimeArmOrigin(uint16 origin_exit_room);
 void Chains_RuntimeClearOrigin(void);
 
+typedef struct ChainsRuntimeSession {
+  bool origin_active;
+  bool terminal_active;
+  uint16 origin_exit_room;
+  uint8 terminal_dungeon;
+} ChainsRuntimeSession;
+
+// Snapshot helpers for the in-flight chain session. The layout must already be
+// installed before restore; inactive sessions clear origin/terminal state.
+bool Chains_RuntimeGetSession(ChainsRuntimeSession *out);
+bool Chains_RuntimeRestoreSession(const ChainsRuntimeSession *session);
+
 // Chain-start door hooks. The entry hook arms the origin-door session state when
 // an installed chain overlay owns `lx`; the exit hook consumes it only when the
 // resolved dungeon-exit room is one of the chain pool's main doors.

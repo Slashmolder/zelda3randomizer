@@ -131,6 +131,7 @@ axis via `item_pool`.
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
 | `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
 | `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, boss/miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
+| `dungeon_chains` | `true`, `false` | `false` (experimental; main dungeon doors route through dungeon chains ending in bosses; see [Dungeon chains](#dungeon-chains-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -430,6 +431,46 @@ the entrance lobbies reachable under current logic.
 `--door-selftest` runs the generation net headlessly (connectivity, prover
 acceptance, determinism, oracle/stitcher agreement for every shuffleable
 dungeon across many seeds).
+
+### Dungeon chains (experimental)
+
+`dungeon_chains=true` routes the **main overworld doors** of the nine pool
+dungeons (EP, DP, ToH, PoD, SP, TT, IP, MM, TR) into ordered dungeon chains.
+Each chain contains zero or more pool dungeons and ends in one pool boss; every
+pool dungeon and every pool boss appears exactly once across the seed. Bosses
+always fight in their vanilla home rooms through full entrance-style loads, not
+through sprite swaps. Thieves' Town -> Blind and Tower of Hera -> Moldorm are
+pinned as vanilla-identity endings.
+
+Excluded content stays vanilla: Hyrule Castle, Castle Tower, Ganon's Tower,
+Ganon, Skull Woods/Mothula, and auxiliary overworld doors such as Desert Palace
+side/back doors and Turtle Rock balcony/contained doors. During a chain, main-door
+walkouts, post-boss prize warps, and checked terminal boss-room exits return to
+the origin door that started the chain. Pre-reward boss-room transitions stay
+vanilla, so Moldorm fall-outs still run the Tower of Hera retry loop. Auxiliary
+exits keep their vanilla behavior and do not consume that origin coupling, so
+Desert Palace ledge/back-door routing and the Turtle Rock balcony/Mimic Cave
+route remain usable.
+
+The axis is one-directional under normalization: it is honored only for
+Open/Standard, NoGlitches seeds with entrance shuffle off, `door_shuffle` vanilla,
+and `boss_shuffle` off. Conflicting settings win and serialize with
+`dungeon_chains` off; chains never force another axis off. Chains can still
+compose with normal prize/medallion shuffle, pot shuffle, traps, enemy/drop
+shuffle, and wild dungeon-key modes.
+
+Persistence mirrors the door/entrance shuffle fail-closed model. The slot stores
+the accepted chain attempt and a 24-bit chain-layout digest in the sidecar
+extension; slot load regenerates the layout from `(seed, attempt)` and refuses
+activation if the digest no longer matches. Snapshots carry the same chain-layout
+identity plus the in-flight origin/terminal session in their randomizer tail, so
+cold replay rebuilds the chain graph and resumes mid-chain exits instead of
+inheriting stale runtime redirects. The spoiler contains a `chains` section
+listing each start door, its ordered dungeons, and its terminal boss.
+
+**Status:** generated and headless-validated; runtime remains experimental until
+the owner-run playtest matrix for the door, boss, death/reload, mirror, and
+auxiliary-exit seams is complete.
 
 ### Pot shuffle (experimental)
 
@@ -1341,17 +1382,19 @@ seconds locally) and the bumper is idempotent.
   table preserves the older slot's interpretation. Loading a v=N
   slot on a v=N+k binary surfaces a one-time informational warning
   (`Rando_DetectVersionDrift`) and uses the embedded data verbatim.
-  The slot is NOT regenerated. (Exception: door-shuffle and sidecar-v3
-  entrance-shuffle slots regenerate their *layouts* at activation and
-  hard-fail on a layout-digest mismatch — see *Save behavior*.)
+  The slot is NOT regenerated. (Exception: door-shuffle, dungeon-chain, and
+  sidecar-v3 entrance-shuffle slots regenerate their *layouts* at activation
+  and hard-fail on a layout-digest mismatch — see *Save behavior*.)
 - **Snapshots** (`Shift+F1..F10` save / `Ctrl+F1..F10` replay): the
   TLV-tail format carries `generator_version` in the
   `TAIL_RANDO_STATE` payload. Replay on a different version uses the
   embedded settings + placement; the runtime treats them as
   authoritative. Additional TLVs carry process state outside the SNES RAM
   dump, including checked-location bitmap state, recovered seed settings for
-  replay, door-shuffle layout identity (`door_attempt` + `door_digest24`) for
-  digest-gated door-graph reconstruction after clearing stale door state, and the masked Seed QoL
+  replay, door-shuffle layout identity (`door_attempt` + `door_digest24`) and
+  dungeon-chain layout identity (`chains_attempt` + `chains_digest24`) plus
+  chain origin/terminal session state for digest-gated graph reconstruction
+  after clearing stale runtime redirects, and the masked Seed QoL
   `recommended_features0` snapshot so manual per-slot gameplay-feature opt-ins
   survive snapshot replay as well as normal sidecar slot loads.
 - **Suppressed race-mode files** (`<spoiler>.json` ZRSR format):
@@ -1407,6 +1450,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 78→79 | **Trap catalog** (`add-rando-trap-catalog`) — the masquerade-trap system expands from 2 effects to a 16-effect catalog across 5 categories (HAZARD / IMPAIR / DRAIN / SCARE / DISPLACE), and the per-slot effect TYPE is now selected deterministically per `(seed, location_id)` filtered by the new `trap_categories` mask (canonical `[27]` bits 2-6), replacing the positional `TrapDamage`/`TrapFreeze` alternation. | Default `traps=off` (mask `0`) keeps the canonical bytes byte-identical, so no-traps corpus seeds are unchanged; the 3 traps-on corpus seeds intentionally move their placement digests (sphere digests unchanged — traps gate nothing). `kSettingsCanonicalLen` unchanged (no size cascade). |
 | 79→80 | **Trap context-aware placement** (`add-rando-trap-catalog`) — the two context-locked effects are now filtered at placement time to compatible locations (Cucco only at overworld free-standing types `Standing`/`Pedestal`/`Dash`/`Dig`; Darkness only in dungeon regions), via `Rando_PickTrapEffectId`'s `loc_flags`, so the placed effect always matches the spoiler instead of silently falling back at runtime. Signal is committed-data-only (region `dungeon_id` + location `type`) for CI determinism. | Default `traps=off` byte-identical; the 3 traps-on corpus seeds move their placement digests (a context-locked effect that previously landed on an incompatible junk slot now resolves differently). |
 | 80→81 | **Trap `insanity` frequency** (`add-rando-trap-catalog`) — a 5th `traps` tier that turns **every** eligible junk pickup into a masquerade trap (the lower tiers cap at 4/8/16). The `traps` canonical field widens 2→3 bits non-contiguously: the low 2 bits stay at `[26]` bits 2-3 (so `off`/`low`/`medium`/`high` — and `instant_flute` at bit4 — are byte-identical) and the 3rd bit (`insanity`=4) uses the previously-free `[26]` bit5. | Default `traps=off` byte-identical; existing `low`/`medium`/`high` seeds unchanged (same bits, same placement). Corpus placement digests **0-changed** — only the manifest `generator_version` bumps. Only new `insanity` seeds set bit5. |
+| 112→113 | **Dungeon chains** (`dungeon_chains=true`) — an experimental one-directional structure axis routes each main dungeon door through zero or more pool dungeons to a terminal pool boss, with every pool dungeon and boss used once. The axis occupies canonical byte `[25]` bit6, persists chain layout identity in sidecar v5 and snapshot TLVs (`chains_attempt` + `chains_digest24`, plus origin/terminal session state), and normalizes off under entrance shuffle, door shuffle, boss shuffle, non-Open/Standard worlds, or non-NoGlitches logic. | Existing 136 corpus entries byte-identical; five chain-on entries added (`chains-open-ganon`, `chains-standard-fast-ganon`, `chains-prize-open-fast-ganon`, `chains-wild-keys-items`, `chains-hunt-none`); branch corpus 141/141 green. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

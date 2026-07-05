@@ -115,10 +115,12 @@ immediately before any bump/commit (concurrent-drift discipline).
 - [x] 5.4 Terminal containment: outbound transitions from a terminal boss room
       divert to the chain exit (origin door); verify cleared-terminal re-entry
       is exitable. <!-- done 2026-07-05: door/stair/hole outbound seams match
-      kChainBossOutboundSeams while terminal state is armed; terminal exits route
-      through the normal module-15 -> module-8 overworld loader using chains-owned
-      origin_exit_room. Release build + --rando-selftest green; end-to-end
-      cleared-terminal owner playtest remains tracked in 7.3. -->
+      kChainBossOutboundSeams while terminal state is armed and the terminal prize
+      location is checked; pre-reward transitions stay vanilla so Moldorm fall-out
+      keeps the retry loop. Terminal exits route through the normal module-15 ->
+      module-8 overworld loader using chains-owned origin_exit_room. Release
+      build + --rando-selftest green; end-to-end cleared-terminal owner playtest
+      remains tracked in 7.3. -->
 - [x] 5.5 Chain-start doors + origin coupling: extend the
       `kOverworld_Entrance_Id` overlay install for the 9 main doors; add the
       chains-owned origin session state (armed at chain entry — NOT the
@@ -143,11 +145,12 @@ immediately before any bump/commit (concurrent-drift discipline).
       installs the chain runtime overlay only after synthetic entrance records
       validate. Deactivation and snapshot replay clear the chain asset-126 owner,
       logic-overlay replay restores chain edge overrides from the same digest
-      gate, and snapshot type-7 carries chain attempt/digest for cold replay.
-      RandoSnapshotTail_SelfCheck covers restore, re-save perpetuation, missing
-      ChainLayout fail-closed, and bad digest fail-closed with a synthetic asset
-      fixture. git diff --check, openspec validate dungeon-chains --strict,
-      Release build, and --rando-selftest green. -->
+      gate, and snapshot type-7 carries chain attempt/digest plus origin/terminal
+      session state for cold replay. RandoSnapshotTail_SelfCheck covers restore,
+      in-flight session restore, re-save perpetuation, missing ChainLayout
+      fail-closed, and bad digest fail-closed with a synthetic asset fixture.
+      git diff --check, openspec validate dungeon-chains --strict, Release build,
+      and --rando-selftest green. -->
 - [x] 5.7 Sidecar persistence: new additive extension block {present, attempt,
       digest24}, `kRandoSidecar_FileFormatVersion` bump, old-file
       compatibility, `RandoSave_SelfCheck` update. <!-- done 2026-07-05:
@@ -220,8 +223,20 @@ immediately before any bump/commit (concurrent-drift discipline).
       production seam hooks and selfcheck coverage. git diff --check, openspec
       validate dungeon-chains --strict, targeted debug-symbol rg, MSVC Release
       build, WSL make zelda3, and --rando-selftest green. -->
-- [ ] 7.5 Independent fresh-eyes review with a self-contained prompt (new
-      findings only, response capped); fix and re-verify.
+- [x] 7.5 Independent fresh-eyes review with a self-contained prompt (new
+      findings only, response capped); fix and re-verify. <!-- done 2026-07-05:
+      Kant found two concrete blockers: terminal outbound seams redirected
+      Moldorm fall-outs before reward, and snapshots restored only chain layout
+      identity, not the in-flight origin/terminal session. Fixed terminal
+      containment to require the terminal prize location checked, extended
+      type-7 snapshots with origin/terminal session bytes, and added
+      RandoSnapshotTail_SelfCheck coverage for in-flight session restore.
+      git diff --check, openspec validate dungeon-chains --strict, MSVC Release
+      build, --rando-selftest, and WSL make zelda3 green. -->
 - [ ] 7.6 Reconcile design.md + spec deltas against as-built source; update
       `docs/randomizer.md`; `openspec archive dungeon-chains --yes` on the
-      branch; squash-merge.
+      branch; squash-merge. <!-- partial 2026-07-05: design.md, spec deltas,
+      and docs/randomizer.md are reconciled to the as-built terminal reward gate,
+      chain snapshot session restore, settings UI, sidecar/snapshot persistence,
+      and corpus/version evidence. Archive and squash-merge remain gated on 7.3
+      owner playtest. -->

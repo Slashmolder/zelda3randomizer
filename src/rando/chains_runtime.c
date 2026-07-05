@@ -5,6 +5,7 @@
 #include "chain_boss_entrances.gen.h"
 #include "chain_seams.gen.h"
 #include "door_tables.gen.h"
+#include "rando.h"
 
 #include "../assets.h"
 #include "../dungeon.h"
@@ -195,6 +196,46 @@ static bool Chains_IsMainExitRoom(uint16 room) {
   return false;
 }
 
+bool Chains_RuntimeGetSession(ChainsRuntimeSession *out) {
+  if (out == NULL)
+    return false;
+  memset(out, 0, sizeof(*out));
+  if (!g_chains_runtime_active)
+    return false;
+  out->origin_active = g_chains_origin_active;
+  out->terminal_active = g_chains_terminal_active;
+  out->origin_exit_room = g_chains_origin_exit_room;
+  out->terminal_dungeon = g_chains_terminal_dungeon;
+  return true;
+}
+
+bool Chains_RuntimeRestoreSession(const ChainsRuntimeSession *session) {
+  if (!g_chains_runtime_active || session == NULL)
+    return false;
+  if (!session->origin_active) {
+    if (session->terminal_active || session->origin_exit_room != 0)
+      return false;
+    Chains_RuntimeClearOrigin();
+    return true;
+  }
+  if (session->origin_exit_room == 0 ||
+      !Chains_IsMainExitRoom(session->origin_exit_room)) {
+    return false;
+  }
+  if (session->terminal_active &&
+      Chains_PoolIndexForDungeon(session->terminal_dungeon) < 0) {
+    return false;
+  }
+
+  g_chains_origin_active = true;
+  g_chains_origin_exit_room = session->origin_exit_room;
+  g_chains_terminal_active = session->terminal_active;
+  g_chains_terminal_dungeon = session->terminal_active
+                                  ? session->terminal_dungeon
+                                  : (uint8)kRandoDungeon_None;
+  return true;
+}
+
 bool Chains_RuntimeRecordDoorEntry(uint16 lx) {
   if (!g_chains_runtime_active || g_chains_entrance_overlay_orig == NULL)
     return false;
@@ -362,6 +403,12 @@ static bool Chains_RequestTerminalExit(uint16 source_room,
   return true;
 }
 
+static bool Chains_TerminalRewardChecked(uint8 rando_dungeon) {
+  uint8 game_dungeon = Rando_GameDungeonFromRandoDungeon(rando_dungeon);
+  uint16 prize_loc = Rando_BossPrizeLocationForGameDungeon(game_dungeon);
+  return prize_loc != 0xFFFFu && Rando_IsLocationChecked(prize_loc);
+}
+
 bool Chains_TryTerminalOutboundSeam(uint8 kind,
                                     uint8 direction,
                                     uint16 source_room,
@@ -373,6 +420,8 @@ bool Chains_TryTerminalOutboundSeam(uint8 kind,
   const ChainSeamRow *seam = Chains_FindOutboundSeam(kind, direction, source_room,
                                                      vanilla_destination_room, slot);
   if (seam == NULL || seam->rando_dungeon != g_chains_terminal_dungeon)
+    return false;
+  if (!Chains_TerminalRewardChecked(g_chains_terminal_dungeon))
     return false;
 
   return Chains_RequestTerminalExit(source_room, vanilla_destination_room);

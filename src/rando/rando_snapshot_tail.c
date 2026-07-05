@@ -40,14 +40,19 @@
 //     door_attempt[1]
 //     door_digest24[3] LE
 //
-// Dungeon-chain snapshots append a separate layout-identity TLV:
+// Dungeon-chain snapshots append a separate layout-identity TLV. Length 5 is
+// the original layout-only form; newer saves extend the same format byte with
+// in-flight chain session bytes that older readers skip.
 //
 //   type[4]   LE             = 7 (TAIL_CHAIN_LAYOUT)
-//   length[4] LE             = 5
+//   length[4] LE             = 5 or 9
 //   payload:
 //     format_version[1]      = 1
 //     chains_attempt[1]
 //     chains_digest24[3] LE
+//     session_flags[1]       bit0=origin_active, bit1=terminal_active (optional)
+//     origin_exit_room[2] LE  optional
+//     terminal_dungeon[1]     optional
 //
 // Another optional TLV carries per-slot Seed QoL features for snapshot replay:
 //
@@ -403,12 +408,18 @@ bool RandoSnapshotTail_Save(FILE *f) {
     if (fwrite(dp, 1, sizeof(dp), f) != sizeof(dp)) return false;
   }
   if (g_has_chains_ctx) {
-    uint8 cp[5];
+    ChainsRuntimeSession session;
+    bool has_session = Chains_RuntimeGetSession(&session);
+    uint8 cp[9];
     cp[0] = 1u;  // format_version
     cp[1] = g_ctx_chains_attempt;
     cp[2] = (uint8)(g_ctx_chains_digest24 & 0xff);
     cp[3] = (uint8)((g_ctx_chains_digest24 >> 8) & 0xff);
     cp[4] = (uint8)((g_ctx_chains_digest24 >> 16) & 0xff);
+    cp[5] = has_session ? ((session.origin_active ? 1u : 0u) |
+                           (session.terminal_active ? 2u : 0u)) : 0u;
+    put_u16le_bytes(cp + 6, has_session ? session.origin_exit_room : 0);
+    cp[8] = has_session ? session.terminal_dungeon : (uint8)kRandoDungeon_None;
     uint8 chdr[16];
     memcpy(chdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
     put_u32le_bytes(chdr + 8, kRandoSnapshotTail_Type_ChainLayout);
@@ -768,26 +779,47 @@ int RandoSnapshotTail_Load(FILE *f) {
     }
 
     if (type == kRandoSnapshotTail_Type_ChainLayout) {
-      // Payload: format_version[1] + chains_attempt[1] + chains_digest24[3].
+      // Payload: format_version[1] + chains_attempt[1] + chains_digest24[3],
+      // optionally followed by session_flags + origin_exit_room +
+      // terminal_dungeon.
       if (length < 5u) {
         if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
-      uint8 cp[5];
-      if (fread(cp, 1, sizeof(cp), f) != sizeof(cp)) FINISH_LOAD();
-      if (length > sizeof(cp) && fseek(f, (long)(length - sizeof(cp)), SEEK_CUR) != 0)
+      uint8 cp[9];
+      memset(cp, 0, sizeof(cp));
+      uint32 copy = length <= (uint32)sizeof(cp) ? length : (uint32)sizeof(cp);
+      if (fread(cp, 1, copy, f) != copy) FINISH_LOAD();
+      if (length > copy && fseek(f, (long)(length - copy), SEEK_CUR) != 0)
         FINISH_LOAD();
       if (cp[0] == 1u && accepted_rando_state) {
         uint8 chains_attempt = cp[1];
         uint32 chains_digest24 =
             (uint32)cp[2] | ((uint32)cp[3] << 8) | ((uint32)cp[4] << 16);
+        ChainsRuntimeSession session;
+        memset(&session, 0, sizeof(session));
+        bool has_session_payload = length >= 9u;
+        if (has_session_payload) {
+          session.origin_active = (cp[5] & 1u) != 0;
+          session.terminal_active = (cp[5] & 2u) != 0;
+          session.origin_exit_room = get_u16le_bytes(cp + 6);
+          session.terminal_dungeon = cp[8];
+        }
         Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24, true);
         if (g_has_ctx && g_has_settings_ctx) {
           RandoSettings s;
           if (Settings_CanonicalDeserialize(g_ctx_settings_canonical, &s) == 0) {
             if (Rando_SnapshotChainsReplayRestore(&s, g_ctx.share_string,
                                                   chains_attempt, chains_digest24)) {
-              pending_chain_layout = false;
+              if (!has_session_payload || Chains_RuntimeRestoreSession(&session)) {
+                pending_chain_layout = false;
+              } else {
+                fprintf(stderr,
+                        "RandoSnapshotTail: invalid dungeon-chain session "
+                        "state - deactivating randomizer state\n");
+                Rando_DeactivateSlot();
+                pending_chain_layout = false;
+              }
             }
           }
         }
@@ -1927,6 +1959,16 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_SetSnapshotContext(0x00C7, chain_ss.settings_hash, chain_share);
     Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
     Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24, true);
+    if (!Chains_RuntimeInstallLayout(&chain_layout))
+      selfcheck_die("type-7: could not install chain layout for session save");
+    ChainsRuntimeSession saved_chain_session;
+    memset(&saved_chain_session, 0, sizeof(saved_chain_session));
+    saved_chain_session.origin_active = true;
+    saved_chain_session.terminal_active = true;
+    saved_chain_session.origin_exit_room = kChainBossEntranceChecks[0].main_exit_room;
+    saved_chain_session.terminal_dungeon = kRandoDungeon_TowerOfHera;
+    if (!Chains_RuntimeRestoreSession(&saved_chain_session))
+      selfcheck_die("type-7: could not arm chain session for save");
 
     FILE *fc = tmpfile();
     if (fc == NULL) selfcheck_die("type-7: tmpfile() returned NULL");
@@ -1941,11 +1983,20 @@ void RandoSnapshotTail_SelfCheck(void) {
     int nc = RandoSnapshotTail_Load(fc);
     if (nc != 5)
       selfcheck_die("type-7: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + ChainLayout");
-    if (!Chains_RuntimeRecordDoorEntry(chain_lx))
-      selfcheck_die("type-7: chain runtime was not restored");
+    ChainsRuntimeSession restored_chain_session;
+    if (!Chains_RuntimeGetSession(&restored_chain_session))
+      selfcheck_die("type-7: chain runtime session was not restored");
+    if (!restored_chain_session.origin_active ||
+        !restored_chain_session.terminal_active ||
+        restored_chain_session.origin_exit_room != kChainBossEntranceChecks[0].main_exit_room ||
+        restored_chain_session.terminal_dungeon != kRandoDungeon_TowerOfHera)
+      selfcheck_die("type-7: restored chain session did not match");
     if (Chains_RuntimeConsumeMainExitOrigin(kChainBossEntranceChecks[0].main_exit_room) !=
         kChainBossEntranceChecks[0].main_exit_room)
       selfcheck_die("type-7: restored chain origin did not consume");
+    if (!Chains_RuntimeRecordDoorEntry(chain_lx))
+      selfcheck_die("type-7: chain runtime was not restored");
+    (void)Chains_RuntimeConsumeMainExitOrigin(kChainBossEntranceChecks[0].main_exit_room);
     fclose(fc);
 
     FILE *frc = tmpfile();

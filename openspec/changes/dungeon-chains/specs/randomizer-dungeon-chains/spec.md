@@ -91,18 +91,27 @@ state captured at the chain's origin door (no re-capture from in-dungeon state).
 
 ### Requirement: Terminal boss-room containment
 
-Outbound transitions from a terminal boss room SHALL divert to the chain exit:
-every door, stair, and hole transition out of a boss room reached as a chain
-terminal returns the player to the origin door instead of entering the boss's
-home dungeon. A cleared terminal boss room revisited through
-its chain SHALL always be exitable.
+Outbound transitions from a terminal boss room SHALL divert to the chain exit
+after the terminal prize location is checked: every door, stair, and hole
+transition out of a cleared boss room reached as a chain terminal returns the
+player to the origin door instead of entering the boss's home dungeon. Before
+the terminal reward is collected, boss-room outbound transitions SHALL stay
+vanilla so boss-specific retry loops remain intact. A cleared terminal boss room
+revisited through its chain SHALL always be exitable.
 
-#### Scenario: No walk-back into the home dungeon
+#### Scenario: No walk-back into the home dungeon after reward
 
 - **WHEN** the player attempts to leave a terminal boss room through any room
-  transition (including after the boss is defeated)
+  transition after the terminal prize location is checked
 - **THEN** they emerge at the chain's origin overworld door, and the boss's home
   dungeon interior is not entered
+
+#### Scenario: Pre-reward retry remains vanilla
+
+- **WHEN** Moldorm is the chain terminal and the player falls out before the
+  Tower of Hera prize location is checked
+- **THEN** the fall uses the vanilla Tower of Hera retry destination rather than
+  consuming the chain's origin exit
 
 #### Scenario: Cleared terminal is not a sealed box
 

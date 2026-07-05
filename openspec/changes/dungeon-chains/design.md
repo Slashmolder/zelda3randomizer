@@ -221,14 +221,15 @@ Two redirect rules, both table-driven off the 9 pool boss-room ids:
    the successor differs from that room's own boss (pinned adjacencies are
    identity ⇒ no divert ⇒ pure vanilla), divert to an entrance-style load of
    `chain_successor[current dungeon]`.
-2. **Out of a terminal boss room**: any outbound transition from a boss room
-   reached as a chain terminal diverts to the chain exit (return to origin door).
-   This seals the walk-backward leak into the boss's home dungeon, and makes a
-   revisited cleared terminal non-sealing regardless of shutter state. Owner
-   playtest (2026-07-04 local): after killing a vanilla boss, before taking the
-   reward/warp, the entry door remained locked; rule 2 therefore is not expected
-   to fire pre-warp through the entry shutter, but still covers any real outbound
-   transition from a terminal boss room.
+2. **Out of a terminal boss room after reward**: outbound transitions from a
+   boss room reached as a chain terminal divert to the chain exit (return to
+   origin door) only after that terminal prize location is checked. This seals
+   the walk-backward leak into the boss's home dungeon for cleared terminals,
+   makes a revisited cleared terminal non-sealing regardless of shutter state,
+   and preserves pre-reward boss-specific retry loops such as Moldorm fall-outs.
+   Owner playtest (2026-07-04 local): after killing a vanilla boss, before taking
+   the reward/warp, the entry door remained locked; the reward gate also covers
+   any other real outbound transition before the terminal reward is collected.
 
 Overworld chain-start doors need no new hook: reuse the entrance-shuffle door
 overlay (`kOverworld_Entrance_Id`, asset 126) to map the 9 main doors to their
@@ -380,16 +381,17 @@ readable (additive pattern used by hints/v3). At slot activation
 `Chains_Compute(seed, attempt)`, **hard-fail the slot on digest mismatch** (door
 shuffle precedent — wrong cross-dungeon redirects are worse than a refused slot),
 install the door overlay + seam tables + logic edges; `Rando_DeactivateSlot`
-tears all of it down. M4 snapshot cold-replay rebuilds via the same install.
+tears all of it down. M4 snapshot cold-replay rebuilds via the same install and
+restores the in-flight origin/terminal session when the type-7 TLV carries it.
 
 ### D9. Spoiler, UI, share string
 
 - Spoiler: `chains` section (JSON + text) after the entrance sections in
   `rando_spoiler.c`: `door → [dungeon, ...] → boss` per chain.
 - UI (`rando_window.cpp`): one checkbox in the world-structure panel, entrance-
-  panel pattern; tooltip = 1–2 durable player-facts ("Dungeon doors lead to a
-  chain of 0+ dungeons ending in a boss. All exits return to the door you
-  entered."). Normalization-grayed like door shuffle under conflicts.
+  panel pattern; tooltip = 1-2 durable player-facts ("Each main dungeon door
+  starts a chain ending in a boss. Every pool boss appears once.").
+  Normalization-grayed like door shuffle under conflicts.
 - Share string: no new fields — chains regenerates from (seed, attempt, axis bit)
   like entrance shuffle; `kGeneratorVersion` bump covers cross-version refusal.
 
