@@ -41,6 +41,9 @@ bool Chains_RuntimeRestoreSession(const ChainsRuntimeSession *session);
 // an installed chain overlay owns `lx`; the exit hook consumes it only when the
 // resolved dungeon-exit room is one of the chain pool's main doors.
 bool Chains_RuntimeRecordDoorEntry(uint16 lx);
+// Clears carried tagalong/follower state before a chain-start entrance load so a
+// follower cannot ride an overworld dungeon door into a foreign chain element.
+void Chains_ClearFollowerForChainStart(void);
 uint16 Chains_RuntimeConsumeMainExitOrigin(uint16 resolved_exit_room);
 void Chains_RuntimeSelfCheck(void);
 

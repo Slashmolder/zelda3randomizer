@@ -301,6 +301,10 @@ static void Chains_ClearFollowerForHop(void) {
   }
 }
 
+void Chains_ClearFollowerForChainStart(void) {
+  Chains_ClearFollowerForHop();
+}
+
 static bool Chains_RequestEntranceHop(uint8 entrance,
                                       uint16 source_room,
                                       uint16 destination_room,

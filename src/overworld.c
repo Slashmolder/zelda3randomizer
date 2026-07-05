@@ -3760,7 +3760,8 @@ after:
     g_rando_entrance_exit_room = 0;
     g_rando_entrance_force_cached = 0;
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
-      Chains_RuntimeRecordDoorEntry((uint16)lx);
+      if (Chains_RuntimeRecordDoorEntry((uint16)lx))
+        Chains_ClearFollowerForChainStart();
       g_rando_entrance_exit_room = Rando_EntranceCoupledExitRoom((uint16)lx);
       // Dungeon decoupled (Insanity): a one-way dungeon exit overrides the coupled
       // (return-to-source) room with the π_out target dungeon's room, so Link emerges
