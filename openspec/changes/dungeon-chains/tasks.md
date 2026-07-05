@@ -37,7 +37,7 @@ immediately before any bump/commit (concurrent-drift discipline).
 
 ## 2. Logic restructure (inert, lands first)
 
-- [ ] 2.1 In `assets/rando_logic_gen.py`: emit per-pool-dungeon `<D>_BossRoom`
+- [x] 2.1 In `assets/rando_logic_gen.py`: emit per-pool-dungeon `<D>_BossRoom`
       regions, the single inbound edge carrying the derived `boss_approach(D)`
       (strip exactly one `CanKillBoss(D)` conjunct from the Boss predicate;
       hard-fail codegen on zero or multiple occurrences), and re-home Boss/Prize

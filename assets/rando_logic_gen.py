@@ -117,6 +117,20 @@ DUNGEON_SUFFIXES = [
     "ThievesTown", "IcePalace", "MiseryMire", "TurtleRock", "GanonsTower",
 ]
 
+# Dungeon-chain logic factoring pool. Skull Woods, Castle Tower, Ganon's Tower,
+# and Hyrule Castle stay outside v1 chains.
+CHAIN_BOSS_ROOM_FACTORS = [
+    ("EasternPalace", "Eastern Palace - Boss", "Eastern Palace - Prize"),
+    ("DesertPalace", "Desert Palace - Boss", "Desert Palace - Prize"),
+    ("TowerOfHera", "Tower of Hera - Boss", "Tower of Hera - Prize"),
+    ("PalaceOfDarkness", "Palace of Darkness - Boss", "Palace of Darkness - Prize"),
+    ("SwampPalace", "Swamp Palace - Boss", "Swamp Palace - Prize"),
+    ("ThievesTown", "Thieves' Town - Boss", "Thieves' Town - Prize"),
+    ("IcePalace", "Ice Palace - Boss", "Ice Palace - Prize"),
+    ("MiseryMire", "Misery Mire - Boss", "Misery Mire - Prize"),
+    ("TurtleRock", "Turtle Rock - Boss", "Turtle Rock - Prize"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Registry loading
@@ -1095,6 +1109,12 @@ kWorldState_Open = 0
 kWorldState_Standard = 1
 kWorldState_Inverted = 2
 kWorldState_Retro = 3
+_WORLD_STATE_NAME_BY_ID = {
+    kWorldState_Open: "open",
+    kWorldState_Standard: "standard",
+    kWorldState_Inverted: "inverted",
+    kWorldState_Retro: "retro",
+}
 
 
 def _world_state_id_for_path(path: Path) -> int | None:
@@ -1164,6 +1184,8 @@ def load_logic(path: Path | None):
             )
 
     _apply_pot_key_terms(loc_preds, world_state_overrides)
+    _apply_chain_boss_room_factoring(
+        regions, edges, loc_preds, world_state_overrides)
     return regions, edges, loc_preds, macros, world_state_overrides, world_state_edges
 
 
@@ -1224,6 +1246,212 @@ def _apply_pot_key_terms(loc_preds, world_state_overrides):
             f"{table_path}: pot_key_depth location(s) match no logic location: "
             f"{sample}. Regenerate or fix the stale table before codegen."
         )
+
+
+def _is_can_kill_boss_call(ast, dungeon: str) -> bool:
+    if not isinstance(ast, tuple):
+        return False
+    if ast[0] not in ("call", "macro", "op"):
+        return False
+    name = ast[1]
+    args = ast[2]
+    if ast[0] == "op":
+        if name != "CAN_KILL_BOSS":
+            return False
+    elif name != "CanKillBoss":
+        return False
+    return len(args) == 1 and args[0] == ("ident", dungeon)
+
+
+def _count_can_kill_boss_calls(ast, dungeon: str) -> int:
+    if not isinstance(ast, tuple):
+        return 0
+    if _is_can_kill_boss_call(ast, dungeon):
+        return 1
+    kind = ast[0]
+    if kind in ("and", "or"):
+        return sum(_count_can_kill_boss_calls(child, dungeon) for child in ast[1])
+    if kind == "not":
+        return _count_can_kill_boss_calls(ast[1], dungeon)
+    if kind == "cmp":
+        return (_count_can_kill_boss_calls(ast[2], dungeon) +
+                _count_can_kill_boss_calls(ast[3], dungeon))
+    return 0
+
+
+def _flatten_and(ast) -> list:
+    if isinstance(ast, tuple) and ast[0] == "and":
+        out = []
+        for child in ast[1]:
+            out.extend(_flatten_and(child))
+        return out
+    return [ast]
+
+
+def _arg_to_predicate_source(arg) -> str:
+    if isinstance(arg, tuple):
+        if arg[0] == "ident":
+            return arg[1]
+        if arg[0] == "int":
+            return str(arg[1])
+        if arg[0] == "list":
+            return "[" + ", ".join(arg[1]) + "]"
+    if isinstance(arg, int):
+        return str(arg)
+    if isinstance(arg, str):
+        return arg
+    raise ParseError(f"cannot stringify predicate argument {arg!r}")
+
+
+def _ast_to_predicate_source(ast, parent_prec: int = 0) -> str:
+    if not isinstance(ast, tuple):
+        raise ParseError(f"cannot stringify predicate AST {ast!r}")
+    kind = ast[0]
+    if kind == "true":
+        return "TRUE()"
+    if kind == "false":
+        return "FALSE()"
+    if kind in ("call", "macro"):
+        _, name, args = ast
+        return f"{name}(" + ", ".join(_arg_to_predicate_source(a) for a in args) + ")"
+    if kind == "op":
+        _, name, args = ast
+        return f"OP_{name}(" + ", ".join(_arg_to_predicate_source(a) for a in args) + ")"
+    if kind == "cmp":
+        _, op, lhs, rhs = ast
+        cmp_text = {
+            "CMP_EQ": "EQ",
+            "CMP_NE": "NE",
+            "CMP_LT": "LT",
+            "CMP_LE": "LE",
+            "CMP_GT": "GT",
+            "CMP_GE": "GE",
+        }[op]
+        return f"{_ast_to_predicate_source(lhs, 3)} {cmp_text} {_ast_to_predicate_source(rhs, 3)}"
+    if kind == "not":
+        text = "NOT " + _ast_to_predicate_source(ast[1], 3)
+        return f"({text})" if parent_prec > 3 else text
+    if kind == "and":
+        text = " AND ".join(_ast_to_predicate_source(c, 2) for c in ast[1])
+        return f"({text})" if parent_prec > 2 else text
+    if kind == "or":
+        text = " OR ".join(_ast_to_predicate_source(c, 1) for c in ast[1])
+        return f"({text})" if parent_prec > 1 else text
+    if kind in ("ident", "int", "list"):
+        return _arg_to_predicate_source(ast)
+    raise ParseError(f"cannot stringify predicate AST kind {kind!r}")
+
+
+def _strip_can_kill_boss_conjunct_source(src: str, dungeon: str, context: str) -> str:
+    ast = parse_predicate(src)
+    occurrences = _count_can_kill_boss_calls(ast, dungeon)
+    if occurrences != 1:
+        raise ParseError(
+            f"{context}: expected exactly one CanKillBoss({dungeon}) conjunct, "
+            f"found {occurrences}")
+    children = _flatten_and(ast)
+    direct = [_is_can_kill_boss_call(c, dungeon) for c in children]
+    if sum(1 for is_match in direct if is_match) != 1:
+        raise ParseError(
+            f"{context}: CanKillBoss({dungeon}) must be a top-level AND conjunct")
+    kept = [c for c, is_match in zip(children, direct) if not is_match]
+    if not kept:
+        return "TRUE()"
+    if len(kept) == 1:
+        return _ast_to_predicate_source(simplify(kept[0]))
+    return _ast_to_predicate_source(simplify(("and", kept)))
+
+
+def _world_state_switch_predicate(default_predicate: str,
+                                  ws_predicates: dict[int, str]) -> str:
+    cases = []
+    guards = []
+    for ws_id, predicate in sorted(ws_predicates.items()):
+        if predicate == default_predicate:
+            continue
+        if ws_id not in _WORLD_STATE_NAME_BY_ID:
+            raise ParseError(f"unknown world_state id {ws_id}")
+        guard = f"WORLDSTATE_EQ({_WORLD_STATE_NAME_BY_ID[ws_id]})"
+        guards.append(guard)
+        cases.append(f"({guard} AND ({predicate}))")
+    if not cases:
+        return default_predicate
+    default_guard = guards[0] if len(guards) == 1 else "(" + " OR ".join(guards) + ")"
+    cases.append(f"(NOT {default_guard} AND ({default_predicate}))")
+    return " OR ".join(cases)
+
+
+def _apply_chain_boss_room_factoring(regions, edges, loc_preds, world_state_overrides):
+    """Add inert boss-room regions for dungeon-chains and factor Boss predicates.
+
+    The transform preserves off-axis logic: boss_approach(D) moves to a single
+    inbound edge, while Boss/Prize locations keep only CanKillBoss(D). If a
+    world-state override changes the approach, the edge predicate switches on
+    WORLDSTATE_EQ so the base edge remains correct for every active world state.
+    """
+    for dungeon, boss_loc, prize_loc in CHAIN_BOSS_ROOM_FACTORS:
+        boss_def = loc_preds.get(boss_loc)
+        prize_def = loc_preds.get(prize_loc)
+        if boss_def is None or prize_def is None:
+            raise RuntimeError(
+                f"dungeon-chain boss factoring missing {boss_loc!r} or {prize_loc!r}")
+        parent_region = boss_def.region
+        if not parent_region or parent_region not in regions:
+            raise RuntimeError(
+                f"{boss_loc}: cannot derive boss-room parent from region "
+                f"{parent_region!r}")
+        if prize_def.region != parent_region:
+            raise RuntimeError(
+                f"{prize_loc}: prize region {prize_def.region!r} differs from "
+                f"{boss_loc} region {parent_region!r}")
+
+        boss_region = f"{dungeon}_BossRoom"
+        if boss_region in regions:
+            raise RuntimeError(f"derived boss-room region {boss_region!r} already exists")
+
+        base_approach = _strip_can_kill_boss_conjunct_source(
+            boss_def.can_reach, dungeon, f"{boss_loc}.can_reach")
+        prize_approach = _strip_can_kill_boss_conjunct_source(
+            prize_def.can_reach, dungeon, f"{prize_loc}.can_reach")
+        if prize_approach != base_approach:
+            raise RuntimeError(
+                f"{prize_loc}: stripped approach {prize_approach!r} differs from "
+                f"{boss_loc} approach {base_approach!r}")
+
+        ws_approaches: dict[int, str] = {}
+        for loc_name in (boss_loc, prize_loc):
+            for ws_id, override in world_state_overrides.get(loc_name, {}).items():
+                approach = _strip_can_kill_boss_conjunct_source(
+                    override.can_reach, dungeon, f"ws={ws_id} {loc_name}.can_reach")
+                prior = ws_approaches.get(ws_id)
+                if prior is not None and prior != approach:
+                    raise RuntimeError(
+                        f"ws={ws_id} {loc_name}: stripped approach {approach!r} "
+                        f"differs from sibling approach {prior!r}")
+                ws_approaches[ws_id] = approach
+
+        regions[boss_region] = RegionDef(
+            id=boss_region,
+            name=f"{regions[parent_region].name} - Boss Room",
+            dungeon=dungeon,
+            parent=parent_region,
+            source="dungeon-chains generated boss-room factor",
+        )
+        edges.append(EdgeDef(
+            from_=parent_region,
+            to=boss_region,
+            predicate=_world_state_switch_predicate(base_approach, ws_approaches),
+            source="dungeon-chains generated boss-room factor",
+        ))
+
+        kill_only = f"CanKillBoss({dungeon})"
+        for loc_name in (boss_loc, prize_loc):
+            loc = loc_preds[loc_name]
+            loc.region = boss_region
+            loc.can_reach = kill_only
+            for override in world_state_overrides.get(loc_name, {}).values():
+                override.region = boss_region
+                override.can_reach = kill_only
 
 
 # ---------------------------------------------------------------------------
