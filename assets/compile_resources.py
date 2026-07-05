@@ -38,6 +38,40 @@ def load_chain_boss_entrances():
                       (path, entry.get('entrance_index'), want))
   return data['base_index'], entries
 
+_CHAIN_BOSS_ENTRANCE_ASSET_KEYS = (
+  'entrance_index',
+  'room',
+  'scroll_xy',
+  'player_xy',
+  'camera_xy',
+  'blockset',
+  'floor',
+  'palace',
+  'doorway_orientation',
+  'plane',
+  'ladder_level',
+  'quadrants',
+  'house_exit_door',
+  'music',
+  'repair_scroll_bounds',
+)
+
+def normalize_chain_boss_entrance_for_assets(entry):
+  def normalize_value(value):
+    if isinstance(value, tuple):
+      return [normalize_value(v) for v in value]
+    if isinstance(value, list):
+      return [normalize_value(v) for v in value]
+    return value
+
+  out = {}
+  for key in _CHAIN_BOSS_ENTRANCE_ASSET_KEYS:
+    value = entry.get(key)
+    if key == 'repair_scroll_bounds' and value is None:
+      value = [0] * 8
+    out[key] = normalize_value(value)
+  return out
+
 def append_chain_boss_entrances(entrances):
   base, entries = load_chain_boss_entrances()
   limit = base + len(entries)
@@ -48,8 +82,9 @@ def append_chain_boss_entrances(entrances):
     row = copy.deepcopy(entry)
     if entrances[idx] is None:
       entrances[idx] = row
-    elif entrances[idx] != row:
-      raise Exception('Synthetic chain boss entrance %d differs from %s' %
+    elif (normalize_chain_boss_entrance_for_assets(entrances[idx]) !=
+          normalize_chain_boss_entrance_for_assets(row)):
+      raise Exception('Synthetic chain boss entrance %d asset fields differ from %s' %
                       (idx, 'rando/chain_boss_entrances.gen.yaml'))
 
 def add_asset_uint8(name, data):

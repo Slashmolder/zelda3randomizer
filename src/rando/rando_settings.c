@@ -605,7 +605,8 @@ bool Settings_EffectiveDungeonChains(const RandoSettings *s) {
     return false;
   if (s->door_shuffle != kDoorShuffle_Vanilla)
     return false;
-  if (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances)
+  if (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances ||
+      s->cross_category || s->decoupled || s->shuffle_ganons_tower_entrance)
     return false;
   return true;
 }
@@ -956,6 +957,32 @@ void Settings_SelfCheck(void) {
                         "'%s' expected %u got canonical=%u effective=%u\n",
                 tc->name, tc->expect_active, active,
                 (uint8)Settings_EffectiveDungeonChains(&sx));
+        exit(2);
+      }
+    }
+    typedef struct {
+      const char *name;
+      uint8 cross_category;
+      uint8 decoupled;
+      uint8 shuffle_ganons_tower_entrance;
+    } ChainRawEntranceFlagCase;
+    static const ChainRawEntranceFlagCase kChainRawEntranceFlagCases[] = {
+      { "cross-category", 1, 0, 0 },
+      { "decoupled", 0, 1, 0 },
+      { "gt-entrance", 0, 0, 1 },
+    };
+    for (size_t i = 0; i < sizeof(kChainRawEntranceFlagCases) /
+                               sizeof(kChainRawEntranceFlagCases[0]); i++) {
+      const ChainRawEntranceFlagCase *tc = &kChainRawEntranceFlagCases[i];
+      RandoSettings sx;
+      Settings_SetDefaults(&sx);
+      sx.dungeon_chains = 1;
+      sx.cross_category = tc->cross_category;
+      sx.decoupled = tc->decoupled;
+      sx.shuffle_ganons_tower_entrance = tc->shuffle_ganons_tower_entrance;
+      if (Settings_EffectiveDungeonChains(&sx)) {
+        fprintf(stderr, "Settings_SelfCheck: dungeon_chains raw entrance case "
+                        "'%s' should normalize off\n", tc->name);
         exit(2);
       }
     }
