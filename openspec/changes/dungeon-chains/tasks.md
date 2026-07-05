@@ -15,7 +15,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       and class) and every OUTBOUND transition from each boss room. Commit the
       generator and its emitted C table; assert completeness (each pool dungeon
       has ≥1 seam; IP's drop-seam class resolved here).
-- [ ] 1.2 Read the entrance-shuffle Stage-2 main-door edge keying for DP/TR
+- [x] 1.2 Read the entrance-shuffle Stage-2 main-door edge keying for DP/TR
       (multi-inbound entry regions) in `shuffle_entrance.c` and record the
       mechanism chains will reuse for chain-start door edges (design.md D6
       UNVERIFIED item).

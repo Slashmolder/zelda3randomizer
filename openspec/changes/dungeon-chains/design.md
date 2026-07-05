@@ -280,10 +280,29 @@ Chains-on then installs only edge overrides (existing APIs, at retry-attempt top
   edge from the chain's last element (pred = that element's `boss_approach`) or
   from the chain-start door's edge for length-0 chains (door predicates — MM/TR
   medallions — stay on the door, the playtest-confirmed medallion-on-spot model).
-- Chain-start door edges retarget via the same mechanism entrance shuffle Stage 2
-  uses for the main-door-only dungeons. **UNVERIFIED**: the exact main-door edge
-  keying for DP/TR (multi-inbound entry regions) — reuse whatever Stage 2 shipped;
-  verification task.
+- Chain-start door edges retarget via the same pure edge-override mechanism
+  entrance shuffle Stage 2 ships today: `Entrance_ApplyEdgeOverrides` resolves
+  `from_lobby` from `dungeon_override_key(&kDungeons[ix])` and `to_lobby` from
+  the assigned dungeon, then calls `Rando_SetEntranceEdgeOverride(from_lobby,
+  to_lobby)`. Logic application rewrites any `kRandoEdges[e].to_region` through
+  `Rando_GetEntranceEdgeOverride`, so the predicate remains attached to the
+  source door/edge and only the destination changes.
+- Source grounding for the DP/TR multi-inbound question: `dungeon_override_key`
+  is the interior/lobby region when `interior_region_name` is present; otherwise
+  it is the entry region. DP has no separate interior key, so its main door edge
+  targets and keys `DesertPalace_Lobby`; the auxiliary east/west/back doors stay
+  outside the shuffle/chains overlay. TR is a two-stage main door: overworld
+  approach edges target `TurtleRock_Entrance`, and the gated edge
+  `TurtleRock_Entrance -> TurtleRock_Lobby` carries the medallion/sword/Somaria
+  predicate. The override key is `TurtleRock_Lobby`, not the multi-inbound
+  approach region; this keeps the gate with the source spot while allowing the
+  two approach edges to remain vanilla fan-in.
+- Note on source comments: `shuffle_entrance.c` still has stale prose describing
+  Stage 2 as "6 cleanly single-overworld-entrance dungeons" and saying TR's
+  override remaps both approach edges. The implementation, selfcheck, and YAML
+  edges above are the authority for chains; chains should key chain-start door
+  retargeting on the same lobby/interior override key and keep DP/TR
+  auxiliary/approach edges out of the overlay.
 
 No new VM op is needed. `boss_assignment` stays NULL (vanilla) — `CanKillBoss(D)`
 correctly evaluates D's own boss, because bosses never leave home rooms.
