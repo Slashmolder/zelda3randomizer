@@ -35,6 +35,13 @@ _Static_assert(kChainBossEntranceBase == 133,
 _Static_assert(kChainBossEntranceCount == 9,
                "dungeon-chain boss entrance count drift");
 
+#define kChainsDesertEastEntranceId 0x0A
+#define kChainsDesertWestEntranceId 0x0B
+#define kChainsDesertBackEntranceId 0x0C
+#define kChainsDesertEastExitRoom 0x085
+#define kChainsDesertWestExitRoom 0x083
+#define kChainsDesertBackExitRoom 0x063
+
 uint8 Chains_BossEntranceForRandoDungeon(uint8 rando_dungeon) {
   for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
     if (kChainBossEntranceChecks[i].rando_dungeon == rando_dungeon)
@@ -201,6 +208,16 @@ static bool Chains_IsMainExitRoom(uint16 room) {
   return false;
 }
 
+static bool Chains_IsDesertAuxExitRoom(uint16 room) {
+  return room == kChainsDesertEastExitRoom ||
+         room == kChainsDesertWestExitRoom ||
+         room == kChainsDesertBackExitRoom;
+}
+
+static bool Chains_IsValidOriginExitRoom(uint16 room) {
+  return Chains_IsMainExitRoom(room) || Chains_IsDesertAuxExitRoom(room);
+}
+
 bool Chains_RuntimeGetSession(ChainsRuntimeSession *out) {
   if (out == NULL)
     return false;
@@ -224,7 +241,7 @@ bool Chains_RuntimeRestoreSession(const ChainsRuntimeSession *session) {
     return true;
   }
   if (session->origin_exit_room == 0 ||
-      !Chains_IsMainExitRoom(session->origin_exit_room)) {
+      !Chains_IsValidOriginExitRoom(session->origin_exit_room)) {
     return false;
   }
   if (session->terminal_active &&
@@ -388,6 +405,24 @@ static const ChainSeamRow *Chains_FindOutboundSeam(uint8 kind,
   return NULL;
 }
 
+// DP's aux doors can reach its boss seam without a chain-start door. Use the
+// loaded aux entrance as a minimal origin so the logic edge has runtime coupling.
+static uint16 Chains_AuxOriginExitRoomForCurrentEntrance(uint8 rando_dungeon) {
+  if (rando_dungeon != kRandoDungeon_DesertPalace)
+    return 0;
+
+  switch (which_entrance) {
+    case kChainsDesertEastEntranceId:
+      return kChainsDesertEastExitRoom;
+    case kChainsDesertWestEntranceId:
+      return kChainsDesertWestExitRoom;
+    case kChainsDesertBackEntranceId:
+      return kChainsDesertBackExitRoom;
+    default:
+      return 0;
+  }
+}
+
 static bool Chains_RequestTerminalExit(uint16 source_room,
                                        uint16 destination_room) {
   (void)source_room;
@@ -471,19 +506,27 @@ bool Chains_TryBossSeamHop(uint8 kind,
                            uint8 slot) {
   if (!g_chains_runtime_active)
     return false;
-  // Without an armed chain session, boss seams stay vanilla: hopping here would
-  // route to a successor whose exit cannot resolve back to an origin door.
-  if (!g_chains_origin_active)
-    return false;
 
   const ChainSeamRow *seam = Chains_FindBossSeam(kind, direction, source_room,
                                                  vanilla_destination_room, slot);
   if (seam == NULL)
     return false;
 
+  bool synthesized_origin = false;
+  if (!g_chains_origin_active) {
+    uint16 aux_origin = Chains_AuxOriginExitRoomForCurrentEntrance(seam->rando_dungeon);
+    if (aux_origin == 0)
+      return false;
+    Chains_RuntimeArmOrigin(aux_origin);
+    synthesized_origin = true;
+  }
+
   int pool_idx = Chains_PoolIndexForDungeon(seam->rando_dungeon);
-  if (pool_idx < 0)
+  if (pool_idx < 0) {
+    if (synthesized_origin)
+      Chains_RuntimeClearOrigin();
     return false;
+  }
 
   uint8 successor = g_chains_runtime_layout.chain_successor[pool_idx];
   if (successor == Chains_BossElement(seam->rando_dungeon)) {
@@ -495,13 +538,19 @@ bool Chains_TryBossSeamHop(uint8 kind,
   }
 
   uint8 entrance = Chains_EntranceForElement(successor);
-  if (entrance == 0xFF)
+  if (entrance == 0xFF) {
+    if (synthesized_origin)
+      Chains_RuntimeClearOrigin();
     return false;
+  }
 
   uint8 terminal_dungeon = Chains_ElementDungeon(successor);
-  return Chains_RequestEntranceHop(entrance, source_room, vanilla_destination_room,
-                                   Chains_ElementIsBoss(successor),
-                                   terminal_dungeon);
+  bool ok = Chains_RequestEntranceHop(entrance, source_room, vanilla_destination_room,
+                                      Chains_ElementIsBoss(successor),
+                                      terminal_dungeon);
+  if (!ok && synthesized_origin)
+    Chains_RuntimeClearOrigin();
+  return ok;
 }
 
 bool Chains_ConsumeHopPending(void) {
@@ -704,6 +753,11 @@ void Chains_RuntimeSelfCheck(void) {
       kChainSeamKind_Door, kDoorTblDir_North, 0x0D8, 0x0C8, 2);
   if (ep_boss_seam == NULL || ep_boss_seam->rando_dungeon != ep)
     Chains_RuntimeSelfCheckDie("EP boss seam fixture missing");
+  const ChainSeamRow *dp_boss_seam = Chains_FindBossSeam(
+      kChainSeamKind_Door, kDoorTblDir_North, 0x043, 0x033, 0);
+  if (dp_boss_seam == NULL ||
+      dp_boss_seam->rando_dungeon != kRandoDungeon_DesertPalace)
+    Chains_RuntimeSelfCheckDie("DP boss seam fixture missing");
 
   uint8 saved_which_entrance = which_entrance;
   uint8 saved_player_is_indoors = player_is_indoors;
@@ -747,6 +801,31 @@ void Chains_RuntimeSelfCheck(void) {
     Chains_RuntimeSelfCheckDie("lobby successor hop armed terminal state");
   if (!Chains_ConsumeHopPending() || Chains_ConsumeHopPending())
     Chains_RuntimeSelfCheckDie("lobby successor hop pending flag mismatch");
+
+  int dp_pool_idx = Chains_PoolIndexForDungeon(kRandoDungeon_DesertPalace);
+  if (dp_pool_idx < 0)
+    Chains_RuntimeSelfCheckDie("DP pool index missing");
+  layout.chain_successor[dp_pool_idx] = Chains_DungeonElement(kRandoDungeon_TurtleRock);
+  if (!Chains_RuntimeInstallLayout(&layout))
+    Chains_RuntimeSelfCheckDie("DP aux-origin layout install failed");
+  Chains_RuntimeClearOrigin();
+  which_entrance = kChainsDesertBackEntranceId;
+  if (!Chains_TryBossSeamHop(dp_boss_seam->kind, dp_boss_seam->direction,
+                             dp_boss_seam->source_room, dp_boss_seam->dest_room,
+                             dp_boss_seam->slot))
+    Chains_RuntimeSelfCheckDie("DP aux boss seam did not hop");
+  if (which_entrance != Chains_MainEntranceForRandoDungeon(kRandoDungeon_TurtleRock))
+    Chains_RuntimeSelfCheckDie("DP aux boss seam picked wrong successor");
+  if (!g_chains_origin_active ||
+      g_chains_origin_exit_room != kChainsDesertBackExitRoom)
+    Chains_RuntimeSelfCheckDie("DP aux boss seam did not synthesize back origin");
+  if (!Chains_ConsumeHopPending() || Chains_ConsumeHopPending())
+    Chains_RuntimeSelfCheckDie("DP aux boss seam pending flag mismatch");
+  if (Chains_RuntimeConsumeMainExitOrigin(
+          Chains_MainExitRoomForRandoDungeon(kRandoDungeon_TurtleRock)) !=
+      kChainsDesertBackExitRoom)
+    Chains_RuntimeSelfCheckDie("DP aux origin did not consume through successor exit");
+  layout.chain_successor[dp_pool_idx] = Chains_BossElement(kRandoDungeon_DesertPalace);
 
   layout.chain_successor[ep_pool_idx] = Chains_BossElement(kRandoDungeon_DesertPalace);
   if (!Chains_RuntimeInstallLayout(&layout))
@@ -847,6 +926,17 @@ void Chains_RuntimeSelfCheck(void) {
   invalid_session.terminal_dungeon = kRandoDungeon_None;
   if (Chains_RuntimeRestoreSession(&invalid_session))
     Chains_RuntimeSelfCheckDie("session accepted invalid terminal dungeon");
+
+  ChainsRuntimeSession aux_session;
+  memset(&aux_session, 0, sizeof(aux_session));
+  aux_session.origin_active = true;
+  aux_session.origin_exit_room = kChainsDesertBackExitRoom;
+  aux_session.terminal_dungeon = kRandoDungeon_None;
+  if (!Chains_RuntimeRestoreSession(&aux_session))
+    Chains_RuntimeSelfCheckDie("DP aux-origin session restore failed");
+  if (Chains_RuntimeConsumeMainExitOrigin(Chains_MainExitRoomForRandoDungeon(ep)) !=
+      kChainsDesertBackExitRoom)
+    Chains_RuntimeSelfCheckDie("DP aux-origin session did not consume");
 
   ChainsRuntimeSession terminal_session;
   memset(&terminal_session, 0, sizeof(terminal_session));

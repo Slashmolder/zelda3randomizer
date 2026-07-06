@@ -14,6 +14,12 @@ enabling `dungeon_chains` SHALL never coerce another axis; conflicting axes win
 and chains yields. The default-off packing SHALL leave existing canonical
 serializations and settings hashes byte-identical.
 
+#### Scenario: Chains force in-dungeon keys
+
+- **WHEN** `dungeon_chains` remains on through normalization
+- **THEN** small keys and big keys serialize as in-dungeon mode, regardless of
+  their requested raw modes
+
 #### Scenario: Chains yields to entrance shuffle
 
 - **WHEN** `dungeon_chains` is requested together with any entrance-shuffle axis

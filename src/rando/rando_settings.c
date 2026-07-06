@@ -134,20 +134,22 @@ void Settings_SetDefaults(RandoSettings *s) {
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s) {
   if (s->world_state == kWorldState_Retro)
     return kDungeonItemMode_Wild;  // Retro forces region.wildKeys
-  // add-rando-door-shuffle: an active door shuffle forces in-dungeon keys
-  // (the key-door prover's containment assumption). apply_derived_rules
-  // mirrors this on the canonical copy; this helper carries it to every
-  // placer read so hash and placement can't disagree (the Retro precedent).
-  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
+  // Door shuffle and dungeon chains both alter required dungeon traversal, so
+  // vanilla/free small-key assumptions can certify a route that spends more
+  // physical keys than the vanilla in-place model exposes. Force in-dungeon keys
+  // for both axes so hash, placement, spoiler, and runtime agree.
+  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla ||
+      Settings_EffectiveDungeonChains(s))
     return kDungeonItemMode_Dungeon;
   return s->dungeon_small_keys_mode;
 }
 
 uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s) {
-  // add-rando-door-shuffle: in-dungeon big keys are forced alongside small
-  // keys — Dungeon containment plus the bk_restricted ban together keep the
-  // big key beatably placed under a shuffled layout.
-  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
+  // Keep big-key handling paired with small keys under topology-changing axes;
+  // otherwise vanilla-mode pregrants can skip the in-dungeon key pickup that the
+  // runtime still requires before a boss seam.
+  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla ||
+      Settings_EffectiveDungeonChains(s))
     return kDungeonItemMode_Dungeon;
   return s->dungeon_big_keys_mode;
 }
@@ -244,8 +246,14 @@ static void apply_derived_rules(RandoSettings *s) {
   }
 
   // dungeon-chains — one-directional compatibility: the chain opt-in yields to
-  // existing topology/runtime modes, it never forces those modes off.
+  // existing topology/runtime modes, it never forces those modes off. Once a
+  // chain survives normalization, force dungeon keys in the serialized settings
+  // so the hash matches the effective placer/runtime contract.
   s->dungeon_chains = Settings_EffectiveDungeonChains(s);
+  if (s->dungeon_chains) {
+    s->dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+    s->dungeon_big_keys_mode = kDungeonItemMode_Dungeon;
+  }
 
   // add-rando-pot-sanity — pots do NOT compose with cave-entrance shuffle in v1.
   // Cave/house pot location IDs are above the per-location entrance
@@ -894,6 +902,14 @@ void Settings_SelfCheck(void) {
     if (cch[25] != kEntranceAxis_DungeonChains) {
       fprintf(stderr, "Settings_SelfCheck: dungeon_chains pack mismatch "
                       "(got 0x%02x)\n", cch[25]);
+      exit(2);
+    }
+    if (cch[11] != kDungeonItemMode_Dungeon ||
+        cch[12] != kDungeonItemMode_Dungeon ||
+        Settings_EffectiveSmallKeysMode(&sch) != kDungeonItemMode_Dungeon ||
+        Settings_EffectiveBigKeysMode(&sch) != kDungeonItemMode_Dungeon) {
+      fprintf(stderr, "Settings_SelfCheck: dungeon_chains must force dungeon "
+                      "small/big keys\n");
       exit(2);
     }
     RandoSettings rch;

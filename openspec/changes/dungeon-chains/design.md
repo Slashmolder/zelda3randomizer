@@ -138,7 +138,10 @@ back/boss), while the door-shuffle oracle treats main as the only initial
 origin, east as a destination-only vanilla portal, and west/back as a staged
 walk-inaccessible ledge pair enabled only after the player reaches either from
 inside. Therefore chained DP may expose vanilla exterior side pockets, but those
-pockets are not chain starts, stay vanilla-coupled, and do not affect soundness.
+pockets are not chain starts, stay vanilla-coupled on entry, and do not affect
+soundness. If an aux-only DP route reaches the boss seam, runtime synthesizes
+the matching aux exit room as the chain origin before applying DP's successor;
+this keeps the logic edge model ("aux doors for DP") aligned with play.
 
 ### D2. Chain construction (generation side)
 
@@ -249,8 +252,11 @@ would eat it and silently un-couple the rest of the chain. Instead the chains
 state survives hops AND aux exits, and is consumed only when the origin
 substitution actually fires (main-door exit, post-boss warp, or containment
 divert), or overwritten by the next chain-start entry. When unset (e.g. a
-dungeon entered purely via aux doors with no prior chain entry), exits resolve
-fully vanilla.
+dungeon entered purely via aux doors with no prior chain entry), ordinary exits
+resolve fully vanilla. Desert Palace is the exception at its boss seam: if the
+player reaches that seam through an aux entry with no existing origin, runtime
+arms the matching DP east/west/back exit room as the origin before applying
+DP's chain successor.
 
 **The origin substitution is keyed to the dungeon's MAIN door, not to every
 exit.** After the room-keyed exit search resolves an overworld door, substitute
@@ -351,15 +357,19 @@ Chains-on then installs only edge overrides (existing APIs, at retry-attempt top
 No new VM op is needed. `boss_assignment` stays NULL (vanilla) — `CanKillBoss(D)`
 correctly evaluates D's own boss, because bosses never leave home rooms.
 
+Chains force small keys and big keys to in-dungeon mode before placement.
+Vanilla key pregrants are unsound once a required boss-seam route can consume
+extra physical keys; e.g. Desert Palace's chain path can spend the vanilla pot
+keys before the outbound boss-seam door. In-dungeon keys keep those physical key
+counts represented as placed items inside the owning dungeon.
+
 This edge model is also what makes **placement respect chain order** (owner
 concern, 2026-07-04): a successor's entry region is reachable only through
 `boss_approach(D_i)`, which includes D_i's big-key/small-key terms — so the
 assumed fill (which only places an item at locations reachable *without* it)
 structurally cannot place D_i's big key past D_i's boss seam. Example: chain
 [EP, ToH] — EP's big key can never land in ToH or the terminal, or the seed
-would be circular. Wild-keys-off constrains keys to their own dungeon as today;
-wild-keys-on is the case the edges actively protect, and a chains+wild-keys
-corpus entry locks it.
+would be circular.
 
 Generation rides `Rando_PlaceWithEntrances`: compute chains per attempt (reset
 override state at attempt top — the accumulation bug class), install edges, run
@@ -464,10 +474,10 @@ grounded during this design so phase 2 starts from facts, not re-derivation:
 - **[Corpus/selftest blindness]** — both seams are runtime; generation tests
   can't see them. → Playtest matrix is a first-class merge gate: chain-0 boss
   door; multi-hop chain; DP as a chain element (ledge side-door exit → back-door
-  boss approach); TR as a chain element (balcony exit stays vanilla, Mimic Cave
-  route intact); IP drop seam; death-continue mid-chain; S&Q; mirror; post-boss
-  warp from a terminal reached via a chain (pendant AND crystal boss);
-  cleared-terminal re-entry.
+  boss approach); DP aux-only back-door boss approach; TR as a chain element
+  (balcony exit stays vanilla, Mimic Cave route intact); IP drop seam;
+  death-continue mid-chain; S&Q; mirror; post-boss warp from a terminal reached
+  via a chain (pendant AND crystal boss); cleared-terminal re-entry.
 - **[Aux-exit substitution keying]** — the main-door-keyed substitution (D5)
   must not regress the consume-at-top discipline on the coupling globals (the
   audited stale-global class); the substitution decision happens AFTER the

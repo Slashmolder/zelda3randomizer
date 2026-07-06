@@ -1010,7 +1010,14 @@ static void Panel_Dungeons() {
   // own pick is preserved if they switch off Retro. (Retro forces only small keys;
   // big keys / maps / compasses stay user-controlled.)
   bool sk_forced_wild = (s->world_state == kWorldState_Retro);
-  bool keys_forced_dungeon = Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla;
+  bool keys_forced_by_door = Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla;
+  bool keys_forced_by_chains = Settings_EffectiveDungeonChains(s);
+  bool keys_forced_dungeon = keys_forced_by_door || keys_forced_by_chains;
+  const char *keys_forced_label = keys_forced_by_chains ? "(forced by dungeon chains)"
+                                                        : "(forced by door shuffle)";
+  const char *keys_forced_help = keys_forced_by_chains
+      ? "Dungeon chains require in-dungeon small and big keys; generation normalizes these values to 'dungeon'."
+      : "Door shuffle requires in-dungeon small and big keys; generation normalizes these values to 'dungeon'.";
   if (sk_forced_wild) {
     ImGui::BeginDisabled();
     uint8 sk_shown = (uint8)kDungeonItemMode_Wild;
@@ -1025,8 +1032,8 @@ static void Panel_Dungeons() {
     EnumCombo("Small keys", &sk_shown, kDungeonModeLabels, 3);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled("(forced by door shuffle)");
-    HelpTooltip("Door shuffle requires in-dungeon small keys; generation normalizes this value to 'dungeon'.");
+    ImGui::TextDisabled("%s", keys_forced_label);
+    HelpTooltip(keys_forced_help);
   } else {
     if (EnumCombo("Small keys", &s->dungeon_small_keys_mode, kDungeonModeLabels, 3)) changed = true;
   }
@@ -1036,8 +1043,8 @@ static void Panel_Dungeons() {
     EnumCombo("Big keys", &bk_shown, kDungeonModeLabels, 3);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled("(forced by door shuffle)");
-    HelpTooltip("Door shuffle requires in-dungeon big keys; generation normalizes this value to 'dungeon'.");
+    ImGui::TextDisabled("%s", keys_forced_label);
+    HelpTooltip(keys_forced_help);
   } else {
     if (EnumCombo("Big keys", &s->dungeon_big_keys_mode, kDungeonModeLabels, 3)) changed = true;
   }

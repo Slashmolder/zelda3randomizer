@@ -37,8 +37,8 @@ typedef struct ChainsRuntimeSession {
 bool Chains_RuntimeGetSession(ChainsRuntimeSession *out);
 bool Chains_RuntimeRestoreSession(const ChainsRuntimeSession *session);
 
-// Chain-start door hooks. The entry hook arms the origin-door session state when
-// an installed chain overlay owns `lx`; the exit hook consumes it only when the
+// Chain-start door hooks. The entry hook arms the origin session state when an
+// installed chain overlay owns `lx`; the exit hook consumes it only when the
 // resolved dungeon-exit room is one of the chain pool's main doors.
 bool Chains_RuntimeRecordDoorEntry(uint16 lx);
 // Clears carried tagalong/follower state before a chain-start entrance load so a

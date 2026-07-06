@@ -78,7 +78,7 @@ immediately before any bump/commit (concurrent-drift discipline).
 - [x] 4.4 Spoiler: chains section (JSON + text) in `rando_spoiler.c` after the
       entrance sections.
 - [x] 4.5 Corpus: add chains entries (chains-open-ganon, chains-standard,
-      chains + prize_shuffle, chains + wild dungeon keys — locks the
+      chains + prize_shuffle, chains with forced in-dungeon keys — locks the
       chain-order key-placement scenario — and a hunt-goal entry with
       accessibility=none) via
       `bump_rando_corpus.py --apply` (absolute `--binary` path; restore CRLF on
@@ -210,7 +210,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       main generator_version 112 with 136 entries; branch generator_version 113
       with 141 entries; added labels are exactly chains-open-ganon,
       chains-standard-fast-ganon, chains-prize-open-fast-ganon,
-      chains-wild-keys-items, and chains-hunt-none; removed labels 0; existing
+      chains-forced-keys-items, and chains-hunt-none; removed labels 0; existing
       settings/seed changes 0; existing placement/sphere digest changes 0. -->
 - [ ] 7.3 Playtest matrix (merge gate; corpus is blind to both seams): chain-0
       boss door (pendant boss AND crystal boss); 3+ hop chain; DP as a chain
@@ -275,7 +275,15 @@ immediately before any bump/commit (concurrent-drift discipline).
       Owner playtest also covered DP entrance -> Swamp -> DP, with DP's outside
       entrances resolving to their expected locations and the DP boss door tested.
       This exercises the DP auxiliary/outside routing and boss-approach
-      requirements while DP is a chain element. -->
+      requirements while DP is a chain element. Follow-up playtest found vanilla
+      small/big key modes could leave DP one physical key short after all three
+      pot keys were spent; chains now normalize small and big keys to dungeon
+      mode so the non-pot key is represented as a placed in-dungeon item.
+      Follow-up playtest reached Desert Palace's back/boss section through a
+      Dark World mirror route, then crossed DP's boss seam with no armed chain
+      session. Runtime fell through to Lanmolas while the spoiler/logic expected
+      DP's chain successor; chains now synthesize the matching DP aux exit room
+      as the origin at that unarmed DP boss seam. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,

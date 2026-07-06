@@ -133,8 +133,12 @@ balcony doors) SHALL resolve vanilla and SHALL NOT consume the chain session's
 origin coupling — the coupling survives an auxiliary round-trip and is consumed
 only when an origin substitution fires (or overwritten by the next chain-start
 entry). Death-continue SHALL respawn at the current chain element's entrance.
-Entries through auxiliary doors SHALL NOT arm chain coupling; with no coupling
-armed, all exits resolve vanilla.
+Entries through auxiliary doors SHALL NOT arm chain coupling merely on entry;
+with no coupling armed, ordinary exits resolve vanilla. Desert Palace's aux
+route to its boss seam SHALL synthesize origin coupling to the matching
+east/west/back Desert Palace aux exit room before applying Desert Palace's chain
+successor, so the aux-reachable boss path is consistent between logic and
+runtime.
 
 #### Scenario: Post-boss warp cannot strand
 
@@ -175,6 +179,14 @@ armed, all exits resolve vanilla.
   session armed and exits
 - **THEN** they emerge at that same back-lobby door as in vanilla
 
+#### Scenario: Desert Palace aux boss seam starts a coupled chain session
+
+- **WHEN** the player enters Desert Palace via an aux door with no chain session
+  armed and crosses Desert Palace's boss seam
+- **THEN** Desert Palace's configured chain successor loads instead of the
+  vanilla boss room, and subsequent main-door or terminal exits resolve to that
+  same Desert Palace aux door
+
 ### Requirement: Chain-aware reachability logic
 
 The logic graph SHALL model each pool dungeon's boss room as a distinct region
@@ -214,7 +226,7 @@ attempt otherwise.
 #### Scenario: Dungeon items cannot be placed past their own boss seam
 
 - **WHEN** a chain is [Eastern Palace, Tower of Hera] with Moldorm as its
-  terminal and wild dungeon keys are enabled
+  terminal and a raw wild dungeon-key request has normalized to in-dungeon keys
 - **THEN** Eastern Palace's big key is never placed in Tower of Hera or the
   terminal boss location, because those locations are reachable only through the
   Eastern Palace boss-approach predicate, which requires that key

@@ -1006,33 +1006,33 @@ entries:
     expected_sphere_digest: "6e85d999f9f1d35c33bc68ff6e4ec2aff9e0e1c1ce2503837b9b5544e75357ae"
 
   # dungeon-chains MVP corpus (kGeneratorVersion 113): five seed shapes covering
-  # Open/Standard activation, prize shuffle composition, wild dungeon-key
+  # Open/Standard activation, prize shuffle composition, forced dungeon-key
   # placement pressure, and a hunt goal with accessibility relaxed.
   - settings: { mode.state: open, goal: ganon, dungeon_chains: true }
     seed: "0xC4A1175EED000001"
     label: "chains-open-ganon"
-    expected_digest: "f79a6f99ecde324f2a67afce86248f07dfa4280a6469e2c8ad2e675410f2727b"
-    expected_sphere_digest: "812b90773140554223b09debe235c2869b1f04ddc7486e46561720cd27a02a86"
+    expected_digest: "ccc73baa50aae189c0200faa1e04d194ee43764ecd319833050c906d3da546ea"
+    expected_sphere_digest: "b3ce922611b66be4b7ce092e3cb38dd80272d0534319181c0713464b1c6bab4f"
   - settings: { mode.state: standard, goal: fast_ganon, dungeon_chains: true }
     seed: "0xC4A1175EED000002"
     label: "chains-standard-fast-ganon"
-    expected_digest: "54d6e55f9d5641cdcc5d9f9ca84e2fbd2b4871d5c6abeef51e182ce192e2c799"
-    expected_sphere_digest: "8b100eec3e915a2443c244b9bb63c1b36f44b40cc1f159d9f424e8719c558744"
+    expected_digest: "59bb7febe0090fda93463c0a1c781f5188d75ad06aeecf443993d34171349e5f"
+    expected_sphere_digest: "02b96b8fb9cf546c0e7c018e83ae5e1bbcc79d054c12eaff8cb7276efc293294"
   - settings: { mode.state: open, goal: fast_ganon, prize_shuffle: true, dungeon_chains: true }
     seed: "0xC4A1175EED000003"
     label: "chains-prize-open-fast-ganon"
-    expected_digest: "d498c00bc811e0fecdd9b6f53f9b8d1a267fbce606a3582f67a25de55726c78e"
-    expected_sphere_digest: "8fa835b630c502968c1b0df9539a12e2f33d66971da96223b8adacdffebef1b8"
+    expected_digest: "7363b40af101c7867888bd71f8bb1617dc7d498a8dfccf74f1c650c7ff85b7bd"
+    expected_sphere_digest: "670c1528ccd817987d136b741ddb9494f682245e482c64349334566e3a3d5035"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, dungeon_items.big_keys: wild, dungeon_chains: true, accessibility: items }
     seed: "0xC4A1175EED000004"
-    label: "chains-wild-keys-items"
-    expected_digest: "42e329fd649b5784f7663ae128b9c99da976514258e42a7ef403f0f8ffea8582"
-    expected_sphere_digest: "e076b349c519152c84fbdc4f200b001dcf841242edab63976ddb93118aaded92"
+    label: "chains-forced-keys-items"
+    expected_digest: "f8f8680621d070cf7452ce514851c7f3b4389ac999ce8f7adecc8f15b65a4bb9"
+    expected_sphere_digest: "96dbf5b14595e3ff50923db95953cb306db3e1f3e184a14294d819d37bdc287d"
   - settings: { mode.state: open, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30, dungeon_chains: true, accessibility: none }
     seed: "0xC4A1175EED000005"
     label: "chains-hunt-none"
-    expected_digest: "072b8ba20fa03a32a8c769cffdb94cceac4a9a0c0c1d065d617ff041d5bfb020"
-    expected_sphere_digest: "b996ce83e1429ad0b4902c242736091864b0f9e5de0f0193592abdd575b8f7fd"
+    expected_digest: "51fe9e7eea3cc67ed946e4a3f38a94c519fd7113a73223fa6a29c38b6dca2e1d"
+    expected_sphere_digest: "c56eb0cfb245ba6724d00bd4493974e6f4bf38c48b8f403efb75aa3dd41cd755"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

@@ -325,17 +325,14 @@ enum {
 // on / Randomized weapons / Items-accessibility / Silvers / 20-of-30 pieces).
 void Settings_SetDefaults(RandoSettings *s);
 
-// Effective small-keys mode after Retro pinning. ALTTPR's Retro world-state
+// Effective small-keys mode after derived overrides. ALTTPR's Retro world-state
 // forces `region.wildKeys` (small keys enter the general/wild pool, no longer
-// restricted to their own dungeon — app/World/Retro.php). The fork realizes
-// that by treating `dungeon_small_keys_mode` as Wild whenever
-// `world_state == Retro`, reusing the existing (corpus-tested) Wild placement +
-// cross-dungeon key-credit runtime (rando.c key grant). This is the SINGLE
+// restricted to their own dungeon — app/World/Retro.php). Topology-changing
+// dungeon axes force Dungeon keys so the placer cannot rely on vanilla/free key
+// assumptions after the route through a dungeon changes. This is the SINGLE
 // source of truth for the override: it is applied identically in
-// apply_derived_rules (so the canonical settings hash reflects Wild) and at
-// every placer read site (so placement matches the hash) — both key off
-// world_state, so the hash and placement can never desync. Returns the user's
-// raw mode for non-Retro seeds.
+// apply_derived_rules (so the canonical settings hash reflects the effective
+// mode) and at every placer read site (so placement matches the hash).
 //
 // NOTE: this is `wildKeys` (the placement-side override). ALTTPR Retro ALSO sets
 // `rom.genericKeys` (one shared key pool, any key opens any door) — that is
@@ -344,9 +341,9 @@ void Settings_SetDefaults(RandoSettings *s);
 // wildKeys lets keys spawn anywhere; genericKeys makes them fungible.
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
 
-// add-rando-door-shuffle — like the small-keys helper: an active door shuffle
-// forces in-dungeon big keys at every placer read (containment + the
-// bk_restricted ban keep the big key beatably placed under a shuffled layout).
+// Topology-changing dungeon axes force in-dungeon big keys at every placer read
+// so generated reachability cannot rely on a vanilla-mode pregrant that the
+// runtime still requires the player to collect in-place.
 uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s);
 
 // add-rando-door-shuffle — the normalized (post-derived-rules) door_shuffle
