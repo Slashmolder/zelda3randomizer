@@ -9,6 +9,7 @@
 
 #include "rando_logic.h"
 #include "enemy_drop_lookup.h"
+#include "enemy_check_lookup.h"
 #include "rando.h"
 #include "rando_placement.h"
 #include "dungeon_ids.h"
@@ -1053,12 +1054,172 @@ struct RandoReachability {
 
 static struct RandoReachability g_reachability;
 
+typedef struct LogicProfileCounters {
+  uint64 reach_calls;
+  uint64 reach_iterations;
+  uint64 edge_predicates;
+  uint64 edge_fast_true;
+  uint64 edge_fast_false;
+  uint64 location_predicates;
+  uint64 location_fast_true;
+  uint64 location_fast_false;
+} LogicProfileCounters;
+
+static LogicProfileCounters g_logic_profile;
+static bool g_logic_profile_active;
+
+static void logic_profile_dump(void) {
+  if (!g_logic_profile_active) return;
+  fprintf(stderr,
+          "[RANDO_PROFILE logic] reach_calls=%llu iterations=%llu "
+          "edge_predicates=%llu edge_fast_true=%llu edge_fast_false=%llu "
+          "location_predicates=%llu location_fast_true=%llu location_fast_false=%llu\n",
+          (unsigned long long)g_logic_profile.reach_calls,
+          (unsigned long long)g_logic_profile.reach_iterations,
+          (unsigned long long)g_logic_profile.edge_predicates,
+          (unsigned long long)g_logic_profile.edge_fast_true,
+          (unsigned long long)g_logic_profile.edge_fast_false,
+          (unsigned long long)g_logic_profile.location_predicates,
+          (unsigned long long)g_logic_profile.location_fast_true,
+          (unsigned long long)g_logic_profile.location_fast_false);
+}
+
+static void logic_profile_maybe_init(void) {
+  static bool initialized;
+  if (initialized) return;
+  initialized = true;
+  const char *v = getenv("ZELDA3_RANDO_PROFILE");
+  g_logic_profile_active = v != NULL && v[0] != '\0' && strcmp(v, "0") != 0;
+  if (g_logic_profile_active) atexit(logic_profile_dump);
+}
+
 static inline void bitset_set(uint8 *bs, uint16 idx) {
   bs[idx >> 3] |= (uint8)(1u << (idx & 7));
 }
 
 static inline bool bitset_has(const uint8 *bs, uint16 idx) {
   return (bs[idx >> 3] >> (idx & 7)) & 1;
+}
+
+static bool predicate_is_vacuous_true(const uint8 *bc, uint16 len) {
+  return len == 2 && bc != NULL && bc[0] == OP_AND && bc[1] == 0;
+}
+
+static bool predicate_is_vacuous_false(const uint8 *bc, uint16 len) {
+  return len == 2 && bc != NULL && bc[0] == OP_OR && bc[1] == 0;
+}
+
+static bool eval_reachability_predicate_fast(const uint8 *bc, uint16 len,
+                                             PredicateContext *ctx,
+                                             bool location_predicate) {
+  if (predicate_is_vacuous_true(bc, len)) {
+    if (g_logic_profile_active) {
+      if (location_predicate) g_logic_profile.location_fast_true++;
+      else g_logic_profile.edge_fast_true++;
+    }
+    return true;
+  }
+  if (ctx == NULL || ctx->settings == NULL || ctx->settings->logic < 4 /* NoLogic */) {
+    if (predicate_is_vacuous_false(bc, len)) {
+      if (g_logic_profile_active) {
+        if (location_predicate) g_logic_profile.location_fast_false++;
+        else g_logic_profile.edge_fast_false++;
+      }
+      return false;
+    }
+  }
+  if (g_logic_profile_active) {
+    if (location_predicate) g_logic_profile.location_predicates++;
+    else g_logic_profile.edge_predicates++;
+  }
+  return Predicate_EvalCtx(bc, len, ctx);
+}
+
+static bool logic_pot_active(const RandoLocationDef *loc, const RandoSettings *s) {
+  if (loc == NULL || s == NULL || loc->type != LOCTYPE_Pot) return false;
+  if (Settings_PotShuffleForcedOff(s)) return false;
+  bool is_empty = (loc->vanilla_item_id == ITEM_Nothing);
+  switch (s->pot_shuffle) {
+    case kPotShuffle_Off:      return false;
+    case kPotShuffle_Keys:     return item_is_small_key(loc->vanilla_item_id);
+    case kPotShuffle_Contents: return !is_empty;
+    case kPotShuffle_All:      return true;
+    default:                   return false;
+  }
+}
+
+static bool logic_enemy_drop_active(const RandoLocationDef *loc,
+                                    const RandoSettings *s) {
+  return loc != NULL && s != NULL && loc->type == LOCTYPE_EnemyDrop &&
+         Settings_EnemyDropKeysActive(s);
+}
+
+static bool g_logic_enemy_flags_ready;
+static uint8 g_logic_enemy_all_tier_only[kReachabilityMaxLocations];
+static uint8 g_logic_enemy_overworld_stage[kReachabilityMaxLocations];
+
+enum { kLogicEnemyCheckNotOverworld = 0xFF };
+
+static void logic_init_enemy_flags(void) {
+  if (g_logic_enemy_flags_ready) return;
+  memset(g_logic_enemy_overworld_stage, kLogicEnemyCheckNotOverworld,
+         sizeof(g_logic_enemy_overworld_stage));
+  for (uint32 i = 0; i < kRandoEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoEnemyCheckLookup[i].loc_id;
+    if (loc_id < kReachabilityMaxLocations &&
+        kRandoEnemyCheckLookup[i].all_tier_only) {
+      g_logic_enemy_all_tier_only[loc_id] = 1;
+    }
+  }
+  for (uint32 i = 0; i < kRandoBossEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoBossEnemyCheckLookup[i].loc_id;
+    if (loc_id < kReachabilityMaxLocations) g_logic_enemy_all_tier_only[loc_id] = 1;
+  }
+  for (uint32 i = 0; i < kRandoScriptedEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoScriptedEnemyCheckLookup[i].loc_id;
+    if (loc_id < kReachabilityMaxLocations) g_logic_enemy_all_tier_only[loc_id] = 1;
+  }
+  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoOverworldEnemyCheckLookup[i].loc_id;
+    if (loc_id < kReachabilityMaxLocations) {
+      g_logic_enemy_all_tier_only[loc_id] = 1;
+      g_logic_enemy_overworld_stage[loc_id] = kRandoOverworldEnemyCheckLookup[i].stage;
+    }
+  }
+  g_logic_enemy_flags_ready = true;
+}
+
+static bool logic_enemy_check_all_tier_only(uint16 loc_id) {
+  logic_init_enemy_flags();
+  return loc_id < kReachabilityMaxLocations && g_logic_enemy_all_tier_only[loc_id] != 0;
+}
+
+static uint8 logic_enemy_check_overworld_stage(uint16 loc_id) {
+  logic_init_enemy_flags();
+  if (loc_id >= kReachabilityMaxLocations) return kLogicEnemyCheckNotOverworld;
+  return g_logic_enemy_overworld_stage[loc_id];
+}
+
+static bool logic_enemy_check_active(const RandoLocationDef *loc,
+                                     const RandoSettings *s) {
+  if (loc == NULL || s == NULL || loc->type != LOCTYPE_Enemy) return false;
+  if (Settings_EnemyChecksAllActive(s)) {
+    uint8 ow_stage = logic_enemy_check_overworld_stage(loc->id);
+    if (ow_stage == 0 && s->world_state != kWorldState_Standard)
+      return false;
+    return true;
+  }
+  return Settings_EnemyChecksDungeonActive(s) &&
+         !logic_enemy_check_all_tier_only(loc->id);
+}
+
+static bool logic_location_active_for_settings(const RandoLocationDef *loc,
+                                               const RandoSettings *settings) {
+  if (loc == NULL) return false;
+  if (loc->type == LOCTYPE_Pot) return logic_pot_active(loc, settings);
+  if (loc->type == LOCTYPE_EnemyDrop) return logic_enemy_drop_active(loc, settings);
+  if (loc->type == LOCTYPE_Enemy) return logic_enemy_check_active(loc, settings);
+  return true;
 }
 
 static bool derive_hce_big_key_from_reachability(RandoCounts *counts,
@@ -1107,6 +1268,8 @@ static inline bool base_edge_inverted_shadowed(uint16 from, uint16 to) {
 
 const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
                                                    const RandoSettings *settings) {
+  logic_profile_maybe_init();
+  if (g_logic_profile_active) g_logic_profile.reach_calls++;
   if (counts == NULL || settings == NULL) return NULL;
   memset(&g_reachability, 0, sizeof(g_reachability));
   g_reachability.reachable_regions_count = kReachabilityMaxRegions;
@@ -1154,6 +1317,7 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   // Fixed-point iteration. Cap at 64 iterations to bound runtime; the graph
   // depth is well under 32 in practice (per ALTTPR's region nesting).
   for (int iter = 0; iter < 64; iter++) {
+    if (g_logic_profile_active) g_logic_profile.reach_iterations++;
     bool changed = false;
     // Door shuffle: invalidate the oracle memo each pass — counts are fixed
     // for this whole call, but the region bitset (portal availability) grows
@@ -1179,7 +1343,7 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
       if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
       if (bitset_has(g_reachability.region_bitset, to_region)) continue;
       const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
-      if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
+      if (eval_reachability_predicate_fast(bc, edge->predicate_length, &ctx, false)) {
         bitset_set(g_reachability.region_bitset, to_region);
         changed = true;
       }
@@ -1192,7 +1356,7 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
         if (bitset_has(g_reachability.region_bitset, to_region)) continue;
         const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
-        if (Predicate_EvalCtx(bc, edge->predicate_length, &ctx)) {
+        if (eval_reachability_predicate_fast(bc, edge->predicate_length, &ctx, false)) {
           bitset_set(g_reachability.region_bitset, to_region);
           changed = true;
         }
@@ -1210,8 +1374,9 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         if (bitset_has(g_reachability.region_bitset, tr)) continue;
         uint16 pl = g_entrance_added_edges[e].pred_len;
         if (pl == 0 ||
-            Predicate_EvalCtx(kRandoPredicateStream + g_entrance_added_edges[e].pred_off,
-                              pl, &ctx)) {
+            eval_reachability_predicate_fast(
+                kRandoPredicateStream + g_entrance_added_edges[e].pred_off,
+                pl, &ctx, false)) {
           bitset_set(g_reachability.region_bitset, tr);
           changed = true;
         }
@@ -1245,6 +1410,7 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         if (settings->world_state >= 32 ||
             !(loc->world_state_filter & (1u << settings->world_state))) continue;
       }
+      if (!logic_location_active_for_settings(loc, settings)) continue;
       // Phase B Slice 2 — consult the per-world-state override table.
       // Inverted seeds get a different can_reach predicate per location;
       // when no override exists, fall back to the base predicate. The
@@ -1284,7 +1450,7 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
         continue;
       }
       const uint8 *bc = kRandoPredicateStream + cr_offset;
-      if (Predicate_EvalCtx(bc, cr_length, &ctx)) {
+      if (eval_reachability_predicate_fast(bc, cr_length, &ctx, true)) {
         bitset_set(g_reachability.location_bitset, loc->id);
         changed = true;
       }

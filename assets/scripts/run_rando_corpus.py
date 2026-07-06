@@ -27,9 +27,13 @@ Usage (activated):
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 import json
 import subprocess
 import sys
+import tempfile
+import zlib
 from pathlib import Path
 
 MANIFEST = Path("tests/rando_corpus/manifest.yaml")
@@ -104,8 +108,162 @@ def entry_uses_enemy_drop_checks(entry: dict) -> bool:
     return bool(v)
 
 
+@dataclass
+class CorpusResult:
+    idx: int
+    label: str
+    lines: list[str] = field(default_factory=list)
+    failed: bool = False
+    skipped: bool = False
+
+
+def _emit_result(result: CorpusResult) -> tuple[int, int]:
+    for line in result.lines:
+        print(line)
+    return (1 if result.failed else 0, 1 if result.skipped else 0)
+
+
+def _run_one_entry(binary: Path, idx: int, entry: dict,
+                   skip_pot_shuffle: bool,
+                   skip_enemy_drop_checks: bool,
+                   timeout: int) -> CorpusResult:
+    settings = entry.get("settings", {})
+    seed = str(entry.get("seed", entry.get("seed_u64", "")))
+    expected = entry.get("expected_digest", "")
+    expected_sphere = entry.get("expected_sphere_digest", "")
+    label = entry.get("label", f"entry-{idx}")
+    result = CorpusResult(idx=idx, label=label)
+    skip_reasons = []
+    if skip_pot_shuffle and entry_needs_local_pot_registry(entry):
+        skip_reasons.append("pot_shuffle")
+    if skip_enemy_drop_checks and entry_uses_enemy_drop_checks(entry):
+        skip_reasons.append("enemy_drop_checks")
+    if skip_reasons:
+        result.lines.append(
+            f"  SKIP [{idx}] {label}: {'+'.join(skip_reasons)} entry "
+            f"(local ROM-derived registry required)"
+        )
+        result.skipped = True
+        return result
+    settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
+
+    with tempfile.TemporaryDirectory() as td:
+        out_json = Path(td) / "out.json"
+        try:
+            subprocess.run(
+                [str(binary), "--generate-seed",
+                 f"--settings={settings_csv}",
+                 f"--seed={seed}",
+                 f"--out-spoiler={out_json}"],
+                check=True, capture_output=True, timeout=timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            result.lines.append(f"  FAIL [{idx}] {label}: generator error: {e}")
+            result.failed = True
+            return result
+        if not out_json.exists():
+            result.lines.append(f"  FAIL [{idx}] {label}: spoiler not written")
+            result.failed = True
+            return result
+        # Phase B Slice 6 §7.4 — race-mode entries emit a fixed-size
+        # suppressed binary (magic ZRSR). Verify by reading the file,
+        # checking the magic + CRC32, then invoking --reveal-spoiler
+        # on a sibling copy to confirm the stamp matches the
+        # regenerated placement. The original file is left intact.
+        buf = out_json.read_bytes()
+        if buf[:4] == b"ZRSR":
+            if len(buf) != 139:
+                result.lines.append(
+                    f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 139"
+                )
+                result.failed = True
+                return result
+            # Validate CRC32 (LE u32 at offset 135 over bytes 0..134).
+            # Keep this in lockstep with rando_spoiler.h constants.
+            disk_crc = int.from_bytes(buf[135:139], "little")
+            calc_crc = zlib.crc32(buf[:135]) & 0xffffffff
+            if disk_crc != calc_crc:
+                result.lines.append(
+                    f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "
+                    f"(disk {disk_crc:#x} != calc {calc_crc:#x})"
+                )
+                result.failed = True
+                return result
+            # Reveal round-trip: copy → reveal → confirm exit 0.
+            reveal_path = Path(td) / "reveal_target.json"
+            reveal_path.write_bytes(buf)
+            try:
+                subprocess.run(
+                    [str(binary), f"--reveal-spoiler={reveal_path}"],
+                    check=True, capture_output=True, timeout=timeout,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                result.lines.append(f"  FAIL [{idx}] {label}: reveal failed: {e}")
+                result.failed = True
+                return result
+            # On success the file has been overwritten with full JSON.
+            # Confirm we can parse it and the placement_digest is sane.
+            try:
+                revealed = json.loads(reveal_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                result.lines.append(
+                    f"  FAIL [{idx}] {label}: revealed JSON unparseable: {exc}"
+                )
+                result.failed = True
+                return result
+            got_pd = revealed.get("meta", {}).get("placement_digest_hex", "")
+            got_sphere_pd = revealed.get("meta", {}).get("sphere_digest", "")
+            if expected and got_pd != expected:
+                result.lines.append(
+                    f"  FAIL [{idx}] {label}: revealed placement_digest "
+                    f"mismatch: expected {expected[:16]}, got {got_pd[:16]}"
+                )
+                result.failed = True
+                return result
+            # also check sphere
+            # digest. Previously skipped in the ZRSR sub-path, leaving
+            # the manifest's expected_sphere_digest for race-mode entries
+            # unenforced.
+            if expected_sphere and got_sphere_pd != expected_sphere:
+                result.lines.append(
+                    f"  FAIL [{idx}] {label}: revealed sphere_digest "
+                    f"mismatch: expected {expected_sphere[:16]}, "
+                    f"got {got_sphere_pd[:16]}"
+                )
+                result.failed = True
+                return result
+            result.lines.append(
+                f"  OK   [{idx}] {label}: ZRSR roundtrip OK "
+                f"(placement_digest {got_pd[:16] if got_pd else 'unchecked'}...)"
+            )
+            return result
+        try:
+            spoiler = json.loads(buf.decode("utf-8"))
+        except Exception as exc:
+            result.lines.append(f"  FAIL [{idx}] {label}: spoiler JSON unparseable: {exc}")
+            result.failed = True
+            return result
+        got = spoiler.get("meta", {}).get("placement_digest_hex", "")
+        got_sphere = spoiler.get("meta", {}).get("sphere_digest", "")
+
+    if got != expected:
+        result.lines.append(f"  FAIL [{idx}] {label}: placement_digest mismatch")
+        result.lines.append(f"    expected {expected}")
+        result.lines.append(f"    got      {got}")
+        result.failed = True
+    elif expected_sphere and got_sphere != expected_sphere:
+        result.lines.append(f"  FAIL [{idx}] {label}: sphere_digest mismatch (placement OK)")
+        result.lines.append(f"    expected sphere {expected_sphere}")
+        result.lines.append(f"    got sphere      {got_sphere}")
+        result.failed = True
+    else:
+        result.lines.append(f"  OK   [{idx}] {label}: {got[:16]}...")
+    return result
+
+
 def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
-                  skip_enemy_drop_checks: bool = False) -> int:
+                  skip_enemy_drop_checks: bool = False, jobs: int = 1,
+                  timeout: int = 60) -> int:
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
     # "zelda3" (pathlib strips the leading "./"), so subprocess would PATH-search
     # for it and fail on Linux/macOS (cwd isn't on PATH). An absolute path runs
@@ -114,134 +272,59 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
     if not binary.exists():
         print(f"run_rando_corpus: binary {binary} not found. Build first.")
         return 1
-    import tempfile
 
+    entries = manifest["entries"]
+    jobs = max(1, jobs)
+    timeout = max(1, timeout)
     failures = 0
     skipped = 0
-    for idx, entry in enumerate(manifest["entries"]):
-        settings = entry.get("settings", {})
-        seed = str(entry.get("seed", entry.get("seed_u64", "")))
-        expected = entry.get("expected_digest", "")
-        expected_sphere = entry.get("expected_sphere_digest", "")
-        label = entry.get("label", f"entry-{idx}")
-        skip_reasons = []
-        if skip_pot_shuffle and entry_needs_local_pot_registry(entry):
-            skip_reasons.append("pot_shuffle")
-        if skip_enemy_drop_checks and entry_uses_enemy_drop_checks(entry):
-            skip_reasons.append("enemy_drop_checks")
-        if skip_reasons:
-            print(f"  SKIP [{idx}] {label}: {'+'.join(skip_reasons)} entry "
-                  f"(local ROM-derived registry required)")
-            skipped += 1
-            continue
-        settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
 
-        with tempfile.TemporaryDirectory() as td:
-            out_json = Path(td) / "out.json"
-            try:
-                subprocess.run(
-                    [str(binary), "--generate-seed",
-                     f"--settings={settings_csv}",
-                     f"--seed={seed}",
-                     f"--out-spoiler={out_json}"],
-                    check=True, capture_output=True, timeout=60,
-                )
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                print(f"  FAIL [{idx}] {label}: generator error: {e}")
-                failures += 1
-                continue
-            if not out_json.exists():
-                print(f"  FAIL [{idx}] {label}: spoiler not written")
-                failures += 1
-                continue
-            # Phase B Slice 6 §7.4 — race-mode entries emit a fixed-size
-            # suppressed binary (magic ZRSR). Verify by reading the file,
-            # checking the magic + CRC32, then invoking --reveal-spoiler
-            # on a sibling copy to confirm the stamp matches the
-            # regenerated placement. The original file is left intact.
-            head = out_json.read_bytes()[:4]
-            if head == b"ZRSR":
-                buf = out_json.read_bytes()
-                if len(buf) != 139:
-                    print(f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 139")
-                    failures += 1
-                    continue
-                # Validate CRC32 (LE u32 at offset 135 over bytes 0..134).
-                # Keep this in lockstep with rando_spoiler.h constants.
-                import zlib
-                disk_crc = int.from_bytes(buf[135:139], "little")
-                calc_crc = zlib.crc32(buf[:135]) & 0xffffffff
-                if disk_crc != calc_crc:
-                    print(f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "
-                          f"(disk {disk_crc:#x} != calc {calc_crc:#x})")
-                    failures += 1
-                    continue
-                # Reveal round-trip: copy → reveal → confirm exit 0.
-                reveal_path = Path(td) / "reveal_target.json"
-                reveal_path.write_bytes(buf)
+    if jobs == 1:
+        for idx, entry in enumerate(entries):
+            result = _run_one_entry(binary, idx, entry, skip_pot_shuffle,
+                                    skip_enemy_drop_checks, timeout)
+            failed_delta, skipped_delta = _emit_result(result)
+            failures += failed_delta
+            skipped += skipped_delta
+    else:
+        pending: dict[int, CorpusResult] = {}
+        next_to_emit = 0
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            future_to_idx = {
+                executor.submit(_run_one_entry, binary, idx, entry,
+                                skip_pot_shuffle, skip_enemy_drop_checks,
+                                timeout): idx
+                for idx, entry in enumerate(entries)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
                 try:
-                    subprocess.run(
-                        [str(binary), f"--reveal-spoiler={reveal_path}"],
-                        check=True, capture_output=True, timeout=60,
-                    )
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                    print(f"  FAIL [{idx}] {label}: reveal failed: {e}")
-                    failures += 1
-                    continue
-                # On success the file has been overwritten with full JSON.
-                # Confirm we can parse it and the placement_digest is sane.
-                try:
-                    revealed = json.loads(reveal_path.read_text(encoding="utf-8"))
+                    result = future.result()
                 except Exception as exc:
-                    print(f"  FAIL [{idx}] {label}: revealed JSON unparseable: {exc}")
-                    failures += 1
-                    continue
-                got_pd = revealed.get("meta", {}).get("placement_digest_hex", "")
-                got_sphere_pd = revealed.get("meta", {}).get("sphere_digest", "")
-                if expected and got_pd != expected:
-                    print(f"  FAIL [{idx}] {label}: revealed placement_digest "
-                          f"mismatch: expected {expected[:16]}, got {got_pd[:16]}")
-                    failures += 1
-                    continue
-                # also check sphere
-                # digest. Previously skipped in the ZRSR sub-path, leaving
-                # the manifest's expected_sphere_digest for race-mode entries
-                # unenforced.
-                if expected_sphere and got_sphere_pd != expected_sphere:
-                    print(f"  FAIL [{idx}] {label}: revealed sphere_digest "
-                          f"mismatch: expected {expected_sphere[:16]}, "
-                          f"got {got_sphere_pd[:16]}")
-                    failures += 1
-                    continue
-                print(f"  OK   [{idx}] {label}: ZRSR roundtrip OK "
-                      f"(placement_digest {got_pd[:16] if got_pd else 'unchecked'}...)")
-                continue
-            spoiler = json.loads(out_json.read_text(encoding="utf-8"))
-            got = spoiler.get("meta", {}).get("placement_digest_hex", "")
-            got_sphere = spoiler.get("meta", {}).get("sphere_digest", "")
-
-        if got != expected:
-            print(f"  FAIL [{idx}] {label}: placement_digest mismatch")
-            print(f"    expected {expected}")
-            print(f"    got      {got}")
-            failures += 1
-        elif expected_sphere and got_sphere != expected_sphere:
-            print(f"  FAIL [{idx}] {label}: sphere_digest mismatch (placement OK)")
-            print(f"    expected sphere {expected_sphere}")
-            print(f"    got sphere      {got_sphere}")
-            failures += 1
-        else:
-            print(f"  OK   [{idx}] {label}: {got[:16]}...")
+                    label = entries[idx].get("label", f"entry-{idx}")
+                    result = CorpusResult(
+                        idx=idx,
+                        label=label,
+                        failed=True,
+                        lines=[f"  FAIL [{idx}] {label}: runner error: {exc}"],
+                    )
+                pending[idx] = result
+                while next_to_emit in pending:
+                    result = pending.pop(next_to_emit)
+                    failed_delta, skipped_delta = _emit_result(result)
+                    failures += failed_delta
+                    skipped += skipped_delta
+                    next_to_emit += 1
 
     if failures:
-        print(f"\nrun_rando_corpus: {failures} of {len(manifest['entries']) - skipped} "
+        print(f"\nrun_rando_corpus: {failures} of {len(entries) - skipped} "
               f"run entries FAILED ({skipped} skipped).")
         return 1
     if skipped:
-        print(f"\nrun_rando_corpus: all {len(manifest['entries']) - skipped} run entries OK "
+        print(f"\nrun_rando_corpus: all {len(entries) - skipped} run entries OK "
               f"({skipped} local-registry entries skipped).")
     else:
-        print(f"\nrun_rando_corpus: all {len(manifest['entries'])} entries OK.")
+        print(f"\nrun_rando_corpus: all {len(entries)} entries OK.")
     return 0
 
 
@@ -283,6 +366,12 @@ def main(argv: list[str]) -> int:
                              "CI uses this when the local ROM-derived enemy "
                              "registries are absent; local checks run the full "
                              "corpus.")
+    parser.add_argument("--jobs", type=int, default=1,
+                        help="number of corpus entries to run concurrently "
+                             "(default: 1).")
+    parser.add_argument("--timeout", type=int, default=60,
+                        help="per-entry generator timeout in seconds "
+                             "(default: 60).")
     args = parser.parse_args(argv)
 
     data = load_manifest(args.manifest)
@@ -292,6 +381,10 @@ def main(argv: list[str]) -> int:
         print(f"run_rando_corpus: manifest {args.manifest}")
         print(f"  generator_version: {data.get('generator_version', '(unset)')}")
         print(f"  entries: {len(entries)}")
+        if args.jobs != 1:
+            print(f"  jobs: {max(1, args.jobs)}")
+        if args.timeout != 60:
+            print(f"  timeout: {max(1, args.timeout)}s")
 
     # Schema check (catches manifest-format bugs early).
     all_errors: list[str] = []
@@ -317,7 +410,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     return run_activated(args.binary, data, args.skip_pot_shuffle,
-                         args.skip_enemy_drop_checks)
+                         args.skip_enemy_drop_checks, args.jobs, args.timeout)
 
 
 if __name__ == "__main__":

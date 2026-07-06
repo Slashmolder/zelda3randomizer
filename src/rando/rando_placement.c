@@ -1118,6 +1118,69 @@ static bool is_progression_item(uint16 item_id) {
   return false;
 }
 
+static bool predicate_is_vacuous_true(const uint8 *bc, uint16 len) {
+  return len == 2 && bc != NULL && bc[0] == OP_AND && bc[1] == 0;
+}
+
+static bool predicate_is_vacuous_false(const uint8 *bc, uint16 len) {
+  return len == 2 && bc != NULL && bc[0] == OP_OR && bc[1] == 0;
+}
+
+typedef struct PlacementProfileCounters {
+  uint64 place_calls;
+  uint64 place_attempts;
+  uint64 place_successes;
+  uint64 place_exhausted;
+  uint64 place_failures;
+  uint64 open_locations_sum;
+  uint64 progression_items_sum;
+  uint64 candidate_scan_slots;
+  uint64 accept_checks;
+  uint64 accept_fast_true;
+  uint64 accept_fast_false;
+  uint64 accept_vm_can_place;
+  uint64 accept_vm_always_allow;
+  uint16 max_open_locations;
+  uint16 max_progression_items;
+} PlacementProfileCounters;
+
+static PlacementProfileCounters g_place_profile;
+static bool g_place_profile_active;
+
+static void placement_profile_dump(void) {
+  if (!g_place_profile_active) return;
+  fprintf(stderr,
+          "[RANDO_PROFILE placement] calls=%llu attempts=%llu successes=%llu "
+          "exhausted=%llu failures=%llu open_sum=%llu prog_sum=%llu "
+          "max_open=%u max_prog=%u candidate_scan_slots=%llu "
+          "accept_checks=%llu fast_true=%llu fast_false=%llu "
+          "vm_can_place=%llu vm_always_allow=%llu\n",
+          (unsigned long long)g_place_profile.place_calls,
+          (unsigned long long)g_place_profile.place_attempts,
+          (unsigned long long)g_place_profile.place_successes,
+          (unsigned long long)g_place_profile.place_exhausted,
+          (unsigned long long)g_place_profile.place_failures,
+          (unsigned long long)g_place_profile.open_locations_sum,
+          (unsigned long long)g_place_profile.progression_items_sum,
+          (unsigned)g_place_profile.max_open_locations,
+          (unsigned)g_place_profile.max_progression_items,
+          (unsigned long long)g_place_profile.candidate_scan_slots,
+          (unsigned long long)g_place_profile.accept_checks,
+          (unsigned long long)g_place_profile.accept_fast_true,
+          (unsigned long long)g_place_profile.accept_fast_false,
+          (unsigned long long)g_place_profile.accept_vm_can_place,
+          (unsigned long long)g_place_profile.accept_vm_always_allow);
+}
+
+static void placement_profile_maybe_init(void) {
+  static bool initialized;
+  if (initialized) return;
+  initialized = true;
+  const char *v = getenv("ZELDA3_RANDO_PROFILE");
+  g_place_profile_active = v != NULL && v[0] != '\0' && strcmp(v, "0") != 0;
+  if (g_place_profile_active) atexit(placement_profile_dump);
+}
+
 // Fisher-Yates over a uint16 array, using Rng_NextRange for unbiased picks.
 static void shuffle_u16(uint16 *arr, uint16 n, RandoRng *rng) {
   for (int i = (int)n - 1; i > 0; i--) {
@@ -1191,6 +1254,7 @@ static bool location_accepts_item(const RandoLocationDef *loc,
                                   uint16 candidate_item,
                                   const RandoCounts *counts,
                                   const RandoSettings *settings) {
+  if (g_place_profile_active) g_place_profile.accept_checks++;
   if (settings != NULL && loc->type == LOCTYPE_Enemy &&
       Settings_EnemyChecksAllActive(settings) &&
       enemy_check_overworld_stage(loc->id) != kEnemyCheckNotOverworld &&
@@ -1235,6 +1299,11 @@ static bool location_accepts_item(const RandoLocationDef *loc,
   // the default is "AND with 0 children" (2 bytes 0x0c 0x00), which
   // Predicate_EvaluatePlacement evaluates as true.
   const uint8 *cp_bc = kRandoPredicateStream + cp_offset;
+  if (predicate_is_vacuous_true(cp_bc, cp_length)) {
+    if (g_place_profile_active) g_place_profile.accept_fast_true++;
+    return true;
+  }
+  if (g_place_profile_active) g_place_profile.accept_vm_can_place++;
   if (Predicate_EvaluatePlacement(cp_bc, cp_length, counts, settings, candidate_item)) {
     return true;
   }
@@ -1242,6 +1311,13 @@ static bool location_accepts_item(const RandoLocationDef *loc,
   // evaluatable safely. If it returns true, the placement is permitted even
   // when can_place rejected.
   const uint8 *aa_bc = kRandoPredicateStream + aa_offset;
+  if (settings == NULL || settings->logic < 4 /* NoLogic */) {
+    if (predicate_is_vacuous_false(aa_bc, aa_length)) {
+      if (g_place_profile_active) g_place_profile.accept_fast_false++;
+      return false;
+    }
+  }
+  if (g_place_profile_active) g_place_profile.accept_vm_always_allow++;
   return Predicate_EvaluatePlacement(aa_bc, aa_length, counts, settings, candidate_item);
 }
 
@@ -1334,6 +1410,8 @@ bool Place_AssumedFill(const RandoSettings *settings,
                        uint64 seed_u64,
                        int budget_seconds,
                        RandoPlacementTable *out) {
+  placement_profile_maybe_init();
+  if (g_place_profile_active) g_place_profile.place_calls++;
   // Reset stats — caller reads via Placement_GetLastStats() after we return.
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
@@ -1399,6 +1477,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
         break;
       }
     }
+    if (g_place_profile_active) g_place_profile.place_attempts++;
     g_last_placement_stats.attempts_used = (uint8)(attempt + 1);
     // Perturb the seed per attempt so each retry produces a different
     // progression order. The first attempt uses the unmodified seed so
@@ -1488,6 +1567,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
       // FIX #6 — this attempt's per-attempt seed (attempt_seed above) is what
       // seeded the prize/medallion shuffle baked into `out`; persist it.
       g_last_placement_stats.prize_attempt = (uint8)attempt;
+      if (g_place_profile_active) g_place_profile.place_successes++;
       return true;
     }
     // Track best-so-far (fewest unreachable + fewest fallbacks). Treat
@@ -1511,6 +1591,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // All attempts exhausted; restore the best-scored placement.
   if (best_unreachable == 0xFFFF) {
     fprintf(stderr, "Place_AssumedFill: no attempt produced a placement\n");
+    if (g_place_profile_active) g_place_profile.place_failures++;
     return false;
   }
   for (uint16 i = 0; i < best_count; i++) out->entries[i] = best_entries[i];
@@ -1528,6 +1609,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // is actually playable. (best_complete may be false; we still keep the
   // best-scored output so the spoiler surfaces diagnostic info.)
   (void)best_complete;
+  if (g_place_profile_active) g_place_profile.place_exhausted++;
   return true;
 }
 
@@ -1823,6 +1905,14 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
     if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
     open_loc_idx[open_n++] = (uint16)i;
+  }
+  if (g_place_profile_active) {
+    g_place_profile.open_locations_sum += open_n;
+    g_place_profile.progression_items_sum += prog_n;
+    if (open_n > g_place_profile.max_open_locations)
+      g_place_profile.max_open_locations = open_n;
+    if (prog_n > g_place_profile.max_progression_items)
+      g_place_profile.max_progression_items = prog_n;
   }
 
   // placement_at[k] = item placed at open_loc_idx[k], or 0xFFFF if empty.
@@ -2129,6 +2219,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (counts.by_item_id[item] > 0) counts.by_item_id[item]--;
 
     const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
+    if (g_place_profile_active) g_place_profile.candidate_scan_slots += open_n;
 
     // Find candidate locations: open + reachable + accepts item.
     uint16 cand_n = 0;

@@ -43,6 +43,66 @@ static uint32 g_door_gen_digest24;
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef struct GenerateProfileCounters {
+  uint64 calls;
+  uint64 plain_calls;
+  uint64 entrance_calls;
+  uint64 entrance_attempts;
+  uint64 entrance_successes;
+  uint64 door_calls;
+  uint64 door_attempts;
+  uint64 door_layout_failures;
+  uint64 door_rejections;
+  uint64 door_successes;
+  uint64 chains_calls;
+  uint64 chains_attempts;
+  uint64 chains_layout_failures;
+  uint64 chains_rejections;
+  uint64 chains_successes;
+  uint32 max_door_attempts;
+  uint32 max_chains_attempts;
+} GenerateProfileCounters;
+
+static GenerateProfileCounters g_generate_profile;
+static bool g_generate_profile_active;
+
+static void generate_profile_dump(void) {
+  if (!g_generate_profile_active) return;
+  fprintf(stderr,
+          "[RANDO_PROFILE generate] calls=%llu plain=%llu entrance=%llu "
+          "entrance_attempts=%llu entrance_successes=%llu door=%llu "
+          "door_attempts=%llu door_layout_failures=%llu door_rejections=%llu "
+          "door_successes=%llu max_door_attempts=%u chains=%llu "
+          "chains_attempts=%llu chains_layout_failures=%llu chains_rejections=%llu "
+          "chains_successes=%llu max_chains_attempts=%u\n",
+          (unsigned long long)g_generate_profile.calls,
+          (unsigned long long)g_generate_profile.plain_calls,
+          (unsigned long long)g_generate_profile.entrance_calls,
+          (unsigned long long)g_generate_profile.entrance_attempts,
+          (unsigned long long)g_generate_profile.entrance_successes,
+          (unsigned long long)g_generate_profile.door_calls,
+          (unsigned long long)g_generate_profile.door_attempts,
+          (unsigned long long)g_generate_profile.door_layout_failures,
+          (unsigned long long)g_generate_profile.door_rejections,
+          (unsigned long long)g_generate_profile.door_successes,
+          (unsigned)g_generate_profile.max_door_attempts,
+          (unsigned long long)g_generate_profile.chains_calls,
+          (unsigned long long)g_generate_profile.chains_attempts,
+          (unsigned long long)g_generate_profile.chains_layout_failures,
+          (unsigned long long)g_generate_profile.chains_rejections,
+          (unsigned long long)g_generate_profile.chains_successes,
+          (unsigned)g_generate_profile.max_chains_attempts);
+}
+
+static void generate_profile_maybe_init(void) {
+  static bool initialized;
+  if (initialized) return;
+  initialized = true;
+  const char *v = getenv("ZELDA3_RANDO_PROFILE");
+  g_generate_profile_active = v != NULL && v[0] != '\0' && strcmp(v, "0") != 0;
+  if (g_generate_profile_active) atexit(generate_profile_dump);
+}
+
 static uint8 door_enemy_drop_keys_for_settings(const RandoSettings *settings) {
   if (settings == NULL ||
       Settings_EffectiveDoorShuffle(settings) == kDoorShuffle_Vanilla)
@@ -283,6 +343,8 @@ void RandoGenerate_SelfCheck(void) {
 bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
                               int budget_seconds, RandoPlacementTable *table,
                               RandoEntranceRegen *reg) {
+  generate_profile_maybe_init();
+  if (g_generate_profile_active) g_generate_profile.calls++;
   memset(reg, 0, sizeof(*reg));
   bool cross_on = Entrance_IsCrossActive(settings);   // supersedes the separate paths
   bool cave_on = !cross_on && Entrance_IsActive(settings);
@@ -295,11 +357,13 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
   Entrance_ClearRegionOverrides();  // ensure a clean logic graph
   Entrance_ClearEdgeOverrides();
   if (cross_on || cave_on || dun_on || decoupled_on || dun_decoupled_on || cross_decoupled_on) {
+    if (g_generate_profile_active) g_generate_profile.entrance_calls++;
     uint8 canon[kSettingsCanonicalLen];
     Settings_CanonicalSerialize(settings, canon);
     reg->entrance_axes = canon[25];  // == the packed entrance-axis byte
     const int kEntranceMaxRetry = 64;
     for (int att = 0; att < kEntranceMaxRetry; att++) {
+      if (g_generate_profile_active) g_generate_profile.entrance_attempts++;
       // reset the edge-override set EVERY attempt so the
       // cave-only ApplyDecoupledExitEdges Begins fresh instead of appending onto
       // the prior attempt's leftover edges (phantom reachability + overflow).
@@ -340,6 +404,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         if (Accessibility_SeedAcceptable(settings, table)) {
           placed = true;
           reg->entrance_attempt = (uint8)att;
+          if (g_generate_profile_active) g_generate_profile.entrance_successes++;
           break;
         }
       } else if (Customizer_LastError()[0] != '\0') {
@@ -351,6 +416,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // NB: leave the accepted π's overrides ACTIVE — the caller's sphere/goal
     // computation must see the shuffled reachability. Caller clears afterward.
   } else if (Settings_EffectiveDoorShuffle(settings) != kDoorShuffle_Vanilla) {
+    if (g_generate_profile_active) g_generate_profile.door_calls++;
     // add-rando-door-shuffle — door phase. Mutually exclusive with entrance
     // shuffle (apply_derived_rules), so it owns this arm. Generate a layout
     // per door_attempt (stitch + key-prove every unpinned dungeon), install
@@ -358,12 +424,15 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // failure tries the next attempt. The accepted attempt + layout digest
     // are persisted (@76-79) so activation can regenerate + drift-check.
     for (uint32 datt = 0; datt < 16; datt++) {
+      if (g_generate_profile_active) g_generate_profile.door_attempts++;
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
                                 Settings_DoorPotTier(settings),
                                 door_enemy_drop_keys_for_settings(settings),
                                 door_enemy_check_tier_for_settings(settings),
-                                &g_door_gen_layout))
+                                &g_door_gen_layout)) {
+        if (g_generate_profile_active) g_generate_profile.door_layout_failures++;
         continue;
+      }
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
       table->count = 0;
       if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
@@ -371,8 +440,15 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         placed = true;
         g_door_gen_attempt = (uint8)datt;
         g_door_gen_digest24 = DoorShuffle_LayoutDigest(&g_door_gen_layout) & 0xFFFFFF;
+        if (g_generate_profile_active) {
+          uint32 used = datt + 1;
+          g_generate_profile.door_successes++;
+          if (used > g_generate_profile.max_door_attempts)
+            g_generate_profile.max_door_attempts = used;
+        }
         break;
       }
+      if (g_generate_profile_active) g_generate_profile.door_rejections++;
       Rando_SetDoorLogicLayout(NULL, 0);
       if (Customizer_LastError()[0] != '\0')
         break;  // deterministic customizer pin error — no layout will fix it
@@ -381,12 +457,16 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // computation must see the shuffled reachability (slot activation later
     // re-installs its own regenerated copy).
   } else if (chains_on) {
+    if (g_generate_profile_active) g_generate_profile.chains_calls++;
     const int kChainsMaxRetry = 64;
     DungeonChainsLayout chains_layout;
     for (uint32 catt = 0; catt < kChainsMaxRetry; catt++) {
+      if (g_generate_profile_active) g_generate_profile.chains_attempts++;
       Entrance_ClearEdgeOverrides();
-      if (!Chains_Compute(seed_u64, catt, &chains_layout))
+      if (!Chains_Compute(seed_u64, catt, &chains_layout)) {
+        if (g_generate_profile_active) g_generate_profile.chains_layout_failures++;
         continue;
+      }
       Chains_ApplyEdgeOverrides(&chains_layout);
       table->count = 0;
       if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
@@ -395,8 +475,15 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         reg->chains_active = true;
         reg->chains_attempt = (uint8)catt;
         reg->chains_layout = chains_layout;
+        if (g_generate_profile_active) {
+          uint32 used = catt + 1;
+          g_generate_profile.chains_successes++;
+          if (used > g_generate_profile.max_chains_attempts)
+            g_generate_profile.max_chains_attempts = used;
+        }
         break;
       }
+      if (g_generate_profile_active) g_generate_profile.chains_rejections++;
       if (Customizer_LastError()[0] != '\0')
         break;  // deterministic customizer pin error — no layout will fix it
     }
@@ -405,6 +492,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     if (!placed)
       Entrance_ClearEdgeOverrides();
   } else {
+    if (g_generate_profile_active) g_generate_profile.plain_calls++;
     placed = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
     if (placed && !Accessibility_SeedAcceptable(settings, table)) {
       placed = false;
