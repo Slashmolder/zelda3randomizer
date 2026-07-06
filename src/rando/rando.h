@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 124u
+#define kGeneratorVersion 126u
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -311,16 +311,20 @@ void Rando_PotOverlayReset(void);
 void Rando_PotOverlayCapture(uint16 room, uint16 pos4);
 uint8 Rando_PotOverlayCount(void);
 uint16 Rando_PotOverlayPos(uint8 i);
-// Set true by the dungeon draw loop when >=1 glint was emitted this frame; gates
-// the NMI gold injection. Cleared by the draw loop.
-extern bool g_rando_pot_overlay_drawn;
-// The sprite sub-palette row (0..7) the draw loop reserved for the glints this
-// frame (no on-screen sprite uses it; never 7). 0xFF = no free row → glint skipped.
-extern uint8 g_rando_pot_overlay_palette_row;
-// In NMI: restore last frame's goldened row from main_palette_buffer, then (if a
-// glint is on-screen) write the animated gold ramp into this frame's reserved
-// row. PPU CGRAM copy only — g_ram stays vanilla (cosmetic-palette-mode style).
-void Rando_PotOverlayApplyCgram(uint16 *cgram);
+
+enum {
+  kRandoObjScratchOwner_None = 0,
+  kRandoObjScratchOwner_LegacyTracker = 1,
+  kRandoObjScratchOwner_EnemyMarkers = 2,
+};
+
+bool Rando_ObjScratchReserveForFrame(uint8 owner);
+uint8 Rando_ObjScratchOwnerThisFrame(void);
+
+bool Rando_OverlayPaletteRequestGold(uint8 row);
+bool Rando_OverlayPaletteRequestCustomItem(uint8 row, uint8 gfx);
+void Rando_OverlayPaletteApplyCgram(uint16 *cgram, bool cgram_rebuilt);
+int Rando_OverlayPaletteSelfCheck(void);
 
 // ---------------------------------------------------------------------------
 // Field item sprites — draw the PLACED item's
@@ -887,6 +891,8 @@ uint32 Rando_ActiveForcedFeatures0(void);
 void Rando_ApplyActiveForcedFeatures0(void);
 void Rando_ApplySeedQolFeatures0(uint32 features0);
 void Rando_ClearSnapshotColdReplayRestore(void);
+void Rando_ClearSnapshotSettingsReplayRestore(void);
+void Rando_ClearSnapshotReplayHeader(void);
 
 // Regenerate the hint table for the CURRENTLY-ACTIVE slot, replaying exactly
 // the activation-time hint block — including the v1/no-blob fallbacks

@@ -105,7 +105,300 @@ ALL_TIER_MINI_MOLDORM_CAVE_ACCESS = (
     "((NOT OP_WORLDSTATE_EQ(inverted)) OR HAS_ITEM(MoonPearl))"
 )
 
+ALL_TIER_HCE_SECRET_PASSAGE_ACCESS = "OP_REGION_REACHABLE(HyruleCastleEscape)"
+
+ALL_TIER_LW_DM_EAST_CAVE_ACCESS = (
+    "OP_REGION_REACHABLE(LightWorld_DeathMountain_East) AND "
+    "((NOT OP_WORLDSTATE_EQ(inverted)) OR HAS_ITEM(MoonPearl))"
+)
+
+ALL_TIER_PARADOX_CAVE_UPPER_ACCESS = (
+    "OP_REGION_REACHABLE(LightWorld_DeathMountain_East) AND "
+    "((NOT OP_WORLDSTATE_EQ(inverted)) OR (HAS_ITEM(MoonPearl) AND CanBombThings()))"
+)
+
+ALL_TIER_SPECTACLE_ROCK_CAVE_ACCESS = (
+    "OP_REGION_REACHABLE(LightWorld_DeathMountain_West)"
+)
+
+
+def reviewed_underworld_inventory_binding(region: str, base_can_reach: str,
+                                          predicate_source: str) -> dict:
+    return {
+        "region": region,
+        "base_can_reach": base_can_reach,
+        "predicate_source": predicate_source,
+        "inventory_kill_predicate": UNDERWORLD_GENERIC_KILL_PREDICATE,
+        "inventory_kill_source": "underworld_generic",
+        "allow_throwable_pots": False,
+    }
+
+
+def reviewed_key_depth_room_binding(region: str, base_can_reach: str,
+                                    predicate_source: str,
+                                    inventory_kill_predicate: str = UNDERWORLD_GENERIC_KILL_PREDICATE,
+                                    inventory_kill_source: str = "reviewed_key_depth_room",
+                                    allow_throwable_pots: bool = True) -> dict:
+    return {
+        "region": region,
+        "base_can_reach": base_can_reach,
+        "predicate_source": predicate_source,
+        "inventory_kill_predicate": inventory_kill_predicate,
+        "inventory_kill_source": inventory_kill_source,
+        "allow_throwable_pots": allow_throwable_pots,
+        "use_key_depth": True,
+    }
+
+
+def reviewed_key_depth_room_bindings(room: int, slots, region: str,
+                                     base_can_reach: str, predicate_source: str,
+                                     inventory_kill_predicate: str = UNDERWORLD_GENERIC_KILL_PREDICATE,
+                                     inventory_kill_source: str = "reviewed_key_depth_room",
+                                     allow_throwable_pots: bool = True) -> dict:
+    return {
+        (room, int(slot)): reviewed_key_depth_room_binding(
+            region, base_can_reach, predicate_source,
+            inventory_kill_predicate=inventory_kill_predicate,
+            inventory_kill_source=inventory_kill_source,
+            allow_throwable_pots=allow_throwable_pots)
+        for slot in slots
+    }
+
+
+def reviewed_hce_castle_guard_binding(predicate_source: str) -> dict:
+    return {
+        "region": "HyruleCastleEscape",
+        "base_can_reach": ALL_TIER_HCE_SECRET_PASSAGE_ACCESS,
+        "predicate_source": predicate_source,
+        "inventory_kill_predicate": "CanKillEscapeThings(world)",
+        "inventory_kill_source": "hce_castle_guard",
+        "allow_throwable_pots": False,
+        "use_key_depth": True,
+    }
+
+
 ALL_TIER_UNDERWORLD_BINDINGS = {
+    # Reviewed key-depth rooms. These rooms have door-table ROOM rows, but no
+    # pot/entry conservative predicate. Bind only the non-key room gate here;
+    # the generator copies key-depth + door-region metadata so Wild/Dungeon key
+    # terms and door shuffle still use the normal bridge.
+    **reviewed_key_depth_room_bindings(
+        0x022, range(7), "HyruleCastleEscape",
+        "CanKillEscapeThings(world) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav())",
+        "all_tier_underworld_reviewed_hce_sewers_water",
+        inventory_kill_predicate="CanKillEscapeThings(world)",
+        inventory_kill_source="hce_sewers"),
+    **reviewed_key_depth_room_bindings(
+        0x042, range(6), "HyruleCastleEscape",
+        "CanKillEscapeThings(world)",
+        "all_tier_underworld_reviewed_hce_sewers_rope_room",
+        inventory_kill_predicate="CanKillEscapeThings(world)",
+        inventory_kill_source="hce_sewers"),
+    **reviewed_key_depth_room_bindings(
+        0x081, range(2), "HyruleCastleEscape",
+        "CanKillEscapeThings(world)",
+        "all_tier_underworld_reviewed_hce_guardroom",
+        inventory_kill_predicate="CanKillEscapeThings(world)",
+        inventory_kill_source="hce_guardroom"),
+
+    **reviewed_key_depth_room_bindings(
+        0x040, [0, 1, 3, 4, 5], "HyruleCastleTower",
+        "HAS_ITEM(Lamp) OR CanDarkRoomNav()",
+        "all_tier_underworld_reviewed_hct_upper_rooms",
+        inventory_kill_predicate="CanKillMostThings(world, 8)",
+        inventory_kill_source="hct_upper_rooms"),
+
+    **reviewed_key_depth_room_bindings(
+        0x02E, range(6), "IcePalace_Lobby", "TRUE()",
+        "all_tier_underworld_reviewed_ice_compass_room"),
+    **reviewed_key_depth_room_bindings(
+        0x05F, range(3), "IcePalace_Lobby", "HAS_ITEM(Hookshot)",
+        "all_tier_underworld_reviewed_ice_spike_room"),
+    **reviewed_key_depth_room_bindings(
+        0x06E, range(5), "IcePalace_Lobby",
+        "HAS_ITEM(Hammer) AND CanLiftRocks() AND HAS_ITEM(BigKey_IcePalace)",
+        "all_tier_underworld_reviewed_ice_pengator_trap"),
+    **reviewed_key_depth_room_bindings(
+        0x0AE, range(2), "IcePalace_Lobby", "TRUE()",
+        "all_tier_underworld_reviewed_ice_iced_t"),
+    **reviewed_key_depth_room_bindings(
+        0x0BE, [2, 3, 5, 6], "IcePalace_Lobby",
+        "HAS_ITEM(Hammer) AND CanLiftRocks() AND HAS_ITEM(BigKey_IcePalace)",
+        "all_tier_underworld_reviewed_ice_anti_fairy_switch"),
+
+    **reviewed_key_depth_room_bindings(
+        0x03A, [3, 4], "PalaceOfDarkness",
+        "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_PalaceOfDarkness)",
+        "all_tier_underworld_reviewed_pod_big_key_landing"),
+    **reviewed_key_depth_room_bindings(
+        0x03B, [3, 5], "PalaceOfDarkness", "TRUE()",
+        "all_tier_underworld_reviewed_pod_conveyor"),
+
+    **reviewed_key_depth_room_bindings(
+        0x044, [2, 3, 5, 7], "ThievesTown",
+        "HAS_ITEM(Hammer) AND HAS_ITEM(BigKey_ThievesTown)",
+        "all_tier_underworld_reviewed_tt_big_chest_conveyor"),
+    **reviewed_key_depth_room_bindings(
+        0x0BB, [0, 1, 2, 3, 5, 7, 8, 10], "ThievesTown",
+        "HAS_ITEM(BigKey_ThievesTown)",
+        "all_tier_underworld_reviewed_tt_hellway"),
+
+    **reviewed_key_depth_room_bindings(
+        0x04C, [2, 3, 4, 5, 6], "GanonsTower_Lobby",
+        "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() "
+        "AND HAS_ITEM(BigKey_GanonsTower) AND CanKillLanmolas(world) "
+        "AND CanKillMoldorm()",
+        "all_tier_underworld_reviewed_gt_late_tower"),
+    **reviewed_key_depth_room_bindings(
+        0x095, range(4), "GanonsTower_Lobby",
+        "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() "
+        "AND HAS_ITEM(BigKey_GanonsTower) AND CanKillLanmolas(world) "
+        "AND CanKillMoldorm()",
+        "all_tier_underworld_reviewed_gt_late_tower"),
+    **reviewed_key_depth_room_bindings(
+        0x0A5, [10, 11], "GanonsTower_Lobby",
+        "HAS_ITEM(Hookshot) AND CanShootArrowsL1() AND CanLightTorches() "
+        "AND HAS_ITEM(BigKey_GanonsTower) AND CanKillLanmolas(world) "
+        "AND CanKillMoldorm()",
+        "all_tier_underworld_reviewed_gt_late_tower"),
+
+    **reviewed_key_depth_room_bindings(
+        0x0C5, [6], "TurtleRock_Lobby", "TRUE()",
+        "all_tier_underworld_reviewed_tr_dash_bridge"),
+    **reviewed_key_depth_room_bindings(
+        0x0D2, [1, 5, 6, 8, 9], "MiseryMire_Lobby", "TRUE()",
+        "all_tier_underworld_reviewed_mire_2"),
+
+    # Death Mountain maze cave rooms. These normal cave-interior enemies are
+    # stored in the dungeon sprite table but have no vanilla door-graph ROOM
+    # rows. Bind them to the matching cave/check access instead of forcing them
+    # into dungeon key-depth logic. Throwable-pot combat stays disabled here
+    # because the current pot-region model does not prove same-side cave access
+    # for these no-key-depth DM maze rooms.
+    (0x0DF, 0): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_PARADOX_CAVE_UPPER_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_upper"),
+    (0x0DF, 1): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_PARADOX_CAVE_UPPER_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_upper"),
+    (0x0EE, 0): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EE, 1): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EE, 2): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EE, 3): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EE, 4): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EF, 0): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EF, 1): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0EF, 2): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_paradox_cave_lower"),
+    (0x0F9, 0): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_West",
+        ALL_TIER_SPECTACLE_ROCK_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spectacle_rock_cave"),
+    (0x0F9, 1): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_West",
+        ALL_TIER_SPECTACLE_ROCK_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spectacle_rock_cave"),
+    (0x0F9, 2): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_West",
+        ALL_TIER_SPECTACLE_ROCK_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spectacle_rock_cave"),
+    (0x0F9, 3): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_West",
+        ALL_TIER_SPECTACLE_ROCK_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spectacle_rock_cave"),
+    (0x0FD, 0): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FD, 1): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FD, 4): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FE, 0): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FE, 1): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FE, 2): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FE, 3): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+    (0x0FE, 4): reviewed_underworld_inventory_binding(
+        "LightWorld_DeathMountain_East",
+        ALL_TIER_LW_DM_EAST_CAVE_ACCESS,
+        "all_tier_underworld_reviewed_spiral_cave"),
+
+    # Hyrule Castle Throne Room and central lobby guards. These rooms are
+    # reachable through the normal HCE region, but they have no pot/key-depth
+    # room predicate row. Killing the guards still needs the normal HCE combat
+    # predicate; there are no reviewed thrown-pot kill routes in these rooms.
+    (0x051, 1): reviewed_hce_castle_guard_binding(
+        "all_tier_underworld_reviewed_hce_throne_room"),
+    (0x051, 2): reviewed_hce_castle_guard_binding(
+        "all_tier_underworld_reviewed_hce_throne_room"),
+    (0x061, 0): reviewed_hce_castle_guard_binding(
+        "all_tier_underworld_reviewed_hce_central_lobby"),
+    (0x061, 1): reviewed_hce_castle_guard_binding(
+        "all_tier_underworld_reviewed_hce_central_lobby"),
+    (0x061, 2): reviewed_hce_castle_guard_binding(
+        "all_tier_underworld_reviewed_hce_central_lobby"),
+
+    # HCE Secret Passage. This engine room is covered by high-level HCE
+    # location logic, but it has no vanilla door-graph ROOM row, so model it as
+    # a reviewed all-tier underworld exception instead of forcing it into the
+    # dungeon key-depth set.
+    (0x055, 1): {
+        "region": "HyruleCastleEscape",
+        "base_can_reach": ALL_TIER_HCE_SECRET_PASSAGE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_hce_secret_passage",
+        "inventory_kill_predicate": "CanKillEscapeThings(world)",
+        "inventory_kill_source": "hce_secret_passage",
+        "throwable_pots_can_reach": "HAS_ITEM(Lamp) OR CanDarkRoomNav()",
+    },
+    (0x055, 2): {
+        "region": "HyruleCastleEscape",
+        "base_can_reach": ALL_TIER_HCE_SECRET_PASSAGE_ACCESS,
+        "predicate_source": "all_tier_underworld_reviewed_hce_secret_passage",
+        "inventory_kill_predicate": "CanKillEscapeThings(world)",
+        "inventory_kill_source": "hce_secret_passage",
+        "throwable_pots_can_reach": "HAS_ITEM(Lamp) OR CanDarkRoomNav()",
+    },
     # Kakariko Storage Shed / Library room. These two rats are behind a bombable
     # wall and have eight liftable pots in-room, so the kill route is modeled by
     # the same thrown-pot damage table used for dungeon enemy checks.
@@ -293,6 +586,7 @@ OVERWORLD_REGIONS = {
     85: "DarkWorld_South",
     107: "DarkWorld_South",
     108: "DarkWorld_South",
+    112: "DarkWorld_Mire",
     114: "DarkWorld_South",
     115: "DarkWorld_South",
     116: "DarkWorld_South",
@@ -919,6 +1213,10 @@ def scripted_enemy_check_name(row: dict) -> str:
     )
 
 
+def dungeon_candidate_key(row: dict) -> tuple[int, int]:
+    return (int(row["room"]), int(row["source_slot"]))
+
+
 def collect_scripted_spawn_candidates(assets: dict[str, bytes]) -> tuple[list[dict], Counter]:
     try:
         sprites = assets["kDungeonSprites"]
@@ -960,7 +1258,8 @@ def collect_scripted_spawn_candidates(assets: dict[str, bytes]) -> tuple[list[di
 
 
 def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
-             dungeon_rows: list[dict], excluded_counts: Counter,
+             dungeon_rows: list[dict], dungeon_all_rows: list[dict],
+             excluded_counts: Counter, all_scope_excluded_counts: Counter,
              overworld_rows: list[dict], overworld_excluded_counts: Counter,
              key_depth: dict[str, dict], pot_predicates: dict[int, list[dict]],
              region_only_pot_rooms: dict[int, str], entry_room_predicates: dict[int, dict],
@@ -968,46 +1267,31 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
              pot_requirements: dict[int, dict]) -> dict:
     by_room = room_key_depth_rows(key_depth)
     rows = []
-    doc_excluded_counts = Counter(excluded_counts)
+    doc_excluded_counts = Counter(all_scope_excluded_counts)
     out_of_scope_no_key_depth = []
     audit_only_no_room_predicate = []
     all_tier_underworld_candidates: dict[tuple[int, int], dict] = {}
+    all_tier_underworld_rescue_reasons: dict[tuple[int, int], str] = {}
+    all_tier_underworld_room_rows: dict[tuple[int, int], list[dict]] = {}
+    all_scope_by_key = {dungeon_candidate_key(r): r for r in dungeon_all_rows}
+    base_dungeon_keys = {dungeon_candidate_key(r) for r in dungeon_rows}
+    automatic_all_tier_keys = set(all_scope_by_key) - base_dungeon_keys
+    automatic_all_tier_no_key_depth = []
+    automatic_all_tier_no_room_predicate = []
     emitted_by_room: Counter[int] = Counter()
     no_key_depth_by_room: Counter[int] = Counter()
     audit_only_by_room: Counter[int] = Counter()
+    automatic_all_tier_emitted = 0
 
-    for candidate in sorted(dungeon_rows, key=lambda r: (int(r["room"]), int(r["source_slot"]))):
+    def append_key_depth_dungeon_row(candidate: dict, room_rows: list[dict],
+                                     best: dict, dungeon: int, reach: dict,
+                                     *, all_tier_only: bool = False,
+                                     reviewed_binding_reason: str | None = None) -> None:
+        nonlocal automatic_all_tier_emitted
         room = int(candidate["room"])
-        source_slot = int(candidate["source_slot"])
-        all_tier_binding = ALL_TIER_UNDERWORLD_BINDINGS.get((room, source_slot))
-        room_rows = by_room.get(room, [])
-        if not room_rows:
-            if all_tier_binding is not None:
-                all_tier_underworld_candidates[(room, source_slot)] = candidate
-                continue
-            no_key_depth_by_room[room] += 1
-            doc_excluded_counts["no_key_depth_room"] += 1
-            out_of_scope_no_key_depth.append(candidate)
-            continue
-        best = best_room_key_depth(room_rows)
-        dungeon = int(best["dungeon"])
-        if dungeon not in SMALL_KEY_ITEMS or dungeon not in DUNGEON_REGIONS:
-            no_key_depth_by_room[room] += 1
-            doc_excluded_counts["unsupported_dungeon"] += 1
-            out_of_scope_no_key_depth.append(candidate)
-            continue
-        reach = enemy_can_reach(
-            candidate, dungeon, pot_predicates, region_only_pot_rooms,
-            entry_room_predicates, pot_rows, pot_requirements)
-        if reach is None:
-            audit_only_by_room[room] += 1
-            doc_excluded_counts["no_conservative_room_predicate"] += 1
-            audit_only_no_room_predicate.append(candidate)
-            continue
-
         loc_id = ENEMY_CHECK_BASE_ID + len(rows)
         emitted_by_room[room] += 1
-        rows.append({
+        row = {
             "id": loc_id,
             "name": enemy_check_name(candidate, emitted_by_room[room]),
             "domain": "dungeon",
@@ -1020,7 +1304,9 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "source_x": int(candidate["source_x"]),
             "door_dungeon": dungeon,
             "door_region": int(best["region"]),
-            "door_regions": [int(r["region"]) for r in sorted(room_rows, key=lambda r: int(r["region"]))],
+            "door_regions": [
+                int(r["region"]) for r in sorted(room_rows, key=lambda r: int(r["region"]))
+            ],
             "region": DUNGEON_REGIONS[dungeon],
             "small_key_item": SMALL_KEY_ITEMS[dungeon],
             "vanilla_item": "Nothing",
@@ -1038,7 +1324,91 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "enemy_health": reach["enemy_health"],
             "key_depth": int(best["key_depth"]),
             "key_mindepth": int(best["key_mindepth"]),
-        })
+        }
+        if all_tier_only:
+            row["all_tier_only"] = True
+            if reviewed_binding_reason:
+                row["reviewed_binding_reason"] = reviewed_binding_reason
+            automatic_all_tier_emitted += 1
+        rows.append(row)
+
+    for candidate in sorted(dungeon_rows, key=lambda r: (int(r["room"]), int(r["source_slot"]))):
+        room = int(candidate["room"])
+        source_slot = int(candidate["source_slot"])
+        all_tier_binding = ALL_TIER_UNDERWORLD_BINDINGS.get((room, source_slot))
+        room_rows = by_room.get(room, [])
+        if not room_rows:
+            if all_tier_binding is not None:
+                key = (room, source_slot)
+                all_tier_underworld_candidates[key] = candidate
+                all_tier_underworld_rescue_reasons[key] = "reviewed_no_key_depth_room"
+                all_tier_underworld_room_rows[key] = []
+                continue
+            no_key_depth_by_room[room] += 1
+            doc_excluded_counts["no_key_depth_room"] += 1
+            out_of_scope_no_key_depth.append(candidate)
+            continue
+        best = best_room_key_depth(room_rows)
+        dungeon = int(best["dungeon"])
+        if dungeon not in SMALL_KEY_ITEMS or dungeon not in DUNGEON_REGIONS:
+            no_key_depth_by_room[room] += 1
+            doc_excluded_counts["unsupported_dungeon"] += 1
+            out_of_scope_no_key_depth.append(candidate)
+            continue
+        reach = enemy_can_reach(
+            candidate, dungeon, pot_predicates, region_only_pot_rooms,
+            entry_room_predicates, pot_rows, pot_requirements)
+        if reach is None:
+            if all_tier_binding is not None:
+                key = (room, source_slot)
+                all_tier_underworld_candidates[key] = candidate
+                all_tier_underworld_rescue_reasons[key] = "reviewed_no_conservative_room_predicate"
+                all_tier_underworld_room_rows[key] = room_rows
+                continue
+            audit_only_by_room[room] += 1
+            doc_excluded_counts["no_conservative_room_predicate"] += 1
+            audit_only_no_room_predicate.append(candidate)
+            continue
+
+        append_key_depth_dungeon_row(candidate, room_rows, best, dungeon, reach)
+
+    for key in sorted(automatic_all_tier_keys):
+        candidate = all_scope_by_key[key]
+        room, source_slot = key
+        all_tier_binding = ALL_TIER_UNDERWORLD_BINDINGS.get((room, source_slot))
+        room_rows = by_room.get(room, [])
+        if not room_rows:
+            if all_tier_binding is not None:
+                all_tier_underworld_candidates[key] = candidate
+                all_tier_underworld_rescue_reasons[key] = "reviewed_no_key_depth_room"
+                all_tier_underworld_room_rows[key] = []
+                continue
+            doc_excluded_counts["all_tier_no_key_depth_room"] += 1
+            automatic_all_tier_no_key_depth.append(candidate)
+            continue
+        best = best_room_key_depth(room_rows)
+        dungeon = int(best["dungeon"])
+        if dungeon not in SMALL_KEY_ITEMS or dungeon not in DUNGEON_REGIONS:
+            doc_excluded_counts["all_tier_unsupported_dungeon"] += 1
+            automatic_all_tier_no_key_depth.append(candidate)
+            continue
+        reach = enemy_can_reach(
+            candidate, dungeon, pot_predicates, region_only_pot_rooms,
+            entry_room_predicates, pot_rows, pot_requirements)
+        if reach is None:
+            if all_tier_binding is not None:
+                all_tier_underworld_candidates[key] = candidate
+                all_tier_underworld_rescue_reasons[key] = "reviewed_no_conservative_room_predicate"
+                all_tier_underworld_room_rows[key] = room_rows
+                continue
+            doc_excluded_counts["all_tier_no_conservative_room_predicate"] += 1
+            automatic_all_tier_no_room_predicate.append(candidate)
+            continue
+
+        append_key_depth_dungeon_row(
+            candidate, room_rows, best, dungeon, reach,
+            all_tier_only=True,
+            reviewed_binding_reason="automatic_all_tier_source_type")
 
     boss_emitted = 0
     for boss in BOSS_EVENT_CHECKS:
@@ -1192,7 +1562,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             throwable_pots_predicate=binding.get("throwable_pots_can_reach"))
         room = int(candidate["room"])
         emitted_by_room[room] += 1
-        rows.append({
+        row = {
             "id": ENEMY_CHECK_BASE_ID + len(rows),
             "name": enemy_check_name(candidate, emitted_by_room[room]),
             "domain": "dungeon",
@@ -1217,10 +1587,37 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "throwable_pot_damage": reach["throwable_pot_damage"],
             "throwable_pot_damage_subclass": reach["throwable_pot_damage_subclass"],
             "enemy_health": reach["enemy_health"],
+            "reviewed_binding_reason": all_tier_underworld_rescue_reasons.get(
+                key, "reviewed_all_tier_binding"),
             "all_tier_only": True,
-        })
+        }
+        if binding.get("use_key_depth"):
+            room_rows = all_tier_underworld_room_rows.get(key, [])
+            if not room_rows:
+                die(
+                    "reviewed key-depth enemy binding has no key-depth ROOM row "
+                    f"room=0x{room:03x} slot={key[1]}")
+            best = best_room_key_depth(room_rows)
+            dungeon = int(best["dungeon"])
+            if dungeon not in SMALL_KEY_ITEMS:
+                die(
+                    "reviewed key-depth enemy binding has unsupported dungeon "
+                    f"room=0x{room:03x} slot={key[1]} dungeon={dungeon}")
+            row.update({
+                "door_dungeon": dungeon,
+                "door_region": int(best["region"]),
+                "door_regions": [
+                    int(r["region"]) for r in sorted(
+                        room_rows, key=lambda r: int(r["region"]))
+                ],
+                "small_key_item": SMALL_KEY_ITEMS[dungeon],
+                "key_depth": int(best["key_depth"]),
+                "key_mindepth": int(best["key_mindepth"]),
+            })
+        rows.append(row)
         underworld_all_tier_emitted += 1
 
+    underworld_all_tier_total = automatic_all_tier_emitted + underworld_all_tier_emitted
     dungeon_emitted = sum(
         1 for r in rows if r.get("domain") == "dungeon" and not r.get("all_tier_only"))
     source_types = {
@@ -1251,6 +1648,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "eligible_source_type": ["ESF_RANDOMIZABLE", "ESF_KILLABLE"],
             "excluded_source_type_flags": {
                 "dungeon": ["ESF_CANNOT_KEY", "ESF_FLYING"],
+                "dungeon_all_tier": [],
                 "overworld_all_tier": [],
             },
             "excluded_sources": [
@@ -1271,6 +1669,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
                 "dungeon: per-source inventory predicate",
                 "dungeon: OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
                 "dungeon: thrown-pot route requires at least the generated pots_needed count in the room",
+                "dungeon all-tier: key-banned/flying killable sources reuse the same modeled room access as dungeon checks and emit only when enemy_drop_checks=all",
                 "underworld all-tier: reviewed room access plus per-source or binding-specific inventory/thrown-pot kill route",
                 "overworld: region-reachable plus generic overworld combat predicate",
                 "boss: existing boss and GT miniboss kill predicates",
@@ -1284,12 +1683,15 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             ],
         },
         "summary": {
-            "scanned_underworld_source_count": len(dungeon_rows),
+            "scanned_underworld_source_count": len(dungeon_all_rows),
+            "scanned_base_dungeon_source_count": len(dungeon_rows),
             "scanned_overworld_source_count": len(overworld_rows),
-            "candidate_count": len(dungeon_rows) + len(overworld_rows) + len(scripted_rows) + len(BOSS_EVENT_CHECKS),
+            "candidate_count": len(dungeon_all_rows) + len(overworld_rows) + len(scripted_rows) + len(BOSS_EVENT_CHECKS),
             "emitted_count": len(rows),
             "emitted_dungeon_count": dungeon_emitted,
-            "emitted_underworld_all_tier_count": underworld_all_tier_emitted,
+            "emitted_underworld_all_tier_count": underworld_all_tier_total,
+            "emitted_underworld_all_tier_automatic_count": automatic_all_tier_emitted,
+            "emitted_underworld_all_tier_reviewed_count": underworld_all_tier_emitted,
             "emitted_overworld_count": overworld_emitted,
             "emitted_boss_count": boss_emitted,
             "emitted_scripted_spawn_count": scripted_emitted,
@@ -1306,6 +1708,12 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "rows_with_throwable_pot_route": sum(1 for r in rows if r.get("throwable_pots_can_reach")),
             "rows_pot_killable_by_damage_table": sum(1 for r in rows if r.get("throwable_pots_required") is not None),
             "rows_with_special_inventory_kill": sum(1 for r in rows if r.get("inventory_kill_source") == "source_type_special"),
+            "reviewed_all_tier_no_key_depth_count": sum(
+                1 for reason in all_tier_underworld_rescue_reasons.values()
+                if reason == "reviewed_no_key_depth_room"),
+            "reviewed_all_tier_no_conservative_room_predicate_count": sum(
+                1 for reason in all_tier_underworld_rescue_reasons.values()
+                if reason == "reviewed_no_conservative_room_predicate"),
         },
         "excluded_counts": {
             "dungeon": dict(sorted(doc_excluded_counts.items())),
@@ -1323,6 +1731,21 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
                 "source_x": int(r["source_x"]),
             }
             for r in out_of_scope_no_key_depth
+        ],
+        "reviewed_all_tier_rescued": [
+            {
+                "room": int(all_tier_underworld_candidates[key]["room"]),
+                "source_slot": int(all_tier_underworld_candidates[key]["source_slot"]),
+                "source_type": int(all_tier_underworld_candidates[key]["source_type"]),
+                "source_name": all_tier_underworld_candidates[key]["source_name"],
+                "source_y": int(all_tier_underworld_candidates[key]["source_y"]),
+                "source_x": int(all_tier_underworld_candidates[key]["source_x"]),
+                "reason": all_tier_underworld_rescue_reasons.get(
+                    key, "reviewed_all_tier_binding"),
+                "predicate_source": str(ALL_TIER_UNDERWORLD_BINDINGS[key]["predicate_source"]),
+                "use_key_depth": bool(ALL_TIER_UNDERWORLD_BINDINGS[key].get("use_key_depth")),
+            }
+            for key in sorted(all_tier_underworld_candidates)
         ],
         "audit_only_no_room_predicate": [
             {
@@ -1354,6 +1777,13 @@ def build_doc(args) -> dict:
         allow_cannot_key=False,
         allow_flying=False,
     )
+    dungeon_all_rows, all_scope_excluded_counts = collect_dungeon_candidates(
+        assets,
+        constraints,
+        forced_sources,
+        allow_cannot_key=True,
+        allow_flying=True,
+    )
     overworld_rows, _overworld_collisions, overworld_excluded_counts = collect_overworld_candidates(
         assets,
         constraints,
@@ -1366,13 +1796,16 @@ def build_doc(args) -> dict:
     entry_room_predicates = load_entry_room_predicates(ENTRANCE_REGISTRY)
     pot_rows = room_pot_rows(POT_REGISTRY)
     pot_requirements = thrown_pot_requirements(
-        assets, {int(row["source_type"]) for row in dungeon_rows})
+        assets,
+        {int(row["source_type"]) for row in itertools.chain(dungeon_rows, dungeon_all_rows)})
     return make_doc(
         assets,
         assets_path,
         key_depth_path,
         dungeon_rows,
+        dungeon_all_rows,
         excluded_counts,
+        all_scope_excluded_counts,
         overworld_rows,
         overworld_excluded_counts,
         key_depth,
@@ -1432,7 +1865,7 @@ def main(argv: list[str]) -> int:
     print(
         "gen_enemy_check_tables: "
         f"{summary['emitted_dungeon_count']} dungeon + "
-        f"{summary['emitted_underworld_all_tier_count']} reviewed underworld + "
+        f"{summary['emitted_underworld_all_tier_count']} underworld all-tier + "
         f"{summary['emitted_overworld_count']} overworld + "
         f"{summary['emitted_boss_count']} boss/miniboss + "
         f"{summary['emitted_scripted_spawn_count']} scripted ordinary enemy checks "

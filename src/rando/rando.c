@@ -2294,7 +2294,6 @@ bool Rando_PotShouldRecolor(uint16 room, uint16 pos4) {
 #define kRandoPotOverlayMax 16
 static uint16 s_pot_overlay_pos[kRandoPotOverlayMax];
 static uint8  s_pot_overlay_count;
-bool g_rando_pot_overlay_drawn;
 
 void Rando_PotOverlayReset(void) {
   s_pot_overlay_count = 0;
@@ -2316,43 +2315,217 @@ uint16 Rando_PotOverlayPos(uint8 i) {
   return i < s_pot_overlay_count ? s_pot_overlay_pos[i] : 0;
 }
 
-uint8 g_rando_pot_overlay_palette_row = 0xFF;
+static uint8 s_rando_obj_scratch_owner;
+static uint8 s_rando_obj_scratch_frame;
 
-void Rando_PotOverlayApplyCgram(uint16 *cgram) {
-  static uint8 s_prev_row = 0xFF;  // the row we goldened last frame (to restore)
-  if (!cgram)
+static void Rando_ObjScratchSyncFrame(void) {
+  if (s_rando_obj_scratch_frame == frame_counter)
     return;
-  // Revert last frame's goldened row to its real colors, so a sprite that now
-  // claims that row — or the glint simply leaving — renders correctly. The 8
-  // sprite rows are all allocated, so we never own a row for more than the frame
-  // its glint is visible. main_palette_buffer is the un-transformed CGRAM image.
-  if (s_prev_row != 0xFF) {
-    int pb = 0x80 + 16 * (int)s_prev_row;
-    for (int i = 1; i < 16; i++)
-      cgram[pb + i] = main_palette_buffer[pb + i];
-    s_prev_row = 0xFF;
+  s_rando_obj_scratch_frame = frame_counter;
+  s_rando_obj_scratch_owner = kRandoObjScratchOwner_None;
+}
+
+bool Rando_ObjScratchReserveForFrame(uint8 owner) {
+  Rando_ObjScratchSyncFrame();
+  if (owner == kRandoObjScratchOwner_None)
+    return false;
+  if (s_rando_obj_scratch_owner == kRandoObjScratchOwner_None ||
+      s_rando_obj_scratch_owner == owner) {
+    s_rando_obj_scratch_owner = owner;
+    return true;
   }
-  if (!g_rando_pot_overlay_drawn || g_rando_pot_overlay_palette_row >= 8)
+  return false;
+}
+
+uint8 Rando_ObjScratchOwnerThisFrame(void) {
+  Rando_ObjScratchSyncFrame();
+  return s_rando_obj_scratch_owner;
+}
+
+enum {
+  kRandoOverlayPaletteKind_Gold = 1,
+  kRandoOverlayPaletteKind_CustomItem = 2,
+  kRandoOverlayPaletteMax = 8,
+};
+
+typedef struct RandoOverlayPaletteRequest {
+  uint8 row;
+  uint8 kind;
+  uint8 gfx;
+} RandoOverlayPaletteRequest;
+
+typedef struct RandoOverlayPalettePrevious {
+  uint8 row;
+  uint16 colors[16];
+} RandoOverlayPalettePrevious;
+
+static RandoOverlayPaletteRequest s_overlay_palette_requests[kRandoOverlayPaletteMax];
+static uint8 s_overlay_palette_request_count;
+static uint8 s_overlay_palette_request_frame;
+static RandoOverlayPalettePrevious s_overlay_palette_previous[kRandoOverlayPaletteMax];
+static uint8 s_overlay_palette_previous_count;
+
+static void Rando_OverlayPaletteSyncFrame(void) {
+  if (s_overlay_palette_request_frame == frame_counter)
     return;
-  // Gold the row the draw loop reserved this frame (no on-screen sprite uses it).
-  // Word 0 of the row is sprite transparency — leave it. Fill 1..15 with a warm
-  // gold ramp (dark at low indices, bright at high) so the glint reads gold
-  // whichever index its tile samples.
-  int base = 0x80 + 16 * (int)g_rando_pot_overlay_palette_row;
-  // Soft brightness pulse: a 0..7..0 triangle over 64 frames so the gold
-  // shimmers instead of strobing.
-  int ph = (frame_counter >> 1) & 0x3f;            // 0..63
-  int pulse = (ph < 0x20 ? ph : 0x3f - ph) >> 2;   // 0..7
+  s_overlay_palette_request_frame = frame_counter;
+  s_overlay_palette_request_count = 0;
+}
+
+static bool Rando_OverlayPaletteAddRequest(uint8 row, uint8 kind, uint8 gfx) {
+  Rando_OverlayPaletteSyncFrame();
+  if (row >= 7)
+    return false;
+  for (uint8 i = 0; i < s_overlay_palette_request_count; i++) {
+    if (s_overlay_palette_requests[i].row == row) {
+      s_overlay_palette_requests[i].kind = kind;
+      s_overlay_palette_requests[i].gfx = gfx;
+      return true;
+    }
+  }
+  if (s_overlay_palette_request_count >= kRandoOverlayPaletteMax)
+    return false;
+  s_overlay_palette_requests[s_overlay_palette_request_count++] =
+      (RandoOverlayPaletteRequest){row, kind, gfx};
+  return true;
+}
+
+bool Rando_OverlayPaletteRequestGold(uint8 row) {
+  return Rando_OverlayPaletteAddRequest(row, kRandoOverlayPaletteKind_Gold, 0);
+}
+
+bool Rando_OverlayPaletteRequestCustomItem(uint8 row, uint8 gfx) {
+  return Rando_OverlayPaletteAddRequest(row, kRandoOverlayPaletteKind_CustomItem, gfx);
+}
+
+static const uint16 *Rando_CustomItemStaticPalette(uint8 gfx) {
+  static const uint16 kRandoOffBlackPalette[8] = {
+    0x0000, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5, 0x14A5,
+  };
+  if (gfx == kRandoCustomGfx_Rupoor)
+    return kRandoOffBlackPalette;
+  if (gfx >= kRandoCustomGfx_TriforcePiece &&
+      gfx < kRandoCustomGfx_TriforcePiece + kRandoCustomGfx_BlobEntries)
+    return kPalette_MainSpr + 52;
+  return NULL;
+}
+
+static void Rando_OverlayPaletteApplyGold(uint16 *dst) {
+  int ph = (frame_counter >> 1) & 0x3f;
+  int pulse = (ph < 0x20 ? ph : 0x3f - ph) >> 2;
   for (int i = 1; i < 16; i++) {
     int lvl = i + pulse;
     if (lvl > 31)
       lvl = 31;
-    int r = lvl;              // full red channel
-    int g = (lvl * 13) >> 4;  // ~0.81 of red -> gold (warmer than pure yellow)
-    int b = lvl >> 2;         // a touch of blue keeps it off lime-green
-    cgram[base + i] = (uint16)((b << 10) | (g << 5) | r);
+    int r = lvl;
+    int g = (lvl * 13) >> 4;
+    int b = lvl >> 2;
+    dst[i] = (uint16)((b << 10) | (g << 5) | r);
   }
-  s_prev_row = g_rando_pot_overlay_palette_row;
+}
+
+static bool Rando_OverlayPaletteApplyCustomItem(uint16 *dst, uint8 row, uint8 gfx) {
+  const uint16 *src = Rando_CustomItemStaticPalette(gfx);
+  int base = 0x80 + 16 * row;
+  if (src != NULL) {
+    for (int i = 0; i < 8; i++)
+      dst[8 + i] = Cosmetic_TransformPaletteColor(src[i], base + 8 + i);
+    return true;
+  }
+  if (gfx == kRandoCustomGfx_Cucco) {
+    for (int i = 0; i < 7; i++) {
+      uint16 c = main_palette_buffer[0xC1 + i];
+      dst[9 + i] = Cosmetic_TransformPaletteColor(c, base + 9 + i);
+    }
+    dst[8] = Cosmetic_TransformPaletteColor(0, base + 8);
+    return true;
+  }
+  return false;
+}
+
+void Rando_OverlayPaletteApplyCgram(uint16 *cgram, bool cgram_rebuilt) {
+  if (cgram == NULL)
+    return;
+  if (!cgram_rebuilt) {
+    for (uint8 i = 0; i < s_overlay_palette_previous_count; i++) {
+      uint8 row = s_overlay_palette_previous[i].row;
+      if (row < 8)
+        memcpy(&cgram[0x80 + 16 * row], s_overlay_palette_previous[i].colors,
+               sizeof(s_overlay_palette_previous[i].colors));
+    }
+  }
+  s_overlay_palette_previous_count = 0;
+
+  Rando_OverlayPaletteSyncFrame();
+  for (uint8 i = 0; i < s_overlay_palette_request_count; i++) {
+    RandoOverlayPaletteRequest *req = &s_overlay_palette_requests[i];
+    if (req->row >= 7 || s_overlay_palette_previous_count >= kRandoOverlayPaletteMax)
+      continue;
+    uint16 *row = &cgram[0x80 + 16 * req->row];
+    RandoOverlayPalettePrevious *prev =
+        &s_overlay_palette_previous[s_overlay_palette_previous_count];
+    prev->row = req->row;
+    memcpy(prev->colors, row, sizeof(prev->colors));
+
+    bool applied = false;
+    if (req->kind == kRandoOverlayPaletteKind_Gold) {
+      Rando_OverlayPaletteApplyGold(row);
+      applied = true;
+    } else if (req->kind == kRandoOverlayPaletteKind_CustomItem) {
+      applied = Rando_OverlayPaletteApplyCustomItem(row, req->row, req->gfx);
+    }
+    if (applied)
+      s_overlay_palette_previous_count++;
+  }
+  s_overlay_palette_request_count = 0;
+}
+
+int Rando_OverlayPaletteSelfCheck(void) {
+  RandoOverlayPaletteRequest saved_requests[kRandoOverlayPaletteMax];
+  RandoOverlayPalettePrevious saved_previous[kRandoOverlayPaletteMax];
+  uint8 saved_request_count = s_overlay_palette_request_count;
+  uint8 saved_request_frame = s_overlay_palette_request_frame;
+  uint8 saved_previous_count = s_overlay_palette_previous_count;
+  memcpy(saved_requests, s_overlay_palette_requests, sizeof(saved_requests));
+  memcpy(saved_previous, s_overlay_palette_previous, sizeof(saved_previous));
+
+  uint16 cgram[0x200];
+  for (int i = 0; i < 0x200; i++)
+    cgram[i] = (uint16)i;
+
+  s_overlay_palette_request_count = 0;
+  s_overlay_palette_request_frame = frame_counter;
+  s_overlay_palette_previous_count = 0;
+
+  uint16 saved_row[16];
+  memcpy(saved_row, &cgram[0x80 + 2 * 16], sizeof(saved_row));
+  int fail = 0;
+  if (!Rando_OverlayPaletteRequestGold(2))
+    fail = 1;
+  Rando_OverlayPaletteApplyCgram(cgram, false);
+  if (!fail && (s_overlay_palette_previous_count != 1 ||
+      memcmp(&cgram[0x80 + 2 * 16], saved_row, sizeof(saved_row)) == 0))
+    fail = 2;
+  Rando_OverlayPaletteApplyCgram(cgram, false);
+  if (!fail && memcmp(&cgram[0x80 + 2 * 16], saved_row, sizeof(saved_row)) != 0)
+    fail = 3;
+
+  memcpy(saved_row, &cgram[0x80 + 3 * 16], sizeof(saved_row));
+  if (!fail && !Rando_OverlayPaletteRequestGold(3))
+    fail = 4;
+  Rando_OverlayPaletteApplyCgram(cgram, false);
+  for (int i = 0; i < 16; i++)
+    cgram[0x80 + 3 * 16 + i] = (uint16)(0x7000 + i);
+  Rando_OverlayPaletteApplyCgram(cgram, true);
+  if (!fail && cgram[0x80 + 3 * 16 + 1] != 0x7001)
+    fail = 5;
+
+  memcpy(s_overlay_palette_requests, saved_requests, sizeof(saved_requests));
+  memcpy(s_overlay_palette_previous, saved_previous, sizeof(saved_previous));
+  s_overlay_palette_request_count = saved_request_count;
+  s_overlay_palette_request_frame = saved_request_frame;
+  s_overlay_palette_previous_count = saved_previous_count;
+  return fail;
 }
 
 bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
@@ -3463,17 +3636,21 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
                                      uint8 prize_attempt) {
   if (s == NULL || share_string_raw == NULL) return;
+  bool preserve_active_header =
+      g_rando_active_header_valid &&
+      !g_rando_settings_from_cold_replay &&
+      memcmp(g_rando_active_header.share_string, share_string_raw, 32) == 0;
   // Protect a GENUINE active slot only when the replayed snapshot belongs to
   // that same seed. A different snapshot seed must replace the process state.
-  if (g_rando_active_settings_valid && !g_rando_settings_from_cold_replay &&
-      g_rando_active_header_valid &&
-      memcmp(g_rando_active_header.share_string, share_string_raw, 32) == 0) {
+  if (g_rando_active_settings_valid && preserve_active_header) {
     return;
   }
   Rando_ClearDeferredPotConfirmation();
 
-  g_rando_active_header_valid = false;
-  g_rando_active_door_logic = false;
+  if (!preserve_active_header) {
+    g_rando_active_header_valid = false;
+    g_rando_active_door_logic = false;
+  }
   g_rando_active_settings = *s;
   g_rando_active_world_state = s->world_state;
   uint64 seed = SlotSeedFromShareString(share_string_raw);
@@ -3498,6 +3675,12 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
 void Rando_ClearSnapshotDoorReplayRestore(void) {
   rando_clear_door_layout_runtime();
   g_rando_active_door_logic = false;
+}
+
+void Rando_ClearSnapshotReplayHeader(void) {
+  g_rando_active_header_valid = false;
+  g_rando_active_door_logic = false;
+  g_rando_active_share_string[0] = '\0';
 }
 
 bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
@@ -3526,11 +3709,13 @@ bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
   return true;
 }
 
-void Rando_ClearSnapshotColdReplayRestore(void) {
-  if (!g_rando_settings_from_cold_replay) return;
+static void rando_clear_snapshot_settings_replay_restore(void) {
+  Rando_ClearDeferredPotConfirmation();
   g_rando_active_settings_valid = false;
   g_rando_settings_from_cold_replay = false;
   g_rando_active_world_state = kWorldState_Open;
+  g_rando_active_door_logic = false;
+  g_rando_active_share_string[0] = '\0';
   Rando_SetDungeonPrizeAssignment(NULL);
   Rando_SetMedallionAssignment(NULL);
   BossShuffle_Deactivate();
@@ -3541,6 +3726,16 @@ void Rando_ClearSnapshotColdReplayRestore(void) {
   InvertedSecrets_Teardown();
   InvertedHoleBlocks_Teardown();
   Rando_ApplyActiveForcedFeatures0();
+  g_reachability_state_counter++;
+}
+
+void Rando_ClearSnapshotColdReplayRestore(void) {
+  if (!g_rando_settings_from_cold_replay) return;
+  rando_clear_snapshot_settings_replay_restore();
+}
+
+void Rando_ClearSnapshotSettingsReplayRestore(void) {
+  rando_clear_snapshot_settings_replay_restore();
 }
 
 void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
@@ -3550,6 +3745,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   }
   rando_clear_trap_effect();
   Rando_ClearDeferredPotConfirmation();
+  RandoSettings slot_settings;
+  bool slot_settings_valid = false;
   // FIX #5 — refuse a slot whose canonical settings blob fails range
   // validation (Settings_CanonicalDeserialize now rejects out-of-range enum
   // bytes via Settings_Validate; undefined FLAG bits stay permissive). The
@@ -3557,8 +3754,6 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // tracker reachability below — a corrupt enum there would either flow into
   // `1u << world_state`-style consumers or silently skip the door drift gate.
   // Same refusal pathway as the digest-drift checks: deactivate, don't guess.
-  RandoSettings slot_settings;
-  bool slot_settings_valid = false;
   if (src->header.settings_present) {
     if (Settings_CanonicalDeserialize(src->settings_canonical, &slot_settings) != 0) {
       fprintf(stderr,
@@ -3568,6 +3763,27 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       return;
     }
     slot_settings_valid = true;
+    char placement_preflight_err[192];
+    if (!Placement_PreflightSettings(
+            &slot_settings, placement_preflight_err, sizeof(placement_preflight_err))) {
+      fprintf(stderr,
+              "Rando: randomizer slot settings are not supported by this build "
+              "(%s) — refusing to activate this slot\n",
+              placement_preflight_err[0] != '\0' ? placement_preflight_err : "preflight failed");
+      Rando_DeactivateSlot();
+      return;
+    }
+    if (Settings_EnemyDropKeysActive(&slot_settings) &&
+        Rando_DetectVersionDrift(&src->header, (uint16)kGeneratorVersion)) {
+      fprintf(stderr,
+              "Rando: enemy-drop-check slot was generated by version %u but this "
+              "build is version %u; enemy check location ids are table-derived, "
+              "so this slot must be regenerated before loading here\n",
+              (unsigned)src->header.generator_version,
+              (unsigned)kGeneratorVersion);
+      Rando_DeactivateSlot();
+      return;
+    }
   }
   if (slot_settings_valid && Rando_SettingsNeedPotRegistry(&slot_settings)) {
     if (!src->header.pot_registry_present ||
@@ -7049,6 +7265,10 @@ void Rando_RunAllSelfChecks(void) {
   }
   if (Rando_EnemyMarkerAllocatorSelfCheck()) {
     fprintf(stderr, "Rando_SelfCheck: enemy marker allocator failed\n");
+    exit(2);
+  }
+  if (Rando_OverlayPaletteSelfCheck()) {
+    fprintf(stderr, "Rando_SelfCheck: overlay palette manager failed\n");
     exit(2);
   }
   Rando_Rng_SelfCheck();

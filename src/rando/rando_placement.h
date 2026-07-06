@@ -41,6 +41,13 @@ bool Placement_PreflightSettings(const RandoSettings *settings,
                                  char *err,
                                  size_t err_cap);
 
+// Runtime/generator guard for settings that require generated enemy-drop or
+// enemy-check registries. Kept beside BuildItemPool so slot activation and
+// generation fail closed against the same compiled table availability.
+bool Placement_EnemyRegistriesAvailableForSettings(const RandoSettings *settings,
+                                                   char *err,
+                                                   size_t err_cap);
+
 // Assumed fill. Returns true on success; false if the budget was exhausted
 // without producing a complete placement and the caller fell back to
 // forward-fill. Either way, |out| is populated.

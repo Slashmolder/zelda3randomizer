@@ -6841,7 +6841,7 @@ void LoadOWMusicIfNeeded() {  // 82854c
 }
 
 static bool RandoPot_AllocateGoldOverlayOam(void);
-static void RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags);
+static bool RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags);
 
 // Draw the animated gold "check" glint over each in-scope un-checked pot and
 // enemy-drop check that needs a neutral marker. Called right after Sprite_Main
@@ -6850,8 +6850,6 @@ static void RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags);
 // targets pixel-for-pixel. Pure OAM + PPU-cgram (NMI injects the gold) — no g_ram
 // divergence; inert off-rando / when no checks need a glint.
 static void RandoPot_DrawGoldOverlay(void) {
-  g_rando_pot_overlay_drawn = false;
-  g_rando_pot_overlay_palette_row = 0xFF;
   if (!(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
   uint8 n = Rando_PotOverlayCount();
@@ -6894,13 +6892,13 @@ static void RandoPot_DrawGoldOverlay(void) {
   }
   if (prow < 0)
     return;
-  g_rando_pot_overlay_palette_row = (uint8)prow;
   // Twinkle: cycle the glint glyph and bob it a couple of pixels.
   static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
   uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
   int bob = (frame_counter >> 3) & 3;   // 0..3 px upward
   // palette = the reserved row; 0x20 = OBJ priority 2 (normal sprite).
   uint8 flags = (uint8)((prow << 1) | 0x20);
+  bool drew_glint = false;
   for (uint8 k = 0; k < n; k++) {
     uint16 pos = Rando_PotOverlayPos(k);
     // Skip if the pot was lifted/checked mid-room (the BG pot is already floor).
@@ -6920,7 +6918,7 @@ static void RandoPot_DrawGoldOverlay(void) {
     int gy = sy + 2 - bob;
     if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
       continue;
-    RandoPot_DrawGoldGlintAt(gx, gy, tile, flags);
+    drew_glint |= RandoPot_DrawGoldGlintAt(gx, gy, tile, flags);
   }
   for (int k = 0; k < 16; k++) {
     if (!(enemy_glint_mask & (uint16)(1u << k)))
@@ -6934,15 +6932,17 @@ static void RandoPot_DrawGoldOverlay(void) {
     int gy = sy + dy - bob;
     if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
       continue;
-    RandoPot_DrawGoldGlintAt(gx, gy, tile, flags);
+    drew_glint |= RandoPot_DrawGoldGlintAt(gx, gy, tile, flags);
   }
+  if (drew_glint)
+    Rando_OverlayPaletteRequestGold((uint8)prow);
 }
 
-static void RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags) {
+static bool RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags) {
   if (!RandoPot_AllocateGoldOverlayOam())
-    return;
+    return false;
   SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
-  g_rando_pot_overlay_drawn = true;
+  return true;
 }
 
 static bool RandoPot_AllocateGoldOverlayOam(void) {

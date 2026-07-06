@@ -173,6 +173,7 @@ def collect_overworld_candidates(assets: dict[str, bytes], constraints: dict[int
         die(f"missing asset {e.args[0]} in zelda3_assets.dat")
 
     raw_rows: list[dict] = []
+    identity_rows: list[dict] = []
     excluded: Counter = Counter()
     for stage, area, slot, y, x, typ in iter_overworld_entries(sprites, offsets):
         if typ == 0xF4:
@@ -184,11 +185,8 @@ def collect_overworld_candidates(assets: dict[str, bytes], constraints: dict[int
         info = constraints.get(typ)
         reason = exclusion_reason(info, allow_cannot_key=allow_cannot_key,
                                   allow_flying=allow_flying)
-        if reason is not None:
-            excluded[reason] += 1
-            continue
         block = overworld_block(y, x)
-        raw_rows.append({
+        row = {
             "domain": "overworld",
             "stage": stage,
             "area": area,
@@ -199,10 +197,15 @@ def collect_overworld_candidates(assets: dict[str, bytes], constraints: dict[int
             "source_y": y,
             "source_x": x,
             "runtime_identity": f"overworld:{stage}:0x{area:02X}:{slot}:0x{block:04X}",
-        })
+        }
+        identity_rows.append(row)
+        if reason is not None:
+            excluded[reason] += 1
+            continue
+        raw_rows.append(row)
 
     by_runtime_key: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
-    for row in raw_rows:
+    for row in identity_rows:
         by_runtime_key[(int(row["stage"]), int(row["area"]), int(row["block"]))].append(row)
 
     collision_groups = []
@@ -314,36 +317,52 @@ def load_enemy_check_registry_summary(path: Path) -> dict:
             "candidate_count": 0,
             "emitted_count": 0,
             "emitted_dungeon_count": 0,
+            "emitted_underworld_all_tier_count": 0,
             "emitted_overworld_count": 0,
+            "emitted_boss_count": 0,
+            "emitted_scripted_spawn_count": 0,
             "out_of_scope_no_key_depth_count": 0,
             "max_loc_plus_one": 0,
+            "emitted_dungeon_keys": set(),
         }
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     summary = doc.get("summary", {}) or {}
     rows = doc.get("enemy_checks", []) or []
     max_loc_plus_one = 0
+    emitted_dungeon_keys = set()
     for raw in rows:
         if "id" not in raw:
             continue
         max_loc_plus_one = max(max_loc_plus_one, int(raw["id"]) + 1)
+        if raw.get("domain") == "dungeon":
+            emitted_dungeon_keys.add((int(raw["room"]), int(raw["source_slot"])))
     emitted_count = int(summary.get("emitted_count", len(rows)))
     emitted_dungeon_count = int(summary.get("emitted_dungeon_count", emitted_count))
+    emitted_underworld_all_tier_count = int(
+        summary.get("emitted_underworld_all_tier_count", 0))
     emitted_overworld_count = int(summary.get("emitted_overworld_count", 0))
+    emitted_boss_count = int(summary.get("emitted_boss_count", 0))
+    emitted_scripted_spawn_count = int(summary.get("emitted_scripted_spawn_count", 0))
     return {
         "source_available": True,
         "candidate_count": int(summary.get("candidate_count", len(rows))),
         "emitted_count": emitted_count,
         "emitted_dungeon_count": emitted_dungeon_count,
+        "emitted_underworld_all_tier_count": emitted_underworld_all_tier_count,
         "emitted_overworld_count": emitted_overworld_count,
+        "emitted_boss_count": emitted_boss_count,
+        "emitted_scripted_spawn_count": emitted_scripted_spawn_count,
         "out_of_scope_no_key_depth_count": int(summary.get("out_of_scope_no_key_depth_count", 0)),
         "max_loc_plus_one": max_loc_plus_one,
+        "emitted_dungeon_keys": emitted_dungeon_keys,
     }
 
 
 def dungeon_predicate_coverage(dungeon_rows: list[dict],
                                pot_predicates: dict[int, list[dict]],
                                region_only_pot_rooms: dict[int, str],
-                               entry_room_predicates: dict[int, dict]) -> dict:
+                               entry_room_predicates: dict[int, dict],
+                               emitted_dungeon_keys: set[tuple[int, int]]) -> dict:
     rooms = sorted({int(r["room"]) for r in dungeon_rows})
     pot_covered = [room for room in rooms if room in pot_predicates]
     pot_region_covered = [room for room in rooms if room in region_only_pot_rooms]
@@ -354,6 +373,18 @@ def dungeon_predicate_coverage(dungeon_rows: list[dict],
     pot_region_covered_set = set(pot_region_covered)
     entry_covered_set = set(entry_covered)
     covered_set = set(covered)
+    reviewed_uncovered_rows = [
+        r for r in dungeon_rows
+        if int(r["room"]) not in covered_set and
+        (int(r["room"]), int(r["source_slot"])) in emitted_dungeon_keys
+    ]
+    still_uncovered_rows = [
+        r for r in dungeon_rows
+        if int(r["room"]) not in covered_set and
+        (int(r["room"]), int(r["source_slot"])) not in emitted_dungeon_keys
+    ]
+    reviewed_uncovered_rooms = sorted({int(r["room"]) for r in reviewed_uncovered_rows})
+    still_uncovered_rooms = sorted({int(r["room"]) for r in still_uncovered_rows})
     return {
         "pot_predicate_source": POT_REGISTRY.relative_to(REPO).as_posix(),
         "pot_predicate_source_available": POT_REGISTRY.exists(),
@@ -374,7 +405,15 @@ def dungeon_predicate_coverage(dungeon_rows: list[dict],
             1 for r in dungeon_rows if int(r["room"]) in covered_set),
         "candidates_without_any_conservative_predicate": sum(
             1 for r in dungeon_rows if int(r["room"]) not in covered_set),
+        "reviewed_rescued_rooms_without_conservative_predicate": len(reviewed_uncovered_rooms),
+        "reviewed_rescued_candidates_without_conservative_predicate": len(reviewed_uncovered_rows),
+        "still_excluded_rooms_without_conservative_predicate": len(still_uncovered_rooms),
+        "still_excluded_candidates_without_conservative_predicate": len(still_uncovered_rows),
         "sample_uncovered_rooms": [f"0x{room:03X}" for room in uncovered[:32]],
+        "sample_reviewed_rescued_rooms": [
+            f"0x{room:03X}" for room in reviewed_uncovered_rooms[:32]],
+        "sample_still_excluded_rooms": [
+            f"0x{room:03X}" for room in still_uncovered_rooms[:32]],
     }
 
 
@@ -402,9 +441,10 @@ def build_doc(args) -> dict:
     pot_predicates = load_pot_room_predicates(POT_REGISTRY)
     region_only_pot_rooms = load_region_only_pot_rooms(POT_REGISTRY)
     entry_room_predicates = load_entry_room_predicates(ENTRANCE_REGISTRY)
-    predicate_coverage = dungeon_predicate_coverage(
-        dungeon_rows, pot_predicates, region_only_pot_rooms, entry_room_predicates)
     emitted_registry = load_enemy_check_registry_summary(ENEMY_CHECK_REGISTRY)
+    predicate_coverage = dungeon_predicate_coverage(
+        dungeon_rows, pot_predicates, region_only_pot_rooms, entry_room_predicates,
+        emitted_registry["emitted_dungeon_keys"])
     emitted_dungeon_count = emitted_registry["emitted_dungeon_count"] or len(dungeon_rows)
     emitted_count = emitted_registry["emitted_count"]
     base_without_enemy_registry = loc_count
@@ -412,7 +452,8 @@ def build_doc(args) -> dict:
         base_without_enemy_registry = loc_count - emitted_count
     enemy_base = max(base_without_enemy_registry, ENEMY_CHECK_BASE_ID)
     mvp_projected = enemy_base + emitted_dungeon_count
-    eligible_total = emitted_dungeon_count + len(overworld_rows)
+    underworld_all_tier_count = emitted_registry["emitted_underworld_all_tier_count"]
+    eligible_total = emitted_dungeon_count + underworld_all_tier_count + len(overworld_rows)
     raw_overworld_total = len(overworld_rows) + overworld_excluded["overworld_runtime_identity_collision"]
     projected = enemy_base + eligible_total
     if emitted_registry["source_available"]:
@@ -467,8 +508,19 @@ def build_doc(args) -> dict:
             },
             "eligible_candidates": {
                 "dungeon": emitted_dungeon_count,
+                "underworld_all_tier": underworld_all_tier_count,
                 "overworld": len(overworld_rows),
                 "total": eligible_total,
+            },
+            "registry_emitted": {
+                "available": emitted_registry["source_available"],
+                "candidate_count": emitted_registry["candidate_count"],
+                "total": emitted_registry["emitted_count"],
+                "dungeon": emitted_dungeon_count,
+                "underworld_all_tier": underworld_all_tier_count,
+                "overworld": emitted_registry["emitted_overworld_count"],
+                "boss": emitted_registry["emitted_boss_count"],
+                "scripted_spawn": emitted_registry["emitted_scripted_spawn_count"],
             },
             "projected_loc_count": projected,
             "fits_current_capacity": projected <= capacity,
@@ -544,8 +596,10 @@ def main(argv: list[str]) -> int:
     print(
         "audit_enemy_check_candidates: "
         f"{summary['eligible_candidates']['dungeon']} dungeon + "
-        f"{summary['eligible_candidates']['overworld']} overworld eligible "
+        f"{summary['eligible_candidates']['underworld_all_tier']} underworld all-tier + "
+        f"{summary['eligible_candidates']['overworld']} overworld raw-audit candidates "
         f"({summary['eligible_candidates']['total']} total); "
+        f"registry emitted {summary['registry_emitted']['total']} checks; "
         f"MVP LOC__COUNT {summary['recommended_mvp']['projected_loc_count']} / "
         f"{summary['current_capacity']}; "
         f"projected LOC__COUNT {summary['projected_loc_count']} / "

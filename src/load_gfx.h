@@ -34,6 +34,7 @@ void LoadItemGFX_Auxiliary();
 void LoadFollowerGraphics();
 void WriteTo4BPPBuffer_at_7F4000(uint8 a);
 void DecodeAnimatedSpriteTile_variable(uint8 a);
+bool DecodeAnimatedSpriteTile_ToBuffer(uint8 a, uint8 *dst);
 // add-rando-field-item-sprites: gfx index currently in the receive-item VRAM
 // slot (chars 0x24/0x34); 0xFFFF = dirty. Invalidated by every slot repaint
 // (WriteTo4BPPBuffer_at_7F4000 / DecodeAnimatedSpriteTile_variable) and by

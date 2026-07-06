@@ -1777,6 +1777,15 @@ static bool Hud_RandoTrackerVisibleNow(void) {
   return true;
 }
 
+bool Hud_RandoOamTrackerWillDrawThisFrame(void) {
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  return false;
+#else
+  return Hud_RandoTrackerVisibleNow() &&
+         (g_rando_show_item_tracker || g_rando_show_location_tracker);
+#endif
+}
+
 // ---- Item tracker --------------------------------------------------------
 // A compact grid, anchored top-left, showing have/level for the progressive
 // and absolute items plus bottles, magic, and the heart count. Each cell is a
@@ -2181,7 +2190,9 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
 }
 
 void Hud_RandoDrawTrackers(void) {
-  if (!Hud_RandoTrackerVisibleNow())
+  if (!Hud_RandoOamTrackerWillDrawThisFrame())
+    return;
+  if (!Rando_ObjScratchReserveForFrame(kRandoObjScratchOwner_LegacyTracker))
     return;
   // Both trackers share one downward OAM-slot cursor so they never claim the
   // same free slot. Item tracker (top-left) draws first, then the location

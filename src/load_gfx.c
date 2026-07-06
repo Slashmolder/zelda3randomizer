@@ -563,6 +563,20 @@ void WriteTo4BPPBuffer_at_7F4000(uint8 a) {  // 80d4db
   Expand3To4High(&g_ram[0x9000] + 0x2d40 + 0x40, src + 0x180, g_ram, 2);
 }
 
+bool DecodeAnimatedSpriteTile_ToBuffer(uint8 a, uint8 *dst) {
+  if (dst == NULL || (a & 0x80) ||
+      a >= sizeof(kDecodeAnimatedSpriteTile_Tab) / sizeof(kDecodeAnimatedSpriteTile_Tab[0]))
+    return false;
+  uint8 y = (a == 0x23 || a >= 0x37) ? 0x5d :
+            (a == 0xc || a >= 0x24) ? 0x5c : 0x5b;
+  Decomp_spr(&g_ram[0x14600], y);
+  Decomp_spr(&g_ram[0x14000], 0x5a);
+  uint8 *src = &g_ram[0x14000] + kDecodeAnimatedSpriteTile_Tab[a];
+  Expand3To4High(dst, src, g_ram, 2);
+  Expand3To4High(dst + 0x40, src + 0x180, g_ram, 2);
+  return true;
+}
+
 // Which gfx index currently occupies the shared receive-item VRAM slot
 // (chars 0x24/0x34), so the field-item drawer can skip a
 // redundant re-decompress when it already owns the slot. 0xFFFF = unknown/dirty.
@@ -2214,4 +2228,3 @@ void HandleScreenFlash() {  // 9de9b6
 
   flag_update_cgram_in_nmi++;
 }
-

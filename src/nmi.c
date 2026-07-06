@@ -210,19 +210,18 @@ void NMI_DoUpdates() {  // 8089e0
     memcpy(&g_zenv.vram[word_7E0219], hud_tile_indices_buffer, 165 * sizeof(uint16));
   }
 
-  if (flag_update_cgram_in_nmi) {
+  bool cgram_rebuilt_this_nmi = flag_update_cgram_in_nmi != 0;
+  if (cgram_rebuilt_this_nmi) {
     memcpy(g_zenv.ppu->cgram, main_palette_buffer, 0x200);
     // Cosmetic palette shuffle: transform the PPU CGRAM copy in place, leaving
     // main_palette_buffer (game RAM) vanilla. No-op unless a palette mode is set.
     Cosmetic_ApplyPaletteCgram(g_zenv.ppu->cgram, 0x100);
   }
 
-  // add-rando-pot-sanity — gold "check"-pot glint sub-palette, straight into the
-  // PPU CGRAM copy (g_ram untouched, like the cosmetic palette modes). Runs every
-  // NMI: it restores the previous frame's goldened row and (if a glint is
-  // on-screen) golds this frame's reserved row, so the gold animates and never
-  // outlives the glint.
-  Rando_PotOverlayApplyCgram(g_zenv.ppu->cgram);
+  // Runtime check overlays own sprite-palette rows for only the frame they draw.
+  // If CGRAM was rebuilt above, that fresh transformed copy is the new baseline;
+  // otherwise restore prior overlay rows from their saved transformed baseline.
+  Rando_OverlayPaletteApplyCgram(g_zenv.ppu->cgram, cgram_rebuilt_this_nmi);
 
   flag_update_hud_in_nmi = 0;
   flag_update_cgram_in_nmi = 0;
@@ -470,4 +469,3 @@ void NMI_UpdateIRQGFX() {  // 809347
     nmi_flag_update_polyhedral = 0;
   }
 }
-

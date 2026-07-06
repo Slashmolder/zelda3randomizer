@@ -110,6 +110,28 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
   return kSettingsCanonicalLen;
 }
 
+static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 4) return kRandoSidecar_SlotExtV4Size;
+  if (format_version >= 3) return kRandoSidecar_SlotExtV3Size;
+  return 0;
+}
+
+static uint32 legacy_slot_ext_len_versioned(uint16 format_version) {
+  // Early v4 development builds used the current 29-byte settings blob but kept
+  // the v3 8-byte extension. Accept them so slot generation can upgrade them.
+  if (format_version == 4) return kRandoSidecar_SlotExtV3Size;
+  return 0;
+}
+
+static uint32 slot_on_disk_size_versioned_ext(uint16 placement_table_size,
+                                              uint16 format_version,
+                                              uint32 ext_len) {
+  uint32 total = slot_on_disk_size_base(placement_table_size);
+  total += settings_blob_len_versioned(format_version);
+  total += ext_len;
+  return total;
+}
+
 // Format-version-aware slot size: v1 = base, v2 adds the settings blob,
 // v3 adds the 8-byte extension after the legacy settings blob. v4 widens the
 // settings blob to current and widens the extension to the current 16 bytes.
@@ -118,11 +140,38 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 // fails the next slot's magic check).
 static uint32 slot_on_disk_size_versioned(uint16 placement_table_size,
                                           uint16 format_version) {
-  uint32 total = slot_on_disk_size_base(placement_table_size);
-  total += settings_blob_len_versioned(format_version);
-  if (format_version >= 4) total += kRandoSidecar_SlotExtV4Size;
-  else if (format_version >= 3) total += kRandoSidecar_SlotExtV3Size;
+  uint32 total = slot_on_disk_size_versioned_ext(
+      placement_table_size, format_version, slot_ext_len_versioned(format_version));
   return total;
+}
+
+static bool all_zero_bytes(const uint8 *buf, uint32 size) {
+  if (buf == NULL) return false;
+  for (uint32 i = 0; i < size; i++) {
+    if (buf[i] != 0)
+      return false;
+  }
+  return true;
+}
+
+static uint32 try_deserialize_zero_empty_slot(const uint8 *buf, uint32 remaining,
+                                              uint16 format_version,
+                                              uint32 ext_len,
+                                              uint8 slots_left,
+                                              RandoSidecarSlot *out) {
+  uint32 size = slot_on_disk_size_versioned_ext(0, format_version, ext_len);
+  if (size == 0 || slots_left == 0)
+    return 0;
+  uint32 span = size * slots_left;
+  if (remaining == span && all_zero_bytes(buf, span)) {
+    memset(out, 0, sizeof(*out));
+    return size;
+  }
+  if (remaining >= size && all_zero_bytes(buf, size)) {
+    memset(out, 0, sizeof(*out));
+    return size;
+  }
+  return 0;
 }
 
 // Public size is the CURRENT format (version 4): base + settings blob + ext.
@@ -357,12 +406,14 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
 // v3 adds the 8-byte extension block after that legacy blob, and v4 widens both
 // the blob and extension to their current sizes. RandoSave_ReadFile passes the
 // file's value.
-static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
-                                         RandoSidecarSlot *out, uint16 format_version) {
+static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
+                                             RandoSidecarSlot *out,
+                                             uint16 format_version,
+                                             uint32 ext_len) {
   if (buf == NULL || out == NULL) return 0;
   uint32 settings_blob_len = settings_blob_len_versioned(format_version);
   bool with_settings = (settings_blob_len != 0);
-  bool with_ext = (format_version >= 3);
+  bool with_ext = (ext_len != 0);
   memset(out, 0, sizeof(*out));
   uint32 hdr_used = deserialize_slot_header(buf, buf_size, &out->header);
   if (hdr_used == 0) return 0;
@@ -377,8 +428,8 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
   if (location_count > (sizeof(out->placements) / sizeof(out->placements[0]))) {
     return 0;
   }
-  uint32 total = slot_on_disk_size_versioned(out->header.placement_table_size,
-                                             format_version);
+  uint32 total = slot_on_disk_size_versioned_ext(
+      out->header.placement_table_size, format_version, ext_len);
   if (buf_size < total) return 0;
   const uint8 *p = buf + kRandoSidecar_SlotHeaderSize;
   // Gather the flat array back into the sparse in-memory list. Sentinel
@@ -419,13 +470,14 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
     out->header.settings_present = 0;
   }
   if (with_ext) {
+    if (ext_len < kRandoSidecar_SlotExtV3Size) return 0;
     // format_version 3/4: extension block (@0-2 entrance_digest24 LE; @3-6
-    // recommended_features0 LE; @7 presence). v4 adds pot registry identity.
+    // recommended_features0 LE; @7 presence). Full v4 adds pot registry identity.
     out->header.entrance_digest24 =
         (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16);
     out->header.recommended_features0 = get_u32le(p + 3);
     out->header.recommended_features0_present = p[7] != 0;
-    if (format_version >= 4) {
+    if (format_version >= 4 && ext_len >= kRandoSidecar_SlotExtV4Size) {
       out->header.pot_registry_digest = get_u32le(p + 8);
       out->header.pot_registry_count = get_u16le(p + 12);
       out->header.pot_registry_present = p[14] != 0;
@@ -445,6 +497,12 @@ static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
     out->header.pot_registry_present = 0;
   }
   return total;
+}
+
+static uint32 deserialize_slot_versioned(const uint8 *buf, uint32 buf_size,
+                                         RandoSidecarSlot *out, uint16 format_version) {
+  return deserialize_slot_versioned_ext(
+      buf, buf_size, out, format_version, slot_ext_len_versioned(format_version));
 }
 
 uint32 RandoSave_DeserializeSlot(const uint8 *buf, uint32 buf_size, RandoSidecarSlot *out) {
@@ -593,6 +651,69 @@ bool RandoSave_WriteFile(const char *path,
   return ok;
 }
 
+static bool deserialize_file_buffer(const uint8 *buf, uint32 fsize,
+                                    RandoSidecarSlot out_slots[kRandoSidecar_SlotCount]) {
+  if (buf == NULL || out_slots == NULL) return false;
+  if (fsize < kRandoSidecar_FileHeaderSize) return false;
+  RandoSidecarFileHeader fh;
+  uint32 hdr_used = RandoSave_DeserializeFileHeader(buf, fsize, &fh);
+  if (hdr_used == 0 || fh.slot_count != kRandoSidecar_SlotCount) return false;
+
+  // FIX #13 — verify file_crc when present. 0 = legacy file (every writer
+  // before the CRC landed wrote 0) → accept without verification. The CRC
+  // covers the slot region only (bytes after the 16-byte header), matching
+  // the writer.
+  if (fh.file_crc != 0) {
+    uint32 actual = rs_crc32(buf + kRandoSidecar_FileHeaderSize,
+                             fsize - kRandoSidecar_FileHeaderSize);
+    if (actual != fh.file_crc) {
+      fprintf(stderr,
+              "RandoSave_ReadFile: sidecar CRC mismatch (file %08x != computed %08x) "
+              "— treating file as corrupt\n",
+              (unsigned)fh.file_crc, (unsigned)actual);
+      return false;
+    }
+  }
+
+  // Key the body layout on the file's declared format_version so older
+  // sidecars still load correctly: v1 slots lack the settings blob, v2 slots
+  // lack an extension block, v2/v3 slots carry the legacy 28-byte settings
+  // prefix, and v3 slots use the old 8-byte extension. Early v4 development
+  // files declared format 4 but still used that 8-byte extension, so try the
+  // current v4 size first and then the legacy physical v4 size.
+  uint32 ext_candidates[2] = {
+    slot_ext_len_versioned(fh.format_version),
+    legacy_slot_ext_len_versioned(fh.format_version),
+  };
+  for (uint8 pass = 0; pass < 2; pass++) {
+    uint32 ext_len = ext_candidates[pass];
+    if (pass != 0 && ext_len == 0)
+      continue;
+    if (pass != 0 && ext_len == ext_candidates[0])
+      continue;
+    RandoSidecarSlot tmp[kRandoSidecar_SlotCount];
+    uint32 off = hdr_used;
+    bool ok = true;
+    for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+      if (off > fsize) { ok = false; break; }
+      uint32 used = deserialize_slot_versioned_ext(
+          buf + off, fsize - off, &tmp[i], fh.format_version, ext_len);
+      if (used == 0) {
+        used = try_deserialize_zero_empty_slot(
+            buf + off, fsize - off, fh.format_version, ext_len,
+            (uint8)(kRandoSidecar_SlotCount - i), &tmp[i]);
+      }
+      if (used == 0) { ok = false; break; }
+      off += used;
+    }
+    if (ok) {
+      memcpy(out_slots, tmp, sizeof(tmp));
+      return true;
+    }
+  }
+  return false;
+}
+
 bool RandoSave_ReadFile(const char *path,
                         RandoSidecarSlot out_slots[kRandoSidecar_SlotCount]) {
   if (path == NULL) return false;
@@ -608,40 +729,9 @@ bool RandoSave_ReadFile(const char *path,
   fclose(f);
   if (read_bytes != (size_t)fsize) { free(buf); return false; }
 
-  RandoSidecarFileHeader fh;
-  uint32 hdr_used = RandoSave_DeserializeFileHeader(buf, (uint32)fsize, &fh);
-  if (hdr_used == 0 || fh.slot_count != kRandoSidecar_SlotCount) { free(buf); return false; }
-
-  // FIX #13 — verify file_crc when present. 0 = legacy file (every writer
-  // before the CRC landed wrote 0) → accept without verification. The CRC
-  // covers the slot region only (bytes after the 16-byte header), matching
-  // the writer.
-  if (fh.file_crc != 0) {
-    uint32 actual = rs_crc32(buf + kRandoSidecar_FileHeaderSize,
-                             (uint32)fsize - kRandoSidecar_FileHeaderSize);
-    if (actual != fh.file_crc) {
-      fprintf(stderr,
-              "RandoSave_ReadFile: sidecar CRC mismatch (file %08x != computed %08x) "
-              "— treating file as corrupt\n",
-              (unsigned)fh.file_crc, (unsigned)actual);
-      free(buf);
-      return false;
-    }
-  }
-
-  // Key the body layout on the file's declared format_version so older
-  // sidecars still load correctly: v1 slots lack the settings blob, v2 slots
-  // lack an extension block, v2/v3 slots carry the legacy 28-byte settings
-  // prefix, and v3 slots use the old 8-byte extension.
-  uint32 off = hdr_used;
-  for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
-    uint32 used = deserialize_slot_versioned(buf + off, (uint32)fsize - off,
-                                             &out_slots[i], fh.format_version);
-    if (used == 0) { free(buf); return false; }
-    off += used;
-  }
+  bool ok = deserialize_file_buffer(buf, (uint32)fsize, out_slots);
   free(buf);
-  return true;
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -1478,6 +1568,74 @@ void RandoSave_SelfCheck(void) {
     }
     if (back[2].header.slot_kind != kSlotKind_Empty) {
       selfcheck_die("§8.7: slot 2 should round-trip as Empty");
+    }
+
+    // Compatibility: early v4 development builds declared format 4 and wrote
+    // current-length settings blobs, but still used the older 8-byte extension
+    // block. A later generate must read and upgrade that file instead of
+    // quarantining it.
+    {
+      uint32 legacy_ext = legacy_slot_ext_len_versioned(kRandoSidecar_FileFormatVersion);
+      if (legacy_ext != kRandoSidecar_SlotExtV3Size)
+        selfcheck_die("§8.7: expected legacy v4 extension size");
+      uint32 compat_total = kRandoSidecar_FileHeaderSize;
+      for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+        compat_total += slot_on_disk_size_versioned_ext(
+            mixed[i].header.placement_table_size, kRandoSidecar_FileFormatVersion,
+            legacy_ext);
+      }
+      uint8 *compat = (uint8 *)calloc(1, compat_total);
+      if (compat == NULL) selfcheck_die("§8.7: calloc legacy-v4 compat buffer");
+      RandoSidecarFileHeader fh_compat = {
+        kRandoSidecar_FileFormatVersion, kRandoSidecar_SlotCount, 0
+      };
+      uint32 compat_off = RandoSave_SerializeFileHeader(&fh_compat, compat, compat_total);
+      for (uint8 i = 0; i < kRandoSidecar_SlotCount; i++) {
+        uint32 current_size = RandoSave_SlotOnDiskSize(mixed[i].header.placement_table_size);
+        uint32 legacy_size = slot_on_disk_size_versioned_ext(
+            mixed[i].header.placement_table_size, kRandoSidecar_FileFormatVersion,
+            legacy_ext);
+        uint8 *slotbuf = (uint8 *)malloc(current_size);
+        if (slotbuf == NULL) {
+          free(compat);
+          selfcheck_die("§8.7: malloc legacy-v4 slot buffer");
+        }
+        uint32 u = RandoSave_SerializeSlot(&mixed[i], slotbuf, current_size);
+        if (u != current_size || legacy_size > current_size) {
+          free(slotbuf);
+          free(compat);
+          selfcheck_die("§8.7: serialize compat slot");
+        }
+        memcpy(compat + compat_off, slotbuf, legacy_size);
+        free(slotbuf);
+        compat_off += legacy_size;
+      }
+      if (compat_off != compat_total) {
+        free(compat);
+        selfcheck_die("§8.7: compat size mismatch");
+      }
+      put_u32le(compat + 8, rs_crc32(compat + kRandoSidecar_FileHeaderSize,
+                                     compat_total - kRandoSidecar_FileHeaderSize));
+      RandoSidecarSlot compat_back[kRandoSidecar_SlotCount];
+      if (!deserialize_file_buffer(compat, compat_total, compat_back)) {
+        free(compat);
+        selfcheck_die("§8.7: legacy v4 sidecar should load");
+      }
+      free(compat);
+      if (compat_back[0].header.slot_kind != kSlotKind_Randomizer ||
+          compat_back[0].placement_count != 1 ||
+          compat_back[0].placements[0].item_id != 0x0080) {
+        selfcheck_die("§8.7: legacy v4 sidecar lost populated slot");
+      }
+      if (compat_back[1].header.slot_kind != kSlotKind_Vanilla ||
+          compat_back[1].placement_count != 1 ||
+          compat_back[2].header.slot_kind != kSlotKind_Empty ||
+          compat_back[2].placement_count != 0 ||
+          compat_back[0].header.pot_registry_present ||
+          compat_back[1].header.pot_registry_present ||
+          compat_back[2].header.pot_registry_present) {
+        selfcheck_die("§8.7: legacy v4 slots should load with pot registry absent");
+      }
     }
 
     // Spec scenario "sram.dat present but sidecar absent": loading a path

@@ -1565,7 +1565,8 @@ int DoorShuffle_SelfTest(void) {
         uint32 att = 0;
         bool got = false;
         for (; att < kMaxAttempts; att++) {
-          if (DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, tier, &full)) {
+          if (DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, tier,
+                                   0, kEnemyDropChecks_Off, &full)) {
             got = true;
             break;
           }
@@ -1582,7 +1583,8 @@ int DoorShuffle_SelfTest(void) {
                   (unsigned)tier);
           hard_fail = true;
         }
-        if (!DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, tier, &full2) ||
+        if (!DoorShuffle_Generate(s, att, kDoorShuffle_MvpDungeonMask, tier,
+                                  0, kEnemyDropChecks_Off, &full2) ||
             DoorShuffle_LayoutDigest(&full) != DoorShuffle_LayoutDigest(&full2)) {
           fprintf(stderr, "door-selftest: door+pot tier %u seed %d digest mismatch\n",
                   (unsigned)tier, seed);

@@ -23,11 +23,12 @@ domains:
 - active unchecked spawned forced-drop pickups;
 - no inactive, checked, vanilla, or excluded sources.
 
-Each candidate records the location id, room, source slot, marker kind
-(`live_carrier` or `spawned_drop`), screen position, and an icon key. The icon key
-includes every graphics-affecting attribute: tile bundle id, dimensions, OAM flags,
-palette requirement, custom-art requirement, and any special draw policy such as
-trap decoy handling. Identical icon keys share a marker tile slot.
+Each candidate records a typed source key: domain, location id, room or overworld
+area, source slot or block, marker kind (`live_carrier` or `spawned_drop`), sprite
+index, screen position, and sorted-OAM region. The icon key is visual-only and
+includes every graphics-affecting attribute: tile bundle id, footprint, OAM flags,
+palette policy, custom-art signature, and any special draw policy. Identical visual
+icon keys share a marker tile slot even when they come from different source keys.
 
 The candidate model must be domain-extensible before it is reused by the future
 all-enemy tier. For every emitted all-tier source that can have an in-world marker,
@@ -43,26 +44,20 @@ iteration accidents.
 
 ## D3 - Dedicated marker tile pool
 
-Enemy item markers SHALL NOT DMA placed-item graphics into unowned OBJ cells. The
-implementation first inventories sprite VRAM usage across the relevant dungeon
-states, then uses only cells proven safe for randomizer overlays. Until a
-marker-owned pool exists, the only safe exact-item path is the existing receive-item
-slot, borrowed after `Sprite_Main` only when no current OAM entry already references
-that slot.
+Enemy item markers SHALL NOT DMA placed-item graphics into unowned OBJ cells or the
+shared receive-item slot. Exact enemy markers use the marker-owned scratch OBJ range
+`0xF0..0xFF` in objTileAdr2, which maps to VRAM `0x5f00..0x5fff`.
 
-The pool size is intentionally bounded. The current safe capacity is one distinct
-receive-slot-backed icon key; additional distinct markers fall back to the gold
-glint. A future marker-owned pool may raise this to two to four distinct icons, but
-the implementation must choose the final capacity from measured VRAM availability
-and backend behavior rather than from this proposal text.
+The pool size is intentionally bounded at four distinct visual icon keys. The fixed
+slots are `F0-F3`, `F4-F7`, `F8-FB`, and `FC-FF`, with each slot laid out as
+top-left, top-right, bottom-left, bottom-right 8x8 tiles. Exact markers draw only
+explicit small OAM pieces: 8x8 uses the top-left tile, 8x16 uses top-left plus
+bottom-left, and 16x16/custom art uses all four tiles. The renderer never uses
+large OAM and never addresses `base + 0x10`, so the final `FC-FF` slot cannot wrap
+outside the scratch range.
 
-Each marker icon slot reserves the complete OBJ tile footprint required by the icon,
-including 8x8, 8x16, 16x16, and custom-art layouts. The implementation must document
-the base charnum mapping used for top, bottom, and adjacent cells in each slot before
-the allocator is wired to rendering. Current exact markers map to the receive-item
-slot (`0x24` top, `0x34` bottom for 8x16 icons) only for the post-sprite overlay
-frame that owns it. A future marker-owned pool must populate its cells without
-leaving visible or cached state in the shared receive-item slot.
+The marker path never calls `Rando_EnsureRecvItemSlotGfx`, never mutates the
+receive-slot staging buffers, and never touches `g_recv_item_slot_owner`.
 Any candidate whose icon cannot get a complete slot draws the gold glint instead.
 Slot exhaustion is a normal fallback path, not a fatal condition.
 
@@ -78,12 +73,13 @@ The renderer must not borrow a palette row that is already needed by Link, enemy
 sprites, pot glints, direct-grant confirmation, or field-item sprites unless that row
 is explicitly proven safe for the current frame.
 
-Marker palette writes must be frame-scoped or tied to a proven marker-owned row.
-Before a palette row can be reused by Link, enemies, pot glints, receipts, or field
-items, the renderer must restore the non-marker contents or prove that the row was
-never shared. Multiple custom icons that require incompatible contents in the same
-palette row must not alternate, flicker, or recolor each other; lower-priority
-candidates fall back to the gold glint or suppress cleanly.
+Marker palette writes are owned by the unified overlay palette manager shared with
+pot and enemy glints. NMI restores previous overlay rows from saved transformed PPU
+CGRAM snapshots unless CGRAM was freshly rebuilt that NMI; on rebuild, the fresh
+post-cosmetic CGRAM copy is the new baseline and stale snapshots are discarded.
+Dynamic item marker palettes are transformed with the same cosmetic palette
+semantics as normal CGRAM rows. Gold glint palettes are intentionally
+cosmetic-exempt. Row 7 is never allocated for overlays.
 
 ## D5 - Marker rendering policy
 
@@ -108,10 +104,12 @@ Pot-sanity glints remain independent and may coexist with enemy item markers. Th
 enemy marker pool must not consume the pot-glint art or palette in a way that makes
 pots disappear or recolor incorrectly.
 
-Field-item sprites and item receipts keep their existing safety priority. If a
-receipt animation, direct-grant confirmation, or field-item sprite path needs a
-shared decompression, DMA, or palette resource that the enemy marker path cannot
-isolate, enemy item markers fall back to the gold glint for that frame.
+Field-item sprites and item receipts keep their existing receive-slot ownership.
+Enemy markers are isolated from the receive slot, so receipts and direct-grant
+confirmations continue to own `0x24/0x34`. The legacy OAM tracker owns the
+`0xF0..0xFF` scratch range when it will draw this frame; in that case exact enemy
+markers have zero capacity and fall back to glints or suppress cleanly. PC rich
+tracker windows do not consume the scratch OBJ range.
 
 OAM allocation must stay within the existing sorted sprite regions. Before allocating
 marker tiles or writing OAM, the renderer must reserve the full OAM footprint for the
@@ -138,26 +136,23 @@ substituted enemy type.
 
 ## D8 - Implementation phases
 
-1. Inventory sprite VRAM, palette, and OAM resources in the dungeon states that can
-   host enemy markers. Pick a measured marker-icon capacity and document the
-   rejected slots.
-2. Add the marker candidate collector and deterministic icon-key allocator with
-   selftests, but leave rendering on the current single-icon/glint path.
-3. Add dedicated tile-slot loading for the allocated icon keys, guarded by receipt,
-   palette, field-item, and OAM availability checks.
-4. Wire `EnemyDropMarker=item` live carriers and spawned forced-drop pickups through
-   the allocator. Keep the glint fallback active for every unsafe case.
-5. Add targeted runtime dumps and playtests for dense rooms, spawned drops, custom
-   icons, pot glints, direct grants, and enemy shuffle.
+1. Add typed marker source keys and visual-only icon keys.
+2. Add scratch-owner arbitration between legacy OAM tracker and enemy markers.
+3. Add side-effect-free item icon planning and marker-owned `0xF0..0xFF` tile upload.
+4. Replace pot-only palette injection with the unified overlay palette manager.
+5. Wire dungeon and overworld post-`Sprite_Main` overlays through the exact-icon to
+   glint fallback path.
+6. Add targeted runtime dumps and playtests for dense rooms, spawned drops, custom
+   icons, pot glints, direct grants, tracker overlays, and enemy shuffle.
 
 ## D9 - Verification strategy
 
 Required validation:
 
 - `openspec validate add-rando-enemy-marker-multi-icons --strict`;
-- allocator unit/selftests for identical-icon coalescing, distinct-icon allocation,
-  deterministic priority, slot exhaustion, palette conflict, and receipt-active
-  fallback;
+- allocator unit/selftests for identical-icon coalescing, four distinct slots,
+  deterministic priority, slot exhaustion, tracker-scratch conflict, palette
+  conflict, and all-or-none OAM fallback;
 - Release build and `--rando-selftest`;
 - `git diff --check`;
 - F12 dump verification for the Hyrule Castle room `0x72` case where the map guard

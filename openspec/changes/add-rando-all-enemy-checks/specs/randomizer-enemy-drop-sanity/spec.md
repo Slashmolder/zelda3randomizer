@@ -13,6 +13,10 @@ The shipped registry scope is dungeon ordinary enemies, static authored overworl
 ordinary enemies, reviewed underworld exceptions, reviewed boss/miniboss events,
 and reviewed finite scripted-spawn enemies with stable source identity,
 reachability, death dispatch, and checked-state suppression.
+Killable source classes that are banned from carrying dungeon keys or are flying
+MAY be excluded from the normal `dungeon` tier, but SHALL be emitted as
+all-tier-only checks when their static source identity and room/area reachability
+are modeled for `enemy_drop_checks=all`.
 
 The all-enemy audit SHALL classify every scanned source in the supported static
 dungeon/overworld domains, every reviewed underworld exception candidate, every
@@ -43,6 +47,15 @@ death dispatch, persistence, and logic are modeled.
   `enemy_drop_checks=all`
 - **AND** the emitted row is marked all-tier-only so it does not activate under
   `enemy_drop_checks=dungeon`
+
+#### Scenario: Killable key-banned dungeon source is all-only
+- **WHEN** the all-enemy audit finds a killable underworld source that is
+  excluded from the `dungeon` tier only because it cannot safely carry keys or is
+  a flying class
+- **AND** the room already has modeled reachability and kill logic
+- **THEN** it emits one all-tier-only `Enemy` location for that source under
+  `enemy_drop_checks=all`
+- **AND** the row remains inactive under `enemy_drop_checks=dungeon`
 
 #### Scenario: Shared-room throwable source is not on the reviewed enemy side
 - **WHEN** an audited underworld exception shares a physical room with pots or

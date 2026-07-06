@@ -96,21 +96,30 @@ static uint16 PermuteChannels(uint16 c, uint8 p) {
   return (uint16)((c & 0x8000) | (nb << 10) | (ng << 5) | nr);
 }
 
-void Cosmetic_ApplyPaletteCgram(uint16 *cgram, int count) {
+uint16 Cosmetic_TransformPaletteColor(uint16 c, int cgram_index) {
+  uint8 mode = g_config.cosmetic_palette_mode;
+  if (mode == kCosmeticPalette_Vanilla)
+    return c;
+  if (mode == kCosmeticPalette_Shuffled)
+    return PermuteChannels(c, g_group_perm[(cgram_index >> 4) & 15]);
+  if (mode == kCosmeticPalette_Grayscale) {
+    int r = c & 0x1f, g = (c >> 5) & 0x1f, b = (c >> 10) & 0x1f;
+    int l = (r * 77 + g * 150 + b * 29) >> 8;  // weights sum to 256 -> l in 0..31
+    return (uint16)((c & 0x8000) | (l << 10) | (l << 5) | l);
+  }
+  return (uint16)(c ^ 0x7fff);  // negative: 1's-complement all three 5-bit channels
+}
+
+void Cosmetic_ApplyPaletteCgramRange(uint16 *cgram, int start_index, int count) {
   uint8 mode = g_config.cosmetic_palette_mode;
   if (mode == kCosmeticPalette_Vanilla || !cgram) return;
   for (int i = 0; i < count; i++) {
-    uint16 c = cgram[i];
-    if (mode == kCosmeticPalette_Shuffled) {
-      cgram[i] = PermuteChannels(c, g_group_perm[(i >> 4) & 15]);
-    } else if (mode == kCosmeticPalette_Grayscale) {
-      int r = c & 0x1f, g = (c >> 5) & 0x1f, b = (c >> 10) & 0x1f;
-      int l = (r * 77 + g * 150 + b * 29) >> 8;  // weights sum to 256 -> l in 0..31
-      cgram[i] = (uint16)((c & 0x8000) | (l << 10) | (l << 5) | l);
-    } else {  // negative
-      cgram[i] = (uint16)(c ^ 0x7fff);  // 1's-complement all three 5-bit channels
-    }
+    cgram[i] = Cosmetic_TransformPaletteColor(cgram[i], start_index + i);
   }
+}
+
+void Cosmetic_ApplyPaletteCgram(uint16 *cgram, int count) {
+  Cosmetic_ApplyPaletteCgramRange(cgram, 0, count);
 }
 
 uint8 Cosmetic_RemapSong(uint8 music_ctrl) {

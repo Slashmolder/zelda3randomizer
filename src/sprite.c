@@ -642,6 +642,8 @@ static const RandoScriptedEnemyCheckLookupEntry *Rando_FindScriptedEnemyCheck(
 
 enum { kRandoOverworldEnemyBlockCount = 0x1000 };
 static uint16 s_rando_overworld_enemy_loc_by_block[kRandoOverworldEnemyBlockCount];
+static uint8 s_rando_overworld_enemy_area_by_block[kRandoOverworldEnemyBlockCount];
+static uint8 s_rando_overworld_enemy_stage_by_block[kRandoOverworldEnemyBlockCount];
 static uint16 s_rando_dynamic_enemy_check_loc[16];
 static uint8 s_rando_overlord_source_slot[8];
 static uint8 s_rando_overlord_type_id[8];
@@ -658,8 +660,11 @@ static uint8 Rando_CurrentOverworldEnemyStage(void) {
 }
 
 static void Rando_ClearOverworldEnemyCheckMap(void) {
-  for (uint16 i = 0; i < kRandoOverworldEnemyBlockCount; i++)
+  for (uint16 i = 0; i < kRandoOverworldEnemyBlockCount; i++) {
     s_rando_overworld_enemy_loc_by_block[i] = 0;
+    s_rando_overworld_enemy_area_by_block[i] = 0xFF;
+    s_rando_overworld_enemy_stage_by_block[i] = 0xFF;
+  }
 }
 
 static void Rando_ClearDynamicEnemyCheckMaps(void) {
@@ -674,16 +679,23 @@ static uint16 Rando_OverworldEnemyCheckLocForBlock(uint16 block) {
   if (!Rando_EnemyChecksAllActiveRuntime() || player_is_indoors ||
       block >= kRandoOverworldEnemyBlockCount)
     return 0;
+  uint8 area = (uint8)overworld_area_index;
+  uint8 stage = Rando_CurrentOverworldEnemyStage();
   uint16 loc = s_rando_overworld_enemy_loc_by_block[block];
-  if (loc != 0)
+  if (loc != 0 &&
+      s_rando_overworld_enemy_area_by_block[block] == area &&
+      s_rando_overworld_enemy_stage_by_block[block] == stage)
     return loc;
+  s_rando_overworld_enemy_loc_by_block[block] = 0;
+  s_rando_overworld_enemy_area_by_block[block] = 0xFF;
+  s_rando_overworld_enemy_stage_by_block[block] = 0xFF;
   const RandoOverworldEnemyCheckLookupEntry *check =
-      Rando_FindOverworldEnemyCheckByBlock((uint8)overworld_area_index,
-                                           Rando_CurrentOverworldEnemyStage(),
-                                           block);
+      Rando_FindOverworldEnemyCheckByBlock(area, stage, block);
   if (check == NULL)
     return 0;
   s_rando_overworld_enemy_loc_by_block[block] = check->loc_id;
+  s_rando_overworld_enemy_area_by_block[block] = area;
+  s_rando_overworld_enemy_stage_by_block[block] = stage;
   return check->loc_id;
 }
 
@@ -700,6 +712,8 @@ static bool Rando_TryGrantOverworldEnemyCheck(int k) {
   Rando_QuietReceiveOrConfirm(lttp, item);
   if (block < kRandoOverworldEnemyBlockCount) {
     s_rando_overworld_enemy_loc_by_block[block] = 0;
+    s_rando_overworld_enemy_area_by_block[block] = 0xFF;
+    s_rando_overworld_enemy_stage_by_block[block] = 0xFF;
     sprite_where_in_overworld[block] = 0;
   }
   return true;
@@ -2131,38 +2145,103 @@ bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_
 
 typedef struct RandoEnemyDropMarkerInfo {
   uint16 loc_id;
-  uint8 source_slot;
+  uint16 source_id;
+  uint8 domain;
 } RandoEnemyDropMarkerInfo;
+
+typedef struct RandoEnemyMarkerSourceKey {
+  uint16 loc_id;
+  uint16 room;
+  uint16 area;
+  uint16 source_id;
+  uint8 domain;
+  uint8 kind;
+  uint8 sprite_index;
+} RandoEnemyMarkerSourceKey;
 
 typedef struct RandoEnemyMarkerIconKey {
   uint8 gfx;
-  uint8 big;
+  uint8 footprint;
   uint8 oam_flags;
-  uint8 palette_class;
+  uint8 palette_policy;
+  uint8 palette_row;
+  uint8 palette_signature;
 } RandoEnemyMarkerIconKey;
 
 typedef struct RandoEnemyMarkerCandidate {
-  uint16 loc_id;
-  uint8 source_slot;
-  uint8 sprite_index;
-  uint8 kind;
+  RandoEnemyMarkerSourceKey source;
   uint8 slot;
+  uint8 palette_row;
+  uint8 oam_region;
   bool has_icon;
   RandoEnemyMarkerIconKey key;
+  int16 x;
+  int16 y;
 } RandoEnemyMarkerCandidate;
 
 enum {
+  kRandoEnemyMarkerDomain_ForcedDrop = 1,
+  kRandoEnemyMarkerDomain_DungeonEnemy = 2,
+  kRandoEnemyMarkerDomain_DynamicUnderworldEnemy = 3,
+  kRandoEnemyMarkerDomain_OverworldEnemy = 4,
   kRandoEnemyMarkerKind_Pickup = 1,
   kRandoEnemyMarkerKind_Carrier = 2,
+  kRandoEnemyMarkerFootprint_8x8 = 1,
+  kRandoEnemyMarkerFootprint_8x16 = 2,
+  kRandoEnemyMarkerFootprint_16x16 = 4,
+  kRandoEnemyMarkerPalette_Unsupported = 0,
+  kRandoEnemyMarkerPalette_FixedScene = 1,
+  kRandoEnemyMarkerPalette_Dynamic = 2,
   kRandoEnemyMarkerNoSlot = 0xff,
-  kRandoEnemyMarkerIconSlots = 1,
+  kRandoEnemyMarkerIconSlots = 4,
   kRandoEnemyMarkerMaxCandidates = 32,
 };
 
-static const uint8 kRandoEnemyMarkerSlotBase[kRandoEnemyMarkerIconSlots] = {0x24};
+static const uint8 kRandoEnemyMarkerSlotBase[kRandoEnemyMarkerIconSlots] = {
+  0xF0, 0xF4, 0xF8, 0xFC,
+};
+
+static bool Rando_EnemyDropCarrierLiveState(uint8 state) {
+  return state == 9 || state == 11;
+}
+
+static int8 Rando_EnemyMarkerCarrierVisualTopOffset(int k) {
+  if (k < 0 || k >= 16)
+    return 0;
+  switch (sprite_type[k]) {
+  case 0x11:  // Hinox
+    return -16;
+  case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+  case 0x46: case 0x47: case 0x48: case 0x49: case 0x4a:
+    return -8;
+  case 0x4b:  // Green knife guard / recruit body
+    return -11;
+  case 0x51:  // Armos statue
+  case 0x53:  // Armos Knight
+    return -16;
+  case 0x56:  // Walking Zora
+    return -7;
+  case 0x6a:  // Ball-n-chain trooper
+    return -9;
+  case 0x8b:  // Gibdo
+  case 0xa5:  // Blue Zazak
+  case 0xa6:  // Red Zazak
+    return -9;
+  case 0x91:  // Stalfos Knight
+    return -12;
+  case 0xd0:  // Lynel
+    return -14;
+  default:
+    return 0;
+  }
+}
+
+static int Rando_EnemyMarkerCarrierGlintDy(int k) {
+  return -10 + Rando_EnemyMarkerCarrierVisualTopOffset(k);
+}
 
 static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo *out) {
-  if (k < 0 || k >= 16 || sprite_state[k] != 9)
+  if (k < 0 || k >= 16 || !Rando_EnemyDropCarrierLiveState(sprite_state[k]))
     return false;
   uint8 drop_kind = (sprite_die_action[k] == 1) ? kRandoEnemyDropKind_SmallKey :
                     (sprite_die_action[k] == 2) ? kRandoEnemyDropKind_BigKey : 0;
@@ -2173,7 +2252,8 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
     if (drop != NULL && !Rando_IsLocationChecked(drop->loc_id)) {
       if (out != NULL) {
         out->loc_id = drop->loc_id;
-        out->source_slot = sprite_N[k];
+        out->source_id = sprite_N[k];
+        out->domain = kRandoEnemyMarkerDomain_ForcedDrop;
       }
       return true;
     }
@@ -2186,7 +2266,8 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
         !Rando_IsLocationChecked(check->loc_id)) {
       if (out != NULL) {
         out->loc_id = check->loc_id;
-        out->source_slot = sprite_N[k];
+        out->source_id = sprite_N[k];
+        out->domain = kRandoEnemyMarkerDomain_DungeonEnemy;
       }
       return true;
     }
@@ -2196,7 +2277,8 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
     if (loc_id != 0 && !Rando_IsLocationChecked(loc_id)) {
       if (out != NULL) {
         out->loc_id = loc_id;
-        out->source_slot = (uint8)k;
+        out->source_id = (uint16)k;
+        out->domain = kRandoEnemyMarkerDomain_DynamicUnderworldEnemy;
       }
       return true;
     }
@@ -2207,7 +2289,8 @@ static bool Rando_GetEnemyDropCarrierMarkerInfo(int k, RandoEnemyDropMarkerInfo 
     if (loc_id != 0 && !Rando_IsLocationChecked(loc_id)) {
       if (out != NULL) {
         out->loc_id = loc_id;
-        out->source_slot = (uint8)block;
+        out->source_id = block;
+        out->domain = kRandoEnemyMarkerDomain_OverworldEnemy;
       }
       return true;
     }
@@ -2229,46 +2312,133 @@ static bool Rando_GetEnemyDropPickupMarkerInfo(int k, RandoEnemyDropMarkerInfo *
     return false;
   if (out != NULL) {
     out->loc_id = drop->loc_id;
-    out->source_slot = sprite_subtype[k];
+    out->source_id = sprite_subtype[k];
+    out->domain = kRandoEnemyMarkerDomain_ForcedDrop;
   }
   return true;
 }
 
-static uint8 Rando_EnemyMarkerPaletteClass(uint8 gfx) {
-  if (!(gfx & 0x80))
-    return 0;
-  if (gfx == kRandoCustomGfx_Rupoor)
-    return 2;
-  if (gfx == kRandoCustomGfx_Cucco)
-    return 3;
-  return 1;
+static uint8 Rando_EnemyMarkerOamRegionForSprite(int k) {
+  if (sort_sprites_setting)
+    return sprite_floor[k] ? 5 : 3;
+  return 0;
+}
+
+static bool Rando_EnemyMarkerNormalGfxUnsupported(uint8 gfx) {
+  // These receive bundles depend on side-effect palette loaders. The marker path
+  // cannot mutate sword/shield palettes, so they remain glint-only until a
+  // caller-owned dynamic palette is authored for them.
+  return gfx == 0x20 || gfx == 0x2d || gfx == 0x2e ||
+         gfx == 6 || gfx == 0x18;
+}
+
+static bool Rando_EnemyMarkerCustomGfxSupported(uint8 gfx) {
+  if (gfx >= kRandoCustomGfx_TriforcePiece &&
+      gfx < kRandoCustomGfx_TriforcePiece + kRandoCustomGfx_BlobEntries) {
+    uint32 idx = gfx & 0x7f;
+    return (idx + 1) * 0x80 <= kRandoCustomItemGfx_SIZE;
+  }
+  return gfx == kRandoCustomGfx_Rupoor || gfx == kRandoCustomGfx_Cucco;
+}
+
+static bool Rando_EnemyMarkerPlanIcon(uint16 loc_id, RandoEnemyMarkerIconKey *key) {
+  uint8 gfx, big, oam_flags;
+  if (key == NULL || !Rando_GetFieldItemIcon(loc_id, 0xFFFFu, &gfx, &big, &oam_flags))
+    return false;
+  memset(key, 0, sizeof(*key));
+  key->gfx = gfx;
+  key->footprint = (big == 0) ? kRandoEnemyMarkerFootprint_8x16 :
+                   kRandoEnemyMarkerFootprint_16x16;
+  key->palette_row = (uint8)((oam_flags >> 1) & 7);
+
+  if (gfx & 0x80) {
+    if (!Rando_EnemyMarkerCustomGfxSupported(gfx)) {
+      key->palette_policy = kRandoEnemyMarkerPalette_Unsupported;
+      return true;
+    }
+    key->oam_flags = (uint8)(oam_flags & ~0x0fu);
+    key->palette_policy = kRandoEnemyMarkerPalette_Dynamic;
+    key->palette_signature = gfx;
+    return true;
+  }
+
+  if (Rando_EnemyMarkerNormalGfxUnsupported(gfx) || key->palette_row >= 7) {
+    key->palette_policy = kRandoEnemyMarkerPalette_Unsupported;
+    key->oam_flags = (uint8)(oam_flags & ~1u);
+    return true;
+  }
+  key->oam_flags = (uint8)(oam_flags & ~1u);
+  key->palette_policy = kRandoEnemyMarkerPalette_FixedScene;
+  return true;
+}
+
+static bool Rando_EnemyMarkerDecodeCucco(uint8 *dst) {
+  if (dst == NULL)
+    return false;
+  Decomp_spr(&g_ram[0x14000], 80);
+  const uint8 *csrc = &g_ram[0x14000] + 0x3F0;
+  Expand3To4High(dst,        csrc,         g_ram, 2);
+  Expand3To4High(dst + 0x40, csrc + 0x180, g_ram, 2);
+  return true;
+}
+
+static bool Rando_EnemyMarkerBuildIconTiles(const RandoEnemyMarkerIconKey *key,
+                                            uint8 *dst) {
+  if (key == NULL || dst == NULL ||
+      key->palette_policy == kRandoEnemyMarkerPalette_Unsupported)
+    return false;
+  if (!(key->gfx & 0x80))
+    return DecodeAnimatedSpriteTile_ToBuffer(key->gfx, dst);
+  if (key->gfx == kRandoCustomGfx_Rupoor)
+    return DecodeAnimatedSpriteTile_ToBuffer(0x24, dst);
+  if (key->gfx == kRandoCustomGfx_Cucco)
+    return Rando_EnemyMarkerDecodeCucco(dst);
+  if (key->gfx >= kRandoCustomGfx_TriforcePiece &&
+      key->gfx < kRandoCustomGfx_TriforcePiece + kRandoCustomGfx_BlobEntries) {
+    uint32 idx = key->gfx & 0x7f;
+    if ((idx + 1) * 0x80 > kRandoCustomItemGfx_SIZE)
+      return false;
+    memcpy(dst, kRandoCustomItemGfx + idx * 0x80, 0x80);
+    return true;
+  }
+  return false;
+}
+
+static void Rando_EnemyMarkerUploadIconSlot(uint8 slot, const uint8 *tiles) {
+  if (slot >= kRandoEnemyMarkerIconSlots || tiles == NULL)
+    return;
+  uint8 base = kRandoEnemyMarkerSlotBase[slot];
+  for (int i = 0; i < 4; i++)
+    memcpy(&g_zenv.vram[0x5000 + (base + i) * 16], tiles + i * 0x20, 0x20);
 }
 
 static bool Rando_EnemyMarkerIconKeyEq(const RandoEnemyMarkerIconKey *a,
                                        const RandoEnemyMarkerIconKey *b) {
-  return a->gfx == b->gfx && a->big == b->big &&
-         a->oam_flags == b->oam_flags && a->palette_class == b->palette_class;
+  return a->gfx == b->gfx && a->footprint == b->footprint &&
+         a->oam_flags == b->oam_flags &&
+         a->palette_policy == b->palette_policy &&
+         a->palette_row == b->palette_row &&
+         a->palette_signature == b->palette_signature;
 }
 
 static bool Rando_EnemyMarkerIconSupported(const RandoEnemyMarkerIconKey *key) {
-  // Current safe exact-item rendering borrows the existing receive-item slot
-  // only after the final OAM buffer proves that slot is not already visible.
-  // There are no additional marker-owned OBJ cells yet. Palette 3 custom art is
-  // still shared with field items, receipts, trap cuccos, and live sprite rows,
-  // so custom marker icons fall back to the neutral glint until a marker-owned
-  // palette row exists.
-  return key != NULL && key->palette_class == 0;
+  return key != NULL && key->palette_policy != kRandoEnemyMarkerPalette_Unsupported;
 }
 
 static bool Rando_EnemyMarkerLess(const RandoEnemyMarkerCandidate *a,
                                   const RandoEnemyMarkerCandidate *b) {
-  uint8 ap = (a->kind == kRandoEnemyMarkerKind_Pickup) ? 0 : 1;
-  uint8 bp = (b->kind == kRandoEnemyMarkerKind_Pickup) ? 0 : 1;
+  uint8 ap = (a->source.kind == kRandoEnemyMarkerKind_Pickup) ? 0 : 1;
+  uint8 bp = (b->source.kind == kRandoEnemyMarkerKind_Pickup) ? 0 : 1;
   if (ap != bp) return ap < bp;
-  if (a->loc_id != b->loc_id) return a->loc_id < b->loc_id;
-  if (a->source_slot != b->source_slot) return a->source_slot < b->source_slot;
-  if (a->sprite_index != b->sprite_index) return a->sprite_index < b->sprite_index;
-  return a->kind < b->kind;
+  if (a->source.loc_id != b->source.loc_id) return a->source.loc_id < b->source.loc_id;
+  if (a->source.domain != b->source.domain) return a->source.domain < b->source.domain;
+  if (a->source.room != b->source.room) return a->source.room < b->source.room;
+  if (a->source.area != b->source.area) return a->source.area < b->source.area;
+  if (a->source.source_id != b->source.source_id)
+    return a->source.source_id < b->source.source_id;
+  if (a->source.sprite_index != b->source.sprite_index)
+    return a->source.sprite_index < b->source.sprite_index;
+  return a->source.kind < b->source.kind;
 }
 
 static void Rando_EnemyMarkerSortCandidates(RandoEnemyMarkerCandidate *c, uint8 n) {
@@ -2287,8 +2457,20 @@ static bool Rando_LoadEnemyMarkerIconSlot(uint8 slot,
                                           const RandoEnemyMarkerIconKey *key) {
   if (slot >= kRandoEnemyMarkerIconSlots || key == NULL)
     return false;
-  Rando_EnsureRecvItemSlotGfx(key->gfx);
+  uint8 tiles[0x80];
+  if (!Rando_EnemyMarkerBuildIconTiles(key, tiles))
+    return false;
+  Rando_EnemyMarkerUploadIconSlot(slot, tiles);
   return true;
+}
+
+static uint8 Rando_EnemyMarkerVisiblePaletteMask(void) {
+  uint8 used = 1u << 7;
+  for (int i = 0; i < 128; i++) {
+    if (oam_buf[i].y < 0xf0)
+      used |= 1u << ((oam_buf[i].flags >> 1) & 7);
+  }
+  return used;
 }
 
 static void Rando_EnemyMarkerAllocateCandidates(RandoEnemyMarkerCandidate *c,
@@ -2297,8 +2479,10 @@ static void Rando_EnemyMarkerAllocateCandidates(RandoEnemyMarkerCandidate *c,
                                                 bool load_tiles) {
   RandoEnemyMarkerIconKey slot_keys[kRandoEnemyMarkerIconSlots];
   uint8 slot_count = 0;
-  for (uint8 i = 0; i < n; i++)
+  for (uint8 i = 0; i < n; i++) {
     c[i].slot = kRandoEnemyMarkerNoSlot;
+    c[i].palette_row = 0xFF;
+  }
   if (!resources_available)
     return;
 
@@ -2320,6 +2504,40 @@ static void Rando_EnemyMarkerAllocateCandidates(RandoEnemyMarkerCandidate *c,
 assigned:
     ;
   }
+
+  uint8 used_rows = Rando_EnemyMarkerVisiblePaletteMask();
+  for (uint8 i = 0; i < n; i++) {
+    if (c[i].slot == kRandoEnemyMarkerNoSlot)
+      continue;
+    if (c[i].key.palette_policy == kRandoEnemyMarkerPalette_FixedScene)
+      used_rows |= (uint8)(1u << c[i].key.palette_row);
+  }
+
+  for (uint8 i = 0; i < n; i++) {
+    if (c[i].slot == kRandoEnemyMarkerNoSlot)
+      continue;
+    if (c[i].key.palette_policy == kRandoEnemyMarkerPalette_FixedScene) {
+      c[i].palette_row = c[i].key.palette_row;
+      continue;
+    }
+    if (c[i].key.palette_policy != kRandoEnemyMarkerPalette_Dynamic)
+      continue;
+    for (uint8 j = 0; j < i; j++) {
+      if (c[j].slot == c[i].slot && c[j].palette_row != 0xFF) {
+        c[i].palette_row = c[j].palette_row;
+        goto dynamic_assigned;
+      }
+    }
+    for (uint8 r = 0; r < 7; r++) {
+      if (!(used_rows & (1u << r))) {
+        c[i].palette_row = r;
+        used_rows |= (uint8)(1u << r);
+        break;
+      }
+    }
+dynamic_assigned:
+    ;
+  }
 }
 
 static void Rando_EnemyMarkerAddCandidate(RandoEnemyMarkerCandidate *c,
@@ -2329,20 +2547,27 @@ static void Rando_EnemyMarkerAddCandidate(RandoEnemyMarkerCandidate *c,
                                           const RandoEnemyDropMarkerInfo *info) {
   if (*n >= kRandoEnemyMarkerMaxCandidates || info == NULL)
     return;
+  PrepOamCoordsRet oam_info;
+  Sprite_Get16BitCoords(sprite_index);
+  if (Sprite_PrepOamCoordOrDoubleRet(sprite_index, &oam_info))
+    return;
   RandoEnemyMarkerCandidate *dst = &c[(*n)++];
   memset(dst, 0, sizeof(*dst));
-  dst->loc_id = info->loc_id;
-  dst->source_slot = info->source_slot;
-  dst->sprite_index = sprite_index;
-  dst->kind = kind;
+  dst->source.loc_id = info->loc_id;
+  dst->source.room = player_is_indoors ? dungeon_room_index : 0xFFFFu;
+  dst->source.area = player_is_indoors ? 0xFFFFu : overworld_screen_index;
+  dst->source.source_id = info->source_id;
+  dst->source.domain = info->domain;
+  dst->source.kind = kind;
+  dst->source.sprite_index = sprite_index;
   dst->slot = kRandoEnemyMarkerNoSlot;
-  uint8 gfx, big, oam_flags;
-  if (Rando_GetFieldItemIcon(info->loc_id, 0xFFFFu, &gfx, &big, &oam_flags)) {
+  dst->palette_row = 0xFF;
+  dst->oam_region = Rando_EnemyMarkerOamRegionForSprite(sprite_index);
+  dst->x = (int16)oam_info.x;
+  dst->y = (int16)(oam_info.y + (kind == kRandoEnemyMarkerKind_Pickup
+      ? 0 : Rando_EnemyMarkerCarrierVisualTopOffset(sprite_index) - 16));
+  if (Rando_EnemyMarkerPlanIcon(info->loc_id, &dst->key)) {
     dst->has_icon = true;
-    dst->key.gfx = gfx;
-    dst->key.big = big;
-    dst->key.oam_flags = (uint8)(oam_flags & ~1u);
-    dst->key.palette_class = Rando_EnemyMarkerPaletteClass(gfx);
   }
 }
 
@@ -2364,44 +2589,18 @@ static uint8 Rando_EnemyMarkerCollectCandidates(RandoEnemyMarkerCandidate *c) {
   return n;
 }
 
-static bool Rando_EnemyMarkerRecvSlotVisible(void) {
-  for (int i = 0; i < 128; i++) {
-    const OamEnt *o = &oam_buf[i];
-    if (o->y >= 0xf0 || (o->flags & 1) != 0)
-      continue;
-    switch (o->charnum) {
-      case 0x24: case 0x25:
-      case 0x34: case 0x35:
-        return true;
-      default:
-        break;
-    }
+static bool Rando_EnemyMarkerHasSupportedExactCandidate(
+    const RandoEnemyMarkerCandidate *c, uint8 n) {
+  for (uint8 i = 0; i < n; i++) {
+    if (c[i].has_icon && Rando_EnemyMarkerIconSupported(&c[i].key))
+      return true;
   }
   return false;
-}
-
-static uint32 Rando_EnemyMarkerSignature(const RandoEnemyMarkerCandidate *c,
-                                         uint8 n,
-                                         bool resources_available) {
-  uint32 h = resources_available ? 2166136261u : 2166136260u;
-  for (uint8 i = 0; i < n; i++) {
-    h = (h ^ c[i].loc_id) * 16777619u;
-    h = (h ^ c[i].source_slot) * 16777619u;
-    h = (h ^ c[i].sprite_index) * 16777619u;
-    h = (h ^ c[i].kind) * 16777619u;
-    h = (h ^ (c[i].has_icon ? 1u : 0u)) * 16777619u;
-    h = (h ^ c[i].key.gfx) * 16777619u;
-    h = (h ^ c[i].key.big) * 16777619u;
-    h = (h ^ c[i].key.oam_flags) * 16777619u;
-    h = (h ^ c[i].key.palette_class) * 16777619u;
-  }
-  return h ^ n;
 }
 
 static RandoEnemyMarkerCandidate s_enemy_marker_candidates[kRandoEnemyMarkerMaxCandidates];
 static uint8 s_enemy_marker_candidate_count;
 static uint8 s_enemy_marker_frame;
-static uint32 s_enemy_marker_signature;
 static bool s_enemy_marker_cache_valid;
 static uint8 s_enemy_marker_draw_failed_frame;
 static uint16 s_enemy_marker_draw_failed_mask;
@@ -2423,17 +2622,16 @@ static bool Rando_EnemyMarkerDrawFailedThisFrame(int k) {
 }
 
 static void Rando_EnemyMarkerEnsureCache(void) {
-  RandoEnemyMarkerCandidate c[kRandoEnemyMarkerMaxCandidates];
-  uint8 n = Rando_EnemyMarkerCollectCandidates(c);
-  bool resources_available = Rando_CanDrawRecvItemSlot() &&
-                             !Rando_EnemyMarkerRecvSlotVisible();
-  uint32 sig = Rando_EnemyMarkerSignature(c, n, resources_available);
   if (s_enemy_marker_cache_valid && s_enemy_marker_frame == frame_counter)
     return;
+  RandoEnemyMarkerCandidate c[kRandoEnemyMarkerMaxCandidates];
+  uint8 n = Rando_EnemyMarkerCollectCandidates(c);
+  bool resources_available = Rando_EnemyMarkerHasSupportedExactCandidate(c, n) &&
+      !Hud_RandoOamTrackerWillDrawThisFrame() &&
+      Rando_ObjScratchReserveForFrame(kRandoObjScratchOwner_EnemyMarkers);
   memcpy(s_enemy_marker_candidates, c, sizeof(c));
   s_enemy_marker_candidate_count = n;
   s_enemy_marker_frame = frame_counter;
-  s_enemy_marker_signature = sig;
   s_enemy_marker_cache_valid = true;
   Rando_EnemyMarkerAllocateCandidates(s_enemy_marker_candidates,
                                       s_enemy_marker_candidate_count,
@@ -2441,55 +2639,102 @@ static void Rando_EnemyMarkerEnsureCache(void) {
                                       true);
 }
 
+static bool Rando_EnemyMarkerCandidateDrawable(const RandoEnemyMarkerCandidate *c) {
+  return c != NULL && c->slot != kRandoEnemyMarkerNoSlot &&
+         c->palette_row != 0xFF;
+}
+
 static const RandoEnemyMarkerCandidate *Rando_EnemyMarkerFindAllocated(int k,
                                                                        uint8 kind) {
   Rando_EnemyMarkerEnsureCache();
   for (uint8 i = 0; i < s_enemy_marker_candidate_count; i++) {
     const RandoEnemyMarkerCandidate *c = &s_enemy_marker_candidates[i];
-    if (c->sprite_index == (uint8)k && c->kind == kind &&
-        c->slot != kRandoEnemyMarkerNoSlot)
+    if (c->source.sprite_index == (uint8)k && c->source.kind == kind &&
+        Rando_EnemyMarkerCandidateDrawable(c))
       return c;
   }
   return NULL;
 }
 
-static bool Rando_EnemyMarkerCanAllocateOam(int k, uint8 nbytes) {
-  uint8 region = 0;
-  if (sort_sprites_setting)
-    region = sprite_floor[k] ? 5 : 3;
+static const RandoEnemyMarkerCandidate *Rando_EnemyMarkerFindCandidate(int k,
+                                                                       uint8 kind) {
+  Rando_EnemyMarkerEnsureCache();
+  for (uint8 i = 0; i < s_enemy_marker_candidate_count; i++) {
+    const RandoEnemyMarkerCandidate *c = &s_enemy_marker_candidates[i];
+    if (c->source.sprite_index == (uint8)k && c->source.kind == kind)
+      return c;
+  }
+  return NULL;
+}
+
+static bool Rando_EnemyMarkerCanAllocateOam(uint8 region, uint8 nbytes) {
   return oam_region_base[region] + nbytes < kOamGetBufferPos_Tab0[region];
 }
 
-static void Rando_EnemyMarkerAllocateOam(int k, uint8 nbytes) {
-  if (sort_sprites_setting) {
-    if (sprite_floor[k])
-      Oam_AllocateFromRegionF(nbytes);
-    else
-      Oam_AllocateFromRegionD(nbytes);
-  } else {
+static void Rando_EnemyMarkerAllocateOam(uint8 region, uint8 nbytes) {
+  if (region == 5)
+    Oam_AllocateFromRegionF(nbytes);
+  else if (region == 3)
+    Oam_AllocateFromRegionD(nbytes);
+  else
     Oam_AllocateFromRegionA(nbytes);
-  }
+}
+
+static uint8 Rando_EnemyMarkerPieceCount(uint8 footprint) {
+  if (footprint == kRandoEnemyMarkerFootprint_8x8)
+    return 1;
+  if (footprint == kRandoEnemyMarkerFootprint_8x16)
+    return 2;
+  return 4;
+}
+
+static bool Rando_EnemyMarkerPieceVisible(int x, int y) {
+  return x >= 0 && x <= 248 && y >= 0 && y <= 216 &&
+         (uint16)(y + 0x10) < 0x100;
+}
+
+static bool Rando_EnemyMarkerFootprintVisible(const RandoEnemyMarkerCandidate *c) {
+  if (c == NULL)
+    return false;
+  if (!Rando_EnemyMarkerPieceVisible(c->x, c->y))
+    return false;
+  if (c->key.footprint == kRandoEnemyMarkerFootprint_8x16)
+    return Rando_EnemyMarkerPieceVisible(c->x, c->y + 8);
+  if (c->key.footprint == kRandoEnemyMarkerFootprint_16x16)
+    return Rando_EnemyMarkerPieceVisible(c->x + 8, c->y) &&
+           Rando_EnemyMarkerPieceVisible(c->x, c->y + 8) &&
+           Rando_EnemyMarkerPieceVisible(c->x + 8, c->y + 8);
+  return true;
 }
 
 static bool Rando_DrawEnemyMarkerIconAt(int k,
-                                        const RandoEnemyMarkerCandidate *c,
-                                        int dx,
-                                        int dy) {
-  if (c == NULL || c->slot >= kRandoEnemyMarkerIconSlots)
+                                        const RandoEnemyMarkerCandidate *c) {
+  (void)k;
+  if (!Rando_EnemyMarkerCandidateDrawable(c) ||
+      c->slot >= kRandoEnemyMarkerIconSlots ||
+      !Rando_EnemyMarkerFootprintVisible(c))
     return false;
-  PrepOamCoordsRet info;
-  if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
-    return true;
-  uint8 nbytes = (c->key.big == 0) ? 8 : 4;
-  if (!Rando_EnemyMarkerCanAllocateOam(k, nbytes))
+  uint8 pieces = Rando_EnemyMarkerPieceCount(c->key.footprint);
+  uint8 nbytes = (uint8)(pieces * 4);
+  if (!Rando_EnemyMarkerCanAllocateOam(c->oam_region, nbytes))
     return false;
-  Rando_EnemyMarkerAllocateOam(k, nbytes);
+  Rando_EnemyMarkerAllocateOam(c->oam_region, nbytes);
   uint8 base = kRandoEnemyMarkerSlotBase[c->slot];
-  uint8 flags = (uint8)(c->key.oam_flags & ~1u);
+  uint8 flags = c->key.oam_flags;
+  if (c->key.palette_policy == kRandoEnemyMarkerPalette_Dynamic)
+    flags = (uint8)((flags & ~0x0Fu) | (c->palette_row << 1));
+  flags = (uint8)((flags & ~1u) | 1u);
   OamEnt *oam = GetOamCurPtr();
-  SetOamHelper0(oam, info.x + dx, info.y + dy, base, flags, c->key.big);
-  if (c->key.big == 0)
-    SetOamHelper0(oam + 1, info.x + dx, info.y + dy + 8, base + 0x10, flags, 0);
+  SetOamHelper0(oam, c->x, c->y, base, flags, 0);
+  if (c->key.footprint == kRandoEnemyMarkerFootprint_8x16) {
+    SetOamHelper0(oam + 1, c->x, c->y + 8, (uint8)(base + 2), flags, 0);
+  } else if (c->key.footprint == kRandoEnemyMarkerFootprint_16x16) {
+    SetOamHelper0(oam + 1, c->x + 8, c->y, (uint8)(base + 1), flags, 0);
+    SetOamHelper0(oam + 2, c->x, c->y + 8, (uint8)(base + 2), flags, 0);
+    SetOamHelper0(oam + 3, c->x + 8, c->y + 8, (uint8)(base + 3), flags, 0);
+  }
+  if (c->key.palette_policy == kRandoEnemyMarkerPalette_Dynamic)
+    Rando_OverlayPaletteRequestCustomItem(c->palette_row, c->key.gfx);
   return true;
 }
 
@@ -2505,13 +2750,13 @@ bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy) {
   if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
     return false;
   if (g_config.enemy_drop_marker == kEnemyDropMarker_Generic) {
-    if (out_dy != NULL) *out_dy = -10;
+    if (out_dy != NULL) *out_dy = Rando_EnemyMarkerCarrierGlintDy(k);
     return true;
   }
   if (Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier) != NULL &&
       !Rando_EnemyMarkerDrawFailedThisFrame(k))
     return false;
-  if (out_dy != NULL) *out_dy = -10;
+  if (out_dy != NULL) *out_dy = Rando_EnemyMarkerCarrierGlintDy(k);
   return true;
 }
 
@@ -2520,16 +2765,7 @@ static bool Rando_TryDrawEnemyDropPickupField(int k) {
 }
 
 bool Rando_TryDrawEnemyDropCarrierField(int k) {
-  if (player_is_indoors || g_config.enemy_drop_marker == kEnemyDropMarker_Generic)
-    return false;  // dungeon exact markers draw in the post-sprite overlay pass.
-  if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
-    return false;
-  const RandoEnemyMarkerCandidate *c =
-      Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier);
-  if (Rando_DrawEnemyMarkerIconAt(k, c, 0, -16))
-    return true;
-  if (c != NULL)
-    Rando_EnemyMarkerMarkDrawFailed(k);
+  (void)k;
   return false;
 }
 
@@ -2547,8 +2783,6 @@ static bool Rando_EnemyMarkerAllocateGlintOam(void) {
 }
 
 void Rando_DrawOverworldEnemyMarkerGlints(void) {
-  g_rando_pot_overlay_drawn = false;
-  g_rando_pot_overlay_palette_row = 0xFF;
   if (player_is_indoors || !(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
 
@@ -2556,6 +2790,14 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
   for (int k = 0; k < 16; k++) {
     if (!Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
       continue;
+    if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic) {
+      const RandoEnemyMarkerCandidate *c =
+          Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier);
+      if (Rando_DrawEnemyMarkerIconAt(k, c))
+        continue;
+      if (Rando_EnemyMarkerFindCandidate(k, kRandoEnemyMarkerKind_Carrier) != NULL)
+        Rando_EnemyMarkerMarkDrawFailed(k);
+    }
     if (g_config.enemy_drop_marker != kEnemyDropMarker_Generic &&
         Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier) != NULL &&
         !Rando_EnemyMarkerDrawFailedThisFrame(k))
@@ -2577,7 +2819,6 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
   if (prow < 0)
     return;
 
-  g_rando_pot_overlay_palette_row = (uint8)prow;
   static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
   uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
   int bob = (frame_counter >> 3) & 3;
@@ -2588,16 +2829,14 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
     int sx = (uint16)(Sprite_GetX(k) - BG2HOFS_copy2);
     int sy = (uint16)(Sprite_GetY(k) - BG2VOFS_copy2) - sprite_z[k];
     int gx = sx + 4;
-    int gy = sy - 10 - bob;
+    int gy = sy + Rando_EnemyMarkerCarrierGlintDy(k) - bob;
     if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
       continue;
     if (!Rando_EnemyMarkerAllocateGlintOam())
       continue;
     SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
-    g_rando_pot_overlay_drawn = true;
+    Rando_OverlayPaletteRequestGold((uint8)prow);
   }
-  if (!g_rando_pot_overlay_drawn)
-    g_rando_pot_overlay_palette_row = 0xFF;
 }
 
 bool Rando_EnemyDropMarkerNeedsOverlay(int k) {
@@ -2609,9 +2848,9 @@ bool Rando_TryDrawEnemyDropMarkerOverlay(int k) {
   if (Rando_GetEnemyDropPickupMarkerInfo(k, NULL)) {
     const RandoEnemyMarkerCandidate *c =
         Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Pickup);
-    if (Rando_DrawEnemyMarkerIconAt(k, c, 0, 0))
+    if (Rando_DrawEnemyMarkerIconAt(k, c))
       return true;
-    if (c != NULL)
+    if (Rando_EnemyMarkerFindCandidate(k, kRandoEnemyMarkerKind_Pickup) != NULL)
       Rando_EnemyMarkerMarkDrawFailed(k);
     return false;
   }
@@ -2621,38 +2860,60 @@ bool Rando_TryDrawEnemyDropMarkerOverlay(int k) {
     return false;
   const RandoEnemyMarkerCandidate *c =
       Rando_EnemyMarkerFindAllocated(k, kRandoEnemyMarkerKind_Carrier);
-  if (Rando_DrawEnemyMarkerIconAt(k, c, 0, -16))
+  if (Rando_DrawEnemyMarkerIconAt(k, c))
     return true;
-  if (c != NULL)
+  if (Rando_EnemyMarkerFindCandidate(k, kRandoEnemyMarkerKind_Carrier) != NULL)
     Rando_EnemyMarkerMarkDrawFailed(k);
   return false;
 }
 
 int Rando_EnemyMarkerAllocatorSelfCheck(void) {
-  RandoEnemyMarkerCandidate c[4];
+  if (!Rando_EnemyDropCarrierLiveState(9) ||
+      !Rando_EnemyDropCarrierLiveState(11) ||
+      Rando_EnemyDropCarrierLiveState(0) ||
+      Rando_EnemyDropCarrierLiveState(10) ||
+      Rando_EnemyDropCarrierLiveState(6))
+    return 12;
+  {
+    uint8 saved_type = sprite_type[0];
+    sprite_type[0] = 0x08;
+    if (Rando_EnemyMarkerCarrierVisualTopOffset(0) != 0 ||
+        Rando_EnemyMarkerCarrierGlintDy(0) != -10)
+      return 13;
+    sprite_type[0] = 0x51;
+    if (Rando_EnemyMarkerCarrierVisualTopOffset(0) != -16 ||
+        Rando_EnemyMarkerCarrierGlintDy(0) != -26)
+      return 14;
+    sprite_type[0] = 0x11;
+    if (Rando_EnemyMarkerCarrierVisualTopOffset(0) != -16)
+      return 15;
+    sprite_type[0] = saved_type;
+  }
+
+  RandoEnemyMarkerCandidate c[6];
   memset(c, 0, sizeof(c));
-  c[0].kind = kRandoEnemyMarkerKind_Carrier; c[0].loc_id = 20; c[0].source_slot = 1;
-  c[1].kind = kRandoEnemyMarkerKind_Pickup;  c[1].loc_id = 30; c[1].source_slot = 2;
+  c[0].source.kind = kRandoEnemyMarkerKind_Carrier; c[0].source.loc_id = 20; c[0].source.source_id = 1;
+  c[1].source.kind = kRandoEnemyMarkerKind_Pickup;  c[1].source.loc_id = 30; c[1].source.source_id = 2;
   c[0].has_icon = c[1].has_icon = true;
-  c[0].key = (RandoEnemyMarkerIconKey){0x24, 0, 0x30, 0};
-  c[1].key = (RandoEnemyMarkerIconKey){0x25, 0, 0x30, 0};
+  c[0].key = (RandoEnemyMarkerIconKey){0x24, kRandoEnemyMarkerFootprint_8x16, 0x30, kRandoEnemyMarkerPalette_FixedScene, 0, 0};
+  c[1].key = (RandoEnemyMarkerIconKey){0x25, kRandoEnemyMarkerFootprint_8x16, 0x30, kRandoEnemyMarkerPalette_FixedScene, 0, 0};
   Rando_EnemyMarkerSortCandidates(c, 2);
-  if (c[0].kind != kRandoEnemyMarkerKind_Pickup)
+  if (c[0].source.kind != kRandoEnemyMarkerKind_Pickup)
     return 1;
   Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
-  if (c[0].slot != 0 || c[1].slot != kRandoEnemyMarkerNoSlot)
+  if (c[0].slot != 0 || c[1].slot != 1)
     return 2;
 
   memset(c, 0, sizeof(c));
-  for (int i = 0; i < 3; i++) {
-    c[i].kind = kRandoEnemyMarkerKind_Carrier;
-    c[i].loc_id = (uint16)(10 + i);
+  for (int i = 0; i < 5; i++) {
+    c[i].source.kind = kRandoEnemyMarkerKind_Carrier;
+    c[i].source.loc_id = (uint16)(10 + i);
     c[i].has_icon = true;
-    c[i].key = (RandoEnemyMarkerIconKey){(uint8)(0x20 + i), 0, 0x30, 0};
+    c[i].key = (RandoEnemyMarkerIconKey){(uint8)(0x20 + i), kRandoEnemyMarkerFootprint_8x16, 0x30, kRandoEnemyMarkerPalette_FixedScene, 0, 0};
   }
-  Rando_EnemyMarkerAllocateCandidates(c, 3, true, false);
-  if (c[0].slot != 0 || c[1].slot != kRandoEnemyMarkerNoSlot ||
-      c[2].slot != kRandoEnemyMarkerNoSlot)
+  Rando_EnemyMarkerAllocateCandidates(c, 5, true, false);
+  if (c[0].slot != 0 || c[1].slot != 1 || c[2].slot != 2 ||
+      c[3].slot != 3 || c[4].slot != kRandoEnemyMarkerNoSlot)
     return 3;
 
   c[1].key = c[0].key;
@@ -2660,8 +2921,8 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
   if (c[0].slot != 0 || c[1].slot != 0)
     return 4;
 
-  c[0].key.palette_class = 1;
-  c[1].key.palette_class = 0;
+  c[0].key.palette_policy = kRandoEnemyMarkerPalette_Unsupported;
+  c[1].key.palette_policy = kRandoEnemyMarkerPalette_FixedScene;
   Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
   if (c[0].slot != kRandoEnemyMarkerNoSlot || c[1].slot != 0)
     return 5;
@@ -2681,6 +2942,32 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
       return 8;
     s_enemy_marker_draw_failed_frame = saved_fail_frame;
     s_enemy_marker_draw_failed_mask = saved_fail_mask;
+  }
+  memset(c, 0, sizeof(c));
+  for (int i = 0; i < 2; i++) {
+    c[i].source.kind = kRandoEnemyMarkerKind_Carrier;
+    c[i].source.loc_id = (uint16)(40 + i);
+    c[i].has_icon = true;
+    c[i].key = (RandoEnemyMarkerIconKey){kRandoCustomGfx_HalfMagic, kRandoEnemyMarkerFootprint_16x16, 0x30, kRandoEnemyMarkerPalette_Dynamic, 0, kRandoCustomGfx_HalfMagic};
+  }
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  if (c[0].slot != 0 || c[1].slot != 0 ||
+      c[0].palette_row == 0xFF || c[1].palette_row != c[0].palette_row)
+    return 9;
+  if (g_asset_ptrs[64] != NULL) {
+    uint16 saved_owner = g_recv_item_slot_owner;
+    uint8 saved_recv[0x80];
+    uint8 tiles[0x80];
+    memcpy(saved_recv, &g_ram[0xbd40], sizeof(saved_recv));
+    RandoEnemyMarkerIconKey key = {
+      0x0f, kRandoEnemyMarkerFootprint_8x16, 0x34,
+      kRandoEnemyMarkerPalette_FixedScene, 2, 0
+    };
+    if (!Rando_EnemyMarkerBuildIconTiles(&key, tiles))
+      return 10;
+    if (g_recv_item_slot_owner != saved_owner ||
+        memcmp(saved_recv, &g_ram[0xbd40], sizeof(saved_recv)) != 0)
+      return 11;
   }
   return 0;
 }
@@ -5079,6 +5366,8 @@ void Overworld_LoadSprites() {  // 89c4ac
           continue;
         }
         s_rando_overworld_enemy_loc_by_block[block] = check->loc_id;
+        s_rando_overworld_enemy_area_by_block[block] = (uint8)overworld_area_index;
+        s_rando_overworld_enemy_stage_by_block[block] = rando_ow_stage;
       }
     }
     // add-rando-enemy-shuffle — substitute the overworld sprite TYPE, then keep

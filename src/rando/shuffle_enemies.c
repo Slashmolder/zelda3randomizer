@@ -122,8 +122,8 @@ typedef struct EnemyConstraint {
 // Generating from source (not a hand summary) is what fixed the Walking Zora
 // 12+68 omission ("hybrid zora+buzzblob") — listing all slots is the invariant.
 static const EnemyConstraint kEnemyTable[ES_TABLE_LEN] = {
-  [0x00] = { (ESF_RANDOMIZABLE | ESF_CANNOT_KEY | ESF_FLYING), { 17 } },  // Raven
-  [0x01] = { (ESF_RANDOMIZABLE | ESF_CANNOT_KEY | ESF_FLYING), { 18 } },  // Vulture
+  [0x00] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY | ESF_FLYING), { 17 } },  // Raven
+  [0x01] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY | ESF_FLYING), { 18 } },  // Vulture
   [0x08] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 12 } },  // Octorok (one-way)
   [0x0A] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 12 } },  // Octorok (four-way)
   [0x0D] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY), { 17 } },  // Buzzblob
@@ -133,7 +133,7 @@ static const EnemyConstraint kEnemyTable[ES_TABLE_LEN] = {
   [0x13] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 30 } },  // Mini-Helmasaur
   [0x17] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY), { 17 } },  // Bush Hoarder
   [0x18] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 30 } },  // Mini-Moldorm
-  [0x19] = { (ESF_RANDOMIZABLE | ESF_CANNOT_KEY | ESF_FLYING), { 21 } },  // Poe
+  [0x19] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY | ESF_FLYING), { 21 } },  // Poe
   [0x22] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 22 } },  // Ropa
   [0x23] = { (ESF_RANDOMIZABLE | ESF_KILLABLE | ESF_CANNOT_KEY), { 31 } },  // Red Bari
   [0x24] = { (ESF_RANDOMIZABLE | ESF_KILLABLE), { 31 } },  // Blue Bari

@@ -480,8 +480,8 @@ lookup keys by vanilla room/source slot, not by the shuffled enemy type.
 The `dungeon` tier includes the `keys` tier and adds eligible ordinary dungeon
 enemies as first-class checks. The local ROM-derived registry currently scans
 eligible underworld sprite-table sources, emits dungeon candidates with a
-conservative room predicate, keeps 78 key-depth-only candidates audit-only, and
-leaves 24 no-key-depth underworld sources outside the dungeon-only scope. Door
+conservative room predicate, and keeps enemy-shuffle key-banned/flying classes
+out of this tier even when they are otherwise killable. Door
 shuffle composes with dungeon ordinary enemies through generated door x
 enemy-check bridge rows and layout digest coverage.
 Enemy shuffle also degrades requested `dungeon` to effective `keys` because the
@@ -491,11 +491,13 @@ ordinary enemy rows.
 The `all` value is a distinct canonical setting above `dungeon`; it no longer
 aliases to the dungeon-only tier. In current builds it adds generated static
 ordinary overworld enemy checks whose authored `(stage, area, source slot, block)`
-identity can be recovered at runtime, reviewed underworld cave/interior checks in
-rooms `0x03C`, `0x107`, `0x10C`, and `0x123`, reviewed boss/miniboss event checks,
-and finite authored scripted-spawn groups whose parent/child identity is stable at
-runtime. A requested `all` lowers to `keys` under enemy shuffle, lowers to
-`dungeon` under entrance shuffle, and normalizes to `off` with vanilla small keys.
+identity can be recovered at runtime, automatic all-only underworld rows for
+killable key-banned/flying source classes when the room already has modeled
+access, reviewed underworld cave/interior checks, reviewed boss/miniboss event
+checks, and finite authored scripted-spawn groups whose parent/child identity is
+stable at runtime. A requested `all` lowers to `keys` under enemy shuffle, lowers
+to `dungeon` under entrance shuffle, and normalizes to `off` with vanilla small
+keys.
 Unbounded/farmable dynamic spawns and sources without stable death-time identity
 remain explicit future scope rather than quiet inclusions.
 The native window and file-select UI expose `all` only as a separate tier; they do
@@ -1383,6 +1385,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 121→122 | **Reviewed underworld exceptions for `all`** — the all-tier enemy registry can now add audited underworld cave/interior rows when access can be modeled directly; the Kakariko Storage Shed room `0x107` rats are included as all-only checks gated by LightWorld NorthWest access plus bombs, with the existing thrown-pot kill proof requiring one of eight room pots. Indoor lookup rows carry an `all_tier_only` bit so these checks do not activate in the `dungeon` tier. | Active pure `all` rows move by two new locations; lower tiers remain excluded from these cave/interior checks. Corpus regenerated at v122. |
 | 122→123 | **Reviewed cave/interior expansion for `all`** — audited all-only underworld checks now include Hookshot Cave-side Blue Bari (`0x03C`), Mimic Cave Goriya/Mimic sources (`0x10C`), and Mini Moldorm Cave Mini-Moldorms (`0x123`) in addition to the Kakariko Storage Shed rats. The reviewed bindings carry world-state-specific cave access where Standard/Open/Retro and Inverted differ, and disable the shared Fairy Cave pot for Mimic Cave so those enemies require the normal inventory combat route. | Active pure `all` rows move by ten new locations. Corpus regenerated at v123. |
 | 123→124 | **Boss, scripted-spawn, and door-bridge enemy checks** — `enemy_drop_checks=all` now adds reviewed boss/miniboss event checks plus finite authored scripted-spawn enemy checks, while ordinary dungeon/all enemy checks compose with door shuffle through generated enemy-check bridge rows, source predicates, and door-layout digest coverage. Door and boss shuffle no longer lower `all`; enemy shuffle still lowers ordinary enemy checks to `keys`, and entrance shuffle still lowers `all` to `dungeon`. | Active `all` rows gain 38 checks and door-shuffle enemy-check rows become fillable/reachable instead of downgrading. Corpus regenerated at v124. |
+| 124→125 | **Complete reviewed all-tier enemy coverage** — reviewed all-only underworld coverage was expanded across modeled key-depth rooms and cave/interior exceptions while preserving `all_tier_only` activation for rows outside the dungeon tier. | Active `all` rows move; lower tiers remain gated to their effective scopes. Corpus regenerated at v125. |
+| 125→126 | **All-tier key-banned/flying killable enemy coverage** — killable enemy-shuffle key-banned/flying classes such as Keese and overworld flyers now emit as all-only checks when their static source identity and room/area reachability are modeled. Raven, Vulture, and Poe are explicitly treated as killable for all-enemy generation. | Active pure `all` rows gain these sources; the normal `dungeon` tier remains key-capable only. Corpus regenerated at v126. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |

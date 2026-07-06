@@ -161,6 +161,18 @@ MANUAL_DO_NOT_RANDOMIZE = {
     0x6B,  # Cannon soldier: handler only behaves as a spawned cannonball path.
 }
 MANUAL_NEVER_OVERWORLD = set()
+MANUAL_KILLABLE = {
+    # Enemizer does not mark these flyers as SetKillable, but in this fork they
+    # are ordinary killable overworld enemies. Enemy-check "all" uses the same
+    # constraint table, so keep the override in the generator rather than only
+    # hand-editing the emitted C block.
+    0x00,  # Raven
+    0x01,  # Vulture
+    0x19,  # Poe/Ghini
+}
+for sid in MANUAL_KILLABLE:
+    if sid in ents:
+        ents[sid]["flags"].add("SetKillable")
 
 # Vanilla per-(slot,sheet) frequency from kSpriteTilesets[144][4] in load_gfx.c —
 # used to pick the most-common sheet for an OR-within-position requirement (so a
@@ -198,7 +210,7 @@ FLYERS = {0x00, 0x01, 0x19}
 # Non-killable enemies we still allow to spawn IN (overworld variety) — curated
 # so we don't randomly spawn traps/hazards (sparks, rollers, guruguru, winders,
 # spike traps, antifairies). Standard "creature" enemies only.
-EXTRA_NONKILL = {0x00, 0x01, 0x19, 0x26, 0x9B}  # Raven, Vulture, Poe, Hardhat, Wizzrobe
+EXTRA_NONKILL = {0x26, 0x9B}  # Hardhat, Wizzrobe
 
 def randomizable(sid, e):
     if sid > 0xF2:

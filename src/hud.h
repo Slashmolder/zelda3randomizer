@@ -80,6 +80,7 @@ void Hud_HandleItemSwitchInputs();
 void Hud_RandoDrawTrackers(void);
 void Hud_RandoDrawItemTracker(void);
 void Hud_RandoDrawLocationTracker(void);
+bool Hud_RandoOamTrackerWillDrawThisFrame(void);
 
 // ---------------------------------------------------------------------------
 // Item-icon atlas for the rich ImGui item tracker (PC). Decodes the HUD

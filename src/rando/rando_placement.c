@@ -430,42 +430,23 @@ static bool enemy_check_all_tier_only(uint16 loc_id) {
   return false;
 }
 
-static bool enemy_check_post_agahnim_only(uint16 loc_id) {
+enum { kEnemyCheckNotOverworld = 0xFF };
+
+static uint8 enemy_check_overworld_stage(uint16 loc_id) {
   for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
     if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id)
-      return kRandoOverworldEnemyCheckLookup[i].stage == 2;
-  return false;
-}
-
-static bool item_is_agahnim_prerequisite(uint16 item_id) {
-  switch (item_id) {
-    case ID_ProgressiveSword:
-    case ID_ProgressiveBow:
-    case ID_L1Sword:
-    case ID_L2Sword:
-    case ID_L3Sword:
-    case ID_L4Sword:
-    case ID_FireRod:
-    case ID_Hammer:
-    case ID_Bow:
-    case ID_Lamp:
-    case ID_BugCatchingNet:
-    case ID_CaneOfSomaria:
-    case ID_CaneOfByrna:
-    case ID_Cape:
-    case ID_SmallKey_HCT:
-    case ID_HalfMagic:
-    case ID_QuarterMagic:
-    case ID_GenericKey:
-      return true;
-    default:
-      return false;
-  }
+      return kRandoOverworldEnemyCheckLookup[i].stage;
+  return kEnemyCheckNotOverworld;
 }
 
 static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s) {
   if (loc == NULL || s == NULL || loc->type != LOCTYPE_Enemy) return false;
-  if (Settings_EnemyChecksAllActive(s)) return true;
+  if (Settings_EnemyChecksAllActive(s)) {
+    uint8 ow_stage = enemy_check_overworld_stage(loc->id);
+    if (ow_stage == 0 && s->world_state != kWorldState_Standard)
+      return false;
+    return true;
+  }
   return Settings_EnemyChecksDungeonActive(s) &&
          !enemy_check_all_tier_only(loc->id);
 }
@@ -522,11 +503,46 @@ bool Placement_PreflightSettings(const RandoSettings *settings,
     placement_set_error(err, err_cap, "settings are missing");
     return false;
   }
+  if (!Placement_EnemyRegistriesAvailableForSettings(settings, err, err_cap))
+    return false;
+  if (Settings_EnemyChecksAllActive(settings) &&
+      Settings_EffectiveAccessibility(settings) == kAccessibility_Locations) {
+    placement_set_error(
+        err, err_cap,
+        "enemy_drop_checks=all is not supported with accessibility=locations yet "
+        "because overworld enemy checks include missable pre/post-Aga windows");
+    return false;
+  }
+  return true;
+}
+
+bool Placement_EnemyRegistriesAvailableForSettings(const RandoSettings *settings,
+                                                   char *err,
+                                                   size_t err_cap) {
+  if (err != NULL && err_cap > 0) err[0] = '\0';
+  if (settings == NULL) {
+    placement_set_error(err, err_cap, "settings are missing");
+    return false;
+  }
+  if (settings_need_enemy_drop_registry(settings) && !enemy_drop_registry_available()) {
+    placement_set_error(
+        err, err_cap,
+        "enemy_drop_checks requires the generated forced enemy-drop registry; "
+        "rebuild local enemy-drop assets or use enemy_drop_checks=off");
+    return false;
+  }
   if (settings_need_all_enemy_registry(settings) && !all_enemy_registry_available()) {
     placement_set_error(
         err, err_cap,
-        "enemy_drop_checks=all requires the generated all-tier enemy "
-        "registry; rebuild local enemy-check assets or use enemy_drop_checks=dungeon");
+        "enemy_drop_checks=all requires the generated all-tier enemy registry; "
+        "rebuild local enemy-check assets or use enemy_drop_checks=dungeon");
+    return false;
+  }
+  if (settings_need_enemy_check_registry(settings) && !enemy_check_registry_available()) {
+    placement_set_error(
+        err, err_cap,
+        "enemy_drop_checks=dungeon requires the generated dungeon enemy-check "
+        "registry; rebuild local enemy-check assets or use enemy_drop_checks=keys");
     return false;
   }
   return true;
@@ -767,6 +783,14 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       "  built without assets/rando/enemy_checks.gen.yaml. Run\n"
       "  assets/scripts/gen_enemy_check_tables.py with ROM assets and rebuild\n"
       "  before generating dungeon enemy-check seeds.\n");
+    return 0;
+  }
+  if (Settings_EnemyChecksAllActive(settings) &&
+      Settings_EffectiveAccessibility(settings) == kAccessibility_Locations) {
+    fprintf(stderr,
+      "BuildItemPool: enemy_drop_checks=all with accessibility=locations is\n"
+      "  unsupported until overworld enemy stage windows are modeled as temporal\n"
+      "  locations. Use accessibility=items/beatable or a lower enemy tier.\n");
     return 0;
   }
 
@@ -1169,8 +1193,8 @@ static bool location_accepts_item(const RandoLocationDef *loc,
                                   const RandoSettings *settings) {
   if (settings != NULL && loc->type == LOCTYPE_Enemy &&
       Settings_EnemyChecksAllActive(settings) &&
-      enemy_check_post_agahnim_only(loc->id) &&
-      item_is_agahnim_prerequisite(candidate_item)) {
+      enemy_check_overworld_stage(loc->id) != kEnemyCheckNotOverworld &&
+      is_progression_item(candidate_item)) {
     return false;
   }
 
@@ -3251,7 +3275,19 @@ void Placement_SelfCheck(void) {
       if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sall))
         n_all_ordinary++;
     }
-    if (n_all_forced != enemy_locs || n_all_ordinary != enemy_check_locs)
+    uint32 enemy_check_locs_all_effective = n_all_ordinary;
+    RandoSettings sall_standard = sall;
+    sall_standard.world_state = kWorldState_Standard;
+    uint32 n_all_standard_ordinary = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sall_standard))
+        n_all_standard_ordinary++;
+    }
+    if (n_all_forced != enemy_locs ||
+        n_all_ordinary < enemy_check_dungeon_locs ||
+        n_all_ordinary > enemy_check_locs ||
+        n_all_standard_ordinary != enemy_check_locs)
       selfcheck_die("enemy_drop_checks All must include lower-tier enemy rows");
     if (!settings_need_all_enemy_registry(&sall))
       selfcheck_die("enemy_drop_checks All must require the all-enemy registry");
@@ -3276,7 +3312,7 @@ void Placement_SelfCheck(void) {
       if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &salldoor))
         n_all_door_ordinary++;
     }
-    if (n_all_door_ordinary != enemy_check_locs ||
+    if (n_all_door_ordinary != enemy_check_locs_all_effective ||
         Settings_EffectiveEnemyDropChecks(&salldoor) != kEnemyDropChecks_All)
       selfcheck_die("door shuffle must preserve All ordinary enemy checks");
     RandoSettings sallboss = sall;
@@ -3287,7 +3323,7 @@ void Placement_SelfCheck(void) {
       if (loc->type == LOCTYPE_Enemy && enemy_check_active(loc, &sallboss))
         n_all_boss_ordinary++;
     }
-    if (n_all_boss_ordinary != enemy_check_locs ||
+    if (n_all_boss_ordinary != enemy_check_locs_all_effective ||
         Settings_EffectiveEnemyDropChecks(&sallboss) != kEnemyDropChecks_All)
       selfcheck_die("boss shuffle must preserve All ordinary enemy checks");
     RandoSettings sdungeonenemy = sdungeon;
@@ -3386,12 +3422,13 @@ void Placement_SelfCheck(void) {
     if (!has_all_enemy_registry) {
       if (n_pool_all != 0)
         selfcheck_die("enemy_drop_checks All must fail closed when the all-tier registry is absent");
-    } else if (n_pool_all != (uint16)(n_pool_keys + enemy_check_locs)) {
+    } else if (n_pool_all != (uint16)(n_pool_keys + enemy_check_locs_all_effective)) {
       fprintf(stderr,
               "[Placement_SelfCheck] enemy all pool keys=%u all=%u ordinary=%u "
-              "dungeon=%u all_only=%u\n",
+              "effective=%u dungeon=%u all_only=%u\n",
               (unsigned)n_pool_keys, (unsigned)n_pool_all,
-              (unsigned)enemy_check_locs, (unsigned)enemy_check_dungeon_locs,
+              (unsigned)enemy_check_locs, (unsigned)enemy_check_locs_all_effective,
+              (unsigned)enemy_check_dungeon_locs,
               (unsigned)enemy_check_all_only_locs);
       selfcheck_die("enemy_drop_checks All pool/slot count drift");
     }
@@ -3407,7 +3444,7 @@ void Placement_SelfCheck(void) {
     uint16 all_door_pool[kRandoLocationCapacity];
     uint16 n_pool_all_door = BuildItemPool(&salldoor, all_door_pool, kRandoLocationCapacity);
     if (has_all_enemy_registry &&
-        n_pool_all_door != (uint16)(n_pool_door_keys + enemy_check_locs))
+        n_pool_all_door != (uint16)(n_pool_door_keys + enemy_check_locs_all_effective))
       selfcheck_die("door-shuffle All pool must include ordinary enemy checks");
     uint16 all_boss_pool[kRandoLocationCapacity];
     uint16 n_pool_all_boss = BuildItemPool(&sallboss, all_boss_pool, kRandoLocationCapacity);
@@ -3453,6 +3490,24 @@ void Placement_SelfCheck(void) {
     if (memcmp(hash_a, hash_b, 32) != 0) {
       selfcheck_die("Settings_ComputeHash should normalize completionist→accessibility=locations");
     }
+  }
+
+  // All-tier enemy checks include overworld stage windows, so Locations
+  // accessibility is rejected. Completionist forces Locations even if the raw
+  // accessibility byte says something else; guard the effective value.
+  {
+    RandoSettings s;
+    Settings_SetDefaults(&s);
+    s.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    s.enemy_drop_checks = kEnemyDropChecks_All;
+    s.accessibility = kAccessibility_Items;
+    s.goal = kGoal_Completionist;
+    char err[192];
+    if (Placement_PreflightSettings(&s, err, sizeof(err)))
+      selfcheck_die("enemy_drop_checks=All + Completionist must fail preflight");
+    uint16 pool[kRandoLocationCapacity];
+    if (BuildItemPool(&s, pool, kRandoLocationCapacity) != 0)
+      selfcheck_die("enemy_drop_checks=All + Completionist must fail BuildItemPool");
   }
 
   // Rando_RandoDungeonFromDungeonItem mapping for the keys-skip-HCT enums.

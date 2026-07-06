@@ -39,6 +39,8 @@ void Cosmetic_SetSeed(uint64 config_cosmetic_seed, uint64 slot_seed_u64);
 // and there is no frame-to-frame accumulation. No-op when palette mode is
 // vanilla. `count` is the number of 16-bit entries (256 for full CGRAM).
 void Cosmetic_ApplyPaletteCgram(uint16 *cgram, int count);
+void Cosmetic_ApplyPaletteCgramRange(uint16 *cgram, int start_index, int count);
+uint16 Cosmetic_TransformPaletteColor(uint16 c, int cgram_index);
 
 // Deterministically pick one .zspr file from g_config.cosmetic_sprite_dir.
 // Returns an interned path (lives to process exit) or NULL when sprite shuffle

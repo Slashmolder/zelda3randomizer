@@ -9,9 +9,13 @@ tile slot in a way that lets the last loaded icon overwrite other markers.
 
 Each marker icon slot SHALL reserve the complete OBJ tile footprint required by the
 icon, including multi-entry 16x16 or custom-art layouts. The implementation SHALL
-document the base charnum mapping for every reserved marker slot. When only the
-shared receive-item slot is safe, the pool capacity is one distinct icon key and the
-renderer SHALL use it only after final OAM proves the slot is not already visible.
+use the marker-owned objTileAdr2 scratch range `0xF0..0xFF` as four fixed slots:
+`F0-F3`, `F4-F7`, `F8-FB`, and `FC-FF`. Each slot SHALL be laid out as top-left,
+top-right, bottom-left, bottom-right 8x8 tiles.
+
+Exact markers SHALL draw only explicit small OAM entries. They SHALL NOT use large
+OAM, SHALL NOT address `base + 0x10`, and SHALL NOT use the shared receive-item
+slot `0x24/0x34`.
 
 The renderer SHALL treat the neutral gold glint as the fallback for any marker whose
 exact placed item cannot be rendered safely due to tile-slot capacity, palette
@@ -26,12 +30,10 @@ placed item.
 - **THEN** each carrier renders its own placed item icon
 - **AND** neither carrier renders the other carrier's icon
 
-#### Scenario: Shared receive slot cannot represent distinct icons
-- **WHEN** two active unchecked enemy markers hold different placed items and the
-  only safe exact-item slot is the shared receive-item slot
-- **THEN** at most one distinct icon key renders exactly
-- **AND** the other marker falls back to the neutral glint instead of showing stale
-  or corrupted item art
+#### Scenario: Marker scratch slot does not wrap
+- **WHEN** an exact marker uses the fourth marker slot
+- **THEN** its OAM charnums stay within `0xFC..0xFF`
+- **AND** no marker tile references `0x24`, `0x34`, or a wrapped `base + 0x10`
 
 #### Scenario: Identical icons share one marker slot
 - **WHEN** multiple active enemy markers resolve to the same icon key
@@ -88,6 +90,12 @@ icons. This mode SHALL NOT allocate item-icon marker slots for live carriers.
 - **THEN** the live carrier draws the neutral gold glint and does not draw the
   placed item icon
 
+#### Scenario: Stunned live carrier remains marked
+- **WHEN** an unchecked live enemy carrier is stunned or frozen into sprite state
+  11 by boomerang, hookshot, or ice interactions
+- **THEN** the carrier remains eligible for its configured enemy marker until it is
+  killed, checked, picked up, or otherwise leaves the live-carrier state
+
 ### Requirement: Enemy marker multi-icon rendering is visual-only
 
 The multi-icon marker renderer SHALL be client-local presentation only. It SHALL NOT
@@ -119,6 +127,11 @@ Before writing OAM for an item marker or glint fallback, the renderer SHALL rese
 the full OAM footprint in the correct sorted region. Multi-entry icons SHALL draw all
 required OAM entries or none.
 
+The legacy OAM tracker SHALL have priority over the `0xF0..0xFF` scratch range. If
+the legacy OAM tracker will draw this frame, exact enemy item markers SHALL have
+zero marker-icon capacity and SHALL fall back to glint or suppress cleanly. Native PC
+tracker windows SHALL NOT consume this scratch range.
+
 #### Scenario: Pot glints remain visible
 - **WHEN** a room contains active pot-sanity glints and active enemy item markers
 - **THEN** drawing enemy markers does not hide, recolor, or corrupt the pot glints
@@ -126,7 +139,13 @@ required OAM entries or none.
 #### Scenario: Receipt animation keeps priority
 - **WHEN** an item receipt, direct-grant confirmation, or equivalent placed-item
   presentation is active
-- **THEN** enemy item markers do not overwrite its graphics or palette state
+- **THEN** enemy item markers do not overwrite its graphics, receive-slot staging
+  buffers, receive-slot owner cache, or palette state
+
+#### Scenario: Legacy OAM tracker keeps scratch priority
+- **WHEN** the legacy OAM tracker will draw this frame
+- **THEN** exact enemy marker icons are not uploaded into `0xF0..0xFF`
+- **AND** enemy markers fall back to the neutral gold glint or suppress cleanly
 
 #### Scenario: OAM pressure is handled safely
 - **WHEN** the room lacks enough OAM capacity for all requested enemy markers
