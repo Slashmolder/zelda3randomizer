@@ -3,14 +3,14 @@
 ### Requirement: Seed QoL tab exposes the new per-slot QoL recommendations
 
 The native settings window's Seed QoL tab SHALL expose the new per-slot Seed QoL
-bits (F1 dungeon check-info, F2 seed info panel, F3 fast text/fanfare, F4 cutscene
-fast-forward, F6 auto-dash) alongside the existing `kRecBits` entries, so a
+bits (F1 dungeon check-info, F3 fast text/fanfare, F4 cutscene fast-forward,
+F6 auto-dash) alongside the existing `kRecBits` entries, so a
 generated slot's `recommended_features0` round-trips them and the "recommended
 defaults" action sets each to its recommended state. Bits added to
 `kFeatures0_RandoSeedQolMask` SHALL appear here; local-only bindings that are not
-per-slot preferences (F5 warp-to-spawn, F7 quick-slot keybinds) live in Game
+per-slot preferences (F5 warp-to-spawn) live in Game
 Settings, not this tab. The window SHALL also surface the auto-tracker connection
-state where its tracker panels report client connections (F8), without adding an
+state where its tracker panels report client connections (F7), without adding an
 in-game overlay.
 
 #### Scenario: A recommended QoL bit round-trips through the slot

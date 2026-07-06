@@ -64,11 +64,11 @@ uint8 *GetCurrentItemButtonPtr(int i);
 void Hud_HandleItemSwitchInputs();
 
 // ---------------------------------------------------------------------------
-// Randomizer in-game tracker overlays (add-rando-trackers, Phase B Slice 1).
+// Randomizer in-game OAM overlays.
 //
-// The visibility toggles g_rando_show_item_tracker /
-// g_rando_show_location_tracker live in rando.c (declared in rando/rando.h);
-// hud.c only reads them and main.c/config.c flip them via kKeys_RandoToggle*.
+// The optional item/location OAM trackers remain non-native overlays controlled
+// by g_rando_show_item_tracker / g_rando_show_location_tracker (owned by rando.c;
+// main.c/config.c flip them via kKeys_RandoToggle*).
 //
 // Hud_RandoDrawTrackers is the single per-frame entry point. It must be called
 // AFTER the game has finished building OAM for the frame (i.e. after

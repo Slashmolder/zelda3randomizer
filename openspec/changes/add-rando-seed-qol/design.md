@@ -15,7 +15,7 @@ identities, not the line offsets. Decision labels (D1…) are referenced from
   per-slot QoL enables are new `kFeatures0_*` bits there. `kFeatures0_RandoSeedQolMask`
   is the replay-safe subset carried in a slot's `recommended_features0`
   (format_version ≥ 3). Reserved free `g_ram` is only `0x66d-0x66f` (3 bytes) — the
-  design avoids new `g_ram` state except one optional byte for F7.
+  design avoids new `g_ram` state.
 - **Text engine.** Per-character pacing comes from a fixed LUT
   `kText_WaitDurations[16]` (`src/messaging.c` ~:116); message characters are drawn/
   advanced in `RenderText_Draw_MessageCharacters()` (~:2457). **Rando hint and trap
@@ -58,12 +58,12 @@ identities, not the line offsets. Decision labels (D1…) are referenced from
   (`g_ram+0x65f`). **`Rando_GetActiveSettings()` returns NULL on snapshot-restore and on
   v1 (format_version < 2) slots** (`src/rando/rando.h` ~:868-889) — callers gate on
   `Rando_HasActiveSettings()` (`rando.c` ~:4073) and provide a fallback. No accessor emits
-  a human-readable share string at runtime — an in-game display reuses the stored v1
-  identity blob the slot already holds (avoids re-serializing).
+  a human-readable share string at runtime. The proposed in-game display is deferred, so
+  this change does not re-serialize slot identity during gameplay.
 - **Keybinds.** Command IDs are the `kKeys_*` enum (`src/config.h`); defaults in
   `kDefaultKbdControls[]` (`src/config.c` ~:51) must stay lock-step with the enum
   (assert ~:86); INI names in `kKeyNameId[]` (~:104). L/R quick-swap uses
-  `hud_cur_item_l/r` (`g_ram+0x657/0x658`) via the HUD reorder path — the F7 model.
+  `hud_cur_item_l/r` (`g_ram+0x657/0x658`) via the HUD reorder path.
 - **Save & Quit / spawn.** `GameOver_SaveAndOrContinue()` (`src/messaging.c` ~:771)
   → `Death_Func15()` (`src/messaging.c` ~:801) is a **flag-latched** state machine
   (`death_var4/5`, `savegame_is_darkworld`, `subsubmodule_index` branching,
@@ -103,18 +103,17 @@ contiguous):
 | Bit | Flag | Feature | In `RandoSeedQolMask`? |
 |---|---|---|---|
 | 20 | `kFeatures0_RandoDungeonCheckCounts` | F1 map counts/dots | yes (rando-only) |
-| 21 | `kFeatures0_RandoSeedInfoPanel` | F2 seed info | yes (rando-only) |
+| 21 | reserved | deferred F2 seed overlay | no |
 | 22 | `kFeatures0_FastFanfare` | F3 item/dungeon-item get holds | yes |
 | 23 | `kFeatures0_CutsceneFastForward` | F4 cutscene/transition FF | yes |
 | 24 | `kFeatures0_AutoDash` | F6 auto/hold dash | yes |
 | 25 | `kFeatures0_WarpToSpawn` | F5 warp-to-spawn enable | no (local/race) |
-| 26 | `kFeatures0_SecondQuickSlot` | F7 second quick-slot | no (local) |
 
 F3's **text draw speed** is a global `zelda3.ini` selector (`text_speed`:
 normal/fast/instant), NOT a bit — a multi-level value doesn't fit the mask; the
-`kFeatures0_FastFanfare` bit covers the recommendable get-hold compression. F5/F7
-add `kKeys_WarpToSpawn` / `kKeys_SecondItem` command IDs. Rando-only features
-(F1/F2, and F5/F8 which read slot state) additionally gate on
+`kFeatures0_FastFanfare` bit covers the recommendable get-hold compression. F5
+adds `kKeys_WarpToSpawn` / `kKeys_SoftResetToSpawn` command IDs. Rando-only features
+(F1, and F5/F7 which read slot state) additionally gate on
 `(enhanced_features1 & kFeatures1_RandomizerActive)`. Where a behavior would perturb
 the side-by-side comparator, it is also gated `!ZeldaIsEmulatorAttached()` per the
 existing Seed QoL convention.
@@ -129,29 +128,29 @@ never per-frame (the O(N) gotcha). Draw the count on the dungeon map render.
 location→map-cell mapping; ships after the count is validated). Counts only, so
 race-safe.
 
-### D3 — F2 seed info panel reads C-static settings + the hunt counter (NULL-guarded)
+### D3 — F2 seed info overlay is deferred
 
-Draw crystal requirements from `Rando_GetActiveSettings()->crystals_ganon` /
-`->crystals_tower`, hunt progress from `g_rando_triforce_piece_count` vs. the settings'
-`pieces_required`, and identity from the slot's stored v1 identity string.
-**Gate on `Rando_HasActiveSettings()`**: `Rando_GetActiveSettings()` is NULL on
-snapshot-restore and v1 slots (a repeatedly-hit cold-replay path), so the panel MUST show
-a blank/"unknown" requirement — and may still show the independently-persisted identity
-string — rather than dereference NULL. Read-only display; do not mirror settings into
-`g_ram`. Goal/identity only → race-safe.
+The in-game seed info overlay is intentionally not part of this change. Playtest showed
+that the gameplay HUD surface is easy to cover and visually rough, while the native
+tracker/generate-copy UI already exposes the useful seed identity and requirements. Keep
+bit 21 reserved so later feature values used during branch testing do not churn, but do
+not expose, persist, recommend, or draw an F2 overlay in this change.
 
 ### D4 — F3 fast text is hint-safe by construction (and emulator-suppressed)
 
 `kText_WaitDurations` is indexed by an **in-text-stream** command param
 (`kText_WaitDurations[TEXTCMD_PARAM(cmd)]`, `messaging.c` ~:2527) — per-message embedded
 pacing, not a global knob. F3 overrides the *effective* wait selected at draw time
-(shorten, or zero when `instant`), NOT the LUT contents, and **never touches the
-end-of-box wait-for-input.** Because hint/telepathy/sign text still requires the player's
-input to advance/close, an `instant` fill cannot blow a hint past the player — the box
-fills instantly and waits. Because `text_speed` is a GLOBAL config value (not rando-only,
-not a bit), the per-frame character-draw cadence it changes is RAM/timing-observable, so
-the override MUST be suppressed under `ZeldaIsEmulatorAttached()` (on BOTH the vanilla and
-rando paths) to keep the side-by-side comparator clean. Fanfare
+(shorten, or zero when `instant`), NOT the LUT contents. `instant` also removes the
+text-box dead time that is not useful reading time: the initial/post-page input latch is
+clamped to one frame and text-box scroll commands complete in one frame. It still
+**never auto-presses generic wait-for-input.** Because hint/telepathy/sign text still
+requires the player's input to advance/close, an `instant` fill cannot blow a hint past
+the player — the box fills instantly and waits. Because `text_speed` is a GLOBAL config
+value (not rando-only, not a bit), the per-frame character-draw cadence it changes is
+RAM/timing-observable, so the override MUST be suppressed under
+`ZeldaIsEmulatorAttached()` (on BOTH the vanilla and rando paths) to keep the
+side-by-side comparator clean. Fanfare
 (`kFeatures0_FastFanfare`) clamps the `ancilla_aux_timer` get-holds at
 `AncillaAdd_ItemReceipt` with the grant otherwise byte-identical.
 
@@ -163,7 +162,10 @@ flag-setting stage. **Invariant:** after a fast-forwarded sequence, `g_ram`+SRAM
 in the exact state the full sequence produces — verified by an F12 dump compare
 (fast vs. vanilla) per cutscene. Covered sequences: prize-get, GT crystal barrier
 (visual-only; trivial), pyramid-opening, Agahnim intro (KillAgahnim module), Zelda
-escort dialogue, death/game-over fade (`Module12_GameOver`). Mirror-warp and
+escort dialogue, death/game-over fade (`Module12_GameOver`). Story-dialogue
+fast-forward is an explicit allowlist (opening Zelda telepathy, Uncle, Zelda escort /
+Sanctuary, and post-Agahnim story messages): it may auto-advance `Waitkey`/end-message
+pages, but it does not auto-select choices or apply to hint-tile ids. Mirror-warp and
 flute-travel **animation** speed is included (D-context: finalize is orthogonal);
 overworld/dungeon **screen-scroll** timing is explicitly out of scope (muscle-memory
 footgun). Each cutscene is an independent task so partial landing is safe.
@@ -178,7 +180,8 @@ a diverted branch (with its stale-flag hazards: `death_var4/5`, `savegame_is_dar
 `sram_progress_indicator`, Inverted DW forcing) is a days-costly bug class. So
 `Warp_ToSpawn()` drives the SAME save-then-load-start sequence (or invokes the existing
 start-point loader directly after a save), preserving every flag `Death_Func15` sets or
-clears. A new `kKeys_WarpToSpawn` hotkey triggers it; gated on `kFeatures0_WarpToSpawn` +
+clears. The `kKeys_WarpToSpawn` and `kKeys_SoftResetToSpawn` hotkeys both trigger the
+same audited spawn-path routine; gated on `kFeatures0_WarpToSpawn` +
 rando-active + `Rando_HasActiveSettings()` where slot state is read. Off (default) =
 vanilla S&Q, no hotkey. The Game Settings control carries the race-legality note (the
 toggle is the ban seam). **This is the highest-risk feature — 5.1 is a flag-audit task,
@@ -194,13 +197,7 @@ spin-charge**, so F6 MUST NOT perturb that path (JP-glitch faithfulness), and re
 source re-grep of the exact charge trigger before coding. Composes with
 `kFeatures0_TurnWhileDashing`. Off = vanilla.
 
-### D8 — F7 second quick-slot mirrors the L/R swap path
-
-Add `kKeys_SecondItem` and, under `kFeatures0_SecondQuickSlot`, a second selected-item
-byte (reuse a reserved `0x66d-0x66f` byte via a named `kRam_*` enum) driven by the
-same HUD reorder logic as L/R. Bind in `zelda3.ini`; unbound/off = vanilla input.
-
-### D9 — F8 auto-tracker connection feed, observation-only
+### D8 — F7 auto-tracker connection feed, observation-only
 
 Add a `discovered_connections` (entrances) / `discovered_doors` field to the
 `AutoTracker_ServiceFrame` snapshot, populated from the door/entrance runtime override
@@ -210,7 +207,7 @@ the new key is **purely additive** (existing clients tolerate an unknown key) an
 **no snapshot schema-version bump** — it is documented alongside the existing snapshot
 keys so clients can opt in.
 
-### D10 — Verification: playtest is the net, corpus proves neutrality
+### D9 — Verification: playtest is the net, corpus proves neutrality
 
 These live at gameplay/render sites the corpus and `--rando-selftest` never exercise
 (the project's dominant-bug-class discipline). Each feature carries a playtest
@@ -227,4 +224,4 @@ must be **byte-identical** with no version bump (D1) — that is the neutrality 
 - **F1 per-frame cost.** Mitigation: cache per map-open (D2).
 - **F3 hint blow-through.** Mitigation: never touch wait-for-input (D4).
 - **RAM-compare divergence.** Mitigation: Seed-QoL-class gating + `!ZeldaIsEmulatorAttached()`
-  where needed; F1/F2/F5/F8 are rando-only and not run side-by-side.
+  where needed; F1/F5/F7 are rando-only and not run side-by-side.

@@ -56,6 +56,10 @@ enum {
   // Unconditional enum entry (keymap table index stability); the handler in
   // main.c is gated by Z3R_NATIVE_SETTINGS_WINDOW and no-ops on Switch.
   kKeys_OpenSettings,
+  // Seed QoL local actions. Default unbound; point-of-use handlers are gated by
+  // their kFeatures0_* toggles so an unbound/off config is vanilla.
+  kKeys_WarpToSpawn,
+  kKeys_SoftResetToSpawn,
   // Developer diagnostic dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line).
   // Default F12; rebindable, and clearing the binding disables the hotkey. Also
   // triggerable from the Debug tab button. Handler is in main.c.
@@ -68,6 +72,12 @@ enum {
   kOutputMethod_SDLSoftware,
   kOutputMethod_OpenGL,
   kOutputMethod_OpenGL_ES,
+};
+
+enum {
+  kTextSpeed_Normal,
+  kTextSpeed_Fast,
+  kTextSpeed_Instant,
 };
 
 typedef struct Config {
@@ -95,6 +105,7 @@ typedef struct Config {
   uint8 msuvolume;
   uint32 features0;
   uint32 features1;  // randomizer kFeatures1_* bank (parsed from [randomizer] section, default 0)
+  uint8 text_speed;  // kTextSpeed_*; global draw-speed selector, default normal
 
   // Randomizer configuration (parsed from [randomizer] section in task 1.6).
   // For A0 these fields are unused but declared so the struct shape is stable.

@@ -1208,7 +1208,9 @@ reachability / checked view:
  "dungeons":[{"name":"Eastern Palace","small_keys":0,"big_key":false,"map":true,"compass":false}, ...],
  "reachable_available":true,
  "checked":[10,23,47],
- "reachable":[1,2,5,88]}
+ "reachable":[1,2,5,88],
+ "discovered_connections":[{"door":36,"from":60,"to":69}],
+ "discovered_doors":[{"from":412,"to":711,"from_name":"...","to_name":"..."}]}
 ```
 
 Field reference (`state`):
@@ -1229,6 +1231,13 @@ Field reference (`state`):
   legacy slots whose settings can't be recovered → `reachable` is empty).
 - `checked` — location ids the player has checked.
 - `reachable` — unchecked location ids reachable now under current logic.
+- `discovered_connections` — entrance-shuffle overworld door rows the player has
+  traversed this session; each entry reports the door row plus vanilla entrance id
+  (`from`) and shuffled destination entrance id (`to`). Empty when no entrance
+  shuffle connection has been traversed.
+- `discovered_doors` — door-shuffle directed door halves the player has traversed
+  this session, as generated door-table ids plus stable names. Empty when no
+  door-shuffle connection has been traversed.
 
 **Spoiler-safe by construction.** The stream exposes only the player's own
 inventory, the locations they have *checked*, and which unchecked locations are

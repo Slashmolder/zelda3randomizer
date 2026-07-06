@@ -1042,6 +1042,7 @@
     <Exec Command="python assets\rando_logic_gen.py" />
   </Target>
   <Target Name="RandoAssetsHash" BeforeTargets="ClCompile">
+    <Exec Condition="Exists('zelda3_assets.dat')" Command="python assets\scripts\check_assets_signature.py" />
     <Exec Condition="Exists('zelda3_assets.dat')" Command="python assets\scripts\dump_vanilla_assets_hash.py" />
     <Exec Condition="!Exists('zelda3_assets.dat') And !Exists('src\rando\vanilla_assets_hash.h')" Command="python assets\scripts\dump_vanilla_assets_hash.py --placeholder" />
   </Target>

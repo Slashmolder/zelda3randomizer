@@ -482,6 +482,8 @@ static void Panel_Controls(void) {
       RowsForBase(kKeys_RandoCheckTrackerWindow, false);
       RowsForBase(kKeys_RandoMapTrackerWindow, false);
       RowsForBase(kKeys_RandoRevealSpoiler, false);
+      RowsForBase(kKeys_WarpToSpawn, false);
+      RowsForBase(kKeys_SoftResetToSpawn, false);
       ImGui::TreePop();
     }
   }
@@ -501,6 +503,15 @@ static void Panel_Controller(void) {
     static const int kSys[] = { kKeys_OpenSettings, kKeys_Fullscreen, kKeys_Pause, kKeys_Turbo,
       kKeys_Reset, kKeys_DisplayPerf, kKeys_ToggleRenderer, kKeys_VolumeUp, kKeys_VolumeDown };
     for (int k = 0; k < (int)(sizeof kSys / sizeof kSys[0]); k++) RowsForBase(kSys[k], true);
+    if (ImGui::TreeNode("Randomizer")) {
+      RowsForBase(kKeys_RandoItemTrackerWindow, true);
+      RowsForBase(kKeys_RandoCheckTrackerWindow, true);
+      RowsForBase(kKeys_RandoMapTrackerWindow, true);
+      RowsForBase(kKeys_RandoRevealSpoiler, true);
+      RowsForBase(kKeys_WarpToSpawn, true);
+      RowsForBase(kKeys_SoftResetToSpawn, true);
+      ImGui::TreePop();
+    }
   }
   ImGui::EndChild();
 }
@@ -752,9 +763,25 @@ static void Panel_Cosmetics(void) {
 static void Panel_Gameplay(void) {
   ImGui::TextWrapped("These take effect immediately.");
   ImGui::SeparatorText("Convenience");
+  {
+    static const char *const kTextSpeeds[] = {"normal", "fast", "instant"};
+    int speed = s_cfg.text_speed;
+    if (speed < 0 || speed >= (int)(sizeof(kTextSpeeds) / sizeof(kTextSpeeds[0])))
+      speed = kTextSpeed_Normal;
+    if (ComboInt("Text speed", &speed, kTextSpeeds,
+                 (int)(sizeof(kTextSpeeds) / sizeof(kTextSpeeds[0])))) {
+      s_cfg.text_speed = (uint8)speed;
+      s_dirty = true;
+    }
+    Help("Speeds message character draw only; text boxes still wait for input.");
+  }
   FeatureCheckbox("Skip intro on keypress", kFeatures0_SkipIntroOnKeypress, "Skip the title/intro with any key.");
   FeatureCheckbox("Turn while dashing", kFeatures0_TurnWhileDashing, "Allow turning while dashing.");
+  FeatureCheckbox("Auto dash", kFeatures0_AutoDash, "Start Pegasus Boots dashes without the normal charge delay.");
   FeatureCheckbox("Cancel bird travel", kFeatures0_CancelBirdTravel, "Press X to cancel bird travel.");
+  FeatureCheckbox("Cutscene fast-forward", kFeatures0_CutsceneFastForward, "Shorten recurring cutscene and travel animations without skipping progression flags.");
+  FeatureCheckbox("Fast item fanfare", kFeatures0_FastFanfare, "Shorten item, small-key, map, and compass get holds.");
+  FeatureCheckbox("Warp to spawn", kFeatures0_WarpToSpawn, "Enable the warp-to-spawn hotkey. Race rules may ban instant repositioning.");
   FeatureCheckbox("Switch items with L/R", kFeatures0_SwitchLR, "L/R cycle the selected item.");
   FeatureCheckbox("Limit L/R cycle to 4 items", kFeatures0_SwitchLRLimit, "Restrict L/R cycling to the first 4 items.");
   FeatureCheckbox("Show maxed counts in yellow", kFeatures0_ShowMaxItemsInYellow, "Max rupees/bombs/arrows shown in yellow.");

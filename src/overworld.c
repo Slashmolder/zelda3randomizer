@@ -12,12 +12,18 @@
 #include "snes/snes_regs.h"
 #include "assets.h"
 #include "features.h"   // enhanced_features1 / kFeatures1_RandomizerActive
+#include "zelda_rtl.h"
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
 #include "rando/chains_runtime.h"
 #include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
 #include "rando/inverted_maps.h" // Overworld_ApplyInvertedTiles (#82 Inverted topology)
 #include "rando/medallion_icons.h"  // Rando_PatchMedallionEntranceMap8
+
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
 
 const uint16 kOverworld_OffsetBaseX[64] = {
   0,     0, 0x400, 0x600, 0x600, 0xa00, 0xa00, 0xe00,
@@ -354,8 +360,12 @@ void InitializeMirrorHDMA() {  // 80fdee
 
 void MirrorWarp_BuildWavingHDMATable() {  // 80fe64
   MirrorWarp_RunAnimationSubmodules();
-  if (frame_counter & 1)
+  if (CutsceneFastForwardEnabled()) {
+    MirrorWarp_RunAnimationSubmodules();
+    MirrorWarp_RunAnimationSubmodules();
+  } else if (frame_counter & 1) {
     return;
+  }
 
   int y = 240 - 8;
   do {
@@ -391,8 +401,12 @@ void MirrorWarp_BuildWavingHDMATable() {  // 80fe64
 
 void MirrorWarp_BuildDewavingHDMATable() {  // 80ff2f
   MirrorWarp_RunAnimationSubmodules();
-  if (frame_counter & 1)
+  if (CutsceneFastForwardEnabled()) {
+    MirrorWarp_RunAnimationSubmodules();
+    MirrorWarp_RunAnimationSubmodules();
+  } else if (frame_counter & 1) {
     return;
+  }
   int y = 240 - 8;
   do {
     hdma_table_dynamic[y] = hdma_table_dynamic[y + 2] = hdma_table_dynamic[y + 4] = hdma_table_dynamic[y + 6] = hdma_table_dynamic[y - 8];

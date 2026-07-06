@@ -134,6 +134,16 @@ enum {
   // $12C/$12D (music_control/sound_effect_ambient) writes change; the
   // destination, Link position, screen index and camera math are untouched.
   kFeatures0_JpOverworldMusic = 524288,  // bit 19
+
+  // Seed QoL (add-rando-seed-qol). Bits 20-25 are placement-neutral runtime
+  // preferences or local toggles. Per-slot bits are included in
+  // kFeatures0_RandoSeedQolMask below; local/race bits are deliberately not.
+  kFeatures0_RandoDungeonCheckCounts = 1048576,  // bit 20
+  kFeatures0_RandoSeedInfoPanel_Reserved = 2097152,  // bit 21, deferred/unused
+  kFeatures0_FastFanfare = 4194304,              // bit 22
+  kFeatures0_CutsceneFastForward = 8388608,      // bit 23
+  kFeatures0_AutoDash = 16777216,                // bit 24
+  kFeatures0_WarpToSpawn = 33554432,             // bit 25, local/race toggle
 };
 
 // Per-randomizer-slot Seed QoL features. These are gameplay/accessibility
@@ -153,7 +163,11 @@ enum {
     kFeatures0_MiscBugFixes | \
     kFeatures0_GameChangingBugFixes | \
     kFeatures0_RestoreJpGlitches | \
-    kFeatures0_DimFlashes)
+    kFeatures0_DimFlashes | \
+    kFeatures0_RandoDungeonCheckCounts | \
+    kFeatures0_FastFanfare | \
+    kFeatures0_CutsceneFastForward | \
+    kFeatures0_AutoDash)
 
 // Enum values for kRam_Features1 (randomizer feature flags).
 // Bits land here as Phase A features are implemented. The enum exists from

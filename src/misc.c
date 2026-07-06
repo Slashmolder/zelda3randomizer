@@ -22,6 +22,7 @@ bool Rando_TryGrantStartingInventory(const struct RandoSettings *settings);
 #include "messaging.h"
 #include "ending.h"
 #include "attract.h"
+#include "zelda_rtl.h"
 #include "snes/snes_regs.h"
 #include "assets.h"
 
@@ -36,6 +37,15 @@ static void KillAghanim_Func7();
 static void KillAghanim_Func8();
 static void KillAghanim_Func12();
 static uint8 PlaySfx_SetPan(uint8 a);
+
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
+
+static uint8 CutsceneClampTimer8(uint8 value, uint8 cap) {
+  return CutsceneFastForwardEnabled() && value > cap ? cap : value;
+}
 
 const uint8 kReceiveItem_Tab1[76] = {
   0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2,
@@ -278,10 +288,11 @@ static void KillAghanim_Func5() {
   HDMAEN_copy = 0x80;
   main_module_index = 21;
   submodule_index = 6;
-  subsubmodule_index = 24;
+  subsubmodule_index = CutsceneFastForwardEnabled() ? 4 : 24;
 }
 
 static void KillAghanim_Func6() {
+  subsubmodule_index = CutsceneClampTimer8(subsubmodule_index, 4);
   if (!--subsubmodule_index) {
     submodule_index++;
     sound_effect_ambient = 9;
@@ -308,12 +319,13 @@ static void KillAghanim_Func7() {
 static void KillAghanim_Func8() {
   RenderText();
   if (!submodule_index) {
-    subsubmodule_index = 32;
+    subsubmodule_index = CutsceneFastForwardEnabled() ? 4 : 32;
     submodule_index = 12;
   }
 }
 
 static void KillAghanim_Func12() {
+  subsubmodule_index = CutsceneClampTimer8(subsubmodule_index, 4);
   if (--subsubmodule_index)
     return;
   ResetAncillaAndCutscene();
@@ -740,7 +752,7 @@ void BossVictory_Heal() {  // 829c59
     link_direction_last = 2 << 1;
     flag_update_hud_in_nmi++;
     submodule_index++;
-    subsubmodule_index = 16;
+    subsubmodule_index = CutsceneFastForwardEnabled() ? 4 : 16;
     flag_is_link_immobilized++;
   }
   overworld_map_state = 0;
@@ -765,11 +777,12 @@ void Dungeon_RunVictorySpin() {  // 829cad
   if (link_sword_type + 1 & 0xfe)
     sound_effect_1 = 0x2C;
   link_force_hold_sword_up = 1;
-  subsubmodule_index = 32;
+  subsubmodule_index = CutsceneFastForwardEnabled() ? 4 : 32;
   submodule_index++;
 }
 
 void Dungeon_CloseVictorySpin() {  // 829cd1
+  subsubmodule_index = CutsceneClampTimer8(subsubmodule_index, 4);
   if (--subsubmodule_index)
     return;
   submodule_index++;
@@ -799,6 +812,7 @@ void Module16_BossVictory_Crystal() {  // 829e8a
 }
 
 void Module16_04_FadeAndEnd() {  // 829e9a
+  INIDISP_copy = CutsceneClampTimer8(INIDISP_copy, 1);
   if (--INIDISP_copy)
     return;
   bg1_x_offset = 0;
@@ -1048,6 +1062,12 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   ancilla_aux_timer[ancilla] =
     (j == 0x20 || j == 0x37 || j == 0x38 || j == 0x39) ? 0x68 :
     (j == 0x26) ? 0x2 : (item_receipt_method ? 0x38 : 0x60);
+  if ((enhanced_features0 & kFeatures0_FastFanfare) &&
+      !ZeldaIsEmulatorAttached() &&
+      j != 0x20 && j != 0x37 && j != 0x38 && j != 0x39 &&
+      ancilla_aux_timer[ancilla] > 0x18) {
+    ancilla_aux_timer[ancilla] = 0x18;
+  }
 
   int x, y;
 

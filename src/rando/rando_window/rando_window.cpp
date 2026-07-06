@@ -416,27 +416,49 @@ static void ApplyRaceSafePreset(RandoSettings *s) {
 // the game thread applies it to g_config.features0 inside the generate consumer.
 // features0 is NOT part of settings_hash — toggling these does not change the
 // hash/share.
-static const uint32 kRecBits[] = {
-    kFeatures0_SkipIntroOnKeypress, kFeatures0_ShowMaxItemsInYellow,
-    kFeatures0_TurnWhileDashing,    kFeatures0_CollectItemsWithSword,
-    kFeatures0_BreakPotsWithSword,  kFeatures0_DisableLowHealthBeep,
-    kFeatures0_CarryMoreRupees,     kFeatures0_MiscBugFixes,
-    kFeatures0_GameChangingBugFixes, kFeatures0_RestoreJpGlitches,
-    kFeatures0_DimFlashes,
+typedef struct RecFeatureRow {
+  uint32 bit;
+  const char *label;
+  const char *help;
+  uint8 recommended_on;
+} RecFeatureRow;
+
+static const RecFeatureRow kRecRows[] = {
+    {kFeatures0_SkipIntroOnKeypress, "Skip intro on keypress",
+     "Skip the title/intro with any key.", 1},
+    {kFeatures0_ShowMaxItemsInYellow, "Show maxed counts in yellow",
+     "Max rupees/bombs/arrows shown in yellow.", 1},
+    {kFeatures0_TurnWhileDashing, "Turn while dashing",
+     "Allow turning while dashing.", 1},
+    {kFeatures0_CollectItemsWithSword, "Collect items with sword",
+     "Sword swing collects nearby items.", 1},
+    {kFeatures0_BreakPotsWithSword, "Break pots with sword",
+     "Lv2-4 sword breaks pots.", 1},
+    {kFeatures0_DisableLowHealthBeep, "Disable low-health beep",
+     "Mute the low-health warning.", 1},
+    {kFeatures0_CarryMoreRupees, "Carry more rupees (9999)",
+     "Raise the rupee cap to 9999.", 1},
+    {kFeatures0_MiscBugFixes, "Misc bug fixes",
+     "Various fixes that don't change behavior.", 1},
+    {kFeatures0_GameChangingBugFixes, "Game-changing bug fixes",
+     "Advanced fixes that alter game behavior.", 0},
+    {kFeatures0_RestoreJpGlitches, "Restore JP 1.0 glitches",
+     "Re-enables glitches removed in the US 1.0 release.", 0},
+    {kFeatures0_DimFlashes, "Dim screen flashes",
+     "Reduce full-screen flash intensity.", 0},
+    {kFeatures0_RandoDungeonCheckCounts, "Dungeon check counts",
+     "Show per-dungeon checked/total counts on the pause-map dungeon view.", 1},
+    {kFeatures0_FastFanfare, "Fast item fanfare",
+     "Shorten item, small-key, map, and compass get holds.", 1},
+    {kFeatures0_CutsceneFastForward, "Cutscene fast-forward",
+     "Shorten recurring cutscene and travel animations without skipping progression flags.", 1},
+    {kFeatures0_AutoDash, "Auto dash",
+     "Start Pegasus Boots dashes without the normal charge delay.", 1},
 };
-static const char *const kRecLabels[] = {
-    "Skip intro on keypress",       "Show max items in yellow",
-    "Turn while dashing",           "Collect items with sword",
-    "Break pots with sword",        "Disable low-health beep",
-    "Carry more rupees",            "Misc bug fixes",
-    "Game-changing bug fixes",      "Restore JP 1.0 glitches",
-    "Dim flashes",
-};
-// Recommended ON set (mirrors kRecRecommendedOn[] for the shared rows). Gameplay
+// recommended_on mirrors kRecRecommendedOn[] for the shared rows. Gameplay
 // behavior changes, JP glitches, and Dim are off by default; glitch-logic seeds
 // still force JP glitches on at generation/slot-load time.
-static const uint8 kRecOn[] = {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0};
-static const int kRecCount = (int)(sizeof(kRecBits) / sizeof(kRecBits[0]));
+static const int kRecCount = (int)(sizeof(kRecRows) / sizeof(kRecRows[0]));
 
 static void Panel_RecommendedFeatures() {
   RandoWindowBridge *b = &g_rando_window_bridge;
@@ -461,30 +483,32 @@ static void Panel_RecommendedFeatures() {
       "Gameplay; this panel only sets what gets stamped into this seed.)");
   ImGui::Spacing();
   for (int i = 0; i < kRecCount; i++) {
+    const RecFeatureRow &row = kRecRows[i];
     bool force_jp_glitches =
-        kRecBits[i] == kFeatures0_RestoreJpGlitches &&
+        row.bit == kFeatures0_RestoreJpGlitches &&
         Rando_SettingsAssumeJpGlitches(&b->pending);
-    bool on = force_jp_glitches || ((*f & kRecBits[i]) != 0);
+    bool on = force_jp_glitches || ((*f & row.bit) != 0);
     if (force_jp_glitches) ImGui::BeginDisabled();
-    bool clicked = ImGui::Checkbox(kRecLabels[i], &on);
+    bool clicked = ImGui::Checkbox(row.label, &on);
     if (force_jp_glitches) ImGui::EndDisabled();
+    HelpTooltip(force_jp_glitches
+        ? "Forced on because this seed's logic or tricks assume restored JP 1.0 glitches. "
+          "Original-ROM compare mode still suppresses these glitches at point of use."
+        : row.help);
     if (!force_jp_glitches && clicked) {
-      if (on) *f |= kRecBits[i]; else *f &= ~kRecBits[i];
+      if (on) *f |= row.bit; else *f &= ~row.bit;
     }
-    if (kRecBits[i] == kFeatures0_RestoreJpGlitches) {
+    if (row.bit == kFeatures0_RestoreJpGlitches) {
       if (force_jp_glitches) {
         ImGui::SameLine();
         ImGui::TextDisabled("(forced by glitch logic)");
       }
-      HelpTooltip(force_jp_glitches
-          ? "Forced on because this seed's logic or tricks assume restored JP 1.0 glitches."
-          : "Per-slot opt-in for restored JP 1.0 gameplay glitches such as Fake Flippers, Itemdash, Spindash, and Superspeed. Does not enable JP 1.0 overworld music.");
     }
   }
   ImGui::Spacing();
   if (ImGui::Button("Apply recommended set")) {
     for (int i = 0; i < kRecCount; i++) {
-      if (kRecOn[i]) *f |= kRecBits[i]; else *f &= ~kRecBits[i];
+      if (kRecRows[i].recommended_on) *f |= kRecRows[i].bit; else *f &= ~kRecRows[i].bit;
     }
   }
   HelpTooltip("Sets every Seed QoL toggle to its recommended on/off state.");
@@ -1966,7 +1990,7 @@ static void RenderGenerateRow() {
   char err[256];
   int invalid = RandoWindowBridge_Validate(&b->pending, err, sizeof err);
   if (!invalid && b->shape_filter_enabled && !b->shape_filter_valid) {
-    snprintf(err, sizeof err, "Seed Shape: %s",
+    snprintf(err, sizeof err, "Seed Shape: %.220s",
              b->shape_filter_error[0] ? b->shape_filter_error : "invalid filter");
     invalid = 1;
   }

@@ -53,6 +53,7 @@ void AutoTracker_GetBindInfo(uint16 *port, bool *allow_remote) {
 
 #include "rando.h"            // Rando_IsActive / Rando_FillItemView / Rando_IsLocationChecked /
                              // Rando_GetReachabilityCounter / Rando_GetActiveSettings / ...
+#include "door_runtime.h"    // DoorRt_GetLink / DoorRt_IsDiscovered
 #include "dungeon_ids.h"      // shared game/key/logic dungeon row descriptors
 #include "rando_logic.h"     // RandoReachability / Reachability_HasLocation / kRandoLocations / names
 #include "rando_placement.h" // Placement_GetActive / RandoPlacementTable
@@ -405,6 +406,67 @@ static void at_append_dungeons(AtStr *s, const RandoItemView *v) {
   at_str_puts(s, "]");
 }
 
+static void at_append_connections(AtStr *s) {
+  at_str_puts(s, ",\"discovered_connections\":[");
+  int first = 1;
+  uint32 n = Rando_EntranceConnectionCount();
+  for (uint32 i = 0; i < n; i++) {
+    uint8 from = 0, to = 0;
+    if (!Rando_EntranceConnection((uint16)i, &from, &to))
+      continue;
+    at_str_printf(s, "%s{\"door\":%u,\"from\":%u,\"to\":%u}",
+                  first ? "" : ",", (unsigned)i, (unsigned)from, (unsigned)to);
+    first = 0;
+  }
+  at_str_puts(s, "],\"discovered_doors\":[");
+  first = 1;
+  for (uint32 i = 0; i < kDoorTbl_DoorCount; i++) {
+    uint16 to = DoorRt_GetLink((uint16)i);
+    if (to == kDoorRt_NoOverride || to >= kDoorTbl_DoorCount ||
+        !DoorRt_IsDiscovered((uint16)i)) {
+      continue;
+    }
+    at_str_printf(s, "%s{\"from\":%u,\"to\":%u,\"from_name\":",
+                  first ? "" : ",", (unsigned)i, (unsigned)to);
+    at_json_str(s, kDoorTblNames + kDoorTblDoors[i].name_off);
+    at_str_puts(s, ",\"to_name\":");
+    at_json_str(s, kDoorTblNames + kDoorTblDoors[to].name_off);
+    at_str_puts(s, "}");
+    first = 0;
+  }
+  at_str_puts(s, "]");
+}
+
+static void at_digest_u16(uint64 *h, uint16 v) {
+  *h = (*h ^ (uint8)(v & 0xff)) * 0x100000001b3ull;
+  *h = (*h ^ (uint8)(v >> 8)) * 0x100000001b3ull;
+}
+
+static uint32 at_connection_digest(void) {
+  uint64 h = 0xcbf29ce484222325ull;
+  uint32 n = Rando_EntranceConnectionCount();
+  for (uint32 i = 0; i < n; i++) {
+    uint8 from = 0, to = 0;
+    if (!Rando_EntranceConnection((uint16)i, &from, &to))
+      continue;
+    at_digest_u16(&h, 1);
+    at_digest_u16(&h, (uint16)i);
+    at_digest_u16(&h, from);
+    at_digest_u16(&h, to);
+  }
+  for (uint32 i = 0; i < kDoorTbl_DoorCount; i++) {
+    uint16 to = DoorRt_GetLink((uint16)i);
+    if (to == kDoorRt_NoOverride || to >= kDoorTbl_DoorCount ||
+        !DoorRt_IsDiscovered((uint16)i)) {
+      continue;
+    }
+    at_digest_u16(&h, 2);
+    at_digest_u16(&h, (uint16)i);
+    at_digest_u16(&h, to);
+  }
+  return (uint32)(h ^ (h >> 32));
+}
+
 // Full state snapshot, terminated by '\n'. When no rando slot is active the line
 // is minimal ({type,msg,counter,active:false}) so a connecting client still gets
 // an immediate, framed ack but no inventory/reachability flows until activation.
@@ -461,7 +523,9 @@ static void at_build_snapshot(AtStr *s, uint32 msg, uint32 counter, bool active,
       first = 0;
     }
   }
-  at_str_puts(s, "]}\n");
+  at_str_puts(s, "]");
+  at_append_connections(s);
+  at_str_puts(s, "}\n");
 }
 
 // Static location catalog (id -> name + region), sent once per connection so an
@@ -518,6 +582,7 @@ static struct {
   bool last_completed;
   uint8 last_prog;   // last sram_progress_indicator (Standard castle-escape bumps
                      // RescuedZelda-gated reachability WITHOUT moving the counter)
+  uint32 last_connections;
   uint32 msg_seq;
 } g_at;
 
@@ -695,6 +760,7 @@ void AutoTracker_ServiceFrame(void) {
 
   uint32 counter = Rando_GetReachabilityCounter();
   bool active = Rando_IsActive();
+  uint32 connections = active ? at_connection_digest() : 0;
   // The player beat the seed only at TriforceRoom (0x19) or Credits (0x1A).
   // Deliberately NOT `>= 0x18`: that also matches GanonEmerges (0x18, the fight
   // is only just starting) and SpawnSelect (0x1B), the spawn-point menu the load
@@ -709,7 +775,8 @@ void AutoTracker_ServiceFrame(void) {
   // next location check.
   bool changed = !g_at.have_last || counter != g_at.last_counter ||
                  active != g_at.last_active || completed != g_at.last_completed ||
-                 (uint8)sram_progress_indicator != g_at.last_prog;
+                 (uint8)sram_progress_indicator != g_at.last_prog ||
+                 connections != g_at.last_connections;
 
   bool any_new = false;
   for (int i = 0; i < AT_MAX_CLIENTS; i++)
@@ -745,6 +812,7 @@ void AutoTracker_ServiceFrame(void) {
       g_at.last_active = active;
       g_at.last_completed = completed;
       g_at.last_prog = (uint8)sram_progress_indicator;
+      g_at.last_connections = connections;
     }
     at_str_free(&snap);
   }

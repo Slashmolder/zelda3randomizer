@@ -2122,7 +2122,6 @@ void Link_HandleYItem() {  // 879b0e
     return;
 
   uint8 item = current_item_y;
-
   if (link_is_bunny_mirror && (item != 11 && item != 20))
     return;
 
@@ -3931,7 +3930,8 @@ void Link_PerformDash() {  // 87b281
   if (link_state_bits & 0x80)
     return;
   bitfield_for_a_button = 0;
-  link_countdown_for_dash = 29;
+  link_countdown_for_dash =
+      (enhanced_features0 & kFeatures0_AutoDash) && !ZeldaIsEmulatorAttached() ? 0 : 29;
   link_dash_ctr = 64;
   link_player_handler_state = kPlayerState_StartDash;
   link_is_running = 1;

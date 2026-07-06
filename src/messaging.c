@@ -2,6 +2,8 @@
 #include "zelda_rtl.h"
 #include "rando/rando.h"  // Phase B Slice 1 — Rando_OnGameSave
 #include "variables.h"
+#include "config.h"
+#include "features.h"
 #include "snes/snes_regs.h"
 #include "dungeon.h"
 #include "hud.h"
@@ -17,6 +19,7 @@
 #include "attract.h"
 #include "nmi.h"
 #include "assets.h"
+#include "rando/dungeon_ids.h"
 #include "rando/rando_hints.h"
 
 static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y);
@@ -126,6 +129,104 @@ static PlayerHandlerFunc *const kMessaging_Text[] = {
   &Text_Render,
   &RenderText_PostDeathSaveOptions,
 };
+
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
+
+static uint8 CutsceneClampTimer8(uint8 value, uint8 cap) {
+  return CutsceneFastForwardEnabled() && value > cap ? cap : value;
+}
+
+static bool Text_InstantModeEnabled(void) {
+  return g_config.text_speed == kTextSpeed_Instant && !ZeldaIsEmulatorAttached();
+}
+
+static bool Text_FastModeEnabled(void) {
+  return g_config.text_speed == kTextSpeed_Fast && !ZeldaIsEmulatorAttached();
+}
+
+static bool Text_ShouldFastForwardStoryDialog(void) {
+  if (!CutsceneFastForwardEnabled())
+    return false;
+  if (Rando_IsHintTileMessage(dialogue_message_index))
+    return false;
+
+  // Non-interactive Standard/escape/Aga story text. Randomizer hints stay manual.
+  switch (dialogue_message_index) {
+  case 0x0e:  // Uncle leaving Link's house.
+  case 0x0f:  // Uncle's gift.
+  case 0x18:  // Sanctuary: Zelda is safe.
+  case 0x19:  // Sanctuary priest's long quest explanation.
+  case 0x1c:  // Zelda already abducted / castle prompt.
+  case 0x1e:  // Zelda at Sanctuary.
+  case 0x20:  // Opening Zelda telepathy.
+  case 0x21:  // Opening hidden path hint.
+  case 0x22:  // Throne-room passage.
+  case 0x23:  // Push the throne shelf.
+  case 0x25:  // Leaving Zelda's cell.
+  case 0x26:  // Zelda explains Agahnim.
+  case 0x29:  // Sanctuary attack telepathy.
+  case 0x2a:  // Sewers near Sanctuary.
+  case 0x2b:  // Sanctuary door switch.
+  case 0x35:  // Post-Agahnim story state.
+  case 0x36:  // Dark World Sahasrahla telepathy.
+    return true;
+  default:
+    return false;
+  }
+}
+
+static uint8 Text_EffectiveLineSpeed(uint8 speed) {
+  if (Text_ShouldFastForwardStoryDialog())
+    return 0;
+  switch (g_config.text_speed) {
+  case kTextSpeed_Instant:
+    return ZeldaIsEmulatorAttached() ? speed : 0;
+  case kTextSpeed_Fast:
+    return ZeldaIsEmulatorAttached() ? speed : (speed > 1 ? 1 : speed);
+  default:
+    return speed;
+  }
+}
+
+static uint16 Text_EffectiveWaitDuration(uint8 wait_index) {
+  uint16 duration = kText_WaitDurations[wait_index & 0xf];
+  if (Text_ShouldFastForwardStoryDialog())
+    return 0;
+  if (ZeldaIsEmulatorAttached())
+    return duration;
+  switch (g_config.text_speed) {
+  case kTextSpeed_Instant:
+    return 0;
+  case kTextSpeed_Fast:
+    duration >>= 2;
+    return duration < 2 ? 2 : duration;
+  default:
+    return duration;
+  }
+}
+
+static uint8 Text_EffectiveInputLatch(void) {
+  if (Text_ShouldFastForwardStoryDialog() || Text_InstantModeEnabled())
+    return 1;
+  if (Text_FastModeEnabled())
+    return 8;
+  return 28;
+}
+
+static uint8 Text_EffectiveScrollSpeed(uint8 speed) {
+  if (Text_ShouldFastForwardStoryDialog() || Text_InstantModeEnabled())
+    return 15;  // 16 row-shifts in one frame, enough to finish any alignment.
+  if (Text_FastModeEnabled() && speed < 7)
+    return 7;
+  return speed;
+}
+
+static bool Text_ShouldAutoAdvancePage(void) {
+  return Text_ShouldFastForwardStoryDialog();
+}
 static const uint8 kOverworldMap_tab1[333] = {
   0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xdf,
   0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0, 0xcf, 0xce,
@@ -655,6 +756,7 @@ void Death_Func1() {  // 89f2a4
 }
 
 void GameOver_DelayBeforeIris() {  // 89f33b
+  some_menu_ctr = CutsceneClampTimer8(some_menu_ctr, 4);
   if (--some_menu_ctr)
     return;
   Death_InitializeGameOverLetters();
@@ -703,6 +805,7 @@ void GameOver_IrisWipe() {  // 89f350
 
 void GameOver_SplatAndFade() {  // 89f3de
   if (some_menu_ctr) {
+    some_menu_ctr = CutsceneClampTimer8(some_menu_ctr, 4);
     some_menu_ctr--;
     return;
   }
@@ -735,7 +838,7 @@ void GameOver_SplatAndFade() {  // 89f3de
 }
 
 void Death_Func6() {  // 89f458
-  some_menu_ctr = 12;
+  some_menu_ctr = CutsceneFastForwardEnabled() ? 4 : 12;
   load_chr_halfslot_even_odd = 15;
   Graphics_LoadChrHalfSlot();
   load_chr_halfslot_even_odd = 0;
@@ -1944,6 +2047,41 @@ void DungeonMap_ScrollFloors() {  // 8aea7f
     dungmap_var2 = 0;
 }
 
+static int DungeonMap_DrawRandoCheckCount(int spr_pos) {
+  if (ZeldaIsEmulatorAttached())
+    return spr_pos;
+  if (!(enhanced_features0 & kFeatures0_RandoDungeonCheckCounts) ||
+      !(enhanced_features1 & kFeatures1_RandomizerActive) ||
+      !Rando_IsActive())
+    return spr_pos;
+
+  uint8 game_dungeon = Rando_GameDungeonFromRawPalace((uint8)cur_palace_index_x2);
+  uint8 rando_dungeon = Rando_RandoDungeonFromGameDungeon(game_dungeon);
+  uint16 checked = 0, total = 0;
+  Rando_DungeonCheckCounts(rando_dungeon, &checked, &total);
+  if (total == 0)
+    return spr_pos;
+
+  uint16 remaining = (checked < total) ? (uint16)(total - checked) : 0;
+  if (remaining > 999)
+    remaining = 999;
+
+  uint8 digits[3];
+  int n = 0;
+  if (remaining >= 100)
+    digits[n++] = (uint8)(remaining / 100);
+  if (remaining >= 10 || n != 0)
+    digits[n++] = (uint8)((remaining / 10) % 10);
+  digits[n++] = (uint8)(remaining % 10);
+
+  int x = 0xd8 - n * 8;
+  for (int i = 0; i < n; i++) {
+    SetOamPlain(&oam_buf[spr_pos++], (uint8)(x + i * 8), 0x20,
+                (uint8)(0x1e + digits[i]), 0x3d, 0);
+  }
+  return spr_pos;
+}
+
 void DungeonMap_DrawSprites() {  // 8aeab2
   int dung = cur_palace_index_x2 >> 1;
   uint8 r2 = (kDungMap_Tab5[dung] & 0xf);
@@ -1959,6 +2097,7 @@ void DungeonMap_DrawSprites() {  // 8aeab2
   spr_pos = DungeonMap_DrawBlinkingIndicator(spr_pos);
   spr_pos = DungeonMap_DrawBossIcon(spr_pos);
   spr_pos = DungeonMap_DrawFloorNumberObjects(spr_pos);
+  spr_pos = DungeonMap_DrawRandoCheckCount(spr_pos);
   DungeonMap_DrawFloorBlinker();
 }
 
@@ -2191,6 +2330,8 @@ void Text_Initialize() {  // 8ec483
 
 void Text_Initialize_initModuleStateLoop() {  // 8ec493
   memcpy(&text_msgbox_topleft_copy, kText_InitializationData, 32);
+  text_wait_countdown2 = Text_EffectiveInputLatch();
+  vwf_line_speed = vwf_line_speed_cur = Text_EffectiveLineSpeed(vwf_line_speed);
   Text_InitVwfState();
   RenderText_SetDefaultWindowPosition();
   text_tilemap_cur = 0x3980;
@@ -2524,7 +2665,14 @@ RESTART:;
   case kTextCmd_Wait:  // RenderText_Draw_Wait
     switch (joypad1L_last & 0x80 ? 1 : text_wait_countdown) {
     case 0:
-      text_wait_countdown = kText_WaitDurations[TEXTCMD_PARAM(cmd)] - 1;
+      {
+        uint16 duration = Text_EffectiveWaitDuration(TEXTCMD_PARAM(cmd));
+        if (duration == 0) {
+          BYTE(text_wait_countdown) = 0;
+          goto COMMAND_DONE;
+        }
+        text_wait_countdown = duration - 1;
+      }
       break;
     case 1:
       BYTE(text_wait_countdown) = 0;
@@ -2538,15 +2686,16 @@ RESTART:;
     sound_effect_2 = TEXTCMD_PARAM(cmd);
     goto COMMAND_DONE;
   case kTextCmd_Speed:  // RenderText_Draw_SetSpeed
-    vwf_line_speed = vwf_line_speed_cur = TEXTCMD_PARAM(cmd);
+    vwf_line_speed = vwf_line_speed_cur = Text_EffectiveLineSpeed(TEXTCMD_PARAM(cmd));
     goto COMMAND_DONE;
   case kTextCmd_Waitkey:  // RenderText_Draw_PauseForInput
     if (text_wait_countdown2 != 0) {
       if (--text_wait_countdown2 == 1)
         sound_effect_2 = 36;
     } else {
-      if ((filtered_joypad_H | filtered_joypad_L) & 0xc0) {
-        text_wait_countdown2 = 28;
+      if (Text_ShouldAutoAdvancePage() ||
+          ((filtered_joypad_H | filtered_joypad_L) & 0xc0)) {
+        text_wait_countdown2 = Text_EffectiveInputLatch();
         goto COMMAND_DONE;
       }
     }
@@ -2556,9 +2705,9 @@ RESTART:;
       if (--text_wait_countdown2 == 1)
         sound_effect_2 = 36;
     } else {
-      if ((filtered_joypad_H | filtered_joypad_L)) {
+      if (Text_ShouldAutoAdvancePage() || (filtered_joypad_H | filtered_joypad_L)) {
         text_render_state = 4;
-        text_wait_countdown2 = 28;
+        text_wait_countdown2 = Text_EffectiveInputLatch();
       }
     }
     break;
@@ -2787,7 +2936,7 @@ void RenderText_Draw_Choose1Or2() {  // 8ecf72
 }
 
 bool RenderText_Draw_Scroll() {  // 8ecfe2
-  uint8 r2 = dialogue_scroll_speed;
+  uint8 r2 = Text_EffectiveScrollSpeed(dialogue_scroll_speed);
   do {
     for (int i = 0; i < 0x7e0; i += 16) {
       uint16 *p = (uint16 *)((uint8 *)messaging_buf + i);

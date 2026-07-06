@@ -267,10 +267,9 @@ static void ZeldaRunGameLoop() {
   Rando_TickTrapEffects();
   Module_MainRouting();
   // Draw the in-game tracker overlays here, after the game has built OAM for
-  // the frame and BEFORE
-  // NMI_PrepareSprites packs the extended-OAM table, so overlay sprites are
-  // uploaded with the rest of OAM. No-op unless rando is active and a tracker
-  // toggle is on.
+  // the frame and BEFORE NMI_PrepareSprites packs the extended-OAM table, so
+  // overlay sprites are uploaded with the rest of OAM. No-op unless rando is
+  // active and a tracker toggle is on.
   //
   // PC supersedes these OAM overlays with the rich ImGui tracker windows, so
   // the overlay is compiled out there (one tracker system on PC). Switch keeps

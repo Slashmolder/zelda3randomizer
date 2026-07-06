@@ -50,6 +50,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from check_assets_signature import AssetSignatureError
+from check_assets_signature import check_assets_signature
+
 ROM_NAMES = ("zelda3.sfc", "zelda3.smc")
 ASSETS_NAME = "zelda3_assets.dat"
 INI_NAME = "zelda3.ini"  # optional, best-effort (keeps dumps/saves in the worktree)
@@ -149,11 +152,26 @@ def print_missing_pot_artifacts(prefix: str, d: Path, *, required: bool) -> None
           "--binary=<built zelda3.exe> --prepare-only", file=sys.stderr)
 
 
+def asset_signature_ok(asset_file: Path, repo: Path, *, label: str) -> bool:
+    try:
+        check_assets_signature(asset_file, repo / "src" / "assets.h")
+        return True
+    except AssetSignatureError as exc:
+        print(f"setup_worktree: {label} {exc}", file=sys.stderr)
+        return False
+
+
 def ensure_vanilla_assets_hash(d: Path) -> int:
     """Generate the gitignored vanilla asset hash header from zelda3_assets.dat."""
-    if not (d / ASSETS_NAME).is_file():
+    asset_file = d / ASSETS_NAME
+    if not asset_file.is_file():
         print(f"setup_worktree: cannot generate {VANILLA_ASSETS_HASH_REL}: "
               f"{ASSETS_NAME} is missing.", file=sys.stderr)
+        return 1
+    if not asset_signature_ok(asset_file, d, label="local"):
+        print("setup_worktree: cannot generate vanilla asset hash from a stale "
+              "asset blob; rerun `python assets/restool.py --extract-from-rom`.",
+              file=sys.stderr)
         return 1
     print(f"setup_worktree: generate {VANILLA_ASSETS_HASH_REL} from {ASSETS_NAME}")
     try:
@@ -182,13 +200,15 @@ def main() -> int:
 
     have_rom = find_existing_rom(cwd) is not None
     have_assets = (cwd / ASSETS_NAME).is_file()
+    assets_ok = (have_assets and
+                 asset_signature_ok(cwd / ASSETS_NAME, cwd, label="local"))
     have_ini = (cwd / INI_NAME).is_file()
     have_chest = (cwd / CHEST_TABLE_REL).is_file()
     have_hash = (cwd / VANILLA_ASSETS_HASH_REL).is_file()
     have_pots = has_pot_artifacts(cwd)
     have_sdl2 = has_vendored_sdl2(cwd)
     need_sdl2 = SDL2_REQUIRED_ON_THIS_PLATFORM
-    required_ready = (have_rom and have_assets and have_chest and have_hash and
+    required_ready = (have_rom and assets_ok and have_chest and have_hash and
                       (have_sdl2 or not need_sdl2))
 
     if args.verify:
@@ -220,7 +240,7 @@ def main() -> int:
                                         required=args.require_pot_artifacts)
         return 1
 
-    if (have_rom and have_assets and have_ini and have_chest and have_hash and
+    if (have_rom and assets_ok and have_ini and have_chest and have_hash and
             have_pots and (have_sdl2 or not need_sdl2)):
         if need_sdl2:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
@@ -241,7 +261,7 @@ def main() -> int:
 
     if source is None:
         # The ini is optional; only a missing ROM/assets is fatal.
-        if have_rom and have_assets and (have_sdl2 or not need_sdl2):
+        if have_rom and assets_ok and (have_sdl2 or not need_sdl2):
             if not have_hash:
                 rc = ensure_vanilla_assets_hash(cwd)
                 if rc:
@@ -273,7 +293,7 @@ def main() -> int:
         return 1
 
     if source.resolve() == cwd:
-        if have_rom and have_assets and have_chest and (have_sdl2 or not need_sdl2):
+        if have_rom and assets_ok and have_chest and (have_sdl2 or not need_sdl2):
             if not have_hash:
                 rc = ensure_vanilla_assets_hash(cwd)
                 if rc:
@@ -304,7 +324,8 @@ def main() -> int:
         print(f"setup_worktree: copy {src_rom} -> {dst_rom}")
         shutil.copy2(src_rom, dst_rom)
 
-    if not have_assets:
+    copied_assets = False
+    if not assets_ok:
         src_assets = source / ASSETS_NAME
         if not src_assets.is_file():
             print(f"setup_worktree: source has no {ASSETS_NAME} -- cannot mirror.",
@@ -314,9 +335,17 @@ def main() -> int:
             print(f"                in {source} first, or pass --from to a populated dir.",
                   file=sys.stderr)
             return 1
+        if not asset_signature_ok(src_assets, cwd, label="source"):
+            print("setup_worktree: source asset blob is stale for this checkout; "
+                  "run `python assets/restool.py --extract-from-rom` in the "
+                  "source checkout first.", file=sys.stderr)
+            return 1
         dst_assets = cwd / ASSETS_NAME
         print(f"setup_worktree: copy {src_assets} -> {dst_assets}")
         shutil.copy2(src_assets, dst_assets)
+        have_assets = True
+        assets_ok = True
+        copied_assets = True
 
     # Windows/MSBuild requires the gitignored SDL2-devel VC package. Copy the
     # whole directory so both x64 and Win32 project platforms stay usable.
@@ -392,7 +421,7 @@ def main() -> int:
             if args.require_pot_artifacts:
                 return 1
 
-    if not (cwd / VANILLA_ASSETS_HASH_REL).is_file():
+    if copied_assets or not (cwd / VANILLA_ASSETS_HASH_REL).is_file():
         rc = ensure_vanilla_assets_hash(cwd)
         if rc:
             return rc

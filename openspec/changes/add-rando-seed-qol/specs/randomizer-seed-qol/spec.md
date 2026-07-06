@@ -61,42 +61,6 @@ NOT affect `placement_digest` or `settings_hash`.
 - **WHEN** no randomizer slot is active, or the feature bit is off
 - **THEN** the pause map renders exactly as vanilla with no counts or dots
 
-### Requirement: In-game seed info panel
-
-Under an active randomizer slot, the game SHALL provide an in-game readout of the
-seed's win condition and identity: the crystals required for Ganon and for the
-Ganon's-Tower entrance, the Triforce/Ganon-hunt `pieces collected / pieces
-required` when the goal is a hunt (sourced from the runtime piece counter), and the
-slot's identity/settings string so the player can confirm the loaded seed. The
-panel SHALL display only goal/requirement/identity data (which the player chose at
-generation) and MUST NOT reveal item placements, so it is safe under race mode. When
-the active settings are unavailable — `Rando_GetActiveSettings()` returns NULL on
-snapshot-restore and v1 (format_version < 2) slots — the panel SHALL degrade to a
-blank/"unknown" requirement rather than crash, and MAY still show the independently
-persisted identity string.
-
-#### Scenario: Crystal requirements are shown
-- **WHEN** the active slot requires 6 crystals for Ganon and 5 for the tower and the
-  seed info panel is shown
-- **THEN** the panel shows those two requirement values
-
-#### Scenario: Hunt progress is shown for hunt goals
-- **WHEN** the goal is Triforce Hunt with 30 pieces placed and 20 required and the
-  player holds 12
-- **THEN** the panel shows `12 / 20` pieces (and the placed count where relevant),
-  updating as pieces are collected
-
-#### Scenario: Panel is race-safe
-- **WHEN** the active slot is a race-mode seed and the seed info panel is shown
-- **THEN** it shows goal/requirement/identity data only and reveals no item names or
-  locations
-
-#### Scenario: Panel degrades gracefully without active settings
-- **WHEN** the slot is a snapshot-restore or v1 slot where `Rando_GetActiveSettings()`
-  returns NULL
-- **THEN** the panel shows blank/"unknown" requirements without crashing, and may still
-  show the persisted identity string
-
 ### Requirement: Message and fanfare speed is configurable and hint-safe
 
 The game SHALL expose a configurable message text speed (at least
@@ -105,16 +69,18 @@ the recurring dungeon small-key / map / compass "get" holds. Text speed SHALL be
 speed *level*, never a plain on/off skip, and the fastest level SHALL remain
 **hint-safe**: hint / telepathy / sign text the player is expected to read MUST NOT
 auto-advance past the player, so an instant setting still requires an input to
-dismiss readable text (it speeds character draw and non-informational holds, it
-does not auto-close text the player must read). Because text speed is a global
-(non-rando) setting, its draw-cadence override SHALL be suppressed under side-by-side
-emulation (`ZeldaIsEmulatorAttached()`) on both the vanilla and randomizer paths so the
-RAM/timing comparator stays clean.
+dismiss readable text. The instant level SHALL speed character draw, embedded waits,
+initial/post-page input latches, and text-box scroll commands; it SHALL NOT auto-close
+generic readable text. Because text speed is a global (non-rando) setting, its
+draw-cadence override SHALL be suppressed under side-by-side emulation
+(`ZeldaIsEmulatorAttached()`) on both the vanilla and randomizer paths so the RAM/timing
+comparator stays clean.
 
 #### Scenario: Instant text speeds dialogue draw
 - **WHEN** text speed is `instant` and an NPC dialogue box opens
-- **THEN** the box's characters render without per-character delay, and the player
-  advances/closes it with the normal input
+- **THEN** the box's characters render without per-character delay, page-scroll
+  commands complete without visible dead time, and the player advances/closes generic
+  text with input
 
 #### Scenario: Hint text stays readable at the fastest setting
 - **WHEN** text speed is `instant` and the player reads a hint tile / telepathy /
@@ -138,7 +104,9 @@ flute-travel animations. Each fast-path SHALL preserve **every** progression fla
 SRAM byte, and side effect the vanilla sequence performs (skip the *animation*,
 never the *flag*): a fast-forwarded sequence MUST leave `g_ram`/SRAM in the exact
 state the full sequence would. The overworld/dungeon **screen-scroll** transition
-timing SHALL NOT be changed by this feature.
+timing SHALL NOT be changed by this feature. Story-dialogue fast-forward SHALL be
+allowlisted to known Standard intro / Uncle / Zelda escort / Sanctuary / post-Agahnim
+messages and SHALL NOT auto-select choices or apply to randomizer hint-tile messages.
 
 #### Scenario: Prize-get fast-path sets the prize identically
 - **WHEN** the prize-get fast-forward is on and the player earns a dungeon
@@ -151,6 +119,12 @@ timing SHALL NOT be changed by this feature.
 - **WHEN** the Agahnim intro or Zelda escort fast-path runs
 - **THEN** every progression bit the vanilla sequence sets is set, so downstream
   triggers behave identically to an un-skipped playthrough
+
+#### Scenario: Allowlisted story text auto-advances without choosing
+- **WHEN** cutscene fast-forward is on and an allowlisted Standard story dialogue
+  reaches a page break
+- **THEN** the page advances without requiring a button press, but choice prompts
+  still wait for player input
 
 #### Scenario: Mirror/flute speed leaves the destination unchanged
 - **WHEN** the mirror-warp or flute-travel animation is sped up
@@ -197,22 +171,6 @@ without conflict.
 #### Scenario: Disabled dash is vanilla
 - **WHEN** auto-dash is off
 - **THEN** the Pegasus Boots charge and dash behave exactly as vanilla
-
-### Requirement: Second item quick-slot / bomb hotkey
-
-The game SHALL provide a configurable second item quick-slot or a dedicated bomb
-hotkey, bindable in `zelda3.ini`, that selects/uses a second Y-item without opening
-the inventory menu — complementing the existing L/R quick-swap
-(`kFeatures0_SwitchLR`) so two items (e.g. bombs and a fire source) are reachable
-without a menu trip. It defaults off and, when unbound/off, changes nothing.
-
-#### Scenario: Bound hotkey reaches a second item without the menu
-- **WHEN** the second quick-slot / bomb hotkey is bound and pressed during play
-- **THEN** the assigned item is selected/used without opening the inventory menu
-
-#### Scenario: Unbound leaves input vanilla
-- **WHEN** the hotkey is unbound (default)
-- **THEN** input handling is unchanged from vanilla
 
 ### Requirement: Entrance/door connection feed to the auto-tracker
 

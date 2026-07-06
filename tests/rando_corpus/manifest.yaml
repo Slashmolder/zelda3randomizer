@@ -927,18 +927,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: keys, accessibility: items }
     seed: "0x4544524F50000006"
     label: "enemy-drop-keys-pot-keys-wild-items"
-    expected_digest: "9469941b804830f42c097384c0171261be967a8a8d6770ee5ba5ed059a64e98c"
-    expected_sphere_digest: "c44a935a5e30d1b1e0c1cb0202a755a2b41b59afc7e339fd844e81dcb79f611a"
+    expected_digest: "b4f42ad823062993b9b13e3c962d64dc8e2cf082bb36702a92d3c366a653cc0e"
+    expected_sphere_digest: "c7912659b349709956da1c33bc76c0c2f7db347e1dcadea5e209745abdece455"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, pot_shuffle: keys, enemy_drop_checks: keys, accessibility: items }
     seed: "0x4544524F50000007"
     label: "enemy-drop-keys-pot-keys-dungeon-items"
-    expected_digest: "c3a2c8f08e9cd1b50df408268e2a8aac578c0a00a2b6acf80b25e50b10338154"
-    expected_sphere_digest: "94dc24fb4b6ac8277ba7f6a8458dfa40909299ecd43a560b41ccb8a243e9f6d1"
+    expected_digest: "e041e9b4846de149f9d6f7b57e41cea44b077ddc20ba9f4dbb58bfd4937155d1"
+    expected_sphere_digest: "8d0ec6fe3d3b356018a279936a9b5e6a598c74ad1ceeb0111dfddecc73f153a6"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, door_shuffle: basic, enemy_drop_checks: keys }
     seed: "0x4544524F5000000D"
     label: "enemy-drop-keys-pot-keys-door-basic-active"
-    expected_digest: "75cab6b384f9336b68525ef0fe1fb871afb0f5862f4de4fc580a532c3d658b37"
-    expected_sphere_digest: "f4875b5345b956b25b7071b2d83a848a215086a8e45468fa231034e27821ffbc"
+    expected_digest: "41e776341f082370d0717bc7f380f4d4c79cab6f138c181707e5855728c98363"
+    expected_sphere_digest: "182d198f7cb0abc5e0bbfb125c55a254bc03146a2c4e18486f7c9bf9fae53c6f"
   # add-rando-dungeon-enemy-checks — ordinary eligible dungeon enemies become
   # first-class checks under enemy_drop_checks=dungeon. Door shuffle composes
   # with them through the generated enemy-check bridge; enemy shuffle still
@@ -982,8 +982,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000007"
     label: "enemy-drop-all-pot-keys-wild-items"
-    expected_digest: "ba5a923e96d2a4a45c2de558279e69de67aa094aac2761f57a3cb25f02627d45"
-    expected_sphere_digest: "94cabc967d8173395d6951e6b4734c4ae957664d46352f406f348936bdb572c3"
+    expected_digest: "79e7dd4b21ecfaffe282b381d70ff84d2fb45ead8254624e4a037e6445440b95"
+    expected_sphere_digest: "fccd258f492793bf546aaefe100b35ed0523ccf04fb7b7865cf6d6c23fdca25d"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
     seed: "0x45414C4C00000008"
     label: "enemy-drop-all-door-basic-active"

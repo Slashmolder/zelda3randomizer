@@ -1,6 +1,8 @@
 #include "hud.h"
 #include "zelda_rtl.h"
 
+#include <string.h>
+
 #include "variables.h"
 #include "messaging.h"
 #include "sprite.h"
@@ -1659,7 +1661,7 @@ static void Hud_ReorderItem(int direction) {
 }
 
 // ===========================================================================
-// Randomizer in-game tracker overlays (add-rando-trackers, Phase B Slice 1).
+// Randomizer in-game OAM overlays.
 //
 // These overlays draw via OAM sprites so they composite over live gameplay on
 // every renderer backend (the in-game HUD strip is a static BG tilemap and
@@ -1675,8 +1677,9 @@ static void Hud_ReorderItem(int direction) {
 // charnums 0xF0..0xFF. We rewrite the glyphs there every frame so an area
 // reload can't leave us pointing at stale tiles.
 //
-// The visibility flags (g_rando_show_item_tracker / g_rando_show_location_tracker)
-// are owned by rando.c (declared in rando/rando.h); this file only reads them.
+// The tracker visibility flags (g_rando_show_item_tracker /
+// g_rando_show_location_tracker) are owned by rando.c (declared in
+// rando/rando.h); this file only reads them.
 //
 // Location-tracker status now reads the live checked-location bitmap
 // (Rando_IsLocationChecked) for a have/not tri-state, so a placed-but-checked
@@ -2194,6 +2197,7 @@ void Hud_RandoDrawTrackers(void) {
     return;
   if (!Rando_ObjScratchReserveForFrame(kRandoObjScratchOwner_LegacyTracker))
     return;
+#ifndef Z3R_NATIVE_SETTINGS_WINDOW
   // Both trackers share one downward OAM-slot cursor so they never claim the
   // same free slot. Item tracker (top-left) draws first, then the location
   // tracker (top-right) from whatever slots remain.
@@ -2202,4 +2206,5 @@ void Hud_RandoDrawTrackers(void) {
     Hud_RandoDrawItemTrackerInner(&slot);
   if (g_rando_show_location_tracker)
     Hud_RandoDrawLocationTrackerInner(&slot);
+#endif
 }

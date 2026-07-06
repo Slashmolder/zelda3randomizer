@@ -9,11 +9,22 @@
 #include "player.h"
 #include "misc.h"
 #include "features.h"
+#include "zelda_rtl.h"
 #include "rando/rando.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 
 #define byte_7FFE01 (*(uint8*)(g_ram+0x1FE01))
+
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
+
+static uint8 CutsceneClampTimer8(uint8 value, uint8 cap) {
+  return CutsceneFastForwardEnabled() && value > cap ? cap : value;
+}
+
 static const int8 kSpriteKeese_Tab2[16] = {0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8};
 static const int8 kSpriteKeese_Tab3[16] = {-16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14};
 static const int8 kZazak_Yvel[4] = {0, 0, 16, -16};
@@ -14404,6 +14415,7 @@ update_pos:
     break;
   }
   case 1:
+    sprite_delay_aux1[k] = CutsceneClampTimer8(sprite_delay_aux1[k], 24);
     if (!sprite_delay_aux1[k]) {
       sprite_ai_state[k]++;
       SpriteSfx_QueueSfx3WithPan(k, 0x26);
@@ -14423,6 +14435,7 @@ update_pos:
     }
     break;
   case 2:
+    sprite_delay_aux1[k] = CutsceneClampTimer8(sprite_delay_aux1[k], 12);
     if (!sprite_delay_aux1[k]) {
       sprite_y_vel[k] = 0;
       sprite_delay_aux1[k] = 96;
@@ -14434,6 +14447,7 @@ update_pos:
     }
     break;
   case 3:  // Finishing Up
+    sprite_delay_aux1[k] = CutsceneClampTimer8(sprite_delay_aux1[k], 24);
     if (!sprite_delay_aux1[k]) {
       sprite_state[k] = 0;
       overworld_map_state++;

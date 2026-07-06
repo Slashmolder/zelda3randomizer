@@ -12,6 +12,7 @@
 #include "sprite_main.h"
 #include "assets.h"
 #include "features.h"
+#include "zelda_rtl.h"
 #include "rando/rando.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
@@ -33,6 +34,15 @@ static const int8 kFireRod_Yvel2[12] = {-40, 40, 0, 0, -48, 48, 0, 0, -64, 64, 0
 static const uint8 kTagalongLayerBits[4] = {0x20, 0x10, 0x30, 0x20};
 static const uint8 kBombos_Sfx[8] = {0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40};
 const uint8 kBomb_Tab0[11] = {0xA0, 6, 4, 4, 4, 4, 4, 6, 6, 6, 6};
+
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
+
+static uint8 CutsceneClampTimer8(uint8 value, uint8 cap) {
+  return CutsceneFastForwardEnabled() && value > cap ? cap : value;
+}
 
 #define swordbeam_temp_x (*(uint16*)(g_ram+0x1580E))
 #define swordbeam_temp_y (*(uint16*)(g_ram+0x15810))
@@ -4007,6 +4017,7 @@ lbl_else:
   if (ancilla_step[k] == 1)
     goto label_b;
   if (ancilla_step[k] == 2) {
+    breaktowerseal_var5 = CutsceneClampTimer8(breaktowerseal_var5, 12);
     if (--breaktowerseal_var5 == 0) {
       // #82 Inverted: the GT crystal-barrier break cutscene. In vanilla the
       // seal-break triggers special-entrance 5 (the warp into the now-open
@@ -4289,6 +4300,11 @@ void Ancilla38_CutsceneDuck(int k) {  // 88d1d8
 
   if (!(frame_counter & 31))
     Ancilla_Sfx3_Pan(k, 0x1e);
+  if (CutsceneFastForwardEnabled()) {
+    if (!ancilla_L[k] && ancilla_item_to_link[k] > 4)
+      ancilla_item_to_link[k] = 4;
+    ancilla_x_vel[k] += sign8(ancilla_x_vel[k]) ? -2 : 2;
+  }
 
   if (sign8(--ancilla_arr3[k])) {
     ancilla_arr3[k] = 3;
@@ -6635,7 +6651,7 @@ void AncillaAdd_Duck_take_off(uint8 a, uint8 y) {  // 8994fe
     return;
   int k = Ancilla_AddAncilla(a, y);
   if (k >= 0) {
-    ancilla_timer[k] = 0x78;
+    ancilla_timer[k] = CutsceneFastForwardEnabled() ? 0x18 : 0x78;
     ancilla_L[k] = 0;
     ancilla_z_vel[k] = 0;
     ancilla_z[k] = 0;
@@ -6659,10 +6675,10 @@ void AddBirdTravelSomething(uint8 a, uint8 y) {  // 89951d
 
     if (enhanced_features0 & kFeatures0_ExtendScreen64) {
       // todo: tune these better so the angle of attack is better
-      ancilla_z_vel[k] = 58;
+      ancilla_z_vel[k] = CutsceneFastForwardEnabled() ? 82 : 58;
       ancilla_z[k] = -105;
     } else {
-      ancilla_z_vel[k] = 40;
+      ancilla_z_vel[k] = CutsceneFastForwardEnabled() ? 64 : 40;
       ancilla_z[k] = -51;
     }
     ancilla_step[k] = 2;

@@ -72,6 +72,9 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   N, N, N, N, N, C(SDLK_i), C(SDLK_c), C(SDLK_m),
   // OpenSettings — backquote `` ` `` opens the native game-config window.
   _(SDLK_BACKQUOTE),
+  // Seed QoL local actions: WarpToSpawn, SoftResetToSpawn.
+  // Default unbound.
+  N, N,
   // DumpDebugState — F12 writes the developer state dump.
   _(SDLK_F12),
 };
@@ -115,6 +118,8 @@ static const KeyNameId kKeyNameId[] = {
   S(RandoItemTrackerWindow), S(RandoCheckTrackerWindow), S(RandoMapTrackerWindow),
   // Native game-config window toggle (config mode). INI key "OpenSettings".
   S(OpenSettings),
+  // Seed QoL local actions.
+  S(WarpToSpawn), S(SoftResetToSpawn),
   // Developer state dump. INI key "DumpDebugState" (default F12).
   S(DumpDebugState),
 };
@@ -485,6 +490,30 @@ static bool ParseEnemyDropMarker(const char *value, uint8 *out) {
   return false;
 }
 
+static bool ParseTextSpeed(const char *value, uint8 *out) {
+  if (StringEqualsNoCase(value, "normal") || StringEqualsNoCase(value, "0")) {
+    *out = kTextSpeed_Normal;
+    return true;
+  }
+  if (StringEqualsNoCase(value, "fast") || StringEqualsNoCase(value, "1")) {
+    *out = kTextSpeed_Fast;
+    return true;
+  }
+  if (StringEqualsNoCase(value, "instant") || StringEqualsNoCase(value, "2")) {
+    *out = kTextSpeed_Instant;
+    return true;
+  }
+  return false;
+}
+
+static const char *TextSpeedName(uint8 speed) {
+  switch (speed) {
+  case kTextSpeed_Fast: return "fast";
+  case kTextSpeed_Instant: return "instant";
+  default: return "normal";
+  }
+}
+
 static bool HandleIniConfig(int section, const char *key, char *value) {
   if (section == 0) {
     for (int i = 0; i < countof(kKeyNameId); i++) {
@@ -672,6 +701,23 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_RestoreJpGlitches);
     } else if (StringEqualsNoCase(key, "JpOverworldMusic")) {
       return ParseBoolBit(value, &g_config.features0, kFeatures0_JpOverworldMusic);
+    } else if (StringEqualsNoCase(key, "RandoDungeonCheckCounts")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_RandoDungeonCheckCounts);
+    } else if (StringEqualsNoCase(key, "RandoSeedInfoPanel")) {
+      // Deferred F2 branch-test key: accept stale local INI entries, but ignore them.
+      bool ignored;
+      return ParseBool(value, &ignored);
+    } else if (StringEqualsNoCase(key, "FastFanfare")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_FastFanfare);
+    } else if (StringEqualsNoCase(key, "CutsceneFastForward")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_CutsceneFastForward);
+    } else if (StringEqualsNoCase(key, "AutoDash")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_AutoDash);
+    } else if (StringEqualsNoCase(key, "WarpToSpawn")) {
+      return ParseBoolBit(value, &g_config.features0, kFeatures0_WarpToSpawn);
+    } else if (StringEqualsNoCase(key, "TextSpeed") ||
+               StringEqualsNoCase(key, "text_speed")) {
+      return ParseTextSpeed(value, &g_config.text_speed);
     }
   } else if (section == 6) {
     // [Randomizer] section — tasks.md §1.6. Defaults set in ParseConfigFile
@@ -862,6 +908,7 @@ void ParseConfigFile(const char *filename) {
   g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
   g_config.field_item_sprites = true;        // add-rando-field-item-sprites: ON by default
   g_config.enemy_drop_marker = kEnemyDropMarker_Item;
+  g_config.text_speed = kTextSpeed_Normal;   // add-rando-seed-qol F3: global selector
 
   // [AutoTracker] defaults — opt-in, observation-only, localhost-only.
   g_config.auto_tracker_enabled = false;
@@ -1274,6 +1321,8 @@ static const char *const kFeatKeys[] = {
   "SkipIntroOnKeypress", "ShowMaxItemsInYellow", "MoreActiveBombs",
   "CarryMoreRupees", "MiscBugFixes", "GameChangingBugFixes", "CancelBirdTravel",
   "EasyMinigames", "RestoreJpGlitches", "JpOverworldMusic",
+  "RandoDungeonCheckCounts", "FastFanfare",
+  "CutsceneFastForward", "AutoDash", "WarpToSpawn",
 };
 static const uint32 kFeatMasks[] = {
   kFeatures0_SwitchLR, kFeatures0_SwitchLRLimit, kFeatures0_TurnWhileDashing,
@@ -1284,9 +1333,15 @@ static const uint32 kFeatMasks[] = {
   kFeatures0_GameChangingBugFixes, kFeatures0_CancelBirdTravel,
   kFeatures0_EasyMinigames, kFeatures0_RestoreJpGlitches,
   kFeatures0_JpOverworldMusic,
+  kFeatures0_RandoDungeonCheckCounts,
+  kFeatures0_FastFanfare, kFeatures0_CutsceneFastForward,
+  kFeatures0_AutoDash, kFeatures0_WarpToSpawn,
 };
 _Static_assert(countof(kFeatKeys) == countof(kFeatMasks),
                "feature key/mask tables must stay aligned");
+static const char *const kFeatValueKeys[] = {
+  "TextSpeed",
+};
 
 // Render the comma-joined binding list for a [KeyMap] (section 0) or
 // [GamepadMap] (section 5) command. Trailing unbound slots are trimmed.
@@ -1407,6 +1462,10 @@ static bool RenderManagedValue(int section, const char *key, char *out, size_t c
     return true;
   }
   if (section == 4) {  // [Features]
+    if (StringEqualsNoCase(key, "TextSpeed")) {
+      snprintf(out, cap, "%s", TextSpeedName(g_config.text_speed));
+      return true;
+    }
     for (int i = 0; i < (int)countof(kFeatKeys); i++) {
       if (StringEqualsNoCase(key, kFeatKeys[i])) {
         snprintf(out, cap, "%s", (g_config.features0 & kFeatMasks[i]) ? "true" : "false");
@@ -1604,6 +1663,7 @@ void Config_WriteIniFile(const char *path) {
     {2, kSndKeys, (int)countof(kSndKeys)},
     {3, kGenKeys, (int)countof(kGenKeys)},
     {4, kFeatKeys, (int)countof(kFeatKeys)},
+    {4, kFeatValueKeys, (int)countof(kFeatValueKeys)},
   };
 
   // For each section, build its key list (keymap/gamepad come from kKeyNameId).

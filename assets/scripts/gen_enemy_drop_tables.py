@@ -38,6 +38,7 @@ SMALL_KEY_ITEMS = {
     11: "SmallKey_TurtleRock",
     12: "SmallKey_GanonsTower",
 }
+ENEMY_DROP_ASSET_KEYS = ("kDungeonSprites", "kDungeonSpriteOffs")
 
 
 SMALL_KEY_BINDINGS = {
@@ -174,8 +175,8 @@ def read_assets(path: Path) -> dict[str, bytes]:
     data = path.read_bytes()
     if len(data) < 88:
         die(f"{path} is too small to be zelda3_assets.dat")
-    if not data.startswith(b"Zelda3_v0"):
-        die(f"{path} does not start with the Zelda3_v0 asset signature")
+    if not (data.startswith(b"Zelda3_v0") or data.startswith(b"Zelda3_v1")):
+        die(f"{path} does not start with a known Zelda3 asset signature")
     count, key_len = struct.unpack_from("<II", data, 80)
     sizes_off = 88
     keys_off = sizes_off + 4 * count
@@ -196,6 +197,19 @@ def read_assets(path: Path) -> dict[str, bytes]:
         out[name] = data[off:end]
         off = end
     return out
+
+
+def asset_payload_sha256(assets: dict[str, bytes], names=None) -> str:
+    """Hash selected parsed asset records, independent of container version."""
+    h = hashlib.sha256()
+    for name in sorted(assets if names is None else names):
+        key = name.encode("utf-8")
+        raw = assets[name]
+        h.update(len(key).to_bytes(4, "little"))
+        h.update(key)
+        h.update(len(raw).to_bytes(8, "little"))
+        h.update(raw)
+    return h.hexdigest()
 
 
 def parse_u16le_array(raw: bytes) -> list[int]:
@@ -469,7 +483,8 @@ def make_small_key_source_counts(small_rows: list[dict], key_depth: dict[str, di
     return rows
 
 
-def make_doc(assets_path: Path, small_rows: list[dict], big_rows: list[dict],
+def make_doc(assets: dict[str, bytes], assets_path: Path,
+             small_rows: list[dict], big_rows: list[dict],
              key_depth: dict[str, dict]) -> dict:
     small_rows = sorted(small_rows, key=lambda r: (r["room"], r["source_slot"]))
     big_rows = sorted(big_rows, key=lambda r: (r["room"], r["source_slot"]))
@@ -521,8 +536,8 @@ def make_doc(assets_path: Path, small_rows: list[dict], big_rows: list[dict],
         "_generated_by": "assets/scripts/gen_enemy_drop_tables.py (do not hand-edit)",
         "source": {
             "assets": str(assets_path.name),
-            "sha256": hashlib.sha256(assets_path.read_bytes()).hexdigest(),
-            "sprite_tables": ["kDungeonSprites", "kDungeonSpriteOffs"],
+            "sha256": asset_payload_sha256(assets, ENEMY_DROP_ASSET_KEYS),
+            "sprite_tables": list(ENEMY_DROP_ASSET_KEYS),
         },
         "enemy_drops": out_rows,
         "small_key_source_counts": make_small_key_source_counts(small_rows, key_depth),
@@ -602,7 +617,7 @@ def main(argv: list[str]) -> int:
     key_depth = parse_key_depth(key_depth_path)
     annotate_key_depth(small_rows, key_depth["drops"])
     annotate_big_key_depth(big_rows, key_depth)
-    doc = make_doc(assets_path, small_rows, big_rows, key_depth)
+    doc = make_doc(assets, assets_path, small_rows, big_rows, key_depth)
     text = render_yaml(doc)
 
     if args.check:

@@ -460,7 +460,9 @@ bool Rando_LoadSidecarSlot(int slot_index, RandoSidecarSlot *out);
 //
 // Other slots in the sidecar are preserved: if the file already exists, we
 // load it first and only the targeted slot is replaced. If the file does
-// not exist, the untouched slots are initialized empty (slot_kind=0).
+// not exist, the untouched slots are initialized empty (slot_kind=0). If an
+// existing file cannot be parsed, it is moved to saves/sram_rando.dat.bad and a
+// fresh sidecar is written; if that quarantine rename fails, the write fails.
 //
 // `paired_sram_slot` MUST point at the caller's snapshot of the current
 // in-memory paired sram.dat slot (typically `g_zenv.sram + slot_index * 0x500`,
@@ -478,7 +480,8 @@ bool Rando_LoadSidecarSlot(int slot_index, RandoSidecarSlot *out);
 //
 // Returns true on a successful atomic commit, false on any I/O or
 // validation error (slot_index out of range, NULL buffers, RandoSave_WriteFile
-// failure). On false, the on-disk file is in its prior state.
+// failure). On false, the on-disk file is in its prior state except for the
+// quarantined .bad backup case described above.
 // ---------------------------------------------------------------------------
 bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
                             const uint8 *paired_sram_slot,

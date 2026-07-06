@@ -560,6 +560,8 @@ bool Rando_CrossDecoupledReplayCave(uint8 target_cave);
 // WALK-IN cave (dark screen 0x22), not a drop cave — it is NOT in the fall-hole table.
 void Rando_RecordEnteredDoorForCapture(uint16 lx);
 void Rando_RecordEnteredFallhole(void);
+uint32 Rando_EntranceConnectionCount(void);
+bool Rando_EntranceConnection(uint16 lx, uint8 *from_id, uint8 *to_id);
 void Rando_CaptureArrivalForBake(void);
 
 // If the cave at overworld row-index `lx` (door_id = lx+1) is an ACTIVE
@@ -885,6 +887,8 @@ bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index);
 bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
+const char *Rando_GetActiveShareString(void);
+void Rando_DungeonCheckCounts(uint8 rando_dungeon, uint16 *checked, uint16 *total);
 
 // Active seed runtime feature overrides. These are NOT global user preferences:
 // they are requirements implied by the currently active/cold-replayed seed.

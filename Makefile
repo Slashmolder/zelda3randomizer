@@ -89,10 +89,11 @@ else
     SDLFLAGS:=$(shell sdl2-config --libs) -lm
 endif
 
-.PHONY: all clean clean_obj clean_gen rando-codegen rando-codegen-force rando-local-prepare rando-local-checks
+.PHONY: all clean clean_obj clean_gen rando-codegen rando-codegen-force rando-local-prepare rando-local-checks check-assets-signature force-assets-check
 
 all: $(TARGET_EXEC) zelda3_assets.dat
 # Link through $(CXX) to pull in libstdc++ for the vendored ImGui C++ objects.
+$(TARGET_EXEC): | check-assets-signature
 $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(SDLFLAGS)
 %.o : %.c
@@ -124,6 +125,11 @@ src/rando/logic_data.c: rando-codegen-force $(RANDO_GEN_SRCS)
 rando-codegen-force:
 
 rando-codegen: $(RANDO_GEN_OUTPUTS)
+
+check-assets-signature:
+	@if [ -f zelda3_assets.dat ]; then \
+	  $(PYTHON) assets/scripts/check_assets_signature.py --quiet; \
+	fi
 
 RANDO_LOCAL_CHECK_BINARY?=./$(TARGET_EXEC)
 rando-local-prepare: all
@@ -163,9 +169,15 @@ $(RES): src/platform/win32/zelda3.rc
 	@echo "Generating Windows resources"
 	@$(WINDRES) $< -O coff -o $@
 
-zelda3_assets.dat:
-	@echo "Extracting game resources"
-	$(PYTHON) assets/restool.py --extract-from-rom
+zelda3_assets.dat: force-assets-check
+	@if [ -f zelda3_assets.dat ] && $(PYTHON) assets/scripts/check_assets_signature.py --quiet; then \
+	  :; \
+	else \
+	  echo "Extracting game resources"; \
+	  $(PYTHON) assets/restool.py --extract-from-rom; \
+	fi
+
+force-assets-check:
 
 clean: clean_obj clean_gen
 clean_obj:

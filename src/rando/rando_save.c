@@ -813,12 +813,10 @@ bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
   if (in == NULL || paired_sram_slot == NULL) return false;
   if (slot_index < 0 || slot_index >= (int)kRandoSidecar_SlotCount) return false;
 
-  // Read existing file (if any) so we don't clobber the other slots.
-  // CRITICAL: zero-init is safe ONLY if the file genuinely does not exist
-  // yet (first-write case). If the file exists but parsing failed (truncation,
-  // corruption, partial write from a crash mid-commit), zero-initializing
-  // would silently destroy the other two slots. Distinguish ENOENT from
-  // parse-error by probing the file's existence directly before deciding.
+  // Read existing file (if any) so we don't clobber the other slots. If the
+  // existing sidecar is unreadable, quarantine it before starting a fresh file:
+  // other slots are not loadable from that file anyway, and requiring a second
+  // Generate after the quarantine is just a first-write UX failure.
   RandoSidecarSlot all_slots[kRandoSidecar_SlotCount];
   bool file_exists = false;
   {
@@ -827,15 +825,14 @@ bool Rando_WriteSidecarSlot(int slot_index, const RandoSidecarSlot *in,
   }
   if (file_exists) {
     if (!RandoSave_ReadFile("saves/sram_rando.dat", all_slots)) {
-      // File exists but failed to parse. Refuse the write — overwriting
-      // would destroy the corrupted-but-recoverable bytes. Back up the
-      // bad file under a .bad suffix (best-effort; rename failure is
-      // non-fatal — the original stays on disk) so the user / a recovery
-      // tool can inspect it.
+      // File exists but failed to parse. Back it up under a .bad suffix before
+      // writing a fresh sidecar. If the quarantine fails, refuse the write so
+      // we do not overwrite potentially recoverable bytes in place.
       char bak_path[] = "saves/sram_rando.dat.bad";
       remove(bak_path);
-      rename("saves/sram_rando.dat", bak_path);
-      return false;
+      if (rename("saves/sram_rando.dat", bak_path) != 0)
+        return false;
+      memset(all_slots, 0, sizeof(all_slots));
     }
   } else {
     // Genuine first-write — initialize all slots empty. The serializer

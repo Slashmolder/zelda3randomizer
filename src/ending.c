@@ -14,6 +14,16 @@
 #include "ancilla.h"
 #include "hud.h"
 #include "assets.h"
+#include "features.h"
+
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
+
+static uint8 CutsceneClampTimer8(uint8 value, uint8 cap) {
+  return CutsceneFastForwardEnabled() && value > cap ? cap : value;
+}
 
 static const uint16 kPolyhedralPalette[8] = { 0, 0x14d, 0x1b0, 0x1f3, 0x256, 0x279, 0x2fd, 0x35f };
 
@@ -295,6 +305,7 @@ void Module18_GanonEmerges() {  // 829edc
     break;
   case 2:  // FadeOutDungeonScreen
     Dungeon_HandleLayerEffect();
+    INIDISP_copy = CutsceneClampTimer8(INIDISP_copy, 1);
     if (--INIDISP_copy)
       break;
     EnableForceBlank();
@@ -314,6 +325,8 @@ void Module18_GanonEmerges() {  // 829edc
     subsubmodule_index = 0;
     break;
   case 5:  // BrightenScreenThenSpawnBat
+    if (CutsceneFastForwardEnabled() && INIDISP_copy < 14)
+      INIDISP_copy = 14;
     if (++INIDISP_copy == 15) {
       dung_savegame_state_bits = 0;
       flag_unk1 = 0;
@@ -322,13 +335,14 @@ void Module18_GanonEmerges() {  // 829edc
       saved_module_for_menu = 9;
       player_is_indoors = 0;
       overworld_map_state++;
-      subsubmodule_index = 128;
+      subsubmodule_index = CutsceneFastForwardEnabled() ? 24 : 128;
       BYTE(cur_palace_index_x2) = 255;
     }
     break;
   case 6:  // DelayForBatSmashIntoPyramid
     break;
   case 7:  // DelayPlayerDropOff
+    subsubmodule_index = CutsceneClampTimer8(subsubmodule_index, 24);
     if (!--subsubmodule_index)
       overworld_map_state++;
     break;
@@ -2655,4 +2669,3 @@ void CrystalCutscene_InitializePolyhedral() {  // 9ecdd9
   TS_copy = 0;
   TM_copy = 0x16;
 }
-

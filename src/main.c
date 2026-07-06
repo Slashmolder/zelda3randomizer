@@ -28,6 +28,8 @@
 #include "load_gfx.h"
 #include "util.h"
 #include "audio.h"
+#include "messaging.h"
+#include "features.h"
 
 #include "rando/rando.h"  // g_assets_hash declaration (tasks.md §1.1a)
 #include "rando/vanilla_assets_hash.h"  // kVanillaAssetsHash + kVanillaAssetsHashKnown
@@ -78,6 +80,7 @@ static void LoadLinkGraphics();
 static void RenderNumber(uint8 *dst, size_t pitch, int n, bool big);
 static void HandleInput(int keyCode, int modCode, bool pressed);
 static void HandleCommand(uint32 j, bool pressed);
+static void WarpToSpawn_Try(void);
 static int RemapSdlButton(int button);
 static void HandleGamepadInput(int button, bool pressed);
 static void HandleGamepadAxisInput(int gamepad_id, int axis, int value);
@@ -106,6 +109,49 @@ static bool LoadAssetsIfPresent() {
   fclose(f);
   LoadAssets();
   return true;
+}
+
+static bool WarpToSpawn_CanRun(void) {
+  if (!(enhanced_features0 & kFeatures0_WarpToSpawn))
+    return false;
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive) ||
+      !Rando_IsActive() || !Rando_HasActiveSettings())
+    return false;
+  if (ZeldaIsReplaying() || ZeldaIsEmulatorAttached())
+    return false;
+  bool run_module = main_module_index == 0x07 ||
+                    main_module_index == 0x09 ||
+                    main_module_index == 0x0b;
+  return run_module && submodule_index == 0;
+}
+
+static void WarpToSpawn_Try(void) {
+  if (!WarpToSpawn_CanRun())
+    return;
+
+  // Reuse the existing S&Q save branch, then restore the just-written save and
+  // force the same start-point loader signal that spawn-select consumes. This
+  // avoids the death save+continue leg, which can clear death_var4 indoors before
+  // Dungeon_LoadEntrance sees it.
+  int slot_index = (srm_var1 >> 1) - 1;
+  if (slot_index < 0 || slot_index >= 3)
+    return;
+  uint8 saved_start = which_starting_point;
+  subsubmodule_index = 1;
+  Death_Func15(false);
+  WORD(g_ram[0]) = (uint16)(slot_index * 0x500);
+  CopySaveToWRAM();
+
+  which_starting_point = saved_start;
+  WORD(death_var5) = 0;
+  WORD(death_var4) = 1;
+  WORD(follower_indicator) = 0;
+  player_is_indoors = 1;
+  mosaic_level = 1;  // Module05_LoadFile routes straight into LoadDungeonRoomRebuildHUD.
+  main_module_index = 5;
+  submodule_index = 0;
+  subsubmodule_index = 0;
+  nmi_load_bg_from_vram = 0;
 }
 
 enum {
@@ -2621,6 +2667,10 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
       RandoWindow_ToggleConfig();
 #endif
+      break;
+    case kKeys_WarpToSpawn:
+    case kKeys_SoftResetToSpawn:
+      WarpToSpawn_Try();
       break;
     // Developer state dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line to
     // the log). Available on all platforms (ZeldaDumpDebugState is core).

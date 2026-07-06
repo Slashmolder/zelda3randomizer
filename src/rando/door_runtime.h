@@ -26,6 +26,7 @@ bool DoorRt_Active(void);
 // reconcile, which clears a restored bit that has no installed layout).
 bool DoorRt_Installed(void);
 uint16 DoorRt_GetLink(uint16 door_id);  // kDoorRt_NoOverride when unshuffled
+bool DoorRt_IsDiscovered(uint16 door_id);  // source half traversed this session
 
 // dungeon.c hook: normal edge doors. Returns true when an override fired —
 // the destination room index, Link/camera/bounds arrival, quadrant and layer

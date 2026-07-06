@@ -1768,6 +1768,63 @@ bool Rando_IsLocationChecked(uint16 location_id) {
   return (g_rando_checked_bitmap[location_id >> 3] & (1u << (location_id & 7))) != 0;
 }
 
+static const RandoLocationDef *Rando_FindLocationDef(uint16 location_id) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    if (kRandoLocations[i].id == location_id)
+      return &kRandoLocations[i];
+  }
+  return NULL;
+}
+
+void Rando_DungeonCheckCounts(uint8 rando_dungeon, uint16 *checked, uint16 *total) {
+  static uint16 s_checked[kRandoDungeon_Count];
+  static uint16 s_total[kRandoDungeon_Count];
+  static const RandoPlacementTable *s_cached_table;
+  static uint16 s_cached_table_count;
+  static uint32 s_cached_counter;
+  static uint8 s_cached_active;
+
+  const RandoPlacementTable *table = Placement_GetActive();
+  uint32 counter = Rando_GetReachabilityCounter();
+  uint8 active = g_rando_slot_active != 0;
+  bool stale = s_cached_table != table ||
+               s_cached_table_count != (table ? table->count : 0) ||
+               s_cached_counter != counter ||
+               s_cached_active != active;
+  if (stale) {
+    memset(s_checked, 0, sizeof(s_checked));
+    memset(s_total, 0, sizeof(s_total));
+    if (active && table != NULL) {
+      for (uint16 i = 0; i < table->count; i++) {
+        uint16 loc_id = table->entries[i].location_id;
+        const RandoLocationDef *loc = Rando_FindLocationDef(loc_id);
+        if (loc == NULL || !Rando_LocationTypeCountsAsCheck(loc->type))
+          continue;
+        if (loc->region_id >= kRandoRegionsCount)
+          continue;
+        uint8 d = kRandoRegions[loc->region_id].dungeon_id;
+        if (d >= kRandoDungeon_Count)
+          continue;
+        s_total[d]++;
+        if (Rando_IsLocationChecked(loc_id))
+          s_checked[d]++;
+      }
+    }
+    s_cached_table = table;
+    s_cached_table_count = table ? table->count : 0;
+    s_cached_counter = counter;
+    s_cached_active = active;
+  }
+
+  if (rando_dungeon >= kRandoDungeon_Count) {
+    if (checked) *checked = 0;
+    if (total) *total = 0;
+    return;
+  }
+  if (checked) *checked = s_checked[rando_dungeon];
+  if (total) *total = s_total[rando_dungeon];
+}
+
 void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   if (out_slot == NULL || !g_rando_slot_active) return;
   // sizeof(out_slot->checked_bitmap) == kRandoCheckedBitmapBytes by
@@ -2703,6 +2760,7 @@ static char g_rando_active_share_string[kShareStringBase32MaxLen] = {0};
 // ---------------------------------------------------------------------------
 #define kEntranceOverlayMax 4096
 static uint8 g_entrance_overlay[kEntranceOverlayMax];
+static uint8 g_entrance_discovered[(kEntranceOverlayMax + 7) / 8];
 // Saved g_asset_ptrs[126] (the vanilla door table) while the overlay is
 // installed. INVARIANT: Entrance_RuntimeTeardown() MUST run before any
 // LoadAssets() reload — LoadAssets unconditionally rewrites every g_asset_ptrs[i]
@@ -2767,6 +2825,11 @@ _Static_assert(kCaveArrivalBakedCount <= kEntranceMaxInteriors,
 // overworld entry hook for EVERY game (shuffle or not) so the capture-for-bake
 // works regardless of mode. 0xFFFF = the entered door isn't a cave.
 static uint16 g_rando_entered_door_interior = 0xFFFF;
+static void Rando_EntranceMarkDiscovered(uint16 lx) {
+  if (lx < kEntranceOverlayMax)
+    g_entrance_discovered[lx >> 3] |= (uint8)(1u << (lx & 7));
+}
+
 void Rando_RecordEnteredDoorForCapture(uint16 lx) {
   g_rando_entered_door_interior = 0xFFFF;
   uint32 len = kOverworld_Entrance_Id_SIZE;
@@ -2775,9 +2838,31 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
   // installed (shuffle), otherwise the live table (vanilla/non-entrance game).
   uint8 vid = (g_entrance_overlay_orig != NULL) ? g_entrance_overlay_orig[lx]
                                                 : ((const uint8 *)kOverworld_Entrance_Id)[lx];
+  if (g_entrance_overlay_orig != NULL && ((const uint8 *)kOverworld_Entrance_Id)[lx] != vid)
+    Rando_EntranceMarkDiscovered(lx);
   int interior = Entrance_InteriorOfEntranceId(vid);
   if (interior >= 0 && interior < kEntranceMaxInteriors)
     g_rando_entered_door_interior = (uint16)interior;
+}
+
+uint32 Rando_EntranceConnectionCount(void) {
+  if (g_entrance_overlay_orig == NULL) return 0;
+  uint32 len = kOverworld_Entrance_Id_SIZE;
+  return len <= kEntranceOverlayMax ? len : kEntranceOverlayMax;
+}
+
+bool Rando_EntranceConnection(uint16 lx, uint8 *from_id, uint8 *to_id) {
+  if (g_entrance_overlay_orig == NULL) return false;
+  uint32 len = Rando_EntranceConnectionCount();
+  if (lx >= len) return false;
+  if ((g_entrance_discovered[lx >> 3] & (uint8)(1u << (lx & 7))) == 0)
+    return false;
+  uint8 from = g_entrance_overlay_orig[lx];
+  uint8 to = ((const uint8 *)kOverworld_Entrance_Id)[lx];
+  if (to == from) return false;
+  if (from_id) *from_id = from;
+  if (to_id) *to_id = to;
+  return true;
 }
 
 // Genuine fall-hole caves (fall-hole table entrance-ids 0x76-0x81) have no
@@ -3036,6 +3121,7 @@ static void Entrance_RuntimeTeardown(void) {
     g_asset_ptrs[126] = (void *)g_entrance_overlay_orig;
     g_entrance_overlay_orig = NULL;
   }
+  memset(g_entrance_discovered, 0, sizeof(g_entrance_discovered));
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
   g_rando_entrance_exit_room = 0;
@@ -4482,6 +4568,10 @@ bool Rando_HasActiveSettings(void) { return g_rando_active_settings_valid; }
 // reachability bridge (Rando_GetLiveReachability).
 const RandoSettings *Rando_GetActiveSettings(void) {
   return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
+}
+
+const char *Rando_GetActiveShareString(void) {
+  return g_rando_slot_active ? g_rando_active_share_string : "";
 }
 
 uint32 Rando_ActiveForcedFeatures0(void) {

@@ -46,6 +46,7 @@ from gen_enemy_drop_tables import (  # noqa: E402
     DEFAULT_KEY_DEPTH,
     SMALL_KEY_BINDINGS,
     SMALL_KEY_ITEMS,
+    asset_payload_sha256,
     parse_key_depth,
     parse_u16le_array,
     read_assets,
@@ -60,6 +61,13 @@ SPRITE_MAIN_C = REPO / "src" / "sprite_main.c"
 ENEMY_CHECK_BASE_ID = 1400
 THROWN_POT_DAMAGE_TYPE = 3
 SPECIAL_DAMAGE_MIN = 249
+ENEMY_CHECK_ASSET_KEYS = (
+    "kDungeonSprites",
+    "kDungeonSpriteOffs",
+    "kEnemyDamageData",
+    "kOverworldSprites",
+    "kOverworldSpriteOffs",
+)
 
 DUNGEON_REGIONS = {
     0: "HyruleCastleEscape",
@@ -1630,7 +1638,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         "_generated_by": "assets/scripts/gen_enemy_check_tables.py (do not hand-edit)",
         "source": {
             "assets": str(assets_path.name),
-            "sha256": hashlib.sha256(assets_path.read_bytes()).hexdigest(),
+            "sha256": asset_payload_sha256(assets, ENEMY_CHECK_ASSET_KEYS),
             # Local checks dump this under tmp/, while direct developer runs
             # commonly use key_depth.txt in the repo root. Keep the registry
             # stable across equivalent dump locations.

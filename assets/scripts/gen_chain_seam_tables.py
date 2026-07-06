@@ -122,6 +122,16 @@ def load_entrance_rooms(assets):
     return u16_list(assets[ASSET_ENTRANCE_ROOMS])
 
 
+def load_synthetic_entrance_range(path):
+    text = path.read_text(encoding="utf-8")
+    base = re.search(r"^base_index:\s*(\d+)\s*$", text, re.MULTILINE)
+    count = re.search(r"^count:\s*(\d+)\s*$", text, re.MULTILINE)
+    if base is None or count is None:
+        raise ValueError(f"{path}: missing base_index/count")
+    start = int(base.group(1))
+    return range(start, start + int(count.group(1)))
+
+
 def parse_door_registry(path):
     text = path.read_text(encoding="utf-8")
     rows = []
@@ -266,16 +276,23 @@ def collect_seams(rows, header_destinations):
     return inbound, outbound
 
 
-def validate(inbound, outbound, entrance_rooms):
+def validate(inbound, outbound, entrance_rooms, synthetic_entrance_range):
     got = [row.dungeon.rando_id for row in inbound]
     want = [d.rando_id for d in POOL]
     if got != want:
         raise ValueError(f"inbound boss seams by dungeon {got} != expected {want}")
     if not any(row.dungeon.short_name == "IP" and row.kind == "Hole" for row in inbound):
         raise ValueError("Ice Palace boss seam was not resolved as a hole")
+    vanilla_entrance_rooms = entrance_rooms[:synthetic_entrance_range.start]
     for boss_room in POOL_BY_BOSS_ROOM:
-        if boss_room in entrance_rooms:
+        if boss_room in vanilla_entrance_rooms:
             raise ValueError(f"boss room {boss_room:#x} already has a vanilla entrance record")
+    if len(entrance_rooms) >= synthetic_entrance_range.stop:
+        expected_synthetic_rooms = set(POOL_BY_BOSS_ROOM)
+        synthetic_rooms = set(entrance_rooms[synthetic_entrance_range.start:
+                                            synthetic_entrance_range.stop])
+        if synthetic_rooms != expected_synthetic_rooms:
+            raise ValueError("synthetic boss entrance rooms drifted from boss pool")
     outbound_dungeons = {row.dungeon.rando_id for row in outbound}
     missing = [d.enum_name for d in POOL if d.rando_id not in outbound_dungeons and d.short_name != "IP"]
     if missing:
@@ -356,6 +373,7 @@ def main():
 
     asset_path = Path(args.asset_file)
     registry_path = REPO / "assets" / "rando" / "door_registry.yaml"
+    chain_boss_entrances_path = REPO / "assets" / "rando" / "chain_boss_entrances.gen.yaml"
     door_table_path = REPO / "src" / "rando" / "door_tables.gen.c"
     out_h = REPO / "src" / "rando" / "chain_seams.gen.h"
     out_c = REPO / "src" / "rando" / "chain_seams.gen.c"
@@ -363,10 +381,11 @@ def main():
     assets = read_assets(asset_path)
     header_destinations = load_header_destinations(assets)
     entrance_rooms = load_entrance_rooms(assets)
+    synthetic_entrance_range = load_synthetic_entrance_range(chain_boss_entrances_path)
     registry_names = parse_door_registry(registry_path)
     door_rows = parse_door_table(door_table_path, registry_names)
     inbound, outbound = collect_seams(door_rows, header_destinations)
-    validate(inbound, outbound, entrance_rooms)
+    validate(inbound, outbound, entrance_rooms, synthetic_entrance_range)
 
     write_or_check(out_h, emit_header(inbound, outbound), args.check)
     write_or_check(out_c, emit_c(inbound, outbound), args.check)

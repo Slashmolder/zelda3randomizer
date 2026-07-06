@@ -51,6 +51,7 @@ static uint8 DoorRt_DestFullsize(uint16 room, uint8 quad_x, uint8 quad_y, bool y
 }
 
 static uint16 g_door_link[kDoorTbl_DoorCount];
+static uint8 g_door_discovered[(kDoorTbl_DoorCount + 7) / 8];
 static bool g_door_rt_active;
 static bool g_door_rt_index_built;
 static bool g_door_staircase_ctx;       // inside Dungeon_DetectStaircase's spiral path
@@ -124,6 +125,7 @@ static void DoorRt_KindOverlayClear(void) {
 
 void DoorRt_Reset(void) {
   memset(g_door_link, 0xFF, sizeof(g_door_link));
+  memset(g_door_discovered, 0, sizeof(g_door_discovered));
   g_door_rt_active = false;
   g_door_staircase_ctx = false;
   g_door_toggles_overridden = false;
@@ -147,6 +149,16 @@ void DoorRt_SetLink(uint16 door_a, uint16 door_b) {
 
 uint16 DoorRt_GetLink(uint16 door_id) {
   return door_id < kDoorTbl_DoorCount ? g_door_link[door_id] : kDoorRt_NoOverride;
+}
+
+static void DoorRt_MarkDiscovered(uint16 door_id) {
+  if (door_id < kDoorTbl_DoorCount)
+    g_door_discovered[door_id >> 3] |= (uint8)(1u << (door_id & 7));
+}
+
+bool DoorRt_IsDiscovered(uint16 door_id) {
+  return door_id < kDoorTbl_DoorCount &&
+         (g_door_discovered[door_id >> 3] & (uint8)(1u << (door_id & 7))) != 0;
 }
 
 static void DoorRt_BuildRoomIndex(void) {
@@ -417,6 +429,7 @@ bool Rando_DoorTransOverride(uint8 dir) {
   uint16 dest_id = g_door_link[exit_id];
   if (dest_id == kDoorRt_NoOverride || dest_id >= kDoorTbl_DoorCount)
     return false;
+  DoorRt_MarkDiscovered((uint16)exit_id);
   DoorRt_Arrive(&kDoorTblDoors[dest_id]);
   g_door_toggles_overridden = true;
   return true;
@@ -695,6 +708,7 @@ uint8 Rando_DoorSpiralDest(uint16 room, uint8 slot, uint8 attr, uint8 vanilla_by
   uint16 dest_id = g_door_link[src_id];
   if (dest_id == kDoorRt_NoOverride || dest_id >= kDoorTbl_DoorCount)
     return vanilla_byte;
+  DoorRt_MarkDiscovered(src_id);
   g_door_spiral_src_x = (src_head & 0x3f) << 3;
   g_door_spiral_src_y = ((src_head >> 6) & 0x3f) << 3;
   g_door_spiral_source = src_id;
