@@ -411,32 +411,58 @@ static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *
          Settings_EnemyDropKeysActive(s);
 }
 
+enum { kEnemyCheckNotOverworld = 0xFF };
+
+static bool g_enemy_check_flags_ready;
+static uint8 g_enemy_check_indoor_all_tier_only[kRandoLocationCapacity];
+static uint8 g_enemy_check_all_tier_only[kRandoLocationCapacity];
+static uint8 g_enemy_check_overworld_stage[kRandoLocationCapacity];
+
+static void init_enemy_check_flags(void) {
+  if (g_enemy_check_flags_ready) return;
+  memset(g_enemy_check_overworld_stage, kEnemyCheckNotOverworld,
+         sizeof(g_enemy_check_overworld_stage));
+  for (uint32 i = 0; i < kRandoEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoEnemyCheckLookup[i].loc_id;
+    if (loc_id >= kRandoLocationCapacity) continue;
+    if (kRandoEnemyCheckLookup[i].all_tier_only) {
+      g_enemy_check_indoor_all_tier_only[loc_id] = 1;
+      g_enemy_check_all_tier_only[loc_id] = 1;
+    }
+  }
+  for (uint32 i = 0; i < kRandoBossEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoBossEnemyCheckLookup[i].loc_id;
+    if (loc_id < kRandoLocationCapacity) g_enemy_check_all_tier_only[loc_id] = 1;
+  }
+  for (uint32 i = 0; i < kRandoScriptedEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoScriptedEnemyCheckLookup[i].loc_id;
+    if (loc_id < kRandoLocationCapacity) g_enemy_check_all_tier_only[loc_id] = 1;
+  }
+  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++) {
+    uint16 loc_id = kRandoOverworldEnemyCheckLookup[i].loc_id;
+    if (loc_id >= kRandoLocationCapacity) continue;
+    g_enemy_check_all_tier_only[loc_id] = 1;
+    g_enemy_check_overworld_stage[loc_id] = kRandoOverworldEnemyCheckLookup[i].stage;
+  }
+  g_enemy_check_flags_ready = true;
+}
+
 static bool enemy_check_indoor_all_tier_only(uint16 loc_id) {
-  for (uint32 i = 0; i < kRandoEnemyCheckLookup_COUNT; i++)
-    if (kRandoEnemyCheckLookup[i].loc_id == loc_id)
-      return kRandoEnemyCheckLookup[i].all_tier_only != 0;
-  return false;
+  init_enemy_check_flags();
+  return loc_id < kRandoLocationCapacity &&
+         g_enemy_check_indoor_all_tier_only[loc_id] != 0;
 }
 
 static bool enemy_check_all_tier_only(uint16 loc_id) {
-  if (enemy_check_indoor_all_tier_only(loc_id))
-    return true;
-  for (uint32 i = 0; i < kRandoBossEnemyCheckLookup_COUNT; i++)
-    if (kRandoBossEnemyCheckLookup[i].loc_id == loc_id) return true;
-  for (uint32 i = 0; i < kRandoScriptedEnemyCheckLookup_COUNT; i++)
-    if (kRandoScriptedEnemyCheckLookup[i].loc_id == loc_id) return true;
-  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
-    if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id) return true;
-  return false;
+  init_enemy_check_flags();
+  return loc_id < kRandoLocationCapacity &&
+         g_enemy_check_all_tier_only[loc_id] != 0;
 }
 
-enum { kEnemyCheckNotOverworld = 0xFF };
-
 static uint8 enemy_check_overworld_stage(uint16 loc_id) {
-  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
-    if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id)
-      return kRandoOverworldEnemyCheckLookup[i].stage;
-  return kEnemyCheckNotOverworld;
+  init_enemy_check_flags();
+  if (loc_id >= kRandoLocationCapacity) return kEnemyCheckNotOverworld;
+  return g_enemy_check_overworld_stage[loc_id];
 }
 
 static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s) {
