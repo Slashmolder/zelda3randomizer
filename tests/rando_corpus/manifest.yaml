@@ -421,13 +421,13 @@ entries:
   - settings: { mode.state: inverted, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0D"
     label: "c-entrance-caves-inverted-pot-inert-cave"
-    expected_digest: "7a74b9befa36d4575c6a47016654f6e7d2750477a1730dc4590edffa90508dd2"
-    expected_sphere_digest: "dd6c1f756cf7ca0e3dc34412059cdb11713374a9c1a4a85521bab23b40ad4f34"
+    expected_digest: "087a15d4384325234ff87e4f79ab04a85c9b80da4478afcc5641d81da0cb99b4"
+    expected_sphere_digest: "a280cf2a31f2ca5af800c2b0c5e2b0ff2c8833e4c4303dd0fba6d57ff2c95876"
   - settings: { mode.state: retro, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0E"
     label: "c-entrance-caves-retro-pot-inert-cave"
-    expected_digest: "ae4c0033370a7e54af3aa437e21530b42489cb05a1592482788c6eed15c0fa64"
-    expected_sphere_digest: "2ca537123890a103be930d2e5f4b5abfd6dc9a9089c1593429365bb43bbb610e"
+    expected_digest: "588a3e7dc83e3c56118d712944c746ba81d92fe086f6d9db3b8b5fc0f60ec2a3"
+    expected_sphere_digest: "4463e5b0c033308c6812e9d7eb704793cda6cfdb88c461c9cb03beeb741f4c97"
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"
@@ -836,38 +836,38 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys }
     seed: "0x504F540000000001"
     label: "pot-keys-open-fast-ganon"
-    expected_digest: "2906fe90787eebbca90c557ad65889d58b4c25e3e5978909ddc3e53197402420"
-    expected_sphere_digest: "73dea0b2e5ce9f4dc17bd0f716aa270a185e14f13c5bac7b4c1eb8a598368653"
+    expected_digest: "45e05c92994f2cfa037779c0eddcd0bf5642b27d6af2963ef296be90697ed683"
+    expected_sphere_digest: "42e7b062361eaab0fcd77782a5f061e3b99bf46080bee27d65473a6537bf0cff"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: contents }
     seed: "0x504F540000000002"
     label: "pot-contents-open-fast-ganon"
-    expected_digest: "8c7320cc338352dee796c300c8dfec57c89780d41c6cf1836a7dc390750b0dcd"
-    expected_sphere_digest: "54a6810e2e6d58c1031f30370878182f9dbacf2d3fa85c43e2df48157aa91bd9"
+    expected_digest: "7cf8b4ceaf2e04d010b5778fda386c2ebe87302183a0ee41e858aa1318fe6e24"
+    expected_sphere_digest: "c5c76d0bd3b92880987b131e5d409b07cb7b48fdcea147edf518b7a0b8b201f5"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all }
     seed: "0x504F540000000003"
     label: "pot-all-open-fast-ganon"
-    expected_digest: "a9cb310f4f1383cea6f049111a6d23afd7eaaface407ae1024751a7764429a11"
-    expected_sphere_digest: "031c927c1a5cbeb0486a0e235d527d5ebf7fc318104b54303d3c5ee694514662"
+    expected_digest: "4447f101ca1f50f73c470e8e35504b316402bba94554efe09fe8b1f8b80c653b"
+    expected_sphere_digest: "37fae85d0960d9e1d30c70e4c246ad401bb4a3672a736282b27c5e9fdc4e5271"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
-    expected_digest: "d417dbbf09acd8de70398f91e8102a7c8108eea44e59bcbfb1c893f3fa152be4"
-    expected_sphere_digest: "48f0354acd7ccc2a6324b763a03dd629eb3f13e2c3f39c40e8650dc3f65ab03f"
+    expected_digest: "37b071ea1375591d85a52a1fce5dc2515663ee948bed689d866e1999aecb4a0b"
+    expected_sphere_digest: "7c2ecec2eade4d5950f0df213fe10107e05e675257f20f47cf7536f64d336032"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
-    expected_digest: "a94de41893f2b6e208c2c097d150b15d075bcc98e925d4e63a5758f8fcac936e"
-    expected_sphere_digest: "7f771ad274812a5ffbc5321ae3230e0437bc3fb6008da0583de7c443c1f61c63"
+    expected_digest: "b363c5e6712efbb9695560657c9a4b9cb441e405a220266bbbf3056a255cffbc"
+    expected_sphere_digest: "ff28d5ad9cc9103d297e618d768c6fcc116f71369b55ea1915566326f7215d70"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, door_shuffle: basic }
     seed: "0x504F54000000000A"
     label: "pot-all-door-basic-open"
-    expected_digest: "a915d7ecbe9ecd2f79bcef8206d5d64aecc0f9741816a7c9ff1c43fab715c288"
-    expected_sphere_digest: "1838a322e7c5728e5a03a252cced0c7798ba2497f9ddd9f0148a3673ae4ea5cb"
+    expected_digest: "ae25625abd27dc72000367d8af22113492e093ea0cf2d5b7353a0520e4d6e6b4"
+    expected_sphere_digest: "ac7457cef23985791fd12bb04296afec671ca6eb3483b8cc8e9a61253fcac429"
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
-    expected_digest: "25c2e61637c80959a2c4ecb344c6bdbcf0853fc0847670acfcb5f94494b497f3"
-    expected_sphere_digest: "6649495df33c3ec9871bb00692af5bb44c29e8616d1968ef0d7e81ddba80afd9"
+    expected_digest: "4ee1db5d7c13021372b9fd5206e2f5fa5af1a185df2b73398bad2b4ad4f15a59"
+    expected_sphere_digest: "36e11383b610850fed6e03b7ee3a68e3c08e87172e6c5d76775788ef1c19768f"
 
   # add-rando-pot-sanity task #25 — WILD keys + pot_shuffle (the strand class the
   # owner hit). These exercise OP_POT_KEYS_WILD end to end: the pot keys enter
@@ -878,13 +878,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, dungeon_items.small_keys: wild, accessibility: items }
     seed: "0x504F540000000007"
     label: "pot-keys-wild-items"
-    expected_digest: "4094f6f36b6ba8c2c2bd3beccba0ba38ec1ec19149c057e7c28774caae0a2794"
-    expected_sphere_digest: "a32a4a2cff915679fe4be773d54b4748fcd588a93fabb197e2e6ffae3f36ac1b"
+    expected_digest: "754b17dc4bf1a39abf8cecc18a468cb113e029930e94f2fb8b69083f9f8788dc"
+    expected_sphere_digest: "0ed32f5680bb82304ade70a2a9a519ddb031acc45a08ff1efc0112b7cc99e17a"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: wild, accessibility: items }
     seed: "0x504F540000000008"
     label: "pot-all-wild-items"
-    expected_digest: "e23c02b47b059308fb8d7470636c436f8f22c6f224046d0231130ec3304ff6f4"
-    expected_sphere_digest: "04f4956c830ac864b62b82e5cde18fc0f331be94830814c83bcd478757c54278"
+    expected_digest: "6da54f1aa91e7e6b2147e32d9eccdd5fe41832cb4d7a40009dba1d07ec83dfd4"
+    expected_sphere_digest: "81ccb3d7fdf16b3bb7b858212783063aa964ae353f5152d829105863f437e94f"
   # DUNGEON keys + pot_shuffle (task #25 dungeon half): key pots stay vanilla
   # (pinned in place, like pots-off) while chest keys shuffle in-dungeon.
   # accessibility=items proves the dungeon is fully reachable — the pot keys no
@@ -892,8 +892,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon, accessibility: items }
     seed: "0x504F540000000009"
     label: "pot-all-dungeon-items"
-    expected_digest: "a758029fd0441a4d587ab2b016ece89b443668d3704cde749400f2f327e5e743"
-    expected_sphere_digest: "1776b7ecda1af27a0124b6de854b028aa203970f60c0cfe2b60a3ebfbfbefee7"
+    expected_digest: "18e7d33e88319f8fe19b972db0deef739b909d7d844db6d449874c8961b2b3e9"
+    expected_sphere_digest: "a9a032eb4f7cf59e456fdfddd9f70ad3a8836c49d34950220f932f5aa9093217"
 
   # add-rando-enemy-drop-sanity — active Wild/Retro/Dungeon forced enemy-drop
   # checks plus door-shuffle and pot-shuffle bridge coverage. Door shuffle
