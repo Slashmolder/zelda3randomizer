@@ -7722,6 +7722,7 @@ void Rando_RunAllSelfChecks(void) {
   TextField_SelfCheck();
   Hints_SelfCheck();
   Entrance_SelfCheck();
+  InvertedEntrances_SelfCheck();
   Rando_EntranceContaminationSelfCheck();  // digest vs Inverted-owned asset 126
   Rando_ReinstallOverlaysSelfCheck();      // generate-then-reinstall round-trip
   Cosmetic_SelfCheck();

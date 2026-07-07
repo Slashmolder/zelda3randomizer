@@ -1,8 +1,9 @@
 # Inverted world-state — known gaps vs. ALTTPR
 
 Status: rebased onto `main`. Covers the full inverted runtime stack plus the
-spawn-point fix (Inverted now spawns at Link's House in the DW — see B6/C1) and
-the DW→LW under-rock warps (see B7). Last updated after the warp port.
+spawn-point fix (Inverted now spawns at Link's House in the DW — see B6/C1), the
+DW→LW under-rock warps (see B7), and the July 2026 entrance/flute coordinate
+audit.
 
 This is the register of *known* differences between this fork's Inverted mode and
 ALTTPR's. The authoritative ALTTPR source is `../alttp_vt_randomizer/app/Rom.php`
@@ -92,18 +93,14 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
   implemented as the second half of the mirror-direction fix in `player.c`
   `DoSwordInteractionWithTiles_Mirror`.)
 
-- **B4 — Flute spot "gargoyle statue" Link-landing nudge (deferred, ambiguous
-  slot).** ALTTPR nudges one Inverted flute destination's Link-landing coord out
-  of a gargoyle statue (`Rom.php:1601-1602`: `kBirdTravel_LinkXCoord`/`LinkYCoord`
-  = 0x07C8/0x01F8). The whole-stack audit flagged this; we left it because the
-  affected flute **slot index is ambiguous** — the audit guessed slot 2
-  (Kakariko), but the coord 0x07C8/0x01F8 decodes to screen col 3 / row 0 = area
-  0x43 (slot 0), so the two disagree. Cosmetic (Link lands near a statue, can
-  still move/mirror). Resolve by playtest: flute to each Inverted spot, find the
-  one that drops Link on/inside a statue, then nudge that specific slot's
-  117/118 coords. (The DM-west exit-0x18 camera nudge from the same audit — Unk1/
-  Unk3 assets 141/142 — WAS resolved and shipped; only this flute-slot one is
-  deferred.)
+- **B4 — Flute spot "gargoyle statue" Link-landing nudge (FIXED).** ALTTPR nudges
+  the Inverted Kakariko flute destination out of the gargoyle statue
+  (`Rom.php:1601-1602`). The earlier "ambiguous slot" note was a ROM-table
+  transcription error: those raw writes hit bird-travel slot 2 in Y-before-X
+  order (`pos_y[2]=0x07C8`, then `pos_x[2]=0x01F8`), while this fork's asset
+  columns are named X-before-Y (`kBirdTravel_LinkXCoord[2]=0x01F8`,
+  `kBirdTravel_LinkYCoord[2]=0x07C8`). Ported in `src/rando/inverted_entrances.c`
+  and covered by `InvertedEntrances_SelfCheck`.
 
 - **B5 — Flute-menu map icons render at vanilla (Light-World) positions.** The
   flute-menu destination icons use hardcoded arrays in `messaging.c` (`kBirdTravel_tab1`
@@ -168,9 +165,14 @@ Companion artifacts: the auto-memory note `inverted-entrance-topology-source`
 
 - **C2 — Pyramid ExtraHole + the pyramid/HC exit rows.** ALTTPR adds a fall-hole
   at area 0x1B (LW Hyrule Castle) and relocates pyramid/HC exits (`Rom.php`
-  exits 0x06/0x37/0x3D, door 0x35). All dead under A1 (Ganon stays at DW 0x5B); a
-  0x1B fall-hole would route to an HC/Houlihan dead-end. The fork's sorted-by-id
-  `kFallHole_*` tables also break the PHP offset→index mapping. Not ported.
+  exits 0x06/0x37/0x3D, door 0x35). The shipped hole-only relocation handles the
+  0x1B fall directly in `Overworld_GetPitDestination` (A1), not by porting
+  ALTTPR's ExtraHole table row or the faithful pyramid exterior/exit rows. Those
+  exit rows therefore remain intentionally unported because the shipped route is a
+  direct fall to Ganon plus spawn-menu recovery, not a normal pyramid facade/door
+  flow. If a future faithful facade/door path revives these rows, port the C asset
+  columns in X-before-Y order: the raw ROM exit tables store scroll/Link/camera
+  values in Y-before-X order.
 
 ## D. Latent / unverified edges (need a playtest to confirm before fixing)
 

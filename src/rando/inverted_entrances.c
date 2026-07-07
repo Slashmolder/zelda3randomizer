@@ -5,6 +5,7 @@
 #include "../assets.h"       // g_asset_ptrs[] / g_asset_sizes[] + asset-index macros
 
 #include <stdio.h>           // fprintf (oversize-asset diagnostic)
+#include <stdlib.h>          // exit (selfcheck)
 #include <string.h>          // memcpy
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,8 @@ enum {
   kAsset_ExitData_Unk1         = 141,  // int8: exit camera-nudge X
   kAsset_ExitData_Unk3         = 142,  // int8: exit camera-nudge Y
   kAsset_BirdTravel_ScreenIndex = 113, // uint16: flute-spot slot -> dest screen
+  kAsset_BirdTravel_LinkXCoord  = 117,  // uint16: Link X after flute travel
+  kAsset_BirdTravel_LinkYCoord  = 118,  // uint16: Link Y after flute travel
 };
 
 static const InvertedOverride kInvertedOverrides[] = {
@@ -86,12 +89,14 @@ static const InvertedOverride kInvertedOverrides[] = {
   { kAsset_ExitDataRooms,         2, 0x18, 0x00F1 },
   { kAsset_ExitData_ScreenIndex,  1, 0x18, 0x43 },
   { kAsset_ExitData_Map16,        2, 0x18, 0x1400 },
-  { kAsset_ExitData_ScrollX,      2, 0x18, 0x0294 },
-  { kAsset_ExitData_ScrollY,      2, 0x18, 0x0600 },
-  { kAsset_ExitData_XCoord,       2, 0x18, 0x02E8 },
-  { kAsset_ExitData_YCoord,       2, 0x18, 0x0678 },
-  { kAsset_ExitData_CameraX,      2, 0x18, 0x0303 },
-  { kAsset_ExitData_CameraY,      2, 0x18, 0x0685 },
+  // ALTTPR writes the ROM columns in Y-before-X order (0x15C79/0x15D17,
+  // 0x15DB5/0x15E53, 0x15EF1/0x15F8F). These C assets are named X-before-Y.
+  { kAsset_ExitData_ScrollX,      2, 0x18, 0x0600 },
+  { kAsset_ExitData_ScrollY,      2, 0x18, 0x0294 },
+  { kAsset_ExitData_XCoord,       2, 0x18, 0x0678 },
+  { kAsset_ExitData_YCoord,       2, 0x18, 0x02E8 },
+  { kAsset_ExitData_CameraX,      2, 0x18, 0x0685 },
+  { kAsset_ExitData_CameraY,      2, 0x18, 0x0303 },
   // Complete the Healer-fairy exit-0x18 row with the remaining columns ALTTPR
   // writes (Rom.php:1660-1663): the int8 camera nudge (Unk1/Unk3 = 0x0a/0xf6)
   // and the door-clear (NormalDoor/FancyDoor -> 0, so the relocated exit shows
@@ -107,10 +112,10 @@ static const InvertedOverride kInvertedOverrides[] = {
   // no inverted reinterpretation, so vanilla LW spots send an Inverted player to
   // the wrong world. Repoint each flute slot to its Dark-World mirror (LW + 0x40).
   // asset 113 is uint16 (width 2); elem_index is the flute slot (bird_travel_id).
-  // Repointing ONLY the screen index (not the sibling map16/scroll/coord/camera
-  // columns of the bird-travel row, assets 114-122) is correct and sufficient:
-  // those columns are world-mirror-INVARIANT by construction. compile_resources.py
-  // builds them as `t['scroll_xy']/xy/camera_xy + base`, where
+  // Repointing the screen index is the critical world fix. The sibling map16/
+  // scroll/coord/camera columns of the bird-travel row are otherwise
+  // world-mirror-INVARIANT by construction: compile_resources.py builds them as
+  // `t['scroll_xy']/xy/camera_xy + base`, where
   // base_x=(screen&7)<<9, base_y=(screen&56)<<6 — bit 0x40 (the world bit) does
   // not overlap &7 or &56, so a screen and its +0x40 mirror share identical
   // base/coord/scroll values, and kBirdTravel_Map16LoadSrcOff (get_loadoffs) is a
@@ -119,7 +124,9 @@ static const InvertedOverride kInvertedOverrides[] = {
   // re-derived from the OVERRIDDEN overworld_screen_index inside
   // Overworld_LoadGFXAndScreenSize at flute-load time, so no row recompute is
   // needed here. (Do not "fix" this by overriding the full row with unverified
-  // DW values — that would diverge from the correct mirror framing.)
+  // DW values — that would diverge from the correct mirror framing.) The one
+  // exception is ALTTPR's explicit Kakariko landing nudge below: Rom.php writes
+  // the raw Y column first (0x02E8D5), then X (0x02E8F7), both for slot 2.
   // Slot 8 (vanilla 0x5B = DW pyramid) maps to 0x1B for the hole-only Ganon
   // relocation (ALTTPR Rom.php:1600, the 9th flute spot = 0x001B). 0x1B is the LW
   // mirror of 0x5B (differs only by the 0x40 world bit), so the screen-index-only
@@ -136,6 +143,8 @@ static const InvertedOverride kInvertedOverrides[] = {
   { kAsset_BirdTravel_ScreenIndex, 2, 6, 0x007B },  //             0x3B->0x7B
   { kAsset_BirdTravel_ScreenIndex, 2, 7, 0x007F },  // Desert      0x3F->0x7F
   { kAsset_BirdTravel_ScreenIndex, 2, 8, 0x001B },  // Ganon/HC    0x5B->0x1B
+  { kAsset_BirdTravel_LinkXCoord,  2, 2, 0x01F8 },  // Kakariko statue nudge
+  { kAsset_BirdTravel_LinkYCoord,  2, 2, 0x07C8 },
 };
 #define kInvertedOverrideCount \
     (sizeof(kInvertedOverrides) / sizeof(kInvertedOverrides[0]))
@@ -171,6 +180,8 @@ static InvertedShadow g_shadows[] = {
   { kAsset_ExitData_Unk1,         {0}, NULL },
   { kAsset_ExitData_Unk3,         {0}, NULL },
   { kAsset_BirdTravel_ScreenIndex, {0}, NULL },
+  { kAsset_BirdTravel_LinkXCoord,  {0}, NULL },
+  { kAsset_BirdTravel_LinkYCoord,  {0}, NULL },
 };
 #define kInvertedShadowCount (sizeof(g_shadows) / sizeof(g_shadows[0]))
 
@@ -269,6 +280,78 @@ void InvertedEntrances_Install(uint8 world_state) {
     s->orig = (const uint8 *)g_asset_ptrs[s->asset_index];
     g_asset_ptrs[s->asset_index] = s->buf;
   }
+}
+
+static void InvertedEntrances_SelfCheckDie(const char *msg) {
+  InvertedEntrances_Teardown();
+  fprintf(stderr, "InvertedEntrances_SelfCheck: %s\n", msg);
+  exit(2);
+}
+
+static uint16 inv_sc_u16(uint8 asset, uint16 elem) {
+  return ((const uint16 *)g_asset_ptrs[asset])[elem];
+}
+
+void InvertedEntrances_SelfCheck(void) {
+  static const uint16 kExpectedFluteScreens[9] = {
+    0x0043, 0x0056, 0x0058, 0x006C, 0x006F, 0x0070, 0x007B, 0x007F, 0x001B
+  };
+  enum { kSynthSize = 0x200 };
+  static uint8 synth[kInvertedShadowCount][kSynthSize];
+  const uint8 *orig_ptr[kInvertedShadowCount];
+  uint32 orig_size[kInvertedShadowCount];
+  bool used_synth[kInvertedShadowCount] = { false };
+
+  InvertedEntrances_Teardown();
+  for (uint32 i = 0; i < kInvertedShadowCount; i++) {
+    uint8 idx = g_shadows[i].asset_index;
+    orig_ptr[i] = g_asset_ptrs[idx];
+    orig_size[i] = g_asset_sizes[idx];
+    if (g_asset_ptrs[idx] == NULL || g_asset_sizes[idx] == 0) {
+      memset(synth[i], 0, sizeof(synth[i]));
+      g_asset_ptrs[idx] = synth[i];
+      g_asset_sizes[idx] = kSynthSize;
+      used_synth[i] = true;
+    }
+  }
+
+  InvertedEntrances_Install((uint8)kWorldState_Inverted);
+  if (InvertedEntrances_SavedEntranceIdOrig() == NULL)
+    InvertedEntrances_SelfCheckDie("install did not take");
+  if (((const uint8 *)g_asset_ptrs[kAsset_Overworld_Entrance_Id])[0x6F] != 0x07)
+    InvertedEntrances_SelfCheckDie("Dark DM healer fairy door did not load Old Man Cave East");
+  if (((const uint8 *)g_asset_ptrs[kAsset_ExitData_ScreenIndex])[0x18] != 0x43)
+    InvertedEntrances_SelfCheckDie("Old Man Cave East exit screen is not DW Death Mountain");
+  if (inv_sc_u16(kAsset_ExitDataRooms, 0x18) != 0x00F1 ||
+      inv_sc_u16(kAsset_ExitData_Map16, 0x18) != 0x1400 ||
+      inv_sc_u16(kAsset_ExitData_ScrollX, 0x18) != 0x0600 ||
+      inv_sc_u16(kAsset_ExitData_ScrollY, 0x18) != 0x0294 ||
+      inv_sc_u16(kAsset_ExitData_XCoord, 0x18) != 0x0678 ||
+      inv_sc_u16(kAsset_ExitData_YCoord, 0x18) != 0x02E8 ||
+      inv_sc_u16(kAsset_ExitData_CameraX, 0x18) != 0x0685 ||
+      inv_sc_u16(kAsset_ExitData_CameraY, 0x18) != 0x0303 ||
+      inv_sc_u16(kAsset_ExitData_NormalDoor, 0x18) != 0x0000 ||
+      inv_sc_u16(kAsset_ExitData_FancyDoor, 0x18) != 0x0000 ||
+      ((const uint8 *)g_asset_ptrs[kAsset_ExitData_Unk1])[0x18] != 0x0A ||
+      ((const uint8 *)g_asset_ptrs[kAsset_ExitData_Unk3])[0x18] != 0xF6)
+    InvertedEntrances_SelfCheckDie("Old Man Cave East exit row mismatch");
+  for (uint32 i = 0; i < 9; i++) {
+    if (inv_sc_u16(kAsset_BirdTravel_ScreenIndex, (uint16)i) != kExpectedFluteScreens[i])
+      InvertedEntrances_SelfCheckDie("Inverted flute screen row mismatch");
+  }
+  if (inv_sc_u16(kAsset_BirdTravel_LinkXCoord, 2) != 0x01F8 ||
+      inv_sc_u16(kAsset_BirdTravel_LinkYCoord, 2) != 0x07C8)
+    InvertedEntrances_SelfCheckDie("Inverted Kakariko flute nudge mismatch");
+
+  InvertedEntrances_Teardown();
+  for (uint32 i = 0; i < kInvertedShadowCount; i++) {
+    if (used_synth[i]) {
+      uint8 idx = g_shadows[i].asset_index;
+      g_asset_ptrs[idx] = orig_ptr[i];
+      g_asset_sizes[idx] = orig_size[i];
+    }
+  }
+  fprintf(stderr, "[InvertedEntrances_SelfCheck] OK\n");
 }
 
 // ===========================================================================

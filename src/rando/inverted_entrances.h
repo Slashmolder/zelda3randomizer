@@ -6,9 +6,14 @@
 // kExitDataRooms / kExitData_ScreenIndex writes); it is a STATIC override set,
 // not a per-seed permutation.
 //
-// THIS PASS COVERS TWO SWAPS ONLY (the rest of setInvertedMode is deferred):
+// This static override layer covers the extracted-data pieces of setInvertedMode:
 //   - Link's House  <-> Bomb Shop
 //   - Ganon's Tower <-> Agahnim's (Hyrule Castle) Tower
+//   - Dark-World Death Mountain cave rewiring
+//   - Dark-World flute destinations, including the Kakariko landing nudge
+// The under-rock DW->LW warp records are installed by InvertedSecrets_Install
+// below because they rebuild packed overworld-secret blobs instead of fixed
+// parallel arrays.
 //
 // Idiom (copied from rando.c's Phase C entrance overlay): one static shadow
 // buffer per touched asset array, copy vanilla -> shadow, apply that array's
@@ -64,6 +69,10 @@ const uint8 *InvertedEntrances_SavedEntranceIdOrig(void);
 // Lets the contamination selfcheck synthesize sources for absent assets
 // (selftest runs without zelda3_assets.dat) without duplicating the list.
 int InvertedEntrances_ShadowedAssets(uint8 *out, int cap);
+
+// Headless regression guard for the static override table, including the
+// Inverted Death Mountain exit-row coordinate mapping and flute landing nudge.
+void InvertedEntrances_SelfCheck(void);
 
 // Install the Inverted overworld DW->LW under-rock warps (overworld-secret
 // type-0x82 records). No-op unless world_state == kWorldState_Inverted (2).
