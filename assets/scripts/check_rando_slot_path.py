@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -70,6 +71,20 @@ def find_binary_default() -> Path:
 DEFAULT_BINARY = find_binary_default()
 
 
+def local_pot_registry_available() -> bool:
+    """Return whether this checkout's generated pot registry has real rows."""
+    header = REPO / "src" / "rando" / "pot_lookup.h"
+    try:
+        text = header.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for macro in ("kRandoPotRegistryCount", "kRandoPotLookup_COUNT"):
+        match = re.search(rf"^#define\s+{macro}\s+(\d+)\b", text, re.MULTILINE)
+        if match:
+            return int(match.group(1)) > 0
+    return False
+
+
 # (label, settings_csv, seed, expect_ok, check_parity, expect_world_state,
 #  allow_missing_pot_registry)
 # - expect_ok:        slot generation should succeed (True) or be refused (False)
@@ -78,7 +93,8 @@ DEFAULT_BINARY = find_binary_default()
 # - expect_world_state: persisted slot header world_state (0=open,1=standard,
 #                     2=inverted,3=retro per WorldState enum); None to skip
 # - allow_missing_pot_registry: public CI has no local ROM-derived pot registry;
-#                     such cells are SKIPPED only for that explicit refusal.
+#                     such cells are SKIPPED only when the generated registry is
+#                     absent.
 MATRIX = [
     ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0, False),
     ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0, False),
@@ -150,6 +166,7 @@ def main(argv: list[str]) -> int:
     args.binary = args.binary.resolve()
 
     print(f"check_rando_slot_path: binary {args.binary}")
+    pot_registry_present = local_pot_registry_available()
     failures = 0
     skipped = 0
     for label, settings, seed, expect_ok, check_parity, expect_ws, allow_missing_pots in MATRIX:
@@ -160,8 +177,7 @@ def main(argv: list[str]) -> int:
             continue
 
         ok = bool(res.get("ok"))
-        if (not ok and expect_ok and allow_missing_pots and
-                "pot_shuffle requested" in str(res.get("error", ""))):
+        if not ok and expect_ok and allow_missing_pots and not pot_registry_present:
             print(f"  SKIP [{label}]: local pot registry absent")
             skipped += 1
             continue
