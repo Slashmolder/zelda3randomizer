@@ -213,6 +213,12 @@ def main() -> int:
     have_chest = (cwd / CHEST_TABLE_REL).is_file()
     have_hash = (cwd / VANILLA_ASSETS_HASH_REL).is_file()
     have_pots = has_pot_artifacts(cwd)
+    # add-enemy-souls: soul_rooms.gen.yaml is gitignored/ROM-derived. Like pots,
+    # it must gate the "nothing to do" early-exit below — otherwise a worktree
+    # that already has rom+assets+hash+chest+pots bails BEFORE the soul block
+    # ever runs, leaving souls_shuffle=all fail-closed with no attempt to
+    # produce it. (npc_souls.yaml is COMMITTED, so it needs no mirroring.)
+    have_souls = (cwd / SOUL_ROOMS_REL).is_file()
     have_sdl2 = has_vendored_sdl2(cwd)
     need_sdl2 = SDL2_REQUIRED_ON_THIS_PLATFORM
     required_ready = (have_rom and assets_ok and have_chest and have_hash and
@@ -230,7 +236,10 @@ def main() -> int:
                 print(f"setup_worktree: OK (rom + assets + chest table + hash{pot_note} present)")
             if not have_pots:
                 print_missing_pot_artifacts("setup_worktree:", cwd, required=False)
-                return 0
+            if not have_souls:
+                print(f"setup_worktree: {SOUL_ROOMS_REL} absent -- souls_shuffle=all "
+                      f"fails closed; run this without --verify to produce it.",
+                      file=sys.stderr)
             return 0
         if not have_rom:
             print(f"setup_worktree: MISSING {ROM_NAMES} in {cwd}")
@@ -248,13 +257,13 @@ def main() -> int:
         return 1
 
     if (have_rom and assets_ok and have_ini and have_chest and have_hash and
-            have_pots and (have_sdl2 or not need_sdl2)):
+            have_pots and have_souls and (have_sdl2 or not need_sdl2)):
         if need_sdl2:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
-                  "chest table + pot artifacts + SDL2 already present)")
+                  "chest table + pot artifacts + soul rooms + SDL2 already present)")
         else:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
-                  "chest table + pot artifacts already present)")
+                  "chest table + pot artifacts + soul rooms already present)")
         return 0
 
     # Resolve the source.
