@@ -47,8 +47,27 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-DEFAULT_BINARY = REPO / "zelda3"
 GEN_TIMEOUT_S = 120
+
+
+def find_binary_default() -> Path:
+    """Return the built binary path most likely to run on this host."""
+    windows_candidates = [
+        REPO / "bin" / "x64-Release" / "zelda3.exe",
+        REPO / "zelda3.exe",
+    ]
+    posix_candidates = [
+        REPO / "zelda3",
+        REPO / "bin" / "x64-Release" / "zelda3.exe",
+    ]
+    candidates = windows_candidates if os.name == "nt" else posix_candidates
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+DEFAULT_BINARY = find_binary_default()
 
 
 # (label, settings_csv, seed, expect_ok, check_parity, expect_world_state,
@@ -83,10 +102,14 @@ def run_slot(binary: Path, settings: str, seed: str) -> dict | None:
     with tempfile.TemporaryDirectory() as td:
         (Path(td) / "saves").mkdir()
         (Path(td) / "spoilers").mkdir()
-        proc = subprocess.run(
-            [str(binary), "--generate-slot", f"--settings={settings}", f"--seed={seed}"],
-            cwd=td, capture_output=True, text=True, timeout=GEN_TIMEOUT_S,
-        )
+        try:
+            proc = subprocess.run(
+                [str(binary), "--generate-slot", f"--settings={settings}", f"--seed={seed}"],
+                cwd=td, capture_output=True, text=True, timeout=GEN_TIMEOUT_S,
+            )
+        except OSError as e:
+            print(f"  failed to launch {binary}: {e}", file=sys.stderr)
+            return None
         # The binary prints exactly one JSON line on stdout regardless of exit
         # code (ok=false carries the error). exit 0 == accepted, 1 == refused.
         line = next((l for l in proc.stdout.splitlines() if l.startswith("{")), None)
@@ -107,7 +130,7 @@ def run_seed_digest(binary: Path, settings: str, seed: str) -> str | None:
                  f"--seed={seed}", f"--out-spoiler={out_json}"],
                 cwd=td, check=True, capture_output=True, timeout=GEN_TIMEOUT_S,
             )
-        except subprocess.CalledProcessError:
+        except (OSError, subprocess.CalledProcessError):
             return None
         if not out_json.exists():
             return None
