@@ -52,6 +52,19 @@ from gen_enemy_drop_tables import (  # noqa: E402
     read_assets,
     sprite_entries,
 )
+from gen_soul_tables import enemy_soul_by_species  # noqa: E402
+
+# add-enemy-souls (task 1.6): killing a check's source enemy requires that
+# species' soul at souls_shuffle=all. Terms are inert below the tier; boss/
+# miniboss checks are excluded (their CanKill<Boss> macros carry the boss-soul
+# terms). Ordinary enemy checks never coexist with enemy shuffle (the tier
+# degrades to Keys there), so the vanilla source_type is authoritative.
+SOUL_BY_SPECIES = enemy_soul_by_species()
+
+
+def soul_term_for(source_type: int) -> str | None:
+    tok = SOUL_BY_SPECIES.get(int(source_type))
+    return f"NeedsEnemySoul(Soul_{tok})" if tok is not None else None
 
 DEFAULT_OUT = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
 POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
@@ -1169,10 +1182,14 @@ def enemy_can_reach_from_base(candidate: dict, dungeon: int, base_pred: str,
         pot_count = len(pot_rows.get(room, []))
 
     kill_pred = or_predicate(kill_branches)
+    soul_term = soul_term_for(source_type)
+    reach_parts = [base_access, kill_pred] if soul_term is None else \
+                  [base_access, soul_term, kill_pred]
     return {
-        "can_reach": and_predicate([base_access, kill_pred]),
+        "can_reach": and_predicate(reach_parts),
         "base_can_reach": base_access,
         "base_predicate_source": source,
+        "source_soul": SOUL_BY_SPECIES.get(int(source_type)),
         "kill_predicate": kill_pred,
         "inventory_kill_predicate": inventory_pred,
         "inventory_kill_source": inventory_source,
@@ -1307,6 +1324,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "room": room,
             "source_slot": int(candidate["source_slot"]),
             "source_type": int(candidate["source_type"]),
+            "source_soul": SOUL_BY_SPECIES.get(int(candidate["source_type"])),
             "source_name": candidate["source_name"],
             "source_y": int(candidate["source_y"]),
             "source_x": int(candidate["source_x"]),
@@ -1461,6 +1479,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         pseudo = {
             "room": room,
             "source_type": int(candidate["child_type"]),
+            "source_soul": SOUL_BY_SPECIES.get(int(candidate["child_type"])),
         }
         reach = enemy_can_reach(
             pseudo, dungeon, pot_predicates, region_only_pot_rooms,
@@ -1520,7 +1539,10 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         stage_gate = overworld_stage_gate(stage)
         region_gate = f"OP_REGION_REACHABLE({region})"
         base_access = and_predicate([region_gate, stage_gate])
-        can_reach = and_predicate([base_access, kill_pred])
+        ow_soul_term = soul_term_for(int(candidate["source_type"]))
+        ow_parts = [base_access, kill_pred] if ow_soul_term is None else \
+                   [base_access, ow_soul_term, kill_pred]
+        can_reach = and_predicate(ow_parts)
         rows.append({
             "id": ENEMY_CHECK_BASE_ID + len(rows),
             "name": overworld_enemy_check_name(candidate),
@@ -1531,6 +1553,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "source_slot": int(candidate["source_slot"]),
             "block": int(candidate["block"]),
             "source_type": int(candidate["source_type"]),
+            "source_soul": SOUL_BY_SPECIES.get(int(candidate["source_type"])),
             "source_name": candidate["source_name"],
             "source_y": int(candidate["source_y"]),
             "source_x": int(candidate["source_x"]),
@@ -1578,6 +1601,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "room": room,
             "source_slot": int(candidate["source_slot"]),
             "source_type": int(candidate["source_type"]),
+            "source_soul": SOUL_BY_SPECIES.get(int(candidate["source_type"])),
             "source_name": candidate["source_name"],
             "source_y": int(candidate["source_y"]),
             "source_x": int(candidate["source_x"]),

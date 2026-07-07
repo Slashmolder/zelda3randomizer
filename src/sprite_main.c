@@ -13,6 +13,8 @@
 #include "rando/rando.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
+#include "rando/souls.h"           // add-npc-souls trigger gates
+#include "rando/npc_soul_tables.h" // kNpcSoul_* indices
 
 #define byte_7FFE01 (*(uint8*)(g_ram+0x1FE01))
 
@@ -1174,6 +1176,19 @@ void Sprite_WishPond3(int k) {
       // throwable-item residual, no freeze, no consume, no lockout. Off-rando:
       // the untouched vanilla toss path runs (preserves the RAM-compare).
       if (enhanced_features1 & kFeatures1_RandomizerActive) {
+        // add-npc-souls — the fairies have no discrete sprite to suppress
+        // (this pond machinery also runs the wishing/happiness ponds), so the
+        // GRANT gates on the respective fairy soul: without it the pond does
+        // nothing (silent idle; re-contact works once the soul is found).
+        // The Bomb Shop dealer's soul gates the Big Bomb PURCHASE (physical
+        // pyramid-wall access), not this grant — runtime mirrors the logic.
+        if (Souls_NpcActive() &&
+            !Souls_NpcOwned(savegame_is_darkworld ? kNpcSoul_PyramidFairy
+                                                  : kNpcSoul_WaterfallFairy)) {
+          sprite_ai_state[k] = 0;
+          sprite_delay_main[k] = 255;
+          return;
+        }
         uint16 loc = 0xFFFFu, vi = 0xFFFFu;
         uint8 vlttp = 0;
         if (!savegame_is_darkworld) {  // Waterfall Fairy (LW)
@@ -6842,6 +6857,16 @@ void Sprite_HeartPiece(int k) {  // 85f020
       uint16 encoded = (uint16)(rando_loc + 1);
       sprite_A[k] = (uint8)encoded;
       sprite_B[k] = (uint8)(encoded >> 8);
+      // add-npc-souls — the Maze Race prize is a STANDING item: suppressing
+      // the two race NPCs does not physically gate it, so the item itself
+      // despawns until BOTH race souls are owned (logic gates the check the
+      // same way; re-entering the screen re-arms the spawn).
+      if (rando_loc == LOC_Maze_Race && Souls_NpcActive() &&
+          (!Souls_NpcOwned(kNpcSoul_MazeGameLady) ||
+           !Souls_NpcOwned(kNpcSoul_MazeGameGuy))) {
+        sprite_state[k] = 0;
+        return;
+      }
     }
     HeartUpgrade_CheckIfAlreadyObtained(k);
     if (!sprite_state[k])
@@ -7267,6 +7292,13 @@ void Sprite_E9_PotionShop(int k) {  // 85f633
 }
 
 void Sprite_BagOfPowder(int k) {  // 85f644
+  // add-npc-souls — defensive: the bag only spawns after the witch hand-in
+  // (impossible while the witch is suppressed), but a foreign/edited save
+  // could carry the flag; never present the grant without the Witch soul.
+  if (Souls_NpcActive() && !Souls_NpcOwned(kNpcSoul_Witch)) {
+    sprite_state[k] = 0;
+    return;
+  }
   // add-rando-field-item-sprites: draw the placed item; vanilla powder otherwise.
   if (!Rando_TryDrawFieldItemSprite(k, LOC_Potion_Shop, ITEM_MagicPowder))
     MagicPowderItem_Draw(k);

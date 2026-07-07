@@ -369,9 +369,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--jobs", type=int, default=1,
                         help="number of corpus entries to run concurrently "
                              "(default: 1).")
-    parser.add_argument("--timeout", type=int, default=60,
+    parser.add_argument("--timeout", type=int, default=120,
                         help="per-entry generator timeout in seconds "
-                             "(default: 60).")
+                             "(default: 120 -- legit hard door-layout seeds "
+                             "run ~55s; 60s flaked under contention).")
     args = parser.parse_args(argv)
 
     data = load_manifest(args.manifest)

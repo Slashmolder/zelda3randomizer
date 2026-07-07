@@ -71,6 +71,9 @@
 // is regenerated from (share_string seed, canonical settings, attempt) on replay
 // and must match the digest before runtime redirects are installed.
 #define kRandoSnapshotTail_Type_ChainLayout 7u
+// add-enemy-souls — soul ownership bitfield for cold replay. Self-contained
+// (like DoorLayout/ChainLayout): absent → zero souls owned, the safe default.
+#define kRandoSnapshotTail_Type_Souls 8u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the

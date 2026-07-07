@@ -108,7 +108,15 @@ typedef enum {
   // Wild small keys, including Retro's generic-key mode. Generated wraps use it
   // for the held-before-entry worst-case key-depth.
   OP_ENEMY_DROP_KEYS_WILD = 27,
-  OP__COUNT = 28,
+  // SOULS_TIER_AT_LEAST <tier:u8> — settings.souls_shuffle >= tier
+  // (add-enemy-souls). Wraps soul-item requirements so they collapse to true
+  // (inert) below the tier; default Off reproduces pre-souls reachability.
+  OP_SOULS_TIER_AT_LEAST = 28,
+  // NPC_SOULS_ACTIVE (no operands) — settings.npc_souls != 0 (add-npc-souls).
+  // Wraps NPC-check soul requirements: (NOT NPC_SOULS_ACTIVE) OR HAS_ITEM(X)
+  // collapses to true when the toggle is off (placement byte-identical).
+  OP_NPC_SOULS_ACTIVE = 29,
+  OP__COUNT = 30,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -122,6 +130,9 @@ typedef struct RandoCounts {
   // door-rando drops for pot-key dungeon mode. Runtime live counts leave this 0.
   uint8 pot_nonpot_drops_seeded;
 } RandoCounts;
+// The registry must stay within this fixed inventory-snapshot capacity —
+// souls.c carries a _Static_assert(ITEM__COUNT <= 256) (item_ids.h is not
+// visible here).
 
 // ---------------------------------------------------------------------------
 // Phase A: per-seed shuffle tables exposed to the VM.
@@ -323,6 +334,18 @@ extern const uint32 kRandoBossKillPredCount;
 // wise cross-checks this against kBossVanilla — both run via
 // Rando_RunAllSelfChecks (the check lives there, not in Logic_SelfCheck).
 extern const uint8 kRandoDungeonVanillaBoss[kRandoDungeonCount];
+
+// add-enemy-souls — kill-gated-room soul data baked into logic_data.c from the
+// local soul_rooms.gen.yaml. kRandoSoulRoomsBaked == 0 means the build carries
+// no kill-room soul requirements: BuildItemPool refuses souls_shuffle=all
+// seeds (fail closed, mirroring the pot/enemy-drop registries).
+// kRandoSoulPinRooms lists the kill-gated + forced key-drop rooms whose logic
+// terms / runtime drop exemptions name VANILLA species; EnemyShuffle_
+// PickDungeon returns the vanilla type for these rooms while the enemies tier
+// is active (Souls_RoomPinnedVanilla, souls.c).
+extern const uint8 kRandoSoulRoomsBaked;
+extern const uint16 kRandoSoulPinRooms[];
+extern const uint16 kRandoSoulPinRoomsCount;
 
 // ---------------------------------------------------------------------------
 // §12.6 — per-trick / per-glitch-level ROM-version verification status.

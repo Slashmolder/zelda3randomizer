@@ -414,6 +414,7 @@
     <ClCompile Include="src\rando\shuffle_boss.c" />
     <ClCompile Include="src\rando\shuffle_drops.c" />
     <ClCompile Include="src\rando\shuffle_enemies.c" />
+    <ClCompile Include="src\rando\souls.c" />
     <ClCompile Include="src\rando\customizer.c" />
     <ClCompile Include="src\rando\shuffle_entrance.c" />
     <ClCompile Include="src\rando\shuffle_cosmetic.c" />
@@ -898,6 +899,8 @@
     <ClInclude Include="src\rando\seed_shape.h" />
     <ClInclude Include="src\rando\chains_runtime.h" />
     <ClInclude Include="src\rando\shuffle_chains.h" />
+    <ClInclude Include="src\rando\souls.h" />
+    <ClInclude Include="src\rando\soul_tables.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\platform\win32\zelda3.rc" />

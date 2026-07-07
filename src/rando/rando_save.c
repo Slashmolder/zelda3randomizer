@@ -111,6 +111,8 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 7) return kRandoSidecar_SlotExtV7Size;
+  if (format_version >= 6) return kRandoSidecar_SlotExtV6Size;
   if (format_version >= 5) return kRandoSidecar_SlotExtV5Size;
   if (format_version >= 4) return kRandoSidecar_SlotExtV4Size;
   if (format_version >= 3) return kRandoSidecar_SlotExtV3Size;
@@ -406,14 +408,21 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     p[19] = (uint8)((slot->header.chains_digest24 >> 8) & 0xff);
     p[20] = (uint8)((slot->header.chains_digest24 >> 16) & 0xff);
   }
+  // format_version 6/7: soul-ownership bitfield @24-36 (v7 widened to 12
+  // bytes — sizeof follows the header array).
+  if (slot->header.souls_present) {
+    p[24] = 1;
+    memcpy(p + 25, slot->header.soul_flags, sizeof(slot->header.soul_flags));
+  }
   return size;
 }
 
 // Version-aware slot deserialize. `format_version` is the FILE's declared
 // version: v1 has no trailing settings blob, v2 adds the legacy 28-byte blob,
 // v3 adds the 8-byte extension block after that legacy blob, v4 widens the blob
-// to current and the extension to 16 bytes, and v5 adds the current 24-byte
-// extension. RandoSave_ReadFile passes the file's value.
+// to current and the extension to 16 bytes, v5 adds a 24-byte extension, and v6
+// (add-enemy-souls) adds the current 33-byte extension. RandoSave_ReadFile
+// passes the file's value.
 static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
                                              RandoSidecarSlot *out,
                                              uint16 format_version,
@@ -505,6 +514,19 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.chains_attempt = 0;
       out->header.chains_digest24 = 0;
     }
+    if (format_version >= 7 && ext_len >= kRandoSidecar_SlotExtV7Size) {
+      out->header.souls_present = p[24] != 0;
+      memcpy(out->header.soul_flags, p + 25, sizeof(out->header.soul_flags));
+    } else if (format_version >= 6 && ext_len >= kRandoSidecar_SlotExtV6Size) {
+      // v6 file: enemy/boss soul bytes only; the NPC tail reads as zero
+      // (un-owned — the safe default; pre-npc seeds have npc_souls=off).
+      out->header.souls_present = p[24] != 0;
+      memset(out->header.soul_flags, 0, sizeof(out->header.soul_flags));
+      memcpy(out->header.soul_flags, p + 25, 8);
+    } else {
+      out->header.souls_present = 0;
+      memset(out->header.soul_flags, 0, sizeof(out->header.soul_flags));
+    }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
@@ -517,6 +539,8 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.chains_present = 0;
     out->header.chains_attempt = 0;
     out->header.chains_digest24 = 0;
+    out->header.souls_present = 0;
+    memset(out->header.soul_flags, 0, sizeof(out->header.soul_flags));
   }
   return total;
 }
@@ -955,6 +979,9 @@ void RandoSave_SelfCheck(void) {
   src.header.chains_present = 1;
   src.header.chains_attempt = 0x09;
   src.header.chains_digest24 = 0x654321u;
+  // add-enemy-souls soul-ownership round-trip coverage (v6 extension block).
+  src.header.souls_present = 1;
+  for (int i = 0; i < 12; i++) src.header.soul_flags[i] = (uint8)(0x81 + i);
   src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
   src.placements[1].location_id = 10; src.placements[1].item_id = 75;
   src.placements[2].location_id = 20; src.placements[2].item_id = 99;
@@ -1064,6 +1091,8 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.chains_present != src.header.chains_present) selfcheck_die("chains_present round-trip");
   if (dst.header.chains_attempt != src.header.chains_attempt) selfcheck_die("chains_attempt round-trip");
   if (dst.header.chains_digest24 != src.header.chains_digest24) selfcheck_die("chains_digest24 round-trip");
+  if (dst.header.souls_present != src.header.souls_present) selfcheck_die("souls_present round-trip");
+  if (memcmp(dst.header.soul_flags, src.header.soul_flags, sizeof(src.header.soul_flags)) != 0) selfcheck_die("soul_flags round-trip");
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
@@ -1222,6 +1251,9 @@ void RandoSave_SelfCheck(void) {
     if (v1dst.header.chains_present != 0 || v1dst.header.chains_attempt != 0 ||
         v1dst.header.chains_digest24 != 0)
       selfcheck_die("v1 compat: dungeon-chain fields must be forced 0");
+    if (v1dst.header.souls_present != 0 || v1dst.header.soul_flags[0] != 0 ||
+        v1dst.header.soul_flags[11] != 0)
+      selfcheck_die("v1 compat: soul fields must be forced 0");
     if (v1dst.placement_count != 1 || v1dst.placements[0].location_id != 5 ||
         v1dst.placements[0].item_id != 50) selfcheck_die("v1 compat: placement round-trip");
     if (v1dst.checked_bitmap[0] != 0x05) selfcheck_die("v1 compat: bitmap round-trip");

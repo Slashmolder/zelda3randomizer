@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 127u
+#define kGeneratorVersion 129u  // add-enemy-souls: enemies-tier kill-room/check soul terms
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -103,6 +103,13 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
 // text row is required.
 #define kRandoTrapDialogueId 0x0220u
 bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer);
+
+// add-*-souls — runtime-only message id for soul pickups. Souls are direct-
+// grant (no vanilla receive message), so this names the collected soul like a
+// normal item-get box: rendered dynamically from the last-granted soul id
+// (mirrors the trap dialogue mechanism; no asset text row required).
+#define kRandoSoulDialogueId 0x0221u
+bool Rando_RenderSoulMessage(uint16 msg_id, uint8 *out_buffer);
 
 // Returns the item id resolved by the most recent Rando_DispatchVanillaGrant
 // (or Rando_ChestDispatch) call. Used by direct-grant
@@ -413,7 +420,12 @@ enum {
   // Rando_ApplyCustomItemGfxPalette, drawn by Rando_DrawTrapCucco. So the flock
   // renders in EVERY area, not just the two that load that sheet into sprite slot 3.
   kRandoCustomGfx_Cucco = 0x84,
-  kRandoCustomGfx_BlobEntries = 3,  // kRandoCustomItemGfx cell count (idx 0..2)
+  // Shared soul-item icon (add-enemy-souls): one blob cell for every Soul_*
+  // registry item, default custom palette. Blob cells 3/4 are reserved padding
+  // (Rupoor/Cucco above are special-cased, not blob-backed) so the loader's
+  // (gfx & 0x7f) cell mapping stays in lockstep with these ids.
+  kRandoCustomGfx_Soul = 0x85,
+  kRandoCustomGfx_BlobEntries = 6,  // kRandoCustomItemGfx cell count (idx 0..5)
 };
 
 // (Re)load the custom item's 8-colour palette into SP3's upper half if it is

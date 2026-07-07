@@ -78,6 +78,7 @@
 #include "rando_snapshot_tail.h"
 #include "rando_placement.h"
 #include "rando.h"          // snapshot cold-replay helpers + ownership externs
+#include "souls.h"          // add-enemy-souls (soul ownership TLV)
 #include "rando_save.h"     // RandoSidecarSlot (self-check synthetic activation)
 #include "rando_settings.h" // kSettingsCanonicalLen, Settings_CanonicalDeserialize
 #include "rando_share.h"    // Share_PackBinary (self-check valid raw share string)
@@ -438,6 +439,24 @@ bool RandoSnapshotTail_Save(FILE *f) {
     if (fwrite(fhdr, 1, sizeof(fhdr), f) != sizeof(fhdr)) return false;
     if (fwrite(fp, 1, sizeof(fp), f) != sizeof(fp)) return false;
   }
+  // add-enemy-souls — soul ownership TLV (type 8). Emitted whenever a settings
+  // context is active (souls are only meaningful on a settings-bearing slot).
+  // Payload: format_version(1) + soul_flags[8]. Read LIVE like the ownership
+  // bytes in the type-2 TLV so it reflects the snapshot instant.
+  if (g_has_settings_ctx) {
+    // add-npc-souls: widened to kSoulFlagsBytes (12). The payload keeps
+    // format_version 1 and only GROWS in length, so pre-widening builds
+    // (which read 8 bytes and skip excess) still restore the enemy block.
+    uint8 up[1 + 12];
+    up[0] = 1u;  // format_version
+    memcpy(up + 1, Souls_Flags(), 12);
+    uint8 uhdr[16];
+    memcpy(uhdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(uhdr + 8, kRandoSnapshotTail_Type_Souls);
+    put_u32le_bytes(uhdr + 12, (uint32)sizeof(up));
+    if (fwrite(uhdr, 1, sizeof(uhdr), f) != sizeof(uhdr)) return false;
+    if (fwrite(up, 1, sizeof(up), f) != sizeof(up)) return false;
+  }
   return true;
 }
 
@@ -597,6 +616,13 @@ int RandoSnapshotTail_Load(FILE *f) {
       // re-memsets and restores the real bitmap below, so this clear is
       // load-bearing ONLY for the type-3-absent case.
       memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+
+      // add-enemy-souls — same clean-restore contract as the checked bitmap:
+      // soul ownership is C-global state outside the g_ram dump. Clear it on
+      // every accepted RandoState so an older/type-8-absent snapshot cannot
+      // inherit stale souls; a current snapshot's type-8 Souls TLV (emitted
+      // after type-1) restores the real bitfield below.
+      Souls_ResetFlags();
 
       // Optional TLV contexts are scoped to this accepted RandoState. A current
       // snapshot's later type-2/type-4 TLVs repopulate them; an older snapshot
@@ -861,6 +887,31 @@ int RandoSnapshotTail_Load(FILE *f) {
       memset(dst, 0, kRandoCheckedBitmapBytes);
       if (copy > 0 && fread(dst, 1, copy, f) != copy) FINISH_LOAD();
       if (length > copy && fseek(f, (long)(length - copy), SEEK_CUR) != 0) FINISH_LOAD();
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_Souls) {
+      // add-enemy-souls — restore soul ownership. Payload: format_version[1] +
+      // soul_flags[8]. Absent TLV leaves souls zeroed (RandoState acceptance
+      // resets them); a short payload zero-extends. Only apply to an accepted
+      // rando state, mirroring the ownership handling in the type-2 TLV.
+      if (length < 9u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      // Accept the legacy 8-byte (length 9) AND the widened 12-byte (length
+      // 13) payloads; a short payload zero-extends the tail (NPC souls
+      // un-owned — the safe default for pre-widening snapshots).
+      uint8 up[13] = { 0 };
+      uint32 body = length < (uint32)sizeof(up) ? length : (uint32)sizeof(up);
+      if (fread(up, 1, body, f) != body) FINISH_LOAD();
+      if (length > body && fseek(f, (long)(length - body), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (up[0] == 1u && accepted_rando_state) {
+        memset(Souls_Flags(), 0, 12);
+        memcpy(Souls_Flags(), up + 1, body - 1 < 12u ? body - 1 : 12u);
+      }
       recognized++;
       continue;
     }
@@ -1263,6 +1314,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     g_rando_flute_shovel_owned = 0x05;
     g_rando_boomerang_owned    = 0x03;
     g_rando_bow_owned          = 0x02;
+    // add-enemy-souls — soul ownership rides the type-8 TLV.
+    for (int i = 0; i < 12; i++) Souls_Flags()[i] = (uint8)(0x11 * (i + 1));
 
     FILE *fm = tmpfile();
     if (fm == NULL) selfcheck_die("tmpfile() returned NULL");
@@ -1271,17 +1324,21 @@ void RandoSnapshotTail_SelfCheck(void) {
     // Wipe the process-static ownership bytes — only the type-2 load restores them.
     g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
     g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
+    Souls_ResetFlags();  // only the type-8 load restores souls
     Placement_Install(NULL);
     Rando_ClearSnapshotContext();
 
     fseek(fm, 0, SEEK_SET);
     int nm = RandoSnapshotTail_Load(fm);
-    if (nm != 4)
-      selfcheck_die("Load should recognize 4 TLVs (RandoState + PotRegistry + RandoSettings + CheckedBitmap)");
+    if (nm != 5)
+      selfcheck_die("Load should recognize 5 TLVs (RandoState + PotRegistry + RandoSettings + CheckedBitmap + Souls)");
     if (g_rando_mushroom_held != 0x02 || g_rando_flute_shovel_owned != 0x05 ||
         g_rando_boomerang_owned != 0x03 || g_rando_bow_owned != 0x02) {
       selfcheck_die("ownership bytes not restored from the type-2 TLV");
     }
+    for (int i = 0; i < 12; i++)
+      if (Souls_Flags()[i] != (uint8)(0x11 * (i + 1)))
+        selfcheck_die("soul_flags not restored from the type-8 TLV");
     fclose(fm);
 
     // the type-2 load reinstalled the settings sub-context, so a RE-SAVE
@@ -1298,8 +1355,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fr, 0, SEEK_SET);
     int nr = RandoSnapshotTail_Load(fr);
-    if (nr != 4)
-      selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-6 + type-2 + type-3 TLVs");
+    if (nr != 5)
+      selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-6 + type-2 + type-3 + type-8 TLVs");
     if (g_rando_mushroom_held != 0x09) selfcheck_die("re-saved ownership did not round-trip");
     fclose(fr);
 
@@ -1433,8 +1490,8 @@ void RandoSnapshotTail_SelfCheck(void) {
       g_rando_slot_active = 1;
       fseek(fcur, 0, SEEK_SET);
       int ncur = RandoSnapshotTail_Load(fcur);
-      if (ncur != 4)
-        selfcheck_die("type-2 active entrance should parse state + bitmap + pot registry + settings");
+      if (ncur != 5)
+        selfcheck_die("type-2 active entrance should parse state + bitmap + pot registry + settings + souls");
       if (!Rando_HasActiveSettings())
         selfcheck_die("type-2 active entrance should restore settings");
       Rando_ClearEntranceRegionOverrides();
@@ -1713,8 +1770,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fd, 0, SEEK_SET);
     int nd = RandoSnapshotTail_Load(fd);
-    if (nd != 5)
-      selfcheck_die("type-5: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + DoorLayout");
+    if (nd != 6)
+      selfcheck_die("type-5: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + DoorLayout + Souls");
     if (!DoorRt_Installed())
       selfcheck_die("type-5: door graph was not restored");
     if (!(enhanced_features1 & kFeatures1_DoorShuffleActive))
@@ -1730,7 +1787,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_DoorShuffleActive;  // restored g_ram claims door shuffle
     fseek(frd, 0, SEEK_SET);
     int nrd = RandoSnapshotTail_Load(frd);
-    if (nrd != 5)
+    if (nrd != 6)
       selfcheck_die("type-5: replayed snapshot re-save must perpetuate DoorLayout");
     if (!DoorRt_Installed())
       selfcheck_die("type-5: re-saved door graph was not restored");
@@ -1752,8 +1809,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_DoorShuffleActive;
     fseek(fmissing, 0, SEEK_SET);
     int nmissing = RandoSnapshotTail_Load(fmissing);
-    if (nmissing != 4)
-      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings");
+    if (nmissing != 5)
+      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings + Souls");
     if (g_rando_slot_active || Placement_GetActive() != NULL || DoorRt_Installed())
       selfcheck_die("type-5: missing DoorLayout should deactivate rando state");
     fclose(fmissing);
@@ -1770,7 +1827,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-5: bad-digest Save returned false");
     fseek(fbad, 0, SEEK_SET);
     int nbad = RandoSnapshotTail_Load(fbad);
-    if (nbad != 5)
+    if (nbad != 6)
       selfcheck_die("type-5: bad-digest snapshot should still parse all known TLVs");
     if (DoorRt_Installed())
       selfcheck_die("type-5: bad digest inherited or installed a door graph");
@@ -1981,8 +2038,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fc, 0, SEEK_SET);
     int nc = RandoSnapshotTail_Load(fc);
-    if (nc != 5)
-      selfcheck_die("type-7: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + ChainLayout");
+    if (nc != 6)
+      selfcheck_die("type-7: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + ChainLayout + Souls");
     ChainsRuntimeSession restored_chain_session;
     if (!Chains_RuntimeGetSession(&restored_chain_session))
       selfcheck_die("type-7: chain runtime session was not restored");
@@ -2009,7 +2066,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_RandomizerActive;
     fseek(frc, 0, SEEK_SET);
     int nrc = RandoSnapshotTail_Load(frc);
-    if (nrc != 5)
+    if (nrc != 6)
       selfcheck_die("type-7: replayed snapshot re-save must perpetuate ChainLayout");
     if (!Chains_RuntimeRecordDoorEntry(chain_lx))
       selfcheck_die("type-7: re-saved chain runtime was not restored");
@@ -2030,8 +2087,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_RandomizerActive;
     fseek(fmissing, 0, SEEK_SET);
     int nmissing = RandoSnapshotTail_Load(fmissing);
-    if (nmissing != 4)
-      selfcheck_die("type-7: missing ChainLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings");
+    if (nmissing != 5)
+      selfcheck_die("type-7: missing ChainLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings + Souls");
     if (g_rando_slot_active || Placement_GetActive() != NULL ||
         Chains_RuntimeRecordDoorEntry(chain_lx))
       selfcheck_die("type-7: missing ChainLayout should deactivate rando state");
@@ -2047,7 +2104,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-7: bad-digest Save returned false");
     fseek(fbad, 0, SEEK_SET);
     int nbad = RandoSnapshotTail_Load(fbad);
-    if (nbad != 5)
+    if (nbad != 6)
       selfcheck_die("type-7: bad-digest snapshot should still parse all known TLVs");
     if (Chains_RuntimeRecordDoorEntry(chain_lx))
       selfcheck_die("type-7: bad digest inherited or installed a chain graph");

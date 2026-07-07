@@ -193,6 +193,20 @@ typedef struct RandoSettings {
   // vanilla-door/no-enemy-shuffle layouts; unsupported layouts degrade
   // explicitly and must never make all mean dungeon-only.
   uint8 enemy_drop_checks;
+  // add-enemy-souls — soul items gate whether the matching enemy/boss spawns.
+  // Serialized in canonical byte [28] bits 2-3 (alongside enemy_drop_checks in
+  // bits 0-1); older/shorter share strings zero-extend to Off. Bosses places
+  // the 12 boss souls; BossesEnemies additionally places one soul per enemy
+  // family and holds kill-gates shut while suppressed spawns exist.
+  uint8 souls_shuffle;
+  // add-npc-souls — 23 NPC soul items gate check-giving people (site-scoped
+  // spawn suppression + logic gates; Kiki gates the PoD entry edge, the Bomb
+  // Shop dealer gates the Pyramid Fairy checks). INDEPENDENT of souls_shuffle
+  // (composes with any tier); NO door-shuffle degrade (no gated check is
+  // door-oracle-controlled). Canonical byte [28] bit 4 (kNpcSoulsAxis_*);
+  // pre-feature builds hard-refuse strings carrying it (forward-compat
+  // refusal), and this build still refuses bits 5-7.
+  uint8 npc_souls;
 } RandoSettings;
 
 // add-rando-pot-sanity — pot_shuffle tiers. Values are part of the determinism
@@ -221,6 +235,24 @@ typedef enum {
   kEnemyDropChecks_Dungeon = 2,
   kEnemyDropChecks_All = 3,
 } EnemyDropChecks;
+
+// add-enemy-souls — souls_shuffle tiers. Values are part of the determinism
+// contract (additions go at the end). Canonical byte [28] bits 2-3.
+typedef enum {
+  kSoulsShuffle_Off = 0,            // no souls (default; byte-identical)
+  kSoulsShuffle_Bosses = 1,         // 12 boss souls gate boss spawns
+  kSoulsShuffle_BossesEnemies = 2,  // + one soul per enemy family
+} SoulsShuffle;
+
+enum {
+  kSoulsShuffleAxis_Shift = 2,        // canonical [28] bits 2-3
+  kSoulsShuffleAxis_Mask  = 3u << 2,  // 0x0C
+};
+
+// add-npc-souls — canonical [28] bit 4. Bits 5-7 remain refused-undefined.
+enum {
+  kNpcSoulsAxis_Enabled = 1u << 4,    // canonical [28] bit 4
+};
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
 // [26]). A zero byte == no enemy shuffle (the default), preserving the
@@ -317,7 +349,9 @@ enum {
 // (bit 7) for pot_shuffle, so [26] and [27] are now fully allocated. The only
 // remaining extension surface at historical length 28 is [25] bit 7
 // (entrance/chains axes use 0-6). add-rando-enemy-drop-sanity grows the length
-// to 29 by appending [28].
+// to 29 by appending [28] (bits 0-1). add-enemy-souls takes [28] bits 2-3
+// (kSoulsShuffleAxis_*); add-npc-souls takes [28] bit 4 (kNpcSoulsAxis_*);
+// [28] bits 5-7 remain free (refused by Settings_FromCanonical until claimed).
 #define kSettingsCanonicalLen 29
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
@@ -405,6 +439,17 @@ uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s);
 bool Settings_EnemyDropKeysActive(const RandoSettings *s);
 bool Settings_EnemyChecksDungeonActive(const RandoSettings *s);
 bool Settings_EnemyChecksAllActive(const RandoSettings *s);
+
+// add-enemy-souls — normalized souls tier. Souls degrade to OFF under door
+// shuffle (any tier): the door-shuffle key/traversal oracle is species-blind
+// (it counts enemy-held keys and floods kill-room shutters with no per-species
+// soul model), the enemies tier's generated kill-room soul requirements are
+// computed against the VANILLA door graph, and even the bosses tier's
+// soul-gated boss/prize predicates make the door-layout fill exhaust its
+// attempt budget per layout candidate. Single source of truth for the placer,
+// the logic VM (eval_souls_tier), the pool, and the runtime suppression hooks
+// — the same pattern as Settings_EffectiveEnemyDropChecks.
+uint8 Settings_EffectiveSoulsShuffle(const RandoSettings *s);
 
 // True iff ALTTPR's `rom.genericKeys` is in effect for these settings — i.e.
 // `world_state == Retro` (Retro pins it on, per app/World/Retro.php). Like

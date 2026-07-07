@@ -150,5 +150,5 @@ macros:
   #   hasSword() || Hammer
   - name: CanKillMoldorm
     parameters: []
-    body: "HasSword(1) OR HAS_ITEM(Hammer)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer)) AND NeedsBossSoul(Soul_Moldorm)"
     source: "app/Boss.php:80-82 (Boss::canBeat for Moldorm)"

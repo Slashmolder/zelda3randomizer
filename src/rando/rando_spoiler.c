@@ -537,7 +537,53 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // pot-less seed shuffled pots. Matches the canonical/share normalization.
   fprintf(f, "    \"pot_shuffle\": %u,\n",
           Settings_PotShuffleForcedOff(s->settings) ? 0u : s->settings->pot_shuffle);
-  fprintf(f, "    \"instant_flute\": %s\n", s->settings->instant_flute ? "true" : "false");
+  fprintf(f, "    \"instant_flute\": %s,\n", s->settings->instant_flute ? "true" : "false");
+  // The echo below completes the struct (it had silently drifted — several
+  // newer axes were missing, so a player could not confirm from the spoiler
+  // that e.g. npc_souls was on). KEEP IN SYNC with RandoSettings: every field
+  // in the struct appears here, EFFECTIVE values where a derived rule can
+  // override the raw one (souls under door shuffle, chains). The canonical
+  // blob hex at the end is the machine-checkable completeness witness — any
+  // settings axis change changes it even if a field line here is forgotten.
+  // Serialize the canonical blob ONCE up front and DECODE the remaining
+  // fields from it, rather than reading the raw struct. Two of the raw
+  // entrance sub-fields (coupled defaults to 1; cross/decoupled) are
+  // normalized only in the SERIALIZED form (apply_derived_rules), so a raw
+  // echo reads 1 at generate but 0 after a canonical round-trip at reveal —
+  // which false-fails the race-mode stamp. Decoding from `canon` makes every
+  // emitted value canonical-consistent, so generate and reveal always agree.
+  uint8 canon[kSettingsCanonicalLen];
+  Settings_CanonicalSerialize(s->settings, canon);
+  fprintf(f, "    \"tricks\": %u,\n", canon[4]);
+  fprintf(f, "    \"logic\": %u,\n", canon[6]);
+  fprintf(f, "    \"pyramid_bow_upgrade\": %u,\n", canon[9]);
+  fprintf(f, "    \"region_boss_hearts_in_pool\": %u,\n", canon[10]);
+  // race_mode is byte [17] but the stamp normalizes it to 0 (recorded in file
+  // existence, not the stamped settings); emit the raw struct value for the
+  // human-readable file, NOT canon[17] — the stamp path passes race_mode=0
+  // settings, and the reveal path zeroes it too, so both stamp inputs read
+  // false while the on-disk file shows the real value.
+  fprintf(f, "    \"race_mode\": %s,\n", s->settings->race_mode ? "true" : "false");
+  fprintf(f, "    \"shuffle_cave_entrances\": %s,\n", (canon[25] & kEntranceAxis_ShuffleCaves) ? "true" : "false");
+  fprintf(f, "    \"shuffle_dungeon_entrances\": %s,\n", (canon[25] & kEntranceAxis_ShuffleDungeons) ? "true" : "false");
+  fprintf(f, "    \"coupled\": %u,\n", (canon[25] & kEntranceAxis_Coupled) ? 1u : 0u);
+  fprintf(f, "    \"cross_category\": %u,\n", (canon[25] & kEntranceAxis_CrossCategory) ? 1u : 0u);
+  fprintf(f, "    \"decoupled\": %u,\n", (canon[25] & kEntranceAxis_Decoupled) ? 1u : 0u);
+  fprintf(f, "    \"shuffle_ganons_tower_entrance\": %s,\n", (canon[25] & kEntranceAxis_ShuffleGanonsTower) ? "true" : "false");
+  fprintf(f, "    \"dungeon_chains\": %s,\n", (canon[25] & kEntranceAxis_DungeonChains) ? "true" : "false");
+  fprintf(f, "    \"enemy_shuffle\": %s,\n", (canon[26] & kEnemyShuffleAxis_Enabled) ? "true" : "false");
+  fprintf(f, "    \"door_shuffle\": %u,\n", Settings_EffectiveDoorShuffle(s->settings));
+  fprintf(f, "    \"customizer_active\": %s,\n", (canon[26] & kCustomizerAxis_Active) ? "true" : "false");
+  fprintf(f, "    \"trap_categories\": %u,\n", s->settings->trap_categories);
+  // EFFECTIVE souls tier (degrades to off under door shuffle) — matches the
+  // pool, the logic VM, and the runtime suppression. souls_shuffle rides
+  // canon[28] bits 2-3; npc_souls is canon[28] bit 4.
+  fprintf(f, "    \"souls_shuffle\": %u,\n",
+          (uint8)((canon[28] & kSoulsShuffleAxis_Mask) >> kSoulsShuffleAxis_Shift));
+  fprintf(f, "    \"npc_souls\": %s,\n", (canon[28] & kNpcSoulsAxis_Enabled) ? "true" : "false");
+  fprintf(f, "    \"canonical_hex\": \"");
+  for (int ci = 0; ci < kSettingsCanonicalLen; ci++) fprintf(f, "%02x", canon[ci]);
+  fprintf(f, "\"\n");
   fprintf(f, "  },\n");
 
   write_medallion_requirements_json(f, s->medallion_assignment);

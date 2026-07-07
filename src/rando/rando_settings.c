@@ -41,7 +41,9 @@
 //                                          (inverse of instant_flute).
 //                                          0x00 for the default.
 //   offset 27  door_shuffle                bits0-1
-//   offset 28  enemy_drop_checks           EnemyDropChecks enum
+//   offset 28  enemy_drop_checks           bits0-1 (EnemyDropChecks enum)
+//                                          bits2-3 souls_shuffle (SoulsShuffle
+//                                          enum, add-enemy-souls)
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
@@ -120,6 +122,10 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->pot_shuffle = kPotShuffle_Off;
   // add-rando-enemy-drop-sanity — enemy drops are not locations by default.
   s->enemy_drop_checks = kEnemyDropChecks_Off;
+  // add-enemy-souls — souls off by default ([28] bits 2-3 stay 0; corpus +
+  // default settings_hash byte-identical).
+  s->souls_shuffle = kSoulsShuffle_Off;
+  s->npc_souls = 0;  // add-npc-souls default off (byte-identical)
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -268,6 +274,12 @@ static void apply_derived_rules(RandoSettings *s) {
     s->pot_shuffle = kPotShuffle_Off;
   }
   s->enemy_drop_checks = Settings_EffectiveEnemyDropChecks(s);
+  // add-enemy-souls — the enemies tier degrades to Bosses under door shuffle
+  // (species-blind oracle + vanilla-graph soul requirements; see
+  // Settings_EffectiveSoulsShuffle). Normalize so the settings_hash matches the
+  // actually-generated seed, same convention as enemy_drop_checks above. Must
+  // run AFTER the door-shuffle normalization so it sees the final value.
+  s->souls_shuffle = Settings_EffectiveSoulsShuffle(s);
 }
 
 bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s) {
@@ -346,6 +358,20 @@ bool Settings_EnemyDropKeysActive(const RandoSettings *s) {
   return Settings_EffectiveEnemyDropChecks(s) >= kEnemyDropChecks_Keys;
 }
 
+uint8 Settings_EffectiveSoulsShuffle(const RandoSettings *s) {
+  if (s == NULL || s->souls_shuffle == kSoulsShuffle_Off)
+    return kSoulsShuffle_Off;
+  // Souls do not compose with door shuffle at ANY tier (see rando_settings.h):
+  // the door-key oracle is species-blind, the enemies tier's kill-room soul
+  // requirements are vanilla-door-graph-specific, and even the bosses tier's
+  // soul-gated boss/prize wraps make the door-layout fill churn its whole
+  // attempt budget per layout candidate (empirical: souls=all + door_basic
+  // timed out across 7 layout passes x 256 attempts).
+  if (Settings_EffectiveDoorShuffle(s) != kDoorShuffle_Vanilla)
+    return kSoulsShuffle_Off;
+  return s->souls_shuffle;
+}
+
 bool Settings_EnemyChecksDungeonActive(const RandoSettings *s) {
   return Settings_EffectiveEnemyDropChecks(s) >= kEnemyDropChecks_Dungeon;
 }
@@ -421,7 +447,12 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     ((s->trap_categories << kTrapCategoriesAxis_Shift) & kTrapCategoriesAxis_Mask) |
                     // add-rando-pot-sanity — pot_shuffle high bit in [27] bit 7.
                     ((s->pot_shuffle & 4u) ? kPotShuffleAxis_HighBit : 0));
-  out[28] = s->enemy_drop_checks;
+  // [28]: enemy_drop_checks in bits 0-1; add-enemy-souls souls_shuffle in
+  // bits 2-3 (kSoulsShuffleAxis_*); add-npc-souls in bit 4 (kNpcSoulsAxis_*).
+  // Defaults keep the byte 0x00.
+  out[28] = (uint8)((s->enemy_drop_checks & 3u) |
+                    ((s->souls_shuffle << kSoulsShuffleAxis_Shift) & kSoulsShuffleAxis_Mask) |
+                    (s->npc_souls ? kNpcSoulsAxis_Enabled : 0));
   return kSettingsCanonicalLen;
 }
 
@@ -515,7 +546,15 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // pre-pot file) yields Off, identical to a struct with no pot shuffle.
   s.pot_shuffle = (uint8)(((in[26] & kPotShuffleAxis_LowMask) >> kPotShuffleAxis_LowShift) |
                           ((in[27] & kPotShuffleAxis_HighBit) ? 4u : 0u));
-  s.enemy_drop_checks = in[28];
+  s.enemy_drop_checks = (uint8)(in[28] & 3u);
+  // add-enemy-souls — souls_shuffle from [28] bits 2-3. Zero (default / any
+  // pre-souls file) yields Off, identical to a struct with no souls. Bits 4-7
+  // remain genuinely undefined: refuse them like the pre-souls whole-byte
+  // check did (corruption/newer-axis rejection, not masked permissiveness).
+  s.souls_shuffle = (uint8)((in[28] & kSoulsShuffleAxis_Mask) >> kSoulsShuffleAxis_Shift);
+  // add-npc-souls — [28] bit 4. Zero (default / pre-npc file) yields off.
+  s.npc_souls = (in[28] & kNpcSoulsAxis_Enabled) ? 1 : 0;
+  if (in[28] & ~(uint8)(3u | kSoulsShuffleAxis_Mask | kNpcSoulsAxis_Enabled)) return -2;
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -583,6 +622,11 @@ bool Settings_Validate(const RandoSettings *s) {
   // [28] enemy_drop_checks: 0=off, 1=forced key drops, 2=dungeon enemies,
   // 3=all-enemy tier (generation requires a complete all-enemy registry).
   if (s->enemy_drop_checks > kEnemyDropChecks_All) return false;
+  // [28] bits 2-3: souls_shuffle 0..2 defined (add-enemy-souls); 3 is
+  // reserved-until-implemented (the kModeWeapons==2 precedent).
+  if (s->souls_shuffle > kSoulsShuffle_BossesEnemies) return false;
+  // [28] bit 4: npc_souls is a strict boolean (add-npc-souls).
+  if (s->npc_souls > 1) return false;
   return true;
 }
 
@@ -1539,6 +1583,140 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
   }
+  // add-enemy-souls — souls_shuffle pack/unpack in [28] bits 2-3, coexisting
+  // with enemy_drop_checks in bits 0-1; default byte stays 0x00.
+  {
+    RandoSettings sd;
+    Settings_SetDefaults(&sd);
+    uint8 cd[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sd, cd);
+    if (cd[28] & kSoulsShuffleAxis_Mask) {
+      fprintf(stderr, "Settings_SelfCheck: default souls_shuffle must leave [28] bits 2-3 clear (0x%02x)\n",
+              cd[28]);
+      exit(2);
+    }
+    RandoSettings ss;
+    Settings_SetDefaults(&ss);
+    ss.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    ss.enemy_drop_checks = kEnemyDropChecks_Keys;
+    ss.souls_shuffle = kSoulsShuffle_BossesEnemies;
+    uint8 cs[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&ss, cs);
+    if (cs[28] != (kEnemyDropChecks_Keys |
+                   (kSoulsShuffle_BossesEnemies << kSoulsShuffleAxis_Shift))) {
+      fprintf(stderr, "Settings_SelfCheck: souls_shuffle pack mismatch ([28]=0x%02x)\n", cs[28]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 11 || i == 28) continue;  // small-key mode + the shared [28] axes
+      if (cs[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: souls_shuffle changed canonical byte [%d]\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rs;
+    if (Settings_CanonicalDeserialize(cs, &rs) != 0 ||
+        rs.souls_shuffle != kSoulsShuffle_BossesEnemies ||
+        rs.enemy_drop_checks != kEnemyDropChecks_Keys) {
+      fprintf(stderr, "Settings_SelfCheck: souls_shuffle round-trip mismatch\n");
+      exit(2);
+    }
+    // Undefined [28] bits 5-7 stay strict-rejected (bit 4 is npc_souls now).
+    uint8 cbad[kSettingsCanonicalLen];
+    memcpy(cbad, cs, kSettingsCanonicalLen);
+    cbad[28] |= 0x20;
+    RandoSettings rbad;
+    if (Settings_CanonicalDeserialize(cbad, &rbad) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: undefined [28] bits must be refused\n");
+      exit(2);
+    }
+    // add-npc-souls — [28] bit 4 pack/round-trip/CSV; independent of tiers.
+    RandoSettings sn;
+    Settings_SetDefaults(&sn);
+    sn.npc_souls = 1;
+    uint8 cn[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sn, cn);
+    if (cn[28] != kNpcSoulsAxis_Enabled) {
+      fprintf(stderr, "Settings_SelfCheck: npc_souls pack mismatch ([28]=0x%02x)\n", cn[28]);
+      exit(2);
+    }
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 28) continue;
+      if (cn[i] != cd[i]) {
+        fprintf(stderr, "Settings_SelfCheck: npc_souls changed canonical byte [%d]\n", i);
+        exit(2);
+      }
+    }
+    RandoSettings rn;
+    if (Settings_CanonicalDeserialize(cn, &rn) != 0 || rn.npc_souls != 1 ||
+        rn.souls_shuffle != kSoulsShuffle_Off) {
+      fprintf(stderr, "Settings_SelfCheck: npc_souls round-trip mismatch\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sn);
+    if (Settings_ParseCsv("npc_souls=true", &sn) != 0 || sn.npc_souls != 1) {
+      fprintf(stderr, "Settings_SelfCheck: npc_souls=true CSV parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sn);
+    if (Settings_ParseCsv("npc_souls=maybe", &sn) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: bad npc_souls value must be rejected\n");
+      exit(2);
+    }
+    // NO door-shuffle degrade: npc_souls survives an active door layout
+    // (no gated check is door-oracle-controlled — spec requirement).
+    Settings_SetDefaults(&sn);
+    sn.npc_souls = 1;
+    sn.door_shuffle = kDoorShuffle_Basic;
+    apply_derived_rules(&sn);
+    if (sn.npc_souls != 1) {
+      fprintf(stderr, "Settings_SelfCheck: npc_souls must NOT degrade under door shuffle\n");
+      exit(2);
+    }
+    RandoSettings sp;
+    Settings_SetDefaults(&sp);
+    if (Settings_ParseCsv("souls_shuffle=bosses", &sp) != 0 ||
+        sp.souls_shuffle != kSoulsShuffle_Bosses) {
+      fprintf(stderr, "Settings_SelfCheck: souls_shuffle=bosses CSV parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sp);
+    if (Settings_ParseCsv("souls_shuffle=all", &sp) != 0 ||
+        sp.souls_shuffle != kSoulsShuffle_BossesEnemies) {
+      fprintf(stderr, "Settings_SelfCheck: souls_shuffle=all CSV parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sp);
+    if (Settings_ParseCsv("souls_shuffle=maximum", &sp) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: bad souls_shuffle value must be rejected\n");
+      exit(2);
+    }
+    // Souls degrade to OFF under door shuffle (species-blind door oracle;
+    // any tier), and the canonical hash reflects the degraded value.
+    RandoSettings sdoor;
+    Settings_SetDefaults(&sdoor);
+    sdoor.souls_shuffle = kSoulsShuffle_BossesEnemies;
+    sdoor.door_shuffle = kDoorShuffle_Basic;
+    if (Settings_EffectiveSoulsShuffle(&sdoor) != kSoulsShuffle_Off) {
+      fprintf(stderr, "Settings_SelfCheck: souls must degrade to off under door shuffle\n");
+      exit(2);
+    }
+    sdoor.souls_shuffle = kSoulsShuffle_Bosses;
+    if (Settings_EffectiveSoulsShuffle(&sdoor) != kSoulsShuffle_Off) {
+      fprintf(stderr, "Settings_SelfCheck: boss souls must degrade to off under door shuffle\n");
+      exit(2);
+    }
+    uint8 cdoor[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(&sdoor, cdoor);
+    if ((cdoor[28] & kSoulsShuffleAxis_Mask) != 0) {
+      fprintf(stderr, "Settings_SelfCheck: canonical souls tier must be the door-degraded value\n");
+      exit(2);
+    }
+    if (Settings_EffectiveSoulsShuffle(&ss) != kSoulsShuffle_BossesEnemies) {
+      fprintf(stderr, "Settings_SelfCheck: souls enemies tier must survive without door shuffle\n");
+      exit(2);
+    }
+  }
   // Spec scenario "Truncation is first-16-bytes": Settings_HashShort writes
   // exactly the first 16 bytes of SHA-256(canonical), not a different hash.
   {
@@ -2010,6 +2188,17 @@ static int parse_enemy_drop_checks(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+// add-enemy-souls — parse the souls_shuffle tier.
+static int parse_souls_shuffle(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))    { *out = kSoulsShuffle_Off;    return 0; }
+  if (csv_str_eq(v, vlen, "bosses") || csv_str_eq(v, vlen, "1")) { *out = kSoulsShuffle_Bosses; return 0; }
+  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "2")) {
+    *out = kSoulsShuffle_BossesEnemies;
+    return 0;
+  }
+  return -1;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint64 seen;
@@ -2073,6 +2262,9 @@ enum {
   KEY_pot_shuffle,
   // add-rando-enemy-drop-sanity — forced enemy small-key drops as checks.
   KEY_enemy_drop_checks,
+  // add-enemy-souls — souls_shuffle tier (off|bosses|all).
+  KEY_souls_shuffle,
+  KEY_npc_souls,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -2288,6 +2480,17 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // Serialized as append-only canonical byte [28].
     MARK_SEEN(KEY_enemy_drop_checks);
     if (parse_enemy_drop_checks(val, vlen, &s->enemy_drop_checks) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "souls_shuffle")) {
+    // add-enemy-souls — soul items gate enemy/boss spawns (off|bosses|all).
+    // Serialized in canonical [28] bits 2-3.
+    MARK_SEEN(KEY_souls_shuffle);
+    if (parse_souls_shuffle(val, vlen, &s->souls_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "npc_souls")) {
+    // add-npc-souls — NPC soul items gate check-giving people. Binary
+    // true/false (parse_bool, the enemy_shuffle convention). Serialized in
+    // canonical [28] bit 4; independent of souls_shuffle.
+    MARK_SEEN(KEY_npc_souls);
+    if (parse_bool(val, vlen, &s->npc_souls) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);

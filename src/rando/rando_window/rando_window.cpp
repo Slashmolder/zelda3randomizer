@@ -335,6 +335,9 @@ static const char *const kTrapFrequencyLabels[] = {"off", "low", "medium", "high
 static const char *const kPotShuffleLabels[] = {"off", "keys", "contents", "all"};
 // add-rando-enemy-drop-sanity — enemy_drop_checks tiers.
 static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "dungeon", "all"};
+// add-enemy-souls — souls_shuffle tiers (index == enum value, matches the
+// parse_souls_shuffle CLI grammar off|bosses|all).
+static const char *const kSoulsShuffleLabels[] = {"off", "bosses", "bosses + enemies"};
 
 static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
   bool entrance_shuffle =
@@ -1280,6 +1283,30 @@ static void Panel_Shuffles() {
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");
       }
+    }
+
+    // add-enemy-souls — soul items gate enemy/boss spawns.
+    {
+      uint8 souls_value = s->souls_shuffle;
+      if (EnumCombo("Souls", &souls_value, kSoulsShuffleLabels, 3)) {
+        s->souls_shuffle = souls_value;
+        changed = true;
+      }
+      HelpTooltip("Enemies and bosses only spawn once you find their soul item. "
+                  "Kill-gated doors and drops stay locked until you return with the soul.");
+      if (s->souls_shuffle != kSoulsShuffle_Off &&
+          Settings_EffectiveSoulsShuffle(s) == kSoulsShuffle_Off) {
+        ImGui::TextDisabled("Souls need vanilla doors; door shuffle turns them off for this seed.");
+      }
+      // add-npc-souls — independent of the tier combo above.
+      bool npc = s->npc_souls != 0;
+      if (ImGui::Checkbox("NPC souls", &npc)) {
+        s->npc_souls = npc ? 1 : 0;
+        changed = true;
+      }
+      HelpTooltip("People like Sahasrahla, the witch, and the game hosts only "
+                  "appear once you find their soul. Kiki's soul opens Palace "
+                  "of Darkness; the bomb shop dealer's sells the Big Bomb.");
     }
 
     bool drs = s->door_shuffle != 0;

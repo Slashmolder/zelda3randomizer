@@ -20,6 +20,7 @@
 #include "rando/rando.h"  // Rando_IsSwordlessActive (swordless Ganon damage)
 #include "rando/enemy_drop_lookup.h"  // forced enemy key-drop lookup
 #include "rando/enemy_check_lookup.h"  // ordinary enemy check lookup
+#include "rando/souls.h"  // add-enemy-souls (spawn suppression + kill-gate hold)
 #include "rando/location_ids.h"  // LOC_Tower_of_Hera_Basement_Cage (cage-key dispatch)
 #include "rando/item_ids.h"      // ITEM_SmallKey_TowerOfHera (cage-key dispatch)
 #include "zelda_rtl.h"
@@ -552,6 +553,24 @@ static const RandoEnemyDropLookupEntry *Rando_FindEnemyDrop(uint16 room,
     if (got < want) lo = mid + 1; else hi = mid;
   }
   return NULL;
+}
+
+// add-enemy-souls — forced key-drop sources are EXEMPT from soul suppression
+// while enemy drops are NOT itemized (enemy_drop_checks off): the vanilla
+// key-count model then treats those drops as free in-dungeon keys (the
+// gen_pot_key_depth "nonpot drops stay free" contract + the placer's
+// free-grant), so the holder must spawn souls-or-not or an assumed-fill-
+// certified seed could strand behind an uncollectable key. When the drop IS a
+// check (edc >= keys) the location's logic predicate carries the holder's
+// soul (gen_enemy_drop_tables source_soul term) and normal suppression
+// applies. Identified by (room, live slot) against the forced-drop lookup —
+// the source species is enemy-shuffle-pinned (Souls_RoomPinnedVanilla), so
+// the vanilla slot binding stays authoritative.
+static bool Rando_SoulDropSourceExempt(uint16 room, uint8 slot) {
+  if (Rando_EnemyDropKeysActiveRuntime())
+    return false;  // itemized: the check's own predicate carries the soul
+  return Rando_FindEnemyDrop(room, slot, kRandoEnemyDropKind_SmallKey) != NULL ||
+         Rando_FindEnemyDrop(room, slot, kRandoEnemyDropKind_BigKey) != NULL;
 }
 
 static const RandoEnemyCheckLookupEntry *Rando_FindEnemyCheck(uint16 room,
@@ -4700,6 +4719,12 @@ void Sprite_SetSpawnedCoordinates(int k, SpriteSpawnInfo *info) {  // 89ae64
 }
 
 bool Sprite_CheckIfScreenIsClear() {  // 89af32
+  // add-enemy-souls — kill-gate hold: sprites this room's load suppressed count
+  // as NOT killed (the loop below only sees live slots, so an empty room would
+  // otherwise open kill-gated doors/chests for free). The gate releases when
+  // the player returns with the soul(s) and clears the room for real.
+  if (Souls_RoomSuppressedCount())
+    return false;
   for (int i = 15; i >= 0; i--) {
     if (sprite_state[i] && !(sprite_flags4[i] & 0x40)) {
       uint16 x = Sprite_GetX(i) - BG2HOFS_copy2;
@@ -4712,6 +4737,9 @@ bool Sprite_CheckIfScreenIsClear() {  // 89af32
 }
 
 bool Sprite_CheckIfRoomIsClear() {  // 89af61
+  // add-enemy-souls — same kill-gate hold as Sprite_CheckIfScreenIsClear.
+  if (Souls_RoomSuppressedCount())
+    return false;
   for (int i = 15; i >= 0; i--) {
     if (sprite_state[i] && !(sprite_flags4[i] & 0x40))
       return false;
@@ -5181,6 +5209,9 @@ void Dungeon_LoadSprites() {  // 89c290
   const uint8 *src = kDungeonSprites + kDungeonSpriteOffs[src_room];
   byte_7E0FB1 = dungeon_room_index2 >> 3 & 0xfe;
   byte_7E0FB0 = (dungeon_room_index2 & 0xf) << 1;
+  // add-enemy-souls — new room sprite load: restart the suppressed-spawn count
+  // that holds this room's kill-gates shut (souls.h).
+  Souls_ResetRoomSuppressed();
   sort_sprites_setting = *src++;
   uint8 es_slot = 0;  // add-rando-enemy-shuffle — stable per-entry list position
   for (int k = 0; *src != 0xff; src += 3, es_slot++) {
@@ -5263,6 +5294,36 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src, uint8 source_slot) {  // 8
   // formation. A per-entry remap on top of that would double-shuffle.
   if (!(kSpriteInit_DeflBits[type] & 1) && (sprite_where_in_room[dungeon_room_index2] & (1 << k)))
     return k;
+  // add-enemy-souls — suppress the spawn while the (post-shuffle) species' soul
+  // is un-owned. Consume the slot index like the checked-enemy-check branch
+  // above (inert state-0 slot, sprite_N[k] = k) so later entries keep their
+  // sprite_where_in_room bit positions, but do NOT set the killed bit — the
+  // enemy must appear once the soul is found. Counted so the room-clear checks
+  // hold kill-gates shut while suppressed spawns exist (souls.h). Forced
+  // key-drop holders spawn regardless while drops are not itemized
+  // (Rando_SoulDropSourceExempt) — their keys are free in the key-count model.
+  if (!Souls_SpriteAllowed(type) &&
+      !Rando_SoulDropSourceExempt(dungeon_room_index2, (uint8)k)) {
+    sprite_state[k] = 0;
+    sprite_type[k] = type;
+    sprite_N[k] = k;
+    sprite_die_action[k] = 0;
+    Souls_NoteRoomSuppressed();
+    return k;
+  }
+  // add-npc-souls — suppress a site-bound NPC while its soul is un-owned.
+  // Consumes the slot EXACTLY like the enemy-souls branch above (room 0x123
+  // holds slot-keyed enemy checks beside the MMC NPC — a skip-without-consume
+  // would shift every later (room, slot) key), but does NOT count toward the
+  // kill-gate hold: no roster NPC participates in a kill gate, and a counted
+  // NPC would wedge any kill-tagged room it shares.
+  if (!Souls_NpcSpriteAllowed(type, dungeon_room_index2, true)) {
+    sprite_state[k] = 0;
+    sprite_type[k] = type;
+    sprite_N[k] = k;
+    sprite_die_action[k] = 0;
+    return k;
+  }
   sprite_state[k] = 8;
   tmp_counter = y;
   sprite_floor[k] = (y >> 7);
@@ -5472,6 +5533,17 @@ void Overworld_LoadProximaSpriteIfAlive(uint16 blk) {  // 89c739
     overlord_gen1[k] = 0;
     overlord_gen3[k] = 0;
   } else {
+    // add-enemy-souls — suppress the proximity spawn while the species' soul is
+    // un-owned. The was-loaded bit is deliberately NOT set: the block re-arms so
+    // the enemy appears on the next proximity pass once the soul is found.
+    if (!Souls_SpriteAllowed((uint8)(sprite_to_spawn - 1)))
+      return;
+    // add-npc-souls — site-bound NPCs (by overworld area) while the soul is
+    // un-owned. Same re-arm semantics; NEVER applied to dynamic spawns (the
+    // 0xC0 reward deliveries bypass this path by construction).
+    if (!Souls_NpcSpriteAllowed((uint8)(sprite_to_spawn - 1),
+                                overworld_area_index, false))
+      return;
     // load regular sprite
     int k = Overworld_AllocSprite(sprite_to_spawn);
     if (k < 0)
@@ -5891,6 +5963,14 @@ int Sprite_SpawnDynamically(int k, uint8 what, SpriteSpawnInfo *info) {  // 9df6
 }
 
 int Sprite_SpawnDynamicallyEx(int k, uint8 what, SpriteSpawnInfo *info, int j) {  // 9df65f
+  // add-enemy-souls — the single funnel for overlord-spawned and
+  // sprite-spawned enemies (both bypass EnemyShuffle_Pick*). Suppress here when
+  // the species' soul is un-owned; the soul map covers only enemy/boss species
+  // (+ boss parts), so item/effect/ancilla spawns through this funnel are never
+  // affected (disjointness asserted in Souls_SelfCheck). Callers already handle
+  // the no-slot -1 result.
+  if (!Souls_SpriteAllowed(what))
+    return -1;
   do {
     if (sprite_state[j] == 0) {
       s_rando_dynamic_enemy_check_loc[j] = 0;

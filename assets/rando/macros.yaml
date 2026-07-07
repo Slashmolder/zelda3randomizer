@@ -361,6 +361,28 @@ macros:
     source: "app/Boss.php (Boss::canBeat for the dungeon's assigned boss; resolved at eval)"
 
   # ===========================================================================
+  # NeedsBossSoul / NeedsEnemySoul (add-enemy-souls). Wrap a soul-item
+  # requirement so it binds only at (or above) its souls_shuffle tier: below the
+  # tier the NOT collapses the disjunction to true and the pre-souls predicate
+  # is unchanged (souls_shuffle=off placement byte-identical). Boss/prize
+  # locations do NOT need these - OP_CAN_KILL_BOSS resolves the ASSIGNED boss's
+  # soul internally (eval_can_kill_boss). These macros are for STATIC sites:
+  # GT refights, goal predicates, kill-gated rooms, enemy-check rows.
+  # ===========================================================================
+  - name: NeedsBossSoul
+    parameters: [soul]
+    body: "(NOT OP_SOULS_TIER_AT_LEAST(bosses)) OR HAS_ITEM(soul)"
+  - name: NeedsEnemySoul
+    parameters: [soul]
+    body: "(NOT OP_SOULS_TIER_AT_LEAST(bosses_enemies)) OR HAS_ITEM(soul)"
+  # NeedsNpcSoul (add-npc-souls). Same collapse pattern keyed on the
+  # independent npc_souls toggle: off leaves every gated predicate at its
+  # pre-npc-souls value (placement byte-identical).
+  - name: NeedsNpcSoul
+    parameters: [soul]
+    body: "(NOT OP_NPC_SOULS_ACTIVE()) OR HAS_ITEM(soul)"
+
+  # ===========================================================================
   # canBombThings — requires the player to actually have a bomb refill item.
   # ===========================================================================
   - name: CanBombThings

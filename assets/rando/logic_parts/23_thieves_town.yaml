@@ -120,7 +120,7 @@ macros:
   # itemPlacement!='basic' → TRUE → leading clause collapses to TRUE.
   - name: CanKillBlind
     parameters: [world]
-    body: "HasSword(1) OR HAS_ITEM(Hammer) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna)) AND NeedsBossSoul(Soul_Blind)"
     source: "app/Boss.php:103-107 (Boss::canBeat for Blind)"
     notes: |
       Phase A: itemPlacement!='basic' → TRUE drops the leading

@@ -212,7 +212,7 @@ locations:
   # PHP for Ganon has NO canBunnyRevive disjunct on the pearl gate.
   - id: "Ganon"
     region: DarkWorld_NorthEast
-    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer) AND CanShootSilvers()) OR ((NOT OP_MODEWEAPONS_EQ(swordless)) AND HasSword2())) AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1)))"
+    can_reach: "(HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer) AND CanShootSilvers()) OR ((NOT OP_MODEWEAPONS_EQ(swordless)) AND HasSword2())) AND (HAS_ITEM(Lamp) OR (HAS_ITEM(FireRod) AND CanExtendMagic(world, 1))) AND NeedsBossSoul(Soul_Ganon)"
     source: "app/Region/Standard/DarkWorld/NorthEast.php:186-234 + World.php:269-273 (requireBetterBow)"
 
   # ===========================================================================

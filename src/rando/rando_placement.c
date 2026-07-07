@@ -25,6 +25,9 @@
 #include "enemy_drop_lookup.h"
 #include "enemy_check_lookup.h"
 #include "pot_nonpot_drop_counts.h"
+#include "souls.h"        // add-enemy-souls (Souls_ItemIsSoul)
+#include "soul_tables.h"  // kSoulCount / kSoulBossCount (pool construction)
+#include "npc_soul_tables.h"  // kNpcSoulCount (add-npc-souls pool)
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -819,6 +822,15 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       "  locations. Use accessibility=items/beatable or a lower enemy tier.\n");
     return 0;
   }
+  if (Settings_EffectiveSoulsShuffle(settings) >= kSoulsShuffle_BossesEnemies &&
+      !kRandoSoulRoomsBaked) {
+    fprintf(stderr,
+      "BuildItemPool: souls_shuffle=all requested, but this binary was built\n"
+      "  without assets/rando/soul_rooms.gen.yaml (kill-gated-room soul\n"
+      "  requirements). Run assets/scripts/gen_soul_room_tables.py with ROM\n"
+      "  assets and rebuild before generating enemies-tier souls seeds.\n");
+    return 0;
+  }
 
   uint16 n = 0;
 
@@ -1045,6 +1057,30 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     n = pool_add(out_items, n, capacity, ID_TriforcePiece, settings->pieces_placed);
   }
 
+  // ----- Souls (add-enemy-souls) -----
+  // Bosses tier places the kSoulBossCount boss souls; the bosses+enemies tier
+  // adds one soul per enemy family. Souls are progression items (see
+  // is_progression_item), one of each, displacing junk padding below.
+  // EFFECTIVE tier: the enemies tier degrades to Bosses under door shuffle
+  // (Settings_EffectiveSoulsShuffle) — the pool must match what the logic VM
+  // and the runtime suppression actually bind.
+  {
+  uint8 souls_tier = Settings_EffectiveSoulsShuffle(settings);
+  if (souls_tier >= kSoulsShuffle_Bosses) {
+    uint16 soul_count = (souls_tier >= kSoulsShuffle_BossesEnemies)
+                            ? kSoulCount : kSoulBossCount;
+    for (uint16 i = 0; i < soul_count; i++)
+      n = pool_add(out_items, n, capacity, (uint16)(ITEM_Soul_ArmosKnights + i), 1);
+  }
+  // add-npc-souls — independent of the tier: 23 NPC souls when the toggle is
+  // on (no fail-closed arm needed: the site/gate tables are COMMITTED, not
+  // asset-derived-gitignored like soul_rooms).
+  if (settings->npc_souls) {
+    for (uint16 i = 0; i < kNpcSoulCount; i++)
+      n = pool_add(out_items, n, capacity, (uint16)(ITEM_Soul_Npc_Sahasrahla + i), 1);
+  }
+  }
+
   // ----- Junk-pad to match world-state-filtered location count -----
   // BuildItemPool used to pad to kRandoLocationsCount
   // unconditionally; that's wrong when locations carry a world_state_filter
@@ -1140,7 +1176,11 @@ static bool is_progression_item(uint16 item_id) {
   // unaffected. It must be in the assumed inventory so the door-reachability
   // collapse (rando_logic.c) sees the shared GenericKey count during fill.
   if (item_id == 125) return true;
-  // Virtual items (121+, except 125 above) — NOT in pool; not progression.
+  // Souls (add-enemy-souls) — progression: they gate boss kills, kill-gated
+  // rooms, and enemy-check/forced-drop availability. Only in the pool under
+  // souls_shuffle, so unconditional classification leaves other pools alone.
+  if (Souls_ItemIsSoul(item_id)) return true;
+  // Virtual items (121+, except 125/souls above) — NOT in pool; not progression.
   return false;
 }
 
@@ -1355,6 +1395,11 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
                                        uint64 seed_u64,
                                        RandoPlacementTable *out,
                                        uint16 *out_fallback_count);
+static bool accessibility_reachability_ok(const RandoSettings *settings,
+                                          const RandoPlacementTable *placements,
+                                          const RandoSpheres *spheres);
+// Goal_IsCompletable — declared in rando_placement.h (used for the none-tier
+// attempt-accept bar below).
 
 // ---------------------------------------------------------------------------
 // Place_AssumedFill — Phase A1 implementation.
@@ -1566,6 +1611,11 @@ bool Place_AssumedFill(const RandoSettings *settings,
       for (uint16 i = 0; i < out->count; i++) {
         uint16 loc = out->entries[i].location_id;
         uint16 item = out->entries[i].item_id;
+        // add-npc-souls: with Uncle soul-gated, an item AT Link's Uncle is
+        // uncollectable until his soul is found — it cannot satisfy the
+        // sphere-0 weapon/lamp bars (the exact soft-softlock these bars
+        // exist to prevent). Skip the Uncle slot when npc_souls is on.
+        if (settings->npc_souls && loc == LOC_Link_s_Uncle) continue;
         if (!has_core_weapon) {
           for (size_t c = 0; c < sizeof(kCoreLocIds)/sizeof(kCoreLocIds[0]); c++) {
             if (loc != kCoreLocIds[c]) continue;
@@ -1586,10 +1636,47 @@ bool Place_AssumedFill(const RandoSettings *settings,
       has_core_weapon = true;
       has_escape_lamp = true;
     }
-    if (full_reach && fallback_count == 0 && has_core_weapon && has_escape_lamp) {
-      // Best possible outcome — accept this placement.
+    // Attempt-accept bar = the ACCEPTANCE bar (Accessibility_SeedAcceptable),
+    // per effective tier — NOT unconditional full reach. Full reach is
+    // unattainable for combos with modeling-stranded junk (e.g. wild keys ×
+    // dungeon enemy checks permanently strand ~63 junk-holding checks), and
+    // demanding it burned all 256 attempts (~2m45s with the placed-item
+    // collection fix-point) on seeds whose attempt 0 already satisfied the
+    // real acceptance gate. locations: every placement reachable (== the old
+    // bar). items (default): every PROGRESSION placement reachable. none
+    // ("beatable only"): goal completability — the caller's refusal gate —
+    // so hunt seeds still retry toward an attempt with enough reachable
+    // pieces instead of shipping an attempt the caller must refuse.
+    bool attempt_ok;
+    if (Settings_EffectiveAccessibility(settings) == kAccessibility_None) {
+      attempt_ok = Goal_IsCompletable(settings, out);
+    } else {
+      // Goal completability is ALSO required (hardening, fresh-eyes review):
+      // the reachability bar walks placement ENTRIES, while goal predicates
+      // additionally test event locations that never hold pool items (Ganon,
+      // Agahnim 2). All-progression-reachable implies those today (prizes are
+      // progression placements, and full inventory opens the goal events), so
+      // this is belt-and-suspenders that keeps the accept bar provably >= the
+      // caller's refusal gate (Accessibility_SeedAcceptable) if a future goal
+      // gains a requirement reachability alone does not imply.
+      // ORDER MATTERS for wall-clock, not semantics: Goal_IsCompletable runs a
+      // full reachability fix-point, so it must be the LAST conjunct — after
+      // the cheap fallback/weapon/lamp gates — or it re-runs on every
+      // bar-passing-but-doomed attempt (the door-layout search has hundreds;
+      // evaluating it eagerly pushed the two 0xD004 door corpus entries past
+      // the 60s runner budget). All conjuncts are also re-tested in the
+      // accept `if` below, so short-circuit order cannot change the accepted
+      // set (digest-inert).
+      attempt_ok = accessibility_reachability_ok(settings, out, &spheres) &&
+                   fallback_count == 0 && has_core_weapon && has_escape_lamp &&
+                   Goal_IsCompletable(settings, out);
+    }
+    (void)full_reach;
+    if (attempt_ok && fallback_count == 0 && has_core_weapon && has_escape_lamp) {
+      // Accepted — record the attempt's own stats (stranded junk is allowed
+      // by the items tier and surfaces in the spoiler's unreachable list).
       g_last_placement_stats.forward_fill_fallback_count = 0;
-      g_last_placement_stats.best_unreachable_count = 0;
+      g_last_placement_stats.best_unreachable_count = spheres.unreachable_count;
       // FIX #6 — this attempt's per-attempt seed (attempt_seed above) is what
       // seeded the prize/medallion shuffle baked into `out`; persist it.
       g_last_placement_stats.prize_attempt = (uint8)attempt;
@@ -1827,6 +1914,98 @@ static bool customizer_validate_item_caps(const CustomizerManifest *cm,
     }
   }
   return true;
+}
+
+// Per-turn reachability with fix-point collection of already-placed pool items
+// (the "assumed fill with fix-point reachability expansion" contract —
+// ALTTPR app/Filler/RandomAssumed.php + World::collectItems). The assumed
+// counts hold only UNPLACED pool items (+ the step-4 pre-pin grants); a pool
+// item placed on an earlier turn must still count as obtainable when its
+// location is reachable, or every location gated on it goes permanently dead
+// for the rest of the fill. Pre-souls that conservatism was survivable (small
+// gated clusters); the enemy-souls kill-room wraps gate whole dungeons on
+// placed souls and collapsed the fill into forward-fill storms (a soul even
+// landed on a location requiring itself, via the reachability-ignoring
+// fallback). Deterministic: no RNG, order-independent (each pass adds every
+// reachable uncollected placement, then recomputes until stable).
+//
+// Pins are collected too (prizes, events, TakeAny rewards, customizer pins) —
+// they are gates' grants like anything else. The ONLY skipped pins are
+// vanilla-MODE dungeon items: Rando_SeedVanillaDungeonItems already pre-granted
+// those classes wholesale into the base counts (the ROM grants them in place),
+// and collecting their pinned slots again would double-count keys into
+// HAS_AMOUNT thresholds.
+// KEEP IN SYNC with location_is_prepinned's per-class vanilla-mode ranges
+// above (53..65 / 66..76 / 77..87+124 / 88..98): that function classifies the
+// SLOTS the 3b pass pins, this one classifies the pinned ITEMS the collector
+// must skip. A new dungeon-item class (or a mode carve-out like the key-pot
+// rule in location_is_prepinned) must land in BOTH or the collector
+// double-counts keys against HAS_AMOUNT thresholds.
+static bool vanilla_mode_pregranted_item(uint16 item, const RandoSettings *s) {
+  if (item >= 53 && item <= 65)
+    return Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla;
+  if (item >= 66 && item <= 76)
+    return Settings_EffectiveBigKeysMode(s) == kDungeonItemMode_Vanilla;
+  if ((item >= 77 && item <= 87) || item == 124)
+    return s->dungeon_maps_mode == kDungeonItemMode_Vanilla;
+  if (item >= 88 && item <= 98)
+    return s->dungeon_compasses_mode == kDungeonItemMode_Vanilla;
+  return false;
+}
+
+// Per-turn reachability for the EFFECTIVE souls_shuffle=all (bosses+enemies)
+// tier: assumed(unplaced) + fix-point collection of committed items (placed on
+// earlier turns + pins) whose locations are reachable — EXCEPT placed copies
+// of the item id currently being placed.
+//
+// Scope: enemies-tier seeds ONLY (the caller falls back to the plain
+// assumed-only model otherwise). The conservative pre-souls model — placed
+// items vanish, pins assumed unconditionally — is a fill-guidance heuristic
+// the worst-case key-threshold models (pot key depths, the door-key oracle)
+// were calibrated against; the sphere walk validates every attempt either
+// way, so neither model can ship an unsound seed. The enemies tier NEEDS this
+// model: 46 souls gate whole-dungeon clusters, and under the conservative
+// model (a) placed souls vanished, killing their clusters for the rest of the
+// fill (forward-fill storms), and (b) phantom prize pins let GT-entry certify
+// open through crystals whose Prize locations were soul-blocked, so every
+// attempt failed validation. Conversely, applying this model to pot/door key
+// seeds degraded THEIR calibrated fills (deep-stacked keys, oracle
+// double-counts) — hence the tier scoping. The own-id exclusion keeps a key
+// from sitting in a slot justified by its own placed siblings (the final walk
+// could not order the copies).
+static const RandoReachability *compute_reachability_collecting_placed(
+    const RandoCounts *base_counts, const RandoSettings *settings,
+    const uint16 *placement_at, const uint16 *open_loc_idx, uint16 open_n,
+    uint16 placing_item) {
+  static RandoCounts local;  // large; keep off the stack (single-threaded CLI)
+  local = *base_counts;
+  static uint8 collected[kRandoLocationCapacity];
+  memset(collected, 0, open_n * sizeof(collected[0]));
+  const RandoReachability *r = Logic_ComputeReachability(&local, settings);
+  for (;;) {
+    bool added = false;
+    for (uint16 k = 0; k < open_n; k++) {
+      if (collected[k] || placement_at[k] == 0xFFFF)
+        continue;
+      uint16 item = placement_at[k];
+      if (item >= 256 || item == placing_item || item == ITEM_Nothing ||
+          vanilla_mode_pregranted_item(item, settings)) {
+        if (item != placing_item)
+          collected[k] = 1;  // never collected through this path
+        continue;
+      }
+      const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+      if (!location_grants_placed_item(loc)) continue;
+      if (r == NULL || !Reachability_HasLocation(r, loc->id)) continue;
+      if (local.by_item_id[item] < 0xFFFF)
+        local.by_item_id[item]++;
+      collected[k] = 1;
+      added = true;
+    }
+    if (!added) break;
+    r = Logic_ComputeReachability(&local, settings);
+  }
+  return r;
 }
 
 static bool place_assumed_fill_attempt(const RandoSettings *settings,
@@ -2208,15 +2387,28 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   for (uint16 i = 0; i < prog_n; i++) {
     counts.by_item_id[progression[i]]++;
   }
-  // Add pre-placed vanilla dungeon items to the assumed inventory so
-  // reachability evaluates as if the player will collect them in-place.
-  // (For vanilla mode the items are already pre-granted above; this loop
-  // is for the (rare) case where a non-vanilla mode pinned something.)
-  for (uint16 k = 0; k < open_n; k++) {
-    if (placement_at[k] == 0xFFFF) continue;
-    if (!location_grants_placed_item(&kRandoLocations[open_loc_idx[k]])) continue;
-    uint16 vi = placement_at[k];
-    if (vi < 256) counts.by_item_id[vi]++;
+  // Fill-model selection (see compute_reachability_collecting_placed): the
+  // EFFECTIVE souls_shuffle=all tier collects committed items/pins through a
+  // per-turn reachability fix-point; every other seed keeps the pre-souls
+  // conservative model — placed items vanish from the assumed set and pins
+  // are seeded unconditionally below. The conservative pin optimism is what
+  // the enemies tier CANNOT use: with the kill-room soul wraps, GT-entry
+  // certified open via assumed crystals whose Prize locations were themselves
+  // soul-blocked, and every attempt failed the final sphere-walk validation.
+  const bool souls_collect_model =
+      Settings_EffectiveSoulsShuffle(settings) >= kSoulsShuffle_BossesEnemies ||
+      settings->npc_souls != 0;  // add-npc-souls: 23 cross-gating scattered
+                                 // items need the same phantom-pin-safe model
+  if (!souls_collect_model) {
+    // Pre-placed pin grants (prizes, events, TakeAny rewards, customizer
+    // pins) join the assumed inventory so reachability treats them as
+    // always-available (the sphere walk still validates every attempt).
+    for (uint16 k = 0; k < open_n; k++) {
+      if (placement_at[k] == 0xFFFF) continue;
+      if (!location_grants_placed_item(&kRandoLocations[open_loc_idx[k]])) continue;
+      uint16 vi = placement_at[k];
+      if (vi < 256) counts.by_item_id[vi]++;
+    }
   }
 
   // Shuffle within each tier independently so dungeon items stay first.
@@ -2244,7 +2436,13 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     // Remove from assumed inventory before computing reachability.
     if (counts.by_item_id[item] > 0) counts.by_item_id[item]--;
 
-    const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
+    // Enemies-tier souls: assumed(unplaced) + fix-point-collected committed
+    // items (own id excluded). Everything else: the pre-souls assumed-only
+    // model the key-threshold calibrations expect.
+    const RandoReachability *r = souls_collect_model
+        ? compute_reachability_collecting_placed(
+              &counts, settings, placement_at, open_loc_idx, open_n, item)
+        : Logic_ComputeReachability(&counts, settings);
     if (g_place_profile_active) g_place_profile.candidate_scan_slots += open_n;
 
     // Find candidate locations: open + reachable + accepts item.
@@ -3567,6 +3765,83 @@ void Placement_SelfCheck(void) {
     uint16 n_pool_all_boss = BuildItemPool(&sallboss, all_boss_pool, kRandoLocationCapacity);
     if (has_all_enemy_registry && n_pool_all_boss != n_pool_all)
       selfcheck_die("boss-shuffle All pool must preserve ordinary enemy checks");
+  }
+
+  // add-enemy-souls — souls pool tiers, the door-shuffle degrade, and the
+  // enemies-tier fail-closed gate (kRandoSoulRoomsBaked). Counts souls by id
+  // range so a pool-construction regression can't slip past the junk-pad
+  // (souls displace junk, keeping the total constant).
+  {
+    uint16 pool[kRandoLocationCapacity];
+    RandoSettings sb;
+    Settings_SetDefaults(&sb);
+    sb.souls_shuffle = kSoulsShuffle_Bosses;
+    uint16 nb = BuildItemPool(&sb, pool, kRandoLocationCapacity);
+    uint16 souls_in_pool = 0;
+    for (uint16 i = 0; i < nb; i++)
+      if (Souls_ItemIsSoul(pool[i])) souls_in_pool++;
+    if (souls_in_pool != kSoulBossCount)
+      selfcheck_die("souls bosses tier pool must hold exactly the boss souls");
+    RandoSettings sa = sb;
+    sa.souls_shuffle = kSoulsShuffle_BossesEnemies;
+    uint16 na = BuildItemPool(&sa, pool, kRandoLocationCapacity);
+    souls_in_pool = 0;
+    for (uint16 i = 0; i < na; i++)
+      if (Souls_ItemIsSoul(pool[i])) souls_in_pool++;
+    if (kRandoSoulRoomsBaked) {
+      if (souls_in_pool != kSoulCount)
+        selfcheck_die("souls enemies tier pool must hold every soul");
+    } else if (na != 0) {
+      selfcheck_die("souls_shuffle=all must fail closed without soul_rooms.gen.yaml");
+    }
+    // Door shuffle degrades souls to OFF at any tier (species-blind door
+    // oracle) — the pool must follow Settings_EffectiveSoulsShuffle.
+    RandoSettings sd = sa;
+    sd.door_shuffle = kDoorShuffle_Basic;
+    uint16 nd = BuildItemPool(&sd, pool, kRandoLocationCapacity);
+    souls_in_pool = 0;
+    for (uint16 i = 0; i < nd; i++)
+      if (Souls_ItemIsSoul(pool[i])) souls_in_pool++;
+    if (souls_in_pool != 0)
+      selfcheck_die("souls must degrade to off under door shuffle");
+    // add-npc-souls — 23 NPC souls when on (0 when off is covered by every
+    // other arm above: none of them set npc_souls). Independent of the tier
+    // AND of door shuffle (no degrade). Also: worst-case progression count
+    // must fit the placer's fixed arrays (progression[256]/prog_slot[256]).
+    RandoSettings snp;
+    Settings_SetDefaults(&snp);
+    snp.npc_souls = 1;
+    uint16 nn = BuildItemPool(&snp, pool, kRandoLocationCapacity);
+    uint16 npc_in_pool = 0;
+    for (uint16 i = 0; i < nn; i++)
+      if (pool[i] >= ITEM_Soul_Npc_Sahasrahla &&
+          pool[i] <= ITEM_Soul_Npc_Uncle) npc_in_pool++;
+    if (npc_in_pool != kNpcSoulCount)
+      selfcheck_die("npc_souls pool must hold exactly kNpcSoulCount souls");
+    snp.door_shuffle = kDoorShuffle_Basic;
+    nn = BuildItemPool(&snp, pool, kRandoLocationCapacity);
+    npc_in_pool = 0;
+    for (uint16 i = 0; i < nn; i++)
+      if (pool[i] >= ITEM_Soul_Npc_Sahasrahla &&
+          pool[i] <= ITEM_Soul_Npc_Uncle) npc_in_pool++;
+    if (npc_in_pool != kNpcSoulCount)
+      selfcheck_die("npc_souls must NOT degrade under door shuffle");
+    // Worst-case progression head-count: wild keys + hunt pieces + souls-all
+    // + npc souls must fit progression[256]/prog_slot[256].
+    RandoSettings sw;
+    Settings_SetDefaults(&sw);
+    sw.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    sw.dungeon_big_keys_mode = kDungeonItemMode_Wild;
+    sw.goal = kGoal_TriforceHunt;
+    sw.accessibility = kAccessibility_None;
+    sw.souls_shuffle = kSoulsShuffle_BossesEnemies;
+    sw.npc_souls = 1;
+    uint16 nw = BuildItemPool(&sw, pool, kRandoLocationCapacity);
+    uint16 prog_count = 0;
+    for (uint16 i = 0; i < nw; i++)
+      if (is_progression_item(pool[i])) prog_count++;
+    if (prog_count > 256)
+      selfcheck_die("worst-case progression pool exceeds progression[256]");
   }
 
   // BuildItemPool refuses pieces_required > pieces_placed for

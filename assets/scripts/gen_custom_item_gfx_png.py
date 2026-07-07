@@ -9,6 +9,9 @@ custom-item-gfx entry N. Keep the order in lockstep with the
   entry 0: Triforce Piece
   entry 1: 1/2 Magic decanter
   entry 2: 1/4 Magic decanter
+  entry 3: reserved (gfx 0x83 Rupoor is a recolored vanilla tile, no blob cell)
+  entry 4: reserved (gfx 0x84 Cucco loads from vanilla sheet 80, no blob cell)
+  entry 5: Soul (shared icon for all Soul_* items, add-enemy-souls)
 
 Pixel values are the asset data: each pixel's palette index is the SNES 4bpp
 pixel value. The embedded RGB palette is authored for preview only and is
@@ -97,6 +100,33 @@ ENTRIES = [
         "xggllggx...xxwx.",
         ".xggggx.....xwx.",
         "..xxxx.......x..",
+    ]),
+    # Blob cells 3/4 are RESERVED padding: gfx ids 0x83 (Rupoor) and 0x84
+    # (Cucco) are special-cased in Rando_EnsureRecvItemSlotGfx (recolored
+    # vanilla tiles, not blob cells), but the blob loader maps gfx -> cell as
+    # (gfx & 0x7f), so later blob-backed entries must keep their cell index in
+    # lockstep with their kRandoCustomGfx_* id.
+    ("ReservedRupoor", ["................"] * 16),
+    ("ReservedCucco", ["................"] * 16),
+    # Entry 5: shared soul-item icon (add-enemy-souls) — gfx 0x85 for every
+    # Soul_* registry item. Original art (spirit wisp), MIT like the sheet.
+    ("Soul", [
+        "................",
+        "......xxx.......",
+        ".....xwwlx......",
+        "....xwwwwlx.....",
+        "....xwwwwlx.....",
+        "...xwwwwwwlx....",
+        "...xwxwwxwlx....",
+        "...xwxwwxwlx....",
+        "..xwwwwwwwwlx...",
+        "..xlwwwwwwllx...",
+        "..xlwwwwwwlx....",
+        "...xlwwwwlx.....",
+        "....xlwlwlx.....",
+        ".....xlxlx......",
+        "......x.x.......",
+        "................",
     ]),
 ]
 

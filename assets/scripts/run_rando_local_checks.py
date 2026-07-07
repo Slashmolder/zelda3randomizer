@@ -144,6 +144,14 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
         ("audit_enemy_check_candidates --check",
          [sys.executable, "assets/scripts/audit_enemy_check_candidates.py",
           "--include-rows", "--allow-cannot-key", "--allow-flying", "--check"]),
+        # Souls generators (add-enemy-souls / add-npc-souls). All need the
+        # local zelda3_assets.dat, so freshness lives here, not in CI.
+        ("gen_soul_tables --check",
+         [sys.executable, "assets/scripts/gen_soul_tables.py", "--check"]),
+        ("gen_soul_room_tables --check",
+         [sys.executable, "assets/scripts/gen_soul_room_tables.py", "--check"]),
+        ("gen_npc_soul_tables --check",
+         [sys.executable, "assets/scripts/gen_npc_soul_tables.py", "--check"]),
     ]
 
     for label, cmd in checks:

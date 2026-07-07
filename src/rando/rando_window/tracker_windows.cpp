@@ -21,6 +21,9 @@ extern "C" {
 #include "../rando_logic.h"    // kRandoLocations/Regions, Rando_Get*Name, Reachability_HasLocation
 #include "../rando_placement.h"// Placement_GetActive, RandoPlacementTable
 #include "../rando_map.h"      // RandoMap_Decode (overworld map background)
+#include "../souls.h"          // add-enemy-souls (owned-souls tracker section)
+#include "../soul_tables.h"    // kSoulNames / kSoulCount / kSoulBossCount
+#include "../npc_soul_tables.h"  // kNpcSoulNames / kNpcSoulCount (add-npc-souls)
 #include "../../hud.h"         // Hud_RandoBuildIconAtlas, kRandoIcon_* (item icons)
 #include "../../config.h"      // g_rando_window_prefs (persisted Check Tracker filters)
 }
@@ -376,6 +379,48 @@ static void DrawItemTracker(void *) {
       ImGui::TableNextColumn(); IconImage(kRandoIcon_Compass, 18.0f, (v.compass_bits & compass_bit) != 0);
     }
     ImGui::EndTable();
+  }
+
+  // add-enemy-souls — owned souls, shown only when the active slot enables the
+  // feature. Boss souls always listed at the bosses+ tiers; enemy-family souls
+  // added at the bosses+enemies tier. A compact colored-name grid (souls have no
+  // icon-atlas art; the shared receipt icon is gameplay-only).
+  {
+    // EFFECTIVE tier — the enemies tier degrades to Bosses under door shuffle,
+    // and the tracker must show what the seed actually binds.
+    uint8 tier = (rset != nullptr) ? Settings_EffectiveSoulsShuffle(rset) : 0;
+    if (tier >= kSoulsShuffle_Bosses) {
+      ImGui::SeparatorText("Souls");
+      int shown = (tier >= kSoulsShuffle_BossesEnemies) ? kSoulCount : kSoulBossCount;
+      const ImVec4 owned = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
+      const ImVec4 missing = ImVec4(0.45f, 0.45f, 0.48f, 1.0f);
+      for (int i = 0; i < shown; i++) {
+        bool have = Souls_OwnedIndex((uint8)i);
+        // kSoulNames entries are "Soul_<Name>" — drop the prefix for display.
+        const char *nm = kSoulNames[i];
+        if (strncmp(nm, "Soul_", 5) == 0) nm += 5;
+        ImGui::TextColored(have ? owned : missing, "%s", nm);
+        if (i == kSoulBossCount - 1 && shown > kSoulBossCount)
+          ImGui::Separator();  // divide boss souls from enemy-family souls
+        else if ((i % 3) != 2 && i != shown - 1)
+          ImGui::SameLine(0.0f, 16.0f);
+      }
+    }
+    // add-npc-souls — independent of the tier; its own section when on.
+    if (rset != nullptr && rset->npc_souls != 0) {
+      ImGui::SeparatorText("NPC Souls");
+      const ImVec4 owned = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
+      const ImVec4 missing = ImVec4(0.45f, 0.45f, 0.48f, 1.0f);
+      for (int i = 0; i < kNpcSoulCount; i++) {
+        bool have = Souls_NpcOwned((uint8)i);
+        // kNpcSoulNames entries are "Soul_Npc_<Name>" — drop the prefix.
+        const char *nm = kNpcSoulNames[i];
+        if (strncmp(nm, "Soul_Npc_", 9) == 0) nm += 9;
+        ImGui::TextColored(have ? owned : missing, "%s", nm);
+        if ((i % 3) != 2 && i != kNpcSoulCount - 1)
+          ImGui::SameLine(0.0f, 16.0f);
+      }
+    }
   }
 
   ImGui::End();

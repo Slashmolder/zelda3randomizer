@@ -18,6 +18,10 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gen_soul_tables import enemy_soul_by_species  # noqa: E402
+
 DEFAULT_ASSETS = REPO / "zelda3_assets.dat"
 DEFAULT_OUT = REPO / "assets" / "rando" / "enemy_drops.gen.yaml"
 DEFAULT_KEY_DEPTH = REPO / "key_depth.txt"
@@ -491,6 +495,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path,
     out_rows = []
     seen_sources = set()
     seen_rooms = set()
+    soul_by_species = enemy_soul_by_species()
     for row in small_rows + big_rows:
         room = int(row["room"])
         slot = int(row["source_slot"])
@@ -501,6 +506,16 @@ def make_doc(assets: dict[str, bytes], assets_path: Path,
         if room in seen_rooms:
             die(f"multiple active enemy key drops in room 0x{room:03x}; room-level key bits would collide")
         seen_rooms.add(room)
+        # add-enemy-souls (task 1.6): killing the holder requires the holder's
+        # soul at souls_shuffle=all — the term is inert below that tier and the
+        # holder's species is enemy-shuffle-pinned (kRandoSoulPinRooms), so the
+        # vanilla source_type stays authoritative. Species with no soul family
+        # (e.g. the TR Pokeys) always spawn and carry no term.
+        soul = soul_by_species.get(int(row["source_type"]))
+        row = dict(row)
+        row["source_soul"] = soul
+        if soul is not None:
+            row["can_reach"] = f"({row['can_reach']}) AND NeedsEnemySoul(Soul_{soul})"
         loc_id = ENEMY_DROP_BASE_ID + len(out_rows)
         out = {
             "id": loc_id,
@@ -516,6 +531,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path,
             "room": room,
             "source_slot": slot,
             "source_type": int(row["source_type"]),
+            "source_soul": row["source_soul"],
             "source_y": int(row["source_y"]),
             "source_x": int(row["source_x"]),
             "marker_list_index": int(row["marker_list_index"]),

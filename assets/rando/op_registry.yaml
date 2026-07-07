@@ -355,6 +355,34 @@ ops:
     contexts: [can_reach, can_place]
 
 
+  - id: 28
+    name: OP_SOULS_TIER_AT_LEAST
+    phase: C
+    operands: [souls_tier]
+    semantics: |
+      settings.souls_shuffle >= tier (Off=0 < Bosses=1 < BossesEnemies=2).
+      add-enemy-souls: wraps soul-item requirements so one logic blob serves
+      all tiers - NeedsBossSoul/NeedsEnemySoul macros compile to
+      (NOT SOULS_TIER_AT_LEAST(t)) OR HAS_ITEM(Soul_X), which collapses to
+      true (requirement inert) below the tier. Default Off leaves every
+      souls-conditional predicate at its pre-souls value (placement
+      byte-identical).
+    contexts: [can_reach, can_place]
+
+  - id: 29
+    name: OP_NPC_SOULS_ACTIVE
+    phase: C
+    operands: []
+    semantics: |
+      settings.npc_souls != 0 (add-npc-souls). Wraps NPC-check soul
+      requirements so they collapse to true (inert) when the toggle is off -
+      NeedsNpcSoul macros compile to
+      (NOT NPC_SOULS_ACTIVE) OR HAS_ITEM(Soul_Npc_X). Default off leaves
+      every gated predicate at its pre-npc-souls value (placement
+      byte-identical).
+    contexts: [can_reach, can_place]
+
+
 
 # ---------------------------------------------------------------------------
 # Phase B trick bit-position scaffolding (priming for `add-rando-trick-logic-and-axes`)

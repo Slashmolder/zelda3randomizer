@@ -209,7 +209,7 @@ macros:
   # HasSword(1) OR CanShootArrowsL1() (HasSword2 is subsumed by HasSword(1)).
   - name: CanKillHelmasaurKing
     parameters: [world]
-    body: "HasSword(1) OR CanShootArrowsL1()"
+    body: "(HasSword(1) OR CanShootArrowsL1()) AND NeedsBossSoul(Soul_HelmasaurKing)"
     source: "app/Boss.php:86-90 (Boss::canBeat for Helmasaur King)"
     notes: |
       Phase A simplification: canBombThings=TRUE drops the leading

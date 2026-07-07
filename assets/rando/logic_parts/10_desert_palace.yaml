@@ -169,5 +169,5 @@ macros:
   # Phase A: canShootArrows($world) defaults to min_level=1.
   - name: CanKillLanmolas
     parameters: [world]
-    body: "HasSword(1) OR HAS_ITEM(Hammer) OR CanShootArrowsL1() OR HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR HAS_ITEM(CaneOfByrna) OR HAS_ITEM(CaneOfSomaria)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer) OR CanShootArrowsL1() OR HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR HAS_ITEM(CaneOfByrna) OR HAS_ITEM(CaneOfSomaria)) AND NeedsBossSoul(Soul_Lanmolas)"
     source: "app/Boss.php:75-79 (Boss::canBeat for Lanmolas)"

@@ -17,6 +17,7 @@
 #include "rando_placement.h"
 #include "rando_shuffles.h"
 #include "shuffle_boss.h"   // BossShuffle_Generate/_Deactivate/_SelfCheck (Slice 7)
+#include "souls.h"          // add-enemy-souls (grant + ownership reset)
 #include "shuffle_drops.h"  // DropShuffle_Generate/_Deactivate/_SelfCheck (Slice 8)
 #include "shuffle_enemies.h"  // EnemyShuffle_Generate/_Deactivate/_SelfCheck (enemy shuffle)
 #include "shuffle_doors.h"   // DoorShuffle_Generate/LayoutDigest (door shuffle)
@@ -454,6 +455,54 @@ bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer) {
   return true;
 }
 
+// add-*-souls — the soul id whose name the next kRandoSoulDialogueId render
+// should show. Set by the soul grant branch of Rando_DispatchVanillaGrant.
+static uint16 g_rando_last_soul_item_id = 0xFFFF;
+// Pending named-box request (0xFFFF = none). Souls are granted from arbitrary
+// contexts (chest open, NPC dialogue end, minigame), so the box CANNOT fire
+// inline: Sprite_ShowMessageUnconditional overwrites main_module_index, which
+// corrupts the return if we're already in a message. Set at grant, consumed on
+// the first quiescent gameplay frame (the trap-onset / pot-confirmation
+// deferral pattern) — never dropped, just delayed.
+static uint16 g_rando_soul_msg_pending = 0xFFFF;
+
+void Rando_QueueSoulPickupMessage(uint16 soul_item_id) {
+  g_rando_last_soul_item_id = soul_item_id;
+  g_rando_soul_msg_pending = soul_item_id;
+}
+
+// Uppercase A-Z + space are the only chars in the generated soul names that
+// the font-encoder must handle beyond trap_ascii_to_font; digits/punctuation
+// never appear (roster tokens are CamelCase words). Split the CamelCase
+// registry token ("Soul_Npc_KingZora" / "Soul_Kholdstare") into spaced words
+// and drop the namespace prefix, matching the tracker/hint display rules.
+static int soul_write_display_name(uint8 *out, int o, const char *tok) {
+  if (strncmp(tok, "Soul_Npc_", 9) == 0) tok += 9;
+  else if (strncmp(tok, "Soul_", 5) == 0) tok += 5;
+  for (int i = 0; tok[i] && o < 232; i++) {
+    char c = tok[i];
+    if (c == '_') { out[o++] = trap_ascii_to_font(' '); continue; }
+    if (i > 0 && c >= 'A' && c <= 'Z' && tok[i - 1] >= 'a' && tok[i - 1] <= 'z')
+      out[o++] = trap_ascii_to_font(' ');  // split CamelCase
+    out[o++] = trap_ascii_to_font(c);
+  }
+  return o;
+}
+
+bool Rando_RenderSoulMessage(uint16 msg_id, uint8 *out_buffer) {
+  if (msg_id != kRandoSoulDialogueId || out_buffer == NULL) return false;
+  const char *tok = (g_rando_last_soul_item_id != 0xFFFF)
+                        ? Rando_GetItemName(g_rando_last_soul_item_id)
+                        : NULL;
+  int o = 0;
+  o = trap_write_ascii(out_buffer, o, "Got the");
+  out_buffer[o++] = 0x75;  // visual row 1 (middle)
+  if (tok != NULL) o = soul_write_display_name(out_buffer, o, tok);
+  o = trap_write_ascii(out_buffer, o, " Soul!");
+  out_buffer[o++] = 0x7f;  // terminator
+  return true;
+}
+
 // add-rando-trap-catalog — membership is an id-RANGE check over the contiguous
 // trap block (item_registry.yaml 132..147). Every effect id in the block thus
 // auto-inherits the decoy masquerade (rando_trap_decoy_icon) and the trap
@@ -595,6 +644,8 @@ uint16 Rando_PickTrapEffectId(uint64 seed, uint16 location_id, uint8 categories,
 void Dungeon_ApproachFixedColor_variable(uint8 a);
 static void rando_trap_effect_teardown(uint8 effect);
 static void rando_tick_deferred_pot_confirmation(void);
+static bool rando_pot_confirmation_safe_to_emit(void);
+static bool rando_receive_icon_active(void);
 
 static uint8 g_rando_trap_stun_timer;
 static uint8 g_rando_trap_effect;
@@ -1055,9 +1106,31 @@ static bool rando_decoy_icon_active(void) {
   return rando_receive_icon_active();
 }
 
+// add-*-souls — fire the deferred soul-pickup name box on a quiescent gameplay
+// frame. Same gate as the pot confirmation (normal module + submodule 0), which
+// also excludes the message module (14), so we never re-enter a live message
+// and corrupt its saved return. Let any still-floating receive icon clear first
+// so the box doesn't race a prior grant's icon.
+static void rando_tick_deferred_soul_message(void) {
+  if (g_rando_soul_msg_pending == 0xFFFF)
+    return;
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive)) {
+    g_rando_soul_msg_pending = 0xFFFF;
+    return;
+  }
+  if (!rando_pot_confirmation_safe_to_emit())
+    return;
+  if (rando_receive_icon_active())
+    return;
+  g_rando_last_soul_item_id = g_rando_soul_msg_pending;
+  g_rando_soul_msg_pending = 0xFFFF;
+  Sprite_ShowMessageUnconditional(kRandoSoulDialogueId);
+}
+
 void Rando_TickTrapEffects(void) {
   rando_clear_bad_trap_wall_spark_residue();
   rando_tick_deferred_pot_confirmation();
+  rando_tick_deferred_soul_message();
 
   if (g_rando_trap_stun_timer == 0) return;
 
@@ -1144,6 +1217,13 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   // accidental double-grant of the slot's vanilla item.
   if (placed == ITEM_TriforcePiece) {
     if (g_rando_triforce_piece_count < 255) g_rando_triforce_piece_count++;
+    return kRandoLttpSkip;
+  }
+
+  // add-enemy-souls — soul direct-write (no vanilla LttP code): set the
+  // ownership bit and take the confirmation-cue path.
+  if (Souls_ItemIsSoul(placed)) {
+    Souls_GrantItem(placed);
     return kRandoLttpSkip;
   }
 
@@ -1842,6 +1922,10 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // across save/reload. See Rando_GrantBoomerang / Rando_GrantBow.
   out_slot->header.boomerang_owned = g_rando_boomerang_owned;
   out_slot->header.bow_owned = g_rando_bow_owned;
+  // add-enemy-souls — persist soul ownership (v6 ext block). Zero bitfield is a
+  // valid "own nothing" state, so always mark present on a rando save.
+  out_slot->header.souls_present = 1;
+  memcpy(out_slot->header.soul_flags, Souls_Flags(), sizeof(out_slot->header.soul_flags));
 }
 
 void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
@@ -1941,6 +2025,14 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   // Traps deliberately start with the normal direct-grant chime; the trap-owned
   // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
   rando_direct_grant_chime_and_hud();
+  // add-*-souls — souls all share one generic icon, so the floating blob can't
+  // say WHICH soul was found (and is easy to miss in motion). Show a named
+  // item-get box instead ("Got the <Name> Soul!"), deferred to a safe frame.
+  // The box IS the indicator, so skip the generic icon for souls.
+  if (Souls_ItemIsSoul(item_id)) {
+    Rando_QueueSoulPickupMessage(item_id);
+    return;
+  }
   rando_show_direct_grant_icon_only(item_id);
 }
 
@@ -4115,6 +4207,11 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_flute_shovel_owned = src->header.flute_shovel_owned;
   g_rando_boomerang_owned = src->header.boomerang_owned;
   g_rando_bow_owned = src->header.bow_owned;
+  // add-enemy-souls — restore soul ownership (pre-v6 slots load souls_present=0
+  // → zero, the correct default: those seeds have souls off so nothing gates).
+  Souls_ResetFlags();
+  if (src->header.souls_present)
+    memcpy(Souls_Flags(), src->header.soul_flags, sizeof(src->header.soul_flags));
   // Phase B Inverted runtime — capture the slot's world_state from the
   // additive @68 ext byte. Only trust it when settings_ext_present is set
   // (older slots wrote 0 there, which already maps to kWorldState_Open).
@@ -5113,6 +5210,15 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   regen.forward_fill_fallback_count = 0;  // stamp normalization
   regen.retry_attempts = 1;               // stamp normalization
   regen.generation_wall_clock_ms = 0;     // stamp normalization
+  // race_mode is canonical byte [17]; compute_stamp normalizes it to 0 on the
+  // GENERATE side (norm_settings.race_mode = 0). The spoiler settings echo now
+  // emits race_mode + canonical_hex, both of which encode byte [17] — so the
+  // reveal-side regen MUST zero it too or every race reveal false-fails as a
+  // stamp mismatch. (Latent before the completed echo; only surfaced once the
+  // echo included race_mode-dependent bytes. Placement regen above is already
+  // done and is race_mode-independent, so mutating the local copy here is
+  // safe.) KEEP IN SYNC with compute_stamp's four-field + race_mode list.
+  settings.race_mode = 0;
 
   // Write JSON to a tmp file next to the suppressed path so we can read it
   // back and SHA-256 it without disturbing the suppressed file.
@@ -5845,6 +5951,32 @@ void Rando_SelfCheck(void) {
     if (Rando_RenderTrapMessage(0x00B5, buf)) {
       fprintf(stderr, "Rando_SelfCheck: trap renderer should ignore non-trap ids\n");
       exit(2);
+    }
+    // add-*-souls — soul-name box renders "Got the <Name> Soul!" for the
+    // last-queued soul; ignores non-soul dialogue ids.
+    {
+      uint8 sbuf[240];
+      Rando_QueueSoulPickupMessage(ITEM_Soul_Npc_KingZora);
+      if (!Rando_RenderSoulMessage(kRandoSoulDialogueId, sbuf) ||
+          sbuf[0] != trap_ascii_to_font('G')) {
+        fprintf(stderr, "Rando_SelfCheck: soul message render mismatch\n");
+        exit(2);
+      }
+      // Row separator (0x75) and 0x7f terminator must both be present.
+      bool has_row = false, has_term = false;
+      for (int i = 0; i < 240; i++) {
+        if (sbuf[i] == 0x75) has_row = true;
+        if (sbuf[i] == 0x7f) { has_term = true; break; }
+      }
+      if (!has_row || !has_term) {
+        fprintf(stderr, "Rando_SelfCheck: soul message missing row/terminator\n");
+        exit(2);
+      }
+      if (Rando_RenderSoulMessage(kRandoTrapDialogueId, sbuf)) {
+        fprintf(stderr, "Rando_SelfCheck: soul renderer should ignore non-soul ids\n");
+        exit(2);
+      }
+      g_rando_soul_msg_pending = 0xFFFF;  // don't leak a pending box into runtime
     }
 
     uint8 saved_main = main_module_index;
@@ -7579,6 +7711,7 @@ void Rando_RunAllSelfChecks(void) {
   BossShuffle_SelfCheck();
   DropShuffle_SelfCheck();
   EnemyShuffle_SelfCheck();  // add-rando-enemy-shuffle
+  Souls_SelfCheck();         // add-enemy-souls
   Chains_SelfCheck();        // dungeon-chains layout construction
   Chains_RuntimeSelfCheck(); // dungeon-chains runtime overlay/origin coupling
   Customizer_SelfCheck();    // add-rando-customizer-mode

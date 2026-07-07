@@ -154,7 +154,7 @@ macros:
   # closure shape).
   - name: CanKillArrghus
     parameters: [world]
-    body: "HAS_ITEM(Hookshot) AND (HAS_ITEM(Hammer) OR HasSword(1) OR ((CanExtendMagic(world, 2) OR CanShootArrowsL1()) AND (HAS_ITEM(FireRod) OR HAS_ITEM(IceRod))))"
+    body: "(HAS_ITEM(Hookshot) AND (HAS_ITEM(Hammer) OR HasSword(1) OR ((CanExtendMagic(world, 2) OR CanShootArrowsL1()) AND (HAS_ITEM(FireRod) OR HAS_ITEM(IceRod))))) AND NeedsBossSoul(Soul_Arrghus)"
     source: "app/Boss.php:91-95 (Boss::canBeat for Arrghus)"
     notes: |
       Phase A: leading `(itemPlacement!='basic' || swordless || hasSword(2))`

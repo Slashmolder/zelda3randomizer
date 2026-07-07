@@ -163,6 +163,80 @@ icons:
   GenericKey: { gfx: 0x0f, big: 0, oam_flags: 0x34, notes: "small-key bundle (lttp 0x24); Retro shared key" }
   Rupoor:     { gfx: 0x83, big: 0, oam_flags: 0x36, notes: "kRandoCustomGfx_Rupoor: vanilla rupee tile (bundle 0x24) + off_black palette via SP3" }
 
+  # --- souls (add-enemy-souls): one shared icon for the whole family ---
+  Soul_ArmosKnights: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Lanmolas: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Moldorm: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Agahnim: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_HelmasaurKing: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Arrghus: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Mothula: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Blind: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Kholdstare: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Vitreous: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Trinexx: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Ganon: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Raven: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Vulture: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Octorok: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Buzzblob: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Snapdragon: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Hinox: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Moblin: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_MiniHelmasaur: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_BushHoarder: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_MiniMoldorm: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Poe: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Ropa: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Bari: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_HardhatBeetle: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Soldier: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Geldman: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Popo: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Armos: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_WalkingZora: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Crab: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_BallChainTrooper: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Rat: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Rope: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Keese: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Leever: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Eyegore: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Gibdo: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Pengator: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Wizzrobe: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Zazak: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Stalfos: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Pikit: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Gibo: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Tektite: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+
+  # --- NPC souls (add-npc-souls): same shared soul icon ---
+  Soul_Npc_Sahasrahla: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_KingZora: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_Witch: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_MagicBat: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_SickKid: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_BottleMerchant: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_Hobo: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_OldMan: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_Stumpy: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_Catfish: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_WaterfallFairy: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_PyramidFairy: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_HomeSmith: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_FrogSmith: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_MiddleAgedMan: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_DiggingGame: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_ChestGame: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_MazeGameLady: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_MazeGameGuy: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_MMCNpc: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_HypeCaveNpc: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_Kiki: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_BombShopDealer: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+  Soul_Npc_Uncle: { gfx: 0x85, big: 2, oam_flags: 0x36 }
+
   # TrapDamage / TrapFreeze intentionally do not have fixed entries here.
   # Runtime dispatch handles the trap effect and skips Link_ReceiveItem; their
   # field/direct-grant icons are selected by rando.c from the full drawable

@@ -182,6 +182,11 @@ static void hint_friendly_item(const char *in, char *out, int outsz) {
   if (strcmp(in, "DefeatAgahnim") == 0)  { snprintf(out, outsz, "Agahnim"); return; }
   if (strncmp(in, "Prize_", 6) == 0) in += 6;         // Prize_GreenPendant -> GreenPendant
   if (strncmp(in, "Progressive", 11) == 0) in += 11;  // ProgressiveSword -> Sword
+  // add-npc-souls: Soul_Npc_KingZora -> "King Zora Soul" (the raw "Npc" token
+  // is an internal namespace, not player text). Enemy souls keep their
+  // existing "Soul <Name>" rendering via the generic pass below.
+  bool npc_soul = false;
+  if (strncmp(in, "Soul_Npc_", 9) == 0) { in += 9; npc_soul = true; }
   int o = 0;
   for (int i = 0; in[i] && o < outsz - 2; i++) {
     char c = in[i];
@@ -191,6 +196,9 @@ static void hint_friendly_item(const char *in, char *out, int outsz) {
     out[o++] = c;
   }
   out[o] = '\0';
+  if (npc_soul && o < outsz - 6) {
+    snprintf(out + o, (size_t)(outsz - o), " Soul");
+  }
 }
 
 // Friendly location: keep just the area/room, dropping the " - <sub-spot>" tail.

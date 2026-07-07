@@ -77,5 +77,5 @@ locations:
     region: HyruleCastleTower
     type: Prize_Event
     vanilla_item: DefeatAgahnim
-    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND (HasSword(1) OR (OP_MODEWEAPONS_EQ(swordless) AND (HAS_ITEM(Hammer) OR HAS_ITEM(BugCatchingNet))))"
+    can_reach: "HAS_AMOUNT(SmallKey_HyruleCastleTower, 2) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND (HasSword(1) OR (OP_MODEWEAPONS_EQ(swordless) AND (HAS_ITEM(Hammer) OR HAS_ITEM(BugCatchingNet)))) AND NeedsBossSoul(Soul_Agahnim)"
     source: "app/Region/Standard/HyruleCastleTower.php:62-68 (can_complete + prize)"

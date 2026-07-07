@@ -156,5 +156,5 @@ macros:
   # branch; CanMeltThings already gained its own swordless (Bombos) branch.
   - name: CanKillKholdstare
     parameters: [world]
-    body: "(HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND CanMeltThings(world)"
+    body: "((HasSword2() OR (OP_MODEWEAPONS_EQ(swordless) AND HAS_ITEM(Hammer))) AND CanMeltThings(world)) AND NeedsBossSoul(Soul_Kholdstare)"
     source: "app/Boss.php:108-114 (Kholdstare can_beat)"

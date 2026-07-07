@@ -317,7 +317,7 @@ macros:
   # CanKillBoss(ArmosKnights) call.
   - name: CanKillArmosKnights
     parameters: []
-    body: "HasSword(1) OR HAS_ITEM(Hammer) OR CanShootArrowsL1() OR HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer) OR CanShootArrowsL1() OR HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna)) AND NeedsBossSoul(Soul_ArmosKnights)"
     source: "app/Boss.php (Boss::canBeat for ArmosKnights — table TBD in §3.4a)"
 
   # NotADungeonItem — the can_place restriction the PHP setFillRules

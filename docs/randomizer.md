@@ -613,6 +613,79 @@ If local generated enemy-check assets are missing, active `enemy_drop_checks=dun
 or pure effective `enemy_drop_checks=all` seeds fail closed instead of silently
 generating with an empty enemy registry.
 
+### Enemy/boss souls (experimental)
+
+`souls_shuffle` (`add-enemy-souls`, `off` / `bosses` / `all`, default `off`)
+adds soul items that gate whether the matching enemy or boss **spawns at all**.
+Without the soul, the sprite simply is not there: boss rooms are empty and
+walkable, kill-gated doors and kill-revealed chests stay shut (the room reports
+not-clear while any suppressed spawn exists), and the enemy appears on the next
+room/area load once its soul is found.
+
+- **`bosses`** places 12 souls: the ten dungeon bosses, one Agahnim Soul
+  (covers both Castle Tower and the GT rematch), and a Ganon Soul. Logic
+  requires the soul of the boss **actually assigned** to a dungeon (composes
+  with boss shuffle), the GT refight souls on the climb, and the
+  Agahnim/Ganon souls on goal routes.
+- **`all`** adds one soul per curated enemy family (34 families over the
+  randomizable species — Soldier, Bari, Pengator, Wizzrobe, ...; 46 souls
+  total). Kill-gated rooms then require their residents' souls for everything
+  they gate — derived from the room-header kill tags, the room sprite lists,
+  and a flood over the vanilla door graph (e.g. all of Ice Palace sits behind
+  the Bari + Pengator souls; Agahnim 1 needs the Soldier, Ball-and-chain
+  Trooper, and Keese souls). Enemy-check and forced-drop locations require
+  their source species' soul.
+
+Interactions: souls turn OFF under door shuffle at any tier (the door oracle
+has no per-species model). Under `all` with enemy shuffle,
+kill-gated and forced key-drop rooms keep their vanilla species so the soul
+requirements stay truthful; other rooms shuffle freely and suppression follows
+the substituted species. While enemy drops are **not** itemized
+(`enemy_drop_checks=off`), forced key-drop holders spawn regardless of souls —
+keys are never soul-locked unless their drop is itself a check. Souls are
+direct-grant items (confirmation cue, shared soul icon) and show in the
+tracker window's Souls grid.
+
+If the local generated kill-room table (`assets/rando/soul_rooms.gen.yaml`) was
+absent at codegen, `souls_shuffle=all` seeds fail closed instead of generating
+with silently weakened logic (`bosses` is unaffected). Regenerate it with
+`python assets/scripts/gen_soul_room_tables.py` and rebuild.
+
+### NPC souls (experimental)
+
+`npc_souls` (`add-npc-souls`, `true`/`false`, default `false`) extends the
+souls idea to the game's check-giving **people**: 24 more soul items, one per
+person. Without an NPC's soul, that person does not exist — no Stumpy under
+his tree, no witch outside the potion shop, no digging-game or chest-game
+host — and every check they grant or enable is out of logic until the soul is
+found. The toggle is independent of `souls_shuffle` (composes with any tier)
+and does **not** turn off under door shuffle (no gated check is inside a
+shuffled dungeon).
+
+The roster: Sahasrahla, King Zora, the Witch, the Magic Bat, the Sick Kid,
+the Bottle Merchant, the Hobo, the Old Man, Stumpy, the Great Catfish, the
+Waterfall and Pyramid fairies, both smiths (home smith + the lost frog), the
+Middle-Aged Man (purple chest), the digging-game and chest-game hosts, both
+maze-race NPCs (the race needs **both** souls), the Mini Moldorm Cave and
+Hype Cave gift NPCs, Kiki, the Bomb Shop dealer, and Link's Uncle (his
+secret-passage grant is gated in every world state; in Standard the placer
+therefore keeps the escape's guaranteed weapon at one of the other sphere-0
+slots, and the house/sanctuary actors sharing his sprite are untouched).
+
+Two souls carry progression beyond their own check: **Kiki's soul gates
+Palace of Darkness entry** (his payoff opens the dungeon; a dungeon-chains
+seam entry legitimately bypasses him, and Inverted's separate PoD access
+does not route through him), and the **Bomb Shop dealer's soul gates the
+Pyramid Fairy checks** (he sells the Big Bomb). Multi-person checks need
+every person: Blacksmith = both smiths; Purple Chest = both smiths + the
+Middle-Aged Man.
+
+Notes: potion purchases always work (the shop counter is not the witch —
+only the mushroom hand-in and the powder check are gated); King Zora's and
+the Catfish's item deliveries are never suppressed once granted; fairy ponds
+simply do nothing until the fairy's soul is found; the maze-race prize item
+despawns until both race souls are owned.
+
 ### Traps
 
 When `traps` is `low` / `medium` / `high`, the generator replaces 4 / 8 / 16

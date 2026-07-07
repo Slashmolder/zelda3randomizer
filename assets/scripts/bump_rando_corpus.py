@@ -133,7 +133,7 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
                  f"--settings={settings_csv}",
                  f"--seed={seed}",
                  f"--out-spoiler={out_json}"],
-                check=True, capture_output=True, timeout=60,
+                check=True, capture_output=True, timeout=120,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             print(f"  generator failed for seed={seed}: {e}", file=sys.stderr)
@@ -156,7 +156,7 @@ def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | Non
             try:
                 subprocess.run(
                     [str(binary), f"--reveal-spoiler={out_json}"],
-                    check=True, capture_output=True, timeout=60,
+                    check=True, capture_output=True, timeout=120,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 print(f"  reveal failed for seed={seed}: {e}", file=sys.stderr)

@@ -667,3 +667,121 @@ the drop contribution is supplied inside the explorer, never double-counted.
   Link holds N chest keys
 - **THEN** key-door edges of that dungeon evaluate against N+1 (and the prover used
   the same definition when it validated the layout, so the two never desync)
+
+### Requirement: OP_SOULS_TIER_AT_LEAST predicate handler
+The predicate VM SHALL provide an `OP_SOULS_TIER_AT_LEAST <tier:u8>` opcode that evaluates true when the seed's `souls_shuffle` tier is at or above the operand (off=0, bosses=1, bosses+enemies=2), enabling `NeedsSoul(X) := NOT SOULS_TIER_AT_LEAST(t) OR HAS_ITEM(Soul_X)`-style macros so a single logic blob serves all tiers.
+
+#### Scenario: Off seed reproduces baseline reachability
+- **WHEN** reachability is computed for a `souls_shuffle=off` seed
+- **THEN** every souls-conditional predicate evaluates as if the soul requirement were absent, and reachability matches the pre-souls baseline
+
+#### Scenario: Tier gates bind at their tier
+- **WHEN** a predicate requires `SOULS_TIER_AT_LEAST(2)` context and the seed is `souls_shuffle=bosses`
+- **THEN** the enclosed soul requirement does not bind, while `SOULS_TIER_AT_LEAST(1)` requirements do
+
+### Requirement: Boss kill requires the assigned boss's soul
+When a souls tier is active, `OP_CAN_KILL_BOSS` SHALL additionally require possession of the soul of the boss actually assigned to that dungeon, resolved through the same per-seed `boss_assignment` input (vanilla-boss fallback when boss shuffle is off) via a generated boss-pool-index → soul-item table in which both Agahnim entries map to the single Agahnim Soul.
+
+#### Scenario: Soul requirement follows boss shuffle
+- **WHEN** boss shuffle assigns Mothula to Eastern Palace in a souls-tier seed
+- **THEN** Eastern Palace's boss and prize locations require the Mothula Soul (not the Armos Knights Soul), and the placer guarantees it is reachable before those locations are required
+
+#### Scenario: Vanilla assignment without boss shuffle
+- **WHEN** boss shuffle is off in a souls-tier seed
+- **THEN** each dungeon's boss/prize locations require that dungeon's vanilla boss's soul
+
+### Requirement: Kill-gated room and enemy-held-key soul requirements
+Under the `bosses+enemies` tier, logic SHALL require the resident species' souls for everything a kill-gated room gates, derived from game data by a committed generator (`gen_soul_room_tables.py`): room-header kill tags classify each room (kill→doors vs kill→chest, verified against the `kDungTagroutines` dispatch), room sprite lists give the resident soul sets, and a flood over the committed vanilla door graph (`door_tables.gen.c`) yields the regions/locations reachable only through each room's shutter doors. The generated wraps SHALL cover fork chest/boss/prize locations (by id), the Agahnim 1 event, and generated pot/enemy-check/enemy-drop locations (by door-region/room); rooms whose residents carry no enemy soul are waived (soul-less species always spawn and enemy shuffle substitutes only souled species), and boss-soul rooms (GT refights) are covered by the `CanKill<Boss>` macro terms instead. Generation SHALL fail closed — `BuildItemPool` refuses a `bosses+enemies` seed — when the generated table was absent at codegen (`kRandoSoulRoomsBaked == 0`).
+
+#### Scenario: Kill-gated traversal requires resident souls
+- **WHEN** a progression path routes through a kill-to-open-door room under the `bosses+enemies` tier
+- **THEN** logic requires the souls of that room's resident species before considering onward locations reachable (e.g. every Ice Palace location requires the Bari and Pengator souls; Agahnim 1 requires the Soldier, Ball-and-chain Trooper, and Keese souls)
+
+#### Scenario: Kill-revealed chest requires resident souls
+- **WHEN** a chest is revealed by a kill-clear room tag under the `bosses+enemies` tier
+- **THEN** that chest's predicate requires the room's resident souls
+
+#### Scenario: Non-itemized enemy-held keys stay collectable (runtime exemption)
+- **WHEN** `enemy_drop_checks` does not itemize forced key drops (effective off) under the `bosses+enemies` tier
+- **THEN** the forced-drop holder spawns regardless of soul ownership (static-hook exemption keyed on the vanilla drop-source slot), so the vanilla free-key counting model stays true and key-availability logic needs no soul terms for those drops
+
+#### Scenario: Itemized enemy-held key requires the holder's soul
+- **WHEN** `enemy_drop_checks` itemizes a forced key drop as a location under the `bosses+enemies` tier
+- **THEN** that location's predicate requires the vanilla holder's soul and normal suppression applies to the holder
+
+#### Scenario: Missing generated table fails generation
+- **WHEN** the room → soul-set table is absent and a `bosses+enemies` seed is requested
+- **THEN** seed generation fails with a diagnostic instead of producing a seed with silently weakened logic
+
+### Requirement: Souls degrade to off under door shuffle
+`Settings_EffectiveSoulsShuffle` SHALL degrade `souls_shuffle` (any tier) to `off` when door shuffle is active: the door-shuffle oracle is species-blind, the enemies tier's generated kill-room requirements are computed against the vanilla door graph, and even the bosses tier's soul-gated boss/prize predicates make the door-layout fill exhaust its attempt budget per layout candidate. The pool, the logic VM, the placer gate, the runtime suppression, and the canonical settings hash SHALL all read the effective value.
+
+#### Scenario: Door shuffle disables souls everywhere
+- **WHEN** a seed requests any `souls_shuffle` tier with `door_shuffle=basic`
+- **THEN** no souls enter the pool, no suppression binds at runtime, souls-conditional logic evaluates as off, and the canonical settings hash reflects the degraded (off) value
+
+### Requirement: Enemy-check locations require the source species' soul
+Under the `bosses+enemies` tier, every enemy-check location (`LOCTYPE_Enemy`) and forced enemy-drop location (`LOCTYPE_EnemyDrop`) SHALL additionally require the soul of its source species, emitted by the enemy-check table generator (which already carries `source_type` per check) into the location's predicate; the 13 boss/miniboss check locations SHALL instead be covered by the boss-soul resolution and the GT-refight gates, and the virtual `HyruleCastleBigKey` derivation SHALL inherit its underlying forced-drop check's soul requirement.
+
+#### Scenario: Ordinary enemy check gated on its species
+- **WHEN** a `bosses+enemies` seed places an item on an enemy-check location whose source species' soul is un-owned
+- **THEN** logic treats that location as unreachable until the soul is in the player's sphere, and the placer orders placements accordingly
+
+#### Scenario: Off and bosses tiers leave enemy-check predicates unchanged
+- **WHEN** a seed uses `souls_shuffle=off` or `souls_shuffle=bosses` with any `enemy_drop_checks` tier
+- **THEN** ordinary enemy-check predicates evaluate exactly as without the souls feature (boss/miniboss checks gate through boss souls at the `bosses` tier)
+
+#### Scenario: Standard escape big-key guard
+- **WHEN** a Standard-mode `bosses+enemies` seed gates the Ball-and-chain guard's big-key drop on that guard's soul
+- **THEN** the placer places that soul reachable within the pre-rescue sphere (or refuses the seed), never producing a seed where the escape cannot be completed
+
+### Requirement: Boss-species kill gates bind at the bosses tier
+The Ganon's Tower refight rooms (Armos Knights, Lanmolas, Moldorm) SHALL carry static soul requirements for those three bosses under any active souls tier, since boss species suppress at the `bosses` tier and the refight rooms are outside the boss-shuffle room set.
+
+#### Scenario: GT climb requires refight souls
+- **WHEN** a `souls_shuffle=bosses` seed's logic evaluates the GT climb past a refight room
+- **THEN** progression beyond each refight requires that boss's soul
+
+### Requirement: Goal predicates require Agahnim and Ganon souls
+When a souls tier is active, goal-completion and world-progression predicates that require killing Agahnim or Ganon SHALL additionally require the Agahnim Soul or Ganon Soul respectively.
+
+#### Scenario: Ganon goal gated on his soul
+- **WHEN** a souls-tier seed's goal requires defeating Ganon
+- **THEN** the goal-completion predicate requires the Ganon Soul, and the placer places it reachable before it is required
+
+#### Scenario: Agahnim-dependent dark-world access gated
+- **WHEN** logic evaluates a route to the Dark World that goes through defeating Agahnim 1
+- **THEN** that route requires the Agahnim Soul (alternative non-Agahnim routes are unaffected)
+
+### Requirement: NPC-driven checks require the involved souls
+
+Every roster-gated check's reachability predicate SHALL AND in `(NOT OP_NPC_SOULS_ACTIVE) OR HAS_ITEM(Soul_<person>)` for EVERY person involved in obtaining the check, injected by the logic codegen from the committed `npc_souls.yaml` gate table (never via logic_parts duplicate entries). Multi-person checks: Maze Race requires both race NPCs' souls; Blacksmith requires Home Smith + Frog; Purple Chest requires Home Smith + Frog + Middle-Aged Man; Pyramid Fairy checks require Pyramid Fairy + Bomb Shop dealer.
+
+#### Scenario: Maze Race gated on both people
+- **WHEN** `npc_souls=on` and the player owns the Maze Game Lady Soul but not the Maze Game Guy Soul
+- **THEN** the Maze Race check is out of logic, and the placer never requires it before both souls are reachable
+
+#### Scenario: Off-tier collapse
+- **WHEN** `npc_souls=off`
+- **THEN** every injected soul term evaluates true and reachability is identical to the pre-feature graph (placement-digest-proven)
+
+### Requirement: Kiki's soul gates Palace of Darkness entry
+
+With `npc_souls=on`, the Palace of Darkness entry edge SHALL require the Kiki Soul in world states where vanilla PoD entry is opened by Kiki's payoff; world states (or routes) that legitimately enter PoD without Kiki (e.g. a dungeon-chains seam entry, or Inverted access if the inverted graph does not route through Kiki) SHALL NOT carry the term on those routes.
+
+#### Scenario: PoD locked without Kiki
+- **WHEN** an Open-state seed has `npc_souls=on` and the Kiki Soul is not yet reachable
+- **THEN** no Palace of Darkness location (including its Boss and Prize) is in logic, and the assumed fill never strands PoD-mandatory progression behind the Kiki Soul's own gate
+
+#### Scenario: Chains seam bypass stays consistent
+- **WHEN** dungeon chains route Palace of Darkness as a successor dungeon and the seam teleports the player into its lobby
+- **THEN** the seam entry requires no Kiki Soul (matching runtime, where the overworld entrance is not used)
+
+### Requirement: The new predicate op is structurally complete
+
+`OP_NPC_SOULS_ACTIVE` SHALL be appended to the op registry, evaluated by the VM, and covered by the skip walker's operand table; the structural selfcheck walk over all generated predicate blobs SHALL pass with the new wraps emitted.
+
+#### Scenario: Selfcheck catches a skip mismatch
+- **WHEN** the op is wired into `eval()` but its operand layout is missing or wrong in `skip_pred`
+- **THEN** `Logic_SelfCheck`'s blob walk fails before the build ships
+

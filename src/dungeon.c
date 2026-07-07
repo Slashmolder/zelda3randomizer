@@ -17,6 +17,7 @@
 #include "assets.h"
 #include "features.h"
 #include "rando/rando.h"
+#include "rando/souls.h"  // add-enemy-souls (kill-gate hold in RoomTag_GanonDoor)
 #include "rando/dungeon_ids.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
@@ -4870,6 +4871,10 @@ void RoomTag_GetHeartForPrize(int k) {  // 81c709
 }
 
 void RoomTag_Agahnim(int k) {  // 81c74e
+  // add-enemy-souls: needs no suppressed-spawn hold (unlike RoomTag_GanonDoor)
+  // — it fires on the post-defeat state bit (dung_savegame_state_bits &
+  // 0x8000), not a live-sprite scan, and that bit is only set by actually
+  // beating Agahnim, which a suppressed Agahnim can never be.
   if (!(save_ow_event_info[0x5b] & 0x20) && dung_savegame_state_bits & 0x8000) {
     Palette_RevertTranslucencySwap();
     dung_hdr_tag[0] = 0;
@@ -4878,6 +4883,11 @@ void RoomTag_Agahnim(int k) {  // 81c74e
 }
 
 void RoomTag_GanonDoor(int tagidx) {  // 81c767
+  // add-enemy-souls — this tag has its own any-active-sprite loop instead of
+  // Sprite_CheckIfScreenIsClear, so it needs the same kill-gate hold: a
+  // soul-suppressed Ganon must not count as already dealt with.
+  if (Souls_RoomSuppressedCount())
+    return;
   for (int k = 15; k >= 0; k--) {
     if (sprite_state[k] == 4 || !(sprite_flags4[k] & 64) && sprite_state[k])
       return;
@@ -4895,6 +4905,11 @@ void RoomTag_GanonDoor(int tagidx) {  // 81c767
 }
 
 void RoomTag_KillRoomBlock(int k) {  // 81c7a2
+  // add-enemy-souls: no explicit hold needed — the gate is the
+  // Sprite_CheckIfScreenIsClear call below, which already reports not-clear
+  // while suppressed spawns exist. (The only room carrying this tag, TR
+  // 0x004, has no soul-mapped residents; gen_soul_room_tables.py fails
+  // generation if that ever changes.)
   if (link_x_coord & 0x100 && link_y_coord & 0x100) {
     if (Sprite_CheckIfScreenIsClear()) {
       sound_effect_2 = 0x1b;

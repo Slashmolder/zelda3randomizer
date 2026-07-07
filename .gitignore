@@ -25,6 +25,9 @@
 /assets/rando/enemy_drops.gen.yaml
 /assets/rando/enemy_checks.gen.yaml
 /assets/rando/enemy_check_candidates.audit.yaml
+# add-enemy-souls: kill-gated-room soul requirements (from zelda3_assets.dat +
+# the committed door tables); absent => souls_shuffle=all fails closed.
+/assets/rando/soul_rooms.gen.yaml
 /key_depth.txt
 /zelda3.sfc
 /zelda3.smc

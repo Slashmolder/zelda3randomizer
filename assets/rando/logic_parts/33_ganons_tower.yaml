@@ -281,19 +281,19 @@ macros:
   # PHP: hasSword || Hammer || canShootArrows || FireRod || IceRod || Byrna || Somaria.
   - name: CanKillLanmolas
     parameters: [world]
-    body: "HasSword(1) OR HAS_ITEM(Hammer) OR CanShootArrowsL1() OR HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR HAS_ITEM(CaneOfByrna) OR HAS_ITEM(CaneOfSomaria)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer) OR CanShootArrowsL1() OR HAS_ITEM(FireRod) OR HAS_ITEM(IceRod) OR HAS_ITEM(CaneOfByrna) OR HAS_ITEM(CaneOfSomaria)) AND NeedsBossSoul(Soul_Lanmolas)"
     source: "app/Boss.php:75-79 (Lanmolas can_beat)"
 
   # CanKillMoldorm — GT top mini-boss (Boss.php:80-82).
   # PHP: hasSword || Hammer.
   - name: CanKillMoldorm
     parameters: []
-    body: "HasSword(1) OR HAS_ITEM(Hammer)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer)) AND NeedsBossSoul(Soul_Moldorm)"
     source: "app/Boss.php:80-82 (Moldorm can_beat)"
 
   # CanKillAgahnim2 — final GT boss (Boss.php:126-128).
   # PHP: hasSword || Hammer || BugCatchingNet.
   - name: CanKillAgahnim2
     parameters: []
-    body: "HasSword(1) OR HAS_ITEM(Hammer) OR HAS_ITEM(BugCatchingNet)"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer) OR HAS_ITEM(BugCatchingNet)) AND NeedsBossSoul(Soul_Agahnim)"
     source: "app/Boss.php:126-128 (Agahnim2 can_beat)"

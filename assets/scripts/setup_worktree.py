@@ -68,6 +68,13 @@ POT_ARTIFACT_RELS = (
     os.path.join("assets", "rando", "pots.gen.yaml"),
     os.path.join("assets", "rando", "pot_key_depth.gen.yaml"),
 )
+# add-enemy-souls: kill-gated-room soul requirements. Local/gitignored; read by
+# rando_logic_gen.py. Absent => kRandoSoulRoomsBaked=0 and souls_shuffle=all
+# seeds fail closed in BuildItemPool (loud, not silent), but a worktree that
+# can regenerate it should. Regenerable from the mirrored zelda3_assets.dat +
+# the COMMITTED door tables (no key_depth.txt needed), so we mirror it and fall
+# back to running the generator.
+SOUL_ROOMS_REL = os.path.join("assets", "rando", "soul_rooms.gen.yaml")
 VANILLA_ASSETS_HASH_REL = os.path.join("src", "rando", "vanilla_assets_hash.h")
 SDL2_REL = os.path.join("third_party", "SDL2-2.32.10")
 SDL2_REQUIRED_RELS = (
@@ -420,6 +427,25 @@ def main() -> int:
                                         required=args.require_pot_artifacts)
             if args.require_pot_artifacts:
                 return 1
+
+    # add-enemy-souls: soul_rooms.gen.yaml — mirror, else regenerate from the
+    # just-mirrored assets (needs only zelda3_assets.dat + committed door
+    # tables). Absence is fail-closed for souls_shuffle=all, so this is
+    # best-effort with a loud warning.
+    dst_souls = cwd / SOUL_ROOMS_REL
+    if not dst_souls.is_file():
+        src_souls = source / SOUL_ROOMS_REL
+        if src_souls.is_file():
+            dst_souls.parent.mkdir(parents=True, exist_ok=True)
+            print(f"setup_worktree: copy {src_souls} -> {dst_souls}")
+            shutil.copy2(src_souls, dst_souls)
+        else:
+            gen = cwd / "assets" / "scripts" / "gen_soul_room_tables.py"
+            rc = subprocess.call([sys.executable, str(gen)], cwd=str(cwd))
+            if rc or not dst_souls.is_file():
+                print(f"setup_worktree: WARNING could not produce {SOUL_ROOMS_REL} "
+                      f"-- souls_shuffle=all seeds will fail closed in this "
+                      f"worktree build (bosses tier unaffected).", file=sys.stderr)
 
     if copied_assets or not (cwd / VANILLA_ASSETS_HASH_REL).is_file():
         rc = ensure_vanilla_assets_hash(cwd)

@@ -56,7 +56,9 @@
 //   5 — extends the per-slot extension block to carry the dungeon-chain layout
 //       identity {present, attempt, digest24}. v1-v4 files read these fields as
 //       absent. New writes are always v5.
-#define kRandoSidecar_FileFormatVersion 5
+//   7 — add-npc-souls widens the soul-ownership bitfield 8->12 bytes
+//       (@33-36 carry soul_flags[8..11]); v6 files read the tail as zero.
+#define kRandoSidecar_FileFormatVersion 7
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -79,7 +81,14 @@
 //   @18-20  dungeon_chains_digest24 (u24 LE)
 //   @21-23  reserved
 #define kRandoSidecar_SlotExtV5Size     24
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV5Size
+// format_version >= 6 (add-enemy-souls):
+//   @24     souls_present (u8; 1 = @25.. carry a soul-ownership bitfield)
+//   @25-32  soul_flags[0..7] (bit index = soul index)
+#define kRandoSidecar_SlotExtV6Size     33
+// format_version >= 7 (add-npc-souls): soul_flags widened to kSoulFlagsBytes.
+//   @33-36  soul_flags[8..11] (NPC souls start at bit 46)
+#define kRandoSidecar_SlotExtV7Size     37
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV7Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -282,6 +291,13 @@ typedef struct RandoSlotHeader {
   uint8 chains_present;          // v5 ext block @16
   uint8 chains_attempt;          // v5 ext block @17
   uint32 chains_digest24;        // v5 ext block @18-20 (3 bytes LE)
+  // add-enemy-souls — per-slot soul ownership. On disk in the format_version-6
+  // extension block; pre-v6 files load with present=0 (zero souls owned, the
+  // safe default: pre-souls seeds have souls_shuffle=off so nothing suppresses).
+  uint8 souls_present;           // v6 ext block @24
+  // kSoulFlagsBytes (souls.h) wide — v6 carries bytes 0-7, v7 all 12; the
+  // sizeof-copy sites in rando.c and the TLV width follow this array.
+  uint8 soul_flags[12];          // v6 @25-32 + v7 @33-36 (bit idx = soul idx)
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

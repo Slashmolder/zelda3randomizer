@@ -131,7 +131,7 @@ macros:
   # itemPlacement!='basic' → TRUE → leading clause collapses to TRUE.
   - name: CanKillMothula
     parameters: [world]
-    body: "HasSword(1) OR HAS_ITEM(Hammer) OR (CanExtendMagic(world, 2) AND (HAS_ITEM(FireRod) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna))) OR CanGetGoodBee()"
+    body: "(HasSword(1) OR HAS_ITEM(Hammer) OR (CanExtendMagic(world, 2) AND (HAS_ITEM(FireRod) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna))) OR CanGetGoodBee()) AND NeedsBossSoul(Soul_Mothula)"
     source: "app/Boss.php:96-102 (Boss::canBeat for Mothula)"
     notes: |
       Phase A: itemPlacement!='basic' → TRUE drops the leading

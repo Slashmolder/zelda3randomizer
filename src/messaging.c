@@ -2461,6 +2461,11 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
     dialogue_msg_read_pos = 0;
     return;
   }
+  // add-*-souls: runtime-only soul-pickup name box (also not in assets).
+  if (Rando_RenderSoulMessage(dialogue_message_index, messaging_text_buffer)) {
+    dialogue_msg_read_pos = 0;
+    return;
+  }
   // Phase B hints: telepathic-tile interception. When the randomizer slot is
   // active, hints are enabled, and the requested dialogue id is one of the 15
   // ALTTPR telepathic-tile ids, render a generated hint directly into the

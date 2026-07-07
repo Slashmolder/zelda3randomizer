@@ -408,12 +408,33 @@ Counting semantics:
 - **THEN** `counts[StartingHeart] = 3` and `HAS_ANY_COUNT [PieceOfHeart, BossHeartContainer, StartingHeart] 3` evaluates true even before any heart items are placed
 
 ### Requirement: Assumed-fill placement
-
 The placement algorithm SHALL use assumed fill — placing progression items into locations reachable under the assumption that all remaining unplaced items are temporarily available — and SHALL retry placement with bounded rewind when no valid location exists for the current item.
+
+**Enemies-tier fill model (add-enemy-souls)**: for seeds whose EFFECTIVE `souls_shuffle` is the bosses+enemies tier, the per-turn reachability SHALL be computed from the assumed (unplaced) inventory PLUS a fix-point collection of items already committed to locations — both items placed on earlier turns and pre-placed pins (prize assignments, event grants, TakeAny rewards, customizer pins): any committed item whose location is reachable under the current set joins the set, and reachability recomputes until stable (the upstream `RandomAssumed` "fix-point reachability expansion" contract). Pins are then NOT assumed unconditionally — a pinned grant whose location the current set cannot reach does not count (unconditionally-assumed prize pins let GT-entry certify open through crystals whose Prize locations were themselves soul-blocked, failing every attempt's validation). Collection exclusions: vanilla-MODE dungeon items are pre-granted wholesale (the ROM grants them in place; their pinned slots are skipped to avoid double-counting key thresholds), and placed copies of the item id currently being placed are never collected (a key must not sit in a slot justified by its own placed siblings — the final sphere walk cannot order the copies).
+
+All other seeds SHALL keep the conservative pre-souls model — placed items leave the assumed set permanently and pin grants are assumed unconditionally — which the worst-case key-threshold models (pot key depths, the door-key oracle) are calibrated against; applying the collection model to them empirically degraded their fills (deep-stacked dungeon keys; door-oracle source double-counting). Under either model, every attempt is validated by the sphere walk before acceptance, so the fill model is quality guidance, never a soundness input.
+
+**Attempt acceptance bar (add-enemy-souls)**: an attempt SHALL be accepted when it satisfies the seed's EFFECTIVE accessibility tier — `locations`: every placement reachable; `items` (default): every progression placement reachable; `none` ("beatable only"): the goal is completable — plus zero forward-fill fallbacks and the Standard-mode escape weapon/lamp constraints. Demanding unconditional full reach (the old bar) is unattainable for combos with modeling-stranded junk placements (e.g. wild keys × dungeon enemy checks permanently strand a fixed set of junk-holding checks) and burned the whole attempt budget on seeds whose first attempt already satisfied the acceptance gate.
 
 **Phase B implementation alignment (Bug #7 fix)**: the "bounded rewind" SHALL be per-item, not whole-attempt. Phase A1's implementation uses whole-attempt retry with `kAssumedFillMaxAttempts=8`; the SHALL above (already present in Phase A spec at `randomizer-core/spec.md:344`) describes per-item rewind. This change brings the implementation in line with the existing spec.
 
 Per-item rewind algorithm: when the current item has no valid placement, rewind the last N placements (N is the per-item rewind budget, configurable; default 10), recompute the simulated inventory state, and retry placing the current item. If the per-item rewind budget exhausts, escalate to whole-attempt retry (existing `kAssumedFillMaxAttempts` path). If both budgets exhaust, surface a clear error.
+
+#### Scenario: Placed souls keep gating locations open (enemies tier)
+- **WHEN** an enemies-tier seed placed a soul on an earlier turn at a reachable location, and a later turn evaluates a kill-gated location requiring that soul
+- **THEN** the per-turn reachability collects the soul through the fix-point and the gated location remains a valid candidate (it does not go permanently dead the moment the soul leaves the assumed set)
+
+#### Scenario: Pins are collected, not assumed (enemies tier)
+- **WHEN** an enemies-tier seed's pinned grant location (e.g. a dungeon Prize holding a crystal) is unreachable under the current assumed-plus-collected set
+- **THEN** the pinned item does not count toward reachability that turn, so the placer cannot certify a placement against a grant the player could not yet have
+
+#### Scenario: Non-enemies-tier seeds keep the conservative model
+- **WHEN** a seed's effective souls tier is off or bosses
+- **THEN** the fill uses the pre-souls conservative reachability (placed items vanish, pins assumed) unchanged
+
+#### Scenario: Attempt acceptance matches the accessibility tier
+- **WHEN** an attempt strands only non-progression placements and the seed's effective accessibility is `items`
+- **THEN** the attempt is accepted without burning the remaining attempt budget, and the stranded placements surface in the spoiler's unreachable list
 
 #### Scenario: Per-item rewind preserves earlier valid placements
 - **WHEN** the placer hits an item with no valid location and the per-item rewind budget is non-zero
@@ -935,3 +956,24 @@ Customizer mode SHALL be mutually exclusive with race mode: the race reveal rege
 #### Scenario: Identical manifests produce identical customizer_seed
 - **WHEN** two users run customizer mode with the same manifest file
 - **THEN** the computed `customizer_seed = SHA-256(manifest_bytes)[0..8]` is byte-identical
+
+### Requirement: NPC souls join the progression pool
+
+With `npc_souls=on`, the pool SHALL contain exactly 23 NPC soul items (the contiguous registry block immediately following the enemy-souls block — ids 196-218 at authoring time), classified as progression and displacing junk; with `npc_souls=off` the pool SHALL contain none of them. Pool self-checks SHALL assert both counts and that the total progression count stays within the placer's fixed-capacity arrays.
+
+#### Scenario: Pool counts per setting
+- **WHEN** `Placement_SelfCheck` builds pools with `npc_souls` on and off
+- **THEN** the on-pool carries 23 NPC souls as progression and the off-pool carries 0
+
+### Requirement: NPC souls activate the collecting fill model
+
+The assumed-fill placer SHALL use the placed-item collecting reachability model (fix-point collection, own-id excluded) whenever `npc_souls=on`, in addition to its existing enemies-tier trigger; seeds with `npc_souls=off` SHALL keep their existing model selection unchanged.
+
+#### Scenario: Cross-gated souls place soundly
+- **WHEN** `npc_souls=on` and two NPC souls could otherwise mutually lock (each placed behind the check the other gates)
+- **THEN** the per-turn collecting reachability prevents certifying either placement against a phantom grant, and the accepted seed's sphere walk confirms both souls collectable
+
+#### Scenario: Model selection is inert when off
+- **WHEN** `npc_souls=off`
+- **THEN** the fill-model choice, attempt acceptance, and placement digest are byte-identical to pre-feature behavior for every settings combination
+

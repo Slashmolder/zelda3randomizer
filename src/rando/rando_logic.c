@@ -17,6 +17,7 @@
 #include "pot_nonpot_drop_counts.h"
 #include "location_ids.h"
 #include "shuffle_doors.h"  // door-shuffle oracle (OP_DOORS_LOC_REACHABLE)
+#include "soul_tables.h"    // kBossPoolSoul (add-enemy-souls boss-soul gate)
 
 #include <assert.h>
 #include <stdio.h>
@@ -240,14 +241,101 @@ static bool eval_not(Cursor *c, const PredicateContext *ctx) {
   return !eval(c, ctx);
 }
 
+// ---------------------------------------------------------------------------
+// skip_pred — structurally advance the cursor past ONE predicate node without
+// evaluating it. This is what lets AND/OR short-circuit: a decided composite
+// still has to move the cursor past its remaining children (the bytecode has
+// no length prefixes), but skipping only DECODES operand layout — it never
+// re-enters boss-kill predicates or the door-shuffle oracle, which is where
+// the evaluation cost lives (short-circuiting cut the slowest door corpus
+// seed from ~86s to well under the 60s runner budget).
+//
+// MUST mirror the operand reads of the eval_* handler for every op — a
+// mismatch desyncs the cursor and corrupts the enclosing predicate.
+// Logic_SelfCheck walks EVERY predicate blob in the generated tables with
+// skip_pred and asserts exact-length consumption, so a divergence (e.g. a new
+// op added to eval() but not here) fails the selfcheck before it can ship.
+// ---------------------------------------------------------------------------
+static void skip_pred(Cursor *c) {
+  uint8 op = cursor_u8(c);
+  if (c->error) return;
+  switch (op) {
+    // no operands
+    case OP_INSTANT_FLUTE:
+    case OP_NPC_SOULS_ACTIVE:
+    case OP_POT_KEYS_ON:
+    case OP_POT_KEYS_WILD:
+    case OP_POT_KEYS_DUNGEON:
+    case OP_ENEMY_DROP_KEYS_DUNGEON:
+    case OP_ENEMY_DROP_KEYS_WILD:
+      return;
+    // one u8 operand
+    case OP_WORLDSTATE_EQ:
+    case OP_GOAL_EQ:
+    case OP_GOAL_REQUIRES_DUNGEON:
+    case OP_DUNGEON_CLEARED:
+    case OP_HAS_PRIZE:
+    case OP_MEDALLION_OPENS:
+    case OP_TRICK:
+    case OP_DIFFICULTY_AT_LEAST:
+    case OP_GLITCH_LEVEL_AT_LEAST:
+    case OP_MODEWEAPONS_EQ:
+    case OP_CAN_KILL_BOSS:
+    case OP_DOORS_ACTIVE:
+    case OP_SOULS_TIER_AT_LEAST:
+      (void)cursor_u8(c);
+      return;
+    // one u16 operand
+    case OP_HAS_ITEM:
+    case OP_REGION_REACHABLE:
+    case OP_ITEM_IS:
+    case OP_DOORS_LOC_REACHABLE:
+      (void)cursor_u16le(c);
+      return;
+    case OP_HAS_AMOUNT:  // u16 item + u8 amount
+      (void)cursor_u16le(c);
+      (void)cursor_u8(c);
+      return;
+    case OP_HAS_ANY_OF: {  // u8 count + count*u16
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++) (void)cursor_u16le(c);
+      return;
+    }
+    case OP_HAS_ANY_COUNT: {  // u8 count + count*u16 + u8 threshold
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++) (void)cursor_u16le(c);
+      (void)cursor_u8(c);
+      return;
+    }
+    case OP_NOT:
+      skip_pred(c);
+      return;
+    case OP_AND:
+    case OP_OR: {
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++) skip_pred(c);
+      return;
+    }
+    default:
+      assert(0 && "unknown predicate op (skip_pred)");
+      c->error = true;
+      return;
+  }
+}
+
 static bool eval_and(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   bool result = true;
   for (uint8 i = 0; i < count; i++) {
-    bool child = eval(c, ctx);
-    // NOTE: despite the name, AND does NOT short-circuit — every child MUST be
-    // evaluated so the cursor advances past its bytecode. Only record falsity.
-    if (!child) result = false;
+    // Short-circuit: once false, the remaining children can't change the
+    // result — skip their bytecode structurally instead of evaluating it.
+    // (Handlers are pure reads of ctx, so skipping is result-identical;
+    // skip_pred's layout table is selfcheck-validated against every blob.)
+    if (result) {
+      if (!eval(c, ctx)) result = false;
+    } else {
+      skip_pred(c);
+    }
   }
   return result;
 }
@@ -256,8 +344,11 @@ static bool eval_or(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   bool result = false;
   for (uint8 i = 0; i < count; i++) {
-    bool child = eval(c, ctx);
-    if (child) result = true;
+    if (!result) {
+      if (eval(c, ctx)) result = true;
+    } else {
+      skip_pred(c);
+    }
   }
   return result;
 }
@@ -292,10 +383,26 @@ static bool eval_modeweapons_eq(Cursor *c, const PredicateContext *ctx) {
   if (c->error || ctx->settings == NULL) return false;
   return ctx->settings->mode_weapons == mw;
 }
+// add-enemy-souls — settings souls tier >= operand tier. Soul-item
+// requirements wrap in (NOT SOULS_TIER_AT_LEAST(t)) OR HAS_ITEM(Soul_X), so
+// they collapse to true below the tier (default Off = pre-souls reachability).
+// EFFECTIVE tier (enemies degrades to Bosses under door shuffle) — must match
+// the pool, the placer fail-closed gate, and the runtime suppression.
+static bool eval_souls_tier(Cursor *c, const PredicateContext *ctx) {
+  uint8 tier = cursor_u8(c);
+  if (c->error || ctx->settings == NULL) return false;
+  return Settings_EffectiveSoulsShuffle(ctx->settings) >= tier;
+}
 
 static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
   (void)c;
   return ctx->settings != NULL && ctx->settings->instant_flute != 0;
+}
+
+// add-npc-souls — the npc_souls toggle (no operands; no derived rules).
+static bool eval_npc_souls_active(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  return ctx->settings != NULL && ctx->settings->npc_souls != 0;
 }
 
 static bool eval_pot_keys_on(Cursor *c, const PredicateContext *ctx) {
@@ -371,6 +478,12 @@ static bool eval_can_kill_boss(Cursor *c, const PredicateContext *ctx) {
                    ? ctx->boss_assignment[dungeon]
                    : kRandoDungeonVanillaBoss[dungeon];
   if (boss >= kRandoBossKillPredCount) return false;  // 0xFF (HCE/unused) → false
+  // add-enemy-souls note: the boss-soul requirement is NOT enforced here — it
+  // lives inside each CanKill<Boss> macro body (NeedsBossSoul term), which
+  // compiles into kRandoBossKillPred[boss] below. Resolving through `boss`
+  // therefore requires the ASSIGNED boss's soul (follows boss shuffle), and the
+  // same macro bodies cover the GT-refight / override sites that call
+  // CanKill<Boss> inline without going through this op.
   const RandoBossKillPred *p = &kRandoBossKillPred[boss];
   if (p->length == 0) return false;
   Cursor sub = { kRandoPredicateStream + p->offset,
@@ -412,6 +525,8 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_POT_KEYS_DUNGEON:       return eval_pot_keys_dungeon(c, ctx);
     case OP_ENEMY_DROP_KEYS_DUNGEON:return eval_enemy_drop_keys_dungeon(c, ctx);
     case OP_ENEMY_DROP_KEYS_WILD:   return eval_enemy_drop_keys_wild(c, ctx);
+    case OP_SOULS_TIER_AT_LEAST:    return eval_souls_tier(c, ctx);
+    case OP_NPC_SOULS_ACTIVE:       return eval_npc_souls_active(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -2149,6 +2264,170 @@ void Logic_SelfCheck(void) {
     hr = Logic_ComputeReachability(&hc, &hce);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
                "HCE enemy-drop: third HCE key should allow Zelda rescue");
+  }
+
+  // add-enemy-souls — kill-gated-room soul wraps (soul_rooms.gen.yaml ->
+  // NeedsEnemySoul terms). Mini Moldorm Cave is the isolated probe: entry
+  // needs only bombs, and its chests sit behind the shutter the Mini Moldorms
+  // hold shut while suppressed. souls_shuffle=all must gate the chests on the
+  // soul; off must stay pre-souls-identical (term inert below the tier).
+  if (kRandoSoulRoomsBaked) {
+    RandoSettings ssoul;
+    Settings_SetDefaults(&ssoul);
+    ssoul.souls_shuffle = kSoulsShuffle_BossesEnemies;
+
+    RandoCounts sc;
+    memset(&sc, 0, sizeof(sc));
+    sc.by_item_id[ITEM_StartingHeart] = 3;
+    sc.by_item_id[ITEM_RescuedZelda] = 1;  // Open pre-grant (mirrors the sphere walker)
+    sc.by_item_id[ITEM_Bombs10] = 1;
+
+    const RandoReachability *sr = Logic_ComputeReachability(&sc, &ssoul);
+    LSC_ASSERT(sr != NULL, "souls kill-room reachability returned NULL");
+    LSC_ASSERT(!Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
+               "souls=all: Mini Moldorm Cave chest must require the Mini Moldorm soul");
+
+    sc.by_item_id[ITEM_Soul_MiniMoldorm] = 1;
+    sr = Logic_ComputeReachability(&sc, &ssoul);
+    LSC_ASSERT(Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
+               "souls=all: the Mini Moldorm soul should open the cave's chests");
+
+    RandoSettings soff;
+    Settings_SetDefaults(&soff);
+    RandoCounts sc0;
+    memset(&sc0, 0, sizeof(sc0));
+    sc0.by_item_id[ITEM_StartingHeart] = 3;
+    sc0.by_item_id[ITEM_RescuedZelda] = 1;
+    sc0.by_item_id[ITEM_Bombs10] = 1;
+    sr = Logic_ComputeReachability(&sc0, &soff);
+    LSC_ASSERT(Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
+               "souls=off: the soul term must be inert (pre-souls reachability)");
+  }
+
+  // add-npc-souls end-to-end gate probe: with npc_souls on and a full
+  // inventory (minus NPC souls), Stumpy is unreachable until his soul is
+  // granted, the Kiki edge holds Palace of Darkness shut until Kiki's, and
+  // the Maze Race needs BOTH race souls. With npc_souls off all are
+  // reachable soul-less (terms collapse — the digest-inert contract).
+  {
+    RandoSettings snpc;
+    Settings_SetDefaults(&snpc);
+    snpc.npc_souls = 1;
+    RandoCounts nc;
+    memset(&nc, 0, sizeof(nc));
+    for (int i = 0; i < ITEM_Soul_Npc_Sahasrahla; i++) nc.by_item_id[i] = 4;  // full non-NPC pool
+    const RandoReachability *nr = Logic_ComputeReachability(&nc, &snpc);
+    LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Stumpy),
+               "npc on: Stumpy must be gated without his soul");
+    LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Palace_of_Darkness_Shooter_Room),
+               "npc on: the Kiki edge must hold PoD shut without his soul");
+    LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Maze_Race),
+               "npc on: the Maze Race needs both race souls");
+    nc.by_item_id[ITEM_Soul_Npc_Stumpy] = 1;
+    nc.by_item_id[ITEM_Soul_Npc_Kiki] = 1;
+    nc.by_item_id[ITEM_Soul_Npc_MazeGameLady] = 1;
+    nr = Logic_ComputeReachability(&nc, &snpc);
+    LSC_ASSERT(Reachability_HasLocation(nr, LOC_Stumpy),
+               "npc on: the Stumpy soul should open his check");
+    LSC_ASSERT(Reachability_HasLocation(nr, LOC_Palace_of_Darkness_Shooter_Room),
+               "npc on: the Kiki soul should open PoD");
+    LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Maze_Race),
+               "npc on: ONE race soul must not open the Maze Race (needs both)");
+    nc.by_item_id[ITEM_Soul_Npc_MazeGameGuy] = 1;
+    nr = Logic_ComputeReachability(&nc, &snpc);
+    LSC_ASSERT(Reachability_HasLocation(nr, LOC_Maze_Race),
+               "npc on: both race souls should open the Maze Race");
+    RandoSettings snoff;
+    Settings_SetDefaults(&snoff);
+    RandoCounts nc0;
+    memset(&nc0, 0, sizeof(nc0));
+    for (int i = 0; i < ITEM_Soul_Npc_Sahasrahla; i++) nc0.by_item_id[i] = 4;
+    nr = Logic_ComputeReachability(&nc0, &snoff);
+    LSC_ASSERT(Reachability_HasLocation(nr, LOC_Stumpy) &&
+               Reachability_HasLocation(nr, LOC_Palace_of_Darkness_Shooter_Room) &&
+               Reachability_HasLocation(nr, LOC_Maze_Race),
+               "npc off: every NPC gate must be inert (pre-npc reachability)");
+  }
+
+  // skip_pred structural validation (short-circuit support). skip_pred must
+  // consume EXACTLY the bytes eval() would for every op, or short-circuiting
+  // desyncs the cursor inside composite predicates. Walk every predicate blob
+  // in the generated tables and assert exact-length, error-free consumption.
+  // This catches a new op wired into eval() but missing from skip_pred's
+  // layout table the moment the codegen first emits it into any table.
+  {
+    struct { uint32 off; uint16 len; } blob;
+    uint32 walked = 0;
+    #define LSC_SKIP_WALK(what) do { \
+      if (blob.len != 0) { \
+        Cursor sk = { kRandoPredicateStream + blob.off, \
+                      kRandoPredicateStream + blob.off + blob.len, false }; \
+        skip_pred(&sk); \
+        LSC_ASSERT(!sk.error && sk.p == sk.end, \
+                   "skip_pred layout mismatch in " what); \
+        walked++; \
+      } \
+    } while (0)
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *L = &kRandoLocations[i];
+      blob.off = L->can_reach_offset;    blob.len = L->can_reach_length;    LSC_SKIP_WALK("location can_reach");
+      blob.off = L->can_place_offset;    blob.len = L->can_place_length;    LSC_SKIP_WALK("location can_place");
+      blob.off = L->always_allow_offset; blob.len = L->always_allow_length; LSC_SKIP_WALK("location always_allow");
+    }
+    for (uint32 i = 0; i < kRandoEdgesCount; i++) {
+      blob.off = kRandoEdges[i].predicate_offset;
+      blob.len = kRandoEdges[i].predicate_length;
+      LSC_SKIP_WALK("edge predicate");
+    }
+    for (uint32 i = 0; i < kRandoEdges_InvertedCount; i++) {
+      blob.off = kRandoEdges_Inverted[i].predicate_offset;
+      blob.len = kRandoEdges_Inverted[i].predicate_length;
+      LSC_SKIP_WALK("inverted edge predicate");
+    }
+    for (uint32 i = 0; i < kRandoLocationPredOverrides_InvertedCount; i++) {
+      const RandoLocationPredOverride *O = &kRandoLocationPredOverrides_Inverted[i];
+      blob.off = O->can_reach_offset;    blob.len = O->can_reach_length;    LSC_SKIP_WALK("inverted override can_reach");
+      blob.off = O->can_place_offset;    blob.len = O->can_place_length;    LSC_SKIP_WALK("inverted override can_place");
+      blob.off = O->always_allow_offset; blob.len = O->always_allow_length; LSC_SKIP_WALK("inverted override always_allow");
+    }
+    for (uint32 i = 0; i < kRandoLocationPredOverrides_RetroCount; i++) {
+      const RandoLocationPredOverride *O = &kRandoLocationPredOverrides_Retro[i];
+      blob.off = O->can_reach_offset;    blob.len = O->can_reach_length;    LSC_SKIP_WALK("retro override can_reach");
+      blob.off = O->can_place_offset;    blob.len = O->can_place_length;    LSC_SKIP_WALK("retro override can_place");
+      blob.off = O->always_allow_offset; blob.len = O->always_allow_length; LSC_SKIP_WALK("retro override always_allow");
+    }
+    for (uint32 i = 0; i < kRandoBossKillPredCount; i++) {
+      blob.off = kRandoBossKillPred[i].offset;
+      blob.len = kRandoBossKillPred[i].length;
+      LSC_SKIP_WALK("boss kill predicate");
+    }
+    for (uint32 i = 0; i < kRandoCaveSourcePredsCount; i++) {
+      blob.off = kRandoCaveSourcePreds[i].off;
+      blob.len = kRandoCaveSourcePreds[i].len;
+      LSC_SKIP_WALK("cave-source predicate");
+    }
+    for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
+      blob.off = kRandoDoorPotLocations[i].pred_off;
+      blob.len = kRandoDoorPotLocations[i].pred_len;
+      LSC_SKIP_WALK("door pot predicate");
+    }
+    for (uint32 i = 0; i < kRandoDoorEnemyDropLocationsCount; i++) {
+      blob.off = kRandoDoorEnemyDropLocations[i].pred_off;
+      blob.len = kRandoDoorEnemyDropLocations[i].pred_len;
+      LSC_SKIP_WALK("door enemy-drop predicate");
+    }
+    for (uint32 i = 0; i < kRandoDoorEnemyCheckLocationsCount; i++) {
+      blob.off = kRandoDoorEnemyCheckLocations[i].pred_off;
+      blob.len = kRandoDoorEnemyCheckLocations[i].pred_len;
+      LSC_SKIP_WALK("door enemy-check predicate");
+    }
+    for (uint32 i = 0; i < kDoorPortalGatesCount; i++) {
+      blob.off = kDoorPortalGates[i].pred_off;
+      blob.len = kDoorPortalGates[i].pred_len;
+      LSC_SKIP_WALK("door portal-gate predicate");
+    }
+    #undef LSC_SKIP_WALK
+    LSC_ASSERT(walked > 1000, "skip_pred walk covered suspiciously few blobs");
   }
 
   fprintf(stderr, "[Logic_SelfCheck] OK\n");

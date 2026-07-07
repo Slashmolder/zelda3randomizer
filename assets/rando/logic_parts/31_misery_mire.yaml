@@ -181,5 +181,5 @@ macros:
   # for the first conjunct. Second conjunct stays as-is.
   - name: CanKillVitreous
     parameters: [world]
-    body: "(HasSword2() OR CanShootArrowsL1()) AND (HAS_ITEM(Hammer) OR HasSword(1) OR CanShootArrowsL1())"
+    body: "((HasSword2() OR CanShootArrowsL1()) AND (HAS_ITEM(Hammer) OR HasSword(1) OR CanShootArrowsL1())) AND NeedsBossSoul(Soul_Vitreous)"
     source: "app/Boss.php:115-118 (Vitreous can_beat)"

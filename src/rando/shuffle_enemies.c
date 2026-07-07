@@ -31,6 +31,7 @@
 #include "shuffle_enemies.h"
 #include "rando_settings.h"
 #include "rando_rng.h"
+#include "souls.h"  // add-enemy-souls: vanilla pin for kill-gated/key-drop rooms
 #include "../assets.h"     // vanilla sprite-list blobs for context gating
 #include "../features.h"   // kRam_EnemyShuffle* reserved-block allocations
 #include <string.h>
@@ -980,6 +981,14 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type) {
   if (!table_is_randomizable(vanilla_type)) return vanilla_type;
   // Hard-exclude rooms: never touch.
   if (room_in_list(room, kHardExcludeRooms, kHardExcludeRoomsCount))
+    return vanilla_type;
+  // add-enemy-souls — under the enemies tier, kill-gated + forced key-drop
+  // rooms keep their VANILLA species: the baked logic soul terms and the
+  // runtime drop-source exemption both name the vanilla residents
+  // (soul_rooms.gen.yaml -> kRandoSoulPinRooms). Substituting here would make
+  // the placer require a soul the spawned species doesn't answer to (or vice
+  // versa). Other rooms shuffle freely; suppression keys on the final species.
+  if (Souls_EnemiesTierActive() && Souls_RoomPinnedVanilla(room))
     return vanilla_type;
 
   uint8 live[4];
