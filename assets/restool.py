@@ -7,6 +7,32 @@ import os
 os.chdir(os.path.dirname(__file__))
 
 
+def emit_soul_rooms():
+  """Generate assets/rando/soul_rooms.gen.yaml from the freshly-compiled
+  zelda3_assets.dat + the committed door tables (add-enemy-souls).
+
+  Like chest_table.gen.bin, this is a ROM-derived codegen INPUT that the build
+  only CONSUMES — so the fresh-repo extract flow must produce it, or
+  souls_shuffle=all fails closed at generation (and `make rando-local-checks`
+  fails its freshness check). It needs no built binary (unlike the pot/enemy
+  registries, which require a `--dump-*` from a compiled zelda3), so it belongs
+  here alongside the asset compile. Best-effort: a warning, not a hard failure,
+  keeps public/--no-build flows working. (npc_souls.yaml is committed — no gen
+  needed.)
+  """
+  asset_path = "../zelda3_assets.dat"
+  if not os.path.exists(asset_path):
+    return  # --no-build or a failed compile; nothing to derive from
+  import subprocess
+  gen = os.path.join("scripts", "gen_soul_room_tables.py")
+  try:
+    subprocess.check_call([sys.executable, gen])
+  except (subprocess.CalledProcessError, OSError) as exc:
+    print(f"restool: WARNING could not generate soul_rooms.gen.yaml ({exc}); "
+          f"souls_shuffle=all will fail closed until you run "
+          f"`python assets/scripts/gen_soul_room_tables.py`.", file=sys.stderr)
+
+
 def emit_vanilla_assets_hash():
   """Emit src/rando/vanilla_assets_hash.h with the SHA-256 of zelda3_assets.dat.
 
@@ -107,6 +133,7 @@ if want_compile and not args.no_build:
   import compile_resources
   compile_resources.main(args)
   emit_vanilla_assets_hash()
+  emit_soul_rooms()
 
 
 

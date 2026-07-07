@@ -146,8 +146,15 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
           "--include-rows", "--allow-cannot-key", "--allow-flying", "--check"]),
         # Souls generators (add-enemy-souls / add-npc-souls). All need the
         # local zelda3_assets.dat, so freshness lives here, not in CI.
+        # gen_soul_tables / gen_npc_soul_tables emit COMMITTED headers, so
+        # --check alone suffices. soul_rooms.gen.yaml is GITIGNORED, so WRITE
+        # it first (like the pot tables) — otherwise --check fails "stale" on a
+        # fresh checkout that hasn't run it (restool now produces it at
+        # extract time, but local-checks must be self-sufficient too).
         ("gen_soul_tables --check",
          [sys.executable, "assets/scripts/gen_soul_tables.py", "--check"]),
+        ("gen_soul_room_tables",
+         [sys.executable, "assets/scripts/gen_soul_room_tables.py"]),
         ("gen_soul_room_tables --check",
          [sys.executable, "assets/scripts/gen_soul_room_tables.py", "--check"]),
         ("gen_npc_soul_tables --check",

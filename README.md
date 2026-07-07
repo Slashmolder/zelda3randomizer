@@ -221,9 +221,24 @@ root, then:
 - **Any platform**: `python assets/restool.py --extract-from-rom`
 
 This creates `zelda3_assets.dat` and regenerates the gitignored randomizer asset
-metadata (`src/rando/vanilla_assets_hash.h` and the chest-table artifact). Both
-the `zelda3` executable and `zelda3_assets.dat` must sit next to each other for
-the game to run.
+metadata (`src/rando/vanilla_assets_hash.h`, the chest-table artifact, and the
+enemy/boss-souls kill-room table). Both the `zelda3` executable and
+`zelda3_assets.dat` must sit next to each other for the game to run.
+
+> **Extract before you build.** If you build *without* extracting first, the
+> chest-table artifact is absent and `src/rando/chest_lookup.h` is emitted
+> empty — the game runs but *every randomizer chest grants its vanilla item*.
+> Always run extraction first.
+
+> **Advanced shuffle modes need one extra step.** `pot_shuffle`,
+> `enemy_drop_checks`, and their registries are derived by *dumping from a built
+> binary* (a chicken-and-egg the one-shot extraction can't resolve), so they are
+> not produced above. After your first build, run the two-pass refresh:
+> `make rando-local-checks` (Linux/macOS) or, on Windows,
+> `python assets/scripts/run_rando_local_checks.py --binary=bin/x64-Release/zelda3.exe`.
+> Until then, enabling those modes makes the generator *refuse the seed with a
+> loud error* (not silent corruption). `souls_shuffle` needs no extra step — its
+> table is produced by extraction above.
 
 ## Installing Python & libraries on Windows (required for asset extraction)
 1. Download [Python](https://www.python.org/ftp/python/3.11.1/python-3.11.1-amd64.exe) and install with "Add to PATH" checked.
