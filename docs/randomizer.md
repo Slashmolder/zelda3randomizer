@@ -132,6 +132,8 @@ axis via `item_pool`.
 | `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
 | `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, boss/miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `dungeon_chains` | `true`, `false` | `false` (experimental; main dungeon doors route through dungeon chains ending in bosses; see [Dungeon chains](#dungeon-chains-experimental)) |
+| `grass_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns overworld bushes and cuttable grass into checks — `junk` = filler only, `all` = anything including progression; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
+| `rock_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns liftable rocks — Glove and Titan's Mitt — into checks; `junk` = filler only, `all` = anything; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
@@ -685,6 +687,42 @@ only the mushroom hand-in and the powder check are gated); King Zora's and
 the Catfish's item deliveries are never suppressed once granted; fairy ponds
 simply do nothing until the fairy's soul is found; the maze-race prize item
 despawns until both race souls are owned.
+
+### Grass & rock shuffle (experimental)
+
+`grass_shuffle` and `rock_shuffle` (`add-rando-grass-rock-shuffle`, each
+`off` / `junk` / `all`, default `off`) turn overworld terrain objects into
+individual randomizer checks — one per object, like pot shuffle:
+
+- **`grass_shuffle`** covers **bushes** (lift, sword-cut, or bomb) and
+  **cuttable thick grass** (sword or bomb). Low walk-through grass tufts are
+  cosmetic and untouched.
+- **`rock_shuffle`** covers **liftable rocks**: light rocks and small piles
+  need the Power Glove; darker rocks and heavy piles need the Titan's Mitt
+  (the logic gates each on the matching glove tier).
+
+Tiers apply per axis: **`junk`** makes every object an active check whose
+contents are filler only (no progression can hide there, so logic never
+routes through them); **`all`** makes them ordinary check locations that any
+item — including progression — may occupy.
+
+The collect cue is streamlined (an item pops with no get-item animation, so
+lifting/carrying is never interrupted). Once a terrain check is collected the
+object reverts to its **vanilla** drop on re-cut/re-lift, so fairy and bee
+bushes still farm normally. Structural terrain (bushes/rocks hiding stairs,
+holes, warps, or the Ice Palace portal) is never shuffled — those always
+behave vanilla. Special overworld screens (Master Sword grove, Zora's Domain,
+under-bridge) are out of scope.
+
+The two axes compose with every other setting, including door and
+cave-entrance shuffle (terrain lives on the overworld surface, so it is not
+subject to the pot-shuffle cave-entrance restriction). There are ~3,900
+objects across the light and dark worlds, so the SNES quick-glance grid hides
+them; the native **Check Tracker** and **Reach** panels gate terrain rows
+behind a **"Show terrain"** toggle while still counting them toward
+completion. Terrain locations are generated from local ROM-derived assets; a
+build without them refuses to activate a grass/rock-enabled slot rather than
+silently granting vanilla drops.
 
 ### Traps
 

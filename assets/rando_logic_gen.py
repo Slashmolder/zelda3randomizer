@@ -431,6 +431,23 @@ def _pot_registry_digest(rows: list[tuple[int, int, int]]) -> int:
     return h
 
 
+def _terrain_registry_digest(rows: list[tuple[int, int, int, int]]) -> int:
+    # add-rando-grass-rock-shuffle: FNV over the sorted
+    # (screen, pos, loc_id, ws_mask) rows — the activation-guard value
+    # (kRandoTerrainRegistryDigest), mirroring _pot_registry_digest. ws_mask
+    # (world_state_filter) is folded in so a filter-only registry change is
+    # drift-detected even without a kGeneratorVersion bump (fresh-eyes review).
+    if not rows:
+        return 0
+    h = 0x811C9DC5
+    for screen, pos, locid, ws_mask in sorted(rows, key=lambda r: (r[0], r[1], r[2])):
+        h = _fnv32_u16(h, screen)
+        h = _fnv32_u16(h, pos)
+        h = _fnv32_u16(h, locid)
+        h = _fnv32_u8(h, ws_mask)
+    return h
+
+
 def _door_enemy_drop_bridge_digest(rows: list[dict]) -> int:
     h = 0x811C9DC5
     for r in rows:
@@ -897,6 +914,74 @@ def _apply_soul_room_wraps(soul_rooms, locations, logic_loc_preds,
                 continue
             ld = pot_locs[name]
             ld.can_reach = f"({ld.can_reach}){_soul_terms(souls)}"
+
+
+def load_terrain(path: Path, logic_regions: dict[str, RegionDef] | None = None):
+    """Load assets/rando/terrain.gen.yaml (local registry from
+    gen_terrain_tables.py — add-rando-grass-rock-shuffle).
+
+    Returns (name -> LocationDef, [(screen, pos, loc_id)]). Each terrain
+    LocationDef carries id/name/region/type=Grass|Rock/can_reach so it feeds
+    BOTH the location registry and the logic binding, exactly like pots.
+    vanilla_item is always "Nothing": suppressed vanilla secrets are NOT pool
+    items (design D8) and the ITEM_Nothing pre-pin in rando_placement.c is
+    pot-type-scoped, so terrain rows are never pinned by it. The YAML is a
+    gitignored local artifact: assetless builds emit no terrain locations and
+    an empty lookup, and Phase-3/4 activation fails closed via the registry
+    digest guard (kRandoTerrainRegistryDigest)."""
+    if not path.exists():
+        print(f"WARNING: {path} not found - emitting NO terrain locations. "
+              f"Run zelda3 --dump-terrain-table + "
+              f"assets/scripts/gen_terrain_tables.py --emit with ROM assets "
+              f"to enable grass/rock shuffle in this build.", file=sys.stderr)
+        return {}, []
+    doc = load_yaml(path)
+    out, rows = {}, []
+    valid_regions = set(logic_regions or {})
+    for t in doc.get("locations", []) or []:
+        axis = t.get("axis")
+        if axis not in ("grass", "rock"):
+            sys.exit(f"{path}: row id={t.get('id')} has unknown axis {axis!r}")
+        region = t.get("region", "")
+        # Hard-fail an unresolvable region NAME (review MED-3). Terrain rows bind
+        # by name to a logic region; a typo would resolve to region_id 0xFFFF,
+        # which the runtime treats as "no region gate" (rando_logic.c) — an
+        # UNDER-gate that lets the placer strand progression on an all-tier
+        # object. The generic well-formedness warning is only fatal under
+        # --strict, and CI's --strict pass runs WITHOUT the (gitignored) terrain
+        # artifacts, so it never sees these rows — enforce here instead.
+        if not region or (valid_regions and region not in valid_regions):
+            sys.exit(f"{path}: row id={t.get('id')} ({t.get('name')}) binds to "
+                     f"region {region!r} which is not a logic region — fix the "
+                     f"SCREEN_REGIONS / terrain_logic_overrides binding "
+                     f"(a 0xFFFF region skips the reachability gate = under-gate).")
+        # world_state_filter (add-rando-grass-rock-shuffle world-group fix):
+        # inverted rewrites the overworld, so a terrain object present-and-equal
+        # in every NON-inverted latch state but absent/repurposed under inverted
+        # (or vice versa) is registered for only its group's world_states. Empty
+        # / absent = universal. Placement (rando_placement.c) AND reachability
+        # (rando_logic.c) both honor the emitted mask, so a filtered-out object
+        # is inert in the other world_state — no strand.
+        wsf = t.get("world_state_filter") or []
+        loc = LocationDef(
+            id=t["id"], name=t["name"], region=region,
+            type="Grass" if axis == "grass" else "Rock",
+            vanilla_item="Nothing",
+            can_reach=t.get("can_reach") or "TRUE()",
+            can_place="TRUE()", always_allow="FALSE()",
+            source="gen_terrain_tables.py",
+            world_state_filter=list(wsf),
+        )
+        out[loc.name] = loc
+        # Row carries the ws_mask so the registry digest covers world_state_filter
+        # too (fresh-eyes review): the filter is placement-relevant registry
+        # state, but it lives in the LOCATION table, not the lookup — without it
+        # a filter-only registry change (same key set, different active
+        # world_states) would keep an identical digest and slip past the runtime
+        # drift guard. The lookup TABLE still emits only (screen,pos,loc_id).
+        rows.append((int(t["screen"]), int(t["pos"]), int(t["id"]),
+                     _world_state_mask(list(wsf))))
+    return out, rows
 
 
 def load_enemy_drops(path: Path, logic_regions: dict[str, RegionDef] | None = None):
@@ -2612,10 +2697,10 @@ def emit_location_ids(locations: dict[str, LocationDef], path: Path):
     # bitsets in rando_logic.c follow it. A registry append that pushes a
     # location id past that ceiling must fail the BUILD, not silently OOB-index a
     # bitset / truncate the digest / drop a tracker row at runtime. Keep this
-    # 4096 in lockstep with kRandoLocationCapacity in src/rando/rando_logic.h.
-    lines.append("_Static_assert(LOC__COUNT <= 4096,")
+    # 8192 in lockstep with kRandoLocationCapacity in src/rando/rando_logic.h.
+    lines.append("_Static_assert(LOC__COUNT <= 8192,")
     lines.append('               "location id space exceeds kRandoLocationCapacity '
-                 '(4096) in rando_logic.h — grow both together");')
+                 '(8192) in rando_logic.h — grow both together");')
     lines.append("")
     lines.append("#endif  // ZELDA3_RANDO_LOCATION_IDS_H_")
     atomic_write_text(path, "\n".join(lines) + "\n")
@@ -2712,6 +2797,53 @@ def emit_pot_lookup(rows, path: Path) -> int:
         f"#define kRandoPotRegistryDigest 0x{digest:08x}u",
         "",
         "#endif  // ZELDA3_RANDO_POT_LOOKUP_H_",
+    ]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+    return len(rows)
+
+
+def emit_terrain_lookup(rows, path: Path) -> int:
+    """Emit src/rando/terrain_lookup.h — sorted (screen, pos) -> LOC_* for the
+    runtime terrain reveal dispatch (add-rando-grass-rock-shuffle Phase 4's
+    Rando_TerrainRevealHook). Mirrors pot_lookup.h; `rows` come from
+    load_terrain() (terrain.gen.yaml). The FNV digest doubles as the sidecar
+    activation-guard value."""
+    rows = sorted(rows, key=lambda r: (r[0], r[1]))
+    digest = _terrain_registry_digest(rows)
+    lines = [
+        HEADER_BANNER, "",
+        "// terrain_lookup.h — sorted (overworld_screen_index, map16 pos) -> LOC_*",
+        "// for the runtime terrain reveal dispatch (Rando_TerrainRevealHook).",
+        "// Generated from local assets/rando/terrain.gen.yaml via",
+        "// assets/scripts/gen_terrain_tables.py --emit.",
+        "",
+        "#ifndef ZELDA3_RANDO_TERRAIN_LOOKUP_H_",
+        "#define ZELDA3_RANDO_TERRAIN_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "",
+        "typedef struct RandoTerrainLookupEntry {",
+        "  uint16 screen;  // 0x00..0x7F parent overworld area",
+        "  uint16 pos;     // area-relative map16 pos, == Overworld_RevealSecret's key",
+        "  uint16 loc_id;  // LOC_*",
+        "} RandoTerrainLookupEntry;",
+        "",
+    ]
+    if rows:
+        lines.append("static const RandoTerrainLookupEntry kRandoTerrainLookup[] = {")
+        for (screen, pos, locid, _ws_mask) in rows:  # ws_mask is digest-only
+            lines.append(f"  {{ 0x{screen:02x}, 0x{pos:04x}, {locid} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: terrain.gen.yaml absent. Active grass/rock generation fails closed.")
+        lines.append("static const RandoTerrainLookupEntry kRandoTerrainLookup[1] = { { 0, 0, 0 } };")
+    lines += [
+        "",
+        f"#define kRandoTerrainLookup_COUNT {len(rows)}",
+        f"#define kRandoTerrainRegistryCount {len(rows)}",
+        f"#define kRandoTerrainRegistryDigest 0x{digest:08x}u",
+        "",
+        "#endif  // ZELDA3_RANDO_TERRAIN_LOOKUP_H_",
     ]
     atomic_write_text(path, "\n".join(lines) + "\n")
     return len(rows)
@@ -3736,6 +3868,24 @@ def emit_logic_data(
             out.append(f"  {{ {loc.id}, {vanilla_id}, 0x{region_id:04x}, 0, {cr_off}u, {cr_len}, {cp_off}u, {cp_len}, {aa_off}u, {aa_len}, {type_id}, 0x{ws_mask:02x} }},  // {loc.name} (vanilla: {loc.vanilla_item}, region: {region_name or '-'})")
     out.append("};")
     out.append(f"const uint32 kRandoLocationsCount = {len(locations)};")
+    # add-rando-grass-rock-shuffle — reachability fast-path boundary. Terrain
+    # locations (LOCTYPE_Grass=20 / Rock=21) are a CONTIGUOUS SUFFIX of the
+    # id-sorted array (their id block 3072+ is the registry's highest), so when
+    # both terrain axes are off the reachability expansion can stop at this
+    # index instead of visiting 3943 inert rows every pass (a door-shuffle
+    # corpus seed's generation time otherwise crosses the 120 s budget). Assert
+    # the contiguity so a future family inserted past terrain can't silently
+    # break the fast-path (it would need its own boundary or a re-sort).
+    _sorted = sorted(locations.values(), key=lambda l: l.id)
+    _terr = {"Grass", "Rock"}
+    _first_terr = next((i for i, l in enumerate(_sorted) if l.type in _terr), len(_sorted))
+    for _i in range(_first_terr, len(_sorted)):
+        if _sorted[_i].type not in _terr:
+            sys.exit("rando_logic_gen: terrain locations are not a contiguous "
+                     "suffix of the id-sorted registry — the reachability "
+                     "fast-path boundary (kRandoNonTerrainLocationsCount) would "
+                     f"be wrong (row {_i} id={_sorted[_i].id} type={_sorted[_i].type})")
+    out.append(f"const uint32 kRandoNonTerrainLocationsCount = {_first_terr};")
     out.append("")
     # RegionDef table — typedef lives in rando_logic.h.
     out.append("// Region table — one row per logic.yaml `regions:` entry. Phase A may emit empty.")
@@ -4004,7 +4154,9 @@ def _location_type_id(t: str) -> int:
              "TakeAny",     # 16 — Phase B Slice 3b Retro take-any cave slot (per-seed active subset)
              "Pot",         # 17 — add-rando-pot-sanity dungeon pot (per-tier active subset)
              "EnemyDrop",    # 18 — add-rando-enemy-drop-sanity forced enemy key drop
-             "Enemy"]        # 19 — add-rando-dungeon-enemy-checks ordinary dungeon enemy check
+             "Enemy",        # 19 — add-rando-dungeon-enemy-checks ordinary dungeon enemy check
+             "Grass",        # 20 — add-rando-grass-rock-shuffle bush/thick-grass check
+             "Rock"]         # 21 — add-rando-grass-rock-shuffle light/heavy rock check
     if t not in types:
         return 0
     return types.index(t)
@@ -4112,6 +4264,33 @@ def main(argv=None):
     )
     locations.update(enemy_check_locs)
     logic_loc_preds.update(enemy_check_locs)
+
+    # add-rando-grass-rock-shuffle: merge the generated local terrain registry
+    # (overworld bushes / thick grass / light+heavy rocks) into the location
+    # set + logic binding, then emit terrain_lookup.h below. Terrain LOCs grow
+    # kRandoLocationsCount but stay OUT of placement until the grass/rock tiers
+    # select them — rando_placement.c's terrain_active() is unconditionally
+    # false in Phase 2, and the skip-triple (open-location loop, junk-pad
+    # target, Placement_SelfCheck) all key on it, so every existing seed is
+    # placement-byte-identical.
+    terrain_locs, terrain_lookup_rows = load_terrain(
+        Path("assets/rando/terrain.gen.yaml"), logic_regions)
+    locations.update(terrain_locs)
+    logic_loc_preds.update(terrain_locs)
+
+    # Registry-wide duplicate-id hard-fail. Every generated family allocates
+    # ids from its own base block, and a block overlap silently corrupts every
+    # id-keyed consumer (reachability bitsets, placement digests, dispatch
+    # lookups) — the terrain base collided with enemy-check ids >= 2048 exactly
+    # this way, and only corpus digest drift caught it. Fail the BUILD instead.
+    _ids_seen = {}
+    for _loc in locations.values():
+        if _loc.id in _ids_seen:
+            sys.exit(f"rando_logic_gen: DUPLICATE location id {_loc.id}: "
+                     f"{_ids_seen[_loc.id]!r} vs {_loc.name!r} — "
+                     f"family base blocks overlap; move the newer family's base")
+        _ids_seen[_loc.id] = _loc.name
+    del _ids_seen
 
     # add-enemy-souls (task 4.4): AND the kill-gated rooms' resident-soul
     # requirements into every predicate those rooms gate (fork chests/bosses/
@@ -4584,6 +4763,8 @@ def main(argv=None):
                     soul_pin_rooms=soul_pin_rooms)
     chest_lookup_count = emit_chest_lookup(locations, out_headers / "chest_lookup.h")
     pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
+    terrain_lookup_count = emit_terrain_lookup(
+        terrain_lookup_rows, out_headers / "terrain_lookup.h")
     enemy_drop_lookup_count = emit_enemy_drop_lookup(
         enemy_drop_lookup_rows,
         items,

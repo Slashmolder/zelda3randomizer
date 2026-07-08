@@ -1921,7 +1921,8 @@ static void Hud_RandoDrawLocationTrackerInner(int *slot) {
     // this 8px quick-glance grid and push the real checks off-screen. Hide pots
     // here (they live in the native check tracker instead). Skip BEFORE the
     // region/row/column bookkeeping so pots are fully invisible to the layout.
-    if (ltype == LOCTYPE_Pot)
+    // add-rando-grass-rock-shuffle — same for the ~3900 terrain checks.
+    if (ltype == LOCTYPE_Pot || ltype == LOCTYPE_Grass || ltype == LOCTYPE_Rock)
       continue;
 
     // Start a new row when the region changes (groups locations visually).

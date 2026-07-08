@@ -240,10 +240,10 @@ jobs:
     # Cross-platform digest determinism: the corpus manifest digests were
     # captured against a Windows build. Every runner must reproduce public,
     # assetless rows byte-for-byte per `randomizer-core / Deterministic
-    # cross-platform placement`. Local ROM-derived pot/enemy registry rows are
-    # exercised by run_rando_local_checks.py instead.
+    # cross-platform placement`. Local ROM-derived pot/enemy/terrain registry
+    # rows are exercised by run_rando_local_checks.py instead.
     - name: Run regression corpus (cross-platform digest check)
-      run: python assets/scripts/run_rando_corpus.py --binary="${{ matrix.binary }}" --skip-pot-shuffle --skip-enemy-drop-checks
+      run: python assets/scripts/run_rando_corpus.py --binary="${{ matrix.binary }}" --skip-pot-shuffle --skip-enemy-drop-checks --skip-terrain-shuffle
 
     - name: Run slot-path generation guard
       run: python assets/scripts/check_rando_slot_path.py --binary="${{ matrix.binary }}"

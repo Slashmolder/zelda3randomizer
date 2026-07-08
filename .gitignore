@@ -18,6 +18,12 @@
 # Pot ground-truth dump (zelda3 --dump-pot-table); generated from ROM assets and
 # consumed by gen_pot_tables.py. Keep it local/untracked.
 /assets/rando/pot_dump.gen.txt
+# Terrain ground-truth dump (zelda3 --dump-terrain-table); generated from ROM
+# assets and consumed by gen_terrain_tables.py (add-rando-grass-rock-shuffle).
+/assets/rando/terrain_dump.gen.txt
+# Generated terrain registry (gen_terrain_tables.py --emit); consumed by rando
+# codegen when present, like pots.gen.yaml. Mirrored by setup_worktree.py.
+/assets/rando/terrain.gen.yaml
 # Generated pot registries. They are derived from local ROM/extracted assets and
 # are consumed by rando codegen when present; public CI builds without them.
 /assets/rando/pots.gen.yaml
@@ -51,6 +57,7 @@ __pycache__
 /src/rando/item_ids.h
 /src/rando/chest_lookup.h
 /src/rando/pot_lookup.h
+/src/rando/terrain_lookup.h
 /src/rando/enemy_drop_lookup.h
 /src/rando/enemy_check_lookup.h
 /src/rando/pot_nonpot_drop_counts.h

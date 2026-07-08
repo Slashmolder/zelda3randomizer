@@ -464,6 +464,14 @@ static inline bool LocIsPot(uint16 loc) {
   return loc < kRandoLocationCapacity && s_loc_type[loc] == LOCTYPE_Pot;
 }
 
+// add-rando-grass-rock-shuffle — grass/rock axes can add ~3900 terrain checks;
+// gate their ROWS behind a "Show terrain" toggle exactly like pots (counts
+// still include them so an all-tier seed can read 100%). Grass=20/Rock=21.
+static inline bool LocIsTerrain(uint16 loc) {
+  return loc < kRandoLocationCapacity &&
+         (s_loc_type[loc] == LOCTYPE_Grass || s_loc_type[loc] == LOCTYPE_Rock);
+}
+
 // Check status: 0 unreachable, 1 reachable-unchecked, 2 checked.
 enum { kCheck_Unreachable = 0, kCheck_Reachable = 1, kCheck_Checked = 2 };
 
@@ -494,18 +502,20 @@ static void DrawCheckTracker(void *) {
   bool &s_only_reachable = g_rando_window_prefs.check_tracker_only_available;
   bool &s_show_items = g_rando_window_prefs.check_tracker_show_items;
   bool &s_show_pots = g_rando_window_prefs.check_tracker_show_pots;  // add-rando-pot-sanity — gate the ~800 pot rows
+  bool &s_show_terrain = g_rando_window_prefs.check_tracker_show_terrain;  // add-rando-grass-rock-shuffle — gate the ~3900 terrain rows
   static char s_search[64] = "";
   if (race) s_show_items = false;
 
   // Compute summary counts. n_total stays the placement-table loop bound;
   // n_visible is the displayed total with non-check slots removed.
   int n_total = pt ? (int)pt->count : 0;
-  int n_visible = 0, n_checked = 0, n_reachable = 0, n_pots = 0;
+  int n_visible = 0, n_checked = 0, n_reachable = 0, n_pots = 0, n_terrain = 0;
   for (int i = 0; i < n_total; i++) {
     uint16 loc = pt->entries[i].location_id;
     if (LocHiddenFromChecks(loc)) continue;
     n_visible++;
     if (LocIsPot(loc)) n_pots++;  // counted in n_visible; rows gated by s_show_pots
+    if (LocIsTerrain(loc)) n_terrain++;  // counted in n_visible; rows gated by s_show_terrain
     if (Rando_IsLocationChecked(loc)) n_checked++;
     else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
   }
@@ -547,6 +557,11 @@ static void DrawCheckTracker(void *) {
     ImGui::SameLine();
     ImGui::Checkbox("Show pots", &s_show_pots);
   }
+  // add-rando-grass-rock-shuffle — same for terrain checks.
+  if (n_terrain > 0) {
+    ImGui::SameLine();
+    ImGui::Checkbox("Show terrain", &s_show_terrain);
+  }
 
   ImGui::Separator();
   ImGui::BeginChild("##checklist", ImVec2(0, 0), false);
@@ -587,6 +602,7 @@ static void DrawCheckTracker(void *) {
 
     ImGui::Indent();
     int r_pots_hidden = 0;  // pots that pass every filter but are hidden by !s_show_pots
+    int r_terrain_hidden = 0;  // terrain checks likewise hidden by !s_show_terrain
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;
@@ -628,6 +644,7 @@ static void DrawCheckTracker(void *) {
       // toggle is tallied for the per-region summary below, so that count
       // reflects those filters instead of the raw pot total.
       if (!s_show_pots && LocIsPot(loc)) { r_pots_hidden++; continue; }
+      if (!s_show_terrain && LocIsTerrain(loc)) { r_terrain_hidden++; continue; }
 
       ImVec4 c = checked ? col_checked : (reachable ? col_reach : col_unreach);
       const char *mark = checked ? "[x]" : (reachable ? "[ ]" : " - ");
@@ -645,6 +662,8 @@ static void DrawCheckTracker(void *) {
     // count tracks availability instead of implying every pot here is available.
     if (!s_show_pots && r_pots_hidden > 0)
       ImGui::TextDisabled("  +%d pots in this region (enable \"Show pots\")", r_pots_hidden);
+    if (!s_show_terrain && r_terrain_hidden > 0)
+      ImGui::TextDisabled("  +%d terrain checks in this region (enable \"Show terrain\")", r_terrain_hidden);
     ImGui::Unindent();
   }
 
@@ -864,7 +883,7 @@ static void DrawMapTracker(void *) {
     ImGui::TextUnformatted(Rando_GetRegionName((uint16)hover_region));
     ImGui::Separator();
     int n = pt ? (int)pt->count : 0;
-    int tip_pots = 0;
+    int tip_pots = 0, tip_terrain = 0;
     for (int i = 0; i < n; i++) {
       uint16 loc = pt->entries[i].location_id;
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
@@ -873,6 +892,9 @@ static void DrawMapTracker(void *) {
       // listing them all overflows this (unscrollable) tooltip. Summarize them
       // as a "+N pots" line instead, like the rest of the trackers.
       if (LocIsPot(loc)) { tip_pots++; continue; }
+      // add-rando-grass-rock-shuffle — a terrain-all region holds hundreds of
+      // checks; summarize identically (this overflow is far larger than pots').
+      if (LocIsTerrain(loc)) { tip_terrain++; continue; }
       bool checked = Rando_IsLocationChecked(loc);
       bool reachable = have_reach && Reachability_HasLocation(reach, loc);
       ImVec4 cc = checked ? ImVec4(0.45f, 0.75f, 0.45f, 1)
@@ -883,6 +905,8 @@ static void DrawMapTracker(void *) {
     }
     if (tip_pots > 0)
       ImGui::TextDisabled("+%d pots", tip_pots);
+    if (tip_terrain > 0)
+      ImGui::TextDisabled("+%d terrain checks", tip_terrain);
     ImGui::EndTooltip();
   }
 
@@ -1024,3 +1048,6 @@ void Trackers_Shutdown(void) {
 }
 
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+extern "C" uint32 RandoCapacityProbe_tracker_windows(void) { return kRandoLocationCapacity; }

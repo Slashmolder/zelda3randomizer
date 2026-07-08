@@ -280,6 +280,7 @@ typedef struct RandoWindowPrefs {
   bool check_tracker_hide_checked;    // Check Tracker "Hide checked" filter (default false)
   bool check_tracker_only_available;  // Check Tracker "Only available" filter (default false)
   bool check_tracker_show_pots;       // Check Tracker "Show pots" toggle (default false)
+  bool check_tracker_show_terrain;    // Check Tracker "Show terrain" toggle (default false; add-rando-grass-rock-shuffle)
   bool check_tracker_show_items;      // Check Tracker "Show items (spoiler)" toggle (default false; forced off for race seeds on load)
 } RandoWindowPrefs;
 

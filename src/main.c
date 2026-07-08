@@ -1769,6 +1769,21 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Dev/codegen: enumerate every consumable overworld terrain object (bushes,
+  // thick grass, small rocks, big rock piles; signs + dash-only bonk piles
+  // reported-but-excluded) as GROUND TRUTH from the engine's own map16 build,
+  // joined with kOverworldSecrets, across the persistent tile-state profiles
+  // (vanilla / +event overlays / inverted / pre-rescue). Source for
+  // assets/scripts/gen_terrain_tables.py (add-rando-grass-rock-shuffle
+  // Phase 1 — see that change's design.md D2/D4). Then exits.
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--dump-terrain-table") == 0) {
+      extern int Overworld_DumpTerrainTable(const char *path);
+      const char *path = (i + 1 < argc) ? argv[i + 1] : "terrain_dump.txt";
+      LoadAssets();
+      return Overworld_DumpTerrainTable(path);
+    }
+  }
 
   // --vanilla-ram-check=<savestate-path>: init-order replay guard
   // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,

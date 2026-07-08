@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 129  # bump_rando_corpus.py --apply
+generator_version: 131  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1139,6 +1139,78 @@ entries:
     label: "npc-souls-retro-wild"
     expected_digest: "e682c3e4c3625673d7c1f7e9317b55cab7373f7e04b939a6927a24de1f169984"
     expected_sphere_digest: "3bafe95b1ebb2e5d3c0e7cbd13868bb14e47d0c2731f8d9e6f3a2e5c047d40ba"
+
+  # add-rando-grass-rock-shuffle (task 6.1) — terrain axes + compositions.
+  # Seeds carry the ascii tag 0x4752... ("GR..") for traceability. Digests
+  # filled by bump_rando_corpus.py --apply at kGeneratorVersion 130.
+  - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: junk, accessibility: items }
+    seed: "0x4752415353000001"
+    label: "terrain-grass-junk"
+    expected_digest: "212de27bfd7a254f9756624e51eafa4a4d831418ebc2f5c85b05f6e298d5c0e3"
+    expected_sphere_digest: "8731754bb289b4f05f8a35ab52ad66e91b0fc8585151138bd812754172e51922"
+  - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, accessibility: items }
+    seed: "0x4752415353000002"
+    label: "terrain-grass-all"
+    expected_digest: "4def2c55bf5e8d139cf935f2cbcb74532c9a5f8e85b6dbe74e4dd642251b2033"
+    expected_sphere_digest: "ca006902d7f041b62ae45e127399e8c42a3d3c5b2e51ac0d2b6d051353003416"
+  - settings: { mode.state: open, goal: fast_ganon, rock_shuffle: junk, accessibility: items }
+    seed: "0x524F434B00000001"
+    label: "terrain-rock-junk"
+    expected_digest: "1737a4a031acfd8cc5bd0727a9cd6f16a39249a31ed5d8026dff4111becbcc54"
+    expected_sphere_digest: "4c93db0a451c938cfd35c95ef2fec642f1243ff5c4b0b1e6e3961af4c72fdf5a"
+  - settings: { mode.state: open, goal: fast_ganon, rock_shuffle: all, accessibility: items }
+    seed: "0x524F434B00000002"
+    label: "terrain-rock-all"
+    expected_digest: "1cff98f2b7ef8e96962296bb8263c9d484757faf5e7fd60ed733e81c2ce43751"
+    expected_sphere_digest: "5d84ddb469be2b2c8d2508937e7f8013b596be9a6c75f59f0b48c0d6d5b4a438"
+  - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
+    seed: "0x4752524F434B0003"
+    label: "terrain-grass-rock-all"
+    expected_digest: "b73cdcb349b6ce00326a300a08d068d05e6ab5e9eee4d66bc73cbbadb7f1d91f"
+    expected_sphere_digest: "fd292d0b54a16ecd401770b3bdd530104632a2652a31a10ec6689a575c44fa8c"
+  - settings: { mode.state: retro, goal: ganon, grass_shuffle: all, rock_shuffle: all }
+    seed: "0x4752524F434B0004"
+    label: "terrain-retro"
+    expected_digest: "81ab0676a0bf6563f04a83715d8736dab0b8bb2defdee6fca0bdf2d1128de399"
+    expected_sphere_digest: "5bb46218ab4c69b02c19f0493f98a00fa77d456924b103f73ddd4724657e8967"
+  - settings: { mode.state: inverted, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
+    seed: "0x4752524F434B0005"
+    label: "terrain-inverted"
+    expected_digest: "acd659f5607015ec55c6218d1a78de53d9be69ebb6d4cc4d7f6a8ae4ca9587a4"
+    expected_sphere_digest: "2f79b272fe8b623b1111ec4ade9fa24a0604015b71288013d89500fc42d1baf5"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, grass_shuffle: all, rock_shuffle: all }
+    seed: "0x4752524F434B0006"
+    label: "terrain-door-basic-composes"
+    expected_digest: "649f5c7e9e95f5ffbc876e8f1c869b2799af4b805fc7491e00396494de20c66d"
+    expected_sphere_digest: "02e9e66b2f317ba7642409af1ae529786c643018d9e5250bf8a14672807e9fc3"
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, grass_shuffle: all, rock_shuffle: all }
+    seed: "0x4752524F434B0007"
+    label: "terrain-cave-entrance-composes"
+    expected_digest: "7900355b2c195681ae169c4540d74f41e1bf0883c86a321b9e63a39f30e51ad0"
+    expected_sphere_digest: "3da5bdc14d7eb89cea947ca498b1aeff3eff9186a65ef12f7d00849ea96506b1"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, grass_shuffle: all, rock_shuffle: all }
+    seed: "0x4752524F434B0008"
+    label: "terrain-enemy-drop"
+    expected_digest: "05e047afc65d66cd561b1fb5d602dabde33917512bf8e82fef62ae8f3862046c"
+    expected_sphere_digest: "ccff17205946aae2020e8be518d294334d670a49ad9506d2ed049f6f614de74b"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: all, grass_shuffle: all, rock_shuffle: all }
+    seed: "0x4752524F434B0009"
+    label: "terrain-pot-shuffle"
+    expected_digest: "7a1395e97a9020ab2453b1b560eefb3d7c742264e86efce8856d43e1bd1f2373"
+    expected_sphere_digest: "a4749ee01134a7bb4577a36b079892e0ea2a1ad1ebb8c0295bbdb64f20867838"
+  - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, grass_shuffle: all, rock_shuffle: all, accessibility: none }
+    seed: "0x4752524F434B000C"
+    label: "terrain-hunt-all-none"
+    # Seed reselected 000A->000C: triforce-hunt + grass+rock=all + accessibility=none
+    # is an inherently marginal composition (~44% of random seeds are 20-piece
+    # beatable — junk dilution across the ~3981 terrain locations under the
+    # beatable-only tier lets the assumed fill strand progression). The +38
+    # world-state-grouped terrain locations (per-world-state registration fix)
+    # shifted the RNG stream and tipped the old 000A seed from beatable to not;
+    # 000C generates the same composition robustly. Same class as any marginal
+    # hunt seed — reselect on a future re-roll (see the hunt-goal note above).
+    expected_digest: "3b8ab91c3c26d5d104200cbf5907526eec6ac22bd16d88d3ac2b61ef20edc9d1"
+    expected_sphere_digest: "bf0bf2b925306ba880db3923fbd3834787bd93b60a6bcafc8a99239f222f9ea5"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

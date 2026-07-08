@@ -47,6 +47,7 @@ EXPECTED_GENERATED = [
     "src/rando/item_ids.h",
     "src/rando/chest_lookup.h",
     "src/rando/pot_lookup.h",
+    "src/rando/terrain_lookup.h",  # add-rando-grass-rock-shuffle
     "src/rando/enemy_drop_lookup.h",
     "src/rando/enemy_check_lookup.h",
     "src/rando/pot_nonpot_drop_counts.h",

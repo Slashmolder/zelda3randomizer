@@ -716,3 +716,6 @@ void Hints_SelfCheck(void) {
   Rando_ClearHints();
   fprintf(stderr, "[Hints_SelfCheck] OK\n");
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_hints)

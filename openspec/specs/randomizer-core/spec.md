@@ -31,7 +31,7 @@ The implementation SHALL NOT use `htobe*`, `be*toh`, or other big-endian convers
 
 ### Requirement: Settings canonical serialization order (normative)
 
-The `RandoSettings` struct SHALL be canonically serialized field-by-field in the following 29-byte layout. This serialization is the input to `SHA-256()` for the `settings_hash` computation and to the v2 share-string encoder for the `seed_u64`-adjacent settings portion. The order is **normative spec**.
+The `RandoSettings` struct SHALL be canonically serialized field-by-field in the following 30-byte layout. This serialization is the input to `SHA-256()` for the `settings_hash` computation and to the v2 share-string encoder for the `seed_u64`-adjacent settings portion. The order is **normative spec**.
 
 **Enum value names align with ALTTPR's config strings** (verified against `app/Randomizer.php` and `config/alttp.php` in `alttp_vt_randomizer`). Hand-translation from ALTTPR is mechanical when names match; share-string-to-PHP-config debugging is 1-to-1. Where ALTTPR uses hyphens (e.g., `triforce-hunt`), our CLI surface preserves the exact string; the C struct field substitutes underscore for the hyphen (parser does the translation).
 
@@ -62,14 +62,15 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 | 22 | `hints` | uint8 boolean (`off=0`, `on=1`; aliases `sahasrahla`/`full` resolve to `on`). |
 | 23 | `boss_shuffle` | uint8 boolean. |
 | 24 | `drop_shuffle` | uint8 boolean. |
-| 25 | entrance axes | bit-packed: bit0 `shuffle_cave_entrances`, bit1 `shuffle_dungeon_entrances`, bit2 `coupled`, bit3 `cross_category`, bit4 `decoupled`, bit5 `shuffle_ganons_tower_entrance`; bits6-7 reserved. |
+| 25 | entrance axes | bit-packed: bit0 `shuffle_cave_entrances`, bit1 `shuffle_dungeon_entrances`, bit2 `coupled`, bit3 `cross_category`, bit4 `decoupled`, bit5 `shuffle_ganons_tower_entrance`, bit6 `dungeon_chains`; bit7 reserved. (bit6 reconciled to as-built `kEntranceAxis_DungeonChains = 1<<6`, `rando_settings.h`; the prior table text predated dungeon chains.) |
 | 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, `traps` is a **non-contiguous 3-bit field** — low 2 bits at bits2-3 + high bit at **bit5** (`off=0`, `low=1`, `medium=2`, `high=3`, `insanity=4`); bit4 `instant_flute` (inverse: `1` = manual activation; default on ⇒ `0`); bits6-7 carry the low 2 bits of `pot_shuffle`. |
 | 27 | door + trap-category axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-6 `trap_categories` enable mask (bit2 HAZARD, bit3 IMPAIR, bit4 DRAIN, bit5 SCARE, bit6 DISPLACE; the mask is meaningful only when `traps > 0`, and a `0` mask while `traps > 0` means all categories enabled, so the default serializes all-zero); bit7 carries the high bit of `pot_shuffle`. |
-| 28 | `enemy_drop_checks` | uint8 (`off=0`, `keys=1`, `dungeon=2`, `all=3`), after derived rules. |
+| 28 | drop-check + souls axes | bit-packed: bits0-1 `enemy_drop_checks` (`off=0`, `keys=1`, `dungeon=2`, `all=3`, after derived rules); bits2-3 `souls_shuffle` (`off=0`, `bosses=1`, `bosses_enemies=2`); bit4 `npc_souls` (boolean); bits5-7 refused-undefined. (Souls fields reconciled to as-built `kSoulsShuffleAxis_*` / `kNpcSoulsAxis_*`, `rando_settings.h` — the prior table text predated the souls merge.) |
+| 29 | terrain drop axes | bit-packed: bits0-1 `grass_shuffle` (`off=0`, `junk=1`, `all=2`); bits2-3 `rock_shuffle` (`off=0`, `junk=1`, `all=2`); bits4-7 reserved. Appended by add-rando-grass-rock-shuffle (`kSettingsCanonicalLen` 29→30, the same append-only move that created byte [28]); both fields default `0` so the appended byte serializes `0x00` at defaults. |
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
 
-Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=dungeon` degrades to `keys` under enemy shuffle and normalizes to `off` when small keys are vanilla; `enemy_drop_checks=all` is distinct from `dungeon` and either remains `all`, normalizes visibly to a lower supported tier such as entrance shuffle's `dungeon`, or generation rejects if the complete all-enemy registry is unavailable. Deserialization masks only the defined bits of bytes 25..27 and leaves undefined bits forward-compatible, but range-checks the scalar enum/count fields including byte 28.
+Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=dungeon` degrades to `keys` under enemy shuffle and normalizes to `off` when small keys are vanilla; `enemy_drop_checks=all` is distinct from `dungeon` and either remains `all`, normalizes visibly to a lower supported tier such as entrance shuffle's `dungeon`, or generation rejects if the complete all-enemy registry is unavailable. `grass_shuffle` and `rock_shuffle` have no derived-rule couplings (they compose freely, including under door and cave-entrance shuffle). Deserialization masks only the defined bits of bytes 25..29 — each bit-packed field is masked to its own width (`enemy_drop_checks` reads bits 0-1 of byte 28 only) — and range-checks the scalar enum/count fields including each packed byte-28/29 field (`grass_shuffle`/`rock_shuffle` value 3 is invalid and rejected).
 
 #### Scenario: Reordering fields breaks settings_hash
 - **WHEN** the canonical serialization order changes (e.g., swap fields 4 and 5)
@@ -77,7 +78,7 @@ Serialization applies derived rules before writing bytes: Completionist forces `
 
 #### Scenario: Phase A defaults
 - **WHEN** the user opens the settings screen and has not changed any field
-- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, `instant_flute=on`, `door_shuffle=vanilla`, `trap_categories=0` (all categories — meaningful only when traps are enabled), and `enemy_drop_checks=off`
+- **THEN** the default values are: `mode_state=open`, `goal=fast_ganon`, `crystals_ganon=7`, `crystals_tower=7`, `tricks=none`, `item_pool=normal`, `logic=NoGlitches`, `mode_weapons=randomized`, `accessibility=items`, `pyramid_bow_upgrade=silvers` (legacy/no-op), `region_boss_hearts_in_pool=false` (legacy/no-op), `dungeon_items_*=vanilla`, `prize_shuffle=true`, `medallion_shuffle=true`, `race_mode=false`, `pieces_required=20`, `pieces_placed=30`, `hints=on`, `boss_shuffle=false`, `drop_shuffle=false`, all entrance shuffle axes (including `dungeon_chains`) inactive in canonical bytes, `enemy_shuffle=false`, `customizer_active=false`, `traps=off`, `instant_flute=on`, `door_shuffle=vanilla`, `trap_categories=0` (all categories — meaningful only when traps are enabled), `enemy_drop_checks=off`, `souls_shuffle=off`, `npc_souls=off`, `grass_shuffle=off`, and `rock_shuffle=off`
 
 #### Scenario: Retired boss-heart axis canonicalizes to shuffled
 - **WHEN** settings are built from defaults, CSV, or a v2 share string
@@ -98,6 +99,10 @@ Serialization applies derived rules before writing bytes: Completionist forces `
 #### Scenario: accessibility=none allows un-completable seeds
 - **WHEN** a seed has `settings.accessibility == none`
 - **THEN** the generator does NOT enforce "every progression item is reachable"; un-reachable junk in the pool is permitted; `--allow-broken-seed` semantics overlap but accessibility=none is the principled axis
+
+#### Scenario: Appending byte 29 is a generator-version bump, placement-neutral at defaults
+- **WHEN** a build that includes the terrain axes serializes any settings combination
+- **THEN** the canonical blob is 30 bytes (byte 29 = `0x00` when both axes are off), so every `settings_hash` — defaults included — differs from pre-terrain builds because the SHA-256 input length changed; `generator_version` advances with this change and the corpus regenerates, while default-settings PLACEMENT stays byte-identical to the pre-terrain build (proven by the corpus 3-way diff)
 
 ### Requirement: pieces_required must not exceed pieces_placed
 

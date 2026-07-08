@@ -35,6 +35,7 @@
 #include "dungeon_ids.h"
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "pot_lookup.h"    // (room, pos4) -> LOC_*; add-rando-pot-sanity runtime
+#include "terrain_lookup.h"  // (screen, pos) -> LOC_*; add-rando-grass-rock-shuffle
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
@@ -80,6 +81,45 @@ bool Rando_SettingsNeedPotRegistry(const RandoSettings *settings) {
 bool Rando_PotRegistryMatches(uint32 digest, uint16 count) {
   return digest == kRandoPotRegistryDigest &&
          count == (uint16)kRandoPotRegistryCount;
+}
+
+// add-rando-grass-rock-shuffle — terrain registry identity (activation guard,
+// mirroring the pot registry guard: terrain locations come from gitignored
+// local codegen, so a terrain-enabled slot must prove THIS binary carries the
+// same registry — the chest_lookup fail-open class).
+uint32 Rando_CurrentTerrainRegistryDigest(void) {
+  return kRandoTerrainRegistryDigest;
+}
+
+uint16 Rando_CurrentTerrainRegistryCount(void) {
+  return (uint16)kRandoTerrainRegistryCount;
+}
+
+bool Rando_SettingsNeedTerrainRegistry(const RandoSettings *settings) {
+  return settings != NULL &&
+         (settings->grass_shuffle != kTerrainShuffle_Off ||
+          settings->rock_shuffle != kTerrainShuffle_Off);
+}
+
+bool Rando_TerrainRegistryMatches(uint32 digest, uint16 count) {
+  return digest == kRandoTerrainRegistryDigest &&
+         count == (uint16)kRandoTerrainRegistryCount;
+}
+
+// Stamp EVERY local-registry identity a slot's activation guard checks (pot,
+// terrain, ...). Single source so no slot-writer path can stamp one registry
+// and forget another — the fresh-eyes review found exactly that drift: the
+// player-facing Rando_GenerateSlot stamped pots but not terrain, so every
+// terrain slot self-refused while the corpus/selftest (which DID stamp both)
+// stayed green. Route all slot-writers through this.
+void Rando_StampSlotRegistries(RandoSlotHeader *h) {
+  if (h == NULL) return;
+  h->pot_registry_digest = Rando_CurrentPotRegistryDigest();
+  h->pot_registry_count = Rando_CurrentPotRegistryCount();
+  h->pot_registry_present = 1;
+  h->terrain_registry_digest = Rando_CurrentTerrainRegistryDigest();
+  h->terrain_registry_count = Rando_CurrentTerrainRegistryCount();
+  h->terrain_registry_present = 1;
 }
 
 static bool rando_instant_flute_active(void);
@@ -2436,6 +2476,65 @@ bool Rando_PotShouldRecolor(uint16 room, uint16 pos4) {
   return !Rando_IsLocationChecked(loc);  // un-checked active pots draw recolored
 }
 
+// ===========================================================================
+// add-rando-grass-rock-shuffle — overworld terrain reveal hook (Phase 4).
+//
+// The hook is invoked from the FOUR CONSUMING overworld call sites, each just
+// before its Overworld_RevealSecret call (Overworld_LiftingSmallObj,
+// SmashRockPile_fromLift, the bush/thick-grass branch of
+// Overworld_ToolAndTileInteraction, and the bush/thick-grass branch of
+// Overworld_BombTile). It is deliberately NOT inside Overworld_RevealSecret:
+// the bomb path also calls that function SPECULATIVELY for blast tiles it does
+// not consume (the label_a staircase probe + the super-bomb blanket probe),
+// which would grant glove-gated rock checks from an adjacent bomb (review
+// finding H1). See the change's design D9.
+// ===========================================================================
+uint16 Rando_GetTerrainLocation(uint16 screen, uint16 pos) {
+  uint32 key = ((uint32)screen << 16) | pos;
+  int lo = 0, hi = (int)kRandoTerrainLookup_COUNT;
+  while (lo < hi) {
+    int mid = lo + (hi - lo) / 2;
+    uint32 mk = ((uint32)kRandoTerrainLookup[mid].screen << 16) | kRandoTerrainLookup[mid].pos;
+    if (mk == key) return kRandoTerrainLookup[mid].loc_id;
+    if (mk < key) lo = mid + 1; else hi = mid;
+  }
+  return 0xFFFF;
+}
+
+// Active this seed? A terrain location whose axis tier selected it has a
+// placement-table entry (inactive terrain is skipped in the open-loc loop, so
+// absent). Same shape as rando_pot_is_active.
+static bool rando_terrain_is_active(uint16 loc) {
+  return Placement_Lookup(loc, 0xFFFFu) != 0xFFFFu;
+}
+
+uint8 Rando_TerrainRevealHook(uint16 screen, uint16 pos) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return kRandoTerrain_Vanilla;
+  uint16 loc = Rando_GetTerrainLocation(screen, pos);
+  if (loc == 0xFFFF)
+    return kRandoTerrain_Vanilla;      // not a registered terrain object
+  if (!rando_terrain_is_active(loc))
+    return kRandoTerrain_Vanilla;      // axis off -> vanilla secret behavior
+  if (Rando_IsLocationChecked(loc)) {
+    // Checked: replay VANILLA. Vanilla overworld secrets are infinitely
+    // refarmable (bushes respawn on re-entry) and carry no progression, so
+    // replay introduces no dupes and preserves fairy/bee farming spots
+    // (design D9). No one-shot suppression needed — unlike dungeon pots there
+    // is no shared key byte to double-grant.
+    return kRandoTerrain_Vanilla;
+  }
+  // Active + unchecked: grant the placed item (dispatch marks the LOC checked
+  // internally + resolves its class). Every active terrain object holds a real
+  // item (no ITEM_Nothing pins — design D8), so `item` is always real; guard on
+  // ITEM_Nothing anyway for defensive parity with the pot hook (review LOW-4).
+  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, kRandoLttpSkip);
+  uint16 item = Rando_LastDispatchedItemId();
+  if (item != ITEM_Nothing)
+    Rando_PotQuietReceive(lttp, item);   // shared streamlined receive (no lift-yank)
+  return kRandoTerrain_Suppress;
+}
+
 // ---- Gold "check" pot overlay (rando.h) -----------------------------------
 // Per-room list of in-scope un-checked pots, captured once at room load (from
 // RoomDraw_SinglePot) and drawn every dungeon frame. A room packs at most 16
@@ -3545,6 +3644,53 @@ static bool g_rando_active_settings_valid = false;
 static bool g_rando_settings_from_cold_replay = false;
 static bool g_rando_seed_qol_features0_saved = false;
 static uint32 g_rando_seed_qol_config_features0 = 0;
+
+// add-rando-grass-rock-shuffle — capped nearest-N terrain glint collector.
+// The 128-sprite OAM budget (up to ~159 in-scope objects on the densest
+// screens) forbids glinting every object, so surface only the closest few
+// unchecked+active terrain checks to Link; they update as Link moves. Returns
+// the count of area-map16 positions written to out_pos[0..max), nearest-first.
+// The draw side (sprite.c Rando_DrawTerrainGlints) converts pos -> world ->
+// screen and reuses the overworld enemy-glint OAM/palette machinery.
+int Rando_CollectTerrainGlints(uint16 *out_pos, int max) {
+  if (out_pos == NULL || max <= 0) return 0;
+  // Cheap early-out for non-terrain seeds (skip the per-frame per-object scan).
+  if (!g_rando_active_settings_valid ||
+      !Rando_SettingsNeedTerrainRegistry(&g_rando_active_settings))
+    return 0;
+  uint16 scr = (uint16)overworld_screen_index;
+  if (scr >= 0x80) return 0;
+  int32 lx = (int32)link_x_coord, ly = (int32)link_y_coord;
+  int32 basex = (int32)overworld_offset_base_x << 3;
+  int32 basey = (int32)overworld_offset_base_y;
+  // Nearest-N kept sorted ascending by squared distance (small max, so an
+  // insertion scan is cheaper than a heap).
+  uint32 best_d[kRandoTerrainGlintCap];
+  int n = 0;
+  if (max > kRandoTerrainGlintCap) max = kRandoTerrainGlintCap;
+  for (uint32 i = 0; i < kRandoTerrainLookup_COUNT; i++) {
+    if (kRandoTerrainLookup[i].screen != scr) continue;
+    uint16 loc = kRandoTerrainLookup[i].loc_id;
+    if (Placement_Lookup(loc, 0xFFFFu) == 0xFFFFu) continue;  // inactive tier
+    if (Rando_IsLocationChecked(loc)) continue;               // already checked
+    uint16 pos = kRandoTerrainLookup[i].pos;
+    int col = (pos & 0x7e) >> 1, row = pos >> 7;
+    int32 dx = (basex + col * 16) - lx;
+    int32 dy = (basey + row * 16) - ly;
+    uint32 d = (uint32)(dx * dx + dy * dy);
+    if (n == max && d >= best_d[n - 1]) continue;  // farther than the worst kept
+    int ins = n < max ? n : n - 1;
+    while (ins > 0 && best_d[ins - 1] > d) {
+      best_d[ins] = best_d[ins - 1];
+      out_pos[ins] = out_pos[ins - 1];
+      ins--;
+    }
+    best_d[ins] = d;
+    out_pos[ins] = pos;
+    if (n < max) n++;
+  }
+  return n;
+}
 static uint32 g_rando_seed_qol_wanted_features0 = 0;
 static uint32 g_rando_seed_qol_enhanced_features0 = 0;
 static void rando_snapshot_seed_qol_features0(void);
@@ -4077,6 +4223,31 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
               (unsigned)src->header.pot_registry_digest,
               (unsigned)Rando_CurrentPotRegistryCount(),
               (unsigned)Rando_CurrentPotRegistryDigest());
+      Rando_DeactivateSlot();
+      return;
+    }
+  }
+  // add-rando-grass-rock-shuffle — same guard shape for the terrain registry:
+  // a grass/rock-enabled slot refuses to activate on a binary whose generated
+  // terrain registry is absent/empty or renumbered (placement location ids
+  // would rebind), never silently resolving terrain checks to vanilla drops.
+  if (slot_settings_valid && Rando_SettingsNeedTerrainRegistry(&slot_settings)) {
+    // A build with an EMPTY terrain registry (count 0) can never honor a
+    // terrain-active slot; reject explicitly so a slot that stored (0,0) —
+    // which the generation fail-closed now prevents, but defense-in-depth —
+    // does not fail-open through the (0,0)==(0,0) match (review HIGH-1).
+    if (!src->header.terrain_registry_present ||
+        Rando_CurrentTerrainRegistryCount() == 0 ||
+        !Rando_TerrainRegistryMatches(src->header.terrain_registry_digest,
+                                      src->header.terrain_registry_count)) {
+      fprintf(stderr,
+              "Rando: grass/rock terrain registry drift or missing registry "
+              "identity (slot count=%u digest=%08x, build count=%u "
+              "digest=%08x) — refusing to activate this slot on this build\n",
+              (unsigned)src->header.terrain_registry_count,
+              (unsigned)src->header.terrain_registry_digest,
+              (unsigned)Rando_CurrentTerrainRegistryCount(),
+              (unsigned)Rando_CurrentTerrainRegistryDigest());
       Rando_DeactivateSlot();
       return;
     }
@@ -5587,6 +5758,43 @@ void Rando_SelfCheck(void) {
     }
   }
 
+  // add-rando-grass-rock-shuffle Phase 4 — the same contract for the terrain
+  // lookup (Rando_GetTerrainLocation (screen,pos)->LOC): strictly sorted by
+  // (screen<<16|pos) + round-trips, plus the registry-digest identity that the
+  // sidecar activation guard uses (a non-empty registry, so a fail-open empty
+  // build is caught loudly here rather than silently at runtime).
+  {
+    uint32 prev = 0;
+    bool first = true;
+    for (uint32 i = 0; i < kRandoTerrainLookup_COUNT; i++) {
+      uint32 k = ((uint32)kRandoTerrainLookup[i].screen << 16) | kRandoTerrainLookup[i].pos;
+      if (!first && k <= prev) {
+        fprintf(stderr, "Rando_SelfCheck: terrain lookup not strictly sorted at %u\n", i);
+        exit(2);
+      }
+      first = false;
+      prev = k;
+      if (Rando_GetTerrainLocation(kRandoTerrainLookup[i].screen, kRandoTerrainLookup[i].pos) !=
+          kRandoTerrainLookup[i].loc_id) {
+        fprintf(stderr, "Rando_SelfCheck: terrain lookup round-trip failed at %u\n", i);
+        exit(2);
+      }
+    }
+    // Screen 0xFF is out of the 0x00..0x7F overworld-area range → not a
+    // terrain object → 0xFFFF (the hook stays pure vanilla).
+    if (Rando_GetTerrainLocation(0x00FF, 0x0000) != 0xFFFF) {
+      fprintf(stderr, "Rando_SelfCheck: terrain lookup of a non-object must be 0xFFFF\n");
+      exit(2);
+    }
+    // Registry-identity self-agreement: the compiled count/digest the sidecar
+    // guard stamps must match the lookup table (an empty/absent registry ==
+    // count 0, which the guard treats as fail-closed for terrain-active slots).
+    if (Rando_CurrentTerrainRegistryCount() != (uint16)kRandoTerrainLookup_COUNT) {
+      fprintf(stderr, "Rando_SelfCheck: terrain registry count disagrees with lookup\n");
+      exit(2);
+    }
+  }
+
   // Dispatch wrapper coverage (§6.1).
   // When no placement table is installed, Rando_OnLocationCheck returns
   // vanilla_item_id unchanged → Rando_DispatchVanillaGrant returns the
@@ -6933,9 +7141,7 @@ void Rando_TrackerSelfCheck(void) {
   slot.header.recommended_features0_present = 1;
   slot.header.recommended_features0 =
       kFeatures0_RestoreJpGlitches | kFeatures0_WidescreenVisualFixes;
-  slot.header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
-  slot.header.pot_registry_count = Rando_CurrentPotRegistryCount();
-  slot.header.pot_registry_present = 1;
+  Rando_StampSlotRegistries(&slot.header);
   g_config.features0 =
       (saved_config_features0 | kFeatures0_ExtendScreen64) &
       ~kFeatures0_WidescreenVisualFixes;
@@ -7097,9 +7303,7 @@ static void rando_selfcheck_build_slot(RandoSidecarSlot *slot, RandoSettings *s,
   ss.version = (uint8)kGeneratorVersion;
   ss.seed_u64 = seed;
   Share_PackBinary(&ss, slot->header.share_string);
-  slot->header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
-  slot->header.pot_registry_count = Rando_CurrentPotRegistryCount();
-  slot->header.pot_registry_present = 1;
+  Rando_StampSlotRegistries(&slot->header);
 }
 
 // Runtime starting-inventory injection wiring (Rando_TryGrantStartingInventory).
@@ -7687,7 +7891,48 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   fprintf(stderr, "[Rando_ReinstallOverlaysSelfCheck] OK\n");
 }
 
+// Cross-TU capacity ABI selfcheck (add-rando-grass-rock-shuffle D5; the
+// enemy-drop review lesson made concrete): the Makefile has no header
+// dependency tracking, so a kRandoLocationCapacity bump + incremental `make`
+// ships TUs compiled against DIFFERENT capacities — mixed-ABI location arrays
+// that historically passed selftest while producing a 16.8 GB runaway
+// spoiler. Every TU that sizes an array by the constant compiles a
+// RANDO_DEFINE_CAPACITY_PROBE; a mismatch here means stale objects — run
+// `make clean`.
+RANDO_DEFINE_CAPACITY_PROBE(rando)
+static void Rando_SelfCheckCapacityABI(void) {
+  static const struct { const char *tu; uint32 (*probe)(void); } kProbes[] = {
+    { "rando.c",              RandoCapacityProbe_rando },
+    { "auto_tracker.c",       RandoCapacityProbe_auto_tracker },
+    { "rando_generate.c",     RandoCapacityProbe_rando_generate },
+    { "rando_hints.c",        RandoCapacityProbe_rando_hints },
+    { "rando_placement.c",    RandoCapacityProbe_rando_placement },
+    { "rando_save.c",         RandoCapacityProbe_rando_save },
+    { "rando_snapshot_tail.c", RandoCapacityProbe_rando_snapshot_tail },
+    { "rando_spoiler.c",      RandoCapacityProbe_rando_spoiler },
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    { "rando_reach_panel.cpp", RandoCapacityProbe_rando_reach_panel },
+    { "tracker_windows.cpp",  RandoCapacityProbe_tracker_windows },
+#endif
+  };
+  for (size_t i = 0; i < sizeof(kProbes) / sizeof(kProbes[0]); i++) {
+    uint32 v = kProbes[i].probe();
+    if (v != kRandoLocationCapacity) {
+      fprintf(stderr,
+              "Rando_SelfCheckCapacityABI: %s compiled with capacity %u, "
+              "header says %u — STALE OBJECT (no header deps in Makefile); "
+              "run `make clean` and rebuild\n",
+              kProbes[i].tu, (unsigned)v, (unsigned)kRandoLocationCapacity);
+      exit(2);
+    }
+  }
+  fprintf(stderr, "[Rando_SelfCheckCapacityABI] OK (capacity %u, %u TUs)\n",
+          (unsigned)kRandoLocationCapacity,
+          (unsigned)(sizeof(kProbes) / sizeof(kProbes[0])));
+}
+
 void Rando_RunAllSelfChecks(void) {
+  Rando_SelfCheckCapacityABI();
   Rando_SelfCheck();
   if (RandoPot_OverlayOamSelfCheck()) {
     fprintf(stderr, "Rando_SelfCheck: pot overlay OAM allocation can clobber sorted sprites\n");

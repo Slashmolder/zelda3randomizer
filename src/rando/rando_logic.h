@@ -258,6 +258,8 @@ enum {
   LOCTYPE_Pot         = 17,  // Dungeon pot check (per-tier active subset)
   LOCTYPE_EnemyDrop   = 18,  // Forced enemy key-drop check (setting-active subset)
   LOCTYPE_Enemy       = 19,  // Ordinary dungeon enemy check.
+  LOCTYPE_Grass       = 20,  // Overworld bush/thick-grass check (add-rando-grass-rock-shuffle)
+  LOCTYPE_Rock        = 21,  // Overworld light/heavy rock check (add-rando-grass-rock-shuffle)
 };
 
 static inline bool Rando_LocationTypeCountsAsCheck(uint8 type) {
@@ -282,24 +284,58 @@ typedef struct RandoEdgeDef {
 
 extern const RandoLocationDef kRandoLocations[];
 extern const uint32 kRandoLocationsCount;
+// add-rando-grass-rock-shuffle — index of the first terrain (Grass/Rock)
+// location in the id-sorted kRandoLocations[]; terrain is a contiguous suffix
+// (codegen-asserted), so a loop that does not need inactive terrain rows can
+// bound by this instead of kRandoLocationsCount.
+extern const uint32 kRandoNonTerrainLocationsCount;
 
 // ---------------------------------------------------------------------------
 // Single location-id ceiling for the whole randomizer module.
 //
 // EVERY array, bitmap, loop bound, or guard keyed by a location_id MUST size /
 // bound by this constant — never a bare literal (512/1024). The static registry
-// is append-only and grows over time (328 baseline + 835 pot-sanity pots + all
-// enemy rows today); 4096 leaves headroom. Because every consumer routes through this one
-// name, a registry that ever exceeds capacity is a SINGLE build break — the
-// codegen `_Static_assert(LOC__COUNT <= 4096)` in location_ids.h plus the
-// `_Static_assert(LOC__COUNT <= kRandoLocationCapacity)` name-ties in rando.c /
-// rando_placement.c — not a silent overflow / truncation / drop (fail-open).
-// Keep the 4096 in location_ids.h's codegen assert (rando_logic_gen.py) in
-// lockstep with this value.
+// is append-only and grows over time (328 baseline + 835 pot-sanity pots +
+// enemy rows to id 1999 + ~3943 grass/rock terrain rows at base 2048 —
+// add-rando-grass-rock-shuffle); 8192 leaves headroom. Because every consumer
+// routes through this one name, a registry that ever exceeds capacity is a
+// SINGLE build break — the codegen `_Static_assert(LOC__COUNT <= 8192)` in
+// location_ids.h plus the `_Static_assert(LOC__COUNT <= kRandoLocationCapacity)`
+// name-ties in rando.c / rando_placement.c — not a silent overflow /
+// truncation / drop (fail-open). Keep the 8192 in location_ids.h's codegen
+// assert (rando_logic_gen.py) in lockstep with this value.
+//
+// CHANGING THIS VALUE: the Makefile has NO header-dependency tracking, so an
+// incremental `make` after a bump ships TUs compiled against DIFFERENT
+// capacities — mixed-ABI location arrays that historically passed selftest
+// while producing a 16.8 GB runaway spoiler (enemy-drop review). ALWAYS
+// `make clean`, and the per-TU capacity probes below let --rando-selftest
+// catch a stale object loudly (Rando_SelfCheckCapacityABI in rando.c).
 // ---------------------------------------------------------------------------
-#define kRandoLocationCapacity 4096
+#define kRandoLocationCapacity 8192
 extern const RandoRegionDef kRandoRegions[];
 extern const uint32 kRandoRegionsCount;
+
+// Cross-TU capacity ABI probes: every TU that sizes an array by
+// kRandoLocationCapacity defines one (C++ TUs with extern "C") returning its
+// compiled-in view of the constant; Rando_SelfCheckCapacityABI (rando.c,
+// --rando-selftest) asserts they all agree. ADD a probe (definition +
+// declaration here + checker row) when a new TU starts sizing arrays by the
+// constant.
+#define RANDO_DEFINE_CAPACITY_PROBE(tu) \
+  uint32 RandoCapacityProbe_##tu(void) { return kRandoLocationCapacity; }
+uint32 RandoCapacityProbe_rando(void);
+uint32 RandoCapacityProbe_auto_tracker(void);
+uint32 RandoCapacityProbe_rando_generate(void);
+uint32 RandoCapacityProbe_rando_hints(void);
+uint32 RandoCapacityProbe_rando_placement(void);
+uint32 RandoCapacityProbe_rando_save(void);
+uint32 RandoCapacityProbe_rando_snapshot_tail(void);
+uint32 RandoCapacityProbe_rando_spoiler(void);
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+uint32 RandoCapacityProbe_rando_reach_panel(void);
+uint32 RandoCapacityProbe_tracker_windows(void);
+#endif
 extern const RandoEdgeDef kRandoEdges[];
 extern const uint32 kRandoEdgesCount;
 

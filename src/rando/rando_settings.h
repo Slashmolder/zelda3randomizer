@@ -207,7 +207,33 @@ typedef struct RandoSettings {
   // pre-feature builds hard-refuse strings carrying it (forward-compat
   // refusal), and this build still refuses bits 5-7.
   uint8 npc_souls;
+  // add-rando-grass-rock-shuffle — overworld terrain checks. Two independent
+  // tier axes (TerrainShuffle: off/junk/all): grass covers bushes + cuttable
+  // thick grass, rock covers light(Glove)/heavy(Mitt) small rocks + big
+  // piles. junk = locations are junk-pad-only fill (no progression, no logic
+  // pressure); all = full open locations. Serialized in the APPENDED
+  // canonical byte [29] (grass bits 0-1, rock bits 2-3 — byte [28]'s free
+  // bits belong to the souls axes); older/shorter blobs zero-extend to Off.
+  // No derived-rule couplings: composes with door/cave-entrance/pot/enemy
+  // shuffles (terrain is overworld-surface-bound; see the change's D12).
+  uint8 grass_shuffle;
+  uint8 rock_shuffle;
 } RandoSettings;
+
+// add-rando-grass-rock-shuffle — shared tier values for both terrain axes.
+// Values are part of the determinism contract (additions go at the end).
+typedef enum {
+  kTerrainShuffle_Off  = 0,  // no terrain checks (default; byte-identical)
+  kTerrainShuffle_Junk = 1,  // active, junk-pad-only fill (no progression)
+  kTerrainShuffle_All  = 2,  // full open locations (progression may land)
+} TerrainShuffle;
+
+enum {
+  kGrassShuffleAxis_Shift = 0,        // canonical [29] bits 0-1
+  kGrassShuffleAxis_Mask  = 3u << 0,
+  kRockShuffleAxis_Shift  = 2,        // canonical [29] bits 2-3
+  kRockShuffleAxis_Mask   = 3u << 2,  // bits 4-7 refused-undefined
+};
 
 // add-rando-pot-sanity — pot_shuffle tiers. Values are part of the determinism
 // contract (additions go at the end). keys ⊆ contents ⊆ all. Value 4 (Subset)
@@ -352,7 +378,12 @@ enum {
 // to 29 by appending [28] (bits 0-1). add-enemy-souls takes [28] bits 2-3
 // (kSoulsShuffleAxis_*); add-npc-souls takes [28] bit 4 (kNpcSoulsAxis_*);
 // [28] bits 5-7 remain free (refused by Settings_FromCanonical until claimed).
-#define kSettingsCanonicalLen 29
+// add-rando-grass-rock-shuffle grew 29 -> 30 by appending [29]: grass_shuffle
+// bits 0-1 + rock_shuffle bits 2-3 (kGrassShuffleAxis_*/kRockShuffleAxis_*);
+// [29] bits 4-7 are refused-undefined. The length change alters every
+// settings_hash (SHA input length) — covered by that change's
+// kGeneratorVersion bump; sidecar format_version 8 widens the stored blob.
+#define kSettingsCanonicalLen 30
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
 // pool / 7 crystals each / dungeon items Vanilla / prize+medallion shuffle

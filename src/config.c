@@ -768,17 +768,22 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
         g_rando_window_prefs.has_settings = true;
         return true;
       }
-      // Compatibility with the immediately previous canonical layout: the new
-      // enemy_drop_checks byte is append-only and zero means Off, so a 28-byte
-      // rando_window.ini value can be promoted by zero-extending the tail.
-      enum { kLegacySettingsCanonicalLen28 = 28 };
-      if (kSettingsCanonicalLen == 29 &&
-          HexDecode(value, buf, kLegacySettingsCanonicalLen28)) {
-        memset(buf + kLegacySettingsCanonicalLen28, 0,
-               kSettingsCanonicalLen - kLegacySettingsCanonicalLen28);
-        memcpy(g_rando_window_prefs.settings_canonical, buf, kSettingsCanonicalLen);
-        g_rando_window_prefs.has_settings = true;
-        return true;
+      // Compatibility with EVERY prior canonical layout: the appended axis
+      // bytes ([28] enemy-drop/souls, [29] terrain) are all append-only with
+      // zero == Off, so a shorter rando_window.ini blob promotes cleanly by
+      // zero-extending the tail. Accept each legacy length in turn (the list
+      // grows by one entry per canonical append). Without the 29-byte entry a
+      // native-window save from the immediately-previous build would be
+      // rejected and the user's last settings silently reset (review LOW-3).
+      static const int kLegacyCanonicalLens[] = { 29, 28 };
+      for (size_t li = 0; li < sizeof(kLegacyCanonicalLens) / sizeof(kLegacyCanonicalLens[0]); ++li) {
+        int legacy = kLegacyCanonicalLens[li];
+        if (legacy < kSettingsCanonicalLen && HexDecode(value, buf, legacy)) {
+          memset(buf + legacy, 0, kSettingsCanonicalLen - legacy);
+          memcpy(g_rando_window_prefs.settings_canonical, buf, kSettingsCanonicalLen);
+          g_rando_window_prefs.has_settings = true;
+          return true;
+        }
       }
       fprintf(stderr, "[rando_window] bad last_settings_canonical_hex (need %d hex chars)\n",
               kSettingsCanonicalLen * 2);
@@ -815,6 +820,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_rando_window_prefs.check_tracker_only_available);
     } else if (StringEqualsNoCase(key, "check_tracker_show_pots")) {
       return ParseBool(value, &g_rando_window_prefs.check_tracker_show_pots);
+    } else if (StringEqualsNoCase(key, "check_tracker_show_terrain")) {
+      return ParseBool(value, &g_rando_window_prefs.check_tracker_show_terrain);
     } else if (StringEqualsNoCase(key, "check_tracker_show_items")) {
       return ParseBool(value, &g_rando_window_prefs.check_tracker_show_items);
     }
@@ -1052,6 +1059,8 @@ void Config_SaveRandoWindowIni(const char *path) {
           g_rando_window_prefs.check_tracker_only_available ? "true" : "false");
   fprintf(f, "check_tracker_show_pots = %s\n",
           g_rando_window_prefs.check_tracker_show_pots ? "true" : "false");
+  fprintf(f, "check_tracker_show_terrain = %s\n",
+          g_rando_window_prefs.check_tracker_show_terrain ? "true" : "false");
   fprintf(f, "check_tracker_show_items = %s\n",
           g_rando_window_prefs.check_tracker_show_items ? "true" : "false");
 

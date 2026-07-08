@@ -91,6 +91,8 @@ static const uint16 kAtDefaultPort = 17400;
 static const uint8  kAtLocTypeMedallion = 13;  // logic.schema.yaml: MM/TR medallion-config
 static const uint8  kAtLocTypePot       = 17;  // add-rando-pot-sanity dungeon pot (tagged in the catalog)
                                                // pseudo-locations (not real checks) — excluded.
+static const uint8  kAtLocTypeGrass     = 20;  // add-rando-grass-rock-shuffle bush/thick-grass check
+static const uint8  kAtLocTypeRock      = 21;  // add-rando-grass-rock-shuffle light/heavy rock check
 
 static bool at_last_would_block(void) {
 #if defined(_WIN32)
@@ -549,6 +551,12 @@ static void at_build_catalog(AtStr *s) {
     // the ~800 dungeon-pot checks (a pot_shuffle=All seed) into their own view.
     if (kRandoLocations[i].type == kAtLocTypePot)
       at_str_puts(s, ",\"pot\":true");
+    // add-rando-grass-rock-shuffle — tag terrain slots so a tracker can filter
+    // the ~3900 overworld bush/grass/rock checks into their own view.
+    if (kRandoLocations[i].type == kAtLocTypeGrass)
+      at_str_puts(s, ",\"grass\":true");
+    if (kRandoLocations[i].type == kAtLocTypeRock)
+      at_str_puts(s, ",\"rock\":true");
     at_str_puts(s, "}");
     first = 0;
   }
@@ -858,3 +866,6 @@ void AutoTracker_GetBindInfo(uint16 *port, bool *allow_remote) {
 }
 
 #endif  // __SWITCH__
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(auto_tracker)

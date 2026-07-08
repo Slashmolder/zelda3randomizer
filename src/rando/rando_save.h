@@ -58,7 +58,11 @@
 //       absent. New writes are always v5.
 //   7 — add-npc-souls widens the soul-ownership bitfield 8->12 bytes
 //       (@33-36 carry soul_flags[8..11]); v6 files read the tail as zero.
-#define kRandoSidecar_FileFormatVersion 7
+//   8 — add-rando-grass-rock-shuffle: widens the settings blob 29->30 bytes
+//       (canonical byte [29] = terrain axes; older blobs zero-extend to Off)
+//       and extends the ext block with the terrain registry identity
+//       (@37-43, mirroring the v4 pot guard). New writes are always v8.
+#define kRandoSidecar_FileFormatVersion 8
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -88,7 +92,14 @@
 // format_version >= 7 (add-npc-souls): soul_flags widened to kSoulFlagsBytes.
 //   @33-36  soul_flags[8..11] (NPC souls start at bit 46)
 #define kRandoSidecar_SlotExtV7Size     37
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV7Size
+// format_version >= 8 (add-rando-grass-rock-shuffle): terrain registry
+// identity (activation guard mirroring the v4 pot fields). The same version
+// widens the stored settings blob to 30 bytes (canonical byte [29]).
+//   @37-40  terrain_registry_digest (u32 LE)
+//   @41-42  terrain_registry_count (u16 LE)
+//   @43     terrain_registry_present (u8; 1 = refuse terrain-enabled drift)
+#define kRandoSidecar_SlotExtV8Size     44
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV8Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -298,6 +309,15 @@ typedef struct RandoSlotHeader {
   // kSoulFlagsBytes (souls.h) wide — v6 carries bytes 0-7, v7 all 12; the
   // sizeof-copy sites in rando.c and the TLV width follow this array.
   uint8 soul_flags[12];          // v6 @25-32 + v7 @33-36 (bit idx = soul idx)
+  // add-rando-grass-rock-shuffle — local terrain registry identity. Terrain
+  // locations are generated from ROM-derived local artifacts
+  // (terrain.gen.yaml) and are absent in public/assetless builds; a
+  // terrain-enabled slot must prove the current binary carries the SAME
+  // registry before activation (the chest_lookup fail-open class). On disk
+  // in the format_version-8 extension block.
+  uint32 terrain_registry_digest;  // v8 ext block @37-40
+  uint16 terrain_registry_count;   // v8 ext block @41-42
+  uint8 terrain_registry_present;  // v8 ext block @43
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

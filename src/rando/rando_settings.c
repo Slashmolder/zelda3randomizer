@@ -44,6 +44,9 @@
 //   offset 28  enemy_drop_checks           bits0-1 (EnemyDropChecks enum)
 //                                          bits2-3 souls_shuffle (SoulsShuffle
 //                                          enum, add-enemy-souls)
+//   offset 29  grass_shuffle               bits0-1 (TerrainShuffle enum)
+//              rock_shuffle                bits2-3 (TerrainShuffle enum,
+//                                          add-rando-grass-rock-shuffle)
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
@@ -122,6 +125,8 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->pot_shuffle = kPotShuffle_Off;
   // add-rando-enemy-drop-sanity — enemy drops are not locations by default.
   s->enemy_drop_checks = kEnemyDropChecks_Off;
+  s->grass_shuffle = kTerrainShuffle_Off;  // add-rando-grass-rock-shuffle
+  s->rock_shuffle = kTerrainShuffle_Off;
   // add-enemy-souls — souls off by default ([28] bits 2-3 stay 0; corpus +
   // default settings_hash byte-identical).
   s->souls_shuffle = kSoulsShuffle_Off;
@@ -453,6 +458,12 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   out[28] = (uint8)((s->enemy_drop_checks & 3u) |
                     ((s->souls_shuffle << kSoulsShuffleAxis_Shift) & kSoulsShuffleAxis_Mask) |
                     (s->npc_souls ? kNpcSoulsAxis_Enabled : 0));
+  // add-rando-grass-rock-shuffle — the appended terrain byte [29]:
+  // grass_shuffle bits 0-1, rock_shuffle bits 2-3 (TerrainShuffle enum).
+  // Defaults keep the byte 0x00; the LENGTH growth 29->30 changes every
+  // settings_hash once, under that change's kGeneratorVersion bump.
+  out[29] = (uint8)(((s->grass_shuffle << kGrassShuffleAxis_Shift) & kGrassShuffleAxis_Mask) |
+                    ((s->rock_shuffle << kRockShuffleAxis_Shift) & kRockShuffleAxis_Mask));
   return kSettingsCanonicalLen;
 }
 
@@ -555,6 +566,14 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // add-npc-souls — [28] bit 4. Zero (default / pre-npc file) yields off.
   s.npc_souls = (in[28] & kNpcSoulsAxis_Enabled) ? 1 : 0;
   if (in[28] & ~(uint8)(3u | kSoulsShuffleAxis_Mask | kNpcSoulsAxis_Enabled)) return -2;
+  // add-rando-grass-rock-shuffle — the appended terrain byte [29]. Zero
+  // (default) yields Off for both axes; bits 4-7 are refused-undefined like
+  // [28]'s tail, and the per-field value 3 is out of the TerrainShuffle
+  // range (off/junk/all) — corruption, not forward-compat.
+  s.grass_shuffle = (uint8)((in[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift);
+  s.rock_shuffle = (uint8)((in[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift);
+  if (in[29] & ~(uint8)(kGrassShuffleAxis_Mask | kRockShuffleAxis_Mask)) return -2;
+  if (s.grass_shuffle > kTerrainShuffle_All || s.rock_shuffle > kTerrainShuffle_All) return -2;
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -719,7 +738,7 @@ void Settings_SelfCheck(void) {
     0x00, 0x01, 0x07, 0x07, 0x00, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x01, 0x00, 0x14, 0x00, 0x1e, 0x00, 0x01, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   };
   if (!settings_byte_eq(canonical, kExpectedCanonical, kSettingsCanonicalLen)) {
     fprintf(stderr,
@@ -737,12 +756,13 @@ void Settings_SelfCheck(void) {
 
   uint8 hash[32];
   Settings_ComputeHash(&s, hash);
-  // SHA-256 of the kExpectedCanonical bytes (29 bytes; hints=1 default).
+  // SHA-256 of the kExpectedCanonical bytes (30 bytes; hints=1 default —
+  // re-pinned when add-rando-grass-rock-shuffle appended byte [29]).
   static const uint8 kExpectedHash[32] = {
-    0x66, 0x42, 0x0f, 0x26, 0x0d, 0x13, 0xb6, 0x7d,
-    0x1b, 0x0b, 0x40, 0x12, 0x62, 0x48, 0xe3, 0x98,
-    0x42, 0x88, 0x0f, 0xc1, 0xec, 0x09, 0xca, 0xd5,
-    0xf9, 0xff, 0xfe, 0x2b, 0x44, 0xa2, 0x2e, 0xb3,
+    0x27, 0xb2, 0x1b, 0x4c, 0x5f, 0xf1, 0x2e, 0xf6,
+    0x04, 0x71, 0x33, 0x66, 0xf9, 0x48, 0x60, 0x32,
+    0xb0, 0x26, 0x91, 0xc4, 0x8e, 0x12, 0x17, 0x0c,
+    0xf7, 0x5c, 0x7a, 0xad, 0x9f, 0xc7, 0xf1, 0x48,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,
@@ -2199,6 +2219,14 @@ static int parse_souls_shuffle(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+// add-rando-grass-rock-shuffle — shared tier grammar for both terrain axes.
+static int parse_terrain_shuffle(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))  { *out = kTerrainShuffle_Off;  return 0; }
+  if (csv_str_eq(v, vlen, "junk") || csv_str_eq(v, vlen, "1")) { *out = kTerrainShuffle_Junk; return 0; }
+  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "2"))  { *out = kTerrainShuffle_All;  return 0; }
+  return -1;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint64 seen;
@@ -2265,6 +2293,8 @@ enum {
   // add-enemy-souls — souls_shuffle tier (off|bosses|all).
   KEY_souls_shuffle,
   KEY_npc_souls,
+  KEY_grass_shuffle,   // add-rando-grass-rock-shuffle
+  KEY_rock_shuffle,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -2491,6 +2521,16 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // canonical [28] bit 4; independent of souls_shuffle.
     MARK_SEEN(KEY_npc_souls);
     if (parse_bool(val, vlen, &s->npc_souls) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "grass_shuffle")) {
+    // add-rando-grass-rock-shuffle — bushes + thick grass as checks
+    // (off|junk|all). Serialized in the appended canonical [29] bits 0-1.
+    MARK_SEEN(KEY_grass_shuffle);
+    if (parse_terrain_shuffle(val, vlen, &s->grass_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "rock_shuffle")) {
+    // add-rando-grass-rock-shuffle — light/heavy rocks + piles as checks
+    // (off|junk|all). Serialized in canonical [29] bits 2-3.
+    MARK_SEEN(KEY_rock_shuffle);
+    if (parse_terrain_shuffle(val, vlen, &s->rock_shuffle) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);

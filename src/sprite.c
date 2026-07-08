@@ -2858,6 +2858,57 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
   }
 }
 
+// add-rando-grass-rock-shuffle — capped nearest-N in-world "check" glint over
+// unchecked+active terrain objects. Mirrors Rando_DrawOverworldEnemyMarkerGlints
+// (runs after Sprite_Main, in the BG-scroll-copy window). The collector caps at
+// the nearest kRandoTerrainGlintCap so a 159-object screen never overruns OAM.
+void Rando_DrawTerrainGlints(void) {
+  if (player_is_indoors || !(enhanced_features1 & kFeatures1_RandomizerActive))
+    return;
+  uint16 pos_list[kRandoTerrainGlintCap];
+  int n = Rando_CollectTerrainGlints(pos_list, kRandoTerrainGlintCap);
+  if (n == 0)
+    return;
+  // Reserve a sprite sub-palette row no on-screen sprite uses (NMI golds it);
+  // never take Link's row 7. Same scan as the enemy glint.
+  uint8 used = 1u << 7;
+  for (int i = 0; i < 128; i++) {
+    if (oam_buf[i].y < 0xf0)
+      used |= 1u << ((oam_buf[i].flags >> 1) & 7);
+  }
+  int prow = -1;
+  for (int r = 0; r < 8; r++) {
+    if (!(used & (1u << r))) { prow = r; break; }
+  }
+  if (prow < 0)
+    return;
+  static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
+  uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
+  int bob = (frame_counter >> 3) & 3;
+  uint8 flags = (uint8)((prow << 1) | 0x20);
+  int32 basex = (int32)overworld_offset_base_x << 3;
+  int32 basey = (int32)overworld_offset_base_y;
+  bool drew = false;
+  for (int i = 0; i < n; i++) {
+    uint16 pos = pos_list[i];
+    int col = (pos & 0x7e) >> 1, row = pos >> 7;
+    // Object world coords -> screen (world minus camera, the Sprite_PrepOamCoord
+    // convention). Center the 8x8 glint on the 16x16 object, less the bob.
+    int sx = (uint16)((basex + col * 16) - BG2HOFS_copy2);
+    int sy = (uint16)((basey + row * 16) - BG2VOFS_copy2);
+    int gx = sx + 4;
+    int gy = sy + 2 - bob;
+    if (gx < 0 || gx > 248 || gy < 0 || gy > 216)
+      continue;
+    if (!Rando_EnemyMarkerAllocateGlintOam())
+      continue;
+    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
+    drew = true;
+  }
+  if (drew)
+    Rando_OverlayPaletteRequestGold((uint8)prow);
+}
+
 bool Rando_EnemyDropMarkerNeedsOverlay(int k) {
   return Rando_GetEnemyDropPickupMarkerInfo(k, NULL) ||
          Rando_GetEnemyDropCarrierMarkerInfo(k, NULL);

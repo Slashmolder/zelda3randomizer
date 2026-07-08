@@ -103,14 +103,19 @@ static uint32 slot_on_disk_size_base(uint16 placement_table_size) {
 }
 
 enum { kRandoSidecar_LegacySettingsCanonicalLen28 = 28 };
+enum { kRandoSidecar_LegacySettingsCanonicalLen29 = 29 };  // v4..v7 blob width
 
 static uint32 settings_blob_len_versioned(uint16 format_version) {
   if (format_version < 2) return 0;
   if (format_version < 4) return kRandoSidecar_LegacySettingsCanonicalLen28;
+  // v4..v7 carried the 29-byte blob; v8 (add-rando-grass-rock-shuffle) widened
+  // it to the current kSettingsCanonicalLen (30) for the terrain byte [29].
+  if (format_version < 8) return kRandoSidecar_LegacySettingsCanonicalLen29;
   return kSettingsCanonicalLen;
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 8) return kRandoSidecar_SlotExtV8Size;
   if (format_version >= 7) return kRandoSidecar_SlotExtV7Size;
   if (format_version >= 6) return kRandoSidecar_SlotExtV6Size;
   if (format_version >= 5) return kRandoSidecar_SlotExtV5Size;
@@ -414,6 +419,13 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     p[24] = 1;
     memcpy(p + 25, slot->header.soul_flags, sizeof(slot->header.soul_flags));
   }
+  // format_version 8: terrain registry identity @37-43
+  // (add-rando-grass-rock-shuffle activation guard, mirroring the pot block).
+  if (slot->header.terrain_registry_present) {
+    put_u32le(p + 37, slot->header.terrain_registry_digest);
+    put_u16le(p + 41, slot->header.terrain_registry_count);
+    p[43] = 1;
+  }
   return size;
 }
 
@@ -527,6 +539,19 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.souls_present = 0;
       memset(out->header.soul_flags, 0, sizeof(out->header.soul_flags));
     }
+    if (format_version >= 8 && ext_len >= kRandoSidecar_SlotExtV8Size) {
+      // add-rando-grass-rock-shuffle: terrain registry identity @37-43.
+      out->header.terrain_registry_digest = get_u32le(p + 37);
+      out->header.terrain_registry_count = get_u16le(p + 41);
+      out->header.terrain_registry_present = p[43] != 0;
+    } else {
+      // Pre-v8 file: no terrain identity. Safe — pre-terrain slots carry both
+      // axes off in the (zero-extended) settings blob, so the activation guard
+      // is never consulted for them.
+      out->header.terrain_registry_digest = 0;
+      out->header.terrain_registry_count = 0;
+      out->header.terrain_registry_present = 0;
+    }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
@@ -541,6 +566,9 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.chains_digest24 = 0;
     out->header.souls_present = 0;
     memset(out->header.soul_flags, 0, sizeof(out->header.soul_flags));
+    out->header.terrain_registry_digest = 0;
+    out->header.terrain_registry_count = 0;
+    out->header.terrain_registry_present = 0;
   }
   return total;
 }
@@ -1368,14 +1396,17 @@ void RandoSave_SelfCheck(void) {
     uint32 v4_bitmap = (loc_count + 7) >> 3;
     p[0] = 0x05;
     p += v4_bitmap;
-    memcpy(p, src.settings_canonical, kSettingsCanonicalLen);
-    p += kSettingsCanonicalLen;
+    // A REAL v4 file carries the 29-byte legacy blob (the 30-byte width is
+    // v8+ — add-rando-grass-rock-shuffle); the reader zero-extends byte [29].
+    memcpy(p, src.settings_canonical, kRandoSidecar_LegacySettingsCanonicalLen29);
+    p += kRandoSidecar_LegacySettingsCanonicalLen29;
     p[0] = 0xEF; p[1] = 0xCD; p[2] = 0xAB;
     put_u32le(p + 8, 0x12345678u);
     put_u16le(p + 12, 0x0456u);
     p[14] = 1;
     uint32 v4_total = kRandoSidecar_SlotHeaderSize + loc_count * 2 + v4_bitmap +
-                      kSettingsCanonicalLen + kRandoSidecar_SlotExtV4Size;
+                      kRandoSidecar_LegacySettingsCanonicalLen29 +
+                      kRandoSidecar_SlotExtV4Size;
 
     RandoSidecarSlot v4dst;
     uint32 v4_used = deserialize_slot_versioned(v4buf, v4_total, &v4dst, 4);
@@ -1776,3 +1807,6 @@ void RandoSave_SelfCheck(void) {
 
   fprintf(stderr, "[RandoSave_SelfCheck] OK\n");
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_save)

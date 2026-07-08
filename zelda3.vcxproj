@@ -1021,6 +1021,7 @@
     <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
     <RandoCodegenInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
+    <RandoCodegenInput Include="assets\rando\terrain.gen.yaml" Condition="Exists('assets\rando\terrain.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\enemy_drops.gen.yaml" Condition="Exists('assets\rando\enemy_drops.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\enemy_checks.gen.yaml" Condition="Exists('assets\rando\enemy_checks.gen.yaml')" />
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
@@ -1031,6 +1032,7 @@
     <RandoCodegenOutput Include="src\rando\item_ids.h" />
     <RandoCodegenOutput Include="src\rando\chest_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_lookup.h" />
+    <RandoCodegenOutput Include="src\rando\terrain_lookup.h" />
     <RandoCodegenOutput Include="src\rando\enemy_drop_lookup.h" />
     <RandoCodegenOutput Include="src\rando\enemy_check_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_nonpot_drop_counts.h" />

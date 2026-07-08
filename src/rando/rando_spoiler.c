@@ -581,6 +581,12 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"souls_shuffle\": %u,\n",
           (uint8)((canon[28] & kSoulsShuffleAxis_Mask) >> kSoulsShuffleAxis_Shift));
   fprintf(f, "    \"npc_souls\": %s,\n", (canon[28] & kNpcSoulsAxis_Enabled) ? "true" : "false");
+  // add-rando-grass-rock-shuffle — the terrain axes ride canon[29] (the
+  // pot-sanity 91a2aef lesson: every axis emits, or corpus scoping is blind).
+  fprintf(f, "    \"grass_shuffle\": %u,\n",
+          (uint8)((canon[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift));
+  fprintf(f, "    \"rock_shuffle\": %u,\n",
+          (uint8)((canon[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift));
   fprintf(f, "    \"canonical_hex\": \"");
   for (int ci = 0; ci < kSettingsCanonicalLen; ci++) fprintf(f, "%02x", canon[ci]);
   fprintf(f, "\"\n");
@@ -1366,3 +1372,6 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fclose(f);
   return true;
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_spoiler)

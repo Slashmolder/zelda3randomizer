@@ -1507,7 +1507,18 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
     //       since the unbound Fountain slots 140/141 were retired), AND
     //   (c) its can_reach predicate evaluates true under the current
     //       inventory snapshot.
-    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    // add-rando-grass-rock-shuffle: terrain locations (Grass/Rock) are a
+    // contiguous suffix of the id-sorted registry. When NEITHER axis is
+    // active they are placement-inert and nothing consumes their reachable
+    // bits, so bound the expansion at the non-terrain count — skipping 3943
+    // rows per pass entirely (a door-shuffle corpus seed's generation
+    // otherwise crosses the 120 s budget). When at least one axis is active
+    // we walk the full array and skip only the inactive-axis rows inline.
+    bool any_terrain = settings->grass_shuffle != kTerrainShuffle_Off ||
+                       settings->rock_shuffle != kTerrainShuffle_Off;
+    uint32 loc_scan_n = any_terrain ? kRandoLocationsCount
+                                    : kRandoNonTerrainLocationsCount;
+    for (uint32 i = 0; i < loc_scan_n; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
       // Bound loc->id before indexing the [kReachabilityMaxLocations]-sized
       // bitset. Every shipping id is < kRandoLocationCapacity (a codegen
@@ -1517,6 +1528,11 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
       // mirroring the bounded cleared-dungeons boss loop instead of corrupting
       // adjacent memory.
       if (loc->id >= kReachabilityMaxLocations) continue;
+      // With a terrain axis active, still skip the OTHER axis's inactive rows.
+      if (loc->type == LOCTYPE_Grass &&
+          settings->grass_shuffle == kTerrainShuffle_Off) continue;
+      if (loc->type == LOCTYPE_Rock &&
+          settings->rock_shuffle == kTerrainShuffle_Off) continue;
       if (bitset_has(g_reachability.location_bitset, loc->id)) continue;
       if (loc->world_state_filter != 0) {
         // Guard the shift: world_state is validated at every byte entry point

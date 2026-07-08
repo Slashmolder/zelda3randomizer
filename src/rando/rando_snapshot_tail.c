@@ -357,10 +357,16 @@ bool RandoSnapshotTail_Save(FILE *f) {
   }
 
   if (g_has_settings_ctx) {
-    uint8 pp[7];
-    pp[0] = 1u;  // format_version
+    // PotRegistry TLV, payload format_version 2: pot identity (v1) followed by
+    // the terrain registry identity (add-rando-grass-rock-shuffle). Extending
+    // this TLV instead of adding a new type keeps the snapshot's TLV COUNT
+    // unchanged, so the round-trip selfchecks' recognized-count asserts stand.
+    uint8 pp[13];
+    pp[0] = 2u;  // format_version 2 = pot + terrain
     put_u32le_bytes(pp + 1, Rando_CurrentPotRegistryDigest());
     put_u16le_bytes(pp + 5, Rando_CurrentPotRegistryCount());
+    put_u32le_bytes(pp + 7, Rando_CurrentTerrainRegistryDigest());
+    put_u16le_bytes(pp + 11, Rando_CurrentTerrainRegistryCount());
     uint8 phdr[16];
     memcpy(phdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
     put_u32le_bytes(phdr + 8, kRandoSnapshotTail_Type_PotRegistry);
@@ -484,6 +490,12 @@ int RandoSnapshotTail_Load(FILE *f) {
   bool has_pot_registry_ctx = false;
   uint32 pot_registry_digest = 0;
   uint16 pot_registry_count = 0;
+  // add-rando-grass-rock-shuffle — terrain registry identity rides the same
+  // PotRegistry TLV (payload format_version 2 appends it), so cold replay
+  // guards a terrain-active snapshot the way the sidecar activation guard does.
+  bool has_terrain_registry_ctx = false;
+  uint32 terrain_registry_digest = 0;
+  uint16 terrain_registry_count = 0;
   bool pending_settings_header_clear = false;
   bool accepted_rando_state = false;
 
@@ -633,6 +645,9 @@ int RandoSnapshotTail_Load(FILE *f) {
       has_pot_registry_ctx = false;
       pot_registry_digest = 0;
       pot_registry_count = 0;
+      has_terrain_registry_ctx = false;
+      terrain_registry_digest = 0;
+      terrain_registry_count = 0;
       pending_settings_header_clear = true;
       pending_chain_layout = false;
 
@@ -656,19 +671,29 @@ int RandoSnapshotTail_Load(FILE *f) {
     }
 
     if (type == kRandoSnapshotTail_Type_PotRegistry) {
-      // Payload: format_version[1] + registry_digest[4] + registry_count[2].
+      // Payload v1: format_version[1] + pot_digest[4] + pot_count[2] (7 bytes).
+      // Payload v2 (add-rando-grass-rock-shuffle): + terrain_digest[4] +
+      // terrain_count[2] (13 bytes). Read up to 13; v1 snapshots leave the
+      // terrain context absent (so a terrain-active v1 snapshot is refused
+      // below — correct, terrain didn't exist when v1 was written).
       if (length < 7u) {
         if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
-      uint8 pp[7];
-      if (fread(pp, 1, sizeof(pp), f) != sizeof(pp)) FINISH_LOAD();
-      if (length > sizeof(pp) && fseek(f, (long)(length - sizeof(pp)), SEEK_CUR) != 0)
+      uint8 pp[13];
+      size_t take = length < sizeof(pp) ? (size_t)length : sizeof(pp);
+      if (fread(pp, 1, take, f) != take) FINISH_LOAD();
+      if (length > take && fseek(f, (long)(length - take), SEEK_CUR) != 0)
         FINISH_LOAD();
-      if (pp[0] == 1u) {
+      if (pp[0] >= 1u && take >= 7u) {
         pot_registry_digest = get_u32le_bytes(pp + 1);
         pot_registry_count = get_u16le_bytes(pp + 5);
         has_pot_registry_ctx = true;
+      }
+      if (pp[0] >= 2u && take >= 13u) {
+        terrain_registry_digest = get_u32le_bytes(pp + 7);
+        terrain_registry_count = get_u16le_bytes(pp + 11);
+        has_terrain_registry_ctx = true;
       }
       recognized++;
       continue;
@@ -744,6 +769,24 @@ int RandoSnapshotTail_Load(FILE *f) {
             fprintf(stderr,
                     "RandoSnapshotTail: pot-shuffle registry drift or missing "
                     "registry identity — deactivating randomizer state\n");
+            Rando_DeactivateSlot();
+            pending_door_layout = false;
+            pending_chain_layout = false;
+            recognized++;
+            FINISH_LOAD();
+          }
+          // add-rando-grass-rock-shuffle — same guard for the terrain registry
+          // (review MED-2): a terrain-active snapshot replayed on a build with
+          // absent (v1 TLV / empty) or drifted terrain data would otherwise
+          // reinstall stale terrain placement ids unguarded.
+          if (Rando_SettingsNeedTerrainRegistry(&s) &&
+              (!has_terrain_registry_ctx ||
+               Rando_CurrentTerrainRegistryCount() == 0 ||
+               !Rando_TerrainRegistryMatches(terrain_registry_digest,
+                                             terrain_registry_count))) {
+            fprintf(stderr,
+                    "RandoSnapshotTail: grass/rock terrain registry drift or "
+                    "missing registry identity — deactivating randomizer state\n");
             Rando_DeactivateSlot();
             pending_door_layout = false;
             pending_chain_layout = false;
@@ -2343,3 +2386,6 @@ void RandoSnapshotTail_SelfCheck(void) {
 
   fprintf(stderr, "[RandoSnapshotTail_SelfCheck] OK\n");
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_snapshot_tail)

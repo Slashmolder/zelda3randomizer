@@ -90,6 +90,38 @@ macros:
     source: "app/Support/ItemCollection.php:378-382"
 
   # ===========================================================================
+  # CanCutGrass — thick-grass (map16 0x37e) consume set. Fork-original
+  # (add-rando-grass-rock-shuffle): the ONLY engine paths that consume thick
+  # grass are the sword slash (Overworld_ToolAndTileInteraction, attr 0x37e
+  # branch — the hammer branch handles pegs only, and powder-in-hand skips the
+  # grass case) and bombs (Overworld_BombTile k=3 branch). Bushes need no tool
+  # (bare-handed lift) so they carry no cutter macro.
+  # ===========================================================================
+  - name: CanCutGrass
+    parameters: []
+    body: "HasSword(1) OR CanBombThings()"
+    source: "fork: src/overworld.c Overworld_ToolAndTileInteraction / Overworld_BombTile"
+
+  # ===========================================================================
+  # TerrainWorldGateLW / TerrainWorldGateDW — world-side bunny gates for
+  # overworld terrain checks (add-rando-grass-rock-shuffle D7). The bunny can
+  # neither lift nor cut, so a terrain object on the AWAY world side needs the
+  # Moon Pearl (or a pearl-bypass glitch tier). World-state aware in ONE entry:
+  # DW objects are home-side in Inverted; LW objects are home-side otherwise —
+  # deliberately better than pot sanity's non-state-aware DW gate (its known
+  # Inverted over-restriction).
+  # ===========================================================================
+  - name: TerrainWorldGateLW
+    parameters: []
+    body: "(NOT WORLDSTATE_EQ(inverted)) OR HAS_ITEM(MoonPearl) OR CanPearlBypass()"
+    source: "fork: add-rando-grass-rock-shuffle design D7"
+
+  - name: TerrainWorldGateDW
+    parameters: []
+    body: "WORLDSTATE_EQ(inverted) OR HAS_ITEM(MoonPearl) OR CanPearlBypass()"
+    source: "fork: add-rando-grass-rock-shuffle design D7"
+
+  # ===========================================================================
   # canLightTorches — fire source.
   # ===========================================================================
   - name: CanLightTorches

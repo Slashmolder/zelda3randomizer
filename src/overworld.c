@@ -19,6 +19,7 @@
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
 #include "rando/inverted_maps.h" // Overworld_ApplyInvertedTiles (#82 Inverted topology)
 #include "rando/medallion_icons.h"  // Rando_PatchMedallionEntranceMap8
+#include <stdio.h>  // Overworld_DumpTerrainTable (--dump-terrain-table)
 
 static bool CutsceneFastForwardEnabled(void) {
   return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
@@ -755,6 +756,7 @@ void Module09_Overworld() {  // 82a475
 
   Sprite_Main();
   Rando_DrawOverworldEnemyMarkerGlints();
+  Rando_DrawTerrainGlints();  // add-rando-grass-rock-shuffle — capped "check" glints
 
   BG2HOFS_copy2 = bg2x;
   BG2VOFS_copy2 = bg2y;
@@ -3841,9 +3843,20 @@ uint16 Overworld_ToolAndTileInteraction(uint16 x, uint16 y) {  // 9bbd82
         yv = (attr == 0x72a) ? 0xdc8 : 0xdc7;
         uint32 result;
 check_secret:
-        result = Overworld_RevealSecret(pos);
-        if (result != 0)
-          yv = result;
+        // add-rando-grass-rock-shuffle: hook the bush-cut / thick-grass-cut
+        // consume (yv 0xdc5/0xdc7/0xdc8). The shovel/dig path (yv==0xdc9) is a
+        // dig spot, NOT a terrain object — leave it to vanilla. On Suppress
+        // the placed item was granted; skip RevealSecret and set the 0xFF
+        // no-spawn sentinel (a ZERO would trigger the outdoor random-secret
+        // substitution) so nothing spawns and yv keeps its cut-tile value.
+        if (yv != 0xdc9 &&
+            Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+          BYTE(dung_secrets_unk1) = 0xff;
+        } else {
+          result = Overworld_RevealSecret(pos);
+          if (result != 0)
+            yv = result;
+        }
 memoize_getout:
         overworld_tileattr[pos >> 1] = yv;
         Overworld_Memorize_Map16_Change(pos, yv);
@@ -3917,9 +3930,17 @@ uint8 Overworld_HandleLiftableTiles(Point16U *pt_arg) {  // 9bbf9d
 }
 
 uint8 Overworld_LiftingSmallObj(uint16 a, uint16 pos, uint16 y, Point16U pt) {  // 9bc008
-  uint16 secret = Overworld_RevealSecret(pos);
-  if (secret != 0)
-    y = secret;
+  // add-rando-grass-rock-shuffle: lift-consume of a bush / small rock. A sign
+  // (map16 0x101) also routes here but is NOT registered, so the hook returns
+  // Vanilla for it. On Suppress the placed item was granted; keep the lifted
+  // replacement tile (y) and set the 0xFF no-spawn sentinel.
+  if (Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+    BYTE(dung_secrets_unk1) = 0xff;
+  } else {
+    uint16 secret = Overworld_RevealSecret(pos);
+    if (secret != 0)
+      y = secret;
+  }
   overworld_tileattr[pos >> 1] = y;
   Overworld_Memorize_Map16_Change(pos, y);
   Overworld_DrawMap16(pos, y);
@@ -3955,7 +3976,18 @@ uint8 SmashRockPile_fromLift(uint16 a, uint16 pos, uint16 y, Point16U pt) {  // 
   *(uint16 *)&g_ram[0] = pt.y;
   *(uint16 *)&g_ram[2] = pt.x;
 
-  uint16 secret = Overworld_RevealSecret(pos);
+  // add-rando-grass-rock-shuffle: big-pile lift-consume, keyed on the pile
+  // ORIGIN pos (reassigned above — the registry key). A pile whose vanilla
+  // secret is the structural stairs reveal (data 0xffff) is excluded from the
+  // registry, so the hook returns Vanilla and the stairs branch below still
+  // runs. On Suppress the placed item was granted; no structural reveal.
+  uint16 secret;
+  if (Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+    BYTE(dung_secrets_unk1) = 0xff;
+    secret = 0;
+  } else {
+    secret = Overworld_RevealSecret(pos);
+  }
   pt.y = *(uint16 *)&g_ram[0];
   pt.x = *(uint16 *)&g_ram[2];
 
@@ -4005,9 +4037,18 @@ void Overworld_BombTile(int x, int y) {  // 9bc155
   } else {
     goto label_a;
   }
-  a = Overworld_RevealSecret(pos);
-  if (a == 0)
+  // add-rando-grass-rock-shuffle: bomb-consume of a bush / thick grass (this
+  // is the CONSUMING branch — the label_a probe below runs for non-consumed
+  // blast tiles and the super-bomb follower and must NOT be hooked). On
+  // Suppress the placed item was granted; draw the cut tile (j), no secret.
+  if (Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+    BYTE(dung_secrets_unk1) = 0xff;
     a = j;
+  } else {
+    a = Overworld_RevealSecret(pos);
+    if (a == 0)
+      a = j;
+  }
   dung_bg2[pos >> 1] = a;
   Overworld_Memorize_Map16_Change(pos, a);
   Overworld_DrawMap16(pos, a);
@@ -4659,4 +4700,193 @@ void OverworldEntrance_AdvanceAndBoom() {  // 9bd00e
   overworld_entrance_sequence_counter = 0;
   sound_effect_1 = 12;
   sound_effect_2 = 7;
+}
+
+// ---------------------------------------------------------------------------
+// --dump-terrain-table (dev/codegen): enumerate every consumable overworld
+// terrain object (bushes, thick grass, small rocks, big rock piles; signs and
+// dash-only bonk piles reported-but-excluded) as GROUND TRUTH from the engine
+// itself, for assets/scripts/gen_terrain_tables.py (grass/rock drop shuffle,
+// openspec change add-rando-grass-rock-shuffle Phase 1). Mirrors the
+// --dump-pot-table philosophy: extract from the authoritative engine build
+// rather than re-deriving map32->map16 decode + overlays in Python.
+//
+// Per parent area (screens 0x00-0x7F; specials >= 0x80 can't reveal secrets)
+// this replicates ONLY the map16-buffer build of a full screen load:
+// Overworld_LoadGFXAndScreenSize + Overworld_DecompressAndDrawAllQuadrants,
+// then the overlay set of Overworld_DrawQuadrantsAndOverlays /
+// Overworld_HandleOverlaysAndBombDoors -- replicated below with an explicit
+// `inverted` flag instead of the live rando world-state gate (KEEP IN SYNC
+// with those functions). No gfx/palette/sprite/VRAM work runs (headless-safe:
+// every write path here is a direct dung_bg2/g_ram buffer write).
+//
+// State profiles cover the persistent tile states the registry invariant
+// cares about (present-with-identical-class in EVERY state, else excluded):
+// vanilla / vanilla+event-overlays (save_ow_event_info bits 0x20|0x02 set for
+// ALL screens, so cross-screen reads like the inverted 0x1B hole gate on
+// 0x5B see them) / inverted / inverted+events / vanilla pre-rescue
+// (sram_progress_indicator < 3 -- the inverted map stream has one
+// phase-dependent write).
+static void TerrainDump_BuildScreen(uint8 scr, bool inverted, bool events) {
+  overworld_screen_index = scr;
+  ow_entrance_value = 0;
+  Overworld_LoadGFXAndScreenSize();
+  Overworld_DecompressAndDrawAllQuadrants();
+  // Mirror of Overworld_HandleOverlaysAndBombDoors (see KEEP IN SYNC above):
+  // hardcoded LW rocks (skipped in inverted), event overlay (bit 0x20; forced
+  // on 0x47 in inverted -- TurtleRockEntranceFix), secondary overlay (bit 2),
+  // then the inverted per-screen tile overrides.
+  if (!inverted) {
+    if (scr == 0x33)
+      dung_bg2[340] = 0x20f;
+    else if (scr == 0x2f)
+      dung_bg2[1497] = 0x20f;
+  }
+  // Overworld_LoadEventOverlay's switch asserts on the screens vanilla never
+  // sets bit 0x20 for (its final case group) — skip those here since the
+  // profile sets the bit blanket-wide. KEEP IN SYNC with that switch.
+  bool has_event_overlay =
+      !(scr == 0x72 || scr == 0x73 || scr == 0x74 || scr == 0x75 ||
+        scr == 0x76 || scr == 0x7a || scr == 0x7c || scr == 0x7d ||
+        scr == 0x7e || scr == 0x7f);
+  if ((events || (inverted && scr == 0x47)) && has_event_overlay)
+    Overworld_LoadEventOverlay();
+  if (events) {
+    uint16 so = kSecondaryOverlayPerOw[scr];
+    if (so) {
+      int pos = so >> 1;
+      dung_bg2[pos + 0] = 0xdb4;
+      dung_bg2[pos + 1] = 0xdb5;
+    }
+  }
+  if (inverted)
+    Overworld_ApplyInvertedTiles();
+}
+
+int Overworld_DumpTerrainTable(const char *path) {
+  FILE *f = fopen(path, "wb");
+  if (!f) {
+    fprintf(stderr, "--dump-terrain-table: cannot open %s\n", path);
+    return 1;
+  }
+  // Emitted lines:
+  //   A scr size            -- parent area header (small|big)
+  //   S scr pos data        -- every kOverworldSecrets entry (static per screen)
+  //   T prof scr pos m16 kind a0 a1 a2 a3 content
+  //                         -- one consumable object under state profile prof
+  //                            (kind: B/b bush LW/DW-id, G thick grass, R/r
+  //                            small rock ids 0x20f/0x239, P/Q lift-pile
+  //                            origins, D dash-pile origin (bonk; excluded),
+  //                            S sign (excluded); content = secret byte or -1)
+  //   U prof scr pos m16 a0 a1 a2 a3
+  //                         -- map16 with a liftable attr (0x50..0x57) NOT in
+  //                            the engine's reveal-helper id sets (coverage
+  //                            assert input; tasks.md 1.3)
+  fprintf(f, "# zelda3 terrain dump v1 (add-rando-grass-rock-shuffle Phase 1)\n"
+             "# profiles: 0=vanilla 1=vanilla+events 2=inverted 3=inverted+events 4=vanilla-prerescue\n");
+  static const struct { uint8 inv, ev, prog; } kProf[5] = {
+    {0, 0, 3}, {0, 1, 3}, {1, 0, 3}, {1, 1, 3}, {0, 0, 1},
+  };
+  // stderr summary: per-kind counts, profile 0, split LW/DW.
+  int hist[9][2];
+  memset(hist, 0, sizeof hist);
+  static const char kKinds[9] = { 'B', 'b', 'G', 'R', 'r', 'P', 'Q', 'D', 'S' };
+  int areas = 0, unknown = 0;
+  for (int scr = 0; scr < 0x80; scr++) {
+    overworld_screen_index = (uint16)scr;
+    Overworld_LoadGFXAndScreenSize();
+    int w6 = scr & 0x3f;
+    if (overworld_offset_base_y != ((w6 >> 3) * 512) ||
+        overworld_offset_base_x != ((w6 & 7) * 64))
+      continue;  // child screen of a big area -- the parent covers it
+    bool small = kOverworldMapIsSmall[w6] != 0;
+    areas++;
+    fprintf(f, "A %02x %s\n", scr, small ? "small" : "big");
+    const uint8 *sp = kOverworldSecrets + kOverworldSecrets_Offs[scr];
+    for (;;) {
+      uint16 x = *(const uint16 *)sp;
+      if (x == 0xffff)
+        break;
+      fprintf(f, "S %02x %04x %d\n", scr, x & 0x7fff, sp[2]);
+      sp += 3;
+    }
+    for (int pi = 0; pi < 5; pi++) {
+      memset(save_ow_event_info, kProf[pi].ev ? 0x22 : 0, 0x80);
+      sram_progress_indicator = kProf[pi].prog;
+      TerrainDump_BuildScreen((uint8)scr, kProf[pi].inv != 0, kProf[pi].ev != 0);
+      int w = small ? 32 : 64;
+      for (int row = 0; row < w; row++) {
+        for (int col = 0; col < w; col++) {
+          uint16 m16 = dung_bg2[row * 64 + col];
+          uint16 pos = (uint16)(row * 128 + col * 2);
+          const uint16 *m8 = GetMap16toMap8Table() + m16 * 4;
+          uint8 a0 = kMap8DataToTileAttr[m8[0] & 0x1ff];
+          uint8 a1 = kMap8DataToTileAttr[m8[1] & 0x1ff];
+          uint8 a2 = kMap8DataToTileAttr[m8[2] & 0x1ff];
+          uint8 a3 = kMap8DataToTileAttr[m8[3] & 0x1ff];
+          int kind_idx = -1;
+          bool skip_quadrant = false;
+          switch (m16) {
+          case 0x036: kind_idx = 0; break;  // bush (LW-id; cut/lift/bomb/dash)
+          case 0x72a: kind_idx = 1; break;  // bush (DW-id)
+          case 0x37e: kind_idx = 2; break;  // thick grass (cut/bomb only)
+          case 0x20f: kind_idx = 3; break;  // small rock (Overworld_LiftingSmallObj)
+          case 0x239: kind_idx = 4; break;  // small rock (2nd id)
+          case 0x36d: kind_idx = 5; break;  // lift-pile A origin (top-left quad)
+          case 0x23b: kind_idx = 6; break;  // lift-pile B origin
+          case 0x226: kind_idx = 7; break;  // dash-pile origin (bonk class; excluded)
+          case 0x101: kind_idx = 8; break;  // sign (excluded from the feature)
+          // non-origin pile quadrants -- recognized so they don't hit the U report
+          case 0x36e: case 0x374: case 0x375:
+          case 0x23c: case 0x23d: case 0x23e:
+          case 0x227: case 0x228: case 0x229:
+            skip_quadrant = true;
+            break;
+          default: break;
+          }
+          if (skip_quadrant)
+            continue;
+          if (kind_idx < 0) {
+            if ((a0 >= 0x50 && a0 < 0x58) || (a1 >= 0x50 && a1 < 0x58) ||
+                (a2 >= 0x50 && a2 < 0x58) || (a3 >= 0x50 && a3 < 0x58)) {
+              fprintf(f, "U %d %02x %04x %03x %02x %02x %02x %02x\n",
+                      pi, scr, pos, m16, a0, a1, a2, a3);
+              unknown++;
+            }
+            continue;
+          }
+          int content = -1;
+          const uint8 *p2 = kOverworldSecrets + kOverworldSecrets_Offs[scr];
+          for (;;) {
+            uint16 x = *(const uint16 *)p2;
+            if (x == 0xffff)
+              break;
+            if ((x & 0x7fff) == pos) {
+              content = p2[2];
+              break;
+            }
+            p2 += 3;
+          }
+          fprintf(f, "T %d %02x %04x %03x %c %02x %02x %02x %02x %d\n",
+                  pi, scr, pos, m16, kKinds[kind_idx], a0, a1, a2, a3, content);
+          if (pi == 0)
+            hist[kind_idx][scr >= 0x40]++;
+        }
+      }
+    }
+  }
+  fclose(f);
+  fprintf(stderr, "--dump-terrain-table: %d parent areas -> %s\n", areas, path);
+  fprintf(stderr, "  profile-0 counts (kind: LW+DW=total):\n");
+  int total = 0;
+  for (int k = 0; k < 9; k++) {
+    fprintf(stderr, "    %c: %d+%d=%d\n", kKinds[k], hist[k][0], hist[k][1],
+            hist[k][0] + hist[k][1]);
+    if (k <= 6)  // B b G R r P Q = in-scope candidates (D/S excluded)
+      total += hist[k][0] + hist[k][1];
+  }
+  fprintf(stderr, "  in-scope candidate total (profile 0, B+b+G+R+r+P+Q): %d\n", total);
+  if (unknown)
+    fprintf(stderr, "  WARNING: %d unknown-liftable (U) lines -- extend the id sets\n", unknown);
+  return 0;
 }

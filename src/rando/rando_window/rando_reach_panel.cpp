@@ -60,6 +60,13 @@ static inline bool LocIsPot(uint16 loc) {
   return loc < kRandoLocationCapacity && s_loc_type[loc] == LOCTYPE_Pot;
 }
 
+// add-rando-grass-rock-shuffle — the grass/rock axes add ~3900 terrain checks;
+// gate their rows behind a "Show terrain" toggle, counts always included.
+static inline bool LocIsTerrain(uint16 loc) {
+  return loc < kRandoLocationCapacity &&
+         (s_loc_type[loc] == LOCTYPE_Grass || s_loc_type[loc] == LOCTYPE_Rock);
+}
+
 extern "C" void RandoReach_Render(void) {
   if (!Rando_IsActive()) {
     ImGui::TextDisabled("Start or load a randomizer slot to view reachability.");
@@ -80,12 +87,14 @@ extern "C" void RandoReach_Render(void) {
   // Summary: reachable (or checked) over total. A check counts toward "reachable"
   // if it is already checked OR currently reachable from the live inventory.
   static bool s_show_pots = false;  // add-rando-pot-sanity — gate the ~800 pot rows
-  int n_reachable = 0, n_visible = 0, n_pots = 0;
+  static bool s_show_terrain = false;  // add-rando-grass-rock-shuffle — gate the ~3900 terrain rows
+  int n_reachable = 0, n_visible = 0, n_pots = 0, n_terrain = 0;
   for (int i = 0; i < n_total; i++) {
     uint16 loc = pt->entries[i].location_id;
     if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
     n_visible++;
     if (LocIsPot(loc)) n_pots++;
+    if (LocIsTerrain(loc)) n_terrain++;
     if (Rando_IsLocationChecked(loc)) n_reachable++;
     else if (have_reach && Reachability_HasLocation(reach, loc)) n_reachable++;
   }
@@ -109,6 +118,11 @@ extern "C" void RandoReach_Render(void) {
   // add-rando-pot-sanity — only surface the pot toggle when the seed has pots.
   if (n_pots > 0)
     ImGui::Checkbox("Show pots", &s_show_pots);
+  // add-rando-grass-rock-shuffle — same for terrain checks.
+  if (n_terrain > 0) {
+    if (n_pots > 0) ImGui::SameLine();
+    ImGui::Checkbox("Show terrain", &s_show_terrain);
+  }
 
   ImGui::Separator();
 
@@ -123,7 +137,7 @@ extern "C" void RandoReach_Render(void) {
     uint16 region_id = (ri < kRandoRegionsCount) ? kRandoRegions[ri].id : 0xFFFF;
 
     // Tally this region's locations from the placement table.
-    int r_total = 0, r_reach = 0, r_pots = 0;
+    int r_total = 0, r_reach = 0, r_pots = 0, r_terrain = 0;
     for (int i = 0; i < n_total; i++) {
       uint16 loc = pt->entries[i].location_id;
       if (LocHiddenFromChecks(loc)) continue;  // exclude non-check slots
@@ -131,6 +145,7 @@ extern "C" void RandoReach_Render(void) {
       if (lr != region_id) continue;
       r_total++;
       if (LocIsPot(loc)) r_pots++;  // counted in the header; rows gated below
+      if (LocIsTerrain(loc)) r_terrain++;
       if (Rando_IsLocationChecked(loc)) r_reach++;
       else if (have_reach && Reachability_HasLocation(reach, loc)) r_reach++;
     }
@@ -161,6 +176,7 @@ extern "C" void RandoReach_Render(void) {
       uint16 lr = (loc < kRandoLocationCapacity) ? s_loc_region[loc] : 0xFFFF;
       if (lr != region_id) continue;
       if (!s_show_pots && LocIsPot(loc)) continue;  // pot rows gated by the toggle
+      if (!s_show_terrain && LocIsTerrain(loc)) continue;  // terrain rows gated
 
       bool checked = Rando_IsLocationChecked(loc);
       bool reachable = have_reach && Reachability_HasLocation(reach, loc);
@@ -198,7 +214,12 @@ extern "C" void RandoReach_Render(void) {
     // count doesn't read as missing rows.
     if (!s_show_pots && r_pots > 0)
       ImGui::TextDisabled("+%d pots in this region (enable \"Show pots\")", r_pots);
+    if (!s_show_terrain && r_terrain > 0)
+      ImGui::TextDisabled("+%d terrain checks in this region (enable \"Show terrain\")", r_terrain);
   }
 }
 
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+extern "C" uint32 RandoCapacityProbe_rando_reach_panel(void) { return kRandoLocationCapacity; }

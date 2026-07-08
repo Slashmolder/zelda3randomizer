@@ -307,7 +307,35 @@ static const uint16 kCompasses[] = {
 static bool pot_active(const RandoLocationDef *loc, const RandoSettings *s);
 static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *s);
 static bool enemy_check_active(const RandoLocationDef *loc, const RandoSettings *s);
+static bool terrain_active(const RandoLocationDef *loc, const RandoSettings *s);
 static void seed_dungeon_free_key_drops(RandoCounts *counts, const RandoSettings *s);
+
+// add-rando-grass-rock-shuffle — the terrain tier filter (Phase 3). A terrain
+// location is ACTIVE when its axis (grass_shuffle for LOCTYPE_Grass,
+// rock_shuffle for LOCTYPE_Rock) is non-off: BOTH the junk and all tiers
+// activate the location (junk restricts WHAT may be placed there — see
+// terrain_junk_only below — not whether it is a check). The skip-triple
+// (open-location loop, junk-pad target, Placement_SelfCheck expected count)
+// all key on this ONE predicate so the pool size and slot count cannot
+// drift; with both axes off every seed is placement-byte-identical.
+static bool terrain_active(const RandoLocationDef *loc, const RandoSettings *s) {
+  if (loc == NULL || s == NULL) return false;
+  if (loc->type == LOCTYPE_Grass) return s->grass_shuffle != kTerrainShuffle_Off;
+  if (loc->type == LOCTYPE_Rock) return s->rock_shuffle != kTerrainShuffle_Off;
+  return false;
+}
+
+// Junk-only class: a terrain location under tier `junk` participates in the
+// junk-pad fill but is EXCLUDED from the assumed-fill progression candidate
+// set (spec: "no pool/progression item on a junk-only location";
+// Placement_SelfCheck asserts it). `all`-tier locations are ordinary open
+// slots.
+static bool terrain_junk_only(const RandoLocationDef *loc, const RandoSettings *s) {
+  if (loc == NULL || s == NULL) return false;
+  if (loc->type == LOCTYPE_Grass) return s->grass_shuffle == kTerrainShuffle_Junk;
+  if (loc->type == LOCTYPE_Rock) return s->rock_shuffle == kTerrainShuffle_Junk;
+  return false;
+}
 
 // NONPOT small-key drops per dungeon: the enemy / guard / under-block keys that
 // pot_shuffle does NOT itemize (only POTS shuffle).
@@ -504,6 +532,24 @@ static bool all_enemy_registry_available(void) {
 static bool settings_need_pot_registry(const RandoSettings *s) {
   return s != NULL && s->pot_shuffle != kPotShuffle_Off &&
          !Settings_PotShuffleForcedOff(s);
+}
+
+// add-rando-grass-rock-shuffle — terrain registry availability + need. Terrain
+// adds NO pool items, so without this explicit fail-closed a grass/rock-active
+// seed on an assetless/empty-registry build would generate a normal seed with
+// no terrain checks and then ACTIVATE (the sidecar guard's (0,0)==(0,0) match
+// is a fail-open) — silently dropping the feature the user asked for (the
+// chest_lookup fail-open class; review HIGH-1).
+static bool terrain_registry_available(void) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (kRandoLocations[i].type == LOCTYPE_Grass ||
+        kRandoLocations[i].type == LOCTYPE_Rock) return true;
+  return false;
+}
+
+static bool settings_need_terrain_registry(const RandoSettings *s) {
+  return s != NULL && (s->grass_shuffle != kTerrainShuffle_Off ||
+                       s->rock_shuffle != kTerrainShuffle_Off);
 }
 
 static bool settings_need_enemy_drop_registry(const RandoSettings *s) {
@@ -788,6 +834,14 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       "BuildItemPool: pot_shuffle requested, but this binary was built without\n"
       "  assets/rando/pots.gen.yaml. Run the local pot codegen with ROM assets\n"
       "  and rebuild before generating pot-shuffle seeds.\n");
+    return 0;
+  }
+  if (settings_need_terrain_registry(settings) && !terrain_registry_available()) {
+    fprintf(stderr,
+      "BuildItemPool: grass/rock shuffle requested, but this binary was built\n"
+      "  without assets/rando/terrain.gen.yaml. Run zelda3 --dump-terrain-table\n"
+      "  + assets/scripts/gen_terrain_tables.py --emit with ROM assets and\n"
+      "  rebuild before generating terrain-shuffle seeds.\n");
     return 0;
   }
   if (settings_need_enemy_drop_registry(settings) && !enemy_drop_registry_available()) {
@@ -1117,6 +1171,8 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
       if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
       if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
+      if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock) &&
+          !terrain_active(loc, settings)) continue;
       // pre-pinned slots (prizes, events, medallions, shops,
       // vanilla-mode dungeon items) are identity-placed by
       // the §3b pin pass and never consume a pool item. Counting them here
@@ -2109,6 +2165,8 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
     if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
     if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
+    if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock) &&
+        !terrain_active(loc, settings)) continue;
     open_loc_idx[open_n++] = (uint16)i;
   }
   if (g_place_profile_active) {
@@ -2450,6 +2508,9 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     for (uint16 k = 0; k < open_n; k++) {
       if (placement_at[k] != 0xFFFF) continue;
       const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+      // add-rando-grass-rock-shuffle: junk-tier terrain slots never take a
+      // pool (progression) item — junk-pad only.
+      if (terrain_junk_only(loc, settings)) continue;
       if (r != NULL && !Reachability_HasLocation(r, loc->id)) continue;
       if (!location_accepts_item(loc, item, &counts, settings)) continue;
       candidates[cand_n++] = k;
@@ -2498,17 +2559,22 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
 
     // Forward-fill fallback: place at any open + can_place location (ignore
     // reachability). If still nothing, take the first open slot regardless of
-    // can_place — last-resort recovery.
+    // can_place — last-resort recovery. Junk-only terrain slots stay excluded
+    // in BOTH fallbacks: violating the junk-tier contract would be a silent
+    // spec break, so an un-placeable pool item fails generation honestly
+    // instead (Placement_SelfCheck also asserts the invariant).
     cand_n = 0;
     for (uint16 k = 0; k < open_n; k++) {
       if (placement_at[k] != 0xFFFF) continue;
       const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[k]];
+      if (terrain_junk_only(loc, settings)) continue;
       if (!location_accepts_item(loc, item, &counts, settings)) continue;
       candidates[cand_n++] = k;
     }
     if (cand_n == 0) {
       for (uint16 k = 0; k < open_n; k++) {
         if (placement_at[k] != 0xFFFF) continue;
+        if (terrain_junk_only(&kRandoLocations[open_loc_idx[k]], settings)) continue;
         candidates[cand_n++] = k;
       }
     }
@@ -3306,6 +3372,8 @@ void Placement_SelfCheck(void) {
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, &defaults)) continue;
       if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, &defaults)) continue;
       if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, &defaults)) continue;
+      if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock) &&
+          !terrain_active(loc, &defaults)) continue;
       if (location_is_prepinned(loc, &defaults)) continue;
       expected++;
     }
@@ -3459,6 +3527,77 @@ void Placement_SelfCheck(void) {
     if (Placement_Lookup(0xFFFE, 0x1234) != 0x1234)
       selfcheck_die("Placement_Lookup must return the vanilla fallback for a missing location");
     Placement_Install(NULL);
+  }
+
+  // add-rando-grass-rock-shuffle — terrain tier filter + junk-only invariant.
+  {
+    uint32 grass_locs = 0, rock_locs = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      if (kRandoLocations[i].type == LOCTYPE_Grass) grass_locs++;
+      if (kRandoLocations[i].type == LOCTYPE_Rock) rock_locs++;
+    }
+    RandoSettings st;
+    Settings_SetDefaults(&st);
+    uint32 n_def = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++)
+      if (terrain_active(&kRandoLocations[i], &st)) n_def++;
+    if (n_def != 0) selfcheck_die("terrain must be inactive at default settings");
+    st.grass_shuffle = kTerrainShuffle_All;
+    st.rock_shuffle = kTerrainShuffle_Junk;
+    uint32 n_grass = 0, n_rock = 0, n_junk_only = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      const RandoLocationDef *loc = &kRandoLocations[i];
+      if (loc->type == LOCTYPE_Grass && terrain_active(loc, &st)) n_grass++;
+      if (loc->type == LOCTYPE_Rock && terrain_active(loc, &st)) n_rock++;
+      if (terrain_junk_only(loc, &st)) n_junk_only++;
+    }
+    if (n_grass != grass_locs) selfcheck_die("grass all-tier must activate every grass location");
+    if (n_rock != rock_locs) selfcheck_die("rock junk-tier must activate every rock location");
+    if (n_junk_only != rock_locs) selfcheck_die("junk-only class must cover exactly the junk-tier axis");
+    // Empty-registry fail-closed (review HIGH-1): an assetless build has no
+    // terrain locations, so a terrain-active pool MUST come back empty (0) —
+    // BuildItemPool refuses rather than silently producing a normal seed with
+    // no terrain checks (which would then fail-open through activation). This
+    // is the terrain analogue of the pot fail-closed proof above.
+    if (grass_locs == 0 && rock_locs == 0) {
+      RandoSettings se;
+      Settings_SetDefaults(&se);
+      se.grass_shuffle = kTerrainShuffle_All;
+      se.rock_shuffle = kTerrainShuffle_All;
+      uint16 empty_pool[kRandoLocationCapacity];
+      if (BuildItemPool(&se, empty_pool, kRandoLocationCapacity) != 0)
+        selfcheck_die("grass/rock shuffle must fail closed when the terrain registry is absent");
+    }
+    // Junk-only placement invariant: fill a junk-tier seed and assert no
+    // progression item landed on a junk-only location (junk-pad items are
+    // fine — that is the tier's purpose). Present only when the registry is.
+    if (grass_locs != 0 && rock_locs != 0) {
+      RandoSettings sj;
+      Settings_SetDefaults(&sj);
+      sj.grass_shuffle = kTerrainShuffle_Junk;
+      sj.rock_shuffle = kTerrainShuffle_Junk;
+      static RandoPlacement terr_entries[kRandoLocationCapacity];
+      RandoPlacementTable tt = { terr_entries, 0 };
+      if (!Place_AssumedFill(&sj, 0x4752415353ull, 0, &tt))
+        selfcheck_die("junk-tier terrain placement could not be generated");
+      // The spec's junk-tier contract: no POOL PROGRESSION item on a
+      // junk-only location (non-progression pool bulk — rupees, refills,
+      // heart pieces — flows through the junk fill and IS allowed there).
+      // is_progression_item is the placer's own classifier, so this cannot
+      // drift from the fill's progression/junk split.
+      for (uint16 i = 0; i < tt.count; i++) {
+        const RandoLocationDef *loc = NULL;
+        for (uint32 j = 0; j < kRandoLocationsCount; j++)
+          if (kRandoLocations[j].id == tt.entries[i].location_id) { loc = &kRandoLocations[j]; break; }
+        if (loc == NULL || !terrain_junk_only(loc, &sj)) continue;
+        uint16 it = tt.entries[i].item_id;
+        if (it == 0xFFFF) continue;  // sentinel = no placement
+        if (is_progression_item(it))
+          selfcheck_die("junk-only terrain location holds a progression item");
+      }
+    }
+    fprintf(stderr, "[Placement_SelfCheck] terrain tiers OK (%u grass, %u rock)\n",
+            (unsigned)grass_locs, (unsigned)rock_locs);
   }
 
   // Placement-side selfchecks for enemy-drop key activation and dungeon enemy rows.
@@ -4166,3 +4305,6 @@ void Placement_SelfCheck(void) {
 
   fprintf(stderr, "[Placement_SelfCheck] OK\n");
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_placement)

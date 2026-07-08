@@ -864,9 +864,14 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     slot.header.chains_attempt = reg.chains_attempt;
     slot.header.chains_digest24 = reg.chains_layout.digest24 & 0xFFFFFFu;
   }
-  slot.header.pot_registry_digest = Rando_CurrentPotRegistryDigest();
-  slot.header.pot_registry_count = Rando_CurrentPotRegistryCount();
-  slot.header.pot_registry_present = 1;
+  // Stamp EVERY local-registry identity the activation guard checks (pot +
+  // terrain + ...) through the single shared helper. This is the PLAYER-FACING
+  // slot path and is SEPARATE code from the --generate-seed / selfcheck
+  // slot-builders the corpus exercises; a fresh-eyes review found this path had
+  // stamped pots but forgotten terrain, so every terrain slot self-refused
+  // while the corpus stayed green. Routing all writers through one helper makes
+  // that drift structurally impossible.
+  Rando_StampSlotRegistries(&slot.header);
   // add-rando-major-glitch D6 — couple a glitch-logic seed to the JP-1.0
   // glitch runtime flag. The placer ASSUMED restored glitches are performable
   // for logic>=OverworldGlitches / fake-flippers seeds; the runtime MUST
@@ -970,3 +975,6 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
 
   return true;
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_generate)

@@ -68,6 +68,14 @@ POT_ARTIFACT_RELS = (
     os.path.join("assets", "rando", "pots.gen.yaml"),
     os.path.join("assets", "rando", "pot_key_depth.gen.yaml"),
 )
+# add-rando-grass-rock-shuffle: overworld terrain dump + registry (gitignored,
+# ROM-derived). Complete-set rule like pots: the dump regenerates the registry,
+# the registry feeds rando codegen (terrain_lookup.h); absent => no terrain
+# locations and grass/rock tiers fail closed via the registry digest guard.
+TERRAIN_ARTIFACT_RELS = (
+    os.path.join("assets", "rando", "terrain_dump.gen.txt"),
+    os.path.join("assets", "rando", "terrain.gen.yaml"),
+)
 # add-enemy-souls: kill-gated-room soul requirements. Local/gitignored; read by
 # rando_logic_gen.py. Absent => kRandoSoulRoomsBaked=0 and souls_shuffle=all
 # seeds fail closed in BuildItemPool (loud, not silent), but a worktree that
@@ -436,6 +444,31 @@ def main() -> int:
                                         required=args.require_pot_artifacts)
             if args.require_pot_artifacts:
                 return 1
+
+    # add-rando-grass-rock-shuffle: overworld terrain artifacts — mirror as a
+    # complete set (dump + registry), like pots. Absence is fail-closed for the
+    # grass/rock tiers (registry digest guard), so best-effort + loud warning.
+    terrain_missing_src = [rel for rel in TERRAIN_ARTIFACT_RELS
+                           if not (source / rel).is_file()]
+    terrain_missing_dst = [rel for rel in TERRAIN_ARTIFACT_RELS
+                           if not (cwd / rel).is_file()]
+    if terrain_missing_dst:
+        if not terrain_missing_src:
+            for rel in TERRAIN_ARTIFACT_RELS:
+                dst_t = cwd / rel
+                if dst_t.is_file():
+                    continue
+                src_t = source / rel
+                dst_t.parent.mkdir(parents=True, exist_ok=True)
+                print(f"setup_worktree: copy {src_t} -> {dst_t}")
+                shutil.copy2(src_t, dst_t)
+        else:
+            print(f"setup_worktree: WARNING source is missing terrain artifacts "
+                  f"{terrain_missing_src} -- grass/rock shuffle tiers will fail "
+                  f"closed in this worktree build. Run `zelda3 "
+                  f"--dump-terrain-table assets/rando/terrain_dump.gen.txt` + "
+                  f"`python assets/scripts/gen_terrain_tables.py --emit` in "
+                  f"{source}, then re-run this script.", file=sys.stderr)
 
     # add-enemy-souls: soul_rooms.gen.yaml — mirror, else regenerate from the
     # just-mirrored assets (needs only zelda3_assets.dat + committed door

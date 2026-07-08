@@ -338,6 +338,10 @@ static const char *const kEnemyDropCheckLabels[] = {"off", "keys", "dungeon", "a
 // add-enemy-souls — souls_shuffle tiers (index == enum value, matches the
 // parse_souls_shuffle CLI grammar off|bosses|all).
 static const char *const kSoulsShuffleLabels[] = {"off", "bosses", "bosses + enemies"};
+// add-rando-grass-rock-shuffle — shared tier labels for both terrain axes
+// (index == TerrainShuffle enum value, matches the parse_terrain_shuffle CLI
+// grammar off|junk|all).
+static const char *const kTerrainShuffleLabels[] = {"off", "junk", "all"};
 
 static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
   bool entrance_shuffle =
@@ -1349,6 +1353,26 @@ static void Panel_Shuffles() {
       ImGui::EndDisabled();
       if (pot_off)
         ImGui::TextDisabled("Pot shuffle is unavailable while Cave entrance shuffle is on.");
+    }
+
+    // add-rando-grass-rock-shuffle — two independent overworld terrain axes.
+    // No disable-coupling: terrain locations are overworld-surface-bound and
+    // compose with every other shuffle (door/cave-entrance/pot/enemy).
+    {
+      uint8 grass_value = s->grass_shuffle;
+      if (EnumCombo("Grass shuffle", &grass_value, kTerrainShuffleLabels, 3)) {
+        s->grass_shuffle = grass_value;
+        changed = true;
+      }
+      HelpTooltip("Turns bushes and cuttable grass into randomizer checks. "
+                  "junk = filler only; all = anything, including progression.");
+      uint8 rock_value = s->rock_shuffle;
+      if (EnumCombo("Rock shuffle", &rock_value, kTerrainShuffleLabels, 3)) {
+        s->rock_shuffle = rock_value;
+        changed = true;
+      }
+      HelpTooltip("Turns liftable rocks (Glove and Titan's Mitt) into "
+                  "randomizer checks. junk = filler only; all = anything.");
     }
 
     if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {

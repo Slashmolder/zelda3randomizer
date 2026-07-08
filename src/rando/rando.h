@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 129u  // add-enemy-souls: enemies-tier kill-room/check soul terms
+#define kGeneratorVersion 131u  // add-rando-grass-rock-shuffle: terrain axes (canonical byte [29], 3981 locations, per-world-state registration)
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -63,6 +63,20 @@ uint32 Rando_CurrentPotRegistryDigest(void);
 uint16 Rando_CurrentPotRegistryCount(void);
 bool Rando_SettingsNeedPotRegistry(const RandoSettings *settings);
 bool Rando_PotRegistryMatches(uint32 digest, uint16 count);
+
+// add-rando-grass-rock-shuffle — terrain registry identity (activation guard,
+// mirroring the pot registry guard above).
+uint32 Rando_CurrentTerrainRegistryDigest(void);
+uint16 Rando_CurrentTerrainRegistryCount(void);
+bool Rando_SettingsNeedTerrainRegistry(const RandoSettings *settings);
+bool Rando_TerrainRegistryMatches(uint32 digest, uint16 count);
+
+// Stamp EVERY local-registry identity a slot's activation guard checks (pot +
+// terrain + ...). ALL slot-writers MUST call this instead of setting the
+// per-registry fields by hand, so a new registry can't be stamped on one path
+// and forgotten on another (the corpus-blind slot-path drift class).
+struct RandoSlotHeader;
+void Rando_StampSlotRegistries(struct RandoSlotHeader *h);
 
 // ---------------------------------------------------------------------------
 // Rando_DispatchVanillaGrant — convenience for §6 grant-site wrappers that
@@ -284,6 +298,32 @@ enum {
 // is a variables.h g_ram-accessor MACRO and can't be a parameter name. Callers
 // pass the global `dungeon_room_index` value as the argument.
 uint8 Rando_PotBreakHook(uint16 room, uint16 pos4);
+
+// add-rando-grass-rock-shuffle — overworld terrain reveal hook. Invoked from
+// the four CONSUMING call sites (lift / big-pile smash / sword-cut / bomb),
+// NOT inside Overworld_RevealSecret (which the bomb path calls speculatively
+// for non-consumed tiles). A Suppress return means the hook granted the placed
+// item; the caller must NOT run Overworld_RevealSecret and must set
+// dung_secrets_unk1 = 0xFF (the engine no-spawn sentinel — a ZERO byte triggers
+// Overworld_SubstituteAlternateSecret's bonus random item outdoors).
+enum {
+  kRandoTerrain_Vanilla = 0,   // let the caller run its normal vanilla path
+  kRandoTerrain_Suppress = 1,  // hook granted the check; suppress the vanilla secret
+};
+uint8 Rando_TerrainRevealHook(uint16 screen, uint16 pos);
+uint16 Rando_GetTerrainLocation(uint16 screen, uint16 pos);
+
+// add-rando-grass-rock-shuffle — capped nearest-N in-world "check" glint.
+// OAM can't carry a glint on all ~159 objects the densest screens hold, so the
+// glint surfaces only the closest unchecked+active terrain checks to Link.
+#define kRandoTerrainGlintCap 20
+// Fill out_pos[0..return) with nearest-first area-map16 positions of active,
+// unchecked terrain objects on the current overworld screen.
+int Rando_CollectTerrainGlints(uint16 *out_pos, int max);
+// Per-overworld-frame draw (call after Sprite_Main, inside the BG-scroll-copy
+// window — mirrors Rando_DrawOverworldEnemyMarkerGlints).
+void Rando_DrawTerrainGlints(void);
+
 bool Rando_PotShouldRecolor(uint16 room, uint16 pos4);
 // Exposed for the --rando-selftest (room,pos4) -> LOC round-trip assertion.
 uint16 Rando_GetPotLocation(uint16 room, uint16 pos4);

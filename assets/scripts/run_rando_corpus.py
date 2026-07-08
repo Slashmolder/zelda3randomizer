@@ -22,7 +22,7 @@ Usage (A0):
 Usage (activated):
   python assets/scripts/run_rando_corpus.py --binary=./zelda3
   python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
-  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks
+  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks --skip-terrain-shuffle
 """
 from __future__ import annotations
 
@@ -37,6 +37,24 @@ import zlib
 from pathlib import Path
 
 MANIFEST = Path("tests/rando_corpus/manifest.yaml")
+REPO = Path(__file__).resolve().parents[2]
+ENEMY_DROP_REGISTRY = REPO / "assets" / "rando" / "enemy_drops.gen.yaml"
+ENEMY_CHECK_REGISTRY = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
+GEN_ENEMY_DROP = REPO / "assets" / "scripts" / "gen_enemy_drop_tables.py"
+GEN_ENEMY_CHECK = REPO / "assets" / "scripts" / "gen_enemy_check_tables.py"
+RANDO_LOGIC_GEN = REPO / "assets" / "rando_logic_gen.py"
+ENEMY_BUILT_ARTIFACTS = (
+    ENEMY_DROP_REGISTRY,
+    ENEMY_CHECK_REGISTRY,
+    REPO / "src" / "rando" / "logic_data.c",
+    REPO / "src" / "rando" / "enemy_drop_lookup.h",
+    REPO / "src" / "rando" / "enemy_check_lookup.h",
+)
+ENEMY_CODEGEN_INPUTS = (
+    GEN_ENEMY_DROP,
+    GEN_ENEMY_CHECK,
+    RANDO_LOGIC_GEN,
+)
 
 
 def load_manifest(path: Path) -> dict:
@@ -108,6 +126,111 @@ def entry_uses_enemy_drop_checks(entry: dict) -> bool:
     return bool(v)
 
 
+def entry_uses_terrain_shuffle(entry: dict) -> bool:
+    """True when grass_shuffle or rock_shuffle is active (off/junk/all).
+
+    Public CI runs without the ROM-derived local terrain registry
+    (terrain.gen.yaml), so it must skip these rows — the activation guard
+    fails a terrain-enabled slot closed, and generation aborts, on such a
+    build. add-rando-grass-rock-shuffle.
+    """
+    settings = entry.get("settings", {}) or {}
+    for axis in ("grass_shuffle", "rock_shuffle"):
+        if _setting_truthy(settings.get(axis, "off")):
+            return True
+    return False
+
+
+def corpus_uses_enemy_drop_checks(entries: list[dict]) -> bool:
+    return any(entry_uses_enemy_drop_checks(entry) for entry in entries)
+
+
+def _print_captured_output(proc: subprocess.CompletedProcess[str]) -> None:
+    if proc.stdout:
+        print(proc.stdout.rstrip())
+    if proc.stderr:
+        print(proc.stderr.rstrip(), file=sys.stderr)
+
+
+def _run_preflight_step(label: str, cmd: list[str], timeout: int) -> bool:
+    try:
+        proc = subprocess.run(
+            cmd, cwd=str(REPO), text=True, capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        print(f"run_rando_corpus: enemy-registry preflight timed out: {label}")
+        if exc.stdout:
+            print(str(exc.stdout).rstrip())
+        if exc.stderr:
+            print(str(exc.stderr).rstrip(), file=sys.stderr)
+        return False
+    if proc.returncode == 0:
+        return True
+    print(f"run_rando_corpus: enemy-registry preflight failed: {label}")
+    print(f"  command: {' '.join(cmd)}")
+    _print_captured_output(proc)
+    return False
+
+
+def verify_enemy_drop_registries(binary: Path, timeout: int) -> bool:
+    """Fail early when full enemy-drop corpus rows would use stale local data.
+
+    The enemy-drop/check registries are gitignored ROM-derived inputs. If they
+    predate generator logic, the corpus can report digest drift even though the
+    tracked manifest is correct. Before running non-skipped enemy-drop rows,
+    validate those registries against a fresh key-depth dump from the same
+    binary and make sure the binary was rebuilt after the generated artifacts.
+    """
+    missing = [p for p in (ENEMY_DROP_REGISTRY, ENEMY_CHECK_REGISTRY)
+               if not p.exists()]
+    if missing:
+        print("run_rando_corpus: local enemy-drop registry artifact(s) missing:")
+        for p in missing:
+            print(f"  missing: {p.relative_to(REPO)}")
+        print("  Run: python assets/scripts/run_rando_local_checks.py "
+              "--binary=<built zelda3.exe> --prepare-only")
+        print("  Or pass --skip-enemy-drop-checks to run the assetless subset.")
+        return False
+
+    with tempfile.TemporaryDirectory() as td:
+        key_depth = Path(td) / "key_depth.txt"
+        steps = [
+            ("dump key-depth ground truth",
+             [str(binary), "--dump-key-depth", str(key_depth)]),
+            ("gen_enemy_drop_tables --check",
+             [sys.executable, str(GEN_ENEMY_DROP),
+              "--key-depth", str(key_depth), "--check"]),
+            ("gen_enemy_check_tables --check",
+             [sys.executable, str(GEN_ENEMY_CHECK),
+              "--key-depth", str(key_depth), "--check"]),
+        ]
+        for label, cmd in steps:
+            if not _run_preflight_step(label, cmd, timeout):
+                print("  Refresh with: python assets/scripts/run_rando_local_checks.py "
+                      "--binary=<built zelda3.exe> --prepare-only")
+                print("  Then rebuild the binary before rerunning the full corpus.")
+                return False
+
+    try:
+        binary_mtime = binary.stat().st_mtime
+    except OSError as exc:
+        print(f"run_rando_corpus: could not stat binary {binary}: {exc}")
+        return False
+    newer = [
+        p for p in ENEMY_BUILT_ARTIFACTS + ENEMY_CODEGEN_INPUTS
+        if p.exists() and p.stat().st_mtime > binary_mtime
+    ]
+    if newer:
+        print("run_rando_corpus: binary is older than enemy-drop codegen "
+              "input/output artifact(s); rebuild before running the full corpus.")
+        for p in newer:
+            print(f"  newer than binary: {p.relative_to(REPO)}")
+        return False
+
+    return True
+
+
 @dataclass
 class CorpusResult:
     idx: int
@@ -126,6 +249,7 @@ def _emit_result(result: CorpusResult) -> tuple[int, int]:
 def _run_one_entry(binary: Path, idx: int, entry: dict,
                    skip_pot_shuffle: bool,
                    skip_enemy_drop_checks: bool,
+                   skip_terrain_shuffle: bool,
                    timeout: int) -> CorpusResult:
     settings = entry.get("settings", {})
     seed = str(entry.get("seed", entry.get("seed_u64", "")))
@@ -138,6 +262,8 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
         skip_reasons.append("pot_shuffle")
     if skip_enemy_drop_checks and entry_uses_enemy_drop_checks(entry):
         skip_reasons.append("enemy_drop_checks")
+    if skip_terrain_shuffle and entry_uses_terrain_shuffle(entry):
+        skip_reasons.append("terrain_shuffle")
     if skip_reasons:
         result.lines.append(
             f"  SKIP [{idx}] {label}: {'+'.join(skip_reasons)} entry "
@@ -172,16 +298,16 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
         # regenerated placement. The original file is left intact.
         buf = out_json.read_bytes()
         if buf[:4] == b"ZRSR":
-            if len(buf) != 139:
+            if len(buf) != 140:
                 result.lines.append(
-                    f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 139"
+                    f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 140"
                 )
                 result.failed = True
                 return result
-            # Validate CRC32 (LE u32 at offset 135 over bytes 0..134).
+            # Validate CRC32 (LE u32 at offset 136 over bytes 0..135).
             # Keep this in lockstep with rando_spoiler.h constants.
-            disk_crc = int.from_bytes(buf[135:139], "little")
-            calc_crc = zlib.crc32(buf[:135]) & 0xffffffff
+            disk_crc = int.from_bytes(buf[136:140], "little")
+            calc_crc = zlib.crc32(buf[:136]) & 0xffffffff
             if disk_crc != calc_crc:
                 result.lines.append(
                     f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "
@@ -262,7 +388,8 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
 
 
 def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
-                  skip_enemy_drop_checks: bool = False, jobs: int = 1,
+                  skip_enemy_drop_checks: bool = False,
+                  skip_terrain_shuffle: bool = False, jobs: int = 1,
                   timeout: int = 60) -> int:
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
     # "zelda3" (pathlib strips the leading "./"), so subprocess would PATH-search
@@ -279,10 +406,16 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
     failures = 0
     skipped = 0
 
+    if not skip_enemy_drop_checks and corpus_uses_enemy_drop_checks(entries):
+        print("run_rando_corpus: checking local enemy-drop registries")
+        if not verify_enemy_drop_registries(binary, max(timeout, 120)):
+            return 1
+
     if jobs == 1:
         for idx, entry in enumerate(entries):
             result = _run_one_entry(binary, idx, entry, skip_pot_shuffle,
-                                    skip_enemy_drop_checks, timeout)
+                                    skip_enemy_drop_checks, skip_terrain_shuffle,
+                                    timeout)
             failed_delta, skipped_delta = _emit_result(result)
             failures += failed_delta
             skipped += skipped_delta
@@ -293,7 +426,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
             future_to_idx = {
                 executor.submit(_run_one_entry, binary, idx, entry,
                                 skip_pot_shuffle, skip_enemy_drop_checks,
-                                timeout): idx
+                                skip_terrain_shuffle, timeout): idx
                 for idx, entry in enumerate(entries)
             }
             for future in as_completed(future_to_idx):
@@ -366,6 +499,11 @@ def main(argv: list[str]) -> int:
                              "CI uses this when the local ROM-derived enemy "
                              "registries are absent; local checks run the full "
                              "corpus.")
+    parser.add_argument("--skip-terrain-shuffle", action="store_true",
+                        help="skip entries that request grass_shuffle/rock_shuffle. "
+                             "Public CI uses this when the local ROM-derived "
+                             "terrain registry (terrain.gen.yaml) is absent; local "
+                             "checks run the full corpus.")
     parser.add_argument("--jobs", type=int, default=1,
                         help="number of corpus entries to run concurrently "
                              "(default: 1).")
@@ -411,7 +549,8 @@ def main(argv: list[str]) -> int:
         return 0
 
     return run_activated(args.binary, data, args.skip_pot_shuffle,
-                         args.skip_enemy_drop_checks, args.jobs, args.timeout)
+                         args.skip_enemy_drop_checks, args.skip_terrain_shuffle,
+                         args.jobs, args.timeout)
 
 
 if __name__ == "__main__":

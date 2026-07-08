@@ -133,6 +133,8 @@ location_record:
         - Pot           # add-rando-pot-sanity — dungeon pot (per-tier active subset)
         - EnemyDrop     # add-rando-enemy-drop-sanity — forced enemy key drop
         - Enemy         # add-rando-dungeon-enemy-checks — ordinary dungeon enemy check
+        - Grass         # add-rando-grass-rock-shuffle — overworld bush/thick-grass check
+        - Rock          # add-rando-grass-rock-shuffle — overworld light/heavy rock check
       description: |
         Location archetype. Mirrors ALTTPR's Location\* subclasses. Drives
         §6 dispatch routing (chest path vs. NPC handler vs. synthesized hook).
