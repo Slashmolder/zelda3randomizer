@@ -22,7 +22,7 @@ Usage (A0):
 Usage (activated):
   python assets/scripts/run_rando_corpus.py --binary=./zelda3
   python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
-  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks --skip-terrain-shuffle
+  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks --skip-enemy-souls --skip-terrain-shuffle
 """
 from __future__ import annotations
 
@@ -141,6 +141,23 @@ def entry_uses_terrain_shuffle(entry: dict) -> bool:
     return False
 
 
+def entry_needs_local_soul_rooms(entry: dict) -> bool:
+    """True when this row needs the gitignored kill-room soul data.
+
+    Public CI builds without assets/rando/soul_rooms.gen.yaml. The generator
+    intentionally refuses enemies-tier souls (souls_shuffle=all) without those
+    ROM-derived wraps, but door shuffle normalizes souls off and must still run
+    to prove the degrade behavior.
+    """
+    settings = entry.get("settings", {}) or {}
+    souls = str(settings.get("souls_shuffle", "off")).lower()
+    if souls != "all":
+        return False
+    if _setting_truthy(settings.get("door_shuffle", "vanilla")):
+        return False
+    return True
+
+
 def corpus_uses_enemy_drop_checks(entries: list[dict]) -> bool:
     return any(entry_uses_enemy_drop_checks(entry) for entry in entries)
 
@@ -249,6 +266,7 @@ def _emit_result(result: CorpusResult) -> tuple[int, int]:
 def _run_one_entry(binary: Path, idx: int, entry: dict,
                    skip_pot_shuffle: bool,
                    skip_enemy_drop_checks: bool,
+                   skip_enemy_souls: bool,
                    skip_terrain_shuffle: bool,
                    timeout: int) -> CorpusResult:
     settings = entry.get("settings", {})
@@ -262,12 +280,14 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
         skip_reasons.append("pot_shuffle")
     if skip_enemy_drop_checks and entry_uses_enemy_drop_checks(entry):
         skip_reasons.append("enemy_drop_checks")
+    if skip_enemy_souls and entry_needs_local_soul_rooms(entry):
+        skip_reasons.append("souls_shuffle=all")
     if skip_terrain_shuffle and entry_uses_terrain_shuffle(entry):
         skip_reasons.append("terrain_shuffle")
     if skip_reasons:
         result.lines.append(
             f"  SKIP [{idx}] {label}: {'+'.join(skip_reasons)} entry "
-            f"(local ROM-derived registry required)"
+            f"(local ROM-derived data required)"
         )
         result.skipped = True
         return result
@@ -389,6 +409,7 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
 
 def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
                   skip_enemy_drop_checks: bool = False,
+                  skip_enemy_souls: bool = False,
                   skip_terrain_shuffle: bool = False, jobs: int = 1,
                   timeout: int = 60) -> int:
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
@@ -414,8 +435,8 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
     if jobs == 1:
         for idx, entry in enumerate(entries):
             result = _run_one_entry(binary, idx, entry, skip_pot_shuffle,
-                                    skip_enemy_drop_checks, skip_terrain_shuffle,
-                                    timeout)
+                                    skip_enemy_drop_checks, skip_enemy_souls,
+                                    skip_terrain_shuffle, timeout)
             failed_delta, skipped_delta = _emit_result(result)
             failures += failed_delta
             skipped += skipped_delta
@@ -426,7 +447,8 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
             future_to_idx = {
                 executor.submit(_run_one_entry, binary, idx, entry,
                                 skip_pot_shuffle, skip_enemy_drop_checks,
-                                skip_terrain_shuffle, timeout): idx
+                                skip_enemy_souls, skip_terrain_shuffle,
+                                timeout): idx
                 for idx, entry in enumerate(entries)
             }
             for future in as_completed(future_to_idx):
@@ -499,6 +521,11 @@ def main(argv: list[str]) -> int:
                              "CI uses this when the local ROM-derived enemy "
                              "registries are absent; local checks run the full "
                              "corpus.")
+    parser.add_argument("--skip-enemy-souls", action="store_true",
+                        help="skip entries that require souls_shuffle=all. Public "
+                             "CI uses this when the local ROM-derived "
+                             "soul_rooms.gen.yaml data is absent; local checks "
+                             "run the full corpus.")
     parser.add_argument("--skip-terrain-shuffle", action="store_true",
                         help="skip entries that request grass_shuffle/rock_shuffle. "
                              "Public CI uses this when the local ROM-derived "
@@ -549,8 +576,8 @@ def main(argv: list[str]) -> int:
         return 0
 
     return run_activated(args.binary, data, args.skip_pot_shuffle,
-                         args.skip_enemy_drop_checks, args.skip_terrain_shuffle,
-                         args.jobs, args.timeout)
+                         args.skip_enemy_drop_checks, args.skip_enemy_souls,
+                         args.skip_terrain_shuffle, args.jobs, args.timeout)
 
 
 if __name__ == "__main__":
