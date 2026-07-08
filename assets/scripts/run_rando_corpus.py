@@ -30,6 +30,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -502,6 +503,10 @@ def find_binary_default() -> Path:
     return Path("./zelda3")  # legacy default; error path will print it
 
 
+def default_jobs() -> int:
+    return max(1, min(8, os.cpu_count() or 1))
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=find_binary_default())
@@ -531,9 +536,9 @@ def main(argv: list[str]) -> int:
                              "Public CI uses this when the local ROM-derived "
                              "terrain registry (terrain.gen.yaml) is absent; local "
                              "checks run the full corpus.")
-    parser.add_argument("--jobs", type=int, default=1,
+    parser.add_argument("--jobs", type=int, default=default_jobs(),
                         help="number of corpus entries to run concurrently "
-                             "(default: 1).")
+                             "(default: min(8, CPU count)).")
     parser.add_argument("--timeout", type=int, default=120,
                         help="per-entry generator timeout in seconds "
                              "(default: 120 -- legit hard door-layout seeds "

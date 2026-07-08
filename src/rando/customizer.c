@@ -18,14 +18,6 @@
 #define strtok_r strtok_s
 #endif
 
-// Highest location id we probe when reverse-resolving a name. The registry is
-// append-only and currently tops out well under this; Rando_GetLocationName
-// returns "(unknown)" for ids that aren't in the registry, so an over-estimate
-// is harmless (just skipped).
-// Probe the whole location id space (sized by the module-wide ceiling in
-// rando_logic.h). Ids past the registry return a sentinel name and are skipped
-// (is_sentinel_name), so the wider range costs only cheap sentinel checks.
-#define kCustomizerLocIdProbeMax kRandoLocationCapacity
 #define kCustomizerItemIdProbeMax 256
 
 // ---------------------------------------------------------------------------
@@ -49,32 +41,100 @@ static bool is_sentinel_name(const char *n) {
   return strcmp(n, "(unknown)") == 0 || strcmp(n, "(unnamed)") == 0;
 }
 
-uint16 Customizer_ResolveLocation(const char *name) {
+typedef struct CustomizerNameEntry {
+  char norm[160];
+  const char *display;
+  uint16 id;
+} CustomizerNameEntry;
+
+static CustomizerNameEntry *g_customizer_loc_names = NULL;
+static uint32 g_customizer_loc_name_count = 0;
+static CustomizerNameEntry *g_customizer_item_names = NULL;
+static uint32 g_customizer_item_name_count = 0;
+
+static int customizer_name_entry_cmp(const void *va, const void *vb) {
+  const CustomizerNameEntry *a = (const CustomizerNameEntry *)va;
+  const CustomizerNameEntry *b = (const CustomizerNameEntry *)vb;
+  int c = strcmp(a->norm, b->norm);
+  if (c != 0) return c;
+  return (int)a->id - (int)b->id;
+}
+
+static uint16 customizer_find_name(const CustomizerNameEntry *entries,
+                                   uint32 count, const char *name) {
+  if (entries == NULL || name == NULL) return 0xFFFF;
   char want[160];
   normalize_name(name, want, sizeof want);
   if (want[0] == '\0') return 0xFFFF;
-  for (uint32 id = 0; id < kCustomizerLocIdProbeMax; id++) {
-    const char *n = Rando_GetLocationName((uint16)id);
-    if (is_sentinel_name(n)) continue;
-    char have[160];
-    normalize_name(n, have, sizeof have);
-    if (strcmp(have, want) == 0) return (uint16)id;
+
+  uint32 lo = 0, hi = count;
+  while (lo < hi) {
+    uint32 mid = lo + (hi - lo) / 2;
+    int c = strcmp(entries[mid].norm, want);
+    if (c < 0) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
   }
+  if (lo < count && strcmp(entries[lo].norm, want) == 0)
+    return entries[lo].id;
   return 0xFFFF;
 }
 
-uint16 Customizer_ResolveItem(const char *name) {
-  char want[160];
-  normalize_name(name, want, sizeof want);
-  if (want[0] == '\0') return 0xFFFF;
+static bool customizer_build_location_name_cache(void) {
+  if (g_customizer_loc_names != NULL) return true;
+  CustomizerNameEntry *entries = (CustomizerNameEntry *)calloc(
+      kRandoLocationsCount ? kRandoLocationsCount : 1, sizeof(CustomizerNameEntry));
+  if (entries == NULL) return false;
+
+  uint32 count = 0;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    uint16 id = kRandoLocations[i].id;
+    const char *n = Rando_GetLocationName(id);
+    if (is_sentinel_name(n)) continue;
+    entries[count].display = n;
+    entries[count].id = id;
+    normalize_name(n, entries[count].norm, sizeof entries[count].norm);
+    count++;
+  }
+  qsort(entries, count, sizeof entries[0], customizer_name_entry_cmp);
+  g_customizer_loc_names = entries;
+  g_customizer_loc_name_count = count;
+  return true;
+}
+
+static bool customizer_build_item_name_cache(void) {
+  if (g_customizer_item_names != NULL) return true;
+  CustomizerNameEntry *entries = (CustomizerNameEntry *)calloc(
+      kCustomizerItemIdProbeMax, sizeof(CustomizerNameEntry));
+  if (entries == NULL) return false;
+
+  uint32 count = 0;
   for (uint32 id = 0; id < kCustomizerItemIdProbeMax; id++) {
     const char *n = Rando_GetItemName((uint16)id);
     if (is_sentinel_name(n)) continue;
-    char have[160];
-    normalize_name(n, have, sizeof have);
-    if (strcmp(have, want) == 0) return (uint16)id;
+    entries[count].display = n;
+    entries[count].id = (uint16)id;
+    normalize_name(n, entries[count].norm, sizeof entries[count].norm);
+    count++;
   }
-  return 0xFFFF;
+  qsort(entries, count, sizeof entries[0], customizer_name_entry_cmp);
+  g_customizer_item_names = entries;
+  g_customizer_item_name_count = count;
+  return true;
+}
+
+uint16 Customizer_ResolveLocation(const char *name) {
+  if (!customizer_build_location_name_cache()) return 0xFFFF;
+  return customizer_find_name(g_customizer_loc_names,
+                              g_customizer_loc_name_count, name);
+}
+
+uint16 Customizer_ResolveItem(const char *name) {
+  if (!customizer_build_item_name_cache()) return 0xFFFF;
+  return customizer_find_name(g_customizer_item_names,
+                              g_customizer_item_name_count, name);
 }
 
 // ---------------------------------------------------------------------------
@@ -328,47 +388,42 @@ static void customizer_selfcheck_die(const char *msg) {
   exit(2);
 }
 
+static void customizer_selfcheck_unique_names(const CustomizerNameEntry *entries,
+                                              uint32 count,
+                                              const char *kind) {
+  for (uint32 i = 0; i < count; i++) {
+    if (entries[i].norm[0] == '\0') {
+      fprintf(stderr, "Customizer_SelfCheck: a %s name normalizes to empty\n", kind);
+      exit(2);
+    }
+    if (i == 0 || strcmp(entries[i - 1].norm, entries[i].norm) != 0)
+      continue;
+    fprintf(stderr,
+            "Customizer_SelfCheck: %s names '%s' (id %u) and '%s' (id %u) "
+            "normalize identically\n",
+            kind,
+            entries[i - 1].display, entries[i - 1].id,
+            entries[i].display, entries[i].id);
+    exit(2);
+  }
+}
+
 void Customizer_SelfCheck(void) {
   // 1. Normalized location names must be unique — the reverse resolver returns
   //    the FIRST match, so a collision would silently resolve to the wrong id.
-  //    O(N^2) over the location id space; one-time, fine.
-  for (uint32 a = 0; a < kCustomizerLocIdProbeMax; a++) {
-    const char *na = Rando_GetLocationName((uint16)a);
-    if (is_sentinel_name(na)) continue;
-    char norm_a[160];
-    normalize_name(na, norm_a, sizeof norm_a);
-    if (norm_a[0] == '\0') customizer_selfcheck_die("a location name normalizes to empty");
-    for (uint32 b = a + 1; b < kCustomizerLocIdProbeMax; b++) {
-      const char *nb = Rando_GetLocationName((uint16)b);
-      if (is_sentinel_name(nb)) continue;
-      char norm_b[160];
-      normalize_name(nb, norm_b, sizeof norm_b);
-      if (strcmp(norm_a, norm_b) == 0) {
-        fprintf(stderr, "Customizer_SelfCheck: location names '%s' (id %u) and '%s' (id %u) "
-                        "normalize identically\n", na, a, nb, b);
-        exit(2);
-      }
-    }
-  }
+  //    Build the resolver caches once, sort by normalized name, then adjacent
+  //    entries are the only possible collisions.
+  if (!customizer_build_location_name_cache())
+    customizer_selfcheck_die("out of memory building location-name cache");
+  customizer_selfcheck_unique_names(g_customizer_loc_names,
+                                    g_customizer_loc_name_count,
+                                    "location");
   // 2. Item names likewise unique.
-  for (uint32 a = 0; a < kCustomizerItemIdProbeMax; a++) {
-    const char *na = Rando_GetItemName((uint16)a);
-    if (is_sentinel_name(na)) continue;
-    char norm_a[160];
-    normalize_name(na, norm_a, sizeof norm_a);
-    if (norm_a[0] == '\0') customizer_selfcheck_die("an item name normalizes to empty");
-    for (uint32 b = a + 1; b < kCustomizerItemIdProbeMax; b++) {
-      const char *nb = Rando_GetItemName((uint16)b);
-      if (is_sentinel_name(nb)) continue;
-      char norm_b[160];
-      normalize_name(nb, norm_b, sizeof norm_b);
-      if (strcmp(norm_a, norm_b) == 0) {
-        fprintf(stderr, "Customizer_SelfCheck: item names '%s' (id %u) and '%s' (id %u) "
-                        "normalize identically\n", na, a, nb, b);
-        exit(2);
-      }
-    }
-  }
+  if (!customizer_build_item_name_cache())
+    customizer_selfcheck_die("out of memory building item-name cache");
+  customizer_selfcheck_unique_names(g_customizer_item_names,
+                                    g_customizer_item_name_count,
+                                    "item");
 
   // 3. Resolution sanity: a known location + item resolve, and both the symbol
   //    and human forms hit the same id.

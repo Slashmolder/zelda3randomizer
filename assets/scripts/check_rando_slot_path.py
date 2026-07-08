@@ -35,10 +35,12 @@ and `spoilers/` pre-created) to avoid clobbering anything.
 Usage:
   python assets/scripts/check_rando_slot_path.py
   python assets/scripts/check_rando_slot_path.py --binary=bin/x64-Release/zelda3.exe
+  python assets/scripts/check_rando_slot_path.py --jobs=1
 """
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
@@ -69,6 +71,10 @@ def find_binary_default() -> Path:
 
 
 DEFAULT_BINARY = find_binary_default()
+
+
+def default_jobs() -> int:
+    return max(1, min(8, os.cpu_count() or 1))
 
 
 def local_pot_registry_available() -> bool:
@@ -156,6 +162,9 @@ def run_seed_digest(binary: Path, settings: str, seed: str) -> str | None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
+    parser.add_argument("--jobs", type=int, default=default_jobs(),
+                        help="parallel matrix cells (default min(8, CPU count); "
+                             "use 1 for serial)")
     args = parser.parse_args(argv)
 
     if not args.binary.exists():
@@ -166,64 +175,88 @@ def main(argv: list[str]) -> int:
     args.binary = args.binary.resolve()
 
     print(f"check_rando_slot_path: binary {args.binary}")
+    print(f"check_rando_slot_path: jobs {max(1, args.jobs)}")
     pot_registry_present = local_pot_registry_available()
-    failures = 0
-    skipped = 0
-    for label, settings, seed, expect_ok, check_parity, expect_ws, allow_missing_pots in MATRIX:
+    jobs = max(1, args.jobs)
+
+    def run_cell(cell):
+        label, settings, seed, expect_ok, check_parity, expect_ws, allow_missing_pots = cell
+        lines: list[str] = []
         res = run_slot(args.binary, settings, seed)
         if res is None:
-            print(f"  FAIL [{label}]: no result")
-            failures += 1
-            continue
+            lines.append(f"  FAIL [{label}]: no result")
+            return lines, True, False
 
         ok = bool(res.get("ok"))
         if not ok and expect_ok and allow_missing_pots and not pot_registry_present:
-            print(f"  SKIP [{label}]: local pot registry absent")
-            skipped += 1
-            continue
+            lines.append(f"  SKIP [{label}]: local pot registry absent")
+            return lines, False, True
         if ok != expect_ok:
-            print(f"  FAIL [{label}]: ok={ok}, expected {expect_ok} "
-                  f"(error={res.get('error','')!r})")
-            failures += 1
-            continue
+            lines.append(f"  FAIL [{label}]: ok={ok}, expected {expect_ok} "
+                         f"(error={res.get('error','')!r})")
+            return lines, True, False
 
         if not ok:
             # Correctly refused. Confirm the CLI path refuses too (consistency).
             cli = run_seed_digest(args.binary, settings, seed)
             if cli is not None:
-                print(f"  FAIL [{label}]: slot path refused but CLI path accepted "
-                      f"(digest {cli[:8]}...) - paths disagree")
-                failures += 1
+                lines.append(f"  FAIL [{label}]: slot path refused but CLI path accepted "
+                             f"(digest {cli[:8]}...) - paths disagree")
+                return lines, True, False
             else:
-                print(f"  OK   [{label}]: refused by both slot and CLI paths (as expected)")
-            continue
+                lines.append(f"  OK   [{label}]: refused by both slot and CLI paths (as expected)")
+            return lines, False, False
 
         if not res.get("roundtrip_ok"):
-            print(f"  FAIL [{label}]: slot did not round-trip "
-                  f"(world_state={res.get('world_state')}, slot_kind={res.get('slot_kind')})")
-            failures += 1
-            continue
+            lines.append(f"  FAIL [{label}]: slot did not round-trip "
+                         f"(world_state={res.get('world_state')}, "
+                         f"slot_kind={res.get('slot_kind')})")
+            return lines, True, False
 
         if expect_ws is not None and res.get("world_state") != expect_ws:
-            print(f"  FAIL [{label}]: world_state={res.get('world_state')}, expected {expect_ws}")
-            failures += 1
-            continue
+            lines.append(f"  FAIL [{label}]: world_state={res.get('world_state')}, expected {expect_ws}")
+            return lines, True, False
 
         if check_parity:
             cli_digest = run_seed_digest(args.binary, settings, seed)
             if cli_digest is None:
-                print(f"  FAIL [{label}]: CLI path failed to generate (parity check)")
-                failures += 1
-                continue
+                lines.append(f"  FAIL [{label}]: CLI path failed to generate (parity check)")
+                return lines, True, False
             if cli_digest != res.get("placement_digest_hex"):
-                print(f"  FAIL [{label}]: digest parity mismatch\n"
-                      f"        slot: {res.get('placement_digest_hex')}\n"
-                      f"        cli : {cli_digest}")
-                failures += 1
-                continue
+                lines.append(f"  FAIL [{label}]: digest parity mismatch")
+                lines.append(f"        slot: {res.get('placement_digest_hex')}")
+                lines.append(f"        cli : {cli_digest}")
+                return lines, True, False
 
-        print(f"  OK   [{label}]: {res.get('placement_digest_hex','')[:16]}... "
-              f"(ws={res.get('world_state')}, roundtrip+parity)")
+        lines.append(f"  OK   [{label}]: {res.get('placement_digest_hex','')[:16]}... "
+                     f"(ws={res.get('world_state')}, roundtrip+parity)")
+        return lines, False, False
+
+    results = {}
+    if jobs == 1:
+        for idx, cell in enumerate(MATRIX):
+            results[idx] = run_cell(cell)
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            future_to_idx = {executor.submit(run_cell, cell): idx
+                             for idx, cell in enumerate(MATRIX)}
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    label = MATRIX[idx][0]
+                    results[idx] = ([f"  FAIL [{label}]: runner error: {e!r}"],
+                                    True, False)
+
+    failures = 0
+    skipped = 0
+    for idx in range(len(MATRIX)):
+        lines, failed, skip = results[idx]
+        for line in lines:
+            print(line)
+        failures += 1 if failed else 0
+        skipped += 1 if skip else 0
 
     n = len(MATRIX)
     if failures:

@@ -81,6 +81,7 @@ Usage
   python assets/scripts/check_rando_invariants.py --binary=bin/x64-Release/zelda3.exe
   python assets/scripts/check_rando_invariants.py --quiet
   python assets/scripts/check_rando_invariants.py --seeds-per-cell=1   # faster
+  python assets/scripts/check_rando_invariants.py --jobs=1             # serial
 
 Run with the working directory set to the repo root (where ``zelda3_assets.dat``
 lives) so the binary can load assets. Exit code is 0 on all-pass, nonzero on any
@@ -89,7 +90,9 @@ failure -- matching the other ``check_*.py`` guard scripts.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import os
 import re
 import subprocess
 import sys
@@ -149,6 +152,7 @@ def generate(binary: Path, settings: dict, seed: int, out_dir: Path) -> dict:
 
     Raises GenError on non-zero exit, timeout, or missing/unparseable spoiler.
     """
+    out_dir.mkdir(parents=True, exist_ok=True)
     out_json = out_dir / f"s{seed}.json"
     csv = settings_csv(settings)
     try:
@@ -198,8 +202,12 @@ SHARE_RE = re.compile(r"^[A-Z2-7]+$")  # RFC4648 base32 alphabet, no padding
 # --- Checks ---------------------------------------------------------------
 
 
+def default_jobs() -> int:
+    return max(1, min(12, os.cpu_count() or 1))
+
+
 def check_completability(binary: Path, out_dir: Path, seeds_per_cell: int,
-                         quiet: bool) -> list[str]:
+                         quiet: bool, jobs: int) -> list[str]:
     """Invariant #1: every cell in the matrix generates a completable seed."""
     failures: list[str] = []
     seeds = SEED_POOL[:seeds_per_cell]
@@ -207,35 +215,55 @@ def check_completability(binary: Path, out_dir: Path, seeds_per_cell: int,
     if not quiet:
         print(f"[1] Completability sweep: {n_cells} generations "
               f"({len(WORLD_STATES)}x{len(GOALS)}x{len(ITEM_POOLS)} "
-              f"x {len(seeds)} seed(s))")
+              f"x {len(seeds)} seed(s), jobs={jobs})")
+    tasks = []
     for state in WORLD_STATES:
         for goal in GOALS:
             for pool in ITEM_POOLS:
                 for seed in seeds:
-                    settings = {"mode.state": state, "goal": goal,
-                                "item_pool": pool}
-                    label = f"{state}/{goal}/{pool}/seed={seed}"
-                    try:
-                        meta = generate(binary, settings, seed, out_dir)
-                    except GenError as e:
-                        failures.append(f"[1] {label}: {e}")
-                        if not quiet:
-                            print(f"    FAIL {label}: {e}")
-                        continue
-                    if meta.get("goal_completable") is not True:
-                        failures.append(
-                            f"[1] {label}: goal_completable="
-                            f"{meta.get('goal_completable')!r}")
-                        if not quiet:
-                            print(f"    FAIL {label}: not goal_completable")
-                        continue
-                    fw = failure_warnings(meta)
-                    if fw:
-                        failures.append(
-                            f"[1] {label}: failure warnings {fw}")
-                        if not quiet:
-                            print(f"    FAIL {label}: {fw}")
-                        continue
+                    tasks.append((len(tasks), state, goal, pool, seed))
+
+    def run_one(task: tuple[int, str, str, str, int]) -> tuple[int, str | None]:
+        idx, state, goal, pool, seed = task
+        settings = {"mode.state": state, "goal": goal, "item_pool": pool}
+        label = f"{state}/{goal}/{pool}/seed={seed}"
+        try:
+            meta = generate(binary, settings, seed, out_dir / f"cell_{idx:03d}")
+        except GenError as e:
+            return idx, f"[1] {label}: {e}"
+        if meta.get("goal_completable") is not True:
+            return idx, (
+                f"[1] {label}: goal_completable="
+                f"{meta.get('goal_completable')!r}"
+            )
+        fw = failure_warnings(meta)
+        if fw:
+            return idx, f"[1] {label}: failure warnings {fw}"
+        return idx, None
+
+    jobs = max(1, jobs)
+    results: dict[int, str | None] = {}
+    if jobs == 1:
+        for task in tasks:
+            idx, failure = run_one(task)
+            results[idx] = failure
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            future_to_idx = {executor.submit(run_one, task): task[0] for task in tasks}
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    got_idx, failure = future.result()
+                except Exception as e:
+                    got_idx, failure = idx, f"[1] runner error: {e!r}"
+                results[got_idx] = failure
+
+    for idx in range(len(tasks)):
+        failure = results.get(idx)
+        if failure:
+            failures.append(failure)
+            if not quiet:
+                print(f"    FAIL {failure[4:]}")
     if not quiet and not failures:
         print(f"    OK   all {n_cells} seeds completable, no unreachable warnings")
     return failures
@@ -352,6 +380,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--seeds-per-cell", type=int, default=2,
                         help="seeds per matrix cell for the completability sweep "
                              "(default 2; max %d)" % len(SEED_POOL))
+    parser.add_argument("--jobs", type=int, default=default_jobs(),
+                        help="parallel generator processes for the completability "
+                             "sweep (default min(12, CPU count); use 1 for serial)")
     parser.add_argument("--quiet", action="store_true",
                         help="exit code + summary only")
     args = parser.parse_args(argv)
@@ -367,6 +398,7 @@ def main(argv: list[str]) -> int:
 
     if not args.quiet:
         print(f"check_rando_invariants: binary {args.binary}")
+        print(f"check_rando_invariants: jobs {max(1, args.jobs)}")
 
     all_failures: list[str] = []
     with tempfile.TemporaryDirectory(prefix="zelda3_rando_inv_") as td:
@@ -375,7 +407,8 @@ def main(argv: list[str]) -> int:
                     "uniq_goal", "uniq_item_pool"):
             (out_dir / sub).mkdir(parents=True, exist_ok=True)
         all_failures += check_completability(args.binary, out_dir,
-                                             args.seeds_per_cell, args.quiet)
+                                             args.seeds_per_cell, args.quiet,
+                                             args.jobs)
         all_failures += check_determinism(args.binary, out_dir, args.quiet)
         all_failures += check_hash_uniqueness(args.binary, out_dir, args.quiet)
         all_failures += check_share_shape(args.binary, out_dir, args.quiet)
