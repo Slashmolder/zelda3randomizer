@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 131u  // add-rando-grass-rock-shuffle: terrain axes (canonical byte [29], 3981 locations, per-world-state registration)
+#define kGeneratorVersion 132u  // randomizer generation performance: incremental soul-collection reachability
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
