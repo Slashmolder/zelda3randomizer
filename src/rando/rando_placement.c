@@ -2059,7 +2059,7 @@ static const RandoReachability *compute_reachability_collecting_placed(
       added = true;
     }
     if (!added) break;
-    r = Logic_ComputeReachability(&local, settings);
+    r = Logic_ExpandReachability(&local, settings);
   }
   return r;
 }

@@ -212,6 +212,12 @@ typedef struct RandoReachability RandoReachability;
 
 const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
                                                    const RandoSettings *settings);
+// Continue the previous reachability fixed-point after only increasing item
+// counts under the same settings/shuffle state. Used by soul collection during
+// assumed fill; Logic_SelfCheck enforces that generated reachability predicates
+// stay monotone in inventory/reachability so preserved bits cannot become stale.
+const RandoReachability *Logic_ExpandReachability(const RandoCounts *counts,
+                                                  const RandoSettings *settings);
 
 bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id);
 bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id);

@@ -323,6 +323,84 @@ static void skip_pred(Cursor *c) {
   }
 }
 
+static bool predicate_reachability_monotone(Cursor *c, bool negated) {
+  uint8 op = cursor_u8(c);
+  if (c->error) return false;
+  switch (op) {
+    case OP_HAS_ITEM:
+    case OP_REGION_REACHABLE:
+    case OP_DOORS_LOC_REACHABLE:
+      (void)cursor_u16le(c);
+      return !c->error && !negated;
+    case OP_HAS_AMOUNT:
+      (void)cursor_u16le(c);
+      (void)cursor_u8(c);
+      return !c->error && !negated;
+    case OP_HAS_ANY_OF: {
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++) (void)cursor_u16le(c);
+      return !c->error && !negated;
+    }
+    case OP_HAS_ANY_COUNT: {
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++) (void)cursor_u16le(c);
+      (void)cursor_u8(c);
+      return !c->error && !negated;
+    }
+    case OP_DUNGEON_CLEARED:
+    case OP_HAS_PRIZE:
+    case OP_MEDALLION_OPENS:
+    case OP_CAN_KILL_BOSS:
+      (void)cursor_u8(c);
+      return !c->error && !negated;
+    case OP_NOT:
+      return predicate_reachability_monotone(c, !negated);
+    case OP_AND:
+    case OP_OR: {
+      uint8 n = cursor_u8(c);
+      bool ok = true;
+      for (uint8 i = 0; i < n && !c->error; i++) {
+        if (!predicate_reachability_monotone(c, negated))
+          ok = false;
+      }
+      return ok && !c->error;
+    }
+    case OP_INSTANT_FLUTE:
+    case OP_NPC_SOULS_ACTIVE:
+    case OP_POT_KEYS_ON:
+    case OP_POT_KEYS_WILD:
+    case OP_POT_KEYS_DUNGEON:
+    case OP_ENEMY_DROP_KEYS_DUNGEON:
+    case OP_ENEMY_DROP_KEYS_WILD:
+      return true;
+    case OP_WORLDSTATE_EQ:
+    case OP_GOAL_EQ:
+    case OP_GOAL_REQUIRES_DUNGEON:
+    case OP_TRICK:
+    case OP_DIFFICULTY_AT_LEAST:
+    case OP_GLITCH_LEVEL_AT_LEAST:
+    case OP_MODEWEAPONS_EQ:
+    case OP_DOORS_ACTIVE:
+    case OP_SOULS_TIER_AT_LEAST:
+      (void)cursor_u8(c);
+      return !c->error;
+    case OP_ITEM_IS:
+      (void)cursor_u16le(c);
+      return !c->error;
+    default:
+      assert(0 && "unknown predicate op (monotone scan)");
+      c->error = true;
+      return false;
+  }
+}
+
+static bool predicate_blob_reachability_monotone(uint32 off, uint16 len) {
+  if (len == 0) return true;
+  Cursor c = { kRandoPredicateStream + off, kRandoPredicateStream + off + len, false };
+  bool ok = predicate_reachability_monotone(&c, false);
+  return ok && !c.error && c.p == c.end;
+}
+
 static bool eval_and(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   bool result = true;
@@ -1381,12 +1459,13 @@ static inline bool base_edge_inverted_shadowed(uint16 from, uint16 to) {
   return (g_inverted_pair_set[from][to >> 3] >> (to & 7)) & 1;
 }
 
-const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
-                                                   const RandoSettings *settings) {
+static const RandoReachability *logic_compute_reachability_internal(
+    const RandoCounts *counts, const RandoSettings *settings, bool preserve_existing) {
   logic_profile_maybe_init();
   if (g_logic_profile_active) g_logic_profile.reach_calls++;
   if (counts == NULL || settings == NULL) return NULL;
-  memset(&g_reachability, 0, sizeof(g_reachability));
+  if (!preserve_existing)
+    memset(&g_reachability, 0, sizeof(g_reachability));
   g_reachability.reachable_regions_count = kReachabilityMaxRegions;
 
   // Seed the fixed-point with the world-state-appropriate start region. The
@@ -1409,6 +1488,7 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   memset(&ctx, 0, sizeof(ctx));
   ctx.counts = &effective_counts;
   ctx.settings = settings;
+  ctx.cleared_dungeons_bitmask = g_reachability.cleared_dungeons_bitmask;
   ctx.reachable_regions_bitset = g_reachability.region_bitset;
   ctx.reachable_regions_count = kReachabilityMaxRegions;
   // Per-seed shuffle assignments (NULL when the placer hasn't installed
@@ -1630,6 +1710,16 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
   }
 
   return &g_reachability;
+}
+
+const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
+                                                   const RandoSettings *settings) {
+  return logic_compute_reachability_internal(counts, settings, false);
+}
+
+const RandoReachability *Logic_ExpandReachability(const RandoCounts *counts,
+                                                  const RandoSettings *settings) {
+  return logic_compute_reachability_internal(counts, settings, true);
 }
 
 bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id) {
@@ -2384,64 +2474,75 @@ void Logic_SelfCheck(void) {
         walked++; \
       } \
     } while (0)
+    #define LSC_REACH_WALK(what) do { \
+      LSC_SKIP_WALK(what); \
+      LSC_ASSERT(predicate_blob_reachability_monotone(blob.off, blob.len), \
+                 "non-monotone reachability predicate in " what); \
+    } while (0)
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *L = &kRandoLocations[i];
-      blob.off = L->can_reach_offset;    blob.len = L->can_reach_length;    LSC_SKIP_WALK("location can_reach");
+      blob.off = L->can_reach_offset;    blob.len = L->can_reach_length;    LSC_REACH_WALK("location can_reach");
       blob.off = L->can_place_offset;    blob.len = L->can_place_length;    LSC_SKIP_WALK("location can_place");
       blob.off = L->always_allow_offset; blob.len = L->always_allow_length; LSC_SKIP_WALK("location always_allow");
     }
     for (uint32 i = 0; i < kRandoEdgesCount; i++) {
       blob.off = kRandoEdges[i].predicate_offset;
       blob.len = kRandoEdges[i].predicate_length;
-      LSC_SKIP_WALK("edge predicate");
+      LSC_REACH_WALK("edge predicate");
     }
     for (uint32 i = 0; i < kRandoEdges_InvertedCount; i++) {
       blob.off = kRandoEdges_Inverted[i].predicate_offset;
       blob.len = kRandoEdges_Inverted[i].predicate_length;
-      LSC_SKIP_WALK("inverted edge predicate");
+      LSC_REACH_WALK("inverted edge predicate");
     }
     for (uint32 i = 0; i < kRandoLocationPredOverrides_InvertedCount; i++) {
       const RandoLocationPredOverride *O = &kRandoLocationPredOverrides_Inverted[i];
-      blob.off = O->can_reach_offset;    blob.len = O->can_reach_length;    LSC_SKIP_WALK("inverted override can_reach");
+      blob.off = O->can_reach_offset;    blob.len = O->can_reach_length;    LSC_REACH_WALK("inverted override can_reach");
       blob.off = O->can_place_offset;    blob.len = O->can_place_length;    LSC_SKIP_WALK("inverted override can_place");
       blob.off = O->always_allow_offset; blob.len = O->always_allow_length; LSC_SKIP_WALK("inverted override always_allow");
     }
     for (uint32 i = 0; i < kRandoLocationPredOverrides_RetroCount; i++) {
       const RandoLocationPredOverride *O = &kRandoLocationPredOverrides_Retro[i];
-      blob.off = O->can_reach_offset;    blob.len = O->can_reach_length;    LSC_SKIP_WALK("retro override can_reach");
+      blob.off = O->can_reach_offset;    blob.len = O->can_reach_length;    LSC_REACH_WALK("retro override can_reach");
       blob.off = O->can_place_offset;    blob.len = O->can_place_length;    LSC_SKIP_WALK("retro override can_place");
       blob.off = O->always_allow_offset; blob.len = O->always_allow_length; LSC_SKIP_WALK("retro override always_allow");
     }
     for (uint32 i = 0; i < kRandoBossKillPredCount; i++) {
       blob.off = kRandoBossKillPred[i].offset;
       blob.len = kRandoBossKillPred[i].length;
-      LSC_SKIP_WALK("boss kill predicate");
+      LSC_REACH_WALK("boss kill predicate");
     }
     for (uint32 i = 0; i < kRandoCaveSourcePredsCount; i++) {
       blob.off = kRandoCaveSourcePreds[i].off;
       blob.len = kRandoCaveSourcePreds[i].len;
-      LSC_SKIP_WALK("cave-source predicate");
+      LSC_REACH_WALK("cave-source predicate");
+    }
+    for (uint32 i = 0; i < kDoorVmPredsCount; i++) {
+      blob.off = kDoorVmPreds[i].off;
+      blob.len = kDoorVmPreds[i].len;
+      LSC_REACH_WALK("door vm predicate");
     }
     for (uint32 i = 0; i < kRandoDoorPotLocationsCount; i++) {
       blob.off = kRandoDoorPotLocations[i].pred_off;
       blob.len = kRandoDoorPotLocations[i].pred_len;
-      LSC_SKIP_WALK("door pot predicate");
+      LSC_REACH_WALK("door pot predicate");
     }
     for (uint32 i = 0; i < kRandoDoorEnemyDropLocationsCount; i++) {
       blob.off = kRandoDoorEnemyDropLocations[i].pred_off;
       blob.len = kRandoDoorEnemyDropLocations[i].pred_len;
-      LSC_SKIP_WALK("door enemy-drop predicate");
+      LSC_REACH_WALK("door enemy-drop predicate");
     }
     for (uint32 i = 0; i < kRandoDoorEnemyCheckLocationsCount; i++) {
       blob.off = kRandoDoorEnemyCheckLocations[i].pred_off;
       blob.len = kRandoDoorEnemyCheckLocations[i].pred_len;
-      LSC_SKIP_WALK("door enemy-check predicate");
+      LSC_REACH_WALK("door enemy-check predicate");
     }
     for (uint32 i = 0; i < kDoorPortalGatesCount; i++) {
       blob.off = kDoorPortalGates[i].pred_off;
       blob.len = kDoorPortalGates[i].pred_len;
-      LSC_SKIP_WALK("door portal-gate predicate");
+      LSC_REACH_WALK("door portal-gate predicate");
     }
+    #undef LSC_REACH_WALK
     #undef LSC_SKIP_WALK
     LSC_ASSERT(walked > 1000, "skip_pred walk covered suspiciously few blobs");
   }
