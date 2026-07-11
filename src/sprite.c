@@ -2617,6 +2617,17 @@ static bool Rando_EnemyMarkerHasSupportedExactCandidate(
   return false;
 }
 
+static bool Rando_EnemyMarkerIconScratchAvailable(void) {
+  // Exact marker art uses DecodeAnimatedSpriteTile_ToBuffer, whose vanilla
+  // decompression scratch is WRAM $7F4000 ($14000 in g_ram). Overworld and
+  // dungeon map recovery use that same buffer to stage the tilemap consumed by
+  // the pending NMI. Re-decoding a marker while core updates are suppressed
+  // replaces the staged tilemap with item graphics and corrupts the restored
+  // screen. Match the existing receive-item-slot guard: fall back to glints
+  // until the transition NMI has consumed its staging buffer.
+  return nmi_disable_core_updates == 0;
+}
+
 static RandoEnemyMarkerCandidate s_enemy_marker_candidates[kRandoEnemyMarkerMaxCandidates];
 static uint8 s_enemy_marker_candidate_count;
 static uint8 s_enemy_marker_frame;
@@ -2646,6 +2657,7 @@ static void Rando_EnemyMarkerEnsureCache(void) {
   RandoEnemyMarkerCandidate c[kRandoEnemyMarkerMaxCandidates];
   uint8 n = Rando_EnemyMarkerCollectCandidates(c);
   bool resources_available = Rando_EnemyMarkerHasSupportedExactCandidate(c, n) &&
+      Rando_EnemyMarkerIconScratchAvailable() &&
       !Hud_RandoOamTrackerWillDrawThisFrame() &&
       Rando_ObjScratchReserveForFrame(kRandoObjScratchOwner_EnemyMarkers);
   memcpy(s_enemy_marker_candidates, c, sizeof(c));
@@ -2944,6 +2956,16 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
       Rando_EnemyDropCarrierLiveState(10) ||
       Rando_EnemyDropCarrierLiveState(6))
     return 12;
+  {
+    uint8 saved_nmi_disable_core_updates = nmi_disable_core_updates;
+    nmi_disable_core_updates = 4;
+    bool blocked_during_transition = !Rando_EnemyMarkerIconScratchAvailable();
+    nmi_disable_core_updates = 0;
+    bool available_during_gameplay = Rando_EnemyMarkerIconScratchAvailable();
+    nmi_disable_core_updates = saved_nmi_disable_core_updates;
+    if (!blocked_during_transition) return 16;
+    if (!available_during_gameplay) return 17;
+  }
   {
     uint8 saved_type = sprite_type[0];
     sprite_type[0] = 0x08;
