@@ -2372,11 +2372,30 @@ void Logic_SelfCheck(void) {
                "HCE enemy-drop: third HCE key should allow Zelda rescue");
   }
 
+  // General bomb access is renewable, but the Standard escape's bombs-as-weapon
+  // branch still requires a concrete refill so the runtime escape assist has
+  // something to supply.
+  {
+    RandoSettings sescape;
+    Settings_SetDefaults(&sescape);
+    sescape.world_state = kWorldState_Standard;
+    RandoCounts ec;
+    memset(&ec, 0, sizeof(ec));
+    ec.by_item_id[ITEM_StartingHeart] = 3;
+    const RandoReachability *er = Logic_ComputeReachability(&ec, &sescape);
+    LSC_ASSERT(!Reachability_HasLocation(er, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Standard escape: renewable bomb access must not waive the weapon gate");
+    ec.by_item_id[ITEM_Bombs10] = 1;
+    er = Logic_ComputeReachability(&ec, &sescape);
+    LSC_ASSERT(Reachability_HasLocation(er, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Standard escape: a bomb refill should satisfy the weapon gate");
+  }
+
   // add-enemy-souls — kill-gated-room soul wraps (soul_rooms.gen.yaml ->
   // NeedsEnemySoul terms). Mini Moldorm Cave is the isolated probe: entry
-  // needs only bombs, and its chests sit behind the shutter the Mini Moldorms
-  // hold shut while suppressed. souls_shuffle=all must gate the chests on the
-  // soul; off must stay pre-souls-identical (term inert below the tier).
+  // is generally accessible, and its chests sit behind the shutter the Mini
+  // Moldorms hold shut while suppressed. souls_shuffle=all must gate the chests
+  // on the soul; off must stay pre-souls-identical (term inert below the tier).
   if (kRandoSoulRoomsBaked) {
     RandoSettings ssoul;
     Settings_SetDefaults(&ssoul);
@@ -2386,7 +2405,6 @@ void Logic_SelfCheck(void) {
     memset(&sc, 0, sizeof(sc));
     sc.by_item_id[ITEM_StartingHeart] = 3;
     sc.by_item_id[ITEM_RescuedZelda] = 1;  // Open pre-grant (mirrors the sphere walker)
-    sc.by_item_id[ITEM_Bombs10] = 1;
 
     const RandoReachability *sr = Logic_ComputeReachability(&sc, &ssoul);
     LSC_ASSERT(sr != NULL, "souls kill-room reachability returned NULL");
@@ -2404,7 +2422,6 @@ void Logic_SelfCheck(void) {
     memset(&sc0, 0, sizeof(sc0));
     sc0.by_item_id[ITEM_StartingHeart] = 3;
     sc0.by_item_id[ITEM_RescuedZelda] = 1;
-    sc0.by_item_id[ITEM_Bombs10] = 1;
     sr = Logic_ComputeReachability(&sc0, &soff);
     LSC_ASSERT(Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
                "souls=off: the soul term must be inert (pre-souls reachability)");

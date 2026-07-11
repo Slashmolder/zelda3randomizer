@@ -4951,6 +4951,19 @@ bool Rando_IsSwordlessActive(void) {
 // the VM treats as inventory (RescuedZelda, DefeatAgahnim) are derived from
 // actual game/rando progress.
 // ---------------------------------------------------------------------------
+static bool rando_has_escape_bomb_refill(void) {
+  if (link_item_bombs != 0 || link_bomb_filler != 0) return true;
+  const RandoPlacementTable *table = Placement_GetActive();
+  if (!g_rando_slot_active || table == NULL) return false;
+  for (uint16 i = 0; i < table->count; i++) {
+    uint16 item = table->entries[i].item_id;
+    if ((item == ITEM_Bombs1 || item == ITEM_Bombs3 || item == ITEM_Bombs10) &&
+        Rando_IsLocationChecked(table->entries[i].location_id))
+      return true;
+  }
+  return false;
+}
+
 void Rando_BuildRuntimeCounts(RandoCounts *out) {
   if (out == NULL) return;
   memset(out, 0, sizeof(*out));
@@ -4993,6 +5006,9 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   out->by_item_id[ITEM_Boots] = link_item_boots ? 1 : 0;
   out->by_item_id[ITEM_Flippers] = link_item_flippers ? 1 : 0;
   out->by_item_id[ITEM_MoonPearl] = link_item_moon_pearl ? 1 : 0;
+  // General CanBombThings() is unconditional. This logical refill bit exists
+  // only for CanKillEscapeThings's explicit Standard-escape ammo branch.
+  if (rando_has_escape_bomb_refill()) out->by_item_id[ITEM_Bombs1] = 1;
 
   // Boomerangs: byte 1=blue, 2=red (separate rando items). Read true ownership
   // (g_rando_boomerang_owned) so a player who owns both but has the slot toggled
@@ -5094,6 +5110,7 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
 // valid across frames and across both tracker windows.
 static uint32 g_live_reach_counter = 0xFFFFFFFFu;
 static uint8 g_live_reach_progress = 0xFFu;
+static uint8 g_live_reach_has_live_bombs = 0xFFu;
 static bool g_live_reach_valid = false;
 
 const RandoReachability *Rando_GetLiveReachability(void) {
@@ -5107,7 +5124,11 @@ const RandoReachability *Rando_GetLiveReachability(void) {
   // the castle-escape cutscene — so fold it into the memo key, else RescuedZelda
   // -gated regions stay dark until the next unrelated location check.
   uint8 prog = sram_progress_indicator;
-  if (g_live_reach_valid && cur == g_live_reach_counter && prog == g_live_reach_progress) {
+  // Live bomb drops/refills are not rando checks, so include their boolean
+  // availability in the memo key. Checked Bomb placements already bump `cur`.
+  uint8 has_live_bombs = link_item_bombs != 0 || link_bomb_filler != 0;
+  if (g_live_reach_valid && cur == g_live_reach_counter && prog == g_live_reach_progress &&
+      has_live_bombs == g_live_reach_has_live_bombs) {
     return Reachability_Snapshot(false);  // stable cached snapshot
   }
   RandoCounts counts;
@@ -5119,6 +5140,7 @@ const RandoReachability *Rando_GetLiveReachability(void) {
   }
   g_live_reach_counter = cur;
   g_live_reach_progress = prog;
+  g_live_reach_has_live_bombs = has_live_bombs;
   g_live_reach_valid = true;
   return Reachability_Snapshot(true);  // copy out of the shared buffer
 }
@@ -7208,6 +7230,41 @@ void Rando_TrackerSelfCheck(void) {
   tsc_expect_check_visibility(LOC_Ganon, false);
   tsc_expect_check_visibility(LOC_Bomb_Merchant, false);
   tsc_expect_check_visibility(LOC_Hyrule_Castle_Zelda_s_Cell, true);
+
+  // Runtime counts must feed CanKillEscapeThings's explicit bomb-refill branch
+  // from either live ammo or durable checked-placement history.
+  uint8 saved_runtime_bombs = link_item_bombs;
+  uint8 saved_runtime_bomb_filler = link_bomb_filler;
+  uint8 saved_bomb_checked[kRandoCheckedBitmapBytes];
+  memcpy(saved_bomb_checked, g_rando_checked_bitmap, sizeof(saved_bomb_checked));
+  link_item_bombs = link_bomb_filler = 0;
+  memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+  RandoCounts bomb_counts;
+  Rando_BuildRuntimeCounts(&bomb_counts);
+  if (bomb_counts.by_item_id[ITEM_Bombs1] != 0)
+    tsc_die("runtime counts invented an escape bomb refill");
+  link_item_bombs = 1;
+  Rando_BuildRuntimeCounts(&bomb_counts);
+  if (bomb_counts.by_item_id[ITEM_Bombs1] != 1)
+    tsc_die("runtime counts missed live escape bombs");
+  link_item_bombs = 0;
+  const RandoPlacementTable *active_table = Placement_GetActive();
+  uint16 bomb_loc = 0xFFFFu;
+  for (uint16 i = 0; active_table != NULL && i < active_table->count; i++) {
+    uint16 item = active_table->entries[i].item_id;
+    if (item == ITEM_Bombs1 || item == ITEM_Bombs3 || item == ITEM_Bombs10) {
+      bomb_loc = active_table->entries[i].location_id;
+      break;
+    }
+  }
+  if (bomb_loc == 0xFFFFu) tsc_die("tracker test placement has no bomb refill");
+  Rando_MarkLocationChecked(bomb_loc);
+  Rando_BuildRuntimeCounts(&bomb_counts);
+  if (bomb_counts.by_item_id[ITEM_Bombs1] != 1)
+    tsc_die("runtime counts forgot a checked escape bomb refill");
+  link_item_bombs = saved_runtime_bombs;
+  link_bomb_filler = saved_runtime_bomb_filler;
+  memcpy(g_rando_checked_bitmap, saved_bomb_checked, sizeof(saved_bomb_checked));
 
   RandoCounts counts;
   link_bigkey = 0;

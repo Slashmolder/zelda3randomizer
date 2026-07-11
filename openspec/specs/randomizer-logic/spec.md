@@ -76,6 +76,27 @@ The logic YAML SHALL author all combat / multi-item predicates as named macros (
 - **WHEN** a predicate exceeds the inline-complexity threshold without using a named macro
 - **THEN** the generator emits an error naming the file/line and the build fails, prompting the author to extract the macro
 
+### Requirement: Renewable bomb access and explicit Standard escape ammo
+
+`CanBombThings()` SHALL be universally true for ordinary-world logic because bomb
+drops, terrain secrets, and shops provide renewable ammo without a permanent
+bomb-bag item. The Standard escape combat predicate SHALL NOT inherit that
+unconditional result: its bomb-as-weapon branch SHALL explicitly require one of
+`Bombs1`, `Bombs3`, or `Bombs10`, allowing the escape-fill runtime to supply the
+needed ammo.
+
+#### Scenario: Ordinary bomb-wall checks do not require a shuffled bomb refill
+- **WHEN** an ordinary-world cave or wall predicate uses `CanBombThings()`
+- **THEN** bomb access is satisfied without a Bombs1/Bombs3/Bombs10 item in the simulated inventory
+
+#### Scenario: Standard escape remains weapon-gated
+- **WHEN** a Standard player has no sword, bow, hammer, rod, cane, or bomb-refill item
+- **THEN** `CanKillEscapeThings()` remains false even though ordinary `CanBombThings()` is true
+
+#### Scenario: Standard escape accepts a concrete bomb refill
+- **WHEN** the Standard escape inventory contains Bombs1, Bombs3, or Bombs10
+- **THEN** the bomb branch of `CanKillEscapeThings()` is true and the runtime escape refill can supply combat ammo
+
 ### Requirement: Reachability search with measured budget
 
 The engine SHALL provide `Logic_ComputeReachability(inventory, settings) ->
@@ -1046,4 +1067,3 @@ source-type kill route.
   and damage tables
 - **THEN** the thrown-pot route requires at least that many reachable pots in the
   room
-

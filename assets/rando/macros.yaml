@@ -348,15 +348,18 @@ macros:
   # ===========================================================================
   - name: CanKillEscapeThings
     parameters: [world]
-    body: "HasSword(1) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna) OR CanBombThings() OR CanShootArrowsL1() OR HAS_ITEM(Hammer) OR HAS_ITEM(FireRod)"
+    body: "HasSword(1) OR HAS_ITEM(CaneOfSomaria) OR HAS_ITEM(CaneOfByrna) OR HAS_ANY_OF([Bombs1, Bombs3, Bombs10]) OR CanShootArrowsL1() OR HAS_ITEM(Hammer) OR HAS_ITEM(FireRod)"
     source: "app/Support/ItemCollection.php:562-574"
     notes: |
       ALTTPR's body includes `UncleSword` (Standard-mode uncle gift item
       that doesn't exist in our pool — we use ProgressiveSword from
-      RescuedZelda forward) and `TenBombs` (assured-bombs pool variant
-      not in our registry). HasSword(1) covers the sword case (any sword
-      satisfies "escape kill"). Enemizer's `enemyHealth='default'` gate
-      on the bomb/byrna branches is dropped: Phase A pins enemizer off.
+      RescuedZelda forward). Its `TenBombs` branch remains an explicit
+      Bombs1/Bombs3/Bombs10 inventory test here rather than composing with
+      CanBombThings(), because general bomb access is renewable while the
+      Standard escape must still receive a concrete sphere-0 ammo refill.
+      HasSword(1) covers the sword case (any sword satisfies "escape kill").
+      Enemizer's `enemyHealth='default'` gate on the bomb/byrna branches is
+      dropped: Phase A pins enemizer off.
       The `ignoreCanKillEscapeThings` config switch is also dropped
       (Standard-mode escape Phase B feature).
 
@@ -415,20 +418,19 @@ macros:
     body: "(NOT OP_NPC_SOULS_ACTIVE()) OR HAS_ITEM(soul)"
 
   # ===========================================================================
-  # canBombThings — requires the player to actually have a bomb refill item.
+  # canBombThings — ordinary-world bomb access is universally renewable.
   # ===========================================================================
   - name: CanBombThings
     parameters: []
-    body: "HAS_ANY_OF([Bombs1, Bombs3, Bombs10])"
+    body: "TRUE()"
     source: "app/Support/ItemCollection.php:602-605"
     notes: |
-      ALTTPR returns true unconditionally because its Standard ROM patch
-      pre-grants 10 starting bombs. This port does not pre-grant bombs.
-      A TRUE() body would let the codegen simplify CanKillEscapeThings
-      to TRUE (any OR-with-TRUE collapses), making the placer believe
-      every HC escape chest is reachable with no items.
-      Phase B no-bombs-from-start variant flips this to `HAS_ITEM(Bombs1)
-      OR HAS_ITEM(Bombs3) OR HAS_ITEM(Bombs10)` plus a worldstate gate.
+      ALTTPR returns true unconditionally: ordinary drops, terrain secrets,
+      and shops make bombs renewable without a permanent bomb-bag item. This
+      port previously item-gated the macro under the false premise that ALTTPR
+      pre-grants 10 bomb ammo. Standard escape safety is handled separately by
+      CanKillEscapeThings's explicit Bombs1/Bombs3/Bombs10 branch and the
+      runtime escape refill.
 
   # ===========================================================================
   # canGetGoodBee — golden bee acquisition.

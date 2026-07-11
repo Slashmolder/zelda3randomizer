@@ -593,6 +593,11 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
   // MUST be appended as a new TLV with a fresh type discriminator —
   // do NOT insert bytes before the TLV chain or change the magic.
   (void)RandoSnapshotTail_Load(f);
+  // The restore replaced live inventory/progress in g_ram and may also have
+  // replaced the checked bitmap from the tail. Invalidate the tracker snapshot
+  // even when the same rando slot/seed remains active; otherwise matching memo
+  // key bytes can incorrectly reuse the pre-restore reachability result.
+  Rando_BumpReachabilityCounter();
 
   // The snapshot reinstalls the placement table (above) but NOT the hint table:
   // g_hint_table is a module-static in rando_hints.c, not part of g_ram and not

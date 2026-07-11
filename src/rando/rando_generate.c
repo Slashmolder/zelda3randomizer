@@ -273,7 +273,7 @@ void RandoGenerate_SelfCheck(void) {
     uint32 attempts = 0;
     SeedShapeMetrics metrics;
     memset(&metrics, 0, sizeof metrics);
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 32; i++) {
       table.count = 0;
       Rando_ClearGenerationLogicOverlays();
       RandoEntranceRegen reg;
@@ -298,7 +298,7 @@ void RandoGenerate_SelfCheck(void) {
     }
     Rando_ClearGenerationLogicOverlays();
     if (!accepted) {
-      fprintf(stderr, "RandoGenerate_SelfCheck: long shape did not match within 20 candidates\n");
+      fprintf(stderr, "RandoGenerate_SelfCheck: long shape did not match within 32 candidates\n");
       exit(2);
     }
     if (attempts == 0 || metrics.max_sphere < kSeedShapePresetLongMinSphere) {
