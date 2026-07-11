@@ -18,16 +18,18 @@ keeps dumps/saves inside the worktree. Missing-source-ini is non-fatal: the exe
 still runs via the parent-dir fallback.
 
 Run this script after creating a new worktree to mirror the ROM, assets, chest
-table, optional pot-shuffle artifacts, Windows SDL2, and optional ini from the
-main worktree. If assets are present but `src/rando/vanilla_assets_hash.h` is
-missing, the script generates the header from the local `zelda3_assets.dat`.
-The script is idempotent: if files already exist locally it does nothing.
+table, optional pot-shuffle and enemy-check artifacts, Windows SDL2, and
+optional ini from the main worktree. If assets are present but
+`src/rando/vanilla_assets_hash.h` is missing, the script generates the header
+from the local `zelda3_assets.dat`. The script is idempotent: if files already
+exist locally it does nothing.
 
 Usage:
     python assets/scripts/setup_worktree.py              # auto-detect main worktree
     python assets/scripts/setup_worktree.py --from PATH  # explicit source dir
     python assets/scripts/setup_worktree.py --verify     # check, don't copy
     python assets/scripts/setup_worktree.py --verify --require-pot-artifacts
+    python assets/scripts/setup_worktree.py --verify --require-enemy-artifacts
 
 Resolution order for the source:
     1. --from PATH command-line override
@@ -39,6 +41,8 @@ Exits 0 if required inputs are present (or were successfully mirrored), 1
 otherwise. On Windows, vendored SDL2 is required; on other platforms it is not.
 Pot-shuffle artifacts are optional by default because public/assetless builds
 intentionally omit them; use `--require-pot-artifacts` for a pot-ready worktree.
+Enemy-check artifacts follow the same rule; use `--require-enemy-artifacts` for
+an enemy-drop-check-ready worktree.
 """
 
 from __future__ import annotations
@@ -67,6 +71,16 @@ POT_ARTIFACT_RELS = (
     os.path.join("assets", "rando", "pot_dump.gen.txt"),
     os.path.join("assets", "rando", "pots.gen.yaml"),
     os.path.join("assets", "rando", "pot_key_depth.gen.yaml"),
+)
+# add-rando-enemy-drop-sanity: forced-drop and ordinary-enemy registries. They
+# are generated together from zelda3_assets.dat plus a key-depth dump from a
+# built binary. The build can intentionally omit them, but every
+# enemy_drop_checks tier then fails closed. Mirror the complete pair so a fresh
+# worktree does not need a warning-producing bootstrap build followed by local
+# prepare and a second build.
+ENEMY_ARTIFACT_RELS = (
+    os.path.join("assets", "rando", "enemy_drops.gen.yaml"),
+    os.path.join("assets", "rando", "enemy_checks.gen.yaml"),
 )
 # add-rando-grass-rock-shuffle: overworld terrain dump + registry (gitignored,
 # ROM-derived). Complete-set rule like pots: the dump regenerates the registry,
@@ -147,6 +161,14 @@ def has_pot_artifacts(d: Path) -> bool:
     return not missing_pot_artifacts(d)
 
 
+def missing_enemy_artifacts(d: Path) -> list[str]:
+    return [rel for rel in ENEMY_ARTIFACT_RELS if not (d / rel).is_file()]
+
+
+def has_enemy_artifacts(d: Path) -> bool:
+    return not missing_enemy_artifacts(d)
+
+
 def print_missing_sdl2(prefix: str, d: Path) -> None:
     missing = [rel for rel in SDL2_REQUIRED_RELS if not (d / rel).is_file()]
     print(f"{prefix} missing vendored SDL2 under {d / SDL2_REL}", file=sys.stderr)
@@ -164,6 +186,20 @@ def print_missing_pot_artifacts(prefix: str, d: Path, *, required: bool) -> None
     for rel in missing:
         print(f"  missing: {rel}", file=sys.stderr)
     print("  prepare with: python assets/scripts/run_rando_local_checks.py "
+          "--binary=<built zelda3.exe> --prepare-only", file=sys.stderr)
+
+
+def print_missing_enemy_artifacts(prefix: str, d: Path, *, required: bool) -> None:
+    missing = missing_enemy_artifacts(d)
+    if not missing:
+        return
+    label = "required" if required else "optional"
+    print(f"{prefix} missing {label} local enemy-check artifacts under "
+          f"{d / 'assets' / 'rando'}", file=sys.stderr)
+    for rel in missing:
+        print(f"  missing: {rel}", file=sys.stderr)
+    print("  prepare after a bootstrap build with: python "
+          "assets/scripts/run_rando_local_checks.py "
           "--binary=<built zelda3.exe> --prepare-only", file=sys.stderr)
 
 
@@ -209,6 +245,8 @@ def main() -> int:
                         help="check whether assets are present, don't copy")
     parser.add_argument("--require-pot-artifacts", action="store_true",
                         help="fail if local pot-shuffle artifacts are absent")
+    parser.add_argument("--require-enemy-artifacts", action="store_true",
+                        help="fail if local enemy-check artifacts are absent")
     args = parser.parse_args()
 
     cwd = Path.cwd().resolve()
@@ -221,6 +259,7 @@ def main() -> int:
     have_chest = (cwd / CHEST_TABLE_REL).is_file()
     have_hash = (cwd / VANILLA_ASSETS_HASH_REL).is_file()
     have_pots = has_pot_artifacts(cwd)
+    have_enemies = has_enemy_artifacts(cwd)
     # add-enemy-souls: soul_rooms.gen.yaml is gitignored/ROM-derived. Like pots,
     # it must gate the "nothing to do" early-exit below — otherwise a worktree
     # that already has rom+assets+hash+chest+pots bails BEFORE the soul block
@@ -237,13 +276,19 @@ def main() -> int:
             if not have_pots and args.require_pot_artifacts:
                 print_missing_pot_artifacts("setup_worktree:", cwd, required=True)
                 return 1
+            if not have_enemies and args.require_enemy_artifacts:
+                print_missing_enemy_artifacts("setup_worktree:", cwd, required=True)
+                return 1
             pot_note = " + pot artifacts" if have_pots else ""
+            enemy_note = " + enemy artifacts" if have_enemies else ""
             if need_sdl2:
-                print(f"setup_worktree: OK (rom + assets + chest table + hash + SDL2{pot_note} present)")
+                print(f"setup_worktree: OK (rom + assets + chest table + hash + SDL2{pot_note}{enemy_note} present)")
             else:
-                print(f"setup_worktree: OK (rom + assets + chest table + hash{pot_note} present)")
+                print(f"setup_worktree: OK (rom + assets + chest table + hash{pot_note}{enemy_note} present)")
             if not have_pots:
                 print_missing_pot_artifacts("setup_worktree:", cwd, required=False)
+            if not have_enemies:
+                print_missing_enemy_artifacts("setup_worktree:", cwd, required=False)
             if not have_souls:
                 print(f"setup_worktree: {SOUL_ROOMS_REL} absent -- souls_shuffle=all "
                       f"fails closed; run this without --verify to produce it.",
@@ -262,16 +307,22 @@ def main() -> int:
         if not have_pots:
             print_missing_pot_artifacts("setup_worktree:", cwd,
                                         required=args.require_pot_artifacts)
+        if not have_enemies:
+            print_missing_enemy_artifacts("setup_worktree:", cwd,
+                                          required=args.require_enemy_artifacts)
         return 1
 
     if (have_rom and assets_ok and have_ini and have_chest and have_hash and
-            have_pots and have_souls and (have_sdl2 or not need_sdl2)):
+            have_pots and have_enemies and have_souls and
+            (have_sdl2 or not need_sdl2)):
         if need_sdl2:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
-                  "chest table + pot artifacts + soul rooms + SDL2 already present)")
+                  "chest table + pot artifacts + enemy artifacts + soul rooms + "
+                  "SDL2 already present)")
         else:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
-                  "chest table + pot artifacts + soul rooms already present)")
+                  "chest table + pot artifacts + enemy artifacts + soul rooms "
+                  "already present)")
         return 0
 
     # Resolve the source.
@@ -306,6 +357,12 @@ def main() -> int:
                                             required=args.require_pot_artifacts)
                 if args.require_pot_artifacts:
                     return 1
+            if not have_enemies:
+                print_missing_enemy_artifacts(
+                    "setup_worktree:", cwd,
+                    required=args.require_enemy_artifacts)
+                if args.require_enemy_artifacts:
+                    return 1
             return 0
         if need_sdl2 and not have_sdl2:
             print_missing_sdl2("setup_worktree:", cwd)
@@ -326,6 +383,12 @@ def main() -> int:
                 print_missing_pot_artifacts("setup_worktree:", cwd,
                                             required=args.require_pot_artifacts)
                 if args.require_pot_artifacts:
+                    return 1
+            if not have_enemies:
+                print_missing_enemy_artifacts(
+                    "setup_worktree:", cwd,
+                    required=args.require_enemy_artifacts)
+                if args.require_enemy_artifacts:
                     return 1
             print(f"setup_worktree: source == cwd ({source}); required inputs "
                   f"are present, nothing to mirror.")
@@ -443,6 +506,34 @@ def main() -> int:
             print_missing_pot_artifacts("setup_worktree:", cwd,
                                         required=args.require_pot_artifacts)
             if args.require_pot_artifacts:
+                return 1
+
+    # Optional local enemy-check artifacts. Mirror them only as a complete set:
+    # both are generated from the same key-depth dump, and a partial set enables
+    # only some enemy_drop_checks tiers. If the source is not populated, keep
+    # the assetless/public-build behavior but explain the one-time two-build
+    # bootstrap needed to generate the pair locally.
+    if not have_enemies:
+        src_missing_enemies = missing_enemy_artifacts(source)
+        if not src_missing_enemies:
+            for rel in ENEMY_ARTIFACT_RELS:
+                dst_enemy = cwd / rel
+                if dst_enemy.is_file():
+                    continue
+                src_enemy = source / rel
+                dst_enemy.parent.mkdir(parents=True, exist_ok=True)
+                print(f"setup_worktree: copy {src_enemy} -> {dst_enemy}")
+                shutil.copy2(src_enemy, dst_enemy)
+            have_enemies = has_enemy_artifacts(cwd)
+        else:
+            print_missing_enemy_artifacts(
+                "setup_worktree: source", source,
+                required=args.require_enemy_artifacts)
+        if not have_enemies:
+            print_missing_enemy_artifacts(
+                "setup_worktree:", cwd,
+                required=args.require_enemy_artifacts)
+            if args.require_enemy_artifacts:
                 return 1
 
     # add-rando-grass-rock-shuffle: overworld terrain artifacts — mirror as a
